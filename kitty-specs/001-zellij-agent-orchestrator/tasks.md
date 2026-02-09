@@ -211,13 +211,13 @@ Depends on WP01 (WorkPackage struct) and WP02 (dependency graph for context inje
 
 #### Included Subtasks
 
-- [ ] [T026] Create Zellij session from KDL layout
-- [ ] [T027] Launch initial wave panes
-- [ ] [T028] Pane ID discovery (list-panes + name matching)
-- [ ] [T029] Pane lifecycle (open, close, restart)
-- [ ] [T030] Focus/zoom operations
-- [ ] [T031] Session attach/detach handling
-- [ ] [T032] Prompt injection failure detection
+- [x] [T026] Create Zellij session from KDL layout
+- [x] [T027] Launch initial wave panes
+- [x] [T028] Pane ID discovery (list-panes + name matching)
+- [x] [T029] Pane lifecycle (open, close, restart)
+- [x] [T030] Focus/zoom operations
+- [x] [T031] Session attach/detach handling
+- [x] [T032] Prompt injection failure detection
 
 #### Implementation Notes
 
@@ -336,15 +336,15 @@ Depends on WP01 (types), WP02 (dependency graph), WP05 (session manager for pane
 
 #### Included Subtasks
 
-- [ ] [T045] FIFO command input (.kasmos/cmd.pipe)
-- [ ] [T046] Command grammar parsing
-- [ ] [T047] [P] Restart command
-- [ ] [T048] [P] Pause command
-- [ ] [T049] [P] Status command
-- [ ] [T050] [P] Focus/zoom commands
-- [ ] [T051] [P] Abort command
-- [ ] [T052] [P] Force-advance command
-- [ ] [T053] [P] Retry command
+- [x] [T045] FIFO command input (.kasmos/cmd.pipe)
+- [x] [T046] Command grammar parsing
+- [x] [T047] [P] Restart command
+- [x] [T048] [P] Pause command
+- [x] [T049] [P] Status command
+- [x] [T050] [P] Focus/zoom commands
+- [x] [T051] [P] Abort command
+- [x] [T052] [P] Force-advance command
+- [x] [T053] [P] Retry command
 
 #### Implementation Notes
 
