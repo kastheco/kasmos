@@ -1,7 +1,7 @@
 ---
 work_package_id: WP01
 title: Core Types & Configuration
-lane: "doing"
+lane: "for_review"
 dependencies: []
 base_branch: master
 base_commit: 892e081e987699b1a8d388714c21e4726c9ac3c2
@@ -19,6 +19,11 @@ history:
   agent: system
   shell_pid: ''
   action: Prompt generated via /spec-kitty.tasks
+- timestamp: '2026-02-09T02:30:00Z'
+  lane: for_review
+  agent: opencode
+  shell_pid: ''
+  action: "Ready for review: implemented WP01 foundation modules with tests and passing cargo build/test"
 ---
 
 # Work Package Prompt: WP01 – Core Types & Configuration

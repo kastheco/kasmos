@@ -45,11 +45,11 @@ Work packages are organized into 6 waves based on dependency analysis:
 
 #### Included Subtasks
 
-- [ ] [T001] [P] Define orchestration data model (OrchestrationRun, WorkPackage, Wave, WPState, Config)
-- [ ] [T002] Config loading from CLI args + env + optional TOML
-- [ ] [T003] Error types via thiserror (ConfigError, ZellijError, SpecKittyError, StateError, PaneError, WaveError)
-- [ ] [T004] WPState machine transitions with guard clauses
-- [ ] [T005] Logging setup via tracing crate with RUST_LOG
+- [x] [T001] [P] Define orchestration data model (OrchestrationRun, WorkPackage, Wave, WPState, Config)
+- [x] [T002] Config loading from CLI args + env + optional TOML
+- [x] [T003] Error types via thiserror (ConfigError, ZellijError, SpecKittyError, StateError, PaneError, WaveError)
+- [x] [T004] WPState machine transitions with guard clauses
+- [x] [T005] Logging setup via tracing crate with RUST_LOG
 
 #### Implementation Notes
 
