@@ -1,7 +1,7 @@
 ---
 work_package_id: WP03
 title: KDL Layout Generator
-lane: "for_review"
+lane: "doing"
 dependencies:
 - WP01
 base_branch: 001-zellij-agent-orchestrator-WP01
@@ -10,8 +10,8 @@ created_at: '2026-02-09T03:22:41.605579+00:00'
 subtasks: [T012, T013, T014, T015, T016, T017, T018, T019]
 phase: Phase 2 - Generation
 assignee: ''
-agent: "opencode"
-shell_pid: "3018616"
+agent: "controller"
+shell_pid: "3350181"
 review_status: ''
 reviewed_by: ''
 history:
@@ -413,3 +413,4 @@ Valid lanes: `planned`, `doing`, `for_review`, `done`
 This file lives in `tasks/` (flat directory). Lane status is tracked ONLY in the `lane:` frontmatter field, NOT by directory location.
 - 2026-02-09T03:22:41Z – opencode – shell_pid=3018616 – lane=doing – Assigned agent via workflow command
 - 2026-02-09T03:42:41Z – opencode – shell_pid=3018616 – lane=for_review – Ready for review: KDL layout generator with LayoutGenerator struct, adaptive grid, shell-escaped commands, round-trip validation, 55 passing tests
+- 2026-02-09T03:50:15Z – controller – shell_pid=3350181 – lane=doing – Started review via workflow command
