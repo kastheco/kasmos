@@ -1,7 +1,7 @@
 ---
 work_package_id: WP05
 title: Zellij Session Manager
-lane: "for_review"
+lane: "doing"
 dependencies:
 - WP01
 base_branch: 001-zellij-agent-orchestrator-WP01
@@ -10,8 +10,8 @@ created_at: '2026-02-09T04:18:18.920213+00:00'
 subtasks: [T026, T027, T028, T029, T030, T031, T032]
 phase: Phase 3 - Runtime
 assignee: ''
-agent: "controller-wp05"
-shell_pid: "3486353"
+agent: "controller-review-wp05"
+shell_pid: "3597136"
 review_status: ''
 reviewed_by: ''
 history:
@@ -522,3 +522,4 @@ Valid lanes: `planned`, `doing`, `for_review`, `done`
 This file lives in `tasks/` (flat directory). Lane status is tracked ONLY in the `lane:` frontmatter field, NOT by directory location.
 - 2026-02-09T04:18:18Z – controller-wp05 – shell_pid=3486353 – lane=doing – Assigned agent via workflow command
 - 2026-02-09T04:43:24Z – controller-wp05 – shell_pid=3486353 – lane=for_review – Implemented Zellij session manager with CLI trait abstraction, session/pane lifecycle, focus navigation, health checking, and input validation. 68 tests passing.
+- 2026-02-09T04:44:13Z – controller-review-wp05 – shell_pid=3597136 – lane=doing – Started review via workflow command
