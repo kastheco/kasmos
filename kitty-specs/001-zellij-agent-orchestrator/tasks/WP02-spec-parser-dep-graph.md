@@ -1,21 +1,24 @@
 ---
-work_package_id: "WP02"
-subtasks: ["T006", "T007", "T008", "T009", "T010", "T011"]
-title: "Spec Parser & Dependency Graph"
-phase: "Phase 1 - Foundation"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
+work_package_id: WP02
+title: Spec Parser & Dependency Graph
+lane: "doing"
 dependencies: []
+base_branch: master
+base_commit: c30ed233eb04a3ec899bb12249aac94e9a83b77e
+created_at: '2026-02-09T02:23:17.200174+00:00'
+subtasks: [T006, T007, T008, T009, T010, T011]
+phase: Phase 1 - Foundation
+assignee: ''
+agent: ''
+shell_pid: "3168686"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-09T00:00:00Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-09T00:00:00Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP02 – Spec Parser & Dependency Graph
