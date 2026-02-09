@@ -1,7 +1,7 @@
 ---
 work_package_id: WP04
 title: Prompt File Generator
-lane: "doing"
+lane: "planned"
 dependencies:
 - WP01
 base_branch: 001-zellij-agent-orchestrator-WP01
@@ -12,8 +12,8 @@ phase: Phase 2 - Generation
 assignee: ''
 agent: "opencode"
 shell_pid: "3190789"
-review_status: ''
-reviewed_by: ''
+review_status: "has_feedback"
+reviewed_by: "kas"
 history:
 - timestamp: '2026-02-09T00:00:00Z'
   lane: planned
@@ -32,7 +32,61 @@ Before starting implementation, check the **Review Feedback** section below.
 
 ## Review Feedback
 
-*(Empty — no review feedback yet)*
+**Reviewed by**: kas
+**Status**: ❌ Changes Requested
+**Date**: 2026-02-09
+
+## Review Feedback - WP04
+
+### 🟠 Major Issue: Shell Script Path Injection Vulnerability
+
+**File:** `crates/kasmos/src/prompt.rs:251-253`
+
+**Problem:** The generated shell script does not quote the file path, making it vulnerable to paths containing spaces or special characters.
+
+**Current code:**
+```rust
+let script_content = format!(
+    "#!/bin/bash\nset -euo pipefail\ncat {} | opencode -p 'context:'\n",
+    prompt_path.display()
+);
+```
+
+**Required fix:**
+```rust
+let script_content = format!(
+    "#!/bin/bash\nset -euo pipefail\ncat '{}' | opencode -p 'context:'\n",
+    prompt_path.display()
+);
+```
+
+**Why this matters:**
+- If a WP ID or path contains spaces, the script will fail
+- Example: `cat .kasmos/prompts/WP 01.md` is interpreted as 3 arguments by bash
+- With quotes: `cat '.kasmos/prompts/WP 01.md'` is correctly interpreted as 1 path
+
+**Test to add:**
+```rust
+#[test]
+fn test_shell_wrapper_script_quotes_path() {
+    let script_content = format!(
+        "#!/bin/bash\nset -euo pipefail\ncat '{}' | opencode -p 'context:'\n",
+        "/path/with spaces/WP01.md"
+    );
+    assert!(script_content.contains("cat '/path/with spaces/WP01.md'"));
+}
+```
+
+### Minor Notes (Optional Improvements)
+
+1. **Placeholder implementation** (lines 192-213): The `build_prompt_context` function uses hardcoded placeholder values for subtasks, scope, and constraints. This is acceptable for WP04 scope if actual parsing is deferred to WP02 integration.
+
+2. **Hardcoded feature name** (line 210): Consider passing feature name as a parameter instead of hardcoding `"001-zellij-agent-orchestrator"`.
+
+### Approval Contingent On
+
+Please fix the path quoting issue and verify the generated script works with paths containing spaces. Once fixed, this WP is ready to merge.
+
 
 ## Dependency Rebase Guidance
 
@@ -415,3 +469,4 @@ This file lives in `tasks/` (flat directory). Lane status is tracked ONLY in the
 - 2026-02-09T03:25:03Z – opencode – shell_pid=3190789 – lane=doing – Assigned agent via workflow command
 - 2026-02-09T03:36:14Z – opencode – shell_pid=3190789 – lane=for_review – Ready for review: Prompt generation, dependency context injection, AGENTS inclusion, script wrappers, binary validation
 - 2026-02-09T03:51:00Z – opencode – shell_pid=3190789 – lane=doing – Started review via workflow command
+- 2026-02-09T03:53:15Z – opencode – shell_pid=3190789 – lane=planned – Moved to planned
