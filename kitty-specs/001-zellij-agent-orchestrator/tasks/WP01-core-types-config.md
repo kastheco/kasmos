@@ -1,7 +1,7 @@
 ---
 work_package_id: WP01
 title: Core Types & Configuration
-lane: "done"
+lane: "doing"
 dependencies: []
 base_branch: master
 base_commit: 892e081e987699b1a8d388714c21e4726c9ac3c2
@@ -10,7 +10,7 @@ subtasks: [T001, T002, T003, T004, T005]
 phase: Phase 1 - Foundation
 assignee: ''
 agent: "opencode"
-shell_pid: "3018616"
+shell_pid: "3250900"
 review_status: "approved"
 reviewed_by: "kas"
 history:
@@ -439,3 +439,4 @@ This file lives in `tasks/` (flat directory). Lane status is tracked ONLY in the
 - 2026-02-09T02:21:35Z – opencode – shell_pid=3018616 – lane=doing – Assigned agent via workflow command
 - 2026-02-09T02:32:34Z – opencode – shell_pid=3018616 – lane=doing – Started review via workflow command
 - 2026-02-09T02:38:12Z – opencode – shell_pid=3018616 – lane=done – Review passed: All 5 subtasks complete with 43 passing tests. Clean public API, excellent error handling, strong philosophy compliance. Two minor issues noted (RunState error placeholder, unsafe env tests) but non-blocking. Ready for dependent WPs.
+- 2026-02-09T02:47:12Z – opencode – shell_pid=3250900 – lane=doing – Started implementation via workflow command
