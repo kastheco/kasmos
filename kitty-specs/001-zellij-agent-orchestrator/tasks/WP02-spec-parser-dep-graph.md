@@ -1,7 +1,7 @@
 ---
 work_package_id: WP02
 title: Spec Parser & Dependency Graph
-lane: "doing"
+lane: "for_review"
 dependencies: []
 base_branch: master
 base_commit: c30ed233eb04a3ec899bb12249aac94e9a83b77e
@@ -394,3 +394,4 @@ Valid lanes: `planned`, `doing`, `for_review`, `done`
 
 This file lives in `tasks/` (flat directory). Lane status is tracked ONLY in the `lane:` frontmatter field, NOT by directory location.
 - 2026-02-09T02:54:40Z – opencode – shell_pid=3190789 – lane=doing – Assigned agent via workflow command
+- 2026-02-09T03:05:52Z – opencode – shell_pid=3190789 – lane=for_review – Ready for review: Implemented parser/frontmatter extraction, DAG/toposort/cycle detection, wave computation, tests+clippy clean
