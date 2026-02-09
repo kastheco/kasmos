@@ -1,14 +1,17 @@
 ---
 work_package_id: WP06
 title: Completion Detector
-lane: planned
+lane: "doing"
 dependencies:
 - WP01
+base_branch: 001-zellij-agent-orchestrator-WP01
+base_commit: eb6d2fdce54e8e2cd1773b50e133e860760a33f2
+created_at: '2026-02-09T04:20:33.344634+00:00'
 subtasks: [T033, T034, T035, T036, T037, T038, T039]
 phase: Phase 3 - Runtime
 assignee: ''
 agent: ''
-shell_pid: ''
+shell_pid: "3484851"
 review_status: ''
 reviewed_by: ''
 history:
