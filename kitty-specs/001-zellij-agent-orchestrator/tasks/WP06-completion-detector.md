@@ -1,7 +1,7 @@
 ---
 work_package_id: WP06
 title: Completion Detector
-lane: "for_review"
+lane: "doing"
 dependencies:
 - WP01
 base_branch: 001-zellij-agent-orchestrator-WP01
@@ -10,8 +10,8 @@ created_at: '2026-02-09T04:20:33.344634+00:00'
 subtasks: [T033, T034, T035, T036, T037, T038, T039]
 phase: Phase 3 - Runtime
 assignee: ''
-agent: "controller-wp06"
-shell_pid: "3484851"
+agent: "controller-review-wp06"
+shell_pid: "3498444"
 review_status: ''
 reviewed_by: ''
 history:
@@ -468,3 +468,4 @@ Valid lanes: `planned`, `doing`, `for_review`, `done`
 This file lives in `tasks/` (flat directory). Lane status is tracked ONLY in the `lane:` frontmatter field, NOT by directory location.
 - 2026-02-09T04:20:33Z – controller-wp06 – shell_pid=3484851 – lane=doing – Assigned agent via workflow command
 - 2026-02-09T04:26:47Z – controller-wp06 – shell_pid=3484851 – lane=for_review – Ready for review: Completion detector fully implemented with filesystem watcher, lane transition parsing, debounce/retry logic, deduplication, and comprehensive unit tests
+- 2026-02-09T06:00:05Z – controller-review-wp06 – shell_pid=3498444 – lane=doing – Started review via workflow command
