@@ -1,14 +1,17 @@
 ---
 work_package_id: WP07
 title: Wave Engine
-lane: planned
+lane: "doing"
 dependencies:
 - WP01
+base_branch: 001-zellij-agent-orchestrator-WP01
+base_commit: eb6d2fdce54e8e2cd1773b50e133e860760a33f2
+created_at: '2026-02-09T04:42:25.724533+00:00'
 subtasks: [T040, T041, T042, T043, T044]
 phase: Phase 4 - Control
 assignee: ''
 agent: ''
-shell_pid: ''
+shell_pid: "3535601"
 review_status: ''
 reviewed_by: ''
 history:
