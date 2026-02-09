@@ -1,7 +1,7 @@
 ---
 work_package_id: WP04
 title: Prompt File Generator
-lane: "planned"
+lane: "doing"
 dependencies:
 - WP01
 base_branch: 001-zellij-agent-orchestrator-WP01
@@ -470,3 +470,4 @@ This file lives in `tasks/` (flat directory). Lane status is tracked ONLY in the
 - 2026-02-09T03:36:14Z – opencode – shell_pid=3190789 – lane=for_review – Ready for review: Prompt generation, dependency context injection, AGENTS inclusion, script wrappers, binary validation
 - 2026-02-09T03:51:00Z – opencode – shell_pid=3190789 – lane=doing – Started review via workflow command
 - 2026-02-09T03:53:15Z – opencode – shell_pid=3190789 – lane=planned – Moved to planned
+- 2026-02-09T03:54:55Z – opencode – shell_pid=3190789 – lane=doing – Started implementation via workflow command
