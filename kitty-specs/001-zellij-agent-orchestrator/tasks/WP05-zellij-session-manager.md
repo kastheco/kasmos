@@ -10,7 +10,7 @@ created_at: '2026-02-09T04:18:18.920213+00:00'
 subtasks: [T026, T027, T028, T029, T030, T031, T032]
 phase: Phase 3 - Runtime
 assignee: ''
-agent: ''
+agent: "controller-wp05"
 shell_pid: "3486353"
 review_status: ''
 reviewed_by: ''
@@ -520,3 +520,4 @@ Valid lanes: `planned`, `doing`, `for_review`, `done`
 ### File Structure
 
 This file lives in `tasks/` (flat directory). Lane status is tracked ONLY in the `lane:` frontmatter field, NOT by directory location.
+- 2026-02-09T04:18:18Z – controller-wp05 – shell_pid=3486353 – lane=doing – Assigned agent via workflow command
