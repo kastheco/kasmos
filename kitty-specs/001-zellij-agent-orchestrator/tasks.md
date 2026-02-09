@@ -252,13 +252,13 @@ Depends on WP01 (types), WP03 (KDL layout), WP04 (prompt files + shell wrappers)
 
 #### Included Subtasks
 
-- [ ] [T033] Filesystem watcher using notify crate (IN_CLOSE_WRITE)
-- [ ] [T034] Parse WP frontmatter lane transitions
-- [ ] [T035] Read-retry with 200ms debounce + 3 retry attempts
-- [ ] [T036] [P] Git activity detection
-- [ ] [T037] [P] File marker detection
-- [ ] [T038] Signal deduplication
-- [ ] [T039] Emit events via tokio::sync::mpsc
+- [x] [T033] Filesystem watcher using notify crate (IN_CLOSE_WRITE)
+- [x] [T034] Parse WP frontmatter lane transitions
+- [x] [T035] Read-retry with 200ms debounce + 3 retry attempts
+- [x] [T036] [P] Git activity detection
+- [x] [T037] [P] File marker detection
+- [x] [T038] Signal deduplication
+- [x] [T039] Emit events via tokio::sync::mpsc
 
 #### Implementation Notes
 
