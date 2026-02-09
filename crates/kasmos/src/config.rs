@@ -256,6 +256,10 @@ struct ConfigFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // Mutex to serialize environment variable tests and prevent race conditions
+    static ENV_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_default_config() {
@@ -311,33 +315,41 @@ mod tests {
 
     #[test]
     fn test_load_from_env() {
+        let _guard = ENV_TEST_LOCK.lock().unwrap();
+
         unsafe {
             std::env::set_var("KASMOS_MAX_PANES", "12");
             std::env::set_var("KASMOS_MODE", "wave_gated");
         }
 
         let mut config = Config::default();
-        assert!(config.load_from_env().is_ok());
-        assert_eq!(config.max_agent_panes, 12);
-        assert_eq!(config.progression_mode, ProgressionMode::WaveGated);
+        let result = config.load_from_env();
 
         unsafe {
             std::env::remove_var("KASMOS_MAX_PANES");
             std::env::remove_var("KASMOS_MODE");
         }
+
+        assert!(result.is_ok());
+        assert_eq!(config.max_agent_panes, 12);
+        assert_eq!(config.progression_mode, ProgressionMode::WaveGated);
     }
 
     #[test]
     fn test_load_from_env_invalid_value() {
+        let _guard = ENV_TEST_LOCK.lock().unwrap();
+
         unsafe {
             std::env::set_var("KASMOS_MAX_PANES", "not_a_number");
         }
 
         let mut config = Config::default();
-        assert!(config.load_from_env().is_err());
+        let result = config.load_from_env();
 
         unsafe {
             std::env::remove_var("KASMOS_MAX_PANES");
         }
+
+        assert!(result.is_err());
     }
 }
