@@ -41,7 +41,7 @@ While agents are working, the operator needs to observe their progress and occas
 
 ### User Story 3 - Automatic Work Package Completion Detection (Priority: P1)
 
-As agents complete their work, the system must detect completion automatically without requiring manual intervention. The system monitors multiple signals—spec-kitty lane transitions, git commit patterns, and designated file markers—to determine when a work package is finished. Upon detection, the system updates internal state, optionally collapses or closes the completed pane, and launches the next eligible work package if dependencies are met (in continuous mode) or queues it for the next wave (in wave-gated mode).
+As agents complete their work, the system must detect completion automatically without requiring manual intervention. The system monitors multiple signals—spec-kitty lane transitions, git commit patterns, and designated file markers—to determine when a work package is finished. Upon detection, the system updates internal state, collapses the completed pane to a minimal single-line summary (freeing screen space while preserving access), and launches the next eligible work package if dependencies are met (in continuous mode) or queues it for the next wave (in wave-gated mode).
 
 **Why this priority**: Automatic completion detection is essential for orchestration to feel responsive and reduce operator overhead. Without it, the operator would need to manually confirm every completion, defeating the purpose of automation. This directly impacts the perceived efficiency of the system.
 
@@ -107,7 +107,7 @@ The operator may need to detach from the Zellij session due to network interrupt
 
 - What happens when an agent pane crashes mid-execution (OpenCode exits unexpectedly)? The system detects the crash, updates the work package state to "failed", and allows the operator to restart the pane via a manual command.
 - How does the system handle Zellij session death while agents are running? The system detects the session loss, persists state to disk, and allows the operator to recover by reattaching or relaunching the session.
-- What if multiple orchestration runs are attempted simultaneously? The system validates that only one orchestration run is active at a time and rejects or queues subsequent attempts.
+- What if multiple orchestration runs are attempted simultaneously? The system enforces one orchestration run per feature directory (lock file at `<feature_dir>/.kasmos/run.lock`). Multiple features can orchestrate in parallel. Attempts to launch a second run for the same feature are rejected with a clear error message.
 - How does the system handle circular dependencies in the work package graph? The system validates the dependency graph before starting and rejects the orchestration with a clear error message if circular dependencies are detected.
 - What happens if the operator tries to interact with a completed or closed pane? The system prevents interaction with closed panes and displays a message indicating the pane is no longer active.
 - How does the system handle a missing or malformed prompt file? The system detects the error during pane launch, displays an error message in the pane, and allows the operator to restart with a corrected prompt file.
@@ -121,7 +121,7 @@ The operator may need to detach from the Zellij session due to network interrupt
 - **FR-001**: System MUST read work package specifications and dependency graphs from kitty-specs feature directories.
 - **FR-002**: System MUST generate valid Zellij KDL layout files dynamically based on the number and arrangement of active work packages.
 - **FR-003**: System MUST create a Zellij session with a 3-column layout: controller pane (left column), work package agent grid (center and right columns).
-- **FR-004**: System MUST launch each work package agent as an OpenCode TUI session in its own Zellij pane with a prompt file injected via command-line argument.
+- **FR-004**: System MUST launch each work package agent as an OpenCode TUI session in its own Zellij pane with a prompt file piped via stdin (`cat prompt.md | opencode --prompt "context:"`).
 - **FR-005**: System MUST generate work-package-specific prompt files containing the work package description, context, and instructions, stored in the feature directory for traceability.
 - **FR-006**: System MUST detect work package completion automatically by monitoring spec-kitty lane transitions, git activity, or designated file markers.
 - **FR-007**: System MUST support manual work package state transitions via commands (restart, pause, complete, abort).
@@ -134,6 +134,7 @@ The operator may need to detach from the Zellij session due to network interrupt
 - **FR-014**: System MUST clean up Zellij sessions and temporary files when orchestration completes or is explicitly stopped.
 - **FR-015**: System MUST support concurrent work package execution within a wave, up to a configurable capacity limit.
 - **FR-016**: System MUST integrate with spec-kitty CLI to move work packages between lanes as they progress.
+- **FR-017**: System MUST generate a post-run summary report (markdown file) containing per-WP durations, wave timings, completion methods (auto-detected vs manual), and failure counts.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -142,7 +143,7 @@ The operator may need to detach from the Zellij session due to network interrupt
 - **Wave**: A group of work packages that can execute in parallel; wave ordering is determined by dependencies and operator confirmation (in wave-gated mode).
 - **Zellij Session**: The terminal session containing all panes for one orchestration run; persists across detach/reattach.
 - **Pane**: A Zellij terminal pane running an OpenCode TUI session for one work package; can be focused, zoomed, paused, or restarted.
-- **Prompt File**: A generated markdown file containing instructions for a work package agent, stored in the feature directory and passed to OpenCode via command-line argument.
+- **Prompt File**: A generated markdown file containing instructions for a work package agent, stored in the feature directory and piped to OpenCode via stdin at pane launch.
 - **State File**: Persistent on-disk representation of the orchestration run's current state, including work package states, wave progress, and pane mappings.
 
 ## Success Criteria *(mandatory)*
@@ -151,17 +152,28 @@ The operator may need to detach from the Zellij session due to network interrupt
 
 - **SC-001**: Operator can launch an orchestration run and see all initial-wave work package agents working in a structured Zellij layout within 30 seconds of invocation.
 - **SC-002**: Operator can focus any work package pane and interact directly with the agent's TUI without leaving the Zellij session.
-- **SC-003**: 90% of work package completions are automatically detected without manual intervention.
+- **SC-003**: Work package completions are automatically detected via spec-kitty lane transitions without manual intervention; manual fallback commands are always available.
 - **SC-004**: Orchestration state survives Zellij session detach and reattach without data loss.
 - **SC-005**: Failed work package agents can be restarted from the controller within a single command.
 - **SC-006**: Wave-gated mode pauses at wave boundaries and requires explicit operator confirmation before proceeding.
 - **SC-007**: The system handles up to 8 concurrent work package panes without degrading terminal responsiveness.
+- **SC-008**: Completed work package panes collapse to a minimal single-line summary, freeing screen space while remaining accessible for operator review.
 
 ## Assumptions
 
 - Zellij is installed and available in PATH.
-- OpenCode supports prompt file injection via command-line argument (or equivalent mechanism).
+- OpenCode supports prompt injection via stdin pipe pattern (`cat prompt.md | opencode --prompt "context:"`), as confirmed by merged PR #1230.
 - spec-kitty CLI is available for lane management and work package state tracking.
 - The operator's terminal is large enough to display a 3-column layout (assumes a modern widescreen display, minimum 120 columns).
 - Git is installed and work packages use git worktrees for isolation.
 - Work package specifications are stored in kitty-specs feature directories with consistent structure.
+
+## Clarifications
+
+### Session 2026-02-09
+
+- Q: What prompt injection mechanism should the spec canonicalize given OpenCode lacks `--prompt-file`? → A: Stdin pipe pattern (`cat prompt.md | opencode --prompt "context:"`). OpenCode's merged PR #1230 supports piping prompt content via stdin.
+- Q: Should kasmos enforce one run globally or per-feature? → A: Per-feature — one orchestration run per feature directory, but multiple features can orchestrate simultaneously.
+- Q: How should SC-003's "90% auto-detected" metric be measured? → A: Remove percentage target. Detection targets spec-kitty lane transitions as the primary signal; manual fallback always available.
+- Q: What should happen to a completed WP's pane? → A: Collapse to minimal single-line summary — frees screen space while preserving access for operator review.
+- Q: What observability should kasmos provide? → A: Post-run summary report (markdown file with WP durations, wave timings, completion methods, failure counts). No runtime metrics system in V1.
