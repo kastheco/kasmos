@@ -1,7 +1,7 @@
 ---
 work_package_id: WP01
 title: Core Types & Configuration
-lane: "for_review"
+lane: "doing"
 dependencies: []
 base_branch: master
 base_commit: 892e081e987699b1a8d388714c21e4726c9ac3c2
@@ -437,3 +437,4 @@ Valid lanes: `planned`, `doing`, `for_review`, `done`
 
 This file lives in `tasks/` (flat directory). Lane status is tracked ONLY in the `lane:` frontmatter field, NOT by directory location.
 - 2026-02-09T02:21:35Z – opencode – shell_pid=3018616 – lane=doing – Assigned agent via workflow command
+- 2026-02-09T02:32:34Z – opencode – shell_pid=3018616 – lane=doing – Started review via workflow command
