@@ -9,8 +9,8 @@ created_at: '2026-02-09T02:23:17.200174+00:00'
 subtasks: [T006, T007, T008, T009, T010, T011]
 phase: Phase 1 - Foundation
 assignee: ''
-agent: ''
-shell_pid: "3168686"
+agent: "opencode"
+shell_pid: "3190789"
 review_status: ''
 reviewed_by: ''
 history:
@@ -393,3 +393,4 @@ Valid lanes: `planned`, `doing`, `for_review`, `done`
 ### File Structure
 
 This file lives in `tasks/` (flat directory). Lane status is tracked ONLY in the `lane:` frontmatter field, NOT by directory location.
+- 2026-02-09T02:54:40Z – opencode – shell_pid=3190789 – lane=doing – Assigned agent via workflow command
