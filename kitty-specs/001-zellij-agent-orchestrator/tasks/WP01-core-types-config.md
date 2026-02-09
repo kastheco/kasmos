@@ -1,21 +1,24 @@
 ---
-work_package_id: "WP01"
-subtasks: ["T001", "T002", "T003", "T004", "T005"]
-title: "Core Types & Configuration"
-phase: "Phase 1 - Foundation"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
+work_package_id: WP01
+title: Core Types & Configuration
+lane: "doing"
 dependencies: []
+base_branch: master
+base_commit: 892e081e987699b1a8d388714c21e4726c9ac3c2
+created_at: '2026-02-09T02:21:35.014413+00:00'
+subtasks: [T001, T002, T003, T004, T005]
+phase: Phase 1 - Foundation
+assignee: ''
+agent: ''
+shell_pid: "3018616"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-09T00:00:00Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-09T00:00:00Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP01 – Core Types & Configuration
