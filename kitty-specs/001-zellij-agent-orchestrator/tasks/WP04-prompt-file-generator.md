@@ -1,14 +1,17 @@
 ---
 work_package_id: WP04
 title: Prompt File Generator
-lane: planned
+lane: "doing"
 dependencies:
 - WP01
+base_branch: 001-zellij-agent-orchestrator-WP01
+base_commit: f3b76ab4fe8fdea32c911fa12382895e6ce13748
+created_at: '2026-02-09T03:25:02.950205+00:00'
 subtasks: [T020, T021, T022, T023, T024, T025]
 phase: Phase 2 - Generation
 assignee: ''
 agent: ''
-shell_pid: ''
+shell_pid: "3190789"
 review_status: ''
 reviewed_by: ''
 history:
