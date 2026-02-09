@@ -1,14 +1,17 @@
 ---
 work_package_id: WP03
 title: KDL Layout Generator
-lane: planned
+lane: "doing"
 dependencies:
 - WP01
+base_branch: 001-zellij-agent-orchestrator-WP01
+base_commit: f3b76ab4fe8fdea32c911fa12382895e6ce13748
+created_at: '2026-02-09T03:22:41.605579+00:00'
 subtasks: [T012, T013, T014, T015, T016, T017, T018, T019]
 phase: Phase 2 - Generation
 assignee: ''
 agent: ''
-shell_pid: ''
+shell_pid: "3018616"
 review_status: ''
 reviewed_by: ''
 history:
