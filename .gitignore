@@ -20,5 +20,6 @@
 .amazonq/
 .github/copilot/
 .kittify/.dashboard
-# Excluded via sparse-checkout
-kitty-specs/
+# Note: kitty-specs/ is tracked in main repo but ignored in worktrees via .git/info/exclude
+# Block WP task files (managed in main repo, prevents merge conflicts in worktrees)
+kitty-specs/**/tasks/*.md

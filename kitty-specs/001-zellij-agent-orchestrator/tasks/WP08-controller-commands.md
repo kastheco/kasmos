@@ -1,22 +1,32 @@
 ---
 work_package_id: WP08
 title: Controller Commands
-lane: planned
+lane: done
 dependencies:
 - WP01
 subtasks: [T045, T046, T047, T048, T049, T050, T051, T052, T053]
 phase: Phase 4 - Control
-assignee: ''
-agent: ''
+assignee: controller-wp08
+agent: controller-wp08
 shell_pid: ''
-review_status: ''
-reviewed_by: ''
+review_status: approved
+reviewed_by: reviewer
 history:
 - timestamp: '2026-02-09T00:00:00Z'
   lane: planned
   agent: system
   shell_pid: ''
   action: Prompt generated via /spec-kitty.tasks
+- timestamp: '2026-02-09T00:00:00Z'
+  lane: for_review
+  agent: controller-wp08
+  shell_pid: ''
+  action: Implementation completed - added commands.rs with FIFO reader and command parser, command_handlers.rs with EngineAction dispatch and status formatting, wired modules in lib.rs, updated Cargo.toml with tokio and nix dependencies, all 75 tests passing
+- timestamp: '2026-02-09T00:00:00Z'
+  lane: done
+  agent: reviewer
+  shell_pid: ''
+  action: Final review approved - moved to done
 ---
 
 # Work Package Prompt: WP08 – Controller Commands
@@ -407,6 +417,7 @@ help                  — Show available commands
 ## Activity Log
 
 2026-02-09T00:00:00Z – system – lane=planned – Prompt created.
+2026-02-09T00:00:00Z – reviewer – lane=done – Final review approved and moved to done.
 
 ### Updating Lane Status
 
