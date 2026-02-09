@@ -83,12 +83,12 @@ None — this is a root work package.
 
 #### Included Subtasks
 
-- [ ] [T006] [P] Parse kitty-specs feature directory structure
-- [ ] [T007] [P] Extract YAML frontmatter from WP markdown files
-- [ ] [T008] Build dependency DAG (HashMap adjacency list)
-- [ ] [T009] Topological sort via Kahn's algorithm
-- [ ] [T010] Cycle detection with actionable error messages
-- [ ] [T011] Compute wave groups from topological layers
+- [x] [T006] [P] Parse kitty-specs feature directory structure
+- [x] [T007] [P] Extract YAML frontmatter from WP markdown files
+- [x] [T008] Build dependency DAG (HashMap adjacency list)
+- [x] [T009] Topological sort via Kahn's algorithm
+- [x] [T010] Cycle detection with actionable error messages
+- [x] [T011] Compute wave groups from topological layers
 
 #### Implementation Notes
 
