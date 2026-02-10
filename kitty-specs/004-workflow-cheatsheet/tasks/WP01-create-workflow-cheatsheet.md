@@ -1,28 +1,31 @@
 ---
-work_package_id: "WP01"
-subtasks:
-  - "T001"
-  - "T002"
-  - "T003"
-  - "T004"
-  - "T005"
-  - "T006"
-  - "T007"
-title: "Create End-to-End Workflow Cheatsheet"
-phase: "Phase 1 - Implementation"
-lane: "planned"
+work_package_id: WP01
+title: Create End-to-End Workflow Cheatsheet
+lane: "doing"
 dependencies: []
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
+base_branch: master
+base_commit: fae4452f84acfa88783a8e58713c17d7ecf21415
+created_at: '2026-02-10T21:07:02.766098+00:00'
+subtasks:
+- T001
+- T002
+- T003
+- T004
+- T005
+- T006
+- T007
+phase: Phase 1 - Implementation
+assignee: ''
+agent: ''
+shell_pid: "460527"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-10T20:59:42Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-10T20:59:42Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP01 – Create End-to-End Workflow Cheatsheet
