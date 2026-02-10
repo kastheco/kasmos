@@ -86,6 +86,11 @@ impl WaveEngine {
         self.launch_eligible_wps().await?;
 
         loop {
+            // Check if aborted
+            if { let r = self.run.read().await; r.state == RunState::Aborted } {
+                break;
+            }
+
             tokio::select! {
                 // Handle completion events
                 Some(event) = self.completion_rx.recv() => {
@@ -102,8 +107,9 @@ impl WaveEngine {
             // Check if orchestration is complete
             if self.is_complete().await {
                 let mut run = self.run.write().await;
-                run.state = RunState::Completed;
-                tracing::info!("Orchestration complete!");
+                let all_failed = run.work_packages.iter().all(|wp| wp.state == WPState::Failed);
+                run.state = if all_failed { RunState::Failed } else { RunState::Completed };
+                tracing::info!(state = ?run.state, "Orchestration complete!");
                 break;
             }
         }
@@ -126,19 +132,19 @@ impl WaveEngine {
                 .iter_mut()
                 .find(|w| w.id == wp_id)
                 .ok_or_else(|| {
-                    crate::error::KasmosError::Wave(WaveError::NoEligible { wave: 0 })
+                    crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.clone() })
                 })?;
 
             if success {
                 // Successful completion
-                wp.state = WPState::Completed;
+                wp.state = wp.state.transition(WPState::Completed, &wp.id)?;
                 wp.completed_at = Some(std::time::SystemTime::now());
                 wp.completion_method = Some(method);
                 self.active_panes = self.active_panes.saturating_sub(1);
                 tracing::info!(wp_id = %wp.id, "WP completed successfully");
             } else {
                 // Failure
-                wp.state = WPState::Failed;
+                wp.state = wp.state.transition(WPState::Failed, &wp.id)?;
                 wp.failure_count += 1;
                 self.active_panes = self.active_panes.saturating_sub(1);
                 tracing::warn!(wp_id = %wp.id, failure_count = wp.failure_count, "WP failed");
@@ -190,6 +196,7 @@ impl WaveEngine {
                 let mut run = self.run.write().await;
                 run.state = RunState::Aborted;
                 tracing::info!("Orchestration aborted by operator");
+                return Ok(());
             }
         }
 
@@ -317,20 +324,9 @@ impl WaveEngine {
             .work_packages
             .iter_mut()
             .find(|w| w.id == wp_id)
-            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::NoEligible { wave: 0 }))?;
+            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.to_string() }))?;
 
-        // Guard: Invalid state transition
-        if !matches!(wp.state, WPState::Pending) {
-            return Err(crate::error::KasmosError::State(
-                crate::error::StateError::InvalidTransition {
-                    wp_id: wp.id.clone(),
-                    from: wp.state,
-                    to: WPState::Active,
-                },
-            ));
-        }
-
-        wp.state = WPState::Active;
+        wp.state = wp.state.transition(WPState::Active, &wp.id)?;
         wp.started_at = Some(std::time::SystemTime::now());
         self.active_panes += 1;
 
@@ -352,20 +348,9 @@ impl WaveEngine {
             .work_packages
             .iter_mut()
             .find(|w| w.id == wp_id)
-            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::NoEligible { wave: 0 }))?;
+            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.to_string() }))?;
 
-        // Guard: Invalid state
-        if !matches!(wp.state, WPState::Failed | WPState::Paused) {
-            return Err(crate::error::KasmosError::State(
-                crate::error::StateError::InvalidTransition {
-                    wp_id: wp.id.clone(),
-                    from: wp.state,
-                    to: WPState::Active,
-                },
-            ));
-        }
-
-        wp.state = WPState::Active;
+        wp.state = wp.state.transition(WPState::Active, &wp.id)?;
         wp.started_at = Some(std::time::SystemTime::now());
         self.active_panes += 1;
 
@@ -383,20 +368,9 @@ impl WaveEngine {
             .work_packages
             .iter_mut()
             .find(|w| w.id == wp_id)
-            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::NoEligible { wave: 0 }))?;
+            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.to_string() }))?;
 
-        // Guard: Invalid state
-        if !matches!(wp.state, WPState::Active) {
-            return Err(crate::error::KasmosError::State(
-                crate::error::StateError::InvalidTransition {
-                    wp_id: wp.id.clone(),
-                    from: wp.state,
-                    to: WPState::Paused,
-                },
-            ));
-        }
-
-        wp.state = WPState::Paused;
+        wp.state = wp.state.transition(WPState::Paused, &wp.id)?;
         self.active_panes = self.active_panes.saturating_sub(1);
 
         tracing::info!(wp_id = %wp.id, "WP paused");
@@ -413,20 +387,9 @@ impl WaveEngine {
             .work_packages
             .iter_mut()
             .find(|w| w.id == wp_id)
-            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::NoEligible { wave: 0 }))?;
+            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.to_string() }))?;
 
-        // Guard: Invalid state
-        if !matches!(wp.state, WPState::Paused) {
-            return Err(crate::error::KasmosError::State(
-                crate::error::StateError::InvalidTransition {
-                    wp_id: wp.id.clone(),
-                    from: wp.state,
-                    to: WPState::Active,
-                },
-            ));
-        }
-
-        wp.state = WPState::Active;
+        wp.state = wp.state.transition(WPState::Active, &wp.id)?;
         self.active_panes += 1;
 
         tracing::info!(wp_id = %wp.id, "WP resumed");
@@ -443,20 +406,9 @@ impl WaveEngine {
             .work_packages
             .iter_mut()
             .find(|w| w.id == wp_id)
-            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::NoEligible { wave: 0 }))?;
+            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.to_string() }))?;
 
-        // Guard: Invalid state
-        if !matches!(wp.state, WPState::Failed) {
-            return Err(crate::error::KasmosError::State(
-                crate::error::StateError::InvalidTransition {
-                    wp_id: wp.id.clone(),
-                    from: wp.state,
-                    to: WPState::Completed,
-                },
-            ));
-        }
-
-        wp.state = WPState::Completed;
+        wp.state = wp.state.transition(WPState::Completed, &wp.id)?;
         wp.completion_method = Some(CompletionMethod::Manual);
 
         tracing::warn!(wp_id = %wp.id, "Force-advanced — dependents unblocked");
@@ -476,20 +428,9 @@ impl WaveEngine {
             .work_packages
             .iter_mut()
             .find(|w| w.id == wp_id)
-            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::NoEligible { wave: 0 }))?;
+            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.to_string() }))?;
 
-        // Guard: Invalid state
-        if !matches!(wp.state, WPState::Failed) {
-            return Err(crate::error::KasmosError::State(
-                crate::error::StateError::InvalidTransition {
-                    wp_id: wp.id.clone(),
-                    from: wp.state,
-                    to: WPState::Pending,
-                },
-            ));
-        }
-
-        wp.state = WPState::Pending;
+        wp.state = wp.state.transition(WPState::Pending, &wp.id)?;
         wp.started_at = None;
         wp.completed_at = None;
         wp.completion_method = None;

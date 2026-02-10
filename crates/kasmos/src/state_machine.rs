@@ -30,6 +30,7 @@ impl WPState {
             // Failed transitions
             (WPState::Failed, WPState::Pending) |
             (WPState::Failed, WPState::Active) |
+            (WPState::Failed, WPState::Completed) |
             // Self-transitions (idempotent)
             (WPState::Completed, WPState::Completed) |
             (WPState::Failed, WPState::Failed) |

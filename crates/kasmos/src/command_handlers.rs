@@ -31,11 +31,12 @@ pub enum EngineAction {
 }
 
 /// Trait for session manager operations (focus, zoom).
+#[async_trait::async_trait]
 pub trait SessionController: Send + Sync {
     /// Focus a specific work package pane.
-    fn focus_pane(&self, wp_id: &str) -> Result<()>;
+    async fn focus_pane(&self, wp_id: &str) -> Result<()>;
     /// Focus and zoom a specific work package pane.
-    fn focus_and_zoom(&self, wp_id: &str) -> Result<()>;
+    async fn focus_and_zoom(&self, wp_id: &str) -> Result<()>;
 }
 
 /// Handles controller commands and dispatches them to the engine and session manager.
@@ -91,11 +92,11 @@ impl<S: SessionController> CommandHandler<S> {
                 Ok(Self::format_status(&run))
             }
             ControllerCommand::Focus { wp_id } => {
-                self.session_controller.focus_pane(&wp_id)?;
+                self.session_controller.focus_pane(&wp_id).await?;
                 Ok(format!("[kasmos] Focused on {}", wp_id))
             }
             ControllerCommand::Zoom { wp_id } => {
-                self.session_controller.focus_and_zoom(&wp_id)?;
+                self.session_controller.focus_and_zoom(&wp_id).await?;
                 Ok(format!("[kasmos] Zoomed on {}", wp_id))
             }
             ControllerCommand::Abort => {
@@ -221,13 +222,14 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
     impl SessionController for MockSessionController {
-        fn focus_pane(&self, wp_id: &str) -> Result<()> {
+        async fn focus_pane(&self, wp_id: &str) -> Result<()> {
             *self.focus_called.lock().unwrap() = Some(wp_id.to_string());
             Ok(())
         }
 
-        fn focus_and_zoom(&self, wp_id: &str) -> Result<()> {
+        async fn focus_and_zoom(&self, wp_id: &str) -> Result<()> {
             *self.zoom_called.lock().unwrap() = Some(wp_id.to_string());
             Ok(())
         }

@@ -3,6 +3,7 @@
 //! A Rust-based orchestration system for coordinating multiple AI agents
 //! across Zellij terminal panes, managing work packages, waves, and state transitions.
 
+pub mod cleanup;
 pub mod command_handlers;
 pub mod commands;
 pub mod config;
@@ -10,20 +11,39 @@ pub mod detector;
 pub mod engine;
 pub mod error;
 pub mod graph;
+pub mod health;
+pub mod layout;
 pub mod logging;
+pub mod parser;
+pub mod persistence;
+pub mod prompt;
+pub mod session;
+pub mod shutdown;
+pub mod signals;
 pub mod state_machine;
 pub mod types;
+pub mod zellij;
 
 // Re-export commonly used types
+pub use cleanup::cleanup_artifacts;
 pub use command_handlers::{CommandHandler, EngineAction, SessionController};
 pub use commands::{CommandReader, ControllerCommand, command_help_text};
 pub use config::Config;
-pub use detector::CompletionEvent;
+pub use detector::{CompletionDetector, CompletionEvent};
 pub use engine::WaveEngine;
 pub use error::{KasmosError, Result};
 pub use graph::DependencyGraph;
+pub use health::{CrashEvent, HealthMonitor, PaneHealthChecker, PaneRegistration};
+pub use layout::LayoutGenerator;
 pub use logging::init_logging;
+pub use parser::{FeatureDir, WPFrontmatter, parse_frontmatter};
+pub use persistence::StatePersister;
+pub use prompt::PromptGenerator;
+pub use session::SessionManager;
+pub use shutdown::{ShutdownCoordinator, ShutdownSession};
+pub use signals::setup_signal_handlers;
 pub use types::{
     CompletionMethod, OrchestrationRun, ProgressionMode, RunState, WPState, Wave, WaveState,
     WorkPackage,
 };
+pub use zellij::{RealZellijCli, ZellijCli};

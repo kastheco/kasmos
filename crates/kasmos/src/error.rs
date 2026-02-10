@@ -38,6 +38,14 @@ pub enum KasmosError {
     #[error("Wave engine error: {0}")]
     Wave(#[from] WaveError),
 
+    /// Layout generation error.
+    #[error("Layout error: {0}")]
+    Layout(#[from] LayoutError),
+
+    /// Detector error.
+    #[error("Detector error: {0}")]
+    Detector(#[from] DetectorError),
+
     /// I/O error.
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -109,6 +117,52 @@ pub enum SpecParserError {
     /// Unknown dependency.
     #[error("Unknown dependency '{dep}' referenced by '{wp}'")]
     UnknownDependency { dep: String, wp: String },
+
+    /// I/O error during spec parsing.
+    #[error("I/O error: {0}")]
+    IoError(#[from] std::io::Error),
+
+    /// YAML parsing error.
+    #[error("YAML error: {0}")]
+    YamlError(#[from] serde_yaml::Error),
+}
+
+/// Layout generation errors.
+#[derive(Error, Debug)]
+pub enum LayoutError {
+    /// KDL generation failed.
+    #[error("KDL generation failed: {0}")]
+    KdlGeneration(String),
+
+    /// KDL validation failed.
+    #[error("KDL validation failed: {0}")]
+    KdlValidation(String),
+
+    /// Invalid pane count.
+    #[error("Invalid pane count: {0}")]
+    InvalidPaneCount(String),
+}
+
+/// Detector errors.
+#[derive(Error, Debug)]
+pub enum DetectorError {
+    /// Filesystem watcher error.
+    #[error("Watcher error: {0}")]
+    WatcherError(String),
+
+    /// File read error.
+    #[error("Read error: {0}")]
+    ReadError(String),
+
+    /// YAML parse error.
+    #[error("YAML error: {0}")]
+    YamlError(String),
+}
+
+impl From<notify::Error> for DetectorError {
+    fn from(e: notify::Error) -> Self {
+        DetectorError::WatcherError(e.to_string())
+    }
 }
 
 /// State machine errors.
@@ -153,6 +207,10 @@ pub enum WaveError {
     /// Wave has no eligible work packages.
     #[error("Wave {wave} has no eligible work packages")]
     NoEligible { wave: usize },
+
+    /// Work package not found.
+    #[error("Work package not found: {wp_id}")]
+    WpNotFound { wp_id: String },
 
     /// Capacity limit reached.
     #[error("Capacity limit reached: {active}/{max} panes")]
