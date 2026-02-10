@@ -1,25 +1,33 @@
 ---
 work_package_id: WP07
 title: Wave Engine
-lane: "doing"
+lane: "done"
 dependencies:
 - WP01
+- WP02
+- WP05
+- WP06
 base_branch: 001-zellij-agent-orchestrator-WP01
 base_commit: eb6d2fdce54e8e2cd1773b50e133e860760a33f2
 created_at: '2026-02-09T04:42:25.724533+00:00'
 subtasks: [T040, T041, T042, T043, T044]
 phase: Phase 4 - Control
-assignee: ''
+assignee: "claude-fresh"
 agent: "controller-wp07"
 shell_pid: "3535601"
-review_status: ''
-reviewed_by: ''
+review_status: 'approved'
+reviewed_by: 'opencode-wp09'
 history:
 - timestamp: '2026-02-09T00:00:00Z'
   lane: planned
   agent: system
   shell_pid: ''
   action: Prompt generated via /spec-kitty.tasks
+- timestamp: '2026-02-10T00:00:00Z'
+  lane: done
+  agent: opencode-wp09
+  shell_pid: ''
+  action: All subtasks verified complete. Review approved. Moved to done.
 ---
 
 # Work Package Prompt: WP07 – Wave Engine
@@ -32,7 +40,13 @@ Before starting implementation, check the **Review Feedback** section below.
 
 ## Review Feedback
 
-*(Empty — no review feedback yet)*
+**APPROVED** — All 5 subtasks (T040–T044) verified against implementation in `crates/kasmos/src/engine.rs`:
+- T040: Wave progression logic — event loop with `tokio::select!`, `handle_completion`, `is_complete` ✓
+- T041: Continuous mode — `launch_eligible_wps` with dependency checking ✓
+- T042: Wave-gated mode — `handle_wave_gated_progression`, `advance_wave` ✓
+- T043: Capacity limiting — `launch_queue`, `process_launch_queue`, `max_agent_panes` checks ✓
+- T044: Partial wave failure policy — `handle_failure`, `force_advance`, `retry_wp` ✓
+- 7 unit tests passing
 
 ## Dependency Rebase Guidance
 
@@ -426,3 +440,6 @@ Valid lanes: `planned`, `doing`, `for_review`, `done`
 
 This file lives in `tasks/` (flat directory). Lane status is tracked ONLY in the `lane:` frontmatter field, NOT by directory location.
 - 2026-02-09T04:42:25Z – controller-wp07 – shell_pid=3535601 – lane=doing – Assigned agent via workflow command
+- 2026-02-09T22:13:22Z – controller-wp07 – shell_pid=3535601 – lane=planned – Restarting: Dead state, no active agent
+- 2026-02-09T22:13:26Z – controller-wp07 – shell_pid=3535601 – lane=doing – Restarted with fresh agent session
+- 2026-02-10T02:22:21Z – controller-wp07 – shell_pid=3535601 – lane=for_review – Moved to for_review
