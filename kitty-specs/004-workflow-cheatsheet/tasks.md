@@ -23,13 +23,13 @@ description: "Work package task list for Workflow Cheatsheet feature"
 **Estimated prompt size**: ~350 lines
 
 ### Included Subtasks
-- [ ] T001 Create `docs/workflow-cheatsheet.md` with document header and prerequisites section
-- [ ] T002 Write end-to-end pipeline overview with visual flow diagram
-- [ ] T003 Write phase reference cards for spec-kitty planning phases (specify, clarify, plan, research, tasks, analyze)
-- [ ] T004 Write phase reference cards for execution phases (implement, launch, monitor, review, accept, merge)
-- [ ] T005 Write kasmos orchestration sub-workflow section (both modes, FIFO summary, recovery actions)
-- [ ] T006 Write daily session quick-reference section
-- [ ] T007 Add cross-references section and update existing docs with back-links
+- [x] T001 Create `docs/workflow-cheatsheet.md` with document header and prerequisites section
+- [x] T002 Write end-to-end pipeline overview with visual flow diagram
+- [x] T003 Write phase reference cards for spec-kitty planning phases (specify, clarify, plan, research, tasks, analyze)
+- [x] T004 Write phase reference cards for execution phases (implement, launch, monitor, review, accept, merge)
+- [x] T005 Write kasmos orchestration sub-workflow section (both modes, FIFO summary, recovery actions)
+- [x] T006 Write daily session quick-reference section
+- [x] T007 Add cross-references section and update existing docs with back-links
 
 ### Implementation Notes
 - Write subtasks sequentially (T001→T007) since each section builds on the document structure.
