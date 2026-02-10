@@ -1,5 +1,7 @@
 # kasmos Cheatsheet
 
+> For the full end-to-end workflow (spec-kitty planning → kasmos execution → merge), see [Workflow Cheatsheet](./workflow-cheatsheet.md).
+
 ## Quick Reference
 
 ### CLI Commands

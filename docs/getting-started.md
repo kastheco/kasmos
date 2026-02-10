@@ -327,6 +327,7 @@ export PATH="/path/to/zellij/bin:$PATH"
 
 ## Next Steps
 
+- **[Workflow Cheatsheet](./workflow-cheatsheet.md)** — End-to-end spec-kitty + kasmos lifecycle reference
 - **[Cheatsheet](./cheatsheet.md)** — Quick reference for CLI and FIFO commands
 - **[Keybinds Reference](./keybinds.md)** — Zellij keybinds and floating pane tips
 - **[Architecture](./architecture.md)** — Deep dive into orchestration design and state machines
