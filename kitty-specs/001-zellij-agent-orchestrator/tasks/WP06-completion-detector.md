@@ -4,6 +4,7 @@ title: Completion Detector
 lane: "done"
 dependencies:
 - WP01
+- WP02
 base_branch: 001-zellij-agent-orchestrator-WP01
 base_commit: eb6d2fdce54e8e2cd1773b50e133e860760a33f2
 created_at: '2026-02-09T04:20:33.344634+00:00'

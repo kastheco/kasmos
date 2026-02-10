@@ -4,6 +4,8 @@ title: Zellij Session Manager
 lane: "done"
 dependencies:
 - WP01
+- WP03
+- WP04
 base_branch: 001-zellij-agent-orchestrator-WP01
 base_commit: eb6d2fdce54e8e2cd1773b50e133e860760a33f2
 created_at: '2026-02-09T04:18:18.920213+00:00'

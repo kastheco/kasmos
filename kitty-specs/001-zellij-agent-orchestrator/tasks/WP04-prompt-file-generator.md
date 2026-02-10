@@ -4,6 +4,7 @@ title: Prompt File Generator
 lane: "done"
 dependencies:
 - WP01
+- WP02
 base_branch: 001-zellij-agent-orchestrator-WP01
 base_commit: f3b76ab4fe8fdea32c911fa12382895e6ce13748
 created_at: '2026-02-09T03:25:02.950205+00:00'

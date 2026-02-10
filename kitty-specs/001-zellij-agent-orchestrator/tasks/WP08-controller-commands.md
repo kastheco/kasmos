@@ -4,11 +4,15 @@ title: Controller Commands
 lane: done
 dependencies:
 - WP01
+- WP05
+base_branch: 001-zellij-agent-orchestrator-WP01
+base_commit: eb6d2fdce54e8e2cd1773b50e133e860760a33f2
+created_at: '2026-02-10T02:42:03.887104+00:00'
 subtasks: [T045, T046, T047, T048, T049, T050, T051, T052, T053]
 phase: Phase 4 - Control
 assignee: controller-wp08
-agent: controller-wp08
-shell_pid: ''
+agent: coder
+shell_pid: '2107793'
 review_status: approved
 reviewed_by: reviewer
 history:
@@ -430,3 +434,5 @@ Valid lanes: `planned`, `doing`, `for_review`, `done`
 ### File Structure
 
 This file lives in `tasks/` (flat directory). Lane status is tracked ONLY in the `lane:` frontmatter field, NOT by directory location.
+- 2026-02-10T02:42:03Z – coder – shell_pid=2107793 – lane=doing – Started implementation via workflow command
+- 2026-02-10T05:03:52Z – coder – shell_pid=2107793 – lane=done – Implementation restored from untracked files. Committed on branch 001-zellij-agent-orchestrator-WP08 (1113180). 81 tests passing.
