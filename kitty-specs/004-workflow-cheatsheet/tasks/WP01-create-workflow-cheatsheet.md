@@ -1,7 +1,7 @@
 ---
 work_package_id: WP01
 title: Create End-to-End Workflow Cheatsheet
-lane: "doing"
+lane: "for_review"
 dependencies: []
 base_branch: master
 base_commit: fae4452f84acfa88783a8e58713c17d7ecf21415
@@ -349,3 +349,4 @@ To change this work package's lane, either:
 
 **Valid lanes**: `planned`, `doing`, `for_review`, `done`
 - 2026-02-10T21:07:02Z – claude-opus – shell_pid=460527 – lane=doing – Assigned agent via workflow command
+- 2026-02-10T21:11:35Z – claude-opus – shell_pid=460527 – lane=for_review – Ready for review: workflow cheatsheet created, all 7 subtasks done, cross-links added
