@@ -611,7 +611,7 @@ print_next_wave_instructions() {
     log "  lane: $lane"
     log "  worktree: $worktree"
     log "  prompt: $prompt_file"
-    log "  launch: cd \"$worktree\" && ocx opencode -p ws -- --agent coder --prompt \"@IMPLEMENT.md\""
+    log "  launch: cd \"$worktree\" && ocx opencode -- --agent coder --prompt \"@IMPLEMENT.md\""
     local feat_prefix="${FEATURE%%-*}"
     log "  when done: just swarm $feat_prefix --review $wp"
   done
@@ -744,7 +744,7 @@ start_review() {
   printf '%s\n' "$prompt_output" > "$worktree/REVIEW.md"
 
   log "Review prompt written: $worktree/REVIEW.md"
-  log "Launch reviewer: cd \"$worktree\" && ocx opencode -p ws -- --agent reviewer --prompt \"@REVIEW.md\""
+  log "Launch reviewer: cd \"$worktree\" && ocx opencode -- --agent reviewer --prompt \"@REVIEW.md\""
   log "Then: just swarm $prefix --done $wp  OR  just swarm $prefix --reject $wp --feedback /path/to/feedback.md"
 }
 
