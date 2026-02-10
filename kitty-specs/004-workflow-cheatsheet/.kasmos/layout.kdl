@@ -1,0 +1,15 @@
+layout{
+pane split_direction=vertical{
+pane size="40%" name=controller{
+command opencode
+        }
+pane size="60%" split_direction=horizontal{
+pane split_direction=vertical{
+pane name=wp01-pane{
+command bash
+args -c "cat /home/kas/dev/kasmos/kitty-specs/004-workflow-cheatsheet/.kasmos/prompts/WP01.md | opencode -p 'context:'"
+                }
+            }
+        }
+    }
+}

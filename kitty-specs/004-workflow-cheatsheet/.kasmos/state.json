@@ -1,0 +1,49 @@
+{
+  "id": "run-20260210-210602",
+  "feature": "004-workflow-cheatsheet",
+  "feature_dir": "/home/kas/dev/kasmos/kitty-specs/004-workflow-cheatsheet",
+  "config": {
+    "max_agent_panes": 8,
+    "progression_mode": "continuous",
+    "zellij_binary": "zellij",
+    "opencode_binary": "opencode",
+    "spec_kitty_binary": "spec-kitty",
+    "kasmos_dir": ".kasmos",
+    "poll_interval_secs": 5,
+    "debounce_ms": 200,
+    "controller_width_pct": 40
+  },
+  "work_packages": [
+    {
+      "id": "WP01",
+      "title": "Create End-to-End Workflow Cheatsheet",
+      "state": "pending",
+      "dependencies": [],
+      "wave": 0,
+      "pane_id": null,
+      "pane_name": "wp01-pane",
+      "worktree_path": null,
+      "prompt_path": "/home/kas/dev/kasmos/kitty-specs/004-workflow-cheatsheet/.kasmos/prompts/WP01.md",
+      "started_at": null,
+      "completed_at": null,
+      "completion_method": null,
+      "failure_count": 0
+    }
+  ],
+  "waves": [
+    {
+      "index": 0,
+      "wp_ids": [
+        "WP01"
+      ],
+      "state": "pending"
+    }
+  ],
+  "state": "initializing",
+  "started_at": {
+    "secs_since_epoch": 1770757562,
+    "nanos_since_epoch": 424119473
+  },
+  "completed_at": null,
+  "mode": "continuous"
+}
