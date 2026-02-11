@@ -81,16 +81,41 @@ fn handle_review_key(_app: &mut App, key: KeyEvent) {
 }
 
 /// Handle keys specific to the Logs tab.
-fn handle_logs_key(_app: &mut App, key: KeyEvent) {
+fn handle_logs_key(app: &mut App, key: KeyEvent) {
+    if app.logs.filter_active {
+        match key.code {
+            KeyCode::Esc | KeyCode::Enter => {
+                app.logs.filter_active = false;
+            }
+            KeyCode::Backspace => {
+                app.logs.filter.pop();
+            }
+            KeyCode::Char(c) => {
+                app.logs.filter.push(c);
+            }
+            _ => {}
+        }
+        return;
+    }
+
     match key.code {
         KeyCode::Char('j') | KeyCode::Down => {
-            // Scroll down — will be implemented in WP07
+            app.logs.auto_scroll = false;
+            app.logs.scroll_offset = app.logs.scroll_offset.saturating_add(1);
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            // Scroll up — will be implemented in WP07
+            app.logs.auto_scroll = false;
+            app.logs.scroll_offset = app.logs.scroll_offset.saturating_sub(1);
+        }
+        KeyCode::Char('G') => {
+            app.logs.auto_scroll = true;
+        }
+        KeyCode::Char('g') => {
+            app.logs.auto_scroll = false;
+            app.logs.scroll_offset = 0;
         }
         KeyCode::Char('/') => {
-            // Activate filter — will be implemented in WP07
+            app.logs.filter_active = true;
         }
         _ => {}
     }

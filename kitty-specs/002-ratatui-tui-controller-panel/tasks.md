@@ -179,11 +179,11 @@
 **Estimated Size**: ~350 lines
 
 ### Included Subtasks
-- [ ] T034 Create `tui/tabs/logs.rs` — scrollable list of LogEntry items with timestamp + level badge
-- [ ] T035 Implement log capture — convert state diffs (on watch update) to LogEntry items
-- [ ] T036 Implement text filter — `/` activates filter input mode, Esc exits, real-time filtering
-- [ ] T037 Implement auto-scroll — follow tail by default, pause on manual scroll up, `G` to resume
-- [ ] T038 Apply log level styling — color-coded by Info (dim), Warn (yellow), Error (red)
+- [x] T034 Create `tui/tabs/logs.rs` — scrollable list of LogEntry items with timestamp + level badge
+- [x] T035 Implement log capture — convert state diffs (on watch update) to LogEntry items
+- [x] T036 Implement text filter — `/` activates filter input mode, Esc exits, real-time filtering
+- [x] T037 Implement auto-scroll — follow tail by default, pause on manual scroll up, `G` to resume
+- [x] T038 Apply log level styling — color-coded by Info (dim), Warn (yellow), Error (red)
 
 ### Dependencies
 - Depends on WP01 + WP02
@@ -339,11 +339,11 @@ Wave 4 (Validation):       WP10 ──┘ depends WP02+WP04+WP05+WP06+WP08+WP09
 | T031 | Reject action (relaunch/hold) | WP06 | P1 | No |
 | T032 | Request-changes action | WP06 | P1 | No |
 | T033 | Display review feedback context | WP06 | P1 | No |
-| T034 | logs.rs — scrollable list | WP07 | P2 | No |
-| T035 | Log capture from state diffs | WP07 | P2 | No |
-| T036 | Text filter (`/` mode) | WP07 | P2 | No |
-| T037 | Auto-scroll + resume | WP07 | P2 | No |
-| T038 | Log level styling | WP07 | P2 | No |
+| T034 | logs.rs — scrollable list | WP07 | P2 | Yes |
+| T035 | Log capture from state diffs | WP07 | P2 | Yes |
+| T036 | Text filter (`/` mode) | WP07 | P2 | Yes |
+| T037 | Auto-scroll + resume | WP07 | P2 | Yes |
+| T038 | Log level styling | WP07 | P2 | Yes |
 | T039 | .input-needed file polling | WP08 | P2 | No |
 | T040 | InputNeeded notification display | WP08 | P2 | No |
 | T041 | Focus/zoom pane action | WP08 | P2 | No |

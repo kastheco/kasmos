@@ -5,13 +5,14 @@
 //! orchestration run snapshot from the engine.
 
 use crate::command_handlers::EngineAction;
-use crate::types::OrchestrationRun;
-use ratatui::layout::{Constraint, Direction, Layout};
+use crate::types::{OrchestrationRun, WPState};
+use ratatui::Frame;
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
-use ratatui::Frame;
-use std::time::Instant;
+use std::collections::HashMap;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 
 use super::event::TuiEvent;
@@ -113,7 +114,7 @@ pub struct ReviewState {
 #[derive(Debug, Clone)]
 pub struct LogEntry {
     /// When the event occurred.
-    pub timestamp: std::time::SystemTime,
+    pub timestamp: SystemTime,
     /// Severity level.
     pub level: LogLevel,
     /// Associated work package ID, if any.
@@ -220,7 +221,16 @@ impl App {
     /// Called when the watch channel signals a new state. Notification diffing
     /// will be added in WP05.
     pub fn update_state(&mut self, new_run: OrchestrationRun) {
+        self.capture_state_logs(&new_run);
         self.run = new_run;
+
+        if self.logs.entries.len() > 10_000 {
+            let overflow = self.logs.entries.len() - 10_000;
+            self.logs.entries.drain(..overflow);
+            if !self.logs.auto_scroll {
+                self.logs.scroll_offset = self.logs.scroll_offset.saturating_sub(overflow);
+            }
+        }
     }
 
     /// Periodic tick handler for elapsed time display updates.
@@ -228,6 +238,198 @@ impl App {
     /// Called every 250ms from the event loop.
     pub fn on_tick(&mut self) {
         // Placeholder — elapsed time formatting will use this in WP03
+    }
+
+    fn capture_state_logs(&mut self, new_run: &OrchestrationRun) {
+        let old_states: HashMap<&str, WPState> = self
+            .run
+            .work_packages
+            .iter()
+            .map(|wp| (wp.id.as_str(), wp.state))
+            .collect();
+
+        for wp in &new_run.work_packages {
+            let old_state = old_states.get(wp.id.as_str()).copied();
+            if old_state == Some(wp.state) {
+                continue;
+            }
+
+            let from = old_state
+                .map(|state| format!("{state:?}"))
+                .unwrap_or_else(|| "(new)".to_string());
+
+            let level = match wp.state {
+                WPState::Failed => LogLevel::Error,
+                WPState::ForReview => LogLevel::Warn,
+                _ => LogLevel::Info,
+            };
+
+            self.logs.entries.push(LogEntry {
+                timestamp: SystemTime::now(),
+                level,
+                wp_id: Some(wp.id.clone()),
+                message: format!("{from} -> {:?}", wp.state),
+            });
+        }
+
+        if new_run.state != self.run.state {
+            self.logs.entries.push(LogEntry {
+                timestamp: SystemTime::now(),
+                level: LogLevel::Info,
+                wp_id: None,
+                message: format!("Run state: {:?} -> {:?}", self.run.state, new_run.state),
+            });
+        }
+    }
+
+    fn filtered_log_entries(&self) -> Vec<&LogEntry> {
+        if self.logs.filter.is_empty() {
+            return self.logs.entries.iter().collect();
+        }
+
+        let needle = self.logs.filter.to_ascii_lowercase();
+        self.logs
+            .entries
+            .iter()
+            .filter(|entry| {
+                entry.message.to_ascii_lowercase().contains(&needle)
+                    || entry
+                        .wp_id
+                        .as_deref()
+                        .unwrap_or_default()
+                        .to_ascii_lowercase()
+                        .contains(&needle)
+            })
+            .collect()
+    }
+
+    fn format_timestamp(timestamp: SystemTime) -> String {
+        match timestamp.duration_since(UNIX_EPOCH) {
+            Ok(duration) => {
+                let total = duration.as_secs() % 86_400;
+                let hours = total / 3_600;
+                let minutes = (total % 3_600) / 60;
+                let seconds = total % 60;
+                format!("{hours:02}:{minutes:02}:{seconds:02}")
+            }
+            Err(_) => "00:00:00".to_string(),
+        }
+    }
+
+    fn render_logs(&self, frame: &mut Frame, area: Rect) {
+        let block = Block::default().borders(Borders::ALL).title(" Logs ");
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+
+        if inner.height == 0 {
+            return;
+        }
+
+        let filtered = self.filtered_log_entries();
+        let reserve = if self.logs.filter_active { 2 } else { 1 };
+        let list_height = usize::from(inner.height.saturating_sub(reserve));
+        let max_top = filtered.len().saturating_sub(list_height);
+        let top = if self.logs.auto_scroll {
+            max_top
+        } else {
+            self.logs.scroll_offset.min(max_top)
+        };
+
+        let end = if list_height == 0 {
+            top
+        } else {
+            (top + list_height).min(filtered.len())
+        };
+
+        let mut lines = Vec::new();
+        if filtered.is_empty() {
+            lines.push(Line::from(Span::styled(
+                "No log entries",
+                Style::default().fg(Color::DarkGray),
+            )));
+        } else {
+            for entry in &filtered[top..end] {
+                let level = match entry.level {
+                    LogLevel::Info => Span::styled("INFO", Style::default().fg(Color::DarkGray)),
+                    LogLevel::Warn => Span::styled("WARN", Style::default().fg(Color::Yellow)),
+                    LogLevel::Error => Span::styled(
+                        "ERR ",
+                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                    ),
+                };
+
+                let wp_prefix = entry
+                    .wp_id
+                    .as_ref()
+                    .map(|wp_id| format!("[{wp_id}] "))
+                    .unwrap_or_default();
+
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        Self::format_timestamp(entry.timestamp),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                    Span::raw(" "),
+                    level,
+                    Span::raw(format!(" {wp_prefix}{}", entry.message)),
+                ]));
+            }
+        }
+
+        let list_area = Rect {
+            x: inner.x,
+            y: inner.y,
+            width: inner.width,
+            height: inner.height.saturating_sub(reserve),
+        };
+        frame.render_widget(Paragraph::new(lines), list_area);
+
+        let paused_text = if self.logs.auto_scroll {
+            "AUTO-SCROLL"
+        } else {
+            "PAUSED - press G to resume"
+        };
+        let status_style = if self.logs.auto_scroll {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default().fg(Color::Yellow)
+        };
+
+        let status_area = Rect {
+            x: inner.x,
+            y: inner.y + inner.height.saturating_sub(reserve),
+            width: inner.width,
+            height: 1,
+        };
+
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(paused_text, status_style),
+                Span::raw("  "),
+                Span::styled(
+                    format!("Filter: {}", self.logs.filter),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ])),
+            status_area,
+        );
+
+        if self.logs.filter_active {
+            let filter_area = Rect {
+                x: inner.x,
+                y: inner.y + inner.height.saturating_sub(1),
+                width: inner.width,
+                height: 1,
+            };
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled("/", Style::default().fg(Color::Yellow)),
+                    Span::raw(&self.logs.filter),
+                    Span::styled("_", Style::default().fg(Color::Yellow)),
+                ])),
+                filter_area,
+            );
+        }
     }
 
     /// Allocate a new unique notification ID.
@@ -281,7 +483,10 @@ impl App {
                 )
             }
             Tab::Review => "Review view coming soon\n\nPress 'q' to quit".to_string(),
-            Tab::Logs => "Logs view coming soon\n\nPress 'q' to quit".to_string(),
+            Tab::Logs => {
+                self.render_logs(frame, chunks[1]);
+                return;
+            }
         };
 
         let body =
