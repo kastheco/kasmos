@@ -4,13 +4,14 @@
 **Created**: 2026-02-11
 **Status**: Draft
 **Base**: `master` (after feature 002 merges)
-**Input**: Refactor the kasmos TUI to adopt 4 community ratatui crates, replacing hand-rolled implementations with battle-tested community widgets.
+**Input**: Refactor the kasmos TUI to adopt 5 community ratatui crates, replacing hand-rolled implementations with battle-tested community widgets and adding a WP dependency graph visualization.
 
 ## Clarifications
 
 ### Session 2026-02-11
 
-- Q: Should all 6 evaluated crates be included? → A: No. Defer `tachyonfx` (rendering overhead risk) and `tui-widget-list` (refactoring working code for marginal gain). Adopt 4: `tui-logger`, `tui-popup`, `throbber-widgets-tui`, `ratatui-macros`.
+- Q: Should all 6 evaluated crates be included? → A: No. Defer `tachyonfx` (rendering overhead risk) and `tui-widget-list` (refactoring working code for marginal gain). Adopt 5: `tui-logger`, `tui-popup`, `throbber-widgets-tui`, `ratatui-macros`, `tui-nodes`.
+- Q: Should `tui-nodes` be added for WP dependency visualization? → A: Yes. Use it to render a node graph showing WP dependencies within a feature, visible from the Dashboard tab.
 - Q: Should this be a new feature or additional WPs on 002? → A: New feature branching from `master`, not from 002's branch. Won't be planned/tasked until 002 merges.
 - Q: Should each crate adoption be independently mergeable? → A: Yes. Structure WPs so each crate can land or be reverted without affecting the others.
 
@@ -86,6 +87,24 @@ Developers working on the kasmos TUI use concise macro syntax (`line![]`, `span!
 
 ---
 
+### User Story 5 - WP Dependency Graph Visualization (Priority: P2)
+
+An operator selects a feature in the Dashboard and toggles a dependency graph view that renders all work packages as nodes connected by directed edges representing their dependency relationships. The graph makes it immediately clear which WPs are blocking others, which are independent, and what the critical path is through the feature. This is powered by `tui-nodes`.
+
+**Why this priority**: WP dependencies are currently implicit (listed as text in task files). A visual graph gives the operator instant understanding of parallelism opportunities, blocking chains, and overall feature structure — especially valuable for features with 8+ WPs.
+
+**Independent Test**: Can be tested by loading a feature with known dependencies (e.g., feature 002 with 10 WPs and documented dependency edges) and verifying the graph renders all nodes and connections correctly, with state-based coloring.
+
+**Acceptance Scenarios**:
+
+1. **Given** an orchestration run is active with WPs that have declared dependencies, **When** the operator activates the dependency graph view, **Then** each WP renders as a labeled node and dependency relationships render as directed edges between nodes.
+2. **Given** the dependency graph is visible, **When** a WP transitions state (e.g., Pending→Active, Active→Completed), **Then** the node's visual styling updates to reflect the new state (e.g., color change, badge update).
+3. **Given** a feature has WPs with no dependencies (fully parallel), **When** the graph renders, **Then** those WPs appear as disconnected nodes without incoming edges.
+4. **Given** a feature has a linear dependency chain (WP01→WP02→WP03), **When** the graph renders, **Then** the chain is visually clear with directed edges flowing in dependency order.
+5. **Given** the terminal is narrow, **When** the graph renders with many WPs, **Then** nodes are laid out without overlapping and the graph remains readable (scrollable if necessary).
+
+---
+
 ### Edge Cases
 
 - What if `tui-logger` version is incompatible with the project's `tracing` subscriber stack? The integration layer must compose with existing tracing subscribers without replacing them.
@@ -93,6 +112,9 @@ Developers working on the kasmos TUI use concise macro syntax (`line![]`, `span!
 - What if the throbber tick rate doesn't align with the existing 250ms render tick? The spinner must degrade gracefully (slower animation is acceptable; flickering is not).
 - What if `ratatui-macros` macro expansion conflicts with existing imports or naming? Compilation errors must be caught by CI before merge.
 - What if any adopted crate has a breaking release during development? Pin exact versions in Cargo.toml.
+- What if a feature has circular dependencies declared between WPs? The graph renderer must detect cycles and render them visually (e.g., highlighted edges) rather than entering an infinite layout loop.
+- What if a feature has 20+ WPs? The node graph layout must remain readable — either via auto-scaling, scrolling, or collapsing completed nodes.
+- What if `tui-nodes` requires ratatui 0.30 but the project is still on 0.29? The tui-nodes adoption WP must be sequenced after feature 006 (dependency upgrade) or use a compatible version.
 
 ## Requirements *(mandatory)*
 
@@ -108,8 +130,11 @@ Developers working on the kasmos TUI use concise macro syntax (`line![]`, `span!
 - **FR-008**: System MUST render animated spinners via `throbber-widgets-tui` on work packages in `Active` state in the Dashboard tab.
 - **FR-009**: System MUST display static state badges (not spinners) for work packages in non-Active states (Pending, Paused, Failed, Completed, ForReview).
 - **FR-010**: System MUST adopt `ratatui-macros` (`line![]`, `span![]`, `constraint![]`) across TUI source files, replacing verbose builder patterns.
-- **FR-011**: System MUST preserve all existing TUI functionality after each crate adoption — no behavioral regressions.
-- **FR-012**: Each crate adoption MUST be independently mergeable — reverting one adoption must not break the others.
+- **FR-011**: System MUST render a WP dependency graph via `tui-nodes` showing all work packages as nodes and their dependency relationships as directed edges.
+- **FR-012**: System MUST color-code dependency graph nodes by WP state (e.g., distinct colors for Pending, Active, Completed, Failed, ForReview).
+- **FR-013**: System MUST provide a keybinding or toggle to switch between the kanban lane view and the dependency graph view in the Dashboard tab.
+- **FR-014**: System MUST preserve all existing TUI functionality after each crate adoption — no behavioral regressions.
+- **FR-015**: Each crate adoption MUST be independently mergeable — reverting one adoption must not break the others.
 
 ### Key Entities
 
@@ -117,6 +142,9 @@ Developers working on the kasmos TUI use concise macro syntax (`line![]`, `span!
 - **Popup**: The tui-popup centered dialog widget that replaces manual confirmation rendering.
 - **Throbber**: The throbber-widgets-tui animated spinner widget rendered per-Active-WP.
 - **ThrobberState**: Per-WP animation state tracking spinner frame position.
+- **NodeGraph**: The tui-nodes graph widget that renders WP dependency relationships as a directed node graph.
+- **NodeLayout**: Per-WP node render configuration (position, label, styling based on WP state).
+- **Connection**: A directed edge between two WP nodes representing a dependency relationship.
 
 ## Success Criteria *(mandatory)*
 
@@ -129,13 +157,15 @@ Developers working on the kasmos TUI use concise macro syntax (`line![]`, `span!
 - **SC-005**: The full test suite (`cargo test`) passes after each individual crate adoption with zero new failures.
 - **SC-006**: `cargo clippy` produces zero new warnings after each individual crate adoption.
 - **SC-007**: The Logs tab implementation is reduced by at least 100 lines of code compared to the hand-rolled version.
-- **SC-008**: Each crate adoption can be reverted via a single `git revert` of its merge commit without breaking other adoptions.
+- **SC-008**: The dependency graph correctly renders all WP nodes and dependency edges for a feature with at least 10 WPs.
+- **SC-009**: Each crate adoption can be reverted via a single `git revert` of its merge commit without breaking other adoptions.
 
 ## Assumptions
 
 - Feature 002 (`ratatui-tui-controller-panel`) is fully merged to `master` before this feature begins implementation.
 - The current `tracing` subscriber setup in kasmos supports adding additional layers (tui-logger's `TuiTracingSubscriberLayer`).
-- All 4 crates are compatible with `ratatui 0.29` (the version currently in use). If a dependency upgrade to ratatui 0.30 is needed, that is handled by a separate feature.
+- `tui-logger`, `tui-popup`, `throbber-widgets-tui`, and `ratatui-macros` are compatible with `ratatui 0.29` (the version currently in use). If a dependency upgrade to ratatui 0.30 is needed, that is handled by a separate feature.
+- `tui-nodes` 0.10.0 requires `ratatui 0.30`. The tui-nodes WP must be sequenced after feature 006 (dependency upgrade) lands, or a ratatui 0.29-compatible version must be used if available.
 - The existing 250ms render tick is sufficient for throbber animation (4+ frames per cycle at 250ms = 1 second per full rotation, which is acceptable).
 - `tui-popup` from the `joshka/tui-widgets` mono-repo is published on crates.io and usable as a standard dependency.
 - `ratatui-macros` is a compile-time-only dependency with zero runtime overhead.
