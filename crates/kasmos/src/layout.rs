@@ -15,7 +15,10 @@ fn kdl_escape(s: &str) -> String {
     out.push('"');
     for c in s.chars() {
         match c {
-            '\\' | '"' => { out.push('\\'); out.push(c); }
+            '\\' | '"' => {
+                out.push('\\');
+                out.push(c);
+            }
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
@@ -58,6 +61,17 @@ fn kdl_bool_prop(key: &str, value: bool) -> KdlEntry {
     let mut entry = KdlEntry::new_prop(key, KdlValue::Bool(value));
     entry.set_format(KdlEntryFormat {
         value_repr: repr.to_string(),
+        leading: " ".to_string(),
+        ..Default::default()
+    });
+    entry
+}
+
+/// Create a KDL integer property entry (e.g., `size=1`).
+fn kdl_int_prop(key: &str, value: i128) -> KdlEntry {
+    let mut entry = KdlEntry::new_prop(key, KdlValue::Integer(value));
+    entry.set_format(KdlEntryFormat {
+        value_repr: value.to_string(),
         leading: " ".to_string(),
         ..Default::default()
     });
@@ -109,7 +123,7 @@ impl LayoutGenerator {
     pub fn generate(
         &self,
         work_packages: &[&WorkPackage],
-        _feature_dir: &Path,
+        feature_dir: &Path,
     ) -> Result<KdlDocument, KasmosError> {
         // Guard: validate input
         if work_packages.is_empty() {
@@ -125,8 +139,14 @@ impl LayoutGenerator {
 
         // Build the root layout document
         let mut doc = KdlDocument::new();
-        let layout_node = self.build_layout_node(work_packages)?;
+        let layout_node = self.build_layout_node(work_packages, feature_dir)?;
         doc.nodes_mut().push(layout_node);
+
+        // Start in locked mode so TUI apps (opencode) receive all keypresses.
+        // Ctrl+G toggles back to normal Zellij mode for pane navigation.
+        let mut default_mode = KdlNode::new("default_mode");
+        default_mode.entries_mut().push(kdl_str_arg("locked"));
+        doc.nodes_mut().push(default_mode);
 
         // Validate the generated KDL
         let kdl_string = doc.to_string();
@@ -166,38 +186,99 @@ impl LayoutGenerator {
         (rows, cols)
     }
 
-    /// Build the root layout node containing controller and agent grid.
-    fn build_layout_node(&self, work_packages: &[&WorkPackage]) -> Result<KdlNode, KasmosError> {
+    /// Build the root layout node with tab template (status bars) and content tab.
+    fn build_layout_node(
+        &self,
+        work_packages: &[&WorkPackage],
+        feature_dir: &Path,
+    ) -> Result<KdlNode, KasmosError> {
         let mut layout = KdlNode::new("layout");
+
+        // default_tab_template: adds compact-bar (top) and status-bar (bottom)
+        let tab_template = Self::build_tab_template();
+        layout.ensure_children().nodes_mut().push(tab_template);
+
+        // tab: the actual orchestration content
+        let mut tab = KdlNode::new("tab");
+        tab.entries_mut().push(kdl_str_prop("name", "kasmos"));
 
         // Main vertical split: controller (left) and agent grid (right)
         let mut main_split = KdlNode::new("pane");
-        main_split.entries_mut().push(kdl_str_prop("split_direction", "vertical"));
+        main_split
+            .entries_mut()
+            .push(kdl_str_prop("split_direction", "vertical"));
 
-        // Add controller pane
-        let controller = self.build_controller_pane();
+        let controller = self.build_controller_pane(feature_dir);
         main_split.ensure_children().nodes_mut().push(controller);
 
-        // Add agent grid pane
         let agent_grid = self.build_agent_grid(work_packages)?;
         main_split.ensure_children().nodes_mut().push(agent_grid);
 
-        layout.ensure_children().nodes_mut().push(main_split);
+        tab.ensure_children().nodes_mut().push(main_split);
+        layout.ensure_children().nodes_mut().push(tab);
         Ok(layout)
+    }
+
+    /// Build the default_tab_template with Zellij's compact-bar and status-bar plugins.
+    fn build_tab_template() -> KdlNode {
+        let mut template = KdlNode::new("default_tab_template");
+
+        // Top bar: compact-bar
+        let mut top_bar = KdlNode::new("pane");
+        top_bar.entries_mut().push(kdl_int_prop("size", 1));
+        top_bar
+            .entries_mut()
+            .push(kdl_bool_prop("borderless", true));
+        let mut top_plugin = KdlNode::new("plugin");
+        top_plugin
+            .entries_mut()
+            .push(kdl_str_prop("location", "zellij:compact-bar"));
+        top_bar.ensure_children().nodes_mut().push(top_plugin);
+        template.ensure_children().nodes_mut().push(top_bar);
+
+        // children placeholder (where tab content goes)
+        let children = KdlNode::new("children");
+        template.ensure_children().nodes_mut().push(children);
+
+        // Bottom bar: status-bar
+        let mut bottom_bar = KdlNode::new("pane");
+        bottom_bar.entries_mut().push(kdl_int_prop("size", 2));
+        bottom_bar
+            .entries_mut()
+            .push(kdl_bool_prop("borderless", true));
+        let mut bottom_plugin = KdlNode::new("plugin");
+        bottom_plugin
+            .entries_mut()
+            .push(kdl_str_prop("location", "zellij:status-bar"));
+        bottom_bar.ensure_children().nodes_mut().push(bottom_plugin);
+        template.ensure_children().nodes_mut().push(bottom_bar);
+
+        template
     }
 
     /// Build the controller pane node.
     ///
     /// The controller pane runs `ocx oc` (opencode via ocx) and takes up the configured
     /// percentage of the terminal width.
-    fn build_controller_pane(&self) -> KdlNode {
+    fn build_controller_pane(&self, feature_dir: &Path) -> KdlNode {
         let mut pane = KdlNode::new("pane");
-        pane.entries_mut().push(kdl_str_prop("size", &format!("{}%", self.controller_width_pct)));
+        pane.entries_mut().push(kdl_str_prop(
+            "size",
+            &format!("{}%", self.controller_width_pct),
+        ));
         pane.entries_mut().push(kdl_str_prop("name", "controller"));
-        pane.entries_mut().push(kdl_bool_prop("start_suspended", false));
+        pane.entries_mut()
+            .push(kdl_bool_prop("start_suspended", false));
+
+        let mut cwd = KdlNode::new("cwd");
+        cwd.entries_mut()
+            .push(kdl_str_arg(&feature_dir.display().to_string()));
+        pane.ensure_children().nodes_mut().push(cwd);
 
         let mut command = KdlNode::new("command");
-        command.entries_mut().push(kdl_str_arg(&self.opencode_binary));
+        command
+            .entries_mut()
+            .push(kdl_str_arg(&self.opencode_binary));
         pane.ensure_children().nodes_mut().push(command);
 
         let mut args = KdlNode::new("args");
@@ -213,7 +294,8 @@ impl LayoutGenerator {
     fn build_agent_pane(&self, wp: &WorkPackage) -> KdlNode {
         let mut pane = KdlNode::new("pane");
         pane.entries_mut().push(kdl_str_prop("name", &wp.pane_name));
-        pane.entries_mut().push(kdl_bool_prop("start_suspended", false));
+        pane.entries_mut()
+            .push(kdl_bool_prop("start_suspended", false));
 
         // Command: bash
         let mut command = KdlNode::new("command");
@@ -238,7 +320,8 @@ impl LayoutGenerator {
         // Cwd: working directory if specified
         if let Some(worktree_path) = &wp.worktree_path {
             let mut cwd = KdlNode::new("cwd");
-            cwd.entries_mut().push(kdl_str_arg(&worktree_path.display().to_string()));
+            cwd.entries_mut()
+                .push(kdl_str_arg(&worktree_path.display().to_string()));
             pane.ensure_children().nodes_mut().push(cwd);
         }
 
@@ -252,8 +335,12 @@ impl LayoutGenerator {
         let (rows, cols) = Self::grid_dimensions(work_packages.len());
 
         let mut grid = KdlNode::new("pane");
-        grid.entries_mut().push(kdl_str_prop("size", &format!("{}%", 100 - self.controller_width_pct)));
-        grid.entries_mut().push(kdl_str_prop("split_direction", "horizontal"));
+        grid.entries_mut().push(kdl_str_prop(
+            "size",
+            &format!("{}%", 100 - self.controller_width_pct),
+        ));
+        grid.entries_mut()
+            .push(kdl_str_prop("split_direction", "horizontal"));
 
         let mut pane_idx = 0;
 
@@ -265,7 +352,8 @@ impl LayoutGenerator {
             }
 
             let mut row = KdlNode::new("pane");
-            row.entries_mut().push(kdl_str_prop("split_direction", "vertical"));
+            row.entries_mut()
+                .push(kdl_str_prop("split_direction", "vertical"));
 
             // Calculate how many panes this row should have
             let panes_in_row = std::cmp::min(cols, work_packages.len() - pane_idx);
@@ -304,7 +392,8 @@ impl LayoutGenerator {
 
         let output_path = output_dir.join("layout.kdl");
         // Downgrade KDL v2 booleans to v1 for Zellij 0.44 compatibility
-        let kdl_string = doc.to_string()
+        let kdl_string = doc
+            .to_string()
             .replace("#true", "true")
             .replace("#false", "false");
 
@@ -464,6 +553,21 @@ mod tests {
         let kdl_str = doc.to_string();
 
         assert!(kdl_str.contains("size=\"35%\""));
+    }
+
+    #[test]
+    fn test_controller_pane_cwd_uses_feature_dir() {
+        let config = Config::default();
+        let generator = LayoutGenerator::new(&config);
+
+        let wp = make_test_wp("WP01", "agent-1");
+        let wps = vec![&wp];
+
+        let feature_dir = Path::new("/tmp/feature-123");
+        let doc = generator.generate(&wps, feature_dir).expect("generate");
+        let kdl_str = doc.to_string();
+
+        assert!(kdl_str.contains("cwd \"/tmp/feature-123\""));
     }
 
     #[test]

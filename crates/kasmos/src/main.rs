@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
 mod attach;
+mod cmd;
 mod feature_arg;
 mod list_specs;
 mod report;
@@ -21,15 +22,17 @@ mod stop;
   kasmos                              List available features
   kasmos start <feature>              Start orchestration (wave-gated)
   kasmos start <feature> --mode continuous
-                                      Start without wave gates
+                                       Start without wave gates
   kasmos status [feature]             Check WP progress
+  kasmos cmd status                   Send controller command via FIFO
+  kasmos cmd focus WP02               Focus a work package pane
   kasmos attach <feature>             Attach to Zellij session
   kasmos stop [feature]               Gracefully stop orchestration
 
 \x1b[1mTypical Workflow:\x1b[0m
   1. kasmos                           See what features are available
   2. kasmos start 001-my-feature      Start orchestration (wave-gated)
-  3. kasmos status                    Monitor progress
+  3. kasmos cmd status                Query live orchestration state
   4. kasmos attach 001-my-feature     Reattach to the Zellij session
   5. kasmos stop                      Stop when done"
 )]
@@ -54,6 +57,15 @@ enum Commands {
     Status {
         /// Feature directory (optional, auto-detects from .kasmos/)
         feature: Option<String>,
+    },
+    /// Send a controller command to a running orchestration via FIFO
+    Cmd {
+        /// Feature directory (optional, auto-detects from current directory)
+        #[arg(long)]
+        feature: Option<String>,
+
+        #[command(subcommand)]
+        command: cmd::FifoCommand,
     },
     /// Attach to an existing orchestration session
     Attach {
@@ -84,6 +96,9 @@ async fn main() -> Result<()> {
         }
         Commands::Status { feature } => {
             status::run(feature.as_deref()).context("Status failed")?;
+        }
+        Commands::Cmd { feature, command } => {
+            cmd::run(feature.as_deref(), command).context("Command send failed")?;
         }
         Commands::Attach { feature } => {
             attach::run(&feature).await.context("Attach failed")?;

@@ -309,6 +309,7 @@ pub fn command_help_text() -> &'static str {
 
 Write commands to: .kasmos/cmd.pipe
 Example: echo "status" > .kasmos/cmd.pipe
+Alternative: kasmos cmd status
 "#
 }
 
