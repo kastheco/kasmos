@@ -202,10 +202,10 @@
 **Estimated Size**: ~300 lines
 
 ### Included Subtasks
-- [ ] T039 Implement `.input-needed` marker file polling — check WP worktree paths on each tick (~1s)
-- [ ] T040 Surface InputNeeded notifications in notification bar with agent's message text from marker file
-- [ ] T041 Implement focus/zoom action — on notification activation, call `SessionManager.zoom_pane(wp_id)`
-- [ ] T042 Auto-clear InputNeeded notifications when agent removes marker file
+- [x] T039 Implement `.input-needed` marker file polling — check WP worktree paths on each tick (~1s)
+- [x] T040 Surface InputNeeded notifications in notification bar with agent's message text from marker file
+- [x] T041 Implement focus/zoom action — on notification activation, call `SessionManager.zoom_pane(wp_id)`
+- [x] T042 Auto-clear InputNeeded notifications when agent removes marker file
 
 ### Dependencies
 - Depends on WP05 (notification bar) + WP02 (SessionManager access)
