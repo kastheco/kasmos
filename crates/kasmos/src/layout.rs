@@ -227,9 +227,9 @@ impl LayoutGenerator {
         let ocx = escape(Cow::Borrowed(&self.opencode_binary));
         let shell_cmd = if let Some(prompt_path) = &wp.prompt_path {
             let path = escape(Cow::Owned(prompt_path.display().to_string()));
-            format!("{ocx} oc --prompt \"$(cat {path})\"")
+            format!("{ocx} oc -- --agent coder --prompt \"$(cat {path})\"")
         } else {
-            format!("{ocx} oc")
+            format!("{ocx} oc -- --agent coder")
         };
 
         args.entries_mut().push(kdl_str_arg(&shell_cmd));

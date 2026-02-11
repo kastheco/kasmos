@@ -2,7 +2,9 @@
 
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::SystemTime;
+use tokio::sync::{RwLock, mpsc};
 
 /// Acquires a run lock to prevent concurrent orchestrations.
 fn acquire_lock(kasmos_dir: &Path) -> Result<LockGuard> {
@@ -118,7 +120,8 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
     }
     tracing::info!(count = frontmatters.len(), "Frontmatter parsed");
 
-    // Build WorkPackages
+    // Build WorkPackages, honouring the frontmatter lane so that WPs
+    // already marked "done" or "for_review" aren't re-launched.
     let mut work_packages: Vec<kasmos::WorkPackage> = frontmatters
         .iter()
         .map(|(fm, _wp_file)| {
@@ -132,10 +135,20 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
                 })
                 .filter(|p| p.exists());
 
+            let (state, completion_method) = lane_to_wp_state(&fm.lane);
+            if state != kasmos::WPState::Pending {
+                tracing::info!(
+                    wp_id = %wp_id,
+                    lane = %fm.lane,
+                    state = ?state,
+                    "WP already progressed — seeding initial state from frontmatter"
+                );
+            }
+
             kasmos::WorkPackage {
                 id: wp_id.clone(),
                 title: fm.title.clone(),
-                state: kasmos::WPState::Pending,
+                state,
                 dependencies: fm.dependencies.clone(),
                 wave: 0,
                 pane_id: None,
@@ -144,7 +157,7 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
                 prompt_path: None,
                 started_at: None,
                 completed_at: None,
-                completion_method: None,
+                completion_method,
                 failure_count: 0,
             }
         })
@@ -233,7 +246,7 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
     persister.save(&run).context("Failed to persist state")?;
     tracing::info!(run_id = %run_id, "Orchestration run initialized");
 
-    // ── Phase 2: Create session and attach ──────────────────────────
+    // ── Phase 2: Create Zellij session ─────────────────────────────
 
     let session_name = format!("kasmos-{}", feature_name);
 
@@ -281,7 +294,71 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
     }
     tracing::info!(session = %session_name, "Zellij session created");
 
-    // Attach interactively — hands control to the user
+    // ── Phase 3: Start orchestration engine & command pipeline ───
+
+    let run_arc = Arc::new(RwLock::new(run));
+
+    // Channels
+    let (command_tx, mut command_rx) = mpsc::channel::<kasmos::ControllerCommand>(64);
+    let (engine_action_tx, engine_action_rx) = mpsc::channel::<kasmos::EngineAction>(64);
+    let (completion_tx, completion_rx) = mpsc::channel::<kasmos::CompletionEvent>(64);
+
+    // CommandReader — creates the FIFO and spawns the reader task
+    let command_reader = kasmos::CommandReader::new(&kasmos_dir, command_tx)
+        .context("Failed to create command FIFO reader")?;
+    let _reader_handle = command_reader
+        .start()
+        .await
+        .context("Failed to start command reader")?;
+    tracing::info!("Command FIFO reader started");
+
+    // Shutdown coordinator
+    let (shutdown_coordinator, _shutdown_rx) = kasmos::ShutdownCoordinator::new(&kasmos_dir);
+
+    // Signal handlers (Ctrl-C triggers graceful shutdown)
+    let shutdown_flag = shutdown_coordinator.flag();
+    let _signal_handle = kasmos::setup_signal_handlers(Box::new(move || {
+        shutdown_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+    }));
+
+    // Command handler bridge: ControllerCommand → EngineAction
+    // Uses a stub SessionController for now; focus/zoom commands will log but not navigate.
+    let session_controller = Arc::new(StubSessionController);
+    let command_handler = kasmos::CommandHandler::new(
+        run_arc.clone(),
+        session_controller,
+        engine_action_tx,
+    );
+    let command_handler = Arc::new(command_handler);
+
+    let handler_clone = command_handler.clone();
+    let _cmd_bridge_handle = tokio::spawn(async move {
+        while let Some(cmd) = command_rx.recv().await {
+            match handler_clone.handle(cmd).await {
+                Ok(msg) => tracing::info!("{}", msg),
+                Err(e) => tracing::error!("Command handling failed: {}", e),
+            }
+        }
+        tracing::debug!("Command bridge task exiting");
+    });
+
+    // WaveEngine — drives wave progression, receives completions and actions
+    let mut engine = kasmos::WaveEngine::new(run_arc.clone(), completion_rx, engine_action_rx);
+    let _engine_handle = tokio::spawn(async move {
+        if let Err(e) = engine.run().await {
+            tracing::error!("Wave engine error: {}", e);
+        }
+        tracing::info!("Wave engine stopped");
+    });
+
+    tracing::info!("Orchestration engine started");
+
+    // Keep completion_tx alive for future detector wiring.
+    // When the completion detector is wired in, it will own this sender.
+    let _completion_tx = completion_tx;
+
+    // ── Phase 4: Attach interactively ───────────────────────────
+
     println!("Attaching to session: {}", session_name);
     let attach_status = tokio::process::Command::new(zellij)
         .args(["attach", &session_name])
@@ -298,4 +375,48 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
 
     tracing::info!("Detached from session");
     Ok(())
+}
+
+/// Map a spec-kitty frontmatter lane to the corresponding WPState.
+///
+/// Lane values used by spec-kitty:
+///   "planned"    → Pending   (not yet started)
+///   "doing"      → Active    (currently being worked on)
+///   "for_review" → ForReview (awaiting operator review)
+///   "done"       → Completed (finished)
+///
+/// Unknown lanes default to Pending.
+fn lane_to_wp_state(
+    lane: &str,
+) -> (kasmos::WPState, Option<kasmos::CompletionMethod>) {
+    match lane {
+        "done" => (
+            kasmos::WPState::Completed,
+            Some(kasmos::CompletionMethod::Manual),
+        ),
+        "for_review" => (kasmos::WPState::ForReview, None),
+        "doing" => (kasmos::WPState::Active, None),
+        // "planned" and anything else → Pending
+        _ => (kasmos::WPState::Pending, None),
+    }
+}
+
+/// Stub session controller for pane focus/zoom operations.
+///
+/// Logs the operation but does not perform real Zellij navigation.
+/// This will be replaced with a real `SessionManager`-backed implementation
+/// once the session manager is integrated into the orchestrator lifecycle.
+struct StubSessionController;
+
+#[async_trait::async_trait]
+impl kasmos::SessionController for StubSessionController {
+    async fn focus_pane(&self, wp_id: &str) -> kasmos::Result<()> {
+        tracing::warn!(wp_id = %wp_id, "Focus not yet wired to session manager");
+        Ok(())
+    }
+
+    async fn focus_and_zoom(&self, wp_id: &str) -> kasmos::Result<()> {
+        tracing::warn!(wp_id = %wp_id, "Zoom not yet wired to session manager");
+        Ok(())
+    }
 }

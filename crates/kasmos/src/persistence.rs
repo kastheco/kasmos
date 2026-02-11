@@ -179,6 +179,14 @@ impl StatePersister {
                     });
                 }
 
+                // ForReview WP → waiting for operator review, no pane required
+                (WPState::ForReview, _) => {
+                    tracing::info!(
+                        wp_id = %wp.id,
+                        "ForReview WP — use Review tab to approve/reject"
+                    );
+                }
+
                 // Pending WP → no action needed
                 (WPState::Pending, _) => {}
             }

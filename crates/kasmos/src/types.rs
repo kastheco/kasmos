@@ -134,6 +134,9 @@ pub enum WPState {
 
     /// Paused (can be resumed).
     Paused,
+
+    /// Awaiting operator review.
+    ForReview,
 }
 
 /// State of an orchestration run.

@@ -25,18 +25,24 @@ impl WPState {
             (WPState::Active, WPState::Completed) |
             (WPState::Active, WPState::Failed) |
             (WPState::Active, WPState::Paused) |
+            (WPState::Active, WPState::ForReview) |
             // Paused transitions
             (WPState::Paused, WPState::Active) |
             // Failed transitions
             (WPState::Failed, WPState::Pending) |
             (WPState::Failed, WPState::Active) |
             (WPState::Failed, WPState::Completed) |
+            // ForReview transitions
+            (WPState::ForReview, WPState::Completed) |  // approve
+            (WPState::ForReview, WPState::Active) |     // reject + relaunch
+            (WPState::ForReview, WPState::Pending) |    // reject + hold
             // Self-transitions (idempotent)
             (WPState::Completed, WPState::Completed) |
             (WPState::Failed, WPState::Failed) |
             (WPState::Pending, WPState::Pending) |
             (WPState::Active, WPState::Active) |
-            (WPState::Paused, WPState::Paused)
+            (WPState::Paused, WPState::Paused) |
+            (WPState::ForReview, WPState::ForReview)
         )
     }
 
@@ -117,11 +123,9 @@ mod tests {
     #[test]
     fn test_wp_active_to_completed() {
         assert!(WPState::Active.can_transition_to(&WPState::Completed));
-        assert!(
-            WPState::Active
-                .transition(WPState::Completed, "WP01")
-                .is_ok()
-        );
+        assert!(WPState::Active
+            .transition(WPState::Completed, "WP01")
+            .is_ok());
     }
 
     #[test]
@@ -157,51 +161,41 @@ mod tests {
     #[test]
     fn test_wp_invalid_completed_to_active() {
         assert!(!WPState::Completed.can_transition_to(&WPState::Active));
-        assert!(
-            WPState::Completed
-                .transition(WPState::Active, "WP01")
-                .is_err()
-        );
+        assert!(WPState::Completed
+            .transition(WPState::Active, "WP01")
+            .is_err());
     }
 
     #[test]
     fn test_wp_invalid_pending_to_completed() {
         assert!(!WPState::Pending.can_transition_to(&WPState::Completed));
-        assert!(
-            WPState::Pending
-                .transition(WPState::Completed, "WP01")
-                .is_err()
-        );
+        assert!(WPState::Pending
+            .transition(WPState::Completed, "WP01")
+            .is_err());
     }
 
     #[test]
     fn test_wp_invalid_pending_to_failed() {
         assert!(!WPState::Pending.can_transition_to(&WPState::Failed));
-        assert!(
-            WPState::Pending
-                .transition(WPState::Failed, "WP01")
-                .is_err()
-        );
+        assert!(WPState::Pending
+            .transition(WPState::Failed, "WP01")
+            .is_err());
     }
 
     #[test]
     fn test_wp_invalid_completed_to_failed() {
         assert!(!WPState::Completed.can_transition_to(&WPState::Failed));
-        assert!(
-            WPState::Completed
-                .transition(WPState::Failed, "WP01")
-                .is_err()
-        );
+        assert!(WPState::Completed
+            .transition(WPState::Failed, "WP01")
+            .is_err());
     }
 
     #[test]
     fn test_wp_self_transition_completed() {
         assert!(WPState::Completed.can_transition_to(&WPState::Completed));
-        assert!(
-            WPState::Completed
-                .transition(WPState::Completed, "WP01")
-                .is_ok()
-        );
+        assert!(WPState::Completed
+            .transition(WPState::Completed, "WP01")
+            .is_ok());
     }
 
     #[test]
@@ -276,5 +270,71 @@ mod tests {
     fn test_run_self_transition_completed() {
         assert!(RunState::Completed.can_transition_to(&RunState::Completed));
         assert!(RunState::Completed.transition(RunState::Completed).is_ok());
+    }
+
+    // ============ ForReview WPState Tests ============
+
+    #[test]
+    fn test_wp_active_to_for_review() {
+        assert!(WPState::Active.can_transition_to(&WPState::ForReview));
+        assert!(WPState::Active
+            .transition(WPState::ForReview, "WP01")
+            .is_ok());
+    }
+
+    #[test]
+    fn test_wp_for_review_to_completed() {
+        assert!(WPState::ForReview.can_transition_to(&WPState::Completed));
+        assert!(WPState::ForReview
+            .transition(WPState::Completed, "WP01")
+            .is_ok());
+    }
+
+    #[test]
+    fn test_wp_for_review_to_active() {
+        assert!(WPState::ForReview.can_transition_to(&WPState::Active));
+        assert!(WPState::ForReview
+            .transition(WPState::Active, "WP01")
+            .is_ok());
+    }
+
+    #[test]
+    fn test_wp_for_review_to_pending() {
+        assert!(WPState::ForReview.can_transition_to(&WPState::Pending));
+        assert!(WPState::ForReview
+            .transition(WPState::Pending, "WP01")
+            .is_ok());
+    }
+
+    #[test]
+    fn test_wp_for_review_self_transition() {
+        assert!(WPState::ForReview.can_transition_to(&WPState::ForReview));
+        assert!(WPState::ForReview
+            .transition(WPState::ForReview, "WP01")
+            .is_ok());
+    }
+
+    #[test]
+    fn test_wp_invalid_for_review_to_failed() {
+        assert!(!WPState::ForReview.can_transition_to(&WPState::Failed));
+        assert!(WPState::ForReview
+            .transition(WPState::Failed, "WP01")
+            .is_err());
+    }
+
+    #[test]
+    fn test_wp_invalid_pending_to_for_review() {
+        assert!(!WPState::Pending.can_transition_to(&WPState::ForReview));
+        assert!(WPState::Pending
+            .transition(WPState::ForReview, "WP01")
+            .is_err());
+    }
+
+    #[test]
+    fn test_wp_invalid_completed_to_for_review() {
+        assert!(!WPState::Completed.can_transition_to(&WPState::ForReview));
+        assert!(WPState::Completed
+            .transition(WPState::ForReview, "WP01")
+            .is_err());
     }
 }
