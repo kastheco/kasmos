@@ -14,6 +14,11 @@
 - Q: When an "input needed" notification is activated, what does the operator do? → A: The TUI displays the agent's question/message, then the operator focuses/zooms the agent's Zellij pane to interact with it directly. The TUI surfaces the alert; the operator handles it in the agent pane.
 - Q: When a WP is rejected (sent back to doing), is agent relaunch automatic or manual? → A: Configurable — defaults to auto-relaunch but the operator can choose "reject and hold" (manual restart) vs "reject and relaunch" (immediate re-execution).
 
+### Session 2026-02-11
+
+- Q: How should automated review be triggered at `for_review`? → A: kasmos should support a tiered review runner that can auto-trigger either a slash command workflow (`/kas:verify` / `/kas:review`) or a built-in prompt workflow.
+- Q: Must automated review be tied to Claude-specific tooling? → A: No. The workflow must be model-agnostic and runnable through opencode; default model should be `openai/gpt-5.3-codex` with high reasoning when no model is configured.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - View Orchestration Dashboard (Priority: P1)
@@ -51,7 +56,7 @@ An operator uses keyboard shortcuts or mouse clicks on action buttons to control
 
 ### User Story 3 - Review Work Packages at For-Review Gate (Priority: P1)
 
-When a WP reaches the `for_review` lane, the orchestrator pauses it and surfaces it to the operator in a dedicated Review tab. Automated review results (from spec-kitty review) are displayed as context. The operator has three actions: approve (move to done), reject (send back to doing for agent rework — configurable auto-relaunch or manual hold), or request changes (keep in for_review while operator manually edits files, then re-trigger review). This is the human-in-the-loop gate for quality control.
+When a WP reaches the `for_review` lane, the orchestrator pauses it and surfaces it to the operator in a dedicated Review tab. A tiered automated review is triggered for that WP (slash-command mode or prompt mode), and results are displayed as context. The operator has three actions: approve (move to done), reject (send back to doing for agent rework — configurable auto-relaunch or manual hold), or request changes (keep in for_review while operator manually edits files, then re-trigger review). This is the human-in-the-loop gate for quality control.
 
 **Why this priority**: The auto-run-then-pause-for-review loop is the central workflow the user described. It ensures quality while maintaining automation speed.
 
@@ -66,6 +71,9 @@ When a WP reaches the `for_review` lane, the orchestrator pauses it and surfaces
 5. **Given** the operator selects "request changes" on a WP, **When** the action is confirmed, **Then** the WP stays in `for_review`, the operator can manually edit files, and a "re-review" action becomes available to re-trigger the review cycle.
 6. **Given** a WP is in `for_review` with "request changes" selected and manual edits completed, **When** the operator triggers "re-review", **Then** automated review is re-run, updated review feedback is displayed, and the WP remains in `for_review`.
 7. **Given** multiple WPs are awaiting review simultaneously, **When** the operator views the Review tab, **Then** all pending reviews are listed and individually actionable.
+8. **Given** automated review trigger mode is `slash`, **When** a WP enters `for_review`, **Then** kasmos injects the configured slash command (default `/kas:verify`) into the reviewer pane for that WP.
+9. **Given** automated review trigger mode is `prompt`, **When** a WP enters `for_review`, **Then** kasmos launches a reviewer agent via opencode using a tiered review prompt with default model `openai/gpt-5.3-codex` and high reasoning unless overridden.
+10. **Given** a slash command is unavailable or fails to execute, **When** review automation runs, **Then** kasmos records the failure, surfaces it in Notifications/Logs, and falls back to prompt-mode review if enabled.
 
 ---
 
@@ -182,6 +190,11 @@ When an agent signals it is blocked and needs operator input, the TUI surfaces a
 - **FR-018**: System MUST provide an action on input-needed notifications that focuses/zooms the agent's Zellij pane for direct operator interaction.
 - **FR-019**: System MUST clear input-needed notifications automatically when the agent resumes work (clears its signal).
 - **FR-020**: System MUST provide a "re-review" action for WPs in `for_review` after "request changes"; this action MUST re-run automated review for that WP, refresh review context in place, and keep the WP in `for_review` until approve/reject.
+- **FR-021**: System MUST support automated tiered review trigger modes: `slash` (inject configurable command, default `/kas:verify`) and `prompt` (run built-in review prompt).
+- **FR-022**: System MUST support reviewer execution through opencode with model-agnostic configuration and default to model `openai/gpt-5.3-codex` and high reasoning.
+- **FR-023**: System MUST persist per-WP review automation results (status, findings summary, command/mode used, timestamp) so Review tab and status/report outputs remain consistent across restarts.
+- **FR-024**: System MUST allow configurable automation policy for `for_review` handling: `manual_only`, `auto_then_manual_approve` (default), or `auto_and_mark_done`.
+- **FR-025**: System MUST surface automated review failures (command missing, timeout, non-zero exit, parser error) as first-class notifications and log entries.
 
 ### Key Entities
 
@@ -202,6 +215,7 @@ When an agent signals it is blocked and needs operator input, the TUI surfaces a
 - **SC-006**: 100% of existing FIFO commands continue to function identically when the TUI is active.
 - **SC-007**: The review workflow (WP reaches for_review → operator reviews → approve/reject) completes without leaving the TUI.
 - **SC-008**: Operators can switch between any two tabs in under 1 second via keyboard or mouse.
+- **SC-009**: For 95% of WPs entering `for_review`, automated review starts within 3 seconds and records an actionable result (pass/fail/error) within configured timeout.
 
 ## Assumptions
 
@@ -209,4 +223,4 @@ When an agent signals it is blocked and needs operator input, the TUI surfaces a
 - ratatui with crossterm backend is the rendering stack (consistent with the Rust ecosystem already in use).
 - The existing `mpsc` channel architecture for `EngineAction` dispatch is reused; the TUI becomes an additional producer.
 - Terminal supports at minimum 256 colors and Unicode box-drawing characters (standard for modern terminals).
-- Automated review results are available as structured data from spec-kitty (text output that can be displayed in the Review tab).
+- Review automation can execute either slash-command workflows (if plugin/command available in pane) or built-in prompt mode; slash availability is environment-dependent.

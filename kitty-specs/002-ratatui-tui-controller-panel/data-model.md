@@ -55,6 +55,63 @@ pub enum NotificationKind {
     Failure,
     /// Agent signaled it needs operator input
     InputNeeded,
+    /// Automated tiered review failed for a WP
+    ReviewAutomationError,
+}
+```
+
+### ReviewAutomationConfig
+
+```rust
+pub struct ReviewAutomationConfig {
+    pub enabled: bool,
+    pub mode: ReviewTriggerMode,             // Slash | Prompt
+    pub slash_command: String,               // default: "/kas:verify"
+    pub fallback_to_prompt: bool,
+    pub model: String,                       // default: "openai/gpt-5.3-codex"
+    pub reasoning: ReasoningLevel,           // default: High
+    pub timeout_seconds: u64,
+    pub policy: ReviewAutomationPolicy,      // ManualOnly | AutoThenManualApprove | AutoAndMarkDone
+}
+
+pub enum ReviewTriggerMode {
+    Slash,
+    Prompt,
+}
+
+pub enum ReasoningLevel {
+    Low,
+    Medium,
+    High,
+}
+
+pub enum ReviewAutomationPolicy {
+    ManualOnly,
+    AutoThenManualApprove,
+    AutoAndMarkDone,
+}
+```
+
+### ReviewResult
+
+```rust
+pub struct ReviewResult {
+    pub wp_id: String,
+    pub mode: ReviewTriggerMode,
+    pub command: Option<String>,
+    pub model: Option<String>,
+    pub reasoning: Option<ReasoningLevel>,
+    pub status: ReviewRunStatus,             // Pass | Fail | Error
+    pub summary: String,
+    pub findings: Vec<String>,
+    pub started_at: SystemTime,
+    pub completed_at: Option<SystemTime>,
+}
+
+pub enum ReviewRunStatus {
+    Pass,
+    Fail,
+    Error,
 }
 ```
 
@@ -123,10 +180,11 @@ Already has all fields the TUI needs:
 - `mode: ProgressionMode` — wave-gated vs continuous
 - `config: Config` — display settings
 
-### EngineAction (existing, no changes needed)
+### EngineAction (modified in WP02)
 
-All TUI actions map to existing variants:
+Review actions extend existing controls:
 - Restart, Pause, Resume, ForceAdvance, Retry, Advance, Abort
+- Approve(String), Reject { wp_id, relaunch }
 
 ### WPState (modified in WP02)
 
@@ -148,9 +206,11 @@ App ──has──▶ Vec<Notification> (derived from state diffs)
 App ──has──▶ DashboardState, ReviewState, LogsState (UI state)
 App ──sends──▶ EngineAction (via mpsc)
 App ──calls──▶ SessionManager (focus/zoom panes)
+App ──reads──▶ ReviewResult (for Review tab context)
 
 Notification ──references──▶ WorkPackage.id
 DashboardState ──indexes into──▶ OrchestrationRun.work_packages (grouped by lane)
 ReviewState ──indexes into──▶ OrchestrationRun.work_packages (filtered to for_review)
 LogsState ──populated by──▶ state transition diffs + engine events
+ReviewResult ──references──▶ WorkPackage.id
 ```
