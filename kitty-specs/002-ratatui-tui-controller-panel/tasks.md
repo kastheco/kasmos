@@ -1,11 +1,11 @@
 # Work Packages: Ratatui TUI Controller Panel
 
 **Inputs**: Design documents from `kitty-specs/002-ratatui-tui-controller-panel/`
-**Prerequisites**: plan.md (architecture, channel topology), spec.md (8 user stories, 20 FRs), research.md (async patterns), data-model.md (App/Tab/Notification types)
+**Prerequisites**: plan.md (architecture, channel topology), spec.md (8 user stories, 25 FRs), research.md (async patterns), data-model.md (App/Tab/Notification types)
 
 **Tests**: Required by constitution. All features must have corresponding tests. Feature completion requires passing `cargo test`. Test coverage is provided in WP10.
 
-**Organization**: 55 subtasks (`T001`–`T055`) roll up into 10 work packages (`WP01`–`WP10`). Each WP is independently deliverable.
+**Organization**: 62 subtasks (`T001`–`T062`) roll up into 10 work packages (`WP01`–`WP10`). Each WP is independently deliverable.
 
 ---
 
@@ -40,8 +40,8 @@
 
 ## Work Package WP02: Engine Integration — Watch Channel & Review States (Priority: P0)
 
-**Goal**: Add `tokio::sync::watch` broadcasting from engine to TUI, extend WPState with ForReview variant, add Approve/Reject EngineActions, update completion detector.
-**Independent Test**: Engine broadcasts state changes via watch channel. ForReview state transitions work in state machine. Approve/Reject actions handled correctly.
+**Goal**: Add `tokio::sync::watch` broadcasting from engine to TUI, extend WPState with ForReview variant, add Approve/Reject EngineActions, update completion detector, and emit review-ready events for automation.
+**Independent Test**: Engine broadcasts state changes via watch channel. ForReview state transitions work in state machine. Approve/Reject actions handled correctly. Review-ready events fire when WPs enter ForReview.
 **Prompt**: `tasks/WP02-engine-integration.md`
 **Estimated Size**: ~450 lines
 
@@ -52,12 +52,14 @@
 - [x] T009 Update completion detector to distinguish `for_review` from `done` lane transitions
 - [x] T010 Wire watch channel creation in `launch.rs` — create channel, pass tx to engine
 - [x] T011 Spawn TUI task in `launch.rs`, re-export `tui` module in `lib.rs`
+- [x] T056 Emit review-ready events when WPs enter ForReview and enqueue review runner jobs
 
 ### Implementation Notes
 - WaveEngine constructor gains `watch_tx: watch::Sender<OrchestrationRun>`
 - After `handle_completion()` and `handle_action()`, clone run state and send via watch_tx
 - ForReview transitions: Active→ForReview, ForReview→Completed (approve), ForReview→Active (reject+relaunch), ForReview→Paused (reject+hold; manual resume/restart)
 - Completion detector: when task file lane=`for_review`, emit CompletionEvent with a new `review` method (not `done`)
+- Engine should emit a review-ready signal (or directly enqueue a review job) whenever a WP transitions to ForReview
 
 ### Dependencies
 - Depends on WP01 (TUI module must exist to spawn)
@@ -142,8 +144,8 @@
 
 ## Work Package WP06: Review Tab (Priority: P1)
 
-**Goal**: Dedicated review view for WPs in for_review state with approve/reject/request-changes workflow.
-**Independent Test**: WP entering ForReview appears in Review tab. Approve moves to Completed. Reject with relaunch triggers restart.
+**Goal**: Dedicated review view for WPs in for_review state with approve/reject/request-changes workflow and automated tiered review execution.
+**Independent Test**: WP entering ForReview appears in Review tab. Approve moves to Completed. Reject with relaunch triggers restart. Automated review runs and surfaces results/errors.
 **Prompt**: `tasks/WP06-review-tab.md`
 **Estimated Size**: ~450 lines
 
@@ -154,6 +156,10 @@
 - [ ] T031 Implement reject action (key `r`) — prompt auto-relaunch vs hold, send `EngineAction::Reject`
 - [ ] T032 Implement request-changes action (key `c`) — keep in ForReview, mark for manual edits, show re-review option
 - [ ] T033 Display review context — read review feedback section from WP task file
+- [ ] T057 Add ReviewRunner service with configurable trigger mode (`slash` or `prompt`)
+- [ ] T058 Implement slash mode injection for reviewer command (default `/kas:verify`) in target pane
+- [ ] T059 Implement prompt mode tiered review execution via opencode (default model `openai/gpt-5.3-codex`, reasoning high)
+- [ ] T060 Persist ReviewResult (status/findings/mode/timestamps) and display in Review tab detail pane
 
 ### Dependencies
 - Depends on WP02 (ForReview state, Approve/Reject actions) + WP03 (tab framework)
@@ -161,6 +167,7 @@
 ### Risks & Mitigations
 - Reading WP task files for review context requires filesystem access from TUI — keep reads on tick, not per-frame
 - Request-changes is TUI-only state — no engine action needed, just UI flag
+- Review automation policy defaults to `auto_then_manual_approve`; auto-mark-done remains opt-in
 
 ---
 
@@ -235,8 +242,8 @@
 
 ## Work Package WP10: Test, Compatibility, and Performance Gates (Priority: P1)
 
-**Goal**: Satisfy constitution-required tests and validate notification/performance success criteria.
-**Independent Test**: `cargo test` passes; notification audit and latency checks pass thresholds.
+**Goal**: Satisfy constitution-required tests and validate notification/performance/review-automation success criteria.
+**Independent Test**: `cargo test` passes; notification audit, latency checks, and review automation fallback tests pass thresholds.
 **Prompt**: `tasks/WP10-validation-gates.md`
 **Estimated Size**: ~350 lines
 
@@ -248,12 +255,15 @@
 - [ ] T053 Add notification delivery audit test (emitted IDs == surfaced IDs)
 - [ ] T054 Add synthetic 50-WP latency test and assert SC-005 thresholds
 - [ ] T055 Add final validation gate documentation (`cargo test` required before done)
+- [ ] T061 Add integration tests for review runner mode selection/fallback (`slash` failure -> `prompt`)
+- [ ] T062 Add integration tests for persisted review results and `for_review` lifecycle visibility after restart
 
 ### Implementation Notes
 - Tests use `ratatui::backend::TestBackend` for UI assertions
 - FIFO parity tests spawn both input sources concurrently
 - Latency test instruments event loop with histogram metrics
 - Notification audit test hooks state broadcaster to capture all emitted events and verify bar coverage
+- Review automation tests should mock slash injection and opencode prompt runner to validate deterministic outcomes
 
 ### Dependencies
 - Depends on WP02 (ForReview state machine), WP04 (action buttons), WP05 (notification bar), WP06 (review tab), WP08 (input-needed signals), WP09 (FIFO compat)
@@ -351,3 +361,10 @@ Wave 4 (Validation):       WP10 ──┘ depends WP02+WP04+WP05+WP06+WP08+WP09
 | T053 | Notification delivery audit test | WP10 | P1 | No |
 | T054 | Synthetic 50-WP latency test | WP10 | P1 | No |
 | T055 | Validation gate documentation | WP10 | P1 | No |
+| T056 | Emit review-ready events on ForReview transition | WP02 | P0 | No |
+| T057 | ReviewRunner service with slash/prompt modes | WP06 | P1 | No |
+| T058 | Slash mode command injection (`/kas:verify`) | WP06 | P1 | No |
+| T059 | Prompt mode tiered review via opencode | WP06 | P1 | No |
+| T060 | Persist + render ReviewResult details | WP06 | P1 | No |
+| T061 | Integration tests for slash->prompt fallback | WP10 | P1 | No |
+| T062 | Integration tests for review result persistence | WP10 | P1 | No |
