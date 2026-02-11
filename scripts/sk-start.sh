@@ -32,8 +32,8 @@ Usage: sk-start.sh <feature-prefix> [options]
                             Resolved by matching kitty-specs/<prefix>*/ directories.
 
 Options:
-  --agent <name>            Implementer agent label for lane tracking (default: from .kittify/config.yaml)
-  --review-agent <name>     Reviewer agent label (default: same as --agent)
+  --agent <name>            Implementer agent label for lane tracking (default: coder)
+  --review-agent <name>     Reviewer agent label (default: reviewer)
   --dry-run                 Preview actions without mutating state
   --cleanup                 Run orphan context cleanup before starting
 
@@ -61,11 +61,81 @@ Examples:
   just swarm 001 --dry-run                  # preview without mutations
   just swarm 001 --accept                   # run acceptance validation
   just swarm 001 --accept --accept-mode pr   # force PR mode acceptance
+
+Notes:
+  - --review and --done auto-commit WP worktree code changes before lane transitions.
+  - Auto-commit excludes ephemeral prompt/state files: IMPLEMENT.md, REVIEW.md, .kas/, .opencode/.
 EOF
 }
 
 log() {
   printf '%s\n' "$*"
+}
+
+has_worktree_changes() {
+  local worktree="$1"
+
+  if ! git -C "$worktree" diff --quiet; then
+    return 0
+  fi
+
+  if ! git -C "$worktree" diff --cached --quiet; then
+    return 0
+  fi
+
+  if [[ -n "$(git -C "$worktree" ls-files --others --exclude-standard)" ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
+auto_commit_wp_changes() {
+  local wp="$1"
+  local worktree
+  worktree="$(worktree_path_for_wp "$wp")"
+
+  [[ -d "$worktree" ]] || die "Missing worktree for $wp: $worktree"
+
+  if ! has_worktree_changes "$worktree"; then
+    log "- $wp: no local code changes to commit"
+    return 0
+  fi
+
+  local branch
+  branch="$(git -C "$worktree" branch --show-current)"
+  local commit_msg="chore($wp): save worktree changes before lane transition"
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    log "[dry-run] git -C \"$worktree\" add -u -- ."
+    log "[dry-run] git -C \"$worktree\" add <untracked non-ignored files except IMPLEMENT.md/REVIEW.md/.kas/.opencode>"
+    log "[dry-run] git -C \"$worktree\" commit -m \"$commit_msg\""
+    return 0
+  fi
+
+  # Stage tracked modifications first (safe with ignored paths).
+  git -C "$worktree" add -u -- .
+
+  # Stage untracked, non-ignored files except known ephemeral artifacts.
+  while IFS= read -r -d '' path; do
+    case "$path" in
+      IMPLEMENT.md|REVIEW.md|.kas|.kas/*|.opencode|.opencode/*)
+        continue
+        ;;
+    esac
+    git -C "$worktree" add -- "$path"
+  done < <(git -C "$worktree" ls-files --others --exclude-standard -z)
+
+  if git -C "$worktree" diff --cached --quiet; then
+    log "- $wp: only ephemeral files changed (nothing to commit)"
+    return 0
+  fi
+
+  if ! git -C "$worktree" commit -m "$commit_msg"; then
+    die "Failed to auto-commit worktree changes for $wp on branch $branch"
+  fi
+
+  log "- $wp: auto-committed worktree changes on $branch"
 }
 
 warn() {
@@ -166,17 +236,23 @@ from pathlib import Path
 
 config_path = Path(sys.argv[1])
 if not config_path.exists():
-    print("opencode")
+    print("coder")
     raise SystemExit(0)
 
 text = config_path.read_text(encoding="utf-8")
 match = re.search(r"^\s*preferred_implementer\s*:\s*([^\n#]+)", text, flags=re.MULTILINE)
 if not match:
-    print("opencode")
+    print("coder")
     raise SystemExit(0)
 
 value = match.group(1).strip().strip('"').strip("'")
-print(value or "opencode")
+normalized = (value or "coder").strip().lower()
+aliases = {
+    "opencode": "coder",
+    "implementer": "coder",
+    "implementation": "coder",
+}
+print(aliases.get(normalized, value or "coder"))
 PY
 }
 
@@ -559,6 +635,9 @@ setup_wp() {
   fi
 
   local workflow_cmd=(spec-kitty agent workflow implement "$wp" --feature "$FEATURE" --agent "$AGENT")
+  if [[ -n "$base_wp" ]]; then
+    workflow_cmd+=(--base "$base_wp")
+  fi
   if [[ "$DRY_RUN" -eq 1 ]]; then
     log "[dry-run] ${workflow_cmd[*]}"
     return 0
@@ -611,7 +690,7 @@ print_next_wave_instructions() {
     log "  lane: $lane"
     log "  worktree: $worktree"
     log "  prompt: $prompt_file"
-    log "  launch: cd \"$worktree\" && ocx opencode -- --agent coder --prompt \"@IMPLEMENT.md\""
+    log "  launch: cd \"$worktree\" && ocx opencode -- --agent $AGENT --prompt \"@IMPLEMENT.md\""
     local feat_prefix="${FEATURE%%-*}"
     log "  when done: just swarm $feat_prefix --review $wp"
   done
@@ -722,6 +801,8 @@ start_review() {
   fi
 
   if [[ "$lane" == "doing" ]]; then
+    auto_commit_wp_changes "$wp"
+
     if [[ "$DRY_RUN" -eq 1 ]]; then
       log "[dry-run] spec-kitty agent tasks move-task $wp --feature $FEATURE --to for_review --agent $AGENT --no-auto-commit"
     else
@@ -744,7 +825,7 @@ start_review() {
   printf '%s\n' "$prompt_output" > "$worktree/REVIEW.md"
 
   log "Review prompt written: $worktree/REVIEW.md"
-  log "Launch reviewer: cd \"$worktree\" && ocx opencode -- --agent reviewer --prompt \"@REVIEW.md\""
+  log "Launch reviewer: cd \"$worktree\" && ocx opencode -- --agent $REVIEW_AGENT --prompt \"@REVIEW.md\""
   log "Then: just swarm $prefix --done $wp  OR  just swarm $prefix --reject $wp --feedback /path/to/feedback.md"
 }
 
@@ -756,12 +837,15 @@ mark_done() {
   require_wp_exists "$wp"
   local lane="${WP_LANE[$wp]}"
   if [[ "$lane" == "done" ]]; then
+    auto_commit_wp_changes "$wp"
     log "$wp is already done"
     return 0
   fi
   if [[ "$lane" == "planned" ]]; then
     die "$wp is still planned"
   fi
+
+  auto_commit_wp_changes "$wp"
 
   if [[ "$DRY_RUN" -eq 1 ]]; then
     log "[dry-run] spec-kitty agent tasks move-task $wp --feature $FEATURE --to done --agent $REVIEW_AGENT --force --no-auto-commit"
@@ -842,7 +926,7 @@ run_accept() {
     fi
   fi
 
-  local accept_cmd=(spec-kitty accept --feature "$FEATURE" --mode "$ACCEPT_MODE" --actor "$AGENT")
+  local accept_cmd=(spec-kitty accept --feature "$FEATURE" --mode "$ACCEPT_MODE" --actor "$REVIEW_AGENT")
 
   if [[ "$DRY_RUN" -eq 1 ]]; then
     log "[dry-run] ${accept_cmd[*]}"
@@ -964,7 +1048,7 @@ main() {
     AGENT="$(detect_default_agent)"
   fi
   if [[ -z "$REVIEW_AGENT" ]]; then
-    REVIEW_AGENT="$AGENT"
+    REVIEW_AGENT="reviewer"
   fi
 
   if [[ "$EXTRA_DEPS" == "__AUTO__" ]]; then
