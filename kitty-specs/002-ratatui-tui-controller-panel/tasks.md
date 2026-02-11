@@ -78,12 +78,12 @@
 **Estimated Size**: ~450 lines
 
 ### Included Subtasks
-- [ ] T012 Create `tui/tabs/mod.rs` — Tab rendering dispatch, tab header bar widget
-- [ ] T013 Create `tui/tabs/dashboard.rs` — 4-column kanban layout (planned/doing/for_review/done)
-- [ ] T014 [P] Create `tui/widgets/mod.rs` and `tui/widgets/wp_card.rs` — WP card widget (id, title, state badge, wave, elapsed time)
-- [ ] T015 Implement WP-to-lane grouping — partition work_packages by WPState into lane columns
-- [ ] T016 Implement dashboard navigation — h/l between lanes, j/k within lane, scroll for overflow
-- [ ] T017 Render wave separators and progress summary (X/Y WPs complete, current wave indicator)
+- [x] T012 Create `tui/tabs/mod.rs` — Tab rendering dispatch, tab header bar widget
+- [x] T013 Create `tui/tabs/dashboard.rs` — 4-column kanban layout (planned/doing/for_review/done)
+- [x] T014 [P] Create `tui/widgets/mod.rs` and `tui/widgets/wp_card.rs` — WP card widget (id, title, state badge, wave, elapsed time)
+- [x] T015 Implement WP-to-lane grouping — partition work_packages by WPState into lane columns
+- [x] T016 Implement dashboard navigation — h/l between lanes, j/k within lane, scroll for overflow
+- [x] T017 Render wave separators and progress summary (X/Y WPs complete, current wave indicator)
 
 ### Parallel Opportunities
 - T014 (wp_card widget) can be developed in parallel with T013 (dashboard layout)
