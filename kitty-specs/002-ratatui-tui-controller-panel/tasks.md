@@ -150,16 +150,16 @@
 **Estimated Size**: ~450 lines
 
 ### Included Subtasks
-- [ ] T028 Create `tui/tabs/review.rs` — split layout: review queue list (left) + detail pane (right)
-- [ ] T029 List all WPs with `WPState::ForReview`, show title, time in review, wave
-- [ ] T030 Implement approve action (key `a`) — send `EngineAction::Approve(wp_id)`
-- [ ] T031 Implement reject action (key `r`) — prompt auto-relaunch vs hold, send `EngineAction::Reject`
-- [ ] T032 Implement request-changes action (key `c`) — keep in ForReview, mark for manual edits, show re-review option
-- [ ] T033 Display review context — read review feedback section from WP task file
-- [ ] T057 Add ReviewRunner service with configurable trigger mode (`slash` or `prompt`)
-- [ ] T058 Implement slash mode injection for reviewer command (default `/kas:verify`) in target pane
-- [ ] T059 Implement prompt mode tiered review execution via opencode (default model `openai/gpt-5.3-codex`, reasoning high)
-- [ ] T060 Persist ReviewResult (status/findings/mode/timestamps) and display in Review tab detail pane
+- [x] T028 Create `tui/tabs/review.rs` — split layout: review queue list (left) + detail pane (right)
+- [x] T029 List all WPs with `WPState::ForReview`, show title, time in review, wave
+- [x] T030 Implement approve action (key `a`) — send `EngineAction::Approve(wp_id)`
+- [x] T031 Implement reject action (key `r`) — prompt auto-relaunch vs hold, send `EngineAction::Reject`
+- [x] T032 Implement request-changes action (key `c`) — keep in ForReview, mark for manual edits, show re-review option
+- [x] T033 Display review context — read review feedback section from WP task file
+- [x] T057 Add ReviewRunner service with configurable trigger mode (`slash` or `prompt`)
+- [x] T058 Implement slash mode injection for reviewer command (default `/kas:verify`) in target pane
+- [x] T059 Implement prompt mode tiered review execution via opencode (default model `openai/gpt-5.3-codex`, reasoning high)
+- [x] T060 Persist ReviewResult (status/findings/mode/timestamps) and display in Review tab detail pane
 
 ### Dependencies
 - Depends on WP02 (ForReview state, Approve/Reject actions) + WP03 (tab framework)
