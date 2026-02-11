@@ -21,7 +21,7 @@
 - [x] T002 Create `tui/mod.rs` — terminal init/teardown, panic hook, async event loop skeleton
 - [x] T003 Create `tui/event.rs` — Event enum and crossterm EventStream wrapper with tokio integration
 - [x] T004 Create `tui/app.rs` — App struct, Tab enum, per-tab state structs, Notification types
-- [ ] T005 Create `tui/keybindings.rs` — keymap definitions for tab switching, vim navigation, quit
+- [x] T005 Create `tui/keybindings.rs` — keymap definitions for tab switching, vim navigation, quit
 
 ### Implementation Notes
 - Event loop uses `tokio::select!` with three branches: crossterm events, watch channel, tick interval
