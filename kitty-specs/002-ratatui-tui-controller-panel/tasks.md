@@ -224,12 +224,12 @@
 **Estimated Size**: ~400 lines
 
 ### Included Subtasks
-- [ ] T043 Verify FIFO commands produce state changes visible in TUI via watch channel
-- [ ] T044 Handle concurrent TUI + FIFO input without data races — both send to same action_rx
-- [ ] T045 Implement terminal resize handling — graceful reflow on crossterm Resize event
-- [ ] T046 Implement mouse support — click on tab headers, click on WP cards, scroll wheels
-- [ ] T047 Handle orchestration termination — show final state summary with exit code, allow quit
-- [ ] T048 Implement empty/no-run state — guidance message when no orchestration is active
+- [x] T043 Verify FIFO commands produce state changes visible in TUI via watch channel
+- [x] T044 Handle concurrent TUI + FIFO input without data races — both send to same action_rx
+- [x] T045 Implement terminal resize handling — graceful reflow on crossterm Resize event
+- [x] T046 Implement mouse support — click on tab headers, click on WP cards, scroll wheels
+- [x] T047 Handle orchestration termination — show final state summary with exit code, allow quit
+- [x] T048 Implement empty/no-run state — guidance message when no orchestration is active
 
 ### Dependencies
 - Depends on WP03 + WP07 (core tabs must exist for FIFO verification and resize testing)
