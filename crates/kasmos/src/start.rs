@@ -100,6 +100,18 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
         .context("ocx binary not found")?;
     tracing::info!("Required binaries validated");
 
+    // Initialize git worktree manager
+    let worktree_mgr = kasmos::WorktreeManager::new(&feature_dir, &feature_name)
+        .context("Failed to initialize git worktree manager")?;
+    let base_ref = worktree_mgr
+        .current_ref()
+        .context("Failed to determine current git ref")?;
+    tracing::info!(
+        repo_root = %worktree_mgr.repo_root().display(),
+        base_ref = %base_ref,
+        "Git worktree manager ready"
+    );
+
     // Scan feature directory for WP files
     let feature_scan = kasmos::FeatureDir::scan(&feature_dir)
         .context("Failed to scan feature directory")?;
@@ -123,18 +135,11 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
 
     // Build WorkPackages, honouring the frontmatter lane so that WPs
     // already marked "done" or "for_review" aren't re-launched.
+    // worktree_path is initially None — we'll set it after computing waves.
     let mut work_packages: Vec<kasmos::WorkPackage> = frontmatters
         .iter()
         .map(|(fm, _wp_file)| {
             let wp_id = &fm.work_package_id;
-            let worktree_path = feature_dir
-                .parent()
-                .map(|parent| {
-                    parent
-                        .join(".worktrees")
-                        .join(format!("{}-{}", feature_name, wp_id))
-                })
-                .filter(|p| p.exists());
 
             let (state, completion_method) = lane_to_wp_state(&fm.lane);
             if state != kasmos::WPState::Pending {
@@ -154,7 +159,7 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
                 wave: 0,
                 pane_id: None,
                 pane_name: format!("{}-pane", wp_id.to_lowercase()),
-                worktree_path,
+                worktree_path: None,
                 prompt_path: None,
                 started_at: None,
                 completed_at: None,
@@ -190,6 +195,36 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
     for (i, wave) in waves.iter().enumerate() {
         tracing::info!(wave = i, wps = ?wave.wp_ids, "Wave {}", i);
     }
+
+    // ── Locate existing git worktrees (created by spec-kitty) ──
+    //
+    // spec-kitty creates worktrees via `spec-kitty implement WPxx` with
+    // the convention: .worktrees/{feature}-{WP##} on branch {feature}-{WP##}.
+    // kasmos locates these rather than creating its own.
+    worktree_mgr.prune().ok(); // clean up stale references first
+    let mut worktree_found = 0usize;
+    for wp in work_packages.iter_mut() {
+        if let Some(path) = worktree_mgr.find_worktree(&wp.id) {
+            tracing::info!(
+                wp_id = %wp.id,
+                wave = wp.wave,
+                path = %path.display(),
+                "Found spec-kitty worktree"
+            );
+            wp.worktree_path = Some(path);
+            worktree_found += 1;
+        } else {
+            tracing::debug!(
+                wp_id = %wp.id,
+                "No worktree found — agent will run in feature dir"
+            );
+        }
+    }
+    tracing::info!(
+        found = worktree_found,
+        total = work_packages.len(),
+        "Git worktrees located"
+    );
 
     // Generate prompt files
     let prompt_gen = kasmos::PromptGenerator::new(&feature_dir)
@@ -349,10 +384,29 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
     let command_handler = Arc::new(command_handler);
 
     let handler_clone = command_handler.clone();
+    let bridge_kasmos_dir = kasmos_dir.clone();
     let _cmd_bridge_handle = tokio::spawn(async move {
+        let status_path = bridge_kasmos_dir.join("status.txt");
+
         while let Some(cmd) = command_rx.recv().await {
+            let is_status = matches!(cmd, kasmos::ControllerCommand::Status);
+
             match handler_clone.handle(cmd).await {
-                Ok(msg) => tracing::info!("{}", msg),
+                Ok(msg) => {
+                    if is_status {
+                        // Write status to file instead of logging (avoids tracing garbling)
+                        if let Err(e) = std::fs::write(&status_path, &msg) {
+                            tracing::error!("Failed to write status file: {}", e);
+                        } else {
+                            tracing::info!(
+                                path = %status_path.display(),
+                                "Status written to file. View with: kasmos status"
+                            );
+                        }
+                    } else {
+                        tracing::info!("{}", msg);
+                    }
+                }
                 Err(e) => tracing::error!("Command handling failed: {}", e),
             }
         }
@@ -360,8 +414,10 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
     });
 
     // WaveEngine — drives wave progression, receives completions and actions
+    let engine_persister = Arc::new(persister);
     let mut engine =
-        kasmos::WaveEngine::new(run_arc.clone(), completion_rx, engine_action_rx, launch_tx);
+        kasmos::WaveEngine::new(run_arc.clone(), completion_rx, engine_action_rx, launch_tx)
+            .with_persister(engine_persister);
     let _engine_handle = tokio::spawn(async move {
         if let Err(e) = engine.run().await {
             tracing::error!("Wave engine error: {}", e);
@@ -371,9 +427,83 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
 
     tracing::info!("Orchestration engine started");
 
-    // Keep completion_tx alive for future detector wiring.
-    // When the completion detector is wired in, it will own this sender.
-    let _completion_tx = completion_tx;
+    // ── Completion detector ─────────────────────────────────────
+    //
+    // Watches WP task files for spec-kitty lane transitions (frontmatter).
+    // When a lane changes to "for_review" or "done", emits a CompletionEvent
+    // that the engine uses to update WP state and progress waves.
+    let detector_paths: Vec<(String, PathBuf, PathBuf)> = {
+        let run = run_arc.read().await;
+        run.work_packages
+            .iter()
+            .filter(|wp| wp.state == kasmos::WPState::Pending || wp.state == kasmos::WPState::Active)
+            .filter_map(|wp| {
+                // Find the task file for this WP
+                let task_file = feature_scan
+                    .wp_files
+                    .iter()
+                    .find(|f| {
+                        f.file_name()
+                            .and_then(|n| n.to_str())
+                            .map(|n| n.starts_with(&wp.id))
+                            .unwrap_or(false)
+                    })
+                    .cloned();
+
+                let task_file = task_file?;
+                // Worktree root: use worktree_path if set, otherwise feature_dir
+                let worktree_root = wp
+                    .worktree_path
+                    .clone()
+                    .unwrap_or_else(|| feature_dir.clone());
+
+                Some((wp.id.clone(), task_file, worktree_root))
+            })
+            .collect()
+    };
+
+    // _detector must live until the session ends — if dropped, the watcher stops.
+    let _detector: Option<kasmos::CompletionDetector>;
+
+    if !detector_paths.is_empty() {
+        let mut detector = kasmos::CompletionDetector::new();
+        match detector.start(detector_paths.clone()).await {
+            Ok(mut detector_rx) => {
+                tracing::info!(
+                    watch_count = detector_paths.len(),
+                    "Completion detector started"
+                );
+
+                // Bridge: forward detector events to the engine's completion channel
+                let _detector_bridge = tokio::spawn(async move {
+                    while let Some(event) = detector_rx.recv().await {
+                        tracing::info!(
+                            wp_id = %event.wp_id,
+                            method = ?event.method,
+                            "Completion event detected"
+                        );
+                        if let Err(e) = completion_tx.send(event).await {
+                            tracing::error!("Failed to forward completion event: {}", e);
+                            break;
+                        }
+                    }
+                    tracing::debug!("Completion detector bridge exiting");
+                });
+
+                _detector = Some(detector);
+            }
+            Err(e) => {
+                tracing::error!("Failed to start completion detector: {}", e);
+                // Non-fatal: orchestration continues, but state won't auto-update
+                _detector = None;
+                let _completion_tx = completion_tx;
+            }
+        }
+    } else {
+        tracing::info!("No WPs to watch — completion detector not started");
+        _detector = None;
+        let _completion_tx = completion_tx;
+    }
 
     // ── Wave launch event handler ────────────────────────────────
     //

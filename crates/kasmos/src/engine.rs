@@ -7,9 +7,10 @@
 
 use crate::Result;
 use crate::command_handlers::EngineAction;
-use crate::detector::CompletionEvent;
+use crate::detector::{CompletionEvent, DetectedLane};
 use crate::error::WaveError;
 use crate::graph::DependencyGraph;
+use crate::persistence::StatePersister;
 use crate::types::{CompletionMethod, OrchestrationRun, ProgressionMode, RunState, WPState};
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
@@ -58,6 +59,9 @@ pub struct WaveEngine {
 
     /// Tracks WP IDs launched in the current batch (accumulated during launch_eligible_wps).
     pending_launch_batch: Vec<String>,
+
+    /// Optional state persister for saving state after mutations.
+    persister: Option<Arc<StatePersister>>,
 }
 
 impl WaveEngine {
@@ -88,7 +92,14 @@ impl WaveEngine {
             active_panes: 0,
             current_wave: 0,
             pending_launch_batch: Vec::new(),
+            persister: None,
         }
+    }
+
+    /// Set a state persister for automatic state saving after mutations.
+    pub fn with_persister(mut self, persister: Arc<StatePersister>) -> Self {
+        self.persister = Some(persister);
+        self
     }
 
     /// Initialize the dependency graph from the current run state.
@@ -99,14 +110,74 @@ impl WaveEngine {
         Ok(())
     }
 
+    /// Reconcile WPs that were already completed/for_review at startup.
+    ///
+    /// When WPs are seeded from frontmatter with terminal states, the engine
+    /// needs to log their status and ensure downstream waves can be evaluated.
+    async fn reconcile_initial_state(&self) {
+        let run = self.run.read().await;
+
+        let pre_completed: Vec<(&str, &WPState)> = run
+            .work_packages
+            .iter()
+            .filter(|wp| {
+                matches!(wp.state, WPState::Completed | WPState::ForReview | WPState::Active)
+            })
+            .map(|wp| (wp.id.as_str(), &wp.state))
+            .collect();
+
+        if !pre_completed.is_empty() {
+            for (wp_id, state) in &pre_completed {
+                tracing::info!(
+                    wp_id = %wp_id,
+                    state = ?state,
+                    "WP pre-seeded from frontmatter"
+                );
+            }
+
+            let completed_count = pre_completed
+                .iter()
+                .filter(|(_, s)| matches!(s, WPState::Completed))
+                .count();
+            let review_count = pre_completed
+                .iter()
+                .filter(|(_, s)| matches!(s, WPState::ForReview))
+                .count();
+
+            if completed_count > 0 || review_count > 0 {
+                tracing::info!(
+                    completed = completed_count,
+                    for_review = review_count,
+                    "Pre-existing terminal WPs detected — downstream waves may be unblocked"
+                );
+            }
+        }
+    }
+
+    /// Persist the current run state to disk (if a persister is configured).
+    async fn persist_state(&self) {
+        if let Some(ref persister) = self.persister {
+            let run = self.run.read().await;
+            if let Err(e) = persister.save(&run) {
+                tracing::error!("Failed to persist state: {}", e);
+            }
+        }
+    }
+
     /// Main event loop — runs until orchestration completes or aborts.
     pub async fn run(&mut self) -> Result<()> {
         // Initialize dependency graph from current run state
         self.init_graph().await?;
 
+        // Check for WPs that were already completed at startup (seeded from frontmatter).
+        // These need to be accounted for in active_panes count and may already satisfy
+        // dependencies for later waves.
+        self.reconcile_initial_state().await;
+
         // Launch initial wave (panes created by the initial layout — mark as initial)
         self.launch_eligible_wps_and_notify(true).await?;
         self.update_wave_states().await;
+        self.persist_state().await;
 
         loop {
             // Check if aborted
@@ -132,7 +203,10 @@ impl WaveEngine {
                 let mut run = self.run.write().await;
                 let all_failed = run.work_packages.iter().all(|wp| wp.state == WPState::Failed);
                 run.state = if all_failed { RunState::Failed } else { RunState::Completed };
+                run.completed_at = Some(std::time::SystemTime::now());
                 tracing::info!(state = ?run.state, "Orchestration complete!");
+                drop(run);
+                self.persist_state().await;
                 break;
             }
         }
@@ -145,6 +219,7 @@ impl WaveEngine {
         let wp_id = event.wp_id.clone();
         let success = event.success;
         let method = event.method;
+        let detected_lane = event.detected_lane;
 
         {
             let mut run = self.run.write().await;
@@ -159,12 +234,30 @@ impl WaveEngine {
                 })?;
 
             if success {
-                // Successful completion
-                wp.state = wp.state.transition(WPState::Completed, &wp.id)?;
-                wp.completed_at = Some(std::time::SystemTime::now());
+                // Determine target state from detected lane:
+                // - for_review → ForReview (agent done, needs human review)
+                // - done → Completed (fully finished)
+                // - no lane info (secondary/tertiary detection) → Completed
+                let target_state = match detected_lane {
+                    Some(DetectedLane::ForReview) => WPState::ForReview,
+                    Some(DetectedLane::Done) | None => WPState::Completed,
+                };
+
+                wp.state = wp.state.transition(target_state, &wp.id)?;
+                if target_state == WPState::Completed {
+                    wp.completed_at = Some(std::time::SystemTime::now());
+                }
                 wp.completion_method = Some(method);
                 self.active_panes = self.active_panes.saturating_sub(1);
-                tracing::info!(wp_id = %wp.id, "WP completed successfully");
+
+                match target_state {
+                    WPState::ForReview => {
+                        tracing::info!(wp_id = %wp.id, "WP moved to review");
+                    }
+                    _ => {
+                        tracing::info!(wp_id = %wp.id, "WP completed successfully");
+                    }
+                }
             } else {
                 // Failure
                 wp.state = wp.state.transition(WPState::Failed, &wp.id)?;
@@ -194,6 +287,9 @@ impl WaveEngine {
         // Update wave states to reflect all WP changes (completions + new launches)
         self.update_wave_states().await;
 
+        // Persist state after handling completion
+        self.persist_state().await;
+
         Ok(())
     }
 
@@ -222,12 +318,17 @@ impl WaveEngine {
                 let mut run = self.run.write().await;
                 run.state = RunState::Aborted;
                 tracing::info!("Orchestration aborted by operator");
+                drop(run);
+                self.persist_state().await;
                 return Ok(());
             }
         }
 
         // Update wave states to reflect any WP changes from the action
         self.update_wave_states().await;
+
+        // Persist state after handling action
+        self.persist_state().await;
 
         Ok(())
     }

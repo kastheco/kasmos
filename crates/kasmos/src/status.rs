@@ -54,6 +54,7 @@ pub fn run(feature: Option<&str>) -> Result<()> {
     let mut completed = 0u32;
     let mut failed = 0u32;
     let mut paused = 0u32;
+    let mut for_review = 0u32;
 
     println!("Work Packages:");
     for wp in &run.work_packages {
@@ -78,15 +79,20 @@ pub fn run(feature: Option<&str>) -> Result<()> {
                 paused += 1;
                 "⏸"
             }
+            kasmos::WPState::ForReview => {
+                for_review += 1;
+                "⊙"
+            }
             #[allow(unreachable_patterns)]
             _ => "?",
         };
 
         println!(
-            "  {} {}: {:?} (attempt {}/{})",
+            "  {} {}: {:?} (wave {}, attempt {}/{})",
             status_icon,
             wp.id,
             wp.state,
+            wp.wave,
             wp.failure_count
                 + if wp.state == kasmos::WPState::Active {
                     1
@@ -99,8 +105,8 @@ pub fn run(feature: Option<&str>) -> Result<()> {
 
     println!();
     println!(
-        "Summary: {} pending, {} active, {} completed, {} failed, {} paused",
-        pending, active, completed, failed, paused
+        "Summary: {} pending, {} active, {} for_review, {} completed, {} failed, {} paused",
+        pending, active, for_review, completed, failed, paused
     );
 
     if let Some(started) = run.started_at
