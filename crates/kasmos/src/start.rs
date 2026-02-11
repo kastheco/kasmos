@@ -1,6 +1,7 @@
 //! Start orchestration for a feature: setup, create Zellij session, attach.
 
 use anyhow::{Context, Result, bail};
+use kasmos::ZellijCli;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -205,22 +206,37 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
     }
     tracing::info!(count = prompt_paths.len(), "Prompt files generated");
 
-    // Generate KDL layout — in wave-gated mode, only include wave 0 WPs
+    // Generate KDL layout — in wave-gated mode, only include wave 0 WPs that need launching.
+    // WPs already marked as Completed/Failed (from frontmatter) are excluded from the layout.
     let layout_gen = kasmos::LayoutGenerator::new(&config);
     let layout_wps: Vec<&kasmos::WorkPackage> = match progression_mode {
         kasmos::ProgressionMode::WaveGated => {
-            work_packages.iter().filter(|wp| wp.wave == 0).collect()
+            work_packages
+                .iter()
+                .filter(|wp| wp.wave == 0 && wp.state == kasmos::WPState::Pending)
+                .collect()
         }
-        kasmos::ProgressionMode::Continuous => work_packages.iter().collect(),
+        kasmos::ProgressionMode::Continuous => {
+            work_packages
+                .iter()
+                .filter(|wp| wp.state == kasmos::WPState::Pending)
+                .collect()
+        }
     };
     tracing::info!(
         pane_count = layout_wps.len(),
         mode = %mode,
         "Generating layout"
     );
-    let kdl_doc = layout_gen
-        .generate(&layout_wps, &feature_dir)
-        .context("Failed to generate KDL layout")?;
+    let kdl_doc = if layout_wps.is_empty() {
+        // All wave 0 WPs are already completed — generate controller-only layout
+        tracing::info!("All wave 0 WPs completed — generating controller-only layout");
+        layout_gen.generate_controller_only(&feature_dir)?
+    } else {
+        layout_gen
+            .generate(&layout_wps, &feature_dir)
+            .context("Failed to generate KDL layout")?
+    };
     let layout_path = layout_gen
         .write_layout(&kdl_doc, &kasmos_dir)
         .context("Failed to write layout file")?;
@@ -302,6 +318,7 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
     let (command_tx, mut command_rx) = mpsc::channel::<kasmos::ControllerCommand>(64);
     let (engine_action_tx, engine_action_rx) = mpsc::channel::<kasmos::EngineAction>(64);
     let (completion_tx, completion_rx) = mpsc::channel::<kasmos::CompletionEvent>(64);
+    let (launch_tx, mut launch_rx) = mpsc::channel::<kasmos::WaveLaunchEvent>(16);
 
     // CommandReader — creates the FIFO and spawns the reader task
     let command_reader = kasmos::CommandReader::new(&kasmos_dir, command_tx)
@@ -343,7 +360,8 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
     });
 
     // WaveEngine — drives wave progression, receives completions and actions
-    let mut engine = kasmos::WaveEngine::new(run_arc.clone(), completion_rx, engine_action_rx);
+    let mut engine =
+        kasmos::WaveEngine::new(run_arc.clone(), completion_rx, engine_action_rx, launch_tx);
     let _engine_handle = tokio::spawn(async move {
         if let Err(e) = engine.run().await {
             tracing::error!("Wave engine error: {}", e);
@@ -356,6 +374,100 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
     // Keep completion_tx alive for future detector wiring.
     // When the completion detector is wired in, it will own this sender.
     let _completion_tx = completion_tx;
+
+    // ── Wave launch event handler ────────────────────────────────
+    //
+    // When the engine launches a new wave, this task:
+    // 1. Renames the current tab to "WAVE <previous>" (archiving it)
+    // 2. Generates a layout with only the new wave's agent panes
+    // 3. Creates a new tab with that layout named "WAVE <current>"
+    //
+    // For the initial wave (panes created by the session layout), this is a no-op.
+    let wave_session_name = session_name.clone();
+    let wave_zellij = config.zellij_binary.clone();
+    let wave_kasmos_dir = kasmos_dir.clone();
+    let wave_config = config.clone();
+    let wave_run_arc = run_arc.clone();
+    let wave_feature_dir = feature_dir.clone();
+    let _wave_handler = tokio::spawn(async move {
+        let cli = kasmos::RealZellijCli::new(wave_zellij);
+        let layout_gen = kasmos::LayoutGenerator::new(&wave_config);
+
+        while let Some(event) = launch_rx.recv().await {
+            if event.is_initial_wave {
+                tracing::info!(
+                    wave = event.wave_index,
+                    wps = ?event.wp_ids,
+                    "Initial wave launched (panes created by session layout)"
+                );
+                continue;
+            }
+
+            tracing::info!(
+                wave = event.wave_index,
+                wps = ?event.wp_ids,
+                "Wave launch event — creating new tab"
+            );
+
+            // Collect WP data for the layout
+            let wp_data: Vec<kasmos::WorkPackage> = {
+                let run = wave_run_arc.read().await;
+                event
+                    .wp_ids
+                    .iter()
+                    .filter_map(|id| run.work_packages.iter().find(|wp| wp.id == *id).cloned())
+                    .collect()
+            };
+
+            if wp_data.is_empty() {
+                tracing::warn!(wave = event.wave_index, "No WP data found for wave launch");
+                continue;
+            }
+
+            // Generate wave tab layout (agent-only, no controller)
+            let wp_refs: Vec<&kasmos::WorkPackage> = wp_data.iter().collect();
+            let wave_layout = match layout_gen.generate_wave_tab(&wp_refs, &wave_feature_dir) {
+                Ok(doc) => doc,
+                Err(e) => {
+                    tracing::error!("Failed to generate wave tab layout: {}", e);
+                    continue;
+                }
+            };
+
+            let wave_layout_path = match layout_gen.write_wave_layout(
+                &wave_layout,
+                &wave_kasmos_dir,
+                event.wave_index,
+            ) {
+                Ok(path) => path,
+                Err(e) => {
+                    tracing::error!("Failed to write wave layout: {}", e);
+                    continue;
+                }
+            };
+
+            // Create new tab with the wave layout
+            let new_tab_name = format!("WAVE-{}", event.wave_index);
+            if let Err(e) = cli
+                .new_tab(
+                    &wave_session_name,
+                    Some(&new_tab_name),
+                    Some(&wave_layout_path),
+                )
+                .await
+            {
+                tracing::error!("Failed to create new tab for wave {}: {}", event.wave_index, e);
+            } else {
+                tracing::info!(
+                    wave = event.wave_index,
+                    tab = %new_tab_name,
+                    "New wave tab created with {} panes",
+                    wp_data.len()
+                );
+            }
+        }
+        tracing::debug!("Wave launch handler exiting");
+    });
 
     // ── Phase 4: Attach interactively ───────────────────────────
 

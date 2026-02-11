@@ -7,6 +7,7 @@ mod attach;
 mod feature_arg;
 mod list_specs;
 mod report;
+mod sendmsg;
 mod start;
 mod status;
 mod stop;
@@ -21,17 +22,21 @@ mod stop;
   kasmos                              List available features
   kasmos start <feature>              Start orchestration (wave-gated)
   kasmos start <feature> --mode continuous
-                                      Start without wave gates
+                                       Start without wave gates
   kasmos status [feature]             Check WP progress
+  kasmos sendmsg advance              Advance to next wave
+  kasmos sendmsg status               Query live orchestration state
+  kasmos sendmsg focus WP02           Focus a work package pane
   kasmos attach <feature>             Attach to Zellij session
   kasmos stop [feature]               Gracefully stop orchestration
 
 \x1b[1mTypical Workflow:\x1b[0m
   1. kasmos                           See what features are available
   2. kasmos start 001-my-feature      Start orchestration (wave-gated)
-  3. kasmos status                    Monitor progress
-  4. kasmos attach 001-my-feature     Reattach to the Zellij session
-  5. kasmos stop                      Stop when done"
+  3. kasmos sendmsg status            Query live orchestration state
+  4. kasmos sendmsg advance           Advance to next wave
+  5. kasmos attach 001-my-feature     Reattach to the Zellij session
+  6. kasmos stop                      Stop when done"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -65,6 +70,15 @@ enum Commands {
         /// Feature directory (optional, auto-detects from .kasmos/)
         feature: Option<String>,
     },
+    /// Send a command to a running orchestration via FIFO
+    #[command(alias = "cmd")]
+    Sendmsg {
+        /// Command to send (e.g. "advance", "status", "focus WP02")
+        command: Vec<String>,
+        /// Feature spec ID or prefix (auto-detects if omitted)
+        #[arg(long)]
+        feature: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -90,6 +104,11 @@ async fn main() -> Result<()> {
         }
         Commands::Stop { feature } => {
             stop::run(feature.as_deref()).await.context("Stop failed")?;
+        }
+        Commands::Sendmsg { command, feature } => {
+            let cmd_str = command.join(" ");
+            sendmsg::run(feature.as_deref(), &cmd_str)
+                .context("Sendmsg failed")?;
         }
     }
 

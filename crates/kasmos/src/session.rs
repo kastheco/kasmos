@@ -477,6 +477,26 @@ mod tests {
             self.calls.lock().unwrap().push(format!("toggle_fullscreen:{}", session));
             Ok(())
         }
+
+        async fn new_tab(&self, session: &str, name: Option<&str>, _layout: Option<&std::path::Path>) -> Result<()> {
+            self.calls.lock().unwrap().push(format!("new_tab:{}:{:?}", session, name));
+            Ok(())
+        }
+
+        async fn rename_tab(&self, session: &str, name: &str) -> Result<()> {
+            self.calls.lock().unwrap().push(format!("rename_tab:{}:{}", session, name));
+            Ok(())
+        }
+
+        async fn go_to_tab_name(&self, session: &str, name: &str) -> Result<()> {
+            self.calls.lock().unwrap().push(format!("go_to_tab_name:{}:{}", session, name));
+            Ok(())
+        }
+
+        async fn query_tab_names(&self, session: &str) -> Result<Vec<String>> {
+            self.calls.lock().unwrap().push(format!("query_tab_names:{}", session));
+            Ok(vec!["Tab #1".to_string()])
+        }
     }
 
     #[tokio::test]

@@ -15,6 +15,19 @@ use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
 
+/// Event emitted when the engine launches work packages for a wave.
+///
+/// The orchestrator receives these events and creates actual Zellij panes/tabs.
+#[derive(Debug, Clone)]
+pub struct WaveLaunchEvent {
+    /// Wave index being launched.
+    pub wave_index: usize,
+    /// Work package IDs being launched in this batch.
+    pub wp_ids: Vec<String>,
+    /// Whether this is the first wave (panes already exist in initial layout).
+    pub is_initial_wave: bool,
+}
+
 /// The wave engine that orchestrates work package execution.
 ///
 /// Manages wave progression, capacity limiting, and dependency satisfaction.
@@ -31,6 +44,9 @@ pub struct WaveEngine {
     /// Receiver for engine actions (commands).
     action_rx: mpsc::Receiver<EngineAction>,
 
+    /// Sender for wave launch events — notifies the orchestrator to create panes.
+    launch_tx: mpsc::Sender<WaveLaunchEvent>,
+
     /// Queue of work packages waiting for capacity.
     launch_queue: VecDeque<String>,
 
@@ -39,6 +55,9 @@ pub struct WaveEngine {
 
     /// The currently approved wave index for wave-gated mode.
     current_wave: usize,
+
+    /// Tracks WP IDs launched in the current batch (accumulated during launch_eligible_wps).
+    pending_launch_batch: Vec<String>,
 }
 
 impl WaveEngine {
@@ -50,6 +69,7 @@ impl WaveEngine {
         run: Arc<RwLock<OrchestrationRun>>,
         completion_rx: mpsc::Receiver<CompletionEvent>,
         action_rx: mpsc::Receiver<EngineAction>,
+        launch_tx: mpsc::Sender<WaveLaunchEvent>,
     ) -> Self {
         // Build dependency graph from work packages
         // We create a dummy graph here and rebuild it on first use if needed
@@ -63,9 +83,11 @@ impl WaveEngine {
             graph,
             completion_rx,
             action_rx,
+            launch_tx,
             launch_queue: VecDeque::new(),
             active_panes: 0,
             current_wave: 0,
+            pending_launch_batch: Vec::new(),
         }
     }
 
@@ -82,8 +104,9 @@ impl WaveEngine {
         // Initialize dependency graph from current run state
         self.init_graph().await?;
 
-        // Launch initial wave
-        self.launch_eligible_wps().await?;
+        // Launch initial wave (panes created by the initial layout — mark as initial)
+        self.launch_eligible_wps_and_notify(true).await?;
+        self.update_wave_states().await;
 
         loop {
             // Check if aborted
@@ -163,10 +186,13 @@ impl WaveEngine {
         }
 
         // Check for newly eligible WPs and launch them
-        self.launch_eligible_wps().await?;
+        self.launch_eligible_wps_and_notify(false).await?;
 
         // Process launch queue (freed slot might allow queued WPs)
         self.process_launch_queue().await?;
+
+        // Update wave states to reflect all WP changes (completions + new launches)
+        self.update_wave_states().await;
 
         Ok(())
     }
@@ -197,6 +223,38 @@ impl WaveEngine {
                 run.state = RunState::Aborted;
                 tracing::info!("Orchestration aborted by operator");
                 return Ok(());
+            }
+        }
+
+        // Update wave states to reflect any WP changes from the action
+        self.update_wave_states().await;
+
+        Ok(())
+    }
+
+    /// Launch eligible WPs and emit a WaveLaunchEvent if any were launched.
+    async fn launch_eligible_wps_and_notify(&mut self, is_initial: bool) -> Result<()> {
+        self.pending_launch_batch.clear();
+        self.launch_eligible_wps().await?;
+
+        if !self.pending_launch_batch.is_empty() {
+            let wp_ids = std::mem::take(&mut self.pending_launch_batch);
+            // Determine the wave index from the first launched WP
+            let wave_index = {
+                let run = self.run.read().await;
+                run.work_packages
+                    .iter()
+                    .find(|wp| wp.id == wp_ids[0])
+                    .map(|wp| wp.wave)
+                    .unwrap_or(self.current_wave)
+            };
+            let event = WaveLaunchEvent {
+                wave_index,
+                wp_ids,
+                is_initial_wave: is_initial,
+            };
+            if let Err(e) = self.launch_tx.send(event).await {
+                tracing::error!("Failed to send wave launch event: {}", e);
             }
         }
 
@@ -308,11 +366,12 @@ impl WaveEngine {
     /// Called when operator confirms wave advance.
     async fn advance_wave(&mut self) -> Result<()> {
         self.current_wave += 1;
+        tracing::info!(wave = self.current_wave, "Advancing to wave {}", self.current_wave);
         let mut run = self.run.write().await;
         run.state = RunState::Running;
         drop(run);
 
-        self.launch_eligible_wps().await
+        self.launch_eligible_wps_and_notify(false).await
     }
 
     /// Launch a single work package.
@@ -335,6 +394,9 @@ impl WaveEngine {
             active = self.active_panes,
             "WP launched"
         );
+
+        // Track for batch notification
+        self.pending_launch_batch.push(wp_id.to_string());
 
         Ok(())
     }
@@ -416,7 +478,7 @@ impl WaveEngine {
         drop(run);
 
         // Launch newly eligible WPs
-        self.launch_eligible_wps().await
+        self.launch_eligible_wps_and_notify(false).await
     }
 
     /// Retry a failed work package.
@@ -464,6 +526,65 @@ impl WaveEngine {
         Ok(())
     }
 
+    /// Recompute wave states from constituent WP states.
+    ///
+    /// For each wave, examine its WPs and derive the wave state:
+    /// - All WPs Completed → Wave Completed
+    /// - All WPs terminal (Completed or Failed) with at least one Failed → PartiallyFailed
+    /// - Any WP Active/Paused/ForReview → Active
+    /// - All WPs Pending → Pending
+    async fn update_wave_states(&self) {
+        use crate::types::WaveState;
+
+        let mut run = self.run.write().await;
+
+        // First pass: compute new states for each wave by index
+        let new_states: Vec<(usize, WaveState)> = run
+            .waves
+            .iter()
+            .map(|wave| {
+                let wp_states: Vec<WPState> = wave
+                    .wp_ids
+                    .iter()
+                    .filter_map(|id| run.work_packages.iter().find(|wp| wp.id == *id))
+                    .map(|wp| wp.state)
+                    .collect();
+
+                let new_state = if wp_states.is_empty() {
+                    wave.state
+                } else {
+                    let all_completed = wp_states
+                        .iter()
+                        .all(|s| matches!(s, WPState::Completed));
+                    let all_terminal = wp_states
+                        .iter()
+                        .all(|s| matches!(s, WPState::Completed | WPState::Failed));
+                    let any_failed = wp_states.iter().any(|s| matches!(s, WPState::Failed));
+                    let all_pending = wp_states.iter().all(|s| matches!(s, WPState::Pending));
+
+                    if all_completed {
+                        WaveState::Completed
+                    } else if all_terminal && any_failed {
+                        WaveState::PartiallyFailed
+                    } else if all_pending {
+                        WaveState::Pending
+                    } else {
+                        WaveState::Active
+                    }
+                };
+
+                (wave.index, new_state)
+            })
+            .collect();
+
+        // Second pass: apply computed states
+        for (index, new_state) in new_states {
+            if let Some(wave) = run.waves.iter_mut().find(|w| w.index == index) {
+                wave.state = new_state;
+            }
+        }
+    }
+
     /// Check if orchestration is complete (all WPs done).
     async fn is_complete(&self) -> bool {
         let run = self.run.read().await;
@@ -480,6 +601,17 @@ mod tests {
     use crate::config::Config;
     use crate::types::{Wave, WaveState};
     use std::path::PathBuf;
+
+    /// Helper to create a WaveEngine with a dummy launch_tx for tests.
+    fn create_test_engine(
+        run: Arc<RwLock<OrchestrationRun>>,
+        completion_rx: mpsc::Receiver<CompletionEvent>,
+        action_rx: mpsc::Receiver<EngineAction>,
+    ) -> (WaveEngine, mpsc::Receiver<WaveLaunchEvent>) {
+        let (launch_tx, launch_rx) = mpsc::channel(10);
+        let engine = WaveEngine::new(run, completion_rx, action_rx, launch_tx);
+        (engine, launch_rx)
+    }
 
     fn create_test_run(
         wps: Vec<(String, Vec<String>, usize)>,
@@ -535,7 +667,7 @@ mod tests {
         let (completion_tx, completion_rx) = mpsc::channel(10);
         let (_action_tx, action_rx) = mpsc::channel(10);
 
-        let mut engine = WaveEngine::new(run.clone(), completion_rx, action_rx);
+        let (mut engine, _launch_rx) = create_test_engine(run.clone(), completion_rx, action_rx);
         engine.init_graph().await.unwrap();
 
         // Launch initial wave
@@ -595,7 +727,7 @@ mod tests {
         let (_completion_tx, completion_rx) = mpsc::channel(10);
         let (_action_tx, action_rx) = mpsc::channel(10);
 
-        let mut engine = WaveEngine::new(run.clone(), completion_rx, action_rx);
+        let (mut engine, _launch_rx) = create_test_engine(run.clone(), completion_rx, action_rx);
         engine.init_graph().await.unwrap();
 
         // Launch eligible WPs
@@ -628,7 +760,7 @@ mod tests {
         let (_completion_tx, completion_rx) = mpsc::channel(10);
         let (_action_tx, action_rx) = mpsc::channel(10);
 
-        let mut engine = WaveEngine::new(run.clone(), completion_rx, action_rx);
+        let (mut engine, _launch_rx) = create_test_engine(run.clone(), completion_rx, action_rx);
         engine.init_graph().await.unwrap();
 
         // Launch initial wave
@@ -673,7 +805,7 @@ mod tests {
         let (_completion_tx, completion_rx) = mpsc::channel(10);
         let (_action_tx, action_rx) = mpsc::channel(10);
 
-        let mut engine = WaveEngine::new(run.clone(), completion_rx, action_rx);
+        let (mut engine, _launch_rx) = create_test_engine(run.clone(), completion_rx, action_rx);
         engine.init_graph().await.unwrap();
 
         // Launch and fail WP01
@@ -718,7 +850,7 @@ mod tests {
         let (_completion_tx, completion_rx) = mpsc::channel(10);
         let (_action_tx, action_rx) = mpsc::channel(10);
 
-        let engine = WaveEngine::new(run.clone(), completion_rx, action_rx);
+        let (engine, _launch_rx) = create_test_engine(run.clone(), completion_rx, action_rx);
 
         // Not complete initially
         assert!(!engine.is_complete().await);
@@ -746,7 +878,7 @@ mod tests {
         let (_completion_tx, completion_rx) = mpsc::channel(10);
         let (_action_tx, action_rx) = mpsc::channel(10);
 
-        let mut engine = WaveEngine::new(run.clone(), completion_rx, action_rx);
+        let (mut engine, _launch_rx) = create_test_engine(run.clone(), completion_rx, action_rx);
         engine.init_graph().await.unwrap();
 
         // Launch initial wave
@@ -796,7 +928,7 @@ mod tests {
         let (_completion_tx, completion_rx) = mpsc::channel(10);
         let (_action_tx, action_rx) = mpsc::channel(10);
 
-        let mut engine = WaveEngine::new(run.clone(), completion_rx, action_rx);
+        let (mut engine, _launch_rx) = create_test_engine(run.clone(), completion_rx, action_rx);
         engine.init_graph().await.unwrap();
 
         // Launch and fail WP01
@@ -823,6 +955,216 @@ mod tests {
         {
             let r = run.read().await;
             assert_eq!(r.work_packages[0].state, WPState::Active);
+        }
+    }
+
+    /// Helper to create a test run with proper wave structs derived from WP data.
+    fn create_test_run_with_waves(
+        wps: Vec<(String, Vec<String>, usize)>,
+        mode: ProgressionMode,
+    ) -> OrchestrationRun {
+        // Build waves from WP wave indices
+        let mut wave_map: std::collections::BTreeMap<usize, Vec<String>> =
+            std::collections::BTreeMap::new();
+        for (id, _, wave_idx) in &wps {
+            wave_map.entry(*wave_idx).or_default().push(id.clone());
+        }
+        let waves: Vec<Wave> = wave_map
+            .into_iter()
+            .map(|(index, wp_ids)| Wave {
+                index,
+                wp_ids,
+                state: WaveState::Pending,
+            })
+            .collect();
+
+        let work_packages = wps
+            .into_iter()
+            .map(|(id, deps, wave)| crate::types::WorkPackage {
+                id,
+                title: "Test WP".to_string(),
+                state: WPState::Pending,
+                dependencies: deps,
+                wave,
+                pane_id: None,
+                pane_name: "test".to_string(),
+                worktree_path: None,
+                prompt_path: None,
+                started_at: None,
+                completed_at: None,
+                completion_method: None,
+                failure_count: 0,
+            })
+            .collect();
+
+        OrchestrationRun {
+            id: "test-run".to_string(),
+            feature: "test".to_string(),
+            feature_dir: PathBuf::from("/tmp"),
+            config: Config::default(),
+            work_packages,
+            waves,
+            state: RunState::Running,
+            started_at: None,
+            completed_at: None,
+            mode,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_wave_state_completed_when_all_wps_done() {
+        let run = Arc::new(RwLock::new(create_test_run_with_waves(
+            vec![
+                ("WP01".to_string(), vec![], 0),
+                ("WP02".to_string(), vec![], 0),
+                ("WP03".to_string(), vec!["WP01".to_string(), "WP02".to_string()], 1),
+            ],
+            ProgressionMode::Continuous,
+        )));
+
+        let (_completion_tx, completion_rx) = mpsc::channel(10);
+        let (_action_tx, action_rx) = mpsc::channel(10);
+
+        let (mut engine, _launch_rx) = create_test_engine(run.clone(), completion_rx, action_rx);
+        engine.init_graph().await.unwrap();
+
+        // Launch wave 0
+        engine.launch_eligible_wps().await.unwrap();
+        engine.update_wave_states().await;
+
+        // Wave 0 should be Active (WPs launched)
+        {
+            let r = run.read().await;
+            assert_eq!(r.waves[0].state, WaveState::Active);
+            assert_eq!(r.waves[1].state, WaveState::Pending);
+        }
+
+        // Complete WP01
+        engine
+            .handle_completion(CompletionEvent::new(
+                "WP01".to_string(),
+                CompletionMethod::AutoDetected,
+                true,
+            ))
+            .await
+            .unwrap();
+
+        // Wave 0 still Active (WP02 still running)
+        {
+            let r = run.read().await;
+            assert_eq!(r.waves[0].state, WaveState::Active);
+        }
+
+        // Complete WP02
+        engine
+            .handle_completion(CompletionEvent::new(
+                "WP02".to_string(),
+                CompletionMethod::AutoDetected,
+                true,
+            ))
+            .await
+            .unwrap();
+
+        // Wave 0 should now be Completed, wave 1 Active (WP03 launched)
+        {
+            let r = run.read().await;
+            assert_eq!(r.waves[0].state, WaveState::Completed);
+            assert_eq!(r.waves[1].state, WaveState::Active);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_wave_state_partially_failed() {
+        let run = Arc::new(RwLock::new(create_test_run_with_waves(
+            vec![
+                ("WP01".to_string(), vec![], 0),
+                ("WP02".to_string(), vec![], 0),
+            ],
+            ProgressionMode::Continuous,
+        )));
+
+        let (_completion_tx, completion_rx) = mpsc::channel(10);
+        let (_action_tx, action_rx) = mpsc::channel(10);
+
+        let (mut engine, _launch_rx) = create_test_engine(run.clone(), completion_rx, action_rx);
+        engine.init_graph().await.unwrap();
+
+        // Launch wave 0
+        engine.launch_eligible_wps().await.unwrap();
+        engine.update_wave_states().await;
+
+        // Complete WP01 successfully
+        engine
+            .handle_completion(CompletionEvent::new(
+                "WP01".to_string(),
+                CompletionMethod::AutoDetected,
+                true,
+            ))
+            .await
+            .unwrap();
+
+        // Fail WP02
+        engine
+            .handle_completion(CompletionEvent::new(
+                "WP02".to_string(),
+                CompletionMethod::AutoDetected,
+                false,
+            ))
+            .await
+            .unwrap();
+
+        // Wave 0 should be PartiallyFailed
+        {
+            let r = run.read().await;
+            assert_eq!(r.waves[0].state, WaveState::PartiallyFailed);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_wave_state_active_when_wps_in_flight() {
+        let run = Arc::new(RwLock::new(create_test_run_with_waves(
+            vec![
+                ("WP01".to_string(), vec![], 0),
+                ("WP02".to_string(), vec![], 0),
+            ],
+            ProgressionMode::Continuous,
+        )));
+
+        let (_completion_tx, completion_rx) = mpsc::channel(10);
+        let (_action_tx, action_rx) = mpsc::channel(10);
+
+        let (mut engine, _launch_rx) = create_test_engine(run.clone(), completion_rx, action_rx);
+        engine.init_graph().await.unwrap();
+
+        // Before launch, wave should be Pending
+        {
+            let r = run.read().await;
+            assert_eq!(r.waves[0].state, WaveState::Pending);
+        }
+
+        // Launch wave 0
+        engine.launch_eligible_wps().await.unwrap();
+        engine.update_wave_states().await;
+
+        // Wave 0 should be Active
+        {
+            let r = run.read().await;
+            assert_eq!(r.waves[0].state, WaveState::Active);
+        }
+
+        // Complete one WP — wave still Active (other WP still running)
+        engine
+            .handle_completion(CompletionEvent::new(
+                "WP01".to_string(),
+                CompletionMethod::AutoDetected,
+                true,
+            ))
+            .await
+            .unwrap();
+
+        {
+            let r = run.read().await;
+            assert_eq!(r.waves[0].state, WaveState::Active);
         }
     }
 }

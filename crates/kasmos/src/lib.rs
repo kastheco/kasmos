@@ -30,7 +30,7 @@ pub use command_handlers::{CommandHandler, EngineAction, SessionController};
 pub use commands::{CommandReader, ControllerCommand, command_help_text};
 pub use config::Config;
 pub use detector::{CompletionDetector, CompletionEvent};
-pub use engine::WaveEngine;
+pub use engine::{WaveEngine, WaveLaunchEvent};
 pub use error::{KasmosError, Result};
 pub use graph::DependencyGraph;
 pub use health::{CrashEvent, HealthMonitor, PaneHealthChecker, PaneRegistration};

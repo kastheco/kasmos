@@ -96,6 +96,18 @@ pub trait ZellijCli: Send + Sync {
 
     /// Toggle fullscreen for the focused pane.
     async fn toggle_fullscreen(&self, session: &str) -> Result<()>;
+
+    /// Create a new tab, optionally with a layout and name.
+    async fn new_tab(&self, session: &str, name: Option<&str>, layout: Option<&std::path::Path>) -> Result<()>;
+
+    /// Rename the currently focused tab.
+    async fn rename_tab(&self, session: &str, name: &str) -> Result<()>;
+
+    /// Go to a tab by name.
+    async fn go_to_tab_name(&self, session: &str, name: &str) -> Result<()>;
+
+    /// Query all tab names and return them as a list.
+    async fn query_tab_names(&self, session: &str) -> Result<Vec<String>>;
 }
 
 /// Real Zellij CLI implementation using tokio::process::Command.
@@ -327,6 +339,66 @@ impl ZellijCli for RealZellijCli {
             .await?;
         debug!("Toggled fullscreen in session: {}", session);
         Ok(())
+    }
+
+    async fn new_tab(&self, session: &str, name: Option<&str>, layout: Option<&std::path::Path>) -> Result<()> {
+        validate_identifier(session, "session name")?;
+        if let Some(n) = name {
+            validate_identifier(n, "tab name")?;
+        }
+
+        let mut args: Vec<String> = vec![
+            "--session".to_string(),
+            session.to_string(),
+            "action".to_string(),
+            "new-tab".to_string(),
+        ];
+        if let Some(layout_path) = layout {
+            args.push("--layout".to_string());
+            args.push(layout_path.display().to_string());
+        }
+        if let Some(n) = name {
+            args.push("--name".to_string());
+            args.push(n.to_string());
+        }
+
+        let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        self.run_command(&arg_refs).await?;
+        debug!("Created new tab in session: {} (name: {:?})", session, name);
+        Ok(())
+    }
+
+    async fn rename_tab(&self, session: &str, name: &str) -> Result<()> {
+        validate_identifier(session, "session name")?;
+        // Tab names can contain spaces and special chars, so no identifier validation
+
+        self.run_command(&["--session", session, "action", "rename-tab", name])
+            .await?;
+        debug!("Renamed tab in session: {} to '{}'", session, name);
+        Ok(())
+    }
+
+    async fn go_to_tab_name(&self, session: &str, name: &str) -> Result<()> {
+        validate_identifier(session, "session name")?;
+
+        self.run_command(&["--session", session, "action", "go-to-tab-name", name])
+            .await?;
+        debug!("Navigated to tab '{}' in session: {}", name, session);
+        Ok(())
+    }
+
+    async fn query_tab_names(&self, session: &str) -> Result<Vec<String>> {
+        validate_identifier(session, "session name")?;
+
+        let output = self.run_command(&["--session", session, "action", "query-tab-names"])
+            .await?;
+        let names: Vec<String> = output
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect();
+        debug!("Tab names in session {}: {:?}", session, names);
+        Ok(names)
     }
 }
 

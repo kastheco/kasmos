@@ -15,7 +15,10 @@ fn kdl_escape(s: &str) -> String {
     out.push('"');
     for c in s.chars() {
         match c {
-            '\\' | '"' => { out.push('\\'); out.push(c); }
+            '\\' | '"' => {
+                out.push('\\');
+                out.push(c);
+            }
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
@@ -74,7 +77,6 @@ use crate::types::WorkPackage;
 /// of agent panes (right side), with dimensions calculated based on the number
 /// of work packages.
 pub struct LayoutGenerator {
-    controller_width_pct: u32,
     opencode_binary: String,
 }
 
@@ -88,7 +90,6 @@ impl LayoutGenerator {
     /// A new LayoutGenerator instance
     pub fn new(config: &Config) -> Self {
         Self {
-            controller_width_pct: config.controller_width_pct,
             opencode_binary: config.opencode_binary.clone(),
         }
     }
@@ -109,7 +110,7 @@ impl LayoutGenerator {
     pub fn generate(
         &self,
         work_packages: &[&WorkPackage],
-        _feature_dir: &Path,
+        feature_dir: &Path,
     ) -> Result<KdlDocument, KasmosError> {
         // Guard: validate input
         if work_packages.is_empty() {
@@ -125,7 +126,7 @@ impl LayoutGenerator {
 
         // Build the root layout document
         let mut doc = KdlDocument::new();
-        let layout_node = self.build_layout_node(work_packages)?;
+        let layout_node = self.build_layout_node(work_packages, feature_dir)?;
         doc.nodes_mut().push(layout_node);
 
         // Validate the generated KDL
@@ -166,38 +167,74 @@ impl LayoutGenerator {
         (rows, cols)
     }
 
-    /// Build the root layout node containing controller and agent grid.
-    fn build_layout_node(&self, work_packages: &[&WorkPackage]) -> Result<KdlNode, KasmosError> {
+    /// Build the root layout node with two tabs:
+    ///   Tab 1 "Control" — vertical split: controller (left) + terminal (right)
+    ///   Tab 2 "WAVE-0"  — agent grid for wave 0
+    fn build_layout_node(
+        &self,
+        work_packages: &[&WorkPackage],
+        feature_dir: &Path,
+    ) -> Result<KdlNode, KasmosError> {
         let mut layout = KdlNode::new("layout");
 
-        // Main vertical split: controller (left) and agent grid (right)
-        let mut main_split = KdlNode::new("pane");
-        main_split.entries_mut().push(kdl_str_prop("split_direction", "vertical"));
+        // Tab 1: Control — controller session + terminal
+        let control_tab = self.build_control_tab(feature_dir);
+        layout.ensure_children().nodes_mut().push(control_tab);
 
-        // Add controller pane
-        let controller = self.build_controller_pane();
-        main_split.ensure_children().nodes_mut().push(controller);
+        // Tab 2: Wave 0 agents
+        let mut wave_tab = KdlNode::new("tab");
+        wave_tab.entries_mut().push(kdl_str_prop("name", "WAVE-0"));
+        wave_tab.entries_mut().push(kdl_bool_prop("focus", true));
+        let agent_grid = self.build_agent_grid_fullwidth(work_packages)?;
+        wave_tab.ensure_children().nodes_mut().push(agent_grid);
+        layout.ensure_children().nodes_mut().push(wave_tab);
 
-        // Add agent grid pane
-        let agent_grid = self.build_agent_grid(work_packages)?;
-        main_split.ensure_children().nodes_mut().push(agent_grid);
-
-        layout.ensure_children().nodes_mut().push(main_split);
         Ok(layout)
+    }
+
+    /// Build the "Control" tab: vertical split with controller (left) and terminal (right).
+    ///
+    /// The terminal opens in the project root (parent of feature_dir) so the
+    /// operator can run `kasmos cmd`, `git`, `cargo build`, etc.
+    fn build_control_tab(&self, feature_dir: &Path) -> KdlNode {
+        let mut tab = KdlNode::new("tab");
+        tab.entries_mut().push(kdl_str_prop("name", "Control"));
+        tab.entries_mut()
+            .push(kdl_str_prop("split_direction", "vertical"));
+
+        // Left: controller session (opencode / future TUI)
+        let controller = self.build_controller_pane();
+        tab.ensure_children().nodes_mut().push(controller);
+
+        // Right: plain terminal in project root
+        let project_dir = feature_dir.parent().unwrap_or(feature_dir);
+        let mut terminal = KdlNode::new("pane");
+        terminal
+            .entries_mut()
+            .push(kdl_str_prop("name", "terminal"));
+        let mut cwd = KdlNode::new("cwd");
+        cwd.entries_mut()
+            .push(kdl_str_arg(&project_dir.display().to_string()));
+        terminal.ensure_children().nodes_mut().push(cwd);
+        tab.ensure_children().nodes_mut().push(terminal);
+
+        tab
     }
 
     /// Build the controller pane node.
     ///
-    /// The controller pane runs `ocx oc` (opencode via ocx) and takes up the configured
-    /// percentage of the terminal width.
+    /// The controller pane runs `ocx oc` (opencode via ocx). It lives in its
+    /// own dedicated "Control" tab, so no size constraint is needed.
     fn build_controller_pane(&self) -> KdlNode {
         let mut pane = KdlNode::new("pane");
-        pane.entries_mut().push(kdl_str_prop("size", &format!("{}%", self.controller_width_pct)));
         pane.entries_mut().push(kdl_str_prop("name", "controller"));
-        pane.entries_mut().push(kdl_bool_prop("start_suspended", false));
+        pane.entries_mut()
+            .push(kdl_bool_prop("start_suspended", false));
 
         let mut command = KdlNode::new("command");
-        command.entries_mut().push(kdl_str_arg(&self.opencode_binary));
+        command
+            .entries_mut()
+            .push(kdl_str_arg(&self.opencode_binary));
         pane.ensure_children().nodes_mut().push(command);
 
         let mut args = KdlNode::new("args");
@@ -213,7 +250,8 @@ impl LayoutGenerator {
     fn build_agent_pane(&self, wp: &WorkPackage) -> KdlNode {
         let mut pane = KdlNode::new("pane");
         pane.entries_mut().push(kdl_str_prop("name", &wp.pane_name));
-        pane.entries_mut().push(kdl_bool_prop("start_suspended", false));
+        pane.entries_mut()
+            .push(kdl_bool_prop("start_suspended", false));
 
         // Command: bash
         let mut command = KdlNode::new("command");
@@ -238,39 +276,38 @@ impl LayoutGenerator {
         // Cwd: working directory if specified
         if let Some(worktree_path) = &wp.worktree_path {
             let mut cwd = KdlNode::new("cwd");
-            cwd.entries_mut().push(kdl_str_arg(&worktree_path.display().to_string()));
+            cwd.entries_mut()
+                .push(kdl_str_arg(&worktree_path.display().to_string()));
             pane.ensure_children().nodes_mut().push(cwd);
         }
 
         pane
     }
 
-    /// Build the agent grid pane containing all agent panes.
-    ///
-    /// Arranges agents in rows and columns based on adaptive grid dimensions.
-    fn build_agent_grid(&self, work_packages: &[&WorkPackage]) -> Result<KdlNode, KasmosError> {
+    /// Build a full-width agent grid (for standalone wave tabs without a controller).
+    fn build_agent_grid_fullwidth(
+        &self,
+        work_packages: &[&WorkPackage],
+    ) -> Result<KdlNode, KasmosError> {
         let (rows, cols) = Self::grid_dimensions(work_packages.len());
 
         let mut grid = KdlNode::new("pane");
-        grid.entries_mut().push(kdl_str_prop("size", &format!("{}%", 100 - self.controller_width_pct)));
-        grid.entries_mut().push(kdl_str_prop("split_direction", "horizontal"));
+        grid.entries_mut()
+            .push(kdl_str_prop("split_direction", "horizontal"));
 
         let mut pane_idx = 0;
 
-        // Create rows
         for _row in 0..rows {
-            // Guard: don't create empty rows
             if pane_idx >= work_packages.len() {
                 break;
             }
 
             let mut row = KdlNode::new("pane");
-            row.entries_mut().push(kdl_str_prop("split_direction", "vertical"));
+            row.entries_mut()
+                .push(kdl_str_prop("split_direction", "vertical"));
 
-            // Calculate how many panes this row should have
             let panes_in_row = std::cmp::min(cols, work_packages.len() - pane_idx);
 
-            // Create columns within this row
             for _ in 0..panes_in_row {
                 let agent_pane = self.build_agent_pane(work_packages[pane_idx]);
                 row.ensure_children().nodes_mut().push(agent_pane);
@@ -281,6 +318,86 @@ impl LayoutGenerator {
         }
 
         Ok(grid)
+    }
+
+    /// Generate a controller-only layout (no agent panes).
+    ///
+    /// Used when all wave 0 WPs are already completed and no agent panes need launching.
+    /// Still produces the Control tab with controller + terminal.
+    pub fn generate_controller_only(&self, feature_dir: &Path) -> Result<KdlDocument, KasmosError> {
+        debug!("Generating controller-only KDL layout");
+
+        let mut doc = KdlDocument::new();
+
+        let mut layout = KdlNode::new("layout");
+        let control_tab = self.build_control_tab(feature_dir);
+        layout.ensure_children().nodes_mut().push(control_tab);
+        doc.nodes_mut().push(layout);
+
+        let kdl_string = doc.to_string();
+        Self::validate_kdl(&kdl_string)?;
+
+        info!("Generated controller-only KDL layout");
+        Ok(doc)
+    }
+
+    /// Generate an agent-only grid layout for a wave tab (no controller).
+    ///
+    /// The controller lives in its own dedicated "Control" tab. Wave tabs
+    /// contain only agent panes, maximizing screen real estate for agents.
+    pub fn generate_wave_tab(
+        &self,
+        work_packages: &[&WorkPackage],
+        _feature_dir: &Path,
+    ) -> Result<KdlDocument, KasmosError> {
+        if work_packages.is_empty() {
+            return Err(
+                LayoutError::InvalidPaneCount("work_packages cannot be empty".to_string()).into(),
+            );
+        }
+
+        debug!(
+            "Generating wave tab KDL layout for {} agent panes",
+            work_packages.len()
+        );
+
+        let mut doc = KdlDocument::new();
+
+        let mut layout = KdlNode::new("layout");
+        let agent_grid = self.build_agent_grid_fullwidth(work_packages)?;
+        layout.ensure_children().nodes_mut().push(agent_grid);
+        doc.nodes_mut().push(layout);
+
+        let kdl_string = doc.to_string();
+        Self::validate_kdl(&kdl_string)?;
+
+        info!(
+            "Generated wave tab KDL layout with {} agent panes",
+            work_packages.len()
+        );
+        Ok(doc)
+    }
+
+    /// Write a wave-specific layout file.
+    ///
+    /// Uses a filename like `wave-1.kdl` to avoid overwriting the main layout.
+    pub fn write_wave_layout(
+        &self,
+        doc: &KdlDocument,
+        output_dir: &Path,
+        wave_index: usize,
+    ) -> Result<PathBuf, KasmosError> {
+        std::fs::create_dir_all(output_dir)?;
+
+        let output_path = output_dir.join(format!("wave-{}.kdl", wave_index));
+        let kdl_string = doc
+            .to_string()
+            .replace("#true", "true")
+            .replace("#false", "false");
+
+        std::fs::write(&output_path, &kdl_string)?;
+        info!("Wrote wave layout to {}", output_path.display());
+        Ok(output_path)
     }
 
     /// Write the KDL document to a file.
@@ -304,7 +421,8 @@ impl LayoutGenerator {
 
         let output_path = output_dir.join("layout.kdl");
         // Downgrade KDL v2 booleans to v1 for Zellij 0.44 compatibility
-        let kdl_string = doc.to_string()
+        let kdl_string = doc
+            .to_string()
             .replace("#true", "true")
             .replace("#false", "false");
 
@@ -450,20 +568,24 @@ mod tests {
     }
 
     #[test]
-    fn test_controller_pane_size() {
-        let mut config = Config::default();
-        config.controller_width_pct = 35;
+    fn test_two_tab_layout() {
+        let config = Config::default();
         let generator = LayoutGenerator::new(&config);
 
         let wp = make_test_wp("WP01", "agent-1");
         let wps = vec![&wp];
 
         let doc = generator
-            .generate(&wps, Path::new("/tmp"))
+            .generate(&wps, Path::new("/tmp/feature"))
             .expect("generate");
         let kdl_str = doc.to_string();
 
-        assert!(kdl_str.contains("size=\"35%\""));
+        // Should have a Control tab and a WAVE-0 tab
+        assert!(kdl_str.contains("name=\"Control\""));
+        assert!(kdl_str.contains("name=\"WAVE-0\""));
+        // Control tab should have controller + terminal panes
+        assert!(kdl_str.contains("name=\"controller\""));
+        assert!(kdl_str.contains("name=\"terminal\""));
     }
 
     #[test]
