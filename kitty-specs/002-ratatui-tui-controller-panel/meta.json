@@ -1,10 +1,30 @@
 {
+  "accept_commit": null,
+  "acceptance_history": [
+    {
+      "accepted_at": "2026-02-11T18:59:14Z",
+      "accepted_by": "ocx oc -- --agent release",
+      "accepted_from_commit": "3d9c402b9ba82ee0f1813a2765772a493690b89d",
+      "branch": "002-ratatui-tui-controller-panel",
+      "mode": "pr",
+      "validation_commands": [
+        "just test",
+        "just lint",
+        "just build",
+        "just install"
+      ]
+    }
+  ],
+  "acceptance_mode": "pr",
+  "accepted_at": "2026-02-11T18:59:14Z",
+  "accepted_by": "ocx oc -- --agent release",
+  "accepted_from_commit": "3d9c402b9ba82ee0f1813a2765772a493690b89d",
+  "created_at": "2026-02-10T00:00:00Z",
   "feature_number": "002",
-  "slug": "002-ratatui-tui-controller-panel",
   "friendly_name": "Ratatui TUI Controller Panel",
   "mission": "software-dev",
+  "slug": "002-ratatui-tui-controller-panel",
   "source_description": "Convert main panel of the app to be a TUI with ratatui that provides action buttons for managing WPs, progressing through work, addressing issues/input requests and displays a status based on the kanboard + what's available.",
-  "created_at": "2026-02-10T00:00:00Z",
   "target_branch": "002-ratatui-tui-controller-panel",
   "vcs": "git"
 }
