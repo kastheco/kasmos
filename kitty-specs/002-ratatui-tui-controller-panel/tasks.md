@@ -105,11 +105,11 @@
 **Estimated Size**: ~350 lines
 
 ### Included Subtasks
-- [ ] T018 Create `tui/widgets/action_buttons.rs` — horizontal button bar rendered below selected WP
-- [ ] T019 Implement state-based action filtering — map WPState to valid action set per plan table
-- [ ] T020 Wire action key dispatch — on keybind (R/P/F/T/A), construct and send EngineAction via action_tx
-- [ ] T021 Implement wave advance UI — "Advance Wave" button at wave boundary in wave-gated mode
-- [ ] T022 Add confirmation for destructive actions (Force-Advance) — inline yes/no prompt
+- [x] T018 Create `tui/widgets/action_buttons.rs` — horizontal button bar rendered below selected WP
+- [x] T019 Implement state-based action filtering — map WPState to valid action set per plan table
+- [x] T020 Wire action key dispatch — on keybind (R/P/F/T/A), construct and send EngineAction via action_tx
+- [x] T021 Implement wave advance UI — "Advance Wave" button at wave boundary in wave-gated mode
+- [x] T022 Add confirmation for destructive actions (Force-Advance) — inline yes/no prompt
 
 ### Dependencies
 - Depends on WP02 (EngineAction channel) + WP03 (dashboard for WP selection context)
