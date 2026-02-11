@@ -72,10 +72,14 @@ pub async fn run(feature: Option<&str>) -> Result<()> {
 }
 
 fn send_fifo_command(fifo_path: &PathBuf, command: &str) -> std::io::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
     use std::io::Write;
 
     // Open FIFO with O_WRONLY | O_NONBLOCK to avoid blocking if no reader
-    let file = std::fs::OpenOptions::new().write(true).open(fifo_path)?;
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(fifo_path)?;
 
     let mut writer = std::io::BufWriter::new(file);
     writer.write_all(command.as_bytes())?;
