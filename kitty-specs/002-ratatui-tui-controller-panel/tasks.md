@@ -46,12 +46,12 @@
 **Estimated Size**: ~450 lines
 
 ### Included Subtasks
-- [ ] T006 Add `watch::Sender<OrchestrationRun>` to WaveEngine, broadcast after every state mutation
-- [ ] T007 Add `ForReview` variant to `WPState` enum, update state machine with new transitions
-- [ ] T008 Add `Approve(String)` and `Reject { wp_id, relaunch }` to `EngineAction`, implement handlers
-- [ ] T009 Update completion detector to distinguish `for_review` from `done` lane transitions
-- [ ] T010 Wire watch channel creation in `launch.rs` — create channel, pass tx to engine
-- [ ] T011 Spawn TUI task in `launch.rs`, re-export `tui` module in `lib.rs`
+- [x] T006 Add `watch::Sender<OrchestrationRun>` to WaveEngine, broadcast after every state mutation
+- [x] T007 Add `ForReview` variant to `WPState` enum, update state machine with new transitions
+- [x] T008 Add `Approve(String)` and `Reject { wp_id, relaunch }` to `EngineAction`, implement handlers
+- [x] T009 Update completion detector to distinguish `for_review` from `done` lane transitions
+- [x] T010 Wire watch channel creation in `launch.rs` — create channel, pass tx to engine
+- [x] T011 Spawn TUI task in `launch.rs`, re-export `tui` module in `lib.rs`
 
 ### Implementation Notes
 - WaveEngine constructor gains `watch_tx: watch::Sender<OrchestrationRun>`
