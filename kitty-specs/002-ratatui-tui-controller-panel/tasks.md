@@ -127,11 +127,11 @@
 **Estimated Size**: ~350 lines
 
 ### Included Subtasks
-- [ ] T023 Create `tui/widgets/notification_bar.rs` — persistent bar at top of frame, rendered before tab content
-- [ ] T024 Implement notification diffing — on watch update, compare previous vs current run to detect state changes
-- [ ] T025 Render notification counts per type with WP identifiers, visually distinguish review/failure/input-needed
-- [ ] T026 Implement notification jump — `n` key cycles through notifications, switches to relevant tab, focuses WP
-- [ ] T027 Auto-dismiss notifications when WP leaves triggering state (e.g., failure resolved by restart)
+- [x] T023 Create `tui/widgets/notification_bar.rs` — persistent bar at top of frame, rendered before tab content
+- [x] T024 Implement notification diffing — on watch update, compare previous vs current run to detect state changes
+- [x] T025 Render notification counts per type with WP identifiers, visually distinguish review/failure/input-needed
+- [x] T026 Implement notification jump — `n` key cycles through notifications, switches to relevant tab, focuses WP
+- [x] T027 Auto-dismiss notifications when WP leaves triggering state (e.g., failure resolved by restart)
 
 ### Dependencies
 - Depends on WP01 + WP02
