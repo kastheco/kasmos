@@ -248,15 +248,15 @@
 **Estimated Size**: ~350 lines
 
 ### Included Subtasks
-- [ ] T049 Add unit tests for ForReview transitions (approve, reject+relaunch, reject+hold->Paused)
-- [ ] T050 Add unit tests for contextual action availability by WP state
-- [ ] T051 Add integration parity tests for FIFO vs TUI command outcomes
-- [ ] T052 Add integration tests for input-needed notification lifecycle
-- [ ] T053 Add notification delivery audit test (emitted IDs == surfaced IDs)
-- [ ] T054 Add synthetic 50-WP latency test and assert SC-005 thresholds
-- [ ] T055 Add final validation gate documentation (`cargo test` required before done)
-- [ ] T061 Add integration tests for review runner mode selection/fallback (`slash` failure -> `prompt`)
-- [ ] T062 Add integration tests for persisted review results and `for_review` lifecycle visibility after restart
+- [x] T049 Add unit tests for ForReview transitions (approve, reject+relaunch, reject+hold->Paused)
+- [x] T050 Add unit tests for contextual action availability by WP state
+- [x] T051 Add integration parity tests for FIFO vs TUI command outcomes
+- [x] T052 Add integration tests for input-needed notification lifecycle
+- [x] T053 Add notification delivery audit test (emitted IDs == surfaced IDs)
+- [x] T054 Add synthetic 50-WP latency test and assert SC-005 thresholds
+- [x] T055 Add final validation gate documentation (`cargo test` required before done)
+- [x] T061 Add integration tests for review runner mode selection/fallback (`slash` failure -> `prompt`)
+- [x] T062 Add integration tests for persisted review results and `for_review` lifecycle visibility after restart
 
 ### Implementation Notes
 - Tests use `ratatui::backend::TestBackend` for UI assertions
