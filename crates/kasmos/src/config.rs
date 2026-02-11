@@ -28,8 +28,8 @@ pub struct Config {
     /// Default: "zellij"
     pub zellij_binary: String,
 
-    /// Path to opencode binary.
-    /// Default: "opencode"
+    /// Path to ocx binary (launches opencode via `ocx oc`).
+    /// Default: "ocx"
     pub opencode_binary: String,
 
     /// Path to spec-kitty binary.
@@ -59,7 +59,7 @@ impl Default for Config {
             max_agent_panes: 8,
             progression_mode: ProgressionMode::Continuous,
             zellij_binary: "zellij".to_string(),
-            opencode_binary: "opencode".to_string(),
+            opencode_binary: "ocx".to_string(),
             spec_kitty_binary: "spec-kitty".to_string(),
             kasmos_dir: ".kasmos".to_string(),
             poll_interval_secs: 5,

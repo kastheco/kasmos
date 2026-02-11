@@ -139,28 +139,60 @@ impl RealZellijCli {
     }
 }
 
+/// Strip ANSI escape sequences from a string.
+fn strip_ansi(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // Skip ESC [ ... (letter) sequences
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                while let Some(&next) = chars.peek() {
+                    chars.next();
+                    if next.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
 /// Parse the output of `zellij list-sessions`.
 ///
-/// Output format:
-/// - Empty or "No active zellij sessions found." → empty vec
-/// - Each line is a session name, optionally with " (current)" suffix or " EXITED" status
+/// Handles both legacy format and Zellij 0.44+ format (with ANSI codes):
+/// - Legacy: `session-name`, `session-name (current)`, `session-name EXITED`
+/// - 0.44+:  `session-name [Created Xh Ym Zs ago]`,
+///           `session-name [Created Xh Ym Zs ago] (EXITED - attach to resurrect)`
 fn parse_list_sessions(output: &str) -> Vec<SessionInfo> {
-    output
+    let clean = strip_ansi(output);
+    clean
         .lines()
         .filter(|line| {
-            !line.is_empty() && !line.contains("No active zellij sessions found")
-        })
-        .map(|line| {
             let trimmed = line.trim();
-            let (name, state) = if trimmed.contains("EXITED") {
-                let name = trimmed.replace(" EXITED", "").trim().to_string();
-                (name, SessionState::Exited)
+            !trimmed.is_empty() && !trimmed.contains("No active zellij sessions found")
+        })
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            // Extract session name: first token before ` [` (0.44+) or ` (` or ` EXITED` (legacy)
+            let name = trimmed
+                .split(&[' ', '\t'][..])
+                .next()?
+                .trim()
+                .to_string();
+            if name.is_empty() {
+                return None;
+            }
+            let state = if trimmed.contains("EXITED") {
+                SessionState::Exited
             } else {
-                let name = trimmed.replace(" (current)", "").trim().to_string();
-                (name, SessionState::Active)
+                SessionState::Active
             };
-
-            SessionInfo { name, state }
+            Some(SessionInfo { name, state })
         })
         .collect()
 }
@@ -175,13 +207,15 @@ impl ZellijCli for RealZellijCli {
     async fn create_session(&self, name: &str, layout: Option<&std::path::Path>) -> Result<()> {
         validate_identifier(name, "session name")?;
         debug!("Creating Zellij session: {}", name);
-        
+
         // Note: TOCTOU race is acceptable for single-user orchestrator
         let sessions = self.list_sessions().await?;
         if sessions.iter().any(|s| s.name == name) {
             return Err(ZellijError::SessionExists { name: name.to_string() }.into());
         }
-        
+
+        // Use `attach --create-background` for detached session creation.
+        // Plain `zellij --session <name>` tries to attach interactively (needs TTY).
         let mut args: Vec<&str> = Vec::new();
         let layout_str;
         if let Some(layout_path) = layout {
@@ -189,9 +223,8 @@ impl ZellijCli for RealZellijCli {
             args.push("--layout");
             args.push(&layout_str);
         }
-        args.push("--session");
-        args.push(name);
-        
+        args.extend_from_slice(&["attach", "--create-background", name]);
+
         self.run_command(&args).await?;
         debug!("Session created: {}", name);
         Ok(())
@@ -375,6 +408,32 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn test_parse_list_sessions_zellij_044_format() {
+        // Zellij 0.44+ outputs ANSI codes and different format
+        let output = "\x1b[32;1mkasmos-feat\x1b[m [Created \x1b[35;1m21h 25m 24s\x1b[m ago] (\x1b[31;1mEXITED\x1b[m - attach to resurrect)\n\x1b[32;1mkasmos-probe\x1b[m [Created \x1b[35;1m2h 8m 3s\x1b[m ago] \n";
+        let sessions = parse_list_sessions(output);
+        assert_eq!(
+            sessions,
+            vec![
+                SessionInfo {
+                    name: "kasmos-feat".to_string(),
+                    state: SessionState::Exited,
+                },
+                SessionInfo {
+                    name: "kasmos-probe".to_string(),
+                    state: SessionState::Active,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_strip_ansi_codes() {
+        let input = "\x1b[32;1mhello\x1b[m world";
+        assert_eq!(strip_ansi(input), "hello world");
     }
 
     #[test]

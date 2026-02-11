@@ -3,9 +3,9 @@
 **Inputs**: Design documents from `kitty-specs/002-ratatui-tui-controller-panel/`
 **Prerequisites**: plan.md (architecture, channel topology), spec.md (8 user stories, 20 FRs), research.md (async patterns), data-model.md (App/Tab/Notification types)
 
-**Tests**: Not explicitly requested. WPs include validation steps but no dedicated test WPs.
+**Tests**: Required by constitution. All features must have corresponding tests. Feature completion requires passing `cargo test`. Test coverage is provided in WP10.
 
-**Organization**: 48 subtasks (`T001`–`T048`) roll up into 9 work packages (`WP01`–`WP09`). Each WP is independently deliverable.
+**Organization**: 55 subtasks (`T001`–`T055`) roll up into 10 work packages (`WP01`–`WP10`). Each WP is independently deliverable.
 
 ---
 
@@ -56,7 +56,7 @@
 ### Implementation Notes
 - WaveEngine constructor gains `watch_tx: watch::Sender<OrchestrationRun>`
 - After `handle_completion()` and `handle_action()`, clone run state and send via watch_tx
-- ForReview transitions: Active→ForReview, ForReview→Completed (approve), ForReview→Active (reject+relaunch), ForReview→Pending (reject+hold)
+- ForReview transitions: Active→ForReview, ForReview→Completed (approve), ForReview→Active (reject+relaunch), ForReview→Paused (reject+hold; manual resume/restart)
 - Completion detector: when task file lane=`for_review`, emit CompletionEvent with a new `review` method (not `done`)
 
 ### Dependencies
@@ -107,7 +107,7 @@
 - [ ] T019 Implement state-based action filtering — map WPState to valid action set per plan table
 - [ ] T020 Wire action key dispatch — on keybind (R/P/F/T/A), construct and send EngineAction via action_tx
 - [ ] T021 Implement wave advance UI — "Advance Wave" button at wave boundary in wave-gated mode
-- [ ] T022 Add confirmation for destructive actions (Force-Advance, Abort) — inline yes/no prompt
+- [ ] T022 Add confirmation for destructive actions (Force-Advance) — inline yes/no prompt
 
 ### Dependencies
 - Depends on WP02 (EngineAction channel) + WP03 (dashboard for WP selection context)
@@ -233,6 +233,37 @@
 
 ---
 
+## Work Package WP10: Test, Compatibility, and Performance Gates (Priority: P1)
+
+**Goal**: Satisfy constitution-required tests and validate notification/performance success criteria.
+**Independent Test**: `cargo test` passes; notification audit and latency checks pass thresholds.
+**Prompt**: `tasks/WP10-validation-gates.md`
+**Estimated Size**: ~350 lines
+
+### Included Subtasks
+- [ ] T049 Add unit tests for ForReview transitions (approve, reject+relaunch, reject+hold->Paused)
+- [ ] T050 Add unit tests for contextual action availability by WP state
+- [ ] T051 Add integration parity tests for FIFO vs TUI command outcomes
+- [ ] T052 Add integration tests for input-needed notification lifecycle
+- [ ] T053 Add notification delivery audit test (emitted IDs == surfaced IDs)
+- [ ] T054 Add synthetic 50-WP latency test and assert SC-005 thresholds
+- [ ] T055 Add final validation gate documentation (`cargo test` required before done)
+
+### Implementation Notes
+- Tests use `ratatui::backend::TestBackend` for UI assertions
+- FIFO parity tests spawn both input sources concurrently
+- Latency test instruments event loop with histogram metrics
+- Notification audit test hooks state broadcaster to capture all emitted events and verify bar coverage
+
+### Dependencies
+- Depends on WP02 (ForReview state machine), WP04 (action buttons), WP05 (notification bar), WP06 (review tab), WP08 (input-needed signals), WP09 (FIFO compat)
+
+### Risks & Mitigations
+- Synthetic load test may be flaky on slow CI — use deterministic clock and set generous timeout buffers
+- Test backend rendering may differ from real terminal — validate core logic, not pixel-perfect layout
+
+---
+
 ## Dependency & Execution Summary
 
 ```
@@ -246,13 +277,16 @@ Wave 2 (Core Views):       WP03 ──┤ depends WP01+WP02
                                   │
 Wave 3 (Advanced):         WP06 ──┤ depends WP02+WP03
                            WP08 ──┤ depends WP05+WP02
-                           WP09 ──┘ depends WP03+WP07
+                           WP09 ──┤ depends WP03+WP07
+                                  │
+Wave 4 (Validation):       WP10 ──┘ depends WP02+WP04+WP05+WP06+WP08+WP09
 ```
 
 **Parallelization**:
 - Wave 2: WP03, WP05, WP07 can run in parallel (all depend only on WP01+WP02)
 - WP04 depends on WP03 (needs dashboard WP selection), so starts after WP03
 - Wave 3: WP06, WP08, WP09 can run in parallel once their deps complete
+- Wave 4: WP10 runs last (tests all prior WP implementations)
 
 **MVP Scope**: WP01 + WP02 + WP03 + WP04 = functional dashboard with WP control
 
@@ -310,3 +344,10 @@ Wave 3 (Advanced):         WP06 ──┤ depends WP02+WP03
 | T046 | Mouse support | WP09 | P2 | No |
 | T047 | Orchestration termination state | WP09 | P2 | No |
 | T048 | Empty/no-run state | WP09 | P2 | No |
+| T049 | Unit tests: ForReview transitions | WP10 | P1 | No |
+| T050 | Unit tests: contextual action availability | WP10 | P1 | No |
+| T051 | Integration tests: FIFO vs TUI parity | WP10 | P1 | No |
+| T052 | Integration tests: input-needed lifecycle | WP10 | P1 | No |
+| T053 | Notification delivery audit test | WP10 | P1 | No |
+| T054 | Synthetic 50-WP latency test | WP10 | P1 | No |
+| T055 | Validation gate documentation | WP10 | P1 | No |

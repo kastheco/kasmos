@@ -6,7 +6,8 @@ use std::path::PathBuf;
 /// Resolves kasmos directory from feature path or current directory.
 fn resolve_kasmos_dir(feature: Option<&str>) -> Result<PathBuf> {
     let base = match feature {
-        Some(f) => PathBuf::from(f),
+        Some(f) => crate::feature_arg::resolve_feature_dir(f)
+            .context("Failed to resolve feature directory")?,
         None => std::env::current_dir().context("Failed to get current directory")?,
     };
 

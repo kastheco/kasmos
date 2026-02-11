@@ -13,13 +13,33 @@ set dotenv-load := true
 swarm +ARGS:
   @scripts/sk-start.sh {{ARGS}}
 
+# Install kasmos binary to ~/.cargo/bin
+install:
+  cargo install --path crates/kasmos --force
+
 # Build
 build:
   cargo build
 
-# Run
-run:
-  cargo run -p kasmos
+# Run (pass-through args)
+run +ARGS:
+  cargo run -p kasmos -- {{ARGS}}
+
+# Launch orchestration by feature path or prefix (e.g. 001)
+launch feature mode="continuous":
+  cargo run -p kasmos -- launch {{feature}} --mode {{mode}}
+
+# Show orchestration status (current dir if feature omitted)
+status feature="":
+  if [ -n "{{feature}}" ]; then cargo run -p kasmos -- status {{feature}}; else cargo run -p kasmos -- status; fi
+
+# Attach to running orchestration by feature path or prefix (e.g. 001)
+attach feature:
+  cargo run -p kasmos -- attach {{feature}}
+
+# Stop orchestration (current dir if feature omitted)
+stop feature="":
+  if [ -n "{{feature}}" ]; then cargo run -p kasmos -- stop {{feature}}; else cargo run -p kasmos -- stop; fi
 
 # Test
 test:

@@ -249,7 +249,7 @@ impl PromptGenerator {
         for wp in wps {
             let prompt_path = kasmos_dir.join("prompts").join(format!("{}.md", wp.id));
             let script_content = format!(
-                "#!/bin/bash\nset -euo pipefail\ncat '{}' | opencode -p 'context:'\n",
+                "#!/bin/bash\nset -euo pipefail\nocx oc --prompt \"$(cat '{}')\"\n",
                 prompt_path.display()
             );
 
@@ -414,18 +414,18 @@ mod tests {
     #[test]
     fn test_shell_wrapper_script_format() {
         let script_content = format!(
-            "#!/bin/bash\nset -euo pipefail\ncat '{}' | opencode -p 'context:'\n",
+            "#!/bin/bash\nset -euo pipefail\nocx oc --prompt \"$(cat '{}')\"\n",
             "/tmp/WP01.md"
         );
         assert!(script_content.starts_with("#!/bin/bash"));
         assert!(script_content.contains("set -euo pipefail"));
-        assert!(script_content.contains("opencode -p 'context:'"));
+        assert!(script_content.contains("ocx oc --prompt"));
     }
 
     #[test]
     fn test_shell_wrapper_script_quotes_path() {
         let script_content = format!(
-            "#!/bin/bash\nset -euo pipefail\ncat '{}' | opencode -p 'context:'\n",
+            "#!/bin/bash\nset -euo pipefail\nocx oc --prompt \"$(cat '{}')\"\n",
             "/path/with spaces/WP01.md"
         );
         assert!(script_content.contains("cat '/path/with spaces/WP01.md'"));

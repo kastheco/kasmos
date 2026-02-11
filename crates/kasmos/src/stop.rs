@@ -6,7 +6,8 @@ use std::path::PathBuf;
 /// Stop a running orchestration gracefully.
 pub async fn run(feature: Option<&str>) -> Result<()> {
     let base = match feature {
-        Some(f) => PathBuf::from(f),
+        Some(f) => crate::feature_arg::resolve_feature_dir(f)
+            .context("Failed to resolve feature directory")?,
         None => std::env::current_dir().context("Failed to get current directory")?,
     };
 

@@ -1,108 +1,219 @@
-# Implementation Plan: [FEATURE]
-*Path: [templates/plan-template.md](templates/plan-template.md)*
+# Implementation Plan: Ratatui TUI Controller Panel
 
-
-**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
-**Input**: Feature specification from `/kitty-specs/[###-feature-name]/spec.md`
-
-**Note**: This template is filled in by the `/spec-kitty.plan` command. See `src/specify_cli/missions/software-dev/command-templates/plan.md` for the execution workflow.
-
-The planner will not begin until all planning questions have been answered—capture those answers in this document before progressing to later phases.
+**Branch**: `002-ratatui-tui-controller-panel` | **Date**: 2026-02-10 | **Spec**: [spec.md](spec.md)
+**Input**: Feature specification from `kitty-specs/002-ratatui-tui-controller-panel/spec.md`
 
 ## Summary
 
-[Extract from feature spec: primary requirement + technical approach from research]
+Replace the passive controller pane with an interactive ratatui TUI that provides a kanban dashboard, review workflow, notification bar, and log viewer. The TUI runs inside the existing Zellij controller pane as the sole operator interface, sends commands via the existing `mpsc<EngineAction>` channel, and receives state updates via a new `tokio::sync::watch` channel broadcasting `OrchestrationRun` snapshots.
+
+## Planning Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| State flow (engine→TUI) | `tokio::sync::watch` | Zero-cost when idle, instant updates, no polling overhead |
+| TUI architecture | Direct state mutation on `App` struct | Simpler, less boilerplate; complexity managed by clear module boundaries |
+| Controller pane | TUI only | kasmos TUI IS the operator interface; no shell toggle |
+| Rendering stack | ratatui + crossterm | Rust-native, matches existing ecosystem |
+| Command dispatch (TUI→engine) | Reuse existing `mpsc<EngineAction>` channel | TUI becomes a peer producer alongside FIFO |
+| FIFO compatibility | Keep existing FIFO unchanged | Both TUI and FIFO send to same CommandHandler→EngineAction pipeline |
 
 ## Technical Context
 
-<!--
-  ACTION REQUIRED: Replace the content in this section with the technical details
-  for the project. The structure here is presented in advisory capacity to guide
-  the iteration process.
--->
-
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
-**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
-**Project Type**: [single/web/mobile - determines source structure]  
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+**Language/Version**: Rust (edition 2024, workspace)
+**Primary Dependencies**: ratatui (latest), crossterm (latest, ratatui re-export preferred)
+**Storage**: N/A (reads `Arc<RwLock<OrchestrationRun>>` in-memory; filesystem only for spec-kitty task files)
+**Testing**: `cargo test` — unit tests for App state logic, rendering snapshots via `ratatui::backend::TestBackend`
+**Target Platform**: Linux terminal (256-color, Unicode box-drawing)
+**Project Type**: Single Rust crate (extends existing `kasmos` crate)
+**Performance Goals**: <100ms input latency, 30fps render, handles 50+ WPs
+**Constraints**: Must not block the tokio runtime; crossterm event reader on dedicated task
+**Scale/Scope**: 3 tabs (Dashboard, Review, Logs), ~10 new source files, ~2000-3000 LOC
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+**Constitution Source**: `.kittify/memory/constitution.md`
 
-[Gates determined based on constitution file]
+**Compliance Verification**:
+- **Rust 2024**: Aligned - project uses Rust edition 2024
+- **Tests Required**: Aligned - all features must have corresponding tests via `cargo test`
+- **Non-blocking TUI/Event Loop**: Aligned - async event handling, no render loop blocking
+- **Stack Alignment**: Aligned - ratatui/tokio/Zellij matches constitution standards
+- **Platform Support**: Aligned - Linux primary, macOS best-effort
+
+**Status**: Compliant. Test coverage is mandatory and included in task breakdown (WP10).
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```
-kitty-specs/[###-feature]/
-├── plan.md              # This file (/spec-kitty.plan command output)
-├── research.md          # Phase 0 output (/spec-kitty.plan command)
-├── data-model.md        # Phase 1 output (/spec-kitty.plan command)
-├── quickstart.md        # Phase 1 output (/spec-kitty.plan command)
-├── contracts/           # Phase 1 output (/spec-kitty.plan command)
-└── tasks.md             # Phase 2 output (/spec-kitty.tasks command - NOT created by /spec-kitty.plan)
+kitty-specs/002-ratatui-tui-controller-panel/
+├── plan.md              # This file
+├── research.md          # Phase 0: ratatui patterns, watch channel design
+├── data-model.md        # Phase 1: App state model, notification types
+└── tasks.md             # Phase 2 output (NOT created by /spec-kitty.plan)
 ```
 
 ### Source Code (repository root)
-<!--
-  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
-  for this feature. Delete unused options and expand the chosen structure with
-  real paths (e.g., apps/admin, packages/something). The delivered plan must
-  not include Option labels.
--->
 
 ```
-# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
-src/
-├── models/
-├── services/
-├── cli/
-└── lib/
-
-tests/
-├── contract/
-├── integration/
-└── unit/
-
-# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
-backend/
-├── src/
-│   ├── models/
-│   ├── services/
-│   └── api/
-└── tests/
-
-frontend/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── services/
-└── tests/
-
-# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
-api/
-└── [same as backend above]
-
-ios/ or android/
-└── [platform-specific structure: feature modules, UI flows, platform tests]
+crates/kasmos/src/
+├── tui/                    # NEW — TUI module
+│   ├── mod.rs              # TUI runner: terminal setup, event loop, watch integration
+│   ├── app.rs              # App state struct: tabs, selection, notifications, scroll positions
+│   ├── event.rs            # Event types: Key, Mouse, Tick, Render, StateUpdate
+│   ├── tabs/
+│   │   ├── mod.rs          # Tab enum + trait
+│   │   ├── dashboard.rs    # Kanban board: WPs grouped by lane, wave info, action buttons
+│   │   ├── review.rs       # Review queue: WPs in for_review, approve/reject/request-changes
+│   │   └── logs.rs         # Scrollable, filterable orchestration event log
+│   ├── widgets/
+│   │   ├── mod.rs
+│   │   ├── notification_bar.rs  # Persistent cross-tab notification strip
+│   │   ├── wp_card.rs           # WP display card with state badge + actions
+│   │   └── action_buttons.rs    # Contextual action buttons per WP state
+│   └── keybindings.rs      # Keymap definitions: vim nav, tab switch, WP actions
+├── engine.rs               # MODIFIED — add watch::Sender for state broadcasts
+├── command_handlers.rs     # UNCHANGED — TUI sends EngineAction directly
+├── commands.rs             # UNCHANGED — FIFO remains parallel input
+├── types.rs                # MINOR — add Notification struct, InputNeeded signal types
+├── lib.rs                  # MODIFIED — re-export tui module
+└── launch.rs (binary)      # MODIFIED — wire TUI into startup, pass watch/action channels
 ```
 
-**Structure Decision**: [Document the selected structure and reference the real
-directories captured above]
+**Structure Decision**: All TUI code lives in a `tui/` submodule within the existing kasmos crate. No new crate needed — the TUI is tightly coupled to kasmos types and channels. The `tui/` module encapsulates all rendering, event handling, and UI state.
+
+## Architecture
+
+### Channel Topology
+
+```
+                    ┌─────────────────┐
+                    │  WaveEngine     │
+                    │                 │
+  completion_rx ──▶ │  handles events │ ──▶ watch_tx.send(run.clone())
+  action_rx ──────▶ │  mutates state  │     (after every state change)
+                    └─────────────────┘
+                           ▲
+                           │ mpsc<EngineAction>
+              ┌────────────┴────────────┐
+              │                         │
+     ┌────────┴──────┐        ┌────────┴──────┐
+     │ CommandHandler │        │   TUI App     │
+     │ (from FIFO)   │        │ (direct send) │
+     └───────┬───────┘        └───────┬───────┘
+             │                        │
+    mpsc<ControllerCommand>    crossterm events
+             │                   + watch_rx
+     ┌───────┴───────┐        (state snapshots)
+     │ CommandReader  │
+     │ (FIFO pipe)    │
+     └────────────────┘
+```
+
+### TUI Event Loop (async, in dedicated tokio task)
+
+```
+loop {
+    tokio::select! {
+        // 1. Crossterm terminal events (keys, mouse, resize)
+        Some(event) = crossterm_events.next() => {
+            handle_input(event, &mut app, &action_tx);
+        }
+        // 2. State updates from engine via watch channel
+        Ok(()) = watch_rx.changed() => {
+            app.update_state(watch_rx.borrow().clone());
+        }
+        // 3. Tick for animations/elapsed time updates
+        _ = tick_interval.tick() => {
+            app.on_tick();
+        }
+    }
+    terminal.draw(|f| app.render(f))?;
+    if app.should_quit { break; }
+}
+```
+
+### App State Model
+
+```rust
+struct App {
+    // State from engine (updated via watch)
+    run: OrchestrationRun,
+
+    // UI state
+    active_tab: Tab,
+    notifications: Vec<Notification>,
+
+    // Per-tab state
+    dashboard: DashboardState,  // selected_wp, scroll offset
+    review: ReviewState,        // selected_review_item, scroll offset
+    logs: LogsState,            // entries, filter text, scroll offset
+
+    // Control
+    action_tx: mpsc::Sender<EngineAction>,
+    should_quit: bool,
+}
+```
+
+### Key Integration Points
+
+1. **launch.rs step 16.5** (new): Create `watch::channel(initial_run)`, pass `watch_tx` to WaveEngine, pass `watch_rx` to TUI
+2. **engine.rs**: After every `handle_completion()` and `handle_action()`, call `watch_tx.send(run.read().clone())`
+3. **launch.rs step 17.5** (new): Spawn TUI task with `watch_rx`, `action_tx.clone()`, terminal handle
+4. **TUI sends `EngineAction` directly** — bypasses CommandHandler/FIFO for lower latency
+5. **FIFO remains untouched** — external scripts still work, both produce to same `action_rx`
+
+### Contextual Actions per WP State
+
+| WP State | Available Actions |
+|----------|-------------------|
+| Pending | (none — waiting for deps/wave) |
+| Active | Pause |
+| Paused | Resume |
+| Failed | Restart, Retry, Force-Advance |
+| Completed | (none) |
+| for_review (lane) | Approve, Reject, Request Changes |
+
+*Wave-gated mode adds global "Advance" action at wave boundaries.*
+
+### Notification Types
+
+| Type | Trigger | Action |
+|------|---------|--------|
+| Review Pending | WP enters `for_review` lane | Jump to Review tab, focus WP |
+| Failure | WP enters `Failed` state | Jump to Dashboard, focus failed WP |
+| Input Needed | Agent writes `.input-needed` marker | Focus/zoom agent's Zellij pane |
+
+### Keybindings
+
+| Key | Action |
+|-----|--------|
+| `1`/`2`/`3` | Switch tabs (Dashboard/Review/Logs) |
+| `j`/`k` | Navigate WP list up/down |
+| `h`/`l` | Navigate between lanes (Dashboard) |
+| `Enter` | Select WP / activate action |
+| `a` | Approve (Review tab) |
+| `r` | Reject (Review tab) |
+| `c` | Request Changes (Review tab) |
+| `R` | Restart selected WP |
+| `P` | Pause/Resume toggle |
+| `F` | Force-advance |
+| `T` | Retry |
+| `A` | Advance wave (wave-gated) |
+| `n` | Jump to next notification |
+| `/` | Filter logs (Logs tab) |
+| `q` | Quit TUI |
+
+## New Dependencies
+
+Add to `crates/kasmos/Cargo.toml`:
+```toml
+ratatui = "0.29"
+crossterm = "0.28"
+```
 
 ## Complexity Tracking
 
-*Fill ONLY if Constitution Check has violations that must be justified*
-
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+*No constitution violations to track.*

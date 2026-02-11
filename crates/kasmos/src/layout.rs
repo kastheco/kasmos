@@ -3,11 +3,66 @@
 //! This module generates valid Zellij KDL layout files that organize
 //! a controller pane and multiple agent panes in an adaptive grid layout.
 
-use kdl::{KdlDocument, KdlNode, KdlValue};
+use kdl::{KdlDocument, KdlEntry, KdlEntryFormat, KdlNode, KdlValue};
 use shell_escape::escape;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
+
+/// Escape a string for KDL quoted representation.
+fn kdl_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '\\' | '"' => { out.push('\\'); out.push(c); }
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            _ => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// Create a KDL property entry with explicitly quoted string value.
+///
+/// The `kdl` v6 crate outputs bare identifiers for simple strings (e.g., `key=value`),
+/// but Zellij requires quoted string values (e.g., `key="value"`).
+fn kdl_str_prop(key: &str, value: &str) -> KdlEntry {
+    let mut entry = KdlEntry::new_prop(key, KdlValue::String(value.to_string()));
+    entry.set_format(KdlEntryFormat {
+        value_repr: kdl_escape(value),
+        leading: " ".to_string(),
+        ..Default::default()
+    });
+    entry
+}
+
+/// Create a KDL positional argument entry with explicitly quoted string value.
+fn kdl_str_arg(value: &str) -> KdlEntry {
+    let mut entry = KdlEntry::new(KdlValue::String(value.to_string()));
+    entry.set_format(KdlEntryFormat {
+        value_repr: kdl_escape(value),
+        leading: " ".to_string(),
+        ..Default::default()
+    });
+    entry
+}
+
+/// Create a KDL boolean property entry (e.g., `start_suspended=#false`).
+/// Uses KDL v2 boolean syntax (`#true`/`#false`).
+fn kdl_bool_prop(key: &str, value: bool) -> KdlEntry {
+    let repr = if value { "#true" } else { "#false" };
+    let mut entry = KdlEntry::new_prop(key, KdlValue::Bool(value));
+    entry.set_format(KdlEntryFormat {
+        value_repr: repr.to_string(),
+        leading: " ".to_string(),
+        ..Default::default()
+    });
+    entry
+}
 
 use crate::config::Config;
 use crate::error::{KasmosError, LayoutError};
@@ -117,7 +172,7 @@ impl LayoutGenerator {
 
         // Main vertical split: controller (left) and agent grid (right)
         let mut main_split = KdlNode::new("pane");
-        main_split.insert("split_direction", KdlValue::String("vertical".to_string()));
+        main_split.entries_mut().push(kdl_str_prop("split_direction", "vertical"));
 
         // Add controller pane
         let controller = self.build_controller_pane();
@@ -133,59 +188,57 @@ impl LayoutGenerator {
 
     /// Build the controller pane node.
     ///
-    /// The controller pane runs the opencode binary and takes up the configured
+    /// The controller pane runs `ocx oc` (opencode via ocx) and takes up the configured
     /// percentage of the terminal width.
     fn build_controller_pane(&self) -> KdlNode {
         let mut pane = KdlNode::new("pane");
-        pane.insert(
-            "size",
-            KdlValue::String(format!("{}%", self.controller_width_pct)),
-        );
-        pane.insert("name", KdlValue::String("controller".to_string()));
+        pane.entries_mut().push(kdl_str_prop("size", &format!("{}%", self.controller_width_pct)));
+        pane.entries_mut().push(kdl_str_prop("name", "controller"));
+        pane.entries_mut().push(kdl_bool_prop("start_suspended", false));
 
         let mut command = KdlNode::new("command");
-        command.push(KdlValue::String(self.opencode_binary.clone()));
-
+        command.entries_mut().push(kdl_str_arg(&self.opencode_binary));
         pane.ensure_children().nodes_mut().push(command);
+
+        let mut args = KdlNode::new("args");
+        args.entries_mut().push(kdl_str_arg("oc"));
+        pane.ensure_children().nodes_mut().push(args);
+
         pane
     }
 
     /// Build a single agent pane node.
     ///
-    /// Each agent pane runs a bash command that pipes the prompt file to opencode.
+    /// Each agent pane runs `ocx oc --prompt "$(cat <file>)"` via bash.
     fn build_agent_pane(&self, wp: &WorkPackage) -> KdlNode {
         let mut pane = KdlNode::new("pane");
-        pane.insert("name", KdlValue::String(wp.pane_name.clone()));
+        pane.entries_mut().push(kdl_str_prop("name", &wp.pane_name));
+        pane.entries_mut().push(kdl_bool_prop("start_suspended", false));
 
         // Command: bash
         let mut command = KdlNode::new("command");
-        command.push(KdlValue::String("bash".to_string()));
+        command.entries_mut().push(kdl_str_arg("bash"));
         pane.ensure_children().nodes_mut().push(command);
 
-        // Args: -c "cat <prompt> | opencode -p 'context:'"
+        // Args: -c "ocx oc --prompt \"$(cat <prompt>)\""
         let mut args = KdlNode::new("args");
-        args.push(KdlValue::String("-c".to_string()));
+        args.entries_mut().push(kdl_str_arg("-c"));
 
-        let pipe_cmd = if let Some(prompt_path) = &wp.prompt_path {
-            format!(
-                "cat {} | {} -p 'context:'",
-                escape(Cow::Owned(prompt_path.display().to_string())),
-                escape(Cow::Borrowed(&self.opencode_binary))
-            )
+        let ocx = escape(Cow::Borrowed(&self.opencode_binary));
+        let shell_cmd = if let Some(prompt_path) = &wp.prompt_path {
+            let path = escape(Cow::Owned(prompt_path.display().to_string()));
+            format!("{ocx} oc --prompt \"$(cat {path})\"")
         } else {
-            format!(
-                "{} -p 'context:'",
-                escape(Cow::Borrowed(&self.opencode_binary))
-            )
+            format!("{ocx} oc")
         };
 
-        args.push(KdlValue::String(pipe_cmd));
+        args.entries_mut().push(kdl_str_arg(&shell_cmd));
         pane.ensure_children().nodes_mut().push(args);
 
         // Cwd: working directory if specified
         if let Some(worktree_path) = &wp.worktree_path {
             let mut cwd = KdlNode::new("cwd");
-            cwd.push(KdlValue::String(worktree_path.display().to_string()));
+            cwd.entries_mut().push(kdl_str_arg(&worktree_path.display().to_string()));
             pane.ensure_children().nodes_mut().push(cwd);
         }
 
@@ -199,14 +252,8 @@ impl LayoutGenerator {
         let (rows, cols) = Self::grid_dimensions(work_packages.len());
 
         let mut grid = KdlNode::new("pane");
-        grid.insert(
-            "size",
-            KdlValue::String(format!("{}%", 100 - self.controller_width_pct)),
-        );
-        grid.insert(
-            "split_direction",
-            KdlValue::String("horizontal".to_string()),
-        );
+        grid.entries_mut().push(kdl_str_prop("size", &format!("{}%", 100 - self.controller_width_pct)));
+        grid.entries_mut().push(kdl_str_prop("split_direction", "horizontal"));
 
         let mut pane_idx = 0;
 
@@ -218,7 +265,7 @@ impl LayoutGenerator {
             }
 
             let mut row = KdlNode::new("pane");
-            row.insert("split_direction", KdlValue::String("vertical".to_string()));
+            row.entries_mut().push(kdl_str_prop("split_direction", "vertical"));
 
             // Calculate how many panes this row should have
             let panes_in_row = std::cmp::min(cols, work_packages.len() - pane_idx);
@@ -256,9 +303,12 @@ impl LayoutGenerator {
         std::fs::create_dir_all(output_dir)?;
 
         let output_path = output_dir.join("layout.kdl");
-        let kdl_string = doc.to_string();
+        // Downgrade KDL v2 booleans to v1 for Zellij 0.44 compatibility
+        let kdl_string = doc.to_string()
+            .replace("#true", "true")
+            .replace("#false", "false");
 
-        std::fs::write(&output_path, kdl_string)?;
+        std::fs::write(&output_path, &kdl_string)?;
 
         info!("Wrote layout to {}", output_path.display());
         Ok(output_path)
@@ -337,7 +387,7 @@ mod tests {
         assert!(kdl_str.contains("layout"));
         assert!(kdl_str.contains("controller"));
         assert!(kdl_str.contains("agent-1"));
-        assert!(kdl_str.contains("opencode"));
+        assert!(kdl_str.contains("ocx"));
     }
 
     #[test]
@@ -454,17 +504,17 @@ mod tests {
             .expect("generate");
         let kdl_str = doc.to_string();
 
-        // Check pane name
-        assert!(kdl_str.contains("name=test-pane"));
+        // Check pane name (now quoted for Zellij compatibility)
+        assert!(kdl_str.contains("name=\"test-pane\""));
 
-        // Check command
-        assert!(kdl_str.contains("command bash"));
+        // Check command (quoted)
+        assert!(kdl_str.contains("command \"bash\""));
 
-        // Check args with pipe
-        assert!(kdl_str.contains("args -c"));
-        assert!(kdl_str.contains("opencode"));
+        // Check args with ocx oc invocation
+        assert!(kdl_str.contains("args \"-c\""));
+        assert!(kdl_str.contains("ocx oc"));
 
-        // Check cwd
+        // Check cwd (quoted)
         assert!(kdl_str.contains("cwd \"/tmp/worktree/WP01\""));
     }
 
@@ -484,7 +534,7 @@ mod tests {
 
         // Should still generate valid KDL
         assert!(kdl_str.contains("agent-1"));
-        assert!(kdl_str.contains("command bash"));
+        assert!(kdl_str.contains("command \"bash\""));
     }
 
     #[test]
@@ -501,9 +551,9 @@ mod tests {
             .expect("generate");
         let kdl_str = doc.to_string();
 
-        // Should still generate valid KDL with just opencode command
+        // Should still generate valid KDL with ocx oc command
         assert!(kdl_str.contains("agent-1"));
-        assert!(kdl_str.contains("opencode"));
+        assert!(kdl_str.contains("ocx oc"));
     }
 
     #[test]
@@ -530,9 +580,7 @@ mod tests {
 
         // The path should be escaped/quoted so it's treated as a literal string
         // shell-escape will quote the entire path, preventing command injection
-        // Check that the command contains the escaped path (quoted)
-        assert!(kdl_string.contains("cat"));
-        assert!(kdl_string.contains("opencode"));
+        assert!(kdl_string.contains("ocx oc"));
         // The path should be present but safely escaped (quoted with single quotes)
         assert!(
             kdl_string.contains("'/tmp/test; rm -rf /'")

@@ -5,9 +5,9 @@ use clap::{Parser, Subcommand};
 
 mod attach;
 mod feature_arg;
-mod launch;
 mod list_specs;
 mod report;
+mod start;
 mod status;
 mod stop;
 
@@ -19,30 +19,32 @@ mod stop;
     after_help = "\
 \x1b[1mQuick Start:\x1b[0m
   kasmos                              List available features
-  kasmos launch <feature>             Launch wave-gated orchestration
-  kasmos launch <feature> --mode continuous
-                                      Launch without wave gates
+  kasmos start <feature>              Start orchestration (wave-gated)
+  kasmos start <feature> --mode continuous
+                                      Start without wave gates
   kasmos status [feature]             Check WP progress
   kasmos attach <feature>             Attach to Zellij session
   kasmos stop [feature]               Gracefully stop orchestration
 
 \x1b[1mTypical Workflow:\x1b[0m
   1. kasmos                           See what features are available
-  2. kasmos launch 001-my-feature     Start orchestration (wave-gated)
+  2. kasmos start 001-my-feature      Start orchestration (wave-gated)
   3. kasmos status                    Monitor progress
-  4. kasmos attach 001-my-feature     Jump into the Zellij session
+  4. kasmos attach 001-my-feature     Reattach to the Zellij session
   5. kasmos stop                      Stop when done"
 )]
 struct Cli {
     #[command(subcommand)]
-    command: Option<Commands>,
+    command: Commands,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Launch orchestration for a feature
-    Launch {
-        /// Feature directory path
+    /// List available feature specs
+    List,
+    /// Start orchestration for a feature and attach to the Zellij session
+    Start {
+        /// Feature spec ID or prefix (e.g. "002" or "002-ratatui-tui-controller-panel")
         feature: String,
         /// Progression mode: continuous or wave-gated
         #[arg(long, default_value = "wave-gated")]
@@ -55,7 +57,7 @@ enum Commands {
     },
     /// Attach to an existing orchestration session
     Attach {
-        /// Feature directory path
+        /// Feature spec ID or prefix
         feature: String,
     },
     /// Stop a running orchestration
@@ -72,21 +74,21 @@ async fn main() -> Result<()> {
     let _ = kasmos::init_logging();
 
     match cli.command {
-        None => {
+        Commands::List => {
             list_specs::run().context("Failed to list specs")?;
         }
-        Some(Commands::Launch { feature, mode }) => {
-            launch::run(&feature, &mode)
+        Commands::Start { feature, mode } => {
+            start::run(&feature, &mode)
                 .await
-                .context("Launch failed")?;
+                .context("Start failed")?;
         }
-        Some(Commands::Status { feature }) => {
+        Commands::Status { feature } => {
             status::run(feature.as_deref()).context("Status failed")?;
         }
-        Some(Commands::Attach { feature }) => {
+        Commands::Attach { feature } => {
             attach::run(&feature).await.context("Attach failed")?;
         }
-        Some(Commands::Stop { feature }) => {
+        Commands::Stop { feature } => {
             stop::run(feature.as_deref()).await.context("Stop failed")?;
         }
     }

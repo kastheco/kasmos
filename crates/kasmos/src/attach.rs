@@ -7,13 +7,8 @@ use std::path::PathBuf;
 pub async fn run(feature: &str) -> Result<()> {
     let _span = tracing::info_span!("attach", feature = %feature).entered();
 
-    let feature_dir = PathBuf::from(feature);
-    if !feature_dir.exists() {
-        bail!(
-            "Feature directory does not exist: {}",
-            feature_dir.display()
-        );
-    }
+    let feature_dir = crate::feature_arg::resolve_feature_dir(feature)
+        .context("Failed to resolve feature directory")?;
 
     let kasmos_dir = feature_dir.join(".kasmos");
     if !kasmos_dir.exists() {
