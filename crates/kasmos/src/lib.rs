@@ -21,6 +21,7 @@ pub mod session;
 pub mod shutdown;
 pub mod signals;
 pub mod state_machine;
+pub mod tui;
 pub mod types;
 pub mod zellij;
 
