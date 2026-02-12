@@ -140,7 +140,6 @@ fn send_fifo_command(fifo_path: &Path, command: &str) -> Result<()> {
     use nix::errno::Errno;
     use nix::fcntl::{open, OFlag};
     use nix::sys::stat::Mode;
-    use std::os::fd::FromRawFd;
 
     let fd = match open(
         fifo_path,
@@ -159,7 +158,7 @@ fn send_fifo_command(fifo_path: &Path, command: &str) -> Result<()> {
         }
     };
 
-    let mut file = unsafe { std::fs::File::from_raw_fd(fd) };
+    let mut file = std::fs::File::from(fd);
     file.write_all(command.as_bytes())
         .with_context(|| format!("Failed to write command to {}", fifo_path.display()))?;
     file.flush()
