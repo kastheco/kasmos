@@ -8,12 +8,12 @@ use crate::command_handlers::EngineAction;
 use crate::review::{
     ReviewAutomationPolicy, ReviewFailureSeverity, ReviewFailureType, ReviewPolicyExecutor,
 };
-use crate::types::{OrchestrationRun, WPState};
-use ratatui::Frame;
+use crate::types::{OrchestrationRun, WPState, WorkPackage};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
+use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Tabs};
+use ratatui::Frame;
 use std::collections::HashMap;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
@@ -88,7 +88,7 @@ pub struct Notification {
 // ---------------------------------------------------------------------------
 
 /// UI state for the Dashboard tab.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DashboardState {
     /// Which lane column is focused (0=planned, 1=doing, 2=for_review, 3=done).
     pub focused_lane: usize,
@@ -96,16 +96,9 @@ pub struct DashboardState {
     pub selected_index: usize,
     /// Vertical scroll offset per lane.
     pub scroll_offsets: [usize; 4],
-}
-
-impl Default for DashboardState {
-    fn default() -> Self {
-        Self {
-            focused_lane: 0,
-            selected_index: 0,
-            scroll_offsets: [0; 4],
-        }
-    }
+    /// Shared spinner state for Active WP indicators.
+    /// Ticked on App::on_tick() every 250ms.
+    pub throbber_state: throbber_widgets_tui::ThrobberState,
 }
 
 /// UI state for the Review tab.
@@ -287,9 +280,11 @@ impl App {
 
     /// Periodic tick handler for elapsed time display updates.
     ///
-    /// Called every 250ms from the event loop.
+    /// Called every 250ms from the event loop. Advances the shared throbber
+    /// animation state unconditionally (regardless of active tab) so spinners
+    /// are smooth when switching back to the Dashboard.
     pub fn on_tick(&mut self) {
-        // Placeholder — elapsed time formatting will use this in WP03
+        self.dashboard.throbber_state.calc_next();
     }
 
     fn capture_state_logs(&mut self, new_run: &OrchestrationRun) {
@@ -380,6 +375,121 @@ impl App {
                 format!("{hours:02}:{minutes:02}:{seconds:02}")
             }
             Err(_) => "00:00:00".to_string(),
+        }
+    }
+
+    /// Return a status indicator span for a work package based on its state.
+    ///
+    /// Active WPs get an animated spinner character from the shared throbber
+    /// state; non-Active WPs get a static badge.
+    fn wp_status_span(&self, state: WPState) -> Span<'static> {
+        if state == WPState::Active {
+            let throbber = throbber_widgets_tui::Throbber::default()
+                .throbber_set(throbber_widgets_tui::BRAILLE_SIX)
+                .use_type(throbber_widgets_tui::WhichUse::Spin);
+            throbber.to_symbol_span(&self.dashboard.throbber_state)
+        } else {
+            #[allow(unreachable_patterns)]
+            let (badge, color) = match state {
+                WPState::Pending => ("○ ", Color::DarkGray),
+                WPState::Paused => ("‖ ", Color::Blue),
+                WPState::ForReview => ("◈ ", Color::Magenta),
+                WPState::Completed => ("✓ ", Color::Green),
+                WPState::Failed => ("✗ ", Color::Red),
+                WPState::Active => unreachable!(),
+                _ => ("? ", Color::DarkGray),
+            };
+            Span::styled(badge, Style::default().fg(color))
+        }
+    }
+
+    /// Render the Dashboard tab showing work packages grouped by state lane.
+    fn render_dashboard(&self, frame: &mut Frame, area: Rect) {
+        let block = Block::default().borders(Borders::ALL).title(" Dashboard ");
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+
+        if inner.height == 0 || inner.width == 0 {
+            return;
+        }
+
+        // Categorise work packages into lanes
+        let mut planned: Vec<&WorkPackage> = Vec::new();
+        let mut doing: Vec<&WorkPackage> = Vec::new();
+        let mut for_review: Vec<&WorkPackage> = Vec::new();
+        let mut done: Vec<&WorkPackage> = Vec::new();
+
+        for wp in &self.run.work_packages {
+            #[allow(unreachable_patterns)]
+            match wp.state {
+                WPState::Pending | WPState::Paused => planned.push(wp),
+                WPState::Active => doing.push(wp),
+                WPState::ForReview => for_review.push(wp),
+                WPState::Completed => done.push(wp),
+                WPState::Failed => doing.push(wp),
+                _ => planned.push(wp),
+            }
+        }
+
+        let lanes: [(&str, &[&WorkPackage]); 4] = [
+            ("Planned", &planned),
+            ("Doing", &doing),
+            ("For Review", &for_review),
+            ("Done", &done),
+        ];
+
+        // Split the inner area into 4 equal columns
+        let lane_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(25),
+                Constraint::Percentage(25),
+                Constraint::Percentage(25),
+                Constraint::Percentage(25),
+            ])
+            .split(inner);
+
+        for (i, (title, wps)) in lanes.iter().enumerate() {
+            let is_focused = i == self.dashboard.focused_lane;
+            let border_style = if is_focused {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+
+            let lane_block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style)
+                .title(format!(" {} ({}) ", title, wps.len()));
+
+            if wps.is_empty() {
+                let empty_item = ListItem::new(Line::from(Span::styled(
+                    "(empty)",
+                    Style::default().fg(Color::DarkGray),
+                )));
+                let list = List::new(vec![empty_item]).block(lane_block);
+                frame.render_widget(list, lane_chunks[i]);
+            } else {
+                let items: Vec<ListItem> = wps
+                    .iter()
+                    .map(|wp| {
+                        let status = self.wp_status_span(wp.state);
+                        let id_span = Span::styled(
+                            wp.id.clone(),
+                            Style::default()
+                                .fg(Color::White)
+                                .add_modifier(Modifier::BOLD),
+                        );
+                        let title_span = Span::styled(
+                            format!(" {}", wp.title),
+                            Style::default().fg(Color::Gray),
+                        );
+                        ListItem::new(Line::from(vec![status, id_span, title_span]))
+                    })
+                    .collect();
+                let list = List::new(items).block(lane_block);
+                frame.render_widget(list, lane_chunks[i]);
+            }
         }
     }
 
@@ -540,32 +650,22 @@ impl App {
 
         frame.render_widget(tabs, chunks[0]);
 
-        // Body — placeholder per tab
-        let body_text = match self.active_tab {
+        // Body — tab-specific content
+        match self.active_tab {
             Tab::Dashboard => {
-                let wp_count = self.run.work_packages.len();
-                format!(
-                    "Dashboard view coming soon\n\n{} work packages loaded\nPress 'q' to quit",
-                    wp_count
-                )
+                self.render_dashboard(frame, chunks[1]);
+                return;
             }
-            Tab::Review => "Review view coming soon\n\nPress 'q' to quit".to_string(),
             Tab::Logs => {
                 self.render_logs(frame, chunks[1]);
                 return;
             }
+            Tab::Review => {}
         };
 
-        let body =
-            Paragraph::new(body_text).block(Block::default().borders(Borders::ALL).title(format!(
-                " {} ",
-                match self.active_tab {
-                    Tab::Dashboard => "Dashboard",
-                    Tab::Review => "Review",
-                    Tab::Logs => "Logs",
-                }
-            )));
-
+        let body_text = "Review view coming soon\n\nPress 'q' to quit".to_string();
+        let body = Paragraph::new(body_text)
+            .block(Block::default().borders(Borders::ALL).title(" Review "));
         frame.render_widget(body, chunks[1]);
     }
 }
@@ -577,8 +677,8 @@ mod tests {
     use crate::review::ReviewAutomationPolicy;
     use crate::types::{ProgressionMode, RunState, Wave, WaveState, WorkPackage};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
 
     fn create_test_run(wp_count: usize) -> OrchestrationRun {
         let mut work_packages = Vec::with_capacity(wp_count);
@@ -768,5 +868,72 @@ mod tests {
             "state update exceeded 25ms: {:?}",
             worst_update
         );
+    }
+
+    #[test]
+    fn test_throbber_state_advances_on_tick() {
+        let (tx, _rx) = mpsc::channel(4);
+        let mut app = App::new(create_test_run(1), tx);
+        let initial = app.dashboard.throbber_state.index();
+        app.on_tick();
+        let after_tick = app.dashboard.throbber_state.index();
+        assert_ne!(initial, after_tick, "ThrobberState should advance on tick");
+    }
+
+    #[test]
+    fn test_dashboard_renders_active_wp_with_spinner() {
+        let (tx, _rx) = mpsc::channel(4);
+        let app = App::new(create_test_run(3), tx);
+
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).expect("create terminal");
+        terminal
+            .draw(|frame| app.render(frame))
+            .expect("dashboard draw");
+
+        // Verify the rendered buffer contains WP IDs
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol().to_string())
+            .collect::<String>();
+        assert!(
+            rendered.contains("WP01"),
+            "Dashboard should render WP01, got: {}",
+            rendered
+        );
+    }
+
+    #[test]
+    fn test_dashboard_renders_mixed_wp_states_with_correct_badges() {
+        let (tx, _rx) = mpsc::channel(4);
+        let mut app = App::new(create_test_run(4), tx);
+        app.run.work_packages[0].state = WPState::Pending;
+        app.run.work_packages[1].state = WPState::Active;
+        app.run.work_packages[2].state = WPState::Completed;
+        app.run.work_packages[3].state = WPState::Failed;
+
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).expect("create terminal");
+        terminal
+            .draw(|frame| app.render(frame))
+            .expect("mixed state draw");
+
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol().to_string())
+            .collect::<String>();
+
+        // Pending WP should have static ○ badge
+        assert!(rendered.contains("○"), "Pending WP should show ○ badge");
+        // Completed WP should have static ✓ badge
+        assert!(rendered.contains("✓"), "Completed WP should show ✓ badge");
+        // Failed WP should have static ✗ badge
+        assert!(rendered.contains("✗"), "Failed WP should show ✗ badge");
     }
 }
