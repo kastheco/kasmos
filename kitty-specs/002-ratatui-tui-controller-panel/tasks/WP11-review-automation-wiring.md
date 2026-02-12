@@ -1,7 +1,7 @@
 ---
 work_package_id: WP11
 title: "Review Automation Wiring — Engine → Reviewer Pane"
-lane: planned
+lane: "doing"
 dependencies:
   - WP02
   - WP06
@@ -16,7 +16,7 @@ subtasks:
   - T062
 phase: "Phase 4 - Integration"
 assignee: 'unassigned'
-agent: ''
+agent: "coder"
 shell_pid: ''
 review_status: ''
 reviewed_by: ''
@@ -214,3 +214,7 @@ When a WP transitions to `ForReview`, the engine logs `"WP moved to review"` (`e
 - Verify `cargo test -p kasmos` — all existing tests pass + new tests
 - Verify reviewer pane spawns correctly when a WP transitions to `ForReview` (manual test with a dummy WP)
 - Verify FIFO approve/reject commands work from CLI
+
+## Activity Log
+
+- 2026-02-12T10:14:14Z – coder – lane=doing – Implementation complete
