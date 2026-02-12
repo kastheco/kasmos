@@ -199,7 +199,7 @@ impl CompletionDetector {
             work_package_id: String,
         }
 
-        let parsed: LaneCheck = serde_yaml::from_str(parts[1].trim())
+        let parsed: LaneCheck = serde_yml::from_str(parts[1].trim())
             .map_err(|e| DetectorError::YamlError(e.to_string()))?;
 
         // Check if lane indicates completion

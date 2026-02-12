@@ -115,7 +115,7 @@ pub fn parse_frontmatter(path: &Path) -> Result<WPFrontmatter, SpecParserError> 
     }
 
     let yaml_str = parts[1].trim();
-    serde_yaml::from_str(yaml_str).map_err(|e| SpecParserError::InvalidFrontmatter {
+    serde_yml::from_str(yaml_str).map_err(|e| SpecParserError::InvalidFrontmatter {
         file: path.display().to_string(),
         reason: e.to_string(),
     })
