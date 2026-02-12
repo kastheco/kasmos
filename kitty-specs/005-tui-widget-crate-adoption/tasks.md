@@ -127,7 +127,7 @@
 
 ### Included Subtasks
 - [x] T018 Add `throbber-widgets-tui` 0.10.x dependency to `crates/kasmos/Cargo.toml`
-- [ ] T019 Add `throbber_state: ThrobberState` to `DashboardState` and initialize in `Default` impl
+- [x] T019 Add `throbber_state: ThrobberState` to `DashboardState` and initialize in `Default` impl
 - [ ] T020 Tick `throbber_state.calc_next()` in `App::on_tick()`
 - [ ] T021 Update `render_dashboard()` — render `Throbber` widget for Active WPs, static `Span` badge for non-Active WPs
 - [ ] T022 Update dashboard rendering tests to account for throbber state
