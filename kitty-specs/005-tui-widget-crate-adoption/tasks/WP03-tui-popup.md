@@ -8,12 +8,12 @@ subtasks:
   - "T017"
 title: "Adopt tui-popup — Confirmation Dialog Widget"
 phase: "Phase 2 - Crate Adoptions"
-lane: "doing"
+lane: "done"
 assignee: ""
 agent: "reviewer"
 shell_pid: "1333019"
-review_status: ""
-reviewed_by: ""
+review_status: "approved"
+reviewed_by: "kas"
 dependencies: ["WP01"]
 history:
   - timestamp: "2026-02-12T00:00:00Z"

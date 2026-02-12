@@ -52,6 +52,9 @@ enum Commands {
         /// Progression mode: continuous or wave-gated
         #[arg(long, default_value = "wave-gated")]
         mode: String,
+        /// Launch the interactive TUI dashboard instead of attaching to Zellij
+        #[arg(long)]
+        tui: bool,
     },
     /// Show orchestration status
     Status {
@@ -89,8 +92,8 @@ async fn main() -> Result<()> {
         Commands::List => {
             list_specs::run().context("Failed to list specs")?;
         }
-        Commands::Start { feature, mode } => {
-            start::run(&feature, &mode)
+        Commands::Start { feature, mode, tui } => {
+            start::run(&feature, &mode, tui)
                 .await
                 .context("Start failed")?;
         }

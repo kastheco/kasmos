@@ -472,8 +472,17 @@ impl LayoutGenerator {
 
         let mut doc = KdlDocument::new();
         let mut layout = KdlNode::new("layout");
+
+        // default_tab_template: ensures compact-bar (bottom) is present on wave tabs
+        let tab_template = Self::build_tab_template();
+        layout.ensure_children().nodes_mut().push(tab_template);
+
+        // Wrap agent grid in a tab node so default_tab_template applies
+        let mut tab = KdlNode::new("tab");
         let agent_grid = self.build_agent_grid_fullwidth(work_packages)?;
-        layout.ensure_children().nodes_mut().push(agent_grid);
+        tab.ensure_children().nodes_mut().push(agent_grid);
+        layout.ensure_children().nodes_mut().push(tab);
+
         doc.nodes_mut().push(layout);
 
         let mut default_mode = KdlNode::new("default_mode");

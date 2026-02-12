@@ -14,7 +14,7 @@ use crate::persistence::StatePersister;
 use crate::types::{CompletionMethod, OrchestrationRun, ProgressionMode, ReviewRequest, RunState, WPState};
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{RwLock, mpsc, watch};
 
 /// Event emitted when the engine launches work packages for a wave.
 ///
@@ -65,6 +65,9 @@ pub struct WaveEngine {
 
     /// Optional state persister for saving state after mutations.
     persister: Option<Arc<StatePersister>>,
+
+    /// Optional watch channel sender for broadcasting state to the TUI.
+    watch_tx: Option<watch::Sender<OrchestrationRun>>,
 }
 
 impl WaveEngine {
@@ -97,12 +100,19 @@ impl WaveEngine {
             current_wave: 0,
             pending_launch_batch: Vec::new(),
             persister: None,
+            watch_tx: None,
         }
     }
 
     /// Set a state persister for automatic state saving after mutations.
     pub fn with_persister(mut self, persister: Arc<StatePersister>) -> Self {
         self.persister = Some(persister);
+        self
+    }
+
+    /// Set a watch channel sender for broadcasting state updates to the TUI.
+    pub fn with_watch_tx(mut self, tx: watch::Sender<OrchestrationRun>) -> Self {
+        self.watch_tx = Some(tx);
         self
     }
 
@@ -173,6 +183,14 @@ impl WaveEngine {
         }
     }
 
+    /// Broadcast the current run state to the TUI via the watch channel.
+    async fn broadcast_state(&self) {
+        if let Some(ref tx) = self.watch_tx {
+            let run = self.run.read().await;
+            let _ = tx.send(run.clone());
+        }
+    }
+
     /// Main event loop — runs until orchestration completes or aborts.
     pub async fn run(&mut self) -> Result<()> {
         // Initialize dependency graph from current run state
@@ -187,6 +205,7 @@ impl WaveEngine {
         self.launch_eligible_wps_and_notify(true).await?;
         self.update_wave_states().await;
         self.persist_state().await;
+        self.broadcast_state().await;
 
         loop {
             // Check if aborted
@@ -309,6 +328,7 @@ impl WaveEngine {
 
         // Persist state after handling completion
         self.persist_state().await;
+        self.broadcast_state().await;
 
         Ok(())
     }
@@ -355,6 +375,7 @@ impl WaveEngine {
 
         // Persist state after handling action
         self.persist_state().await;
+        self.broadcast_state().await;
 
         Ok(())
     }
@@ -384,6 +405,8 @@ impl WaveEngine {
                 tracing::error!("Failed to send wave launch event: {}", e);
             }
         }
+
+        self.broadcast_state().await;
 
         Ok(())
     }
@@ -1294,6 +1317,82 @@ mod tests {
             let r = run.read().await;
             assert_eq!(r.waves[0].state, WaveState::PartiallyFailed);
         }
+    }
+
+    #[tokio::test]
+    async fn test_watch_channel_broadcasts_on_completion() {
+        let run_data = create_test_run_with_waves(
+            vec![
+                ("WP01".to_string(), vec![], 0),
+                ("WP02".to_string(), vec!["WP01".to_string()], 1),
+            ],
+            ProgressionMode::Continuous,
+        );
+
+        let (watch_tx, mut watch_rx) = watch::channel(run_data.clone());
+
+        let run = Arc::new(RwLock::new(run_data));
+
+        let (_completion_tx, completion_rx) = mpsc::channel(10);
+        let (_action_tx, action_rx) = mpsc::channel(10);
+
+        let (mut engine, _launch_rx) = create_test_engine(run.clone(), completion_rx, action_rx);
+        engine = engine.with_watch_tx(watch_tx);
+        engine.init_graph().await.unwrap();
+
+        // Launch initial wave — WP01 should become Active
+        engine.launch_eligible_wps_and_notify(true).await.unwrap();
+
+        // The watch channel should have received a broadcast with WP01 Active
+        assert!(watch_rx.has_changed().unwrap());
+        watch_rx.mark_changed(); // ensure we catch the next update
+        let state = watch_rx.borrow_and_update().clone();
+        assert_eq!(state.work_packages[0].state, WPState::Active);
+        assert_eq!(state.work_packages[1].state, WPState::Pending);
+
+        // Complete WP01 — should trigger broadcast with WP01 Completed and WP02 Active
+        engine
+            .handle_completion(CompletionEvent::new(
+                "WP01".to_string(),
+                CompletionMethod::AutoDetected,
+                true,
+            ))
+            .await
+            .unwrap();
+
+        // Verify the watch channel received the updated state
+        let state = watch_rx.borrow_and_update().clone();
+        assert_eq!(state.work_packages[0].state, WPState::Completed);
+        assert_eq!(state.work_packages[1].state, WPState::Active);
+    }
+
+    #[tokio::test]
+    async fn test_watch_channel_none_does_not_panic() {
+        // Ensure engine works fine without a watch channel (Option::None path)
+        let run = Arc::new(RwLock::new(create_test_run_with_waves(
+            vec![("WP01".to_string(), vec![], 0)],
+            ProgressionMode::Continuous,
+        )));
+
+        let (_completion_tx, completion_rx) = mpsc::channel(10);
+        let (_action_tx, action_rx) = mpsc::channel(10);
+
+        let (mut engine, _launch_rx) = create_test_engine(run.clone(), completion_rx, action_rx);
+        // No watch_tx set — should not panic
+        engine.init_graph().await.unwrap();
+        engine.launch_eligible_wps_and_notify(true).await.unwrap();
+
+        engine
+            .handle_completion(CompletionEvent::new(
+                "WP01".to_string(),
+                CompletionMethod::AutoDetected,
+                true,
+            ))
+            .await
+            .unwrap();
+
+        let r = run.read().await;
+        assert_eq!(r.work_packages[0].state, WPState::Completed);
     }
 
     #[tokio::test]

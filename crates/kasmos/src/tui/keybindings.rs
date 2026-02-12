@@ -10,12 +10,38 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::command_handlers::EngineAction;
-use crate::types::{ProgressionMode, RunState};
+use crate::types::{ProgressionMode, RunState, WPState};
 
-use super::app::{App, Tab};
+use super::app::{App, ConfirmAction, DashboardViewMode, Tab};
 
 /// Handle a key event by dispatching to global or tab-specific handlers.
 pub fn handle_key(app: &mut App, key: KeyEvent) {
+    // --- Popup confirmation interception (highest priority) ---
+    if let Some(ref action) = app.pending_confirm.clone() {
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                // Execute the confirmed action
+                match action {
+                    ConfirmAction::ForceAdvance { wp_id } => {
+                        let _ = app
+                            .action_tx
+                            .try_send(EngineAction::ForceAdvance(wp_id.clone()));
+                    }
+                    ConfirmAction::AbortRun => {
+                        // TODO: Add AbortRun engine action if not yet implemented
+                    }
+                }
+                app.pending_confirm = None;
+                return;
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                app.pending_confirm = None;
+                return;
+            }
+            _ => return, // Swallow all other keys while popup is visible
+        }
+    }
+
     // Global keys (work in all tabs)
     match key.code {
         KeyCode::Char('q') => {
@@ -35,7 +61,38 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             return;
         }
         KeyCode::Char('n') => {
-            // Notification jump — will be implemented in WP05
+            if !app.notifications.is_empty() {
+                let notif = &app.notifications[0];
+                match notif.kind {
+                    super::app::NotificationKind::ReviewPending => {
+                        let wp_id = notif.wp_id.clone();
+                        app.active_tab = Tab::Review;
+                        // Find the WP's index in the review list
+                        let review_wps: Vec<_> = app
+                            .run
+                            .work_packages
+                            .iter()
+                            .filter(|wp| wp.state == WPState::ForReview)
+                            .collect();
+                        if let Some(pos) = review_wps.iter().position(|wp| wp.id == wp_id) {
+                            app.review.selected_index = pos;
+                        }
+                    }
+                    super::app::NotificationKind::Failure
+                    | super::app::NotificationKind::InputNeeded => {
+                        let wp_id = notif.wp_id.clone();
+                        app.active_tab = Tab::Dashboard;
+                        if let Some(wp) = app.run.work_packages.iter().find(|wp| wp.id == wp_id) {
+                            let lane = super::app::wp_lane(wp.state);
+                            app.dashboard.focused_lane = lane;
+                            let lane_wps = app.wps_in_lane(lane);
+                            if let Some(pos) = lane_wps.iter().position(|w| w.id == wp_id) {
+                                app.dashboard.selected_index = pos;
+                            }
+                        }
+                    }
+                }
+            }
             return;
         }
         _ => {}
@@ -51,39 +108,132 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
 
 /// Handle keys specific to the Dashboard tab.
 fn handle_dashboard_key(app: &mut App, key: KeyEvent) {
+    // --- View mode toggle (works in both modes) ---
+    if key.code == KeyCode::Char('v') {
+        app.dashboard.view_mode = match app.dashboard.view_mode {
+            DashboardViewMode::Kanban => DashboardViewMode::DependencyGraph,
+            DashboardViewMode::DependencyGraph => DashboardViewMode::Kanban,
+        };
+        return;
+    }
+
+    // In graph mode, lane navigation and action keys are inactive
+    if app.dashboard.view_mode == DashboardViewMode::DependencyGraph {
+        return;
+    }
+
     match key.code {
+        // --- Navigation ---
         KeyCode::Char('j') | KeyCode::Down => {
-            // Move down in lane — will be implemented in WP03
+            let lane_len = app.wps_in_lane(app.dashboard.focused_lane).len();
+            if lane_len > 0 {
+                app.dashboard.selected_index = (app.dashboard.selected_index + 1).min(lane_len - 1);
+            }
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            // Move up in lane — will be implemented in WP03
+            app.dashboard.selected_index = app.dashboard.selected_index.saturating_sub(1);
         }
         KeyCode::Char('h') | KeyCode::Left => {
-            // Move to left lane — will be implemented in WP03
+            app.dashboard.focused_lane = app.dashboard.focused_lane.saturating_sub(1);
+            app.dashboard.selected_index = 0;
         }
         KeyCode::Char('l') | KeyCode::Right => {
-            // Move to right lane — will be implemented in WP03
+            app.dashboard.focused_lane = (app.dashboard.focused_lane + 1).min(3);
+            app.dashboard.selected_index = 0;
         }
+
+        // --- Action keys ---
         KeyCode::Char('A') => {
             if app.run.mode == ProgressionMode::WaveGated && app.run.state == RunState::Paused {
                 let _ = app.action_tx.try_send(EngineAction::Advance);
             }
         }
-        // Action keys will be filled in WP04
+        KeyCode::Char('R') => {
+            if let Some((wp_id, state)) = selected_wp(app) {
+                match state {
+                    WPState::Failed | WPState::Paused => {
+                        let _ = app.action_tx.try_send(EngineAction::Restart(wp_id));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        KeyCode::Char('P') => {
+            if let Some((wp_id, state)) = selected_wp(app) {
+                match state {
+                    WPState::Active => {
+                        let _ = app.action_tx.try_send(EngineAction::Pause(wp_id));
+                    }
+                    WPState::Paused => {
+                        let _ = app.action_tx.try_send(EngineAction::Resume(wp_id));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        KeyCode::Char('F') => {
+            if let Some((wp_id, state)) = selected_wp(app)
+                && state == WPState::Failed
+            {
+                app.pending_confirm = Some(ConfirmAction::ForceAdvance { wp_id });
+            }
+        }
+        KeyCode::Char('T') => {
+            if let Some((wp_id, state)) = selected_wp(app) {
+                if state == WPState::Failed {
+                    let _ = app.action_tx.try_send(EngineAction::Retry(wp_id));
+                }
+            }
+        }
         _ => {}
     }
 }
 
+/// Return `(wp_id, state)` for the currently selected WP in the dashboard.
+///
+/// Avoids cloning the full `WorkPackage` — callers only need the id and state.
+fn selected_wp(app: &App) -> Option<(String, WPState)> {
+    let lane_wps = app.wps_in_lane(app.dashboard.focused_lane);
+    lane_wps
+        .get(app.dashboard.selected_index)
+        .map(|wp| (wp.id.clone(), wp.state))
+}
+
 /// Handle keys specific to the Review tab.
-fn handle_review_key(_app: &mut App, key: KeyEvent) {
+fn handle_review_key(app: &mut App, key: KeyEvent) {
+    let review_wps: Vec<String> = app
+        .run
+        .work_packages
+        .iter()
+        .filter(|wp| wp.state == WPState::ForReview)
+        .map(|wp| wp.id.clone())
+        .collect();
+
     match key.code {
         KeyCode::Char('j') | KeyCode::Down => {
-            // Next review item — will be implemented in WP06
+            if !review_wps.is_empty() {
+                app.review.selected_index =
+                    (app.review.selected_index + 1).min(review_wps.len() - 1);
+            }
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            // Previous review item — will be implemented in WP06
+            app.review.selected_index = app.review.selected_index.saturating_sub(1);
         }
-        // Approve/reject/request-changes keys will be filled in WP06
+        KeyCode::Char('a') => {
+            // Approve selected WP
+            if let Some(wp_id) = review_wps.get(app.review.selected_index) {
+                let _ = app.action_tx.try_send(EngineAction::Approve(wp_id.clone()));
+            }
+        }
+        KeyCode::Char('r') => {
+            // Reject + relaunch selected WP
+            if let Some(wp_id) = review_wps.get(app.review.selected_index) {
+                let _ = app.action_tx.try_send(EngineAction::Reject {
+                    wp_id: wp_id.clone(),
+                    relaunch: true,
+                });
+            }
+        }
         _ => {}
     }
 }

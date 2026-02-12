@@ -5,7 +5,7 @@ use kasmos::ZellijCli;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{RwLock, mpsc, watch};
 
 /// Acquires a run lock to prevent concurrent orchestrations.
 fn acquire_lock(kasmos_dir: &Path) -> Result<LockGuard> {
@@ -50,7 +50,7 @@ impl Drop for LockGuard {
 }
 
 /// Main start entry point: setup session and attach.
-pub async fn run(feature: &str, mode: &str) -> Result<()> {
+pub async fn run(feature: &str, mode: &str, tui: bool) -> Result<()> {
     let _span = tracing::info_span!("start", feature = %feature).entered();
     tracing::info!("Starting orchestration");
 
@@ -325,6 +325,9 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
         mode: progression_mode,
     };
 
+    // Create watch channel for TUI state broadcasting
+    let (watch_tx, watch_rx) = watch::channel(run.clone());
+
     let persister = kasmos::StatePersister::new(&kasmos_dir);
     persister.ensure_dir()?;
     persister.save(&run).context("Failed to persist state")?;
@@ -408,6 +411,8 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
 
     // Command handler bridge: ControllerCommand → EngineAction
     // Uses a stub SessionController for now; focus/zoom commands will log but not navigate.
+    // Clone action_tx before moving into CommandHandler — TUI needs its own sender.
+    let tui_action_tx = engine_action_tx.clone();
     let session_controller = Arc::new(StubSessionController);
     let command_handler = kasmos::CommandHandler::new(
         run_arc.clone(),
@@ -453,7 +458,8 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
     let engine_persister = Arc::new(persister);
     let mut engine =
         kasmos::WaveEngine::new(run_arc.clone(), completion_rx, engine_action_rx, launch_tx)
-            .with_persister(engine_persister);
+            .with_persister(engine_persister)
+            .with_watch_tx(watch_tx);
     engine.set_review_tx(review_tx);
     let _engine_handle = tokio::spawn(async move {
         if let Err(e) = engine.run().await {
@@ -650,23 +656,41 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
     });
     tracing::info!("Review coordinator started");
 
-    // ── Phase 4: Attach interactively ───────────────────────────
+    // ── Phase 4: Attach interactively OR launch TUI ───────────
 
-    println!("Attaching to session: {}", session_name);
-    let attach_status = tokio::process::Command::new(zellij)
-        .args(["attach", &session_name])
-        .stdin(std::process::Stdio::inherit())
-        .stdout(std::process::Stdio::inherit())
-        .stderr(std::process::Stdio::inherit())
-        .status()
-        .await
-        .context("Failed to attach to Zellij session")?;
+    if tui {
+        // TUI mode: run the ratatui dashboard instead of attaching to Zellij
+        tracing::info!("Launching TUI dashboard");
+        match kasmos::tui::run(watch_rx, tui_action_tx).await {
+            Ok(()) => {
+                tracing::info!("TUI exited normally");
+            }
+            Err(e) => {
+                tracing::error!("TUI error: {}", e);
+                eprintln!("TUI error: {e:#}");
+            }
+        }
+    } else {
+        // Standard mode: attach to the Zellij session interactively
+        // Drop TUI-specific resources that won't be used
+        drop(watch_rx);
+        drop(tui_action_tx);
+        println!("Attaching to session: {}", session_name);
+        let attach_status = tokio::process::Command::new(zellij)
+            .args(["attach", &session_name])
+            .stdin(std::process::Stdio::inherit())
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit())
+            .status()
+            .await
+            .context("Failed to attach to Zellij session")?;
 
-    if !attach_status.success() {
-        tracing::warn!("Zellij attach exited with: {}", attach_status);
+        if !attach_status.success() {
+            tracing::warn!("Zellij attach exited with: {}", attach_status);
+        }
     }
 
-    tracing::info!("Detached from session");
+    tracing::info!("Session ended");
     Ok(())
 }
 
