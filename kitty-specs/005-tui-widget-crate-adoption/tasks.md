@@ -199,16 +199,16 @@
 **Estimated prompt size**: ~700 lines
 
 ### Included Subtasks
-- [ ] T030 Extract tab rendering into `tabs/` module (`dashboard.rs`, `review.rs`, `logs.rs`)
-- [ ] T031 Add persistent status footer (run state, elapsed time, WP counts, wave progress)
-- [ ] T032 Add `?` key help overlay with tab-contextual keybindings via tui-popup
-- [ ] T033 Implement dashboard lane scrolling using existing `scroll_offsets` field
-- [ ] T034 Add WP detail popup on `Enter` key showing all WP fields
-- [ ] T035 Add progress summary bar above kanban lanes (gauge + status counts)
-- [ ] T036 Implement responsive column layout (4/2/1 columns based on terminal width)
-- [ ] T037 Show failure count badges on WPs with `failure_count > 0`
-- [ ] T038 Implement notification cycling (`n` key advances through notification list)
-- [ ] T039 Update tests and verify build/clippy pass
+- [x] T030 Extract tab rendering into `tabs/` module (`dashboard.rs`, `review.rs`, `logs.rs`)
+- [x] T031 Add persistent status footer (run state, elapsed time, WP counts, wave progress)
+- [x] T032 Add `?` key help overlay with tab-contextual keybindings via tui-popup
+- [x] T033 Implement dashboard lane scrolling using existing `scroll_offsets` field
+- [x] T034 Add WP detail popup on `Enter` key showing all WP fields
+- [x] T035 Add progress summary bar above kanban lanes (gauge + status counts)
+- [x] T036 Implement responsive column layout (4/2/1 columns based on terminal width)
+- [x] T037 Show failure count badges on WPs with `failure_count > 0`
+- [x] T038 Implement notification cycling (`n` key advances through notification list)
+- [x] T039 Update tests and verify build/clippy pass
 
 ### Implementation Notes
 - T030 (module extraction) must be done first within this WP — all subsequent subtasks add code to the new `tabs/` files.
