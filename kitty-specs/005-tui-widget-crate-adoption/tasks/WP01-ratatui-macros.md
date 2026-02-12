@@ -10,8 +10,8 @@ title: "Adopt ratatui-macros — Layout & Text Macro Migration"
 phase: "Phase 1 - Foundation"
 lane: "doing"
 assignee: ""
-agent: "coder"
-shell_pid: ""
+agent: "reviewer"
+shell_pid: "1195051"
 review_status: ""
 reviewed_by: ""
 dependencies: []
@@ -283,3 +283,5 @@ Only `crates/kasmos/src/tui/app.rs` contains layout and text construction code. 
 ## Activity Log
 
 - 2026-02-12T00:00:00Z – system – lane=planned – Prompt created.
+- 2026-02-12T12:17:45Z – coder – lane=for_review – Submitted for review via swarm
+- 2026-02-12T12:17:45Z – reviewer – shell_pid=1195051 – lane=doing – Started review via workflow command
