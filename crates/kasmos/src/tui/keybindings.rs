@@ -10,12 +10,35 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::command_handlers::EngineAction;
-use crate::types::{ProgressionMode, RunState};
+use crate::types::{ProgressionMode, RunState, WPState, WorkPackage};
 
-use super::app::{App, Tab};
+use super::app::{App, ConfirmAction, Tab};
 
 /// Handle a key event by dispatching to global or tab-specific handlers.
 pub fn handle_key(app: &mut App, key: KeyEvent) {
+    // --- Popup confirmation interception (highest priority) ---
+    if let Some(action) = app.pending_confirm.clone() {
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                // Execute the confirmed action
+                match action {
+                    ConfirmAction::ForceAdvance { wp_id } => {
+                        let _ = app.action_tx.try_send(EngineAction::ForceAdvance(wp_id));
+                    }
+                    ConfirmAction::AbortRun => {
+                        let _ = app.action_tx.try_send(EngineAction::Abort);
+                    }
+                }
+                app.pending_confirm = None;
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                app.pending_confirm = None;
+            }
+            _ => {} // Swallow all other keys while popup is visible
+        }
+        return;
+    }
+
     // Global keys (work in all tabs)
     match key.code {
         KeyCode::Char('q') => {
@@ -69,9 +92,39 @@ fn handle_dashboard_key(app: &mut App, key: KeyEvent) {
                 let _ = app.action_tx.try_send(EngineAction::Advance);
             }
         }
+        KeyCode::Char('F') => {
+            if let Some(wp) = selected_wp(app)
+                && wp.state == WPState::Failed
+            {
+                app.pending_confirm = Some(ConfirmAction::ForceAdvance {
+                    wp_id: wp.id.clone(),
+                });
+            }
+        }
         // Action keys will be filled in WP04
         _ => {}
     }
+}
+
+/// Get the currently selected work package in the dashboard, if any.
+///
+/// Maps the focused lane index to WP state categories and returns the WP
+/// at the current selection index within that lane.
+fn selected_wp(app: &App) -> Option<&WorkPackage> {
+    let lane_wps: Vec<&WorkPackage> = app
+        .run
+        .work_packages
+        .iter()
+        .filter(|wp| match app.dashboard.focused_lane {
+            0 => wp.state == WPState::Pending || wp.state == WPState::Failed,
+            1 => wp.state == WPState::Active || wp.state == WPState::Paused,
+            2 => wp.state == WPState::ForReview,
+            3 => wp.state == WPState::Completed,
+            _ => false,
+        })
+        .collect();
+
+    lane_wps.get(app.dashboard.selected_index).copied()
 }
 
 /// Handle keys specific to the Review tab.

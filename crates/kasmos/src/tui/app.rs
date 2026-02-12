@@ -9,11 +9,11 @@ use crate::review::{
     ReviewAutomationPolicy, ReviewFailureSeverity, ReviewFailureType, ReviewPolicyExecutor,
 };
 use crate::types::{OrchestrationRun, WPState};
-use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
+use ratatui::Frame;
 use std::collections::HashMap;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
@@ -81,6 +81,45 @@ pub struct Notification {
     pub severity: Option<ReviewFailureSeverity>,
     /// When this notification was created.
     pub created_at: Instant,
+}
+
+// ---------------------------------------------------------------------------
+// Confirmation dialog
+// ---------------------------------------------------------------------------
+
+/// A pending confirmation dialog action.
+#[derive(Debug, Clone)]
+pub enum ConfirmAction {
+    /// Force-advance a work package past its current state.
+    ForceAdvance { wp_id: String },
+    /// Abort the entire orchestration run.
+    AbortRun,
+}
+
+impl ConfirmAction {
+    /// Dialog title for the confirmation popup.
+    pub fn title(&self) -> &str {
+        match self {
+            ConfirmAction::ForceAdvance { .. } => "Confirm Force Advance",
+            ConfirmAction::AbortRun => "Confirm Abort",
+        }
+    }
+
+    /// Dialog body text describing the action and consequences.
+    pub fn description(&self) -> String {
+        match self {
+            ConfirmAction::ForceAdvance { wp_id } => {
+                format!(
+                    "Force-advance {} past its current state?\n\
+                     This skips remaining work. Press [y] to confirm, [n] to cancel.",
+                    wp_id
+                )
+            }
+            ConfirmAction::AbortRun => "Abort the entire orchestration run?\n\
+                 All active work packages will be stopped. Press [y] to confirm, [n] to cancel."
+                .to_string(),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +225,8 @@ pub struct App {
     pub review: ReviewState,
     /// Logs tab UI state.
     pub logs: LogsState,
+    /// Currently pending confirmation dialog, if any.
+    pub pending_confirm: Option<ConfirmAction>,
     /// Channel to send commands to the engine.
     pub action_tx: mpsc::Sender<EngineAction>,
     /// Exit flag — when true, the event loop breaks.
@@ -206,6 +247,7 @@ impl App {
             dashboard: DashboardState::default(),
             review: ReviewState::default(),
             logs: LogsState::default(),
+            pending_confirm: None,
             action_tx,
             should_quit: false,
             notification_counter: 0,
@@ -540,33 +582,46 @@ impl App {
 
         frame.render_widget(tabs, chunks[0]);
 
-        // Body — placeholder per tab
-        let body_text = match self.active_tab {
-            Tab::Dashboard => {
-                let wp_count = self.run.work_packages.len();
-                format!(
-                    "Dashboard view coming soon\n\n{} work packages loaded\nPress 'q' to quit",
-                    wp_count
-                )
-            }
-            Tab::Review => "Review view coming soon\n\nPress 'q' to quit".to_string(),
+        // Body — per-tab content
+        match self.active_tab {
             Tab::Logs => {
                 self.render_logs(frame, chunks[1]);
-                return;
             }
-        };
+            _ => {
+                let body_text = match self.active_tab {
+                    Tab::Dashboard => {
+                        let wp_count = self.run.work_packages.len();
+                        format!(
+                            "Dashboard view coming soon\n\n{} work packages loaded\nPress 'q' to quit",
+                            wp_count
+                        )
+                    }
+                    Tab::Review => "Review view coming soon\n\nPress 'q' to quit".to_string(),
+                    Tab::Logs => unreachable!(),
+                };
 
-        let body =
-            Paragraph::new(body_text).block(Block::default().borders(Borders::ALL).title(format!(
-                " {} ",
-                match self.active_tab {
-                    Tab::Dashboard => "Dashboard",
-                    Tab::Review => "Review",
-                    Tab::Logs => "Logs",
-                }
-            )));
+                let body = Paragraph::new(body_text).block(
+                    Block::default().borders(Borders::ALL).title(format!(
+                        " {} ",
+                        match self.active_tab {
+                            Tab::Dashboard => "Dashboard",
+                            Tab::Review => "Review",
+                            Tab::Logs => "Logs",
+                        }
+                    )),
+                );
 
-        frame.render_widget(body, chunks[1]);
+                frame.render_widget(body, chunks[1]);
+            }
+        }
+
+        // Confirmation popup overlay (renders on top of everything)
+        if let Some(ref action) = self.pending_confirm {
+            let popup = tui_popup::Popup::new(action.description())
+                .title(action.title())
+                .style(Style::default().fg(Color::White).bg(Color::Red));
+            frame.render_widget(popup, frame.area());
+        }
     }
 }
 
@@ -577,8 +632,8 @@ mod tests {
     use crate::review::ReviewAutomationPolicy;
     use crate::types::{ProgressionMode, RunState, Wave, WaveState, WorkPackage};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
 
     fn create_test_run(wp_count: usize) -> OrchestrationRun {
         let mut work_packages = Vec::with_capacity(wp_count);
