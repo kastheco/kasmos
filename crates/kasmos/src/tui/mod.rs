@@ -86,6 +86,12 @@ pub async fn run(
     mut watch_rx: watch::Receiver<OrchestrationRun>,
     action_tx: mpsc::Sender<EngineAction>,
 ) -> anyhow::Result<()> {
+    // Initialize tui-logger BEFORE setting up the tracing subscriber.
+    tui_logger::init_logger(log::LevelFilter::Trace)
+        .map_err(|e| anyhow::anyhow!("tui-logger init failed: {e}"))?;
+    tui_logger::set_default_level(log::LevelFilter::Trace);
+    crate::init_logging(true)?;
+
     install_panic_hook();
     let mut terminal = setup_terminal()?;
     let mut app = App::new(watch_rx.borrow().clone(), action_tx);
@@ -102,6 +108,7 @@ pub async fn run(
                 app.update_state(watch_rx.borrow().clone());
             }
             _ = tokio::time::sleep(Duration::from_millis(250)) => {
+                tui_logger::move_events();
                 app.on_tick();
             }
         }

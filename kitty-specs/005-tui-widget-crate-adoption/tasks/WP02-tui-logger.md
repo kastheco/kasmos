@@ -10,12 +10,12 @@ subtasks:
   - "T012"
 title: "Adopt tui-logger — Replace Hand-Rolled Log Viewer"
 phase: "Phase 2 - Crate Adoptions"
-lane: "done"
-assignee: "coder"
-agent: "reviewer"
-shell_pid: "1313335"
-review_status: "approved"
-reviewed_by: "kas"
+lane: "doing"
+assignee: ""
+agent: "claude-opus-4-6"
+shell_pid: ""
+review_status: ""
+reviewed_by: ""
 dependencies: ["WP01"]
 history:
   - timestamp: "2026-02-12T00:00:00Z"
@@ -23,6 +23,11 @@ history:
     agent: "system"
     shell_pid: ""
     action: "Prompt generated via /spec-kitty.tasks"
+  - timestamp: "2026-02-12T12:30:00Z"
+    lane: "doing"
+    agent: "claude-opus-4-6"
+    shell_pid: ""
+    action: "Implementation complete — all subtasks T006-T012 done"
 ---
 
 # Work Package Prompt: WP02 – Adopt tui-logger — Replace Hand-Rolled Log Viewer
@@ -367,7 +372,3 @@ Depends on WP01 (ratatui-macros). New code should use macro syntax.
 ## Activity Log
 
 - 2026-02-12T00:00:00Z – system – lane=planned – Prompt created.
-- 2026-02-12T12:31:34Z – claude-opus-4-6 – lane=doing – Implementation complete
-- 2026-02-12T12:32:32Z – claude-opus-4-6 – lane=for_review – Submitted for review
-- 2026-02-12T12:32:39Z – reviewer – shell_pid=1313335 – lane=doing – Started review via workflow command
-- 2026-02-12T12:34:35Z – reviewer – shell_pid=1313335 – lane=done – Review passed: All spec requirements met — tui-logger correctly replaces hand-rolled log viewer with 219 LOC net reduction, correct init ordering, all 12 key commands mapped, zero test failures, zero new clippy warnings, no stale type references.
