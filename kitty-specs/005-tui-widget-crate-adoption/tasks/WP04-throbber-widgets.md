@@ -17,7 +17,7 @@ reviewed_by: "kas"
 dependencies: ["WP01"]
 history:
   - timestamp: "2026-02-12T00:00:00Z"
-    lane: "planned"
+lane: "doing"
     agent: "system"
     shell_pid: ""
     action: "Prompt generated via /spec-kitty.tasks"
