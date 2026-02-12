@@ -94,7 +94,13 @@ pub fn run() -> Result<()> {
             } else {
                 format!("[{}/{} done]", f.done_count, f.total_count)
             };
-            println!("  {}  {:<width$}  {}", f.id, f.slug, label, width = max_slug);
+            println!(
+                "  {}  {:<width$}  {}",
+                f.id,
+                f.slug,
+                label,
+                width = max_slug
+            );
         }
     }
 
@@ -134,6 +140,6 @@ fn extract_lane(path: &Path) -> Option<String> {
     let content = std::fs::read_to_string(path).ok()?;
     let body = content.strip_prefix("---")?;
     let end = body.find("\n---")?;
-    let fm: WpFrontmatter = serde_yaml::from_str(&body[..end]).ok()?;
+    let fm: WpFrontmatter = serde_yml::from_str(&body[..end]).ok()?;
     fm.lane
 }
