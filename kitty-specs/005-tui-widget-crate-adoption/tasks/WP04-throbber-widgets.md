@@ -10,8 +10,8 @@ title: "Adopt throbber-widgets-tui — Animated Activity Indicators"
 phase: "Phase 2 - Crate Adoptions"
 lane: "doing"
 assignee: ""
-agent: "coder"
-shell_pid: ""
+agent: "reviewer"
+shell_pid: "1298376"
 review_status: ""
 reviewed_by: ""
 dependencies: ["WP01"]
@@ -239,3 +239,5 @@ Depends on WP01 (ratatui-macros). New code should use macro syntax.
 
 - 2026-02-12T00:00:00Z – system – lane=planned – Prompt created.
 - 2026-02-12T12:30:11Z – coder – lane=doing – Implementation complete, moving to doing for review submission
+- 2026-02-12T12:30:42Z – coder – lane=for_review – Submitted for review via swarm
+- 2026-02-12T12:30:43Z – reviewer – shell_pid=1298376 – lane=doing – Started review via workflow command
