@@ -10,9 +10,9 @@ subtasks:
   - "T029"
 title: "Adopt tui-nodes — WP Dependency Graph Visualization"
 phase: "Phase 2 - Crate Adoptions"
-lane: "planned"
+lane: "doing"
 assignee: ""
-agent: ""
+agent: "coder"
 shell_pid: ""
 review_status: ""
 reviewed_by: ""
@@ -418,3 +418,4 @@ Depends on WP01 (ratatui-macros). New code should use macro syntax.
 ## Activity Log
 
 - 2026-02-12T00:00:00Z – system – lane=planned – Prompt created.
+- 2026-02-12T12:32:06Z – coder – lane=doing – Implementation complete, moving to doing
