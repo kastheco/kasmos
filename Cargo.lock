@@ -785,6 +785,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+ "tui-nodes",
  "which",
 ]
 
@@ -2042,6 +2043,16 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "tui-nodes"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32406150d98eeb5655d92ad4af8aee816541d05e16b151b24c6be66190a50899"
+dependencies = [
+ "log",
+ "ratatui",
 ]
 
 [[package]]

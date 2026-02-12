@@ -9,11 +9,11 @@ use crate::review::{
     ReviewAutomationPolicy, ReviewFailureSeverity, ReviewFailureType, ReviewPolicyExecutor,
 };
 use crate::types::{OrchestrationRun, WPState};
-use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
+use ratatui::widgets::{Block, Borders, Paragraph, StatefulWidget, Tabs};
+use ratatui::Frame;
 use std::collections::HashMap;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
@@ -87,8 +87,18 @@ pub struct Notification {
 // Per-tab state structs
 // ---------------------------------------------------------------------------
 
+/// Which view is active in the Dashboard tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DashboardViewMode {
+    /// Standard kanban lane view (Planned / Doing / ForReview / Done).
+    #[default]
+    Kanban,
+    /// Directed graph showing WP dependency relationships.
+    DependencyGraph,
+}
+
 /// UI state for the Dashboard tab.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DashboardState {
     /// Which lane column is focused (0=planned, 1=doing, 2=for_review, 3=done).
     pub focused_lane: usize,
@@ -96,16 +106,8 @@ pub struct DashboardState {
     pub selected_index: usize,
     /// Vertical scroll offset per lane.
     pub scroll_offsets: [usize; 4],
-}
-
-impl Default for DashboardState {
-    fn default() -> Self {
-        Self {
-            focused_lane: 0,
-            selected_index: 0,
-            scroll_offsets: [0; 4],
-        }
-    }
+    /// Current Dashboard sub-view mode (Kanban vs DependencyGraph).
+    pub view_mode: DashboardViewMode,
 }
 
 /// UI state for the Review tab.
@@ -540,33 +542,82 @@ impl App {
 
         frame.render_widget(tabs, chunks[0]);
 
-        // Body — placeholder per tab
-        let body_text = match self.active_tab {
+        // Body — per-tab rendering
+        match self.active_tab {
             Tab::Dashboard => {
-                let wp_count = self.run.work_packages.len();
-                format!(
-                    "Dashboard view coming soon\n\n{} work packages loaded\nPress 'q' to quit",
-                    wp_count
-                )
+                match self.dashboard.view_mode {
+                    DashboardViewMode::Kanban => {
+                        self.render_dashboard_kanban(frame, chunks[1]);
+                    }
+                    DashboardViewMode::DependencyGraph => {
+                        self.render_dashboard_graph(frame, chunks[1]);
+                    }
+                }
+                return;
             }
-            Tab::Review => "Review view coming soon\n\nPress 'q' to quit".to_string(),
             Tab::Logs => {
                 self.render_logs(frame, chunks[1]);
                 return;
             }
-        };
+            Tab::Review => {}
+        }
 
-        let body =
-            Paragraph::new(body_text).block(Block::default().borders(Borders::ALL).title(format!(
-                " {} ",
-                match self.active_tab {
-                    Tab::Dashboard => "Dashboard",
-                    Tab::Review => "Review",
-                    Tab::Logs => "Logs",
-                }
-            )));
-
+        let body_text = "Review view coming soon\n\nPress 'q' to quit".to_string();
+        let body = Paragraph::new(body_text)
+            .block(Block::default().borders(Borders::ALL).title(" Review "));
         frame.render_widget(body, chunks[1]);
+    }
+
+    /// Render the Dashboard in kanban lane view (original placeholder).
+    fn render_dashboard_kanban(&self, frame: &mut Frame, area: Rect) {
+        let wp_count = self.run.work_packages.len();
+        let body_text = format!(
+            "Dashboard — Kanban view\n\n{} work packages loaded\n[v] toggle graph view\nPress 'q' to quit",
+            wp_count
+        );
+        let body = Paragraph::new(body_text)
+            .block(Block::default().borders(Borders::ALL).title(" Dashboard "));
+        frame.render_widget(body, area);
+    }
+
+    /// Render the Dashboard in dependency graph view using tui-nodes.
+    fn render_dashboard_graph(&self, frame: &mut Frame, area: Rect) {
+        use super::widgets::dependency_graph;
+
+        // Reserve 1 line at top for view mode indicator + cycle warning.
+        let header_body = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Min(0)])
+            .split(area);
+
+        let header_area = header_body[0];
+        let graph_area = header_body[1];
+
+        let (graph, has_cycles) = dependency_graph::build_dependency_graph(&self.run, graph_area);
+
+        // Header: view mode indicator
+        let header_text = if has_cycles {
+            Line::from(vec![
+                Span::styled("⚠ Dependency Graph", Style::default().fg(Color::Yellow)),
+                Span::raw(" "),
+                Span::styled(
+                    "(circular dependencies detected!)",
+                    Style::default().fg(Color::Red),
+                ),
+                Span::raw("  "),
+                Span::styled("[v] kanban", Style::default().fg(Color::DarkGray)),
+            ])
+        } else {
+            Line::from(vec![
+                Span::styled("Dependency Graph", Style::default().fg(Color::Yellow)),
+                Span::raw("  "),
+                Span::styled("[v] kanban", Style::default().fg(Color::DarkGray)),
+            ])
+        };
+        frame.render_widget(Paragraph::new(header_text), header_area);
+
+        // Render the graph (StatefulWidget with State = ()).
+        StatefulWidget::render(graph, graph_area, frame.buffer_mut(), &mut ());
     }
 }
 
@@ -577,8 +628,8 @@ mod tests {
     use crate::review::ReviewAutomationPolicy;
     use crate::types::{ProgressionMode, RunState, Wave, WaveState, WorkPackage};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
 
     fn create_test_run(wp_count: usize) -> OrchestrationRun {
         let mut work_packages = Vec::with_capacity(wp_count);

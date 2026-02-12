@@ -12,7 +12,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use crate::command_handlers::EngineAction;
 use crate::types::{ProgressionMode, RunState};
 
-use super::app::{App, Tab};
+use super::app::{App, DashboardViewMode, Tab};
 
 /// Handle a key event by dispatching to global or tab-specific handlers.
 pub fn handle_key(app: &mut App, key: KeyEvent) {
@@ -51,6 +51,20 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
 
 /// Handle keys specific to the Dashboard tab.
 fn handle_dashboard_key(app: &mut App, key: KeyEvent) {
+    // View toggle works in all dashboard modes
+    if key.code == KeyCode::Char('v') {
+        app.dashboard.view_mode = match app.dashboard.view_mode {
+            DashboardViewMode::Kanban => DashboardViewMode::DependencyGraph,
+            DashboardViewMode::DependencyGraph => DashboardViewMode::Kanban,
+        };
+        return;
+    }
+
+    // All other dashboard keys only work in Kanban mode
+    if app.dashboard.view_mode != DashboardViewMode::Kanban {
+        return;
+    }
+
     match key.code {
         KeyCode::Char('j') | KeyCode::Down => {
             // Move down in lane — will be implemented in WP03
