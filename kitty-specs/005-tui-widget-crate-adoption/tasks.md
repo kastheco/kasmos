@@ -130,7 +130,7 @@
 - [x] T019 Add `throbber_state: ThrobberState` to `DashboardState` and initialize in `Default` impl
 - [x] T020 Tick `throbber_state.calc_next()` in `App::on_tick()`
 - [x] T021 Update `render_dashboard()` — render `Throbber` widget for Active WPs, static `Span` badge for non-Active WPs
-- [ ] T022 Update dashboard rendering tests to account for throbber state
+- [x] T022 Update dashboard rendering tests to account for throbber state
 
 ### Implementation Notes
 - AD-3 (plan.md): Single shared ThrobberState — all Active WPs show same animation frame (US3-AC3 synchronized).
