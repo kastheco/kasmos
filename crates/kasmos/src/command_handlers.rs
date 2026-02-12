@@ -28,6 +28,14 @@ pub enum EngineAction {
     Advance,
     /// Gracefully abort the entire orchestration.
     Abort,
+    /// Approve a reviewed work package (ForReview → Completed).
+    Approve(String),
+    /// Reject a reviewed work package.
+    Reject {
+        wp_id: String,
+        /// If true, relaunch (ForReview → Active); if false, hold (ForReview → Pending).
+        relaunch: bool,
+    },
 }
 
 /// Trait for session manager operations (focus, zoom).
@@ -126,6 +134,23 @@ impl<S: SessionController> CommandHandler<S> {
                     .await
                     .map_err(|e| crate::error::KasmosError::Other(anyhow::anyhow!(e)))?;
                 Ok(format!("[kasmos] Retrying {}...", wp_id))
+            }
+            ControllerCommand::Approve { wp_id } => {
+                self.engine_tx
+                    .send(EngineAction::Approve(wp_id.clone()))
+                    .await
+                    .map_err(|e| crate::error::KasmosError::Other(anyhow::anyhow!(e)))?;
+                Ok(format!("[kasmos] Approving {}...", wp_id))
+            }
+            ControllerCommand::Reject { wp_id } => {
+                self.engine_tx
+                    .send(EngineAction::Reject {
+                        wp_id: wp_id.clone(),
+                        relaunch: true,
+                    })
+                    .await
+                    .map_err(|e| crate::error::KasmosError::Other(anyhow::anyhow!(e)))?;
+                Ok(format!("[kasmos] Rejecting {} (will relaunch)...", wp_id))
             }
             ControllerCommand::Help => Ok(command_help_text().to_string()),
             ControllerCommand::Unknown { input } => Ok(format!(

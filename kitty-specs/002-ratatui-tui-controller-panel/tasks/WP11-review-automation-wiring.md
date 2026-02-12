@@ -1,7 +1,7 @@
 ---
 work_package_id: WP11
 title: "Review Automation Wiring — Engine → Reviewer Pane"
-lane: "doing"
+lane: "done"
 dependencies:
   - WP02
   - WP06
@@ -18,8 +18,8 @@ phase: "Phase 4 - Integration"
 assignee: 'unassigned'
 agent: "reviewer"
 shell_pid: "775722"
-review_status: ''
-reviewed_by: ''
+review_status: 'approved'
+reviewed_by: 'kas'
 history:
   - timestamp: '2026-02-12T02:15:00Z'
     lane: planned

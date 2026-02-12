@@ -18,6 +18,15 @@ use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 
+/// The detected lane from a spec-kitty frontmatter transition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DetectedLane {
+    /// WP moved to `done` lane.
+    Done,
+    /// WP moved to `for_review` lane.
+    ForReview,
+}
+
 /// Represents a completion event detected by the detector.
 #[derive(Debug, Clone)]
 pub struct CompletionEvent {
@@ -30,6 +39,9 @@ pub struct CompletionEvent {
     /// Whether the completion was successful.
     pub success: bool,
 
+    /// The detected lane (if from frontmatter detection).
+    pub detected_lane: Option<DetectedLane>,
+
     /// When the event was detected.
     pub timestamp: SystemTime,
 }
@@ -41,8 +53,15 @@ impl CompletionEvent {
             wp_id,
             method,
             success,
+            detected_lane: None,
             timestamp: SystemTime::now(),
         }
+    }
+
+    /// Create a completion event with a detected lane.
+    pub fn with_lane(mut self, lane: DetectedLane) -> Self {
+        self.detected_lane = Some(lane);
+        self
     }
 }
 
@@ -153,8 +172,8 @@ impl CompletionDetector {
 
     /// Parse YAML frontmatter to check for completion lane transitions.
     ///
-    /// Returns the WP ID if the file indicates completion (lane = "for_review" or "done").
-    fn check_completion(path: &Path) -> Result<Option<String>> {
+    /// Returns the WP ID and detected lane if the file indicates completion (lane = "for_review" or "done").
+    fn check_completion(path: &Path) -> Result<Option<(String, DetectedLane)>> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| DetectorError::ReadError(e.to_string()))?;
 
@@ -178,13 +197,21 @@ impl CompletionDetector {
 
         // Check if lane indicates completion
         match parsed.lane.as_str() {
-            "for_review" | "done" => {
+            "done" => {
                 tracing::info!(
                     wp_id = %parsed.work_package_id,
                     lane = %parsed.lane,
                     "Completion detected via lane transition"
                 );
-                Ok(Some(parsed.work_package_id))
+                Ok(Some((parsed.work_package_id, DetectedLane::Done)))
+            }
+            "for_review" => {
+                tracing::info!(
+                    wp_id = %parsed.work_package_id,
+                    lane = %parsed.lane,
+                    "Review transition detected via lane transition"
+                );
+                Ok(Some((parsed.work_package_id, DetectedLane::ForReview)))
             }
             _ => Ok(None),
         }
@@ -222,7 +249,7 @@ impl CompletionDetector {
     /// Check if a WP file's frontmatter indicates completion via lane transition.
     ///
     /// Retries up to 3 times with 200ms delay on read failures.
-    async fn check_completion_with_retry(path: &Path) -> Result<Option<String>> {
+    async fn check_completion_with_retry(path: &Path) -> Result<Option<(String, DetectedLane)>> {
         const MAX_ATTEMPTS: usize = 3;
         const RETRY_DELAY_MS: u64 = 200;
 
@@ -306,8 +333,8 @@ impl CompletionDetector {
             sleep(debounce).await;
 
             // Try primary detection: lane transition in task file
-            let completion_method = match Self::check_completion_with_retry(&raw_event.path).await {
-                Ok(Some(_wp_id)) => Some(CompletionMethod::AutoDetected),
+            let detection_result = match Self::check_completion_with_retry(&raw_event.path).await {
+                Ok(Some((_wp_id, lane))) => Some((CompletionMethod::AutoDetected, Some(lane))),
                 Ok(None) => {
                     // Primary failed, try secondary: git activity
                     Self::check_git_activity(&raw_event.worktree_path)
@@ -315,6 +342,7 @@ impl CompletionDetector {
                             // Secondary failed, try tertiary: file markers
                             Self::check_file_markers(&raw_event.worktree_path)
                         })
+                        .map(|method| (method, None))
                 }
                 Err(e) => {
                     tracing::debug!(
@@ -326,7 +354,7 @@ impl CompletionDetector {
                 }
             };
 
-            if let Some(method) = completion_method {
+            if let Some((method, detected_lane)) = detection_result {
                 // Check for duplicates
                 if Self::is_duplicate(&mut processed, &raw_event.wp_id, dedup_window) {
                     tracing::debug!(wp_id = %raw_event.wp_id, "Duplicate completion event suppressed");
@@ -337,6 +365,7 @@ impl CompletionDetector {
                     wp_id: raw_event.wp_id.clone(),
                     method,
                     success: true,
+                    detected_lane,
                     timestamp: SystemTime::now(),
                 };
 
@@ -371,7 +400,7 @@ title: Test WP
         fs::write(&file_path, content).unwrap();
 
         let result = CompletionDetector::check_completion(&file_path).unwrap();
-        assert_eq!(result, Some("WP01".to_string()));
+        assert_eq!(result, Some(("WP01".to_string(), DetectedLane::ForReview)));
     }
 
     #[test]
@@ -391,7 +420,7 @@ title: Test WP
         fs::write(&file_path, content).unwrap();
 
         let result = CompletionDetector::check_completion(&file_path).unwrap();
-        assert_eq!(result, Some("WP02".to_string()));
+        assert_eq!(result, Some(("WP02".to_string(), DetectedLane::Done)));
     }
 
     #[test]

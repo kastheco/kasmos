@@ -18,6 +18,7 @@ pub mod parser;
 pub mod persistence;
 pub mod prompt;
 pub mod review;
+pub mod review_coordinator;
 pub mod session;
 pub mod shutdown;
 pub mod signals;
@@ -31,7 +32,7 @@ pub use cleanup::cleanup_artifacts;
 pub use command_handlers::{CommandHandler, EngineAction, SessionController};
 pub use commands::{CommandReader, ControllerCommand, command_help_text};
 pub use config::Config;
-pub use detector::{CompletionDetector, CompletionEvent};
+pub use detector::{CompletionDetector, CompletionEvent, DetectedLane};
 pub use engine::WaveEngine;
 pub use error::{KasmosError, Result};
 pub use graph::DependencyGraph;
@@ -41,6 +42,7 @@ pub use logging::init_logging;
 pub use parser::{FeatureDir, WPFrontmatter, parse_frontmatter};
 pub use persistence::StatePersister;
 pub use prompt::PromptGenerator;
+pub use review_coordinator::ReviewCoordinator;
 pub use review::{
     ReviewAutomationPolicy, ReviewFailureSeverity, ReviewFailureType, ReviewPolicyDecision,
     ReviewPolicyExecutor,
@@ -49,7 +51,7 @@ pub use session::SessionManager;
 pub use shutdown::{ShutdownCoordinator, ShutdownSession};
 pub use signals::setup_signal_handlers;
 pub use types::{
-    CompletionMethod, OrchestrationRun, ProgressionMode, RunState, WPState, Wave, WaveState,
-    WorkPackage,
+    CompletionMethod, OrchestrationRun, ProgressionMode, ReviewRequest, RunState, WPState, Wave,
+    WaveState, WorkPackage,
 };
 pub use zellij::{RealZellijCli, ZellijCli};

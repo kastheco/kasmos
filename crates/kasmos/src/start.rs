@@ -342,8 +342,12 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
         tracing::debug!("Command bridge task exiting");
     });
 
+    // Review automation channel
+    let (review_tx, review_rx) = mpsc::channel::<kasmos::ReviewRequest>(16);
+
     // WaveEngine — drives wave progression, receives completions and actions
     let mut engine = kasmos::WaveEngine::new(run_arc.clone(), completion_rx, engine_action_rx);
+    engine.set_review_tx(review_tx);
     let _engine_handle = tokio::spawn(async move {
         if let Err(e) = engine.run().await {
             tracing::error!("Wave engine error: {}", e);
@@ -352,6 +356,20 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
     });
 
     tracing::info!("Orchestration engine started");
+
+    // ReviewCoordinator — spawns reviewer panes when WPs enter ForReview
+    let review_coordinator = kasmos::ReviewCoordinator::new(
+        session_name.clone(),
+        config.opencode_binary.clone(),
+        std::sync::Arc::new(kasmos::RealZellijCli::new(config.zellij_binary.clone())),
+        review_rx,
+        kasmos::ReviewAutomationPolicy::default(),
+        kasmos_dir.clone(),
+    );
+    let _review_handle = tokio::spawn(async move {
+        review_coordinator.run().await;
+    });
+    tracing::info!("Review coordinator started");
 
     // Keep completion_tx alive for future detector wiring.
     // When the completion detector is wired in, it will own this sender.

@@ -7,10 +7,10 @@
 
 use crate::Result;
 use crate::command_handlers::EngineAction;
-use crate::detector::CompletionEvent;
+use crate::detector::{CompletionEvent, DetectedLane};
 use crate::error::WaveError;
 use crate::graph::DependencyGraph;
-use crate::types::{CompletionMethod, OrchestrationRun, ProgressionMode, RunState, WPState};
+use crate::types::{CompletionMethod, OrchestrationRun, ProgressionMode, ReviewRequest, RunState, WPState};
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
@@ -30,6 +30,9 @@ pub struct WaveEngine {
 
     /// Receiver for engine actions (commands).
     action_rx: mpsc::Receiver<EngineAction>,
+
+    /// Sender for review requests when WPs enter ForReview.
+    review_tx: Option<mpsc::Sender<ReviewRequest>>,
 
     /// Queue of work packages waiting for capacity.
     launch_queue: VecDeque<String>,
@@ -63,15 +66,21 @@ impl WaveEngine {
             graph,
             completion_rx,
             action_rx,
+            review_tx: None,
             launch_queue: VecDeque::new(),
             active_panes: 0,
             current_wave: 0,
         }
     }
 
+    /// Set the review request sender for emitting review events.
+    pub fn set_review_tx(&mut self, tx: mpsc::Sender<ReviewRequest>) {
+        self.review_tx = Some(tx);
+    }
+
     /// Initialize the dependency graph from the current run state.
     /// This should be called once before the main event loop starts.
-    async fn init_graph(&mut self) -> Result<()> {
+    pub(crate) async fn init_graph(&mut self) -> Result<()> {
         let run = self.run.read().await;
         self.graph = DependencyGraph::new(&run.work_packages);
         Ok(())
@@ -118,32 +127,55 @@ impl WaveEngine {
     }
 
     /// Handle a completion event.
-    async fn handle_completion(&mut self, event: CompletionEvent) -> Result<()> {
+    pub(crate) async fn handle_completion(&mut self, event: CompletionEvent) -> Result<()> {
         let wp_id = event.wp_id.clone();
         let success = event.success;
         let method = event.method;
+        let detected_lane = event.detected_lane;
+
+        // Track whether we need to emit a review request after releasing the lock
+        let mut review_request: Option<ReviewRequest> = None;
 
         {
             let mut run = self.run.write().await;
 
             // Guard: Unknown work package
-            let wp = run
+            let wp_idx = run
                 .work_packages
-                .iter_mut()
-                .find(|w| w.id == wp_id)
+                .iter()
+                .position(|w| w.id == wp_id)
                 .ok_or_else(|| {
                     crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.clone() })
                 })?;
 
             if success {
-                // Successful completion
-                wp.state = wp.state.transition(WPState::Completed, &wp.id)?;
-                wp.completed_at = Some(std::time::SystemTime::now());
-                wp.completion_method = Some(method);
-                self.active_panes = self.active_panes.saturating_sub(1);
-                tracing::info!(wp_id = %wp.id, "WP completed successfully");
+                // Check if this is a for_review transition rather than full completion
+                if detected_lane == Some(DetectedLane::ForReview) {
+                    let new_state = run.work_packages[wp_idx].state.transition(WPState::ForReview, &wp_id)?;
+                    run.work_packages[wp_idx].state = new_state;
+                    self.active_panes = self.active_panes.saturating_sub(1);
+                    tracing::info!(wp_id = %wp_id, "WP moved to review");
+
+                    // Prepare review request data
+                    if self.review_tx.is_some() {
+                        review_request = Some(ReviewRequest {
+                            wp_id: wp_id.clone(),
+                            worktree_path: run.work_packages[wp_idx].worktree_path.clone(),
+                            feature_dir: run.feature_dir.clone(),
+                        });
+                    }
+                } else {
+                    // Successful completion (done lane or non-frontmatter detection)
+                    let wp = &mut run.work_packages[wp_idx];
+                    wp.state = wp.state.transition(WPState::Completed, &wp.id)?;
+                    wp.completed_at = Some(std::time::SystemTime::now());
+                    wp.completion_method = Some(method);
+                    self.active_panes = self.active_panes.saturating_sub(1);
+                    tracing::info!(wp_id = %wp.id, "WP completed successfully");
+                }
             } else {
                 // Failure
+                let wp = &mut run.work_packages[wp_idx];
                 wp.state = wp.state.transition(WPState::Failed, &wp.id)?;
                 wp.failure_count += 1;
                 self.active_panes = self.active_panes.saturating_sub(1);
@@ -159,6 +191,13 @@ impl WaveEngine {
                         blocked.len(), wp.id, wp.id
                     );
                 }
+            }
+        }
+
+        // Emit review request outside the lock
+        if let (Some(review_tx), Some(request)) = (&self.review_tx, review_request) {
+            if let Err(e) = review_tx.send(request).await {
+                tracing::error!(wp_id = %wp_id, error = %e, "Failed to send review request");
             }
         }
 
@@ -197,6 +236,12 @@ impl WaveEngine {
                 run.state = RunState::Aborted;
                 tracing::info!("Orchestration aborted by operator");
                 return Ok(());
+            }
+            EngineAction::Approve(wp_id) => {
+                self.approve_wp(&wp_id).await?;
+            }
+            EngineAction::Reject { wp_id, relaunch } => {
+                self.reject_wp(&wp_id, relaunch).await?;
             }
         }
 
@@ -459,6 +504,55 @@ impl WaveEngine {
             } else {
                 break;
             }
+        }
+
+        Ok(())
+    }
+
+    /// Approve a work package in review (ForReview → Completed).
+    pub(crate) async fn approve_wp(&mut self, wp_id: &str) -> Result<()> {
+        let mut run = self.run.write().await;
+
+        let wp = run
+            .work_packages
+            .iter_mut()
+            .find(|w| w.id == wp_id)
+            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.to_string() }))?;
+
+        wp.state = wp.state.transition(WPState::Completed, &wp.id)?;
+        wp.completed_at = Some(std::time::SystemTime::now());
+        wp.completion_method = Some(CompletionMethod::Manual);
+
+        tracing::info!(wp_id = %wp.id, "WP approved — marked as completed");
+
+        drop(run);
+
+        // Launch newly eligible WPs
+        self.launch_eligible_wps().await
+    }
+
+    /// Reject a work package in review.
+    /// If `relaunch` is true, transitions ForReview → Active (rework).
+    /// If `relaunch` is false, transitions ForReview → Pending (hold).
+    pub(crate) async fn reject_wp(&mut self, wp_id: &str, relaunch: bool) -> Result<()> {
+        let mut run = self.run.write().await;
+
+        let wp = run
+            .work_packages
+            .iter_mut()
+            .find(|w| w.id == wp_id)
+            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.to_string() }))?;
+
+        if relaunch {
+            wp.state = wp.state.transition(WPState::Active, &wp.id)?;
+            wp.started_at = Some(std::time::SystemTime::now());
+            self.active_panes += 1;
+            tracing::info!(wp_id = %wp.id, "WP rejected — relaunching for rework");
+        } else {
+            wp.state = wp.state.transition(WPState::Pending, &wp.id)?;
+            wp.started_at = None;
+            wp.completed_at = None;
+            tracing::info!(wp_id = %wp.id, "WP rejected — held in pending");
         }
 
         Ok(())
