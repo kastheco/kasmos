@@ -1,7 +1,7 @@
 ---
 work_package_id: WP12
 title: "TUI Launch Integration — Wire tui::run() into Runtime"
-lane: "doing"
+lane: "done"
 dependencies:
   - WP01
   - WP02
@@ -18,8 +18,8 @@ phase: "Phase 4 - Integration"
 assignee: 'unassigned'
 agent: "reviewer"
 shell_pid: "814301"
-review_status: ''
-reviewed_by: ''
+review_status: "approved"
+reviewed_by: "kas"
 history:
   - timestamp: '2026-02-12T02:20:00Z'
 lane: doing
@@ -297,3 +297,4 @@ This cleanly separates the TUI process from the engine process and works natural
 - 2026-02-12T10:25:27Z – coder – shell_pid=805216 – lane=doing – Moved to doing
 - 2026-02-12T10:25:46Z – coder – shell_pid=805216 – lane=for_review – Submitted for review via swarm
 - 2026-02-12T10:25:46Z – reviewer – shell_pid=814301 – lane=doing – Started review via workflow command
+- 2026-02-12T10:27:09Z – reviewer – shell_pid=814301 – lane=done – Review passed via swarm
