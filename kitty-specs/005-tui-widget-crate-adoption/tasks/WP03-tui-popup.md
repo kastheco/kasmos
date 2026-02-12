@@ -10,8 +10,8 @@ title: "Adopt tui-popup — Confirmation Dialog Widget"
 phase: "Phase 2 - Crate Adoptions"
 lane: "doing"
 assignee: ""
-agent: "coder"
-shell_pid: "1302302"
+agent: "reviewer"
+shell_pid: "1333019"
 review_status: ""
 reviewed_by: ""
 dependencies: ["WP01"]
@@ -270,3 +270,5 @@ Depends on WP01 (ratatui-macros). New code should use macro syntax.
 - 2026-02-12T12:31:19Z – coder – lane=for_review – Submitted for review via swarm
 - 2026-02-12T12:31:19Z – reviewer – shell_pid=1302302 – lane=doing – Started review via workflow command
 - 2026-02-12T12:35:15Z – coder – shell_pid=1302302 – lane=doing – Feedback addressed, resubmitting
+- 2026-02-12T12:35:29Z – coder – shell_pid=1302302 – lane=for_review – Submitted for review via swarm
+- 2026-02-12T12:35:29Z – reviewer – shell_pid=1333019 – lane=doing – Started review via workflow command
