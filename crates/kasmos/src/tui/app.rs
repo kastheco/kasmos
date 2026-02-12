@@ -9,11 +9,12 @@ use crate::review::{
     ReviewAutomationPolicy, ReviewFailureSeverity, ReviewFailureType, ReviewPolicyExecutor,
 };
 use crate::types::{OrchestrationRun, WPState};
-use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
+use ratatui::Frame;
+use ratatui_macros::{line, span, vertical};
 use std::collections::HashMap;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
@@ -410,19 +411,17 @@ impl App {
 
         let mut lines = Vec::new();
         if filtered.is_empty() {
-            lines.push(Line::from(Span::styled(
-                "No log entries",
-                Style::default().fg(Color::DarkGray),
-            )));
+            lines.push(line![
+                span!(Style::default().fg(Color::DarkGray); "No log entries")
+            ]);
         } else {
             for entry in &filtered[top..end] {
                 let level = match entry.level {
-                    LogLevel::Info => Span::styled("INFO", Style::default().fg(Color::DarkGray)),
-                    LogLevel::Warn => Span::styled("WARN", Style::default().fg(Color::Yellow)),
-                    LogLevel::Error => Span::styled(
-                        "ERR ",
-                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                    ),
+                    LogLevel::Info => span!(Style::default().fg(Color::DarkGray); "INFO"),
+                    LogLevel::Warn => span!(Style::default().fg(Color::Yellow); "WARN"),
+                    LogLevel::Error => {
+                        span!(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD); "ERR ")
+                    }
                 };
 
                 let wp_prefix = entry
@@ -431,15 +430,13 @@ impl App {
                     .map(|wp_id| format!("[{wp_id}] "))
                     .unwrap_or_default();
 
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        Self::format_timestamp(entry.timestamp),
-                        Style::default().fg(Color::DarkGray),
-                    ),
-                    Span::raw(" "),
+                let ts = Self::format_timestamp(entry.timestamp);
+                lines.push(line![
+                    span!(Style::default().fg(Color::DarkGray); "{ts}"),
+                    " ",
                     level,
                     Span::raw(format!(" {wp_prefix}{}", entry.message)),
-                ]));
+                ]);
             }
         }
 
@@ -469,15 +466,13 @@ impl App {
             height: 1,
         };
 
+        let filter = &self.logs.filter;
         frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(paused_text, status_style),
-                Span::raw("  "),
-                Span::styled(
-                    format!("Filter: {}", self.logs.filter),
-                    Style::default().fg(Color::DarkGray),
-                ),
-            ])),
+            Paragraph::new(line![
+                span!(status_style; "{paused_text}"),
+                "  ",
+                span!(Style::default().fg(Color::DarkGray); "Filter: {filter}"),
+            ]),
             status_area,
         );
 
@@ -488,12 +483,13 @@ impl App {
                 width: inner.width,
                 height: 1,
             };
+            let filter_text = &self.logs.filter;
             frame.render_widget(
-                Paragraph::new(Line::from(vec![
-                    Span::styled("/", Style::default().fg(Color::Yellow)),
-                    Span::raw(&self.logs.filter),
-                    Span::styled("_", Style::default().fg(Color::Yellow)),
-                ])),
+                Paragraph::new(line![
+                    span!(Style::default().fg(Color::Yellow); "/"),
+                    span!("{filter_text}"),
+                    span!(Style::default().fg(Color::Yellow); "_"),
+                ]),
                 filter_area,
             );
         }
@@ -514,19 +510,10 @@ impl App {
     pub fn render(&self, frame: &mut Frame) {
         let area = frame.area();
 
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3), // tab bar
-                Constraint::Min(0),    // body
-            ])
-            .split(area);
+        let [tab_area, body_area] = vertical![==3, *=0].areas(area);
 
         // Tab bar
-        let titles: Vec<Line> = Tab::titles()
-            .iter()
-            .map(|t| Line::from(Span::raw(*t)))
-            .collect();
+        let titles: Vec<Line> = Tab::titles().iter().map(|t| line![*t]).collect();
 
         let tabs = Tabs::new(titles)
             .block(Block::default().borders(Borders::ALL).title(" kasmos "))
@@ -538,7 +525,7 @@ impl App {
                     .add_modifier(Modifier::BOLD),
             );
 
-        frame.render_widget(tabs, chunks[0]);
+        frame.render_widget(tabs, tab_area);
 
         // Body — placeholder per tab
         let body_text = match self.active_tab {
@@ -551,7 +538,7 @@ impl App {
             }
             Tab::Review => "Review view coming soon\n\nPress 'q' to quit".to_string(),
             Tab::Logs => {
-                self.render_logs(frame, chunks[1]);
+                self.render_logs(frame, body_area);
                 return;
             }
         };
@@ -566,7 +553,7 @@ impl App {
                 }
             )));
 
-        frame.render_widget(body, chunks[1]);
+        frame.render_widget(body, body_area);
     }
 }
 
@@ -577,8 +564,8 @@ mod tests {
     use crate::review::ReviewAutomationPolicy;
     use crate::types::{ProgressionMode, RunState, Wave, WaveState, WorkPackage};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
 
     fn create_test_run(wp_count: usize) -> OrchestrationRun {
         let mut work_packages = Vec::with_capacity(wp_count);

@@ -775,6 +775,7 @@ dependencies = [
  "nix 0.31.1",
  "notify",
  "ratatui",
+ "ratatui-macros",
  "serde",
  "serde_json",
  "serde_yml",
