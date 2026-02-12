@@ -1,7 +1,7 @@
 ---
 work_package_id: "WP06"
 title: "Upgrade which 8.0"
-lane: "planned"
+lane: "done"
 dependencies: []
 subtasks: ["T020", "T021", "T022"]
 history:

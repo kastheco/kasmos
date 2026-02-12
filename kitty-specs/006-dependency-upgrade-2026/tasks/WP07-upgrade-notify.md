@@ -1,7 +1,7 @@
 ---
 work_package_id: "WP07"
 title: "Upgrade notify 9.0.0-rc.1"
-lane: "planned"
+lane: "done"
 dependencies: []
 subtasks: ["T023", "T024", "T025", "T026"]
 history:

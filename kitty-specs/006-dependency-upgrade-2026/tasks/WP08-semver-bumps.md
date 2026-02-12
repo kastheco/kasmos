@@ -1,7 +1,7 @@
 ---
 work_package_id: "WP08"
 title: "Semver-compatible dependency bumps"
-lane: "planned"
+lane: "done"
 dependencies: []
 subtasks: ["T027", "T028", "T029", "T030"]
 history:

@@ -1,7 +1,7 @@
 ---
 work_package_id: "WP01"
 title: "Upgrade ratatui 0.30 + crossterm 0.29"
-lane: "planned"
+lane: "done"
 dependencies: []
 subtasks: ["T001", "T002", "T003", "T004"]
 history:

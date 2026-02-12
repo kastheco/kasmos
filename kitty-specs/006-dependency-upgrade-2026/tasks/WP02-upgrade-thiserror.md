@@ -1,7 +1,7 @@
 ---
 work_package_id: "WP02"
 title: "Upgrade thiserror 2.0"
-lane: "planned"
+lane: "done"
 dependencies: []
 subtasks: ["T005", "T006", "T007"]
 history:

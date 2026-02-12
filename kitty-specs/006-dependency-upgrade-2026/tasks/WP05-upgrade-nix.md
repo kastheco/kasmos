@@ -1,7 +1,7 @@
 ---
 work_package_id: "WP05"
 title: "Upgrade nix 0.31"
-lane: "planned"
+lane: "done"
 dependencies: []
 subtasks: ["T016", "T017", "T018", "T019"]
 history:
