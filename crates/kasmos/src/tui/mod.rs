@@ -8,7 +8,7 @@
 pub mod app;
 pub mod event;
 pub mod keybindings;
-// tabs/ and widgets/ will be added in later WPs
+pub mod tabs;
 
 use std::io::Stdout;
 use std::time::Duration;
