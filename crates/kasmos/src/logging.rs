@@ -1,69 +1,80 @@
 //! Logging setup for kasmos.
 //!
 //! Configures structured logging via the `tracing` crate with support for
-//! the `RUST_LOG` environment variable.
+//! the `RUST_LOG` environment variable. Supports two modes:
+//!
+//! - **Headless mode** (`tui_mode: false`): Uses `tracing-subscriber`'s `fmt`
+//!   layer writing to stderr. Suitable for CLI commands.
+//! - **TUI mode** (`tui_mode: true`): Routes tracing events through
+//!   `tui-logger`'s `TuiTracingSubscriberLayer`, feeding the in-TUI log
+//!   viewer widget. Stderr output is suppressed (alternate screen).
 //!
 //! # Examples
 //!
 //! ```ignore
 //! use kasmos::logging::init_logging;
 //!
-//! // Initialize logging with default filter (kasmos=info)
-//! init_logging()?;
+//! // Initialize logging in headless mode (CLI commands)
+//! init_logging(false)?;
+//!
+//! // Initialize logging in TUI mode (tui-logger widget)
+//! init_logging(true)?;
 //!
 //! // Use tracing macros for structured logging
 //! tracing::info!("Starting orchestration run");
 //! tracing::debug!("Detailed debug information");
-//! tracing::warn!("Warning message");
-//! tracing::error!("Error message");
-//!
-//! // Create spans for contextual logging
-//! let span = tracing::info_span!("wave_execution", wave = 0);
-//! let _guard = span.enter();
-//! tracing::info!("Processing wave");
 //! ```
+//!
+//! # Environment Variables
+//!
+//! - `RUST_LOG`: Controls logging level and filters (headless mode only)
+//!   - `RUST_LOG=debug` — Show debug and above
+//!   - `RUST_LOG=kasmos=trace` — Show trace for kasmos crate only
 
 use crate::error::Result;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
-use tracing_subscriber::fmt;
+use tracing_subscriber::{fmt, Registry};
 
 /// Initialize the tracing logging system.
 ///
-/// Sets up structured logging with the following behavior:
-/// - Reads the `RUST_LOG` environment variable for filter configuration
-/// - Falls back to `kasmos=info` if `RUST_LOG` is not set
-/// - Includes file names and line numbers in output
-/// - Includes target module names
-/// - Does not include thread IDs (reduces noise)
+/// # Arguments
 ///
-/// # Examples
+/// * `tui_mode` — When `true`, routes events through `tui-logger` for the
+///   in-TUI widget. When `false`, uses `fmt` layer to stderr (standard CLI
+///   output).
 ///
-/// ```ignore
-/// init_logging()?;
-/// tracing::info!("Logging is now active");
-/// ```
+/// # TUI mode requirements
 ///
-/// # Environment Variables
-///
-/// - `RUST_LOG`: Controls logging level and filters
-///   - `RUST_LOG=debug` — Show debug and above
-///   - `RUST_LOG=kasmos=trace` — Show trace for kasmos crate only
-///   - `RUST_LOG=kasmos=info,zellij=debug` — Mixed filters
+/// `tui_logger::init_logger()` **must** be called before this function when
+/// `tui_mode` is `true`. This is handled by `tui::run()`.
 ///
 /// # Errors
 ///
 /// Returns an error if the logging subscriber cannot be initialized.
-pub fn init_logging() -> Result<()> {
-    let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("kasmos=info"));
+pub fn init_logging(tui_mode: bool) -> Result<()> {
+    if tui_mode {
+        // TUI mode: route tracing events to tui-logger widget.
+        // tui_logger::init_logger() must have been called already by tui::run().
+        Registry::default()
+            .with(tui_logger::TuiTracingSubscriberLayer)
+            .init();
+    } else {
+        // Headless mode: structured fmt output to stderr.
+        let filter =
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("kasmos=info"));
 
-    fmt()
-        .with_env_filter(filter)
-        .with_target(true)
-        .with_thread_ids(false)
-        .with_file(true)
-        .with_line_number(true)
-        .init();
+        Registry::default()
+            .with(
+                fmt::layer()
+                    .with_target(true)
+                    .with_file(true)
+                    .with_line_number(true),
+            )
+            .with(filter)
+            .init();
+    }
 
     Ok(())
 }
@@ -76,9 +87,8 @@ mod tests {
     fn test_init_logging_succeeds() {
         // Note: This test may fail if called multiple times in the same process
         // because tracing-subscriber can only be initialized once.
-        // In a real test suite, you'd use a test harness that isolates this.
         // For now, we just verify the function signature is correct.
-        let result = init_logging();
+        let result = init_logging(false);
         // We don't assert success here because of the single-init constraint.
         // The important thing is that the function compiles and has the right signature.
         let _ = result;

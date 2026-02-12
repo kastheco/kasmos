@@ -83,7 +83,7 @@ enum Commands {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let _ = kasmos::init_logging();
+    let _ = kasmos::init_logging(false);
 
     match cli.command {
         Commands::List => {
