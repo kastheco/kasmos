@@ -23,7 +23,7 @@
 - [x] T002 Migrate Layout construction patterns in `crates/kasmos/src/tui/app.rs` to `vertical![]`/`horizontal![]` macros
 - [x] T003 Migrate Line/Span text construction patterns in `crates/kasmos/src/tui/app.rs` to `line![]`/`span![]` macros
 - [x] T004 Update imports — add `ratatui_macros` use statements, remove newly-unused ratatui imports
-- [ ] T005 Verify `cargo build`, `cargo test`, `cargo clippy` pass with zero new warnings
+- [x] T005 Verify `cargo build`, `cargo test`, `cargo clippy` pass with zero new warnings
 
 ### Implementation Notes
 - AD-2 (plan.md): ratatui-macros is adopted first so all subsequent WP code uses macro syntax from the start.
