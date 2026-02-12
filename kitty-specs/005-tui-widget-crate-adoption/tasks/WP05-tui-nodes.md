@@ -12,8 +12,8 @@ title: "Adopt tui-nodes — WP Dependency Graph Visualization"
 phase: "Phase 2 - Crate Adoptions"
 lane: "doing"
 assignee: ""
-agent: "coder"
-shell_pid: ""
+agent: "reviewer"
+shell_pid: "1312308"
 review_status: ""
 reviewed_by: ""
 dependencies: ["WP01"]
@@ -419,3 +419,5 @@ Depends on WP01 (ratatui-macros). New code should use macro syntax.
 
 - 2026-02-12T00:00:00Z – system – lane=planned – Prompt created.
 - 2026-02-12T12:32:06Z – coder – lane=doing – Implementation complete, moving to doing
+- 2026-02-12T12:32:27Z – coder – lane=for_review – Submitted for review via swarm
+- 2026-02-12T12:32:27Z – reviewer – shell_pid=1312308 – lane=doing – Started review via workflow command
