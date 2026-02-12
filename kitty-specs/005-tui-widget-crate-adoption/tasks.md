@@ -92,11 +92,11 @@
 **Estimated prompt size**: ~400 lines
 
 ### Included Subtasks
-- [ ] T013 Add `tui-popup` 0.7.x dependency to `crates/kasmos/Cargo.toml`
-- [ ] T014 Add `ConfirmAction` enum with `title()` and `description()` methods to `crates/kasmos/src/tui/app.rs`
-- [ ] T015 Add `pending_confirm: Option<ConfirmAction>` to `App` struct and `App::new()`
-- [ ] T016 Add popup rendering overlay in `App::render()` using `tui_popup::Popup`
-- [ ] T017 Update `crates/kasmos/src/tui/keybindings.rs` — route destructive actions through confirmation flow, add popup-active key interception
+- [x] T013 Add `tui-popup` 0.7.x dependency to `crates/kasmos/Cargo.toml`
+- [x] T014 Add `ConfirmAction` enum with `title()` and `description()` methods to `crates/kasmos/src/tui/app.rs`
+- [x] T015 Add `pending_confirm: Option<ConfirmAction>` to `App` struct and `App::new()`
+- [x] T016 Add popup rendering overlay in `App::render()` using `tui_popup::Popup`
+- [x] T017 Update `crates/kasmos/src/tui/keybindings.rs` — route destructive actions through confirmation flow, add popup-active key interception
 
 ### Implementation Notes
 - R-4 (research.md): `Popup::new(content).title(title).style(style)` auto-centers in `frame.area()`.
