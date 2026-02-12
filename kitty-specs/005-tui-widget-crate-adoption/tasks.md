@@ -56,7 +56,7 @@
 - [x] T007 Refactor `crates/kasmos/src/logging.rs` — conditional `Registry`-based subscriber with TUI vs headless modes
 - [x] T008 Wire up TUI-mode logging in `crates/kasmos/src/tui/mod.rs` and `crates/kasmos/src/main.rs`
 - [x] T009 Remove hand-rolled log types and state from `crates/kasmos/src/tui/app.rs`
-- [ ] T010 Add `TuiLoggerSmartWidget` rendering in the Logs tab
+- [x] T010 Add `TuiLoggerSmartWidget` rendering in the Logs tab
 - [ ] T011 Replace `handle_logs_key()` in `crates/kasmos/src/tui/keybindings.rs` with tui-logger key event delegation
 - [ ] T012 Update all tests referencing removed log types and state
 
