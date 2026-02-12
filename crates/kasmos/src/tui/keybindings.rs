@@ -17,7 +17,7 @@ use super::app::{App, ConfirmAction, Tab};
 /// Handle a key event by dispatching to global or tab-specific handlers.
 pub fn handle_key(app: &mut App, key: KeyEvent) {
     // --- Popup confirmation interception (highest priority) ---
-    if let Some(action) = app.pending_confirm.clone() {
+    if let Some(action) = app.pending_confirm.take() {
         match key.code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 // Execute the confirmed action
@@ -29,12 +29,14 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
                         let _ = app.action_tx.try_send(EngineAction::Abort);
                     }
                 }
-                app.pending_confirm = None;
             }
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
-                app.pending_confirm = None;
+                // Dismissed — action already taken out, nothing to do
             }
-            _ => {} // Swallow all other keys while popup is visible
+            _ => {
+                // Swallow key but keep popup visible
+                app.pending_confirm = Some(action);
+            }
         }
         return;
     }
@@ -250,5 +252,160 @@ mod tests {
         );
 
         assert!(rx.try_recv().is_err());
+    }
+
+    /// Create a test run with a Failed WP in lane 0 (planned/failed lane).
+    fn create_test_run_with_failed_wp() -> OrchestrationRun {
+        OrchestrationRun {
+            id: "run-1".to_string(),
+            feature: "feature".to_string(),
+            feature_dir: PathBuf::from("/tmp/feature"),
+            config: Config::default(),
+            work_packages: vec![WorkPackage {
+                id: "WP01".to_string(),
+                title: "WP01".to_string(),
+                state: WPState::Failed,
+                dependencies: vec![],
+                wave: 0,
+                pane_id: None,
+                pane_name: "wp01".to_string(),
+                worktree_path: None,
+                prompt_path: None,
+                started_at: None,
+                completed_at: None,
+                completion_method: None,
+                failure_count: 1,
+            }],
+            waves: vec![Wave {
+                index: 0,
+                wp_ids: vec!["WP01".to_string()],
+                state: WaveState::Active,
+            }],
+            state: RunState::Running,
+            started_at: None,
+            completed_at: None,
+            mode: ProgressionMode::Continuous,
+        }
+    }
+
+    #[test]
+    fn test_force_advance_on_failed_wp_sets_pending_confirm() {
+        let (tx, _rx) = mpsc::channel(4);
+        let run = create_test_run_with_failed_wp();
+        let mut app = App::new(run, tx);
+        // Lane 0 = planned/failed, selected_index 0 = WP01 (Failed)
+        app.active_tab = Tab::Dashboard;
+        app.dashboard.focused_lane = 0;
+        app.dashboard.selected_index = 0;
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('F'), KeyModifiers::NONE),
+        );
+
+        assert!(app.pending_confirm.is_some());
+        match &app.pending_confirm {
+            Some(ConfirmAction::ForceAdvance { wp_id }) => {
+                assert_eq!(wp_id, "WP01");
+            }
+            other => panic!("Expected ForceAdvance, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_confirm_y_dispatches_force_advance_and_clears_popup() {
+        let (tx, mut rx) = mpsc::channel(4);
+        let run = create_test_run_with_failed_wp();
+        let mut app = App::new(run, tx);
+        app.pending_confirm = Some(ConfirmAction::ForceAdvance {
+            wp_id: "WP01".to_string(),
+        });
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE),
+        );
+
+        assert!(app.pending_confirm.is_none());
+        match rx.try_recv() {
+            Ok(EngineAction::ForceAdvance(wp_id)) => assert_eq!(wp_id, "WP01"),
+            other => panic!("Expected ForceAdvance action, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_confirm_n_dismisses_popup_without_dispatching() {
+        let (tx, mut rx) = mpsc::channel(4);
+        let run = create_test_run_with_failed_wp();
+        let mut app = App::new(run, tx);
+        app.pending_confirm = Some(ConfirmAction::ForceAdvance {
+            wp_id: "WP01".to_string(),
+        });
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE),
+        );
+
+        assert!(app.pending_confirm.is_none());
+        assert!(rx.try_recv().is_err(), "No action should be dispatched on dismiss");
+    }
+
+    #[test]
+    fn test_confirm_esc_dismisses_popup_without_dispatching() {
+        let (tx, mut rx) = mpsc::channel(4);
+        let run = create_test_run_with_failed_wp();
+        let mut app = App::new(run, tx);
+        app.pending_confirm = Some(ConfirmAction::ForceAdvance {
+            wp_id: "WP01".to_string(),
+        });
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+        );
+
+        assert!(app.pending_confirm.is_none());
+        assert!(rx.try_recv().is_err(), "No action should be dispatched on Esc");
+    }
+
+    #[test]
+    fn test_popup_swallows_quit_key() {
+        let (tx, _rx) = mpsc::channel(4);
+        let run = create_test_run_with_failed_wp();
+        let mut app = App::new(run, tx);
+        app.pending_confirm = Some(ConfirmAction::ForceAdvance {
+            wp_id: "WP01".to_string(),
+        });
+
+        // Press 'q' while popup is visible — should NOT quit
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE),
+        );
+
+        assert!(!app.should_quit, "Popup must swallow quit key");
+        assert!(app.pending_confirm.is_some(), "Popup must remain visible");
+    }
+
+    #[test]
+    fn test_force_advance_ignored_on_non_failed_wp() {
+        let (tx, _rx) = mpsc::channel(4);
+        // Default test run has WP01 in Pending state
+        let run = create_test_run(ProgressionMode::Continuous, RunState::Running);
+        let mut app = App::new(run, tx);
+        app.active_tab = Tab::Dashboard;
+        app.dashboard.focused_lane = 0;
+        app.dashboard.selected_index = 0;
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('F'), KeyModifiers::NONE),
+        );
+
+        assert!(
+            app.pending_confirm.is_none(),
+            "F key should be ignored on non-Failed WP"
+        );
     }
 }
