@@ -22,7 +22,7 @@
 - [x] T001 Add `ratatui-macros` 0.7.x dependency to `crates/kasmos/Cargo.toml`
 - [x] T002 Migrate Layout construction patterns in `crates/kasmos/src/tui/app.rs` to `vertical![]`/`horizontal![]` macros
 - [x] T003 Migrate Line/Span text construction patterns in `crates/kasmos/src/tui/app.rs` to `line![]`/`span![]` macros
-- [ ] T004 Update imports — add `ratatui_macros` use statements, remove newly-unused ratatui imports
+- [x] T004 Update imports — add `ratatui_macros` use statements, remove newly-unused ratatui imports
 - [ ] T005 Verify `cargo build`, `cargo test`, `cargo clippy` pass with zero new warnings
 
 ### Implementation Notes
