@@ -23,8 +23,8 @@ Replace the passive controller pane with an interactive ratatui TUI that provide
 ## Technical Context
 
 **Language/Version**: Rust (edition 2024, workspace)
-**Primary Dependencies**: ratatui (latest), crossterm (latest, ratatui re-export preferred)
-**Storage**: N/A (reads `Arc<RwLock<OrchestrationRun>>` in-memory; filesystem only for spec-kitty task files)
+**Primary Dependencies**: ratatui = "0.29", crossterm = "0.28" (pinned for deterministic builds; ratatui re-export preferred where applicable)
+**Storage**: Hybrid — runtime state in `Arc<RwLock<OrchestrationRun>>`, persisted review results in `.kasmos/review-results.json` (atomic write on update, load on startup for restart consistency).
 **Testing**: `cargo test` — unit tests for App state logic, rendering snapshots via `ratatui::backend::TestBackend`
 **Target Platform**: Linux terminal (256-color, Unicode box-drawing)
 **Project Type**: Single Rust crate (extends existing `kasmos` crate)

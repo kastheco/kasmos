@@ -5,6 +5,9 @@
 //! orchestration run snapshot from the engine.
 
 use crate::command_handlers::EngineAction;
+use crate::review::{
+    ReviewAutomationPolicy, ReviewFailureSeverity, ReviewFailureType, ReviewPolicyExecutor,
+};
 use crate::types::{OrchestrationRun, WPState};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -72,6 +75,10 @@ pub struct Notification {
     pub wp_id: String,
     /// Optional message (populated for InputNeeded with the agent's question).
     pub message: Option<String>,
+    /// Failure type for review-automation failures.
+    pub failure_type: Option<ReviewFailureType>,
+    /// Failure severity for review-automation failures.
+    pub severity: Option<ReviewFailureSeverity>,
     /// When this notification was created.
     pub created_at: Instant,
 }
@@ -185,6 +192,8 @@ pub struct App {
     pub should_quit: bool,
     /// Monotonically increasing counter for notification IDs.
     notification_counter: u64,
+    /// Executor for `for_review` policy decisions.
+    review_policy_executor: ReviewPolicyExecutor,
 }
 
 impl App {
@@ -200,6 +209,49 @@ impl App {
             action_tx,
             should_quit: false,
             notification_counter: 0,
+            review_policy_executor: ReviewPolicyExecutor::new(ReviewAutomationPolicy::default()),
+        }
+    }
+
+    /// Set the review automation policy used at `for_review` transitions.
+    pub fn set_review_policy(&mut self, policy: ReviewAutomationPolicy) {
+        self.review_policy_executor = ReviewPolicyExecutor::new(policy);
+    }
+
+    /// Record a typed review automation failure in both notifications and logs.
+    pub fn record_review_failure(
+        &mut self,
+        wp_id: impl Into<String>,
+        failure_type: ReviewFailureType,
+        message: impl Into<String>,
+    ) {
+        let wp_id = wp_id.into();
+        let message = message.into();
+        let notification_id = self.next_notification_id();
+
+        self.notifications.push(Notification {
+            id: notification_id,
+            kind: NotificationKind::Failure,
+            wp_id: wp_id.clone(),
+            message: Some(message.clone()),
+            failure_type: Some(failure_type),
+            severity: Some(ReviewFailureSeverity::Error),
+            created_at: Instant::now(),
+        });
+
+        self.logs.entries.push(LogEntry {
+            timestamp: SystemTime::now(),
+            level: LogLevel::Error,
+            wp_id: Some(wp_id.clone()),
+            message: format!("review_failure {:?}: {}", failure_type, message),
+        });
+
+        if self.logs.entries.len() > 10_000 {
+            let overflow = self.logs.entries.len() - 10_000;
+            self.logs.entries.drain(..overflow);
+            if !self.logs.auto_scroll {
+                self.logs.scroll_offset = self.logs.scroll_offset.saturating_sub(overflow);
+            }
         }
     }
 
@@ -270,6 +322,21 @@ impl App {
                 wp_id: Some(wp.id.clone()),
                 message: format!("{from} -> {:?}", wp.state),
             });
+
+            if old_state != Some(WPState::ForReview) && wp.state == WPState::ForReview {
+                let decision = self.review_policy_executor.on_for_review_transition();
+                self.logs.entries.push(LogEntry {
+                    timestamp: SystemTime::now(),
+                    level: LogLevel::Info,
+                    wp_id: Some(wp.id.clone()),
+                    message: format!(
+                        "review_policy {:?}: run_automation={}, auto_mark_done={}",
+                        self.review_policy_executor.policy(),
+                        decision.run_automation,
+                        decision.auto_mark_done
+                    ),
+                });
+            }
         }
 
         if new_run.state != self.run.state {
@@ -500,5 +567,206 @@ impl App {
             )));
 
         frame.render_widget(body, chunks[1]);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use crate::review::ReviewAutomationPolicy;
+    use crate::types::{ProgressionMode, RunState, Wave, WaveState, WorkPackage};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    fn create_test_run(wp_count: usize) -> OrchestrationRun {
+        let mut work_packages = Vec::with_capacity(wp_count);
+        for i in 0..wp_count {
+            work_packages.push(WorkPackage {
+                id: format!("WP{:02}", i + 1),
+                title: format!("Work package {}", i + 1),
+                state: WPState::Active,
+                dependencies: vec![],
+                wave: i / 5,
+                pane_id: None,
+                pane_name: format!("wp{:02}", i + 1),
+                worktree_path: None,
+                prompt_path: None,
+                started_at: None,
+                completed_at: None,
+                completion_method: None,
+                failure_count: 0,
+            });
+        }
+
+        OrchestrationRun {
+            id: "run-1".to_string(),
+            feature: "feature".to_string(),
+            feature_dir: std::path::PathBuf::from("/tmp/feature"),
+            config: Config::default(),
+            work_packages,
+            waves: vec![Wave {
+                index: 0,
+                wp_ids: vec!["WP01".to_string()],
+                state: WaveState::Active,
+            }],
+            state: RunState::Running,
+            started_at: None,
+            completed_at: None,
+            mode: ProgressionMode::WaveGated,
+        }
+    }
+
+    #[test]
+    fn test_review_policy_mode_selection_and_auto_mark_done_path() {
+        let (tx, _rx) = mpsc::channel(4);
+        let mut app = App::new(create_test_run(1), tx);
+
+        app.set_review_policy(ReviewAutomationPolicy::ManualOnly);
+        let mut to_for_review = app.run.clone();
+        to_for_review.work_packages[0].state = WPState::ForReview;
+        app.update_state(to_for_review);
+        assert!(app.logs.entries.iter().any(|entry| {
+            entry
+                .message
+                .contains("review_policy ManualOnly: run_automation=false, auto_mark_done=false")
+        }));
+
+        app.set_review_policy(ReviewAutomationPolicy::AutoAndMarkDone);
+        let mut active_again = app.run.clone();
+        active_again.work_packages[0].state = WPState::Active;
+        app.update_state(active_again.clone());
+        active_again.work_packages[0].state = WPState::ForReview;
+        app.update_state(active_again);
+        assert!(app.logs.entries.iter().any(|entry| {
+            entry
+                .message
+                .contains("review_policy AutoAndMarkDone: run_automation=true, auto_mark_done=true")
+        }));
+    }
+
+    #[test]
+    fn test_review_failure_surfaces_notification_and_log_entry() {
+        let (tx, _rx) = mpsc::channel(4);
+        let mut app = App::new(create_test_run(1), tx);
+
+        app.record_review_failure(
+            "WP01",
+            ReviewFailureType::Timeout,
+            "review command exceeded timeout",
+        );
+
+        assert_eq!(app.notifications.len(), 1);
+        let notification = &app.notifications[0];
+        assert_eq!(notification.kind, NotificationKind::Failure);
+        assert_eq!(notification.wp_id, "WP01");
+        assert_eq!(notification.failure_type, Some(ReviewFailureType::Timeout));
+        assert_eq!(notification.severity, Some(ReviewFailureSeverity::Error));
+
+        assert!(app.logs.entries.iter().any(|entry| {
+            entry.level == LogLevel::Error
+                && entry.wp_id.as_deref() == Some("WP01")
+                && entry.message.contains("review_failure Timeout")
+        }));
+    }
+
+    #[test]
+    fn test_resize_reflow_render_does_not_panic() {
+        let (tx, _rx) = mpsc::channel(4);
+        let app = App::new(create_test_run(12), tx);
+
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).expect("create terminal");
+        terminal
+            .draw(|frame| app.render(frame))
+            .expect("initial draw");
+
+        terminal.backend_mut().resize(80, 20);
+        terminal
+            .draw(|frame| app.render(frame))
+            .expect("draw after resize");
+
+        let resized = terminal.size().expect("size after resize");
+        assert_eq!(resized.width, 80);
+        assert_eq!(resized.height, 20);
+    }
+
+    #[test]
+    fn test_keyboard_only_flow_without_mouse_events() {
+        let (tx, _rx) = mpsc::channel(4);
+        let mut app = App::new(create_test_run(3), tx);
+
+        app.handle_event(TuiEvent::Key(KeyEvent::new(
+            KeyCode::Char('2'),
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(app.active_tab, Tab::Review);
+
+        app.handle_event(TuiEvent::Key(KeyEvent::new(
+            KeyCode::Char('3'),
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(app.active_tab, Tab::Logs);
+
+        app.handle_event(TuiEvent::Key(KeyEvent::new(
+            KeyCode::Char('/'),
+            KeyModifiers::NONE,
+        )));
+        assert!(app.logs.filter_active);
+
+        app.handle_event(TuiEvent::Key(KeyEvent::new(
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        )));
+        assert!(!app.logs.filter_active);
+    }
+
+    #[test]
+    fn test_event_loop_hot_paths_stay_non_blocking_under_load() {
+        let (tx, _rx) = mpsc::channel(4);
+        let mut app = App::new(create_test_run(50), tx);
+
+        let mut worst_key = std::time::Duration::ZERO;
+        for _ in 0..500 {
+            let start = Instant::now();
+            app.handle_event(TuiEvent::Key(KeyEvent::new(
+                KeyCode::Char('j'),
+                KeyModifiers::NONE,
+            )));
+            let elapsed = start.elapsed();
+            if elapsed > worst_key {
+                worst_key = elapsed;
+            }
+        }
+
+        let mut worst_update = std::time::Duration::ZERO;
+        for i in 0..200 {
+            let mut updated = app.run.clone();
+            let idx = i % updated.work_packages.len();
+            updated.work_packages[idx].state = if i % 2 == 0 {
+                WPState::ForReview
+            } else {
+                WPState::Active
+            };
+
+            let start = Instant::now();
+            app.update_state(updated);
+            let elapsed = start.elapsed();
+            if elapsed > worst_update {
+                worst_update = elapsed;
+            }
+        }
+
+        assert!(
+            worst_key <= std::time::Duration::from_millis(25),
+            "key handling exceeded 25ms: {:?}",
+            worst_key
+        );
+        assert!(
+            worst_update <= std::time::Duration::from_millis(25),
+            "state update exceeded 25ms: {:?}",
+            worst_update
+        );
     }
 }

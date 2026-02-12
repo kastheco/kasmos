@@ -17,6 +17,7 @@ pub mod logging;
 pub mod parser;
 pub mod persistence;
 pub mod prompt;
+pub mod review;
 pub mod session;
 pub mod shutdown;
 pub mod signals;
@@ -40,6 +41,10 @@ pub use logging::init_logging;
 pub use parser::{FeatureDir, WPFrontmatter, parse_frontmatter};
 pub use persistence::StatePersister;
 pub use prompt::PromptGenerator;
+pub use review::{
+    ReviewAutomationPolicy, ReviewFailureSeverity, ReviewFailureType, ReviewPolicyDecision,
+    ReviewPolicyExecutor,
+};
 pub use session::SessionManager;
 pub use shutdown::{ShutdownCoordinator, ShutdownSession};
 pub use signals::setup_signal_handlers;

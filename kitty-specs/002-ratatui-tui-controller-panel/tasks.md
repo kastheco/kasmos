@@ -1,11 +1,11 @@
 # Work Packages: Ratatui TUI Controller Panel
 
 **Inputs**: Design documents from `kitty-specs/002-ratatui-tui-controller-panel/`
-**Prerequisites**: plan.md (architecture, channel topology), spec.md (8 user stories, 25 FRs), research.md (async patterns), data-model.md (App/Tab/Notification types)
+**Prerequisites**: plan.md (architecture, channel topology), spec.md (8 user stories, 26 FRs, 4 NFRs), research.md (async patterns), data-model.md (App/Tab/Notification types)
 
 **Tests**: Required by constitution. All features must have corresponding tests. Feature completion requires passing `cargo test`. Test coverage is provided in WP10.
 
-**Organization**: 62 subtasks (`T001`–`T062`) roll up into 10 work packages (`WP01`–`WP10`). Each WP is independently deliverable.
+**Organization**: 70 subtasks (`T001`–`T070`) roll up into 10 work packages (`WP01`–`WP10`). Each WP is independently deliverable.
 
 ---
 
@@ -160,6 +160,8 @@
 - [x] T058 Implement slash mode injection for reviewer command (default `/kas:verify`) in target pane
 - [x] T059 Implement prompt mode tiered review execution via opencode (default model `openai/gpt-5.3-codex`, reasoning high)
 - [x] T060 Persist ReviewResult (status/findings/mode/timestamps) and display in Review tab detail pane
+- [x] T063 Implement explicit review policy executor for `manual_only`, `auto_then_manual_approve`, and `auto_and_mark_done` at `for_review` transitions
+- [x] T065 Emit typed review automation failure events (missing command, timeout, non-zero exit, parser error) as first-class notifications and log entries
 
 ### Dependencies
 - Depends on WP02 (ForReview state, Approve/Reject actions) + WP03 (tab framework)
@@ -254,9 +256,15 @@
 - [x] T052 Add integration tests for input-needed notification lifecycle
 - [x] T053 Add notification delivery audit test (emitted IDs == surfaced IDs)
 - [x] T054 Add synthetic 50-WP latency test and assert SC-005 thresholds
-- [x] T055 Add final validation gate documentation (`cargo test` required before done)
+- [x] T055 Add final validation gate documentation (`cargo test` required before done) plus constitution-aligned requirement-to-test traceability notes
 - [x] T061 Add integration tests for review runner mode selection/fallback (`slash` failure -> `prompt`)
 - [x] T062 Add integration tests for persisted review results and `for_review` lifecycle visibility after restart
+- [x] T064 Add integration tests for review policy modes (`manual_only`, `auto_then_manual_approve`, `auto_and_mark_done`) including auto-mark-done path assertions
+- [x] T066 Add integration tests that each review failure type is surfaced in both Notifications and Logs with stable WP-linked metadata
+- [x] T067 Add integration test for terminal resize reflow correctness (FR-015)
+- [x] T068 Add integration test for keyboard-only operation with mouse disabled (FR-016/NFR-003)
+- [x] T069 Add runtime-safety test ensuring no blocking handlers on event loop hot paths (NFR-004)
+- [x] T070 Add integration test for global "Advance Wave" behavior in wave-gated mode at wave boundary (FR-026)
 
 ### Implementation Notes
 - Tests use `ratatui::backend::TestBackend` for UI assertions
@@ -360,7 +368,7 @@ Wave 4 (Validation):       WP10 ──┘ depends WP02+WP04+WP05+WP06+WP08+WP09
 | T052 | Integration tests: input-needed lifecycle | WP10 | P1 | No |
 | T053 | Notification delivery audit test | WP10 | P1 | No |
 | T054 | Synthetic 50-WP latency test | WP10 | P1 | No |
-| T055 | Validation gate documentation | WP10 | P1 | No |
+| T055 | Validation gate documentation + requirement-to-test traceability | WP10 | P1 | No |
 | T056 | Emit review-ready events on ForReview transition | WP02 | P0 | No |
 | T057 | ReviewRunner service with slash/prompt modes | WP06 | P1 | No |
 | T058 | Slash mode command injection (`/kas:verify`) | WP06 | P1 | No |
@@ -368,3 +376,11 @@ Wave 4 (Validation):       WP10 ──┘ depends WP02+WP04+WP05+WP06+WP08+WP09
 | T060 | Persist + render ReviewResult details | WP06 | P1 | No |
 | T061 | Integration tests for slash->prompt fallback | WP10 | P1 | No |
 | T062 | Integration tests for review result persistence | WP10 | P1 | No |
+| T063 | Implement review policy executor for all configured modes | WP06 | P1 | No |
+| T064 | Integration tests for review policy modes | WP10 | P1 | No |
+| T065 | Emit typed review failure notifications/log entries | WP06 | P1 | No |
+| T066 | Integration tests for review failure surfacing | WP10 | P1 | No |
+| T067 | Integration test: terminal resize reflow correctness | WP10 | P1 | No |
+| T068 | Integration test: keyboard-only operation without mouse | WP10 | P1 | No |
+| T069 | Runtime-safety test: non-blocking event loop hot paths | WP10 | P1 | No |
+| T070 | Integration test: global Advance Wave in wave-gated mode | WP10 | P1 | No |
