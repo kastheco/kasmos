@@ -50,6 +50,16 @@ pub enum FifoCommand {
         /// Work package ID (example: WP02)
         wp_id: String,
     },
+    /// Approve a work package in review
+    Approve {
+        /// Work package ID (example: WP02)
+        wp_id: String,
+    },
+    /// Reject a work package in review (relaunch for rework)
+    Reject {
+        /// Work package ID (example: WP02)
+        wp_id: String,
+    },
     /// Show command help
     Help,
 }
@@ -67,6 +77,8 @@ impl FifoCommand {
             Self::Advance => "advance".to_string(),
             Self::ForceAdvance { wp_id } => format!("force-advance {wp_id}"),
             Self::Retry { wp_id } => format!("retry {wp_id}"),
+            Self::Approve { wp_id } => format!("approve {wp_id}"),
+            Self::Reject { wp_id } => format!("reject {wp_id}"),
             Self::Help => "help".to_string(),
         }
     }

@@ -1,7 +1,7 @@
 ---
 work_package_id: WP11
 title: "Review Automation Wiring — Engine → Reviewer Pane"
-lane: planned
+lane: "done"
 dependencies:
   - WP02
   - WP06
@@ -16,16 +16,21 @@ subtasks:
   - T062
 phase: "Phase 4 - Integration"
 assignee: 'unassigned'
-agent: ''
-shell_pid: ''
-review_status: ''
-reviewed_by: ''
+agent: "reviewer"
+shell_pid: "775722"
+review_status: 'approved'
+reviewed_by: 'kas'
 history:
   - timestamp: '2026-02-12T02:15:00Z'
     lane: planned
     agent: system
     shell_pid: ''
     action: "Manual WP created — review automation gap identified during 006 orchestration"
+  - timestamp: '2026-02-12T10:48:00Z'
+    lane: done
+    agent: kas
+    shell_pid: ''
+    action: "WP11 implemented: ReviewCoordinator, DetectedLane, approve/reject FIFO commands, engine wiring. All 227 tests pass."
 ---
 
 # Work Package Prompt: WP11 — Review Automation Wiring
@@ -214,3 +219,10 @@ When a WP transitions to `ForReview`, the engine logs `"WP moved to review"` (`e
 - Verify `cargo test -p kasmos` — all existing tests pass + new tests
 - Verify reviewer pane spawns correctly when a WP transitions to `ForReview` (manual test with a dummy WP)
 - Verify FIFO approve/reject commands work from CLI
+
+## Activity Log
+
+- 2026-02-12T10:14:14Z – coder – lane=doing – Implementation complete
+- 2026-02-12T10:15:48Z – coder – lane=for_review – Submitted for review via swarm
+- 2026-02-12T10:15:52Z – reviewer – shell_pid=775722 – lane=doing – Started review via workflow command
+- 2026-02-12T10:48:00Z – kas – lane=done – WP11 implemented: ReviewCoordinator, DetectedLane, approve/reject FIFO commands, engine wiring. All 227 tests pass.

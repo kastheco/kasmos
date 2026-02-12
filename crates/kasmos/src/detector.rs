@@ -341,9 +341,7 @@ impl CompletionDetector {
 
             // Try primary detection: lane transition in task file
             let detection_result = match Self::check_completion_with_retry(&raw_event.path).await {
-                Ok(Some((_wp_id, lane))) => {
-                    Some((CompletionMethod::AutoDetected, Some(lane)))
-                }
+                Ok(Some((_wp_id, lane))) => Some((CompletionMethod::AutoDetected, Some(lane))),
                 Ok(None) => {
                     // Primary failed, try secondary: git activity
                     Self::check_git_activity(&raw_event.worktree_path)

@@ -31,6 +31,10 @@ pub enum ControllerCommand {
     ForceAdvance { wp_id: String },
     /// Re-run a failed work package from scratch.
     Retry { wp_id: String },
+    /// Approve a work package in review (ForReview → Completed).
+    Approve { wp_id: String },
+    /// Reject a work package in review (ForReview → Active for rework).
+    Reject { wp_id: String },
     /// Display available commands.
     Help,
     /// Unknown or malformed command.
@@ -254,6 +258,26 @@ impl CommandReader {
                     wp_id: parts[1].to_string(),
                 })
             }
+            "approve" => {
+                if parts.len() != 2 {
+                    return Err(crate::error::KasmosError::Other(anyhow::anyhow!(
+                        "Usage: approve <WP_ID>"
+                    )));
+                }
+                Ok(ControllerCommand::Approve {
+                    wp_id: parts[1].to_string(),
+                })
+            }
+            "reject" => {
+                if parts.len() != 2 {
+                    return Err(crate::error::KasmosError::Other(anyhow::anyhow!(
+                        "Usage: reject <WP_ID>"
+                    )));
+                }
+                Ok(ControllerCommand::Reject {
+                    wp_id: parts[1].to_string(),
+                })
+            }
             "help" => {
                 if parts.len() != 1 {
                     return Err(crate::error::KasmosError::Other(anyhow::anyhow!(
@@ -305,6 +329,8 @@ pub fn command_help_text() -> &'static str {
   advance               - Confirm wave advancement (wave-gated mode)
   force-advance <WP_ID> - Skip a failed work package, unblock dependents
   retry <WP_ID>         - Re-run a failed work package from scratch
+  approve <WP_ID>       - Approve a work package in review (mark as done)
+  reject <WP_ID>        - Reject a work package in review (relaunch for rework)
   help                  - Show this message
 
 Write commands to: .kasmos/cmd.pipe

@@ -1,7 +1,7 @@
 ---
 work_package_id: WP12
 title: "TUI Launch Integration — Wire tui::run() into Runtime"
-lane: planned
+lane: "done"
 dependencies:
   - WP01
   - WP02
@@ -16,13 +16,13 @@ subtasks:
   - T068
 phase: "Phase 4 - Integration"
 assignee: 'unassigned'
-agent: ''
-shell_pid: ''
-review_status: ''
-reviewed_by: ''
+agent: "reviewer"
+shell_pid: "814301"
+review_status: "approved"
+reviewed_by: "kas"
 history:
   - timestamp: '2026-02-12T02:20:00Z'
-    lane: planned
+lane: doing
     agent: system
     shell_pid: ''
     action: "Manual WP created — TUI runtime wiring gap identified during 006 orchestration"
@@ -289,3 +289,12 @@ This cleanly separates the TUI process from the engine process and works natural
 - Manual test: WP state changes appear in the TUI within 1 second
 - Manual test: press `q` to exit TUI, verify terminal is restored cleanly
 - Manual test: TUI renders correctly when Zellij pane is resized
+
+## Activity Log
+
+- 2026-02-12T10:22:54Z – coder – lane=for_review – Submitted for review via swarm
+- 2026-02-12T10:22:55Z – reviewer – shell_pid=805216 – lane=doing – Started review via workflow command
+- 2026-02-12T10:25:27Z – coder – shell_pid=805216 – lane=doing – Moved to doing
+- 2026-02-12T10:25:46Z – coder – shell_pid=805216 – lane=for_review – Submitted for review via swarm
+- 2026-02-12T10:25:46Z – reviewer – shell_pid=814301 – lane=doing – Started review via workflow command
+- 2026-02-12T10:27:09Z – reviewer – shell_pid=814301 – lane=done – Review passed via swarm
