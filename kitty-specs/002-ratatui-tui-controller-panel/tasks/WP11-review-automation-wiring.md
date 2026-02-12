@@ -26,6 +26,11 @@ history:
     agent: system
     shell_pid: ''
     action: "Manual WP created — review automation gap identified during 006 orchestration"
+  - timestamp: '2026-02-12T10:48:00Z'
+    lane: done
+    agent: kas
+    shell_pid: ''
+    action: "WP11 implemented: ReviewCoordinator, DetectedLane, approve/reject FIFO commands, engine wiring. All 227 tests pass."
 ---
 
 # Work Package Prompt: WP11 — Review Automation Wiring
