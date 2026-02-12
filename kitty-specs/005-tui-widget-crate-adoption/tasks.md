@@ -160,13 +160,13 @@
 **Estimated prompt size**: ~500 lines
 
 ### Included Subtasks
-- [ ] T023 Add `tui-nodes` 0.10.x dependency to `crates/kasmos/Cargo.toml`
-- [ ] T024 Add `DashboardViewMode` enum and `view_mode` field to `DashboardState` in `crates/kasmos/src/tui/app.rs`
-- [ ] T025 Create `crates/kasmos/src/tui/widgets/mod.rs` and `crates/kasmos/src/tui/widgets/dependency_graph.rs` with graph builder
-- [ ] T026 [P] Implement cycle detection for WP dependency graphs before rendering
-- [ ] T027 Update `render_dashboard()` to dispatch between kanban and graph views based on `view_mode`
-- [ ] T028 Update `crates/kasmos/src/tui/keybindings.rs` — `v` key toggles view mode; disable lane nav keys in graph mode
-- [ ] T029 Register `widgets` module in `crates/kasmos/src/tui/mod.rs`
+- [x] T023 Add `tui-nodes` 0.10.x dependency to `crates/kasmos/Cargo.toml`
+- [x] T024 Add `DashboardViewMode` enum and `view_mode` field to `DashboardState` in `crates/kasmos/src/tui/app.rs`
+- [x] T025 Create `crates/kasmos/src/tui/widgets/mod.rs` and `crates/kasmos/src/tui/widgets/dependency_graph.rs` with graph builder
+- [x] T026 [P] Implement cycle detection for WP dependency graphs before rendering
+- [x] T027 Update `render_dashboard()` to dispatch between kanban and graph views based on `view_mode`
+- [x] T028 Update `crates/kasmos/src/tui/keybindings.rs` — `v` key toggles view mode; disable lane nav keys in graph mode
+- [x] T029 Register `widgets` module in `crates/kasmos/src/tui/mod.rs`
 
 ### Implementation Notes
 - AD-4 (plan.md): DashboardViewMode enum (Kanban, DependencyGraph). `v` key toggle. Lane nav keys inactive in graph mode.
