@@ -10,9 +10,9 @@ subtasks:
   - "T012"
 title: "Adopt tui-logger — Replace Hand-Rolled Log Viewer"
 phase: "Phase 2 - Crate Adoptions"
-lane: "planned"
+lane: "doing"
 assignee: ""
-agent: ""
+agent: "claude-opus-4-6"
 shell_pid: ""
 review_status: ""
 reviewed_by: ""
@@ -23,6 +23,11 @@ history:
     agent: "system"
     shell_pid: ""
     action: "Prompt generated via /spec-kitty.tasks"
+  - timestamp: "2026-02-12T12:30:00Z"
+    lane: "doing"
+    agent: "claude-opus-4-6"
+    shell_pid: ""
+    action: "Implementation complete — all subtasks T006-T012 done"
 ---
 
 # Work Package Prompt: WP02 – Adopt tui-logger — Replace Hand-Rolled Log Viewer
