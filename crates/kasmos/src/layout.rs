@@ -186,7 +186,7 @@ impl LayoutGenerator {
         (rows, cols)
     }
 
-    /// Build the root layout node with tab template (compact-bar) and content tab.
+    /// Build the root layout node with tab template (status-bar + zjstatus) and content tab.
     fn build_layout_node(
         &self,
         work_packages: &[&WorkPackage],
@@ -194,7 +194,7 @@ impl LayoutGenerator {
     ) -> Result<KdlNode, KasmosError> {
         let mut layout = KdlNode::new("layout");
 
-        // default_tab_template: adds compact-bar (bottom)
+        // default_tab_template: adds status-bar (top, keybinding hints) + zjstatus (bottom, themed)
         let tab_template = Self::build_tab_template();
         layout.ensure_children().nodes_mut().push(tab_template);
 
@@ -219,15 +219,36 @@ impl LayoutGenerator {
         Ok(layout)
     }
 
-    /// Build the default_tab_template with Zellij's built-in compact-bar.
+    /// Build the default_tab_template with status-bar (keybinding hints) and zjstatus (themed bar).
+    ///
+    /// Layout order: status-bar (top, 2 rows) → children (content) → zjstatus (bottom, 1 row).
+    /// This gives users keybinding hints (Ctrl+G, Ctrl+P, etc.) plus the Rose Pine Moon themed bar.
     fn build_tab_template() -> KdlNode {
         let mut template = KdlNode::new("default_tab_template");
+
+        // status-bar pane (2 rows, borderless, at the top — shows keybinding hints)
+        let mut status_pane = KdlNode::new("pane");
+        status_pane.entries_mut().push(kdl_int_prop("size", 2));
+        status_pane
+            .entries_mut()
+            .push(kdl_bool_prop("borderless", true));
+
+        let mut status_plugin = KdlNode::new("plugin");
+        status_plugin
+            .entries_mut()
+            .push(kdl_str_prop("location", "status-bar"));
+
+        status_pane
+            .ensure_children()
+            .nodes_mut()
+            .push(status_plugin);
+        template.ensure_children().nodes_mut().push(status_pane);
 
         // children placeholder (where tab content goes)
         let children = KdlNode::new("children");
         template.ensure_children().nodes_mut().push(children);
 
-        // compact-bar pane (1 row, borderless, at the bottom)
+        // zjstatus bar pane (1 row, borderless, at the bottom — Rose Pine Moon theme)
         let mut bar_pane = KdlNode::new("pane");
         bar_pane.entries_mut().push(kdl_int_prop("size", 1));
         bar_pane
@@ -235,9 +256,100 @@ impl LayoutGenerator {
             .push(kdl_bool_prop("borderless", true));
 
         let mut plugin = KdlNode::new("plugin");
-        plugin
-            .entries_mut()
-            .push(kdl_str_prop("location", "compact-bar"));
+        plugin.entries_mut().push(kdl_str_prop(
+            "location",
+            "file:~/.config/zellij/plugins/zjstatus.wasm",
+        ));
+
+        // Rose Pine Moon zjstatus configuration
+        let zjstatus_config: &[(&str, &str)] = &[
+            // -- Rose Pine Moon palette
+            ("color_base", "#232136"),
+            ("color_surface", "#2a273f"),
+            ("color_overlay", "#393552"),
+            ("color_muted", "#6e6a86"),
+            ("color_subtle", "#908caa"),
+            ("color_text", "#e0def4"),
+            ("color_love", "#eb6f92"),
+            ("color_gold", "#f6c177"),
+            ("color_rose", "#ea9a97"),
+            ("color_pine", "#3e8fb0"),
+            ("color_foam", "#9ccfd8"),
+            ("color_iris", "#c4a7e7"),
+            ("color_hl_low", "#2a283e"),
+            ("color_hl_med", "#44415a"),
+            ("color_hl_high", "#56526e"),
+            // Format
+            (
+                "format_left",
+                "#[bg=$overlay,fg=$subtle] {session} {mode}#[bg=$surface] {tabs}",
+            ),
+            ("format_center", "{notifications}"),
+            (
+                "format_right",
+                "#[bg=$surface,fg=$overlay]\u{e0b6}#[bg=$overlay,fg=$subtle] {command_user}@{command_host} #[bg=$overlay,fg=$text]\u{e0b6}#[bg=$text,fg=$base] {datetime} ",
+            ),
+            ("format_space", "#[bg=$surface]"),
+            ("format_hide_on_overlength", "true"),
+            ("format_precedence", "lrc"),
+            // Border
+            ("border_enabled", "false"),
+            ("border_char", "\u{2500}"),
+            ("border_format", "#[fg=$surface]{char}"),
+            ("border_position", "top"),
+            // Frame
+            ("hide_frame_for_single_pane", "false"),
+            // Mode indicators
+            ("mode_normal", "#[bg=$text,fg=$overlay]\u{e0b6}#[bg=$text,fg=$base,bold] NORMAL #[bg=$surface,fg=$text]\u{e0b4}"),
+            ("mode_tmux", "#[bg=$pine,fg=$overlay]\u{e0b6}#[bg=$pine,fg=$base,bold] TMUX #[bg=$surface,fg=$pine]\u{e0b4}"),
+            ("mode_locked", "#[bg=$hl_high,fg=$overlay]\u{e0b6}#[bg=$hl_high,fg=$subtle,bold] LOCKED #[bg=$surface,fg=$hl_high]\u{e0b4}"),
+            ("mode_pane", "#[bg=$foam,fg=$overlay]\u{e0b6}#[bg=$foam,fg=$base,bold] PANE #[bg=$surface,fg=$foam]\u{e0b4}"),
+            ("mode_tab", "#[bg=$foam,fg=$overlay]\u{e0b6}#[bg=$foam,fg=$base,bold] TAB #[bg=$surface,fg=$foam]\u{e0b4}"),
+            ("mode_scroll", "#[bg=$iris,fg=$overlay]\u{e0b6}#[bg=$iris,fg=$base,bold] SCROLL #[bg=$surface,fg=$iris]\u{e0b4}"),
+            ("mode_enter_search", "#[bg=$iris,fg=$overlay]\u{e0b6}#[bg=$iris,fg=$base,bold] ENT-SEARCH #[bg=$surface,fg=$iris]\u{e0b4}"),
+            ("mode_search", "#[bg=$iris,fg=$overlay]\u{e0b6}#[bg=$iris,fg=$base,bold] SEARCH #[bg=$surface,fg=$iris]\u{e0b4}"),
+            ("mode_resize", "#[bg=$gold,fg=$overlay]\u{e0b6}#[bg=$gold,fg=$base,bold] RESIZE #[bg=$surface,fg=$gold]\u{e0b4}"),
+            ("mode_rename_tab", "#[bg=$gold,fg=$overlay]\u{e0b6}#[bg=$gold,fg=$base,bold] RENAME TAB #[bg=$surface,fg=$gold]\u{e0b4}"),
+            ("mode_rename_pane", "#[bg=$gold,fg=$overlay]\u{e0b6}#[bg=$gold,fg=$base,bold] RENAME PANE #[bg=$surface,fg=$gold]\u{e0b4}"),
+            ("mode_move", "#[bg=$gold,fg=$overlay]\u{e0b6}#[bg=$gold,fg=$base,bold] MOVE #[bg=$surface,fg=$gold]\u{e0b4}"),
+            ("mode_session", "#[bg=$iris,fg=$overlay]\u{e0b6}#[bg=$iris,fg=$base,bold] SESSION #[bg=$surface,fg=$iris]\u{e0b4}"),
+            ("mode_prompt", "#[bg=$iris,fg=$overlay]\u{e0b6}#[bg=$iris,fg=$base,bold] PROMPT #[bg=$surface,fg=$iris]\u{e0b4}"),
+            // Tab styles
+            ("tab_normal", "#[bg=$overlay,fg=$surface]\u{e0b6}#[bg=$overlay,fg=$text] {index} #[bg=$overlay,fg=$text,bold] {name} {floating_indicator}#[bg=$surface,fg=$overlay]\u{e0b4}"),
+            ("tab_normal_fullscreen", "#[bg=$overlay,fg=$surface]\u{e0b6}#[bg=$overlay,fg=$text] {index} #[bg=$overlay,fg=$text,bold] {name} {fullscreen_indicator}#[bg=$surface,fg=$overlay]\u{e0b4}"),
+            ("tab_normal_sync", "#[bg=$overlay,fg=$surface]\u{e0b6}#[bg=$overlay,fg=$text] {index} #[bg=$overlay,fg=$text,bold] {name} {sync_indicator}#[bg=$surface,fg=$overlay]\u{e0b4}"),
+            ("tab_active", "#[bg=$iris,fg=$surface]\u{e0b6}#[bg=$iris,fg=$base] {index} #[bg=$iris,fg=$base,bold] {name} {floating_indicator}#[bg=$surface,fg=$iris]\u{e0b4}"),
+            ("tab_active_fullscreen", "#[bg=$iris,fg=$surface]\u{e0b6}#[bg=$iris,fg=$base] {index} #[bg=$iris,fg=$base,bold] {name} {fullscreen_indicator}#[bg=$surface,fg=$iris]\u{e0b4}"),
+            ("tab_active_sync", "#[bg=$iris,fg=$surface]\u{e0b6}#[bg=$iris,fg=$base] {index} #[bg=$iris,fg=$base,bold] {name} {sync_indicator}#[bg=$surface,fg=$iris]\u{e0b4}"),
+            ("tab_separator", "#[bg=$surface]"),
+            // Tab indicators
+            ("tab_sync_indicator", ""),
+            ("tab_fullscreen_indicator", "\u{f02d3}"),
+            ("tab_floating_indicator", "\u{f0e59}"),
+            // Notifications
+            ("notification_format_unread", "#[bg=$love,fg=$surface]\u{e0b6}#[bg=$love,fg=$base] {message} #[bg=$surface,fg=$love]\u{e0b4}"),
+            ("notification_format_no_notifications", ""),
+            ("notification_show_interval", "10"),
+            // Commands
+            ("command_host_command", "uname -n"),
+            ("command_host_format", "{stdout}"),
+            ("command_host_interval", "0"),
+            ("command_host_rendermode", "static"),
+            ("command_user_command", "whoami"),
+            ("command_user_format", "{stdout}"),
+            ("command_user_interval", "0"),
+            ("command_user_rendermode", "static"),
+            // Datetime
+            ("datetime", "{format}"),
+            ("datetime_format", "%Y-%m-%d %H:%M"),
+            ("datetime_timezone", "America/Chicago"),
+        ];
+
+        for (key, value) in zjstatus_config {
+            let mut node = KdlNode::new(*key);
+            node.entries_mut().push(kdl_str_arg(value));
+            plugin.ensure_children().nodes_mut().push(node);
+        }
 
         bar_pane.ensure_children().nodes_mut().push(plugin);
         template.ensure_children().nodes_mut().push(bar_pane);
