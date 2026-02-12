@@ -120,6 +120,52 @@ cargo run -p kasmos -- start --feature 002-ratatui-tui-controller-panel
 # → Resize terminal to narrow width — verify no overlapping nodes
 ```
 
+### WP06: TUI UX Polish
+
+```bash
+# Verify tabs/ module extraction
+ls crates/kasmos/src/tui/tabs/
+# Should list: mod.rs, dashboard.rs, review.rs, logs.rs
+
+# Verify app.rs no longer contains tab rendering functions
+grep -rn 'fn render_dashboard\|fn render_review\|fn render_logs' crates/kasmos/src/tui/app.rs
+# Should return no results (SC-015)
+
+# Run and verify status footer
+cargo run -p kasmos -- start --feature <test-feature>
+# → Status footer visible at bottom of every tab (SC-010)
+# → Shows run state, completion count, active/failed counts, elapsed time, mode
+
+# Verify help overlay
+# → Press '?' — help overlay appears with tab-contextual keybindings
+# → Press '?' or 'Esc' — overlay dismisses
+# → While overlay is visible, other keys are swallowed
+
+# Verify WP detail popup
+# → Select a WP in Dashboard, press Enter
+# → Detail popup shows all fields (ID, title, state, wave, deps, failures, time, worktree, pane, completion)
+# → Press Esc to dismiss
+
+# Verify progress summary bar
+# → Dashboard shows completion gauge and per-state counts above kanban lanes
+
+# Verify responsive layout
+# → Resize terminal to <60 cols — should show 1 column
+# → Resize to 60-99 cols — should show 2 columns
+# → Resize to 100+ cols — should show 4 columns (SC-014)
+
+# Verify lane scrolling
+# → With a feature that has 20+ WPs in one lane, navigate with j/k
+# → Selection should always be visible; lane scrolls (SC-012)
+
+# Verify failure badges
+# → WPs with failure_count > 0 show red [xN] badge
+
+# Verify notification cycling
+# → With 3+ notifications, press 'n' repeatedly
+# → Should cycle through all notifications, not always jump to first
+```
+
 ## Revertibility Check (SC-009)
 
 After each WP merge, verify independent revertibility:
