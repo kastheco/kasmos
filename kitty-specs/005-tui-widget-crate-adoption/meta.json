@@ -1,10 +1,29 @@
 {
+  "accept_commit": null,
+  "acceptance_history": [
+    {
+      "accepted_at": "2026-02-12T17:15:07Z",
+      "accepted_by": "controller",
+      "accepted_from_commit": "31910fbfd48c8e06c1ced9369f2730ec153207cf",
+      "branch": "master",
+      "mode": "pr",
+      "validation_commands": [
+        "cargo build -p kasmos",
+        "cargo test -p kasmos",
+        "cargo clippy -p kasmos -- -D warnings"
+      ]
+    }
+  ],
+  "acceptance_mode": "pr",
+  "accepted_at": "2026-02-12T17:15:07Z",
+  "accepted_by": "controller",
+  "accepted_from_commit": "31910fbfd48c8e06c1ced9369f2730ec153207cf",
+  "created_at": "2026-02-11T22:00:00Z",
   "feature_number": "005",
-  "slug": "005-tui-widget-crate-adoption",
   "friendly_name": "TUI Widget Crate Adoption",
   "mission": "software-dev",
+  "slug": "005-tui-widget-crate-adoption",
   "source_description": "Refactor the kasmos TUI (built in feature 002) to adopt 5 community ratatui crates (tui-logger, tui-popup, throbber-widgets-tui, ratatui-macros, tui-nodes), replacing hand-rolled implementations and adding WP dependency graph visualization. Each adoption is independently mergeable. A final UX polish WP adds help overlay, status footer, progress summary, WP detail popups, responsive layout, lane scrolling, failure badges, notification cycling, and module extraction.",
-  "created_at": "2026-02-11T22:00:00Z",
   "target_branch": "master",
   "vcs": "git"
 }
