@@ -58,7 +58,7 @@
 - [x] T009 Remove hand-rolled log types and state from `crates/kasmos/src/tui/app.rs`
 - [x] T010 Add `TuiLoggerSmartWidget` rendering in the Logs tab
 - [x] T011 Replace `handle_logs_key()` in `crates/kasmos/src/tui/keybindings.rs` with tui-logger key event delegation
-- [ ] T012 Update all tests referencing removed log types and state
+- [x] T012 Update all tests referencing removed log types and state
 
 ### Implementation Notes
 - AD-1 (plan.md): Conditional subscriber — `init_logging()` gains a `tui_mode: bool` parameter.
