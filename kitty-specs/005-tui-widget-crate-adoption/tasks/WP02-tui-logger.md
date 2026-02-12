@@ -10,10 +10,10 @@ subtasks:
   - "T012"
 title: "Adopt tui-logger — Replace Hand-Rolled Log Viewer"
 phase: "Phase 2 - Crate Adoptions"
-lane: "planned"
+lane: "doing"
 assignee: ""
-agent: ""
-shell_pid: ""
+agent: "reviewer"
+shell_pid: "1313335"
 review_status: ""
 reviewed_by: ""
 dependencies: ["WP01"]
@@ -367,3 +367,6 @@ Depends on WP01 (ratatui-macros). New code should use macro syntax.
 ## Activity Log
 
 - 2026-02-12T00:00:00Z – system – lane=planned – Prompt created.
+- 2026-02-12T12:31:34Z – claude-opus-4-6 – lane=doing – Implementation complete
+- 2026-02-12T12:32:32Z – claude-opus-4-6 – lane=for_review – Submitted for review
+- 2026-02-12T12:32:39Z – reviewer – shell_pid=1313335 – lane=doing – Started review via workflow command
