@@ -5,7 +5,7 @@
 
 **Tests**: Not explicitly requested. Each WP validates via `cargo build`, `cargo test`, `cargo clippy` (SC-005, SC-006).
 
-**Organization**: 29 fine-grained subtasks (`T001`–`T029`) roll up into 5 work packages (`WP01`–`WP05`). Each work package adopts one crate and is independently mergeable and revertible (FR-015, SC-009).
+**Organization**: 39 fine-grained subtasks (`T001`–`T039`) roll up into 6 work packages (`WP01`–`WP06`). WP01–WP05 each adopt one crate and are independently mergeable and revertible (FR-015, SC-009). WP06 is a UX polish pass that depends on all prior WPs.
 
 **Prompt Files**: Each work package references a matching prompt file in `kitty-specs/005-tui-widget-crate-adoption/tasks/`.
 
@@ -19,7 +19,7 @@
 **Estimated prompt size**: ~350 lines
 
 ### Included Subtasks
-- [ ] T001 Add `ratatui-macros` 0.7.x dependency to `crates/kasmos/Cargo.toml`
+- [x] T001 Add `ratatui-macros` 0.7.x dependency to `crates/kasmos/Cargo.toml`
 - [ ] T002 Migrate Layout construction patterns in `crates/kasmos/src/tui/app.rs` to `vertical![]`/`horizontal![]` macros
 - [ ] T003 Migrate Line/Span text construction patterns in `crates/kasmos/src/tui/app.rs` to `line![]`/`span![]` macros
 - [ ] T004 Update imports — add `ratatui_macros` use statements, remove newly-unused ratatui imports
@@ -191,6 +191,51 @@
 
 ---
 
+## Work Package WP06: TUI UX Polish — Help Overlay, Status Footer, Dashboard Enhancements, and Responsive Layout (Priority: P2)
+
+**Goal**: Comprehensive UI/UX polish pass on the kasmos TUI. Extract rendering into a `tabs/` module, add a persistent status footer with run state and progress, add a `?` help overlay, implement dashboard lane scrolling (using the existing unused `scroll_offsets`), add WP detail popups on `Enter`, add a progress summary bar, implement responsive column layout for narrow terminals, show failure count badges, and enable notification cycling.
+**Independent Test**: Launch kasmos TUI, verify status footer visible on all tabs. Press `?` for help overlay. Navigate a long WP list with `j`/`k` and verify scrolling. Press `Enter` on a WP for detail popup. Resize terminal and verify responsive column layout.
+**Prompt**: `kitty-specs/005-tui-widget-crate-adoption/tasks/WP06-tui-ux-polish.md`
+**Estimated prompt size**: ~700 lines
+
+### Included Subtasks
+- [ ] T030 Extract tab rendering into `tabs/` module (`dashboard.rs`, `review.rs`, `logs.rs`)
+- [ ] T031 Add persistent status footer (run state, elapsed time, WP counts, wave progress)
+- [ ] T032 Add `?` key help overlay with tab-contextual keybindings via tui-popup
+- [ ] T033 Implement dashboard lane scrolling using existing `scroll_offsets` field
+- [ ] T034 Add WP detail popup on `Enter` key showing all WP fields
+- [ ] T035 Add progress summary bar above kanban lanes (gauge + status counts)
+- [ ] T036 Implement responsive column layout (4/2/1 columns based on terminal width)
+- [ ] T037 Show failure count badges on WPs with `failure_count > 0`
+- [ ] T038 Implement notification cycling (`n` key advances through notification list)
+- [ ] T039 Update tests and verify build/clippy pass
+
+### Implementation Notes
+- T030 (module extraction) must be done first within this WP — all subsequent subtasks add code to the new `tabs/` files.
+- Uses tui-popup (WP03) for help overlay and WP detail popup — consistent overlay behavior.
+- Uses ratatui-macros (WP01) for all new layout and text construction.
+- Status footer uses `on_tick()` (previously an empty placeholder) to refresh elapsed time.
+- Overlay priority order: help > confirmation > detail > normal rendering. Key interception follows the same order.
+- `DashboardState.scroll_offsets` is currently dead code — this WP brings it to life.
+- `NotificationKind::InputNeeded` remains unused — not in scope for this WP.
+
+### Parallel Opportunities
+- T031 (status footer) and T032 (help overlay) are independent — different rendering areas and key handling.
+- T033 (lane scrolling) and T035 (progress summary) are independent within the dashboard.
+- T034 (WP detail popup) is independent of T036 (responsive layout).
+- T037 (failure badges) and T038 (notification cycling) are independent.
+- T030 (module extraction) must precede T033, T035, T036 (they modify `tabs/dashboard.rs`).
+
+### Dependencies
+- Depends on WP01 (macro syntax), WP02 (tui-logger — logs tab rendering), WP03 (tui-popup — overlay rendering), WP04 (throbber — dashboard spinners), WP05 (tui-nodes — graph view toggle). Implementation command: `spec-kitty implement WP06 --base WP05`
+
+### Risks & Mitigations
+- Module extraction merge conflicts: T030 is a pure refactor — do it first to absorb prior WP changes before adding new code.
+- Responsive layout boundary cases: Test with `TestBackend` at widths 59, 60, 99, 100, 120.
+- Overlay stacking: Enforce single-active-overlay rule via key interception priority.
+
+---
+
 ## Dependency & Execution Summary
 
 ```
@@ -198,14 +243,15 @@ WP01 (ratatui-macros) ← Foundation, no dependencies
   ├── WP02 (tui-logger)         ← depends on WP01
   ├── WP03 (tui-popup)          ← depends on WP01
   ├── WP04 (throbber-widgets)   ← depends on WP01
-  └── WP05 (tui-nodes)          ← depends on WP01
+  ├── WP05 (tui-nodes)          ← depends on WP01
+  └── WP06 (UX polish)          ← depends on WP01–WP05
 ```
 
-- **Sequence**: WP01 first → WP02–WP05 can proceed in parallel after WP01 merges.
+- **Sequence**: WP01 first → WP02–WP05 can proceed in parallel after WP01 merges → WP06 after all others merge.
 - **Practical note**: WP02–WP04 all modify `app.rs` and `keybindings.rs`. Sequential merging recommended to avoid merge conflicts (see plan.md).
-- **Recommended merge order**: WP01 → WP02 → WP03 → WP04 → WP05 (by priority P4→P1→P2→P3→P2).
+- **Recommended merge order**: WP01 → WP02 → WP03 → WP04 → WP05 → WP06 (by priority P4→P1→P2→P3→P2→P2).
 - **MVP Scope**: WP01 + WP02 (macro foundation + highest-value log viewer replacement, SC-007).
-- **Parallelization**: After WP01 merges, WP02–WP05 are all independent. Assign to separate agents for maximum throughput.
+- **Parallelization**: After WP01 merges, WP02–WP05 are all independent. Assign to separate agents for maximum throughput. WP06 must wait for all prior WPs.
 
 ---
 
@@ -242,3 +288,13 @@ WP01 (ratatui-macros) ← Foundation, no dependencies
 | T027 | Update render_dashboard() for graph view dispatch | WP05 | P2 | No |
 | T028 | Add v-key toggle + disable nav in graph mode | WP05 | P2 | Yes |
 | T029 | Register widgets module in tui/mod.rs | WP05 | P2 | No |
+| T030 | Extract tab rendering into tabs/ module | WP06 | P2 | No |
+| T031 | Add persistent status footer | WP06 | P2 | Yes |
+| T032 | Add ? key help overlay via tui-popup | WP06 | P2 | Yes |
+| T033 | Implement dashboard lane scrolling | WP06 | P2 | Yes |
+| T034 | Add WP detail popup on Enter key | WP06 | P2 | Yes |
+| T035 | Add progress summary bar above kanban | WP06 | P2 | Yes |
+| T036 | Implement responsive column layout | WP06 | P2 | Yes |
+| T037 | Show failure count badges on WPs | WP06 | P2 | Yes |
+| T038 | Implement notification cycling | WP06 | P2 | Yes |
+| T039 | Update tests and verify build/clippy | WP06 | P2 | No |
