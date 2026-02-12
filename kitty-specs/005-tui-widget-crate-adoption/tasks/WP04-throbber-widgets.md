@@ -9,7 +9,7 @@ subtasks:
 title: "Adopt throbber-widgets-tui — Animated Activity Indicators"
 phase: "Phase 2 - Crate Adoptions"
 lane: "done"
-assignee: ""
+assignee: "coder"
 agent: "reviewer"
 shell_pid: "1298376"
 review_status: "approved"

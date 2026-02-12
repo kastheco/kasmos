@@ -11,7 +11,7 @@ subtasks:
 title: "Adopt tui-logger — Replace Hand-Rolled Log Viewer"
 phase: "Phase 2 - Crate Adoptions"
 lane: "done"
-assignee: ""
+assignee: "coder"
 agent: "reviewer"
 shell_pid: "1313335"
 review_status: "approved"

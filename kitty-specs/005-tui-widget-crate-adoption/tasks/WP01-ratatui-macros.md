@@ -9,7 +9,7 @@ subtasks:
 title: "Adopt ratatui-macros — Layout & Text Macro Migration"
 phase: "Phase 1 - Foundation"
 lane: "done"
-assignee: ""
+assignee: "coder"
 agent: "reviewer"
 shell_pid: "1195051"
 review_status: "approved"

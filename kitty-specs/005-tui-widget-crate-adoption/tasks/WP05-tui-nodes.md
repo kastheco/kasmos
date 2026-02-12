@@ -11,7 +11,7 @@ subtasks:
 title: "Adopt tui-nodes — WP Dependency Graph Visualization"
 phase: "Phase 2 - Crate Adoptions"
 lane: "done"
-assignee: ""
+assignee: "coder"
 agent: "reviewer"
 shell_pid: "1312308"
 review_status: "approved"
