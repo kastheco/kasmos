@@ -1,7 +1,7 @@
 ---
 work_package_id: WP03
 title: Dashboard Tab — Kanban Board
-lane: "for_review"
+lane: "done"
 dependencies:
 - WP01
 subtasks:
