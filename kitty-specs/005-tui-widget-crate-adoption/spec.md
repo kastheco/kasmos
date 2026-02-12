@@ -111,6 +111,28 @@ An operator selects a feature in the Dashboard and toggles a dependency graph vi
 
 ---
 
+### User Story 6 - Polished TUI Experience with Help, Status, and Responsive Layout (Priority: P2)
+
+An operator launches the kasmos TUI and immediately sees a persistent status footer showing the run state, elapsed time, completion progress, and active/failed counts — no need to mentally tally kanban lanes. They press `?` to discover keybindings and see a context-sensitive help overlay listing all keys for the current tab. On the Dashboard, a progress summary bar shows overall completion as a visual gauge. Pressing `Enter` on a WP opens a detail popup with all metadata (wave, dependencies, failure count, worktree path, pane ID). WPs that have failed and been retried show `[x2]` failure badges. When the operator resizes their terminal to a narrow width, the kanban columns gracefully collapse from 4 to 2 to 1. Pressing `n` multiple times cycles through all notifications, not just the first one. The TUI source code is organized into per-tab rendering modules, making it maintainable and extensible.
+
+**Why this priority**: This WP addresses multiple UX gaps identified in the initial TUI implementation — dead-code scroll offsets, placeholder `on_tick()`, no help system, no WP detail view, no progress overview, no failure visibility, and a monolithic rendering file. It transforms the TUI from functional to polished.
+
+**Independent Test**: Can be tested by launching kasmos with multiple WPs in various states, verifying the status footer, help overlay, WP detail popup, progress bar, responsive layout, failure badges, and notification cycling all work correctly.
+
+**Acceptance Scenarios**:
+
+1. **Given** kasmos is running, **When** the operator looks at any tab, **Then** a persistent 1-row status footer at the bottom shows: run state, completed/total count, active count, failed count, elapsed time, and progression mode.
+2. **Given** the operator presses `?`, **When** the help overlay appears, **Then** it lists all global keybindings plus tab-specific keybindings for the currently active tab. Pressing `?` or `Esc` dismisses it.
+3. **Given** a kanban lane has more WPs than visible rows, **When** the operator navigates with `j`/`k`, **Then** the lane scrolls to keep the selected WP visible using `DashboardState.scroll_offsets`.
+4. **Given** the operator selects a WP in the Dashboard and presses `Enter`, **When** the detail popup appears, **Then** it shows: ID, title, state, wave, dependencies, failure count, elapsed time, worktree path, pane ID, and completion method. `Esc` dismisses it.
+5. **Given** the Dashboard is active, **When** the operator views the progress summary bar, **Then** it shows a visual gauge of completion percentage and colored counts for each WP state plus wave progress.
+6. **Given** the terminal width is less than 60 columns, **When** the Dashboard renders, **Then** it shows 1 column (the focused lane) instead of 4. Between 60-99 columns, it shows 2 columns.
+7. **Given** a WP has `failure_count: 3`, **When** it renders in any view (dashboard, review, detail popup), **Then** a red `[x3]` badge is visible next to the WP.
+8. **Given** there are 3 active notifications, **When** the operator presses `n` three times, **Then** each press jumps to a different notification in sequence.
+9. **Given** the `crates/kasmos/src/tui/` directory, **When** this WP is complete, **Then** a `tabs/` subdirectory exists with `dashboard.rs`, `review.rs`, and `logs.rs`, and `app.rs` no longer contains tab-specific rendering functions.
+
+---
+
 ### Edge Cases
 
 - What if `tui-logger` version is incompatible with the project's `tracing` subscriber stack? The integration layer must compose with existing tracing subscribers without replacing them.
@@ -141,6 +163,15 @@ An operator selects a feature in the Dashboard and toggles a dependency graph vi
 - **FR-013**: System MUST use the `v` key to toggle between the kanban lane view and the dependency graph view in the Dashboard tab.
 - **FR-014**: System MUST preserve all existing TUI functionality after each crate adoption — no behavioral regressions.
 - **FR-015**: Each crate adoption MUST be independently mergeable — reverting one adoption must not break the others.
+- **FR-016**: System MUST render a persistent status footer on all tabs showing run state, WP completion count, active count, failed count, elapsed time, and progression mode.
+- **FR-017**: System MUST provide a `?` key help overlay listing all keybindings for the current tab, rendered via tui-popup, dismissible with `?` or `Esc`.
+- **FR-018**: System MUST implement dashboard lane scrolling using `DashboardState.scroll_offsets` so the selected WP is always visible in lanes with more items than visible rows.
+- **FR-019**: System MUST render a WP detail popup on `Enter` key in the Dashboard showing all WP metadata fields (ID, title, state, wave, dependencies, failure count, elapsed time, worktree path, pane ID, completion method).
+- **FR-020**: System MUST render a progress summary bar above the kanban lanes showing a visual completion gauge and per-state WP counts.
+- **FR-021**: System MUST implement responsive column layout — 4 columns at >= 100 cols, 2 columns at 60-99 cols, 1 column at < 60 cols.
+- **FR-022**: System MUST display failure count badges (e.g., `[x2]`) on WPs with `failure_count > 0` in dashboard, review, and detail views.
+- **FR-023**: System MUST support notification cycling — repeated `n` presses advance through the notification list instead of always jumping to the first notification.
+- **FR-024**: System MUST extract per-tab rendering into a `tabs/` module (`dashboard.rs`, `review.rs`, `logs.rs`) to keep `app.rs` focused on state and lifecycle.
 
 ### Key Entities
 
@@ -165,6 +196,12 @@ An operator selects a feature in the Dashboard and toggles a dependency graph vi
 - **SC-007**: The Logs tab implementation is reduced by at least 100 lines of code compared to the hand-rolled version.
 - **SC-008**: The dependency graph correctly renders all WP nodes and dependency edges for a feature with at least 10 WPs.
 - **SC-009**: Each crate adoption can be reverted via a single `git revert` of its merge commit without breaking other adoptions.
+- **SC-010**: The status footer is visible on all 3 tabs and updates elapsed time at least once per second.
+- **SC-011**: The help overlay correctly lists at least 5 keybindings per tab (global + tab-specific).
+- **SC-012**: Dashboard lanes with 20+ WPs scroll correctly, keeping the selected item visible at all times.
+- **SC-013**: The WP detail popup displays at least 8 metadata fields from the WorkPackage struct.
+- **SC-014**: Responsive layout correctly renders 4, 2, or 1 column(s) at terminal widths of 120, 80, and 50 respectively.
+- **SC-015**: After the `tabs/` module extraction, `app.rs` contains zero tab-specific rendering functions (`render_dashboard`, `render_review`, `render_logs` are all in `tabs/`).
 
 ## Assumptions
 

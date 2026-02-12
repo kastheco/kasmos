@@ -23,7 +23,7 @@ Adopt 5 community ratatui crates (`ratatui-macros`, `tui-logger`, `tui-popup`, `
 **Project Type**: Rust workspace — single crate `crates/kasmos/`
 **Performance Goals**: TUI render loop stays non-blocking; key handling < 25ms (existing benchmark); spinner animation at 250ms tick
 **Constraints**: All 5 latest crate versions require ratatui 0.30 — feature 006 (dependency upgrade) must merge first
-**Scale/Scope**: ~5 TUI source files affected; 5 independently-mergeable adoption WPs
+**Scale/Scope**: ~5 TUI source files affected + new `tabs/` module; 5 independently-mergeable adoption WPs + 1 UX polish WP
 
 ## Constitution Check
 
@@ -71,25 +71,34 @@ crates/kasmos/
     │                                #   TUI mode: Registry + TuiTracingSubscriberLayer
     ├── tui/
     │   ├── mod.rs                   # Updated: tui_logger::init_logger() call added
+    │   │                            #   + registers tabs/ and widgets/ modules
     │   ├── app.rs                   # Major changes:
     │   │                            #   - LogsState/LogEntry/LogLevel removed
     │   │                            #   - TuiWidgetState added (tui-logger)
     │   │                            #   - ThrobberState added (shared, single instance)
     │   │                            #   - DashboardState.view_mode enum added (Kanban|Graph)
-    │   │                            #   - render_logs() replaced by TuiLoggerSmartWidget
     │   │                            #   - Popup state (Option<ConfirmAction>) for dialogs
+    │   │                            #   - show_help, detail_wp_id, notification_cycle_index (WP06)
     │   │                            #   - Macro syntax throughout (line![], span![], etc.)
+    │   │                            #   - Rendering extracted to tabs/ module (WP06)
     │   ├── keybindings.rs           # Updated:
     │   │                            #   - 'v' key toggles Dashboard view mode
     │   │                            #   - tui-logger widget events forwarded in Logs tab
     │   │                            #   - Popup y/n/Esc handling routed through tui-popup
+    │   │                            #   - '?' help overlay toggle, Enter WP detail (WP06)
+    │   │                            #   - Notification cycling (WP06)
     │   ├── event.rs                 # Minimal changes (event types unchanged)
+    │   ├── tabs/                    # NEW module (WP06 — extracted from app.rs)
+    │   │   ├── mod.rs               # Re-exports tab rendering functions
+    │   │   ├── dashboard.rs         # render_dashboard(), progress summary, responsive layout
+    │   │   ├── review.rs            # render_review()
+    │   │   └── logs.rs              # render_logs() (thin TuiLoggerSmartWidget wrapper)
     │   └── widgets/                 # NEW module (optional, for graph adapter)
     │       └── dependency_graph.rs  # tui-nodes adapter: builds NodeGraph from OrchestrationRun
     └── tests/                       # Existing tests updated; new tests per adoption
 ```
 
-**Structure Decision**: Existing `crates/kasmos/src/tui/` module hierarchy is retained. A new `widgets/` submodule may be added for the dependency graph adapter if the tui-nodes integration is non-trivial enough to warrant its own file. All other changes are in-place modifications to existing files.
+**Structure Decision**: Existing `crates/kasmos/src/tui/` module hierarchy is retained. A new `widgets/` submodule may be added for the dependency graph adapter if the tui-nodes integration is non-trivial enough to warrant its own file. A new `tabs/` submodule (WP06) extracts per-tab rendering from `app.rs` to keep the file focused on state and lifecycle. All other changes are in-place modifications to existing files.
 
 ## Architecture Decisions
 
@@ -135,12 +144,14 @@ Feature 002 merges → Feature 006 merges → Feature 005 begins
                                            ├── WP04: throbber-widgets-tui (depends on WP01 for macro syntax)
                                            │         (WP02–WP04 are independent of each other, parallel-capable)
                                            │
-                                           └── WP05: tui-nodes (depends on WP01; largest scope)
+                                           ├── WP05: tui-nodes (depends on WP01; largest scope)
+                                           │
+                                           └── WP06: UX polish (depends on WP01–WP05; uses all adopted crates)
 ```
 
-All WPs are independently mergeable per FR-015. WP02–WP05 logically depend on WP01 (macros) being merged first so new code uses macro idioms. WP02–WP04 have no dependency on each other. WP05 is the largest scope (new visualization, new module) and should come last.
+WP01–WP05 are independently mergeable per FR-015. WP02–WP05 logically depend on WP01 (macros) being merged first so new code uses macro idioms. WP02–WP04 have no dependency on each other. WP05 is the largest scope (new visualization, new module). WP06 depends on all prior WPs — it is a comprehensive UX polish pass that leverages every adopted crate (tui-popup for help/detail overlays, macros for all new layout code, tui-logger for the logs tab extraction, throbber state for dashboard rendering, tui-nodes graph view toggle).
 
-**Practical note**: WP02–WP04 are logically independent but all modify `crates/kasmos/src/tui/app.rs` and `crates/kasmos/src/tui/keybindings.rs` (different sections). Sequential merging is recommended to avoid merge conflicts even though the features don't depend on each other.
+**Practical note**: WP02–WP04 are logically independent but all modify `crates/kasmos/src/tui/app.rs` and `crates/kasmos/src/tui/keybindings.rs` (different sections). Sequential merging is recommended to avoid merge conflicts even though the features don't depend on each other. WP06 should be the final WP merged — its module extraction (T030) absorbs all prior changes into the new `tabs/` structure.
 
 ## Complexity Tracking
 

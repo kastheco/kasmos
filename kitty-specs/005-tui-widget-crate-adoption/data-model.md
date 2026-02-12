@@ -80,6 +80,23 @@ pub enum ConfirmAction {
 - `title(&self) -> &str` — Dialog title (e.g., "Confirm Force Advance")
 - `description(&self) -> String` — Dialog body text describing the action
 
+### ColumnMode (derived at render time by WP06 — responsive layout)
+
+```rust
+/// Determines how many kanban columns to render based on terminal width.
+/// Not stored in state — computed from `area.width` during each render frame.
+enum ColumnMode {
+    /// >= 100 cols: all 4 lanes visible
+    Full,       // 4 columns
+    /// 60..100 cols: 2 lanes visible (focused pair)
+    Compact,    // 2 columns
+    /// < 60 cols: 1 lane visible (focused lane only)
+    Single,     // 1 column
+}
+```
+
+**Lifecycle**: Derived from terminal width at render time. Not stored in state — no persistence needed.
+
 ## Entities Modified
 
 ### App (modified across WP01–WP05)
@@ -110,6 +127,16 @@ pub struct App {
 
     // ADDED (WP04 — throbber-widgets-tui):
     // (ThrobberState lives in DashboardState, not App directly)
+
+    // ADDED (WP06 — UX polish):
+    /// Whether the help overlay is currently visible.
+    pub show_help: bool,
+
+    /// WP ID currently shown in the detail popup, if any.
+    pub detail_wp_id: Option<String>,
+
+    /// Index into `notifications` for cycling with 'n' key.
+    pub notification_cycle_index: usize,
 }
 ```
 
@@ -164,6 +191,10 @@ Frame count depends on the selected throbber set (e.g., `BRAILLE_SIX` has 6 fram
 - `ThrobberState` is ticked unconditionally on every 250ms tick regardless of active tab (keeps animation smooth when switching back to Dashboard)
 - `DashboardViewMode` does not affect any non-Dashboard state
 - `logger_state` (TuiWidgetState) is initialized once at App creation and persists for the session lifetime
+- `show_help`, `detail_wp_id`, and `pending_confirm` are mutually exclusive overlays — key interception priority: help > confirm > detail
+- `notification_cycle_index` is reset to 0 whenever the notification list changes (additions or removals)
+- `detail_wp_id` must be cleared if the referenced WP is removed from the run (stale reference check)
+- `scroll_offsets[lane]` must be clamped to `0..=max(0, lane_item_count - visible_height)` during rendering
 
 ## Dependency Graph Data Flow
 
