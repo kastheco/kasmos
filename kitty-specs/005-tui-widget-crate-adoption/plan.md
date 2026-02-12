@@ -23,7 +23,7 @@ Adopt 5 community ratatui crates (`ratatui-macros`, `tui-logger`, `tui-popup`, `
 **Project Type**: Rust workspace — single crate `crates/kasmos/`
 **Performance Goals**: TUI render loop stays non-blocking; key handling < 25ms (existing benchmark); spinner animation at 250ms tick
 **Constraints**: All 5 latest crate versions require ratatui 0.30 — feature 006 (dependency upgrade) must merge first
-**Scale/Scope**: ~5 TUI source files affected + new `tabs/` module; 5 independently-mergeable adoption WPs + 1 UX polish WP
+**Scale/Scope**: ~9 TUI source files affected (5 existing + 4 new in `tabs/` module); 5 independently-mergeable adoption WPs + 1 UX polish WP
 
 ## Constitution Check
 

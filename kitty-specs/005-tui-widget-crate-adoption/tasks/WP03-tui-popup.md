@@ -8,9 +8,9 @@ subtasks:
   - "T017"
 title: "Adopt tui-popup — Confirmation Dialog Widget"
 phase: "Phase 2 - Crate Adoptions"
-lane: "planned"
+lane: "doing"
 assignee: ""
-agent: ""
+agent: "claude"
 shell_pid: ""
 review_status: ""
 reviewed_by: ""
@@ -265,3 +265,4 @@ Depends on WP01 (ratatui-macros). New code should use macro syntax.
 ## Activity Log
 
 - 2026-02-12T00:00:00Z – system – lane=planned – Prompt created.
+- 2026-02-12T12:30:28Z – claude – lane=doing – Implementation complete, moving to doing for review
