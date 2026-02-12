@@ -15,6 +15,12 @@
 - Q: Should this be a new feature or additional WPs on 002? → A: New feature branching from `master`, not from 002's branch. Won't be planned/tasked until 002 merges.
 - Q: Should each crate adoption be independently mergeable? → A: Yes. Structure WPs so each crate can land or be reverted without affecting the others.
 
+### Session 2026-02-12
+
+- Q: Is feature 006 (ratatui 0.30 upgrade) expected to land before this feature's tui-nodes WP? → A: Yes. 006 lands first; the tui-nodes WP depends on 006 being merged.
+- Q: Should tui-logger's buffer size be configured to match the current 10k entry cap? → A: No. Use tui-logger's default buffer size; no explicit cap needed.
+- Q: What key should toggle between kanban and dependency graph views in Dashboard? → A: `v` for "view toggle".
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Enhanced Log Viewer with Per-Target Filtering (Priority: P1)
@@ -31,7 +37,7 @@ An operator opens the Logs tab and sees orchestration events organized by their 
 2. **Given** the Logs tab is active, **When** the operator uses the target selector to hide a specific target, **Then** events from that target disappear from the log view without affecting other targets.
 3. **Given** the Logs tab has accumulated many events, **When** the operator enters page mode (PageUp), **Then** they can scroll through history without new events disrupting their position.
 4. **Given** the operator adjusts the captured log level for a target to Warn, **When** new Debug/Info events arrive for that target, **Then** they are silently discarded and do not appear in the log view.
-5. **Given** the previous hand-rolled LogsState code existed, **When** this adoption is complete, **Then** the manual `Vec<LogEntry>`, filter string, and scroll offset management code is fully removed.
+5. **Given** the previous hand-rolled LogsState code existed, **When** this adoption is complete, **Then** the manual `Vec<LogEntry>`, filter string, scroll offset management code, and 10k-entry cap logic are fully removed (tui-logger manages its own default buffer).
 
 ---
 
@@ -132,7 +138,7 @@ An operator selects a feature in the Dashboard and toggles a dependency graph vi
 - **FR-010**: System MUST adopt `ratatui-macros` (`line![]`, `span![]`, `constraint![]`) across TUI source files, replacing verbose builder patterns.
 - **FR-011**: System MUST render a WP dependency graph via `tui-nodes` showing all work packages as nodes and their dependency relationships as directed edges.
 - **FR-012**: System MUST color-code dependency graph nodes by WP state (e.g., distinct colors for Pending, Active, Completed, Failed, ForReview).
-- **FR-013**: System MUST provide a keybinding or toggle to switch between the kanban lane view and the dependency graph view in the Dashboard tab.
+- **FR-013**: System MUST use the `v` key to toggle between the kanban lane view and the dependency graph view in the Dashboard tab.
 - **FR-014**: System MUST preserve all existing TUI functionality after each crate adoption — no behavioral regressions.
 - **FR-015**: Each crate adoption MUST be independently mergeable — reverting one adoption must not break the others.
 
@@ -164,8 +170,7 @@ An operator selects a feature in the Dashboard and toggles a dependency graph vi
 
 - Feature 002 (`ratatui-tui-controller-panel`) is fully merged to `master` before this feature begins implementation.
 - The current `tracing` subscriber setup in kasmos supports adding additional layers (tui-logger's `TuiTracingSubscriberLayer`).
-- `tui-logger`, `tui-popup`, `throbber-widgets-tui`, and `ratatui-macros` are compatible with `ratatui 0.29` (the version currently in use). If a dependency upgrade to ratatui 0.30 is needed, that is handled by a separate feature.
-- `tui-nodes` 0.10.0 requires `ratatui 0.30`. The tui-nodes WP must be sequenced after feature 006 (dependency upgrade) lands, or a ratatui 0.29-compatible version must be used if available.
+- All 5 adopted crates (`tui-logger` 0.18.x, `tui-popup` 0.7.x, `throbber-widgets-tui` 0.10.x, `ratatui-macros` 0.7.x, `tui-nodes` 0.10.x) require `ratatui 0.30` in their latest versions. Feature 006 (dependency upgrade) is confirmed to merge first, so all adoptions target ratatui 0.30 with latest crate versions. (Research finding — originally only tui-nodes was known to require 0.30.)
 - The existing 250ms render tick is sufficient for throbber animation (4+ frames per cycle at 250ms = 1 second per full rotation, which is acceptable).
 - `tui-popup` from the `joshka/tui-widgets` mono-repo is published on crates.io and usable as a standard dependency.
 - `ratatui-macros` is a compile-time-only dependency with zero runtime overhead.
