@@ -8,12 +8,12 @@ subtasks:
   - "T017"
 title: "Adopt tui-popup — Confirmation Dialog Widget"
 phase: "Phase 2 - Crate Adoptions"
-lane: "done"
-assignee: "coder"
-agent: "reviewer"
-shell_pid: "1333019"
-review_status: "approved"
-reviewed_by: "kas"
+lane: "doing"
+assignee: ""
+agent: "coder"
+shell_pid: "1302302"
+review_status: ""
+reviewed_by: ""
 dependencies: ["WP01"]
 history:
   - timestamp: "2026-02-12T00:00:00Z"
@@ -21,16 +21,11 @@ history:
     agent: "system"
     shell_pid: ""
     action: "Prompt generated via /spec-kitty.tasks"
-  - timestamp: "2026-02-12T12:30:28Z"
+  - timestamp: "2026-02-12T12:30:00Z"
     lane: "doing"
-    agent: "coder"
+    agent: "claude"
     shell_pid: ""
-    action: "Implementation started"
-  - timestamp: "2026-02-12T12:40:00Z"
-    lane: "done"
-    agent: "reviewer"
-    shell_pid: "1333019"
-    action: "Review approved, accepted"
+    action: "Implementation complete, submitting for review"
 ---
 
 # Work Package Prompt: WP03 – Adopt tui-popup — Confirmation Dialog Widget
@@ -280,6 +275,3 @@ Depends on WP01 (ratatui-macros). New code should use macro syntax.
 - 2026-02-12T12:31:19Z – coder – lane=for_review – Submitted for review via swarm
 - 2026-02-12T12:31:19Z – reviewer – shell_pid=1302302 – lane=doing – Started review via workflow command
 - 2026-02-12T12:35:15Z – coder – shell_pid=1302302 – lane=doing – Feedback addressed, resubmitting
-- 2026-02-12T12:35:29Z – coder – shell_pid=1302302 – lane=for_review – Submitted for review via swarm
-- 2026-02-12T12:35:29Z – reviewer – shell_pid=1333019 – lane=doing – Started review via workflow command
-- 2026-02-12T12:40:00Z – reviewer – shell_pid=1333019 – lane=done – Review approved, accepted
