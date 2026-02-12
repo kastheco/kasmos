@@ -67,6 +67,17 @@ fn kdl_bool_prop(key: &str, value: bool) -> KdlEntry {
     entry
 }
 
+/// Create a KDL integer property entry (e.g., `size=1`).
+fn kdl_int_prop(key: &str, value: i128) -> KdlEntry {
+    let mut entry = KdlEntry::new_prop(key, KdlValue::Integer(value));
+    entry.set_format(KdlEntryFormat {
+        value_repr: value.to_string(),
+        leading: " ".to_string(),
+        ..Default::default()
+    });
+    entry
+}
+
 use crate::config::Config;
 use crate::error::{KasmosError, LayoutError};
 use crate::types::WorkPackage;
@@ -77,6 +88,7 @@ use crate::types::WorkPackage;
 /// of agent panes (right side), with dimensions calculated based on the number
 /// of work packages.
 pub struct LayoutGenerator {
+    controller_width_pct: u32,
     opencode_binary: String,
 }
 
@@ -90,6 +102,7 @@ impl LayoutGenerator {
     /// A new LayoutGenerator instance
     pub fn new(config: &Config) -> Self {
         Self {
+            controller_width_pct: config.controller_width_pct,
             opencode_binary: config.opencode_binary.clone(),
         }
     }
@@ -129,6 +142,12 @@ impl LayoutGenerator {
         let layout_node = self.build_layout_node(work_packages, feature_dir)?;
         doc.nodes_mut().push(layout_node);
 
+        // Start in locked mode so TUI apps (opencode) receive all keypresses.
+        // Ctrl+G toggles back to normal Zellij mode for pane navigation.
+        let mut default_mode = KdlNode::new("default_mode");
+        default_mode.entries_mut().push(kdl_str_arg("locked"));
+        doc.nodes_mut().push(default_mode);
+
         // Validate the generated KDL
         let kdl_string = doc.to_string();
         Self::validate_kdl(&kdl_string)?;
@@ -167,9 +186,7 @@ impl LayoutGenerator {
         (rows, cols)
     }
 
-    /// Build the root layout node with two tabs:
-    ///   Tab 1 "Control" — vertical split: controller (left) + terminal (right)
-    ///   Tab 2 "WAVE-0"  — agent grid for wave 0
+    /// Build the root layout node with tab template (status bars) and content tab.
     fn build_layout_node(
         &self,
         work_packages: &[&WorkPackage],
@@ -177,59 +194,163 @@ impl LayoutGenerator {
     ) -> Result<KdlNode, KasmosError> {
         let mut layout = KdlNode::new("layout");
 
-        // Tab 1: Control — controller session + terminal
-        let control_tab = self.build_control_tab(feature_dir);
-        layout.ensure_children().nodes_mut().push(control_tab);
+        // default_tab_template: adds zjstatus bar (bottom) with Rose Pine Moon theme
+        let tab_template = Self::build_tab_template();
+        layout.ensure_children().nodes_mut().push(tab_template);
 
-        // Tab 2: Wave 0 agents
-        let mut wave_tab = KdlNode::new("tab");
-        wave_tab.entries_mut().push(kdl_str_prop("name", "WAVE-0"));
-        wave_tab.entries_mut().push(kdl_bool_prop("focus", true));
-        let agent_grid = self.build_agent_grid_fullwidth(work_packages)?;
-        wave_tab.ensure_children().nodes_mut().push(agent_grid);
-        layout.ensure_children().nodes_mut().push(wave_tab);
+        // tab: the actual orchestration content
+        let mut tab = KdlNode::new("tab");
+        tab.entries_mut().push(kdl_str_prop("name", "kasmos"));
 
+        // Main vertical split: controller (left) and agent grid (right)
+        let mut main_split = KdlNode::new("pane");
+        main_split
+            .entries_mut()
+            .push(kdl_str_prop("split_direction", "vertical"));
+
+        let controller = self.build_controller_pane(feature_dir);
+        main_split.ensure_children().nodes_mut().push(controller);
+
+        let agent_grid = self.build_agent_grid(work_packages)?;
+        main_split.ensure_children().nodes_mut().push(agent_grid);
+
+        tab.ensure_children().nodes_mut().push(main_split);
+        layout.ensure_children().nodes_mut().push(tab);
         Ok(layout)
     }
 
-    /// Build the "Control" tab: vertical split with controller (left) and terminal (right).
+    /// Build the default_tab_template with zjstatus (Rose Pine Moon theme).
     ///
-    /// The terminal opens in the project root (parent of feature_dir) so the
-    /// operator can run `kasmos cmd`, `git`, `cargo build`, etc.
-    fn build_control_tab(&self, feature_dir: &Path) -> KdlNode {
-        let mut tab = KdlNode::new("tab");
-        tab.entries_mut().push(kdl_str_prop("name", "Control"));
-        tab.entries_mut()
-            .push(kdl_str_prop("split_direction", "vertical"));
+    /// Generates a status bar at the bottom of each tab using the zjstatus plugin
+    /// with Rose Pine Moon colors, replacing Zellij's default compact-bar and status-bar.
+    fn build_tab_template() -> KdlNode {
+        let mut template = KdlNode::new("default_tab_template");
 
-        // Left: controller session (opencode / future TUI)
-        let controller = self.build_controller_pane();
-        tab.ensure_children().nodes_mut().push(controller);
+        // children placeholder (where tab content goes)
+        let children = KdlNode::new("children");
+        template.ensure_children().nodes_mut().push(children);
 
-        // Right: plain terminal in project root
-        let project_dir = feature_dir.parent().unwrap_or(feature_dir);
-        let mut terminal = KdlNode::new("pane");
-        terminal
+        // zjstatus bar pane (1 row, borderless, at the bottom)
+        let mut bar_pane = KdlNode::new("pane");
+        bar_pane.entries_mut().push(kdl_int_prop("size", 1));
+        bar_pane
             .entries_mut()
-            .push(kdl_str_prop("name", "terminal"));
-        let mut cwd = KdlNode::new("cwd");
-        cwd.entries_mut()
-            .push(kdl_str_arg(&project_dir.display().to_string()));
-        terminal.ensure_children().nodes_mut().push(cwd);
-        tab.ensure_children().nodes_mut().push(terminal);
+            .push(kdl_bool_prop("borderless", true));
 
-        tab
+        let mut plugin = KdlNode::new("plugin");
+        plugin.entries_mut().push(kdl_str_prop(
+            "location",
+            "file:~/.config/zellij/plugins/zjstatus.wasm",
+        ));
+
+        // Rose Pine Moon zjstatus configuration
+        let zjstatus_config: &[(&str, &str)] = &[
+            // -- Rose Pine Moon palette
+            ("color_base", "#232136"),
+            ("color_surface", "#2a273f"),
+            ("color_overlay", "#393552"),
+            ("color_muted", "#6e6a86"),
+            ("color_subtle", "#908caa"),
+            ("color_text", "#e0def4"),
+            ("color_love", "#eb6f92"),
+            ("color_gold", "#f6c177"),
+            ("color_rose", "#ea9a97"),
+            ("color_pine", "#3e8fb0"),
+            ("color_foam", "#9ccfd8"),
+            ("color_iris", "#c4a7e7"),
+            ("color_hl_low", "#2a283e"),
+            ("color_hl_med", "#44415a"),
+            ("color_hl_high", "#56526e"),
+            // Format
+            ("format_left", "#[bg=$overlay,fg=$subtle] {session} {mode}#[bg=$surface] {tabs}"),
+            ("format_center", "{notifications}"),
+            ("format_right", "#[bg=$surface,fg=$overlay]\u{e0b6}#[bg=$overlay,fg=$subtle] {command_user}@{command_host} #[bg=$overlay,fg=$text]\u{e0b6}#[bg=$text,fg=$base] {datetime} "),
+            ("format_space", "#[bg=$surface]"),
+            ("format_hide_on_overlength", "true"),
+            ("format_precedence", "lrc"),
+            // Border
+            ("border_enabled", "false"),
+            ("border_char", "\u{2500}"),
+            ("border_format", "#[fg=$surface]{char}"),
+            ("border_position", "top"),
+            // Frame
+            ("hide_frame_for_single_pane", "false"),
+            // Mode indicators
+            ("mode_normal", "#[bg=$text,fg=$overlay]\u{e0b6}#[bg=$text,fg=$base,bold] NORMAL #[bg=$surface,fg=$text]\u{e0b4}"),
+            ("mode_tmux", "#[bg=$pine,fg=$overlay]\u{e0b6}#[bg=$pine,fg=$base,bold] TMUX #[bg=$surface,fg=$pine]\u{e0b4}"),
+            ("mode_locked", "#[bg=$hl_high,fg=$overlay]\u{e0b6}#[bg=$hl_high,fg=$subtle,bold] LOCKED #[bg=$surface,fg=$hl_high]\u{e0b4}"),
+            ("mode_pane", "#[bg=$foam,fg=$overlay]\u{e0b6}#[bg=$foam,fg=$base,bold] PANE #[bg=$surface,fg=$foam]\u{e0b4}"),
+            ("mode_tab", "#[bg=$foam,fg=$overlay]\u{e0b6}#[bg=$foam,fg=$base,bold] TAB #[bg=$surface,fg=$foam]\u{e0b4}"),
+            ("mode_scroll", "#[bg=$iris,fg=$overlay]\u{e0b6}#[bg=$iris,fg=$base,bold] SCROLL #[bg=$surface,fg=$iris]\u{e0b4}"),
+            ("mode_enter_search", "#[bg=$iris,fg=$overlay]\u{e0b6}#[bg=$iris,fg=$base,bold] ENT-SEARCH #[bg=$surface,fg=$iris]\u{e0b4}"),
+            ("mode_search", "#[bg=$iris,fg=$overlay]\u{e0b6}#[bg=$iris,fg=$base,bold] SEARCH #[bg=$surface,fg=$iris]\u{e0b4}"),
+            ("mode_resize", "#[bg=$gold,fg=$overlay]\u{e0b6}#[bg=$gold,fg=$base,bold] RESIZE #[bg=$surface,fg=$gold]\u{e0b4}"),
+            ("mode_rename_tab", "#[bg=$gold,fg=$overlay]\u{e0b6}#[bg=$gold,fg=$base,bold] RENAME TAB #[bg=$surface,fg=$gold]\u{e0b4}"),
+            ("mode_rename_pane", "#[bg=$gold,fg=$overlay]\u{e0b6}#[bg=$gold,fg=$base,bold] RENAME PANE #[bg=$surface,fg=$gold]\u{e0b4}"),
+            ("mode_move", "#[bg=$gold,fg=$overlay]\u{e0b6}#[bg=$gold,fg=$base,bold] MOVE #[bg=$surface,fg=$gold]\u{e0b4}"),
+            ("mode_session", "#[bg=$iris,fg=$overlay]\u{e0b6}#[bg=$iris,fg=$base,bold] SESSION #[bg=$surface,fg=$iris]\u{e0b4}"),
+            ("mode_prompt", "#[bg=$iris,fg=$overlay]\u{e0b6}#[bg=$iris,fg=$base,bold] PROMPT #[bg=$surface,fg=$iris]\u{e0b4}"),
+            // Tab styles
+            ("tab_normal", "#[bg=$overlay,fg=$surface]\u{e0b6}#[bg=$overlay,fg=$text] {index} #[bg=$overlay,fg=$text,bold] {name} {floating_indicator}#[bg=$surface,fg=$overlay]\u{e0b4}"),
+            ("tab_normal_fullscreen", "#[bg=$overlay,fg=$surface]\u{e0b6}#[bg=$overlay,fg=$text] {index} #[bg=$overlay,fg=$text,bold] {name} {fullscreen_indicator}#[bg=$surface,fg=$overlay]\u{e0b4}"),
+            ("tab_normal_sync", "#[bg=$overlay,fg=$surface]\u{e0b6}#[bg=$overlay,fg=$text] {index} #[bg=$overlay,fg=$text,bold] {name} {sync_indicator}#[bg=$surface,fg=$overlay]\u{e0b4}"),
+            ("tab_active", "#[bg=$iris,fg=$surface]\u{e0b6}#[bg=$iris,fg=$base] {index} #[bg=$iris,fg=$base,bold] {name} {floating_indicator}#[bg=$surface,fg=$iris]\u{e0b4}"),
+            ("tab_active_fullscreen", "#[bg=$iris,fg=$surface]\u{e0b6}#[bg=$iris,fg=$base] {index} #[bg=$iris,fg=$base,bold] {name} {fullscreen_indicator}#[bg=$surface,fg=$iris]\u{e0b4}"),
+            ("tab_active_sync", "#[bg=$iris,fg=$surface]\u{e0b6}#[bg=$iris,fg=$base] {index} #[bg=$iris,fg=$base,bold] {name} {sync_indicator}#[bg=$surface,fg=$iris]\u{e0b4}"),
+            ("tab_separator", "#[bg=$surface]"),
+            // Tab indicators
+            ("tab_sync_indicator", ""),
+            ("tab_fullscreen_indicator", "\u{f02d3}"),
+            ("tab_floating_indicator", "\u{f0e59}"),
+            // Notifications
+            ("notification_format_unread", "#[bg=$love,fg=$surface]\u{e0b6}#[bg=$love,fg=$base] {message} #[bg=$surface,fg=$love]\u{e0b4}"),
+            ("notification_format_no_notifications", ""),
+            ("notification_show_interval", "10"),
+            // Commands
+            ("command_host_command", "uname -n"),
+            ("command_host_format", "{stdout}"),
+            ("command_host_interval", "0"),
+            ("command_host_rendermode", "static"),
+            ("command_user_command", "whoami"),
+            ("command_user_format", "{stdout}"),
+            ("command_user_interval", "0"),
+            ("command_user_rendermode", "static"),
+            // Datetime
+            ("datetime", "{format}"),
+            ("datetime_format", "%Y-%m-%d %H:%M"),
+            ("datetime_timezone", "America/Chicago"),
+        ];
+
+        for (key, value) in zjstatus_config {
+            let mut node = KdlNode::new(*key);
+            node.entries_mut().push(kdl_str_arg(value));
+            plugin.ensure_children().nodes_mut().push(node);
+        }
+
+        bar_pane.ensure_children().nodes_mut().push(plugin);
+        template.ensure_children().nodes_mut().push(bar_pane);
+
+        template
     }
 
     /// Build the controller pane node.
     ///
-    /// The controller pane runs `ocx oc` (opencode via ocx). It lives in its
-    /// own dedicated "Control" tab, so no size constraint is needed.
-    fn build_controller_pane(&self) -> KdlNode {
+    /// The controller pane runs `ocx oc` (opencode via ocx) and takes up the configured
+    /// percentage of the terminal width.
+    fn build_controller_pane(&self, feature_dir: &Path) -> KdlNode {
         let mut pane = KdlNode::new("pane");
+        pane.entries_mut().push(kdl_str_prop(
+            "size",
+            &format!("{}%", self.controller_width_pct),
+        ));
         pane.entries_mut().push(kdl_str_prop("name", "controller"));
         pane.entries_mut()
             .push(kdl_bool_prop("start_suspended", false));
+
+        let mut cwd = KdlNode::new("cwd");
+        cwd.entries_mut()
+            .push(kdl_str_arg(&feature_dir.display().to_string()));
+        pane.ensure_children().nodes_mut().push(cwd);
 
         let mut command = KdlNode::new("command");
         command
@@ -242,6 +363,20 @@ impl LayoutGenerator {
         pane.ensure_children().nodes_mut().push(args);
 
         pane
+    }
+
+    /// Build the terminal pane for controller-only layouts.
+    fn build_terminal_pane(&self, feature_dir: &Path) -> KdlNode {
+        let project_dir = feature_dir.parent().unwrap_or(feature_dir);
+        let mut terminal = KdlNode::new("pane");
+        terminal
+            .entries_mut()
+            .push(kdl_str_prop("name", "terminal"));
+        let mut cwd = KdlNode::new("cwd");
+        cwd.entries_mut()
+            .push(kdl_str_arg(&project_dir.display().to_string()));
+        terminal.ensure_children().nodes_mut().push(cwd);
+        terminal
     }
 
     /// Build a single agent pane node.
@@ -284,7 +419,50 @@ impl LayoutGenerator {
         pane
     }
 
-    /// Build a full-width agent grid (for standalone wave tabs without a controller).
+    /// Build the agent grid pane containing all agent panes.
+    ///
+    /// Arranges agents in rows and columns based on adaptive grid dimensions.
+    fn build_agent_grid(&self, work_packages: &[&WorkPackage]) -> Result<KdlNode, KasmosError> {
+        let (rows, cols) = Self::grid_dimensions(work_packages.len());
+
+        let mut grid = KdlNode::new("pane");
+        grid.entries_mut().push(kdl_str_prop(
+            "size",
+            &format!("{}%", 100 - self.controller_width_pct),
+        ));
+        grid.entries_mut()
+            .push(kdl_str_prop("split_direction", "horizontal"));
+
+        let mut pane_idx = 0;
+
+        // Create rows
+        for _row in 0..rows {
+            // Guard: don't create empty rows
+            if pane_idx >= work_packages.len() {
+                break;
+            }
+
+            let mut row = KdlNode::new("pane");
+            row.entries_mut()
+                .push(kdl_str_prop("split_direction", "vertical"));
+
+            // Calculate how many panes this row should have
+            let panes_in_row = std::cmp::min(cols, work_packages.len() - pane_idx);
+
+            // Create columns within this row
+            for _ in 0..panes_in_row {
+                let agent_pane = self.build_agent_pane(work_packages[pane_idx]);
+                row.ensure_children().nodes_mut().push(agent_pane);
+                pane_idx += 1;
+            }
+
+            grid.ensure_children().nodes_mut().push(row);
+        }
+
+        Ok(grid)
+    }
+
+    /// Build a full-width agent grid for standalone wave tabs.
     fn build_agent_grid_fullwidth(
         &self,
         work_packages: &[&WorkPackage],
@@ -321,18 +499,40 @@ impl LayoutGenerator {
     }
 
     /// Generate a controller-only layout (no agent panes).
-    ///
-    /// Used when all wave 0 WPs are already completed and no agent panes need launching.
-    /// Still produces the Control tab with controller + terminal.
     pub fn generate_controller_only(&self, feature_dir: &Path) -> Result<KdlDocument, KasmosError> {
         debug!("Generating controller-only KDL layout");
 
         let mut doc = KdlDocument::new();
 
         let mut layout = KdlNode::new("layout");
-        let control_tab = self.build_control_tab(feature_dir);
-        layout.ensure_children().nodes_mut().push(control_tab);
+        layout
+            .ensure_children()
+            .nodes_mut()
+            .push(Self::build_tab_template());
+
+        let mut tab = KdlNode::new("tab");
+        tab.entries_mut().push(kdl_str_prop("name", "kasmos"));
+
+        let mut main_split = KdlNode::new("pane");
+        main_split
+            .entries_mut()
+            .push(kdl_str_prop("split_direction", "vertical"));
+        main_split
+            .ensure_children()
+            .nodes_mut()
+            .push(self.build_controller_pane(feature_dir));
+        main_split
+            .ensure_children()
+            .nodes_mut()
+            .push(self.build_terminal_pane(feature_dir));
+
+        tab.ensure_children().nodes_mut().push(main_split);
+        layout.ensure_children().nodes_mut().push(tab);
         doc.nodes_mut().push(layout);
+
+        let mut default_mode = KdlNode::new("default_mode");
+        default_mode.entries_mut().push(kdl_str_arg("locked"));
+        doc.nodes_mut().push(default_mode);
 
         let kdl_string = doc.to_string();
         Self::validate_kdl(&kdl_string)?;
@@ -341,10 +541,7 @@ impl LayoutGenerator {
         Ok(doc)
     }
 
-    /// Generate an agent-only grid layout for a wave tab (no controller).
-    ///
-    /// The controller lives in its own dedicated "Control" tab. Wave tabs
-    /// contain only agent panes, maximizing screen real estate for agents.
+    /// Generate an agent-only layout for wave tabs (no controller pane).
     pub fn generate_wave_tab(
         &self,
         work_packages: &[&WorkPackage],
@@ -362,11 +559,14 @@ impl LayoutGenerator {
         );
 
         let mut doc = KdlDocument::new();
-
         let mut layout = KdlNode::new("layout");
         let agent_grid = self.build_agent_grid_fullwidth(work_packages)?;
         layout.ensure_children().nodes_mut().push(agent_grid);
         doc.nodes_mut().push(layout);
+
+        let mut default_mode = KdlNode::new("default_mode");
+        default_mode.entries_mut().push(kdl_str_arg("locked"));
+        doc.nodes_mut().push(default_mode);
 
         let kdl_string = doc.to_string();
         Self::validate_kdl(&kdl_string)?;
@@ -378,9 +578,7 @@ impl LayoutGenerator {
         Ok(doc)
     }
 
-    /// Write a wave-specific layout file.
-    ///
-    /// Uses a filename like `wave-1.kdl` to avoid overwriting the main layout.
+    /// Write a wave-specific layout file without replacing `layout.kdl`.
     pub fn write_wave_layout(
         &self,
         doc: &KdlDocument,
@@ -568,24 +766,35 @@ mod tests {
     }
 
     #[test]
-    fn test_two_tab_layout() {
-        let config = Config::default();
+    fn test_controller_pane_size() {
+        let mut config = Config::default();
+        config.controller_width_pct = 35;
         let generator = LayoutGenerator::new(&config);
 
         let wp = make_test_wp("WP01", "agent-1");
         let wps = vec![&wp];
 
         let doc = generator
-            .generate(&wps, Path::new("/tmp/feature"))
+            .generate(&wps, Path::new("/tmp"))
             .expect("generate");
         let kdl_str = doc.to_string();
 
-        // Should have a Control tab and a WAVE-0 tab
-        assert!(kdl_str.contains("name=\"Control\""));
-        assert!(kdl_str.contains("name=\"WAVE-0\""));
-        // Control tab should have controller + terminal panes
-        assert!(kdl_str.contains("name=\"controller\""));
-        assert!(kdl_str.contains("name=\"terminal\""));
+        assert!(kdl_str.contains("size=\"35%\""));
+    }
+
+    #[test]
+    fn test_controller_pane_cwd_uses_feature_dir() {
+        let config = Config::default();
+        let generator = LayoutGenerator::new(&config);
+
+        let wp = make_test_wp("WP01", "agent-1");
+        let wps = vec![&wp];
+
+        let feature_dir = Path::new("/tmp/feature-123");
+        let doc = generator.generate(&wps, feature_dir).expect("generate");
+        let kdl_str = doc.to_string();
+
+        assert!(kdl_str.contains("cwd \"/tmp/feature-123\""));
     }
 
     #[test]

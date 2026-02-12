@@ -1,11 +1,11 @@
 # Work Packages: Ratatui TUI Controller Panel
 
 **Inputs**: Design documents from `kitty-specs/002-ratatui-tui-controller-panel/`
-**Prerequisites**: plan.md (architecture, channel topology), spec.md (8 user stories, 20 FRs), research.md (async patterns), data-model.md (App/Tab/Notification types)
+**Prerequisites**: plan.md (architecture, channel topology), spec.md (8 user stories, 26 FRs, 4 NFRs), research.md (async patterns), data-model.md (App/Tab/Notification types)
 
 **Tests**: Required by constitution. All features must have corresponding tests. Feature completion requires passing `cargo test`. Test coverage is provided in WP10.
 
-**Organization**: 55 subtasks (`T001`–`T055`) roll up into 10 work packages (`WP01`–`WP10`). Each WP is independently deliverable.
+**Organization**: 70 subtasks (`T001`–`T070`) roll up into 10 work packages (`WP01`–`WP10`). Each WP is independently deliverable.
 
 ---
 
@@ -40,24 +40,26 @@
 
 ## Work Package WP02: Engine Integration — Watch Channel & Review States (Priority: P0)
 
-**Goal**: Add `tokio::sync::watch` broadcasting from engine to TUI, extend WPState with ForReview variant, add Approve/Reject EngineActions, update completion detector.
-**Independent Test**: Engine broadcasts state changes via watch channel. ForReview state transitions work in state machine. Approve/Reject actions handled correctly.
+**Goal**: Add `tokio::sync::watch` broadcasting from engine to TUI, extend WPState with ForReview variant, add Approve/Reject EngineActions, update completion detector, and emit review-ready events for automation.
+**Independent Test**: Engine broadcasts state changes via watch channel. ForReview state transitions work in state machine. Approve/Reject actions handled correctly. Review-ready events fire when WPs enter ForReview.
 **Prompt**: `tasks/WP02-engine-integration.md`
 **Estimated Size**: ~450 lines
 
 ### Included Subtasks
-- [ ] T006 Add `watch::Sender<OrchestrationRun>` to WaveEngine, broadcast after every state mutation
-- [ ] T007 Add `ForReview` variant to `WPState` enum, update state machine with new transitions
-- [ ] T008 Add `Approve(String)` and `Reject { wp_id, relaunch }` to `EngineAction`, implement handlers
-- [ ] T009 Update completion detector to distinguish `for_review` from `done` lane transitions
-- [ ] T010 Wire watch channel creation in `launch.rs` — create channel, pass tx to engine
-- [ ] T011 Spawn TUI task in `launch.rs`, re-export `tui` module in `lib.rs`
+- [x] T006 Add `watch::Sender<OrchestrationRun>` to WaveEngine, broadcast after every state mutation
+- [x] T007 Add `ForReview` variant to `WPState` enum, update state machine with new transitions
+- [x] T008 Add `Approve(String)` and `Reject { wp_id, relaunch }` to `EngineAction`, implement handlers
+- [x] T009 Update completion detector to distinguish `for_review` from `done` lane transitions
+- [x] T010 Wire watch channel creation in `launch.rs` — create channel, pass tx to engine
+- [x] T011 Spawn TUI task in `launch.rs`, re-export `tui` module in `lib.rs`
+- [x] T056 Emit review-ready events when WPs enter ForReview and enqueue review runner jobs
 
 ### Implementation Notes
 - WaveEngine constructor gains `watch_tx: watch::Sender<OrchestrationRun>`
 - After `handle_completion()` and `handle_action()`, clone run state and send via watch_tx
 - ForReview transitions: Active→ForReview, ForReview→Completed (approve), ForReview→Active (reject+relaunch), ForReview→Paused (reject+hold; manual resume/restart)
 - Completion detector: when task file lane=`for_review`, emit CompletionEvent with a new `review` method (not `done`)
+- Engine should emit a review-ready signal (or directly enqueue a review job) whenever a WP transitions to ForReview
 
 ### Dependencies
 - Depends on WP01 (TUI module must exist to spawn)
@@ -103,11 +105,11 @@
 **Estimated Size**: ~350 lines
 
 ### Included Subtasks
-- [ ] T018 Create `tui/widgets/action_buttons.rs` — horizontal button bar rendered below selected WP
-- [ ] T019 Implement state-based action filtering — map WPState to valid action set per plan table
-- [ ] T020 Wire action key dispatch — on keybind (R/P/F/T/A), construct and send EngineAction via action_tx
-- [ ] T021 Implement wave advance UI — "Advance Wave" button at wave boundary in wave-gated mode
-- [ ] T022 Add confirmation for destructive actions (Force-Advance) — inline yes/no prompt
+- [x] T018 Create `tui/widgets/action_buttons.rs` — horizontal button bar rendered below selected WP
+- [x] T019 Implement state-based action filtering — map WPState to valid action set per plan table
+- [x] T020 Wire action key dispatch — on keybind (R/P/F/T/A), construct and send EngineAction via action_tx
+- [x] T021 Implement wave advance UI — "Advance Wave" button at wave boundary in wave-gated mode
+- [x] T022 Add confirmation for destructive actions (Force-Advance) — inline yes/no prompt
 
 ### Dependencies
 - Depends on WP02 (EngineAction channel) + WP03 (dashboard for WP selection context)
@@ -125,11 +127,11 @@
 **Estimated Size**: ~350 lines
 
 ### Included Subtasks
-- [ ] T023 Create `tui/widgets/notification_bar.rs` — persistent bar at top of frame, rendered before tab content
-- [ ] T024 Implement notification diffing — on watch update, compare previous vs current run to detect state changes
-- [ ] T025 Render notification counts per type with WP identifiers, visually distinguish review/failure/input-needed
-- [ ] T026 Implement notification jump — `n` key cycles through notifications, switches to relevant tab, focuses WP
-- [ ] T027 Auto-dismiss notifications when WP leaves triggering state (e.g., failure resolved by restart)
+- [x] T023 Create `tui/widgets/notification_bar.rs` — persistent bar at top of frame, rendered before tab content
+- [x] T024 Implement notification diffing — on watch update, compare previous vs current run to detect state changes
+- [x] T025 Render notification counts per type with WP identifiers, visually distinguish review/failure/input-needed
+- [x] T026 Implement notification jump — `n` key cycles through notifications, switches to relevant tab, focuses WP
+- [x] T027 Auto-dismiss notifications when WP leaves triggering state (e.g., failure resolved by restart)
 
 ### Dependencies
 - Depends on WP01 + WP02
@@ -142,18 +144,24 @@
 
 ## Work Package WP06: Review Tab (Priority: P1)
 
-**Goal**: Dedicated review view for WPs in for_review state with approve/reject/request-changes workflow.
-**Independent Test**: WP entering ForReview appears in Review tab. Approve moves to Completed. Reject with relaunch triggers restart.
+**Goal**: Dedicated review view for WPs in for_review state with approve/reject/request-changes workflow and automated tiered review execution.
+**Independent Test**: WP entering ForReview appears in Review tab. Approve moves to Completed. Reject with relaunch triggers restart. Automated review runs and surfaces results/errors.
 **Prompt**: `tasks/WP06-review-tab.md`
 **Estimated Size**: ~450 lines
 
 ### Included Subtasks
-- [ ] T028 Create `tui/tabs/review.rs` — split layout: review queue list (left) + detail pane (right)
-- [ ] T029 List all WPs with `WPState::ForReview`, show title, time in review, wave
-- [ ] T030 Implement approve action (key `a`) — send `EngineAction::Approve(wp_id)`
-- [ ] T031 Implement reject action (key `r`) — prompt auto-relaunch vs hold, send `EngineAction::Reject`
-- [ ] T032 Implement request-changes action (key `c`) — keep in ForReview, mark for manual edits, show re-review option
-- [ ] T033 Display review context — read review feedback section from WP task file
+- [x] T028 Create `tui/tabs/review.rs` — split layout: review queue list (left) + detail pane (right)
+- [x] T029 List all WPs with `WPState::ForReview`, show title, time in review, wave
+- [x] T030 Implement approve action (key `a`) — send `EngineAction::Approve(wp_id)`
+- [x] T031 Implement reject action (key `r`) — prompt auto-relaunch vs hold, send `EngineAction::Reject`
+- [x] T032 Implement request-changes action (key `c`) — keep in ForReview, mark for manual edits, show re-review option
+- [x] T033 Display review context — read review feedback section from WP task file
+- [x] T057 Add ReviewRunner service with configurable trigger mode (`slash` or `prompt`)
+- [x] T058 Implement slash mode injection for reviewer command (default `/kas:verify`) in target pane
+- [x] T059 Implement prompt mode tiered review execution via opencode (default model `openai/gpt-5.3-codex`, reasoning high)
+- [x] T060 Persist ReviewResult (status/findings/mode/timestamps) and display in Review tab detail pane
+- [x] T063 Implement explicit review policy executor for `manual_only`, `auto_then_manual_approve`, and `auto_and_mark_done` at `for_review` transitions
+- [x] T065 Emit typed review automation failure events (missing command, timeout, non-zero exit, parser error) as first-class notifications and log entries
 
 ### Dependencies
 - Depends on WP02 (ForReview state, Approve/Reject actions) + WP03 (tab framework)
@@ -161,6 +169,7 @@
 ### Risks & Mitigations
 - Reading WP task files for review context requires filesystem access from TUI — keep reads on tick, not per-frame
 - Request-changes is TUI-only state — no engine action needed, just UI flag
+- Review automation policy defaults to `auto_then_manual_approve`; auto-mark-done remains opt-in
 
 ---
 
@@ -172,11 +181,11 @@
 **Estimated Size**: ~350 lines
 
 ### Included Subtasks
-- [ ] T034 Create `tui/tabs/logs.rs` — scrollable list of LogEntry items with timestamp + level badge
-- [ ] T035 Implement log capture — convert state diffs (on watch update) to LogEntry items
-- [ ] T036 Implement text filter — `/` activates filter input mode, Esc exits, real-time filtering
-- [ ] T037 Implement auto-scroll — follow tail by default, pause on manual scroll up, `G` to resume
-- [ ] T038 Apply log level styling — color-coded by Info (dim), Warn (yellow), Error (red)
+- [x] T034 Create `tui/tabs/logs.rs` — scrollable list of LogEntry items with timestamp + level badge
+- [x] T035 Implement log capture — convert state diffs (on watch update) to LogEntry items
+- [x] T036 Implement text filter — `/` activates filter input mode, Esc exits, real-time filtering
+- [x] T037 Implement auto-scroll — follow tail by default, pause on manual scroll up, `G` to resume
+- [x] T038 Apply log level styling — color-coded by Info (dim), Warn (yellow), Error (red)
 
 ### Dependencies
 - Depends on WP01 + WP02
@@ -195,10 +204,10 @@
 **Estimated Size**: ~300 lines
 
 ### Included Subtasks
-- [ ] T039 Implement `.input-needed` marker file polling — check WP worktree paths on each tick (~1s)
-- [ ] T040 Surface InputNeeded notifications in notification bar with agent's message text from marker file
-- [ ] T041 Implement focus/zoom action — on notification activation, call `SessionManager.zoom_pane(wp_id)`
-- [ ] T042 Auto-clear InputNeeded notifications when agent removes marker file
+- [x] T039 Implement `.input-needed` marker file polling — check WP worktree paths on each tick (~1s)
+- [x] T040 Surface InputNeeded notifications in notification bar with agent's message text from marker file
+- [x] T041 Implement focus/zoom action — on notification activation, call `SessionManager.zoom_pane(wp_id)`
+- [x] T042 Auto-clear InputNeeded notifications when agent removes marker file
 
 ### Dependencies
 - Depends on WP05 (notification bar) + WP02 (SessionManager access)
@@ -217,12 +226,12 @@
 **Estimated Size**: ~400 lines
 
 ### Included Subtasks
-- [ ] T043 Verify FIFO commands produce state changes visible in TUI via watch channel
-- [ ] T044 Handle concurrent TUI + FIFO input without data races — both send to same action_rx
-- [ ] T045 Implement terminal resize handling — graceful reflow on crossterm Resize event
-- [ ] T046 Implement mouse support — click on tab headers, click on WP cards, scroll wheels
-- [ ] T047 Handle orchestration termination — show final state summary with exit code, allow quit
-- [ ] T048 Implement empty/no-run state — guidance message when no orchestration is active
+- [x] T043 Verify FIFO commands produce state changes visible in TUI via watch channel
+- [x] T044 Handle concurrent TUI + FIFO input without data races — both send to same action_rx
+- [x] T045 Implement terminal resize handling — graceful reflow on crossterm Resize event
+- [x] T046 Implement mouse support — click on tab headers, click on WP cards, scroll wheels
+- [x] T047 Handle orchestration termination — show final state summary with exit code, allow quit
+- [x] T048 Implement empty/no-run state — guidance message when no orchestration is active
 
 ### Dependencies
 - Depends on WP03 + WP07 (core tabs must exist for FIFO verification and resize testing)
@@ -235,25 +244,34 @@
 
 ## Work Package WP10: Test, Compatibility, and Performance Gates (Priority: P1)
 
-**Goal**: Satisfy constitution-required tests and validate notification/performance success criteria.
-**Independent Test**: `cargo test` passes; notification audit and latency checks pass thresholds.
+**Goal**: Satisfy constitution-required tests and validate notification/performance/review-automation success criteria.
+**Independent Test**: `cargo test` passes; notification audit, latency checks, and review automation fallback tests pass thresholds.
 **Prompt**: `tasks/WP10-validation-gates.md`
 **Estimated Size**: ~350 lines
 
 ### Included Subtasks
-- [ ] T049 Add unit tests for ForReview transitions (approve, reject+relaunch, reject+hold->Paused)
-- [ ] T050 Add unit tests for contextual action availability by WP state
-- [ ] T051 Add integration parity tests for FIFO vs TUI command outcomes
-- [ ] T052 Add integration tests for input-needed notification lifecycle
-- [ ] T053 Add notification delivery audit test (emitted IDs == surfaced IDs)
-- [ ] T054 Add synthetic 50-WP latency test and assert SC-005 thresholds
-- [ ] T055 Add final validation gate documentation (`cargo test` required before done)
+- [x] T049 Add unit tests for ForReview transitions (approve, reject+relaunch, reject+hold->Paused)
+- [x] T050 Add unit tests for contextual action availability by WP state
+- [x] T051 Add integration parity tests for FIFO vs TUI command outcomes
+- [x] T052 Add integration tests for input-needed notification lifecycle
+- [x] T053 Add notification delivery audit test (emitted IDs == surfaced IDs)
+- [x] T054 Add synthetic 50-WP latency test and assert SC-005 thresholds
+- [x] T055 Add final validation gate documentation (`cargo test` required before done) plus constitution-aligned requirement-to-test traceability notes
+- [x] T061 Add integration tests for review runner mode selection/fallback (`slash` failure -> `prompt`)
+- [x] T062 Add integration tests for persisted review results and `for_review` lifecycle visibility after restart
+- [x] T064 Add integration tests for review policy modes (`manual_only`, `auto_then_manual_approve`, `auto_and_mark_done`) including auto-mark-done path assertions
+- [x] T066 Add integration tests that each review failure type is surfaced in both Notifications and Logs with stable WP-linked metadata
+- [x] T067 Add integration test for terminal resize reflow correctness (FR-015)
+- [x] T068 Add integration test for keyboard-only operation with mouse disabled (FR-016/NFR-003)
+- [x] T069 Add runtime-safety test ensuring no blocking handlers on event loop hot paths (NFR-004)
+- [x] T070 Add integration test for global "Advance Wave" behavior in wave-gated mode at wave boundary (FR-026)
 
 ### Implementation Notes
 - Tests use `ratatui::backend::TestBackend` for UI assertions
 - FIFO parity tests spawn both input sources concurrently
 - Latency test instruments event loop with histogram metrics
 - Notification audit test hooks state broadcaster to capture all emitted events and verify bar coverage
+- Review automation tests should mock slash injection and opencode prompt runner to validate deterministic outcomes
 
 ### Dependencies
 - Depends on WP02 (ForReview state machine), WP04 (action buttons), WP05 (notification bar), WP06 (review tab), WP08 (input-needed signals), WP09 (FIFO compat)
@@ -329,11 +347,11 @@ Wave 4 (Validation):       WP10 ──┘ depends WP02+WP04+WP05+WP06+WP08+WP09
 | T031 | Reject action (relaunch/hold) | WP06 | P1 | No |
 | T032 | Request-changes action | WP06 | P1 | No |
 | T033 | Display review feedback context | WP06 | P1 | No |
-| T034 | logs.rs — scrollable list | WP07 | P2 | No |
-| T035 | Log capture from state diffs | WP07 | P2 | No |
-| T036 | Text filter (`/` mode) | WP07 | P2 | No |
-| T037 | Auto-scroll + resume | WP07 | P2 | No |
-| T038 | Log level styling | WP07 | P2 | No |
+| T034 | logs.rs — scrollable list | WP07 | P2 | Yes |
+| T035 | Log capture from state diffs | WP07 | P2 | Yes |
+| T036 | Text filter (`/` mode) | WP07 | P2 | Yes |
+| T037 | Auto-scroll + resume | WP07 | P2 | Yes |
+| T038 | Log level styling | WP07 | P2 | Yes |
 | T039 | .input-needed file polling | WP08 | P2 | No |
 | T040 | InputNeeded notification display | WP08 | P2 | No |
 | T041 | Focus/zoom pane action | WP08 | P2 | No |
@@ -350,4 +368,19 @@ Wave 4 (Validation):       WP10 ──┘ depends WP02+WP04+WP05+WP06+WP08+WP09
 | T052 | Integration tests: input-needed lifecycle | WP10 | P1 | No |
 | T053 | Notification delivery audit test | WP10 | P1 | No |
 | T054 | Synthetic 50-WP latency test | WP10 | P1 | No |
-| T055 | Validation gate documentation | WP10 | P1 | No |
+| T055 | Validation gate documentation + requirement-to-test traceability | WP10 | P1 | No |
+| T056 | Emit review-ready events on ForReview transition | WP02 | P0 | No |
+| T057 | ReviewRunner service with slash/prompt modes | WP06 | P1 | No |
+| T058 | Slash mode command injection (`/kas:verify`) | WP06 | P1 | No |
+| T059 | Prompt mode tiered review via opencode | WP06 | P1 | No |
+| T060 | Persist + render ReviewResult details | WP06 | P1 | No |
+| T061 | Integration tests for slash->prompt fallback | WP10 | P1 | No |
+| T062 | Integration tests for review result persistence | WP10 | P1 | No |
+| T063 | Implement review policy executor for all configured modes | WP06 | P1 | No |
+| T064 | Integration tests for review policy modes | WP10 | P1 | No |
+| T065 | Emit typed review failure notifications/log entries | WP06 | P1 | No |
+| T066 | Integration tests for review failure surfacing | WP10 | P1 | No |
+| T067 | Integration test: terminal resize reflow correctness | WP10 | P1 | No |
+| T068 | Integration test: keyboard-only operation without mouse | WP10 | P1 | No |
+| T069 | Runtime-safety test: non-blocking event loop hot paths | WP10 | P1 | No |
+| T070 | Integration test: global Advance Wave in wave-gated mode | WP10 | P1 | No |

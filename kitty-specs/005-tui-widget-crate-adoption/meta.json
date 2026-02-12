@@ -1,0 +1,10 @@
+{
+  "feature_number": "005",
+  "slug": "005-tui-widget-crate-adoption",
+  "friendly_name": "TUI Widget Crate Adoption",
+  "mission": "software-dev",
+  "source_description": "Refactor the kasmos TUI (built in feature 002) to adopt 5 community ratatui crates (tui-logger, tui-popup, throbber-widgets-tui, ratatui-macros, tui-nodes), replacing hand-rolled implementations and adding WP dependency graph visualization. Each adoption is independently mergeable.",
+  "created_at": "2026-02-11T22:00:00Z",
+  "target_branch": "master",
+  "vcs": "git"
+}

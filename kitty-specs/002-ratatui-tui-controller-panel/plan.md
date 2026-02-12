@@ -5,7 +5,7 @@
 
 ## Summary
 
-Replace the passive controller pane with an interactive ratatui TUI that provides a kanban dashboard, review workflow, notification bar, and log viewer. The TUI runs inside the existing Zellij controller pane as the sole operator interface, sends commands via the existing `mpsc<EngineAction>` channel, and receives state updates via a new `tokio::sync::watch` channel broadcasting `OrchestrationRun` snapshots.
+Replace the passive controller pane with an interactive ratatui TUI that provides a kanban dashboard, review workflow, notification bar, and log viewer. The TUI runs inside the existing Zellij controller pane as the sole operator interface, sends commands via the existing `mpsc<EngineAction>` channel, and receives state updates via a new `tokio::sync::watch` channel broadcasting `OrchestrationRun` snapshots. At `for_review`, kasmos triggers a tiered review runner (slash-command mode or built-in prompt mode), captures results, and feeds them back into the Review tab and orchestration state.
 
 ## Planning Decisions
 
@@ -17,18 +17,24 @@ Replace the passive controller pane with an interactive ratatui TUI that provide
 | Rendering stack | ratatui + crossterm | Rust-native, matches existing ecosystem |
 | Command dispatch (TUI→engine) | Reuse existing `mpsc<EngineAction>` channel | TUI becomes a peer producer alongside FIFO |
 | FIFO compatibility | Keep existing FIFO unchanged | Both TUI and FIFO send to same CommandHandler→EngineAction pipeline |
+| Review trigger mode | Configurable: `slash` or `prompt` | Supports `/kas:verify`-style workflows and model-agnostic fallback |
+| Review execution model | Default `openai/gpt-5.3-codex` (high reasoning) | Provides a deterministic default while keeping model override support |
 
 ## Technical Context
 
 **Language/Version**: Rust (edition 2024, workspace)
-**Primary Dependencies**: ratatui (latest), crossterm (latest, ratatui re-export preferred)
-**Storage**: N/A (reads `Arc<RwLock<OrchestrationRun>>` in-memory; filesystem only for spec-kitty task files)
+**Primary Dependencies**: ratatui = "0.29", crossterm = "0.28" (pinned for deterministic builds; ratatui re-export preferred where applicable)
+**Storage**: Hybrid — runtime state in `Arc<RwLock<OrchestrationRun>>`, persisted review results in `.kasmos/review-results.json` (atomic write on update, load on startup for restart consistency).
 **Testing**: `cargo test` — unit tests for App state logic, rendering snapshots via `ratatui::backend::TestBackend`
 **Target Platform**: Linux terminal (256-color, Unicode box-drawing)
 **Project Type**: Single Rust crate (extends existing `kasmos` crate)
 **Performance Goals**: <100ms input latency, 30fps render, handles 50+ WPs
 **Constraints**: Must not block the tokio runtime; crossterm event reader on dedicated task
 **Scale/Scope**: 3 tabs (Dashboard, Review, Logs), ~10 new source files, ~2000-3000 LOC
+
+**Runtime Integrations**:
+- `opencode` runner for implementation/review agents
+- Optional slash-command plugin flow (`/kas:verify` / `/kas:review`) when available in pane environment
 
 ## Constitution Check
 
@@ -164,6 +170,41 @@ struct App {
 3. **launch.rs step 17.5** (new): Spawn TUI task with `watch_rx`, `action_tx.clone()`, terminal handle
 4. **TUI sends `EngineAction` directly** — bypasses CommandHandler/FIFO for lower latency
 5. **FIFO remains untouched** — external scripts still work, both produce to same `action_rx`
+
+### Review Automation Pipeline
+
+```
+CompletionDetector (lane=for_review)
+        │
+        ▼
+WaveEngine transitions WP -> ForReview
+        │
+        ▼
+ReviewRunner enqueues WP review job
+        │
+        ├── slash mode: inject "/kas:verify" (or configured command) into reviewer pane
+        │
+        └── prompt mode: run opencode reviewer prompt (default model gpt-5.3-codex, reasoning high)
+        │
+        ▼
+ReviewResultStore persists result -> TUI Review tab + Notifications + Logs
+```
+
+### Review Automation Config (proposed)
+
+```toml
+[review]
+enabled = true
+trigger_lane = "for_review"
+mode = "prompt"                     # "slash" | "prompt"
+slash_command = "/kas:verify"
+fallback_to_prompt = true
+agent = "reviewer"
+model = "openai/gpt-5.3-codex"
+reasoning = "high"
+timeout_seconds = 900
+policy = "auto_then_manual_approve" # manual_only | auto_then_manual_approve | auto_and_mark_done
+```
 
 ### Contextual Actions per WP State
 

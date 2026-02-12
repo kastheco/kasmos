@@ -8,7 +8,7 @@
 
 Launch a new orchestration:
 ```bash
-kasmos launch <feature_dir> [--mode continuous|wave-gated]
+kasmos start <feature_dir> [--mode continuous|wave-gated]
 ```
 
 Show status:
@@ -26,9 +26,22 @@ Stop orchestration:
 kasmos stop [feature_dir]
 ```
 
+Send controller commands (works outside the feature dir with `--feature`):
+```bash
+kasmos cmd status
+kasmos cmd focus WP02
+kasmos cmd --feature 004 advance
+```
+
 ---
 
 ## FIFO Commands
+
+Preferred:
+
+```bash
+kasmos cmd <command> [WP_ID] [--feature <feature_dir_or_prefix>]
+```
 
 Write commands to `.kasmos/cmd.pipe`:
 

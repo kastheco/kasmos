@@ -80,3 +80,25 @@ This keeps notification logic entirely in the TUI layer.
 **Rationale**: Matches the existing completion detection pattern (file markers in worktrees). The marker file can contain the agent's question/message as plaintext content. The TUI reads the file content and displays it in the notification. When the agent resumes, it deletes the marker.
 
 File path: `{worktree_path}/.input-needed`
+
+## R8: Tiered Review Automation Trigger
+
+**Decision**: Add a review runner with two trigger modes:
+1. `slash` mode: inject configured slash command in reviewer pane (default `/kas:verify`)
+2. `prompt` mode: run a built-in tiered review prompt via opencode
+
+Prompt mode must be model-agnostic and default to model `openai/gpt-5.3-codex` with high reasoning.
+
+**Rationale**:
+- Slash mode preserves existing personal plugin workflows (`kas-claude-plugins`) with minimal operator friction.
+- Prompt mode ensures portability when slash plugin commands are unavailable.
+- Having both allows reliable automation in mixed environments without locking review quality to a single vendor/tool.
+
+**Alternatives considered**:
+- Slash-only workflow: rejected (environment-dependent, fragile in non-Claude panes)
+- Prompt-only workflow: rejected (does not leverage existing user plugin ergonomics)
+- Human-only review trigger: rejected (too much repetitive operator typing)
+
+**Operational policy**:
+- Default policy is `auto_then_manual_approve` (automation produces findings; human still approves/rejects)
+- `auto_and_mark_done` is optional and should be opt-in per project due quality risk

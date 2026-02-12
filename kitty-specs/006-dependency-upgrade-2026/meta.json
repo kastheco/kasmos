@@ -1,0 +1,10 @@
+{
+  "feature_number": "006",
+  "slug": "006-dependency-upgrade-2026",
+  "friendly_name": "Dependency Upgrade 2026",
+  "mission": "software-dev",
+  "source_description": "Upgrade all kasmos dependencies to latest versions, migrating through breaking changes. Covers ratatui 0.29→0.30, crossterm 0.28→0.29, thiserror 1→2, toml 0.8→0.9, nix 0.29→0.31, which 5→8, notify 6→9, and serde_yaml→serde_yml replacement.",
+  "created_at": "2026-02-11T22:30:00Z",
+  "target_branch": "master",
+  "vcs": "git"
+}
