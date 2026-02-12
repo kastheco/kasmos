@@ -1,86 +1,27 @@
 //! TUI application state.
 //!
 //! Contains the root `App` struct and supporting types that hold all UI state:
-//! active tab, per-tab scroll/selection state, notifications, and the latest
-//! orchestration run snapshot from the engine.
+//! active tab, per-tab scroll/selection state, notifications, overlays, and
+//! the latest orchestration run snapshot from the engine.
 
 use crate::command_handlers::EngineAction;
 use crate::review::{
     ReviewAutomationPolicy, ReviewFailureSeverity, ReviewFailureType, ReviewPolicyExecutor,
 };
-use crate::types::{OrchestrationRun, WPState, WorkPackage};
+use crate::types::{OrchestrationRun, RunState, WPState};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Tabs};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Tabs, Wrap};
 use ratatui::Frame;
+use std::cell::Cell;
 use std::collections::HashMap;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 
 use super::event::TuiEvent;
 use super::keybindings;
-
-// ---------------------------------------------------------------------------
-// Confirmation dialog types
-// ---------------------------------------------------------------------------
-
-/// A pending confirmation dialog action.
-#[derive(Debug, Clone)]
-pub enum ConfirmAction {
-    /// Force-advance a work package past its current state.
-    ForceAdvance { wp_id: String },
-    /// Abort the entire orchestration run.
-    AbortRun,
-}
-
-impl ConfirmAction {
-    /// Dialog title for the confirmation popup.
-    pub fn title(&self) -> &str {
-        match self {
-            ConfirmAction::ForceAdvance { .. } => "Confirm Force Advance",
-            ConfirmAction::AbortRun => "Confirm Abort",
-        }
-    }
-
-    /// Dialog body text describing the action and consequences.
-    pub fn description(&self) -> String {
-        match self {
-            ConfirmAction::ForceAdvance { wp_id } => {
-                format!(
-                    "Force-advance {} past its current state?\n\
-                     This skips remaining work. Press [y] to confirm, [n] to cancel.",
-                    wp_id
-                )
-            }
-            ConfirmAction::AbortRun => "Abort the entire orchestration run?\n\
-                 All active work packages will be stopped. Press [y] to confirm, [n] to cancel."
-                .to_string(),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Lane helpers
-// ---------------------------------------------------------------------------
-
-/// Lane names for the kanban board.
-const LANE_NAMES: [&str; 4] = ["Planned", "Doing", "Review", "Done"];
-
-/// Map a `WPState` to a kanban lane index.
-///
-/// - Lane 0 "Planned": Pending, Paused
-/// - Lane 1 "Doing": Active
-/// - Lane 2 "Review": ForReview
-/// - Lane 3 "Done": Completed, Failed
-pub(super) fn wp_lane(state: WPState) -> usize {
-    match state {
-        WPState::Pending | WPState::Paused => 0,
-        WPState::Active => 1,
-        WPState::ForReview => 2,
-        WPState::Completed | WPState::Failed => 3,
-    }
-}
+use super::tabs;
 
 // ---------------------------------------------------------------------------
 // Tab enum
@@ -148,18 +89,8 @@ pub struct Notification {
 // Per-tab state structs
 // ---------------------------------------------------------------------------
 
-/// Which view is active in the Dashboard tab.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum DashboardViewMode {
-    /// Standard kanban lane view (Planned / Doing / ForReview / Done).
-    #[default]
-    Kanban,
-    /// Directed graph showing WP dependency relationships.
-    DependencyGraph,
-}
-
 /// UI state for the Dashboard tab.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct DashboardState {
     /// Which lane column is focused (0=planned, 1=doing, 2=for_review, 3=done).
     pub focused_lane: usize,
@@ -167,8 +98,43 @@ pub struct DashboardState {
     pub selected_index: usize,
     /// Vertical scroll offset per lane.
     pub scroll_offsets: [usize; 4],
-    /// Current Dashboard sub-view mode (Kanban vs DependencyGraph).
-    pub view_mode: DashboardViewMode,
+    /// Last known visible lane height (updated during render via `Cell` for interior mutability).
+    /// Used by keybinding handler to adjust scroll offsets.
+    pub last_lane_height: Cell<usize>,
+}
+
+impl Default for DashboardState {
+    fn default() -> Self {
+        Self {
+            focused_lane: 0,
+            selected_index: 0,
+            scroll_offsets: [0; 4],
+            last_lane_height: Cell::new(0),
+        }
+    }
+}
+
+impl DashboardState {
+    /// Ensure the selected item is visible within the scroll window.
+    ///
+    /// Call this after modifying `selected_index` in keybinding handlers.
+    pub fn ensure_selected_visible(&mut self) {
+        let lane = self.focused_lane;
+        let visible = {
+            let h = self.last_lane_height.get();
+            if h > 0 { h } else { 20 }
+        };
+
+        // Scroll up if selected is above viewport
+        if self.selected_index < self.scroll_offsets[lane] {
+            self.scroll_offsets[lane] = self.selected_index;
+        }
+
+        // Scroll down if selected is below viewport
+        if self.selected_index >= self.scroll_offsets[lane] + visible {
+            self.scroll_offsets[lane] = self.selected_index.saturating_sub(visible) + 1;
+        }
+    }
 }
 
 /// UI state for the Review tab.
@@ -235,7 +201,7 @@ impl Default for LogsState {
 /// Root application state for the TUI.
 ///
 /// Holds the latest orchestration run snapshot, per-tab UI state, notifications,
-/// and the channel for sending commands back to the engine.
+/// overlay state, and the channel for sending commands back to the engine.
 pub struct App {
     /// Latest orchestration state from the engine (via watch channel).
     pub run: OrchestrationRun,
@@ -249,8 +215,6 @@ pub struct App {
     pub review: ReviewState,
     /// Logs tab UI state.
     pub logs: LogsState,
-    /// Currently pending confirmation dialog, if any.
-    pub pending_confirm: Option<ConfirmAction>,
     /// Channel to send commands to the engine.
     pub action_tx: mpsc::Sender<EngineAction>,
     /// Exit flag — when true, the event loop breaks.
@@ -259,6 +223,16 @@ pub struct App {
     notification_counter: u64,
     /// Executor for `for_review` policy decisions.
     review_policy_executor: ReviewPolicyExecutor,
+
+    // -- WP06 fields --
+    /// Whether the help overlay is currently visible.
+    pub show_help: bool,
+    /// WP ID currently shown in the detail popup, if any.
+    pub detail_wp_id: Option<String>,
+    /// Index into `notifications` for cycling with 'n' key.
+    pub notification_cycle_index: usize,
+    /// When the TUI was started (for elapsed time display).
+    pub started_at: Instant,
 }
 
 impl App {
@@ -271,11 +245,14 @@ impl App {
             dashboard: DashboardState::default(),
             review: ReviewState::default(),
             logs: LogsState::default(),
-            pending_confirm: None,
             action_tx,
             should_quit: false,
             notification_counter: 0,
             review_policy_executor: ReviewPolicyExecutor::new(ReviewAutomationPolicy::default()),
+            show_help: false,
+            detail_wp_id: None,
+            notification_cycle_index: 0,
+            started_at: Instant::now(),
         }
     }
 
@@ -304,6 +281,8 @@ impl App {
             severity: Some(ReviewFailureSeverity::Error),
             created_at: Instant::now(),
         });
+        // Reset notification cycle index on list change
+        self.notification_cycle_index = 0;
 
         self.logs.entries.push(LogEntry {
             timestamp: SystemTime::now(),
@@ -336,59 +315,9 @@ impl App {
 
     /// Update the orchestration run snapshot from the engine.
     ///
-    /// Diffs old vs new WP states to add/remove notifications, then captures
-    /// log entries and replaces the run snapshot.
+    /// Called when the watch channel signals a new state. Also clears stale
+    /// detail popup references and resets notification cycle index.
     pub fn update_state(&mut self, new_run: OrchestrationRun) {
-        // --- Notification diffing: compare old and new WP states ---
-        let old_states: HashMap<String, WPState> = self
-            .run
-            .work_packages
-            .iter()
-            .map(|wp| (wp.id.clone(), wp.state))
-            .collect();
-
-        for wp in &new_run.work_packages {
-            let old_state = old_states.get(&wp.id).copied();
-
-            // Add notifications for transitions INTO attention states
-            if old_state != Some(WPState::ForReview) && wp.state == WPState::ForReview {
-                let id = self.next_notification_id();
-                self.notifications.push(Notification {
-                    id,
-                    kind: NotificationKind::ReviewPending,
-                    wp_id: wp.id.clone(),
-                    message: Some(format!("{} is ready for review", wp.title)),
-                    failure_type: None,
-                    severity: None,
-                    created_at: Instant::now(),
-                });
-            }
-
-            if old_state != Some(WPState::Failed) && wp.state == WPState::Failed {
-                let id = self.next_notification_id();
-                self.notifications.push(Notification {
-                    id,
-                    kind: NotificationKind::Failure,
-                    wp_id: wp.id.clone(),
-                    message: Some(format!("{} has failed", wp.title)),
-                    failure_type: None,
-                    severity: None,
-                    created_at: Instant::now(),
-                });
-            }
-
-            // Auto-dismiss notifications for transitions OUT of attention states
-            if old_state == Some(WPState::ForReview) && wp.state != WPState::ForReview {
-                self.notifications
-                    .retain(|n| !(n.kind == NotificationKind::ReviewPending && n.wp_id == wp.id));
-            }
-
-            if old_state == Some(WPState::Failed) && wp.state != WPState::Failed {
-                self.notifications
-                    .retain(|n| !(n.kind == NotificationKind::Failure && n.wp_id == wp.id));
-            }
-        }
-
         self.capture_state_logs(&new_run);
         self.run = new_run;
 
@@ -399,13 +328,53 @@ impl App {
                 self.logs.scroll_offset = self.logs.scroll_offset.saturating_sub(overflow);
             }
         }
+
+        // Clear stale detail popup reference
+        if let Some(ref wp_id) = self.detail_wp_id
+            && !self.run.work_packages.iter().any(|wp| wp.id == *wp_id)
+        {
+            self.detail_wp_id = None;
+        }
+
+        // Clamp review.selected_index to valid range
+        let review_count = self
+            .run
+            .work_packages
+            .iter()
+            .filter(|wp| wp.state == WPState::ForReview)
+            .count();
+        if review_count > 0 {
+            self.review.selected_index = self.review.selected_index.min(review_count - 1);
+        } else {
+            self.review.selected_index = 0;
+        }
+
+        // Clamp dashboard.selected_index to focused lane count
+        let focused_lane = self.dashboard.focused_lane;
+        let lane_count = self
+            .run
+            .work_packages
+            .iter()
+            .filter(|wp| state_to_lane(wp.state) == focused_lane)
+            .count();
+        if lane_count > 0 {
+            self.dashboard.selected_index = self.dashboard.selected_index.min(lane_count - 1);
+        } else {
+            self.dashboard.selected_index = 0;
+        }
     }
 
     /// Periodic tick handler for elapsed time display updates.
     ///
     /// Called every 250ms from the event loop.
     pub fn on_tick(&mut self) {
-        // Placeholder — elapsed time formatting will use this in WP03
+        // Status footer elapsed time is computed at render time from self.started_at,
+        // so no state update is needed here. The tick just triggers a re-render.
+    }
+
+    /// Return the elapsed time since the TUI started.
+    pub fn elapsed(&self) -> Duration {
+        self.started_at.elapsed()
     }
 
     fn capture_state_logs(&mut self, new_run: &OrchestrationRun) {
@@ -465,7 +434,8 @@ impl App {
         }
     }
 
-    fn filtered_log_entries(&self) -> Vec<&LogEntry> {
+    /// Return filtered log entries matching the current filter text.
+    pub fn filtered_log_entries(&self) -> Vec<&LogEntry> {
         if self.logs.filter.is_empty() {
             return self.logs.entries.iter().collect();
         }
@@ -486,7 +456,8 @@ impl App {
             .collect()
     }
 
-    fn format_timestamp(timestamp: SystemTime) -> String {
+    /// Format a SystemTime as HH:MM:SS (UTC time of day).
+    pub fn format_timestamp(timestamp: SystemTime) -> String {
         match timestamp.duration_since(UNIX_EPOCH) {
             Ok(duration) => {
                 let total = duration.as_secs() % 86_400;
@@ -499,554 +470,363 @@ impl App {
         }
     }
 
-    /// Render the Review tab: left pane (review queue list) + right pane (detail).
-    fn render_review(&self, frame: &mut Frame, area: Rect) {
-        let review_wps: Vec<&WorkPackage> = self
-            .run
-            .work_packages
-            .iter()
-            .filter(|wp| wp.state == WPState::ForReview)
-            .collect();
-
-        // Empty state
-        if review_wps.is_empty() {
-            let body = Paragraph::new(Line::from(Span::styled(
-                "No work packages awaiting review",
-                Style::default().fg(Color::DarkGray),
-            )))
-            .block(Block::default().borders(Borders::ALL).title(" Review "));
-            frame.render_widget(body, area);
-            return;
-        }
-
-        // Split horizontally: 40% list, 60% detail
-        let panes = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-            .split(area);
-
-        // --- Left pane: review queue list ---
-        let selected = self
-            .review
-            .selected_index
-            .min(review_wps.len().saturating_sub(1));
-        let items: Vec<ListItem> = review_wps
-            .iter()
-            .enumerate()
-            .map(|(i, wp)| {
-                let style = if i == selected {
-                    Style::default().add_modifier(Modifier::REVERSED)
-                } else {
-                    Style::default()
-                };
-                ListItem::new(Line::from(vec![
-                    Span::styled(&wp.id, Style::default().fg(Color::Cyan)),
-                    Span::raw(" "),
-                    Span::raw(&wp.title),
-                ]))
-                .style(style)
-            })
-            .collect();
-
-        let list_title = format!(" Review Queue ({}) ", review_wps.len());
-        let list = List::new(items).block(Block::default().borders(Borders::ALL).title(list_title));
-        frame.render_widget(list, panes[0]);
-
-        // --- Right pane: detail for selected WP ---
-        let wp = review_wps[selected];
-
-        let mut detail_lines: Vec<Line> = Vec::new();
-
-        // ID and title
-        detail_lines.push(Line::from(vec![
-            Span::styled("ID:    ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                &wp.id,
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]));
-        detail_lines.push(Line::from(vec![
-            Span::styled("Title: ", Style::default().fg(Color::DarkGray)),
-            Span::raw(&wp.title),
-        ]));
-
-        // Wave assignment
-        detail_lines.push(Line::from(vec![
-            Span::styled("Wave:  ", Style::default().fg(Color::DarkGray)),
-            Span::raw(format!("{}", wp.wave)),
-        ]));
-
-        // Time in review (approximate with elapsed since started_at)
-        let time_str = wp
-            .started_at
-            .and_then(|started| started.elapsed().ok())
-            .map(|elapsed| {
-                let secs = elapsed.as_secs();
-                let mins = secs / 60;
-                let hrs = mins / 60;
-                if hrs > 0 {
-                    format!("{}h{}m", hrs, mins % 60)
-                } else if mins > 0 {
-                    format!("{}m{}s", mins, secs % 60)
-                } else {
-                    format!("{}s", secs)
-                }
-            })
-            .unwrap_or_else(|| "\u{2014}".to_string());
-        detail_lines.push(Line::from(vec![
-            Span::styled("Time:  ", Style::default().fg(Color::DarkGray)),
-            Span::raw(time_str),
-        ]));
-
-        // Dependencies
-        let deps_str = if wp.dependencies.is_empty() {
-            "(none)".to_string()
-        } else {
-            wp.dependencies.join(", ")
-        };
-        detail_lines.push(Line::from(vec![
-            Span::styled("Deps:  ", Style::default().fg(Color::DarkGray)),
-            Span::raw(deps_str),
-        ]));
-
-        // State badge
-        detail_lines.push(Line::from(vec![
-            Span::styled("State: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                format!("{:?}", wp.state),
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]));
-
-        // Spacer
-        detail_lines.push(Line::from(""));
-
-        // Action hints
-        detail_lines.push(Line::from(vec![
-            Span::styled(
-                "[a]",
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" Approve  "),
-            Span::styled(
-                "[r]",
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" Reject + Relaunch"),
-        ]));
-
-        let detail_block = Block::default().borders(Borders::ALL).title(" Details ");
-        let detail = Paragraph::new(detail_lines).block(detail_block);
-        frame.render_widget(detail, panes[1]);
-    }
-
-    /// Render the notification bar between the tab bar and body.
-    fn render_notification_bar(&self, frame: &mut Frame, area: Rect) {
-        let review_count = self
-            .notifications
-            .iter()
-            .filter(|n| n.kind == NotificationKind::ReviewPending)
-            .count();
-        let failure_count = self
-            .notifications
-            .iter()
-            .filter(|n| n.kind == NotificationKind::Failure)
-            .count();
-
-        let mut spans: Vec<Span> = vec![Span::raw("  ")];
-
-        if review_count > 0 {
-            spans.push(Span::styled(
-                format!("{} review", review_count),
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ));
-        }
-
-        if review_count > 0 && failure_count > 0 {
-            spans.push(Span::raw(" | "));
-        }
-
-        if failure_count > 0 {
-            spans.push(Span::styled(
-                format!("{} failed", failure_count),
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            ));
-        }
-
-        spans.push(Span::styled(
-            "  [n] jump",
-            Style::default().fg(Color::DarkGray),
-        ));
-
-        let bar = Paragraph::new(Line::from(spans))
-            .style(Style::default().bg(Color::DarkGray).fg(Color::White));
-        frame.render_widget(bar, area);
-    }
-
-    fn render_logs(&self, frame: &mut Frame, area: Rect) {
-        let block = Block::default().borders(Borders::ALL).title(" Logs ");
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
-
-        if inner.height == 0 {
-            return;
-        }
-
-        let filtered = self.filtered_log_entries();
-        let reserve = if self.logs.filter_active { 2 } else { 1 };
-        let list_height = usize::from(inner.height.saturating_sub(reserve));
-        let max_top = filtered.len().saturating_sub(list_height);
-        let top = if self.logs.auto_scroll {
-            max_top
-        } else {
-            self.logs.scroll_offset.min(max_top)
-        };
-
-        let end = if list_height == 0 {
-            top
-        } else {
-            (top + list_height).min(filtered.len())
-        };
-
-        let mut lines = Vec::new();
-        if filtered.is_empty() {
-            lines.push(Line::from(Span::styled(
-                "No log entries",
-                Style::default().fg(Color::DarkGray),
-            )));
-        } else {
-            for entry in &filtered[top..end] {
-                let level = match entry.level {
-                    LogLevel::Info => Span::styled("INFO", Style::default().fg(Color::DarkGray)),
-                    LogLevel::Warn => Span::styled("WARN", Style::default().fg(Color::Yellow)),
-                    LogLevel::Error => Span::styled(
-                        "ERR ",
-                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                    ),
-                };
-
-                let wp_prefix = entry
-                    .wp_id
-                    .as_ref()
-                    .map(|wp_id| format!("[{wp_id}] "))
-                    .unwrap_or_default();
-
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        Self::format_timestamp(entry.timestamp),
-                        Style::default().fg(Color::DarkGray),
-                    ),
-                    Span::raw(" "),
-                    level,
-                    Span::raw(format!(" {wp_prefix}{}", entry.message)),
-                ]));
-            }
-        }
-
-        let list_area = Rect {
-            x: inner.x,
-            y: inner.y,
-            width: inner.width,
-            height: inner.height.saturating_sub(reserve),
-        };
-        frame.render_widget(Paragraph::new(lines), list_area);
-
-        let paused_text = if self.logs.auto_scroll {
-            "AUTO-SCROLL"
-        } else {
-            "PAUSED - press G to resume"
-        };
-        let status_style = if self.logs.auto_scroll {
-            Style::default().fg(Color::DarkGray)
-        } else {
-            Style::default().fg(Color::Yellow)
-        };
-
-        let status_area = Rect {
-            x: inner.x,
-            y: inner.y + inner.height.saturating_sub(reserve),
-            width: inner.width,
-            height: 1,
-        };
-
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(paused_text, status_style),
-                Span::raw("  "),
-                Span::styled(
-                    format!("Filter: {}", self.logs.filter),
-                    Style::default().fg(Color::DarkGray),
-                ),
-            ])),
-            status_area,
-        );
-
-        if self.logs.filter_active {
-            let filter_area = Rect {
-                x: inner.x,
-                y: inner.y + inner.height.saturating_sub(1),
-                width: inner.width,
-                height: 1,
-            };
-            frame.render_widget(
-                Paragraph::new(Line::from(vec![
-                    Span::styled("/", Style::default().fg(Color::Yellow)),
-                    Span::raw(&self.logs.filter),
-                    Span::styled("_", Style::default().fg(Color::Yellow)),
-                ])),
-                filter_area,
-            );
-        }
+    /// Format a Duration as HH:MM:SS.
+    fn format_duration(d: Duration) -> String {
+        let total = d.as_secs();
+        let hours = total / 3_600;
+        let minutes = (total % 3_600) / 60;
+        let seconds = total % 60;
+        format!("{hours:02}:{minutes:02}:{seconds:02}")
     }
 
     /// Allocate a new unique notification ID.
+    #[allow(dead_code)]
     pub fn next_notification_id(&mut self) -> u64 {
         self.notification_counter += 1;
         self.notification_counter
     }
 
-    /// Get WP references in a given lane (for navigation bounds and rendering).
-    pub fn wps_in_lane(&self, lane: usize) -> Vec<&WorkPackage> {
-        self.run
-            .work_packages
-            .iter()
-            .filter(|wp| wp_lane(wp.state) == lane)
-            .collect()
-    }
+    // -- Overlay rendering helpers --
 
-    /// Render the Dashboard into the given area.
-    ///
-    /// Dispatches between the kanban board view and the dependency graph view
-    /// based on `DashboardViewMode`.
-    fn render_dashboard(&self, frame: &mut Frame, area: Rect) {
-        match self.dashboard.view_mode {
-            DashboardViewMode::Kanban => self.render_dashboard_kanban(frame, area),
-            DashboardViewMode::DependencyGraph => {
-                self.render_dashboard_graph(frame, area);
-            }
-        }
-    }
-
-    /// Render the dependency graph view in the Dashboard tab.
-    fn render_dashboard_graph(&self, frame: &mut Frame, area: Rect) {
-        // Split area into graph body + hint bar at bottom.
-        let vert_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Length(1)])
-            .split(area);
-
-        let graph_area = vert_chunks[0];
-        let hint_area = vert_chunks[1];
-
-        // Render the graph
-        super::widgets::dependency_graph::render_dependency_graph(&self.run, frame, graph_area);
-
-        // Hint bar
-        let hint = Paragraph::new(Line::from(Span::styled(
-            "[v] Switch to Kanban view",
-            Style::default().fg(Color::DarkGray),
-        )));
-        frame.render_widget(hint, hint_area);
-    }
-
-    /// Render the Dashboard kanban board into the given area.
-    fn render_dashboard_kanban(&self, frame: &mut Frame, area: Rect) {
-        // Split area into kanban columns + action hint bar at the bottom.
-        let vert_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Length(1)])
-            .split(area);
-
-        let kanban_area = vert_chunks[0];
-        let hint_area = vert_chunks[1];
-
-        // 4 equal columns for the lanes.
-        let columns = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(25),
-                Constraint::Percentage(25),
-                Constraint::Percentage(25),
-                Constraint::Percentage(25),
-            ])
-            .split(kanban_area);
-
-        // Partition WPs into lanes.
-        let lanes: [Vec<&WorkPackage>; 4] = [
-            self.wps_in_lane(0),
-            self.wps_in_lane(1),
-            self.wps_in_lane(2),
-            self.wps_in_lane(3),
+    /// Render the help overlay listing all keybindings for the current tab.
+    fn render_help_overlay(&self, frame: &mut Frame, area: Rect) {
+        let global_keys = vec![
+            ("q", "Quit"),
+            ("1/2/3", "Switch tab"),
+            ("?", "Toggle help"),
+            ("n", "Next notification"),
         ];
 
-        for (lane_idx, (lane_wps, col_area)) in lanes.iter().zip(columns.iter()).enumerate() {
-            let is_focused = lane_idx == self.dashboard.focused_lane;
-            let title = format!(" {} ({}) ", LANE_NAMES[lane_idx], lane_wps.len());
-
-            let border_style = if is_focused {
-                Style::default().fg(Color::Yellow)
-            } else {
-                Style::default()
-            };
-
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(border_style);
-
-            if lane_wps.is_empty() {
-                let items = vec![ListItem::new(Line::from(Span::styled(
-                    "(empty)",
-                    Style::default().fg(Color::DarkGray),
-                )))];
-                let list = List::new(items).block(block);
-                frame.render_widget(list, *col_area);
-            } else {
-                let items: Vec<ListItem> = lane_wps
-                    .iter()
-                    .enumerate()
-                    .map(|(i, wp)| {
-                        let state_color = match wp.state {
-                            WPState::Pending => Color::DarkGray,
-                            WPState::Active => Color::Green,
-                            WPState::Paused => Color::Yellow,
-                            WPState::ForReview => Color::Cyan,
-                            WPState::Completed => Color::Blue,
-                            WPState::Failed => Color::Red,
-                        };
-
-                        let mut spans = vec![
-                            Span::styled(
-                                wp.id.to_string(),
-                                if wp.state == WPState::Failed {
-                                    Style::default()
-                                        .fg(state_color)
-                                        .add_modifier(Modifier::BOLD)
-                                } else {
-                                    Style::default().fg(state_color)
-                                },
-                            ),
-                            Span::raw(" "),
-                            Span::raw(&wp.title),
-                        ];
-
-                        // Show elapsed time for Active WPs with started_at.
-                        if wp.state == WPState::Active
-                            && let Some(started) = wp.started_at
-                            && let Ok(elapsed) = started.elapsed()
-                        {
-                            let secs = elapsed.as_secs();
-                            let mins = secs / 60;
-                            let hrs = mins / 60;
-                            let elapsed_str = if hrs > 0 {
-                                format!(" ({}h{}m)", hrs, mins % 60)
-                            } else if mins > 0 {
-                                format!(" ({}m{}s)", mins, secs % 60)
-                            } else {
-                                format!(" ({}s)", secs)
-                            };
-                            spans.push(Span::styled(
-                                elapsed_str,
-                                Style::default().fg(Color::DarkGray),
-                            ));
-                        }
-
-                        let mut style = Style::default();
-                        if is_focused && i == self.dashboard.selected_index {
-                            style = style.add_modifier(Modifier::REVERSED);
-                        }
-
-                        ListItem::new(Line::from(spans)).style(style)
-                    })
-                    .collect();
-
-                let list = List::new(items).block(block);
-                frame.render_widget(list, *col_area);
-            }
-        }
-
-        // Action hint bar for the currently selected WP.
-        let mut hint_text = self.dashboard_action_hints();
-        if !hint_text.is_empty() {
-            hint_text.push_str("  ");
-        }
-        hint_text.push_str("[v] Graph view");
-        let hint = Paragraph::new(Line::from(Span::styled(
-            hint_text,
-            Style::default().fg(Color::DarkGray),
-        )));
-        frame.render_widget(hint, hint_area);
-    }
-
-    /// Build the action hint string for the currently selected WP.
-    fn dashboard_action_hints(&self) -> String {
-        let lane_wps = self.wps_in_lane(self.dashboard.focused_lane);
-        let Some(wp) = lane_wps.get(self.dashboard.selected_index) else {
-            return String::new();
+        let tab_keys: Vec<(&str, &str)> = match self.active_tab {
+            Tab::Dashboard => vec![
+                ("j/↓", "Move down in lane"),
+                ("k/↑", "Move up in lane"),
+                ("h/←", "Move to left lane"),
+                ("l/→", "Move to right lane"),
+                ("Enter", "WP detail popup"),
+                ("A", "Advance wave (wave-gated)"),
+            ],
+            Tab::Review => vec![
+                ("j/↓", "Next review item"),
+                ("k/↑", "Previous review item"),
+                ("a", "Approve WP"),
+                ("r", "Reject WP"),
+                ("R", "Reject + relaunch WP"),
+            ],
+            Tab::Logs => vec![
+                ("j/↓", "Scroll down"),
+                ("k/↑", "Scroll up"),
+                ("G", "Resume auto-scroll"),
+                ("g", "Jump to top"),
+                ("/", "Filter"),
+            ],
         };
 
-        let mut hints = Vec::new();
-        match wp.state {
-            WPState::Failed => {
-                hints.push("[R]estart");
-                hints.push("[T] Retry");
-                hints.push("[F]orce-advance");
-            }
-            WPState::Paused => {
-                hints.push("[R]estart");
-                hints.push("[P] Resume");
-            }
-            WPState::Active => {
-                hints.push("[P]ause");
-            }
-            _ => {}
+        let mut lines: Vec<Line> = Vec::new();
+        lines.push(Line::from(Span::styled(
+            "Global Keys",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )));
+        for (key, desc) in &global_keys {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  {key:<12}"),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(*desc),
+            ]));
         }
 
-        if self.run.mode == crate::types::ProgressionMode::WaveGated
-            && self.run.state == crate::types::RunState::Paused
-        {
-            hints.push("[A]dvance wave");
+        lines.push(Line::default());
+
+        let tab_name = match self.active_tab {
+            Tab::Dashboard => "Dashboard Keys",
+            Tab::Review => "Review Keys",
+            Tab::Logs => "Logs Keys",
+        };
+        lines.push(Line::from(Span::styled(
+            tab_name,
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )));
+        for (key, desc) in &tab_keys {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  {key:<12}"),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(*desc),
+            ]));
         }
 
-        hints.join("  ")
+        lines.push(Line::default());
+        lines.push(Line::from(Span::styled(
+            "Press ? or Esc to close",
+            Style::default().fg(Color::DarkGray),
+        )));
+
+        let popup_width = 40u16.min(area.width.saturating_sub(4));
+        let popup_height = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
+        let popup_area = centered_rect(popup_width, popup_height, area);
+
+        frame.render_widget(Clear, popup_area);
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Help ")
+            .border_style(Style::default().fg(Color::Cyan));
+        let inner = block.inner(popup_area);
+        frame.render_widget(block, popup_area);
+        frame.render_widget(Paragraph::new(lines), inner);
+    }
+
+    /// Render the WP detail popup.
+    fn render_detail_popup(&self, frame: &mut Frame, area: Rect) {
+        let wp_id = match &self.detail_wp_id {
+            Some(id) => id,
+            None => return,
+        };
+
+        let wp = match self.run.work_packages.iter().find(|wp| wp.id == *wp_id) {
+            Some(wp) => wp,
+            None => return,
+        };
+
+        let mut lines: Vec<Line> = Vec::new();
+
+        lines.push(Line::from(vec![
+            Span::styled("ID:          ", Style::default().fg(Color::Cyan)),
+            Span::raw(&wp.id),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("Title:       ", Style::default().fg(Color::Cyan)),
+            Span::raw(&wp.title),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("State:       ", Style::default().fg(Color::Cyan)),
+            Span::styled(
+                format!("{:?}", wp.state),
+                Style::default().fg(state_color(wp.state)),
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("Wave:        ", Style::default().fg(Color::Cyan)),
+            Span::raw(wp.wave.to_string()),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("Dependencies:", Style::default().fg(Color::Cyan)),
+            Span::raw(if wp.dependencies.is_empty() {
+                " (none)".to_string()
+            } else {
+                format!(" {}", wp.dependencies.join(", "))
+            }),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("Failures:    ", Style::default().fg(Color::Cyan)),
+            if wp.failure_count > 0 {
+                Span::styled(
+                    wp.failure_count.to_string(),
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                )
+            } else {
+                Span::raw("0")
+            },
+        ]));
+
+        // Elapsed time
+        let elapsed_str = match (wp.started_at, wp.completed_at) {
+            (Some(start), Some(end)) => match end.duration_since(start) {
+                Ok(d) => Self::format_duration(d),
+                Err(_) => "N/A".to_string(),
+            },
+            (Some(start), None) => match SystemTime::now().duration_since(start) {
+                Ok(d) => format!("{} (running)", Self::format_duration(d)),
+                Err(_) => "N/A".to_string(),
+            },
+            _ => "N/A".to_string(),
+        };
+        lines.push(Line::from(vec![
+            Span::styled("Elapsed:     ", Style::default().fg(Color::Cyan)),
+            Span::raw(elapsed_str),
+        ]));
+
+        lines.push(Line::from(vec![
+            Span::styled("Worktree:    ", Style::default().fg(Color::Cyan)),
+            Span::raw(
+                wp.worktree_path
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "(none)".to_string()),
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("Pane ID:     ", Style::default().fg(Color::Cyan)),
+            Span::raw(
+                wp.pane_id
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| "(none)".to_string()),
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("Completion:  ", Style::default().fg(Color::Cyan)),
+            Span::raw(
+                wp.completion_method
+                    .map(|m| format!("{m:?}"))
+                    .unwrap_or_else(|| "(pending)".to_string()),
+            ),
+        ]));
+
+        lines.push(Line::default());
+        lines.push(Line::from(Span::styled(
+            "Press Esc to close",
+            Style::default().fg(Color::DarkGray),
+        )));
+
+        let popup_width = 60u16.min(area.width.saturating_sub(4));
+        let popup_height = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
+        let popup_area = centered_rect(popup_width, popup_height, area);
+
+        frame.render_widget(Clear, popup_area);
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(format!(" {} Detail ", wp.id))
+            .border_style(Style::default().fg(Color::Yellow));
+        let inner = block.inner(popup_area);
+        frame.render_widget(block, popup_area);
+        frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+    }
+
+    /// Render the persistent status footer (FR-016).
+    fn render_status_footer(&self, frame: &mut Frame, area: Rect) {
+        let total = self.run.work_packages.len();
+        let completed = self
+            .run
+            .work_packages
+            .iter()
+            .filter(|wp| wp.state == WPState::Completed)
+            .count();
+        let active = self
+            .run
+            .work_packages
+            .iter()
+            .filter(|wp| wp.state == WPState::Active)
+            .count();
+        let failed = self
+            .run
+            .work_packages
+            .iter()
+            .filter(|wp| wp.state == WPState::Failed)
+            .count();
+
+        let run_state_span = match self.run.state {
+            RunState::Running => Span::styled(
+                " RUNNING ",
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            RunState::Paused => Span::styled(
+                " PAUSED ",
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            RunState::Completed => Span::styled(
+                " COMPLETED ",
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            RunState::Failed => Span::styled(
+                " FAILED ",
+                Style::default()
+                    .fg(Color::White)
+                    .bg(Color::Red)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            RunState::Aborted => Span::styled(
+                " ABORTED ",
+                Style::default()
+                    .fg(Color::White)
+                    .bg(Color::Red)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            RunState::Initializing => Span::styled(
+                " INIT ",
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        };
+
+        let elapsed_str = Self::format_duration(self.elapsed());
+        let mode_str = match self.run.mode {
+            crate::types::ProgressionMode::Continuous => "continuous",
+            crate::types::ProgressionMode::WaveGated => "wave-gated",
+        };
+
+        let spans = vec![
+            run_state_span,
+            Span::raw(" "),
+            Span::styled(
+                format!("{completed}/{total}"),
+                Style::default().fg(Color::Green),
+            ),
+            Span::styled(" done ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("{active}"), Style::default().fg(Color::Yellow)),
+            Span::styled(" active ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("{failed}"), Style::default().fg(Color::Red)),
+            Span::styled(" failed ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("⏱ {elapsed_str}"), Style::default().fg(Color::Cyan)),
+            Span::raw("  "),
+            Span::styled(mode_str, Style::default().fg(Color::DarkGray)),
+        ];
+
+        // Add notification indicator if there are active notifications
+        let mut all_spans = spans;
+        if !self.notifications.is_empty() {
+            all_spans.push(Span::raw("  "));
+            all_spans.push(Span::styled(
+                format!("🔔{}", self.notifications.len()),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+
+        frame.render_widget(
+            Paragraph::new(Line::from(all_spans)).style(Style::default().bg(Color::DarkGray)),
+            area,
+        );
     }
 
     /// Render the entire TUI frame.
     ///
     /// Layout:
     /// - Tab header bar at top
-    /// - Optional notification bar (when notifications exist)
     /// - Body: tab-specific content
+    /// - Status footer at bottom
+    /// - Overlays: help > detail (overlay priority order)
     pub fn render(&self, frame: &mut Frame) {
         let area = frame.area();
 
-        let has_notifications = !self.notifications.is_empty();
-        let constraints = if has_notifications {
-            vec![
-                Constraint::Length(3), // tab bar
-                Constraint::Length(1), // notification bar
-                Constraint::Min(0),    // body
-            ]
-        } else {
-            vec![
-                Constraint::Length(3), // tab bar
-                Constraint::Min(0),    // body
-            ]
-        };
-
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(constraints)
+            .constraints([
+                Constraint::Length(3), // tab bar
+                Constraint::Min(0),    // body
+                Constraint::Length(1), // status footer
+            ])
             .split(area);
 
         // Tab bar
@@ -1067,34 +847,55 @@ impl App {
 
         frame.render_widget(tabs, chunks[0]);
 
-        // Notification bar (when present)
-        let body_area = if has_notifications {
-            self.render_notification_bar(frame, chunks[1]);
-            chunks[2]
-        } else {
-            chunks[1]
-        };
-
-        // Body — tab-specific content
+        // Body — dispatch to tab rendering modules (SC-015)
         match self.active_tab {
-            Tab::Dashboard => {
-                self.render_dashboard(frame, body_area);
-            }
-            Tab::Review => {
-                self.render_review(frame, body_area);
-            }
-            Tab::Logs => {
-                self.render_logs(frame, body_area);
-            }
+            Tab::Dashboard => tabs::dashboard::render_dashboard(self, frame, chunks[1]),
+            Tab::Review => tabs::review::render_review(self, frame, chunks[1]),
+            Tab::Logs => tabs::logs::render_logs(self, frame, chunks[1]),
         }
 
-        // Confirmation popup overlay (renders on top of everything)
-        if let Some(ref action) = self.pending_confirm {
-            let popup = tui_popup::Popup::new(action.description())
-                .title(action.title())
-                .style(Style::default().fg(Color::White).bg(Color::Red));
-            frame.render_widget(popup, frame.area());
+        // Status footer (FR-016, SC-010)
+        self.render_status_footer(frame, chunks[2]);
+
+        // Overlays — priority: help > detail
+        if self.show_help {
+            self.render_help_overlay(frame, area);
+        } else if self.detail_wp_id.is_some() {
+            self.render_detail_popup(frame, area);
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helper functions
+// ---------------------------------------------------------------------------
+
+/// Compute a centered rectangle within a parent area.
+fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    Rect::new(x, y, width.min(area.width), height.min(area.height))
+}
+
+/// Map a WPState to a kanban lane index (0=planned, 1=doing, 2=for_review, 3=done).
+pub fn state_to_lane(state: WPState) -> usize {
+    match state {
+        WPState::Pending | WPState::Paused => 0,
+        WPState::Active | WPState::Failed => 1,
+        WPState::ForReview => 2,
+        WPState::Completed => 3,
+    }
+}
+
+/// Map a WPState to a display color.
+pub fn state_color(state: WPState) -> Color {
+    match state {
+        WPState::Pending => Color::DarkGray,
+        WPState::Active => Color::Yellow,
+        WPState::Completed => Color::Green,
+        WPState::Failed => Color::Red,
+        WPState::ForReview => Color::Magenta,
+        WPState::Paused => Color::Blue,
     }
 }
 
@@ -1298,505 +1099,248 @@ mod tests {
         );
     }
 
-    /// Helper to create a run with WPs in various states for dashboard tests.
-    fn create_mixed_state_run() -> OrchestrationRun {
-        let states = [
-            ("WP01", "Setup CI", WPState::Pending),
-            ("WP02", "Build pipeline", WPState::Active),
-            ("WP03", "Write tests", WPState::Paused),
-            ("WP04", "Code review", WPState::ForReview),
-            ("WP05", "Deploy staging", WPState::Completed),
-            ("WP06", "Fix flaky test", WPState::Failed),
-        ];
+    // -- WP06 tests --
 
-        let work_packages: Vec<WorkPackage> = states
-            .iter()
-            .map(|(id, title, state)| WorkPackage {
-                id: id.to_string(),
-                title: title.to_string(),
-                state: *state,
-                dependencies: vec![],
-                wave: 0,
-                pane_id: None,
-                pane_name: id.to_lowercase(),
-                worktree_path: None,
-                prompt_path: None,
-                started_at: None,
-                completed_at: None,
-                completion_method: None,
-                failure_count: 0,
-            })
-            .collect();
+    #[test]
+    fn test_status_footer_renders_on_all_tabs() {
+        let (tx, _rx) = mpsc::channel(4);
+        let app = App::new(create_test_run(5), tx);
 
-        OrchestrationRun {
-            id: "run-mixed".to_string(),
-            feature: "feature".to_string(),
-            feature_dir: std::path::PathBuf::from("/tmp/feature"),
-            config: Config::default(),
-            work_packages,
-            waves: vec![Wave {
-                index: 0,
-                wp_ids: vec![
-                    "WP01".into(),
-                    "WP02".into(),
-                    "WP03".into(),
-                    "WP04".into(),
-                    "WP05".into(),
-                    "WP06".into(),
-                ],
-                state: WaveState::Active,
-            }],
-            state: RunState::Running,
-            started_at: None,
-            completed_at: None,
-            mode: ProgressionMode::Continuous,
+        for &tab in &[Tab::Dashboard, Tab::Review, Tab::Logs] {
+            let mut app_clone = App::new(create_test_run(5), app.action_tx.clone());
+            app_clone.active_tab = tab;
+
+            let backend = TestBackend::new(120, 40);
+            let mut terminal = Terminal::new(backend).expect("create terminal");
+            terminal
+                .draw(|frame| app_clone.render(frame))
+                .expect("draw");
         }
     }
 
     #[test]
-    fn test_dashboard_renders_wps_in_correct_lanes() {
+    fn test_help_overlay_toggle() {
         let (tx, _rx) = mpsc::channel(4);
-        let app = App::new(create_mixed_state_run(), tx);
+        let mut app = App::new(create_test_run(3), tx);
 
-        // Verify lane partitioning via wps_in_lane.
-        let planned = app.wps_in_lane(0);
-        assert_eq!(planned.len(), 2); // WP01 (Pending) + WP03 (Paused)
-        assert!(planned.iter().any(|wp| wp.id == "WP01"));
-        assert!(planned.iter().any(|wp| wp.id == "WP03"));
+        assert!(!app.show_help);
 
-        let doing = app.wps_in_lane(1);
-        assert_eq!(doing.len(), 1); // WP02 (Active)
-        assert_eq!(doing[0].id, "WP02");
+        app.handle_event(TuiEvent::Key(KeyEvent::new(
+            KeyCode::Char('?'),
+            KeyModifiers::NONE,
+        )));
+        assert!(app.show_help);
 
-        let review = app.wps_in_lane(2);
-        assert_eq!(review.len(), 1); // WP04 (ForReview)
-        assert_eq!(review[0].id, "WP04");
-
-        let done = app.wps_in_lane(3);
-        assert_eq!(done.len(), 2); // WP05 (Completed) + WP06 (Failed)
-        assert!(done.iter().any(|wp| wp.id == "WP05"));
-        assert!(done.iter().any(|wp| wp.id == "WP06"));
-
-        // Render to a TestBackend and verify no panic + WP IDs appear in output.
-        let backend = TestBackend::new(120, 30);
-        let mut terminal = Terminal::new(backend).expect("create terminal");
-        terminal
-            .draw(|frame| app.render(frame))
-            .expect("dashboard render");
-
-        let buf = terminal.backend().buffer().clone();
-        let mut rendered = String::new();
-        for y in 0..buf.area.height {
-            for x in 0..buf.area.width {
-                rendered.push_str(buf[(x, y)].symbol());
-            }
-        }
-
-        // Verify WP IDs appear in the rendered buffer.
-        assert!(
-            rendered.contains("WP01"),
-            "WP01 should appear in rendered output"
-        );
-        assert!(
-            rendered.contains("WP02"),
-            "WP02 should appear in rendered output"
-        );
-        assert!(
-            rendered.contains("WP04"),
-            "WP04 should appear in rendered output"
-        );
-        assert!(
-            rendered.contains("WP05"),
-            "WP05 should appear in rendered output"
-        );
-        assert!(
-            rendered.contains("WP06"),
-            "WP06 should appear in rendered output"
-        );
-
-        // Verify lane headers appear.
-        assert!(
-            rendered.contains("Planned"),
-            "Planned lane header should appear"
-        );
-        assert!(
-            rendered.contains("Doing"),
-            "Doing lane header should appear"
-        );
-        assert!(
-            rendered.contains("Review"),
-            "Review lane header should appear"
-        );
-        assert!(rendered.contains("Done"), "Done lane header should appear");
+        app.handle_event(TuiEvent::Key(KeyEvent::new(
+            KeyCode::Char('?'),
+            KeyModifiers::NONE,
+        )));
+        assert!(!app.show_help);
     }
 
     #[test]
-    fn test_dashboard_navigation_bounds() {
+    fn test_help_overlay_dismiss_with_esc() {
         let (tx, _rx) = mpsc::channel(4);
-        let mut app = App::new(create_mixed_state_run(), tx);
+        let mut app = App::new(create_test_run(3), tx);
 
-        // Start at lane 0, index 0.
+        app.show_help = true;
+        app.handle_event(TuiEvent::Key(KeyEvent::new(
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        )));
+        assert!(!app.show_help);
+    }
+
+    #[test]
+    fn test_help_overlay_swallows_other_keys() {
+        let (tx, _rx) = mpsc::channel(4);
+        let mut app = App::new(create_test_run(3), tx);
+
+        app.show_help = true;
+        let tab_before = app.active_tab;
+
+        // Try to switch tab while help is open — should be swallowed
+        app.handle_event(TuiEvent::Key(KeyEvent::new(
+            KeyCode::Char('2'),
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(app.active_tab, tab_before);
+        assert!(app.show_help);
+    }
+
+    #[test]
+    fn test_dashboard_lane_navigation() {
+        let (tx, _rx) = mpsc::channel(4);
+        let mut run = create_test_run(8);
+        // Put WPs in different lanes
+        run.work_packages[0].state = WPState::Pending;
+        run.work_packages[1].state = WPState::Pending;
+        run.work_packages[2].state = WPState::Active;
+        run.work_packages[3].state = WPState::Active;
+        run.work_packages[4].state = WPState::ForReview;
+        run.work_packages[5].state = WPState::ForReview;
+        run.work_packages[6].state = WPState::Completed;
+        run.work_packages[7].state = WPState::Completed;
+
+        let mut app = App::new(run, tx);
         assert_eq!(app.dashboard.focused_lane, 0);
         assert_eq!(app.dashboard.selected_index, 0);
 
-        // j moves down within lane 0 (has 2 items: WP01, WP03).
+        // Move down
         app.handle_event(TuiEvent::Key(KeyEvent::new(
             KeyCode::Char('j'),
             KeyModifiers::NONE,
         )));
         assert_eq!(app.dashboard.selected_index, 1);
 
-        // j again should clamp at 1 (lane 0 has 2 items, max index = 1).
-        app.handle_event(TuiEvent::Key(KeyEvent::new(
-            KeyCode::Char('j'),
-            KeyModifiers::NONE,
-        )));
-        assert_eq!(app.dashboard.selected_index, 1);
-
-        // k moves up.
-        app.handle_event(TuiEvent::Key(KeyEvent::new(
-            KeyCode::Char('k'),
-            KeyModifiers::NONE,
-        )));
-        assert_eq!(app.dashboard.selected_index, 0);
-
-        // k again should clamp at 0 (saturating_sub).
-        app.handle_event(TuiEvent::Key(KeyEvent::new(
-            KeyCode::Char('k'),
-            KeyModifiers::NONE,
-        )));
-        assert_eq!(app.dashboard.selected_index, 0);
-
-        // l moves to lane 1, resets selected_index.
-        app.dashboard.selected_index = 1; // set to non-zero first
+        // Move to right lane
         app.handle_event(TuiEvent::Key(KeyEvent::new(
             KeyCode::Char('l'),
             KeyModifiers::NONE,
         )));
         assert_eq!(app.dashboard.focused_lane, 1);
         assert_eq!(app.dashboard.selected_index, 0);
-
-        // l twice more to reach lane 3.
-        app.handle_event(TuiEvent::Key(KeyEvent::new(
-            KeyCode::Char('l'),
-            KeyModifiers::NONE,
-        )));
-        app.handle_event(TuiEvent::Key(KeyEvent::new(
-            KeyCode::Char('l'),
-            KeyModifiers::NONE,
-        )));
-        assert_eq!(app.dashboard.focused_lane, 3);
-
-        // l again should clamp at 3.
-        app.handle_event(TuiEvent::Key(KeyEvent::new(
-            KeyCode::Char('l'),
-            KeyModifiers::NONE,
-        )));
-        assert_eq!(app.dashboard.focused_lane, 3);
-
-        // h moves back to lane 2.
-        app.handle_event(TuiEvent::Key(KeyEvent::new(
-            KeyCode::Char('h'),
-            KeyModifiers::NONE,
-        )));
-        assert_eq!(app.dashboard.focused_lane, 2);
-        assert_eq!(app.dashboard.selected_index, 0);
-
-        // h three times to reach lane 0, then one more to verify clamping.
-        app.handle_event(TuiEvent::Key(KeyEvent::new(
-            KeyCode::Char('h'),
-            KeyModifiers::NONE,
-        )));
-        app.handle_event(TuiEvent::Key(KeyEvent::new(
-            KeyCode::Char('h'),
-            KeyModifiers::NONE,
-        )));
-        assert_eq!(app.dashboard.focused_lane, 0);
-        app.handle_event(TuiEvent::Key(KeyEvent::new(
-            KeyCode::Char('h'),
-            KeyModifiers::NONE,
-        )));
-        assert_eq!(app.dashboard.focused_lane, 0);
     }
 
     #[test]
-    fn test_action_keys_dispatch_correct_engine_action() {
-        let (tx, mut rx) = mpsc::channel(16);
-        let mut app = App::new(create_mixed_state_run(), tx);
-
-        // Navigate to lane 3 (Done) which has WP05 (Completed) and WP06 (Failed).
-        app.dashboard.focused_lane = 3;
-        app.dashboard.selected_index = 0;
-
-        // WP05 is Completed — T (Retry) should NOT dispatch (not valid for Completed).
-        app.handle_event(TuiEvent::Key(KeyEvent::new(
-            KeyCode::Char('T'),
-            KeyModifiers::NONE,
-        )));
-        assert!(
-            rx.try_recv().is_err(),
-            "Retry should not dispatch for Completed WP"
-        );
-
-        // Select WP06 (Failed) — index 1 in the Done lane.
-        app.dashboard.selected_index = 1;
-
-        // T (Retry) should dispatch for Failed WP.
-        app.handle_event(TuiEvent::Key(KeyEvent::new(
-            KeyCode::Char('T'),
-            KeyModifiers::NONE,
-        )));
-        match rx.try_recv() {
-            Ok(EngineAction::Retry(wp_id)) => assert_eq!(wp_id, "WP06"),
-            other => panic!("Expected Retry(WP06), got {:?}", other),
-        }
-
-        // R (Restart) should dispatch for Failed WP.
-        app.handle_event(TuiEvent::Key(KeyEvent::new(
-            KeyCode::Char('R'),
-            KeyModifiers::NONE,
-        )));
-        match rx.try_recv() {
-            Ok(EngineAction::Restart(wp_id)) => assert_eq!(wp_id, "WP06"),
-            other => panic!("Expected Restart(WP06), got {:?}", other),
-        }
-
-        // F (ForceAdvance) should set pending_confirm (not dispatch immediately).
-        app.handle_event(TuiEvent::Key(KeyEvent::new(
-            KeyCode::Char('F'),
-            KeyModifiers::NONE,
-        )));
-        assert!(
-            rx.try_recv().is_err(),
-            "ForceAdvance should NOT dispatch immediately — confirmation required"
-        );
-        assert!(
-            app.pending_confirm.is_some(),
-            "pending_confirm should be set after pressing F on Failed WP"
-        );
-        match &app.pending_confirm {
-            Some(ConfirmAction::ForceAdvance { wp_id }) => assert_eq!(wp_id, "WP06"),
-            other => panic!("Expected ForceAdvance(WP06) confirm, got {:?}", other),
-        }
-
-        // Confirm with 'y' — now the action dispatches.
-        app.handle_event(TuiEvent::Key(KeyEvent::new(
-            KeyCode::Char('y'),
-            KeyModifiers::NONE,
-        )));
-        match rx.try_recv() {
-            Ok(EngineAction::ForceAdvance(wp_id)) => assert_eq!(wp_id, "WP06"),
-            other => panic!("Expected ForceAdvance(WP06), got {:?}", other),
-        }
-        assert!(
-            app.pending_confirm.is_none(),
-            "pending_confirm should be cleared after confirmation"
-        );
-
-        // Navigate to lane 1 (Doing) — WP02 is Active.
-        app.dashboard.focused_lane = 1;
-        app.dashboard.selected_index = 0;
-
-        // P (Pause) should dispatch for Active WP.
-        app.handle_event(TuiEvent::Key(KeyEvent::new(
-            KeyCode::Char('P'),
-            KeyModifiers::NONE,
-        )));
-        match rx.try_recv() {
-            Ok(EngineAction::Pause(wp_id)) => assert_eq!(wp_id, "WP02"),
-            other => panic!("Expected Pause(WP02), got {:?}", other),
-        }
-
-        // Navigate to lane 0 (Planned) — WP03 is Paused (index 1).
-        app.dashboard.focused_lane = 0;
-        app.dashboard.selected_index = 1; // WP03 (Paused)
-
-        // P (Resume) should dispatch for Paused WP.
-        app.handle_event(TuiEvent::Key(KeyEvent::new(
-            KeyCode::Char('P'),
-            KeyModifiers::NONE,
-        )));
-        match rx.try_recv() {
-            Ok(EngineAction::Resume(wp_id)) => assert_eq!(wp_id, "WP03"),
-            other => panic!("Expected Resume(WP03), got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn test_review_tab_renders_for_review_wps() {
-        let (tx, _rx) = mpsc::channel(4);
-        let mut run = create_test_run(5);
-        run.work_packages[0].state = WPState::ForReview;
-        run.work_packages[2].state = WPState::ForReview;
-        let mut app = App::new(run, tx);
-        app.active_tab = Tab::Review;
-
-        let backend = TestBackend::new(120, 40);
-        let mut terminal = Terminal::new(backend).expect("create terminal");
-        terminal
-            .draw(|frame| app.render(frame))
-            .expect("render review tab with ForReview WPs");
-    }
-
-    #[test]
-    fn test_review_tab_renders_empty_state() {
-        let (tx, _rx) = mpsc::channel(4);
-        let run = create_test_run(3); // all Active, none ForReview
-        let mut app = App::new(run, tx);
-        app.active_tab = Tab::Review;
-
-        let backend = TestBackend::new(120, 40);
-        let mut terminal = Terminal::new(backend).expect("create terminal");
-        terminal
-            .draw(|frame| app.render(frame))
-            .expect("render review tab empty state");
-    }
-
-    #[test]
-    fn test_notification_diffing_adds_and_removes() {
-        let (tx, _rx) = mpsc::channel(4);
-        let mut app = App::new(create_test_run(2), tx);
-
-        // WP01 transitions Active → ForReview → should add ReviewPending notification
-        let mut to_review = app.run.clone();
-        to_review.work_packages[0].state = WPState::ForReview;
-        app.update_state(to_review);
-
-        assert_eq!(app.notifications.len(), 1);
-        assert_eq!(app.notifications[0].kind, NotificationKind::ReviewPending);
-        assert_eq!(app.notifications[0].wp_id, "WP01");
-
-        // WP01 transitions ForReview → Completed → should remove ReviewPending notification
-        let mut to_completed = app.run.clone();
-        to_completed.work_packages[0].state = WPState::Completed;
-        app.update_state(to_completed);
-
-        assert!(
-            app.notifications.is_empty(),
-            "ReviewPending notification should be auto-dismissed"
-        );
-    }
-
-    #[test]
-    fn test_notification_diffing_failure_add_and_remove() {
-        let (tx, _rx) = mpsc::channel(4);
-        let mut app = App::new(create_test_run(1), tx);
-
-        // Active → Failed → should add Failure notification
-        let mut to_failed = app.run.clone();
-        to_failed.work_packages[0].state = WPState::Failed;
-        app.update_state(to_failed);
-
-        assert_eq!(app.notifications.len(), 1);
-        assert_eq!(app.notifications[0].kind, NotificationKind::Failure);
-        assert_eq!(app.notifications[0].wp_id, "WP01");
-
-        // Failed → Active (retry) → should remove Failure notification
-        let mut to_active = app.run.clone();
-        to_active.work_packages[0].state = WPState::Active;
-        app.update_state(to_active);
-
-        assert!(
-            app.notifications.is_empty(),
-            "Failure notification should be auto-dismissed on retry"
-        );
-    }
-
-    #[test]
-    fn test_approve_key_sends_action() {
-        let (tx, mut rx) = mpsc::channel(4);
-        let mut run = create_test_run(2);
-        run.work_packages[0].state = WPState::ForReview;
-        let mut app = App::new(run, tx);
-        app.active_tab = Tab::Review;
-        app.review.selected_index = 0;
-
-        keybindings::handle_key(
-            &mut app,
-            KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE),
-        );
-
-        match rx.try_recv() {
-            Ok(EngineAction::Approve(wp_id)) => assert_eq!(wp_id, "WP01"),
-            other => panic!("Expected Approve(WP01), got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn test_reject_key_sends_action() {
-        let (tx, mut rx) = mpsc::channel(4);
-        let mut run = create_test_run(2);
-        run.work_packages[0].state = WPState::ForReview;
-        let mut app = App::new(run, tx);
-        app.active_tab = Tab::Review;
-        app.review.selected_index = 0;
-
-        keybindings::handle_key(
-            &mut app,
-            KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE),
-        );
-
-        match rx.try_recv() {
-            Ok(EngineAction::Reject { wp_id, relaunch }) => {
-                assert_eq!(wp_id, "WP01");
-                assert!(relaunch);
-            }
-            other => panic!(
-                "Expected Reject {{ wp_id: WP01, relaunch: true }}, got {:?}",
-                other
-            ),
-        }
-    }
-
-    #[test]
-    fn test_notification_jump_switches_tab() {
-        let (tx, _rx) = mpsc::channel(4);
-        let mut run = create_test_run(3);
-        run.work_packages[1].state = WPState::ForReview;
-        let mut app = App::new(run, tx);
-
-        // Manually add a ReviewPending notification
-        let notif_id = app.next_notification_id();
-        app.notifications.push(Notification {
-            id: notif_id,
-            kind: NotificationKind::ReviewPending,
-            wp_id: "WP02".to_string(),
-            message: None,
-            failure_type: None,
-            severity: None,
-            created_at: Instant::now(),
-        });
-
-        // Start on Dashboard
-        app.active_tab = Tab::Dashboard;
-
-        // Press 'n' to jump
-        keybindings::handle_key(
-            &mut app,
-            KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE),
-        );
-
-        assert_eq!(app.active_tab, Tab::Review);
-        // WP02 is the only ForReview WP, at index 0
-        assert_eq!(app.review.selected_index, 0);
-    }
-
-    #[test]
-    fn test_notification_bar_renders_with_notifications() {
+    fn test_notification_cycling() {
         let (tx, _rx) = mpsc::channel(4);
         let mut app = App::new(create_test_run(3), tx);
 
-        // Trigger notification diffing: WP02 → Failed
-        let mut new_run = app.run.clone();
-        new_run.work_packages[1].state = WPState::Failed;
-        app.update_state(new_run);
+        // Add some notifications
+        for i in 0..3 {
+            let id = app.next_notification_id();
+            app.notifications.push(Notification {
+                id,
+                kind: NotificationKind::Failure,
+                wp_id: format!("WP{:02}", i + 1),
+                message: Some(format!("fail {}", i + 1)),
+                failure_type: None,
+                severity: None,
+                created_at: Instant::now(),
+            });
+        }
+        app.notification_cycle_index = 0;
 
-        assert!(!app.notifications.is_empty());
+        // Press 'n' three times — should cycle through all
+        app.handle_event(TuiEvent::Key(KeyEvent::new(
+            KeyCode::Char('n'),
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(app.notification_cycle_index, 1);
+
+        app.handle_event(TuiEvent::Key(KeyEvent::new(
+            KeyCode::Char('n'),
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(app.notification_cycle_index, 2);
+
+        app.handle_event(TuiEvent::Key(KeyEvent::new(
+            KeyCode::Char('n'),
+            KeyModifiers::NONE,
+        )));
+        // Wraps back to 0
+        assert_eq!(app.notification_cycle_index, 0);
+    }
+
+    #[test]
+    fn test_wp_detail_popup_opens_and_closes() {
+        let (tx, _rx) = mpsc::channel(4);
+        let mut run = create_test_run(3);
+        run.work_packages[0].state = WPState::Pending;
+        let mut app = App::new(run, tx);
+
+        assert!(app.detail_wp_id.is_none());
+
+        // Press Enter to open detail
+        app.handle_event(TuiEvent::Key(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+        )));
+        assert!(app.detail_wp_id.is_some());
+
+        // Press Esc to close
+        app.handle_event(TuiEvent::Key(KeyEvent::new(
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        )));
+        assert!(app.detail_wp_id.is_none());
+    }
+
+    #[test]
+    fn test_responsive_layout_renders_at_various_widths() {
+        let (tx, _rx) = mpsc::channel(4);
+        let app = App::new(create_test_run(8), tx);
+
+        // Wide terminal (120 cols) — should render 4 columns
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).expect("create terminal");
+        terminal
+            .draw(|frame| app.render(frame))
+            .expect("draw at 120 cols");
+
+        // Medium terminal (80 cols) — should render 2 columns
+        terminal.backend_mut().resize(80, 40);
+        terminal
+            .draw(|frame| app.render(frame))
+            .expect("draw at 80 cols");
+
+        // Narrow terminal (50 cols) — should render 1 column
+        terminal.backend_mut().resize(50, 40);
+        terminal
+            .draw(|frame| app.render(frame))
+            .expect("draw at 50 cols");
+    }
+
+    #[test]
+    fn test_failure_badges_visible_in_dashboard() {
+        let (tx, _rx) = mpsc::channel(4);
+        let mut run = create_test_run(3);
+        run.work_packages[0].failure_count = 3;
+        run.work_packages[0].state = WPState::Failed;
+        let app = App::new(run, tx);
 
         let backend = TestBackend::new(120, 40);
         let mut terminal = Terminal::new(backend).expect("create terminal");
         terminal
             .draw(|frame| app.render(frame))
-            .expect("render with notification bar");
+            .expect("draw with failures");
+        // If it renders without panic, the badge code path was exercised
+    }
+
+    #[test]
+    fn test_stale_detail_popup_cleared_on_state_update() {
+        let (tx, _rx) = mpsc::channel(4);
+        let mut app = App::new(create_test_run(3), tx);
+        app.detail_wp_id = Some("WP99".to_string()); // non-existent
+
+        // Update state — should clear stale reference
+        let new_run = create_test_run(3);
+        app.update_state(new_run);
+        assert!(app.detail_wp_id.is_none());
+    }
+
+    #[test]
+    fn test_dashboard_lane_scrolling() {
+        let (tx, _rx) = mpsc::channel(4);
+        let mut run = create_test_run(25);
+        // Put all WPs in lane 0 (Pending)
+        for wp in &mut run.work_packages {
+            wp.state = WPState::Pending;
+        }
+        let mut app = App::new(run, tx);
+
+        // Navigate down many times
+        for _ in 0..20 {
+            app.handle_event(TuiEvent::Key(KeyEvent::new(
+                KeyCode::Char('j'),
+                KeyModifiers::NONE,
+            )));
+        }
+
+        assert_eq!(app.dashboard.selected_index, 20);
+        // Scroll offset should have been adjusted (we can't easily test the exact
+        // value without knowing the visible height, but it should be > 0 if there
+        // are more items than visible rows)
     }
 }

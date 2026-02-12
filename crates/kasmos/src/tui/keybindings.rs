@@ -1,8 +1,8 @@
 //! Centralized keybinding definitions for the TUI.
 //!
-//! Maps keyboard events to application state mutations. Global keys (quit,
-//! tab switching) are handled first; remaining keys are delegated to the
-//! active tab's handler.
+//! Maps keyboard events to application state mutations. Overlay keys are
+//! intercepted first (help > detail), then global keys (quit, tab switching),
+//! then tab-specific keys.
 //!
 //! Keybinding logic is kept thin — actual state mutations call methods on
 //! `App` or its sub-state structs.
@@ -12,40 +12,45 @@ use crossterm::event::{KeyCode, KeyEvent};
 use crate::command_handlers::EngineAction;
 use crate::types::{ProgressionMode, RunState, WPState};
 
-use super::app::{App, ConfirmAction, DashboardViewMode, Tab};
+use super::app::{state_to_lane, App, Tab};
 
-/// Handle a key event by dispatching to global or tab-specific handlers.
+/// Handle a key event by dispatching to overlay, global, or tab-specific handlers.
 pub fn handle_key(app: &mut App, key: KeyEvent) {
-    // --- Popup confirmation interception (highest priority) ---
-    if let Some(ref action) = app.pending_confirm.clone() {
+    // Overlay priority: help > detail > normal
+    // When an overlay is active, intercept keys before anything else.
+
+    if app.show_help {
         match key.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => {
-                // Execute the confirmed action
-                match action {
-                    ConfirmAction::ForceAdvance { wp_id } => {
-                        let _ = app
-                            .action_tx
-                            .try_send(EngineAction::ForceAdvance(wp_id.clone()));
-                    }
-                    ConfirmAction::AbortRun => {
-                        // TODO: Add AbortRun engine action if not yet implemented
-                    }
-                }
-                app.pending_confirm = None;
-                return;
+            KeyCode::Char('?') | KeyCode::Esc => {
+                app.show_help = false;
             }
-            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
-                app.pending_confirm = None;
-                return;
+            _ => {
+                // Swallow all other keys while help is visible
             }
-            _ => return, // Swallow all other keys while popup is visible
         }
+        return;
+    }
+
+    if app.detail_wp_id.is_some() {
+        match key.code {
+            KeyCode::Esc => {
+                app.detail_wp_id = None;
+            }
+            _ => {
+                // Swallow all other keys while detail is visible
+            }
+        }
+        return;
     }
 
     // Global keys (work in all tabs)
     match key.code {
         KeyCode::Char('q') => {
             app.should_quit = true;
+            return;
+        }
+        KeyCode::Char('?') => {
+            app.show_help = true;
             return;
         }
         KeyCode::Char('1') => {
@@ -61,37 +66,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             return;
         }
         KeyCode::Char('n') => {
+            // Notification cycling (FR-023)
             if !app.notifications.is_empty() {
-                let notif = &app.notifications[0];
-                match notif.kind {
-                    super::app::NotificationKind::ReviewPending => {
-                        let wp_id = notif.wp_id.clone();
-                        app.active_tab = Tab::Review;
-                        // Find the WP's index in the review list
-                        let review_wps: Vec<_> = app
-                            .run
-                            .work_packages
-                            .iter()
-                            .filter(|wp| wp.state == WPState::ForReview)
-                            .collect();
-                        if let Some(pos) = review_wps.iter().position(|wp| wp.id == wp_id) {
-                            app.review.selected_index = pos;
-                        }
-                    }
-                    super::app::NotificationKind::Failure
-                    | super::app::NotificationKind::InputNeeded => {
-                        let wp_id = notif.wp_id.clone();
-                        app.active_tab = Tab::Dashboard;
-                        if let Some(wp) = app.run.work_packages.iter().find(|wp| wp.id == wp_id) {
-                            let lane = super::app::wp_lane(wp.state);
-                            app.dashboard.focused_lane = lane;
-                            let lane_wps = app.wps_in_lane(lane);
-                            if let Some(pos) = lane_wps.iter().position(|w| w.id == wp_id) {
-                                app.dashboard.selected_index = pos;
-                            }
-                        }
-                    }
-                }
+                app.notification_cycle_index =
+                    (app.notification_cycle_index + 1) % app.notifications.len();
             }
             return;
         }
@@ -106,130 +84,132 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
     }
 }
 
+/// Count WPs in a given lane.
+fn lane_count(app: &App, lane: usize) -> usize {
+    app.run
+        .work_packages
+        .iter()
+        .filter(|wp| state_to_lane(wp.state) == lane)
+        .count()
+}
+
+/// Get the WP at a given lane and index position.
+fn wp_at_lane_index(app: &App, lane: usize, index: usize) -> Option<String> {
+    app.run
+        .work_packages
+        .iter()
+        .filter(|wp| state_to_lane(wp.state) == lane)
+        .nth(index)
+        .map(|wp| wp.id.clone())
+}
+
 /// Handle keys specific to the Dashboard tab.
 fn handle_dashboard_key(app: &mut App, key: KeyEvent) {
-    // --- View mode toggle (works in both modes) ---
-    if key.code == KeyCode::Char('v') {
-        app.dashboard.view_mode = match app.dashboard.view_mode {
-            DashboardViewMode::Kanban => DashboardViewMode::DependencyGraph,
-            DashboardViewMode::DependencyGraph => DashboardViewMode::Kanban,
-        };
-        return;
-    }
-
-    // In graph mode, lane navigation and action keys are inactive
-    if app.dashboard.view_mode == DashboardViewMode::DependencyGraph {
-        return;
-    }
+    let focused = app.dashboard.focused_lane;
+    let count = lane_count(app, focused);
 
     match key.code {
-        // --- Navigation ---
         KeyCode::Char('j') | KeyCode::Down => {
-            let lane_len = app.wps_in_lane(app.dashboard.focused_lane).len();
-            if lane_len > 0 {
-                app.dashboard.selected_index = (app.dashboard.selected_index + 1).min(lane_len - 1);
+            // Move down in lane (FR-018)
+            if count > 0 {
+                app.dashboard.selected_index =
+                    (app.dashboard.selected_index + 1).min(count.saturating_sub(1));
+                app.dashboard.ensure_selected_visible();
             }
         }
         KeyCode::Char('k') | KeyCode::Up => {
+            // Move up in lane (FR-018)
             app.dashboard.selected_index = app.dashboard.selected_index.saturating_sub(1);
+            app.dashboard.ensure_selected_visible();
         }
         KeyCode::Char('h') | KeyCode::Left => {
-            app.dashboard.focused_lane = app.dashboard.focused_lane.saturating_sub(1);
-            app.dashboard.selected_index = 0;
+            // Move to left lane — reset selection and scroll to top
+            if app.dashboard.focused_lane > 0 {
+                app.dashboard.focused_lane -= 1;
+                app.dashboard.selected_index = 0;
+                app.dashboard.scroll_offsets[app.dashboard.focused_lane] = 0;
+            }
         }
         KeyCode::Char('l') | KeyCode::Right => {
-            app.dashboard.focused_lane = (app.dashboard.focused_lane + 1).min(3);
-            app.dashboard.selected_index = 0;
+            // Move to right lane — reset selection and scroll to top
+            if app.dashboard.focused_lane < 3 {
+                app.dashboard.focused_lane += 1;
+                app.dashboard.selected_index = 0;
+                app.dashboard.scroll_offsets[app.dashboard.focused_lane] = 0;
+            }
         }
-
-        // --- Action keys ---
+        KeyCode::Enter => {
+            // WP detail popup (FR-019)
+            if let Some(wp_id) = wp_at_lane_index(app, focused, app.dashboard.selected_index) {
+                app.detail_wp_id = Some(wp_id);
+            }
+        }
         KeyCode::Char('A') => {
             if app.run.mode == ProgressionMode::WaveGated && app.run.state == RunState::Paused {
                 let _ = app.action_tx.try_send(EngineAction::Advance);
-            }
-        }
-        KeyCode::Char('R') => {
-            if let Some((wp_id, state)) = selected_wp(app) {
-                match state {
-                    WPState::Failed | WPState::Paused => {
-                        let _ = app.action_tx.try_send(EngineAction::Restart(wp_id));
-                    }
-                    _ => {}
-                }
-            }
-        }
-        KeyCode::Char('P') => {
-            if let Some((wp_id, state)) = selected_wp(app) {
-                match state {
-                    WPState::Active => {
-                        let _ = app.action_tx.try_send(EngineAction::Pause(wp_id));
-                    }
-                    WPState::Paused => {
-                        let _ = app.action_tx.try_send(EngineAction::Resume(wp_id));
-                    }
-                    _ => {}
-                }
-            }
-        }
-        KeyCode::Char('F') => {
-            if let Some((wp_id, state)) = selected_wp(app)
-                && state == WPState::Failed
-            {
-                app.pending_confirm = Some(ConfirmAction::ForceAdvance { wp_id });
-            }
-        }
-        KeyCode::Char('T') => {
-            if let Some((wp_id, state)) = selected_wp(app) {
-                if state == WPState::Failed {
-                    let _ = app.action_tx.try_send(EngineAction::Retry(wp_id));
-                }
             }
         }
         _ => {}
     }
 }
 
-/// Return `(wp_id, state)` for the currently selected WP in the dashboard.
-///
-/// Avoids cloning the full `WorkPackage` — callers only need the id and state.
-fn selected_wp(app: &App) -> Option<(String, WPState)> {
-    let lane_wps = app.wps_in_lane(app.dashboard.focused_lane);
-    lane_wps
-        .get(app.dashboard.selected_index)
-        .map(|wp| (wp.id.clone(), wp.state))
-}
-
 /// Handle keys specific to the Review tab.
 fn handle_review_key(app: &mut App, key: KeyEvent) {
-    let review_wps: Vec<String> = app
+    let review_count = app
         .run
         .work_packages
         .iter()
         .filter(|wp| wp.state == WPState::ForReview)
-        .map(|wp| wp.id.clone())
-        .collect();
+        .count();
 
     match key.code {
         KeyCode::Char('j') | KeyCode::Down => {
-            if !review_wps.is_empty() {
+            if review_count > 0 {
                 app.review.selected_index =
-                    (app.review.selected_index + 1).min(review_wps.len() - 1);
+                    (app.review.selected_index + 1).min(review_count.saturating_sub(1));
             }
         }
         KeyCode::Char('k') | KeyCode::Up => {
             app.review.selected_index = app.review.selected_index.saturating_sub(1);
         }
         KeyCode::Char('a') => {
-            // Approve selected WP
-            if let Some(wp_id) = review_wps.get(app.review.selected_index) {
-                let _ = app.action_tx.try_send(EngineAction::Approve(wp_id.clone()));
+            // Approve — dispatch action for the selected review WP
+            if let Some(wp) = app
+                .run
+                .work_packages
+                .iter()
+                .filter(|wp| wp.state == WPState::ForReview)
+                .nth(app.review.selected_index)
+            {
+                let _ = app.action_tx.try_send(EngineAction::Approve(wp.id.clone()));
             }
         }
         KeyCode::Char('r') => {
-            // Reject + relaunch selected WP
-            if let Some(wp_id) = review_wps.get(app.review.selected_index) {
+            // Reject — hold (ForReview → Pending)
+            if let Some(wp) = app
+                .run
+                .work_packages
+                .iter()
+                .filter(|wp| wp.state == WPState::ForReview)
+                .nth(app.review.selected_index)
+            {
                 let _ = app.action_tx.try_send(EngineAction::Reject {
-                    wp_id: wp_id.clone(),
+                    wp_id: wp.id.clone(),
+                    relaunch: false,
+                });
+            }
+        }
+        KeyCode::Char('R') => {
+            // Reject + relaunch (ForReview → Active)
+            if let Some(wp) = app
+                .run
+                .work_packages
+                .iter()
+                .filter(|wp| wp.state == WPState::ForReview)
+                .nth(app.review.selected_index)
+            {
+                let _ = app.action_tx.try_send(EngineAction::Reject {
+                    wp_id: wp.id.clone(),
                     relaunch: true,
                 });
             }
@@ -239,27 +219,43 @@ fn handle_review_key(app: &mut App, key: KeyEvent) {
 }
 
 /// Handle keys specific to the Logs tab.
-///
-/// Translates crossterm key events to tui-logger widget events and
-/// forwards them via `TuiWidgetState::transition()`.
 fn handle_logs_key(app: &mut App, key: KeyEvent) {
-    let event = match key.code {
-        KeyCode::Char('h') => Some(tui_logger::TuiWidgetEvent::HideKey),
-        KeyCode::Char('f') => Some(tui_logger::TuiWidgetEvent::FocusKey),
-        KeyCode::Char(' ') => Some(tui_logger::TuiWidgetEvent::SpaceKey),
-        KeyCode::Up => Some(tui_logger::TuiWidgetEvent::UpKey),
-        KeyCode::Down => Some(tui_logger::TuiWidgetEvent::DownKey),
-        KeyCode::Left => Some(tui_logger::TuiWidgetEvent::LeftKey),
-        KeyCode::Right => Some(tui_logger::TuiWidgetEvent::RightKey),
-        KeyCode::Char('+') => Some(tui_logger::TuiWidgetEvent::PlusKey),
-        KeyCode::Char('-') => Some(tui_logger::TuiWidgetEvent::MinusKey),
-        KeyCode::PageUp => Some(tui_logger::TuiWidgetEvent::PrevPageKey),
-        KeyCode::PageDown => Some(tui_logger::TuiWidgetEvent::NextPageKey),
-        KeyCode::Esc => Some(tui_logger::TuiWidgetEvent::EscapeKey),
-        _ => None,
-    };
-    if let Some(evt) = event {
-        app.logger_state.transition(evt);
+    if app.logs.filter_active {
+        match key.code {
+            KeyCode::Esc | KeyCode::Enter => {
+                app.logs.filter_active = false;
+            }
+            KeyCode::Backspace => {
+                app.logs.filter.pop();
+            }
+            KeyCode::Char(c) => {
+                app.logs.filter.push(c);
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    match key.code {
+        KeyCode::Char('j') | KeyCode::Down => {
+            app.logs.auto_scroll = false;
+            app.logs.scroll_offset = app.logs.scroll_offset.saturating_add(1);
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            app.logs.auto_scroll = false;
+            app.logs.scroll_offset = app.logs.scroll_offset.saturating_sub(1);
+        }
+        KeyCode::Char('G') => {
+            app.logs.auto_scroll = true;
+        }
+        KeyCode::Char('g') => {
+            app.logs.auto_scroll = false;
+            app.logs.scroll_offset = 0;
+        }
+        KeyCode::Char('/') => {
+            app.logs.filter_active = true;
+        }
+        _ => {}
     }
 }
 
@@ -331,5 +327,82 @@ mod tests {
         );
 
         assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_help_overlay_intercepts_keys() {
+        let (tx, _rx) = mpsc::channel(4);
+        let run = create_test_run(ProgressionMode::Continuous, RunState::Running);
+        let mut app = App::new(run, tx);
+
+        app.show_help = true;
+
+        // Tab switch should be swallowed
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE),
+        );
+        assert_eq!(app.active_tab, Tab::Dashboard);
+        assert!(app.show_help);
+
+        // ? dismisses
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE),
+        );
+        assert!(!app.show_help);
+    }
+
+    #[test]
+    fn test_detail_popup_intercepts_keys() {
+        let (tx, _rx) = mpsc::channel(4);
+        let run = create_test_run(ProgressionMode::Continuous, RunState::Running);
+        let mut app = App::new(run, tx);
+
+        app.detail_wp_id = Some("WP01".to_string());
+
+        // Tab switch should be swallowed
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE),
+        );
+        assert_eq!(app.active_tab, Tab::Dashboard);
+
+        // Esc dismisses
+        handle_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(app.detail_wp_id.is_none());
+    }
+
+    #[test]
+    fn test_notification_cycling_wraps() {
+        let (tx, _rx) = mpsc::channel(4);
+        let run = create_test_run(ProgressionMode::Continuous, RunState::Running);
+        let mut app = App::new(run, tx);
+
+        // Add 2 notifications
+        for i in 0..2 {
+            let id = app.next_notification_id();
+            app.notifications.push(super::super::app::Notification {
+                id,
+                kind: super::super::app::NotificationKind::Failure,
+                wp_id: format!("WP{:02}", i + 1),
+                message: None,
+                failure_type: None,
+                severity: None,
+                created_at: std::time::Instant::now(),
+            });
+        }
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE),
+        );
+        assert_eq!(app.notification_cycle_index, 1);
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE),
+        );
+        assert_eq!(app.notification_cycle_index, 0); // wraps
     }
 }

@@ -9,7 +9,7 @@ pub mod app;
 pub mod event;
 pub mod keybindings;
 pub(crate) mod widgets;
-// tabs/ will be added in later WPs
+pub mod tabs;
 
 use std::io::Stdout;
 use std::time::Duration;
