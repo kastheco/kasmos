@@ -225,3 +225,4 @@ When a WP transitions to `ForReview`, the engine logs `"WP moved to review"` (`e
 - 2026-02-12T10:14:14Z – coder – lane=doing – Implementation complete
 - 2026-02-12T10:15:48Z – coder – lane=for_review – Submitted for review via swarm
 - 2026-02-12T10:15:52Z – reviewer – shell_pid=775722 – lane=doing – Started review via workflow command
+- 2026-02-12T10:48:00Z – kas – lane=done – WP11 implemented: ReviewCoordinator, DetectedLane, approve/reject FIFO commands, engine wiring. All 227 tests pass.
