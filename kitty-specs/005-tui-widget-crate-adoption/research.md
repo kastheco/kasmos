@@ -106,6 +106,8 @@ if let Some(action) = &self.pending_confirm {
 
 **Key handling**: When `pending_confirm.is_some()`, intercept `y`/`n`/`Esc` before tab-specific handlers.
 
+**Terminal overflow (edge case)**: `tui-popup` renders within the provided `area` parameter (`frame.area()`), which is already clamped to terminal dimensions by ratatui. If the popup content exceeds the available area, tui-popup will truncate. For confirmation dialogs, action descriptions should be kept concise (1-2 lines) to avoid truncation in narrow terminals.
+
 ## R-5: throbber-widgets-tui Widget API
 
 **Decision**: Use single shared `ThrobberState` ticked on `App::on_tick()`.

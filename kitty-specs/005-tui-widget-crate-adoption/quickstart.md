@@ -111,6 +111,13 @@ cargo run -p kasmos -- start --feature <feature-with-deps>
 # → Verify edges connect dependent WPs
 # → Verify node colors match WP state
 # → Press 'v' again to return to kanban view
+
+# SC-008 verification: Test with a 10+ WP feature
+cargo run -p kasmos -- start --feature 002-ratatui-tui-controller-panel
+# → Press 'v' to activate dependency graph view
+# → Count rendered nodes — must show all 10 WPs
+# → Verify edges match documented WP dependency relationships
+# → Resize terminal to narrow width — verify no overlapping nodes
 ```
 
 ## Revertibility Check (SC-009)
