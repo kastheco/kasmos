@@ -196,34 +196,67 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
         tracing::info!(wave = i, wps = ?wave.wp_ids, "Wave {}", i);
     }
 
-    // ── Locate existing git worktrees (created by spec-kitty) ──
+    // ── Locate or create git worktrees ──
     //
-    // spec-kitty creates worktrees via `spec-kitty implement WPxx` with
-    // the convention: .worktrees/{feature}-{WP##} on branch {feature}-{WP##}.
-    // kasmos locates these rather than creating its own.
+    // Each WP needs its own worktree for isolation. spec-kitty may have
+    // already created worktrees via `spec-kitty implement WPxx`. For any
+    // WP without a pre-existing worktree, kasmos creates one automatically
+    // so agents never run in a shared working tree.
     worktree_mgr.prune().ok(); // clean up stale references first
     let mut worktree_found = 0usize;
+    let mut worktree_created = 0usize;
     for wp in work_packages.iter_mut() {
+        // Skip WPs that are already terminal — they don't need worktrees
+        if matches!(
+            wp.state,
+            kasmos::WPState::Completed | kasmos::WPState::Failed
+        ) {
+            tracing::debug!(
+                wp_id = %wp.id,
+                state = ?wp.state,
+                "Skipping worktree for terminal-state WP"
+            );
+            continue;
+        }
+
         if let Some(path) = worktree_mgr.find_worktree(&wp.id) {
             tracing::info!(
                 wp_id = %wp.id,
                 wave = wp.wave,
                 path = %path.display(),
-                "Found spec-kitty worktree"
+                "Found existing worktree"
             );
             wp.worktree_path = Some(path);
             worktree_found += 1;
         } else {
-            tracing::debug!(
-                wp_id = %wp.id,
-                "No worktree found — agent will run in feature dir"
-            );
+            // No pre-existing worktree — create one to ensure WP isolation
+            match worktree_mgr.ensure_worktree(&wp.id, &base_ref) {
+                Ok(path) => {
+                    tracing::info!(
+                        wp_id = %wp.id,
+                        wave = wp.wave,
+                        path = %path.display(),
+                        "Created worktree for WP isolation"
+                    );
+                    wp.worktree_path = Some(path);
+                    worktree_created += 1;
+                }
+                Err(e) => {
+                    tracing::error!(
+                        wp_id = %wp.id,
+                        error = %e,
+                        "Failed to create worktree — WP will run in feature dir (NO ISOLATION)"
+                    );
+                    // Fall back to feature_dir — bad but non-fatal
+                }
+            }
         }
     }
     tracing::info!(
         found = worktree_found,
+        created = worktree_created,
         total = work_packages.len(),
-        "Git worktrees located"
+        "Git worktrees ready"
     );
 
     // Generate prompt files
