@@ -1,108 +1,66 @@
-# Implementation Plan: [FEATURE]
-*Path: [templates/plan-template.md](templates/plan-template.md)*
+# Implementation Plan: Standalone TUI Preview Mode
 
-
-**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
-**Input**: Feature specification from `/kitty-specs/[###-feature-name]/spec.md`
-
-**Note**: This template is filled in by the `/spec-kitty.plan` command. See `src/specify_cli/missions/software-dev/command-templates/plan.md` for the execution workflow.
-
-The planner will not begin until all planning questions have been answered—capture those answers in this document before progressing to later phases.
+**Branch**: `master` | **Date**: 2026-02-12 | **Spec**: `kitty-specs/009-standalone-tui-preview/spec.md`
+**Input**: Feature specification from `kitty-specs/009-standalone-tui-preview/spec.md`
 
 ## Summary
 
-[Extract from feature spec: primary requirement + technical approach from research]
+Add a `kasmos tui` subcommand that launches the ratatui TUI with animated mock data — no Zellij, no git, no orchestration. Exploits the existing `tui::run(watch_rx, action_tx)` channel-based interface to feed synthetic `OrchestrationRun` state into the TUI, with a deterministic background loop cycling work packages through all states every ~3 seconds.
+
+Two files touched: `crates/kasmos/src/main.rs` (~15 lines) and new `crates/kasmos/src/tui_preview.rs` (~80-100 lines). Zero changes to existing TUI or orchestration code.
 
 ## Technical Context
 
-<!--
-  ACTION REQUIRED: Replace the content in this section with the technical details
-  for the project. The structure here is presented in advisory capacity to guide
-  the iteration process.
--->
-
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
-**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
-**Project Type**: [single/web/mobile - determines source structure]  
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+**Language/Version**: Rust 2024 edition (workspace already configured)
+**Primary Dependencies**: `tokio` (async runtime — already in workspace), `ratatui`/`crossterm` (already in workspace), `clap` (already in workspace). No new dependencies.
+**Storage**: N/A — all data is in-memory mock state
+**Testing**: `cargo test` — no new test files required (existing TUI tests cover rendering; preview is a runtime-only binary entry point)
+**Target Platform**: Any terminal supporting crossterm alternate screen (same as existing TUI)
+**Project Type**: Single Rust workspace — binary crate addition
+**Performance Goals**: N/A — preview mode has no performance-sensitive path
+**Constraints**: Total new code ≤ 120 lines (NFR-004). Zero new crate dependencies. Zero changes to `crates/kasmos/src/tui/`.
+**Scale/Scope**: 1 new file, 1 modified file
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
-
-[Gates determined based on constitution file]
+*Skipped — no `.kittify/memory/constitution.md` found in repository.*
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```
-kitty-specs/[###-feature]/
-├── plan.md              # This file (/spec-kitty.plan command output)
-├── research.md          # Phase 0 output (/spec-kitty.plan command)
-├── data-model.md        # Phase 1 output (/spec-kitty.plan command)
-├── quickstart.md        # Phase 1 output (/spec-kitty.plan command)
-├── contracts/           # Phase 1 output (/spec-kitty.plan command)
-└── tasks.md             # Phase 2 output (/spec-kitty.tasks command - NOT created by /spec-kitty.plan)
+kitty-specs/009-standalone-tui-preview/
+├── spec.md              # Feature specification (complete)
+├── plan.md              # This file
+├── research.md          # Phase 0 output (minimal — no unknowns)
+├── data-model.md        # Phase 1 output (state model reference)
+├── quickstart.md        # Phase 1 output (dev workflow)
+└── contracts/
+    └── cli-contract.md  # CLI interface contract (extracted from spec)
 ```
 
 ### Source Code (repository root)
-<!--
-  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
-  for this feature. Delete unused options and expand the chosen structure with
-  real paths (e.g., apps/admin, packages/something). The delivered plan must
-  not include Option labels.
--->
 
 ```
-# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
-src/
-├── models/
-├── services/
-├── cli/
-└── lib/
-
-tests/
-├── contract/
-├── integration/
-└── unit/
-
-# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
-backend/
-├── src/
-│   ├── models/
-│   ├── services/
-│   └── api/
-└── tests/
-
-frontend/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── services/
-└── tests/
-
-# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
-api/
-└── [same as backend above]
-
-ios/ or android/
-└── [platform-specific structure: feature modules, UI flows, platform tests]
+crates/kasmos/src/
+├── main.rs              # MODIFIED: Add `Tui` variant to Commands enum,
+│                        #   `mod tui_preview;`, match arm, updated help text
+├── tui_preview.rs       # NEW: Mock data generator + animation loop (~80-100 lines)
+│                        #   - pub async fn run(count: usize)
+│                        #   - fn generate_mock_run(count: usize) -> OrchestrationRun
+│                        #   - async fn animation_loop(tx, initial_run)
+└── tui/                 # UNCHANGED — no modifications to any file in this directory
+    ├── mod.rs
+    ├── app.rs
+    ├── event.rs
+    ├── keybindings.rs
+    ├── tabs/
+    └── widgets/
 ```
 
-**Structure Decision**: [Document the selected structure and reference the real
-directories captured above]
+**Structure Decision**: Binary-only module. `tui_preview.rs` lives in the `main.rs` binary crate scope (declared via `mod tui_preview;`), not exported through `lib.rs`. This keeps the library API surface unchanged and signals that preview mode is a development tool, not a library feature.
 
 ## Complexity Tracking
 
-*Fill ONLY if Constitution Check has violations that must be justified*
-
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+No violations — feature is trivially simple. No complexity justifications needed.
