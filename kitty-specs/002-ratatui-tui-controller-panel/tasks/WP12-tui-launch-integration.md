@@ -17,7 +17,7 @@ subtasks:
 phase: "Phase 4 - Integration"
 assignee: 'unassigned'
 agent: "reviewer"
-shell_pid: "805216"
+shell_pid: "814301"
 review_status: ''
 reviewed_by: ''
 history:
@@ -294,3 +294,6 @@ This cleanly separates the TUI process from the engine process and works natural
 
 - 2026-02-12T10:22:54Z – coder – lane=for_review – Submitted for review via swarm
 - 2026-02-12T10:22:55Z – reviewer – shell_pid=805216 – lane=doing – Started review via workflow command
+- 2026-02-12T10:25:27Z – coder – shell_pid=805216 – lane=doing – Moved to doing
+- 2026-02-12T10:25:46Z – coder – shell_pid=805216 – lane=for_review – Submitted for review via swarm
+- 2026-02-12T10:25:46Z – reviewer – shell_pid=814301 – lane=doing – Started review via workflow command
