@@ -52,7 +52,7 @@
 **Estimated prompt size**: ~550 lines
 
 ### Included Subtasks
-- [ ] T006 Add `tui-logger` 0.18.x (features: `tracing-support`) to `crates/kasmos/Cargo.toml`
+- [x] T006 Add `tui-logger` 0.18.x (features: `tracing-support`) to `crates/kasmos/Cargo.toml`
 - [ ] T007 Refactor `crates/kasmos/src/logging.rs` — conditional `Registry`-based subscriber with TUI vs headless modes
 - [ ] T008 Wire up TUI-mode logging in `crates/kasmos/src/tui/mod.rs` and `crates/kasmos/src/main.rs`
 - [ ] T009 Remove hand-rolled log types and state from `crates/kasmos/src/tui/app.rs`
