@@ -11,6 +11,7 @@ mod report;
 mod start;
 mod status;
 mod stop;
+mod tui_preview;
 
 #[derive(Parser)]
 #[command(
@@ -28,6 +29,8 @@ mod stop;
   kasmos cmd focus WP02               Focus a work package pane
   kasmos attach <feature>             Attach to Zellij session
   kasmos stop [feature]               Gracefully stop orchestration
+  kasmos tui                          Launch TUI with animated mock data
+  kasmos tui --count 25               Launch TUI with 25 simulated WPs
 
 \x1b[1mTypical Workflow:\x1b[0m
   1. kasmos                           See what features are available
@@ -80,6 +83,12 @@ enum Commands {
         /// Feature directory (optional, auto-detects from .kasmos/)
         feature: Option<String>,
     },
+    /// Launch the TUI with animated mock data (no orchestration)
+    Tui {
+        /// Number of simulated work packages (minimum: 1)
+        #[arg(long, default_value_t = 12, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
+        count: usize,
+    },
 }
 
 #[tokio::main]
@@ -108,6 +117,9 @@ async fn main() -> Result<()> {
         }
         Commands::Stop { feature } => {
             stop::run(feature.as_deref()).await.context("Stop failed")?;
+        }
+        Commands::Tui { count } => {
+            tui_preview::run(count).await.context("TUI preview failed")?;
         }
     }
 
