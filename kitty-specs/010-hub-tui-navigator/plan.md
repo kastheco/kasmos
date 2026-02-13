@@ -7,7 +7,7 @@
 
 Replace bare `kasmos` (no args) with an interactive ratatui TUI that serves as a project command center — browsing feature specs, launching OpenCode agent panes for spec creation and planning, and starting implementation sessions in new Zellij tabs. Additionally, invert `kasmos start` to default to TUI mode with `--no-tui` opt-out.
 
-The hub TUI is a lightweight navigator (`src/hub/`) that delegates heavy workflows to agent panes (spec creation, planning) and orchestration sessions (implementation). It scans `kitty-specs/` for feature state, detects running orchestrations via lock files and Zellij sessions, and manages pane/tab lifecycle through the existing `ZellijCli` abstraction.
+The hub TUI is a lightweight navigator (`src/hub/`) that delegates heavy workflows to agent panes (spec creation, planning) and orchestration sessions (implementation). It scans `kitty-specs/` for feature state, detects running orchestrations via lock files and Zellij sessions, and manages pane/tab lifecycle through direct `zellij action` calls (inside-session commands without `--session` flag, per R-001).
 
 ## Technical Context
 
@@ -23,7 +23,20 @@ The hub TUI is a lightweight navigator (`src/hub/`) that delegates heavy workflo
 
 ## Constitution Check
 
-*No constitution file found (`.kittify/memory/constitution.md` absent). Skipped.*
+Constitution loaded from `.kittify/memory/constitution.md` (v1.0.0).
+
+| Principle | Status | Notes |
+|-----------|--------|-------|
+| Rust latest stable, 2024 edition | Aligned | Workspace edition 2024, all deps in Cargo.toml |
+| tokio for async runtime | Aligned | Hub event loop uses tokio; scanner via `spawn_blocking` |
+| ratatui for terminal UI | Aligned | Hub renders with ratatui widgets, crossterm backend |
+| TUI must remain responsive - never block render loop | Aligned | AD-007: scanner on `spawn_blocking`, actions via `tokio::spawn` |
+| All features must have corresponding tests | Aligned | T011 (scanner), T025 (action resolution); rendering verified manually |
+| Async operations must not starve event loop | Aligned | `spawn_blocking` for I/O, `tokio::spawn` for fire-and-forget actions |
+| Linux primary, macOS best-effort | Aligned | `libc::kill` for PID check is POSIX-compatible |
+| Runtime deps: Zellij + OpenCode in PATH | Aligned | Graceful degradation when missing (FR-017, WP06 validation) |
+
+No constitution violations identified.
 
 ## Project Structure
 
@@ -120,25 +133,11 @@ match cli.command {
   - `Attach`: `zellij action go-to-tab-name kasmos-<feature>`
   - `OpenHub` (from orchestration TUI): `zellij action new-tab -- kasmos`
 
-### AD-003: ZellijCli Trait Extension
+### ~~AD-003: ZellijCli Trait Extension~~ (SUPERSEDED)
 
-Add `new_pane_direction()` to the `ZellijCli` trait:
+**Superseded by R-001 finding**: The hub runs *inside* a Zellij session, so it uses direct `zellij action` calls via `tokio::process::Command` without the `--session` flag. The `ZellijCli` trait (which uses `--session` for remote control) is not needed for hub pane/tab operations. Instead, thin wrappers in `hub/actions.rs` call `zellij action new-pane --direction right ...` directly (see WP05/T023).
 
-```rust
-async fn new_pane_direction(
-    &self,
-    session: &str,
-    direction: PaneDirection,
-    command: &str,
-    args: &[&str],
-) -> Result<()>;
-```
-
-Where `PaneDirection` is `enum PaneDirection { Right, Down }`.
-
-Implementation calls `zellij --session <session> action new-pane --direction <dir> -- <command> <args>`.
-
-Existing `new_pane()` and `run_in_pane()` remain unchanged.
+The `ZellijCli` trait is still used for `list_sessions()` in the scanner (orchestration detection).
 
 ### AD-004: `kasmos start` TUI Inversion
 

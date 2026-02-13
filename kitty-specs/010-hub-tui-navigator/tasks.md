@@ -27,7 +27,7 @@
 
 ### Included Subtasks
 - [ ] T001 Make `Commands` optional in `Cli` struct (`crates/kasmos/src/main.rs`)
-- [ ] T002 Add `hub` module declaration stub (`crates/kasmos/src/hub/mod.rs`, `crates/kasmos/src/lib.rs`)
+- [ ] T002 Add `hub` module declaration stub (`crates/kasmos/src/hub/mod.rs`, `crates/kasmos/src/main.rs`)
 - [ ] T003 Wire `None` match arm to `hub::run()` placeholder in `main.rs`
 - [ ] T004 Extract `setup_terminal`, `restore_terminal`, `install_panic_hook` to `pub` in `crates/kasmos/src/tui/mod.rs`
 - [ ] T005 Update `after_help` text in CLI to document hub as default behavior

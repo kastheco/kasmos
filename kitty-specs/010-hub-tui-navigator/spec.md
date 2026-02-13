@@ -171,6 +171,7 @@ The hub TUI periodically refreshes feature status from disk (re-scanning `kitty-
 - **FR-004**: The hub MUST provide a "Create Spec" action for features with empty specs that opens a Zellij pane to the right of the hub running an OpenCode controller agent session.
 - **FR-005**: The hub MUST provide a "New Feature" action that prompts for a feature name/description and then opens an OpenCode agent pane for spec creation.
 - **FR-006**: The hub MUST provide a "Plan" action for features with a spec but no `plan.md`, and a "Generate Tasks" action for features with a `plan.md` but no WP files in `tasks/`, each opening an OpenCode agent pane to the right of the hub.
+- **FR-006b**: The hub MUST provide a "Clarify" action for features with a spec but no `plan.md`, opening an OpenCode agent pane to the right of the hub running the `/spec-kitty.clarify` workflow. This action is available alongside "Plan" (FR-006) for the same feature state.
 - **FR-007**: The hub MUST provide a "Start Implementation" action for features with ready work packages that launches `kasmos start <feature>` in a new Zellij tab. Enter defaults to continuous mode; Shift+Enter starts in wave-gated mode. When the feature has more than 6 WPs and the operator presses Enter, the hub MUST show a confirmation dialog recommending wave-gated mode before proceeding.
 - **FR-008**: The hub MUST provide an "Attach" action for features with active orchestration sessions — detected via `.kasmos/run.lock` (PID liveness) for status and Zellij session listing (`kasmos-<feature>`) for attach capability — that switches to the existing Zellij tab.
 - **FR-009**: The hub MUST remain visible and interactive when agent panes are opened to its right.
@@ -196,7 +197,7 @@ The hub TUI periodically refreshes feature status from disk (re-scanning `kitty-
 
 - **FeatureEntry**: A feature discovered in `kitty-specs/`. Has `number`, `slug`, `spec_status` (empty/present), `plan_status` (absent/present — detected by `plan.md` existence), `task_progress` (no tasks / done_count/total_count / complete), and `orchestration_status` (none/running/completed — detected via `.kasmos/run.lock` PID liveness and Zellij session listing).
 - **FeatureDetail**: Expanded view of a feature. Includes the list of work packages with their lane, dependencies, and wave assignment.
-- **HubAction**: A contextual action available for a feature based on its state: CreateSpec, NewFeature, Plan, GenerateTasks, StartImplementation, Attach, ViewDetails.
+- **HubAction**: A contextual action available for a feature based on its state: CreateSpec, NewFeature, Clarify, Plan, GenerateTasks, StartContinuous, StartWaveGated, Attach, ViewDetails.
 - **AgentPane**: A Zellij pane opened to the right of the hub for spec creation, planning, or task generation. Multiple agent panes can be stacked concurrently.
 
 ## Success Criteria *(mandatory)*
