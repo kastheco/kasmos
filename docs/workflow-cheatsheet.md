@@ -176,7 +176,7 @@ Full command list → [cheatsheet.md](./cheatsheet.md) | Keybinds → [keybinds.
 
 #### 11. Accept
 
-> Validate feature readiness before merging to main.
+> Validate feature readiness before merging to master.
 
 | | |
 |---|---|
@@ -187,7 +187,7 @@ Full command list → [cheatsheet.md](./cheatsheet.md) | Keybinds → [keybinds.
 
 #### 12. Merge
 
-> Merge completed feature into main branch and clean up worktrees.
+> Merge completed feature into master branch and clean up worktrees.
 
 | | |
 |---|---|

@@ -49,7 +49,7 @@ spec-kitty agent tasks move-task WP## --to for_review --note "Ready for review: 
 ```
 
 **Why this matters:**
-- `move-task` validates that your worktree has commits beyond main
+- `move-task` validates that your worktree has commits beyond master
 - Uncommitted changes will block the move to for_review
 - This prevents lost work and ensures reviewers see complete implementations
 

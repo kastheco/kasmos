@@ -55,7 +55,7 @@
 <!-- Examples: GitHub Actions, GitLab CI, CircleCI, Jenkins -->
 
 **Trigger**: {deployment_trigger}
-<!-- Examples: Push to main branch, Tag creation, Manual workflow dispatch -->
+<!-- Examples: Push to master branch, Tag creation, Manual workflow dispatch -->
 
 **Workflow File**: `{workflow_file_path}`
 <!-- Example: .github/workflows/docs.yml -->
