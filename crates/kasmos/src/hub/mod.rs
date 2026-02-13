@@ -80,13 +80,26 @@ async fn ensure_zellij_session() -> anyhow::Result<Option<String>> {
             anyhow::bail!("Zellij attach exited with: {status}");
         }
     } else {
-        // Create a new session running kasmos inside it.
+        // Create a new session running kasmos inside it via a temporary layout.
+        // Zellij doesn't support `-- <command>`, so we write a minimal KDL layout
+        // that runs the kasmos binary and closes the pane on exit.
+        let layout_content = format!(
+            "layout {{\n    pane command=\"{}\" close_on_exit=true\n}}\n",
+            kasmos_bin.display()
+        );
+        let layout_dir = std::env::temp_dir().join("kasmos");
+        std::fs::create_dir_all(&layout_dir)
+            .context("Failed to create temp layout directory")?;
+        let layout_path = layout_dir.join("hub-layout.kdl");
+        std::fs::write(&layout_path, &layout_content)
+            .context("Failed to write hub layout file")?;
+
         let status = tokio::process::Command::new("zellij")
             .args([
+                "--layout",
+                &layout_path.display().to_string(),
                 "--session",
                 session_name,
-                "--",
-                &kasmos_bin.display().to_string(),
             ])
             .stdin(std::process::Stdio::inherit())
             .stdout(std::process::Stdio::inherit())
