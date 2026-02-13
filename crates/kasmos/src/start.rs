@@ -1,6 +1,8 @@
 //! Start orchestration for a feature: setup, create Zellij session, attach.
 
 use anyhow::{Context, Result, bail};
+// ZellijCli trait used via Arc<dyn ...> in ReviewCoordinator
+#[allow(unused_imports)]
 use kasmos::ZellijCli;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -274,42 +276,6 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
     }
     tracing::info!(count = prompt_paths.len(), "Prompt files generated");
 
-    // Generate KDL layout — in wave-gated mode, only include wave 0 WPs that need launching.
-    // WPs already marked as Completed/Failed (from frontmatter) are excluded from the layout.
-    let layout_gen = kasmos::LayoutGenerator::new(&config);
-    let layout_wps: Vec<&kasmos::WorkPackage> = match progression_mode {
-        kasmos::ProgressionMode::WaveGated => {
-            work_packages
-                .iter()
-                .filter(|wp| wp.wave == 0 && wp.state == kasmos::WPState::Pending)
-                .collect()
-        }
-        kasmos::ProgressionMode::Continuous => {
-            work_packages
-                .iter()
-                .filter(|wp| wp.state == kasmos::WPState::Pending)
-                .collect()
-        }
-    };
-    tracing::info!(
-        pane_count = layout_wps.len(),
-        mode = %mode,
-        "Generating layout"
-    );
-    let kdl_doc = if layout_wps.is_empty() {
-        // All wave 0 WPs are already completed — generate controller-only layout
-        tracing::info!("All wave 0 WPs completed — generating controller-only layout");
-        layout_gen.generate_controller_only(&feature_dir)?
-    } else {
-        layout_gen
-            .generate(&layout_wps, &feature_dir)
-            .context("Failed to generate KDL layout")?
-    };
-    let layout_path = layout_gen
-        .write_layout(&kdl_doc, &kasmos_dir)
-        .context("Failed to write layout file")?;
-    tracing::info!(path = %layout_path.display(), "KDL layout written");
-
     // Persist orchestration state
     let run_id = format!("run-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
     let run = kasmos::OrchestrationRun {
@@ -333,68 +299,10 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
     persister.save(&run).context("Failed to persist state")?;
     tracing::info!(run_id = %run_id, "Orchestration run initialized");
 
-    // ── Phase 2: Create Zellij session ─────────────────────────────
-
+    // Session name used for logging and identifiers (no separate session created).
     let session_name = format!("kasmos-{}", feature_name);
 
-    // Check if session already exists (e.g. from a previous run).
-    //
-    // IMPORTANT: Strip ZELLIJ env vars from all session-management commands.
-    // When kasmos is bootstrapped inside a Zellij wrapper session (kasmos-start-*),
-    // these commands would otherwise affect the wrapper session instead of
-    // creating/managing a truly separate background session.
-    let zellij = &config.zellij_binary;
-    let existing = tokio::process::Command::new(zellij)
-        .env_remove("ZELLIJ")
-        .env_remove("ZELLIJ_SESSION_NAME")
-        .args(["list-sessions"])
-        .output()
-        .await
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .unwrap_or_default();
-
-    if existing.contains(&session_name) {
-        // Kill active session, then delete (handles both active and EXITED states).
-        // EXITED sessions can't be killed but must be deleted, otherwise
-        // `attach --create-background` resurrects them with the old/default layout.
-        tracing::warn!(session = %session_name, "Removing existing session");
-        let _ = tokio::process::Command::new(zellij)
-            .env_remove("ZELLIJ")
-            .env_remove("ZELLIJ_SESSION_NAME")
-            .args(["kill-session", &session_name])
-            .output()
-            .await;
-        let _ = tokio::process::Command::new(zellij)
-            .env_remove("ZELLIJ")
-            .env_remove("ZELLIJ_SESSION_NAME")
-            .args(["delete-session", &session_name])
-            .output()
-            .await;
-    }
-
-    // Create background session with layout
-    let create_status = tokio::process::Command::new(zellij)
-        .env_remove("ZELLIJ")
-        .env_remove("ZELLIJ_SESSION_NAME")
-        .args([
-            "--layout",
-            &layout_path.display().to_string(),
-            "attach",
-            "--create-background",
-            &session_name,
-        ])
-        .output()
-        .await
-        .context("Failed to spawn zellij")?;
-
-    if !create_status.status.success() {
-        let stderr = String::from_utf8_lossy(&create_status.stderr);
-        bail!("Failed to create Zellij session: {}", stderr);
-    }
-    tracing::info!(session = %session_name, "Zellij session created");
-
-    // ── Phase 3: Start orchestration engine & command pipeline ───
+    // ── Phase 2: Start orchestration engine & command pipeline ───
 
     let run_arc = Arc::new(RwLock::new(run));
 
@@ -563,39 +471,20 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
 
     // ── Wave launch event handler ────────────────────────────────
     //
-    // When the engine launches a new wave, this task:
-    // 1. Renames the current tab to "WAVE <previous>" (archiving it)
-    // 2. Generates a layout with only the new wave's agent panes
-    // 3. Creates a new tab with that layout named "WAVE <current>"
-    //
-    // For the initial wave (panes created by the session layout), this is a no-op.
-    let wave_session_name = session_name.clone();
-    let wave_zellij = config.zellij_binary.clone();
-    let wave_kasmos_dir = kasmos_dir.clone();
-    let wave_config = config.clone();
+    // When the engine launches a new wave, this task creates one Zellij tab
+    // per work package in the current session. Each tab runs the agent
+    // (opencode) with the WP's prompt file, in the WP's worktree directory.
     let wave_run_arc = run_arc.clone();
-    let wave_feature_dir = feature_dir.clone();
+    let wave_kasmos_dir = kasmos_dir.clone();
     let _wave_handler = tokio::spawn(async move {
-        let cli = kasmos::RealZellijCli::new(wave_zellij);
-        let layout_gen = kasmos::LayoutGenerator::new(&wave_config);
-
         while let Some(event) = launch_rx.recv().await {
-            if event.is_initial_wave {
-                tracing::info!(
-                    wave = event.wave_index,
-                    wps = ?event.wp_ids,
-                    "Initial wave launched (panes created by session layout)"
-                );
-                continue;
-            }
-
             tracing::info!(
                 wave = event.wave_index,
                 wps = ?event.wp_ids,
-                "Wave launch event — creating new tab"
+                "Wave launch — creating agent tabs"
             );
 
-            // Collect WP data for the layout
+            // Collect WP data
             let wp_data: Vec<kasmos::WorkPackage> = {
                 let run = wave_run_arc.read().await;
                 event
@@ -605,52 +494,78 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
                     .collect()
             };
 
-            if wp_data.is_empty() {
-                tracing::warn!(wave = event.wave_index, "No WP data found for wave launch");
-                continue;
-            }
+            // Create one tab per WP in the current Zellij session.
+            for wp in &wp_data {
+                let tab_name = wp.id.clone();
+                let script_path = wave_kasmos_dir
+                    .join("scripts")
+                    .join(format!("{}.sh", wp.id));
 
-            // Generate wave tab layout (agent-only, no controller)
-            let wp_refs: Vec<&kasmos::WorkPackage> = wp_data.iter().collect();
-            let wave_layout = match layout_gen.generate_wave_tab(&wp_refs, &wave_feature_dir) {
-                Ok(doc) => doc,
-                Err(e) => {
-                    tracing::error!("Failed to generate wave tab layout: {}", e);
+                if !script_path.exists() {
+                    tracing::error!(wp_id = %wp.id, "Script not found: {}", script_path.display());
                     continue;
                 }
-            };
 
-            let wave_layout_path = match layout_gen.write_wave_layout(
-                &wave_layout,
-                &wave_kasmos_dir,
-                event.wave_index,
-            ) {
-                Ok(path) => path,
-                Err(e) => {
-                    tracing::error!("Failed to write wave layout: {}", e);
+                // Determine working directory: worktree if available, else feature dir.
+                let cwd = wp
+                    .worktree_path
+                    .as_deref()
+                    .unwrap_or_else(|| wp.prompt_path.as_ref().map(|p| p.parent().unwrap().parent().unwrap().parent().unwrap()).unwrap_or(std::path::Path::new(".")));
+
+                // Create new tab
+                let tab_result = tokio::process::Command::new("zellij")
+                    .args(["action", "new-tab", "--name", &tab_name])
+                    .output()
+                    .await;
+
+                if let Err(e) = &tab_result {
+                    tracing::error!(wp_id = %wp.id, "Failed to create tab: {}", e);
                     continue;
                 }
-            };
+                if let Ok(ref out) = tab_result {
+                    if !out.status.success() {
+                        tracing::error!(wp_id = %wp.id, "Tab creation failed: {}", String::from_utf8_lossy(&out.stderr));
+                        continue;
+                    }
+                }
 
-            // Create new tab with the wave layout
-            let new_tab_name = format!("WAVE-{}", event.wave_index);
-            if let Err(e) = cli
-                .new_tab(
-                    &wave_session_name,
-                    Some(&new_tab_name),
-                    Some(&wave_layout_path),
-                )
-                .await
-            {
-                tracing::error!("Failed to create new tab for wave {}: {}", event.wave_index, e);
-            } else {
-                tracing::info!(
-                    wave = event.wave_index,
-                    tab = %new_tab_name,
-                    "New wave tab created with {} panes",
-                    wp_data.len()
-                );
+                // Run the agent script in the new (now-focused) tab
+                let run_result = tokio::process::Command::new("zellij")
+                    .args([
+                        "run",
+                        "--cwd",
+                        &cwd.display().to_string(),
+                        "--",
+                        "bash",
+                        &script_path.display().to_string(),
+                    ])
+                    .output()
+                    .await;
+
+                match run_result {
+                    Ok(out) if out.status.success() => {
+                        tracing::info!(wp_id = %wp.id, tab = %tab_name, "Agent tab created");
+                    }
+                    Ok(out) => {
+                        tracing::error!(wp_id = %wp.id, "zellij run failed: {}", String::from_utf8_lossy(&out.stderr));
+                    }
+                    Err(e) => {
+                        tracing::error!(wp_id = %wp.id, "Failed to run agent: {}", e);
+                    }
+                }
+
+                // Switch back to the TUI tab (tab index 1) so the user stays on the dashboard
+                let _ = tokio::process::Command::new("zellij")
+                    .args(["action", "go-to-tab", "1"])
+                    .output()
+                    .await;
             }
+
+            tracing::info!(
+                wave = event.wave_index,
+                count = wp_data.len(),
+                "Agent tabs created for wave"
+            );
         }
         tracing::debug!("Wave launch handler exiting");
     });
