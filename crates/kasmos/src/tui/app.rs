@@ -817,15 +817,61 @@ impl App {
     /// - Body: tab-specific content
     /// - Status footer at bottom
     /// - Overlays: help > detail (overlay priority order)
+    /// Returns `true` when the run is paused at a wave gate, meaning the
+    /// operator needs to press Shift+A to advance.
+    fn is_wave_gated_paused(&self) -> bool {
+        self.run.mode == crate::types::ProgressionMode::WaveGated
+            && self.run.state == RunState::Paused
+    }
+
+    /// Compute the index of the last completed wave. Falls back to checking
+    /// which waves have all WPs completed.
+    fn completed_wave_index(&self) -> usize {
+        use crate::types::WaveState;
+        if let Some(wave) = self
+            .run
+            .waves
+            .iter()
+            .rev()
+            .find(|w| w.state == WaveState::Completed)
+        {
+            return wave.index;
+        }
+        // Fallback: derive from WP states
+        let max_wave = self
+            .run
+            .work_packages
+            .iter()
+            .map(|wp| wp.wave)
+            .max()
+            .unwrap_or(0);
+        for w in (0..=max_wave).rev() {
+            let all_done = self
+                .run
+                .work_packages
+                .iter()
+                .filter(|wp| wp.wave == w)
+                .all(|wp| matches!(wp.state, WPState::Completed | WPState::Failed));
+            if all_done {
+                return w;
+            }
+        }
+        0
+    }
+
     pub fn render(&self, frame: &mut Frame) {
         let area = frame.area();
+
+        let show_banner = self.is_wave_gated_paused();
+        let banner_height = if show_banner { 3 } else { 0 };
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3), // tab bar
-                Constraint::Min(0),    // body
-                Constraint::Length(1), // status footer
+                Constraint::Length(3),             // tab bar
+                Constraint::Length(banner_height), // wave-gate banner (0 when hidden)
+                Constraint::Min(0),                // body
+                Constraint::Length(1),             // status footer
             ])
             .split(area);
 
@@ -835,8 +881,14 @@ impl App {
             .map(|t| Line::from(Span::raw(*t)))
             .collect();
 
+        let tab_title = if show_banner {
+            " kasmos - PAUSED "
+        } else {
+            " kasmos "
+        };
+
         let tabs = Tabs::new(titles)
-            .block(Block::default().borders(Borders::ALL).title(" kasmos "))
+            .block(Block::default().borders(Borders::ALL).title(tab_title))
             .select(self.active_tab.index())
             .style(Style::default().fg(Color::White))
             .highlight_style(
@@ -847,15 +899,51 @@ impl App {
 
         frame.render_widget(tabs, chunks[0]);
 
+        // Wave-gate banner
+        if show_banner {
+            let completed_wave = self.completed_wave_index();
+            let total_waves = self.run.waves.len();
+            let next_wave = completed_wave + 1;
+
+            let banner_text = if next_wave < total_waves {
+                format!(
+                    "  Wave {} complete ({}/{} waves) -- press Shift+A to advance to wave {}",
+                    completed_wave, next_wave, total_waves, next_wave
+                )
+            } else {
+                format!(
+                    "  Wave {} complete ({}/{} waves) -- press Shift+A to advance",
+                    completed_wave, next_wave, total_waves
+                )
+            };
+
+            let banner = Paragraph::new(Line::from(vec![Span::styled(
+                banner_text,
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )]))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Yellow))
+                    .title(" Action Required "),
+            );
+
+            frame.render_widget(banner, chunks[1]);
+        }
+
         // Body — dispatch to tab rendering modules (SC-015)
+        let body_area = chunks[2];
         match self.active_tab {
-            Tab::Dashboard => tabs::dashboard::render_dashboard(self, frame, chunks[1]),
-            Tab::Review => tabs::review::render_review(self, frame, chunks[1]),
-            Tab::Logs => tabs::logs::render_logs(self, frame, chunks[1]),
+            Tab::Dashboard => tabs::dashboard::render_dashboard(self, frame, body_area),
+            Tab::Review => tabs::review::render_review(self, frame, body_area),
+            Tab::Logs => tabs::logs::render_logs(self, frame, body_area),
         }
 
         // Status footer (FR-016, SC-010)
-        self.render_status_footer(frame, chunks[2]);
+        self.render_status_footer(frame, chunks[3]);
 
         // Overlays — priority: help > detail
         if self.show_help {

@@ -6,11 +6,13 @@ use clap::{Parser, Subcommand};
 mod attach;
 mod cmd;
 mod feature_arg;
+mod hub;
 mod list_specs;
 mod report;
 mod start;
 mod status;
 mod stop;
+mod tui_cmd;
 mod tui_preview;
 
 #[derive(Parser)]
@@ -20,28 +22,27 @@ mod tui_preview;
     about = "Zellij agent orchestrator",
     after_help = "\
 \x1b[1mQuick Start:\x1b[0m
-  kasmos                              List available features
-  kasmos start <feature>              Start orchestration (wave-gated)
-  kasmos start <feature> --mode continuous
-                                       Start without wave gates
+  kasmos                              Launch hub TUI (project navigator)
+  kasmos start <feature>              Start orchestration (TUI dashboard)
+  kasmos start <feature> --no-tui     Start without TUI (direct Zellij attach)
+  kasmos start <feature> --mode wave-gated
+                                       Start with wave gates (default: continuous)
   kasmos status [feature]             Check WP progress
   kasmos cmd status                   Send controller command via FIFO
   kasmos cmd focus WP02               Focus a work package pane
   kasmos attach <feature>             Attach to Zellij session
   kasmos stop [feature]               Gracefully stop orchestration
-  kasmos tui                          Launch TUI with animated mock data
-  kasmos tui --count 25               Launch TUI with 25 simulated WPs
 
 \x1b[1mTypical Workflow:\x1b[0m
-  1. kasmos                           See what features are available
-  2. kasmos start 001-my-feature      Start orchestration (wave-gated)
+  1. kasmos                           Open the hub TUI
+  2. Select a feature and start       Hub launches orchestration in new tab
   3. kasmos cmd status                Query live orchestration state
-  4. kasmos attach 001-my-feature     Reattach to the Zellij session
+  4. Alt+h in orchestration TUI       Switch back to hub
   5. kasmos stop                      Stop when done"
 )]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
@@ -83,8 +84,14 @@ enum Commands {
         /// Feature directory (optional, auto-detects from .kasmos/)
         feature: Option<String>,
     },
+    /// Launch the TUI dashboard inside a Zellij controller pane
+    #[command(hide = true)]
+    TuiCtrl {
+        /// Feature spec ID or prefix
+        feature: String,
+    },
     /// Launch the TUI with animated mock data (no orchestration)
-    Tui {
+    TuiPreview {
         /// Number of simulated work packages (minimum: 1)
         #[arg(long, default_value_t = 12, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
         count: usize,
@@ -95,34 +102,40 @@ enum Commands {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Skip headless logging init for TUI command — tui::run() sets up its own
-    // TUI-mode tracing subscriber, and the global subscriber can only be set once.
-    if !matches!(cli.command, Commands::Tui { .. }) {
-        let _ = kasmos::init_logging(false);
-    }
-
     match cli.command {
-        Commands::List => {
+        // No subcommand: launch hub TUI (no logging init — hub manages its own terminal)
+        None => hub::run().await.context("Hub TUI failed")?,
+
+        Some(Commands::List) => {
+            let _ = kasmos::init_logging(false);
             list_specs::run().context("Failed to list specs")?;
         }
-        Commands::Start { feature, mode, tui } => {
+        Some(Commands::Start { feature, mode, tui }) => {
+            let _ = kasmos::init_logging(false);
             start::run(&feature, &mode, tui)
                 .await
                 .context("Start failed")?;
         }
-        Commands::Status { feature } => {
+        Some(Commands::Status { feature }) => {
+            let _ = kasmos::init_logging(false);
             status::run(feature.as_deref()).context("Status failed")?;
         }
-        Commands::Cmd { feature, command } => {
+        Some(Commands::Cmd { feature, command }) => {
+            let _ = kasmos::init_logging(false);
             cmd::run(feature.as_deref(), command).context("Command send failed")?;
         }
-        Commands::Attach { feature } => {
+        Some(Commands::Attach { feature }) => {
+            let _ = kasmos::init_logging(false);
             attach::run(&feature).await.context("Attach failed")?;
         }
-        Commands::Stop { feature } => {
+        Some(Commands::Stop { feature }) => {
+            let _ = kasmos::init_logging(false);
             stop::run(feature.as_deref()).await.context("Stop failed")?;
         }
-        Commands::Tui { count } => {
+        Some(Commands::TuiCtrl { feature }) => {
+            tui_cmd::run(&feature).await.context("TUI failed")?;
+        }
+        Some(Commands::TuiPreview { count }) => {
             tui_preview::run(count).await.context("TUI preview failed")?;
         }
     }

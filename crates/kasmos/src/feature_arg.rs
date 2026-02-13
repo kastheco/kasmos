@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use std::path::PathBuf;
 
 pub fn resolve_feature_dir(feature: &str) -> Result<PathBuf> {
@@ -18,6 +18,19 @@ pub fn resolve_feature_dir(feature: &str) -> Result<PathBuf> {
     }
 
     let specs_root = PathBuf::from("kitty-specs");
+
+    // Exact match: full slug provided (e.g. "010-hub-tui-navigator")
+    let exact_path = specs_root.join(feature);
+    if exact_path.is_dir() {
+        return exact_path.canonicalize().with_context(|| {
+            format!(
+                "Failed to canonicalize feature path: {}",
+                exact_path.display()
+            )
+        });
+    }
+
+    // Prefix match: numeric prefix provided (e.g. "010")
     let entries = std::fs::read_dir(&specs_root)
         .with_context(|| format!("Failed to read {}", specs_root.display()))?;
 

@@ -31,7 +31,7 @@ use self::app::App;
 use self::event::EventHandler;
 
 /// Set up the terminal for TUI rendering (raw mode, alternate screen, mouse capture).
-fn setup_terminal() -> anyhow::Result<Terminal<CrosstermBackend<Stdout>>> {
+pub fn setup_terminal() -> anyhow::Result<Terminal<CrosstermBackend<Stdout>>> {
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
@@ -40,7 +40,7 @@ fn setup_terminal() -> anyhow::Result<Terminal<CrosstermBackend<Stdout>>> {
 }
 
 /// Restore the terminal to its original state (disable raw mode, leave alternate screen).
-fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Result<()> {
+pub fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Result<()> {
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
@@ -54,7 +54,7 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow
 /// Install a panic hook that restores the terminal before the default panic handler runs.
 ///
 /// This prevents terminal corruption when panics occur while raw mode is active.
-fn install_panic_hook() {
+pub fn install_panic_hook() {
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
         // Best-effort terminal restoration — ignore errors since we're panicking

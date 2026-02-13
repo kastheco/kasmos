@@ -390,17 +390,61 @@ impl LayoutGenerator {
     }
 
     /// Build the terminal pane for controller-only layouts.
+    ///
+    /// Opens in the repository root (two levels up from feature_dir:
+    /// `kitty-specs/<slug>/` → repo root).
     fn build_terminal_pane(&self, feature_dir: &Path) -> KdlNode {
-        let project_dir = feature_dir.parent().unwrap_or(feature_dir);
+        // feature_dir is kitty-specs/<slug>/, parent is kitty-specs/, grandparent is repo root
+        let repo_root = feature_dir
+            .parent()
+            .and_then(|p| p.parent())
+            .unwrap_or(feature_dir);
         let mut terminal = KdlNode::new("pane");
         terminal
             .entries_mut()
             .push(kdl_str_prop("name", "terminal"));
         let mut cwd = KdlNode::new("cwd");
         cwd.entries_mut()
-            .push(kdl_str_arg(&project_dir.display().to_string()));
+            .push(kdl_str_arg(&repo_root.display().to_string()));
         terminal.ensure_children().nodes_mut().push(cwd);
         terminal
+    }
+
+    /// Build a TUI controller pane that runs `kasmos tui-ctrl <feature>`.
+    ///
+    /// Used in controller-only layouts where there are no agent panes to display.
+    /// The TUI shows orchestration status, wave progress, and keybinding hints.
+    fn build_tui_pane(&self, feature_dir: &Path) -> KdlNode {
+        // Run from repo root so relative paths work
+        let repo_root = feature_dir
+            .parent()
+            .and_then(|p| p.parent())
+            .unwrap_or(feature_dir);
+        let feature_name = feature_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown");
+
+        let mut pane = KdlNode::new("pane");
+        pane.entries_mut().push(kdl_str_prop("name", "controller"));
+        pane.entries_mut()
+            .push(kdl_bool_prop("start_suspended", false));
+
+        let mut cwd = KdlNode::new("cwd");
+        cwd.entries_mut()
+            .push(kdl_str_arg(&repo_root.display().to_string()));
+        pane.ensure_children().nodes_mut().push(cwd);
+
+        let mut command = KdlNode::new("command");
+        command.entries_mut().push(kdl_str_arg("kasmos"));
+        pane.ensure_children().nodes_mut().push(command);
+
+        let mut args = KdlNode::new("args");
+        args.entries_mut().push(kdl_str_arg("tui-ctrl"));
+        args.entries_mut().push(kdl_str_arg(feature_name));
+        pane.ensure_children().nodes_mut().push(args);
+
+        pane
     }
 
     /// Build a single agent pane node.
@@ -523,6 +567,9 @@ impl LayoutGenerator {
     }
 
     /// Generate a controller-only layout (no agent panes).
+    ///
+    /// Uses the kasmos TUI dashboard in the main pane and a terminal pane
+    /// on the side for manual commands.
     pub fn generate_controller_only(&self, feature_dir: &Path) -> Result<KdlDocument, KasmosError> {
         debug!("Generating controller-only KDL layout");
 
@@ -544,7 +591,7 @@ impl LayoutGenerator {
         main_split
             .ensure_children()
             .nodes_mut()
-            .push(self.build_controller_pane(feature_dir));
+            .push(self.build_tui_pane(feature_dir));
         main_split
             .ensure_children()
             .nodes_mut()
@@ -554,8 +601,10 @@ impl LayoutGenerator {
         layout.ensure_children().nodes_mut().push(tab);
         doc.nodes_mut().push(layout);
 
+        // Don't use locked mode for controller-only — the TUI handles its
+        // own input and the terminal pane needs normal shell interaction.
         let mut default_mode = KdlNode::new("default_mode");
-        default_mode.entries_mut().push(kdl_str_arg("locked"));
+        default_mode.entries_mut().push(kdl_str_arg("normal"));
         doc.nodes_mut().push(default_mode);
 
         let kdl_string = doc.to_string();
