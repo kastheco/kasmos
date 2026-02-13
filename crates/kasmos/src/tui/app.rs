@@ -233,6 +233,10 @@ pub struct App {
     pub notification_cycle_index: usize,
     /// When the TUI was started (for elapsed time display).
     pub started_at: Instant,
+
+    // -- WP08 fields --
+    /// Whether Alt+h was pressed to open/switch to hub tab.
+    pub open_hub_requested: bool,
 }
 
 impl App {
@@ -253,6 +257,7 @@ impl App {
             detail_wp_id: None,
             notification_cycle_index: 0,
             started_at: Instant::now(),
+            open_hub_requested: false,
         }
     }
 

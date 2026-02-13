@@ -104,6 +104,7 @@ impl App {
     /// Update the feature list from a fresh scan, preserving selection.
     pub fn update_features(&mut self, features: Vec<FeatureEntry>) {
         self.features = features;
+        self.last_refresh = std::time::Instant::now();
         if self.selected >= self.features.len() && !self.features.is_empty() {
             self.selected = self.features.len() - 1;
         }
@@ -252,15 +253,40 @@ impl App {
                 .iter()
                 .map(|f| {
                     let status = format_status(f);
-                    ListItem::new(Line::from(vec![
+
+                    // WP08 T044: Visual distinction for complete/running features
+                    let is_complete = matches!(f.task_progress, TaskProgress::Complete { .. });
+                    let is_running = f.orchestration_status == OrchestrationStatus::Running;
+
+                    let number_color = if is_complete {
+                        Color::DarkGray
+                    } else {
+                        Color::DarkGray
+                    };
+                    let slug_color = if is_complete {
+                        Color::DarkGray
+                    } else {
+                        Color::White
+                    };
+
+                    let line_spans = vec![
                         Span::styled(
                             format!(" [{}] ", f.number),
-                            Style::default().fg(Color::DarkGray),
+                            Style::default().fg(number_color),
                         ),
-                        Span::styled(format!("{:<30}", f.slug), Style::default().fg(Color::White)),
+                        Span::styled(
+                            format!("{:<30}", f.slug),
+                            if is_running {
+                                Style::default().fg(slug_color).add_modifier(Modifier::BOLD)
+                            } else {
+                                Style::default().fg(slug_color)
+                            },
+                        ),
                         Span::raw(" "),
                         status,
-                    ]))
+                    ];
+
+                    ListItem::new(Line::from(line_spans))
                 })
                 .collect();
 

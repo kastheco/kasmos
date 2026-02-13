@@ -113,6 +113,13 @@ pub async fn run(
             }
         }
 
+        // Handle hub navigation request (WP08 T038)
+        if app.open_hub_requested {
+            app.open_hub_requested = false;
+            // For now, just log — actual navigation implemented when WP05 Zellij wrappers land
+            tracing::info!("Hub navigation requested (Alt+h) — requires WP05 Zellij wrappers");
+        }
+
         if app.should_quit {
             break;
         }

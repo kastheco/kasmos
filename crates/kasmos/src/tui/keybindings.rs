@@ -49,6 +49,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             app.should_quit = true;
             return;
         }
+        KeyCode::Char('h') if key.modifiers.contains(KeyModifiers::ALT) => {
+            app.open_hub_requested = true;
+            return;
+        }
         KeyCode::Char('?') => {
             app.show_help = true;
             return;
