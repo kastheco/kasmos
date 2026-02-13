@@ -22,7 +22,7 @@
 - [x] T003 Update `after_help` text in `crates/kasmos/src/main.rs` to document `kasmos tui`
 - [x] T004 Create `crates/kasmos/src/tui_preview.rs` with `pub async fn run(count: usize)` entry point
 - [x] T005 Implement `fn generate_mock_run(count: usize) -> OrchestrationRun` in `crates/kasmos/src/tui_preview.rs`
-- [ ] T006 Implement `async fn animation_loop(...)` in `crates/kasmos/src/tui_preview.rs`
+- [x] T006 Implement `async fn animation_loop(...)` in `crates/kasmos/src/tui_preview.rs`
 
 ### Implementation Notes
 - T001-T003 modify `crates/kasmos/src/main.rs` (~15 lines added)
