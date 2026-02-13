@@ -57,15 +57,20 @@ pub fn init_logging(tui_mode: bool) -> Result<()> {
     if tui_mode {
         // TUI mode: route tracing events to tui-logger widget.
         // tui_logger::init_logger() must have been called already by tui::run().
-        Registry::default()
+        //
+        // Use try_init() instead of init() so that a second call (e.g. when
+        // `kasmos start` already initialised headless logging in main.rs)
+        // returns an error instead of panicking.
+        let _ = Registry::default()
             .with(tui_logger::TuiTracingSubscriberLayer)
-            .init();
+            .try_init();
     } else {
         // Headless mode: structured fmt output to stderr.
         let filter =
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("kasmos=info"));
 
-        Registry::default()
+        // Use try_init() to be idempotent — a subscriber may already be set.
+        let _ = Registry::default()
             .with(
                 fmt::layer()
                     .with_target(true)
@@ -73,7 +78,7 @@ pub fn init_logging(tui_mode: bool) -> Result<()> {
                     .with_line_number(true),
             )
             .with(filter)
-            .init();
+            .try_init();
     }
 
     Ok(())

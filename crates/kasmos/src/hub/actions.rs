@@ -196,21 +196,32 @@ pub async fn dispatch_action(action: &HubAction) -> anyhow::Result<()> {
         }
 
         // -- WP07: Implementation launch (T031/T032) --
+        // Check for existing tab first to avoid duplicates.
         HubAction::StartContinuous { feature_slug } => {
-            open_new_tab(
-                &format!("kasmos-{feature_slug}"),
-                "kasmos",
-                &["start", feature_slug, "--mode", "continuous"],
-            )
-            .await
+            let tab_name = format!("kasmos-{feature_slug}");
+            if tab_exists(&tab_name).await {
+                go_to_tab(&tab_name).await
+            } else {
+                open_new_tab(
+                    &tab_name,
+                    "kasmos",
+                    &["start", feature_slug, "--mode", "continuous"],
+                )
+                .await
+            }
         }
         HubAction::StartWaveGated { feature_slug } => {
-            open_new_tab(
-                &format!("kasmos-{feature_slug}"),
-                "kasmos",
-                &["start", feature_slug, "--mode", "wave-gated"],
-            )
-            .await
+            let tab_name = format!("kasmos-{feature_slug}");
+            if tab_exists(&tab_name).await {
+                go_to_tab(&tab_name).await
+            } else {
+                open_new_tab(
+                    &tab_name,
+                    "kasmos",
+                    &["start", feature_slug, "--mode", "wave-gated"],
+                )
+                .await
+            }
         }
 
         // -- WP07: Attach (T035) --
@@ -280,6 +291,14 @@ pub async fn go_to_tab(name: &str) -> anyhow::Result<()> {
         anyhow::bail!("zellij action go-to-tab-name failed: {}", stderr);
     }
     Ok(())
+}
+
+/// Check whether a tab with the given name exists in the current session.
+async fn tab_exists(name: &str) -> bool {
+    match query_tab_names().await {
+        Ok(tabs) => tabs.iter().any(|t| t == name),
+        Err(_) => false,
+    }
 }
 
 /// Query all tab names in the current Zellij session.
