@@ -3,6 +3,8 @@
 //! Provides a ratatui-based TUI for browsing feature specs, launching
 //! OpenCode agent panes, and starting implementation sessions.
 
+pub mod scanner;
+
 /// Run the hub TUI.
 ///
 /// This is the entry point when `kasmos` is invoked with no subcommand.
