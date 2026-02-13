@@ -245,7 +245,7 @@ policy = "auto_then_manual_approve" # manual_only | auto_then_manual_approve | a
 | `A` | Advance wave (wave-gated) |
 | `n` | Jump to next notification |
 | `/` | Filter logs (Logs tab) |
-| `q` | Quit TUI |
+| `Alt+q` | Quit TUI |
 
 ## New Dependencies
 

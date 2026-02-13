@@ -64,7 +64,7 @@ Zero Zellij imports exist in the TUI module. The existing test helper `create_te
 - **FR-007**: Wave states MUST be updated to reflect their constituent WPs (Pending, Active, Completed, PartiallyFailed).
 - **FR-008**: When all WPs reach `Completed`, the animation MUST reset all WPs back to their initial states and loop forever.
 - **FR-009**: All three TUI tabs MUST work: Dashboard (kanban with WP cards), Review (ForReview queue), and Logs (state transition log entries).
-- **FR-010**: Pressing `q` MUST quit the TUI cleanly (same as production TUI behavior).
+- **FR-010**: Pressing `Alt+q` MUST quit the TUI cleanly (same as production TUI behavior).
 - **FR-011**: The `EngineAction` channel receiver MUST be present but actions MUST be silently discarded (no-op sink). TUI keybindings that send actions (approve, reject, restart, etc.) should not error.
 - **FR-012**: The run state MUST be set to `Running` during animation and `Completed` briefly when all WPs finish before resetting.
 
@@ -291,7 +291,7 @@ kasmos tui --count 3
 2. **AC-02**: WPs animate through state transitions automatically every ~3 seconds.
 3. **AC-03**: All three TUI tabs work (Dashboard kanban, Review queue, Logs with state transition entries).
 4. **AC-04**: The `--count` flag controls the number of simulated WPs.
-5. **AC-05**: Pressing `q` quits cleanly with terminal restoration.
+5. **AC-05**: Pressing `Alt+q` quits cleanly with terminal restoration.
 6. **AC-06**: The animation cycle resets when all WPs reach Completed.
 7. **AC-07**: No changes to existing TUI code (`src/tui/`) or orchestration logic.
 8. **AC-08**: `cargo build` succeeds with no warnings in the new code.

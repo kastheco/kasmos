@@ -491,7 +491,7 @@ impl App {
     /// Render the help overlay listing all keybindings for the current tab.
     fn render_help_overlay(&self, frame: &mut Frame, area: Rect) {
         let global_keys = vec![
-            ("q", "Quit"),
+            ("Alt+q", "Quit"),
             ("1/2/3", "Switch tab"),
             ("?", "Toggle help"),
             ("n", "Next notification"),

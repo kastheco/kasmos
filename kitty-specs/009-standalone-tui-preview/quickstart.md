@@ -26,7 +26,7 @@ cargo run -p kasmos -- tui --count 25
 
 ## Keybindings
 
-All existing TUI keybindings work. Press `q` to quit.
+All existing TUI keybindings work. Press `Alt+q` to quit.
 
 ## Development Workflow
 

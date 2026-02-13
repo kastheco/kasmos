@@ -175,7 +175,7 @@ When an agent signals it is blocked and needs operator input, the TUI surfaces a
 - **FR-003**: System MUST display all work packages grouped by kanban lane (planned, doing, for_review, done) in the Dashboard view.
 - **FR-004**: System MUST update the display in real-time (within 1 second) when WP state changes occur.
 - **FR-005**: System MUST provide contextual action buttons for each WP based on its current state (restart, pause, resume, retry, force-advance).
-- **FR-006**: System MUST support both keyboard navigation (vim-style `h/j/k/l`, tab switching `1/2/3`, actions `R/P/F/T`, notifications `n`, logs filter `/`, quit `q`) and mouse input (click, scroll).
+- **FR-006**: System MUST support both keyboard navigation (vim-style `h/j/k/l`, tab switching `1/2/3`, actions `R/P/F/T`, notifications `n`, logs filter `/`, quit `Alt+q`) and mouse input (click, scroll).
 - **FR-007**: System MUST display a persistent notification bar across all tabs showing WPs requiring operator attention, with counts and identifiers.
 - **FR-008**: System MUST visually distinguish between three attention types in the notification bar: reviews pending, failures, and input needed (agent-signaled blocks).
 - **FR-009**: System MUST provide a keybinding to jump from a notification directly to the relevant WP or review item.

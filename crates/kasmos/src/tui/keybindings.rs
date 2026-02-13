@@ -7,7 +7,7 @@
 //! Keybinding logic is kept thin — actual state mutations call methods on
 //! `App` or its sub-state structs.
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::command_handlers::EngineAction;
 use crate::types::{ProgressionMode, RunState, WPState};
@@ -45,7 +45,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
 
     // Global keys (work in all tabs)
     match key.code {
-        KeyCode::Char('q') => {
+        KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::ALT) => {
             app.should_quit = true;
             return;
         }

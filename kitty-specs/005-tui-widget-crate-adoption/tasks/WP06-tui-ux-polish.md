@@ -213,7 +213,7 @@ Depends on all previous WPs (WP01–WP05). This WP uses macro syntax (WP01), the
      }
      ```
   4. Implement `build_help_text(tab: Tab) -> String`:
-     - Global section (always shown): `q` Quit, `1-3` Switch tabs, `n` Next notification, `?` Help
+     - Global section (always shown): `Alt+q` Quit, `1-3` Switch tabs, `n` Next notification, `?` Help
      - Dashboard section (when Dashboard active): `j/k` Navigate, `h/l` Switch lanes, `Enter` WP details, `v` Toggle graph view, plus action keys (R/P/F/T/A)
      - Review section: `j/k` Navigate, `a` Approve, `r` Reject + Relaunch
      - Logs section: tui-logger keys (h, f, UP/DOWN, LEFT/RIGHT, +/-, PageUp/PageDown, Esc, Space)

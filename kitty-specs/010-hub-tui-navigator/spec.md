@@ -169,7 +169,7 @@ The hub TUI periodically refreshes feature status from disk (re-scanning `kitty-
 - **FR-013**: The `kasmos start` command MUST silently accept the existing `--tui` flag for backward compatibility.
 - **FR-014**: Running `kasmos --help` MUST display help text documenting all subcommands and the hub TUI as the no-argument default.
 - **FR-015**: The orchestration TUI MUST provide a keybinding to open the hub TUI in a new Zellij tab.
-- **FR-016**: The hub MUST support keyboard-only operation with vim-style navigation (j/k for up/down, Enter for select/action, Esc for back, q to quit).
+- **FR-016**: The hub MUST support keyboard-only operation with vim-style navigation (j/k for up/down, Enter for select/action, Esc for back, Alt+q to quit).
 - **FR-017**: The hub MUST detect when it is running outside a Zellij session and operate in read-only mode with appropriate warnings for unavailable pane/tab actions.
 - **FR-018**: When an agent pane to the right is already active, triggering another pane action MUST either replace the existing pane or warn the operator.
 - **FR-019**: All existing subcommands (list, start, status, cmd, attach, stop) MUST continue to function identically.
