@@ -17,6 +17,7 @@ struct DetailFrontmatter {
     work_package_id: Option<String>,
     title: Option<String>,
     lane: Option<String>,
+    wave: Option<usize>,
     #[serde(default)]
     dependencies: Option<Vec<String>>,
 }
@@ -74,6 +75,8 @@ pub struct WPSummary {
     pub title: String,
     /// planned / doing / for_review / done
     pub lane: String,
+    /// Wave assignment (from frontmatter), if any.
+    pub wave: Option<usize>,
     /// WP IDs this depends on.
     pub dependencies: Vec<String>,
 }
@@ -232,6 +235,7 @@ fn parse_wp_summary(path: &Path, filename: &std::ffi::OsStr) -> WPSummary {
                 id: fallback_id,
                 title: fallback_title,
                 lane: "planned".to_string(),
+                wave: None,
                 dependencies: Vec::new(),
             };
         }
@@ -242,6 +246,7 @@ fn parse_wp_summary(path: &Path, filename: &std::ffi::OsStr) -> WPSummary {
             id: fallback_id,
             title: fallback_title,
             lane: "planned".to_string(),
+            wave: None,
             dependencies: Vec::new(),
         };
     };
@@ -251,6 +256,7 @@ fn parse_wp_summary(path: &Path, filename: &std::ffi::OsStr) -> WPSummary {
             id: fallback_id,
             title: fallback_title,
             lane: "planned".to_string(),
+            wave: None,
             dependencies: Vec::new(),
         };
     };
@@ -262,6 +268,7 @@ fn parse_wp_summary(path: &Path, filename: &std::ffi::OsStr) -> WPSummary {
                 id: fallback_id,
                 title: fallback_title,
                 lane: "planned".to_string(),
+                wave: None,
                 dependencies: Vec::new(),
             };
         }
@@ -271,6 +278,7 @@ fn parse_wp_summary(path: &Path, filename: &std::ffi::OsStr) -> WPSummary {
         id: fm.work_package_id.unwrap_or(fallback_id),
         title: fm.title.unwrap_or(fallback_title),
         lane: fm.lane.unwrap_or_else(|| "planned".to_string()),
+        wave: fm.wave,
         dependencies: fm.dependencies.unwrap_or_default(),
     }
 }

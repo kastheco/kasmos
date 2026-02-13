@@ -165,7 +165,7 @@ impl App {
 
         // Overlay the new-feature prompt if active (WP05).
         if let InputMode::NewFeaturePrompt { ref input } = self.input_mode {
-            self.render_new_feature_prompt(frame, input.clone());
+            self.render_new_feature_prompt(frame, input);
         }
     }
 
@@ -206,6 +206,12 @@ impl App {
         }
 
         // Header
+        let elapsed = self.last_refresh.elapsed().as_secs();
+        let refresh_text = if elapsed < 2 {
+            "just now".to_string()
+        } else {
+            format!("{elapsed}s ago")
+        };
         let header = Paragraph::new(Line::from(vec![
             Span::styled(
                 " kasmos ",
@@ -217,6 +223,11 @@ impl App {
             Span::raw("  "),
             Span::styled(
                 format!("{} features", self.features.len()),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::raw("  "),
+            Span::styled(
+                format!("Last refresh: {refresh_text}"),
                 Style::default().fg(Color::DarkGray),
             ),
         ]))
@@ -261,10 +272,12 @@ impl App {
                     let number_color = if is_complete {
                         Color::DarkGray
                     } else {
-                        Color::DarkGray
+                        Color::Cyan
                     };
                     let slug_color = if is_complete {
                         Color::DarkGray
+                    } else if is_running {
+                        Color::Green
                     } else {
                         Color::White
                     };
@@ -374,6 +387,7 @@ impl App {
                     Span::styled("ID", Style::default().add_modifier(Modifier::BOLD)),
                     Span::styled("Title", Style::default().add_modifier(Modifier::BOLD)),
                     Span::styled("Lane", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::styled("Wave", Style::default().add_modifier(Modifier::BOLD)),
                     Span::styled(
                         "Dependencies",
                         Style::default().add_modifier(Modifier::BOLD),
@@ -392,6 +406,10 @@ impl App {
                             "for_review" => Color::Blue,
                             _ => Color::DarkGray, // planned or unknown
                         };
+                        let wave_str = wp
+                            .wave
+                            .map(|w| w.to_string())
+                            .unwrap_or_else(|| "-".to_string());
                         let deps = if wp.dependencies.is_empty() {
                             "-".to_string()
                         } else {
@@ -401,6 +419,7 @@ impl App {
                             Span::styled(wp.id.clone(), Style::default().fg(Color::White)),
                             Span::styled(wp.title.clone(), Style::default().fg(Color::White)),
                             Span::styled(wp.lane.clone(), Style::default().fg(lane_color)),
+                            Span::styled(wave_str, Style::default().fg(Color::DarkGray)),
                             Span::styled(deps, Style::default().fg(Color::DarkGray)),
                         ])
                     })
@@ -410,6 +429,7 @@ impl App {
                     Constraint::Length(8),
                     Constraint::Min(20),
                     Constraint::Length(12),
+                    Constraint::Length(6),
                     Constraint::Min(15),
                 ];
 
@@ -447,7 +467,7 @@ impl App {
     }
 
     /// Render the new-feature prompt overlay at the bottom of the screen (WP05).
-    fn render_new_feature_prompt(&self, frame: &mut Frame, input: String) {
+    fn render_new_feature_prompt(&self, frame: &mut Frame, input: &str) {
         let area = frame.area();
         // Place the prompt in the last row of the terminal.
         let prompt_area = ratatui::layout::Rect {
@@ -464,7 +484,7 @@ impl App {
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(&input, Style::default().fg(Color::Cyan)),
+            Span::styled(input, Style::default().fg(Color::Cyan)),
             Span::styled(
                 "_",
                 Style::default()
@@ -714,18 +734,21 @@ mod tests {
                     id: "WP01".into(),
                     title: "Setup".into(),
                     lane: "done".into(),
+                    wave: None,
                     dependencies: vec![],
                 },
                 WPSummary {
                     id: "WP02".into(),
                     title: "Implementation".into(),
                     lane: "doing".into(),
+                    wave: None,
                     dependencies: vec!["WP01".into()],
                 },
                 WPSummary {
                     id: "WP03".into(),
                     title: "Review".into(),
                     lane: "for_review".into(),
+                    wave: None,
                     dependencies: vec!["WP01".into(), "WP02".into()],
                 },
             ],
@@ -764,12 +787,14 @@ mod tests {
                     id: "WP01".into(),
                     title: "A".into(),
                     lane: "done".into(),
+                    wave: None,
                     dependencies: vec![],
                 },
                 WPSummary {
                     id: "WP02".into(),
                     title: "B".into(),
                     lane: "doing".into(),
+                    wave: None,
                     dependencies: vec![],
                 },
             ],

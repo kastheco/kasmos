@@ -14,6 +14,24 @@ use std::time::Duration;
 use kasmos::tui as tui_plumbing;
 use kasmos::tui::event::EventHandler;
 
+/// Refresh the detail view if the user is currently viewing one.
+///
+/// Called after `update_features()` to keep the detail data in sync.
+fn refresh_detail_if_active(app: &mut app::App) {
+    if let app::HubView::Detail { index } = app.view {
+        if let Some(feature) = app.features.get(index) {
+            let detail = scanner::load_detail(feature);
+            app.detail = Some(detail);
+            // Clamp WP selection if the list shrank.
+            if let Some(ref d) = app.detail {
+                if app.detail_selected >= d.work_packages.len() && !d.work_packages.is_empty() {
+                    app.detail_selected = d.work_packages.len() - 1;
+                }
+            }
+        }
+    }
+}
+
 /// Run the hub TUI.
 ///
 /// This is the entry point when `kasmos` is invoked with no subcommand.
@@ -54,6 +72,7 @@ pub async fn run() -> anyhow::Result<()> {
                     scanner_clone.scan()
                 }).await?;
                 app.update_features(features);
+                refresh_detail_if_active(&mut app);
             }
         }
 
@@ -63,6 +82,7 @@ pub async fn run() -> anyhow::Result<()> {
             let scanner_clone = scanner::FeatureScanner::new(specs_root.clone());
             let features = tokio::task::spawn_blocking(move || scanner_clone.scan()).await?;
             app.update_features(features);
+            refresh_detail_if_active(&mut app);
             app.status_message = Some("Refreshed".to_string());
         }
 

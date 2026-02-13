@@ -49,7 +49,7 @@ Contextual action available for a feature. Derived from `FeatureEntry` state, no
 | `Clarify` | `spec_status == Present` AND `plan_status == Absent` | Opens OpenCode pane with `/spec-kitty.clarify` |
 | `Plan` | `spec_status == Present` AND `plan_status == Absent` | Opens OpenCode pane with `/spec-kitty.plan` |
 | `GenerateTasks` | `plan_status == Present` AND `task_progress == NoTasks` | Opens OpenCode pane with `/spec-kitty.tasks` |
-| `StartContinuous` | `task_progress` has pending WPs AND `orchestration_status == None` | Launches `kasmos start <feature>` in new tab (continuous mode) |
+| `StartContinuous` | `task_progress` has pending WPs AND `orchestration_status` is `None` or `Completed` | Launches `kasmos start <feature>` in new tab (continuous mode) |
 | `StartWaveGated` | Same as StartContinuous | Launches `kasmos start <feature> --mode wave-gated` in new tab |
 | `Attach` | `orchestration_status == Running` | Switches to existing Zellij tab |
 | `ViewDetails` | Always available | Shows FeatureDetail view |
