@@ -1,0 +1,10 @@
+{
+  "feature_number": "010",
+  "slug": "010-hub-tui-navigator",
+  "friendly_name": "Hub TUI Navigator",
+  "mission": "software-dev",
+  "source_description": "replace 'kasmos' with no args as a new tui view that allows you to browse available feature specs, create a new one (w/ planning and task generation flow), or start implementation waves/continuous on one with WPs ready to go. the current cli output still stays the same you just get that help view with --help now. the existing tui linked to kasmos start should be able to open that view in a new tab.\n\nif started with just 'kasmos' that tui launches new tabs for whatever actions are needed (new pane for feature spec generation flow)",
+  "created_at": "2026-02-12T00:00:00Z",
+  "target_branch": "main",
+  "vcs": "git"
+}
