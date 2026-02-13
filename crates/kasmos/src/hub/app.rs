@@ -432,4 +432,122 @@ mod tests {
         let app = App::new(Vec::new(), Some("test-session".to_string()));
         assert!(!app.is_read_only());
     }
+
+    #[test]
+    fn render_list_empty_does_not_panic() {
+        let mut app = App::new(Vec::new(), None);
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| app.render(frame)).unwrap();
+    }
+
+    #[test]
+    fn render_list_with_features_does_not_panic() {
+        let features = vec![
+            dummy_feature("001", "alpha"),
+            dummy_feature("002", "bravo"),
+            dummy_feature("003", "charlie"),
+        ];
+        let mut app = App::new(features, Some("test-session".to_string()));
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| app.render(frame)).unwrap();
+    }
+
+    #[test]
+    fn render_read_only_banner_does_not_panic() {
+        let features = vec![dummy_feature("001", "alpha")];
+        let mut app = App::new(features, None); // read-only
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| app.render(frame)).unwrap();
+    }
+
+    #[test]
+    fn render_detail_view_does_not_panic() {
+        let features = vec![dummy_feature("001", "alpha")];
+        let mut app = App::new(features, None);
+        app.view = HubView::Detail { index: 0 };
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| app.render(frame)).unwrap();
+    }
+
+    #[test]
+    fn render_detail_view_out_of_bounds_does_not_panic() {
+        let features = vec![dummy_feature("001", "alpha")];
+        let mut app = App::new(features, None);
+        app.view = HubView::Detail { index: 99 };
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| app.render(frame)).unwrap();
+    }
+
+    #[test]
+    fn render_with_status_message_does_not_panic() {
+        let features = vec![dummy_feature("001", "alpha")];
+        let mut app = App::new(features, None);
+        app.status_message = Some("Refreshed".to_string());
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| app.render(frame)).unwrap();
+    }
+
+    #[test]
+    fn format_status_precedence() {
+        // Running takes precedence over everything
+        let running = FeatureEntry {
+            number: "001".into(),
+            slug: "x".into(),
+            full_slug: "001-x".into(),
+            spec_status: SpecStatus::Empty,
+            plan_status: PlanStatus::Absent,
+            task_progress: TaskProgress::NoTasks,
+            orchestration_status: OrchestrationStatus::Running,
+            feature_dir: PathBuf::from("/tmp"),
+        };
+        let span = format_status(&running);
+        assert!(span.content.contains("running"));
+
+        // Empty spec
+        let empty = FeatureEntry {
+            orchestration_status: OrchestrationStatus::None,
+            ..running.clone()
+        };
+        let span = format_status(&empty);
+        assert!(span.content.contains("empty spec"));
+
+        // No plan
+        let no_plan = FeatureEntry {
+            spec_status: SpecStatus::Present,
+            plan_status: PlanStatus::Absent,
+            ..empty.clone()
+        };
+        let span = format_status(&no_plan);
+        assert!(span.content.contains("no plan"));
+
+        // No tasks
+        let no_tasks = FeatureEntry {
+            plan_status: PlanStatus::Present,
+            ..no_plan.clone()
+        };
+        let span = format_status(&no_tasks);
+        assert!(span.content.contains("no tasks"));
+
+        // In progress
+        let in_progress = FeatureEntry {
+            task_progress: TaskProgress::InProgress { done: 2, total: 5 },
+            ..no_tasks.clone()
+        };
+        let span = format_status(&in_progress);
+        assert!(span.content.contains("2/5 done"));
+
+        // Complete
+        let complete = FeatureEntry {
+            task_progress: TaskProgress::Complete { total: 5 },
+            ..no_tasks.clone()
+        };
+        let span = format_status(&complete);
+        assert!(span.content.contains("complete"));
+    }
 }
