@@ -42,8 +42,6 @@ pub fn setup_signal_handlers(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_shutdown_flag_works() {
         use std::sync::Arc;

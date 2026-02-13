@@ -21,6 +21,8 @@ pub enum HubAction {
     /// Open OpenCode pane for spec creation.
     CreateSpec { feature_slug: String },
     /// Create a new feature (prompt for name first).
+    /// Constructed by the keybinding layer's `InputMode::NewFeaturePrompt` flow.
+    #[allow(dead_code)]
     NewFeature,
     /// Open OpenCode pane for clarification.
     Clarify { feature_slug: String },
@@ -355,26 +357,6 @@ pub async fn open_new_tab(name: &str, command: &str, args: &[&str]) -> anyhow::R
     }
 
     Ok(())
-}
-
-/// Switch to an existing "Hub" tab or create one if it doesn't exist.
-///
-/// Queries tab names, and if a tab named "Hub" exists, switches to it.
-/// Otherwise creates a new tab named "Hub".
-pub async fn open_or_switch_to_hub() -> anyhow::Result<()> {
-    let tabs = query_tab_names().await?;
-    if tabs.iter().any(|t| t == "Hub") {
-        go_to_tab("Hub").await
-    } else {
-        // Create a new Hub tab (no command -- just a shell).
-        let tab_args = ["action", "new-tab", "--name", "Hub"];
-        let output = Command::new("zellij").args(tab_args).output().await?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("zellij action new-tab (Hub) failed: {}", stderr);
-        }
-        Ok(())
-    }
 }
 
 // ---------------------------------------------------------------------------

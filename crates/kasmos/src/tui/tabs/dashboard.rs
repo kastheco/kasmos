@@ -1,7 +1,9 @@
 //! Dashboard tab rendering.
 //!
-//! Renders a kanban-style board with four lanes (Planned, Doing, For Review,
-//! Done), a progress summary bar, responsive column layout, and failure badges.
+//! Renders either a kanban-style board with four lanes (Planned, Doing,
+//! For Review, Done) or a WP dependency graph visualization, toggled by `v`.
+//! Both views include a progress summary bar, and the kanban view has
+//! responsive column layout and failure badges.
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -9,9 +11,10 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Gauge, List, ListItem, Paragraph};
 use ratatui::Frame;
 
+use crate::tui::widgets::dependency_graph::render_dependency_graph;
 use crate::types::{WPState, WorkPackage};
 
-use super::super::app::{state_to_lane, App};
+use super::super::app::{state_to_lane, App, DashboardViewMode};
 
 // ---------------------------------------------------------------------------
 // Column mode (responsive layout)
@@ -255,19 +258,42 @@ fn render_lane(
 
 /// Render the entire Dashboard tab into the given area.
 pub fn render_dashboard(app: &App, frame: &mut Frame, area: Rect) {
-    let lanes = partition_lanes(&app.run.work_packages);
-
-    // Split: progress bar (1 row) + kanban body
+    // Split: progress bar (1 row) + view mode indicator (1 row) + body
     let vertical = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
         .split(area);
 
     // Progress summary bar (FR-020)
     render_progress_bar(app, frame, vertical[0]);
 
+    // View mode indicator
+    let mode_label = match app.dashboard.view_mode {
+        DashboardViewMode::Kanban => " Kanban  [v] switch to graph",
+        DashboardViewMode::DependencyGraph => " Graph   [v] switch to kanban",
+    };
+    let mode_bar = Paragraph::new(mode_label).style(Style::default().fg(Color::DarkGray));
+    frame.render_widget(mode_bar, vertical[1]);
+
+    // Body: kanban or dependency graph
+    match app.dashboard.view_mode {
+        DashboardViewMode::Kanban => render_kanban(app, frame, vertical[2]),
+        DashboardViewMode::DependencyGraph => {
+            render_dependency_graph(&app.run, frame, vertical[2]);
+        }
+    }
+}
+
+/// Render the kanban board body.
+fn render_kanban(app: &App, frame: &mut Frame, area: Rect) {
+    let lanes = partition_lanes(&app.run.work_packages);
+
     // Responsive column layout (FR-021)
-    let column_mode = ColumnMode::from_width(vertical[1].width);
+    let column_mode = ColumnMode::from_width(area.width);
 
     match column_mode {
         ColumnMode::Full => {
@@ -280,7 +306,7 @@ pub fn render_dashboard(app: &App, frame: &mut Frame, area: Rect) {
                     Constraint::Percentage(25),
                     Constraint::Percentage(25),
                 ])
-                .split(vertical[1]);
+                .split(area);
 
             for (i, col) in cols.iter().enumerate() {
                 render_lane(
@@ -299,7 +325,7 @@ pub fn render_dashboard(app: &App, frame: &mut Frame, area: Rect) {
             let cols = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(vertical[1]);
+                .split(area);
 
             render_lane(
                 app,
@@ -321,7 +347,7 @@ pub fn render_dashboard(app: &App, frame: &mut Frame, area: Rect) {
         ColumnMode::Single => {
             // Show only the focused lane
             let lane = app.dashboard.focused_lane;
-            render_lane(app, frame, vertical[1], lane, &lanes[lane], true);
+            render_lane(app, frame, area, lane, &lanes[lane], true);
         }
     }
 }

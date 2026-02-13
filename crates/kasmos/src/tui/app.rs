@@ -89,9 +89,21 @@ pub struct Notification {
 // Per-tab state structs
 // ---------------------------------------------------------------------------
 
+/// View mode for the Dashboard tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DashboardViewMode {
+    /// Kanban board with four lanes.
+    #[default]
+    Kanban,
+    /// WP dependency graph visualization.
+    DependencyGraph,
+}
+
 /// UI state for the Dashboard tab.
 #[derive(Debug)]
 pub struct DashboardState {
+    /// Current view mode (kanban or dependency graph).
+    pub view_mode: DashboardViewMode,
     /// Which lane column is focused (0=planned, 1=doing, 2=for_review, 3=done).
     pub focused_lane: usize,
     /// Selected WP index within the focused lane.
@@ -106,6 +118,7 @@ pub struct DashboardState {
 impl Default for DashboardState {
     fn default() -> Self {
         Self {
+            view_mode: DashboardViewMode::default(),
             focused_lane: 0,
             selected_index: 0,
             scroll_offsets: [0; 4],

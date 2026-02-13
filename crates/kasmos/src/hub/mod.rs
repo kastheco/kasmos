@@ -43,49 +43,6 @@ fn build_hub_layout() -> anyhow::Result<(String, std::path::PathBuf)> {
     Ok((layout, layout_path))
 }
 
-/// Read the user's `default_tab_template` from their Zellij default layout.
-///
-/// Returns the raw text block if found, or None.
-/// Public within the crate so `main.rs` can reuse it for the start bootstrap.
-pub(crate) fn read_user_tab_template_text() -> Option<String> {
-    read_user_tab_template()
-}
-
-/// Read the user's `default_tab_template` from their Zellij default layout.
-///
-/// Returns the raw text block if found, or None.
-fn read_user_tab_template() -> Option<String> {
-    let home = std::env::var("HOME").ok()?;
-    let default_layout = std::path::PathBuf::from(home)
-        .join(".config/zellij/layouts/default.kdl");
-    let content = std::fs::read_to_string(&default_layout).ok()?;
-
-    // Extract the default_tab_template block (simple brace-matching).
-    let start = content.find("default_tab_template")?;
-    let block_start = content[start..].find('{')? + start;
-    let mut depth = 0;
-    let mut block_end = block_start;
-    for (i, ch) in content[block_start..].char_indices() {
-        match ch {
-            '{' => depth += 1,
-            '}' => {
-                depth -= 1;
-                if depth == 0 {
-                    block_end = block_start + i + 1;
-                    break;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    if block_end > block_start {
-        Some(format!("    {}", &content[start..block_end]))
-    } else {
-        None
-    }
-}
-
 /// Create or attach to the `kasmos-hub` Zellij session.
 ///
 /// If the session exists, attaches to it. Otherwise creates it with a

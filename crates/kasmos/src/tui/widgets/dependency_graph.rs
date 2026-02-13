@@ -3,6 +3,8 @@
 //! Builds a `NodeGraph` from an `OrchestrationRun`, mapping work packages to
 //! nodes and their dependency relationships to directed edges. Includes cycle
 //! detection to prevent infinite layout loops.
+//!
+//! Not yet wired into the TUI — will be used by the dependency graph tab.
 
 use std::collections::{HashMap, HashSet};
 

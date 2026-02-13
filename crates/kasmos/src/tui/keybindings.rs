@@ -12,7 +12,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::command_handlers::EngineAction;
 use crate::types::{ProgressionMode, RunState, WPState};
 
-use super::app::{state_to_lane, App, Tab};
+use super::app::{state_to_lane, App, DashboardViewMode, Tab};
 
 /// Handle a key event by dispatching to overlay, global, or tab-specific handlers.
 pub fn handle_key(app: &mut App, key: KeyEvent) {
@@ -109,6 +109,29 @@ fn wp_at_lane_index(app: &App, lane: usize, index: usize) -> Option<String> {
 
 /// Handle keys specific to the Dashboard tab.
 fn handle_dashboard_key(app: &mut App, key: KeyEvent) {
+    // 'v' toggles view mode regardless of current mode.
+    if key.code == KeyCode::Char('v') {
+        app.dashboard.view_mode = match app.dashboard.view_mode {
+            DashboardViewMode::Kanban => DashboardViewMode::DependencyGraph,
+            DashboardViewMode::DependencyGraph => DashboardViewMode::Kanban,
+        };
+        return;
+    }
+
+    // In dependency graph mode, only Enter (detail popup) and A (advance) work.
+    if app.dashboard.view_mode == DashboardViewMode::DependencyGraph {
+        match key.code {
+            KeyCode::Char('A') => {
+                if app.run.mode == ProgressionMode::WaveGated && app.run.state == RunState::Paused {
+                    let _ = app.action_tx.try_send(EngineAction::Advance);
+                }
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    // Kanban mode keys.
     let focused = app.dashboard.focused_lane;
     let count = lane_count(app, focused);
 

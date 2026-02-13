@@ -1,4 +1,7 @@
 //! Post-run summary report generation.
+//!
+//! Called by the orchestrator at run completion. Not yet wired into the
+//! binary entry point — will be integrated when the finalize command lands.
 
 use anyhow::{Context, Result};
 use std::path::Path;

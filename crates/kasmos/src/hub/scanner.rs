@@ -84,8 +84,6 @@ pub struct WPSummary {
 /// Expanded view of a single feature.
 #[derive(Debug, Clone)]
 pub struct FeatureDetail {
-    /// The feature being detailed.
-    pub feature: FeatureEntry,
     /// Individual WP states.
     pub work_packages: Vec<WPSummary>,
 }
@@ -187,7 +185,6 @@ pub fn load_detail(feature: &FeatureEntry) -> FeatureDetail {
         Ok(rd) => rd,
         Err(_) => {
             return FeatureDetail {
-                feature: feature.clone(),
                 work_packages: Vec::new(),
             };
         }
@@ -207,10 +204,7 @@ pub fn load_detail(feature: &FeatureEntry) -> FeatureDetail {
 
     wps.sort_by(|a, b| a.id.cmp(&b.id));
 
-    FeatureDetail {
-        feature: feature.clone(),
-        work_packages: wps,
-    }
+    FeatureDetail { work_packages: wps }
 }
 
 /// Parse a single WP file into a [`WPSummary`].

@@ -8,6 +8,7 @@ mod cmd;
 mod feature_arg;
 mod hub;
 mod list_specs;
+#[allow(dead_code)]
 mod report;
 mod start;
 mod status;

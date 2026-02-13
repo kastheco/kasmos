@@ -450,7 +450,6 @@ mod tests {
         app.selected = 1;
         app.view = HubView::Detail { index: 1 };
         app.detail = Some(crate::hub::scanner::FeatureDetail {
-            feature: dummy_feature("001", "a"),
             work_packages: vec![],
         });
 
@@ -467,7 +466,6 @@ mod tests {
         let mut app = App::new(features, None, true);
         app.view = HubView::Detail { index: 0 };
         app.detail = Some(crate::hub::scanner::FeatureDetail {
-            feature: dummy_feature("001", "a"),
             work_packages: vec![
                 crate::hub::scanner::WPSummary {
                     id: "WP01".into(),
@@ -574,7 +572,6 @@ mod tests {
         let mut app = App::new(features, Some("session".to_string()), true);
         app.view = HubView::Detail { index: 0 };
         app.detail = Some(crate::hub::scanner::FeatureDetail {
-            feature: make_startable_feature("001", "alpha", 3),
             work_packages: vec![],
         });
 
@@ -589,7 +586,6 @@ mod tests {
         let mut app = App::new(features, Some("session".to_string()), true);
         app.view = HubView::Detail { index: 0 };
         app.detail = Some(crate::hub::scanner::FeatureDetail {
-            feature: make_startable_feature("001", "alpha", 8),
             work_packages: vec![],
         });
 
@@ -669,7 +665,6 @@ mod tests {
         let mut app = App::new(features, None, true); // no zellij
         app.view = HubView::Detail { index: 0 };
         app.detail = Some(crate::hub::scanner::FeatureDetail {
-            feature: make_startable_feature("001", "alpha", 3),
             work_packages: vec![],
         });
 

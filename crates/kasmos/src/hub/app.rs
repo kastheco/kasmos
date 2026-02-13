@@ -763,7 +763,6 @@ mod tests {
         let mut app = App::new(features, None, true);
         app.view = HubView::Detail { index: 0 };
         app.detail = Some(FeatureDetail {
-            feature: dummy_feature("001", "alpha"),
             work_packages: vec![
                 WPSummary {
                     id: "WP01".into(),
@@ -800,7 +799,6 @@ mod tests {
         let mut app = App::new(features, None, true);
         app.view = HubView::Detail { index: 0 };
         app.detail = Some(FeatureDetail {
-            feature: dummy_feature("001", "alpha"),
             work_packages: vec![],
         });
 
@@ -816,7 +814,6 @@ mod tests {
         let features = vec![dummy_feature("001", "a")];
         let mut app = App::new(features, None, true);
         app.detail = Some(FeatureDetail {
-            feature: dummy_feature("001", "a"),
             work_packages: vec![
                 WPSummary {
                     id: "WP01".into(),
@@ -847,7 +844,6 @@ mod tests {
         let features = vec![dummy_feature("001", "a")];
         let mut app = App::new(features, None, true);
         app.detail = Some(FeatureDetail {
-            feature: dummy_feature("001", "a"),
             work_packages: vec![],
         });
 
