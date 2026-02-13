@@ -34,3 +34,6 @@ kitty-specs/**/tasks/*.md
 IMPLEMENT.md
 REVIEW.md
 HANDOFF.md
+SPEC_REVIEW_PLAN.md
+kasmos-collect.sh
+kasmos-config.sh
