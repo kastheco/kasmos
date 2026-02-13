@@ -22,6 +22,17 @@ fn default_lane() -> String {
     "planned".to_string()
 }
 
+/// Map a [`WPState`] to the spec-kitty lane string used in task file frontmatter.
+pub fn wp_state_to_lane(state: crate::types::WPState) -> &'static str {
+    use crate::types::WPState;
+    match state {
+        WPState::Completed => "done",
+        WPState::ForReview => "for_review",
+        WPState::Active => "doing",
+        WPState::Pending | WPState::Paused | WPState::Failed => "planned",
+    }
+}
+
 /// Feature directory structure containing work packages.
 pub struct FeatureDir {
     pub path: PathBuf,
@@ -119,6 +130,110 @@ pub fn parse_frontmatter(path: &Path) -> Result<WPFrontmatter, SpecParserError> 
         file: path.display().to_string(),
         reason: e.to_string(),
     })
+}
+
+/// Update the `lane` field in a WP task file's YAML frontmatter.
+///
+/// Finds the task file matching `wp_id` (e.g., "WP06") in `feature_dir/tasks/`,
+/// then rewrites its YAML frontmatter with the new lane value while preserving
+/// the rest of the file content.
+///
+/// Returns `Ok(())` if the lane was updated, or an error if the file wasn't found
+/// or couldn't be parsed. Logs a warning and returns `Ok(())` if the tasks
+/// directory doesn't exist (idempotent for tests).
+pub fn update_task_file_lane(
+    feature_dir: &Path,
+    wp_id: &str,
+    new_lane: &str,
+) -> std::result::Result<(), SpecParserError> {
+    let tasks_dir = feature_dir.join("tasks");
+    if !tasks_dir.is_dir() {
+        tracing::warn!(
+            wp_id = %wp_id,
+            dir = %tasks_dir.display(),
+            "Tasks directory not found — skipping lane write-back"
+        );
+        return Ok(());
+    }
+
+    // Find the WP file: tasks/WP<nn>-*.md
+    let wp_file = find_wp_task_file(&tasks_dir, wp_id)?;
+
+    // Read content and replace the lane in frontmatter
+    let content = std::fs::read_to_string(&wp_file)?;
+    let updated = replace_frontmatter_lane(&content, new_lane).ok_or_else(|| {
+        SpecParserError::InvalidFrontmatter {
+            file: wp_file.display().to_string(),
+            reason: "Could not locate lane field in frontmatter".into(),
+        }
+    })?;
+
+    std::fs::write(&wp_file, updated)?;
+
+    tracing::debug!(
+        wp_id = %wp_id,
+        lane = %new_lane,
+        file = %wp_file.display(),
+        "Task file lane updated"
+    );
+    Ok(())
+}
+
+/// Find the task file for a given WP ID in the tasks directory.
+fn find_wp_task_file(tasks_dir: &Path, wp_id: &str) -> std::result::Result<PathBuf, SpecParserError> {
+    for entry in std::fs::read_dir(tasks_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file()
+            && let Some(name) = path.file_name()
+            && let Some(name_str) = name.to_str()
+            && name_str.starts_with(wp_id)
+            && name_str.ends_with(".md")
+        {
+            return Ok(path);
+        }
+    }
+    Err(SpecParserError::InvalidFrontmatter {
+        file: format!("{}/{}-*.md", tasks_dir.display(), wp_id),
+        reason: format!("No task file found for {}", wp_id),
+    })
+}
+
+/// Replace the `lane:` value in YAML frontmatter, preserving everything else.
+///
+/// Handles both `lane: value` and `lane: "value"` forms.
+fn replace_frontmatter_lane(content: &str, new_lane: &str) -> Option<String> {
+    // Split on --- delimiters: parts[0] is before first ---, parts[1] is YAML, parts[2] is body
+    let parts: Vec<&str> = content.splitn(3, "---").collect();
+    if parts.len() < 3 {
+        return None;
+    }
+
+    let yaml = parts[1];
+
+    // Replace lane field using line-by-line approach to preserve formatting
+    let mut found = false;
+    let updated_yaml: String = yaml
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("lane:") {
+                found = true;
+                // Preserve leading whitespace
+                let indent = &line[..line.len() - trimmed.len()];
+                format!("{}lane: {}", indent, new_lane)
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if !found {
+        return None;
+    }
+
+    Some(format!("---{}---{}", updated_yaml, parts[2]))
 }
 
 #[cfg(test)]
@@ -245,5 +360,73 @@ work_package_id: WP03
     fn test_feature_dir_not_found() {
         let result = FeatureDir::scan(Path::new("/nonexistent/path"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_replace_frontmatter_lane() {
+        let content = "---\nwork_package_id: WP06\ntitle: Agent Pane Launch\nlane: for_review\n---\n\n# Body\n";
+        let updated = replace_frontmatter_lane(content, "done").unwrap();
+        assert!(updated.contains("lane: done"));
+        assert!(!updated.contains("lane: for_review"));
+        assert!(updated.contains("# Body"));
+        assert!(updated.contains("work_package_id: WP06"));
+    }
+
+    #[test]
+    fn test_replace_frontmatter_lane_no_lane_field() {
+        let content = "---\nwork_package_id: WP06\ntitle: Test\n---\n\n# Body\n";
+        assert!(replace_frontmatter_lane(content, "done").is_none());
+    }
+
+    #[test]
+    fn test_replace_frontmatter_lane_no_frontmatter() {
+        let content = "No frontmatter here";
+        assert!(replace_frontmatter_lane(content, "done").is_none());
+    }
+
+    #[test]
+    fn test_update_task_file_lane() {
+        let temp_dir = TempDir::new().unwrap();
+        let tasks_dir = temp_dir.path().join("tasks");
+        fs::create_dir(&tasks_dir).unwrap();
+
+        let content = "---\nwork_package_id: WP06\ntitle: Agent Pane Launch\nlane: for_review\n---\n\n# WP06\n";
+        fs::write(tasks_dir.join("WP06-agent-pane-launch.md"), content).unwrap();
+
+        update_task_file_lane(temp_dir.path(), "WP06", "done").unwrap();
+
+        let updated = fs::read_to_string(tasks_dir.join("WP06-agent-pane-launch.md")).unwrap();
+        assert!(updated.contains("lane: done"));
+        assert!(!updated.contains("lane: for_review"));
+        assert!(updated.contains("# WP06"));
+    }
+
+    #[test]
+    fn test_update_task_file_lane_missing_tasks_dir() {
+        let temp_dir = TempDir::new().unwrap();
+        // No tasks/ directory — should return Ok (idempotent)
+        let result = update_task_file_lane(temp_dir.path(), "WP01", "done");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_update_task_file_lane_file_not_found() {
+        let temp_dir = TempDir::new().unwrap();
+        let tasks_dir = temp_dir.path().join("tasks");
+        fs::create_dir(&tasks_dir).unwrap();
+
+        let result = update_task_file_lane(temp_dir.path(), "WP99", "done");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_wp_state_to_lane() {
+        use crate::types::WPState;
+        assert_eq!(wp_state_to_lane(WPState::Completed), "done");
+        assert_eq!(wp_state_to_lane(WPState::ForReview), "for_review");
+        assert_eq!(wp_state_to_lane(WPState::Active), "doing");
+        assert_eq!(wp_state_to_lane(WPState::Pending), "planned");
+        assert_eq!(wp_state_to_lane(WPState::Paused), "planned");
+        assert_eq!(wp_state_to_lane(WPState::Failed), "planned");
     }
 }

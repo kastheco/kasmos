@@ -209,7 +209,8 @@ impl WaveEngine {
 
         loop {
             // Check if aborted
-            if { let r = self.run.read().await; r.state == RunState::Aborted } {
+            let is_aborted = { let r = self.run.read().await; r.state == RunState::Aborted };
+            if is_aborted {
                 break;
             }
 
@@ -326,10 +327,10 @@ impl WaveEngine {
         }
 
         // Emit review request outside the lock
-        if let (Some(review_tx), Some(request)) = (&self.review_tx, review_request) {
-            if let Err(e) = review_tx.send(request).await {
-                tracing::error!(wp_id = %wp_id, error = %e, "Failed to send review request");
-            }
+        if let (Some(review_tx), Some(request)) = (&self.review_tx, review_request)
+            && let Err(e) = review_tx.send(request).await
+        {
+            tracing::error!(wp_id = %wp_id, error = %e, "Failed to send review request");
         }
 
         // Check for newly eligible WPs and launch them
@@ -495,7 +496,7 @@ impl WaveEngine {
                 run.work_packages
                     .iter()
                     .find(|wp| wp.id == *wp_id)
-                    .map_or(false, |wp| wp.wave <= self.current_wave)
+                    .is_some_and(|wp| wp.wave <= self.current_wave)
             });
 
         // Launch WPs that are within the approved wave
@@ -734,6 +735,8 @@ impl WaveEngine {
     pub(crate) async fn approve_wp(&mut self, wp_id: &str) -> Result<()> {
         let mut run = self.run.write().await;
 
+        let feature_dir = run.feature_dir.clone();
+
         let wp = run
             .work_packages
             .iter_mut()
@@ -748,6 +751,18 @@ impl WaveEngine {
 
         drop(run);
 
+        if let Err(e) = crate::parser::update_task_file_lane(
+            &feature_dir,
+            wp_id,
+            crate::parser::wp_state_to_lane(WPState::Completed),
+        ) {
+            tracing::warn!(
+                wp_id = %wp_id,
+                error = %e,
+                "Failed to write lane back to task file (hub may show stale state)"
+            );
+        }
+
         // Launch newly eligible WPs
         self.launch_eligible_wps_and_notify(false).await
     }
@@ -758,22 +773,42 @@ impl WaveEngine {
     pub(crate) async fn reject_wp(&mut self, wp_id: &str, relaunch: bool) -> Result<()> {
         let mut run = self.run.write().await;
 
+        let feature_dir = run.feature_dir.clone();
+
         let wp = run
             .work_packages
             .iter_mut()
             .find(|w| w.id == wp_id)
             .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.to_string() }))?;
 
+        let new_state;
         if relaunch {
             wp.state = wp.state.transition(WPState::Active, &wp.id)?;
             wp.started_at = Some(std::time::SystemTime::now());
             self.active_panes += 1;
+            new_state = WPState::Active;
             tracing::info!(wp_id = %wp.id, "WP rejected — relaunching for rework");
         } else {
             wp.state = wp.state.transition(WPState::Pending, &wp.id)?;
             wp.started_at = None;
             wp.completed_at = None;
+            new_state = WPState::Pending;
             tracing::info!(wp_id = %wp.id, "WP rejected — held in pending");
+        }
+
+        drop(run);
+
+        // Write lane back to task file so the hub (and spec-kitty) see the update.
+        if let Err(e) = crate::parser::update_task_file_lane(
+            &feature_dir,
+            wp_id,
+            crate::parser::wp_state_to_lane(new_state),
+        ) {
+            tracing::warn!(
+                wp_id = %wp_id,
+                error = %e,
+                "Failed to write lane back to task file (hub may show stale state)"
+            );
         }
 
         Ok(())
@@ -962,8 +997,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_capacity_limiting() {
-        let mut config = Config::default();
-        config.max_agent_panes = 2;
+        let config = Config { max_agent_panes: 2, ..Default::default() };
 
         let mut run_data = create_test_run(
             vec![
