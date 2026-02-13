@@ -127,8 +127,9 @@ async fn ensure_zellij_session() -> anyhow::Result<bool> {
             .args([
                 "--layout",
                 &layout_path.display().to_string(),
-                "--session",
+                "attach",
                 session_name,
+                "--create",
             ])
             .stdin(std::process::Stdio::inherit())
             .stdout(std::process::Stdio::inherit())
