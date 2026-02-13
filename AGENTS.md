@@ -2,13 +2,16 @@
 
 ## Startup checklist
 - Read `README.md` for project overview.
+- Read `.kittify/memory/` for project constitution, architecture knowledge, and workflow intelligence.
 - Check `kitty-specs/` for feature specifications.
-- This is a Rust workspace — crates live in `crates/`.
-- Primary binary: `crates/kasmos/` — the Zellij orchestrator.
+- This is a Rust workspace -- crates live in `crates/`.
+- Primary binary: `crates/kasmos/` -- the Zellij orchestrator.
 
 ## Repository layout
 - `crates/kasmos/`: Main orchestrator binary
 - `kitty-specs/`: Feature specifications (spec-kitty)
+- `.kittify/memory/`: Persistent project memory (constitution, architecture, workflow learnings)
+- `.kittify/`: spec-kitty project configuration, scripts, missions
 - `docs/`: Documentation
 
 ## Build / run commands
@@ -28,3 +31,24 @@
 - `spec-kitty`: Feature specification tool
 - `opencode`: AI coding agent (launched in Zellij panes)
 - `git`: Version control
+
+## Worktree awareness
+
+kasmos uses git worktrees at `.worktrees/<feature_slug>-<wp_id>/` for WP isolation. When modifying code that deals with file paths -- especially task file watching, file scanning, or agent CWD setup -- always consider whether the path should point to the main repo or the worktree. See `.kittify/memory/architecture.md` for the full explanation and known issues.
+
+Key rule: agents work in worktrees, so any file they modify is the worktree copy. Watchers/detectors that need to see agent changes must watch the worktree path, not the main repo path.
+
+## Zellij constraints
+
+- There is no `list-panes` or `focus-pane-by-name` CLI command (as of Zellij 0.41+).
+- Inside a Zellij session, use `zellij action <cmd>` directly (no `--session` flag).
+- Pane tracking is internal via `SessionManager` HashMap -- do not assume Zellij provides pane discovery.
+- See `.kittify/memory/architecture.md` for session layout and pane naming conventions.
+
+## Persistent memory
+
+When you discover something significant about the codebase architecture, runtime behavior, or integration quirks, record it in `.kittify/memory/`. This directory is symlinked into worktrees so all sessions share it.
+
+- `constitution.md`: Project technical standards and governance (do not modify without discussion).
+- `architecture.md`: Codebase structure, type locations, subsystem interactions, known issues.
+- `workflow-intelligence.md`: Lessons from the spec-kitty planning lifecycle.
