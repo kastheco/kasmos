@@ -245,13 +245,13 @@
 **Prompt**: `/kitty-specs/010-hub-tui-navigator/tasks/WP08-orchestration-hub-nav-polish.md`
 
 ### Included Subtasks
-- [ ] T038 Add `Alt+h` keybinding to orchestration TUI (`crates/kasmos/src/tui/keybindings.rs`) that opens/switches to hub tab (AD-005)
-- [ ] T039 Implement hub tab detection: query tab names for "hub" or "kasmos-hub", go-to if found, new-tab if not
-- [ ] T040 Handle edge case: `kitty-specs/` does not exist -- display "No kitty-specs/ directory found" message
-- [ ] T041 Handle edge case: no Zellij session -- read-only mode with warning banner for unavailable actions
-- [ ] T042 Handle edge case: feature has no WP files -- show error and suggest task generation when Start is attempted
-- [ ] T043 Handle edge case: terminal too narrow for side-by-side split -- warn or fall back to new tab for agent panes
-- [ ] T044 Polish: consistent status bar, help footer with keybinding hints, visual distinction for complete features (dimmed/checkmark)
+- [x] T038 Add `Alt+h` keybinding to orchestration TUI (`crates/kasmos/src/tui/keybindings.rs`) that opens/switches to hub tab (AD-005)
+- [x] T039 Implement hub tab detection: query tab names for "hub" or "kasmos-hub", go-to if found, new-tab if not
+- [x] T040 Handle edge case: `kitty-specs/` does not exist -- display "No kitty-specs/ directory found" message
+- [x] T041 Handle edge case: no Zellij session -- read-only mode with warning banner for unavailable actions
+- [x] T042 Handle edge case: feature has no WP files -- show error and suggest task generation when Start is attempted
+- [x] T043 Handle edge case: terminal too narrow for side-by-side split -- warn or fall back to new tab for agent panes
+- [x] T044 Polish: consistent status bar, help footer with keybinding hints, visual distinction for complete features (dimmed/checkmark)
 
 ### Implementation Notes
 - Alt+h in orchestration TUI uses inside-session Zellij commands (same as hub actions).
