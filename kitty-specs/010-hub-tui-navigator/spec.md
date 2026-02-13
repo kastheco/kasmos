@@ -5,6 +5,15 @@
 **Status**: Draft
 **Input**: Replace `kasmos` with no args as a new TUI view that allows browsing available feature specs, creating new ones (with planning and task generation flow), or starting implementation. Invert `kasmos start` to default to TUI mode. The hub TUI launches Zellij panes/tabs for actions.
 
+## Clarifications
+
+### Session 2026-02-12
+
+- Q: How does the hub distinguish "planning done but no tasks" from "no planning done"? → A: The hub follows spec-kitty's file-based workflow: `spec.md` indicates spec created, `plan.md` indicates planning done, `tasks/WPxx-*.md` files indicate tasks generated. Plan and tasks are separate phases with distinct artifacts.
+- Q: When an agent pane is already open to the right and the operator triggers another pane action, what should happen? → A: Stack — open the new pane below or beside the existing one, allowing multiple agent sessions simultaneously.
+- Q: How does the hub detect whether an orchestration session is currently running for a feature? → A: Both — check `.kasmos/run.lock` (with PID liveness) for orchestration status and progress detail, and query Zellij session list for `kasmos-<feature>` pattern to determine attach capability.
+- Q: How should the operator select between wave-gated and continuous mode when starting implementation? → A: Default to continuous (Enter), Shift+Enter for wave-gated. If the feature has more than 6 WPs and the operator presses Enter, show a confirmation dialog suggesting wave-gated before proceeding.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Browse Feature Specs (Priority: P1)
@@ -38,7 +47,7 @@ An operator selects a feature with an empty spec (or chooses "New Feature") and 
 1. **Given** the operator selects a feature with an empty spec, **When** they trigger the "Create Spec" action, **Then** a new Zellij pane opens to the right of the hub running an OpenCode controller agent session.
 2. **Given** the OpenCode agent pane is open for spec creation, **When** the operator looks at the hub on the left, **Then** the hub is still visible and interactive (not blocked or hidden).
 3. **Given** the operator selects "New Feature" (not an existing empty spec), **When** they trigger creation, **Then** they are prompted for a feature name/description before the agent pane opens.
-4. **Given** an agent pane is already open to the right, **When** the operator triggers another action that would open a pane, **Then** the existing pane is replaced or the operator is warned about the active session.
+4. **Given** an agent pane is already open to the right, **When** the operator triggers another action that would open a pane, **Then** the new pane is stacked alongside the existing one, allowing both agent sessions to run concurrently.
 5. **Given** the agent completes spec creation and the pane is closed, **When** the operator returns to the hub, **Then** the feature list refreshes and shows the newly created feature with its updated status.
 
 ---
@@ -73,7 +82,9 @@ An operator selects a feature with work packages ready (tasks generated, WPs in 
 1. **Given** the operator selects a feature with tasks in the "planned" lane, **When** they trigger "Start Implementation", **Then** a new Zellij tab is created running `kasmos start <feature>` with the orchestration TUI.
 2. **Given** implementation is started in a new tab, **When** the operator switches back to the hub tab, **Then** the hub shows the feature's status as "running" with a summary (e.g., "2/8 WPs active").
 3. **Given** an orchestration session is already running for a feature, **When** the operator selects that feature, **Then** the available action is "Attach" (switch to existing tab) rather than "Start".
-4. **Given** the operator triggers "Start" with mode selection available, **When** they choose between wave-gated and continuous mode, **Then** the orchestration starts in the selected mode.
+4. **Given** the operator triggers "Start" with Enter, **When** the feature has 6 or fewer WPs, **Then** the orchestration starts in continuous mode.
+5. **Given** the operator triggers "Start" with Shift+Enter, **When** the orchestration begins, **Then** it starts in wave-gated mode regardless of WP count.
+6. **Given** the operator triggers "Start" with Enter, **When** the feature has more than 6 WPs, **Then** a confirmation dialog appears suggesting wave-gated mode; the operator can confirm continuous or switch to wave-gated.
 
 ---
 
@@ -155,13 +166,13 @@ The hub TUI periodically refreshes feature status from disk (re-scanning `kitty-
 ### Functional Requirements
 
 - **FR-001**: When invoked with no subcommand, the system MUST launch an interactive TUI (the "hub") that displays all features found in `kitty-specs/`.
-- **FR-002**: The hub MUST display each feature's number, slug, spec status (empty/present), and task progress (no tasks / X/Y done / complete).
+- **FR-002**: The hub MUST display each feature's number, slug, spec status (empty/present), plan status (absent/present), and task progress (no tasks / X/Y done / complete).
 - **FR-003**: The hub MUST allow the operator to select a feature and view its details, including individual work package lane status, dependencies, and wave assignments.
 - **FR-004**: The hub MUST provide a "Create Spec" action for features with empty specs that opens a Zellij pane to the right of the hub running an OpenCode controller agent session.
 - **FR-005**: The hub MUST provide a "New Feature" action that prompts for a feature name/description and then opens an OpenCode agent pane for spec creation.
-- **FR-006**: The hub MUST provide "Plan" and "Generate Tasks" actions for features with specs but no tasks, opening an OpenCode agent pane to the right of the hub.
-- **FR-007**: The hub MUST provide a "Start Implementation" action for features with ready work packages that launches `kasmos start <feature>` in a new Zellij tab.
-- **FR-008**: The hub MUST provide an "Attach" action for features with active orchestration sessions that switches to the existing Zellij tab.
+- **FR-006**: The hub MUST provide a "Plan" action for features with a spec but no `plan.md`, and a "Generate Tasks" action for features with a `plan.md` but no WP files in `tasks/`, each opening an OpenCode agent pane to the right of the hub.
+- **FR-007**: The hub MUST provide a "Start Implementation" action for features with ready work packages that launches `kasmos start <feature>` in a new Zellij tab. Enter defaults to continuous mode; Shift+Enter starts in wave-gated mode. When the feature has more than 6 WPs and the operator presses Enter, the hub MUST show a confirmation dialog recommending wave-gated mode before proceeding.
+- **FR-008**: The hub MUST provide an "Attach" action for features with active orchestration sessions — detected via `.kasmos/run.lock` (PID liveness) for status and Zellij session listing (`kasmos-<feature>`) for attach capability — that switches to the existing Zellij tab.
 - **FR-009**: The hub MUST remain visible and interactive when agent panes are opened to its right.
 - **FR-010**: The hub MUST periodically refresh feature status from disk and support manual refresh via keybinding.
 - **FR-011**: The `kasmos start <feature>` command MUST default to TUI mode (previously required `--tui` flag).
@@ -171,7 +182,7 @@ The hub TUI periodically refreshes feature status from disk (re-scanning `kitty-
 - **FR-015**: The orchestration TUI MUST provide a keybinding to open the hub TUI in a new Zellij tab.
 - **FR-016**: The hub MUST support keyboard-only operation with vim-style navigation (j/k for up/down, Enter for select/action, Esc for back, Alt+q to quit).
 - **FR-017**: The hub MUST detect when it is running outside a Zellij session and operate in read-only mode with appropriate warnings for unavailable pane/tab actions.
-- **FR-018**: When an agent pane to the right is already active, triggering another pane action MUST either replace the existing pane or warn the operator.
+- **FR-018**: When an agent pane to the right is already active, triggering another pane action MUST stack the new pane alongside the existing one (below or beside), allowing multiple concurrent agent sessions.
 - **FR-019**: All existing subcommands (list, start, status, cmd, attach, stop) MUST continue to function identically.
 
 ### Non-Functional Requirements
@@ -183,10 +194,10 @@ The hub TUI periodically refreshes feature status from disk (re-scanning `kitty-
 
 ### Key Entities
 
-- **FeatureEntry**: A feature discovered in `kitty-specs/`. Has `number`, `slug`, `spec_status` (empty/present), `task_progress` (no tasks / done_count/total_count / complete), and `orchestration_status` (none/running/completed).
+- **FeatureEntry**: A feature discovered in `kitty-specs/`. Has `number`, `slug`, `spec_status` (empty/present), `plan_status` (absent/present — detected by `plan.md` existence), `task_progress` (no tasks / done_count/total_count / complete), and `orchestration_status` (none/running/completed — detected via `.kasmos/run.lock` PID liveness and Zellij session listing).
 - **FeatureDetail**: Expanded view of a feature. Includes the list of work packages with their lane, dependencies, and wave assignment.
 - **HubAction**: A contextual action available for a feature based on its state: CreateSpec, NewFeature, Plan, GenerateTasks, StartImplementation, Attach, ViewDetails.
-- **AgentPane**: A Zellij pane opened to the right of the hub for spec creation, planning, or task generation. Tracked by the hub to prevent duplicate panes.
+- **AgentPane**: A Zellij pane opened to the right of the hub for spec creation, planning, or task generation. Multiple agent panes can be stacked concurrently.
 
 ## Success Criteria *(mandatory)*
 
@@ -208,6 +219,6 @@ The hub TUI periodically refreshes feature status from disk (re-scanning `kitty-
 - OpenCode is available in PATH for agent session panes. The hub shows an error if OpenCode is not found when an agent action is triggered.
 - The `kitty-specs/` directory structure follows the established convention: `<NNN>-<slug>/spec.md` for specs, `<NNN>-<slug>/tasks/WPxx-*.md` for work packages.
 - spec-kitty slash commands (`/spec-kitty.specify`, `/spec-kitty.plan`, `/spec-kitty.tasks`) are available to the OpenCode agent sessions.
-- The hub does not need to parse spec.md content beyond checking its existence and non-emptiness. Detailed spec content is the agent's domain.
+- The hub detects feature lifecycle state by checking file existence: `spec.md` (non-empty) for spec, `plan.md` for plan, `tasks/WPxx-*.md` for tasks. It does not parse file content beyond WP frontmatter for lane status.
 - Periodic refresh interval defaults to 5 seconds and is not user-configurable in the initial version.
 - The "New Feature" prompt for feature name/description is a simple inline input field in the hub, not a multi-step wizard.
