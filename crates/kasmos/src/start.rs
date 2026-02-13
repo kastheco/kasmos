@@ -471,20 +471,24 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
 
     // ── Wave launch event handler ────────────────────────────────
     //
-    // When the engine launches a new wave, this task creates one Zellij tab
-    // per work package in the current session. Each tab runs the agent
-    // (opencode) with the WP's prompt file, in the WP's worktree directory.
+    // When the engine launches a wave, this task creates a single "agents"
+    // tab in the current Zellij session containing all the wave's WP panes
+    // in a grid layout. Result: Tab 1 = TUI dashboard, Tab 2 = agents.
     let wave_run_arc = run_arc.clone();
     let wave_kasmos_dir = kasmos_dir.clone();
+    let wave_config = config.clone();
+    let wave_feature_dir = feature_dir.clone();
     let _wave_handler = tokio::spawn(async move {
+        let layout_gen = kasmos::LayoutGenerator::new(&wave_config);
+
         while let Some(event) = launch_rx.recv().await {
             tracing::info!(
                 wave = event.wave_index,
                 wps = ?event.wp_ids,
-                "Wave launch — creating agent tabs"
+                "Wave launch — creating agents tab"
             );
 
-            // Collect WP data
+            // Collect WP data for the layout
             let wp_data: Vec<kasmos::WorkPackage> = {
                 let run = wave_run_arc.read().await;
                 event
@@ -494,78 +498,73 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
                     .collect()
             };
 
-            // Create one tab per WP in the current Zellij session.
-            for wp in &wp_data {
-                let tab_name = wp.id.clone();
-                let script_path = wave_kasmos_dir
-                    .join("scripts")
-                    .join(format!("{}.sh", wp.id));
-
-                if !script_path.exists() {
-                    tracing::error!(wp_id = %wp.id, "Script not found: {}", script_path.display());
-                    continue;
-                }
-
-                // Determine working directory: worktree if available, else feature dir.
-                let cwd = wp
-                    .worktree_path
-                    .as_deref()
-                    .unwrap_or_else(|| wp.prompt_path.as_ref().map(|p| p.parent().unwrap().parent().unwrap().parent().unwrap()).unwrap_or(std::path::Path::new(".")));
-
-                // Create new tab
-                let tab_result = tokio::process::Command::new("zellij")
-                    .args(["action", "new-tab", "--name", &tab_name])
-                    .output()
-                    .await;
-
-                if let Err(e) = &tab_result {
-                    tracing::error!(wp_id = %wp.id, "Failed to create tab: {}", e);
-                    continue;
-                }
-                if let Ok(ref out) = tab_result {
-                    if !out.status.success() {
-                        tracing::error!(wp_id = %wp.id, "Tab creation failed: {}", String::from_utf8_lossy(&out.stderr));
-                        continue;
-                    }
-                }
-
-                // Run the agent script in the new (now-focused) tab
-                let run_result = tokio::process::Command::new("zellij")
-                    .args([
-                        "run",
-                        "--cwd",
-                        &cwd.display().to_string(),
-                        "--",
-                        "bash",
-                        &script_path.display().to_string(),
-                    ])
-                    .output()
-                    .await;
-
-                match run_result {
-                    Ok(out) if out.status.success() => {
-                        tracing::info!(wp_id = %wp.id, tab = %tab_name, "Agent tab created");
-                    }
-                    Ok(out) => {
-                        tracing::error!(wp_id = %wp.id, "zellij run failed: {}", String::from_utf8_lossy(&out.stderr));
-                    }
-                    Err(e) => {
-                        tracing::error!(wp_id = %wp.id, "Failed to run agent: {}", e);
-                    }
-                }
-
-                // Switch back to the TUI tab (tab index 1) so the user stays on the dashboard
-                let _ = tokio::process::Command::new("zellij")
-                    .args(["action", "go-to-tab", "1"])
-                    .output()
-                    .await;
+            if wp_data.is_empty() {
+                tracing::warn!(wave = event.wave_index, "No WP data found for wave launch");
+                continue;
             }
 
-            tracing::info!(
-                wave = event.wave_index,
-                count = wp_data.len(),
-                "Agent tabs created for wave"
-            );
+            // Generate a grid layout for all WPs in this wave
+            let wp_refs: Vec<&kasmos::WorkPackage> = wp_data.iter().collect();
+            let wave_layout = match layout_gen.generate_wave_tab(&wp_refs, &wave_feature_dir) {
+                Ok(doc) => doc,
+                Err(e) => {
+                    tracing::error!("Failed to generate agents layout: {}", e);
+                    continue;
+                }
+            };
+
+            let wave_layout_path = match layout_gen.write_wave_layout(
+                &wave_layout,
+                &wave_kasmos_dir,
+                event.wave_index,
+            ) {
+                Ok(path) => path,
+                Err(e) => {
+                    tracing::error!("Failed to write agents layout: {}", e);
+                    continue;
+                }
+            };
+
+            // Create the agents tab with the grid layout
+            let tab_name = format!("agents-w{}", event.wave_index);
+            let result = tokio::process::Command::new("zellij")
+                .args([
+                    "action",
+                    "new-tab",
+                    "--layout",
+                    &wave_layout_path.display().to_string(),
+                    "--name",
+                    &tab_name,
+                ])
+                .output()
+                .await;
+
+            match result {
+                Ok(out) if out.status.success() => {
+                    tracing::info!(
+                        wave = event.wave_index,
+                        tab = %tab_name,
+                        panes = wp_data.len(),
+                        "Agents tab created"
+                    );
+                }
+                Ok(out) => {
+                    tracing::error!(
+                        wave = event.wave_index,
+                        "Failed to create agents tab: {}",
+                        String::from_utf8_lossy(&out.stderr)
+                    );
+                }
+                Err(e) => {
+                    tracing::error!(wave = event.wave_index, "Failed to run zellij: {}", e);
+                }
+            }
+
+            // Switch back to the TUI tab so the user stays on the dashboard
+            let _ = tokio::process::Command::new("zellij")
+                .args(["action", "go-to-tab", "1"])
+                .output()
+                .await;
         }
         tracing::debug!("Wave launch handler exiting");
     });
