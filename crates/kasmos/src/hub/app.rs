@@ -389,7 +389,7 @@ impl App {
 
                 let table = Table::new(rows, widths)
                     .header(header_row)
-                    .highlight_style(
+                    .row_highlight_style(
                         Style::default()
                             .bg(Color::DarkGray)
                             .add_modifier(Modifier::BOLD),

@@ -11,6 +11,16 @@ struct WpFrontmatter {
     lane: Option<String>,
 }
 
+/// Extended frontmatter for detail view parsing.
+#[derive(serde::Deserialize)]
+struct DetailFrontmatter {
+    work_package_id: Option<String>,
+    title: Option<String>,
+    lane: Option<String>,
+    #[serde(default)]
+    dependencies: Option<Vec<String>>,
+}
+
 // ---------------------------------------------------------------------------
 // Status types
 // ---------------------------------------------------------------------------
@@ -53,6 +63,28 @@ pub enum OrchestrationStatus {
     Running,
     /// No live process but Zellij session exists (EXITED state).
     Completed,
+}
+
+/// Summary of a single work package, parsed from WP frontmatter.
+#[derive(Debug, Clone)]
+pub struct WPSummary {
+    /// e.g., "WP01"
+    pub id: String,
+    /// WP title for display.
+    pub title: String,
+    /// planned / doing / for_review / done
+    pub lane: String,
+    /// WP IDs this depends on.
+    pub dependencies: Vec<String>,
+}
+
+/// Expanded view of a single feature.
+#[derive(Debug, Clone)]
+pub struct FeatureDetail {
+    /// The feature being detailed.
+    pub feature: FeatureEntry,
+    /// Individual WP states.
+    pub work_packages: Vec<WPSummary>,
 }
 
 /// A feature discovered in `kitty-specs/`.
@@ -139,6 +171,107 @@ impl FeatureScanner {
 
         features.sort_by(|a, b| a.number.cmp(&b.number));
         features
+    }
+}
+
+/// Load detailed WP information for a single feature.
+///
+/// Scans `feature.feature_dir/tasks/` for `WP*.md` files, parses extended
+/// frontmatter, and returns a sorted list of WP summaries.
+pub fn load_detail(feature: &FeatureEntry) -> FeatureDetail {
+    let tasks_dir = feature.feature_dir.join("tasks");
+    let rd = match std::fs::read_dir(&tasks_dir) {
+        Ok(rd) => rd,
+        Err(_) => {
+            return FeatureDetail {
+                feature: feature.clone(),
+                work_packages: Vec::new(),
+            };
+        }
+    };
+
+    let mut wps: Vec<WPSummary> = rd
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let name = e.file_name();
+            let Some(name_str) = name.to_str() else {
+                return false;
+            };
+            name_str.starts_with("WP") && name_str.ends_with(".md")
+        })
+        .map(|e| parse_wp_summary(&e.path(), &e.file_name()))
+        .collect();
+
+    wps.sort_by(|a, b| a.id.cmp(&b.id));
+
+    FeatureDetail {
+        feature: feature.clone(),
+        work_packages: wps,
+    }
+}
+
+/// Parse a single WP file into a [`WPSummary`].
+fn parse_wp_summary(path: &Path, filename: &std::ffi::OsStr) -> WPSummary {
+    let fallback_id = filename
+        .to_str()
+        .and_then(|s| s.strip_suffix(".md"))
+        .unwrap_or("WP??")
+        .to_string();
+
+    // Derive a fallback title from the filename: "WP01-setup.md" -> "setup"
+    let fallback_title = filename
+        .to_str()
+        .and_then(|s| s.strip_suffix(".md"))
+        .and_then(|s| s.split_once('-').map(|(_, rest)| rest.replace('-', " ")))
+        .unwrap_or_else(|| fallback_id.clone());
+
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => {
+            return WPSummary {
+                id: fallback_id,
+                title: fallback_title,
+                lane: "planned".to_string(),
+                dependencies: Vec::new(),
+            };
+        }
+    };
+
+    let Some(body) = content.strip_prefix("---") else {
+        return WPSummary {
+            id: fallback_id,
+            title: fallback_title,
+            lane: "planned".to_string(),
+            dependencies: Vec::new(),
+        };
+    };
+
+    let Some(end) = body.find("\n---") else {
+        return WPSummary {
+            id: fallback_id,
+            title: fallback_title,
+            lane: "planned".to_string(),
+            dependencies: Vec::new(),
+        };
+    };
+
+    let fm: DetailFrontmatter = match serde_yml::from_str(&body[..end]) {
+        Ok(fm) => fm,
+        Err(_) => {
+            return WPSummary {
+                id: fallback_id,
+                title: fallback_title,
+                lane: "planned".to_string(),
+                dependencies: Vec::new(),
+            };
+        }
+    };
+
+    WPSummary {
+        id: fm.work_package_id.unwrap_or(fallback_id),
+        title: fm.title.unwrap_or(fallback_title),
+        lane: fm.lane.unwrap_or_else(|| "planned".to_string()),
+        dependencies: fm.dependencies.unwrap_or_default(),
     }
 }
 
@@ -541,5 +674,125 @@ mod tests {
             TaskProgress::InProgress { done: 1, total: 2 }
         );
         assert_eq!(f.orchestration_status, OrchestrationStatus::None);
+    }
+
+    // -- load_detail --
+
+    fn detail_frontmatter(id: &str, title: &str, lane: &str, deps: &[&str]) -> String {
+        let deps_str = if deps.is_empty() {
+            String::new()
+        } else {
+            let items: Vec<String> = deps.iter().map(|d| format!("- {d}")).collect();
+            format!("dependencies:\n{}", items.join("\n"))
+        };
+        format!("---\nwork_package_id: {id}\ntitle: \"{title}\"\nlane: {lane}\n{deps_str}\n---\n# {title}")
+    }
+
+    fn dummy_feature_entry(dir: &Path, name: &str) -> FeatureEntry {
+        let (number, slug) = name.split_once('-').unwrap();
+        FeatureEntry {
+            number: number.to_string(),
+            slug: slug.to_string(),
+            full_slug: name.to_string(),
+            spec_status: SpecStatus::Present,
+            plan_status: PlanStatus::Present,
+            task_progress: TaskProgress::NoTasks,
+            orchestration_status: OrchestrationStatus::None,
+            feature_dir: dir.to_path_buf(),
+        }
+    }
+
+    #[test]
+    fn load_detail_with_wp_files() {
+        let fix = TestFixture::new();
+        let dir = fix.add_feature("001-alpha");
+        let tasks = dir.join("tasks");
+        std::fs::create_dir_all(&tasks).unwrap();
+        std::fs::write(
+            tasks.join("WP01-setup.md"),
+            detail_frontmatter("WP01", "Setup", "done", &[]),
+        )
+        .unwrap();
+        std::fs::write(
+            tasks.join("WP02-impl.md"),
+            detail_frontmatter("WP02", "Implementation", "doing", &["WP01"]),
+        )
+        .unwrap();
+
+        let feature = dummy_feature_entry(&dir, "001-alpha");
+        let detail = load_detail(&feature);
+
+        assert_eq!(detail.work_packages.len(), 2);
+        assert_eq!(detail.work_packages[0].id, "WP01");
+        assert_eq!(detail.work_packages[0].title, "Setup");
+        assert_eq!(detail.work_packages[0].lane, "done");
+        assert!(detail.work_packages[0].dependencies.is_empty());
+
+        assert_eq!(detail.work_packages[1].id, "WP02");
+        assert_eq!(detail.work_packages[1].title, "Implementation");
+        assert_eq!(detail.work_packages[1].lane, "doing");
+        assert_eq!(detail.work_packages[1].dependencies, vec!["WP01"]);
+    }
+
+    #[test]
+    fn load_detail_no_tasks_dir() {
+        let fix = TestFixture::new();
+        let dir = fix.add_feature("001-alpha");
+        // No tasks/ directory at all
+
+        let feature = dummy_feature_entry(&dir, "001-alpha");
+        let detail = load_detail(&feature);
+
+        assert!(detail.work_packages.is_empty());
+    }
+
+    #[test]
+    fn load_detail_malformed_frontmatter_uses_defaults() {
+        let fix = TestFixture::new();
+        let dir = fix.add_feature("001-alpha");
+        let tasks = dir.join("tasks");
+        std::fs::create_dir_all(&tasks).unwrap();
+        // No frontmatter delimiters
+        std::fs::write(tasks.join("WP01-setup.md"), "no frontmatter here").unwrap();
+
+        let feature = dummy_feature_entry(&dir, "001-alpha");
+        let detail = load_detail(&feature);
+
+        assert_eq!(detail.work_packages.len(), 1);
+        assert_eq!(detail.work_packages[0].id, "WP01-setup");
+        assert_eq!(detail.work_packages[0].title, "setup");
+        assert_eq!(detail.work_packages[0].lane, "planned");
+        assert!(detail.work_packages[0].dependencies.is_empty());
+    }
+
+    #[test]
+    fn load_detail_wps_sorted_by_id() {
+        let fix = TestFixture::new();
+        let dir = fix.add_feature("001-alpha");
+        let tasks = dir.join("tasks");
+        std::fs::create_dir_all(&tasks).unwrap();
+        std::fs::write(
+            tasks.join("WP03-last.md"),
+            detail_frontmatter("WP03", "Last", "planned", &[]),
+        )
+        .unwrap();
+        std::fs::write(
+            tasks.join("WP01-first.md"),
+            detail_frontmatter("WP01", "First", "done", &[]),
+        )
+        .unwrap();
+        std::fs::write(
+            tasks.join("WP02-middle.md"),
+            detail_frontmatter("WP02", "Middle", "doing", &[]),
+        )
+        .unwrap();
+
+        let feature = dummy_feature_entry(&dir, "001-alpha");
+        let detail = load_detail(&feature);
+
+        assert_eq!(detail.work_packages.len(), 3);
+        assert_eq!(detail.work_packages[0].id, "WP01");
+        assert_eq!(detail.work_packages[1].id, "WP02");
+        assert_eq!(detail.work_packages[2].id, "WP03");
     }
 }
