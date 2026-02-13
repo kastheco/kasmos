@@ -18,7 +18,7 @@
 
 ### Included Subtasks
 - [x] T001 Add `mod tui_preview;` declaration and `Tui` variant to `Commands` enum in `crates/kasmos/src/main.rs`
-- [ ] T002 Add match arm for `Commands::Tui { count }` in `main()` calling `tui_preview::run(count)`
+- [x] T002 Add match arm for `Commands::Tui { count }` in `main()` calling `tui_preview::run(count)`
 - [ ] T003 Update `after_help` text in `crates/kasmos/src/main.rs` to document `kasmos tui`
 - [ ] T004 Create `crates/kasmos/src/tui_preview.rs` with `pub async fn run(count: usize)` entry point
 - [ ] T005 Implement `fn generate_mock_run(count: usize) -> OrchestrationRun` in `crates/kasmos/src/tui_preview.rs`
