@@ -21,7 +21,7 @@
 - [x] T002 Add match arm for `Commands::Tui { count }` in `main()` calling `tui_preview::run(count)`
 - [x] T003 Update `after_help` text in `crates/kasmos/src/main.rs` to document `kasmos tui`
 - [x] T004 Create `crates/kasmos/src/tui_preview.rs` with `pub async fn run(count: usize)` entry point
-- [ ] T005 Implement `fn generate_mock_run(count: usize) -> OrchestrationRun` in `crates/kasmos/src/tui_preview.rs`
+- [x] T005 Implement `fn generate_mock_run(count: usize) -> OrchestrationRun` in `crates/kasmos/src/tui_preview.rs`
 - [ ] T006 Implement `async fn animation_loop(...)` in `crates/kasmos/src/tui_preview.rs`
 
 ### Implementation Notes
