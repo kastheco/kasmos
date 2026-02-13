@@ -1,0 +1,21 @@
+{
+  "accept_commit": null,
+  "acceptance_history": [
+    {
+      "accepted_at": "2026-02-13T01:40:34Z",
+      "accepted_by": "claude-opus-4-6",
+      "accepted_from_commit": "dea8fd43b04125c05b9ec96e87815220c8d0b1ed",
+      "branch": "master",
+      "mode": "local",
+      "validation_commands": [
+        "cargo build -p kasmos",
+        "cargo test -p kasmos",
+        "cargo install --path crates/kasmos --force"
+      ]
+    }
+  ],
+  "acceptance_mode": "local",
+  "accepted_at": "2026-02-13T01:40:34Z",
+  "accepted_by": "claude-opus-4-6",
+  "accepted_from_commit": "dea8fd43b04125c05b9ec96e87815220c8d0b1ed"
+}
