@@ -95,7 +95,11 @@ enum Commands {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let _ = kasmos::init_logging(false);
+    // Skip headless logging init for TUI command — tui::run() sets up its own
+    // TUI-mode tracing subscriber, and the global subscriber can only be set once.
+    if !matches!(cli.command, Commands::Tui { .. }) {
+        let _ = kasmos::init_logging(false);
+    }
 
     match cli.command {
         Commands::List => {
