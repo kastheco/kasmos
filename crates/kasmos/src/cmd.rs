@@ -40,6 +40,8 @@ pub enum FifoCommand {
     Abort,
     /// Confirm wave advancement (wave-gated mode)
     Advance,
+    /// Mark orchestration as completed and finalize state
+    Finalize,
     /// Skip failed WP and unblock dependents
     ForceAdvance {
         /// Work package ID (example: WP02)
@@ -75,6 +77,7 @@ impl FifoCommand {
             Self::Zoom { wp_id } => format!("zoom {wp_id}"),
             Self::Abort => "abort".to_string(),
             Self::Advance => "advance".to_string(),
+            Self::Finalize => "finalize".to_string(),
             Self::ForceAdvance { wp_id } => format!("force-advance {wp_id}"),
             Self::Retry { wp_id } => format!("retry {wp_id}"),
             Self::Approve { wp_id } => format!("approve {wp_id}"),
@@ -242,6 +245,7 @@ mod tests {
                 },
                 "retry WP07",
             ),
+            (FifoCommand::Finalize, "finalize"),
             (FifoCommand::Help, "help"),
         ];
 

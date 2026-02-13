@@ -27,6 +27,8 @@ pub enum ControllerCommand {
     Abort,
     /// Confirm wave advancement (wave-gated mode).
     Advance,
+    /// Mark orchestration as completed and finalize state.
+    Finalize,
     /// Skip a failed work package and unblock dependents.
     ForceAdvance { wp_id: String },
     /// Re-run a failed work package from scratch.
@@ -238,6 +240,14 @@ impl CommandReader {
                 }
                 Ok(ControllerCommand::Advance)
             }
+            "finalize" => {
+                if parts.len() != 1 {
+                    return Err(crate::error::KasmosError::Other(anyhow::anyhow!(
+                        "Usage: finalize"
+                    )));
+                }
+                Ok(ControllerCommand::Finalize)
+            }
             "force-advance" => {
                 if parts.len() != 2 {
                     return Err(crate::error::KasmosError::Other(anyhow::anyhow!(
@@ -327,6 +337,7 @@ pub fn command_help_text() -> &'static str {
   zoom <WP_ID>          - Focus and zoom a work package pane
   abort                 - Gracefully shutdown the entire orchestration
   advance               - Confirm wave advancement (wave-gated mode)
+  finalize              - Mark orchestration as completed and finalize state
   force-advance <WP_ID> - Skip a failed work package, unblock dependents
   retry <WP_ID>         - Re-run a failed work package from scratch
   approve <WP_ID>       - Approve a work package in review (mark as done)
@@ -431,6 +442,22 @@ mod tests {
             ControllerCommand::Retry { wp_id } => assert_eq!(wp_id, "WP07"),
             _ => panic!("Expected Retry command"),
         }
+    }
+
+    #[test]
+    fn test_parse_finalize_command() {
+        let cmd = CommandReader::parse_command("finalize").unwrap();
+        match cmd {
+            ControllerCommand::Finalize => (),
+            _ => panic!("Expected Finalize command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_finalize_with_extra_args() {
+        let result = CommandReader::parse_command("finalize now");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Usage: finalize"));
     }
 
     #[test]

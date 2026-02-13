@@ -28,6 +28,8 @@ pub enum EngineAction {
     Advance,
     /// Gracefully abort the entire orchestration.
     Abort,
+    /// Mark orchestration as completed and finalize state.
+    Finalize,
     /// Approve a reviewed work package (ForReview → Completed).
     Approve(String),
     /// Reject a reviewed work package.
@@ -120,6 +122,13 @@ impl<S: SessionController> CommandHandler<S> {
                     .await
                     .map_err(|e| crate::error::KasmosError::Other(anyhow::anyhow!(e)))?;
                 Ok("[kasmos] Advancing to next wave...".to_string())
+            }
+            ControllerCommand::Finalize => {
+                self.engine_tx
+                    .send(EngineAction::Finalize)
+                    .await
+                    .map_err(|e| crate::error::KasmosError::Other(anyhow::anyhow!(e)))?;
+                Ok("[kasmos] Finalizing orchestration...".to_string())
             }
             ControllerCommand::ForceAdvance { wp_id } => {
                 self.engine_tx
@@ -462,6 +471,26 @@ mod tests {
         match action.unwrap() {
             EngineAction::Advance => (),
             _ => panic!("Expected Advance action"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_finalize_command() {
+        let (tx, mut rx) = mpsc::channel(10);
+        let run = Arc::new(RwLock::new(create_test_run()));
+        let session = Arc::new(MockSessionController::new());
+        let handler = CommandHandler::new(run, session, tx);
+
+        let result = handler.handle(ControllerCommand::Finalize).await;
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("Finalizing"));
+
+        let action = rx.recv().await;
+        assert!(action.is_some());
+        match action.unwrap() {
+            EngineAction::Finalize => (),
+            _ => panic!("Expected Finalize action"),
         }
     }
 

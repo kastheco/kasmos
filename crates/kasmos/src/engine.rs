@@ -362,6 +362,12 @@ impl WaveEngine {
                 self.persist_state().await;
                 return Ok(());
             }
+            EngineAction::Finalize => {
+                self.finalize_run().await?;
+                self.persist_state().await;
+                self.broadcast_state().await;
+                return Ok(());
+            }
             EngineAction::Approve(wp_id) => {
                 self.approve_wp(&wp_id).await?;
             }
@@ -522,6 +528,39 @@ impl WaveEngine {
         drop(run);
 
         self.launch_eligible_wps_and_notify(false).await
+    }
+
+    /// Finalize the orchestration run, marking all completed WPs and the run itself as done.
+    ///
+    /// This is used when all work packages have been merged to the target branch
+    /// and the operator wants to close out the run. Any active WPs are marked completed,
+    /// all waves are marked completed, and the run state is set to Completed.
+    async fn finalize_run(&mut self) -> Result<()> {
+        let mut run = self.run.write().await;
+        let now = std::time::SystemTime::now();
+
+        // Mark any non-terminal WPs as completed
+        for wp in &mut run.work_packages {
+            if !matches!(wp.state, WPState::Completed | WPState::Failed) {
+                wp.state = WPState::Completed;
+                wp.completed_at = Some(now);
+                wp.completion_method = Some(CompletionMethod::Manual);
+                tracing::info!(wp_id = %wp.id, "Finalized WP as completed");
+            }
+        }
+
+        // Mark all waves as completed
+        for wave in &mut run.waves {
+            wave.state = crate::types::WaveState::Completed;
+        }
+
+        // Mark the run itself as completed
+        run.state = RunState::Completed;
+        run.completed_at = Some(now);
+
+        tracing::info!("Orchestration finalized by operator");
+
+        Ok(())
     }
 
     /// Launch a single work package.
