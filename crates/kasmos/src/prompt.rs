@@ -55,6 +55,8 @@ pub struct PromptContext {
     pub feature_name: String,
     /// Path to the feature directory.
     pub feature_dir: PathBuf,
+    /// Path to the WP task file (for completion signalling).
+    pub task_file: Option<PathBuf>,
 }
 
 impl PromptContext {
@@ -115,6 +117,24 @@ impl PromptContext {
             out.push_str("## Project Agent Instructions\n\n");
             out.push_str(agents);
             out.push_str("\n\n");
+        }
+
+        // Completion signal
+        if let Some(task_file) = &self.task_file {
+            out.push_str("## Completion Signal\n\n");
+            out.push_str("When you have finished ALL subtasks and verified your work (tests pass, build succeeds),\n");
+            out.push_str("update the task file frontmatter to signal completion:\n\n");
+            out.push_str(&format!("**File**: `{}`\n\n", task_file.display()));
+            out.push_str("Change the `lane` field from `doing` to `for_review`:\n\n");
+            out.push_str("```yaml\n");
+            out.push_str("---\n");
+            out.push_str(&format!("work_package_id: {}\n", self.wp_id));
+            out.push_str(&format!("title: {}\n", self.wp_title));
+            out.push_str("lane: for_review    # <-- change this from 'doing' to 'for_review'\n");
+            out.push_str("---\n");
+            out.push_str("```\n\n");
+            out.push_str("This signals the orchestrator that your work is ready for review.\n");
+            out.push_str("Do NOT set lane to 'done' — that happens after review passes.\n\n");
         }
 
         out
@@ -209,7 +229,25 @@ impl PromptGenerator {
             agents_md: self.agents_md.clone(),
             feature_name: "001-zellij-agent-orchestrator".to_string(),
             feature_dir: self.feature_dir.clone(),
+            task_file: self.find_task_file(&wp.id),
         }
+    }
+
+    /// Find the task file for a given WP ID in the feature's tasks/ directory.
+    fn find_task_file(&self, wp_id: &str) -> Option<PathBuf> {
+        let tasks_dir = self.feature_dir.join("tasks");
+        if !tasks_dir.exists() {
+            return None;
+        }
+        let entries = std::fs::read_dir(&tasks_dir).ok()?;
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.starts_with(wp_id) && name_str.ends_with(".md") {
+                return Some(entry.path());
+            }
+        }
+        None
     }
 
     /// Generate and write prompt files for all work packages.
@@ -316,6 +354,7 @@ mod tests {
             agents_md: Some("# Agent Instructions\n\nFollow these rules.".to_string()),
             feature_name: "001-zellij-agent-orchestrator".to_string(),
             feature_dir: PathBuf::from("/tmp"),
+            task_file: None,
         };
 
         let rendered = ctx.render();
@@ -342,6 +381,7 @@ mod tests {
             agents_md: None,
             feature_name: "001-zellij-agent-orchestrator".to_string(),
             feature_dir: PathBuf::from("/tmp"),
+            task_file: None,
         };
 
         let rendered = ctx.render();
@@ -367,6 +407,7 @@ mod tests {
             agents_md: None,
             feature_name: "001-zellij-agent-orchestrator".to_string(),
             feature_dir: PathBuf::from("/tmp"),
+            task_file: None,
         };
 
         let rendered = ctx.render();
@@ -405,6 +446,7 @@ mod tests {
             agents_md: None,
             feature_name: "001-zellij-agent-orchestrator".to_string(),
             feature_dir: PathBuf::from("/tmp"),
+            task_file: None,
         };
 
         let rendered = ctx.render();

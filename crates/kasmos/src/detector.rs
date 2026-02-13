@@ -23,8 +23,10 @@ use tokio::time::sleep;
 pub enum DetectedLane {
     /// Lane is "for_review" — agent finished, awaiting human review.
     ForReview,
-    /// Lane is "done" — work package fully completed.
+    /// Lane is "done" — work package fully completed (review approved).
     Done,
+    /// Lane is "planned" — review rejected, WP re-queued for rework.
+    Rejected,
 }
 
 /// Represents a completion event detected by the detector.
@@ -202,13 +204,13 @@ impl CompletionDetector {
         let parsed: LaneCheck = serde_yml::from_str(parts[1].trim())
             .map_err(|e| DetectorError::YamlError(e.to_string()))?;
 
-        // Check if lane indicates completion
+        // Check if lane indicates a state transition
         match parsed.lane.as_str() {
             "for_review" => {
                 tracing::info!(
                     wp_id = %parsed.work_package_id,
                     lane = %parsed.lane,
-                    "Completion detected via lane transition"
+                    "Agent completion detected — awaiting review"
                 );
                 Ok(Some((parsed.work_package_id, DetectedLane::ForReview)))
             }
@@ -216,9 +218,17 @@ impl CompletionDetector {
                 tracing::info!(
                     wp_id = %parsed.work_package_id,
                     lane = %parsed.lane,
-                    "Completion detected via lane transition"
+                    "Review approved — WP complete"
                 );
                 Ok(Some((parsed.work_package_id, DetectedLane::Done)))
+            }
+            "planned" => {
+                tracing::info!(
+                    wp_id = %parsed.work_package_id,
+                    lane = %parsed.lane,
+                    "Review rejected — WP re-queued for rework"
+                );
+                Ok(Some((parsed.work_package_id, DetectedLane::Rejected)))
             }
             _ => Ok(None),
         }
@@ -451,7 +461,7 @@ title: Test WP
     }
 
     #[test]
-    fn test_parse_frontmatter_no_completion_planned() {
+    fn test_parse_frontmatter_planned_detected_as_rejected() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("WP04.md");
 
@@ -467,7 +477,10 @@ title: Test WP
         fs::write(&file_path, content).unwrap();
 
         let result = CompletionDetector::check_completion(&file_path).unwrap();
-        assert_eq!(result, None);
+        assert_eq!(
+            result,
+            Some(("WP04".to_string(), DetectedLane::Rejected))
+        );
     }
 
     #[test]

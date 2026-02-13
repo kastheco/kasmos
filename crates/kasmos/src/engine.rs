@@ -265,8 +265,8 @@ impl WaveEngine {
                 })?;
 
             if success {
-                // Check if this is a for_review transition rather than full completion
                 if detected_lane == Some(DetectedLane::ForReview) {
+                    // Agent finished — move to review
                     let new_state = run.work_packages[wp_idx].state.transition(WPState::ForReview, &wp_id)?;
                     run.work_packages[wp_idx].state = new_state;
                     self.active_panes = self.active_panes.saturating_sub(1);
@@ -280,8 +280,23 @@ impl WaveEngine {
                             feature_dir: run.feature_dir.clone(),
                         });
                     }
+                } else if detected_lane == Some(DetectedLane::Done) {
+                    // Review approved — mark completed
+                    let wp = &mut run.work_packages[wp_idx];
+                    wp.state = wp.state.transition(WPState::Completed, &wp.id)?;
+                    wp.completed_at = Some(std::time::SystemTime::now());
+                    wp.completion_method = Some(method);
+                    self.active_panes = self.active_panes.saturating_sub(1);
+                    tracing::info!(wp_id = %wp.id, "WP completed — review approved");
+                } else if detected_lane == Some(DetectedLane::Rejected) {
+                    // Review rejected — re-queue for rework
+                    let wp = &mut run.work_packages[wp_idx];
+                    wp.state = wp.state.transition(WPState::Pending, &wp.id)?;
+                    wp.failure_count += 1;
+                    self.active_panes = self.active_panes.saturating_sub(1);
+                    tracing::warn!(wp_id = %wp.id, failure_count = wp.failure_count, "WP rejected by review — re-queued");
                 } else {
-                    // Successful completion (done lane or non-frontmatter detection)
+                    // Non-frontmatter completion (file marker, git activity)
                     let wp = &mut run.work_packages[wp_idx];
                     wp.state = wp.state.transition(WPState::Completed, &wp.id)?;
                     wp.completed_at = Some(std::time::SystemTime::now());
