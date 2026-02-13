@@ -24,21 +24,18 @@ mod tui_preview;
 \x1b[1mQuick Start:\x1b[0m
   kasmos                              Launch hub TUI (project navigator)
   kasmos start <feature>              Start orchestration (TUI dashboard)
-  kasmos start <feature> --no-tui     Start without TUI (direct Zellij attach)
   kasmos start <feature> --mode continuous
                                        Start in continuous mode (default: wave-gated)
   kasmos status [feature]             Check WP progress
   kasmos cmd status                   Send controller command via FIFO
-  kasmos cmd focus WP02               Focus a work package pane
   kasmos attach <feature>             Attach to Zellij session
   kasmos stop [feature]               Gracefully stop orchestration
 
 \x1b[1mTypical Workflow:\x1b[0m
   1. kasmos                           Open the hub TUI
   2. Select a feature and start       Hub launches orchestration in new tab
-  3. kasmos cmd status                Query live orchestration state
-  4. Alt+h in orchestration TUI       Switch back to hub
-  5. kasmos stop                      Stop when done"
+  3. Alt+h in orchestration TUI       Switch back to hub
+  4. kasmos stop                      Stop when done"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -49,19 +46,13 @@ struct Cli {
 enum Commands {
     /// List available feature specs
     List,
-    /// Start orchestration for a feature (TUI dashboard by default)
+    /// Start orchestration for a feature (TUI dashboard in Zellij)
     Start {
         /// Feature spec ID or prefix (e.g. "002" or "002-ratatui-tui-controller-panel")
         feature: String,
         /// Progression mode: wave-gated (default) or continuous
         #[arg(long, default_value = "wave-gated")]
         mode: String,
-        /// Skip TUI dashboard, attach directly to Zellij session
-        #[arg(long)]
-        no_tui: bool,
-        /// [deprecated] TUI is now the default; accepted for backward compatibility
-        #[arg(long, hide = true)]
-        tui: bool,
     },
     /// Show orchestration status
     Status {
@@ -113,26 +104,16 @@ async fn main() -> Result<()> {
             let _ = kasmos::init_logging(false);
             list_specs::run().context("Failed to list specs")?;
         }
-        Some(Commands::Start {
-            feature,
-            mode,
-            no_tui,
-            tui: _,
-        }) => {
-            // TUI mode outside Zellij: bootstrap into a Zellij session so
-            // the user gets their status bars, then re-invoke ourselves
-            // inside that session. The inner invocation detects
-            // ZELLIJ_SESSION_NAME and proceeds normally.
-            if !no_tui && std::env::var("ZELLIJ_SESSION_NAME").is_err() {
+        Some(Commands::Start { feature, mode }) => {
+            // Outside Zellij: bootstrap into a Zellij session so the user
+            // gets their status bars, then re-invoke inside that session.
+            if std::env::var("ZELLIJ_SESSION_NAME").is_err() {
                 bootstrap_start_in_zellij(&feature, &mode)
                     .await
                     .context("Failed to bootstrap Zellij session for TUI")?;
             } else {
-                // Inside Zellij (or --no-tui): run directly.
-                if no_tui {
-                    let _ = kasmos::init_logging(false);
-                }
-                start::run(&feature, &mode, no_tui)
+                // Inside Zellij: run engine + TUI directly.
+                start::run(&feature, &mode)
                     .await
                     .context("Start failed")?;
             }

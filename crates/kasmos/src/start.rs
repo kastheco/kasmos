@@ -49,8 +49,8 @@ impl Drop for LockGuard {
     }
 }
 
-/// Main start entry point: setup session, launch TUI (default) or attach.
-pub async fn run(feature: &str, mode: &str, no_tui: bool) -> Result<()> {
+/// Main start entry point: setup session, launch TUI dashboard.
+pub async fn run(feature: &str, mode: &str) -> Result<()> {
     let _span = tracing::info_span!("start", feature = %feature).entered();
     tracing::info!("Starting orchestration");
 
@@ -337,9 +337,16 @@ pub async fn run(feature: &str, mode: &str, no_tui: bool) -> Result<()> {
 
     let session_name = format!("kasmos-{}", feature_name);
 
-    // Check if session already exists (e.g. from a previous run)
+    // Check if session already exists (e.g. from a previous run).
+    //
+    // IMPORTANT: Strip ZELLIJ env vars from all session-management commands.
+    // When kasmos is bootstrapped inside a Zellij wrapper session (kasmos-start-*),
+    // these commands would otherwise affect the wrapper session instead of
+    // creating/managing a truly separate background session.
     let zellij = &config.zellij_binary;
     let existing = tokio::process::Command::new(zellij)
+        .env_remove("ZELLIJ")
+        .env_remove("ZELLIJ_SESSION_NAME")
         .args(["list-sessions"])
         .output()
         .await
@@ -353,10 +360,14 @@ pub async fn run(feature: &str, mode: &str, no_tui: bool) -> Result<()> {
         // `attach --create-background` resurrects them with the old/default layout.
         tracing::warn!(session = %session_name, "Removing existing session");
         let _ = tokio::process::Command::new(zellij)
+            .env_remove("ZELLIJ")
+            .env_remove("ZELLIJ_SESSION_NAME")
             .args(["kill-session", &session_name])
             .output()
             .await;
         let _ = tokio::process::Command::new(zellij)
+            .env_remove("ZELLIJ")
+            .env_remove("ZELLIJ_SESSION_NAME")
             .args(["delete-session", &session_name])
             .output()
             .await;
@@ -364,6 +375,8 @@ pub async fn run(feature: &str, mode: &str, no_tui: bool) -> Result<()> {
 
     // Create background session with layout
     let create_status = tokio::process::Command::new(zellij)
+        .env_remove("ZELLIJ")
+        .env_remove("ZELLIJ_SESSION_NAME")
         .args([
             "--layout",
             &layout_path.display().to_string(),
@@ -656,37 +669,16 @@ pub async fn run(feature: &str, mode: &str, no_tui: bool) -> Result<()> {
     });
     tracing::info!("Review coordinator started");
 
-    // ── Phase 4: Launch TUI dashboard (default) or attach directly ───
+    // ── Phase 4: Launch TUI dashboard ─────────────────────────────
 
-    if no_tui {
-        // Legacy mode: attach directly to the Zellij session
-        // Drop TUI-specific resources that won't be used
-        drop(watch_rx);
-        drop(tui_action_tx);
-        println!("Attaching to session: {}", session_name);
-        let attach_status = tokio::process::Command::new(zellij)
-            .args(["attach", &session_name])
-            .stdin(std::process::Stdio::inherit())
-            .stdout(std::process::Stdio::inherit())
-            .stderr(std::process::Stdio::inherit())
-            .status()
-            .await
-            .context("Failed to attach to Zellij session")?;
-
-        if !attach_status.success() {
-            tracing::warn!("Zellij attach exited with: {}", attach_status);
+    tracing::info!("Launching TUI dashboard");
+    match kasmos::tui::run(watch_rx, tui_action_tx).await {
+        Ok(()) => {
+            tracing::info!("TUI exited normally");
         }
-    } else {
-        // Default: launch the TUI dashboard
-        tracing::info!("Launching TUI dashboard");
-        match kasmos::tui::run(watch_rx, tui_action_tx).await {
-            Ok(()) => {
-                tracing::info!("TUI exited normally");
-            }
-            Err(e) => {
-                tracing::error!("TUI error: {}", e);
-                eprintln!("TUI error: {e:#}");
-            }
+        Err(e) => {
+            tracing::error!("TUI error: {}", e);
+            eprintln!("TUI error: {e:#}");
         }
     }
 
