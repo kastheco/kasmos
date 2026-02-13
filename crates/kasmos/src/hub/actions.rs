@@ -120,6 +120,117 @@ pub fn resolve_actions(entry: &FeatureEntry) -> Vec<HubAction> {
 }
 
 // ---------------------------------------------------------------------------
+// Action dispatch (WP06 T026-T029, WP07 T031/T032/T035)
+// ---------------------------------------------------------------------------
+
+/// Validate that a binary exists in PATH.
+fn validate_binary(name: &str) -> anyhow::Result<()> {
+    match std::process::Command::new("which")
+        .arg(name)
+        .output()
+    {
+        Ok(output) if output.status.success() => Ok(()),
+        _ => anyhow::bail!("{name} not found in PATH"),
+    }
+}
+
+/// Extract the feature number prefix (first 3 chars) from a feature slug.
+fn feature_number_prefix(feature_slug: &str) -> &str {
+    if feature_slug.len() >= 3 {
+        &feature_slug[..3]
+    } else {
+        feature_slug
+    }
+}
+
+/// Dispatch a hub action asynchronously.
+///
+/// This is the central dispatch function called from the event loop when
+/// a keybinding triggers an action. Each action maps to a Zellij command.
+pub async fn dispatch_action(action: &HubAction) -> anyhow::Result<()> {
+    match action {
+        // -- WP06: Agent pane launches (T026-T029) --
+        HubAction::CreateSpec { feature_slug } => {
+            validate_binary("ocx")?;
+            let prefix = feature_number_prefix(feature_slug);
+            open_pane_right(
+                &format!("spec-{prefix}"),
+                "ocx",
+                &["oc", "--", "--prompt", "/spec-kitty.specify", "--agent", "controller"],
+                Some(&format!("kitty-specs/{feature_slug}")),
+            )
+            .await
+        }
+        HubAction::Clarify { feature_slug } => {
+            validate_binary("ocx")?;
+            let prefix = feature_number_prefix(feature_slug);
+            open_pane_right(
+                &format!("clarify-{prefix}"),
+                "ocx",
+                &["oc", "--", "--prompt", "/spec-kitty.clarify", "--agent", "controller"],
+                Some(&format!("kitty-specs/{feature_slug}")),
+            )
+            .await
+        }
+        HubAction::Plan { feature_slug } => {
+            validate_binary("ocx")?;
+            let prefix = feature_number_prefix(feature_slug);
+            open_pane_right(
+                &format!("plan-{prefix}"),
+                "ocx",
+                &["oc", "--", "--prompt", "/spec-kitty.plan", "--agent", "controller"],
+                Some(&format!("kitty-specs/{feature_slug}")),
+            )
+            .await
+        }
+        HubAction::GenerateTasks { feature_slug } => {
+            validate_binary("ocx")?;
+            let prefix = feature_number_prefix(feature_slug);
+            open_pane_right(
+                &format!("tasks-{prefix}"),
+                "ocx",
+                &["oc", "--", "--prompt", "/spec-kitty.tasks", "--agent", "controller"],
+                Some(&format!("kitty-specs/{feature_slug}")),
+            )
+            .await
+        }
+
+        // -- WP07: Implementation launch (T031/T032) --
+        HubAction::StartContinuous { feature_slug } => {
+            open_new_tab(
+                &format!("kasmos-{feature_slug}"),
+                "kasmos",
+                &["start", feature_slug, "--mode", "continuous"],
+            )
+            .await
+        }
+        HubAction::StartWaveGated { feature_slug } => {
+            open_new_tab(
+                &format!("kasmos-{feature_slug}"),
+                "kasmos",
+                &["start", feature_slug, "--mode", "wave-gated"],
+            )
+            .await
+        }
+
+        // -- WP07: Attach (T035) --
+        HubAction::Attach { feature_slug } => {
+            go_to_tab(&format!("kasmos-{feature_slug}")).await
+        }
+
+        // -- Non-dispatchable actions --
+        HubAction::NewFeature => {
+            // Handled by the NewFeaturePrompt input mode, not dispatch.
+            Ok(())
+        }
+        HubAction::ViewDetails => {
+            // Handled by view navigation, not dispatch.
+            Ok(())
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Inside-session Zellij wrappers (T023)
 // ---------------------------------------------------------------------------
 
@@ -585,5 +696,30 @@ mod tests {
         );
         f2.number = "010".to_string();
         assert_eq!(next_feature_number(&[f1, f2]), "011");
+    }
+
+    // -- feature_number_prefix tests --
+
+    #[test]
+    fn prefix_extracts_three_chars() {
+        assert_eq!(feature_number_prefix("010-hub-tui-navigator"), "010");
+    }
+
+    #[test]
+    fn prefix_short_slug() {
+        assert_eq!(feature_number_prefix("ab"), "ab");
+    }
+
+    // -- validate_binary tests --
+
+    #[test]
+    fn validate_binary_finds_existing() {
+        // `ls` should always exist
+        assert!(validate_binary("ls").is_ok());
+    }
+
+    #[test]
+    fn validate_binary_rejects_missing() {
+        assert!(validate_binary("nonexistent-kasmos-test-binary-xyz").is_err());
     }
 }

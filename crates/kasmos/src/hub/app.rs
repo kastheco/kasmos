@@ -13,6 +13,7 @@ use ratatui::{
     Frame,
 };
 
+use super::actions::HubAction;
 use super::scanner::{
     FeatureDetail, FeatureEntry, OrchestrationStatus, PlanStatus, SpecStatus, TaskProgress,
 };
@@ -66,6 +67,8 @@ pub struct App {
     pub last_refresh: std::time::Instant,
     /// Root path for kitty-specs/ (WP05).
     pub specs_root: PathBuf,
+    /// Pending action for ConfirmDialog (WP07 T034).
+    pub pending_action: Option<HubAction>,
     /// List state for ratatui scrolling.
     list_state: ListState,
     /// Table state for detail view WP scrolling.
@@ -96,6 +99,7 @@ impl App {
             detail_selected: 0,
             last_refresh: std::time::Instant::now(),
             specs_root: PathBuf::from("kitty-specs"),
+            pending_action: None,
             list_state,
             detail_table_state: TableState::default(),
         }
@@ -166,6 +170,11 @@ impl App {
         // Overlay the new-feature prompt if active (WP05).
         if let InputMode::NewFeaturePrompt { ref input } = self.input_mode {
             self.render_new_feature_prompt(frame, input);
+        }
+
+        // Overlay the confirmation dialog if active (WP07 T034).
+        if let InputMode::ConfirmDialog { ref message } = self.input_mode {
+            self.render_confirm_dialog(frame, message);
         }
     }
 
@@ -499,6 +508,51 @@ impl App {
         .style(Style::default().bg(Color::DarkGray));
         frame.render_widget(prompt, prompt_area);
     }
+    /// Render the confirmation dialog overlay (WP07 T034).
+    fn render_confirm_dialog(&self, frame: &mut Frame, message: &str) {
+        let area = frame.area();
+        // Center a dialog box.
+        let dialog_width = 50u16.min(area.width.saturating_sub(4));
+        let dialog_height = 7u16.min(area.height.saturating_sub(2));
+        let dialog_area = ratatui::layout::Rect {
+            x: area.x + (area.width.saturating_sub(dialog_width)) / 2,
+            y: area.y + (area.height.saturating_sub(dialog_height)) / 2,
+            width: dialog_width,
+            height: dialog_height,
+        };
+
+        // Clear the area behind the dialog
+        let clear = Paragraph::new("").style(Style::default().bg(Color::Black));
+        frame.render_widget(clear, dialog_area);
+
+        let dialog = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                message,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(" [y] ", Style::default().fg(Color::Cyan)),
+                Span::raw("Wave-gated  "),
+                Span::styled("[n/Enter] ", Style::default().fg(Color::Cyan)),
+                Span::raw("Continuous  "),
+                Span::styled("[Esc] ", Style::default().fg(Color::Cyan)),
+                Span::raw("Cancel"),
+            ]),
+        ])
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow))
+                .title(" Confirm "),
+        )
+        .alignment(ratatui::layout::Alignment::Center);
+
+        frame.render_widget(dialog, dialog_area);
+    }
 }
 
 /// Format a single-span status indicator for a feature entry.
@@ -827,6 +881,21 @@ mod tests {
         app.input_mode = InputMode::NewFeaturePrompt {
             input: "my-feature".to_string(),
         };
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| app.render(frame)).unwrap();
+    }
+
+    #[test]
+    fn render_confirm_dialog_does_not_panic() {
+        let features = vec![dummy_feature("001", "alpha")];
+        let mut app = App::new(features, Some("session".to_string()), true);
+        app.input_mode = InputMode::ConfirmDialog {
+            message: "This feature has 9 WPs. Use wave-gated mode instead?".to_string(),
+        };
+        app.pending_action = Some(super::HubAction::StartContinuous {
+            feature_slug: "001-alpha".to_string(),
+        });
         let backend = ratatui::backend::TestBackend::new(80, 24);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
         terminal.draw(|frame| app.render(frame)).unwrap();

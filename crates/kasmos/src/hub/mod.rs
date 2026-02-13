@@ -64,7 +64,19 @@ pub async fn run() -> anyhow::Result<()> {
 
         tokio::select! {
             Some(event) = event_handler.next() => {
-                keybindings::handle_event(&mut app, event);
+                if let Some(action) = keybindings::handle_event(&mut app, event) {
+                    if app.is_read_only() {
+                        app.status_message = Some("Action unavailable -- not running inside Zellij".to_string());
+                    } else {
+                        let label = action.label().to_string();
+                        tokio::spawn(async move {
+                            if let Err(e) = actions::dispatch_action(&action).await {
+                                tracing::warn!("Action dispatch failed: {}", e);
+                            }
+                        });
+                        app.status_message = Some(format!("Launched: {label}"));
+                    }
+                }
             }
             _ = refresh_interval.tick() => {
                 let scanner_clone = scanner::FeatureScanner::new(specs_root.clone());

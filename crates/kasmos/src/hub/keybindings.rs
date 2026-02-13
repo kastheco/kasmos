@@ -6,25 +6,27 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use kasmos::tui::event::TuiEvent;
 
-use super::actions;
+use super::actions::{self, HubAction};
 use super::app::{App, HubView, InputMode};
 use super::scanner;
 
 /// Handle a TUI event for the hub.
-pub fn handle_event(app: &mut App, event: TuiEvent) {
+///
+/// Returns `Some(action)` when an action should be dispatched asynchronously
+/// by the event loop. Returns `None` for navigation-only events.
+pub fn handle_event(app: &mut App, event: TuiEvent) -> Option<HubAction> {
     let TuiEvent::Key(key) = event else {
-        return;
+        return None;
     };
 
     // Dispatch based on input mode.
     match &app.input_mode {
         InputMode::NewFeaturePrompt { .. } => {
             handle_new_feature_prompt_key(app, key);
-            return;
+            return None;
         }
         InputMode::ConfirmDialog { .. } => {
-            // Not yet implemented -- ignore keys.
-            return;
+            return handle_confirm_dialog_key(app, key);
         }
         InputMode::Normal => {}
     }
@@ -38,7 +40,7 @@ pub fn handle_event(app: &mut App, event: TuiEvent) {
     }
 }
 
-fn handle_list_key(app: &mut App, key: KeyEvent) {
+fn handle_list_key(app: &mut App, key: KeyEvent) -> Option<HubAction> {
     match key.code {
         // Quit
         KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::ALT) => {
@@ -49,7 +51,28 @@ fn handle_list_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('j') | KeyCode::Down => app.select_next(),
         KeyCode::Char('k') | KeyCode::Up => app.select_previous(),
 
-        // Enter detail view
+        // Enter: open detail view OR dispatch primary action
+        KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            // Shift+Enter: wave-gated start (WP07 T033)
+            if app.is_read_only() {
+                app.status_message =
+                    Some("Action unavailable -- not running inside Zellij".to_string());
+            } else if !app.features.is_empty() {
+                let entry = &app.features[app.selected];
+                let hub_actions = actions::resolve_actions(entry);
+                if hub_actions
+                    .iter()
+                    .any(|a| matches!(a, HubAction::StartWaveGated { .. }))
+                {
+                    return hub_actions
+                        .into_iter()
+                        .find(|a| matches!(a, HubAction::StartWaveGated { .. }));
+                } else {
+                    app.status_message =
+                        Some("Wave-gated start not available for this feature".to_string());
+                }
+            }
+        }
         KeyCode::Enter => {
             if !app.features.is_empty() {
                 let detail = scanner::load_detail(&app.features[app.selected]);
@@ -67,7 +90,7 @@ fn handle_list_key(app: &mut App, key: KeyEvent) {
             app.status_message = Some("Refreshing...".to_string());
         }
 
-        // New feature prompt (placeholder for WP05)
+        // New feature prompt (WP05)
         KeyCode::Char('n') => {
             if app.is_read_only() {
                 app.status_message =
@@ -81,9 +104,10 @@ fn handle_list_key(app: &mut App, key: KeyEvent) {
 
         _ => {}
     }
+    None
 }
 
-fn handle_detail_key(app: &mut App, key: KeyEvent) {
+fn handle_detail_key(app: &mut App, key: KeyEvent) -> Option<HubAction> {
     match key.code {
         // Quit
         KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::ALT) => {
@@ -101,6 +125,62 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('j') | KeyCode::Down => app.select_next_wp(),
         KeyCode::Char('k') | KeyCode::Up => app.select_previous_wp(),
 
+        // Enter: dispatch primary action for this feature (WP06 T030)
+        KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            // Shift+Enter: wave-gated start (WP07 T033)
+            if app.is_read_only() {
+                app.status_message =
+                    Some("Action unavailable -- not running inside Zellij".to_string());
+            } else if let HubView::Detail { index } = app.view {
+                if let Some(entry) = app.features.get(index) {
+                    let hub_actions = actions::resolve_actions(entry);
+                    if let Some(action) = hub_actions
+                        .into_iter()
+                        .find(|a| matches!(a, HubAction::StartWaveGated { .. }))
+                    {
+                        return Some(action);
+                    } else {
+                        app.status_message =
+                            Some("Wave-gated start not available for this feature".to_string());
+                    }
+                }
+            }
+        }
+        KeyCode::Enter => {
+            // Enter in detail: dispatch the primary non-ViewDetails action
+            if app.is_read_only() {
+                app.status_message =
+                    Some("Action unavailable -- not running inside Zellij".to_string());
+            } else if let HubView::Detail { index } = app.view {
+                if let Some(entry) = app.features.get(index) {
+                    let hub_actions = actions::resolve_actions(entry);
+                    // Find the first non-ViewDetails action
+                    let primary = hub_actions
+                        .into_iter()
+                        .find(|a| !matches!(a, HubAction::ViewDetails));
+                    if let Some(action) = primary {
+                        // Check for >6 WP confirmation (WP07 T033/T034)
+                        if matches!(&action, HubAction::StartContinuous { .. }) {
+                            let total_wps = match &entry.task_progress {
+                                super::scanner::TaskProgress::InProgress { total, .. } => *total,
+                                _ => 0,
+                            };
+                            if total_wps > 6 {
+                                app.pending_action = Some(action);
+                                app.input_mode = InputMode::ConfirmDialog {
+                                    message: format!(
+                                        "This feature has {total_wps} WPs. Use wave-gated mode instead?"
+                                    ),
+                                };
+                                return None;
+                            }
+                        }
+                        return Some(action);
+                    }
+                }
+            }
+        }
+
         // Manual refresh
         KeyCode::Char('r') => {
             app.refresh_requested = true;
@@ -108,6 +188,39 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) {
         }
 
         _ => {}
+    }
+    None
+}
+
+/// Handle keys for ConfirmDialog input mode (WP07 T034).
+///
+/// - `y`/`Y`: Switch to wave-gated, dispatch StartWaveGated
+/// - `n`/`Enter`: Continue with continuous, dispatch the pending action
+/// - `Esc`: Cancel, return to Normal
+fn handle_confirm_dialog_key(app: &mut App, key: KeyEvent) -> Option<HubAction> {
+    match key.code {
+        KeyCode::Esc => {
+            app.input_mode = InputMode::Normal;
+            app.pending_action = None;
+            None
+        }
+        KeyCode::Char('y') | KeyCode::Char('Y') => {
+            app.input_mode = InputMode::Normal;
+            // User chose wave-gated instead of continuous.
+            let action = app.pending_action.take();
+            if let Some(HubAction::StartContinuous { feature_slug }) = action {
+                Some(HubAction::StartWaveGated { feature_slug })
+            } else {
+                // Shouldn't happen, but return the pending action if it was something else.
+                action
+            }
+        }
+        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Enter => {
+            app.input_mode = InputMode::Normal;
+            // User confirmed continuous mode.
+            app.pending_action.take()
+        }
+        _ => None,
     }
 }
 
@@ -422,5 +535,170 @@ mod tests {
 
         handle_event(&mut app, key(KeyCode::Char('r')));
         assert!(app.refresh_requested);
+    }
+
+    // -- WP06/WP07: Action dispatch and mode selection tests --
+
+    fn shift_enter() -> TuiEvent {
+        TuiEvent::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT))
+    }
+
+    fn make_startable_feature(number: &str, slug: &str, total: usize) -> FeatureEntry {
+        FeatureEntry {
+            number: number.to_string(),
+            slug: slug.to_string(),
+            full_slug: format!("{number}-{slug}"),
+            spec_status: SpecStatus::Present,
+            plan_status: PlanStatus::Present,
+            task_progress: TaskProgress::InProgress { done: 1, total },
+            orchestration_status: OrchestrationStatus::None,
+            feature_dir: PathBuf::from(format!("kitty-specs/{number}-{slug}")),
+        }
+    }
+
+    #[test]
+    fn navigation_returns_none() {
+        let features = vec![dummy_feature("001", "a"), dummy_feature("002", "b")];
+        let mut app = App::new(features, None, true);
+        let result = handle_event(&mut app, key(KeyCode::Char('j')));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn enter_in_list_returns_none_opens_detail() {
+        let features = vec![dummy_feature("001", "a")];
+        let mut app = App::new(features, None, true);
+        let result = handle_event(&mut app, key(KeyCode::Enter));
+        assert!(result.is_none());
+        assert_eq!(app.view, HubView::Detail { index: 0 });
+    }
+
+    #[test]
+    fn shift_enter_in_list_returns_wave_gated_when_available() {
+        let features = vec![make_startable_feature("001", "alpha", 3)];
+        let mut app = App::new(features, Some("session".to_string()), true);
+        let result = handle_event(&mut app, shift_enter());
+        assert!(matches!(result, Some(HubAction::StartWaveGated { .. })));
+    }
+
+    #[test]
+    fn shift_enter_read_only_returns_none() {
+        let features = vec![make_startable_feature("001", "alpha", 3)];
+        let mut app = App::new(features, None, true); // read-only
+        let result = handle_event(&mut app, shift_enter());
+        assert!(result.is_none());
+        assert!(app.status_message.as_ref().unwrap().contains("unavailable"));
+    }
+
+    #[test]
+    fn enter_detail_dispatches_primary_action() {
+        let features = vec![make_startable_feature("001", "alpha", 3)];
+        let mut app = App::new(features, Some("session".to_string()), true);
+        app.view = HubView::Detail { index: 0 };
+        app.detail = Some(crate::hub::scanner::FeatureDetail {
+            feature: make_startable_feature("001", "alpha", 3),
+            work_packages: vec![],
+        });
+
+        let result = handle_event(&mut app, key(KeyCode::Enter));
+        // Primary action for in-progress feature is StartContinuous
+        assert!(matches!(result, Some(HubAction::StartContinuous { .. })));
+    }
+
+    #[test]
+    fn enter_detail_with_many_wps_shows_confirm() {
+        let features = vec![make_startable_feature("001", "alpha", 8)]; // >6 WPs
+        let mut app = App::new(features, Some("session".to_string()), true);
+        app.view = HubView::Detail { index: 0 };
+        app.detail = Some(crate::hub::scanner::FeatureDetail {
+            feature: make_startable_feature("001", "alpha", 8),
+            work_packages: vec![],
+        });
+
+        let result = handle_event(&mut app, key(KeyCode::Enter));
+        // Should show confirm dialog, not dispatch immediately
+        assert!(result.is_none());
+        assert!(matches!(app.input_mode, InputMode::ConfirmDialog { .. }));
+        assert!(app.pending_action.is_some());
+    }
+
+    #[test]
+    fn confirm_dialog_y_switches_to_wave_gated() {
+        let mut app = App::new(vec![], Some("s".to_string()), true);
+        app.input_mode = InputMode::ConfirmDialog {
+            message: "test".to_string(),
+        };
+        app.pending_action = Some(HubAction::StartContinuous {
+            feature_slug: "001-alpha".to_string(),
+        });
+
+        let result = handle_event(&mut app, key(KeyCode::Char('y')));
+        assert!(matches!(
+            result,
+            Some(HubAction::StartWaveGated { ref feature_slug }) if feature_slug == "001-alpha"
+        ));
+        assert!(matches!(app.input_mode, InputMode::Normal));
+    }
+
+    #[test]
+    fn confirm_dialog_n_continues_with_continuous() {
+        let mut app = App::new(vec![], Some("s".to_string()), true);
+        app.input_mode = InputMode::ConfirmDialog {
+            message: "test".to_string(),
+        };
+        app.pending_action = Some(HubAction::StartContinuous {
+            feature_slug: "001-alpha".to_string(),
+        });
+
+        let result = handle_event(&mut app, key(KeyCode::Char('n')));
+        assert!(matches!(
+            result,
+            Some(HubAction::StartContinuous { ref feature_slug }) if feature_slug == "001-alpha"
+        ));
+    }
+
+    #[test]
+    fn confirm_dialog_enter_continues_with_continuous() {
+        let mut app = App::new(vec![], Some("s".to_string()), true);
+        app.input_mode = InputMode::ConfirmDialog {
+            message: "test".to_string(),
+        };
+        app.pending_action = Some(HubAction::StartContinuous {
+            feature_slug: "001-alpha".to_string(),
+        });
+
+        let result = handle_event(&mut app, key(KeyCode::Enter));
+        assert!(matches!(result, Some(HubAction::StartContinuous { .. })));
+    }
+
+    #[test]
+    fn confirm_dialog_esc_cancels() {
+        let mut app = App::new(vec![], Some("s".to_string()), true);
+        app.input_mode = InputMode::ConfirmDialog {
+            message: "test".to_string(),
+        };
+        app.pending_action = Some(HubAction::StartContinuous {
+            feature_slug: "001-alpha".to_string(),
+        });
+
+        let result = handle_event(&mut app, key(KeyCode::Esc));
+        assert!(result.is_none());
+        assert!(matches!(app.input_mode, InputMode::Normal));
+        assert!(app.pending_action.is_none());
+    }
+
+    #[test]
+    fn enter_detail_read_only_shows_warning() {
+        let features = vec![make_startable_feature("001", "alpha", 3)];
+        let mut app = App::new(features, None, true); // read-only
+        app.view = HubView::Detail { index: 0 };
+        app.detail = Some(crate::hub::scanner::FeatureDetail {
+            feature: make_startable_feature("001", "alpha", 3),
+            work_packages: vec![],
+        });
+
+        let result = handle_event(&mut app, key(KeyCode::Enter));
+        assert!(result.is_none());
+        assert!(app.status_message.as_ref().unwrap().contains("unavailable"));
     }
 }
