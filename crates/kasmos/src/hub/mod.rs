@@ -49,6 +49,14 @@ fn build_hub_layout() -> anyhow::Result<(String, std::path::PathBuf)> {
 /// Read the user's `default_tab_template` from their Zellij default layout.
 ///
 /// Returns the raw text block if found, or None.
+/// Public within the crate so `main.rs` can reuse it for the start bootstrap.
+pub(crate) fn read_user_tab_template_text() -> Option<String> {
+    read_user_tab_template()
+}
+
+/// Read the user's `default_tab_template` from their Zellij default layout.
+///
+/// Returns the raw text block if found, or None.
 fn read_user_tab_template() -> Option<String> {
     let home = std::env::var("HOME").ok()?;
     let default_layout = std::path::PathBuf::from(home)

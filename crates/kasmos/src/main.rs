@@ -119,16 +119,23 @@ async fn main() -> Result<()> {
             no_tui,
             tui: _,
         }) => {
-            // Only init headless logging when --no-tui is set.
-            // In TUI mode (default), tui::run() initialises the TUI subscriber;
-            // doing it here first would claim the global slot and leave the TUI
-            // log widget empty.
-            if no_tui {
-                let _ = kasmos::init_logging(false);
+            // TUI mode outside Zellij: bootstrap into a Zellij session so
+            // the user gets their status bars, then re-invoke ourselves
+            // inside that session. The inner invocation detects
+            // ZELLIJ_SESSION_NAME and proceeds normally.
+            if !no_tui && std::env::var("ZELLIJ_SESSION_NAME").is_err() {
+                bootstrap_start_in_zellij(&feature, &mode)
+                    .await
+                    .context("Failed to bootstrap Zellij session for TUI")?;
+            } else {
+                // Inside Zellij (or --no-tui): run directly.
+                if no_tui {
+                    let _ = kasmos::init_logging(false);
+                }
+                start::run(&feature, &mode, no_tui)
+                    .await
+                    .context("Start failed")?;
             }
-            start::run(&feature, &mode, no_tui)
-                .await
-                .context("Start failed")?;
         }
         Some(Commands::Status { feature }) => {
             let _ = kasmos::init_logging(false);
@@ -152,6 +159,68 @@ async fn main() -> Result<()> {
         Some(Commands::TuiPreview { count }) => {
             tui_preview::run(count).await.context("TUI preview failed")?;
         }
+    }
+
+    Ok(())
+}
+
+/// Bootstrap `kasmos start` inside a Zellij session with the user's tab template.
+///
+/// Creates a temporary layout that runs `kasmos start <feature> --mode <mode>`
+/// inside a Zellij session named `kasmos-start-<feature>`, inheriting the
+/// user's `default_tab_template` for status bars.
+async fn bootstrap_start_in_zellij(feature: &str, mode: &str) -> Result<()> {
+    let kasmos_bin = std::env::current_exe()
+        .unwrap_or_else(|_| std::path::PathBuf::from("kasmos"));
+
+    let tab_template = hub::read_user_tab_template_text().unwrap_or_else(|| {
+        "    default_tab_template {\n        children\n        pane size=1 borderless=true {\n            plugin location=\"status-bar\"\n        }\n    }".to_string()
+    });
+
+    let layout = format!(
+        "layout {{\n{tab_template}\n    tab name=\"kasmos\" {{\n        pane command=\"{}\" close_on_exit=true {{\n            args \"start\" \"{}\" \"--mode\" \"{}\"\n        }}\n    }}\n}}\n",
+        kasmos_bin.display(),
+        feature,
+        mode,
+    );
+
+    let layout_dir = std::env::temp_dir().join("kasmos");
+    std::fs::create_dir_all(&layout_dir)
+        .context("Failed to create temp layout directory")?;
+    let layout_path = layout_dir.join("start-layout.kdl");
+    std::fs::write(&layout_path, &layout)
+        .context("Failed to write start layout file")?;
+
+    // Use a session name based on feature so re-invocations reuse/replace it.
+    let session_name = format!("kasmos-start-{}", feature);
+
+    // Kill any existing session with this name first.
+    let _ = tokio::process::Command::new("zellij")
+        .args(["kill-session", &session_name])
+        .output()
+        .await;
+    let _ = tokio::process::Command::new("zellij")
+        .args(["delete-session", &session_name])
+        .output()
+        .await;
+
+    let status = tokio::process::Command::new("zellij")
+        .args([
+            "--layout",
+            &layout_path.display().to_string(),
+            "attach",
+            &session_name,
+            "--create",
+        ])
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status()
+        .await
+        .context("Failed to launch Zellij session")?;
+
+    if !status.success() {
+        anyhow::bail!("Zellij session exited with: {status}");
     }
 
     Ok(())
