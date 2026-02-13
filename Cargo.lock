@@ -500,6 +500,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
+name = "env_filter"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bf3c259d255ca70051b30e2e95b5446cdb8949ac4cd22c0d7fd634d89f568e2"
+dependencies = [
+ "log",
+ "regex",
+]
+
+[[package]]
 name = "env_home"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -830,6 +840,7 @@ dependencies = [
  "futures-util",
  "kdl",
  "libc",
+ "log",
  "nix 0.31.1",
  "notify",
  "ratatui",
@@ -840,11 +851,11 @@ dependencies = [
  "shell-escape",
  "tempfile",
  "thiserror 2.0.18",
- "throbber-widgets-tui",
  "tokio",
  "toml",
  "tracing",
  "tracing-subscriber",
+ "tui-logger",
  "tui-nodes",
  "tui-popup",
  "which",
@@ -1958,15 +1969,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "throbber-widgets-tui"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fb8f83731b18ea611a38a243b458adfa78239d61ca6acc545aa3b1c450ac6e7"
-dependencies = [
- "ratatui",
-]
-
-[[package]]
 name = "time"
 version = "0.3.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2113,6 +2115,23 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "tui-logger"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9384df20a5244a6ab204bc4b6959b41f37f0ee7b5e0f2feb7a8a78f58e684d06"
+dependencies = [
+ "chrono",
+ "env_filter",
+ "lazy_static",
+ "log",
+ "parking_lot",
+ "ratatui",
+ "tracing",
+ "tracing-subscriber",
+ "unicode-segmentation",
 ]
 
 [[package]]
