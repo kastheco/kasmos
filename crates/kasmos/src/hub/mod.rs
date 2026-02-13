@@ -3,6 +3,7 @@
 //! Provides a ratatui-based TUI for browsing feature specs, launching
 //! OpenCode agent panes, and starting implementation sessions.
 
+pub mod actions;
 pub mod app;
 pub mod keybindings;
 pub mod scanner;
@@ -27,6 +28,7 @@ pub async fn run() -> anyhow::Result<()> {
 
     // Initial scan.
     let specs_root = PathBuf::from("kitty-specs");
+    let specs_dir_exists = specs_root.is_dir();
     let scanner = scanner::FeatureScanner::new(specs_root.clone());
     let features = scanner.scan();
 
@@ -34,7 +36,7 @@ pub async fn run() -> anyhow::Result<()> {
     let mut terminal = tui_plumbing::setup_terminal()?;
 
     // Create app state.
-    let mut app = app::App::new(features, zellij_session);
+    let mut app = app::App::new(features, zellij_session, specs_dir_exists);
     let mut event_handler = EventHandler::new();
     let mut refresh_interval = tokio::time::interval(Duration::from_secs(5));
     refresh_interval.tick().await; // consume initial tick
