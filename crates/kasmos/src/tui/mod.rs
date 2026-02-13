@@ -68,6 +68,61 @@ pub fn install_panic_hook() {
     }));
 }
 
+/// Navigate to an existing Hub tab or create one running `kasmos`.
+///
+/// Queries Zellij tab names for a "Hub" tab. If found, switches to it;
+/// otherwise creates a new tab named "Hub" running the `kasmos` binary.
+async fn navigate_to_hub() -> anyhow::Result<()> {
+    // Query existing tab names
+    let output = tokio::process::Command::new("zellij")
+        .args(["action", "query-tab-names"])
+        .output()
+        .await?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let has_hub = stdout.lines().any(|l| {
+            let trimmed = l.trim().to_lowercase();
+            trimmed == "hub" || trimmed == "kasmos-hub"
+        });
+        if has_hub {
+            let switch = tokio::process::Command::new("zellij")
+                .args(["action", "go-to-tab-name", "Hub"])
+                .output()
+                .await?;
+            if switch.status.success() {
+                return Ok(());
+            }
+        }
+    }
+
+    // No hub tab found — create one running kasmos (which launches the hub TUI)
+    let create = tokio::process::Command::new("zellij")
+        .args(["action", "new-tab", "--name", "Hub"])
+        .output()
+        .await?;
+    if !create.status.success() {
+        anyhow::bail!(
+            "Failed to create Hub tab: {}",
+            String::from_utf8_lossy(&create.stderr)
+        );
+    }
+
+    // Run kasmos in the new (now-focused) tab
+    let run = tokio::process::Command::new("zellij")
+        .args(["run", "--", "kasmos"])
+        .output()
+        .await?;
+    if !run.status.success() {
+        anyhow::bail!(
+            "Failed to run kasmos in Hub tab: {}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+    }
+
+    Ok(())
+}
+
 /// Run the TUI event loop.
 ///
 /// This is the main entry point for the TUI. It sets up the terminal, creates
@@ -113,11 +168,14 @@ pub async fn run(
             }
         }
 
-        // Handle hub navigation request (WP08 T038)
+        // Handle hub navigation request (WP08 T038/T039)
         if app.open_hub_requested {
             app.open_hub_requested = false;
-            // For now, just log — actual navigation implemented when WP05 Zellij wrappers land
-            tracing::info!("Hub navigation requested (Alt+h) — requires WP05 Zellij wrappers");
+            tokio::spawn(async {
+                if let Err(e) = navigate_to_hub().await {
+                    tracing::warn!("Failed to open hub: {}", e);
+                }
+            });
         }
 
         if app.should_quit {
