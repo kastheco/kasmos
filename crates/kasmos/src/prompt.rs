@@ -279,15 +279,28 @@ impl PromptGenerator {
     }
 
     /// Generate shell wrapper scripts for each work package.
-    pub fn generate_scripts(&self, wps: &[WorkPackage], kasmos_dir: &Path) -> Result<Vec<PathBuf>> {
+    pub fn generate_scripts(
+        &self,
+        wps: &[WorkPackage],
+        kasmos_dir: &Path,
+        opencode_profile: Option<&str>,
+    ) -> Result<Vec<PathBuf>> {
         let scripts_dir = kasmos_dir.join("scripts");
         fs::create_dir_all(&scripts_dir)?;
+
+        let profile_flag = match opencode_profile {
+            Some(p) => format!(
+                " -p {}",
+                shell_escape::escape(std::borrow::Cow::Borrowed(p))
+            ),
+            None => String::new(),
+        };
 
         let mut paths = Vec::new();
         for wp in wps {
             let prompt_path = kasmos_dir.join("prompts").join(format!("{}.md", wp.id));
             let script_content = format!(
-                "#!/bin/bash\nset -euo pipefail\nocx oc -- --agent coder --prompt \"$(cat '{}')\"\n",
+                "#!/bin/bash\nset -euo pipefail\nocx oc{profile_flag} -- --agent coder --prompt \"$(cat '{}')\"\n",
                 prompt_path.display()
             );
 

@@ -51,6 +51,11 @@ pub struct Config {
     /// Controller pane width as percentage of terminal width (10-90).
     /// Default: 40
     pub controller_width_pct: u32,
+
+    /// Profile name passed to `ocx oc -p <profile>`.
+    /// When set, all opencode invocations include `-p <profile>` before the `--` separator.
+    /// Default: Some("kas")
+    pub opencode_profile: Option<String>,
 }
 
 impl Default for Config {
@@ -65,6 +70,7 @@ impl Default for Config {
             poll_interval_secs: 5,
             debounce_ms: 200,
             controller_width_pct: 40,
+            opencode_profile: Some("kas".to_string()),
         }
     }
 }
@@ -151,6 +157,14 @@ impl Config {
             })?;
         }
 
+        if let Ok(val) = std::env::var("KASMOS_OPENCODE_PROFILE") {
+            if val.is_empty() {
+                self.opencode_profile = None;
+            } else {
+                self.opencode_profile = Some(val);
+            }
+        }
+
         Ok(())
     }
 
@@ -198,6 +212,9 @@ impl Config {
         }
         if let Some(val) = file_config.controller_width_pct {
             self.controller_width_pct = val;
+        }
+        if let Some(val) = file_config.opencode_profile {
+            self.opencode_profile = val;
         }
 
         Ok(())
@@ -251,6 +268,9 @@ struct ConfigFile {
     poll_interval_secs: Option<u64>,
     debounce_ms: Option<u64>,
     controller_width_pct: Option<u32>,
+    /// Wrapped in Option<Option<>> to distinguish "not set" from "set to null/empty".
+    /// In TOML: `opencode_profile = "kas"` or omit entirely.
+    opencode_profile: Option<Option<String>>,
 }
 
 #[cfg(test)]
@@ -280,36 +300,46 @@ mod tests {
 
     #[test]
     fn test_validate_max_agent_panes_too_low() {
-        let mut config = Config::default();
-        config.max_agent_panes = 0;
+        let config = Config {
+            max_agent_panes: 0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validate_max_agent_panes_too_high() {
-        let mut config = Config::default();
-        config.max_agent_panes = 17;
+        let config = Config {
+            max_agent_panes: 17,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validate_controller_width_too_low() {
-        let mut config = Config::default();
-        config.controller_width_pct = 5;
+        let config = Config {
+            controller_width_pct: 5,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validate_controller_width_too_high() {
-        let mut config = Config::default();
-        config.controller_width_pct = 95;
+        let config = Config {
+            controller_width_pct: 95,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validate_poll_interval_zero() {
-        let mut config = Config::default();
-        config.poll_interval_secs = 0;
+        let config = Config {
+            poll_interval_secs: 0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 

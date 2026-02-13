@@ -26,11 +26,11 @@
 **Prompt**: `/kitty-specs/010-hub-tui-navigator/tasks/WP01-cli-restructuring-tui-plumbing.md`
 
 ### Included Subtasks
-- [ ] T001 Make `Commands` optional in `Cli` struct (`crates/kasmos/src/main.rs`)
-- [ ] T002 Add `hub` module declaration stub (`crates/kasmos/src/hub/mod.rs`, `crates/kasmos/src/main.rs`)
-- [ ] T003 Wire `None` match arm to `hub::run()` placeholder in `main.rs`
-- [ ] T004 Extract `setup_terminal`, `restore_terminal`, `install_panic_hook` to `pub` in `crates/kasmos/src/tui/mod.rs`
-- [ ] T005 Update `after_help` text in CLI to document hub as default behavior
+- [x] T001 Make `Commands` optional in `Cli` struct (`crates/kasmos/src/main.rs`)
+- [x] T002 Add `hub` module declaration stub (`crates/kasmos/src/hub/mod.rs`, `crates/kasmos/src/main.rs`)
+- [x] T003 Wire `None` match arm to `hub::run()` placeholder in `main.rs`
+- [x] T004 Extract `setup_terminal`, `restore_terminal`, `install_panic_hook` to `pub` in `crates/kasmos/src/tui/mod.rs`
+- [x] T005 Update `after_help` text in CLI to document hub as default behavior
 
 ### Implementation Notes
 - `Option<Commands>` is the idiomatic clap pattern for optional subcommands (AD-001).
@@ -56,12 +56,12 @@
 **Prompt**: `/kitty-specs/010-hub-tui-navigator/tasks/WP02-feature-scanner.md`
 
 ### Included Subtasks
-- [ ] T006 Define `FeatureEntry`, `SpecStatus`, `PlanStatus`, `TaskProgress`, `OrchestrationStatus` types in `crates/kasmos/src/hub/scanner.rs`
-- [ ] T007 Implement `kitty-specs/` directory scanning and feature number/slug parsing
-- [ ] T008 Implement `spec.md` existence + non-empty check for `SpecStatus`
-- [ ] T009 Implement `plan.md` existence check for `PlanStatus` and `tasks/WPxx-*.md` scanning with frontmatter lane parsing for `TaskProgress`
-- [ ] T010 Implement `.kasmos/run.lock` PID liveness check and Zellij session listing for `OrchestrationStatus`
-- [ ] T011 Write unit tests for scanner with filesystem fixtures (all state combinations)
+- [x] T006 Define `FeatureEntry`, `SpecStatus`, `PlanStatus`, `TaskProgress`, `OrchestrationStatus` types in `crates/kasmos/src/hub/scanner.rs`
+- [x] T007 Implement `kitty-specs/` directory scanning and feature number/slug parsing
+- [x] T008 Implement `spec.md` existence + non-empty check for `SpecStatus`
+- [x] T009 Implement `plan.md` existence check for `PlanStatus` and `tasks/WPxx-*.md` scanning with frontmatter lane parsing for `TaskProgress`
+- [x] T010 Implement `.kasmos/run.lock` PID liveness check and Zellij session listing for `OrchestrationStatus`
+- [x] T011 Write unit tests for scanner with filesystem fixtures (all state combinations)
 
 ### Implementation Notes
 - Reuse `list_specs.rs` patterns for directory scanning and frontmatter extraction.
@@ -89,12 +89,12 @@
 **Prompt**: `/kitty-specs/010-hub-tui-navigator/tasks/WP03-hub-app-core.md`
 
 ### Included Subtasks
-- [ ] T012 Define `HubView`, `InputMode` enums and `App` struct in `crates/kasmos/src/hub/app.rs`
-- [ ] T013 Implement `hub::run()` async event loop in `crates/kasmos/src/hub/mod.rs` using extracted TUI plumbing
-- [ ] T014 Implement feature list rendering (ratatui `List` widget with status indicators) in `hub/app.rs`
-- [ ] T015 Implement keyboard navigation: j/k up/down, Enter select, Esc back, Alt+q quit in `crates/kasmos/src/hub/keybindings.rs`
-- [ ] T016 Implement periodic refresh timer (5s interval via `tokio::time::interval`) with `spawn_blocking` scanner call (AD-007)
-- [ ] T017 Implement manual refresh keybinding (`r`) and Zellij-absent read-only mode detection (FR-017)
+- [x] T012 Define `HubView`, `InputMode` enums and `App` struct in `crates/kasmos/src/hub/app.rs`
+- [x] T013 Implement `hub::run()` async event loop in `crates/kasmos/src/hub/mod.rs` using extracted TUI plumbing
+- [x] T014 Implement feature list rendering (ratatui `List` widget with status indicators) in `hub/app.rs`
+- [x] T015 Implement keyboard navigation: j/k up/down, Enter select, Esc back, Alt+q quit in `crates/kasmos/src/hub/keybindings.rs`
+- [x] T016 Implement periodic refresh timer (5s interval via `tokio::time::interval`) with `spawn_blocking` scanner call (AD-007)
+- [x] T017 Implement manual refresh keybinding (`r`) and Zellij-absent read-only mode detection (FR-017)
 
 ### Implementation Notes
 - Reuse `tui::EventHandler` for crossterm event polling.
@@ -122,9 +122,9 @@
 **Prompt**: `/kitty-specs/010-hub-tui-navigator/tasks/WP04-detail-view.md`
 
 ### Included Subtasks
-- [ ] T018 Define `FeatureDetail` and `WPSummary` types in `crates/kasmos/src/hub/scanner.rs`
-- [ ] T019 Implement detail view rendering in `crates/kasmos/src/hub/app.rs` (WP table with lane/wave/deps columns)
-- [ ] T020 Implement detail view navigation: Esc to return, preserve list selection state
+- [x] T018 Define `FeatureDetail` and `WPSummary` types in `crates/kasmos/src/hub/scanner.rs`
+- [x] T019 Implement detail view rendering in `crates/kasmos/src/hub/app.rs` (WP table with lane/wave/deps columns)
+- [x] T020 Implement detail view navigation: Esc to return, preserve list selection state
 
 ### Implementation Notes
 - `FeatureDetail` is lazily loaded when the operator drills into a feature.
@@ -149,11 +149,11 @@
 **Prompt**: `/kitty-specs/010-hub-tui-navigator/tasks/WP05-action-resolution-zellij-wrappers.md`
 
 ### Included Subtasks
-- [ ] T021 Define `HubAction` enum in `crates/kasmos/src/hub/actions.rs`
-- [ ] T022 Implement `resolve_actions(entry: &FeatureEntry) -> Vec<HubAction>` that maps feature state to available actions
-- [ ] T023 Implement inside-session Zellij wrappers in `crates/kasmos/src/hub/actions.rs`: `open_pane_right()`, `open_new_tab()`, `go_to_tab()`, `query_tab_names()`
-- [ ] T024 [P] Implement `NewFeaturePrompt` input mode in `crates/kasmos/src/hub/app.rs` (inline text input for feature name)
-- [ ] T025 Write unit tests for action resolution (all state combinations from data-model.md)
+- [x] T021 Define `HubAction` enum in `crates/kasmos/src/hub/actions.rs`
+- [x] T022 Implement `resolve_actions(entry: &FeatureEntry) -> Vec<HubAction>` that maps feature state to available actions
+- [x] T023 Implement inside-session Zellij wrappers in `crates/kasmos/src/hub/actions.rs`: `open_pane_right()`, `open_new_tab()`, `go_to_tab()`, `query_tab_names()`
+- [x] T024 [P] Implement `NewFeaturePrompt` input mode in `crates/kasmos/src/hub/app.rs` (inline text input for feature name)
+- [x] T025 Write unit tests for action resolution (all state combinations from data-model.md)
 
 ### Implementation Notes
 - Inside-session Zellij commands use `zellij action ...` without `--session` flag (R-001).
@@ -180,11 +180,11 @@
 **Prompt**: `/kitty-specs/010-hub-tui-navigator/tasks/WP06-agent-pane-launch.md`
 
 ### Included Subtasks
-- [ ] T026 Implement `CreateSpec` action dispatch: `zellij action new-pane --direction right -- ocx oc -- --prompt "/spec-kitty.specify" --agent controller`
-- [ ] T027 Implement `Clarify` action dispatch: `zellij action new-pane --direction right -- ocx oc -- --prompt "/spec-kitty.clarify" --agent controller`
-- [ ] T028 Implement `Plan` action dispatch: `zellij action new-pane --direction right -- ocx oc -- --prompt "/spec-kitty.plan" --agent controller`
-- [ ] T029 Implement `GenerateTasks` action dispatch: `zellij action new-pane --direction right -- ocx oc -- --prompt "/spec-kitty.tasks" --agent controller`
-- [ ] T030 Wire action dispatch to hub keybindings (Enter on action in list/detail view)
+- [x] T026 Implement `CreateSpec` action dispatch: `zellij action new-pane --direction right -- ocx oc -- --prompt "/spec-kitty.specify" --agent controller`
+- [x] T027 Implement `Clarify` action dispatch: `zellij action new-pane --direction right -- ocx oc -- --prompt "/spec-kitty.clarify" --agent controller`
+- [x] T028 Implement `Plan` action dispatch: `zellij action new-pane --direction right -- ocx oc -- --prompt "/spec-kitty.plan" --agent controller`
+- [x] T029 Implement `GenerateTasks` action dispatch: `zellij action new-pane --direction right -- ocx oc -- --prompt "/spec-kitty.tasks" --agent controller`
+- [x] T030 Wire action dispatch to hub keybindings (Enter on action in list/detail view)
 
 ### Implementation Notes
 - All agent pane commands follow the pattern from R-002: `zellij action new-pane --direction right --name "<action>-<feature>" -- ocx oc -- --prompt "<slash-cmd>" --agent controller`
@@ -211,13 +211,13 @@
 **Prompt**: `/kitty-specs/010-hub-tui-navigator/tasks/WP07-implementation-launch-start-inversion.md`
 
 ### Included Subtasks
-- [ ] T031 Implement `StartContinuous` action: `zellij action new-tab --name "kasmos-<feature>" -- kasmos start <feature>`
-- [ ] T032 Implement `StartWaveGated` action: `zellij action new-tab --name "kasmos-<feature>" -- kasmos start <feature> --mode wave-gated`
-- [ ] T033 Implement mode selection UX: Enter=continuous (>6 WP confirmation dialog), Shift+Enter=wave-gated (AD-006)
-- [ ] T034 Implement `ConfirmDialog` input mode for >6 WP warning in `crates/kasmos/src/hub/app.rs`
-- [ ] T035 Implement `Attach` action: `zellij action go-to-tab-name kasmos-<feature>`
-- [ ] T036 Add `--no-tui` flag to `Start` command, change `--mode` default to `continuous`, hide `--tui` flag (AD-004) in `crates/kasmos/src/main.rs`
-- [ ] T037 Modify `start::run()` to launch orchestration TUI by default, use `zellij attach` only when `--no-tui` is set (`crates/kasmos/src/start.rs`)
+- [x] T031 Implement `StartContinuous` action: `zellij action new-tab --name "kasmos-<feature>" -- kasmos start <feature>`
+- [x] T032 Implement `StartWaveGated` action: `zellij action new-tab --name "kasmos-<feature>" -- kasmos start <feature> --mode wave-gated`
+- [x] T033 Implement mode selection UX: Enter=continuous (>6 WP confirmation dialog), Shift+Enter=wave-gated (AD-006)
+- [x] T034 Implement `ConfirmDialog` input mode for >6 WP warning in `crates/kasmos/src/hub/app.rs`
+- [x] T035 Implement `Attach` action: `zellij action go-to-tab-name kasmos-<feature>`
+- [x] T036 Add `--no-tui` flag to `Start` command, change `--mode` default to `continuous`, hide `--tui` flag (AD-004) in `crates/kasmos/src/main.rs`
+- [x] T037 Modify `start::run()` to launch orchestration TUI by default, use `zellij attach` only when `--no-tui` is set (`crates/kasmos/src/start.rs`)
 
 ### Implementation Notes
 - Mode selection UX (AD-006): Enter defaults to continuous. If >6 WPs, show confirmation dialog before proceeding. Shift+Enter always wave-gated.

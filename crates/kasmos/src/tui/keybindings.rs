@@ -120,13 +120,11 @@ fn handle_dashboard_key(app: &mut App, key: KeyEvent) {
 
     // In dependency graph mode, only Enter (detail popup) and A (advance) work.
     if app.dashboard.view_mode == DashboardViewMode::DependencyGraph {
-        match key.code {
-            KeyCode::Char('A') => {
-                if app.run.mode == ProgressionMode::WaveGated && app.run.state == RunState::Paused {
-                    let _ = app.action_tx.try_send(EngineAction::Advance);
-                }
-            }
-            _ => {}
+        if let KeyCode::Char('A') = key.code
+            && app.run.mode == ProgressionMode::WaveGated
+            && app.run.state == RunState::Paused
+        {
+            let _ = app.action_tx.try_send(EngineAction::Advance);
         }
         return;
     }
@@ -239,6 +237,20 @@ fn handle_review_key(app: &mut App, key: KeyEvent) {
                     wp_id: wp.id.clone(),
                     relaunch: true,
                 });
+            }
+        }
+        KeyCode::Char(' ') => {
+            // Launch review agent pane (if not already running for this WP)
+            if let Some(wp) = app
+                .run
+                .work_packages
+                .iter()
+                .filter(|wp| wp.state == WPState::ForReview)
+                .nth(app.review.selected_index)
+                && !app.review.active_review_panes.contains(&wp.id)
+            {
+                app.review.active_review_panes.insert(wp.id.clone());
+                app.launch_review_request = Some((wp.id.clone(), wp.worktree_path.clone()));
             }
         }
         _ => {}

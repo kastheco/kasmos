@@ -90,6 +90,7 @@ use crate::types::WorkPackage;
 pub struct LayoutGenerator {
     controller_width_pct: u32,
     opencode_binary: String,
+    opencode_profile: Option<String>,
 }
 
 impl LayoutGenerator {
@@ -104,6 +105,7 @@ impl LayoutGenerator {
         Self {
             controller_width_pct: config.controller_width_pct,
             opencode_binary: config.opencode_binary.clone(),
+            opencode_profile: config.opencode_profile.clone(),
         }
     }
 
@@ -186,7 +188,7 @@ impl LayoutGenerator {
         (rows, cols)
     }
 
-    /// Build the root layout node with tab template (status-bar + zjstatus) and content tab.
+    /// Build the root layout node with tab template (zjstatus) and content tab.
     fn build_layout_node(
         &self,
         work_packages: &[&WorkPackage],
@@ -194,7 +196,7 @@ impl LayoutGenerator {
     ) -> Result<KdlNode, KasmosError> {
         let mut layout = KdlNode::new("layout");
 
-        // default_tab_template: adds status-bar (top, keybinding hints) + zjstatus (bottom, themed)
+        // default_tab_template: adds zjstatus (bottom, Rose Pine Moon themed with zjstatus-hints)
         let tab_template = Self::build_tab_template();
         layout.ensure_children().nodes_mut().push(tab_template);
 
@@ -222,7 +224,7 @@ impl LayoutGenerator {
     /// Return the `default_tab_template` as a raw KDL string for embedding
     /// in hand-crafted layouts (e.g. the bootstrap layout in main.rs).
     ///
-    /// Includes status-bar (top, keybinding hints) + zjstatus (bottom, Rose Pine Moon).
+    /// Includes zjstatus (bottom, Rose Pine Moon with zjstatus-hints integration).
     pub fn tab_template_kdl_string() -> String {
         let template = Self::build_tab_template();
         let mut doc = KdlDocument::new();
@@ -232,27 +234,13 @@ impl LayoutGenerator {
             .replace("#false", "false")
     }
 
-    /// Build the `default_tab_template` with status-bar + zjstatus (Rose Pine Moon).
+    /// Build the `default_tab_template` with zjstatus + zjstatus-hints (Rose Pine Moon).
+    ///
+    /// Keybinding hints come from the `zjstatus-hints` background plugin (loaded
+    /// globally in `config.kdl`), piped into zjstatus via `{pipe_zjstatus_hints}`.
+    /// Pane frame management is handled by the `zjframes` background plugin.
     fn build_tab_template() -> KdlNode {
         let mut template = KdlNode::new("default_tab_template");
-
-        // status-bar pane (2 rows, borderless, at the top — shows keybinding hints)
-        let mut status_pane = KdlNode::new("pane");
-        status_pane.entries_mut().push(kdl_int_prop("size", 2));
-        status_pane
-            .entries_mut()
-            .push(kdl_bool_prop("borderless", true));
-
-        let mut status_plugin = KdlNode::new("plugin");
-        status_plugin
-            .entries_mut()
-            .push(kdl_str_prop("location", "status-bar"));
-
-        status_pane
-            .ensure_children()
-            .nodes_mut()
-            .push(status_plugin);
-        template.ensure_children().nodes_mut().push(status_pane);
 
         // children placeholder (where tab content goes)
         let children = KdlNode::new("children");
@@ -271,88 +259,56 @@ impl LayoutGenerator {
             "file:~/.config/zellij/plugins/zjstatus.wasm",
         ));
 
-        // Rose Pine Moon zjstatus configuration
+        // Rose Pine Moon zjstatus configuration — matches opencode-kas.kdl theme.
+        // Clean, minimal style (no powerline glyphs).
         let zjstatus_config: &[(&str, &str)] = &[
             // -- Rose Pine Moon palette
-            ("color_base", "#232136"),
-            ("color_surface", "#2a273f"),
-            ("color_overlay", "#393552"),
-            ("color_muted", "#6e6a86"),
-            ("color_subtle", "#908caa"),
-            ("color_text", "#e0def4"),
-            ("color_love", "#eb6f92"),
+            ("color_bg", "#393552"),
+            ("color_fg", "#e0def4"),
+            ("color_sel", "#44415a"),
+            ("color_blue", "#3e8fb0"),
             ("color_gold", "#f6c177"),
-            ("color_rose", "#ea9a97"),
-            ("color_pine", "#3e8fb0"),
+            ("color_rose", "#eb6f92"),
+            ("color_pine", "#c4a7e7"),
             ("color_foam", "#9ccfd8"),
-            ("color_iris", "#c4a7e7"),
-            ("color_hl_low", "#2a283e"),
-            ("color_hl_med", "#44415a"),
-            ("color_hl_high", "#56526e"),
             // Format
-            (
-                "format_left",
-                "#[bg=$overlay,fg=$subtle] {session} {mode}#[bg=$surface] {tabs}",
-            ),
-            ("format_center", "{notifications}"),
-            (
-                "format_right",
-                "#[bg=$surface,fg=$overlay]\u{e0b6}#[bg=$overlay,fg=$subtle] {command_user}@{command_host} #[bg=$overlay,fg=$text]\u{e0b6}#[bg=$text,fg=$base] {datetime} ",
-            ),
-            ("format_space", "#[bg=$surface]"),
-            ("format_hide_on_overlength", "true"),
-            ("format_precedence", "lrc"),
-            // Border
-            ("border_enabled", "false"),
-            ("border_char", "\u{2500}"),
-            ("border_format", "#[fg=$surface]{char}"),
-            ("border_position", "top"),
-            // Frame
-            ("hide_frame_for_single_pane", "false"),
+            ("format_left", "{mode} {tabs}"),
+            ("format_center", ""),
+            ("format_right", "{pipe_zjstatus_hints}{datetime} "),
+            ("format_space", ""),
+            // Frame (zjframes handles frame toggling globally)
+            ("hide_frame_for_single_pane", "true"),
+            // zjstatus-hints pipe format (keybinding hints from background plugin)
+            ("pipe_zjstatus_hints_format", "{output}"),
             // Mode indicators
-            ("mode_normal", "#[bg=$text,fg=$overlay]\u{e0b6}#[bg=$text,fg=$base,bold] NORMAL #[bg=$surface,fg=$text]\u{e0b4}"),
-            ("mode_tmux", "#[bg=$pine,fg=$overlay]\u{e0b6}#[bg=$pine,fg=$base,bold] TMUX #[bg=$surface,fg=$pine]\u{e0b4}"),
-            ("mode_locked", "#[bg=$hl_high,fg=$overlay]\u{e0b6}#[bg=$hl_high,fg=$subtle,bold] LOCKED #[bg=$surface,fg=$hl_high]\u{e0b4}"),
-            ("mode_pane", "#[bg=$foam,fg=$overlay]\u{e0b6}#[bg=$foam,fg=$base,bold] PANE #[bg=$surface,fg=$foam]\u{e0b4}"),
-            ("mode_tab", "#[bg=$foam,fg=$overlay]\u{e0b6}#[bg=$foam,fg=$base,bold] TAB #[bg=$surface,fg=$foam]\u{e0b4}"),
-            ("mode_scroll", "#[bg=$iris,fg=$overlay]\u{e0b6}#[bg=$iris,fg=$base,bold] SCROLL #[bg=$surface,fg=$iris]\u{e0b4}"),
-            ("mode_enter_search", "#[bg=$iris,fg=$overlay]\u{e0b6}#[bg=$iris,fg=$base,bold] ENT-SEARCH #[bg=$surface,fg=$iris]\u{e0b4}"),
-            ("mode_search", "#[bg=$iris,fg=$overlay]\u{e0b6}#[bg=$iris,fg=$base,bold] SEARCH #[bg=$surface,fg=$iris]\u{e0b4}"),
-            ("mode_resize", "#[bg=$gold,fg=$overlay]\u{e0b6}#[bg=$gold,fg=$base,bold] RESIZE #[bg=$surface,fg=$gold]\u{e0b4}"),
-            ("mode_rename_tab", "#[bg=$gold,fg=$overlay]\u{e0b6}#[bg=$gold,fg=$base,bold] RENAME TAB #[bg=$surface,fg=$gold]\u{e0b4}"),
-            ("mode_rename_pane", "#[bg=$gold,fg=$overlay]\u{e0b6}#[bg=$gold,fg=$base,bold] RENAME PANE #[bg=$surface,fg=$gold]\u{e0b4}"),
-            ("mode_move", "#[bg=$gold,fg=$overlay]\u{e0b6}#[bg=$gold,fg=$base,bold] MOVE #[bg=$surface,fg=$gold]\u{e0b4}"),
-            ("mode_session", "#[bg=$iris,fg=$overlay]\u{e0b6}#[bg=$iris,fg=$base,bold] SESSION #[bg=$surface,fg=$iris]\u{e0b4}"),
-            ("mode_prompt", "#[bg=$iris,fg=$overlay]\u{e0b6}#[bg=$iris,fg=$base,bold] PROMPT #[bg=$surface,fg=$iris]\u{e0b4}"),
+            ("mode_normal", "#[bg=$blue,fg=$bg,bold] NORMAL "),
+            ("mode_locked", "#[bg=$bg,fg=$fg,dim] LOCKED "),
+            ("mode_pane", "#[bg=$pine,fg=$bg,bold] PANE "),
+            ("mode_tab", "#[bg=$gold,fg=$bg,bold] TAB "),
+            ("mode_resize", "#[bg=$foam,fg=$bg,bold] RESIZE "),
+            ("mode_move", "#[bg=$foam,fg=$bg,bold] MOVE "),
+            ("mode_scroll", "#[bg=$blue,fg=$bg,bold] SCROLL "),
+            ("mode_search", "#[bg=$blue,fg=$bg,bold] SEARCH "),
+            ("mode_enter_search", "#[bg=$blue,fg=$bg,bold] SEARCH "),
+            ("mode_session", "#[bg=$rose,fg=$bg,bold] SESSION "),
+            ("mode_rename_tab", "#[bg=$gold,fg=$bg,bold] RENAME TAB "),
+            ("mode_rename_pane", "#[bg=$pine,fg=$bg,bold] RENAME PANE "),
+            ("mode_tmux", "#[bg=$gold,fg=$bg,bold] TMUX "),
             // Tab styles
-            ("tab_normal", "#[bg=$overlay,fg=$surface]\u{e0b6}#[bg=$overlay,fg=$text] {index} #[bg=$overlay,fg=$text,bold] {name} {floating_indicator}#[bg=$surface,fg=$overlay]\u{e0b4}"),
-            ("tab_normal_fullscreen", "#[bg=$overlay,fg=$surface]\u{e0b6}#[bg=$overlay,fg=$text] {index} #[bg=$overlay,fg=$text,bold] {name} {fullscreen_indicator}#[bg=$surface,fg=$overlay]\u{e0b4}"),
-            ("tab_normal_sync", "#[bg=$overlay,fg=$surface]\u{e0b6}#[bg=$overlay,fg=$text] {index} #[bg=$overlay,fg=$text,bold] {name} {sync_indicator}#[bg=$surface,fg=$overlay]\u{e0b4}"),
-            ("tab_active", "#[bg=$iris,fg=$surface]\u{e0b6}#[bg=$iris,fg=$base] {index} #[bg=$iris,fg=$base,bold] {name} {floating_indicator}#[bg=$surface,fg=$iris]\u{e0b4}"),
-            ("tab_active_fullscreen", "#[bg=$iris,fg=$surface]\u{e0b6}#[bg=$iris,fg=$base] {index} #[bg=$iris,fg=$base,bold] {name} {fullscreen_indicator}#[bg=$surface,fg=$iris]\u{e0b4}"),
-            ("tab_active_sync", "#[bg=$iris,fg=$surface]\u{e0b6}#[bg=$iris,fg=$base] {index} #[bg=$iris,fg=$base,bold] {name} {sync_indicator}#[bg=$surface,fg=$iris]\u{e0b4}"),
-            ("tab_separator", "#[bg=$surface]"),
-            // Tab indicators
-            ("tab_sync_indicator", ""),
-            ("tab_fullscreen_indicator", "\u{f02d3}"),
-            ("tab_floating_indicator", "\u{f0e59}"),
-            // Notifications
-            ("notification_format_unread", "#[bg=$love,fg=$surface]\u{e0b6}#[bg=$love,fg=$base] {message} #[bg=$surface,fg=$love]\u{e0b4}"),
-            ("notification_format_no_notifications", ""),
-            ("notification_show_interval", "10"),
-            // Commands
-            ("command_host_command", "uname -n"),
-            ("command_host_format", "{stdout}"),
-            ("command_host_interval", "0"),
-            ("command_host_rendermode", "static"),
-            ("command_user_command", "whoami"),
-            ("command_user_format", "{stdout}"),
-            ("command_user_interval", "0"),
-            ("command_user_rendermode", "static"),
+            ("tab_normal", "#[bg=$sel,fg=$fg] {name} "),
+            ("tab_normal_fullscreen", "#[bg=$sel,fg=$fg] {name} [] "),
+            ("tab_normal_sync", "#[bg=$sel,fg=$fg] {name} <> "),
+            ("tab_active", "#[bg=$blue,fg=$bg,bold] {name} "),
+            (
+                "tab_active_fullscreen",
+                "#[bg=$blue,fg=$bg,bold] {name} [] ",
+            ),
+            ("tab_active_sync", "#[bg=$blue,fg=$bg,bold] {name} <> "),
+            ("tab_separator", "#[bg=$bg] "),
             // Datetime
-            ("datetime", "{format}"),
-            ("datetime_format", "%Y-%m-%d %H:%M"),
-            ("datetime_timezone", "America/Chicago"),
+            ("datetime", "#[bg=$bg,fg=$fg,dim]{format}"),
+            ("datetime_format", "%H:%M"),
+            ("datetime_timezone", "America/New_York"),
         ];
 
         for (key, value) in zjstatus_config {
@@ -394,6 +350,10 @@ impl LayoutGenerator {
 
         let mut args = KdlNode::new("args");
         args.entries_mut().push(kdl_str_arg("oc"));
+        if let Some(ref profile) = self.opencode_profile {
+            args.entries_mut().push(kdl_str_arg("-p"));
+            args.entries_mut().push(kdl_str_arg(profile));
+        }
         pane.ensure_children().nodes_mut().push(args);
 
         pane
@@ -476,11 +436,15 @@ impl LayoutGenerator {
         args.entries_mut().push(kdl_str_arg("-c"));
 
         let ocx = escape(Cow::Borrowed(&self.opencode_binary));
+        let profile_flag = match &self.opencode_profile {
+            Some(p) => format!(" -p {}", escape(Cow::Borrowed(p))),
+            None => String::new(),
+        };
         let shell_cmd = if let Some(prompt_path) = &wp.prompt_path {
             let path = escape(Cow::Owned(prompt_path.display().to_string()));
-            format!("{ocx} oc -- --agent coder --prompt \"$(cat {path})\"")
+            format!("{ocx} oc{profile_flag} -- --agent coder --prompt \"$(cat {path})\"")
         } else {
-            format!("{ocx} oc -- --agent coder")
+            format!("{ocx} oc{profile_flag} -- --agent coder")
         };
 
         args.entries_mut().push(kdl_str_arg(&shell_cmd));
@@ -859,8 +823,10 @@ mod tests {
 
     #[test]
     fn test_controller_pane_size() {
-        let mut config = Config::default();
-        config.controller_width_pct = 35;
+        let config = Config {
+            controller_width_pct: 35,
+            ..Default::default()
+        };
         let generator = LayoutGenerator::new(&config);
 
         let wp = make_test_wp("WP01", "agent-1");

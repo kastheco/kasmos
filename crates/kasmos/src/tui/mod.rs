@@ -123,6 +123,66 @@ async fn navigate_to_hub() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Launch a review agent pane in a new Zellij pane for the given WP.
+///
+/// Creates a floating pane running `ocx oc -- --agent reviewer --prompt "/kas.review <wp_id>"`
+/// in the WP's worktree directory.
+async fn launch_review_pane(wp_id: &str, worktree_path: Option<&std::path::Path>) -> anyhow::Result<()> {
+    let pane_name = format!("review-{}", wp_id.to_lowercase());
+    let prompt = format!("/kas.review {}", wp_id);
+
+    // Load profile from config.
+    let profile = {
+        let mut cfg = crate::config::Config::default();
+        let _ = cfg.load_from_env();
+        cfg.opencode_profile
+    };
+    let profile_flag = match &profile {
+        Some(p) => format!(" -p {}", shell_escape::escape(std::borrow::Cow::Borrowed(p))),
+        None => String::new(),
+    };
+
+    let mut args = vec![
+        "run".to_string(),
+        "--name".to_string(),
+        pane_name,
+        "--floating".to_string(),
+        "--".to_string(),
+        "bash".to_string(),
+        "-c".to_string(),
+    ];
+
+    // Build the command that runs inside the pane.
+    // If we have a worktree path, cd into it first.
+    let inner_cmd = if let Some(wt) = worktree_path {
+        format!(
+            "cd {} && ocx oc{profile_flag} -- --agent reviewer --prompt \"{}\"",
+            shell_escape::escape(std::borrow::Cow::Borrowed(
+                wt.to_str().unwrap_or(".")
+            )),
+            prompt
+        )
+    } else {
+        format!("ocx oc{profile_flag} -- --agent reviewer --prompt \"{}\"", prompt)
+    };
+    args.push(inner_cmd);
+
+    let result = tokio::process::Command::new("zellij")
+        .args(&args)
+        .output()
+        .await?;
+
+    if !result.status.success() {
+        anyhow::bail!(
+            "zellij run failed: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+
+    tracing::info!(wp_id = %wp_id, "Review agent pane launched");
+    Ok(())
+}
+
 /// Run the TUI event loop.
 ///
 /// This is the main entry point for the TUI. It sets up the terminal, creates
@@ -174,6 +234,15 @@ pub async fn run(
             tokio::spawn(async {
                 if let Err(e) = navigate_to_hub().await {
                     tracing::warn!("Failed to open hub: {}", e);
+                }
+            });
+        }
+
+        // Handle review agent launch request
+        if let Some((wp_id, worktree_path)) = app.launch_review_request.take() {
+            tokio::spawn(async move {
+                if let Err(e) = launch_review_pane(&wp_id, worktree_path.as_deref()).await {
+                    tracing::warn!(wp_id = %wp_id, "Failed to launch review pane: {}", e);
                 }
             });
         }

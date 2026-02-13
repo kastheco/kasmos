@@ -5,7 +5,7 @@
 //! as the controller view when there are no agent panes to display.
 
 use anyhow::{Context, Result};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::sync::mpsc;
 
@@ -129,14 +129,14 @@ fn file_modified(path: &PathBuf) -> Option<std::time::SystemTime> {
 }
 
 /// Write a command line to the FIFO pipe (non-blocking open, blocking write).
-fn write_fifo(fifo_path: &PathBuf, command: &str) -> Result<()> {
+fn write_fifo(fifo_path: &Path, command: &str) -> Result<()> {
     use nix::errno::Errno;
     use nix::fcntl::{open, OFlag};
     use nix::sys::stat::Mode;
     use std::io::Write;
 
     let fd = match open(
-        fifo_path.as_path(),
+        fifo_path,
         OFlag::O_WRONLY | OFlag::O_NONBLOCK,
         Mode::empty(),
     ) {

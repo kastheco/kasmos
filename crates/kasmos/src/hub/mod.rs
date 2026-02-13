@@ -20,7 +20,7 @@ use kasmos::tui::event::EventHandler;
 ///
 /// Reads `~/.config/zellij/layouts/default.kdl` and extracts the
 /// `default_tab_template` block. If the file doesn't exist or can't be
-/// parsed, falls back to a minimal template with `status-bar`.
+/// parsed, falls back to a minimal template with `zjstatus`.
 fn build_hub_layout() -> anyhow::Result<(String, std::path::PathBuf)> {
     let kasmos_bin = std::env::current_exe()
         .unwrap_or_else(|_| std::path::PathBuf::from("kasmos"));
@@ -112,16 +112,17 @@ async fn ensure_zellij_session() -> anyhow::Result<bool> {
 ///
 /// Called after `update_features()` to keep the detail data in sync.
 fn refresh_detail_if_active(app: &mut app::App) {
-    if let app::HubView::Detail { index } = app.view {
-        if let Some(feature) = app.features.get(index) {
-            let detail = scanner::load_detail(feature);
-            app.detail = Some(detail);
-            // Clamp WP selection if the list shrank.
-            if let Some(ref d) = app.detail {
-                if app.detail_selected >= d.work_packages.len() && !d.work_packages.is_empty() {
-                    app.detail_selected = d.work_packages.len() - 1;
-                }
-            }
+    if let app::HubView::Detail { index } = app.view
+        && let Some(feature) = app.features.get(index)
+    {
+        let detail = scanner::load_detail(feature);
+        app.detail = Some(detail);
+        // Clamp WP selection if the list shrank.
+        if let Some(ref d) = app.detail
+            && app.detail_selected >= d.work_packages.len()
+            && !d.work_packages.is_empty()
+        {
+            app.detail_selected = d.work_packages.len() - 1;
         }
     }
 }
@@ -140,6 +141,13 @@ pub async fn run() -> anyhow::Result<()> {
 
     // We're inside Zellij — proceed with the hub TUI.
     let zellij_session = std::env::var("ZELLIJ_SESSION_NAME").ok();
+
+    // Load opencode profile from config (env/defaults).
+    let opencode_profile = {
+        let mut cfg = kasmos::Config::default();
+        let _ = cfg.load_from_env();
+        cfg.opencode_profile
+    };
 
     // Install panic hook before entering raw mode.
     tui_plumbing::install_panic_hook();
@@ -169,8 +177,9 @@ pub async fn run() -> anyhow::Result<()> {
                         app.status_message = Some("Requires Zellij -- run kasmos inside a Zellij session".to_string());
                     } else {
                         let label = action.label().to_string();
+                        let profile = opencode_profile.clone();
                         tokio::spawn(async move {
-                            if let Err(e) = actions::dispatch_action(&action).await {
+                            if let Err(e) = actions::dispatch_action(&action, profile.as_deref()).await {
                                 tracing::warn!("Action dispatch failed: {}", e);
                             }
                         });

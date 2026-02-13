@@ -32,13 +32,13 @@ impl DependencyGraph {
             dependencies.insert(wp.id.clone(), wp.dependencies.clone());
 
             // Initialize dependents map for this WP
-            dependents.entry(wp.id.clone()).or_insert_with(Vec::new);
+            dependents.entry(wp.id.clone()).or_default();
 
             // Build reverse dependencies
             for dep in &wp.dependencies {
                 dependents
                     .entry(dep.clone())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(wp.id.clone());
             }
         }
@@ -111,13 +111,16 @@ impl DependencyGraph {
         }
 
         if sorted.len() != self.dependencies.len() {
-            let unsorted: Vec<_> = self.dependencies.keys()
+            let unsorted: Vec<_> = self
+                .dependencies
+                .keys()
                 .filter(|k| !sorted.contains(k))
                 .cloned()
                 .collect();
             return Err(crate::error::SpecParserError::CircularDependency {
                 cycle: unsorted.join(" -> "),
-            }.into());
+            }
+            .into());
         }
 
         Ok(sorted)

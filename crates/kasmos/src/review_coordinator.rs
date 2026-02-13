@@ -18,6 +18,9 @@ pub struct ReviewCoordinator {
     /// Path to the opencode binary (e.g., "ocx").
     opencode_binary: String,
 
+    /// Profile name for `ocx oc -p <profile>` (e.g., "kas").
+    opencode_profile: Option<String>,
+
     /// Zellij CLI for pane operations.
     cli: Arc<dyn ZellijCli>,
 
@@ -36,6 +39,7 @@ impl ReviewCoordinator {
     pub fn new(
         session_name: String,
         opencode_binary: String,
+        opencode_profile: Option<String>,
         cli: Arc<dyn ZellijCli>,
         review_rx: mpsc::Receiver<ReviewRequest>,
         policy: ReviewAutomationPolicy,
@@ -44,6 +48,7 @@ impl ReviewCoordinator {
         Self {
             session_name,
             opencode_binary,
+            opencode_profile,
             cli,
             review_rx,
             policy,
@@ -100,10 +105,16 @@ impl ReviewCoordinator {
             String::new()
         };
 
+        let profile_flag = match &self.opencode_profile {
+            Some(p) => format!(" -p {}", shell_escape::escape(std::borrow::Cow::Borrowed(p))),
+            None => String::new(),
+        };
+
         let reviewer_cmd = format!(
-            "#!/bin/bash\n{}exec {} oc -- --agent reviewer --prompt \"/kas:verify {}\"",
+            "#!/bin/bash\n{}exec {} oc{} -- --agent reviewer --prompt \"/kas:verify {}\"",
             cwd_line,
             shell_escape::escape(std::borrow::Cow::Borrowed(&self.opencode_binary)),
+            profile_flag,
             request.wp_id,
         );
 
@@ -144,9 +155,12 @@ mod tests {
     use crate::review::ReviewAutomationPolicy;
     use std::path::PathBuf;
 
+    /// (session, pane_name, command, args)
+    type RunCall = (String, String, String, Vec<String>);
+
     /// Mock ZellijCli that records run_in_pane calls.
     struct MockZellijCli {
-        run_calls: std::sync::Mutex<Vec<(String, String, String, Vec<String>)>>,
+        run_calls: std::sync::Mutex<Vec<RunCall>>,
     }
 
     impl MockZellijCli {
@@ -247,6 +261,7 @@ mod tests {
         let coordinator = ReviewCoordinator::new(
             "test-session".to_string(),
             "ocx".to_string(),
+            None,
             mock_cli.clone(),
             review_rx,
             ReviewAutomationPolicy::AutoThenManualApprove,
@@ -278,7 +293,8 @@ mod tests {
         let script_path = kasmos_dir.join("review-WP01.sh");
         assert!(script_path.exists());
         let content = std::fs::read_to_string(&script_path).unwrap();
-        assert!(content.contains("ocx oc -- --agent reviewer --prompt"));
+        assert!(content.contains("ocx oc -- --agent reviewer --prompt"),
+            "Script content should contain ocx oc invocation: {content}");
         assert!(content.contains("/kas:verify WP01"));
     }
 
@@ -293,6 +309,7 @@ mod tests {
         let coordinator = ReviewCoordinator::new(
             "test-session".to_string(),
             "ocx".to_string(),
+            None,
             mock_cli.clone(),
             review_rx,
             ReviewAutomationPolicy::ManualOnly,

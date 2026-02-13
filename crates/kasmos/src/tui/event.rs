@@ -25,6 +25,12 @@ pub struct EventHandler {
     stream: EventStream,
 }
 
+impl Default for EventHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EventHandler {
     /// Create a new event handler wrapping a fresh crossterm `EventStream`.
     pub fn new() -> Self {

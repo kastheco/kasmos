@@ -59,7 +59,7 @@ pub async fn run(count: usize) -> anyhow::Result<()> {
 
 /// Generate a mock `OrchestrationRun` with `count` work packages across 3 waves.
 fn generate_mock_run(count: usize) -> OrchestrationRun {
-    let wave_size = (count + 2) / 3; // ceiling division for even distribution
+    let wave_size = count.div_ceil(3); // ceiling division for even distribution
     let now = SystemTime::now();
 
     let mut work_packages = Vec::with_capacity(count);
@@ -157,7 +157,7 @@ fn derive_wave_state(work_packages: &[WorkPackage], wp_ids: &[String]) -> WaveSt
         WaveState::Completed
     } else if states.iter().any(|s| matches!(s, WPState::Active | WPState::ForReview)) {
         WaveState::Active
-    } else if states.iter().any(|s| *s == WPState::Failed) {
+    } else if states.contains(&WPState::Failed) {
         WaveState::PartiallyFailed
     } else {
         WaveState::Pending
@@ -205,7 +205,7 @@ async fn animation_loop(watch_tx: watch::Sender<OrchestrationRun>, initial_run: 
                 run.work_packages[idx].started_at = Some(now);
             }
             WPState::Active => {
-                if tick % 7 == 0 {
+                if tick.is_multiple_of(7) {
                     // ~14.3% chance of failure
                     run.work_packages[idx].state = WPState::Failed;
                     run.work_packages[idx].failure_count += 1;

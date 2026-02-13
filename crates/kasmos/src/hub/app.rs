@@ -132,12 +132,12 @@ impl App {
     }
 
     pub fn select_next_wp(&mut self) {
-        if let Some(ref detail) = self.detail {
-            if !detail.work_packages.is_empty() {
-                self.detail_selected =
-                    (self.detail_selected + 1).min(detail.work_packages.len() - 1);
-                self.detail_table_state.select(Some(self.detail_selected));
-            }
+        if let Some(ref detail) = self.detail
+            && !detail.work_packages.is_empty()
+        {
+            self.detail_selected =
+                (self.detail_selected + 1).min(detail.work_packages.len() - 1);
+            self.detail_table_state.select(Some(self.detail_selected));
         }
     }
 
@@ -770,6 +770,7 @@ mod tests {
                     lane: "done".into(),
                     wave: None,
                     dependencies: vec![],
+                    worktree_path: None,
                 },
                 WPSummary {
                     id: "WP02".into(),
@@ -777,6 +778,7 @@ mod tests {
                     lane: "doing".into(),
                     wave: None,
                     dependencies: vec!["WP01".into()],
+                    worktree_path: None,
                 },
                 WPSummary {
                     id: "WP03".into(),
@@ -784,6 +786,7 @@ mod tests {
                     lane: "for_review".into(),
                     wave: None,
                     dependencies: vec!["WP01".into(), "WP02".into()],
+                    worktree_path: None,
                 },
             ],
         });
@@ -821,6 +824,7 @@ mod tests {
                     lane: "done".into(),
                     wave: None,
                     dependencies: vec![],
+                    worktree_path: None,
                 },
                 WPSummary {
                     id: "WP02".into(),
@@ -828,6 +832,7 @@ mod tests {
                     lane: "doing".into(),
                     wave: None,
                     dependencies: vec![],
+                    worktree_path: None,
                 },
             ],
         });

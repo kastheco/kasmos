@@ -61,7 +61,7 @@ pub fn run() -> Result<()> {
         let dir = entry.path();
         let spec_path = dir.join("spec.md");
         let has_spec_content =
-            spec_path.is_file() && std::fs::metadata(&spec_path).map_or(false, |m| m.len() > 0);
+            spec_path.is_file() && std::fs::metadata(&spec_path).is_ok_and(|m| m.len() > 0);
 
         let tasks_dir = dir.join("tasks");
         let (done_count, total_count) = if tasks_dir.is_dir() {
@@ -126,10 +126,10 @@ fn scan_wp_lanes(tasks_dir: &Path) -> (usize, usize) {
 
         total += 1;
 
-        if let Some(lane) = extract_lane(&entry.path()) {
-            if lane == "done" {
-                done += 1;
-            }
+        if let Some(lane) = extract_lane(&entry.path())
+            && lane == "done"
+        {
+            done += 1;
         }
     }
 

@@ -229,10 +229,10 @@ impl SessionManager {
                 self.pane_order.remove(idx);
                 if self.pane_order.is_empty() {
                     self.focused_index = None;
-                } else if let Some(fi) = self.focused_index {
-                    if fi >= self.pane_order.len() {
-                        self.focused_index = Some(self.pane_order.len() - 1);
-                    }
+                } else if let Some(fi) = self.focused_index
+                    && fi >= self.pane_order.len()
+                {
+                    self.focused_index = Some(self.pane_order.len() - 1);
                 }
             }
         }
@@ -261,11 +261,11 @@ impl SessionManager {
             }
 
             // Guard: Check if pane exists and is healthy
-            if let Some(pane) = self.get_pane(wp_id) {
-                if pane.health == PaneHealth::Healthy {
-                    debug!("Pane ready: {}", wp_id);
-                    return Ok(());
-                }
+            if let Some(pane) = self.get_pane(wp_id)
+                && pane.health == PaneHealth::Healthy
+            {
+                debug!("Pane ready: {}", wp_id);
+                return Ok(());
             }
 
             // Exponential backoff
@@ -562,8 +562,7 @@ mod tests {
     #[tokio::test]
     async fn test_open_pane_capacity_exceeded() {
         let cli = Arc::new(MockZellijCli::new());
-        let mut config = Config::default();
-        config.max_agent_panes = 2;
+        let config = Config { max_agent_panes: 2, ..Default::default() };
         let config = Arc::new(config);
 
         let mut manager = SessionManager::new("test-session".to_string(), cli.clone(), config).unwrap();

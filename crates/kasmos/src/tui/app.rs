@@ -15,7 +15,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Tabs, Wrap};
 use ratatui::Frame;
 use std::cell::Cell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 
@@ -157,6 +157,8 @@ pub struct ReviewState {
     pub selected_index: usize,
     /// Scroll offset for the review detail pane.
     pub detail_scroll: usize,
+    /// WP IDs that have an active review pane (to prevent duplicates).
+    pub active_review_panes: HashSet<String>,
 }
 
 /// A single log entry in the orchestration log.
@@ -250,6 +252,14 @@ pub struct App {
     // -- WP08 fields --
     /// Whether Alt+h was pressed to open/switch to hub tab.
     pub open_hub_requested: bool,
+
+    /// When set, the event loop should navigate to this WP's pane (or open one).
+    /// Tuple of (wp_id, worktree_path, pane_name).
+    pub open_wp_pane_request: Option<(String, Option<std::path::PathBuf>, String)>,
+
+    /// When set, the event loop should spawn a review agent pane for this WP.
+    /// Tuple of (wp_id, worktree_path).
+    pub launch_review_request: Option<(String, Option<std::path::PathBuf>)>,
 }
 
 impl App {
@@ -271,6 +281,8 @@ impl App {
             notification_cycle_index: 0,
             started_at: Instant::now(),
             open_hub_requested: false,
+            open_wp_pane_request: None,
+            launch_review_request: None,
         }
     }
 
@@ -835,8 +847,8 @@ impl App {
     /// - Body: tab-specific content
     /// - Status footer at bottom
     /// - Overlays: help > detail (overlay priority order)
-    /// Returns `true` when the run is paused at a wave gate, meaning the
-    /// operator needs to press Shift+A to advance.
+    ///   Returns `true` when the run is paused at a wave gate, meaning the
+    ///   operator needs to press Shift+A to advance.
     fn is_wave_gated_paused(&self) -> bool {
         self.run.mode == crate::types::ProgressionMode::WaveGated
             && self.run.state == RunState::Paused

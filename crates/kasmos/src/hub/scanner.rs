@@ -79,6 +79,8 @@ pub struct WPSummary {
     pub wave: Option<usize>,
     /// WP IDs this depends on.
     pub dependencies: Vec<String>,
+    /// Path to the git worktree for this WP, if it exists.
+    pub worktree_path: Option<PathBuf>,
 }
 
 /// Expanded view of a single feature.
@@ -179,6 +181,9 @@ impl FeatureScanner {
 ///
 /// Scans `feature.feature_dir/tasks/` for `WP*.md` files, parses extended
 /// frontmatter, and returns a sorted list of WP summaries.
+///
+/// Also looks up git worktree paths from `.worktrees/{feature_slug}-{wp_id}`
+/// relative to the repository root (derived from the specs directory).
 pub fn load_detail(feature: &FeatureEntry) -> FeatureDetail {
     let tasks_dir = feature.feature_dir.join("tasks");
     let rd = match std::fs::read_dir(&tasks_dir) {
@@ -190,6 +195,16 @@ pub fn load_detail(feature: &FeatureEntry) -> FeatureDetail {
         }
     };
 
+    // Derive repo root from feature_dir:
+    //   feature_dir = <repo_root>/kitty-specs/<slug>
+    //   repo_root   = feature_dir.parent().parent()
+    let repo_root = feature
+        .feature_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap_or(Path::new("."));
+    let worktrees_dir = repo_root.join(".worktrees");
+
     let mut wps: Vec<WPSummary> = rd
         .filter_map(|e| e.ok())
         .filter(|e| {
@@ -199,7 +214,15 @@ pub fn load_detail(feature: &FeatureEntry) -> FeatureDetail {
             };
             name_str.starts_with("WP") && name_str.ends_with(".md")
         })
-        .map(|e| parse_wp_summary(&e.path(), &e.file_name()))
+        .map(|e| {
+            let mut wp = parse_wp_summary(&e.path(), &e.file_name());
+            // Look up worktree: .worktrees/{feature_full_slug}-{wp_id}
+            let wt_path = worktrees_dir.join(format!("{}-{}", feature.full_slug, wp.id));
+            if wt_path.is_dir() {
+                wp.worktree_path = Some(wt_path);
+            }
+            wp
+        })
         .collect();
 
     wps.sort_by(|a, b| a.id.cmp(&b.id));
@@ -231,6 +254,7 @@ fn parse_wp_summary(path: &Path, filename: &std::ffi::OsStr) -> WPSummary {
                 lane: "planned".to_string(),
                 wave: None,
                 dependencies: Vec::new(),
+                worktree_path: None,
             };
         }
     };
@@ -242,6 +266,7 @@ fn parse_wp_summary(path: &Path, filename: &std::ffi::OsStr) -> WPSummary {
             lane: "planned".to_string(),
             wave: None,
             dependencies: Vec::new(),
+            worktree_path: None,
         };
     };
 
@@ -252,6 +277,7 @@ fn parse_wp_summary(path: &Path, filename: &std::ffi::OsStr) -> WPSummary {
             lane: "planned".to_string(),
             wave: None,
             dependencies: Vec::new(),
+            worktree_path: None,
         };
     };
 
@@ -264,6 +290,7 @@ fn parse_wp_summary(path: &Path, filename: &std::ffi::OsStr) -> WPSummary {
                 lane: "planned".to_string(),
                 wave: None,
                 dependencies: Vec::new(),
+                worktree_path: None,
             };
         }
     };
@@ -274,6 +301,7 @@ fn parse_wp_summary(path: &Path, filename: &std::ffi::OsStr) -> WPSummary {
         lane: fm.lane.unwrap_or_else(|| "planned".to_string()),
         wave: fm.wave,
         dependencies: fm.dependencies.unwrap_or_default(),
+        worktree_path: None, // Set by load_detail after lookup
     }
 }
 
@@ -283,7 +311,7 @@ fn parse_wp_summary(path: &Path, filename: &std::ffi::OsStr) -> WPSummary {
 
 fn check_spec_status(feature_dir: &Path) -> SpecStatus {
     let spec_path = feature_dir.join("spec.md");
-    if spec_path.is_file() && std::fs::metadata(&spec_path).map_or(false, |m| m.len() > 0) {
+    if spec_path.is_file() && std::fs::metadata(&spec_path).is_ok_and(|m| m.len() > 0) {
         SpecStatus::Present
     } else {
         SpecStatus::Empty
@@ -319,10 +347,10 @@ fn check_task_progress(feature_dir: &Path) -> TaskProgress {
 
         total += 1;
 
-        if let Some(lane) = extract_lane(&entry.path()) {
-            if lane == "done" {
-                done += 1;
-            }
+        if let Some(lane) = extract_lane(&entry.path())
+            && lane == "done"
+        {
+            done += 1;
         }
     }
 
@@ -364,10 +392,10 @@ fn check_orchestration_status(
     ];
 
     let pid_alive = lock_paths.iter().any(|lock_path| {
-        if let Ok(content) = std::fs::read_to_string(lock_path) {
-            if let Ok(pid) = content.trim().parse::<u32>() {
-                return is_pid_alive(pid);
-            }
+        if let Ok(content) = std::fs::read_to_string(lock_path)
+            && let Ok(pid) = content.trim().parse::<u32>()
+        {
+            return is_pid_alive(pid);
         }
         false
     });

@@ -126,18 +126,18 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) -> Option<HubAction> {
             if app.outside_zellij() {
                 app.status_message =
                     Some("Requires Zellij -- run kasmos inside a Zellij session".to_string());
-            } else if let HubView::Detail { index } = app.view {
-                if let Some(entry) = app.features.get(index) {
-                    let hub_actions = actions::resolve_actions(entry);
-                    if let Some(action) = hub_actions
-                        .into_iter()
-                        .find(|a| matches!(a, HubAction::StartContinuous { .. }))
-                    {
-                        return Some(action);
-                    } else {
-                        app.status_message =
-                            Some("Continuous start not available for this feature".to_string());
-                    }
+            } else if let HubView::Detail { index } = app.view
+                && let Some(entry) = app.features.get(index)
+            {
+                let hub_actions = actions::resolve_actions(entry);
+                if let Some(action) = hub_actions
+                    .into_iter()
+                    .find(|a| matches!(a, HubAction::StartContinuous { .. }))
+                {
+                    return Some(action);
+                } else {
+                    app.status_message =
+                        Some("Continuous start not available for this feature".to_string());
                 }
             }
         }
@@ -146,16 +146,16 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) -> Option<HubAction> {
             if app.outside_zellij() {
                 app.status_message =
                     Some("Requires Zellij -- run kasmos inside a Zellij session".to_string());
-            } else if let HubView::Detail { index } = app.view {
-                if let Some(entry) = app.features.get(index) {
-                    let hub_actions = actions::resolve_actions(entry);
-                    // Find the first non-ViewDetails action
-                    let primary = hub_actions
-                        .into_iter()
-                        .find(|a| !matches!(a, HubAction::ViewDetails));
-                    if let Some(action) = primary {
-                        return Some(action);
-                    }
+            } else if let HubView::Detail { index } = app.view
+                && let Some(entry) = app.features.get(index)
+            {
+                let hub_actions = actions::resolve_actions(entry);
+                // Find the first non-ViewDetails action
+                let primary = hub_actions
+                    .into_iter()
+                    .find(|a| !matches!(a, HubAction::ViewDetails));
+                if let Some(action) = primary {
+                    return Some(action);
                 }
             }
         }
@@ -473,6 +473,7 @@ mod tests {
                     lane: "done".into(),
                     wave: None,
                     dependencies: vec![],
+                    worktree_path: None,
                 },
                 crate::hub::scanner::WPSummary {
                     id: "WP02".into(),
@@ -480,6 +481,7 @@ mod tests {
                     lane: "doing".into(),
                     wave: None,
                     dependencies: vec![],
+                    worktree_path: None,
                 },
                 crate::hub::scanner::WPSummary {
                     id: "WP03".into(),
@@ -487,6 +489,7 @@ mod tests {
                     lane: "planned".into(),
                     wave: None,
                     dependencies: vec![],
+                    worktree_path: None,
                 },
             ],
         });

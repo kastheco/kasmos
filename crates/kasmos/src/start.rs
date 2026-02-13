@@ -268,7 +268,7 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
         .generate_all(&work_packages, &kasmos_dir)
         .context("Failed to generate prompt files")?;
     let _script_paths = prompt_gen
-        .generate_scripts(&work_packages, &kasmos_dir)
+        .generate_scripts(&work_packages, &kasmos_dir, config.opencode_profile.as_deref())
         .context("Failed to generate scripts")?;
 
     for (wp, prompt_path) in work_packages.iter_mut().zip(prompt_paths.iter()) {
@@ -573,6 +573,7 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
     let review_coordinator = kasmos::ReviewCoordinator::new(
         session_name.clone(),
         config.opencode_binary.clone(),
+        config.opencode_profile.clone(),
         std::sync::Arc::new(kasmos::RealZellijCli::new(config.zellij_binary.clone())),
         review_rx,
         kasmos::ReviewAutomationPolicy::default(),

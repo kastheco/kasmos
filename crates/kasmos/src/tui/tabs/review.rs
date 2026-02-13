@@ -130,11 +130,33 @@ pub fn render_review(app: &App, frame: &mut Frame, area: Rect) {
             ]));
         }
 
+        // Review pane status
+        let has_active_review = app.review.active_review_panes.contains(&wp.id);
+
         lines.push(Line::default());
-        lines.push(Line::from(Span::styled(
-            "Keys: a=approve  r=reject  R=reject+relaunch",
-            Style::default().fg(Color::DarkGray),
-        )));
+        if has_active_review {
+            lines.push(Line::from(Span::styled(
+                "Review agent running (check floating pane)",
+                Style::default().fg(Color::Green),
+            )));
+        }
+
+        lines.push(Line::default());
+        lines.push(Line::from(vec![
+            Span::styled("Keys: ", Style::default().fg(Color::DarkGray)),
+            if has_active_review {
+                Span::styled(
+                    "Space=review(running)",
+                    Style::default().fg(Color::DarkGray),
+                )
+            } else {
+                Span::styled("Space=review", Style::default().fg(Color::Magenta))
+            },
+            Span::styled(
+                "  a=approve  r=reject  R=reject+relaunch",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]));
 
         frame.render_widget(Paragraph::new(lines), detail_inner);
     }

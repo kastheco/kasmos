@@ -4,21 +4,16 @@ use crate::types::WPState;
 use serde::{Deserialize, Serialize};
 
 /// Automation policy for work packages entering `for_review`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReviewAutomationPolicy {
     /// Never run automation; operator reviews manually.
     ManualOnly,
     /// Run automation and require manual approval for completion.
+    #[default]
     AutoThenManualApprove,
     /// Run automation and mark done when automation succeeds.
     AutoAndMarkDone,
-}
-
-impl Default for ReviewAutomationPolicy {
-    fn default() -> Self {
-        Self::AutoThenManualApprove
-    }
 }
 
 /// Typed review automation failure category.

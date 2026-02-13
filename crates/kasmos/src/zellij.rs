@@ -179,7 +179,7 @@ fn strip_ansi(s: &str) -> String {
 /// Handles both legacy format and Zellij 0.44+ format (with ANSI codes):
 /// - Legacy: `session-name`, `session-name (current)`, `session-name EXITED`
 /// - 0.44+:  `session-name [Created Xh Ym Zs ago]`,
-///           `session-name [Created Xh Ym Zs ago] (EXITED - attach to resurrect)`
+///   `session-name [Created Xh Ym Zs ago] (EXITED - attach to resurrect)`
 fn parse_list_sessions(output: &str) -> Vec<SessionInfo> {
     let clean = strip_ansi(output);
     clean

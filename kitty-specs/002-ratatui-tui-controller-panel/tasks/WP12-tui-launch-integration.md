@@ -22,10 +22,6 @@ review_status: "approved"
 reviewed_by: "kas"
 history:
   - timestamp: '2026-02-12T02:20:00Z'
-lane: doing
-    agent: system
-    shell_pid: ''
-    action: "Manual WP created — TUI runtime wiring gap identified during 006 orchestration"
 ---
 
 # Work Package Prompt: WP12 — TUI Launch Integration
