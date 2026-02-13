@@ -11,6 +11,7 @@ pub mod scanner;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use anyhow::Context;
 use kasmos::tui as tui_plumbing;
 use kasmos::tui::event::EventHandler;
 
@@ -32,14 +33,89 @@ fn refresh_detail_if_active(app: &mut app::App) {
     }
 }
 
+/// Ensure the hub is running inside a Zellij session.
+///
+/// If `ZELLIJ_SESSION_NAME` is not set, creates (or attaches to) a
+/// `kasmos-hub` session that runs `kasmos` inside it. The outer process
+/// then exits after Zellij detaches, and the inner `kasmos` invocation
+/// picks up `ZELLIJ_SESSION_NAME` automatically.
+///
+/// Returns `Ok(None)` when Zellij was spawned (caller should exit),
+/// or `Ok(Some(session_name))` when already inside Zellij.
+async fn ensure_zellij_session() -> anyhow::Result<Option<String>> {
+    if let Ok(session) = std::env::var("ZELLIJ_SESSION_NAME") {
+        return Ok(Some(session));
+    }
+
+    let session_name = "kasmos-hub";
+
+    // Resolve the kasmos binary path so re-exec works regardless of cwd.
+    let kasmos_bin = std::env::current_exe()
+        .unwrap_or_else(|_| std::path::PathBuf::from("kasmos"));
+
+    // Check if a kasmos-hub session already exists.
+    let existing = tokio::process::Command::new("zellij")
+        .args(["list-sessions", "--short", "--no-formatting"])
+        .output()
+        .await
+        .ok()
+        .and_then(|o| if o.status.success() { Some(o) } else { None })
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default();
+
+    let session_exists = existing.lines().any(|l| l.trim() == session_name);
+
+    if session_exists {
+        // Attach to the existing session (foreground).
+        let status = tokio::process::Command::new("zellij")
+            .args(["attach", session_name])
+            .stdin(std::process::Stdio::inherit())
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit())
+            .status()
+            .await
+            .context("Failed to attach to Zellij session")?;
+
+        if !status.success() {
+            anyhow::bail!("Zellij attach exited with: {status}");
+        }
+    } else {
+        // Create a new session running kasmos inside it.
+        let status = tokio::process::Command::new("zellij")
+            .args([
+                "--session",
+                session_name,
+                "--",
+                &kasmos_bin.display().to_string(),
+            ])
+            .stdin(std::process::Stdio::inherit())
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit())
+            .status()
+            .await
+            .context("Failed to create Zellij session")?;
+
+        if !status.success() {
+            anyhow::bail!("Zellij session exited with: {status}");
+        }
+    }
+
+    // Zellij has exited (user detached or quit). Outer process should exit.
+    Ok(None)
+}
+
 /// Run the hub TUI.
 ///
 /// This is the entry point when `kasmos` is invoked with no subcommand.
-/// Sets up the terminal, performs an initial scan of `kitty-specs/`, and
-/// runs an async event loop with periodic refresh.
+/// If not inside Zellij, spawns a session first. Then sets up the terminal,
+/// performs an initial scan of `kitty-specs/`, and runs an async event loop
+/// with periodic refresh.
 pub async fn run() -> anyhow::Result<()> {
-    // Detect Zellij session (None = read-only mode).
-    let zellij_session = std::env::var("ZELLIJ_SESSION_NAME").ok();
+    // Ensure we're inside Zellij. If not, create/attach and re-exec.
+    let zellij_session = match ensure_zellij_session().await? {
+        Some(session) => Some(session),
+        None => return Ok(()), // Zellij was spawned; outer process exits cleanly.
+    };
 
     // Install panic hook before entering raw mode.
     tui_plumbing::install_panic_hook();
