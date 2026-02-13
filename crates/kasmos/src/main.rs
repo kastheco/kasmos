@@ -49,15 +49,18 @@ struct Cli {
 enum Commands {
     /// List available feature specs
     List,
-    /// Start orchestration for a feature and attach to the Zellij session
+    /// Start orchestration for a feature (TUI dashboard by default)
     Start {
         /// Feature spec ID or prefix (e.g. "002" or "002-ratatui-tui-controller-panel")
         feature: String,
         /// Progression mode: continuous or wave-gated
-        #[arg(long, default_value = "wave-gated")]
+        #[arg(long, default_value = "continuous")]
         mode: String,
-        /// Launch the interactive TUI dashboard instead of attaching to Zellij
+        /// Skip TUI dashboard, attach directly to Zellij session
         #[arg(long)]
+        no_tui: bool,
+        /// [deprecated] TUI is now the default; accepted for backward compatibility
+        #[arg(long, hide = true)]
         tui: bool,
     },
     /// Show orchestration status
@@ -110,9 +113,14 @@ async fn main() -> Result<()> {
             let _ = kasmos::init_logging(false);
             list_specs::run().context("Failed to list specs")?;
         }
-        Some(Commands::Start { feature, mode, tui }) => {
+        Some(Commands::Start {
+            feature,
+            mode,
+            no_tui,
+            tui: _,
+        }) => {
             let _ = kasmos::init_logging(false);
-            start::run(&feature, &mode, tui)
+            start::run(&feature, &mode, no_tui)
                 .await
                 .context("Start failed")?;
         }

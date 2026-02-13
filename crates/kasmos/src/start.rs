@@ -49,8 +49,8 @@ impl Drop for LockGuard {
     }
 }
 
-/// Main start entry point: setup session and attach.
-pub async fn run(feature: &str, mode: &str, tui: bool) -> Result<()> {
+/// Main start entry point: setup session, launch TUI (default) or attach.
+pub async fn run(feature: &str, mode: &str, no_tui: bool) -> Result<()> {
     let _span = tracing::info_span!("start", feature = %feature).entered();
     tracing::info!("Starting orchestration");
 
@@ -656,22 +656,10 @@ pub async fn run(feature: &str, mode: &str, tui: bool) -> Result<()> {
     });
     tracing::info!("Review coordinator started");
 
-    // ── Phase 4: Attach interactively OR launch TUI ───────────
+    // ── Phase 4: Launch TUI dashboard (default) or attach directly ───
 
-    if tui {
-        // TUI mode: run the ratatui dashboard instead of attaching to Zellij
-        tracing::info!("Launching TUI dashboard");
-        match kasmos::tui::run(watch_rx, tui_action_tx).await {
-            Ok(()) => {
-                tracing::info!("TUI exited normally");
-            }
-            Err(e) => {
-                tracing::error!("TUI error: {}", e);
-                eprintln!("TUI error: {e:#}");
-            }
-        }
-    } else {
-        // Standard mode: attach to the Zellij session interactively
+    if no_tui {
+        // Legacy mode: attach directly to the Zellij session
         // Drop TUI-specific resources that won't be used
         drop(watch_rx);
         drop(tui_action_tx);
@@ -687,6 +675,18 @@ pub async fn run(feature: &str, mode: &str, tui: bool) -> Result<()> {
 
         if !attach_status.success() {
             tracing::warn!("Zellij attach exited with: {}", attach_status);
+        }
+    } else {
+        // Default: launch the TUI dashboard
+        tracing::info!("Launching TUI dashboard");
+        match kasmos::tui::run(watch_rx, tui_action_tx).await {
+            Ok(()) => {
+                tracing::info!("TUI exited normally");
+            }
+            Err(e) => {
+                tracing::error!("TUI error: {}", e);
+                eprintln!("TUI error: {e:#}");
+            }
         }
     }
 
