@@ -154,9 +154,7 @@ async fn bootstrap_start_in_zellij(feature: &str, mode: &str) -> Result<()> {
     let kasmos_bin = std::env::current_exe()
         .unwrap_or_else(|_| std::path::PathBuf::from("kasmos"));
 
-    let tab_template = hub::read_user_tab_template_text().unwrap_or_else(|| {
-        "    default_tab_template {\n        children\n        pane size=1 borderless=true {\n            plugin location=\"status-bar\"\n        }\n    }".to_string()
-    });
+    let tab_template = kasmos::LayoutGenerator::tab_template_kdl_string();
 
     let layout = format!(
         "layout {{\n{tab_template}\n    tab name=\"kasmos\" {{\n        pane command=\"{}\" close_on_exit=true {{\n            args \"start\" \"{}\" \"--mode\" \"{}\"\n        }}\n    }}\n}}\n",

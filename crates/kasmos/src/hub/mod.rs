@@ -26,10 +26,7 @@ fn build_hub_layout() -> anyhow::Result<(String, std::path::PathBuf)> {
         .unwrap_or_else(|_| std::path::PathBuf::from("kasmos"));
 
     // Try to read the user's default layout for their tab template.
-    let tab_template = read_user_tab_template().unwrap_or_else(|| {
-        // Fallback: minimal template with status-bar.
-        "    default_tab_template {\n        children\n        pane size=1 borderless=true {\n            plugin location=\"status-bar\"\n        }\n    }".to_string()
-    });
+    let tab_template = kasmos::LayoutGenerator::tab_template_kdl_string();
 
     let layout = format!(
         "layout {{\n{tab_template}\n    tab name=\"Hub\" {{\n        pane command=\"{}\" close_on_exit=true\n    }}\n}}\n",
