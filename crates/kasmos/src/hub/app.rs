@@ -146,7 +146,12 @@ impl App {
         self.detail_table_state.select(Some(self.detail_selected));
     }
 
-    pub fn is_read_only(&self) -> bool {
+    /// Whether the hub is running outside a Zellij session.
+    ///
+    /// When true, actions that require Zellij (pane/tab operations) are
+    /// unavailable. Browsing, navigation, refresh, and local actions
+    /// like creating a new feature directory still work.
+    pub fn outside_zellij(&self) -> bool {
         self.zellij_session.is_none()
     }
 
@@ -181,38 +186,15 @@ impl App {
     fn render_list(&mut self, frame: &mut Frame) {
         let area = frame.area();
 
-        // Layout: optional warning + header + list + footer
-        let has_warning = self.is_read_only();
-        let constraints = if has_warning {
-            vec![
-                Constraint::Length(1), // read-only warning
-                Constraint::Length(2), // header
-                Constraint::Min(1),    // list
-                Constraint::Length(1), // footer
-            ]
-        } else {
-            vec![
-                Constraint::Length(2), // header
-                Constraint::Min(1),    // list
-                Constraint::Length(1), // footer
-            ]
-        };
+        // Layout: header + list + footer
+        let constraints = vec![
+            Constraint::Length(2), // header
+            Constraint::Min(1),    // list
+            Constraint::Length(1), // footer
+        ];
 
         let chunks = Layout::vertical(constraints).split(area);
         let mut idx = 0;
-
-        // Read-only warning banner
-        if has_warning {
-            let warning = Paragraph::new(Line::from(vec![Span::styled(
-                " Read-only mode -- Zellij not detected ",
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            )]));
-            frame.render_widget(warning, chunks[idx]);
-            idx += 1;
-        }
 
         // Header
         let elapsed = self.last_refresh.elapsed().as_secs();
@@ -648,12 +630,11 @@ mod tests {
     }
 
     #[test]
-    fn is_read_only() {
-        let app = App::new(Vec::new(), None, true);
-        assert!(app.is_read_only());
-
-        let app = App::new(Vec::new(), Some("test-session".to_string()), true);
-        assert!(!app.is_read_only());
+    fn outside_zellij_detection() {
+        let app = App::new(vec![], None, true);
+        assert!(app.outside_zellij());
+        let app = App::new(vec![], Some("session".to_string()), true);
+        assert!(!app.outside_zellij());
     }
 
     #[test]

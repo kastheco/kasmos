@@ -54,9 +54,9 @@ fn handle_list_key(app: &mut App, key: KeyEvent) -> Option<HubAction> {
         // Enter: open detail view OR dispatch primary action
         KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
             // Shift+Enter: wave-gated start (WP07 T033)
-            if app.is_read_only() {
+            if app.outside_zellij() {
                 app.status_message =
-                    Some("Action unavailable -- not running inside Zellij".to_string());
+                    Some("Requires Zellij -- run kasmos inside a Zellij session".to_string());
             } else if !app.features.is_empty() {
                 let entry = &app.features[app.selected];
                 let hub_actions = actions::resolve_actions(entry);
@@ -90,16 +90,11 @@ fn handle_list_key(app: &mut App, key: KeyEvent) -> Option<HubAction> {
             app.status_message = Some("Refreshing...".to_string());
         }
 
-        // New feature prompt (WP05)
+        // New feature prompt (WP05) — works without Zellij (just creates a directory).
         KeyCode::Char('n') => {
-            if app.is_read_only() {
-                app.status_message =
-                    Some("Action unavailable -- not running inside Zellij".to_string());
-            } else {
-                app.input_mode = InputMode::NewFeaturePrompt {
-                    input: String::new(),
-                };
-            }
+            app.input_mode = InputMode::NewFeaturePrompt {
+                input: String::new(),
+            };
         }
 
         _ => {}
@@ -128,9 +123,9 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) -> Option<HubAction> {
         // Enter: dispatch primary action for this feature (WP06 T030)
         KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
             // Shift+Enter: wave-gated start (WP07 T033)
-            if app.is_read_only() {
+            if app.outside_zellij() {
                 app.status_message =
-                    Some("Action unavailable -- not running inside Zellij".to_string());
+                    Some("Requires Zellij -- run kasmos inside a Zellij session".to_string());
             } else if let HubView::Detail { index } = app.view {
                 if let Some(entry) = app.features.get(index) {
                     let hub_actions = actions::resolve_actions(entry);
@@ -148,9 +143,9 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) -> Option<HubAction> {
         }
         KeyCode::Enter => {
             // Enter in detail: dispatch the primary non-ViewDetails action
-            if app.is_read_only() {
+            if app.outside_zellij() {
                 app.status_message =
-                    Some("Action unavailable -- not running inside Zellij".to_string());
+                    Some("Requires Zellij -- run kasmos inside a Zellij session".to_string());
             } else if let HubView::Detail { index } = app.view {
                 if let Some(entry) = app.features.get(index) {
                     let hub_actions = actions::resolve_actions(entry);
@@ -395,11 +390,11 @@ mod tests {
     }
 
     #[test]
-    fn n_key_read_only_shows_warning() {
-        let mut app = App::new(vec![], None, true); // read-only
+    fn n_key_works_without_zellij() {
+        let mut app = App::new(vec![], None, true); // no zellij
         handle_event(&mut app, key(KeyCode::Char('n')));
-        assert!(matches!(app.input_mode, InputMode::Normal));
-        assert!(app.status_message.as_ref().unwrap().contains("unavailable"));
+        // New feature prompt opens regardless of Zellij — it only creates a directory.
+        assert!(matches!(app.input_mode, InputMode::NewFeaturePrompt { .. }));
     }
 
     #[test]
@@ -582,12 +577,12 @@ mod tests {
     }
 
     #[test]
-    fn shift_enter_read_only_returns_none() {
+    fn shift_enter_outside_zellij_returns_none() {
         let features = vec![make_startable_feature("001", "alpha", 3)];
-        let mut app = App::new(features, None, true); // read-only
+        let mut app = App::new(features, None, true); // no zellij
         let result = handle_event(&mut app, shift_enter());
         assert!(result.is_none());
-        assert!(app.status_message.as_ref().unwrap().contains("unavailable"));
+        assert!(app.status_message.as_ref().unwrap().contains("Zellij"));
     }
 
     #[test]
@@ -688,9 +683,9 @@ mod tests {
     }
 
     #[test]
-    fn enter_detail_read_only_shows_warning() {
+    fn enter_detail_outside_zellij_shows_warning() {
         let features = vec![make_startable_feature("001", "alpha", 3)];
-        let mut app = App::new(features, None, true); // read-only
+        let mut app = App::new(features, None, true); // no zellij
         app.view = HubView::Detail { index: 0 };
         app.detail = Some(crate::hub::scanner::FeatureDetail {
             feature: make_startable_feature("001", "alpha", 3),
@@ -699,6 +694,6 @@ mod tests {
 
         let result = handle_event(&mut app, key(KeyCode::Enter));
         assert!(result.is_none());
-        assert!(app.status_message.as_ref().unwrap().contains("unavailable"));
+        assert!(app.status_message.as_ref().unwrap().contains("Zellij"));
     }
 }
