@@ -53,7 +53,7 @@ fn handle_list_key(app: &mut App, key: KeyEvent) -> Option<HubAction> {
 
         // Enter: open detail view OR dispatch primary action
         KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
-            // Shift+Enter: wave-gated start (WP07 T033)
+            // Shift+Enter: continuous start (secondary mode)
             if app.outside_zellij() {
                 app.status_message =
                     Some("Requires Zellij -- run kasmos inside a Zellij session".to_string());
@@ -62,14 +62,14 @@ fn handle_list_key(app: &mut App, key: KeyEvent) -> Option<HubAction> {
                 let hub_actions = actions::resolve_actions(entry);
                 if hub_actions
                     .iter()
-                    .any(|a| matches!(a, HubAction::StartWaveGated { .. }))
+                    .any(|a| matches!(a, HubAction::StartContinuous { .. }))
                 {
                     return hub_actions
                         .into_iter()
-                        .find(|a| matches!(a, HubAction::StartWaveGated { .. }));
+                        .find(|a| matches!(a, HubAction::StartContinuous { .. }));
                 } else {
                     app.status_message =
-                        Some("Wave-gated start not available for this feature".to_string());
+                        Some("Continuous start not available for this feature".to_string());
                 }
             }
         }
@@ -122,7 +122,7 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) -> Option<HubAction> {
 
         // Enter: dispatch primary action for this feature (WP06 T030)
         KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
-            // Shift+Enter: wave-gated start (WP07 T033)
+            // Shift+Enter: continuous start (secondary mode)
             if app.outside_zellij() {
                 app.status_message =
                     Some("Requires Zellij -- run kasmos inside a Zellij session".to_string());
@@ -131,12 +131,12 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) -> Option<HubAction> {
                     let hub_actions = actions::resolve_actions(entry);
                     if let Some(action) = hub_actions
                         .into_iter()
-                        .find(|a| matches!(a, HubAction::StartWaveGated { .. }))
+                        .find(|a| matches!(a, HubAction::StartContinuous { .. }))
                     {
                         return Some(action);
                     } else {
                         app.status_message =
-                            Some("Wave-gated start not available for this feature".to_string());
+                            Some("Continuous start not available for this feature".to_string());
                     }
                 }
             }
@@ -154,22 +154,6 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) -> Option<HubAction> {
                         .into_iter()
                         .find(|a| !matches!(a, HubAction::ViewDetails));
                     if let Some(action) = primary {
-                        // Check for >6 WP confirmation (WP07 T033/T034)
-                        if matches!(&action, HubAction::StartContinuous { .. }) {
-                            let total_wps = match &entry.task_progress {
-                                super::scanner::TaskProgress::InProgress { total, .. } => *total,
-                                _ => 0,
-                            };
-                            if total_wps > 6 {
-                                app.pending_action = Some(action);
-                                app.input_mode = InputMode::ConfirmDialog {
-                                    message: format!(
-                                        "This feature has {total_wps} WPs. Use wave-gated mode instead?"
-                                    ),
-                                };
-                                return None;
-                            }
-                        }
                         return Some(action);
                     }
                 }
@@ -189,8 +173,8 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) -> Option<HubAction> {
 
 /// Handle keys for ConfirmDialog input mode (WP07 T034).
 ///
-/// - `y`/`Y`: Switch to wave-gated, dispatch StartWaveGated
-/// - `n`/`Enter`: Continue with continuous, dispatch the pending action
+/// - `y`/`Y`: Switch to continuous, dispatch StartContinuous
+/// - `n`/`Enter`: Continue with wave-gated (default), dispatch the pending action
 /// - `Esc`: Cancel, return to Normal
 fn handle_confirm_dialog_key(app: &mut App, key: KeyEvent) -> Option<HubAction> {
     match key.code {
@@ -201,18 +185,17 @@ fn handle_confirm_dialog_key(app: &mut App, key: KeyEvent) -> Option<HubAction> 
         }
         KeyCode::Char('y') | KeyCode::Char('Y') => {
             app.input_mode = InputMode::Normal;
-            // User chose wave-gated instead of continuous.
+            // User chose continuous instead of wave-gated.
             let action = app.pending_action.take();
-            if let Some(HubAction::StartContinuous { feature_slug }) = action {
-                Some(HubAction::StartWaveGated { feature_slug })
+            if let Some(HubAction::StartWaveGated { feature_slug }) = action {
+                Some(HubAction::StartContinuous { feature_slug })
             } else {
-                // Shouldn't happen, but return the pending action if it was something else.
                 action
             }
         }
         KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Enter => {
             app.input_mode = InputMode::Normal;
-            // User confirmed continuous mode.
+            // User confirmed wave-gated mode (default).
             app.pending_action.take()
         }
         _ => None,
@@ -569,11 +552,11 @@ mod tests {
     }
 
     #[test]
-    fn shift_enter_in_list_returns_wave_gated_when_available() {
+    fn shift_enter_in_list_returns_continuous_when_available() {
         let features = vec![make_startable_feature("001", "alpha", 3)];
         let mut app = App::new(features, Some("session".to_string()), true);
         let result = handle_event(&mut app, shift_enter());
-        assert!(matches!(result, Some(HubAction::StartWaveGated { .. })));
+        assert!(matches!(result, Some(HubAction::StartContinuous { .. })));
     }
 
     #[test]
@@ -596,12 +579,12 @@ mod tests {
         });
 
         let result = handle_event(&mut app, key(KeyCode::Enter));
-        // Primary action for in-progress feature is StartContinuous
-        assert!(matches!(result, Some(HubAction::StartContinuous { .. })));
+        // Primary action for in-progress feature is StartWaveGated (default)
+        assert!(matches!(result, Some(HubAction::StartWaveGated { .. })));
     }
 
     #[test]
-    fn enter_detail_with_many_wps_shows_confirm() {
+    fn enter_detail_with_many_wps_dispatches_directly() {
         let features = vec![make_startable_feature("001", "alpha", 8)]; // >6 WPs
         let mut app = App::new(features, Some("session".to_string()), true);
         app.view = HubView::Detail { index: 0 };
@@ -611,59 +594,57 @@ mod tests {
         });
 
         let result = handle_event(&mut app, key(KeyCode::Enter));
-        // Should show confirm dialog, not dispatch immediately
-        assert!(result.is_none());
-        assert!(matches!(app.input_mode, InputMode::ConfirmDialog { .. }));
-        assert!(app.pending_action.is_some());
+        // Wave-gated is already the safe default — no confirm dialog needed
+        assert!(matches!(result, Some(HubAction::StartWaveGated { .. })));
     }
 
     #[test]
-    fn confirm_dialog_y_switches_to_wave_gated() {
+    fn confirm_dialog_y_switches_to_continuous() {
         let mut app = App::new(vec![], Some("s".to_string()), true);
         app.input_mode = InputMode::ConfirmDialog {
             message: "test".to_string(),
         };
-        app.pending_action = Some(HubAction::StartContinuous {
+        app.pending_action = Some(HubAction::StartWaveGated {
             feature_slug: "001-alpha".to_string(),
         });
 
         let result = handle_event(&mut app, key(KeyCode::Char('y')));
         assert!(matches!(
             result,
-            Some(HubAction::StartWaveGated { ref feature_slug }) if feature_slug == "001-alpha"
+            Some(HubAction::StartContinuous { ref feature_slug }) if feature_slug == "001-alpha"
         ));
         assert!(matches!(app.input_mode, InputMode::Normal));
     }
 
     #[test]
-    fn confirm_dialog_n_continues_with_continuous() {
+    fn confirm_dialog_n_continues_with_wave_gated() {
         let mut app = App::new(vec![], Some("s".to_string()), true);
         app.input_mode = InputMode::ConfirmDialog {
             message: "test".to_string(),
         };
-        app.pending_action = Some(HubAction::StartContinuous {
+        app.pending_action = Some(HubAction::StartWaveGated {
             feature_slug: "001-alpha".to_string(),
         });
 
         let result = handle_event(&mut app, key(KeyCode::Char('n')));
         assert!(matches!(
             result,
-            Some(HubAction::StartContinuous { ref feature_slug }) if feature_slug == "001-alpha"
+            Some(HubAction::StartWaveGated { ref feature_slug }) if feature_slug == "001-alpha"
         ));
     }
 
     #[test]
-    fn confirm_dialog_enter_continues_with_continuous() {
+    fn confirm_dialog_enter_continues_with_wave_gated() {
         let mut app = App::new(vec![], Some("s".to_string()), true);
         app.input_mode = InputMode::ConfirmDialog {
             message: "test".to_string(),
         };
-        app.pending_action = Some(HubAction::StartContinuous {
+        app.pending_action = Some(HubAction::StartWaveGated {
             feature_slug: "001-alpha".to_string(),
         });
 
         let result = handle_event(&mut app, key(KeyCode::Enter));
-        assert!(matches!(result, Some(HubAction::StartContinuous { .. })));
+        assert!(matches!(result, Some(HubAction::StartWaveGated { .. })));
     }
 
     #[test]
@@ -672,7 +653,7 @@ mod tests {
         app.input_mode = InputMode::ConfirmDialog {
             message: "test".to_string(),
         };
-        app.pending_action = Some(HubAction::StartContinuous {
+        app.pending_action = Some(HubAction::StartWaveGated {
             feature_slug: "001-alpha".to_string(),
         });
 

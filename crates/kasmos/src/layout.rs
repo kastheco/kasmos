@@ -219,11 +219,59 @@ impl LayoutGenerator {
         Ok(layout)
     }
 
-    /// Build the default_tab_template with status-bar (keybinding hints) and zjstatus (themed bar).
+    /// Build the `default_tab_template` by reading the user's Zellij default layout.
     ///
-    /// Layout order: status-bar (top, 2 rows) → children (content) → zjstatus (bottom, 1 row).
-    /// This gives users keybinding hints (Ctrl+G, Ctrl+P, etc.) plus the Rose Pine Moon themed bar.
+    /// Reads `~/.config/zellij/layouts/default.kdl`, extracts the `default_tab_template`
+    /// block, and parses it as a `KdlNode`. Falls back to the hardcoded template
+    /// (status-bar + zjstatus) if the file is missing or unparseable.
     fn build_tab_template() -> KdlNode {
+        if let Some(node) = Self::read_user_tab_template() {
+            return node;
+        }
+        Self::build_fallback_tab_template()
+    }
+
+    /// Try to read the user's `default_tab_template` from their Zellij default layout.
+    ///
+    /// Returns the parsed `KdlNode` if found, or `None`.
+    fn read_user_tab_template() -> Option<KdlNode> {
+        let home = std::env::var("HOME").ok()?;
+        let default_layout =
+            std::path::PathBuf::from(home).join(".config/zellij/layouts/default.kdl");
+        let content = std::fs::read_to_string(&default_layout).ok()?;
+
+        // Extract the default_tab_template block (simple brace-matching).
+        let start = content.find("default_tab_template")?;
+        let block_start = content[start..].find('{')? + start;
+        let mut depth = 0;
+        let mut block_end = block_start;
+        for (i, ch) in content[block_start..].char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        block_end = block_start + i + 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if block_end <= block_start {
+            return None;
+        }
+
+        let fragment = &content[start..block_end];
+        // Wrap in a document so we can parse it.
+        let doc = KdlDocument::parse(fragment).ok()?;
+        let node = doc.nodes().first()?.clone();
+        Some(node)
+    }
+
+    /// Hardcoded fallback: status-bar (top) + children + zjstatus (bottom).
+    fn build_fallback_tab_template() -> KdlNode {
         let mut template = KdlNode::new("default_tab_template");
 
         // status-bar pane (2 rows, borderless, at the top — shows keybinding hints)

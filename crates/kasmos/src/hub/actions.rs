@@ -102,10 +102,11 @@ pub fn resolve_actions(entry: &FeatureEntry) -> Vec<HubAction> {
                     });
                 }
                 TaskProgress::InProgress { .. } => {
-                    actions.push(HubAction::StartContinuous {
+                    // Wave-gated first (primary/default), continuous second.
+                    actions.push(HubAction::StartWaveGated {
                         feature_slug: slug.clone(),
                     });
-                    actions.push(HubAction::StartWaveGated {
+                    actions.push(HubAction::StartContinuous {
                         feature_slug: slug,
                     });
                 }

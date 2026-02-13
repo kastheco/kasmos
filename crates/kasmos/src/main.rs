@@ -25,8 +25,8 @@ mod tui_preview;
   kasmos                              Launch hub TUI (project navigator)
   kasmos start <feature>              Start orchestration (TUI dashboard)
   kasmos start <feature> --no-tui     Start without TUI (direct Zellij attach)
-  kasmos start <feature> --mode wave-gated
-                                       Start with wave gates (default: continuous)
+  kasmos start <feature> --mode continuous
+                                       Start in continuous mode (default: wave-gated)
   kasmos status [feature]             Check WP progress
   kasmos cmd status                   Send controller command via FIFO
   kasmos cmd focus WP02               Focus a work package pane
@@ -53,8 +53,8 @@ enum Commands {
     Start {
         /// Feature spec ID or prefix (e.g. "002" or "002-ratatui-tui-controller-panel")
         feature: String,
-        /// Progression mode: continuous or wave-gated
-        #[arg(long, default_value = "continuous")]
+        /// Progression mode: wave-gated (default) or continuous
+        #[arg(long, default_value = "wave-gated")]
         mode: String,
         /// Skip TUI dashboard, attach directly to Zellij session
         #[arg(long)]
@@ -119,7 +119,13 @@ async fn main() -> Result<()> {
             no_tui,
             tui: _,
         }) => {
-            let _ = kasmos::init_logging(false);
+            // Only init headless logging when --no-tui is set.
+            // In TUI mode (default), tui::run() initialises the TUI subscriber;
+            // doing it here first would claim the global slot and leave the TUI
+            // log widget empty.
+            if no_tui {
+                let _ = kasmos::init_logging(false);
+            }
             start::run(&feature, &mode, no_tui)
                 .await
                 .context("Start failed")?;
