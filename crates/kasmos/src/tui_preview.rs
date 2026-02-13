@@ -48,10 +48,9 @@ const TITLES: &[&str] = &[
 ///
 /// Creates mock data, spawns an animation loop, and launches the TUI.
 pub async fn run(count: usize) -> anyhow::Result<()> {
-    anyhow::ensure!(count >= 1, "count must be at least 1");
     let initial_run = generate_mock_run(count);
     let (watch_tx, watch_rx) = watch::channel(initial_run.clone());
-    let (action_tx, _action_rx) = mpsc::channel::<EngineAction>(64);
+    let (action_tx, _) = mpsc::channel::<EngineAction>(64);
 
     tokio::spawn(animation_loop(watch_tx, initial_run));
 
@@ -69,15 +68,14 @@ fn generate_mock_run(count: usize) -> OrchestrationRun {
         let wp_id = format!("WP{:02}", i + 1);
 
         // Initial states: wave 0 gets a mix of states to showcase all kanban lanes,
-        // waves 1-2 start Pending. For small counts (< 5), start all wave-0 WPs as
+        // waves 1-2 start Pending. For small waves (< 3), start all wave-0 WPs as
         // Active to ensure visible animation.
         let (state, started_at, completed_at, completion_method, failure_count) =
-            if wave_idx == 0 && wave_size >= 5 {
-                match i % 5 {
+            if wave_idx == 0 && wave_size >= 3 {
+                match i {
                     0 => (WPState::Completed, Some(now), Some(now), Some(CompletionMethod::AutoDetected), 0),
-                    1 => (WPState::Active, Some(now), None, None, 0),
+                    1 => (WPState::Failed, Some(now), None, None, 1),
                     2 => (WPState::ForReview, Some(now), None, None, 0),
-                    3 => (WPState::Failed, Some(now), None, None, 1),
                     _ => (WPState::Active, Some(now), None, None, 0),
                 }
             } else if wave_idx == 0 {
