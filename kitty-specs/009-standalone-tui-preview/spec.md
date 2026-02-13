@@ -80,9 +80,12 @@ Zero Zellij imports exist in the TUI module. The existing test helper `create_te
 
 ### Session 2026-02-12
 
-- Q: Should CLI commands be tracked as contracts? → A: Yes. Add a `## CLI Contract` section with structured tables covering the entire kasmos CLI scope, not just `kasmos tui`.
+- Q: Should CLI commands be tracked as contracts? → A: Yes. Add a `## CLI Contract` section with structured tables covering the entire kasmos CLI scope, not just `kasmos tui`. → Extracted to repo-level `contracts/cli-contract.md`.
 
 ## CLI Contract
+
+> **Canonical contract**: [`contracts/cli-contract.md`](../../../contracts/cli-contract.md)
+> **Freshness check**: `scripts/check-cli-contract.sh`
 
 The kasmos CLI is a public interface contract. Changes to subcommand names, flag names, defaults, or argument semantics are breaking changes and must be versioned accordingly.
 
