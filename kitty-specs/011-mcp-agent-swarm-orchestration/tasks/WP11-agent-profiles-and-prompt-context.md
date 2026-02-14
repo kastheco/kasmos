@@ -1,7 +1,7 @@
 ---
 work_package_id: WP11
 title: Agent Profiles and Prompt Context Boundaries
-lane: "doing"
+lane: "planned"
 dependencies: [WP02]
 base_branch: 011-mcp-agent-swarm-orchestration-WP02
 base_commit: 839ff563e7dfa7894ce4b53b37f439478bf887a6
@@ -295,3 +295,4 @@ Implement role-specific prompt/context assembly that enforces scope boundaries a
 ## Activity Log
 
 - 2026-02-14T16:27:48Z - system - lane=planned - Prompt generated via /spec-kitty.tasks
+- 2026-02-14T22:25:37Z – unknown – shell_pid=3674747 – lane=planned – Moved to planned
