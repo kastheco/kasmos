@@ -1,4 +1,4 @@
-//! kasmos — Zellij Agent Orchestrator
+//! kasmos -- Zellij Agent Orchestrator
 //!
 //! A Rust-based orchestration system for coordinating multiple AI agents
 //! across Zellij terminal panes, managing work packages, waves, and state transitions.
@@ -13,6 +13,7 @@ pub mod error;
 pub mod git;
 pub mod graph;
 pub mod health;
+pub mod launch;
 pub mod layout;
 pub mod logging;
 pub mod parser;
@@ -20,10 +21,13 @@ pub mod persistence;
 pub mod prompt;
 pub mod review;
 pub mod review_coordinator;
+pub mod serve;
 pub mod session;
+pub mod setup;
 pub mod shutdown;
 pub mod signals;
 pub mod state_machine;
+#[cfg(feature = "tui")]
 pub mod tui;
 pub mod types;
 pub mod zellij;
