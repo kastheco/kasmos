@@ -29,7 +29,7 @@
 - [x] T003 Replace clap command model in `crates/kasmos/src/main.rs` with new launcher-first surface (`None => launch`, `Serve`, `Setup`, `List`, `Status`)
 - [x] T004 [P] Create module stubs `crates/kasmos/src/launch/mod.rs`, `crates/kasmos/src/serve/mod.rs`, and `crates/kasmos/src/setup/mod.rs`
 - [x] T005 Preserve list/status behavior while removing old default hub entrypoint and unwiring `start/cmd/attach/stop`
-- [ ] T006 Validate compile matrix and update any broken imports caused by feature gating
+- [x] T006 Validate compile matrix and update any broken imports caused by feature gating
 
 ### Implementation Notes
 - Keep existing legacy TUI files in the repository; only disconnect from default command wiring.
