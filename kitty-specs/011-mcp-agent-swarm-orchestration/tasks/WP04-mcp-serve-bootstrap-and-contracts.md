@@ -1,7 +1,7 @@
 ---
 work_package_id: WP04
 title: MCP Serve Bootstrap and Contract Wiring
-lane: "doing"
+lane: "planned"
 dependencies: [WP02]
 base_branch: 011-mcp-agent-swarm-orchestration-WP02
 base_commit: 839ff563e7dfa7894ce4b53b37f439478bf887a6
@@ -261,3 +261,4 @@ Stand up `kasmos serve` as an RMCP stdio server with all 9 contract-defined tool
 ## Activity Log
 
 - 2026-02-14T16:27:48Z - system - lane=planned - Prompt generated via /spec-kitty.tasks
+- 2026-02-14T22:25:37Z – unknown – shell_pid=3674163 – lane=planned – Moved to planned
