@@ -62,7 +62,7 @@
 - [x] T010 Implement CLI feature selector path when feature cannot be inferred, guaranteed before any Zellij actions
 - [x] T011 Implement launch dependency preflight checks with actionable guidance and non-zero exit (`zellij`, `opencode`, pane-tracker tooling, `spec-kitty`)
 - [x] T012 Implement "no specs found" early-exit path before launch
-- [ ] T013 Add unit tests for config loading/validation, feature detection ambiguity, selector gate, and preflight hard-fail behavior
+- [x] T013 Add unit tests for config loading/validation, feature detection ambiguity, selector gate, and preflight hard-fail behavior
 
 ### Implementation Notes
 - Locked requirement: selector must happen before session/tab creation.
