@@ -1,7 +1,7 @@
 ---
 work_package_id: WP04
 title: MCP Serve Bootstrap and Contract Wiring
-lane: "for_review"
+lane: "done"
 dependencies: [WP02]
 base_branch: 011-mcp-agent-swarm-orchestration-WP02
 base_commit: 839ff563e7dfa7894ce4b53b37f439478bf887a6
@@ -17,8 +17,8 @@ phase: Phase 1 - Launch Topology and MCP Runtime Skeleton
 assignee: ''
 agent: "opencode"
 shell_pid: "3957847"
-review_status: ''
-reviewed_by: ''
+review_status: "approved"
+reviewed_by: "kas"
 history:
 - timestamp: '2026-02-14T16:27:48Z'
   lane: planned
@@ -265,3 +265,4 @@ Stand up `kasmos serve` as an RMCP stdio server with all 9 contract-defined tool
 - 2026-02-14T22:27:10Z – unknown – shell_pid=3674163 – lane=planned – Moved to planned
 - 2026-02-14T22:39:40Z – opencode – shell_pid=3957847 – lane=doing – Assigned agent via workflow command
 - 2026-02-14T22:55:34Z – opencode – shell_pid=3957847 – lane=for_review – Ready for review
+- 2026-02-14T22:56:12Z – opencode – shell_pid=3957847 – lane=done – Review passed: 9 MCP tools wired, registry CRUD, contract tests pass, 247 tests total
