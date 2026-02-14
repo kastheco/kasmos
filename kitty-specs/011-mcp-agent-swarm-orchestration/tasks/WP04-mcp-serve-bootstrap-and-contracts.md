@@ -15,8 +15,8 @@ subtasks:
 - T026
 phase: Phase 1 - Launch Topology and MCP Runtime Skeleton
 assignee: ''
-agent: ''
-shell_pid: "3114343"
+agent: "opencode"
+shell_pid: "3957847"
 review_status: ''
 reviewed_by: ''
 history:
@@ -263,3 +263,4 @@ Stand up `kasmos serve` as an RMCP stdio server with all 9 contract-defined tool
 - 2026-02-14T16:27:48Z - system - lane=planned - Prompt generated via /spec-kitty.tasks
 - 2026-02-14T22:25:37Z – unknown – shell_pid=3674163 – lane=planned – Moved to planned
 - 2026-02-14T22:27:10Z – unknown – shell_pid=3674163 – lane=planned – Moved to planned
+- 2026-02-14T22:39:40Z – opencode – shell_pid=3957847 – lane=doing – Assigned agent via workflow command
