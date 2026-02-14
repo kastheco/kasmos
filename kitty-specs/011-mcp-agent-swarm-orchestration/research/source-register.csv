@@ -1,0 +1,16 @@
+source_id,type,location,description,accessed_date,reliability
+SRC-01,repository,https://github.com/modelcontextprotocol/rust-sdk,Official MCP Rust SDK (rmcp) - source code and documentation,2026-02-13,High
+SRC-02,registry,https://crates.io/crates/rmcp,"rmcp crate page on crates.io - version history, downloads, metadata",2026-02-13,High
+SRC-03,config,/home/kas/.config/opencode/profiles/kas/opencode.jsonc,OpenCode kas profile - agent definitions and MCP server configs,2026-02-13,High
+SRC-04,source,/home/kas/dev/kasmos/crates/kasmos/Cargo.toml,kasmos dependency manifest,2026-02-13,High
+SRC-05,documentation,Zellij official docs (via context7),Zellij swap layout and KDL layout syntax documentation,2026-02-13,High
+SRC-06,source,/home/kas/dev/kasmos/crates/kasmos/src/layout.rs,Current kasmos layout generator source code,2026-02-13,High
+SRC-07,cli,zellij --help + action --help,Zellij 0.43.1 CLI capabilities and subcommands,2026-02-13,High
+SRC-08,source,/opt/zellij-pane-tracker/mcp-server/index.ts,zellij-pane-tracker MCP server TypeScript source (v0.8.0),2026-02-13,High
+SRC-09,source,/opt/zellij-pane-tracker/src/main.rs,zellij-pane-tracker WASM plugin Rust source,2026-02-13,High
+SRC-10,spec,/home/kas/dev/kasmos/kitty-specs/011-mcp-agent-swarm-orchestration/spec.md,Feature specification (237 lines; 31 FRs; 8 entities; 10 SCs),2026-02-13,High
+SRC-11,analysis,kasmos codebase analysis (51 .rs files),Module-by-module categorization of current kasmos source,2026-02-13,High
+SRC-12,config,/home/kas/.config/opencode/profiles/kas/agent/*.md,Agent instruction files (controller/coder/reviewer/release),2026-02-13,High
+SRC-13,repository,https://github.com/theslyprofessor/zellij-pane-tracker,zellij-pane-tracker GitHub repository - README and documentation,2026-02-13,High
+SRC-14,config,/home/kas/.config/zellij/layouts/opencode-kas.kdl,Current kas Zellij layout definition,2026-02-13,High
+SRC-15,config,/home/kas/.config/zellij/config.kdl,Zellij global configuration (locked mode; rose-pine-moon),2026-02-13,High
