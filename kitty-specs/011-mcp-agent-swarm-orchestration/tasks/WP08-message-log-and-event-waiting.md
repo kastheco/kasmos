@@ -11,6 +11,7 @@ subtasks:
 - T048
 - T049
 - T050
+- T075
 phase: Phase 2 - Safety, State, and Audit Guarantees
 assignee: ''
 agent: ''
@@ -288,6 +289,29 @@ Implement `read_messages` and `wait_for_event` MCP tools with structured parsing
 
 **Files**: Test modules in messages.rs and tools files
 **Validation**: `cargo test` passes with message/event tests.
+
+### Subtask T075 - Implement dashboard pane update side-effect
+
+**Purpose**: On each `wait_for_event` poll cycle, format the current worker status as a table and write it to the dashboard pane (FR-032).
+
+**Steps**:
+1. After reading messages in the `wait_for_event` loop, gather current worker status from the registry:
+   ```rust
+   async fn update_dashboard(state: &KasmosServer) -> Result<()> {
+       let workers = state.registry.read().await;
+       let table = format_worker_table(&workers);
+       write_to_pane("dashboard", &format!("echo '{}'", table)).await?;
+       Ok(())
+   }
+   ```
+2. Format as a simple ANSI table showing: WP ID, Role, Status, Elapsed Time
+3. Clear and rewrite the dashboard pane on each update (not append).
+4. Use the existing `DashboardState::format_ansi()` pattern from the data model if available, or implement a simple table formatter.
+5. **Important**: Dashboard write failures MUST NOT crash the poll loop. Log the error and continue.
+6. Dashboard updates are a side-effect of polling, not on a separate timer.
+
+**Files**: `crates/kasmos/src/serve/tools/wait_for_event.rs`, `crates/kasmos/src/serve/messages.rs`
+**Validation**: Dashboard pane shows updated worker status. Write failures don't crash polling.
 
 ## Risks & Mitigations
 

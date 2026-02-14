@@ -48,13 +48,14 @@ spec-kitty implement WP11 --base WP02
 
 ## Objectives & Success Criteria
 
-Implement role-specific prompt/context assembly that enforces scope boundaries and OpenCode runtime consistency (FR-025, FR-028-031). After this WP:
+Implement role-specific prompt/context assembly that enforces scope boundaries and OpenCode runtime consistency (FR-025, FR-028-033). After this WP:
 
 1. Manager prompts include broadest context: full spec, plan, task board, architecture memory, project structure
 2. Coder prompts include narrow context: specific WP task file only, coding standards, scoped architecture
 3. Reviewer prompts include medium context: WP task file, coder changes, acceptance criteria, standards
 4. Release prompts include broad structural context: all WP statuses, branch structure, merge target
-5. All roles use a single agent runtime (OpenCode via ocx) - FR-025
+5. Planner prompts include medium-broad context: full spec, plan, workflow state, architecture memory, workflow intelligence - but NOT individual WP task files or coding standards (FR-033)
+6. All roles use a single agent runtime (OpenCode via ocx) - FR-025
 6. Profile assets exist under `config/profiles/kasmos/` with role-specific configurations
 
 ## Context & Constraints
@@ -65,6 +66,7 @@ Implement role-specific prompt/context assembly that enforces scope boundaries a
 - **Spec FR-029**: Coder = narrowest (WP task file as contract, standards, scoped arch memory)
 - **Spec FR-030**: Reviewer = medium (WP task file, changes, acceptance criteria, standards)
 - **Spec FR-031**: Release = broad structural (all WP statuses, branch structure, merge target)
+- **Spec FR-033**: Planner = medium-broad (full spec, plan, workflow state, architecture, workflow intelligence; NOT WP task files or coding standards)
 - **Existing code**: `crates/kasmos/src/prompt.rs` (490 lines) has `PromptGenerator` and `PromptContext` for generating agent prompts. `crates/kasmos/src/session.rs` builds opencode commands.
 - **Plan**: Profile assets at `config/profiles/kasmos/` with `opencode.jsonc` and role `.md` files
 

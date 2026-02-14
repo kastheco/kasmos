@@ -50,7 +50,7 @@ spec-kitty implement WP09 --base WP04
 
 Implement `workflow_status` and `transition_wp` MCP tools against spec-kitty task lanes as the single source of truth, with wave awareness and review loop caps. After this WP:
 
-1. `workflow_status` reports correct phase (spec_only, planned, tasked, implementing, reviewing, complete)
+1. `workflow_status` reports correct phase using expanded model (spec_only, clarifying, planned, analyzing, tasked, implementing, reviewing, releasing, complete) where clarifying/analyzing are optional
 2. `workflow_status` includes computed wave structure from WP dependency metadata
 3. `transition_wp` validates state machine rules and persists via lane translation
 4. Advisory lock protection prevents concurrent task-file corruption
@@ -100,13 +100,17 @@ Implement `workflow_status` and `transition_wp` MCP tools against spec-kitty tas
        })
    }
    ```
-2. Phase determination logic:
-   - `spec_only`: spec.md exists, no plan.md
-   - `planned`: plan.md exists, no tasks/ or empty tasks/
+2. Phase determination logic (per expanded WorkflowSnapshot model in `data-model.md`):
+   - `spec_only`: spec.md exists, no plan.md, no clarification artifacts
+   - `clarifying`: spec.md exists, clarification session in progress (optional phase - smaller features skip this)
+   - `planned`: plan.md exists, no tasks.md or empty tasks/
+   - `analyzing`: plan.md and tasks.md exist, analysis in progress (optional phase - smaller features skip this)
    - `tasked`: tasks/ has WP files, all in `planned` lane
    - `implementing`: any WP in `doing` lane
    - `reviewing`: any WP in `for_review` lane (and none in `doing`)
-   - `complete`: all WPs in `done` lane
+   - `releasing`: all WPs in `done` lane, release process initiated but not yet complete
+   - `complete`: all WPs in `done` lane and release completed
+   Note: `clarifying` and `analyzing` are optional. Phase derivation is from artifact presence, not WP lane states.
 3. Read task file frontmatter using the existing `parser::parse_frontmatter()` function.
 4. Include lock metadata from WP05's lock manager.
 

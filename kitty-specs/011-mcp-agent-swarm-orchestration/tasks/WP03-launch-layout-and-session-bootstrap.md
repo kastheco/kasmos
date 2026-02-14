@@ -53,7 +53,7 @@ Implement the launch flow that creates the orchestration tab layout, supports in
 
 1. `kasmos 011` from outside Zellij creates a new session named "kasmos" with an orchestration tab
 2. Running `kasmos 012` from inside an existing Zellij session creates a new orchestration tab (not a new session)
-3. The orchestration tab contains: manager pane (60%), message-log pane (20%), and empty worker area below
+3. The orchestration tab contains: manager pane (60%), message-log pane (20%), dashboard pane (20%), and empty worker area below
 4. No dedicated MCP tab/process is created - `kasmos serve` runs as a manager-spawned MCP stdio subprocess
 5. The manager pane receives initial prompt instructions including bound feature and phase assessment
 6. Layout fallback works (manager + message-log only) when advanced layout generation fails
@@ -68,9 +68,9 @@ Implement the launch flow that creates the orchestration tab layout, supports in
 
 ## Subtasks & Detailed Guidance
 
-### Subtask T014 - Implement orchestration layout generator
+### Subtask T014 - Implement orchestration layout generator with swap-layout and dashboard
 
-**Purpose**: Generate KDL layout for the orchestration tab with manager pane, message-log pane, and dynamic worker area.
+**Purpose**: Generate KDL layout for the orchestration tab with manager pane, message-log pane, dashboard pane, and dynamic worker area. Include swap-layout KDL blocks for automatic reflow when workers are added/removed (FR-007, US5, FR-032).
 
 **Steps**:
 1. Create/populate `crates/kasmos/src/launch/layout.rs`:
@@ -94,9 +94,10 @@ Implement the launch flow that creates the orchestration tab layout, supports in
 3. Reference the existing `LayoutGenerator` in `crates/kasmos/src/layout.rs` for KDL generation patterns (see `generate_layout()` method and `tab_template_kdl_string()` static method).
 4. The existing layout.rs generates layouts for the old orchestration model (controller + agents tab). The new layout is different: single tab with manager + msg-log + worker area.
 5. Use config values for width percentages (`session.manager_width_pct`, `session.message_log_width_pct`).
+6. Generate multiple `swap_tiled_layout` KDL blocks for pane counts 2 (manager + msg-log only) through `max_workers + 3` (manager + msg-log + dashboard + N workers). Each block defines how panes are arranged for that count, ensuring the header row (manager/msg-log/dashboard) stays fixed while worker rows expand below. This is the mechanism behind FR-007 and US5's automatic reflow requirement.
 
 **Files**: `crates/kasmos/src/launch/layout.rs`
-**Validation**: Generated KDL parses correctly. Layout produces expected pane arrangement.
+**Validation**: Generated KDL parses correctly. Layout produces expected pane arrangement. Swap layouts exist for multiple pane counts.
 
 ### Subtask T015 - Implement session/tab bootstrap behavior
 
