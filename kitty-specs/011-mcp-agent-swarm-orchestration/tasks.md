@@ -282,13 +282,15 @@
 ### Included Subtasks
 - [ ] T051 Implement `workflow_status` artifact scan (`spec.md`, `plan.md`, `tasks.md`, task lanes)
 - [ ] T052 Integrate dependency graph wave computation from parsed WP metadata
-- [ ] T053 Implement `transition_wp` with state-machine validation and actor/reason audit metadata
+- [ ] T053 Implement `transition_wp` with state-machine validation, actor/reason audit metadata, and lane translation layer (kasmos states `pending/active/for_review/done/rework` -> spec-kitty lanes `planned/doing/for_review/done`; see `data-model.md` Lane Translation Protocol)
 - [ ] T054 Implement advisory lock protection for task-file writes to prevent concurrent corruption
 - [ ] T055 Enforce review-rejection loop cap (default 3) and pause-required outcome
 - [ ] T056 Add tests for phase derivation, transition guards, wave ordering constraints, and concurrent writers
 
 ### Implementation Notes
 - Use task lanes as single source of truth (no parallel shadow state).
+- Implement bidirectional lane translation per `data-model.md` Lane Translation Protocol: kasmos states (`pending`, `active`, `rework`) map to spec-kitty lanes (`planned`, `doing`, `doing`). `rework` writes as `doing` but preserves rework semantics in the audit log `reason` field.
+- `workflow_status` reads spec-kitty lanes and translates back to kasmos vocabulary, using transition history to distinguish `active` from `rework` when both map to `doing`.
 - Keep transition errors mapped to contract codes (`TRANSITION_NOT_ALLOWED`).
 
 ### Parallel Opportunities
@@ -477,7 +479,7 @@
 | T050 | Add message/event tool tests | WP08 | P1 | No |
 | T051 | Implement `workflow_status` snapshot | WP09 | P1 | No |
 | T052 | Compute waves from dependency graph | WP09 | P1 | Yes |
-| T053 | Implement `transition_wp` with validation | WP09 | P1 | No |
+| T053 | Implement `transition_wp` with validation + lane translation | WP09 | P1 | No |
 | T054 | Add advisory lock around task writes | WP09 | P1 | Yes |
 | T055 | Enforce rejection loop cap and escalation | WP09 | P1 | No |
 | T056 | Add workflow/transition tests | WP09 | P1 | No |
