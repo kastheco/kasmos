@@ -1,7 +1,7 @@
 ---
 work_package_id: WP03
 title: Launch Layout and Session Bootstrap
-lane: "doing"
+lane: "for_review"
 dependencies: [WP02]
 base_branch: 011-mcp-agent-swarm-orchestration-WP02
 base_commit: 839ff563e7dfa7894ce4b53b37f439478bf887a6
@@ -279,3 +279,4 @@ Implement the launch flow that creates the orchestration tab layout, supports in
 
 - 2026-02-14T16:27:48Z - system - lane=planned - Prompt generated via /spec-kitty.tasks
 - 2026-02-14T22:40:25Z – opencode – shell_pid=3957849 – lane=doing – Assigned agent via workflow command
+- 2026-02-14T22:54:27Z – opencode – shell_pid=3957849 – lane=for_review – Ready for review
