@@ -1,28 +1,31 @@
 ---
-work_package_id: "WP03"
+work_package_id: WP03
+title: Launch Layout and Session Bootstrap
+lane: "doing"
+dependencies: [WP02]
+base_branch: 011-mcp-agent-swarm-orchestration-WP02
+base_commit: 839ff563e7dfa7894ce4b53b37f439478bf887a6
+created_at: '2026-02-14T22:26:27.010494+00:00'
 subtasks:
-  - "T014"
-  - "T015"
-  - "T016"
-  - "T017"
-  - "T018"
-  - "T019"
-  - "T020"
-title: "Launch Layout and Session Bootstrap"
-phase: "Phase 1 - Launch Topology and MCP Runtime Skeleton"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
-dependencies: ["WP02"]
+- T014
+- T015
+- T016
+- T017
+- T018
+- T019
+- T020
+phase: Phase 1 - Launch Topology and MCP Runtime Skeleton
+assignee: ''
+agent: ''
+shell_pid: "3114343"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-14T16:27:48Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-14T16:27:48Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP03 - Launch Layout and Session Bootstrap
