@@ -211,7 +211,7 @@ Implement the new sectioned config model, deterministic feature resolution pipel
 3. **Critical**: This MUST happen before any `zellij` commands are executed. The selection gate is in the launch entry function, before layout generation or session creation.
 
 **Files**: `crates/kasmos/src/launch/mod.rs`
-**Validation**: Running `kasmos` on `master` with no inferable feature shows the selector.
+**Validation**: Running `kasmos` on `main` with no inferable feature shows the selector.
 
 ### Subtask T011 - Implement launch dependency preflight checks
 

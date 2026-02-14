@@ -142,7 +142,7 @@ Validate end-to-end behavior against locked decisions and success criteria, conf
 
 **Steps**:
 1. Scenario: Selector gate
-   - Set up environment with no inferable feature (master branch, no spec prefix)
+   - Set up environment with no inferable feature (main branch, no spec prefix)
    - Verify the selector is presented
    - Verify NO Zellij commands have been executed before selection
 2. Scenario: No specs available
