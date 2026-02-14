@@ -28,7 +28,7 @@
 - [x] T002 Mark TUI-only dependencies (`ratatui`, `crossterm`, `futures-util`) as optional and gate legacy modules in `crates/kasmos/src/main.rs`/`crates/kasmos/src/lib.rs`
 - [x] T003 Replace clap command model in `crates/kasmos/src/main.rs` with new launcher-first surface (`None => launch`, `Serve`, `Setup`, `List`, `Status`)
 - [x] T004 [P] Create module stubs `crates/kasmos/src/launch/mod.rs`, `crates/kasmos/src/serve/mod.rs`, and `crates/kasmos/src/setup/mod.rs`
-- [ ] T005 Preserve list/status behavior while removing old default hub entrypoint and unwiring `start/cmd/attach/stop`
+- [x] T005 Preserve list/status behavior while removing old default hub entrypoint and unwiring `start/cmd/attach/stop`
 - [ ] T006 Validate compile matrix and update any broken imports caused by feature gating
 
 ### Implementation Notes
