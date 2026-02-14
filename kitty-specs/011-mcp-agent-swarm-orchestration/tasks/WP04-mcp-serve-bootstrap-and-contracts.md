@@ -1,27 +1,30 @@
 ---
-work_package_id: "WP04"
+work_package_id: WP04
+title: MCP Serve Bootstrap and Contract Wiring
+lane: "doing"
+dependencies: [WP02]
+base_branch: 011-mcp-agent-swarm-orchestration-WP02
+base_commit: 839ff563e7dfa7894ce4b53b37f439478bf887a6
+created_at: '2026-02-14T22:21:07.408477+00:00'
 subtasks:
-  - "T021"
-  - "T022"
-  - "T023"
-  - "T024"
-  - "T025"
-  - "T026"
-title: "MCP Serve Bootstrap and Contract Wiring"
-phase: "Phase 1 - Launch Topology and MCP Runtime Skeleton"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
-dependencies: ["WP02"]
+- T021
+- T022
+- T023
+- T024
+- T025
+- T026
+phase: Phase 1 - Launch Topology and MCP Runtime Skeleton
+assignee: ''
+agent: ''
+shell_pid: "3674163"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-14T16:27:48Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-14T16:27:48Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP04 - MCP Serve Bootstrap and Contract Wiring
