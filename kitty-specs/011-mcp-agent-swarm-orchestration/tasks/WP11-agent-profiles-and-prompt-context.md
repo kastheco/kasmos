@@ -1,11 +1,11 @@
 ---
 work_package_id: WP11
 title: Agent Profiles and Prompt Context Boundaries
-lane: "planned"
+lane: "doing"
 dependencies: [WP02]
 base_branch: 011-mcp-agent-swarm-orchestration-WP02
 base_commit: 839ff563e7dfa7894ce4b53b37f439478bf887a6
-created_at: '2026-02-14T22:21:09.927233+00:00'
+created_at: '2026-02-14T22:27:45.338853+00:00'
 subtasks:
 - T063
 - T064
@@ -16,7 +16,7 @@ subtasks:
 phase: Phase 3 - Setup UX, Role Context, and End-to-End Hardening
 assignee: ''
 agent: ''
-shell_pid: "3674747"
+shell_pid: "3114343"
 review_status: ''
 reviewed_by: ''
 history:
