@@ -8,8 +8,8 @@
 
 use crate::error::{DetectorError, Result};
 use crate::types::CompletionMethod;
-use notify::{Watcher, RecommendedWatcher, RecursiveMode, Event, EventKind};
-use notify::event::{ModifyKind, DataChange};
+use notify::event::{DataChange, ModifyKind};
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -155,11 +155,13 @@ impl CompletionDetector {
                     }
                 }
             }
-        }).map_err(DetectorError::from)?;
+        })
+        .map_err(DetectorError::from)?;
 
         // Watch each WP task file
         for (wp_id, path, _worktree_root) in &wp_paths {
-            watcher.watch(path, RecursiveMode::NonRecursive)
+            watcher
+                .watch(path, RecursiveMode::NonRecursive)
                 .map_err(DetectorError::from)?;
             tracing::debug!(wp_id = wp_id, path = %path.display(), "Watching for completion");
         }
@@ -183,8 +185,8 @@ impl CompletionDetector {
     /// Returns `(wp_id, detected_lane)` if the file indicates completion
     /// (lane = "for_review" or "done").
     fn check_completion(path: &Path) -> Result<Option<(String, DetectedLane)>> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| DetectorError::ReadError(e.to_string()))?;
+        let content =
+            std::fs::read_to_string(path).map_err(|e| DetectorError::ReadError(e.to_string()))?;
 
         // Parse YAML frontmatter (between --- delimiters)
         let parts: Vec<&str> = content.splitn(3, "---").collect();
@@ -477,10 +479,7 @@ title: Test WP
         fs::write(&file_path, content).unwrap();
 
         let result = CompletionDetector::check_completion(&file_path).unwrap();
-        assert_eq!(
-            result,
-            Some(("WP04".to_string(), DetectedLane::Rejected))
-        );
+        assert_eq!(result, Some(("WP04".to_string(), DetectedLane::Rejected)));
     }
 
     #[test]

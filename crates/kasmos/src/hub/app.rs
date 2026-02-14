@@ -6,11 +6,11 @@
 use std::path::PathBuf;
 
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Row, Table, TableState},
-    Frame,
 };
 
 use super::actions::HubAction;
@@ -135,8 +135,7 @@ impl App {
         if let Some(ref detail) = self.detail
             && !detail.work_packages.is_empty()
         {
-            self.detail_selected =
-                (self.detail_selected + 1).min(detail.work_packages.len() - 1);
+            self.detail_selected = (self.detail_selected + 1).min(detail.work_packages.len() - 1);
             self.detail_table_state.select(Some(self.detail_selected));
         }
     }

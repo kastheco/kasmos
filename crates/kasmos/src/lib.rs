@@ -10,6 +10,7 @@ pub mod config;
 pub mod detector;
 pub mod engine;
 pub mod error;
+pub mod feature_arg;
 pub mod git;
 pub mod graph;
 pub mod health;
@@ -48,11 +49,11 @@ pub use logging::init_logging;
 pub use parser::{FeatureDir, WPFrontmatter, parse_frontmatter};
 pub use persistence::StatePersister;
 pub use prompt::PromptGenerator;
-pub use review_coordinator::ReviewCoordinator;
 pub use review::{
     ReviewAutomationPolicy, ReviewFailureSeverity, ReviewFailureType, ReviewPolicyDecision,
     ReviewPolicyExecutor,
 };
+pub use review_coordinator::ReviewCoordinator;
 pub use session::SessionManager;
 pub use shutdown::{ShutdownCoordinator, ShutdownSession};
 pub use signals::setup_signal_handlers;

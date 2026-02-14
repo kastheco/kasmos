@@ -16,14 +16,15 @@ fn acquire_lock(kasmos_dir: &Path) -> Result<LockGuard> {
     if lock_path.exists() {
         let content = std::fs::read_to_string(&lock_path).unwrap_or_default();
         if let Ok(pid) = content.trim().parse::<u32>()
-            && is_pid_alive(pid) {
-                bail!(
-                    "Another orchestration is running (PID {}). \
+            && is_pid_alive(pid)
+        {
+            bail!(
+                "Another orchestration is running (PID {}). \
                      Use 'kasmos stop' first or remove {}",
-                    pid,
-                    lock_path.display()
-                );
-            }
+                pid,
+                lock_path.display()
+            );
+        }
         tracing::warn!(path = %lock_path.display(), "Removing stale lock file");
     }
 
@@ -115,9 +116,12 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
     );
 
     // Scan feature directory for WP files
-    let feature_scan = kasmos::FeatureDir::scan(&feature_dir)
-        .context("Failed to scan feature directory")?;
-    tracing::info!(wp_count = feature_scan.wp_files.len(), "Feature directory scanned");
+    let feature_scan =
+        kasmos::FeatureDir::scan(&feature_dir).context("Failed to scan feature directory")?;
+    tracing::info!(
+        wp_count = feature_scan.wp_files.len(),
+        "Feature directory scanned"
+    );
 
     if feature_scan.wp_files.is_empty() {
         bail!(
@@ -173,7 +177,9 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
 
     // Build dependency graph and compute waves
     let graph = kasmos::DependencyGraph::new(&work_packages);
-    let wave_groups = graph.compute_waves().context("Failed to compute wave assignments")?;
+    let wave_groups = graph
+        .compute_waves()
+        .context("Failed to compute wave assignments")?;
 
     for (wave_idx, wave_wp_ids) in wave_groups.iter().enumerate() {
         for wp_id in wave_wp_ids {
@@ -193,7 +199,11 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
         })
         .collect();
 
-    tracing::info!(waves = waves.len(), "Dependency graph computed: {} waves", waves.len());
+    tracing::info!(
+        waves = waves.len(),
+        "Dependency graph computed: {} waves",
+        waves.len()
+    );
     for (i, wave) in waves.iter().enumerate() {
         tracing::info!(wave = i, wps = ?wave.wp_ids, "Wave {}", i);
     }
@@ -268,7 +278,11 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
         .generate_all(&work_packages, &kasmos_dir)
         .context("Failed to generate prompt files")?;
     let _script_paths = prompt_gen
-        .generate_scripts(&work_packages, &kasmos_dir, config.opencode_profile.as_deref())
+        .generate_scripts(
+            &work_packages,
+            &kasmos_dir,
+            config.opencode_profile.as_deref(),
+        )
         .context("Failed to generate scripts")?;
 
     for (wp, prompt_path) in work_packages.iter_mut().zip(prompt_paths.iter()) {
@@ -335,11 +349,8 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
     // Clone action_tx before moving into CommandHandler — TUI needs its own sender.
     let tui_action_tx = engine_action_tx.clone();
     let session_controller = Arc::new(StubSessionController);
-    let command_handler = kasmos::CommandHandler::new(
-        run_arc.clone(),
-        session_controller,
-        engine_action_tx,
-    );
+    let command_handler =
+        kasmos::CommandHandler::new(run_arc.clone(), session_controller, engine_action_tx);
     let command_handler = Arc::new(command_handler);
 
     let handler_clone = command_handler.clone();
@@ -400,7 +411,9 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
         let run = run_arc.read().await;
         run.work_packages
             .iter()
-            .filter(|wp| wp.state == kasmos::WPState::Pending || wp.state == kasmos::WPState::Active)
+            .filter(|wp| {
+                wp.state == kasmos::WPState::Pending || wp.state == kasmos::WPState::Active
+            })
             .filter_map(|wp| {
                 // Find the task file for this WP
                 let task_file = feature_scan
@@ -610,9 +623,7 @@ pub async fn run(feature: &str, mode: &str) -> Result<()> {
 ///   "done"       → Completed (finished)
 ///
 /// Unknown lanes default to Pending.
-fn lane_to_wp_state(
-    lane: &str,
-) -> (kasmos::WPState, Option<kasmos::CompletionMethod>) {
+fn lane_to_wp_state(lane: &str) -> (kasmos::WPState, Option<kasmos::CompletionMethod>) {
     match lane {
         "done" => (
             kasmos::WPState::Completed,

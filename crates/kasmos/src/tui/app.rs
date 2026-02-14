@@ -9,11 +9,11 @@ use crate::review::{
     ReviewAutomationPolicy, ReviewFailureSeverity, ReviewFailureType, ReviewPolicyExecutor,
 };
 use crate::types::{OrchestrationRun, RunState, WPState};
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Tabs, Wrap};
-use ratatui::Frame;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -1024,8 +1024,8 @@ mod tests {
     use crate::review::ReviewAutomationPolicy;
     use crate::types::{ProgressionMode, RunState, Wave, WaveState, WorkPackage};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use ratatui::backend::TestBackend;
     use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
 
     fn create_test_run(wp_count: usize) -> OrchestrationRun {
         let mut work_packages = Vec::with_capacity(wp_count);

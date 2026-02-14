@@ -110,9 +110,10 @@ pub fn run(feature: Option<&str>) -> Result<()> {
     );
 
     if let Some(started) = run.started_at
-        && let Ok(duration) = started.elapsed() {
-            println!("Running for: {}s", duration.as_secs());
-        }
+        && let Ok(duration) = started.elapsed()
+    {
+        println!("Running for: {}s", duration.as_secs());
+    }
 
     if run.completed_at.is_some() {
         println!("Status: Completed");
