@@ -6,6 +6,7 @@ pub mod session;
 
 use crate::config::Config;
 use crate::launch::detect::{FeatureDetection, FeatureSource};
+use crate::launch::layout::ManagerCommand;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
@@ -20,10 +21,7 @@ pub struct PreflightFailure {
     pub guidance: String,
 }
 
-/// Execute launch preflight and feature selection.
-///
-/// WP02 intentionally stops before creating Zellij sessions/tabs; layout/session
-/// bootstrap is implemented in WP03.
+/// Execute launch preflight, feature selection, layout generation, and bootstrap.
 pub async fn run(spec_prefix: Option<&str>) -> Result<()> {
     let config = Config::load().context("Failed to load config")?;
     let specs_root = PathBuf::from(&config.paths.specs_root);
@@ -36,10 +34,6 @@ pub async fn run(spec_prefix: Option<&str>) -> Result<()> {
         return Ok(());
     }
 
-    let detection = detect::detect_feature(spec_prefix, &specs_root)
-        .context("Failed during feature detection")?;
-    let selection = resolve_feature_selection(&specs_root, detection)?;
-
     if let Err(failures) = preflight_checks(&config) {
         eprintln!("Launch preflight failed:\n");
         for failure in failures {
@@ -51,6 +45,31 @@ pub async fn run(spec_prefix: Option<&str>) -> Result<()> {
         anyhow::bail!("preflight failed");
     }
 
+    let detection = detect::detect_feature(spec_prefix, &specs_root)
+        .context("Failed during feature detection")?;
+    let selection = resolve_feature_selection(&specs_root, detection)?;
+    let feature_slug = selection
+        .feature_slug
+        .as_deref()
+        .context("feature slug not resolved")?;
+    let feature_dir = selection
+        .feature_dir
+        .as_deref()
+        .context("feature directory not resolved")?;
+
+    let phase_hint = detect_phase_hint(feature_dir);
+    let manager_prompt =
+        crate::prompt::generate_manager_prompt(feature_slug, feature_dir, &phase_hint);
+    let manager_command =
+        ManagerCommand::from_config(&config, feature_dir.display().to_string(), manager_prompt);
+
+    let layout_kdl = layout::generate_layout(&config, feature_slug, &manager_command)
+        .context("Failed to generate launch layout")?;
+
+    session::bootstrap(&config, feature_slug, &layout_kdl)
+        .await
+        .context("Failed to bootstrap orchestration session/tab")?;
+
     println!(
         "Feature resolved: {} ({})",
         selection
@@ -60,8 +79,26 @@ pub async fn run(spec_prefix: Option<&str>) -> Result<()> {
         source_label(&selection.source)
     );
     println!("Preflight checks passed.");
-    println!("Launch session bootstrap is implemented in WP03.");
+    println!("Orchestration launch bootstrap complete.");
     Ok(())
+}
+
+fn detect_phase_hint(feature_dir: &Path) -> String {
+    let has_spec = feature_dir.join("spec.md").is_file();
+    let has_plan = feature_dir.join("plan.md").is_file();
+    let has_tasks_index = feature_dir.join("tasks.md").is_file();
+    let has_wp_tasks = feature_dir.join("tasks").is_dir();
+
+    if !has_spec {
+        return "specify".to_string();
+    }
+    if !has_plan {
+        return "plan".to_string();
+    }
+    if !has_tasks_index && !has_wp_tasks {
+        return "tasks".to_string();
+    }
+    "implement".to_string()
 }
 
 /// Run dependency preflight checks required for launch.

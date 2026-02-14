@@ -8,6 +8,41 @@ use crate::types::WorkPackage;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// Generate the initial manager prompt for orchestration startup.
+pub fn generate_manager_prompt(feature_slug: &str, feature_dir: &Path, phase_hint: &str) -> String {
+    let spec_path = feature_dir.join("spec.md");
+    let plan_path = feature_dir.join("plan.md");
+    let tasks_path = feature_dir.join("tasks.md");
+
+    format!(
+        "You are the kasmos manager agent for feature '{feature_slug}'.\n\
+Feature directory: {feature_dir}\n\
+Phase hint: {phase_hint}\n\
+\n\
+Startup responsibilities:\n\
+1) Assess current workflow phase by checking artifact presence and completion state:\n\
+   - spec: {spec_path}\n\
+   - plan: {plan_path}\n\
+   - tasks index: {tasks_path}\n\
+   - work packages: {feature_dir}/tasks/WP*.md\n\
+2) Summarize current state and recommend exactly one next action.\n\
+3) Wait for explicit user confirmation before taking any action.\n\
+\n\
+Use kasmos MCP tools for orchestration operations.\n\
+kasmos serve is already available as your MCP stdio subprocess via profile configuration;\n\
+do not launch kasmos serve as a separate pane/process.\n\
+\n\
+Reference project rules and memory:\n\
+- AGENTS: AGENTS.md\n\
+- Constitution: .kittify/memory/constitution.md\n\
+- Architecture memory: .kittify/memory/architecture.md\n",
+        feature_dir = feature_dir.display(),
+        spec_path = spec_path.display(),
+        plan_path = plan_path.display(),
+        tasks_path = tasks_path.display(),
+    )
+}
+
 /// Information about a subtask within a work package.
 #[derive(Debug, Clone)]
 pub struct SubtaskInfo {
