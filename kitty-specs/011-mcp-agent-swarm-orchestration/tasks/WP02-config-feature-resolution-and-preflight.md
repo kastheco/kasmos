@@ -1,7 +1,7 @@
 ---
 work_package_id: WP02
 title: Config, Feature Resolution, and Launch Preflight
-lane: "for_review"
+lane: "doing"
 dependencies: [WP01]
 base_branch: 011-mcp-agent-swarm-orchestration-WP01
 base_commit: e8f430fb6a020367f628f9d80fbcec56c22b7d6a
@@ -17,7 +17,7 @@ subtasks:
 phase: Phase 0 - CLI Pivot and Core Foundation
 assignee: ''
 agent: "reviewer"
-shell_pid: "3530436"
+shell_pid: "3580441"
 review_status: ''
 reviewed_by: ''
 history:
@@ -304,3 +304,4 @@ Implement the new sectioned config model, deterministic feature resolution pipel
 - 2026-02-14T21:23:48Z – coder – shell_pid=3406135 – lane=for_review – Submitted for review via swarm
 - 2026-02-14T21:23:48Z – reviewer – shell_pid=3530436 – lane=doing – Started review via workflow command
 - 2026-02-14T21:44:15Z – reviewer – shell_pid=3530436 – lane=for_review – Moved to for_review
+- 2026-02-14T21:44:24Z – reviewer – shell_pid=3580441 – lane=doing – Started review via workflow command
