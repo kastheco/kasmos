@@ -16,8 +16,8 @@ subtasks:
 - T020
 phase: Phase 1 - Launch Topology and MCP Runtime Skeleton
 assignee: ''
-agent: ''
-shell_pid: "3114343"
+agent: "opencode"
+shell_pid: "3957849"
 review_status: ''
 reviewed_by: ''
 history:
@@ -278,3 +278,4 @@ Implement the launch flow that creates the orchestration tab layout, supports in
 ## Activity Log
 
 - 2026-02-14T16:27:48Z - system - lane=planned - Prompt generated via /spec-kitty.tasks
+- 2026-02-14T22:40:25Z – opencode – shell_pid=3957849 – lane=doing – Assigned agent via workflow command
