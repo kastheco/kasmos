@@ -1,343 +1,332 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "kasmos serve MCP Tools",
-  "description": "MCP tool definitions for the kasmos serve orchestration server. 9 tools exposed via stdio JSON-RPC 2.0 transport.",
+  "service": "kasmos-serve",
+  "version": "1.0.0-draft",
+  "transport": "stdio",
+  "description": "MCP tool contract for kasmos manager orchestration",
   "tools": [
     {
       "name": "spawn_worker",
-      "description": "Spawn a worker agent in a new Zellij pane. Creates the pane with the specified role, prompt, and working directory. Registers the worker in the in-memory registry.",
+      "description": "Spawn a planner/coder/reviewer/release worker pane",
       "inputSchema": {
         "type": "object",
+        "required": ["wp_id", "role", "prompt", "feature_slug"],
         "properties": {
-          "wp_id": {
-            "type": "string",
-            "description": "Work package ID (e.g., 'WP-01')"
-          },
+          "wp_id": { "type": "string" },
           "role": {
             "type": "string",
-            "enum": ["planner", "coder", "reviewer", "release"],
-            "description": "Agent role to assign"
+            "enum": ["planner", "coder", "reviewer", "release"]
           },
-          "prompt": {
-            "type": "string",
-            "description": "Initial prompt for the agent (task instructions)"
-          },
-          "cwd": {
-            "type": "string",
-            "description": "Working directory. Worktree path for coders, main repo for planner/release. Auto-detected if omitted."
-          },
-          "context_files": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "Absolute paths to files the agent should be primed with"
-          }
+          "prompt": { "type": "string" },
+          "feature_slug": { "type": "string" },
+          "worktree_path": { "type": "string" }
         },
-        "required": ["wp_id", "role", "prompt"]
+        "additionalProperties": false
       },
       "outputSchema": {
         "type": "object",
+        "required": ["ok", "worker"],
         "properties": {
-          "pane_name": { "type": "string" },
-          "wp_id": { "type": "string" },
-          "role": { "type": "string" },
-          "cwd": { "type": "string" }
-        }
-      },
-      "implementation_notes": "Calls `zellij --session <name> action new-pane --name '<wp_id>-<role>' --cwd <cwd> -- opencode -p <profile> -- --agent <role> --prompt <prompt>`. Registers worker in registry. Returns immediately (non-blocking)."
+          "ok": { "type": "boolean" },
+          "worker": { "$ref": "#/sharedSchemas/WorkerEntry" }
+        },
+        "additionalProperties": false
+      }
     },
     {
       "name": "despawn_worker",
-      "description": "Close a worker agent's pane and remove it from the registry.",
+      "description": "Close a worker pane and remove it from registry",
       "inputSchema": {
         "type": "object",
+        "required": ["wp_id", "role"],
         "properties": {
-          "wp_id": {
+          "wp_id": { "type": "string" },
+          "role": {
             "type": "string",
-            "description": "Work package ID of the worker to despawn"
-          }
+            "enum": ["planner", "coder", "reviewer", "release"]
+          },
+          "reason": { "type": "string" }
         },
-        "required": ["wp_id"]
+        "additionalProperties": false
       },
       "outputSchema": {
         "type": "object",
+        "required": ["ok", "removed"],
         "properties": {
-          "success": { "type": "boolean" },
-          "wp_id": { "type": "string" }
-        }
-      },
-      "implementation_notes": "Looks up pane from registry. Navigates via zellij-pane-tracker focus-cycling. Calls `zellij action close-pane`. Removes from registry."
+          "ok": { "type": "boolean" },
+          "removed": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
     },
     {
       "name": "list_workers",
-      "description": "List all active worker panes and their current statuses, reconciled with live Zellij pane state.",
+      "description": "List workers tracked by this manager instance",
       "inputSchema": {
-        "type": "object",
-        "properties": {}
-      },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "workers": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "wp_id": { "type": "string" },
-                "role": { "type": "string" },
-                "pane_name": { "type": "string" },
-                "status": { "type": "string", "enum": ["active", "done", "errored", "aborted"] },
-                "elapsed_seconds": { "type": "integer" }
-              }
-            }
-          }
-        }
-      },
-      "implementation_notes": "Returns in-memory registry reconciled with zellij-pane-tracker get_panes. Detects missing panes (aborted) and stale entries."
-    },
-    {
-      "name": "read_messages",
-      "description": "Read structured messages from the msg-log pane. Non-blocking, returns current state.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "since": {
-            "type": "integer",
-            "description": "Return messages after this index (0-based). Omit for all messages."
-          },
-          "filter_wp": {
-            "type": "string",
-            "description": "Filter to messages from a specific work package"
-          },
-          "filter_event": {
-            "type": "string",
-            "description": "Filter to a specific event type (e.g., 'DONE', 'ERROR')"
-          }
-        }
-      },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "messages": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "index": { "type": "integer" },
-                "sender": { "type": "string" },
-                "event": { "type": "string" },
-                "data": { "type": "object" },
-                "raw_line": { "type": "string" }
-              }
-            }
-          },
-          "total": { "type": "integer" }
-        }
-      },
-      "implementation_notes": "Dumps msg-log pane via zellij dump-pane. Parses lines matching `[KASMOS:<sender>:<event>]` prefix. Strips ANSI codes before matching. Returns filtered results."
-    },
-    {
-      "name": "wait_for_event",
-      "description": "Block until a matching event appears in the msg-log pane. Updates the dashboard pane with live status on each poll cycle. Returns on match or timeout.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "filter_event": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "Event types to match (e.g., ['DONE', 'ERROR', 'REVIEW_PASS', 'REVIEW_REJECT']). Omit to match any event."
-          },
-          "filter_wp": {
-            "type": "string",
-            "description": "Only match events from this work package"
-          },
-          "timeout_seconds": {
-            "type": "integer",
-            "description": "Max seconds to wait before returning timeout (default: 120, from config)"
-          },
-          "poll_interval_seconds": {
-            "type": "integer",
-            "description": "Seconds between poll cycles (default: 5, from config)"
-          }
-        }
-      },
-      "outputSchema": {
         "type": "object",
         "properties": {
           "status": {
             "type": "string",
-            "enum": ["event", "timeout"],
-            "description": "'event' if a matching event was found, 'timeout' if ceiling exceeded"
-          },
-          "event": {
-            "type": "object",
-            "description": "The matched message (present when status='event')",
-            "properties": {
-              "index": { "type": "integer" },
-              "sender": { "type": "string" },
-              "event": { "type": "string" },
-              "data": { "type": "object" }
-            }
-          },
-          "elapsed_seconds": { "type": "integer" },
-          "last_messages": {
-            "type": "array",
-            "description": "Most recent messages (present when status='timeout')",
-            "items": { "type": "object" }
+            "enum": ["active", "done", "errored", "aborted"]
           }
-        }
+        },
+        "additionalProperties": false
       },
-      "implementation_notes": "Async poll loop: (1) dump msg-log pane, parse new messages since last index. (2) Update dashboard pane via zellij write-chars with formatted worker status table. (3) Check for matching event -> return if found. (4) Check timeout -> return timeout status if exceeded. (5) tokio::time::sleep(poll_interval), repeat."
+      "outputSchema": {
+        "type": "object",
+        "required": ["ok", "workers"],
+        "properties": {
+          "ok": { "type": "boolean" },
+          "workers": {
+            "type": "array",
+            "items": { "$ref": "#/sharedSchemas/WorkerEntry" }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "read_messages",
+      "description": "Read and parse message-log pane events",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "since_index": { "type": "integer", "minimum": 0 },
+          "filter_wp": { "type": "string" },
+          "filter_event": {
+            "type": "string",
+            "enum": [
+              "STARTED",
+              "PROGRESS",
+              "DONE",
+              "ERROR",
+              "REVIEW_PASS",
+              "REVIEW_REJECT",
+              "NEEDS_INPUT"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": ["ok", "messages", "next_index"],
+        "properties": {
+          "ok": { "type": "boolean" },
+          "messages": {
+            "type": "array",
+            "items": { "$ref": "#/sharedSchemas/KasmosMessage" }
+          },
+          "next_index": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "wait_for_event",
+      "description": "Block until matching event appears or timeout is reached",
+      "inputSchema": {
+        "type": "object",
+        "required": ["timeout_seconds"],
+        "properties": {
+          "wp_id": { "type": "string" },
+          "event": {
+            "type": "string",
+            "enum": [
+              "STARTED",
+              "PROGRESS",
+              "DONE",
+              "ERROR",
+              "REVIEW_PASS",
+              "REVIEW_REJECT",
+              "NEEDS_INPUT"
+            ]
+          },
+          "timeout_seconds": { "type": "integer", "minimum": 1 }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": ["ok", "status", "elapsed_seconds"],
+        "properties": {
+          "ok": { "type": "boolean" },
+          "status": { "type": "string", "enum": ["matched", "timeout"] },
+          "elapsed_seconds": { "type": "integer", "minimum": 0 },
+          "message": { "$ref": "#/sharedSchemas/KasmosMessage" }
+        },
+        "additionalProperties": false
+      }
     },
     {
       "name": "workflow_status",
-      "description": "Query the current workflow state by scanning spec-kitty task files. Returns wave structure, WP states, and phase summary.",
+      "description": "Return feature phase, wave status, and active lock metadata",
       "inputSchema": {
         "type": "object",
+        "required": ["feature_slug"],
         "properties": {
-          "feature": {
-            "type": "string",
-            "description": "Feature slug (e.g., '011-mcp-agent-swarm-orchestration'). Auto-detected if omitted."
-          }
-        }
+          "feature_slug": { "type": "string" }
+        },
+        "additionalProperties": false
       },
       "outputSchema": {
         "type": "object",
+        "required": ["ok", "snapshot"],
         "properties": {
-          "feature": { "type": "string" },
-          "phase": {
-            "type": "string",
-            "enum": ["no_spec", "spec_only", "planned", "tasked", "implementing", "reviewing", "complete"],
-            "description": "Current lifecycle phase derived from artifact presence and WP states"
-          },
-          "waves": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "wave_id": { "type": "integer" },
-                "wps": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "wp_id": { "type": "string" },
-                      "title": { "type": "string" },
-                      "lane": { "type": "string" }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "summary": {
-            "type": "object",
-            "properties": {
-              "total": { "type": "integer" },
-              "pending": { "type": "integer" },
-              "active": { "type": "integer" },
-              "for_review": { "type": "integer" },
-              "done": { "type": "integer" },
-              "blocked": { "type": "integer" }
-            }
-          }
-        }
-      },
-      "implementation_notes": "Scans kitty-specs/<feature>/tasks/ for task files. Reads YAML frontmatter for lane, wave, depends_on. Uses graph.rs for wave computation. Checks for spec.md, plan.md, tasks.md to determine phase."
+          "ok": { "type": "boolean" },
+          "snapshot": { "$ref": "#/sharedSchemas/WorkflowSnapshot" }
+        },
+        "additionalProperties": false
+      }
     },
     {
       "name": "transition_wp",
-      "description": "Move a work package to a new lifecycle state. Validates the transition against state machine rules. Acquires file lock, updates task file, logs to audit.",
+      "description": "Validate and apply WP lane transitions in task files",
       "inputSchema": {
         "type": "object",
+        "required": ["feature_slug", "wp_id", "to_state", "actor"],
         "properties": {
-          "wp_id": {
+          "feature_slug": { "type": "string" },
+          "wp_id": { "type": "string" },
+          "to_state": {
             "type": "string",
-            "description": "Work package ID (e.g., 'WP-01')"
+            "enum": ["pending", "active", "for_review", "done", "rework"]
           },
-          "target_lane": {
-            "type": "string",
-            "enum": ["pending", "active", "for_review", "done", "rework", "blocked"],
-            "description": "Target lifecycle state"
-          },
-          "reason": {
-            "type": "string",
-            "description": "Reason for transition (logged to audit trail)"
-          }
+          "actor": { "type": "string" },
+          "reason": { "type": "string" }
         },
-        "required": ["wp_id", "target_lane"]
+        "additionalProperties": false
       },
       "outputSchema": {
         "type": "object",
+        "required": ["ok", "wp_id", "from_state", "to_state"],
         "properties": {
+          "ok": { "type": "boolean" },
           "wp_id": { "type": "string" },
-          "from_lane": { "type": "string" },
-          "to_lane": { "type": "string" },
-          "valid": { "type": "boolean" },
-          "error": {
-            "type": "string",
-            "description": "Present if valid=false, explains why transition was rejected"
-          }
-        }
-      },
-      "implementation_notes": "Validates via state_machine.rs transition rules. Acquires flock advisory lock on task file. Updates YAML frontmatter 'lane' field. Appends AuditEntry to .kasmos/messages.jsonl. Returns validation result."
+          "from_state": { "type": "string" },
+          "to_state": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
     },
     {
       "name": "list_features",
-      "description": "List available feature specs in the repository with their planning status.",
+      "description": "List known feature specs and artifact availability",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {},
+        "additionalProperties": false
       },
       "outputSchema": {
         "type": "object",
+        "required": ["ok", "features"],
         "properties": {
+          "ok": { "type": "boolean" },
           "features": {
             "type": "array",
             "items": {
               "type": "object",
+              "required": ["slug", "has_spec", "has_plan", "has_tasks"],
               "properties": {
                 "slug": { "type": "string" },
                 "has_spec": { "type": "boolean" },
                 "has_plan": { "type": "boolean" },
-                "has_tasks": { "type": "boolean" },
-                "wp_summary": {
-                  "type": "object",
-                  "description": "WP count by lane (present if has_tasks)",
-                  "properties": {
-                    "total": { "type": "integer" },
-                    "done": { "type": "integer" }
-                  }
-                }
-              }
+                "has_tasks": { "type": "boolean" }
+              },
+              "additionalProperties": false
             }
           }
-        }
-      },
-      "implementation_notes": "Scans specs_dir (from config) for directories matching ###-* pattern. Checks for spec.md, plan.md, tasks/ in each. Returns sorted list."
+        },
+        "additionalProperties": false
+      }
     },
     {
       "name": "infer_feature",
-      "description": "Detect the current feature from environment context (git branch, working directory).",
+      "description": "Infer feature slug from arg, branch, and cwd context",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "spec_prefix": { "type": "string" }
+        },
+        "additionalProperties": false
       },
       "outputSchema": {
         "type": "object",
+        "required": ["ok", "source"],
         "properties": {
-          "detected": { "type": "boolean" },
-          "feature_slug": {
-            "type": "string",
-            "description": "Detected feature slug (present if detected=true)"
-          },
-          "method": {
-            "type": "string",
-            "enum": ["branch", "directory", "none"],
-            "description": "How the feature was detected"
+          "ok": { "type": "boolean" },
+          "source": { "type": "string", "enum": ["arg", "branch", "directory", "none"] },
+          "feature_slug": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  ],
+  "sharedSchemas": {
+    "WorkerEntry": {
+      "type": "object",
+      "required": ["wp_id", "role", "pane_name", "status", "spawned_at"],
+      "properties": {
+        "wp_id": { "type": "string" },
+        "role": { "type": "string" },
+        "pane_name": { "type": "string" },
+        "status": { "type": "string" },
+        "spawned_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": true
+    },
+    "KasmosMessage": {
+      "type": "object",
+      "required": ["message_index", "sender", "event", "payload", "timestamp"],
+      "properties": {
+        "message_index": { "type": "integer", "minimum": 0 },
+        "sender": { "type": "string" },
+        "event": { "type": "string" },
+        "payload": { "type": "object" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "raw_line": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "WorkflowSnapshot": {
+      "type": "object",
+      "required": ["feature_slug", "phase", "waves", "lock"],
+      "properties": {
+        "feature_slug": { "type": "string" },
+        "phase": { "type": "string" },
+        "waves": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["wave", "wp_ids", "complete"],
+            "properties": {
+              "wave": { "type": "integer", "minimum": 0 },
+              "wp_ids": { "type": "array", "items": { "type": "string" } },
+              "complete": { "type": "boolean" }
+            },
+            "additionalProperties": false
           }
+        },
+        "lock": {
+          "type": "object",
+          "required": ["state"],
+          "properties": {
+            "state": { "type": "string", "enum": ["active", "stale", "none"] },
+            "owner_id": { "type": "string" },
+            "expires_at": { "type": "string", "format": "date-time" }
+          },
+          "additionalProperties": true
         }
       },
-      "implementation_notes": "Uses feature_arg.rs logic. Checks git branch for ###-* pattern (strips -WP## suffix). Falls back to directory name matching. Returns detection result."
+      "additionalProperties": true
     }
+  },
+  "errorCodes": [
+    "INVALID_INPUT",
+    "FEATURE_LOCK_CONFLICT",
+    "STALE_LOCK_CONFIRMATION_REQUIRED",
+    "WORKER_NOT_FOUND",
+    "TRANSITION_NOT_ALLOWED",
+    "DEPENDENCY_MISSING",
+    "INTERNAL_ERROR"
   ]
 }

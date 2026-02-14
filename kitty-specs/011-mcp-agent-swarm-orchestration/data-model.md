@@ -1,256 +1,121 @@
 # Data Model: MCP Agent Swarm Orchestration
 
-**Feature**: 011-mcp-agent-swarm-orchestration  
-**Date**: 2026-02-13  
-**Status**: Complete
+## Overview
 
----
+This model defines runtime entities required for launch orchestration, worker lifecycle, feature ownership locking, and audit persistence.
 
-## Entity Relationship Overview
+## Entity: FeatureBindingLock
 
-```
-FeatureSpec 1──* WorkPackage *──1 Wave
-     │                │
-     │                │ assigned_to
-     │                ▼
-     │          WorkerAgent *──1 Pane
-     │                │
-     │                │ sends
-     │                ▼
-     └──────── Message *──1 MessageLog
-                      │
-                      ▼
-               AuditLogEntry
-```
+- Purpose: Ensure a single active manager owns a feature in a repository at any time.
+- Identity:
+  - Primary key: `lock_key` (`<repo_root>::<feature_slug>`)
+- Fields:
+  - `lock_key: String`
+  - `repo_root: String`
+  - `feature_slug: String`
+  - `owner_id: String` (stable process/session token)
+  - `owner_session: String`
+  - `owner_tab: String`
+  - `acquired_at: DateTime<Utc>`
+  - `last_heartbeat_at: DateTime<Utc>`
+  - `expires_at: DateTime<Utc>`
+  - `status: LockStatus` (`active | stale | released`)
+- Validation rules:
+  - Only one `active` lock per `lock_key`
+  - `expires_at = last_heartbeat_at + stale_timeout`
+  - Default stale timeout is 15 minutes
+- State transitions:
+  - `released -> active` on successful acquisition
+  - `active -> stale` when heartbeat misses timeout
+  - `stale -> active` on confirmed takeover
+  - `active/stale -> released` on clean shutdown
 
----
+## Entity: WorkerEntry
 
-## Entities
+- Purpose: Track active and completed worker panes managed by one manager.
+- Identity:
+  - Primary key: `wp_id + role`
+- Fields:
+  - `wp_id: String`
+  - `role: AgentRole` (`planner | coder | reviewer | release`)
+  - `pane_name: String`
+  - `pane_id: Option<String>`
+  - `worktree_path: Option<String>`
+  - `status: WorkerStatus` (`active | done | errored | aborted`)
+  - `spawned_at: DateTime<Utc>`
+  - `updated_at: DateTime<Utc>`
+  - `last_event: Option<MessageEvent>`
+- Validation rules:
+  - `worktree_path` required for coder role
+  - `pane_name` must be unique within owning orchestration tab
 
-### 1. FeatureSpec
+## Entity: KasmosMessage
 
-The top-level unit of work that kasmos orchestrates. Maps to a `kitty-specs/NNN-slug/` directory.
+- Purpose: Parsed structured event line from message-log pane.
+- Identity:
+  - Primary key: `message_index` (monotonic per manager)
+- Fields:
+  - `message_index: u64`
+  - `sender: String`
+  - `event: MessageEvent`
+  - `payload: JsonValue`
+  - `timestamp: DateTime<Utc>`
+  - `raw_line: String`
+- Validation rules:
+  - Must match format: `[KASMOS:<sender>:<event>] <json_payload>`
+  - `event` must map to known enum values
 
-| Attribute       | Type            | Description                                          | Source                    |
-|-----------------|-----------------|------------------------------------------------------|---------------------------|
-| number          | String          | Three-digit prefix (e.g., "011")                     | meta.json                 |
-| slug            | String          | Full kebab-case name (e.g., "011-mcp-agent-swarm")   | meta.json                 |
-| friendly_name   | String          | Human-readable title                                 | meta.json                 |
-| mission         | Enum            | software-dev, research                               | meta.json                 |
-| phase           | Enum            | specify, clarify, plan, analyze, tasks, implement, review, release | Derived from file presence |
-| has_spec        | Boolean         | spec.md exists and is non-empty                      | Filesystem                |
-| has_plan        | Boolean         | plan.md exists                                       | Filesystem                |
-| has_tasks       | Boolean         | tasks/ contains WP files                             | Filesystem                |
-| target_branch   | String          | Branch to merge into (default: "main")               | meta.json                 |
+## Entity: AuditEntry
 
-**Relationships**:
-- Has many WorkPackages (via tasks/ directory)
-- Has many AuditLogEntries (via orchestration-audit.log)
-- Owns one MessageLog per session (via .kasmos/messages.jsonl)
+- Purpose: Persisted orchestration trail for post-session diagnostics.
+- Storage path:
+  - `kitty-specs/<feature>/.kasmos/messages.jsonl`
+- Fields:
+  - `timestamp: DateTime<Utc>`
+  - `actor: String` (`manager`, `kasmos-serve`, or worker id)
+  - `action: String` (`spawn_worker`, `transition_wp`, etc.)
+  - `feature_slug: String`
+  - `wp_id: Option<String>`
+  - `status: String`
+  - `summary: String`
+  - `details: JsonValue` (metadata by default)
+  - `debug_payload: Option<JsonValue>` (present only in debug mode)
+- Validation rules:
+  - `debug_payload` must be omitted unless debug logging is enabled
+  - Writes must be append-only within a file generation
 
----
+## Entity: AuditPolicy
 
-### 2. WorkPackage (WP)
+- Purpose: Retention and payload policy controls.
+- Fields:
+  - `metadata_only_default: bool` (default `true`)
+  - `debug_full_payload_enabled: bool` (default `false`)
+  - `max_bytes: u64` (default `536870912`)
+  - `max_age_days: u32` (default `14`)
+  - `trigger_mode: TriggerMode` (`either_threshold`)
+- Validation rules:
+  - Rotation/pruning triggers when either size or age threshold is reached
 
-A unit of implementation work. Each WP has a task file in the feature's `tasks/` directory with YAML frontmatter defining its state.
+## Entity: WorkflowSnapshot
 
-| Attribute       | Type            | Description                                          | Source                    |
-|-----------------|-----------------|------------------------------------------------------|---------------------------|
-| id              | String          | Identifier (e.g., "WP01")                            | Task file name            |
-| title           | String          | Descriptive title                                    | Task file frontmatter     |
-| lane            | Enum            | pending, active, for_review, done, failed             | Task file frontmatter     |
-| wave            | Integer         | Wave number for execution ordering                   | Task file frontmatter     |
-| dependencies    | List<String>    | IDs of WPs that must complete first                  | Task file frontmatter     |
-| assignee        | Option<String>  | Pane ID of current worker (if active)                | In-memory (kasmos serve)  |
-| review_count    | Integer         | Number of review iterations completed                | Task file frontmatter     |
+- Purpose: Report current feature phase and wave execution state.
+- Fields:
+  - `feature_slug: String`
+  - `phase: String` (`spec_only | planned | tasked | implementing | reviewing | complete`)
+  - `waves: Vec<WaveStatus>`
+  - `active_workers: Vec<WorkerEntry>`
+  - `last_event_at: Option<DateTime<Utc>>`
 
-**State Machine** (lane transitions):
-```
-pending → active → for_review → done
-                 ↘ failed       ↗ (rework)
-         active ← for_review (rejected)
-```
+## Relationships
 
-Valid transitions enforced by `state_machine.rs`:
-- pending → active (worker spawned)
-- active → for_review (implementation complete)
-- active → failed (worker error/abort)
-- for_review → done (review approved)
-- for_review → active (review rejected, rework)
-- failed → active (retry)
+- One `FeatureBindingLock` controls one active manager per feature key.
+- One manager owns many `WorkerEntry` records.
+- Many `KasmosMessage` records reference zero or one `WorkerEntry` by `wp_id` and sender.
+- Many `AuditEntry` records belong to one feature slug and optional WP.
+- One `AuditPolicy` is loaded from config and applied to all `AuditEntry` writes.
 
-**Relationships**:
-- Belongs to one FeatureSpec
-- Belongs to one Wave
-- May be assigned to one WorkerAgent
-- Depends on zero or more other WorkPackages
+## Scale Assumptions
 
----
-
-### 3. Wave
-
-An ordered group of WorkPackages that can execute concurrently. All WPs in wave N must complete before wave N+1 begins.
-
-| Attribute       | Type            | Description                                          | Source                    |
-|-----------------|-----------------|------------------------------------------------------|---------------------------|
-| index           | Integer         | Wave number (0-based)                                | Computed from WP deps     |
-| state           | Enum            | pending, active, completed                           | Derived from WP states    |
-| wp_ids          | List<String>    | WorkPackage IDs in this wave                         | Computed by graph.rs      |
-
-**Derivation**: Waves are computed by `graph.rs::compute_waves()` from WP dependency relationships using topological sort. Not stored — recomputed on demand.
-
-**Relationships**:
-- Contains one or more WorkPackages
-- Ordered sequentially (wave N < wave N+1)
-
----
-
-### 4. WorkerAgent
-
-A running agent instance in a Zellij pane, performing a specific task.
-
-| Attribute       | Type            | Description                                          | Source                    |
-|-----------------|-----------------|------------------------------------------------------|---------------------------|
-| pane_id         | String          | Zellij terminal pane identifier (e.g., "terminal_5") | zellij-pane-tracker JSON  |
-| pane_name       | String          | Display name (e.g., "WP01-coder")                    | Zellij pane title         |
-| role            | Enum            | coder, reviewer, release                             | Spawn parameters          |
-| wp_id           | String          | Assigned work package ID                             | Spawn parameters          |
-| status          | Enum            | active, complete, errored, aborted                   | In-memory + monitoring    |
-| started_at      | Timestamp       | When the worker was spawned                          | In-memory                 |
-| worktree_path   | Option<String>  | Git worktree path for isolation                      | Computed at spawn         |
-| tab_name        | Option<String>  | Zellij tab containing this worker                    | Tracked at spawn          |
-
-**Lifecycle**:
-```
-(spawn) → active → complete → (despawn)
-                  → errored → (despawn + report)
-                  → aborted → (despawn + report)
-```
-
-**Relationships**:
-- Assigned to one WorkPackage
-- Runs in one Pane (Zellij terminal)
-- Sends Messages to the MessageLog
-
----
-
-### 5. Message
-
-A structured communication unit between workers and the manager, written to the message-log pane.
-
-| Attribute       | Type            | Description                                          | Source                    |
-|-----------------|-----------------|------------------------------------------------------|---------------------------|
-| timestamp       | ISO 8601        | When the message was sent                            | Generated by sender       |
-| sender          | String          | Pane name or "manager"                               | Agent identity            |
-| event           | Enum            | task_complete, error, status_update, review_result, spawn, transition | Protocol definition |
-| data            | JSON Object     | Event-specific payload                               | Varies by event type      |
-| line_number     | Option<Integer> | Position in message-log pane scrollback              | Computed by reader        |
-
-**Event Types**:
-- `task_complete`: Worker finished its assigned task. Data: `{wp_id, status, summary}`
-- `error`: Worker encountered an error. Data: `{wp_id, error_type, message}`
-- `status_update`: Periodic progress report. Data: `{wp_id, progress, detail}`
-- `review_result`: Reviewer's verdict. Data: `{wp_id, decision: "approve"|"reject", findings}`
-- `spawn`: Manager spawned a worker. Data: `{wp_id, role, pane_id}`
-- `transition`: WP state changed. Data: `{wp_id, from_state, to_state, reason}`
-
-**Wire Format** (in message-log pane):
-```
-echo "[KASMOS:<sender>:<event>] <json_data>"
-```
-
-**Relationships**:
-- Sent by one WorkerAgent (or manager)
-- Written to the MessageLog
-- May trigger an AuditLogEntry
-
----
-
-### 6. MessageLog
-
-The communication channel between workers and the manager. Dual-layered: pane (real-time) + file (persistent).
-
-| Attribute       | Type            | Description                                          | Source                    |
-|-----------------|-----------------|------------------------------------------------------|---------------------------|
-| pane_id         | String          | Zellij pane for real-time messages                   | Session layout            |
-| file_path       | Path            | `.kasmos/messages.jsonl` for persistence              | Convention                |
-| last_read_line  | Integer         | Manager's read cursor in pane scrollback             | In-memory (manager)       |
-
-**Relationships**:
-- Contains many Messages
-- Read by the Manager Agent
-- Written to by Worker Agents
-
----
-
-### 7. AuditLogEntry
-
-A persistent record of orchestration decisions for traceability (FR-027).
-
-| Attribute       | Type            | Description                                          | Source                    |
-|-----------------|-----------------|------------------------------------------------------|---------------------------|
-| timestamp       | ISO 8601        | When the action occurred                             | Generated                 |
-| action          | String          | What happened (e.g., "spawn_worker", "transition_wp")| kasmos serve              |
-| actor           | String          | Who initiated (e.g., "manager", "WP01-coder")       | Caller identity           |
-| details         | JSON Object     | Action-specific context                              | Varies                    |
-| feature         | String          | Feature slug                                         | Session binding           |
-
-**Storage**: Appended to `kitty-specs/<feature>/orchestration-audit.log` (one JSON line per entry). Committed to git for full traceability.
-
-**Relationships**:
-- Belongs to one FeatureSpec
-- May reference one WorkPackage
-- May reference one WorkerAgent
-
----
-
-### 8. Session
-
-The runtime context for a kasmos orchestration session within Zellij.
-
-| Attribute       | Type            | Description                                          | Source                    |
-|-----------------|-----------------|------------------------------------------------------|---------------------------|
-| session_name    | String          | Zellij session name (default: "kasmos")              | Launch parameter          |
-| bound_feature   | Option<String>  | Feature slug currently being orchestrated            | Manager binding           |
-| active_phase    | Enum            | planning, implementing, releasing                    | Derived from feature state|
-| manager_pane    | String          | Pane ID of the manager agent                         | Session layout            |
-| msglog_pane     | String          | Pane ID of the message-log pane                      | Session layout            |
-| worker_panes    | List<String>    | Pane IDs of active workers                           | In-memory registry        |
-| tabs            | List<String>    | Tab names in the session                             | Zellij query-tab-names    |
-
-**Relationships**:
-- Binds to one FeatureSpec
-- Contains one Manager Agent (pane)
-- Contains one MessageLog (pane)
-- Contains zero or more WorkerAgents (panes)
-
----
-
-## Configuration Entities
-
-### KasmosConfig
-
-Runtime configuration for the kasmos binary.
-
-| Attribute             | Type    | Description                                     | Default        |
-|-----------------------|---------|-------------------------------------------------|----------------|
-| max_concurrent_workers| Integer | Maximum worker panes active simultaneously      | 4              |
-| workers_per_row       | Integer | Max workers in a single layout row              | 4              |
-| poll_interval_secs    | Integer | Seconds between scrollback/message polls        | 10             |
-| max_review_iterations | Integer | Max reject-rework cycles before escalation      | 3              |
-| opencode_profile      | String  | OpenCode profile name for agent spawning        | "kas"          |
-| message_log_path      | Path    | Path to persistent message file                 | ".kasmos/messages.jsonl" |
-| audit_log_enabled     | Boolean | Whether to write orchestration audit entries    | true           |
-
-### AgentProfile
-
-Configuration for a specific agent role (defined in OpenCode profile).
-
-| Attribute       | Type            | Description                                     |
-|-----------------|-----------------|-------------------------------------------------|
-| name            | String          | Agent identifier (manager, coder, reviewer, release) |
-| model           | String          | LLM model identifier                           |
-| temperature     | Float           | Sampling temperature                            |
-| reasoning_effort| Enum            | low, medium, high                               |
-| mcp_servers     | List<String>    | MCP servers this agent can access               |
-| permissions     | Object          | Read/write/edit/bash permissions                |
+- Concurrent workers: 4+ expected, configurable upper bound validated in config.
+- Message volume: bursty but line-oriented; parser must handle thousands of lines without duplication.
+- Audit retention: bounded by 512MB and 14-day age using either-threshold policy.
