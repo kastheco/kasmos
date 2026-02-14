@@ -56,7 +56,7 @@
 **Estimated prompt size**: ~360 lines
 
 ### Included Subtasks
-- [ ] T007 Define sectioned config structs in `crates/kasmos/src/config.rs` (`AgentConfig`, `CommunicationConfig`, `PathsConfig`, `SessionConfig`, `AuditConfig`, `LockConfig`)
+- [x] T007 Define sectioned config structs in `crates/kasmos/src/config.rs` (`AgentConfig`, `CommunicationConfig`, `PathsConfig`, `SessionConfig`, `AuditConfig`, `LockConfig`)
 - [ ] T008 Implement config loading precedence (defaults -> `kasmos.toml` at repo root -> env overrides) and validation
 - [ ] T009 Implement reusable feature detection pipeline (`arg -> branch -> directory -> none`) in `crates/kasmos/src/launch/detect.rs` and integrate `crates/kasmos/src/feature_arg.rs`
 - [ ] T010 Implement CLI feature selector path when feature cannot be inferred, guaranteed before any Zellij actions
