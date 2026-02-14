@@ -32,10 +32,10 @@
 //!   - `RUST_LOG=kasmos=trace` — Show trace for kasmos crate only
 
 use crate::error::Result;
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
-use tracing_subscriber::{fmt, Registry};
+use tracing_subscriber::{Registry, fmt};
 
 /// Initialize the tracing logging system.
 ///

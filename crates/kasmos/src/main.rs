@@ -103,7 +103,9 @@ async fn main() -> Result<()> {
         None => {
             if let Some(ref prefix) = cli.spec_prefix {
                 let _ = kasmos::init_logging(false);
-                kasmos::launch::run(Some(prefix)).await.context("Launch failed")?;
+                kasmos::launch::run(Some(prefix))
+                    .await
+                    .context("Launch failed")?;
             } else {
                 let _ = kasmos::init_logging(false);
                 kasmos::launch::run(None).await.context("Launch failed")?;

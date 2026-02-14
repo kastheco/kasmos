@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::path::PathBuf;
 
 pub fn resolve_feature_dir(feature: &str) -> Result<PathBuf> {

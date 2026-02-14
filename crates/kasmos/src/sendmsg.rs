@@ -1,6 +1,6 @@
 //! Send a controller command to a running orchestration via FIFO.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::io::Write;
 
 /// Send a command string to the orchestration FIFO.
