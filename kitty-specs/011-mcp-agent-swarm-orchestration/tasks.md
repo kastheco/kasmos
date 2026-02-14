@@ -24,7 +24,7 @@
 **Estimated prompt size**: ~320 lines
 
 ### Included Subtasks
-- [ ] T001 Add required dependencies for MCP and schema tooling in `crates/kasmos/Cargo.toml` (`rmcp`, `schemars`, `regex`) and define `tui` feature gating
+- [x] T001 Add required dependencies for MCP and schema tooling in `crates/kasmos/Cargo.toml` (`rmcp`, `schemars`, `regex`) and define `tui` feature gating
 - [ ] T002 Mark TUI-only dependencies (`ratatui`, `crossterm`, `futures-util`) as optional and gate legacy modules in `crates/kasmos/src/main.rs`/`crates/kasmos/src/lib.rs`
 - [ ] T003 Replace clap command model in `crates/kasmos/src/main.rs` with new launcher-first surface (`None => launch`, `Serve`, `Setup`, `List`, `Status`)
 - [ ] T004 [P] Create module stubs `crates/kasmos/src/launch/mod.rs`, `crates/kasmos/src/serve/mod.rs`, and `crates/kasmos/src/setup/mod.rs`
