@@ -35,7 +35,7 @@ futures-util = { version = "0.3.31", optional = true }
 tui-logger = { version = "0.18", features = ["tracing-support"], optional = true }
 log = "0.4"
 rmcp = { version = "0.15", features = ["server", "transport-io"] }
-schemars = "0.8"
+schemars = "1.2"
 regex = "1"
 
 [dev-dependencies]
