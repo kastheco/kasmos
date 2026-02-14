@@ -101,10 +101,14 @@ This model defines runtime entities required for launch orchestration, worker li
 - Purpose: Report current feature phase and wave execution state.
 - Fields:
   - `feature_slug: String`
-  - `phase: String` (`spec_only | planned | tasked | implementing | reviewing | complete`)
+  - `phase: String` (`spec_only | clarifying | planned | analyzing | tasked | implementing | reviewing | releasing | complete`)
   - `waves: Vec<WaveStatus>`
   - `active_workers: Vec<WorkerEntry>`
   - `last_event_at: Option<DateTime<Utc>>`
+- Phase derivation notes:
+  - `clarifying` and `analyzing` are optional planning phases; smaller features may skip directly from `spec_only` to `planned` to `tasked`
+  - Phase is derived from artifact presence (e.g., spec.md exists without plan.md -> `spec_only` or `clarifying`), not from WP lane states
+  - Workflow phases and WP lane states are orthogonal concepts; the Lane Translation Protocol (below) applies only to WP states
 
 ## Relationships
 
@@ -113,6 +117,22 @@ This model defines runtime entities required for launch orchestration, worker li
 - Many `KasmosMessage` records reference zero or one `WorkerEntry` by `wp_id` and sender.
 - Many `AuditEntry` records belong to one feature slug and optional WP.
 - One `AuditPolicy` is loaded from config and applied to all `AuditEntry` writes.
+
+## Lane Translation Protocol
+
+Kasmos uses its own orchestration state vocabulary internally and in the MCP contract. Spec-kitty task files use a different lane vocabulary. Translation occurs at the file I/O boundary (inside `transition_wp` writes and `workflow_status` reads).
+
+| Kasmos State | Spec-Kitty Lane | Direction | Notes |
+|--------------|-----------------|-----------|-------|
+| `pending` | `planned` | Bidirectional | WP ready but not started |
+| `active` | `doing` | Bidirectional | Worker assigned and executing |
+| `for_review` | `for_review` | Bidirectional | Shared term, no translation needed |
+| `done` | `done` | Bidirectional | Shared term, no translation needed |
+| `rework` | `doing` | Write-only | Written as `doing`; rework context is preserved in the audit log (`reason` field), not the lane name. On read-back, `doing` with prior `for_review` history implies rework. |
+
+- `transition_wp` translates kasmos state to spec-kitty lane before writing task file frontmatter.
+- `workflow_status` translates spec-kitty lane to kasmos state when reading task file frontmatter.
+- The audit log always records the kasmos vocabulary (e.g., `rework`, not `doing`) for precise history.
 
 ## Scale Assumptions
 

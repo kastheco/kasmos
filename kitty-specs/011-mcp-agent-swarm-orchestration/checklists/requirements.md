@@ -34,4 +34,4 @@
 - All items pass validation. Spec is ready for `/spec-kitty.clarify` or `/spec-kitty.plan`.
 - Spec deliberately uses generic terms ("terminal multiplexer", "agent runtime", "pane-tracking service") instead of technology names in requirements and success criteria. Technology mapping happens during planning/implementation.
 - FR-024 (preserve TUI code) ensures this is an additive change, not a destructive rewrite.
-- The spec covers 3 kasmos modes (launch, serve, setup) as described in discovery, 8 user stories across 2 priority levels, 25 functional requirements, 10 success criteria, and 9 edge cases.
+- The spec covers 3 kasmos modes (launch, serve, setup) as described in discovery, 8 user stories across 2 priority levels, 33 functional requirements (FR-001 through FR-033), 10 success criteria, and 11 edge cases.

@@ -9,7 +9,7 @@
 
 ### User Story 1 - Launch Kasmos Session (Priority: P1)
 
-A developer runs `kasmos` (optionally with a spec prefix like `kasmos 011`) from any terminal. Kasmos validates that required tools are available, generates a session layout, and opens a Zellij session named "kasmos" with an orchestration tab containing a manager agent in the top-left pane, a message-log pane to its right, and an empty worker row below. The manager agent is automatically primed with the project context and, if a spec prefix was provided, binds to that feature specification. `kasmos serve` runs as an MCP stdio subprocess spawned by the manager agent (not as a dedicated pane). Once the layout is ready, the manager greets the user and reports what feature (if any) it has bound to and what the current workflow state is.
+A developer runs `kasmos` (optionally with a spec prefix like `kasmos 011`) from any terminal. Kasmos validates that required tools are available, generates a session layout, and opens a Zellij session named "kasmos" with an orchestration tab containing a manager agent in the top-left pane, a message-log pane to its right, a dashboard pane showing live worker status, and an empty worker row below. The manager agent is automatically primed with the project context and, if a spec prefix was provided, binds to that feature specification. `kasmos serve` runs as an MCP stdio subprocess spawned by the manager agent (not as a dedicated pane). Once the layout is ready, the manager greets the user and reports what feature (if any) it has bound to and what the current workflow state is.
 
 If kasmos is already running inside a Zellij session, it opens a new orchestration tab within the current session instead of creating a new session.
 
@@ -22,7 +22,7 @@ If kasmos is already running inside a Zellij session, it opens a new orchestrati
 1. **Given** a terminal outside Zellij with all dependencies installed, **When** the user runs `kasmos`, **Then** a new Zellij session named "kasmos" launches with an orchestration tab (manager pane, message-log pane, empty worker area), the manager starts `kasmos serve` as its MCP stdio subprocess, and the manager reports readiness.
 2. **Given** a terminal outside Zellij, **When** the user runs `kasmos 011`, **Then** the session launches and the manager automatically binds to the `011-*` feature spec and reports the current workflow phase.
 3. **Given** a terminal inside an active Zellij session, **When** the user runs `kasmos 011`, **Then** a new named orchestration tab opens within the existing session (no new session created) with the same layout.
-4. **Given** the user runs `kasmos` without a spec prefix on the `master` branch, **When** no feature can be inferred from branch or directory, **Then** the CLI presents a selection of available feature specs before any session or tab is created, and launch proceeds only after the user chooses one.
+4. **Given** the user runs `kasmos` without a spec prefix on the `main` branch, **When** no feature can be inferred from branch or directory, **Then** the CLI presents a selection of available feature specs before any session or tab is created, and launch proceeds only after the user chooses one.
 5. **Given** a feature branch like `011-mcp-agent-swarm-orchestration`, **When** the user runs `kasmos` without a spec prefix, **Then** the manager infers the spec prefix `011` from the branch name and binds to it automatically.
 
 ---
@@ -145,6 +145,7 @@ While agents are working, the manager provides periodic status updates to the us
 2. **Given** a worker completes a task, **When** the manager detects this, **Then** it reports the completion and the next action it will take.
 3. **Given** an error occurs in any worker, **When** the manager detects it, **Then** it reports the error immediately with context about which work package and what went wrong.
 4. **Given** the user has been idle for a configurable period during active work, **When** the period elapses, **Then** the manager provides a summary of overall progress.
+5. **Given** workers are active in the orchestration tab, **When** the event polling loop executes, **Then** the dashboard pane displays an updated status table showing each worker's role, assigned WP, current state, and elapsed time.
 
 ---
 
@@ -178,12 +179,13 @@ While agents are working, the manager provides periodic status updates to the us
 - Q: If a required dependency is missing when the user runs `kasmos` (launch command), what should the system do? -> A: Hard fail before launch with actionable error and non-zero exit.
 - Q: For duplicate feature binding prevention (`FR-020`), what lock scope should apply? -> A: Repository-wide across all running processes.
 - Q: When no feature can be inferred (`FR-005`), where should feature selection occur? -> A: In the CLI before any session or tab is created.
+- Q: How do kasmos WP states map to spec-kitty task file lanes? -> A: Kasmos uses its own orchestration vocabulary (`pending`, `active`, `for_review`, `done`, `rework`) and translates at the spec-kitty file I/O boundary. Mapping: `pending` <-> `planned`, `active` <-> `doing`, `for_review` <-> `for_review` (shared), `done` <-> `done` (shared), `rework` -> `doing` (with rework context preserved in the audit log, not the lane name).
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: The system MUST launch a named session with an orchestration tab when run from outside an existing session. The orchestration tab contains the manager pane, message-log pane, and worker area.
+- **FR-001**: The system MUST launch a named session with an orchestration tab when run from outside an existing session. The orchestration tab contains the manager pane, message-log pane, dashboard pane, and worker area.
 - **FR-002**: The system MUST open a new orchestration tab within the current session when run from inside an existing session.
 - **FR-003**: The system MUST accept an optional spec prefix argument to bind to a specific feature specification.
 - **FR-004**: The system MUST infer the spec prefix from the current git branch name when no prefix is provided and the branch matches a known spec pattern.
@@ -192,7 +194,7 @@ While agents are working, the manager provides periodic status updates to the us
 - **FR-007**: The system MUST generate layout configurations that support automatic reflow when panes are added or removed.
 - **FR-008**: The manager agent MUST assess the current workflow phase of the bound feature and present a summary to the user before taking action.
 - **FR-009**: The manager agent MUST request explicit user confirmation before beginning any workflow stage (planning, implementation/review, release).
-- **FR-010**: The manager agent MUST spawn worker agents with role-specific context (as defined in FR-028 through FR-031), role assignment, and commands for the current task.
+- **FR-010**: The manager agent MUST spawn worker agents with role-specific context (as defined in FR-028 through FR-033), role assignment, and commands for the current task.
 - **FR-011**: The manager agent MUST monitor worker agents via message-log reading and scrollback polling to detect completion, errors, and other actionable events.
 - **FR-012**: The manager agent MUST transition work packages through their lifecycle states (pending → active → for_review → done/rework) by updating the corresponding spec-kitty task file lanes — these artifacts are the single source of truth for WP state.
 - **FR-013**: The manager agent MUST respect wave ordering — work packages in later waves do not start until all work packages in earlier waves are complete.
@@ -214,15 +216,17 @@ While agents are working, the manager provides periodic status updates to the us
 - **FR-029**: Coder agents MUST be provisioned with narrow, task-focused context: the specific work package task file (as their contract), project coding standards and constitution, and architecture memory scoped to the relevant subsystems only. Coders MUST NOT receive the full spec, other work packages, or the plan.
 - **FR-030**: Reviewer agents MUST be provisioned with medium-breadth context: the work package task file (to know what was requested), the changes produced by the coder, the spec's acceptance criteria for that work package, project coding standards and constitution, and architecture memory for the affected areas.
 - **FR-031**: Release agents MUST be provisioned with broad structural context: all work package statuses, the feature branch structure, merge target, spec summary, awareness of other active features in the repository (for conflict detection), and project conventions for commits and changelogs.
+- **FR-032**: The system MUST maintain a dashboard pane in the orchestration tab that displays a live worker status table (role, assigned WP, current state, elapsed time). The dashboard MUST be updated as a side effect of the event polling loop, not on a separate timer.
+- **FR-033**: Planner agents MUST be provisioned with medium-broad context: the full feature spec, plan (if it exists), workflow state, project architecture memory, and workflow intelligence. Planners MUST NOT receive individual work package task files or implementation-level coding standards, as their role is strategic (running spec-kitty lifecycle commands) rather than tactical.
 
 ### Key Entities
 
-- **Session**: A kasmos workspace within the terminal multiplexer with one or more orchestration tabs (each containing one manager, one message-log, and zero or more workers). For each manager, `kasmos serve` runs as an MCP stdio subprocess. Attributes: session name, tab names, bound feature spec, active workflow phase, worker inventory.
+- **Session**: A kasmos workspace within the terminal multiplexer with one or more orchestration tabs (each containing one manager, one message-log, one dashboard, and zero or more workers). For each manager, `kasmos serve` runs as an MCP stdio subprocess. Attributes: session name, tab names, bound feature spec, active workflow phase, worker inventory.
 - **Manager Agent**: The controller agent occupying the primary pane. Holds workflow state, makes orchestration decisions, communicates with workers. Provisioned with the broadest context (full spec, plan, task board, architecture memory, project structure). Attributes: bound feature, current phase, active workers, pending actions.
-- **Worker Agent**: A coder, reviewer, or release agent in the worker area. Has a specific task assignment and communicates via message-log. Each role receives a different context profile: coders get narrow task-focused context, reviewers get medium-breadth context including changes and acceptance criteria, release agents get broad structural context across the feature. Attributes: pane ID, role (coder/reviewer/release), assigned work package, status (active/complete/errored/aborted), context profile.
+- **Worker Agent**: A planner, coder, reviewer, or release agent in the worker area. Has a specific task assignment and communicates via message-log. Each role receives a different context profile: planners get medium-broad strategic context, coders get narrow task-focused context, reviewers get medium-breadth context including changes and acceptance criteria, release agents get broad structural context across the feature. Attributes: pane ID, role (planner/coder/reviewer/release), assigned work package, status (active/complete/errored/aborted), context profile.
 - **Message Log**: A dedicated pane serving as the shared communication channel. Contains structured messages from both workers (status updates, completion signals) and the manager (orchestration decisions, transitions, cleanup actions), each with timestamps, sender IDs, and event types.
 - **Orchestration Audit Log**: A persistent file at `kitty-specs/<feature>/.kasmos/messages.jsonl` recording timestamped manager actions (spawns, transitions, cleanups, errors). Committed to version control alongside spec artifacts for post-mortem analysis and project history.
-- **Work Package (WP)**: A unit of work from the feature plan. Progresses through states: pending → active → for_review → done (or rework loop). Belongs to a wave for ordering. State is stored in spec-kitty task file lanes (single source of truth); the system does not maintain a separate state store.
+- **Work Package (WP)**: A unit of work from the feature plan. Progresses through states: pending -> active -> for_review -> done (or rework loop). Belongs to a wave for ordering. State is stored in spec-kitty task file lanes (single source of truth); the system does not maintain a separate state store. Kasmos uses its own state vocabulary (pending/active/for_review/done/rework) and translates to spec-kitty lane names (planned/doing/for_review/done) at the file I/O boundary.
 - **Wave**: An ordered group of work packages that can execute concurrently. All WPs in wave N must complete before wave N+1 begins.
 - **Feature Spec**: A specification in the specs directory containing spec document, plan, tasks, and metadata. The unit of work that kasmos orchestrates.
 
