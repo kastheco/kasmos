@@ -1,27 +1,30 @@
 ---
-work_package_id: "WP01"
-subtasks:
-  - "T001"
-  - "T002"
-  - "T003"
-  - "T004"
-  - "T005"
-  - "T006"
-title: "CLI Pivot and Legacy TUI Gating"
-phase: "Phase 0 - CLI Pivot and Core Foundation"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
+work_package_id: WP01
+title: CLI Pivot and Legacy TUI Gating
+lane: "doing"
 dependencies: []
+base_branch: main
+base_commit: e2efe83d5f7238ed6104250098ac15f90cc6038e
+created_at: '2026-02-14T19:22:02.295961+00:00'
+subtasks:
+- T001
+- T002
+- T003
+- T004
+- T005
+- T006
+phase: Phase 0 - CLI Pivot and Core Foundation
+assignee: ''
+agent: ''
+shell_pid: "3202027"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-14T16:27:48Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-14T16:27:48Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP01 - CLI Pivot and Legacy TUI Gating
