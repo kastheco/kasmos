@@ -59,7 +59,7 @@
 - [x] T007 Define sectioned config structs in `crates/kasmos/src/config.rs` (`AgentConfig`, `CommunicationConfig`, `PathsConfig`, `SessionConfig`, `AuditConfig`, `LockConfig`)
 - [x] T008 Implement config loading precedence (defaults -> `kasmos.toml` at repo root -> env overrides) and validation
 - [x] T009 Implement reusable feature detection pipeline (`arg -> branch -> directory -> none`) in `crates/kasmos/src/launch/detect.rs` and integrate `crates/kasmos/src/feature_arg.rs`
-- [ ] T010 Implement CLI feature selector path when feature cannot be inferred, guaranteed before any Zellij actions
+- [x] T010 Implement CLI feature selector path when feature cannot be inferred, guaranteed before any Zellij actions
 - [ ] T011 Implement launch dependency preflight checks with actionable guidance and non-zero exit (`zellij`, `opencode`, pane-tracker tooling, `spec-kitty`)
 - [ ] T012 Implement "no specs found" early-exit path before launch
 - [ ] T013 Add unit tests for config loading/validation, feature detection ambiguity, selector gate, and preflight hard-fail behavior
