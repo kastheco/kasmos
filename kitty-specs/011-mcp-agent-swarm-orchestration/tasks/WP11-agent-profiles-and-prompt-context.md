@@ -1,27 +1,30 @@
 ---
-work_package_id: "WP11"
+work_package_id: WP11
+title: Agent Profiles and Prompt Context Boundaries
+lane: "doing"
+dependencies: [WP02]
+base_branch: 011-mcp-agent-swarm-orchestration-WP02
+base_commit: 839ff563e7dfa7894ce4b53b37f439478bf887a6
+created_at: '2026-02-14T22:21:09.927233+00:00'
 subtasks:
-  - "T063"
-  - "T064"
-  - "T065"
-  - "T066"
-  - "T067"
-  - "T068"
-title: "Agent Profiles and Prompt Context Boundaries"
-phase: "Phase 3 - Setup UX, Role Context, and End-to-End Hardening"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
-dependencies: ["WP02"]
+- T063
+- T064
+- T065
+- T066
+- T067
+- T068
+phase: Phase 3 - Setup UX, Role Context, and End-to-End Hardening
+assignee: ''
+agent: ''
+shell_pid: "3674747"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-14T16:27:48Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-14T16:27:48Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP11 - Agent Profiles and Prompt Context Boundaries
