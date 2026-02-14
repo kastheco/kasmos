@@ -116,7 +116,7 @@ spec-kitty validate-encoding --all --fix
 - Commit only meaningful units of work.
 - Write descriptive commit messages (imperative mood).
 - Do not rewrite history of shared branches.
-- Keep feature branches up to date with master via merge or rebase as appropriate.
+- Keep feature branches up to date with main via merge or rebase as appropriate.
 - Never commit secrets, tokens, or credentials.
 
 ---
