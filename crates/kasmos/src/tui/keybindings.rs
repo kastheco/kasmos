@@ -12,7 +12,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::command_handlers::EngineAction;
 use crate::types::{ProgressionMode, RunState, WPState};
 
-use super::app::{state_to_lane, App, DashboardViewMode, Tab};
+use super::app::{App, DashboardViewMode, Tab, state_to_lane};
 
 /// Handle a key event by dispatching to overlay, global, or tab-specific handlers.
 pub fn handle_key(app: &mut App, key: KeyEvent) {

@@ -1,6 +1,6 @@
 //! Send controller commands to a running orchestration via FIFO.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Subcommand;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -153,7 +153,7 @@ fn resolve_kasmos_dir(base: &Path) -> Result<PathBuf> {
 
 fn send_fifo_command(fifo_path: &Path, command: &str) -> Result<()> {
     use nix::errno::Errno;
-    use nix::fcntl::{open, OFlag};
+    use nix::fcntl::{OFlag, open};
     use nix::sys::stat::Mode;
 
     let fd = match open(
