@@ -15,7 +15,7 @@ subtasks:
 - T032
 phase: Phase 2 - Safety, State, and Audit Guarantees
 assignee: ''
-agent: ''
+agent: "opencode"
 shell_pid: "3957848"
 review_status: ''
 reviewed_by: ''
@@ -252,3 +252,4 @@ Enforce single active owner per feature across the repository (FR-020), with sta
 ## Activity Log
 
 - 2026-02-14T16:27:48Z - system - lane=planned - Prompt generated via /spec-kitty.tasks
+- 2026-02-14T22:40:00Z – opencode – shell_pid=3957848 – lane=doing – Assigned agent via workflow command
