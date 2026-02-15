@@ -1,7 +1,7 @@
 ---
 work_package_id: WP12
 title: Integration, Legacy Preservation, and Acceptance Hardening
-lane: "for_review"
+lane: "doing"
 dependencies: [WP07, WP08, WP09, WP10, WP11]
 base_branch: 011-mcp-agent-swarm-orchestration-WP07
 base_commit: ad49303038f379286b49bd243b78966248018c92
@@ -15,8 +15,8 @@ subtasks:
 - T074
 phase: Phase 3 - Setup UX, Role Context, and End-to-End Hardening
 assignee: ''
-agent: ''
-shell_pid: '1417265'
+agent: "reviewer"
+shell_pid: "1544861"
 review_status: ''
 reviewed_by: ''
 history:
@@ -238,3 +238,4 @@ Validate end-to-end behavior against locked decisions and success criteria, conf
 
 - 2026-02-14T16:27:48Z - system - lane=planned - Prompt generated via /spec-kitty.tasks
 - 2026-02-15T07:19:49Z – unknown – shell_pid=1417265 – lane=for_review – Ready for review
+- 2026-02-15T07:26:32Z – reviewer – shell_pid=1544861 – lane=doing – Started review via workflow command
