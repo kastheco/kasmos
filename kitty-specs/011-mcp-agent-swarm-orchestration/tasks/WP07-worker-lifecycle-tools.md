@@ -15,8 +15,8 @@ subtasks:
 - T044
 phase: Phase 2 - Safety, State, and Audit Guarantees
 assignee: ''
-agent: ''
-shell_pid: "210164"
+agent: "coder"
+shell_pid: "566744"
 review_status: ''
 reviewed_by: ''
 history:
@@ -267,3 +267,4 @@ Implement the worker pane lifecycle tools (`spawn_worker`, `despawn_worker`, `li
 ## Activity Log
 
 - 2026-02-14T16:27:48Z - system - lane=planned - Prompt generated via /spec-kitty.tasks
+- 2026-02-15T01:41:43Z – coder – shell_pid=566744 – lane=doing – Assigned agent via workflow command
