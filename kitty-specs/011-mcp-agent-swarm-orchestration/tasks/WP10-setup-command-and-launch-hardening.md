@@ -1,7 +1,7 @@
 ---
 work_package_id: WP10
 title: Setup Command and Launch Hardening
-lane: "for_review"
+lane: "doing"
 dependencies: [WP03]
 base_branch: 011-mcp-agent-swarm-orchestration-WP03
 base_commit: 5ede493dbac49ea7462a399719ed32e777981362
@@ -279,3 +279,4 @@ Deliver `kasmos setup` as a first-time environment validation and configuration 
 - 2026-02-15T01:19:23Z – reviewer – shell_pid=418927 – lane=doing – Started review via workflow command
 - 2026-02-15T01:22:58Z – reviewer – shell_pid=418927 – lane=done – Review passed: All 6 subtasks satisfied. Setup validates deps, generates assets idempotently, shares engine with launch, provides guidance, returns non-zero on failure. 252/252 tests pass.
 - 2026-02-15T01:33:05Z – reviewer – shell_pid=418927 – lane=for_review – Re-submitting after addressing review findings
+- 2026-02-15T01:33:09Z – reviewer – shell_pid=418927 – lane=doing – Started review via workflow command
