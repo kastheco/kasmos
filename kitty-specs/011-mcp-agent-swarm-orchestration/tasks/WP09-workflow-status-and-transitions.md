@@ -1,27 +1,30 @@
 ---
-work_package_id: "WP09"
+work_package_id: WP09
+title: Workflow Status and Transition Controls
+lane: "doing"
+dependencies: [WP04]
+base_branch: 011-mcp-agent-swarm-orchestration-WP04
+base_commit: a02df49238a89b34cf57dc156237af2bad587046
+created_at: '2026-02-15T01:01:51.630409+00:00'
 subtasks:
-  - "T051"
-  - "T052"
-  - "T053"
-  - "T054"
-  - "T055"
-  - "T056"
-title: "Workflow Status and Transition Controls"
-phase: "Phase 2 - Safety, State, and Audit Guarantees"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
-dependencies: ["WP04"]
+- T051
+- T052
+- T053
+- T054
+- T055
+- T056
+phase: Phase 2 - Safety, State, and Audit Guarantees
+assignee: ''
+agent: ''
+shell_pid: "212269"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-14T16:27:48Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-14T16:27:48Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP09 - Workflow Status and Transition Controls
