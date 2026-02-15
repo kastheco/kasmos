@@ -1,8 +1,9 @@
 use crate::graph::DependencyGraph;
 use crate::parser::{FeatureDir, parse_frontmatter};
 use crate::serve::KasmosServer;
+use crate::serve::registry::{WorkerEntry, WorkerStatus};
 use crate::types::{WPState, WorkPackage};
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow};
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -26,6 +27,10 @@ pub struct WorkflowSnapshot {
     pub phase: String,
     pub waves: Vec<WaveInfo>,
     pub lock: LockInfo,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub active_workers: Vec<WorkerEntry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_event_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -64,7 +69,6 @@ struct ArtifactSnapshot {
     has_tasks_md: bool,
     has_clarification_artifacts: bool,
     has_analysis_artifacts: bool,
-    has_release_artifacts: bool,
     has_release_complete_artifacts: bool,
     task_file_count: usize,
     parsed_wps: Vec<ParsedWp>,
@@ -86,14 +90,15 @@ pub async fn handle(
     input: WorkflowStatusInput,
     server: &KasmosServer,
 ) -> Result<WorkflowStatusOutput> {
-    let feature_dir = resolve_feature_dir(
+    let feature_dir = super::resolve_feature_dir(
         Path::new(&server.config.paths.specs_root),
         &input.feature_slug,
     )?;
     let snapshot = scan_artifacts(&feature_dir)?;
-    let lock = read_lock_info(&server.config, &input.feature_slug)?;
-    let phase = determine_phase(&snapshot, &lock);
+    let lock = read_lock_info(&server.config, &feature_dir, &input.feature_slug)?;
+    let phase = determine_phase(&snapshot);
     let waves = compute_waves(&snapshot)?;
+    let (active_workers, last_event_at) = worker_snapshot(server).await;
 
     Ok(WorkflowStatusOutput {
         ok: true,
@@ -102,28 +107,43 @@ pub async fn handle(
             phase,
             waves,
             lock,
+            active_workers,
+            last_event_at,
         },
     })
 }
 
-fn resolve_feature_dir(specs_root: &Path, feature_slug: &str) -> Result<PathBuf> {
-    let as_path = PathBuf::from(feature_slug);
-    let candidate = if as_path.is_dir() {
-        as_path
-    } else {
-        specs_root.join(feature_slug)
+async fn worker_snapshot(server: &KasmosServer) -> (Vec<WorkerEntry>, Option<String>) {
+    let workers = {
+        let registry = server.registry.read().await;
+        registry.list().cloned().collect::<Vec<_>>()
     };
 
-    if !candidate.is_dir() {
-        bail!("Feature directory not found: {}", candidate.display());
-    }
+    let active_workers = workers
+        .iter()
+        .filter(|worker| worker.status == WorkerStatus::Active)
+        .cloned()
+        .collect::<Vec<_>>();
 
-    candidate.canonicalize().with_context(|| {
-        format!(
-            "Failed to canonicalize feature directory: {}",
-            candidate.display()
-        )
-    })
+    let last_event_at = workers
+        .iter()
+        .filter_map(|worker| {
+            worker
+                .updated_at
+                .as_deref()
+                .or(Some(worker.spawned_at.as_str()))
+        })
+        .filter_map(parse_rfc3339_utc)
+        .max()
+        .map(|timestamp| timestamp.to_rfc3339());
+
+    (active_workers, last_event_at)
+}
+
+fn parse_rfc3339_utc(value: &str) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|timestamp| timestamp.with_timezone(&Utc))
 }
 
 fn scan_artifacts(feature_dir: &Path) -> Result<ArtifactSnapshot> {
@@ -137,10 +157,6 @@ fn scan_artifacts(feature_dir: &Path) -> Result<ArtifactSnapshot> {
     let has_analysis_artifacts = has_any_file(
         feature_dir,
         &["analysis.md", "analyze.md", "analysis-report.md"],
-    );
-    let has_release_artifacts = has_any_file(
-        feature_dir,
-        &["release.md", "release-notes.md", ".release-started"],
     );
     let has_release_complete_artifacts = has_any_file(
         feature_dir,
@@ -176,7 +192,6 @@ fn scan_artifacts(feature_dir: &Path) -> Result<ArtifactSnapshot> {
         has_tasks_md,
         has_clarification_artifacts,
         has_analysis_artifacts,
-        has_release_artifacts,
         has_release_complete_artifacts,
         task_file_count,
         parsed_wps,
@@ -187,7 +202,7 @@ fn has_any_file(dir: &Path, candidates: &[&str]) -> bool {
     candidates.iter().any(|name| dir.join(name).is_file())
 }
 
-fn determine_phase(snapshot: &ArtifactSnapshot, lock: &LockInfo) -> String {
+fn determine_phase(snapshot: &ArtifactSnapshot) -> String {
     if !snapshot.has_spec {
         return "spec_only".to_string();
     }
@@ -208,9 +223,6 @@ fn determine_phase(snapshot: &ArtifactSnapshot, lock: &LockInfo) -> String {
         if all_done {
             if snapshot.has_release_complete_artifacts {
                 return "complete".to_string();
-            }
-            if snapshot.has_release_artifacts || matches!(lock.state, LockState::Active) {
-                return "releasing".to_string();
             }
             return "releasing".to_string();
         }
@@ -288,8 +300,16 @@ fn compute_waves(snapshot: &ArtifactSnapshot) -> Result<Vec<WaveInfo>> {
         .collect())
 }
 
-fn read_lock_info(config: &crate::config::Config, feature_slug: &str) -> Result<LockInfo> {
-    let lock_path = lock_file_path(feature_slug)?;
+fn read_lock_info(
+    config: &crate::config::Config,
+    feature_dir: &Path,
+    feature_slug: &str,
+) -> Result<LockInfo> {
+    let lock_path = lock_file_path(
+        Path::new(&config.paths.specs_root),
+        feature_dir,
+        feature_slug,
+    )?;
     if !lock_path.is_file() {
         return Ok(LockInfo {
             state: LockState::None,
@@ -321,21 +341,40 @@ fn read_lock_info(config: &crate::config::Config, feature_slug: &str) -> Result<
     })
 }
 
-fn lock_file_path(feature_slug: &str) -> Result<PathBuf> {
-    let output = std::process::Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-        .context("Failed to resolve git repository root")?;
+fn lock_file_path(specs_root: &Path, feature_dir: &Path, feature_slug: &str) -> Result<PathBuf> {
+    let specs_root = specs_root.canonicalize().with_context(|| {
+        format!(
+            "Failed to canonicalize specs root while locating lock file: {}",
+            specs_root.display()
+        )
+    })?;
 
-    if !output.status.success() {
-        bail!(
-            "Failed to resolve git root: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+    let specs_dir = if specs_root == feature_dir {
+        feature_dir.parent().ok_or_else(|| {
+            anyhow!(
+                "Unable to resolve specs directory from feature path {}",
+                feature_dir.display()
+            )
+        })?
+    } else if feature_dir.starts_with(&specs_root) {
+        specs_root.as_path()
+    } else {
+        feature_dir.parent().ok_or_else(|| {
+            anyhow!(
+                "Unable to resolve specs directory from feature path {}",
+                feature_dir.display()
+            )
+        })?
+    };
 
-    let repo_root = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok(PathBuf::from(repo_root)
+    let repo_root = specs_dir.parent().ok_or_else(|| {
+        anyhow!(
+            "Unable to locate repository root from specs path {}",
+            specs_dir.display()
+        )
+    })?;
+
+    Ok(repo_root
         .join(".kasmos")
         .join("locks")
         .join(format!("{}.lock", feature_slug)))
@@ -365,6 +404,7 @@ fn is_stale_lock(config: &crate::config::Config, record: &StoredLockRecord) -> b
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::serve::registry::AgentRole;
     use tempfile::tempdir;
 
     fn write_wp(feature_dir: &Path, file_name: &str, lane: &str, deps: &[&str]) {
@@ -441,6 +481,47 @@ mod tests {
         .expect("status");
 
         assert_eq!(output.snapshot.phase, "reviewing");
+        assert!(output.snapshot.active_workers.is_empty());
+        assert!(output.snapshot.last_event_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn workflow_status_includes_active_workers_and_last_event_at() {
+        let tmp = tempdir().expect("tempdir");
+        let specs_root = tmp.path().join("kitty-specs");
+        let feature_dir = specs_root.join("011-workers");
+        std::fs::create_dir_all(feature_dir.join("tasks")).expect("mkdir tasks");
+        std::fs::write(feature_dir.join("spec.md"), "# spec").expect("write spec");
+
+        let mut config = crate::config::Config::default();
+        config.paths.specs_root = specs_root.display().to_string();
+        let server = crate::serve::KasmosServer::new(config).expect("server");
+
+        crate::serve::tools::spawn_worker::handle(
+            &server,
+            crate::serve::tools::spawn_worker::SpawnWorkerInput {
+                wp_id: "WP01".to_string(),
+                role: AgentRole::Coder,
+                prompt: "work".to_string(),
+                feature_slug: "011-workers".to_string(),
+                worktree_path: None,
+            },
+        )
+        .await
+        .expect("spawn worker");
+
+        let output = handle(
+            WorkflowStatusInput {
+                feature_slug: "011-workers".to_string(),
+            },
+            &server,
+        )
+        .await
+        .expect("status");
+
+        assert_eq!(output.snapshot.active_workers.len(), 1);
+        assert_eq!(output.snapshot.active_workers[0].wp_id, "WP01");
+        assert!(output.snapshot.last_event_at.is_some());
     }
 
     #[test]
@@ -451,7 +532,6 @@ mod tests {
             has_tasks_md: true,
             has_clarification_artifacts: false,
             has_analysis_artifacts: false,
-            has_release_artifacts: false,
             has_release_complete_artifacts: false,
             task_file_count: 2,
             parsed_wps: vec![
@@ -467,12 +547,7 @@ mod tests {
                 },
             ],
         };
-        let lock = LockInfo {
-            state: LockState::None,
-            owner_id: None,
-            expires_at: None,
-        };
-        assert_eq!(determine_phase(&snapshot, &lock), "tasked");
+        assert_eq!(determine_phase(&snapshot), "tasked");
     }
 
     #[test]
@@ -482,5 +557,39 @@ mod tests {
         let parsed: serde_yml::Value =
             serde_yml::from_str(parts[1].trim()).expect("frontmatter value");
         assert_eq!(parsed["work_package_id"], "WP01");
+    }
+
+    #[test]
+    fn lock_file_path_resolves_repo_root_from_specs_root() {
+        let tmp = tempdir().expect("tempdir");
+        let specs_root = tmp.path().join("specs");
+        let feature_dir = specs_root.join("011-alpha");
+        std::fs::create_dir_all(&feature_dir).expect("mkdir feature");
+
+        let path = lock_file_path(&specs_root, &feature_dir, "011-alpha").expect("lock path");
+        assert_eq!(
+            path,
+            tmp.path()
+                .join(".kasmos")
+                .join("locks")
+                .join("011-alpha.lock")
+        );
+    }
+
+    #[test]
+    fn lock_file_path_handles_specs_root_set_to_feature_dir() {
+        let tmp = tempdir().expect("tempdir");
+        let specs_root = tmp.path().join("specs");
+        let feature_dir = specs_root.join("011-beta");
+        std::fs::create_dir_all(&feature_dir).expect("mkdir feature");
+
+        let path = lock_file_path(&feature_dir, &feature_dir, "011-beta").expect("lock path");
+        assert_eq!(
+            path,
+            tmp.path()
+                .join(".kasmos")
+                .join("locks")
+                .join("011-beta.lock")
+        );
     }
 }

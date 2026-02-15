@@ -17,7 +17,10 @@ pub struct DespawnWorkerOutput {
     pub removed: bool,
 }
 
-pub async fn handle(server: &KasmosServer, input: DespawnWorkerInput) -> Result<DespawnWorkerOutput> {
+pub async fn handle(
+    server: &KasmosServer,
+    input: DespawnWorkerInput,
+) -> Result<DespawnWorkerOutput> {
     let mut registry = server.registry.write().await;
     let removed = registry.remove(&input.wp_id, input.role).is_some();
     Ok(DespawnWorkerOutput { ok: true, removed })

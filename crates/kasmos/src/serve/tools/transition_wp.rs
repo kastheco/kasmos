@@ -49,7 +49,7 @@ pub struct TransitionWpOutput {
 }
 
 pub async fn handle(input: TransitionWpInput, server: &KasmosServer) -> Result<TransitionWpOutput> {
-    let feature_dir = resolve_feature_dir(
+    let feature_dir = super::resolve_feature_dir(
         Path::new(&server.config.paths.specs_root),
         &input.feature_slug,
     )?;
@@ -91,23 +91,6 @@ pub async fn handle(input: TransitionWpInput, server: &KasmosServer) -> Result<T
         from_state: from_state.as_str().to_string(),
         to_state: input.to_state.as_str().to_string(),
     })
-}
-
-fn resolve_feature_dir(specs_root: &Path, feature_slug: &str) -> Result<PathBuf> {
-    let as_path = PathBuf::from(feature_slug);
-    let candidate = if as_path.is_dir() {
-        as_path
-    } else {
-        specs_root.join(feature_slug)
-    };
-
-    if !candidate.is_dir() {
-        bail!("Feature directory not found: {}", candidate.display());
-    }
-
-    candidate
-        .canonicalize()
-        .with_context(|| format!("Failed to canonicalize {}", candidate.display()))
 }
 
 fn find_wp_file(feature_dir: &Path, wp_id: &str) -> Result<PathBuf> {
@@ -361,7 +344,7 @@ fn append_history_entry(
         );
         item.insert(
             Value::String("shell_pid".to_string()),
-            Value::String(String::new()),
+            Value::String(std::process::id().to_string()),
         );
         let action = match reason {
             Some(reason) if !reason.trim().is_empty() => {
@@ -444,6 +427,19 @@ mod tests {
             std::fs::read_to_string(feature_dir.join("tasks/WP01-test.md")).expect("read");
         assert!(updated.contains("lane: doing"));
         assert!(updated.contains("transition active (start)"));
+
+        let (yaml, _) = split_frontmatter(&updated).expect("frontmatter");
+        let parsed: Value = serde_yml::from_str(&yaml).expect("yaml");
+        let shell_pid = parsed
+            .as_mapping()
+            .and_then(|map| map.get(Value::String("history".to_string())))
+            .and_then(Value::as_sequence)
+            .and_then(|history| history.last())
+            .and_then(Value::as_mapping)
+            .and_then(|entry| entry.get(Value::String("shell_pid".to_string())))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        assert!(!shell_pid.is_empty());
     }
 
     #[tokio::test]
