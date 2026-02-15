@@ -7,6 +7,7 @@ pub mod session;
 use crate::config::Config;
 use crate::launch::detect::{FeatureDetection, FeatureSource};
 use crate::launch::layout::ManagerCommand;
+use crate::setup::CheckStatus;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
@@ -103,66 +104,34 @@ fn detect_phase_hint(feature_dir: &Path) -> String {
 
 /// Run dependency preflight checks required for launch.
 pub fn preflight_checks(config: &Config) -> std::result::Result<(), Vec<PreflightFailure>> {
-    let mut failures = Vec::new();
+    let setup_result = match crate::setup::validate_environment(config) {
+        Ok(result) => result,
+        Err(err) => {
+            return Err(vec![PreflightFailure {
+                dependency: "setup-validation".to_string(),
+                required_for: "environment validation".to_string(),
+                guidance: format!("Resolve setup validation error: {}", err),
+            }]);
+        }
+    };
 
-    check_binary(
-        &config.paths.zellij_binary,
-        "zellij",
-        "creating/switching orchestration sessions and panes",
-        "Install zellij (for example: cargo install zellij)",
-        &mut failures,
-    );
-
-    check_binary(
-        &config.agent.opencode_binary,
-        "opencode",
-        "spawning manager/worker agents",
-        "Install OpenCode and ensure its launcher binary is on PATH",
-        &mut failures,
-    );
-
-    check_binary(
-        &config.paths.spec_kitty_binary,
-        "spec-kitty",
-        "feature/task lifecycle commands",
-        "Install spec-kitty and ensure `spec-kitty` is on PATH",
-        &mut failures,
-    );
-
-    check_pane_tracker(&mut failures);
+    let failures: Vec<PreflightFailure> = setup_result
+        .checks
+        .into_iter()
+        .filter(|check| check.status == CheckStatus::Fail)
+        .map(|check| PreflightFailure {
+            dependency: check.name,
+            required_for: check.description,
+            guidance: check
+                .guidance
+                .unwrap_or_else(|| "Run `kasmos setup` to inspect and remediate".to_string()),
+        })
+        .collect();
 
     if failures.is_empty() {
         Ok(())
     } else {
         Err(failures)
-    }
-}
-
-fn check_binary(
-    binary: &str,
-    dependency: &str,
-    required_for: &str,
-    guidance: &str,
-    failures: &mut Vec<PreflightFailure>,
-) {
-    if which::which(binary).is_err() {
-        failures.push(PreflightFailure {
-            dependency: dependency.to_string(),
-            required_for: required_for.to_string(),
-            guidance: guidance.to_string(),
-        });
-    }
-}
-
-fn check_pane_tracker(failures: &mut Vec<PreflightFailure>) {
-    let tracker_binaries = ["pane-tracker", "zellij-pane-tracker"];
-    let found = tracker_binaries.iter().any(|b| which::which(b).is_ok());
-    if !found {
-        failures.push(PreflightFailure {
-            dependency: "pane-tracker".to_string(),
-            required_for: "structured pane message/event tracking".to_string(),
-            guidance: "Install pane-tracker tooling and expose `pane-tracker` (or `zellij-pane-tracker`) in PATH".to_string(),
-        });
     }
 }
 
