@@ -1,7 +1,7 @@
 ---
 work_package_id: WP09
 title: Workflow Status and Transition Controls
-lane: "for_review"
+lane: "done"
 dependencies: [WP04]
 base_branch: 011-mcp-agent-swarm-orchestration-WP04
 base_commit: a02df49238a89b34cf57dc156237af2bad587046
@@ -17,8 +17,8 @@ phase: Phase 2 - Safety, State, and Audit Guarantees
 assignee: ''
 agent: "reviewer"
 shell_pid: "418409"
-review_status: ''
-reviewed_by: ''
+review_status: "approved"
+reviewed_by: "kas"
 history:
 - timestamp: '2026-02-14T16:27:48Z'
   lane: planned
@@ -321,3 +321,4 @@ Implement `workflow_status` and `transition_wp` MCP tools against spec-kitty tas
 - 2026-02-15T01:18:03Z – unknown – shell_pid=212269 – lane=for_review – Ready for review
 - 2026-02-15T01:19:16Z – reviewer – shell_pid=418409 – lane=doing – Started review via workflow command
 - 2026-02-15T01:22:36Z – reviewer – shell_pid=418409 – lane=for_review – Moved to for_review
+- 2026-02-15T01:22:39Z – reviewer – shell_pid=418409 – lane=done – Moved to done
