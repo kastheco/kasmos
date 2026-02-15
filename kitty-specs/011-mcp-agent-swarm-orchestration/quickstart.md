@@ -5,7 +5,23 @@
 - Rust stable toolchain (2024 edition support)
 - `zellij` in `PATH`
 - `opencode` in `PATH`
-- zellij pane tracker tooling available to manager/worker agents
+- `pane-tracker` (or `zellij-pane-tracker`) in `PATH`
+
+## 0) Build Matrix Sanity
+
+Run:
+
+```bash
+cargo build
+cargo test
+cargo build --features tui
+cargo test --features tui
+```
+
+Expected behavior:
+
+- Default build and tests pass
+- Legacy TUI build and tests pass behind `tui` feature gate
 
 ## 1) Validate Environment
 
@@ -49,14 +65,28 @@ Expected behavior:
 - If not inferable, CLI selector appears before any tab/session creation
 - If no feature specs exist, CLI reports this and exits cleanly
 
-## 4) Lock Conflict and Stale Recovery
+## 4) Listing And Status
+
+Run:
+
+```bash
+kasmos list
+kasmos status 011
+```
+
+Expected behavior:
+
+- `kasmos list` shows available feature slugs and artifact availability
+- `kasmos status 011` reports workflow phase, waves, lock state, and active workers
+
+## 5) Lock Conflict and Stale Recovery
 
 If another process already owns the feature lock:
 
 - Fresh lock: bind is refused and current owner details are shown
 - Stale lock (older than 15 minutes): takeover is offered but requires explicit confirmation
 
-## 5) Audit Logging Behavior
+## 6) Audit Logging Behavior
 
 - Log file path: `kitty-specs/<feature>/.kasmos/messages.jsonl`
 - Default mode: metadata-only entries
@@ -65,8 +95,10 @@ If another process already owns the feature lock:
   - file size exceeds 512MB
   - entry age exceeds 14 days
 
-## 6) Basic Verification Checklist
+## 7) Basic Verification Checklist
 
 - `cargo build`
 - `cargo test`
+- `cargo build --features tui`
+- `cargo test --features tui`
 - Manual check: launch + lock conflict + stale takeover prompt + message-log event flow

@@ -8,6 +8,7 @@ pub mod registry;
 pub mod tools;
 
 use crate::config::Config;
+use crate::serve::audit::{AuditEntry, AuditWriter, resolve_feature_dir};
 use crate::serve::tools::despawn_worker::{DespawnWorkerInput, DespawnWorkerOutput};
 use crate::serve::tools::infer_feature::{InferFeatureInput, InferFeatureOutput};
 use crate::serve::tools::list_features::{ListFeaturesInput, ListFeaturesOutput};
@@ -23,7 +24,7 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{ErrorData, ServerCapabilities, ServerInfo};
 use rmcp::transport::io::stdio;
 use rmcp::{Json, ServerHandler, ServiceExt, tool, tool_handler, tool_router};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 use self::registry::WorkerRegistry;
 
@@ -33,19 +34,81 @@ pub struct KasmosServer {
     pub registry: std::sync::Arc<RwLock<WorkerRegistry>>,
     pub message_cursor: std::sync::Arc<RwLock<u64>>,
     pub feature_slug: Option<String>,
+    pub audit: std::sync::Arc<Mutex<Option<AuditWriter>>>,
     tool_router: ToolRouter<Self>,
 }
 
 impl KasmosServer {
     pub fn new(config: Config) -> anyhow::Result<Self> {
         let feature_slug = infer_feature_from_specs_root(&config.paths.specs_root);
+        let audit = if let Some(slug) = feature_slug.as_deref() {
+            let feature_dir =
+                resolve_feature_dir(std::path::Path::new(&config.paths.specs_root), slug);
+            Some(
+                AuditWriter::new(&feature_dir, slug.to_string(), &config.audit)
+                    .with_context(|| format!("failed to initialize audit writer for {slug}"))?,
+            )
+        } else {
+            None
+        };
+
         Ok(Self {
             config,
             registry: std::sync::Arc::new(RwLock::new(WorkerRegistry::new())),
             message_cursor: std::sync::Arc::new(RwLock::new(0)),
             feature_slug,
+            audit: std::sync::Arc::new(Mutex::new(audit)),
             tool_router: Self::tool_router(),
         })
+    }
+
+    pub async fn emit_audit(&self, entry: AuditEntry) {
+        let mut audit = self.audit.lock().await;
+
+        if audit
+            .as_ref()
+            .is_some_and(|writer| writer.feature_slug() != entry.feature_slug.as_str())
+        {
+            *audit = None;
+        }
+
+        if audit.is_none() {
+            let feature_dir = resolve_feature_dir(
+                std::path::Path::new(&self.config.paths.specs_root),
+                &entry.feature_slug,
+            );
+            match AuditWriter::new(&feature_dir, entry.feature_slug.clone(), &self.config.audit) {
+                Ok(writer) => *audit = Some(writer),
+                Err(err) => {
+                    tracing::warn!(error = %err, "failed to initialize audit writer");
+                    return;
+                }
+            }
+        }
+
+        if let Some(writer) = audit.as_mut()
+            && let Err(err) = writer.write_entry(&entry)
+        {
+            tracing::warn!(error = %err, "failed to write audit entry");
+        }
+    }
+
+    pub async fn emit_audit_error(
+        &self,
+        feature_slug: &str,
+        wp_id: Option<&str>,
+        action: &str,
+        summary: &str,
+        details: serde_json::Value,
+    ) {
+        let mut entry = AuditEntry::new("kasmos-serve", action, feature_slug)
+            .with_status("error")
+            .with_summary(summary)
+            .with_details(details);
+        if let Some(wp_id) = wp_id {
+            entry = entry.with_wp_id(wp_id);
+        }
+        self.emit_audit(entry).await;
     }
 }
 
@@ -59,9 +122,20 @@ impl KasmosServer {
         &self,
         Parameters(input): Parameters<SpawnWorkerInput>,
     ) -> Result<Json<SpawnWorkerOutput>, ErrorData> {
-        let output = tools::spawn_worker::handle(self, input)
-            .await
-            .map_err(internal_error)?;
+        let output = match tools::spawn_worker::handle(self, input.clone()).await {
+            Ok(output) => output,
+            Err(err) => {
+                self.emit_audit_error(
+                    &input.feature_slug,
+                    Some(&input.wp_id),
+                    "spawn_worker",
+                    "worker spawn failed",
+                    serde_json::json!({"error": err.to_string()}),
+                )
+                .await;
+                return Err(internal_error(err));
+            }
+        };
         Ok(Json(output))
     }
 
@@ -73,9 +147,22 @@ impl KasmosServer {
         &self,
         Parameters(input): Parameters<DespawnWorkerInput>,
     ) -> Result<Json<DespawnWorkerOutput>, ErrorData> {
-        let output = tools::despawn_worker::handle(self, input)
-            .await
-            .map_err(internal_error)?;
+        let output = match tools::despawn_worker::handle(self, input.clone()).await {
+            Ok(output) => output,
+            Err(err) => {
+                if let Some(feature_slug) = self.feature_slug.as_deref() {
+                    self.emit_audit_error(
+                        feature_slug,
+                        Some(&input.wp_id),
+                        "despawn_worker",
+                        "worker despawn failed",
+                        serde_json::json!({"error": err.to_string()}),
+                    )
+                    .await;
+                }
+                return Err(internal_error(err));
+            }
+        };
         Ok(Json(output))
     }
 

@@ -1,4 +1,6 @@
-use crate::serve::{KasmosServer, messages::log_manager_event, registry::AgentRole};
+use crate::serve::{
+    KasmosServer, audit::AuditEntry, messages::log_manager_event, registry::AgentRole,
+};
 use anyhow::Result;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -34,6 +36,25 @@ pub async fn handle(
         }),
     )
     .await;
+
+    if let Some(feature_slug) = server.feature_slug.as_deref() {
+        let status = if removed { "ok" } else { "not_found" };
+        let summary = if removed {
+            "worker despawned"
+        } else {
+            "worker not found for despawn"
+        };
+        let entry = AuditEntry::new("manager", "despawn_worker", feature_slug)
+            .with_wp_id(input.wp_id)
+            .with_status(status)
+            .with_summary(summary)
+            .with_details(serde_json::json!({
+                "role": input.role.as_str(),
+                "removed": removed,
+                "reason": input.reason,
+            }));
+        server.emit_audit(entry).await;
+    }
 
     Ok(DespawnWorkerOutput { ok: true, removed })
 }

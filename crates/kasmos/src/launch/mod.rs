@@ -6,10 +6,10 @@ pub mod session;
 
 use crate::config::Config;
 use crate::launch::detect::{FeatureDetection, FeatureSource};
+use crate::launch::layout::ManagerCommand;
 use crate::serve::lock::{
     FeatureLockManager, LockError, format_active_owner_conflict, format_stale_lock_prompt,
 };
-use crate::launch::layout::ManagerCommand;
 use crate::setup::CheckStatus;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -28,6 +28,17 @@ pub struct PreflightFailure {
 /// Execute launch preflight, feature selection, layout generation, and bootstrap.
 pub async fn run(spec_prefix: Option<&str>) -> Result<()> {
     let config = Config::load().context("Failed to load config")?;
+    run_with_config_and_prompt(config, spec_prefix, prompt_for_selection).await
+}
+
+async fn run_with_config_and_prompt<F>(
+    config: Config,
+    spec_prefix: Option<&str>,
+    mut prompt: F,
+) -> Result<()>
+where
+    F: FnMut(usize) -> Result<usize>,
+{
     let specs_root = PathBuf::from(&config.paths.specs_root);
 
     if !has_any_feature_specs(&specs_root)? {
@@ -38,7 +49,24 @@ pub async fn run(spec_prefix: Option<&str>) -> Result<()> {
         return Ok(());
     }
 
-    if let Err(failures) = preflight_checks(&config) {
+    let detection = detect::detect_feature(spec_prefix, &specs_root)
+        .context("Failed during feature detection")?;
+
+    run_with_detection_and_prompt(&config, &specs_root, detection, &mut prompt).await
+}
+
+async fn run_with_detection_and_prompt<F>(
+    config: &Config,
+    specs_root: &Path,
+    detection: FeatureDetection,
+    prompt: &mut F,
+) -> Result<()>
+where
+    F: FnMut(usize) -> Result<usize>,
+{
+    let selection = resolve_feature_selection(specs_root, detection, prompt)?;
+
+    if let Err(failures) = preflight_checks(config) {
         eprintln!("Launch preflight failed:\n");
         for failure in failures {
             eprintln!("- Missing {}", failure.dependency);
@@ -49,9 +77,6 @@ pub async fn run(spec_prefix: Option<&str>) -> Result<()> {
         anyhow::bail!("preflight failed");
     }
 
-    let detection = detect::detect_feature(spec_prefix, &specs_root)
-        .context("Failed during feature detection")?;
-    let selection = resolve_feature_selection(&specs_root, detection)?;
     let feature_slug = selection
         .feature_slug
         .as_deref()
@@ -88,17 +113,39 @@ pub async fn run(spec_prefix: Option<&str>) -> Result<()> {
         .context("feature directory not resolved")?;
 
     let phase_hint = detect_phase_hint(feature_dir);
-    let manager_prompt =
-        crate::prompt::generate_manager_prompt(feature_slug, feature_dir, &phase_hint);
+    let manager_prompt = crate::prompt::RolePromptBuilder::new(
+        crate::prompt::AgentRole::Manager,
+        feature_slug,
+        feature_dir,
+    )
+    .with_additional_context(format!("phase_hint={phase_hint}"))
+    .build()
+    .context("Failed to build manager prompt")?;
     let manager_command =
-        ManagerCommand::from_config(&config, feature_dir.display().to_string(), manager_prompt);
+        ManagerCommand::from_config(config, feature_dir.display().to_string(), manager_prompt);
 
-    let layout_kdl = layout::generate_layout(&config, feature_slug, &manager_command)
+    let layout_kdl = layout::generate_layout(config, feature_slug, &manager_command)
         .context("Failed to generate launch layout")?;
 
-    session::bootstrap(&config, feature_slug, &layout_kdl)
+    let launch_result = session::bootstrap(config, feature_slug, &layout_kdl)
         .await
-        .context("Failed to bootstrap orchestration session/tab")?;
+        .context("Failed to bootstrap orchestration session/tab");
+
+    if let Err(release_err) = lock_manager
+        .release()
+        .context("failed to release feature lock")
+    {
+        if launch_result.is_ok() {
+            return Err(release_err);
+        }
+        tracing::warn!(
+            error = %release_err,
+            feature = feature_slug,
+            "failed to release feature lock after launch error"
+        );
+    }
+
+    launch_result?;
 
     println!(
         "Feature resolved: {} ({})",
@@ -110,9 +157,6 @@ pub async fn run(spec_prefix: Option<&str>) -> Result<()> {
     );
     println!("Preflight checks passed.");
     println!("Orchestration launch bootstrap complete.");
-    lock_manager
-        .release()
-        .context("failed to release feature lock")?;
     Ok(())
 }
 
@@ -191,10 +235,14 @@ fn has_any_feature_specs(specs_root: &Path) -> Result<bool> {
     Ok(has_feature)
 }
 
-fn resolve_feature_selection(
+fn resolve_feature_selection<F>(
     specs_root: &Path,
     detection: FeatureDetection,
-) -> Result<FeatureDetection> {
+    prompt: &mut F,
+) -> Result<FeatureDetection>
+where
+    F: FnMut(usize) -> Result<usize>,
+{
     if detection.source != FeatureSource::None {
         return Ok(detection);
     }
@@ -210,7 +258,13 @@ fn resolve_feature_selection(
         println!("  {}) {}", idx + 1, feature.display_name);
     }
 
-    let selected = prompt_for_selection(features.len())?;
+    let selected = prompt(features.len())?;
+    if !(1..=features.len()).contains(&selected) {
+        anyhow::bail!(
+            "Selection out of range. Enter a number between 1 and {}.",
+            features.len()
+        );
+    }
     let selected = &features[selected - 1];
 
     Ok(FeatureDetection {
@@ -317,6 +371,10 @@ fn source_label(source: &FeatureSource) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
 
     #[test]
     fn preflight_reports_missing_binaries() {
@@ -348,11 +406,102 @@ mod tests {
 
     #[test]
     fn selection_gate_triggers_when_detection_none() {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let specs_root = tmp.path().join("kitty-specs");
+        std::fs::create_dir_all(specs_root.join("011-alpha")).expect("create feature");
+        std::fs::create_dir_all(specs_root.join("012-beta")).expect("create feature");
+
         let detection = FeatureDetection {
             source: FeatureSource::None,
             feature_slug: None,
             feature_dir: None,
         };
-        assert_eq!(detection.source, FeatureSource::None);
+
+        let called = Arc::new(AtomicBool::new(false));
+        let called_in_prompt = Arc::clone(&called);
+        let mut prompt = move |max: usize| {
+            called_in_prompt.store(true, Ordering::SeqCst);
+            assert_eq!(max, 2);
+            Ok(2)
+        };
+
+        let selected = resolve_feature_selection(&specs_root, detection, &mut prompt)
+            .expect("resolve selection");
+
+        assert!(called.load(Ordering::SeqCst));
+        assert_eq!(selected.feature_slug.as_deref(), Some("012-beta"));
+        assert_eq!(selected.source, FeatureSource::Arg("012-beta".to_string()));
+    }
+
+    #[test]
+    fn selection_gate_rejects_out_of_range_choice() {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let specs_root = tmp.path().join("kitty-specs");
+        std::fs::create_dir_all(specs_root.join("011-alpha")).expect("create feature");
+
+        let detection = FeatureDetection {
+            source: FeatureSource::None,
+            feature_slug: None,
+            feature_dir: None,
+        };
+
+        let mut prompt = |_max: usize| Ok(9);
+        let err = resolve_feature_selection(&specs_root, detection, &mut prompt)
+            .expect_err("selection should fail");
+        assert!(err.to_string().contains("Selection out of range"));
+    }
+
+    #[tokio::test]
+    async fn selector_runs_before_preflight_failures() {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let specs_root = tmp.path().join("kitty-specs");
+        std::fs::create_dir_all(specs_root.join("011-alpha")).expect("create feature");
+
+        let mut config = Config::default();
+        config.paths.specs_root = specs_root.display().to_string();
+        config.paths.zellij_binary = "__missing_zellij__".to_string();
+        config.agent.opencode_binary = "__missing_opencode__".to_string();
+        config.paths.spec_kitty_binary = "__missing_spec_kitty__".to_string();
+
+        let detection = FeatureDetection {
+            source: FeatureSource::None,
+            feature_slug: None,
+            feature_dir: None,
+        };
+
+        let called = Arc::new(AtomicBool::new(false));
+        let called_in_prompt = Arc::clone(&called);
+        let mut prompt = move |_max: usize| {
+            called_in_prompt.store(true, Ordering::SeqCst);
+            Ok(1)
+        };
+
+        let err = run_with_detection_and_prompt(&config, &specs_root, detection, &mut prompt)
+            .await
+            .expect_err("preflight should fail");
+
+        assert!(called.load(Ordering::SeqCst));
+        assert!(err.to_string().contains("preflight failed"));
+    }
+
+    #[tokio::test]
+    async fn no_specs_path_exits_before_preflight_checks() {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let specs_root = tmp.path().join("kitty-specs");
+        std::fs::create_dir_all(&specs_root).expect("create specs root");
+
+        let mut config = Config::default();
+        config.paths.specs_root = specs_root.display().to_string();
+        config.paths.zellij_binary = "__missing_zellij__".to_string();
+        config.agent.opencode_binary = "__missing_opencode__".to_string();
+        config.paths.spec_kitty_binary = "__missing_spec_kitty__".to_string();
+
+        let mut prompt = |_max: usize| -> Result<usize> {
+            anyhow::bail!("prompt should not run when no specs exist")
+        };
+
+        run_with_config_and_prompt(config, None, &mut prompt)
+            .await
+            .expect("no-specs path should return cleanly");
     }
 }

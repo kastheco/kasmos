@@ -1,5 +1,6 @@
 use crate::serve::{
     KasmosServer,
+    audit::AuditEntry,
     messages::log_manager_event,
     registry::{AgentRole, WorkerEntry, WorkerStatus},
 };
@@ -43,6 +44,25 @@ pub async fn handle(server: &KasmosServer, input: SpawnWorkerInput) -> Result<Sp
 
     let mut registry = server.registry.write().await;
     registry.upsert(worker.clone());
+    drop(registry);
+
+    let audit_entry = AuditEntry::new("manager", "spawn_worker", &input.feature_slug)
+        .with_wp_id(worker.wp_id.clone())
+        .with_status("ok")
+        .with_summary("worker spawned")
+        .with_details(serde_json::json!({
+            "role": worker.role.as_str(),
+            "pane_name": worker.pane_name.clone(),
+            "status": "active",
+        }))
+        .with_debug_payload(
+            serde_json::json!({
+                "prompt": input.prompt,
+                "worktree_path": worker.worktree_path.clone(),
+            }),
+            server.config.audit.debug_full_payload,
+        );
+    server.emit_audit(audit_entry).await;
 
     let _ = log_manager_event(
         "SPAWN",

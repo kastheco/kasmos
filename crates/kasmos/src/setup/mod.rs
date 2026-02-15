@@ -76,32 +76,29 @@ fn validate_environment_with_repo(
     config: &Config,
     repo_root: Option<PathBuf>,
 ) -> Result<SetupResult> {
-    let mut checks = Vec::new();
-
-    checks.push(check_binary(
-        &config.paths.zellij_binary,
-        "zellij",
-        "creating/switching orchestration sessions and panes",
-        "Install zellij (for example: cargo install zellij)",
-    ));
-
-    checks.push(check_binary(
-        &config.agent.opencode_binary,
-        "opencode",
-        "spawning manager/worker agents",
-        "Install OpenCode and ensure its launcher binary is on PATH",
-    ));
-
-    checks.push(check_binary(
-        &config.paths.spec_kitty_binary,
-        "spec-kitty",
-        "feature/task lifecycle commands",
-        "Install spec-kitty and ensure `spec-kitty` is on PATH",
-    ));
-
-    checks.push(check_pane_tracker());
-    checks.push(check_git(repo_root.as_deref()));
-    checks.push(check_config_file(repo_root.as_deref()));
+    let checks = vec![
+        check_binary(
+            &config.paths.zellij_binary,
+            "zellij",
+            "creating/switching orchestration sessions and panes",
+            "Install zellij (for example: cargo install zellij)",
+        ),
+        check_binary(
+            &config.agent.opencode_binary,
+            "opencode",
+            "spawning manager/worker agents",
+            "Install OpenCode and ensure its launcher binary is on PATH",
+        ),
+        check_binary(
+            &config.paths.spec_kitty_binary,
+            "spec-kitty",
+            "feature/task lifecycle commands",
+            "Install spec-kitty and ensure `spec-kitty` is on PATH",
+        ),
+        check_pane_tracker(),
+        check_git(repo_root.as_deref()),
+        check_config_file(repo_root.as_deref()),
+    ];
 
     let all_passed = checks.iter().all(|c| c.status != CheckStatus::Fail);
 
