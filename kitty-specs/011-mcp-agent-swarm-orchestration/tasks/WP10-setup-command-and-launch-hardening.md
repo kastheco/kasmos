@@ -1,7 +1,7 @@
 ---
 work_package_id: WP10
 title: Setup Command and Launch Hardening
-lane: "for_review"
+lane: "doing"
 dependencies: [WP03]
 base_branch: 011-mcp-agent-swarm-orchestration-WP03
 base_commit: 5ede493dbac49ea7462a399719ed32e777981362
@@ -15,8 +15,8 @@ subtasks:
 - T062
 phase: Phase 3 - Setup UX, Role Context, and End-to-End Hardening
 assignee: ''
-agent: ''
-shell_pid: "212269"
+agent: "reviewer"
+shell_pid: "418927"
 review_status: ''
 reviewed_by: ''
 history:
@@ -276,3 +276,4 @@ Deliver `kasmos setup` as a first-time environment validation and configuration 
 
 - 2026-02-14T16:27:48Z - system - lane=planned - Prompt generated via /spec-kitty.tasks
 - 2026-02-15T01:18:04Z – unknown – shell_pid=212269 – lane=for_review – Ready for review
+- 2026-02-15T01:19:23Z – reviewer – shell_pid=418927 – lane=doing – Started review via workflow command
