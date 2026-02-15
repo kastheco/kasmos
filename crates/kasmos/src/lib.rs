@@ -48,7 +48,9 @@ pub use layout::LayoutGenerator;
 pub use logging::init_logging;
 pub use parser::{FeatureDir, WPFrontmatter, parse_frontmatter};
 pub use persistence::StatePersister;
+#[cfg(feature = "tui")]
 pub use prompt::PromptGenerator;
+pub use prompt::{AgentRole, ContextBoundary, RolePromptBuilder};
 pub use review::{
     ReviewAutomationPolicy, ReviewFailureSeverity, ReviewFailureType, ReviewPolicyDecision,
     ReviewPolicyExecutor,
