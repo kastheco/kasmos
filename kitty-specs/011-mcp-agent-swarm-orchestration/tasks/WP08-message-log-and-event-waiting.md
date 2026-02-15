@@ -17,8 +17,8 @@ subtasks:
 - T075
 phase: Phase 2 - Safety, State, and Audit Guarantees
 assignee: ''
-agent: ''
-shell_pid: "210164"
+agent: "coder"
+shell_pid: "571423"
 review_status: ''
 reviewed_by: ''
 history:
@@ -336,3 +336,4 @@ Implement `read_messages` and `wait_for_event` MCP tools with structured parsing
 ## Activity Log
 
 - 2026-02-14T16:27:48Z - system - lane=planned - Prompt generated via /spec-kitty.tasks
+- 2026-02-15T01:42:14Z – coder – shell_pid=571423 – lane=doing – Assigned agent via workflow command
