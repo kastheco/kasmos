@@ -329,3 +329,4 @@ Implement the worker pane lifecycle tools (`spawn_worker`, `despawn_worker`, `li
 - 2026-02-15T06:23:04Z – reviewer – shell_pid=1148797 – lane=for_review – Ready for re-review: addressed runtime fallbacks and registry consistency
 - 2026-02-15T06:23:07Z – reviewer – shell_pid=1148797 – lane=doing – Started review via workflow command
 - 2026-02-15T06:24:16Z – reviewer – shell_pid=1148797 – lane=done – Review passed: lifecycle runtime fallbacks and registry consistency verified
+- 2026-02-15T06:24:49Z – reviewer – shell_pid=1148797 – lane=done – Review metadata synced
