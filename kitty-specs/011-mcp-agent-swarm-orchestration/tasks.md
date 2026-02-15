@@ -189,7 +189,7 @@
 ### Included Subtasks
 - [x] T033 Implement audit directory and file bootstrap under feature path (`.kasmos/messages.jsonl`)
 - [x] T034 Implement append-only JSONL writer for manager/tool audit entries
-- [ ] T035 Implement metadata-only default record shaping and debug-mode full payload opt-in
+- [x] T035 Implement metadata-only default record shaping and debug-mode full payload opt-in
 - [ ] T036 Implement retention evaluator with either-threshold trigger (size > 512MB OR age > 14 days)
 - [ ] T037 Integrate audit writes across lock, spawn/despawn, transition, and error paths
 - [ ] T038 Add tests for payload redaction defaults, debug inclusion, and retention trigger correctness
