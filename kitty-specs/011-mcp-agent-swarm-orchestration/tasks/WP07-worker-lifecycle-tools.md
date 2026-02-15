@@ -1,27 +1,30 @@
 ---
-work_package_id: "WP07"
+work_package_id: WP07
+title: Worker Lifecycle MCP Tools
+lane: "doing"
+dependencies: [WP03, WP05, WP06]
+base_branch: 011-mcp-agent-swarm-orchestration-WP05
+base_commit: bc2cea80968e2391d68d55763e35809dc44e582a
+created_at: '2026-02-15T01:41:35.119359+00:00'
 subtasks:
-  - "T039"
-  - "T040"
-  - "T041"
-  - "T042"
-  - "T043"
-  - "T044"
-title: "Worker Lifecycle MCP Tools"
-phase: "Phase 2 - Safety, State, and Audit Guarantees"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
-dependencies: ["WP03", "WP05", "WP06"]
+- T039
+- T040
+- T041
+- T042
+- T043
+- T044
+phase: Phase 2 - Safety, State, and Audit Guarantees
+assignee: ''
+agent: ''
+shell_pid: "210164"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-14T16:27:48Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-14T16:27:48Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP07 - Worker Lifecycle MCP Tools
