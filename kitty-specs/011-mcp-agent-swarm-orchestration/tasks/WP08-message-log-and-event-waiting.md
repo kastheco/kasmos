@@ -1,7 +1,7 @@
 ---
 work_package_id: WP08
 title: Message Log Parsing and Event Waiting
-lane: "doing"
+lane: "for_review"
 dependencies:
 - WP04
 base_branch: 011-mcp-agent-swarm-orchestration-WP04
@@ -337,3 +337,4 @@ Implement `read_messages` and `wait_for_event` MCP tools with structured parsing
 
 - 2026-02-14T16:27:48Z - system - lane=planned - Prompt generated via /spec-kitty.tasks
 - 2026-02-15T01:42:14Z – coder – shell_pid=571423 – lane=doing – Assigned agent via workflow command
+- 2026-02-15T06:27:33Z – coder – shell_pid=571423 – lane=for_review – Ready for review
