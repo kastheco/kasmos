@@ -218,12 +218,12 @@
 **Estimated prompt size**: ~350 lines
 
 ### Included Subtasks
-- [ ] T039 Implement `spawn_worker` tool with role, prompt, and pane-name validation
-- [ ] T040 Implement coder-only worktree provisioning and cleanup handling
-- [ ] T041 Implement `despawn_worker` with pane close, registry update, and audit event
-- [ ] T042 Implement `list_workers` with live-pane reconciliation and aborted detection
-- [ ] T043 Implement max parallel worker enforcement and actionable backpressure response
-- [ ] T044 Add unit/integration tests for spawn/despawn/list behavior and registry edge cases
+- [x] T039 Implement `spawn_worker` tool with role, prompt, and pane-name validation
+- [x] T040 Implement coder-only worktree provisioning and cleanup handling
+- [x] T041 Implement `despawn_worker` with pane close, registry update, and audit event
+- [x] T042 Implement `list_workers` with live-pane reconciliation and aborted detection
+- [x] T043 Implement max parallel worker enforcement and actionable backpressure response
+- [x] T044 Add unit/integration tests for spawn/despawn/list behavior and registry edge cases
 
 ### Implementation Notes
 - Keep pane naming deterministic (`<wp_id>-<role>`).
