@@ -1,7 +1,7 @@
 ---
 work_package_id: WP07
 title: Worker Lifecycle MCP Tools
-lane: "for_review"
+lane: "doing"
 dependencies: [WP03, WP05, WP06]
 base_branch: 011-mcp-agent-swarm-orchestration-WP05
 base_commit: bc2cea80968e2391d68d55763e35809dc44e582a
@@ -15,8 +15,8 @@ subtasks:
 - T044
 phase: Phase 2 - Safety, State, and Audit Guarantees
 assignee: ''
-agent: "coder"
-shell_pid: "566744"
+agent: "reviewer"
+shell_pid: "1148797"
 review_status: ''
 reviewed_by: ''
 history:
@@ -269,3 +269,4 @@ Implement the worker pane lifecycle tools (`spawn_worker`, `despawn_worker`, `li
 - 2026-02-14T16:27:48Z - system - lane=planned - Prompt generated via /spec-kitty.tasks
 - 2026-02-15T01:41:43Z – coder – shell_pid=566744 – lane=doing – Assigned agent via workflow command
 - 2026-02-15T05:47:42Z – coder – shell_pid=566744 – lane=for_review – Ready for review: spawn/despawn/list_workers with registry, audit, reconciliation, capacity enforcement, worktree cleanup
+- 2026-02-15T05:50:07Z – reviewer – shell_pid=1148797 – lane=doing – Started review via workflow command
