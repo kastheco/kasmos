@@ -378,7 +378,7 @@
 **Estimated prompt size**: ~360 lines
 
 ### Included Subtasks
-- [ ] T069 Verify and preserve legacy TUI compile path (`cargo build --features tui`) while default build uses new launcher flow
+- [x] T069 Verify and preserve legacy TUI compile path (`cargo build --features tui`) while default build uses new launcher flow
 - [ ] T070 Add integration scenario for duplicate lock conflict and stale takeover confirmation behavior
 - [ ] T071 Add integration scenario for audit logging modes and retention thresholds (size/age either-threshold)
 - [ ] T072 Add integration scenario for feature selector pre-launch gate and no-specs early exit
