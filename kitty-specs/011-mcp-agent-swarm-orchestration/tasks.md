@@ -379,7 +379,7 @@
 
 ### Included Subtasks
 - [x] T069 Verify and preserve legacy TUI compile path (`cargo build --features tui`) while default build uses new launcher flow
-- [ ] T070 Add integration scenario for duplicate lock conflict and stale takeover confirmation behavior
+- [x] T070 Add integration scenario for duplicate lock conflict and stale takeover confirmation behavior
 - [ ] T071 Add integration scenario for audit logging modes and retention thresholds (size/age either-threshold)
 - [ ] T072 Add integration scenario for feature selector pre-launch gate and no-specs early exit
 - [ ] T073 Align `README.md`, `quickstart.md`, and any launch/setup docs with final command behavior
