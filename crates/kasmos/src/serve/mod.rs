@@ -16,9 +16,7 @@ use crate::serve::tools::read_messages::{ReadMessagesInput, ReadMessagesOutput};
 use crate::serve::tools::spawn_worker::{SpawnWorkerInput, SpawnWorkerOutput};
 use crate::serve::tools::transition_wp::{TransitionWpInput, TransitionWpOutput};
 use crate::serve::tools::wait_for_event::{WaitForEventInput, WaitForEventOutput};
-use crate::serve::tools::workflow_status::{
-    LockInfo, LockState, WaveInfo, WorkflowSnapshot, WorkflowStatusInput, WorkflowStatusOutput,
-};
+use crate::serve::tools::workflow_status::{WorkflowStatusInput, WorkflowStatusOutput};
 use anyhow::Context;
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -27,7 +25,7 @@ use rmcp::transport::io::stdio;
 use rmcp::{Json, ServerHandler, ServiceExt, tool, tool_handler, tool_router};
 use tokio::sync::RwLock;
 
-use self::registry::{WorkerRegistry, WorkerStatus};
+use self::registry::WorkerRegistry;
 
 #[derive(Debug)]
 pub struct KasmosServer {
@@ -131,32 +129,10 @@ impl KasmosServer {
         &self,
         Parameters(input): Parameters<WorkflowStatusInput>,
     ) -> Result<Json<WorkflowStatusOutput>, ErrorData> {
-        let active_workers = self
-            .registry
-            .read()
+        let output = tools::workflow_status::handle(input, self)
             .await
-            .list()
-            .filter(|worker| worker.status == WorkerStatus::Active)
-            .count();
-        let snapshot = WorkflowSnapshot {
-            feature_slug: input.feature_slug,
-            phase: if active_workers > 0 {
-                "implementing".to_string()
-            } else {
-                "planned".to_string()
-            },
-            waves: vec![WaveInfo {
-                wave: 0,
-                wp_ids: Vec::new(),
-                complete: active_workers == 0,
-            }],
-            lock: LockInfo {
-                state: LockState::None,
-                owner_id: None,
-                expires_at: None,
-            },
-        };
-        Ok(Json(WorkflowStatusOutput { ok: true, snapshot }))
+            .map_err(internal_error)?;
+        Ok(Json(output))
     }
 
     #[tool(
@@ -165,12 +141,12 @@ impl KasmosServer {
     )]
     async fn transition_wp(
         &self,
-        Parameters(_input): Parameters<TransitionWpInput>,
+        Parameters(input): Parameters<TransitionWpInput>,
     ) -> Result<Json<TransitionWpOutput>, ErrorData> {
-        Err(ErrorData::internal_error(
-            "INTERNAL_ERROR: transition_wp not yet implemented",
-            None,
-        ))
+        let output = tools::transition_wp::handle(input, self)
+            .await
+            .map_err(map_transition_error)?;
+        Ok(Json(output))
     }
 
     #[tool(
@@ -236,6 +212,14 @@ pub async fn run() -> anyhow::Result<()> {
 
 fn internal_error(err: anyhow::Error) -> ErrorData {
     ErrorData::internal_error(format!("INTERNAL_ERROR: {}", err), None)
+}
+
+fn map_transition_error(err: anyhow::Error) -> ErrorData {
+    let message = err.to_string();
+    if message.starts_with("TRANSITION_NOT_ALLOWED:") {
+        return ErrorData::invalid_params(message, None);
+    }
+    internal_error(err)
 }
 
 fn infer_feature_from_specs_root(specs_root: &str) -> Option<String> {
