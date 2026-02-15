@@ -239,16 +239,23 @@ fn internal_error(err: anyhow::Error) -> ErrorData {
 }
 
 fn infer_feature_from_specs_root(specs_root: &str) -> Option<String> {
-    std::path::Path::new(specs_root)
+    let candidate = std::path::Path::new(specs_root)
         .file_name()
-        .and_then(|name| name.to_str())
-        .and_then(|name| {
-            if name.contains('-') {
-                Some(name.to_string())
-            } else {
-                None
-            }
-        })
+        .and_then(|name| name.to_str())?;
+
+    if looks_like_feature_slug(candidate) {
+        Some(candidate.to_string())
+    } else {
+        None
+    }
+}
+
+fn looks_like_feature_slug(value: &str) -> bool {
+    let Some((prefix, rest)) = value.split_once('-') else {
+        return false;
+    };
+
+    prefix.len() == 3 && prefix.chars().all(|ch| ch.is_ascii_digit()) && !rest.is_empty()
 }
 
 #[cfg(test)]
@@ -378,5 +385,18 @@ mod tests {
         .expect("despawn");
         assert!(despawn.ok);
         assert!(despawn.removed);
+    }
+
+    #[test]
+    fn feature_slug_inference_requires_feature_like_directory_name() {
+        assert_eq!(infer_feature_from_specs_root("kitty-specs"), None);
+        assert_eq!(
+            infer_feature_from_specs_root("/tmp/kitty-specs/011-mcp-agent-swarm-orchestration"),
+            Some("011-mcp-agent-swarm-orchestration".to_string())
+        );
+        assert_eq!(
+            infer_feature_from_specs_root("/tmp/kitty-specs/feature"),
+            None
+        );
     }
 }

@@ -1,6 +1,8 @@
 use crate::serve::{
     KasmosServer,
-    messages::{KasmosMessage, MessageEvent, read_messages_since, rewrite_dashboard},
+    messages::{
+        KasmosMessage, MessageEvent, message_targets_wp, read_messages_since, rewrite_dashboard,
+    },
     registry::WorkerEntry,
 };
 use anyhow::Result;
@@ -82,11 +84,7 @@ pub async fn handle(server: &KasmosServer, input: WaitForEventInput) -> Result<W
 
 fn message_matches(message: &KasmosMessage, input: &WaitForEventInput) -> bool {
     if let Some(wp_id) = input.wp_id.as_deref()
-        && message
-            .payload
-            .get("wp_id")
-            .and_then(|value| value.as_str())
-            != Some(wp_id)
+        && !message_targets_wp(message, wp_id)
     {
         return false;
     }
@@ -143,13 +141,13 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn message(event: &str, wp_id: &str) -> KasmosMessage {
+    fn message(event: &str, sender: &str, payload: serde_json::Value) -> KasmosMessage {
         KasmosMessage {
             message_index: 0,
-            sender: "worker".to_string(),
+            sender: sender.to_string(),
             event: MessageEvent::new(event),
             known_event: true,
-            payload: json!({ "wp_id": wp_id }),
+            payload,
             timestamp: "2026-02-14T00:00:00Z".to_string(),
             raw_line: None,
         }
@@ -163,9 +161,32 @@ mod tests {
             timeout_seconds: 1,
         };
 
-        assert!(message_matches(&message("DONE", "WP08"), &input));
-        assert!(!message_matches(&message("PROGRESS", "WP08"), &input));
-        assert!(!message_matches(&message("DONE", "WP07"), &input));
+        assert!(message_matches(
+            &message("DONE", "worker", json!({ "wp_id": "WP08" })),
+            &input
+        ));
+        assert!(!message_matches(
+            &message("PROGRESS", "worker", json!({ "wp_id": "WP08" })),
+            &input
+        ));
+        assert!(!message_matches(
+            &message("DONE", "worker", json!({ "wp_id": "WP07" })),
+            &input
+        ));
+    }
+
+    #[test]
+    fn wp_filter_matches_sender_when_payload_missing_wp_id() {
+        let input = WaitForEventInput {
+            wp_id: Some("WP08".to_string()),
+            event: Some(MessageEvent::new("DONE")),
+            timeout_seconds: 1,
+        };
+
+        assert!(message_matches(
+            &message("DONE", "WP08", json!({ "step": "sender-only" })),
+            &input
+        ));
     }
 
     #[test]

@@ -8,7 +8,7 @@ use serde_json::Value;
 use shell_escape::unix::escape as shell_escape;
 use std::borrow::Cow;
 use std::sync::LazyLock;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use tokio::process::Command;
 
 const MSG_LOG_PANE: &str = "msg-log";
@@ -18,6 +18,8 @@ static MESSAGE_PATTERN: LazyLock<Regex> =
 static ANSI_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\x1B\[[0-9;?]*[ -/]*[@-~]").expect("valid regex"));
 static DEGRADED_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
+static DUMP_PANE_ATTEMPT_HINT: AtomicU8 = AtomicU8::new(u8::MAX);
+static RUN_IN_PANE_ATTEMPT_HINT: AtomicU8 = AtomicU8::new(u8::MAX);
 
 /// Event values currently recognized by the protocol.
 const KNOWN_EVENTS: &[&str] = &[
@@ -106,6 +108,15 @@ pub fn parse_scrollback(scrollback: &str) -> Vec<KasmosMessage> {
     messages
 }
 
+pub fn message_targets_wp(message: &KasmosMessage, wp_id: &str) -> bool {
+    message.sender == wp_id
+        || message
+            .payload
+            .get("wp_id")
+            .and_then(|value| value.as_str())
+            == Some(wp_id)
+}
+
 pub async fn read_messages_since(since_index: u64) -> Result<MessageRead> {
     let pane = read_pane_scrollback(MSG_LOG_PANE).await?;
     let messages = parse_scrollback(&pane.scrollback)
@@ -165,17 +176,14 @@ async fn try_pane_tracker_dump(pane_name: &str) -> Result<String> {
     let binary =
         pane_tracker_binary().ok_or_else(|| anyhow!("pane-tracker binary not found in PATH"))?;
 
-    let attempts: [Vec<&str>; 4] = [
-        vec!["dump-pane", "--pane-name", pane_name],
-        vec!["dump-pane", "--pane", pane_name],
-        vec!["dump-pane", "--name", pane_name],
-        vec!["dump-pane", pane_name],
-    ];
-
     let mut last_error = None;
-    for args in attempts {
+    for attempt in preferred_attempt_order(4, DUMP_PANE_ATTEMPT_HINT.load(Ordering::Relaxed)) {
+        let args = dump_pane_args(attempt, pane_name);
         match run_command_capture(binary, &args).await {
-            Ok(output) => return Ok(output),
+            Ok(output) => {
+                DUMP_PANE_ATTEMPT_HINT.store(attempt, Ordering::Relaxed);
+                return Ok(output);
+            }
             Err(error) => last_error = Some(error),
         }
     }
@@ -194,22 +202,14 @@ async fn write_to_pane(pane_name: &str, content: &str, rewrite: bool) -> Result<
         format!("printf '%s\\n' {escaped}")
     };
 
-    let attempts: [Vec<&str>; 3] = [
-        vec![
-            "run-in-pane",
-            "--pane-name",
-            pane_name,
-            "--command",
-            &command,
-        ],
-        vec!["run-in-pane", "--pane", pane_name, "--command", &command],
-        vec!["run-in-pane", pane_name, &command],
-    ];
-
     let mut last_error = None;
-    for args in attempts {
+    for attempt in preferred_attempt_order(3, RUN_IN_PANE_ATTEMPT_HINT.load(Ordering::Relaxed)) {
+        let args = run_in_pane_args(attempt, pane_name, &command);
         match run_command_capture(binary, &args).await {
-            Ok(_) => return Ok(()),
+            Ok(_) => {
+                RUN_IN_PANE_ATTEMPT_HINT.store(attempt, Ordering::Relaxed);
+                return Ok(());
+            }
             Err(error) => last_error = Some(error),
         }
     }
@@ -218,7 +218,60 @@ async fn write_to_pane(pane_name: &str, content: &str, rewrite: bool) -> Result<
 }
 
 async fn direct_scrollback_read() -> Result<String> {
-    run_command_capture("zellij", &["action", "dump-screen"]).await
+    let dump_path = std::env::temp_dir().join(format!(
+        "kasmos-scrollback-{}-{}.txt",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default()
+    ));
+    let dump_path_arg = dump_path.to_string_lossy().into_owned();
+
+    run_command_capture("zellij", &["action", "dump-screen", dump_path_arg.as_str()]).await?;
+
+    let content = tokio::fs::read_to_string(&dump_path)
+        .await
+        .with_context(|| {
+            format!(
+                "failed to read dump-screen output at {}",
+                dump_path.display()
+            )
+        });
+    let _ = tokio::fs::remove_file(&dump_path).await;
+    content
+}
+
+fn dump_pane_args(attempt: u8, pane_name: &str) -> Vec<&str> {
+    match attempt {
+        0 => vec!["dump-pane", "--pane-name", pane_name],
+        1 => vec!["dump-pane", "--pane", pane_name],
+        2 => vec!["dump-pane", "--name", pane_name],
+        _ => vec!["dump-pane", pane_name],
+    }
+}
+
+fn run_in_pane_args<'a>(attempt: u8, pane_name: &'a str, command: &'a str) -> Vec<&'a str> {
+    match attempt {
+        0 => vec![
+            "run-in-pane",
+            "--pane-name",
+            pane_name,
+            "--command",
+            command,
+        ],
+        1 => vec!["run-in-pane", "--pane", pane_name, "--command", command],
+        _ => vec!["run-in-pane", pane_name, command],
+    }
+}
+
+fn preferred_attempt_order(total: u8, hint: u8) -> Vec<u8> {
+    let mut order = (0..total).collect::<Vec<_>>();
+    if hint < total {
+        order.retain(|attempt| *attempt != hint);
+        order.insert(0, hint);
+    }
+    order
 }
 
 async fn run_command_capture(binary: &str, args: &[&str]) -> Result<String> {
@@ -249,6 +302,7 @@ fn pane_tracker_binary() -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn parse_valid_message_line() {
@@ -291,5 +345,37 @@ mod tests {
 
         assert_eq!(parsed.event.as_str(), "SOMETHING_NEW");
         assert!(!parsed.known_event);
+    }
+
+    #[test]
+    fn wp_target_match_allows_sender_or_payload() {
+        let sender_match = KasmosMessage {
+            message_index: 1,
+            sender: "WP08".to_string(),
+            event: MessageEvent::new("PROGRESS"),
+            known_event: true,
+            payload: json!({"detail":"no wp_id in payload"}),
+            timestamp: "2026-01-01T00:00:00Z".to_string(),
+            raw_line: None,
+        };
+        let payload_match = KasmosMessage {
+            sender: "worker".to_string(),
+            payload: json!({"wp_id":"WP08"}),
+            ..sender_match.clone()
+        };
+
+        assert!(message_targets_wp(&sender_match, "WP08"));
+        assert!(message_targets_wp(&payload_match, "WP08"));
+        assert!(!message_targets_wp(&sender_match, "WP07"));
+    }
+
+    #[test]
+    fn preferred_order_uses_hint_first() {
+        assert_eq!(preferred_attempt_order(4, 2), vec![2, 0, 1, 3]);
+    }
+
+    #[test]
+    fn preferred_order_ignores_invalid_hint() {
+        assert_eq!(preferred_attempt_order(3, u8::MAX), vec![0, 1, 2]);
     }
 }

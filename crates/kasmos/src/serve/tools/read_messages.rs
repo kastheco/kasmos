@@ -1,6 +1,6 @@
 use crate::serve::{
     KasmosServer,
-    messages::{KasmosMessage, MessageEvent, read_messages_since},
+    messages::{KasmosMessage, MessageEvent, message_targets_wp, read_messages_since},
 };
 use anyhow::Result;
 use schemars::JsonSchema;
@@ -51,15 +51,7 @@ pub(crate) fn filter_messages(
 ) -> Vec<KasmosMessage> {
     messages
         .into_iter()
-        .filter(|message| {
-            wp_filter.is_none_or(|wp| {
-                message
-                    .payload
-                    .get("wp_id")
-                    .and_then(|value| value.as_str())
-                    == Some(wp)
-            })
-        })
+        .filter(|message| wp_filter.is_none_or(|wp| message_targets_wp(message, wp)))
         .filter(|message| {
             event_filter
                 .as_ref()
@@ -73,13 +65,13 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn message(index: u64, wp_id: &str, event: &str) -> KasmosMessage {
+    fn message(index: u64, sender: &str, payload: serde_json::Value, event: &str) -> KasmosMessage {
         KasmosMessage {
             message_index: index,
-            sender: "worker".to_string(),
+            sender: sender.to_string(),
             event: MessageEvent::new(event),
             known_event: true,
-            payload: json!({ "wp_id": wp_id }),
+            payload,
             timestamp: "2026-02-14T00:00:00Z".to_string(),
             raw_line: None,
         }
@@ -88,9 +80,9 @@ mod tests {
     #[test]
     fn cursor_filter_prevents_duplicates() {
         let all = vec![
-            message(0, "WP01", "STARTED"),
-            message(1, "WP01", "PROGRESS"),
-            message(2, "WP01", "DONE"),
+            message(0, "worker", json!({ "wp_id": "WP01" }), "STARTED"),
+            message(1, "worker", json!({ "wp_id": "WP01" }), "PROGRESS"),
+            message(2, "worker", json!({ "wp_id": "WP01" }), "DONE"),
         ];
         let new_only = all
             .into_iter()
@@ -105,9 +97,9 @@ mod tests {
     fn combines_wp_and_event_filters() {
         let filtered = filter_messages(
             vec![
-                message(0, "WP01", "PROGRESS"),
-                message(1, "WP02", "PROGRESS"),
-                message(2, "WP01", "DONE"),
+                message(0, "worker", json!({ "wp_id": "WP01" }), "PROGRESS"),
+                message(1, "worker", json!({ "wp_id": "WP02" }), "PROGRESS"),
+                message(2, "worker", json!({ "wp_id": "WP01" }), "DONE"),
             ],
             Some("WP01"),
             Some(MessageEvent::new("DONE")),
@@ -115,5 +107,20 @@ mod tests {
 
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].message_index, 2);
+    }
+
+    #[test]
+    fn wp_filter_matches_sender_when_payload_wp_id_missing() {
+        let filtered = filter_messages(
+            vec![
+                message(0, "WP08", json!({ "detail": "from sender" }), "PROGRESS"),
+                message(1, "worker", json!({ "wp_id": "WP09" }), "PROGRESS"),
+            ],
+            Some("WP08"),
+            None,
+        );
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].message_index, 0);
     }
 }
