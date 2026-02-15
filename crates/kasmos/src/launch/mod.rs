@@ -6,6 +6,9 @@ pub mod session;
 
 use crate::config::Config;
 use crate::launch::detect::{FeatureDetection, FeatureSource};
+use crate::serve::lock::{
+    FeatureLockManager, LockError, format_active_owner_conflict, format_stale_lock_prompt,
+};
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
@@ -39,6 +42,10 @@ pub async fn run(spec_prefix: Option<&str>) -> Result<()> {
     let detection = detect::detect_feature(spec_prefix, &specs_root)
         .context("Failed during feature detection")?;
     let selection = resolve_feature_selection(&specs_root, detection)?;
+    let feature_slug = selection
+        .feature_slug
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("resolved feature is missing slug"))?;
 
     if let Err(failures) = preflight_checks(&config) {
         eprintln!("Launch preflight failed:\n");
@@ -51,6 +58,32 @@ pub async fn run(spec_prefix: Option<&str>) -> Result<()> {
         anyhow::bail!("preflight failed");
     }
 
+    let lock_manager = FeatureLockManager::new(
+        &feature_slug,
+        config.session.session_name.clone(),
+        "orchestration",
+        config.lock.clone(),
+    )
+    .context("failed to initialize feature lock manager")?;
+
+    match lock_manager.acquire(false) {
+        Ok(_) => {}
+        Err(LockError::FeatureLockConflict { record, .. }) => {
+            eprintln!("{}", format_active_owner_conflict(&record));
+            anyhow::bail!("{}", LockError::from_conflict(*record));
+        }
+        Err(LockError::StaleLockConfirmationRequired { record, .. }) => {
+            eprintln!("{}", format_stale_lock_prompt(&record));
+            if !prompt_yes_no("Take over ownership?", false)? {
+                anyhow::bail!("{}", LockError::from_stale_confirmation(*record));
+            }
+            lock_manager
+                .acquire(true)
+                .context("failed to acquire lock after stale takeover confirmation")?;
+        }
+        Err(err) => return Err(err).context("failed to acquire feature lock"),
+    }
+
     println!(
         "Feature resolved: {} ({})",
         selection
@@ -61,6 +94,9 @@ pub async fn run(spec_prefix: Option<&str>) -> Result<()> {
     );
     println!("Preflight checks passed.");
     println!("Launch session bootstrap is implemented in WP03.");
+    lock_manager
+        .release()
+        .context("failed to release feature lock")?;
     Ok(())
 }
 
@@ -245,6 +281,26 @@ fn prompt_for_selection(max: usize) -> Result<usize> {
             max
         );
     }
+}
+
+fn prompt_yes_no(prompt: &str, default: bool) -> Result<bool> {
+    use std::io::{self, Write};
+
+    let suffix = if default { "[Y/n]" } else { "[y/N]" };
+    print!("{} {}: ", prompt, suffix);
+    io::stdout().flush().context("Failed to flush stdout")?;
+
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .context("Failed to read confirmation")?;
+    let trimmed = input.trim().to_ascii_lowercase();
+
+    if trimmed.is_empty() {
+        return Ok(default);
+    }
+
+    Ok(matches!(trimmed.as_str(), "y" | "yes"))
 }
 
 fn source_label(source: &FeatureSource) -> &'static str {

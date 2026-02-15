@@ -32,7 +32,7 @@ pub fn detect_feature(spec_prefix: Option<&str>, specs_root: &Path) -> Result<Fe
     detect_feature_with(
         spec_prefix,
         specs_root,
-        || current_branch_name(),
+        current_branch_name,
         || std::env::current_dir().context("Failed to get current directory"),
     )
 }
