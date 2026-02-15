@@ -1,7 +1,7 @@
 ---
 work_package_id: WP01
 title: CLI Pivot and Legacy TUI Gating
-lane: "doing"
+lane: "done"
 dependencies: []
 base_branch: main
 base_commit: e2efe83d5f7238ed6104250098ac15f90cc6038e
@@ -17,8 +17,8 @@ phase: Phase 0 - CLI Pivot and Core Foundation
 assignee: ''
 agent: "reviewer"
 shell_pid: "3419985"
-review_status: ''
-reviewed_by: ''
+review_status: "approved"
+reviewed_by: "kas"
 history:
 - timestamp: '2026-02-14T16:27:48Z'
   lane: planned
@@ -309,3 +309,4 @@ Replace the legacy orchestration entry points with the new command surface while
 - 2026-02-14T16:27:48Z - system - lane=planned - Prompt generated via /spec-kitty.tasks
 - 2026-02-14T20:40:54Z – coder – shell_pid=3202027 – lane=for_review – Submitted for review via swarm
 - 2026-02-14T20:40:54Z – reviewer – shell_pid=3419985 – lane=doing – Started review via workflow command
+- 2026-02-14T20:44:35Z – reviewer – shell_pid=3419985 – lane=done – Review passed via swarm
