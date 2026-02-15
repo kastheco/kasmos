@@ -1,7 +1,7 @@
 ---
 work_package_id: WP10
 title: Setup Command and Launch Hardening
-lane: "doing"
+lane: "for_review"
 dependencies: [WP03]
 base_branch: 011-mcp-agent-swarm-orchestration-WP03
 base_commit: 5ede493dbac49ea7462a399719ed32e777981362
@@ -275,3 +275,4 @@ Deliver `kasmos setup` as a first-time environment validation and configuration 
 ## Activity Log
 
 - 2026-02-14T16:27:48Z - system - lane=planned - Prompt generated via /spec-kitty.tasks
+- 2026-02-15T01:18:04Z – unknown – shell_pid=212269 – lane=for_review – Ready for review
