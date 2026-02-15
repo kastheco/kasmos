@@ -192,7 +192,7 @@
 - [x] T035 Implement metadata-only default record shaping and debug-mode full payload opt-in
 - [x] T036 Implement retention evaluator with either-threshold trigger (size > 512MB OR age > 14 days)
 - [x] T037 Integrate audit writes across lock, spawn/despawn, transition, and error paths
-- [ ] T038 Add tests for payload redaction defaults, debug inclusion, and retention trigger correctness
+- [x] T038 Add tests for payload redaction defaults, debug inclusion, and retention trigger correctness
 
 ### Implementation Notes
 - Do not emit full prompts/tool args unless debug mode is enabled.
