@@ -318,7 +318,7 @@
 ### Included Subtasks
 - [x] T057 Implement `crates/kasmos/src/setup/mod.rs` dependency validation flow with structured output
 - [x] T058 Implement idempotent generation of missing baseline config/profile assets
-- [ ] T059 Ensure launch uses the same preflight engine and exits before any session/tab creation on failures
+- [x] T059 Ensure launch uses the same preflight engine and exits before any session/tab creation on failures
 - [ ] T060 Add per-dependency remediation guidance (install hints and expected minimum behavior)
 - [ ] T061 Ensure non-zero exit code mapping for setup and launch preflight failures
 - [ ] T062 Add tests for setup pass/fail and launch hard-fail guarantees
