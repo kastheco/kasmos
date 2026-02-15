@@ -27,7 +27,6 @@ use rmcp::transport::io::stdio;
 use rmcp::{Json, ServerHandler, ServiceExt, tool, tool_handler, tool_router};
 use tokio::sync::RwLock;
 
-use self::messages::KasmosMessage;
 use self::registry::{WorkerRegistry, WorkerStatus};
 
 #[derive(Debug)]
@@ -54,7 +53,10 @@ impl KasmosServer {
 
 #[tool_router]
 impl KasmosServer {
-    #[tool(name = "spawn_worker", description = "Spawn a planner/coder/reviewer/release worker pane")]
+    #[tool(
+        name = "spawn_worker",
+        description = "Spawn a planner/coder/reviewer/release worker pane"
+    )]
     async fn spawn_worker(
         &self,
         Parameters(input): Parameters<SpawnWorkerInput>,
@@ -65,7 +67,10 @@ impl KasmosServer {
         Ok(Json(output))
     }
 
-    #[tool(name = "despawn_worker", description = "Close a worker pane and remove it from registry")]
+    #[tool(
+        name = "despawn_worker",
+        description = "Close a worker pane and remove it from registry"
+    )]
     async fn despawn_worker(
         &self,
         Parameters(input): Parameters<DespawnWorkerInput>,
@@ -76,7 +81,10 @@ impl KasmosServer {
         Ok(Json(output))
     }
 
-    #[tool(name = "list_workers", description = "List workers tracked by this manager instance")]
+    #[tool(
+        name = "list_workers",
+        description = "List workers tracked by this manager instance"
+    )]
     async fn list_workers(
         &self,
         Parameters(input): Parameters<ListWorkersInput>,
@@ -87,33 +95,38 @@ impl KasmosServer {
         Ok(Json(output))
     }
 
-    #[tool(name = "read_messages", description = "Read and parse message-log pane events")]
+    #[tool(
+        name = "read_messages",
+        description = "Read and parse message-log pane events"
+    )]
     async fn read_messages(
         &self,
-        Parameters(_input): Parameters<ReadMessagesInput>,
+        Parameters(input): Parameters<ReadMessagesInput>,
     ) -> Result<Json<ReadMessagesOutput>, ErrorData> {
-        let next_index = *self.message_cursor.read().await;
-        Ok(Json(ReadMessagesOutput {
-            ok: true,
-            messages: Vec::<KasmosMessage>::new(),
-            next_index,
-        }))
+        let output = tools::read_messages::handle(self, input)
+            .await
+            .map_err(internal_error)?;
+        Ok(Json(output))
     }
 
-    #[tool(name = "wait_for_event", description = "Block until matching event appears or timeout is reached")]
+    #[tool(
+        name = "wait_for_event",
+        description = "Block until matching event appears or timeout is reached"
+    )]
     async fn wait_for_event(
         &self,
-        Parameters(_input): Parameters<WaitForEventInput>,
+        Parameters(input): Parameters<WaitForEventInput>,
     ) -> Result<Json<WaitForEventOutput>, ErrorData> {
-        Ok(Json(WaitForEventOutput {
-            ok: true,
-            status: tools::wait_for_event::WaitForEventStatus::Timeout,
-            elapsed_seconds: 0,
-            message: None,
-        }))
+        let output = tools::wait_for_event::handle(self, input)
+            .await
+            .map_err(internal_error)?;
+        Ok(Json(output))
     }
 
-    #[tool(name = "workflow_status", description = "Return feature phase, wave status, and active lock metadata")]
+    #[tool(
+        name = "workflow_status",
+        description = "Return feature phase, wave status, and active lock metadata"
+    )]
     async fn workflow_status(
         &self,
         Parameters(input): Parameters<WorkflowStatusInput>,
@@ -146,7 +159,10 @@ impl KasmosServer {
         Ok(Json(WorkflowStatusOutput { ok: true, snapshot }))
     }
 
-    #[tool(name = "transition_wp", description = "Validate and apply WP lane transitions in task files")]
+    #[tool(
+        name = "transition_wp",
+        description = "Validate and apply WP lane transitions in task files"
+    )]
     async fn transition_wp(
         &self,
         Parameters(_input): Parameters<TransitionWpInput>,
@@ -157,7 +173,10 @@ impl KasmosServer {
         ))
     }
 
-    #[tool(name = "list_features", description = "List known feature specs and artifact availability")]
+    #[tool(
+        name = "list_features",
+        description = "List known feature specs and artifact availability"
+    )]
     async fn list_features(
         &self,
         Parameters(_input): Parameters<ListFeaturesInput>,
@@ -168,7 +187,10 @@ impl KasmosServer {
         Ok(Json(output))
     }
 
-    #[tool(name = "infer_feature", description = "Infer feature slug from arg, branch, and cwd context")]
+    #[tool(
+        name = "infer_feature",
+        description = "Infer feature slug from arg, branch, and cwd context"
+    )]
     async fn infer_feature(
         &self,
         Parameters(input): Parameters<InferFeatureInput>,
@@ -286,8 +308,11 @@ mod tests {
         std::fs::create_dir_all(specs_root.join("011-alpha")).expect("create feature");
         std::fs::write(specs_root.join("011-alpha/spec.md"), "# spec").expect("write spec");
         std::fs::create_dir_all(specs_root.join("011-alpha/tasks")).expect("create tasks");
-        std::fs::write(specs_root.join("011-alpha/tasks/WP01.md"), "---\nlane: planned\n---")
-            .expect("write task");
+        std::fs::write(
+            specs_root.join("011-alpha/tasks/WP01.md"),
+            "---\nlane: planned\n---",
+        )
+        .expect("write task");
 
         let mut config = Config::default();
         config.paths.specs_root = specs_root.display().to_string();
@@ -335,12 +360,10 @@ mod tests {
         .expect("spawn");
         assert!(spawn.ok);
 
-        let workers = crate::serve::tools::list_workers::handle(
-            &server,
-            ListWorkersInput { status: None },
-        )
-        .await
-        .expect("list");
+        let workers =
+            crate::serve::tools::list_workers::handle(&server, ListWorkersInput { status: None })
+                .await
+                .expect("list");
         assert_eq!(workers.workers.len(), 1);
 
         let despawn = crate::serve::tools::despawn_worker::handle(

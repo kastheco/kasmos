@@ -1,4 +1,8 @@
-use crate::serve::messages::{KasmosMessage, MessageEvent};
+use crate::serve::{
+    KasmosServer,
+    messages::{KasmosMessage, MessageEvent, read_messages_since},
+};
+use anyhow::Result;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -15,4 +19,101 @@ pub struct ReadMessagesOutput {
     pub ok: bool,
     pub messages: Vec<KasmosMessage>,
     pub next_index: u64,
+}
+
+pub async fn handle(
+    _server: &KasmosServer,
+    input: ReadMessagesInput,
+) -> Result<ReadMessagesOutput> {
+    let since_index = input.since_index.unwrap_or(0);
+    let read = read_messages_since(since_index).await?;
+    let messages = filter_messages(
+        read.messages,
+        input.filter_wp.as_deref(),
+        input.filter_event,
+    );
+    let next_index = messages
+        .last()
+        .map(|message| message.message_index.saturating_add(1))
+        .unwrap_or(since_index);
+
+    Ok(ReadMessagesOutput {
+        ok: true,
+        messages,
+        next_index,
+    })
+}
+
+pub(crate) fn filter_messages(
+    messages: Vec<KasmosMessage>,
+    wp_filter: Option<&str>,
+    event_filter: Option<MessageEvent>,
+) -> Vec<KasmosMessage> {
+    messages
+        .into_iter()
+        .filter(|message| {
+            wp_filter.is_none_or(|wp| {
+                message
+                    .payload
+                    .get("wp_id")
+                    .and_then(|value| value.as_str())
+                    == Some(wp)
+            })
+        })
+        .filter(|message| {
+            event_filter
+                .as_ref()
+                .is_none_or(|event| message.event == *event)
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn message(index: u64, wp_id: &str, event: &str) -> KasmosMessage {
+        KasmosMessage {
+            message_index: index,
+            sender: "worker".to_string(),
+            event: MessageEvent::new(event),
+            known_event: true,
+            payload: json!({ "wp_id": wp_id }),
+            timestamp: "2026-02-14T00:00:00Z".to_string(),
+            raw_line: None,
+        }
+    }
+
+    #[test]
+    fn cursor_filter_prevents_duplicates() {
+        let all = vec![
+            message(0, "WP01", "STARTED"),
+            message(1, "WP01", "PROGRESS"),
+            message(2, "WP01", "DONE"),
+        ];
+        let new_only = all
+            .into_iter()
+            .filter(|msg| msg.message_index >= 2)
+            .collect::<Vec<_>>();
+
+        assert_eq!(new_only.len(), 1);
+        assert_eq!(new_only[0].message_index, 2);
+    }
+
+    #[test]
+    fn combines_wp_and_event_filters() {
+        let filtered = filter_messages(
+            vec![
+                message(0, "WP01", "PROGRESS"),
+                message(1, "WP02", "PROGRESS"),
+                message(2, "WP01", "DONE"),
+            ],
+            Some("WP01"),
+            Some(MessageEvent::new("DONE")),
+        );
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].message_index, 2);
+    }
 }

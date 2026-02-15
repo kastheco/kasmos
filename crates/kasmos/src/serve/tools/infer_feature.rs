@@ -29,7 +29,8 @@ pub enum InferFeatureSource {
 
 pub async fn handle(config: &Config, input: InferFeatureInput) -> Result<InferFeatureOutput> {
     if let Some(spec_prefix) = input.spec_prefix {
-        let slug = resolve_feature_slug_by_prefix(Path::new(&config.paths.specs_root), &spec_prefix)?;
+        let slug =
+            resolve_feature_slug_by_prefix(Path::new(&config.paths.specs_root), &spec_prefix)?;
         return Ok(InferFeatureOutput {
             ok: true,
             source: InferFeatureSource::Arg,

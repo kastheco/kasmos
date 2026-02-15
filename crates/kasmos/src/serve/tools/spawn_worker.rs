@@ -1,5 +1,6 @@
 use crate::serve::{
     KasmosServer,
+    messages::log_manager_event,
     registry::{AgentRole, WorkerEntry, WorkerStatus},
 };
 use anyhow::Result;
@@ -24,10 +25,14 @@ pub struct SpawnWorkerOutput {
 
 pub async fn handle(server: &KasmosServer, input: SpawnWorkerInput) -> Result<SpawnWorkerOutput> {
     let now = chrono::Utc::now().to_rfc3339();
+    let wp_id = input.wp_id.clone();
+    let role = input.role;
+    let pane_name = format!("{}-{}", wp_id, role.as_str());
+
     let worker = WorkerEntry {
-        wp_id: input.wp_id.clone(),
-        role: input.role,
-        pane_name: format!("{}-{}", input.wp_id, input.role.as_str()),
+        wp_id,
+        role,
+        pane_name,
         pane_id: None,
         worktree_path: input.worktree_path,
         status: WorkerStatus::Active,
@@ -38,6 +43,16 @@ pub async fn handle(server: &KasmosServer, input: SpawnWorkerInput) -> Result<Sp
 
     let mut registry = server.registry.write().await;
     registry.upsert(worker.clone());
+
+    let _ = log_manager_event(
+        "SPAWN",
+        &serde_json::json!({
+            "wp_id": worker.wp_id.clone(),
+            "role": worker.role.as_str(),
+            "pane_name": worker.pane_name.clone(),
+        }),
+    )
+    .await;
 
     Ok(SpawnWorkerOutput { ok: true, worker })
 }
