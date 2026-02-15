@@ -1,27 +1,30 @@
 ---
-work_package_id: "WP12"
+work_package_id: WP12
+title: Integration, Legacy Preservation, and Acceptance Hardening
+lane: "doing"
+dependencies: [WP07, WP08, WP09, WP10, WP11]
+base_branch: 011-mcp-agent-swarm-orchestration-WP07
+base_commit: ad49303038f379286b49bd243b78966248018c92
+created_at: '2026-02-15T06:53:01.173379+00:00'
 subtasks:
-  - "T069"
-  - "T070"
-  - "T071"
-  - "T072"
-  - "T073"
-  - "T074"
-title: "Integration, Legacy Preservation, and Acceptance Hardening"
-phase: "Phase 3 - Setup UX, Role Context, and End-to-End Hardening"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
-dependencies: ["WP07", "WP08", "WP09", "WP10", "WP11"]
+- T069
+- T070
+- T071
+- T072
+- T073
+- T074
+phase: Phase 3 - Setup UX, Role Context, and End-to-End Hardening
+assignee: ''
+agent: ''
+shell_pid: "1417265"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-14T16:27:48Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-14T16:27:48Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP12 - Integration, Legacy Preservation, and Acceptance Hardening
