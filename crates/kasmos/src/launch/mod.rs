@@ -121,7 +121,7 @@ pub fn preflight_checks(config: &Config) -> std::result::Result<(), Vec<Prefligh
         .filter(|check| check.status == CheckStatus::Fail)
         .map(|check| PreflightFailure {
             dependency: check.name,
-            required_for: check.description,
+            required_for: check.required_for,
             guidance: check
                 .guidance
                 .unwrap_or_else(|| "Run `kasmos setup` to inspect and remediate".to_string()),

@@ -2,11 +2,16 @@
 
 use crate::config::Config;
 use anyhow::{Context, Result};
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
-const STATUS_PASS: &str = "\x1b[32m[PASS]\x1b[0m";
-const STATUS_FAIL: &str = "\x1b[31m[FAIL]\x1b[0m";
-const STATUS_WARN: &str = "\x1b[33m[WARN]\x1b[0m";
+const STATUS_PASS: &str = "[PASS]";
+const STATUS_FAIL: &str = "[FAIL]";
+const STATUS_WARN: &str = "[WARN]";
+const STATUS_PASS_COLOR: &str = "\x1b[32m[PASS]\x1b[0m";
+const STATUS_FAIL_COLOR: &str = "\x1b[31m[FAIL]\x1b[0m";
+const STATUS_WARN_COLOR: &str = "\x1b[33m[WARN]\x1b[0m";
 
 /// Setup command result.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,6 +24,7 @@ pub struct SetupResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CheckResult {
     pub name: String,
+    pub required_for: String,
     pub description: String,
     pub status: CheckStatus,
     pub guidance: Option<String>,
@@ -35,13 +41,14 @@ pub enum CheckStatus {
 /// Run setup checks and generate missing baseline assets.
 pub async fn run() -> Result<()> {
     let config = Config::load().context("Failed to load config")?;
-    let result = validate_environment(&config)?;
+    let repo_root = detect_repo_root();
+    let result = validate_environment_with_repo(&config, repo_root.clone())?;
 
     println!("kasmos setup");
     print_results(&result);
 
-    if let Some(repo_root) = detect_repo_root() {
-        let created = ensure_baseline_assets(&repo_root, &config)?;
+    if let Some(repo_root) = repo_root.as_deref() {
+        let created = ensure_baseline_assets(repo_root, &config)?;
         if created.is_empty() {
             println!("\nNo new baseline assets created.");
         } else {
@@ -62,45 +69,57 @@ pub async fn run() -> Result<()> {
 
 /// Validate runtime dependencies and repo context.
 pub fn validate_environment(config: &Config) -> Result<SetupResult> {
+    validate_environment_with_repo(config, detect_repo_root())
+}
+
+fn validate_environment_with_repo(
+    config: &Config,
+    repo_root: Option<PathBuf>,
+) -> Result<SetupResult> {
     let mut checks = Vec::new();
 
     checks.push(check_binary(
         &config.paths.zellij_binary,
         "zellij",
+        "creating/switching orchestration sessions and panes",
         "Install zellij (for example: cargo install zellij)",
     ));
 
     checks.push(check_binary(
         &config.agent.opencode_binary,
         "opencode",
+        "spawning manager/worker agents",
         "Install OpenCode and ensure its launcher binary is on PATH",
     ));
 
     checks.push(check_binary(
         &config.paths.spec_kitty_binary,
         "spec-kitty",
+        "feature/task lifecycle commands",
         "Install spec-kitty and ensure `spec-kitty` is on PATH",
     ));
 
     checks.push(check_pane_tracker());
-    checks.push(check_git());
-    checks.push(check_config_file());
+    checks.push(check_git(repo_root.as_deref()));
+    checks.push(check_config_file(repo_root.as_deref()));
 
     let all_passed = checks.iter().all(|c| c.status != CheckStatus::Fail);
 
     Ok(SetupResult { checks, all_passed })
 }
 
-fn check_binary(binary: &str, name: &str, guidance: &str) -> CheckResult {
+fn check_binary(binary: &str, name: &str, required_for: &str, guidance: &str) -> CheckResult {
     match which::which(binary) {
         Ok(path) => CheckResult {
             name: name.to_string(),
-            description: format!("{}", path.display()),
+            required_for: required_for.to_string(),
+            description: format_binary_description(&path),
             status: CheckStatus::Pass,
             guidance: None,
         },
         Err(_) => CheckResult {
             name: name.to_string(),
+            required_for: required_for.to_string(),
             description: format!("{} not found in PATH", binary),
             status: CheckStatus::Fail,
             guidance: Some(guidance.to_string()),
@@ -109,12 +128,15 @@ fn check_binary(binary: &str, name: &str, guidance: &str) -> CheckResult {
 }
 
 fn check_pane_tracker() -> CheckResult {
+    let required_for = "structured pane message/event tracking";
     let candidates = ["pane-tracker", "zellij-pane-tracker"];
+
     for candidate in candidates {
         if let Ok(path) = which::which(candidate) {
             return CheckResult {
                 name: "pane-tracker".to_string(),
-                description: format!("{} ({})", candidate, path.display()),
+                required_for: required_for.to_string(),
+                description: format!("{} ({})", candidate, format_binary_description(&path)),
                 status: CheckStatus::Pass,
                 guidance: None,
             };
@@ -123,6 +145,7 @@ fn check_pane_tracker() -> CheckResult {
 
     CheckResult {
         name: "pane-tracker".to_string(),
+        required_for: required_for.to_string(),
         description: "pane tracker binary not found".to_string(),
         status: CheckStatus::Fail,
         guidance: Some(
@@ -132,25 +155,37 @@ fn check_pane_tracker() -> CheckResult {
     }
 }
 
-fn check_git() -> CheckResult {
-    if which::which("git").is_err() {
-        return CheckResult {
-            name: "git".to_string(),
-            description: "git not found in PATH".to_string(),
-            status: CheckStatus::Fail,
-            guidance: Some("Install git and ensure `git` is on PATH".to_string()),
-        };
-    }
+fn check_git(repo_root: Option<&Path>) -> CheckResult {
+    let required_for = "repository inspection and worktree management";
 
-    match detect_repo_root() {
+    let git_path = match which::which("git") {
+        Ok(path) => path,
+        Err(_) => {
+            return CheckResult {
+                name: "git".to_string(),
+                required_for: required_for.to_string(),
+                description: "git not found in PATH".to_string(),
+                status: CheckStatus::Fail,
+                guidance: Some("Install git and ensure `git` is on PATH".to_string()),
+            };
+        }
+    };
+
+    match repo_root {
         Some(repo_root) => CheckResult {
             name: "git".to_string(),
-            description: format!("in git repo ({})", repo_root.display()),
+            required_for: required_for.to_string(),
+            description: format!(
+                "{} (in git repo {})",
+                format_binary_description(&git_path),
+                repo_root.display()
+            ),
             status: CheckStatus::Pass,
             guidance: None,
         },
         None => CheckResult {
             name: "git".to_string(),
+            required_for: required_for.to_string(),
             description: "not inside a git repository".to_string(),
             status: CheckStatus::Fail,
             guidance: Some(
@@ -160,10 +195,13 @@ fn check_git() -> CheckResult {
     }
 }
 
-fn check_config_file() -> CheckResult {
-    let Some(repo_root) = detect_repo_root() else {
+fn check_config_file(repo_root: Option<&Path>) -> CheckResult {
+    let required_for = "loading project defaults and local overrides";
+
+    let Some(repo_root) = repo_root else {
         return CheckResult {
             name: "config".to_string(),
+            required_for: required_for.to_string(),
             description: "unable to resolve repo root for kasmos.toml".to_string(),
             status: CheckStatus::Warn,
             guidance: Some("Run from the repository root to generate kasmos.toml".to_string()),
@@ -174,6 +212,7 @@ fn check_config_file() -> CheckResult {
     if path.is_file() {
         CheckResult {
             name: "config".to_string(),
+            required_for: required_for.to_string(),
             description: format!("{}", path.display()),
             status: CheckStatus::Pass,
             guidance: None,
@@ -181,6 +220,7 @@ fn check_config_file() -> CheckResult {
     } else {
         CheckResult {
             name: "config".to_string(),
+            required_for: required_for.to_string(),
             description: "kasmos.toml not found (using defaults)".to_string(),
             status: CheckStatus::Warn,
             guidance: Some("Run `kasmos setup` to generate a baseline kasmos.toml".to_string()),
@@ -189,18 +229,36 @@ fn check_config_file() -> CheckResult {
 }
 
 fn print_results(result: &SetupResult) {
+    let colorize = should_colorize();
+
     for check in &result.checks {
-        let label = match check.status {
-            CheckStatus::Pass => STATUS_PASS,
-            CheckStatus::Fail => STATUS_FAIL,
-            CheckStatus::Warn => STATUS_WARN,
-        };
+        let label = status_label(check.status, colorize);
 
         println!("{} {:<14} {}", label, check.name, check.description);
         if let Some(guidance) = &check.guidance
             && check.status == CheckStatus::Fail
         {
             println!("       guidance: {}", guidance);
+        }
+    }
+}
+
+fn should_colorize() -> bool {
+    std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
+}
+
+fn status_label(status: CheckStatus, colorize: bool) -> &'static str {
+    if colorize {
+        match status {
+            CheckStatus::Pass => STATUS_PASS_COLOR,
+            CheckStatus::Fail => STATUS_FAIL_COLOR,
+            CheckStatus::Warn => STATUS_WARN_COLOR,
+        }
+    } else {
+        match status {
+            CheckStatus::Pass => STATUS_PASS,
+            CheckStatus::Fail => STATUS_FAIL,
+            CheckStatus::Warn => STATUS_WARN,
         }
     }
 }
@@ -237,6 +295,11 @@ fn ensure_baseline_assets(repo_root: &Path, config: &Config) -> Result<Vec<PathB
         &mut created,
     )?;
     write_if_missing(
+        &agent_root.join("planner.md"),
+        default_agent_prompt("planner"),
+        &mut created,
+    )?;
+    write_if_missing(
         &agent_root.join("coder.md"),
         default_agent_prompt("coder"),
         &mut created,
@@ -269,6 +332,32 @@ fn write_if_missing(path: &Path, contents: String, created: &mut Vec<PathBuf>) -
         .with_context(|| format!("Failed to write {}", path.display()))?;
     created.push(path.to_path_buf());
     Ok(())
+}
+
+fn format_binary_description(path: &Path) -> String {
+    match command_version(path) {
+        Some(version) => format!("{} ({})", path.display(), version),
+        None => path.display().to_string(),
+    }
+}
+
+fn command_version(path: &Path) -> Option<String> {
+    let output = Command::new(path).arg("--version").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if let Some(line) = stdout.lines().map(str::trim).find(|line| !line.is_empty()) {
+        return Some(line.to_string());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    stderr
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(ToOwned::to_owned)
 }
 
 fn default_opencode_profile() -> String {
@@ -381,6 +470,11 @@ mod tests {
         assert!(
             repo.path()
                 .join("config/profiles/kasmos/agent/manager.md")
+                .is_file()
+        );
+        assert!(
+            repo.path()
+                .join("config/profiles/kasmos/agent/planner.md")
                 .is_file()
         );
     }
