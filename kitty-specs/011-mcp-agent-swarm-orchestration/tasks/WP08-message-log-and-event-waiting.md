@@ -1,7 +1,7 @@
 ---
 work_package_id: WP08
 title: Message Log Parsing and Event Waiting
-lane: "doing"
+lane: "for_review"
 dependencies:
 - WP04
 base_branch: 011-mcp-agent-swarm-orchestration-WP04
@@ -19,8 +19,8 @@ phase: Phase 2 - Safety, State, and Audit Guarantees
 assignee: ''
 agent: "reviewer"
 shell_pid: "1148797"
-review_status: ''
-reviewed_by: ''
+review_status: "has_feedback"
+reviewed_by: "reviewer"
 history:
 - timestamp: '2026-02-14T16:27:48Z'
   lane: planned
@@ -39,9 +39,49 @@ history:
 
 ## Review Feedback
 
-*[This section is empty initially.]*
+**Reviewed by**: reviewer
+**Status**: ❌ Changes Requested
+**Date**: 2026-02-15
 
----
+# Review Feedback: WP08 - Message Log Parsing and Event Waiting
+
+## Decision: NEEDS_CHANGES
+
+## Findings
+
+### [Medium] direct_scrollback_read always fails (messages.rs:220-221)
+
+`direct_scrollback_read()` calls `zellij action dump-screen` without the required `<PATH>` argument. Zellij 0.43+ requires `dump-screen <PATH>`. The degraded fallback always fails, so when pane-tracker is unavailable, `read_messages` and `wait_for_event` return hard errors instead of degraded data.
+
+**Fix**: Write to a temp file and read it back:
+
+```rust
+async fn direct_scrollback_read() -> Result<String> {
+    let probe = std::env::temp_dir().join(format!(
+        "kasmos-scrollback-{}.txt",
+        std::process::id()
+    ));
+    let probe_str = probe.display().to_string();
+    run_command_capture("zellij", &["action", "dump-screen", &probe_str]).await?;
+    let content = tokio::fs::read_to_string(&probe).await
+        .context("read scrollback dump")?;
+    let _ = tokio::fs::remove_file(&probe).await;
+    Ok(content)
+}
+```
+
+### [Low] pane-tracker arg brute-force not cached (messages.rs:168-183)
+
+`try_pane_tracker_dump` tries 4 CLI patterns on every call. Consider caching the working pattern in a `OnceLock<usize>` to skip failed patterns on subsequent calls.
+
+### [Low] WP filter checks payload instead of sender (read_messages.rs:55-61, wait_for_event.rs:84-92)
+
+Both filters match on `payload["wp_id"]` rather than the `sender` field. If a worker omits `wp_id` from the JSON payload, the filter silently excludes the message even though the sender captures the WP ID.
+
+### [Low] infer_feature_from_specs_root returns directory name (mod.rs:241-252)
+
+Returns the specs root directory name (e.g. "kitty-specs") as a feature slug. Currently unused by tool handlers, so no runtime impact.
+
 
 ## Implementation Command
 
@@ -339,3 +379,5 @@ Implement `read_messages` and `wait_for_event` MCP tools with structured parsing
 - 2026-02-15T01:42:14Z – coder – shell_pid=571423 – lane=doing – Assigned agent via workflow command
 - 2026-02-15T06:27:33Z – coder – shell_pid=571423 – lane=for_review – Ready for review
 - 2026-02-15T06:28:08Z – reviewer – shell_pid=1148797 – lane=doing – Started review via workflow command
+- 2026-02-15T06:31:46Z – reviewer – shell_pid=1148797 – lane=planned – Moved to planned
+- 2026-02-15T06:44:02Z – reviewer – shell_pid=1148797 – lane=for_review – Ready for review
