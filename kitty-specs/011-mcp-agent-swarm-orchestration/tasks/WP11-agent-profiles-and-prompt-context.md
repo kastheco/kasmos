@@ -1,7 +1,7 @@
 ---
 work_package_id: WP11
 title: Agent Profiles and Prompt Context Boundaries
-lane: "for_review"
+lane: "done"
 dependencies: [WP02]
 base_branch: 011-mcp-agent-swarm-orchestration-WP02
 base_commit: 839ff563e7dfa7894ce4b53b37f439478bf887a6
@@ -17,8 +17,8 @@ phase: Phase 3 - Setup UX, Role Context, and End-to-End Hardening
 assignee: ''
 agent: ''
 shell_pid: "3114343"
-review_status: ''
-reviewed_by: ''
+review_status: "approved"
+reviewed_by: "kas"
 history:
 - timestamp: '2026-02-14T16:27:48Z'
   lane: planned
@@ -298,3 +298,4 @@ Implement role-specific prompt/context assembly that enforces scope boundaries a
 - 2026-02-14T22:25:37Z – unknown – shell_pid=3674747 – lane=planned – Moved to planned
 - 2026-02-14T22:27:10Z – unknown – shell_pid=3674747 – lane=planned – Moved to planned
 - 2026-02-15T00:51:10Z – unknown – shell_pid=3114343 – lane=for_review – Ready for review
+- 2026-02-15T00:56:10Z – unknown – shell_pid=3114343 – lane=done – Review passed: role-based prompt builder, context boundaries, 5 agent templates, 241 tests pass
