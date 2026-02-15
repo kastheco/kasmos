@@ -1,27 +1,30 @@
 ---
-work_package_id: "WP10"
+work_package_id: WP10
+title: Setup Command and Launch Hardening
+lane: "doing"
+dependencies: [WP03]
+base_branch: 011-mcp-agent-swarm-orchestration-WP03
+base_commit: 5ede493dbac49ea7462a399719ed32e777981362
+created_at: '2026-02-15T01:01:51.958671+00:00'
 subtasks:
-  - "T057"
-  - "T058"
-  - "T059"
-  - "T060"
-  - "T061"
-  - "T062"
-title: "Setup Command and Launch Hardening"
-phase: "Phase 3 - Setup UX, Role Context, and End-to-End Hardening"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
-dependencies: ["WP03"]
+- T057
+- T058
+- T059
+- T060
+- T061
+- T062
+phase: Phase 3 - Setup UX, Role Context, and End-to-End Hardening
+assignee: ''
+agent: ''
+shell_pid: "212269"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-14T16:27:48Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-14T16:27:48Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP10 - Setup Command and Launch Hardening
