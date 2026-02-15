@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 use crate::serve::audit::AuditEvent;
 use crate::serve::registry::WorkerRole;
@@ -34,11 +35,21 @@ pub async fn handle(
         .close_worker_pane(&state.session_name, &worker.pane_name)
         .await;
 
-    if worker.role == WorkerRole::Coder && worker.worktree_path.is_some() {
+    let cleanup_error = if worker.role == WorkerRole::Coder && worker.worktree_path.is_some() {
         state
             .runtime
             .cleanup_coder_worktree(&state.repo_root, &state.feature_slug, &worker.wp_id)
-            .await?;
+            .await
+            .err()
+    } else {
+        None
+    };
+
+    if worker.role == WorkerRole::Coder
+        && worker.worktree_path.is_some()
+        && let Some(err) = cleanup_error
+    {
+        warn!(wp_id = %worker.wp_id, error = %err, "failed to cleanup coder worktree during despawn");
     }
 
     {
@@ -73,6 +84,7 @@ mod tests {
     struct MockRuntime {
         closed: Mutex<Vec<String>>,
         cleaned: Mutex<Vec<String>>,
+        fail_cleanup: bool,
     }
 
     #[async_trait]
@@ -118,6 +130,11 @@ mod tests {
             wp_id: &str,
         ) -> anyhow::Result<()> {
             self.cleaned.lock().unwrap().push(wp_id.to_string());
+
+            if self.fail_cleanup {
+                anyhow::bail!("simulated cleanup failure");
+            }
+
             Ok(())
         }
     }
@@ -161,6 +178,42 @@ mod tests {
         assert!(out.removed);
         assert!(state.registry.read().await.list().is_empty());
         assert_eq!(runtime.closed.lock().unwrap().len(), 1);
+        assert_eq!(state.audit_log.lock().await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn despawn_coder_cleanup_failure_still_removes_entry() {
+        let runtime = Arc::new(MockRuntime {
+            fail_cleanup: true,
+            ..MockRuntime::default()
+        });
+        let state = make_state(runtime.clone());
+
+        state.registry.write().await.upsert(WorkerEntry {
+            wp_id: "WP08".to_string(),
+            role: WorkerRole::Coder,
+            status: WorkerStatus::Active,
+            pane_name: "WP08-coder".to_string(),
+            worktree_path: Some(PathBuf::from(".worktrees/011-WP08")),
+            prompt: "implement".to_string(),
+            created_at: Utc::now(),
+        });
+
+        let out = handle(
+            DespawnWorkerInput {
+                wp_id: "WP08".to_string(),
+                role: "coder".to_string(),
+                reason: Some("cleanup test".to_string()),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        assert!(out.removed);
+        assert!(state.registry.read().await.list().is_empty());
+        assert_eq!(runtime.cleaned.lock().unwrap().as_slice(), ["WP08"]);
+        assert_eq!(state.audit_log.lock().await.len(), 1);
     }
 
     #[tokio::test]

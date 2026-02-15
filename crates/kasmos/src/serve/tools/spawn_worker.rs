@@ -1,6 +1,7 @@
 use chrono::Utc;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 
 use crate::serve::audit::AuditEvent;
 use crate::serve::registry::{WorkerEntry, WorkerRole, WorkerStatus};
@@ -142,8 +143,10 @@ async fn check_capacity(state: &KasmosServer) -> anyhow::Result<()> {
 }
 
 fn validate_wp_id(wp_id: &str) -> anyhow::Result<()> {
-    let regex = Regex::new(r"^WP\d+$")?;
-    if !regex.is_match(wp_id) {
+    static WP_ID_REGEX: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^WP\d+$").expect("valid wp id regex"));
+
+    if !WP_ID_REGEX.is_match(wp_id) {
         anyhow::bail!("invalid wp_id '{wp_id}', expected format like WP07");
     }
     Ok(())
@@ -258,6 +261,7 @@ mod tests {
         assert!(out.ok);
         assert_eq!(out.worker.pane_name, "WP07-reviewer");
         assert_eq!(state.registry.read().await.list().len(), 1);
+        assert_eq!(state.audit_log.lock().await.len(), 1);
     }
 
     #[tokio::test]

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 use crate::serve::audit::AuditEvent;
 use crate::serve::registry::WorkerStatus;
@@ -31,7 +32,15 @@ pub async fn handle(
             .runtime
             .pane_exists(&state.session_name, &worker.pane_name)
             .await
-            .unwrap_or(false);
+            .unwrap_or_else(|err| {
+                warn!(
+                    wp_id = %worker.wp_id,
+                    pane_name = %worker.pane_name,
+                    error = %err,
+                    "worker pane reconciliation failed; keeping worker active"
+                );
+                true
+            });
 
         if !is_alive {
             let mut registry = state.registry.write().await;
@@ -200,5 +209,6 @@ mod tests {
             .unwrap();
         assert_eq!(out.workers.len(), 1);
         assert_eq!(out.workers[0].status, WorkerStatus::Aborted);
+        assert_eq!(state.audit_log.lock().await.len(), 1);
     }
 }
