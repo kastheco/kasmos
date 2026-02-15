@@ -1,7 +1,7 @@
 ---
 work_package_id: WP05
 title: Repository-Wide Feature Locking
-lane: "for_review"
+lane: "done"
 dependencies: [WP04]
 base_branch: 011-mcp-agent-swarm-orchestration-WP04
 base_commit: 839ff563e7dfa7894ce4b53b37f439478bf887a6
@@ -17,8 +17,8 @@ phase: Phase 2 - Safety, State, and Audit Guarantees
 assignee: ''
 agent: "opencode"
 shell_pid: "3957848"
-review_status: ''
-reviewed_by: ''
+review_status: "approved"
+reviewed_by: "kas"
 history:
 - timestamp: '2026-02-14T16:27:48Z'
   lane: planned
@@ -254,3 +254,4 @@ Enforce single active owner per feature across the repository (FR-020), with sta
 - 2026-02-14T16:27:48Z - system - lane=planned - Prompt generated via /spec-kitty.tasks
 - 2026-02-14T22:40:00Z – opencode – shell_pid=3957848 – lane=doing – Assigned agent via workflow command
 - 2026-02-15T00:52:49Z – opencode – shell_pid=3957848 – lane=for_review – Ready for review
+- 2026-02-15T00:55:14Z – opencode – shell_pid=3957848 – lane=done – Review passed: feature locking with flock, atomic writes, stale detection, 251 tests pass
