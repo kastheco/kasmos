@@ -249,13 +249,13 @@
 **Estimated prompt size**: ~370 lines
 
 ### Included Subtasks
-- [ ] T045 Implement structured message parser in `crates/kasmos/src/serve/messages.rs` with ANSI stripping
-- [ ] T046 Implement `read_messages` cursor semantics (`since_index`, filters, ordered response)
-- [ ] T047 Implement `wait_for_event` bounded blocking loop with timeout and elapsed reporting
-- [ ] T048 Implement fallback path when pane-tracker is unavailable (degraded polling + explicit warning)
-- [ ] T049 Ensure manager decision events are also written to message-log pane for real-time transparency
-- [ ] T050 Add tests for parser edge cases, duplicate protection, timeout semantics, and degraded mode
-- [ ] T075 Implement dashboard pane update as a side effect of `wait_for_event` polling loop: format current worker status table (role, WP, state, elapsed time) and write to dashboard pane via zellij (FR-032)
+- [x] T045 Implement structured message parser in `crates/kasmos/src/serve/messages.rs` with ANSI stripping
+- [x] T046 Implement `read_messages` cursor semantics (`since_index`, filters, ordered response)
+- [x] T047 Implement `wait_for_event` bounded blocking loop with timeout and elapsed reporting
+- [x] T048 Implement fallback path when pane-tracker is unavailable (degraded polling + explicit warning)
+- [x] T049 Ensure manager decision events are also written to message-log pane for real-time transparency
+- [x] T050 Add tests for parser edge cases, duplicate protection, timeout semantics, and degraded mode
+- [x] T075 Implement dashboard pane update as a side effect of `wait_for_event` polling loop: format current worker status table (role, WP, state, elapsed time) and write to dashboard pane via zellij (FR-032)
 
 ### Implementation Notes
 - Message format is fixed: `[KASMOS:<sender>:<event>] <json_payload>`.
