@@ -1,9 +1,12 @@
 ---
 work_package_id: WP08
 title: Message Log Parsing and Event Waiting
-lane: planned
+lane: "doing"
 dependencies:
 - WP04
+base_branch: 011-mcp-agent-swarm-orchestration-WP04
+base_commit: a02df49238a89b34cf57dc156237af2bad587046
+created_at: '2026-02-15T01:41:35.969048+00:00'
 subtasks:
 - T045
 - T046
@@ -15,7 +18,7 @@ subtasks:
 phase: Phase 2 - Safety, State, and Audit Guarantees
 assignee: ''
 agent: ''
-shell_pid: ''
+shell_pid: "210164"
 review_status: ''
 reviewed_by: ''
 history:
