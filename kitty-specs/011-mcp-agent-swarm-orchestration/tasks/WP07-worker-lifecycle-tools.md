@@ -1,7 +1,7 @@
 ---
 work_package_id: WP07
 title: Worker Lifecycle MCP Tools
-lane: "doing"
+lane: "done"
 dependencies: [WP03, WP05, WP06]
 base_branch: 011-mcp-agent-swarm-orchestration-WP05
 base_commit: bc2cea80968e2391d68d55763e35809dc44e582a
@@ -328,3 +328,4 @@ Implement the worker pane lifecycle tools (`spawn_worker`, `despawn_worker`, `li
 - 2026-02-15T05:54:38Z – reviewer – shell_pid=1148797 – lane=planned – Moved to planned
 - 2026-02-15T06:23:04Z – reviewer – shell_pid=1148797 – lane=for_review – Ready for re-review: addressed runtime fallbacks and registry consistency
 - 2026-02-15T06:23:07Z – reviewer – shell_pid=1148797 – lane=doing – Started review via workflow command
+- 2026-02-15T06:24:16Z – reviewer – shell_pid=1148797 – lane=done – Review passed: lifecycle runtime fallbacks and registry consistency verified
