@@ -281,12 +281,12 @@
 **Estimated prompt size**: ~360 lines
 
 ### Included Subtasks
-- [ ] T051 Implement `workflow_status` artifact scan (`spec.md`, `plan.md`, `tasks.md`, task lanes) with fine-grained phase derivation (including optional `clarifying`/`analyzing` planning phases and distinct `releasing` phase) per expanded WorkflowSnapshot model in `data-model.md`
-- [ ] T052 Integrate dependency graph wave computation from parsed WP metadata
-- [ ] T053 Implement `transition_wp` with state-machine validation, actor/reason audit metadata, and lane translation layer (kasmos states `pending/active/for_review/done/rework` -> spec-kitty lanes `planned/doing/for_review/done`; see `data-model.md` Lane Translation Protocol)
-- [ ] T054 Implement advisory lock protection for task-file writes to prevent concurrent corruption
-- [ ] T055 Enforce review-rejection loop cap (default 3) and pause-required outcome
-- [ ] T056 Add tests for phase derivation, transition guards, wave ordering constraints, and concurrent writers
+- [x] T051 Implement `workflow_status` artifact scan (`spec.md`, `plan.md`, `tasks.md`, task lanes) with fine-grained phase derivation (including optional `clarifying`/`analyzing` planning phases and distinct `releasing` phase) per expanded WorkflowSnapshot model in `data-model.md`
+- [x] T052 Integrate dependency graph wave computation from parsed WP metadata
+- [x] T053 Implement `transition_wp` with state-machine validation, actor/reason audit metadata, and lane translation layer (kasmos states `pending/active/for_review/done/rework` -> spec-kitty lanes `planned/doing/for_review/done`; see `data-model.md` Lane Translation Protocol)
+- [x] T054 Implement advisory lock protection for task-file writes to prevent concurrent corruption
+- [x] T055 Enforce review-rejection loop cap (default 3) and pause-required outcome
+- [x] T056 Add tests for phase derivation, transition guards, wave ordering constraints, and concurrent writers
 
 ### Implementation Notes
 - Use task lanes as single source of truth (no parallel shadow state).
