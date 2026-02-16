@@ -71,7 +71,7 @@ pub async fn run() -> Result<()> {
 
     // Install opencode config into repo-level .opencode/opencode.jsonc.
     if let Some(repo_root) = repo_root.as_deref() {
-        match install_opencode_config(repo_root, &config.agent.opencode_binary) {
+        match install_opencode_config(repo_root, &config.agent.opencode_binary, &config) {
             Ok(Some(path)) => {
                 println!("\nInstalled OpenCode config:\n- {}", path.display());
             }
@@ -545,6 +545,7 @@ fn apply_selections_and_fixup(
     config: &mut serde_json::Value,
     selections: &BTreeMap<String, (String, String)>,
     repo_root: &Path,
+    pane_tracker_dir: &str,
 ) {
     if let Some(agents) = config.get_mut("agent").and_then(|a| a.as_object_mut()) {
         for (role, (model, reasoning)) in selections {
@@ -564,6 +565,31 @@ fn apply_selections_and_fixup(
     if let Some(agents) = config.get_mut("agent").and_then(|a| a.as_object_mut()) {
         for (_role, agent_cfg) in agents.iter_mut() {
             fixup_external_directory(agent_cfg, &repo_root);
+        }
+    }
+
+    fixup_mcp_pane_tracker_path(config, pane_tracker_dir);
+}
+
+/// Replace `/opt/zellij-pane-tracker` in mcp.zellij.command with the actual install path.
+fn fixup_mcp_pane_tracker_path(config: &mut serde_json::Value, pane_tracker_dir: &str) {
+    let command = config
+        .get_mut("mcp")
+        .and_then(|m| m.get_mut("zellij"))
+        .and_then(|z| z.get_mut("command"))
+        .and_then(|c| c.as_array_mut());
+
+    let Some(command) = command else {
+        return;
+    };
+
+    for elem in command.iter_mut() {
+        if let Some(s) = elem.as_str()
+            && s.contains("/opt/zellij-pane-tracker")
+        {
+            *elem = serde_json::Value::String(
+                s.replace("/opt/zellij-pane-tracker", pane_tracker_dir),
+            );
         }
     }
 }
@@ -596,7 +622,11 @@ fn fixup_external_directory(agent_cfg: &mut serde_json::Value, repo_root: &str) 
 }
 
 /// Interactively build opencode config from the embedded template.
-fn interactive_opencode_config(repo_root: &Path, opencode_binary: &str) -> Result<String> {
+fn interactive_opencode_config(
+    repo_root: &Path,
+    opencode_binary: &str,
+    kasmos_config: &Config,
+) -> Result<String> {
     let mut config: serde_json::Value = json5::from_str(OPENCODE_CONFIG_TEMPLATE)
         .context("Failed to parse embedded opencode.jsonc template")?;
 
@@ -667,7 +697,26 @@ fn interactive_opencode_config(repo_root: &Path, opencode_binary: &str) -> Resul
         defaults
     };
 
-    apply_selections_and_fixup(&mut config, &selections, repo_root);
+    // Detect and prompt for pane-tracker installation directory
+    let detected_dir = detect_pane_tracker_dir(kasmos_config);
+    let pane_tracker_dir: String = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt("zellij-pane-tracker install directory")
+        .default(detected_dir)
+        .validate_with(|input: &String| -> Result<(), String> {
+            let script = PathBuf::from(input).join("mcp-server/index.ts");
+            if script.is_file() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "mcp-server/index.ts not found at {}/mcp-server/index.ts",
+                    input
+                ))
+            }
+        })
+        .interact_text()
+        .context("Interactive prompt cancelled")?;
+
+    apply_selections_and_fixup(&mut config, &selections, repo_root, &pane_tracker_dir);
 
     serde_json::to_string_pretty(&config).context("Failed to serialize opencode config")
 }
@@ -675,7 +724,11 @@ fn interactive_opencode_config(repo_root: &Path, opencode_binary: &str) -> Resul
 /// Install opencode config into `.opencode/opencode.jsonc`.
 ///
 /// Returns Some(path) when a file is written, None when skipped.
-fn install_opencode_config(repo_root: &Path, opencode_binary: &str) -> Result<Option<PathBuf>> {
+fn install_opencode_config(
+    repo_root: &Path,
+    opencode_binary: &str,
+    kasmos_config: &Config,
+) -> Result<Option<PathBuf>> {
     let config_path = repo_root.join(".opencode/opencode.jsonc");
 
     if config_path.exists() {
@@ -696,14 +749,27 @@ fn install_opencode_config(repo_root: &Path, opencode_binary: &str) -> Result<Op
 
     if !std::io::stdin().is_terminal() {
         println!("  (non-interactive: using template defaults)");
-        let config: serde_json::Value = json5::from_str(OPENCODE_CONFIG_TEMPLATE)
+        let mut config: serde_json::Value = json5::from_str(OPENCODE_CONFIG_TEMPLATE)
             .context("Failed to parse embedded opencode.jsonc template")?;
         let defaults = extract_template_defaults(&config);
-        let path = install_opencode_config_with_values(repo_root, &defaults)?;
-        return Ok(Some(path));
+        let pane_tracker_dir = detect_pane_tracker_dir(kasmos_config);
+        apply_selections_and_fixup(&mut config, &defaults, repo_root, &pane_tracker_dir);
+
+        let contents = serde_json::to_string_pretty(&config)
+            .context("Failed to serialize opencode config")?;
+
+        let config_path = repo_root.join(".opencode/opencode.jsonc");
+        if let Some(parent) = config_path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create {}", parent.display()))?;
+        }
+        std::fs::write(&config_path, contents)
+            .with_context(|| format!("Failed to write {}", config_path.display()))?;
+
+        return Ok(Some(config_path));
     }
 
-    let contents = interactive_opencode_config(repo_root, opencode_binary)?;
+    let contents = interactive_opencode_config(repo_root, opencode_binary, kasmos_config)?;
 
     if let Some(parent) = config_path.parent() {
         std::fs::create_dir_all(parent)
@@ -717,14 +783,17 @@ fn install_opencode_config(repo_root: &Path, opencode_binary: &str) -> Result<Op
 }
 
 /// Install opencode config with explicit per-role model/reasoning selections.
+#[cfg(test)]
 fn install_opencode_config_with_values(
     repo_root: &Path,
     selections: &BTreeMap<String, (String, String)>,
+    kasmos_config: &Config,
 ) -> Result<PathBuf> {
     let mut config: serde_json::Value = json5::from_str(OPENCODE_CONFIG_TEMPLATE)
         .context("Failed to parse embedded opencode.jsonc template")?;
 
-    apply_selections_and_fixup(&mut config, selections, repo_root);
+    let pane_tracker_dir = detect_pane_tracker_dir(kasmos_config);
+    apply_selections_and_fixup(&mut config, selections, repo_root, &pane_tracker_dir);
 
     let contents = serde_json::to_string_pretty(&config)
         .context("Failed to serialize opencode config")?;
@@ -1201,7 +1270,7 @@ mod tests {
         let defaults = extract_template_defaults(&config);
 
         let repo_root = Path::new("/home/alice/myproject");
-        apply_selections_and_fixup(&mut config, &defaults, repo_root);
+        apply_selections_and_fixup(&mut config, &defaults, repo_root, "/opt/zellij-pane-tracker");
 
         let ext_dir = config["agent"]["coder"]["permission"]["external_directory"]
             .as_object()
@@ -1228,7 +1297,7 @@ mod tests {
         );
 
         let repo_root = Path::new("/tmp/test-repo");
-        apply_selections_and_fixup(&mut config, &selections, repo_root);
+        apply_selections_and_fixup(&mut config, &selections, repo_root, "/opt/zellij-pane-tracker");
 
         assert_eq!(
             config["agent"]["coder"]["model"].as_str().expect("coder model"),
@@ -1254,7 +1323,8 @@ mod tests {
         let config_path = repo.path().join(".opencode/opencode.jsonc");
         assert!(!config_path.exists());
 
-        let result = install_opencode_config(repo.path(), "opencode");
+        let kasmos_config = Config::default();
+        let result = install_opencode_config(repo.path(), "opencode", &kasmos_config);
         assert!(result.is_ok(), "install should succeed: {result:?}");
         assert!(config_path.exists(), "config file should exist");
 
@@ -1321,7 +1391,8 @@ mod tests {
             ),
         );
 
-        let path = install_opencode_config_with_values(repo.path(), &selections)
+        let kasmos_config = Config::default();
+        let path = install_opencode_config_with_values(repo.path(), &selections, &kasmos_config)
             .expect("install opencode config with values");
         assert!(path.is_file(), "installed config should be a file");
 
