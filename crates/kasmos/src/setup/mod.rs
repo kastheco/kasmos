@@ -71,7 +71,7 @@ pub async fn run() -> Result<()> {
 
     // Install opencode config into repo-level .opencode/opencode.jsonc.
     if let Some(repo_root) = repo_root.as_deref() {
-        match install_opencode_config(repo_root, &config.agent.opencode_binary) {
+        match install_opencode_config(repo_root, &config.agent.opencode_binary, &config) {
             Ok(Some(path)) => {
                 println!("\nInstalled OpenCode config:\n- {}", path.display());
             }
@@ -142,7 +142,8 @@ fn validate_environment_with_repo(
             "feature/task lifecycle commands",
             "Install spec-kitty and ensure `spec-kitty` is on PATH",
         ),
-        check_pane_tracker(),
+        check_pane_tracker(config),
+        check_zjstatus(),
     ];
 
     if let Some(root) = repo_root.as_deref() {
@@ -177,7 +178,36 @@ fn check_binary(binary: &str, name: &str, required_for: &str, guidance: &str) ->
     }
 }
 
-fn check_pane_tracker() -> CheckResult {
+/// Auto-detect the zellij-pane-tracker installation directory.
+///
+/// Searches common locations for a directory containing `mcp-server/index.ts`.
+/// Returns the first match or falls back to the config default.
+fn detect_pane_tracker_dir(config: &Config) -> String {
+    let candidates = [
+        Some(config.paths.pane_tracker_dir.clone()),
+        Some("/opt/zellij-pane-tracker".to_string()),
+        std::env::var("HOME")
+            .ok()
+            .map(|h| format!("{h}/zellij-pane-tracker")),
+        std::env::var("HOME")
+            .ok()
+            .map(|h| format!("{h}/.local/share/zellij-pane-tracker")),
+        std::env::var("HOME")
+            .ok()
+            .map(|h| format!("{h}/src/zellij-pane-tracker")),
+    ];
+
+    for candidate in candidates.into_iter().flatten() {
+        let mcp_script = PathBuf::from(&candidate).join("mcp-server/index.ts");
+        if mcp_script.is_file() {
+            return candidate;
+        }
+    }
+
+    config.paths.pane_tracker_dir.clone()
+}
+
+fn check_pane_tracker(config: &Config) -> CheckResult {
     let required_for = "pane metadata tracking for agent coordination";
     let plugin_dir = zellij_plugin_dir();
     let plugin_path = plugin_dir.join("zellij-pane-tracker.wasm");
@@ -213,8 +243,58 @@ fn check_pane_tracker() -> CheckResult {
         };
     }
 
+    // After WASM check passes, also validate MCP server exists at configured path
+    let detected_dir = detect_pane_tracker_dir(config);
+    let mcp_script = PathBuf::from(&detected_dir).join("mcp-server/index.ts");
+    if !mcp_script.is_file() {
+        return CheckResult {
+            name: "pane-tracker".to_string(),
+            required_for: required_for.to_string(),
+            description: format!(
+                "{} (MCP server not found at {})",
+                plugin_path.display(),
+                mcp_script.display()
+            ),
+            status: CheckStatus::Warn,
+            guidance: Some(format!(
+                "Set [paths].pane_tracker_dir in kasmos.toml or run `kasmos setup` to configure.\n\
+                 \x20      Expected: {}/mcp-server/index.ts",
+                detected_dir
+            )),
+        };
+    }
+
     CheckResult {
         name: "pane-tracker".to_string(),
+        required_for: required_for.to_string(),
+        description: plugin_path.display().to_string(),
+        status: CheckStatus::Pass,
+        guidance: None,
+    }
+}
+
+fn check_zjstatus() -> CheckResult {
+    let required_for = "status bar in generated Zellij layouts";
+    let plugin_dir = zellij_plugin_dir();
+    let plugin_path = plugin_dir.join("zjstatus.wasm");
+
+    if !plugin_path.is_file() {
+        return CheckResult {
+            name: "zjstatus".to_string(),
+            required_for: required_for.to_string(),
+            description: "zjstatus.wasm not found".to_string(),
+            status: CheckStatus::Fail,
+            guidance: Some(format!(
+                "Install the zjstatus plugin:\n\
+                 \x20      Download from https://github.com/dj95/zjstatus/releases\n\
+                 \x20      mkdir -p {dir} && cp zjstatus.wasm {dir}/",
+                dir = plugin_dir.display()
+            )),
+        };
+    }
+
+    CheckResult {
+        name: "zjstatus".to_string(),
         required_for: required_for.to_string(),
         description: plugin_path.display().to_string(),
         status: CheckStatus::Pass,
@@ -495,6 +575,7 @@ fn apply_selections_and_fixup(
     config: &mut serde_json::Value,
     selections: &BTreeMap<String, (String, String)>,
     repo_root: &Path,
+    pane_tracker_dir: &str,
 ) {
     if let Some(agents) = config.get_mut("agent").and_then(|a| a.as_object_mut()) {
         for (role, (model, reasoning)) in selections {
@@ -514,6 +595,31 @@ fn apply_selections_and_fixup(
     if let Some(agents) = config.get_mut("agent").and_then(|a| a.as_object_mut()) {
         for (_role, agent_cfg) in agents.iter_mut() {
             fixup_external_directory(agent_cfg, &repo_root);
+        }
+    }
+
+    fixup_mcp_pane_tracker_path(config, pane_tracker_dir);
+}
+
+/// Replace `/opt/zellij-pane-tracker` in mcp.zellij.command with the actual install path.
+fn fixup_mcp_pane_tracker_path(config: &mut serde_json::Value, pane_tracker_dir: &str) {
+    let command = config
+        .get_mut("mcp")
+        .and_then(|m| m.get_mut("zellij"))
+        .and_then(|z| z.get_mut("command"))
+        .and_then(|c| c.as_array_mut());
+
+    let Some(command) = command else {
+        return;
+    };
+
+    for elem in command.iter_mut() {
+        if let Some(s) = elem.as_str()
+            && s.contains("/opt/zellij-pane-tracker")
+        {
+            *elem = serde_json::Value::String(
+                s.replace("/opt/zellij-pane-tracker", pane_tracker_dir),
+            );
         }
     }
 }
@@ -546,7 +652,11 @@ fn fixup_external_directory(agent_cfg: &mut serde_json::Value, repo_root: &str) 
 }
 
 /// Interactively build opencode config from the embedded template.
-fn interactive_opencode_config(repo_root: &Path, opencode_binary: &str) -> Result<String> {
+fn interactive_opencode_config(
+    repo_root: &Path,
+    opencode_binary: &str,
+    kasmos_config: &Config,
+) -> Result<String> {
     let mut config: serde_json::Value = json5::from_str(OPENCODE_CONFIG_TEMPLATE)
         .context("Failed to parse embedded opencode.jsonc template")?;
 
@@ -617,7 +727,26 @@ fn interactive_opencode_config(repo_root: &Path, opencode_binary: &str) -> Resul
         defaults
     };
 
-    apply_selections_and_fixup(&mut config, &selections, repo_root);
+    // Detect and prompt for pane-tracker installation directory
+    let detected_dir = detect_pane_tracker_dir(kasmos_config);
+    let pane_tracker_dir: String = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt("zellij-pane-tracker install directory")
+        .default(detected_dir)
+        .validate_with(|input: &String| -> Result<(), String> {
+            let script = PathBuf::from(input).join("mcp-server/index.ts");
+            if script.is_file() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "mcp-server/index.ts not found at {}/mcp-server/index.ts",
+                    input
+                ))
+            }
+        })
+        .interact_text()
+        .context("Interactive prompt cancelled")?;
+
+    apply_selections_and_fixup(&mut config, &selections, repo_root, &pane_tracker_dir);
 
     serde_json::to_string_pretty(&config).context("Failed to serialize opencode config")
 }
@@ -625,7 +754,11 @@ fn interactive_opencode_config(repo_root: &Path, opencode_binary: &str) -> Resul
 /// Install opencode config into `.opencode/opencode.jsonc`.
 ///
 /// Returns Some(path) when a file is written, None when skipped.
-fn install_opencode_config(repo_root: &Path, opencode_binary: &str) -> Result<Option<PathBuf>> {
+fn install_opencode_config(
+    repo_root: &Path,
+    opencode_binary: &str,
+    kasmos_config: &Config,
+) -> Result<Option<PathBuf>> {
     let config_path = repo_root.join(".opencode/opencode.jsonc");
 
     if config_path.exists() {
@@ -646,14 +779,27 @@ fn install_opencode_config(repo_root: &Path, opencode_binary: &str) -> Result<Op
 
     if !std::io::stdin().is_terminal() {
         println!("  (non-interactive: using template defaults)");
-        let config: serde_json::Value = json5::from_str(OPENCODE_CONFIG_TEMPLATE)
+        let mut config: serde_json::Value = json5::from_str(OPENCODE_CONFIG_TEMPLATE)
             .context("Failed to parse embedded opencode.jsonc template")?;
         let defaults = extract_template_defaults(&config);
-        let path = install_opencode_config_with_values(repo_root, &defaults)?;
-        return Ok(Some(path));
+        let pane_tracker_dir = detect_pane_tracker_dir(kasmos_config);
+        apply_selections_and_fixup(&mut config, &defaults, repo_root, &pane_tracker_dir);
+
+        let contents = serde_json::to_string_pretty(&config)
+            .context("Failed to serialize opencode config")?;
+
+        let config_path = repo_root.join(".opencode/opencode.jsonc");
+        if let Some(parent) = config_path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create {}", parent.display()))?;
+        }
+        std::fs::write(&config_path, contents)
+            .with_context(|| format!("Failed to write {}", config_path.display()))?;
+
+        return Ok(Some(config_path));
     }
 
-    let contents = interactive_opencode_config(repo_root, opencode_binary)?;
+    let contents = interactive_opencode_config(repo_root, opencode_binary, kasmos_config)?;
 
     if let Some(parent) = config_path.parent() {
         std::fs::create_dir_all(parent)
@@ -667,14 +813,17 @@ fn install_opencode_config(repo_root: &Path, opencode_binary: &str) -> Result<Op
 }
 
 /// Install opencode config with explicit per-role model/reasoning selections.
+#[cfg(test)]
 fn install_opencode_config_with_values(
     repo_root: &Path,
     selections: &BTreeMap<String, (String, String)>,
+    kasmos_config: &Config,
 ) -> Result<PathBuf> {
     let mut config: serde_json::Value = json5::from_str(OPENCODE_CONFIG_TEMPLATE)
         .context("Failed to parse embedded opencode.jsonc template")?;
 
-    apply_selections_and_fixup(&mut config, selections, repo_root);
+    let pane_tracker_dir = detect_pane_tracker_dir(kasmos_config);
+    apply_selections_and_fixup(&mut config, selections, repo_root, &pane_tracker_dir);
 
     let contents = serde_json::to_string_pretty(&config)
         .context("Failed to serialize opencode config")?;
@@ -978,6 +1127,8 @@ mod tests {
         std::fs::create_dir_all(&plugin_dir).expect("create plugin dir");
         std::fs::write(plugin_dir.join("zellij-pane-tracker.wasm"), b"fake-wasm")
             .expect("write fake wasm");
+        std::fs::write(plugin_dir.join("zjstatus.wasm"), b"fake-wasm")
+            .expect("write fake zjstatus wasm");
         std::fs::write(
             zellij_config.join("config.kdl"),
             "load_plugins {\n    \"file:~/.config/zellij/plugins/zellij-pane-tracker.wasm\"\n}\n",
@@ -994,14 +1145,23 @@ mod tests {
         std::fs::write(repo.path().join(".opencode/opencode.jsonc"), "{}")
             .expect("write fake opencode config");
 
+        // Create fake pane-tracker MCP server directory
+        let pane_tracker_dir = repo.path().join("pane-tracker");
+        let mcp_server_dir = pane_tracker_dir.join("mcp-server");
+        std::fs::create_dir_all(&mcp_server_dir).expect("create mcp-server dir");
+        std::fs::write(mcp_server_dir.join("index.ts"), "// stub")
+            .expect("write fake mcp server script");
+
         unsafe {
             std::env::set_var("PATH", bin.display().to_string());
             std::env::set_var("ZELLIJ_CONFIG_DIR", zellij_config.display().to_string());
             std::env::set_current_dir(repo.path()).expect("set cwd");
         }
 
-        let outcome = std::panic::catch_unwind(|| {
-            let config = Config::default();
+        let pane_tracker_dir_str = pane_tracker_dir.display().to_string();
+        let outcome = std::panic::catch_unwind(move || {
+            let mut config = Config::default();
+            config.paths.pane_tracker_dir = pane_tracker_dir_str;
             let result = validate_environment(&config).expect("validate environment");
 
             assert!(result.all_passed);
@@ -1016,6 +1176,12 @@ mod tests {
                     .checks
                     .iter()
                     .any(|c| c.name == "pane-tracker" && c.status == CheckStatus::Pass)
+            );
+            assert!(
+                result
+                    .checks
+                    .iter()
+                    .any(|c| c.name == "zjstatus" && c.status == CheckStatus::Pass)
             );
             assert!(
                 result
@@ -1142,7 +1308,7 @@ mod tests {
         let defaults = extract_template_defaults(&config);
 
         let repo_root = Path::new("/home/alice/myproject");
-        apply_selections_and_fixup(&mut config, &defaults, repo_root);
+        apply_selections_and_fixup(&mut config, &defaults, repo_root, "/opt/zellij-pane-tracker");
 
         let ext_dir = config["agent"]["coder"]["permission"]["external_directory"]
             .as_object()
@@ -1169,7 +1335,7 @@ mod tests {
         );
 
         let repo_root = Path::new("/tmp/test-repo");
-        apply_selections_and_fixup(&mut config, &selections, repo_root);
+        apply_selections_and_fixup(&mut config, &selections, repo_root, "/opt/zellij-pane-tracker");
 
         assert_eq!(
             config["agent"]["coder"]["model"].as_str().expect("coder model"),
@@ -1195,7 +1361,8 @@ mod tests {
         let config_path = repo.path().join(".opencode/opencode.jsonc");
         assert!(!config_path.exists());
 
-        let result = install_opencode_config(repo.path(), "opencode");
+        let kasmos_config = Config::default();
+        let result = install_opencode_config(repo.path(), "opencode", &kasmos_config);
         assert!(result.is_ok(), "install should succeed: {result:?}");
         assert!(config_path.exists(), "config file should exist");
 
@@ -1262,7 +1429,8 @@ mod tests {
             ),
         );
 
-        let path = install_opencode_config_with_values(repo.path(), &selections)
+        let kasmos_config = Config::default();
+        let path = install_opencode_config_with_values(repo.path(), &selections, &kasmos_config)
             .expect("install opencode config with values");
         assert!(path.is_file(), "installed config should be a file");
 
@@ -1324,6 +1492,127 @@ mod tests {
 
         let failures = launch::preflight_checks(&config).expect_err("preflight should fail");
         assert!(failures.iter().any(|f| f.dependency == "zellij"));
+    }
+
+    #[test]
+    fn zjstatus_check_passes_when_present() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let old_zellij_config = std::env::var("ZELLIJ_CONFIG_DIR").ok();
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let plugin_dir = tmp.path().join("plugins");
+        std::fs::create_dir_all(&plugin_dir).expect("create plugins dir");
+        std::fs::write(plugin_dir.join("zjstatus.wasm"), b"fake-wasm")
+            .expect("write fake zjstatus");
+
+        unsafe {
+            std::env::set_var("ZELLIJ_CONFIG_DIR", tmp.path().display().to_string());
+        }
+
+        let result = check_zjstatus();
+
+        unsafe {
+            if let Some(dir) = old_zellij_config {
+                std::env::set_var("ZELLIJ_CONFIG_DIR", dir);
+            } else {
+                std::env::remove_var("ZELLIJ_CONFIG_DIR");
+            }
+        }
+
+        assert_eq!(result.status, CheckStatus::Pass);
+    }
+
+    #[test]
+    fn zjstatus_check_fails_when_missing() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let old_zellij_config = std::env::var("ZELLIJ_CONFIG_DIR").ok();
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        // No plugins directory -- zjstatus.wasm won't exist.
+
+        unsafe {
+            std::env::set_var("ZELLIJ_CONFIG_DIR", tmp.path().display().to_string());
+        }
+
+        let result = check_zjstatus();
+
+        unsafe {
+            if let Some(dir) = old_zellij_config {
+                std::env::set_var("ZELLIJ_CONFIG_DIR", dir);
+            } else {
+                std::env::remove_var("ZELLIJ_CONFIG_DIR");
+            }
+        }
+
+        assert_eq!(result.status, CheckStatus::Fail);
+        assert!(
+            result
+                .guidance
+                .as_deref()
+                .unwrap_or("")
+                .contains("zjstatus"),
+            "guidance should mention zjstatus"
+        );
+    }
+
+    #[test]
+    fn fixup_mcp_pane_tracker_path_replaces_opt() {
+        let mut config: serde_json::Value = serde_json::json!({
+            "mcp": {
+                "zellij": {
+                    "command": [
+                        "bun",
+                        "run",
+                        "/opt/zellij-pane-tracker/mcp-server/index.ts"
+                    ]
+                }
+            }
+        });
+
+        fixup_mcp_pane_tracker_path(&mut config, "/home/user/zellij-pane-tracker");
+
+        let command = config["mcp"]["zellij"]["command"]
+            .as_array()
+            .expect("command should be an array");
+        assert_eq!(
+            command[2].as_str().expect("third element"),
+            "/home/user/zellij-pane-tracker/mcp-server/index.ts"
+        );
+    }
+
+    #[test]
+    fn fixup_mcp_pane_tracker_path_noop_when_no_mcp_section() {
+        let mut config: serde_json::Value = serde_json::json!({"agent": {}});
+
+        // Should not panic.
+        fixup_mcp_pane_tracker_path(&mut config, "/home/user/zellij-pane-tracker");
+
+        // Config unchanged -- still has agent key and no mcp key.
+        assert!(config.get("agent").is_some());
+        assert!(config.get("mcp").is_none());
+    }
+
+    #[test]
+    fn detect_pane_tracker_dir_finds_valid_path() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let mcp_dir = tmp.path().join("mcp-server");
+        std::fs::create_dir_all(&mcp_dir).expect("create mcp-server dir");
+        std::fs::write(mcp_dir.join("index.ts"), "// stub").expect("write index.ts");
+
+        let mut config = Config::default();
+        config.paths.pane_tracker_dir = tmp.path().display().to_string();
+
+        let detected = detect_pane_tracker_dir(&config);
+        assert_eq!(detected, tmp.path().display().to_string());
+    }
+
+    #[test]
+    fn detect_pane_tracker_dir_falls_back_to_default() {
+        let config = Config::default();
+        // The default /opt/zellij-pane-tracker won't have mcp-server/index.ts
+        // in a test environment, so detect should fall back to the config default.
+        let detected = detect_pane_tracker_dir(&config);
+        assert_eq!(detected, config.paths.pane_tracker_dir);
     }
 
     fn create_executable(path: &Path) {

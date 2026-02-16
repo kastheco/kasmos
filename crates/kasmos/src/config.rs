@@ -78,6 +78,8 @@ pub struct PathsConfig {
     pub spec_kitty_binary: String,
     /// Feature specs root path.
     pub specs_root: String,
+    /// Installation directory of zellij-pane-tracker (contains mcp-server/).
+    pub pane_tracker_dir: String,
 }
 
 /// Zellij session/layout settings.
@@ -139,6 +141,7 @@ impl Default for PathsConfig {
             zellij_binary: "zellij".to_string(),
             spec_kitty_binary: "spec-kitty".to_string(),
             specs_root: "kitty-specs".to_string(),
+            pane_tracker_dir: "/opt/zellij-pane-tracker".to_string(),
         }
     }
 }
@@ -252,6 +255,9 @@ impl Config {
         }
         if let Ok(val) = std::env::var("KASMOS_PATHS_SPECS_ROOT") {
             self.paths.specs_root = val;
+        }
+        if let Ok(val) = std::env::var("KASMOS_PATHS_PANE_TRACKER_DIR") {
+            self.paths.pane_tracker_dir = val;
         }
 
         if let Ok(val) = std::env::var("KASMOS_SESSION_SESSION_NAME") {
@@ -374,6 +380,9 @@ impl Config {
             }
             if let Some(v) = paths.specs_root {
                 self.paths.specs_root = v;
+            }
+            if let Some(v) = paths.pane_tracker_dir {
+                self.paths.pane_tracker_dir = v;
             }
         }
 
@@ -563,6 +572,7 @@ struct PathsConfigFile {
     zellij_binary: Option<String>,
     spec_kitty_binary: Option<String>,
     specs_root: Option<String>,
+    pane_tracker_dir: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -723,5 +733,54 @@ max_parallel_workers = 2
         }
 
         assert_eq!(config.agent.max_parallel_workers, 9);
+    }
+
+    #[test]
+    fn pane_tracker_dir_default() {
+        let config = Config::default();
+        assert_eq!(config.paths.pane_tracker_dir, "/opt/zellij-pane-tracker");
+    }
+
+    #[test]
+    fn pane_tracker_dir_from_toml() {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let path = tmp.path().join("kasmos.toml");
+        std::fs::write(
+            &path,
+            "[paths]\npane_tracker_dir = \"/home/user/zellij-pane-tracker\"\n",
+        )
+        .expect("write toml");
+
+        let mut config = Config::default();
+        config.load_from_file(&path).expect("load toml");
+
+        assert_eq!(
+            config.paths.pane_tracker_dir,
+            "/home/user/zellij-pane-tracker"
+        );
+    }
+
+    #[test]
+    fn pane_tracker_dir_from_env() {
+        let _guard = ENV_TEST_LOCK.lock().expect("env lock");
+
+        let old = std::env::var("KASMOS_PATHS_PANE_TRACKER_DIR").ok();
+
+        unsafe {
+            std::env::set_var("KASMOS_PATHS_PANE_TRACKER_DIR", "/custom/tracker");
+        }
+
+        let mut config = Config::default();
+        config.load_from_env().expect("load env");
+
+        unsafe {
+            if let Some(prev) = old {
+                std::env::set_var("KASMOS_PATHS_PANE_TRACKER_DIR", prev);
+            } else {
+                std::env::remove_var("KASMOS_PATHS_PANE_TRACKER_DIR");
+            }
+        }
+
+        assert_eq!(config.paths.pane_tracker_dir, "/custom/tracker");
     }
 }
