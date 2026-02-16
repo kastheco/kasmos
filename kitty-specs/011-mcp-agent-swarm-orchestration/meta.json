@@ -1,10 +1,24 @@
 {
+  "accept_commit": null,
+  "acceptance_history": [
+    {
+      "accepted_at": "2026-02-16T03:30:09Z",
+      "accepted_by": "release",
+      "accepted_from_commit": "e7d0cdcd76513c4ca7bbf4a636c6f42fd8f84cad",
+      "branch": "main",
+      "mode": "pr"
+    }
+  ],
+  "acceptance_mode": "pr",
+  "accepted_at": "2026-02-16T03:30:09Z",
+  "accepted_by": "release",
+  "accepted_from_commit": "e7d0cdcd76513c4ca7bbf4a636c6f42fd8f84cad",
+  "created_at": "2026-02-13T18:00:00Z",
   "feature_number": "011",
-  "slug": "011-mcp-agent-swarm-orchestration",
   "friendly_name": "MCP Agent Swarm Orchestration",
   "mission": "software-dev",
+  "slug": "011-mcp-agent-swarm-orchestration",
   "source_description": "Pivot kasmos from TUI-based orchestrator to MCP-powered agent swarm model. kasmos becomes bootstrapper + launcher + local MCP server. Manager agent orchestrates workers via kasmos MCP tools. Workers communicate status via zellij MCP message-log pane. Dynamic Zellij swap layouts for worker grid management. Hub TUI preserved for future reintegration.",
-  "created_at": "2026-02-13T18:00:00Z",
   "target_branch": "main",
   "vcs": "git"
 }
