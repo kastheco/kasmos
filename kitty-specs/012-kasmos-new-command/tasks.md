@@ -84,7 +84,7 @@
 **Implementation sequence**: All tests are independent (parallel). Each test function stands alone.
 
 **Included subtasks**:
-- [ ] T008: Test pre-flight validation (missing/present binaries)
+- [x] T008: Test pre-flight validation (missing/present binaries)
 - [ ] T009: Test prompt construction (instruction present, description handling)
 - [ ] T010: Test prompt degradation (missing .kittify/memory/)
 - [ ] T011: Test CLI parsing for `Commands::New`
