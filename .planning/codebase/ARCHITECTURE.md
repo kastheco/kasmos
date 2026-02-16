@@ -1,0 +1,236 @@
+# Architecture
+
+**Analysis Date:** 2026-02-16
+
+## Pattern Overview
+
+**Overall:** MCP-first CLI orchestrator with event-driven wave engine
+
+kasmos is a single Rust binary (one workspace crate) that orchestrates AI coding agents across Zellij terminal panes. It has two primary runtime modes:
+
+1. **Launch mode** (`kasmos [PREFIX]`) - Resolves a feature, generates a KDL layout, and bootstraps a Zellij session with a manager agent pane, message-log pane, and worker area.
+2. **Serve mode** (`kasmos serve`) - Runs as an MCP stdio server, spawned by the manager agent, exposing tools for worker lifecycle and workflow status.
+
+**Key Characteristics:**
+- MCP server is the primary control plane (not TUI) -- the manager agent calls MCP tools to spawn/despawn workers, read messages, and transition WP states
+- Wave-based execution model: work packages are grouped into dependency waves, launched in parallel within each wave
+- File-based communication: agents write structured `[KASMOS:event:sender]` messages to a shared message-log pane; the detector watches spec-kitty task file frontmatter for lane transitions
+- Legacy TUI modules exist behind `#[cfg(feature = "tui")]` feature gate but are not wired into the default CLI surface
+
+## Layers
+
+**CLI Layer:**
+- Purpose: Parse user commands, dispatch to appropriate subsystem
+- Location: `crates/kasmos/src/main.rs`
+- Contains: Clap-derived `Cli` struct, `Commands` enum, tokio main entrypoint
+- Depends on: lib.rs re-exports, `launch`, `serve`, `setup`, `list_specs`, `status`
+- Used by: User at terminal
+
+**MCP Server Layer:**
+- Purpose: Expose orchestration tools to the manager agent via Model Context Protocol
+- Location: `crates/kasmos/src/serve/`
+- Contains: `KasmosServer` struct implementing `ServerHandler`, tool handlers, worker registry, message parser, audit writer, feature lock manager
+- Depends on: `rmcp` crate, `config`, `parser`, `feature_arg`, `serve::registry`, `serve::messages`, `serve::lock`, `serve::audit`
+- Used by: Manager agent (via stdio MCP transport)
+
+**Launch Layer:**
+- Purpose: Feature resolution, preflight validation, layout generation, Zellij session bootstrap
+- Location: `crates/kasmos/src/launch/`
+- Contains: Feature detection (`detect.rs`), KDL layout generation (`layout.rs`), Zellij session/tab creation (`session.rs`)
+- Depends on: `config`, `setup`, `prompt`, `serve::lock`
+- Used by: CLI layer (bare `kasmos` or `kasmos PREFIX`)
+
+**Wave Engine Layer:**
+- Purpose: Drive work package lifecycle through dependency-ordered waves
+- Location: `crates/kasmos/src/engine.rs`
+- Contains: `WaveEngine` struct with event loop processing completion events and engine actions
+- Depends on: `types`, `graph`, `detector`, `command_handlers`, `persistence`, `parser`
+- Used by: Legacy TUI orchestrator (`start.rs`), potentially future MCP-driven orchestration
+
+**State Machine Layer:**
+- Purpose: Enforce valid state transitions for work packages and orchestration runs
+- Location: `crates/kasmos/src/state_machine.rs`, `crates/kasmos/src/types.rs`
+- Contains: `WPState` and `RunState` enums with `can_transition_to()` and `transition()` methods
+- Depends on: `error`
+- Used by: `engine`, `command_handlers`, `serve::tools::transition_wp`
+
+**Zellij Abstraction Layer:**
+- Purpose: Abstract all Zellij CLI interactions behind a trait for testability
+- Location: `crates/kasmos/src/zellij.rs`, `crates/kasmos/src/session.rs`
+- Contains: `ZellijCli` trait, `RealZellijCli` implementation, `SessionManager` for pane tracking
+- Depends on: `config`, `error`
+- Used by: `launch::session`, `review_coordinator`, `shutdown`, legacy `start.rs`
+
+**Configuration Layer:**
+- Purpose: Load and validate runtime configuration with multi-source precedence
+- Location: `crates/kasmos/src/config.rs`
+- Contains: `Config` struct with sectioned TOML, env var overrides, validation
+- Precedence: defaults -> `kasmos.toml` (discovered by walking up from cwd) -> `KASMOS_*` env vars
+- Used by: All subsystems
+
+**Detection Layer:**
+- Purpose: Watch filesystem for work package completion signals
+- Location: `crates/kasmos/src/detector.rs`
+- Contains: `CompletionDetector` using `notify` crate, debounced/deduplicated event pipeline
+- Detection hierarchy: (1) YAML frontmatter lane transition, (2) git activity, (3) file markers (.done, .complete, DONE)
+- Used by: `engine` (receives `CompletionEvent` via mpsc channel)
+
+## Data Flow
+
+**Launch Flow:**
+
+1. User runs `kasmos 011`
+2. `main.rs` parses args, calls `kasmos::launch::run(Some("011"))`
+3. `launch::detect` resolves prefix "011" to a feature slug and directory via `kitty-specs/`
+4. `launch::preflight_checks()` validates zellij, opencode, spec-kitty binaries via `setup::validate_environment()`
+5. `serve::lock::FeatureLockManager` acquires exclusive feature lock (`.kasmos/locks/{slug}.lock`)
+6. `prompt::RolePromptBuilder` constructs the manager agent's initial prompt
+7. `launch::layout::generate_layout()` produces KDL layout string with manager pane, msg-log pane, dashboard pane, worker area
+8. `launch::session::bootstrap()` writes layout to temp file, creates/attaches Zellij session
+
+**MCP Serve Flow:**
+
+1. Manager agent spawns `kasmos serve` as MCP subprocess (stdio transport)
+2. `KasmosServer::new()` loads config, infers feature slug, initializes audit writer
+3. Manager agent calls MCP tools:
+   - `workflow_status` - reads task file frontmatter, lock state, wave status
+   - `spawn_worker` - registers worker in `WorkerRegistry`, builds prompt, writes to audit log
+   - `read_messages` - scrapes message-log pane via `zellij action dump-pane`, parses `[KASMOS:event:sender]` format
+   - `wait_for_event` - polls message-log pane until matching event appears or timeout
+   - `transition_wp` - validates and applies lane transitions in task file frontmatter
+   - `list_workers` / `despawn_worker` / `list_features` / `infer_feature`
+4. All tool invocations are audit-logged to `.kasmos/audit/{slug}-audit.jsonl`
+
+**Wave Engine Event Loop (legacy TUI path):**
+
+1. `WaveEngine::run()` initializes dependency graph, reconciles pre-seeded states
+2. Launches initial wave (wave 0 WPs with no unmet dependencies)
+3. `tokio::select!` loop processes:
+   - `CompletionEvent` from detector -> updates WP state, launches newly eligible WPs
+   - `EngineAction` from command handler -> applies operator commands (restart, pause, approve, reject, etc.)
+4. After each event: persists state to `.kasmos/state.json`, broadcasts to TUI via `watch` channel
+5. Loop exits when all WPs are terminal (Completed or Failed) or run is Aborted
+
+**Message Protocol:**
+
+Workers and the manager communicate through a shared `msg-log` Zellij pane using structured messages:
+```
+[KASMOS:EVENT_TYPE:SENDER_ID] optional payload text
+```
+Event types: `STARTED`, `PROGRESS`, `DONE`, `ERROR`, `REVIEW_PASS`, `REVIEW_REJECT`, `NEEDS_INPUT`, `SPAWN`, `DESPAWN`
+
+**State Management:**
+- In-memory: `OrchestrationRun` behind `Arc<RwLock<>>` for engine
+- Persisted: atomic JSON writes to `.kasmos/state.json` via `StatePersister`
+- MCP server: `WorkerRegistry` (in-memory HashMap keyed by `wp_id:role`)
+- Feature locks: file-based advisory locks at `.kasmos/locks/{slug}.lock` with heartbeat
+
+## Key Abstractions
+
+**OrchestrationRun:**
+- Purpose: Root aggregate for an entire orchestration session
+- Location: `crates/kasmos/src/types.rs`
+- Contains: `work_packages: Vec<WorkPackage>`, `waves: Vec<Wave>`, `state: RunState`, `config: Config`
+- Pattern: Shared via `Arc<RwLock<OrchestrationRun>>`
+
+**WorkPackage:**
+- Purpose: Unit of work assigned to an agent pane
+- Location: `crates/kasmos/src/types.rs`
+- Fields: `id`, `title`, `state: WPState`, `dependencies`, `wave`, `pane_id`, `worktree_path`, `prompt_path`, `failure_count`
+- State machine: `Pending -> Active -> ForReview -> Completed` (with Failed/Paused branches)
+
+**WaveEngine:**
+- Purpose: Core event loop driving work package progression
+- Location: `crates/kasmos/src/engine.rs`
+- Pattern: Receives events via mpsc channels, emits launch events, manages capacity queue
+- Builder pattern: `.with_persister()`, `.with_watch_tx()`, `.set_review_tx()`
+
+**ZellijCli Trait:**
+- Purpose: Abstraction for all Zellij CLI operations
+- Location: `crates/kasmos/src/zellij.rs`
+- Implementations: `RealZellijCli` (production), `MockZellijCli` (tests)
+- Adaptations: Zellij 0.41+ has no `list-panes` or `focus-pane-by-name` -- pane tracking is internal
+
+**DependencyGraph:**
+- Purpose: Track forward/reverse work package dependencies, compute waves
+- Location: `crates/kasmos/src/graph.rs`
+- Methods: `deps_satisfied()`, `get_dependents()`, `topological_sort()`, `compute_waves()`
+- Algorithm: Kahn's algorithm for topological sort, BFS for wave computation
+
+**SessionController Trait:**
+- Purpose: Abstract pane focus/zoom operations for testability
+- Location: `crates/kasmos/src/command_handlers.rs`
+- Implementations: `SessionManager` (production via `session.rs`), `MockSessionController` (tests)
+
+**KasmosServer:**
+- Purpose: MCP server exposing orchestration tools
+- Location: `crates/kasmos/src/serve/mod.rs`
+- Pattern: `rmcp` `ServerHandler` + `ToolRouter` with `#[tool]` attribute macros
+- 9 registered tools matching the CLI contract
+
+**RolePromptBuilder:**
+- Purpose: Construct role-specific prompts with context boundaries
+- Location: `crates/kasmos/src/prompt.rs`
+- Roles: Manager, Planner, Coder, Reviewer, Release
+- Each role has a `ContextBoundary` defining which project artifacts it can access
+- Templates loaded from `config/profiles/kasmos/agent/`
+
+## Entry Points
+
+**Binary Entrypoint:**
+- Location: `crates/kasmos/src/main.rs`
+- Triggers: `cargo run -p kasmos -- <args>` or installed `kasmos` binary
+- Responsibilities: Parse CLI, init logging, dispatch to `launch::run()`, `serve::run()`, `setup::run()`, `list_specs::run()`, or `status::run()`
+
+**MCP Server Entry:**
+- Location: `crates/kasmos/src/serve/mod.rs::run()`
+- Triggers: `kasmos serve` (spawned by manager agent as MCP subprocess)
+- Responsibilities: Load config, create `KasmosServer`, bind to stdio transport, serve until quit
+
+**Library Entry:**
+- Location: `crates/kasmos/src/lib.rs`
+- Re-exports all public types and functions for use by `main.rs` and tests
+
+## Error Handling
+
+**Strategy:** Hierarchical error types with `thiserror` + `anyhow` for context
+
+**Error Hierarchy:**
+- `KasmosError` (top-level enum in `crates/kasmos/src/error.rs`)
+  - `Config(ConfigError)` - missing files, invalid values, parse failures
+  - `Zellij(ZellijError)` - binary not found, session exists/missing, pane operations
+  - `SpecParser(SpecParserError)` - missing feature dirs, invalid frontmatter, circular deps
+  - `State(StateError)` - invalid transitions, corrupted/stale state files
+  - `Pane(PaneError)` - pane not found, crashed, prompt injection failed
+  - `Wave(WaveError)` - no eligible WPs, WP not found, capacity exceeded
+  - `Layout(LayoutError)` - KDL generation/validation failures
+  - `Detector(DetectorError)` - watcher errors, read errors, YAML errors
+  - `Io(std::io::Error)` - transparent I/O errors
+  - `Other(anyhow::Error)` - catch-all
+
+**Patterns:**
+- All public functions return `crate::error::Result<T>` (alias for `std::result::Result<T, KasmosError>`)
+- MCP tool handlers convert domain errors to `rmcp::model::ErrorData` with `internal_error()` or `map_transition_error()`
+- Launch flow uses `anyhow::Result` with `.context()` for user-facing error messages
+- Guard clauses with early returns are used consistently throughout the codebase
+
+## Cross-Cutting Concerns
+
+**Logging:** `tracing` + `tracing-subscriber` with env-filter. Initialized via `kasmos::init_logging()` in `crates/kasmos/src/logging.rs`. Log levels: `info` for state transitions, `debug` for internal operations, `warn` for recoverable errors, `error` for failures.
+
+**Validation:** Multi-layer validation:
+- Config validation in `Config::validate()` with range checks
+- Identifier validation in `zellij::validate_identifier()` (alphanumeric + hyphens + underscores only)
+- Shell metacharacter rejection in `zellij::contains_shell_metacharacters()`
+- State machine transition validation in `state_machine.rs`
+- YAML frontmatter validation in `parser.rs`
+
+**Authentication:** Not applicable -- kasmos is a local orchestrator. External tool auth (OpenCode API keys, etc.) is handled by the respective tools' config.
+
+**Persistence:** Atomic JSON file writes via `StatePersister` (write to `.tmp`, then rename). Feature locks use file-based advisory locking with heartbeat.
+
+**Audit:** JSONL audit log per feature at `.kasmos/audit/{slug}-audit.jsonl`. Configurable metadata-only vs full-payload mode. Automatic rotation by size and age.
+
+---
+
+*Architecture analysis: 2026-02-16*
