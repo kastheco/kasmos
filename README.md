@@ -147,6 +147,44 @@ Kasmos loads config from `kasmos.toml` in the repo root, with `KASMOS_*` environ
 - Manager/worker agents communicate through the message log protocol
 - Workflow and lock state are derived from spec-kitty artifacts plus lock files
 
+## Dependencies
+
+kasmos requires these external tools at runtime. `kasmos setup` validates most of these automatically.
+
+### Required binaries
+
+| Tool | Purpose | Install |
+|------|---------|---------|
+| `zellij` | Terminal multiplexer hosting all sessions/panes | [zellij.dev](https://zellij.dev/documentation/installation) |
+| `ocx` / OpenCode | AI agent launcher | Project docs |
+| `spec-kitty` | Feature/task lifecycle management | [spec-kitty docs](https://github.com/theslyprofessor/spec-kitty) |
+| `git` | Repository and worktree management | System package manager |
+| `bun` | Runs the pane-tracker MCP server | [bun.sh](https://bun.sh) |
+
+### Required Zellij plugins
+
+Install to `~/.config/zellij/plugins/`:
+
+| Plugin | Purpose | Source |
+|--------|---------|--------|
+| `zjstatus.wasm` | Status bar in generated layouts | [github.com/dj95/zjstatus](https://github.com/dj95/zjstatus/releases) |
+| `zellij-pane-tracker.wasm` | Pane metadata tracking for agent coordination | [github.com/theslyprofessor/zellij-pane-tracker](https://github.com/theslyprofessor/zellij-pane-tracker) |
+
+### Companion projects
+
+| Project | Purpose | Default location |
+|---------|---------|-----------------|
+| zellij-pane-tracker (repo checkout) | MCP server for inter-agent pane communication | Configurable via `kasmos.toml` `[paths].pane_tracker_dir` |
+
+> **Note:** `kasmos setup` auto-detects the pane-tracker installation directory and writes it into `.opencode/opencode.jsonc`. Override with `[paths].pane_tracker_dir` in `kasmos.toml` or `KASMOS_PATHS_PANE_TRACKER_DIR` env var.
+
+## Legacy TUI Feature Gate
+
+- Default builds use the MCP-first command surface
+- Legacy TUI modules are preserved behind feature flag `tui`
+- Build legacy path with `cargo build --features tui`
+- Test legacy path with `cargo test --features tui`
+
 ## Build And Test
 
 - `cargo build`

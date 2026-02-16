@@ -74,6 +74,15 @@
 - MCP config: Also registered as MCP server in `config/profiles/kasmos/opencode.jsonc`
 - Fallback: If unavailable, falls back to `zellij action dump-screen` (degraded mode)
 
+**zjstatus (Zellij Status Bar Plugin):**
+- Purpose: Renders the status bar in all kasmos-generated Zellij layouts
+- Plugin file: `~/.config/zellij/plugins/zjstatus.wasm`
+- Source: https://github.com/dj95/zjstatus
+- Integration: Hardcoded in `crates/kasmos/src/layout.rs` (`build_tab_template()`)
+- Setup validation: `check_zjstatus()` in `crates/kasmos/src/setup/mod.rs`
+- Configuration: Rose Pine Moon theme with zjstatus-hints pipe integration
+- Features used: mode indicators, tab styles, datetime, pipe format (zjstatus_hints)
+
 **Git:**
 - Purpose: Repository inspection, worktree management, branch discovery
 - Binary: Hardcoded `"git"` in `crates/kasmos/src/git.rs`
