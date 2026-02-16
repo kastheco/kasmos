@@ -142,7 +142,7 @@ fn validate_environment_with_repo(
             "feature/task lifecycle commands",
             "Install spec-kitty and ensure `spec-kitty` is on PATH",
         ),
-        check_pane_tracker(),
+        check_pane_tracker(config),
     ];
 
     if let Some(root) = repo_root.as_deref() {
@@ -177,7 +177,36 @@ fn check_binary(binary: &str, name: &str, required_for: &str, guidance: &str) ->
     }
 }
 
-fn check_pane_tracker() -> CheckResult {
+/// Auto-detect the zellij-pane-tracker installation directory.
+///
+/// Searches common locations for a directory containing `mcp-server/index.ts`.
+/// Returns the first match or falls back to the config default.
+fn detect_pane_tracker_dir(config: &Config) -> String {
+    let candidates = [
+        Some(config.paths.pane_tracker_dir.clone()),
+        Some("/opt/zellij-pane-tracker".to_string()),
+        std::env::var("HOME")
+            .ok()
+            .map(|h| format!("{h}/zellij-pane-tracker")),
+        std::env::var("HOME")
+            .ok()
+            .map(|h| format!("{h}/.local/share/zellij-pane-tracker")),
+        std::env::var("HOME")
+            .ok()
+            .map(|h| format!("{h}/src/zellij-pane-tracker")),
+    ];
+
+    for candidate in candidates.into_iter().flatten() {
+        let mcp_script = PathBuf::from(&candidate).join("mcp-server/index.ts");
+        if mcp_script.is_file() {
+            return candidate;
+        }
+    }
+
+    config.paths.pane_tracker_dir.clone()
+}
+
+fn check_pane_tracker(config: &Config) -> CheckResult {
     let required_for = "pane metadata tracking for agent coordination";
     let plugin_dir = zellij_plugin_dir();
     let plugin_path = plugin_dir.join("zellij-pane-tracker.wasm");
@@ -210,6 +239,27 @@ fn check_pane_tracker() -> CheckResult {
                  \x20      \"file:~/.config/zellij/plugins/zellij-pane-tracker.wasm\""
                     .to_string(),
             ),
+        };
+    }
+
+    // After WASM check passes, also validate MCP server exists at configured path
+    let detected_dir = detect_pane_tracker_dir(config);
+    let mcp_script = PathBuf::from(&detected_dir).join("mcp-server/index.ts");
+    if !mcp_script.is_file() {
+        return CheckResult {
+            name: "pane-tracker".to_string(),
+            required_for: required_for.to_string(),
+            description: format!(
+                "{} (MCP server not found at {})",
+                plugin_path.display(),
+                mcp_script.display()
+            ),
+            status: CheckStatus::Warn,
+            guidance: Some(format!(
+                "Set [paths].pane_tracker_dir in kasmos.toml or run `kasmos setup` to configure.\n\
+                 \x20      Expected: {}/mcp-server/index.ts",
+                detected_dir
+            )),
         };
     }
 
@@ -994,14 +1044,23 @@ mod tests {
         std::fs::write(repo.path().join(".opencode/opencode.jsonc"), "{}")
             .expect("write fake opencode config");
 
+        // Create fake pane-tracker MCP server directory
+        let pane_tracker_dir = repo.path().join("pane-tracker");
+        let mcp_server_dir = pane_tracker_dir.join("mcp-server");
+        std::fs::create_dir_all(&mcp_server_dir).expect("create mcp-server dir");
+        std::fs::write(mcp_server_dir.join("index.ts"), "// stub")
+            .expect("write fake mcp server script");
+
         unsafe {
             std::env::set_var("PATH", bin.display().to_string());
             std::env::set_var("ZELLIJ_CONFIG_DIR", zellij_config.display().to_string());
             std::env::set_current_dir(repo.path()).expect("set cwd");
         }
 
-        let outcome = std::panic::catch_unwind(|| {
-            let config = Config::default();
+        let pane_tracker_dir_str = pane_tracker_dir.display().to_string();
+        let outcome = std::panic::catch_unwind(move || {
+            let mut config = Config::default();
+            config.paths.pane_tracker_dir = pane_tracker_dir_str;
             let result = validate_environment(&config).expect("validate environment");
 
             assert!(result.all_passed);

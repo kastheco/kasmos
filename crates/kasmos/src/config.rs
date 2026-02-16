@@ -78,6 +78,8 @@ pub struct PathsConfig {
     pub spec_kitty_binary: String,
     /// Feature specs root path.
     pub specs_root: String,
+    /// Installation directory of zellij-pane-tracker (contains mcp-server/).
+    pub pane_tracker_dir: String,
 }
 
 /// Zellij session/layout settings.
@@ -139,6 +141,7 @@ impl Default for PathsConfig {
             zellij_binary: "zellij".to_string(),
             spec_kitty_binary: "spec-kitty".to_string(),
             specs_root: "kitty-specs".to_string(),
+            pane_tracker_dir: "/opt/zellij-pane-tracker".to_string(),
         }
     }
 }
@@ -252,6 +255,9 @@ impl Config {
         }
         if let Ok(val) = std::env::var("KASMOS_PATHS_SPECS_ROOT") {
             self.paths.specs_root = val;
+        }
+        if let Ok(val) = std::env::var("KASMOS_PATHS_PANE_TRACKER_DIR") {
+            self.paths.pane_tracker_dir = val;
         }
 
         if let Ok(val) = std::env::var("KASMOS_SESSION_SESSION_NAME") {
@@ -374,6 +380,9 @@ impl Config {
             }
             if let Some(v) = paths.specs_root {
                 self.paths.specs_root = v;
+            }
+            if let Some(v) = paths.pane_tracker_dir {
+                self.paths.pane_tracker_dir = v;
             }
         }
 
@@ -563,6 +572,7 @@ struct PathsConfigFile {
     zellij_binary: Option<String>,
     spec_kitty_binary: Option<String>,
     specs_root: Option<String>,
+    pane_tracker_dir: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
