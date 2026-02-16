@@ -1,27 +1,30 @@
 ---
-work_package_id: "WP12"
+work_package_id: WP12
+title: Integration, Legacy Preservation, and Acceptance Hardening
+lane: "done"
+dependencies: [WP07, WP08, WP09, WP10, WP11]
+base_branch: 011-mcp-agent-swarm-orchestration-WP07
+base_commit: ad49303038f379286b49bd243b78966248018c92
+created_at: '2026-02-15T06:55:22.669223+00:00'
 subtasks:
-  - "T069"
-  - "T070"
-  - "T071"
-  - "T072"
-  - "T073"
-  - "T074"
-title: "Integration, Legacy Preservation, and Acceptance Hardening"
-phase: "Phase 3 - Setup UX, Role Context, and End-to-End Hardening"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
-dependencies: ["WP07", "WP08", "WP09", "WP10", "WP11"]
+- T069
+- T070
+- T071
+- T072
+- T073
+- T074
+phase: Phase 3 - Setup UX, Role Context, and End-to-End Hardening
+assignee: 'opencode'
+agent: "reviewer"
+shell_pid: "1148797"
+review_status: "approved"
+reviewed_by: "reviewer"
 history:
-  - timestamp: "2026-02-14T16:27:48Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-14T16:27:48Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP12 - Integration, Legacy Preservation, and Acceptance Hardening
@@ -34,9 +37,43 @@ history:
 
 ## Review Feedback
 
-*[This section is empty initially.]*
+**Reviewed by**: reviewer
+**Status**: ❌ Changes Requested
+**Date**: 2026-02-15
 
----
+DECISION: NEEDS_CHANGES
+TIER_REACHED: 3
+SEVERITY_SUMMARY: Critical=0, High=0, Medium=0, Low=4
+
+SCOPE:
+- spec: 011-mcp-agent-swarm-orchestration
+- wp: WP12
+
+SK_WORKFLOW_CHECKS:
+- dependency_check: PASS (WP07, WP08, WP09, WP10, WP11 are all merged and in done lane)
+- integration_seam: PASS (Rust module/public API seams compile and resolve correctly)
+
+FINDINGS:
+- [Low] crates/kasmos/src/serve/audit.rs:149 - Archive file names use second-level timestamps only; two rotations in one second can collide and overwrite.
+- [Low] crates/kasmos/src/launch/mod.rs:134 - Lock release failure after successful bootstrap returns an error even when launch already succeeded, which can mislead operators.
+- [Low] crates/kasmos/src/feature_arg.rs:4 - `resolve_feature_dir` logic is duplicated across `feature_arg`, `serve/tools/mod.rs`, and `serve/audit.rs`, increasing drift risk.
+- [Low] crates/kasmos/src/config.rs:100 - `audit.metadata_only` is configurable but not enforced in runtime behavior; `debug_full_payload` alone controls payload capture.
+
+REALITY_GAPS:
+- None. Claimed WP12 outcomes match implementation and verification evidence.
+
+SIMPLIFICATION_SUGGESTIONS:
+- Consolidate feature-dir resolution into one shared utility with explicit modes.
+- Add sub-second or random suffix to rotated audit filenames.
+- Either wire `metadata_only` into behavior or remove/deprecate it to avoid operator confusion.
+
+NEXT_ACTION:
+- Move WP12 back to planned and address the low-severity findings.
+
+AUTOMATION:
+- feedback_file: .kas/review-WP12.feedback.md and /tmp/spec-kitty-review-feedback-WP12.md
+- lane_update: pending
+
 
 ## Implementation Command
 
@@ -234,3 +271,9 @@ Validate end-to-end behavior against locked decisions and success criteria, conf
 ## Activity Log
 
 - 2026-02-14T16:27:48Z - system - lane=planned - Prompt generated via /spec-kitty.tasks
+- 2026-02-15T07:19:49Z – unknown – shell_pid=1417265 – lane=for_review – Ready for review
+- 2026-02-15T07:26:32Z – reviewer – shell_pid=1544861 – lane=doing – Started review via workflow command
+- 2026-02-15T08:14:59Z – reviewer – shell_pid=1544861 – lane=planned – Moved to planned
+- 2026-02-16T02:14:16Z – reviewer – shell_pid=3974381 – lane=for_review – Moved to for_review
+- 2026-02-16T02:14:20Z – reviewer – shell_pid=1148797 – lane=doing – Started review via workflow command
+- 2026-02-16T02:16:25Z – reviewer – shell_pid=1148797 – lane=done – Review passed: resolved low findings and verified full matrix

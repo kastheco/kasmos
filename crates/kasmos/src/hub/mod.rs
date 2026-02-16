@@ -22,8 +22,7 @@ use kasmos::tui::event::EventHandler;
 /// `default_tab_template` block. If the file doesn't exist or can't be
 /// parsed, falls back to a minimal template with `zjstatus`.
 fn build_hub_layout() -> anyhow::Result<(String, std::path::PathBuf)> {
-    let kasmos_bin = std::env::current_exe()
-        .unwrap_or_else(|_| std::path::PathBuf::from("kasmos"));
+    let kasmos_bin = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("kasmos"));
 
     // Try to read the user's default layout for their tab template.
     let tab_template = kasmos::LayoutGenerator::tab_template_kdl_string();
@@ -34,11 +33,9 @@ fn build_hub_layout() -> anyhow::Result<(String, std::path::PathBuf)> {
     );
 
     let layout_dir = std::env::temp_dir().join("kasmos");
-    std::fs::create_dir_all(&layout_dir)
-        .context("Failed to create temp layout directory")?;
+    std::fs::create_dir_all(&layout_dir).context("Failed to create temp layout directory")?;
     let layout_path = layout_dir.join("hub-layout.kdl");
-    std::fs::write(&layout_path, &layout)
-        .context("Failed to write hub layout file")?;
+    std::fs::write(&layout_path, &layout).context("Failed to write hub layout file")?;
 
     Ok((layout, layout_path))
 }

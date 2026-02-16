@@ -1,27 +1,30 @@
 ---
-work_package_id: "WP04"
+work_package_id: WP04
+title: MCP Serve Bootstrap and Contract Wiring
+lane: "done"
+dependencies: [WP02]
+base_branch: 011-mcp-agent-swarm-orchestration-WP02
+base_commit: 839ff563e7dfa7894ce4b53b37f439478bf887a6
+created_at: '2026-02-14T22:27:41.958224+00:00'
 subtasks:
-  - "T021"
-  - "T022"
-  - "T023"
-  - "T024"
-  - "T025"
-  - "T026"
-title: "MCP Serve Bootstrap and Contract Wiring"
-phase: "Phase 1 - Launch Topology and MCP Runtime Skeleton"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
-dependencies: ["WP02"]
+- T021
+- T022
+- T023
+- T024
+- T025
+- T026
+phase: Phase 1 - Launch Topology and MCP Runtime Skeleton
+assignee: 'opencode'
+agent: "opencode"
+shell_pid: "3957847"
+review_status: "approved"
+reviewed_by: "kas"
 history:
-  - timestamp: "2026-02-14T16:27:48Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-14T16:27:48Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP04 - MCP Serve Bootstrap and Contract Wiring
@@ -258,3 +261,8 @@ Stand up `kasmos serve` as an RMCP stdio server with all 9 contract-defined tool
 ## Activity Log
 
 - 2026-02-14T16:27:48Z - system - lane=planned - Prompt generated via /spec-kitty.tasks
+- 2026-02-14T22:25:37Z – unknown – shell_pid=3674163 – lane=planned – Moved to planned
+- 2026-02-14T22:27:10Z – unknown – shell_pid=3674163 – lane=planned – Moved to planned
+- 2026-02-14T22:39:40Z – opencode – shell_pid=3957847 – lane=doing – Assigned agent via workflow command
+- 2026-02-14T22:55:34Z – opencode – shell_pid=3957847 – lane=for_review – Ready for review
+- 2026-02-14T22:56:12Z – opencode – shell_pid=3957847 – lane=done – Review passed: 9 MCP tools wired, registry CRUD, contract tests pass, 247 tests total

@@ -106,3 +106,39 @@ The detector in `start.rs` may be watching main-repo task files instead of workt
 ### Pane ID investigation
 
 `WorkPackage.pane_id` may be `None` in contexts where `StubSessionController` is used. Need to verify real `SessionManager` assigns IDs correctly during actual orchestration.
+
+## OpenCode Agent Permissions and External Directories
+
+### Problem discovered (2026-02-14)
+
+Agents running in worktrees (e.g., `.worktrees/011-...-WP02/`) need read access to paths outside their CWD — specifically the main repo's `kitty-specs/` directory (which is gitignored and doesn't exist in worktrees) and `/tmp/` (where spec-kitty writes review prompts).
+
+OpenCode's `external_directory` permission config does **not** expand `~` to the home directory. Paths like `"~/dev/kasmos/**": "allow"` silently fail to match absolute paths like `/home/kas/dev/kasmos/kitty-specs/...`, causing `auto-rejecting` when the agent runs non-interactively (e.g., `ocx oc -- run`).
+
+**Fix**: Always use fully-qualified absolute paths in `external_directory` rules.
+
+### Paths agents commonly need
+
+| Path | Who needs it | Why |
+|------|-------------|-----|
+| `/home/kas/dev/kasmos/**` (main repo) | All agents | `kitty-specs/`, `.kittify/memory/`, docs |
+| `/tmp/*`, `/tmp/**` | All agents | spec-kitty review prompts, temp files |
+| `~/.config/opencode/**` | All agents | Self-reference for config |
+| `~/.config/zellij/**` | Controller, release | Layout management |
+
+### TODO: `kasmos setup` should bootstrap this (WP10)
+
+The `kasmos setup` command (WP10 — Setup Command and Launch Hardening) should handle opencode permission configuration as part of environment bootstrap. Specifically:
+
+1. **Config values needed** in `kasmos.toml`:
+   - `paths.opencode_config` — path to the active opencode profile config (e.g., `~/.config/opencode/profiles/kas/opencode.jsonc`)
+   - `paths.kitty_specs` — already exists, but `setup` should use it to pre-approve the directory
+   - `paths.main_repo_root` — the canonical repo root (auto-detected from `git rev-parse --git-common-dir`)
+
+2. **What `kasmos setup` should do**:
+   - Read the opencode config file
+   - Ensure `external_directory` rules exist for the main repo root (absolute path), `/tmp/**`, and config dirs
+   - Warn if `~` is used instead of absolute paths (common mistake)
+   - Optionally write/patch the rules if the user consents
+
+This avoids the current fragile manual setup where a tilde-vs-absolute mismatch silently breaks non-interactive reviewer sessions.

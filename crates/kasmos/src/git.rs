@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use tracing::{debug, info, warn};
 
 /// Git-related errors.

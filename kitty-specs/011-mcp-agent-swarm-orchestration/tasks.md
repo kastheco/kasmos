@@ -24,12 +24,12 @@
 **Estimated prompt size**: ~320 lines
 
 ### Included Subtasks
-- [ ] T001 Add required dependencies for MCP and schema tooling in `crates/kasmos/Cargo.toml` (`rmcp`, `schemars`, `regex`) and define `tui` feature gating
-- [ ] T002 Mark TUI-only dependencies (`ratatui`, `crossterm`, `futures-util`) as optional and gate legacy modules in `crates/kasmos/src/main.rs`/`crates/kasmos/src/lib.rs`
-- [ ] T003 Replace clap command model in `crates/kasmos/src/main.rs` with new launcher-first surface (`None => launch`, `Serve`, `Setup`, `List`, `Status`)
-- [ ] T004 [P] Create module stubs `crates/kasmos/src/launch/mod.rs`, `crates/kasmos/src/serve/mod.rs`, and `crates/kasmos/src/setup/mod.rs`
-- [ ] T005 Preserve list/status behavior while removing old default hub entrypoint and unwiring `start/cmd/attach/stop`
-- [ ] T006 Validate compile matrix and update any broken imports caused by feature gating
+- [x] T001 Add required dependencies for MCP and schema tooling in `crates/kasmos/Cargo.toml` (`rmcp`, `schemars`, `regex`) and define `tui` feature gating
+- [x] T002 Mark TUI-only dependencies (`ratatui`, `crossterm`, `futures-util`) as optional and gate legacy modules in `crates/kasmos/src/main.rs`/`crates/kasmos/src/lib.rs`
+- [x] T003 Replace clap command model in `crates/kasmos/src/main.rs` with new launcher-first surface (`None => launch`, `Serve`, `Setup`, `List`, `Status`)
+- [x] T004 [P] Create module stubs `crates/kasmos/src/launch/mod.rs`, `crates/kasmos/src/serve/mod.rs`, and `crates/kasmos/src/setup/mod.rs`
+- [x] T005 Preserve list/status behavior while removing old default hub entrypoint and unwiring `start/cmd/attach/stop`
+- [x] T006 Validate compile matrix and update any broken imports caused by feature gating
 
 ### Implementation Notes
 - Keep existing legacy TUI files in the repository; only disconnect from default command wiring.
@@ -56,13 +56,13 @@
 **Estimated prompt size**: ~360 lines
 
 ### Included Subtasks
-- [ ] T007 Define sectioned config structs in `crates/kasmos/src/config.rs` (`AgentConfig`, `CommunicationConfig`, `PathsConfig`, `SessionConfig`, `AuditConfig`, `LockConfig`)
-- [ ] T008 Implement config loading precedence (defaults -> `kasmos.toml` at repo root -> env overrides) and validation
-- [ ] T009 Implement reusable feature detection pipeline (`arg -> branch -> directory -> none`) in `crates/kasmos/src/launch/detect.rs` and integrate `crates/kasmos/src/feature_arg.rs`
-- [ ] T010 Implement CLI feature selector path when feature cannot be inferred, guaranteed before any Zellij actions
-- [ ] T011 Implement launch dependency preflight checks with actionable guidance and non-zero exit (`zellij`, `opencode`, pane-tracker tooling, `spec-kitty`)
-- [ ] T012 Implement "no specs found" early-exit path before launch
-- [ ] T013 Add unit tests for config loading/validation, feature detection ambiguity, selector gate, and preflight hard-fail behavior
+- [x] T007 Define sectioned config structs in `crates/kasmos/src/config.rs` (`AgentConfig`, `CommunicationConfig`, `PathsConfig`, `SessionConfig`, `AuditConfig`, `LockConfig`)
+- [x] T008 Implement config loading precedence (defaults -> `kasmos.toml` at repo root -> env overrides) and validation
+- [x] T009 Implement reusable feature detection pipeline (`arg -> branch -> directory -> none`) in `crates/kasmos/src/launch/detect.rs` and integrate `crates/kasmos/src/feature_arg.rs`
+- [x] T010 Implement CLI feature selector path when feature cannot be inferred, guaranteed before any Zellij actions
+- [x] T011 Implement launch dependency preflight checks with actionable guidance and non-zero exit (`zellij`, `opencode`, pane-tracker tooling, `spec-kitty`)
+- [x] T012 Implement "no specs found" early-exit path before launch
+- [x] T013 Add unit tests for config loading/validation, feature detection ambiguity, selector gate, and preflight hard-fail behavior
 
 ### Implementation Notes
 - Locked requirement: selector must happen before session/tab creation.
@@ -91,13 +91,13 @@
 **Estimated prompt size**: ~340 lines
 
 ### Included Subtasks
-- [ ] T014 Implement `crates/kasmos/src/launch/layout.rs` for manager pane, message-log pane, dashboard pane, and dynamic worker area layout generation with swap-layout KDL blocks for pane counts 2 through max_workers+2, ensuring automatic reflow on pane add/remove per FR-007 and US5
-- [ ] T015 Implement `crates/kasmos/src/launch/session.rs` for outside-Zellij session creation vs inside-Zellij tab creation behavior
-- [ ] T016 Ensure runtime model is manager-spawned MCP stdio subprocess; remove any dedicated MCP tab assumptions from launch logic
-- [ ] T017 Implement manager initial prompt seed including bound feature, phase assessment instruction, and confirmation-first behavior
-- [ ] T018 Add minimal-layout fallback path (manager + message-log) when advanced layout generation fails
-- [ ] T019 Wire `crates/kasmos/src/launch/mod.rs` end-to-end (config -> detect/select feature -> preflight -> layout -> launch)
-- [ ] T020 Add launch integration tests covering explicit feature arg, branch inference, and selector path behavior
+- [x] T014 Implement `crates/kasmos/src/launch/layout.rs` for manager pane, message-log pane, dashboard pane, and dynamic worker area layout generation with swap-layout KDL blocks for pane counts 2 through max_workers+2, ensuring automatic reflow on pane add/remove per FR-007 and US5
+- [x] T015 Implement `crates/kasmos/src/launch/session.rs` for outside-Zellij session creation vs inside-Zellij tab creation behavior
+- [x] T016 Ensure runtime model is manager-spawned MCP stdio subprocess; remove any dedicated MCP tab assumptions from launch logic
+- [x] T017 Implement manager initial prompt seed including bound feature, phase assessment instruction, and confirmation-first behavior
+- [x] T018 Add minimal-layout fallback path (manager + message-log) when advanced layout generation fails
+- [x] T019 Wire `crates/kasmos/src/launch/mod.rs` end-to-end (config -> detect/select feature -> preflight -> layout -> launch)
+- [x] T020 Add launch integration tests covering explicit feature arg, branch inference, and selector path behavior
 
 ### Implementation Notes
 - Keep session name deterministic (`kasmos`) unless existing naming policy demands suffixing.
@@ -123,12 +123,12 @@
 **Estimated prompt size**: ~350 lines
 
 ### Included Subtasks
-- [ ] T021 Implement `crates/kasmos/src/serve/mod.rs` server bootstrap with stdio transport
-- [ ] T022 Define shared server state (`WorkerRegistry`, message cursor, lock handler, audit policy, config snapshot)
-- [ ] T023 Implement typed request/response structs for all tool handlers to align with `contracts/kasmos-serve.json`
-- [ ] T024 [P] Fully implement `list_features` tool against `kitty-specs/`
-- [ ] T025 [P] Fully implement `infer_feature` tool using shared feature detection logic
-- [ ] T026 Add contract-level tests for tool registration and standard error code responses
+- [x] T021 Implement `crates/kasmos/src/serve/mod.rs` server bootstrap with stdio transport
+- [x] T022 Define shared server state (`WorkerRegistry`, message cursor, lock handler, audit policy, config snapshot)
+- [x] T023 Implement typed request/response structs for all tool handlers to align with `contracts/kasmos-serve.json`
+- [x] T024 [P] Fully implement `list_features` tool against `kitty-specs/`
+- [x] T025 [P] Fully implement `infer_feature` tool using shared feature detection logic
+- [x] T026 Add contract-level tests for tool registration and standard error code responses
 
 ### Implementation Notes
 - Preserve exact error codes from contract (`FEATURE_LOCK_CONFLICT`, `STALE_LOCK_CONFIRMATION_REQUIRED`, etc.).
@@ -156,12 +156,12 @@
 **Estimated prompt size**: ~330 lines
 
 ### Included Subtasks
-- [ ] T027 Implement lock key derivation `<repo_root>::<feature_slug>` and canonical repo-root resolution
-- [ ] T028 Implement persistent lock record with owner/session metadata, acquired/heartbeat/expires timestamps
-- [ ] T029 Enforce conflict response path for active locks with actionable owner details
-- [ ] T030 Implement stale detection using configurable timeout (default 15 minutes)
-- [ ] T031 Implement confirmation-gated stale takeover flow and explicit rejection path when confirmation absent
-- [ ] T032 Add tests for lock acquisition, heartbeat refresh, stale transition, takeover confirmation, and conflict errors
+- [x] T027 Implement lock key derivation `<repo_root>::<feature_slug>` and canonical repo-root resolution
+- [x] T028 Implement persistent lock record with owner/session metadata, acquired/heartbeat/expires timestamps
+- [x] T029 Enforce conflict response path for active locks with actionable owner details
+- [x] T030 Implement stale detection using configurable timeout (default 15 minutes)
+- [x] T031 Implement confirmation-gated stale takeover flow and explicit rejection path when confirmation absent
+- [x] T032 Add tests for lock acquisition, heartbeat refresh, stale transition, takeover confirmation, and conflict errors
 
 ### Implementation Notes
 - Lock scope is repository-wide across processes, tabs, and sessions.
@@ -187,12 +187,12 @@
 **Estimated prompt size**: ~320 lines
 
 ### Included Subtasks
-- [ ] T033 Implement audit directory and file bootstrap under feature path (`.kasmos/messages.jsonl`)
-- [ ] T034 Implement append-only JSONL writer for manager/tool audit entries
-- [ ] T035 Implement metadata-only default record shaping and debug-mode full payload opt-in
-- [ ] T036 Implement retention evaluator with either-threshold trigger (size > 512MB OR age > 14 days)
-- [ ] T037 Integrate audit writes across lock, spawn/despawn, transition, and error paths
-- [ ] T038 Add tests for payload redaction defaults, debug inclusion, and retention trigger correctness
+- [x] T033 Implement audit directory and file bootstrap under feature path (`.kasmos/messages.jsonl`)
+- [x] T034 Implement append-only JSONL writer for manager/tool audit entries
+- [x] T035 Implement metadata-only default record shaping and debug-mode full payload opt-in
+- [x] T036 Implement retention evaluator with either-threshold trigger (size > 512MB OR age > 14 days)
+- [x] T037 Integrate audit writes across lock, spawn/despawn, transition, and error paths
+- [x] T038 Add tests for payload redaction defaults, debug inclusion, and retention trigger correctness
 
 ### Implementation Notes
 - Do not emit full prompts/tool args unless debug mode is enabled.
@@ -218,12 +218,12 @@
 **Estimated prompt size**: ~350 lines
 
 ### Included Subtasks
-- [ ] T039 Implement `spawn_worker` tool with role, prompt, and pane-name validation
-- [ ] T040 Implement coder-only worktree provisioning and cleanup handling
-- [ ] T041 Implement `despawn_worker` with pane close, registry update, and audit event
-- [ ] T042 Implement `list_workers` with live-pane reconciliation and aborted detection
-- [ ] T043 Implement max parallel worker enforcement and actionable backpressure response
-- [ ] T044 Add unit/integration tests for spawn/despawn/list behavior and registry edge cases
+- [x] T039 Implement `spawn_worker` tool with role, prompt, and pane-name validation
+- [x] T040 Implement coder-only worktree provisioning and cleanup handling
+- [x] T041 Implement `despawn_worker` with pane close, registry update, and audit event
+- [x] T042 Implement `list_workers` with live-pane reconciliation and aborted detection
+- [x] T043 Implement max parallel worker enforcement and actionable backpressure response
+- [x] T044 Add unit/integration tests for spawn/despawn/list behavior and registry edge cases
 
 ### Implementation Notes
 - Keep pane naming deterministic (`<wp_id>-<role>`).
@@ -249,13 +249,13 @@
 **Estimated prompt size**: ~370 lines
 
 ### Included Subtasks
-- [ ] T045 Implement structured message parser in `crates/kasmos/src/serve/messages.rs` with ANSI stripping
-- [ ] T046 Implement `read_messages` cursor semantics (`since_index`, filters, ordered response)
-- [ ] T047 Implement `wait_for_event` bounded blocking loop with timeout and elapsed reporting
-- [ ] T048 Implement fallback path when pane-tracker is unavailable (degraded polling + explicit warning)
-- [ ] T049 Ensure manager decision events are also written to message-log pane for real-time transparency
-- [ ] T050 Add tests for parser edge cases, duplicate protection, timeout semantics, and degraded mode
-- [ ] T075 Implement dashboard pane update as a side effect of `wait_for_event` polling loop: format current worker status table (role, WP, state, elapsed time) and write to dashboard pane via zellij (FR-032)
+- [x] T045 Implement structured message parser in `crates/kasmos/src/serve/messages.rs` with ANSI stripping
+- [x] T046 Implement `read_messages` cursor semantics (`since_index`, filters, ordered response)
+- [x] T047 Implement `wait_for_event` bounded blocking loop with timeout and elapsed reporting
+- [x] T048 Implement fallback path when pane-tracker is unavailable (degraded polling + explicit warning)
+- [x] T049 Ensure manager decision events are also written to message-log pane for real-time transparency
+- [x] T050 Add tests for parser edge cases, duplicate protection, timeout semantics, and degraded mode
+- [x] T075 Implement dashboard pane update as a side effect of `wait_for_event` polling loop: format current worker status table (role, WP, state, elapsed time) and write to dashboard pane via zellij (FR-032)
 
 ### Implementation Notes
 - Message format is fixed: `[KASMOS:<sender>:<event>] <json_payload>`.
@@ -281,12 +281,12 @@
 **Estimated prompt size**: ~360 lines
 
 ### Included Subtasks
-- [ ] T051 Implement `workflow_status` artifact scan (`spec.md`, `plan.md`, `tasks.md`, task lanes) with fine-grained phase derivation (including optional `clarifying`/`analyzing` planning phases and distinct `releasing` phase) per expanded WorkflowSnapshot model in `data-model.md`
-- [ ] T052 Integrate dependency graph wave computation from parsed WP metadata
-- [ ] T053 Implement `transition_wp` with state-machine validation, actor/reason audit metadata, and lane translation layer (kasmos states `pending/active/for_review/done/rework` -> spec-kitty lanes `planned/doing/for_review/done`; see `data-model.md` Lane Translation Protocol)
-- [ ] T054 Implement advisory lock protection for task-file writes to prevent concurrent corruption
-- [ ] T055 Enforce review-rejection loop cap (default 3) and pause-required outcome
-- [ ] T056 Add tests for phase derivation, transition guards, wave ordering constraints, and concurrent writers
+- [x] T051 Implement `workflow_status` artifact scan (`spec.md`, `plan.md`, `tasks.md`, task lanes) with fine-grained phase derivation (including optional `clarifying`/`analyzing` planning phases and distinct `releasing` phase) per expanded WorkflowSnapshot model in `data-model.md`
+- [x] T052 Integrate dependency graph wave computation from parsed WP metadata
+- [x] T053 Implement `transition_wp` with state-machine validation, actor/reason audit metadata, and lane translation layer (kasmos states `pending/active/for_review/done/rework` -> spec-kitty lanes `planned/doing/for_review/done`; see `data-model.md` Lane Translation Protocol)
+- [x] T054 Implement advisory lock protection for task-file writes to prevent concurrent corruption
+- [x] T055 Enforce review-rejection loop cap (default 3) and pause-required outcome
+- [x] T056 Add tests for phase derivation, transition guards, wave ordering constraints, and concurrent writers
 
 ### Implementation Notes
 - Use task lanes as single source of truth (no parallel shadow state).
@@ -316,12 +316,12 @@
 **Estimated prompt size**: ~300 lines
 
 ### Included Subtasks
-- [ ] T057 Implement `crates/kasmos/src/setup/mod.rs` dependency validation flow with structured output
-- [ ] T058 Implement idempotent generation of missing baseline config/profile assets
-- [ ] T059 Ensure launch uses the same preflight engine and exits before any session/tab creation on failures
-- [ ] T060 Add per-dependency remediation guidance (install hints and expected minimum behavior)
-- [ ] T061 Ensure non-zero exit code mapping for setup and launch preflight failures
-- [ ] T062 Add tests for setup pass/fail and launch hard-fail guarantees
+- [x] T057 Implement `crates/kasmos/src/setup/mod.rs` dependency validation flow with structured output
+- [x] T058 Implement idempotent generation of missing baseline config/profile assets
+- [x] T059 Ensure launch uses the same preflight engine and exits before any session/tab creation on failures
+- [x] T060 Add per-dependency remediation guidance (install hints and expected minimum behavior)
+- [x] T061 Ensure non-zero exit code mapping for setup and launch preflight failures
+- [x] T062 Add tests for setup pass/fail and launch hard-fail guarantees
 
 ### Implementation Notes
 - Keep setup non-destructive unless creating missing defaults.
@@ -347,12 +347,12 @@
 **Estimated prompt size**: ~330 lines
 
 ### Included Subtasks
-- [ ] T063 Define/update OpenCode profile assets under `config/profiles/kasmos/` for manager/planner/coder/reviewer/release
-- [ ] T064 Rewrite `crates/kasmos/src/prompt.rs` for role-aware context assembly and command generation
-- [ ] T065 Implement manager bootstrap prompt instructions for assessment, confirmation gates, and `kasmos serve` subprocess ownership
-- [ ] T066 Implement worker prompt contract for structured message-log communication and escalation events
-- [ ] T067 Enforce context minimization rules (coder narrow, reviewer medium, release broad structural)
-- [ ] T068 Add prompt snapshot tests and validation for role-context boundary rules
+- [x] T063 Define/update OpenCode profile assets under `config/profiles/kasmos/` for manager/planner/coder/reviewer/release
+- [x] T064 Rewrite `crates/kasmos/src/prompt.rs` for role-aware context assembly and command generation
+- [x] T065 Implement manager bootstrap prompt instructions for assessment, confirmation gates, and `kasmos serve` subprocess ownership
+- [x] T066 Implement worker prompt contract for structured message-log communication and escalation events
+- [x] T067 Enforce context minimization rules (coder narrow, reviewer medium, release broad structural)
+- [x] T068 Add prompt snapshot tests and validation for role-context boundary rules
 
 ### Implementation Notes
 - Single agent runtime requirement: OpenCode only for all roles.
@@ -378,12 +378,12 @@
 **Estimated prompt size**: ~360 lines
 
 ### Included Subtasks
-- [ ] T069 Verify and preserve legacy TUI compile path (`cargo build --features tui`) while default build uses new launcher flow
-- [ ] T070 Add integration scenario for duplicate lock conflict and stale takeover confirmation behavior
-- [ ] T071 Add integration scenario for audit logging modes and retention thresholds (size/age either-threshold)
-- [ ] T072 Add integration scenario for feature selector pre-launch gate and no-specs early exit
-- [ ] T073 Align `README.md`, `quickstart.md`, and any launch/setup docs with final command behavior
-- [ ] T074 Run final verification matrix (`cargo test`, launch/serve manual smoke checks) and capture FR/SC traceability checklist
+- [x] T069 Verify and preserve legacy TUI compile path (`cargo build --features tui`) while default build uses new launcher flow
+- [x] T070 Add integration scenario for duplicate lock conflict and stale takeover confirmation behavior
+- [x] T071 Add integration scenario for audit logging modes and retention thresholds (size/age either-threshold)
+- [x] T072 Add integration scenario for feature selector pre-launch gate and no-specs early exit
+- [x] T073 Align `README.md`, `quickstart.md`, and any launch/setup docs with final command behavior
+- [x] T074 Run final verification matrix (`cargo test`, launch/serve manual smoke checks) and capture FR/SC traceability checklist
 
 ### Implementation Notes
 - Keep scenario tests deterministic; use temp dirs and mocked clocks where possible.

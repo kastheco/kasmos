@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 
 use ratatui::style::{Color, Style};
 use ratatui::widgets::Paragraph;
-use ratatui::{layout::Rect, Frame};
+use ratatui::{Frame, layout::Rect};
 use tui_nodes::{Connection, NodeGraph, NodeLayout};
 
 use crate::types::{OrchestrationRun, WPState};
@@ -315,8 +315,8 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use crate::types::{OrchestrationRun, ProgressionMode, RunState, Wave, WaveState, WorkPackage};
-    use ratatui::backend::TestBackend;
     use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
 
     fn create_dependency_run() -> OrchestrationRun {
         let work_packages = vec![

@@ -1,27 +1,30 @@
 ---
-work_package_id: "WP11"
+work_package_id: WP11
+title: Agent Profiles and Prompt Context Boundaries
+lane: "done"
+dependencies: [WP02]
+base_branch: 011-mcp-agent-swarm-orchestration-WP02
+base_commit: 839ff563e7dfa7894ce4b53b37f439478bf887a6
+created_at: '2026-02-14T22:27:45.338853+00:00'
 subtasks:
-  - "T063"
-  - "T064"
-  - "T065"
-  - "T066"
-  - "T067"
-  - "T068"
-title: "Agent Profiles and Prompt Context Boundaries"
-phase: "Phase 3 - Setup UX, Role Context, and End-to-End Hardening"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
-dependencies: ["WP02"]
+- T063
+- T064
+- T065
+- T066
+- T067
+- T068
+phase: Phase 3 - Setup UX, Role Context, and End-to-End Hardening
+assignee: 'opencode'
+agent: 'opencode'
+shell_pid: "3114343"
+review_status: "approved"
+reviewed_by: "kas"
 history:
-  - timestamp: "2026-02-14T16:27:48Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-14T16:27:48Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP11 - Agent Profiles and Prompt Context Boundaries
@@ -292,3 +295,7 @@ Implement role-specific prompt/context assembly that enforces scope boundaries a
 ## Activity Log
 
 - 2026-02-14T16:27:48Z - system - lane=planned - Prompt generated via /spec-kitty.tasks
+- 2026-02-14T22:25:37Z – unknown – shell_pid=3674747 – lane=planned – Moved to planned
+- 2026-02-14T22:27:10Z – unknown – shell_pid=3674747 – lane=planned – Moved to planned
+- 2026-02-15T00:51:10Z – unknown – shell_pid=3114343 – lane=for_review – Ready for review
+- 2026-02-15T00:56:10Z – unknown – shell_pid=3114343 – lane=done – Review passed: role-based prompt builder, context boundaries, 5 agent templates, 241 tests pass

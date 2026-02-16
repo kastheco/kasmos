@@ -3,11 +3,11 @@
 //! Renders the list of work packages awaiting operator review, with a detail
 //! pane showing review information for the selected item.
 
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
-use ratatui::Frame;
 
 use crate::types::WPState;
 
