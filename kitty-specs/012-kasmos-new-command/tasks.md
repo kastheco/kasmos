@@ -87,7 +87,7 @@
 - [x] T008: Test pre-flight validation (missing/present binaries)
 - [x] T009: Test prompt construction (instruction present, description handling)
 - [x] T010: Test prompt degradation (missing .kittify/memory/)
-- [ ] T011: Test CLI parsing for `Commands::New`
+- [x] T011: Test CLI parsing for `Commands::New`
 
 **Risks**:
 - Test fixture management for .kittify/memory/ files (mitigate: use tempfile crate, already in deps)
