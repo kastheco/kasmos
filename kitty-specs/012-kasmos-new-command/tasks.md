@@ -52,7 +52,7 @@
 - [x] T003: Create new.rs with `preflight_check()` for opencode + spec-kitty
 - [x] T004: Implement repo root discovery from CWD
 - [x] T005: Implement `build_prompt()` with context loading + description injection
-- [ ] T006: Implement opencode process spawning with exit code propagation
+- [x] T006: Implement opencode process spawning with exit code propagation
 - [ ] T007: Wire `run()` orchestrator: config -> preflight -> prompt -> spawn
 
 **Risks**:
