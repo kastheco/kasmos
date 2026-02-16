@@ -15,7 +15,7 @@ subtasks:
 - T019
 - T020
 phase: Phase 1 - Launch Topology and MCP Runtime Skeleton
-assignee: ''
+assignee: 'opencode'
 agent: "opencode"
 shell_pid: "3957849"
 review_status: "approved"

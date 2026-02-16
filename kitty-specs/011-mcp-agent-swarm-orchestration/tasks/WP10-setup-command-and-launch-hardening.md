@@ -14,7 +14,7 @@ subtasks:
 - T061
 - T062
 phase: Phase 3 - Setup UX, Role Context, and End-to-End Hardening
-assignee: ''
+assignee: 'opencode'
 agent: "reviewer"
 shell_pid: "418927"
 review_status: "approved"

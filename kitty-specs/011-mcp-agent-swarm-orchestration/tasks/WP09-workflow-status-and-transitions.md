@@ -14,7 +14,7 @@ subtasks:
 - T055
 - T056
 phase: Phase 2 - Safety, State, and Audit Guarantees
-assignee: ''
+assignee: 'opencode'
 agent: "reviewer"
 shell_pid: "543338"
 review_status: "approved"

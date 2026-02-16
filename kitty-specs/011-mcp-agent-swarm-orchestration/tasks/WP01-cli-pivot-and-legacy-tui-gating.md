@@ -14,7 +14,7 @@ subtasks:
 - T005
 - T006
 phase: Phase 0 - CLI Pivot and Core Foundation
-assignee: ''
+assignee: 'opencode'
 agent: "reviewer"
 shell_pid: "3419985"
 review_status: "approved"
