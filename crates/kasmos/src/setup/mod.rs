@@ -1494,6 +1494,127 @@ mod tests {
         assert!(failures.iter().any(|f| f.dependency == "zellij"));
     }
 
+    #[test]
+    fn zjstatus_check_passes_when_present() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let old_zellij_config = std::env::var("ZELLIJ_CONFIG_DIR").ok();
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let plugin_dir = tmp.path().join("plugins");
+        std::fs::create_dir_all(&plugin_dir).expect("create plugins dir");
+        std::fs::write(plugin_dir.join("zjstatus.wasm"), b"fake-wasm")
+            .expect("write fake zjstatus");
+
+        unsafe {
+            std::env::set_var("ZELLIJ_CONFIG_DIR", tmp.path().display().to_string());
+        }
+
+        let result = check_zjstatus();
+
+        unsafe {
+            if let Some(dir) = old_zellij_config {
+                std::env::set_var("ZELLIJ_CONFIG_DIR", dir);
+            } else {
+                std::env::remove_var("ZELLIJ_CONFIG_DIR");
+            }
+        }
+
+        assert_eq!(result.status, CheckStatus::Pass);
+    }
+
+    #[test]
+    fn zjstatus_check_fails_when_missing() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let old_zellij_config = std::env::var("ZELLIJ_CONFIG_DIR").ok();
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        // No plugins directory -- zjstatus.wasm won't exist.
+
+        unsafe {
+            std::env::set_var("ZELLIJ_CONFIG_DIR", tmp.path().display().to_string());
+        }
+
+        let result = check_zjstatus();
+
+        unsafe {
+            if let Some(dir) = old_zellij_config {
+                std::env::set_var("ZELLIJ_CONFIG_DIR", dir);
+            } else {
+                std::env::remove_var("ZELLIJ_CONFIG_DIR");
+            }
+        }
+
+        assert_eq!(result.status, CheckStatus::Fail);
+        assert!(
+            result
+                .guidance
+                .as_deref()
+                .unwrap_or("")
+                .contains("zjstatus"),
+            "guidance should mention zjstatus"
+        );
+    }
+
+    #[test]
+    fn fixup_mcp_pane_tracker_path_replaces_opt() {
+        let mut config: serde_json::Value = serde_json::json!({
+            "mcp": {
+                "zellij": {
+                    "command": [
+                        "bun",
+                        "run",
+                        "/opt/zellij-pane-tracker/mcp-server/index.ts"
+                    ]
+                }
+            }
+        });
+
+        fixup_mcp_pane_tracker_path(&mut config, "/home/user/zellij-pane-tracker");
+
+        let command = config["mcp"]["zellij"]["command"]
+            .as_array()
+            .expect("command should be an array");
+        assert_eq!(
+            command[2].as_str().expect("third element"),
+            "/home/user/zellij-pane-tracker/mcp-server/index.ts"
+        );
+    }
+
+    #[test]
+    fn fixup_mcp_pane_tracker_path_noop_when_no_mcp_section() {
+        let mut config: serde_json::Value = serde_json::json!({"agent": {}});
+
+        // Should not panic.
+        fixup_mcp_pane_tracker_path(&mut config, "/home/user/zellij-pane-tracker");
+
+        // Config unchanged -- still has agent key and no mcp key.
+        assert!(config.get("agent").is_some());
+        assert!(config.get("mcp").is_none());
+    }
+
+    #[test]
+    fn detect_pane_tracker_dir_finds_valid_path() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let mcp_dir = tmp.path().join("mcp-server");
+        std::fs::create_dir_all(&mcp_dir).expect("create mcp-server dir");
+        std::fs::write(mcp_dir.join("index.ts"), "// stub").expect("write index.ts");
+
+        let mut config = Config::default();
+        config.paths.pane_tracker_dir = tmp.path().display().to_string();
+
+        let detected = detect_pane_tracker_dir(&config);
+        assert_eq!(detected, tmp.path().display().to_string());
+    }
+
+    #[test]
+    fn detect_pane_tracker_dir_falls_back_to_default() {
+        let config = Config::default();
+        // The default /opt/zellij-pane-tracker won't have mcp-server/index.ts
+        // in a test environment, so detect should fall back to the config default.
+        let detected = detect_pane_tracker_dir(&config);
+        assert_eq!(detected, config.paths.pane_tracker_dir);
+    }
+
     fn create_executable(path: &Path) {
         std::fs::write(path, "#!/bin/sh\nexit 0\n").expect("write executable");
         #[cfg(unix)]
