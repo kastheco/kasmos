@@ -1,7 +1,13 @@
 [package]
 name = "kasmos"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
+description = "Zellij-based AI agent orchestrator for multi-pane development workflows"
+repository.workspace = true
+license.workspace = true
+readme = "../../README.md"
+keywords = ["zellij", "ai", "orchestrator", "agent", "cli"]
+categories = ["command-line-utilities", "development-tools"]
 
 [features]
 default = []
@@ -25,6 +31,8 @@ chrono = { version = "0.4.43", features = ["serde"] }
 kdl = "6.5"
 shell-escape = "0.1"
 which = "8.0"
+dialoguer = { version = "0.12", features = ["fuzzy-select"] }
+json5 = "1.3"
 notify = "9.0.0-rc.1"
 ratatui = { version = "0.30", features = ["crossterm"], optional = true }
 ratatui-macros = { version = "0.7", optional = true }

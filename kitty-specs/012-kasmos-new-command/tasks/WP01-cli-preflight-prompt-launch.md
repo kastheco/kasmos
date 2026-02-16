@@ -1,9 +1,11 @@
 ---
 work_package_id: "WP01"
 title: "CLI Wiring, Pre-flight & Prompt Builder"
-lane: "planned"
+lane: "done"
 dependencies: []
 subtasks: ["T001", "T002", "T003", "T004", "T005", "T006", "T007"]
+reviewed_by: "kas"
+review_status: "approved"
 history:
   - date: "2026-02-16"
     action: "created"
@@ -434,3 +436,9 @@ spec-kitty implement WP01
 - Confirm `Command::arg()` is used (not shell string interpolation) for process spawning
 - Verify exit code propagation handles signal termination (code() returns None)
 - Run `kasmos new` manually to verify end-to-end behavior
+
+## Activity Log
+
+- 2026-02-16T14:31:30Z – unknown – lane=doing – Implementation complete
+- 2026-02-16T14:31:44Z – unknown – lane=for_review – All subtasks complete, implementation reviewed
+- 2026-02-16T14:31:48Z – unknown – lane=done – Review passed, bug fix applied

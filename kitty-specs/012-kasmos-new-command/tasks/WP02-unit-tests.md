@@ -1,9 +1,11 @@
 ---
 work_package_id: WP02
 title: Unit Tests
-lane: planned
+lane: "done"
 dependencies: []
 subtasks: [T008, T009, T010, T011]
+reviewed_by: "kas"
+review_status: "approved"
 history:
 - date: '2026-02-16'
   action: created
@@ -334,3 +336,9 @@ spec-kitty implement WP02 --base WP01
 - Confirm no tests depend on the real opencode or spec-kitty binaries being installed
 - Ensure `tempdir()` is used (not hardcoded paths) for all fixture directories
 - Run `cargo test -p kasmos` to verify all tests pass
+
+## Activity Log
+
+- 2026-02-16T14:31:53Z – unknown – lane=doing – Tests implemented
+- 2026-02-16T14:32:01Z – unknown – lane=for_review – All test subtasks complete
+- 2026-02-16T14:32:02Z – unknown – lane=done – Review passed

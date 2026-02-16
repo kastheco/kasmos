@@ -1,9 +1,5 @@
 {
-  "plugin": [
-    "opencode-handoff",
-    "opencode-zellij-namer",
-    "@franlol/opencode-md-table-formatter@latest",
-  ],
+  "plugin": ["@franlol/opencode-md-table-formatter@latest"],
   "agent": {
     "planner": {
       "model": "anthropic/claude-opus-4-6",
