@@ -180,7 +180,10 @@ pub fn update_task_file_lane(
 }
 
 /// Find the task file for a given WP ID in the tasks directory.
-fn find_wp_task_file(tasks_dir: &Path, wp_id: &str) -> std::result::Result<PathBuf, SpecParserError> {
+fn find_wp_task_file(
+    tasks_dir: &Path,
+    wp_id: &str,
+) -> std::result::Result<PathBuf, SpecParserError> {
     for entry in std::fs::read_dir(tasks_dir)? {
         let entry = entry?;
         let path = entry.path();

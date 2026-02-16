@@ -1,0 +1,15 @@
+{
+  // OpenCode runtime profile for kasmos orchestrated agents.
+  "mcpServers": {
+    "kasmos": {
+      "command": "kasmos",
+      "args": ["serve"],
+      "type": "stdio"
+    },
+    "zellij-pane-tracker": {
+      "command": "zellij-pane-tracker",
+      "args": [],
+      "type": "stdio"
+    }
+  }
+}

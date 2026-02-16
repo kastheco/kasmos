@@ -73,7 +73,13 @@ fn generate_mock_run(count: usize) -> OrchestrationRun {
         let (state, started_at, completed_at, completion_method, failure_count) =
             if wave_idx == 0 && wave_size >= 3 {
                 match i {
-                    0 => (WPState::Completed, Some(now), Some(now), Some(CompletionMethod::AutoDetected), 0),
+                    0 => (
+                        WPState::Completed,
+                        Some(now),
+                        Some(now),
+                        Some(CompletionMethod::AutoDetected),
+                        0,
+                    ),
                     1 => (WPState::Failed, Some(now), None, None, 1),
                     2 => (WPState::ForReview, Some(now), None, None, 0),
                     _ => (WPState::Active, Some(now), None, None, 0),
@@ -155,7 +161,10 @@ fn derive_wave_state(work_packages: &[WorkPackage], wp_ids: &[String]) -> WaveSt
 
     if states.iter().all(|s| *s == WPState::Completed) {
         WaveState::Completed
-    } else if states.iter().any(|s| matches!(s, WPState::Active | WPState::ForReview)) {
+    } else if states
+        .iter()
+        .any(|s| matches!(s, WPState::Active | WPState::ForReview))
+    {
         WaveState::Active
     } else if states.contains(&WPState::Failed) {
         WaveState::PartiallyFailed

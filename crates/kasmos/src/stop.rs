@@ -72,8 +72,8 @@ pub async fn run(feature: Option<&str>) -> Result<()> {
 }
 
 fn send_fifo_command(fifo_path: &PathBuf, command: &str) -> std::io::Result<()> {
-    use std::os::unix::fs::OpenOptionsExt;
     use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
 
     // Open FIFO with O_WRONLY | O_NONBLOCK to avoid blocking if no reader
     let file = std::fs::OpenOptions::new()

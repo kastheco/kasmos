@@ -28,17 +28,26 @@ pub(crate) fn validate_identifier(s: &str, context: &str) -> Result<()> {
     if s.is_empty() {
         return Err(ZellijError::PaneOperation(format!("{} cannot be empty", context)).into());
     }
-    if !s.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
-        return Err(ZellijError::PaneOperation(
-            format!("Invalid {}: '{}' — only alphanumeric, hyphens, and underscores allowed", context, s)
-        ).into());
+    if !s
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(ZellijError::PaneOperation(format!(
+            "Invalid {}: '{}' — only alphanumeric, hyphens, and underscores allowed",
+            context, s
+        ))
+        .into());
     }
     Ok(())
 }
 
 /// Check if a string contains shell metacharacters.
 fn contains_shell_metacharacters(s: &str) -> bool {
-    s.contains(&[';', '|', '&', '$', '`', '(', ')', '<', '>', '\n', '\r', '\'', '"'][..])
+    s.contains(
+        &[
+            ';', '|', '&', '$', '`', '(', ')', '<', '>', '\n', '\r', '\'', '"',
+        ][..],
+    )
 }
 
 /// Information about a Zellij session.
@@ -83,7 +92,13 @@ pub trait ZellijCli: Send + Sync {
     async fn new_pane(&self, session: &str) -> Result<()>;
 
     /// Run a command in a named pane within a session.
-    async fn run_in_pane(&self, session: &str, name: &str, command: &str, args: &[&str]) -> Result<()>;
+    async fn run_in_pane(
+        &self,
+        session: &str,
+        name: &str,
+        command: &str,
+        args: &[&str],
+    ) -> Result<()>;
 
     /// Close the focused pane in a session.
     async fn close_focused_pane(&self, session: &str) -> Result<()>;
@@ -98,7 +113,12 @@ pub trait ZellijCli: Send + Sync {
     async fn toggle_fullscreen(&self, session: &str) -> Result<()>;
 
     /// Create a new tab, optionally with a layout and name.
-    async fn new_tab(&self, session: &str, name: Option<&str>, layout: Option<&std::path::Path>) -> Result<()>;
+    async fn new_tab(
+        &self,
+        session: &str,
+        name: Option<&str>,
+        layout: Option<&std::path::Path>,
+    ) -> Result<()>;
 
     /// Rename the currently focused tab.
     async fn rename_tab(&self, session: &str, name: &str) -> Result<()>;
@@ -191,11 +211,7 @@ fn parse_list_sessions(output: &str) -> Vec<SessionInfo> {
         .filter_map(|line| {
             let trimmed = line.trim();
             // Extract session name: first token before ` [` (0.44+) or ` (` or ` EXITED` (legacy)
-            let name = trimmed
-                .split(&[' ', '\t'][..])
-                .next()?
-                .trim()
-                .to_string();
+            let name = trimmed.split(&[' ', '\t'][..]).next()?.trim().to_string();
             if name.is_empty() {
                 return None;
             }
@@ -223,7 +239,10 @@ impl ZellijCli for RealZellijCli {
         // Note: TOCTOU race is acceptable for single-user orchestrator
         let sessions = self.list_sessions().await?;
         if sessions.iter().any(|s| s.name == name) {
-            return Err(ZellijError::SessionExists { name: name.to_string() }.into());
+            return Err(ZellijError::SessionExists {
+                name: name.to_string(),
+            }
+            .into());
         }
 
         // Use `attach --create-background` for detached session creation.
@@ -250,7 +269,7 @@ impl ZellijCli for RealZellijCli {
 
     async fn attach_session(&self, name: &str, create: bool) -> Result<()> {
         validate_identifier(name, "session name")?;
-        
+
         let mut args = vec!["attach"];
         if create {
             args.push("--create");
@@ -264,7 +283,7 @@ impl ZellijCli for RealZellijCli {
 
     async fn kill_session(&self, name: &str) -> Result<()> {
         validate_identifier(name, "session name")?;
-        
+
         self.run_command(&["kill-sessions", name]).await?;
         debug!("Killed session: {}", name);
         Ok(())
@@ -272,42 +291,55 @@ impl ZellijCli for RealZellijCli {
 
     async fn new_pane(&self, session: &str) -> Result<()> {
         validate_identifier(session, "session name")?;
-        
+
         self.run_command(&["--session", session, "action", "new-pane"])
             .await?;
         debug!("Created new pane in session: {}", session);
         Ok(())
     }
 
-    async fn run_in_pane(&self, session: &str, name: &str, command: &str, args: &[&str]) -> Result<()> {
+    async fn run_in_pane(
+        &self,
+        session: &str,
+        name: &str,
+        command: &str,
+        args: &[&str],
+    ) -> Result<()> {
         validate_identifier(session, "session name")?;
         validate_identifier(name, "pane name")?;
-        
+
         if contains_shell_metacharacters(command) {
-            return Err(ZellijError::PaneOperation(
-                format!("Command contains shell metacharacters: '{}'", command)
-            ).into());
+            return Err(ZellijError::PaneOperation(format!(
+                "Command contains shell metacharacters: '{}'",
+                command
+            ))
+            .into());
         }
-        
+
         for arg in args {
             if contains_shell_metacharacters(arg) {
-                return Err(ZellijError::PaneOperation(
-                    format!("Argument contains shell metacharacters: '{}'", arg)
-                ).into());
+                return Err(ZellijError::PaneOperation(format!(
+                    "Argument contains shell metacharacters: '{}'",
+                    arg
+                ))
+                .into());
             }
         }
-        
+
         let mut cmd_args = vec!["--session", session, "run", "-n", name, "--", command];
         cmd_args.extend_from_slice(args);
 
         self.run_command(&cmd_args).await?;
-        debug!("Ran command in pane '{}' of session '{}': {}", name, session, command);
+        debug!(
+            "Ran command in pane '{}' of session '{}': {}",
+            name, session, command
+        );
         Ok(())
     }
 
     async fn close_focused_pane(&self, session: &str) -> Result<()> {
         validate_identifier(session, "session name")?;
-        
+
         self.run_command(&["--session", session, "action", "close-pane"])
             .await?;
         debug!("Closed focused pane in session: {}", session);
@@ -316,7 +348,7 @@ impl ZellijCli for RealZellijCli {
 
     async fn focus_next_pane(&self, session: &str) -> Result<()> {
         validate_identifier(session, "session name")?;
-        
+
         self.run_command(&["--session", session, "action", "focus-next-pane"])
             .await?;
         debug!("Focused next pane in session: {}", session);
@@ -325,7 +357,7 @@ impl ZellijCli for RealZellijCli {
 
     async fn focus_previous_pane(&self, session: &str) -> Result<()> {
         validate_identifier(session, "session name")?;
-        
+
         self.run_command(&["--session", session, "action", "focus-previous-pane"])
             .await?;
         debug!("Focused previous pane in session: {}", session);
@@ -334,14 +366,19 @@ impl ZellijCli for RealZellijCli {
 
     async fn toggle_fullscreen(&self, session: &str) -> Result<()> {
         validate_identifier(session, "session name")?;
-        
+
         self.run_command(&["--session", session, "action", "ToggleFocusFullscreen"])
             .await?;
         debug!("Toggled fullscreen in session: {}", session);
         Ok(())
     }
 
-    async fn new_tab(&self, session: &str, name: Option<&str>, layout: Option<&std::path::Path>) -> Result<()> {
+    async fn new_tab(
+        &self,
+        session: &str,
+        name: Option<&str>,
+        layout: Option<&std::path::Path>,
+    ) -> Result<()> {
         validate_identifier(session, "session name")?;
         if let Some(n) = name {
             validate_identifier(n, "tab name")?;
@@ -390,7 +427,8 @@ impl ZellijCli for RealZellijCli {
     async fn query_tab_names(&self, session: &str) -> Result<Vec<String>> {
         validate_identifier(session, "session name")?;
 
-        let output = self.run_command(&["--session", session, "action", "query-tab-names"])
+        let output = self
+            .run_command(&["--session", session, "action", "query-tab-names"])
             .await?;
         let names: Vec<String> = output
             .lines()

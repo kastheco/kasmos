@@ -123,15 +123,13 @@ pub async fn run(feature: &str) -> Result<()> {
 
 /// Get the modification time of a file as a comparable value.
 fn file_modified(path: &PathBuf) -> Option<std::time::SystemTime> {
-    std::fs::metadata(path)
-        .ok()
-        .and_then(|m| m.modified().ok())
+    std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
 }
 
 /// Write a command line to the FIFO pipe (non-blocking open, blocking write).
 fn write_fifo(fifo_path: &Path, command: &str) -> Result<()> {
     use nix::errno::Errno;
-    use nix::fcntl::{open, OFlag};
+    use nix::fcntl::{OFlag, open};
     use nix::sys::stat::Mode;
     use std::io::Write;
 

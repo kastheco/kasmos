@@ -715,7 +715,9 @@ mod tests {
             let items: Vec<String> = deps.iter().map(|d| format!("- {d}")).collect();
             format!("dependencies:\n{}", items.join("\n"))
         };
-        format!("---\nwork_package_id: {id}\ntitle: \"{title}\"\nlane: {lane}\n{deps_str}\n---\n# {title}")
+        format!(
+            "---\nwork_package_id: {id}\ntitle: \"{title}\"\nlane: {lane}\n{deps_str}\n---\n# {title}"
+        )
     }
 
     fn dummy_feature_entry(dir: &Path, name: &str) -> FeatureEntry {

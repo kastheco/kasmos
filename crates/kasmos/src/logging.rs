@@ -32,10 +32,10 @@
 //!   - `RUST_LOG=kasmos=trace` — Show trace for kasmos crate only
 
 use crate::error::Result;
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
-use tracing_subscriber::{fmt, Registry};
+use tracing_subscriber::{Registry, fmt};
 
 /// Initialize the tracing logging system.
 ///
@@ -55,21 +55,29 @@ use tracing_subscriber::{fmt, Registry};
 /// Returns an error if the logging subscriber cannot be initialized.
 pub fn init_logging(tui_mode: bool) -> Result<()> {
     if tui_mode {
-        // TUI mode: route tracing events to tui-logger widget.
-        // tui_logger::init_logger() must have been called already by tui::run().
-        //
-        // Use try_init() instead of init() so that a second call (e.g. when
-        // `kasmos start` already initialised headless logging in main.rs)
-        // returns an error instead of panicking.
-        let _ = Registry::default()
-            .with(tui_logger::TuiTracingSubscriberLayer)
-            .try_init();
+        #[cfg(feature = "tui")]
+        {
+            // TUI mode: route tracing events to tui-logger widget.
+            // tui_logger::init_logger() must have been called already by tui::run().
+            //
+            // Use try_init() instead of init() so that a second call (e.g. when
+            // `kasmos start` already initialised headless logging in main.rs)
+            // returns an error instead of panicking.
+            let _ = Registry::default()
+                .with(tui_logger::TuiTracingSubscriberLayer)
+                .try_init();
+        }
+        #[cfg(not(feature = "tui"))]
+        {
+            // TUI feature not enabled -- fall back to headless mode.
+            return init_logging(false);
+        }
     } else {
         // Headless mode: structured fmt output to stderr.
         let filter =
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("kasmos=info"));
 
-        // Use try_init() to be idempotent — a subscriber may already be set.
+        // Use try_init() to be idempotent -- a subscriber may already be set.
         let _ = Registry::default()
             .with(
                 fmt::layer()

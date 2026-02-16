@@ -8,8 +8,8 @@
 pub mod app;
 pub mod event;
 pub mod keybindings;
-pub(crate) mod widgets;
 pub mod tabs;
+pub(crate) mod widgets;
 
 use std::io::Stdout;
 use std::time::Duration;
@@ -59,11 +59,7 @@ pub fn install_panic_hook() {
     std::panic::set_hook(Box::new(move |panic_info| {
         // Best-effort terminal restoration — ignore errors since we're panicking
         let _ = disable_raw_mode();
-        let _ = execute!(
-            std::io::stdout(),
-            LeaveAlternateScreen,
-            DisableMouseCapture
-        );
+        let _ = execute!(std::io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
         original_hook(panic_info);
     }));
 }
@@ -127,7 +123,10 @@ async fn navigate_to_hub() -> anyhow::Result<()> {
 ///
 /// Creates a floating pane running `ocx oc -- --agent reviewer --prompt "/kas.review <wp_id>"`
 /// in the WP's worktree directory.
-async fn launch_review_pane(wp_id: &str, worktree_path: Option<&std::path::Path>) -> anyhow::Result<()> {
+async fn launch_review_pane(
+    wp_id: &str,
+    worktree_path: Option<&std::path::Path>,
+) -> anyhow::Result<()> {
     let pane_name = format!("review-{}", wp_id.to_lowercase());
     let prompt = format!("/kas.review {}", wp_id);
 
@@ -138,7 +137,10 @@ async fn launch_review_pane(wp_id: &str, worktree_path: Option<&std::path::Path>
         cfg.opencode_profile
     };
     let profile_flag = match &profile {
-        Some(p) => format!(" -p {}", shell_escape::escape(std::borrow::Cow::Borrowed(p))),
+        Some(p) => format!(
+            " -p {}",
+            shell_escape::escape(std::borrow::Cow::Borrowed(p))
+        ),
         None => String::new(),
     };
 
@@ -157,13 +159,14 @@ async fn launch_review_pane(wp_id: &str, worktree_path: Option<&std::path::Path>
     let inner_cmd = if let Some(wt) = worktree_path {
         format!(
             "cd {} && ocx oc{profile_flag} -- --agent reviewer --prompt \"{}\"",
-            shell_escape::escape(std::borrow::Cow::Borrowed(
-                wt.to_str().unwrap_or(".")
-            )),
+            shell_escape::escape(std::borrow::Cow::Borrowed(wt.to_str().unwrap_or("."))),
             prompt
         )
     } else {
-        format!("ocx oc{profile_flag} -- --agent reviewer --prompt \"{}\"", prompt)
+        format!(
+            "ocx oc{profile_flag} -- --agent reviewer --prompt \"{}\"",
+            prompt
+        )
     };
     args.push(inner_cmd);
 

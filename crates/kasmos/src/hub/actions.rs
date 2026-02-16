@@ -92,50 +92,38 @@ pub fn resolve_actions(entry: &FeatureEntry) -> Vec<HubAction> {
 
     // Running orchestration takes precedence: only Attach is offered.
     if entry.orchestration_status == OrchestrationStatus::Running {
-        actions.push(HubAction::Attach {
-            feature_slug: slug,
-        });
+        actions.push(HubAction::Attach { feature_slug: slug });
         return actions;
     }
 
     match entry.spec_status {
         SpecStatus::Empty => {
-            actions.push(HubAction::CreateSpec {
-                feature_slug: slug,
-            });
+            actions.push(HubAction::CreateSpec { feature_slug: slug });
         }
         SpecStatus::Present => match entry.plan_status {
             PlanStatus::Absent => {
                 actions.push(HubAction::Clarify {
                     feature_slug: slug.clone(),
                 });
-                actions.push(HubAction::Plan {
-                    feature_slug: slug,
-                });
+                actions.push(HubAction::Plan { feature_slug: slug });
             }
             PlanStatus::Present => match &entry.task_progress {
                 TaskProgress::NoTasks => {
-                    actions.push(HubAction::GenerateTasks {
-                        feature_slug: slug,
-                    });
+                    actions.push(HubAction::GenerateTasks { feature_slug: slug });
                 }
                 TaskProgress::InProgress { .. } => {
                     // Wave-gated first (primary/default), continuous second.
                     actions.push(HubAction::StartWaveGated {
                         feature_slug: slug.clone(),
                     });
-                    actions.push(HubAction::StartContinuous {
-                        feature_slug: slug,
-                    });
+                    actions.push(HubAction::StartContinuous { feature_slug: slug });
                 }
                 TaskProgress::Complete { .. } => {
                     // All WPs done — offer acceptance and merge.
                     actions.push(HubAction::AcceptFeature {
                         feature_slug: slug.clone(),
                     });
-                    actions.push(HubAction::MergeFeature {
-                        feature_slug: slug,
-                    });
+                    actions.push(HubAction::MergeFeature { feature_slug: slug });
                 }
             },
         },
@@ -150,10 +138,7 @@ pub fn resolve_actions(entry: &FeatureEntry) -> Vec<HubAction> {
 
 /// Validate that a binary exists in PATH.
 fn validate_binary(name: &str) -> anyhow::Result<()> {
-    match std::process::Command::new("which")
-        .arg(name)
-        .output()
-    {
+    match std::process::Command::new("which").arg(name).output() {
         Ok(output) if output.status.success() => Ok(()),
         _ => anyhow::bail!("{name} not found in PATH"),
     }
@@ -186,7 +171,13 @@ pub async fn dispatch_action(action: &HubAction, profile: Option<&str>) -> anyho
             let prefix = feature_number_prefix(feature_slug);
             let mut args: Vec<&str> = vec!["oc"];
             args.extend_from_slice(&profile_args);
-            args.extend_from_slice(&["--", "--prompt", "/spec-kitty.specify", "--agent", "controller"]);
+            args.extend_from_slice(&[
+                "--",
+                "--prompt",
+                "/spec-kitty.specify",
+                "--agent",
+                "controller",
+            ]);
             open_pane_right(
                 &format!("spec-{prefix}"),
                 "ocx",
@@ -200,7 +191,13 @@ pub async fn dispatch_action(action: &HubAction, profile: Option<&str>) -> anyho
             let prefix = feature_number_prefix(feature_slug);
             let mut args: Vec<&str> = vec!["oc"];
             args.extend_from_slice(&profile_args);
-            args.extend_from_slice(&["--", "--prompt", "/spec-kitty.clarify", "--agent", "controller"]);
+            args.extend_from_slice(&[
+                "--",
+                "--prompt",
+                "/spec-kitty.clarify",
+                "--agent",
+                "controller",
+            ]);
             open_pane_right(
                 &format!("clarify-{prefix}"),
                 "ocx",
@@ -214,7 +211,13 @@ pub async fn dispatch_action(action: &HubAction, profile: Option<&str>) -> anyho
             let prefix = feature_number_prefix(feature_slug);
             let mut args: Vec<&str> = vec!["oc"];
             args.extend_from_slice(&profile_args);
-            args.extend_from_slice(&["--", "--prompt", "/spec-kitty.plan", "--agent", "controller"]);
+            args.extend_from_slice(&[
+                "--",
+                "--prompt",
+                "/spec-kitty.plan",
+                "--agent",
+                "controller",
+            ]);
             open_pane_right(
                 &format!("plan-{prefix}"),
                 "ocx",
@@ -228,7 +231,13 @@ pub async fn dispatch_action(action: &HubAction, profile: Option<&str>) -> anyho
             let prefix = feature_number_prefix(feature_slug);
             let mut args: Vec<&str> = vec!["oc"];
             args.extend_from_slice(&profile_args);
-            args.extend_from_slice(&["--", "--prompt", "/spec-kitty.tasks", "--agent", "controller"]);
+            args.extend_from_slice(&[
+                "--",
+                "--prompt",
+                "/spec-kitty.tasks",
+                "--agent",
+                "controller",
+            ]);
             open_pane_right(
                 &format!("tasks-{prefix}"),
                 "ocx",
@@ -268,9 +277,7 @@ pub async fn dispatch_action(action: &HubAction, profile: Option<&str>) -> anyho
         }
 
         // -- WP07: Attach (T035) --
-        HubAction::Attach { feature_slug } => {
-            go_to_tab(&format!("kasmos-{feature_slug}")).await
-        }
+        HubAction::Attach { feature_slug } => go_to_tab(&format!("kasmos-{feature_slug}")).await,
 
         // -- WP-level pane launch --
         HubAction::OpenWP {
@@ -287,18 +294,10 @@ pub async fn dispatch_action(action: &HubAction, profile: Option<&str>) -> anyho
                 return Ok(());
             }
             // No existing pane — open a new one in the WP's worktree.
-            let cwd = worktree_path
-                .as_ref()
-                .map(|p| p.display().to_string());
+            let cwd = worktree_path.as_ref().map(|p| p.display().to_string());
             let mut args: Vec<&str> = vec!["oc"];
             args.extend_from_slice(&profile_args);
-            open_pane_right(
-                &pane_name,
-                "ocx",
-                &args,
-                cwd.as_deref(),
-            )
-            .await
+            open_pane_right(&pane_name, "ocx", &args, cwd.as_deref()).await
         }
 
         // -- Post-completion: Accept & Merge --
@@ -307,11 +306,7 @@ pub async fn dispatch_action(action: &HubAction, profile: Option<&str>) -> anyho
             let prefix = feature_number_prefix(feature_slug);
             let mut args: Vec<&str> = vec!["oc"];
             args.extend_from_slice(&profile_args);
-            args.extend_from_slice(&[
-                "--",
-                "--agent", "reviewer",
-                "--prompt", "/kas:review",
-            ]);
+            args.extend_from_slice(&["--", "--agent", "reviewer", "--prompt", "/kas:review"]);
             open_pane_right(
                 &format!("accept-{prefix}"),
                 "ocx",
@@ -487,7 +482,13 @@ pub fn slugify(input: &str) -> String {
         .trim()
         .to_lowercase()
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     // Collapse consecutive hyphens and trim leading/trailing hyphens.
     let mut result = String::new();
@@ -576,12 +577,12 @@ mod tests {
             OrchestrationStatus::None,
         );
         let actions = resolve_actions(&entry);
-        assert!(actions
-            .iter()
-            .any(|a| matches!(a, HubAction::Clarify { .. })));
-        assert!(actions
-            .iter()
-            .any(|a| matches!(a, HubAction::Plan { .. })));
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, HubAction::Clarify { .. }))
+        );
+        assert!(actions.iter().any(|a| matches!(a, HubAction::Plan { .. })));
         assert!(actions.contains(&HubAction::ViewDetails));
         assert_eq!(actions.len(), 3);
     }
@@ -595,9 +596,11 @@ mod tests {
             OrchestrationStatus::None,
         );
         let actions = resolve_actions(&entry);
-        assert!(actions
-            .iter()
-            .any(|a| matches!(a, HubAction::GenerateTasks { .. })));
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, HubAction::GenerateTasks { .. }))
+        );
         assert!(actions.contains(&HubAction::ViewDetails));
         assert_eq!(actions.len(), 2);
     }
@@ -611,12 +614,16 @@ mod tests {
             OrchestrationStatus::None,
         );
         let actions = resolve_actions(&entry);
-        assert!(actions
-            .iter()
-            .any(|a| matches!(a, HubAction::StartContinuous { .. })));
-        assert!(actions
-            .iter()
-            .any(|a| matches!(a, HubAction::StartWaveGated { .. })));
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, HubAction::StartContinuous { .. }))
+        );
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, HubAction::StartWaveGated { .. }))
+        );
         assert!(actions.contains(&HubAction::ViewDetails));
         assert_eq!(actions.len(), 3);
     }
@@ -630,17 +637,23 @@ mod tests {
             OrchestrationStatus::Running,
         );
         let actions = resolve_actions(&entry);
-        assert!(actions
-            .iter()
-            .any(|a| matches!(a, HubAction::Attach { .. })));
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, HubAction::Attach { .. }))
+        );
         assert!(actions.contains(&HubAction::ViewDetails));
         // No start actions when running.
-        assert!(!actions
-            .iter()
-            .any(|a| matches!(a, HubAction::StartContinuous { .. })));
-        assert!(!actions
-            .iter()
-            .any(|a| matches!(a, HubAction::StartWaveGated { .. })));
+        assert!(
+            !actions
+                .iter()
+                .any(|a| matches!(a, HubAction::StartContinuous { .. }))
+        );
+        assert!(
+            !actions
+                .iter()
+                .any(|a| matches!(a, HubAction::StartWaveGated { .. }))
+        );
         assert_eq!(actions.len(), 2);
     }
 
@@ -654,12 +667,16 @@ mod tests {
         );
         let actions = resolve_actions(&entry);
         assert!(actions.contains(&HubAction::ViewDetails));
-        assert!(actions
-            .iter()
-            .any(|a| matches!(a, HubAction::AcceptFeature { .. })));
-        assert!(actions
-            .iter()
-            .any(|a| matches!(a, HubAction::MergeFeature { .. })));
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, HubAction::AcceptFeature { .. }))
+        );
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, HubAction::MergeFeature { .. }))
+        );
         assert_eq!(actions.len(), 3);
     }
 
@@ -673,12 +690,16 @@ mod tests {
             OrchestrationStatus::Completed,
         );
         let actions = resolve_actions(&entry);
-        assert!(actions
-            .iter()
-            .any(|a| matches!(a, HubAction::StartContinuous { .. })));
-        assert!(actions
-            .iter()
-            .any(|a| matches!(a, HubAction::StartWaveGated { .. })));
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, HubAction::StartContinuous { .. }))
+        );
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, HubAction::StartWaveGated { .. }))
+        );
         assert!(actions.contains(&HubAction::ViewDetails));
     }
 
@@ -782,14 +803,12 @@ mod tests {
 
     #[test]
     fn next_number_increments_max() {
-        let features = vec![
-            make_entry(
-                SpecStatus::Empty,
-                PlanStatus::Absent,
-                TaskProgress::NoTasks,
-                OrchestrationStatus::None,
-            ),
-        ];
+        let features = vec![make_entry(
+            SpecStatus::Empty,
+            PlanStatus::Absent,
+            TaskProgress::NoTasks,
+            OrchestrationStatus::None,
+        )];
         // number is "001", so next is "002".
         assert_eq!(next_feature_number(&features), "002");
     }

@@ -100,13 +100,19 @@ impl ReviewCoordinator {
 
         // Build the reviewer command with optional cwd
         let cwd_line = if let Some(ref wt) = request.worktree_path {
-            format!("cd {} || exit 1\n", shell_escape::escape(std::borrow::Cow::Owned(wt.display().to_string())))
+            format!(
+                "cd {} || exit 1\n",
+                shell_escape::escape(std::borrow::Cow::Owned(wt.display().to_string()))
+            )
         } else {
             String::new()
         };
 
         let profile_flag = match &self.opencode_profile {
-            Some(p) => format!(" -p {}", shell_escape::escape(std::borrow::Cow::Borrowed(p))),
+            Some(p) => format!(
+                " -p {}",
+                shell_escape::escape(std::borrow::Cow::Borrowed(p))
+            ),
             None => String::new(),
         };
 
@@ -131,12 +137,7 @@ impl ReviewCoordinator {
         // Launch via Zellij run — pass script path as argument to bash
         let script_str = script_path.display().to_string();
         self.cli
-            .run_in_pane(
-                &self.session_name,
-                &pane_name,
-                "bash",
-                &[&script_str],
-            )
+            .run_in_pane(&self.session_name, &pane_name, "bash", &[&script_str])
             .await?;
 
         tracing::info!(
@@ -181,7 +182,11 @@ mod tests {
             Ok(vec![])
         }
 
-        async fn create_session(&self, _name: &str, _layout: Option<&std::path::Path>) -> crate::Result<()> {
+        async fn create_session(
+            &self,
+            _name: &str,
+            _layout: Option<&std::path::Path>,
+        ) -> crate::Result<()> {
             Ok(())
         }
 
@@ -233,7 +238,12 @@ mod tests {
             Ok(())
         }
 
-        async fn new_tab(&self, _session: &str, _name: Option<&str>, _layout: Option<&std::path::Path>) -> crate::Result<()> {
+        async fn new_tab(
+            &self,
+            _session: &str,
+            _name: Option<&str>,
+            _layout: Option<&std::path::Path>,
+        ) -> crate::Result<()> {
             Ok(())
         }
 
@@ -293,8 +303,10 @@ mod tests {
         let script_path = kasmos_dir.join("review-WP01.sh");
         assert!(script_path.exists());
         let content = std::fs::read_to_string(&script_path).unwrap();
-        assert!(content.contains("ocx oc -- --agent reviewer --prompt"),
-            "Script content should contain ocx oc invocation: {content}");
+        assert!(
+            content.contains("ocx oc -- --agent reviewer --prompt"),
+            "Script content should contain ocx oc invocation: {content}"
+        );
         assert!(content.contains("/kas:verify WP01"));
     }
 
@@ -372,11 +384,16 @@ mod tests {
         let (review_tx, mut review_rx) = mpsc::channel(10);
         let (launch_tx, _launch_rx) = mpsc::channel(10);
 
-        let mut engine = crate::engine::WaveEngine::new(run_arc.clone(), completion_rx, action_rx, launch_tx);
+        let mut engine =
+            crate::engine::WaveEngine::new(run_arc.clone(), completion_rx, action_rx, launch_tx);
         engine.set_review_tx(review_tx);
         engine.init_graph().await.unwrap();
 
-        let event = CompletionEvent::with_lane("WP01".to_string(), CompletionMethod::AutoDetected, DetectedLane::ForReview);
+        let event = CompletionEvent::with_lane(
+            "WP01".to_string(),
+            CompletionMethod::AutoDetected,
+            DetectedLane::ForReview,
+        );
 
         engine.handle_completion(event).await.unwrap();
 
@@ -426,7 +443,8 @@ mod tests {
         let (_action_tx, action_rx) = mpsc::channel(10);
         let (launch_tx, _launch_rx) = mpsc::channel(10);
 
-        let mut engine = crate::engine::WaveEngine::new(run_arc.clone(), completion_rx, action_rx, launch_tx);
+        let mut engine =
+            crate::engine::WaveEngine::new(run_arc.clone(), completion_rx, action_rx, launch_tx);
         engine.init_graph().await.unwrap();
 
         engine.approve_wp("WP01").await.unwrap();
@@ -473,7 +491,8 @@ mod tests {
         let (_action_tx, action_rx) = mpsc::channel(10);
         let (launch_tx, _launch_rx) = mpsc::channel(10);
 
-        let mut engine = crate::engine::WaveEngine::new(run_arc.clone(), completion_rx, action_rx, launch_tx);
+        let mut engine =
+            crate::engine::WaveEngine::new(run_arc.clone(), completion_rx, action_rx, launch_tx);
         engine.init_graph().await.unwrap();
 
         engine.reject_wp("WP01", true).await.unwrap();
@@ -519,7 +538,8 @@ mod tests {
         let (_action_tx, action_rx) = mpsc::channel(10);
         let (launch_tx, _launch_rx) = mpsc::channel(10);
 
-        let mut engine = crate::engine::WaveEngine::new(run_arc.clone(), completion_rx, action_rx, launch_tx);
+        let mut engine =
+            crate::engine::WaveEngine::new(run_arc.clone(), completion_rx, action_rx, launch_tx);
         engine.init_graph().await.unwrap();
 
         engine.reject_wp("WP01", false).await.unwrap();

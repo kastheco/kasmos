@@ -11,7 +11,9 @@ use crate::detector::{CompletionEvent, DetectedLane};
 use crate::error::WaveError;
 use crate::graph::DependencyGraph;
 use crate::persistence::StatePersister;
-use crate::types::{CompletionMethod, OrchestrationRun, ProgressionMode, ReviewRequest, RunState, WPState};
+use crate::types::{
+    CompletionMethod, OrchestrationRun, ProgressionMode, ReviewRequest, RunState, WPState,
+};
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc, watch};
@@ -140,7 +142,10 @@ impl WaveEngine {
             .work_packages
             .iter()
             .filter(|wp| {
-                matches!(wp.state, WPState::Completed | WPState::ForReview | WPState::Active)
+                matches!(
+                    wp.state,
+                    WPState::Completed | WPState::ForReview | WPState::Active
+                )
             })
             .map(|wp| (wp.id.as_str(), &wp.state))
             .collect();
@@ -209,7 +214,10 @@ impl WaveEngine {
 
         loop {
             // Check if aborted
-            let is_aborted = { let r = self.run.read().await; r.state == RunState::Aborted };
+            let is_aborted = {
+                let r = self.run.read().await;
+                r.state == RunState::Aborted
+            };
             if is_aborted {
                 break;
             }
@@ -230,8 +238,15 @@ impl WaveEngine {
             // Check if orchestration is complete
             if self.is_complete().await {
                 let mut run = self.run.write().await;
-                let all_failed = run.work_packages.iter().all(|wp| wp.state == WPState::Failed);
-                run.state = if all_failed { RunState::Failed } else { RunState::Completed };
+                let all_failed = run
+                    .work_packages
+                    .iter()
+                    .all(|wp| wp.state == WPState::Failed);
+                run.state = if all_failed {
+                    RunState::Failed
+                } else {
+                    RunState::Completed
+                };
                 run.completed_at = Some(std::time::SystemTime::now());
                 tracing::info!(state = ?run.state, "Orchestration complete!");
                 drop(run);
@@ -262,13 +277,17 @@ impl WaveEngine {
                 .iter()
                 .position(|w| w.id == wp_id)
                 .ok_or_else(|| {
-                    crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.clone() })
+                    crate::error::KasmosError::Wave(WaveError::WpNotFound {
+                        wp_id: wp_id.clone(),
+                    })
                 })?;
 
             if success {
                 if detected_lane == Some(DetectedLane::ForReview) {
                     // Agent finished — move to review
-                    let new_state = run.work_packages[wp_idx].state.transition(WPState::ForReview, &wp_id)?;
+                    let new_state = run.work_packages[wp_idx]
+                        .state
+                        .transition(WPState::ForReview, &wp_id)?;
                     run.work_packages[wp_idx].state = new_state;
                     self.active_panes = self.active_panes.saturating_sub(1);
                     tracing::info!(wp_id = %wp_id, "WP moved to review");
@@ -490,9 +509,8 @@ impl WaveEngine {
         let run = self.run.read().await;
 
         // Partition eligible WPs into those in the current approved wave and those beyond
-        let (launchable, _beyond): (Vec<String>, Vec<String>) = eligible
-            .into_iter()
-            .partition(|wp_id| {
+        let (launchable, _beyond): (Vec<String>, Vec<String>) =
+            eligible.into_iter().partition(|wp_id| {
                 run.work_packages
                     .iter()
                     .find(|wp| wp.id == *wp_id)
@@ -538,7 +556,11 @@ impl WaveEngine {
     /// Called when operator confirms wave advance.
     async fn advance_wave(&mut self) -> Result<()> {
         self.current_wave += 1;
-        tracing::info!(wave = self.current_wave, "Advancing to wave {}", self.current_wave);
+        tracing::info!(
+            wave = self.current_wave,
+            "Advancing to wave {}",
+            self.current_wave
+        );
         let mut run = self.run.write().await;
         run.state = RunState::Running;
         drop(run);
@@ -588,7 +610,11 @@ impl WaveEngine {
             .work_packages
             .iter_mut()
             .find(|w| w.id == wp_id)
-            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.to_string() }))?;
+            .ok_or_else(|| {
+                crate::error::KasmosError::Wave(WaveError::WpNotFound {
+                    wp_id: wp_id.to_string(),
+                })
+            })?;
 
         wp.state = wp.state.transition(WPState::Active, &wp.id)?;
         wp.started_at = Some(std::time::SystemTime::now());
@@ -615,7 +641,11 @@ impl WaveEngine {
             .work_packages
             .iter_mut()
             .find(|w| w.id == wp_id)
-            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.to_string() }))?;
+            .ok_or_else(|| {
+                crate::error::KasmosError::Wave(WaveError::WpNotFound {
+                    wp_id: wp_id.to_string(),
+                })
+            })?;
 
         wp.state = wp.state.transition(WPState::Active, &wp.id)?;
         wp.started_at = Some(std::time::SystemTime::now());
@@ -635,7 +665,11 @@ impl WaveEngine {
             .work_packages
             .iter_mut()
             .find(|w| w.id == wp_id)
-            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.to_string() }))?;
+            .ok_or_else(|| {
+                crate::error::KasmosError::Wave(WaveError::WpNotFound {
+                    wp_id: wp_id.to_string(),
+                })
+            })?;
 
         wp.state = wp.state.transition(WPState::Paused, &wp.id)?;
         self.active_panes = self.active_panes.saturating_sub(1);
@@ -654,7 +688,11 @@ impl WaveEngine {
             .work_packages
             .iter_mut()
             .find(|w| w.id == wp_id)
-            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.to_string() }))?;
+            .ok_or_else(|| {
+                crate::error::KasmosError::Wave(WaveError::WpNotFound {
+                    wp_id: wp_id.to_string(),
+                })
+            })?;
 
         wp.state = wp.state.transition(WPState::Active, &wp.id)?;
         self.active_panes += 1;
@@ -673,7 +711,11 @@ impl WaveEngine {
             .work_packages
             .iter_mut()
             .find(|w| w.id == wp_id)
-            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.to_string() }))?;
+            .ok_or_else(|| {
+                crate::error::KasmosError::Wave(WaveError::WpNotFound {
+                    wp_id: wp_id.to_string(),
+                })
+            })?;
 
         wp.state = wp.state.transition(WPState::Completed, &wp.id)?;
         wp.completion_method = Some(CompletionMethod::Manual);
@@ -695,7 +737,11 @@ impl WaveEngine {
             .work_packages
             .iter_mut()
             .find(|w| w.id == wp_id)
-            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.to_string() }))?;
+            .ok_or_else(|| {
+                crate::error::KasmosError::Wave(WaveError::WpNotFound {
+                    wp_id: wp_id.to_string(),
+                })
+            })?;
 
         wp.state = wp.state.transition(WPState::Pending, &wp.id)?;
         wp.started_at = None;
@@ -741,7 +787,11 @@ impl WaveEngine {
             .work_packages
             .iter_mut()
             .find(|w| w.id == wp_id)
-            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.to_string() }))?;
+            .ok_or_else(|| {
+                crate::error::KasmosError::Wave(WaveError::WpNotFound {
+                    wp_id: wp_id.to_string(),
+                })
+            })?;
 
         wp.state = wp.state.transition(WPState::Completed, &wp.id)?;
         wp.completed_at = Some(std::time::SystemTime::now());
@@ -779,7 +829,11 @@ impl WaveEngine {
             .work_packages
             .iter_mut()
             .find(|w| w.id == wp_id)
-            .ok_or_else(|| crate::error::KasmosError::Wave(WaveError::WpNotFound { wp_id: wp_id.to_string() }))?;
+            .ok_or_else(|| {
+                crate::error::KasmosError::Wave(WaveError::WpNotFound {
+                    wp_id: wp_id.to_string(),
+                })
+            })?;
 
         let new_state;
         if relaunch {
@@ -841,9 +895,7 @@ impl WaveEngine {
                 let new_state = if wp_states.is_empty() {
                     wave.state
                 } else {
-                    let all_completed = wp_states
-                        .iter()
-                        .all(|s| matches!(s, WPState::Completed));
+                    let all_completed = wp_states.iter().all(|s| matches!(s, WPState::Completed));
                     let all_terminal = wp_states
                         .iter()
                         .all(|s| matches!(s, WPState::Completed | WPState::Failed));
@@ -880,7 +932,6 @@ impl WaveEngine {
             .iter()
             .all(|wp| matches!(wp.state, WPState::Completed | WPState::Failed))
     }
-
 }
 
 #[cfg(test)]
@@ -997,7 +1048,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_capacity_limiting() {
-        let config = Config { max_agent_panes: 2, ..Default::default() };
+        let config = Config {
+            max_agent_panes: 2,
+            ..Default::default()
+        };
 
         let mut run_data = create_test_run(
             vec![
@@ -1304,7 +1358,11 @@ mod tests {
             vec![
                 ("WP01".to_string(), vec![], 0),
                 ("WP02".to_string(), vec![], 0),
-                ("WP03".to_string(), vec!["WP01".to_string(), "WP02".to_string()], 1),
+                (
+                    "WP03".to_string(),
+                    vec!["WP01".to_string(), "WP02".to_string()],
+                    1,
+                ),
             ],
             ProgressionMode::Continuous,
         )));

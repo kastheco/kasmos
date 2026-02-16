@@ -5,16 +5,16 @@
 //! Both views include a progress summary bar, and the kanban view has
 //! responsive column layout and failure badges.
 
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Gauge, List, ListItem, Paragraph};
-use ratatui::Frame;
 
 use crate::tui::widgets::dependency_graph::render_dependency_graph;
 use crate::types::{WPState, WorkPackage};
 
-use super::super::app::{state_to_lane, App, DashboardViewMode};
+use super::super::app::{App, DashboardViewMode, state_to_lane};
 
 // ---------------------------------------------------------------------------
 // Column mode (responsive layout)
