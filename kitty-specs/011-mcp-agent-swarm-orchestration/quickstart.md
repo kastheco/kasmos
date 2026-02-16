@@ -4,7 +4,7 @@
 
 - Rust stable toolchain (2024 edition support)
 - `zellij` in `PATH`
-- `opencode` in `PATH`
+- `ocx` (OpenCode) in `PATH`
 - `bun` in `PATH` (runs pane-tracker MCP server)
 - `pane-tracker` (or `zellij-pane-tracker`) in `PATH`
 - `zjstatus.wasm` in `~/.config/zellij/plugins/`

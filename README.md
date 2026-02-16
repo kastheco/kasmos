@@ -26,7 +26,7 @@ Kasmos is an MCP-first orchestration CLI for running planner, coder, reviewer, a
 
 ## Dependencies
 
-kasmos requires these external tools at runtime. Run `kasmos setup` to validate.
+kasmos requires these external tools at runtime. `kasmos setup` validates most of these automatically.
 
 ### Required binaries
 
@@ -34,7 +34,7 @@ kasmos requires these external tools at runtime. Run `kasmos setup` to validate.
 |------|---------|---------|
 | `zellij` | Terminal multiplexer hosting all sessions/panes | [zellij.dev](https://zellij.dev/documentation/installation) |
 | `ocx` / OpenCode | AI agent launcher | Project docs |
-| `spec-kitty` | Feature/task lifecycle management | `pip install spec-kitty` |
+| `spec-kitty` | Feature/task lifecycle management | [spec-kitty docs](https://github.com/theslyprofessor/spec-kitty) |
 | `git` | Repository and worktree management | System package manager |
 | `bun` | Runs the pane-tracker MCP server | [bun.sh](https://bun.sh) |
 
