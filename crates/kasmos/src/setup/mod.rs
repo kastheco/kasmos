@@ -42,7 +42,7 @@ pub enum CheckStatus {
 pub async fn run() -> Result<()> {
     let config = Config::load().context("Failed to load config")?;
     let repo_root = detect_repo_root();
-    let result = validate_environment_with_repo(&config, repo_root.clone())?;
+    let mut result = validate_environment_with_repo(&config, repo_root.clone())?;
 
     println!("kasmos setup");
     print_results(&result);
@@ -59,8 +59,30 @@ pub async fn run() -> Result<()> {
         }
     }
 
+    // Install agent definitions into repo-level .opencode/agents/.
+    if let Some(repo_root) = repo_root.as_deref() {
+        match install_opencode_agents(repo_root) {
+            Ok(created) if created.is_empty() => {
+                println!("\nOpenCode agents: all roles already installed.");
+            }
+            Ok(created) => {
+                println!("\nInstalled OpenCode agent definitions:");
+                for path in &created {
+                    println!("- {}", path.display());
+                }
+            }
+            Err(err) => {
+                println!("\nWarning: could not install OpenCode agents: {err}");
+            }
+        }
+    }
+
+    // Re-evaluate any checks that setup may have fixed (e.g. oc-agents)
+    // so the final verdict reflects the post-install state.
+    recheck_after_install(repo_root.as_deref(), &mut result);
+
     if result.all_passed {
-        println!("\nAll required checks passed.");
+        println!("\nAll checks passed.");
         Ok(())
     } else {
         anyhow::bail!("setup checks failed")
@@ -76,7 +98,7 @@ fn validate_environment_with_repo(
     config: &Config,
     repo_root: Option<PathBuf>,
 ) -> Result<SetupResult> {
-    let checks = vec![
+    let mut checks = vec![
         check_binary(
             &config.paths.zellij_binary,
             "zellij",
@@ -96,9 +118,14 @@ fn validate_environment_with_repo(
             "Install spec-kitty and ensure `spec-kitty` is on PATH",
         ),
         check_pane_tracker(),
-        check_git(repo_root.as_deref()),
-        check_config_file(repo_root.as_deref()),
     ];
+
+    if let Some(root) = repo_root.as_deref() {
+        checks.push(check_opencode_agents(root));
+    }
+
+    checks.push(check_git(repo_root.as_deref()));
+    checks.push(check_config_file(repo_root.as_deref()));
 
     let all_passed = checks.iter().all(|c| c.status != CheckStatus::Fail);
 
@@ -125,31 +152,69 @@ fn check_binary(binary: &str, name: &str, required_for: &str, guidance: &str) ->
 }
 
 fn check_pane_tracker() -> CheckResult {
-    let required_for = "structured pane message/event tracking";
-    let candidates = ["pane-tracker", "zellij-pane-tracker"];
+    let required_for = "pane metadata tracking for agent coordination";
+    let plugin_dir = zellij_plugin_dir();
+    let plugin_path = plugin_dir.join("zellij-pane-tracker.wasm");
 
-    for candidate in candidates {
-        if let Ok(path) = which::which(candidate) {
-            return CheckResult {
-                name: "pane-tracker".to_string(),
-                required_for: required_for.to_string(),
-                description: format!("{} ({})", candidate, format_binary_description(&path)),
-                status: CheckStatus::Pass,
-                guidance: None,
-            };
-        }
+    if !plugin_path.is_file() {
+        return CheckResult {
+            name: "pane-tracker".to_string(),
+            required_for: required_for.to_string(),
+            description: "zellij-pane-tracker.wasm not found".to_string(),
+            status: CheckStatus::Fail,
+            guidance: Some(format!(
+                "Install the Zellij pane-tracker plugin:\n\
+                 \x20      git clone https://github.com/theslyprofessor/zellij-pane-tracker\n\
+                 \x20      cd zellij-pane-tracker && rustup target add wasm32-wasip1 && cargo build --release\n\
+                 \x20      mkdir -p {dir} && cp target/wasm32-wasip1/release/zellij-pane-tracker.wasm {dir}/",
+                dir = plugin_dir.display()
+            )),
+        };
+    }
+
+    // Plugin file exists. Check if Zellij config loads it.
+    if !zellij_config_loads_pane_tracker() {
+        return CheckResult {
+            name: "pane-tracker".to_string(),
+            required_for: required_for.to_string(),
+            description: format!("{} (not loaded in zellij config)", plugin_path.display()),
+            status: CheckStatus::Warn,
+            guidance: Some(
+                "Add to load_plugins {{ }} in ~/.config/zellij/config.kdl:\n\
+                 \x20      \"file:~/.config/zellij/plugins/zellij-pane-tracker.wasm\""
+                    .to_string(),
+            ),
+        };
     }
 
     CheckResult {
         name: "pane-tracker".to_string(),
         required_for: required_for.to_string(),
-        description: "pane tracker binary not found".to_string(),
-        status: CheckStatus::Fail,
-        guidance: Some(
-            "Install pane-tracker and expose `pane-tracker` or `zellij-pane-tracker` in PATH"
-                .to_string(),
-        ),
+        description: plugin_path.display().to_string(),
+        status: CheckStatus::Pass,
+        guidance: None,
     }
+}
+
+fn zellij_config_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("ZELLIJ_CONFIG_DIR") {
+        return PathBuf::from(dir);
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        return PathBuf::from(home).join(".config/zellij");
+    }
+    PathBuf::from(".config/zellij")
+}
+
+fn zellij_plugin_dir() -> PathBuf {
+    zellij_config_dir().join("plugins")
+}
+
+fn zellij_config_loads_pane_tracker() -> bool {
+    let config_path = zellij_config_dir().join("config.kdl");
+    std::fs::read_to_string(config_path)
+        .map(|content| content.contains("zellij-pane-tracker"))
+        .unwrap_or(false)
 }
 
 fn check_git(repo_root: Option<&Path>) -> CheckResult {
@@ -378,6 +443,225 @@ fn default_agent_prompt(role: &str) -> String {
     )
 }
 
+/// Re-evaluate fixable checks after install steps have run.
+///
+/// Some checks (like `oc-agents`) may have failed during the initial
+/// validation but were subsequently fixed by the install step.  This
+/// function re-runs those checks and patches the result so the final
+/// pass/fail verdict reflects reality.
+fn recheck_after_install(repo_root: Option<&Path>, result: &mut SetupResult) {
+    if let Some(root) = repo_root {
+        for check in &mut result.checks {
+            if check.name == "oc-agents" && check.status != CheckStatus::Pass {
+                *check = check_opencode_agents(root);
+            }
+        }
+    }
+    result.all_passed = result.checks.iter().all(|c| c.status != CheckStatus::Fail);
+}
+
+/// All kasmos agent roles that need opencode agent definitions.
+const KASMOS_AGENT_ROLES: &[&str] = &["manager", "planner", "coder", "reviewer", "release"];
+
+/// Check that opencode agent definitions exist for all kasmos roles.
+///
+/// Looks for `.opencode/agents/<role>.md` in the repo root (per-project agents).
+fn check_opencode_agents(repo_root: &Path) -> CheckResult {
+    let required_for = "agent spawning (opencode --agent <role>)";
+    let agent_dir = repo_root.join(".opencode/agents");
+
+    let missing: Vec<&str> = KASMOS_AGENT_ROLES
+        .iter()
+        .filter(|role| !agent_dir.join(format!("{}.md", role)).is_file())
+        .copied()
+        .collect();
+
+    if missing.is_empty() {
+        CheckResult {
+            name: "oc-agents".to_string(),
+            required_for: required_for.to_string(),
+            description: format!(
+                "all {} roles in .opencode/agents/",
+                KASMOS_AGENT_ROLES.len(),
+            ),
+            status: CheckStatus::Pass,
+            guidance: None,
+        }
+    } else {
+        CheckResult {
+            name: "oc-agents".to_string(),
+            required_for: required_for.to_string(),
+            description: format!("missing agents: {}", missing.join(", ")),
+            status: CheckStatus::Fail,
+            guidance: Some(format!(
+                "Run `kasmos setup` to install agent definitions to {}",
+                agent_dir.display()
+            )),
+        }
+    }
+}
+
+/// Install agent definitions into the repo-level `.opencode/agents/` directory.
+///
+/// Only writes files that do not already exist, preserving user customisations.
+fn install_opencode_agents(repo_root: &Path) -> Result<Vec<PathBuf>> {
+    let agent_dir = repo_root.join(".opencode/agents");
+    std::fs::create_dir_all(&agent_dir)
+        .with_context(|| format!("Failed to create {}", agent_dir.display()))?;
+
+    let mut created = Vec::new();
+
+    for role in KASMOS_AGENT_ROLES {
+        write_if_missing(
+            &agent_dir.join(format!("{role}.md")),
+            default_opencode_agent(role),
+            &mut created,
+        )?;
+    }
+
+    Ok(created)
+}
+
+/// Default opencode agent definition for a kasmos role.
+///
+/// These are the files opencode reads from `profiles/<profile>/agent/<role>.md`
+/// to register agent types. They use YAML frontmatter for metadata.
+fn default_opencode_agent(role: &str) -> String {
+    match role {
+        "manager" => r#"---
+description: Orchestrator agent that coordinates worker agents through kasmos MCP tools
+mode: all
+---
+
+# Manager
+
+You are the orchestration manager for kasmos feature development.
+
+## Responsibilities
+
+- Assess feature readiness and determine workflow phase
+- Spawn and coordinate planner, coder, reviewer, and release workers
+- Use kasmos MCP tools for workflow state and worker lifecycle
+- Monitor progress through message-log events
+- Make lane transition decisions based on worker outcomes
+
+## Rules
+
+- Always check workflow_status before spawning workers
+- Respect the review_rejection_cap for review cycles
+- Use structured messages for all worker coordination
+- Do not implement code directly - delegate to worker agents
+"#
+        .to_string(),
+
+        "planner" => r#"---
+description: Planning agent for converting requirements into structured plans and work packages
+mode: all
+---
+
+# Planner
+
+You convert feature specifications into actionable plans and work package decompositions.
+
+## Responsibilities
+
+- Analyze spec.md to understand feature requirements
+- Produce architecture-quality plans
+- Decompose plans into work packages with clear contracts
+- Maintain consistency across spec, plan, and task artifacts
+
+## Rules
+
+- Keep plans actionable for implementers
+- Define clear acceptance criteria per work package
+- Identify dependencies between work packages
+- Prefer explicit assumptions over hidden ambiguity
+"#
+        .to_string(),
+
+        "coder" => r#"---
+description: Implementation agent for writing and modifying code
+mode: all
+---
+
+# Coder
+
+You are a software engineer focused on implementing robust, correct code.
+
+## Responsibilities
+
+- Implement features and fixes exactly as specified in the prompt
+- Follow existing project conventions and patterns
+- Write clean, readable code
+- Run verification after changes (build, lint, type-check, tests)
+- Return clear summaries of changes made
+
+## Rules
+
+- Early exit: guard clauses at function tops, minimal nesting
+- Parse don't validate: parse at boundaries, trust internally
+- Fail fast: invalid states halt with descriptive errors
+- Fix lint/type errors in code you modify
+- NEVER commit code or leave debug statements
+"#
+        .to_string(),
+
+        "reviewer" => r#"---
+description: Code reviewer for correctness, security, and quality
+mode: all
+---
+
+# Reviewer
+
+You are an expert code reviewer providing detailed, actionable feedback.
+
+## Process
+
+1. Identify scope - list all files to review
+2. Analyze - correctness, security, performance, style
+3. Classify - severity: Critical > Major > Minor > Nitpick
+4. Report - structured findings with file:line references
+
+## Rules
+
+- NEVER modify files
+- NEVER approve without completing full review
+- Be specific with file:line references
+- Include positive observations alongside issues
+"#
+        .to_string(),
+
+        "release" => r#"---
+description: Release agent for merge, finalization, and cleanup operations
+mode: all
+---
+
+# Release
+
+You handle feature integration, merge execution, and release finalization steps.
+
+## Responsibilities
+
+- Execute merge preflight checks and merge strategy steps
+- Resolve straightforward merge/process issues safely
+- Report merge outcomes, cleanup, and follow-up actions clearly
+
+## Rules
+
+- Prefer safe, reversible git operations unless explicitly told otherwise
+- Never skip required validation gates
+- Keep execution logs concise and operator-focused
+- Escalate when conflicts affect critical interfaces or safety-sensitive paths
+"#
+        .to_string(),
+
+        _ => format!(
+            "---\ndescription: {} agent\nmode: all\n---\n\n# {}\n\nGenerated by `kasmos setup`.\n",
+            role, role
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -391,6 +675,7 @@ mod tests {
         let _guard = ENV_LOCK.lock().expect("env lock");
         let old_path = std::env::var("PATH").ok();
         let old_cwd = std::env::current_dir().expect("cwd");
+        let old_zellij_config = std::env::var("ZELLIJ_CONFIG_DIR").ok();
 
         let repo = tempfile::tempdir().expect("repo tempdir");
         std::fs::create_dir_all(repo.path().join(".git")).expect("create .git");
@@ -400,11 +685,31 @@ mod tests {
         create_executable(&bin.join("zellij"));
         create_executable(&bin.join("ocx"));
         create_executable(&bin.join("spec-kitty"));
-        create_executable(&bin.join("pane-tracker"));
         create_executable(&bin.join("git"));
+
+        // Create fake Zellij config dir with plugin and config.kdl
+        let zellij_config = repo.path().join("zellij-config");
+        let plugin_dir = zellij_config.join("plugins");
+        std::fs::create_dir_all(&plugin_dir).expect("create plugin dir");
+        std::fs::write(plugin_dir.join("zellij-pane-tracker.wasm"), b"fake-wasm")
+            .expect("write fake wasm");
+        std::fs::write(
+            zellij_config.join("config.kdl"),
+            "load_plugins {\n    \"file:~/.config/zellij/plugins/zellij-pane-tracker.wasm\"\n}\n",
+        )
+        .expect("write fake zellij config");
+
+        // Create repo-level .opencode/agents/ with agent definitions.
+        let oc_agent_dir = repo.path().join(".opencode/agents");
+        std::fs::create_dir_all(&oc_agent_dir).expect("create oc agent dir");
+        for role in KASMOS_AGENT_ROLES {
+            std::fs::write(oc_agent_dir.join(format!("{role}.md")), "# stub\n")
+                .expect("write fake agent");
+        }
 
         unsafe {
             std::env::set_var("PATH", bin.display().to_string());
+            std::env::set_var("ZELLIJ_CONFIG_DIR", zellij_config.display().to_string());
             std::env::set_current_dir(repo.path()).expect("set cwd");
         }
 
@@ -419,6 +724,18 @@ mod tests {
                     .iter()
                     .any(|c| c.name == "zellij" && c.status == CheckStatus::Pass)
             );
+            assert!(
+                result
+                    .checks
+                    .iter()
+                    .any(|c| c.name == "pane-tracker" && c.status == CheckStatus::Pass)
+            );
+            assert!(
+                result
+                    .checks
+                    .iter()
+                    .any(|c| c.name == "oc-agents" && c.status == CheckStatus::Pass)
+            );
         });
 
         unsafe {
@@ -427,6 +744,11 @@ mod tests {
                 std::env::set_var("PATH", path);
             } else {
                 std::env::remove_var("PATH");
+            }
+            if let Some(dir) = old_zellij_config {
+                std::env::set_var("ZELLIJ_CONFIG_DIR", dir);
+            } else {
+                std::env::remove_var("ZELLIJ_CONFIG_DIR");
             }
         }
 
@@ -474,6 +796,47 @@ mod tests {
                 .join("config/profiles/kasmos/agent/planner.md")
                 .is_file()
         );
+    }
+
+    #[test]
+    fn install_opencode_agents_creates_missing_roles() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        let agent_dir = repo.path().join(".opencode/agents");
+
+        let created = install_opencode_agents(repo.path()).expect("install agents");
+        assert_eq!(created.len(), KASMOS_AGENT_ROLES.len());
+
+        for role in KASMOS_AGENT_ROLES {
+            let path = agent_dir.join(format!("{role}.md"));
+            assert!(path.is_file(), "missing agent: {role}");
+
+            let content = std::fs::read_to_string(&path).expect("read agent");
+            assert!(content.contains("---"), "missing frontmatter in {role}");
+        }
+
+        // Second run should be idempotent.
+        let second = install_opencode_agents(repo.path()).expect("second install");
+        assert!(second.is_empty(), "expected no new files on second run");
+    }
+
+    #[test]
+    fn check_opencode_agents_reports_missing() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        let agent_dir = repo.path().join(".opencode/agents");
+        std::fs::create_dir_all(&agent_dir).expect("create agent dir");
+
+        // Only install 2 of 5 roles.
+        std::fs::write(agent_dir.join("coder.md"), "# stub\n").expect("write coder");
+        std::fs::write(agent_dir.join("reviewer.md"), "# stub\n").expect("write reviewer");
+
+        let check = check_opencode_agents(repo.path());
+
+        assert_eq!(check.status, CheckStatus::Fail);
+        assert!(check.description.contains("manager"));
+        assert!(check.description.contains("planner"));
+        assert!(check.description.contains("release"));
+        assert!(!check.description.contains("coder"));
+        assert!(!check.description.contains("reviewer"));
     }
 
     #[test]

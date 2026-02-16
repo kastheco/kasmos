@@ -1,7 +1,7 @@
 //! KDL layout generation for orchestration launch.
 
 use crate::config::Config;
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 
 /// Launch layout definition for a single orchestration tab.
 #[derive(Debug, Clone)]
@@ -86,7 +86,7 @@ impl OrchestrationLayout {
             }
 
             out.push_str(&format!(
-                "    tab max_panes={pane_count} {{\n      pane split_direction=\"vertical\" {{\n        pane size=\"22%\" split_direction=\"horizontal\" {{\n          pane size=\"{mgr}%\"\n          pane size=\"{msg}%\"\n          pane size=\"{dash}%\"\n        }}\n        pane {{ children }}\n      }}\n    }}\n",
+                "    tab max_panes={pane_count} {{\n      pane split_direction=\"vertical\" {{\n        pane size=\"22%\" split_direction=\"horizontal\" {{\n          pane size=\"{mgr}%\"\n          pane size=\"{msg}%\"\n          pane size=\"{dash}%\"\n        }}\n        pane {{\n          children\n        }}\n      }}\n    }}\n",
                 mgr = self.manager_width_pct,
                 msg = self.message_log_width_pct,
                 dash = self.dashboard_width_pct()

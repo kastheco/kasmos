@@ -1,0 +1,40 @@
+max_agent_panes = 4
+progression_mode = "continuous"
+zellij_binary = "zellij"
+opencode_binary = "opencode"
+spec_kitty_binary = "spec-kitty"
+kasmos_dir = ".kasmos"
+poll_interval_secs = 5
+debounce_ms = 200
+controller_width_pct = 60
+opencode_profile = "kas"
+
+[agent]
+max_parallel_workers = 4
+opencode_binary = "ocx"
+opencode_profile = "kas"
+review_rejection_cap = 3
+
+[communication]
+poll_interval_secs = 5
+event_timeout_secs = 300
+
+[paths]
+zellij_binary = "zellij"
+spec_kitty_binary = "spec-kitty"
+specs_root = "kitty-specs"
+
+[session]
+session_name = "kasmos"
+manager_width_pct = 60
+message_log_width_pct = 20
+max_workers_per_row = 4
+
+[audit]
+metadata_only = true
+debug_full_payload = false
+max_bytes = 536870912
+max_age_days = 14
+
+[lock]
+stale_timeout_minutes = 15
