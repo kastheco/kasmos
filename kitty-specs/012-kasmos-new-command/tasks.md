@@ -47,7 +47,7 @@
 **Implementation sequence**: T001 and T002 are independent (parallel). T003-T007 are sequential within new.rs. T007 integrates everything.
 
 **Included subtasks**:
-- [ ] T001: Make `read_file_if_exists` and `summarize_markdown` `pub(crate)` in prompt.rs
+- [x] T001: Make `read_file_if_exists` and `summarize_markdown` `pub(crate)` in prompt.rs
 - [ ] T002: Add `pub mod new;` to lib.rs, `Commands::New` to main.rs, dispatch arm
 - [ ] T003: Create new.rs with `preflight_check()` for opencode + spec-kitty
 - [ ] T004: Implement repo root discovery from CWD
