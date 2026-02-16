@@ -53,7 +53,7 @@
 - [x] T004: Implement repo root discovery from CWD
 - [x] T005: Implement `build_prompt()` with context loading + description injection
 - [x] T006: Implement opencode process spawning with exit code propagation
-- [ ] T007: Wire `run()` orchestrator: config -> preflight -> prompt -> spawn
+- [x] T007: Wire `run()` orchestrator: config -> preflight -> prompt -> spawn
 
 **Risks**:
 - Shell escaping of prompt content with special characters (mitigate: use shell-escape crate)
