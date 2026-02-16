@@ -135,14 +135,13 @@ where
         .release()
         .context("failed to release feature lock")
     {
-        if launch_result.is_ok() {
-            return Err(release_err);
-        }
         tracing::warn!(
             error = %release_err,
             feature = feature_slug,
-            "failed to release feature lock after launch error"
+            launch_succeeded = launch_result.is_ok(),
+            "failed to release feature lock"
         );
+        eprintln!("Warning: failed to release feature lock: {release_err}");
     }
 
     launch_result?;

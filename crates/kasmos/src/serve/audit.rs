@@ -146,8 +146,7 @@ impl AuditWriter {
             return Ok(());
         }
 
-        let archive_name = format!("messages.{}.jsonl", Utc::now().format("%Y%m%d-%H%M%S"));
-        let archive_path = self.path.with_file_name(archive_name);
+        let archive_path = self.next_archive_path();
         std::fs::rename(&self.path, &archive_path).with_context(|| {
             format!(
                 "failed rotating audit file {} to {}",
@@ -174,11 +173,33 @@ impl AuditWriter {
     }
 
     fn prepare_debug_payload(&self, payload: Option<Value>) -> Option<Value> {
-        if !self.config.debug_full_payload {
+        if self.config.metadata_only && !self.config.debug_full_payload {
             return None;
         }
 
         payload.map(redact_sensitive_values)
+    }
+
+    fn next_archive_path(&self) -> PathBuf {
+        let timestamp = Utc::now().format("%Y%m%d-%H%M%S-%f").to_string();
+        let mut suffix = 0u32;
+
+        loop {
+            let suffix_part = if suffix == 0 {
+                String::new()
+            } else {
+                format!(".{suffix}")
+            };
+            let candidate = self
+                .path
+                .with_file_name(format!("messages.{timestamp}{suffix_part}.jsonl"));
+
+            if !candidate.exists() {
+                return candidate;
+            }
+
+            suffix = suffix.saturating_add(1);
+        }
     }
 
     fn get_or_open_file(&mut self) -> Result<&mut File> {
@@ -249,18 +270,6 @@ impl AuditWriter {
         }
 
         Ok(())
-    }
-}
-
-pub fn resolve_feature_dir(specs_root: &Path, feature_slug: &str) -> PathBuf {
-    if specs_root
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name == feature_slug)
-    {
-        specs_root.to_path_buf()
-    } else {
-        specs_root.join(feature_slug)
     }
 }
 

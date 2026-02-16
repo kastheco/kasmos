@@ -8,7 +8,8 @@ pub mod registry;
 pub mod tools;
 
 use crate::config::Config;
-use crate::serve::audit::{AuditEntry, AuditWriter, resolve_feature_dir};
+use crate::feature_arg::feature_dir_from_specs_root;
+use crate::serve::audit::{AuditEntry, AuditWriter};
 use crate::serve::tools::despawn_worker::{DespawnWorkerInput, DespawnWorkerOutput};
 use crate::serve::tools::infer_feature::{InferFeatureInput, InferFeatureOutput};
 use crate::serve::tools::list_features::{ListFeaturesInput, ListFeaturesOutput};
@@ -43,7 +44,7 @@ impl KasmosServer {
         let feature_slug = infer_feature_from_specs_root(&config.paths.specs_root);
         let audit = if let Some(slug) = feature_slug.as_deref() {
             let feature_dir =
-                resolve_feature_dir(std::path::Path::new(&config.paths.specs_root), slug);
+                feature_dir_from_specs_root(std::path::Path::new(&config.paths.specs_root), slug);
             Some(
                 AuditWriter::new(&feature_dir, slug.to_string(), &config.audit)
                     .with_context(|| format!("failed to initialize audit writer for {slug}"))?,
@@ -73,7 +74,7 @@ impl KasmosServer {
         }
 
         if audit.is_none() {
-            let feature_dir = resolve_feature_dir(
+            let feature_dir = feature_dir_from_specs_root(
                 std::path::Path::new(&self.config.paths.specs_root),
                 &entry.feature_slug,
             );
