@@ -28,6 +28,10 @@
 # .kittify: track memory, missions, config; ignore runtime artifacts
 .kittify/.dashboard
 .kittify/scripts/
+
+# Always track these paths (negate ignores)
+!kitty-specs/
+!.kittify/memory/
 .claudeignore
 .multitask*
 IMPLEMENT.md

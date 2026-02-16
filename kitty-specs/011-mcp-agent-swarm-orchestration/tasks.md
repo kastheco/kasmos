@@ -91,13 +91,13 @@
 **Estimated prompt size**: ~340 lines
 
 ### Included Subtasks
-- [ ] T014 Implement `crates/kasmos/src/launch/layout.rs` for manager pane, message-log pane, dashboard pane, and dynamic worker area layout generation with swap-layout KDL blocks for pane counts 2 through max_workers+2, ensuring automatic reflow on pane add/remove per FR-007 and US5
-- [ ] T015 Implement `crates/kasmos/src/launch/session.rs` for outside-Zellij session creation vs inside-Zellij tab creation behavior
-- [ ] T016 Ensure runtime model is manager-spawned MCP stdio subprocess; remove any dedicated MCP tab assumptions from launch logic
-- [ ] T017 Implement manager initial prompt seed including bound feature, phase assessment instruction, and confirmation-first behavior
-- [ ] T018 Add minimal-layout fallback path (manager + message-log) when advanced layout generation fails
-- [ ] T019 Wire `crates/kasmos/src/launch/mod.rs` end-to-end (config -> detect/select feature -> preflight -> layout -> launch)
-- [ ] T020 Add launch integration tests covering explicit feature arg, branch inference, and selector path behavior
+- [x] T014 Implement `crates/kasmos/src/launch/layout.rs` for manager pane, message-log pane, dashboard pane, and dynamic worker area layout generation with swap-layout KDL blocks for pane counts 2 through max_workers+2, ensuring automatic reflow on pane add/remove per FR-007 and US5
+- [x] T015 Implement `crates/kasmos/src/launch/session.rs` for outside-Zellij session creation vs inside-Zellij tab creation behavior
+- [x] T016 Ensure runtime model is manager-spawned MCP stdio subprocess; remove any dedicated MCP tab assumptions from launch logic
+- [x] T017 Implement manager initial prompt seed including bound feature, phase assessment instruction, and confirmation-first behavior
+- [x] T018 Add minimal-layout fallback path (manager + message-log) when advanced layout generation fails
+- [x] T019 Wire `crates/kasmos/src/launch/mod.rs` end-to-end (config -> detect/select feature -> preflight -> layout -> launch)
+- [x] T020 Add launch integration tests covering explicit feature arg, branch inference, and selector path behavior
 
 ### Implementation Notes
 - Keep session name deterministic (`kasmos`) unless existing naming policy demands suffixing.
@@ -123,12 +123,12 @@
 **Estimated prompt size**: ~350 lines
 
 ### Included Subtasks
-- [ ] T021 Implement `crates/kasmos/src/serve/mod.rs` server bootstrap with stdio transport
-- [ ] T022 Define shared server state (`WorkerRegistry`, message cursor, lock handler, audit policy, config snapshot)
-- [ ] T023 Implement typed request/response structs for all tool handlers to align with `contracts/kasmos-serve.json`
-- [ ] T024 [P] Fully implement `list_features` tool against `kitty-specs/`
-- [ ] T025 [P] Fully implement `infer_feature` tool using shared feature detection logic
-- [ ] T026 Add contract-level tests for tool registration and standard error code responses
+- [x] T021 Implement `crates/kasmos/src/serve/mod.rs` server bootstrap with stdio transport
+- [x] T022 Define shared server state (`WorkerRegistry`, message cursor, lock handler, audit policy, config snapshot)
+- [x] T023 Implement typed request/response structs for all tool handlers to align with `contracts/kasmos-serve.json`
+- [x] T024 [P] Fully implement `list_features` tool against `kitty-specs/`
+- [x] T025 [P] Fully implement `infer_feature` tool using shared feature detection logic
+- [x] T026 Add contract-level tests for tool registration and standard error code responses
 
 ### Implementation Notes
 - Preserve exact error codes from contract (`FEATURE_LOCK_CONFLICT`, `STALE_LOCK_CONFIRMATION_REQUIRED`, etc.).
@@ -156,12 +156,12 @@
 **Estimated prompt size**: ~330 lines
 
 ### Included Subtasks
-- [ ] T027 Implement lock key derivation `<repo_root>::<feature_slug>` and canonical repo-root resolution
-- [ ] T028 Implement persistent lock record with owner/session metadata, acquired/heartbeat/expires timestamps
-- [ ] T029 Enforce conflict response path for active locks with actionable owner details
-- [ ] T030 Implement stale detection using configurable timeout (default 15 minutes)
-- [ ] T031 Implement confirmation-gated stale takeover flow and explicit rejection path when confirmation absent
-- [ ] T032 Add tests for lock acquisition, heartbeat refresh, stale transition, takeover confirmation, and conflict errors
+- [x] T027 Implement lock key derivation `<repo_root>::<feature_slug>` and canonical repo-root resolution
+- [x] T028 Implement persistent lock record with owner/session metadata, acquired/heartbeat/expires timestamps
+- [x] T029 Enforce conflict response path for active locks with actionable owner details
+- [x] T030 Implement stale detection using configurable timeout (default 15 minutes)
+- [x] T031 Implement confirmation-gated stale takeover flow and explicit rejection path when confirmation absent
+- [x] T032 Add tests for lock acquisition, heartbeat refresh, stale transition, takeover confirmation, and conflict errors
 
 ### Implementation Notes
 - Lock scope is repository-wide across processes, tabs, and sessions.
@@ -347,12 +347,12 @@
 **Estimated prompt size**: ~330 lines
 
 ### Included Subtasks
-- [ ] T063 Define/update OpenCode profile assets under `config/profiles/kasmos/` for manager/planner/coder/reviewer/release
-- [ ] T064 Rewrite `crates/kasmos/src/prompt.rs` for role-aware context assembly and command generation
-- [ ] T065 Implement manager bootstrap prompt instructions for assessment, confirmation gates, and `kasmos serve` subprocess ownership
-- [ ] T066 Implement worker prompt contract for structured message-log communication and escalation events
-- [ ] T067 Enforce context minimization rules (coder narrow, reviewer medium, release broad structural)
-- [ ] T068 Add prompt snapshot tests and validation for role-context boundary rules
+- [x] T063 Define/update OpenCode profile assets under `config/profiles/kasmos/` for manager/planner/coder/reviewer/release
+- [x] T064 Rewrite `crates/kasmos/src/prompt.rs` for role-aware context assembly and command generation
+- [x] T065 Implement manager bootstrap prompt instructions for assessment, confirmation gates, and `kasmos serve` subprocess ownership
+- [x] T066 Implement worker prompt contract for structured message-log communication and escalation events
+- [x] T067 Enforce context minimization rules (coder narrow, reviewer medium, release broad structural)
+- [x] T068 Add prompt snapshot tests and validation for role-context boundary rules
 
 ### Implementation Notes
 - Single agent runtime requirement: OpenCode only for all roles.
