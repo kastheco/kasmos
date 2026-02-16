@@ -7,12 +7,10 @@ kasmos_dir = ".kasmos"
 poll_interval_secs = 5
 debounce_ms = 200
 controller_width_pct = 60
-opencode_profile = "kas"
 
 [agent]
 max_parallel_workers = 4
-opencode_binary = "ocx"
-opencode_profile = "kas"
+opencode_binary = "opencode"
 review_rejection_cap = 3
 
 [communication]

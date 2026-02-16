@@ -17,6 +17,7 @@ pub mod health;
 pub mod launch;
 pub mod layout;
 pub mod logging;
+pub mod new;
 pub mod parser;
 pub mod persistence;
 pub mod prompt;

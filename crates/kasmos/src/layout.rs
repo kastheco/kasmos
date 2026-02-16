@@ -431,20 +431,16 @@ impl LayoutGenerator {
         command.entries_mut().push(kdl_str_arg("bash"));
         pane.ensure_children().nodes_mut().push(command);
 
-        // Args: -c "ocx oc --prompt \"$(cat <prompt>)\""
+        // Args: -c "opencode --agent coder --prompt \"$(cat <prompt>)\""
         let mut args = KdlNode::new("args");
         args.entries_mut().push(kdl_str_arg("-c"));
 
-        let ocx = escape(Cow::Borrowed(&self.opencode_binary));
-        let profile_flag = match &self.opencode_profile {
-            Some(p) => format!(" -p {}", escape(Cow::Borrowed(p))),
-            None => String::new(),
-        };
+        let binary = escape(Cow::Borrowed(&self.opencode_binary));
         let shell_cmd = if let Some(prompt_path) = &wp.prompt_path {
             let path = escape(Cow::Owned(prompt_path.display().to_string()));
-            format!("{ocx} oc{profile_flag} -- --agent coder --prompt \"$(cat {path})\"")
+            format!("{binary} --agent coder --prompt \"$(cat {path})\"")
         } else {
-            format!("{ocx} oc{profile_flag} -- --agent coder")
+            format!("{binary} --agent coder")
         };
 
         args.entries_mut().push(kdl_str_arg(&shell_cmd));
@@ -759,7 +755,7 @@ mod tests {
         assert!(kdl_str.contains("layout"));
         assert!(kdl_str.contains("controller"));
         assert!(kdl_str.contains("agent-1"));
-        assert!(kdl_str.contains("ocx"));
+        assert!(kdl_str.contains("opencode"));
     }
 
     #[test]
@@ -899,9 +895,9 @@ mod tests {
         // Check command (quoted)
         assert!(kdl_str.contains("command \"bash\""));
 
-        // Check args with ocx oc invocation
+        // Check args with opencode invocation
         assert!(kdl_str.contains("args \"-c\""));
-        assert!(kdl_str.contains("ocx oc"));
+        assert!(kdl_str.contains("opencode --agent coder"));
 
         // Check cwd (quoted)
         assert!(kdl_str.contains("cwd \"/tmp/worktree/WP01\""));
@@ -940,9 +936,9 @@ mod tests {
             .expect("generate");
         let kdl_str = doc.to_string();
 
-        // Should still generate valid KDL with ocx oc command
+        // Should still generate valid KDL with opencode command
         assert!(kdl_str.contains("agent-1"));
-        assert!(kdl_str.contains("ocx oc"));
+        assert!(kdl_str.contains("opencode --agent coder"));
     }
 
     #[test]
@@ -969,7 +965,7 @@ mod tests {
 
         // The path should be escaped/quoted so it's treated as a literal string
         // shell-escape will quote the entire path, preventing command injection
-        assert!(kdl_string.contains("ocx oc"));
+        assert!(kdl_string.contains("opencode --agent coder"));
         // The path should be present but safely escaped (quoted with single quotes)
         assert!(
             kdl_string.contains("'/tmp/test; rm -rf /'")

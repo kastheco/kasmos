@@ -418,7 +418,7 @@ impl RolePromptBuilder {
     }
 }
 
-fn summarize_markdown(content: &str, max_lines: usize) -> String {
+pub(crate) fn summarize_markdown(content: &str, max_lines: usize) -> String {
     let mut kept = Vec::new();
     for line in content.lines() {
         let trimmed = line.trim();
@@ -467,7 +467,7 @@ fn extract_section(content: &str, heading: &str) -> Option<String> {
     }
 }
 
-fn read_file_if_exists(path: &Path) -> Result<Option<String>> {
+pub(crate) fn read_file_if_exists(path: &Path) -> Result<Option<String>> {
     if path.exists() {
         Ok(Some(fs::read_to_string(path)?))
     } else {

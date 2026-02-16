@@ -1,0 +1,26 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // Project-level OpenCode config for kasmos.
+  // Installed by `kasmos setup`. Provides MCP servers for orchestration.
+  // Merges with global config (~/.config/opencode/opencode.json) and
+  // any active profile (OPENCODE_CONFIG_DIR).
+  "mcp": {
+    "kasmos": {
+      "type": "local",
+      "command": [
+        "kasmos",
+        "serve"
+      ],
+      "enabled": true
+    },
+    "zellij": {
+      "type": "local",
+      "command": [
+        "bun",
+        "run",
+        "/opt/zellij-pane-tracker/mcp-server/index.ts"
+      ],
+      "enabled": true
+    }
+  }
+}
