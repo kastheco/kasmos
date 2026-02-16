@@ -86,7 +86,7 @@
 **Included subtasks**:
 - [x] T008: Test pre-flight validation (missing/present binaries)
 - [x] T009: Test prompt construction (instruction present, description handling)
-- [ ] T010: Test prompt degradation (missing .kittify/memory/)
+- [x] T010: Test prompt degradation (missing .kittify/memory/)
 - [ ] T011: Test CLI parsing for `Commands::New`
 
 **Risks**:
