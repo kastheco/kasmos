@@ -1,0 +1,10 @@
+{
+  "feature_number": "012",
+  "slug": "012-kasmos-new-command",
+  "friendly_name": "Kasmos New Command",
+  "mission": "software-dev",
+  "source_description": "i want to make a new 'kasmos new' that opens up an opencode session with kasmos' planning agent calling /spec-kitty.specify",
+  "created_at": "2026-02-16T12:00:00Z",
+  "target_branch": "main",
+  "vcs": "git"
+}
