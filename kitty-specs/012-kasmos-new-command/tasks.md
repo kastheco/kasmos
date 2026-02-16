@@ -50,7 +50,7 @@
 - [x] T001: Make `read_file_if_exists` and `summarize_markdown` `pub(crate)` in prompt.rs
 - [x] T002: Add `pub mod new;` to lib.rs, `Commands::New` to main.rs, dispatch arm
 - [x] T003: Create new.rs with `preflight_check()` for opencode + spec-kitty
-- [ ] T004: Implement repo root discovery from CWD
+- [x] T004: Implement repo root discovery from CWD
 - [ ] T005: Implement `build_prompt()` with context loading + description injection
 - [ ] T006: Implement opencode process spawning with exit code propagation
 - [ ] T007: Wire `run()` orchestrator: config -> preflight -> prompt -> spawn
