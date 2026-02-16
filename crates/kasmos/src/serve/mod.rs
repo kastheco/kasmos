@@ -31,11 +31,11 @@ use self::registry::WorkerRegistry;
 
 #[derive(Debug)]
 pub struct KasmosServer {
-    pub config: Config,
-    pub registry: std::sync::Arc<RwLock<WorkerRegistry>>,
-    pub message_cursor: std::sync::Arc<RwLock<u64>>,
-    pub feature_slug: Option<String>,
-    pub audit: std::sync::Arc<Mutex<Option<AuditWriter>>>,
+    pub(crate) config: Config,
+    pub(crate) registry: std::sync::Arc<RwLock<WorkerRegistry>>,
+    pub(crate) message_cursor: std::sync::Arc<RwLock<u64>>,
+    pub(crate) feature_slug: Option<String>,
+    pub(crate) audit: std::sync::Arc<Mutex<Option<AuditWriter>>>,
     tool_router: ToolRouter<Self>,
 }
 

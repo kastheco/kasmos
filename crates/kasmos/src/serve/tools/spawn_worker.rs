@@ -64,7 +64,7 @@ pub async fn handle(server: &KasmosServer, input: SpawnWorkerInput) -> Result<Sp
         );
     server.emit_audit(audit_entry).await;
 
-    let _ = log_manager_event(
+    if let Err(err) = log_manager_event(
         "SPAWN",
         &serde_json::json!({
             "wp_id": worker.wp_id.clone(),
@@ -72,7 +72,14 @@ pub async fn handle(server: &KasmosServer, input: SpawnWorkerInput) -> Result<Sp
             "pane_name": worker.pane_name.clone(),
         }),
     )
-    .await;
+    .await
+    {
+        tracing::warn!(
+            wp_id = %worker.wp_id,
+            error = %err,
+            "failed to log SPAWN event to message pane"
+        );
+    }
 
     Ok(SpawnWorkerOutput { ok: true, worker })
 }

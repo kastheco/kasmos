@@ -37,6 +37,4 @@ log = "0.4"
 rmcp = { version = "0.15", features = ["server", "transport-io"] }
 schemars = "1.2"
 regex = "1"
-
-[dev-dependencies]
 tempfile = "3.25.0"

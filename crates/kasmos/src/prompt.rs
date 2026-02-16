@@ -7,33 +7,36 @@ use std::path::{Path, PathBuf};
 
 const PROFILE_ROOT: &str = "config/profiles/kasmos";
 
+/// Prompt-side agent role. Wraps `registry::AgentRole` for spawnable roles
+/// and adds `Manager` which is the orchestrator (never spawned as a worker).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentRole {
     Manager,
-    Planner,
-    Coder,
-    Reviewer,
-    Release,
+    Worker(crate::serve::registry::AgentRole),
 }
 
 impl AgentRole {
+    pub const PLANNER: Self = Self::Worker(crate::serve::registry::AgentRole::Planner);
+    pub const CODER: Self = Self::Worker(crate::serve::registry::AgentRole::Coder);
+    pub const REVIEWER: Self = Self::Worker(crate::serve::registry::AgentRole::Reviewer);
+    pub const RELEASE: Self = Self::Worker(crate::serve::registry::AgentRole::Release);
+
     pub fn template_name(self) -> &'static str {
         match self {
             Self::Manager => "manager.md",
-            Self::Planner => "planner.md",
-            Self::Coder => "coder.md",
-            Self::Reviewer => "reviewer.md",
-            Self::Release => "release.md",
+            Self::Worker(role) => match role {
+                crate::serve::registry::AgentRole::Planner => "planner.md",
+                crate::serve::registry::AgentRole::Coder => "coder.md",
+                crate::serve::registry::AgentRole::Reviewer => "reviewer.md",
+                crate::serve::registry::AgentRole::Release => "release.md",
+            },
         }
     }
 
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Manager => "manager",
-            Self::Planner => "planner",
-            Self::Coder => "coder",
-            Self::Reviewer => "reviewer",
-            Self::Release => "release",
+            Self::Worker(role) => role.as_str(),
         }
     }
 }
@@ -52,6 +55,7 @@ pub struct ContextBoundary {
 }
 
 pub fn allowed_context(role: AgentRole) -> ContextBoundary {
+    use crate::serve::registry::AgentRole as WR;
     match role {
         AgentRole::Manager => ContextBoundary {
             spec: true,
@@ -64,7 +68,7 @@ pub fn allowed_context(role: AgentRole) -> ContextBoundary {
             wp_task_file: false,
             coding_standards: false,
         },
-        AgentRole::Coder => ContextBoundary {
+        AgentRole::Worker(WR::Coder) => ContextBoundary {
             spec: false,
             plan: false,
             all_tasks: false,
@@ -75,7 +79,7 @@ pub fn allowed_context(role: AgentRole) -> ContextBoundary {
             wp_task_file: true,
             coding_standards: true,
         },
-        AgentRole::Reviewer => ContextBoundary {
+        AgentRole::Worker(WR::Reviewer) => ContextBoundary {
             spec: false,
             plan: false,
             all_tasks: false,
@@ -86,7 +90,7 @@ pub fn allowed_context(role: AgentRole) -> ContextBoundary {
             wp_task_file: true,
             coding_standards: true,
         },
-        AgentRole::Release => ContextBoundary {
+        AgentRole::Worker(WR::Release) => ContextBoundary {
             spec: false,
             plan: false,
             all_tasks: true,
@@ -97,7 +101,7 @@ pub fn allowed_context(role: AgentRole) -> ContextBoundary {
             wp_task_file: false,
             coding_standards: false,
         },
-        AgentRole::Planner => ContextBoundary {
+        AgentRole::Worker(WR::Planner) => ContextBoundary {
             spec: true,
             plan: true,
             all_tasks: false,
@@ -215,7 +219,7 @@ impl RolePromptBuilder {
                 wp_content
             ));
 
-            if self.role == AgentRole::Reviewer {
+            if self.role == AgentRole::REVIEWER {
                 let acceptance = extract_section(&wp_content, "Objectives & Success Criteria")
                     .or_else(|| extract_section(&wp_content, "Review Guidance"));
                 if let Some(acceptance) = acceptance {
@@ -279,7 +283,7 @@ impl RolePromptBuilder {
             }
         }
 
-        if self.role == AgentRole::Release {
+        if self.role == AgentRole::RELEASE {
             sections.push("## Branch and Merge Target\n\n- Merge target: `main`\n- Release lane input: all WPs currently in `for_review` or `done`\n- Validate branch consistency before merge".to_string());
         }
 
@@ -688,13 +692,13 @@ mod tests {
         assert!(manager.plan);
         assert!(manager.all_tasks);
 
-        let coder = allowed_context(AgentRole::Coder);
+        let coder = allowed_context(AgentRole::CODER);
         assert!(coder.wp_task_file);
         assert!(!coder.spec);
         assert!(!coder.plan);
         assert!(!coder.all_tasks);
 
-        let planner = allowed_context(AgentRole::Planner);
+        let planner = allowed_context(AgentRole::PLANNER);
         assert!(planner.spec);
         assert!(planner.plan);
         assert!(!planner.wp_task_file);
@@ -718,7 +722,7 @@ mod tests {
     #[test]
     fn test_coder_prompt_excludes_spec_and_plan() {
         let fixture = Fixture::new();
-        let prompt = RolePromptBuilder::new(AgentRole::Coder, "011-test", fixture.feature_dir())
+        let prompt = RolePromptBuilder::new(AgentRole::CODER, "011-test", fixture.feature_dir())
             .with_wp_id("WP01")
             .build()
             .unwrap();
@@ -746,7 +750,7 @@ mod tests {
     #[test]
     fn test_reviewer_prompt_has_acceptance_and_additional_context() {
         let fixture = Fixture::new();
-        let prompt = RolePromptBuilder::new(AgentRole::Reviewer, "011-test", fixture.feature_dir())
+        let prompt = RolePromptBuilder::new(AgentRole::REVIEWER, "011-test", fixture.feature_dir())
             .with_wp_id("WP01")
             .with_additional_context("Changed files: crates/kasmos/src/prompt.rs")
             .build()
@@ -758,6 +762,7 @@ mod tests {
     }
 
     struct Fixture {
+        #[allow(dead_code)] // held to keep the TempDir alive
         root: tempfile::TempDir,
         feature_dir: PathBuf,
     }
@@ -836,9 +841,4 @@ mod tests {
         }
     }
 
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            let _ = self.root.path();
-        }
-    }
 }

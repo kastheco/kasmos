@@ -5,8 +5,8 @@ use regex::Regex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use shell_escape::unix::escape as shell_escape;
-use std::borrow::Cow;
+use std::io::Write as _;
+use std::path::Path;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use tokio::process::Command;
@@ -30,6 +30,8 @@ const KNOWN_EVENTS: &[&str] = &[
     "REVIEW_PASS",
     "REVIEW_REJECT",
     "NEEDS_INPUT",
+    "SPAWN",
+    "DESPAWN",
 ];
 
 /// Message event kinds emitted by workers and understood by the manager.
@@ -81,7 +83,8 @@ pub fn parse_message(line: &str, index: u64) -> Option<KasmosMessage> {
     let payload = if payload_str.is_empty() {
         Value::Null
     } else {
-        serde_json::from_str(payload_str).unwrap_or(Value::Null)
+        serde_json::from_str(payload_str)
+            .unwrap_or_else(|_| Value::String(payload_str.to_string()))
     };
 
     let event = MessageEvent::new(event_raw);
@@ -141,6 +144,24 @@ pub async fn rewrite_dashboard(content: &str) -> Result<()> {
     write_to_pane("dashboard", content, true).await
 }
 
+/// POSIX-safe shell quoting: wraps in single quotes, escaping any embedded single quotes.
+fn shell_quote_path(path: &Path) -> String {
+    let s = path.display().to_string();
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Write content to a temporary file (auto-cleaned on drop).
+fn write_content_tempfile(content: &str) -> Result<tempfile::NamedTempFile> {
+    let mut file = tempfile::Builder::new()
+        .prefix("kasmos-pane-")
+        .suffix(".txt")
+        .tempfile()
+        .context("failed to create temporary file for pane content")?;
+    file.write_all(content.as_bytes())
+        .context("failed to write pane content to temporary file")?;
+    Ok(file)
+}
+
 fn strip_ansi(line: &str) -> String {
     ANSI_PATTERN.replace_all(line, "").into_owned()
 }
@@ -195,11 +216,20 @@ async fn write_to_pane(pane_name: &str, content: &str, rewrite: bool) -> Result<
     let binary =
         pane_tracker_binary().ok_or_else(|| anyhow!("pane-tracker binary not found in PATH"))?;
 
-    let escaped = shell_escape(Cow::Borrowed(content)).to_string();
+    // Write content to a tempfile to avoid shell injection.
+    // NamedTempFile guarantees unique names (via mkstemp).  We call keep()
+    // to prevent auto-deletion on drop because run-in-pane dispatches the
+    // command asynchronously into the Zellij pane — cat needs the file to
+    // still exist after this function returns.  The shell command handles
+    // its own cleanup with `rm -f`.
+    let tempfile = write_content_tempfile(content)?;
+    let temp_path = tempfile.into_temp_path();
+    let quoted_path = shell_quote_path(&temp_path);
+    let _ = temp_path.keep(); // prevent auto-deletion; shell cleans up
     let command = if rewrite {
-        format!("clear && printf '%s\\n' {escaped}")
+        format!("clear && cat {quoted_path}; rm -f {quoted_path}")
     } else {
-        format!("printf '%s\\n' {escaped}")
+        format!("cat {quoted_path}; rm -f {quoted_path}")
     };
 
     let mut last_error = None;
@@ -332,10 +362,10 @@ mod tests {
     }
 
     #[test]
-    fn malformed_payload_becomes_null() {
+    fn malformed_payload_preserved_as_string() {
         let line = "[KASMOS:worker:PROGRESS] {";
         let parsed = parse_message(line, 2).expect("must parse");
-        assert_eq!(parsed.payload, Value::Null);
+        assert_eq!(parsed.payload, Value::String("{".to_string()));
     }
 
     #[test]

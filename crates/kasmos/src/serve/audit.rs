@@ -182,9 +182,8 @@ impl AuditWriter {
 
     fn next_archive_path(&self) -> PathBuf {
         let timestamp = Utc::now().format("%Y%m%d-%H%M%S-%f").to_string();
-        let mut suffix = 0u32;
 
-        loop {
+        for suffix in 0u32..1000 {
             let suffix_part = if suffix == 0 {
                 String::new()
             } else {
@@ -197,9 +196,13 @@ impl AuditWriter {
             if !candidate.exists() {
                 return candidate;
             }
-
-            suffix = suffix.saturating_add(1);
         }
+
+        // Fallback: use PID to avoid collision
+        self.path.with_file_name(format!(
+            "messages.{timestamp}.{}.jsonl",
+            std::process::id()
+        ))
     }
 
     fn get_or_open_file(&mut self) -> Result<&mut File> {

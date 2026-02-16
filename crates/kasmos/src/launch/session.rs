@@ -31,10 +31,10 @@ async fn create_orchestration_session(
     let layout_path = write_temp_layout(layout_kdl).context("failed to write layout file")?;
     let session_name = &config.session.session_name;
 
-    if session_exists(&config.paths.zellij_binary, session_name)
+    let exists = session_exists(&config.paths.zellij_binary, session_name)
         .await
-        .unwrap_or(false)
-    {
+        .context("failed to check if zellij session already exists")?;
+    if exists {
         let kill = Command::new(&config.paths.zellij_binary)
             .args(["kill-sessions", session_name])
             .output()

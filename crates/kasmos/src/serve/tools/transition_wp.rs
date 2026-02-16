@@ -5,7 +5,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_yml::{Mapping, Value};
 use std::fs::OpenOptions;
-use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -44,8 +43,8 @@ impl TransitionState {
 pub struct TransitionWpOutput {
     pub ok: bool,
     pub wp_id: String,
-    pub from_state: String,
-    pub to_state: String,
+    pub from_state: TransitionState,
+    pub to_state: TransitionState,
 }
 
 pub async fn handle(input: TransitionWpInput, server: &KasmosServer) -> Result<TransitionWpOutput> {
@@ -88,8 +87,8 @@ pub async fn handle(input: TransitionWpInput, server: &KasmosServer) -> Result<T
     Ok(TransitionWpOutput {
         ok: true,
         wp_id: input.wp_id,
-        from_state: from_state.as_str().to_string(),
-        to_state: input.to_state.as_str().to_string(),
+        from_state,
+        to_state: input.to_state,
     })
 }
 
@@ -233,9 +232,11 @@ fn enforce_rejection_cap(content: &str, wp_id: &str, cap: u32) -> Result<()> {
 
 fn rejection_count(content: &str) -> u32 {
     let Ok((yaml, _)) = split_frontmatter(content) else {
+        tracing::warn!("rejection_count: failed to split frontmatter, assuming 0 rejections");
         return 0;
     };
     let Ok(value) = serde_yml::from_str::<Value>(&yaml) else {
+        tracing::warn!("rejection_count: failed to parse frontmatter YAML, assuming 0 rejections");
         return 0;
     };
 
@@ -309,9 +310,13 @@ fn update_task_lane(
         Ok::<(), anyhow::Error>(())
     })();
 
-    unlock_file(&lock_file);
+    if let Err(err) = unlock_file(&lock_file) {
+        tracing::warn!(path = %lock_path.display(), error = %err, "failed to unlock WP file");
+    }
     drop(lock_file);
-    let _ = std::fs::remove_file(&lock_path);
+    if let Err(err) = std::fs::remove_file(&lock_path) {
+        tracing::debug!(path = %lock_path.display(), error = %err, "failed to remove lock file");
+    }
 
     write_result
 }
@@ -362,19 +367,13 @@ fn append_history_entry(
 }
 
 fn lock_exclusive_nonblocking(file: &std::fs::File) -> Result<()> {
-    let fd = file.as_raw_fd();
-    // SAFETY: fd comes from a live File handle owned by this process.
-    let rc = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
-    if rc != 0 {
-        bail!("TRANSITION_NOT_ALLOWED: concurrent write detected");
-    }
-    Ok(())
+    crate::serve::lock::flock_exclusive_nonblocking(file, Path::new("<wp-transition>"))
+        .map_err(|_| anyhow::anyhow!("TRANSITION_NOT_ALLOWED: concurrent write detected"))
 }
 
-fn unlock_file(file: &std::fs::File) {
-    let fd = file.as_raw_fd();
-    // SAFETY: fd comes from a live File handle owned by this process.
-    let _ = unsafe { libc::flock(fd, libc::LOCK_UN) };
+fn unlock_file(file: &std::fs::File) -> Result<()> {
+    crate::serve::lock::flock_unlock(file)
+        .context("failed to release WP file lock")
 }
 
 #[cfg(test)]
@@ -420,8 +419,8 @@ mod tests {
         .expect("transition");
 
         assert!(output.ok);
-        assert_eq!(output.from_state, "pending");
-        assert_eq!(output.to_state, "active");
+        assert_eq!(output.from_state, TransitionState::Pending);
+        assert_eq!(output.to_state, TransitionState::Active);
 
         let updated =
             std::fs::read_to_string(feature_dir.join("tasks/WP01-test.md")).expect("read");

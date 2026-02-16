@@ -26,16 +26,23 @@ pub async fn handle(
     let mut registry = server.registry.write().await;
     let removed = registry.remove(&input.wp_id, input.role).is_some();
 
-    let _ = log_manager_event(
+    if let Err(err) = log_manager_event(
         "DESPAWN",
         &serde_json::json!({
             "wp_id": input.wp_id,
             "role": input.role.as_str(),
             "removed": removed,
-            "reason": input.reason,
+            "reason": input.reason.as_deref(),
         }),
     )
-    .await;
+    .await
+    {
+        tracing::warn!(
+            wp_id = %input.wp_id,
+            error = %err,
+            "failed to log DESPAWN event to message pane"
+        );
+    }
 
     if let Some(feature_slug) = server.feature_slug.as_deref() {
         let status = if removed { "ok" } else { "not_found" };

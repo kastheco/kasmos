@@ -9,6 +9,7 @@ use crate::launch::detect::{FeatureDetection, FeatureSource};
 use crate::launch::layout::ManagerCommand;
 use crate::serve::lock::{
     FeatureLockManager, LockError, format_active_owner_conflict, format_stale_lock_prompt,
+    resolve_repo_root,
 };
 use crate::setup::CheckStatus;
 use anyhow::{Context, Result};
@@ -82,13 +83,15 @@ where
         .as_deref()
         .context("feature slug not resolved")?;
 
-    let lock_manager = FeatureLockManager::new(
+    let repo_root = resolve_repo_root()
+        .context("failed to resolve repo root for feature lock")?;
+    let lock_manager = FeatureLockManager::with_repo_root(
+        repo_root,
         feature_slug,
         config.session.session_name.clone(),
         "orchestration",
         config.lock.clone(),
-    )
-    .context("failed to initialize feature lock manager")?;
+    );
 
     match lock_manager.acquire(false) {
         Ok(_) => {}
@@ -127,9 +130,32 @@ where
     let layout_kdl = layout::generate_layout(config, feature_slug, &manager_command)
         .context("Failed to generate launch layout")?;
 
+    // Heartbeat the lock periodically so it doesn't go stale during the
+    // (potentially hours-long) orchestration session.  The interval is 1/3
+    // of the stale timeout (min 10s) so the lock stays comfortably active.
+    let heartbeat_manager = lock_manager.clone();
+    let heartbeat_secs = (config.lock.stale_timeout_minutes * 60) / 3;
+    let heartbeat_handle = tokio::spawn(async move {
+        let mut interval =
+            tokio::time::interval(std::time::Duration::from_secs(heartbeat_secs.max(10)));
+        interval.tick().await; // skip the immediate first tick
+        loop {
+            interval.tick().await;
+            match heartbeat_manager.heartbeat() {
+                Ok(_) => tracing::debug!("feature lock heartbeat sent"),
+                Err(err) => {
+                    tracing::warn!(error = %err, "feature lock heartbeat failed");
+                    break;
+                }
+            }
+        }
+    });
+
     let launch_result = session::bootstrap(config, feature_slug, &layout_kdl)
         .await
         .context("Failed to bootstrap orchestration session/tab");
+
+    heartbeat_handle.abort();
 
     if let Err(release_err) = lock_manager
         .release()

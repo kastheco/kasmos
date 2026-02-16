@@ -215,6 +215,9 @@ mod tests {
         let (tmp, specs_root) = make_specs_root();
         std::fs::create_dir_all(specs_root.join("011-test-feature")).expect("create feature");
 
+        // The arg-resolution path calls feature_arg::resolve_feature_dir which
+        // scans from the real CWD, so we must temporarily set it.  The injected
+        // get_cwd only affects branch/directory detection paths.
         let old_cwd = std::env::current_dir().expect("cwd");
         std::env::set_current_dir(tmp.path()).expect("set cwd");
 

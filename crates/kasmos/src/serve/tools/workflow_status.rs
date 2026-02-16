@@ -163,25 +163,27 @@ fn scan_artifacts(feature_dir: &Path) -> Result<ArtifactSnapshot> {
         &["released.md", ".release-complete", "release-complete.md"],
     );
 
-    let mut task_file_count = 0usize;
+    let feature = FeatureDir::scan(feature_dir).with_context(|| {
+        format!(
+            "Failed to scan feature directory {} for task files",
+            feature_dir.display()
+        )
+    })?;
+    let task_file_count = feature.wp_files.len();
     let mut parsed_wps = Vec::new();
-
-    if let Ok(feature) = FeatureDir::scan(feature_dir) {
-        task_file_count = feature.wp_files.len();
-        for wp_file in feature.wp_files {
-            match parse_frontmatter(&wp_file) {
-                Ok(fm) => parsed_wps.push(ParsedWp {
-                    wp_id: fm.work_package_id,
-                    dependencies: fm.dependencies,
-                    lane: fm.lane,
-                }),
-                Err(err) => {
-                    tracing::warn!(
-                        file = %wp_file.display(),
-                        error = %err,
-                        "Skipping unparsable task file while computing workflow status"
-                    );
-                }
+    for wp_file in feature.wp_files {
+        match parse_frontmatter(&wp_file) {
+            Ok(fm) => parsed_wps.push(ParsedWp {
+                wp_id: fm.work_package_id,
+                dependencies: fm.dependencies,
+                lane: fm.lane,
+            }),
+            Err(err) => {
+                tracing::warn!(
+                    file = %wp_file.display(),
+                    error = %err,
+                    "Skipping unparsable task file while computing workflow status"
+                );
             }
         }
     }
@@ -225,12 +227,6 @@ fn determine_phase(snapshot: &ArtifactSnapshot) -> String {
                 return "complete".to_string();
             }
             return "releasing".to_string();
-        }
-
-        let all_planned = !snapshot.parsed_wps.is_empty()
-            && snapshot.parsed_wps.iter().all(|wp| wp.lane == "planned");
-        if all_planned {
-            return "tasked".to_string();
         }
 
         return "tasked".to_string();

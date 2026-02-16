@@ -9,13 +9,10 @@ use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::OnceLock;
 use thiserror::Error;
 
 pub const FEATURE_LOCK_CONFLICT_CODE: &str = "FEATURE_LOCK_CONFLICT";
 pub const STALE_LOCK_CONFIRMATION_REQUIRED_CODE: &str = "STALE_LOCK_CONFIRMATION_REQUIRED";
-
-static REPO_ROOT_CACHE: OnceLock<PathBuf> = OnceLock::new();
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LockKey {
@@ -58,8 +55,7 @@ impl LockKey {
         })
     }
 
-    #[cfg(test)]
-    fn for_repo_root(repo_root: PathBuf, feature_slug: &str) -> Self {
+    pub fn with_repo_root(repo_root: PathBuf, feature_slug: &str) -> Self {
         Self {
             repo_root,
             feature_slug: feature_slug.to_string(),
@@ -127,8 +123,7 @@ impl FeatureLockManager {
         })
     }
 
-    #[cfg(test)]
-    fn for_tests(
+    pub fn with_repo_root(
         repo_root: PathBuf,
         feature_slug: &str,
         owner_session: impl Into<String>,
@@ -136,7 +131,7 @@ impl FeatureLockManager {
         config: LockConfig,
     ) -> Self {
         Self {
-            key: LockKey::for_repo_root(repo_root, feature_slug),
+            key: LockKey::with_repo_root(repo_root, feature_slug),
             owner_id: owner_identity(),
             owner_session: owner_session.into(),
             owner_tab: owner_tab.into(),
@@ -478,11 +473,7 @@ pub fn is_stale(record: &LockRecord, config: &LockConfig) -> bool {
     now - record.last_heartbeat_at > stale_threshold
 }
 
-fn resolve_repo_root() -> Result<PathBuf, LockError> {
-    if let Some(cached) = REPO_ROOT_CACHE.get() {
-        return Ok(cached.clone());
-    }
-
+pub fn resolve_repo_root() -> Result<PathBuf, LockError> {
     let output = Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
         .output()
@@ -503,21 +494,19 @@ fn resolve_repo_root() -> Result<PathBuf, LockError> {
         });
     }
 
-    let canonical = Path::new(&root)
+    Path::new(&root)
         .canonicalize()
         .map_err(|source| LockError::Io {
             source,
             context: format!("canonicalize repository root {}", root),
-        })?;
-    let _ = REPO_ROOT_CACHE.set(canonical.clone());
-    Ok(canonical)
+        })
 }
 
 fn owner_identity() -> String {
     format!("{}@{}", std::process::id(), local_hostname())
 }
 
-fn flock_exclusive_nonblocking(file: &File, path: &Path) -> Result<(), LockError> {
+pub(crate) fn flock_exclusive_nonblocking(file: &File, path: &Path) -> Result<(), LockError> {
     let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
     if rc == 0 {
         return Ok(());
@@ -529,7 +518,7 @@ fn flock_exclusive_nonblocking(file: &File, path: &Path) -> Result<(), LockError
     })
 }
 
-fn flock_unlock(file: &File) -> std::io::Result<()> {
+pub(crate) fn flock_unlock(file: &File) -> std::io::Result<()> {
     let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
     if rc == 0 {
         return Ok(());
@@ -577,7 +566,7 @@ mod tests {
     }
 
     fn manager(repo_root: &Path, feature_slug: &str, session: &str) -> FeatureLockManager {
-        FeatureLockManager::for_tests(
+        FeatureLockManager::with_repo_root(
             repo_root.to_path_buf(),
             feature_slug,
             session,
@@ -589,8 +578,8 @@ mod tests {
     #[test]
     fn lock_key_is_deterministic_for_repo_and_feature() {
         let tmp = tempfile::tempdir().expect("create tempdir");
-        let key1 = LockKey::for_repo_root(tmp.path().to_path_buf(), "011-feature");
-        let key2 = LockKey::for_repo_root(tmp.path().to_path_buf(), "011-feature");
+        let key1 = LockKey::with_repo_root(tmp.path().to_path_buf(), "011-feature");
+        let key2 = LockKey::with_repo_root(tmp.path().to_path_buf(), "011-feature");
 
         assert_eq!(key1.as_lock_key(), key2.as_lock_key());
         assert_eq!(
@@ -638,7 +627,7 @@ mod tests {
         let manager_a = manager(tmp.path(), "011-feature", "session-a");
         manager_a.acquire(false).expect("manager a acquires");
 
-        let manager_b = FeatureLockManager::for_tests(
+        let manager_b = FeatureLockManager::with_repo_root(
             tmp.path().to_path_buf(),
             "011-feature",
             "session-b",
@@ -655,7 +644,7 @@ mod tests {
     #[test]
     fn stale_lock_requires_confirmation_then_allows_takeover() {
         let tmp = tempfile::tempdir().expect("create tempdir");
-        let manager_a = FeatureLockManager::for_tests(
+        let manager_a = FeatureLockManager::with_repo_root(
             tmp.path().to_path_buf(),
             "011-feature",
             "session-a",
@@ -669,7 +658,7 @@ mod tests {
             .write_record_atomic(&record)
             .expect("write stale record");
 
-        let manager_b = FeatureLockManager::for_tests(
+        let manager_b = FeatureLockManager::with_repo_root(
             tmp.path().to_path_buf(),
             "011-feature",
             "session-b",
@@ -702,7 +691,7 @@ mod tests {
     #[test]
     fn conflict_classifier_marks_stale_when_heartbeat_old() {
         let tmp = tempfile::tempdir().expect("create tempdir");
-        let manager = FeatureLockManager::for_tests(
+        let manager = FeatureLockManager::with_repo_root(
             tmp.path().to_path_buf(),
             "011-feature",
             "session-a",
@@ -732,7 +721,7 @@ mod tests {
             let outcomes = Arc::clone(&outcomes);
             let repo_root = repo_root.clone();
             handles.push(thread::spawn(move || {
-                let manager = FeatureLockManager::for_tests(
+                let manager = FeatureLockManager::with_repo_root(
                     repo_root,
                     "011-feature",
                     format!("session-{i}"),

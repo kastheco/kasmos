@@ -85,29 +85,38 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Some(Commands::Serve) => {
-            let _ = kasmos::init_logging(false);
+            if let Err(err) = kasmos::init_logging(false) {
+                eprintln!("Warning: logging init failed: {err}");
+            }
             kasmos::serve::run().await.context("MCP serve failed")?;
         }
         Some(Commands::Setup) => {
-            let _ = kasmos::init_logging(false);
+            if let Err(err) = kasmos::init_logging(false) {
+                eprintln!("Warning: logging init failed: {err}");
+            }
             kasmos::setup::run().await.context("Setup failed")?;
         }
         Some(Commands::List) => {
-            let _ = kasmos::init_logging(false);
+            if let Err(err) = kasmos::init_logging(false) {
+                eprintln!("Warning: logging init failed: {err}");
+            }
             list_specs::run().context("Failed to list specs")?;
         }
         Some(Commands::Status { feature }) => {
-            let _ = kasmos::init_logging(false);
+            if let Err(err) = kasmos::init_logging(false) {
+                eprintln!("Warning: logging init failed: {err}");
+            }
             status::run(feature.as_deref()).context("Status failed")?;
         }
         None => {
+            if let Err(err) = kasmos::init_logging(false) {
+                eprintln!("Warning: logging init failed: {err}");
+            }
             if let Some(ref prefix) = cli.spec_prefix {
-                let _ = kasmos::init_logging(false);
                 kasmos::launch::run(Some(prefix))
                     .await
                     .context("Launch failed")?;
             } else {
-                let _ = kasmos::init_logging(false);
                 kasmos::launch::run(None).await.context("Launch failed")?;
             }
         }
