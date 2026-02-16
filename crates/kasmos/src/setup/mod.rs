@@ -143,6 +143,7 @@ fn validate_environment_with_repo(
             "Install spec-kitty and ensure `spec-kitty` is on PATH",
         ),
         check_pane_tracker(),
+        check_zjstatus(),
     ];
 
     if let Some(root) = repo_root.as_deref() {
@@ -215,6 +216,35 @@ fn check_pane_tracker() -> CheckResult {
 
     CheckResult {
         name: "pane-tracker".to_string(),
+        required_for: required_for.to_string(),
+        description: plugin_path.display().to_string(),
+        status: CheckStatus::Pass,
+        guidance: None,
+    }
+}
+
+fn check_zjstatus() -> CheckResult {
+    let required_for = "status bar in generated Zellij layouts";
+    let plugin_dir = zellij_plugin_dir();
+    let plugin_path = plugin_dir.join("zjstatus.wasm");
+
+    if !plugin_path.is_file() {
+        return CheckResult {
+            name: "zjstatus".to_string(),
+            required_for: required_for.to_string(),
+            description: "zjstatus.wasm not found".to_string(),
+            status: CheckStatus::Fail,
+            guidance: Some(format!(
+                "Install the zjstatus plugin:\n\
+                 \x20      Download from https://github.com/dj95/zjstatus/releases\n\
+                 \x20      mkdir -p {dir} && cp zjstatus.wasm {dir}/",
+                dir = plugin_dir.display()
+            )),
+        };
+    }
+
+    CheckResult {
+        name: "zjstatus".to_string(),
         required_for: required_for.to_string(),
         description: plugin_path.display().to_string(),
         status: CheckStatus::Pass,
@@ -978,6 +1008,8 @@ mod tests {
         std::fs::create_dir_all(&plugin_dir).expect("create plugin dir");
         std::fs::write(plugin_dir.join("zellij-pane-tracker.wasm"), b"fake-wasm")
             .expect("write fake wasm");
+        std::fs::write(plugin_dir.join("zjstatus.wasm"), b"fake-wasm")
+            .expect("write fake zjstatus wasm");
         std::fs::write(
             zellij_config.join("config.kdl"),
             "load_plugins {\n    \"file:~/.config/zellij/plugins/zellij-pane-tracker.wasm\"\n}\n",
@@ -1016,6 +1048,12 @@ mod tests {
                     .checks
                     .iter()
                     .any(|c| c.name == "pane-tracker" && c.status == CheckStatus::Pass)
+            );
+            assert!(
+                result
+                    .checks
+                    .iter()
+                    .any(|c| c.name == "zjstatus" && c.status == CheckStatus::Pass)
             );
             assert!(
                 result
