@@ -1,10 +1,12 @@
 ---
 work_package_id: WP01b
 title: Interactive pane-tracker path prompt and MCP fixup
-lane: "planned"
+lane: "done"
 dependencies: [WP01]
 phase: "Wave 2"
 assignee: "coder"
+reviewed_by: "kas"
+review_status: "approved"
 ---
 
 # WP01b - Interactive pane-tracker path prompt and MCP fixup
@@ -164,3 +166,4 @@ The resulting `.opencode/opencode.jsonc` should have:
 - If user enters a path where `mcp-server/index.ts` doesn't exist, validation rejects it
 
 ## Activity Log
+- 2026-02-17T09:53:52Z – unknown – lane=done – Code already on main - interactive prompt, MCP fixup, all tests pass
