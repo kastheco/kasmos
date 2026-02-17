@@ -1,7 +1,7 @@
 ---
 work_package_id: WP01
 title: Config schema and pane-tracker auto-detection
-lane: "doing"
+lane: "done"
 dependencies: []
 base_branch: main
 base_commit: 8e32626467b9c4feb8da950f6d308cd6e52ea858
@@ -9,6 +9,8 @@ created_at: '2026-02-17T09:50:51.891875+00:00'
 phase: Wave 1
 assignee: coder
 shell_pid: "3854650"
+reviewed_by: "kas"
+review_status: "approved"
 ---
 
 # WP01 - Config schema and pane-tracker auto-detection
@@ -143,3 +145,4 @@ Note: `check_pane_tracker()` currently takes no arguments. You will need to chan
 - Setting `KASMOS_PATHS_PANE_TRACKER_DIR=/custom/path` and loading config reflects it
 
 ## Activity Log
+- 2026-02-17T09:53:46Z – unknown – shell_pid=3854650 – lane=done – Code already on main - all tests pass
