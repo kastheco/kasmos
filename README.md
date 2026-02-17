@@ -44,7 +44,7 @@ mkdir -p ~/.config/zellij/plugins
 cp target/wasm32-wasip1/release/zellij-pane-tracker.wasm ~/.config/zellij/plugins/
 ```
 
-Then add to `load_plugins { }` in `~/.config/zellij/config.kdl`:
+Then add to `load_plugins { }` in `~/.config/zellij/config.kdl` (or run `kasmos setup` to add it automatically):
 
 ```kdl
 "file:~/.config/zellij/plugins/zellij-pane-tracker.wasm"

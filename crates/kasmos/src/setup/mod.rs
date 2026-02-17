@@ -52,10 +52,26 @@ pub enum CheckStatus {
 pub async fn run() -> Result<()> {
     let config = Config::load().context("Failed to load config")?;
     let repo_root = detect_repo_root();
-    let mut result = validate_environment_with_repo(&config, repo_root.clone())?;
-
     println!("kasmos setup");
+
+    let mut zellij_config_warning = None;
+    let zellij_config_update = match ensure_pane_tracker_loaded_in_zellij_config() {
+        Ok(update) => update,
+        Err(err) => {
+            zellij_config_warning = Some(err.to_string());
+            None
+        }
+    };
+
+    let mut result = validate_environment_with_repo(&config, repo_root.clone())?;
     print_results(&result);
+
+    if let Some(path) = zellij_config_update {
+        println!("\nUpdated Zellij config:\n- {}", path.display());
+    }
+    if let Some(warning) = zellij_config_warning {
+        println!("\nWarning: could not update Zellij config: {warning}");
+    }
 
     if let Some(repo_root) = repo_root.as_deref() {
         let created = ensure_baseline_assets(repo_root, &config)?;
@@ -355,6 +371,105 @@ fn zellij_config_loads_pane_tracker() -> bool {
     std::fs::read_to_string(config_path)
         .map(|content| content.contains("zellij-pane-tracker"))
         .unwrap_or(false)
+}
+
+fn ensure_pane_tracker_loaded_in_zellij_config() -> Result<Option<PathBuf>> {
+    let plugin_path = zellij_plugin_dir().join("zellij-pane-tracker.wasm");
+    if !plugin_path.is_file() {
+        return Ok(None);
+    }
+
+    let plugin_url = format!("file:{}", plugin_path.display());
+    let config_path = zellij_config_dir().join("config.kdl");
+
+    if !config_path.exists() {
+        if let Some(parent) = config_path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create {}", parent.display()))?;
+        }
+        let contents = format!("load_plugins {{\n    \"{}\"\n}}\n", plugin_url);
+        std::fs::write(&config_path, contents)
+            .with_context(|| format!("Failed to write {}", config_path.display()))?;
+        return Ok(Some(config_path));
+    }
+
+    let content = std::fs::read_to_string(&config_path)
+        .with_context(|| format!("Failed to read {}", config_path.display()))?;
+    if content.contains("zellij-pane-tracker") {
+        return Ok(None);
+    }
+
+    let updated = insert_pane_tracker_into_load_plugins(&content, &plugin_url).unwrap_or_else(|| {
+        let mut appended = String::with_capacity(content.len() + plugin_url.len() + 40);
+        appended.push_str(&content);
+        if !appended.ends_with('\n') {
+            appended.push('\n');
+        }
+        appended.push_str("load_plugins {\n    \"");
+        appended.push_str(&plugin_url);
+        appended.push_str("\"\n}\n");
+        appended
+    });
+
+    if updated == content {
+        return Ok(None);
+    }
+
+    std::fs::write(&config_path, updated)
+        .with_context(|| format!("Failed to write {}", config_path.display()))?;
+    Ok(Some(config_path))
+}
+
+fn insert_pane_tracker_into_load_plugins(content: &str, plugin_url: &str) -> Option<String> {
+    let load_index = content.find("load_plugins")?;
+    let brace_index = content[load_index..].find('{')? + load_index;
+
+    let mut depth = 0;
+    let mut end_index = None;
+    for (offset, ch) in content[brace_index..].char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    end_index = Some(brace_index + offset);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let end_index = end_index?;
+    let block = &content[brace_index + 1..end_index];
+    let indent = block
+        .lines()
+        .filter_map(|line| {
+            if line.trim().is_empty() {
+                None
+            } else {
+                Some(
+                    line.chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>(),
+                )
+            }
+        })
+        .next()
+        .unwrap_or_else(|| "    ".to_string());
+
+    let mut updated = String::with_capacity(content.len() + plugin_url.len() + indent.len() + 8);
+    updated.push_str(&content[..end_index]);
+    if !content[..end_index].ends_with('\n') {
+        updated.push('\n');
+    }
+    updated.push_str(&indent);
+    updated.push('"');
+    updated.push_str(plugin_url);
+    updated.push('"');
+    updated.push('\n');
+    updated.push_str(&content[end_index..]);
+    Some(updated)
 }
 
 fn check_git(repo_root: Option<&Path>) -> CheckResult {
@@ -1842,6 +1957,75 @@ mod tests {
 
         let failures = launch::preflight_checks(&config).expect_err("preflight should fail");
         assert!(failures.iter().any(|f| f.dependency == "zellij"));
+    }
+
+    #[test]
+    fn ensure_pane_tracker_config_created_when_missing() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let old_zellij_config = std::env::var("ZELLIJ_CONFIG_DIR").ok();
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let plugin_dir = tmp.path().join("plugins");
+        std::fs::create_dir_all(&plugin_dir).expect("create plugins dir");
+        std::fs::write(plugin_dir.join("zellij-pane-tracker.wasm"), b"fake-wasm")
+            .expect("write fake wasm");
+
+        unsafe {
+            std::env::set_var("ZELLIJ_CONFIG_DIR", tmp.path().display().to_string());
+        }
+
+        let updated =
+            ensure_pane_tracker_loaded_in_zellij_config().expect("ensure pane tracker config");
+        let config_path = tmp.path().join("config.kdl");
+        assert!(config_path.is_file());
+        let content = std::fs::read_to_string(&config_path).expect("read config");
+        assert!(content.contains("zellij-pane-tracker"));
+        assert!(updated.is_some());
+
+        unsafe {
+            if let Some(dir) = old_zellij_config {
+                std::env::set_var("ZELLIJ_CONFIG_DIR", dir);
+            } else {
+                std::env::remove_var("ZELLIJ_CONFIG_DIR");
+            }
+        }
+    }
+
+    #[test]
+    fn ensure_pane_tracker_appends_to_existing_load_plugins() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let old_zellij_config = std::env::var("ZELLIJ_CONFIG_DIR").ok();
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let plugin_dir = tmp.path().join("plugins");
+        std::fs::create_dir_all(&plugin_dir).expect("create plugins dir");
+        std::fs::write(plugin_dir.join("zellij-pane-tracker.wasm"), b"fake-wasm")
+            .expect("write fake wasm");
+        std::fs::write(
+            tmp.path().join("config.kdl"),
+            "load_plugins {\n    \"file:/tmp/other.wasm\"\n}\n",
+        )
+        .expect("write config");
+
+        unsafe {
+            std::env::set_var("ZELLIJ_CONFIG_DIR", tmp.path().display().to_string());
+        }
+
+        let updated =
+            ensure_pane_tracker_loaded_in_zellij_config().expect("ensure pane tracker config");
+        let content =
+            std::fs::read_to_string(tmp.path().join("config.kdl")).expect("read config");
+        assert!(content.contains("file:/tmp/other.wasm"));
+        assert!(content.contains("zellij-pane-tracker"));
+        assert!(updated.is_some());
+
+        unsafe {
+            if let Some(dir) = old_zellij_config {
+                std::env::set_var("ZELLIJ_CONFIG_DIR", dir);
+            } else {
+                std::env::remove_var("ZELLIJ_CONFIG_DIR");
+            }
+        }
     }
 
     #[test]

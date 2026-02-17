@@ -25,9 +25,9 @@
                     "~/dev/kasmos/*": "allow",
                     "~/dev/kasmos/**": "allow",
                     ".kasmos/*": "allow",
-                    "*": "ask",
-                },
-            },
+                    "*": "ask"
+                }
+            }
         },
         "manager": {
             "model": "anthropic/claude-opus-4-6",
@@ -51,9 +51,9 @@
                     "~/dev/kasmos/*": "allow",
                     "~/dev/kasmos/**": "allow",
                     ".kasmos/*": "allow",
-                    "*": "ask",
-                },
-            },
+                    "*": "ask"
+                }
+            }
         },
         "coder": {
             "model": "openai/gpt-5.3-codex",
@@ -76,9 +76,9 @@
                     "~/.config/zellij/**": "allow",
                     "~/.config/opencode/*": "allow",
                     "~/.config/opencode/**": "allow",
-                    "*": "ask",
-                },
-            },
+                    "*": "ask"
+                }
+            }
         },
         "reviewer": {
             "model": "anthropic/claude-opus-4-6",
@@ -93,20 +93,20 @@
                 "edit": {
                     "/tmp/*": "allow",
                     "/tmp/**": "allow",
-                    "*": "deny",
+                    "*": "deny"
                 },
                 "write": {
                     "/tmp/*": "allow",
                     "/tmp/**": "allow",
-                    "*": "deny",
+                    "*": "deny"
                 },
                 "external_directory": {
                     "/tmp/*": "allow",
                     "/tmp/**": "allow",
                     "~/dev/kasmos/*": "allow",
-                    "*": "ask",
-                },
-            },
+                    "*": "ask"
+                }
+            }
         },
         "release": {
             "model": "openai/gpt-5.3-codex",
@@ -129,10 +129,10 @@
                     "~/.config/zellij/**": "allow",
                     "~/.config/opencode/*": "allow",
                     "~/.config/opencode/**": "allow",
-                    "*": "ask",
-                },
-            },
-        },
+                    "*": "ask"
+                }
+            }
+        }
     },
     "mcp": {
         "zellij": {
@@ -142,7 +142,7 @@
                 "run",
                 "/opt/zellij-pane-tracker/mcp-server/index.ts"
             ],
-            "enabled": true,
+            "enabled": true
         },
         "kasmos": {
             "command": [
@@ -150,7 +150,7 @@
                 "serve"
             ],
             "type": "local",
-            "enabled": true,
-        },
-    },
+            "enabled": true
+        }
+    }
 }
