@@ -1,10 +1,12 @@
 ---
 work_package_id: WP04
 title: Tests for plugin path discovery and zjstatus check
-lane: "planned"
+lane: "done"
 dependencies: [WP01, WP01b, WP02]
 phase: "Wave 3"
 assignee: "coder"
+reviewed_by: "kas"
+review_status: "approved"
 ---
 
 # WP04 - Tests for plugin path discovery and zjstatus check
@@ -235,3 +237,4 @@ assert!(
 - `cargo clippy -p kasmos -- -D warnings` clean
 
 ## Activity Log
+- 2026-02-17T09:53:54Z – unknown – lane=done – Code already on main - all WP04 tests present and passing
