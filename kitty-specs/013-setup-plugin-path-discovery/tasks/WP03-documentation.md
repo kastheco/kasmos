@@ -1,10 +1,14 @@
 ---
 work_package_id: WP03
 title: Dependency documentation
-lane: "planned"
+lane: "doing"
 dependencies: []
-phase: "Wave 1"
-assignee: "coder"
+base_branch: main
+base_commit: abeda7b5876b81200f3f41d7158844665fae79ea
+created_at: '2026-02-17T09:51:21.993340+00:00'
+phase: Wave 1
+assignee: coder
+shell_pid: "3856130"
 ---
 
 # WP03 - Dependency documentation
