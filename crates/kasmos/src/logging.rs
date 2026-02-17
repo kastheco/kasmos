@@ -1,93 +1,57 @@
 //! Logging setup for kasmos.
 //!
 //! Configures structured logging via the `tracing` crate with support for
-//! the `RUST_LOG` environment variable. Supports two modes:
-//!
-//! - **Headless mode** (`tui_mode: false`): Uses `tracing-subscriber`'s `fmt`
-//!   layer writing to stderr. Suitable for CLI commands.
-//! - **TUI mode** (`tui_mode: true`): Routes tracing events through
-//!   `tui-logger`'s `TuiTracingSubscriberLayer`, feeding the in-TUI log
-//!   viewer widget. Stderr output is suppressed (alternate screen).
+//! the `RUST_LOG` environment variable. Uses `tracing-subscriber`'s `fmt`
+//! layer writing to stderr.
 //!
 //! # Examples
 //!
 //! ```ignore
 //! use kasmos::logging::init_logging;
 //!
-//! // Initialize logging in headless mode (CLI commands)
+//! // Initialize logging
 //! init_logging(false)?;
-//!
-//! // Initialize logging in TUI mode (tui-logger widget)
-//! init_logging(true)?;
 //!
 //! // Use tracing macros for structured logging
 //! tracing::info!("Starting orchestration run");
-//! tracing::debug!("Detailed debug information");
 //! ```
 //!
 //! # Environment Variables
 //!
-//! - `RUST_LOG`: Controls logging level and filters (headless mode only)
+//! - `RUST_LOG`: Controls logging level and filters
 //!   - `RUST_LOG=debug` — Show debug and above
 //!   - `RUST_LOG=kasmos=trace` — Show trace for kasmos crate only
 
 use crate::error::Result;
-use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{Registry, fmt};
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{fmt, Registry};
 
 /// Initialize the tracing logging system.
 ///
 /// # Arguments
 ///
-/// * `tui_mode` — When `true`, routes events through `tui-logger` for the
-///   in-TUI widget. When `false`, uses `fmt` layer to stderr (standard CLI
-///   output).
-///
-/// # TUI mode requirements
-///
-/// `tui_logger::init_logger()` **must** be called before this function when
-/// `tui_mode` is `true`. This is handled by `tui::run()`.
+/// * `_tui_mode` — Deprecated argument retained for compatibility.
 ///
 /// # Errors
 ///
 /// Returns an error if the logging subscriber cannot be initialized.
-pub fn init_logging(tui_mode: bool) -> Result<()> {
-    if tui_mode {
-        #[cfg(feature = "tui")]
-        {
-            // TUI mode: route tracing events to tui-logger widget.
-            // tui_logger::init_logger() must have been called already by tui::run().
-            //
-            // Use try_init() instead of init() so that a second call (e.g. when
-            // `kasmos start` already initialised headless logging in main.rs)
-            // returns an error instead of panicking.
-            let _ = Registry::default()
-                .with(tui_logger::TuiTracingSubscriberLayer)
-                .try_init();
-        }
-        #[cfg(not(feature = "tui"))]
-        {
-            // TUI feature not enabled -- fall back to headless mode.
-            return init_logging(false);
-        }
-    } else {
-        // Headless mode: structured fmt output to stderr.
-        let filter =
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("kasmos=info"));
+pub fn init_logging(_tui_mode: bool) -> Result<()> {
+    // Headless mode: structured fmt output to stderr.
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("kasmos=info"));
 
-        // Use try_init() to be idempotent -- a subscriber may already be set.
-        let _ = Registry::default()
-            .with(
-                fmt::layer()
-                    .with_target(true)
-                    .with_file(true)
-                    .with_line_number(true),
-            )
-            .with(filter)
-            .try_init();
-    }
+    // Use try_init() to be idempotent -- a subscriber may already be set.
+    let _ = Registry::default()
+        .with(
+            fmt::layer()
+                .with_target(true)
+                .with_file(true)
+                .with_line_number(true),
+        )
+        .with(filter)
+        .try_init();
 
     Ok(())
 }

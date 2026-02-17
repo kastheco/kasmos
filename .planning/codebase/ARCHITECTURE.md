@@ -4,7 +4,7 @@
 
 ## Pattern Overview
 
-**Overall:** MCP-first CLI orchestrator with event-driven wave engine
+**Overall:** MCP-first CLI orchestrator with event-driven tool flows
 
 kasmos is a single Rust binary (one workspace crate) that orchestrates AI coding agents across Zellij terminal panes. It has two primary runtime modes:
 
@@ -12,10 +12,9 @@ kasmos is a single Rust binary (one workspace crate) that orchestrates AI coding
 2. **Serve mode** (`kasmos serve`) - Runs as an MCP stdio server, spawned by the manager agent, exposing tools for worker lifecycle and workflow status.
 
 **Key Characteristics:**
-- MCP server is the primary control plane (not TUI) -- the manager agent calls MCP tools to spawn/despawn workers, read messages, and transition WP states
+- MCP server is the primary control plane -- the manager agent calls MCP tools to spawn/despawn workers, read messages, and transition WP states
 - Wave-based execution model: work packages are grouped into dependency waves, launched in parallel within each wave
-- File-based communication: agents write structured `[KASMOS:event:sender]` messages to a shared message-log pane; the detector watches spec-kitty task file frontmatter for lane transitions
-- Legacy TUI modules exist behind `#[cfg(feature = "tui")]` feature gate but are not wired into the default CLI surface
+- File-based communication: agents write structured `[KASMOS:event:sender]` messages to a shared message-log pane; task-file frontmatter is the source of truth for lane transitions
 
 ## Layers
 
@@ -40,26 +39,19 @@ kasmos is a single Rust binary (one workspace crate) that orchestrates AI coding
 - Depends on: `config`, `setup`, `prompt`, `serve::lock`
 - Used by: CLI layer (bare `kasmos` or `kasmos PREFIX`)
 
-**Wave Engine Layer:**
-- Purpose: Drive work package lifecycle through dependency-ordered waves
-- Location: `crates/kasmos/src/engine.rs`
-- Contains: `WaveEngine` struct with event loop processing completion events and engine actions
-- Depends on: `types`, `graph`, `detector`, `command_handlers`, `persistence`, `parser`
-- Used by: Legacy TUI orchestrator (`start.rs`), potentially future MCP-driven orchestration
-
 **State Machine Layer:**
 - Purpose: Enforce valid state transitions for work packages and orchestration runs
-- Location: `crates/kasmos/src/state_machine.rs`, `crates/kasmos/src/types.rs`
+- Location: `crates/kasmos/src/types.rs`
 - Contains: `WPState` and `RunState` enums with `can_transition_to()` and `transition()` methods
 - Depends on: `error`
-- Used by: `engine`, `command_handlers`, `serve::tools::transition_wp`
+- Used by: `graph`, `serve::tools::transition_wp`, `serve::tools/workflow_status`
 
-**Zellij Abstraction Layer:**
-- Purpose: Abstract all Zellij CLI interactions behind a trait for testability
-- Location: `crates/kasmos/src/zellij.rs`, `crates/kasmos/src/session.rs`
-- Contains: `ZellijCli` trait, `RealZellijCli` implementation, `SessionManager` for pane tracking
+**Zellij Integration Layer:**
+- Purpose: Create or attach sessions/tabs and run pane lifecycle actions needed by launch and MCP tools
+- Location: `crates/kasmos/src/launch/session.rs`, `crates/kasmos/src/serve/messages.rs`
+- Contains: session bootstrap helpers, pane command wrappers, fallback scrollback support
 - Depends on: `config`, `error`
-- Used by: `launch::session`, `review_coordinator`, `shutdown`, legacy `start.rs`
+- Used by: `launch::run`, `serve::tools::despawn_worker`, `serve::tools::read_messages`
 
 **Configuration Layer:**
 - Purpose: Load and validate runtime configuration with multi-source precedence
@@ -68,12 +60,11 @@ kasmos is a single Rust binary (one workspace crate) that orchestrates AI coding
 - Precedence: defaults -> `kasmos.toml` (discovered by walking up from cwd) -> `KASMOS_*` env vars
 - Used by: All subsystems
 
-**Detection Layer:**
-- Purpose: Watch filesystem for work package completion signals
-- Location: `crates/kasmos/src/detector.rs`
-- Contains: `CompletionDetector` using `notify` crate, debounced/deduplicated event pipeline
-- Detection hierarchy: (1) YAML frontmatter lane transition, (2) git activity, (3) file markers (.done, .complete, DONE)
-- Used by: `engine` (receives `CompletionEvent` via mpsc channel)
+**Task-State Layer:**
+- Purpose: Parse and mutate work package state stored in task-file frontmatter
+- Location: `crates/kasmos/src/parser.rs`, `crates/kasmos/src/serve/tools/transition_wp.rs`, `crates/kasmos/src/serve/tools/workflow_status.rs`
+- Contains: YAML frontmatter parsing, lane transition validation, workflow snapshot derivation
+- Used by: MCP tool handlers and status reporting
 
 ## Data Flow
 
@@ -99,17 +90,7 @@ kasmos is a single Rust binary (one workspace crate) that orchestrates AI coding
    - `wait_for_event` - polls message-log pane until matching event appears or timeout
    - `transition_wp` - validates and applies lane transitions in task file frontmatter
    - `list_workers` / `despawn_worker` / `list_features` / `infer_feature`
-4. All tool invocations are audit-logged to `.kasmos/audit/{slug}-audit.jsonl`
-
-**Wave Engine Event Loop (legacy TUI path):**
-
-1. `WaveEngine::run()` initializes dependency graph, reconciles pre-seeded states
-2. Launches initial wave (wave 0 WPs with no unmet dependencies)
-3. `tokio::select!` loop processes:
-   - `CompletionEvent` from detector -> updates WP state, launches newly eligible WPs
-   - `EngineAction` from command handler -> applies operator commands (restart, pause, approve, reject, etc.)
-4. After each event: persists state to `.kasmos/state.json`, broadcasts to TUI via `watch` channel
-5. Loop exits when all WPs are terminal (Completed or Failed) or run is Aborted
+4. All tool invocations are audit-logged to `kitty-specs/{feature}/.kasmos/messages.jsonl`
 
 **Message Protocol:**
 
@@ -120,10 +101,10 @@ Workers and the manager communicate through a shared `msg-log` Zellij pane using
 Event types: `STARTED`, `PROGRESS`, `DONE`, `ERROR`, `REVIEW_PASS`, `REVIEW_REJECT`, `NEEDS_INPUT`, `SPAWN`, `DESPAWN`
 
 **State Management:**
-- In-memory: `OrchestrationRun` behind `Arc<RwLock<>>` for engine
-- Persisted: atomic JSON writes to `.kasmos/state.json` via `StatePersister`
-- MCP server: `WorkerRegistry` (in-memory HashMap keyed by `wp_id:role`)
+- In-memory: `WorkerRegistry` + message cursor in `KasmosServer`
+- Persisted: task-file frontmatter lane state in `kitty-specs/{feature}/tasks/WP*.md`
 - Feature locks: file-based advisory locks at `.kasmos/locks/{slug}.lock` with heartbeat
+- Audit log: JSONL entries in `kitty-specs/{feature}/.kasmos/messages.jsonl`
 
 ## Key Abstractions
 
@@ -139,28 +120,11 @@ Event types: `STARTED`, `PROGRESS`, `DONE`, `ERROR`, `REVIEW_PASS`, `REVIEW_REJE
 - Fields: `id`, `title`, `state: WPState`, `dependencies`, `wave`, `pane_id`, `worktree_path`, `prompt_path`, `failure_count`
 - State machine: `Pending -> Active -> ForReview -> Completed` (with Failed/Paused branches)
 
-**WaveEngine:**
-- Purpose: Core event loop driving work package progression
-- Location: `crates/kasmos/src/engine.rs`
-- Pattern: Receives events via mpsc channels, emits launch events, manages capacity queue
-- Builder pattern: `.with_persister()`, `.with_watch_tx()`, `.set_review_tx()`
-
-**ZellijCli Trait:**
-- Purpose: Abstraction for all Zellij CLI operations
-- Location: `crates/kasmos/src/zellij.rs`
-- Implementations: `RealZellijCli` (production), `MockZellijCli` (tests)
-- Adaptations: Zellij 0.41+ has no `list-panes` or `focus-pane-by-name` -- pane tracking is internal
-
 **DependencyGraph:**
 - Purpose: Track forward/reverse work package dependencies, compute waves
 - Location: `crates/kasmos/src/graph.rs`
 - Methods: `deps_satisfied()`, `get_dependents()`, `topological_sort()`, `compute_waves()`
 - Algorithm: Kahn's algorithm for topological sort, BFS for wave computation
-
-**SessionController Trait:**
-- Purpose: Abstract pane focus/zoom operations for testability
-- Location: `crates/kasmos/src/command_handlers.rs`
-- Implementations: `SessionManager` (production via `session.rs`), `MockSessionController` (tests)
 
 **KasmosServer:**
 - Purpose: MCP server exposing orchestration tools
@@ -173,7 +137,8 @@ Event types: `STARTED`, `PROGRESS`, `DONE`, `ERROR`, `REVIEW_PASS`, `REVIEW_REJE
 - Location: `crates/kasmos/src/prompt.rs`
 - Roles: Manager, Planner, Coder, Reviewer, Release
 - Each role has a `ContextBoundary` defining which project artifacts it can access
-- Templates loaded from `config/profiles/kasmos/agent/`
+- Agent templates loaded from `config/profiles/kasmos/agent/`
+- Spec-kitty slash commands loaded from `config/profiles/kasmos/commands/`
 
 ## Entry Points
 
@@ -201,10 +166,7 @@ Event types: `STARTED`, `PROGRESS`, `DONE`, `ERROR`, `REVIEW_PASS`, `REVIEW_REJE
   - `Zellij(ZellijError)` - binary not found, session exists/missing, pane operations
   - `SpecParser(SpecParserError)` - missing feature dirs, invalid frontmatter, circular deps
   - `State(StateError)` - invalid transitions, corrupted/stale state files
-  - `Pane(PaneError)` - pane not found, crashed, prompt injection failed
-  - `Wave(WaveError)` - no eligible WPs, WP not found, capacity exceeded
   - `Layout(LayoutError)` - KDL generation/validation failures
-  - `Detector(DetectorError)` - watcher errors, read errors, YAML errors
   - `Io(std::io::Error)` - transparent I/O errors
   - `Other(anyhow::Error)` - catch-all
 
@@ -220,16 +182,15 @@ Event types: `STARTED`, `PROGRESS`, `DONE`, `ERROR`, `REVIEW_PASS`, `REVIEW_REJE
 
 **Validation:** Multi-layer validation:
 - Config validation in `Config::validate()` with range checks
-- Identifier validation in `zellij::validate_identifier()` (alphanumeric + hyphens + underscores only)
-- Shell metacharacter rejection in `zellij::contains_shell_metacharacters()`
-- State machine transition validation in `state_machine.rs`
+- Role and status validation in MCP tool inputs (`spawn_worker`, `list_workers`, `transition_wp`)
+- State machine transition validation in `types.rs`
 - YAML frontmatter validation in `parser.rs`
 
 **Authentication:** Not applicable -- kasmos is a local orchestrator. External tool auth (OpenCode API keys, etc.) is handled by the respective tools' config.
 
-**Persistence:** Atomic JSON file writes via `StatePersister` (write to `.tmp`, then rename). Feature locks use file-based advisory locking with heartbeat.
+**Persistence:** Task state is persisted in spec-kitty task frontmatter. Feature locks use file-based advisory locking with heartbeat.
 
-**Audit:** JSONL audit log per feature at `.kasmos/audit/{slug}-audit.jsonl`. Configurable metadata-only vs full-payload mode. Automatic rotation by size and age.
+**Audit:** JSONL audit log per feature at `kitty-specs/{feature}/.kasmos/messages.jsonl`. Configurable metadata-only vs full-payload mode. Automatic rotation by size and age.
 
 ---
 

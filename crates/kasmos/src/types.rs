@@ -217,17 +217,6 @@ pub enum CompletionMethod {
     Manual,
 }
 
-/// A request to review a work package, emitted when a WP enters ForReview.
-#[derive(Debug, Clone)]
-pub struct ReviewRequest {
-    /// The work package ID to review.
-    pub wp_id: String,
-    /// Path to the WP's git worktree (if any).
-    pub worktree_path: Option<PathBuf>,
-    /// Path to the feature directory.
-    pub feature_dir: PathBuf,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

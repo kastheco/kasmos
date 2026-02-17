@@ -5,28 +5,28 @@
 ## Naming Patterns
 
 **Files:**
-- Use `snake_case.rs` for all Rust source files: `state_machine.rs`, `review_coordinator.rs`, `feature_arg.rs`
-- Module directories use `snake_case`: `serve/`, `launch/`, `hub/`, `tui/`
+- Use `snake_case.rs` for all Rust source files: `feature_arg.rs`, `workflow_status.rs`, `list_specs.rs`
+- Module directories use `snake_case`: `serve/`, `launch/`, `setup/`
 - Sub-module entry points use `mod.rs`: `crates/kasmos/src/serve/mod.rs`, `crates/kasmos/src/launch/mod.rs`
 - MCP tool implementations are one file per tool: `crates/kasmos/src/serve/tools/spawn_worker.rs`
 
 **Functions:**
-- Use `snake_case` for all functions: `launch_eligible_wps()`, `check_pane_health()`, `parse_frontmatter()`
-- Public constructors use `new()` or `default()`: `Config::new()`, `WorkerRegistry::new()`, `CompletionDetector::new()`
-- Boolean predicates use `is_` or `can_`: `is_complete()`, `can_transition_to()`, `is_stale()`, `is_fifo()`
-- Builder methods return `Self` with `with_` prefix: `with_persister()`, `with_watch_tx()`, `with_wp_id()`, `with_status()`
+- Use `snake_case` for all functions: `detect_feature()`, `parse_frontmatter()`, `write_temp_layout()`
+- Public constructors use `new()` or `default()`: `Config::new()`, `WorkerRegistry::new()`, `KasmosServer::new()`
+- Boolean predicates use `is_` or `can_`: `is_inside_zellij()`, `is_known()`, `is_stale()`, `can_transition_to()`
+- Builder methods return `Self` with `with_` prefix: `with_wp_id()`, `with_status()`, `with_details()`
 - Async handlers use `handle()` as the entry point function name: `tools::spawn_worker::handle()`, `tools::list_features::handle()`
 - Internal helper functions are private (no `pub`): `sync_legacy_fields()`, `detect_phase_hint()`
 
 **Variables:**
-- Use `snake_case` for all bindings: `feature_slug`, `wp_id`, `max_agent_panes`
+- Use `snake_case` for all bindings: `feature_slug`, `wp_id`, `max_parallel_workers`
 - Work package identifiers are consistently `wp_id: String`: never `id` or `work_package_id` in function params
 - Configuration fields use descriptive names: `stale_timeout_minutes`, `max_parallel_workers`, `poll_interval_secs`
 
 **Types:**
-- Use `PascalCase` for all types: `KasmosError`, `WaveEngine`, `SessionManager`, `CompletionDetector`
+- Use `PascalCase` for all types: `KasmosError`, `KasmosServer`, `FeatureDetection`, `WorkerRegistry`
 - Enums use `PascalCase` variants: `WPState::Active`, `RunState::Running`, `AgentRole::Coder`
-- Error enums end with `Error`: `ConfigError`, `ZellijError`, `StateError`, `PaneError`, `WaveError`
+- Error enums end with `Error`: `ConfigError`, `ZellijError`, `SpecParserError`, `StateError`, `LayoutError`
 - Input/Output structs for MCP tools follow `{ToolName}Input` / `{ToolName}Output`: `SpawnWorkerInput`, `SpawnWorkerOutput`
 
 **Constants:**
@@ -38,17 +38,11 @@
 **Formatting:**
 - No `rustfmt.toml` or `.rustfmt.toml` — uses default `rustfmt` settings
 - Rust 2024 edition (set in `Cargo.toml` workspace: `edition = "2024"`)
-- Uses `let`-chains (`if let ... && let ...`) — a nightly/2024-edition feature seen throughout: `crates/kasmos/src/parser.rs`, `crates/kasmos/src/session.rs`
+- Uses `let`-chains (`if let ... && let ...`) in Rust 2024 style: `crates/kasmos/src/parser.rs`, `crates/kasmos/src/launch/detect.rs`
 
 **Linting:**
 - Clippy with `-D warnings` (treat all warnings as errors): `cargo clippy -p kasmos -- -D warnings`
 - All-targets, all-features lint in Justfile: `cargo clippy --all-targets --all-features -- -D warnings`
-- Legacy TUI modules use `#[allow(dead_code)]` in `crates/kasmos/src/main.rs` to suppress warnings for feature-gated code
-
-**Feature Gates:**
-- Legacy TUI code is behind `#[cfg(feature = "tui")]` feature flag
-- Use `#[cfg(feature = "tui")]` for conditional compilation in `lib.rs` and `main.rs`
-- Optional dependencies tied to feature flags in `Cargo.toml`: `ratatui`, `crossterm`, `futures-util`, etc.
 
 ## Import Organization
 
@@ -67,7 +61,7 @@
   ```rust
   pub use config::Config;
   pub use error::{KasmosError, Result};
-  pub use engine::{WaveEngine, WaveLaunchEvent};
+  pub use graph::DependencyGraph;
   ```
 - Binary crate (`main.rs`) uses `kasmos::` prefix to access library items: `kasmos::serve::run()`, `kasmos::init_logging()`
 
@@ -80,7 +74,7 @@ Use `thiserror` for domain-specific typed errors and `anyhow` for contextual pro
 **Domain Error Hierarchy (`crates/kasmos/src/error.rs`):**
 - Top-level `KasmosError` enum aggregates all subsystem errors via `#[from]`
 - Custom `Result<T>` alias: `pub type Result<T> = std::result::Result<T, KasmosError>;`
-- Sub-errors: `ConfigError`, `ZellijError`, `SpecParserError`, `StateError`, `PaneError`, `WaveError`, `LayoutError`, `DetectorError`
+- Sub-errors: `ConfigError`, `ZellijError`, `SpecParserError`, `StateError`, `LayoutError`
 - Each error variant includes contextual fields (e.g., `wp_id`, `path`, `field`, `value`, `reason`)
 
 **Standalone Error Types:**
@@ -111,16 +105,16 @@ config.load_from_file(&path)
 
 **Pattern: Use `bail!` for early returns with anyhow:**
 ```rust
-if !fifo_path.exists() {
-    bail!("No command pipe found at {}. Is kasmos currently running?", fifo_path.display());
+if !feature_dir.is_dir() {
+    bail!("Feature directory not found: {}", feature_dir.display());
 }
 ```
 
 **Pattern: Guard clauses with comments:**
 ```rust
-// Guard: Check capacity
-if self.panes.len() >= self.config.max_agent_panes {
-    return Err(WaveError::CapacityExceeded { active: self.panes.len(), max: self.config.max_agent_panes }.into());
+// Guard: feature path must resolve to a directory
+if !candidate.is_dir() {
+    bail!("Feature directory not found: {}", candidate.display());
 }
 ```
 
@@ -128,9 +122,9 @@ if self.panes.len() >= self.config.max_agent_panes {
 
 **Framework:** `tracing` crate with `tracing-subscriber`
 
-**Initialization:** `crates/kasmos/src/logging.rs` — `init_logging(tui_mode: bool)`
+**Initialization:** `crates/kasmos/src/logging.rs` — `init_logging(false)`
 - Headless mode: `fmt` layer to stderr with target, file, and line number
-- TUI mode (feature-gated): routes through `tui-logger`
+- Compatibility note: function retains an unused bool parameter for backward compatibility
 - Default filter: `kasmos=info` (override with `RUST_LOG` env var)
 - Uses `try_init()` for idempotent initialization
 
@@ -175,7 +169,7 @@ if self.panes.len() >= self.config.max_agent_panes {
 
 ## Function Design
 
-**Size:** Most functions are focused and under 50 lines. Complex async flows like `WaveEngine::run()` are longer but well-structured with `tokio::select!`.
+**Size:** Most functions are focused and under 50 lines. Longer command handlers are split into helper functions for readability.
 
 **Parameters:** 
 - Prefer `&str` over `String` for input parameters
@@ -184,7 +178,7 @@ if self.panes.len() >= self.config.max_agent_panes {
 
 **Return Values:**
 - Functions that can fail return `Result<T>` (either `crate::Result<T>` or `anyhow::Result<T>`)
-- Functions that might not find something return `Option<T>`: `get_pane()`, `check_file_markers()`
+- Functions that might not find something return `Option<T>`: `feature_slug_from_dir()`, `current_branch_name()`
 - MCP tool handlers return `Result<Json<Output>, ErrorData>`
 
 ## Module Design
@@ -200,7 +194,7 @@ if self.panes.len() >= self.config.max_agent_panes {
 
 **Module Organization Pattern:**
 - One concern per module: `config.rs` for configuration, `graph.rs` for dependency graph, `parser.rs` for spec parsing
-- Complex subsystems use directory modules: `serve/`, `launch/`, `tui/`, `hub/`
+- Complex subsystems use directory modules: `serve/`, `launch/`, `setup/`
 - `#[cfg(test)] mod tests` at the bottom of every source file — co-located tests
 
 ## Serde Conventions
@@ -224,17 +218,14 @@ if self.panes.len() >= self.config.max_agent_panes {
 - Use `Arc<RwLock<T>>` for shared mutable state across async tasks: `Arc<RwLock<OrchestrationRun>>`
 - Use `Arc<Mutex<T>>` for write-heavy shared state: `Arc<Mutex<Option<AuditWriter>>>`
 - Use `tokio::sync::mpsc` channels for event communication between subsystems
-- Use `tokio::sync::watch` for broadcasting state to TUI
+- Use shared state + explicit function boundaries instead of feature-specific channel layers
 
-**Trait Objects:**
-- Use `Arc<dyn ZellijCli>` for dependency injection of the Zellij CLI abstraction
-- The `ZellijCli` trait uses `#[async_trait]` from the `async_trait` crate
-
-**Builder Pattern for Engine:**
+**Builder Pattern (Audit Entry):**
 ```rust
-let engine = WaveEngine::new(run, completion_rx, action_rx, launch_tx)
-    .with_persister(persister)
-    .with_watch_tx(watch_tx);
+let entry = AuditEntry::new("manager", "spawn_worker", "011-feature")
+    .with_wp_id("WP01")
+    .with_status("ok")
+    .with_details(json!({ "role": "coder" }));
 ```
 
 ## Configuration Conventions

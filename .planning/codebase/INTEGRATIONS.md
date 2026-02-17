@@ -30,7 +30,7 @@
 - Binary: Configurable via `kasmos.toml` `[paths].zellij_binary` (default: `"zellij"`)
 - Version support: 0.41+ (adaptations for missing `list-panes`, `focus-pane-by-name`)
 - ANSI output parsing: Handles 0.44+ format with ANSI codes in `list-sessions` output
-- Integration layer: `crates/kasmos/src/zellij.rs` (`ZellijCli` trait, `RealZellijCli` impl)
+- Integration layer: `crates/kasmos/src/launch/session.rs` (session/tab bootstrap + pane actions)
 - Operations used:
   - `list-sessions` - Session discovery
   - `attach --create-background` / `attach --create` - Session creation
@@ -78,22 +78,17 @@
 - Purpose: Renders the status bar in all kasmos-generated Zellij layouts
 - Plugin file: `~/.config/zellij/plugins/zjstatus.wasm`
 - Source: https://github.com/dj95/zjstatus
-- Integration: Hardcoded in `crates/kasmos/src/layout.rs` (`build_tab_template()`)
+- Integration: Used by generated layouts from `crates/kasmos/src/launch/layout.rs`
 - Setup validation: `check_zjstatus()` in `crates/kasmos/src/setup/mod.rs`
 - Configuration: Rose Pine Moon theme with zjstatus-hints pipe integration
 - Features used: mode indicators, tab styles, datetime, pipe format (zjstatus_hints)
 
 **Git:**
-- Purpose: Repository inspection, worktree management, branch discovery
-- Binary: Hardcoded `"git"` in `crates/kasmos/src/git.rs`
+- Purpose: Repository discovery and branch detection used by launch/lock flows
+- Binary: `git` in PATH (validated by `kasmos setup`)
 - Operations:
   - `rev-parse --show-toplevel` - Repo root discovery (`crates/kasmos/src/serve/lock.rs`)
-  - `rev-parse --verify refs/heads/<branch>` - Branch existence check
-  - `symbolic-ref --short HEAD` - Current branch name
-  - `worktree add`, `worktree remove --force`, `worktree prune` - Worktree lifecycle
-- Worktree layout: `.worktrees/{feature_name}-{wp_id}/` at repo root
-- Branch convention: `{feature_name}-{wp_id}` (e.g., `011-mcp-agent-swarm-orchestration-WP01`)
-- Integration: `crates/kasmos/src/git.rs` (`WorktreeManager` struct)
+  - `branch --show-current` - Current branch detection (`crates/kasmos/src/launch/detect.rs`)
 
 ## Data Storage
 
@@ -101,14 +96,13 @@
 - None - All state is file-based
 
 **File-Based State:**
-- Audit logs: JSONL files at `kitty-specs/{feature}/audit/kasmos-audit-{slug}-{date}.jsonl` (`crates/kasmos/src/serve/audit.rs`)
+- Audit logs: JSONL files at `kitty-specs/{feature}/.kasmos/messages.jsonl` (`crates/kasmos/src/serve/audit.rs`)
   - Retention: Configurable max_bytes (512MB default), max_age_days (14 default)
   - Rotation: Auto-prune by size and age every 64 writes
 - Feature locks: JSON files at `.kasmos/locks/{feature_slug}.lock` + `.lock.guard` (`crates/kasmos/src/serve/lock.rs`)
   - Advisory locking via `flock()` for concurrent access safety
   - Heartbeat-based stale detection with configurable timeout
 - Worker registry: In-memory `HashMap` in `crates/kasmos/src/serve/registry.rs` (not persisted)
-- State persistence: `crates/kasmos/src/persistence.rs` (orchestration run state)
 - Task files: `kitty-specs/{feature}/tasks/WP*.md` with YAML frontmatter (read/written by `transition_wp`)
 
 **File Storage:**
@@ -135,7 +129,7 @@
 **Structured Logging:**
 - Framework: `tracing` + `tracing-subscriber` (env-filter, fmt layers)
 - Config: `RUST_LOG` env var (default: `kasmos=info`)
-- Output: stderr in headless mode, `tui-logger` widget in TUI mode
+- Output: stderr
 - Implementation: `crates/kasmos/src/logging.rs`
 
 **Audit Trail:**
@@ -154,7 +148,6 @@
 
 **Build Commands:**
 - `cargo build` - Default build
-- `cargo build --features tui` - Build with legacy TUI
 - `cargo test` - Run all tests
 - `cargo clippy -p kasmos -- -D warnings` - Lint
 - `just install` - Install to `~/.cargo/bin/`
@@ -172,11 +165,6 @@
 - Message pane: Named `msg-log` in Zellij layout
 - Reading: Via `pane-tracker dump-pane` (primary) or `zellij action dump-screen` (fallback)
 - Writing: Via `pane-tracker run-in-pane` with tempfile-based content transfer
-
-**FIFO Command Interface (Legacy TUI):**
-- Controller commands sent via `.kasmos/cmd.pipe` Unix FIFO
-- Implementation: `crates/kasmos/src/cmd.rs`
-- Commands: `status`, `restart`, `pause`, `resume`, `focus`, `zoom`, `abort`, `advance`, `finalize`, `force-advance`, `retry`, `approve`, `reject`, `help`
 
 ## Environment Configuration
 
@@ -231,9 +219,6 @@ kitty-specs/
   locks/
     {feature_slug}.lock        # Feature lock (JSON)
     {feature_slug}.lock.guard  # Advisory lock guard file
-  cmd.pipe                     # FIFO for legacy controller commands
-  prompts/                     # Generated agent prompts (TUI mode)
-  scripts/                     # Generated agent launch scripts (TUI mode)
 ```
 
 **Git Worktree Layout:**

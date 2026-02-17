@@ -178,13 +178,6 @@ Install to `~/.config/zellij/plugins/`:
 
 > **Note:** `kasmos setup` auto-detects the pane-tracker installation directory and writes it into `.opencode/opencode.jsonc`. Override with `[paths].pane_tracker_dir` in `kasmos.toml` or `KASMOS_PATHS_PANE_TRACKER_DIR` env var.
 
-## Legacy TUI Feature Gate
-
-- Default builds use the MCP-first command surface
-- Legacy TUI modules are preserved behind feature flag `tui`
-- Build legacy path with `cargo build --features tui`
-- Test legacy path with `cargo test --features tui`
-
 ## Build And Test
 
 - `cargo build`

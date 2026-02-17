@@ -22,7 +22,6 @@
 **Run Commands:**
 ```bash
 cargo test                           # Run all tests (default features)
-cargo test --features tui            # Run all tests including TUI-gated tests
 cargo clippy -p kasmos -- -D warnings  # Lint (treat warnings as errors)
 cargo clippy --all-targets --all-features -- -D warnings  # Full lint
 ```
@@ -46,9 +45,9 @@ just lint    # cargo clippy --all-targets --all-features -- -D warnings
 - Invalid/error cases use explicit names: `test_wp_invalid_completed_to_active()`, `test_session_name_validation_invalid_chars()`
 
 **Coverage:**
-- 45 test modules across the codebase (every major module has tests)
-- ~419 individual test functions
-- Tests exist for: `error.rs`, `types.rs`, `config.rs`, `state_machine.rs`, `graph.rs`, `parser.rs`, `session.rs`, `engine.rs`, `detector.rs`, `zellij.rs`, `review.rs`, `cmd.rs`, `logging.rs`, `serve/mod.rs`, `serve/audit.rs`, `serve/lock.rs`, `serve/messages.rs`, `serve/tools/workflow_status.rs`, `serve/tools/transition_wp.rs`, `serve/tools/wait_for_event.rs`, `serve/tools/read_messages.rs`, `launch/mod.rs`, `launch/detect.rs`, `launch/session.rs`, `launch/layout.rs`, `prompt.rs`, `persistence.rs`, `shutdown.rs`, `health.rs`, `cleanup.rs`, `signals.rs`, `commands.rs`, `command_handlers.rs`, `report.rs`, `layout.rs`, `git.rs`, `review_coordinator.rs`, `hub/scanner.rs`, `hub/app.rs`, `hub/actions.rs`, `hub/keybindings.rs`, `tui/keybindings.rs`, `tui/app.rs`, `tui/widgets/dependency_graph.rs`
+- 20 source files include co-located test modules
+- Existing suite currently reports 130 passing tests
+- Tests exist for active modules including `config.rs`, `types.rs`, `graph.rs`, `parser.rs`, `prompt.rs`, `launch/*`, `setup/mod.rs`, `serve/mod.rs`, `serve/messages.rs`, `serve/lock.rs`, `serve/audit.rs`, and core MCP tools
 
 ## Test Structure
 
@@ -106,18 +105,14 @@ fn env_overrides_take_precedence() {
 }
 ```
 
-**Table-Driven Tests:**
+**State Transition Tests:**
 ```rust
 #[test]
-fn test_fifo_line_formatting() {
-    let cases = vec![
-        (FifoCommand::Status, "status"),
-        (FifoCommand::Restart { wp_id: "WP01".into() }, "restart WP01"),
-        (FifoCommand::Abort, "abort"),
-    ];
-    for (command, expected) in cases {
-        assert_eq!(command.as_fifo_line(), expected);
-    }
+fn run_state_pending_to_running_is_valid() {
+    assert!(RunState::Pending.can_transition_to(&RunState::Running));
+    assert!(RunState::Pending
+        .transition(RunState::Running)
+        .is_ok());
 }
 ```
 
@@ -139,51 +134,7 @@ fn test_wp_invalid_completed_to_active() {
 
 ## Mocking
 
-**Framework:** No mocking framework — hand-written mocks using traits
-
-**Pattern: Trait-based mock for external dependencies (`crates/kasmos/src/session.rs`):**
-```rust
-/// Mock Zellij CLI for testing.
-struct MockZellijCli {
-    sessions: Mutex<Vec<SessionInfo>>,
-    calls: Mutex<Vec<String>>,  // Track all method calls
-}
-
-impl MockZellijCli {
-    fn new() -> Self {
-        Self {
-            sessions: Mutex::new(Vec::new()),
-            calls: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn add_session(&self, name: &str, state: SessionState) { ... }
-    fn get_calls(&self) -> Vec<String> { ... }
-}
-
-#[async_trait]
-impl ZellijCli for MockZellijCli {
-    async fn create_session(&self, name: &str, _layout: Option<&std::path::Path>) -> Result<()> {
-        self.calls.lock().unwrap().push(format!("create_session:{}", name));
-        // ... mock behavior ...
-    }
-    // ... all trait methods implemented ...
-}
-```
-
-**Pattern: Using the mock:**
-```rust
-#[tokio::test]
-async fn test_start_session_creates_new() {
-    let cli = Arc::new(MockZellijCli::new());
-    let config = Arc::new(Config::default());
-    let mut manager = SessionManager::new("test-session".to_string(), cli.clone(), config).unwrap();
-
-    let result = manager.start_session().await;
-    assert!(result.is_ok());
-    assert!(cli.get_calls().iter().any(|c| c.contains("create_session:test-session")));
-}
-```
+**Framework:** No mocking framework — use closure injection and tempdir fixtures
 
 **Pattern: Callback/closure mocks for prompt functions (`crates/kasmos/src/launch/mod.rs`):**
 ```rust
@@ -204,7 +155,6 @@ async fn test_selector_runs_before_preflight_failures() {
 ```
 
 **What to Mock:**
-- External CLI tools (Zellij) — via `ZellijCli` trait
 - User input prompts — via closure parameters
 - File system — via `tempfile::TempDir`
 
@@ -290,7 +240,7 @@ cargo tarpaulin --out Html
 - All tests are co-located unit tests
 - Test individual functions, state transitions, data transformations
 - Use `#[test]` for synchronous, `#[tokio::test]` for async
-- Heavily used for: state machines (31 tests in `state_machine.rs`), dependency graph (14 tests), serialization round-trips, error display messages
+- Heavily used for: config parsing/validation, dependency graph logic, parser behavior, launch detection, and MCP tool behavior
 
 **Integration Tests:**
 - No dedicated `tests/` directory — integration-style testing happens within module tests
@@ -307,20 +257,18 @@ cargo tarpaulin --out Html
 **Async Testing:**
 ```rust
 #[tokio::test]
-async fn test_continuous_auto_launch() {
-    let run = Arc::new(RwLock::new(create_test_run(...)));
-    let (completion_tx, completion_rx) = mpsc::channel(10);
-    let (_action_tx, action_rx) = mpsc::channel(10);
+async fn test_selector_runs_before_preflight_failures() {
+    let called = Arc::new(AtomicBool::new(false));
+    let called_in_prompt = Arc::clone(&called);
+    let mut prompt = move |_max: usize| {
+        called_in_prompt.store(true, Ordering::SeqCst);
+        Ok(1)
+    };
 
-    let (mut engine, _launch_rx) = create_test_engine(run.clone(), completion_rx, action_rx);
-    engine.init_graph().await.unwrap();
-
-    engine.launch_eligible_wps().await.unwrap();
-
-    {
-        let r = run.read().await;
-        assert_eq!(r.work_packages[0].state, WPState::Active);
-    }
+    let err = run_with_detection_and_prompt(&config, &specs_root, detection, &mut prompt)
+        .await
+        .expect_err("preflight should fail");
+    assert!(called.load(Ordering::SeqCst));
 }
 ```
 
@@ -422,9 +370,8 @@ fn spawn_worker_input_rejects_invalid_payloads() {
 - File operations need: `tempfile::TempDir` isolation, missing file handling, permission edge cases
 
 **When modifying existing code:**
-- Run `cargo test` before committing — all 419+ tests must pass
+- Run `cargo test` before committing — all tests must pass
 - Run `cargo clippy -p kasmos -- -D warnings` — zero warnings allowed
-- For feature-gated code: `cargo test --features tui`
 
 ---
 

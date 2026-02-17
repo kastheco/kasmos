@@ -12,7 +12,7 @@ kasmos is an MCP-first orchestration CLI. It has three runtime modes:
 2. **MCP server** (`kasmos serve`) -- stdio transport server providing tools for worker lifecycle, message reading, workflow status, WP lane transitions, and feature lock management. Spawned as a subprocess by the manager agent (not as a separate pane).
 3. **Utilities** (`kasmos setup`, `kasmos list`, `kasmos status`) -- environment validation, feature listing, and progress reporting.
 
-The TUI code from specs 002-010 is preserved behind `#[cfg(feature = "tui")]` and is not compiled by default. It is inert.
+Legacy FIFO command handling, TUI modules, and the old wave-engine orchestration path were removed from the crate. kasmos now runs only through launch + MCP server flows.
 
 ## Worktree Structure
 
@@ -30,7 +30,7 @@ This is a critical distinction that affects multiple subsystems:
 - **Main repo** `kitty-specs/<slug>/tasks/WPxx.md` -- the canonical task files, versioned in git.
 - **Worktree** `.worktrees/<slug>-<wp_id>/kitty-specs/<slug>/tasks/WPxx.md` -- the agent's working copy.
 
-When an agent modifies a task file (e.g., moving its lane from `doing` to `for_review`), it modifies the **worktree copy**, not the main repo copy. Any subsystem that watches for file changes (e.g., `CompletionDetector` in `crates/kasmos/src/detector.rs`) must watch the worktree path, not the main repo path, when worktrees are in use.
+When an agent modifies a task file (e.g., moving its lane from `doing` to `for_review`), it modifies the **worktree copy**, not the main repo copy. Any subsystem that inspects task changes must read from the worktree path, not the main repo path, when worktrees are in use.
 
 ## Zellij Integration
 
@@ -142,8 +142,8 @@ Legacy flat keys (`max_agent_panes`, `controller_width_pct`, etc.) are still acc
 | `FeatureLockManager` | `serve/lock.rs` | Per-feature lock with heartbeat and stale detection |
 | `Config` | `config.rs` | Sectioned TOML config with env overrides |
 | `WorkPackage` | `types.rs` | Has `pane_id: Option<u32>`, `worktree_path`, `pane_name` |
-| `CompletionDetector` | `detector.rs` | Watches task files for lane transitions |
-| `WorktreeManager` | `git.rs` | Creates worktrees at `.worktrees/{feature_name}-{wp_id}` |
+| `FeatureDetection` | `launch/detect.rs` | Feature resolution result from arg/branch/cwd |
+| `FeatureSource` | `launch/detect.rs` | Source enum for feature detection priority |
 
 ## Agent Permissions and External Directories
 

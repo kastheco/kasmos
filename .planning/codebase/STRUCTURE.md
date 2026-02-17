@@ -8,7 +8,7 @@
 kasmos/
 ├── crates/
 │   └── kasmos/                 # Single workspace crate (binary + library)
-│       ├── Cargo.toml          # Crate manifest with feature flags
+│       ├── Cargo.toml          # Crate manifest
 │       ├── kitty-specs/        # Crate-local spec-kitty specs (for crate tests)
 │       └── src/                # All source code
 ├── config/
@@ -47,7 +47,6 @@ kasmos/
 ├── .worktrees/                 # Git worktrees for WP isolation (gitignored)
 ├── .kasmos/                    # Runtime state directory (gitignored)
 │   ├── state.json              # Persisted orchestration state
-│   ├── cmd.pipe                # FIFO for controller commands
 │   ├── locks/                  # Feature lock files
 │   └── audit/                  # Audit log files
 ├── Cargo.toml                  # Workspace manifest
@@ -62,7 +61,7 @@ kasmos/
 
 **`crates/kasmos/src/`:**
 - Purpose: All Rust source code for the single kasmos binary/library crate
-- Contains: ~70 `.rs` files organized as flat modules + subdirectories for subsystems
+- Contains: ~30 `.rs` files organized as flat modules + subdirectories for subsystems
 - Key principle: `lib.rs` exposes the public API, `main.rs` is the thin CLI entrypoint
 
 **`crates/kasmos/src/serve/`:**
@@ -90,18 +89,6 @@ kasmos/
 - Contains: Binary checks (zellij, opencode, spec-kitty), repo context validation, config file generation
 - Key files: `mod.rs`
 
-**`crates/kasmos/src/tui/` (feature-gated: `tui`):**
-- Purpose: Legacy TUI for per-feature orchestration dashboard
-- Contains: Ratatui terminal UI with tabs (Dashboard, Review, Logs)
-- Key files: `mod.rs`, `app.rs`, `keybindings.rs`, `event.rs`, `tabs/dashboard.rs`, `tabs/review.rs`, `tabs/logs.rs`, `widgets/dependency_graph.rs`
-- Status: Preserved behind `#[cfg(feature = "tui")]` gate, not wired into default CLI
-
-**`crates/kasmos/src/hub/` (feature-gated: `tui`):**
-- Purpose: Legacy hub TUI for browsing features across specs
-- Contains: Feature browser, WP scanner, contextual actions
-- Key files: `mod.rs`, `app.rs`, `actions.rs`, `scanner.rs`, `keybindings.rs`
-- Status: Feature-gated alongside TUI
-
 **`config/profiles/kasmos/`:**
 - Purpose: Agent prompt templates and OpenCode configuration
 - Contains: Role-specific markdown prompt templates loaded by `RolePromptBuilder`
@@ -128,32 +115,19 @@ kasmos/
 **Configuration:**
 - `kasmos.toml`: Runtime configuration (TOML, discovered by walking up from cwd)
 - `crates/kasmos/src/config.rs`: Config struct, loading, validation
-- `crates/kasmos/Cargo.toml`: Crate manifest with `tui` feature flag
+- `crates/kasmos/Cargo.toml`: Crate manifest and dependency declarations
 
 **Core Logic:**
-- `crates/kasmos/src/engine.rs`: Wave engine (event loop, WP lifecycle)
-- `crates/kasmos/src/types.rs`: Core data model (`OrchestrationRun`, `WorkPackage`, `Wave`, state enums)
-- `crates/kasmos/src/state_machine.rs`: State transition rules for `WPState` and `RunState`
+- `crates/kasmos/src/config.rs`: Runtime config model, loading, and validation
+- `crates/kasmos/src/types.rs`: Core enums/data structures (`WPState`, `RunState`, `WorkPackage`, `OrchestrationRun`)
 - `crates/kasmos/src/graph.rs`: Dependency graph with topological sort and wave computation
-- `crates/kasmos/src/detector.rs`: Filesystem completion detector (notify + debounce + retry)
 - `crates/kasmos/src/parser.rs`: YAML frontmatter parser for spec-kitty task files
 - `crates/kasmos/src/prompt.rs`: Role-based prompt builder with context boundaries
-- `crates/kasmos/src/session.rs`: Zellij session/pane manager with internal tracking
-- `crates/kasmos/src/zellij.rs`: Zellij CLI trait + real implementation
-- `crates/kasmos/src/command_handlers.rs`: Command dispatch (controller commands -> engine actions)
-- `crates/kasmos/src/commands.rs`: FIFO-based command input system
-- `crates/kasmos/src/persistence.rs`: Atomic state file persistence
-- `crates/kasmos/src/review_coordinator.rs`: Spawns reviewer agents when WPs enter ForReview
-- `crates/kasmos/src/review.rs`: Review automation policy and execution
-- `crates/kasmos/src/health.rs`: Pane health monitoring with crash detection
-- `crates/kasmos/src/shutdown.rs`: Ordered shutdown coordinator
-- `crates/kasmos/src/signals.rs`: Unix signal handlers (SIGINT/SIGTERM)
-- `crates/kasmos/src/git.rs`: Git worktree manager
-- `crates/kasmos/src/cleanup.rs`: Artifact cleanup
+- `crates/kasmos/src/feature_arg.rs`: Feature argument resolution helpers
+- `crates/kasmos/src/list_specs.rs`: Feature listing command implementation
+- `crates/kasmos/src/status.rs`: Status command implementation
 - `crates/kasmos/src/error.rs`: Error type hierarchy
 - `crates/kasmos/src/logging.rs`: Tracing subscriber initialization
-- `crates/kasmos/src/layout.rs`: KDL layout generator (legacy, uses `kdl` crate programmatic API)
-- `crates/kasmos/src/feature_arg.rs`: Feature argument resolution helpers
 
 **MCP Tools:**
 - `crates/kasmos/src/serve/tools/spawn_worker.rs`: Spawn a worker pane
@@ -180,7 +154,7 @@ kasmos/
 **Files:**
 - `snake_case.rs` for all Rust source files
 - `mod.rs` for directory-module entrypoints
-- Flat modules for most concerns; subdirectories (`serve/`, `launch/`, `setup/`, `tui/`, `hub/`) only for subsystems with multiple files
+- Flat modules for most concerns; subdirectories (`serve/`, `launch/`, `setup/`) only for subsystems with multiple files
 
 **Directories:**
 - `snake_case` for Rust module directories
@@ -191,16 +165,16 @@ kasmos/
 - `.planning/` for GSD planning artifacts
 
 **Types:**
-- `PascalCase` for types: `WorkPackage`, `WaveEngine`, `KasmosServer`
-- State enums: `WPState`, `RunState`, `WaveState`, `SessionState`
+- `PascalCase` for types: `WorkPackage`, `FeatureDetection`, `KasmosServer`
+- State enums: `WPState`, `RunState`, `WaveState`, `WorkerStatus`
 - Config structs: `Config`, `AgentConfig`, `PathsConfig`, etc.
 - Error enums: `KasmosError`, `ConfigError`, `ZellijError`, etc.
 
 **Functions:**
 - `snake_case` for all functions
-- Async functions: `start_session()`, `focus_pane()`, `handle_completion()`
-- Builders: `with_persister()`, `with_watch_tx()`, `set_review_tx()`
-- Validators: `validate()`, `validate_identifier()`, `can_transition_to()`
+- Async functions: `run()`, `bootstrap()`, `emit_audit()`
+- Builders: `with_wp_id()`, `with_status()`, `with_details()`
+- Validators: `validate()`, `validate_role()`, `can_transition_to()`
 
 **Constants:**
 - `SCREAMING_SNAKE_CASE`: `MSG_LOG_PANE`, `KNOWN_EVENTS`, `FEATURE_LOCK_CONFLICT_CODE`
@@ -231,10 +205,10 @@ kasmos/
 2. Add variant to `KasmosError` with `#[from]` derive
 3. Use `thiserror::Error` for the domain enum
 
-**New Engine Action:**
-1. Add variant to `EngineAction` in `crates/kasmos/src/command_handlers.rs`
-2. Add handler method in `crates/kasmos/src/engine.rs::WaveEngine`
-3. Wire in `handle_action()` match block
+**New Launch Step:**
+1. Add behavior in `crates/kasmos/src/launch/mod.rs::run()`
+2. Implement feature/session helpers under `crates/kasmos/src/launch/`
+3. Add tests in the touched launch module
 
 **New Agent Role:**
 1. Add variant to `AgentRole` in `crates/kasmos/src/serve/registry.rs`
@@ -247,11 +221,11 @@ kasmos/
 - Purpose: Runtime artifacts created during orchestration
 - Generated: Yes (by kasmos at runtime)
 - Committed: No (gitignored)
-- Contains: `state.json`, `cmd.pipe`, `locks/`, `audit/`, wrapper scripts
+- Contains: `state.json`, `locks/`, `audit/`
 
 **`.worktrees/` (git worktrees):**
 - Purpose: Isolated git worktrees per work package
-- Generated: Yes (by `WorktreeManager`)
+- Generated: Yes (by spec-kitty/manager workflow)
 - Committed: No (gitignored)
 - Pattern: `.worktrees/{feature_slug}-{wp_id}/`
 - Note: `.kittify/memory/` inside worktrees is symlinked to main repo
@@ -269,6 +243,11 @@ kasmos/
 
 **`config/profiles/kasmos/agent/`:**
 - Purpose: Role-specific prompt templates loaded at runtime by `RolePromptBuilder`
+- Generated: No (manually authored)
+- Committed: Yes
+
+**`config/profiles/kasmos/commands/`:**
+- Purpose: Spec-kitty slash command definitions installed to `.opencode/commands/` by `kasmos setup`
 - Generated: No (manually authored)
 - Committed: Yes
 

@@ -7,36 +7,6 @@ mod feature_arg;
 mod list_specs;
 mod status;
 
-// Legacy TUI modules -- preserved behind feature gate per FR-024.
-// These are not wired into the current CLI surface but kept compilable.
-#[cfg(feature = "tui")]
-#[allow(dead_code)]
-mod attach;
-#[cfg(feature = "tui")]
-#[allow(dead_code)]
-mod cmd;
-#[cfg(feature = "tui")]
-#[allow(dead_code)]
-mod hub;
-#[cfg(feature = "tui")]
-#[allow(dead_code)]
-mod report;
-#[cfg(feature = "tui")]
-#[allow(dead_code)]
-mod sendmsg;
-#[cfg(feature = "tui")]
-#[allow(dead_code)]
-mod start;
-#[cfg(feature = "tui")]
-#[allow(dead_code)]
-mod stop;
-#[cfg(feature = "tui")]
-#[allow(dead_code)]
-mod tui_cmd;
-#[cfg(feature = "tui")]
-#[allow(dead_code)]
-mod tui_preview;
-
 #[derive(Parser)]
 #[command(
     name = "kasmos",

@@ -30,21 +30,9 @@ pub enum KasmosError {
     #[error("State error: {0}")]
     State(#[from] StateError),
 
-    /// Pane operation error.
-    #[error("Pane error: {0}")]
-    Pane(#[from] PaneError),
-
-    /// Wave engine error.
-    #[error("Wave engine error: {0}")]
-    Wave(#[from] WaveError),
-
     /// Layout generation error.
     #[error("Layout error: {0}")]
     Layout(#[from] LayoutError),
-
-    /// Detector error.
-    #[error("Detector error: {0}")]
-    Detector(#[from] DetectorError),
 
     /// I/O error.
     #[error(transparent)]
@@ -143,28 +131,6 @@ pub enum LayoutError {
     InvalidPaneCount(String),
 }
 
-/// Detector errors.
-#[derive(Error, Debug)]
-pub enum DetectorError {
-    /// Filesystem watcher error.
-    #[error("Watcher error: {0}")]
-    WatcherError(String),
-
-    /// File read error.
-    #[error("Read error: {0}")]
-    ReadError(String),
-
-    /// YAML parse error.
-    #[error("YAML error: {0}")]
-    YamlError(String),
-}
-
-impl From<notify::Error> for DetectorError {
-    fn from(e: notify::Error) -> Self {
-        DetectorError::WatcherError(e.to_string())
-    }
-}
-
 /// State machine errors.
 #[derive(Error, Debug)]
 pub enum StateError {
@@ -183,42 +149,6 @@ pub enum StateError {
     /// Stale state detected.
     #[error("Stale state detected: last updated {last_updated}")]
     Stale { last_updated: String },
-}
-
-/// Pane operation errors.
-#[derive(Error, Debug)]
-pub enum PaneError {
-    /// Pane not found.
-    #[error("Pane not found for WP {wp_id}")]
-    NotFound { wp_id: String },
-
-    /// Pane crashed.
-    #[error("Pane {pane_id} crashed for WP {wp_id}")]
-    Crashed { pane_id: u32, wp_id: String },
-
-    /// Prompt injection failed.
-    #[error("Prompt injection failed for WP {wp_id}: {reason}")]
-    PromptInjectionFailed { wp_id: String, reason: String },
-}
-
-/// Wave engine errors.
-#[derive(Error, Debug)]
-pub enum WaveError {
-    /// Wave has no eligible work packages.
-    #[error("Wave {wave} has no eligible work packages")]
-    NoEligible { wave: usize },
-
-    /// Work package not found.
-    #[error("Work package not found: {wp_id}")]
-    WpNotFound { wp_id: String },
-
-    /// Capacity limit reached.
-    #[error("Capacity limit reached: {active}/{max} panes")]
-    CapacityExceeded { active: usize, max: usize },
-
-    /// Wave progression blocked.
-    #[error("Wave progression blocked: WP {blocker} failed")]
-    Blocked { blocker: String },
 }
 
 #[cfg(test)]

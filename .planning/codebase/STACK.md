@@ -12,14 +12,14 @@
 - KDL - Zellij layout definitions (generated at runtime in `crates/kasmos/src/launch/layout.rs`)
 - TOML - Configuration (`kasmos.toml`, `Cargo.toml`)
 - YAML - Work package frontmatter in `kitty-specs/*/tasks/WP*.md` files
-- Markdown - Agent prompt templates in `config/profiles/kasmos/agent/*.md`
+- Markdown - Agent prompt templates in `config/profiles/kasmos/agent/*.md`, slash commands in `config/profiles/kasmos/commands/*.md`
 - JSONC - OpenCode MCP server configuration in `config/profiles/kasmos/opencode.jsonc`
 
 ## Runtime
 
 **Environment:**
 - Rust stable (rustc 1.92.0, cargo 1.92.0)
-- Linux (primary target, uses POSIX-specific APIs: `libc::flock`, `nix::fcntl`, Unix FIFOs)
+- Linux (primary target, uses POSIX-specific APIs such as `libc::flock`)
 
 **Package Manager:**
 - Cargo (workspace-level)
@@ -49,12 +49,6 @@
 - `cargo clippy` - Linting (enforced: `-D warnings`)
 - No formatter config (`.rustfmt.toml`) detected - uses default `rustfmt`
 
-**Optional TUI (feature-gated: `tui`):**
-- `ratatui` 0.30 (crossterm) - Terminal UI framework
-- `crossterm` 0.29 (event-stream) - Terminal backend
-- `tui-popup` 0.7, `tui-nodes` 0.10, `tui-logger` 0.18, `ratatui-macros` 0.7 - TUI widgets
-- `futures-util` 0.3.31 - Async stream utilities for TUI event loop
-
 ## Key Dependencies
 
 **Critical (core functionality):**
@@ -69,15 +63,11 @@
 - `thiserror` 2.0 - Typed error enums in `crates/kasmos/src/error.rs`
 - `anyhow` 1.0.101 - Contextual error handling throughout application code
 - `chrono` 0.4.43 (serde) - Timestamps for audit logs, lock records, worker entries
-- `notify` 9.0.0-rc.1 - Filesystem watching for completion detection in `crates/kasmos/src/detector.rs`
 - `kdl` 6.5 - KDL document parsing/validation for Zellij layout generation
 - `regex` 1 - Message protocol parsing (`[KASMOS:sender:EVENT]` pattern) in `crates/kasmos/src/serve/messages.rs`
-- `nix` 0.31 (fs) - Low-level POSIX file operations (advisory locking in `crates/kasmos/src/serve/lock.rs`)
 - `libc` 0.2 - Direct `flock()` syscalls for advisory file locking
 - `which` 8.0 - Binary discovery for preflight checks (`zellij`, `ocx`, `spec-kitty`, `pane-tracker`)
 - `shell-escape` 0.1 - Safe shell argument escaping for agent script generation
-- `async-trait` 0.1.89 - Async trait support for `ZellijCli` trait in `crates/kasmos/src/zellij.rs`
-- `log` 0.4 - Log facade (compatibility layer, tracing is primary)
 - `tempfile` 3.25.0 - Temp files for pane message writing and layout generation
 
 ## Configuration
@@ -114,17 +104,17 @@
 - `config/profiles/kasmos/agent/coder.md` - Coder agent prompt template
 - `config/profiles/kasmos/agent/reviewer.md` - Reviewer agent prompt template
 - `config/profiles/kasmos/agent/release.md` - Release agent prompt template
+- `config/profiles/kasmos/commands/spec-kitty.*.md` - Spec-kitty slash command definitions
 
 **Build:**
 - `Cargo.toml` workspace at repo root, members: `crates/*`
-- Feature flag `tui` gates legacy TUI modules (not in default build)
 - `Justfile` provides `just build`, `just test`, `just lint`, `just install`, `just swarm`, `just launch`
 
 ## Platform Requirements
 
 **Development:**
 - Rust stable toolchain (1.92.0+ recommended)
-- Linux (POSIX APIs: `flock`, Unix FIFOs, `/etc/hostname`)
+- Linux (POSIX APIs: `flock`, `/etc/hostname`)
 - `git` in PATH
 - `zellij` in PATH (0.41+ supported, 0.44+ ANSI format handled)
 - `ocx` (OpenCode CLI) in PATH

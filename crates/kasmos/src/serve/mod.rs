@@ -22,9 +22,13 @@ use crate::serve::tools::workflow_status::{WorkflowStatusInput, WorkflowStatusOu
 use anyhow::Context;
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{ErrorData, ServerCapabilities, ServerInfo};
+use rmcp::model::{
+    CallToolRequestParams, CallToolResult, ErrorData, ListToolsResult, PaginatedRequestParams,
+    ServerCapabilities, ServerInfo, Tool,
+};
+use rmcp::service::RequestContext;
 use rmcp::transport::io::stdio;
-use rmcp::{Json, ServerHandler, ServiceExt, tool, tool_handler, tool_router};
+use rmcp::{Json, RoleServer, ServerHandler, ServiceExt, tool, tool_router};
 use tokio::sync::{Mutex, RwLock};
 
 use self::registry::WorkerRegistry;
@@ -266,7 +270,6 @@ impl KasmosServer {
     }
 }
 
-#[tool_handler]
 impl ServerHandler for KasmosServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
@@ -285,6 +288,40 @@ impl ServerHandler for KasmosServer {
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             ..Default::default()
         }
+    }
+
+    async fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, ErrorData> {
+        let tools = self
+            .tool_router
+            .list_all()
+            .into_iter()
+            .map(tools::fix_tool_nullable)
+            .collect();
+        Ok(ListToolsResult {
+            tools,
+            meta: None,
+            next_cursor: None,
+        })
+    }
+
+    fn get_tool(&self, name: &str) -> Option<Tool> {
+        self.tool_router
+            .get(name)
+            .cloned()
+            .map(tools::fix_tool_nullable)
+    }
+
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        self.tool_router.call(tcc).await
     }
 }
 
