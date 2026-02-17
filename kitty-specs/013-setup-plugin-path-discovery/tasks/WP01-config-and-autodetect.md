@@ -1,10 +1,14 @@
 ---
 work_package_id: WP01
 title: Config schema and pane-tracker auto-detection
-lane: "planned"
+lane: "doing"
 dependencies: []
-phase: "Wave 1"
-assignee: "coder"
+base_branch: main
+base_commit: 8e32626467b9c4feb8da950f6d308cd6e52ea858
+created_at: '2026-02-17T09:50:51.891875+00:00'
+phase: Wave 1
+assignee: coder
+shell_pid: "3854650"
 ---
 
 # WP01 - Config schema and pane-tracker auto-detection
