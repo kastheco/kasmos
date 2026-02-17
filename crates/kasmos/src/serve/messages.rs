@@ -184,11 +184,21 @@ async fn read_pane_scrollback(pane_name: &str) -> Result<PaneScrollback> {
                     "pane-tracker unavailable: {error}. falling back to degraded scrollback mode"
                 );
             }
-            let scrollback = direct_scrollback_read().await?;
-            Ok(PaneScrollback {
-                scrollback,
-                degraded_mode: true,
-            })
+            match direct_scrollback_read().await {
+                Ok(scrollback) => Ok(PaneScrollback {
+                    scrollback,
+                    degraded_mode: true,
+                }),
+                Err(zellij_error) => {
+                    tracing::warn!(
+                        "zellij dump-screen also failed: {zellij_error}. returning empty scrollback"
+                    );
+                    Ok(PaneScrollback {
+                        scrollback: String::new(),
+                        degraded_mode: true,
+                    })
+                }
+            }
         }
     }
 }

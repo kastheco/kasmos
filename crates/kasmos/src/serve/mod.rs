@@ -299,7 +299,7 @@ impl ServerHandler for KasmosServer {
             .tool_router
             .list_all()
             .into_iter()
-            .map(tools::fix_tool_nullable)
+            .map(tools::fix_tool_schemas)
             .collect();
         Ok(ListToolsResult {
             tools,
@@ -312,7 +312,7 @@ impl ServerHandler for KasmosServer {
         self.tool_router
             .get(name)
             .cloned()
-            .map(tools::fix_tool_nullable)
+            .map(tools::fix_tool_schemas)
     }
 
     async fn call_tool(

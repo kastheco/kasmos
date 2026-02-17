@@ -135,11 +135,6 @@ fn build_prompt(repo_root: &Path, description: Option<&str>) -> Result<String> {
 fn spawn_opencode(config: &Config, prompt: &str) -> Result<i32> {
     let mut cmd = Command::new(&config.agent.opencode_binary);
 
-    // -p profile switching is only supported by ocx, not opencode native
-    // if let Some(ref profile) = config.agent.opencode_profile {
-    //     cmd.arg("-p").arg(profile);
-    // }
-
     cmd.arg("--agent")
         .arg("planner")
         .arg("--prompt")

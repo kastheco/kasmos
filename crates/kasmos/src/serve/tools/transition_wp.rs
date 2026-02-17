@@ -205,6 +205,7 @@ fn validate_transition(from: TransitionState, to: TransitionState) -> Result<()>
             | (TransitionState::Rework, TransitionState::Done)
             | (TransitionState::Rework, TransitionState::Pending)
             | (TransitionState::Done, TransitionState::Done)
+            | (TransitionState::Done, TransitionState::Rework)
     );
 
     if !allowed {
