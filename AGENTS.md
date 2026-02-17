@@ -29,8 +29,19 @@
 ## External tools
 - `zellij`: Terminal multiplexer (must be in PATH)
 - `spec-kitty`: Feature specification tool
-- `opencode`: AI coding agent (launched in Zellij panes)
+- `opencode`: AI coding agent harness (launched in Zellij panes)
 - `git`: Version control
+
+## Agent harness: OpenCode only
+
+kasmos uses **OpenCode** as the sole agent harness for spawning worker agents. This is a hard rule:
+
+- Worker panes are launched via `opencode [-p <profile>] -- --agent <role> --prompt <prompt>`.
+- The `opencode_binary` and `opencode_profile` are configured in `kasmos.toml` under `[agent]`.
+- **Never invoke a model-specific CLI** (e.g., `claude`, `gemini`, `aider`) directly. OpenCode is the abstraction layer -- it handles model selection, permissions, and session management.
+- kasmos is **model-agnostic**. The model running behind OpenCode is configured in OpenCode's own config, not in kasmos. Do not assume or hardcode any specific model provider.
+- When spawning workers programmatically, always go through kasmos MCP tools (`spawn_worker`) or `opencode`. Never shell out to a bare model CLI.
+- If you are the manager agent and need to delegate work to a new pane, use `kasmos serve`'s `spawn_worker` MCP tool, which handles the OpenCode invocation internally.
 
 ## Worktree awareness
 
