@@ -1,7 +1,7 @@
 ---
 work_package_id: WP03
 title: Dependency documentation
-lane: "doing"
+lane: "done"
 dependencies: []
 base_branch: main
 base_commit: abeda7b5876b81200f3f41d7158844665fae79ea
@@ -9,6 +9,8 @@ created_at: '2026-02-17T09:51:21.993340+00:00'
 phase: Wave 1
 assignee: coder
 shell_pid: "3856130"
+reviewed_by: "kas"
+review_status: "approved"
 ---
 
 # WP03 - Dependency documentation
@@ -110,3 +112,4 @@ In `kitty-specs/011-mcp-agent-swarm-orchestration/quickstart.md`, update the Pre
 - No encoding issues (UTF-8 only, no smart quotes)
 
 ## Activity Log
+- 2026-02-17T09:53:48Z – unknown – shell_pid=3856130 – lane=done – Code already on main - all tests pass
