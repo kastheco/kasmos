@@ -119,8 +119,8 @@ impl Default for AgentConfig {
     fn default() -> Self {
         Self {
             max_parallel_workers: 4,
-            opencode_binary: "ocx".to_string(),
-            opencode_profile: Some("kas".to_string()),
+            opencode_binary: "opencode".to_string(),
+            opencode_profile: None,
             review_rejection_cap: 3,
         }
     }
@@ -195,13 +195,13 @@ impl Default for Config {
             max_agent_panes: 4,
             progression_mode: ProgressionMode::Continuous,
             zellij_binary: "zellij".to_string(),
-            opencode_binary: "ocx".to_string(),
+            opencode_binary: "opencode".to_string(),
             spec_kitty_binary: "spec-kitty".to_string(),
             kasmos_dir: ".kasmos".to_string(),
             poll_interval_secs: 5,
             debounce_ms: 200,
             controller_width_pct: 60,
-            opencode_profile: Some("kas".to_string()),
+            opencode_profile: None,
         }
     }
 }

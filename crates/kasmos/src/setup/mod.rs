@@ -84,8 +84,23 @@ pub async fn run() -> Result<()> {
         }
     }
 
-    // Install agent definitions into repo-level .opencode/agents/.
+    // Install agent definitions and project-level MCP config into .opencode/.
     if let Some(repo_root) = repo_root.as_deref() {
+        match install_opencode_project_config(repo_root) {
+            Ok(created) if created.is_empty() => {
+                println!("\nOpenCode project config: already installed.");
+            }
+            Ok(created) => {
+                println!("\nInstalled OpenCode project config:");
+                for path in &created {
+                    println!("- {}", path.display());
+                }
+            }
+            Err(err) => {
+                println!("\nWarning: could not install OpenCode project config: {err}");
+            }
+        }
+
         match install_opencode_agents(repo_root) {
             Ok(created) if created.is_empty() => {
                 println!("\nOpenCode agents: all roles already installed.");
@@ -894,18 +909,108 @@ fn default_agent_prompt(role: &str) -> String {
 fn recheck_after_install(repo_root: Option<&Path>, result: &mut SetupResult) {
     if let Some(root) = repo_root {
         for check in &mut result.checks {
-            if check.name == "oc-config" && check.status != CheckStatus::Pass {
-                *check = check_opencode_config(root);
-            }
-            if check.name == "oc-agents" && check.status != CheckStatus::Pass {
-                *check = check_opencode_agents(root);
-            }
-            if check.name == "oc-commands" && check.status != CheckStatus::Pass {
-                *check = check_opencode_commands(root);
+            match check.name.as_str() {
+                "oc-config" if check.status != CheckStatus::Pass => {
+                    *check = check_opencode_config(root);
+                }
+                "oc-agents" if check.status != CheckStatus::Pass => {
+                    *check = check_opencode_agents(root);
+                }
+                "oc-commands" if check.status != CheckStatus::Pass => {
+                    *check = check_opencode_commands(root);
+                }
+                _ => {}
             }
         }
     }
     result.all_passed = result.checks.iter().all(|c| c.status != CheckStatus::Fail);
+}
+
+/// Check that .opencode/opencode.jsonc exists and contains kasmos MCP config.
+fn check_opencode_config(repo_root: &Path) -> CheckResult {
+    let required_for = "MCP server config for kasmos orchestration tools";
+    let config_path = repo_root.join(".opencode/opencode.jsonc");
+
+    if !config_path.is_file() {
+        return CheckResult {
+            name: "oc-config".to_string(),
+            required_for: required_for.to_string(),
+            description: ".opencode/opencode.jsonc not found".to_string(),
+            status: CheckStatus::Fail,
+            guidance: Some(
+                "Run `kasmos setup` to install project-level OpenCode config".to_string(),
+            ),
+        };
+    }
+
+    // Quick sanity check: the file should reference "kasmos" MCP server.
+    let content = std::fs::read_to_string(&config_path).unwrap_or_default();
+    if !content.contains("\"kasmos\"") {
+        return CheckResult {
+            name: "oc-config".to_string(),
+            required_for: required_for.to_string(),
+            description: ".opencode/opencode.jsonc missing kasmos MCP server".to_string(),
+            status: CheckStatus::Warn,
+            guidance: Some(
+                "Delete .opencode/opencode.jsonc and re-run `kasmos setup` to regenerate"
+                    .to_string(),
+            ),
+        };
+    }
+
+    CheckResult {
+        name: "oc-config".to_string(),
+        required_for: required_for.to_string(),
+        description: format!("{}", config_path.display()),
+        status: CheckStatus::Pass,
+        guidance: None,
+    }
+}
+
+/// Install project-level OpenCode config (.opencode/opencode.jsonc) with MCP servers.
+fn install_opencode_project_config(repo_root: &Path) -> Result<Vec<PathBuf>> {
+    let oc_dir = repo_root.join(".opencode");
+    std::fs::create_dir_all(&oc_dir)
+        .with_context(|| format!("Failed to create {}", oc_dir.display()))?;
+
+    let mut created = Vec::new();
+    write_if_missing(
+        &oc_dir.join("opencode.jsonc"),
+        default_opencode_project_config(),
+        &mut created,
+    )?;
+    Ok(created)
+}
+
+/// Default project-level OpenCode config with kasmos MCP servers.
+fn default_opencode_project_config() -> String {
+    r#"{
+  // Project-level OpenCode config for kasmos.
+  // Installed by `kasmos setup`. Provides MCP servers for orchestration.
+  // Merges with global config (~/.config/opencode/opencode.json) and
+  // any active profile (OPENCODE_CONFIG_DIR).
+  "mcp": {
+    "kasmos": {
+      "type": "local",
+      "command": [
+        "kasmos",
+        "serve"
+      ],
+      "enabled": true
+    },
+    "zellij": {
+      "type": "local",
+      "command": [
+        "bun",
+        "run",
+        "/opt/zellij-pane-tracker/mcp-server/index.ts"
+      ],
+      "enabled": true
+    }
+  }
+}
+"#
+    .to_string()
 }
 
 /// All kasmos agent roles that need opencode agent definitions.
@@ -928,30 +1033,6 @@ const SPEC_KITTY_COMMANDS: &[&str] = &[
     "spec-kitty.status",
     "spec-kitty.tasks",
 ];
-
-/// Check that .opencode/opencode.jsonc exists in the repo root.
-fn check_opencode_config(repo_root: &Path) -> CheckResult {
-    let required_for = "opencode per-project configuration (MCP servers, agent models)";
-    let config_path = repo_root.join(".opencode/opencode.jsonc");
-
-    if config_path.is_file() {
-        CheckResult {
-            name: "oc-config".to_string(),
-            required_for: required_for.to_string(),
-            description: ".opencode/opencode.jsonc".to_string(),
-            status: CheckStatus::Pass,
-            guidance: None,
-        }
-    } else {
-        CheckResult {
-            name: "oc-config".to_string(),
-            required_for: required_for.to_string(),
-            description: ".opencode/opencode.jsonc not found".to_string(),
-            status: CheckStatus::Fail,
-            guidance: Some("Run `kasmos setup` to interactively configure OpenCode".to_string()),
-        }
-    }
-}
 
 /// Check that opencode agent definitions exist for all kasmos roles.
 ///
@@ -1243,7 +1324,7 @@ mod tests {
         let bin = repo.path().join("bin");
         std::fs::create_dir_all(&bin).expect("create bin");
         create_executable(&bin.join("zellij"));
-        create_executable(&bin.join("ocx"));
+        create_executable(&bin.join("opencode"));
         create_executable(&bin.join("spec-kitty"));
         create_executable(&bin.join("git"));
 
@@ -1261,16 +1342,19 @@ mod tests {
         )
         .expect("write fake zellij config");
 
-        // Create repo-level .opencode/agents/ with agent definitions.
-        let oc_agent_dir = repo.path().join(".opencode/agents");
+        // Create repo-level .opencode/ with project config and agent definitions.
+        let oc_dir = repo.path().join(".opencode");
+        let oc_agent_dir = oc_dir.join("agents");
         std::fs::create_dir_all(&oc_agent_dir).expect("create oc agent dir");
+        std::fs::write(
+            oc_dir.join("opencode.jsonc"),
+            r#"{"mcp":{"kasmos":{"type":"local","command":["kasmos","serve"],"enabled":true}}}"#,
+        )
+        .expect("write fake oc config");
         for role in KASMOS_AGENT_ROLES {
             std::fs::write(oc_agent_dir.join(format!("{role}.md")), "# stub\n")
                 .expect("write fake agent");
         }
-        std::fs::write(repo.path().join(".opencode/opencode.jsonc"), "{}")
-            .expect("write fake opencode config");
-
         // Create repo-level .opencode/commands/ with spec-kitty command stubs.
         let oc_cmd_dir = repo.path().join(".opencode/commands");
         std::fs::create_dir_all(&oc_cmd_dir).expect("create oc commands dir");
@@ -1328,6 +1412,12 @@ mod tests {
                     .checks
                     .iter()
                     .any(|c| c.name == "oc-agents" && c.status == CheckStatus::Pass)
+            );
+            assert!(
+                result
+                    .checks
+                    .iter()
+                    .any(|c| c.name == "oc-config" && c.status == CheckStatus::Pass)
             );
             assert!(
                 result
@@ -1516,15 +1606,25 @@ mod tests {
     fn check_opencode_config_pass_and_fail() {
         let repo = tempfile::tempdir().expect("tempdir");
 
+        // Missing file -> Fail
         let missing = check_opencode_config(repo.path());
         assert_eq!(missing.status, CheckStatus::Fail);
         assert_eq!(missing.name, "oc-config");
 
+        // File present but missing kasmos key -> Warn
         let oc_dir = repo.path().join(".opencode");
         std::fs::create_dir_all(&oc_dir).expect("create .opencode dir");
         std::fs::write(oc_dir.join("opencode.jsonc"), "{}")
             .expect("write opencode config");
+        let warn = check_opencode_config(repo.path());
+        assert_eq!(warn.status, CheckStatus::Warn);
 
+        // File present with kasmos key -> Pass
+        std::fs::write(
+            oc_dir.join("opencode.jsonc"),
+            r#"{"mcp":{"kasmos":{"type":"local","command":["kasmos","serve"]}}}"#,
+        )
+        .expect("write valid config");
         let present = check_opencode_config(repo.path());
         assert_eq!(present.status, CheckStatus::Pass);
     }
@@ -1603,6 +1703,49 @@ mod tests {
         // Second run should be idempotent.
         let second = install_opencode_agents(repo.path()).expect("second install");
         assert!(second.is_empty(), "expected no new files on second run");
+    }
+
+    #[test]
+    fn install_opencode_project_config_creates_and_is_idempotent() {
+        let repo = tempfile::tempdir().expect("tempdir");
+
+        let created = install_opencode_project_config(repo.path()).expect("install config");
+        assert_eq!(created.len(), 1);
+
+        let config_path = repo.path().join(".opencode/opencode.jsonc");
+        assert!(config_path.is_file());
+        let content = std::fs::read_to_string(&config_path).expect("read config");
+        assert!(content.contains("\"kasmos\""));
+        assert!(content.contains("\"zellij\""));
+
+        // Second run should be idempotent.
+        let second = install_opencode_project_config(repo.path()).expect("second install");
+        assert!(second.is_empty());
+    }
+
+    #[test]
+    fn check_opencode_config_detects_missing_and_present() {
+        let repo = tempfile::tempdir().expect("tempdir");
+
+        // Missing: should fail.
+        let check = check_opencode_config(repo.path());
+        assert_eq!(check.status, CheckStatus::Fail);
+
+        // Present but missing kasmos key: should warn.
+        let oc_dir = repo.path().join(".opencode");
+        std::fs::create_dir_all(&oc_dir).expect("create .opencode");
+        std::fs::write(oc_dir.join("opencode.jsonc"), r#"{"mcp":{}}"#).expect("write empty config");
+        let check = check_opencode_config(repo.path());
+        assert_eq!(check.status, CheckStatus::Warn);
+
+        // Present with kasmos: should pass.
+        std::fs::write(
+            oc_dir.join("opencode.jsonc"),
+            r#"{"mcp":{"kasmos":{"type":"local","command":["kasmos","serve"]}}}"#,
+        )
+        .expect("write valid config");
+        let check = check_opencode_config(repo.path());
+        assert_eq!(check.status, CheckStatus::Pass);
     }
 
     #[test]

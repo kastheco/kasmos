@@ -15,6 +15,7 @@ mod status;
     after_help = "\
 \x1b[1mQuick Start:\x1b[0m
   kasmos 011                            Launch orchestration for spec prefix 011
+  kasmos new [description]              Create a new feature specification
   kasmos serve                          Run MCP server (stdio transport)
   kasmos setup                          Validate environment and generate configs
   kasmos list                           List available feature specs
@@ -34,7 +35,7 @@ struct Cli {
     command: Option<Commands>,
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 enum Commands {
     /// Run MCP server (stdio transport, spawned by manager agent)
     Serve,
@@ -46,6 +47,12 @@ enum Commands {
     Status {
         /// Feature directory (optional, auto-detects)
         feature: Option<String>,
+    },
+    /// Create a new feature specification
+    New {
+        /// Initial feature description (optional, can be multiple words)
+        #[arg(trailing_var_arg = true)]
+        description: Vec<String>,
     },
 }
 
@@ -78,6 +85,19 @@ async fn main() -> Result<()> {
             }
             status::run(feature.as_deref()).context("Status failed")?;
         }
+        Some(Commands::New { description }) => {
+            if let Err(err) = kasmos::init_logging(false) {
+                eprintln!("Warning: logging init failed: {err}");
+            }
+            let desc = if description.is_empty() {
+                None
+            } else {
+                Some(description.join(" "))
+            };
+            let code = kasmos::new::run(desc.as_deref())
+                .context("New feature spec failed")?;
+            std::process::exit(code);
+        }
         None => {
             if let Err(err) = kasmos::init_logging(false) {
                 eprintln!("Warning: logging init failed: {err}");
@@ -93,4 +113,58 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn new_command_parses_without_description() {
+        let cli = Cli::try_parse_from(["kasmos", "new"]).unwrap();
+        match cli.command {
+            Some(Commands::New { description }) => {
+                assert!(
+                    description.is_empty(),
+                    "description should be empty when no args given"
+                );
+            }
+            other => panic!("expected Commands::New, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn new_command_parses_quoted_description() {
+        let cli = Cli::try_parse_from(["kasmos", "new", "add dark mode toggle"]).unwrap();
+        match cli.command {
+            Some(Commands::New { description }) => {
+                assert!(
+                    !description.is_empty(),
+                    "description should have words"
+                );
+                // A single quoted string arrives as one element
+                assert!(
+                    description.contains(&"add dark mode toggle".to_string()),
+                    "description should contain the full phrase, got: {description:?}"
+                );
+            }
+            other => panic!("expected Commands::New, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn new_command_parses_unquoted_trailing_words() {
+        let cli = Cli::try_parse_from(["kasmos", "new", "add", "dark", "mode"]).unwrap();
+        match cli.command {
+            Some(Commands::New { description }) => {
+                let joined = description.join(" ");
+                assert_eq!(
+                    joined, "add dark mode",
+                    "trailing words should join to 'add dark mode'"
+                );
+            }
+            other => panic!("expected Commands::New, got {other:?}"),
+        }
+    }
 }

@@ -36,10 +36,10 @@ async fn create_orchestration_session(
         .context("failed to check if zellij session already exists")?;
     if exists {
         let kill = Command::new(&config.paths.zellij_binary)
-            .args(["kill-sessions", session_name])
+            .args(["kill-session", session_name])
             .output()
             .await
-            .context("failed to execute zellij kill-sessions")?;
+            .context("failed to execute zellij kill-session")?;
         if !kill.status.success() {
             tracing::warn!(
                 session = %session_name,
@@ -49,7 +49,7 @@ async fn create_orchestration_session(
         }
     }
 
-    let output = Command::new(&config.paths.zellij_binary)
+    let status = Command::new(&config.paths.zellij_binary)
         .args([
             "--layout",
             layout_path.to_string_lossy().as_ref(),
@@ -57,17 +57,14 @@ async fn create_orchestration_session(
             session_name,
             "--create",
         ])
-        .output()
+        .status()
         .await
         .context("failed to execute zellij attach --create")?;
 
     let _ = std::fs::remove_file(&layout_path);
 
-    if !output.status.success() {
-        bail!(
-            "zellij attach failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+    if !status.success() {
+        bail!("zellij attach failed with exit code: {:?}", status.code());
     }
 
     Ok(())

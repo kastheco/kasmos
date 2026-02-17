@@ -9,6 +9,7 @@ pub mod feature_arg;
 pub mod graph;
 pub mod launch;
 pub mod logging;
+pub mod new;
 pub mod parser;
 pub mod prompt;
 pub mod serve;

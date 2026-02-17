@@ -8,8 +8,7 @@ use crate::config::Config;
 use crate::launch::detect::{FeatureDetection, FeatureSource};
 use crate::launch::layout::ManagerCommand;
 use crate::serve::lock::{
-    FeatureLockManager, LockError, format_active_owner_conflict, format_stale_lock_prompt,
-    resolve_repo_root,
+    FeatureLockManager, LockError, format_active_owner_conflict, resolve_repo_root,
 };
 use crate::setup::CheckStatus;
 use anyhow::{Context, Result};
@@ -100,13 +99,13 @@ where
             anyhow::bail!("{}", LockError::from_conflict(*record));
         }
         Err(LockError::StaleLockConfirmationRequired { record, .. }) => {
-            eprintln!("{}", format_stale_lock_prompt(&record));
-            if !prompt_yes_no("Take over ownership?", false)? {
-                anyhow::bail!("{}", LockError::from_stale_confirmation(*record));
-            }
+            eprintln!(
+                "Stale lock detected ({}), taking over automatically.",
+                record.owner_session
+            );
             lock_manager
                 .acquire(true)
-                .context("failed to acquire lock after stale takeover confirmation")?;
+                .context("failed to acquire lock after stale takeover")?;
         }
         Err(err) => return Err(err).context("failed to acquire feature lock"),
     }
@@ -124,8 +123,12 @@ where
     .with_additional_context(format!("phase_hint={phase_hint}"))
     .build()
     .context("Failed to build manager prompt")?;
-    let manager_command =
+    let mut manager_command =
         ManagerCommand::from_config(config, feature_dir.display().to_string(), manager_prompt);
+
+    manager_command
+        .write_prompt_file()
+        .context("Failed to write manager prompt file")?;
 
     let layout_kdl = layout::generate_layout(config, feature_slug, &manager_command)
         .context("Failed to generate launch layout")?;
@@ -156,6 +159,7 @@ where
         .context("Failed to bootstrap orchestration session/tab");
 
     heartbeat_handle.abort();
+    layout::cleanup_prompt_file(&manager_command);
 
     if let Err(release_err) = lock_manager
         .release()
@@ -362,26 +366,6 @@ fn prompt_for_selection(max: usize) -> Result<usize> {
             max
         );
     }
-}
-
-fn prompt_yes_no(prompt: &str, default: bool) -> Result<bool> {
-    use std::io::{self, Write};
-
-    let suffix = if default { "[Y/n]" } else { "[y/N]" };
-    print!("{} {}: ", prompt, suffix);
-    io::stdout().flush().context("Failed to flush stdout")?;
-
-    let mut input = String::new();
-    io::stdin()
-        .read_line(&mut input)
-        .context("Failed to read confirmation")?;
-    let trimmed = input.trim().to_ascii_lowercase();
-
-    if trimmed.is_empty() {
-        return Ok(default);
-    }
-
-    Ok(matches!(trimmed.as_str(), "y" | "yes"))
 }
 
 fn source_label(source: &FeatureSource) -> &'static str {
