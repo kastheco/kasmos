@@ -1,7 +1,7 @@
 ---
 work_package_id: WP02
 title: zjstatus.wasm setup validation
-lane: "doing"
+lane: "done"
 dependencies: []
 base_branch: main
 base_commit: f3978873a0d7303208a59decfd70868fe527042a
@@ -9,6 +9,8 @@ created_at: '2026-02-17T09:51:21.273774+00:00'
 phase: Wave 1
 assignee: coder
 shell_pid: "3856010"
+reviewed_by: "kas"
+review_status: "approved"
 ---
 
 # WP02 - zjstatus.wasm setup validation
@@ -115,3 +117,4 @@ assert!(
 - If it exists, shows `[PASS]`
 
 ## Activity Log
+- 2026-02-17T09:53:47Z – unknown – shell_pid=3856010 – lane=done – Code already on main - all tests pass
