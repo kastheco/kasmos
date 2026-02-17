@@ -102,7 +102,25 @@ pub async fn run() -> Result<()> {
         }
     }
 
-    // Re-evaluate any checks that setup may have fixed (e.g. oc-config, oc-agents)
+    // Install spec-kitty command definitions into repo-level .opencode/commands/.
+    if let Some(repo_root) = repo_root.as_deref() {
+        match install_opencode_commands(repo_root) {
+            Ok(created) if created.is_empty() => {
+                println!("\nOpenCode commands: all spec-kitty commands already installed.");
+            }
+            Ok(created) => {
+                println!("\nInstalled OpenCode command definitions:");
+                for path in &created {
+                    println!("- {}", path.display());
+                }
+            }
+            Err(err) => {
+                println!("\nWarning: could not install OpenCode commands: {err}");
+            }
+        }
+    }
+
+    // Re-evaluate any checks that setup may have fixed (e.g. oc-config, oc-agents, oc-commands)
     // so the final verdict reflects the post-install state.
     recheck_after_install(repo_root.as_deref(), &mut result);
 
@@ -149,6 +167,7 @@ fn validate_environment_with_repo(
     if let Some(root) = repo_root.as_deref() {
         checks.push(check_opencode_config(root));
         checks.push(check_opencode_agents(root));
+        checks.push(check_opencode_commands(root));
     }
 
     checks.push(check_git(repo_root.as_deref()));
@@ -433,7 +452,23 @@ fn status_label(status: CheckStatus, colorize: bool) -> &'static str {
 
 fn detect_repo_root() -> Option<PathBuf> {
     let cwd = std::env::current_dir().ok()?;
-    crate::git::find_repo_root(&cwd).ok()
+    find_repo_root(&cwd).ok()
+}
+
+/// Find the git repository root by walking up from the given path.
+fn find_repo_root(start: &Path) -> anyhow::Result<PathBuf> {
+    let mut current = start.to_path_buf();
+    if current.exists() {
+        current = current.canonicalize().unwrap_or_else(|_| current.clone());
+    }
+    loop {
+        if current.join(".git").exists() {
+            return Ok(current);
+        }
+        if !current.pop() {
+            anyhow::bail!("No git repository found at or above {}", start.display());
+        }
+    }
 }
 
 fn ensure_baseline_assets(repo_root: &Path, config: &Config) -> Result<Vec<PathBuf>> {
@@ -865,6 +900,9 @@ fn recheck_after_install(repo_root: Option<&Path>, result: &mut SetupResult) {
             if check.name == "oc-agents" && check.status != CheckStatus::Pass {
                 *check = check_opencode_agents(root);
             }
+            if check.name == "oc-commands" && check.status != CheckStatus::Pass {
+                *check = check_opencode_commands(root);
+            }
         }
     }
     result.all_passed = result.checks.iter().all(|c| c.status != CheckStatus::Fail);
@@ -872,6 +910,24 @@ fn recheck_after_install(repo_root: Option<&Path>, result: &mut SetupResult) {
 
 /// All kasmos agent roles that need opencode agent definitions.
 const KASMOS_AGENT_ROLES: &[&str] = &["manager", "planner", "coder", "reviewer", "release"];
+
+/// All spec-kitty slash commands that need opencode command definitions.
+const SPEC_KITTY_COMMANDS: &[&str] = &[
+    "spec-kitty.accept",
+    "spec-kitty.analyze",
+    "spec-kitty.checklist",
+    "spec-kitty.clarify",
+    "spec-kitty.constitution",
+    "spec-kitty.dashboard",
+    "spec-kitty.implement",
+    "spec-kitty.merge",
+    "spec-kitty.plan",
+    "spec-kitty.research",
+    "spec-kitty.review",
+    "spec-kitty.specify",
+    "spec-kitty.status",
+    "spec-kitty.tasks",
+];
 
 /// Check that .opencode/opencode.jsonc exists in the repo root.
 fn check_opencode_config(repo_root: &Path) -> CheckResult {
@@ -954,6 +1010,76 @@ fn install_opencode_agents(repo_root: &Path) -> Result<Vec<PathBuf>> {
     }
 
     Ok(created)
+}
+
+/// Install spec-kitty command definitions into `.opencode/commands/`.
+///
+/// Copies from the profile source at `config/profiles/kasmos/commands/` into
+/// the repo-level `.opencode/commands/` directory. Only writes files that do
+/// not already exist, preserving user customisations.
+fn install_opencode_commands(repo_root: &Path) -> Result<Vec<PathBuf>> {
+    let source_dir = repo_root.join("config/profiles/kasmos/commands");
+    let target_dir = repo_root.join(".opencode/commands");
+    std::fs::create_dir_all(&target_dir)
+        .with_context(|| format!("Failed to create {}", target_dir.display()))?;
+
+    let mut created = Vec::new();
+
+    for cmd in SPEC_KITTY_COMMANDS {
+        let filename = format!("{cmd}.md");
+        let source = source_dir.join(&filename);
+        let target = target_dir.join(&filename);
+
+        if target.exists() {
+            continue;
+        }
+
+        if source.is_file() {
+            let content = std::fs::read_to_string(&source)
+                .with_context(|| format!("Failed to read {}", source.display()))?;
+            std::fs::write(&target, content)
+                .with_context(|| format!("Failed to write {}", target.display()))?;
+            created.push(target);
+        }
+    }
+
+    Ok(created)
+}
+
+/// Check that spec-kitty slash-command definitions exist in `.opencode/commands/`.
+fn check_opencode_commands(repo_root: &Path) -> CheckResult {
+    let required_for = "spec-kitty slash commands (/spec-kitty.specify, etc.)";
+    let cmd_dir = repo_root.join(".opencode/commands");
+
+    let missing: Vec<&str> = SPEC_KITTY_COMMANDS
+        .iter()
+        .filter(|cmd| !cmd_dir.join(format!("{}.md", cmd)).is_file())
+        .copied()
+        .collect();
+
+    if missing.is_empty() {
+        CheckResult {
+            name: "oc-commands".to_string(),
+            required_for: required_for.to_string(),
+            description: format!(
+                "all {} spec-kitty commands in .opencode/commands/",
+                SPEC_KITTY_COMMANDS.len(),
+            ),
+            status: CheckStatus::Pass,
+            guidance: None,
+        }
+    } else {
+        CheckResult {
+            name: "oc-commands".to_string(),
+            required_for: required_for.to_string(),
+            description: format!("missing commands: {}", missing.join(", ")),
+            status: CheckStatus::Warn,
+            guidance: Some(format!(
+                "Run `kasmos setup` to install command definitions to {}",
+                cmd_dir.display()
+            )),
+        }
+    }
 }
 
 /// Default opencode agent definition for a kasmos role.
@@ -1145,6 +1271,14 @@ mod tests {
         std::fs::write(repo.path().join(".opencode/opencode.jsonc"), "{}")
             .expect("write fake opencode config");
 
+        // Create repo-level .opencode/commands/ with spec-kitty command stubs.
+        let oc_cmd_dir = repo.path().join(".opencode/commands");
+        std::fs::create_dir_all(&oc_cmd_dir).expect("create oc commands dir");
+        for cmd in SPEC_KITTY_COMMANDS {
+            std::fs::write(oc_cmd_dir.join(format!("{cmd}.md")), "# stub\n")
+                .expect("write fake command");
+        }
+
         // Create fake pane-tracker MCP server directory
         let pane_tracker_dir = repo.path().join("pane-tracker");
         let mcp_server_dir = pane_tracker_dir.join("mcp-server");
@@ -1194,6 +1328,12 @@ mod tests {
                     .checks
                     .iter()
                     .any(|c| c.name == "oc-agents" && c.status == CheckStatus::Pass)
+            );
+            assert!(
+                result
+                    .checks
+                    .iter()
+                    .any(|c| c.name == "oc-commands" && c.status == CheckStatus::Pass)
             );
         });
 
@@ -1483,6 +1623,73 @@ mod tests {
         assert!(check.description.contains("release"));
         assert!(!check.description.contains("coder"));
         assert!(!check.description.contains("reviewer"));
+    }
+
+    #[test]
+    fn install_opencode_commands_copies_from_profile() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        let cmd_dir = repo.path().join(".opencode/commands");
+
+        // Create profile source files for a subset of commands.
+        let source_dir = repo.path().join("config/profiles/kasmos/commands");
+        std::fs::create_dir_all(&source_dir).expect("create source dir");
+        std::fs::write(
+            source_dir.join("spec-kitty.specify.md"),
+            "---\ndescription: Create spec\n---\n# specify\n",
+        )
+        .expect("write source command");
+        std::fs::write(
+            source_dir.join("spec-kitty.plan.md"),
+            "---\ndescription: Create plan\n---\n# plan\n",
+        )
+        .expect("write source command");
+
+        let created = install_opencode_commands(repo.path()).expect("install commands");
+        assert_eq!(created.len(), 2, "should install 2 commands that have sources");
+
+        let specify = cmd_dir.join("spec-kitty.specify.md");
+        assert!(specify.is_file(), "specify command should exist");
+        let content = std::fs::read_to_string(&specify).expect("read command");
+        assert!(content.contains("Create spec"));
+
+        // Second run should be idempotent.
+        let second = install_opencode_commands(repo.path()).expect("second install");
+        assert!(second.is_empty(), "expected no new files on second run");
+    }
+
+    #[test]
+    fn check_opencode_commands_reports_missing() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        let cmd_dir = repo.path().join(".opencode/commands");
+        std::fs::create_dir_all(&cmd_dir).expect("create commands dir");
+
+        // Install only 2 commands.
+        std::fs::write(cmd_dir.join("spec-kitty.specify.md"), "# stub\n")
+            .expect("write specify");
+        std::fs::write(cmd_dir.join("spec-kitty.plan.md"), "# stub\n")
+            .expect("write plan");
+
+        let check = check_opencode_commands(repo.path());
+
+        assert_eq!(check.status, CheckStatus::Warn);
+        assert!(check.description.contains("spec-kitty.tasks"));
+        assert!(!check.description.contains("spec-kitty.specify"));
+        assert!(!check.description.contains("spec-kitty.plan"));
+    }
+
+    #[test]
+    fn check_opencode_commands_passes_when_all_present() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        let cmd_dir = repo.path().join(".opencode/commands");
+        std::fs::create_dir_all(&cmd_dir).expect("create commands dir");
+
+        for cmd in SPEC_KITTY_COMMANDS {
+            std::fs::write(cmd_dir.join(format!("{cmd}.md")), "# stub\n")
+                .expect("write command");
+        }
+
+        let check = check_opencode_commands(repo.path());
+        assert_eq!(check.status, CheckStatus::Pass);
     }
 
     #[test]
