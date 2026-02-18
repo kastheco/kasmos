@@ -1,0 +1,10 @@
+{
+  "feature_number": "019",
+  "slug": "019-tmux-worker-mode",
+  "friendly_name": "Tmux Worker Mode",
+  "mission": "software-dev",
+  "source_description": "implement a tmux mode like we discussed when brainstorming 0016 for a richer ux when interactivity is needed (eg. planning).",
+  "created_at": "2026-02-18T12:00:00Z",
+  "target_branch": "main",
+  "vcs": "git"
+}
