@@ -29,6 +29,7 @@ type Model struct {
 	showHelp   bool
 	fullScreen bool
 	autoFollow bool
+	tickActive bool
 
 	showLauncher bool
 	showSettings bool
@@ -255,6 +256,7 @@ func (m *Model) DaemonExitCode() int {
 }
 
 func (m *Model) Init() (tea.Model, tea.Cmd) {
+	m.tickActive = true
 	cmds := []tea.Cmd{tickCmd(), m.spinner.Tick}
 	if m.daemon {
 		m.logDaemonEvent(sessionStartEvent(m.modeName(), m.taskSourcePath, len(m.loadedTasks)))

@@ -46,9 +46,8 @@ func (m *Model) renderWorkerTable() string {
 		body,
 	)
 
-	return panelStyle(m.focused == panelTable).
+	return panelStyle(m.focused == panelTable, m.tableInnerHeight).
 		Width(m.tableInnerWidth).
-		Height(m.tableInnerHeight).
 		Render(content)
 }
 
@@ -79,9 +78,8 @@ func (m *Model) renderViewport() string {
 			Render(m.viewport.View()),
 	)
 
-	return panelStyle(m.focused == panelViewport).
+	return panelStyle(m.focused == panelViewport, m.viewportInnerHeight).
 		Width(m.viewportInnerWidth).
-		Height(m.viewportInnerHeight).
 		Render(content)
 }
 
@@ -292,7 +290,8 @@ func (m *Model) renderStatusBar() string {
 	if m.focused == panelViewport && m.viewport.TotalLineCount() > 0 {
 		scrollStr = fmt.Sprintf("%.0f%%", m.viewport.ScrollPercent()*100)
 	}
-	right := fmt.Sprintf("mode: %s  scroll: %s ", m.modeName(), scrollStr)
+	mode := modeIndicatorStyle.Render(" mode: " + m.modeName() + " ")
+	right := fmt.Sprintf("%s  scroll: %s ", mode, scrollStr)
 	gap := strings.Repeat(" ", max(0, m.width-lipgloss.Width(left)-lipgloss.Width(right)-2))
 	bar := left + gap + right
 	return statusBarStyle.Width(m.width).Render(bar)
@@ -315,9 +314,8 @@ func (m *Model) renderTasksPanel() string {
 	if len(m.loadedTasks) == 0 {
 		empty := lipgloss.NewStyle().Foreground(colorMidGray).Render("no tasks loaded")
 		content := lipgloss.JoinVertical(lipgloss.Left, title, empty)
-		return panelStyle(m.focused == panelTasks).
+		return panelStyle(m.focused == panelTasks, m.tasksInnerHeight).
 			Width(m.tasksInnerWidth).
-			Height(m.tasksInnerHeight).
 			Render(content)
 	}
 
@@ -341,9 +339,8 @@ func (m *Model) renderTasksPanel() string {
 	taskList := strings.Join(items, "\n")
 	content := lipgloss.JoinVertical(lipgloss.Left, title, taskList)
 
-	return panelStyle(m.focused == panelTasks).
+	return panelStyle(m.focused == panelTasks, m.tasksInnerHeight).
 		Width(m.tasksInnerWidth).
-		Height(m.tasksInnerHeight).
 		Render(content)
 }
 

@@ -77,11 +77,11 @@ var (
 				Padding(0, 1)
 )
 
-func panelStyle(focused bool) lipgloss.Style {
+func panelStyle(focused bool, contentHeight int) lipgloss.Style {
 	if focused {
-		return focusedPanelStyle
+		return focusedPanelStyle.Height(contentHeight)
 	}
-	return unfocusedPanelStyle
+	return unfocusedPanelStyle.Height(contentHeight)
 }
 
 var (
@@ -146,9 +146,12 @@ func workerTableStyles() table.Styles {
 
 var statusBarStyle = lipgloss.NewStyle().
 	Foreground(colorCream).
-	Background(colorPurple).
 	Padding(0, 1).
 	Bold(false)
+
+var modeIndicatorStyle = lipgloss.NewStyle().
+	Foreground(colorCream).
+	Background(colorPurple)
 
 func styledHelp() help.Model {
 	h := help.New()

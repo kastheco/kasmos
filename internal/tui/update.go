@@ -521,7 +521,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.openSpawnDialogWithPrefill(role, msg.Prompt, nil)
 
+	case tea.FocusMsg:
+		if !m.tickActive {
+			m.tickActive = true
+			return m, tickCmd()
+		}
+		return m, nil
+
+	case tea.BlurMsg:
+		m.tickActive = false
+		return m, nil
+
 	case tickMsg:
+		if !m.tickActive {
+			return m, nil
+		}
 		m.refreshTableRows()
 		return m, tickCmd()
 
@@ -879,10 +893,12 @@ func (m *Model) updateTableKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if key.Matches(msg, m.keys.Up, m.keys.Down) {
+		prevWorkerID := m.selectedWorkerID
 		var cmd tea.Cmd
 		m.table, cmd = m.table.Update(msg)
 		m.syncSelectionFromTable()
-		m.refreshViewportFromSelected(false)
+		workerChanged := prevWorkerID != "" && m.selectedWorkerID != "" && prevWorkerID != m.selectedWorkerID
+		m.refreshViewportFromSelected(workerChanged)
 		return m, cmd
 	}
 
