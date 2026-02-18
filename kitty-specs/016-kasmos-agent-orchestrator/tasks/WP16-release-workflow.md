@@ -7,9 +7,9 @@ dependencies:
 subtasks:
 - Replace hardcoded version with ldflags injection
 - Rewrite Justfile for Go project (build, test, install, release)
-- Build matrix (linux/amd64, darwin/amd64, darwin/arm64)
-- Git tag + GitHub release + artifact upload via gh CLI
-- Version bump in source files before tagging
+- Create .goreleaser.yaml (linux/amd64, darwin/amd64+arm64, homebrew tap)
+- Create kastheco/homebrew-tap repo for brew install
+- Version bump in source + goreleaser release in one command
 phase: Wave 4 - Dashboard Enhancements
 assignee: ''
 agent: ''
@@ -21,6 +21,10 @@ history:
   lane: planned
   agent: planner
   action: Specified by user request
+- timestamp: '2026-02-18T00:00:00Z'
+  lane: planned
+  agent: planner
+  action: Updated to use goreleaser with homebrew tap
 ---
 
 # Work Package Prompt: WP16 - Release Workflow (`just release X.Y.Z`)
@@ -28,15 +32,18 @@ history:
 ## Mission
 
 Implement a one-command release workflow: `just release 2.0.1` updates the version
-in source, builds cross-platform binaries, creates a git tag, publishes a GitHub
-release, and attaches the artifacts. Also rewrite the Justfile from the legacy
+in source, tags, and runs goreleaser to build cross-platform binaries, publish a
+GitHub release with artifacts and changelog, and push a Homebrew formula so users
+can `brew install kastheco/tap/kasmos`. Also rewrite the Justfile from legacy
 Rust/cargo recipes to Go-native commands.
 
 ## Scope
 
 ### Files to Create
 
-None — all changes are to existing files.
+```
+.goreleaser.yaml             # goreleaser config (builds, archives, homebrew, changelog)
+```
 
 ### Files to Modify
 
@@ -44,13 +51,21 @@ None — all changes are to existing files.
 Justfile                     # Full rewrite: Go build/test/install/release recipes
 cmd/kasmos/main.go           # Use ldflags-injected version variable
 internal/tui/panels.go       # Use shared version variable instead of hardcoded const
+internal/tui/model.go        # Add version field to Model, update NewModel signature
+.gitignore                   # Add dist/
 ```
 
-### Possible New File
+### External Setup (manual, not automated)
 
+Before the first release, create the Homebrew tap repo:
+
+```sh
+gh repo create kastheco/homebrew-tap --public --description "Homebrew formulae for kastheco projects"
 ```
-version.go                   # Single source of truth for version (root package or internal/)
-```
+
+And ensure a `GH_PAT` environment variable is available with `repo` scope for
+goreleaser to push the formula. A fine-grained PAT scoped to `kastheco/homebrew-tap`
+with Contents read/write is sufficient.
 
 ## Implementation
 
@@ -60,30 +75,24 @@ Currently the version is hardcoded in two places:
 - `cmd/kasmos/main.go`: `fmt.Fprintln(cmd.OutOrStdout(), "kasmos v2.0.0")`
 - `internal/tui/panels.go`: `const appVersion = "v2.0.0"`
 
-Replace with a single injectable variable. Create a minimal version package or
-use a package-level var in `cmd/kasmos/`:
+Replace with a single injectable variable in `cmd/kasmos/main.go`:
 
-**Option A — version var in main (simplest)**:
-
-In `cmd/kasmos/main.go`:
 ```go
-// Set via ldflags: -ldflags "-X main.version=2.0.1"
+// Set at build time: -ldflags "-X main.version=2.0.1"
 var version = "dev"
 ```
 
-Then reference `version` in the `--version` flag handler and pass it to the TUI
-model. Add a `Version` field or param to `NewModel` so `panels.go` can read it
-instead of a hardcoded const.
+Then pass it through to the TUI model:
 
-The `appVersion` const in `panels.go` becomes a field on Model:
 ```go
-// In model.go
-type Model struct {
-    // ...
-    version string
-}
+// cmd/kasmos/main.go — in RunE
+model := tui.NewModel(backend, source, version)
+```
 
-// In NewModel
+Update `NewModel` signature:
+
+```go
+// internal/tui/model.go
 func NewModel(backend worker.WorkerBackend, source task.Source, version string) *Model {
     // ...
     m.version = version
@@ -91,30 +100,130 @@ func NewModel(backend worker.WorkerBackend, source task.Source, version string) 
 }
 ```
 
-And `panels.go` uses `m.version` instead of `appVersion`.
+Add `version string` field to the Model struct.
 
-Build command becomes:
+In `internal/tui/panels.go`, delete the `appVersion` const and use `m.version`:
+
+```go
+func (m *Model) renderHeader() string {
+    v := m.version
+    if v != "" && v[0] != 'v' {
+        v = "v" + v
+    }
+    version := versionStyle.Render(v)
+    // ...
+}
 ```
-go build -ldflags "-X main.version=2.0.1" ./cmd/kasmos
+
+### .goreleaser.yaml
+
+```yaml
+version: 2
+
+env:
+  - CGO_ENABLED=0
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: kasmos
+    main: ./cmd/kasmos
+    binary: kasmos
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.CommitDate}}
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: linux
+        goarch: arm64
+
+archives:
+  - id: default
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    files:
+      - LICENSE*
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  use: github
+  groups:
+    - title: Features
+      regexp: '^.*feat[\w)]*:.*$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*fix[\w)]*:.*$'
+      order: 1
+    - title: Tasks
+      regexp: '^.*tasks[\w)]*:.*$'
+      order: 2
+    - title: Others
+      order: 999
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "Merge pull request"
+
+release:
+  github:
+    owner: kastheco
+    name: kasmos
+  draft: false
+  prerelease: auto
+  name_template: "kasmos v{{.Version}}"
+
+brews:
+  - repository:
+      owner: kastheco
+      name: homebrew-tap
+      token: "{{ .Env.GH_PAT }}"
+    directory: Formula
+    homepage: "https://github.com/kastheco/kasmos"
+    description: "TUI agent orchestrator for concurrent OpenCode sessions"
+    license: "MIT"
+    install: |
+      bin.install "kasmos"
+    test: |
+      system "#{bin}/kasmos", "--version"
 ```
+
+Key config decisions:
+- **linux/amd64 + darwin/amd64 + darwin/arm64**: no Windows (bubbletea needs Unix
+  terminal), no linux/arm64 (uncommon for dev tooling)
+- **tar.gz archives**: goreleaser convention, includes README and LICENSE
+- **Changelog groups**: matches our commit convention (`feat(016):`, `fix(016):`, `tasks(016):`)
+- **Homebrew tap**: pushes formula to `kastheco/homebrew-tap` repo so users get
+  `brew install kastheco/tap/kasmos`
+- **`-trimpath -s -w`**: reproducible builds, stripped debug symbols (smaller binary)
 
 ### Justfile Rewrite
 
-Replace the entire Justfile (currently Rust/cargo recipes) with Go-native recipes.
-Use `set shell := ["bash", "-cu"]` for compatibility with the release script logic.
+Replace the entire Justfile (currently Rust/cargo recipes) with Go-native recipes:
 
 ```just
 set shell := ["bash", "-cu"]
 
-version := "dev"
-
 # Build kasmos binary
 build:
     go build ./cmd/kasmos
-
-# Build with version
-build-version v:
-    go build -ldflags "-X main.version={{v}}" -o kasmos ./cmd/kasmos
 
 # Install to GOPATH/bin
 install:
@@ -132,6 +241,15 @@ lint:
 run *ARGS:
     go run ./cmd/kasmos {{ARGS}}
 
+# Dry-run release (no publish)
+release-dry v:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    VERSION="{{v}}"
+    echo "==> Dry run for kasmos v${VERSION}"
+    goreleaser release --snapshot --clean
+    echo "==> Artifacts in dist/"
+
 # Full release: just release 2.0.1
 release v:
     #!/usr/bin/env bash
@@ -148,124 +266,94 @@ release v:
         exit 1
     fi
 
-    # 2. Ensure on main or charm branch
     BRANCH=$(git branch --show-current)
     echo "    branch: ${BRANCH}"
 
-    # 3. Update version in source files
+    # 2. Update version in source
     sed -i "s/var version = \".*\"/var version = \"${VERSION}\"/" cmd/kasmos/main.go
-    echo "    updated cmd/kasmos/main.go"
-
-    # 4. Commit version bump if changed
     if [[ -n "$(git status --porcelain)" ]]; then
         git add cmd/kasmos/main.go
         git commit -m "release: v${VERSION}"
         echo "    committed version bump"
     fi
 
-    # 5. Build artifacts
-    echo "==> Building artifacts"
-    mkdir -p dist
-
-    GOOS=linux  GOARCH=amd64 go build -ldflags "-X main.version=${VERSION}" \
-        -o "dist/kasmos-${TAG}-linux-amd64" ./cmd/kasmos
-    echo "    built linux/amd64"
-
-    GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.version=${VERSION}" \
-        -o "dist/kasmos-${TAG}-darwin-amd64" ./cmd/kasmos
-    echo "    built darwin/amd64"
-
-    GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.version=${VERSION}" \
-        -o "dist/kasmos-${TAG}-darwin-arm64" ./cmd/kasmos
-    echo "    built darwin/arm64"
-
-    # 6. Generate checksums
-    cd dist
-    sha256sum kasmos-${TAG}-* > kasmos-${TAG}-checksums.txt
-    cd ..
-    echo "    generated checksums"
-
-    # 7. Create git tag
+    # 3. Tag
     git tag -a "${TAG}" -m "kasmos ${TAG}"
     echo "    tagged ${TAG}"
 
-    # 8. Push commit + tag
+    # 4. Push commit + tag
     git push origin "${BRANCH}"
     git push origin "${TAG}"
     echo "    pushed to origin"
 
-    # 9. Create GitHub release with artifacts
-    gh release create "${TAG}" \
-        --title "kasmos ${TAG}" \
-        --generate-notes \
-        dist/kasmos-${TAG}-linux-amd64 \
-        dist/kasmos-${TAG}-darwin-amd64 \
-        dist/kasmos-${TAG}-darwin-arm64 \
-        dist/kasmos-${TAG}-checksums.txt
-    echo "    created GitHub release"
-
-    # 10. Cleanup
-    rm -rf dist
+    # 5. Goreleaser builds, creates GH release, pushes homebrew formula
+    goreleaser release --clean
     echo "==> Done: https://github.com/kastheco/kasmos/releases/tag/${TAG}"
 ```
 
 ### .gitignore
 
-Add `dist/` to `.gitignore` so build artifacts aren't accidentally committed:
+Add `dist/` (goreleaser output directory):
 
 ```
 /kasmos
 /dist/
 ```
 
-### Release Artifact Naming
+### What Users Get
 
-Artifacts follow the standard convention:
-```
-kasmos-v2.0.1-linux-amd64
-kasmos-v2.0.1-darwin-amd64
-kasmos-v2.0.1-darwin-arm64
-kasmos-v2.0.1-checksums.txt
-```
+After a release, users can install kasmos via:
 
-No `.tar.gz` wrapping — ship raw binaries since kasmos is a single static binary
-with zero runtime dependencies. Users download and `chmod +x`.
-
-The checksums file uses `sha256sum` format:
-```
-abc123...  kasmos-v2.0.1-linux-amd64
-def456...  kasmos-v2.0.1-darwin-amd64
-789abc...  kasmos-v2.0.1-darwin-arm64
+**Homebrew (macOS/Linux):**
+```sh
+brew install kastheco/tap/kasmos
 ```
 
-### GitHub Release Notes
+**Direct download:**
+```sh
+# macOS Apple Silicon
+curl -Lo kasmos.tar.gz https://github.com/kastheco/kasmos/releases/latest/download/kasmos_X.Y.Z_darwin_arm64.tar.gz
+tar xzf kasmos.tar.gz
+sudo mv kasmos /usr/local/bin/
 
-`gh release create` with `--generate-notes` auto-generates notes from commits
-since the previous tag. Since this is the first release, it will include all
-commits on the branch.
+# Linux
+curl -Lo kasmos.tar.gz https://github.com/kastheco/kasmos/releases/latest/download/kasmos_X.Y.Z_linux_amd64.tar.gz
+tar xzf kasmos.tar.gz
+sudo mv kasmos /usr/local/bin/
+```
 
-For subsequent releases, the auto-generated notes will show the diff between tags.
+**From source:**
+```sh
+go install github.com/kastheco/kasmos/cmd/kasmos@latest
+```
+
+## Dependencies
+
+- `goreleaser` — `go install github.com/goreleaser/goreleaser/v2@latest`
+- `gh` — GitHub CLI (already used in project)
+- `GH_PAT` env var — GitHub PAT with `repo` scope for homebrew tap push
+- `just` — task runner (already used in project)
 
 ## What NOT to Do
 
-- Do NOT use goreleaser — it's overkill for 3 build targets and adds a dependency
-- Do NOT build Windows artifacts — kasmos requires a Unix terminal (bubbletea)
 - Do NOT create a GitHub Actions workflow — releases are manual via `just release`
-- Do NOT strip binaries (`-s -w` ldflags) unless size becomes a concern
-- Do NOT create `.tar.gz` archives — ship raw binaries
-- Do NOT modify go.mod or go.sum as part of the release
+- Do NOT build Windows artifacts — kasmos requires a Unix terminal
+- Do NOT include `commit` or `date` ldflags vars unless you also add them to
+  `main.go` (goreleaser sets them but they need corresponding `var` declarations)
+- Do NOT use goreleaser Pro features (`--split`, `--merge`) — free tier is sufficient
+- Do NOT modify go.mod or go.sum as part of the release recipe
 
 ## Acceptance Criteria
 
 1. `just build` compiles kasmos, `just test` runs tests, `just install` installs
-2. `just release 2.0.1` with clean tree: bumps version in source, builds 3 binaries,
-   creates tag `v2.0.1`, pushes, creates GH release with artifacts attached
-3. `just release 2.0.1` with dirty tree: exits with error
-4. Built binary reports correct version: `./dist/kasmos-v2.0.1-linux-amd64 --version`
-   prints `kasmos v2.0.1`
-5. TUI header shows the ldflags-injected version
-6. `dist/` is in `.gitignore`
-7. Checksums file is correct and attached to release
-8. Old Rust/cargo recipes are fully replaced
-9. `go test ./...` passes
-10. `go build ./cmd/kasmos` passes
+2. `just release-dry 2.0.1` builds all artifacts in `dist/` without publishing
+3. `just release 2.0.1` with clean tree: bumps version, tags, pushes, goreleaser
+   publishes GH release with 3 platform archives + checksums + changelog
+4. `just release 2.0.1` with dirty tree: exits with error
+5. Built binary reports correct version: `kasmos --version` prints `kasmos v2.0.1`
+6. TUI header shows the ldflags-injected version
+7. Homebrew formula pushed to `kastheco/homebrew-tap` — `brew install kastheco/tap/kasmos` works
+8. `dist/` is in `.gitignore`
+9. Old Rust/cargo recipes fully replaced in Justfile
+10. `go test ./...` passes
+11. `go build ./cmd/kasmos` passes
