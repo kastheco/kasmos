@@ -9,13 +9,98 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 
+	"github.com/user/kasmos/internal/persist"
 	"github.com/user/kasmos/internal/worker"
 )
+
+func restoreScanCmd(persister *persist.SessionPersister) tea.Cmd {
+	return func() tea.Msg {
+		if persister == nil {
+			return restoreScanCompleteMsg{Err: errors.New("session persister is not configured")}
+		}
+
+		entries := make([]restoreSessionEntry, 0)
+		notes := make([]string, 0)
+		seenIDs := make(map[string]struct{})
+
+		if active, err := persist.LoadSessionFromPath(persister.Path); err == nil {
+			if !persist.IsPIDAlive(active.PID) {
+				entry := newRestoreSessionEntry(*active, persister.Path, true)
+				entries = append(entries, entry)
+				seenIDs[entry.SessionID] = struct{}{}
+			}
+		} else if !os.IsNotExist(err) {
+			notes = append(notes, fmt.Sprintf("skipped active session: %v", err))
+		}
+
+		pattern := filepath.Join(filepath.Dir(persister.Path), "sessions", "*.json")
+		paths, err := filepath.Glob(pattern)
+		if err != nil {
+			return restoreScanCompleteMsg{Err: fmt.Errorf("scan archived sessions: %w", err)}
+		}
+
+		type loadedSession struct {
+			path  string
+			state persist.SessionState
+			time  time.Time
+		}
+
+		archived := make([]loadedSession, 0, len(paths))
+		for _, path := range paths {
+			state, err := persist.LoadSessionFromPath(path)
+			if err != nil {
+				notes = append(notes, fmt.Sprintf("skipped %s: %v", filepath.Base(path), err))
+				continue
+			}
+			archived = append(archived, loadedSession{path: path, state: *state, time: sessionSortTime(*state)})
+		}
+
+		sort.Slice(archived, func(i, j int) bool {
+			return archived[i].time.After(archived[j].time)
+		})
+
+		for _, session := range archived {
+			entry := newRestoreSessionEntry(session.state, session.path, false)
+			if _, exists := seenIDs[entry.SessionID]; exists {
+				continue
+			}
+			entries = append(entries, entry)
+			seenIDs[entry.SessionID] = struct{}{}
+		}
+
+		note := strings.Join(notes, " | ")
+		return restoreScanCompleteMsg{Entries: entries, Note: note}
+	}
+}
+
+func restoreLoadCmd(persister *persist.SessionPersister, path string) tea.Cmd {
+	return func() tea.Msg {
+		if persister == nil {
+			return restoreLoadCompleteMsg{Err: errors.New("session persister is not configured")}
+		}
+
+		state, err := persister.LoadFromPath(path)
+		if err != nil {
+			return restoreLoadCompleteMsg{Path: path, Err: err}
+		}
+
+		return restoreLoadCompleteMsg{Path: path, State: state}
+	}
+}
+
+func sessionSortTime(state persist.SessionState) time.Time {
+	t := state.StartedAt
+	if state.FinishedAt != nil && state.FinishedAt.After(t) {
+		return *state.FinishedAt
+	}
+	return t
+}
 
 func spawnWorkerCmd(backend worker.WorkerBackend, cfg worker.SpawnConfig) tea.Cmd {
 	return func() tea.Msg {

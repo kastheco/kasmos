@@ -28,6 +28,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateHistory(msg)
 	}
 
+	if m.showRestorePicker {
+		return m.updateRestorePicker(msg)
+	}
+
 	if m.showBatchDialog {
 		return m.updateBatchDialog(msg)
 	}
@@ -572,8 +576,7 @@ func (m *Model) updateLauncherKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.setViewportContent("plan creation not yet implemented", false)
 		return m, nil
 	case "r":
-		m.setViewportContent("restore not yet implemented", false)
-		return m, nil
+		return m, m.openRestorePicker()
 	case "s":
 		m.setViewportContent("settings not yet implemented", false)
 		return m, nil
@@ -888,7 +891,7 @@ func (m *Model) updateTaskPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.updateKeyStates()
 		return m, nil
-	case key.Matches(msg, m.keys.Select):
+	case key.Matches(msg, m.keys.Select) || msg.String() == " ":
 		if m.selectedTaskIdx >= 0 && m.selectedTaskIdx < len(m.loadedTasks) {
 			t := m.loadedTasks[m.selectedTaskIdx]
 			if t.State == task.TaskUnassigned {

@@ -291,7 +291,7 @@ func (m *Model) updateKeyStates() {
 			(m.focused == panelTasks && len(m.loadedTasks) > 0),
 	)
 
-	overlayActive := m.showHelp || m.showSpawnDialog || m.showContinueDialog || m.showBatchDialog || m.showQuitConfirm || m.showNewDialog || m.showHistory
+	overlayActive := m.showHelp || m.showSpawnDialog || m.showContinueDialog || m.showBatchDialog || m.showQuitConfirm || m.showNewDialog || m.showHistory || m.showRestorePicker
 	m.keys.New.SetEnabled(!overlayActive)
 	m.keys.CycleMode.SetEnabled(!overlayActive)
 	m.keys.History.SetEnabled(!overlayActive && !m.fullScreen)

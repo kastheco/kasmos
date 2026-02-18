@@ -13,7 +13,6 @@ import (
 	historypkg "github.com/user/kasmos/internal/history"
 	"github.com/user/kasmos/internal/persist"
 	"github.com/user/kasmos/internal/task"
-	"github.com/user/kasmos/internal/worker"
 )
 
 type HistoryEntry = historypkg.Entry
@@ -269,41 +268,7 @@ func (m *Model) loadArchivedSession(path string) error {
 	if err != nil {
 		return err
 	}
-
-	m.manager = worker.NewWorkerManager()
-	m.workers = nil
-	m.selectedWorkerID = ""
-
-	for _, snap := range state.Workers {
-		w := persist.SnapshotToWorker(snap)
-		if w.State == worker.StateRunning || w.State == worker.StateSpawning {
-			w.State = worker.StateKilled
-			w.ExitedAt = time.Now()
-		}
-		m.manager.Add(w)
-		if m.selectedWorkerID == "" {
-			m.selectedWorkerID = w.ID
-		}
-	}
-
-	m.workers = m.manager.All()
-	m.manager.ResetWorkerCounter(state.NextWorkerNum)
-	m.sessionID = state.SessionID
-	if !state.StartedAt.IsZero() {
-		m.sessionStartedAt = state.StartedAt
-	}
-
-	if state.TaskSource == nil {
-		m.swapTaskSource(&task.YoloSource{})
-		return nil
-	}
-
-	source, err := sourceFromPersistConfig(*state.TaskSource)
-	if err != nil {
-		return err
-	}
-	m.swapTaskSource(source)
-	return nil
+	return m.applyRestoredSessionState(state)
 }
 
 func sourceFromPersistConfig(cfg persist.TaskSourceConfig) (task.Source, error) {

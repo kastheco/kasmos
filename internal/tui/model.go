@@ -79,6 +79,13 @@ type Model struct {
 	historyLoading  bool
 	historyErr      error
 
+	showRestorePicker bool
+	restoreEntries    []restoreSessionEntry
+	restoreSelected   int
+	restoreLoading    bool
+	restoreErr        error
+	restoreNote       string
+
 	tableInnerWidth     int
 	tableInnerHeight    int
 	tableOuterWidth     int
@@ -272,6 +279,9 @@ func (m *Model) View() string {
 	}
 
 	if m.showLauncher {
+		if m.showRestorePicker {
+			return m.renderRestorePicker()
+		}
 		if m.showHistory {
 			return m.renderHistoryOverlay()
 		}

@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 
 	historypkg "github.com/user/kasmos/internal/history"
+	"github.com/user/kasmos/internal/persist"
 	"github.com/user/kasmos/internal/worker"
 )
 
@@ -117,6 +118,18 @@ type historyScanCompleteMsg struct {
 
 type historyLoadMsg struct {
 	Entry historypkg.Entry
+}
+
+type restoreScanCompleteMsg struct {
+	Entries []restoreSessionEntry
+	Note    string
+	Err     error
+}
+
+type restoreLoadCompleteMsg struct {
+	Path  string
+	State *persist.SessionState
+	Err   error
 }
 
 func tickCmd() tea.Cmd {

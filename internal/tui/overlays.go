@@ -304,6 +304,18 @@ func (m *Model) updateSpawnDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.spawnForm.roleIndex++
 			}
 			return m, nil
+		case keyMsg.String() == "enter" && m.spawnForm.focusedIdx == spawnFocusRole:
+			prompt := strings.TrimSpace(m.spawnForm.prompt.Value())
+			if prompt == "" {
+				return m, nil
+			}
+			submitted := spawnDialogSubmittedMsg{
+				Role:   m.spawnForm.roles[m.spawnForm.roleIndex].role,
+				Prompt: prompt,
+				TaskID: m.spawnForm.taskID,
+			}
+			m.closeSpawnDialog()
+			return m, func() tea.Msg { return submitted }
 		case keyMsg.String() == "enter" && m.spawnForm.focusedIdx == spawnFocusFiles:
 			m.spawnDraft = spawnDialogDraft{
 				Role:   m.spawnForm.roles[m.spawnForm.roleIndex].role,
