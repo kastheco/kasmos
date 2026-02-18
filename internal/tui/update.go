@@ -793,7 +793,8 @@ func (m *Model) updateTaskPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Reject):
 		if m.selectedTaskIdx >= 0 && m.selectedTaskIdx < len(m.loadedTasks) {
 			t := &m.loadedTasks[m.selectedTaskIdx]
-			if t.State == task.TaskForReview {
+			switch t.State {
+			case task.TaskForReview, task.TaskDone, task.TaskFailed, task.TaskInProgress:
 				t.State = task.TaskUnassigned
 				t.WorkerID = ""
 				m.resolveTaskDependencies()

@@ -276,13 +276,16 @@ func (m *Model) updateKeyStates() {
 	m.keys.Batch.SetEnabled(m.hasTaskSource() && m.hasUnassignedTasks())
 	m.keys.Filter.SetEnabled(false)
 
-	// Review keys — enabled when selected task is for-review
-	hasReviewTask := false
+	// Review keys
+	canApprove := false
+	canReject := false
 	if m.focused == panelTasks && m.selectedTaskIdx >= 0 && m.selectedTaskIdx < len(m.loadedTasks) {
-		hasReviewTask = m.loadedTasks[m.selectedTaskIdx].State == task.TaskForReview
+		st := m.loadedTasks[m.selectedTaskIdx].State
+		canApprove = st == task.TaskForReview
+		canReject = st == task.TaskForReview || st == task.TaskDone || st == task.TaskFailed || st == task.TaskInProgress
 	}
-	m.keys.Approve.SetEnabled(hasReviewTask)
-	m.keys.Reject.SetEnabled(hasReviewTask)
+	m.keys.Approve.SetEnabled(canApprove)
+	m.keys.Reject.SetEnabled(canReject)
 	m.keys.Select.SetEnabled(
 		(m.focused == panelTable && selected != nil) ||
 			(m.focused == panelTasks && len(m.loadedTasks) > 0),
