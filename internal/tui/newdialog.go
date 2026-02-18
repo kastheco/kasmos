@@ -325,7 +325,7 @@ func (m *Model) renderNewDialog() string {
 			"",
 			newDialogOptionStyle.Render("[s] feature spec")+"  "+newDialogMutedStyle.Render("create a spec-kitty feature with research + planning"),
 			newDialogOptionStyle.Render("[g] gsd task list")+"  "+newDialogMutedStyle.Render("create a checkbox task markdown file"),
-			newDialogOptionStyle.Render("[y] yolo mode")+"    "+newDialogMutedStyle.Render("skip planning, jump straight to prompting"),
+			newDialogOptionStyle.Render("[y] yolo mode")+"    "+newDialogMutedStyle.Render("quick task with optional planning"),
 			"",
 			newDialogHelpStyle.Render("s/g/y select . esc cancel"),
 		)
