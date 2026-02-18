@@ -98,21 +98,58 @@ func (m *Model) recalculateLayout() {
 }
 
 func (m Model) workerTableColumns() []table.Column {
+	const (
+		idPref       = 10
+		statusPref   = 12
+		rolePref     = 8
+		durationPref = 8
+
+		idMin       = 6
+		statusMin   = 10
+		roleMin     = 6
+		durationMin = 6
+
+		minTaskWidth = 12
+	)
+
+	widths := []int{idPref, statusPref, rolePref, durationPref}
+	mins := []int{idMin, statusMin, roleMin, durationMin}
+
+	widthBudget := max(0, m.tableInnerWidth-(len(widths)-1))
+	total := 0
+	for _, w := range widths {
+		total += w
+	}
+
+	for total > widthBudget {
+		shrunk := false
+		for i := range widths {
+			if widths[i] <= mins[i] {
+				continue
+			}
+			widths[i]--
+			total--
+			shrunk = true
+			if total <= widthBudget {
+				break
+			}
+		}
+		if !shrunk {
+			break
+		}
+	}
+
 	cols := []table.Column{
-		{Title: "ID", Width: 10},
-		{Title: "Status", Width: 14},
-		{Title: "Role", Width: 10},
-		{Title: "Duration", Width: 9},
+		{Title: "ID", Width: widths[0]},
+		{Title: "Status", Width: widths[1]},
+		{Title: "Role", Width: widths[2]},
+		{Title: "Duration", Width: widths[3]},
 	}
 
 	if m.width >= 100 {
-		fixed := 0
-		for _, c := range cols {
-			fixed += c.Width
-		}
-		remaining := m.tableInnerWidth - fixed - len(cols)
-		if remaining >= 15 {
-			cols = append(cols, table.Column{Title: "Task", Width: remaining})
+		taskWidth := m.tableInnerWidth - total - len(cols)
+		if taskWidth >= minTaskWidth {
+			cols = append(cols, table.Column{Title: "Task", Width: taskWidth})
 		}
 	}
 

@@ -73,7 +73,10 @@ func (m *Model) renderViewport() string {
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render(title),
-		m.viewport.View(),
+		lipgloss.NewStyle().
+			MaxWidth(m.viewportInnerWidth).
+			MaxHeight(max(1, m.viewportInnerHeight-1)).
+			Render(m.viewport.View()),
 	)
 
 	return panelStyle(m.focused == panelViewport).
@@ -139,7 +142,10 @@ func (m *Model) renderFullScreen() string {
 		Render(lipgloss.JoinVertical(
 			lipgloss.Left,
 			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render(title),
-			m.viewport.View(),
+			lipgloss.NewStyle().
+				MaxWidth(vpInnerWidth).
+				MaxHeight(max(1, vpInnerHeight-1)).
+				Render(m.viewport.View()),
 		))
 
 	view := lipgloss.JoinVertical(
@@ -323,18 +329,8 @@ func (m *Model) renderTasksPanel() string {
 		selected = len(m.loadedTasks) - 1
 	}
 
-	const linesPerTask = 4
 	availableLines := max(1, m.tasksInnerHeight-1)
-	visibleTasks := max(1, availableLines/linesPerTask)
-	start := selected - visibleTasks/2
-	if start < 0 {
-		start = 0
-	}
-	end := start + visibleTasks
-	if end > len(m.loadedTasks) {
-		end = len(m.loadedTasks)
-		start = max(0, end-visibleTasks)
-	}
+	start, end := m.visibleTaskWindow(selected, availableLines)
 
 	items := make([]string, 0, end-start)
 	for i := start; i < end; i++ {
@@ -356,17 +352,98 @@ func (m *Model) renderTaskItem(t task.Task, selected bool) string {
 	if selected {
 		idStyle = idStyle.Foreground(colorPurple)
 	}
-	line1 := idStyle.Render(t.ID) + "  " + t.Title
-	line2 := taskStatusBadge(t.State, firstBlockingDep(t))
+	line1 := fmt.Sprintf("%s %s  %s", taskStatusIndicator(t.State), idStyle.Render(t.ID), t.Title)
 
-	line3 := ""
-	if t.WorkerID != "" {
-		line3 = lipgloss.NewStyle().Foreground(colorLightBlue).Render("-> " + t.WorkerID)
-	} else if t.SuggestedRole != "" {
-		line3 = lipgloss.NewStyle().Foreground(colorMidGray).Render("role: " + t.SuggestedRole)
+	line2 := m.taskMetaLine(t)
+	if line2 == "" {
+		return line1
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, line1, line2, line3, "")
+	return lipgloss.JoinVertical(lipgloss.Left, line1, line2)
+}
+
+func (m *Model) visibleTaskWindow(selected, availableLines int) (int, int) {
+	if len(m.loadedTasks) == 0 {
+		return 0, 0
+	}
+	if selected < 0 {
+		selected = 0
+	}
+	if selected >= len(m.loadedTasks) {
+		selected = len(m.loadedTasks) - 1
+	}
+	if availableLines <= 0 {
+		return selected, min(len(m.loadedTasks), selected+1)
+	}
+
+	start := selected
+	end := selected + 1
+	used := m.taskLineCount(m.loadedTasks[selected])
+
+	for end < len(m.loadedTasks) {
+		need := m.taskLineCount(m.loadedTasks[end])
+		if used+need > availableLines {
+			break
+		}
+		used += need
+		end++
+	}
+
+	for start > 0 {
+		need := m.taskLineCount(m.loadedTasks[start-1])
+		if used+need > availableLines {
+			break
+		}
+		used += need
+		start--
+	}
+
+	for end < len(m.loadedTasks) {
+		need := m.taskLineCount(m.loadedTasks[end])
+		if used+need > availableLines {
+			break
+		}
+		used += need
+		end++
+	}
+
+	return start, end
+}
+
+func (m *Model) taskLineCount(t task.Task) int {
+	if m.taskMetaLine(t) == "" {
+		return 1
+	}
+	return 2
+}
+
+func (m *Model) taskMetaLine(t task.Task) string {
+	if t.State == task.TaskDone {
+		return ""
+	}
+	if t.WorkerID != "" {
+		return lipgloss.NewStyle().Foreground(colorLightBlue).Render("-> " + t.WorkerID)
+	}
+	if strings.TrimSpace(t.SuggestedRole) != "" {
+		return lipgloss.NewStyle().Foreground(colorMidGray).Render("role: " + t.SuggestedRole)
+	}
+	return ""
+}
+
+func taskStatusIndicator(state task.TaskState) string {
+	s := lipgloss.NewStyle()
+	switch state {
+	case task.TaskDone:
+		return s.Foreground(colorDone).Render("✓")
+	case task.TaskInProgress:
+		return s.Foreground(colorRunning).Render("◌")
+	case task.TaskBlocked:
+		return s.Foreground(colorOrange).Render("⊘")
+	case task.TaskFailed:
+		return s.Foreground(colorFailed).Render("✗")
+	default:
+		return s.Foreground(colorPending).Render("○")
+	}
 }
 
 func firstBlockingDep(t task.Task) string {

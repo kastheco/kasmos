@@ -2,8 +2,14 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
@@ -70,4 +76,194 @@ func killWorkerCmd(workerID string, handle worker.WorkerHandle, grace time.Durat
 
 		return workerKilledMsg{WorkerID: workerID, Err: handle.Kill(grace)}
 	}
+}
+
+func markWorkerDoneCmd(workerID string, handle worker.WorkerHandle, output *worker.OutputBuffer, grace time.Duration) tea.Cmd {
+	return func() tea.Msg {
+		if handle == nil {
+			return workerMarkedDoneMsg{WorkerID: workerID, Err: errors.New("worker handle is nil")}
+		}
+
+		if err := handle.Kill(grace); err != nil {
+			return workerMarkedDoneMsg{WorkerID: workerID, Err: err}
+		}
+
+		result := handle.Wait()
+		sessionID := strings.TrimSpace(result.SessionID)
+		if sessionID == "" {
+			sessionID = extractSessionID(output)
+		}
+
+		return workerMarkedDoneMsg{WorkerID: workerID, SessionID: sessionID}
+	}
+}
+
+func killAndContinueCmd(workerID string, handle worker.WorkerHandle, output *worker.OutputBuffer) tea.Cmd {
+	return func() tea.Msg {
+		if handle == nil {
+			return workerKillAndContinueMsg{WorkerID: workerID, Err: errors.New("worker handle is nil")}
+		}
+
+		if err := handle.Kill(3 * time.Second); err != nil {
+			return workerKillAndContinueMsg{WorkerID: workerID, Err: err}
+		}
+
+		result := handle.Wait()
+		sessionID := strings.TrimSpace(result.SessionID)
+		if sessionID == "" {
+			sessionID = extractSessionID(output)
+		}
+
+		return workerKillAndContinueMsg{WorkerID: workerID, SessionID: sessionID}
+	}
+}
+
+func extractSessionID(output *worker.OutputBuffer) string {
+	if output == nil {
+		return ""
+	}
+
+	return strings.TrimSpace(worker.ExtractSessionID(output.Content()))
+}
+
+func specCreateCmd(slug, mission string) tea.Cmd {
+	return func() tea.Msg {
+		slug = strings.TrimSpace(slug)
+		mission = strings.TrimSpace(mission)
+		if slug == "" {
+			return specCreatedMsg{Slug: slug, Err: fmt.Errorf("slug is required")}
+		}
+		if mission == "" {
+			return specCreatedMsg{Slug: slug, Err: fmt.Errorf("mission is required")}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		cmd := exec.CommandContext(ctx, "spec-kitty", "agent", "feature", "create-feature", slug, "--mission", mission, "--json")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return specCreatedMsg{Slug: slug, Err: fmt.Errorf("spec-kitty create-feature failed: %w: %s", err, strings.TrimSpace(string(output)))}
+		}
+
+		path, parseErr := parseSpecCreatePath(output)
+		if parseErr != nil {
+			return specCreatedMsg{Slug: slug, Err: parseErr}
+		}
+
+		return specCreatedMsg{Slug: slug, Path: path}
+	}
+}
+
+func gsdCreateCmd(path string, tasks []string) tea.Cmd {
+	return func() tea.Msg {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return gsdCreatedMsg{Err: fmt.Errorf("filename is required")}
+		}
+
+		cleaned := make([]string, 0, len(tasks))
+		for _, task := range tasks {
+			task = strings.TrimSpace(task)
+			if task == "" {
+				continue
+			}
+			cleaned = append(cleaned, task)
+		}
+		if len(cleaned) == 0 {
+			return gsdCreatedMsg{Path: path, Err: fmt.Errorf("at least one task is required")}
+		}
+
+		if err := ensureParentDir(path); err != nil {
+			return gsdCreatedMsg{Path: path, Err: err}
+		}
+
+		var b strings.Builder
+		for _, task := range cleaned {
+			b.WriteString("- [ ] ")
+			b.WriteString(task)
+			b.WriteString("\n")
+		}
+
+		if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+			return gsdCreatedMsg{Path: path, Err: fmt.Errorf("write gsd file %q: %w", path, err)}
+		}
+
+		return gsdCreatedMsg{Path: path, TaskCount: len(cleaned)}
+	}
+}
+
+func planCreateCmd(path, title, content string) tea.Cmd {
+	return func() tea.Msg {
+		path = strings.TrimSpace(path)
+		title = strings.TrimSpace(title)
+		content = strings.TrimSpace(content)
+		if path == "" {
+			return planCreatedMsg{Err: fmt.Errorf("filename is required")}
+		}
+		if title == "" {
+			return planCreatedMsg{Path: path, Err: fmt.Errorf("title is required")}
+		}
+
+		if err := ensureParentDir(path); err != nil {
+			return planCreatedMsg{Path: path, Err: err}
+		}
+
+		var body strings.Builder
+		body.WriteString("# ")
+		body.WriteString(title)
+		body.WriteString("\n")
+		if content != "" {
+			body.WriteString("\n")
+			body.WriteString(content)
+			body.WriteString("\n")
+		}
+
+		if err := os.WriteFile(path, []byte(body.String()), 0o644); err != nil {
+			return planCreatedMsg{Path: path, Err: fmt.Errorf("write plan file %q: %w", path, err)}
+		}
+
+		return planCreatedMsg{Path: path}
+	}
+}
+
+func parseSpecCreatePath(output []byte) (string, error) {
+	var payload map[string]any
+	if err := json.Unmarshal(output, &payload); err != nil {
+		return "", fmt.Errorf("parse spec-kitty output: %w", err)
+	}
+
+	if path := firstString(payload, "path", "feature_path", "dir"); path != "" {
+		return path, nil
+	}
+
+	if feature, ok := payload["feature"].(map[string]any); ok {
+		if path := firstString(feature, "path", "dir"); path != "" {
+			return path, nil
+		}
+	}
+
+	return "", fmt.Errorf("spec-kitty output missing feature path")
+}
+
+func firstString(values map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if raw, ok := values[key]; ok {
+			if str, ok := raw.(string); ok && strings.TrimSpace(str) != "" {
+				return strings.TrimSpace(str)
+			}
+		}
+	}
+	return ""
+}
+
+func ensureParentDir(path string) error {
+	dir := filepath.Dir(path)
+	if dir == "." {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create parent directory %q: %w", dir, err)
+	}
+	return nil
 }

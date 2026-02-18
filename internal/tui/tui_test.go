@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/user/kasmos/internal/task"
 	"github.com/user/kasmos/internal/worker"
 )
 
@@ -114,6 +115,9 @@ func TestRecalculateLayoutBreakpoints(t *testing.T) {
 			m.width = tt.width
 			m.height = tt.height
 			m.taskSourceType = tt.taskSourceType
+			if tt.taskSourceType != "" {
+				m.taskSource = &task.SpecKittySource{Dir: "kitty-specs/test"}
+			}
 
 			m.recalculateLayout()
 
@@ -159,6 +163,9 @@ func TestUpdateKeyStates(t *testing.T) {
 				if m.keys.Kill.Enabled() || m.keys.Continue.Enabled() || m.keys.Restart.Enabled() || m.keys.Analyze.Enabled() {
 					t.Fatal("kill/continue/restart/analyze should be disabled")
 				}
+				if m.keys.MarkDone.Enabled() {
+					t.Fatal("mark done should be disabled")
+				}
 			},
 		},
 		{
@@ -171,6 +178,12 @@ func TestUpdateKeyStates(t *testing.T) {
 				t.Helper()
 				if !m.keys.Kill.Enabled() {
 					t.Fatal("kill should be enabled for running worker")
+				}
+				if !m.keys.MarkDone.Enabled() {
+					t.Fatal("mark done should be enabled for running worker")
+				}
+				if !m.keys.Continue.Enabled() {
+					t.Fatal("continue should be enabled for running worker")
 				}
 				if m.keys.Restart.Enabled() {
 					t.Fatal("restart should be disabled for running worker")
@@ -190,6 +203,19 @@ func TestUpdateKeyStates(t *testing.T) {
 				}
 				if !m.keys.Restart.Enabled() {
 					t.Fatal("restart should be enabled for failed worker")
+				}
+			},
+		},
+		{
+			name: "exited worker with session selected",
+			setup: func(m *Model) {
+				m.manager.Add(&worker.Worker{ID: "w-004", State: worker.StateExited, SessionID: "sess-1"})
+				m.selectedWorkerID = "w-004"
+			},
+			assert: func(t *testing.T, m *Model) {
+				t.Helper()
+				if !m.keys.Continue.Enabled() {
+					t.Fatal("continue should be enabled for exited worker with session id")
 				}
 			},
 		},
@@ -220,6 +246,56 @@ func TestUpdateKeyStates(t *testing.T) {
 			m.updateKeyStates()
 			tt.assert(t, m)
 		})
+	}
+}
+
+func TestWorkerTableColumnsFitWidth(t *testing.T) {
+	m := NewModel(nil, nil, "test")
+	m.width = 120
+	m.height = 24
+	m.recalculateLayout()
+
+	cols := m.workerTableColumns()
+	if len(cols) == 0 {
+		t.Fatal("expected worker table columns")
+	}
+
+	total := 0
+	for _, c := range cols {
+		total += c.Width
+	}
+	total += len(cols) - 1
+
+	if total > m.tableInnerWidth {
+		t.Fatalf("columns overflow table width: total=%d inner=%d", total, m.tableInnerWidth)
+	}
+}
+
+func TestArrowKeysBoundToPanelNavigation(t *testing.T) {
+	m := NewModel(nil, nil, "test")
+
+	if got := m.keys.NextPanel.Keys(); len(got) < 2 || got[1] != "right" {
+		t.Fatalf("next panel keys mismatch: got=%v", got)
+	}
+	if got := m.keys.PrevPanel.Keys(); len(got) < 2 || got[1] != "left" {
+		t.Fatalf("prev panel keys mismatch: got=%v", got)
+	}
+}
+
+func TestNewKeyDisabledWhenOverlayActive(t *testing.T) {
+	m := NewModel(nil, nil, "test")
+	m.showSpawnDialog = true
+	m.updateKeyStates()
+
+	if m.keys.New.Enabled() {
+		t.Fatal("new key should be disabled while overlay is active")
+	}
+
+	m.showSpawnDialog = false
+	m.updateKeyStates()
+
+	if !m.keys.New.Enabled() {
+		t.Fatal("new key should be enabled when no overlay is active")
 	}
 }
 

@@ -3,8 +3,10 @@ package persist
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"syscall"
 	"time"
@@ -51,7 +53,7 @@ func (p *SessionPersister) SaveSync(state SessionState) error {
 	p.dirty = false
 	p.pending = nil
 
-	return p.writeAtomic(state)
+	return p.writeAtomicToPath(p.Path, state)
 }
 
 func (p *SessionPersister) flush() {
@@ -62,14 +64,14 @@ func (p *SessionPersister) flush() {
 		return
 	}
 
-	_ = p.writeAtomic(*p.pending)
+	_ = p.writeAtomicToPath(p.Path, *p.pending)
 	p.dirty = false
 	p.pending = nil
 	p.timer = nil
 }
 
-func (p *SessionPersister) writeAtomic(state SessionState) error {
-	dir := filepath.Dir(p.Path)
+func (p *SessionPersister) writeAtomicToPath(path string, state SessionState) error {
+	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create session dir: %w", err)
 	}
@@ -79,11 +81,11 @@ func (p *SessionPersister) writeAtomic(state SessionState) error {
 		return fmt.Errorf("marshal session: %w", err)
 	}
 
-	tmpPath := p.Path + ".tmp"
+	tmpPath := path + ".tmp"
 	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
 		return fmt.Errorf("write temp: %w", err)
 	}
-	if err := os.Rename(tmpPath, p.Path); err != nil {
+	if err := os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("rename temp: %w", err)
 	}
 
@@ -91,7 +93,15 @@ func (p *SessionPersister) writeAtomic(state SessionState) error {
 }
 
 func (p *SessionPersister) Load() (*SessionState, error) {
-	data, err := os.ReadFile(p.Path)
+	return LoadSessionFromPath(p.Path)
+}
+
+func (p *SessionPersister) LoadFromPath(path string) (*SessionState, error) {
+	return LoadSessionFromPath(path)
+}
+
+func LoadSessionFromPath(path string) (*SessionState, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, err
@@ -109,6 +119,45 @@ func (p *SessionPersister) Load() (*SessionState, error) {
 	}
 
 	return &state, nil
+}
+
+func (p *SessionPersister) Archive(state SessionState) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	finishedAt := time.Now().UTC()
+	state.FinishedAt = &finishedAt
+
+	if state.SessionID == "" {
+		state.SessionID = NewSessionID()
+	}
+
+	archivePath := filepath.Join(filepath.Dir(p.Path), "sessions", state.SessionID+".json")
+	return p.writeAtomicToPath(archivePath, state)
+}
+
+func (p *SessionPersister) ListArchived() ([]SessionState, error) {
+	pattern := filepath.Join(filepath.Dir(p.Path), "sessions", "*.json")
+	paths, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("list archived sessions: %w", err)
+	}
+
+	states := make([]SessionState, 0, len(paths))
+	for _, path := range paths {
+		state, err := LoadSessionFromPath(path)
+		if err != nil {
+			log.Printf("persist: skipping corrupt archived session %q: %v", path, err)
+			continue
+		}
+		states = append(states, *state)
+	}
+
+	sort.Slice(states, func(i, j int) bool {
+		return states[i].StartedAt.After(states[j].StartedAt)
+	})
+
+	return states, nil
 }
 
 // IsPIDAlive checks if a process is still running.

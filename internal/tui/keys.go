@@ -17,9 +17,12 @@ type keyMap struct {
 
 	Spawn    key.Binding
 	Kill     key.Binding
+	MarkDone key.Binding
 	Continue key.Binding
 	Restart  key.Binding
 	Batch    key.Binding
+	New      key.Binding
+	History  key.Binding
 
 	Fullscreen key.Binding
 	ScrollDown key.Binding
@@ -53,12 +56,12 @@ func defaultKeyMap() keyMap {
 			key.WithHelp("↓/j", "down"),
 		),
 		NextPanel: key.NewBinding(
-			key.WithKeys("tab"),
-			key.WithHelp("tab", "next panel"),
+			key.WithKeys("tab", "right"),
+			key.WithHelp("tab/right", "next panel"),
 		),
 		PrevPanel: key.NewBinding(
-			key.WithKeys("shift+tab"),
-			key.WithHelp("S-tab", "prev panel"),
+			key.WithKeys("shift+tab", "left"),
+			key.WithHelp("S-tab/left", "prev panel"),
 		),
 		Spawn: key.NewBinding(
 			key.WithKeys("s"),
@@ -67,6 +70,10 @@ func defaultKeyMap() keyMap {
 		Kill: key.NewBinding(
 			key.WithKeys("x"),
 			key.WithHelp("x", "kill worker"),
+		),
+		MarkDone: key.NewBinding(
+			key.WithKeys("d"),
+			key.WithHelp("d", "mark done"),
 		),
 		Continue: key.NewBinding(
 			key.WithKeys("c"),
@@ -79,6 +86,14 @@ func defaultKeyMap() keyMap {
 		Batch: key.NewBinding(
 			key.WithKeys("b"),
 			key.WithHelp("b", "batch spawn"),
+		),
+		New: key.NewBinding(
+			key.WithKeys("n"),
+			key.WithHelp("n", "new spec/plan"),
+		),
+		History: key.NewBinding(
+			key.WithKeys("h"),
+			key.WithHelp("h", "history"),
 		),
 		Fullscreen: key.NewBinding(
 			key.WithKeys("f"),
@@ -149,7 +164,8 @@ func defaultKeyMap() keyMap {
 
 func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
-		k.Spawn, k.Kill, k.Restart, k.Continue,
+		k.Spawn, k.Kill, k.MarkDone, k.Restart, k.Continue,
+		k.New, k.History,
 		k.NextPanel, k.Fullscreen,
 		k.Help, k.Quit,
 	}
@@ -158,7 +174,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.NextPanel, k.PrevPanel, k.Select, k.Back},
-		{k.Spawn, k.Kill, k.Continue, k.Restart, k.Batch, k.GenPrompt, k.Analyze},
+		{k.Spawn, k.Kill, k.MarkDone, k.Continue, k.Restart, k.Batch, k.New, k.History, k.GenPrompt, k.Analyze},
 		{k.Fullscreen, k.ScrollDown, k.ScrollUp, k.HalfDown, k.HalfUp, k.GotoBottom, k.GotoTop},
 		{k.Help, k.Quit, k.ForceQuit},
 	}
@@ -167,6 +183,8 @@ func (k keyMap) FullHelp() [][]key.Binding {
 func (m *Model) updateKeyStates() {
 	// Always enabled
 	m.keys.Spawn.SetEnabled(true)
+	m.keys.New.SetEnabled(true)
+	m.keys.History.SetEnabled(true)
 	m.keys.Help.SetEnabled(true)
 	m.keys.Quit.SetEnabled(true)
 	m.keys.ForceQuit.SetEnabled(true)
@@ -178,7 +196,10 @@ func (m *Model) updateKeyStates() {
 
 	if m.analysisMode {
 		m.keys.Spawn.SetEnabled(false)
+		m.keys.New.SetEnabled(false)
+		m.keys.History.SetEnabled(false)
 		m.keys.Kill.SetEnabled(false)
+		m.keys.MarkDone.SetEnabled(false)
 		m.keys.Continue.SetEnabled(false)
 		m.keys.Batch.SetEnabled(false)
 		m.keys.Fullscreen.SetEnabled(false)
@@ -206,10 +227,12 @@ func (m *Model) updateKeyStates() {
 	selected := m.selectedWorker()
 
 	// Worker action keys
-	m.keys.Kill.SetEnabled(selected != nil && selected.State == worker.StateRunning)
+	isRunning := selected != nil && selected.State == worker.StateRunning
+	m.keys.Kill.SetEnabled(isRunning)
+	m.keys.MarkDone.SetEnabled(isRunning)
 	m.keys.Continue.SetEnabled(selected != nil &&
-		(selected.State == worker.StateExited || selected.State == worker.StateFailed) &&
-		selected.SessionID != "")
+		((selected.State == worker.StateRunning) ||
+			((selected.State == worker.StateExited || selected.State == worker.StateFailed) && selected.SessionID != "")))
 	m.keys.Restart.SetEnabled(selected != nil &&
 		(selected.State == worker.StateFailed || selected.State == worker.StateKilled))
 
@@ -243,6 +266,10 @@ func (m *Model) updateKeyStates() {
 		(m.focused == panelTable && selected != nil) ||
 			(m.focused == panelTasks && len(m.loadedTasks) > 0),
 	)
+
+	overlayActive := m.showHelp || m.showSpawnDialog || m.showContinueDialog || m.showBatchDialog || m.showQuitConfirm || m.showNewDialog || m.showHistory
+	m.keys.New.SetEnabled(!overlayActive)
+	m.keys.History.SetEnabled(!overlayActive && !m.fullScreen)
 }
 
 func (m *Model) hasUnassignedTasks() bool {

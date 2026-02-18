@@ -58,6 +58,7 @@ func (m *Model) openSpawnDialog() tea.Cmd {
 	m.spawnDraft = spawnDialogDraft{Role: "coder"}
 	m.spawnForm = newSpawnDialogModel()
 	m.spawnForm.taskID = ""
+	m.updateKeyStates()
 	return m.spawnForm.focusCurrentField()
 }
 
@@ -66,6 +67,7 @@ func (m *Model) openSpawnDialogWithPrefill(role, prompt string, files []string) 
 	m.spawnDraft = spawnDialogDraft{Role: role, Prompt: prompt, Files: strings.Join(files, ", ")}
 	m.spawnForm = newSpawnDialogModelWithPrefill(role, prompt, files)
 	m.spawnForm.taskID = ""
+	m.updateKeyStates()
 	return m.spawnForm.focusCurrentField()
 }
 
@@ -73,6 +75,7 @@ func (m *Model) openBatchDialog() tea.Cmd {
 	m.batchSelections = make([]bool, len(m.loadedTasks))
 	m.batchFocusedIdx = 0
 	m.showBatchDialog = true
+	m.updateKeyStates()
 	if idx := m.firstBatchSelectableIdx(); idx >= 0 {
 		m.batchFocusedIdx = idx
 	}
@@ -83,6 +86,7 @@ func (m *Model) closeBatchDialog() {
 	m.showBatchDialog = false
 	m.batchSelections = nil
 	m.batchFocusedIdx = 0
+	m.updateKeyStates()
 }
 
 func newSpawnDialogModel() *spawnDialogModel {
@@ -155,6 +159,7 @@ func (m *Model) closeSpawnDialog() {
 	m.showSpawnDialog = false
 	m.spawnForm = nil
 	m.spawnDraft = spawnDialogDraft{}
+	m.updateKeyStates()
 }
 
 func (m *Model) openContinueDialog(parent *worker.Worker) tea.Cmd {
@@ -165,6 +170,7 @@ func (m *Model) openContinueDialog(parent *worker.Worker) tea.Cmd {
 	m.showContinueDialog = true
 	m.continueParentID = parent.ID
 	m.continueForm = newContinueDialogModel(parent)
+	m.updateKeyStates()
 	return m.continueForm.focusCurrentField()
 }
 

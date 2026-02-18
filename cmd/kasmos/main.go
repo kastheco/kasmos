@@ -47,13 +47,15 @@ func newRootCmd() *cobra.Command {
 				return nil
 			}
 
-			var source task.Source = &task.AdHocSource{}
+			var source task.Source
 			if len(args) > 0 {
 				detected, err := task.DetectSourceType(args[0])
 				if err != nil {
 					return err
 				}
 				source = detected
+			} else {
+				source = task.AutoDetect()
 			}
 
 			if _, err := source.Load(); err != nil {
@@ -116,6 +118,7 @@ func newRootCmd() *cobra.Command {
 				}
 				model.ResetWorkerCounter(state.NextWorkerNum)
 				sessionID = state.SessionID
+				model.SetSessionStartedAt(state.StartedAt)
 			}
 			model.SetPersister(persister, sessionID)
 			opts := []tea.ProgramOption{tea.WithContext(ctx)}
@@ -131,8 +134,11 @@ func newRootCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if daemon {
-				if final, ok := finalModel.(*tui.Model); ok && final.DaemonExitCode() != 0 {
+			if final, ok := finalModel.(*tui.Model); ok {
+				if err := final.FinalizeSession(); err != nil {
+					log.Printf("warning: failed to archive session: %v", err)
+				}
+				if daemon && final.DaemonExitCode() != 0 {
 					return fmt.Errorf("daemon finished with failures")
 				}
 			}

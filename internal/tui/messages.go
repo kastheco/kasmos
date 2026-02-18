@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 
+	historypkg "github.com/user/kasmos/internal/history"
 	"github.com/user/kasmos/internal/worker"
 )
 
@@ -30,6 +31,18 @@ type workerExitedMsg struct {
 type workerKilledMsg struct {
 	WorkerID string
 	Err      error
+}
+
+type workerMarkedDoneMsg struct {
+	WorkerID  string
+	SessionID string
+	Err       error
+}
+
+type workerKillAndContinueMsg struct {
+	WorkerID  string
+	SessionID string
+	Err       error
 }
 
 type tickMsg time.Time
@@ -76,6 +89,38 @@ type genPromptCompletedMsg struct {
 	TaskID string
 	Prompt string
 	Err    error
+}
+
+type newDialogPickedMsg struct {
+	Type string
+}
+
+type newDialogCancelledMsg struct{}
+
+type specCreatedMsg struct {
+	Slug string
+	Path string
+	Err  error
+}
+
+type gsdCreatedMsg struct {
+	Path      string
+	TaskCount int
+	Err       error
+}
+
+type planCreatedMsg struct {
+	Path string
+	Err  error
+}
+
+type historyScanCompleteMsg struct {
+	Entries []historypkg.Entry
+	Err     error
+}
+
+type historyLoadMsg struct {
+	Entry historypkg.Entry
 }
 
 func tickCmd() tea.Cmd {

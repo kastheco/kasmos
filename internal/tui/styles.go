@@ -289,6 +289,37 @@ func roleBadge(role string) string {
 		Render(role)
 }
 
+func historyTypeBadge(entryType string) string {
+	style := lipgloss.NewStyle().Foreground(colorCream).Padding(0, 1)
+	switch entryType {
+	case "spec-kitty":
+		style = style.Background(colorHotPink)
+	case "gsd":
+		style = style.Background(colorLightBlue).Foreground(lipgloss.Color("#0a0a18"))
+	case "yolo":
+		style = style.Background(colorOrange).Foreground(lipgloss.Color("#0a0a18"))
+	default:
+		style = style.Background(colorDarkGray)
+	}
+	return style.Render(entryType)
+}
+
+func historyStatusBadge(status string) string {
+	base := lipgloss.NewStyle().Padding(0, 1)
+	switch status {
+	case "complete":
+		return base.Foreground(colorCream).Background(colorGreen).Render(status)
+	case "in-progress":
+		return base.Foreground(colorCream).Background(colorPurple).Render(status)
+	case "planned":
+		return base.Foreground(colorCream).Background(colorMidGray).Render(status)
+	case "partial":
+		return base.Foreground(lipgloss.Color("#0a0a18")).Background(colorYellow).Render(status)
+	default:
+		return base.Foreground(colorCream).Background(colorDarkGray).Render(status)
+	}
+}
+
 var (
 	timestampStyle = lipgloss.NewStyle().Foreground(colorTimestamp)
 	filePathStyle  = lipgloss.NewStyle().Foreground(colorLightBlue)
@@ -312,6 +343,20 @@ var (
 	analysisHintStyle = lipgloss.NewStyle().
 				Foreground(colorMidGray).
 				Faint(true)
+
+	newDialogOptionStyle = lipgloss.NewStyle().
+				Foreground(colorPurple).
+				Bold(true)
+
+	newDialogMutedStyle = lipgloss.NewStyle().
+				Foreground(colorLightGray)
+
+	newDialogHelpStyle = lipgloss.NewStyle().
+				Foreground(colorMidGray)
+
+	newDialogErrorStyle = lipgloss.NewStyle().
+				Foreground(colorOrange).
+				Bold(true)
 )
 
 func (m Model) renderWithBackdrop(dialog string) string {

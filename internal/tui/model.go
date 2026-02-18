@@ -41,6 +41,8 @@ type Model struct {
 	persister *persist.SessionPersister
 	sessionID string
 
+	sessionStartedAt time.Time
+
 	showSpawnDialog    bool
 	spawnForm          *spawnDialogModel
 	spawnDraft         spawnDialogDraft
@@ -52,6 +54,10 @@ type Model struct {
 	continueParentID   string
 	showQuitConfirm    bool
 	quitConfirmFocused int
+	showNewDialog      bool
+	newDialogStage     int
+	newDialogType      string
+	newForm            *newFormModel
 
 	selectedWorkerID  string
 	tableRowWorkerIDs []string
@@ -61,6 +67,13 @@ type Model struct {
 	analysisWorkerID string
 	analysisLoading  bool
 	genPromptLoading bool
+
+	showHistory     bool
+	historyEntries  []HistoryEntry
+	historySelected int
+	historyDetail   bool
+	historyLoading  bool
+	historyErr      error
 
 	tableInnerWidth     int
 	tableInnerHeight    int
@@ -115,23 +128,24 @@ func NewModel(backend worker.WorkerBackend, source task.Source, version string) 
 	vp.SetContent(welcomeViewportText())
 
 	m := &Model{
-		focused:    panelTable,
-		layoutMode: layoutTooSmall,
-		keys:       defaultKeyMap(),
-		help:       styledHelp(),
-		table:      t,
-		viewport:   vp,
-		spinner:    styledSpinner(),
-		backend:    backend,
-		manager:    worker.NewWorkerManager(),
-		workers:    make([]*worker.Worker, 0),
-		version:    version,
+		focused:          panelTable,
+		layoutMode:       layoutTooSmall,
+		keys:             defaultKeyMap(),
+		help:             styledHelp(),
+		table:            t,
+		viewport:         vp,
+		spinner:          styledSpinner(),
+		backend:          backend,
+		manager:          worker.NewWorkerManager(),
+		workers:          make([]*worker.Worker, 0),
+		version:          version,
+		sessionStartedAt: time.Now().UTC(),
 	}
 	if source != nil {
 		m.taskSource = source
 		m.taskSourceType = source.Type()
 		m.taskSourcePath = source.Path()
-		if source.Type() != "ad-hoc" {
+		if source.Type() != "yolo" {
 			if tasks, err := source.Load(); err == nil {
 				m.loadedTasks = tasks
 			}
@@ -148,6 +162,13 @@ func (m *Model) SetProgram(program *tea.Program) {
 func (m *Model) SetPersister(p *persist.SessionPersister, sessionID string) {
 	m.persister = p
 	m.sessionID = sessionID
+}
+
+func (m *Model) SetSessionStartedAt(startedAt time.Time) {
+	if startedAt.IsZero() {
+		return
+	}
+	m.sessionStartedAt = startedAt.UTC()
 }
 
 func (m *Model) RestoreWorker(w *worker.Worker) {
@@ -167,7 +188,7 @@ func (m *Model) buildSessionState() persist.SessionState {
 	}
 
 	var ts *persist.TaskSourceConfig
-	if m.taskSource != nil && m.taskSource.Type() != "ad-hoc" {
+	if m.taskSource != nil && m.taskSource.Type() != "yolo" {
 		ts = &persist.TaskSourceConfig{
 			Type: m.taskSource.Type(),
 			Path: m.taskSource.Path(),
@@ -177,7 +198,7 @@ func (m *Model) buildSessionState() persist.SessionState {
 	return persist.SessionState{
 		Version:       1,
 		SessionID:     m.sessionID,
-		StartedAt:     time.Now(),
+		StartedAt:     m.sessionStartedAt,
 		TaskSource:    ts,
 		Workers:       snapshots,
 		NextWorkerNum: m.manager.Counter(),
@@ -190,6 +211,17 @@ func (m *Model) triggerPersist() {
 		return
 	}
 	m.persister.Save(m.buildSessionState())
+}
+
+func (m *Model) FinalizeSession() error {
+	if m.persister == nil {
+		return nil
+	}
+	state := m.buildSessionState()
+	if err := m.persister.SaveSync(state); err != nil {
+		return err
+	}
+	return m.persister.Archive(state)
 }
 
 func (m *Model) SetDaemonMode(daemon bool, format string, spawnAll bool) {
@@ -241,6 +273,12 @@ func (m *Model) View() string {
 		if m.showContinueDialog {
 			return m.renderContinueDialog()
 		}
+		if m.showHistory {
+			return m.renderHistoryOverlay()
+		}
+		if m.showNewDialog {
+			return m.renderNewDialog()
+		}
 		if m.showQuitConfirm {
 			return m.renderQuitConfirm()
 		}
@@ -283,6 +321,14 @@ func (m *Model) View() string {
 		return m.renderContinueDialog()
 	}
 
+	if m.showHistory {
+		return m.renderHistoryOverlay()
+	}
+
+	if m.showNewDialog {
+		return m.renderNewDialog()
+	}
+
 	if m.showQuitConfirm {
 		return m.renderQuitConfirm()
 	}
@@ -299,14 +345,41 @@ func (m *Model) View() string {
 }
 
 func (m *Model) hasTaskSource() bool {
-	return m.taskSourceType != ""
+	return m.taskSource != nil && m.taskSource.Type() != "yolo"
 }
 
 func (m *Model) modeName() string {
 	if m.hasTaskSource() {
 		return m.taskSourceType
 	}
-	return "ad-hoc"
+	return "yolo"
+}
+
+func (m *Model) swapTaskSource(source task.Source) {
+	if source == nil {
+		source = &task.YoloSource{}
+	}
+
+	m.taskSource = source
+	m.taskSourceType = source.Type()
+	m.taskSourcePath = source.Path()
+	m.selectedTaskIdx = 0
+
+	if source.Type() != "yolo" {
+		tasks, err := source.Load()
+		if err != nil {
+			m.loadedTasks = nil
+			m.setViewportContent(fmt.Sprintf("Failed to load task source %q: %v", source.Path(), err), false)
+		} else {
+			m.loadedTasks = tasks
+		}
+	} else {
+		m.loadedTasks = nil
+	}
+
+	m.recalculateLayout()
+	m.updateKeyStates()
+	m.triggerPersist()
 }
 
 func welcomeViewportText() string {

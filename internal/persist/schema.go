@@ -14,6 +14,7 @@ type SessionState struct {
 	Version       int               `json:"version"`
 	SessionID     string            `json:"session_id"`
 	StartedAt     time.Time         `json:"started_at"`
+	FinishedAt    *time.Time        `json:"finished_at,omitempty"`
 	TaskSource    *TaskSourceConfig `json:"task_source,omitempty"`
 	Workers       []WorkerSnapshot  `json:"workers"`
 	NextWorkerNum int64             `json:"next_worker_num"`

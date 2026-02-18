@@ -24,8 +24,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateQuitConfirm(msg)
 	}
 
+	if m.showHistory {
+		return m.updateHistory(msg)
+	}
+
 	if m.showBatchDialog {
 		return m.updateBatchDialog(msg)
+	}
+
+	if m.showNewDialog {
+		return m.updateNewDialog(msg)
 	}
 
 	if m.showSpawnDialog {
@@ -75,12 +83,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if key.Matches(msg, m.keys.Help) {
 			m.showHelp = !m.showHelp
+			m.updateKeyStates()
 			return m, nil
 		}
 
 		if m.showHelp {
 			if key.Matches(msg, m.keys.Back) {
 				m.showHelp = false
+				m.updateKeyStates()
 			}
 			return m, nil
 		}
@@ -89,13 +99,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		if key.Matches(msg, m.keys.NextPanel) {
+		if key.Matches(msg, m.keys.New) {
+			return m, m.openNewDialog()
+		}
+
+		if key.Matches(msg, m.keys.History) {
+			return m, m.openHistoryOverlay()
+		}
+
+		if !m.fullScreen && key.Matches(msg, m.keys.NextPanel) {
 			m.cyclePanel(1)
 			m.updateKeyStates()
 			return m, func() tea.Msg { return focusChangedMsg{To: m.focused} }
 		}
 
-		if key.Matches(msg, m.keys.PrevPanel) {
+		if !m.fullScreen && key.Matches(msg, m.keys.PrevPanel) {
 			m.cyclePanel(-1)
 			m.updateKeyStates()
 			return m, func() tea.Msg { return focusChangedMsg{To: m.focused} }
@@ -196,14 +214,46 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.closeContinueDialog()
 		return m, nil
 
+	case newDialogPickedMsg:
+		return m, m.startNewDialogForm(msg.Type)
+
+	case newDialogCancelledMsg:
+		m.closeNewDialog()
+		return m, nil
+
+	case specCreatedMsg:
+		if msg.Err != nil {
+			m.setViewportContent(formatCreateError("feature spec", msg.Err), false)
+			return m, nil
+		}
+		m.swapTaskSource(&task.SpecKittySource{Dir: msg.Path})
+		m.refreshTableRows()
+		m.setViewportContent(fmt.Sprintf("Created feature %q at %s", msg.Slug, msg.Path), false)
+		return m, nil
+
+	case gsdCreatedMsg:
+		if msg.Err != nil {
+			m.setViewportContent(formatCreateError("GSD task list", msg.Err), false)
+			return m, nil
+		}
+		m.swapTaskSource(&task.GsdSource{FilePath: msg.Path})
+		m.refreshTableRows()
+		m.setViewportContent(fmt.Sprintf("Created %s with %d tasks", msg.Path, msg.TaskCount), false)
+		return m, nil
+
+	case planCreatedMsg:
+		if msg.Err != nil {
+			m.setViewportContent(formatCreateError("planning doc", msg.Err), false)
+			return m, nil
+		}
+		m.setViewportContent(fmt.Sprintf("Created %s", msg.Path), false)
+		return m, nil
+
 	case quitConfirmedMsg:
 		for _, w := range m.manager.All() {
 			if w.State == worker.StateRunning && w.Handle != nil {
 				_ = w.Handle.Kill(3 * time.Second)
 			}
-		}
-		if m.persister != nil {
-			_ = m.persister.SaveSync(m.buildSessionState())
 		}
 		return m, tea.Quit
 
@@ -252,6 +302,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if w == nil {
 			return m, nil
 		}
+		if w.Handle == nil && (w.State == worker.StateExited || w.State == worker.StateFailed || w.State == worker.StateKilled) {
+			return m, nil
+		}
 
 		w.ExitCode = msg.ExitCode
 		if msg.Duration > 0 {
@@ -264,9 +317,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			w.State = worker.StateExited
 		}
-		if msg.SessionID != "" {
-			w.SessionID = msg.SessionID
-		} else if w.Output != nil {
+		if strings.TrimSpace(msg.SessionID) != "" {
+			w.SessionID = strings.TrimSpace(msg.SessionID)
+		}
+		if w.SessionID == "" && w.Output != nil {
 			w.SessionID = worker.ExtractSessionID(w.Output.Content())
 		}
 		w.Handle = nil
@@ -301,6 +355,107 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+
+	case workerMarkedDoneMsg:
+		w := m.manager.Get(msg.WorkerID)
+		if w == nil {
+			return m, nil
+		}
+		if msg.Err != nil {
+			m.setViewportContent(fmt.Sprintf("Failed to mark %s done: %v", w.ID, msg.Err), false)
+			return m, nil
+		}
+
+		w.State = worker.StateExited
+		w.ExitCode = 0
+		w.ExitedAt = time.Now()
+		if strings.TrimSpace(msg.SessionID) != "" {
+			w.SessionID = strings.TrimSpace(msg.SessionID)
+		}
+		if w.SessionID == "" && w.Output != nil {
+			w.SessionID = worker.ExtractSessionID(w.Output.Content())
+		}
+		w.Handle = nil
+
+		if w.TaskID != "" {
+			for i := range m.loadedTasks {
+				if m.loadedTasks[i].ID != w.TaskID {
+					continue
+				}
+				m.loadedTasks[i].State = task.TaskDone
+				m.loadedTasks[i].WorkerID = w.ID
+				m.resolveTaskDependencies()
+				break
+			}
+		}
+
+		m.logDaemonEvent(workerExitEvent(w.ID, w.ExitCode, w.FormatDuration(), w.SessionID))
+		m.workers = m.manager.All()
+		m.refreshTableRows()
+		m.updateKeyStates()
+		if w.ID == m.selectedWorkerID {
+			m.refreshViewportFromSelected(true)
+			m.setViewportContent(fmt.Sprintf("Marked %s done", w.ID), false)
+		}
+		m.triggerPersist()
+		if m.daemon {
+			if cmd := m.checkDaemonComplete(); cmd != nil {
+				return m, cmd
+			}
+		}
+		return m, nil
+
+	case workerKillAndContinueMsg:
+		w := m.manager.Get(msg.WorkerID)
+		if w == nil {
+			return m, nil
+		}
+		if msg.Err != nil {
+			m.setViewportContent(fmt.Sprintf("Failed to continue %s: %v", w.ID, msg.Err), false)
+			return m, nil
+		}
+
+		w.State = worker.StateExited
+		w.ExitCode = 0
+		w.ExitedAt = time.Now()
+		if strings.TrimSpace(msg.SessionID) != "" {
+			w.SessionID = strings.TrimSpace(msg.SessionID)
+		}
+		if w.SessionID == "" && w.Output != nil {
+			w.SessionID = worker.ExtractSessionID(w.Output.Content())
+		}
+		w.Handle = nil
+
+		if w.TaskID != "" {
+			for i := range m.loadedTasks {
+				if m.loadedTasks[i].ID != w.TaskID {
+					continue
+				}
+				m.loadedTasks[i].State = task.TaskDone
+				m.loadedTasks[i].WorkerID = w.ID
+				m.resolveTaskDependencies()
+				break
+			}
+		}
+
+		m.logDaemonEvent(workerExitEvent(w.ID, w.ExitCode, w.FormatDuration(), w.SessionID))
+		m.workers = m.manager.All()
+		m.refreshTableRows()
+		m.updateKeyStates()
+		if w.ID == m.selectedWorkerID {
+			m.refreshViewportFromSelected(true)
+		}
+		m.triggerPersist()
+		if w.SessionID == "" {
+			m.setViewportContent(fmt.Sprintf("Cannot continue %s: session ID not found in output", w.ID), false)
+			if m.daemon {
+				if cmd := m.checkDaemonComplete(); cmd != nil {
+					return m, cmd
+				}
+			}
+			return m, nil
+		}
+		return m, m.openContinueDialog(w)
 
 	case workerKilledMsg:
 		if w := m.manager.Get(msg.WorkerID); w != nil {
@@ -518,13 +673,7 @@ func (m *Model) updateFullScreenKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if key.Matches(msg, m.keys.Continue) {
-		selected := m.selectedWorker()
-		if selected != nil &&
-			(selected.State == worker.StateExited || selected.State == worker.StateFailed) &&
-			selected.SessionID != "" {
-			return m, m.openContinueDialog(selected)
-		}
-		return m, nil
+		return m, m.continueSelectedWorkerCmd()
 	}
 
 	if key.Matches(msg, m.keys.Restart) {
@@ -548,11 +697,13 @@ func (m *Model) updateTableKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if key.Matches(msg, m.keys.Continue) {
+		return m, m.continueSelectedWorkerCmd()
+	}
+
+	if key.Matches(msg, m.keys.MarkDone) {
 		selected := m.selectedWorker()
-		if selected != nil &&
-			(selected.State == worker.StateExited || selected.State == worker.StateFailed) &&
-			selected.SessionID != "" {
-			return m, m.openContinueDialog(selected)
+		if selected != nil && selected.State == worker.StateRunning && selected.Handle != nil {
+			return m, markWorkerDoneCmd(selected.ID, selected.Handle, selected.Output, 3*time.Second)
 		}
 		return m, nil
 	}
@@ -633,6 +784,8 @@ func (m *Model) updateTableKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) updateTaskPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
+	case key.Matches(msg, m.keys.Continue):
+		return m, m.continueSelectedWorkerCmd()
 	case key.Matches(msg, m.keys.Up):
 		if m.selectedTaskIdx > 0 {
 			m.selectedTaskIdx--
@@ -667,6 +820,10 @@ func (m *Model) updateTaskPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) updateViewportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.analysisMode {
 		return m.handleAnalysisModeKeys(msg)
+	}
+
+	if key.Matches(msg, m.keys.Continue) {
+		return m, m.continueSelectedWorkerCmd()
 	}
 
 	if key.Matches(msg, m.keys.Fullscreen) {
@@ -731,6 +888,23 @@ func (m *Model) selectedWorker() *worker.Worker {
 		return nil
 	}
 	return m.manager.Get(m.selectedWorkerID)
+}
+
+func (m *Model) continueSelectedWorkerCmd() tea.Cmd {
+	selected := m.selectedWorker()
+	if selected == nil {
+		return nil
+	}
+
+	if selected.State == worker.StateRunning && selected.Handle != nil {
+		return killAndContinueCmd(selected.ID, selected.Handle, selected.Output)
+	}
+
+	if (selected.State == worker.StateExited || selected.State == worker.StateFailed) && strings.TrimSpace(selected.SessionID) != "" {
+		return m.openContinueDialog(selected)
+	}
+
+	return nil
 }
 
 func (m *Model) runningWorkersCount() int {

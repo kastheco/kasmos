@@ -24,8 +24,8 @@ func TestWriteAtomicCreatesSessionFile(t *testing.T) {
 	dir := t.TempDir()
 	p := NewSessionPersister(dir)
 
-	if err := p.writeAtomic(testState()); err != nil {
-		t.Fatalf("writeAtomic: %v", err)
+	if err := p.writeAtomicToPath(p.Path, testState()); err != nil {
+		t.Fatalf("writeAtomicToPath: %v", err)
 	}
 
 	data, err := os.ReadFile(p.Path)
@@ -131,5 +131,65 @@ func TestIsPIDAlive(t *testing.T) {
 	}
 	if IsPIDAlive(0) {
 		t.Fatalf("pid 0 should not be alive")
+	}
+}
+
+func TestArchiveAndListArchived(t *testing.T) {
+	dir := t.TempDir()
+	p := NewSessionPersister(dir)
+
+	first := testState()
+	first.SessionID = "ks-1111-abcd"
+	first.StartedAt = time.Now().UTC().Add(-2 * time.Hour)
+	if err := p.Archive(first); err != nil {
+		t.Fatalf("Archive first: %v", err)
+	}
+
+	second := testState()
+	second.SessionID = "ks-2222-efgh"
+	second.StartedAt = time.Now().UTC().Add(-1 * time.Hour)
+	if err := p.Archive(second); err != nil {
+		t.Fatalf("Archive second: %v", err)
+	}
+
+	states, err := p.ListArchived()
+	if err != nil {
+		t.Fatalf("ListArchived: %v", err)
+	}
+	if len(states) != 2 {
+		t.Fatalf("expected 2 archived states, got %d", len(states))
+	}
+	if states[0].SessionID != second.SessionID {
+		t.Fatalf("expected newest archived session first, got %q", states[0].SessionID)
+	}
+	if states[0].FinishedAt == nil || states[1].FinishedAt == nil {
+		t.Fatal("expected archived states to include finished_at")
+	}
+}
+
+func TestListArchivedSkipsCorruptFiles(t *testing.T) {
+	dir := t.TempDir()
+	p := NewSessionPersister(dir)
+
+	valid := testState()
+	valid.SessionID = "ks-valid-abcd"
+	if err := p.Archive(valid); err != nil {
+		t.Fatalf("Archive valid: %v", err)
+	}
+
+	corruptPath := filepath.Join(dir, ".kasmos", "sessions", "corrupt.json")
+	if err := os.WriteFile(corruptPath, []byte("{not-json"), 0o644); err != nil {
+		t.Fatalf("write corrupt file: %v", err)
+	}
+
+	states, err := p.ListArchived()
+	if err != nil {
+		t.Fatalf("ListArchived: %v", err)
+	}
+	if len(states) != 1 {
+		t.Fatalf("expected 1 valid archived state, got %d", len(states))
+	}
+	if states[0].SessionID != valid.SessionID {
+		t.Fatalf("unexpected archived session ID: %q", states[0].SessionID)
 	}
 }
