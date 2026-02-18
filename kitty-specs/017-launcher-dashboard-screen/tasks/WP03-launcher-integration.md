@@ -29,7 +29,7 @@ review_status: ''
 reviewed_by: ''
 history:
 - timestamp: '2026-02-18T00:00:00Z'
-  lane: planned
+lane: done
   agent: planner
   action: Prompt generated via /spec-kitty.tasks
 ---
