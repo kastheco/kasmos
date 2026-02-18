@@ -1,30 +1,35 @@
 ---
-work_package_id: "WP09"
-title: "Task Panel UI + Worker-Task Association + Batch Spawn"
-lane: "planned"
+work_package_id: WP09
+title: Task Panel UI + Worker-Task Association + Batch Spawn
+lane: doing
 dependencies:
-  - "WP03"
-  - "WP04"
-  - "WP08"
+- WP03
+- WP04
+- WP08
 subtasks:
-  - "Task list panel using bubbles/list (wide mode)"
-  - "Custom list.ItemDelegate for multi-line task items"
-  - "Task panel focus cycling (3-panel mode)"
-  - "Spawn from task: pre-fill dialog with task data"
-  - "Worker-task association: taskStateChangedMsg flow"
-  - "Batch spawn dialog"
-  - "Header subtitle with source info"
-phase: "Wave 2 - Task Sources + Worker Management"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
+- Task list panel using bubbles/list (wide mode)
+- Custom list.ItemDelegate for multi-line task items
+- Task panel focus cycling (3-panel mode)
+- 'Spawn from task: pre-fill dialog with task data'
+- 'Worker-task association: taskStateChangedMsg flow'
+- Batch spawn dialog
+- Header subtitle with source info
+phase: Wave 2 - Task Sources + Worker Management
+assignee: ''
+agent: ''
+shell_pid: ''
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-17T00:00:00Z"
-    lane: "planned"
-    agent: "planner"
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-17T00:00:00Z'
+  lane: planned
+  agent: planner
+  action: Prompt generated via /spec-kitty.tasks
+- timestamp: '2026-02-18T14:31:13.383985135+00:00'
+  lane: doing
+  actor: manager
+  shell_pid: '472734'
+  action: transition active (Launching WP09 coder - task panel UI + batch spawn)
 ---
 
 # Work Package Prompt: WP09 - Task Panel UI + Worker-Task Association + Batch Spawn

@@ -1,7 +1,7 @@
 ---
 work_package_id: WP10
 title: Setup Command + Agent Scaffolding
-lane: doing
+lane: done
 dependencies:
 - WP01
 subtasks:
@@ -26,6 +26,11 @@ history:
   actor: manager
   shell_pid: '472734'
   action: transition active (Launching WP10 coder - setup command + agent scaffolding)
+- timestamp: '2026-02-18T14:31:01.365155161+00:00'
+  lane: done
+  actor: manager
+  shell_pid: '472734'
+  action: transition done (Implemented and verified - setup command + agent scaffolding)
 ---
 
 # Work Package Prompt: WP10 - Setup Command + Agent Scaffolding

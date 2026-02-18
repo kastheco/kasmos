@@ -1,28 +1,33 @@
 ---
-work_package_id: "WP11"
-title: "AI Helpers (Analyze Failure + Generate Prompt)"
-lane: "planned"
+work_package_id: WP11
+title: AI Helpers (Analyze Failure + Generate Prompt)
+lane: doing
 dependencies:
-  - "WP04"
-  - "WP08"
+- WP04
+- WP08
 subtasks:
-  - "Analyze failure: spawn headless worker to analyze output"
-  - "Generate prompt: spawn headless worker to generate prompt from task"
-  - "Analysis viewport rendering (V9 mockup)"
-  - "analyzeStartedMsg/analyzeCompletedMsg handlers"
-  - "genPromptStartedMsg/genPromptCompletedMsg handlers"
-  - "Restart with suggested prompt flow"
-phase: "Wave 2 - Task Sources + Worker Management"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
+- 'Analyze failure: spawn headless worker to analyze output'
+- 'Generate prompt: spawn headless worker to generate prompt from task'
+- Analysis viewport rendering (V9 mockup)
+- analyzeStartedMsg/analyzeCompletedMsg handlers
+- genPromptStartedMsg/genPromptCompletedMsg handlers
+- Restart with suggested prompt flow
+phase: Wave 2 - Task Sources + Worker Management
+assignee: ''
+agent: ''
+shell_pid: ''
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-17T00:00:00Z"
-    lane: "planned"
-    agent: "planner"
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-17T00:00:00Z'
+  lane: planned
+  agent: planner
+  action: Prompt generated via /spec-kitty.tasks
+- timestamp: '2026-02-18T14:31:14.374507180+00:00'
+  lane: doing
+  actor: manager
+  shell_pid: '472734'
+  action: transition active (Launching WP11 coder - AI helpers)
 ---
 
 # Work Package Prompt: WP11 - AI Helpers (Analyze Failure + Generate Prompt)

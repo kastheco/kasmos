@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 
+	"github.com/user/kasmos/internal/task"
 	"github.com/user/kasmos/internal/worker"
 )
 
@@ -21,6 +22,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.showQuitConfirm {
 		return m.updateQuitConfirm(msg)
+	}
+
+	if m.showBatchDialog {
+		return m.updateBatchDialog(msg)
 	}
 
 	if m.showSpawnDialog {
@@ -107,6 +112,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateTableKeys(msg)
 		case panelViewport:
 			return m.updateViewportKeys(msg)
+		case panelTasks:
+			return m.updateTaskPanelKeys(msg)
 		default:
 			return m, nil
 		}
@@ -136,6 +143,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.refreshTableRows()
 		m.refreshViewportFromSelected(true)
+		if msg.TaskID != "" {
+			for i := range m.loadedTasks {
+				if m.loadedTasks[i].ID == msg.TaskID {
+					m.loadedTasks[i].State = task.TaskInProgress
+					m.loadedTasks[i].WorkerID = w.ID
+					break
+				}
+			}
+		}
+		m.updateKeyStates()
 
 		cfg := worker.SpawnConfig{ID: w.ID, Role: w.Role, Prompt: w.Prompt, Files: w.Files}
 		return m, spawnWorkerCmd(m.backend, cfg)
@@ -247,8 +264,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		w.Handle = nil
 
+		if w.TaskID != "" {
+			for i := range m.loadedTasks {
+				if m.loadedTasks[i].ID != w.TaskID {
+					continue
+				}
+				if w.State == worker.StateExited {
+					m.loadedTasks[i].State = task.TaskDone
+					m.loadedTasks[i].WorkerID = w.ID
+				} else {
+					m.loadedTasks[i].State = task.TaskFailed
+				}
+				m.resolveTaskDependencies()
+				break
+			}
+		}
+
 		m.workers = m.manager.All()
 		m.refreshTableRows()
+		m.updateKeyStates()
 		if w.ID == m.selectedWorkerID {
 			m.refreshViewportFromSelected(true)
 		}
@@ -266,6 +300,42 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case analyzeCompletedMsg:
+		m.analysisLoading = false
+		m.analysisMode = true
+		if msg.Err != nil {
+			m.analysisResult = &AnalysisResult{
+				WorkerID:  msg.WorkerID,
+				RootCause: fmt.Sprintf("Analysis failed: %v", msg.Err),
+			}
+		} else {
+			m.analysisResult = &AnalysisResult{
+				WorkerID:        msg.WorkerID,
+				RootCause:       msg.RootCause,
+				SuggestedPrompt: msg.SuggestedPrompt,
+			}
+		}
+		m.updateKeyStates()
+		m.refreshViewportFromSelected(false)
+		return m, nil
+
+	case genPromptCompletedMsg:
+		m.genPromptLoading = false
+		m.updateKeyStates()
+		if msg.Err != nil {
+			m.refreshViewportFromSelected(false)
+			return m, nil
+		}
+
+		role := "coder"
+		for _, t := range m.loadedTasks {
+			if t.ID == msg.TaskID && strings.TrimSpace(t.SuggestedRole) != "" {
+				role = t.SuggestedRole
+				break
+			}
+		}
+		return m, m.openSpawnDialogWithPrefill(role, msg.Prompt, nil)
+
 	case tickMsg:
 		m.refreshTableRows()
 		return m, tickCmd()
@@ -274,6 +344,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		m.refreshTableRows()
+		if m.analysisLoading || m.genPromptLoading {
+			m.refreshViewportFromSelected(false)
+		}
 		return m, cmd
 	}
 
@@ -348,6 +421,21 @@ func (m *Model) syncSelectionFromTable() {
 }
 
 func (m *Model) refreshViewportFromSelected(autoFollow bool) {
+	if m.analysisLoading {
+		m.setViewportContent(fmt.Sprintf("%s Analyzing failure for %s...", m.spinner.View(), m.analysisWorkerID), false)
+		return
+	}
+
+	if m.genPromptLoading {
+		m.setViewportContent(fmt.Sprintf("%s Generating implementation prompt...", m.spinner.View()), false)
+		return
+	}
+
+	if m.analysisMode && m.analysisResult != nil {
+		m.setViewportContent(m.renderAnalysisView(), false)
+		return
+	}
+
 	w := m.selectedWorker()
 	if w == nil || w.Output == nil {
 		m.setViewportContent(welcomeViewportText(), false)
@@ -376,6 +464,30 @@ func (m *Model) setViewportContent(content string, autoFollow bool) {
 }
 
 func (m *Model) updateFullScreenKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.analysisMode {
+		if key.Matches(msg, m.keys.Back) {
+			m.analysisMode = false
+			m.analysisResult = nil
+			m.updateKeyStates()
+			m.refreshViewportFromSelected(false)
+			return m, nil
+		}
+
+		if key.Matches(msg, m.keys.Restart) && m.analysisResult != nil && strings.TrimSpace(m.analysisResult.SuggestedPrompt) != "" {
+			role := "coder"
+			if w := m.manager.Get(m.analysisResult.WorkerID); w != nil {
+				role = w.Role
+			}
+			suggestedPrompt := m.analysisResult.SuggestedPrompt
+			m.analysisMode = false
+			m.analysisResult = nil
+			m.updateKeyStates()
+			return m, m.openSpawnDialogWithPrefill(role, suggestedPrompt, nil)
+		}
+
+		return m, nil
+	}
+
 	if key.Matches(msg, m.keys.Back) {
 		m.fullScreen = false
 		m.recalculateLayout()
@@ -405,6 +517,30 @@ func (m *Model) updateFullScreenKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) updateTableKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.analysisMode {
+		if key.Matches(msg, m.keys.Back) {
+			m.analysisMode = false
+			m.analysisResult = nil
+			m.updateKeyStates()
+			m.refreshViewportFromSelected(false)
+			return m, nil
+		}
+
+		if key.Matches(msg, m.keys.Restart) && m.analysisResult != nil && strings.TrimSpace(m.analysisResult.SuggestedPrompt) != "" {
+			role := "coder"
+			if w := m.manager.Get(m.analysisResult.WorkerID); w != nil {
+				role = w.Role
+			}
+			suggestedPrompt := m.analysisResult.SuggestedPrompt
+			m.analysisMode = false
+			m.analysisResult = nil
+			m.updateKeyStates()
+			return m, m.openSpawnDialogWithPrefill(role, suggestedPrompt, nil)
+		}
+
+		return m, nil
+	}
+
 	if key.Matches(msg, m.keys.Spawn) {
 		return m, m.openSpawnDialog()
 	}
@@ -435,6 +571,44 @@ func (m *Model) updateTableKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if key.Matches(msg, m.keys.Analyze) {
+		selected := m.selectedWorker()
+		if selected != nil && selected.State == worker.StateFailed {
+			m.analysisMode = false
+			m.analysisResult = nil
+			m.analysisLoading = true
+			m.analysisWorkerID = selected.ID
+			m.updateKeyStates()
+			m.refreshViewportFromSelected(false)
+
+			outputTail := ""
+			if selected.Output != nil {
+				outputTail = selected.Output.Tail(200)
+			}
+			return m, analyzeCmd(m.backend, selected.ID, selected.Role, selected.ExitCode, selected.FormatDuration(), outputTail)
+		}
+		return m, nil
+	}
+
+	if key.Matches(msg, m.keys.GenPrompt) {
+		selectedTask := m.selectTaskForPromptGen()
+		if selectedTask == nil {
+			return m, nil
+		}
+
+		m.genPromptLoading = true
+		m.updateKeyStates()
+		m.refreshViewportFromSelected(false)
+		return m, genPromptCmd(
+			m.backend,
+			selectedTask.ID,
+			selectedTask.Title,
+			selectedTask.Description,
+			selectedTask.SuggestedRole,
+			selectedTask.Dependencies,
+		)
+	}
+
 	if key.Matches(msg, m.keys.Fullscreen, m.keys.Select) {
 		if m.selectedWorker() != nil {
 			m.fullScreen = true
@@ -455,7 +629,64 @@ func (m *Model) updateTableKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *Model) updateTaskPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Up):
+		if m.selectedTaskIdx > 0 {
+			m.selectedTaskIdx--
+		}
+		m.updateKeyStates()
+		return m, nil
+	case key.Matches(msg, m.keys.Down):
+		if m.selectedTaskIdx < len(m.loadedTasks)-1 {
+			m.selectedTaskIdx++
+		}
+		m.updateKeyStates()
+		return m, nil
+	case key.Matches(msg, m.keys.Select), key.Matches(msg, m.keys.Spawn):
+		if m.selectedTaskIdx >= 0 && m.selectedTaskIdx < len(m.loadedTasks) {
+			t := m.loadedTasks[m.selectedTaskIdx]
+			if t.State == task.TaskUnassigned {
+				role := t.SuggestedRole
+				if role == "" {
+					role = "coder"
+				}
+				return m, m.openSpawnDialogWithTaskPrefill(role, strings.TrimSpace(t.Description), nil, t.ID)
+			}
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.Batch):
+		return m, m.openBatchDialog()
+	default:
+		return m, nil
+	}
+}
+
 func (m *Model) updateViewportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.analysisMode {
+		if key.Matches(msg, m.keys.Back) {
+			m.analysisMode = false
+			m.analysisResult = nil
+			m.updateKeyStates()
+			m.refreshViewportFromSelected(false)
+			return m, nil
+		}
+
+		if key.Matches(msg, m.keys.Restart) && m.analysisResult != nil && strings.TrimSpace(m.analysisResult.SuggestedPrompt) != "" {
+			role := "coder"
+			if w := m.manager.Get(m.analysisResult.WorkerID); w != nil {
+				role = w.Role
+			}
+			suggestedPrompt := m.analysisResult.SuggestedPrompt
+			m.analysisMode = false
+			m.analysisResult = nil
+			m.updateKeyStates()
+			return m, m.openSpawnDialogWithPrefill(role, suggestedPrompt, nil)
+		}
+
+		return m, nil
+	}
+
 	if key.Matches(msg, m.keys.Fullscreen) {
 		if m.selectedWorker() != nil {
 			m.fullScreen = true
@@ -528,4 +759,63 @@ func (m *Model) runningWorkersCount() int {
 		}
 	}
 	return count
+}
+
+func (m *Model) openSpawnDialogWithTaskPrefill(role, prompt string, files []string, taskID string) tea.Cmd {
+	m.showSpawnDialog = true
+	m.spawnDraft = spawnDialogDraft{Role: role, Prompt: prompt, Files: strings.Join(files, ", ")}
+	m.spawnForm = newSpawnDialogModelWithPrefill(role, prompt, files)
+	m.spawnForm.taskID = taskID
+	return m.spawnForm.focusCurrentField()
+}
+
+func (m *Model) resolveTaskDependencies() {
+	doneIDs := make(map[string]bool, len(m.loadedTasks))
+	for _, t := range m.loadedTasks {
+		if t.State == task.TaskDone {
+			doneIDs[t.ID] = true
+		}
+	}
+
+	for i := range m.loadedTasks {
+		if m.loadedTasks[i].State != task.TaskBlocked {
+			continue
+		}
+		allDone := true
+		for _, dep := range m.loadedTasks[i].Dependencies {
+			if !doneIDs[dep] {
+				allDone = false
+				break
+			}
+		}
+		if allDone {
+			m.loadedTasks[i].State = task.TaskUnassigned
+		}
+	}
+}
+
+func (m *Model) selectTaskForPromptGen() *task.Task {
+	if len(m.loadedTasks) == 0 {
+		return nil
+	}
+
+	if selected := m.selectedWorker(); selected != nil && selected.TaskID != "" {
+		for i := range m.loadedTasks {
+			if m.loadedTasks[i].ID == selected.TaskID {
+				return &m.loadedTasks[i]
+			}
+		}
+	}
+
+	if m.selectedTaskIdx >= 0 && m.selectedTaskIdx < len(m.loadedTasks) {
+		return &m.loadedTasks[m.selectedTaskIdx]
+	}
+
+	for i := range m.loadedTasks {
+		if m.loadedTasks[i].State == task.TaskUnassigned {
+			return &m.loadedTasks[i]
+		}
+	}
+
+	return &m.loadedTasks[0]
 }

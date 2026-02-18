@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss/v2"
 
+	"github.com/user/kasmos/internal/task"
 	"github.com/user/kasmos/internal/worker"
 )
 
@@ -55,10 +56,15 @@ func (m *Model) renderViewport() string {
 	}
 
 	title := "Output"
+	if m.analysisMode && m.analysisResult != nil {
+		title = fmt.Sprintf("Analysis: %s", m.analysisResult.WorkerID)
+	}
 	if selected := m.selectedWorker(); selected != nil {
-		title = fmt.Sprintf("Output: %s %s", selected.ID, selected.Role)
-		if selected.ParentID != "" {
-			title = fmt.Sprintf("%s <- %s", title, selected.ParentID)
+		if !m.analysisMode {
+			title = fmt.Sprintf("Output: %s %s", selected.ID, selected.Role)
+			if selected.ParentID != "" {
+				title = fmt.Sprintf("%s <- %s", title, selected.ParentID)
+			}
 		}
 	}
 
@@ -74,6 +80,34 @@ func (m *Model) renderViewport() string {
 		Render(content)
 }
 
+func (m *Model) renderAnalysisView() string {
+	if m.analysisResult == nil {
+		return ""
+	}
+
+	r := m.analysisResult
+	dividerWidth := max(1, min(40, m.viewportInnerWidth))
+	lines := []string{
+		analysisHeaderStyle.Render(fmt.Sprintf("Analysis: %s", r.WorkerID)),
+		strings.Repeat("-", dividerWidth),
+		"",
+		rootCauseLabelStyle.Render("Root Cause:"),
+		r.RootCause,
+	}
+
+	if strings.TrimSpace(r.SuggestedPrompt) != "" {
+		lines = append(lines,
+			"",
+			suggestedFixLabelStyle.Render("Suggested Fix:"),
+			r.SuggestedPrompt,
+			"",
+			analysisHintStyle.Render("Press r to restart with suggested prompt"),
+		)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
 func (m *Model) renderFullScreen() string {
 	contentHeight := max(0, m.height-m.chromeHeight())
 	const (
@@ -87,8 +121,13 @@ func (m *Model) renderFullScreen() string {
 	m.viewport.SetHeight(max(1, vpInnerHeight-1))
 
 	title := "Output"
+	if m.analysisMode && m.analysisResult != nil {
+		title = fmt.Sprintf("Analysis: %s", m.analysisResult.WorkerID)
+	}
 	if selected := m.selectedWorker(); selected != nil {
-		title = fmt.Sprintf("Output: %s %s - %s", selected.ID, selected.Role, truncateMiddle(strings.TrimSpace(selected.Prompt), 40))
+		if !m.analysisMode {
+			title = fmt.Sprintf("Output: %s %s - %s", selected.ID, selected.Role, truncateMiddle(strings.TrimSpace(selected.Prompt), 40))
+		}
 	}
 
 	viewportPanel := lipgloss.NewStyle().
@@ -237,6 +276,11 @@ func (m *Model) renderStatusBar() string {
 		warningStyle.Render("☠"), counts.killed,
 		lipgloss.NewStyle().Foreground(colorPending).Render("○"), counts.pending,
 	)
+	if m.hasTaskSource() && len(m.loadedTasks) > 0 {
+		taskCounts := m.taskCounts()
+		taskInfo := fmt.Sprintf("tasks: %d done . %d active . %d pending", taskCounts.done, taskCounts.active, taskCounts.pending)
+		left = " " + taskInfo + "  |" + left
+	}
 
 	scrollStr := "-"
 	if m.focused == panelViewport && m.viewport.TotalLineCount() > 0 {
@@ -260,16 +304,77 @@ func (m *Model) renderTasksPanel() string {
 		return ""
 	}
 
-	content := lipgloss.JoinVertical(
-		lipgloss.Left,
-		lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("Tasks"),
-		lipgloss.NewStyle().Foreground(colorMidGray).Render("No tasks loaded"),
-	)
+	title := lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("Tasks")
+
+	if len(m.loadedTasks) == 0 {
+		empty := lipgloss.NewStyle().Foreground(colorMidGray).Render("No tasks loaded")
+		content := lipgloss.JoinVertical(lipgloss.Left, title, empty)
+		return panelStyle(m.focused == panelTasks).
+			Width(m.tasksInnerWidth).
+			Height(m.tasksInnerHeight).
+			Render(content)
+	}
+
+	selected := m.selectedTaskIdx
+	if selected < 0 {
+		selected = 0
+	}
+	if selected >= len(m.loadedTasks) {
+		selected = len(m.loadedTasks) - 1
+	}
+	m.selectedTaskIdx = selected
+
+	const linesPerTask = 4
+	availableLines := max(1, m.tasksInnerHeight-1)
+	visibleTasks := max(1, availableLines/linesPerTask)
+	start := selected - visibleTasks/2
+	if start < 0 {
+		start = 0
+	}
+	end := start + visibleTasks
+	if end > len(m.loadedTasks) {
+		end = len(m.loadedTasks)
+		start = max(0, end-visibleTasks)
+	}
+
+	items := make([]string, 0, end-start)
+	for i := start; i < end; i++ {
+		isSelected := m.focused == panelTasks && i == selected
+		items = append(items, m.renderTaskItem(m.loadedTasks[i], isSelected))
+	}
+
+	taskList := strings.Join(items, "\n")
+	content := lipgloss.JoinVertical(lipgloss.Left, title, taskList)
 
 	return panelStyle(m.focused == panelTasks).
 		Width(m.tasksInnerWidth).
 		Height(m.tasksInnerHeight).
 		Render(content)
+}
+
+func (m *Model) renderTaskItem(t task.Task, selected bool) string {
+	idStyle := lipgloss.NewStyle().Bold(true)
+	if selected {
+		idStyle = idStyle.Foreground(colorPurple)
+	}
+	line1 := idStyle.Render(t.ID) + "  " + t.Title
+	line2 := taskStatusBadge(t.State, firstBlockingDep(t))
+
+	line3 := ""
+	if t.WorkerID != "" {
+		line3 = lipgloss.NewStyle().Foreground(colorLightBlue).Render("-> " + t.WorkerID)
+	} else if t.SuggestedRole != "" {
+		line3 = lipgloss.NewStyle().Foreground(colorMidGray).Render("role: " + t.SuggestedRole)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, line1, line2, line3, "")
+}
+
+func firstBlockingDep(t task.Task) string {
+	if len(t.Dependencies) > 0 {
+		return t.Dependencies[0]
+	}
+	return ""
 }
 
 func (m *Model) renderHelpOverlay() string {
@@ -298,6 +403,12 @@ type workerStateCounts struct {
 	pending int
 }
 
+type taskStateCounts struct {
+	done    int
+	active  int
+	pending int
+}
+
 func (m *Model) workerCounts() workerStateCounts {
 	counts := workerStateCounts{}
 	for _, w := range m.workers {
@@ -311,6 +422,21 @@ func (m *Model) workerCounts() workerStateCounts {
 		case worker.StateKilled:
 			counts.killed++
 		case worker.StatePending, worker.StateSpawning:
+			counts.pending++
+		}
+	}
+	return counts
+}
+
+func (m *Model) taskCounts() taskStateCounts {
+	counts := taskStateCounts{}
+	for _, t := range m.loadedTasks {
+		switch t.State {
+		case task.TaskDone:
+			counts.done++
+		case task.TaskInProgress:
+			counts.active++
+		default:
 			counts.pending++
 		}
 	}

@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 
+	"github.com/user/kasmos/internal/task"
 	"github.com/user/kasmos/internal/worker"
 )
 
@@ -25,6 +26,7 @@ type spawnDialogModel struct {
 	prompt     textarea.Model
 	files      textinput.Model
 	focusedIdx int
+	taskID     string
 }
 
 type spawnRoleOption struct {
@@ -55,6 +57,7 @@ func (m *Model) openSpawnDialog() tea.Cmd {
 	m.showSpawnDialog = true
 	m.spawnDraft = spawnDialogDraft{Role: "coder"}
 	m.spawnForm = newSpawnDialogModel()
+	m.spawnForm.taskID = ""
 	return m.spawnForm.focusCurrentField()
 }
 
@@ -62,7 +65,24 @@ func (m *Model) openSpawnDialogWithPrefill(role, prompt string, files []string) 
 	m.showSpawnDialog = true
 	m.spawnDraft = spawnDialogDraft{Role: role, Prompt: prompt, Files: strings.Join(files, ", ")}
 	m.spawnForm = newSpawnDialogModelWithPrefill(role, prompt, files)
+	m.spawnForm.taskID = ""
 	return m.spawnForm.focusCurrentField()
+}
+
+func (m *Model) openBatchDialog() tea.Cmd {
+	m.batchSelections = make([]bool, len(m.loadedTasks))
+	m.batchFocusedIdx = 0
+	m.showBatchDialog = true
+	if idx := m.firstBatchSelectableIdx(); idx >= 0 {
+		m.batchFocusedIdx = idx
+	}
+	return nil
+}
+
+func (m *Model) closeBatchDialog() {
+	m.showBatchDialog = false
+	m.batchSelections = nil
+	m.batchFocusedIdx = 0
 }
 
 func newSpawnDialogModel() *spawnDialogModel {
@@ -288,6 +308,7 @@ func (m *Model) updateSpawnDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Role:   m.spawnDraft.Role,
 				Prompt: m.spawnDraft.Prompt,
 				Files:  parseSpawnFiles(m.spawnDraft.Files),
+				TaskID: m.spawnForm.taskID,
 			}
 			m.closeSpawnDialog()
 			return m, func() tea.Msg { return submitted }
@@ -365,6 +386,129 @@ func (m *Model) renderSpawnDialog() string {
 		"",
 		lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("Attach Files (optional)"),
 		m.spawnForm.files.View(),
+		"",
+		helpText,
+	)
+
+	dialog := dialogStyle.Width(70).Render(content)
+	return m.renderWithBackdrop(dialog)
+}
+
+func (m *Model) updateBatchDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
+	keyMsg, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+
+	if key.Matches(keyMsg, m.keys.Back) {
+		m.closeBatchDialog()
+		return m, nil
+	}
+
+	if len(m.loadedTasks) == 0 {
+		m.closeBatchDialog()
+		return m, nil
+	}
+
+	switch keyMsg.String() {
+	case "up", "k":
+		m.moveBatchFocus(-1)
+		return m, nil
+	case "down", "j":
+		m.moveBatchFocus(1)
+		return m, nil
+	case " ":
+		if m.batchFocusedIdx >= 0 && m.batchFocusedIdx < len(m.loadedTasks) && m.loadedTasks[m.batchFocusedIdx].State == task.TaskUnassigned {
+			m.batchSelections[m.batchFocusedIdx] = !m.batchSelections[m.batchFocusedIdx]
+		}
+		return m, nil
+	case "enter":
+		cmds := make([]tea.Cmd, 0)
+		for i, selected := range m.batchSelections {
+			if !selected || i >= len(m.loadedTasks) {
+				continue
+			}
+			t := m.loadedTasks[i]
+			if t.State != task.TaskUnassigned {
+				continue
+			}
+			role := t.SuggestedRole
+			if role == "" {
+				role = "coder"
+			}
+			msg := spawnDialogSubmittedMsg{
+				Role:   role,
+				Prompt: strings.TrimSpace(t.Description),
+				Files:  nil,
+				TaskID: t.ID,
+			}
+			cmds = append(cmds, func(m spawnDialogSubmittedMsg) tea.Cmd {
+				return func() tea.Msg { return m }
+			}(msg))
+		}
+		m.closeBatchDialog()
+		if len(cmds) == 0 {
+			return m, nil
+		}
+		return m, tea.Batch(cmds...)
+	}
+
+	return m, nil
+}
+
+func (m *Model) moveBatchFocus(dir int) {
+	if len(m.loadedTasks) == 0 {
+		m.batchFocusedIdx = 0
+		return
+	}
+
+	idx := m.batchFocusedIdx
+	for range len(m.loadedTasks) {
+		idx = (idx + dir + len(m.loadedTasks)) % len(m.loadedTasks)
+		if m.loadedTasks[idx].State == task.TaskUnassigned {
+			m.batchFocusedIdx = idx
+			return
+		}
+	}
+}
+
+func (m *Model) firstBatchSelectableIdx() int {
+	for i, t := range m.loadedTasks {
+		if t.State == task.TaskUnassigned {
+			return i
+		}
+	}
+	return -1
+}
+
+func (m *Model) renderBatchDialog() string {
+	lines := make([]string, 0, len(m.loadedTasks))
+	for i, t := range m.loadedTasks {
+		if t.State != task.TaskUnassigned {
+			continue
+		}
+		check := "[ ]"
+		if i < len(m.batchSelections) && m.batchSelections[i] {
+			check = "[x]"
+		}
+		style := lipgloss.NewStyle().Foreground(colorLightGray)
+		if i == m.batchFocusedIdx {
+			style = style.Foreground(colorPurple).Bold(true)
+		}
+		lines = append(lines, style.Render(fmt.Sprintf("  %s %s  %s", check, t.ID, t.Title)))
+	}
+
+	if len(lines) == 0 {
+		lines = append(lines, lipgloss.NewStyle().Foreground(colorMidGray).Render("  No unassigned tasks available"))
+	}
+
+	helpText := lipgloss.NewStyle().Foreground(colorMidGray).Render("j/k navigate  space toggle  enter spawn selected  esc cancel")
+
+	content := lipgloss.JoinVertical(
+		lipgloss.Left,
+		dialogHeaderStyle.Render("Batch Spawn"),
+		"",
+		strings.Join(lines, "\n"),
 		"",
 		helpText,
 	)

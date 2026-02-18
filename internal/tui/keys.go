@@ -3,6 +3,7 @@ package tui
 import (
 	"github.com/charmbracelet/bubbles/v2/key"
 
+	"github.com/user/kasmos/internal/task"
 	"github.com/user/kasmos/internal/worker"
 )
 
@@ -201,14 +202,26 @@ func (m *Model) updateKeyStates() {
 		m.keys.GenPrompt.SetEnabled(false)
 	} else {
 		m.keys.GotoTop.SetEnabled(false)
-		m.keys.GenPrompt.SetEnabled(false)
+		m.keys.GenPrompt.SetEnabled(m.focused == panelTable && m.hasTaskSource() && len(m.loadedTasks) > 0 && !m.genPromptLoading)
 	}
 
-	// AI helpers (disabled until WP11)
-	m.keys.Analyze.SetEnabled(false)
+	// AI helpers
+	m.keys.Analyze.SetEnabled(selected != nil && selected.State == worker.StateFailed && !m.analysisLoading)
 
-	// Task panel keys (disabled until WP09)
-	m.keys.Batch.SetEnabled(false)
+	// Task panel keys
+	m.keys.Batch.SetEnabled(m.hasTaskSource() && m.hasUnassignedTasks())
 	m.keys.Filter.SetEnabled(false)
-	m.keys.Select.SetEnabled(m.focused == panelTable && selected != nil)
+	m.keys.Select.SetEnabled(
+		(m.focused == panelTable && selected != nil) ||
+			(m.focused == panelTasks && len(m.loadedTasks) > 0),
+	)
+}
+
+func (m *Model) hasUnassignedTasks() bool {
+	for _, t := range m.loadedTasks {
+		if t.State == task.TaskUnassigned {
+			return true
+		}
+	}
+	return false
 }

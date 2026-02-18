@@ -39,6 +39,9 @@ type Model struct {
 	showSpawnDialog    bool
 	spawnForm          *spawnDialogModel
 	spawnDraft         spawnDialogDraft
+	showBatchDialog    bool
+	batchSelections    []bool
+	batchFocusedIdx    int
 	showContinueDialog bool
 	continueForm       *continueDialogModel
 	continueParentID   string
@@ -47,6 +50,12 @@ type Model struct {
 
 	selectedWorkerID  string
 	tableRowWorkerIDs []string
+
+	analysisMode     bool
+	analysisResult   *AnalysisResult
+	analysisWorkerID string
+	analysisLoading  bool
+	genPromptLoading bool
 
 	tableInnerWidth     int
 	tableInnerHeight    int
@@ -61,9 +70,17 @@ type Model struct {
 	tasksOuterWidth     int
 	tasksOuterHeight    int
 
-	taskSourceType string
-	taskSourcePath string
-	taskSource     task.Source
+	taskSourceType  string
+	taskSourcePath  string
+	taskSource      task.Source
+	loadedTasks     []task.Task
+	selectedTaskIdx int
+}
+
+type AnalysisResult struct {
+	WorkerID        string
+	RootCause       string
+	SuggestedPrompt string
 }
 
 func NewModel(backend worker.WorkerBackend, source task.Source) *Model {
@@ -99,6 +116,11 @@ func NewModel(backend worker.WorkerBackend, source task.Source) *Model {
 		m.taskSource = source
 		m.taskSourceType = source.Type()
 		m.taskSourcePath = source.Path()
+		if source.Type() != "ad-hoc" {
+			if tasks, err := source.Load(); err == nil {
+				m.loadedTasks = tasks
+			}
+		}
 	}
 	m.updateKeyStates()
 	return m
@@ -135,6 +157,9 @@ func (m *Model) View() string {
 		}
 		if m.showQuitConfirm {
 			return m.renderQuitConfirm()
+		}
+		if m.showBatchDialog {
+			return m.renderBatchDialog()
 		}
 		if m.showSpawnDialog {
 			return m.renderSpawnDialog()
@@ -174,6 +199,10 @@ func (m *Model) View() string {
 
 	if m.showQuitConfirm {
 		return m.renderQuitConfirm()
+	}
+
+	if m.showBatchDialog {
+		return m.renderBatchDialog()
 	}
 
 	if m.showSpawnDialog {
