@@ -66,5 +66,5 @@ release v:
     echo "    pushed to origin"
 
     # 5. Goreleaser builds, creates GH release, pushes homebrew formula
-    goreleaser release --clean
+    GITHUB_TOKEN="${GH_PAT}" goreleaser release --clean
     echo "==> Done: https://github.com/kastheco/kasmos/releases/tag/${TAG}"
