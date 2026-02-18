@@ -236,6 +236,74 @@ prepended to the ID column. The table itself is still flat - tree structure is v
 | Concurrent goroutine leaks from workers | Memory grows | Context cancellation on worker kill. Shutdown protocol force-kills after timeout. |
 | huh forms block TUI rendering | Dashboard freezes | huh runs as a sub-model within the bubbletea Update loop, not blocking. |
 
+## Work Package Decomposition
+
+13 WPs across 3 waves. Each WP is independently implementable by a coder agent
+in a single session. WP files are in `kitty-specs/016-kasmos-agent-orchestrator/tasks/`.
+
+### Wave 1: Core TUI + Worker Lifecycle (6 WPs)
+
+| WP | Title | Dependencies | User Stories | Key Deliverables |
+|----|-------|-------------|--------------|------------------|
+| WP01 | Project Bootstrap + CLI Entry | none | -- | go.mod, cmd/kasmos/main.go, cobra, minimal tea.Program |
+| WP02 | Worker Backend Package | none | -- | internal/worker/ (interface, subprocess, output buffer, session ID) |
+| WP03 | TUI Foundation (Layout, Styles, Keys) | WP01 | -- | internal/tui/ skeleton (model, layout, styles, keys, empty panels) |
+| WP04 | Worker-TUI Integration | WP02, WP03 | US1, US2 | commands.go, spawn dialog, table+viewport with live workers |
+| WP05 | Continue Dialog + Overlays + Chains | WP04 | US3 | Continue dialog, quit confirm, worker tree glyphs |
+| WP06 | Output Viewport + Fullscreen + Shutdown | WP04, WP05 | US2 | Fullscreen, auto-follow, 4-phase key routing, graceful shutdown |
+
+**Wave 1 acceptance**: Run `kasmos`, press `s` to spawn, see output streaming,
+press `c` on completed worker to continue session. All 3 P1 user stories pass.
+
+### Wave 2: Task Sources + Worker Management (5 WPs)
+
+| WP | Title | Dependencies | User Stories | Key Deliverables |
+|----|-------|-------------|--------------|------------------|
+| WP07 | Kill + Restart Workers | WP04 | US4 | Kill (x key), restart (r key) with pre-filled dialog |
+| WP08 | Task Source Framework + Adapters | WP02 | US5 | internal/task/ (source interface, spec-kitty, GSD, ad-hoc) |
+| WP09 | Task Panel UI + Batch Spawn | WP03, WP04, WP08 | US5 | Task list panel (wide mode), spawn from task, batch spawn |
+| WP10 | Setup Command + Agent Scaffolding | WP01 | US6 | `kasmos setup`, dep validation, agent definitions |
+| WP11 | AI Helpers (Analyze + Gen Prompt) | WP04, WP08 | FR-012 | Failure analysis (a key), prompt generation (g key) |
+
+**Wave 2 acceptance**: Run `kasmos kitty-specs/.../`, see WPs in task panel,
+spawn from task. Kill/restart workers. Run `kasmos setup`.
+
+### Wave 3: Daemon Mode + Persistence (2 WPs)
+
+| WP | Title | Dependencies | User Stories | Key Deliverables |
+|----|-------|-------------|--------------|------------------|
+| WP12 | Daemon Mode (Headless Operation) | WP04 | US7 | -d flag, NDJSON/human output, --spawn-all, TTY detection |
+| WP13 | Session Persistence + Reattach | WP04 | US8 | .kasmos/session.json, --attach, atomic write, orphan recovery |
+
+**Wave 3 acceptance**: Run `kasmos -d --format json`, see NDJSON events.
+Kill TUI, run `kasmos --attach`, see restored worker states.
+
+### Dependency Graph
+
+```
+WP01 ─────────────────────────────────────────────┬──→ WP10
+  │                                                │
+  └──→ WP03 ─────────────────┐                    │
+                              │                    │
+WP02 ──────────┬──→ WP08 ────┤                    │
+               │              │                    │
+               └──→ WP04 ────┼──→ WP07            │
+                    │    │    │                    │
+                    │    │    └──→ WP09            │
+                    │    │                         │
+                    │    └──→ WP11                 │
+                    │                              │
+                    └──→ WP05 ──→ WP06            │
+                    │                              │
+                    ├──→ WP12                      │
+                    └──→ WP13                      │
+```
+
+**Parallelism opportunities**:
+- WP01 and WP02 can run in parallel (no dependency)
+- WP07, WP08, WP10 can run in parallel after their deps complete
+- WP12 and WP13 can run in parallel
+
 ## Reference Documents
 
 - **Spec**: `kitty-specs/016-kasmos-agent-orchestrator/spec.md`
