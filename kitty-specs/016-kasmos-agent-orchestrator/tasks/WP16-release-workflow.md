@@ -1,7 +1,9 @@
 ---
 work_package_id: WP16
 title: Release Workflow (just release X.Y.Z)
-lane: planned
+lane: done
+descoped: true
+descoped_reason: Deferred - feature 016 finalized without Wave 4 enhancements (release workflow implemented separately via goreleaser)
 dependencies:
 - WP01
 subtasks:

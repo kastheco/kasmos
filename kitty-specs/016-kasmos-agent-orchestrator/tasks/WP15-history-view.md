@@ -1,7 +1,9 @@
 ---
 work_package_id: WP15
 title: History View (h key)
-lane: planned
+lane: done
+descoped: true
+descoped_reason: Deferred - feature 016 finalized without Wave 4 enhancements
 dependencies:
 - WP03
 - WP08
@@ -21,7 +23,6 @@ review_status: ''
 reviewed_by: ''
 history:
 - timestamp: '2026-02-18T00:00:00Z'
-  lane: planned
   agent: planner
   action: Specified by user request
 ---
