@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 
+	"github.com/user/kasmos/internal/task"
 	"github.com/user/kasmos/internal/worker"
 )
 
@@ -86,40 +87,31 @@ type genPromptCompletedMsg struct {
 	Err    error
 }
 
-type Task struct {
-	ID            string
-	Title         string
-	Description   string
-	SuggestedRole string
-	Dependencies  []string
-	State         TaskState
-	WorkerID      string
-	Metadata      map[string]string
-}
-
+// tasksLoadedMsg is sent when a task source finishes loading.
 type tasksLoadedMsg struct {
 	Source string
 	Path   string
-	Tasks  []Task
+	Tasks  []task.Task
 	Err    error
 }
 
+// taskStateChangedMsg is sent when a task's state changes.
 type taskStateChangedMsg struct {
 	TaskID   string
-	NewState TaskState
+	NewState task.TaskState
 	WorkerID string
 }
 
+// sessionSavedMsg is sent when session persistence completes.
 type sessionSavedMsg struct {
 	Path string
 	Err  error
 }
 
-type SessionState struct{}
-
+// sessionLoadedMsg is sent when a session is restored from disk.
 type sessionLoadedMsg struct {
-	Session *SessionState
-	Err     error
+	Path string
+	Err  error
 }
 
 func tickCmd() tea.Cmd {

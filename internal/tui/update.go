@@ -9,11 +9,20 @@ import (
 	"github.com/charmbracelet/bubbles/v2/spinner"
 	"github.com/charmbracelet/bubbles/v2/table"
 	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss/v2"
 
 	"github.com/user/kasmos/internal/worker"
 )
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.showContinueDialog {
+		return m.updateContinueDialog(msg)
+	}
+
+	if m.showQuitConfirm {
+		return m.updateQuitConfirm(msg)
+	}
+
 	if m.showSpawnDialog {
 		return m.updateSpawnDialog(msg)
 	}
@@ -39,8 +48,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case tea.KeyMsg:
-		if key.Matches(msg, m.keys.ForceQuit, m.keys.Quit) {
+		if key.Matches(msg, m.keys.ForceQuit) {
 			return m, tea.Quit
+		}
+
+		if key.Matches(msg, m.keys.Quit) {
+			running := m.runningWorkersCount()
+			if running == 0 {
+				return m, tea.Quit
+			}
+			m.showQuitConfirm = true
+			m.quitConfirmFocused = 1
+			m.updateKeyStates()
+			return m, nil
 		}
 
 		if key.Matches(msg, m.keys.Help) {
@@ -73,6 +93,32 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.focused == panelTable {
 			if key.Matches(msg, m.keys.Spawn) {
 				return m, m.openSpawnDialog()
+			}
+
+			if key.Matches(msg, m.keys.Continue) {
+				selected := m.selectedWorker()
+				if selected != nil &&
+					(selected.State == worker.StateExited || selected.State == worker.StateFailed) &&
+					selected.SessionID != "" {
+					return m, m.openContinueDialog(selected)
+				}
+				return m, nil
+			}
+
+			if key.Matches(msg, m.keys.Kill) {
+				selected := m.selectedWorker()
+				if selected != nil && selected.State == worker.StateRunning && selected.Handle != nil {
+					return m, killWorkerCmd(selected.ID, selected.Handle, 3*time.Second)
+				}
+				return m, nil
+			}
+
+			if key.Matches(msg, m.keys.Restart) {
+				selected := m.selectedWorker()
+				if selected != nil && (selected.State == worker.StateFailed || selected.State == worker.StateKilled) {
+					return m, m.openSpawnDialogWithPrefill(selected.Role, selected.Prompt, selected.Files)
+				}
+				return m, nil
 			}
 
 			if key.Matches(msg, m.keys.Up, m.keys.Down) {
@@ -128,14 +174,56 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.closeSpawnDialog()
 		return m, nil
 
+	case continueDialogSubmittedMsg:
+		parent := m.manager.Get(msg.ParentWorkerID)
+		if parent == nil {
+			return m, nil
+		}
+		id := m.manager.NextWorkerID()
+		w := &worker.Worker{
+			ID:        id,
+			Role:      parent.Role,
+			Prompt:    msg.FollowUp,
+			ParentID:  msg.ParentWorkerID,
+			State:     worker.StateSpawning,
+			SpawnedAt: time.Now(),
+			Output:    worker.NewOutputBuffer(worker.DefaultMaxLines),
+		}
+		m.manager.Add(w)
+		m.workers = m.manager.All()
+		m.selectedWorkerID = w.ID
+		m.refreshTableRows()
+		m.refreshViewportFromSelected(true)
+
+		cfg := worker.SpawnConfig{
+			ID:              w.ID,
+			Role:            w.Role,
+			Prompt:          msg.FollowUp,
+			ContinueSession: msg.SessionID,
+		}
+		return m, spawnWorkerCmd(m.backend, cfg)
+
+	case continueDialogCancelledMsg:
+		m.closeContinueDialog()
+		return m, nil
+
+	case quitConfirmedMsg:
+		return m, tea.Quit
+
+	case quitCancelledMsg:
+		m.showQuitConfirm = false
+		m.updateKeyStates()
+		return m, nil
+
 	case workerSpawnedMsg:
 		w := m.manager.Get(msg.WorkerID)
 		if w == nil {
 			return m, nil
 		}
-		if err := w.Transition(worker.StateRunning); err != nil {
-			w.State = worker.StateRunning
-		}
+		// Force to running — the transition may fail if the worker was already
+		// in an unexpected state (e.g., killed during spawn), but we trust the
+		// backend's spawned confirmation.
+		w.State = worker.StateRunning
 		w.Handle = msg.Handle
 		if w.SpawnedAt.IsZero() {
 			w.SpawnedAt = time.Now()
@@ -219,15 +307,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) refreshTableRows() {
 	m.workers = m.manager.All()
-	rows := make([]table.Row, 0, len(m.workers))
+	ordered, prefixes := workerTreeRows(m.workers)
+	m.tableRowWorkerIDs = make([]string, 0, len(ordered))
+	rows := make([]table.Row, 0, len(ordered))
 	withTask := len(m.workerTableColumns()) == 5
-	for _, w := range m.workers {
+	treePrefixStyle := lipgloss.NewStyle().Foreground(colorMidGray).Faint(true)
+	for _, w := range ordered {
 		status := statusIndicator(w.State, w.ExitCode)
 		if w.State == worker.StateRunning {
 			status = m.spinner.View() + " running"
 		}
 
-		row := table.Row{w.ID, status, roleBadge(w.Role), w.FormatDuration()}
+		idLabel := w.ID
+		if prefix := prefixes[w.ID]; prefix != "" {
+			idLabel = treePrefixStyle.Render(prefix) + w.ID
+		}
+
+		row := table.Row{idLabel, status, roleBadge(w.Role), w.FormatDuration()}
 		if withTask {
 			task := w.TaskID
 			if task == "" {
@@ -236,9 +332,18 @@ func (m *Model) refreshTableRows() {
 			row = append(row, task)
 		}
 		rows = append(rows, row)
+		m.tableRowWorkerIDs = append(m.tableRowWorkerIDs, w.ID)
 	}
 
 	m.table.SetRows(rows)
+	if m.selectedWorkerID != "" {
+		for i, id := range m.tableRowWorkerIDs {
+			if id == m.selectedWorkerID {
+				m.table.SetCursor(i)
+				break
+			}
+		}
+	}
 	m.syncSelectionFromTable()
 }
 
@@ -257,12 +362,14 @@ func (m *Model) syncSelectionFromTable() {
 		cursor = len(rows) - 1
 		m.table.SetCursor(cursor)
 	}
-	if len(rows[cursor]) == 0 {
+	if cursor < 0 || cursor >= len(m.tableRowWorkerIDs) {
 		m.selectedWorkerID = ""
+		m.updateKeyStates()
 		return
 	}
 
-	m.selectedWorkerID = fmt.Sprintf("%v", rows[cursor][0])
+	m.selectedWorkerID = m.tableRowWorkerIDs[cursor]
+	m.updateKeyStates()
 }
 
 func (m *Model) refreshViewportFromSelected(autoFollow bool) {
@@ -271,7 +378,17 @@ func (m *Model) refreshViewportFromSelected(autoFollow bool) {
 		m.setViewportContent(welcomeViewportText(), false)
 		return
 	}
-	m.setViewportContent(w.Output.Content(), autoFollow)
+	content := w.Output.Content()
+	if w.ParentID != "" {
+		parentRole := "unknown"
+		if parent := m.manager.Get(w.ParentID); parent != nil {
+			parentRole = parent.Role
+		}
+		line := lipgloss.NewStyle().Foreground(colorMidGray).Faint(true).
+			Render(fmt.Sprintf("← continued from %s (%s)", w.ParentID, parentRole))
+		content = line + "\n" + content
+	}
+	m.setViewportContent(content, autoFollow)
 }
 
 func (m *Model) setViewportContent(content string, autoFollow bool) {
@@ -287,4 +404,14 @@ func (m *Model) selectedWorker() *worker.Worker {
 		return nil
 	}
 	return m.manager.Get(m.selectedWorkerID)
+}
+
+func (m *Model) runningWorkersCount() int {
+	count := 0
+	for _, w := range m.manager.All() {
+		if w.State == worker.StateRunning {
+			count++
+		}
+	}
+	return count
 }

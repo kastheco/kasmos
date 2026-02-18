@@ -57,6 +57,9 @@ func (m *Model) renderViewport() string {
 	title := "Output"
 	if selected := m.selectedWorker(); selected != nil {
 		title = fmt.Sprintf("Output: %s %s", selected.ID, selected.Role)
+		if selected.ParentID != "" {
+			title = fmt.Sprintf("%s <- %s", title, selected.ParentID)
+		}
 	}
 
 	content := lipgloss.JoinVertical(
@@ -69,6 +72,72 @@ func (m *Model) renderViewport() string {
 		Width(m.viewportInnerWidth).
 		Height(m.viewportInnerHeight).
 		Render(content)
+}
+
+func workerTreeRows(workers []*worker.Worker) ([]*worker.Worker, map[string]string) {
+	if len(workers) == 0 {
+		return nil, map[string]string{}
+	}
+
+	byID := make(map[string]*worker.Worker, len(workers))
+	children := make(map[string][]*worker.Worker, len(workers))
+	roots := make([]*worker.Worker, 0, len(workers))
+	for _, w := range workers {
+		byID[w.ID] = w
+	}
+	for _, w := range workers {
+		if w.ParentID == "" || byID[w.ParentID] == nil {
+			roots = append(roots, w)
+			continue
+		}
+		children[w.ParentID] = append(children[w.ParentID], w)
+	}
+
+	ordered := make([]*worker.Worker, 0, len(workers))
+	prefixes := make(map[string]string, len(workers))
+	visited := make(map[string]bool, len(workers))
+
+	var walk func(node *worker.Worker, depth int, ancestorHasNext []bool, isLast bool)
+	walk = func(node *worker.Worker, depth int, ancestorHasNext []bool, isLast bool) {
+		if node == nil || visited[node.ID] {
+			return
+		}
+		visited[node.ID] = true
+
+		if depth > 0 {
+			var b strings.Builder
+			for i := 0; i < depth-1; i++ {
+				if ancestorHasNext[i] {
+					b.WriteString("│ ")
+				} else {
+					b.WriteString("  ")
+				}
+			}
+			if isLast {
+				b.WriteString("└─")
+			} else {
+				b.WriteString("├─")
+			}
+			prefixes[node.ID] = b.String()
+		}
+
+		ordered = append(ordered, node)
+		next := children[node.ID]
+		for i, child := range next {
+			walk(child, depth+1, append(ancestorHasNext, i < len(next)-1), i == len(next)-1)
+		}
+	}
+
+	for i, root := range roots {
+		walk(root, 0, nil, i == len(roots)-1)
+	}
+	for _, w := range workers {
+		if !visited[w.ID] {
+			walk(w, 0, nil, true)
+		}
+	}
+
+	return ordered, prefixes
 }
 
 func (m *Model) renderStatusBar() string {

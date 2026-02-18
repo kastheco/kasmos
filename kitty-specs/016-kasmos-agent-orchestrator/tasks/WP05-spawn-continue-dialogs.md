@@ -1,26 +1,31 @@
 ---
-work_package_id: "WP05"
-title: "Continue Dialog + Overlays + Worker Chains"
-lane: "planned"
+work_package_id: WP05
+title: Continue Dialog + Overlays + Worker Chains
+lane: doing
 dependencies:
-  - "WP04"
+- WP04
 subtasks:
-  - "Continue session dialog (huh form + parent info)"
-  - "Quit confirmation dialog"
-  - "Worker continuation chains (ParentID, tree glyphs)"
-  - "Viewport title shows chain reference"
-  - "Update key handlers for c (continue)"
-phase: "Wave 1 - Core TUI + Worker Lifecycle"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
+- Continue session dialog (huh form + parent info)
+- Quit confirmation dialog
+- Worker continuation chains (ParentID, tree glyphs)
+- Viewport title shows chain reference
+- Update key handlers for c (continue)
+phase: Wave 1 - Core TUI + Worker Lifecycle
+assignee: ''
+agent: ''
+shell_pid: ''
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-17T00:00:00Z"
-    lane: "planned"
-    agent: "planner"
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-17T00:00:00Z'
+  lane: planned
+  agent: planner
+  action: Prompt generated via /spec-kitty.tasks
+- timestamp: '2026-02-18T14:12:27.565191687+00:00'
+  lane: doing
+  actor: manager
+  shell_pid: '472734'
+  action: transition active (Launching WP05 coder - continue dialog + overlays + worker chains)
 ---
 
 # Work Package Prompt: WP05 - Continue Dialog + Overlays + Worker Chains

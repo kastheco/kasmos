@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 
+	"github.com/user/kasmos/internal/task"
 	"github.com/user/kasmos/internal/worker"
 )
 
@@ -33,11 +34,17 @@ type Model struct {
 	workers  []*worker.Worker
 	program  *tea.Program
 
-	showSpawnDialog bool
-	spawnForm       *spawnDialogModel
-	spawnDraft      spawnDialogDraft
+	showSpawnDialog    bool
+	spawnForm          *spawnDialogModel
+	spawnDraft         spawnDialogDraft
+	showContinueDialog bool
+	continueForm       *continueDialogModel
+	continueParentID   string
+	showQuitConfirm    bool
+	quitConfirmFocused int
 
-	selectedWorkerID string
+	selectedWorkerID  string
+	tableRowWorkerIDs []string
 
 	tableInnerWidth     int
 	tableInnerHeight    int
@@ -54,9 +61,10 @@ type Model struct {
 
 	taskSourceType string
 	taskSourcePath string
+	taskSource     task.Source
 }
 
-func NewModel(backend worker.WorkerBackend) *Model {
+func NewModel(backend worker.WorkerBackend, source task.Source) *Model {
 	t := table.New(
 		table.WithColumns([]table.Column{
 			{Title: "ID", Width: 10},
@@ -84,6 +92,11 @@ func NewModel(backend worker.WorkerBackend) *Model {
 		backend:    backend,
 		manager:    worker.NewWorkerManager(),
 		workers:    make([]*worker.Worker, 0),
+	}
+	if source != nil {
+		m.taskSource = source
+		m.taskSourceType = source.Type()
+		m.taskSourcePath = source.Path()
 	}
 	m.updateKeyStates()
 	return m
@@ -134,6 +147,14 @@ func (m *Model) View() string {
 
 	if m.showHelp {
 		return m.renderHelpOverlay()
+	}
+
+	if m.showContinueDialog {
+		return m.renderContinueDialog()
+	}
+
+	if m.showQuitConfirm {
+		return m.renderQuitConfirm()
 	}
 
 	if m.showSpawnDialog {

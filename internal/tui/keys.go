@@ -1,6 +1,10 @@
 package tui
 
-import "github.com/charmbracelet/bubbles/v2/key"
+import (
+	"github.com/charmbracelet/bubbles/v2/key"
+
+	"github.com/user/kasmos/internal/worker"
+)
 
 type keyMap struct {
 	Up        key.Binding
@@ -158,6 +162,8 @@ func (k keyMap) FullHelp() [][]key.Binding {
 }
 
 func (m *Model) updateKeyStates() {
+	selected := m.selectedWorker()
+
 	m.keys.Spawn.SetEnabled(true)
 	m.keys.Help.SetEnabled(true)
 	m.keys.Quit.SetEnabled(true)
@@ -170,9 +176,12 @@ func (m *Model) updateKeyStates() {
 	m.keys.ScrollUp.SetEnabled(true)
 	m.keys.Back.SetEnabled(true)
 
-	m.keys.Kill.SetEnabled(false)
-	m.keys.Continue.SetEnabled(false)
-	m.keys.Restart.SetEnabled(false)
+	m.keys.Kill.SetEnabled(selected != nil && selected.State == worker.StateRunning)
+	m.keys.Continue.SetEnabled(selected != nil &&
+		(selected.State == worker.StateExited || selected.State == worker.StateFailed) &&
+		selected.SessionID != "")
+	m.keys.Restart.SetEnabled(selected != nil &&
+		(selected.State == worker.StateFailed || selected.State == worker.StateKilled))
 	m.keys.Batch.SetEnabled(false)
 	m.keys.Fullscreen.SetEnabled(false)
 	m.keys.HalfDown.SetEnabled(false)

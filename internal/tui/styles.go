@@ -14,6 +14,7 @@ import (
 	"github.com/lucasb-eyer/go-colorful"
 	"github.com/muesli/gamut"
 
+	"github.com/user/kasmos/internal/task"
 	"github.com/user/kasmos/internal/worker"
 )
 
@@ -257,25 +258,15 @@ func statusIndicator(state worker.WorkerState, exitCode int) string {
 	}
 }
 
-type TaskState int
-
-const (
-	TaskUnassigned TaskState = iota
-	TaskBlocked
-	TaskInProgress
-	TaskDone
-	TaskFailed
-)
-
-func taskStatusBadge(state TaskState, blockingDep string) string {
+func taskStatusBadge(state task.TaskState, blockingDep string) string {
 	switch state {
-	case TaskDone:
+	case task.TaskDone:
 		return lipgloss.NewStyle().Foreground(colorDone).Render("✓ done")
-	case TaskInProgress:
+	case task.TaskInProgress:
 		return lipgloss.NewStyle().Foreground(colorRunning).Render("⟳ in-progress")
-	case TaskBlocked:
+	case task.TaskBlocked:
 		return lipgloss.NewStyle().Foreground(colorOrange).Render(fmt.Sprintf("⊘ blocked (%s)", blockingDep))
-	case TaskFailed:
+	case task.TaskFailed:
 		return lipgloss.NewStyle().Foreground(colorFailed).Render("✗ failed")
 	default:
 		return lipgloss.NewStyle().Foreground(colorPending).Render("○ unassigned")

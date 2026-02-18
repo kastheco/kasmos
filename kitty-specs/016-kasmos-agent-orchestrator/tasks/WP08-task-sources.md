@@ -1,27 +1,32 @@
 ---
-work_package_id: "WP08"
-title: "Task Source Framework + Adapters"
-lane: "planned"
+work_package_id: WP08
+title: Task Source Framework + Adapters
+lane: doing
 dependencies:
-  - "WP02"
+- WP02
 subtasks:
-  - "internal/task/source.go - Source interface, Task struct, TaskState enum"
-  - "internal/task/speckitty.go - SpecKittySource (YAML frontmatter parser)"
-  - "internal/task/gsd.go - GsdSource (checkbox markdown parser)"
-  - "internal/task/adhoc.go - AdHocSource (empty/noop)"
-  - "CLI argument parsing: detect source type from path"
-  - "Unit tests for all adapters"
-phase: "Wave 2 - Task Sources + Worker Management"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
+- internal/task/source.go - Source interface, Task struct, TaskState enum
+- internal/task/speckitty.go - SpecKittySource (YAML frontmatter parser)
+- internal/task/gsd.go - GsdSource (checkbox markdown parser)
+- internal/task/adhoc.go - AdHocSource (empty/noop)
+- 'CLI argument parsing: detect source type from path'
+- Unit tests for all adapters
+phase: Wave 2 - Task Sources + Worker Management
+assignee: ''
+agent: ''
+shell_pid: ''
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-17T00:00:00Z"
-    lane: "planned"
-    agent: "planner"
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-17T00:00:00Z'
+  lane: planned
+  agent: planner
+  action: Prompt generated via /spec-kitty.tasks
+- timestamp: '2026-02-18T14:12:30.527335431+00:00'
+  lane: doing
+  actor: manager
+  shell_pid: '472734'
+  action: transition active (Launching WP08 coder - task source framework + adapters)
 ---
 
 # Work Package Prompt: WP08 - Task Source Framework + Adapters

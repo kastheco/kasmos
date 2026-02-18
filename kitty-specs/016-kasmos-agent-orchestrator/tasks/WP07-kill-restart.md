@@ -1,25 +1,30 @@
 ---
-work_package_id: "WP07"
-title: "Kill + Restart Workers"
-lane: "planned"
+work_package_id: WP07
+title: Kill + Restart Workers
+lane: doing
 dependencies:
-  - "WP04"
+- WP04
 subtasks:
-  - "Kill worker handler (x key -> SIGTERM -> workerKilledMsg)"
-  - "Restart worker handler (r key -> spawn dialog pre-filled)"
-  - "Worker state transitions for killed/restarted"
-  - "Kill confirmation for running workers"
-phase: "Wave 2 - Task Sources + Worker Management"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
+- Kill worker handler (x key -> SIGTERM -> workerKilledMsg)
+- Restart worker handler (r key -> spawn dialog pre-filled)
+- Worker state transitions for killed/restarted
+- Kill confirmation for running workers
+phase: Wave 2 - Task Sources + Worker Management
+assignee: ''
+agent: ''
+shell_pid: ''
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-17T00:00:00Z"
-    lane: "planned"
-    agent: "planner"
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-17T00:00:00Z'
+  lane: planned
+  agent: planner
+  action: Prompt generated via /spec-kitty.tasks
+- timestamp: '2026-02-18T14:12:28.785022125+00:00'
+  lane: doing
+  actor: manager
+  shell_pid: '472734'
+  action: transition active (Launching WP07 coder - kill + restart workers)
 ---
 
 # Work Package Prompt: WP07 - Kill + Restart Workers
