@@ -9,6 +9,9 @@ build:
 install:
     go install ./cmd/kasmos
 
+# Build + install
+bi: build install
+
 # Run tests
 test:
     go test ./...
