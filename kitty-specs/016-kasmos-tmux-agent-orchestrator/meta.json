@@ -1,0 +1,10 @@
+{
+  "feature_number": "016",
+  "slug": "016-kasmos-tmux-agent-orchestrator",
+  "friendly_name": "kasmos - tmux agent orchestrator",
+  "mission": "software-dev",
+  "source_description": "i want to create this as a fresh program (current state can be used as reference of course) so it's a fully clean slate since the implementation has changed course so many times. create a spec outlining this new tmux-based approach with a tui. leave a research step to design the tui using a specialized agent",
+  "created_at": "2026-02-17T00:00:00Z",
+  "target_branch": "main",
+  "vcs": "git"
+}
