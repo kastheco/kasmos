@@ -1,108 +1,248 @@
-# Implementation Plan: [FEATURE]
-*Path: [templates/plan-template.md](templates/plan-template.md)*
+# Implementation Plan: kasmos - Agent Orchestrator
 
-
-**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
-**Input**: Feature specification from `/kitty-specs/[###-feature-name]/spec.md`
-
-**Note**: This template is filled in by the `/spec-kitty.plan` command. See `src/specify_cli/missions/software-dev/command-templates/plan.md` for the execution workflow.
-
-The planner will not begin until all planning questions have been answered—capture those answers in this document before progressing to later phases.
+**Branch**: `charm` | **Date**: 2026-02-17 | **Spec**: `kitty-specs/016-kasmos-agent-orchestrator/spec.md`
+**Input**: Feature specification from `kitty-specs/016-kasmos-agent-orchestrator/spec.md`
 
 ## Summary
 
-[Extract from feature spec: primary requirement + technical approach from research]
+kasmos is a complete rewrite of the Zellij/Rust agent orchestrator as a Go/bubbletea
+terminal application. It provides a TUI dashboard for spawning, monitoring, killing,
+and continuing concurrent AI coding agent sessions (OpenCode workers). The TUI is the
+orchestrator - no manager AI agent, zero token cost for orchestration, deterministic
+and instant.
+
+**Technical approach**: bubbletea Elm architecture drives the event loop. Workers are
+headless `opencode run` subprocesses with stdout/stderr captured via Go pipes. Session
+continuation (`--continue -s <id>`) replaces interactive terminal access. A pluggable
+`WorkerBackend` interface allows future backends (tmux) without TUI changes. Three task
+source adapters (spec-kitty, GSD, ad-hoc) connect orchestration to planning pipelines.
+
+**Design artifacts**: Four TUI design documents define the visual system
+(`design-artifacts/tui-layout-spec.md`, `tui-mockups.md`, `tui-keybinds.md`,
+`tui-styles.md`). A technical research document defines all Go interfaces, message
+types, JSON schemas, and package structure
+(`kitty-specs/016-kasmos-agent-orchestrator/research/tui-technical.md`).
 
 ## Technical Context
 
-<!--
-  ACTION REQUIRED: Replace the content in this section with the technical details
-  for the project. The structure here is presented in advisory capacity to guide
-  the iteration process.
--->
-
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
-**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
-**Project Type**: [single/web/mobile - determines source structure]  
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+**Language/Version**: Go 1.23+
+**Primary Dependencies**: bubbletea v2, lipgloss v2, bubbles, huh, cobra, gamut, go-isatty, yaml.v3
+**Storage**: File-based JSON (`.kasmos/session.json` for session persistence)
+**Testing**: `go test ./...`, standard library `testing`, table-driven tests, mock WorkerBackend for unit tests, integration tests gated by `KASMOS_INTEGRATION=1`
+**Target Platform**: Linux (primary), macOS (best-effort)
+**Project Type**: Single Go binary (CLI + TUI)
+**Performance Goals**: TUI responsive at all times; worker status updates within 1s; support 10+ concurrent workers
+**Constraints**: Zero token cost for orchestration; single binary with no runtime deps beyond opencode + git
+**Scale/Scope**: MVP covers P1+P2 user stories (6 of 9). P3 stories (daemon, persistence, SSH) are future waves.
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+| Principle | Status | Notes |
+|-----------|--------|-------|
+| Go 1.23+ | PASS | Locked in. go.mod will target 1.23. |
+| bubbletea/lipgloss/bubbles | PASS | All dependencies from charmbracelet ecosystem. |
+| OpenCode sole agent harness | PASS | Workers spawned via `opencode run`. No model-specific CLIs. |
+| `go test ./...` for testing | PASS | Standard library testing, table-driven, mock backend. |
+| TUI never blocks Update loop | PASS | All I/O via tea.Cmd. Worker output via goroutines + tea.Msg. |
+| Pluggable WorkerBackend | PASS | Interface defined in research. SubprocessBackend MVP. |
+| Linux primary, macOS secondary | PASS | No Linux-only syscalls in core. `Setpgid` has macOS equivalent. |
+| Single binary distribution | PASS | `go build ./cmd/kasmos` produces one binary. |
+| No secrets in persistence | PASS | session.json stores worker metadata, not credentials. |
+
+No violations. No complexity tracking needed.
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```
-kitty-specs/[###-feature]/
-├── plan.md              # This file (/spec-kitty.plan command output)
-├── research.md          # Phase 0 output (/spec-kitty.plan command)
-├── data-model.md        # Phase 1 output (/spec-kitty.plan command)
-├── quickstart.md        # Phase 1 output (/spec-kitty.plan command)
-├── contracts/           # Phase 1 output (/spec-kitty.plan command)
-└── tasks.md             # Phase 2 output (/spec-kitty.tasks command - NOT created by /spec-kitty.plan)
+kitty-specs/016-kasmos-agent-orchestrator/
+  plan.md              # This file
+  spec.md              # Feature specification (9 user stories, 15 FRs, 8 SCs)
+  project-context.md   # Architecture decisions, OpenCode reference
+  research/
+    tui-technical.md   # Go interfaces, Msg types, JSON schemas, package layout
+  checklists/
+    requirements.md    # Spec quality checklist
+  tasks/               # WP files (generated by /spec-kitty.tasks)
 ```
 
-### Source Code (repository root)
-<!--
-  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
-  for this feature. Delete unused options and expand the chosen structure with
-  real paths (e.g., apps/admin, packages/something). The delivered plan must
-  not include Option labels.
--->
+### Design Artifacts
 
 ```
-# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
-src/
-├── models/
-├── services/
-├── cli/
-└── lib/
-
-tests/
-├── contract/
-├── integration/
-└── unit/
-
-# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
-backend/
-├── src/
-│   ├── models/
-│   ├── services/
-│   └── api/
-└── tests/
-
-frontend/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── services/
-└── tests/
-
-# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
-api/
-└── [same as backend above]
-
-ios/ or android/
-└── [platform-specific structure: feature modules, UI flows, platform tests]
+design-artifacts/
+  tui-layout-spec.md   # Responsive layout system, breakpoints, dimension math
+  tui-mockups.md       # 12 ASCII mockups (dashboard, dialogs, overlays, daemon)
+  tui-keybinds.md      # Full keybind map, keys.go implementation, routing
+  tui-styles.md        # Color palette, component styles, status indicators
 ```
 
-**Structure Decision**: [Document the selected structure and reference the real
-directories captured above]
+### Source Code
 
-## Complexity Tracking
+```
+cmd/
+  kasmos/
+    main.go             # Entry point, flag parsing, tea.Program setup
 
-*Fill ONLY if Constitution Check has violations that must be justified*
+internal/
+  tui/
+    model.go            # Main Model struct, Init(), top-level Update(), View()
+    update.go           # Update dispatch (table, viewport, task, fullscreen)
+    keys.go             # keyMap, defaultKeyMap(), ShortHelp(), FullHelp()
+    styles.go           # lipgloss styles, colors, indicators, gradient
+    messages.go         # All tea.Msg type definitions
+    commands.go         # All tea.Cmd constructors (spawn, kill, read output)
+    layout.go           # Layout calculation, breakpoints, recalculateLayout()
+    panels.go           # Panel rendering (table, viewport, tasks, status bar)
+    overlays.go         # Overlay rendering (spawn dialog, continue, help, quit)
+    daemon.go           # Daemon mode event logging (NDJSON + human-readable)
+  worker/
+    backend.go          # WorkerBackend interface, SpawnConfig, WorkerHandle
+    subprocess.go       # SubprocessBackend (os/exec MVP implementation)
+    worker.go           # Worker struct, WorkerState enum, lifecycle
+    output.go           # OutputBuffer (thread-safe ring buffer)
+    session.go          # OpenCode session ID extraction from output
+    manager.go          # WorkerManager (tracks workers, generates IDs)
+  task/
+    source.go           # Source interface, Task struct, TaskState enum
+    speckitty.go        # SpecKittySource (reads plan.md + tasks/WP*.md)
+    gsd.go              # GsdSource (reads checkbox markdown)
+    adhoc.go            # AdHocSource (empty, manual prompts)
+  persist/
+    session.go          # SessionPersister (save/load, atomic write, debounce)
+    schema.go           # SessionState struct (maps to JSON schema)
+  setup/
+    setup.go            # Setup orchestration (validate deps, scaffold agents)
+    agents.go           # Agent definition templates (.opencode/agents/*.md)
+    deps.go             # Dependency validation (opencode, git)
 
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+go.mod
+go.sum
+```
+
+**Structure Decision**: Single Go binary with `internal/` packages for encapsulation.
+No monorepo, no separate frontend/backend. The TUI and worker management are in the
+same process. Package boundaries follow the architecture diagram: `tui/` owns the
+display, `worker/` owns process management, `task/` owns external data adapters,
+`persist/` owns serialization, `setup/` owns scaffolding. Cross-package communication
+is via Go interfaces and bubbletea messages.
+
+## Implementation Waves
+
+### Wave 1: Core TUI Shell + Worker Lifecycle (P1)
+
+Foundation: the TUI renders, workers spawn and produce visible output, sessions continue.
+This wave delivers User Stories 1, 2, and 3 (the core value proposition).
+
+**Dependencies**: None (greenfield)
+
+**Deliverables**:
+- `cmd/kasmos/main.go` - binary entry point with cobra root command
+- `internal/worker/` - full package: backend interface, subprocess impl, output buffer, worker types
+- `internal/tui/` - model, layout, styles, keys, panels (table + viewport), spawn dialog, continue dialog
+- `internal/tui/messages.go` + `commands.go` - worker lifecycle messages and commands
+
+**Acceptance**: Run `kasmos`, press `s` to spawn a worker, see output streaming in viewport,
+press `c` on a completed worker to continue its session. All 3 P1 user stories pass.
+
+### Wave 2: Task Sources + Worker Management (P2)
+
+Connects the orchestrator to planning pipelines and adds error recovery controls.
+This wave delivers User Stories 4, 5, and 6.
+
+**Dependencies**: Wave 1 (TUI shell + worker lifecycle must exist)
+
+**Deliverables**:
+- `internal/task/` - full package: source interface, spec-kitty adapter, GSD adapter, ad-hoc adapter
+- `internal/setup/` - full package: dep validation, agent scaffolding
+- TUI additions: task panel (wide mode), kill/restart actions, batch spawn, AI helpers (analyze, gen-prompt)
+
+**Acceptance**: Run `kasmos kitty-specs/016-kasmos-agent-orchestrator/`, see WPs in task panel,
+spawn from task. Kill a running worker, restart a failed one. Run `kasmos setup`, verify
+agent definitions created.
+
+### Wave 3: Daemon Mode + Persistence (P3)
+
+Production hardening: headless operation for CI, session survival across disconnects.
+This wave delivers User Stories 7 and 8.
+
+**Dependencies**: Wave 2 (task sources and full worker management)
+
+**Deliverables**:
+- `internal/tui/daemon.go` - daemon mode event logging
+- `internal/persist/` - full package: session state persistence, reattach
+- `cmd/kasmos/main.go` additions: `-d` flag, `--attach` flag, `--format` flag
+- Graceful shutdown protocol (SIGTERM -> grace -> SIGKILL -> persist)
+
+**Acceptance**: Run `kasmos -d --format json`, see NDJSON events on stdout.
+Kill TUI, run `kasmos --attach`, see restored worker states.
+
+### Future (not in this plan)
+
+- **User Story 9**: SSH access via charmbracelet/wish
+- **TmuxBackend**: Alternative WorkerBackend for persistent panes
+- **Plugin system**: User-defined task source adapters
+
+## Key Design Decisions
+
+### 1. Worker output is captured via merged stdout+stderr pipe
+
+Workers produce a single output stream. We merge stderr into stdout at spawn time
+(`cmd.Stderr = cmd.Stdout`) so the OutputBuffer and viewport show everything in order.
+This avoids the complexity of interleaving two streams.
+
+### 2. Session ID is extracted by regex from output
+
+OpenCode prints session info at run start. We parse it with a regex
+(`session:\s+(ses_[a-zA-Z0-9]+)`) from the output stream. If extraction fails
+(output format changes, worker crashes early), continuation is unavailable for
+that worker - the TUI shows the Continue action as disabled.
+
+### 3. Spawn dialog uses huh forms, not raw textinput
+
+The spawn dialog has multiple fields (role selector, multiline prompt, file paths).
+huh provides a form abstraction with tab navigation, validation, and the ThemeCharm()
+aesthetic. This is more maintainable than wiring up individual bubbles components.
+
+### 4. Table uses bubbles/table, not bubbles/list
+
+The worker list is tabular data (columns: ID, status, role, duration, task). bubbles/table
+provides column-aware rendering, header styling, and width management. bubbles/list is
+used only for the task panel where items are multi-line (title + description + deps + status).
+
+### 5. Layout is computed, not hardcoded
+
+`recalculateLayout()` runs on every `tea.WindowSizeMsg`. It picks a layout mode
+(narrow/standard/wide) based on terminal width, computes panel dimensions with explicit
+math (see `design-artifacts/tui-layout-spec.md`), and applies them to sub-models.
+No magic constants scattered through View().
+
+### 6. Worker tree rendering for continuation chains
+
+Continuation workers display as tree children in the table: `w-002` -> `+-w-005` -> `| +-w-006`.
+This is rendered by preprocessing the worker list into a flat display order with tree glyphs
+prepended to the ID column. The table itself is still flat - tree structure is visual only.
+
+## Risk Register
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| OpenCode CLI changes `run` flags | Workers fail to spawn | Pin to OpenCode version range. Validate flags at startup in `kasmos setup`. |
+| OpenCode session ID format changes | Continuation breaks | Regex extraction with fallback. Warn user if extraction fails. |
+| bubbletea v2 breaking changes (still beta) | TUI breaks on upgrade | Pin exact version in go.mod. Upgrade deliberately. |
+| Large worker output causes OOM | TUI crashes | OutputBuffer ring buffer with configurable max (default 5000 lines). |
+| Concurrent goroutine leaks from workers | Memory grows | Context cancellation on worker kill. Shutdown protocol force-kills after timeout. |
+| huh forms block TUI rendering | Dashboard freezes | huh runs as a sub-model within the bubbletea Update loop, not blocking. |
+
+## Reference Documents
+
+- **Spec**: `kitty-specs/016-kasmos-agent-orchestrator/spec.md`
+- **Architecture context**: `kitty-specs/016-kasmos-agent-orchestrator/project-context.md`
+- **Technical contracts**: `kitty-specs/016-kasmos-agent-orchestrator/research/tui-technical.md`
+- **Layout specification**: `design-artifacts/tui-layout-spec.md`
+- **View mockups**: `design-artifacts/tui-mockups.md`
+- **Keybinding specification**: `design-artifacts/tui-keybinds.md`
+- **Style specification**: `design-artifacts/tui-styles.md`
+- **Constitution**: `.kittify/memory/constitution.md`

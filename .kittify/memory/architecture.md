@@ -2,164 +2,161 @@
 
 > Codebase discoveries and architectural knowledge accumulated during development.
 > This file is the authority on how kasmos internals work and interact.
-> Updated: 2026-02-16
+> Updated: 2026-02-17
 
 ## System Overview
 
-kasmos is an MCP-first orchestration CLI. It has three runtime modes:
+kasmos is a Go/bubbletea TUI-based agent orchestrator. It manages concurrent AI coding
+agent sessions (OpenCode workers) from a terminal dashboard. The human drives orchestration
+directly -- no manager AI agent, zero token cost for orchestration.
 
-1. **Bootstrap/launcher** (`kasmos [PREFIX]`) -- resolves a feature spec, runs preflight checks, acquires a feature lock, generates a KDL layout, and creates a Zellij session/tab with a manager agent pane, message-log pane, dashboard pane, and worker area.
-2. **MCP server** (`kasmos serve`) -- stdio transport server providing tools for worker lifecycle, message reading, workflow status, WP lane transitions, and feature lock management. Spawned as a subprocess by the manager agent (not as a separate pane).
-3. **Utilities** (`kasmos setup`, `kasmos list`, `kasmos status`) -- environment validation, feature listing, and progress reporting.
+### Runtime Modes
 
-Legacy FIFO command handling, TUI modules, and the old wave-engine orchestration path were removed from the crate. kasmos now runs only through launch + MCP server flows.
+1. **TUI mode** (`kasmos [path]`) - Interactive terminal dashboard with worker table,
+   output viewport, task panel. Responsive layout at 4 breakpoints.
+2. **Daemon mode** (`kasmos -d`) - Same Model/Update loop, no View rendering
+   (`WithoutRenderer()`). Status events logged to stdout as NDJSON or human-readable text.
+3. **Setup** (`kasmos setup`) - Scaffolds `.opencode/agents/*.md` definitions and validates
+   dependencies (opencode, git).
+4. **Reattach** (`kasmos --attach`) - Reconnects TUI to a running daemon session,
+   restoring worker states from `.kasmos/session.json`.
 
-## Worktree Structure
-
-kasmos uses git worktrees for WP isolation during orchestration.
-
-- Location: `<repo_root>/.worktrees/<feature_slug>-<wp_id>/`
-- Each worktree is a full repo checkout on its own branch.
-- The worktree contains its own copy of `kitty-specs/` files.
-- The `.kittify/memory/` directory inside worktrees is a **symlink** back to the main repo's `.kittify/memory/`, so constitution and memory are shared.
-
-### Worktree vs main repo file paths
-
-This is a critical distinction that affects multiple subsystems:
-
-- **Main repo** `kitty-specs/<slug>/tasks/WPxx.md` -- the canonical task files, versioned in git.
-- **Worktree** `.worktrees/<slug>-<wp_id>/kitty-specs/<slug>/tasks/WPxx.md` -- the agent's working copy.
-
-When an agent modifies a task file (e.g., moving its lane from `doing` to `for_review`), it modifies the **worktree copy**, not the main repo copy. Any subsystem that inspects task changes must read from the worktree path, not the main repo path, when worktrees are in use.
-
-## Zellij Integration
-
-### Session architecture (MCP era)
-
-- `kasmos [PREFIX]` creates or attaches to a Zellij session named per `config.session.session_name` (default: `kasmos`).
-- If already inside Zellij, it creates a new tab instead of a new session (`launch/session.rs`).
-- The layout has a fixed top row (22% height) with three panes: **manager** (left), **msg-log** (center), **dashboard** (right). Below is the **worker-area** where worker panes are dynamically spawned.
-- `swap_tiled_layout` rules handle reflowing as workers are added/removed (up to `max_parallel_workers + 3` panes).
-- The session starts in Zellij `locked` mode to avoid accidental keybind interference.
-
-### Layout structure (from `launch/layout.rs`)
+## Package Architecture
 
 ```
-+---manager(60%)---+--msg-log(20%)--+--dashboard(20%)--+  <- 22% height
-|                                                       |
-|                    worker-area                         |  <- remaining
-|                                                       |
-+-------------------------------------------------------+
+cmd/kasmos/main.go          Entry point, cobra commands, tea.Program setup
+internal/tui/               bubbletea TUI (Elm architecture)
+  model.go                  Main Model struct, Init(), Update(), View()
+  update.go                 Update dispatch per panel/overlay
+  keys.go                   keyMap with context-dependent activation
+  styles.go                 lipgloss palette, component styles, indicators
+  messages.go               All tea.Msg types (worker, UI, overlay, task, persist)
+  commands.go               All tea.Cmd constructors
+  layout.go                 Responsive breakpoints, dimension math
+  panels.go                 Panel rendering (table, viewport, tasks, status bar)
+  overlays.go               Overlays (spawn dialog, continue, help, quit confirm)
+  daemon.go                 Daemon mode event logging
+internal/worker/            Worker process management
+  backend.go                WorkerBackend interface
+  subprocess.go             SubprocessBackend (os/exec)
+  worker.go                 Worker struct, WorkerState state machine
+  output.go                 OutputBuffer (thread-safe ring buffer)
+  session.go                OpenCode session ID extraction
+  manager.go                WorkerManager (ID generation, worker tracking)
+internal/task/              Task source adapters
+  source.go                 Source interface, Task struct, TaskState
+  speckitty.go              SpecKittySource (plan.md + tasks/WP*.md frontmatter)
+  gsd.go                    GsdSource (checkbox markdown)
+  adhoc.go                  AdHocSource (empty, manual prompts)
+internal/persist/           Session persistence
+  session.go                SessionPersister (debounced atomic JSON writes)
+  schema.go                 SessionState struct
+internal/setup/             Setup command
+  setup.go                  Orchestration (deps + scaffolding)
+  agents.go                 Agent definition templates
+  deps.go                   Dependency validation
 ```
 
-Width percentages are configurable via `session.manager_width_pct` and `session.message_log_width_pct`. Dashboard gets the remainder.
+## Worker Lifecycle
 
-### Manager pane command
+```
+StatePending -> StateSpawning -> StateRunning --+--> StateExited (code 0)
+                                                +--> StateFailed (code != 0)
+                                                +--> StateKilled (user kill)
+```
 
-The manager pane runs `ocx oc [-p <profile>] -- --agent manager --prompt <prompt>`. The prompt is built by `RolePromptBuilder` with a phase hint (specify/plan/tasks/implement) derived from which artifacts exist in the feature directory.
+Workers are spawned as child processes via `opencode run --agent <role> "prompt"`.
+Stdout and stderr are merged into a single pipe, read by a goroutine that sends
+`workerOutputMsg` through `tea.Program.Send()`. When the process exits, a
+`workerExitedMsg` is sent with the exit code and parsed session ID.
 
-`kasmos serve` is NOT a pane command -- it runs as an MCP stdio subprocess owned by the manager agent's OpenCode/Claude Code profile config.
+Continuation: `opencode run --continue -s <session_id> "follow-up message"` spawns
+a NEW worker (new ID, new process) that preserves the parent session's full context.
+The child worker's `ParentID` field links it to its parent for tree display.
 
-### Zellij CLI limitations (v0.41+)
+## Key Interfaces
 
-- There is **no** `list-panes` or `focus-pane-by-name` CLI command.
-- Inside a Zellij session, use `zellij action <cmd>` directly (no `--session` flag needed).
-- From outside a session, use `zellij --session <name> action <cmd>`.
-- Worker panes are tracked by the MCP server's `WorkerRegistry` (in-memory HashMap keyed by `wp_id:role`), not by Zellij introspection.
+### WorkerBackend
 
-## MCP Server Architecture
+```go
+type WorkerBackend interface {
+    Spawn(ctx context.Context, cfg SpawnConfig) (WorkerHandle, error)
+    Name() string
+}
+```
 
-### Server (`serve/mod.rs`)
+MVP: `SubprocessBackend` (os/exec). Future: `TmuxBackend`.
 
-`KasmosServer` is an `rmcp` server with stdio transport. State:
-- `config: Config` -- loaded from `kasmos.toml` + env
-- `registry: Arc<RwLock<WorkerRegistry>>` -- tracks spawned workers
-- `message_cursor: Arc<RwLock<u64>>` -- tracks read position in message log
-- `feature_slug: Option<String>` -- inferred from `specs_root` path
-- `audit: Arc<Mutex<Option<AuditWriter>>>` -- per-feature audit log
+### Source (Task)
 
-### MCP tools (9 registered)
+```go
+type Source interface {
+    Type() string    // "spec-kitty", "gsd", "ad-hoc"
+    Path() string    // file/directory path
+    Load() ([]Task, error)
+    Tasks() []Task
+}
+```
 
-| Tool | Purpose |
-|------|---------|
-| `spawn_worker` | Create a planner/coder/reviewer/release worker pane |
-| `despawn_worker` | Close a worker pane and remove from registry |
-| `list_workers` | List tracked workers with status filter |
-| `read_messages` | Parse message-log pane events |
-| `wait_for_event` | Block until matching event or timeout |
-| `workflow_status` | Return feature phase, wave status, lock metadata |
-| `transition_wp` | Validate and apply WP lane transitions in task files |
-| `list_features` | List known specs and artifact availability |
-| `infer_feature` | Resolve feature slug from arg, branch, or cwd |
+### bubbletea Message Flow
 
-### Agent roles
+```
+User input (tea.KeyMsg) -> Update() -> tea.Cmd (side effect) -> tea.Msg (result) -> Update() -> View()
+Worker event flow: spawnWorkerCmd -> workerSpawnedMsg -> readOutputCmd -> workerOutputMsg(loop) -> workerExitedMsg
+Timer: tea.Tick(1s) -> tickMsg (duration refresh)
+Spinner: spinner.Tick -> spinner.TickMsg (animation)
+```
 
-Defined in `serve/registry.rs`. Worker roles: `planner`, `coder`, `reviewer`, `release`. The `Manager` role exists in `prompt.rs` but is never a registry worker -- it's the orchestrator agent that calls MCP tools.
+## Task Source Patterns
 
-### Context boundaries (`prompt.rs`)
+### spec-kitty (SpecKittySource)
 
-Each role gets different context injected into its prompt:
+Reads `kitty-specs/<slug>/` directory:
+- `plan.md` for WP summaries (markdown, not structured)
+- `tasks/WP*.md` for work packages with YAML frontmatter
 
-| Context | Manager | Planner | Coder | Reviewer | Release |
-|---------|---------|---------|-------|----------|---------|
-| spec.md | yes | yes | no | no | no |
-| plan.md | yes | yes | no | no | no |
-| all tasks | yes | no | no | no | yes |
-| architecture memory | yes | yes | yes | yes | no |
-| workflow intelligence | yes | yes | no | no | no |
-| constitution | yes | yes | yes | yes | yes |
-| project structure | yes | yes | no | no | yes |
-| WP task file | no | no | yes | yes | no |
-| coding standards | no | no | yes | yes | no |
+Frontmatter fields: `work_package_id`, `title`, `dependencies`, `lane`, `subtasks`, `phase`
+Lane mapping: planned -> TaskUnassigned, doing -> TaskInProgress, for_review -> TaskInProgress, done -> TaskDone
+Role inference from phase: spec/clarifying -> planner, implementation -> coder, reviewing -> reviewer, releasing -> release
 
-## Configuration
+### GSD (GsdSource)
 
-Config is loaded from `kasmos.toml` (discovered by walking up from CWD) with `KASMOS_*` env var overrides. Key sections:
+Reads a markdown file with checkboxes:
+```
+- [ ] Implement auth   -> Task{ID: "T-001", State: TaskUnassigned}
+- [x] Review PR #42    -> Task{ID: "T-002", State: TaskDone}
+```
 
-| Section | Key fields | Location |
-|---------|-----------|----------|
-| `[agent]` | `max_parallel_workers`, `opencode_binary`, `opencode_profile`, `review_rejection_cap` | `config.rs:51` |
-| `[communication]` | `poll_interval_secs`, `event_timeout_secs` | `config.rs:64` |
-| `[paths]` | `zellij_binary`, `spec_kitty_binary`, `specs_root` | `config.rs:73` |
-| `[session]` | `session_name`, `manager_width_pct`, `message_log_width_pct`, `max_workers_per_row` | `config.rs:84` |
-| `[audit]` | `metadata_only`, `debug_full_payload`, `max_bytes`, `max_age_days` | `config.rs:97` |
-| `[lock]` | `stale_timeout_minutes` | `config.rs:110` |
+### Ad-hoc (AdHocSource)
 
-Legacy flat keys (`max_agent_panes`, `controller_width_pct`, etc.) are still accepted for backward compatibility and synced into the sectioned fields.
+No file. Empty task list. Workers spawned with manual prompts only.
 
-## Key Type Definitions
+## Session Persistence
 
-| Type | Location | Notes |
-|------|----------|-------|
-| `KasmosServer` | `serve/mod.rs` | MCP server with tool router, registry, audit |
-| `WorkerRegistry` | `serve/registry.rs` | In-memory worker tracking, keyed by `wp_id:role` |
-| `WorkerEntry` | `serve/registry.rs` | Worker metadata: role, pane_name, status, events |
-| `AgentRole` (worker) | `serve/registry.rs` | Planner, Coder, Reviewer, Release |
-| `AgentRole` (prompt) | `prompt.rs` | Adds Manager variant for orchestrator prompts |
-| `OrchestrationLayout` | `launch/layout.rs` | KDL layout builder with swap-tiled reflow |
-| `ManagerCommand` | `launch/layout.rs` | Manager pane command (binary, profile, prompt) |
-| `RolePromptBuilder` | `prompt.rs` | Context-boundary-aware prompt construction |
-| `FeatureLockManager` | `serve/lock.rs` | Per-feature lock with heartbeat and stale detection |
-| `Config` | `config.rs` | Sectioned TOML config with env overrides |
-| `WorkPackage` | `types.rs` | Has `pane_id: Option<u32>`, `worktree_path`, `pane_name` |
-| `FeatureDetection` | `launch/detect.rs` | Feature resolution result from arg/branch/cwd |
-| `FeatureSource` | `launch/detect.rs` | Source enum for feature detection priority |
+State persisted to `.kasmos/session.json`:
+- Schema version 1
+- Session ID (ks-timestamp-random)
+- All workers (active + historical) with output tails
+- Task source configuration
+- PID for reattach detection
 
-## Agent Permissions and External Directories
+Write behavior: debounced to 1 write/second, atomic (write .tmp then rename).
+Reattach: if session.json exists and PID is alive, connect to running session.
+Orphan recovery: if PID is dead, mark running workers as killed, assign new PID.
 
-### Problem discovered (2026-02-14)
+## Design Reference
 
-Agents running in worktrees (e.g., `.worktrees/011-...-WP02/`) need read access to paths outside their CWD -- specifically the main repo's `kitty-specs/` directory (which is gitignored and doesn't exist in worktrees) and `/tmp/` (where spec-kitty writes review prompts).
+Visual design defined in `design-artifacts/`:
+- `tui-layout-spec.md` - 4 responsive breakpoints, dimension math, focus system
+- `tui-mockups.md` - 12 ASCII mockups covering all view states
+- `tui-keybinds.md` - Full keybind map with implementation code
+- `tui-styles.md` - Charm bubblegum palette, component styles, status indicators
 
-OpenCode's `external_directory` permission config does **not** expand `~` to the home directory. Paths like `"~/dev/kasmos/**": "allow"` silently fail to match absolute paths like `/home/kas/dev/kasmos/kitty-specs/...`, causing `auto-rejecting` when the agent runs non-interactively (e.g., `ocx oc -- run`).
-
-**Fix**: Always use fully-qualified absolute paths in `external_directory` rules.
-
-### Paths agents commonly need
-
-| Path | Who needs it | Why |
-|------|-------------|-----|
-| `/home/kas/dev/kasmos/**` (main repo) | All agents | `kitty-specs/`, `.kittify/memory/`, docs |
-| `/tmp/*`, `/tmp/**` | All agents | spec-kitty review prompts, temp files |
-| `~/.config/opencode/**` | All agents | Self-reference for config |
-| `~/.config/zellij/**` | Manager, release | Layout management |
+Technical contracts in `kitty-specs/016-kasmos-agent-orchestrator/research/tui-technical.md`:
+- Go interface definitions (WorkerBackend, Source, WorkerHandle)
+- Complete tea.Msg type catalog (20+ types)
+- Session persistence JSON schema
+- Daemon mode NDJSON event schema
+- Output buffer ring design
+- Graceful shutdown protocol
+- Package structure
