@@ -99,6 +99,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if key.Matches(msg, m.keys.CycleMode) {
+			m.cycleDashboardMode()
+			return m, nil
+		}
+
 		if key.Matches(msg, m.keys.New) {
 			return m, m.openNewDialog()
 		}
@@ -609,14 +614,28 @@ func (m *Model) refreshViewportFromSelected(autoFollow bool) {
 		return
 	}
 	content := w.Output.Content()
+
+	// Prepend prompt header
+	var header strings.Builder
 	if w.ParentID != "" {
 		parentRole := "unknown"
 		if parent := m.manager.Get(w.ParentID); parent != nil {
 			parentRole = parent.Role
 		}
-		line := lipgloss.NewStyle().Foreground(colorMidGray).Faint(true).
-			Render(fmt.Sprintf("← continued from %s (%s)", w.ParentID, parentRole))
-		content = line + "\n" + content
+		header.WriteString(lipgloss.NewStyle().Foreground(colorMidGray).Faint(true).
+			Render(fmt.Sprintf("← continued from %s (%s)", w.ParentID, parentRole)))
+		header.WriteString("\n")
+	}
+	if strings.TrimSpace(w.Prompt) != "" {
+		promptLabel := lipgloss.NewStyle().Foreground(colorMidGray).Bold(true).Render("prompt:")
+		promptText := lipgloss.NewStyle().Foreground(colorLightGray).Render(w.Prompt)
+		header.WriteString(fmt.Sprintf("%s %s", promptLabel, promptText))
+		header.WriteString("\n")
+		header.WriteString(lipgloss.NewStyle().Foreground(colorDarkGray).Render(strings.Repeat("─", min(60, m.viewportInnerWidth))))
+		header.WriteString("\n")
+	}
+	if header.Len() > 0 {
+		content = header.String() + content
 	}
 	m.setViewportContent(content, autoFollow)
 }
@@ -686,10 +705,6 @@ func (m *Model) updateFullScreenKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) updateTableKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.analysisMode {
 		return m.handleAnalysisModeKeys(msg)
-	}
-
-	if key.Matches(msg, m.keys.Spawn) {
-		return m, m.openSpawnDialog()
 	}
 
 	if key.Matches(msg, m.keys.Continue) {
@@ -817,7 +832,7 @@ func (m *Model) updateTaskPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.updateKeyStates()
 		return m, nil
-	case key.Matches(msg, m.keys.Select), key.Matches(msg, m.keys.Spawn):
+	case key.Matches(msg, m.keys.Select):
 		if m.selectedTaskIdx >= 0 && m.selectedTaskIdx < len(m.loadedTasks) {
 			t := m.loadedTasks[m.selectedTaskIdx]
 			if t.State == task.TaskUnassigned {
@@ -1078,4 +1093,42 @@ func (m *Model) selectTaskForPromptGen() *task.Task {
 	}
 
 	return &m.loadedTasks[0]
+}
+
+func (m *Model) cycleDashboardMode() {
+	current := m.modeName()
+	order := []string{"spec-kitty", "gsd", "yolo"}
+
+	idx := 0
+	for i, name := range order {
+		if name == current {
+			idx = i
+			break
+		}
+	}
+
+	// Try each mode in cycle order, skip modes without a detectable source.
+	for range len(order) {
+		idx = (idx + 1) % len(order)
+		next := order[idx]
+
+		switch next {
+		case "spec-kitty":
+			if source := task.AutoDetectSpecKitty(); source != nil {
+				m.swapTaskSource(source)
+				return
+			}
+		case "gsd":
+			if source := task.AutoDetectGSD(); source != nil {
+				m.swapTaskSource(source)
+				return
+			}
+		case "yolo":
+			m.swapTaskSource(&task.YoloSource{})
+			return
+		}
+	}
+
+	// Fallback: yolo always available.
+	m.swapTaskSource(&task.YoloSource{})
 }

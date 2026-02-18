@@ -29,7 +29,7 @@ func TestNewModelDefaults(t *testing.T) {
 	if m.manager == nil {
 		t.Fatal("manager was not initialized")
 	}
-	if len(m.keys.Spawn.Keys()) == 0 || len(m.keys.Kill.Keys()) == 0 || len(m.keys.Help.Keys()) == 0 {
+	if len(m.keys.New.Keys()) == 0 || len(m.keys.Kill.Keys()) == 0 || len(m.keys.Help.Keys()) == 0 {
 		t.Fatal("expected key bindings to be initialized")
 	}
 }
@@ -159,8 +159,8 @@ func TestUpdateKeyStates(t *testing.T) {
 			},
 			assert: func(t *testing.T, m *Model) {
 				t.Helper()
-				if !m.keys.Spawn.Enabled() {
-					t.Fatal("spawn should be enabled")
+				if !m.keys.New.Enabled() {
+					t.Fatal("new should be enabled")
 				}
 				if m.keys.Kill.Enabled() || m.keys.Continue.Enabled() || m.keys.Restart.Enabled() || m.keys.Analyze.Enabled() {
 					t.Fatal("kill/continue/restart/analyze should be disabled")
@@ -234,7 +234,7 @@ func TestUpdateKeyStates(t *testing.T) {
 				if !m.keys.Back.Enabled() {
 					t.Fatal("back should be enabled in analysis mode")
 				}
-				if m.keys.Spawn.Enabled() || m.keys.Kill.Enabled() || m.keys.Continue.Enabled() || m.keys.Analyze.Enabled() || m.keys.Fullscreen.Enabled() || m.keys.NextPanel.Enabled() || m.keys.PrevPanel.Enabled() {
+				if m.keys.New.Enabled() || m.keys.Kill.Enabled() || m.keys.Continue.Enabled() || m.keys.Analyze.Enabled() || m.keys.Fullscreen.Enabled() || m.keys.NextPanel.Enabled() || m.keys.PrevPanel.Enabled() {
 					t.Fatal("most non-back actions should be disabled in analysis mode")
 				}
 			},

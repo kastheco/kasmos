@@ -15,16 +15,16 @@ type keyMap struct {
 	NextPanel key.Binding
 	PrevPanel key.Binding
 
-	Spawn    key.Binding
-	Kill     key.Binding
-	MarkDone key.Binding
-	Continue key.Binding
-	Restart  key.Binding
-	Approve  key.Binding
-	Reject   key.Binding
-	Batch    key.Binding
-	New      key.Binding
-	History  key.Binding
+	New       key.Binding
+	Kill      key.Binding
+	MarkDone  key.Binding
+	Continue  key.Binding
+	Restart   key.Binding
+	Approve   key.Binding
+	Reject    key.Binding
+	Batch     key.Binding
+	CycleMode key.Binding
+	History   key.Binding
 
 	Fullscreen key.Binding
 	ScrollDown key.Binding
@@ -65,9 +65,9 @@ func defaultKeyMap() keyMap {
 			key.WithKeys("shift+tab", "left"),
 			key.WithHelp("s-tab/left", "prev panel"),
 		),
-		Spawn: key.NewBinding(
-			key.WithKeys("s"),
-			key.WithHelp("s", "spawn worker"),
+		New: key.NewBinding(
+			key.WithKeys("n"),
+			key.WithHelp("n", "new task"),
 		),
 		Kill: key.NewBinding(
 			key.WithKeys("x"),
@@ -86,20 +86,20 @@ func defaultKeyMap() keyMap {
 			key.WithHelp("r", "restart worker"),
 		),
 		Approve: key.NewBinding(
-			key.WithKeys("y"),
-			key.WithHelp("y", "approve task"),
+			key.WithKeys("a"),
+			key.WithHelp("a", "approve task"),
 		),
 		Reject: key.NewBinding(
-			key.WithKeys("!"),
-			key.WithHelp("!", "reject task"),
+			key.WithKeys("r"),
+			key.WithHelp("r", "reject task"),
 		),
 		Batch: key.NewBinding(
 			key.WithKeys("b"),
 			key.WithHelp("b", "batch spawn"),
 		),
-		New: key.NewBinding(
-			key.WithKeys("n"),
-			key.WithHelp("n", "new spec/plan"),
+		CycleMode: key.NewBinding(
+			key.WithKeys("ctrl+space"),
+			key.WithHelp("c-spc", "cycle mode"),
 		),
 		History: key.NewBinding(
 			key.WithKeys("h"),
@@ -174,9 +174,9 @@ func defaultKeyMap() keyMap {
 
 func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
-		k.Spawn, k.Kill, k.MarkDone, k.Restart, k.Continue,
+		k.New, k.Kill, k.MarkDone, k.Restart, k.Continue,
 		k.Approve, k.Reject,
-		k.New, k.History,
+		k.CycleMode, k.History,
 		k.NextPanel, k.Fullscreen,
 		k.Help, k.Quit,
 	}
@@ -185,7 +185,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.NextPanel, k.PrevPanel, k.Select, k.Back},
-		{k.Spawn, k.Kill, k.MarkDone, k.Continue, k.Restart, k.Approve, k.Reject, k.Batch, k.New, k.History, k.GenPrompt, k.Analyze},
+		{k.New, k.Kill, k.MarkDone, k.Continue, k.Restart, k.Approve, k.Reject, k.Batch, k.CycleMode, k.History, k.GenPrompt, k.Analyze},
 		{k.Fullscreen, k.ScrollDown, k.ScrollUp, k.HalfDown, k.HalfUp, k.GotoBottom, k.GotoTop},
 		{k.Help, k.Quit, k.ForceQuit},
 	}
@@ -193,8 +193,8 @@ func (k keyMap) FullHelp() [][]key.Binding {
 
 func (m *Model) updateKeyStates() {
 	// Always enabled
-	m.keys.Spawn.SetEnabled(true)
 	m.keys.New.SetEnabled(true)
+	m.keys.CycleMode.SetEnabled(true)
 	m.keys.History.SetEnabled(true)
 	m.keys.Help.SetEnabled(true)
 	m.keys.Quit.SetEnabled(true)
@@ -206,8 +206,8 @@ func (m *Model) updateKeyStates() {
 	m.keys.Back.SetEnabled(true)
 
 	if m.analysisMode {
-		m.keys.Spawn.SetEnabled(false)
 		m.keys.New.SetEnabled(false)
+		m.keys.CycleMode.SetEnabled(false)
 		m.keys.History.SetEnabled(false)
 		m.keys.Kill.SetEnabled(false)
 		m.keys.MarkDone.SetEnabled(false)
@@ -293,6 +293,7 @@ func (m *Model) updateKeyStates() {
 
 	overlayActive := m.showHelp || m.showSpawnDialog || m.showContinueDialog || m.showBatchDialog || m.showQuitConfirm || m.showNewDialog || m.showHistory
 	m.keys.New.SetEnabled(!overlayActive)
+	m.keys.CycleMode.SetEnabled(!overlayActive)
 	m.keys.History.SetEnabled(!overlayActive && !m.fullScreen)
 }
 

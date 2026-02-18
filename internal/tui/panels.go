@@ -36,7 +36,7 @@ func (m *Model) renderWorkerTable() string {
 	if len(m.table.Rows()) == 0 {
 		empty := lipgloss.NewStyle().Foreground(colorMidGray).Render("no workers yet") +
 			"\n\n" +
-			lipgloss.NewStyle().Foreground(colorLightGray).Render("press s to spawn your first worker")
+			lipgloss.NewStyle().Foreground(colorLightGray).Render("press n to create your first task")
 		body = lipgloss.Place(m.tableInnerWidth, max(1, m.tableInnerHeight-1), lipgloss.Center, lipgloss.Center, empty)
 	}
 

@@ -86,10 +86,26 @@ func DetectSourceType(path string) (Source, error) {
 }
 
 func AutoDetect() Source {
-	if source := autoDetectSpecKittySource(); source != nil {
+	if source := AutoDetectSpecKitty(); source != nil {
 		return source
 	}
 
+	if source := AutoDetectGSD(); source != nil {
+		return source
+	}
+
+	return &YoloSource{}
+}
+
+// AutoDetectSpecKitty looks for a spec-kitty feature directory in kitty-specs/.
+// Returns nil if none found.
+func AutoDetectSpecKitty() Source {
+	return autoDetectSpecKittySource()
+}
+
+// AutoDetectGSD looks for common GSD markdown files (tasks.md, todo.md, TODO.md).
+// Returns nil if none found.
+func AutoDetectGSD() Source {
 	for _, candidate := range []string{"tasks.md", "todo.md", "TODO.md"} {
 		info, err := os.Stat(candidate)
 		if err != nil || info.IsDir() {
@@ -97,8 +113,7 @@ func AutoDetect() Source {
 		}
 		return &GsdSource{FilePath: candidate}
 	}
-
-	return &YoloSource{}
+	return nil
 }
 
 type autoDetectFeatureCandidate struct {

@@ -322,7 +322,7 @@ func (m *Model) renderNewDialog() string {
 	if m.newDialogStage == newDialogStagePicker {
 		content := lipgloss.JoinVertical(
 			lipgloss.Left,
-			dialogHeaderStyle.Render("new spec/plan"),
+			dialogHeaderStyle.Render("new task"),
 			"",
 			newDialogOptionStyle.Render("[s] feature spec")+"  "+newDialogMutedStyle.Render("create a spec-kitty feature with research + planning"),
 			newDialogOptionStyle.Render("[g] gsd task list")+"  "+newDialogMutedStyle.Render("create a checkbox task markdown file"),
