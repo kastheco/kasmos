@@ -1,7 +1,7 @@
 ---
 work_package_id: WP01
 title: Config Package
-lane: planned
+lane: done
 dependencies: []
 subtasks:
 - 'Config struct with AgentConfig per role (planner, coder, reviewer, release)'
@@ -19,7 +19,7 @@ review_status: ''
 reviewed_by: ''
 history:
 - timestamp: '2026-02-18T00:00:00Z'
-lane: done
+  lane: planned
   agent: planner
   action: Prompt generated via /spec-kitty.tasks
 ---

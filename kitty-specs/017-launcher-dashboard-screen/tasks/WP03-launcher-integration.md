@@ -1,7 +1,7 @@
 ---
 work_package_id: WP03
 title: Launcher-Dashboard Integration
-lane: planned
+lane: done
 dependencies:
 - WP01
 - WP02
@@ -29,7 +29,7 @@ review_status: ''
 reviewed_by: ''
 history:
 - timestamp: '2026-02-18T00:00:00Z'
-lane: done
+  lane: planned
   agent: planner
   action: Prompt generated via /spec-kitty.tasks
 ---

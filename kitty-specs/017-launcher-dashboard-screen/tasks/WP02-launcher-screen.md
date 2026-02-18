@@ -1,7 +1,7 @@
 ---
 work_package_id: WP02
 title: Launcher Screen View
-lane: planned
+lane: done
 dependencies: []
 subtasks:
 - 'ASCII art block-font kasmos text (fits within 80 cols)'
@@ -20,7 +20,7 @@ review_status: ''
 reviewed_by: ''
 history:
 - timestamp: '2026-02-18T00:00:00Z'
-lane: done
+  lane: planned
   agent: planner
   action: Prompt generated via /spec-kitty.tasks
 ---
