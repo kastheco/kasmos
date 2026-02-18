@@ -34,15 +34,15 @@ func (m *Model) renderWorkerTable() string {
 
 	body := m.table.View()
 	if len(m.table.Rows()) == 0 {
-		empty := lipgloss.NewStyle().Foreground(colorMidGray).Render("No workers yet") +
+		empty := lipgloss.NewStyle().Foreground(colorMidGray).Render("no workers yet") +
 			"\n\n" +
-			lipgloss.NewStyle().Foreground(colorLightGray).Render("Press s to spawn your first worker")
+			lipgloss.NewStyle().Foreground(colorLightGray).Render("press s to spawn your first worker")
 		body = lipgloss.Place(m.tableInnerWidth, max(1, m.tableInnerHeight-1), lipgloss.Center, lipgloss.Center, empty)
 	}
 
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
-		lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("Workers"),
+		lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("workers"),
 		body,
 	)
 
@@ -57,13 +57,13 @@ func (m *Model) renderViewport() string {
 		return ""
 	}
 
-	title := "Output"
+	title := "output"
 	if m.analysisMode && m.analysisResult != nil {
-		title = fmt.Sprintf("Analysis: %s", m.analysisResult.WorkerID)
+		title = fmt.Sprintf("analysis: %s", m.analysisResult.WorkerID)
 	}
 	if selected := m.selectedWorker(); selected != nil {
 		if !m.analysisMode {
-			title = fmt.Sprintf("Output: %s %s", selected.ID, selected.Role)
+			title = fmt.Sprintf("output: %s %s", selected.ID, selected.Role)
 			if selected.ParentID != "" {
 				title = fmt.Sprintf("%s <- %s", title, selected.ParentID)
 			}
@@ -93,20 +93,20 @@ func (m *Model) renderAnalysisView() string {
 	r := m.analysisResult
 	dividerWidth := max(1, min(40, m.viewportInnerWidth))
 	lines := []string{
-		analysisHeaderStyle.Render(fmt.Sprintf("Analysis: %s", r.WorkerID)),
+		analysisHeaderStyle.Render(fmt.Sprintf("analysis: %s", r.WorkerID)),
 		strings.Repeat("-", dividerWidth),
 		"",
-		rootCauseLabelStyle.Render("Root Cause:"),
+		rootCauseLabelStyle.Render("root cause:"),
 		r.RootCause,
 	}
 
 	if strings.TrimSpace(r.SuggestedPrompt) != "" {
 		lines = append(lines,
 			"",
-			suggestedFixLabelStyle.Render("Suggested Fix:"),
+			suggestedFixLabelStyle.Render("suggested fix:"),
 			r.SuggestedPrompt,
 			"",
-			analysisHintStyle.Render("Press r to restart with suggested prompt"),
+			analysisHintStyle.Render("press r to restart with suggested prompt"),
 		)
 	}
 
@@ -123,13 +123,13 @@ func (m *Model) renderFullScreen() string {
 	vpInnerWidth := max(1, m.width-borderH)
 	vpInnerHeight := max(1, contentHeight-borderV)
 
-	title := "Output"
+	title := "output"
 	if m.analysisMode && m.analysisResult != nil {
-		title = fmt.Sprintf("Analysis: %s", m.analysisResult.WorkerID)
+		title = fmt.Sprintf("analysis: %s", m.analysisResult.WorkerID)
 	}
 	if selected := m.selectedWorker(); selected != nil {
 		if !m.analysisMode {
-			title = fmt.Sprintf("Output: %s %s - %s", selected.ID, selected.Role, truncateMiddle(strings.TrimSpace(selected.Prompt), 40))
+			title = fmt.Sprintf("output: %s %s - %s", selected.ID, selected.Role, truncateMiddle(strings.TrimSpace(selected.Prompt), 40))
 		}
 	}
 
@@ -310,10 +310,10 @@ func (m *Model) renderTasksPanel() string {
 		return ""
 	}
 
-	title := lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("Tasks")
+	title := lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("tasks")
 
 	if len(m.loadedTasks) == 0 {
-		empty := lipgloss.NewStyle().Foreground(colorMidGray).Render("No tasks loaded")
+		empty := lipgloss.NewStyle().Foreground(colorMidGray).Render("no tasks loaded")
 		content := lipgloss.JoinVertical(lipgloss.Left, title, empty)
 		return panelStyle(m.focused == panelTasks).
 			Width(m.tasksInnerWidth).
@@ -460,7 +460,7 @@ func (m *Model) renderHelpOverlay() string {
 
 	overlay := lipgloss.JoinVertical(
 		lipgloss.Left,
-		dialogHeaderStyle.Render("Keyboard Shortcuts"),
+		dialogHeaderStyle.Render("keyboard shortcuts"),
 		"",
 		h.View(m.keys),
 	)

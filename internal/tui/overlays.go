@@ -91,7 +91,7 @@ func (m *Model) closeBatchDialog() {
 
 func newSpawnDialogModel() *spawnDialogModel {
 	prompt := styledTextArea()
-	prompt.Placeholder = "Describe the task for this worker"
+	prompt.Placeholder = "describe the task for this worker"
 	prompt.SetWidth(58)
 	prompt.SetHeight(6)
 
@@ -101,10 +101,10 @@ func newSpawnDialogModel() *spawnDialogModel {
 
 	form := &spawnDialogModel{
 		roles: []spawnRoleOption{
-			{role: "planner", description: "Research and planning, read-only filesystem"},
-			{role: "coder", description: "Implementation, full tool access"},
-			{role: "reviewer", description: "Code review, read-only + test execution"},
-			{role: "release", description: "Merge, finalization, cleanup operations"},
+			{role: "planner", description: "research and planning, read-only filesystem"},
+			{role: "coder", description: "implementation, full tool access"},
+			{role: "reviewer", description: "code review, read-only + test execution"},
+			{role: "release", description: "merge, finalization, cleanup operations"},
 		},
 		roleIndex:  1,
 		prompt:     prompt,
@@ -183,7 +183,7 @@ func (m *Model) closeContinueDialog() {
 
 func newContinueDialogModel(parent *worker.Worker) *continueDialogModel {
 	followUp := styledTextArea()
-	followUp.Placeholder = "Describe what to do next..."
+	followUp.Placeholder = "describe what to do next..."
 	followUp.SetWidth(58)
 	followUp.SetHeight(6)
 	followUp.Blur()
@@ -378,19 +378,19 @@ func (m *Model) renderSpawnDialog() string {
 	}
 
 	roleBox := strings.Join(roleLines, "\n")
-	helpText := lipgloss.NewStyle().Foreground(colorMidGray).Render("tab/S-tab field  up/down role  enter on files to spawn  esc cancel")
+	helpText := lipgloss.NewStyle().Foreground(colorMidGray).Render("tab/s-tab field  up/down role  enter on files to spawn  esc cancel")
 
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
-		dialogHeaderStyle.Render("Spawn Worker"),
+		dialogHeaderStyle.Render("spawn worker"),
 		"",
-		lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("Agent Role"),
+		lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("agent role"),
 		roleBox,
 		"",
-		lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("Prompt"),
+		lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("prompt"),
 		m.spawnForm.prompt.View(),
 		"",
-		lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("Attach Files (optional)"),
+		lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("attach files (optional)"),
 		m.spawnForm.files.View(),
 		"",
 		helpText,
@@ -505,14 +505,14 @@ func (m *Model) renderBatchDialog() string {
 	}
 
 	if len(lines) == 0 {
-		lines = append(lines, lipgloss.NewStyle().Foreground(colorMidGray).Render("  No unassigned tasks available"))
+		lines = append(lines, lipgloss.NewStyle().Foreground(colorMidGray).Render("  no unassigned tasks available"))
 	}
 
 	helpText := lipgloss.NewStyle().Foreground(colorMidGray).Render("j/k navigate  space toggle  enter spawn selected  esc cancel")
 
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
-		dialogHeaderStyle.Render("Batch Spawn"),
+		dialogHeaderStyle.Render("batch spawn"),
 		"",
 		strings.Join(lines, "\n"),
 		"",
@@ -531,24 +531,24 @@ func (m *Model) renderContinueDialog() string {
 	parentStatus := statusIndicator(m.continueForm.parentState, 0)
 	meta := lipgloss.JoinVertical(
 		lipgloss.Left,
-		fmt.Sprintf("Worker: %s", m.continueForm.parentWorkerID),
-		lipgloss.JoinHorizontal(lipgloss.Left, "Role: ", roleBadge(m.continueForm.parentRole)),
-		fmt.Sprintf("Status: %s", parentStatus),
+		fmt.Sprintf("worker: %s", m.continueForm.parentWorkerID),
+		lipgloss.JoinHorizontal(lipgloss.Left, "role: ", roleBadge(m.continueForm.parentRole)),
+		fmt.Sprintf("status: %s", parentStatus),
 		lipgloss.JoinHorizontal(lipgloss.Left,
-			"Session: ",
+			"session: ",
 			lipgloss.NewStyle().Foreground(colorLightBlue).Render(m.continueForm.sessionID),
 		),
 	)
 
-	helpText := lipgloss.NewStyle().Foreground(colorMidGray).Render("tab/S-tab field  enter submit  esc cancel")
+	helpText := lipgloss.NewStyle().Foreground(colorMidGray).Render("tab/s-tab field  enter submit  esc cancel")
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
-		dialogHeaderStyle.Render("Continue Session"),
+		dialogHeaderStyle.Render("continue session"),
 		"",
-		lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("Parent Worker"),
+		lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("parent worker"),
 		meta,
 		"",
-		lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("Follow-up Message"),
+		lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("follow-up message"),
 		m.continueForm.followUp.View(),
 		"",
 		helpText,
@@ -560,7 +560,7 @@ func (m *Model) renderContinueDialog() string {
 
 func (m *Model) renderQuitConfirm() string {
 	running := m.runningWorkersCount()
-	body := fmt.Sprintf("%d workers are still running. They will be terminated.", running)
+	body := fmt.Sprintf("%d workers are still running. they will be terminated.", running)
 
 	forceStyle := inactiveButtonStyle
 	cancelStyle := inactiveButtonStyle
@@ -572,12 +572,12 @@ func (m *Model) renderQuitConfirm() string {
 
 	buttons := lipgloss.JoinHorizontal(
 		lipgloss.Left,
-		forceStyle.Render("Force Quit"),
+		forceStyle.Render("force quit"),
 		"  ",
-		cancelStyle.Render("Cancel"),
+		cancelStyle.Render("cancel"),
 	)
 
-	header := lipgloss.NewStyle().Foreground(colorOrange).Bold(true).Render("⚠ Quit kasmos?")
+	header := lipgloss.NewStyle().Foreground(colorOrange).Bold(true).Render("⚠ quit kasmos?")
 	helpText := lipgloss.NewStyle().Foreground(colorMidGray).Render("left/right or tab switch  enter select  esc cancel")
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,

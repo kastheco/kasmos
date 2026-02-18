@@ -91,10 +91,6 @@ type genPromptCompletedMsg struct {
 	Err    error
 }
 
-type newDialogPickedMsg struct {
-	Type string
-}
-
 type newDialogCancelledMsg struct{}
 
 type specCreatedMsg struct {

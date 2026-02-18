@@ -113,10 +113,10 @@ type AnalysisResult struct {
 func NewModel(backend worker.WorkerBackend, source task.Source, version string) *Model {
 	t := table.New(
 		table.WithColumns([]table.Column{
-			{Title: "ID", Width: 10},
-			{Title: "Status", Width: 14},
-			{Title: "Role", Width: 10},
-			{Title: "Duration", Width: 9},
+			{Title: "id", Width: 10},
+			{Title: "status", Width: 14},
+			{Title: "role", Width: 10},
+			{Title: "duration", Width: 9},
 		}),
 		table.WithRows([]table.Row{}),
 		table.WithHeight(1),
@@ -258,9 +258,9 @@ func (m *Model) View() string {
 	}
 
 	if m.layoutMode == layoutTooSmall {
-		warn := lipgloss.NewStyle().Foreground(colorOrange).Bold(true).Render("Terminal too small")
-		meta := lipgloss.NewStyle().Foreground(colorMidGray).Render("Minimum: 80x24")
-		curr := lipgloss.NewStyle().Foreground(colorLightGray).Render(fmt.Sprintf("Current: %dx%d", m.width, m.height))
+		warn := lipgloss.NewStyle().Foreground(colorOrange).Bold(true).Render("terminal too small")
+		meta := lipgloss.NewStyle().Foreground(colorMidGray).Render("minimum: 80x24")
+		curr := lipgloss.NewStyle().Foreground(colorLightGray).Render(fmt.Sprintf("current: %dx%d", m.width, m.height))
 		body := lipgloss.JoinVertical(lipgloss.Center, warn, meta, curr)
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, body)
 	}
@@ -369,7 +369,7 @@ func (m *Model) swapTaskSource(source task.Source) {
 		tasks, err := source.Load()
 		if err != nil {
 			m.loadedTasks = nil
-			m.setViewportContent(fmt.Sprintf("Failed to load task source %q: %v", source.Path(), err), false)
+			m.setViewportContent(fmt.Sprintf("failed to load task source %q: %v", source.Path(), err), false)
 		} else {
 			m.loadedTasks = tasks
 		}
@@ -386,12 +386,12 @@ func welcomeViewportText() string {
 	setup := filePathStyle.Render("kasmos setup")
 	lines := []string{
 		"",
-		"  🫧 Welcome to kasmos!",
+		"  🫧 welcome to kasmos!",
 		"",
-		"  Spawn your first worker to get started.",
-		"  Select a worker to view its output here.",
+		"  spawn your first worker to get started.",
+		"  select a worker to view its output here.",
 		"",
-		"  Tip: Run " + setup + " to scaffold",
+		"  tip: run " + setup + " to scaffold",
 		"  agent configurations if you haven't yet.",
 	}
 	return strings.Join(lines, "\n")

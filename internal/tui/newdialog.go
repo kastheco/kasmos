@@ -19,7 +19,7 @@ const (
 const (
 	newDialogTypeFeatureSpec = "feature-spec"
 	newDialogTypeGSD         = "gsd"
-	newDialogTypePlanning    = "planning"
+	newDialogTypeYolo        = "yolo"
 )
 
 type newFormModel struct {
@@ -79,24 +79,24 @@ func newFormModelFor(formType string) *newFormModel {
 		filename.SetWidth(58)
 
 		tasks := styledTextArea()
-		tasks.Placeholder = "One task per line"
+		tasks.Placeholder = "one task per line"
 		tasks.SetWidth(58)
 		tasks.SetHeight(6)
 
 		f.gsdFilename = filename
 		f.gsdTasks = tasks
-	case newDialogTypePlanning:
+	case newDialogTypeYolo:
 		filename := styledTextInput()
-		filename.Placeholder = "plan.md"
-		filename.SetValue("plan.md")
+		filename.Placeholder = "yolo.md"
+		filename.SetValue("yolo.md")
 		filename.SetWidth(58)
 
 		title := styledTextInput()
-		title.Placeholder = "API Refactor Plan"
+		title.Placeholder = "quick refactor"
 		title.SetWidth(58)
 
 		content := styledTextArea()
-		content.Placeholder = "Goals:\n- ..."
+		content.Placeholder = "what needs doing..."
 		content.SetWidth(58)
 		content.SetHeight(6)
 
@@ -113,7 +113,7 @@ func newFormModelFor(formType string) *newFormModel {
 
 func (f *newFormModel) fieldCount() int {
 	switch f.formType {
-	case newDialogTypePlanning:
+	case newDialogTypeYolo:
 		return 3
 	default:
 		return 2
@@ -140,7 +140,7 @@ func (f *newFormModel) focusCurrentField() tea.Cmd {
 			return f.gsdFilename.Focus()
 		}
 		return f.gsdTasks.Focus()
-	case newDialogTypePlanning:
+	case newDialogTypeYolo:
 		switch f.focusedIdx {
 		case 0:
 			return f.planFilename.Focus()
@@ -177,11 +177,11 @@ func (m *Model) updateNewDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.newDialogStage == newDialogStagePicker {
 			switch keyMsg.String() {
 			case "s":
-				return m, func() tea.Msg { return newDialogPickedMsg{Type: newDialogTypeFeatureSpec} }
+				return m, m.startNewDialogForm(newDialogTypeFeatureSpec)
 			case "g":
-				return m, func() tea.Msg { return newDialogPickedMsg{Type: newDialogTypeGSD} }
-			case "r":
-				return m, func() tea.Msg { return newDialogPickedMsg{Type: newDialogTypePlanning} }
+				return m, m.startNewDialogForm(newDialogTypeGSD)
+			case "y":
+				return m, m.startNewDialogForm(newDialogTypeYolo)
 			}
 			return m, nil
 		}
@@ -221,7 +221,7 @@ func (m *Model) updateNewDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.newForm.gsdTasks, cmd = m.newForm.gsdTasks.Update(msg)
 		}
-	case newDialogTypePlanning:
+	case newDialogTypeYolo:
 		switch m.newForm.focusedIdx {
 		case 0:
 			m.newForm.planFilename, cmd = m.newForm.planFilename.Update(msg)
@@ -247,11 +247,11 @@ func (m *Model) submitNewDialogForm() tea.Cmd {
 		slug := strings.TrimSpace(m.newForm.featureSlug.Value())
 		mission := strings.TrimSpace(m.newForm.featureMission.Value())
 		if slug == "" {
-			m.newForm.errMsg = "Slug is required."
+			m.newForm.errMsg = "slug is required."
 			return nil
 		}
 		if !isKnownMission(mission) {
-			m.newForm.errMsg = "Mission must be software-dev, documentation, or research."
+			m.newForm.errMsg = "mission must be software-dev, documentation, or research."
 			return nil
 		}
 		m.closeNewDialog()
@@ -261,26 +261,26 @@ func (m *Model) submitNewDialogForm() tea.Cmd {
 		filename := strings.TrimSpace(m.newForm.gsdFilename.Value())
 		tasks := parseLines(m.newForm.gsdTasks.Value())
 		if filename == "" {
-			m.newForm.errMsg = "Filename is required."
+			m.newForm.errMsg = "filename is required."
 			return nil
 		}
 		if len(tasks) == 0 {
-			m.newForm.errMsg = "Provide at least one task line."
+			m.newForm.errMsg = "provide at least one task line."
 			return nil
 		}
 		m.closeNewDialog()
 		return gsdCreateCmd(filename, tasks)
 
-	case newDialogTypePlanning:
+	case newDialogTypeYolo:
 		filename := strings.TrimSpace(m.newForm.planFilename.Value())
 		title := strings.TrimSpace(m.newForm.planTitle.Value())
 		content := strings.TrimSpace(m.newForm.planContent.Value())
 		if filename == "" {
-			m.newForm.errMsg = "Filename is required."
+			m.newForm.errMsg = "filename is required."
 			return nil
 		}
 		if title == "" {
-			m.newForm.errMsg = "Title is required."
+			m.newForm.errMsg = "title is required."
 			return nil
 		}
 		m.closeNewDialog()
@@ -321,13 +321,13 @@ func (m *Model) renderNewDialog() string {
 	if m.newDialogStage == newDialogStagePicker {
 		content := lipgloss.JoinVertical(
 			lipgloss.Left,
-			dialogHeaderStyle.Render("New Spec/Plan"),
+			dialogHeaderStyle.Render("new spec/plan"),
 			"",
-			newDialogOptionStyle.Render("[s] Feature Spec")+"  "+newDialogMutedStyle.Render("create a spec-kitty feature with research + planning"),
-			newDialogOptionStyle.Render("[g] GSD Task List")+"  "+newDialogMutedStyle.Render("create a checkbox task markdown file"),
-			newDialogOptionStyle.Render("[r] Planning Doc")+"  "+newDialogMutedStyle.Render("create a freeform planning document"),
+			newDialogOptionStyle.Render("[s] feature spec")+"  "+newDialogMutedStyle.Render("create a spec-kitty feature with research + planning"),
+			newDialogOptionStyle.Render("[g] gsd task list")+"  "+newDialogMutedStyle.Render("create a checkbox task markdown file"),
+			newDialogOptionStyle.Render("[y] yolo mode")+"    "+newDialogMutedStyle.Render("skip planning, jump straight to prompting"),
 			"",
-			newDialogHelpStyle.Render("s/g/r select . esc cancel"),
+			newDialogHelpStyle.Render("s/g/y select . esc cancel"),
 		)
 		dialog := dialogStyle.Width(80).Render(content)
 		return m.renderWithBackdrop(dialog)
@@ -346,14 +346,14 @@ func (m *Model) renderNewDialog() string {
 	case newDialogTypeFeatureSpec:
 		content := lipgloss.JoinVertical(
 			lipgloss.Left,
-			dialogHeaderStyle.Render("New Feature Spec"),
+			dialogHeaderStyle.Render("new feature spec"),
 			"",
-			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("Slug"),
+			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("slug"),
 			m.newForm.featureSlug.View(),
 			"",
-			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("Mission"),
+			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("mission"),
 			m.newForm.featureMission.View(),
-			newDialogMutedStyle.Render("Mission: software-dev | documentation | research"),
+			newDialogMutedStyle.Render("mission: software-dev | documentation | research"),
 			errorLine,
 			newDialogHelpStyle.Render("enter submit . tab next field . esc cancel"),
 		)
@@ -363,12 +363,12 @@ func (m *Model) renderNewDialog() string {
 	case newDialogTypeGSD:
 		content := lipgloss.JoinVertical(
 			lipgloss.Left,
-			dialogHeaderStyle.Render("New GSD Task List"),
+			dialogHeaderStyle.Render("new gsd task list"),
 			"",
-			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("Filename"),
+			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("filename"),
 			m.newForm.gsdFilename.View(),
 			"",
-			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("Tasks (one per line)"),
+			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("tasks (one per line)"),
 			m.newForm.gsdTasks.View(),
 			errorLine,
 			newDialogHelpStyle.Render("enter submit . tab next field . esc cancel"),
@@ -376,18 +376,18 @@ func (m *Model) renderNewDialog() string {
 		dialog := dialogStyle.Width(70).Render(content)
 		return m.renderWithBackdrop(dialog)
 
-	case newDialogTypePlanning:
+	case newDialogTypeYolo:
 		content := lipgloss.JoinVertical(
 			lipgloss.Left,
-			dialogHeaderStyle.Render("New Planning Doc"),
+			dialogHeaderStyle.Render("yolo mode"),
 			"",
-			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("Filename"),
+			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("filename"),
 			m.newForm.planFilename.View(),
 			"",
-			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("Title"),
+			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("title"),
 			m.newForm.planTitle.View(),
 			"",
-			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("Content"),
+			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("content"),
 			m.newForm.planContent.View(),
 			errorLine,
 			newDialogHelpStyle.Render("enter submit . tab next field . esc cancel"),
@@ -415,5 +415,5 @@ func formatCreateError(kind string, err error) string {
 	if err == nil {
 		return ""
 	}
-	return fmt.Sprintf("Failed to create %s: %v", kind, err)
+	return fmt.Sprintf("failed to create %s: %v", kind, err)
 }

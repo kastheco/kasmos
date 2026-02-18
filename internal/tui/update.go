@@ -214,9 +214,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.closeContinueDialog()
 		return m, nil
 
-	case newDialogPickedMsg:
-		return m, m.startNewDialogForm(msg.Type)
-
 	case newDialogCancelledMsg:
 		m.closeNewDialog()
 		return m, nil
@@ -228,25 +225,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.swapTaskSource(&task.SpecKittySource{Dir: msg.Path})
 		m.refreshTableRows()
-		m.setViewportContent(fmt.Sprintf("Created feature %q at %s", msg.Slug, msg.Path), false)
+		m.setViewportContent(fmt.Sprintf("created feature %q at %s", msg.Slug, msg.Path), false)
 		return m, nil
 
 	case gsdCreatedMsg:
 		if msg.Err != nil {
-			m.setViewportContent(formatCreateError("GSD task list", msg.Err), false)
+			m.setViewportContent(formatCreateError("gsd task list", msg.Err), false)
 			return m, nil
 		}
 		m.swapTaskSource(&task.GsdSource{FilePath: msg.Path})
 		m.refreshTableRows()
-		m.setViewportContent(fmt.Sprintf("Created %s with %d tasks", msg.Path, msg.TaskCount), false)
+		m.setViewportContent(fmt.Sprintf("created %s with %d tasks", msg.Path, msg.TaskCount), false)
 		return m, nil
 
 	case planCreatedMsg:
 		if msg.Err != nil {
-			m.setViewportContent(formatCreateError("planning doc", msg.Err), false)
+			m.setViewportContent(formatCreateError("yolo doc", msg.Err), false)
 			return m, nil
 		}
-		m.setViewportContent(fmt.Sprintf("Created %s", msg.Path), false)
+		m.setViewportContent(fmt.Sprintf("created %s", msg.Path), false)
 		return m, nil
 
 	case quitConfirmedMsg:
@@ -362,7 +359,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.Err != nil {
-			m.setViewportContent(fmt.Sprintf("Failed to mark %s done: %v", w.ID, msg.Err), false)
+			m.setViewportContent(fmt.Sprintf("failed to mark %s done: %v", w.ID, msg.Err), false)
 			return m, nil
 		}
 
@@ -395,7 +392,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateKeyStates()
 		if w.ID == m.selectedWorkerID {
 			m.refreshViewportFromSelected(true)
-			m.setViewportContent(fmt.Sprintf("Marked %s done", w.ID), false)
+			m.setViewportContent(fmt.Sprintf("marked %s done", w.ID), false)
 		}
 		m.triggerPersist()
 		if m.daemon {
@@ -411,7 +408,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.Err != nil {
-			m.setViewportContent(fmt.Sprintf("Failed to continue %s: %v", w.ID, msg.Err), false)
+			m.setViewportContent(fmt.Sprintf("failed to continue %s: %v", w.ID, msg.Err), false)
 			return m, nil
 		}
 
@@ -447,7 +444,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.triggerPersist()
 		if w.SessionID == "" {
-			m.setViewportContent(fmt.Sprintf("Cannot continue %s: session ID not found in output", w.ID), false)
+			m.setViewportContent(fmt.Sprintf("cannot continue %s: session id not found in output", w.ID), false)
 			if m.daemon {
 				if cmd := m.checkDaemonComplete(); cmd != nil {
 					return m, cmd
@@ -477,7 +474,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err != nil {
 			m.analysisResult = &AnalysisResult{
 				WorkerID:  msg.WorkerID,
-				RootCause: fmt.Sprintf("Analysis failed: %v", msg.Err),
+				RootCause: fmt.Sprintf("analysis failed: %v", msg.Err),
 			}
 		} else {
 			m.analysisResult = &AnalysisResult{
@@ -593,12 +590,12 @@ func (m *Model) syncSelectionFromTable() {
 
 func (m *Model) refreshViewportFromSelected(autoFollow bool) {
 	if m.analysisLoading {
-		m.setViewportContent(fmt.Sprintf("%s Analyzing failure for %s...", m.spinner.View(), m.analysisWorkerID), false)
+		m.setViewportContent(fmt.Sprintf("%s analyzing failure for %s...", m.spinner.View(), m.analysisWorkerID), false)
 		return
 	}
 
 	if m.genPromptLoading {
-		m.setViewportContent(fmt.Sprintf("%s Generating implementation prompt...", m.spinner.View()), false)
+		m.setViewportContent(fmt.Sprintf("%s generating implementation prompt...", m.spinner.View()), false)
 		return
 	}
 

@@ -57,7 +57,7 @@ func (m *Model) updateHistory(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case historyLoadMsg:
 		if err := m.loadHistoryEntry(msg.Entry); err != nil {
-			m.setViewportContent(fmt.Sprintf("Failed to load history entry %q: %v", msg.Entry.Name, err), false)
+			m.setViewportContent(fmt.Sprintf("failed to load history entry %q: %v", msg.Entry.Name, err), false)
 			return m, nil
 		}
 		m.closeHistoryOverlay()
@@ -136,9 +136,9 @@ func absPathOrRaw(path string) string {
 }
 
 func (m *Model) renderHistoryOverlay() string {
-	lines := []string{dialogHeaderStyle.Render("History"), ""}
+	lines := []string{dialogHeaderStyle.Render("history"), ""}
 	if m.historyLoading {
-		lines = append(lines, fmt.Sprintf("%s Scanning project history...", m.spinner.View()))
+		lines = append(lines, fmt.Sprintf("%s scanning project history...", m.spinner.View()))
 		lines = append(lines, "", lipgloss.NewStyle().Foreground(colorMidGray).Render("esc close"))
 		dialog := dialogStyle.Width(min(120, max(60, m.width-6))).Render(strings.Join(lines, "\n"))
 		return m.renderWithBackdrop(dialog)
@@ -149,7 +149,7 @@ func (m *Model) renderHistoryOverlay() string {
 	}
 
 	if len(m.historyEntries) == 0 {
-		lines = append(lines, lipgloss.NewStyle().Foreground(colorMidGray).Render("No history entries found."))
+		lines = append(lines, lipgloss.NewStyle().Foreground(colorMidGray).Render("no history entries found."))
 		lines = append(lines, "", lipgloss.NewStyle().Foreground(colorMidGray).Render("esc close"))
 		dialog := dialogStyle.Width(min(120, max(60, m.width-6))).Render(strings.Join(lines, "\n"))
 		return m.renderWithBackdrop(dialog)
@@ -159,7 +159,7 @@ func (m *Model) renderHistoryOverlay() string {
 		return m.renderHistoryDetail(lines)
 	}
 
-	lines = append(lines, "  TYPE        NAME                          DATE        STATUS         PROGRESS")
+	lines = append(lines, "  type        name                          date        status         progress")
 	for i, entry := range m.historyEntries {
 		selector := " "
 		if i == m.historySelected {
@@ -190,21 +190,21 @@ func (m *Model) renderHistoryDetail(lines []string) string {
 	lines = append(lines,
 		lipgloss.NewStyle().Bold(true).Render(entry.Name),
 		strings.Repeat("-", min(40, max(20, len(entry.Name)))),
-		fmt.Sprintf("Type:   %s", entry.Type),
-		fmt.Sprintf("Path:   %s", entry.Path),
-		fmt.Sprintf("Status: %s (%s)", entry.Status, historyProgress(entry)),
+		fmt.Sprintf("type:   %s", entry.Type),
+		fmt.Sprintf("path:   %s", entry.Path),
+		fmt.Sprintf("status: %s (%s)", entry.Status, historyProgress(entry)),
 		"",
 	)
 
 	if len(entry.Details) > 0 {
-		heading := "Details:"
+		heading := "details:"
 		switch entry.Type {
 		case historypkg.EntrySpecKitty:
-			heading = "Work Packages:"
+			heading = "work packages:"
 		case historypkg.EntryGSD:
-			heading = "Tasks:"
+			heading = "tasks:"
 		case historypkg.EntryYolo:
-			heading = "Workers:"
+			heading = "workers:"
 		}
 		lines = append(lines, heading)
 		maxRows := max(3, m.height-14)
@@ -232,7 +232,7 @@ func formatHistoryDate(t time.Time) string {
 func historyProgress(entry HistoryEntry) string {
 	switch entry.Type {
 	case historypkg.EntrySpecKitty:
-		return fmt.Sprintf("%d/%d WPs", entry.DoneCount, entry.TaskCount)
+		return fmt.Sprintf("%d/%d wps", entry.DoneCount, entry.TaskCount)
 	case historypkg.EntryGSD:
 		return fmt.Sprintf("%d/%d tasks", entry.DoneCount, entry.TaskCount)
 	case historypkg.EntryYolo:

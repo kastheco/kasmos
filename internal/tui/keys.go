@@ -61,7 +61,7 @@ func defaultKeyMap() keyMap {
 		),
 		PrevPanel: key.NewBinding(
 			key.WithKeys("shift+tab", "left"),
-			key.WithHelp("S-tab/left", "prev panel"),
+			key.WithHelp("s-tab/left", "prev panel"),
 		),
 		Spawn: key.NewBinding(
 			key.WithKeys("s"),
@@ -117,7 +117,7 @@ func defaultKeyMap() keyMap {
 		),
 		GotoBottom: key.NewBinding(
 			key.WithKeys("G"),
-			key.WithHelp("G", "bottom"),
+			key.WithHelp("g", "bottom"),
 		),
 		GotoTop: key.NewBinding(
 			key.WithKeys("g"),
@@ -129,11 +129,11 @@ func defaultKeyMap() keyMap {
 		),
 		GenPrompt: key.NewBinding(
 			key.WithKeys("g"),
-			key.WithHelp("g", "gen prompt (AI)"),
+			key.WithHelp("g", "gen prompt (ai)"),
 		),
 		Analyze: key.NewBinding(
 			key.WithKeys("a"),
-			key.WithHelp("a", "analyze failure (AI)"),
+			key.WithHelp("a", "analyze failure (ai)"),
 		),
 		Filter: key.NewBinding(
 			key.WithKeys("/"),
