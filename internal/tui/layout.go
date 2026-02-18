@@ -20,7 +20,7 @@ const (
 )
 
 func (m *Model) recalculateLayout() {
-	if m.width < 80 || m.height < 24 {
+	if m.width < 60 || m.height < 15 {
 		m.layoutMode = layoutTooSmall
 		return
 	}
@@ -54,7 +54,7 @@ func (m *Model) recalculateLayout() {
 		m.tasksOuterWidth = 0
 		m.tasksOuterHeight = 0
 
-	case m.width >= 80:
+	case m.width >= 60:
 		m.layoutMode = layoutNarrow
 
 		m.tableOuterWidth = m.width

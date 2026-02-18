@@ -40,7 +40,7 @@ func newRootCmd() *cobra.Command {
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if showVersion {
-				fmt.Fprintln(cmd.OutOrStdout(), "kasmos v0.1.0")
+				fmt.Fprintln(cmd.OutOrStdout(), "kasmos v2.0.0")
 				return nil
 			}
 

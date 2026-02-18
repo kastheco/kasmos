@@ -21,6 +21,10 @@ func (m *WorkerManager) NextWorkerID() string {
 	return fmt.Sprintf("w-%03d", n)
 }
 
+func (m *WorkerManager) Counter() int64 {
+	return m.counter.Load()
+}
+
 func (m *WorkerManager) ResetWorkerCounter(n int64) {
 	m.counter.Store(n)
 }

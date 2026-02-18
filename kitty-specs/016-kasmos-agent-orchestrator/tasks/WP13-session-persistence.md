@@ -1,7 +1,7 @@
 ---
 work_package_id: WP13
 title: Session Persistence + Reattach
-lane: doing
+lane: done
 dependencies:
 - WP04
 subtasks:
@@ -28,6 +28,11 @@ history:
   actor: manager
   shell_pid: '472734'
   action: transition active (Launching WP13 coder - session persistence + reattach)
+- timestamp: '2026-02-18T14:59:23.490309483+00:00'
+  lane: done
+  actor: manager
+  shell_pid: '472734'
+  action: transition done (Implemented - session persistence + reattach + orphan detection)
 ---
 
 # Work Package Prompt: WP13 - Session Persistence + Reattach

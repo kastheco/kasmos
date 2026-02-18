@@ -177,7 +177,7 @@ func (m *Model) buildSessionState() persist.SessionState {
 		StartedAt:     time.Now(),
 		TaskSource:    ts,
 		Workers:       snapshots,
-		NextWorkerNum: int64(len(workers) + 1),
+		NextWorkerNum: m.manager.Counter(),
 		PID:           os.Getpid(),
 	}
 }

@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/v2/key"
 
 	"github.com/user/kasmos/internal/task"
@@ -174,6 +176,33 @@ func (m *Model) updateKeyStates() {
 	m.keys.Up.SetEnabled(true)
 	m.keys.Down.SetEnabled(true)
 	m.keys.Back.SetEnabled(true)
+
+	if m.analysisMode {
+		m.keys.Spawn.SetEnabled(false)
+		m.keys.Kill.SetEnabled(false)
+		m.keys.Continue.SetEnabled(false)
+		m.keys.Batch.SetEnabled(false)
+		m.keys.Fullscreen.SetEnabled(false)
+		m.keys.ScrollDown.SetEnabled(false)
+		m.keys.ScrollUp.SetEnabled(false)
+		m.keys.HalfDown.SetEnabled(false)
+		m.keys.HalfUp.SetEnabled(false)
+		m.keys.GotoBottom.SetEnabled(false)
+		m.keys.GotoTop.SetEnabled(false)
+		m.keys.Search.SetEnabled(false)
+		m.keys.GenPrompt.SetEnabled(false)
+		m.keys.Analyze.SetEnabled(false)
+		m.keys.Filter.SetEnabled(false)
+		m.keys.Select.SetEnabled(false)
+		m.keys.NextPanel.SetEnabled(false)
+		m.keys.PrevPanel.SetEnabled(false)
+		m.keys.Up.SetEnabled(false)
+		m.keys.Down.SetEnabled(false)
+		m.keys.Restart.SetEnabled(
+			m.analysisResult != nil && strings.TrimSpace(m.analysisResult.SuggestedPrompt) != "",
+		)
+		return
+	}
 
 	selected := m.selectedWorker()
 

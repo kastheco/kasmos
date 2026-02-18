@@ -479,29 +479,35 @@ func (m *Model) setViewportContent(content string, autoFollow bool) {
 	}
 }
 
+// handleAnalysisModeKeys handles key events when analysis mode is active.
+// Returns the model, command, and whether the key was consumed.
+func (m *Model) handleAnalysisModeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(msg, m.keys.Back) {
+		m.analysisMode = false
+		m.analysisResult = nil
+		m.updateKeyStates()
+		m.refreshViewportFromSelected(false)
+		return m, nil
+	}
+
+	if key.Matches(msg, m.keys.Restart) && m.analysisResult != nil && strings.TrimSpace(m.analysisResult.SuggestedPrompt) != "" {
+		role := "coder"
+		if w := m.manager.Get(m.analysisResult.WorkerID); w != nil {
+			role = w.Role
+		}
+		suggestedPrompt := m.analysisResult.SuggestedPrompt
+		m.analysisMode = false
+		m.analysisResult = nil
+		m.updateKeyStates()
+		return m, m.openSpawnDialogWithPrefill(role, suggestedPrompt, nil)
+	}
+
+	return m, nil
+}
+
 func (m *Model) updateFullScreenKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.analysisMode {
-		if key.Matches(msg, m.keys.Back) {
-			m.analysisMode = false
-			m.analysisResult = nil
-			m.updateKeyStates()
-			m.refreshViewportFromSelected(false)
-			return m, nil
-		}
-
-		if key.Matches(msg, m.keys.Restart) && m.analysisResult != nil && strings.TrimSpace(m.analysisResult.SuggestedPrompt) != "" {
-			role := "coder"
-			if w := m.manager.Get(m.analysisResult.WorkerID); w != nil {
-				role = w.Role
-			}
-			suggestedPrompt := m.analysisResult.SuggestedPrompt
-			m.analysisMode = false
-			m.analysisResult = nil
-			m.updateKeyStates()
-			return m, m.openSpawnDialogWithPrefill(role, suggestedPrompt, nil)
-		}
-
-		return m, nil
+		return m.handleAnalysisModeKeys(msg)
 	}
 
 	if key.Matches(msg, m.keys.Back) {
@@ -534,27 +540,7 @@ func (m *Model) updateFullScreenKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) updateTableKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.analysisMode {
-		if key.Matches(msg, m.keys.Back) {
-			m.analysisMode = false
-			m.analysisResult = nil
-			m.updateKeyStates()
-			m.refreshViewportFromSelected(false)
-			return m, nil
-		}
-
-		if key.Matches(msg, m.keys.Restart) && m.analysisResult != nil && strings.TrimSpace(m.analysisResult.SuggestedPrompt) != "" {
-			role := "coder"
-			if w := m.manager.Get(m.analysisResult.WorkerID); w != nil {
-				role = w.Role
-			}
-			suggestedPrompt := m.analysisResult.SuggestedPrompt
-			m.analysisMode = false
-			m.analysisResult = nil
-			m.updateKeyStates()
-			return m, m.openSpawnDialogWithPrefill(role, suggestedPrompt, nil)
-		}
-
-		return m, nil
+		return m.handleAnalysisModeKeys(msg)
 	}
 
 	if key.Matches(msg, m.keys.Spawn) {
@@ -680,27 +666,7 @@ func (m *Model) updateTaskPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) updateViewportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.analysisMode {
-		if key.Matches(msg, m.keys.Back) {
-			m.analysisMode = false
-			m.analysisResult = nil
-			m.updateKeyStates()
-			m.refreshViewportFromSelected(false)
-			return m, nil
-		}
-
-		if key.Matches(msg, m.keys.Restart) && m.analysisResult != nil && strings.TrimSpace(m.analysisResult.SuggestedPrompt) != "" {
-			role := "coder"
-			if w := m.manager.Get(m.analysisResult.WorkerID); w != nil {
-				role = w.Role
-			}
-			suggestedPrompt := m.analysisResult.SuggestedPrompt
-			m.analysisMode = false
-			m.analysisResult = nil
-			m.updateKeyStates()
-			return m, m.openSpawnDialogWithPrefill(role, suggestedPrompt, nil)
-		}
-
-		return m, nil
+		return m.handleAnalysisModeKeys(msg)
 	}
 
 	if key.Matches(msg, m.keys.Fullscreen) {
