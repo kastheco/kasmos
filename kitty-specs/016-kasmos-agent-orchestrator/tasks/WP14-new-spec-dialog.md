@@ -13,6 +13,7 @@ subtasks:
 - Planning form (title, description) -> create freeform planning doc
 - Auto-load new source into dashboard after creation
 - specCreateCmd for subprocess execution of spec-kitty
+- Task source autodiscovery (scan kitty-specs/ on bare launch)
 phase: Wave 4 - Dashboard Enhancements
 assignee: ''
 agent: ''
@@ -46,8 +47,10 @@ internal/tui/newdialog.go    # Type picker model + type-specific form models
 ### Files to Modify
 
 ```
+cmd/kasmos/main.go           # Autodiscovery when no arg given
+internal/task/source.go      # AutoDetect() function
 internal/tui/keys.go         # Add New key binding (n)
-internal/tui/model.go        # New dialog state fields
+internal/tui/model.go        # New dialog state fields + swapTaskSource helper
 internal/tui/update.go       # New dialog message handlers, key routing
 internal/tui/messages.go     # New dialog messages
 internal/tui/commands.go     # specCreateCmd, gsdCreateCmd
@@ -273,6 +276,57 @@ func (m *Model) swapTaskSource(source task.Source) {
 }
 ```
 
+### Task Source Autodiscovery
+
+When kasmos launches with no CLI argument, it currently defaults to ad-hoc mode.
+Add autodiscovery so bare `kasmos` finds the most relevant source automatically.
+
+Add to `internal/task/source.go`:
+
+```go
+// AutoDetect scans the current project for task sources.
+// Priority: kitty-specs (most recent by mtime) > root .md files > ad-hoc.
+func AutoDetect() Source {
+    // 1. Scan kitty-specs/*/ for spec-kitty feature directories
+    //    Sort by mtime descending, pick the most recent one that has
+    //    at least one non-done WP (i.e. active work). If all features
+    //    are fully done, pick the most recent anyway.
+    matches, _ := filepath.Glob("kitty-specs/*/tasks/WP*.md")
+    if len(matches) > 0 {
+        // Group by parent feature dir, find most recent
+        // Return &SpecKittySource{Dir: featureDir}
+    }
+
+    // 2. Check for common GSD files at project root
+    for _, candidate := range []string{"tasks.md", "todo.md", "TODO.md"} {
+        if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+            return &GsdSource{FilePath: candidate}
+        }
+    }
+
+    // 3. Fall back to ad-hoc
+    return &AdHocSource{}
+}
+```
+
+Update `cmd/kasmos/main.go` to use autodiscovery:
+
+```go
+var source task.Source
+if len(args) > 0 {
+    detected, err := task.DetectSourceType(args[0])
+    if err != nil {
+        return err
+    }
+    source = detected
+} else {
+    source = task.AutoDetect()
+}
+```
+
+This means running bare `kasmos` in the kasmos repo auto-discovers
+`kitty-specs/016-kasmos-agent-orchestrator` and loads WP14/15/16 as planned tasks.
+
 ## What NOT to Do
 
 - Do NOT call `spec-kitty specify` interactively — use `agent feature create-feature`
@@ -294,5 +348,8 @@ func (m *Model) swapTaskSource(source task.Source) {
 5. `esc` at any stage cancels and closes the dialog
 6. Error from spec-kitty CLI shown in viewport (not a crash)
 7. `n` disabled when any other overlay is active
-8. `go test ./...` passes
-9. `go build ./cmd/kasmos` passes
+8. Bare `kasmos` (no arg) autodiscovers kitty-specs and loads most recent feature
+9. Bare `kasmos` in a dir with `tasks.md` autodiscovers GSD source
+10. Bare `kasmos` with nothing to discover falls back to ad-hoc
+11. `go test ./...` passes
+12. `go build ./cmd/kasmos` passes
