@@ -80,17 +80,17 @@ Enable when no overlay is active. Add to ShortHelp and FullHelp.
 
 ### Stage 1: Type Picker Overlay
 
-A simple vertical list of 3 options rendered as a centered overlay (same pattern
-as quit confirm dialog):
+A compact key-driven picker rendered as a centered overlay (same pattern as quit
+confirm dialog). No cursor navigation — direct key dispatch:
 
 ```
  New Spec/Plan
  ─────────────
- > Feature Spec    create a spec-kitty feature with research + planning
-   GSD Task List   create a checkbox task markdown file
-   Planning Doc    create a freeform planning document
+ [s] Feature Spec    create a spec-kitty feature with research + planning
+ [g] GSD Task List   create a checkbox task markdown file
+ [r] Planning Doc    create a freeform planning document
 
- ↑/↓ select · enter confirm · esc cancel
+ s/g/r select · esc cancel
 ```
 
 Model fields:
@@ -99,14 +99,17 @@ Model fields:
 showNewDialog     bool
 newDialogStage    int          // 0 = picker, 1 = form
 newDialogType     string       // "feature-spec", "gsd", "planning"
-newDialogPicker   int          // selected index in picker (0-2)
 newForm           *newFormModel // stage 2 form (type depends on newDialogType)
 ```
 
 Key handling in picker:
-- `up`/`down` or `j`/`k` — move selection
-- `enter` — advance to stage 2 form
+- `s` — select Feature Spec, advance to stage 2 form
+- `g` — select GSD Task List, advance to stage 2 form
+- `r` — select Planning Doc, advance to stage 2 form
 - `esc` — cancel and close
+
+This is intentionally zero-navigation. Press `n` then immediately `s`, `g`, or `r`
+to get to the form in two keystrokes.
 
 ### Stage 2a: Feature Spec Form
 
