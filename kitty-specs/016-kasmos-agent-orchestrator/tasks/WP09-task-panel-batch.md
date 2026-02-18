@@ -1,7 +1,7 @@
 ---
 work_package_id: WP09
 title: Task Panel UI + Worker-Task Association + Batch Spawn
-lane: doing
+lane: done
 dependencies:
 - WP03
 - WP04
@@ -30,6 +30,11 @@ history:
   actor: manager
   shell_pid: '472734'
   action: transition active (Launching WP09 coder - task panel UI + batch spawn)
+- timestamp: '2026-02-18T14:39:19.046365334+00:00'
+  lane: done
+  actor: manager
+  shell_pid: '472734'
+  action: transition done (Implemented - task panel, batch spawn, worker-task association)
 ---
 
 # Work Package Prompt: WP09 - Task Panel UI + Worker-Task Association + Batch Spawn

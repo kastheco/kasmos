@@ -117,8 +117,6 @@ func (m *Model) renderFullScreen() string {
 
 	vpInnerWidth := max(1, m.width-borderH)
 	vpInnerHeight := max(1, contentHeight-borderV)
-	m.viewport.SetWidth(vpInnerWidth)
-	m.viewport.SetHeight(max(1, vpInnerHeight-1))
 
 	title := "Output"
 	if m.analysisMode && m.analysisResult != nil {
@@ -322,7 +320,6 @@ func (m *Model) renderTasksPanel() string {
 	if selected >= len(m.loadedTasks) {
 		selected = len(m.loadedTasks) - 1
 	}
-	m.selectedTaskIdx = selected
 
 	const linesPerTask = 4
 	availableLines := max(1, m.tasksInnerHeight-1)
