@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea/v2"
+
 	"github.com/user/kasmos/internal/task"
 	"github.com/user/kasmos/internal/worker"
 )
@@ -296,6 +298,44 @@ func TestNewKeyDisabledWhenOverlayActive(t *testing.T) {
 
 	if !m.keys.New.Enabled() {
 		t.Fatal("new key should be enabled when no overlay is active")
+	}
+}
+
+func TestNewDialogPickerPlanningFlow(t *testing.T) {
+	m := NewModel(nil, nil, "test")
+	_ = m.openNewDialog()
+
+	if !m.showNewDialog || m.newDialogStage != newDialogStagePicker {
+		t.Fatal("new dialog should open on picker stage")
+	}
+
+	_, _ = m.updateNewDialog(tea.KeyPressMsg{Text: "r", Code: 'r'})
+
+	if m.newDialogStage != newDialogStageForm {
+		t.Fatalf("expected form stage after selecting planning, got %d", m.newDialogStage)
+	}
+	if m.newDialogType != newDialogTypePlanning {
+		t.Fatalf("expected planning form type, got %q", m.newDialogType)
+	}
+	if m.newForm == nil {
+		t.Fatal("expected planning form model to be initialized")
+	}
+	if m.showSpawnDialog {
+		t.Fatal("planning picker selection should not open spawn dialog")
+	}
+}
+
+func TestNewDialogPickerIgnoresLegacyYKey(t *testing.T) {
+	m := NewModel(nil, nil, "test")
+	_ = m.openNewDialog()
+
+	_, _ = m.updateNewDialog(tea.KeyPressMsg{Text: "y", Code: 'y'})
+
+	if m.newDialogStage != newDialogStagePicker {
+		t.Fatalf("unexpected stage change for legacy y key: got %d", m.newDialogStage)
+	}
+	if m.showSpawnDialog {
+		t.Fatal("legacy y key should not open spawn dialog")
 	}
 }
 

@@ -239,6 +239,25 @@ func styledTextArea() textarea.Model {
 	return ta
 }
 
+func plainStatus(state worker.WorkerState, exitCode int) string {
+	switch state {
+	case worker.StateRunning:
+		return "⟳ running"
+	case worker.StateExited:
+		return "✓ done"
+	case worker.StateFailed:
+		return fmt.Sprintf("✗ fail(%d)", exitCode)
+	case worker.StateKilled:
+		return "☠ killed"
+	case worker.StatePending:
+		return "○ pending"
+	case worker.StateSpawning:
+		return "◌ spawning"
+	default:
+		return "? unknown"
+	}
+}
+
 func statusIndicator(state worker.WorkerState, exitCode int) string {
 	switch state {
 	case worker.StateRunning:

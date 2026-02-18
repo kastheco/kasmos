@@ -240,7 +240,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case planCreatedMsg:
 		if msg.Err != nil {
-			m.setViewportContent(formatCreateError("yolo doc", msg.Err), false)
+			m.setViewportContent(formatCreateError("planning doc", msg.Err), false)
 			return m, nil
 		}
 		m.setViewportContent(fmt.Sprintf("created %s", msg.Path), false)
@@ -527,19 +527,18 @@ func (m *Model) refreshTableRows() {
 	m.tableRowWorkerIDs = make([]string, 0, len(ordered))
 	rows := make([]table.Row, 0, len(ordered))
 	withTask := len(m.workerTableColumns()) == 5
-	treePrefixStyle := lipgloss.NewStyle().Foreground(colorMidGray).Faint(true)
 	for _, w := range ordered {
-		status := statusIndicator(w.State, w.ExitCode)
+		status := plainStatus(w.State, w.ExitCode)
 		if w.State == worker.StateRunning {
-			status = m.spinner.View() + " running"
+			status = "⟳ running"
 		}
 
 		idLabel := w.ID
 		if prefix := prefixes[w.ID]; prefix != "" {
-			idLabel = treePrefixStyle.Render(prefix) + w.ID
+			idLabel = prefix + w.ID
 		}
 
-		row := table.Row{idLabel, status, roleBadge(w.Role), w.FormatDuration()}
+		row := table.Row{idLabel, status, w.Role, w.FormatDuration()}
 		if withTask {
 			task := w.TaskID
 			if task == "" {
