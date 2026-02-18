@@ -19,7 +19,7 @@ const (
 const (
 	newDialogTypeFeatureSpec = "feature-spec"
 	newDialogTypeGSD         = "gsd"
-	newDialogTypePlanning    = "planning"
+	newDialogTypeYolo        = "yolo"
 )
 
 type newFormModel struct {
@@ -85,7 +85,7 @@ func newFormModelFor(formType string) *newFormModel {
 
 		f.gsdFilename = filename
 		f.gsdTasks = tasks
-	case newDialogTypePlanning:
+	case newDialogTypeYolo:
 		filename := styledTextInput()
 		filename.Placeholder = "plan.md"
 		filename.SetValue("plan.md")
@@ -113,7 +113,7 @@ func newFormModelFor(formType string) *newFormModel {
 
 func (f *newFormModel) fieldCount() int {
 	switch f.formType {
-	case newDialogTypePlanning:
+	case newDialogTypeYolo:
 		return 3
 	default:
 		return 2
@@ -140,7 +140,7 @@ func (f *newFormModel) focusCurrentField() tea.Cmd {
 			return f.gsdFilename.Focus()
 		}
 		return f.gsdTasks.Focus()
-	case newDialogTypePlanning:
+	case newDialogTypeYolo:
 		switch f.focusedIdx {
 		case 0:
 			return f.planFilename.Focus()
@@ -180,8 +180,9 @@ func (m *Model) updateNewDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.startNewDialogForm(newDialogTypeFeatureSpec)
 			case "g":
 				return m, m.startNewDialogForm(newDialogTypeGSD)
-			case "r":
-				return m, m.startNewDialogForm(newDialogTypePlanning)
+			case "y":
+				m.closeNewDialog()
+				return m, m.openSpawnDialog()
 			}
 			return m, nil
 		}
@@ -221,7 +222,7 @@ func (m *Model) updateNewDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.newForm.gsdTasks, cmd = m.newForm.gsdTasks.Update(msg)
 		}
-	case newDialogTypePlanning:
+	case newDialogTypeYolo:
 		switch m.newForm.focusedIdx {
 		case 0:
 			m.newForm.planFilename, cmd = m.newForm.planFilename.Update(msg)
@@ -271,7 +272,7 @@ func (m *Model) submitNewDialogForm() tea.Cmd {
 		m.closeNewDialog()
 		return gsdCreateCmd(filename, tasks)
 
-	case newDialogTypePlanning:
+	case newDialogTypeYolo:
 		filename := strings.TrimSpace(m.newForm.planFilename.Value())
 		title := strings.TrimSpace(m.newForm.planTitle.Value())
 		content := strings.TrimSpace(m.newForm.planContent.Value())
@@ -325,9 +326,9 @@ func (m *Model) renderNewDialog() string {
 			"",
 			newDialogOptionStyle.Render("[s] feature spec")+"  "+newDialogMutedStyle.Render("create a spec-kitty feature with research + planning"),
 			newDialogOptionStyle.Render("[g] gsd task list")+"  "+newDialogMutedStyle.Render("create a checkbox task markdown file"),
-			newDialogOptionStyle.Render("[r] planning doc")+"   "+newDialogMutedStyle.Render("create a freeform planning markdown doc"),
+			newDialogOptionStyle.Render("[y] yolo mode")+"    "+newDialogMutedStyle.Render("quick task with optional planning"),
 			"",
-			newDialogHelpStyle.Render("s/g/r select . esc cancel"),
+			newDialogHelpStyle.Render("s/g/y select . esc cancel"),
 		)
 		dialog := dialogStyle.Width(80).Render(content)
 		return m.renderWithBackdrop(dialog)
@@ -376,10 +377,10 @@ func (m *Model) renderNewDialog() string {
 		dialog := dialogStyle.Width(70).Render(content)
 		return m.renderWithBackdrop(dialog)
 
-	case newDialogTypePlanning:
+	case newDialogTypeYolo:
 		content := lipgloss.JoinVertical(
 			lipgloss.Left,
-			dialogHeaderStyle.Render("new planning doc"),
+			dialogHeaderStyle.Render("yolo mode"),
 			"",
 			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("filename"),
 			m.newForm.planFilename.View(),

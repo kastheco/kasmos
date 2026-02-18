@@ -240,7 +240,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case planCreatedMsg:
 		if msg.Err != nil {
-			m.setViewportContent(formatCreateError("planning doc", msg.Err), false)
+			m.setViewportContent(formatCreateError("yolo doc", msg.Err), false)
 			return m, nil
 		}
 		m.setViewportContent(fmt.Sprintf("created %s", msg.Path), false)
