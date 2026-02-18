@@ -6,21 +6,21 @@ dependencies:
 - WP01
 - WP02
 subtasks:
-- Add showLauncher bool and config *config.Config to Model struct
-- NewModel() accepts config parameter, sets showLauncher based on whether CLI args were provided
-- View() checks showLauncher first, renders launcher or dashboard
-- Launcher key handling in Update(): dispatch menu actions
-- n -> set showLauncher=false, open spawn dialog (yolo mode)
-- f -> set showLauncher=false, start spec-kitty feature creation
-- p -> set showLauncher=false, start spec-kitty plan flow
-- h -> open history overlay (Esc returns to launcher)
-- r -> open restore picker (WP04 implements, stub for now)
-- s -> open settings view (WP05 implements, stub for now)
-- q -> quit
-- CLI bypass: when args provided OR --attach OR --daemon, showLauncher starts as false
-- Esc from history/restore/settings returns to launcher (not dashboard)
-- main.go changes: load config, detect bare invocation, pass to NewModel
-- Tests: launcher shown on bare invocation, skipped with args, menu key routing
+- 'Add showLauncher bool and config pointer to Model struct'
+- 'NewModel() accepts config parameter, sets showLauncher based on CLI args'
+- 'View() checks showLauncher first, renders launcher or dashboard'
+- 'Launcher key handling in Update() dispatches menu actions'
+- 'n sets showLauncher=false and opens spawn dialog (yolo mode)'
+- 'f sets showLauncher=false and starts spec-kitty feature creation'
+- 'p sets showLauncher=false and starts spec-kitty plan flow'
+- 'h opens history overlay (Esc returns to launcher)'
+- 'r opens restore picker (WP04 implements, stub for now)'
+- 's opens settings view (WP05 implements, stub for now)'
+- 'q quits'
+- 'CLI bypass when args provided or --attach or --daemon'
+- 'Esc from history/restore/settings returns to launcher not dashboard'
+- 'main.go loads config, detects bare invocation, passes to NewModel'
+- 'Tests for launcher shown/hidden, menu key routing'
 phase: Wave 2 - Integration
 assignee: ''
 agent: ''

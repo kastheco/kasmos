@@ -4,14 +4,14 @@ title: Launcher Screen View
 lane: planned
 dependencies: []
 subtasks:
-- ASCII art block-font "kasmos" text (fits within 80 cols)
-- Gradient coloring using gamut (already a dep) from hot pink (#F25D94) to purple (#7D56F4)
-- Menu items: n (new task), f (create feature spec), p (create plan), h (view history), r (restore session), s (settings), q (quit)
-- Each menu item: key hint left, label right, dimmed description below
-- Centered layout responsive to terminal width/height
-- renderLauncher(width, height int) string function
-- Version string shown below branding
-- All text lowercase per project convention
+- 'ASCII art block-font kasmos text (fits within 80 cols)'
+- 'Gradient coloring using gamut from hot pink to purple'
+- 'Menu items with key hints (n, f, p, h, r, s, q)'
+- 'Each menu item has key hint left, label right, dimmed description below'
+- 'Centered layout responsive to terminal width/height'
+- 'renderLauncher(width, height int) string function'
+- 'Version string shown below branding'
+- 'All text lowercase per project convention'
 phase: Wave 1 - Foundation
 assignee: ''
 agent: ''

@@ -5,13 +5,13 @@ lane: planned
 dependencies:
 - WP03
 subtasks:
-- f action: transition to dashboard, open spec-kitty feature creation flow
-- p action: if multiple features in kitty-specs/, show feature picker, then start plan flow
-- p action: if one feature, start plan flow directly
-- p action: if no features, show message suggesting f first
-- Handle missing spec-kitty binary gracefully (error message, stay on launcher)
-- Reuse existing newdialog.go flows where possible (NewFormModel for spec-kitty)
-- Tests: f routes to feature creation, p with features shows picker, p without features shows message, missing spec-kitty shows error
+- 'f action transitions to dashboard and opens spec-kitty feature creation flow'
+- 'p action with multiple features shows feature picker then starts plan flow'
+- 'p action with one feature starts plan flow directly'
+- 'p action with no features shows message suggesting f first'
+- 'Handle missing spec-kitty binary gracefully (error message, stay on launcher)'
+- 'Reuse existing newdialog.go flows where possible'
+- 'Tests for f/p routing, feature picker, missing spec-kitty error'
 phase: Wave 3 - Extended Features
 assignee: ''
 agent: ''

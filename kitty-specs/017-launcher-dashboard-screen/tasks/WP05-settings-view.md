@@ -6,15 +6,15 @@ dependencies:
 - WP01
 - WP03
 subtasks:
-- Settings overlay/view accessible from launcher only
-- Display 4 agent roles (planner, coder, reviewer, release) with current model + reasoning
-- Default task source selector (spec-kitty, gsd, yolo)
-- Navigate between roles with up/down
-- Edit model name (text input) and reasoning level (cycle: default/low/medium/high)
-- Save on exit (Esc saves and returns to launcher)
-- Wire config into worker spawn: when spawning, look up role in config for model/reasoning
-- Handle missing config gracefully (create with defaults)
-- Tests: display settings, edit + save round-trip, defaults on missing config
+- 'Settings overlay/view accessible from launcher only'
+- 'Display 4 agent roles (planner, coder, reviewer, release) with current model + reasoning'
+- 'Default task source selector (spec-kitty, gsd, yolo)'
+- 'Navigate between roles with up/down'
+- 'Edit model name (text input) and reasoning level cycling'
+- 'Save on exit (Esc saves and returns to launcher)'
+- 'Wire config into worker spawn to look up role config'
+- 'Handle missing config gracefully (create with defaults)'
+- 'Tests for display settings, edit + save round-trip, defaults on missing config'
 phase: Wave 3 - Extended Features
 assignee: ''
 agent: ''

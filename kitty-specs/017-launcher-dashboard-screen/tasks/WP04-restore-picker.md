@@ -5,16 +5,16 @@ lane: planned
 dependencies:
 - WP03
 subtasks:
-- Restore picker overlay/view (similar to history overlay but with selection + load)
-- Show last active session from .kasmos/session.json at top (if exists and PID dead)
-- List archived sessions from .kasmos/sessions/ below, reverse chronological
-- Each entry shows: session ID, timestamp, worker count, task source type
-- Up/down navigation, Enter to select and load
-- On select: load session, restore workers, transition to dashboard (showLauncher=false)
-- Handle no-sessions gracefully (message + stay on launcher)
-- Handle corrupt session gracefully (error message, skip entry)
-- Esc returns to launcher
-- Tests: render with sessions, render empty, selection + load
+- 'Restore picker overlay with selection and load'
+- 'Show last active session from .kasmos/session.json at top (if exists and PID dead)'
+- 'List archived sessions from .kasmos/sessions/ below, reverse chronological'
+- 'Each entry shows session ID, timestamp, worker count, task source type'
+- 'Up/down navigation, Enter to select and load'
+- 'On select load session, restore workers, transition to dashboard'
+- 'Handle no-sessions gracefully (message + stay on launcher)'
+- 'Handle corrupt session gracefully (error message, skip entry)'
+- 'Esc returns to launcher'
+- 'Tests for render with sessions, render empty, selection + load'
 phase: Wave 3 - Extended Features
 assignee: ''
 agent: ''

@@ -4,13 +4,13 @@ title: Config Package
 lane: planned
 dependencies: []
 subtasks:
-- Config struct with AgentConfig per role (planner, coder, reviewer, release)
-- Each AgentConfig has model (string) and reasoning (string) fields
-- Top-level default_task_source field (string: "spec-kitty", "gsd", or "yolo")
-- Load() reads from .kasmos/config.toml, returns defaults if file missing
-- Save() writes config to .kasmos/config.toml, creates .kasmos/ dir if needed
-- DefaultConfig() returns sensible defaults
-- Tests: load existing, load missing (defaults), save + reload round-trip, corrupt file handling
+- 'Config struct with AgentConfig per role (planner, coder, reviewer, release)'
+- 'Each AgentConfig has model (string) and reasoning (string) fields'
+- 'Top-level default_task_source field (spec-kitty, gsd, or yolo)'
+- 'Load() reads from .kasmos/config.toml, returns defaults if file missing'
+- 'Save() writes config to .kasmos/config.toml, creates .kasmos/ dir if needed'
+- 'DefaultConfig() returns sensible defaults'
+- 'Tests: load existing, load missing (defaults), save + reload round-trip, corrupt file handling'
 phase: Wave 1 - Foundation
 assignee: ''
 agent: ''
