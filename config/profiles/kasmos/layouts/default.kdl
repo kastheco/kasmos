@@ -1,0 +1,53 @@
+layout {
+    default_tab_template {
+        children
+        pane size=1 borderless=true {
+            plugin location="zjstatus" {
+                // rose-pine-moon palette
+                color_bg   "#393552"
+                color_fg   "#e0def4"
+                color_sel  "#44415a"
+                color_blue "#3e8fb0"
+                color_gold "#f6c177"
+                color_rose "#eb6f92"
+                color_pine "#c4a7e7"
+                color_foam "#9ccfd8"
+
+                format_left   "{mode}#[bg=$overlay,fg=$text] {session} #[fg=$overlay,bg=$base]{pipe_zjstatus_hints}#[bg=$base] {tabs}"
+                format_center ""
+                format_right  "#[fg=$overlay,bg=$base]#[bg=$overlay,fg=$subtle] {datetime}#[fg=$pine,bg=$overlay]#[bg=$pine,fg=$base,bold]  "
+                format_space  "#[bg=$base]"
+
+                hide_frame_for_single_pane "false"
+
+                mode_normal        "#[bg=$blue,fg=$bg,bold] NORMAL "
+                mode_locked        "#[bg=$bg,fg=$fg,dim] LOCKED "
+                mode_pane          "#[bg=$pine,fg=$bg,bold] PANE "
+                mode_tab           "#[bg=$gold,fg=$bg,bold] TAB "
+                mode_resize        "#[bg=$foam,fg=$bg,bold] RESIZE "
+                mode_move          "#[bg=$foam,fg=$bg,bold] MOVE "
+                mode_scroll        "#[bg=$blue,fg=$bg,bold] SCROLL "
+                mode_search        "#[bg=$blue,fg=$bg,bold] SEARCH "
+                mode_enter_search  "#[bg=$blue,fg=$bg,bold] SEARCH "
+                mode_session       "#[bg=$rose,fg=$bg,bold] SESSION "
+                mode_rename_tab    "#[bg=$gold,fg=$bg,bold] RENAME TAB "
+                mode_rename_pane   "#[bg=$pine,fg=$bg,bold] RENAME PANE "
+                mode_tmux          "#[bg=$gold,fg=$bg,bold] TMUX "
+
+                tab_normal              "#[bg=$sel,fg=$fg] {name} "
+                tab_normal_fullscreen   "#[bg=$sel,fg=$fg] {name} [] "
+                tab_normal_sync         "#[bg=$sel,fg=$fg] {name} <> "
+                tab_active              "#[bg=$blue,fg=$bg,bold] {name} "
+                tab_active_fullscreen   "#[bg=$blue,fg=$bg,bold] {name} [] "
+                tab_active_sync         "#[bg=$blue,fg=$bg,bold] {name} <> "
+                tab_separator           "#[bg=$bg] "
+
+                pipe_zjstatus_hints_format "{output}"
+
+                datetime          "#[bg=$bg,fg=$fg,dim]{format}"
+                datetime_format   "%H:%M"
+                datetime_timezone "America/Chicago"
+            }
+        }
+    }
+}

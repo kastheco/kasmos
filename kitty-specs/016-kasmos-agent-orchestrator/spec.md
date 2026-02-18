@@ -1,9 +1,9 @@
-# Feature Specification: kasmos - tmux agent orchestrator
+# Feature Specification: kasmos - agent orchestrator
 
-**Feature Branch**: `016-kasmos-tmux-agent-orchestrator`
+**Feature Branch**: `016-kasmos-agent-orchestrator`
 **Created**: 2026-02-17
 **Status**: Draft
-**Input**: Fresh Go program replacing the Rust/Zellij kasmos. TUI-based orchestrator for concurrent AI coding agent sessions using bubbletea + tmux.
+**Input**: Fresh Go program replacing the Rust/Zellij kasmos. TUI-based orchestrator for concurrent AI coding agent sessions using bubbletea.
 
 ## User Scenarios & Testing
 

@@ -1,8 +1,8 @@
-# Specification Quality Checklist: kasmos - tmux agent orchestrator
+# Specification Quality Checklist: kasmos - agent orchestrator
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-02-17
-**Feature**: kitty-specs/016-kasmos-tmux-agent-orchestrator/spec.md
+**Feature**: kitty-specs/016-kasmos-agent-orchestrator/spec.md
 
 ## Content Quality
 
