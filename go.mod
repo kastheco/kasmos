@@ -5,6 +5,7 @@ go 1.23.0
 require (
 	github.com/charmbracelet/bubbletea/v2 v2.0.0-alpha.2
 	github.com/charmbracelet/lipgloss/v2 v2.0.0-alpha.2
+	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/spf13/cobra v1.8.0
 	gopkg.in/yaml.v3 v3.0.1
 )
