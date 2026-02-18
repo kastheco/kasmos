@@ -153,6 +153,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.updateKeyStates()
+		m.triggerPersist()
 
 		cfg := worker.SpawnConfig{ID: w.ID, Role: w.Role, Prompt: w.Prompt, Files: w.Files}
 		return m, spawnWorkerCmd(m.backend, cfg)
@@ -181,6 +182,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.selectedWorkerID = w.ID
 		m.refreshTableRows()
 		m.refreshViewportFromSelected(true)
+		m.triggerPersist()
 
 		cfg := worker.SpawnConfig{
 			ID:              w.ID,
@@ -199,6 +201,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if w.State == worker.StateRunning && w.Handle != nil {
 				_ = w.Handle.Kill(3 * time.Second)
 			}
+		}
+		if m.persister != nil {
+			_ = m.persister.SaveSync(m.buildSessionState())
 		}
 		return m, tea.Quit
 
@@ -220,8 +225,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if w.SpawnedAt.IsZero() {
 			w.SpawnedAt = time.Now()
 		}
+		m.logDaemonEvent(workerSpawnEvent(w.ID, w.Role, w.TaskID))
 		m.workers = m.manager.All()
 		m.refreshTableRows()
+		m.triggerPersist()
 
 		readWorkerOutput(w.ID, w.Handle.Stdout(), m.program)
 		return m, waitWorkerCmd(w.ID, w.Handle)
@@ -263,6 +270,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			w.SessionID = worker.ExtractSessionID(w.Output.Content())
 		}
 		w.Handle = nil
+		m.logDaemonEvent(workerExitEvent(w.ID, w.ExitCode, w.FormatDuration(), w.SessionID))
 
 		if w.TaskID != "" {
 			for i := range m.loadedTasks {
@@ -286,6 +294,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if w.ID == m.selectedWorkerID {
 			m.refreshViewportFromSelected(true)
 		}
+		m.triggerPersist()
+		if m.daemon {
+			if cmd := m.checkDaemonComplete(); cmd != nil {
+				return m, cmd
+			}
+		}
 		return m, nil
 
 	case workerKilledMsg:
@@ -293,10 +307,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			w.State = worker.StateKilled
 			w.ExitedAt = time.Now()
 			w.Handle = nil
+			m.logDaemonEvent(workerKillEvent(msg.WorkerID))
 			m.refreshTableRows()
 			if w.ID == m.selectedWorkerID {
 				m.refreshViewportFromSelected(true)
 			}
+			m.triggerPersist()
 		}
 		return m, nil
 
@@ -767,6 +783,91 @@ func (m *Model) openSpawnDialogWithTaskPrefill(role, prompt string, files []stri
 	m.spawnForm = newSpawnDialogModelWithPrefill(role, prompt, files)
 	m.spawnForm.taskID = taskID
 	return m.spawnForm.focusCurrentField()
+}
+
+func (m *Model) spawnAllTasks() tea.Cmd {
+	cmds := make([]tea.Cmd, 0)
+	for _, t := range m.loadedTasks {
+		if t.State != task.TaskUnassigned {
+			continue
+		}
+
+		role := t.SuggestedRole
+		if role == "" {
+			role = "coder"
+		}
+
+		id := m.manager.NextWorkerID()
+		w := &worker.Worker{
+			ID:        id,
+			Role:      role,
+			Prompt:    strings.TrimSpace(t.Description),
+			TaskID:    t.ID,
+			State:     worker.StateSpawning,
+			SpawnedAt: time.Now(),
+			Output:    worker.NewOutputBuffer(worker.DefaultMaxLines),
+		}
+		m.manager.Add(w)
+
+		for i := range m.loadedTasks {
+			if m.loadedTasks[i].ID == t.ID {
+				m.loadedTasks[i].State = task.TaskInProgress
+				m.loadedTasks[i].WorkerID = w.ID
+				break
+			}
+		}
+
+		cfg := worker.SpawnConfig{ID: w.ID, Role: w.Role, Prompt: w.Prompt}
+		cmds = append(cmds, spawnWorkerCmd(m.backend, cfg))
+	}
+
+	m.workers = m.manager.All()
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
+}
+
+func (m *Model) checkDaemonComplete() tea.Cmd {
+	workers := m.manager.All()
+	if len(workers) == 0 {
+		return nil
+	}
+
+	for _, w := range workers {
+		if w.State == worker.StateRunning || w.State == worker.StateSpawning {
+			return nil
+		}
+	}
+
+	if m.spawnAll {
+		m.resolveTaskDependencies()
+		if cmd := m.spawnAllTasks(); cmd != nil {
+			return cmd
+		}
+	}
+
+	total := 0
+	passed := 0
+	failed := 0
+	for _, w := range workers {
+		total++
+		if w.State == worker.StateExited {
+			passed++
+		} else {
+			failed++
+		}
+	}
+
+	exitCode := 0
+	if failed > 0 {
+		exitCode = 1
+	}
+
+	m.daemonDone = true
+	m.daemonExitCode = exitCode
+	m.logDaemonEvent(sessionEndEvent(total, passed, failed, time.Since(m.sessionStart), exitCode))
+	return tea.Quit
 }
 
 func (m *Model) resolveTaskDependencies() {

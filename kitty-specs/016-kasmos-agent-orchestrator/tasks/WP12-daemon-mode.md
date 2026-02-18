@@ -1,27 +1,32 @@
 ---
-work_package_id: "WP12"
-title: "Daemon Mode (Headless Operation)"
-lane: "planned"
+work_package_id: WP12
+title: Daemon Mode (Headless Operation)
+lane: doing
 dependencies:
-  - "WP04"
+- WP04
 subtasks:
-  - "internal/tui/daemon.go - Daemon event logging (NDJSON + human-readable)"
-  - "cmd/kasmos/main.go - -d flag, --format flag, TTY detection"
-  - "tea.WithoutRenderer() setup for daemon mode"
-  - "DaemonEvent types and formatting"
-  - "Exit code logic (0 if all pass, 1 if any fail)"
-  - "Integration with --spawn-all for batch execution"
-phase: "Wave 3 - Daemon Mode + Persistence"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
+- internal/tui/daemon.go - Daemon event logging (NDJSON + human-readable)
+- cmd/kasmos/main.go - -d flag, --format flag, TTY detection
+- tea.WithoutRenderer() setup for daemon mode
+- DaemonEvent types and formatting
+- Exit code logic (0 if all pass, 1 if any fail)
+- Integration with --spawn-all for batch execution
+phase: Wave 3 - Daemon Mode + Persistence
+assignee: ''
+agent: ''
+shell_pid: ''
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-17T00:00:00Z"
-    lane: "planned"
-    agent: "planner"
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-17T00:00:00Z'
+  lane: planned
+  agent: planner
+  action: Prompt generated via /spec-kitty.tasks
+- timestamp: '2026-02-18T14:52:47.582546632+00:00'
+  lane: doing
+  actor: manager
+  shell_pid: '472734'
+  action: transition active (Launching WP12 coder - daemon mode)
 ---
 
 # Work Package Prompt: WP12 - Daemon Mode (Headless Operation)

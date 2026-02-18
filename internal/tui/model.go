@@ -2,7 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/v2/help"
 	"github.com/charmbracelet/bubbles/v2/spinner"
@@ -11,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 
+	"github.com/user/kasmos/internal/persist"
 	"github.com/user/kasmos/internal/task"
 	"github.com/user/kasmos/internal/worker"
 )
@@ -26,15 +29,17 @@ type Model struct {
 	fullScreen bool
 	autoFollow bool
 
-	keys     keyMap
-	help     help.Model
-	table    table.Model
-	viewport viewport.Model
-	spinner  spinner.Model
-	backend  worker.WorkerBackend
-	manager  *worker.WorkerManager
-	workers  []*worker.Worker
-	program  *tea.Program
+	keys      keyMap
+	help      help.Model
+	table     table.Model
+	viewport  viewport.Model
+	spinner   spinner.Model
+	backend   worker.WorkerBackend
+	manager   *worker.WorkerManager
+	workers   []*worker.Worker
+	program   *tea.Program
+	persister *persist.SessionPersister
+	sessionID string
 
 	showSpawnDialog    bool
 	spawnForm          *spawnDialogModel
@@ -75,6 +80,13 @@ type Model struct {
 	taskSource      task.Source
 	loadedTasks     []task.Task
 	selectedTaskIdx int
+
+	daemon         bool
+	daemonFormat   string
+	spawnAll       bool
+	sessionStart   time.Time
+	daemonDone     bool
+	daemonExitCode int
 }
 
 type AnalysisResult struct {
@@ -130,11 +142,82 @@ func (m *Model) SetProgram(program *tea.Program) {
 	m.program = program
 }
 
+func (m *Model) SetPersister(p *persist.SessionPersister, sessionID string) {
+	m.persister = p
+	m.sessionID = sessionID
+}
+
+func (m *Model) RestoreWorker(w *worker.Worker) {
+	m.manager.Add(w)
+	m.workers = m.manager.All()
+}
+
+func (m *Model) ResetWorkerCounter(n int64) {
+	m.manager.ResetWorkerCounter(n)
+}
+
+func (m *Model) buildSessionState() persist.SessionState {
+	workers := m.manager.All()
+	snapshots := make([]persist.WorkerSnapshot, 0, len(workers))
+	for _, w := range workers {
+		snapshots = append(snapshots, persist.WorkerToSnapshot(w))
+	}
+
+	var ts *persist.TaskSourceConfig
+	if m.taskSource != nil && m.taskSource.Type() != "ad-hoc" {
+		ts = &persist.TaskSourceConfig{
+			Type: m.taskSource.Type(),
+			Path: m.taskSource.Path(),
+		}
+	}
+
+	return persist.SessionState{
+		Version:       1,
+		SessionID:     m.sessionID,
+		StartedAt:     time.Now(),
+		TaskSource:    ts,
+		Workers:       snapshots,
+		NextWorkerNum: int64(len(workers) + 1),
+		PID:           os.Getpid(),
+	}
+}
+
+func (m *Model) triggerPersist() {
+	if m.persister == nil {
+		return
+	}
+	m.persister.Save(m.buildSessionState())
+}
+
+func (m *Model) SetDaemonMode(daemon bool, format string, spawnAll bool) {
+	m.daemon = daemon
+	m.daemonFormat = format
+	m.spawnAll = spawnAll
+	m.sessionStart = time.Now()
+}
+
+func (m *Model) DaemonExitCode() int {
+	return m.daemonExitCode
+}
+
 func (m *Model) Init() (tea.Model, tea.Cmd) {
-	return m, tea.Batch(tickCmd(), m.spinner.Tick)
+	cmds := []tea.Cmd{tickCmd(), m.spinner.Tick}
+	if m.daemon {
+		m.logDaemonEvent(sessionStartEvent(m.modeName(), m.taskSourcePath, len(m.loadedTasks)))
+	}
+	if m.daemon && m.spawnAll {
+		if cmd := m.spawnAllTasks(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	return m, tea.Batch(cmds...)
 }
 
 func (m *Model) View() string {
+	if m.daemon {
+		return ""
+	}
+
 	if !m.ready {
 		return ""
 	}

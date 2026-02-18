@@ -1,28 +1,33 @@
 ---
-work_package_id: "WP13"
-title: "Session Persistence + Reattach"
-lane: "planned"
+work_package_id: WP13
+title: Session Persistence + Reattach
+lane: doing
 dependencies:
-  - "WP04"
+- WP04
 subtasks:
-  - "internal/persist/schema.go - SessionState struct (maps to JSON schema)"
-  - "internal/persist/session.go - SessionPersister (save/load, atomic write, debounce)"
-  - "cmd/kasmos/main.go - --attach flag"
-  - "Reattach logic: detect running session, restore state"
-  - "Orphan detection (PID dead, mark workers killed)"
-  - "Output tail preservation (last 200 lines per worker)"
-  - "Unit tests"
-phase: "Wave 3 - Daemon Mode + Persistence"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
+- internal/persist/schema.go - SessionState struct (maps to JSON schema)
+- internal/persist/session.go - SessionPersister (save/load, atomic write, debounce)
+- cmd/kasmos/main.go - --attach flag
+- 'Reattach logic: detect running session, restore state'
+- Orphan detection (PID dead, mark workers killed)
+- Output tail preservation (last 200 lines per worker)
+- Unit tests
+phase: Wave 3 - Daemon Mode + Persistence
+assignee: ''
+agent: ''
+shell_pid: ''
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-17T00:00:00Z"
-    lane: "planned"
-    agent: "planner"
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-17T00:00:00Z'
+  lane: planned
+  agent: planner
+  action: Prompt generated via /spec-kitty.tasks
+- timestamp: '2026-02-18T14:52:48.643090054+00:00'
+  lane: doing
+  actor: manager
+  shell_pid: '472734'
+  action: transition active (Launching WP13 coder - session persistence + reattach)
 ---
 
 # Work Package Prompt: WP13 - Session Persistence + Reattach
