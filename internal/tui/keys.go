@@ -149,10 +149,9 @@ func defaultKeyMap() keyMap {
 
 func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
-		k.Spawn, k.Kill, k.Continue, k.Restart,
-		k.Fullscreen, k.ScrollDown, k.ScrollUp,
-		k.GotoBottom, k.GotoTop,
-		k.NextPanel, k.Help, k.Quit,
+		k.Spawn, k.Kill, k.Restart, k.Continue,
+		k.NextPanel, k.Fullscreen,
+		k.Help, k.Quit,
 	}
 }
 
@@ -160,8 +159,8 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.NextPanel, k.PrevPanel, k.Select, k.Back},
 		{k.Spawn, k.Kill, k.Continue, k.Restart, k.Batch, k.GenPrompt, k.Analyze},
-		{k.Fullscreen, k.ScrollDown, k.ScrollUp, k.GotoBottom, k.GotoTop, k.Search},
-		{k.Help, k.Quit, k.ForceQuit, k.Filter},
+		{k.Fullscreen, k.ScrollDown, k.ScrollUp, k.HalfDown, k.HalfUp, k.GotoBottom, k.GotoTop},
+		{k.Help, k.Quit, k.ForceQuit},
 	}
 }
 
