@@ -20,6 +20,9 @@ import (
 	"github.com/user/kasmos/internal/worker"
 )
 
+// Set at build time: -ldflags "-X main.version=2.0.0"
+var version = "dev"
+
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -40,7 +43,7 @@ func newRootCmd() *cobra.Command {
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if showVersion {
-				fmt.Fprintln(cmd.OutOrStdout(), "kasmos v2.0.0")
+				fmt.Fprintf(cmd.OutOrStdout(), "kasmos v%s\n", version)
 				return nil
 			}
 
@@ -87,7 +90,7 @@ func newRootCmd() *cobra.Command {
 			ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
 
-			model := tui.NewModel(backend, source)
+			model := tui.NewModel(backend, source, version)
 			if daemon {
 				model.SetDaemonMode(true, format, spawnAll)
 			}

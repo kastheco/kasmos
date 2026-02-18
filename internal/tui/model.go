@@ -87,6 +87,8 @@ type Model struct {
 	sessionStart   time.Time
 	daemonDone     bool
 	daemonExitCode int
+
+	version string
 }
 
 type AnalysisResult struct {
@@ -95,7 +97,7 @@ type AnalysisResult struct {
 	SuggestedPrompt string
 }
 
-func NewModel(backend worker.WorkerBackend, source task.Source) *Model {
+func NewModel(backend worker.WorkerBackend, source task.Source, version string) *Model {
 	t := table.New(
 		table.WithColumns([]table.Column{
 			{Title: "ID", Width: 10},
@@ -123,6 +125,7 @@ func NewModel(backend worker.WorkerBackend, source task.Source) *Model {
 		backend:    backend,
 		manager:    worker.NewWorkerManager(),
 		workers:    make([]*worker.Worker, 0),
+		version:    version,
 	}
 	if source != nil {
 		m.taskSource = source

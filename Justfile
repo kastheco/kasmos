@@ -1,51 +1,70 @@
 set shell := ["bash", "-cu"]
 set dotenv-load := true
 
-# Spec Kitty manual swarm lifecycle
-# Usage: just swarm <prefix> [flags...]
-#   just swarm 001                  # start next wave
-#   just swarm 003 --status         # show board + waves
-#   just swarm 001 --cleanup        # start with orphan cleanup
-#   just swarm 001 --review WP02
-#   just swarm 001 --done WP01
-#   just swarm 001 --reject WP02 --feedback /tmp/fb.md
-
-# just swarm 001 --dry-run
-swarm +ARGS:
-    @scripts/sk-start.sh {{ ARGS }}
-
-# Install kasmos binary to ~/.cargo/bin
-install:
-    cargo install --path crates/kasmos
-
-# Build
+# Build kasmos binary
 build:
-    cargo build
+    go build ./cmd/kasmos
 
-# Run (pass-through args)
-run +ARGS:
-    cargo run -p kasmos -- {{ ARGS }}
+# Install to GOPATH/bin
+install:
+    go install ./cmd/kasmos
 
-# Launch orchestration by feature path or prefix (e.g. 001)
-launch feature mode="continuous":
-    cargo run -p kasmos -- launch {{ feature }} --mode {{ mode }}
-
-# Show orchestration status (current dir if feature omitted)
-status feature="":
-    if [ -n "{{ feature }}" ]; then cargo run -p kasmos -- status {{ feature }}; else cargo run -p kasmos -- status; fi
-
-# Attach to running orchestration by feature path or prefix (e.g. 001)
-attach feature:
-    cargo run -p kasmos -- attach {{ feature }}
-
-# Stop orchestration (current dir if feature omitted)
-stop feature="":
-    if [ -n "{{ feature }}" ]; then cargo run -p kasmos -- stop {{ feature }}; else cargo run -p kasmos -- stop; fi
-
-# Test
+# Run tests
 test:
-    cargo test
+    go test ./...
 
-# Lint
+# Run linter
 lint:
-    cargo clippy --all-targets --all-features -- -D warnings
+    go vet ./...
+
+# Run kasmos (pass-through args)
+run *ARGS:
+    go run ./cmd/kasmos {{ARGS}}
+
+# Dry-run release (no publish)
+release-dry v:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "==> Dry run for kasmos v{{v}}"
+    goreleaser release --snapshot --clean
+    echo "==> Artifacts in dist/"
+
+# Full release: just release 2.0.1
+release v:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    VERSION="{{v}}"
+    TAG="v${VERSION}"
+
+    echo "==> Releasing kasmos ${TAG}"
+
+    # 1. Ensure clean working tree
+    if [[ -n "$(git status --porcelain)" ]]; then
+        echo "ERROR: working tree is dirty, commit or stash first"
+        exit 1
+    fi
+
+    BRANCH=$(git branch --show-current)
+    echo "    branch: ${BRANCH}"
+
+    # 2. Update version in source
+    sed -i "s/var version = \".*\"/var version = \"${VERSION}\"/" cmd/kasmos/main.go
+    if [[ -n "$(git status --porcelain)" ]]; then
+        git add cmd/kasmos/main.go
+        git commit -m "release: v${VERSION}"
+        echo "    committed version bump"
+    fi
+
+    # 3. Tag
+    git tag -a "${TAG}" -m "kasmos ${TAG}"
+    echo "    tagged ${TAG}"
+
+    # 4. Push commit + tag
+    git push origin "${BRANCH}"
+    git push origin "${TAG}"
+    echo "    pushed to origin"
+
+    # 5. Goreleaser builds, creates GH release, pushes homebrew formula
+    goreleaser release --clean
+    echo "==> Done: https://github.com/kastheco/kasmos/releases/tag/${TAG}"

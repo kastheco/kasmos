@@ -10,11 +10,13 @@ import (
 	"github.com/user/kasmos/internal/worker"
 )
 
-const appVersion = "v2.0.0"
-
 func (m *Model) renderHeader() string {
 	title := " " + renderGradientTitle("kasmos") + "  " + dimSubtitleStyle.Render("agent orchestrator")
-	version := versionStyle.Render(appVersion)
+	v := m.version
+	if v != "" && v[0] != 'v' {
+		v = "v" + v
+	}
+	version := versionStyle.Render(v)
 	gap := strings.Repeat(" ", max(1, m.width-lipgloss.Width(title)-lipgloss.Width(version)))
 	line := title + gap + version
 	if !m.hasTaskSource() {

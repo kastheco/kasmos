@@ -1,0 +1,86 @@
+version: 2
+
+env:
+  - CGO_ENABLED=0
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: kasmos
+    main: ./cmd/kasmos
+    binary: kasmos
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: linux
+        goarch: arm64
+
+archives:
+  - id: default
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    files:
+      - LICENSE*
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  use: github
+  groups:
+    - title: Features
+      regexp: '^.*feat[\w)]*:.*$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*fix[\w)]*:.*$'
+      order: 1
+    - title: Tasks
+      regexp: '^.*tasks[\w)]*:.*$'
+      order: 2
+    - title: Others
+      order: 999
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "Merge pull request"
+
+release:
+  github:
+    owner: kastheco
+    name: kasmos
+  draft: false
+  prerelease: auto
+  name_template: "kasmos v{{.Version}}"
+
+homebrew_casks:
+  - repository:
+      owner: kastheco
+      name: homebrew-tap
+      token: "{{ .Env.GH_PAT }}"
+    directory: Casks
+    homepage: "https://github.com/kastheco/kasmos"
+    description: "TUI agent orchestrator for concurrent OpenCode sessions"
+    license: "MIT"
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/kasmos"]
+          end
