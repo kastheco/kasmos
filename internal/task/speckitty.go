@@ -130,8 +130,10 @@ func laneToTaskState(lane string) TaskState {
 	switch strings.ToLower(strings.TrimSpace(lane)) {
 	case "planned":
 		return TaskUnassigned
-	case "doing", "for_review":
+	case "doing":
 		return TaskInProgress
+	case "for_review":
+		return TaskForReview
 	case "done":
 		return TaskDone
 	default:
@@ -167,8 +169,8 @@ func resolveDependencyStates(tasks []Task) {
 			if len(tasks[i].Dependencies) == 0 {
 				continue
 			}
-			// Don't retroactively block tasks that are already done or in progress.
-			if tasks[i].State == TaskDone || tasks[i].State == TaskInProgress {
+			// Don't retroactively block tasks that are already done, in review, or in progress.
+			if tasks[i].State == TaskDone || tasks[i].State == TaskForReview || tasks[i].State == TaskInProgress {
 				continue
 			}
 

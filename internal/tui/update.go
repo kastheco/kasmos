@@ -329,7 +329,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					continue
 				}
 				if w.State == worker.StateExited {
-					m.loadedTasks[i].State = task.TaskDone
+					m.loadedTasks[i].State = task.TaskForReview
 					m.loadedTasks[i].WorkerID = w.ID
 				} else {
 					m.loadedTasks[i].State = task.TaskFailed
@@ -780,6 +780,28 @@ func (m *Model) updateTableKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) updateTaskPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
+	case key.Matches(msg, m.keys.Approve):
+		if m.selectedTaskIdx >= 0 && m.selectedTaskIdx < len(m.loadedTasks) {
+			if m.loadedTasks[m.selectedTaskIdx].State == task.TaskForReview {
+				m.loadedTasks[m.selectedTaskIdx].State = task.TaskDone
+				m.resolveTaskDependencies()
+				m.updateKeyStates()
+				m.triggerPersist()
+			}
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.Reject):
+		if m.selectedTaskIdx >= 0 && m.selectedTaskIdx < len(m.loadedTasks) {
+			t := &m.loadedTasks[m.selectedTaskIdx]
+			if t.State == task.TaskForReview {
+				t.State = task.TaskUnassigned
+				t.WorkerID = ""
+				m.resolveTaskDependencies()
+				m.updateKeyStates()
+				m.triggerPersist()
+			}
+		}
+		return m, nil
 	case key.Matches(msg, m.keys.Continue):
 		return m, m.continueSelectedWorkerCmd()
 	case key.Matches(msg, m.keys.Up):

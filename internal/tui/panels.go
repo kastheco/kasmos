@@ -435,6 +435,8 @@ func taskStatusIndicator(state task.TaskState) string {
 	switch state {
 	case task.TaskDone:
 		return s.Foreground(colorDone).Render("✓")
+	case task.TaskForReview:
+		return s.Foreground(colorLightBlue).Render("◆")
 	case task.TaskInProgress:
 		return s.Foreground(colorRunning).Render("◌")
 	case task.TaskBlocked:

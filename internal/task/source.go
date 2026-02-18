@@ -33,6 +33,7 @@ const (
 	TaskUnassigned TaskState = iota
 	TaskBlocked
 	TaskInProgress
+	TaskForReview
 	TaskDone
 	TaskFailed
 )
@@ -45,6 +46,8 @@ func (s TaskState) String() string {
 		return "blocked"
 	case TaskInProgress:
 		return "in-progress"
+	case TaskForReview:
+		return "for-review"
 	case TaskDone:
 		return "done"
 	case TaskFailed:

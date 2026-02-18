@@ -20,6 +20,8 @@ type keyMap struct {
 	MarkDone key.Binding
 	Continue key.Binding
 	Restart  key.Binding
+	Approve  key.Binding
+	Reject   key.Binding
 	Batch    key.Binding
 	New      key.Binding
 	History  key.Binding
@@ -82,6 +84,14 @@ func defaultKeyMap() keyMap {
 		Restart: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "restart worker"),
+		),
+		Approve: key.NewBinding(
+			key.WithKeys("y"),
+			key.WithHelp("y", "approve task"),
+		),
+		Reject: key.NewBinding(
+			key.WithKeys("!"),
+			key.WithHelp("!", "reject task"),
 		),
 		Batch: key.NewBinding(
 			key.WithKeys("b"),
@@ -165,6 +175,7 @@ func defaultKeyMap() keyMap {
 func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
 		k.Spawn, k.Kill, k.MarkDone, k.Restart, k.Continue,
+		k.Approve, k.Reject,
 		k.New, k.History,
 		k.NextPanel, k.Fullscreen,
 		k.Help, k.Quit,
@@ -174,7 +185,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.NextPanel, k.PrevPanel, k.Select, k.Back},
-		{k.Spawn, k.Kill, k.MarkDone, k.Continue, k.Restart, k.Batch, k.New, k.History, k.GenPrompt, k.Analyze},
+		{k.Spawn, k.Kill, k.MarkDone, k.Continue, k.Restart, k.Approve, k.Reject, k.Batch, k.New, k.History, k.GenPrompt, k.Analyze},
 		{k.Fullscreen, k.ScrollDown, k.ScrollUp, k.HalfDown, k.HalfUp, k.GotoBottom, k.GotoTop},
 		{k.Help, k.Quit, k.ForceQuit},
 	}
@@ -212,6 +223,8 @@ func (m *Model) updateKeyStates() {
 		m.keys.Search.SetEnabled(false)
 		m.keys.GenPrompt.SetEnabled(false)
 		m.keys.Analyze.SetEnabled(false)
+		m.keys.Approve.SetEnabled(false)
+		m.keys.Reject.SetEnabled(false)
 		m.keys.Filter.SetEnabled(false)
 		m.keys.Select.SetEnabled(false)
 		m.keys.NextPanel.SetEnabled(false)
@@ -262,6 +275,14 @@ func (m *Model) updateKeyStates() {
 	// Task panel keys
 	m.keys.Batch.SetEnabled(m.hasTaskSource() && m.hasUnassignedTasks())
 	m.keys.Filter.SetEnabled(false)
+
+	// Review keys — enabled when selected task is for-review
+	hasReviewTask := false
+	if m.focused == panelTasks && m.selectedTaskIdx >= 0 && m.selectedTaskIdx < len(m.loadedTasks) {
+		hasReviewTask = m.loadedTasks[m.selectedTaskIdx].State == task.TaskForReview
+	}
+	m.keys.Approve.SetEnabled(hasReviewTask)
+	m.keys.Reject.SetEnabled(hasReviewTask)
 	m.keys.Select.SetEnabled(
 		(m.focused == panelTable && selected != nil) ||
 			(m.focused == panelTasks && len(m.loadedTasks) > 0),

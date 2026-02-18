@@ -281,6 +281,8 @@ func taskStatusBadge(state task.TaskState, blockingDep string) string {
 	switch state {
 	case task.TaskDone:
 		return lipgloss.NewStyle().Foreground(colorDone).Render("✓ done")
+	case task.TaskForReview:
+		return lipgloss.NewStyle().Foreground(colorLightBlue).Render("◆ for review")
 	case task.TaskInProgress:
 		return lipgloss.NewStyle().Foreground(colorRunning).Render("⟳ in-progress")
 	case task.TaskBlocked:
