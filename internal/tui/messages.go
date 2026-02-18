@@ -4,11 +4,14 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
+
+	"github.com/user/kasmos/internal/worker"
 )
 
 type workerSpawnedMsg struct {
 	WorkerID string
 	PID      int
+	Handle   worker.WorkerHandle
 }
 
 type workerOutputMsg struct {

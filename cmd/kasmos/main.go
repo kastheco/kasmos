@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/user/kasmos/internal/tui"
+	"github.com/user/kasmos/internal/worker"
 )
 
 func main() {
@@ -32,11 +33,19 @@ func newRootCmd() *cobra.Command {
 				return nil
 			}
 
+			backend, err := worker.NewSubprocessBackend()
+			if err != nil {
+				return err
+			}
+
 			ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
 
-			program := tea.NewProgram(tui.NewModel(), tea.WithAltScreen(), tea.WithContext(ctx))
-			_, err := program.Run()
+			model := tui.NewModel(backend)
+			program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithContext(ctx))
+			model.SetProgram(program)
+
+			_, err = program.Run()
 			return err
 		},
 	}
