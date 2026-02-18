@@ -181,7 +181,8 @@ func (m *Model) updateNewDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "g":
 				return m, m.startNewDialogForm(newDialogTypeGSD)
 			case "y":
-				return m, m.startNewDialogForm(newDialogTypeYolo)
+				m.closeNewDialog()
+				return m, m.openSpawnDialog()
 			}
 			return m, nil
 		}
