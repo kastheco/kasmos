@@ -36,7 +36,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ready = true
 
 		prev := m.layoutMode
-		m.recalculateLayout()
+		if m.fullScreen {
+			m.resizeFullScreenViewport()
+		} else {
+			m.recalculateLayout()
+		}
 		m.refreshTableRows()
 		m.refreshViewportFromSelected(false)
 		if prev != m.layoutMode {
@@ -48,6 +52,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case tea.KeyMsg:
+		// Phase 1: Global keys
 		if key.Matches(msg, m.keys.ForceQuit) {
 			return m, tea.Quit
 		}
@@ -79,67 +84,32 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		switch {
-		case key.Matches(msg, m.keys.NextPanel):
+		if key.Matches(msg, m.keys.NextPanel) {
 			m.cyclePanel(1)
 			m.updateKeyStates()
 			return m, func() tea.Msg { return focusChangedMsg{To: m.focused} }
-		case key.Matches(msg, m.keys.PrevPanel):
+		}
+
+		if key.Matches(msg, m.keys.PrevPanel) {
 			m.cyclePanel(-1)
 			m.updateKeyStates()
 			return m, func() tea.Msg { return focusChangedMsg{To: m.focused} }
 		}
 
-		if m.focused == panelTable {
-			if key.Matches(msg, m.keys.Spawn) {
-				return m, m.openSpawnDialog()
-			}
-
-			if key.Matches(msg, m.keys.Continue) {
-				selected := m.selectedWorker()
-				if selected != nil &&
-					(selected.State == worker.StateExited || selected.State == worker.StateFailed) &&
-					selected.SessionID != "" {
-					return m, m.openContinueDialog(selected)
-				}
-				return m, nil
-			}
-
-			if key.Matches(msg, m.keys.Kill) {
-				selected := m.selectedWorker()
-				if selected != nil && selected.State == worker.StateRunning && selected.Handle != nil {
-					return m, killWorkerCmd(selected.ID, selected.Handle, 3*time.Second)
-				}
-				return m, nil
-			}
-
-			if key.Matches(msg, m.keys.Restart) {
-				selected := m.selectedWorker()
-				if selected != nil && (selected.State == worker.StateFailed || selected.State == worker.StateKilled) {
-					return m, m.openSpawnDialogWithPrefill(selected.Role, selected.Prompt, selected.Files)
-				}
-				return m, nil
-			}
-
-			if key.Matches(msg, m.keys.Up, m.keys.Down) {
-				var cmd tea.Cmd
-				m.table, cmd = m.table.Update(msg)
-				m.syncSelectionFromTable()
-				m.refreshViewportFromSelected(false)
-				return m, cmd
-			}
+		// Phase 2: Fullscreen keys
+		if m.fullScreen {
+			return m.updateFullScreenKeys(msg)
 		}
 
-		var cmd tea.Cmd
+		// Phase 3: Panel-specific keys
 		switch m.focused {
 		case panelTable:
-			m.table, cmd = m.table.Update(msg)
-			m.syncSelectionFromTable()
-			m.refreshViewportFromSelected(false)
+			return m.updateTableKeys(msg)
 		case panelViewport:
-			m.viewport, cmd = m.viewport.Update(msg)
+			return m.updateViewportKeys(msg)
+		default:
+			return m, nil
 		}
-		return m, cmd
 
 	case spawnDialogSubmittedMsg:
 		role := strings.TrimSpace(msg.Role)
@@ -208,6 +178,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case quitConfirmedMsg:
+		for _, w := range m.manager.All() {
+			if w.State == worker.StateRunning && w.Handle != nil {
+				_ = w.Handle.Kill(3 * time.Second)
+			}
+		}
 		return m, tea.Quit
 
 	case quitCancelledMsg:
@@ -392,11 +367,150 @@ func (m *Model) refreshViewportFromSelected(autoFollow bool) {
 }
 
 func (m *Model) setViewportContent(content string, autoFollow bool) {
-	atBottom := m.viewport.AtBottom()
+	wasAtBottom := m.viewport.AtBottom()
 	m.viewport.SetContent(content)
-	if autoFollow && atBottom {
+	if autoFollow && (wasAtBottom || m.autoFollow) {
 		m.viewport.GotoBottom()
+		m.autoFollow = true
 	}
+}
+
+func (m *Model) updateFullScreenKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(msg, m.keys.Back) {
+		m.fullScreen = false
+		m.recalculateLayout()
+		m.updateKeyStates()
+		return m, nil
+	}
+
+	if key.Matches(msg, m.keys.Continue) {
+		selected := m.selectedWorker()
+		if selected != nil &&
+			(selected.State == worker.StateExited || selected.State == worker.StateFailed) &&
+			selected.SessionID != "" {
+			return m, m.openContinueDialog(selected)
+		}
+		return m, nil
+	}
+
+	if key.Matches(msg, m.keys.Restart) {
+		selected := m.selectedWorker()
+		if selected != nil && (selected.State == worker.StateFailed || selected.State == worker.StateKilled) {
+			return m, m.openSpawnDialogWithPrefill(selected.Role, selected.Prompt, selected.Files)
+		}
+		return m, nil
+	}
+
+	return m.updateViewportScrollKeys(msg)
+}
+
+func (m *Model) updateTableKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(msg, m.keys.Spawn) {
+		return m, m.openSpawnDialog()
+	}
+
+	if key.Matches(msg, m.keys.Continue) {
+		selected := m.selectedWorker()
+		if selected != nil &&
+			(selected.State == worker.StateExited || selected.State == worker.StateFailed) &&
+			selected.SessionID != "" {
+			return m, m.openContinueDialog(selected)
+		}
+		return m, nil
+	}
+
+	if key.Matches(msg, m.keys.Kill) {
+		selected := m.selectedWorker()
+		if selected != nil && selected.State == worker.StateRunning && selected.Handle != nil {
+			return m, killWorkerCmd(selected.ID, selected.Handle, 3*time.Second)
+		}
+		return m, nil
+	}
+
+	if key.Matches(msg, m.keys.Restart) {
+		selected := m.selectedWorker()
+		if selected != nil && (selected.State == worker.StateFailed || selected.State == worker.StateKilled) {
+			return m, m.openSpawnDialogWithPrefill(selected.Role, selected.Prompt, selected.Files)
+		}
+		return m, nil
+	}
+
+	if key.Matches(msg, m.keys.Fullscreen, m.keys.Select) {
+		if m.selectedWorker() != nil {
+			m.fullScreen = true
+			m.resizeFullScreenViewport()
+			m.updateKeyStates()
+		}
+		return m, nil
+	}
+
+	if key.Matches(msg, m.keys.Up, m.keys.Down) {
+		var cmd tea.Cmd
+		m.table, cmd = m.table.Update(msg)
+		m.syncSelectionFromTable()
+		m.refreshViewportFromSelected(false)
+		return m, cmd
+	}
+
+	return m, nil
+}
+
+func (m *Model) updateViewportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(msg, m.keys.Fullscreen) {
+		if m.selectedWorker() != nil {
+			m.fullScreen = true
+			m.resizeFullScreenViewport()
+			m.updateKeyStates()
+		}
+		return m, nil
+	}
+
+	return m.updateViewportScrollKeys(msg)
+}
+
+func (m *Model) updateViewportScrollKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.ScrollDown, m.keys.Down):
+		m.viewport.LineDown(1)
+		if m.viewport.AtBottom() {
+			m.autoFollow = true
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.ScrollUp, m.keys.Up):
+		m.viewport.LineUp(1)
+		m.autoFollow = false
+		return m, nil
+	case key.Matches(msg, m.keys.HalfDown):
+		m.viewport.HalfViewDown()
+		if m.viewport.AtBottom() {
+			m.autoFollow = true
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.HalfUp):
+		m.viewport.HalfViewUp()
+		m.autoFollow = false
+		return m, nil
+	case key.Matches(msg, m.keys.GotoBottom):
+		m.viewport.GotoBottom()
+		m.autoFollow = true
+		return m, nil
+	case key.Matches(msg, m.keys.GotoTop):
+		m.viewport.GotoTop()
+		m.autoFollow = false
+		return m, nil
+	default:
+		return m, nil
+	}
+}
+
+func (m *Model) resizeFullScreenViewport() {
+	contentHeight := max(0, m.height-m.chromeHeight())
+	const (
+		borderH = 4
+		borderV = 2
+	)
+	m.viewport.SetWidth(max(1, m.width-borderH))
+	m.viewport.SetHeight(max(1, contentHeight-borderV-1))
 }
 
 func (m *Model) selectedWorker() *worker.Worker {

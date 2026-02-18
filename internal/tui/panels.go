@@ -74,6 +74,94 @@ func (m *Model) renderViewport() string {
 		Render(content)
 }
 
+func (m *Model) renderFullScreen() string {
+	contentHeight := max(0, m.height-m.chromeHeight())
+	const (
+		borderH = 4
+		borderV = 2
+	)
+
+	vpInnerWidth := max(1, m.width-borderH)
+	vpInnerHeight := max(1, contentHeight-borderV)
+	m.viewport.SetWidth(vpInnerWidth)
+	m.viewport.SetHeight(max(1, vpInnerHeight-1))
+
+	title := "Output"
+	if selected := m.selectedWorker(); selected != nil {
+		title = fmt.Sprintf("Output: %s %s - %s", selected.ID, selected.Role, truncateMiddle(strings.TrimSpace(selected.Prompt), 40))
+	}
+
+	viewportPanel := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorPurple).
+		Padding(0, 1).
+		Width(vpInnerWidth).
+		Height(vpInnerHeight).
+		Render(lipgloss.JoinVertical(
+			lipgloss.Left,
+			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render(title),
+			m.viewport.View(),
+		))
+
+	view := lipgloss.JoinVertical(
+		lipgloss.Left,
+		m.renderHeader(),
+		viewportPanel,
+		m.renderFullScreenStatusBar(),
+		m.renderHelpBar(),
+	)
+
+	return view
+}
+
+func (m *Model) renderFullScreenStatusBar() string {
+	selected := m.selectedWorker()
+	if selected == nil {
+		line := " -  -  -  exit(-)  duration: -  session: -  scroll: - "
+		return statusBarStyle.Width(m.width).Render(line)
+	}
+
+	session := selected.SessionID
+	if session == "" {
+		session = "-"
+	}
+
+	exit := "-"
+	if selected.State == worker.StateExited || selected.State == worker.StateFailed {
+		exit = fmt.Sprintf("%d", selected.ExitCode)
+	}
+
+	scroll := "-"
+	if m.viewport.TotalLineCount() > 0 {
+		scroll = fmt.Sprintf("%.0f%%", m.viewport.ScrollPercent()*100)
+	}
+
+	line := fmt.Sprintf(" %s %s  %s  exit(%s)  duration: %s  session: %s  scroll: %s ",
+		selected.ID,
+		selected.Role,
+		selected.State,
+		exit,
+		selected.FormatDuration(),
+		session,
+		scroll,
+	)
+
+	return statusBarStyle.Width(m.width).Render(line)
+}
+
+func truncateMiddle(s string, maxLen int) string {
+	if maxLen <= 0 {
+		return ""
+	}
+	if len([]rune(s)) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return strings.Repeat(".", maxLen)
+	}
+	return string([]rune(s)[:maxLen-3]) + "..."
+}
+
 func workerTreeRows(workers []*worker.Worker) ([]*worker.Worker, map[string]string) {
 	if len(workers) == 0 {
 		return nil, map[string]string{}

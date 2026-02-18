@@ -1,7 +1,7 @@
 ---
 work_package_id: WP07
 title: Kill + Restart Workers
-lane: doing
+lane: done
 dependencies:
 - WP04
 subtasks:
@@ -25,6 +25,11 @@ history:
   actor: manager
   shell_pid: '472734'
   action: transition active (Launching WP07 coder - kill + restart workers)
+- timestamp: '2026-02-18T14:23:51.661595646+00:00'
+  lane: done
+  actor: manager
+  shell_pid: '472734'
+  action: transition done (Implemented and reviewed - kill/restart workers)
 ---
 
 # Work Package Prompt: WP07 - Kill + Restart Workers

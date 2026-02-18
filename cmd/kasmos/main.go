@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/spf13/cobra"
 
+	"github.com/user/kasmos/internal/setup"
 	"github.com/user/kasmos/internal/task"
 	"github.com/user/kasmos/internal/tui"
 	"github.com/user/kasmos/internal/worker"
@@ -67,6 +68,15 @@ func newRootCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&showVersion, "version", false, "print version and exit")
+
+	setupCmd := &cobra.Command{
+		Use:   "setup",
+		Short: "Validate dependencies and scaffold agent configurations",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return setup.Run()
+		},
+	}
+	cmd.AddCommand(setupCmd)
 
 	return cmd
 }

@@ -1,26 +1,31 @@
 ---
-work_package_id: "WP10"
-title: "Setup Command + Agent Scaffolding"
-lane: "planned"
+work_package_id: WP10
+title: Setup Command + Agent Scaffolding
+lane: doing
 dependencies:
-  - "WP01"
+- WP01
 subtasks:
-  - "internal/setup/setup.go - Setup orchestration"
-  - "internal/setup/agents.go - Agent definition templates"
-  - "internal/setup/deps.go - Dependency validation"
-  - "cmd/kasmos setup.go - Cobra subcommand"
-  - "Unit tests"
-phase: "Wave 2 - Task Sources + Worker Management"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
+- internal/setup/setup.go - Setup orchestration
+- internal/setup/agents.go - Agent definition templates
+- internal/setup/deps.go - Dependency validation
+- cmd/kasmos setup.go - Cobra subcommand
+- Unit tests
+phase: Wave 2 - Task Sources + Worker Management
+assignee: ''
+agent: ''
+shell_pid: ''
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-17T00:00:00Z"
-    lane: "planned"
-    agent: "planner"
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-17T00:00:00Z'
+  lane: planned
+  agent: planner
+  action: Prompt generated via /spec-kitty.tasks
+- timestamp: '2026-02-18T14:24:29.725046729+00:00'
+  lane: doing
+  actor: manager
+  shell_pid: '472734'
+  action: transition active (Launching WP10 coder - setup command + agent scaffolding)
 ---
 
 # Work Package Prompt: WP10 - Setup Command + Agent Scaffolding

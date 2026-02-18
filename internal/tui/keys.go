@@ -147,7 +147,8 @@ func defaultKeyMap() keyMap {
 func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
 		k.Spawn, k.Kill, k.Continue, k.Restart,
-		k.GenPrompt, k.Analyze, k.Fullscreen,
+		k.Fullscreen, k.ScrollDown, k.ScrollUp,
+		k.GotoBottom, k.GotoTop,
 		k.NextPanel, k.Help, k.Quit,
 	}
 }
@@ -162,35 +163,52 @@ func (k keyMap) FullHelp() [][]key.Binding {
 }
 
 func (m *Model) updateKeyStates() {
-	selected := m.selectedWorker()
-
+	// Always enabled
 	m.keys.Spawn.SetEnabled(true)
 	m.keys.Help.SetEnabled(true)
 	m.keys.Quit.SetEnabled(true)
 	m.keys.ForceQuit.SetEnabled(true)
-	m.keys.NextPanel.SetEnabled(true)
-	m.keys.PrevPanel.SetEnabled(true)
+	m.keys.NextPanel.SetEnabled(!m.fullScreen)
+	m.keys.PrevPanel.SetEnabled(!m.fullScreen)
 	m.keys.Up.SetEnabled(true)
 	m.keys.Down.SetEnabled(true)
-	m.keys.ScrollDown.SetEnabled(true)
-	m.keys.ScrollUp.SetEnabled(true)
 	m.keys.Back.SetEnabled(true)
 
+	selected := m.selectedWorker()
+
+	// Worker action keys
 	m.keys.Kill.SetEnabled(selected != nil && selected.State == worker.StateRunning)
 	m.keys.Continue.SetEnabled(selected != nil &&
 		(selected.State == worker.StateExited || selected.State == worker.StateFailed) &&
 		selected.SessionID != "")
 	m.keys.Restart.SetEnabled(selected != nil &&
 		(selected.State == worker.StateFailed || selected.State == worker.StateKilled))
-	m.keys.Batch.SetEnabled(false)
-	m.keys.Fullscreen.SetEnabled(false)
-	m.keys.HalfDown.SetEnabled(false)
-	m.keys.HalfUp.SetEnabled(false)
-	m.keys.GotoBottom.SetEnabled(false)
-	m.keys.GotoTop.SetEnabled(false)
+
+	// Viewport keys
+	m.keys.Fullscreen.SetEnabled(selected != nil)
+	viewportActive := m.focused == panelViewport || m.fullScreen
+	m.keys.ScrollDown.SetEnabled(viewportActive)
+	m.keys.ScrollUp.SetEnabled(viewportActive)
+	m.keys.HalfDown.SetEnabled(viewportActive)
+	m.keys.HalfUp.SetEnabled(viewportActive)
+	m.keys.GotoBottom.SetEnabled(viewportActive)
+	m.keys.GotoTop.SetEnabled(viewportActive)
 	m.keys.Search.SetEnabled(false)
-	m.keys.GenPrompt.SetEnabled(false)
+
+	// g key conflict: GotoTop in viewport, GenPrompt in table
+	if viewportActive {
+		m.keys.GotoTop.SetEnabled(true)
+		m.keys.GenPrompt.SetEnabled(false)
+	} else {
+		m.keys.GotoTop.SetEnabled(false)
+		m.keys.GenPrompt.SetEnabled(false)
+	}
+
+	// AI helpers (disabled until WP11)
 	m.keys.Analyze.SetEnabled(false)
+
+	// Task panel keys (disabled until WP09)
+	m.keys.Batch.SetEnabled(false)
 	m.keys.Filter.SetEnabled(false)
-	m.keys.Select.SetEnabled(false)
+	m.keys.Select.SetEnabled(m.focused == panelTable && selected != nil)
 }

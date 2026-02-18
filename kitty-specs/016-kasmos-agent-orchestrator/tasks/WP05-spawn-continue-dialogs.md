@@ -1,7 +1,7 @@
 ---
 work_package_id: WP05
 title: Continue Dialog + Overlays + Worker Chains
-lane: doing
+lane: done
 dependencies:
 - WP04
 subtasks:
@@ -26,6 +26,11 @@ history:
   actor: manager
   shell_pid: '472734'
   action: transition active (Launching WP05 coder - continue dialog + overlays + worker chains)
+- timestamp: '2026-02-18T14:23:50.653262752+00:00'
+  lane: done
+  actor: manager
+  shell_pid: '472734'
+  action: transition done (Implemented and reviewed - continue dialog, quit confirm, worker chains)
 ---
 
 # Work Package Prompt: WP05 - Continue Dialog + Overlays + Worker Chains

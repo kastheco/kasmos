@@ -23,6 +23,8 @@ type Model struct {
 	focused    panel
 	layoutMode layoutMode
 	showHelp   bool
+	fullScreen bool
+	autoFollow bool
 
 	keys     keyMap
 	help     help.Model
@@ -121,6 +123,23 @@ func (m *Model) View() string {
 		curr := lipgloss.NewStyle().Foreground(colorLightGray).Render(fmt.Sprintf("Current: %dx%d", m.width, m.height))
 		body := lipgloss.JoinVertical(lipgloss.Center, warn, meta, curr)
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, body)
+	}
+
+	if m.fullScreen {
+		view := m.renderFullScreen()
+		if m.showHelp {
+			return m.renderHelpOverlay()
+		}
+		if m.showContinueDialog {
+			return m.renderContinueDialog()
+		}
+		if m.showQuitConfirm {
+			return m.renderQuitConfirm()
+		}
+		if m.showSpawnDialog {
+			return m.renderSpawnDialog()
+		}
+		return view
 	}
 
 	var content string

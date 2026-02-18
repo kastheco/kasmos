@@ -1,29 +1,34 @@
 ---
-work_package_id: "WP06"
-title: "Output Viewport + Fullscreen + Update Dispatch + Shutdown"
-lane: "planned"
+work_package_id: WP06
+title: Output Viewport + Fullscreen + Update Dispatch + Shutdown
+lane: doing
 dependencies:
-  - "WP04"
-  - "WP05"
+- WP04
+- WP05
 subtasks:
-  - "Full-screen viewport mode (f key toggle)"
-  - "Auto-follow logic (track AtBottom, GotoBottom on new content)"
-  - "Viewport scroll controls (d/u half-page, G bottom, g top)"
-  - "internal/tui/update.go - Complete 4-phase key routing"
-  - "Context-dependent key activation (updateKeyStates)"
-  - "Graceful shutdown protocol (SIGTERM -> SIGKILL -> persist)"
-  - "Signal handling refinement in main.go"
-phase: "Wave 1 - Core TUI + Worker Lifecycle"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
+- Full-screen viewport mode (f key toggle)
+- Auto-follow logic (track AtBottom, GotoBottom on new content)
+- Viewport scroll controls (d/u half-page, G bottom, g top)
+- internal/tui/update.go - Complete 4-phase key routing
+- Context-dependent key activation (updateKeyStates)
+- Graceful shutdown protocol (SIGTERM -> SIGKILL -> persist)
+- Signal handling refinement in main.go
+phase: Wave 1 - Core TUI + Worker Lifecycle
+assignee: ''
+agent: ''
+shell_pid: ''
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-17T00:00:00Z"
-    lane: "planned"
-    agent: "planner"
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-17T00:00:00Z'
+  lane: planned
+  agent: planner
+  action: Prompt generated via /spec-kitty.tasks
+- timestamp: '2026-02-18T14:24:28.504267429+00:00'
+  lane: doing
+  actor: manager
+  shell_pid: '472734'
+  action: transition active (Launching WP06 coder - output viewport + fullscreen + shutdown)
 ---
 
 # Work Package Prompt: WP06 - Output Viewport + Fullscreen + Update Dispatch + Shutdown
