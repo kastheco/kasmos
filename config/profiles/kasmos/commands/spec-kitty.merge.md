@@ -12,7 +12,7 @@ description: Merge a completed feature into the main branch and clean up worktre
 - Route merge/finalization execution through the `release` agent (medium tier).
 - Keep the command runner in controller mode: perform pre-flight checks and delegate git merge operations to `release`.
 - Escalate to `reviewer` when merge conflicts touch shared interfaces or critical safety paths.
-- Profile default: `release` -> `openai/gpt-5.3-codex` with `reasoningEffort: medium`.
+- Profile default: `release` -> `openai/gpt-5.3-codex` with `reasoningEffort: high`.
 
 ## CRITICAL: Workspace-per-WP Model (0.11.0)
 

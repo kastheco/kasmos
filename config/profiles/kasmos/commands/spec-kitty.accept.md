@@ -12,7 +12,7 @@ description: Validate feature readiness and guide final acceptance steps.
 - Route acceptance checks through the `reviewer` agent (medium tier).
 - Keep the command runner in controller mode: gather inputs, dispatch checks, and report results.
 - Escalate to controller-only handling when acceptance blockers are ambiguous or contradictory.
-- Profile default: `reviewer` -> `anthropic/claude-opus-4-6` with `reasoningEffort: high`.
+- Profile default: `reviewer` -> `anthropic/claude-sonnet-4-6` with `reasoningEffort: high`.
 
 ## 📍 WORKING DIRECTORY: Run from MAIN repository
 

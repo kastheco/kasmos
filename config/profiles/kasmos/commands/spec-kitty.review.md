@@ -7,7 +7,7 @@ description: Perform structured code review and kanban transitions for completed
 - Route review execution through the `reviewer` agent (medium tier).
 - Keep the command runner in controller mode: delegate review analysis and verdict drafting to `reviewer`.
 - Escalate back to controller only for unresolved dependency conflicts or ambiguous review outcomes.
-- Profile default: `reviewer` -> `anthropic/claude-opus-4-6` with `reasoningEffort: high`.
+- Profile default: `reviewer` -> `anthropic/claude-sonnet-4-6` with `reasoningEffort: high`.
 
 **IMPORTANT**: After running the command below, you'll see a LONG work package prompt (~1000+ lines).
 
