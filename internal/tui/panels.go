@@ -10,7 +10,7 @@ import (
 	"github.com/user/kasmos/internal/worker"
 )
 
-const appVersion = "v0.1.0"
+const appVersion = "v2.0.0"
 
 func (m *Model) renderHeader() string {
 	title := " " + renderGradientTitle("kasmos") + "  " + dimSubtitleStyle.Render("agent orchestrator")
