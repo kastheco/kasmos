@@ -117,6 +117,43 @@ The handoff summary between sessions was critical -- it carried forward:
 
 **Lesson**: Handoff summaries should include **discoveries about the codebase** (not just decisions). The session that reads `main.rs` and discovers the CLI structure saves the next session from re-reading it.
 
+## WP Lifecycle Protocol
+
+> Added 2026-02-18 after WP01-03 of feature 017 were completed but their
+> frontmatter was never updated, leaving kasmos unable to unblock downstream
+> tasks or show correct status.
+
+### Rule: Update WP frontmatter lane on completion
+
+When a work package is **completed** (code written, tests passing, committed),
+the manager MUST update the WP file's frontmatter `lane:` field before or
+as part of the commit. This is not optional — kasmos reads the lane field
+to determine task state and dependency resolution at runtime.
+
+**Lane values**: `planned` -> `doing` -> `for_review` -> `done`
+
+### Checklist (per WP completion)
+
+1. Verify the WP's code changes build and pass tests
+2. Update the WP frontmatter: set `lane: done`
+3. Append a history entry with timestamp, lane, actor, and action
+4. Include the frontmatter update in the same commit as the code (or immediately after)
+5. Verify downstream WPs are unblocked (their deps are now all `done`)
+
+### Why this matters
+
+- `resolveDependencyStates()` in `internal/task/speckitty.go` marks tasks as
+  `TaskBlocked` when any dependency has a lane other than `done`
+- Blocked tasks cannot be selected (Enter is disabled) in the kasmos TUI
+- The status bar shows incorrect counts (0 done when work is actually done)
+- The user cannot spawn workers for Wave N+1 tasks until Wave N lanes are updated
+
+### Anti-pattern: Completing WPs outside kasmos without updating lanes
+
+When WPs are implemented by external agents (Claude Task tool, manual coding),
+the lane state diverges from reality. The manager must reconcile lane state
+as part of the completion workflow, not as an afterthought.
+
 ## Metrics for This Feature
 
 | Metric | Value |
