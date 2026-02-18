@@ -20,6 +20,7 @@ type SpawnConfig struct {
 	Files           []string
 	ContinueSession string
 	Model           string
+	Reasoning       string
 	WorkDir         string
 	Env             map[string]string
 }

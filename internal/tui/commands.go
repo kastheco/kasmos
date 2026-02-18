@@ -15,9 +15,19 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 
+	"github.com/user/kasmos/internal/config"
 	"github.com/user/kasmos/internal/persist"
 	"github.com/user/kasmos/internal/worker"
 )
+
+func settingsSaveCmd(cfg *config.Config, dir string) tea.Cmd {
+	return func() tea.Msg {
+		if cfg == nil {
+			return settingsSavedMsg{Err: fmt.Errorf("config is nil")}
+		}
+		return settingsSavedMsg{Err: cfg.Save(dir)}
+	}
+}
 
 func restoreScanCmd(persister *persist.SessionPersister) tea.Cmd {
 	return func() tea.Msg {

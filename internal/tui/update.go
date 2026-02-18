@@ -20,6 +20,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateContinueDialog(msg)
 	}
 
+	if m.showSettings {
+		return m.updateSettings(msg)
+	}
+
 	if m.showQuitConfirm {
 		return m.updateQuitConfirm(msg)
 	}
@@ -186,7 +190,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateKeyStates()
 		m.triggerPersist()
 
-		cfg := worker.SpawnConfig{ID: w.ID, Role: w.Role, Prompt: w.Prompt, Files: w.Files}
+		cfg := m.roleSpawnConfig(worker.SpawnConfig{ID: w.ID, Role: w.Role, Prompt: w.Prompt, Files: w.Files})
 		return m, spawnWorkerCmd(m.backend, cfg)
 
 	case spawnDialogCancelledMsg:
@@ -215,12 +219,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshViewportFromSelected(true)
 		m.triggerPersist()
 
-		cfg := worker.SpawnConfig{
+		cfg := m.roleSpawnConfig(worker.SpawnConfig{
 			ID:              w.ID,
 			Role:            w.Role,
 			Prompt:          msg.FollowUp,
 			ContinueSession: msg.SessionID,
-		}
+		})
 		return m, spawnWorkerCmd(m.backend, cfg)
 
 	case continueDialogCancelledMsg:
@@ -539,12 +543,14 @@ func (m *Model) transitionFromLauncher() {
 		return
 	}
 	m.showLauncher = false
+	m.restoreNote = ""
 	m.recalculateLayout()
 	m.updateKeyStates()
 }
 
 func (m *Model) updateLauncherKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.New) {
+		m.restoreNote = ""
 		m.transitionFromLauncher()
 		if m.taskSource == nil || m.taskSource.Type() != "yolo" {
 			m.swapTaskSource(&task.YoloSource{})
@@ -553,10 +559,12 @@ func (m *Model) updateLauncherKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if key.Matches(msg, m.keys.History) {
+		m.restoreNote = ""
 		return m, m.openHistoryOverlay()
 	}
 
 	if key.Matches(msg, m.keys.Quit) {
+		m.restoreNote = ""
 		running := m.runningWorkersCount()
 		if running == 0 {
 			return m, tea.Quit
@@ -569,17 +577,42 @@ func (m *Model) updateLauncherKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "f":
+		if err := ensureSpecKittyAvailable(); err != nil {
+			m.restoreNote = err.Error()
+			return m, nil
+		}
+		m.restoreNote = ""
 		m.transitionFromLauncher()
 		_ = m.openNewDialog()
 		return m, m.startNewDialogForm(newDialogTypeFeatureSpec)
 	case "p":
-		m.setViewportContent("plan creation not yet implemented", false)
-		return m, nil
+		if err := ensureSpecKittyAvailable(); err != nil {
+			m.restoreNote = err.Error()
+			return m, nil
+		}
+		featureDirs, err := listSpecKittyFeatureDirs()
+		if err != nil {
+			m.restoreNote = fmt.Sprintf("failed to list spec-kitty features: %v", err)
+			return m, nil
+		}
+		if len(featureDirs) == 0 {
+			m.restoreNote = "no spec-kitty features found. press f to create one first"
+			return m, nil
+		}
+
+		m.restoreNote = ""
+		m.transitionFromLauncher()
+		if len(featureDirs) == 1 {
+			m.showNewDialog = true
+			return m, m.startFeaturePlanForm(featureDirs[0])
+		}
+		return m, m.startFeaturePlanPicker(featureDirs)
 	case "r":
+		m.restoreNote = ""
 		return m, m.openRestorePicker()
 	case "s":
-		m.setViewportContent("settings not yet implemented", false)
-		return m, nil
+		m.restoreNote = ""
+		return m, m.openSettingsView()
 	default:
 		return m, nil
 	}
@@ -808,7 +841,8 @@ func (m *Model) updateTableKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if selected.Output != nil {
 				outputTail = selected.Output.Tail(200)
 			}
-			return m, analyzeCmd(m.backend, selected.ID, selected.Role, selected.ExitCode, selected.FormatDuration(), outputTail)
+			reviewerCfg := m.roleSpawnConfig(worker.SpawnConfig{Role: "reviewer"})
+			return m, analyzeCmd(m.backend, selected.ID, selected.Role, selected.ExitCode, selected.FormatDuration(), outputTail, reviewerCfg.Model, reviewerCfg.Reasoning)
 		}
 		return m, nil
 	}
@@ -822,6 +856,7 @@ func (m *Model) updateTableKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.genPromptLoading = true
 		m.updateKeyStates()
 		m.refreshViewportFromSelected(false)
+		plannerCfg := m.roleSpawnConfig(worker.SpawnConfig{Role: "planner"})
 		return m, genPromptCmd(
 			m.backend,
 			selectedTask.ID,
@@ -829,6 +864,8 @@ func (m *Model) updateTableKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			selectedTask.Description,
 			selectedTask.SuggestedRole,
 			selectedTask.Dependencies,
+			plannerCfg.Model,
+			plannerCfg.Reasoning,
 		)
 	}
 
@@ -1050,7 +1087,7 @@ func (m *Model) spawnAllTasks() tea.Cmd {
 			}
 		}
 
-		cfg := worker.SpawnConfig{ID: w.ID, Role: w.Role, Prompt: w.Prompt}
+		cfg := m.roleSpawnConfig(worker.SpawnConfig{ID: w.ID, Role: w.Role, Prompt: w.Prompt})
 		cmds = append(cmds, spawnWorkerCmd(m.backend, cfg))
 	}
 

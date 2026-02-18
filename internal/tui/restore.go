@@ -129,7 +129,7 @@ func (m *Model) updateRestorePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Down):
 			m.restoreSelected = min(len(m.restoreEntries)-1, m.restoreSelected+1)
 			return m, nil
-		case key.Matches(msg, m.keys.Select):
+		case key.Matches(msg, m.keys.Select) || msg.String() == "enter":
 			selected := m.restoreEntries[m.restoreSelected]
 			m.restoreLoading = true
 			m.restoreErr = nil

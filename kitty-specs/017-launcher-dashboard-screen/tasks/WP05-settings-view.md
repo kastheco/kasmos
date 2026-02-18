@@ -1,7 +1,7 @@
 ---
 work_package_id: WP05
 title: Settings View
-lane: planned
+lane: done
 dependencies:
 - WP01
 - WP03

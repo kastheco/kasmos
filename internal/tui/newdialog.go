@@ -2,6 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"os/exec"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/v2/key"
@@ -14,12 +17,14 @@ import (
 const (
 	newDialogStagePicker = 0
 	newDialogStageForm   = 1
+	newDialogStagePlan   = 2
 )
 
 const (
 	newDialogTypeFeatureSpec = "feature-spec"
 	newDialogTypeGSD         = "gsd"
 	newDialogTypeYolo        = "yolo"
+	newDialogTypeFeaturePlan = "feature-plan"
 )
 
 type newFormModel struct {
@@ -37,6 +42,10 @@ type newFormModel struct {
 
 	focusedIdx int
 	errMsg     string
+
+	planFeatureDirs []string
+	planSelectedIdx int
+	planFeatureDir  string
 }
 
 func (m *Model) openNewDialog() tea.Cmd {
@@ -103,6 +112,23 @@ func newFormModelFor(formType string) *newFormModel {
 		f.planFilename = filename
 		f.planTitle = title
 		f.planContent = content
+	case newDialogTypeFeaturePlan:
+		filename := styledTextInput()
+		filename.Placeholder = "kitty-specs/my-feature/plan.md"
+		filename.SetWidth(58)
+
+		title := styledTextInput()
+		title.Placeholder = "planning session"
+		title.SetWidth(58)
+
+		content := styledTextArea()
+		content.Placeholder = "what needs doing..."
+		content.SetWidth(58)
+		content.SetHeight(6)
+
+		f.planFilename = filename
+		f.planTitle = title
+		f.planContent = content
 	default:
 		return nil
 	}
@@ -113,7 +139,7 @@ func newFormModelFor(formType string) *newFormModel {
 
 func (f *newFormModel) fieldCount() int {
 	switch f.formType {
-	case newDialogTypeYolo:
+	case newDialogTypeYolo, newDialogTypeFeaturePlan:
 		return 3
 	default:
 		return 2
@@ -140,7 +166,7 @@ func (f *newFormModel) focusCurrentField() tea.Cmd {
 			return f.gsdFilename.Focus()
 		}
 		return f.gsdTasks.Focus()
-	case newDialogTypeYolo:
+	case newDialogTypeYolo, newDialogTypeFeaturePlan:
 		switch f.focusedIdx {
 		case 0:
 			return f.planFilename.Focus()
@@ -187,6 +213,26 @@ func (m *Model) updateNewDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if m.newDialogStage == newDialogStagePlan {
+			if m.newForm == nil || len(m.newForm.planFeatureDirs) == 0 {
+				m.closeNewDialog()
+				return m, nil
+			}
+
+			switch keyMsg.String() {
+			case "j", "down":
+				m.newForm.planSelectedIdx = min(len(m.newForm.planFeatureDirs)-1, m.newForm.planSelectedIdx+1)
+				return m, nil
+			case "k", "up":
+				m.newForm.planSelectedIdx = max(0, m.newForm.planSelectedIdx-1)
+				return m, nil
+			case "enter":
+				selectedDir := m.newForm.planFeatureDirs[m.newForm.planSelectedIdx]
+				return m, m.startFeaturePlanForm(selectedDir)
+			}
+			return m, nil
+		}
+
 		if m.newDialogStage == newDialogStageForm {
 			if m.newForm == nil {
 				m.closeNewDialog()
@@ -222,7 +268,7 @@ func (m *Model) updateNewDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.newForm.gsdTasks, cmd = m.newForm.gsdTasks.Update(msg)
 		}
-	case newDialogTypeYolo:
+	case newDialogTypeYolo, newDialogTypeFeaturePlan:
 		switch m.newForm.focusedIdx {
 		case 0:
 			m.newForm.planFilename, cmd = m.newForm.planFilename.Update(msg)
@@ -272,7 +318,7 @@ func (m *Model) submitNewDialogForm() tea.Cmd {
 		m.closeNewDialog()
 		return gsdCreateCmd(filename, tasks)
 
-	case newDialogTypeYolo:
+	case newDialogTypeYolo, newDialogTypeFeaturePlan:
 		filename := strings.TrimSpace(m.newForm.planFilename.Value())
 		title := strings.TrimSpace(m.newForm.planTitle.Value())
 		content := strings.TrimSpace(m.newForm.planContent.Value())
@@ -331,6 +377,36 @@ func (m *Model) renderNewDialog() string {
 			newDialogHelpStyle.Render("s/g/y select . esc cancel"),
 		)
 		dialog := dialogStyle.Width(80).Render(content)
+		return m.renderWithBackdrop(dialog)
+	}
+
+	if m.newDialogStage == newDialogStagePlan {
+		if m.newForm == nil || len(m.newForm.planFeatureDirs) == 0 {
+			return m.renderWithBackdrop("")
+		}
+
+		lines := []string{dialogHeaderStyle.Render("choose feature for plan"), ""}
+		for i, dir := range m.newForm.planFeatureDirs {
+			selector := " "
+			if i == m.newForm.planSelectedIdx {
+				selector = ">"
+			}
+			name := filepath.Base(dir)
+			if name == "" {
+				name = dir
+			}
+			row := fmt.Sprintf("%s %s", selector, name)
+			meta := "  " + dir
+			if i == m.newForm.planSelectedIdx {
+				style := lipgloss.NewStyle().Foreground(colorCream).Bold(true)
+				row = style.Render(row)
+				meta = style.Render(meta)
+			}
+			lines = append(lines, row, meta)
+		}
+		lines = append(lines, "", newDialogHelpStyle.Render("j/k select . enter continue . esc cancel"))
+
+		dialog := dialogStyle.Width(90).Render(strings.Join(lines, "\n"))
 		return m.renderWithBackdrop(dialog)
 	}
 
@@ -395,6 +471,31 @@ func (m *Model) renderNewDialog() string {
 		)
 		dialog := dialogStyle.Width(70).Render(content)
 		return m.renderWithBackdrop(dialog)
+
+	case newDialogTypeFeaturePlan:
+		featureLabel := m.newForm.planFeatureDir
+		if featureLabel == "" {
+			featureLabel = "(unknown feature)"
+		}
+		content := lipgloss.JoinVertical(
+			lipgloss.Left,
+			dialogHeaderStyle.Render("new feature plan"),
+			"",
+			newDialogMutedStyle.Render("feature: "+featureLabel),
+			"",
+			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("filename"),
+			m.newForm.planFilename.View(),
+			"",
+			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("title"),
+			m.newForm.planTitle.View(),
+			"",
+			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("content"),
+			m.newForm.planContent.View(),
+			errorLine,
+			newDialogHelpStyle.Render("enter submit . tab next field . esc cancel"),
+		)
+		dialog := dialogStyle.Width(76).Render(content)
+		return m.renderWithBackdrop(dialog)
 	default:
 		return m.renderWithBackdrop("")
 	}
@@ -417,4 +518,66 @@ func formatCreateError(kind string, err error) string {
 		return ""
 	}
 	return fmt.Sprintf("failed to create %s: %v", kind, err)
+}
+
+func (m *Model) startFeaturePlanPicker(featureDirs []string) tea.Cmd {
+	m.showNewDialog = true
+	m.newDialogStage = newDialogStagePlan
+	m.newDialogType = newDialogTypeFeaturePlan
+	m.newForm = &newFormModel{
+		formType:        newDialogTypeFeaturePlan,
+		planFeatureDirs: append([]string(nil), featureDirs...),
+		planSelectedIdx: 0,
+	}
+	m.updateKeyStates()
+	return nil
+}
+
+func (m *Model) startFeaturePlanForm(featureDir string) tea.Cmd {
+	m.newDialogStage = newDialogStageForm
+	m.newDialogType = newDialogTypeFeaturePlan
+	m.newForm = newFormModelFor(newDialogTypeFeaturePlan)
+	if m.newForm == nil {
+		m.closeNewDialog()
+		return nil
+	}
+
+	cleanDir := strings.TrimSpace(featureDir)
+	m.newForm.planFeatureDir = cleanDir
+	m.newForm.planFilename.SetValue(filepath.Join(cleanDir, "plan.md"))
+	name := filepath.Base(cleanDir)
+	if name != "" {
+		m.newForm.planTitle.SetValue("plan " + name)
+	}
+	m.newForm.focusedIdx = 1
+	m.updateKeyStates()
+	return m.newForm.focusCurrentField()
+}
+
+func ensureSpecKittyAvailable() error {
+	_, err := exec.LookPath("spec-kitty")
+	if err != nil {
+		return fmt.Errorf("spec-kitty is required (install spec-kitty and retry)")
+	}
+	return nil
+}
+
+func listSpecKittyFeatureDirs() ([]string, error) {
+	paths, err := filepath.Glob(filepath.Join("kitty-specs", "*", "tasks", "WP*.md"))
+	if err != nil {
+		return nil, fmt.Errorf("scan spec-kitty features: %w", err)
+	}
+
+	seen := make(map[string]struct{})
+	for _, path := range paths {
+		featureDir := filepath.Dir(filepath.Dir(path))
+		seen[featureDir] = struct{}{}
+	}
+
+	featureDirs := make([]string, 0, len(seen))
+	for featureDir := range seen {
+		featureDirs = append(featureDirs, featureDir)
+	}
+	sort.Strings(featureDirs)
+	return featureDirs, nil
 }

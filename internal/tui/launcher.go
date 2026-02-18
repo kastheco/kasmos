@@ -37,6 +37,13 @@ func (m *Model) renderLauncher(width, height int) string {
 	version := renderLauncherVersion(m.version)
 	menu := renderLauncherMenu()
 	tip := lipgloss.NewStyle().Foreground(colorMidGray).Render("press a key to get started")
+	if note := strings.TrimSpace(m.restoreNote); note != "" {
+		tip = lipgloss.JoinVertical(
+			lipgloss.Center,
+			tip,
+			lipgloss.NewStyle().Foreground(colorOrange).Render(note),
+		)
+	}
 
 	content := lipgloss.JoinVertical(
 		lipgloss.Center,

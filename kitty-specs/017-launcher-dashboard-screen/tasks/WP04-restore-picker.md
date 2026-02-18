@@ -1,7 +1,7 @@
 ---
 work_package_id: WP04
 title: Session Restore Picker
-lane: planned
+lane: done
 dependencies:
 - WP03
 subtasks:

@@ -28,12 +28,18 @@ func TestBuildArgs(t *testing.T) {
 		{
 			name: "model and files",
 			cfg: SpawnConfig{
-				Role:   "planner",
-				Model:  "openai/gpt-5",
-				Files:  []string{"spec.md", "plan.md"},
-				Prompt: "plan it",
+				Role:      "planner",
+				Model:     "openai/gpt-5",
+				Reasoning: "high",
+				Files:     []string{"spec.md", "plan.md"},
+				Prompt:    "plan it",
 			},
-			want: []string{"run", "--agent", "planner", "--model", "openai/gpt-5", "--file", "spec.md", "--file", "plan.md", "plan it"},
+			want: []string{"run", "--agent", "planner", "--model", "openai/gpt-5", "--variant", "high", "--file", "spec.md", "--file", "plan.md", "plan it"},
+		},
+		{
+			name: "default reasoning omits variant",
+			cfg:  SpawnConfig{Role: "coder", Reasoning: "default", Prompt: "code"},
+			want: []string{"run", "--agent", "coder", "code"},
 		},
 		{
 			name: "empty config",

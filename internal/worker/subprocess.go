@@ -74,6 +74,9 @@ func (b *SubprocessBackend) buildArgs(cfg SpawnConfig) []string {
 	if cfg.Model != "" {
 		args = append(args, "--model", cfg.Model)
 	}
+	if cfg.Reasoning != "" && cfg.Reasoning != "default" {
+		args = append(args, "--variant", cfg.Reasoning)
+	}
 	for _, f := range cfg.Files {
 		args = append(args, "--file", f)
 	}

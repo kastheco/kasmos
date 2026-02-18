@@ -2,6 +2,8 @@ package tui
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 
 	"github.com/user/kasmos/internal/config"
+	"github.com/user/kasmos/internal/persist"
 	"github.com/user/kasmos/internal/task"
 	"github.com/user/kasmos/internal/worker"
 )
@@ -397,6 +400,135 @@ func TestLauncherHistoryEscReturnsToLauncher(t *testing.T) {
 	}
 }
 
+func TestRestorePickerRenderWithSessions(t *testing.T) {
+	tmp := t.TempDir()
+	p := persist.NewSessionPersister(tmp)
+
+	now := time.Now().UTC()
+	activePath := filepath.Join(tmp, ".kasmos", "session.json")
+	writeSessionFile(t, activePath, persist.SessionState{
+		Version:    1,
+		SessionID:  "ks-active",
+		StartedAt:  now.Add(-2 * time.Hour),
+		PID:        999999,
+		TaskSource: &persist.TaskSourceConfig{Type: "spec-kitty", Path: "kitty-specs/feature-a"},
+		Workers: []persist.WorkerSnapshot{{
+			ID: "w-001", Role: "coder", State: "exited", SpawnedAt: now.Add(-2 * time.Hour),
+		}},
+	})
+
+	writeSessionFile(t, filepath.Join(tmp, ".kasmos", "sessions", "ks-arch-new.json"), persist.SessionState{
+		Version:    1,
+		SessionID:  "ks-arch-new",
+		StartedAt:  now.Add(-3 * time.Hour),
+		Workers:    []persist.WorkerSnapshot{{ID: "w-010", Role: "planner", State: "exited", SpawnedAt: now.Add(-3 * time.Hour)}},
+		TaskSource: &persist.TaskSourceConfig{Type: "gsd", Path: "tasks.md"},
+	})
+
+	writeSessionFile(t, filepath.Join(tmp, ".kasmos", "sessions", "ks-arch-old.json"), persist.SessionState{
+		Version:   1,
+		SessionID: "ks-arch-old",
+		StartedAt: now.Add(-5 * time.Hour),
+		Workers:   []persist.WorkerSnapshot{{ID: "w-020", Role: "reviewer", State: "failed", SpawnedAt: now.Add(-5 * time.Hour)}},
+	})
+
+	m := newTestModel(true)
+	m.ready = true
+	m.width = 120
+	m.height = 30
+	m.layoutMode = layoutStandard
+	m.SetPersister(p, "ks-current")
+
+	msg := m.openRestorePicker()()
+	_, _ = m.Update(msg)
+
+	if len(m.restoreEntries) != 3 {
+		t.Fatalf("expected 3 restore entries, got %d", len(m.restoreEntries))
+	}
+	if !m.restoreEntries[0].Active || m.restoreEntries[0].SessionID != "ks-active" {
+		t.Fatalf("expected active entry first, got %+v", m.restoreEntries[0])
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "last active") || !strings.Contains(view, "ks-arch-new") || !strings.Contains(view, "ks-arch-old") {
+		t.Fatalf("restore picker render missing expected sessions: %q", view)
+	}
+}
+
+func TestRestorePickerRenderEmpty(t *testing.T) {
+	m := newTestModel(true)
+	m.ready = true
+	m.width = 120
+	m.height = 30
+	m.layoutMode = layoutStandard
+	m.SetPersister(persist.NewSessionPersister(t.TempDir()), "ks-current")
+
+	msg := m.openRestorePicker()()
+	_, _ = m.Update(msg)
+
+	if len(m.restoreEntries) != 0 {
+		t.Fatalf("expected no restore entries, got %d", len(m.restoreEntries))
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "no restorable sessions found") {
+		t.Fatalf("expected empty-state message, got: %q", view)
+	}
+}
+
+func TestRestorePickerSelectionLoadsSession(t *testing.T) {
+	tmp := t.TempDir()
+	p := persist.NewSessionPersister(tmp)
+	now := time.Now().UTC()
+
+	writeSessionFile(t, filepath.Join(tmp, ".kasmos", "session.json"), persist.SessionState{
+		Version:       1,
+		SessionID:     "ks-restore",
+		StartedAt:     now.Add(-time.Hour),
+		NextWorkerNum: 42,
+		PID:           999999,
+		TaskSource:    &persist.TaskSourceConfig{Type: "yolo", Path: ""},
+		Workers: []persist.WorkerSnapshot{
+			{ID: "w-001", Role: "coder", State: "running", SpawnedAt: now.Add(-50 * time.Minute)},
+			{ID: "w-002", Role: "reviewer", State: "exited", SpawnedAt: now.Add(-40 * time.Minute)},
+		},
+	})
+
+	m := newTestModel(true)
+	m.ready = true
+	m.width = 120
+	m.height = 30
+	m.layoutMode = layoutStandard
+	m.SetPersister(p, "ks-current")
+
+	msg := m.openRestorePicker()()
+	_, _ = m.Update(msg)
+
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected restore load command on enter")
+	}
+	_, _ = m.Update(cmd())
+
+	if m.showLauncher {
+		t.Fatal("launcher should close after restore")
+	}
+	if m.showRestorePicker {
+		t.Fatal("restore picker should close after restore")
+	}
+	if m.sessionID != "ks-restore" {
+		t.Fatalf("session id mismatch: got=%q want=%q", m.sessionID, "ks-restore")
+	}
+
+	restored := m.manager.All()
+	if len(restored) != 2 {
+		t.Fatalf("expected 2 restored workers, got %d", len(restored))
+	}
+	if restored[0].State != worker.StateKilled {
+		t.Fatalf("expected running worker to be marked killed, got %s", restored[0].State)
+	}
+}
+
 func TestSelectionAndViewportNoPanicOnEmptyState(t *testing.T) {
 	m := newTestModel(false)
 
@@ -508,6 +640,20 @@ func mustNotPanic(t *testing.T, name string, fn func()) {
 		}
 	}()
 	fn()
+}
+
+func writeSessionFile(t *testing.T, path string, state persist.SessionState) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal session state: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write session file %s: %v", path, err)
+	}
 }
 
 func newTestModel(showLauncher bool) *Model {

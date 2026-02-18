@@ -11,7 +11,7 @@ import (
 	"github.com/user/kasmos/internal/worker"
 )
 
-func analyzeCmd(backend worker.WorkerBackend, workerID, role string, exitCode int, duration, outputTail string) tea.Cmd {
+func analyzeCmd(backend worker.WorkerBackend, workerID, role string, exitCode int, duration, outputTail, model, reasoning string) tea.Cmd {
 	return func() tea.Msg {
 		if backend == nil {
 			return analyzeCompletedMsg{WorkerID: workerID, Err: fmt.Errorf("no backend")}
@@ -31,9 +31,11 @@ ROOT_CAUSE: <one paragraph explaining what went wrong>
 SUGGESTED_PROMPT: <a revised prompt that would fix the issue>`, workerID, role, exitCode, duration, outputTail)
 
 		cfg := worker.SpawnConfig{
-			ID:     fmt.Sprintf("analyze-%s", workerID),
-			Role:   "reviewer",
-			Prompt: prompt,
+			ID:        fmt.Sprintf("analyze-%s", workerID),
+			Role:      "reviewer",
+			Prompt:    prompt,
+			Model:     model,
+			Reasoning: reasoning,
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -78,7 +80,7 @@ SUGGESTED_PROMPT: <a revised prompt that would fix the issue>`, workerID, role, 
 	}
 }
 
-func genPromptCmd(backend worker.WorkerBackend, taskID, title, description, suggestedRole string, deps []string) tea.Cmd {
+func genPromptCmd(backend worker.WorkerBackend, taskID, title, description, suggestedRole string, deps []string, model, reasoning string) tea.Cmd {
 	return func() tea.Msg {
 		if backend == nil {
 			return genPromptCompletedMsg{TaskID: taskID, Err: fmt.Errorf("no backend")}
@@ -95,9 +97,11 @@ Generate a detailed, actionable prompt suitable for an AI coding agent.
 The prompt should be specific enough to implement without further clarification.`, taskID, title, description, strings.Join(deps, ", "), suggestedRole)
 
 		cfg := worker.SpawnConfig{
-			ID:     fmt.Sprintf("genprompt-%s", taskID),
-			Role:   "planner",
-			Prompt: prompt,
+			ID:        fmt.Sprintf("genprompt-%s", taskID),
+			Role:      "planner",
+			Prompt:    prompt,
+			Model:     model,
+			Reasoning: reasoning,
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

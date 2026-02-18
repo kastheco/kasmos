@@ -31,7 +31,9 @@ type Model struct {
 	autoFollow bool
 
 	showLauncher bool
+	showSettings bool
 	config       *config.Config
+	settingsForm *settingsModel
 
 	keys      keyMap
 	help      help.Model
@@ -153,6 +155,10 @@ func NewModel(backend worker.WorkerBackend, source task.Source, version string, 
 		config:           cfg,
 		version:          version,
 		sessionStartedAt: time.Now().UTC(),
+	}
+	m.ensureConfigDefaults()
+	if source == nil {
+		source = m.defaultTaskSource()
 	}
 	if source != nil {
 		m.taskSource = source
@@ -284,6 +290,9 @@ func (m *Model) View() string {
 		}
 		if m.showHistory {
 			return m.renderHistoryOverlay()
+		}
+		if m.showSettings {
+			return m.renderSettingsView()
 		}
 		if m.showQuitConfirm {
 			return m.renderQuitConfirm()

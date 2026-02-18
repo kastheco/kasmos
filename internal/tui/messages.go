@@ -132,6 +132,10 @@ type restoreLoadCompleteMsg struct {
 	Err   error
 }
 
+type settingsSavedMsg struct {
+	Err error
+}
+
 func tickCmd() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
 		return tickMsg(t)

@@ -1,7 +1,7 @@
 ---
 work_package_id: WP06
 title: Spec-Kitty Launcher Actions
-lane: planned
+lane: done
 dependencies:
 - WP03
 subtasks:
