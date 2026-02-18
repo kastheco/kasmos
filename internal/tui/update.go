@@ -70,6 +70,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
+		if m.showLauncher {
+			return m.updateLauncherKeys(msg)
+		}
+
 		if key.Matches(msg, m.keys.Quit) {
 			running := m.runningWorkersCount()
 			if running == 0 {
@@ -524,6 +528,58 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+func (m *Model) transitionFromLauncher() {
+	if !m.showLauncher {
+		return
+	}
+	m.showLauncher = false
+	m.recalculateLayout()
+	m.updateKeyStates()
+}
+
+func (m *Model) updateLauncherKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(msg, m.keys.New) {
+		m.transitionFromLauncher()
+		if m.taskSource == nil || m.taskSource.Type() != "yolo" {
+			m.swapTaskSource(&task.YoloSource{})
+		}
+		return m, m.openSpawnDialog()
+	}
+
+	if key.Matches(msg, m.keys.History) {
+		return m, m.openHistoryOverlay()
+	}
+
+	if key.Matches(msg, m.keys.Quit) {
+		running := m.runningWorkersCount()
+		if running == 0 {
+			return m, tea.Quit
+		}
+		m.showQuitConfirm = true
+		m.quitConfirmFocused = 1
+		m.updateKeyStates()
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "f":
+		m.transitionFromLauncher()
+		_ = m.openNewDialog()
+		return m, m.startNewDialogForm(newDialogTypeFeatureSpec)
+	case "p":
+		m.setViewportContent("plan creation not yet implemented", false)
+		return m, nil
+	case "r":
+		m.setViewportContent("restore not yet implemented", false)
+		return m, nil
+	case "s":
+		m.setViewportContent("settings not yet implemented", false)
+		return m, nil
+	default:
+		return m, nil
+	}
 }
 
 func (m *Model) refreshTableRows() {

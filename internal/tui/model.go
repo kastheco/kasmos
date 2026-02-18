@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 
+	"github.com/user/kasmos/internal/config"
 	"github.com/user/kasmos/internal/persist"
 	"github.com/user/kasmos/internal/task"
 	"github.com/user/kasmos/internal/worker"
@@ -28,6 +29,9 @@ type Model struct {
 	showHelp   bool
 	fullScreen bool
 	autoFollow bool
+
+	showLauncher bool
+	config       *config.Config
 
 	keys      keyMap
 	help      help.Model
@@ -110,7 +114,7 @@ type AnalysisResult struct {
 	SuggestedPrompt string
 }
 
-func NewModel(backend worker.WorkerBackend, source task.Source, version string) *Model {
+func NewModel(backend worker.WorkerBackend, source task.Source, version string, cfg *config.Config, showLauncher bool) *Model {
 	t := table.New(
 		table.WithColumns([]table.Column{
 			{Title: "id", Width: 10},
@@ -138,6 +142,8 @@ func NewModel(backend worker.WorkerBackend, source task.Source, version string) 
 		backend:          backend,
 		manager:          worker.NewWorkerManager(),
 		workers:          make([]*worker.Worker, 0),
+		showLauncher:     showLauncher,
+		config:           cfg,
 		version:          version,
 		sessionStartedAt: time.Now().UTC(),
 	}
@@ -263,6 +269,16 @@ func (m *Model) View() string {
 		curr := lipgloss.NewStyle().Foreground(colorLightGray).Render(fmt.Sprintf("current: %dx%d", m.width, m.height))
 		body := lipgloss.JoinVertical(lipgloss.Center, warn, meta, curr)
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, body)
+	}
+
+	if m.showLauncher {
+		if m.showHistory {
+			return m.renderHistoryOverlay()
+		}
+		if m.showQuitConfirm {
+			return m.renderQuitConfirm()
+		}
+		return m.renderLauncher(m.width, m.height)
 	}
 
 	if m.fullScreen {

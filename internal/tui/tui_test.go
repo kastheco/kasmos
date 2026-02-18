@@ -2,17 +2,19 @@ package tui
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 
+	"github.com/user/kasmos/internal/config"
 	"github.com/user/kasmos/internal/task"
 	"github.com/user/kasmos/internal/worker"
 )
 
 func TestNewModelDefaults(t *testing.T) {
-	m := NewModel(nil, nil, "test")
+	m := newTestModel(false)
 
 	if m == nil {
 		t.Fatal("NewModel returned nil")
@@ -113,7 +115,7 @@ func TestRecalculateLayoutBreakpoints(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := NewModel(nil, nil, "test")
+			m := newTestModel(false)
 			m.width = tt.width
 			m.height = tt.height
 			m.taskSourceType = tt.taskSourceType
@@ -243,7 +245,7 @@ func TestUpdateKeyStates(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := NewModel(nil, nil, "test")
+			m := newTestModel(false)
 			tt.setup(m)
 			m.updateKeyStates()
 			tt.assert(t, m)
@@ -252,7 +254,7 @@ func TestUpdateKeyStates(t *testing.T) {
 }
 
 func TestWorkerTableColumnsFitWidth(t *testing.T) {
-	m := NewModel(nil, nil, "test")
+	m := newTestModel(false)
 	m.width = 120
 	m.height = 24
 	m.recalculateLayout()
@@ -274,7 +276,7 @@ func TestWorkerTableColumnsFitWidth(t *testing.T) {
 }
 
 func TestArrowKeysBoundToPanelNavigation(t *testing.T) {
-	m := NewModel(nil, nil, "test")
+	m := newTestModel(false)
 
 	if got := m.keys.NextPanel.Keys(); len(got) < 2 || got[1] != "right" {
 		t.Fatalf("next panel keys mismatch: got=%v", got)
@@ -285,7 +287,7 @@ func TestArrowKeysBoundToPanelNavigation(t *testing.T) {
 }
 
 func TestNewKeyDisabledWhenOverlayActive(t *testing.T) {
-	m := NewModel(nil, nil, "test")
+	m := newTestModel(false)
 	m.showSpawnDialog = true
 	m.updateKeyStates()
 
@@ -302,7 +304,7 @@ func TestNewKeyDisabledWhenOverlayActive(t *testing.T) {
 }
 
 func TestNewDialogPickerYoloOpensSpawnDialog(t *testing.T) {
-	m := NewModel(nil, nil, "test")
+	m := newTestModel(false)
 	_ = m.openNewDialog()
 
 	if !m.showNewDialog || m.newDialogStage != newDialogStagePicker {
@@ -319,8 +321,84 @@ func TestNewDialogPickerYoloOpensSpawnDialog(t *testing.T) {
 	}
 }
 
+func TestLauncherViewShownWhenEnabled(t *testing.T) {
+	m := newTestModel(true)
+	m.ready = true
+	m.width = 120
+	m.height = 30
+	m.layoutMode = layoutStandard
+
+	view := m.View()
+	if !strings.Contains(view, "press a key to get started") {
+		t.Fatalf("expected launcher view, got: %q", view)
+	}
+}
+
+func TestLauncherViewSkippedWhenDisabled(t *testing.T) {
+	m := newTestModel(false)
+	m.ready = true
+	m.width = 120
+	m.height = 30
+	m.layoutMode = layoutStandard
+	m.recalculateLayout()
+
+	view := m.View()
+	if strings.Contains(view, "press a key to get started") {
+		t.Fatalf("expected dashboard view when launcher disabled, got: %q", view)
+	}
+	if !strings.Contains(view, "agent orchestrator") {
+		t.Fatalf("expected dashboard header, got: %q", view)
+	}
+}
+
+func TestLauncherKeyNOpensYoloSpawnDialog(t *testing.T) {
+	m := newTestModel(true)
+
+	_, _ = m.Update(tea.KeyPressMsg{Text: "n", Code: 'n'})
+
+	if m.showLauncher {
+		t.Fatal("launcher should close on n")
+	}
+	if !m.showSpawnDialog {
+		t.Fatal("spawn dialog should open on n")
+	}
+	if m.taskSource == nil || m.taskSource.Type() != "yolo" {
+		t.Fatal("n should switch to yolo source")
+	}
+}
+
+func TestLauncherKeyQQuits(t *testing.T) {
+	m := newTestModel(true)
+
+	_, cmd := m.Update(tea.KeyPressMsg{Text: "q", Code: 'q'})
+	if cmd == nil {
+		t.Fatal("expected quit cmd")
+	}
+	msg := cmd()
+	if _, ok := msg.(tea.QuitMsg); !ok {
+		t.Fatalf("expected tea.QuitMsg, got %T", msg)
+	}
+}
+
+func TestLauncherHistoryEscReturnsToLauncher(t *testing.T) {
+	m := newTestModel(true)
+
+	_, _ = m.Update(tea.KeyPressMsg{Text: "h", Code: 'h'})
+	if !m.showHistory {
+		t.Fatal("history overlay should open on h")
+	}
+
+	_, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.showHistory {
+		t.Fatal("history overlay should close on esc")
+	}
+	if !m.showLauncher {
+		t.Fatal("esc from history should return to launcher")
+	}
+}
+
 func TestSelectionAndViewportNoPanicOnEmptyState(t *testing.T) {
-	m := NewModel(nil, nil, "test")
+	m := newTestModel(false)
 
 	mustNotPanic(t, "syncSelectionFromTable", func() {
 		m.syncSelectionFromTable()
@@ -332,7 +410,7 @@ func TestSelectionAndViewportNoPanicOnEmptyState(t *testing.T) {
 }
 
 func TestBuildSessionStateUsesManagerCounter(t *testing.T) {
-	m := NewModel(nil, nil, "test")
+	m := newTestModel(false)
 	m.sessionID = "ks-test"
 	m.manager.ResetWorkerCounter(41)
 	m.manager.Add(&worker.Worker{ID: "w-003", Role: "coder", State: worker.StateRunning})
@@ -430,4 +508,8 @@ func mustNotPanic(t *testing.T, name string, fn func()) {
 		}
 	}()
 	fn()
+}
+
+func newTestModel(showLauncher bool) *Model {
+	return NewModel(nil, nil, "test", config.DefaultConfig(), showLauncher)
 }

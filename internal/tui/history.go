@@ -60,6 +60,9 @@ func (m *Model) updateHistory(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setViewportContent(fmt.Sprintf("failed to load history entry %q: %v", msg.Entry.Name, err), false)
 			return m, nil
 		}
+		if m.showLauncher {
+			m.transitionFromLauncher()
+		}
 		m.closeHistoryOverlay()
 		m.refreshTableRows()
 		m.refreshViewportFromSelected(false)

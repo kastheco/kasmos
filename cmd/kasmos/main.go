@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/spf13/cobra"
 
+	"github.com/user/kasmos/internal/config"
 	"github.com/user/kasmos/internal/persist"
 	"github.com/user/kasmos/internal/setup"
 	"github.com/user/kasmos/internal/task"
@@ -45,6 +46,12 @@ func newRootCmd() *cobra.Command {
 			if showVersion {
 				fmt.Fprintf(cmd.OutOrStdout(), "kasmos v%s\n", version)
 				return nil
+			}
+
+			cfg, err := config.Load(".")
+			if err != nil {
+				log.Printf("warning: failed to load config: %v", err)
+				cfg = config.DefaultConfig()
 			}
 
 			var source task.Source
@@ -92,7 +99,9 @@ func newRootCmd() *cobra.Command {
 			ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
 
-			model := tui.NewModel(backend, source, version)
+			showLauncher := len(args) == 0 && !attach && !daemon
+
+			model := tui.NewModel(backend, source, version, cfg, showLauncher)
 			if daemon {
 				model.SetDaemonMode(true, format, spawnAll)
 			}
