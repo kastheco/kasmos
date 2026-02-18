@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -12,11 +11,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 
 	"github.com/user/kasmos/internal/worker"
-)
-
-var (
-	sessionTextPattern = regexp.MustCompile(`session:\s+(ses_[a-zA-Z0-9]+)`)
-	sessionJSONPattern = regexp.MustCompile(`"session_id"\s*:\s*"(ses_[a-zA-Z0-9]+)"`)
 )
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -186,7 +180,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.SessionID != "" {
 			w.SessionID = msg.SessionID
 		} else if w.Output != nil {
-			w.SessionID = extractSessionID(w.Output.Content())
+			w.SessionID = worker.ExtractSessionID(w.Output.Content())
 		}
 		w.Handle = nil
 
@@ -293,14 +287,4 @@ func (m *Model) selectedWorker() *worker.Worker {
 		return nil
 	}
 	return m.manager.Get(m.selectedWorkerID)
-}
-
-func extractSessionID(output string) string {
-	if match := sessionTextPattern.FindStringSubmatch(output); len(match) > 1 {
-		return match[1]
-	}
-	if match := sessionJSONPattern.FindStringSubmatch(output); len(match) > 1 {
-		return match[1]
-	}
-	return ""
 }

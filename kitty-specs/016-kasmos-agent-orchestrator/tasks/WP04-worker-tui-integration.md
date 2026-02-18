@@ -1,29 +1,39 @@
 ---
-work_package_id: "WP04"
-title: "Worker-TUI Integration (Spawn + Output + Lifecycle)"
-lane: "planned"
+work_package_id: WP04
+title: Worker-TUI Integration (Spawn + Output + Lifecycle)
+lane: done
 dependencies:
-  - "WP02"
-  - "WP03"
+- WP02
+- WP03
 subtasks:
-  - "internal/tui/commands.go - spawnWorkerCmd, readOutputCmd, waitCmd, killWorkerCmd"
-  - "Update model.go - Add WorkerManager + WorkerBackend fields"
-  - "Update update.go - Worker lifecycle message handlers"
-  - "Update panels.go - Table rows from worker data, viewport from output buffer"
-  - "Spawn dialog (huh form) in overlays.go"
-  - "Timer tick for duration updates"
-  - "Spinner for running worker status cells"
-phase: "Wave 1 - Core TUI + Worker Lifecycle"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
+- internal/tui/commands.go - spawnWorkerCmd, readOutputCmd, waitCmd, killWorkerCmd
+- Update model.go - Add WorkerManager + WorkerBackend fields
+- Update update.go - Worker lifecycle message handlers
+- Update panels.go - Table rows from worker data, viewport from output buffer
+- Spawn dialog (huh form) in overlays.go
+- Timer tick for duration updates
+- Spinner for running worker status cells
+phase: Wave 1 - Core TUI + Worker Lifecycle
+assignee: ''
+agent: ''
+shell_pid: ''
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-17T00:00:00Z"
-    lane: "planned"
-    agent: "planner"
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-17T00:00:00Z'
+  lane: planned
+  agent: planner
+  action: Prompt generated via /spec-kitty.tasks
+- timestamp: '2026-02-18T08:53:56.379168648+00:00'
+  lane: doing
+  actor: manager
+  shell_pid: '472734'
+  action: 'transition active (WP02+WP03 done. Launching core integration: spawn, output, lifecycle.)'
+- timestamp: '2026-02-18T13:30:47.372407497+00:00'
+  lane: done
+  actor: manager
+  shell_pid: '472734'
+  action: 'transition done (Verified: PASS. Fixed M1 (View purity). Spawn->output->exit flow works end-to-end.)'
 ---
 
 # Work Package Prompt: WP04 - Worker-TUI Integration (Spawn + Output + Lifecycle)

@@ -87,8 +87,8 @@ func (m *Model) renderStatusBar() string {
 	}
 	right := fmt.Sprintf("mode: %s  scroll: %s ", m.modeName(), scrollStr)
 	gap := strings.Repeat(" ", max(0, m.width-lipgloss.Width(left)-lipgloss.Width(right)-2))
-	m.statusBar = left + gap + right
-	return statusBarStyle.Width(m.width).Render(m.statusBar)
+	bar := left + gap + right
+	return statusBarStyle.Width(m.width).Render(bar)
 }
 
 func (m *Model) renderHelpBar() string {

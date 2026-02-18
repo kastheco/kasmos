@@ -37,9 +37,9 @@ func TestExtractSessionID(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := extractSessionID(tc.input)
+			got := ExtractSessionID(tc.input)
 			if got != tc.output {
-				t.Fatalf("extractSessionID() = %q, want %q", got, tc.output)
+				t.Fatalf("ExtractSessionID() = %q, want %q", got, tc.output)
 			}
 		})
 	}

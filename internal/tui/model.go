@@ -33,8 +33,6 @@ type Model struct {
 	workers  []*worker.Worker
 	program  *tea.Program
 
-	statusBar string
-
 	showSpawnDialog bool
 	spawnForm       *spawnDialogModel
 	spawnDraft      spawnDialogDraft
