@@ -22,7 +22,7 @@ import (
 )
 
 // Set at build time: -ldflags "-X main.version=2.0.0"
-var version = "2.0.6"
+var version = "2.0.7"
 
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
