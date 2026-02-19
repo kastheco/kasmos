@@ -9,6 +9,7 @@ subtasks:
   - "T012"
   - "T013"
   - "T014"
+  - "T042"
 title: "TmuxBackend & tmuxHandle Implementation"
 phase: "Phase 1 - TmuxBackend Core"
 lane: "planned"
@@ -830,6 +831,57 @@ func (b *TmuxBackend) Handle(workerID string, startTime time.Time) WorkerHandle 
 - tmux session destroyed before cleanup: All KillPane calls will fail silently.
 
 **Total file estimate**: `internal/worker/tmux.go` should be approximately 450-500 lines total.
+
+---
+
+### Subtask T042 - Unit tests for TmuxBackend with mock TmuxCLI
+
+**Purpose**: Validate TmuxBackend behavior (spawn, swap, poll, reconnect) and tmuxHandle lifecycle using the mock TmuxCLI from WP01's `tmux_cli_test.go`.
+
+**Steps**:
+
+1. Create `internal/worker/tmux_test.go`.
+
+2. **Test TmuxBackend.Init()**:
+   - Mock `CurrentPaneID` returns `%1`, `NewWindow` returns `@2`.
+   - Verify `kasmosPaneID`, `parkingWindow`, `sessionTag` are set.
+   - Test Init failure when `CurrentPaneID` errors.
+
+3. **Test TmuxBackend.Spawn()**:
+   - Mock `SplitWindow` returns `%3`.
+   - Verify returned handle is `tmuxHandle` with `Interactive() == true`, `Stdout() == nil`.
+   - Verify managed pane is tracked with correct worker ID.
+   - Verify spawn before Init returns error.
+
+4. **Test TmuxBackend.SwapActive()**:
+   - Spawn 2 workers (mock returns `%3` then `%4`).
+   - Call `SwapActive` to second worker.
+   - Verify `JoinPane` called with first worker's pane to parking, then second worker's pane to kasmos.
+   - Verify `SelectPane` called for focus.
+
+5. **Test TmuxBackend.PollPanes()**:
+   - Mock `ListPanes` returns one dead pane.
+   - Verify `PollPanes` returns `PaneStatus{Dead: true, ExitCode: 1}`.
+   - Mock `ListPanes` returns missing pane (not in list).
+   - Verify `PaneStatus{Missing: true}`.
+
+6. **Test tmuxHandle lifecycle**:
+   - Create handle, verify `Wait()` blocks.
+   - Call `NotifyExit(0, 5*time.Second)`.
+   - Verify `Wait()` unblocks and returns correct `ExitResult`.
+   - Call `NotifyExit` again, verify no panic (idempotent).
+
+7. **Test TmuxBackend.Reconnect()**:
+   - Mock `ListPanes("-s")` returns 2 panes with matching env tags.
+   - Verify `Reconnect` returns 2 `ReconnectedWorker` entries.
+   - Verify managed panes are tracked.
+
+8. **Test WorkerHandle.Interactive()**:
+   - Verify `subprocessHandle.Interactive()` returns `false`.
+   - Verify `tmuxHandle.Interactive()` returns `true`.
+
+**Files**: `internal/worker/tmux_test.go` (new, ~250 lines)
+**Parallel?**: Yes - can proceed once T007-T014 are done.
 
 ---
 

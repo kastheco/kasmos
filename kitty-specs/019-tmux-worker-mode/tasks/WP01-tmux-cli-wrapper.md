@@ -7,6 +7,7 @@ subtasks:
   - "T004"
   - "T005"
   - "T006"
+  - "T041"
 title: "TmuxCLI Wrapper Interface"
 phase: "Phase 1 - TmuxBackend Core"
 lane: "planned"
@@ -486,6 +487,69 @@ func (t *tmuxExec) GetPaneEnv(paneID, key string) (string, error) {
 **Parallel?**: No (final subtask, depends on T002 for `run` helper).
 
 **Total file estimate**: `internal/worker/tmux_cli.go` should be approximately 250-300 lines.
+
+---
+
+### Subtask T041 - Unit tests for TmuxCLI
+
+**Purpose**: Validate the interface contract, parsing logic, and error handling. Uses a mock `TmuxCLI` implementation and direct tests of `parsePaneList`.
+
+**Steps**:
+
+1. Create `internal/worker/tmux_cli_test.go`.
+
+2. **Define a mock TmuxCLI** for use in tests across WP01 and WP02:
+
+```go
+type mockTmuxCLI struct {
+    splitWindowFn  func(target, cmd string, horizontal bool, size int) (string, error)
+    joinPaneFn     func(src, dst string, horizontal bool, size int) error
+    breakPaneFn    func(paneID string) error
+    selectPaneFn   func(paneID string) error
+    listPanesFn    func(target string) ([]PaneInfo, error)
+    killPaneFn     func(paneID string) error
+    capturePane Fn func(paneID string) (string, error)
+    setPaneEnvFn   func(paneID, key, value string) error
+    getPaneEnvFn   func(paneID, key string) (string, error)
+    newWindowFn    func(name string) (string, error)
+    currentPaneIDFn func() (string, error)
+    versionFn      func() (string, error)
+}
+```
+
+Each method delegates to the corresponding `Fn` field, returning zero values if nil. This pattern lets individual tests override only the methods they care about.
+
+3. **Test `parsePaneList`** with table-driven tests:
+
+```go
+func TestParsePaneList(t *testing.T) {
+    tests := []struct {
+        name   string
+        input  string
+        want   []PaneInfo
+    }{
+        {"empty", "", nil},
+        {"single live pane", "%1 12345 0 0", []PaneInfo{{ID: "%1", PID: 12345, Dead: false, DeadStatus: 0}}},
+        {"single dead pane", "%2 99 1 127", []PaneInfo{{ID: "%2", PID: 99, Dead: true, DeadStatus: 127}}},
+        {"multiple panes", "%1 100 0 0\n%2 200 1 1", []PaneInfo{...}},
+        {"malformed line skipped", "%1 100 0 0\nbad\n%3 300 0 0", []PaneInfo{...}},
+        {"trailing whitespace", "  %1 100 0 0  \n", []PaneInfo{...}},
+    }
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            got, err := parsePaneList(tt.input)
+            // assert err == nil, got matches tt.want
+        })
+    }
+}
+```
+
+4. **Test `NewTmuxExec`**: Verify it returns `ErrTmuxNotFound` when tmux is not in PATH (set PATH to empty in test, or use a build tag).
+
+5. **Test `GetPaneEnv` parsing**: Verify `KEY=VALUE` output is split correctly, and missing key returns error.
+
+**Files**: `internal/worker/tmux_cli_test.go` (new, ~120 lines)
+**Parallel?**: Yes - can proceed once T001-T006 are done.
 
 ---
 

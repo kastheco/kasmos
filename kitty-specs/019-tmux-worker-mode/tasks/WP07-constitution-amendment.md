@@ -6,7 +6,7 @@ subtasks:
   - "T040"
 title: "Constitution Amendment"
 phase: "Phase 3 - Persistence & Config"
-lane: "planned"
+lane: "done"
 assignee: ""
 agent: ""
 shell_pid: ""
@@ -143,3 +143,4 @@ No dependencies - this WP can start immediately and run in parallel with any oth
 ## Activity Log
 
 - 2026-02-19T03:53:34Z - system - lane=planned - Prompt created.
+- 2026-02-19T04:15:00Z - system - lane=done - Constitution already amended during planning phase. All three changes (worker mode dual-mode, session continuation, Go 1.24+) verified present in .kittify/memory/constitution.md v2.1.0. No implementation needed.

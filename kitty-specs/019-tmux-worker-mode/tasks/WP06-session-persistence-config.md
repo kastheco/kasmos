@@ -7,6 +7,7 @@ subtasks:
   - "T035"
   - "T036"
   - "T037"
+  - "T043"
 title: "Session Persistence, Config & Reattach"
 phase: "Phase 3 - Persistence & Config"
 lane: "planned"
@@ -407,6 +408,73 @@ for _, snap := range attachState.Workers {
 - `cmd/kasmos/main.go` (modify, ~40 lines)
 - `internal/tui/model.go` (modify, ~5 lines - FindWorker accessor)
 **Parallel?**: No - depends on T035 reorder and tmux backend creation.
+
+---
+
+### Subtask T043 - Add tmux_mode toggle to settings form
+
+**Purpose**: FR-002 requires tmux mode to be configurable via the settings view. The settings form (from feature 017) needs a toggle row for `tmux_mode`. Currently the form has task source cycling and agent role editing. Add a boolean toggle for tmux mode.
+
+**Steps**:
+
+1. In `internal/tui/settings.go`, add a new row kind:
+
+```go
+const (
+    settingsRowTaskSource settingsRowKind = iota
+    settingsRowTmuxMode   // NEW
+    settingsRowRoleModel
+    settingsRowRoleReasoning
+)
+```
+
+2. In `newSettingsModel()`, add the tmux mode row after task source:
+
+```go
+form.rows = append(form.rows, settingsRow{kind: settingsRowTaskSource})
+form.rows = append(form.rows, settingsRow{kind: settingsRowTmuxMode}) // NEW
+```
+
+3. In `updateSettings()`, handle the new row kind (cycling behavior like task source):
+
+```go
+case settingsRowTmuxMode:
+    switch keyMsg.String() {
+    case "left", "h", "right", "l", "enter", " ":
+        m.config.TmuxMode = !m.config.TmuxMode
+        m.settingsForm.saveErr = nil
+    }
+    return m, nil
+```
+
+4. In `renderSettingsView()`, render the toggle:
+
+```go
+case settingsRowTmuxMode:
+    status := "off"
+    if m.config.TmuxMode {
+        status = "on"
+    }
+    lines = append(lines, lineStyle.Render(fmt.Sprintf("%stmux mode: %s", selector, status)))
+```
+
+5. In `cloneConfig()`, copy the TmuxMode field:
+
+```go
+clone := &config.Config{
+    DefaultTaskSource: cfg.DefaultTaskSource,
+    TmuxMode:          cfg.TmuxMode, // NEW
+    Agents:            make(map[string]config.AgentConfig, len(cfg.Agents)),
+}
+```
+
+**Files**: `internal/tui/settings.go` (modify, ~20 lines across 4 locations)
+**Parallel?**: No - depends on T033 (Config.TmuxMode field must exist).
+
+**Validation**:
+- Open settings view, verify "tmux mode: off" appears.
+- Toggle it, verify it changes to "on".
+- Press Esc, verify config saves with `tmux_mode = true` in TOML.
 
 ---
 

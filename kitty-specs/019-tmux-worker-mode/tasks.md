@@ -3,9 +3,9 @@
 **Inputs**: Design documents from `kitty-specs/019-tmux-worker-mode/`
 **Prerequisites**: plan.md (required), spec.md (6 user stories, 17 FRs, 6 SCs), research.md (8 design decisions), data-model.md (entity definitions)
 
-**Tests**: Not explicitly requested. Unit tests with mock TmuxCLI are included as implementation guidance within WP prompts where appropriate.
+**Tests**: Required per constitution ("All features must have corresponding tests"). Unit tests use mock TmuxCLI for isolated testing. Integration tests gated behind `KASMOS_INTEGRATION=1`.
 
-**Organization**: 40 fine-grained subtasks (`T001`-`T040`) roll up into 7 work packages (`WP01`-`WP07`). Each work package is independently deliverable. Structure follows the plan's three implementation waves.
+**Organization**: 43 fine-grained subtasks (`T001`-`T043`) roll up into 7 work packages (`WP01`-`WP07`). Each work package is independently deliverable. Structure follows the plan's three implementation waves. WP07 is pre-completed (constitution already amended during planning).
 
 **Prompt Files**: Each work package references a matching prompt file in `kitty-specs/019-tmux-worker-mode/tasks/`.
 
@@ -25,6 +25,7 @@
 - [ ] T004 [P] Implement pane movement methods: JoinPane, BreakPane, and window management: NewWindow
 - [ ] T005 Implement pane query methods: ListPanes (with PaneInfo parsing), CapturePane, CurrentPaneID, Version
 - [ ] T006 Implement environment tagging methods: SetPaneEnv, GetPaneEnv
+- [ ] T041 [P] Unit tests for TmuxCLI: mock interface, test `parsePaneList`, test error wrapping in `internal/worker/tmux_cli_test.go`
 
 ### Implementation Notes
 - All methods shell out to `tmux` via `os/exec.Command`. No Go tmux library.
@@ -62,6 +63,7 @@
 - [ ] T012 Implement pane visibility management: `ShowPane()`, `HidePane()`, `SwapActive()` using JoinPane/BreakPane
 - [ ] T013 Implement `PollPanes()`: list all managed panes, detect dead/missing, return `[]PaneStatus`
 - [ ] T014 Implement `Reconnect()` (scan for surviving tagged panes) and `Cleanup()` (kill parking window)
+- [ ] T042 [P] Unit tests for TmuxBackend with mock TmuxCLI: Spawn, SwapActive, PollPanes, Reconnect, tmuxHandle lifecycle in `internal/worker/tmux_test.go`
 
 ### Implementation Notes
 - `TmuxBackend` implements `WorkerBackend` interface. Compile-time check: `var _ WorkerBackend = (*TmuxBackend)(nil)`.
@@ -204,6 +206,7 @@
 - [ ] T035 Update reattach logic in `cmd/kasmos/main.go`: read `BackendMode` from loaded session, auto-select TmuxBackend if "tmux"
 - [ ] T036 Implement config-based tmux activation in `cmd/kasmos/main.go`: if `cfg.TmuxMode == true` and `$TMUX` is set, enable tmux mode; if `$TMUX` is not set, fall back to subprocess with a notice
 - [ ] T037 Implement reattach pane reconnection: call `TmuxBackend.Reconnect()` during `--attach`, restore worker pane mappings, update worker states for dead/surviving panes
+- [ ] T043 Add `tmux_mode` boolean toggle to settings form in `internal/tui/settings.go`: new `settingsRowTmuxMode` kind with left/right cycling, wired to `cfg.TmuxMode`, displayed as "tmux mode: on/off"
 
 ### Implementation Notes
 - `BackendMode` defaults to empty string (backward compatible with existing sessions, treated as "subprocess").
@@ -226,10 +229,10 @@
 
 ---
 
-## Work Package WP07: Constitution Amendment (Priority: P2)
+## Work Package WP07: Constitution Amendment (Priority: P2) - DONE
 
 **Goal**: Update `.kittify/memory/constitution.md` to reflect the dual-mode architecture introduced by tmux worker mode. Amend three principles as identified in plan.md.
-**Independent Test**: Read constitution.md; verify amended principles accurately describe the subprocess + tmux dual-mode architecture.
+**Status**: **Pre-completed** - all three amendments were applied to constitution.md (v2.1.0) during the planning phase. Verified 2026-02-19.
 **Prompt**: `kitty-specs/019-tmux-worker-mode/tasks/WP07-constitution-amendment.md`
 **Estimated Size**: ~200 lines
 
@@ -258,9 +261,9 @@
 ## Dependency & Execution Summary
 
 - **Sequence**: WP01 -> WP02 -> WP03 -> WP04 -> WP05 -> WP06 (main chain)
-- **Parallel**: WP07 can run anytime alongside the main chain (no code dependencies)
-- **Parallelization**: WP01 || WP07 at the start. After WP03, all remaining WPs are sequential.
-- **MVP Scope**: WP01 + WP02 + WP03 + WP04 + WP05 deliver a working tmux mode. WP06 (persistence/config) and WP07 (constitution) are polish.
+- **Parallel**: WP07 is pre-completed (constitution already amended during planning).
+- **Parallelization**: After WP03, all remaining WPs are sequential.
+- **MVP Scope**: WP01 + WP02 + WP03 + WP04 + WP05 deliver a working tmux mode. WP06 (persistence/config/settings) is polish. WP07 is done.
 
 ### Dependency Graph
 
@@ -328,7 +331,10 @@ WP06 (Persistence+Config)
 | T037 | Reattach pane reconnection | WP06 | P2 | No |
 | T038 | Amend worker mode principle | WP07 | P2 | Yes |
 | T039 | Amend session continuation principle | WP07 | P2 | Yes |
-| T040 | Update Go version reference | WP07 | P2 | Yes |
+| T040       | Update Go version reference | WP07 | P2 | Yes |
+| T041       | Unit tests for TmuxCLI (parsePaneList, error wrapping) | WP01 | P0 | Yes |
+| T042       | Unit tests for TmuxBackend with mock TmuxCLI | WP02 | P0 | Yes |
+| T043       | Add tmux_mode toggle to settings form | WP06 | P2 | No |
 
 ---
 
