@@ -59,7 +59,7 @@ func (m *Model) openRestorePicker() tea.Cmd {
 	m.restoreSelected = 0
 	m.restoreLoading = true
 	m.restoreErr = nil
-	m.restoreNote = ""
+	m.launcherNote = ""
 	m.updateKeyStates()
 	return restoreScanCmd(m.persister)
 }
@@ -70,7 +70,7 @@ func (m *Model) closeRestorePicker() {
 	m.restoreSelected = 0
 	m.restoreLoading = false
 	m.restoreErr = nil
-	m.restoreNote = ""
+	m.launcherNote = ""
 	m.updateKeyStates()
 }
 
@@ -79,7 +79,7 @@ func (m *Model) updateRestorePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case restoreScanCompleteMsg:
 		m.restoreLoading = false
 		m.restoreErr = msg.Err
-		m.restoreNote = msg.Note
+		m.launcherNote = msg.Note
 		m.restoreEntries = msg.Entries
 		if m.restoreSelected >= len(m.restoreEntries) {
 			m.restoreSelected = max(0, len(m.restoreEntries)-1)
@@ -154,8 +154,8 @@ func (m *Model) renderRestorePicker() string {
 		lines = append(lines, lipgloss.NewStyle().Foreground(colorOrange).Render(m.restoreErr.Error()), "")
 	}
 
-	if m.restoreNote != "" {
-		lines = append(lines, lipgloss.NewStyle().Foreground(colorMidGray).Render(m.restoreNote), "")
+	if m.launcherNote != "" {
+		lines = append(lines, lipgloss.NewStyle().Foreground(colorMidGray).Render(m.launcherNote), "")
 	}
 
 	if len(m.restoreEntries) == 0 {

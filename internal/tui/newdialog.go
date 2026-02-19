@@ -95,46 +95,35 @@ func newFormModelFor(formType string) *newFormModel {
 		f.gsdFilename = filename
 		f.gsdTasks = tasks
 	case newDialogTypeYolo:
-		filename := styledTextInput()
-		filename.Placeholder = "plan.md"
-		filename.SetValue("plan.md")
-		filename.SetWidth(58)
-
-		title := styledTextInput()
-		title.Placeholder = "quick refactor"
-		title.SetWidth(58)
-
-		content := styledTextArea()
-		content.Placeholder = "what needs doing..."
-		content.SetWidth(58)
-		content.SetHeight(6)
-
-		f.planFilename = filename
-		f.planTitle = title
-		f.planContent = content
+		initPlanFields(f, "plan.md", "quick refactor")
+		f.planFilename.SetValue("plan.md")
 	case newDialogTypeFeaturePlan:
-		filename := styledTextInput()
-		filename.Placeholder = "kitty-specs/my-feature/plan.md"
-		filename.SetWidth(58)
-
-		title := styledTextInput()
-		title.Placeholder = "planning session"
-		title.SetWidth(58)
-
-		content := styledTextArea()
-		content.Placeholder = "what needs doing..."
-		content.SetWidth(58)
-		content.SetHeight(6)
-
-		f.planFilename = filename
-		f.planTitle = title
-		f.planContent = content
+		initPlanFields(f, "kitty-specs/my-feature/plan.md", "planning session")
 	default:
 		return nil
 	}
 
 	_ = f.focusCurrentField()
 	return f
+}
+
+func initPlanFields(f *newFormModel, filenamePlaceholder, titlePlaceholder string) {
+	filename := styledTextInput()
+	filename.Placeholder = filenamePlaceholder
+	filename.SetWidth(58)
+
+	title := styledTextInput()
+	title.Placeholder = titlePlaceholder
+	title.SetWidth(58)
+
+	content := styledTextArea()
+	content.Placeholder = "what needs doing..."
+	content.SetWidth(58)
+	content.SetHeight(6)
+
+	f.planFilename = filename
+	f.planTitle = title
+	f.planContent = content
 }
 
 func (f *newFormModel) fieldCount() int {
@@ -453,48 +442,38 @@ func (m *Model) renderNewDialog() string {
 		dialog := dialogStyle.Width(70).Render(content)
 		return m.renderWithBackdrop(dialog)
 
-	case newDialogTypeYolo:
-		content := lipgloss.JoinVertical(
-			lipgloss.Left,
-			dialogHeaderStyle.Render("yolo mode"),
-			"",
-			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("filename"),
-			m.newForm.planFilename.View(),
-			"",
-			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("title"),
-			m.newForm.planTitle.View(),
-			"",
-			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("content"),
-			m.newForm.planContent.View(),
-			errorLine,
-			newDialogHelpStyle.Render("enter submit . tab next field . esc cancel"),
-		)
-		dialog := dialogStyle.Width(70).Render(content)
-		return m.renderWithBackdrop(dialog)
-
-	case newDialogTypeFeaturePlan:
-		featureLabel := m.newForm.planFeatureDir
-		if featureLabel == "" {
-			featureLabel = "(unknown feature)"
+	case newDialogTypeYolo, newDialogTypeFeaturePlan:
+		header := "yolo mode"
+		subtitle := ""
+		width := 70
+		if m.newForm.formType == newDialogTypeFeaturePlan {
+			header = "new feature plan"
+			width = 76
+			featureLabel := m.newForm.planFeatureDir
+			if featureLabel == "" {
+				featureLabel = "(unknown feature)"
+			}
+			subtitle = newDialogMutedStyle.Render("feature: " + featureLabel)
 		}
-		content := lipgloss.JoinVertical(
-			lipgloss.Left,
-			dialogHeaderStyle.Render("new feature plan"),
-			"",
-			newDialogMutedStyle.Render("feature: "+featureLabel),
-			"",
-			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("filename"),
+
+		lines := []string{dialogHeaderStyle.Render(header), ""}
+		if subtitle != "" {
+			lines = append(lines, subtitle, "")
+		}
+		fieldHeader := lipgloss.NewStyle().Foreground(colorHeader).Bold(true)
+		lines = append(lines,
+			fieldHeader.Render("filename"),
 			m.newForm.planFilename.View(),
 			"",
-			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("title"),
+			fieldHeader.Render("title"),
 			m.newForm.planTitle.View(),
 			"",
-			lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("content"),
+			fieldHeader.Render("content"),
 			m.newForm.planContent.View(),
 			errorLine,
 			newDialogHelpStyle.Render("enter submit . tab next field . esc cancel"),
 		)
-		dialog := dialogStyle.Width(76).Render(content)
+		dialog := dialogStyle.Width(width).Render(strings.Join(lines, "\n"))
 		return m.renderWithBackdrop(dialog)
 	default:
 		return m.renderWithBackdrop("")

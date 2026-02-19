@@ -557,14 +557,14 @@ func (m *Model) transitionFromLauncher() {
 		return
 	}
 	m.showLauncher = false
-	m.restoreNote = ""
+	m.launcherNote = ""
 	m.recalculateLayout()
 	m.updateKeyStates()
 }
 
 func (m *Model) updateLauncherKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.New) {
-		m.restoreNote = ""
+		m.launcherNote = ""
 		m.transitionFromLauncher()
 		if m.taskSource == nil || m.taskSource.Type() != "yolo" {
 			m.swapTaskSource(&task.YoloSource{})
@@ -573,12 +573,12 @@ func (m *Model) updateLauncherKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if key.Matches(msg, m.keys.History) {
-		m.restoreNote = ""
+		m.launcherNote = ""
 		return m, m.openHistoryOverlay()
 	}
 
 	if key.Matches(msg, m.keys.Quit) {
-		m.restoreNote = ""
+		m.launcherNote = ""
 		running := m.runningWorkersCount()
 		if running == 0 {
 			return m, tea.Quit
@@ -592,29 +592,29 @@ func (m *Model) updateLauncherKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "f":
 		if err := ensureSpecKittyAvailable(); err != nil {
-			m.restoreNote = err.Error()
+			m.launcherNote = err.Error()
 			return m, nil
 		}
-		m.restoreNote = ""
+		m.launcherNote = ""
 		m.transitionFromLauncher()
 		_ = m.openNewDialog()
 		return m, m.startNewDialogForm(newDialogTypeFeatureSpec)
 	case "p":
 		if err := ensureSpecKittyAvailable(); err != nil {
-			m.restoreNote = err.Error()
+			m.launcherNote = err.Error()
 			return m, nil
 		}
 		featureDirs, err := listSpecKittyFeatureDirs()
 		if err != nil {
-			m.restoreNote = fmt.Sprintf("failed to list spec-kitty features: %v", err)
+			m.launcherNote = fmt.Sprintf("failed to list spec-kitty features: %v", err)
 			return m, nil
 		}
 		if len(featureDirs) == 0 {
-			m.restoreNote = "no spec-kitty features found. press f to create one first"
+			m.launcherNote = "no spec-kitty features found. press f to create one first"
 			return m, nil
 		}
 
-		m.restoreNote = ""
+		m.launcherNote = ""
 		m.transitionFromLauncher()
 		if len(featureDirs) == 1 {
 			m.showNewDialog = true
@@ -622,10 +622,10 @@ func (m *Model) updateLauncherKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.startFeaturePlanPicker(featureDirs)
 	case "r":
-		m.restoreNote = ""
+		m.launcherNote = ""
 		return m, m.openRestorePicker()
 	case "s":
-		m.restoreNote = ""
+		m.launcherNote = ""
 		return m, m.openSettingsView()
 	default:
 		return m, nil
@@ -855,8 +855,8 @@ func (m *Model) updateTableKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if selected.Output != nil {
 				outputTail = selected.Output.Tail(200)
 			}
-			reviewerCfg := m.roleSpawnConfig(worker.SpawnConfig{Role: "reviewer"})
-			return m, analyzeCmd(m.backend, selected.ID, selected.Role, selected.ExitCode, selected.FormatDuration(), outputTail, reviewerCfg.Model, reviewerCfg.Reasoning)
+			reviewer := m.agentConfig("reviewer")
+			return m, analyzeCmd(m.backend, selected.ID, selected.Role, selected.ExitCode, selected.FormatDuration(), outputTail, reviewer.Model, reviewer.Reasoning)
 		}
 		return m, nil
 	}
@@ -870,7 +870,7 @@ func (m *Model) updateTableKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.genPromptLoading = true
 		m.updateKeyStates()
 		m.refreshViewportFromSelected(false)
-		plannerCfg := m.roleSpawnConfig(worker.SpawnConfig{Role: "planner"})
+		planner := m.agentConfig("planner")
 		return m, genPromptCmd(
 			m.backend,
 			selectedTask.ID,
@@ -878,8 +878,8 @@ func (m *Model) updateTableKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			selectedTask.Description,
 			selectedTask.SuggestedRole,
 			selectedTask.Dependencies,
-			plannerCfg.Model,
-			plannerCfg.Reasoning,
+			planner.Model,
+			planner.Reasoning,
 		)
 	}
 

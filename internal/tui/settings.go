@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/v2/key"
@@ -66,7 +67,7 @@ func (m *Model) ensureConfigDefaults() {
 		m.config.Agents[role] = cfg
 	}
 
-	if !containsString(settingsTaskSources, m.config.DefaultTaskSource) {
+	if !slices.Contains(settingsTaskSources, m.config.DefaultTaskSource) {
 		m.config.DefaultTaskSource = def.DefaultTaskSource
 	}
 }
@@ -239,7 +240,7 @@ func (m *Model) applySettingsFromForm() error {
 		m.config.Agents[role] = agent
 	}
 
-	if !containsString(settingsTaskSources, m.config.DefaultTaskSource) {
+	if !slices.Contains(settingsTaskSources, m.config.DefaultTaskSource) {
 		return fmt.Errorf("default task source %q is invalid", m.config.DefaultTaskSource)
 	}
 
@@ -248,7 +249,7 @@ func (m *Model) applySettingsFromForm() error {
 
 func (m *Model) cycleTaskSourceSetting(delta int) {
 	current := m.config.DefaultTaskSource
-	idx := indexOf(settingsTaskSources, current)
+	idx := slices.Index(settingsTaskSources, current)
 	if idx < 0 {
 		idx = 0
 	}
@@ -259,7 +260,7 @@ func (m *Model) cycleTaskSourceSetting(delta int) {
 
 func (m *Model) cycleReasoningSetting(role string, delta int) {
 	agent := m.config.Agents[role]
-	idx := indexOf(settingsReasoningModes, normalizeReasoning(agent.Reasoning))
+	idx := slices.Index(settingsReasoningModes, normalizeReasoning(agent.Reasoning))
 	if idx < 0 {
 		idx = 0
 	}
@@ -271,23 +272,10 @@ func (m *Model) cycleReasoningSetting(role string, delta int) {
 
 func normalizeReasoning(value string) string {
 	v := strings.TrimSpace(strings.ToLower(value))
-	if containsString(settingsReasoningModes, v) {
+	if slices.Contains(settingsReasoningModes, v) {
 		return v
 	}
 	return "default"
-}
-
-func containsString(values []string, value string) bool {
-	return indexOf(values, value) >= 0
-}
-
-func indexOf(values []string, value string) int {
-	for i, candidate := range values {
-		if candidate == value {
-			return i
-		}
-	}
-	return -1
 }
 
 func cloneConfig(cfg *config.Config) *config.Config {
@@ -306,12 +294,18 @@ func cloneConfig(cfg *config.Config) *config.Config {
 	return clone
 }
 
-func (m *Model) roleSpawnConfig(base worker.SpawnConfig) worker.SpawnConfig {
+func (m *Model) agentConfig(role string) config.AgentConfig {
 	m.ensureConfigDefaults()
-	agent := m.config.Agents[base.Role]
+	agent := m.config.Agents[role]
+	agent.Model = strings.TrimSpace(agent.Model)
+	agent.Reasoning = normalizeReasoning(agent.Reasoning)
+	return agent
+}
 
-	base.Model = strings.TrimSpace(agent.Model)
-	base.Reasoning = normalizeReasoning(agent.Reasoning)
+func (m *Model) roleSpawnConfig(base worker.SpawnConfig) worker.SpawnConfig {
+	agent := m.agentConfig(base.Role)
+	base.Model = agent.Model
+	base.Reasoning = agent.Reasoning
 	return base
 }
 

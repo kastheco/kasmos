@@ -87,7 +87,7 @@ type Model struct {
 	restoreSelected   int
 	restoreLoading    bool
 	restoreErr        error
-	restoreNote       string
+	launcherNote      string
 
 	tableInnerWidth     int
 	tableInnerHeight    int
