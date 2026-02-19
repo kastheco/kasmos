@@ -85,7 +85,11 @@ type WorkerBackend interface {
 }
 ```
 
-MVP: `SubprocessBackend` (os/exec). Future: `TmuxBackend`.
+`SubprocessBackend` (os/exec, headless default). `TmuxBackend` (interactive tmux panes, feature 019).
+
+`WorkerHandle` interface includes `Interactive() bool` to distinguish backends.
+SubprocessBackend returns `false`; TmuxBackend returns `true`. TUI skips pipe-based
+output reading for interactive handles (output goes to tmux pane instead).
 
 ### Source (Task)
 

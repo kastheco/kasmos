@@ -1,7 +1,7 @@
 # kasmos Constitution
 
-> Updated: 2026-02-17
-> Version: 2.0.0
+> Updated: 2026-02-18
+> Version: 2.1.0
 
 ## Purpose
 
@@ -13,7 +13,7 @@ All features and pull requests should align with these principles.
 
 ### Languages and Frameworks
 
-- **Go** (1.23+)
+- **Go** (1.24+)
 - **bubbletea** v2 for TUI (Elm architecture: Model/Update/View)
 - **lipgloss** v2 for terminal styling
 - **bubbles** for TUI components (table, viewport, textinput, list, spinner, help)
@@ -40,9 +40,9 @@ All features and pull requests should align with these principles.
 ### Architecture Principles
 
 - **No manager AI agent** - the TUI is the orchestrator. Zero token cost for orchestration.
-- **Workers are headless subprocesses** - spawned via `opencode run`, output captured via Go pipes.
-- **Session continuation over interactivity** - `opencode run --continue -s <id>` preserves context without PTY allocation.
-- **Pluggable WorkerBackend interface** - SubprocessBackend (MVP), TmuxBackend (future).
+- **Workers are subprocesses** - spawned via `opencode run`. Headless by default (output captured via Go pipes); interactive via tmux panes when configured.
+- **Headless by default; interactive when needed** - `opencode run --continue -s <id>` preserves context in headless mode. Tmux mode enables direct terminal interaction for workflows requiring back-and-forth (planning, clarification, review).
+- **Pluggable WorkerBackend interface** - SubprocessBackend (headless default), TmuxBackend (interactive tmux panes).
 - **Three task source adapters** - spec-kitty (plan.md/WP frontmatter), GSD (checkbox markdown), ad-hoc (manual prompts).
 - **Daemon mode** - same Model/Update loop, no View rendering (`WithoutRenderer()`).
 
@@ -50,7 +50,7 @@ All features and pull requests should align with these principles.
 
 - **Linux**: Primary platform (full support)
 - **macOS**: Secondary platform (best-effort support)
-- **Runtime dependencies**: OpenCode and git must be installed and in PATH
+- **Runtime dependencies**: OpenCode and git must be installed and in PATH. tmux required only for tmux worker mode.
 - Distributed as a single binary (standard `go install` or goreleaser workflow)
 
 ## Governance

@@ -1,108 +1,274 @@
-# Implementation Plan: [FEATURE]
-*Path: [templates/plan-template.md](templates/plan-template.md)*
+# Implementation Plan: Tmux Worker Mode
 
-
-**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
-**Input**: Feature specification from `/kitty-specs/[###-feature-name]/spec.md`
-
-**Note**: This template is filled in by the `/spec-kitty.plan` command. See `src/specify_cli/missions/software-dev/command-templates/plan.md` for the execution workflow.
-
-The planner will not begin until all planning questions have been answered—capture those answers in this document before progressing to later phases.
+**Branch**: `019-tmux-worker-mode` | **Date**: 2026-02-18 | **Spec**: `kitty-specs/019-tmux-worker-mode/spec.md`
+**Input**: Feature specification from `kitty-specs/019-tmux-worker-mode/spec.md`
 
 ## Summary
 
-[Extract from feature spec: primary requirement + technical approach from research]
+Tmux Worker Mode adds a second `WorkerBackend` implementation (`TmuxBackend`) that
+spawns workers as interactive tmux panes instead of headless subprocesses. The kasmos
+dashboard occupies the left tmux pane; the selected worker's live terminal replaces
+the output viewport on the right. Users interact directly with agents for workflows
+needing back-and-forth (planning, clarification, review). Workers survive kasmos
+crashes via tmux session persistence.
+
+**Technical approach**: `TmuxBackend` implements the existing `WorkerBackend` interface
+using `os/exec` to shell out to the `tmux` CLI. A thin `TmuxCLI` wrapper interface
+enables unit testing with a mock. Non-visible worker panes are parked in a hidden tmux
+window; `join-pane`/`break-pane` swaps the active worker. Worker exit is detected by
+polling `tmux list-panes` on the existing 1-second tick timer. Session metadata records
+the backend mode for reattach inference.
 
 ## Technical Context
 
-<!--
-  ACTION REQUIRED: Replace the content in this section with the technical details
-  for the project. The structure here is presented in advisory capacity to guide
-  the iteration process.
--->
-
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
-**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
-**Project Type**: [single/web/mobile - determines source structure]  
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+**Language/Version**: Go 1.24+ (go.mod target 1.24.0, runtime 1.25.7)
+**Primary Dependencies**: bubbletea v2, lipgloss v2, bubbles, huh, cobra (existing). New external dep: `tmux` CLI via `os/exec` (no Go library).
+**Storage**: `.kasmos/session.json` (extended with `backend_mode` field), `.kasmos/config.toml` (extended with `tmux_mode` field)
+**Testing**: `go test ./...`, standard library `testing`, table-driven tests, mock `TmuxCLI` for unit tests, real tmux for integration tests gated by `KASMOS_INTEGRATION=1`
+**Target Platform**: Linux (primary), macOS (best-effort - tmux available via Homebrew)
+**Project Type**: Single Go binary (CLI + TUI) - extension of existing codebase
+**Performance Goals**: Pane switch <1s (SC-002), status polling every 1s (SC-004), spawn-to-interactive <3s (SC-001)
+**Constraints**: Must implement `WorkerBackend` interface. No changes to SubprocessBackend behavior. tmux is optional dep (only for this mode).
+**Scale/Scope**: Same as subprocess mode: 10+ concurrent workers. Each worker = one tmux pane.
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+| Principle | Status | Notes |
+|-----------|--------|-------|
+| Go 1.24+ | PASS | go.mod targets 1.24.0. Constitution updating from 1.23+. |
+| bubbletea/lipgloss/bubbles | PASS | No new Charm deps. TUI changes are within existing packages. |
+| OpenCode sole agent harness | PASS | Workers still run `opencode run`. Execution environment changes (tmux pane vs pipe), not the command. |
+| `go test ./...` for testing | PASS | Mock TmuxCLI for unit tests. Integration tests behind KASMOS_INTEGRATION. |
+| TUI never blocks Update loop | PASS | All tmux CLI calls wrapped in `tea.Cmd` (async). Polling on tick timer. |
+| Pluggable WorkerBackend | PASS | This IS the planned second backend. Interface designed for this. |
+| Linux primary, macOS secondary | PASS | tmux available on both platforms. |
+| Single binary distribution | PASS | tmux is an external runtime dep, not linked. kasmos binary unchanged. |
+| No secrets in persistence | PASS | session.json adds backend_mode string, no credentials. |
+
+**AMENDMENT REQUIRED**:
+
+Two constitution principles need updating to reflect the dual-mode architecture:
+
+1. "Workers are headless subprocesses" -> "Workers are subprocesses (headless by default, interactive tmux panes when configured)"
+2. "Session continuation over interactivity" -> "Headless by default; interactive via tmux when workflows require it. Session continuation remains available in both modes."
+3. Go version: "Go (1.23+)" -> "Go (1.24+)"
+
+These amendments are additive -- subprocess mode behavior is unchanged.
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```
-kitty-specs/[###-feature]/
-├── plan.md              # This file (/spec-kitty.plan command output)
-├── research.md          # Phase 0 output (/spec-kitty.plan command)
-├── data-model.md        # Phase 1 output (/spec-kitty.plan command)
-├── quickstart.md        # Phase 1 output (/spec-kitty.plan command)
-├── contracts/           # Phase 1 output (/spec-kitty.plan command)
-└── tasks.md             # Phase 2 output (/spec-kitty.tasks command - NOT created by /spec-kitty.plan)
+kitty-specs/019-tmux-worker-mode/
+  plan.md              # This file
+  spec.md              # Feature specification (6 user stories, 17 FRs, 6 SCs)
+  research.md          # Phase 0 output: tmux CLI capabilities, design decisions
+  data-model.md        # Phase 1 output: entity definitions, state transitions
+  checklists/
+    requirements.md    # Spec quality checklist
+  tasks/               # WP files (generated by /spec-kitty.tasks)
 ```
 
-### Source Code (repository root)
-<!--
-  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
-  for this feature. Delete unused options and expand the chosen structure with
-  real paths (e.g., apps/admin, packages/something). The delivered plan must
-  not include Option labels.
--->
+### Source Code
 
 ```
-# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
-src/
-├── models/
-├── services/
-├── cli/
-└── lib/
+cmd/kasmos/
+  main.go              # MODIFIED: --tmux flag, backend selection, flag validation
 
-tests/
-├── contract/
-├── integration/
-└── unit/
+internal/
+  worker/
+    backend.go         # MODIFIED: add Interactive() bool to WorkerHandle interface
+    subprocess.go      # MODIFIED: add Interactive() -> false to subprocessHandle
+    tmux.go            # NEW: TmuxBackend + tmuxHandle implementations
+    tmux_cli.go        # NEW: TmuxCLI interface + tmuxExec (real) implementation
+    tmux_test.go       # NEW: TmuxBackend unit tests with mock TmuxCLI
+  tui/
+    model.go           # MODIFIED: tmuxMode field, pane tracking state
+    commands.go        # MODIFIED: conditional readWorkerOutput skip for interactive handles
+    update.go          # MODIFIED: tmux pane polling on tick, pane swap on selection change
+    panels.go          # MODIFIED: right column renders placeholder when tmux mode + no workers
+    messages.go        # MODIFIED: new tmux-specific messages (paneSwappedMsg, paneExitedMsg)
+    keys.go            # MODIFIED: disable AI helper keys when tmuxMode
+  config/
+    config.go          # MODIFIED: add TmuxMode bool field
+  persist/
+    schema.go          # MODIFIED: add BackendMode string to SessionState
 
-# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
-backend/
-├── src/
-│   ├── models/
-│   ├── services/
-│   └── api/
-└── tests/
-
-frontend/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── services/
-└── tests/
-
-# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
-api/
-└── [same as backend above]
-
-ios/ or android/
-└── [platform-specific structure: feature modules, UI flows, platform tests]
+.kittify/memory/
+  constitution.md      # MODIFIED: amended principles (dual-mode, Go 1.24+)
 ```
 
-**Structure Decision**: [Document the selected structure and reference the real
-directories captured above]
+**Structure Decision**: No new packages. TmuxBackend lives in `internal/worker/` alongside
+SubprocessBackend. The `TmuxCLI` wrapper interface lives in `internal/worker/tmux_cli.go`
+for clean mock injection. TUI changes are surgical -- conditional branches in existing
+files, not new panel types.
 
-## Complexity Tracking
+## Key Design Decisions
 
-*Fill ONLY if Constitution Check has violations that must be justified*
+### 1. TmuxCLI wrapper interface for testability
 
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+All tmux CLI interaction goes through a `TmuxCLI` interface:
+
+```go
+type TmuxCLI interface {
+    SplitWindow(target, cmd string, horizontal bool, size int) (string, error)
+    JoinPane(src, dst string, horizontal bool, size int) error
+    BreakPane(paneID string) error
+    SelectPane(paneID string) error
+    ListPanes(target string) ([]PaneInfo, error)
+    KillPane(paneID string) error
+    CapturePane(paneID string) (string, error)
+    SetPaneEnv(paneID, key, value string) error
+    GetPaneEnv(paneID, key string) (string, error)
+}
+```
+
+Real implementation (`tmuxExec`) shells out via `os/exec`. Unit tests inject a mock.
+Integration tests use real tmux.
+
+### 2. Hidden parking window for non-visible panes
+
+Non-visible worker panes live in a dedicated tmux window (named `kasmos-parking`).
+To show a worker: `tmux join-pane -s kasmos-parking.<pane> -t <kasmos-window> -h -l 50%`.
+To hide: `tmux break-pane -d -s <worker-pane> -t kasmos-parking`.
+
+This avoids complex resize/visibility logic. The visible layout is always exactly
+two panes: kasmos (left) + active worker (right). The parking window is hidden
+from the user's tmux window list.
+
+### 3. Worker exit detection via polling on existing tick
+
+The TUI already has a 1-second `tickMsg` for duration updates. In tmux mode, the
+tick handler additionally calls `tmux list-panes -F '#{pane_id} #{pane_pid} #{pane_dead}'`
+on the parking window and active pane. Dead panes trigger `paneExitedMsg` with exit
+status, mapping to the existing `workerExitedMsg` flow. No new timers or goroutines.
+
+### 4. WorkerHandle.Interactive() for conditional output reading
+
+Adding `Interactive() bool` to the `WorkerHandle` interface distinguishes interactive
+panes from pipe-captured subprocesses. The TUI's `workerSpawnedMsg` handler checks
+this: if `true`, it skips `readWorkerOutput()` and `waitWorkerCmd()` (exit is detected
+by tick polling instead). SubprocessBackend returns `false`. Backward-compatible.
+
+### 5. Session ID extraction via capture-pane on exit
+
+When a tmux worker exits, kasmos calls `tmux capture-pane -p -t <pane>` to grab
+the terminal content, then applies the existing `extractSessionID()` regex. This
+reuses the existing extraction logic. Capture happens once (on exit), not continuously.
+
+### 6. Focus management via tmux select-pane
+
+Selecting a worker in the kasmos table triggers `tmux select-pane -t <worker-pane>`
+via a `tea.Cmd`. Worker exit triggers `tmux select-pane -t <kasmos-pane>` to return
+focus. The kasmos pane ID is captured at startup.
+
+### 7. Pane tagging for rediscovery
+
+Each managed pane gets a tmux environment variable: `KASMOS_WORKER_ID=w-001`. On
+reattach, kasmos scans all panes in the tmux session for this variable to rediscover
+surviving workers. Untagged panes are ignored.
+
+## Risk Register
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| tmux CLI output format changes across versions | Pane parsing breaks | Pin to documented tmux format strings. Test against tmux 3.x+. |
+| join-pane/break-pane race with rapid switching | Visual glitch or wrong pane shown | Serialize pane operations via mutex. Debounce rapid selections. |
+| Parking window visible to user in tmux window list | Confusing UX | Set parking window name to `kasmos-parking` and document. Consider `set-option remain-on-exit`. |
+| Worker pane scrollback fills memory | tmux memory grows | Rely on tmux's own scrollback limit (default 2000). Not kasmos's problem. |
+| bubbletea alt-screen conflicts with tmux pane | Rendering artifacts | kasmos already uses alt-screen. Verify tmux pane inherits terminal correctly. |
+| Multiple kasmos instances in same tmux session | Pane conflicts | Tag panes with kasmos session ID. Only manage panes with matching session tag. |
+
+## Implementation Waves
+
+### Wave 1: TmuxBackend Core (FR-001, FR-003, FR-005, FR-010, FR-012, FR-015)
+
+Foundation: the tmux CLI wrapper, backend implementation, and pane lifecycle management.
+Workers can be spawned in tmux panes and survive kasmos exit.
+
+**Dependencies**: None (existing WorkerBackend interface is the contract)
+
+**Deliverables**:
+- `internal/worker/tmux_cli.go` - TmuxCLI interface + tmuxExec implementation
+- `internal/worker/tmux.go` - TmuxBackend + tmuxHandle, pane parking, tagging
+- `internal/worker/backend.go` - Interactive() added to WorkerHandle
+- `internal/worker/subprocess.go` - Interactive() -> false
+- `internal/worker/tmux_test.go` - Unit tests with mock TmuxCLI
+
+**Acceptance**: TmuxBackend.Spawn creates a tmux pane running opencode. TmuxBackend.Name()
+returns "tmux". Handle.Kill() terminates the pane process. Handle.Wait() blocks until
+pane process exits. Handle.Interactive() returns true. Panes survive backend instance death.
+
+### Wave 2: TUI Integration (FR-006, FR-007, FR-008, FR-009, FR-011, FR-014, FR-016, FR-017)
+
+Connects the TmuxBackend to the kasmos dashboard. Pane switching, focus management,
+exit detection via tick, and flag validation.
+
+**Dependencies**: Wave 1 (TmuxBackend must exist and pass tests)
+
+**Deliverables**:
+- `cmd/kasmos/main.go` - --tmux flag, backend selection, --tmux + -d rejection
+- `internal/tui/model.go` - tmuxMode field, kasmosPaneID, activePaneID state
+- `internal/tui/commands.go` - skip readWorkerOutput for interactive, pane swap cmds
+- `internal/tui/update.go` - tick handler polls tmux, selection change triggers swap
+- `internal/tui/messages.go` - paneSwappedMsg, paneExitedMsg, paneDetectedMsg
+- `internal/tui/panels.go` - tmux mode placeholder for empty right column
+- `internal/tui/keys.go` - disable Analyze/GenPrompt when tmuxMode
+
+**Acceptance**: Run `kasmos --tmux` inside tmux. Spawn a worker -- it appears as a pane
+on the right. Select a different worker -- pane swaps. Focus moves to worker pane on select.
+Focus returns on worker exit. AI helper keys hidden. `kasmos --tmux -d` produces error.
+
+### Wave 3: Persistence, Config & Constitution (FR-002, FR-004, FR-013)
+
+Session metadata records backend mode. Config stores tmux preference. Constitution amended.
+Reattach infers tmux mode from session.
+
+**Dependencies**: Wave 2 (TUI integration must be working)
+
+**Deliverables**:
+- `internal/persist/schema.go` - BackendMode field in SessionState
+- `internal/config/config.go` - TmuxMode bool field
+- `internal/tui/model.go` - buildSessionState includes BackendMode
+- `cmd/kasmos/main.go` - reattach reads BackendMode, config TmuxMode as fallback
+- `.kittify/memory/constitution.md` - amended principles
+
+**Acceptance**: Start kasmos --tmux, spawn workers, exit. Run kasmos --attach -- it
+auto-selects tmux backend and reconnects to surviving panes. Configure tmux_mode = true
+in config.toml, run kasmos inside tmux with no flags -- tmux mode activates. Run kasmos
+outside tmux with config tmux_mode = true -- falls back to subprocess with notice.
+
+### Dependency Graph
+
+```
+Wave 1: TmuxBackend Core
+  WP01: TmuxCLI interface + tmuxExec         (no deps)
+  WP02: TmuxBackend + tmuxHandle             (WP01)
+  WP03: WorkerHandle.Interactive() extension  (no deps)
+
+Wave 2: TUI Integration
+  WP04: --tmux flag + backend selection       (WP02, WP03)
+  WP05: Pane switching + focus management     (WP04)
+  WP06: Tick-based exit detection + messages  (WP04, WP05)
+
+Wave 3: Persistence & Config
+  WP07: Session metadata + config + reattach  (WP06)
+  WP08: Constitution amendment                (no deps)
+```
+
+**Parallelism opportunities**:
+- WP01 and WP03 can run in parallel (no dependency)
+- WP08 can run anytime (documentation only)
+
+## Reference Documents
+
+- **Spec**: `kitty-specs/019-tmux-worker-mode/spec.md`
+- **Research**: `kitty-specs/019-tmux-worker-mode/research.md`
+- **Data Model**: `kitty-specs/019-tmux-worker-mode/data-model.md`
+- **016 Plan**: `kitty-specs/016-kasmos-agent-orchestrator/plan.md`
+- **016 Technical Research**: `kitty-specs/016-kasmos-agent-orchestrator/research/tui-technical.md`
+- **Architecture**: `.kittify/memory/architecture.md`
+- **Constitution**: `.kittify/memory/constitution.md`
