@@ -325,6 +325,9 @@ func (m *Model) View() string {
 		if m.showBatchDialog {
 			return m.renderBatchDialog()
 		}
+		if m.showBlockedConfirm {
+			return m.renderBlockedConfirmDialog()
+		}
 		if m.showSpawnDialog {
 			return m.renderSpawnDialog()
 		}
@@ -375,6 +378,10 @@ func (m *Model) View() string {
 
 	if m.showBatchDialog {
 		return m.renderBatchDialog()
+	}
+
+	if m.showBlockedConfirm {
+		return m.renderBlockedConfirmDialog()
 	}
 
 	if m.showSpawnDialog {
