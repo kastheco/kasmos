@@ -1,7 +1,7 @@
 ---
 work_package_id: WP01
 title: Foundation and Visual Dimming
-lane: "doing"
+lane: "done"
 dependencies: []
 base_branch: main
 base_commit: 19b6818d5c331da11ad232a4b88b98d1a91df630
@@ -15,14 +15,29 @@ phase: Phase 1 - Foundation
 assignee: ''
 agent: ''
 shell_pid: "2693732"
-review_status: ''
-reviewed_by: ''
+review_status: 'passed'
+reviewed_by: 'manager-reviewer'
 history:
 - timestamp: '2026-02-19T04:05:55Z'
   lane: planned
   agent: system
   shell_pid: ''
   action: Prompt generated via /spec-kitty.tasks
+- timestamp: '2026-02-19T19:26:58Z'
+  lane: doing
+  agent: coder
+  shell_pid: '2693732'
+  action: Implementation started
+- timestamp: '2026-02-19T20:00:00Z'
+  lane: for_review
+  agent: manager
+  shell_pid: ''
+  action: Submitted for review
+- timestamp: '2026-02-19T20:15:00Z'
+  lane: done
+  agent: reviewer
+  shell_pid: ''
+  action: "Review PASS - FR-001/FR-002/AD-003 compliant, no regressions, build+vet+tests clean"
 ---
 
 # Work Package Prompt: WP01 - Foundation and Visual Dimming
