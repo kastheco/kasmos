@@ -44,6 +44,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateNewDialog(msg)
 	}
 
+	if m.showBlockedConfirm {
+		return m.updateBlockedConfirmDialog(msg)
+	}
+
 	if m.showSpawnDialog {
 		return m.updateSpawnDialog(msg)
 	}
@@ -229,6 +233,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case continueDialogCancelledMsg:
 		m.closeContinueDialog()
+		return m, nil
+
+	case blockedConfirmProceedMsg:
+		if msg.TaskIdx >= 0 && msg.TaskIdx < len(m.loadedTasks) {
+			t := m.loadedTasks[msg.TaskIdx]
+			role := t.SuggestedRole
+			if role == "" {
+				role = "coder"
+			}
+			return m, m.openSpawnDialogWithTaskPrefill(role, strings.TrimSpace(t.Description), nil, t.ID)
+		}
 		return m, nil
 
 	case newDialogCancelledMsg:
@@ -947,6 +962,10 @@ func (m *Model) updateTaskPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Select) || msg.String() == " ":
 		if m.selectedTaskIdx >= 0 && m.selectedTaskIdx < len(m.loadedTasks) {
 			t := m.loadedTasks[m.selectedTaskIdx]
+			if t.State == task.TaskBlocked {
+				m.openBlockedConfirmDialog(m.selectedTaskIdx)
+				return m, nil
+			}
 			if t.State == task.TaskUnassigned {
 				role := t.SuggestedRole
 				if role == "" {

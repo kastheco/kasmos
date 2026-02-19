@@ -43,6 +43,11 @@ type continueDialogModel struct {
 	focusedIdx     int
 }
 
+type unfinishedDep struct {
+	ID    string
+	State string
+}
+
 const (
 	spawnFocusRole = iota
 	spawnFocusPrompt
@@ -87,6 +92,47 @@ func (m *Model) closeBatchDialog() {
 	m.batchSelections = nil
 	m.batchFocusedIdx = 0
 	m.updateKeyStates()
+}
+
+func (m *Model) unfinishedDeps(t task.Task) []unfinishedDep {
+	stateByID := make(map[string]task.TaskState, len(m.loadedTasks))
+	for _, loadedTask := range m.loadedTasks {
+		stateByID[loadedTask.ID] = loadedTask.State
+	}
+
+	deps := make([]unfinishedDep, 0, len(t.Dependencies))
+	for _, depID := range t.Dependencies {
+		state, exists := stateByID[depID]
+		if !exists {
+			deps = append(deps, unfinishedDep{ID: depID, State: "unknown"})
+			continue
+		}
+		if state == task.TaskDone {
+			continue
+		}
+		deps = append(deps, unfinishedDep{ID: depID, State: taskStateLabel(state)})
+	}
+
+	return deps
+}
+
+func taskStateLabel(state task.TaskState) string {
+	switch state {
+	case task.TaskUnassigned:
+		return "unassigned"
+	case task.TaskBlocked:
+		return "blocked"
+	case task.TaskInProgress:
+		return "in-progress"
+	case task.TaskForReview:
+		return "for-review"
+	case task.TaskFailed:
+		return "failed"
+	case task.TaskDone:
+		return "done"
+	default:
+		return "unknown"
+	}
 }
 
 func newSpawnDialogModel() *spawnDialogModel {
@@ -273,6 +319,52 @@ func (m *Model) updateQuitConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg { return quitConfirmedMsg{} }
 		}
 		return m, func() tea.Msg { return quitCancelledMsg{} }
+	}
+
+	return m, nil
+}
+
+func (m *Model) openBlockedConfirmDialog(taskIdx int) {
+	m.showBlockedConfirm = true
+	m.blockedConfirmTaskIdx = taskIdx
+	m.blockedConfirmFocused = 1
+	m.updateKeyStates()
+}
+
+func (m *Model) closeBlockedConfirmDialog() {
+	m.showBlockedConfirm = false
+	m.blockedConfirmTaskIdx = 0
+	m.blockedConfirmFocused = 0
+	m.updateKeyStates()
+}
+
+func (m *Model) updateBlockedConfirmDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
+	keyMsg, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+
+	switch {
+	case key.Matches(keyMsg, m.keys.Back):
+		m.closeBlockedConfirmDialog()
+		return m, nil
+	case keyMsg.String() == "left" || keyMsg.String() == "right" || keyMsg.String() == "tab":
+		if m.blockedConfirmFocused == 0 {
+			m.blockedConfirmFocused = 1
+		} else {
+			m.blockedConfirmFocused = 0
+		}
+		return m, nil
+	case keyMsg.String() == "enter":
+		if m.blockedConfirmFocused == 0 {
+			taskIdx := m.blockedConfirmTaskIdx
+			m.closeBlockedConfirmDialog()
+			return m, func() tea.Msg {
+				return blockedConfirmProceedMsg{TaskIdx: taskIdx}
+			}
+		}
+		m.closeBlockedConfirmDialog()
+		return m, nil
 	}
 
 	return m, nil
@@ -596,6 +688,64 @@ func (m *Model) renderQuitConfirm() string {
 		header,
 		"",
 		lipgloss.NewStyle().Foreground(colorLightGray).Render(body),
+		"",
+		buttons,
+		"",
+		helpText,
+	)
+
+	dialog := alertDialogStyle.Width(64).Render(content)
+	return m.renderWithBackdrop(dialog)
+}
+
+func (m *Model) renderBlockedConfirmDialog() string {
+	if m.blockedConfirmTaskIdx < 0 || m.blockedConfirmTaskIdx >= len(m.loadedTasks) {
+		return m.renderWithBackdrop("")
+	}
+
+	t := m.loadedTasks[m.blockedConfirmTaskIdx]
+	deps := m.unfinishedDeps(t)
+
+	header := lipgloss.NewStyle().Foreground(colorOrange).Bold(true).Render("! blocked task")
+	taskInfo := lipgloss.NewStyle().Foreground(colorLightGray).Render(fmt.Sprintf("%s - %s", t.ID, t.Title))
+
+	depLines := make([]string, 0, len(deps))
+	for _, dep := range deps {
+		depLines = append(depLines, fmt.Sprintf("  %s (%s)", dep.ID, lipgloss.NewStyle().Foreground(colorOrange).Render(dep.State)))
+	}
+
+	depSection := lipgloss.NewStyle().Foreground(colorMidGray).Render("(no unfinished dependencies detected)")
+	if len(depLines) > 0 {
+		depSection = lipgloss.JoinVertical(
+			lipgloss.Left,
+			lipgloss.NewStyle().Foreground(colorCream).Render("unfinished dependencies:"),
+			strings.Join(depLines, "\n"),
+		)
+	}
+
+	spawnStyle := inactiveButtonStyle
+	cancelStyle := inactiveButtonStyle
+	if m.blockedConfirmFocused == 0 {
+		spawnStyle = alertButtonStyle
+	} else {
+		cancelStyle = activeButtonStyle
+	}
+
+	buttons := lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		spawnStyle.Render("spawn anyway"),
+		"  ",
+		cancelStyle.Render("cancel"),
+	)
+
+	helpText := lipgloss.NewStyle().Foreground(colorMidGray).Render("left/right or tab switch  enter select  esc cancel")
+	content := lipgloss.JoinVertical(
+		lipgloss.Left,
+		header,
+		"",
+		taskInfo,
+		"",
+		depSection,
 		"",
 		buttons,
 		"",
