@@ -1,108 +1,168 @@
-# Implementation Plan: [FEATURE]
-*Path: [templates/plan-template.md](templates/plan-template.md)*
+# Implementation Plan: Blocked Task Visual Feedback and Confirmation
 
-
-**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
-**Input**: Feature specification from `/kitty-specs/[###-feature-name]/spec.md`
-
-**Note**: This template is filled in by the `/spec-kitty.plan` command. See `src/specify_cli/missions/software-dev/command-templates/plan.md` for the execution workflow.
-
-The planner will not begin until all planning questions have been answered—capture those answers in this document before progressing to later phases.
+**Branch**: `018-blocked-task-visual-feedback` | **Date**: 2026-02-18 | **Spec**: `kitty-specs/018-blocked-task-visual-feedback/spec.md`
+**Input**: Feature specification from `kitty-specs/018-blocked-task-visual-feedback/spec.md`
 
 ## Summary
 
-[Extract from feature spec: primary requirement + technical approach from research]
+Add visual dimming for blocked tasks in the kasmos task panel and a confirmation dialog when users attempt to spawn workers for blocked tasks. Blocked tasks render with an explicit dim foreground color across the entire row. Pressing enter on a blocked task shows a warning dialog listing unfinished dependencies with "spawn anyway" / "cancel" actions. Batch spawn already excludes non-unassigned tasks; this is preserved and tested.
 
 ## Technical Context
 
-<!--
-  ACTION REQUIRED: Replace the content in this section with the technical details
-  for the project. The structure here is presented in advisory capacity to guide
-  the iteration process.
--->
-
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
-**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
-**Project Type**: [single/web/mobile - determines source structure]  
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+**Language/Version**: Go 1.24+
+**Primary Dependencies**: bubbletea v2, lipgloss v2, bubbles v2 (table, viewport, textarea, textinput, help, spinner)
+**Storage**: N/A (no persistence changes)
+**Testing**: `go test ./...` (standard library testing, table-driven)
+**Target Platform**: Linux (primary), macOS (secondary)
+**Project Type**: Single Go module, TUI application
+**Performance Goals**: Task panel rendering must remain instant (<16ms); no new allocations in hot paths
+**Constraints**: No new packages, no interface changes, no persistence schema changes
+**Scale/Scope**: 6 files modified in `internal/tui/`, ~150-200 lines added
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+| Constitution Rule | Status | Notes |
+|---|---|---|
+| Go 1.24+ | PASS | No new language features required |
+| bubbletea v2 Elm architecture | PASS | Changes follow Model/Update/View pattern |
+| lipgloss v2 for styling | PASS | New color constant + style application |
+| bubbles for components | PASS | No new component dependencies |
+| Testing required | PASS | Unit tests for styling functions, dialog logic, key dispatch |
+| Mock WorkerBackend for TUI tests | PASS | No backend changes; tests use existing patterns |
+| Never block Update loop | PASS | All changes are synchronous rendering; no goroutines added |
+| No manager AI agent | PASS | Feature is purely TUI-side |
+| Pluggable WorkerBackend | N/A | Backend interface untouched |
+
+**Post-Phase 1 re-check**: No new violations introduced. All changes are view-layer and update-dispatch only.
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```
-kitty-specs/[###-feature]/
-├── plan.md              # This file (/spec-kitty.plan command output)
-├── research.md          # Phase 0 output (/spec-kitty.plan command)
-├── data-model.md        # Phase 1 output (/spec-kitty.plan command)
-├── quickstart.md        # Phase 1 output (/spec-kitty.plan command)
-├── contracts/           # Phase 1 output (/spec-kitty.plan command)
-└── tasks.md             # Phase 2 output (/spec-kitty.tasks command - NOT created by /spec-kitty.plan)
+kitty-specs/018-blocked-task-visual-feedback/
++-- plan.md              # This file
++-- research.md          # Codebase analysis findings
++-- data-model.md        # Model and message type changes
++-- spec.md              # Feature specification
++-- checklists/
+|   +-- requirements.md  # Spec quality checklist
++-- research/            # (empty - research consolidated in research.md)
++-- tasks/               # WP files (generated by /spec-kitty.tasks)
 ```
 
-### Source Code (repository root)
-<!--
-  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
-  for this feature. Delete unused options and expand the chosen structure with
-  real paths (e.g., apps/admin, packages/something). The delivered plan must
-  not include Option labels.
--->
+### Source Code (files modified)
 
 ```
-# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
-src/
-├── models/
-├── services/
-├── cli/
-└── lib/
-
-tests/
-├── contract/
-├── integration/
-└── unit/
-
-# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
-backend/
-├── src/
-│   ├── models/
-│   ├── services/
-│   └── api/
-└── tests/
-
-frontend/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── services/
-└── tests/
-
-# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
-api/
-└── [same as backend above]
-
-ios/ or android/
-└── [platform-specific structure: feature modules, UI flows, platform tests]
+internal/tui/
++-- styles.go            # New colorBlocked constant, blockedTaskStyle, blockedConfirmDialog styles
++-- panels.go            # renderTaskItem() dimming for blocked tasks
++-- overlays.go          # New blocked confirm dialog (model, update, render)
++-- update.go            # Enter-on-blocked dispatch, new message handler
++-- messages.go          # New blockedConfirmProceedMsg type
++-- model.go             # New showBlockedConfirm, blockedConfirmTaskIdx fields
 ```
 
-**Structure Decision**: [Document the selected structure and reference the real
-directories captured above]
+## Architecture Decisions
+
+### AD-001: Explicit Color Over Faint Modifier
+
+**Decision**: Use an explicit foreground color (`colorBlocked`) instead of lipgloss `.Faint(true)`.
+
+**Rationale**: `.Faint(true)` depends on terminal emulator support and can be invisible in light themes or terminals that don't implement ANSI dim. An explicit color gives deterministic rendering across all supported terminals.
+
+**Color choice**: `#555555` - sits between `colorDarkGray` (#383838) and `colorMidGray` (#5C5C5C). Dark enough to read as "inactive" but light enough to remain legible. The blocked status icon (`colorOrange`) retains its color for state identification.
+
+**Alternatives rejected**:
+- `.Faint(true)`: Terminal-dependent, invisible in some configs
+- `colorDarkGray` (#383838): Too close to background, illegible
+- `colorMidGray` (#5C5C5C): Already used for pending/help text, would conflate states
+
+### AD-002: Confirmation Dialog Follows Quit Confirm Pattern
+
+**Decision**: The blocked task confirmation dialog follows the existing quit confirm dialog pattern in `internal/tui/overlays.go` - `alertDialogStyle` with orange border, two-button layout, left/right/tab cycling, esc to dismiss.
+
+**Rationale**: Visual consistency with existing kasmos dialogs. The orange border signals "warning" (same as quit confirm), which is appropriate for "you're spawning a task with unfinished dependencies." The two-button pattern is proven and the keyboard navigation matches user expectations.
+
+**Dialog content**:
+- Header: warning icon + "blocked task" title (orange, bold)
+- Body: task ID + title, then list of unfinished dependency IDs with their current state
+- Buttons: "spawn anyway" (left, alert style) | "cancel" (right, default focus)
+- Default focus on "cancel" to prevent accidental spawns (same as quit confirm defaulting to cancel)
+
+**Alternatives rejected**:
+- Standard `dialogStyle` (pink border): Doesn't signal warning severity
+- Inline toast/notification: Doesn't block the spawn action, user could miss it
+- Full huh form: Overkill for a binary yes/no decision
+
+### AD-003: Dim Entire Row, Keep Status Icon Color
+
+**Decision**: Apply `colorBlocked` to the task ID, title, and meta line text. Keep the `taskStatusIndicator()` icon in `colorOrange` for the blocked state.
+
+**Rationale**: The icon color is the primary state identifier (users scan icons by color). Dimming the icon would make blocked tasks harder to identify. Dimming the surrounding text achieves the "greyed out" effect the spec requests while preserving scanability.
+
+### AD-004: No New Overlay State Machine - Use Boolean Flag
+
+**Decision**: Add `showBlockedConfirm bool` and `blockedConfirmTaskIdx int` to the Model, following the same pattern as `showQuitConfirm`/`quitConfirmFocused`.
+
+**Rationale**: The blocked confirm dialog is a simple binary choice (same as quit confirm). It doesn't need text input, form fields, or multi-step flow. A boolean flag + focus index is the simplest correct implementation. The dialog lifecycle is: show -> user chooses -> close.
+
+**Data flow**:
+1. Enter on blocked task -> set `showBlockedConfirm = true`, store task index
+2. "spawn anyway" -> close dialog, call `openSpawnDialogWithTaskPrefill()` (existing function)
+3. "cancel" / esc -> close dialog, no action
+
+### AD-005: Filter Unfinished Dependencies at Dialog Render Time
+
+**Decision**: Compute the list of unfinished dependency IDs when rendering the dialog, not when opening it.
+
+**Rationale**: Dependencies could theoretically change between opening the dialog and the user making a choice (e.g., a running worker completes while the dialog is open). Filtering at render time ensures the displayed list is always current. The cost is trivial - iterating `loadedTasks` (typically <20 items) once per render.
 
 ## Complexity Tracking
 
-*Fill ONLY if Constitution Check has violations that must be justified*
+No constitution violations to justify. All changes are additive view-layer code within the existing architecture.
 
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+## Implementation Strategy
+
+### Change Set 1: Styling (styles.go)
+
+1. Add `colorBlocked = lipgloss.Color("#555555")` to the color palette
+2. No new style variables needed - dimming is applied inline in `renderTaskItem()`
+
+### Change Set 2: Task Panel Dimming (panels.go)
+
+1. Modify `renderTaskItem()` to detect `task.TaskBlocked` state
+2. When blocked: apply `colorBlocked` foreground to the ID and title text on line 1
+3. When blocked: apply `colorBlocked` foreground to the meta line (line 2)
+4. The `taskStatusIndicator()` icon is not modified (keeps `colorOrange` for blocked)
+5. When blocked + selected: use `colorBlocked` instead of `colorPurple` for the ID
+
+### Change Set 3: Confirmation Dialog (overlays.go, messages.go, model.go)
+
+1. Add `showBlockedConfirm bool` and `blockedConfirmTaskIdx int` and `blockedConfirmFocused int` to Model
+2. Add `blockedConfirmProceedMsg` to messages.go
+3. Add `openBlockedConfirmDialog(taskIdx int)` method
+4. Add `closeBlockedConfirmDialog()` method
+5. Add `updateBlockedConfirmDialog(msg tea.Msg) (tea.Model, tea.Cmd)` handler
+6. Add `renderBlockedConfirmDialog() string` renderer
+7. Compute unfinished deps by iterating `loadedTasks` and filtering `Dependencies` where dep ID's task state != `TaskDone`
+
+### Change Set 4: Key Dispatch (update.go)
+
+1. Add `showBlockedConfirm` check early in `Update()` dispatch chain (before spawn dialog, after quit confirm)
+2. Modify `updateTaskPanelKeys()` Select/enter handler: add `task.TaskBlocked` branch that calls `openBlockedConfirmDialog()`
+3. Handle `blockedConfirmProceedMsg` in main Update switch: open spawn dialog with task prefill (reuse `openSpawnDialogWithTaskPrefill()`)
+
+### Change Set 5: View Integration (model.go)
+
+1. Add `showBlockedConfirm` render check in `View()` overlay cascade (after quit confirm, before batch dialog)
+
+### Testing Strategy
+
+- **Unit tests for `renderTaskItem()`**: Verify blocked tasks produce dimmed output vs normal tasks
+- **Unit tests for unfinished dep filtering**: Verify correct filtering with mixed states (done, in-progress, blocked, unassigned)
+- **Unit tests for dialog key dispatch**: Verify enter on blocked task opens confirm, spawn-anyway proceeds, cancel/esc closes
+- **Unit tests for batch exclusion**: Verify blocked tasks never appear in batch selectable list (documents existing behavior)
+- **Integration test**: Load a spec-kitty feature dir with dependency chains, verify visual output and interaction flow
