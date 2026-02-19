@@ -5,6 +5,14 @@
 **Status**: Draft
 **Input**: Add a tmux-backed worker mode so users can interact directly with agent sessions when workflows require back-and-forth (planning, clarification, review discussions), while maintaining full orchestration visibility in the kasmos dashboard.
 
+## Clarifications
+
+### Session 2026-02-18
+
+- Q: Should AI helpers (failure analysis, prompt generation) work in tmux mode? -> A: Out of scope for tmux mode MVP. They remain available in subprocess mode only. Can be extended later.
+- Q: When reattaching (`--attach`), how is tmux mode determined? -> A: Inferred from session metadata. The session file records whether the session used tmux mode; reattach automatically selects the correct backend.
+- Q: Are daemon mode (`-d`) and tmux mode (`--tmux`) mutually exclusive? -> A: Yes, mutually exclusive. Providing both flags produces a clear error.
+
 ## User Scenarios & Testing
 
 ### User Story 1 - Enable Tmux Mode (Priority: P1)
@@ -103,7 +111,7 @@ A developer's kasmos process crashes, is killed, or they intentionally exit. The
 **Acceptance Scenarios**:
 
 1. **Given** kasmos is killed while workers are running in tmux mode, **When** the kasmos process terminates, **Then** worker terminal panes continue running independently.
-2. **Given** workers survived a kasmos crash, **When** the user restarts kasmos with `--attach` in tmux mode, **Then** the dashboard reconnects to surviving worker panes and displays their current status.
+2. **Given** workers survived a kasmos crash, **When** the user restarts kasmos with `--attach`, **Then** kasmos infers tmux mode from the saved session metadata, reconnects to surviving worker panes, and displays their current status without requiring the `--tmux` flag.
 3. **Given** a worker completed while kasmos was down, **When** kasmos reattaches, **Then** the completed worker's final status and terminal history are available.
 4. **Given** the terminal multiplexer session itself was terminated, **When** the user starts kasmos fresh, **Then** standard orphan recovery applies (no panes to reconnect to, clean start).
 
@@ -118,6 +126,8 @@ A developer's kasmos process crashes, is killed, or they intentionally exit. The
 - What happens when kasmos restarts but the terminal multiplexer naming convention changed? kasmos uses a consistent pane naming/tagging scheme to identify its managed panes. Unrecognized panes are ignored.
 - What happens when subprocess-mode workers and tmux-mode are mixed? In tmux mode, all workers use the tmux backend. Mixed mode within a single session is not supported.
 - What happens when the user scrolls in a worker pane? Standard terminal multiplexer scrollback applies. The user can scroll through the worker's output history using terminal multiplexer scroll mode.
+- What happens when the user presses AI helper keys (analyze failure, gen-prompt) in tmux mode? These features are not available in tmux mode as they depend on captured output from subprocess workers. The keybindings are disabled when tmux mode is active.
+- What happens when the user passes both `--tmux` and `-d` (daemon mode)? The flags are mutually exclusive. kasmos produces a clear error explaining that tmux mode requires the interactive dashboard and cannot run headless.
 
 ## Requirements
 
@@ -135,15 +145,18 @@ A developer's kasmos process crashes, is killed, or they intentionally exit. The
 - **FR-010**: System MUST keep non-visible worker processes running in hidden panes while a different worker is displayed.
 - **FR-011**: System MUST track worker lifecycle status (running, exited, failed, killed) in the dashboard table regardless of which pane is currently visible.
 - **FR-012**: Worker processes MUST survive kasmos process termination when running in tmux mode.
-- **FR-013**: System MUST reconnect to surviving worker panes when restarting with `--attach` in tmux mode.
+- **FR-013**: System MUST reconnect to surviving worker panes when restarting with `--attach`. Tmux mode is inferred from session metadata; the user does not need to pass `--tmux` again.
 - **FR-014**: System MUST detect and handle externally killed panes (user manually closes a worker pane) by marking the worker as killed.
 - **FR-015**: System MUST implement the existing `WorkerBackend` interface (from feature 016) for the tmux backend, maintaining compatibility with all existing orchestration logic.
+- **FR-016**: System MUST reject the combination of `--tmux` and `-d` (daemon mode) flags with a clear error, as they are mutually exclusive.
+- **FR-017**: System MUST disable AI helper features (failure analysis, prompt generation) when in tmux mode, as they depend on captured subprocess output. The associated keybindings are hidden.
 
 ### Key Entities
 
 - **TmuxBackend**: An implementation of the `WorkerBackend` interface that creates and manages terminal multiplexer panes for workers instead of headless subprocesses. Handles pane creation, visibility toggling, focus management, and process lifecycle monitoring.
 - **ManagedPane**: A terminal multiplexer pane created and tracked by kasmos. Key attributes: pane identifier, associated worker ID, visibility state (shown/hidden), process status. Uses a consistent naming/tagging scheme for rediscovery after kasmos restart.
 - **TmuxMode Setting**: A persistent configuration option (stored in `.kasmos/config.json` alongside other settings from feature 017) that determines whether kasmos uses interactive terminal panes or headless subprocesses for workers.
+- **Session Backend Metadata**: The session persistence file (`.kasmos/session.json`) records the backend mode (subprocess or tmux) used by the session. On reattach, kasmos reads this to automatically select the correct backend and reconnect to managed panes.
 
 ## Success Criteria
 
