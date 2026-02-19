@@ -30,6 +30,7 @@ var (
 	colorDarkGray  = lipgloss.Color("#383838")
 	colorMidGray   = lipgloss.Color("#5C5C5C")
 	colorLightGray = lipgloss.Color("#9B9B9B")
+	colorBlocked   = lipgloss.Color("#555555")
 )
 
 var (

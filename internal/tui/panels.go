@@ -345,15 +345,37 @@ func (m *Model) renderTasksPanel() string {
 }
 
 func (m *Model) renderTaskItem(t task.Task, selected bool) string {
+	blocked := t.State == task.TaskBlocked
+
 	idStyle := lipgloss.NewStyle().Bold(true)
-	if selected {
+	switch {
+	case blocked:
+		idStyle = idStyle.Foreground(colorBlocked)
+	case selected:
 		idStyle = idStyle.Foreground(colorPurple)
 	}
-	line1 := fmt.Sprintf("%s %s  %s", taskStatusIndicator(t.State), idStyle.Render(t.ID), t.Title)
+
+	title := t.Title
+	if blocked {
+		title = lipgloss.NewStyle().Foreground(colorBlocked).Render(t.Title)
+	}
+
+	line1 := fmt.Sprintf("%s %s  %s", taskStatusIndicator(t.State), idStyle.Render(t.ID), title)
 
 	line2 := m.taskMetaLine(t)
 	if line2 == "" {
 		return line1
+	}
+	if blocked {
+		raw := ""
+		if t.WorkerID != "" {
+			raw = "-> " + t.WorkerID
+		} else if strings.TrimSpace(t.SuggestedRole) != "" {
+			raw = "role: " + t.SuggestedRole
+		}
+		if raw != "" {
+			line2 = lipgloss.NewStyle().Foreground(colorBlocked).Render(raw)
+		}
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, line1, line2)

@@ -79,6 +79,10 @@ type quitConfirmedMsg struct{}
 
 type quitCancelledMsg struct{}
 
+type blockedConfirmProceedMsg struct {
+	TaskIdx int
+}
+
 type analyzeCompletedMsg struct {
 	WorkerID        string
 	RootCause       string

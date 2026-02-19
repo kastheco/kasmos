@@ -50,21 +50,24 @@ type Model struct {
 
 	sessionStartedAt time.Time
 
-	showSpawnDialog    bool
-	spawnForm          *spawnDialogModel
-	spawnDraft         spawnDialogDraft
-	showBatchDialog    bool
-	batchSelections    []bool
-	batchFocusedIdx    int
-	showContinueDialog bool
-	continueForm       *continueDialogModel
-	continueParentID   string
-	showQuitConfirm    bool
-	quitConfirmFocused int
-	showNewDialog      bool
-	newDialogStage     int
-	newDialogType      string
-	newForm            *newFormModel
+	showSpawnDialog       bool
+	spawnForm             *spawnDialogModel
+	spawnDraft            spawnDialogDraft
+	showBatchDialog       bool
+	batchSelections       []bool
+	batchFocusedIdx       int
+	showContinueDialog    bool
+	continueForm          *continueDialogModel
+	continueParentID      string
+	showQuitConfirm       bool
+	quitConfirmFocused    int
+	showBlockedConfirm    bool
+	blockedConfirmTaskIdx int
+	blockedConfirmFocused int // 0 = "spawn anyway", 1 = "cancel"
+	showNewDialog         bool
+	newDialogStage        int
+	newDialogType         string
+	newForm               *newFormModel
 
 	selectedWorkerID  string
 	tableRowWorkerIDs []string
