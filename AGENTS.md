@@ -55,3 +55,19 @@ When you discover something significant about the codebase architecture, runtime
 - `constitution.md`: Project technical standards and governance (do not modify without discussion).
 - `architecture.md`: Codebase structure, type locations, subsystem interactions, known issues.
 - `workflow-intelligence.md`: Lessons from the spec-kitty planning lifecycle.
+
+## Automatic skill loading
+
+When your prompt, file paths, or content you read contains certain keywords, automatically load the corresponding skill before proceeding. Use the Skill loading tool if available, otherwise read the skill file directly.
+
+| Keywords | Skill | Skill file |
+|----------|-------|------------|
+| `kitty`, `kittify`, `spec-kitty`, `kitty-specs` | spec-kitty | `.opencode/skills/spec-kitty/SKILL.md` |
+| `tmux`, `pane` | tmux-orchestration | `.opencode/skills/tmux-orchestration/SKILL.md` |
+| `tui`, `worker`, `app`, `launch`, `settings`, `keybind` | TUI Design | `.opencode/skills/tui-design/SKILL.md` |
+
+Rules:
+- Match keywords case-insensitively in the user's prompt, file paths being read/edited, or content encountered during the task.
+- Load the skill once at the start of the task; do not reload on every keyword match.
+- If multiple skills match, load all matching skills.
+- Skill loading is additive to any skill instructions already present in command files.

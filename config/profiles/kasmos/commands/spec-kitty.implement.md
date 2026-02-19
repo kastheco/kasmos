@@ -2,6 +2,8 @@
 description: Create an isolated workspace (worktree) for implementing a specific work package.
 ---
 
+> **Skill Required**: Before executing this command, load the **spec-kitty** skill (`.opencode/skills/spec-kitty/SKILL.md`). If a Skill loading tool is available, use it with name `spec-kitty`. Otherwise, read the skill file directly. The skill provides essential context about the spec-kitty workflow, CLI commands, worktree management, and the `spec-kitty agent` programmatic API.
+
 ## Agent Routing (Cost Tier)
 
 - Route implementation execution through the `coder` agent (light tier).

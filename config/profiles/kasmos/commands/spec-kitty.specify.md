@@ -2,6 +2,8 @@
 description: Create or update the feature specification from a natural language feature description.
 ---
 
+> **Skill Required**: Before executing this command, load the **spec-kitty** skill (`.opencode/skills/spec-kitty/SKILL.md`). If a Skill loading tool is available, use it with name `spec-kitty`. Otherwise, read the skill file directly. The skill provides essential context about the spec-kitty workflow, CLI commands, worktree management, and the `spec-kitty agent` programmatic API.
+
 # /spec-kitty.specify - Create Feature Specification
 
 **Version**: 0.11.0+
