@@ -1,25 +1,28 @@
 ---
-work_package_id: "WP01"
-subtasks:
-  - "T001"
-  - "T002"
-  - "T003"
-  - "T004"
-title: "Foundation and Visual Dimming"
-phase: "Phase 1 - Foundation"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
+work_package_id: WP01
+title: Foundation and Visual Dimming
+lane: "doing"
 dependencies: []
+base_branch: main
+base_commit: 19b6818d5c331da11ad232a4b88b98d1a91df630
+created_at: '2026-02-19T19:26:58.955697+00:00'
+subtasks:
+- T001
+- T002
+- T003
+- T004
+phase: Phase 1 - Foundation
+assignee: ''
+agent: ''
+shell_pid: "2693732"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-19T04:05:55Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-19T04:05:55Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP01 - Foundation and Visual Dimming
