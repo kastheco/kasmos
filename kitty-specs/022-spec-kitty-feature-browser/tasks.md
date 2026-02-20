@@ -176,7 +176,7 @@ Dependency rationale: WP05 tests are exclusively for WP01 pure functions and bra
 
 **Subtasks**:
 - [x] T024: Test scanFeatures() with temp directory structures at various phases
-- [ ] T025: Test phase detection accuracy (spec-only, plan-ready, tasks-ready, invalid dirs)
+- [x] T025: Test phase detection accuracy (spec-only, plan-ready, tasks-ready, invalid dirs)
 - [ ] T026: Test actionsForPhase() returns correct actions per phase
 - [ ] T027: Test parseFeatureDir() with normal and edge-case directory names
 - [ ] T028: Test filterFeatures() (case-insensitive, empty query, no matches)
