@@ -144,7 +144,7 @@ WP03 [P]  WP04 [P]     <-- parallel
 - [x] T020: Implement feature selection (Enter/right -> dashboard load or sub-menu expand)
 - [x] T021: Implement action selection (Enter/right -> spawn dialog with prefill)
 - [x] T022: Implement filter mode (/ activate, keystrokes filter, Enter/Esc confirm/clear)
-- [ ] T023: Implement back navigation (Esc/left -> collapse sub-menu or close browser)
+- [x] T023: Implement back navigation (Esc/left -> collapse sub-menu or close browser)
 
 **Implementation sketch**:
 1. Dispatcher checks featureFilterActive first, then featureActionsOpen, then normal list mode (T018)
