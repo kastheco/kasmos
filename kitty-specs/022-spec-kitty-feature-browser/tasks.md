@@ -175,7 +175,7 @@ WP03 [P]  WP04 [P]     <-- parallel
 Dependency rationale: WP05 tests are exclusively for WP01 pure functions and branches from WP04 (`--base WP04`). WP03 rendering code is not needed (WP02 stubs remain). The WP03 dependency is a sequencing gate ensuring the full browser is implemented before the quality phase, not a code dependency.
 
 **Subtasks**:
-- [ ] T024: Test scanFeatures() with temp directory structures at various phases
+- [x] T024: Test scanFeatures() with temp directory structures at various phases
 - [ ] T025: Test phase detection accuracy (spec-only, plan-ready, tasks-ready, invalid dirs)
 - [ ] T026: Test actionsForPhase() returns correct actions per phase
 - [ ] T027: Test parseFeatureDir() with normal and edge-case directory names
