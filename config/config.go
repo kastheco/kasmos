@@ -177,8 +177,12 @@ func LoadConfig() *Config {
 	if tomlErr != nil {
 		log.WarningLog.Printf("failed to load TOML config: %v", tomlErr)
 	} else if tomlResult != nil {
-		config.Profiles = tomlResult.Profiles
-		config.PhaseRoles = tomlResult.PhaseRoles
+		if len(tomlResult.Profiles) > 0 {
+			config.Profiles = tomlResult.Profiles
+		}
+		if len(tomlResult.PhaseRoles) > 0 {
+			config.PhaseRoles = tomlResult.PhaseRoles
+		}
 	}
 
 	return &config

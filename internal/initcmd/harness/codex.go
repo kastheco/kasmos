@@ -48,8 +48,15 @@ func (c *Codex) InstallSuperpowers() error {
 
 	repoDir := filepath.Join(home, ".codex", "superpowers")
 
-	// Clone or pull
-	if _, err := os.Stat(filepath.Join(repoDir, ".git")); os.IsNotExist(err) {
+	// Clone or pull based on whether the repo already exists
+	switch _, err := os.Stat(filepath.Join(repoDir, ".git")); {
+	case err == nil:
+		// Repo exists; update best-effort (stale version is acceptable)
+		cmd := exec.Command("git", "-C", repoDir, "pull", "--ff-only")
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "  warning: superpowers update failed (using cached): %v\n", err)
+		}
+	case os.IsNotExist(err):
 		if err := os.MkdirAll(filepath.Dir(repoDir), 0o755); err != nil {
 			return fmt.Errorf("create codex dir: %w", err)
 		}
@@ -58,9 +65,8 @@ func (c *Codex) InstallSuperpowers() error {
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("clone superpowers: %s: %w", string(out), err)
 		}
-	} else {
-		cmd := exec.Command("git", "-C", repoDir, "pull", "--ff-only")
-		_ = cmd.Run() // best-effort update
+	default:
+		return fmt.Errorf("check superpowers repo: %w", err)
 	}
 
 	// Symlink skills
@@ -70,16 +76,13 @@ func (c *Codex) InstallSuperpowers() error {
 	}
 	skillsLink := filepath.Join(skillsDir, "superpowers")
 	skillsSrc := filepath.Join(repoDir, "skills")
-	os.Remove(skillsLink)
+	if err := os.Remove(skillsLink); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove existing skills link: %w", err)
+	}
 	if err := os.Symlink(skillsSrc, skillsLink); err != nil {
 		return fmt.Errorf("symlink skills: %w", err)
 	}
 
-	return nil
-}
-
-func (c *Codex) ScaffoldProject(dir string, agents []AgentConfig, force bool) error {
-	// Scaffolding is orchestrated by internal/initcmd/scaffold package
 	return nil
 }
 

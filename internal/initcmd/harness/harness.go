@@ -18,7 +18,6 @@ type Harness interface {
 	ListModels() ([]string, error)
 	BuildFlags(agent AgentConfig) []string
 	InstallSuperpowers() error
-	ScaffoldProject(dir string, agents []AgentConfig, force bool) error
 	SupportsTemperature() bool
 	SupportsEffort() bool
 }
@@ -26,6 +25,7 @@ type Harness interface {
 // Registry holds all known harness adapters keyed by name.
 type Registry struct {
 	harnesses map[string]Harness
+	order     []string // insertion order for stable All() output
 }
 
 // NewRegistry creates a registry with all built-in harness adapters.
@@ -38,7 +38,11 @@ func NewRegistry() *Registry {
 }
 
 // Register adds a harness adapter to the registry.
+// Re-registering a name replaces the adapter but does not duplicate the order entry.
 func (r *Registry) Register(h Harness) {
+	if _, exists := r.harnesses[h.Name()]; !exists {
+		r.order = append(r.order, h.Name())
+	}
 	r.harnesses[h.Name()] = h
 }
 
@@ -47,9 +51,12 @@ func (r *Registry) Get(name string) Harness {
 	return r.harnesses[name]
 }
 
-// All returns all registered harness names in stable order.
+// All returns all registered harness names in insertion order.
+// Returns a copy to prevent callers from mutating internal state.
 func (r *Registry) All() []string {
-	return []string{"claude", "opencode", "codex"}
+	out := make([]string, len(r.order))
+	copy(out, r.order)
+	return out
 }
 
 // DetectResult holds the result of detecting a single harness.

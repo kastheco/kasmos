@@ -2,6 +2,8 @@ package wizard
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 
 	"github.com/charmbracelet/huh"
 	"github.com/kastheco/klique/config"
@@ -11,10 +13,14 @@ func runAgentStage(state *State, existing *config.TOMLConfigResult) error {
 	roles := DefaultAgentRoles()
 
 	// Initialize agent states with defaults or existing values
+	defaultHarness := ""
+	if len(state.SelectedHarness) > 0 {
+		defaultHarness = state.SelectedHarness[0]
+	}
 	for _, role := range roles {
 		as := AgentState{
 			Role:    role,
-			Harness: state.SelectedHarness[0], // default to first selected
+			Harness: defaultHarness,
 			Enabled: true,
 		}
 
@@ -53,9 +59,22 @@ func runSingleAgentForm(state *State, idx int) error {
 		harnessOpts = append(harnessOpts, huh.NewOption(name, name))
 	}
 
-	// Get models for the current harness
+	// Resolve harness adapter; fall back if pre-populated config named an unknown harness
 	h := state.Registry.Get(agent.Harness)
-	models, _ := h.ListModels()
+	if h == nil {
+		if len(state.SelectedHarness) > 0 {
+			agent.Harness = state.SelectedHarness[0]
+			h = state.Registry.Get(agent.Harness)
+		}
+		if h == nil {
+			return fmt.Errorf("no valid harness available for agent %q", agent.Role)
+		}
+	}
+
+	models, err := h.ListModels()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  warning: could not list models for %s: %v\n", h.Name(), err)
+	}
 
 	// Build model options
 	var modelOpts []huh.Option[string]
@@ -105,7 +124,16 @@ func runSingleAgentForm(state *State, idx int) error {
 			huh.NewInput().
 				Title("Temperature (empty = harness default)").
 				Placeholder("e.g. 0.7").
-				Value(&agent.Temperature),
+				Value(&agent.Temperature).
+				Validate(func(s string) error {
+					if s == "" {
+						return nil
+					}
+					if _, err := strconv.ParseFloat(s, 64); err != nil {
+						return fmt.Errorf("must be a number (e.g. 0.7)")
+					}
+					return nil
+				}),
 		)
 	}
 

@@ -10,6 +10,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestValidateRole(t *testing.T) {
+	t.Run("valid roles pass", func(t *testing.T) {
+		for _, role := range []string{"coder", "reviewer", "planner", "my-agent", "agent_1"} {
+			assert.NoError(t, validateRole(role), "role: %q", role)
+		}
+	})
+
+	t.Run("path traversal rejected", func(t *testing.T) {
+		for _, role := range []string{"../etc/passwd", "../../.bashrc", "a/b", "a\\b"} {
+			assert.Error(t, validateRole(role), "role: %q", role)
+		}
+	})
+
+	t.Run("empty role rejected", func(t *testing.T) {
+		assert.Error(t, validateRole(""))
+	})
+}
+
 func TestScaffoldClaudeProject(t *testing.T) {
 	dir := t.TempDir()
 	agents := []harness.AgentConfig{
@@ -17,7 +35,7 @@ func TestScaffoldClaudeProject(t *testing.T) {
 		{Role: "reviewer", Harness: "claude", Model: "claude-opus-4-6", Enabled: true},
 	}
 
-	err := WriteClaudeProject(dir, agents, false)
+	_, err := WriteClaudeProject(dir, agents, false)
 	require.NoError(t, err)
 
 	assert.FileExists(t, filepath.Join(dir, ".claude", "agents", "coder.md"))
@@ -31,7 +49,7 @@ func TestScaffoldOpenCodeProject(t *testing.T) {
 		{Role: "coder", Harness: "opencode", Model: "anthropic/claude-sonnet-4-6", Enabled: true},
 	}
 
-	err := WriteOpenCodeProject(dir, agents, false)
+	_, err := WriteOpenCodeProject(dir, agents, false)
 	require.NoError(t, err)
 
 	assert.FileExists(t, filepath.Join(dir, ".opencode", "agents", "coder.md"))
@@ -43,7 +61,7 @@ func TestScaffoldCodexProject(t *testing.T) {
 		{Role: "coder", Harness: "codex", Model: "gpt-5.3-codex", Enabled: true},
 	}
 
-	err := WriteCodexProject(dir, agents, false)
+	_, err := WriteCodexProject(dir, agents, false)
 	require.NoError(t, err)
 
 	assert.FileExists(t, filepath.Join(dir, ".codex", "AGENTS.md"))
@@ -61,12 +79,17 @@ func TestScaffoldSkipsExisting(t *testing.T) {
 		{Role: "coder", Harness: "claude", Enabled: true},
 	}
 
-	err := WriteClaudeProject(dir, agents, false) // force=false
+	results, err := WriteClaudeProject(dir, agents, false) // force=false
 	require.NoError(t, err)
 
+	// File preserved
 	content, err := os.ReadFile(existing)
 	require.NoError(t, err)
 	assert.Equal(t, "custom content", string(content))
+
+	// Result correctly shows skipped
+	require.Len(t, results, 1)
+	assert.False(t, results[0].Created)
 }
 
 func TestScaffoldForceOverwrites(t *testing.T) {
@@ -81,12 +104,68 @@ func TestScaffoldForceOverwrites(t *testing.T) {
 		{Role: "coder", Harness: "claude", Enabled: true},
 	}
 
-	err := WriteClaudeProject(dir, agents, true) // force=true
+	results, err := WriteClaudeProject(dir, agents, true) // force=true
 	require.NoError(t, err)
 
+	// Content overwritten
 	content, err := os.ReadFile(existing)
 	require.NoError(t, err)
 	assert.NotEqual(t, "old content", string(content))
+
+	// Result correctly shows created
+	require.Len(t, results, 1)
+	assert.True(t, results[0].Created)
+}
+
+func TestScaffoldAll_MixedHarnesses(t *testing.T) {
+	dir := t.TempDir()
+	agents := []harness.AgentConfig{
+		{Role: "coder", Harness: "claude", Model: "claude-sonnet-4-6", Enabled: true},
+		{Role: "reviewer", Harness: "opencode", Model: "anthropic/claude-opus-4-6", Enabled: true},
+		{Role: "planner", Harness: "codex", Model: "gpt-5.3-codex", Enabled: true},
+	}
+
+	results, err := ScaffoldAll(dir, agents, false)
+	require.NoError(t, err)
+
+	// All three harness directories created
+	assert.FileExists(t, filepath.Join(dir, ".claude", "agents", "coder.md"))
+	assert.FileExists(t, filepath.Join(dir, ".opencode", "agents", "reviewer.md"))
+	assert.FileExists(t, filepath.Join(dir, ".codex", "AGENTS.md"))
+
+	// Results only include actually-created files
+	assert.GreaterOrEqual(t, len(results), 3)
+	for _, r := range results {
+		assert.True(t, r.Created, "expected all results to be created in fresh dir")
+	}
+}
+
+func TestScaffoldRejectsPathTraversalRole(t *testing.T) {
+	dir := t.TempDir()
+	agents := []harness.AgentConfig{
+		{Role: "../../../.bashrc", Harness: "claude", Enabled: true},
+	}
+
+	_, err := WriteClaudeProject(dir, agents, false)
+	assert.Error(t, err)
+}
+
+func TestScaffoldFiltersByHarness(t *testing.T) {
+	dir := t.TempDir()
+	// Pass a mix: only the claude agent should be written
+	agents := []harness.AgentConfig{
+		{Role: "coder", Harness: "claude", Model: "claude-sonnet-4-6", Enabled: true},
+		{Role: "reviewer", Harness: "opencode", Model: "anthropic/claude-opus-4-6", Enabled: true},
+	}
+
+	results, err := WriteClaudeProject(dir, agents, false)
+	require.NoError(t, err)
+
+	// Only coder.md created (claude only)
+	assert.FileExists(t, filepath.Join(dir, ".claude", "agents", "coder.md"))
+	assert.NoFileExists(t, filepath.Join(dir, ".opencode", "agents", "reviewer.md"))
+	require.Len(t, results, 1)
+	assert.Equal(t, ".claude/agents/coder.md", results[0].Path)
 }
 
 func TestToolsReferenceInjected(t *testing.T) {
@@ -96,7 +175,7 @@ func TestToolsReferenceInjected(t *testing.T) {
 			{Role: "coder", Harness: "claude", Model: "claude-sonnet-4-6", Enabled: true},
 		}
 
-		err := WriteClaudeProject(dir, agents, false)
+		_, err := WriteClaudeProject(dir, agents, false)
 		require.NoError(t, err)
 
 		content, err := os.ReadFile(filepath.Join(dir, ".claude", "agents", "coder.md"))
@@ -117,7 +196,7 @@ func TestToolsReferenceInjected(t *testing.T) {
 			{Role: "coder", Harness: "opencode", Model: "anthropic/claude-sonnet-4-6", Enabled: true},
 		}
 
-		err := WriteOpenCodeProject(dir, agents, false)
+		_, err := WriteOpenCodeProject(dir, agents, false)
 		require.NoError(t, err)
 
 		content, err := os.ReadFile(filepath.Join(dir, ".opencode", "agents", "coder.md"))
@@ -132,7 +211,7 @@ func TestToolsReferenceInjected(t *testing.T) {
 			{Role: "coder", Harness: "codex", Model: "gpt-5.3-codex", Enabled: true},
 		}
 
-		err := WriteCodexProject(dir, agents, false)
+		_, err := WriteCodexProject(dir, agents, false)
 		require.NoError(t, err)
 
 		content, err := os.ReadFile(filepath.Join(dir, ".codex", "AGENTS.md"))
@@ -147,7 +226,7 @@ func TestToolsReferenceInjected(t *testing.T) {
 			{Role: "coder", Harness: "claude", Model: "claude-opus-4-6", Enabled: true},
 		}
 
-		err := WriteClaudeProject(dir, agents, false)
+		_, err := WriteClaudeProject(dir, agents, false)
 		require.NoError(t, err)
 
 		content, err := os.ReadFile(filepath.Join(dir, ".claude", "agents", "coder.md"))

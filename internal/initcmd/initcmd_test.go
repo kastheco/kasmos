@@ -21,9 +21,7 @@ func TestOptionsDefaults(t *testing.T) {
 func TestWritePhase(t *testing.T) {
 	// Set up temp HOME to avoid touching real config
 	tmpHome := t.TempDir()
-	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpHome)
-	defer os.Setenv("HOME", origHome)
+	t.Setenv("HOME", tmpHome)
 
 	// Create config dir
 	configDir := filepath.Join(tmpHome, ".klique")

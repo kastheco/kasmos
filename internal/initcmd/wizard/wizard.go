@@ -1,7 +1,7 @@
 package wizard
 
 import (
-	"fmt"
+	"strconv"
 
 	"github.com/kastheco/klique/config"
 	"github.com/kastheco/klique/internal/initcmd/harness"
@@ -67,6 +67,19 @@ func Run(registry *harness.Registry, existing *config.TOMLConfigResult) (*State,
 	return state, nil
 }
 
+// parseTemperature converts a temperature string to *float64.
+// Returns nil for empty string or unparseable values.
+func parseTemperature(s string) *float64 {
+	if s == "" {
+		return nil
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return nil
+	}
+	return &f
+}
+
 // ToTOMLConfig converts wizard state to the TOML config structure.
 func (s *State) ToTOMLConfig() *config.TOMLConfig {
 	tc := &config.TOMLConfig{
@@ -75,22 +88,14 @@ func (s *State) ToTOMLConfig() *config.TOMLConfig {
 	}
 
 	for _, a := range s.Agents {
-		agent := config.TOMLAgent{
-			Enabled: a.Enabled,
-			Program: a.Harness,
-			Model:   a.Model,
-			Effort:  a.Effort,
-			Flags:   []string{},
+		tc.Agents[a.Role] = config.TOMLAgent{
+			Enabled:     a.Enabled,
+			Program:     a.Harness,
+			Model:       a.Model,
+			Effort:      a.Effort,
+			Temperature: parseTemperature(a.Temperature),
+			Flags:       []string{},
 		}
-
-		if a.Temperature != "" {
-			var temp float64
-			if _, err := fmt.Sscanf(a.Temperature, "%f", &temp); err == nil {
-				agent.Temperature = &temp
-			}
-		}
-
-		tc.Agents[a.Role] = agent
 	}
 
 	return tc
@@ -104,20 +109,14 @@ func (s *State) ToAgentConfigs() []harness.AgentConfig {
 		if !a.Enabled {
 			continue
 		}
-		ac := harness.AgentConfig{
-			Role:    a.Role,
-			Harness: a.Harness,
-			Model:   a.Model,
-			Effort:  a.Effort,
-			Enabled: a.Enabled,
-		}
-		if a.Temperature != "" {
-			var temp float64
-			if _, err := fmt.Sscanf(a.Temperature, "%f", &temp); err == nil {
-				ac.Temperature = &temp
-			}
-		}
-		configs = append(configs, ac)
+		configs = append(configs, harness.AgentConfig{
+			Role:        a.Role,
+			Harness:     a.Harness,
+			Model:       a.Model,
+			Effort:      a.Effort,
+			Enabled:     a.Enabled,
+			Temperature: parseTemperature(a.Temperature),
+		})
 	}
 	return configs
 }

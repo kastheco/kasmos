@@ -63,10 +63,5 @@ func (c *Claude) InstallSuperpowers() error {
 	return nil
 }
 
-func (c *Claude) ScaffoldProject(dir string, agents []AgentConfig, force bool) error {
-	// Scaffolding is orchestrated by internal/initcmd/scaffold package
-	return nil
-}
-
 func (c *Claude) SupportsTemperature() bool { return false }
 func (c *Claude) SupportsEffort() bool      { return true }
