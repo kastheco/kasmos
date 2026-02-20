@@ -1,7 +1,7 @@
 ---
 work_package_id: WP01
 title: Core Types, Scanner, and Phase Detection
-lane: "doing"
+lane: "for_review"
 dependencies: []
 base_branch: main
 base_commit: ee4dc161d4104dee012377433baca9a0eb672b99
@@ -312,3 +312,7 @@ colorLightGray = lipgloss.Color("#9B9B9B")
 - Verify actionsForPhase mapping matches spec FR-007 and FR-008
 - Verify scanFeatures excludes directories without spec.md (FR-002)
 - Verify filterFeatures is a pure function with no Model dependency
+
+## Activity Log
+
+- 2026-02-20T07:06:00Z – unknown – shell_pid=3948330 – lane=for_review – Core types and scanner implemented; builds and tests pass
