@@ -78,7 +78,7 @@ WP03 [P]  WP04 [P]     <-- parallel
 
 **Subtasks**:
 - [x] T007: Add browser state fields to Model struct in model.go
-- [ ] T008: Implement openFeatureBrowser() and closeFeatureBrowser() methods
+- [x] T008: Implement openFeatureBrowser() and closeFeatureBrowser() methods
 - [ ] T009: Add `b` key case to updateLauncherKeys() in update.go
 - [ ] T010: Add "browse features" menu item to launcherMenuItems in launcher.go
 - [ ] T011: Add showFeatureBrowser dispatches in View() and Update()
