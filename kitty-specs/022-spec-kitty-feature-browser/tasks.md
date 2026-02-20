@@ -235,7 +235,7 @@ Dependency rationale: WP05 tests are exclusively for WP01 pure functions and bra
 **Estimated prompt size**: ~300 lines
 
 **Subtasks**:
-- [ ] T035: Separate buildArgs for subprocess (opencode run) vs tmux (opencode interactive)
+- [x] T035: Separate buildArgs for subprocess (opencode run) vs tmux (opencode interactive)
 - [ ] T036: Add WorkDir support to tmux SplitWindow via -c flag
 - [ ] T037: Update buildArgs tests for both backends
 - [ ] T038: Update architecture documentation to reflect dual-mode design
