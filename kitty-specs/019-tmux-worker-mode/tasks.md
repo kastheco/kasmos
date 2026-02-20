@@ -102,7 +102,7 @@
 - [x] T015 Add `--tmux` flag to cobra command in `cmd/kasmos/main.go`
 - [x] T016 Implement backend selection logic: `--tmux` flag detection, `$TMUX` environment validation, `NewTmuxBackend()` construction
 - [x] T017 Validate `--tmux` and `-d` mutual exclusivity with clear error message (FR-016)
-- [ ] T018 Add `tmuxMode bool`, `tmuxBackend *worker.TmuxBackend`, `kasmosPaneID string`, and `activePaneID string` fields to TUI Model in `internal/tui/model.go`
+- [x] T018 Add `tmuxMode bool`, `tmuxBackend *worker.TmuxBackend`, `kasmosPaneID string`, and `activePaneID string` fields to TUI Model in `internal/tui/model.go`
 - [ ] T019 Update `NewModel()` to accept and store tmux mode state; add `backendName()` helper that returns `m.backend.Name()` (e.g., "tmux" or "subprocess"); update status bar rendering in `panels.go` to show backend indicator alongside task source mode (e.g., `mode: spec-kitty [tmux]`) when `tmuxMode` is true. Do NOT modify `modeName()` -- it must continue returning the task source type.
 
 ### Implementation Notes
