@@ -1,7 +1,7 @@
 ---
 work_package_id: WP02
 title: Browser Model State and Launcher Wiring
-lane: "doing"
+lane: "for_review"
 dependencies: [WP01]
 base_branch: 022-spec-kitty-feature-browser-WP01
 base_commit: 94ddda5a17e154a0c6485a61073ecbf486001d9e
@@ -377,3 +377,7 @@ default:
 - Verify openFeatureBrowser validates spec-kitty before scanning
 - Verify closeFeatureBrowser resets ALL browser fields
 - Check menu item placement is logically grouped (after creation, before navigation)
+
+## Activity Log
+
+- 2026-02-20T07:09:54Z – unknown – shell_pid=3972069 – lane=for_review – Ready for review: wired browser launcher state, dispatch, and key/menu integration
