@@ -1,10 +1,14 @@
 ---
 work_package_id: WP06
 title: tmux Visual Integration
-lane: planned
+lane: "doing"
 dependencies: []
+base_branch: main
+base_commit: 2e0aad875f49c52020bc757413ccc9c9d19e8a18
+created_at: '2026-02-20T08:25:21.455854+00:00'
 subtasks: [T030, T031, T032, T033, T034]
 phase: implementation
+shell_pid: "4116651"
 history:
 - timestamp: '2026-02-20T14:00:00Z'
   lane: planned
