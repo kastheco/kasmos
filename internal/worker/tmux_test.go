@@ -19,6 +19,8 @@ func newTestTmuxBackend(cli TmuxCLI) *TmuxBackend {
 func TestTmuxBackendInit(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		setEnvCalls := make(map[string]string)
+		setOptionCalls := make(map[string]string)
+		showOptionCalls := 0
 
 		mock := &mockTmuxCLI{
 			DisplayMsgFn: func(_ context.Context, format string) (string, error) {
@@ -42,6 +44,17 @@ func TestTmuxBackendInit(t *testing.T) {
 				setEnvCalls[key] = value
 				return nil
 			},
+			ShowOptionFn: func(_ context.Context, key string) (string, error) {
+				showOptionCalls++
+				if key != "status" {
+					t.Fatalf("unexpected show-option key: %s", key)
+				}
+				return "on", nil
+			},
+			SetOptionFn: func(_ context.Context, key, value string) error {
+				setOptionCalls[key] = value
+				return nil
+			},
 		}
 
 		backend := newTestTmuxBackend(mock)
@@ -61,6 +74,12 @@ func TestTmuxBackendInit(t *testing.T) {
 		if backend.sessionTag != "ks-123" {
 			t.Fatalf("session tag mismatch: got=%q want=%q", backend.sessionTag, "ks-123")
 		}
+		if backend.previousStatus != "on" {
+			t.Fatalf("previous status mismatch: got=%q want=%q", backend.previousStatus, "on")
+		}
+		if showOptionCalls != 1 {
+			t.Fatalf("show-option call count mismatch: got=%d want=1", showOptionCalls)
+		}
 
 		if got := setEnvCalls["KASMOS_SESSION_ID"]; got != "ks-123" {
 			t.Fatalf("KASMOS_SESSION_ID mismatch: got=%q want=%q", got, "ks-123")
@@ -70,6 +89,68 @@ func TestTmuxBackendInit(t *testing.T) {
 		}
 		if got := setEnvCalls["KASMOS_PARKING"]; got != "@2" {
 			t.Fatalf("KASMOS_PARKING mismatch: got=%q want=%q", got, "@2")
+		}
+
+		if got := setOptionCalls["pane-border-style"]; got != "fg=#383838" {
+			t.Fatalf("pane-border-style mismatch: got=%q want=%q", got, "fg=#383838")
+		}
+		if got := setOptionCalls["pane-active-border-style"]; got != "fg=#7D56F4" {
+			t.Fatalf("pane-active-border-style mismatch: got=%q want=%q", got, "fg=#7D56F4")
+		}
+		if got := setOptionCalls["pane-border-lines"]; got != "heavy" {
+			t.Fatalf("pane-border-lines mismatch: got=%q want=%q", got, "heavy")
+		}
+		if got := setOptionCalls["pane-border-format"]; got != " #{pane_title} " {
+			t.Fatalf("pane-border-format mismatch: got=%q want=%q", got, " #{pane_title} ")
+		}
+		if got := setOptionCalls["status"]; got != "off" {
+			t.Fatalf("status option mismatch: got=%q want=%q", got, "off")
+		}
+	})
+
+	t.Run("preserve status skips hide", func(t *testing.T) {
+		setOptionCalls := make(map[string]string)
+		showOptionCalls := 0
+
+		mock := &mockTmuxCLI{
+			DisplayMsgFn: func(_ context.Context, format string) (string, error) {
+				switch format {
+				case "#{pane_id}":
+					return "%1", nil
+				case "#{window_id}":
+					return "@1", nil
+				default:
+					t.Fatalf("unexpected display format: %s", format)
+					return "", nil
+				}
+			},
+			NewWindowFn: func(_ context.Context, opts NewWindowOpts) (string, error) {
+				if !opts.Detached || opts.Name != "kasmos-parking" {
+					t.Fatalf("unexpected new-window opts: %+v", opts)
+				}
+				return "@2", nil
+			},
+			ShowOptionFn: func(_ context.Context, key string) (string, error) {
+				showOptionCalls++
+				return "on", nil
+			},
+			SetOptionFn: func(_ context.Context, key, value string) error {
+				setOptionCalls[key] = value
+				return nil
+			},
+		}
+
+		backend := newTestTmuxBackend(mock)
+		backend.PreserveStatus = true
+		if err := backend.Init("ks-123"); err != nil {
+			t.Fatalf("Init() returned error: %v", err)
+		}
+
+		if _, ok := setOptionCalls["status"]; ok {
+			t.Fatal("status should not be modified when PreserveStatus is true")
+		}
+		if showOptionCalls != 0 {
+			t.Fatalf("status should not be queried when PreserveStatus is true, got=%d", showOptionCalls)
 		}
 	})
 
@@ -103,6 +184,8 @@ func TestTmuxBackendSpawn(t *testing.T) {
 		var splitOpts SplitOpts
 		joinCalls := make([]JoinOpts, 0)
 		setPaneCalls := 0
+		setPaneTitleCalls := 0
+		lastPaneTitle := ""
 		setEnvCalls := make(map[string]string)
 
 		mock := &mockTmuxCLI{
@@ -119,6 +202,14 @@ func TestTmuxBackendSpawn(t *testing.T) {
 				if paneID != "%3" || option != "remain-on-exit" || value != "on" {
 					t.Fatalf("unexpected pane option call: pane=%s option=%s value=%s", paneID, option, value)
 				}
+				return nil
+			},
+			SetPaneTitleFn: func(_ context.Context, paneID, title string) error {
+				setPaneTitleCalls++
+				if paneID != "%3" {
+					t.Fatalf("unexpected pane title pane: got=%q want=%q", paneID, "%3")
+				}
+				lastPaneTitle = title
 				return nil
 			},
 			SetEnvFn: func(_ context.Context, key, value string) error {
@@ -173,6 +264,12 @@ func TestTmuxBackendSpawn(t *testing.T) {
 		if setPaneCalls != 1 {
 			t.Fatalf("remain-on-exit call count mismatch: got=%d want=1", setPaneCalls)
 		}
+		if setPaneTitleCalls != 1 {
+			t.Fatalf("pane title call count mismatch: got=%d want=1", setPaneTitleCalls)
+		}
+		if lastPaneTitle != "w-001 coder" {
+			t.Fatalf("pane title mismatch: got=%q want=%q", lastPaneTitle, "w-001 coder")
+		}
 		if got := setEnvCalls["KASMOS_PANE_w-001"]; got != "%3" {
 			t.Fatalf("pane tag mismatch: got=%q want=%q", got, "%3")
 		}
@@ -196,6 +293,106 @@ func TestTmuxBackendSpawn(t *testing.T) {
 
 		if handle == nil || handle.Stdout() != nil || !handle.Interactive() {
 			t.Fatalf("unexpected handle characteristics: handle=%v interactive=%t stdout=%v", handle, handle.Interactive(), handle.Stdout())
+		}
+	})
+
+	t.Run("sets pane title to ID when role empty", func(t *testing.T) {
+		paneTitle := ""
+
+		mock := &mockTmuxCLI{
+			SplitWindowFn: func(_ context.Context, opts SplitOpts) (string, error) {
+				return "%4", nil
+			},
+			SetPaneTitleFn: func(_ context.Context, paneID, title string) error {
+				if paneID != "%4" {
+					t.Fatalf("unexpected pane ID for title: got=%q want=%q", paneID, "%4")
+				}
+				paneTitle = title
+				return nil
+			},
+		}
+
+		backend := newTestTmuxBackend(mock)
+		backend.kasmosPaneID = "%1"
+		backend.kasmosWindowID = "@1"
+
+		if _, err := backend.Spawn(context.Background(), SpawnConfig{ID: "w-002"}); err != nil {
+			t.Fatalf("Spawn() returned error: %v", err)
+		}
+
+		if paneTitle != "w-002" {
+			t.Fatalf("pane title mismatch: got=%q want=%q", paneTitle, "w-002")
+		}
+	})
+}
+
+func TestTmuxBackendCleanupStatusRestore(t *testing.T) {
+	t.Run("restores previous status by default", func(t *testing.T) {
+		setOptionCalls := make(map[string]string)
+
+		mock := &mockTmuxCLI{
+			SetOptionFn: func(_ context.Context, key, value string) error {
+				setOptionCalls[key] = value
+				return nil
+			},
+		}
+
+		backend := newTestTmuxBackend(mock)
+		backend.previousStatus = "off"
+		if err := backend.Cleanup(); err != nil {
+			t.Fatalf("Cleanup() returned error: %v", err)
+		}
+
+		if got := setOptionCalls["status"]; got != "off" {
+			t.Fatalf("status restore mismatch: got=%q want=%q", got, "off")
+		}
+		if backend.previousStatus != "" {
+			t.Fatalf("previous status should be reset after cleanup, got=%q", backend.previousStatus)
+		}
+	})
+
+	t.Run("missing previous status skips restore", func(t *testing.T) {
+		statusCalls := 0
+
+		mock := &mockTmuxCLI{
+			SetOptionFn: func(_ context.Context, key, value string) error {
+				if key == "status" {
+					statusCalls++
+				}
+				return nil
+			},
+		}
+
+		backend := newTestTmuxBackend(mock)
+		if err := backend.Cleanup(); err != nil {
+			t.Fatalf("Cleanup() returned error: %v", err)
+		}
+
+		if statusCalls != 0 {
+			t.Fatalf("status should not be restored without a saved value, got=%d", statusCalls)
+		}
+	})
+
+	t.Run("preserve status skips restore", func(t *testing.T) {
+		statusCalls := 0
+
+		mock := &mockTmuxCLI{
+			SetOptionFn: func(_ context.Context, key, value string) error {
+				if key == "status" {
+					statusCalls++
+				}
+				return nil
+			},
+		}
+
+		backend := newTestTmuxBackend(mock)
+		backend.PreserveStatus = true
+		if err := backend.Cleanup(); err != nil {
+			t.Fatalf("Cleanup() returned error: %v", err)
+		}
+
+		if statusCalls != 0 {
+			t.Fatalf("status should not be restored when PreserveStatus is true, got=%d", statusCalls)
 		}
 	})
 }

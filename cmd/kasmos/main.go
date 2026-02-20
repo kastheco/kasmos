@@ -156,6 +156,11 @@ func newRootCmd() *cobra.Command {
 				if err := tmuxBackend.Init(sessionID); err != nil {
 					return fmt.Errorf("tmux init: %w", err)
 				}
+				defer func() {
+					if err := tmuxBackend.Cleanup(); err != nil {
+						log.Printf("warning: tmux cleanup failed: %v", err)
+					}
+				}()
 
 				backend = tmuxBackend
 			} else {
