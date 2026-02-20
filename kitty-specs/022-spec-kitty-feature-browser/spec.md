@@ -106,10 +106,10 @@ A developer opens the browser but decides not to select a feature. They press Es
 - **FR-007**: The lifecycle sub-menu for "spec only" features MUST offer "clarify" and "plan" actions.
 - **FR-008**: The lifecycle sub-menu for "plan ready" features MUST offer "tasks" as the action.
 - **FR-009**: Selecting a lifecycle action MUST transition to the dashboard and open a worker spawn dialog pre-configured for the appropriate agent role and feature path.
-- **FR-010**: The browser MUST support keyboard navigation (up/down arrows to move selection, Enter to select, Escape to go back).
+- **FR-010**: The browser MUST support keyboard navigation (up/down arrows or j/k to move selection, Enter or right arrow to select/expand, Escape or left arrow to go back/collapse).
 - **FR-011**: The browser MUST show a helpful empty state message when no features exist in `kitty-specs/`.
 - **FR-012**: The browser MUST validate that `spec-kitty` CLI is available before opening, showing an error note if not found.
-- **FR-013**: Escape from the lifecycle sub-menu MUST return to the browser list; Escape from the browser MUST return to the launcher.
+- **FR-013**: Escape or left arrow from the lifecycle sub-menu MUST return to the browser list; Escape or left arrow from the browser MUST return to the launcher.
 
 ### Non-Functional Requirements
 
