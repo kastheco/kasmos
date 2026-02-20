@@ -137,7 +137,7 @@
 - [x] T022 Implement `paneSwapCmd()` in `internal/tui/commands.go`: calls `TmuxBackend.SwapActive()`, returns `paneSwappedMsg`
 - [x] T023 Implement `paneFocusCmd()` in `internal/tui/commands.go`: calls `TmuxCLI.SelectPane()` for worker focus, and dashboard focus return
 - [x] T024 Update worker selection handling in `internal/tui/update.go`: on selection change in tmux mode, emit `paneSwapCmd` instead of refreshing viewport content
-- [ ] T025 Update `renderViewport()` in `internal/tui/panels.go`: in tmux mode with no workers, render placeholder text indicating the right column is reserved for worker panes
+- [x] T025 Update `renderViewport()` in `internal/tui/panels.go`: in tmux mode with no workers, render placeholder text indicating the right column is reserved for worker panes
 - [ ] T044 Implement narrow terminal adaptation for tmux mode: when terminal width is below the split threshold, alternate between full-width dashboard and full-width worker pane instead of side-by-side split. Use the existing fullscreen toggle (`f` key) pattern. Detect width on `tea.WindowSizeMsg` and adjust `join-pane` size or skip splitting. See spec.md edge case L124 and research.md section 4.
 
 ### Implementation Notes
