@@ -1,7 +1,7 @@
 ---
 work_package_id: WP07
 title: Interactive opencode for tmux Workers
-lane: "doing"
+lane: "for_review"
 dependencies: []
 base_branch: main
 base_commit: 0cfb003c7eb526018ce88f6f9251feccbe5f4d43
@@ -273,3 +273,7 @@ opencode --agent coder --model provider/model --prompt "prompt text"
 - Verify WorkDir support uses tmux `-c` flag (not `cd && ...`)
 - Check that long prompts (460+ lines) work correctly via `--prompt`
 - Confirm `buildArgs` test cases cover the flag differences between modes
+
+## Activity Log
+
+- 2026-02-20T08:29:24Z – unknown – shell_pid=4116783 – lane=for_review – All 4 subtasks complete. tmux backend uses interactive opencode with --prompt flag. WorkDir via -c. Subprocess untouched.
