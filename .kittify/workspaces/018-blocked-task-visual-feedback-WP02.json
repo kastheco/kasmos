@@ -1,0 +1,14 @@
+{
+  "wp_id": "WP02",
+  "feature_slug": "018-blocked-task-visual-feedback",
+  "worktree_path": ".worktrees/018-blocked-task-visual-feedback-WP02",
+  "branch_name": "018-blocked-task-visual-feedback-WP02",
+  "base_branch": "018-blocked-task-visual-feedback-WP01",
+  "base_commit": "8f5dc5deda9b17e2044c1514a4341c4667bbae4e",
+  "dependencies": [
+    "WP01"
+  ],
+  "created_at": "2026-02-19T19:28:13.254909+00:00",
+  "created_by": "implement-command",
+  "vcs_backend": "git"
+}

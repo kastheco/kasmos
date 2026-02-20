@@ -13,7 +13,7 @@ import (
 // config/default/agents/ directory into the project's .opencode/agents/.
 // Existing files are skipped unless force is true.
 func WriteAgentDefinitions(dir string, force bool) (created, skipped int, err error) {
-	agentsFS, err := fs.Sub(profilecfg.DefaultProfile, "default/agents")
+	agentsFS, err := fs.Sub(profilecfg.DefaultProfile, "kasmos/agents")
 	if err != nil {
 		return 0, 0, fmt.Errorf("access embedded agents: %w", err)
 	}

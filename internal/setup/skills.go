@@ -10,7 +10,7 @@ import (
 )
 
 func WriteSkills(projectDir string) (written int, err error) {
-	skillsFS, err := fs.Sub(profilecfg.DefaultProfile, "default/skills")
+	skillsFS, err := fs.Sub(profilecfg.DefaultProfile, "kasmos/skills")
 	if err != nil {
 		return 0, fmt.Errorf("access embedded skills: %w", err)
 	}

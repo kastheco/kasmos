@@ -2,5 +2,5 @@ package config
 
 import "embed"
 
-//go:embed all:default
+//go:embed all:kasmos
 var DefaultProfile embed.FS
