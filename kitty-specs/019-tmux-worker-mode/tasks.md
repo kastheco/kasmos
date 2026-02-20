@@ -99,7 +99,7 @@
 **Estimated Size**: ~350 lines
 
 ### Included Subtasks
-- [ ] T015 Add `--tmux` flag to cobra command in `cmd/kasmos/main.go`
+- [x] T015 Add `--tmux` flag to cobra command in `cmd/kasmos/main.go`
 - [ ] T016 Implement backend selection logic: `--tmux` flag detection, `$TMUX` environment validation, `NewTmuxBackend()` construction
 - [ ] T017 Validate `--tmux` and `-d` mutual exclusivity with clear error message (FR-016)
 - [ ] T018 Add `tmuxMode bool`, `tmuxBackend *worker.TmuxBackend`, `kasmosPaneID string`, and `activePaneID string` fields to TUI Model in `internal/tui/model.go`
