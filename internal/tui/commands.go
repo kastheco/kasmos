@@ -127,6 +127,67 @@ func spawnWorkerCmd(backend worker.WorkerBackend, cfg worker.SpawnConfig) tea.Cm
 	}
 }
 
+func tmuxInitCmd(backend *worker.TmuxBackend) tea.Cmd {
+	return func() tea.Msg {
+		if backend == nil {
+			return tmuxInitMsg{Err: errors.New("tmux backend is nil")}
+		}
+
+		kasmosPaneID := strings.TrimSpace(backend.KasmosPaneID())
+		if kasmosPaneID == "" {
+			return tmuxInitMsg{Err: errors.New("tmux backend is not initialized: missing kasmos pane")}
+		}
+
+		parkingWindow := strings.TrimSpace(backend.ParkingWindowID())
+		if parkingWindow == "" {
+			return tmuxInitMsg{Err: errors.New("tmux backend is not initialized: missing parking window")}
+		}
+
+		return tmuxInitMsg{
+			KasmosPaneID:  kasmosPaneID,
+			ParkingWindow: parkingWindow,
+		}
+	}
+}
+
+func paneSwapCmd(backend *worker.TmuxBackend, workerID string, narrow bool) tea.Cmd {
+	return func() tea.Msg {
+		if backend == nil {
+			return paneSwappedMsg{WorkerID: workerID, Err: errors.New("tmux backend is nil")}
+		}
+
+		workerID = strings.TrimSpace(workerID)
+		if workerID == "" {
+			return paneSwappedMsg{WorkerID: workerID, Err: errors.New("worker ID is empty")}
+		}
+
+		backend.SetNarrowLayout(narrow)
+		if err := backend.SwapActive(workerID); err != nil {
+			return paneSwappedMsg{WorkerID: workerID, Err: err}
+		}
+
+		return paneSwappedMsg{
+			WorkerID: workerID,
+			PaneID:   backend.ActivePaneID(),
+		}
+	}
+}
+
+func paneFocusCmd(backend *worker.TmuxBackend, paneID string) tea.Cmd {
+	return func() tea.Msg {
+		if backend == nil {
+			return paneFocusMsg{PaneID: paneID, Err: errors.New("tmux backend is nil")}
+		}
+
+		paneID = strings.TrimSpace(paneID)
+		if paneID == "" {
+			return paneFocusMsg{PaneID: paneID, Err: errors.New("pane ID is empty")}
+		}
+
+		return paneFocusMsg{PaneID: paneID, Err: backend.FocusPane(paneID)}
+	}
+}
+
 func readWorkerOutput(workerID string, reader io.Reader, program *tea.Program) {
 	if workerID == "" || reader == nil || program == nil {
 		return

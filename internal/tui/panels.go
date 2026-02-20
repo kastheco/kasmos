@@ -55,6 +55,9 @@ func (m *Model) renderViewport() string {
 	if m.viewportInnerWidth <= 0 || m.viewportInnerHeight <= 0 {
 		return ""
 	}
+	if m.tmuxMode {
+		return m.renderTmuxViewportPlaceholder()
+	}
 
 	title := "output"
 	if m.analysisMode && m.analysisResult != nil {
@@ -76,6 +79,64 @@ func (m *Model) renderViewport() string {
 			MaxWidth(m.viewportInnerWidth).
 			MaxHeight(max(1, m.viewportInnerHeight-1)).
 			Render(m.viewport.View()),
+	)
+
+	return panelStyle(m.focused == panelViewport, m.viewportInnerHeight).
+		Width(m.viewportInnerWidth).
+		Render(content)
+}
+
+func (m *Model) renderTmuxViewportPlaceholder() string {
+	title := "tmux worker pane"
+	lines := []string{}
+
+	if !m.tmuxReady {
+		lines = []string{
+			"",
+			"  Initializing tmux worker mode...",
+			"",
+			"  If setup fails, kasmos falls back to",
+			"  the standard output viewport.",
+		}
+	} else if selected := m.selectedWorker(); selected != nil {
+		title = fmt.Sprintf("worker: %s %s", selected.ID, selected.Role)
+		lines = []string{
+			"",
+			"  Interactive terminal is shown in tmux.",
+			"",
+			fmt.Sprintf("  Worker: %s", selected.ID),
+			fmt.Sprintf("  Role: %s", selected.Role),
+			fmt.Sprintf("  State: %s", selected.State),
+		}
+	} else {
+		lines = []string{
+			"",
+			"  Tmux worker mode is active.",
+			"",
+			"  Spawn a worker to open an interactive pane",
+			"  beside the dashboard.",
+			"",
+			"  Press n to create your first task.",
+		}
+	}
+
+	if m.tmuxNarrow {
+		lines = append(lines,
+			"",
+			"  Narrow terminal mode: pane swaps use",
+			"  full-width tmux sizing.",
+		)
+	}
+
+	body := strings.Join(lines, "\n")
+	content := lipgloss.JoinVertical(
+		lipgloss.Left,
+		lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render(title),
+		lipgloss.NewStyle().
+			MaxWidth(m.viewportInnerWidth).
+			MaxHeight(max(1, m.viewportInnerHeight-1)).
+			Foreground(colorMidGray).
+			Render(body),
 	)
 
 	return panelStyle(m.focused == panelViewport, m.viewportInnerHeight).

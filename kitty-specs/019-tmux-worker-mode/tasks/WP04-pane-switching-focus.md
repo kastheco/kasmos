@@ -1,7 +1,7 @@
 ---
 work_package_id: WP04
 title: Pane Switching & Focus Management
-lane: "done"
+lane: "doing"
 dependencies: [WP03]
 base_branch: 019-tmux-worker-mode-WP03
 base_commit: 51bf551535d6bb83ed5008c7bc73fd54509a640d
@@ -18,8 +18,8 @@ phase: Phase 2 - TUI Integration
 assignee: ''
 agent: ''
 shell_pid: "3654692"
-review_status: "approved"
-reviewed_by: "kas"
+review_status: ''
+reviewed_by: ''
 history:
 - timestamp: '2026-02-19T03:53:34Z'
   lane: planned
@@ -513,4 +513,3 @@ case tea.WindowSizeMsg:
 ## Activity Log
 
 - 2026-02-19T03:53:34Z - system - lane=planned - Prompt created.
-- 2026-02-20T04:50:10Z – unknown – shell_pid=3654692 – lane=done – Tmux pane switching, focus management, viewport placeholder, narrow adaptation all implemented. 258 insertions across 6 files. /kas.verify passed.

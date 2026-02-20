@@ -1,7 +1,7 @@
 ---
 work_package_id: WP03
 title: CLI Flag & Backend Selection
-lane: "doing"
+lane: "done"
 dependencies: [WP02]
 base_branch: 019-tmux-worker-mode-WP02
 base_commit: e1b1fc55cff2f383c549d48718a79a59269961d6
@@ -16,8 +16,8 @@ phase: Phase 2 - TUI Integration
 assignee: ''
 agent: ''
 shell_pid: "3643387"
-review_status: ''
-reviewed_by: ''
+review_status: "approved"
+reviewed_by: "kas"
 history:
 - timestamp: '2026-02-19T03:53:34Z'
   lane: planned
@@ -305,3 +305,4 @@ if tmuxMode {
 ## Activity Log
 
 - 2026-02-19T03:53:34Z - system - lane=planned - Prompt created.
+- 2026-02-20T04:40:25Z – unknown – shell_pid=3643387 – lane=done – CLI flag, backend selection, mutual exclusivity, Model fields, status bar indicator all implemented. 81 insertions across 3 files. /kas.verify passed.
