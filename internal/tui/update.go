@@ -348,8 +348,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshTableRows()
 		m.triggerPersist()
 
-		readWorkerOutput(w.ID, w.Handle.Stdout(), m.program)
-		return m, waitWorkerCmd(w.ID, w.Handle)
+		if !w.Handle.Interactive() {
+			readWorkerOutput(w.ID, w.Handle.Stdout(), m.program)
+			return m, waitWorkerCmd(w.ID, w.Handle)
+		}
+
+		return m, nil
 
 	case workerOutputMsg:
 		w := m.manager.Get(msg.WorkerID)
@@ -381,6 +385,57 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setViewportContent(fmt.Sprintf("pane focus failed: %v", msg.Err), false)
 		}
 		return m, nil
+
+	case panesPolledMsg:
+		if len(msg.Statuses) == 0 {
+			return m, nil
+		}
+
+		pollCmds := make([]tea.Cmd, 0, len(msg.Statuses))
+		for _, status := range msg.Statuses {
+			status := status
+			if status.Missing {
+				wasActive := status.PaneID != "" && status.PaneID == msg.ActivePaneID
+				pollCmds = append(pollCmds, func() tea.Msg {
+					return workerKilledMsg{WorkerID: status.WorkerID, PaneID: status.PaneID, WasActive: wasActive}
+				})
+				continue
+			}
+			if status.Dead {
+				pollCmds = append(pollCmds, func() tea.Msg {
+					return paneExitedMsg{WorkerID: status.WorkerID, PaneID: status.PaneID, ExitCode: status.ExitCode}
+				})
+			}
+		}
+
+		if len(pollCmds) == 0 {
+			return m, nil
+		}
+
+		return m, tea.Batch(pollCmds...)
+
+	case paneExitedMsg:
+		w := m.manager.Get(msg.WorkerID)
+		if w == nil || w.Handle == nil {
+			return m, nil
+		}
+
+		if w.Output == nil {
+			w.Output = worker.NewOutputBuffer(worker.DefaultMaxLines)
+		}
+
+		exitCmd := paneExitedWorkerCmd(w.ID, msg.ExitCode, w.SpawnedAt, w.Handle, w.Output)
+		exitCmds := []tea.Cmd{exitCmd}
+
+		if m.tmuxMode && m.tmuxReady && m.tmuxBackend != nil && strings.TrimSpace(msg.PaneID) != "" {
+			if msg.PaneID == m.tmuxBackend.ActivePaneID() {
+				if kasmosPaneID := strings.TrimSpace(m.tmuxBackend.KasmosPaneID()); kasmosPaneID != "" {
+					exitCmds = append(exitCmds, paneFocusCmd(m.tmuxBackend, kasmosPaneID))
+				}
+			}
+		}
+
+		return m, tea.Batch(exitCmds...)
 
 	case workerExitedMsg:
 		w := m.manager.Get(msg.WorkerID)
@@ -544,16 +599,35 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case workerKilledMsg:
 		if w := m.manager.Get(msg.WorkerID); w != nil {
+			if notifier, ok := w.Handle.(worker.ExitNotifier); ok {
+				duration := time.Duration(0)
+				if !w.SpawnedAt.IsZero() {
+					duration = time.Since(w.SpawnedAt)
+					if duration < 0 {
+						duration = 0
+					}
+				}
+				notifier.NotifyExit(-1, duration)
+			}
+
 			w.State = worker.StateKilled
 			w.ExitedAt = time.Now()
 			w.Handle = nil
 			m.logDaemonEvent(workerKillEvent(msg.WorkerID))
 			m.refreshTableRows()
+			m.updateKeyStates()
 			if w.ID == m.selectedWorkerID {
 				m.refreshViewportFromSelected(true)
 			}
 			m.triggerPersist()
 		}
+
+		if m.tmuxMode && m.tmuxReady && m.tmuxBackend != nil && msg.WasActive {
+			if kasmosPaneID := strings.TrimSpace(m.tmuxBackend.KasmosPaneID()); kasmosPaneID != "" {
+				return m, paneFocusCmd(m.tmuxBackend, kasmosPaneID)
+			}
+		}
+
 		return m, nil
 
 	case analyzeCompletedMsg:
@@ -608,7 +682,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.refreshTableRows()
-		return m, tickCmd()
+		tickCmds := []tea.Cmd{tickCmd()}
+		if m.tmuxMode && m.tmuxReady && m.tmuxBackend != nil {
+			tickCmds = append(tickCmds, tmuxPollCmd(m.tmuxBackend))
+		}
+		return m, tea.Batch(tickCmds...)
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd

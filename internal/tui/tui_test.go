@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -210,6 +211,27 @@ func TestUpdateKeyStates(t *testing.T) {
 				}
 				if !m.keys.Restart.Enabled() {
 					t.Fatal("restart should be enabled for failed worker")
+				}
+			},
+		},
+		{
+			name: "tmux mode disables ai helpers",
+			setup: func(m *Model) {
+				m.manager.Add(&worker.Worker{ID: "w-005", State: worker.StateFailed})
+				m.selectedWorkerID = "w-005"
+				m.focused = panelTable
+				m.taskSource = &task.SpecKittySource{Dir: "kitty-specs/test"}
+				m.taskSourceType = "spec-kitty"
+				m.loadedTasks = []task.Task{{ID: "T001", State: task.TaskUnassigned}}
+				m.tmuxMode = true
+			},
+			assert: func(t *testing.T, m *Model) {
+				t.Helper()
+				if m.keys.Analyze.Enabled() {
+					t.Fatal("analyze should be disabled in tmux mode")
+				}
+				if m.keys.GenPrompt.Enabled() {
+					t.Fatal("gen prompt should be disabled in tmux mode")
 				}
 			},
 		},
@@ -632,6 +654,68 @@ func TestDaemonEventFormatting(t *testing.T) {
 	}
 }
 
+func TestWorkerSpawnedMsgSkipsWaitForInteractiveHandles(t *testing.T) {
+	tests := []struct {
+		name        string
+		interactive bool
+		wantCmd     bool
+	}{
+		{name: "interactive handle", interactive: true, wantCmd: false},
+		{name: "subprocess handle", interactive: false, wantCmd: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := newTestModel(false)
+			m.manager.Add(&worker.Worker{ID: "w-101", State: worker.StateSpawning, SpawnedAt: time.Now()})
+
+			handle := &testWorkerHandle{interactive: tt.interactive}
+			_, cmd := m.Update(workerSpawnedMsg{WorkerID: "w-101", Handle: handle})
+
+			if (cmd != nil) != tt.wantCmd {
+				t.Fatalf("command presence mismatch: got=%t want=%t", cmd != nil, tt.wantCmd)
+			}
+
+			w := m.manager.Get("w-101")
+			if w == nil || w.State != worker.StateRunning {
+				t.Fatalf("worker state mismatch: got=%v", w)
+			}
+		})
+	}
+}
+
+func TestPaneExitedWorkerCmdCapturesOutputAndExtractsSessionID(t *testing.T) {
+	handle := &testWorkerHandle{
+		interactive: true,
+		capture:     `{"session_id":"ses_test123"}`,
+	}
+	output := worker.NewOutputBuffer(worker.DefaultMaxLines)
+	spawnedAt := time.Now().Add(-2 * time.Second)
+
+	msg := paneExitedWorkerCmd("w-201", 9, spawnedAt, handle, output)()
+	exited, ok := msg.(workerExitedMsg)
+	if !ok {
+		t.Fatalf("expected workerExitedMsg, got %T", msg)
+	}
+
+	if exited.WorkerID != "w-201" || exited.ExitCode != 9 {
+		t.Fatalf("exit metadata mismatch: %+v", exited)
+	}
+	if exited.SessionID != "ses_test123" {
+		t.Fatalf("session id mismatch: got=%q want=%q", exited.SessionID, "ses_test123")
+	}
+	if exited.Duration <= 0 {
+		t.Fatalf("expected positive duration, got %s", exited.Duration)
+	}
+
+	if handle.notifyCalls != 1 || handle.notifiedCode != 9 {
+		t.Fatalf("notify mismatch: calls=%d code=%d", handle.notifyCalls, handle.notifiedCode)
+	}
+	if !strings.Contains(output.Content(), `ses_test123`) {
+		t.Fatalf("captured output not appended: %q", output.Content())
+	}
+}
+
 func mustNotPanic(t *testing.T, name string, fn func()) {
 	t.Helper()
 	defer func() {
@@ -658,4 +742,47 @@ func writeSessionFile(t *testing.T, path string, state persist.SessionState) {
 
 func newTestModel(showLauncher bool) *Model {
 	return NewModel(nil, nil, "test", config.DefaultConfig(), showLauncher)
+}
+
+type testWorkerHandle struct {
+	interactive  bool
+	capture      string
+	captureErr   error
+	notifyCalls  int
+	notifiedCode int
+	notifiedDur  time.Duration
+	waitResult   worker.ExitResult
+}
+
+func (h *testWorkerHandle) Stdout() io.Reader {
+	if h.interactive {
+		return nil
+	}
+	return strings.NewReader("")
+}
+
+func (h *testWorkerHandle) Wait() worker.ExitResult {
+	return h.waitResult
+}
+
+func (h *testWorkerHandle) Kill(time.Duration) error {
+	return nil
+}
+
+func (h *testWorkerHandle) PID() int {
+	return 1
+}
+
+func (h *testWorkerHandle) Interactive() bool {
+	return h.interactive
+}
+
+func (h *testWorkerHandle) CaptureOutput() (string, error) {
+	return h.capture, h.captureErr
+}
+
+func (h *testWorkerHandle) NotifyExit(code int, duration time.Duration) {
+	h.notifyCalls++
+	h.notifiedCode = code
+	h.notifiedDur = duration
 }

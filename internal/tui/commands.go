@@ -188,6 +188,22 @@ func paneFocusCmd(backend *worker.TmuxBackend, paneID string) tea.Cmd {
 	}
 }
 
+func tmuxPollCmd(backend *worker.TmuxBackend) tea.Cmd {
+	return func() tea.Msg {
+		if backend == nil {
+			return nil
+		}
+
+		activePaneID := strings.TrimSpace(backend.ActivePaneID())
+		statuses, err := backend.PollPanes()
+		if err != nil || len(statuses) == 0 {
+			return nil
+		}
+
+		return panesPolledMsg{Statuses: statuses, ActivePaneID: activePaneID}
+	}
+}
+
 func readWorkerOutput(workerID string, reader io.Reader, program *tea.Program) {
 	if workerID == "" || reader == nil || program == nil {
 		return
@@ -220,6 +236,42 @@ func waitWorkerCmd(workerID string, handle worker.WorkerHandle) tea.Cmd {
 			Duration:  result.Duration,
 			SessionID: result.SessionID,
 			Err:       result.Error,
+		}
+	}
+}
+
+func paneExitedWorkerCmd(workerID string, exitCode int, spawnedAt time.Time, handle worker.WorkerHandle, output *worker.OutputBuffer) tea.Cmd {
+	return func() tea.Msg {
+		if handle == nil {
+			return workerExitedMsg{WorkerID: workerID, ExitCode: exitCode, Err: errors.New("worker handle is nil")}
+		}
+
+		duration := time.Duration(0)
+		if !spawnedAt.IsZero() {
+			duration = time.Since(spawnedAt)
+			if duration < 0 {
+				duration = 0
+			}
+		}
+
+		if capturer, ok := handle.(worker.OutputCapturer); ok {
+			captured, err := capturer.CaptureOutput()
+			if err == nil && strings.TrimSpace(captured) != "" && output != nil {
+				output.Append(captured)
+			}
+		}
+
+		sessionID := extractSessionID(output)
+
+		if notifier, ok := handle.(worker.ExitNotifier); ok {
+			notifier.NotifyExit(exitCode, duration)
+		}
+
+		return workerExitedMsg{
+			WorkerID:  workerID,
+			ExitCode:  exitCode,
+			Duration:  duration,
+			SessionID: sessionID,
 		}
 	}
 }
