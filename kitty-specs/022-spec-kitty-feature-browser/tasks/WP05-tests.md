@@ -1,9 +1,13 @@
 ---
 work_package_id: WP05
 title: Tests
-lane: planned
+lane: "doing"
 dependencies: [WP03, WP04]
+base_branch: 022-spec-kitty-feature-browser-WP04
+base_commit: 4a86fa2d208c63d21f00bbc79092eb9bf72a0a07
+created_at: '2026-02-20T09:08:41.499750+00:00'
 subtasks: [T024, T025, T026, T027, T028, T029]
+shell_pid: "28591"
 history:
 - timestamp: '2026-02-20T12:00:00Z'
   lane: planned
