@@ -7,6 +7,7 @@ subtasks:
   - "T023"
   - "T024"
   - "T025"
+  - "T044"
 title: "Pane Switching & Focus Management"
 phase: "Phase 2 - TUI Integration"
 lane: "planned"
@@ -446,6 +447,44 @@ Note: Adjust the `panelStyle` call to match the current signature in the codebas
 
 **Files**: `internal/tui/panels.go` (modify, ~40 lines added)
 **Parallel?**: Yes - can proceed alongside T020 (different files).
+
+---
+
+### Subtask T044 - Narrow terminal adaptation for tmux mode
+
+**Purpose**: When the terminal is too narrow for the side-by-side split (dashboard + worker pane), adapt the layout so dashboard and worker alternate full-width. Matches the existing fullscreen toggle pattern. See spec.md edge case L124.
+
+**Steps**:
+1. Define a width threshold constant (e.g., `tmuxSplitMinWidth = 160`). This can be refined during implementation. Consider reusing the existing responsive breakpoint system from `internal/tui/layout.go`.
+
+2. In the `tea.WindowSizeMsg` handler in `update.go`, when `tmuxMode` is active, check if the terminal width is below the threshold:
+
+```go
+case tea.WindowSizeMsg:
+    // ... existing resize handling ...
+    if m.tmuxMode {
+        m.tmuxNarrow = msg.Width < tmuxSplitMinWidth
+    }
+```
+
+3. Add a `tmuxNarrow bool` field to the Model struct (in `model.go`).
+
+4. When `tmuxNarrow` is true and a worker is selected:
+   - The worker pane takes full terminal width (no side-by-side split)
+   - The kasmos dashboard is either minimized or hidden
+   - The existing fullscreen toggle (`f` key) returns to the dashboard at full width
+
+5. Adapt `paneSwapCmd` behavior: in narrow mode, use `join-pane` without `-l 50%` (let the worker take full width). When returning to dashboard, park the worker pane and resize kasmos to full width.
+
+6. Alternative simpler approach: in narrow mode, skip the `join-pane` split entirely. The worker pane stays in the parking window. The user uses `tmux select-window` to jump between the kasmos window and a worker-display window. This avoids layout complexity but changes the UX model.
+
+**Recommended approach**: Keep the join-pane model but adjust the `-l` size parameter based on terminal width. For narrow terminals, give the worker pane 100% and hide the dashboard viewport (the dashboard still runs but its pane is at minimum width). The `f` key toggles between states.
+
+**Files**:
+- `internal/tui/model.go` (modify, ~2 lines - add tmuxNarrow field)
+- `internal/tui/update.go` (modify, ~10 lines - narrow detection on resize)
+- `internal/tui/commands.go` (modify, ~10 lines - size param adjustment)
+**Parallel?**: No - depends on T024 (pane swap logic must exist first).
 
 ---
 

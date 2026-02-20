@@ -58,8 +58,8 @@ No dependencies - this WP can start immediately.
 ## Objectives & Success Criteria
 
 1. **Define `TmuxCLI` interface** in `internal/worker/tmux_cli.go` that abstracts all tmux CLI interactions.
-2. **Implement `tmuxExec`** as the real implementation using `os/exec.Command("tmux", ...)`.
-3. **All 12 interface methods** are implemented and handle errors with descriptive messages.
+2. **Implement `tmuxExec`** as the real implementation using `os/exec.CommandContext("tmux", ...)`.
+3. **All interface methods** are implemented and handle errors with descriptive messages.
 4. **`PaneInfo` parsing** correctly extracts pane ID, PID, dead status, exit code from tmux format strings.
 5. **`go build ./internal/worker/...`** compiles without errors.
 6. **Unit tests** with a mock `TmuxCLI` validate interface contract.
@@ -71,7 +71,7 @@ No dependencies - this WP can start immediately.
 - **Design Decision**: Direct CLI via `os/exec`, no Go tmux library (see `kitty-specs/019-tmux-worker-mode/research.md` section 1).
 - **Minimum tmux version**: 2.6+ (September 2017). Version check is advisory (warn, not error).
 - **All tmux commands**: See research.md section 1 table for the exact tmux CLI invocations.
-- **Environment tagging**: Uses `tmux set-environment` / `show-environment` per session scope (research.md section 2).
+- **Environment tagging**: Uses `tmux set-environment` / `show-environment` with `KASMOS_PANE_<worker_id>=<pane_id>` keys and `KASMOS_*` session metadata tags (research.md section 2).
 - **Data model**: See `kitty-specs/019-tmux-worker-mode/data-model.md` for TmuxCLI interface and PaneInfo definitions.
 - **Constitution**: Follow Go conventions (`internal/` packages, explicit error handling with `fmt.Errorf` wrapping).
 
@@ -91,33 +91,61 @@ No dependencies - this WP can start immediately.
 
 **Steps**:
 1. Create `internal/worker/tmux_cli.go`.
-2. Define the `TmuxCLI` interface with all 12 methods (from data-model.md):
+2. Define the `TmuxCLI` interface (from data-model.md):
 
 ```go
 // TmuxCLI abstracts tmux CLI interactions for testability.
+// All methods accept context.Context for timeout/cancellation.
 // Real implementation: tmuxExec (os/exec). Test implementation: mock.
 type TmuxCLI interface {
     // Pane lifecycle
-    SplitWindow(target, cmd string, horizontal bool, size int) (paneID string, err error)
-    KillPane(paneID string) error
-    SelectPane(paneID string) error
+    SplitWindow(ctx context.Context, opts SplitOpts) (paneID string, err error)
+    KillPane(ctx context.Context, paneID string) error
+    SelectPane(ctx context.Context, paneID string) error
 
-    // Pane movement
-    JoinPane(src, dst string, horizontal bool, size int) error
-    BreakPane(paneID string) error
+    // Pane movement (used for both parking and showing)
+    JoinPane(ctx context.Context, opts JoinOpts) error
 
     // Window management
-    NewWindow(name string) (windowID string, err error)
+    NewWindow(ctx context.Context, opts NewWindowOpts) (windowID string, err error)
 
-    // Pane queries
-    ListPanes(target string) ([]PaneInfo, error)
-    CapturePane(paneID string) (content string, err error)
-    CurrentPaneID() (paneID string, err error)
-    Version() (string, error)
+    // Introspection
+    ListPanes(ctx context.Context, target string) ([]PaneInfo, error)
+    DisplayMessage(ctx context.Context, format string) (string, error)
+    CapturePane(ctx context.Context, paneID string) (content string, err error)
+    Version(ctx context.Context) (string, error)
 
-    // Environment tagging
-    SetPaneEnv(paneID, key, value string) error
-    GetPaneEnv(paneID, key string) (value string, err error)
+    // Environment tagging (session-scope)
+    SetEnvironment(ctx context.Context, key, value string) error
+    ShowEnvironment(ctx context.Context) (map[string]string, error)
+    UnsetEnvironment(ctx context.Context, key string) error
+
+    // Per-pane options
+    SetPaneOption(ctx context.Context, paneID, key, value string) error
+}
+
+// SplitOpts configures split-window.
+type SplitOpts struct {
+    Target     string   // pane/window to split from
+    Horizontal bool     // -h flag
+    Size       string   // -l flag: "50%" or "80"
+    Command    []string // command to run in new pane
+    Env        []string // environment variables as "KEY=VALUE" for -e flags
+}
+
+// JoinOpts configures join-pane (used for both parking and showing).
+type JoinOpts struct {
+    Source     string // -s: pane to move
+    Target     string // -t: destination window/pane
+    Horizontal bool   // -h: horizontal split
+    Detached   bool   // -d: don't follow focus (used when parking)
+    Size       string // -l: size spec ("50%")
+}
+
+// NewWindowOpts configures new-window.
+type NewWindowOpts struct {
+    Detached bool   // -d: don't switch to it
+    Name     string // -n: window name
 }
 ```
 
@@ -139,6 +167,25 @@ Note: `WorkerID` and `SessionTag` fields from the data model are derived at a hi
 
 ```go
 var ErrTmuxNotFound = errors.New("tmux binary not found in PATH")
+
+// TmuxError wraps a failed tmux command with its stderr output.
+type TmuxError struct {
+    Command []string
+    Stderr  string
+    Err     error
+}
+
+func (e *TmuxError) Error() string { ... }
+func (e *TmuxError) Unwrap() error { return e.Err }
+
+// IsNotFound checks if a tmux error indicates the target doesn't exist.
+func IsNotFound(err error) bool { ... } // checks stderr for "can't find", "not found"
+
+// IsNoSpace checks if tmux refused a split due to terminal size.
+func IsNoSpace(err error) bool { ... } // checks stderr for "no space for new pane"
+
+// IsSessionGone checks if the tmux session/server is gone.
+func IsSessionGone(err error) bool { ... } // checks "no server running", "session not found"
 ```
 
 **Files**: `internal/worker/tmux_cli.go` (new, ~60 lines)
@@ -177,8 +224,8 @@ func NewTmuxExec() (*tmuxExec, error) {
 
 ```go
 // run executes a tmux command and returns stdout. Stderr is captured in error messages.
-func (t *tmuxExec) run(args ...string) (string, error) {
-    cmd := exec.Command(t.bin, args...)
+func (t *tmuxExec) run(ctx context.Context, args ...string) (string, error) {
+    cmd := exec.CommandContext(ctx, t.bin, args...)
     var stdout, stderr bytes.Buffer
     cmd.Stdout = &stdout
     cmd.Stderr = &stderr
@@ -209,22 +256,23 @@ var _ TmuxCLI = (*tmuxExec)(nil)
 1. **SplitWindow**: Creates a new pane by splitting an existing one.
 
 ```go
-func (t *tmuxExec) SplitWindow(target, cmd string, horizontal bool, size int) (string, error) {
+func (t *tmuxExec) SplitWindow(ctx context.Context, opts SplitOpts) (string, error) {
     args := []string{"split-window"}
-    if horizontal {
+    if opts.Horizontal {
         args = append(args, "-h")
     }
-    if target != "" {
-        args = append(args, "-t", target)
+    if opts.Target != "" {
+        args = append(args, "-t", opts.Target)
     }
-    if size > 0 {
-        args = append(args, "-l", fmt.Sprintf("%d%%", size))
+    if opts.Size != "" {
+        args = append(args, "-l", opts.Size)
     }
     args = append(args, "-P", "-F", "#{pane_id}")
-    if cmd != "" {
-        args = append(args, cmd)
+    for _, kv := range opts.Env {
+        args = append(args, "-e", kv)
     }
-    return t.run(args...)
+    args = append(args, opts.Command...)
+    return t.run(ctx, args...)
 }
 ```
 
@@ -233,8 +281,8 @@ The `-P` flag prints the new pane info, `-F '#{pane_id}'` formats as just the pa
 2. **KillPane**: Terminates a pane and its process.
 
 ```go
-func (t *tmuxExec) KillPane(paneID string) error {
-    _, err := t.run("kill-pane", "-t", paneID)
+func (t *tmuxExec) KillPane(ctx context.Context, paneID string) error {
+    _, err := t.run(ctx, "kill-pane", "-t", paneID)
     return err
 }
 ```
@@ -242,8 +290,8 @@ func (t *tmuxExec) KillPane(paneID string) error {
 3. **SelectPane**: Moves keyboard focus to a pane.
 
 ```go
-func (t *tmuxExec) SelectPane(paneID string) error {
-    _, err := t.run("select-pane", "-t", paneID)
+func (t *tmuxExec) SelectPane(ctx context.Context, paneID string) error {
+    _, err := t.run(ctx, "select-pane", "-t", paneID)
     return err
 }
 ```
@@ -253,77 +301,30 @@ func (t *tmuxExec) SelectPane(paneID string) error {
 
 ---
 
-### Subtask T004 - Implement pane movement methods: JoinPane, BreakPane, NewWindow
+### Subtask T004 - Implement pane movement methods: JoinPane and NewWindow
 
-**Purpose**: These methods move panes between the visible kasmos window and the hidden parking window. Core to the pane swap mechanism (research.md section 4).
+**Purpose**: Move panes between the visible kasmos window and the hidden parking
+window, and create the parking window. Core to the pane swap mechanism (research.md
+section 4).
 
 **Steps**:
 
-1. **JoinPane**: Brings a pane from one location to another (parking -> kasmos window).
+1. Implement `JoinPane` using `JoinOpts` so callers can select both park/show modes.
+2. Implement `NewWindow` with `-d -P -F '#{window_id}'` and optional name.
 
-```go
-func (t *tmuxExec) JoinPane(src, dst string, horizontal bool, size int) error {
-    args := []string{"join-pane", "-s", src, "-t", dst}
-    if horizontal {
-        args = append(args, "-h")
-    }
-    if size > 0 {
-        args = append(args, "-l", fmt.Sprintf("%d%%", size))
-    }
-    _, err := t.run(args...)
-    return err
-}
-```
+Note: Both parking (hide) and showing use `JoinPane` with different options:
+- **Park**: `JoinOpts{Source: paneID, Target: parkingWindow, Detached: true}`
+- **Show**: `JoinOpts{Source: paneID, Target: kasmosWindow, Horizontal: true, Size: "50%"}`
 
-2. **BreakPane**: Moves a pane to its own window (kasmos window -> parking). The `-d` flag prevents switching to the new window.
-
-```go
-func (t *tmuxExec) BreakPane(paneID string) error {
-    // -d: don't switch to the new window
-    // -s: source pane
-    _, err := t.run("break-pane", "-d", "-s", paneID)
-    return err
-}
-```
-
-Note: `break-pane` moves the pane to a new window. For parking, we need to move it to the *existing* parking window. Actually, `break-pane` creates a new window by default. To move to parking, we use `join-pane` in reverse or `move-pane`. Let me reconsider.
-
-**Correction**: For the parking mechanism:
-- **Hide a pane**: `tmux join-pane -s <visible-pane> -t <parking-window>` (moves pane TO parking)
-- **Show a pane**: `tmux join-pane -s <parking-window>.<pane> -t <kasmos-window> -h -l 50%` (moves pane FROM parking)
-
-So `BreakPane` should move the pane to the parking window, not create a new window:
-
-```go
-func (t *tmuxExec) BreakPane(paneID string) error {
-    // break-pane with -d keeps the focus on the source window
-    _, err := t.run("break-pane", "-d", "-s", paneID)
-    return err
-}
-```
-
-Actually, `break-pane` always creates a new window. The TmuxBackend at a higher level will handle the parking window logic using `join-pane` for both show and hide. Keep `BreakPane` as a thin wrapper. The higher-level `HidePane`/`ShowPane` in WP02 will compose these primitives correctly.
-
-3. **NewWindow**: Creates a new tmux window (used for the parking window).
-
-```go
-func (t *tmuxExec) NewWindow(name string) (string, error) {
-    args := []string{"new-window", "-d", "-P", "-F", "#{window_id}"}
-    if name != "" {
-        args = append(args, "-n", name)
-    }
-    return t.run(args...)
-}
-```
-
-`-d` prevents switching to the new window. `-P -F '#{window_id}'` prints the window ID.
+No `BreakPane` method is needed. The interface is simpler with `JoinPane` handling
+both directions.
 
 **Files**: `internal/worker/tmux_cli.go` (~40 lines added)
 **Parallel?**: Yes - can be implemented alongside T003.
 
 ---
 
-### Subtask T005 - Implement pane query methods: ListPanes, CapturePane, CurrentPaneID, Version
+### Subtask T005 - Implement pane query methods: ListPanes, CapturePane, DisplayMessage, Version
 
 **Purpose**: Query methods for pane status polling (exit detection), content capture (session ID extraction), self-identification, and version checking.
 
@@ -332,13 +333,15 @@ func (t *tmuxExec) NewWindow(name string) (string, error) {
 1. **ListPanes**: Lists panes in a target window with structured format output.
 
 ```go
-func (t *tmuxExec) ListPanes(target string) ([]PaneInfo, error) {
+func (t *tmuxExec) ListPanes(ctx context.Context, target string) ([]PaneInfo, error) {
     format := "#{pane_id} #{pane_pid} #{pane_dead} #{pane_dead_status}"
     args := []string{"list-panes", "-F", format}
-    if target != "" {
+    if target == "-s" {
+        args = append(args, "-s")
+    } else if target != "" {
         args = append(args, "-t", target)
     }
-    output, err := t.run(args...)
+    output, err := t.run(ctx, args...)
     if err != nil {
         return nil, err
     }
@@ -381,26 +384,28 @@ func parsePaneList(output string) ([]PaneInfo, error) {
 3. **CapturePane**: Captures the full scrollback content of a pane.
 
 ```go
-func (t *tmuxExec) CapturePane(paneID string) (string, error) {
+func (t *tmuxExec) CapturePane(ctx context.Context, paneID string) (string, error) {
     // -p: output to stdout (not paste buffer)
     // -S -: start from beginning of scrollback history
-    return t.run("capture-pane", "-p", "-t", paneID, "-S", "-")
+    return t.run(ctx, "capture-pane", "-p", "-t", paneID, "-S", "-")
 }
 ```
 
-4. **CurrentPaneID**: Gets the pane ID of the current (kasmos) process.
+4. **DisplayMessage**: Evaluates tmux format strings for self-identification.
 
 ```go
-func (t *tmuxExec) CurrentPaneID() (string, error) {
-    return t.run("display-message", "-p", "#{pane_id}")
+// DisplayMessage returns the result of a tmux format string evaluation.
+// Used for self-identification: DisplayMessage(ctx, "#{pane_id}"), DisplayMessage(ctx, "#{window_id}")
+func (t *tmuxExec) DisplayMessage(ctx context.Context, format string) (string, error) {
+    return t.run(ctx, "display-message", "-p", format)
 }
 ```
 
 5. **Version**: Gets the tmux version string.
 
 ```go
-func (t *tmuxExec) Version() (string, error) {
-    return t.run("-V")
+func (t *tmuxExec) Version(ctx context.Context) (string, error) {
+    return t.run(ctx, "-V")
 }
 ```
 
@@ -414,74 +419,60 @@ func (t *tmuxExec) Version() (string, error) {
 
 ---
 
-### Subtask T006 - Implement environment tagging methods: SetPaneEnv, GetPaneEnv
+### Subtask T006 - Implement environment and pane option methods
 
-**Purpose**: Tag managed panes with kasmos session ID and worker ID for rediscovery after kasmos restart. Uses tmux session-level environment variables (research.md section 2).
+**Purpose**: Tag managed panes via session-level environment variables for crash
+recovery. Set per-pane options like `remain-on-exit`. Uses `tmux set-environment` /
+`show-environment` at session scope (research.md section 2).
 
 **Steps**:
 
-1. **SetPaneEnv**: Sets an environment variable on a tmux session/pane scope.
+1. **SetEnvironment**: Sets a session-level environment variable.
 
-```go
-func (t *tmuxExec) SetPaneEnv(paneID, key, value string) error {
-    // set-environment with -t targets the session of the specified pane
-    _, err := t.run("set-environment", "-t", paneID, key, value)
-    return err
-}
-```
-
-Note: tmux `set-environment` sets variables at the session level, not per-pane. For per-pane tagging, we use a naming convention: `KASMOS_WORKER_<paneID>=<workerID>`. The TmuxBackend (WP02) will handle the naming convention; this method is the raw primitive.
-
-Actually, looking more carefully at the research: tmux 3.0+ has `set-option -p` for per-pane options, but we're targeting 2.6+ compatibility. The research says to use session-level env vars with a naming scheme. Let me adjust:
-
-```go
-func (t *tmuxExec) SetPaneEnv(paneID, key, value string) error {
-    // Uses session-level environment with pane-specific key naming.
-    // The caller is responsible for the naming convention (e.g., KASMOS_WORKER_%42=w-001).
-    _, err := t.run("set-environment", key, value)
-    return err
-}
-
-func (t *tmuxExec) GetPaneEnv(paneID, key string) (string, error) {
-    output, err := t.run("show-environment", key)
-    if err != nil {
-        return "", err
+    func (t *tmuxExec) SetEnvironment(ctx context.Context, key, value string) error {
+        _, err := t.run(ctx, "set-environment", key, value)
+        return err
     }
-    // Output format: "KEY=VALUE" or "KEY" (if unset, with -u flag)
-    if idx := strings.IndexByte(output, '='); idx >= 0 {
-        return output[idx+1:], nil
+
+2. **ShowEnvironment**: Returns all session-level environment variables as a map.
+
+    func (t *tmuxExec) ShowEnvironment(ctx context.Context) (map[string]string, error) {
+        output, err := t.run(ctx, "show-environment")
+        if err != nil {
+            return nil, err
+        }
+        return parseEnvironment(output)
     }
-    return "", fmt.Errorf("environment variable %q not set", key)
-}
-```
 
-Wait, the data model says the tagging scheme is:
-- `KASMOS_SESSION=<session-id>`
-- `KASMOS_WORKER=<worker-id>`
+    Helper parser (pure function):
 
-But these are session-level, not per-pane. For multiple workers, we need per-pane differentiation. The TmuxBackend will use a compound key like `KASMOS_PANE_<pane-id>=<worker-id>` or track the mapping internally. The CLI wrapper just provides the raw set/get primitives.
-
-Keep the implementation simple - the TmuxBackend composes the tagging logic:
-
-```go
-func (t *tmuxExec) SetPaneEnv(paneID, key, value string) error {
-    _, err := t.run("set-environment", key, value)
-    return err
-}
-
-func (t *tmuxExec) GetPaneEnv(paneID, key string) (string, error) {
-    output, err := t.run("show-environment", key)
-    if err != nil {
-        return "", err
+    func parseEnvironment(output string) (map[string]string, error) {
+        env := make(map[string]string)
+        for _, line := range strings.Split(output, "\n") {
+            line = strings.TrimSpace(line)
+            if line == "" || strings.HasPrefix(line, "-") {
+                continue // skip unset vars (prefixed with "-")
+            }
+            if idx := strings.IndexByte(line, '='); idx > 0 {
+                env[line[:idx]] = line[idx+1:]
+            }
+        }
+        return env, nil
     }
-    if idx := strings.IndexByte(output, '='); idx >= 0 {
-        return output[idx+1:], nil
-    }
-    return "", fmt.Errorf("tmux environment variable %q not found", key)
-}
-```
 
-2. **Add imports** at the top of the file: `bytes`, `errors`, `fmt`, `os/exec`, `strconv`, `strings`.
+3. **UnsetEnvironment**: Removes a session-level environment variable.
+
+    func (t *tmuxExec) UnsetEnvironment(ctx context.Context, key string) error {
+        _, err := t.run(ctx, "set-environment", "-u", key)
+        return err
+    }
+
+4. **SetPaneOption**: Sets a per-pane tmux option (used for `remain-on-exit`).
+
+    func (t *tmuxExec) SetPaneOption(ctx context.Context, paneID, key, value string) error {
+        _, err := t.run(ctx, "set-option", "-p", "-t", paneID, key, value)
+        return err
+    }
 
 **Files**: `internal/worker/tmux_cli.go` (~30 lines added)
 **Parallel?**: No (final subtask, depends on T002 for `run` helper).
@@ -502,18 +493,19 @@ func (t *tmuxExec) GetPaneEnv(paneID, key string) (string, error) {
 
 ```go
 type mockTmuxCLI struct {
-    splitWindowFn  func(target, cmd string, horizontal bool, size int) (string, error)
-    joinPaneFn     func(src, dst string, horizontal bool, size int) error
-    breakPaneFn    func(paneID string) error
-    selectPaneFn   func(paneID string) error
-    listPanesFn    func(target string) ([]PaneInfo, error)
-    killPaneFn     func(paneID string) error
-    capturePane Fn func(paneID string) (string, error)
-    setPaneEnvFn   func(paneID, key, value string) error
-    getPaneEnvFn   func(paneID, key string) (string, error)
-    newWindowFn    func(name string) (string, error)
-    currentPaneIDFn func() (string, error)
-    versionFn      func() (string, error)
+    splitWindowFn    func(ctx context.Context, opts SplitOpts) (string, error)
+    joinPaneFn       func(ctx context.Context, opts JoinOpts) error
+    selectPaneFn     func(ctx context.Context, paneID string) error
+    listPanesFn      func(ctx context.Context, target string) ([]PaneInfo, error)
+    killPaneFn       func(ctx context.Context, paneID string) error
+    capturePaneFn    func(ctx context.Context, paneID string) (string, error)
+    setEnvironmentFn func(ctx context.Context, key, value string) error
+    showEnvironmentFn func(ctx context.Context) (map[string]string, error)
+    unsetEnvironmentFn func(ctx context.Context, key string) error
+    setPaneOptionFn  func(ctx context.Context, paneID, key, value string) error
+    newWindowFn      func(ctx context.Context, opts NewWindowOpts) (string, error)
+    displayMessageFn func(ctx context.Context, format string) (string, error)
+    versionFn        func(ctx context.Context) (string, error)
 }
 ```
 
@@ -546,7 +538,7 @@ func TestParsePaneList(t *testing.T) {
 
 4. **Test `NewTmuxExec`**: Verify it returns `ErrTmuxNotFound` when tmux is not in PATH (set PATH to empty in test, or use a build tag).
 
-5. **Test `GetPaneEnv` parsing**: Verify `KEY=VALUE` output is split correctly, and missing key returns error.
+5. **Test `ShowEnvironment` parsing**: Verify `KEY=VALUE` output is split correctly and unset variables (`-KEY`) are ignored.
 
 **Files**: `internal/worker/tmux_cli_test.go` (new, ~120 lines)
 **Parallel?**: Yes - can proceed once T001-T006 are done.
@@ -569,7 +561,7 @@ func TestParsePaneList(t *testing.T) {
 - Verify all `tmuxExec` methods include descriptive error wrapping.
 - Verify the `run()` helper captures stderr for debugging.
 - Verify `var _ TmuxCLI = (*tmuxExec)(nil)` compile-time check is present.
-- Verify no `context.Context` is needed at this layer (tmux commands are fast, <100ms).
+- Verify all methods accept `context.Context` and use `exec.CommandContext` for cancellation.
 
 ## Activity Log
 

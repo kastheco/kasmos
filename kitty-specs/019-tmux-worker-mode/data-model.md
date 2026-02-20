@@ -12,18 +12,37 @@ Real implementation: `tmuxExec`. Test implementation: mock.
 
 ```
 TmuxCLI
-  SplitWindow(target, cmd string, horizontal bool, size int) -> (paneID string, error)
-  JoinPane(src, dst string, horizontal bool, size int) -> error
-  BreakPane(paneID string) -> error
-  SelectPane(paneID string) -> error
-  ListPanes(target string) -> ([]PaneInfo, error)
-  KillPane(paneID string) -> error
-  CapturePane(paneID string) -> (content string, error)
-  SetPaneEnv(paneID, key, value string) -> error
-  GetPaneEnv(paneID, key string) -> (value string, error)
-  NewWindow(name string) -> (windowID string, error)
-  CurrentPaneID() -> (paneID string, error)
-  Version() -> (string, error)
+  SplitWindow(ctx context.Context, opts SplitOpts) -> (paneID string, error)
+  JoinPane(ctx context.Context, opts JoinOpts) -> error
+  SelectPane(ctx context.Context, paneID string) -> error
+  KillPane(ctx context.Context, paneID string) -> error
+  NewWindow(ctx context.Context, opts NewWindowOpts) -> (windowID string, error)
+  ListPanes(ctx context.Context, target string) -> ([]PaneInfo, error)
+  DisplayMessage(ctx context.Context, format string) -> (string, error)
+  CapturePane(ctx context.Context, paneID string) -> (content string, error)
+  SetEnvironment(ctx context.Context, key, value string) -> error
+  ShowEnvironment(ctx context.Context) -> (map[string]string, error)
+  UnsetEnvironment(ctx context.Context, key string) -> error
+  SetPaneOption(ctx context.Context, paneID, key, value string) -> error
+  Version(ctx context.Context) -> (string, error)
+
+SplitOpts
+  Target      string    // pane/window to split from
+  Horizontal  bool      // -h flag
+  Size        string    // -l flag: "50%" or "80"
+  Command     []string  // command to run in the new pane
+  Env         []string  // environment variables as "KEY=VALUE" for -e flags
+
+JoinOpts
+  Source      string    // -s: pane to move
+  Target      string    // -t: destination window/pane
+  Horizontal  bool      // -h: horizontal split
+  Detached    bool      // -d: don't follow focus
+  Size        string    // -l: size spec ("50%")
+
+NewWindowOpts
+  Detached    bool      // -d: don't switch to it
+  Name        string    // -n: window name
 ```
 
 ### PaneInfo (Value Object)
@@ -36,8 +55,6 @@ PaneInfo
   PID         int       // process running in the pane
   Dead        bool      // true if the pane process has exited
   DeadStatus  int       // exit code of the dead process
-  WorkerID    string    // kasmos worker ID (from env tag), empty if untagged
-  SessionTag  string    // kasmos session ID (from env tag), empty if untagged
 ```
 
 ### TmuxBackend (WorkerBackend Implementation)
@@ -48,21 +65,23 @@ Spawns workers as tmux panes. Manages the parking window and pane lifecycle.
 TmuxBackend
   cli             TmuxCLI       // injected dependency
   kasmosPaneID    string        // tmux pane ID of the kasmos dashboard
+  kasmosWindowID  string        // tmux window ID of the kasmos dashboard (join-pane target)
   parkingWindow   string        // tmux window ID for hidden panes
   sessionTag      string        // kasmos session ID for pane tagging
   activePaneID    string        // currently visible worker pane (empty if none)
   managedPanes    map[string]*ManagedPane  // workerID -> pane tracking
+  mu              sync.RWMutex  // protects pane operations
 
   Spawn(ctx, cfg) -> (WorkerHandle, error)    // implements WorkerBackend
   Name() -> "tmux"                            // implements WorkerBackend
 
-  Init(sessionTag string) -> error            // setup parking window, capture kasmos pane ID
-  ShowPane(workerID string) -> error          // join-pane from parking to main window
-  HidePane(workerID string) -> error          // break-pane to parking
+  Init(sessionTag string) -> error            // setup parking window, capture kasmos pane/window IDs, set env tags
+  ShowPane(workerID string) -> error          // join-pane from parking to kasmos window
+  HidePane(workerID string) -> error          // join-pane -d to parking
   SwapActive(workerID string) -> error        // hide current + show new
-  PollPanes() -> ([]PaneStatus, error)        // list-panes for exit detection
-  Reconnect(sessionTag string) -> ([]ReconnectedWorker, error)  // scan for surviving panes
-  Cleanup() -> error                          // kill parking window on graceful exit
+  PollPanes() -> ([]PaneStatus, error)        // list-panes -s for session-wide exit detection
+  Reconnect(sessionTag string) -> ([]ReconnectedWorker, error)  // scan env vars + list-panes
+  Cleanup() -> error                          // kill parking window, unset all KASMOS_* env vars
 ```
 
 ### ManagedPane (Internal Tracking)
@@ -82,11 +101,11 @@ ManagedPane
 State transitions:
 ```
 Created -> Visible (initial spawn shows the pane)
-Visible -> Hidden  (user selects different worker: break-pane to parking)
+Visible -> Hidden  (user selects different worker: join-pane -d to parking)
 Hidden  -> Visible (user selects this worker: join-pane from parking)
-Visible -> Dead    (process exits while visible: detected by poll)
-Hidden  -> Dead    (process exits while hidden: detected by poll)
-*       -> Removed (pane externally killed: missing from list-panes)
+Visible -> Dead    (process exits while visible: detected by poll, pane retained via remain-on-exit)
+Hidden  -> Dead    (process exits while hidden: detected by poll, pane retained via remain-on-exit)
+*       -> Removed (pane externally killed: missing from list-panes -s)
 ```
 
 ### tmuxHandle (WorkerHandle Implementation)
@@ -199,9 +218,10 @@ paneDetectedMsg
   Err         error
 
 tmuxInitMsg
-  KasmosPaneID   string   // this process's tmux pane ID
-  ParkingWindow  string   // created parking window ID
-  Err            error
+  KasmosPaneID    string   // this process's tmux pane ID
+  KasmosWindowID  string   // this process's tmux window ID (join-pane target)
+  ParkingWindow   string   // created parking window ID
+  Err             error
 ```
 
 ## Validation Rules

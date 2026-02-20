@@ -72,10 +72,10 @@ Depends on WP01 (TmuxCLI interface must exist).
 ## Context & Constraints
 
 - **Data model**: See `kitty-specs/019-tmux-worker-mode/data-model.md` for TmuxBackend, ManagedPane, tmuxHandle, PaneStatus, ReconnectedWorker definitions.
-- **Pane parking design**: research.md section 4 - hidden parking window with join-pane/break-pane.
+- **Pane parking design**: research.md section 4 - hidden parking window with `join-pane` in both directions (`-d` for parking).
 - **Exit detection design**: research.md section 3 - poll `list-panes` on tick, check `pane_dead`.
 - **Interface extension design**: research.md section 5 - `Interactive() bool` on WorkerHandle.
-- **Tagging design**: research.md section 2 - env vars `KASMOS_SESSION` and `KASMOS_WORKER`.
+- **Tagging design**: research.md section 2 - session env vars `KASMOS_PANE_<worker_id>=<pane_id>` plus `KASMOS_SESSION_ID`, `KASMOS_PARKING`, `KASMOS_DASHBOARD`.
 - **Session ID extraction**: research.md section 6 - `capture-pane` on exit, apply existing regex.
 - **Existing patterns**: `internal/worker/subprocess.go` for WorkerBackend/WorkerHandle implementation pattern.
 
@@ -210,7 +210,9 @@ func (h *subprocessHandle) Interactive() bool {
 
 ### Subtask T009 - Implement TmuxBackend.Init()
 
-**Purpose**: Initialize the tmux backend: capture the kasmos pane ID, create the hidden parking window, and set the session tag. Must be called before `Spawn()`.
+**Purpose**: Initialize the tmux backend: capture the kasmos pane/window IDs,
+create the hidden parking window, and set session infrastructure tags. Must be
+called before `Spawn()`.
 
 **Steps**:
 1. Implement `Init`:
@@ -219,26 +221,40 @@ func (h *subprocessHandle) Interactive() bool {
 func (b *TmuxBackend) Init(sessionTag string) error {
     b.mu.Lock()
     defer b.mu.Unlock()
+    ctx := context.Background()
 
     b.sessionTag = sessionTag
 
     // Capture our own pane ID
-    paneID, err := b.cli.CurrentPaneID()
+    paneID, err := b.cli.DisplayMessage(ctx, "#{pane_id}")
     if err != nil {
         return fmt.Errorf("get kasmos pane ID: %w", err)
     }
     b.kasmosPaneID = paneID
 
+    // Capture our own window ID (needed as join-pane target)
+    windowID, err := b.cli.DisplayMessage(ctx, "#{window_id}")
+    if err != nil {
+        return fmt.Errorf("get kasmos window ID: %w", err)
+    }
+    b.kasmosWindowID = windowID
+
     // Create hidden parking window for non-visible worker panes
-    windowID, err := b.cli.NewWindow("kasmos-parking")
+    parkingWindowID, err := b.cli.NewWindow(ctx, NewWindowOpts{Detached: true, Name: "kasmos-parking"})
     if err != nil {
         return fmt.Errorf("create parking window: %w", err)
     }
-    b.parkingWindow = windowID
+    b.parkingWindow = parkingWindowID
 
-    // Tag the session so we can identify our panes on reattach
-    if err := b.cli.SetPaneEnv(paneID, "KASMOS_SESSION", sessionTag); err != nil {
+    // Tag session with kasmos identity for crash recovery
+    if err := b.cli.SetEnvironment(ctx, "KASMOS_SESSION_ID", sessionTag); err != nil {
         return fmt.Errorf("set session tag: %w", err)
+    }
+    if err := b.cli.SetEnvironment(ctx, "KASMOS_DASHBOARD", paneID); err != nil {
+        // Non-fatal
+    }
+    if err := b.cli.SetEnvironment(ctx, "KASMOS_PARKING", parkingWindowID); err != nil {
+        // Non-fatal
     }
 
     return nil
@@ -282,9 +298,15 @@ func (b *TmuxBackend) Spawn(ctx context.Context, cfg SpawnConfig) (WorkerHandle,
         return nil, fmt.Errorf("create worker pane: %w", err)
     }
 
+    // Retain the pane after process exit (for poll detection and capture)
+    if err := b.cli.SetPaneOption(ctx, paneID, "remain-on-exit", "on"); err != nil {
+        // Non-fatal: pane works but won't survive exit for capture
+        // Log warning
+    }
+
     // Tag the pane with worker and session IDs
-    workerEnvKey := fmt.Sprintf("KASMOS_PANE_%s", strings.TrimPrefix(paneID, "%"))
-    if err := b.cli.SetPaneEnv(paneID, workerEnvKey, cfg.ID); err != nil {
+    tagKey := fmt.Sprintf("KASMOS_PANE_%s", cfg.ID)
+    if err := b.cli.SetEnvironment(ctx, tagKey, paneID); err != nil {
         // Non-fatal: pane exists but tagging failed
         // Log warning but continue
     }
@@ -304,7 +326,11 @@ func (b *TmuxBackend) Spawn(ctx context.Context, cfg SpawnConfig) (WorkerHandle,
     if b.activePaneID != "" && b.activePaneID != paneID {
         if prev := b.findPaneByID(b.activePaneID); prev != nil {
             // Move previous to parking
-            if err := b.cli.JoinPane(b.activePaneID, b.parkingWindow, false, 0); err != nil {
+            if err := b.cli.JoinPane(ctx, JoinOpts{
+                Source:   b.activePaneID,
+                Target:   b.parkingWindow,
+                Detached: true,
+            }); err != nil {
                 // Non-fatal, log warning
             }
             prev.Visible = false
@@ -313,7 +339,7 @@ func (b *TmuxBackend) Spawn(ctx context.Context, cfg SpawnConfig) (WorkerHandle,
     b.activePaneID = paneID
 
     // Focus the new pane
-    _ = b.cli.SelectPane(paneID)
+    _ = b.cli.SelectPane(ctx, paneID)
 
     handle := &tmuxHandle{
         cli:       b.cli,
@@ -492,6 +518,7 @@ func (h *tmuxHandle) CaptureOutput() (string, error) {
 func (b *TmuxBackend) ShowPane(workerID string) error {
     b.mu.Lock()
     defer b.mu.Unlock()
+    ctx := context.Background()
 
     managed, ok := b.managedPanes[workerID]
     if !ok {
@@ -502,7 +529,12 @@ func (b *TmuxBackend) ShowPane(workerID string) error {
     }
 
     // Join from parking to kasmos window, horizontal split, 50% width
-    if err := b.cli.JoinPane(managed.PaneID, b.kasmosPaneID, true, 50); err != nil {
+    if err := b.cli.JoinPane(ctx, JoinOpts{
+        Source:     managed.PaneID,
+        Target:     b.kasmosWindowID,
+        Horizontal: true,
+        Size:       "50%",
+    }); err != nil {
         return fmt.Errorf("show pane for worker %q: %w", workerID, err)
     }
 
@@ -518,6 +550,7 @@ func (b *TmuxBackend) ShowPane(workerID string) error {
 func (b *TmuxBackend) HidePane(workerID string) error {
     b.mu.Lock()
     defer b.mu.Unlock()
+    ctx := context.Background()
 
     managed, ok := b.managedPanes[workerID]
     if !ok {
@@ -528,7 +561,11 @@ func (b *TmuxBackend) HidePane(workerID string) error {
     }
 
     // Move to parking window
-    if err := b.cli.JoinPane(managed.PaneID, b.parkingWindow, false, 0); err != nil {
+    if err := b.cli.JoinPane(ctx, JoinOpts{
+        Source:   managed.PaneID,
+        Target:   b.parkingWindow,
+        Detached: true,
+    }); err != nil {
         return fmt.Errorf("hide pane for worker %q: %w", workerID, err)
     }
 
@@ -546,11 +583,16 @@ func (b *TmuxBackend) HidePane(workerID string) error {
 func (b *TmuxBackend) SwapActive(workerID string) error {
     b.mu.Lock()
     defer b.mu.Unlock()
+    ctx := context.Background()
 
     // Hide current active pane (if any)
     if b.activePaneID != "" {
         if current := b.findPaneByID(b.activePaneID); current != nil && current.Visible {
-            if err := b.cli.JoinPane(current.PaneID, b.parkingWindow, false, 0); err != nil {
+            if err := b.cli.JoinPane(ctx, JoinOpts{
+                Source:   current.PaneID,
+                Target:   b.parkingWindow,
+                Detached: true, // don't follow focus into parking
+            }); err != nil {
                 return fmt.Errorf("hide current pane: %w", err)
             }
             current.Visible = false
@@ -563,7 +605,12 @@ func (b *TmuxBackend) SwapActive(workerID string) error {
         return fmt.Errorf("unknown worker %q", workerID)
     }
 
-    if err := b.cli.JoinPane(managed.PaneID, b.kasmosPaneID, true, 50); err != nil {
+    if err := b.cli.JoinPane(ctx, JoinOpts{
+        Source:     managed.PaneID,
+        Target:     b.kasmosWindowID, // NOTE: window ID, not pane ID
+        Horizontal: true,
+        Size:       "50%",
+    }); err != nil {
         return fmt.Errorf("show pane for worker %q: %w", workerID, err)
     }
 
@@ -571,7 +618,7 @@ func (b *TmuxBackend) SwapActive(workerID string) error {
     b.activePaneID = managed.PaneID
 
     // Move focus to the worker pane
-    if err := b.cli.SelectPane(managed.PaneID); err != nil {
+    if err := b.cli.SelectPane(ctx, managed.PaneID); err != nil {
         return fmt.Errorf("focus worker pane: %w", err)
     }
 
@@ -584,8 +631,8 @@ func (b *TmuxBackend) SwapActive(workerID string) error {
 
 **Important notes**:
 - The locking in ShowPane/HidePane/SwapActive is critical for preventing races during rapid selection changes.
-- `JoinPane` with `horizontal=true, size=50` creates a 50/50 horizontal split (kasmos left, worker right).
-- `JoinPane` with `horizontal=false, size=0` in the parking direction stacks panes vertically (doesn't matter since parking is hidden).
+- `JoinPane` show path uses `JoinOpts{Horizontal: true, Size: "50%"}` to create a 50/50 split.
+- `JoinPane` park path uses `JoinOpts{Detached: true}` so focus does not follow the pane into parking.
 
 ---
 
@@ -681,7 +728,9 @@ func (b *TmuxBackend) PollPanes() ([]PaneStatus, error) {
 
 ### Subtask T014 - Implement Reconnect() and Cleanup()
 
-**Purpose**: `Reconnect` scans for surviving tagged panes after kasmos restart (FR-013). `Cleanup` kills the parking window on graceful exit.
+**Purpose**: `Reconnect` scans for surviving tagged panes after kasmos restart
+(FR-013). `Cleanup` tears down panes/windows and clears `KASMOS_*` tags on
+graceful exit.
 
 **Steps**:
 1. Implement `Reconnect`:
@@ -692,36 +741,67 @@ func (b *TmuxBackend) PollPanes() ([]PaneStatus, error) {
 func (b *TmuxBackend) Reconnect(sessionTag string) ([]ReconnectedWorker, error) {
     b.mu.Lock()
     defer b.mu.Unlock()
+    ctx := context.Background()
 
     b.sessionTag = sessionTag
 
     // Get our current pane ID
-    paneID, err := b.cli.CurrentPaneID()
+    paneID, err := b.cli.DisplayMessage(ctx, "#{pane_id}")
     if err != nil {
         return nil, fmt.Errorf("get kasmos pane ID: %w", err)
     }
     b.kasmosPaneID = paneID
 
-    // Look for existing parking window by checking session env vars
-    // Scan all panes in the tmux session for KASMOS_PANE_* env vars
-    var workers []ReconnectedWorker
+    // Recover infrastructure tags
+    env, err := b.cli.ShowEnvironment(ctx)
+    if err == nil {
+        if parking, ok := env["KASMOS_PARKING"]; ok {
+            b.parkingWindow = parking
+        }
+        // KASMOS_DASHBOARD is informational; we already have our own pane ID
+    }
+
+    // If no parking window found, create one
+    if b.parkingWindow == "" {
+        windowID, err := b.cli.NewWindow(ctx, NewWindowOpts{Detached: true, Name: "kasmos-parking"})
+        if err != nil {
+            return nil, fmt.Errorf("create parking window: %w", err)
+        }
+        b.parkingWindow = windowID
+        _ = b.cli.SetEnvironment(ctx, "KASMOS_PARKING", windowID)
+    }
 
     // List all panes across all windows in the current session
-    allPanes, err := b.cli.ListPanes("-s") // -s flag = all panes in session
+    allPanes, err := b.cli.ListPanes(ctx, "-s") // -s flag = all panes in session
     if err != nil {
         return nil, fmt.Errorf("list session panes: %w", err)
     }
 
+    paneMap := make(map[string]PaneInfo)
     for _, pane := range allPanes {
+        paneMap[pane.ID] = pane
+    }
+
+    if env == nil {
+        env = map[string]string{}
+    }
+
+    var workers []ReconnectedWorker
+
+    // Scan session env vars for KASMOS_PANE_* entries
+    for key, paneID := range env {
+        if !strings.HasPrefix(key, "KASMOS_PANE_") {
+            continue
+        }
+        workerID := strings.TrimPrefix(key, "KASMOS_PANE_")
+
+        pane, ok := paneMap[paneID]
+        if !ok {
+            _ = b.cli.UnsetEnvironment(ctx, key) // stale tag
+            continue
+        }
         if pane.ID == b.kasmosPaneID {
             continue // skip our own pane
-        }
-
-        // Check if this pane has a kasmos worker tag
-        envKey := fmt.Sprintf("KASMOS_PANE_%s", strings.TrimPrefix(pane.ID, "%"))
-        workerID, err := b.cli.GetPaneEnv(pane.ID, envKey)
-        if err != nil {
-            continue // not a kasmos pane
         }
 
         workers = append(workers, ReconnectedWorker{
@@ -754,17 +834,28 @@ func (b *TmuxBackend) Reconnect(sessionTag string) ([]ReconnectedWorker, error) 
 func (b *TmuxBackend) Cleanup() error {
     b.mu.Lock()
     defer b.mu.Unlock()
+    ctx := context.Background()
 
     if b.parkingWindow != "" {
         // Kill the parking window (and all panes in it)
-        _ = b.cli.KillPane(b.parkingWindow)
+        _ = b.cli.KillPane(ctx, b.parkingWindow)
         b.parkingWindow = ""
     }
 
     // Kill any visible worker pane
     if b.activePaneID != "" {
-        _ = b.cli.KillPane(b.activePaneID)
+        _ = b.cli.KillPane(ctx, b.activePaneID)
         b.activePaneID = ""
+    }
+
+    // Clean up kasmos env tags
+    env, err := b.cli.ShowEnvironment(ctx)
+    if err == nil {
+        for key := range env {
+            if strings.HasPrefix(key, "KASMOS_") {
+                _ = b.cli.UnsetEnvironment(ctx, key)
+            }
+        }
     }
 
     b.managedPanes = make(map[string]*ManagedPane)
@@ -843,9 +934,9 @@ func (b *TmuxBackend) Handle(workerID string, startTime time.Time) WorkerHandle 
 1. Create `internal/worker/tmux_test.go`.
 
 2. **Test TmuxBackend.Init()**:
-   - Mock `CurrentPaneID` returns `%1`, `NewWindow` returns `@2`.
+   - Mock `DisplayMessage("#{pane_id}")` returns `%1`, `DisplayMessage("#{window_id}")` returns `@1`, `NewWindow` returns `@2`.
    - Verify `kasmosPaneID`, `parkingWindow`, `sessionTag` are set.
-   - Test Init failure when `CurrentPaneID` errors.
+   - Test Init failure when `DisplayMessage` errors.
 
 3. **Test TmuxBackend.Spawn()**:
    - Mock `SplitWindow` returns `%3`.

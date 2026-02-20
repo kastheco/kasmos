@@ -221,9 +221,11 @@ type Model struct {
 
 ---
 
-### Subtask T019 - Update NewModel for tmux mode state and modeName
+### Subtask T019 - Update NewModel for tmux mode state and status bar indicator
 
-**Purpose**: Allow the Model to be initialized with tmux mode information. Update `modeName()` to reflect tmux mode.
+**Purpose**: Allow the Model to be initialized with tmux mode information. Add a `backendName()` helper. Show backend mode in the status bar alongside (not replacing) the task source mode.
+
+**IMPORTANT**: Do NOT modify `modeName()`. It must continue returning the task source type (yolo/spec-kitty/gsd). Tmux mode is orthogonal to task source -- both must be visible.
 
 **Steps**:
 1. Add a `SetTmuxMode` method:
@@ -237,22 +239,29 @@ func (m *Model) SetTmuxMode(tmuxBackend *worker.TmuxBackend) {
 }
 ```
 
-2. Update `modeName()` to include tmux indicator:
+2. Add a `backendName()` helper (separate from `modeName()`):
 
 ```go
-func (m *Model) modeName() string {
-    prefix := ""
-    if m.tmuxMode {
-        prefix = "tmux:"
-    }
-    if m.hasTaskSource() {
-        return prefix + m.taskSourceType
-    }
-    return prefix + "yolo"
+func (m *Model) backendName() string {
+    return m.backend.Name() // "subprocess" or "tmux"
 }
 ```
 
-3. In `cmd/kasmos/main.go`, after creating the model and before `program.Run()`, call `SetTmuxMode` if in tmux mode:
+3. Update the status bar rendering in `internal/tui/panels.go` to show the backend indicator when in tmux mode. Find the existing mode rendering:
+
+```go
+// Current (panels.go):
+mode := modeIndicatorStyle.Render(" mode: " + m.modeName() + " ")
+
+// New:
+modeText := m.modeName()
+if m.tmuxMode {
+    modeText += " [tmux]"
+}
+mode := modeIndicatorStyle.Render(" mode: " + modeText + " ")
+```
+
+4. In `cmd/kasmos/main.go`, after creating the model and before `program.Run()`, call `SetTmuxMode` if in tmux mode:
 
 ```go
 model := tui.NewModel(backend, source, version, cfg, showLauncher)
@@ -263,7 +272,7 @@ if tmuxMode {
 }
 ```
 
-4. The existing `NewModel` signature doesn't need to change - the backend is already passed as `worker.WorkerBackend`. The TmuxBackend-specific reference is set via `SetTmuxMode`.
+5. The existing `NewModel` signature doesn't need to change - the backend is already passed as `worker.WorkerBackend`. The TmuxBackend-specific reference is set via `SetTmuxMode`.
 
 **Files**:
 - `internal/tui/model.go` (modify, ~15 lines added)

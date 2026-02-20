@@ -5,7 +5,7 @@
 
 **Tests**: Required per constitution ("All features must have corresponding tests"). Unit tests use mock TmuxCLI for isolated testing. Integration tests gated behind `KASMOS_INTEGRATION=1`.
 
-**Organization**: 43 fine-grained subtasks (`T001`-`T043`) roll up into 7 work packages (`WP01`-`WP07`). Each work package is independently deliverable. Structure follows the plan's three implementation waves. WP07 is pre-completed (constitution already amended during planning).
+**Organization**: 44 fine-grained subtasks (`T001`-`T044`) roll up into 7 work packages (`WP01`-`WP07`). Each work package is independently deliverable. Structure follows the plan's three implementation waves. WP07 is pre-completed (constitution already amended during planning).
 
 **Prompt Files**: Each work package references a matching prompt file in `kitty-specs/019-tmux-worker-mode/tasks/`.
 
@@ -22,16 +22,19 @@
 - [ ] T001 Define TmuxCLI interface, PaneInfo struct, and error types in `internal/worker/tmux_cli.go`
 - [ ] T002 Implement `tmuxExec` base struct with command execution helper and constructor
 - [ ] T003 [P] Implement pane lifecycle methods: SplitWindow, KillPane, SelectPane
-- [ ] T004 [P] Implement pane movement methods: JoinPane, BreakPane, and window management: NewWindow
-- [ ] T005 Implement pane query methods: ListPanes (with PaneInfo parsing), CapturePane, CurrentPaneID, Version
-- [ ] T006 Implement environment tagging methods: SetPaneEnv, GetPaneEnv
+- [ ] T004 [P] Implement pane movement methods: JoinPane (with JoinOpts for both park and show directions), and window management: NewWindow
+- [ ] T005 Implement pane query methods: ListPanes (with PaneInfo parsing, supports `-s` for session-wide), CapturePane, DisplayMessage, Version
+- [ ] T006 Implement environment methods: SetEnvironment, ShowEnvironment, UnsetEnvironment, SetPaneOption
 - [ ] T041 [P] Unit tests for TmuxCLI: mock interface, test `parsePaneList`, test error wrapping in `internal/worker/tmux_cli_test.go`
 
 ### Implementation Notes
 - All methods shell out to `tmux` via `os/exec.Command`. No Go tmux library.
+- All TmuxCLI methods accept `context.Context` as first parameter for timeout/cancellation. The `run` helper should use `exec.CommandContext`.
 - The `tmuxExec` struct holds the tmux binary path (resolved via `exec.LookPath` at construction).
+- Size parameters are `string` type (not `int`) to support percentage notation (`"50%"`) and absolute columns (`"80"`).
 - Format strings for `list-panes` use `#{pane_id} #{pane_pid} #{pane_dead} #{pane_dead_status}` (research.md section 1).
-- Environment tagging uses `tmux set-environment` / `show-environment` per session scope (research.md section 2).
+- Environment tagging uses `tmux set-environment` / `show-environment` at session scope with unique-per-worker keys: `KASMOS_PANE_<worker_id>=<pane_id>`. Additional tags: `KASMOS_SESSION_ID`, `KASMOS_PARKING`, `KASMOS_DASHBOARD`. See research.md section 2.
+- Pane retention: `SetPaneOption(ctx, paneID, "remain-on-exit", "on")` must be called after pane creation. Without this, dead panes disappear from `list-panes` and `capture-pane` fails. See research.md section 3a.
 - Minimum tmux version: 2.6+ (research.md section 7). Version check is advisory (warn, not error).
 
 ### Parallel Opportunities
@@ -44,6 +47,7 @@
 ### Risks & Mitigations
 - tmux output format varies across versions -> Pin to documented format strings, test against tmux 3.x+.
 - `os/exec` errors are opaque -> Wrap with descriptive error messages including the tmux command that failed.
+- tmux "no space for new pane" error on narrow terminal -> Define `IsNoSpace(err)` check that matches tmux stderr containing "no space for new pane". Surface as user-friendly message in spawn failure.
 
 ---
 
@@ -57,20 +61,21 @@
 ### Included Subtasks
 - [ ] T007 Define TmuxBackend, ManagedPane, PaneStatus, and ReconnectedWorker types in `internal/worker/tmux.go`
 - [ ] T008 Add `Interactive() bool` to WorkerHandle interface in `internal/worker/backend.go` and implement `Interactive() -> false` on `subprocessHandle` in `internal/worker/subprocess.go`
-- [ ] T009 Implement `TmuxBackend.Init()`: create parking window, capture kasmos pane ID, set session tag
+- [ ] T009 Implement `TmuxBackend.Init()`: capture kasmos pane ID AND window ID via `DisplayMessage`, create parking window, set session/parking/dashboard env tags
 - [ ] T010 Implement `TmuxBackend.Spawn()`: build command, create pane via SplitWindow, tag with worker/session IDs, track in managedPanes
 - [ ] T011 Implement `tmuxHandle` struct: `Interactive() -> true`, `Stdout() -> nil`, `Wait()` via exitCh, `Kill()`, `PID()`, `NotifyExit()`, `CaptureOutput()`
-- [ ] T012 Implement pane visibility management: `ShowPane()`, `HidePane()`, `SwapActive()` using JoinPane/BreakPane
+- [ ] T012 Implement pane visibility management: `ShowPane()`, `HidePane()`, `SwapActive()` using JoinPane (both directions)
 - [ ] T013 Implement `PollPanes()`: list all managed panes, detect dead/missing, return `[]PaneStatus`
-- [ ] T014 Implement `Reconnect()` (scan for surviving tagged panes) and `Cleanup()` (kill parking window)
+- [ ] T014 Implement `Reconnect()` (read KASMOS_PANE_* env vars, cross-reference with list-panes -s, clean stale tags via UnsetEnvironment) and `Cleanup()` (kill parking window, kill worker panes, unset all KASMOS_* env vars)
 - [ ] T042 [P] Unit tests for TmuxBackend with mock TmuxCLI: Spawn, SwapActive, PollPanes, Reconnect, tmuxHandle lifecycle in `internal/worker/tmux_test.go`
 
 ### Implementation Notes
 - `TmuxBackend` implements `WorkerBackend` interface. Compile-time check: `var _ WorkerBackend = (*TmuxBackend)(nil)`.
 - The parking window (`kasmos-parking`) holds non-visible panes. Only one pane is ever visible alongside kasmos.
 - `tmuxHandle.Wait()` blocks on `exitCh` channel, closed by `NotifyExit()` (called from TUI tick poller).
-- SwapActive sequence: break-pane current -> join-pane new -> select-pane new (research.md section 4).
-- Pane tagging: `KASMOS_SESSION=<session-id>`, `KASMOS_WORKER=<worker-id>` (research.md section 2).
+- SwapActive sequence: join-pane -d current to parking -> join-pane new from parking to kasmos window -> select-pane new (research.md section 4).
+- Pane tagging: `KASMOS_PANE_<worker_id>=<pane_id>` per worker. Session metadata: `KASMOS_SESSION_ID`, `KASMOS_PARKING`, `KASMOS_DASHBOARD`. All at session scope via `set-environment`. See research.md section 2.
+- After `SplitWindow` in `Spawn()`, immediately call `SetPaneOption(ctx, paneID, "remain-on-exit", "on")` so dead panes survive for polling and capture.
 - Mutex protection for pane operations to prevent race conditions during rapid switching.
 
 ### Parallel Opportunities
@@ -80,7 +85,7 @@
 - Depends on WP01 (TmuxCLI interface must exist to inject into TmuxBackend).
 
 ### Risks & Mitigations
-- join-pane/break-pane race with rapid switching -> Serialize via mutex, debounce in TUI layer.
+- join-pane race with rapid switching -> Serialize via mutex, debounce in TUI layer.
 - Parking window visible to user -> Name it `kasmos-parking`, document in help text.
 - Multiple kasmos instances in same tmux session -> Tag panes with kasmos session ID, only manage matching panes.
 
@@ -98,7 +103,7 @@
 - [ ] T016 Implement backend selection logic: `--tmux` flag detection, `$TMUX` environment validation, `NewTmuxBackend()` construction
 - [ ] T017 Validate `--tmux` and `-d` mutual exclusivity with clear error message (FR-016)
 - [ ] T018 Add `tmuxMode bool`, `tmuxBackend *worker.TmuxBackend`, `kasmosPaneID string`, and `activePaneID string` fields to TUI Model in `internal/tui/model.go`
-- [ ] T019 Update `NewModel()` to accept and store tmux mode state; update `modeName()` to return "tmux" when active
+- [ ] T019 Update `NewModel()` to accept and store tmux mode state; add `backendName()` helper that returns `m.backend.Name()` (e.g., "tmux" or "subprocess"); update status bar rendering in `panels.go` to show backend indicator alongside task source mode (e.g., `mode: spec-kitty [tmux]`) when `tmuxMode` is true. Do NOT modify `modeName()` -- it must continue returning the task source type.
 
 ### Implementation Notes
 - Backend selection order: `--tmux` flag -> config `TmuxMode` (WP06) -> default subprocess.
@@ -124,26 +129,29 @@
 **Goal**: Wire tmux pane operations into the TUI. When a worker is selected in the dashboard table, the right-side pane swaps to show that worker's live terminal. Focus automatically moves to the worker pane. Implements FR-006, FR-007, FR-008, and the tmux initialization flow.
 **Independent Test**: In tmux mode, spawn a worker. Verify the worker's terminal appears in the right pane. Select a different worker; verify pane swaps. Verify focus moves to the worker pane on selection.
 **Prompt**: `kitty-specs/019-tmux-worker-mode/tasks/WP04-pane-switching-focus.md`
-**Estimated Size**: ~450 lines
+**Estimated Size**: ~550 lines
 
 ### Included Subtasks
 - [ ] T020 Define tmux-specific message types in `internal/tui/messages.go`: `paneSwappedMsg`, `paneExitedMsg`, `paneDetectedMsg`, `tmuxInitMsg`
-- [ ] T021 Implement `tmuxInitCmd()` in `internal/tui/commands.go`: calls `TmuxBackend.Init()`, returns `tmuxInitMsg` with kasmos pane ID and parking window ID
+- [ ] T021 Implement `tmuxInitCmd()` in `internal/tui/commands.go`: calls `TmuxBackend.Init()`, returns `tmuxInitMsg` with kasmos pane ID, kasmos window ID, and parking window ID
 - [ ] T022 Implement `paneSwapCmd()` in `internal/tui/commands.go`: calls `TmuxBackend.SwapActive()`, returns `paneSwappedMsg`
 - [ ] T023 Implement `paneFocusCmd()` in `internal/tui/commands.go`: calls `TmuxCLI.SelectPane()` for worker focus, and dashboard focus return
 - [ ] T024 Update worker selection handling in `internal/tui/update.go`: on selection change in tmux mode, emit `paneSwapCmd` instead of refreshing viewport content
 - [ ] T025 Update `renderViewport()` in `internal/tui/panels.go`: in tmux mode with no workers, render placeholder text indicating the right column is reserved for worker panes
+- [ ] T044 Implement narrow terminal adaptation for tmux mode: when terminal width is below the split threshold, alternate between full-width dashboard and full-width worker pane instead of side-by-side split. Use the existing fullscreen toggle (`f` key) pattern. Detect width on `tea.WindowSizeMsg` and adjust `join-pane` size or skip splitting. See spec.md edge case L124 and research.md section 4.
 
 ### Implementation Notes
 - `tmuxInitCmd` runs as a `tea.Cmd` from `Init()` when `tmuxMode` is true. Must complete before workers can be spawned.
-- `tmuxInitMsg` handler stores `kasmosPaneID` and `parkingWindow` in model state.
+- `tmuxInitMsg` handler stores `kasmosPaneID`, `kasmosWindowID`, and `parkingWindow` in model state.
 - Pane swap on selection change: detect `selectedWorkerID` change in table navigation, fire `paneSwapCmd`.
 - First worker spawn: no existing visible pane, so `ShowPane` (not `SwapActive`).
 - The viewport in tmux mode is cosmetic (shows status text), not the output viewport. The real output is in the tmux pane.
 - SC-002: Pane switch must complete in under 1 second (join-pane + select-pane is typically <100ms).
+- SC-005 worker->dashboard return: Standard tmux navigation (prefix + arrow) handles this. Consider adding a kasmos-specific tmux keybind during Init (`bind-key -n M-d select-pane -t <dashboard>`) and showing the hint in the status bar.
 
 ### Parallel Opportunities
 - T020 and T025 can proceed in parallel (messages.go vs panels.go, no dependency).
+- T044 can proceed after T024 (needs pane swap logic to exist).
 
 ### Dependencies
 - Depends on WP03 (CLI flag and tmuxMode state must exist in Model).
@@ -295,24 +303,24 @@ WP06 (Persistence+Config)
 | T001 | Define TmuxCLI interface, PaneInfo, error types | WP01 | P0 | No |
 | T002 | Implement tmuxExec base struct | WP01 | P0 | No |
 | T003 | Implement pane lifecycle methods | WP01 | P0 | Yes |
-| T004 | Implement pane movement + window methods | WP01 | P0 | Yes |
-| T005 | Implement pane query methods + parsing | WP01 | P0 | No |
-| T006 | Implement environment tagging methods | WP01 | P0 | No |
+| T004 | Implement JoinPane (both directions) + NewWindow | WP01 | P0 | Yes |
+| T005 | Implement pane query methods (+ `-s`, DisplayMessage) | WP01 | P0 | No |
+| T006 | Implement environment + pane option methods | WP01 | P0 | No |
 | T007 | Define TmuxBackend, ManagedPane, PaneStatus types | WP02 | P0 | Yes |
 | T008 | Add Interactive() to WorkerHandle + subprocess impl | WP02 | P0 | Yes |
-| T009 | Implement TmuxBackend.Init() | WP02 | P0 | No |
+| T009 | Implement Init with pane+window IDs and env tags | WP02 | P0 | No |
 | T010 | Implement TmuxBackend.Spawn() | WP02 | P0 | No |
 | T011 | Implement tmuxHandle struct | WP02 | P0 | No |
 | T012 | Implement ShowPane/HidePane/SwapActive | WP02 | P0 | No |
 | T013 | Implement PollPanes() | WP02 | P0 | No |
-| T014 | Implement Reconnect() and Cleanup() | WP02 | P0 | No |
+| T014 | Implement Reconnect/Cleanup with env tag lifecycle | WP02 | P0 | No |
 | T015 | Add --tmux flag to cobra | WP03 | P0 | No |
 | T016 | Implement backend selection logic | WP03 | P0 | No |
 | T017 | Validate --tmux and -d mutual exclusivity | WP03 | P0 | No |
 | T018 | Add tmux state fields to TUI Model | WP03 | P0 | No |
-| T019 | Update NewModel for tmux mode state | WP03 | P0 | No |
+| T019 | Update NewModel + add backendName() + status bar indicator | WP03 | P0 | No |
 | T020 | Define tmux message types | WP04 | P1 | Yes |
-| T021 | Implement tmuxInitCmd | WP04 | P1 | No |
+| T021 | Implement tmuxInitCmd with pane+window+parking IDs | WP04 | P1 | No |
 | T022 | Implement paneSwapCmd | WP04 | P1 | No |
 | T023 | Implement paneFocusCmd | WP04 | P1 | No |
 | T024 | Update selection handling for tmux swap | WP04 | P1 | No |
@@ -335,7 +343,4 @@ WP06 (Persistence+Config)
 | T041       | Unit tests for TmuxCLI (parsePaneList, error wrapping) | WP01 | P0 | Yes |
 | T042       | Unit tests for TmuxBackend with mock TmuxCLI | WP02 | P0 | Yes |
 | T043       | Add tmux_mode toggle to settings form | WP06 | P2 | No |
-
----
-
-> Replace all placeholder text above with feature-specific content. Keep this template structure intact so downstream automation can parse work packages reliably.
+| T044       | Narrow terminal adaptation for tmux mode | WP04 | P1 | No |

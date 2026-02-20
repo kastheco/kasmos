@@ -15,7 +15,8 @@ crashes via tmux session persistence.
 **Technical approach**: `TmuxBackend` implements the existing `WorkerBackend` interface
 using `os/exec` to shell out to the `tmux` CLI. A thin `TmuxCLI` wrapper interface
 enables unit testing with a mock. Non-visible worker panes are parked in a hidden tmux
-window; `join-pane`/`break-pane` swaps the active worker. Worker exit is detected by
+window; `join-pane -d` parks the current worker, `join-pane` shows the next.
+Worker exit is detected by
 polling `tmux list-panes` on the existing 1-second tick timer. Session metadata records
 the backend mode for reattach inference.
 
@@ -114,17 +115,25 @@ All tmux CLI interaction goes through a `TmuxCLI` interface:
 
 ```go
 type TmuxCLI interface {
-    SplitWindow(target, cmd string, horizontal bool, size int) (string, error)
-    JoinPane(src, dst string, horizontal bool, size int) error
-    BreakPane(paneID string) error
-    SelectPane(paneID string) error
-    ListPanes(target string) ([]PaneInfo, error)
-    KillPane(paneID string) error
-    CapturePane(paneID string) (string, error)
-    SetPaneEnv(paneID, key, value string) error
-    GetPaneEnv(paneID, key string) (string, error)
+    SplitWindow(ctx context.Context, opts SplitOpts) (string, error)
+    JoinPane(ctx context.Context, opts JoinOpts) error
+    SelectPane(ctx context.Context, paneID string) error
+    KillPane(ctx context.Context, paneID string) error
+    NewWindow(ctx context.Context, opts NewWindowOpts) (string, error)
+    ListPanes(ctx context.Context, target string) ([]PaneInfo, error)
+    DisplayMessage(ctx context.Context, format string) (string, error)
+    CapturePane(ctx context.Context, paneID string) (string, error)
+    SetEnvironment(ctx context.Context, key, value string) error
+    ShowEnvironment(ctx context.Context) (map[string]string, error)
+    UnsetEnvironment(ctx context.Context, key string) error
+    SetPaneOption(ctx context.Context, paneID, key, value string) error
+    Version(ctx context.Context) (string, error)
 }
 ```
+
+All methods accept `context.Context` as the first parameter for timeout/cancellation.
+This is critical for the poll loop and spawn operations - a hung tmux process must
+not block the `tea.Cmd` indefinitely.
 
 Real implementation (`tmuxExec`) shells out via `os/exec`. Unit tests inject a mock.
 Integration tests use real tmux.
@@ -132,12 +141,11 @@ Integration tests use real tmux.
 ### 2. Hidden parking window for non-visible panes
 
 Non-visible worker panes live in a dedicated tmux window (named `kasmos-parking`).
-To show a worker: `tmux join-pane -s kasmos-parking.<pane> -t <kasmos-window> -h -l 50%`.
-To hide: `tmux break-pane -d -s <worker-pane> -t kasmos-parking`.
+To show a worker: `tmux join-pane -h -s <pane> -t <kasmos-window> -l 50%`.
+To hide: `tmux join-pane -d -s <visible-pane> -t <parking-window>`.
 
-This avoids complex resize/visibility logic. The visible layout is always exactly
-two panes: kasmos (left) + active worker (right). The parking window is hidden
-from the user's tmux window list.
+Both directions use `join-pane`. The `-d` flag on parking prevents focus from
+following the pane into the hidden window. This avoids needing `break-pane` entirely.
 
 ### 3. Worker exit detection via polling on existing tick
 
@@ -176,7 +184,7 @@ surviving workers. Untagged panes are ignored.
 | Risk | Impact | Mitigation |
 |------|--------|------------|
 | tmux CLI output format changes across versions | Pane parsing breaks | Pin to documented tmux format strings. Test against tmux 3.x+. |
-| join-pane/break-pane race with rapid switching | Visual glitch or wrong pane shown | Serialize pane operations via mutex. Debounce rapid selections. |
+| join-pane race with rapid switching | Visual glitch or wrong pane shown | Serialize pane operations via mutex. Debounce rapid selections. |
 | Parking window visible to user in tmux window list | Confusing UX | Set parking window name to `kasmos-parking` and document. Consider `set-option remain-on-exit`. |
 | Worker pane scrollback fills memory | tmux memory grows | Rely on tmux's own scrollback limit (default 2000). Not kasmos's problem. |
 | bubbletea alt-screen conflicts with tmux pane | Rendering artifacts | kasmos already uses alt-screen. Verify tmux pane inherits terminal correctly. |
@@ -246,22 +254,23 @@ outside tmux with config tmux_mode = true -- falls back to subprocess with notic
 ```
 Wave 1: TmuxBackend Core
   WP01: TmuxCLI interface + tmuxExec         (no deps)
-  WP02: TmuxBackend + tmuxHandle             (WP01)
-  WP03: WorkerHandle.Interactive() extension  (no deps)
+  WP02: TmuxBackend + tmuxHandle + Interactive()  (WP01)
 
 Wave 2: TUI Integration
-  WP04: --tmux flag + backend selection       (WP02, WP03)
-  WP05: Pane switching + focus management     (WP04)
-  WP06: Tick-based exit detection + messages  (WP04, WP05)
+  WP03: --tmux flag + backend selection       (WP02)
+  WP04: Pane switching + focus management     (WP03)
+  WP05: Exit detection + output capture       (WP04)
 
 Wave 3: Persistence & Config
-  WP07: Session metadata + config + reattach  (WP06)
-  WP08: Constitution amendment                (no deps)
+  WP06: Session metadata + config + reattach  (WP05)
+  WP07: Constitution amendment                (no deps, DONE)
 ```
 
 **Parallelism opportunities**:
-- WP01 and WP03 can run in parallel (no dependency)
-- WP08 can run anytime (documentation only)
+- WP07 was pre-completed during planning (constitution amendment).
+
+**Note**: Interactive() (plan's original WP03) was folded into WP02 during
+task generation. The tasks.md WP numbering (WP01-WP07) is authoritative.
 
 ## Reference Documents
 

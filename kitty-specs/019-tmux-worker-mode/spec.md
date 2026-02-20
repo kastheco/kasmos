@@ -155,7 +155,7 @@ A developer's kasmos process crashes, is killed, or they intentionally exit. The
 
 - **TmuxBackend**: An implementation of the `WorkerBackend` interface that creates and manages terminal multiplexer panes for workers instead of headless subprocesses. Handles pane creation, visibility toggling, focus management, and process lifecycle monitoring.
 - **ManagedPane**: A terminal multiplexer pane created and tracked by kasmos. Key attributes: pane identifier, associated worker ID, visibility state (shown/hidden), process status. Uses a consistent naming/tagging scheme for rediscovery after kasmos restart.
-- **TmuxMode Setting**: A persistent configuration option (stored in `.kasmos/config.json` alongside other settings from feature 017) that determines whether kasmos uses interactive terminal panes or headless subprocesses for workers.
+- **TmuxMode Setting**: A persistent configuration option (stored in `.kasmos/config.toml` alongside other settings from feature 017) that determines whether kasmos uses interactive terminal panes or headless subprocesses for workers.
 - **Session Backend Metadata**: The session persistence file (`.kasmos/session.json`) records the backend mode (subprocess or tmux) used by the session. On reattach, kasmos reads this to automatically select the correct backend and reconnect to managed panes.
 
 ## Success Criteria
@@ -172,7 +172,7 @@ A developer's kasmos process crashes, is killed, or they intentionally exit. The
 ## Assumptions
 
 - The terminal multiplexer (tmux) is installed and available in PATH when tmux mode is used. It is not a hard dependency for kasmos itself -- only for this mode.
-- The feature 017 settings view and `.kasmos/config.json` persistence are available for storing the tmux mode default preference.
+- The feature 017 settings view and `.kasmos/config.toml` persistence are available for storing the tmux mode default preference.
 - The existing `WorkerBackend` interface from feature 016 is sufficient for the tmux backend without interface changes. If minor additions are needed (e.g., a method for pane visibility), they will be additive and backward-compatible.
 - Terminal multiplexer pane naming/tagging is reliable enough for kasmos to identify its managed panes after a restart (tmux supports `set-option` for pane metadata).
 - Workers in tmux mode run the same `opencode run` commands as subprocess mode -- the difference is the execution environment (interactive terminal vs captured pipe), not the command itself.
