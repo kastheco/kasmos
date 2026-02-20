@@ -5,6 +5,7 @@
 .env
 .pids/
 .kasmos/
+.worktrees/
 .idea/
 
 # Added by Spec Kitty CLI (auto-managed)
