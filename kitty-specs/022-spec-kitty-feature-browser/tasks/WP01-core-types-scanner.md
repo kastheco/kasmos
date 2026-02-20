@@ -1,13 +1,15 @@
 ---
 work_package_id: WP01
 title: Core Types, Scanner, and Phase Detection
-lane: "for_review"
+lane: "done"
 dependencies: []
 base_branch: main
 base_commit: ee4dc161d4104dee012377433baca9a0eb672b99
 created_at: '2026-02-20T07:00:17.530661+00:00'
 subtasks: [T001, T002, T003, T004, T005, T006]
 shell_pid: "3948330"
+reviewed_by: "kas"
+review_status: "approved"
 history:
 - timestamp: '2026-02-20T12:00:00Z'
   lane: planned
@@ -316,3 +318,4 @@ colorLightGray = lipgloss.Color("#9B9B9B")
 ## Activity Log
 
 - 2026-02-20T07:06:00Z – unknown – shell_pid=3948330 – lane=for_review – Core types and scanner implemented; builds and tests pass
+- 2026-02-20T08:34:54Z – unknown – shell_pid=3948330 – lane=done – Previously approved by user.
