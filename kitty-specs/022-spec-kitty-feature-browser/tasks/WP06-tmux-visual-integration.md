@@ -1,7 +1,7 @@
 ---
 work_package_id: WP06
 title: tmux Visual Integration
-lane: "doing"
+lane: "done"
 dependencies: []
 base_branch: main
 base_commit: 2e0aad875f49c52020bc757413ccc9c9d19e8a18
@@ -225,3 +225,4 @@ The interface has `SetPaneOption(ctx, paneID, option, value)` for pane-level opt
 - 2026-02-20T08:29:18Z – unknown – shell_pid=4116651 – lane=for_review – All 5 subtasks complete. SetOption, SetPaneTitle added to TmuxCLI. Pane borders themed with kasmos palette. Status bar hidden/restored.
 - 2026-02-20T08:34:49Z – unknown – shell_pid=4116651 – lane=done – Reviewer VERIFIED. All acceptance criteria pass.
 - 2026-02-20T08:39:40Z – unknown – shell_pid=4116651 – lane=doing – kas.verify BLOCKED: Cleanup not called on shutdown, status not saved/restored. Fixing.
+- 2026-02-20T08:50:55Z – unknown – shell_pid=4116651 – lane=done – Review VERIFIED: All 5 subtasks complete. SetOption/ShowOption/SetPaneTitle added to TmuxCLI. Pane borders themed with kasmos palette (fg=#383838 unfocused, fg=#7D56F4 focused). Status bar hidden on Init, restored on Cleanup. PreserveStatus flag works. Cleanup called via defer in main.go. Comprehensive tests (6 new cases). Zero Critical/High findings.
