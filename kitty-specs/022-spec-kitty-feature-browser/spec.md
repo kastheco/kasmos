@@ -110,6 +110,7 @@ A developer opens the browser but decides not to select a feature. They press Es
 - **FR-011**: The browser MUST show a helpful empty state message when no features exist in `kitty-specs/`.
 - **FR-012**: The browser MUST validate that `spec-kitty` CLI is available before opening, showing an error note if not found.
 - **FR-013**: Escape or left arrow from the lifecycle sub-menu MUST return to the browser list; Escape or left arrow from the browser MUST return to the launcher.
+- **FR-014**: The browser MUST support `/` to activate a filter. Filtering MUST use case-insensitive substring matching against feature slugs. Enter confirms the filter and returns to navigation mode; Escape clears the filter and restores the full list.
 
 ### Non-Functional Requirements
 
@@ -121,7 +122,7 @@ A developer opens the browser but decides not to select a feature. They press Es
 
 - **FeatureEntry**: A discovered spec-kitty feature. Attributes: feature number (string), slug (string), directory path (string), phase (FeaturePhase).
 - **FeaturePhase**: Enumeration of feature lifecycle phases as detected by the browser: SpecOnly, PlanReady, TasksReady. Determined by filesystem presence of `spec.md`, `plan.md`, and `tasks/WP*.md`.
-- **LifecycleAction**: An available spec-kitty workflow action for a given phase. Maps phase to action labels and the agent role + arguments needed to spawn the corresponding worker.
+- **LifecycleAction** (`lifecycleAction` in code, unexported): An available spec-kitty workflow action for a given phase. Maps phase to action labels and the agent role + arguments needed to spawn the corresponding worker.
 
 ## Success Criteria
 

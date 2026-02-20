@@ -81,6 +81,12 @@ featureFilterActive  bool              // true when textinput has focus
 featureFilter        textinput.Model   // filter textinput (initialized via styledTextInput())
 ```
 
+**Scroll management**: No stored scroll offset. The renderer computes the visible
+window from `featureSelectedIdx` and the available dialog height on each frame,
+keeping the selected item centered or visible. This matches the existing kasmos
+pattern used by the restore picker (`restoreSelected`) and history overlay
+(`historySelected`), neither of which store a separate scroll offset.
+
 ### State Transitions
 
 ```

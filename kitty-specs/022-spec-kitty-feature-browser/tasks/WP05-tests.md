@@ -2,8 +2,8 @@
 work_package_id: WP05
 title: Tests
 lane: planned
-dependencies: []
-subtasks: [T024, T025, T026, T027, T028]
+dependencies: [WP03, WP04]
+subtasks: [T024, T025, T026, T027, T028, T029]
 history:
 - timestamp: '2026-02-20T12:00:00Z'
   lane: planned
@@ -22,6 +22,14 @@ spec-kitty implement WP05 --base WP04
 ## Objective
 
 Write comprehensive table-driven tests for all browser pure functions in a new file `internal/tui/browser_test.go`. Tests cover: filesystem scanning with temp directories, phase detection accuracy, action mapping correctness, directory name parsing edge cases, and filter matching behavior.
+
+**Base branch note**: This WP uses `--base WP04` despite declaring dependencies on
+both WP03 and WP04. All tested functions (`scanFeatures`, `detectPhase`,
+`actionsForPhase`, `parseFeatureDir`, `filterFeatures`) are pure functions from
+WP01, present in every downstream branch. WP03 rendering code is not needed for
+compilation (WP02 stubs remain in the WP04 lineage). The WP03 dependency is a
+sequencing gate ensuring the full browser is implemented before the quality
+phase, not a code dependency.
 
 ## Context
 
@@ -205,7 +213,8 @@ func TestSomething(t *testing.T) {
            {name: "plan ready", hasPlan: true, wpCount: 0, wantPhase: PhasePlanReady, wantWPs: 0},
            {name: "tasks ready 1 WP", hasPlan: true, wpCount: 1, wantPhase: PhaseTasksReady, wantWPs: 1},
            {name: "tasks ready 5 WPs", hasPlan: true, wpCount: 5, wantPhase: PhaseTasksReady, wantWPs: 5},
-           {name: "tasks ready no plan", hasPlan: false, wpCount: 3, wantPhase: PhaseTasksReady, wantWPs: 3},
+            {name: "tasks ready no plan", hasPlan: false, wpCount: 3, wantPhase: PhaseTasksReady, wantWPs: 3},
+            {name: "tasks ready all done lane files", hasPlan: true, wpCount: 2, wantPhase: PhaseTasksReady, wantWPs: 2},
        }
 
        for _, tt := range tests {
@@ -237,6 +246,7 @@ func TestSomething(t *testing.T) {
    ```
 
 2. Key edge case: "tasks ready no plan" - a feature can have WPs without a plan.md (unusual but possible if plan was deleted). The phase should still be TasksReady because WP files exist.
+3. Add explicit EC-2 coverage: a feature with WP files representing completed work still classifies as TasksReady because phase detection is file-existence-based and does not inspect lane state.
 
 **Files**: `internal/tui/browser_test.go`
 
@@ -439,9 +449,37 @@ func TestSomething(t *testing.T) {
 
 ---
 
+## Subtask T029: Benchmark scanFeatures() for NFR-001
+
+**Purpose**: Validate scan performance against NFR-001 (under 200ms for up to 50 features).
+
+**Steps**:
+
+1. Add `BenchmarkScanFeatures` in `internal/tui/browser_test.go` using `testing.B`.
+2. In benchmark setup, create a temp project root with 50 feature directories under `kitty-specs/`:
+   - 20 spec-only (`spec.md`)
+   - 15 plan-ready (`spec.md` + `plan.md`)
+   - 15 tasks-ready (`spec.md` + `plan.md` + `tasks/WP*.md`)
+3. Change CWD to the benchmark root for the run, then restore it with `defer os.Chdir(origDir)`.
+4. Run `scanFeatures()` in the benchmark loop and assert no errors.
+5. Document expected result in benchmark comments: comfortably below 200ms/op on local filesystems.
+
+**Additional error-path coverage**:
+
+- Add a scan test case where `kitty-specs/` does not exist. Verify `scanFeatures()` returns an empty slice and nil error.
+
+**Files**: `internal/tui/browser_test.go`
+
+**Validation**:
+- [ ] Benchmark uses 50-feature dataset aligned with NFR-001
+- [ ] Benchmark setup/teardown restores process CWD
+- [ ] scanFeatures() on missing `kitty-specs/` returns empty, non-error result
+
+---
+
 ## Definition of Done
 
-- [ ] All 5 test subtasks implemented
+- [ ] All 6 test subtasks implemented
 - [ ] `go test ./internal/tui/ -run TestScan` passes
 - [ ] `go test ./internal/tui/ -run TestDetectPhase` passes
 - [ ] `go test ./internal/tui/ -run TestActionsForPhase` passes

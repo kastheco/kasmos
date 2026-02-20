@@ -2,7 +2,7 @@
 work_package_id: WP04
 title: Browser Interaction Logic (Update)
 lane: planned
-dependencies: []
+dependencies: [WP02]
 subtasks: [T018, T019, T020, T021, T022, T023]
 history:
 - timestamp: '2026-02-20T12:00:00Z'
@@ -165,16 +165,25 @@ When the user selects a feature, the browser routes based on phase:
            }
            return m, nil
 
-       case "enter", "right":
-           return m.handleFeatureSelect()
+        case "enter", "right":
+            return m.handleFeatureSelect()
 
-       case "/":
-           return m.activateBrowserFilter()
+        case "/":
+            return m.activateBrowserFilter()
 
-       default:
-           return m, nil
-       }
-   }
+        case "f":
+            if len(m.featureFiltered) == 0 {
+                m.closeFeatureBrowser()
+                m.transitionFromLauncher()
+                _ = m.openNewDialog()
+                return m, m.startNewDialogForm(newDialogTypeFeatureSpec)
+            }
+            return m, nil
+
+        default:
+            return m, nil
+        }
+    }
    ```
 
 2. Navigation uses `featureSelectedIdx` which indexes into `featureFiltered`. The actual entry is `m.featureEntries[m.featureFiltered[m.featureSelectedIdx]]`.
@@ -187,6 +196,8 @@ When the user selects a feature, the browser routes based on phase:
 - [ ] j/down moves selection down, clamped to list end
 - [ ] k/up moves selection up, clamped to list start
 - [ ] Enter/right triggers feature selection
+- [ ] `f` in empty browser state routes to feature creation (US4 shortcut)
+- [ ] `f` in populated browser does nothing (no conflict with feature list)
 - [ ] / activates filter mode
 - [ ] Navigation works with filtered list (operates on featureFiltered indices)
 - [ ] Empty filtered list doesn't panic

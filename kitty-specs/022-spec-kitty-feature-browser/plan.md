@@ -57,7 +57,7 @@ No violations. No complexity tracking needed.
 **Rationale**: For a project with 50 features, the scan involves ~1 glob + ~150 stat calls. On any modern filesystem (ext4, APFS, even NFS), this completes in under 1ms. Async scanning would add complexity (loading state, spinner, scan-complete message type) for no perceptible benefit.
 
 **Alternatives considered**:
-- Async scan via `tea.Cmd` with spinner: Correct for network filesystems or massive project counts. Rejected for the expected scale. If projects regularly exceed 100 features, this can be revisited.
+- Async scan via `tea.Cmd` with spinner: Correct for network filesystems or massive project counts. Rejected for the expected scale. If projects regularly exceed 100 features or `kitty-specs/` is on a network filesystem, this should be revisited. This satisfies NFR-003 because current target scale (<50 features, local filesystem) keeps scan latency comfortably under the NFR-001 200ms budget.
 
 ### AD-003: Browser as Launcher Sub-View
 
@@ -134,6 +134,7 @@ internal/tui/
 |                        #         add showFeatureBrowser check in View()
 |-- update.go            # MODIFY: Add 'b' case in updateLauncherKeys(),
 |                        #         dispatch to updateFeatureBrowser()
+|-- keys.go              # MODIFY: Add showFeatureBrowser to overlayActive check
 |-- launcher.go          # MODIFY: Add menu item {key: "b", label: "browse features", ...}
 |-- styles.go            # MODIFY (optional): Add phaseBadge() helper if styling warrants it
 '-- messages.go          # NO CHANGE: No new message types needed (synchronous scan)

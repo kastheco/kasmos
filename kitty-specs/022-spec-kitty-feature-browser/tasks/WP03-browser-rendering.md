@@ -2,7 +2,7 @@
 work_package_id: WP03
 title: Browser Rendering (View)
 lane: planned
-dependencies: []
+dependencies: [WP02]
 subtasks: [T013, T014, T015, T016, T017]
 history:
 - timestamp: '2026-02-20T12:00:00Z'
