@@ -1,28 +1,31 @@
 ---
-work_package_id: "WP01"
-subtasks:
-  - "T001"
-  - "T002"
-  - "T003"
-  - "T004"
-  - "T005"
-  - "T006"
-  - "T041"
-title: "TmuxCLI Wrapper Interface"
-phase: "Phase 1 - TmuxBackend Core"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
+work_package_id: WP01
+title: TmuxCLI Wrapper Interface
+lane: "doing"
 dependencies: []
+base_branch: main
+base_commit: 91b2d8ef5f8f8a8f80f29407e2644b1aa7bc9a85
+created_at: '2026-02-20T03:48:00.836862+00:00'
+subtasks:
+- T001
+- T002
+- T003
+- T004
+- T005
+- T006
+- T041
+phase: Phase 1 - TmuxBackend Core
+assignee: ''
+agent: ''
+shell_pid: "3525140"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-19T03:53:34Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-19T03:53:34Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP01 - TmuxCLI Wrapper Interface
