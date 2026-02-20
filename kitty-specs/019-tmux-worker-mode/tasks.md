@@ -247,7 +247,7 @@
 ### Included Subtasks
 - [x] T038 Amend worker mode principle: "Workers are headless subprocesses" -> "Workers are subprocesses (headless by default, interactive tmux panes when configured)"
 - [x] T039 Amend session continuation principle: "Session continuation over interactivity" -> "Headless by default; interactive via tmux when workflows require it. Session continuation remains available in both modes."
-- [ ] T040 Update Go version reference: "Go (1.23+)" -> "Go (1.24+)"
+- [x] T040 Update Go version reference: "Go (1.23+)" -> "Go (1.24+)"
 
 ### Implementation Notes
 - Constitution file: `.kittify/memory/constitution.md`.
