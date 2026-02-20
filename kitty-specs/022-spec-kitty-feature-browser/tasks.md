@@ -179,7 +179,7 @@ Dependency rationale: WP05 tests are exclusively for WP01 pure functions and bra
 - [x] T025: Test phase detection accuracy (spec-only, plan-ready, tasks-ready, invalid dirs)
 - [x] T026: Test actionsForPhase() returns correct actions per phase
 - [x] T027: Test parseFeatureDir() with normal and edge-case directory names
-- [ ] T028: Test filterFeatures() (case-insensitive, empty query, no matches)
+- [x] T028: Test filterFeatures() (case-insensitive, empty query, no matches)
 - [ ] T029: Benchmark scanFeatures() with 50 features to validate NFR-001 (<200ms)
 
 **Implementation sketch**:
