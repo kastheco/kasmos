@@ -1,10 +1,14 @@
 ---
 work_package_id: WP07
 title: Interactive opencode for tmux Workers
-lane: planned
+lane: "doing"
 dependencies: []
+base_branch: main
+base_commit: 0cfb003c7eb526018ce88f6f9251feccbe5f4d43
+created_at: '2026-02-20T08:25:21.992159+00:00'
 subtasks: [T035, T036, T037, T038]
 phase: implementation
+shell_pid: "4116783"
 history:
 - timestamp: '2026-02-20T14:00:00Z'
   lane: planned
