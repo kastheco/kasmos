@@ -105,17 +105,4 @@ You CAN access: WP statuses, branch targets, constitution, project structure, bu
 
 You MUST NOT: perform deep code edits, inspect full planning artifacts, force-push without explicit user approval, skip the dry-run step.
 
-## Communication Protocol
-
-Send structured messages to the `msg-log` pane:
-- Use zellij MCP tools (`run-in-pane` targeting `msg-log`)
-- Format: `echo '[KASMOS:release:<event>] {"feature":"{{FEATURE_SLUG}}", ...}'`
-
-Events:
-- `STARTED`: Release validation begun
-- `PROGRESS`: Milestone (acceptance passed, dry-run clean, merge in progress)
-- `DONE`: Feature merged to main, cleanup complete
-- `ERROR`: Blocking issue (acceptance failed, merge conflict, build failure)
-- `NEEDS_INPUT`: Decision required (merge strategy, conflict resolution, force-push approval)
-
 {{CONTEXT}}

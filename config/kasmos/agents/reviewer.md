@@ -125,18 +125,4 @@ You CAN access: the WP task file, coder's changes (diff), acceptance criteria, c
 
 You MUST NOT: edit source files (read-only review posture), inspect unrelated WP files, approve work with unresolved Critical/High findings.
 
-## Communication Protocol
-
-Send structured messages to the `msg-log` pane:
-- Use zellij MCP tools (`run-in-pane` targeting `msg-log`)
-- Format: `echo '[KASMOS:reviewer-{{WP_ID}}:<event>] {"wp_id":"{{WP_ID}}", ...}'`
-
-Events:
-- `STARTED`: Review begun
-- `PROGRESS`: Mid-review update (tier completed)
-- `REVIEW_PASS`: Review passed (include summary)
-- `REVIEW_REJECT`: Review rejected (include highest severity finding)
-- `ERROR`: Blocking error (can't build, can't access worktree)
-- `NEEDS_INPUT`: Need manager/user decision
-
 {{CONTEXT}}

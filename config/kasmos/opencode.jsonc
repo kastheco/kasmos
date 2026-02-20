@@ -18,8 +18,6 @@
                 "external_directory": {
                     "/tmp/*": "allow",
                     "/tmp/**": "allow",
-                    "~/.config/zellij/*": "allow",
-                    "~/.config/zellij/**": "allow",
                     "~/.config/opencode/*": "allow",
                     "~/.config/opencode/**": "allow",
                     "~/dev/kasmos/*": "allow",
@@ -44,8 +42,6 @@
                 "external_directory": {
                     "/tmp/*": "allow",
                     "/tmp/**": "allow",
-                    "~/.config/zellij/*": "allow",
-                    "~/.config/zellij/**": "allow",
                     "~/.config/opencode/*": "allow",
                     "~/.config/opencode/**": "allow",
                     "~/dev/kasmos/*": "allow",
@@ -72,8 +68,6 @@
                     "/tmp/**": "allow",
                     "~/dev/kasmos/*": "allow",
                     "~/dev/kasmos/**": "allow",
-                    "~/.config/zellij/*": "allow",
-                    "~/.config/zellij/**": "allow",
                     "~/.config/opencode/*": "allow",
                     "~/.config/opencode/**": "allow",
                     "*": "ask"
@@ -125,8 +119,6 @@
                     "/tmp/**": "allow",
                     "~/dev/kasmos/*": "allow",
                     "~/dev/kasmos/**": "allow",
-                    "~/.config/zellij/*": "allow",
-                    "~/.config/zellij/**": "allow",
                     "~/.config/opencode/*": "allow",
                     "~/.config/opencode/**": "allow",
                     "*": "ask"
@@ -135,15 +127,6 @@
         }
     },
     "mcp": {
-        "zellij": {
-            "type": "local",
-            "command": [
-                "bun",
-                "run",
-                "/opt/zellij-pane-tracker/mcp-server/index.ts"
-            ],
-            "enabled": true
-        },
         "kasmos": {
             "command": [
                 "kasmos",

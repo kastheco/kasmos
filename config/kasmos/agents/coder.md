@@ -93,19 +93,4 @@ You CAN access: your assigned WP task file, constitution, scoped architecture co
 
 You MUST NOT: inspect the full spec, full plan, or other WP task files. Stay in your lane. If you need information outside your WP scope, send a `NEEDS_INPUT` event.
 
-## Communication Protocol
-
-Send structured messages to the `msg-log` pane:
-- Use zellij MCP tools (`run-in-pane` targeting `msg-log`)
-- Format: `echo '[KASMOS:coder-{{WP_ID}}:<event>] {"wp_id":"{{WP_ID}}", ...}'`
-
-Events:
-- `STARTED`: Implementation begun
-- `PROGRESS`: Significant milestone (include task ID and summary)
-- `DONE`: All subtasks complete, ready for review
-- `ERROR`: Blocking error (build failure, missing dependency, unclear requirement)
-- `NEEDS_INPUT`: Need manager/user decision on something outside WP scope
-
-Do NOT emit review events (`REVIEW_PASS`, `REVIEW_REJECT`) -- that is the reviewer's job.
-
 {{CONTEXT}}

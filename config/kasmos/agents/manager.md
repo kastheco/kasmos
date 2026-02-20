@@ -93,20 +93,6 @@ Checklist per WP completion:
 3. Verify downstream WPs are unblocked
 4. Update via: `spec-kitty agent tasks move-task WP## --to done --note "..."`
 
-## Communication Protocol
-
-Send structured messages to the `msg-log` pane for kasmos dashboard visibility:
-- Use the zellij MCP tools (`run-in-pane` targeting `msg-log`)
-- Format: `echo '[KASMOS:manager:<event>] {"feature":"{{FEATURE_SLUG}}", ...}'`
-
-Events:
-- `STARTED`: Feature orchestration begun
-- `PROGRESS`: Phase transition or milestone
-- `PHASE_COMPLETE`: A workflow phase finished (include phase name)
-- `WORKER_SPAWNED`: Delegated to a worker agent (include role and WP)
-- `BLOCKED`: Waiting on external input or failed gate
-- `DONE`: All WPs merged, feature complete
-
 ## Scope Boundaries
 
 You have **broad read access**: full spec, plan, tasks, workflow memory, architecture memory, constitution, kanban status, project structure.

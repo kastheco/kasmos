@@ -80,9 +80,9 @@ var (
 
 func panelStyle(focused bool, contentHeight int) lipgloss.Style {
 	if focused {
-		return focusedPanelStyle.Height(contentHeight)
+		return focusedPanelStyle.Height(contentHeight).MaxHeight(contentHeight)
 	}
-	return unfocusedPanelStyle.Height(contentHeight)
+	return unfocusedPanelStyle.Height(contentHeight).MaxHeight(contentHeight)
 }
 
 var (
