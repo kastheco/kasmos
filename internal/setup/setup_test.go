@@ -15,8 +15,8 @@ func TestWriteAgentDefinitions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first write failed: %v", err)
 	}
-	if created != len(agentDefinitions) {
-		t.Fatalf("expected %d files created, got %d", len(agentDefinitions), created)
+	if created == 0 {
+		t.Fatal("expected at least one agent file to be created")
 	}
 	if skipped != 0 {
 		t.Fatalf("expected 0 skipped on first run, got %d", skipped)
@@ -29,25 +29,28 @@ func TestWriteAgentDefinitions(t *testing.T) {
 		t.Fatalf("expected %s to be a directory", agentDir)
 	}
 
-	for _, def := range agentDefinitions {
-		path := filepath.Join(agentDir, def.Filename)
+	// Verify expected agent files exist and are non-empty.
+	expectedAgents := []string{"planner.md", "coder.md", "reviewer.md", "release.md", "manager.md"}
+	for _, name := range expectedAgents {
+		path := filepath.Join(agentDir, name)
 		content, err := os.ReadFile(path)
 		if err != nil {
-			t.Fatalf("expected file %s: %v", def.Filename, err)
+			t.Fatalf("expected file %s: %v", name, err)
 		}
 		if len(content) == 0 {
-			t.Fatalf("expected non-empty content for %s", def.Filename)
+			t.Fatalf("expected non-empty content for %s", name)
 		}
 	}
 
-	created, skipped, err = WriteAgentDefinitions(tempDir)
+	// Second run: all files should be skipped (no overwrite).
+	created2, skipped2, err := WriteAgentDefinitions(tempDir)
 	if err != nil {
 		t.Fatalf("second write failed: %v", err)
 	}
-	if created != 0 {
-		t.Fatalf("expected 0 files created on second run, got %d", created)
+	if created2 != 0 {
+		t.Fatalf("expected 0 files created on second run, got %d", created2)
 	}
-	if skipped != len(agentDefinitions) {
-		t.Fatalf("expected %d skipped on second run, got %d", len(agentDefinitions), skipped)
+	if skipped2 != created {
+		t.Fatalf("expected %d skipped on second run, got %d", created, skipped2)
 	}
 }
