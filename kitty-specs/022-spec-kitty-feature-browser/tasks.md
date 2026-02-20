@@ -2,8 +2,8 @@
 
 **Feature**: 022-spec-kitty-feature-browser
 **Date**: 2026-02-20
-**Work Packages**: 5 (WP01-WP05)
-**Total Subtasks**: 29
+**Work Packages**: 7 (WP01-WP07)
+**Total Subtasks**: 38
 
 ## Overview
 
@@ -17,8 +17,8 @@ All new code goes in a single new file `internal/tui/browser.go` (plus `browser_
 WP01 (types/scanner)
   |
   v
-WP02 (state/wiring)
-  |
+WP02 (state/wiring)                WP06 [P] (tmux theming)
+  |                                 WP07 [P] (interactive opencode)
   +----+----+
   |         |
   v         v
@@ -30,7 +30,7 @@ WP03 [P]  WP04 [P]     <-- parallel
      WP05 (tests)
 ```
 
-**Parallel opportunity**: WP03 and WP04 can execute simultaneously after WP02 completes.
+**Parallel opportunity**: WP03 and WP04 can execute simultaneously after WP02 completes. WP06 and WP07 are fully independent of WP01-05 (they touch `internal/worker/`, not `internal/tui/`) and can run at any time in parallel.
 
 **Reference note**: Line numbers in WP prompt files are guidance only. If source files shift, use the quoted code context and symbols as the authoritative insertion points.
 
@@ -197,6 +197,61 @@ Dependency rationale: WP05 tests are exclusively for WP01 pure functions and bra
 
 ---
 
+## Phase 5: tmux Integration (independent)
+
+### WP06 - tmux Visual Integration
+
+**Prompt**: `tasks/WP06-tmux-visual-integration.md`
+**Summary**: Theme tmux pane borders to match the kasmos bubblegum palette, set worker pane titles (shown in border format), and hide the tmux status bar. Adds `SetOption` and `SetPaneTitle` methods to the `TmuxCLI` interface.
+**Priority**: P1 (visual polish)
+**Dependencies**: none (independent of WP01-05, touches only `internal/worker/`)
+**Estimated prompt size**: ~250 lines
+
+**Subtasks**:
+- [ ] T030: Add SetOption to TmuxCLI interface (session-level set-option)
+- [ ] T031: Add SetPaneTitle to TmuxCLI interface (select-pane -T wrapper)
+- [ ] T032: Apply kasmos palette theming in TmuxBackend.Init()
+- [ ] T033: Set pane title on spawn with worker ID and role
+- [ ] T034: Hide tmux status bar (restore on cleanup)
+
+**Implementation sketch**:
+1. Extend TmuxCLI interface with two new methods (T030-T031)
+2. Call theming options in Init() after parking window creation (T032)
+3. Set title per pane in Spawn() after remain-on-exit (T033)
+4. Hide/restore status bar in Init()/Cleanup() (T034)
+
+**Risks**:
+- `pane-border-lines heavy` requires tmux 3.2+ (degrades gracefully on older tmux)
+- Overrides user's tmux theme for the session (acceptable tradeoff)
+
+---
+
+### WP07 - Interactive opencode for tmux Workers
+
+**Prompt**: `tasks/WP07-interactive-opencode.md`
+**Summary**: Switch the tmux backend from `opencode run` (headless) to `opencode` (interactive TUI). Uses `--prompt` flag instead of positional args. Adds WorkDir support via tmux `-c` flag. Subprocess backend stays headless.
+**Priority**: P0 (bug fix -- current tmux workers are non-interactive contrary to design intent)
+**Dependencies**: none (independent of WP01-06, modifies only backend arg construction)
+**Estimated prompt size**: ~300 lines
+
+**Subtasks**:
+- [ ] T035: Separate buildArgs for subprocess (opencode run) vs tmux (opencode interactive)
+- [ ] T036: Add WorkDir support to tmux SplitWindow via -c flag
+- [ ] T037: Update buildArgs tests for both backends
+- [ ] T038: Update architecture documentation to reflect dual-mode design
+
+**Implementation sketch**:
+1. Rewrite TmuxBackend.buildArgs() to omit "run", use --prompt flag (T035)
+2. Add Dir field to SplitOpts, wire through Spawn (T036)
+3. Table-driven tests for both arg builders (T037)
+4. Update architecture.md and constitution.md (T038)
+
+**Risks**:
+- `--variant` and `-f` flags not available in interactive opencode (silently dropped)
+- Long prompts via --prompt need testing (460+ line WP bodies)
+
+---
+
 ## Summary Table
 
 | WP | Title | Subtasks | Est. Lines | Dependencies | Parallel |
@@ -206,11 +261,13 @@ Dependency rationale: WP05 tests are exclusively for WP01 pure functions and bra
 | WP03 | Browser Rendering (View) | T013-T017 (5) | ~400 | WP02 | [P] with WP04 |
 | WP04 | Browser Interaction Logic (Update) | T018-T023 (6) | ~450 | WP02 | [P] with WP03 |
 | WP05 | Tests | T024-T029 (6) | ~400 | WP03, WP04 | - |
+| WP06 | tmux Visual Integration | T030-T034 (5) | ~250 | none | [P] with all |
+| WP07 | Interactive opencode for tmux Workers | T035-T038 (4) | ~300 | none | [P] with all |
 
-**MVP scope**: WP01 + WP02 + WP03 + WP04 delivers a fully functional browser. WP05 adds test coverage.
+**MVP scope**: WP01-04 delivers the feature browser. WP05 adds tests. WP06-07 add tmux visual integration and fix the interactive worker mode.
 
 **Recommended execution**:
 1. WP01 (serial)
 2. WP02 (serial, depends on WP01)
-3. WP03 + WP04 (parallel, both depend on WP02)
+3. WP03 + WP04 + WP06 + WP07 (all parallel -- WP03/04 touch tui/, WP06/07 touch worker/)
 4. WP05 (serial, depends on WP03 + WP04)
