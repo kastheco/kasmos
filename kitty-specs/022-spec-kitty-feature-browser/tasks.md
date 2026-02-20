@@ -139,7 +139,7 @@ WP03 [P]  WP04 [P]     <-- parallel
 **Parallel**: Can run simultaneously with WP03
 
 **Subtasks**:
-- [ ] T018: Implement updateFeatureBrowser() dispatcher (route by filter/actions state)
+- [x] T018: Implement updateFeatureBrowser() dispatcher (route by filter/actions state)
 - [ ] T019: Implement list navigation (j/k/up/down, visible window clamping, `f` shortcut from empty state)
 - [ ] T020: Implement feature selection (Enter/right -> dashboard load or sub-menu expand)
 - [ ] T021: Implement action selection (Enter/right -> spawn dialog with prefill)
