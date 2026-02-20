@@ -19,7 +19,7 @@
 **Estimated Size**: ~400 lines
 
 ### Included Subtasks
-- [ ] T001 Define TmuxCLI interface, PaneInfo struct, and error types in `internal/worker/tmux_cli.go`
+- [x] T001 Define TmuxCLI interface, PaneInfo struct, and error types in `internal/worker/tmux_cli.go`
 - [ ] T002 Implement `tmuxExec` base struct with command execution helper and constructor
 - [ ] T003 [P] Implement pane lifecycle methods: SplitWindow, KillPane, SelectPane
 - [ ] T004 [P] Implement pane movement methods: JoinPane (with JoinOpts for both park and show directions), and window management: NewWindow
