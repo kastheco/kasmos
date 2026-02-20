@@ -111,7 +111,7 @@ WP03 [P]  WP04 [P]     <-- parallel
 
 **Subtasks**:
 - [x] T013: Implement renderFeatureBrowser() main structure (backdrop dialog, header, list, help bar)
-- [ ] T014: Implement feature entry line rendering (number, slug, phase badge, selection highlight)
+- [x] T014: Implement feature entry line rendering (number, slug, phase badge, selection highlight)
 - [ ] T015: Implement inline tree expansion rendering (ASCII tree chars, action selection)
 - [ ] T016: Implement filter textinput rendering at bottom of dialog
 - [ ] T017: Implement empty state rendering ("no features found" with hint)
