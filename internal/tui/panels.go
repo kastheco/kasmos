@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss/v2"
@@ -374,7 +375,11 @@ func (m *Model) renderTasksPanel() string {
 		return ""
 	}
 
-	title := lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("tasks")
+	titleText := "tasks"
+	if m.taskSourcePath != "" {
+		titleText = fmt.Sprintf("tasks: %s", filepath.Base(m.taskSourcePath))
+	}
+	title := lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render(titleText)
 
 	if len(m.loadedTasks) == 0 {
 		empty := lipgloss.NewStyle().Foreground(colorMidGray).Render("no tasks loaded")
