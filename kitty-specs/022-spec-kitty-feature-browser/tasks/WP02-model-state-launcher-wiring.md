@@ -1,13 +1,15 @@
 ---
 work_package_id: WP02
 title: Browser Model State and Launcher Wiring
-lane: "for_review"
+lane: "done"
 dependencies: [WP01]
 base_branch: 022-spec-kitty-feature-browser-WP01
 base_commit: 94ddda5a17e154a0c6485a61073ecbf486001d9e
 created_at: '2026-02-20T07:08:50.396239+00:00'
 subtasks: [T007, T008, T009, T010, T011, T012]
 shell_pid: "3972069"
+reviewed_by: "kas"
+review_status: "approved"
 history:
 - timestamp: '2026-02-20T12:00:00Z'
   lane: planned
@@ -381,3 +383,4 @@ default:
 ## Activity Log
 
 - 2026-02-20T07:09:54Z – unknown – shell_pid=3972069 – lane=for_review – Ready for review: wired browser launcher state, dispatch, and key/menu integration
+- 2026-02-20T08:34:40Z – unknown – shell_pid=3972069 – lane=done – Previously approved by user.
