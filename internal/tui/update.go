@@ -34,6 +34,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateHistory(msg)
 	}
 
+	if m.showFeatureBrowser {
+		return m.updateFeatureBrowser(msg)
+	}
+
 	if m.showRestorePicker {
 		return m.updateRestorePicker(msg)
 	}
@@ -776,6 +780,9 @@ func (m *Model) updateLauncherKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "s":
 		m.launcherNote = ""
 		return m, m.openSettingsView()
+	case "b":
+		m.launcherNote = ""
+		return m, m.openFeatureBrowser()
 	default:
 		return m, nil
 	}
