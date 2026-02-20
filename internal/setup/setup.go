@@ -6,8 +6,11 @@ import (
 	"path/filepath"
 )
 
-func Run() error {
+func Run(force bool) error {
 	fmt.Println("kasmos setup")
+	if force {
+		fmt.Println("  (--force: overwriting existing files)")
+	}
 	fmt.Println()
 
 	fmt.Println("Checking dependencies...")
@@ -39,11 +42,15 @@ func Run() error {
 	}
 
 	fmt.Println("Scaffolding agent definitions...")
-	created, skipped, err := WriteAgentDefinitions(root)
+	created, skipped, err := WriteAgentDefinitions(root, force)
 	if err != nil {
 		return fmt.Errorf("write agents: %w", err)
 	}
-	fmt.Printf("  %d created, %d skipped (already exist)\n", created, skipped)
+	if force {
+		fmt.Printf("  %d written (force mode)\n", created+skipped)
+	} else {
+		fmt.Printf("  %d created, %d skipped (already exist)\n", created, skipped)
+	}
 	fmt.Println()
 
 	fmt.Println("Installing skills...")

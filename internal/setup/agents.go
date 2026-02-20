@@ -11,8 +11,8 @@ import (
 
 // WriteAgentDefinitions copies agent markdown files from the embedded
 // config/default/agents/ directory into the project's .opencode/agents/.
-// Existing files are NOT overwritten (skip-if-exists semantics).
-func WriteAgentDefinitions(dir string) (created, skipped int, err error) {
+// Existing files are skipped unless force is true.
+func WriteAgentDefinitions(dir string, force bool) (created, skipped int, err error) {
 	agentsFS, err := fs.Sub(profilecfg.DefaultProfile, "default/agents")
 	if err != nil {
 		return 0, 0, fmt.Errorf("access embedded agents: %w", err)
@@ -33,10 +33,11 @@ func WriteAgentDefinitions(dir string) (created, skipped int, err error) {
 
 		dest := filepath.Join(destDir, path)
 
-		// Skip if the file already exists (don't overwrite user customizations).
 		if _, statErr := os.Stat(dest); statErr == nil {
-			skipped++
-			return nil
+			if !force {
+				skipped++
+				return nil
+			}
 		} else if !os.IsNotExist(statErr) {
 			return fmt.Errorf("stat %s: %w", path, statErr)
 		}

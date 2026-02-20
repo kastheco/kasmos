@@ -161,13 +161,15 @@ func newRootCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&spawnAll, "spawn-all", false, "spawn workers for all unblocked tasks immediately")
 	cmd.Flags().BoolVar(&attach, "attach", false, "restore session from .kasmos/session.json")
 
+	var forceSetup bool
 	setupCmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Validate dependencies and scaffold agent configurations",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return setup.Run()
+			return setup.Run(forceSetup)
 		},
 	}
+	setupCmd.Flags().BoolVar(&forceSetup, "force", false, "overwrite existing agent definitions and configurations")
 	cmd.AddCommand(setupCmd)
 
 	return cmd

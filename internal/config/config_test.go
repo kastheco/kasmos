@@ -141,8 +141,8 @@ func TestDefaultConfigHasRequiredRoles(t *testing.T) {
 		if !ok {
 			t.Fatalf("missing default role %q", role)
 		}
-		if agent.Model == "" {
-			t.Fatalf("role %q has empty model", role)
+		if agent.Model != "" {
+			t.Fatalf("role %q has non-empty default model %q; models should come from opencode.jsonc", role, agent.Model)
 		}
 		if agent.Reasoning == "" {
 			t.Fatalf("role %q has empty reasoning", role)

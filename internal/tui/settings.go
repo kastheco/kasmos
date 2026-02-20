@@ -60,9 +60,6 @@ func (m *Model) ensureConfigDefaults() {
 			m.config.Agents[role] = def.Agents[role]
 			continue
 		}
-		if strings.TrimSpace(cfg.Model) == "" {
-			cfg.Model = def.Agents[role].Model
-		}
 		cfg.Reasoning = normalizeReasoning(cfg.Reasoning)
 		m.config.Agents[role] = cfg
 	}
@@ -231,11 +228,7 @@ func (m *Model) applySettingsFromForm() error {
 
 	for _, role := range settingsRoles {
 		agent := m.config.Agents[role]
-		model := strings.TrimSpace(m.settingsForm.modelInput[role].Value())
-		if model == "" {
-			return fmt.Errorf("%s model cannot be empty", role)
-		}
-		agent.Model = model
+		agent.Model = strings.TrimSpace(m.settingsForm.modelInput[role].Value())
 		agent.Reasoning = normalizeReasoning(agent.Reasoning)
 		m.config.Agents[role] = agent
 	}

@@ -29,19 +29,15 @@ func DefaultConfig() *Config {
 		DefaultTaskSource: "yolo",
 		Agents: map[string]AgentConfig{
 			"planner": {
-				Model:     "claude-opus-4-6",
 				Reasoning: "high",
 			},
 			"coder": {
-				Model:     "claude-sonnet-4",
 				Reasoning: "default",
 			},
 			"reviewer": {
-				Model:     "claude-opus-4-6",
 				Reasoning: "high",
 			},
 			"release": {
-				Model:     "claude-sonnet-4",
 				Reasoning: "default",
 			},
 		},

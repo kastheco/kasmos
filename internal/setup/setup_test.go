@@ -11,7 +11,7 @@ func TestWriteAgentDefinitions(t *testing.T) {
 
 	tempDir := t.TempDir()
 
-	created, skipped, err := WriteAgentDefinitions(tempDir)
+	created, skipped, err := WriteAgentDefinitions(tempDir, false)
 	if err != nil {
 		t.Fatalf("first write failed: %v", err)
 	}
@@ -42,8 +42,8 @@ func TestWriteAgentDefinitions(t *testing.T) {
 		}
 	}
 
-	// Second run: all files should be skipped (no overwrite).
-	created2, skipped2, err := WriteAgentDefinitions(tempDir)
+	// Second run without force: all files should be skipped.
+	created2, skipped2, err := WriteAgentDefinitions(tempDir, false)
 	if err != nil {
 		t.Fatalf("second write failed: %v", err)
 	}
@@ -52,5 +52,17 @@ func TestWriteAgentDefinitions(t *testing.T) {
 	}
 	if skipped2 != created {
 		t.Fatalf("expected %d skipped on second run, got %d", created, skipped2)
+	}
+
+	// Third run with force: all files should be overwritten.
+	created3, skipped3, err := WriteAgentDefinitions(tempDir, true)
+	if err != nil {
+		t.Fatalf("force write failed: %v", err)
+	}
+	if created3 == 0 {
+		t.Fatal("expected files to be written in force mode")
+	}
+	if skipped3 != 0 {
+		t.Fatalf("expected 0 skipped in force mode, got %d", skipped3)
 	}
 }
