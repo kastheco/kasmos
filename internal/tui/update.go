@@ -948,24 +948,26 @@ func (m *Model) updateTaskPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Continue):
 		return m, m.continueSelectedWorkerCmd()
 	case key.Matches(msg, m.keys.Up):
-		if m.selectedTaskIdx > 0 {
-			m.selectedTaskIdx--
+		for i := m.selectedTaskIdx - 1; i >= 0; i-- {
+			if m.loadedTasks[i].State != task.TaskBlocked {
+				m.selectedTaskIdx = i
+				break
+			}
 		}
 		m.updateKeyStates()
 		return m, nil
 	case key.Matches(msg, m.keys.Down):
-		if m.selectedTaskIdx < len(m.loadedTasks)-1 {
-			m.selectedTaskIdx++
+		for i := m.selectedTaskIdx + 1; i < len(m.loadedTasks); i++ {
+			if m.loadedTasks[i].State != task.TaskBlocked {
+				m.selectedTaskIdx = i
+				break
+			}
 		}
 		m.updateKeyStates()
 		return m, nil
 	case key.Matches(msg, m.keys.Select) || msg.String() == " ":
 		if m.selectedTaskIdx >= 0 && m.selectedTaskIdx < len(m.loadedTasks) {
 			t := m.loadedTasks[m.selectedTaskIdx]
-			if t.State == task.TaskBlocked {
-				m.openBlockedConfirmDialog(m.selectedTaskIdx)
-				return m, nil
-			}
 			if t.State == task.TaskUnassigned {
 				role := t.SuggestedRole
 				if role == "" {

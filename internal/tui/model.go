@@ -410,7 +410,6 @@ func (m *Model) swapTaskSource(source task.Source) {
 	m.taskSource = source
 	m.taskSourceType = source.Type()
 	m.taskSourcePath = source.Path()
-	m.selectedTaskIdx = 0
 
 	if source.Type() != "yolo" {
 		tasks, err := source.Load()
@@ -422,6 +421,14 @@ func (m *Model) swapTaskSource(source task.Source) {
 		}
 	} else {
 		m.loadedTasks = nil
+	}
+
+	m.selectedTaskIdx = 0
+	for i, t := range m.loadedTasks {
+		if t.State != task.TaskBlocked {
+			m.selectedTaskIdx = i
+			break
+		}
 	}
 
 	m.recalculateLayout()
