@@ -81,7 +81,7 @@ WP03 [P]  WP04 [P]     <-- parallel
 - [x] T008: Implement openFeatureBrowser() and closeFeatureBrowser() methods
 - [x] T009: Add `b` key case to updateLauncherKeys() in update.go
 - [x] T010: Add "browse features" menu item to launcherMenuItems in launcher.go
-- [ ] T011: Add showFeatureBrowser dispatches in View() and Update()
+- [x] T011: Add showFeatureBrowser dispatches in View() and Update()
 - [ ] T012: Update updateKeyStates() to handle browser overlay state
 
 **Implementation sketch**:
