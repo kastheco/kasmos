@@ -132,7 +132,7 @@
 **Estimated Size**: ~550 lines
 
 ### Included Subtasks
-- [ ] T020 Define tmux-specific message types in `internal/tui/messages.go`: `paneSwappedMsg`, `paneExitedMsg`, `paneDetectedMsg`, `tmuxInitMsg`
+- [x] T020 Define tmux-specific message types in `internal/tui/messages.go`: `paneSwappedMsg`, `paneExitedMsg`, `paneDetectedMsg`, `tmuxInitMsg`
 - [ ] T021 Implement `tmuxInitCmd()` in `internal/tui/commands.go`: calls `TmuxBackend.Init()`, returns `tmuxInitMsg` with kasmos pane ID, kasmos window ID, and parking window ID
 - [ ] T022 Implement `paneSwapCmd()` in `internal/tui/commands.go`: calls `TmuxBackend.SwapActive()`, returns `paneSwappedMsg`
 - [ ] T023 Implement `paneFocusCmd()` in `internal/tui/commands.go`: calls `TmuxCLI.SelectPane()` for worker focus, and dashboard focus return
