@@ -209,7 +209,7 @@
 
 ### Included Subtasks
 - [x] T032 Add `BackendMode string` field to `SessionState` in `internal/persist/schema.go` with JSON tag `"backend_mode,omitempty"`
-- [ ] T033 Add `TmuxMode bool` field to `Config` in `internal/config/config.go` with TOML tag `"tmux_mode"`
+- [x] T033 Add `TmuxMode bool` field to `Config` in `internal/config/config.go` with TOML tag `"tmux_mode"`
 - [ ] T034 Update `buildSessionState()` in `internal/tui/model.go` to include `BackendMode` (set to `m.backend.Name()`)
 - [ ] T035 Update reattach logic in `cmd/kasmos/main.go`: read `BackendMode` from loaded session, auto-select TmuxBackend if "tmux"
 - [ ] T036 Implement config-based tmux activation in `cmd/kasmos/main.go`: if `cfg.TmuxMode == true` and `$TMUX` is set, enable tmux mode; if `$TMUX` is not set, fall back to subprocess with a notice
