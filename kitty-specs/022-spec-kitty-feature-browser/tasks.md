@@ -52,7 +52,7 @@ WP03 [P]  WP04 [P]     <-- parallel
 - [x] T003: Define lifecycleAction struct and actionsForPhase() mapping
 - [x] T004: Implement parseFeatureDir() - extract number and slug from directory name
 - [x] T005: Implement scanFeatures() - glob, classify phases, sort by number descending
-- [ ] T006: Implement filterFeatures() - case-insensitive substring match on slugs
+- [x] T006: Implement filterFeatures() - case-insensitive substring match on slugs
 
 **Implementation sketch**:
 1. Create `internal/tui/browser.go` with package declaration and imports
