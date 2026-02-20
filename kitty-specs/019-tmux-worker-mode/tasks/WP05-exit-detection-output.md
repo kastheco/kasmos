@@ -1,27 +1,30 @@
 ---
-work_package_id: "WP05"
+work_package_id: WP05
+title: Exit Detection, Output Capture & Key Disabling
+lane: "doing"
+dependencies: [WP04]
+base_branch: 019-tmux-worker-mode-WP04
+base_commit: 81019aaa6e5521aec829634c012c429238c84fe6
+created_at: '2026-02-20T04:50:18.890183+00:00'
 subtasks:
-  - "T026"
-  - "T027"
-  - "T028"
-  - "T029"
-  - "T030"
-  - "T031"
-title: "Exit Detection, Output Capture & Key Disabling"
-phase: "Phase 2 - TUI Integration"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
-dependencies: ["WP04"]
+- T026
+- T027
+- T028
+- T029
+- T030
+- T031
+phase: Phase 2 - TUI Integration
+assignee: ''
+agent: ''
+shell_pid: "3677728"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-19T03:53:34Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-19T03:53:34Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP05 - Exit Detection, Output Capture & Key Disabling
