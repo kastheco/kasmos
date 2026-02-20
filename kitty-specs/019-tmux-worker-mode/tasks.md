@@ -60,7 +60,7 @@
 
 ### Included Subtasks
 - [x] T007 Define TmuxBackend, ManagedPane, PaneStatus, and ReconnectedWorker types in `internal/worker/tmux.go`
-- [ ] T008 Add `Interactive() bool` to WorkerHandle interface in `internal/worker/backend.go` and implement `Interactive() -> false` on `subprocessHandle` in `internal/worker/subprocess.go`
+- [x] T008 Add `Interactive() bool` to WorkerHandle interface in `internal/worker/backend.go` and implement `Interactive() -> false` on `subprocessHandle` in `internal/worker/subprocess.go`
 - [ ] T009 Implement `TmuxBackend.Init()`: capture kasmos pane ID AND window ID via `DisplayMessage`, create parking window, set session/parking/dashboard env tags
 - [ ] T010 Implement `TmuxBackend.Spawn()`: build command, create pane via SplitWindow, tag with worker/session IDs, track in managedPanes
 - [ ] T011 Implement `tmuxHandle` struct: `Interactive() -> true`, `Stdout() -> nil`, `Wait()` via exitCh, `Kill()`, `PID()`, `NotifyExit()`, `CaptureOutput()`
