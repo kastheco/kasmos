@@ -1,9 +1,13 @@
 ---
 work_package_id: WP03
 title: Browser Rendering (View)
-lane: planned
+lane: "doing"
 dependencies: [WP02]
+base_branch: 022-spec-kitty-feature-browser-WP02
+base_commit: 33ce9398923a77135b43ec8d1a71ddadeb49caee
+created_at: '2026-02-20T07:48:39.287846+00:00'
 subtasks: [T013, T014, T015, T016, T017]
+shell_pid: "4041860"
 history:
 - timestamp: '2026-02-20T12:00:00Z'
   lane: planned
