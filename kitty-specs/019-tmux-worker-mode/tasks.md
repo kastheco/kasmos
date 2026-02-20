@@ -175,7 +175,7 @@
 - [x] T027 Handle `paneExitedMsg` in update.go: capture pane output via `tmuxHandle.CaptureOutput()`, extract session ID, emit `workerExitedMsg` to reuse existing exit flow
 - [x] T028 Handle externally killed panes: when PollPanes reports a pane as missing, emit `workerKilledMsg` for that worker (FR-014)
 - [x] T029 Update `workerSpawnedMsg` handler in update.go: check `handle.Interactive()`, skip `readWorkerOutput()` and `waitWorkerCmd()` for interactive handles
-- [ ] T030 Disable AI helper keys (Analyze, GenPrompt) in `updateKeyStates()` in `internal/tui/keys.go` when `tmuxMode` is active (FR-017)
+- [x] T030 Disable AI helper keys (Analyze, GenPrompt) in `updateKeyStates()` in `internal/tui/keys.go` when `tmuxMode` is active (FR-017)
 - [ ] T031 Implement auto-focus return: when the focused worker's pane exits, fire `paneFocusCmd` targeting the kasmos dashboard pane (FR-009)
 
 ### Implementation Notes
