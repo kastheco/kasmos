@@ -24,6 +24,7 @@ type TmuxBackend struct {
 	parkingWindow  string
 	sessionTag     string
 	activePaneID   string
+	narrowLayout   bool
 	managedPanes   map[string]*ManagedPane
 	mu             sync.Mutex
 }
@@ -128,11 +129,15 @@ func (b *TmuxBackend) Spawn(ctx context.Context, cfg SpawnConfig) (WorkerHandle,
 
 	args := b.buildArgs(cfg)
 	cmd := append([]string{b.openCodeBin}, args...)
+	splitSize := "50%"
+	if b.narrowLayout {
+		splitSize = ""
+	}
 
 	paneID, err := b.cli.SplitWindow(ctx, SplitOpts{
 		Target:     b.kasmosPaneID,
 		Horizontal: true,
-		Size:       "50%",
+		Size:       splitSize,
 		Command:    cmd,
 		Env:        buildEnvArgs(cfg.Env),
 	})
@@ -253,6 +258,10 @@ func (b *TmuxBackend) ShowPane(workerID string) error {
 	}
 
 	ctx := context.Background()
+	joinSize := "50%"
+	if b.narrowLayout {
+		joinSize = ""
+	}
 
 	if b.activePaneID != "" && b.activePaneID != managed.PaneID {
 		if current := b.findPaneByID(b.activePaneID); current != nil && current.Visible {
@@ -272,7 +281,7 @@ func (b *TmuxBackend) ShowPane(workerID string) error {
 		Source:     managed.PaneID,
 		Target:     b.kasmosWindowID,
 		Horizontal: true,
-		Size:       "50%",
+		Size:       joinSize,
 	}); err != nil {
 		return fmt.Errorf("show pane for worker %q: %w", workerID, err)
 	}
@@ -323,6 +332,10 @@ func (b *TmuxBackend) SwapActive(workerID string) error {
 	}
 
 	ctx := context.Background()
+	joinSize := "50%"
+	if b.narrowLayout {
+		joinSize = ""
+	}
 
 	if b.activePaneID != "" {
 		if current := b.findPaneByID(b.activePaneID); current != nil && current.Visible {
@@ -342,7 +355,7 @@ func (b *TmuxBackend) SwapActive(workerID string) error {
 		Source:     managed.PaneID,
 		Target:     b.kasmosWindowID,
 		Horizontal: true,
-		Size:       "50%",
+		Size:       joinSize,
 	}); err != nil {
 		return fmt.Errorf("show pane for worker %q: %w", workerID, err)
 	}
@@ -625,10 +638,38 @@ func (b *TmuxBackend) KasmosPaneID() string {
 	return b.kasmosPaneID
 }
 
+func (b *TmuxBackend) ParkingWindowID() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.parkingWindow
+}
+
 func (b *TmuxBackend) ActivePaneID() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.activePaneID
+}
+
+func (b *TmuxBackend) SetNarrowLayout(narrow bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.narrowLayout = narrow
+}
+
+func (b *TmuxBackend) FocusPane(paneID string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	paneID = strings.TrimSpace(paneID)
+	if paneID == "" {
+		return errors.New("pane ID is empty")
+	}
+
+	if err := b.cli.SelectPane(context.Background(), paneID); err != nil {
+		return fmt.Errorf("focus pane %q: %w", paneID, err)
+	}
+
+	return nil
 }
 
 // Handle creates a tmux handle for an existing managed pane.

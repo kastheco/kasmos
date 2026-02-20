@@ -44,6 +44,7 @@ type Model struct {
 	backend     worker.WorkerBackend
 	tmuxMode    bool
 	tmuxReady   bool
+	tmuxNarrow  bool
 	tmuxBackend *worker.TmuxBackend
 	manager     *worker.WorkerManager
 	workers     []*worker.Worker
@@ -271,6 +272,9 @@ func (m *Model) DaemonExitCode() int {
 func (m *Model) Init() (tea.Model, tea.Cmd) {
 	m.tickActive = true
 	cmds := []tea.Cmd{tickCmd(), m.spinner.Tick}
+	if m.tmuxMode && m.tmuxBackend != nil {
+		cmds = append(cmds, tmuxInitCmd(m.tmuxBackend))
+	}
 	if m.daemon {
 		m.logDaemonEvent(sessionStartEvent(m.modeName(), m.taskSourcePath, len(m.loadedTasks)))
 	}
