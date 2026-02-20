@@ -1,28 +1,31 @@
 ---
-work_package_id: "WP04"
+work_package_id: WP04
+title: Pane Switching & Focus Management
+lane: "doing"
+dependencies: [WP03]
+base_branch: 019-tmux-worker-mode-WP03
+base_commit: 51bf551535d6bb83ed5008c7bc73fd54509a640d
+created_at: '2026-02-20T04:40:35.029029+00:00'
 subtasks:
-  - "T020"
-  - "T021"
-  - "T022"
-  - "T023"
-  - "T024"
-  - "T025"
-  - "T044"
-title: "Pane Switching & Focus Management"
-phase: "Phase 2 - TUI Integration"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
-dependencies: ["WP03"]
+- T020
+- T021
+- T022
+- T023
+- T024
+- T025
+- T044
+phase: Phase 2 - TUI Integration
+assignee: ''
+agent: ''
+shell_pid: "3654692"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-19T03:53:34Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-19T03:53:34Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP04 - Pane Switching & Focus Management
