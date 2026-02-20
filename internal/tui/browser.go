@@ -11,6 +11,8 @@ import (
 	"github.com/charmbracelet/bubbles/v2/textinput"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+
+	"github.com/user/kasmos/internal/task"
 )
 
 type FeaturePhase int
@@ -212,13 +214,212 @@ func (m *Model) renderFeatureBrowser() string {
 	return m.renderWithBackdrop(dialogStyle.Width(70).Render("feature browser (loading...)"))
 }
 
+// updateFeatureBrowser is the top-level dispatcher for the feature browser overlay.
+// It routes messages based on the current browser sub-state:
+//   - Filter mode captures all messages (textinput needs non-key msgs too)
+//   - Back/Esc is always available regardless of sub-state
+//   - Actions mode handles lifecycle sub-menu navigation
+//   - List mode handles feature navigation, selection, and filter activation
 func (m *Model) updateFeatureBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if key.Matches(keyMsg, m.keys.Back) {
+	// Handle filter mode first: textinput needs all message types, not just key events.
+	if m.featureFilterActive {
+		return m.updateBrowserFilter(msg)
+	}
+
+	keyMsg, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+
+	// Back/Esc is always available regardless of sub-state.
+	if key.Matches(keyMsg, m.keys.Back) || keyMsg.String() == "left" {
+		return m.handleBrowserBack()
+	}
+
+	// Actions sub-menu mode: j/k/enter navigate the lifecycle action list.
+	if m.featureActionsOpen {
+		return m.updateBrowserActions(keyMsg)
+	}
+
+	// Normal list navigation mode.
+	return m.updateBrowserList(keyMsg)
+}
+
+// updateBrowserList handles key events in the main feature list.
+// j/k navigate the filtered list, enter/right selects, / activates filter,
+// and f opens the new-feature dialog when the list is empty.
+func (m *Model) updateBrowserList(keyMsg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch keyMsg.String() {
+	case "j", "down":
+		if m.featureSelectedIdx < len(m.featureFiltered)-1 {
+			m.featureSelectedIdx++
+		}
+		return m, nil
+
+	case "k", "up":
+		if m.featureSelectedIdx > 0 {
+			m.featureSelectedIdx--
+		}
+		return m, nil
+
+	case "enter", "right":
+		return m.handleFeatureSelect()
+
+	case "/":
+		return m.activateBrowserFilter()
+
+	case "f":
+		// US4: when the browser is empty (no features exist), f opens the
+		// new-feature dialog as a shortcut to start the spec-kitty lifecycle.
+		if len(m.featureFiltered) == 0 {
 			m.closeFeatureBrowser()
+			m.transitionFromLauncher()
+			_ = m.openNewDialog()
+			return m, m.startNewDialogForm(newDialogTypeFeatureSpec)
+		}
+		return m, nil
+
+	default:
+		return m, nil
+	}
+}
+
+// handleFeatureSelect routes the Enter/right action based on the selected feature's phase.
+// Tasks-ready features load the dashboard directly; non-ready features expand the
+// lifecycle sub-menu so the user can advance the feature through the spec-kitty pipeline.
+func (m *Model) handleFeatureSelect() (tea.Model, tea.Cmd) {
+	if len(m.featureFiltered) == 0 || m.featureSelectedIdx >= len(m.featureFiltered) {
+		return m, nil
+	}
+
+	entryIdx := m.featureFiltered[m.featureSelectedIdx]
+	entry := m.featureEntries[entryIdx]
+
+	if entry.Phase == PhaseTasksReady {
+		// Direct dashboard load: detect the task source and swap it in.
+		source, err := task.DetectSourceType(entry.Dir)
+		if err != nil {
+			m.launcherNote = fmt.Sprintf("failed to load %s: %v", entry.Dir, err)
+			m.closeFeatureBrowser()
+			return m, nil
+		}
+		m.closeFeatureBrowser()
+		m.swapTaskSource(source)
+		m.transitionFromLauncher()
+		return m, nil
+	}
+
+	// Non-ready feature: expand the lifecycle sub-menu.
+	actions := actionsForPhase(entry.Phase)
+	if len(actions) == 0 {
+		// Defensive: no actions defined for this phase, do nothing.
+		return m, nil
+	}
+	m.featureActionsOpen = true
+	m.featureActionIdx = 0
+	return m, nil
+}
+
+// updateBrowserActions handles key events inside the expanded lifecycle sub-menu.
+// j/k navigate between actions; enter/right spawns a worker for the selected action.
+func (m *Model) updateBrowserActions(keyMsg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if len(m.featureFiltered) == 0 || m.featureSelectedIdx >= len(m.featureFiltered) {
+		return m, nil
+	}
+
+	entryIdx := m.featureFiltered[m.featureSelectedIdx]
+	entry := m.featureEntries[entryIdx]
+	actions := actionsForPhase(entry.Phase)
+
+	switch keyMsg.String() {
+	case "j", "down":
+		if m.featureActionIdx < len(actions)-1 {
+			m.featureActionIdx++
+		}
+		return m, nil
+
+	case "k", "up":
+		if m.featureActionIdx > 0 {
+			m.featureActionIdx--
+		}
+		return m, nil
+
+	case "enter", "right":
+		if m.featureActionIdx >= len(actions) {
+			return m, nil
+		}
+		action := actions[m.featureActionIdx]
+		prompt := fmt.Sprintf(action.promptFmt, entry.Dir)
+
+		m.closeFeatureBrowser()
+		m.transitionFromLauncher()
+		return m, m.openSpawnDialogWithPrefill(action.role, prompt, nil)
+
+	default:
+		return m, nil
+	}
+}
+
+// activateBrowserFilter switches the browser into filter mode, focusing the textinput
+// and collapsing any expanded action sub-menu.
+func (m *Model) activateBrowserFilter() (tea.Model, tea.Cmd) {
+	m.featureFilterActive = true
+	m.featureActionsOpen = false // collapse any expanded sub-menu
+	m.featureActionIdx = 0
+	return m, m.featureFilter.Focus()
+}
+
+// updateBrowserFilter handles all messages while the filter textinput is active.
+// Enter confirms the filter (keeps text, returns to nav mode).
+// Esc clears the filter and restores the full list.
+// All other messages are forwarded to the textinput, which recomputes the filtered list.
+func (m *Model) updateBrowserFilter(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.String() {
+		case "enter":
+			// Confirm filter: keep the current filter text, return to navigation mode.
+			m.featureFilterActive = false
+			m.featureFilter.Blur()
+			return m, nil
+
+		case "esc":
+			// Clear filter: empty the textinput, restore the full list, return to nav mode.
+			m.featureFilterActive = false
+			m.featureFilter.SetValue("")
+			m.featureFilter.Blur()
+			m.featureFiltered = filterFeatures(m.featureEntries, "")
+			m.featureSelectedIdx = 0
 			return m, nil
 		}
 	}
 
+	// Forward all other messages to the textinput so it can handle typing, deletion, etc.
+	var cmd tea.Cmd
+	m.featureFilter, cmd = m.featureFilter.Update(msg)
+
+	// Recompute the filtered list on every change for real-time filtering.
+	m.featureFiltered = filterFeatures(m.featureEntries, m.featureFilter.Value())
+
+	// Clamp selection to prevent out-of-bounds access after the list shrinks.
+	if m.featureSelectedIdx >= len(m.featureFiltered) {
+		m.featureSelectedIdx = max(0, len(m.featureFiltered)-1)
+	}
+
+	return m, cmd
+}
+
+// handleBrowserBack implements context-dependent back navigation.
+// From the action sub-menu: collapse to the feature list (same feature stays highlighted).
+// From the feature list: close the browser and return to the launcher.
+func (m *Model) handleBrowserBack() (tea.Model, tea.Cmd) {
+	if m.featureActionsOpen {
+		// Collapse sub-menu, return to feature list.
+		m.featureActionsOpen = false
+		m.featureActionIdx = 0
+		return m, nil
+	}
+
+	// Close browser, return to launcher.
+	m.closeFeatureBrowser()
 	return m, nil
 }
