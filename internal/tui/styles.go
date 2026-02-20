@@ -232,6 +232,8 @@ func styledTextInput() textinput.Model {
 
 func styledTextArea() textarea.Model {
 	ta := textarea.New()
+	ta.CharLimit = 0 // bubbles v2 alpha.2 defaults to 400; we need unlimited for WP prompts
+	ta.MaxHeight = 0
 	ta.Styles.Focused.CursorLine = lipgloss.NewStyle().
 		Background(colorDarkGray)
 	ta.Styles.Focused.Base = lipgloss.NewStyle().
