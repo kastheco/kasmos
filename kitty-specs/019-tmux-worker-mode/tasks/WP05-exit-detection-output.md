@@ -1,7 +1,7 @@
 ---
 work_package_id: WP05
 title: Exit Detection, Output Capture & Key Disabling
-lane: "doing"
+lane: "done"
 dependencies: [WP04]
 base_branch: 019-tmux-worker-mode-WP04
 base_commit: 81019aaa6e5521aec829634c012c429238c84fe6
@@ -17,8 +17,8 @@ phase: Phase 2 - TUI Integration
 assignee: ''
 agent: ''
 shell_pid: "3677728"
-review_status: ''
-reviewed_by: ''
+review_status: "approved"
+reviewed_by: "kas"
 history:
 - timestamp: '2026-02-19T03:53:34Z'
   lane: planned
@@ -445,3 +445,4 @@ case workerKilledMsg:
 ## Activity Log
 
 - 2026-02-19T03:53:34Z - system - lane=planned - Prompt created.
+- 2026-02-20T04:57:54Z – unknown – shell_pid=3677728 – lane=done – Exit detection via tick polling, output capture, session ID extraction, interactive spawn skip, AI key disabling, auto-focus return. 286 insertions, new TUI tests. /kas.verify passed.

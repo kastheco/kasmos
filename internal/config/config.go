@@ -16,6 +16,7 @@ const (
 
 type Config struct {
 	DefaultTaskSource string                 `toml:"default_task_source"`
+	TmuxMode          bool                   `toml:"tmux_mode"`
 	Agents            map[string]AgentConfig `toml:"agents"`
 }
 

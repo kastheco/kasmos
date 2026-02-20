@@ -210,6 +210,11 @@ func (m *Model) RestoreWorker(w *worker.Worker) {
 	m.workers = m.manager.All()
 }
 
+// FindWorker returns the worker with the given ID, or nil if not found.
+func (m *Model) FindWorker(id string) *worker.Worker {
+	return m.manager.Get(id)
+}
+
 func (m *Model) ResetWorkerCounter(n int64) {
 	m.manager.ResetWorkerCounter(n)
 }
@@ -219,6 +224,11 @@ func (m *Model) buildSessionState() persist.SessionState {
 	snapshots := make([]persist.WorkerSnapshot, 0, len(workers))
 	for _, w := range workers {
 		snapshots = append(snapshots, persist.WorkerToSnapshot(w))
+	}
+
+	backendMode := ""
+	if m.backend != nil {
+		backendMode = m.backend.Name()
 	}
 
 	var ts *persist.TaskSourceConfig
@@ -237,6 +247,7 @@ func (m *Model) buildSessionState() persist.SessionState {
 		Workers:       snapshots,
 		NextWorkerNum: m.manager.Counter(),
 		PID:           os.Getpid(),
+		BackendMode:   backendMode,
 	}
 }
 
