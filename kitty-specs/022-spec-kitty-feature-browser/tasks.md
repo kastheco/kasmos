@@ -51,7 +51,7 @@ WP03 [P]  WP04 [P]     <-- parallel
 - [x] T002: Define FeatureEntry struct (Number, Slug, Dir, Phase, WPCount)
 - [x] T003: Define lifecycleAction struct and actionsForPhase() mapping
 - [x] T004: Implement parseFeatureDir() - extract number and slug from directory name
-- [ ] T005: Implement scanFeatures() - glob, classify phases, sort by number descending
+- [x] T005: Implement scanFeatures() - glob, classify phases, sort by number descending
 - [ ] T006: Implement filterFeatures() - case-insensitive substring match on slugs
 
 **Implementation sketch**:
