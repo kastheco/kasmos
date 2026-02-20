@@ -1,6 +1,6 @@
 ---
 description: Planning agent that drives spec-kitty specify, clarify, plan, tasks, and analyze phases
-mode: subagent
+mode: primary
 ---
 
 # Planner Agent

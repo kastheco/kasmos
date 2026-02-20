@@ -1,6 +1,6 @@
 ---
 description: Implementation agent that builds and tests code changes within isolated git worktrees
-mode: subagent
+mode: primary
 ---
 
 # Coder Agent

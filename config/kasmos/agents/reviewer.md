@@ -1,6 +1,6 @@
 ---
 description: Code review agent that validates work packages against acceptance criteria, constitution, and architectural standards
-mode: subagent
+mode: primary
 ---
 
 # Reviewer Agent

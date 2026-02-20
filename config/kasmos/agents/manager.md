@@ -1,6 +1,6 @@
 ---
 description: Orchestration manager that coordinates planner, coder, reviewer, and release agents through the spec-kitty lifecycle
-mode: subagent
+mode: primary
 ---
 
 # Manager Agent

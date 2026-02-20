@@ -1,6 +1,6 @@
 ---
 description: Release agent that validates readiness, runs spec-kitty accept, and coordinates merge sequencing
-mode: subagent
+mode: primary
 ---
 
 # Release Agent
