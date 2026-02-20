@@ -55,6 +55,8 @@ type TmuxCLI interface {
 	SetEnvironment(ctx context.Context, key, value string) error
 	ShowEnvironment(ctx context.Context) (map[string]string, error)
 	UnsetEnvironment(ctx context.Context, key string) error
+	SetOption(ctx context.Context, key, value string) error
+	SetPaneTitle(ctx context.Context, paneID, title string) error
 	SetPaneOption(ctx context.Context, paneID, option, value string) error
 }
 
@@ -334,6 +336,16 @@ func parseEnvironment(output string) (map[string]string, error) {
 
 func (t *tmuxExec) UnsetEnvironment(ctx context.Context, key string) error {
 	_, err := t.run(ctx, "set-environment", "-u", key)
+	return err
+}
+
+func (t *tmuxExec) SetOption(ctx context.Context, key, value string) error {
+	_, err := t.run(ctx, "set-option", key, value)
+	return err
+}
+
+func (t *tmuxExec) SetPaneTitle(ctx context.Context, paneID, title string) error {
+	_, err := t.run(ctx, "select-pane", "-t", paneID, "-T", title)
 	return err
 }
 

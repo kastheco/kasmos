@@ -19,6 +19,7 @@ var _ WorkerHandle = (*tmuxHandle)(nil)
 type TmuxBackend struct {
 	cli            TmuxCLI
 	openCodeBin    string
+	PreserveStatus bool
 	kasmosPaneID   string
 	kasmosWindowID string
 	parkingWindow  string
@@ -113,6 +114,14 @@ func (b *TmuxBackend) Init(sessionTag string) error {
 	_ = b.cli.SetEnvironment(ctx, "KASMOS_DASHBOARD", b.kasmosPaneID)
 	_ = b.cli.SetEnvironment(ctx, "KASMOS_PARKING", b.parkingWindow)
 
+	_ = b.cli.SetOption(ctx, "pane-border-style", "fg=#383838")
+	_ = b.cli.SetOption(ctx, "pane-active-border-style", "fg=#7D56F4")
+	_ = b.cli.SetOption(ctx, "pane-border-lines", "heavy")
+	_ = b.cli.SetOption(ctx, "pane-border-format", " #{pane_title} ")
+	if !b.PreserveStatus {
+		_ = b.cli.SetOption(ctx, "status", "off")
+	}
+
 	return nil
 }
 
@@ -150,6 +159,11 @@ func (b *TmuxBackend) Spawn(ctx context.Context, cfg SpawnConfig) (WorkerHandle,
 	paneID = strings.TrimSpace(paneID)
 
 	_ = b.cli.SetPaneOption(ctx, paneID, "remain-on-exit", "on")
+	title := cfg.ID
+	if cfg.Role != "" {
+		title = fmt.Sprintf("%s %s", cfg.ID, cfg.Role)
+	}
+	_ = b.cli.SetPaneTitle(ctx, paneID, title)
 	_ = b.cli.SetEnvironment(ctx, fmt.Sprintf("KASMOS_PANE_%s", cfg.ID), paneID)
 
 	if b.managedPanes == nil {
@@ -571,6 +585,9 @@ func (b *TmuxBackend) Cleanup() error {
 
 	ctx := context.Background()
 	errList := make([]error, 0)
+	if !b.PreserveStatus {
+		_ = b.cli.SetOption(ctx, "status", "on")
+	}
 
 	for workerID, managed := range b.managedPanes {
 		if managed == nil || managed.PaneID == "" {
