@@ -1,9 +1,13 @@
 ---
 work_package_id: WP02
 title: Browser Model State and Launcher Wiring
-lane: planned
+lane: "doing"
 dependencies: [WP01]
+base_branch: 022-spec-kitty-feature-browser-WP01
+base_commit: 94ddda5a17e154a0c6485a61073ecbf486001d9e
+created_at: '2026-02-20T07:08:50.396239+00:00'
 subtasks: [T007, T008, T009, T010, T011, T012]
+shell_pid: "3972069"
 history:
 - timestamp: '2026-02-20T12:00:00Z'
   lane: planned
