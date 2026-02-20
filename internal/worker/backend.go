@@ -34,6 +34,16 @@ type WorkerHandle interface {
 	Interactive() bool
 }
 
+// OutputCapturer is an optional worker handle capability for reading buffered output.
+type OutputCapturer interface {
+	CaptureOutput() (string, error)
+}
+
+// ExitNotifier is an optional worker handle capability for signaling completion.
+type ExitNotifier interface {
+	NotifyExit(code int, duration time.Duration)
+}
+
 // ExitResult contains the outcome of a completed worker process.
 type ExitResult struct {
 	Code      int

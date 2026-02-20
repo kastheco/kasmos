@@ -30,8 +30,10 @@ type workerExitedMsg struct {
 }
 
 type workerKilledMsg struct {
-	WorkerID string
-	Err      error
+	WorkerID  string
+	PaneID    string
+	WasActive bool
+	Err       error
 }
 
 type workerMarkedDoneMsg struct {
@@ -73,6 +75,12 @@ type paneDetectedMsg struct {
 type paneFocusMsg struct {
 	PaneID string
 	Err    error
+}
+
+type panesPolledMsg struct {
+	Statuses     []worker.PaneStatus
+	ActivePaneID string
+	Err          error
 }
 
 type tickMsg time.Time

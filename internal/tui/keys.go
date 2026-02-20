@@ -270,7 +270,12 @@ func (m *Model) updateKeyStates() {
 	}
 
 	// AI helpers
-	m.keys.Analyze.SetEnabled(selected != nil && selected.State == worker.StateFailed && !m.analysisLoading)
+	if m.tmuxMode {
+		m.keys.GenPrompt.SetEnabled(false)
+		m.keys.Analyze.SetEnabled(false)
+	} else {
+		m.keys.Analyze.SetEnabled(selected != nil && selected.State == worker.StateFailed && !m.analysisLoading)
+	}
 
 	// Task panel keys
 	m.keys.Batch.SetEnabled(m.hasTaskSource() && m.hasUnassignedTasks())
