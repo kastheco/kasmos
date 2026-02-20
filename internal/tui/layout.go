@@ -36,9 +36,15 @@ func (m *Model) recalculateLayout() {
 		m.layoutMode = layoutWide
 
 		available := max(0, m.width-2)
-		m.tasksOuterWidth = int(float64(available) * 0.25)
-		m.tableOuterWidth = int(float64(available) * 0.35)
-		m.viewportOuterWidth = max(0, available-m.tasksOuterWidth-m.tableOuterWidth)
+		if m.tmuxMode {
+			m.tasksOuterWidth = int(float64(available) * 0.35)
+			m.tableOuterWidth = max(0, available-m.tasksOuterWidth)
+			m.viewportOuterWidth = 0
+		} else {
+			m.tasksOuterWidth = int(float64(available) * 0.25)
+			m.tableOuterWidth = int(float64(available) * 0.35)
+			m.viewportOuterWidth = max(0, available-m.tasksOuterWidth-m.tableOuterWidth)
+		}
 
 		m.tasksOuterHeight = contentHeight
 		m.tableOuterHeight = contentHeight
@@ -47,8 +53,13 @@ func (m *Model) recalculateLayout() {
 	case m.width >= 100:
 		m.layoutMode = layoutStandard
 
-		m.tableOuterWidth = int(float64(m.width) * 0.40)
-		m.viewportOuterWidth = max(0, m.width-m.tableOuterWidth-1)
+		if m.tmuxMode {
+			m.tableOuterWidth = m.width
+			m.viewportOuterWidth = 0
+		} else {
+			m.tableOuterWidth = int(float64(m.width) * 0.40)
+			m.viewportOuterWidth = max(0, m.width-m.tableOuterWidth-1)
+		}
 		m.tableOuterHeight = contentHeight
 		m.viewportOuterHeight = contentHeight
 		m.tasksOuterWidth = 0
@@ -58,9 +69,15 @@ func (m *Model) recalculateLayout() {
 		m.layoutMode = layoutNarrow
 
 		m.tableOuterWidth = m.width
-		m.viewportOuterWidth = m.width
-		m.tableOuterHeight = int(float64(contentHeight) * 0.45)
-		m.viewportOuterHeight = max(0, contentHeight-m.tableOuterHeight)
+		if m.tmuxMode {
+			m.viewportOuterWidth = 0
+			m.tableOuterHeight = contentHeight
+			m.viewportOuterHeight = 0
+		} else {
+			m.viewportOuterWidth = m.width
+			m.tableOuterHeight = int(float64(contentHeight) * 0.45)
+			m.viewportOuterHeight = max(0, contentHeight-m.tableOuterHeight)
+		}
 		m.tasksOuterWidth = 0
 		m.tasksOuterHeight = 0
 
@@ -80,8 +97,14 @@ func (m *Model) recalculateLayout() {
 	m.table.SetHeight(max(1, m.tableInnerHeight-1))
 	m.table.SetRows(nil) // clear before column change to avoid index-out-of-range in renderRow
 	m.table.SetColumns(m.workerTableColumns())
-	m.viewport.SetWidth(m.viewportInnerWidth)
-	m.viewport.SetHeight(max(1, m.viewportInnerHeight-1))
+	if m.tmuxMode {
+		// Viewport panel is hidden in tmux layout; size model for fullscreen use.
+		m.viewport.SetWidth(max(1, m.width-borderH))
+		m.viewport.SetHeight(max(1, contentHeight-borderV-1))
+	} else {
+		m.viewport.SetWidth(m.viewportInnerWidth)
+		m.viewport.SetHeight(max(1, m.viewportInnerHeight-1))
+	}
 
 	panels := m.cyclablePanels()
 	if len(panels) > 0 {
@@ -158,6 +181,12 @@ func (m Model) workerTableColumns() []table.Column {
 }
 
 func (m Model) cyclablePanels() []panel {
+	if m.tmuxMode {
+		if m.hasTaskSource() && m.layoutMode == layoutWide {
+			return []panel{panelTasks, panelTable}
+		}
+		return []panel{panelTable}
+	}
 	panels := []panel{panelTable, panelViewport}
 	if m.hasTaskSource() && m.layoutMode == layoutWide {
 		panels = []panel{panelTasks, panelTable, panelViewport}

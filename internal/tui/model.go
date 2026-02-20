@@ -376,15 +376,29 @@ func (m *Model) View() string {
 	var content string
 	switch m.layoutMode {
 	case layoutNarrow:
-		content = lipgloss.JoinVertical(lipgloss.Left, m.renderWorkerTable(), m.renderViewport())
+		if m.tmuxMode {
+			content = m.renderWorkerTable()
+		} else {
+			content = lipgloss.JoinVertical(lipgloss.Left, m.renderWorkerTable(), m.renderViewport())
+		}
 	case layoutWide:
-		if m.hasTaskSource() {
+		if m.tmuxMode {
+			if m.hasTaskSource() {
+				content = lipgloss.JoinHorizontal(lipgloss.Top, m.renderTasksPanel(), " ", m.renderWorkerTable())
+			} else {
+				content = m.renderWorkerTable()
+			}
+		} else if m.hasTaskSource() {
 			content = lipgloss.JoinHorizontal(lipgloss.Top, m.renderTasksPanel(), " ", m.renderWorkerTable(), " ", m.renderViewport())
 		} else {
 			content = lipgloss.JoinHorizontal(lipgloss.Top, m.renderWorkerTable(), " ", m.renderViewport())
 		}
 	default:
-		content = lipgloss.JoinHorizontal(lipgloss.Top, m.renderWorkerTable(), " ", m.renderViewport())
+		if m.tmuxMode {
+			content = m.renderWorkerTable()
+		} else {
+			content = lipgloss.JoinHorizontal(lipgloss.Top, m.renderWorkerTable(), " ", m.renderViewport())
+		}
 	}
 
 	view := lipgloss.JoinVertical(
