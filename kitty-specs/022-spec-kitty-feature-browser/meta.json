@@ -1,0 +1,10 @@
+{
+  "feature_number": "022",
+  "slug": "022-spec-kitty-feature-browser",
+  "friendly_name": "Spec-Kitty Feature Browser",
+  "mission": "software-dev",
+  "source_description": "add a spec-kitty feature browser to the launcher when ran with no provided spec or additional info (things liek --tmux dont count). selecting one will jump to either planner or the dashboard for implementation if it's ready for that. basically a way to figure out what kitty-specs/path you want to work with",
+  "created_at": "2026-02-20T00:00:00Z",
+  "target_branch": "main",
+  "vcs": "git"
+}
