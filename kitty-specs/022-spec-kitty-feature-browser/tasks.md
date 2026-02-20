@@ -237,7 +237,7 @@ Dependency rationale: WP05 tests are exclusively for WP01 pure functions and bra
 **Subtasks**:
 - [x] T035: Separate buildArgs for subprocess (opencode run) vs tmux (opencode interactive)
 - [x] T036: Add WorkDir support to tmux SplitWindow via -c flag
-- [ ] T037: Update buildArgs tests for both backends
+- [x] T037: Update buildArgs tests for both backends
 - [ ] T038: Update architecture documentation to reflect dual-mode design
 
 **Implementation sketch**:
