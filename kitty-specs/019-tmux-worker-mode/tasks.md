@@ -213,7 +213,7 @@
 - [x] T034 Update `buildSessionState()` in `internal/tui/model.go` to include `BackendMode` (set to `m.backend.Name()`)
 - [x] T035 Update reattach logic in `cmd/kasmos/main.go`: read `BackendMode` from loaded session, auto-select TmuxBackend if "tmux"
 - [x] T036 Implement config-based tmux activation in `cmd/kasmos/main.go`: if `cfg.TmuxMode == true` and `$TMUX` is set, enable tmux mode; if `$TMUX` is not set, fall back to subprocess with a notice
-- [ ] T037 Implement reattach pane reconnection: call `TmuxBackend.Reconnect()` during `--attach`, restore worker pane mappings, update worker states for dead/surviving panes
+- [x] T037 Implement reattach pane reconnection: call `TmuxBackend.Reconnect()` during `--attach`, restore worker pane mappings, update worker states for dead/surviving panes
 - [ ] T043 Add `tmux_mode` boolean toggle to settings form in `internal/tui/settings.go`: new `settingsRowTmuxMode` kind with left/right cycling, wired to `cfg.TmuxMode`, displayed as "tmux mode: on/off"
 
 ### Implementation Notes
