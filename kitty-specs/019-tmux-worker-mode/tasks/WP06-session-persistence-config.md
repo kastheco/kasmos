@@ -1,7 +1,7 @@
 ---
 work_package_id: WP06
 title: Session Persistence, Config & Reattach
-lane: "doing"
+lane: "done"
 dependencies: [WP05]
 base_branch: 019-tmux-worker-mode-WP05
 base_commit: 359b73bac4aff0b2e224692f032be1aa72d98340
@@ -18,8 +18,8 @@ phase: Phase 3 - Persistence & Config
 assignee: ''
 agent: ''
 shell_pid: "3696870"
-review_status: ''
-reviewed_by: ''
+review_status: "approved"
+reviewed_by: "kas"
 history:
 - timestamp: '2026-02-19T03:53:34Z'
   lane: planned
@@ -504,3 +504,4 @@ clone := &config.Config{
 ## Activity Log
 
 - 2026-02-19T03:53:34Z - system - lane=planned - Prompt created.
+- 2026-02-20T05:12:16Z – unknown – shell_pid=3696870 – lane=done – Moved to done
