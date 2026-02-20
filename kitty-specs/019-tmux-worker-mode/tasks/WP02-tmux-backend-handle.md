@@ -1,30 +1,33 @@
 ---
-work_package_id: "WP02"
+work_package_id: WP02
+title: TmuxBackend & tmuxHandle Implementation
+lane: "doing"
+dependencies: [WP01]
+base_branch: 019-tmux-worker-mode-WP01
+base_commit: 8bf0bb7c25c429f074bff115981fdefc6feef7f1
+created_at: '2026-02-20T04:24:47.011307+00:00'
 subtasks:
-  - "T007"
-  - "T008"
-  - "T009"
-  - "T010"
-  - "T011"
-  - "T012"
-  - "T013"
-  - "T014"
-  - "T042"
-title: "TmuxBackend & tmuxHandle Implementation"
-phase: "Phase 1 - TmuxBackend Core"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
-dependencies: ["WP01"]
+- T007
+- T008
+- T009
+- T010
+- T011
+- T012
+- T013
+- T014
+- T042
+phase: Phase 1 - TmuxBackend Core
+assignee: ''
+agent: ''
+shell_pid: "3618553"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-19T03:53:34Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-19T03:53:34Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP02 - TmuxBackend & tmuxHandle Implementation
