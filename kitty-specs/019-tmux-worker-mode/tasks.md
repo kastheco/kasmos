@@ -25,7 +25,7 @@
 - [x] T004 [P] Implement pane movement methods: JoinPane (with JoinOpts for both park and show directions), and window management: NewWindow
 - [x] T005 Implement pane query methods: ListPanes (with PaneInfo parsing, supports `-s` for session-wide), CapturePane, DisplayMessage, Version
 - [x] T006 Implement environment methods: SetEnvironment, ShowEnvironment, UnsetEnvironment, SetPaneOption
-- [ ] T041 [P] Unit tests for TmuxCLI: mock interface, test `parsePaneList`, test error wrapping in `internal/worker/tmux_cli_test.go`
+- [x] T041 [P] Unit tests for TmuxCLI: mock interface, test `parsePaneList`, test error wrapping in `internal/worker/tmux_cli_test.go`
 
 ### Implementation Notes
 - All methods shell out to `tmux` via `os/exec.Command`. No Go tmux library.
