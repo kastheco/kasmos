@@ -1,9 +1,13 @@
 ---
 work_package_id: WP04
 title: Browser Interaction Logic (Update)
-lane: planned
+lane: "doing"
 dependencies: [WP02]
+base_branch: 022-spec-kitty-feature-browser-WP02
+base_commit: 33ce9398923a77135b43ec8d1a71ddadeb49caee
+created_at: '2026-02-20T09:02:01.406060+00:00'
 subtasks: [T018, T019, T020, T021, T022, T023]
+shell_pid: "11683"
 history:
 - timestamp: '2026-02-20T12:00:00Z'
   lane: planned
