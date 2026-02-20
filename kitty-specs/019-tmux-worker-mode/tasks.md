@@ -245,7 +245,7 @@
 **Estimated Size**: ~200 lines
 
 ### Included Subtasks
-- [ ] T038 Amend worker mode principle: "Workers are headless subprocesses" -> "Workers are subprocesses (headless by default, interactive tmux panes when configured)"
+- [x] T038 Amend worker mode principle: "Workers are headless subprocesses" -> "Workers are subprocesses (headless by default, interactive tmux panes when configured)"
 - [ ] T039 Amend session continuation principle: "Session continuation over interactivity" -> "Headless by default; interactive via tmux when workflows require it. Session continuation remains available in both modes."
 - [ ] T040 Update Go version reference: "Go (1.23+)" -> "Go (1.24+)"
 
