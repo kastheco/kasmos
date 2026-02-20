@@ -1,13 +1,15 @@
 ---
 work_package_id: WP04
 title: Browser Interaction Logic (Update)
-lane: "doing"
+lane: "done"
 dependencies: [WP02]
 base_branch: 022-spec-kitty-feature-browser-WP02
 base_commit: 33ce9398923a77135b43ec8d1a71ddadeb49caee
 created_at: '2026-02-20T09:02:01.406060+00:00'
 subtasks: [T018, T019, T020, T021, T022, T023]
 shell_pid: "11683"
+reviewed_by: "kas"
+review_status: "approved"
 history:
 - timestamp: '2026-02-20T12:00:00Z'
   lane: planned
@@ -478,3 +480,7 @@ When the user selects a feature, the browser routes based on phase:
 - Verify back navigation matches the two-level hierarchy (US5)
 - Verify no new tea.Msg types are needed (all routing uses existing spawn infrastructure)
 - Check that task import is added to browser.go
+
+## Activity Log
+
+- 2026-02-20T09:08:28Z – unknown – shell_pid=11683 – lane=done – All 6 subtasks (T018-T023) implemented. Build+tests+vet clean. Commit 4a86fa2. Untracked .opencode symlink is benign.
