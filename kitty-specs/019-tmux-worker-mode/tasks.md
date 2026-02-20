@@ -171,7 +171,7 @@
 **Estimated Size**: ~450 lines
 
 ### Included Subtasks
-- [ ] T026 Add tmux pane polling to `tickMsg` handler in `internal/tui/update.go`: call `TmuxBackend.PollPanes()`, emit `paneExitedMsg` for dead panes
+- [x] T026 Add tmux pane polling to `tickMsg` handler in `internal/tui/update.go`: call `TmuxBackend.PollPanes()`, emit `paneExitedMsg` for dead panes
 - [ ] T027 Handle `paneExitedMsg` in update.go: capture pane output via `tmuxHandle.CaptureOutput()`, extract session ID, emit `workerExitedMsg` to reuse existing exit flow
 - [ ] T028 Handle externally killed panes: when PollPanes reports a pane as missing, emit `workerKilledMsg` for that worker (FR-014)
 - [ ] T029 Update `workerSpawnedMsg` handler in update.go: check `handle.Interactive()`, skip `readWorkerOutput()` and `waitWorkerCmd()` for interactive handles
