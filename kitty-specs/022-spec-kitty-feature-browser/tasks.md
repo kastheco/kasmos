@@ -48,7 +48,7 @@ WP03 [P]  WP04 [P]     <-- parallel
 
 **Subtasks**:
 - [x] T001: Define FeaturePhase enum with String() and phaseBadge() style helper
-- [ ] T002: Define FeatureEntry struct (Number, Slug, Dir, Phase, WPCount)
+- [x] T002: Define FeatureEntry struct (Number, Slug, Dir, Phase, WPCount)
 - [ ] T003: Define lifecycleAction struct and actionsForPhase() mapping
 - [ ] T004: Implement parseFeatureDir() - extract number and slug from directory name
 - [ ] T005: Implement scanFeatures() - glob, classify phases, sort by number descending
