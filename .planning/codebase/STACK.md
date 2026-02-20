@@ -12,8 +12,8 @@
 - KDL - Zellij layout definitions (generated at runtime in `crates/kasmos/src/launch/layout.rs`)
 - TOML - Configuration (`kasmos.toml`, `Cargo.toml`)
 - YAML - Work package frontmatter in `kitty-specs/*/tasks/WP*.md` files
-- Markdown - Agent prompt templates in `config/profiles/kasmos/agent/*.md`, slash commands in `config/profiles/kasmos/commands/*.md`
-- JSONC - OpenCode MCP server configuration in `config/profiles/kasmos/opencode.jsonc`
+- Markdown - Agent prompt templates in `config/default/agent/*.md`, slash commands in `config/default/commands/*.md`
+- JSONC - OpenCode MCP server configuration in `config/default/opencode.jsonc`
 
 ## Runtime
 
@@ -98,13 +98,13 @@
 - Legacy aliases: `KASMOS_MAX_PANES`, `KASMOS_MODE`, `KASMOS_ZELLIJ`, `KASMOS_OPENCODE`, etc.
 
 **Agent Profiles:**
-- `config/profiles/kasmos/opencode.jsonc` - MCP server config for OpenCode agents
-- `config/profiles/kasmos/agent/manager.md` - Manager agent prompt template
-- `config/profiles/kasmos/agent/planner.md` - Planner agent prompt template
-- `config/profiles/kasmos/agent/coder.md` - Coder agent prompt template
-- `config/profiles/kasmos/agent/reviewer.md` - Reviewer agent prompt template
-- `config/profiles/kasmos/agent/release.md` - Release agent prompt template
-- `config/profiles/kasmos/commands/spec-kitty.*.md` - Spec-kitty slash command definitions
+- `config/default/opencode.jsonc` - MCP server config for OpenCode agents
+- `config/default/agent/manager.md` - Manager agent prompt template
+- `config/default/agent/planner.md` - Planner agent prompt template
+- `config/default/agent/coder.md` - Coder agent prompt template
+- `config/default/agent/reviewer.md` - Reviewer agent prompt template
+- `config/default/agent/release.md` - Release agent prompt template
+- `config/default/commands/spec-kitty.*.md` - Spec-kitty slash command definitions
 
 **Build:**
 - `Cargo.toml` workspace at repo root, members: `crates/*`

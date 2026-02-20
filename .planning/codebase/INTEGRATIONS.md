@@ -10,7 +10,7 @@
 - Implementation: `crates/kasmos/src/serve/mod.rs`
 - Transport: stdio (stdin/stdout JSON-RPC)
 - Spawned as a subprocess by the manager agent's OpenCode profile
-- Config: `config/profiles/kasmos/opencode.jsonc` registers `kasmos serve` as MCP server
+- Config: `config/default/opencode.jsonc` registers `kasmos serve` as MCP server
 
 **MCP Tools Exposed (9 tools):**
 - `spawn_worker` - Spawn planner/coder/reviewer/release worker pane (`crates/kasmos/src/serve/tools/spawn_worker.rs`)
@@ -51,7 +51,7 @@
 - Profile: Configurable via `[agent].opencode_profile` (default: `"kas"`)
 - Used in: KDL layout generation for manager pane (`crates/kasmos/src/launch/layout.rs`)
 - Manager command: `ocx oc -p kas -- --agent manager --prompt "<prompt>"`
-- MCP integration: Manager agent uses `kasmos serve` as an MCP server via `config/profiles/kasmos/opencode.jsonc`
+- MCP integration: Manager agent uses `kasmos serve` as an MCP server via `config/default/opencode.jsonc`
 - Worker spawning: Workers launched in Zellij panes running OpenCode instances
 
 **spec-kitty (Feature Specification Tool):**
@@ -71,7 +71,7 @@
 - Operations:
   - `dump-pane --pane-name <name>` - Read pane scrollback (multiple arg format fallbacks)
   - `run-in-pane --pane-name <name> --command <cmd>` - Write content to pane
-- MCP config: Also registered as MCP server in `config/profiles/kasmos/opencode.jsonc`
+- MCP config: Also registered as MCP server in `config/default/opencode.jsonc`
 - Fallback: If unavailable, falls back to `zellij action dump-screen` (degraded mode)
 
 **zjstatus (Zellij Status Bar Plugin):**

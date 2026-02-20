@@ -137,8 +137,8 @@ Event types: `STARTED`, `PROGRESS`, `DONE`, `ERROR`, `REVIEW_PASS`, `REVIEW_REJE
 - Location: `crates/kasmos/src/prompt.rs`
 - Roles: Manager, Planner, Coder, Reviewer, Release
 - Each role has a `ContextBoundary` defining which project artifacts it can access
-- Agent templates loaded from `config/profiles/kasmos/agent/`
-- Spec-kitty slash commands loaded from `config/profiles/kasmos/commands/`
+- Agent templates loaded from `config/default/agent/`
+- Spec-kitty slash commands loaded from `config/default/commands/`
 
 ## Entry Points
 

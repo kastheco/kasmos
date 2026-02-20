@@ -89,7 +89,7 @@ kasmos/
 - Contains: Binary checks (zellij, opencode, spec-kitty), repo context validation, config file generation
 - Key files: `mod.rs`
 
-**`config/profiles/kasmos/`:**
+**`config/default/`:**
 - Purpose: Agent prompt templates and OpenCode configuration
 - Contains: Role-specific markdown prompt templates loaded by `RolePromptBuilder`
 - Key files: `agent/manager.md`, `agent/coder.md`, `agent/reviewer.md`, `agent/planner.md`, `agent/release.md`, `opencode.jsonc`
@@ -212,7 +212,7 @@ kasmos/
 
 **New Agent Role:**
 1. Add variant to `AgentRole` in `crates/kasmos/src/serve/registry.rs`
-2. Add prompt template to `config/profiles/kasmos/agent/`
+2. Add prompt template to `config/default/agent/`
 3. Add context boundary in `crates/kasmos/src/prompt.rs::allowed_context()`
 
 ## Special Directories
@@ -241,12 +241,12 @@ kasmos/
 - Committed: Yes (tracked in git)
 - Pattern: `kitty-specs/{###-slug}/` with `spec.md`, `plan.md`, `tasks/WPxx.md`
 
-**`config/profiles/kasmos/agent/`:**
+**`config/default/agent/`:**
 - Purpose: Role-specific prompt templates loaded at runtime by `RolePromptBuilder`
 - Generated: No (manually authored)
 - Committed: Yes
 
-**`config/profiles/kasmos/commands/`:**
+**`config/default/commands/`:**
 - Purpose: Spec-kitty slash command definitions installed to `.opencode/commands/` by `kasmos setup`
 - Generated: No (manually authored)
 - Committed: Yes

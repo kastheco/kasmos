@@ -31,7 +31,7 @@
 
 **Constants:**
 - Use `SCREAMING_SNAKE_CASE`: `FEATURE_LOCK_CONFLICT_CODE`, `STALE_LOCK_CONFIRMATION_REQUIRED_CODE`, `RETENTION_CHECK_EVERY_WRITES`
-- Module-level string constants use `const`: `const PROFILE_ROOT: &str = "config/profiles/kasmos";`
+- Module-level string constants use `const`: `const PROFILE_ROOT: &str = "config/default";`
 
 ## Code Style
 

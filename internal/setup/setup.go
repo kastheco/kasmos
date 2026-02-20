@@ -45,6 +45,15 @@ func Run() error {
 	}
 	fmt.Printf("  %d created, %d skipped (already exist)\n", created, skipped)
 	fmt.Println()
+
+	fmt.Println("Installing skills...")
+	skillsWritten, err := WriteSkills(root)
+	if err != nil {
+		return fmt.Errorf("install skills: %w", err)
+	}
+	fmt.Printf("  %d skill files written\n", skillsWritten)
+	fmt.Println()
+
 	fmt.Println("Setup complete!")
 
 	return nil
