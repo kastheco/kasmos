@@ -97,8 +97,45 @@ func newRootCmd() *cobra.Command {
 
 			persister := persist.NewSessionPersister(".")
 			sessionID := persist.NewSessionID()
+			var attachState *persist.SessionState
+
+			if attach {
+				state, err := persister.Load()
+				if err != nil {
+					if os.IsNotExist(err) {
+						return fmt.Errorf("no session found. Start a new session with: kasmos")
+					}
+					return fmt.Errorf("load session: %w", err)
+				}
+				if persist.IsPIDAlive(state.PID) {
+					return fmt.Errorf("session already active (PID %d)", state.PID)
+				}
+
+				attachState = state
+				sessionID = state.SessionID
+
+				if state.BackendMode == "tmux" && !tmuxMode {
+					if os.Getenv("TMUX") != "" {
+						tmuxMode = true
+					} else {
+						log.Printf("notice: session used tmux mode but not in tmux session, restoring as subprocess mode")
+					}
+				}
+			}
+
+			// Config-based tmux activation (FR-002, FR-004)
+			// Priority: --tmux flag > attach inference > cfg.TmuxMode > default (subprocess)
+			if !tmuxMode && cfg.TmuxMode {
+				if os.Getenv("TMUX") != "" {
+					tmuxMode = true
+					log.Printf("info: tmux mode activated from config")
+				} else {
+					log.Printf("notice: tmux_mode configured but not in tmux session, using subprocess mode")
+				}
+			}
 
 			var backend worker.WorkerBackend
+			var tmuxBackend *worker.TmuxBackend
 			if tmuxMode {
 				if os.Getenv("TMUX") == "" {
 					return fmt.Errorf("--tmux requires running inside a tmux session.\n" +
@@ -111,7 +148,7 @@ func newRootCmd() *cobra.Command {
 					return fmt.Errorf("tmux mode: %w", err)
 				}
 
-				tmuxBackend, err := worker.NewTmuxBackend(cli)
+				tmuxBackend, err = worker.NewTmuxBackend(cli)
 				if err != nil {
 					return err
 				}
@@ -134,37 +171,54 @@ func newRootCmd() *cobra.Command {
 			showLauncher := len(args) == 0 && !attach && !daemon
 
 			model := tui.NewModel(backend, source, version, cfg, showLauncher)
-			if tmuxMode {
-				if tmuxBackend, ok := backend.(*worker.TmuxBackend); ok {
-					model.SetTmuxMode(tmuxBackend)
-				}
+			if tmuxMode && tmuxBackend != nil {
+				model.SetTmuxMode(tmuxBackend)
 			}
 			if daemon {
 				model.SetDaemonMode(true, format, spawnAll)
 			}
-			if attach {
-				state, err := persister.Load()
-				if err != nil {
-					if os.IsNotExist(err) {
-						return fmt.Errorf("no session found. Start a new session with: kasmos")
+
+			if attachState != nil {
+				survivingWorkerIDs := make(map[string]bool)
+				if tmuxMode && tmuxBackend != nil {
+					reconnected, err := tmuxBackend.Reconnect(sessionID)
+					if err != nil {
+						log.Printf("warning: tmux reconnect failed: %v", err)
+					} else {
+						for _, rw := range reconnected {
+							if !rw.Dead {
+								survivingWorkerIDs[rw.WorkerID] = true
+							}
+						}
 					}
-					return fmt.Errorf("load session: %w", err)
-				}
-				if persist.IsPIDAlive(state.PID) {
-					return fmt.Errorf("session already active (PID %d)", state.PID)
 				}
 
-				for _, snap := range state.Workers {
+				for _, snap := range attachState.Workers {
 					w := persist.SnapshotToWorker(snap)
-					if w.State == worker.StateRunning || w.State == worker.StateSpawning {
+					if (w.State == worker.StateRunning || w.State == worker.StateSpawning) && !survivingWorkerIDs[w.ID] {
 						w.State = worker.StateKilled
 						w.ExitedAt = time.Now()
 					}
 					model.RestoreWorker(w)
 				}
-				model.ResetWorkerCounter(state.NextWorkerNum)
-				sessionID = state.SessionID
-				model.SetSessionStartedAt(state.StartedAt)
+
+				if tmuxMode && tmuxBackend != nil {
+					for workerID := range survivingWorkerIDs {
+						w := model.FindWorker(workerID)
+						if w == nil {
+							continue
+						}
+
+						handle := tmuxBackend.Handle(workerID, w.SpawnedAt)
+						if handle != nil {
+							w.Handle = handle
+							w.State = worker.StateRunning
+						}
+					}
+				}
+
+				model.ResetWorkerCounter(attachState.NextWorkerNum)
+				model.SetSessionStartedAt(attachState.StartedAt)
 			}
 			model.SetPersister(persister, sessionID)
 			opts := []tea.ProgramOption{tea.WithContext(ctx)}

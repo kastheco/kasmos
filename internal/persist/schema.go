@@ -19,6 +19,7 @@ type SessionState struct {
 	Workers       []WorkerSnapshot  `json:"workers"`
 	NextWorkerNum int64             `json:"next_worker_num"`
 	PID           int               `json:"pid"`
+	BackendMode   string            `json:"backend_mode,omitempty"`
 }
 
 type TaskSourceConfig struct {

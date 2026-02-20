@@ -27,6 +27,7 @@ type settingsRowKind int
 
 const (
 	settingsRowTaskSource settingsRowKind = iota
+	settingsRowTmuxMode
 	settingsRowRoleModel
 	settingsRowRoleReasoning
 )
@@ -85,11 +86,12 @@ func (m *Model) closeSettingsView() {
 
 func newSettingsModel(cfg *config.Config) *settingsModel {
 	form := &settingsModel{
-		rows:       make([]settingsRow, 0, 1+len(settingsRoles)*2),
+		rows:       make([]settingsRow, 0, 2+len(settingsRoles)*2),
 		modelInput: make(map[string]textinput.Model, len(settingsRoles)),
 	}
 
 	form.rows = append(form.rows, settingsRow{kind: settingsRowTaskSource})
+	form.rows = append(form.rows, settingsRow{kind: settingsRowTmuxMode})
 	for _, role := range settingsRoles {
 		form.rows = append(form.rows,
 			settingsRow{kind: settingsRowRoleModel, role: role},
@@ -201,6 +203,14 @@ func (m *Model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case settingsRowTmuxMode:
+		switch keyMsg.String() {
+		case "left", "h", "right", "l", "enter", " ":
+			m.config.TmuxMode = !m.config.TmuxMode
+			m.settingsForm.saveErr = nil
+		}
+		return m, nil
+
 	case settingsRowRoleReasoning:
 		switch keyMsg.String() {
 		case "left", "h":
@@ -278,6 +288,7 @@ func cloneConfig(cfg *config.Config) *config.Config {
 
 	clone := &config.Config{
 		DefaultTaskSource: cfg.DefaultTaskSource,
+		TmuxMode:          cfg.TmuxMode,
 		Agents:            make(map[string]config.AgentConfig, len(cfg.Agents)),
 	}
 	for role, agent := range cfg.Agents {
@@ -344,6 +355,13 @@ func (m *Model) renderSettingsView() string {
 		switch row.kind {
 		case settingsRowTaskSource:
 			lines = append(lines, lineStyle.Render(fmt.Sprintf("%sdefault source: %s", selector, m.config.DefaultTaskSource)))
+
+		case settingsRowTmuxMode:
+			status := "off"
+			if m.config.TmuxMode {
+				status = "on"
+			}
+			lines = append(lines, lineStyle.Render(fmt.Sprintf("%stmux mode: %s", selector, status)))
 			lines = append(lines, "")
 			lines = append(lines, lipgloss.NewStyle().Foreground(colorHeader).Bold(true).Render("agent roles"))
 
