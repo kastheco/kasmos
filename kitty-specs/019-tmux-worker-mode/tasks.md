@@ -134,7 +134,7 @@
 ### Included Subtasks
 - [x] T020 Define tmux-specific message types in `internal/tui/messages.go`: `paneSwappedMsg`, `paneExitedMsg`, `paneDetectedMsg`, `tmuxInitMsg`
 - [x] T021 Implement `tmuxInitCmd()` in `internal/tui/commands.go`: calls `TmuxBackend.Init()`, returns `tmuxInitMsg` with kasmos pane ID, kasmos window ID, and parking window ID
-- [ ] T022 Implement `paneSwapCmd()` in `internal/tui/commands.go`: calls `TmuxBackend.SwapActive()`, returns `paneSwappedMsg`
+- [x] T022 Implement `paneSwapCmd()` in `internal/tui/commands.go`: calls `TmuxBackend.SwapActive()`, returns `paneSwappedMsg`
 - [ ] T023 Implement `paneFocusCmd()` in `internal/tui/commands.go`: calls `TmuxCLI.SelectPane()` for worker focus, and dashboard focus return
 - [ ] T024 Update worker selection handling in `internal/tui/update.go`: on selection change in tmux mode, emit `paneSwapCmd` instead of refreshing viewport content
 - [ ] T025 Update `renderViewport()` in `internal/tui/panels.go`: in tmux mode with no workers, render placeholder text indicating the right column is reserved for worker panes
