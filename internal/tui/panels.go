@@ -290,7 +290,11 @@ func (m *Model) renderStatusBar() string {
 	if m.focused == panelViewport && m.viewport.TotalLineCount() > 0 {
 		scrollStr = fmt.Sprintf("%.0f%%", m.viewport.ScrollPercent()*100)
 	}
-	mode := modeIndicatorStyle.Render(" mode: " + m.modeName() + " ")
+	modeText := m.modeName()
+	if m.tmuxMode {
+		modeText += " [" + m.backendName() + "]"
+	}
+	mode := modeIndicatorStyle.Render(" mode: " + modeText + " ")
 	right := fmt.Sprintf("%s  scroll: %s ", mode, scrollStr)
 	gap := strings.Repeat(" ", max(0, m.width-lipgloss.Width(left)-lipgloss.Width(right)-2))
 	bar := left + gap + right

@@ -36,17 +36,20 @@ type Model struct {
 	config       *config.Config
 	settingsForm *settingsModel
 
-	keys      keyMap
-	help      help.Model
-	table     table.Model
-	viewport  viewport.Model
-	spinner   spinner.Model
-	backend   worker.WorkerBackend
-	manager   *worker.WorkerManager
-	workers   []*worker.Worker
-	program   *tea.Program
-	persister *persist.SessionPersister
-	sessionID string
+	keys        keyMap
+	help        help.Model
+	table       table.Model
+	viewport    viewport.Model
+	spinner     spinner.Model
+	backend     worker.WorkerBackend
+	tmuxMode    bool
+	tmuxReady   bool
+	tmuxBackend *worker.TmuxBackend
+	manager     *worker.WorkerManager
+	workers     []*worker.Worker
+	program     *tea.Program
+	persister   *persist.SessionPersister
+	sessionID   string
 
 	sessionStartedAt time.Time
 
@@ -180,6 +183,13 @@ func NewModel(backend worker.WorkerBackend, source task.Source, version string, 
 
 func (m *Model) SetProgram(program *tea.Program) {
 	m.program = program
+}
+
+// SetTmuxMode configures the model for tmux worker mode.
+// Must be called before Init().
+func (m *Model) SetTmuxMode(tmuxBackend *worker.TmuxBackend) {
+	m.tmuxMode = true
+	m.tmuxBackend = tmuxBackend
 }
 
 func (m *Model) SetPersister(p *persist.SessionPersister, sessionID string) {
@@ -400,6 +410,10 @@ func (m *Model) modeName() string {
 		return m.taskSourceType
 	}
 	return "yolo"
+}
+
+func (m *Model) backendName() string {
+	return m.backend.Name()
 }
 
 func (m *Model) swapTaskSource(source task.Source) {

@@ -37,6 +37,7 @@ func newRootCmd() *cobra.Command {
 	var format string
 	var spawnAll bool
 	var attach bool
+	var tmuxMode bool
 
 	cmd := &cobra.Command{
 		Use:   "kasmos",
@@ -46,6 +47,20 @@ func newRootCmd() *cobra.Command {
 			if showVersion {
 				fmt.Fprintf(cmd.OutOrStdout(), "kasmos v%s\n", version)
 				return nil
+			}
+
+			if !daemon {
+				if info, err := os.Stdout.Stat(); err == nil {
+					if (info.Mode() & os.ModeCharDevice) == 0 {
+						daemon = true
+					}
+				}
+			}
+
+			if tmuxMode && daemon {
+				return fmt.Errorf("--tmux and -d (daemon mode) are mutually exclusive.\n" +
+					"Tmux mode requires the interactive dashboard and cannot run headless.\n" +
+					"Use --tmux for interactive agent sessions, or -d for headless batch processing.")
 			}
 
 			cfg, err := config.Load(".")
@@ -69,14 +84,6 @@ func newRootCmd() *cobra.Command {
 				log.Printf("warning: failed to load task source %q (%s): %v", source.Path(), source.Type(), err)
 			}
 
-			if !daemon {
-				if info, err := os.Stdout.Stat(); err == nil {
-					if (info.Mode() & os.ModeCharDevice) == 0 {
-						daemon = true
-					}
-				}
-			}
-
 			format = strings.TrimSpace(strings.ToLower(format))
 			if format == "" {
 				format = "default"
@@ -88,13 +95,38 @@ func newRootCmd() *cobra.Command {
 				signal.Ignore(syscall.SIGPIPE)
 			}
 
-			backend, err := worker.NewSubprocessBackend()
-			if err != nil {
-				return err
-			}
-
 			persister := persist.NewSessionPersister(".")
 			sessionID := persist.NewSessionID()
+
+			var backend worker.WorkerBackend
+			if tmuxMode {
+				if os.Getenv("TMUX") == "" {
+					return fmt.Errorf("--tmux requires running inside a tmux session.\n" +
+						"Start one with: tmux new-session -s kasmos\n" +
+						"Then run: kasmos --tmux")
+				}
+
+				cli, err := worker.NewTmuxExec()
+				if err != nil {
+					return fmt.Errorf("tmux mode: %w", err)
+				}
+
+				tmuxBackend, err := worker.NewTmuxBackend(cli)
+				if err != nil {
+					return err
+				}
+
+				if err := tmuxBackend.Init(sessionID); err != nil {
+					return fmt.Errorf("tmux init: %w", err)
+				}
+
+				backend = tmuxBackend
+			} else {
+				backend, err = worker.NewSubprocessBackend()
+				if err != nil {
+					return err
+				}
+			}
 
 			ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
@@ -102,6 +134,11 @@ func newRootCmd() *cobra.Command {
 			showLauncher := len(args) == 0 && !attach && !daemon
 
 			model := tui.NewModel(backend, source, version, cfg, showLauncher)
+			if tmuxMode {
+				if tmuxBackend, ok := backend.(*worker.TmuxBackend); ok {
+					model.SetTmuxMode(tmuxBackend)
+				}
+			}
 			if daemon {
 				model.SetDaemonMode(true, format, spawnAll)
 			}
@@ -160,6 +197,7 @@ func newRootCmd() *cobra.Command {
 	cmd.Flags().StringVar(&format, "format", "default", "daemon output format: default or json")
 	cmd.Flags().BoolVar(&spawnAll, "spawn-all", false, "spawn workers for all unblocked tasks immediately")
 	cmd.Flags().BoolVar(&attach, "attach", false, "restore session from .kasmos/session.json")
+	cmd.Flags().BoolVar(&tmuxMode, "tmux", false, "run workers as interactive tmux panes")
 
 	var forceSetup bool
 	setupCmd := &cobra.Command{
