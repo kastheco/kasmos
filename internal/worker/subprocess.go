@@ -169,3 +169,7 @@ func (h *subprocessHandle) PID() int {
 
 	return h.cmd.Process.Pid
 }
+
+func (h *subprocessHandle) Interactive() bool {
+	return false
+}

@@ -31,6 +31,7 @@ type WorkerHandle interface {
 	Wait() ExitResult
 	Kill(gracePeriod time.Duration) error
 	PID() int
+	Interactive() bool
 }
 
 // ExitResult contains the outcome of a completed worker process.
