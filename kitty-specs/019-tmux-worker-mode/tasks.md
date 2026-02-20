@@ -176,7 +176,7 @@
 - [x] T028 Handle externally killed panes: when PollPanes reports a pane as missing, emit `workerKilledMsg` for that worker (FR-014)
 - [x] T029 Update `workerSpawnedMsg` handler in update.go: check `handle.Interactive()`, skip `readWorkerOutput()` and `waitWorkerCmd()` for interactive handles
 - [x] T030 Disable AI helper keys (Analyze, GenPrompt) in `updateKeyStates()` in `internal/tui/keys.go` when `tmuxMode` is active (FR-017)
-- [ ] T031 Implement auto-focus return: when the focused worker's pane exits, fire `paneFocusCmd` targeting the kasmos dashboard pane (FR-009)
+- [x] T031 Implement auto-focus return: when the focused worker's pane exits, fire `paneFocusCmd` targeting the kasmos dashboard pane (FR-009)
 
 ### Implementation Notes
 - Tick polling: only runs when `tmuxMode` is true. On each `tickMsg`, call `TmuxBackend.PollPanes()`. This returns `[]PaneStatus` with Dead/Missing flags.
