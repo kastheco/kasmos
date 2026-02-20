@@ -26,6 +26,7 @@ var launcherMenuItems = []launcherMenuItem{
 	{key: "n", label: "new task", description: "spawn a worker in yolo mode"},
 	{key: "f", label: "create feature spec", description: "start spec-kitty feature creation"},
 	{key: "p", label: "create plan", description: "start spec-kitty plan flow"},
+	{key: "b", label: "browse features", description: "open spec-kitty feature browser"},
 	{key: "h", label: "view history", description: "browse past sessions"},
 	{key: "r", label: "restore session", description: "load a previous session"},
 	{key: "s", label: "settings", description: "configure agent models"},

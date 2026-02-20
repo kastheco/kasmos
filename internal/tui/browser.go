@@ -7,6 +7,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/v2/key"
+	"github.com/charmbracelet/bubbles/v2/textinput"
+	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 )
 
@@ -164,4 +167,58 @@ func filterFeatures(entries []FeatureEntry, query string) []int {
 	}
 
 	return indices
+}
+
+func (m *Model) openFeatureBrowser() tea.Cmd {
+	if err := ensureSpecKittyAvailable(); err != nil {
+		m.launcherNote = err.Error()
+		return nil
+	}
+
+	entries, err := scanFeatures()
+	if err != nil {
+		m.launcherNote = fmt.Sprintf("failed to scan features: %v", err)
+		return nil
+	}
+
+	m.showFeatureBrowser = true
+	m.featureEntries = entries
+	m.featureFiltered = filterFeatures(entries, "")
+	m.featureSelectedIdx = 0
+	m.featureActionsOpen = false
+	m.featureActionIdx = 0
+	m.featureFilterActive = false
+	m.featureFilter = styledTextInput()
+	m.featureFilter.Placeholder = "filter features..."
+	m.featureFilter.SetWidth(40)
+	m.launcherNote = ""
+	m.updateKeyStates()
+	return nil
+}
+
+func (m *Model) closeFeatureBrowser() {
+	m.showFeatureBrowser = false
+	m.featureEntries = nil
+	m.featureFiltered = nil
+	m.featureSelectedIdx = 0
+	m.featureActionsOpen = false
+	m.featureActionIdx = 0
+	m.featureFilterActive = false
+	m.featureFilter = textinput.Model{}
+	m.updateKeyStates()
+}
+
+func (m *Model) renderFeatureBrowser() string {
+	return m.renderWithBackdrop(dialogStyle.Width(70).Render("feature browser (loading...)"))
+}
+
+func (m *Model) updateFeatureBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if key.Matches(keyMsg, m.keys.Back) {
+			m.closeFeatureBrowser()
+			return m, nil
+		}
+	}
+
+	return m, nil
 }

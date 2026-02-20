@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/v2/help"
 	"github.com/charmbracelet/bubbles/v2/spinner"
 	"github.com/charmbracelet/bubbles/v2/table"
+	"github.com/charmbracelet/bubbles/v2/textinput"
 	"github.com/charmbracelet/bubbles/v2/viewport"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
@@ -95,6 +96,16 @@ type Model struct {
 	restoreLoading    bool
 	restoreErr        error
 	launcherNote      string
+
+	// Feature browser state (launcher sub-view)
+	showFeatureBrowser  bool
+	featureEntries      []FeatureEntry
+	featureFiltered     []int // indices into featureEntries matching filter
+	featureSelectedIdx  int   // index into featureFiltered
+	featureActionsOpen  bool  // true when lifecycle sub-menu is expanded
+	featureActionIdx    int   // selected action within expanded sub-menu
+	featureFilterActive bool  // true when filter textinput has focus
+	featureFilter       textinput.Model
 
 	tableInnerWidth     int
 	tableInnerHeight    int
@@ -315,6 +326,9 @@ func (m *Model) View() string {
 	}
 
 	if m.showLauncher {
+		if m.showFeatureBrowser {
+			return m.renderFeatureBrowser()
+		}
 		if m.showRestorePicker {
 			return m.renderRestorePicker()
 		}
