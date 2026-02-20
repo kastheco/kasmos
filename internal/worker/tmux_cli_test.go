@@ -21,6 +21,7 @@ type mockTmuxCLI struct {
 	SetEnvFn        func(ctx context.Context, key, value string) error
 	ShowEnvFn       func(ctx context.Context) (map[string]string, error)
 	UnsetEnvFn      func(ctx context.Context, key string) error
+	ShowOptionFn    func(ctx context.Context, key string) (string, error)
 	SetOptionFn     func(ctx context.Context, key, value string) error
 	SetPaneTitleFn  func(ctx context.Context, paneID, title string) error
 	SetPaneOptionFn func(ctx context.Context, paneID, option, value string) error
@@ -117,6 +118,13 @@ func (m *mockTmuxCLI) SetOption(ctx context.Context, key, value string) error {
 		return m.SetOptionFn(ctx, key, value)
 	}
 	return nil
+}
+
+func (m *mockTmuxCLI) ShowOption(ctx context.Context, key string) (string, error) {
+	if m.ShowOptionFn != nil {
+		return m.ShowOptionFn(ctx, key)
+	}
+	return "", nil
 }
 
 func (m *mockTmuxCLI) SetPaneTitle(ctx context.Context, paneID, title string) error {
