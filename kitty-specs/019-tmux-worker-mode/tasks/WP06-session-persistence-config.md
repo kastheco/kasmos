@@ -1,28 +1,31 @@
 ---
-work_package_id: "WP06"
+work_package_id: WP06
+title: Session Persistence, Config & Reattach
+lane: "doing"
+dependencies: [WP05]
+base_branch: 019-tmux-worker-mode-WP05
+base_commit: 359b73bac4aff0b2e224692f032be1aa72d98340
+created_at: '2026-02-20T04:58:03.011266+00:00'
 subtasks:
-  - "T032"
-  - "T033"
-  - "T034"
-  - "T035"
-  - "T036"
-  - "T037"
-  - "T043"
-title: "Session Persistence, Config & Reattach"
-phase: "Phase 3 - Persistence & Config"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
-dependencies: ["WP05"]
+- T032
+- T033
+- T034
+- T035
+- T036
+- T037
+- T043
+phase: Phase 3 - Persistence & Config
+assignee: ''
+agent: ''
+shell_pid: "3696870"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-19T03:53:34Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-19T03:53:34Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP06 - Session Persistence, Config & Reattach
