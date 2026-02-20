@@ -19,6 +19,7 @@ func (h fakeHandle) Stdout() io.Reader                    { return nil }
 func (h fakeHandle) Wait() worker.ExitResult              { return worker.ExitResult{} }
 func (h fakeHandle) Kill(gracePeriod time.Duration) error { return nil }
 func (h fakeHandle) PID() int                             { return h.pid }
+func (h fakeHandle) Interactive() bool                    { return false }
 
 func TestSessionStateJSONRoundTrip(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)

@@ -55,7 +55,17 @@ func TestSettingsSaveRoundTrip(t *testing.T) {
 	plannerInput.SetValue("openai/gpt-5")
 	m.settingsForm.modelInput["planner"] = plannerInput
 
-	m.settingsForm.selected = 2 // planner reasoning
+	plannerReasoningRow := -1
+	for i, row := range m.settingsForm.rows {
+		if row.kind == settingsRowRoleReasoning && row.role == "planner" {
+			plannerReasoningRow = i
+			break
+		}
+	}
+	if plannerReasoningRow == -1 {
+		t.Fatal("planner reasoning row not found")
+	}
+	m.settingsForm.selected = plannerReasoningRow
 	_, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 
 	m.settingsForm.selected = 0 // default task source
@@ -168,4 +178,8 @@ func (stubHandle) Kill(time.Duration) error {
 
 func (stubHandle) PID() int {
 	return 1
+}
+
+func (stubHandle) Interactive() bool {
+	return false
 }

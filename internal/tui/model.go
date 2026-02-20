@@ -36,17 +36,21 @@ type Model struct {
 	config       *config.Config
 	settingsForm *settingsModel
 
-	keys      keyMap
-	help      help.Model
-	table     table.Model
-	viewport  viewport.Model
-	spinner   spinner.Model
-	backend   worker.WorkerBackend
-	manager   *worker.WorkerManager
-	workers   []*worker.Worker
-	program   *tea.Program
-	persister *persist.SessionPersister
-	sessionID string
+	keys        keyMap
+	help        help.Model
+	table       table.Model
+	viewport    viewport.Model
+	spinner     spinner.Model
+	backend     worker.WorkerBackend
+	tmuxMode    bool
+	tmuxReady   bool
+	tmuxNarrow  bool
+	tmuxBackend *worker.TmuxBackend
+	manager     *worker.WorkerManager
+	workers     []*worker.Worker
+	program     *tea.Program
+	persister   *persist.SessionPersister
+	sessionID   string
 
 	sessionStartedAt time.Time
 
@@ -182,6 +186,13 @@ func (m *Model) SetProgram(program *tea.Program) {
 	m.program = program
 }
 
+// SetTmuxMode configures the model for tmux worker mode.
+// Must be called before Init().
+func (m *Model) SetTmuxMode(tmuxBackend *worker.TmuxBackend) {
+	m.tmuxMode = true
+	m.tmuxBackend = tmuxBackend
+}
+
 func (m *Model) SetPersister(p *persist.SessionPersister, sessionID string) {
 	m.persister = p
 	m.sessionID = sessionID
@@ -199,6 +210,11 @@ func (m *Model) RestoreWorker(w *worker.Worker) {
 	m.workers = m.manager.All()
 }
 
+// FindWorker returns the worker with the given ID, or nil if not found.
+func (m *Model) FindWorker(id string) *worker.Worker {
+	return m.manager.Get(id)
+}
+
 func (m *Model) ResetWorkerCounter(n int64) {
 	m.manager.ResetWorkerCounter(n)
 }
@@ -208,6 +224,11 @@ func (m *Model) buildSessionState() persist.SessionState {
 	snapshots := make([]persist.WorkerSnapshot, 0, len(workers))
 	for _, w := range workers {
 		snapshots = append(snapshots, persist.WorkerToSnapshot(w))
+	}
+
+	backendMode := ""
+	if m.backend != nil {
+		backendMode = m.backend.Name()
 	}
 
 	var ts *persist.TaskSourceConfig
@@ -226,6 +247,7 @@ func (m *Model) buildSessionState() persist.SessionState {
 		Workers:       snapshots,
 		NextWorkerNum: m.manager.Counter(),
 		PID:           os.Getpid(),
+		BackendMode:   backendMode,
 	}
 }
 
@@ -261,6 +283,9 @@ func (m *Model) DaemonExitCode() int {
 func (m *Model) Init() (tea.Model, tea.Cmd) {
 	m.tickActive = true
 	cmds := []tea.Cmd{tickCmd(), m.spinner.Tick}
+	if m.tmuxMode && m.tmuxBackend != nil {
+		cmds = append(cmds, tmuxInitCmd(m.tmuxBackend))
+	}
 	if m.daemon {
 		m.logDaemonEvent(sessionStartEvent(m.modeName(), m.taskSourcePath, len(m.loadedTasks)))
 	}
@@ -400,6 +425,10 @@ func (m *Model) modeName() string {
 		return m.taskSourceType
 	}
 	return "yolo"
+}
+
+func (m *Model) backendName() string {
+	return m.backend.Name()
 }
 
 func (m *Model) swapTaskSource(source task.Source) {

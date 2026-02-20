@@ -30,8 +30,10 @@ type workerExitedMsg struct {
 }
 
 type workerKilledMsg struct {
-	WorkerID string
-	Err      error
+	WorkerID  string
+	PaneID    string
+	WasActive bool
+	Err       error
 }
 
 type workerMarkedDoneMsg struct {
@@ -44,6 +46,41 @@ type workerKillAndContinueMsg struct {
 	WorkerID  string
 	SessionID string
 	Err       error
+}
+
+type tmuxInitMsg struct {
+	KasmosPaneID  string
+	ParkingWindow string
+	Err           error
+}
+
+type paneSwappedMsg struct {
+	WorkerID string
+	PaneID   string
+	Err      error
+}
+
+type paneExitedMsg struct {
+	WorkerID string
+	PaneID   string
+	ExitCode int
+	Output   string
+}
+
+type paneDetectedMsg struct {
+	Workers []worker.ReconnectedWorker
+	Err     error
+}
+
+type paneFocusMsg struct {
+	PaneID string
+	Err    error
+}
+
+type panesPolledMsg struct {
+	Statuses     []worker.PaneStatus
+	ActivePaneID string
+	Err          error
 }
 
 type tickMsg time.Time

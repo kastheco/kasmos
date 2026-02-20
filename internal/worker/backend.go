@@ -31,6 +31,17 @@ type WorkerHandle interface {
 	Wait() ExitResult
 	Kill(gracePeriod time.Duration) error
 	PID() int
+	Interactive() bool
+}
+
+// OutputCapturer is an optional worker handle capability for reading buffered output.
+type OutputCapturer interface {
+	CaptureOutput() (string, error)
+}
+
+// ExitNotifier is an optional worker handle capability for signaling completion.
+type ExitNotifier interface {
+	NotifyExit(code int, duration time.Duration)
 }
 
 // ExitResult contains the outcome of a completed worker process.

@@ -127,6 +127,83 @@ func spawnWorkerCmd(backend worker.WorkerBackend, cfg worker.SpawnConfig) tea.Cm
 	}
 }
 
+func tmuxInitCmd(backend *worker.TmuxBackend) tea.Cmd {
+	return func() tea.Msg {
+		if backend == nil {
+			return tmuxInitMsg{Err: errors.New("tmux backend is nil")}
+		}
+
+		kasmosPaneID := strings.TrimSpace(backend.KasmosPaneID())
+		if kasmosPaneID == "" {
+			return tmuxInitMsg{Err: errors.New("tmux backend is not initialized: missing kasmos pane")}
+		}
+
+		parkingWindow := strings.TrimSpace(backend.ParkingWindowID())
+		if parkingWindow == "" {
+			return tmuxInitMsg{Err: errors.New("tmux backend is not initialized: missing parking window")}
+		}
+
+		return tmuxInitMsg{
+			KasmosPaneID:  kasmosPaneID,
+			ParkingWindow: parkingWindow,
+		}
+	}
+}
+
+func paneSwapCmd(backend *worker.TmuxBackend, workerID string, narrow bool) tea.Cmd {
+	return func() tea.Msg {
+		if backend == nil {
+			return paneSwappedMsg{WorkerID: workerID, Err: errors.New("tmux backend is nil")}
+		}
+
+		workerID = strings.TrimSpace(workerID)
+		if workerID == "" {
+			return paneSwappedMsg{WorkerID: workerID, Err: errors.New("worker ID is empty")}
+		}
+
+		backend.SetNarrowLayout(narrow)
+		if err := backend.SwapActive(workerID); err != nil {
+			return paneSwappedMsg{WorkerID: workerID, Err: err}
+		}
+
+		return paneSwappedMsg{
+			WorkerID: workerID,
+			PaneID:   backend.ActivePaneID(),
+		}
+	}
+}
+
+func paneFocusCmd(backend *worker.TmuxBackend, paneID string) tea.Cmd {
+	return func() tea.Msg {
+		if backend == nil {
+			return paneFocusMsg{PaneID: paneID, Err: errors.New("tmux backend is nil")}
+		}
+
+		paneID = strings.TrimSpace(paneID)
+		if paneID == "" {
+			return paneFocusMsg{PaneID: paneID, Err: errors.New("pane ID is empty")}
+		}
+
+		return paneFocusMsg{PaneID: paneID, Err: backend.FocusPane(paneID)}
+	}
+}
+
+func tmuxPollCmd(backend *worker.TmuxBackend) tea.Cmd {
+	return func() tea.Msg {
+		if backend == nil {
+			return nil
+		}
+
+		activePaneID := strings.TrimSpace(backend.ActivePaneID())
+		statuses, err := backend.PollPanes()
+		if err != nil || len(statuses) == 0 {
+			return nil
+		}
+
+		return panesPolledMsg{Statuses: statuses, ActivePaneID: activePaneID}
+	}
+}
+
 func readWorkerOutput(workerID string, reader io.Reader, program *tea.Program) {
 	if workerID == "" || reader == nil || program == nil {
 		return
@@ -159,6 +236,42 @@ func waitWorkerCmd(workerID string, handle worker.WorkerHandle) tea.Cmd {
 			Duration:  result.Duration,
 			SessionID: result.SessionID,
 			Err:       result.Error,
+		}
+	}
+}
+
+func paneExitedWorkerCmd(workerID string, exitCode int, spawnedAt time.Time, handle worker.WorkerHandle, output *worker.OutputBuffer) tea.Cmd {
+	return func() tea.Msg {
+		if handle == nil {
+			return workerExitedMsg{WorkerID: workerID, ExitCode: exitCode, Err: errors.New("worker handle is nil")}
+		}
+
+		duration := time.Duration(0)
+		if !spawnedAt.IsZero() {
+			duration = time.Since(spawnedAt)
+			if duration < 0 {
+				duration = 0
+			}
+		}
+
+		if capturer, ok := handle.(worker.OutputCapturer); ok {
+			captured, err := capturer.CaptureOutput()
+			if err == nil && strings.TrimSpace(captured) != "" && output != nil {
+				output.Append(captured)
+			}
+		}
+
+		sessionID := extractSessionID(output)
+
+		if notifier, ok := handle.(worker.ExitNotifier); ok {
+			notifier.NotifyExit(exitCode, duration)
+		}
+
+		return workerExitedMsg{
+			WorkerID:  workerID,
+			ExitCode:  exitCode,
+			Duration:  duration,
+			SessionID: sessionID,
 		}
 	}
 }
