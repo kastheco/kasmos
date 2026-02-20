@@ -1,14 +1,18 @@
 ---
-work_package_id: "WP01"
-title: "Core Types, Scanner, and Phase Detection"
-lane: "planned"
+work_package_id: WP01
+title: Core Types, Scanner, and Phase Detection
+lane: "doing"
 dependencies: []
-subtasks: ["T001", "T002", "T003", "T004", "T005", "T006"]
+base_branch: main
+base_commit: ee4dc161d4104dee012377433baca9a0eb672b99
+created_at: '2026-02-20T07:00:17.530661+00:00'
+subtasks: [T001, T002, T003, T004, T005, T006]
+shell_pid: "3948330"
 history:
-  - timestamp: "2026-02-20T12:00:00Z"
-    lane: planned
-    actor: planner
-    action: "created work package"
+- timestamp: '2026-02-20T12:00:00Z'
+  lane: planned
+  actor: planner
+  action: created work package
 ---
 
 # WP01: Core Types, Scanner, and Phase Detection
