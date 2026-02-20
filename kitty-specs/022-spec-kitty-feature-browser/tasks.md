@@ -210,7 +210,7 @@ Dependency rationale: WP05 tests are exclusively for WP01 pure functions and bra
 **Subtasks**:
 - [x] T030: Add SetOption to TmuxCLI interface (session-level set-option)
 - [x] T031: Add SetPaneTitle to TmuxCLI interface (select-pane -T wrapper)
-- [ ] T032: Apply kasmos palette theming in TmuxBackend.Init()
+- [x] T032: Apply kasmos palette theming in TmuxBackend.Init()
 - [ ] T033: Set pane title on spawn with worker ID and role
 - [ ] T034: Hide tmux status bar (restore on cleanup)
 
