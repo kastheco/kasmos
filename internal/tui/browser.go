@@ -209,7 +209,158 @@ func (m *Model) closeFeatureBrowser() {
 }
 
 func (m *Model) renderFeatureBrowser() string {
-	return m.renderWithBackdrop(dialogStyle.Width(70).Render("feature browser (loading...)"))
+	if len(m.featureEntries) == 0 {
+		return m.renderFeatureBrowserEmpty()
+	}
+
+	lines := m.renderFeatureList()
+
+	filterLine := ""
+	if m.featureFilterActive || m.featureFilter.Value() != "" {
+		filterLine = m.renderBrowserFilter()
+	}
+
+	helpText := m.browserHelpText()
+
+	parts := []string{
+		dialogHeaderStyle.Render("browse features"),
+		"",
+	}
+	parts = append(parts, strings.Join(lines, "\n"))
+	parts = append(parts, "")
+	if filterLine != "" {
+		parts = append(parts, filterLine)
+	}
+	parts = append(parts, helpText)
+
+	content := strings.Join(parts, "\n")
+	dialog := dialogStyle.Width(min(76, m.width-4)).Render(content)
+	return m.renderWithBackdrop(dialog)
+}
+
+func (m *Model) browserHelpText() string {
+	if m.featureFilterActive {
+		return lipgloss.NewStyle().Foreground(colorMidGray).Render(
+			"type to filter  enter confirm  esc clear")
+	}
+	if m.featureActionsOpen {
+		return lipgloss.NewStyle().Foreground(colorMidGray).Render(
+			"j/k navigate  enter/right select  esc/left back")
+	}
+	return lipgloss.NewStyle().Foreground(colorMidGray).Render(
+		"j/k navigate  enter/right select  / filter  esc back")
+}
+
+func (m *Model) renderFeatureList() []string {
+	lines := make([]string, 0, len(m.featureFiltered)*2)
+
+	for listIdx, entryIdx := range m.featureFiltered {
+		entry := m.featureEntries[entryIdx]
+		isSelected := listIdx == m.featureSelectedIdx
+
+		line := m.renderFeatureEntry(entry, isSelected)
+		lines = append(lines, line)
+
+		if isSelected && m.featureActionsOpen {
+			actionLines := m.renderActionLines(entry)
+			lines = append(lines, actionLines...)
+		}
+	}
+
+	return lines
+}
+
+func (m *Model) renderFeatureEntry(entry FeatureEntry, selected bool) string {
+	selector := "  "
+	if selected && !m.featureActionsOpen {
+		selector = "> "
+	} else if selected && m.featureActionsOpen {
+		selector = "  "
+	}
+
+	numStyle := lipgloss.NewStyle().Foreground(colorMidGray)
+	slugStyle := lipgloss.NewStyle().Foreground(colorLightGray)
+	if selected {
+		numStyle = numStyle.Foreground(colorCream)
+		slugStyle = slugStyle.Foreground(colorCream).Bold(true)
+	}
+
+	badge := phaseBadge(entry.Phase, entry.WPCount)
+	return fmt.Sprintf("%s%s  %s   %s",
+		selector,
+		numStyle.Render(entry.Number),
+		slugStyle.Render(entry.Slug),
+		badge,
+	)
+}
+
+func (m *Model) renderActionLines(entry FeatureEntry) []string {
+	actions := actionsForPhase(entry.Phase)
+	if len(actions) == 0 {
+		return nil
+	}
+
+	treeStyle := lipgloss.NewStyle().Foreground(colorMidGray)
+	actionStyle := lipgloss.NewStyle().Foreground(colorLightGray)
+	descStyle := lipgloss.NewStyle().Foreground(colorMidGray)
+	selectedActionStyle := lipgloss.NewStyle().Foreground(colorPurple).Bold(true)
+	selectedDescStyle := lipgloss.NewStyle().Foreground(colorCream)
+
+	lines := make([]string, 0, len(actions))
+	for i, action := range actions {
+		isLast := i == len(actions)-1
+		isActionSelected := i == m.featureActionIdx
+
+		treeChar := "|--"
+		if isLast {
+			treeChar = "'--"
+		}
+
+		selector := " "
+		aStyle := actionStyle
+		dStyle := descStyle
+		if isActionSelected {
+			selector = ">"
+			aStyle = selectedActionStyle
+			dStyle = selectedDescStyle
+		}
+
+		line := fmt.Sprintf("    %s %s %-10s %s",
+			treeStyle.Render(treeChar),
+			selector,
+			aStyle.Render(action.label),
+			dStyle.Render(action.description),
+		)
+		lines = append(lines, line)
+	}
+
+	return lines
+}
+
+func (m *Model) renderBrowserFilter() string {
+	prefix := lipgloss.NewStyle().Foreground(colorPurple).Render("/")
+	return prefix + " " + m.featureFilter.View()
+}
+
+func (m *Model) renderFeatureBrowserEmpty() string {
+	msg := lipgloss.NewStyle().Foreground(colorMidGray).Render(
+		"no spec-kitty features found")
+	hint := lipgloss.NewStyle().Foreground(colorLightGray).Render(
+		"press f to create a new feature, or esc to go back")
+	helpText := lipgloss.NewStyle().Foreground(colorMidGray).Render("esc back")
+
+	content := lipgloss.JoinVertical(
+		lipgloss.Left,
+		dialogHeaderStyle.Render("browse features"),
+		"",
+		msg,
+		hint,
+		"",
+		helpText,
+	)
+
+	dialog := dialogStyle.Width(min(76, m.width-4)).Render(content)
+	return m.renderWithBackdrop(dialog)
 }
 
 func (m *Model) updateFeatureBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
