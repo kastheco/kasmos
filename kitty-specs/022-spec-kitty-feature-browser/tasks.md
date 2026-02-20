@@ -110,7 +110,7 @@ WP03 [P]  WP04 [P]     <-- parallel
 **Parallel**: Can run simultaneously with WP04
 
 **Subtasks**:
-- [ ] T013: Implement renderFeatureBrowser() main structure (backdrop dialog, header, list, help bar)
+- [x] T013: Implement renderFeatureBrowser() main structure (backdrop dialog, header, list, help bar)
 - [ ] T014: Implement feature entry line rendering (number, slug, phase badge, selection highlight)
 - [ ] T015: Implement inline tree expansion rendering (ASCII tree chars, action selection)
 - [ ] T016: Implement filter textinput rendering at bottom of dialog
