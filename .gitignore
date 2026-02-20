@@ -10,7 +10,7 @@
 # Added by Spec Kitty CLI (auto-managed)
 .claude/
 .codex/
-.opencode/
+# .opencode/ is tracked -- agents, commands, skills, and config are project-specific
 .windsurf/
 .gemini/
 .cursor/
