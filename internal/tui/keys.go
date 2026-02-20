@@ -26,6 +26,8 @@ type keyMap struct {
 	CycleMode key.Binding
 	History   key.Binding
 
+	Menu       key.Binding
+	Features   key.Binding
 	Fullscreen key.Binding
 	ScrollDown key.Binding
 	ScrollUp   key.Binding
@@ -105,9 +107,17 @@ func defaultKeyMap() keyMap {
 			key.WithKeys("h"),
 			key.WithHelp("h", "history"),
 		),
-		Fullscreen: key.NewBinding(
+		Menu: key.NewBinding(
+			key.WithKeys("m"),
+			key.WithHelp("m", "menu"),
+		),
+		Features: key.NewBinding(
 			key.WithKeys("f"),
-			key.WithHelp("f", "fullscreen"),
+			key.WithHelp("f", "features"),
+		),
+		Fullscreen: key.NewBinding(
+			key.WithKeys("F"),
+			key.WithHelp("F", "fullscreen"),
 		),
 		ScrollDown: key.NewBinding(
 			key.WithKeys("j", "down"),
@@ -176,7 +186,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
 		k.New, k.Kill, k.MarkDone, k.Restart, k.Continue,
 		k.Approve, k.Reject,
-		k.CycleMode, k.History,
+		k.CycleMode, k.History, k.Menu, k.Features,
 		k.NextPanel, k.Fullscreen,
 		k.Help, k.Quit,
 	}
@@ -185,7 +195,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.NextPanel, k.PrevPanel, k.Select, k.Back},
-		{k.New, k.Kill, k.MarkDone, k.Continue, k.Restart, k.Approve, k.Reject, k.Batch, k.CycleMode, k.History, k.GenPrompt, k.Analyze},
+		{k.New, k.Kill, k.MarkDone, k.Continue, k.Restart, k.Approve, k.Reject, k.Batch, k.CycleMode, k.History, k.Menu, k.Features, k.GenPrompt, k.Analyze},
 		{k.Fullscreen, k.ScrollDown, k.ScrollUp, k.HalfDown, k.HalfUp, k.GotoBottom, k.GotoTop},
 		{k.Help, k.Quit, k.ForceQuit},
 	}
@@ -300,6 +310,8 @@ func (m *Model) updateKeyStates() {
 	m.keys.New.SetEnabled(!overlayActive)
 	m.keys.CycleMode.SetEnabled(!overlayActive)
 	m.keys.History.SetEnabled(!overlayActive && !m.fullScreen)
+	m.keys.Menu.SetEnabled(!overlayActive && !m.fullScreen && !m.showLauncher)
+	m.keys.Features.SetEnabled(!overlayActive && !m.fullScreen && !m.showLauncher)
 }
 
 func (m *Model) hasUnassignedTasks() bool {

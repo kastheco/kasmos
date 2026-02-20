@@ -143,6 +143,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.openHistoryOverlay()
 		}
 
+		if key.Matches(msg, m.keys.Menu) {
+			m.showLauncher = true
+			m.recalculateLayout()
+			m.updateKeyStates()
+			return m, nil
+		}
+
+		if key.Matches(msg, m.keys.Features) {
+			return m, m.openFeatureBrowser()
+		}
+
 		if !m.fullScreen && key.Matches(msg, m.keys.NextPanel) {
 			m.cyclePanel(1)
 			m.updateKeyStates()
