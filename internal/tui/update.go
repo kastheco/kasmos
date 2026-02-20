@@ -66,6 +66,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.recalculateLayout()
 		}
+		m.resizeSpawnPrompt()
 		m.refreshTableRows()
 		m.refreshViewportFromSelected(false)
 		if prev != m.layoutMode {
@@ -1089,6 +1090,7 @@ func (m *Model) openSpawnDialogWithTaskPrefill(role, prompt string, files []stri
 	m.spawnDraft = spawnDialogDraft{Role: role, Prompt: prompt, Files: strings.Join(files, ", ")}
 	m.spawnForm = newSpawnDialogModelWithPrefill(role, prompt, files)
 	m.spawnForm.taskID = taskID
+	m.resizeSpawnPrompt()
 	return m.spawnForm.focusCurrentField()
 }
 

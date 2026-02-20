@@ -63,6 +63,7 @@ func (m *Model) openSpawnDialog() tea.Cmd {
 	m.spawnDraft = spawnDialogDraft{Role: "coder"}
 	m.spawnForm = newSpawnDialogModel()
 	m.spawnForm.taskID = ""
+	m.resizeSpawnPrompt()
 	m.updateKeyStates()
 	return m.spawnForm.focusCurrentField()
 }
@@ -72,6 +73,7 @@ func (m *Model) openSpawnDialogWithPrefill(role, prompt string, files []string) 
 	m.spawnDraft = spawnDialogDraft{Role: role, Prompt: prompt, Files: strings.Join(files, ", ")}
 	m.spawnForm = newSpawnDialogModelWithPrefill(role, prompt, files)
 	m.spawnForm.taskID = ""
+	m.resizeSpawnPrompt()
 	m.updateKeyStates()
 	return m.spawnForm.focusCurrentField()
 }
@@ -135,11 +137,13 @@ func taskStateLabel(state task.TaskState) string {
 	}
 }
 
+const spawnDialogChrome = 16 // lines used by dialog chrome outside the textarea
+
 func newSpawnDialogModel() *spawnDialogModel {
 	prompt := styledTextArea()
 	prompt.Placeholder = "describe the task for this worker"
 	prompt.SetWidth(58)
-	prompt.SetHeight(6)
+	prompt.SetHeight(6) // initial default; resized dynamically via resizeSpawnPrompt
 
 	files := styledTextInput()
 	files.Placeholder = "path/to/file.go, another/file.go"
@@ -180,6 +184,20 @@ func newSpawnDialogModelWithPrefill(role, promptText string, files []string) *sp
 	}
 
 	return form
+}
+
+func (m *Model) resizeSpawnPrompt() {
+	if m.spawnForm == nil {
+		return
+	}
+	h := m.height - spawnDialogChrome
+	if h < 4 {
+		h = 4
+	}
+	if h > 30 {
+		h = 30
+	}
+	m.spawnForm.prompt.SetHeight(h)
 }
 
 func (f *spawnDialogModel) focusCurrentField() tea.Cmd {
