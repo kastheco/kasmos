@@ -1,7 +1,7 @@
 ---
 work_package_id: WP03
 title: Browser Rendering (View)
-lane: "doing"
+lane: "for_review"
 dependencies: [WP02]
 base_branch: 022-spec-kitty-feature-browser-WP02
 base_commit: 33ce9398923a77135b43ec8d1a71ddadeb49caee
@@ -415,3 +415,7 @@ for i, dir := range m.newForm.planFeatureDirs {
 - Verify empty state matches spec US4 acceptance criteria
 - Verify dialog uses renderWithBackdrop consistently with other launcher sub-views
 - Verify help text changes based on browser state (normal, filter active, actions open)
+
+## Activity Log
+
+- 2026-02-20T07:50:05Z – unknown – shell_pid=4041860 – lane=for_review – Ready for review: implemented browser dialog rendering with feature list, action tree, filter line, dynamic help text, and empty state
