@@ -1,24 +1,27 @@
 ---
-work_package_id: "WP07"
-subtasks:
-  - "T038"
-  - "T039"
-  - "T040"
-title: "Constitution Amendment"
-phase: "Phase 3 - Persistence & Config"
-lane: "done"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
+work_package_id: WP07
+title: Constitution Amendment
+lane: done
 dependencies: []
+base_branch: main
+base_commit: f055de83e4266ab7ae6feafcc18372838787f867
+created_at: '2026-02-20T05:13:09.397628+00:00'
+subtasks:
+- T038
+- T039
+- T040
+phase: Phase 3 - Persistence & Config
+assignee: ''
+agent: ''
+shell_pid: ''
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-19T03:53:34Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-19T03:53:34Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP07 - Constitution Amendment

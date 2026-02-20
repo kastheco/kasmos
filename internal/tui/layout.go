@@ -78,6 +78,7 @@ func (m *Model) recalculateLayout() {
 
 	m.table.SetWidth(m.tableInnerWidth)
 	m.table.SetHeight(max(1, m.tableInnerHeight-1))
+	m.table.SetRows(nil) // clear before column change to avoid index-out-of-range in renderRow
 	m.table.SetColumns(m.workerTableColumns())
 	m.viewport.SetWidth(m.viewportInnerWidth)
 	m.viewport.SetHeight(max(1, m.viewportInnerHeight-1))

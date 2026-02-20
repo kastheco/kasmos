@@ -1,6 +1,5 @@
 max_agent_panes = 4
 progression_mode = "continuous"
-zellij_binary = "zellij"
 opencode_binary = "opencode"
 spec_kitty_binary = "spec-kitty"
 kasmos_dir = ".kasmos"
@@ -20,7 +19,6 @@ poll_interval_secs = 5
 event_timeout_secs = 300
 
 [paths]
-zellij_binary = "zellij"
 spec_kitty_binary = "spec-kitty"
 specs_root = "kitty-specs"
 
