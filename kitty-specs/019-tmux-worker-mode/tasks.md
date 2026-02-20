@@ -67,7 +67,7 @@
 - [x] T012 Implement pane visibility management: `ShowPane()`, `HidePane()`, `SwapActive()` using JoinPane (both directions)
 - [x] T013 Implement `PollPanes()`: list all managed panes, detect dead/missing, return `[]PaneStatus`
 - [x] T014 Implement `Reconnect()` (read KASMOS_PANE_* env vars, cross-reference with list-panes -s, clean stale tags via UnsetEnvironment) and `Cleanup()` (kill parking window, kill worker panes, unset all KASMOS_* env vars)
-- [ ] T042 [P] Unit tests for TmuxBackend with mock TmuxCLI: Spawn, SwapActive, PollPanes, Reconnect, tmuxHandle lifecycle in `internal/worker/tmux_test.go`
+- [x] T042 [P] Unit tests for TmuxBackend with mock TmuxCLI: Spawn, SwapActive, PollPanes, Reconnect, tmuxHandle lifecycle in `internal/worker/tmux_test.go`
 
 ### Implementation Notes
 - `TmuxBackend` implements `WorkerBackend` interface. Compile-time check: `var _ WorkerBackend = (*TmuxBackend)(nil)`.
