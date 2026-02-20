@@ -23,6 +23,7 @@ type SplitOpts struct {
 	Target     string   // pane/window to split from
 	Horizontal bool     // -h flag
 	Size       string   // -l flag: "50%" or "80"
+	Dir        string   // -c flag: starting directory
 	Command    []string // command to run in new pane
 	Env        []string // environment variables as "KEY=VALUE" for -e flags
 }
@@ -167,6 +168,9 @@ func (t *tmuxExec) SplitWindow(ctx context.Context, opts SplitOpts) (string, err
 	}
 	if opts.Size != "" {
 		args = append(args, "-l", opts.Size)
+	}
+	if opts.Dir != "" {
+		args = append(args, "-c", opts.Dir)
 	}
 	for _, env := range opts.Env {
 		args = append(args, "-e", env)

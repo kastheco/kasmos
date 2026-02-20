@@ -138,6 +138,7 @@ func TestTmuxBackendSpawn(t *testing.T) {
 			ID:              "w-001",
 			Role:            "coder",
 			Prompt:          "do thing",
+			WorkDir:         "/tmp/wp07-workdir",
 			Files:           []string{"a.go", "b.go"},
 			ContinueSession: "ses-1",
 			Model:           "m1",
@@ -154,9 +155,12 @@ func TestTmuxBackendSpawn(t *testing.T) {
 		if splitOpts.Target != "%1" || !splitOpts.Horizontal || splitOpts.Size != "50%" {
 			t.Fatalf("unexpected split opts: %+v", splitOpts)
 		}
+		if splitOpts.Dir != "/tmp/wp07-workdir" {
+			t.Fatalf("split workdir mismatch: got=%q want=%q", splitOpts.Dir, "/tmp/wp07-workdir")
+		}
 		wantCmd := []string{
-			"opencode", "run", "--agent", "coder", "--continue", "-s", "ses-1",
-			"--model", "m1", "--variant", "high", "--file", "a.go", "--file", "b.go", "do thing",
+			"opencode", "--agent", "coder", "--continue", "-s", "ses-1",
+			"--model", "m1", "--prompt", "do thing",
 		}
 		if len(splitOpts.Command) != len(wantCmd) {
 			t.Fatalf("split command length mismatch: got=%v want=%v", splitOpts.Command, wantCmd)

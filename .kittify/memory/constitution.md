@@ -1,7 +1,7 @@
 # kasmos Constitution
 
-> Updated: 2026-02-18
-> Version: 2.1.0
+> Updated: 2026-02-20
+> Version: 2.1.1
 
 ## Purpose
 
@@ -19,7 +19,7 @@ All features and pull requests should align with these principles.
 - **bubbles** for TUI components (table, viewport, textinput, list, spinner, help)
 - **huh** for form dialogs
 - **cobra** for CLI command structure
-- **OpenCode** as the sole AI agent harness (`opencode run` for headless workers)
+- **OpenCode** as the sole AI agent harness (`opencode run` for headless workers, `opencode` for interactive tmux workers)
 
 ### Testing Requirements
 
@@ -40,8 +40,8 @@ All features and pull requests should align with these principles.
 ### Architecture Principles
 
 - **No manager AI agent** - the TUI is the orchestrator. Zero token cost for orchestration.
-- **Workers are subprocesses** - spawned via `opencode run`. Headless by default (output captured via Go pipes); interactive via tmux panes when configured.
-- **Headless by default; interactive when needed** - `opencode run --continue -s <id>` preserves context in headless mode. Tmux mode enables direct terminal interaction for workflows requiring back-and-forth (planning, clarification, review).
+- **Workers support dual spawn modes** - `SubprocessBackend` uses `opencode run` for headless pipe-captured execution, while `TmuxBackend` uses interactive `opencode` in a real tmux PTY pane.
+- **Headless by default; interactive when needed** - `opencode run --continue -s <id>` preserves context in headless mode. Tmux mode uses `opencode --prompt` plus `--continue -s <id>` for direct terminal interaction when back-and-forth is required.
 - **Pluggable WorkerBackend interface** - SubprocessBackend (headless default), TmuxBackend (interactive tmux panes).
 - **Three task source adapters** - spec-kitty (plan.md/WP frontmatter), GSD (checkbox markdown), ad-hoc (manual prompts).
 - **Daemon mode** - same Model/Update loop, no View rendering (`WithoutRenderer()`).

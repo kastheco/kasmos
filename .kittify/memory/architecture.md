@@ -2,7 +2,7 @@
 
 > Codebase discoveries and architectural knowledge accumulated during development.
 > This file is the authority on how kasmos internals work and interact.
-> Updated: 2026-02-17
+> Updated: 2026-02-20
 
 ## System Overview
 
@@ -65,13 +65,23 @@ StatePending -> StateSpawning -> StateRunning --+--> StateExited (code 0)
                                                 +--> StateKilled (user kill)
 ```
 
-Workers are spawned as child processes via `opencode run --agent <role> "prompt"`.
-Stdout and stderr are merged into a single pipe, read by a goroutine that sends
-`workerOutputMsg` through `tea.Program.Send()`. When the process exits, a
+Workers are spawned through two backend modes:
+
+- `SubprocessBackend` (headless): `opencode run --agent <role> "prompt"`.
+  Prompt is positional. `--variant` (reasoning) and `--file` attachments are supported.
+  `cfg.WorkDir` maps to `exec.Cmd.Dir`.
+- `TmuxBackend` (interactive): `opencode --agent <role> --prompt "prompt"` in a tmux pane.
+  Prompt is passed by `--prompt` (not positional). `--variant` and `--file` are not
+  available in interactive mode and are intentionally ignored. `cfg.WorkDir` maps to
+  `tmux split-window -c <dir>`.
+
+Subprocess mode merges stdout and stderr into a single pipe, read by a goroutine that
+sends `workerOutputMsg` through `tea.Program.Send()`. When the process exits, a
 `workerExitedMsg` is sent with the exit code and parsed session ID.
 
-Continuation: `opencode run --continue -s <session_id> "follow-up message"` spawns
-a NEW worker (new ID, new process) that preserves the parent session's full context.
+Continuation spawns a NEW worker (new ID, new process) that preserves the parent
+session context. Subprocess mode uses `opencode run --continue -s <session_id> "follow-up"`.
+Tmux mode uses `opencode --continue -s <session_id> --prompt "follow-up"`.
 The child worker's `ParentID` field links it to its parent for tree display.
 
 ## Key Interfaces

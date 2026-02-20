@@ -138,6 +138,7 @@ func (b *TmuxBackend) Spawn(ctx context.Context, cfg SpawnConfig) (WorkerHandle,
 		Target:     b.kasmosPaneID,
 		Horizontal: true,
 		Size:       splitSize,
+		Dir:        cfg.WorkDir,
 		Command:    cmd,
 		Env:        buildEnvArgs(cfg.Env),
 	})
@@ -191,7 +192,7 @@ func (b *TmuxBackend) Spawn(ctx context.Context, cfg SpawnConfig) (WorkerHandle,
 }
 
 func (b *TmuxBackend) buildArgs(cfg SpawnConfig) []string {
-	args := []string{"run"}
+	args := []string{}
 
 	if cfg.Role != "" {
 		args = append(args, "--agent", cfg.Role)
@@ -202,14 +203,8 @@ func (b *TmuxBackend) buildArgs(cfg SpawnConfig) []string {
 	if cfg.Model != "" {
 		args = append(args, "--model", cfg.Model)
 	}
-	if cfg.Reasoning != "" && cfg.Reasoning != "default" {
-		args = append(args, "--variant", cfg.Reasoning)
-	}
-	for _, f := range cfg.Files {
-		args = append(args, "--file", f)
-	}
 	if cfg.Prompt != "" {
-		args = append(args, cfg.Prompt)
+		args = append(args, "--prompt", cfg.Prompt)
 	}
 
 	return args
