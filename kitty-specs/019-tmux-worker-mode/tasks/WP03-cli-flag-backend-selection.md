@@ -1,26 +1,29 @@
 ---
-work_package_id: "WP03"
+work_package_id: WP03
+title: CLI Flag & Backend Selection
+lane: "doing"
+dependencies: [WP02]
+base_branch: 019-tmux-worker-mode-WP02
+base_commit: e1b1fc55cff2f383c549d48718a79a59269961d6
+created_at: '2026-02-20T04:36:10.592767+00:00'
 subtasks:
-  - "T015"
-  - "T016"
-  - "T017"
-  - "T018"
-  - "T019"
-title: "CLI Flag & Backend Selection"
-phase: "Phase 2 - TUI Integration"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
-dependencies: ["WP02"]
+- T015
+- T016
+- T017
+- T018
+- T019
+phase: Phase 2 - TUI Integration
+assignee: ''
+agent: ''
+shell_pid: "3643387"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-19T03:53:34Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-19T03:53:34Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP03 - CLI Flag & Backend Selection
