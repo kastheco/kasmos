@@ -169,3 +169,7 @@ func (stubHandle) Kill(time.Duration) error {
 func (stubHandle) PID() int {
 	return 1
 }
+
+func (stubHandle) Interactive() bool {
+	return false
+}
