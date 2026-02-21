@@ -53,29 +53,28 @@ type WriteResult struct {
 	Created bool // true=written, false=skipped (file already existed)
 }
 
-// WriteClaudeProject scaffolds .claude/ project files.
-func WriteClaudeProject(dir string, agents []harness.AgentConfig, force bool) ([]WriteResult, error) {
+// writePerRoleProject is the shared implementation for per-role harnesses (claude, opencode).
+// It scaffolds one .md file per agent role using templates at templates/<harnessName>/agents/<role>.md.
+func writePerRoleProject(dir, harnessName string, agents []harness.AgentConfig, force bool) ([]WriteResult, error) {
 	toolsRef := loadToolsReference()
-	agentDir := filepath.Join(dir, ".claude", "agents")
+	agentDir := filepath.Join(dir, "."+harnessName, "agents")
 	if err := os.MkdirAll(agentDir, 0o755); err != nil {
-		return nil, fmt.Errorf("create .claude/agents: %w", err)
+		return nil, fmt.Errorf("create .%s/agents: %w", harnessName, err)
 	}
 
 	var results []WriteResult
 	for _, agent := range agents {
-		if agent.Harness != "claude" {
+		if agent.Harness != harnessName {
 			continue
 		}
 		if err := validateRole(agent.Role); err != nil {
 			return nil, err
 		}
-		templatePath := fmt.Sprintf("templates/claude/agents/%s.md", agent.Role)
-		content, err := templates.ReadFile(templatePath)
+		content, err := templates.ReadFile(fmt.Sprintf("templates/%s/agents/%s.md", harnessName, agent.Role))
 		if err != nil {
 			// No template for this role - skip
 			continue
 		}
-
 		rendered := renderTemplate(string(content), agent, toolsRef)
 		dest := filepath.Join(agentDir, agent.Role+".md")
 		written, err := writeFile(dest, []byte(rendered), force)
@@ -88,46 +87,17 @@ func WriteClaudeProject(dir string, agents []harness.AgentConfig, force bool) ([
 		}
 		results = append(results, WriteResult{Path: rel, Created: written})
 	}
-
 	return results, nil
+}
+
+// WriteClaudeProject scaffolds .claude/ project files.
+func WriteClaudeProject(dir string, agents []harness.AgentConfig, force bool) ([]WriteResult, error) {
+	return writePerRoleProject(dir, "claude", agents, force)
 }
 
 // WriteOpenCodeProject scaffolds .opencode/ project files.
 func WriteOpenCodeProject(dir string, agents []harness.AgentConfig, force bool) ([]WriteResult, error) {
-	toolsRef := loadToolsReference()
-	agentDir := filepath.Join(dir, ".opencode", "agents")
-	if err := os.MkdirAll(agentDir, 0o755); err != nil {
-		return nil, fmt.Errorf("create .opencode/agents: %w", err)
-	}
-
-	var results []WriteResult
-	for _, agent := range agents {
-		if agent.Harness != "opencode" {
-			continue
-		}
-		if err := validateRole(agent.Role); err != nil {
-			return nil, err
-		}
-		templatePath := fmt.Sprintf("templates/opencode/agents/%s.md", agent.Role)
-		content, err := templates.ReadFile(templatePath)
-		if err != nil {
-			continue
-		}
-
-		rendered := renderTemplate(string(content), agent, toolsRef)
-		dest := filepath.Join(agentDir, agent.Role+".md")
-		written, err := writeFile(dest, []byte(rendered), force)
-		if err != nil {
-			return nil, err
-		}
-		rel, relErr := filepath.Rel(dir, dest)
-		if relErr != nil {
-			rel = dest
-		}
-		results = append(results, WriteResult{Path: rel, Created: written})
-	}
-
-	return results, nil
+	return writePerRoleProject(dir, "opencode", agents, force)
 }
 
 // WriteCodexProject scaffolds .codex/ project files.

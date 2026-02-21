@@ -21,6 +21,17 @@ type TOMLAgent struct {
 	Flags       []string `toml:"flags,omitempty"`
 }
 
+func (a TOMLAgent) toProfile() AgentProfile {
+	return AgentProfile{
+		Program:     a.Program,
+		Model:       a.Model,
+		Temperature: a.Temperature,
+		Effort:      a.Effort,
+		Enabled:     a.Enabled,
+		Flags:       a.Flags,
+	}
+}
+
 // TOMLConfig is the top-level TOML file structure.
 type TOMLConfig struct {
 	Phases map[string]string    `toml:"phases"`
@@ -47,14 +58,7 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 	}
 
 	for name, agent := range tc.Agents {
-		result.Profiles[name] = AgentProfile{
-			Program:     agent.Program,
-			Model:       agent.Model,
-			Temperature: agent.Temperature,
-			Effort:      agent.Effort,
-			Enabled:     agent.Enabled,
-			Flags:       agent.Flags,
-		}
+		result.Profiles[name] = agent.toProfile()
 	}
 
 	return result, nil

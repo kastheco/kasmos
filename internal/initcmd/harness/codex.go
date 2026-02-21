@@ -48,25 +48,8 @@ func (c *Codex) InstallSuperpowers() error {
 
 	repoDir := filepath.Join(home, ".codex", "superpowers")
 
-	// Clone or pull based on whether the repo already exists
-	switch _, err := os.Stat(filepath.Join(repoDir, ".git")); {
-	case err == nil:
-		// Repo exists; update best-effort (stale version is acceptable)
-		cmd := exec.Command("git", "-C", repoDir, "pull", "--ff-only")
-		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "  warning: superpowers update failed (using cached): %v\n", err)
-		}
-	case os.IsNotExist(err):
-		if err := os.MkdirAll(filepath.Dir(repoDir), 0o755); err != nil {
-			return fmt.Errorf("create codex dir: %w", err)
-		}
-		cmd := exec.Command("git", "clone",
-			"https://github.com/obra/superpowers.git", repoDir)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("clone superpowers: %s: %w", string(out), err)
-		}
-	default:
-		return fmt.Errorf("check superpowers repo: %w", err)
+	if err := cloneOrPull(repoDir, "https://github.com/obra/superpowers.git"); err != nil {
+		return err
 	}
 
 	// Symlink skills

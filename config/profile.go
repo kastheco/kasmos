@@ -1,5 +1,7 @@
 package config
 
+import "strings"
+
 // AgentProfile defines the program and flags for an agent in a specific role.
 type AgentProfile struct {
 	Program     string   `json:"program"     toml:"program"`
@@ -32,12 +34,5 @@ func (c *Config) ResolveProfile(phase string, defaultProgram string) AgentProfil
 
 // BuildCommand returns the full command string (program + flags) for this profile.
 func (p AgentProfile) BuildCommand() string {
-	if len(p.Flags) == 0 {
-		return p.Program
-	}
-	result := p.Program
-	for _, f := range p.Flags {
-		result += " " + f
-	}
-	return result
+	return strings.Join(append([]string{p.Program}, p.Flags...), " ")
 }
