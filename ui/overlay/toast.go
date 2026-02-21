@@ -253,36 +253,36 @@ func (tm *ToastManager) enforceMaxToasts() {
 	}
 }
 
-// toastColor returns the color string associated with a toast type.
-func toastColor(typ ToastType) string {
+// toastColor returns the Rosé Pine Moon palette color for a toast type.
+func toastColor(typ ToastType) lipgloss.Color {
 	switch typ {
 	case ToastInfo:
-		return "#9ccfd8"
+		return colorFoam
 	case ToastSuccess:
-		return "#9ccfd8"
+		return colorFoam
 	case ToastError:
-		return "#eb6f92"
+		return colorLove
 	case ToastLoading:
-		return "#f6c177"
+		return colorGold
 	default:
-		return "#9ccfd8"
+		// Defensive fallback for future ToastType values not yet handled;
+		// renders as an info-style toast rather than breaking the UI.
+		return colorFoam
 	}
 }
 
 // toastStyle returns a lipgloss style for rendering a toast of the given type and width.
 func toastStyle(typ ToastType, width int) lipgloss.Style {
-	color := toastColor(typ)
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color(color)).
+		BorderForeground(toastColor(typ)).
 		Padding(0, 1).
 		Width(width)
 }
 
 // toastIcon returns a styled icon string for the given toast type.
 func (tm *ToastManager) toastIcon(typ ToastType) string {
-	color := toastColor(typ)
-	style := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+	style := lipgloss.NewStyle().Foreground(toastColor(typ))
 	switch typ {
 	case ToastInfo:
 		return style.Render("▸")

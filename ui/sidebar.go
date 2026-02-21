@@ -458,7 +458,6 @@ func (s *Sidebar) String() string {
 	// lipgloss .Width(w) includes padding but EXCLUDES borders.
 	// So total rendered = w + 2(border). To fit in sidebar content area
 	// (innerWidth - 2), we need: w + 2 <= innerWidth - 2 => w <= innerWidth - 4.
-	// Use innerWidth - 6 for safe margin.
 	var repoSection string
 	if s.repoName != "" {
 		btnWidth := innerWidth - 4 // same as search bar: border excluded from Width
@@ -466,11 +465,11 @@ func (s *Sidebar) String() string {
 			btnWidth = 4
 		}
 
-		borderColor := lipgloss.AdaptiveColor{Light: "#908caa", Dark: "#393552"}
-		textColor := lipgloss.AdaptiveColor{Light: "#6e6a86", Dark: "#908caa"}
+		borderColor := lipgloss.TerminalColor(lipgloss.AdaptiveColor{Light: string(ColorSubtle), Dark: string(ColorOverlay)})
+		textColor := lipgloss.TerminalColor(lipgloss.AdaptiveColor{Light: string(ColorMuted), Dark: string(ColorSubtle)})
 		if s.repoHovered {
-			borderColor = lipgloss.AdaptiveColor{Light: "#6e6a86", Dark: "#6e6a86"}
-			textColor = lipgloss.AdaptiveColor{Light: "#232136", Dark: "#e0def4"}
+			borderColor = lipgloss.AdaptiveColor{Light: string(ColorMuted), Dark: string(ColorSubtle)}
+			textColor = lipgloss.AdaptiveColor{Light: string(ColorBase), Dark: string(ColorText)}
 		}
 
 		// Truncate repo name to fit: btnWidth - padding(2) - arrow
