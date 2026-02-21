@@ -13,12 +13,20 @@ Before planning, load the relevant superpowers skill:
 - **Writing plans**: `writing-plans` — structured plan format with phases and tasks
 - **Large scope**: use `scc` for codebase metrics when estimating effort
 
-## Plan State
+## Plan State (CRITICAL — must follow every time)
 
-Plans live in `docs/plans/`. State is tracked separately in `docs/plans/plan-state.json`
-(never modify plan file content for state tracking). When creating a new plan, add an entry
-with `"status": "ready"`. Transition to `"in_progress"` when implementation begins, `"done"`
-when complete. Valid statuses: `ready`, `in_progress`, `done`.
+Plans live in `docs/plans/`. State is tracked in `docs/plans/plan-state.json`.
+Never modify plan file content for state tracking.
+
+**You MUST register every plan you write.** Immediately after writing a plan `.md` file,
+add an entry to `plan-state.json` with `"status": "ready"`. The klique TUI polls this file
+to populate the sidebar Plans list — unregistered plans are invisible to the user.
+
+Registration steps (do both atomically, never skip step 2):
+1. Write the plan to `docs/plans/<date>-<name>.md`
+2. Read `docs/plans/plan-state.json`, add `"<date>-<name>.md": {"status": "ready"}`, write it back
+
+Valid statuses: `ready` → `in_progress` → `done`. Only klique transitions beyond `done`.
 
 ## Project Skills
 

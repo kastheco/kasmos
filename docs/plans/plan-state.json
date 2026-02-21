@@ -16,19 +16,22 @@
     "implemented": "2026-02-20"
   },
   "2026-02-20-project-skills-distribution.md": {
-    "status": "ready"
+    "status": "done",
+    "implemented": "2026-02-20"
   },
   "2026-02-20-plan-orchestration-design.md": {
     "status": "done"
   },
   "2026-02-20-plan-orchestration.md": {
-    "status": "ready"
+    "status": "done",
+    "implemented": "2026-02-20"
   },
   "2026-02-20-wizard-ux-design.md": {
     "status": "done"
   },
   "2026-02-20-wizard-ux.md": {
-    "status": "ready"
+    "status": "done",
+    "implemented": "2026-02-21"
   },
   "2026-02-21-fix-plan-state-machine.md": {
     "status": "done",

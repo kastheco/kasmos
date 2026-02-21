@@ -19,8 +19,11 @@ Use `scc` for codebase metrics when scoping work.
 Load superpowers skills: `brainstorming`, `writing-plans`.
 Load project skills: `tui-design` (always for TUI work), `tmux-orchestration` (when task involves tmux/worker lifecycle).
 
-## Plan State
+## Plan State (CRITICAL)
 Plans live in `docs/plans/`. State tracked in `docs/plans/plan-state.json`.
-Never modify plan files for state tracking. Valid statuses: `ready`, `in_progress`, `done`.
+Never modify plan files for state tracking. **You MUST register every plan** by adding
+an entry to `plan-state.json` with `"status": "ready"` immediately after writing the `.md` file.
+Unregistered plans are invisible in the klique sidebar.
+Valid statuses: `ready` → `in_progress` → `done`. Only klique transitions beyond `done`.
 
 {{TOOLS_REFERENCE}}
