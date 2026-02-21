@@ -20,6 +20,7 @@ type Harness interface {
 	InstallSuperpowers() error
 	SupportsTemperature() bool
 	SupportsEffort() bool
+	ListEffortLevels(model string) []string
 }
 
 // Registry holds all known harness adapters keyed by name.

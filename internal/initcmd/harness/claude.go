@@ -65,3 +65,7 @@ func (c *Claude) InstallSuperpowers() error {
 
 func (c *Claude) SupportsTemperature() bool { return false }
 func (c *Claude) SupportsEffort() bool      { return true }
+
+func (c *Claude) ListEffortLevels(_ string) []string {
+	return []string{"", "low", "medium", "high", "max"}
+}

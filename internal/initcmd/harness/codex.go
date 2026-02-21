@@ -71,3 +71,7 @@ func (c *Codex) InstallSuperpowers() error {
 
 func (c *Codex) SupportsTemperature() bool { return true }
 func (c *Codex) SupportsEffort() bool      { return true }
+
+func (c *Codex) ListEffortLevels(_ string) []string {
+	return []string{"", "low", "medium", "high", "xhigh"}
+}
