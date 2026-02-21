@@ -17,7 +17,7 @@ func tabBorderWithBottom(left, middle, right string) lipgloss.Border {
 var (
 	inactiveTabBorder = tabBorderWithBottom("┴", "─", "┴")
 	activeTabBorder   = tabBorderWithBottom("┘", " ", "└")
-	highlightColor    = lipgloss.AdaptiveColor{Light: "#F0A868", Dark: "#F0A868"}
+	highlightColor    = lipgloss.AdaptiveColor{Light: "#c4a7e7", Dark: "#c4a7e7"}
 	inactiveTabStyle  = lipgloss.NewStyle().
 				Border(inactiveTabBorder, true).
 				BorderForeground(highlightColor).
@@ -291,7 +291,7 @@ func (w *TabbedWindow) String() string {
 	lastTabWidth := w.width - tabWidth*(len(w.tabs)-1)
 	tabHeight := activeTabStyle.GetVerticalFrameSize() + 1 // get padding border margin size + 1 for character height
 
-	focusColor := lipgloss.Color("#51bd73")
+	focusColor := ColorFoam
 	for i, t := range w.tabs {
 		width := tabWidth
 		if i == len(w.tabs)-1 {
@@ -321,7 +321,7 @@ func (w *TabbedWindow) String() string {
 		style = style.Border(border)
 		style = style.Width(width - style.GetHorizontalFrameSize())
 		if isActive && !w.focusMode {
-			renderedTabs = append(renderedTabs, style.Render(GradientText(t, "#F0A868", "#7EC8D8")))
+			renderedTabs = append(renderedTabs, style.Render(GradientText(t, GradientStart, GradientEnd)))
 		} else {
 			renderedTabs = append(renderedTabs, style.Render(t))
 		}
@@ -343,7 +343,7 @@ func (w *TabbedWindow) String() string {
 	}
 	ws := windowStyle
 	if w.focusMode {
-		ws = ws.BorderForeground(lipgloss.Color("#51bd73"))
+		ws = ws.BorderForeground(ColorFoam)
 	}
 	// Subtract the window border width so the total rendered width
 	// (content + borders) matches the tab row width.

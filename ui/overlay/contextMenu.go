@@ -10,37 +10,37 @@ import (
 
 var contextMenuStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
-	BorderForeground(lipgloss.Color("#F0A868")).
+	BorderForeground(lipgloss.Color("#c4a7e7")).
 	Padding(0, 1)
 
 var contextItemStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#dddddd")).
+	Foreground(lipgloss.Color("#e0def4")).
 	Padding(0, 1)
 
 var contextSelectedStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#1a1a1a")).
-	Background(lipgloss.Color("#7EC8D8")).
+	Foreground(lipgloss.Color("#232136")).
+	Background(lipgloss.Color("#9ccfd8")).
 	Padding(0, 1)
 
 var contextDisabledStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#555555")).
+	Foreground(lipgloss.Color("#393552")).
 	Padding(0, 1)
 
 var contextSearchStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
-	BorderForeground(lipgloss.Color("#555555")).
+	BorderForeground(lipgloss.Color("#393552")).
 	Padding(0, 1).
 	MarginBottom(1)
 
 var contextSearchPlaceholderStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#666666"))
+	Foreground(lipgloss.Color("#6e6a86"))
 
 var contextHintStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#666666")).
+	Foreground(lipgloss.Color("#6e6a86")).
 	MarginTop(1)
 
 var contextNumberStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#F0A868"))
+	Foreground(lipgloss.Color("#c4a7e7"))
 
 // ContextMenuItem represents a single menu option.
 type ContextMenuItem struct {

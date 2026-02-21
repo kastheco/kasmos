@@ -8,82 +8,82 @@ const readyIcon = "● "
 const pausedIcon = "\uf04c "
 
 var readyStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.AdaptiveColor{Light: "#51bd73", Dark: "#51bd73"})
+	Foreground(ColorFoam)
 
 var notifyStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#F0A868"))
+	Foreground(ColorRose)
 
 var addedLinesStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.AdaptiveColor{Light: "#51bd73", Dark: "#51bd73"})
+	Foreground(ColorFoam)
 
 var removedLinesStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#de613e"))
+	Foreground(ColorLove)
 
 var pausedStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.AdaptiveColor{Light: "#888888", Dark: "#888888"})
+	Foreground(ColorMuted)
 
 var titleStyle = lipgloss.NewStyle().
 	Padding(1, 1, 0, 1).
-	Foreground(lipgloss.AdaptiveColor{Light: "#1a1a1a", Dark: "#dddddd"})
+	Foreground(ColorText)
 
 var listDescStyle = lipgloss.NewStyle().
 	Padding(0, 1, 1, 1).
-	Foreground(lipgloss.AdaptiveColor{Light: "#A49FA5", Dark: "#777777"})
+	Foreground(ColorSubtle)
 
 var evenRowTitleStyle = lipgloss.NewStyle().
 	Padding(1, 1, 0, 1).
-	Background(lipgloss.AdaptiveColor{Light: "#f5f5f5", Dark: "#1e1e1e"}).
-	Foreground(lipgloss.AdaptiveColor{Light: "#1a1a1a", Dark: "#dddddd"})
+	Background(ColorSurface).
+	Foreground(ColorText)
 
 var evenRowDescStyle = lipgloss.NewStyle().
 	Padding(0, 1, 1, 1).
-	Background(lipgloss.AdaptiveColor{Light: "#f5f5f5", Dark: "#1e1e1e"}).
-	Foreground(lipgloss.AdaptiveColor{Light: "#A49FA5", Dark: "#777777"})
+	Background(ColorSurface).
+	Foreground(ColorSubtle)
 
 var selectedTitleStyle = lipgloss.NewStyle().
 	Padding(1, 1, 0, 1).
-	Background(lipgloss.Color("#dde4f0")).
-	Foreground(lipgloss.AdaptiveColor{Light: "#1a1a1a", Dark: "#1a1a1a"})
+	Background(ColorIris).
+	Foreground(ColorBase)
 
 var selectedDescStyle = lipgloss.NewStyle().
 	Padding(0, 1, 1, 1).
-	Background(lipgloss.Color("#dde4f0")).
-	Foreground(lipgloss.AdaptiveColor{Light: "#1a1a1a", Dark: "#1a1a1a"})
+	Background(ColorIris).
+	Foreground(ColorBase)
 
 // Active (unfocused) styles — muted version of selected
 var activeTitleStyle = lipgloss.NewStyle().
 	Padding(1, 1, 0, 1).
-	Background(lipgloss.AdaptiveColor{Light: "#b0b0b0", Dark: "#666666"}).
-	Foreground(lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#1a1a1a"})
+	Background(ColorOverlay).
+	Foreground(ColorText)
 
 var activeDescStyle = lipgloss.NewStyle().
 	Padding(0, 1, 1, 1).
-	Background(lipgloss.AdaptiveColor{Light: "#b0b0b0", Dark: "#666666"}).
-	Foreground(lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#1a1a1a"})
+	Background(ColorOverlay).
+	Foreground(ColorText)
 
 var mainTitle = lipgloss.NewStyle().
-	Background(lipgloss.Color("216")).
-	Foreground(lipgloss.Color("230"))
+	Background(ColorIris).
+	Foreground(ColorBase)
 
 var autoYesStyle = lipgloss.NewStyle().
-	Background(lipgloss.Color("#dde4f0")).
-	Foreground(lipgloss.Color("#1a1a1a"))
+	Background(ColorGold).
+	Foreground(ColorBase)
 
 var resourceStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#777777"})
+	Foreground(ColorSubtle)
 
 var activityStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.AdaptiveColor{Light: "#aaaaaa", Dark: "#666666"})
+	Foreground(ColorMuted)
 
 // Status filter tab styles
 var activeFilterTab = lipgloss.NewStyle().
-	Background(lipgloss.Color("216")).
-	Foreground(lipgloss.Color("230")).
+	Background(ColorIris).
+	Foreground(ColorBase).
 	Padding(0, 1)
 
 var inactiveFilterTab = lipgloss.NewStyle().
-	Background(lipgloss.AdaptiveColor{Light: "#b0b0b0", Dark: "#444444"}).
-	Foreground(lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#999999"}).
+	Background(ColorOverlay).
+	Foreground(ColorSubtle).
 	Padding(0, 1)
 
 // StatusFilter determines which instances are shown based on their status.
@@ -112,7 +112,7 @@ var sortModeLabels = map[SortMode]string{
 }
 
 var sortDropdownStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#7EC8D8")).
+	Foreground(ColorFoam).
 	Padding(0, 1)
 
 const branchIcon = "\uf126"

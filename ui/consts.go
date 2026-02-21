@@ -10,4 +10,4 @@ var fallbackBannerRaw = `██╗  ██╗██╗     ██╗ ███�
 ╚═╝  ╚═╝╚══════╝╚═╝ ╚══▀▀═╝  ╚═════╝ ╚══════╝`
 
 var FallBackText = lipgloss.JoinVertical(lipgloss.Center,
-	GradientText(fallbackBannerRaw, "#F25D94", "#7D56F4"))
+	GradientText(fallbackBannerRaw, GradientStart, GradientEnd))

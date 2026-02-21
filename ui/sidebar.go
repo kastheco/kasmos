@@ -14,43 +14,43 @@ import (
 const ZoneRepoSwitch = "repo-switch"
 
 var sidebarTitleStyle = lipgloss.NewStyle().
-	Background(lipgloss.Color("216")).
-	Foreground(lipgloss.Color("230"))
+	Background(ColorIris).
+	Foreground(ColorBase)
 
 // sidebarBorderStyle wraps the entire sidebar content in a subtle rounded border
 var sidebarBorderStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
-	BorderForeground(lipgloss.AdaptiveColor{Light: "#d0d0d0", Dark: "#3a3a3a"}).
+	BorderForeground(ColorOverlay).
 	Padding(0, 1)
 
 var topicItemStyle = lipgloss.NewStyle().
 	Padding(0, 1).
-	Foreground(lipgloss.AdaptiveColor{Light: "#1a1a1a", Dark: "#dddddd"})
+	Foreground(ColorText)
 
-// selectedTopicStyle — focused: white bg (dark) / black bg (light)
+// selectedTopicStyle — focused: iris bg on dark base
 var selectedTopicStyle = lipgloss.NewStyle().
 	Padding(0, 1).
-	Background(lipgloss.AdaptiveColor{Light: "#1a1a1a", Dark: "#ffffff"}).
-	Foreground(lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#1a1a1a"})
+	Background(ColorIris).
+	Foreground(ColorBase)
 
-// activeTopicStyle — unfocused: 50% transparent version (muted)
+// activeTopicStyle — unfocused: muted overlay bg
 var activeTopicStyle = lipgloss.NewStyle().
 	Padding(0, 1).
-	Background(lipgloss.AdaptiveColor{Light: "#b0b0b0", Dark: "#666666"}).
-	Foreground(lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#1a1a1a"})
+	Background(ColorOverlay).
+	Foreground(ColorText)
 
 var sectionHeaderStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.AdaptiveColor{Light: "#888888", Dark: "#666666"}).
+	Foreground(ColorMuted).
 	Padding(0, 1)
 
 var searchBarStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
-	BorderForeground(lipgloss.Color("216")).
+	BorderForeground(ColorOverlay).
 	Padding(0, 1)
 
 var searchActiveBarStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
-	BorderForeground(lipgloss.Color("#7EC8D8")).
+	BorderForeground(ColorFoam).
 	Padding(0, 1)
 
 const (
@@ -61,16 +61,16 @@ const (
 // dimmedTopicStyle is for topics with no matching instances during search
 var dimmedTopicStyle = lipgloss.NewStyle().
 	Padding(0, 1).
-	Foreground(lipgloss.AdaptiveColor{Light: "#c0c0c0", Dark: "#444444"})
+	Foreground(ColorMuted)
 
 var sidebarRunningStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#51bd73"))
+	Foreground(ColorFoam)
 
 var sidebarReadyStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#51bd73"))
+	Foreground(ColorFoam)
 
 var sidebarNotifyStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#F0A868"))
+	Foreground(ColorRose)
 
 // SidebarItem represents a selectable item in the sidebar.
 type SidebarItem struct {
@@ -279,9 +279,9 @@ func (s *Sidebar) SetSearchQuery(q string) { s.searchQuery = q }
 func (s *Sidebar) String() string {
 	borderStyle := sidebarBorderStyle
 	if s.focused {
-		borderStyle = borderStyle.BorderForeground(lipgloss.Color("#F0A868"))
+		borderStyle = borderStyle.BorderForeground(ColorIris)
 	} else {
-		borderStyle = borderStyle.BorderForeground(lipgloss.AdaptiveColor{Light: "#d0d0d0", Dark: "#333333"})
+		borderStyle = borderStyle.BorderForeground(ColorOverlay)
 	}
 
 	// Inner width accounts for border (2) + border padding (2)
@@ -416,11 +416,11 @@ func (s *Sidebar) String() string {
 			btnWidth = 4
 		}
 
-		borderColor := lipgloss.AdaptiveColor{Light: "#c0c0c0", Dark: "#555555"}
-		textColor := lipgloss.AdaptiveColor{Light: "#555555", Dark: "#aaaaaa"}
+		borderColor := lipgloss.AdaptiveColor{Light: "#908caa", Dark: "#393552"}
+		textColor := lipgloss.AdaptiveColor{Light: "#6e6a86", Dark: "#908caa"}
 		if s.repoHovered {
-			borderColor = lipgloss.AdaptiveColor{Light: "#888888", Dark: "#888888"}
-			textColor = lipgloss.AdaptiveColor{Light: "#000000", Dark: "#ffffff"}
+			borderColor = lipgloss.AdaptiveColor{Light: "#6e6a86", Dark: "#6e6a86"}
+			textColor = lipgloss.AdaptiveColor{Light: "#232136", Dark: "#e0def4"}
 		}
 
 		// Truncate repo name to fit: btnWidth - padding(2) - arrow

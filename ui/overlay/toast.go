@@ -220,15 +220,15 @@ func (tm *ToastManager) enforceMaxToasts() {
 func toastColor(typ ToastType) string {
 	switch typ {
 	case ToastInfo:
-		return "#7EC8D8"
+		return "#9ccfd8"
 	case ToastSuccess:
-		return "#A8D8A8"
+		return "#9ccfd8"
 	case ToastError:
-		return "#FF6B6B"
+		return "#eb6f92"
 	case ToastLoading:
-		return "#F0A868"
+		return "#f6c177"
 	default:
-		return "#7EC8D8"
+		return "#9ccfd8"
 	}
 }
 

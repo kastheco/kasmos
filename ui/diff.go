@@ -12,29 +12,29 @@ import (
 )
 
 var (
-	AdditionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e"))
-	DeletionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ef4444"))
-	HunkStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#0ea5e9"))
+	AdditionStyle = lipgloss.NewStyle().Foreground(ColorDiffAdd)
+	DeletionStyle = lipgloss.NewStyle().Foreground(ColorDiffDelete)
+	HunkStyle     = lipgloss.NewStyle().Foreground(ColorDiffHunk)
 
 	fileItemStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F0A868"))
+			Foreground(ColorIris)
 	fileItemSelectedStyle = lipgloss.NewStyle().
-				Background(lipgloss.Color("#F0A868")).
-				Foreground(lipgloss.Color("#1a1a1a")).
+				Background(ColorIris).
+				Foreground(ColorBase).
 				Bold(true)
 	fileItemDimStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
+				Foreground(ColorMuted)
 	filePanelBorderStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.AdaptiveColor{Light: "#d0d0d0", Dark: "#333333"})
+				BorderForeground(ColorOverlay)
 	filePanelBorderFocusedStyle = lipgloss.NewStyle().
 					Border(lipgloss.RoundedBorder()).
-					BorderForeground(lipgloss.Color("#F0A868"))
+					BorderForeground(ColorIris)
 	diffHeaderStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F0A868")).
+			Foreground(ColorIris).
 			Bold(true)
 	diffHintStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.AdaptiveColor{Light: "#aaaaaa", Dark: "#555555"})
+			Foreground(ColorMuted)
 )
 
 // fileChunk holds a single file's parsed diff data.

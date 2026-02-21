@@ -35,7 +35,7 @@ func helpStart(instance *session.Instance) helpText {
 
 func (h helpTypeGeneral) toContent() string {
 	content := lipgloss.JoinVertical(lipgloss.Left,
-		lipgloss.NewStyle().Bold(true).Underline(true).Render(ui.GradientText("klique", "#F0A868", "#7EC8D8")),
+		lipgloss.NewStyle().Bold(true).Underline(true).Render(ui.GradientText("klique", ui.GradientStart, ui.GradientEnd)),
 		"",
 		"A terminal UI that manages multiple Claude Code (and other local agents) in separate workspaces.",
 		"",
@@ -132,10 +132,10 @@ func (h helpTypeInstanceCheckout) mask() uint32 {
 }
 
 var (
-	titleStyle  = lipgloss.NewStyle().Bold(true).Underline(true).Foreground(lipgloss.Color("#F0A868"))
-	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#36CFC9"))
-	keyStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFCC00"))
-	descStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+	titleStyle  = lipgloss.NewStyle().Bold(true).Underline(true).Foreground(ui.ColorIris)
+	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(ui.ColorFoam)
+	keyStyle    = lipgloss.NewStyle().Bold(true).Foreground(ui.ColorGold)
+	descStyle   = lipgloss.NewStyle().Foreground(ui.ColorText)
 )
 
 // showHelpScreen displays the help screen overlay if it hasn't been shown before

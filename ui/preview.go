@@ -10,7 +10,7 @@ import (
 )
 
 var previewPaneStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.AdaptiveColor{Light: "#1a1a1a", Dark: "#dddddd"})
+	Foreground(ColorText)
 
 type PreviewPane struct {
 	width  int
@@ -76,7 +76,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		if filled > barWidth {
 			filled = barWidth
 		}
-		bar := GradientBar(barWidth, filled, "#F25D94", "#7D56F4")
+		bar := GradientBar(barWidth, filled, GradientStart, GradientEnd)
 
 		stepText := instance.LoadingMessage
 		if stepText == "" {
@@ -93,16 +93,16 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 			"",
 			lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("#F25D94")).
+				Foreground(lipgloss.Color(GradientStart)).
 				Render("Starting instance"),
 			"",
 			bar,
 			"",
 			lipgloss.NewStyle().
-				Foreground(lipgloss.AdaptiveColor{Light: "#808080", Dark: "#808080"}).
+				Foreground(ColorMuted).
 				Render(stepText),
 			lipgloss.NewStyle().
-				Foreground(lipgloss.AdaptiveColor{Light: "#aaaaaa", Dark: "#555555"}).
+				Foreground(ColorMuted).
 				Render(progressText),
 		))
 		return nil
@@ -111,10 +111,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 			"Session is paused. Press 'r' to resume.",
 			"",
 			lipgloss.NewStyle().
-				Foreground(lipgloss.AdaptiveColor{
-					Light: "#FFD700",
-					Dark:  "#FFD700",
-				}).
+				Foreground(ColorGold).
 				Render(fmt.Sprintf(
 					"The instance can be checked out at '%s' (copied to your clipboard)",
 					instance.Branch,
@@ -136,7 +133,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 
 		// Set content in the viewport
 		footer := lipgloss.NewStyle().
-			Foreground(lipgloss.AdaptiveColor{Light: "#808080", Dark: "#808080"}).
+			Foreground(ColorMuted).
 			Render("ESC to exit scroll mode")
 
 		p.viewport.SetContent(lipgloss.JoinVertical(lipgloss.Left, content, footer))
@@ -245,7 +242,7 @@ func (p *PreviewPane) ScrollUp(instance *session.Instance) error {
 
 		// Set content in the viewport
 		footer := lipgloss.NewStyle().
-			Foreground(lipgloss.AdaptiveColor{Light: "#808080", Dark: "#808080"}).
+			Foreground(ColorMuted).
 			Render("ESC to exit scroll mode")
 
 		contentWithFooter := lipgloss.JoinVertical(lipgloss.Left, content, footer)
@@ -278,7 +275,7 @@ func (p *PreviewPane) ScrollDown(instance *session.Instance) error {
 
 		// Set content in the viewport
 		footer := lipgloss.NewStyle().
-			Foreground(lipgloss.AdaptiveColor{Light: "#808080", Dark: "#808080"}).
+			Foreground(ColorMuted).
 			Render("ESC to exit scroll mode")
 
 		contentWithFooter := lipgloss.JoinVertical(lipgloss.Left, content, footer)

@@ -9,31 +9,31 @@ import (
 
 var pickerBorderStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
-	BorderForeground(lipgloss.Color("#F0A868")).
+	BorderForeground(lipgloss.Color("#c4a7e7")).
 	Padding(1, 2)
 
 var pickerTitleStyle = lipgloss.NewStyle().
 	Bold(true).
-	Foreground(lipgloss.Color("#F0A868")).
+	Foreground(lipgloss.Color("#c4a7e7")).
 	MarginBottom(1)
 
 var pickerSearchActiveStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
-	BorderForeground(lipgloss.Color("#7EC8D8")).
+	BorderForeground(lipgloss.Color("#9ccfd8")).
 	Padding(0, 1).
 	MarginBottom(1)
 
 var pickerItemStyle = lipgloss.NewStyle().
 	Padding(0, 1).
-	Foreground(lipgloss.Color("#dddddd"))
+	Foreground(lipgloss.Color("#e0def4"))
 
 var pickerSelectedItemStyle = lipgloss.NewStyle().
 	Padding(0, 1).
-	Background(lipgloss.Color("#7EC8D8")).
-	Foreground(lipgloss.Color("#ffffff"))
+	Background(lipgloss.Color("#9ccfd8")).
+	Foreground(lipgloss.Color("#e0def4"))
 
 var pickerHintStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#666666")).
+	Foreground(lipgloss.Color("#6e6a86")).
 	MarginTop(1)
 
 // PickerOverlay shows a searchable list of options for selection.
