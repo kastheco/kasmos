@@ -1,11 +1,39 @@
 package wizard
 
 import (
+	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/kastheco/klique/config"
 	"github.com/kastheco/klique/internal/initcmd/harness"
 )
+
+// BuildProgressNote renders a summary of agent configuration progress.
+// Used as the description for huh.NewNote() at the top of each agent form.
+func BuildProgressNote(agents []AgentState, currentIdx int) string {
+	var lines []string
+	for i, a := range agents {
+		switch {
+		case i < currentIdx && !a.Enabled:
+			lines = append(lines, fmt.Sprintf("  ⊘ %s  (disabled)", a.Role))
+		case i < currentIdx:
+			summary := a.Harness
+			if a.Model != "" {
+				summary += " / " + a.Model
+			}
+			if a.Effort != "" {
+				summary += " / " + a.Effort
+			}
+			lines = append(lines, fmt.Sprintf("  ✓ %-10s %s", a.Role, summary))
+		case i == currentIdx:
+			lines = append(lines, fmt.Sprintf("  ▸ %-10s configuring...", a.Role))
+		default:
+			lines = append(lines, fmt.Sprintf("  ○ %s", a.Role))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
 
 // State holds all wizard-collected values across stages.
 type State struct {
