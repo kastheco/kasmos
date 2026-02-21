@@ -145,6 +145,30 @@ func TestToastViewRendersContent(t *testing.T) {
 	assert.Contains(t, view, "hello world", "View() should contain the toast message text")
 }
 
+func TestToastLongMessageWraps(t *testing.T) {
+	s := spinner.New()
+	tm := NewToastManager(&s)
+
+	longMsg := "cannot change title of a started instance because the session is running"
+	_ = tm.Error(longMsg)
+	require.Len(t, tm.toasts, 1)
+
+	// Force visible phase.
+	tm.toasts[0].Phase = PhaseVisible
+	tm.toasts[0].PhaseStart = time.Now()
+
+	view := tm.View()
+	assert.NotEmpty(t, view)
+
+	// The full message should appear in the rendered output (possibly across lines),
+	// NOT truncated with "...".
+	assert.NotContains(t, view, "...", "long messages should wrap, not truncate")
+
+	// Key words from both ends of the message should appear.
+	assert.Contains(t, view, "cannot change")
+	assert.Contains(t, view, "session is running")
+}
+
 func TestToastViewEmpty(t *testing.T) {
 	s := spinner.New()
 	tm := NewToastManager(&s)

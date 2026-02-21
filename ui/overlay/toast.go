@@ -2,12 +2,14 @@ package overlay
 
 import (
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
+	"github.com/muesli/reflow/wordwrap"
 )
 
 // ToastType identifies the kind of toast notification.
@@ -327,13 +329,27 @@ func (t *toast) slideOffset() int {
 // renderToast renders a single toast notification as a styled string.
 func (tm *ToastManager) renderToast(t *toast) string {
 	icon := tm.toastIcon(t.Type)
-	// t.Width - 4 accounts for border (2) + padding (2), then subtract icon width + space.
-	maxMsgWidth := t.Width - 4 - runewidth.StringWidth(icon) - 1
-	msg := t.Message
-	if runewidth.StringWidth(msg) > maxMsgWidth {
-		msg = runewidth.Truncate(msg, maxMsgWidth, "...")
+	iconWidth := runewidth.StringWidth(icon)
+	// Content area width: total width minus border (2) + padding (2).
+	// Then subtract icon (iconWidth) + space (1) for the first-line prefix.
+	maxMsgWidth := t.Width - 4 - iconWidth - 1
+
+	// Word-wrap the message to fit within maxMsgWidth.
+	wrapped := wordwrap.String(t.Message, maxMsgWidth)
+	lines := strings.Split(wrapped, "\n")
+
+	// First line: "icon message"
+	// Continuation lines: indent to align with the text after the icon.
+	indent := strings.Repeat(" ", iconWidth+1)
+	var contentLines []string
+	for i, line := range lines {
+		if i == 0 {
+			contentLines = append(contentLines, icon+" "+line)
+		} else if line != "" {
+			contentLines = append(contentLines, indent+line)
+		}
 	}
-	content := icon + " " + msg
+	content := strings.Join(contentLines, "\n")
 	return toastStyle(t.Type, t.Width).Render(content)
 }
 
