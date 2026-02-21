@@ -1,0 +1,27 @@
+{
+  "2026-02-20-kq-init-design.md": {
+    "status": "done",
+    "implemented": "2026-02-20"
+  },
+  "2026-02-20-task-orchestration-design.md": {
+    "status": "done",
+    "implemented": "2026-02-20"
+  },
+  "2026-02-20-task-orchestration.md": {
+    "status": "done",
+    "implemented": "2026-02-20"
+  },
+  "2026-02-20-tool-discovery-design.md": {
+    "status": "done",
+    "implemented": "2026-02-20"
+  },
+  "2026-02-20-project-skills-distribution.md": {
+    "status": "ready"
+  },
+  "2026-02-20-plan-orchestration-design.md": {
+    "status": "done"
+  },
+  "2026-02-20-plan-orchestration.md": {
+    "status": "ready"
+  }
+}
