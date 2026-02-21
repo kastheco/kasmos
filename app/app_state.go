@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/kastheco/klique/config"
+	"github.com/kastheco/klique/config/planstate"
+	"github.com/kastheco/klique/internal/initcmd/scaffold"
 	"github.com/kastheco/klique/keys"
 	"github.com/kastheco/klique/log"
 	"github.com/kastheco/klique/session"
@@ -186,11 +188,14 @@ func (m *home) switchToTab(name keys.KeyName) (tea.Model, tea.Cmd) {
 
 func (m *home) filterInstancesByTopic() {
 	selectedID := m.sidebar.GetSelectedID()
-	switch selectedID {
-	case ui.SidebarAll:
+	switch {
+	case selectedID == ui.SidebarAll:
 		m.list.SetFilter("")
-	case ui.SidebarUngrouped:
+	case selectedID == ui.SidebarUngrouped:
 		m.list.SetFilter(ui.SidebarUngrouped)
+	case strings.HasPrefix(selectedID, ui.SidebarPlanPrefix):
+		// Plan items: show all instances (no topic filter)
+		m.list.SetFilter("")
 	default:
 		m.list.SetFilter(selectedID)
 	}
@@ -245,6 +250,10 @@ func (m *home) rebuildInstanceList() {
 	}
 	m.topics = m.filterTopicsByRepo(m.allTopics, m.activeRepoPath)
 	m.filterInstancesByTopic()
+	// Reload plan state for the new active repo.
+	m.planStateDir = filepath.Join(m.activeRepoPath, "docs", "plans")
+	m.loadPlanState()
+	m.updateSidebarPlans()
 	m.updateSidebarItems()
 }
 
@@ -419,4 +428,162 @@ func (m *home) spawnGitTab() tea.Cmd {
 // killGitTab kills the lazygit subprocess.
 func (m *home) killGitTab() {
 	m.tabbedWindow.GetGitPane().Kill()
+}
+
+// loadPlanState reads plan-state.json from the active repo's docs/plans/ directory.
+// Silently no-ops if the file is missing (project may not use plans).
+func (m *home) loadPlanState() {
+	if m.planStateDir == "" {
+		return
+	}
+	ps, err := planstate.Load(m.planStateDir)
+	if err != nil {
+		log.WarningLog.Printf("could not load plan state: %v", err)
+		return
+	}
+	m.planState = ps
+}
+
+// updateSidebarPlans pushes the current unfinished plans into the sidebar.
+func (m *home) updateSidebarPlans() {
+	if m.planState == nil {
+		m.sidebar.SetPlans(nil)
+		return
+	}
+	unfinished := m.planState.Unfinished()
+	plans := make([]ui.PlanDisplay, 0, len(unfinished))
+	for _, p := range unfinished {
+		plans = append(plans, ui.PlanDisplay{Filename: p.Filename, Status: p.Status})
+	}
+	m.sidebar.SetPlans(plans)
+}
+
+// checkPlanCompletion scans running coder instances for plans that have been
+// marked "done" by the agent and, if found, transitions them to reviewer sessions.
+// Returns a cmd to start the reviewer (may be nil).
+func (m *home) checkPlanCompletion() tea.Cmd {
+	if m.planState == nil {
+		return nil
+	}
+	for _, inst := range m.list.GetInstances() {
+		if inst.PlanFile == "" || inst.IsReviewer {
+			continue
+		}
+		if !m.planState.AllTasksDone(inst.PlanFile) {
+			continue
+		}
+		return m.transitionToReview(inst)
+	}
+	return nil
+}
+
+// checkReviewerCompletion detects reviewer sessions whose tmux pane has died
+// (agent exited after completing the review) and marks the plan as done.
+func (m *home) checkReviewerCompletion() {
+	if m.planState == nil {
+		return
+	}
+	for _, inst := range m.list.GetInstances() {
+		if inst.PlanFile == "" || !inst.IsReviewer || !inst.Started() || inst.Paused() {
+			continue
+		}
+		if inst.TmuxAlive() {
+			continue
+		}
+		// Reviewer's tmux session is gone — mark plan done only if still reviewing.
+		entry := m.planState.Plans[inst.PlanFile]
+		if entry.Status != "reviewing" {
+			continue
+		}
+		if err := m.planState.SetStatus(inst.PlanFile, "done"); err != nil {
+			log.WarningLog.Printf("could not mark plan %q done: %v", inst.PlanFile, err)
+		}
+	}
+}
+
+// transitionToReview marks a plan as "reviewing", spawns a reviewer session
+// pre-loaded with the review prompt, and returns the start cmd.
+func (m *home) transitionToReview(coderInst *session.Instance) tea.Cmd {
+	planFile := coderInst.PlanFile
+
+	// Guard: update in-memory state before next tick re-reads disk, preventing double-spawn.
+	if err := m.planState.SetStatus(planFile, "reviewing"); err != nil {
+		log.WarningLog.Printf("could not set plan %q to reviewing: %v", planFile, err)
+	}
+
+	planName := planDisplayName(planFile)
+	planPath := "docs/plans/" + planFile
+	prompt := scaffold.LoadReviewPrompt(planPath, planName)
+
+	reviewerInst, err := session.NewInstance(session.InstanceOptions{
+		Title:    planName + "-review",
+		Path:     m.activeRepoPath,
+		Program:  m.program,
+		PlanFile: planFile,
+	})
+	if err != nil {
+		log.WarningLog.Printf("could not create reviewer instance for %q: %v", planFile, err)
+		return nil
+	}
+	reviewerInst.IsReviewer = true
+	reviewerInst.QueuedPrompt = prompt
+
+	m.newInstanceFinalizer = m.list.AddInstance(reviewerInst)
+	m.list.SetSelectedInstance(m.list.NumInstances() - 1)
+
+	return func() tea.Msg {
+		err := reviewerInst.Start(true)
+		return instanceStartedMsg{instance: reviewerInst, err: err}
+	}
+}
+
+// spawnPlanSession creates a new coder session bound to the given plan file.
+// Returns early with an error toast if a session for this plan already exists.
+func (m *home) spawnPlanSession(planFile string) (tea.Model, tea.Cmd) {
+	if m.list.TotalInstances() >= GlobalInstanceLimit {
+		return m, m.handleError(fmt.Errorf("cannot spawn plan session: instance limit reached"))
+	}
+
+	// Prevent duplicate sessions for the same plan.
+	for _, inst := range m.list.GetInstances() {
+		if inst.PlanFile == planFile {
+			return m, m.handleError(fmt.Errorf("plan %q already has an active session", planDisplayName(planFile)))
+		}
+	}
+
+	planName := planDisplayName(planFile)
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:    planName,
+		Path:     m.activeRepoPath,
+		Program:  m.program,
+		PlanFile: planFile,
+	})
+	if err != nil {
+		return m, m.handleError(err)
+	}
+
+	inst.QueuedPrompt = fmt.Sprintf(
+		"Implement docs/plans/%s using the executing-plans superpowers skill, task by task.",
+		planFile,
+	)
+
+	m.newInstanceFinalizer = m.list.AddInstance(inst)
+	m.list.SetSelectedInstance(m.list.NumInstances() - 1)
+
+	startCmd := func() tea.Msg {
+		err := inst.Start(true)
+		return instanceStartedMsg{instance: inst, err: err}
+	}
+	return m, tea.Batch(tea.WindowSize(), startCmd)
+}
+
+// planDisplayName strips the date prefix and .md extension from a plan filename.
+// "2026-02-20-my-feature.md" → "my-feature"
+// "plain-plan.md" → "plain-plan"
+func planDisplayName(filename string) string {
+	name := strings.TrimSuffix(filename, ".md")
+	if len(name) > 11 && name[4] == '-' && name[7] == '-' && name[10] == '-' {
+		name = name[11:]
+	}
+	return name
 }

@@ -1057,6 +1057,12 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		}
 		return m, tea.WindowSize()
 	case keys.KeyEnter:
+		// If the sidebar is focused and a plan item is selected, spawn a coder session.
+		if m.focusedPanel == 0 {
+			if planFile := m.sidebar.GetSelectedPlanFile(); planFile != "" {
+				return m.spawnPlanSession(planFile)
+			}
+		}
 		if m.list.NumInstances() == 0 {
 			return m, nil
 		}
