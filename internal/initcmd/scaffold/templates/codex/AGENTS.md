@@ -4,6 +4,7 @@
 Implementation agent. Writes code, fixes bugs, runs tests.
 Follow TDD: write failing test first, implement, verify green.
 Load superpowers skills: `test-driven-development`, `systematic-debugging`, `verification-before-completion`.
+Load project skills: `tui-design` (TUI components), `tmux-orchestration` (tmux/worker code), `golang-pro` (Go patterns).
 
 ## Reviewer
 Review agent. Checks quality, security, spec compliance.
