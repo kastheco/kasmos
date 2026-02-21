@@ -15,6 +15,7 @@ Load superpowers skills: `requesting-code-review`, `receiving-code-review`.
 Planning agent. Writes specs, plans, decomposes work into packages.
 Use `scc` for codebase metrics when scoping work.
 Load superpowers skills: `brainstorming`, `writing-plans`.
+Load project skills: `tui-design` (always for TUI work), `tmux-orchestration` (when task involves tmux/worker lifecycle).
 
 ## Plan State
 Plans live in `docs/plans/`. State tracked in `docs/plans/plan-state.json`.
