@@ -18,7 +18,7 @@ bin:
     kq
 
 init:
-    kq init {{ARGS}}
+    kq init --force 
 
 # Build + install + run
 kq: build install bin
