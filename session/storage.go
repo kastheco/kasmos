@@ -23,6 +23,9 @@ type InstanceData struct {
 	AutoYes         bool      `json:"auto_yes"`
 	SkipPermissions bool      `json:"skip_permissions"`
 	TopicName       string    `json:"topic_name,omitempty"`
+	PlanFile        string    `json:"plan_file,omitempty"`
+	IsReviewer      bool      `json:"is_reviewer,omitempty"`
+	QueuedPrompt    string    `json:"queued_prompt,omitempty"`
 
 	Program   string          `json:"program"`
 	Worktree  GitWorktreeData `json:"worktree"`

@@ -1,0 +1,49 @@
+package session
+
+import "testing"
+
+func TestNewInstance_SetsPlanFile(t *testing.T) {
+	inst, err := NewInstance(InstanceOptions{
+		Title:    "plan-worker",
+		Path:     ".",
+		Program:  "claude",
+		PlanFile: "2026-02-20-plan-orchestration.md",
+	})
+	if err != nil {
+		t.Fatalf("NewInstance() error = %v", err)
+	}
+	if inst.PlanFile != "2026-02-20-plan-orchestration.md" {
+		t.Fatalf("PlanFile = %q, want %q", inst.PlanFile, "2026-02-20-plan-orchestration.md")
+	}
+}
+
+func TestInstanceData_RoundTripPlanFile(t *testing.T) {
+	data := InstanceData{
+		Title:    "persisted",
+		Path:     "/tmp/repo",
+		Branch:   "feature/test",
+		Status:   Paused,
+		Program:  "claude",
+		PlanFile: "plan.md",
+		Worktree: GitWorktreeData{
+			RepoPath:      "/tmp/repo",
+			WorktreePath:  "/tmp/repo/.worktrees/persisted",
+			SessionName:   "persisted",
+			BranchName:    "feature/test",
+			BaseCommitSHA: "abc123",
+		},
+	}
+
+	inst, err := FromInstanceData(data)
+	if err != nil {
+		t.Fatalf("FromInstanceData() error = %v", err)
+	}
+	if inst.PlanFile != "plan.md" {
+		t.Fatalf("instance PlanFile = %q, want %q", inst.PlanFile, "plan.md")
+	}
+
+	roundTrip := inst.ToInstanceData()
+	if roundTrip.PlanFile != "plan.md" {
+		t.Fatalf("ToInstanceData PlanFile = %q, want %q", roundTrip.PlanFile, "plan.md")
+	}
+}

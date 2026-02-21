@@ -48,6 +48,12 @@ type Instance struct {
 	SkipPermissions bool
 	// TopicName is the name of the topic this instance belongs to (empty = ungrouped).
 	TopicName string
+	// PlanFile is the plan filename this instance is implementing (empty = no plan).
+	PlanFile string
+	// IsReviewer is true when this instance is a reviewer session for a plan.
+	IsReviewer bool
+	// QueuedPrompt is sent to the session once it becomes ready for the first time. Cleared after send.
+	QueuedPrompt string
 
 	// sharedWorktree is true if this instance uses a topic's shared worktree (should not clean it up).
 	sharedWorktree bool
@@ -105,6 +111,9 @@ func (i *Instance) ToInstanceData() InstanceData {
 		AutoYes:         i.AutoYes,
 		SkipPermissions: i.SkipPermissions,
 		TopicName:       i.TopicName,
+		PlanFile:        i.PlanFile,
+		IsReviewer:      i.IsReviewer,
+		QueuedPrompt:    i.QueuedPrompt,
 	}
 
 	// Only include worktree data if gitWorktree is initialized
@@ -144,6 +153,9 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		Program:         data.Program,
 		SkipPermissions: data.SkipPermissions,
 		TopicName:       data.TopicName,
+		PlanFile:        data.PlanFile,
+		IsReviewer:      data.IsReviewer,
+		QueuedPrompt:    data.QueuedPrompt,
 		gitWorktree: git.NewGitWorktreeFromStorage(
 			data.Worktree.RepoPath,
 			data.Worktree.WorktreePath,
@@ -184,6 +196,8 @@ type InstanceOptions struct {
 	SkipPermissions bool
 	// TopicName assigns this instance to a topic.
 	TopicName string
+	// PlanFile binds this instance to a plan from plan-state.json.
+	PlanFile string
 }
 
 func NewInstance(opts InstanceOptions) (*Instance, error) {
@@ -207,6 +221,7 @@ func NewInstance(opts InstanceOptions) (*Instance, error) {
 		AutoYes:         opts.AutoYes,
 		SkipPermissions: opts.SkipPermissions,
 		TopicName:       opts.TopicName,
+		PlanFile:        opts.PlanFile,
 	}, nil
 }
 

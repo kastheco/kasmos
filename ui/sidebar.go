@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/kastheco/klique/config/planstate"
 	zone "github.com/lrstanley/bubblezone"
 	"github.com/mattn/go-runewidth"
 )
@@ -54,9 +55,16 @@ var searchActiveBarStyle = lipgloss.NewStyle().
 	Padding(0, 1)
 
 const (
-	SidebarAll       = "__all__"
-	SidebarUngrouped = "__ungrouped__"
+	SidebarAll        = "__all__"
+	SidebarUngrouped  = "__ungrouped__"
+	SidebarPlanPrefix = "__plan__"
 )
+
+// PlanDisplay holds plan info for sidebar rendering.
+type PlanDisplay struct {
+	Filename string
+	Status   string
+}
 
 // dimmedTopicStyle is for topics with no matching instances during search
 var dimmedTopicStyle = lipgloss.NewStyle().
@@ -87,6 +95,7 @@ type SidebarItem struct {
 // Sidebar is the left-most panel showing topics and search.
 type Sidebar struct {
 	items         []SidebarItem
+	plans         []PlanDisplay
 	selectedIdx   int
 	height, width int
 	focused       bool
@@ -96,6 +105,11 @@ type Sidebar struct {
 
 	repoName    string // current repo name shown at bottom
 	repoHovered bool   // true when mouse is hovering over the repo button
+}
+
+// SetPlans stores unfinished plans for sidebar display.
+func (s *Sidebar) SetPlans(plans []PlanDisplay) {
+	s.plans = plans
 }
 
 func NewSidebar() *Sidebar {
@@ -162,6 +176,18 @@ func (s *Sidebar) SetItems(topicNames []string, instanceCountByTopic map[string]
 		{Name: "All", ID: SidebarAll, Count: totalCount, HasRunning: anyRunning, HasNotification: anyNotification},
 	}
 
+	if len(s.plans) > 0 {
+		items = append(items, SidebarItem{Name: "Plans", IsSection: true})
+		for _, p := range s.plans {
+			items = append(items, SidebarItem{
+				Name:            planstate.DisplayName(p.Filename),
+				ID:              SidebarPlanPrefix + p.Filename,
+				HasRunning:      p.Status == string(planstate.StatusInProgress),
+				HasNotification: p.Status == string(planstate.StatusReviewing),
+			})
+		}
+	}
+
 	if len(topicNames) > 0 {
 		items = append(items, SidebarItem{Name: "Topics", IsSection: true})
 		for _, name := range topicNames {
@@ -203,6 +229,15 @@ func (s *Sidebar) GetSelectedID() string {
 		return SidebarAll
 	}
 	return s.items[s.selectedIdx].ID
+}
+
+// GetSelectedPlanFile returns the plan filename if a plan item is selected, or "".
+func (s *Sidebar) GetSelectedPlanFile() string {
+	id := s.GetSelectedID()
+	if strings.HasPrefix(id, SidebarPlanPrefix) {
+		return id[len(SidebarPlanPrefix):]
+	}
+	return ""
 }
 
 func (s *Sidebar) Up() {
@@ -364,9 +399,21 @@ func (s *Sidebar) String() string {
 		}
 
 		// Left part: prefix + name + count
+		// Plan items use a status glyph as prefix (○/●/◉); selected items show ▸.
+		// Selection takes priority over the status glyph.
+		isPlan := strings.HasPrefix(item.ID, SidebarPlanPrefix)
 		prefix := " "
 		if i == s.selectedIdx {
 			prefix = "▸"
+		} else if isPlan {
+			switch {
+			case item.HasNotification:
+				prefix = sidebarNotifyStyle.Render("◉")
+			case item.HasRunning:
+				prefix = sidebarRunningStyle.Render("●")
+			default:
+				prefix = sectionHeaderStyle.Render("○")
+			}
 		}
 		leftPart := prefix + nameText + countSuffix
 		leftWidth := runewidth.StringWidth(leftPart)
@@ -378,19 +425,22 @@ func (s *Sidebar) String() string {
 		}
 		paddedLeft := leftPart + strings.Repeat(" ", gap)
 
-		// Style the trailing icons
+		// Style the trailing icons. Plan items use a prefix glyph instead of a
+		// trailing dot, so skip the trailing icon for them.
 		var styledTrailing string
 		if item.SharedWorktree {
 			styledTrailing += " \ue727"
 		}
-		if item.HasNotification {
-			if time.Now().UnixMilli()/500%2 == 0 {
-				styledTrailing += " " + sidebarReadyStyle.Render("●")
-			} else {
-				styledTrailing += " " + sidebarNotifyStyle.Render("●")
+		if !isPlan {
+			if item.HasNotification {
+				if time.Now().UnixMilli()/500%2 == 0 {
+					styledTrailing += " " + sidebarReadyStyle.Render("●")
+				} else {
+					styledTrailing += " " + sidebarNotifyStyle.Render("●")
+				}
+			} else if item.HasRunning {
+				styledTrailing += " " + sidebarRunningStyle.Render("●")
 			}
-		} else if item.HasRunning {
-			styledTrailing += " " + sidebarRunningStyle.Render("●")
 		}
 
 		line := paddedLeft + styledTrailing

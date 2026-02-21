@@ -172,6 +172,18 @@ func ScaffoldAll(dir string, agents []harness.AgentConfig, selectedTools []strin
 	return results, nil
 }
 
+// LoadReviewPrompt reads the embedded review prompt template and fills in the plan placeholders.
+// Falls back to a minimal inline prompt if the template is missing from the binary.
+func LoadReviewPrompt(planFile, planName string) string {
+	content, err := templates.ReadFile("templates/shared/review-prompt.md")
+	if err != nil {
+		return fmt.Sprintf("Review the implementation of plan: %s\nPlan file: %s", planName, planFile)
+	}
+	result := strings.ReplaceAll(string(content), "{{PLAN_FILE}}", planFile)
+	result = strings.ReplaceAll(result, "{{PLAN_NAME}}", planName)
+	return result
+}
+
 // writeFile writes content to path. If force is false and the file exists, skip.
 // Returns true if the file was actually written, false if skipped.
 func writeFile(path string, content []byte, force bool) (bool, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/kastheco/klique/config"
+	"github.com/kastheco/klique/config/planstate"
 	"github.com/kastheco/klique/log"
 	"github.com/kastheco/klique/session"
 	"github.com/kastheco/klique/ui"
@@ -154,6 +155,11 @@ type home struct {
 
 	// repoPickerMap maps picker display text to full repo path
 	repoPickerMap map[string]string
+
+	// planState holds the parsed plan-state.json for the active repo. Nil when missing.
+	planState *planstate.PlanState
+	// planStateDir is the directory containing plan-state.json (docs/plans/ of active repo).
+	planStateDir string
 }
 
 func newHome(ctx context.Context, program string, autoYes bool) *home {
@@ -188,12 +194,14 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 		state:          stateDefault,
 		appState:       appState,
 		activeRepoPath: activeRepoPath,
+		planStateDir:   filepath.Join(activeRepoPath, "docs", "plans"),
 	}
 	h.list = ui.NewList(&h.spinner, autoYes)
 	h.toastManager = overlay.NewToastManager(&h.spinner)
 	h.sidebar = ui.NewSidebar()
 	h.sidebar.SetRepoName(filepath.Base(activeRepoPath))
 	h.setFocus(1) // Start with instance list focused
+	h.loadPlanState()
 
 	// Load saved instances
 	instances, err := storage.LoadInstances()
@@ -380,13 +388,25 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					instance.LastActivity = nil
 				}
 			}
+			// Deliver queued prompt once the instance reaches Ready for the first time.
+			if instance.QueuedPrompt != "" && instance.Status == session.Ready {
+				if err := instance.SendPrompt(instance.QueuedPrompt); err != nil {
+					log.WarningLog.Printf("could not send queued prompt to %q: %v", instance.Title, err)
+				}
+				instance.QueuedPrompt = ""
+			}
 			if err := instance.UpdateDiffStats(); err != nil {
 				log.WarningLog.Printf("could not update diff stats: %v", err)
 			}
 			instance.UpdateResourceUsage()
 		}
+		// Refresh plan state from disk and update the sidebar plans section.
+		m.loadPlanState()
+		m.checkReviewerCompletion()
+		m.updateSidebarPlans()
 		m.updateSidebarItems()
-		return m, tickUpdateMetadataCmd
+		completionCmd := m.checkPlanCompletion()
+		return m, tea.Batch(tickUpdateMetadataCmd, completionCmd)
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
 	case tea.KeyMsg:
