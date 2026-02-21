@@ -24,7 +24,7 @@ brews:
   - repository:
       owner: kastheco
       name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_REPO_TOKEN }}"
+      token: "{{ .Env.GH_PAT }}"
     name: klique
     homepage: "https://github.com/kastheco/klique"
     description: "klique - A TUI-based agent-driven IDE for managing multiple AI agents"
@@ -38,7 +38,7 @@ scoops:
   - repository:
       owner: kastheco
       name: scoop-bucket
-      token: "{{ .Env.HOMEBREW_REPO_TOKEN }}"
+      token: "{{ .Env.GH_PAT }}"
     name: klique
     homepage: "https://github.com/kastheco/klique"
     description: "klique - A TUI-based agent-driven IDE for managing multiple AI agents"
