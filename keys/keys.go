@@ -55,6 +55,9 @@ const (
 	// Diff keybindings
 	KeyShiftUp
 	KeyShiftDown
+
+	KeyFocusSidebar // Key for focusing the sidebar / plan list
+	KeyViewPlan     // Key for viewing the selected plan's markdown
 )
 
 // GlobalKeyStringsMap is a global, immutable map string to keybinding.
@@ -92,6 +95,8 @@ var GlobalKeyStringsMap = map[string]KeyName{
 	"2":          KeyFilterActive,
 	"3":          KeyCycleSort,
 	"R":          KeyRepoSwitch,
+	"s":          KeyFocusSidebar,
+	"v":          KeyViewPlan,
 	"g":          KeyGitTab,
 	"f1":         KeyTabAgent,
 	"f2":         KeyTabDiff,
@@ -211,6 +216,14 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	KeyRepoSwitch: key.NewBinding(
 		key.WithKeys("R"),
 		key.WithHelp("R", "switch repo"),
+	),
+	KeyFocusSidebar: key.NewBinding(
+		key.WithKeys("s"),
+		key.WithHelp("s", "select plan"),
+	),
+	KeyViewPlan: key.NewBinding(
+		key.WithKeys("v"),
+		key.WithHelp("v", "view plan"),
 	),
 	KeyGitTab: key.NewBinding(
 		key.WithKeys("g"),

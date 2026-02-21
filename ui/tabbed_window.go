@@ -140,6 +140,12 @@ func (w *TabbedWindow) SetPreviewContent(content string) {
 	w.preview.SetRawContent(content)
 }
 
+// SetDocumentContent sets the preview pane to show a rendered document (plan markdown etc.)
+// with top-aligned display and scroll support.
+func (w *TabbedWindow) SetDocumentContent(content string) {
+	w.preview.SetDocumentContent(content)
+}
+
 // SetGitContent caches the git pane content to avoid re-rendering when unchanged.
 func (w *TabbedWindow) SetGitContent(content string) {
 	w.gitContent = content

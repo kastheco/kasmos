@@ -128,11 +128,19 @@ func (m *home) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.filterInstancesByTopic()
 			return m, m.instanceChanged()
 		}
-	} else if x < m.sidebarWidth+m.listWidth {
-		// Click in instance list
+	} else if x < m.sidebarWidth+m.tabsWidth {
+		// Click in preview/diff area (center column)
 		m.setFocus(1)
-
 		localX := x - m.sidebarWidth
+		if m.tabbedWindow.HandleTabClick(localX, contentY) {
+			m.menu.SetInDiffTab(m.tabbedWindow.IsInDiffTab())
+			return m, m.instanceChanged()
+		}
+	} else {
+		// Click in instance list (right column)
+		m.setFocus(2)
+
+		localX := x - m.sidebarWidth - m.tabsWidth
 		// Check if clicking on filter tabs
 		if filter, ok := m.list.HandleTabClick(localX, contentY); ok {
 			m.list.SetStatusFilter(filter)
@@ -147,14 +155,6 @@ func (m *home) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				m.list.SetSelectedInstance(itemIdx)
 				return m, m.instanceChanged()
 			}
-		}
-	} else {
-		// Click in preview/diff area
-		m.setFocus(1)
-		localX := x - m.sidebarWidth - m.listWidth
-		if m.tabbedWindow.HandleTabClick(localX, contentY) {
-			m.menu.SetInDiffTab(m.tabbedWindow.IsInDiffTab())
-			return m, m.instanceChanged()
 		}
 	}
 
@@ -198,8 +198,8 @@ func (m *home) handleRightClick(x, y, contentY int) (tea.Model, tea.Cmd) {
 		m.contextMenu = overlay.NewContextMenu(x, y, items)
 		m.state = stateContextMenu
 		return m, nil
-	} else if x < m.sidebarWidth+m.listWidth {
-		// Right-click in instance list — select the item first
+	} else if x >= m.sidebarWidth+m.tabsWidth {
+		// Right-click in instance list (right column) — select the item first
 		listY := contentY - 4
 		if listY >= 0 {
 			itemIdx := m.list.GetItemAtRow(listY)
@@ -1081,11 +1081,21 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			m.state = stateDefault
 		})
 		return m, nil
-	case keys.KeyLeft:
+	case keys.KeyFocusSidebar:
+		// s key always jumps directly to the sidebar regardless of current panel.
 		m.setFocus(0)
 		return m, nil
+	case keys.KeyViewPlan:
+		return m.viewSelectedPlan()
+	case keys.KeyLeft:
+		// Cycle left: list(2) → preview(1) → sidebar(0), no-op at left edge.
+		if m.focusedPanel > 0 {
+			m.setFocus(m.focusedPanel - 1)
+		}
+		return m, nil
 	case keys.KeyRight:
-		if m.focusedPanel == 1 {
+		// Cycle right: sidebar(0) → preview(1) → list(2) → enter focus mode.
+		if m.focusedPanel == 2 {
 			// Already on instance list → enter focus mode on the active tab's pane
 			if m.tabbedWindow.IsInGitTab() {
 				return m, m.enterGitFocusMode()
@@ -1094,8 +1104,9 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			if selected != nil && selected.Started() && !selected.Paused() {
 				return m, m.enterFocusMode()
 			}
+		} else {
+			m.setFocus(m.focusedPanel + 1)
 		}
-		m.setFocus(1)
 		return m, nil
 	case keys.KeyNewTopic:
 		m.state = stateNewTopic
@@ -1197,6 +1208,11 @@ func keyToBytes(msg tea.KeyMsg) []byte {
 	case tea.KeyShiftTab:
 		return []byte("\x1b[Z")
 	default:
+		// Forward any ctrl+letter key as its raw control character byte.
+		// bubbletea KeyCtrlA..KeyCtrlZ have sequential values 0x01..0x1A.
+		if msg.Type >= tea.KeyCtrlA && msg.Type <= tea.KeyCtrlZ {
+			return []byte{byte(msg.Type)}
+		}
 		return nil
 	}
 }

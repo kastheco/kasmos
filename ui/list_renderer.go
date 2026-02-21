@@ -207,13 +207,26 @@ func (r *InstanceRenderer) Render(i *session.Instance, selected bool, focused bo
 func (l *List) String() string {
 	const autoYesText = " auto-yes "
 
+	// Border frame: 2 border + 2 padding = 4 chars horizontal, 2 chars vertical.
+	// An extra 2-char buffer matches the sidebar's innerWidth = width-6 so that
+	// placing the bordered element Right-aligned leaves a 2-char gap on the left,
+	// mirroring the sidebar's 2-char gap on its right side.
+	const borderH = 6
+	const borderV = 2
+
+	// Inner width available inside the border.
+	innerWidth := l.width - borderH
+	if innerWidth < 8 {
+		innerWidth = 8
+	}
+
 	// Write the title.
 	var b strings.Builder
 	b.WriteString("\n")
 	b.WriteString("\n")
 
 	// Write filter tabs
-	titleWidth := AdjustPreviewWidth(l.width) + 2
+	titleWidth := AdjustPreviewWidth(innerWidth) + 2
 
 	allTab := inactiveFilterTab
 	activeTab := inactiveFilterTab
@@ -258,7 +271,22 @@ func (l *List) String() string {
 			b.WriteString("\n\n")
 		}
 	}
-	return lipgloss.Place(l.width, l.height, lipgloss.Left, lipgloss.Top, b.String())
+
+	// Wrap in border matching the sidebar style.
+	borderStyle := listBorderStyle
+	if l.focused {
+		borderStyle = borderStyle.BorderForeground(ColorIris)
+	}
+	innerHeight := l.height - borderV
+	if innerHeight < 4 {
+		innerHeight = 4
+	}
+	// borderStyle.Width/Height set the inner content dimensions; no inner Place
+	// needed — the border itself constrains and pads the content.
+	bordered := borderStyle.Width(innerWidth).Height(innerHeight).Render(b.String())
+	// Place Right so the border hugs the right edge, leaving the 2-char gap on
+	// the left (between preview and list), mirroring the sidebar's right gap.
+	return lipgloss.Place(l.width, l.height, lipgloss.Right, lipgloss.Top, bordered)
 }
 
 // itemHeight returns the rendered row count for an instance entry.

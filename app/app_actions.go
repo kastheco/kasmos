@@ -291,8 +291,8 @@ func (m *home) openContextMenu() (tea.Model, tea.Cmd) {
 	items = append(items, overlay.ContextMenuItem{Label: "Create PR", Action: "create_pr_instance"})
 	items = append(items, overlay.ContextMenuItem{Label: "Copy worktree path", Action: "copy_worktree_path"})
 	items = append(items, overlay.ContextMenuItem{Label: "Copy branch name", Action: "copy_branch_name"})
-	// Position next to the selected instance
-	x := m.sidebarWidth + m.listWidth
+	// Position at the left edge of the instance list (right column)
+	x := m.sidebarWidth + m.tabsWidth
 	y := 1 + 4 + m.list.GetSelectedIdx()*4 // PaddingTop(1) + header rows + item offset
 	m.contextMenu = overlay.NewContextMenu(x, y, items)
 	m.state = stateContextMenu

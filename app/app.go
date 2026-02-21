@@ -131,7 +131,7 @@ type home struct {
 	topics []*session.Topic
 	// allTopics stores every topic across all repos (master list)
 	allTopics []*session.Topic
-	// focusedPanel tracks which panel has keyboard focus (0=sidebar, 1=instance list)
+	// focusedPanel tracks which panel has keyboard focus: 0=sidebar (left), 1=preview/center, 2=instance list (right)
 	focusedPanel int
 	// pendingTopicName stores the topic name during the two-step creation flow
 	pendingTopicName string
@@ -148,6 +148,7 @@ type home struct {
 	// Layout dimensions for mouse hit-testing
 	sidebarWidth  int
 	listWidth     int
+	tabsWidth     int
 	contentHeight int
 
 	// embeddedTerminal is the VT emulator for focus mode (nil when not in focus mode)
@@ -203,7 +204,8 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 	h.toastManager = overlay.NewToastManager(&h.spinner)
 	h.sidebar = ui.NewSidebar()
 	h.sidebar.SetRepoName(filepath.Base(activeRepoPath))
-	h.setFocus(1) // Start with instance list focused
+	h.tabbedWindow.SetAnimateBanner(appConfig.AnimateBanner)
+	h.setFocus(2) // Start with instance list (right column) focused
 	h.loadPlanState()
 
 	// Load saved instances
@@ -273,6 +275,7 @@ func (m *home) updateHandleWindowSizeEvent(msg tea.WindowSizeMsg) {
 	// Store for mouse hit-testing
 	m.sidebarWidth = sidebarWidth
 	m.listWidth = listWidth
+	m.tabsWidth = tabsWidth
 	m.contentHeight = contentHeight
 
 	if m.textInputOverlay != nil {
@@ -488,7 +491,8 @@ func (m *home) View() string {
 	sidebarView := colStyle.Render(m.sidebar.String())
 	listWithPadding := colStyle.Render(m.list.String())
 	previewWithPadding := colStyle.Render(m.tabbedWindow.String())
-	listAndPreview := lipgloss.JoinHorizontal(lipgloss.Top, sidebarView, listWithPadding, previewWithPadding)
+	// Layout: sidebar | preview (center/main) | instance list (right)
+	listAndPreview := lipgloss.JoinHorizontal(lipgloss.Top, sidebarView, previewWithPadding, listWithPadding)
 
 	mainView := lipgloss.JoinVertical(
 		lipgloss.Left,

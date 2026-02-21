@@ -115,4 +115,10 @@ var sortDropdownStyle = lipgloss.NewStyle().
 	Foreground(ColorFoam).
 	Padding(0, 1)
 
+// listBorderStyle wraps the instance list in a subtle rounded border matching the sidebar.
+var listBorderStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(ColorOverlay).
+	Padding(0, 1)
+
 const branchIcon = "\uf126"

@@ -63,6 +63,16 @@ func (p *PreviewPane) setFallbackState(message string) {
 	}
 }
 
+// SetDocumentContent sets the preview to show a rendered document (e.g. plan markdown)
+// top-aligned with no centering, using the normal content path so scroll mode works.
+func (p *PreviewPane) SetDocumentContent(content string) {
+	p.previewState = previewState{
+		fallback: false,
+		text:     content,
+	}
+	p.isScrolling = false
+}
+
 // setFallbackContent sets the preview state with arbitrary centered content (no banner).
 func (p *PreviewPane) setFallbackContent(content string) {
 	p.previewState = previewState{
@@ -87,7 +97,7 @@ func (p *PreviewPane) TickBanner() {
 func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 	switch {
 	case instance == nil:
-		p.setFallbackState("No agents running, select a plan or create a 'n'ew one.")
+		p.setFallbackState("create [n]ew plan or [s]elect existing")
 		return nil
 	case instance.Status == session.Loading:
 		// Real progress from instance startup stages

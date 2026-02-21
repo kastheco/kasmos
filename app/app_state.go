@@ -2,10 +2,12 @@ package app
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/glamour"
 	"github.com/kastheco/klique/config"
 	"github.com/kastheco/klique/config/planstate"
 	"github.com/kastheco/klique/internal/initcmd/scaffold"
@@ -65,10 +67,11 @@ func (m *home) getMovableTopicNames() []string {
 }
 
 // setFocus updates which panel has focus and syncs the focused state to sidebar and list.
+// 0 = sidebar (left), 1 = preview/center, 2 = instance list (right).
 func (m *home) setFocus(panel int) {
 	m.focusedPanel = panel
 	m.sidebar.SetFocused(panel == 0)
-	m.list.SetFocused(panel == 1)
+	m.list.SetFocused(panel == 2)
 }
 
 // enterFocusMode enters focus/insert mode and starts the fast preview ticker.
@@ -577,4 +580,43 @@ func (m *home) spawnPlanSession(planFile string) (tea.Model, tea.Cmd) {
 		return instanceStartedMsg{instance: inst, err: err}
 	}
 	return m, tea.Batch(tea.WindowSize(), startCmd)
+}
+
+// viewSelectedPlan renders the selected plan's markdown in the preview pane.
+func (m *home) viewSelectedPlan() (tea.Model, tea.Cmd) {
+	planFile := m.sidebar.GetSelectedPlanFile()
+	if planFile == "" {
+		return m, nil
+	}
+
+	planPath := filepath.Join(m.planStateDir, planFile)
+	data, err := os.ReadFile(planPath)
+	if err != nil {
+		return m, m.handleError(fmt.Errorf("could not read plan %s: %w", planFile, err))
+	}
+
+	previewWidth, _ := m.tabbedWindow.GetPreviewSize()
+	// glamour word-wrap width; leave room for padding
+	wordWrap := previewWidth - 4
+	if wordWrap < 40 {
+		wordWrap = 40
+	}
+
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(wordWrap),
+	)
+	if err != nil {
+		return m, m.handleError(fmt.Errorf("could not create markdown renderer: %w", err))
+	}
+
+	rendered, err := renderer.Render(string(data))
+	if err != nil {
+		return m, m.handleError(fmt.Errorf("could not render markdown: %w", err))
+	}
+
+	// Switch to the preview tab and display the rendered markdown.
+	m.tabbedWindow.SetActiveTab(ui.PreviewTab)
+	m.tabbedWindow.SetDocumentContent(rendered)
+	return m, nil
 }
