@@ -39,8 +39,9 @@ const (
 	SuccessDismissAfter = 3 * time.Second
 	ErrorDismissAfter   = 5 * time.Second
 
-	ToastWidth = 38
-	MaxToasts  = 5
+	MinToastWidth = 30
+	MaxToastWidth = 60
+	MaxToasts     = 5
 )
 
 // idCounter is a global atomic counter used to generate unique toast IDs.
@@ -55,6 +56,25 @@ type toast struct {
 	Phase      AnimPhase
 	PhaseStart time.Time
 	Duration   time.Duration // 0 means no auto-dismiss (e.g. loading toasts)
+	Width      int           // computed width based on message content
+}
+
+// calcToastWidth computes the appropriate width for a toast based on its
+// message content. The width includes border (2) + padding (2) + icon (1-2) + space (1).
+func calcToastWidth(msg string) int {
+	// icon (up to 2 cells) + space + message + padding (2) + border (2)
+	contentWidth := 2 + 1 + runewidth.StringWidth(msg) + 4
+	return clampInt(contentWidth, MinToastWidth, MaxToastWidth)
+}
+
+func clampInt(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 // ToastManager manages the collection of active toast notifications.
@@ -106,6 +126,7 @@ func (tm *ToastManager) Resolve(id string, typ ToastType, msg string) {
 		if t.ID == id {
 			t.Type = typ
 			t.Message = msg
+			t.Width = calcToastWidth(msg)
 			now := time.Now()
 			t.Phase = PhaseVisible
 			t.PhaseStart = now
@@ -145,6 +166,21 @@ func nextID() string {
 // returns the generated ID.
 func (tm *ToastManager) addToast(typ ToastType, msg string, duration time.Duration) string {
 	now := time.Now()
+
+	// Deduplicate: if an identical toast (same type + message) already exists
+	// and is still visible, reset its timer instead of creating a new one.
+	for _, existing := range tm.toasts {
+		if existing.Type == typ && existing.Message == msg && existing.Phase != PhaseDone && existing.Phase != PhaseSlidingOut {
+			existing.PhaseStart = now
+			if existing.Phase == PhaseSlidingIn {
+				// Let it finish sliding in, duration starts after.
+			} else {
+				existing.Phase = PhaseVisible
+			}
+			return existing.ID
+		}
+	}
+
 	t := &toast{
 		ID:         nextID(),
 		Type:       typ,
@@ -153,6 +189,7 @@ func (tm *ToastManager) addToast(typ ToastType, msg string, duration time.Durati
 		Phase:      PhaseSlidingIn,
 		PhaseStart: now,
 		Duration:   duration,
+		Width:      calcToastWidth(msg),
 	}
 
 	tm.enforceMaxToasts()
@@ -232,14 +269,14 @@ func toastColor(typ ToastType) string {
 	}
 }
 
-// toastStyle returns a lipgloss style for rendering a toast of the given type.
-func toastStyle(typ ToastType) lipgloss.Style {
+// toastStyle returns a lipgloss style for rendering a toast of the given type and width.
+func toastStyle(typ ToastType, width int) lipgloss.Style {
 	color := toastColor(typ)
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(color)).
 		Padding(0, 1).
-		Width(ToastWidth)
+		Width(width)
 }
 
 // toastIcon returns a styled icon string for the given toast type.
@@ -262,7 +299,7 @@ func (tm *ToastManager) toastIcon(typ ToastType) string {
 
 // slideOffset returns the horizontal offset for a toast's slide animation.
 func (t *toast) slideOffset() int {
-	fullOffset := ToastWidth + 4
+	fullOffset := t.Width + 4
 	switch t.Phase {
 	case PhaseSlidingIn:
 		elapsed := time.Since(t.PhaseStart)
@@ -290,14 +327,14 @@ func (t *toast) slideOffset() int {
 // renderToast renders a single toast notification as a styled string.
 func (tm *ToastManager) renderToast(t *toast) string {
 	icon := tm.toastIcon(t.Type)
-	// ToastWidth - 4 accounts for border (2) + padding (2), then subtract icon width + space.
-	maxMsgWidth := ToastWidth - 4 - runewidth.StringWidth(icon) - 1
+	// t.Width - 4 accounts for border (2) + padding (2), then subtract icon width + space.
+	maxMsgWidth := t.Width - 4 - runewidth.StringWidth(icon) - 1
 	msg := t.Message
 	if runewidth.StringWidth(msg) > maxMsgWidth {
 		msg = runewidth.Truncate(msg, maxMsgWidth, "...")
 	}
 	content := icon + " " + msg
-	return toastStyle(t.Type).Render(content)
+	return toastStyle(t.Type, t.Width).Render(content)
 }
 
 // View renders all active toasts stacked vertically.
@@ -320,7 +357,14 @@ func (tm *ToastManager) View() string {
 
 // GetPosition returns the x, y coordinates for placing the toast overlay.
 func (tm *ToastManager) GetPosition() (int, int) {
-	x := tm.width - ToastWidth - 4
+	// Use the widest active toast for right-edge alignment.
+	widest := MinToastWidth
+	for _, t := range tm.toasts {
+		if t.Phase != PhaseDone && t.Width > widest {
+			widest = t.Width
+		}
+	}
+	x := tm.width - widest - 4
 	if x < 0 {
 		x = 0
 	}

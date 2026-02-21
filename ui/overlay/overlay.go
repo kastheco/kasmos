@@ -63,30 +63,33 @@ func PlaceOverlay(
 	bgHeight := len(bgLines)
 	fgHeight := len(fgLines)
 
-	// Apply a fade effect to the background by replacing ANSI colors with gray tones
-	fadedBgLines := make([]string, len(bgLines))
-	for i, line := range bgLines {
-		// Replace background color codes with a faded version
-		content := bgColorRegex.ReplaceAllString(line, "\x1b[48;5;236m") // Dark gray background
+	// Apply a fade effect to the background only for modal overlays (shadow or centered).
+	// Non-modal overlays like toasts should not dim the entire app.
+	if shadow || center {
+		fadedBgLines := make([]string, len(bgLines))
+		for i, line := range bgLines {
+			// Replace background color codes with a faded version
+			content := bgColorRegex.ReplaceAllString(line, "\x1b[48;5;236m") // Dark gray background
 
-		// Replace foreground color codes with a faded version
-		content = fgColorRegex.ReplaceAllString(content, "\x1b[38;5;240m") // Medium gray foreground
+			// Replace foreground color codes with a faded version
+			content = fgColorRegex.ReplaceAllString(content, "\x1b[38;5;240m") // Medium gray foreground
 
-		// Replace simple color codes with a faded version
-		content = simpleColorRegex.ReplaceAllStringFunc(content, func(match string) string {
-			// Skip reset codes
-			if match == "\x1b[0m" {
-				return match
-			}
-			// Replace with dimmed color
-			return "\x1b[38;5;240m" // Medium gray
-		})
+			// Replace simple color codes with a faded version
+			content = simpleColorRegex.ReplaceAllStringFunc(content, func(match string) string {
+				// Skip reset codes
+				if match == "\x1b[0m" {
+					return match
+				}
+				// Replace with dimmed color
+				return "\x1b[38;5;240m" // Medium gray
+			})
 
-		fadedBgLines[i] = content
+			fadedBgLines[i] = content
+		}
+
+		// Replace the original background with the faded version
+		bgLines = fadedBgLines
 	}
-
-	// Replace the original background with the faded version
-	bgLines = fadedBgLines
 
 	// Determine placement coordinates
 	placeX, placeY := x, y
