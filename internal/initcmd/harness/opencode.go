@@ -96,3 +96,14 @@ func (o *OpenCode) InstallSuperpowers() error {
 
 func (o *OpenCode) SupportsTemperature() bool { return true }
 func (o *OpenCode) SupportsEffort() bool      { return true }
+
+func (o *OpenCode) ListEffortLevels(model string) []string {
+	switch {
+	case strings.HasPrefix(model, "anthropic/"):
+		return []string{"", "low", "medium", "high", "max"}
+	case strings.Contains(model, "codex"):
+		return []string{"", "low", "medium", "high", "xhigh"}
+	default:
+		return []string{"", "low", "medium", "high"}
+	}
+}

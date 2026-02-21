@@ -65,6 +65,11 @@ func TestClaudeAdapter(t *testing.T) {
 	t.Run("SupportsEffort is true", func(t *testing.T) {
 		assert.True(t, c.SupportsEffort())
 	})
+
+	t.Run("ListEffortLevels ignores model and includes max", func(t *testing.T) {
+		levels := c.ListEffortLevels("anything")
+		assert.Equal(t, []string{"", "low", "medium", "high", "max"}, levels)
+	})
 }
 
 func TestCodexAdapter(t *testing.T) {
@@ -101,6 +106,11 @@ func TestCodexAdapter(t *testing.T) {
 	t.Run("SupportsEffort is true", func(t *testing.T) {
 		assert.True(t, c.SupportsEffort())
 	})
+
+	t.Run("ListEffortLevels ignores model and includes xhigh", func(t *testing.T) {
+		levels := c.ListEffortLevels("anything")
+		assert.Equal(t, []string{"", "low", "medium", "high", "xhigh"}, levels)
+	})
 }
 
 func TestOpenCodeAdapter(t *testing.T) {
@@ -125,5 +135,22 @@ func TestOpenCodeAdapter(t *testing.T) {
 
 	t.Run("SupportsEffort is true", func(t *testing.T) {
 		assert.True(t, o.SupportsEffort())
+	})
+
+	t.Run("ListEffortLevels varies by model", func(t *testing.T) {
+		t.Run("anthropic model gets claude levels", func(t *testing.T) {
+			levels := o.ListEffortLevels("anthropic/claude-sonnet-4-6")
+			assert.Equal(t, []string{"", "low", "medium", "high", "max"}, levels)
+		})
+
+		t.Run("codex model gets codex levels", func(t *testing.T) {
+			levels := o.ListEffortLevels("gpt-5.3-codex")
+			assert.Equal(t, []string{"", "low", "medium", "high", "xhigh"}, levels)
+		})
+
+		t.Run("other model gets generic levels", func(t *testing.T) {
+			levels := o.ListEffortLevels("deepseek/deepseek-r1")
+			assert.Equal(t, []string{"", "low", "medium", "high"}, levels)
+		})
 	})
 }
