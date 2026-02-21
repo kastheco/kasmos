@@ -303,7 +303,7 @@ func (m *home) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
 		func() tea.Msg {
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 			return previewTickMsg{}
 		},
 		tickUpdateMetadataCmd,
@@ -339,15 +339,15 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case previewTickMsg:
 		cmd := m.instanceChanged()
-		// Advance banner animation every 10 ticks (~1s per frame)
+		// Advance banner animation every 20 ticks (~1s per frame at 50ms tick)
 		m.previewTickCount++
-		if m.previewTickCount%10 == 0 {
+		if m.previewTickCount%20 == 0 {
 			m.tabbedWindow.TickBanner()
 		}
 		return m, tea.Batch(
 			cmd,
 			func() tea.Msg {
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(50 * time.Millisecond)
 				return previewTickMsg{}
 			},
 		)
