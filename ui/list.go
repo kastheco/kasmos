@@ -101,8 +101,11 @@ func (l *List) HandleTabClick(localX, localY int) (StatusFilter, bool) {
 func (l *List) SetSize(width, height int) {
 	l.width = width
 	l.height = height
-	// Renderer operates on inner width (subtracting border frame: 2 border + 2 padding).
-	l.renderer.setWidth(width - 4)
+	// Renderer content width must fit inside the border (borderH=6 removes border+padding+gap)
+	// AND inside item styles which add 2 chars of horizontal padding (1 left + 1 right).
+	// So: width - 6 (border) - 2 (item padding) = width - 8.
+	// AdjustPreviewWidth subtracts 2, so pass width - 6.
+	l.renderer.setWidth(width - 6)
 }
 
 // SetSessionPreviewSize sets the height and width for the tmux sessions. This makes the stdout line have the correct

@@ -79,7 +79,7 @@ func (r *InstanceRenderer) Render(i *session.Instance, selected bool, focused bo
 	// Build title line: content + spaces + status icon, all fitting within r.width
 	titleContentWidth := runewidth.StringWidth(titleContent)
 	joinWidth := runewidth.StringWidth(join)
-	titlePad := r.width - titleContentWidth - joinWidth - 2 // 2 for left/right padding in style
+	titlePad := r.width - titleContentWidth - joinWidth
 	if titlePad < 1 {
 		titlePad = 1
 	}
@@ -106,7 +106,7 @@ func (r *InstanceRenderer) Render(i *session.Instance, selected bool, focused bo
 		)
 	}
 
-	remainingWidth := r.width - 2 // subtract horizontal padding (1 left + 1 right) in descS
+	remainingWidth := r.width
 	remainingWidth -= runewidth.StringWidth(prefix)
 	remainingWidth -= runewidth.StringWidth(branchIcon)
 
@@ -184,7 +184,7 @@ func (r *InstanceRenderer) Render(i *session.Instance, selected bool, focused bo
 		cpuText := fmt.Sprintf("\U000f0d46 %.0f%%", i.CPUPercent)
 		memText := fmt.Sprintf("\uefc5 %.0fM", i.MemMB)
 		resourceContent := fmt.Sprintf("%s %s  %s", strings.Repeat(" ", len(prefix)), cpuText, memText)
-		resourcePad := r.width - 2 - runewidth.StringWidth(resourceContent) // -2 for descS horizontal padding
+		resourcePad := r.width - runewidth.StringWidth(resourceContent)
 		if resourcePad < 0 {
 			resourcePad = 0
 		}
