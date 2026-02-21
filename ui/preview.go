@@ -22,6 +22,8 @@ type PreviewPane struct {
 
 	// bannerFrame tracks the animation frame for the idle banner dots.
 	bannerFrame int
+	// animateBanner gates the idle banner animation (disabled by default).
+	animateBanner bool
 }
 
 type previewState struct {
@@ -69,9 +71,14 @@ func (p *PreviewPane) setFallbackContent(content string) {
 	}
 }
 
+// SetAnimateBanner enables or disables the idle banner animation.
+func (p *PreviewPane) SetAnimateBanner(enabled bool) {
+	p.animateBanner = enabled
+}
+
 // TickBanner advances the banner animation frame. Call from the app tick loop.
 func (p *PreviewPane) TickBanner() {
-	if p.previewState.fallback {
+	if p.animateBanner && p.previewState.fallback {
 		p.bannerFrame++
 	}
 }

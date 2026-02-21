@@ -255,6 +255,11 @@ func (w *TabbedWindow) TickBanner() {
 	w.preview.TickBanner()
 }
 
+// SetAnimateBanner enables or disables the idle banner animation on the preview pane.
+func (w *TabbedWindow) SetAnimateBanner(enabled bool) {
+	w.preview.SetAnimateBanner(enabled)
+}
+
 // IsPreviewInScrollMode returns true if the preview pane is in scroll mode
 func (w *TabbedWindow) IsPreviewInScrollMode() bool {
 	return w.preview.isScrolling

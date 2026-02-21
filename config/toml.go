@@ -32,16 +32,23 @@ func (a TOMLAgent) toProfile() AgentProfile {
 	}
 }
 
+// TOMLUIConfig holds UI-specific settings from the [ui] TOML table.
+type TOMLUIConfig struct {
+	AnimateBanner bool `toml:"animate_banner"`
+}
+
 // TOMLConfig is the top-level TOML file structure.
 type TOMLConfig struct {
 	Phases map[string]string    `toml:"phases"`
 	Agents map[string]TOMLAgent `toml:"agents"`
+	UI     TOMLUIConfig         `toml:"ui"`
 }
 
 // TOMLConfigResult holds the parsed config in terms of internal types.
 type TOMLConfigResult struct {
-	Profiles   map[string]AgentProfile
-	PhaseRoles map[string]string
+	Profiles      map[string]AgentProfile
+	PhaseRoles    map[string]string
+	AnimateBanner bool
 }
 
 // LoadTOMLConfigFrom reads and parses a TOML config file,
@@ -53,8 +60,9 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 	}
 
 	result := &TOMLConfigResult{
-		Profiles:   make(map[string]AgentProfile),
-		PhaseRoles: tc.Phases,
+		Profiles:      make(map[string]AgentProfile),
+		PhaseRoles:    tc.Phases,
+		AnimateBanner: tc.UI.AnimateBanner,
 	}
 
 	for name, agent := range tc.Agents {

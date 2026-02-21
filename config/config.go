@@ -59,6 +59,8 @@ type Config struct {
 	Profiles map[string]AgentProfile `json:"profiles,omitempty"`
 	// PhaseRoles maps lifecycle phase names to agent role names.
 	PhaseRoles map[string]string `json:"phase_roles,omitempty"`
+	// AnimateBanner controls the idle banner animation (disabled by default).
+	AnimateBanner bool `json:"animate_banner,omitempty"`
 }
 
 // DefaultConfig returns the default configuration
@@ -182,6 +184,9 @@ func LoadConfig() *Config {
 		}
 		if len(tomlResult.PhaseRoles) > 0 {
 			config.PhaseRoles = tomlResult.PhaseRoles
+		}
+		if tomlResult.AnimateBanner {
+			config.AnimateBanner = true
 		}
 	}
 
