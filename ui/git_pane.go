@@ -58,7 +58,7 @@ func (g *GitPane) Spawn(worktreePath, instanceTitle string) {
 
 	// Create a detached tmux session running lazygit with quit keybindings disabled.
 	// Quitting lazygit destroys the tmux session and crashes the TUI.
-	// Users navigate back with Escape and exit focus mode with Ctrl+O.
+	// Users navigate back with Escape and exit focus mode with Ctrl+Space.
 	configArg := lazygitConfigArg()
 	createCmd := exec.Command("tmux", "new-session", "-d", "-s", sessionName, "-c", worktreePath,
 		"lazygit", "--use-config-file="+configArg)

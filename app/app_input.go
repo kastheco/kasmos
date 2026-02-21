@@ -536,8 +536,8 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 
 	// Handle focus mode — forward keys directly to the agent's or lazygit's PTY
 	if m.state == stateFocusAgent {
-		// Ctrl+O exits focus mode
-		if msg.Type == tea.KeyCtrlO {
+		// Ctrl+Space exits focus mode
+		if msg.Type == tea.KeyCtrlAt {
 			m.exitFocusMode()
 			return m, tea.WindowSize()
 		}
