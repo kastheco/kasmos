@@ -453,7 +453,7 @@ func (m *home) updateSidebarPlans() {
 	unfinished := m.planState.Unfinished()
 	plans := make([]ui.PlanDisplay, 0, len(unfinished))
 	for _, p := range unfinished {
-		plans = append(plans, ui.PlanDisplay{Filename: p.Filename, Status: p.Status})
+		plans = append(plans, ui.PlanDisplay{Filename: p.Filename, Status: string(p.Status)})
 	}
 	m.sidebar.SetPlans(plans)
 }
@@ -469,7 +469,7 @@ func (m *home) checkPlanCompletion() tea.Cmd {
 		if inst.PlanFile == "" || inst.IsReviewer {
 			continue
 		}
-		if !m.planState.AllTasksDone(inst.PlanFile) {
+		if !m.planState.IsDone(inst.PlanFile) {
 			continue
 		}
 		return m.transitionToReview(inst)
@@ -490,13 +490,15 @@ func (m *home) checkReviewerCompletion() {
 		if inst.TmuxAlive() {
 			continue
 		}
-		// Reviewer's tmux session is gone — mark plan done only if still reviewing.
+		// Reviewer's tmux session is gone — mark plan completed (terminal) only if still reviewing.
+		// Using StatusCompleted (not StatusDone) breaks the infinite spawn cycle: IsDone()
+		// only matches StatusDone, so the coder instance will not trigger another reviewer.
 		entry := m.planState.Plans[inst.PlanFile]
-		if entry.Status != "reviewing" {
+		if entry.Status != planstate.StatusReviewing {
 			continue
 		}
-		if err := m.planState.SetStatus(inst.PlanFile, "done"); err != nil {
-			log.WarningLog.Printf("could not mark plan %q done: %v", inst.PlanFile, err)
+		if err := m.planState.SetStatus(inst.PlanFile, planstate.StatusCompleted); err != nil {
+			log.WarningLog.Printf("could not mark plan %q completed: %v", inst.PlanFile, err)
 		}
 	}
 }
@@ -507,11 +509,11 @@ func (m *home) transitionToReview(coderInst *session.Instance) tea.Cmd {
 	planFile := coderInst.PlanFile
 
 	// Guard: update in-memory state before next tick re-reads disk, preventing double-spawn.
-	if err := m.planState.SetStatus(planFile, "reviewing"); err != nil {
+	if err := m.planState.SetStatus(planFile, planstate.StatusReviewing); err != nil {
 		log.WarningLog.Printf("could not set plan %q to reviewing: %v", planFile, err)
 	}
 
-	planName := planDisplayName(planFile)
+	planName := planstate.DisplayName(planFile)
 	planPath := "docs/plans/" + planFile
 	prompt := scaffold.LoadReviewPrompt(planPath, planName)
 
@@ -547,11 +549,11 @@ func (m *home) spawnPlanSession(planFile string) (tea.Model, tea.Cmd) {
 	// Prevent duplicate sessions for the same plan.
 	for _, inst := range m.list.GetInstances() {
 		if inst.PlanFile == planFile {
-			return m, m.handleError(fmt.Errorf("plan %q already has an active session", planDisplayName(planFile)))
+			return m, m.handleError(fmt.Errorf("plan %q already has an active session", planstate.DisplayName(planFile)))
 		}
 	}
 
-	planName := planDisplayName(planFile)
+	planName := planstate.DisplayName(planFile)
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:    planName,
 		Path:     m.activeRepoPath,
@@ -575,15 +577,4 @@ func (m *home) spawnPlanSession(planFile string) (tea.Model, tea.Cmd) {
 		return instanceStartedMsg{instance: inst, err: err}
 	}
 	return m, tea.Batch(tea.WindowSize(), startCmd)
-}
-
-// planDisplayName strips the date prefix and .md extension from a plan filename.
-// "2026-02-20-my-feature.md" → "my-feature"
-// "plain-plan.md" → "plain-plan"
-func planDisplayName(filename string) string {
-	name := strings.TrimSuffix(filename, ".md")
-	if len(name) > 11 && name[4] == '-' && name[7] == '-' && name[10] == '-' {
-		name = name[11:]
-	}
-	return name
 }

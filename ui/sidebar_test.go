@@ -1,19 +1,23 @@
 package ui
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/kastheco/klique/config/planstate"
+)
 
 func TestPlanDisplayName(t *testing.T) {
-	if got := planDisplayName("2026-02-20-my-feature.md"); got != "my-feature" {
-		t.Fatalf("planDisplayName() = %q, want %q", got, "my-feature")
+	if got := planstate.DisplayName("2026-02-20-my-feature.md"); got != "my-feature" {
+		t.Fatalf("planstate.DisplayName() = %q, want %q", got, "my-feature")
 	}
-	if got := planDisplayName("plain-plan.md"); got != "plain-plan" {
-		t.Fatalf("planDisplayName() = %q, want %q", got, "plain-plan")
+	if got := planstate.DisplayName("plain-plan.md"); got != "plain-plan" {
+		t.Fatalf("planstate.DisplayName() = %q, want %q", got, "plain-plan")
 	}
 }
 
 func TestSidebarSetItems_IncludesPlansSectionBeforeTopics(t *testing.T) {
 	s := NewSidebar()
-	s.SetPlans([]PlanDisplay{{Filename: "2026-02-20-plan-orchestration.md", Status: "in_progress"}})
+	s.SetPlans([]PlanDisplay{{Filename: "2026-02-20-plan-orchestration.md", Status: string(planstate.StatusInProgress)}})
 	s.SetItems([]string{"alpha"}, map[string]int{"alpha": 1}, 0, map[string]bool{"alpha": false}, map[string]TopicStatus{"alpha": {}})
 
 	if len(s.items) < 5 {
@@ -33,7 +37,7 @@ func TestSidebarSetItems_IncludesPlansSectionBeforeTopics(t *testing.T) {
 
 func TestGetSelectedPlanFile(t *testing.T) {
 	s := NewSidebar()
-	s.SetPlans([]PlanDisplay{{Filename: "plan.md", Status: "ready"}})
+	s.SetPlans([]PlanDisplay{{Filename: "plan.md", Status: string(planstate.StatusReady)}})
 	s.SetItems(nil, map[string]int{}, 0, map[string]bool{}, map[string]TopicStatus{})
 
 	if s.GetSelectedPlanFile() != "" {

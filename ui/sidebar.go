@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/kastheco/klique/config/planstate"
 	zone "github.com/lrstanley/bubblezone"
 	"github.com/mattn/go-runewidth"
 )
@@ -111,14 +112,6 @@ func (s *Sidebar) SetPlans(plans []PlanDisplay) {
 	s.plans = plans
 }
 
-func planDisplayName(filename string) string {
-	name := strings.TrimSuffix(filename, ".md")
-	if len(name) > 11 && name[4] == '-' && name[7] == '-' && name[10] == '-' {
-		name = name[11:]
-	}
-	return name
-}
-
 func NewSidebar() *Sidebar {
 	return &Sidebar{
 		items: []SidebarItem{
@@ -187,10 +180,10 @@ func (s *Sidebar) SetItems(topicNames []string, instanceCountByTopic map[string]
 		items = append(items, SidebarItem{Name: "Plans", IsSection: true})
 		for _, p := range s.plans {
 			items = append(items, SidebarItem{
-				Name:            planDisplayName(p.Filename),
+				Name:            planstate.DisplayName(p.Filename),
 				ID:              SidebarPlanPrefix + p.Filename,
-				HasRunning:      p.Status == "in_progress",
-				HasNotification: p.Status == "reviewing",
+				HasRunning:      p.Status == string(planstate.StatusInProgress),
+				HasNotification: p.Status == string(planstate.StatusReviewing),
 			})
 		}
 	}

@@ -7,11 +7,32 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
+)
+
+// Status is the type-safe status for a plan entry.
+type Status string
+
+const (
+	// StatusReady is the initial state — plan is queued, no session started yet.
+	StatusReady Status = "ready"
+	// StatusInProgress means a coder session is actively implementing the plan.
+	StatusInProgress Status = "in_progress"
+	// StatusDone means the agent has finished implementation and written "done".
+	// This is the trigger that causes klique to spawn a reviewer.
+	StatusDone Status = "done"
+	// StatusReviewing means a reviewer session has been spawned and is running.
+	StatusReviewing Status = "reviewing"
+	// StatusCompleted is the terminal status set by klique after the reviewer
+	// session exits. It is intentionally distinct from StatusDone so that
+	// IsDone returns false, breaking the coder→reviewer→done→
+	// reviewer infinite spawn cycle.
+	StatusCompleted Status = "completed"
 )
 
 // PlanEntry is one plan's state in plan-state.json.
 type PlanEntry struct {
-	Status      string `json:"status"`
+	Status      Status `json:"status"`
 	Implemented string `json:"implemented,omitempty"`
 }
 
@@ -24,7 +45,7 @@ type PlanState struct {
 // PlanInfo is a plan entry with its filename attached, for display.
 type PlanInfo struct {
 	Filename string
-	Status   string
+	Status   Status
 }
 
 const stateFile = "plan-state.json"
@@ -52,11 +73,11 @@ func Load(dir string) (*PlanState, error) {
 	return &PlanState{Dir: dir, Plans: plans}, nil
 }
 
-// Unfinished returns plans that are not done, sorted by filename.
+// Unfinished returns plans that are not done or completed, sorted by filename.
 func (ps *PlanState) Unfinished() []PlanInfo {
 	result := make([]PlanInfo, 0, len(ps.Plans))
 	for filename, entry := range ps.Plans {
-		if entry.Status == "done" {
+		if entry.Status == StatusDone || entry.Status == StatusCompleted {
 			continue
 		}
 		result = append(result, PlanInfo{Filename: filename, Status: entry.Status})
@@ -69,17 +90,18 @@ func (ps *PlanState) Unfinished() []PlanInfo {
 	return result
 }
 
-// AllTasksDone returns true if the given plan has status done.
-func (ps *PlanState) AllTasksDone(filename string) bool {
+// IsDone returns true only if the given plan has status StatusDone.
+// StatusCompleted intentionally returns false to prevent re-triggering a reviewer.
+func (ps *PlanState) IsDone(filename string) bool {
 	entry, ok := ps.Plans[filename]
 	if !ok {
 		return false
 	}
-	return entry.Status == "done"
+	return entry.Status == StatusDone
 }
 
 // SetStatus updates a plan's status and persists to disk.
-func (ps *PlanState) SetStatus(filename, status string) error {
+func (ps *PlanState) SetStatus(filename string, status Status) error {
 	if ps.Plans == nil {
 		ps.Plans = make(map[string]PlanEntry)
 	}
@@ -89,6 +111,17 @@ func (ps *PlanState) SetStatus(filename, status string) error {
 	ps.Plans[filename] = entry
 
 	return ps.save()
+}
+
+// DisplayName strips the date prefix and .md extension from a plan filename.
+// "2026-02-20-my-feature.md" → "my-feature"
+// "plain-plan.md" → "plain-plan"
+func DisplayName(filename string) string {
+	name := strings.TrimSuffix(filename, ".md")
+	if len(name) > 11 && name[4] == '-' && name[7] == '-' && name[10] == '-' {
+		name = name[11:]
+	}
+	return name
 }
 
 func (ps *PlanState) save() error {
