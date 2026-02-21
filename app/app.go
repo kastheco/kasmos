@@ -328,6 +328,15 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.toastManager.Resolve(msg.id, overlay.ToastError, msg.err.Error())
 		m.pendingPRToastID = ""
 		return m, m.toastTickCmd()
+	case planRenderedMsg:
+		if msg.err != nil {
+			return m, m.handleError(msg.err)
+		}
+		m.cachedPlanFile = msg.planFile
+		m.cachedPlanRendered = msg.rendered
+		m.tabbedWindow.SetActiveTab(ui.PreviewTab)
+		m.tabbedWindow.SetDocumentContent(msg.rendered)
+		return m, nil
 	case previewTickMsg:
 		cmd := m.instanceChanged()
 		// Advance banner animation every 10 ticks (~1s per frame)
@@ -588,6 +597,13 @@ type instanceStartedMsg struct {
 }
 
 type keyupMsg struct{}
+
+// planRenderedMsg delivers the async glamour render result back to the Update loop.
+type planRenderedMsg struct {
+	planFile string
+	rendered string
+	err      error
+}
 
 // tickUpdateMetadataCmd is the callback to update the metadata of the instances every 500ms. Note that we iterate
 // overall the instances and capture their output. It's a pretty expensive operation. Let's do it 2x a second only.

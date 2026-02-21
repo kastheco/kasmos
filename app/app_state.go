@@ -584,50 +584,48 @@ func (m *home) spawnPlanSession(planFile string) (tea.Model, tea.Cmd) {
 }
 
 // viewSelectedPlan renders the selected plan's markdown in the preview pane.
-// The rendered output is cached so repeated presses of 'v' don't re-run glamour.
+// The rendered output is cached; on cache miss the glamour render runs async
+// via a tea.Cmd so the UI stays responsive.
 func (m *home) viewSelectedPlan() (tea.Model, tea.Cmd) {
 	planFile := m.sidebar.GetSelectedPlanFile()
 	if planFile == "" {
 		return m, nil
 	}
 
-	// Cache hit — reuse previously rendered content.
+	// Cache hit — reuse previously rendered content (instant).
 	if planFile == m.cachedPlanFile && m.cachedPlanRendered != "" {
 		m.tabbedWindow.SetActiveTab(ui.PreviewTab)
 		m.tabbedWindow.SetDocumentContent(m.cachedPlanRendered)
 		return m, nil
 	}
 
+	// Cache miss — render async so the UI doesn't freeze.
 	planPath := filepath.Join(m.planStateDir, planFile)
-	data, err := os.ReadFile(planPath)
-	if err != nil {
-		return m, m.handleError(fmt.Errorf("could not read plan %s: %w", planFile, err))
-	}
-
 	previewWidth, _ := m.tabbedWindow.GetPreviewSize()
-	// glamour word-wrap width; leave room for padding
 	wordWrap := previewWidth - 4
 	if wordWrap < 40 {
 		wordWrap = 40
 	}
 
-	renderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(wordWrap),
-	)
-	if err != nil {
-		return m, m.handleError(fmt.Errorf("could not create markdown renderer: %w", err))
-	}
+	return m, func() tea.Msg {
+		data, err := os.ReadFile(planPath)
+		if err != nil {
+			return planRenderedMsg{err: fmt.Errorf("could not read plan %s: %w", planFile, err)}
+		}
 
-	rendered, err := renderer.Render(string(data))
-	if err != nil {
-		return m, m.handleError(fmt.Errorf("could not render markdown: %w", err))
-	}
+		renderer, err := glamour.NewTermRenderer(
+			glamour.WithAutoStyle(),
+			glamour.WithWordWrap(wordWrap),
+		)
+		if err != nil {
+			return planRenderedMsg{err: fmt.Errorf("could not create markdown renderer: %w", err)}
+		}
 
-	// Cache and display.
-	m.cachedPlanFile = planFile
-	m.cachedPlanRendered = rendered
-	m.tabbedWindow.SetActiveTab(ui.PreviewTab)
-	m.tabbedWindow.SetDocumentContent(rendered)
-	return m, nil
+		rendered, err := renderer.Render(string(data))
+		if err != nil {
+			return planRenderedMsg{err: fmt.Errorf("could not render markdown: %w", err)}
+		}
+
+		return planRenderedMsg{planFile: planFile, rendered: rendered}
+	}
 }
