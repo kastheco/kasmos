@@ -104,7 +104,7 @@ func Run(registry *harness.Registry, existing *config.TOMLConfigResult) (*State,
 }
 
 // parseTemperature converts a temperature string to *float64.
-// Returns nil for empty string or unparseable values.
+// Returns nil for empty string or unparsable values.
 func parseTemperature(s string) *float64 {
 	if s == "" {
 		return nil
