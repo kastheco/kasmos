@@ -5,9 +5,10 @@ set dotenv-load := true
 build:
     go build -o klique .
 
-# Install to GOPATH/bin
+# Install to GOPATH/bin (with kq alias)
 install:
     go install .
+    ln -sf "$(go env GOPATH)/bin/klique" "$(go env GOPATH)/bin/kq"
 
 # Build + install
 bi: build install
