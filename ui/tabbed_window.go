@@ -146,6 +146,16 @@ func (w *TabbedWindow) SetDocumentContent(content string) {
 	w.preview.SetDocumentContent(content)
 }
 
+// ClearDocumentMode exits document mode so UpdatePreview resumes normal behaviour.
+func (w *TabbedWindow) ClearDocumentMode() {
+	w.preview.ClearDocumentMode()
+}
+
+// IsDocumentMode returns true when the preview is showing a static document.
+func (w *TabbedWindow) IsDocumentMode() bool {
+	return w.preview.IsDocumentMode()
+}
+
 // SetGitContent caches the git pane content to avoid re-rendering when unchanged.
 func (w *TabbedWindow) SetGitContent(content string) {
 	w.gitContent = content

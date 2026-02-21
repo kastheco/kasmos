@@ -124,6 +124,7 @@ func (m *home) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		// Sidebar items start after search bar (row 0) + border (2 rows) + blank line (1 row) = row 4
 		itemRow := contentY - 4
 		if itemRow >= 0 {
+			m.tabbedWindow.ClearDocumentMode()
 			m.sidebar.ClickItem(itemRow)
 			m.filterInstancesByTopic()
 			return m, m.instanceChanged()
@@ -152,6 +153,7 @@ func (m *home) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if listY >= 0 {
 			itemIdx := m.list.GetItemAtRow(listY)
 			if itemIdx >= 0 {
+				m.tabbedWindow.ClearDocumentMode()
 				m.list.SetSelectedInstance(itemIdx)
 				return m, m.instanceChanged()
 			}
@@ -795,6 +797,11 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 	// Check if Escape key was pressed and we're not in the diff tab (meaning we're in preview tab)
 	// Always check for escape key first to ensure it doesn't get intercepted elsewhere
 	if msg.Type == tea.KeyEsc {
+		// Exit document mode (plan viewer) on Esc
+		if m.tabbedWindow.IsDocumentMode() {
+			m.tabbedWindow.ClearDocumentMode()
+			return m, m.instanceChanged()
+		}
 		// If in preview tab and in scroll mode, exit scroll mode
 		if !m.tabbedWindow.IsInDiffTab() && m.tabbedWindow.IsPreviewInScrollMode() {
 			// Use the selected instance from the list
@@ -901,6 +908,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 
 		return m, nil
 	case keys.KeyUp:
+		m.tabbedWindow.ClearDocumentMode()
 		if m.focusedPanel == 0 {
 			m.sidebar.Up()
 			m.filterInstancesByTopic()
@@ -909,6 +917,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		}
 		return m, m.instanceChanged()
 	case keys.KeyDown:
+		m.tabbedWindow.ClearDocumentMode()
 		if m.focusedPanel == 0 {
 			m.sidebar.Down()
 			m.filterInstancesByTopic()

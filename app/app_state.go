@@ -81,6 +81,7 @@ func (m *home) setFocus(panel int) {
 // PTY and starts the 30fps render ticker. Input goes directly to the PTY (zero latency),
 // display is rendered from the emulator's screen buffer (no subprocess calls).
 func (m *home) enterFocusMode() tea.Cmd {
+	m.tabbedWindow.ClearDocumentMode()
 	selected := m.list.GetSelectedInstance()
 	if selected == nil {
 		return nil

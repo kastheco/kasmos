@@ -24,6 +24,9 @@ type PreviewPane struct {
 	bannerFrame int
 	// animateBanner gates the idle banner animation (disabled by default).
 	animateBanner bool
+	// isDocument is true when the preview is showing a rendered document (plan markdown).
+	// While set, UpdateContent() is a no-op so the tick loop doesn't overwrite the content.
+	isDocument bool
 }
 
 type previewState struct {
@@ -46,6 +49,7 @@ func NewPreviewPane() *PreviewPane {
 func (p *PreviewPane) SetRawContent(content string) {
 	p.previewState = previewState{text: content}
 	p.isScrolling = false
+	p.isDocument = false
 }
 
 func (p *PreviewPane) SetSize(width, maxHeight int) {
@@ -65,12 +69,24 @@ func (p *PreviewPane) setFallbackState(message string) {
 
 // SetDocumentContent sets the preview to show a rendered document (e.g. plan markdown)
 // top-aligned with no centering, using the normal content path so scroll mode works.
+// Sets isDocument so the periodic UpdateContent tick won't overwrite the content.
 func (p *PreviewPane) SetDocumentContent(content string) {
 	p.previewState = previewState{
 		fallback: false,
 		text:     content,
 	}
 	p.isScrolling = false
+	p.isDocument = true
+}
+
+// IsDocumentMode returns true when the preview is showing a static document.
+func (p *PreviewPane) IsDocumentMode() bool {
+	return p.isDocument
+}
+
+// ClearDocumentMode exits document mode so UpdateContent resumes normal preview.
+func (p *PreviewPane) ClearDocumentMode() {
+	p.isDocument = false
 }
 
 // setFallbackContent sets the preview state with arbitrary centered content (no banner).
@@ -93,8 +109,12 @@ func (p *PreviewPane) TickBanner() {
 	}
 }
 
-// Updates the preview pane content with the tmux pane content
+// Updates the preview pane content with the tmux pane content.
+// No-op when in document mode (isDocument) — the caller must ClearDocumentMode first.
 func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
+	if p.isDocument {
+		return nil
+	}
 	switch {
 	case instance == nil:
 		p.setFallbackState("create [n]ew plan or [s]elect existing")
