@@ -29,10 +29,10 @@ Valid statuses: `ready` → `in_progress` → `done`. Only klique transitions be
 
 ## Project Skills
 
-Always load when working on this project's TUI:
+Load for anything touching the visual interface — UI, TUI, layout, view, panel, column, sidebar, overlay, toast, viewport, colors, styles, animation, keybindings, focus, charm, lipgloss, bubbletea, bubbles, rendering, design:
 - `tui-design` — design-first workflow for bubbletea/lipgloss interfaces
 
-Load when task involves tmux panes, worker lifecycle, or process management:
+Load for anything touching how tasks run or how users interact with live sessions — starting a task, launching an agent, worker interactivity, session lifecycle, running instances, spawning, pausing, resuming, attaching, interactive terminals, agent output:
 - `tmux-orchestration` — tmux pane management from Go, parking pattern, crash resilience
 
 ## Available CLI Tools

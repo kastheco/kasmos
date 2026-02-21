@@ -17,10 +17,10 @@ Be specific about issues — cite file paths and line numbers.
 
 ## Project Skills
 
-Always load when reviewing TUI/UX changes:
+Load when reviewing anything visual — UI, TUI, layout, view, panel, column, sidebar, overlay, toast, viewport, colors, styles, animation, keybindings, focus, charm, lipgloss, bubbletea, bubbles, rendering, design:
 - `tui-design` — terminal aesthetic principles, anti-patterns to flag
 
-Load when reviewing tmux integration, worker backends, or pane management:
+Load when reviewing anything related to how tasks run or user interaction with live sessions — starting a task, launching an agent, worker interactivity, session lifecycle, running instances, spawning, pausing, resuming, attaching, interactive terminals, agent output:
 - `tmux-orchestration` — architecture principles, error handling philosophy
 
 ## Available CLI Tools

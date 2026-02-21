@@ -22,9 +22,9 @@ Valid statuses: `ready`, `in_progress`, `done`.
 ## Project Skills
 
 Load based on what you're implementing:
-- `tui-design` — when building or modifying TUI components, views, or styles
-- `tmux-orchestration` — when working on tmux pane management, worker backends, or process lifecycle
-- `golang-pro` — for concurrency patterns, interface design, generics, testing best practices
+- `tui-design` — anything visual: UI, TUI, layout, view, panel, column, sidebar, overlay, toast, viewport, colors, styles, animation, keybindings, focus, charm, lipgloss, bubbletea, bubbles, rendering, design
+- `tmux-orchestration` — anything about how tasks run or user interaction with live sessions: starting a task, launching an agent, worker interactivity, session lifecycle, running instances, spawning, pausing, resuming, attaching, interactive terminals, agent output
+- `golang-pro` — concurrency patterns, interface design, generics, testing best practices
 
 ## Available CLI Tools
 
