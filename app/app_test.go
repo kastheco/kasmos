@@ -464,3 +464,43 @@ func TestConfirmationModalVisualAppearance(t *testing.T) {
 	// Test that the danger indicator is preserved
 	assert.Contains(t, rendered, "[!")
 }
+
+// TestNewInstancePointerSetAndCleared verifies that m.newInstance is set when
+// entering stateNew and cleared on exit — preventing the stale-index naming bug.
+func TestNewInstancePointerSetAndCleared(t *testing.T) {
+	s := spinner.New()
+	sp := s
+	list := ui.NewList(&sp, false)
+
+	h := &home{
+		ctx:       context.Background(),
+		state:     stateDefault,
+		appConfig: config.DefaultConfig(),
+		list:      list,
+	}
+
+	// Create a mock instance (not started, not real tmux)
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:   "",
+		Path:    t.TempDir(),
+		Program: "echo",
+	})
+	require.NoError(t, err)
+
+	// Simulate what KeyNew does
+	h.newInstanceFinalizer = h.list.AddInstance(inst)
+	h.newInstance = inst
+	h.list.SetSelectedInstance(h.list.NumInstances() - 1)
+	h.state = stateNew
+
+	assert.Equal(t, inst, h.newInstance, "newInstance should be set when entering stateNew")
+	assert.Equal(t, stateNew, h.state)
+
+	// Simulate pressing Esc — clear newInstance
+	h.list.Kill()
+	h.state = stateDefault
+	h.newInstance = nil
+
+	assert.Nil(t, h.newInstance, "newInstance should be nil after leaving stateNew")
+	assert.Equal(t, stateDefault, h.state)
+}
