@@ -3,8 +3,11 @@ package session
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/kastheco/klique/config"
+	"os"
 	"time"
+
+	"github.com/kastheco/klique/config"
+	"github.com/kastheco/klique/log"
 )
 
 // InstanceData represents the serializable data of an Instance
@@ -82,13 +85,23 @@ func (s *Storage) LoadInstances() ([]*Instance, error) {
 		return nil, fmt.Errorf("failed to unmarshal instances: %w", err)
 	}
 
-	instances := make([]*Instance, len(instancesData))
-	for i, data := range instancesData {
+	instances := make([]*Instance, 0, len(instancesData))
+	for _, data := range instancesData {
+		// Skip non-paused instances whose worktree no longer exists on disk.
+		// This cleans up stale state from old sessions or config migrations
+		// (e.g. worktree path was moved from ~/.klique/worktrees/ to <repo>/.worktrees/).
+		if data.Status != Paused && data.Worktree.WorktreePath != "" {
+			if _, err := os.Stat(data.Worktree.WorktreePath); err != nil {
+				log.WarningLog.Printf("skipping stale instance %q: worktree path gone: %s",
+					data.Title, data.Worktree.WorktreePath)
+				continue
+			}
+		}
 		instance, err := FromInstanceData(data)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create instance %s: %w", data.Title, err)
 		}
-		instances[i] = instance
+		instances = append(instances, instance)
 	}
 
 	return instances, nil

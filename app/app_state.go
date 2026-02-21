@@ -2,13 +2,15 @@ package app
 
 import (
 	"fmt"
-	"github.com/kastheco/klique/config"
-	"github.com/kastheco/klique/keys"
-	"github.com/kastheco/klique/session"
-	"github.com/kastheco/klique/ui"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/kastheco/klique/config"
+	"github.com/kastheco/klique/keys"
+	"github.com/kastheco/klique/log"
+	"github.com/kastheco/klique/session"
+	"github.com/kastheco/klique/ui"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -373,8 +375,10 @@ func (m *home) instanceChanged() tea.Cmd {
 	m.menu.SetInstance(selected)
 
 	// If there's no selected instance, we don't need to update the preview.
+	// Preview errors (e.g. dead tmux pane) are transient infrastructure failures —
+	// log them silently rather than spamming the user with toast notifications.
 	if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
-		return m.handleError(err)
+		log.ErrorLog.Printf("preview update error: %v", err)
 	}
 
 	// Respawn lazygit if the selected instance changed while on the git tab
