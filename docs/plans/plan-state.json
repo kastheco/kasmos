@@ -36,5 +36,8 @@
   "2026-02-21-fix-plan-state-machine.md": {
     "status": "done",
     "implemented": "2026-02-21"
+  },
+  "2026-02-21-fix-naming-and-toast-wrap.md": {
+    "status": "ready"
   }
 }
