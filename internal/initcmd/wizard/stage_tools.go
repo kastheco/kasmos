@@ -1,5 +1,12 @@
 package wizard
 
+import (
+	"fmt"
+	"os/exec"
+
+	"github.com/charmbracelet/huh"
+)
+
 // toolDef defines a CLI tool the wizard can detect.
 type toolDef struct {
 	Binary string // executable name to look up in PATH
@@ -48,4 +55,41 @@ func detectTools(catalog []toolDef, lookup lookupFunc) []toolDetectResult {
 		})
 	}
 	return results
+}
+
+// runToolsStage detects CLI tools on PATH and lets the user confirm the selection.
+func runToolsStage(state *State) error {
+	results := detectTools(toolCatalog, exec.LookPath)
+
+	var options []huh.Option[string]
+	var preSelected []string
+
+	for _, r := range results {
+		label := fmt.Sprintf("%s  (%s)", r.Name, r.Binary)
+		if r.Found {
+			label = fmt.Sprintf("%s  (%s)  detected: %s", r.Name, r.Binary, r.Path)
+			preSelected = append(preSelected, r.Binary)
+		} else {
+			label = fmt.Sprintf("%s  (%s)  not found", r.Name, r.Binary)
+		}
+		options = append(options, huh.NewOption(label, r.Binary))
+	}
+
+	state.SelectedTools = preSelected
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Which CLI tools should agents reference?").
+				Description("Pre-selected tools were detected on your PATH. You can add tools you plan to install.").
+				Options(options...).
+				Value(&state.SelectedTools),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		return fmt.Errorf("tool discovery: %w", err)
+	}
+
+	return nil
 }

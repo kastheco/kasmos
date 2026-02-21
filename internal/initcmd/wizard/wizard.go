@@ -19,6 +19,9 @@ type State struct {
 
 	// Stage 3 outputs
 	PhaseMapping map[string]string
+
+	// Stage 4 outputs
+	SelectedTools []string // binary names of CLI tools to include in scaffolded agent files
 }
 
 // AgentState holds the wizard form values for one agent role.
@@ -61,6 +64,11 @@ func Run(registry *harness.Registry, existing *config.TOMLConfigResult) (*State,
 
 	// Stage 3: Phase mapping
 	if err := runPhaseStage(state, existing); err != nil {
+		return nil, err
+	}
+
+	// Stage 4: Tool discovery
+	if err := runToolsStage(state); err != nil {
 		return nil, err
 	}
 
