@@ -150,7 +150,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		if planFile == "" {
 			return m, nil
 		}
-		return m.spawnPlanSession(planFile)
+		return m.triggerPlanStage(planFile, "plan")
 
 	case "view_plan":
 		return m.viewSelectedPlan()

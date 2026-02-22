@@ -593,46 +593,6 @@ func (m *home) transitionToReview(coderInst *session.Instance) tea.Cmd {
 	}
 }
 
-// spawnPlanSession creates a new coder session bound to the given plan file.
-// Returns early with an error toast if a session for this plan already exists.
-func (m *home) spawnPlanSession(planFile string) (tea.Model, tea.Cmd) {
-	if m.list.TotalInstances() >= GlobalInstanceLimit {
-		return m, m.handleError(fmt.Errorf("cannot spawn plan session: instance limit reached"))
-	}
-
-	// Prevent duplicate sessions for the same plan.
-	for _, inst := range m.list.GetInstances() {
-		if inst.PlanFile == planFile {
-			return m, m.handleError(fmt.Errorf("plan %q already has an active session", planstate.DisplayName(planFile)))
-		}
-	}
-
-	planName := planstate.DisplayName(planFile)
-	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:    planName,
-		Path:     m.activeRepoPath,
-		Program:  m.program,
-		PlanFile: planFile,
-	})
-	if err != nil {
-		return m, m.handleError(err)
-	}
-
-	inst.QueuedPrompt = fmt.Sprintf(
-		"Implement docs/plans/%s using the executing-plans superpowers skill. Execute ALL tasks sequentially without stopping to ask for confirmation between tasks. Do NOT delete the git worktree or feature branch when done — your orchestrator (klique) manages worktree lifecycle and will clean up after you.",
-		planFile,
-	)
-
-	m.newInstanceFinalizer = m.list.AddInstance(inst)
-	m.list.SelectInstance(inst) // sort-order safe
-
-	startCmd := func() tea.Msg {
-		err := inst.Start(true)
-		return instanceStartedMsg{instance: inst, err: err}
-	}
-	return m, tea.Batch(tea.WindowSize(), startCmd)
-}
-
 // viewSelectedPlan renders the selected plan's markdown in the preview pane.
 // The rendered output is cached; on cache miss the glamour render runs async
 // via a tea.Cmd so the UI stays responsive.
