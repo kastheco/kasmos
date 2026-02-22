@@ -1,6 +1,9 @@
 package app
 
 import (
+	"fmt"
+
+	"github.com/kastheco/klique/config/planstate"
 	"github.com/kastheco/klique/session"
 	"github.com/kastheco/klique/ui/overlay"
 
@@ -243,4 +246,77 @@ func (m *home) openTopicContextMenu() (tea.Model, tea.Cmd) {
 	m.contextMenu = overlay.NewContextMenu(x, y, items)
 	m.state = stateContextMenu
 	return m, nil
+}
+
+// triggerPlanStage handles a user action on a plan lifecycle stage row.
+// It checks if the stage is locked, applies the concurrency gate for the
+// implement stage, and then executes the stage transition.
+func (m *home) triggerPlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
+	if m.planState == nil {
+		return m, m.handleError(fmt.Errorf("no plan state loaded"))
+	}
+	entry, ok := m.planState.Plans[planFile]
+	if !ok {
+		return m, m.handleError(fmt.Errorf("missing plan state for %s", planFile))
+	}
+
+	// Check if stage is locked
+	if isLocked(entry.Status, stage) {
+		prev := map[string]string{
+			"implement": "plan",
+			"review":    "implement",
+			"finished":  "review",
+		}[stage]
+		m.toastManager.Error(fmt.Sprintf("complete %s first", prev))
+		return m, m.toastTickCmd()
+	}
+
+	// Concurrency gate for implement stage
+	if stage == "implement" && entry.Topic != "" {
+		if hasConflict, conflictPlan := m.planState.HasRunningCoderInTopic(entry.Topic, planFile); hasConflict {
+			conflictName := planstate.DisplayName(conflictPlan)
+			message := fmt.Sprintf("⚠ %s is already running in topic \"%s\"\n\nRunning both plans may cause issues.\nContinue anyway?", conflictName, entry.Topic)
+			proceedAction := func() tea.Msg {
+				m.executePlanStage(planFile, stage)
+				return instanceChangedMsg{}
+			}
+			return m, m.confirmAction(message, proceedAction)
+		}
+	}
+
+	m.executePlanStage(planFile, stage)
+	return m, nil
+}
+
+// executePlanStage applies the status transition for a plan stage.
+func (m *home) executePlanStage(planFile, stage string) {
+	switch stage {
+	case "plan":
+		_ = m.planState.SetStatus(planFile, planstate.StatusInProgress)
+	case "implement":
+		_ = m.planState.SetStatus(planFile, planstate.StatusInProgress)
+	case "review":
+		_ = m.planState.SetStatus(planFile, planstate.StatusReviewing)
+	case "finished":
+		_ = m.planState.SetStatus(planFile, planstate.StatusCompleted)
+	}
+	m.loadPlanState()
+	m.updateSidebarPlans()
+	m.updateSidebarItems()
+}
+
+// isLocked returns true if the given stage cannot be triggered given the current plan status.
+func isLocked(status planstate.Status, stage string) bool {
+	switch stage {
+	case "plan":
+		return false
+	case "implement":
+		return status == planstate.StatusReady
+	case "review":
+		return status == planstate.StatusReady || status == planstate.StatusInProgress
+	case "finished":
+		return status != planstate.StatusReviewing && status != planstate.StatusDone && status != planstate.StatusCompleted
+	default:
+		return true
+	}
 }

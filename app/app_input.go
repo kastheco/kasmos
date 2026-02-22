@@ -870,6 +870,9 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		m.list.CycleSortMode()
 		return m, m.instanceChanged()
 	case keys.KeySpace:
+		if m.focusedPanel == 0 && m.sidebar.ToggleSelectedExpand() {
+			return m, nil
+		}
 		return m.openContextMenu()
 	case keys.KeyGitTab:
 		// Jump directly to git tab
@@ -981,8 +984,21 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		}
 		return m, tea.WindowSize()
 	case keys.KeyEnter:
-		// If the sidebar is focused and a plan item is selected, spawn a coder session.
+		// If the sidebar is focused, handle tree-mode interactions.
 		if m.focusedPanel == 0 {
+			// Stage row: trigger the stage action
+			if planFile, stage, ok := m.sidebar.GetSelectedPlanStage(); ok {
+				return m.triggerPlanStage(planFile, stage)
+			}
+			// Plan header: open plan context menu
+			if m.sidebar.IsSelectedPlanHeader() {
+				return m.openPlanContextMenu()
+			}
+			// Topic header: open topic context menu
+			if m.sidebar.IsSelectedTopicHeader() {
+				return m.openTopicContextMenu()
+			}
+			// Plan file selected (legacy path): spawn coder session
 			if planFile := m.sidebar.GetSelectedPlanFile(); planFile != "" {
 				return m.spawnPlanSession(planFile)
 			}
