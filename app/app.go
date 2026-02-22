@@ -23,6 +23,11 @@ const GlobalInstanceLimit = 10
 
 // Run is the main entrypoint into the application.
 func Run(ctx context.Context, program string, autoYes bool) error {
+	// Set the terminal's default background to the theme base color so every
+	// ANSI reset and unstyled cell falls back to #232136 instead of black.
+	restore := ui.SetTerminalBackground(string(ui.ColorBase))
+	defer restore()
+
 	zone.NewGlobal()
 	p := tea.NewProgram(
 		newHome(ctx, program, autoYes),
