@@ -69,7 +69,7 @@ func DefaultPhases() []string {
 
 // DefaultAgentRoles returns the built-in agent role names.
 func DefaultAgentRoles() []string {
-	return []string{"coder", "reviewer", "planner"}
+	return []string{"coder", "reviewer", "planner", "chat"}
 }
 
 // RoleDefaults returns sensible per-role defaults for fresh inits.
@@ -95,6 +95,13 @@ func RoleDefaults() map[string]AgentState {
 			Model:       "openai/gpt-5.3-codex",
 			Effort:      "xhigh",
 			Temperature: "0.2",
+			Enabled:     true,
+		},
+		"chat": {
+			Role:        "chat",
+			Model:       "anthropic/claude-sonnet-4-6",
+			Effort:      "high",
+			Temperature: "0.3",
 			Enabled:     true,
 		},
 	}
