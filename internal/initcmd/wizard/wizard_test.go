@@ -55,22 +55,44 @@ func TestStateToTOMLConfig(t *testing.T) {
 }
 
 func TestStateToAgentConfigs(t *testing.T) {
-	state := &State{
-		Agents: []AgentState{
-			{Role: "coder", Harness: "opencode", Model: "model-1", Enabled: true},
-			{Role: "reviewer", Harness: "claude", Model: "model-2", Enabled: true},
-			{Role: "planner", Harness: "codex", Model: "model-3", Enabled: false},
-			{Role: "chat", Harness: "opencode", Model: "model-4", Enabled: true},
-		},
-	}
+	t.Run("chat is fanned out to all selected harnesses", func(t *testing.T) {
+		state := &State{
+			SelectedHarness: []string{"opencode", "claude"},
+			Agents: []AgentState{
+				{Role: "coder", Harness: "opencode", Model: "model-1", Enabled: true},
+				{Role: "reviewer", Harness: "claude", Model: "model-2", Enabled: true},
+				{Role: "planner", Harness: "codex", Model: "model-3", Enabled: false},
+				{Role: "chat", Harness: "opencode", Model: "model-4", Enabled: true},
+			},
+		}
 
-	configs := state.ToAgentConfigs()
+		configs := state.ToAgentConfigs()
 
-	// Only enabled agents (planner disabled)
-	assert.Len(t, configs, 3)
-	assert.Equal(t, "coder", configs[0].Role)
-	assert.Equal(t, "reviewer", configs[1].Role)
-	assert.Equal(t, "chat", configs[2].Role)
+		// coder + reviewer + chat×2 (one per harness); planner disabled
+		assert.Len(t, configs, 4)
+		assert.Equal(t, "coder", configs[0].Role)
+		assert.Equal(t, "reviewer", configs[1].Role)
+		// chat fanned out: opencode then claude
+		assert.Equal(t, "chat", configs[2].Role)
+		assert.Equal(t, "opencode", configs[2].Harness)
+		assert.Equal(t, "chat", configs[3].Role)
+		assert.Equal(t, "claude", configs[3].Harness)
+	})
+
+	t.Run("chat with single harness emits one entry", func(t *testing.T) {
+		state := &State{
+			SelectedHarness: []string{"opencode"},
+			Agents: []AgentState{
+				{Role: "coder", Harness: "opencode", Model: "model-1", Enabled: true},
+				{Role: "chat", Harness: "opencode", Model: "model-4", Enabled: true},
+			},
+		}
+
+		configs := state.ToAgentConfigs()
+		assert.Len(t, configs, 2)
+		assert.Equal(t, "chat", configs[1].Role)
+		assert.Equal(t, "opencode", configs[1].Harness)
+	})
 }
 
 func TestDefaultAgentRoles(t *testing.T) {

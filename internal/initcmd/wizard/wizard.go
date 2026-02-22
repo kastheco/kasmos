@@ -186,10 +186,28 @@ func (s *State) ToTOMLConfig() *config.TOMLConfig {
 
 // ToAgentConfigs converts wizard state to harness.AgentConfig slice
 // for use by scaffold and superpowers install.
+//
+// The chat role is special: it is not user-configurable per harness, so a
+// single AgentState entry is stored with the first selected harness. To ensure
+// chat.md is scaffolded for every selected harness, we fan it out here.
 func (s *State) ToAgentConfigs() []harness.AgentConfig {
 	var configs []harness.AgentConfig
 	for _, a := range s.Agents {
 		if !a.Enabled {
+			continue
+		}
+		if a.Role == "chat" {
+			// Emit one entry per selected harness so chat.md is written everywhere.
+			for _, h := range s.SelectedHarness {
+				configs = append(configs, harness.AgentConfig{
+					Role:        a.Role,
+					Harness:     h,
+					Model:       a.Model,
+					Effort:      a.Effort,
+					Enabled:     a.Enabled,
+					Temperature: parseTemperature(a.Temperature),
+				})
+			}
 			continue
 		}
 		configs = append(configs, harness.AgentConfig{
