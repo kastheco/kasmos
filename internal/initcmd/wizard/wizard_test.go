@@ -112,6 +112,42 @@ func TestRoleDefaults(t *testing.T) {
 	})
 }
 
+func TestFormatAgentSummary(t *testing.T) {
+	t.Run("full settings", func(t *testing.T) {
+		a := AgentState{
+			Role: "coder", Harness: "opencode",
+			Model:  "anthropic/claude-sonnet-4-6",
+			Effort: "medium", Temperature: "0.1", Enabled: true,
+		}
+		s := FormatAgentSummary(a)
+		assert.Contains(t, s, "opencode")
+		assert.Contains(t, s, "anthropic/claude-sonnet-4-6")
+		assert.Contains(t, s, "medium")
+		assert.Contains(t, s, "temp=0.1")
+	})
+
+	t.Run("no temperature", func(t *testing.T) {
+		a := AgentState{
+			Role: "coder", Harness: "claude",
+			Model:  "claude-sonnet-4-6",
+			Effort: "high", Temperature: "", Enabled: true,
+		}
+		s := FormatAgentSummary(a)
+		assert.Contains(t, s, "claude")
+		assert.Contains(t, s, "claude-sonnet-4-6")
+		assert.Contains(t, s, "high")
+		assert.NotContains(t, s, "temp=")
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		a := AgentState{
+			Role: "planner", Harness: "codex", Enabled: false,
+		}
+		s := FormatAgentSummary(a)
+		assert.Contains(t, s, "disabled")
+	})
+}
+
 func TestPrePopulateFromExisting(t *testing.T) {
 	// Tests the pre-population logic without running the interactive form.
 	temp := 0.5

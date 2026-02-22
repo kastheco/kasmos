@@ -4,10 +4,29 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/kastheco/klique/config"
 )
+
+// FormatAgentSummary returns a one-line summary of an agent's settings.
+func FormatAgentSummary(a AgentState) string {
+	if !a.Enabled {
+		return "(disabled)"
+	}
+	parts := []string{a.Harness}
+	if a.Model != "" {
+		parts = append(parts, a.Model)
+	}
+	if a.Effort != "" {
+		parts = append(parts, a.Effort)
+	}
+	if a.Temperature != "" {
+		parts = append(parts, "temp="+a.Temperature)
+	}
+	return strings.Join(parts, " / ")
+}
 
 func runAgentStage(state *State, existing *config.TOMLConfigResult) error {
 	roles := DefaultAgentRoles()
