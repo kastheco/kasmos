@@ -88,7 +88,7 @@ const (
 	rowKindPlan                                // plan header
 	rowKindStage                               // plan lifecycle stage
 	rowKindHistoryToggle                       // "History" toggle row
-
+	rowKindCancelled                           // cancelled plan (strikethrough)
 )
 
 // sidebarRow is a single rendered row in the sidebar.
@@ -106,6 +106,7 @@ type sidebarRow struct {
 	Done            bool // stage is completed
 	Active          bool // stage is currently active
 	Locked          bool // stage is not yet reachable
+	Indent          int  // visual indent in characters (0, 2, or 4)
 }
 
 // dimmedTopicStyle is for topics with no matching instances during search
@@ -161,6 +162,7 @@ type Sidebar struct {
 	treeTopics    []TopicDisplay
 	treeUngrouped []PlanDisplay
 	treeHistory   []PlanDisplay
+	treeCancelled []PlanDisplay
 
 	useTreeMode  bool // true when SetTopicsAndPlans has been called
 	planStatuses map[string]TopicStatus
@@ -438,10 +440,13 @@ func (s *Sidebar) DisableTreeMode() {
 }
 
 // SetTopicsAndPlans sets the three-level tree data and rebuilds rows.
-func (s *Sidebar) SetTopicsAndPlans(topics []TopicDisplay, ungrouped []PlanDisplay, history []PlanDisplay) {
+func (s *Sidebar) SetTopicsAndPlans(topics []TopicDisplay, ungrouped []PlanDisplay, history []PlanDisplay, cancelled ...[]PlanDisplay) {
 	s.treeTopics = topics
 	s.treeUngrouped = ungrouped
 	s.treeHistory = history
+	if len(cancelled) > 0 {
+		s.treeCancelled = cancelled[0]
+	}
 	s.useTreeMode = true
 	s.rebuildRows()
 }
@@ -477,22 +482,37 @@ func (s *Sidebar) rebuildRows() {
 			Collapsed:       !s.expandedPlans[p.Filename],
 			HasRunning:      effective.Status == string(planstate.StatusInProgress),
 			HasNotification: effective.Status == string(planstate.StatusReviewing),
+			Indent:          0,
 		})
-		// If expanded, add stage rows
 		if s.expandedPlans[p.Filename] {
-			rows = append(rows, planStageRows(effective)...)
+			rows = append(rows, planStageRows(effective, 2)...)
 		}
 	}
 
 	// Topic headers (collapsed by default)
 	for _, t := range s.treeTopics {
+		// Aggregate status from child plans
+		hasRunning := false
+		hasNotification := false
+		for _, p := range t.Plans {
+			eff := s.effectivePlanStatus(p)
+			if eff == string(planstate.StatusInProgress) {
+				hasRunning = true
+			}
+			if eff == string(planstate.StatusReviewing) {
+				hasNotification = true
+			}
+		}
+
 		rows = append(rows, sidebarRow{
-			Kind:      rowKindTopic,
-			ID:        SidebarTopicPrefix + t.Name,
-			Label:     t.Name,
-			Collapsed: !s.expandedTopics[t.Name],
+			Kind:            rowKindTopic,
+			ID:              SidebarTopicPrefix + t.Name,
+			Label:           t.Name,
+			Collapsed:       !s.expandedTopics[t.Name],
+			HasRunning:      hasRunning,
+			HasNotification: hasNotification,
+			Indent:          0,
 		})
-		// If expanded, add plan rows under topic
 		if s.expandedTopics[t.Name] {
 			for _, p := range t.Plans {
 				effective := p
@@ -505,9 +525,10 @@ func (s *Sidebar) rebuildRows() {
 					Collapsed:       !s.expandedPlans[p.Filename],
 					HasRunning:      effective.Status == string(planstate.StatusInProgress),
 					HasNotification: effective.Status == string(planstate.StatusReviewing),
+					Indent:          2,
 				})
 				if s.expandedPlans[p.Filename] {
-					rows = append(rows, planStageRows(effective)...)
+					rows = append(rows, planStageRows(effective, 4)...)
 				}
 			}
 		}
@@ -516,17 +537,37 @@ func (s *Sidebar) rebuildRows() {
 	// History toggle (if there are finished plans)
 	if len(s.treeHistory) > 0 {
 		rows = append(rows, sidebarRow{
-			Kind:  rowKindHistoryToggle,
-			ID:    SidebarPlanHistoryToggle,
-			Label: "History",
+			Kind:   rowKindHistoryToggle,
+			ID:     SidebarPlanHistoryToggle,
+			Label:  "History",
+			Indent: 0,
+		})
+	}
+
+	// Cancelled plans (shown at bottom with strikethrough)
+	for _, p := range s.treeCancelled {
+		rows = append(rows, sidebarRow{
+			Kind:     rowKindCancelled,
+			ID:       SidebarPlanPrefix + p.Filename,
+			Label:    planstate.DisplayName(p.Filename),
+			PlanFile: p.Filename,
+			Indent:   0,
 		})
 	}
 
 	s.rows = rows
+
+	// Clamp selectedIdx
+	if s.selectedIdx >= len(rows) {
+		s.selectedIdx = len(rows) - 1
+	}
+	if s.selectedIdx < 0 {
+		s.selectedIdx = 0
+	}
 }
 
 // planStageRows returns the four lifecycle stage rows for a plan.
-func planStageRows(p PlanDisplay) []sidebarRow {
+func planStageRows(p PlanDisplay, indent int) []sidebarRow {
 	stages := []struct{ name, label string }{
 		{"plan", "Plan"},
 		{"implement", "Implement"},
@@ -545,6 +586,7 @@ func planStageRows(p PlanDisplay) []sidebarRow {
 			Done:     done,
 			Active:   active,
 			Locked:   locked,
+			Indent:   indent,
 		})
 	}
 	return rows
