@@ -95,5 +95,9 @@
   "2026-02-21-topics-collision-domains.md": {
     "status": "done",
     "implemented": "2026-02-21"
+  },
+  "2026-02-21-global-skill-sync.md": {
+    "status": "done",
+    "implemented": "2026-02-22"
   }
 }
