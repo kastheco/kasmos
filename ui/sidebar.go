@@ -55,15 +55,56 @@ var searchActiveBarStyle = lipgloss.NewStyle().
 	Padding(0, 1)
 
 const (
-	SidebarAll        = "__all__"
-	SidebarUngrouped  = "__ungrouped__"
-	SidebarPlanPrefix = "__plan__"
+	SidebarAll               = "__all__"
+	SidebarUngrouped         = "__ungrouped__"
+	SidebarPlanPrefix        = "__plan__"
+	SidebarTopicPrefix       = "__topic__"
+	SidebarPlanStagePrefix   = "__plan_stage__"
+	SidebarPlanHistoryToggle = "__plan_history_toggle__"
 )
 
 // PlanDisplay holds plan info for sidebar rendering.
 type PlanDisplay struct {
-	Filename string
-	Status   string
+	Filename    string
+	Status      string
+	Description string
+	Branch      string
+	Topic       string
+}
+
+// TopicDisplay holds a topic and its plans for sidebar rendering.
+type TopicDisplay struct {
+	Name  string
+	Plans []PlanDisplay
+}
+
+// sidebarRowKind identifies the type of a sidebar row.
+type sidebarRowKind int
+
+const (
+	rowKindItem          sidebarRowKind = iota // regular item (All, Ungrouped)
+	rowKindSection                             // section header
+	rowKindTopic                               // topic header
+	rowKindPlan                                // plan header
+	rowKindStage                               // plan lifecycle stage
+	rowKindHistoryToggle                       // "History" toggle row
+)
+
+// sidebarRow is a single rendered row in the sidebar.
+type sidebarRow struct {
+	Kind      sidebarRowKind
+	ID        string
+	Label     string
+	PlanFile  string
+	Stage     string
+	Collapsed bool
+	// display flags
+	HasRunning      bool
+	HasNotification bool
+	Count           int
+	Done            bool // stage is completed
+	Active          bool // stage is currently active
+	Locked          bool // stage is not yet reachable
 }
 
 // dimmedTopicStyle is for topics with no matching instances during search
@@ -105,6 +146,16 @@ type Sidebar struct {
 
 	repoName    string // current repo name shown at bottom
 	repoHovered bool   // true when mouse is hovering over the repo button
+
+	// Three-level tree state (Task 3)
+	rows           []sidebarRow
+	expandedTopics map[string]bool
+	expandedPlans  map[string]bool
+	// stored data for rebuild
+	treeTopics    []TopicDisplay
+	treeUngrouped []PlanDisplay
+	treeHistory   []PlanDisplay
+	useTreeMode   bool // true when SetTopicsAndPlans has been called
 }
 
 // SetPlans stores unfinished plans for sidebar display.
@@ -117,8 +168,10 @@ func NewSidebar() *Sidebar {
 		items: []SidebarItem{
 			{Name: "All", ID: SidebarAll},
 		},
-		selectedIdx: 0,
-		focused:     true,
+		selectedIdx:    0,
+		focused:        true,
+		expandedTopics: make(map[string]bool),
+		expandedPlans:  make(map[string]bool),
 	}
 }
 
@@ -225,6 +278,12 @@ func (s *Sidebar) GetSelectedIdx() int {
 }
 
 func (s *Sidebar) GetSelectedID() string {
+	if s.useTreeMode {
+		if s.selectedIdx < len(s.rows) {
+			return s.rows[s.selectedIdx].ID
+		}
+		return ""
+	}
 	if len(s.items) == 0 {
 		return SidebarAll
 	}
@@ -241,6 +300,12 @@ func (s *Sidebar) GetSelectedPlanFile() string {
 }
 
 func (s *Sidebar) Up() {
+	if s.useTreeMode {
+		if s.selectedIdx > 0 {
+			s.selectedIdx--
+		}
+		return
+	}
 	for i := s.selectedIdx - 1; i >= 0; i-- {
 		if !s.items[i].IsSection {
 			s.selectedIdx = i
@@ -250,6 +315,12 @@ func (s *Sidebar) Up() {
 }
 
 func (s *Sidebar) Down() {
+	if s.useTreeMode {
+		if s.selectedIdx < len(s.rows)-1 {
+			s.selectedIdx++
+		}
+		return
+	}
 	for i := s.selectedIdx + 1; i < len(s.items); i++ {
 		if !s.items[i].IsSection {
 			s.selectedIdx = i
@@ -261,6 +332,12 @@ func (s *Sidebar) Down() {
 // ClickItem selects a sidebar item by its rendered row offset (0-indexed from the first item).
 // Section headers count as a row but are skipped for selection.
 func (s *Sidebar) ClickItem(row int) {
+	if s.useTreeMode {
+		if row >= 0 && row < len(s.rows) {
+			s.selectedIdx = row
+		}
+		return
+	}
 	currentRow := 0
 	for i, item := range s.items {
 		if currentRow == row {
@@ -311,34 +388,211 @@ func (s *Sidebar) IsSearchActive() bool    { return s.searchActive }
 func (s *Sidebar) GetSearchQuery() string  { return s.searchQuery }
 func (s *Sidebar) SetSearchQuery(q string) { s.searchQuery = q }
 
-// GetSelectedTopicName returns the topic name if a topic row is selected, or "".
-// Full implementation in Task 3 (three-level sidebar tree).
-func (s *Sidebar) GetSelectedTopicName() string {
-	return "" // stub — implemented in Task 3
+// SetTopicsAndPlans sets the three-level tree data and rebuilds rows.
+func (s *Sidebar) SetTopicsAndPlans(topics []TopicDisplay, ungrouped []PlanDisplay, history []PlanDisplay) {
+	s.treeTopics = topics
+	s.treeUngrouped = ungrouped
+	s.treeHistory = history
+	s.useTreeMode = true
+	s.rebuildRows()
 }
 
-// IsSelectedTopicHeader returns true if a topic header row is selected.
-// Full implementation in Task 3.
-func (s *Sidebar) IsSelectedTopicHeader() bool {
-	return false // stub — implemented in Task 3
+// rebuildRows rebuilds the flat row list from the tree structure.
+func (s *Sidebar) rebuildRows() {
+	rows := []sidebarRow{}
+
+	// Ungrouped plans (shown at top level, always visible)
+	for _, p := range s.treeUngrouped {
+		rows = append(rows, sidebarRow{
+			Kind:            rowKindPlan,
+			ID:              SidebarPlanPrefix + p.Filename,
+			Label:           planstate.DisplayName(p.Filename),
+			PlanFile:        p.Filename,
+			Collapsed:       !s.expandedPlans[p.Filename],
+			HasRunning:      p.Status == "in_progress",
+			HasNotification: p.Status == "reviewing",
+		})
+		// If expanded, add stage rows
+		if s.expandedPlans[p.Filename] {
+			rows = append(rows, planStageRows(p)...)
+		}
+	}
+
+	// Topic headers (collapsed by default)
+	for _, t := range s.treeTopics {
+		rows = append(rows, sidebarRow{
+			Kind:      rowKindTopic,
+			ID:        SidebarTopicPrefix + t.Name,
+			Label:     t.Name,
+			Collapsed: !s.expandedTopics[t.Name],
+		})
+		// If expanded, add plan rows under topic
+		if s.expandedTopics[t.Name] {
+			for _, p := range t.Plans {
+				rows = append(rows, sidebarRow{
+					Kind:            rowKindPlan,
+					ID:              SidebarPlanPrefix + p.Filename,
+					Label:           planstate.DisplayName(p.Filename),
+					PlanFile:        p.Filename,
+					Collapsed:       !s.expandedPlans[p.Filename],
+					HasRunning:      p.Status == "in_progress",
+					HasNotification: p.Status == "reviewing",
+				})
+				if s.expandedPlans[p.Filename] {
+					rows = append(rows, planStageRows(p)...)
+				}
+			}
+		}
+	}
+
+	// History toggle (if there are finished plans)
+	if len(s.treeHistory) > 0 {
+		rows = append(rows, sidebarRow{
+			Kind:  rowKindHistoryToggle,
+			ID:    SidebarPlanHistoryToggle,
+			Label: "History",
+		})
+	}
+
+	s.rows = rows
+
+	// Clamp selectedIdx
+	if s.selectedIdx >= len(rows) {
+		s.selectedIdx = len(rows) - 1
+	}
+	if s.selectedIdx < 0 {
+		s.selectedIdx = 0
+	}
 }
 
-// IsSelectedPlanHeader returns true if a plan header row is selected.
-// Full implementation in Task 3.
-func (s *Sidebar) IsSelectedPlanHeader() bool {
-	return false // stub — implemented in Task 3
+// planStageRows returns the four lifecycle stage rows for a plan.
+func planStageRows(p PlanDisplay) []sidebarRow {
+	stages := []struct{ name, label string }{
+		{"plan", "Plan"},
+		{"implement", "Implement"},
+		{"review", "Review"},
+		{"finished", "Finished"},
+	}
+	rows := make([]sidebarRow, 0, 4)
+	for _, st := range stages {
+		done, active, locked := stageState(p.Status, st.name)
+		rows = append(rows, sidebarRow{
+			Kind:     rowKindStage,
+			ID:       SidebarPlanStagePrefix + p.Filename + "::" + st.name,
+			Label:    st.label,
+			PlanFile: p.Filename,
+			Stage:    st.name,
+			Done:     done,
+			Active:   active,
+			Locked:   locked,
+		})
+	}
+	return rows
 }
 
-// ToggleSelectedExpand toggles expand/collapse of a topic or plan row.
-// Full implementation in Task 3.
+// stageState returns (done, active, locked) for a stage given the plan status.
+func stageState(status, stage string) (done, active, locked bool) {
+	switch stage {
+	case "plan":
+		done = status == "in_progress" || status == "reviewing" || status == "done" || status == "completed"
+		active = status == "ready"
+		locked = false
+	case "implement":
+		done = status == "reviewing" || status == "done" || status == "completed"
+		active = status == "in_progress"
+		locked = status == "ready"
+	case "review":
+		done = status == "done" || status == "completed"
+		active = status == "reviewing"
+		locked = status == "ready" || status == "in_progress"
+	case "finished":
+		done = status == "done" || status == "completed"
+		active = false
+		locked = !(status == "reviewing" || status == "done" || status == "completed")
+	}
+	return
+}
+
+// ToggleSelectedExpand toggles expand/collapse of the selected topic or plan row.
+// Returns true if the toggle was handled (row was a topic or plan header).
 func (s *Sidebar) ToggleSelectedExpand() bool {
-	return false // stub — implemented in Task 3
+	if !s.useTreeMode || s.selectedIdx >= len(s.rows) {
+		return false
+	}
+	row := s.rows[s.selectedIdx]
+	switch row.Kind {
+	case rowKindTopic:
+		topicName := row.ID[len(SidebarTopicPrefix):]
+		s.expandedTopics[topicName] = !s.expandedTopics[topicName]
+		s.rebuildRows()
+		return true
+	case rowKindPlan:
+		s.expandedPlans[row.PlanFile] = !s.expandedPlans[row.PlanFile]
+		s.rebuildRows()
+		return true
+	}
+	return false
 }
 
 // GetSelectedPlanStage returns the plan file and stage if a stage row is selected.
-// Full implementation in Task 3.
 func (s *Sidebar) GetSelectedPlanStage() (planFile, stage string, ok bool) {
-	return "", "", false // stub — implemented in Task 3
+	if !s.useTreeMode || s.selectedIdx >= len(s.rows) {
+		return "", "", false
+	}
+	row := s.rows[s.selectedIdx]
+	if row.Kind == rowKindStage {
+		return row.PlanFile, row.Stage, true
+	}
+	return "", "", false
+}
+
+// GetSelectedTopicName returns the topic name if a topic row is selected, or "".
+func (s *Sidebar) GetSelectedTopicName() string {
+	if !s.useTreeMode || s.selectedIdx >= len(s.rows) {
+		return ""
+	}
+	row := s.rows[s.selectedIdx]
+	if row.Kind == rowKindTopic {
+		return row.ID[len(SidebarTopicPrefix):]
+	}
+	return ""
+}
+
+// IsSelectedTopicHeader returns true if a topic header row is selected.
+func (s *Sidebar) IsSelectedTopicHeader() bool {
+	if !s.useTreeMode || s.selectedIdx >= len(s.rows) {
+		return false
+	}
+	return s.rows[s.selectedIdx].Kind == rowKindTopic
+}
+
+// IsSelectedPlanHeader returns true if a plan header row is selected.
+func (s *Sidebar) IsSelectedPlanHeader() bool {
+	if !s.useTreeMode || s.selectedIdx >= len(s.rows) {
+		return false
+	}
+	return s.rows[s.selectedIdx].Kind == rowKindPlan
+}
+
+// HasRowID returns true if any row has the given ID. Used in tests.
+func (s *Sidebar) HasRowID(id string) bool {
+	for _, row := range s.rows {
+		if row.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// SelectByID selects the row with the given ID. Returns true if found.
+func (s *Sidebar) SelectByID(id string) bool {
+	for i, row := range s.rows {
+		if row.ID == id {
+			s.selectedIdx = i
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Sidebar) String() string {

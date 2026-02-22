@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/kastheco/klique/config/planstate"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPlanDisplayName(t *testing.T) {
@@ -48,4 +50,105 @@ func TestGetSelectedPlanFile(t *testing.T) {
 	if got := s.GetSelectedPlanFile(); got != "plan.md" {
 		t.Fatalf("GetSelectedPlanFile() = %q, want %q", got, "plan.md")
 	}
+}
+
+func TestSidebarTopicTree(t *testing.T) {
+	s := NewSidebar()
+
+	s.SetTopicsAndPlans(
+		[]TopicDisplay{
+			{Name: "ui-refactor", Plans: []PlanDisplay{
+				{Filename: "sidebar.md", Status: "in_progress"},
+				{Filename: "menu.md", Status: "ready"},
+			}},
+		},
+		[]PlanDisplay{{Filename: "bugfix.md", Status: "ready"}}, // ungrouped
+		nil, // history
+	)
+
+	// Topic header should exist
+	require.True(t, s.HasRowID(SidebarTopicPrefix+"ui-refactor"))
+	// Ungrouped plan should exist at top level
+	require.True(t, s.HasRowID(SidebarPlanPrefix+"bugfix.md"))
+}
+
+func TestSidebarExpandTopic(t *testing.T) {
+	s := NewSidebar()
+	s.SetTopicsAndPlans(
+		[]TopicDisplay{
+			{Name: "ui", Plans: []PlanDisplay{
+				{Filename: "a.md", Status: "ready"},
+			}},
+		},
+		nil, nil,
+	)
+
+	// Topic starts collapsed — plan should not be visible
+	assert.False(t, s.HasRowID(SidebarPlanPrefix+"a.md"))
+
+	// Expand topic
+	s.SelectByID(SidebarTopicPrefix + "ui")
+	s.ToggleSelectedExpand()
+
+	// Now plan should be visible
+	assert.True(t, s.HasRowID(SidebarPlanPrefix+"a.md"))
+}
+
+func TestSidebarExpandPlanStages(t *testing.T) {
+	s := NewSidebar()
+	s.SetTopicsAndPlans(
+		nil,
+		[]PlanDisplay{{Filename: "fix.md", Status: "in_progress"}},
+		nil,
+	)
+
+	// Expand ungrouped plan
+	s.SelectByID(SidebarPlanPrefix + "fix.md")
+	s.ToggleSelectedExpand()
+
+	// Stage rows should appear
+	assert.True(t, s.HasRowID(SidebarPlanStagePrefix+"fix.md::plan"))
+	assert.True(t, s.HasRowID(SidebarPlanStagePrefix+"fix.md::implement"))
+	assert.True(t, s.HasRowID(SidebarPlanStagePrefix+"fix.md::review"))
+	assert.True(t, s.HasRowID(SidebarPlanStagePrefix+"fix.md::finished"))
+}
+
+func TestSidebarGetSelectedPlanStage(t *testing.T) {
+	s := NewSidebar()
+	s.SetTopicsAndPlans(
+		nil,
+		[]PlanDisplay{{Filename: "fix.md", Status: "reviewing"}},
+		nil,
+	)
+
+	s.SelectByID(SidebarPlanPrefix + "fix.md")
+	s.ToggleSelectedExpand()
+	s.SelectByID(SidebarPlanStagePrefix + "fix.md::review")
+
+	planFile, stage, ok := s.GetSelectedPlanStage()
+	require.True(t, ok)
+	assert.Equal(t, "fix.md", planFile)
+	assert.Equal(t, "review", stage)
+}
+
+func TestSidebarGetSelectedTopicName(t *testing.T) {
+	s := NewSidebar()
+	s.SetTopicsAndPlans(
+		[]TopicDisplay{{Name: "auth", Plans: nil}},
+		nil, nil,
+	)
+
+	s.SelectByID(SidebarTopicPrefix + "auth")
+	name := s.GetSelectedTopicName()
+	assert.Equal(t, "auth", name)
+}
+
+func TestSidebarPlanHistory(t *testing.T) {
+	s := NewSidebar()
+	s.SetTopicsAndPlans(
+		nil, nil,
+		[]PlanDisplay{{Filename: "old.md", Status: "completed"}},
+	)
+
+	assert.True(t, s.HasRowID(SidebarPlanHistoryToggle))
 }

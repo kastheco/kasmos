@@ -409,18 +409,62 @@ func (m *home) loadPlanState() {
 	m.planState = ps
 }
 
-// updateSidebarPlans pushes the current unfinished plans into the sidebar.
+// updateSidebarPlans pushes the current plans into the sidebar using the three-level tree API.
 func (m *home) updateSidebarPlans() {
 	if m.planState == nil {
-		m.sidebar.SetPlans(nil)
+		m.sidebar.SetTopicsAndPlans(nil, nil, nil)
 		return
 	}
-	unfinished := m.planState.Unfinished()
-	plans := make([]ui.PlanDisplay, 0, len(unfinished))
-	for _, p := range unfinished {
-		plans = append(plans, ui.PlanDisplay{Filename: p.Filename, Status: string(p.Status)})
+
+	// Build topic displays
+	topicInfos := m.planState.Topics()
+	topics := make([]ui.TopicDisplay, 0, len(topicInfos))
+	for _, t := range topicInfos {
+		plans := m.planState.PlansByTopic(t.Name)
+		planDisplays := make([]ui.PlanDisplay, 0, len(plans))
+		for _, p := range plans {
+			if p.Status == planstate.StatusDone || p.Status == planstate.StatusCompleted {
+				continue // finished plans go to history
+			}
+			planDisplays = append(planDisplays, ui.PlanDisplay{
+				Filename:    p.Filename,
+				Status:      string(p.Status),
+				Description: p.Description,
+				Branch:      p.Branch,
+				Topic:       p.Topic,
+			})
+		}
+		if len(planDisplays) > 0 {
+			topics = append(topics, ui.TopicDisplay{Name: t.Name, Plans: planDisplays})
+		}
 	}
-	m.sidebar.SetPlans(plans)
+
+	// Build ungrouped plans
+	ungroupedInfos := m.planState.UngroupedPlans()
+	ungrouped := make([]ui.PlanDisplay, 0, len(ungroupedInfos))
+	for _, p := range ungroupedInfos {
+		ungrouped = append(ungrouped, ui.PlanDisplay{
+			Filename:    p.Filename,
+			Status:      string(p.Status),
+			Description: p.Description,
+			Branch:      p.Branch,
+		})
+	}
+
+	// Build history
+	finishedInfos := m.planState.Finished()
+	history := make([]ui.PlanDisplay, 0, len(finishedInfos))
+	for _, p := range finishedInfos {
+		history = append(history, ui.PlanDisplay{
+			Filename:    p.Filename,
+			Status:      string(p.Status),
+			Description: p.Description,
+			Branch:      p.Branch,
+			Topic:       p.Topic,
+		})
+	}
+
+	m.sidebar.SetTopicsAndPlans(topics, ungrouped, history)
 }
 
 // checkPlanCompletion scans running coder instances for plans that have been
