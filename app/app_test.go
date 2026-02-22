@@ -464,3 +464,104 @@ func TestConfirmationModalVisualAppearance(t *testing.T) {
 	// Test that the danger indicator is preserved
 	assert.Contains(t, rendered, "[!")
 }
+
+func TestSidebarToggle(t *testing.T) {
+	newTestHome := func() *home {
+		spinner := spinner.New(spinner.WithSpinner(spinner.Dot))
+		return &home{
+			ctx:          context.Background(),
+			state:        stateDefault,
+			appConfig:    config.DefaultConfig(),
+			list:         ui.NewList(&spinner, false),
+			menu:         ui.NewMenu(),
+			sidebar:      ui.NewSidebar(),
+			tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+		}
+	}
+
+	handle := func(t *testing.T, h *home, msg tea.KeyMsg) *home {
+		t.Helper()
+		h.keySent = true
+		model, _ := h.handleKeyPress(msg)
+		homeModel, ok := model.(*home)
+		require.True(t, ok)
+		return homeModel
+	}
+
+	t.Run("ctrl+s hides sidebar and moves focus from sidebar to panel 1", func(t *testing.T) {
+		h := newTestHome()
+		h.sidebarHidden = false
+		h.setFocus(0)
+
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyCtrlS})
+
+		assert.True(t, homeModel.sidebarHidden)
+		assert.Equal(t, 1, homeModel.focusedPanel)
+	})
+
+	t.Run("ctrl+s hides sidebar and keeps focus when panel 1 is focused", func(t *testing.T) {
+		h := newTestHome()
+		h.sidebarHidden = false
+		h.setFocus(1)
+
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyCtrlS})
+
+		assert.True(t, homeModel.sidebarHidden)
+		assert.Equal(t, 1, homeModel.focusedPanel)
+	})
+
+	t.Run("ctrl+s shows sidebar and keeps focus when sidebar is hidden", func(t *testing.T) {
+		h := newTestHome()
+		h.sidebarHidden = true
+		h.setFocus(2)
+
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyCtrlS})
+
+		assert.False(t, homeModel.sidebarHidden)
+		assert.Equal(t, 2, homeModel.focusedPanel)
+	})
+
+	t.Run("left reveals sidebar without moving focus when panel 1 is focused and sidebar is hidden", func(t *testing.T) {
+		h := newTestHome()
+		h.sidebarHidden = true
+		h.setFocus(1)
+
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyLeft})
+
+		assert.False(t, homeModel.sidebarHidden)
+		assert.Equal(t, 1, homeModel.focusedPanel)
+	})
+
+	t.Run("h moves focus to sidebar when panel 1 is focused and sidebar is visible", func(t *testing.T) {
+		h := newTestHome()
+		h.sidebarHidden = false
+		h.setFocus(1)
+
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+
+		assert.False(t, homeModel.sidebarHidden)
+		assert.Equal(t, 0, homeModel.focusedPanel)
+	})
+
+	t.Run("s reveals sidebar without moving focus when sidebar is hidden", func(t *testing.T) {
+		h := newTestHome()
+		h.sidebarHidden = true
+		h.setFocus(2)
+
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+
+		assert.False(t, homeModel.sidebarHidden)
+		assert.Equal(t, 2, homeModel.focusedPanel)
+	})
+
+	t.Run("s moves focus to sidebar when sidebar is visible", func(t *testing.T) {
+		h := newTestHome()
+		h.sidebarHidden = false
+		h.setFocus(2)
+
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+
+		assert.False(t, homeModel.sidebarHidden)
+		assert.Equal(t, 0, homeModel.focusedPanel)
+	})
+}
