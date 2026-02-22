@@ -134,6 +134,7 @@ type InstanceMetadata struct {
 	CPUPercent         float64
 	MemMB              float64
 	ResourceUsageValid bool
+	TmuxAlive          bool // tmux has-session result (for reviewer completion check)
 }
 
 // CollectMetadata gathers all per-tick data for this instance via subprocess calls.
@@ -166,6 +167,9 @@ func (i *Instance) CollectMetadata() InstanceMetadata {
 
 	// Resource usage (pgrep + ps)
 	m.CPUPercent, m.MemMB, m.ResourceUsageValid = i.collectResourceUsage()
+
+	// Session liveness (tmux has-session) — used by reviewer completion check.
+	m.TmuxAlive = i.TmuxAlive()
 
 	return m
 }

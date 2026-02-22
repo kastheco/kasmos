@@ -396,6 +396,8 @@ func (m *home) killGitTab() {
 }
 
 // loadPlanState reads plan-state.json from the active repo's docs/plans/ directory.
+// Called on user-triggered events (plan creation, repo switch, etc.). The periodic
+// metadata tick loads plan state in its goroutine instead.
 // Silently no-ops if the file is missing (project may not use plans).
 func (m *home) loadPlanState() {
 	if m.planStateDir == "" {
@@ -513,31 +515,7 @@ func (m *home) checkPlanCompletion() tea.Cmd {
 	return nil
 }
 
-// checkReviewerCompletion detects reviewer sessions whose tmux pane has died
-// (agent exited after completing the review) and marks the plan as done.
-func (m *home) checkReviewerCompletion() {
-	if m.planState == nil {
-		return
-	}
-	for _, inst := range m.list.GetInstances() {
-		if inst.PlanFile == "" || !inst.IsReviewer || !inst.Started() || inst.Paused() {
-			continue
-		}
-		if inst.TmuxAlive() {
-			continue
-		}
-		// Reviewer's tmux session is gone — mark plan completed (terminal) only if still reviewing.
-		// Using StatusCompleted (not StatusDone) breaks the infinite spawn cycle: IsDone()
-		// only matches StatusDone, so the coder instance will not trigger another reviewer.
-		entry := m.planState.Plans[inst.PlanFile]
-		if entry.Status != planstate.StatusReviewing {
-			continue
-		}
-		if err := m.planState.SetStatus(inst.PlanFile, planstate.StatusCompleted); err != nil {
-			log.WarningLog.Printf("could not mark plan %q completed: %v", inst.PlanFile, err)
-		}
-	}
-}
+
 
 // transitionToReview marks a plan as "reviewing", pauses the coder session,
 // spawns a reviewer session with the reviewer profile, and returns the start cmd.
