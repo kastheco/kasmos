@@ -212,6 +212,34 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			return nil
 		}
 		return m, m.confirmAction(fmt.Sprintf("Cancel plan '%s'?", planName), cancelAction)
+
+	case "kill_running_instances_in_plan":
+		planFile := m.sidebar.GetSelectedPlanFile()
+		if planFile == "" {
+			return m, nil
+		}
+
+		doKill := func() {
+			for i := len(m.allInstances) - 1; i >= 0; i-- {
+				if m.allInstances[i].PlanFile == planFile {
+					m.allInstances = append(m.allInstances[:i], m.allInstances[i+1:]...)
+				}
+			}
+			m.list.KillInstancesByPlan(planFile)
+			_ = m.saveAllInstances()
+			m.updateSidebarItems()
+		}
+
+		message := fmt.Sprintf("[!] Kill running instances in plan '%s'?", planstate.DisplayName(planFile))
+		m.state = stateConfirm
+		m.confirmationOverlay = overlay.NewConfirmationOverlay(message)
+		m.confirmationOverlay.SetWidth(50)
+		m.confirmationOverlay.OnConfirm = doKill
+		m.pendingConfirmAction = func() tea.Msg {
+			doKill()
+			return instanceChangedMsg{}
+		}
+		return m, nil
 	}
 
 	return m, nil
@@ -284,6 +312,7 @@ func (m *home) openPlanContextMenu() (tea.Model, tea.Cmd) {
 	items := []overlay.ContextMenuItem{
 		{Label: "Start plan", Action: "start_plan"},
 		{Label: "View plan", Action: "view_plan"},
+		{Label: "Kill running instances", Action: "kill_running_instances_in_plan"},
 		{Label: "Push branch", Action: "push_plan_branch"},
 		{Label: "Create PR", Action: "create_plan_pr"},
 		{Label: "Mark done", Action: "mark_plan_done"},
