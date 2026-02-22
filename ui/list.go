@@ -173,6 +173,25 @@ func (l *List) Kill() {
 	}
 }
 
+// RemoveByPlan removes all instances belonging to planFile from the list without
+// calling inst.Kill(). Use this from Update handlers where I/O must not happen;
+// the caller is responsible for killing the processes beforehand (in a goroutine).
+func (l *List) RemoveByPlan(planFile string) {
+	var remaining []*session.Instance
+	for _, inst := range l.allItems {
+		if inst.PlanFile == planFile {
+			repoName, err := inst.RepoName()
+			if err == nil {
+				l.rmRepo(repoName)
+			}
+		} else {
+			remaining = append(remaining, inst)
+		}
+	}
+	l.allItems = remaining
+	l.rebuildFilteredItems()
+}
+
 // KillInstancesByPlan kills and removes all instances belonging to the given plan file.
 func (l *List) KillInstancesByPlan(planFile string) {
 	var remaining []*session.Instance

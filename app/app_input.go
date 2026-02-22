@@ -803,10 +803,12 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			return m, m.handleError(
 				fmt.Errorf("you can't create more than %d instances", GlobalInstanceLimit))
 		}
+		planFile := m.sidebar.GetSelectedPlanFile()
 		instance, err := session.NewInstance(session.InstanceOptions{
-			Title:   "",
-			Path:    m.activeRepoPath,
-			Program: m.program,
+			Title:    "",
+			Path:     m.activeRepoPath,
+			Program:  m.program,
+			PlanFile: planFile,
 		})
 		if err != nil {
 			return m, m.handleError(err)
@@ -825,10 +827,12 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			return m, m.handleError(
 				fmt.Errorf("you can't create more than %d instances", GlobalInstanceLimit))
 		}
+		planFile := m.sidebar.GetSelectedPlanFile()
 		instance, err := session.NewInstance(session.InstanceOptions{
-			Title:   "",
-			Path:    m.activeRepoPath,
-			Program: m.program,
+			Title:    "",
+			Path:     m.activeRepoPath,
+			Program:  m.program,
+			PlanFile: planFile,
 		})
 		if err != nil {
 			return m, m.handleError(err)
@@ -846,10 +850,12 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			return m, m.handleError(
 				fmt.Errorf("you can't create more than %d instances", GlobalInstanceLimit))
 		}
+		planFile := m.sidebar.GetSelectedPlanFile()
 		instance, err := session.NewInstance(session.InstanceOptions{
 			Title:           "",
 			Path:            m.activeRepoPath,
 			Program:         m.program,
+			PlanFile:        planFile,
 			SkipPermissions: true,
 		})
 		if err != nil {

@@ -590,6 +590,19 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateSidebarPlans()
 		m.updateSidebarItems()
 		return m, tea.WindowSize()
+	case killPlanInstancesMsg:
+		// Goroutine already called inst.Kill() for each instance; apply model mutations here.
+		remaining := m.allInstances[:0]
+		for _, inst := range m.allInstances {
+			if inst.PlanFile != msg.planFile {
+				remaining = append(remaining, inst)
+			}
+		}
+		m.allInstances = remaining
+		m.list.RemoveByPlan(msg.planFile)
+		m.saveAllInstances()
+		m.updateSidebarItems()
+		return m, tea.Batch(tea.WindowSize(), m.instanceChanged())
 	case instanceStartedMsg:
 		if msg.err != nil {
 			m.list.Kill()
@@ -676,6 +689,8 @@ func (m *home) View() string {
 		result = overlay.PlaceOverlay(0, 0, m.textInputOverlay.Render(), mainView, true, true)
 	case m.state == stateNewPlanTopic && m.pickerOverlay != nil:
 		result = overlay.PlaceOverlay(0, 0, m.pickerOverlay.Render(), mainView, true, true)
+	case m.state == stateMoveTo && m.pickerOverlay != nil:
+		result = overlay.PlaceOverlay(0, 0, m.pickerOverlay.Render(), mainView, true, true)
 	case m.state == stateRepoSwitch && m.pickerOverlay != nil:
 		// Position near the repo button at the bottom of the sidebar
 		pickerX := 1
@@ -752,6 +767,10 @@ type killInstanceMsg struct {
 
 // planRefreshMsg triggers a plan state reload and sidebar refresh in Update.
 type planRefreshMsg struct{}
+
+// killPlanInstancesMsg is sent by the kill_running_instances_in_plan goroutine
+// after all I/O (inst.Kill) is complete. Model mutations happen in Update.
+type killPlanInstancesMsg struct{ planFile string }
 
 // instanceStartedMsg is sent when an async instance startup completes.
 type instanceStartedMsg struct {

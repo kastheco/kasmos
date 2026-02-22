@@ -8,20 +8,54 @@ import (
 	"github.com/kastheco/klique/config/planstate"
 	"github.com/kastheco/klique/session"
 	"github.com/kastheco/klique/ui"
+	"github.com/kastheco/klique/ui/overlay"
 )
 
-func TestExecuteContextAction_KillRunningInstancesInPlan(t *testing.T) {
+func newHomeForPlanActionTests(t *testing.T) *home {
+	t.Helper()
 	sp := spinner.New()
-	h := &home{
-		ctx:     context.Background(),
-		list:    ui.NewList(&sp, false),
-		sidebar: ui.NewSidebar(),
-		menu:    ui.NewMenu(),
-		planState: &planstate.PlanState{Plans: map[string]planstate.PlanEntry{
-			"2026-02-21-alpha.md": {Status: planstate.StatusInProgress},
-			"2026-02-21-beta.md":  {Status: planstate.StatusReady},
-		}},
+	return &home{
+		ctx:          context.Background(),
+		list:         ui.NewList(&sp, false),
+		sidebar:      ui.NewSidebar(),
+		menu:         ui.NewMenu(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+		toastManager: overlay.NewToastManager(&sp),
+		planState: &planstate.PlanState{
+			Dir: t.TempDir(),
+			Plans: map[string]planstate.PlanEntry{
+				"2026-02-21-alpha.md": {Status: planstate.StatusInProgress},
+				"2026-02-21-beta.md":  {Status: planstate.StatusReady},
+			},
+		},
 	}
+}
+
+// TestCancelPlan_PendingActionReturnsPlanRefreshMsg verifies that the async
+// cancel_plan action (run in a goroutine by confirmAction) returns planRefreshMsg
+// so model mutations stay in Update, not in the goroutine.
+func TestCancelPlan_PendingActionReturnsPlanRefreshMsg(t *testing.T) {
+	h := newHomeForPlanActionTests(t)
+	h.updateSidebarPlans()
+	h.updateSidebarItems()
+	h.sidebar.ClickItem(2) // select alpha plan
+
+	_, _ = h.executeContextAction("cancel_plan")
+	if h.pendingConfirmAction == nil {
+		t.Fatalf("expected pendingConfirmAction to be set")
+	}
+
+	msg := h.pendingConfirmAction()
+	if _, ok := msg.(planRefreshMsg); !ok {
+		t.Fatalf("pendingConfirmAction returned %T, want planRefreshMsg", msg)
+	}
+}
+
+// TestExecuteContextAction_KillRunningInstancesInPlan verifies the real async flow:
+// pendingConfirmAction does only I/O and returns killPlanInstancesMsg; model
+// mutations happen only inside Update.
+func TestExecuteContextAction_KillRunningInstancesInPlan(t *testing.T) {
+	h := newHomeForPlanActionTests(t)
 	h.updateSidebarPlans()
 
 	mk := func(title, planFile string) *session.Instance {
@@ -43,10 +77,36 @@ func TestExecuteContextAction_KillRunningInstancesInPlan(t *testing.T) {
 	if h.confirmationOverlay == nil {
 		t.Fatalf("expected confirmation overlay")
 	}
-
-	h.confirmationOverlay.OnConfirm()
-
-	if len(h.allInstances) != 1 || h.allInstances[0].Title != "beta" {
-		t.Fatalf("remaining instances mismatch: %+v", h.allInstances)
+	if h.pendingConfirmAction == nil {
+		t.Fatalf("expected pendingConfirmAction to be set")
 	}
+
+	// Run the async action — must return killPlanInstancesMsg, not mutate model directly.
+	msg := h.pendingConfirmAction()
+	km, ok := msg.(killPlanInstancesMsg)
+	if !ok {
+		t.Fatalf("pendingConfirmAction returned %T, want killPlanInstancesMsg", msg)
+	}
+	if km.planFile != "2026-02-21-alpha.md" {
+		t.Fatalf("killPlanInstancesMsg.planFile = %q, want 2026-02-21-alpha.md", km.planFile)
+	}
+
+	// Apply the message through Update — this is where model mutations happen.
+	newModel, _ := h.Update(km)
+	newHome := newModel.(*home)
+
+	if len(newHome.allInstances) != 1 || newHome.allInstances[0].Title != "beta" {
+		t.Fatalf("remaining allInstances = %v, want [beta]", instanceTitles(newHome.allInstances))
+	}
+	if newHome.list.NumInstances() != 1 {
+		t.Fatalf("list.NumInstances() = %d, want 1", newHome.list.NumInstances())
+	}
+}
+
+func instanceTitles(insts []*session.Instance) []string {
+	out := make([]string, len(insts))
+	for i, inst := range insts {
+		out[i] = inst.Title
+	}
+	return out
 }

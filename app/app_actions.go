@@ -206,10 +206,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			if err := m.planState.SetStatus(planFile, planstate.StatusCancelled); err != nil {
 				return err
 			}
-			m.loadPlanState()
-			m.updateSidebarPlans()
-			m.updateSidebarItems()
-			return nil
+			return planRefreshMsg{}
 		}
 		return m, m.confirmAction(fmt.Sprintf("Cancel plan '%s'?", planName), cancelAction)
 
@@ -219,27 +216,24 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		doKill := func() {
-			for i := len(m.allInstances) - 1; i >= 0; i-- {
-				if m.allInstances[i].PlanFile == planFile {
-					m.allInstances = append(m.allInstances[:i], m.allInstances[i+1:]...)
-				}
+		// Snapshot instance pointers before entering the goroutine; the goroutine
+		// must not read m.allInstances (model state) after it starts.
+		var toKill []*session.Instance
+		for _, inst := range m.allInstances {
+			if inst.PlanFile == planFile {
+				toKill = append(toKill, inst)
 			}
-			m.list.KillInstancesByPlan(planFile)
-			_ = m.saveAllInstances()
-			m.updateSidebarItems()
+		}
+
+		killAction := func() tea.Msg {
+			for _, inst := range toKill {
+				_ = inst.Kill() // I/O only — errors are non-fatal
+			}
+			return killPlanInstancesMsg{planFile: planFile}
 		}
 
 		message := fmt.Sprintf("[!] Kill running instances in plan '%s'?", planstate.DisplayName(planFile))
-		m.state = stateConfirm
-		m.confirmationOverlay = overlay.NewConfirmationOverlay(message)
-		m.confirmationOverlay.SetWidth(50)
-		m.confirmationOverlay.OnConfirm = doKill
-		m.pendingConfirmAction = func() tea.Msg {
-			doKill()
-			return instanceChangedMsg{}
-		}
-		return m, nil
+		return m, m.confirmAction(message, killAction)
 	}
 
 	return m, nil
