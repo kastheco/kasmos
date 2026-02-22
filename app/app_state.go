@@ -207,21 +207,62 @@ func (m *home) filterBySearch() {
 	query := strings.ToLower(m.sidebar.GetSearchQuery())
 	if query == "" {
 		m.sidebar.UpdateMatchCounts(nil, 0)
-		m.filterInstancesByTopic()
+		m.filterInstancesByPlan()
 		return
 	}
+
+	// Search is global across all instances regardless of selected plan.
 	m.list.SetSearchFilter(query)
 
-	// Calculate match counts for sidebar dimming
-	matchesByTopic := make(map[string]int)
+	matchesByPlan := make(map[string]int)
 	totalMatches := 0
 	for _, inst := range m.list.GetInstances() {
-		if strings.Contains(strings.ToLower(inst.Title), query) {
-			matchesByTopic[""]++
+		if strings.Contains(strings.ToLower(inst.Title), query) ||
+			strings.Contains(strings.ToLower(inst.PlanFile), query) {
+			matchesByPlan[inst.PlanFile]++
 			totalMatches++
 		}
 	}
-	m.sidebar.UpdateMatchCounts(matchesByTopic, totalMatches)
+	m.sidebar.UpdateMatchCounts(matchesByPlan, totalMatches)
+}
+
+func (m *home) filterInstancesByPlan() {
+	selectedID := m.sidebar.GetSelectedID()
+	switch {
+	case selectedID == ui.SidebarAll:
+		m.list.SetFilter("")
+	case selectedID == ui.SidebarUngrouped:
+		m.list.SetFilter(ui.SidebarUngrouped)
+	case strings.HasPrefix(selectedID, ui.SidebarPlanPrefix):
+		m.list.SetFilter(strings.TrimPrefix(selectedID, ui.SidebarPlanPrefix))
+	default:
+		m.list.SetFilter("")
+	}
+}
+
+func (m *home) getAssignablePlanNames() ([]string, map[string]string) {
+	items := []string{"(Ungrouped)"}
+	mapping := map[string]string{"(Ungrouped)": ""}
+	if m.planState == nil {
+		return items, mapping
+	}
+
+	planFiles := make([]string, 0, len(m.planState.Plans))
+	for filename := range m.planState.Plans {
+		planFiles = append(planFiles, filename)
+	}
+	sort.Strings(planFiles)
+
+	for _, filename := range planFiles {
+		label := planstate.DisplayName(filename)
+		if _, exists := mapping[label]; exists {
+			label = fmt.Sprintf("%s (%s)", label, filename)
+		}
+		items = append(items, label)
+		mapping[label] = filename
+	}
+
+	return items, mapping
 }
 
 // rebuildInstanceList clears the list and repopulates with instances matching activeRepoPath.
