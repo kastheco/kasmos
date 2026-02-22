@@ -284,6 +284,30 @@ func (ps *PlanState) Create(filename, description, branch, topic string, created
 	return ps.save()
 }
 
+// Register adds a new plan entry with metadata and persists to disk.
+// Returns an error if the plan already exists.
+func (ps *PlanState) Register(filename, description, branch string, createdAt time.Time) error {
+	if ps.Plans == nil {
+		ps.Plans = make(map[string]PlanEntry)
+	}
+	if _, exists := ps.Plans[filename]; exists {
+		return fmt.Errorf("plan already exists: %s", filename)
+	}
+	ps.Plans[filename] = PlanEntry{
+		Status:      StatusReady,
+		Description: description,
+		Branch:      branch,
+		CreatedAt:   createdAt.UTC(),
+	}
+	return ps.save()
+}
+
+// Entry returns the PlanEntry for the given filename, and whether it exists.
+func (ps *PlanState) Entry(filename string) (PlanEntry, bool) {
+	entry, ok := ps.Plans[filename]
+	return entry, ok
+}
+
 // Save persists the current state to disk.
 func (ps *PlanState) Save() error {
 	return ps.save()
