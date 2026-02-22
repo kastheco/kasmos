@@ -75,6 +75,8 @@ func runAgentStage(state *State, existing *config.TOMLConfigResult) error {
 				as.Model = profile.Model
 				as.Effort = profile.Effort
 				as.Enabled = profile.Enabled
+				// Explicitly reset temperature so nil in existing config clears the role default.
+				as.Temperature = ""
 				if profile.Temperature != nil {
 					as.Temperature = fmt.Sprintf("%g", *profile.Temperature)
 				}
