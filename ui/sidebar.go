@@ -163,6 +163,7 @@ type Sidebar struct {
 	treeHistory   []PlanDisplay
 	treeCancelled []PlanDisplay
 	useTreeMode   bool // true when SetTopicsAndPlans has been called
+	planStatuses  map[string]TopicStatus
 }
 
 // SetPlans stores unfinished plans for sidebar display.
@@ -179,6 +180,7 @@ func NewSidebar() *Sidebar {
 		focused:        true,
 		expandedTopics: make(map[string]bool),
 		expandedPlans:  make(map[string]bool),
+		planStatuses:   make(map[string]TopicStatus),
 	}
 }
 
@@ -214,7 +216,19 @@ type TopicStatus struct {
 // SetItems updates the sidebar items from the current topics.
 // sharedTopics maps topic name → whether it has a shared worktree.
 // topicStatuses maps topic name → running/notification status.
-func (s *Sidebar) SetItems(topicNames []string, instanceCountByTopic map[string]int, ungroupedCount int, sharedTopics map[string]bool, topicStatuses map[string]TopicStatus) {
+func (s *Sidebar) SetItems(
+	topicNames []string,
+	instanceCountByTopic map[string]int,
+	ungroupedCount int,
+	sharedTopics map[string]bool,
+	topicStatuses map[string]TopicStatus,
+	planStatuses map[string]TopicStatus,
+) {
+	s.planStatuses = planStatuses
+	if s.useTreeMode {
+		s.rebuildRows()
+	}
+
 	totalCount := ungroupedCount
 	for _, c := range instanceCountByTopic {
 		totalCount += c
@@ -240,11 +254,12 @@ func (s *Sidebar) SetItems(topicNames []string, instanceCountByTopic map[string]
 		items = append(items, SidebarItem{Name: "Plans", IsSection: true})
 		for _, p := range s.plans {
 			isCancelled := p.Status == string(planstate.StatusCancelled)
+			planSt := planStatuses[p.Filename]
 			items = append(items, SidebarItem{
 				Name:            planstate.DisplayName(p.Filename),
 				ID:              SidebarPlanPrefix + p.Filename,
-				HasRunning:      !isCancelled && p.Status == string(planstate.StatusInProgress),
-				HasNotification: !isCancelled && p.Status == string(planstate.StatusReviewing),
+				HasRunning:      !isCancelled && (planSt.HasRunning || p.Status == string(planstate.StatusInProgress)),
+				HasNotification: !isCancelled && (planSt.HasNotification || p.Status == string(planstate.StatusReviewing)),
 				IsCancelled:     isCancelled,
 			})
 		}
@@ -417,24 +432,41 @@ func (s *Sidebar) SetTopicsAndPlans(topics []TopicDisplay, ungrouped []PlanDispl
 	s.rebuildRows()
 }
 
+// effectivePlanStatus overlays live runtime status onto plan-state status for display.
+func (s *Sidebar) effectivePlanStatus(p PlanDisplay) string {
+	if p.Status == string(planstate.StatusCancelled) {
+		return p.Status
+	}
+	st := s.planStatuses[p.Filename]
+	if st.HasNotification {
+		return string(planstate.StatusReviewing)
+	}
+	if st.HasRunning {
+		return string(planstate.StatusInProgress)
+	}
+	return p.Status
+}
+
 // rebuildRows rebuilds the flat row list from the tree structure.
 func (s *Sidebar) rebuildRows() {
 	rows := []sidebarRow{}
 
 	// Ungrouped plans (shown at top level, always visible)
 	for _, p := range s.treeUngrouped {
+		effective := p
+		effective.Status = s.effectivePlanStatus(p)
 		rows = append(rows, sidebarRow{
 			Kind:            rowKindPlan,
 			ID:              SidebarPlanPrefix + p.Filename,
 			Label:           planstate.DisplayName(p.Filename),
 			PlanFile:        p.Filename,
 			Collapsed:       !s.expandedPlans[p.Filename],
-			HasRunning:      p.Status == "in_progress",
-			HasNotification: p.Status == "reviewing",
+			HasRunning:      effective.Status == string(planstate.StatusInProgress),
+			HasNotification: effective.Status == string(planstate.StatusReviewing),
 		})
 		// If expanded, add stage rows
 		if s.expandedPlans[p.Filename] {
-			rows = append(rows, planStageRows(p)...)
+			rows = append(rows, planStageRows(effective)...)
 		}
 	}
 
@@ -449,17 +481,19 @@ func (s *Sidebar) rebuildRows() {
 		// If expanded, add plan rows under topic
 		if s.expandedTopics[t.Name] {
 			for _, p := range t.Plans {
+				effective := p
+				effective.Status = s.effectivePlanStatus(p)
 				rows = append(rows, sidebarRow{
 					Kind:            rowKindPlan,
 					ID:              SidebarPlanPrefix + p.Filename,
 					Label:           planstate.DisplayName(p.Filename),
 					PlanFile:        p.Filename,
 					Collapsed:       !s.expandedPlans[p.Filename],
-					HasRunning:      p.Status == "in_progress",
-					HasNotification: p.Status == "reviewing",
+					HasRunning:      effective.Status == string(planstate.StatusInProgress),
+					HasNotification: effective.Status == string(planstate.StatusReviewing),
 				})
 				if s.expandedPlans[p.Filename] {
-					rows = append(rows, planStageRows(p)...)
+					rows = append(rows, planStageRows(effective)...)
 				}
 			}
 		}

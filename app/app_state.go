@@ -21,27 +21,56 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+func mergeTopicStatus(status ui.TopicStatus, inst *session.Instance, started bool) ui.TopicStatus {
+	if started && !inst.Paused() && !inst.PromptDetected {
+		status.HasRunning = true
+	}
+	if inst.Notified {
+		status.HasNotification = true
+	}
+	return status
+}
+
+func mergePlanStatus(status ui.TopicStatus, inst *session.Instance, started bool) ui.TopicStatus {
+	if inst.PlanFile == "" {
+		return status
+	}
+	if started && !inst.Paused() {
+		if inst.IsReviewer {
+			status.HasNotification = true
+		} else {
+			status.HasRunning = true
+		}
+	}
+	if inst.Notified && inst.IsReviewer {
+		status.HasNotification = true
+	}
+	return status
+}
+
 func (m *home) updateSidebarItems() {
 	// Count running/notification instances for status (used by the "All" count badge).
 	// Since topics are now plan-state-based (not instance-based), we still track
 	// instance activity for the top-level status indicators.
 	topicStatuses := make(map[string]ui.TopicStatus)
+	planStatuses := make(map[string]ui.TopicStatus)
 	ungroupedCount := 0
 
 	for _, inst := range m.list.GetInstances() {
 		ungroupedCount++
-		// All instances are ungrouped at the instance level; topics are plan-state-based.
+		started := inst.Started()
+
 		st := topicStatuses[""]
-		if inst.Started() && !inst.Paused() && !inst.PromptDetected {
-			st.HasRunning = true
+		topicStatuses[""] = mergeTopicStatus(st, inst, started)
+
+		if inst.PlanFile == "" {
+			continue
 		}
-		if inst.Notified {
-			st.HasNotification = true
-		}
-		topicStatuses[""] = st
+		planSt := planStatuses[inst.PlanFile]
+		planStatuses[inst.PlanFile] = mergePlanStatus(planSt, inst, started)
 	}
 
-	m.sidebar.SetItems(nil, nil, ungroupedCount, nil, topicStatuses)
+	m.sidebar.SetItems(nil, nil, ungroupedCount, nil, topicStatuses, planStatuses)
 }
 
 // setFocus updates which panel has focus and syncs the focused state to sidebar and list.
@@ -514,8 +543,6 @@ func (m *home) checkPlanCompletion() tea.Cmd {
 	}
 	return nil
 }
-
-
 
 // transitionToReview marks a plan as "reviewing", pauses the coder session,
 // spawns a reviewer session with the reviewer profile, and returns the start cmd.

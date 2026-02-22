@@ -17,10 +17,10 @@ Be specific about issues — cite file paths and line numbers.
 
 ## Project Skills
 
-Load when reviewing anything visual — UI, TUI, layout, view, panel, column, sidebar, overlay, toast, viewport, colors, styles, animation, keybindings, focus, charm, lipgloss, bubbletea, bubbles, rendering, design:
+Always load when reviewing TUI/UX changes:
 - `tui-design` — terminal aesthetic principles, anti-patterns to flag
 
-Load when reviewing anything related to how tasks run or user interaction with live sessions — starting a task, launching an agent, worker interactivity, session lifecycle, running instances, spawning, pausing, resuming, attaching, interactive terminals, agent output:
+Load when reviewing tmux integration, worker backends, or pane management:
 - `tmux-orchestration` — architecture principles, error handling philosophy
 
 ## Available CLI Tools
@@ -36,6 +36,8 @@ These tools are available in this environment. Prefer them over lower-level alte
 - **comby** (`comby`): Language-aware structural search/replace with hole syntax. Use for multi-line pattern matching and complex rewrites that span statement boundaries. Examples:
   - `comby 'if err != nil { return :[rest] }' 'if err != nil { return fmt.Errorf(":[context]: %w", err) }' .go`
   - `comby 'func :[name](:[args]) {:[body]}' 'func :[name](:[args]) error {:[body]}' .go -d src/`
+  - **Always use `-in-place` to write changes** — without it comby only previews (dry run)
+  - **Replacement template indentation is literal** — comby does not inherit source indentation; the template must have the exact whitespace you want in the output
 
 ### Diff & Change Analysis
 
@@ -74,7 +76,7 @@ These tools are available in this environment. Prefer them over lower-level alte
 | Task | Preferred Tool | Fallback |
 |------|---------------|----------|
 | Rename symbol across files | `sg` (ast-grep) | `sd` for simple strings |
-| Structural multi-line rewrite | `sg` or `comby` | manual edit |
+| Structural code rewrite | `sg` or `comby` | manual edit |
 | Find pattern in code | `sg --pattern` | `rg` (ripgrep) for literal strings |
 | Replace string in files | `sd` | `sed` |
 | Read/modify YAML/TOML/JSON | `yq` | manual edit |

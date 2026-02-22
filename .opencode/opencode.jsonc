@@ -84,6 +84,11 @@
       "textVerbosity": "medium"
     }
   },
+  "tui": {
+    "scroll_acceleration": {
+      "enabled": true
+    }
+  },
   "plugin": [
     "@franlol/opencode-md-table-formatter@latest"
   ]

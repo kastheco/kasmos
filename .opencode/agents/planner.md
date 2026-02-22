@@ -23,16 +23,16 @@ to populate the sidebar Plans list — unregistered plans are invisible to the u
 
 Registration steps (do both atomically, never skip step 2):
 1. Write the plan to `docs/plans/<date>-<name>.md`
-2. Register it with `yq`: `yq -i '."<date>-<name>.md" = {"status": "ready"}' docs/plans/plan-state.json`
+2. Read `docs/plans/plan-state.json`, add `"<date>-<name>.md": {"status": "ready"}`, write it back
 
 Valid statuses: `ready` → `in_progress` → `done`. Only klique transitions beyond `done`.
 
 ## Project Skills
 
-Load for anything touching the visual interface — UI, TUI, layout, view, panel, column, sidebar, overlay, toast, viewport, colors, styles, animation, keybindings, focus, charm, lipgloss, bubbletea, bubbles, rendering, design:
+Always load when working on this project's TUI:
 - `tui-design` — design-first workflow for bubbletea/lipgloss interfaces
 
-Load for anything touching how tasks run or how users interact with live sessions — starting a task, launching an agent, worker interactivity, session lifecycle, running instances, spawning, pausing, resuming, attaching, interactive terminals, agent output:
+Load when task involves tmux panes, worker lifecycle, or process management:
 - `tmux-orchestration` — tmux pane management from Go, parking pattern, crash resilience
 
 ## Available CLI Tools
@@ -48,6 +48,8 @@ These tools are available in this environment. Prefer them over lower-level alte
 - **comby** (`comby`): Language-aware structural search/replace with hole syntax. Use for multi-line pattern matching and complex rewrites that span statement boundaries. Examples:
   - `comby 'if err != nil { return :[rest] }' 'if err != nil { return fmt.Errorf(":[context]: %w", err) }' .go`
   - `comby 'func :[name](:[args]) {:[body]}' 'func :[name](:[args]) error {:[body]}' .go -d src/`
+  - **Always use `-in-place` to write changes** — without it comby only previews (dry run)
+  - **Replacement template indentation is literal** — comby does not inherit source indentation; the template must have the exact whitespace you want in the output
 
 ### Diff & Change Analysis
 
@@ -86,7 +88,7 @@ These tools are available in this environment. Prefer them over lower-level alte
 | Task | Preferred Tool | Fallback |
 |------|---------------|----------|
 | Rename symbol across files | `sg` (ast-grep) | `sd` for simple strings |
-| Structural multi-line rewrite | `sg` or `comby` | manual edit |
+| Structural code rewrite | `sg` or `comby` | manual edit |
 | Find pattern in code | `sg --pattern` | `rg` (ripgrep) for literal strings |
 | Replace string in files | `sd` | `sed` |
 | Read/modify YAML/TOML/JSON | `yq` | manual edit |

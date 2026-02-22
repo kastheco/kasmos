@@ -20,7 +20,7 @@ func TestPlanDisplayName(t *testing.T) {
 func TestSidebarSetItems_IncludesPlansSectionBeforeTopics(t *testing.T) {
 	s := NewSidebar()
 	s.SetPlans([]PlanDisplay{{Filename: "2026-02-20-plan-orchestration.md", Status: string(planstate.StatusInProgress)}})
-	s.SetItems([]string{"alpha"}, map[string]int{"alpha": 1}, 0, map[string]bool{"alpha": false}, map[string]TopicStatus{"alpha": {}})
+	s.SetItems([]string{"alpha"}, map[string]int{"alpha": 1}, 0, map[string]bool{"alpha": false}, map[string]TopicStatus{"alpha": {}}, map[string]TopicStatus{})
 
 	if len(s.items) < 5 {
 		t.Fatalf("expected at least 5 sidebar items, got %d", len(s.items))
@@ -40,7 +40,7 @@ func TestSidebarSetItems_IncludesPlansSectionBeforeTopics(t *testing.T) {
 func TestGetSelectedPlanFile(t *testing.T) {
 	s := NewSidebar()
 	s.SetPlans([]PlanDisplay{{Filename: "plan.md", Status: string(planstate.StatusReady)}})
-	s.SetItems(nil, map[string]int{}, 0, map[string]bool{}, map[string]TopicStatus{})
+	s.SetItems(nil, map[string]int{}, 0, map[string]bool{}, map[string]TopicStatus{}, map[string]TopicStatus{})
 
 	if s.GetSelectedPlanFile() != "" {
 		t.Fatalf("selected plan should be empty when All is selected")
@@ -151,4 +151,80 @@ func TestSidebarPlanHistory(t *testing.T) {
 	)
 
 	assert.True(t, s.HasRowID(SidebarPlanHistoryToggle))
+}
+
+func TestSidebarSetItems_PlanRuntimeStatusOverridesReadyState(t *testing.T) {
+	s := NewSidebar()
+	s.SetPlans([]PlanDisplay{{Filename: "plan.md", Status: string(planstate.StatusReady)}})
+
+	s.SetItems(
+		nil,
+		map[string]int{},
+		0,
+		map[string]bool{},
+		map[string]TopicStatus{},
+		map[string]TopicStatus{"plan.md": {HasRunning: true}},
+	)
+
+	require.Len(t, s.items, 3)
+	assert.True(t, s.items[2].HasRunning)
+	assert.False(t, s.items[2].HasNotification)
+}
+
+func TestSidebarSetItems_CancelledPlanIgnoresRuntimeStatus(t *testing.T) {
+	s := NewSidebar()
+	s.SetPlans([]PlanDisplay{{Filename: "cancelled.md", Status: string(planstate.StatusCancelled)}})
+
+	s.SetItems(
+		nil,
+		map[string]int{},
+		0,
+		map[string]bool{},
+		map[string]TopicStatus{},
+		map[string]TopicStatus{"cancelled.md": {HasRunning: true, HasNotification: true}},
+	)
+
+	require.Len(t, s.items, 3)
+	assert.False(t, s.items[2].HasRunning)
+	assert.False(t, s.items[2].HasNotification)
+	assert.True(t, s.items[2].IsCancelled)
+}
+
+func findRowByID(rows []sidebarRow, id string) (sidebarRow, bool) {
+	for _, row := range rows {
+		if row.ID == id {
+			return row, true
+		}
+	}
+	return sidebarRow{}, false
+}
+
+func TestSidebarTreeRows_ApplyRuntimePlanStatusOverlay(t *testing.T) {
+	s := NewSidebar()
+	s.SetTopicsAndPlans(
+		nil,
+		[]PlanDisplay{{Filename: "fix.md", Status: string(planstate.StatusReady)}},
+		nil,
+	)
+
+	s.SelectByID(SidebarPlanPrefix + "fix.md")
+	s.ToggleSelectedExpand()
+
+	implementID := SidebarPlanStagePrefix + "fix.md::implement"
+	implementRow, ok := findRowByID(s.rows, implementID)
+	require.True(t, ok)
+	assert.True(t, implementRow.Locked)
+	assert.False(t, implementRow.Active)
+
+	s.SetItems(nil, nil, 0, nil, map[string]TopicStatus{}, map[string]TopicStatus{"fix.md": {HasRunning: true}})
+
+	implementRow, ok = findRowByID(s.rows, implementID)
+	require.True(t, ok)
+	assert.True(t, implementRow.Active)
+	assert.False(t, implementRow.Locked)
+
+	planRow, ok := findRowByID(s.rows, SidebarPlanPrefix+"fix.md")
+	require.True(t, ok)
+	assert.True(t, planRow.HasRunning)
+	assert.False(t, planRow.HasNotification)
 }
