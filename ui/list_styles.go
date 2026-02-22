@@ -8,33 +8,26 @@ const readyIcon = "● "
 const pausedIcon = "\uf04c "
 
 var readyStyle = lipgloss.NewStyle().
-	Background(ColorBase).
 	Foreground(ColorFoam)
 
 var notifyStyle = lipgloss.NewStyle().
-	Background(ColorBase).
 	Foreground(ColorRose)
 
 var addedLinesStyle = lipgloss.NewStyle().
-	Background(ColorBase).
 	Foreground(ColorFoam)
 
 var removedLinesStyle = lipgloss.NewStyle().
-	Background(ColorBase).
 	Foreground(ColorLove)
 
 var pausedStyle = lipgloss.NewStyle().
-	Background(ColorBase).
 	Foreground(ColorMuted)
 
 var titleStyle = lipgloss.NewStyle().
 	Padding(1, 1, 0, 1).
-	Background(ColorBase).
 	Foreground(ColorText)
 
 var listDescStyle = lipgloss.NewStyle().
 	Padding(0, 1, 1, 1).
-	Background(ColorBase).
 	Foreground(ColorSubtle)
 
 var evenRowTitleStyle = lipgloss.NewStyle().
@@ -77,11 +70,9 @@ var autoYesStyle = lipgloss.NewStyle().
 	Foreground(ColorBase)
 
 var resourceStyle = lipgloss.NewStyle().
-	Background(ColorBase).
 	Foreground(ColorSubtle)
 
 var activityStyle = lipgloss.NewStyle().
-	Background(ColorBase).
 	Foreground(ColorMuted)
 
 // Status filter tab styles
@@ -121,7 +112,6 @@ var sortModeLabels = map[SortMode]string{
 }
 
 var sortDropdownStyle = lipgloss.NewStyle().
-	Background(ColorBase).
 	Foreground(ColorFoam).
 	Padding(0, 1)
 
@@ -129,8 +119,6 @@ var sortDropdownStyle = lipgloss.NewStyle().
 var listBorderStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
 	BorderForeground(ColorOverlay).
-	BorderBackground(ColorBase).
-	Background(ColorBase).
 	Padding(0, 1)
 
 const branchIcon = "\uf126"
