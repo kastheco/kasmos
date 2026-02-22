@@ -11,6 +11,8 @@ These tools are available in this environment. Prefer them over lower-level alte
 - **comby** (`comby`): Language-aware structural search/replace with hole syntax. Use for multi-line pattern matching and complex rewrites that span statement boundaries. Examples:
   - `comby 'if err != nil { return :[rest] }' 'if err != nil { return fmt.Errorf(":[context]: %w", err) }' .go`
   - `comby 'func :[name](:[args]) {:[body]}' 'func :[name](:[args]) error {:[body]}' .go -d src/`
+  - **Always use `-in-place` to write changes** — without it comby only previews (dry run)
+  - **Replacement template indentation is literal** — comby does not inherit source indentation; the template must have the exact whitespace you want in the output
 
 ### Diff & Change Analysis
 
