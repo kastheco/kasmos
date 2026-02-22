@@ -100,6 +100,7 @@ func TestRoleDefaults(t *testing.T) {
 		assert.Equal(t, "anthropic/claude-opus-4-6", p.Model)
 		assert.Equal(t, "max", p.Effort)
 		assert.Equal(t, "0.5", p.Temperature)
+		assert.True(t, p.Enabled)
 	})
 
 	t.Run("reviewer defaults", func(t *testing.T) {
@@ -107,6 +108,7 @@ func TestRoleDefaults(t *testing.T) {
 		assert.Equal(t, "openai/gpt-5.3-codex", r.Model)
 		assert.Equal(t, "xhigh", r.Effort)
 		assert.Equal(t, "0.2", r.Temperature)
+		assert.True(t, r.Enabled)
 	})
 }
 
