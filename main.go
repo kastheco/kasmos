@@ -175,9 +175,8 @@ func init() {
 		Long: `Run an interactive wizard to:
   1. Detect and select agent CLIs (claude, opencode, codex)
   2. Configure agent roles (coder, reviewer, planner) with model and tuning
-  3. Map lifecycle phases to agent roles
-  4. Install superpowers skills into each harness
-  5. Write ~/.klique/config.toml and scaffold project-level agent files`,
+  3. Install superpowers skills into each harness
+  4. Write ~/.klique/config.toml and scaffold project-level agent files`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return initcmd.Run(initcmd.Options{
 				Force: forceFlag,

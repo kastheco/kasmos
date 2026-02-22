@@ -138,9 +138,12 @@ func Run(registry *harness.Registry, existing *config.TOMLConfigResult) (*State,
 		return nil, err
 	}
 
-	// Stage 3: Phase mapping
-	if err := runPhaseStage(state, existing); err != nil {
-		return nil, err
+		// Stage 3: Hardcoded phase mapping
+	state.PhaseMapping = map[string]string{
+		"implementing":   "coder",
+		"spec_review":    "reviewer",
+		"quality_review": "reviewer",
+		"planning":       "planner",
 	}
 
 	// Stage 4: Tool discovery
