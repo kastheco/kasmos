@@ -1,6 +1,8 @@
 package wizard
 
 import (
+	"io"
+	"strings"
 	"testing"
 
 	"github.com/kastheco/klique/config"
@@ -145,6 +147,44 @@ func TestFormatAgentSummary(t *testing.T) {
 		}
 		s := FormatAgentSummary(a)
 		assert.Contains(t, s, "disabled")
+	})
+}
+
+func TestPromptCustomize(t *testing.T) {
+	t.Run("empty input (Enter) returns false", func(t *testing.T) {
+		r := strings.NewReader("\n")
+		result := PromptCustomize(r, io.Discard, "coder", "opencode / claude-sonnet-4-6")
+		assert.False(t, result)
+	})
+
+	t.Run("n returns false", func(t *testing.T) {
+		r := strings.NewReader("n\n")
+		result := PromptCustomize(r, io.Discard, "coder", "opencode / claude-sonnet-4-6")
+		assert.False(t, result)
+	})
+
+	t.Run("N returns false", func(t *testing.T) {
+		r := strings.NewReader("N\n")
+		result := PromptCustomize(r, io.Discard, "coder", "opencode / claude-sonnet-4-6")
+		assert.False(t, result)
+	})
+
+	t.Run("y returns true", func(t *testing.T) {
+		r := strings.NewReader("y\n")
+		result := PromptCustomize(r, io.Discard, "coder", "opencode / claude-sonnet-4-6")
+		assert.True(t, result)
+	})
+
+	t.Run("Y returns true", func(t *testing.T) {
+		r := strings.NewReader("Y\n")
+		result := PromptCustomize(r, io.Discard, "coder", "opencode / claude-sonnet-4-6")
+		assert.True(t, result)
+	})
+
+	t.Run("junk defaults to false", func(t *testing.T) {
+		r := strings.NewReader("hello\n")
+		result := PromptCustomize(r, io.Discard, "coder", "opencode / claude-sonnet-4-6")
+		assert.False(t, result)
 	})
 }
 

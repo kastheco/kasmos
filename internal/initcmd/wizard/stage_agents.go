@@ -1,7 +1,9 @@
 package wizard
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -29,6 +31,20 @@ func FormatAgentSummary(a AgentState) string {
 		parts = append(parts, "temp="+a.Temperature)
 	}
 	return strings.Join(parts, " / ")
+}
+
+// PromptCustomize prints an agent summary and asks "customize? y[n]".
+// Returns true only if the user types "y" or "Y". Default (Enter) is no.
+func PromptCustomize(r io.Reader, w io.Writer, role string, summary string) bool {
+	fmt.Fprintf(w, "  %-10s %s\n", role, summary)
+	fmt.Fprintf(w, "  customize? y[n]: ")
+
+	scanner := bufio.NewScanner(r)
+	if !scanner.Scan() {
+		return false
+	}
+	answer := strings.TrimSpace(scanner.Text())
+	return strings.EqualFold(answer, "y")
 }
 
 func runAgentStage(state *State, existing *config.TOMLConfigResult) error {
