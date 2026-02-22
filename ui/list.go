@@ -247,6 +247,18 @@ func (l *List) SetSelectedInstance(idx int) {
 	l.selectedIdx = idx
 }
 
+// SelectInstance finds the given instance in the filtered/sorted list and selects it.
+// Returns true if found. This is sort-order safe unlike SetSelectedInstance(index).
+func (l *List) SelectInstance(inst *session.Instance) bool {
+	for i, item := range l.items {
+		if item == inst {
+			l.selectedIdx = i
+			return true
+		}
+	}
+	return false
+}
+
 // GetInstances returns all instances (unfiltered) for persistence and metadata updates.
 func (l *List) GetInstances() []*session.Instance {
 	return l.allItems

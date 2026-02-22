@@ -558,13 +558,27 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 
 	// Handle confirmation state
 	if m.state == stateConfirm {
-		shouldClose := m.confirmationOverlay.HandleKeyPress(msg)
-		if shouldClose {
+		if m.confirmationOverlay == nil {
 			m.state = stateDefault
-			m.confirmationOverlay = nil
 			return m, nil
 		}
-		return m, nil
+		switch msg.String() {
+		case m.confirmationOverlay.ConfirmKey:
+			action := m.pendingConfirmAction
+			m.state = stateDefault
+			m.confirmationOverlay = nil
+			m.pendingConfirmAction = nil
+			// Return the action as a tea.Cmd so bubbletea runs it asynchronously.
+			// This prevents blocking the UI during I/O (git push, etc.).
+			return m, action
+		case m.confirmationOverlay.CancelKey, "esc":
+			m.state = stateDefault
+			m.confirmationOverlay = nil
+			m.pendingConfirmAction = nil
+			return m, nil
+		default:
+			return m, nil
+		}
 	}
 
 	// Handle new plan name state
@@ -899,29 +913,21 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			return m, nil
 		}
 
-		// Create the kill action as a tea.Cmd
+		// Pre-kill checks run async; model mutations happen in Update via killInstanceMsg.
 		title := selected.Title
 		killAction := func() tea.Msg {
-			// Get worktree and check if branch is checked out
 			worktree, err := selected.GetGitWorktree()
 			if err != nil {
 				return err
 			}
-
 			checkedOut, err := worktree.IsBranchCheckedOut()
 			if err != nil {
 				return err
 			}
-
 			if checkedOut {
 				return fmt.Errorf("instance %s is currently checked out", selected.Title)
 			}
-
-			// Kill the instance, remove from master list, and persist
-			m.list.Kill()
-			m.removeFromAllInstances(title)
-			m.saveAllInstances()
-			return instanceChangedMsg{}
+			return killInstanceMsg{title: title}
 		}
 
 		// Show confirmation modal
@@ -1161,28 +1167,15 @@ func (m *home) handleError(err error) tea.Cmd {
 	return m.toastTickCmd()
 }
 
-// confirmAction shows a confirmation modal and stores the action to execute on confirm
+// confirmAction shows a confirmation modal and stores the action to execute on confirm.
+// The action is a tea.Cmd that will be returned from Update() to run asynchronously —
+// never called synchronously, which would block the UI during I/O operations.
 func (m *home) confirmAction(message string, action tea.Cmd) tea.Cmd {
 	m.state = stateConfirm
+	m.pendingConfirmAction = action
 
-	// Create and show the confirmation overlay using ConfirmationOverlay
 	m.confirmationOverlay = overlay.NewConfirmationOverlay(message)
-	// Set a fixed width for consistent appearance
 	m.confirmationOverlay.SetWidth(50)
-
-	// Set callbacks for confirmation and cancellation
-	m.confirmationOverlay.OnConfirm = func() {
-		m.state = stateDefault
-		// Execute the action if it exists
-		if action != nil {
-			_ = action()
-		}
-		m.updateSidebarItems()
-	}
-
-	m.confirmationOverlay.OnCancel = func() {
-		m.state = stateDefault
-	}
 
 	return nil
 }

@@ -132,6 +132,8 @@ type home struct {
 	textOverlay *overlay.TextOverlay
 	// confirmationOverlay displays confirmation modals
 	confirmationOverlay *overlay.ConfirmationOverlay
+	// pendingConfirmAction stores the tea.Cmd to run asynchronously when confirmed
+	pendingConfirmAction tea.Cmd
 
 	// sidebar displays the topic sidebar
 	sidebar *ui.Sidebar
@@ -460,6 +462,19 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle instance changed after confirmation action
 		m.updateSidebarItems()
 		return m, m.instanceChanged()
+	case killInstanceMsg:
+		// Async pre-kill checks passed — safe to mutate model in Update.
+		m.list.Kill()
+		m.removeFromAllInstances(msg.title)
+		m.saveAllInstances()
+		m.updateSidebarItems()
+		return m, tea.Batch(tea.WindowSize(), m.instanceChanged())
+	case planRefreshMsg:
+		// Reload plan state and refresh sidebar after async plan mutation.
+		m.loadPlanState()
+		m.updateSidebarPlans()
+		m.updateSidebarItems()
+		return m, tea.WindowSize()
 	case instanceStartedMsg:
 		if msg.err != nil {
 			m.list.Kill()
@@ -613,6 +628,15 @@ type focusPreviewTickMsg struct{}
 type gitTabTickMsg struct{}
 
 type instanceChangedMsg struct{}
+
+// killInstanceMsg is sent after async pre-kill checks pass (worktree not checked out).
+// Model mutations (list.Kill, removeFromAllInstances) happen in Update, not in the goroutine.
+type killInstanceMsg struct {
+	title string
+}
+
+// planRefreshMsg triggers a plan state reload and sidebar refresh in Update.
+type planRefreshMsg struct{}
 
 // instanceStartedMsg is sent when an async instance startup completes.
 type instanceStartedMsg struct {

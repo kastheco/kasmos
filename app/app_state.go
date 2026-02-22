@@ -577,7 +577,7 @@ func (m *home) transitionToReview(coderInst *session.Instance) tea.Cmd {
 	reviewerInst.QueuedPrompt = prompt
 
 	m.newInstanceFinalizer = m.list.AddInstance(reviewerInst)
-	m.list.SetSelectedInstance(m.list.NumInstances() - 1)
+	m.list.SelectInstance(reviewerInst) // sort-order safe, unlike index arithmetic
 
 	m.toastManager.Success(fmt.Sprintf("Implementation complete → review started for %s", planName))
 
@@ -618,7 +618,7 @@ func (m *home) spawnPlanSession(planFile string) (tea.Model, tea.Cmd) {
 	)
 
 	m.newInstanceFinalizer = m.list.AddInstance(inst)
-	m.list.SetSelectedInstance(m.list.NumInstances() - 1)
+	m.list.SelectInstance(inst) // sort-order safe
 
 	startCmd := func() tea.Msg {
 		err := inst.Start(true)
