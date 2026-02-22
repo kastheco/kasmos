@@ -93,7 +93,7 @@
       "created_at": "0001-01-01T00:00:00Z"
     },
     "2026-02-21-plan-instance-grouping.md": {
-      "status": "ready",
+      "status": "completed",
       "created_at": "0001-01-01T00:00:00Z"
     },
     "2026-02-21-plan-lifecycle-sessions.md": {
@@ -161,6 +161,12 @@
       "description": "indicate in list view if permissions are needed and switch to live capture (or increased cache r/w if possible) to button presses dont jump back and forth",
       "branch": "plan/detect-permissions-needed",
       "created_at": "2026-02-22T08:35:22.645408061Z"
+    },
+    "2026-02-22-kq-check.md": {
+      "status": "done",
+      "description": "kq check command to audit skills sync health across all three layers (global, project, superpowers)",
+      "created_at": "2026-02-22T09:00:00.000000000Z",
+      "implemented": "2026-02-22"
     }
   }
 }
