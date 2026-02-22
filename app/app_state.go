@@ -172,37 +172,6 @@ func (m *home) switchToTab(name keys.KeyName) (tea.Model, tea.Cmd) {
 	return m, m.instanceChanged()
 }
 
-func (m *home) filterInstancesByTopic() {
-	selectedID := m.sidebar.GetSelectedID()
-	switch {
-	case selectedID == ui.SidebarAll:
-		m.list.SetFilter("")
-	case selectedID == ui.SidebarUngrouped:
-		m.list.SetFilter(ui.SidebarUngrouped)
-	case strings.HasPrefix(selectedID, ui.SidebarPlanPrefix):
-		// Plan items: show all instances (no topic filter)
-		m.list.SetFilter("")
-	default:
-		m.list.SetFilter(selectedID)
-	}
-}
-
-// filterSearchWithTopic applies the search query scoped to the currently selected topic.
-func (m *home) filterSearchWithTopic() {
-	query := strings.ToLower(m.sidebar.GetSearchQuery())
-	selectedID := m.sidebar.GetSelectedID()
-	topicFilter := ""
-	switch selectedID {
-	case ui.SidebarAll:
-		topicFilter = ""
-	case ui.SidebarUngrouped:
-		topicFilter = ui.SidebarUngrouped
-	default:
-		topicFilter = selectedID
-	}
-	m.list.SetSearchFilterWithTopic(query, topicFilter)
-}
-
 func (m *home) filterBySearch() {
 	query := strings.ToLower(m.sidebar.GetSearchQuery())
 	if query == "" {
@@ -274,7 +243,7 @@ func (m *home) rebuildInstanceList() {
 			m.list.AddInstance(inst)()
 		}
 	}
-	m.filterInstancesByTopic()
+	m.filterInstancesByPlan()
 	// Reload plan state for the new active repo.
 	m.planStateDir = filepath.Join(m.activeRepoPath, "docs", "plans")
 	m.loadPlanState()

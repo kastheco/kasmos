@@ -173,13 +173,6 @@ func (l *List) Kill() {
 	}
 }
 
-// KillInstancesByTopic kills and removes all instances belonging to the given topic.
-// NOTE: Topics are now plan-state-based; this method is kept for compatibility but
-// will not match any instances since TopicName has been removed from Instance.
-func (l *List) KillInstancesByTopic(_ string) {
-	// No-op: instances no longer have a TopicName field.
-}
-
 // KillInstancesByPlan kills and removes all instances belonging to the given plan file.
 func (l *List) KillInstancesByPlan(planFile string) {
 	var remaining []*session.Instance
@@ -320,12 +313,6 @@ func (l *List) SetSearchFilter(query string) {
 	if l.selectedIdx < 0 {
 		l.selectedIdx = 0
 	}
-}
-
-// SetSearchFilterWithTopic filters instances by search query, optionally scoped to a topic.
-// Kept for compatibility; new code should use SetSearchFilter.
-func (l *List) SetSearchFilterWithTopic(query string, topicFilter string) {
-	l.SetSearchFilter(query)
 }
 
 // Clear removes all instances from the list.

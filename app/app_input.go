@@ -126,7 +126,7 @@ func (m *home) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if itemRow >= 0 {
 			m.tabbedWindow.ClearDocumentMode()
 			m.sidebar.ClickItem(itemRow)
-			m.filterInstancesByTopic()
+			m.filterInstancesByPlan()
 			return m, m.instanceChanged()
 		}
 	} else if x < m.sidebarWidth+m.tabsWidth {
@@ -170,7 +170,7 @@ func (m *home) handleRightClick(x, y, contentY int) (tea.Model, tea.Cmd) {
 		itemRow := contentY - 4
 		if itemRow >= 0 {
 			m.sidebar.ClickItem(itemRow)
-			m.filterInstancesByTopic()
+			m.filterInstancesByPlan()
 		}
 		// Plan header: show plan context menu
 		if planFile := m.sidebar.GetSelectedPlanFile(); planFile != "" {
@@ -729,7 +729,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			m.sidebar.DeactivateSearch()
 			m.sidebar.UpdateMatchCounts(nil, 0)
 			m.state = stateDefault
-			m.filterInstancesByTopic()
+			m.filterInstancesByPlan()
 			return m, nil
 		case msg.String() == "enter":
 			m.sidebar.DeactivateSearch()
@@ -738,11 +738,11 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			return m, nil
 		case msg.String() == "up":
 			m.sidebar.Up()
-			m.filterSearchWithTopic()
+			m.filterBySearch()
 			return m, m.instanceChanged()
 		case msg.String() == "down":
 			m.sidebar.Down()
-			m.filterSearchWithTopic()
+			m.filterBySearch()
 			return m, m.instanceChanged()
 		case msg.Type == tea.KeyBackspace:
 			q := m.sidebar.GetSearchQuery()
@@ -867,7 +867,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		m.tabbedWindow.ClearDocumentMode()
 		if m.focusedPanel == 0 {
 			m.sidebar.Up()
-			m.filterInstancesByTopic()
+			m.filterInstancesByPlan()
 		} else {
 			m.list.Up()
 		}
@@ -876,7 +876,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		m.tabbedWindow.ClearDocumentMode()
 		if m.focusedPanel == 0 {
 			m.sidebar.Down()
-			m.filterInstancesByTopic()
+			m.filterInstancesByPlan()
 		} else {
 			m.list.Down()
 		}
