@@ -59,12 +59,14 @@
       "implemented": "2026-02-21"
     },
     "2026-02-21-generate-opencode-jsonc-design.md": {
-      "status": "completed",
-      "created_at": "0001-01-01T00:00:00Z"
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-22"
     },
     "2026-02-21-generate-opencode-jsonc.md": {
-      "status": "ready",
-      "created_at": "0001-01-01T00:00:00Z"
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-22"
     },
     "2026-02-21-global-skill-sync.md": {
       "status": "done",
