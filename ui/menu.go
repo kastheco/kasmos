@@ -9,18 +9,19 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-var keyStyle = lipgloss.NewStyle().Foreground(ColorSubtle)
+var keyStyle = lipgloss.NewStyle().Background(ColorBase).Foreground(ColorSubtle)
 
-var descStyle = lipgloss.NewStyle().Foreground(ColorMuted)
+var descStyle = lipgloss.NewStyle().Background(ColorBase).Foreground(ColorMuted)
 
-var sepStyle = lipgloss.NewStyle().Foreground(ColorOverlay)
+var sepStyle = lipgloss.NewStyle().Background(ColorBase).Foreground(ColorOverlay)
 
-var actionGroupStyle = lipgloss.NewStyle().Foreground(ColorRose)
+var actionGroupStyle = lipgloss.NewStyle().Background(ColorBase).Foreground(ColorRose)
 
 var separator = " • "
 var verticalSeparator = " │ "
 
 var menuStyle = lipgloss.NewStyle().
+	Background(ColorBase).
 	Foreground(ColorFoam)
 
 // MenuState represents different states the menu can be in
@@ -226,5 +227,5 @@ func (m *Menu) String() string {
 	}
 
 	centeredMenuText := menuStyle.Render(s.String())
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, centeredMenuText)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, centeredMenuText, lipgloss.WithWhitespaceBackground(ColorBase))
 }

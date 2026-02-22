@@ -22,10 +22,12 @@ var sidebarTitleStyle = lipgloss.NewStyle().
 var sidebarBorderStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
 	BorderForeground(ColorOverlay).
+	Background(ColorBase).
 	Padding(0, 1)
 
 var topicItemStyle = lipgloss.NewStyle().
 	Padding(0, 1).
+	Background(ColorBase).
 	Foreground(ColorText)
 
 // selectedTopicStyle — focused: iris bg on dark base
@@ -42,16 +44,19 @@ var activeTopicStyle = lipgloss.NewStyle().
 
 var sectionHeaderStyle = lipgloss.NewStyle().
 	Foreground(ColorMuted).
+	Background(ColorBase).
 	Padding(0, 1)
 
 var searchBarStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
 	BorderForeground(ColorOverlay).
+	Background(ColorBase).
 	Padding(0, 1)
 
 var searchActiveBarStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
 	BorderForeground(ColorFoam).
+	Background(ColorBase).
 	Padding(0, 1)
 
 const (
@@ -69,6 +74,7 @@ type PlanDisplay struct {
 // dimmedTopicStyle is for topics with no matching instances during search
 var dimmedTopicStyle = lipgloss.NewStyle().
 	Padding(0, 1).
+	Background(ColorBase).
 	Foreground(ColorMuted)
 
 var sidebarRunningStyle = lipgloss.NewStyle().
@@ -514,5 +520,5 @@ func (s *Sidebar) String() string {
 	}
 
 	bordered := borderStyle.Width(innerWidth).Height(borderHeight).Render(innerContent)
-	return lipgloss.Place(s.width, s.height, lipgloss.Left, lipgloss.Top, bordered)
+	return lipgloss.Place(s.width, s.height, lipgloss.Left, lipgloss.Top, bordered, lipgloss.WithWhitespaceBackground(ColorBase))
 }

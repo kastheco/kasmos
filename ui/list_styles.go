@@ -24,10 +24,12 @@ var pausedStyle = lipgloss.NewStyle().
 
 var titleStyle = lipgloss.NewStyle().
 	Padding(1, 1, 0, 1).
+	Background(ColorBase).
 	Foreground(ColorText)
 
 var listDescStyle = lipgloss.NewStyle().
 	Padding(0, 1, 1, 1).
+	Background(ColorBase).
 	Foreground(ColorSubtle)
 
 var evenRowTitleStyle = lipgloss.NewStyle().
@@ -119,6 +121,7 @@ var sortDropdownStyle = lipgloss.NewStyle().
 var listBorderStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
 	BorderForeground(ColorOverlay).
+	Background(ColorBase).
 	Padding(0, 1)
 
 const branchIcon = "\uf126"

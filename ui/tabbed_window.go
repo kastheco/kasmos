@@ -20,6 +20,7 @@ var (
 	inactiveTabStyle  = lipgloss.NewStyle().
 				Border(inactiveTabBorder, true).
 				BorderForeground(ColorIris).
+				Background(ColorBase).
 				AlignHorizontal(lipgloss.Center)
 	activeTabStyle = inactiveTabStyle.
 			Border(activeTabBorder, true).
@@ -27,6 +28,7 @@ var (
 	windowBorder = lipgloss.RoundedBorder()
 	windowStyle  = lipgloss.NewStyle().
 			BorderForeground(ColorIris).
+			Background(ColorBase).
 			Border(windowBorder, false, true, true, true)
 )
 
@@ -386,7 +388,8 @@ func (w *TabbedWindow) String() string {
 	window := ws.Render(
 		lipgloss.Place(
 			innerWidth, w.height-2-ws.GetVerticalFrameSize()-tabHeight,
-			lipgloss.Left, lipgloss.Top, content))
+			lipgloss.Left, lipgloss.Top, content,
+			lipgloss.WithWhitespaceBackground(ColorBase)))
 
 	return lipgloss.JoinVertical(lipgloss.Left, row, window)
 }

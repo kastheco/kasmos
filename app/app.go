@@ -154,6 +154,13 @@ type home struct {
 	tabsWidth     int
 	contentHeight int
 
+	// sidebarHidden tracks whether the sidebar is collapsed (ctrl+s toggle)
+	sidebarHidden bool
+
+	// Terminal dimensions for the global background fill.
+	termWidth  int
+	termHeight int
+
 	// embeddedTerminal is the VT emulator for focus mode (nil when not in focus mode)
 	embeddedTerminal *session.EmbeddedTerminal
 
@@ -264,9 +271,14 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 // The components will try to render inside their bounds.
 func (m *home) updateHandleWindowSizeEvent(msg tea.WindowSizeMsg) {
 	// Three-column layout: sidebar (15%), instance list (20%), preview (remaining)
-	sidebarWidth := int(float32(msg.Width) * 0.18)
-	if sidebarWidth < 20 {
-		sidebarWidth = 20
+	var sidebarWidth int
+	if m.sidebarHidden {
+		sidebarWidth = 0
+	} else {
+		sidebarWidth = int(float32(msg.Width) * 0.18)
+		if sidebarWidth < 20 {
+			sidebarWidth = 20
+		}
 	}
 	listWidth := int(float32(msg.Width) * 0.20)
 	tabsWidth := msg.Width - sidebarWidth - listWidth
@@ -280,6 +292,8 @@ func (m *home) updateHandleWindowSizeEvent(msg tea.WindowSizeMsg) {
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
+	m.termWidth = msg.Width
+	m.termHeight = msg.Height
 	m.toastManager.SetSize(msg.Width, msg.Height)
 
 	m.tabbedWindow.SetSize(tabsWidth, contentHeight)
@@ -517,7 +531,12 @@ func (m *home) View() string {
 	listWithPadding := colStyle.Render(m.list.String())
 	previewWithPadding := colStyle.Render(m.tabbedWindow.String())
 	// Layout: sidebar | preview (center/main) | instance list (right)
-	listAndPreview := lipgloss.JoinHorizontal(lipgloss.Top, sidebarView, previewWithPadding, listWithPadding)
+	var listAndPreview string
+	if m.sidebarHidden {
+		listAndPreview = lipgloss.JoinHorizontal(lipgloss.Top, previewWithPadding, listWithPadding)
+	} else {
+		listAndPreview = lipgloss.JoinHorizontal(lipgloss.Top, sidebarView, previewWithPadding, listWithPadding)
+	}
 
 	mainView := lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -575,6 +594,12 @@ func (m *home) View() string {
 		x, y := m.toastManager.GetPosition()
 		result = overlay.PlaceOverlay(x, y, toastView, result, false, false)
 	}
+
+	// Global background fill — paint Rosé Pine Moon base behind every cell on
+	// the terminal screen. This catches gaps between panels, bare newlines from
+	// lipgloss Height fill, and any other transparent cells that would otherwise
+	// show the terminal's raw default background.
+	result = ui.FillBackground(result, m.termWidth, m.termHeight, ui.ColorBase)
 
 	return zone.Scan(result)
 }

@@ -284,7 +284,7 @@ func (l *List) String() string {
 	bordered := borderStyle.Width(innerWidth).Height(innerHeight).Render(b.String())
 	// Place Right so the border hugs the right edge, leaving the 2-char gap on
 	// the left (between preview and list), mirroring the sidebar's right gap.
-	return lipgloss.Place(l.width, l.height, lipgloss.Right, lipgloss.Top, bordered)
+	return lipgloss.Place(l.width, l.height, lipgloss.Right, lipgloss.Top, bordered, lipgloss.WithWhitespaceBackground(ColorBase))
 }
 
 // itemHeight returns the rendered row count for an instance entry.

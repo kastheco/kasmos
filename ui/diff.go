@@ -12,28 +12,34 @@ import (
 )
 
 var (
-	AdditionStyle = lipgloss.NewStyle().Foreground(ColorDiffAdd)
-	DeletionStyle = lipgloss.NewStyle().Foreground(ColorDiffDelete)
-	HunkStyle     = lipgloss.NewStyle().Foreground(ColorDiffHunk)
+	AdditionStyle = lipgloss.NewStyle().Background(ColorBase).Foreground(ColorDiffAdd)
+	DeletionStyle = lipgloss.NewStyle().Background(ColorBase).Foreground(ColorDiffDelete)
+	HunkStyle     = lipgloss.NewStyle().Background(ColorBase).Foreground(ColorDiffHunk)
 
 	fileItemStyle = lipgloss.NewStyle().
+			Background(ColorBase).
 			Foreground(ColorIris)
 	fileItemSelectedStyle = lipgloss.NewStyle().
 				Background(ColorIris).
 				Foreground(ColorBase).
 				Bold(true)
 	fileItemDimStyle = lipgloss.NewStyle().
+				Background(ColorBase).
 				Foreground(ColorMuted)
 	filePanelBorderStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
-				BorderForeground(ColorOverlay)
+				BorderForeground(ColorOverlay).
+				Background(ColorBase)
 	filePanelBorderFocusedStyle = lipgloss.NewStyle().
 					Border(lipgloss.RoundedBorder()).
-					BorderForeground(ColorIris)
+					BorderForeground(ColorIris).
+					Background(ColorBase)
 	diffHeaderStyle = lipgloss.NewStyle().
+			Background(ColorBase).
 			Foreground(ColorIris).
 			Bold(true)
 	diffHintStyle = lipgloss.NewStyle().
+			Background(ColorBase).
 			Foreground(ColorMuted)
 )
 
@@ -164,7 +170,7 @@ func (d *DiffPane) String() string {
 		if d.fullDiff != "" {
 			msg = d.fullDiff
 		}
-		return lipgloss.Place(d.width, d.height, lipgloss.Center, lipgloss.Center, msg)
+		return lipgloss.Place(d.width, d.height, lipgloss.Center, lipgloss.Center, msg, lipgloss.WithWhitespaceBackground(ColorBase))
 	}
 
 	sidebar := d.renderSidebar()
