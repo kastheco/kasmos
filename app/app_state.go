@@ -496,28 +496,15 @@ func (m *home) updateSidebarPlans() {
 		})
 	}
 
-	// Build cancelled plans
-	cancelledInfos := m.planState.Cancelled()
-	cancelled := make([]ui.PlanDisplay, 0, len(cancelledInfos))
-	for _, p := range cancelledInfos {
-		cancelled = append(cancelled, ui.PlanDisplay{
-			Filename:    p.Filename,
-			Status:      string(p.Status),
-			Description: p.Description,
-			Topic:       p.Topic,
-		})
-	}
-
-	// Feed flat-mode plan list (active plans + cancelled for rendering)
-	allVisiblePlans := make([]ui.PlanDisplay, 0, len(ungrouped)+len(cancelled))
+	// Feed flat-mode plan list (active plans only — cancelled are hidden)
+	allVisiblePlans := make([]ui.PlanDisplay, 0, len(ungrouped))
 	allVisiblePlans = append(allVisiblePlans, ungrouped...)
 	for _, t := range topics {
 		allVisiblePlans = append(allVisiblePlans, t.Plans...)
 	}
-	allVisiblePlans = append(allVisiblePlans, cancelled...)
 	m.sidebar.SetPlans(allVisiblePlans)
 
-	m.sidebar.SetTopicsAndPlans(topics, ungrouped, history, cancelled)
+	m.sidebar.SetTopicsAndPlans(topics, ungrouped, history)
 
 	// NOTE: Tree mode navigation is disabled until String() is updated to
 	// render s.rows. Currently String() renders s.items (flat list) while

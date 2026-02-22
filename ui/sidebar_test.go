@@ -171,25 +171,6 @@ func TestSidebarSetItems_PlanRuntimeStatusOverridesReadyState(t *testing.T) {
 	assert.False(t, s.items[2].HasNotification)
 }
 
-func TestSidebarSetItems_CancelledPlanIgnoresRuntimeStatus(t *testing.T) {
-	s := NewSidebar()
-	s.SetPlans([]PlanDisplay{{Filename: "cancelled.md", Status: string(planstate.StatusCancelled)}})
-
-	s.SetItems(
-		nil,
-		map[string]int{},
-		0,
-		map[string]bool{},
-		map[string]TopicStatus{},
-		map[string]TopicStatus{"cancelled.md": {HasRunning: true, HasNotification: true}},
-	)
-
-	require.Len(t, s.items, 3)
-	assert.False(t, s.items[2].HasRunning)
-	assert.False(t, s.items[2].HasNotification)
-	assert.True(t, s.items[2].IsCancelled)
-}
-
 func findRowByID(rows []sidebarRow, id string) (sidebarRow, bool) {
 	for _, row := range rows {
 		if row.ID == id {

@@ -1,4 +1,9 @@
 {
+  "topics": {
+    "sidebar": {
+      "created_at": "2026-02-22T18:00:00Z"
+    }
+  },
   "plans": {
     "2026-02-20-kq-init-design.md": {
       "status": "done",
@@ -135,14 +140,14 @@
       "implemented": "2026-02-21"
     },
     "2026-02-22-1a-tree-renderer.md": {
-      "status": "ready",
+      "status": "planning",
       "description": "tree-mode rendering branch in Sidebar.String() with indentation, chevrons, and status glyphs",
       "branch": "plan/1a-tree-renderer",
       "topic": "sidebar",
       "created_at": "2026-02-22T18:00:00Z"
     },
     "2026-02-22-1b-tree-navigation.md": {
-      "status": "ready",
+      "status": "planning",
       "description": "Left/Right tree-traversal methods and Space/Enter/arrow keybindings for tree-mode sidebar",
       "branch": "plan/1b-tree-navigation",
       "topic": "sidebar",
@@ -243,11 +248,6 @@
       "description": "D kill becomes K kill. i focus agent to i interactive mode. space actions becomes space shortcuts. hide P create PR and c checkout, remove R switch repo, keep the rest.",
       "branch": "plan/update-shortcut-hints",
       "created_at": "2026-02-22T12:12:58.588910211Z"
-    }
-  },
-  "topics": {
-    "sidebar": {
-      "created_at": "2026-02-22T18:00:00Z"
     }
   }
 }

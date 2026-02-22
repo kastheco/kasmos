@@ -88,7 +88,7 @@ const (
 	rowKindPlan                                // plan header
 	rowKindStage                               // plan lifecycle stage
 	rowKindHistoryToggle                       // "History" toggle row
-	rowKindCancelled                           // cancelled plan (strikethrough)
+
 )
 
 // sidebarRow is a single rendered row in the sidebar.
@@ -161,9 +161,9 @@ type Sidebar struct {
 	treeTopics    []TopicDisplay
 	treeUngrouped []PlanDisplay
 	treeHistory   []PlanDisplay
-	treeCancelled []PlanDisplay
-	useTreeMode   bool // true when SetTopicsAndPlans has been called
-	planStatuses  map[string]TopicStatus
+
+	useTreeMode  bool // true when SetTopicsAndPlans has been called
+	planStatuses map[string]TopicStatus
 }
 
 // SetPlans stores unfinished plans for sidebar display.
@@ -419,15 +419,10 @@ func (s *Sidebar) DisableTreeMode() {
 }
 
 // SetTopicsAndPlans sets the three-level tree data and rebuilds rows.
-func (s *Sidebar) SetTopicsAndPlans(topics []TopicDisplay, ungrouped []PlanDisplay, history []PlanDisplay, cancelled ...[]PlanDisplay) {
+func (s *Sidebar) SetTopicsAndPlans(topics []TopicDisplay, ungrouped []PlanDisplay, history []PlanDisplay) {
 	s.treeTopics = topics
 	s.treeUngrouped = ungrouped
 	s.treeHistory = history
-	if len(cancelled) > 0 {
-		s.treeCancelled = cancelled[0]
-	} else {
-		s.treeCancelled = nil
-	}
 	s.useTreeMode = true
 	s.rebuildRows()
 }
@@ -505,16 +500,6 @@ func (s *Sidebar) rebuildRows() {
 			Kind:  rowKindHistoryToggle,
 			ID:    SidebarPlanHistoryToggle,
 			Label: "History",
-		})
-	}
-
-	// Cancelled plans (shown at bottom with strikethrough)
-	for _, p := range s.treeCancelled {
-		rows = append(rows, sidebarRow{
-			Kind:     rowKindCancelled,
-			ID:       SidebarPlanPrefix + p.Filename,
-			Label:    planstate.DisplayName(p.Filename),
-			PlanFile: p.Filename,
 		})
 	}
 
