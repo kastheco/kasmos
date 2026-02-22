@@ -2,15 +2,13 @@ package ui
 
 import (
 	"strings"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 // FillBackground ensures the output has at least `height` lines so bubbletea's
 // alt-screen renderer doesn't leave stale content below the rendered view.
 // Width-padding is no longer needed because OSC 11 sets the terminal's default
 // background to the theme base color — unstyled cells are already correct.
-func FillBackground(s string, width, height int, bg lipgloss.TerminalColor) string {
+func FillBackground(s string, height int) string {
 	if height <= 0 {
 		return s
 	}

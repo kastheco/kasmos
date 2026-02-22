@@ -600,15 +600,13 @@ func (m *home) View() string {
 		result = overlay.PlaceOverlay(x, y, toastView, result, false, false)
 	}
 
-	// Process bubblezone markers first so FillBackground measures true
-	// visible widths (zone markers inflate lipgloss.Width before Scan).
+	// Process bubblezone markers before rendering is complete
+	// (zone markers inflate lipgloss.Width if left in place).
 	result = zone.Scan(result)
 
-	// Global background fill — paint Rosé Pine Moon base behind every cell on
-	// the terminal screen. This catches gaps between panels, bare newlines from
-	// lipgloss Height fill, and any other transparent cells that would otherwise
-	// show the terminal's raw default background.
-	result = ui.FillBackground(result, m.termWidth, m.termHeight, ui.ColorBase)
+	// Height-fill — ensure enough lines for bubbletea's alt-screen renderer.
+	// OSC 11 handles the actual background color; this just pads vertically.
+	result = ui.FillBackground(result, m.termHeight)
 
 	return result
 }
