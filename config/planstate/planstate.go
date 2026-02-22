@@ -264,6 +264,11 @@ func (ps *PlanState) Create(filename, description, branch, topic string, created
 	return ps.save()
 }
 
+// Save persists the current state to disk.
+func (ps *PlanState) Save() error {
+	return ps.save()
+}
+
 // DisplayName strips the date prefix and .md extension from a plan filename.
 // "2026-02-20-my-feature.md" → "my-feature"
 // "plain-plan.md" → "plain-plan"
