@@ -521,7 +521,7 @@ func TestSidebarToggle(t *testing.T) {
 		assert.Equal(t, 2, homeModel.focusedPanel)
 	})
 
-	t.Run("left reveals sidebar without moving focus when panel 1 is focused and sidebar is hidden", func(t *testing.T) {
+	t.Run("left from panel 1 shows and focuses sidebar when hidden", func(t *testing.T) {
 		h := newTestHome()
 		h.sidebarHidden = true
 		h.setFocus(1)
@@ -529,6 +529,17 @@ func TestSidebarToggle(t *testing.T) {
 		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyLeft})
 
 		assert.False(t, homeModel.sidebarHidden)
+		assert.Equal(t, 0, homeModel.focusedPanel)
+	})
+
+	t.Run("left from sidebar hides sidebar and focuses panel 1", func(t *testing.T) {
+		h := newTestHome()
+		h.sidebarHidden = false
+		h.setFocus(0)
+
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyLeft})
+
+		assert.True(t, homeModel.sidebarHidden)
 		assert.Equal(t, 1, homeModel.focusedPanel)
 	})
 
@@ -543,7 +554,7 @@ func TestSidebarToggle(t *testing.T) {
 		assert.Equal(t, 0, homeModel.focusedPanel)
 	})
 
-	t.Run("s reveals sidebar without moving focus when sidebar is hidden", func(t *testing.T) {
+	t.Run("s shows and focuses sidebar when hidden", func(t *testing.T) {
 		h := newTestHome()
 		h.sidebarHidden = true
 		h.setFocus(2)
@@ -551,7 +562,7 @@ func TestSidebarToggle(t *testing.T) {
 		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
 
 		assert.False(t, homeModel.sidebarHidden)
-		assert.Equal(t, 2, homeModel.focusedPanel)
+		assert.Equal(t, 0, homeModel.focusedPanel)
 	})
 
 	t.Run("s moves focus to sidebar when sidebar is visible", func(t *testing.T) {
