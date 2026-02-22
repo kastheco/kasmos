@@ -1,103 +1,164 @@
 {
-  "2026-02-20-kq-init-design.md": {
-    "status": "done",
-    "implemented": "2026-02-20"
-  },
-  "2026-02-20-plan-orchestration-design.md": {
-    "status": "done"
-  },
-  "2026-02-20-plan-orchestration.md": {
-    "status": "done",
-    "implemented": "2026-02-20"
-  },
-  "2026-02-20-project-skills-distribution.md": {
-    "status": "done",
-    "implemented": "2026-02-20"
-  },
-  "2026-02-20-task-orchestration-design.md": {
-    "status": "done",
-    "implemented": "2026-02-20"
-  },
-  "2026-02-20-task-orchestration.md": {
-    "status": "done",
-    "implemented": "2026-02-20"
-  },
-  "2026-02-20-tool-discovery-design.md": {
-    "status": "done",
-    "implemented": "2026-02-20"
-  },
-  "2026-02-20-wizard-ux-design.md": {
-    "status": "done"
-  },
-  "2026-02-20-wizard-ux.md": {
-    "status": "done",
-    "implemented": "2026-02-21"
-  },
-  "2026-02-21-agent-customize-gate.md": {
-    "status": "done",
-    "implemented": "2026-02-21"
-  },
-  "2026-02-21-fix-naming-and-toast-wrap.md": {
-    "status": "done",
-    "implemented": "2026-02-21"
-  },
-  "2026-02-21-fix-plan-state-machine.md": {
-    "status": "done",
-    "implemented": "2026-02-21"
-  },
-  "2026-02-21-generate-opencode-jsonc-design.md": {
-    "status": "ready"
-  },
-  "2026-02-21-generate-opencode-jsonc.md": {
-    "status": "ready"
-  },
-  "2026-02-21-init-wizard-refinements.md": {
-    "status": "reviewing"
-  },
-  "2026-02-21-osc11-terminal-bg-design.md": {
-    "status": "done",
-    "implemented": "2026-02-21"
-  },
-  "2026-02-21-osc11-terminal-bg.md": {
-    "status": "done",
-    "implemented": "2026-02-21"
-  },
-  "2026-02-21-plan-centric-sidebar.md": {
-    "status": "cancelled"
-  },
-  "2026-02-21-plan-instance-grouping.md": {
-    "status": "ready"
-  },
-  "2026-02-21-plan-lifecycle-sessions.md": {
-    "status": "ready"
-  },
-  "2026-02-21-rose-pine-moon-design.md": {
-    "status": "ready"
-  },
-  "2026-02-21-rose-pine-moon.md": {
-    "status": "ready"
-  },
-  "2026-02-21-sidebar-nav-showhide.md": {
-    "status": "done",
-    "implemented": "2026-02-21"
-  },
-  "2026-02-21-sidebar-toggle-design.md": {
-    "status": "done",
-    "implemented": "2026-02-21"
-  },
-  "2026-02-21-sidebar-toggle.md": {
-    "status": "done",
-    "implemented": "2026-02-21"
-  },
-  "2026-02-21-topics-as-collision-domains-design.md": {
-    "status": "ready"
-  },
-  "2026-02-21-topics-collision-domains.md": {
-    "status": "done",
-    "implemented": "2026-02-21"
-  },
-  "2026-02-21-global-skill-sync.md": {
-    "status": "done",
-    "implemented": "2026-02-22"
+  "plans": {
+    "2026-02-20-kq-init-design.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-20"
+    },
+    "2026-02-20-plan-orchestration-design.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z"
+    },
+    "2026-02-20-plan-orchestration.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-20"
+    },
+    "2026-02-20-project-skills-distribution.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-20"
+    },
+    "2026-02-20-task-orchestration-design.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-20"
+    },
+    "2026-02-20-task-orchestration.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-20"
+    },
+    "2026-02-20-tool-discovery-design.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-20"
+    },
+    "2026-02-20-wizard-ux-design.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z"
+    },
+    "2026-02-20-wizard-ux.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-21"
+    },
+    "2026-02-21-agent-customize-gate.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-21"
+    },
+    "2026-02-21-fix-naming-and-toast-wrap.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-21"
+    },
+    "2026-02-21-fix-plan-state-machine.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-21"
+    },
+    "2026-02-21-generate-opencode-jsonc-design.md": {
+      "status": "completed",
+      "created_at": "0001-01-01T00:00:00Z"
+    },
+    "2026-02-21-generate-opencode-jsonc.md": {
+      "status": "ready",
+      "created_at": "0001-01-01T00:00:00Z"
+    },
+    "2026-02-21-global-skill-sync.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-22"
+    },
+    "2026-02-21-init-wizard-refinements.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-21"
+    },
+    "2026-02-21-osc11-terminal-bg-design.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-21"
+    },
+    "2026-02-21-osc11-terminal-bg.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-21"
+    },
+    "2026-02-21-plan-centric-sidebar.md": {
+      "status": "cancelled",
+      "created_at": "0001-01-01T00:00:00Z"
+    },
+    "2026-02-21-plan-instance-grouping.md": {
+      "status": "ready",
+      "created_at": "0001-01-01T00:00:00Z"
+    },
+    "2026-02-21-plan-lifecycle-sessions.md": {
+      "status": "ready",
+      "created_at": "0001-01-01T00:00:00Z"
+    },
+    "2026-02-21-rose-pine-moon-design.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-21"
+    },
+    "2026-02-21-rose-pine-moon.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-21"
+    },
+    "2026-02-21-sidebar-nav-showhide.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-21"
+    },
+    "2026-02-21-sidebar-toggle-design.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-21"
+    },
+    "2026-02-21-sidebar-toggle.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-21"
+    },
+    "2026-02-21-topics-as-collision-domains-design.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z"
+    },
+    "2026-02-21-topics-collision-domains.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-21"
+    },
+    "2026-02-22-async-metadata-tick.md": {
+      "status": "done",
+      "created_at": "0001-01-01T00:00:00Z",
+      "implemented": "2026-02-22"
+    },
+    "2026-02-22-bubblezone.md": {
+      "status": "ready",
+      "description": "utilize bubblezone for using mouse accurately as well as to escape agent focus",
+      "branch": "plan/bubblezone",
+      "created_at": "2026-02-22T08:28:43.336094301Z"
+    },
+    "2026-02-22-center-col-v-align.md": {
+      "status": "ready",
+      "description": "center column is scrolled up slightly and also not bottom aligned",
+      "branch": "plan/center-col-v-align",
+      "created_at": "2026-02-22T08:33:42.034471509Z"
+    },
+    "2026-02-22-center-pane-scrolled-up-slightly-and-isn-t-aligned-with-bottom-yet.md": {
+      "status": "cancelled",
+      "branch": "plan/center-pane-scrolled-up-slightly-and-isn-t-aligned-with-bottom-yet",
+      "created_at": "2026-02-22T08:30:57.806756006Z"
+    },
+    "2026-02-22-detect-permissions-needed.md": {
+      "status": "ready",
+      "description": "indicate in list view if permissions are needed and switch to live capture (or increased cache r/w if possible) to button presses dont jump back and forth",
+      "branch": "plan/detect-permissions-needed",
+      "created_at": "2026-02-22T08:35:22.645408061Z"
+    }
   }
 }
