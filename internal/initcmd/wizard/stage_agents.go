@@ -15,7 +15,10 @@ func FormatAgentSummary(a AgentState) string {
 	if !a.Enabled {
 		return "(disabled)"
 	}
-	parts := []string{a.Harness}
+	var parts []string
+	if a.Harness != "" {
+		parts = append(parts, a.Harness)
+	}
 	if a.Model != "" {
 		parts = append(parts, a.Model)
 	}
