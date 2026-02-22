@@ -27,6 +27,9 @@ type List struct {
 	statusFilter StatusFilter // status filter (All or Active)
 	sortMode     SortMode     // how instances are sorted
 	allItems     []*session.Instance
+
+	highlightKind  string // "plan", "topic", or "" (no highlight)
+	highlightValue string // plan filename or topic name
 }
 
 func NewList(spinner *spinner.Model, autoYes bool) *List {
@@ -276,6 +279,39 @@ func (l *List) SetFilter(topicFilter string) {
 	l.rebuildFilteredItems()
 }
 
+// SetHighlightFilter sets the highlight context from sidebar selection.
+// kind is "plan" or "topic", value is the plan filename or topic name.
+// Empty kind means no highlight (all items render normally).
+func (l *List) SetHighlightFilter(kind, value string) {
+	l.highlightKind = kind
+	l.highlightValue = value
+	l.rebuildFilteredItems()
+}
+
+// IsHighlighted returns true if the instance matches the current highlight filter.
+// Returns true for all instances when no filter is active.
+func (l *List) IsHighlighted(inst *session.Instance) bool {
+	if l.highlightKind == "" || l.highlightValue == "" {
+		return true
+	}
+	return l.matchesHighlight(inst)
+}
+
+func (l *List) matchesHighlight(inst *session.Instance) bool {
+	switch l.highlightKind {
+	case "plan":
+		return inst.PlanFile == l.highlightValue
+	case "topic":
+		return inst.Topic == l.highlightValue
+	}
+	return false
+}
+
+// GetFilteredInstances returns the current display list (filtered and sorted).
+func (l *List) GetFilteredInstances() []*session.Instance {
+	return l.items
+}
+
 // SetSearchFilter filters instances by search query across all topics.
 // SetSearchFilter filters instances by search query across all topics.
 func (l *List) SetSearchFilter(query string) {
@@ -317,26 +353,41 @@ func (l *List) Clear() {
 }
 
 func (l *List) rebuildFilteredItems() {
-	// First apply topic filter
-	var topicFiltered []*session.Instance
-	// Topics are now plan-state-based; all instances are shown regardless of filter.
-	topicFiltered = l.allItems
-
-	// Then apply status filter
+	// Apply status filter
+	var filtered []*session.Instance
 	if l.statusFilter == StatusFilterActive {
-		filtered := make([]*session.Instance, 0)
-		for _, inst := range topicFiltered {
+		for _, inst := range l.allItems {
 			if !inst.Paused() {
 				filtered = append(filtered, inst)
 			}
 		}
-		l.items = filtered
 	} else {
-		l.items = topicFiltered
+		filtered = l.allItems
 	}
 
-	// Apply sort
-	l.sortItems()
+	// Partition into matched/unmatched if highlight is active
+	if l.highlightKind != "" && l.highlightValue != "" {
+		var matched, unmatched []*session.Instance
+		for _, inst := range filtered {
+			if l.matchesHighlight(inst) {
+				matched = append(matched, inst)
+			} else {
+				unmatched = append(unmatched, inst)
+			}
+		}
+		l.items = matched
+		l.sortItems()
+		sortedMatched := make([]*session.Instance, len(l.items))
+		copy(sortedMatched, l.items)
+
+		l.items = unmatched
+		l.sortItems()
+
+		l.items = append(sortedMatched, l.items...)
+	} else {
+		l.items = filtered
+		l.sortItems()
+	}
 
 	if l.selectedIdx >= len(l.items) {
 		l.selectedIdx = len(l.items) - 1

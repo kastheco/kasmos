@@ -25,9 +25,9 @@ func TestListHighlightFilter_MatchedFirst(t *testing.T) {
 	b := makeTestInstance("bravo", "plan-b.md")
 	c := makeTestInstance("charlie", "plan-a.md")
 
-	l.AddInstance(a)()
-	l.AddInstance(b)()
-	l.AddInstance(c)()
+	l.AddInstance(a)
+	l.AddInstance(b)
+	l.AddInstance(c)
 
 	l.SetHighlightFilter("plan", "plan-a.md")
 
@@ -47,8 +47,8 @@ func TestListHighlightFilter_EmptyShowsAll(t *testing.T) {
 	a := makeTestInstance("alpha", "plan-a.md")
 	b := makeTestInstance("bravo", "plan-b.md")
 
-	l.AddInstance(a)()
-	l.AddInstance(b)()
+	l.AddInstance(a)
+	l.AddInstance(b)
 
 	l.SetHighlightFilter("", "")
 
@@ -67,9 +67,9 @@ func TestListHighlightFilter_TopicMatch(t *testing.T) {
 	c := makeTestInstance("charlie", "plan-c.md")
 	c.Topic = "auth"
 
-	l.AddInstance(a)()
-	l.AddInstance(b)()
-	l.AddInstance(c)()
+	l.AddInstance(a)
+	l.AddInstance(b)
+	l.AddInstance(c)
 
 	l.SetHighlightFilter("topic", "auth")
 
@@ -87,8 +87,8 @@ func TestListIsHighlighted(t *testing.T) {
 	a := makeTestInstance("alpha", "plan-a.md")
 	b := makeTestInstance("bravo", "plan-b.md")
 
-	l.AddInstance(a)()
-	l.AddInstance(b)()
+	l.AddInstance(a)
+	l.AddInstance(b)
 
 	l.SetHighlightFilter("plan", "plan-a.md")
 
@@ -101,7 +101,7 @@ func TestListIsHighlighted_NoFilter(t *testing.T) {
 	l := NewList(&s, false)
 
 	a := makeTestInstance("alpha", "plan-a.md")
-	l.AddInstance(a)()
+	l.AddInstance(a)
 
 	l.SetHighlightFilter("", "")
 	// No filter active — everything is "highlighted" (normal rendering)

@@ -55,6 +55,8 @@ type Instance struct {
 	SkipPermissions bool
 	// PlanFile is the plan filename this instance is implementing (empty = no plan).
 	PlanFile string
+	// Topic is the topic/group this instance belongs to (from plan-state).
+	Topic string
 	// AgentType is the role of this instance within a plan lifecycle: planner/coder/reviewer or empty for ad-hoc.
 	AgentType string
 	// IsReviewer is true when this instance is a reviewer session for a plan.
