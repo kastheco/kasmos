@@ -287,7 +287,26 @@ func (s *Sidebar) SetItems(
 		})
 	}
 
+	// Preserve the currently selected ID across rebuilds so the periodic
+	// metadata tick doesn't reset the user's navigation position.
+	prevID := ""
+	if s.selectedIdx >= 0 && s.selectedIdx < len(s.items) {
+		prevID = s.items[s.selectedIdx].ID
+	}
+
 	s.items = items
+
+	// Try to restore selection by ID.
+	if prevID != "" {
+		for i, item := range items {
+			if item.ID == prevID {
+				s.selectedIdx = i
+				return
+			}
+		}
+	}
+
+	// Fallback: clamp index if the previous ID no longer exists.
 	if s.selectedIdx >= len(items) {
 		s.selectedIdx = len(items) - 1
 	}
