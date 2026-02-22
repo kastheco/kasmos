@@ -2,8 +2,6 @@ package wizard
 
 import (
 	"fmt"
-	"io"
-	"strings"
 	"testing"
 
 	"github.com/kastheco/klique/config"
@@ -21,6 +19,8 @@ func TestStateToTOMLConfig(t *testing.T) {
 				Temperature: "", Effort: "high", Enabled: true},
 			{Role: "planner", Harness: "codex", Model: "gpt-5.3-codex",
 				Temperature: "", Effort: "", Enabled: false},
+			{Role: "chat", Harness: "opencode", Model: "anthropic/claude-sonnet-4-6",
+				Temperature: "0.3", Effort: "high", Enabled: true},
 		},
 		PhaseMapping: map[string]string{
 			"implementing":   "coder",
@@ -60,15 +60,17 @@ func TestStateToAgentConfigs(t *testing.T) {
 			{Role: "coder", Harness: "opencode", Model: "model-1", Enabled: true},
 			{Role: "reviewer", Harness: "claude", Model: "model-2", Enabled: true},
 			{Role: "planner", Harness: "codex", Model: "model-3", Enabled: false},
+			{Role: "chat", Harness: "opencode", Model: "model-4", Enabled: true},
 		},
 	}
 
 	configs := state.ToAgentConfigs()
 
-	// Only enabled agents
-	assert.Len(t, configs, 2)
+	// Only enabled agents (planner disabled)
+	assert.Len(t, configs, 3)
 	assert.Equal(t, "coder", configs[0].Role)
 	assert.Equal(t, "reviewer", configs[1].Role)
+	assert.Equal(t, "chat", configs[2].Role)
 }
 
 func TestDefaultPhases(t *testing.T) {
@@ -78,16 +80,17 @@ func TestDefaultPhases(t *testing.T) {
 
 func TestDefaultAgentRoles(t *testing.T) {
 	roles := DefaultAgentRoles()
-	assert.Equal(t, []string{"coder", "reviewer", "planner"}, roles)
+	assert.Equal(t, []string{"coder", "reviewer", "planner", "chat"}, roles)
 }
 
 func TestRoleDefaults(t *testing.T) {
 	defaults := RoleDefaults()
 
-	t.Run("has all three roles", func(t *testing.T) {
+	t.Run("has all four roles", func(t *testing.T) {
 		assert.Contains(t, defaults, "coder")
 		assert.Contains(t, defaults, "reviewer")
 		assert.Contains(t, defaults, "planner")
+		assert.Contains(t, defaults, "chat")
 	})
 
 	t.Run("coder defaults", func(t *testing.T) {
@@ -112,6 +115,14 @@ func TestRoleDefaults(t *testing.T) {
 		assert.Equal(t, "xhigh", r.Effort)
 		assert.Equal(t, "0.2", r.Temperature)
 		assert.True(t, r.Enabled)
+	})
+
+	t.Run("chat defaults", func(t *testing.T) {
+		ch := defaults["chat"]
+		assert.Equal(t, "anthropic/claude-sonnet-4-6", ch.Model)
+		assert.Equal(t, "high", ch.Effort)
+		assert.Equal(t, "0.3", ch.Temperature)
+		assert.True(t, ch.Enabled)
 	})
 }
 
@@ -148,44 +159,6 @@ func TestFormatAgentSummary(t *testing.T) {
 		}
 		s := FormatAgentSummary(a)
 		assert.Contains(t, s, "disabled")
-	})
-}
-
-func TestPromptCustomize(t *testing.T) {
-	t.Run("empty input (Enter) returns false", func(t *testing.T) {
-		r := strings.NewReader("\n")
-		result := PromptCustomize(r, io.Discard, "coder", "opencode / claude-sonnet-4-6")
-		assert.False(t, result)
-	})
-
-	t.Run("n returns false", func(t *testing.T) {
-		r := strings.NewReader("n\n")
-		result := PromptCustomize(r, io.Discard, "coder", "opencode / claude-sonnet-4-6")
-		assert.False(t, result)
-	})
-
-	t.Run("N returns false", func(t *testing.T) {
-		r := strings.NewReader("N\n")
-		result := PromptCustomize(r, io.Discard, "coder", "opencode / claude-sonnet-4-6")
-		assert.False(t, result)
-	})
-
-	t.Run("y returns true", func(t *testing.T) {
-		r := strings.NewReader("y\n")
-		result := PromptCustomize(r, io.Discard, "coder", "opencode / claude-sonnet-4-6")
-		assert.True(t, result)
-	})
-
-	t.Run("Y returns true", func(t *testing.T) {
-		r := strings.NewReader("Y\n")
-		result := PromptCustomize(r, io.Discard, "coder", "opencode / claude-sonnet-4-6")
-		assert.True(t, result)
-	})
-
-	t.Run("junk defaults to false", func(t *testing.T) {
-		r := strings.NewReader("hello\n")
-		result := PromptCustomize(r, io.Discard, "coder", "opencode / claude-sonnet-4-6")
-		assert.False(t, result)
 	})
 }
 
