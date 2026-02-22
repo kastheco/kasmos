@@ -1091,17 +1091,8 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		}
 		return m, nil
 	case keys.KeyRight:
-		// Cycle right: sidebar(0) → preview(1) → list(2) → enter focus mode.
-		if m.focusedPanel == 2 {
-			// Already on instance list → enter focus mode on the active tab's pane
-			if m.tabbedWindow.IsInGitTab() {
-				return m, m.enterGitFocusMode()
-			}
-			selected := m.list.GetSelectedInstance()
-			if selected != nil && selected.Started() && !selected.Paused() {
-				return m, m.enterFocusMode()
-			}
-		} else {
+		// Cycle right: sidebar(0) → preview(1) → list(2). Stop at list.
+		if m.focusedPanel < 2 {
 			m.setFocus(m.focusedPanel + 1)
 		}
 		return m, nil
