@@ -12,6 +12,8 @@
 
 **Dependencies:** Plans 1a (tree-renderer), 1b (tree-navigation), 1c (highlight-boost-list) must all be complete before starting this plan.
 
+**Known merge conflict:** Plan 1a changes `planStageRows` from `planStageRows(p PlanDisplay)` to `planStageRows(p PlanDisplay, indent int)` and adds an `Indent int` field to `sidebarRow`. Plan 1b was implemented against the old signature. When merging, update the two `planStageRows(effective)` call sites in `rebuildRows()` (in 1b's version of `ui/sidebar.go`) to `planStageRows(effective, 2)` (ungrouped plan stages) and `planStageRows(effective, 4)` (topic plan stages).
+
 ---
 
 ### Task 1: Remove DisableTreeMode() call
