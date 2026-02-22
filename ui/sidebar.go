@@ -714,6 +714,195 @@ func (s *Sidebar) SelectByID(id string) bool {
 	return false
 }
 
+// renderTreeRows writes the tree-mode sidebar content into b.
+// Each row is rendered according to its Kind via per-kind render functions.
+func (s *Sidebar) renderTreeRows(b *strings.Builder, itemWidth int) {
+	contentWidth := itemWidth - 2 // account for Padding(0,1) in item styles
+
+	for i, row := range s.rows {
+		var line string
+
+		switch row.Kind {
+		case rowKindTopic:
+			line = s.renderTopicRow(row, i, contentWidth)
+		case rowKindPlan:
+			line = s.renderPlanRow(row, i, contentWidth)
+		case rowKindStage:
+			line = s.renderStageRow(row)
+		case rowKindHistoryToggle:
+			line = s.renderHistoryToggleRow(contentWidth)
+		case rowKindCancelled:
+			line = s.renderCancelledRow(row, i, contentWidth)
+		}
+
+		// Apply selection styling
+		if i == s.selectedIdx && s.focused {
+			b.WriteString(selectedTopicStyle.Width(itemWidth).Render(line))
+		} else if i == s.selectedIdx && !s.focused {
+			b.WriteString(activeTopicStyle.Width(itemWidth).Render(line))
+		} else {
+			b.WriteString(topicItemStyle.Width(itemWidth).Render(line))
+		}
+		b.WriteString("\n")
+	}
+}
+
+// renderTopicRow renders a topic header row.
+// Layout: [cursor 1][chevron 1][space 1][label...][gap...][status 2]
+func (s *Sidebar) renderTopicRow(row sidebarRow, idx, contentWidth int) string {
+	chevron := "▸"
+	if !row.Collapsed {
+		chevron = "▾"
+	}
+
+	cursor := " "
+	if idx == s.selectedIdx {
+		cursor = "▸"
+	}
+
+	var statusGlyph string
+	var statusStyle lipgloss.Style
+	if row.HasNotification {
+		statusGlyph = "◉"
+		statusStyle = sidebarNotifyStyle
+	} else if row.HasRunning {
+		statusGlyph = "●"
+		statusStyle = sidebarRunningStyle
+	}
+
+	label := row.Label
+	const fixedW = 3 // cursor(1) + chevron(1) + space(1)
+	trailW := 0
+	if statusGlyph != "" {
+		trailW = 2 // " ●"
+	}
+	maxLabel := contentWidth - fixedW - trailW
+	if maxLabel < 3 {
+		maxLabel = 3
+	}
+	if runewidth.StringWidth(label) > maxLabel {
+		label = runewidth.Truncate(label, maxLabel-1, "…")
+	}
+
+	text := topicLabelStyle.Render(label)
+	usedW := fixedW + runewidth.StringWidth(label) + trailW
+	gap := contentWidth - usedW
+	if gap < 0 {
+		gap = 0
+	}
+
+	trail := ""
+	if statusGlyph != "" {
+		trail = " " + statusStyle.Render(statusGlyph)
+	}
+	return cursor + chevron + " " + text + strings.Repeat(" ", gap) + trail
+}
+
+// renderPlanRow renders a plan row.
+// Layout: [indent][cursor 1][label...][gap...][chevron 1][space 1][status 1]
+func (s *Sidebar) renderPlanRow(row sidebarRow, idx, contentWidth int) string {
+	indent := strings.Repeat(" ", row.Indent)
+
+	chevron := "▸"
+	if !row.Collapsed {
+		chevron = "▾"
+	}
+
+	cursor := " "
+	if idx == s.selectedIdx {
+		cursor = "▸"
+	}
+
+	var statusGlyph string
+	var statusStyle lipgloss.Style
+	switch {
+	case row.HasNotification:
+		statusGlyph = "◉"
+		statusStyle = sidebarNotifyStyle
+	case row.HasRunning:
+		statusGlyph = "●"
+		statusStyle = sidebarRunningStyle
+	default:
+		statusGlyph = "○"
+		statusStyle = lipgloss.NewStyle().Foreground(ColorMuted)
+	}
+
+	label := row.Label
+	indentW := row.Indent
+	const cursorW = 1
+	const chevronW = 2 // chevron + space
+	const trailW = 1   // status glyph
+	maxLabel := contentWidth - indentW - cursorW - chevronW - trailW
+	if maxLabel < 3 {
+		maxLabel = 3
+	}
+	if runewidth.StringWidth(label) > maxLabel {
+		label = runewidth.Truncate(label, maxLabel-1, "…")
+	}
+
+	usedW := indentW + cursorW + runewidth.StringWidth(label) + chevronW + trailW
+	gap := contentWidth - usedW
+	if gap < 0 {
+		gap = 0
+	}
+
+	return indent + cursor + label + strings.Repeat(" ", gap) + chevron + " " + statusStyle.Render(statusGlyph)
+}
+
+// renderStageRow renders a plan lifecycle stage row.
+// Layout: [indent][indicator 1][space 1][label]
+func (s *Sidebar) renderStageRow(row sidebarRow) string {
+	indent := strings.Repeat(" ", row.Indent)
+
+	var indicator string
+	var indStyle lipgloss.Style
+	switch {
+	case row.Done:
+		indicator = "✓"
+		indStyle = stageCheckStyle
+	case row.Active:
+		indicator = "▸"
+		indStyle = stageActiveStyle
+	default:
+		indicator = "○"
+		indStyle = stageLockedStyle
+	}
+
+	return indent + indStyle.Render(indicator) + " " + row.Label
+}
+
+// renderHistoryToggleRow renders the history section divider.
+func (s *Sidebar) renderHistoryToggleRow(_ int) string {
+	return historyToggleStyle.Render("── History ──")
+}
+
+// renderCancelledRow renders a cancelled plan with strikethrough.
+// Layout: [cursor 1][label...][gap...][space 1][✕ 1]
+func (s *Sidebar) renderCancelledRow(row sidebarRow, idx, contentWidth int) string {
+	cursor := " "
+	if idx == s.selectedIdx {
+		cursor = "▸"
+	}
+
+	label := row.Label
+	const trailW = 2 // " ✕"
+	maxLabel := contentWidth - 1 - trailW
+	if maxLabel < 3 {
+		maxLabel = 3
+	}
+	if runewidth.StringWidth(label) > maxLabel {
+		label = runewidth.Truncate(label, maxLabel-1, "…")
+	}
+
+	usedW := 1 + runewidth.StringWidth(label) + trailW
+	gap := contentWidth - usedW
+	if gap < 0 {
+		gap = 0
+	}
+
+	return cursor + sidebarCancelledStyle.Render(label) + strings.Repeat(" ", gap) + " " + sidebarCancelledStyle.Render("✕")
+}
+
 func (s *Sidebar) String() string {
 	borderStyle := sidebarBorderStyle
 	if s.focused {
