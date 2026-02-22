@@ -8,47 +8,59 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
-// Status is the type-safe status for a plan entry.
 type Status string
 
 const (
-	// StatusReady is the initial state — plan is queued, no session started yet.
-	StatusReady Status = "ready"
-	// StatusInProgress means a coder session is actively implementing the plan.
+	StatusReady      Status = "ready"
 	StatusInProgress Status = "in_progress"
-	// StatusDone means the agent has finished implementation and written "done".
-	// This is the trigger that causes klique to spawn a reviewer.
-	StatusDone Status = "done"
-	// StatusReviewing means a reviewer session has been spawned and is running.
-	StatusReviewing Status = "reviewing"
-	// StatusCompleted is the terminal status set by klique after the reviewer
-	// session exits. It is intentionally distinct from StatusDone so that
-	// IsDone returns false, breaking the coder→reviewer→done→
-	// reviewer infinite spawn cycle.
-	StatusCompleted Status = "completed"
+	StatusDone       Status = "done"
+	StatusReviewing  Status = "reviewing"
+	StatusCompleted  Status = "completed"
 )
 
-// PlanEntry is one plan's state in plan-state.json.
 type PlanEntry struct {
-	Status      Status `json:"status"`
-	Implemented string `json:"implemented,omitempty"`
+	Status      Status    `json:"status"`
+	Description string    `json:"description,omitempty"`
+	Branch      string    `json:"branch,omitempty"`
+	Topic       string    `json:"topic,omitempty"`
+	CreatedAt   time.Time `json:"created_at,omitempty"`
+	Implemented string    `json:"implemented,omitempty"`
 }
 
-// PlanState holds all plan entries and the directory they were loaded from.
+type TopicEntry struct {
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type PlanState struct {
-	Dir   string
-	Plans map[string]PlanEntry
+	Dir          string
+	Plans        map[string]PlanEntry
+	TopicEntries map[string]TopicEntry
 }
 
-// PlanInfo is a plan entry with its filename attached, for display.
 type PlanInfo struct {
-	Filename string
-	Status   Status
+	Filename    string
+	Status      Status
+	Description string
+	Branch      string
+	Topic       string
+	CreatedAt   time.Time
+}
+
+type TopicInfo struct {
+	Name      string
+	CreatedAt time.Time
 }
 
 const stateFile = "plan-state.json"
+
+// wrappedFormat is the new on-disk format with "plans" and "topics" keys.
+type wrappedFormat struct {
+	Topics map[string]TopicEntry `json:"topics,omitempty"`
+	Plans  map[string]PlanEntry  `json:"plans"`
+}
 
 // Load reads plan-state.json from dir. Returns empty state if file missing.
 func Load(dir string) (*PlanState, error) {
@@ -56,21 +68,111 @@ func Load(dir string) (*PlanState, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return &PlanState{Dir: dir, Plans: make(map[string]PlanEntry)}, nil
+			return &PlanState{Dir: dir, Plans: make(map[string]PlanEntry), TopicEntries: make(map[string]TopicEntry)}, nil
 		}
 		return nil, fmt.Errorf("read plan state: %w", err)
 	}
 
-	var plans map[string]PlanEntry
-	if err := json.Unmarshal(data, &plans); err != nil {
+	// Try new wrapped format first
+	var wrapped wrappedFormat
+	if err := json.Unmarshal(data, &wrapped); err != nil {
 		return nil, fmt.Errorf("parse plan state: %w", err)
 	}
 
-	if plans == nil {
-		plans = make(map[string]PlanEntry)
+	// Detect legacy flat format: if "plans" key is absent, the top-level
+	// object IS the plan map. We detect this by checking if wrapped.Plans
+	// is nil/empty AND the raw JSON has keys ending in ".md".
+	if len(wrapped.Plans) == 0 {
+		var flat map[string]PlanEntry
+		if err := json.Unmarshal(data, &flat); err == nil && len(flat) > 0 {
+			// Check if any key looks like a plan filename
+			isLegacy := false
+			for k := range flat {
+				if strings.HasSuffix(k, ".md") {
+					isLegacy = true
+					break
+				}
+			}
+			if isLegacy {
+				wrapped.Plans = flat
+				wrapped.Topics = make(map[string]TopicEntry)
+			}
+		}
 	}
 
-	return &PlanState{Dir: dir, Plans: plans}, nil
+	if wrapped.Plans == nil {
+		wrapped.Plans = make(map[string]PlanEntry)
+	}
+	if wrapped.Topics == nil {
+		wrapped.Topics = make(map[string]TopicEntry)
+	}
+
+	return &PlanState{Dir: dir, Plans: wrapped.Plans, TopicEntries: wrapped.Topics}, nil
+}
+
+// Topics returns all topic entries sorted by name.
+func (ps *PlanState) Topics() []TopicInfo {
+	result := make([]TopicInfo, 0, len(ps.TopicEntries))
+	for name, entry := range ps.TopicEntries {
+		result = append(result, TopicInfo{Name: name, CreatedAt: entry.CreatedAt})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Name < result[j].Name
+	})
+	return result
+}
+
+// PlansByTopic returns all plans in the given topic, sorted by filename.
+func (ps *PlanState) PlansByTopic(topic string) []PlanInfo {
+	result := make([]PlanInfo, 0)
+	for filename, entry := range ps.Plans {
+		if entry.Topic == topic {
+			result = append(result, PlanInfo{
+				Filename: filename, Status: entry.Status,
+				Description: entry.Description, Branch: entry.Branch,
+				Topic: entry.Topic, CreatedAt: entry.CreatedAt,
+			})
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Filename < result[j].Filename
+	})
+	return result
+}
+
+// UngroupedPlans returns all plans with no topic that are not done/completed, sorted by filename.
+func (ps *PlanState) UngroupedPlans() []PlanInfo {
+	result := make([]PlanInfo, 0)
+	for filename, entry := range ps.Plans {
+		if entry.Topic == "" && entry.Status != StatusDone && entry.Status != StatusCompleted {
+			result = append(result, PlanInfo{
+				Filename: filename, Status: entry.Status,
+				Description: entry.Description, Branch: entry.Branch,
+				Topic: "", CreatedAt: entry.CreatedAt,
+			})
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Filename < result[j].Filename
+	})
+	return result
+}
+
+// HasRunningCoderInTopic checks if any plan in the given topic (other than
+// excludePlan) has status StatusInProgress. Returns the conflicting plan filename.
+func (ps *PlanState) HasRunningCoderInTopic(topic, excludePlan string) (bool, string) {
+	if topic == "" {
+		return false, ""
+	}
+	for filename, entry := range ps.Plans {
+		if filename == excludePlan {
+			continue
+		}
+		if entry.Topic == topic && entry.Status == StatusInProgress {
+			return true, filename
+		}
+	}
+	return false, ""
 }
 
 // Unfinished returns plans that are not done or completed, sorted by filename.
@@ -80,13 +182,37 @@ func (ps *PlanState) Unfinished() []PlanInfo {
 		if entry.Status == StatusDone || entry.Status == StatusCompleted {
 			continue
 		}
-		result = append(result, PlanInfo{Filename: filename, Status: entry.Status})
+		result = append(result, PlanInfo{
+			Filename: filename, Status: entry.Status,
+			Description: entry.Description, Branch: entry.Branch,
+			Topic: entry.Topic, CreatedAt: entry.CreatedAt,
+		})
 	}
-
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].Filename < result[j].Filename
 	})
+	return result
+}
 
+// Finished returns plans that are done or completed, sorted by creation time (newest first).
+func (ps *PlanState) Finished() []PlanInfo {
+	result := make([]PlanInfo, 0)
+	for filename, entry := range ps.Plans {
+		if entry.Status != StatusDone && entry.Status != StatusCompleted {
+			continue
+		}
+		result = append(result, PlanInfo{
+			Filename: filename, Status: entry.Status,
+			Description: entry.Description, Branch: entry.Branch,
+			Topic: entry.Topic, CreatedAt: entry.CreatedAt,
+		})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if !result[i].CreatedAt.Equal(result[j].CreatedAt) {
+			return result[i].CreatedAt.After(result[j].CreatedAt)
+		}
+		return result[i].Filename > result[j].Filename
+	})
 	return result
 }
 
@@ -105,11 +231,36 @@ func (ps *PlanState) SetStatus(filename string, status Status) error {
 	if ps.Plans == nil {
 		ps.Plans = make(map[string]PlanEntry)
 	}
-
 	entry := ps.Plans[filename]
 	entry.Status = status
 	ps.Plans[filename] = entry
+	return ps.save()
+}
 
+// Create adds a new plan entry to the state and auto-creates the topic if needed.
+func (ps *PlanState) Create(filename, description, branch, topic string, createdAt time.Time) error {
+	if ps.Plans == nil {
+		ps.Plans = make(map[string]PlanEntry)
+	}
+	if _, exists := ps.Plans[filename]; exists {
+		return fmt.Errorf("plan already exists: %s", filename)
+	}
+	ps.Plans[filename] = PlanEntry{
+		Status:      StatusReady,
+		Description: description,
+		Branch:      branch,
+		Topic:       topic,
+		CreatedAt:   createdAt.UTC(),
+	}
+	// Auto-create topic entry if it doesn't exist
+	if topic != "" {
+		if ps.TopicEntries == nil {
+			ps.TopicEntries = make(map[string]TopicEntry)
+		}
+		if _, exists := ps.TopicEntries[topic]; !exists {
+			ps.TopicEntries[topic] = TopicEntry{CreatedAt: createdAt.UTC()}
+		}
+	}
 	return ps.save()
 }
 
@@ -125,15 +276,17 @@ func DisplayName(filename string) string {
 }
 
 func (ps *PlanState) save() error {
-	data, err := json.MarshalIndent(ps.Plans, "", "  ")
+	wrapped := wrappedFormat{
+		Topics: ps.TopicEntries,
+		Plans:  ps.Plans,
+	}
+	data, err := json.MarshalIndent(wrapped, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal plan state: %w", err)
 	}
-
 	path := filepath.Join(ps.Dir, stateFile)
 	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
 		return fmt.Errorf("write plan state: %w", err)
 	}
-
 	return nil
 }

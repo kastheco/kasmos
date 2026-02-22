@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -170,4 +171,127 @@ func TestSetStatus(t *testing.T) {
 	ps2, err := Load(dir)
 	require.NoError(t, err)
 	assert.Equal(t, StatusReviewing, ps2.Plans["a.md"].Status)
+}
+
+func TestPlanEntryWithTopic(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "plan-state.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{
+		"topics": {
+			"ui-refactor": {"created_at": "2026-02-21T14:30:00Z"}
+		},
+		"plans": {
+			"2026-02-21-sidebar.md": {
+				"status": "in_progress",
+				"description": "refactor sidebar",
+				"branch": "plan/sidebar",
+				"topic": "ui-refactor",
+				"created_at": "2026-02-21T14:30:00Z"
+			}
+		}
+	}`), 0o644))
+
+	ps, err := Load(dir)
+	require.NoError(t, err)
+
+	entry := ps.Plans["2026-02-21-sidebar.md"]
+	assert.Equal(t, StatusInProgress, entry.Status)
+	assert.Equal(t, "refactor sidebar", entry.Description)
+	assert.Equal(t, "plan/sidebar", entry.Branch)
+	assert.Equal(t, "ui-refactor", entry.Topic)
+
+	topics := ps.Topics()
+	require.Len(t, topics, 1)
+	assert.Equal(t, "ui-refactor", topics[0].Name)
+}
+
+func TestPlansByTopic(t *testing.T) {
+	ps := &PlanState{
+		Dir: "/tmp",
+		Plans: map[string]PlanEntry{
+			"a.md": {Status: StatusInProgress, Topic: "ui"},
+			"b.md": {Status: StatusReady, Topic: "ui"},
+			"c.md": {Status: StatusReady, Topic: ""},
+		},
+		TopicEntries: map[string]TopicEntry{
+			"ui": {CreatedAt: time.Now()},
+		},
+	}
+
+	byTopic := ps.PlansByTopic("ui")
+	assert.Len(t, byTopic, 2)
+
+	ungrouped := ps.UngroupedPlans()
+	assert.Len(t, ungrouped, 1)
+	assert.Equal(t, "c.md", ungrouped[0].Filename)
+}
+
+func TestCreatePlanWithTopic(t *testing.T) {
+	dir := t.TempDir()
+	ps, err := Load(dir)
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+	require.NoError(t, ps.Create("2026-02-21-feat.md", "a feature", "plan/feat", "my-topic", now))
+
+	// Topic should be auto-created
+	topics := ps.Topics()
+	require.Len(t, topics, 1)
+	assert.Equal(t, "my-topic", topics[0].Name)
+
+	entry := ps.Plans["2026-02-21-feat.md"]
+	assert.Equal(t, "my-topic", entry.Topic)
+	assert.Equal(t, StatusReady, entry.Status)
+}
+
+func TestCreatePlanUngrouped(t *testing.T) {
+	dir := t.TempDir()
+	ps, err := Load(dir)
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+	require.NoError(t, ps.Create("2026-02-21-fix.md", "a fix", "plan/fix", "", now))
+
+	topics := ps.Topics()
+	assert.Len(t, topics, 0)
+
+	entry := ps.Plans["2026-02-21-fix.md"]
+	assert.Equal(t, "", entry.Topic)
+}
+
+func TestHasRunningCoderInTopic(t *testing.T) {
+	ps := &PlanState{
+		Dir: "/tmp",
+		Plans: map[string]PlanEntry{
+			"a.md": {Status: StatusInProgress, Topic: "ui"},
+			"b.md": {Status: StatusReady, Topic: "ui"},
+		},
+	}
+
+	running, planFile := ps.HasRunningCoderInTopic("ui", "b.md")
+	assert.True(t, running)
+	assert.Equal(t, "a.md", planFile)
+
+	running, _ = ps.HasRunningCoderInTopic("ui", "a.md")
+	assert.False(t, running, "should not flag self")
+
+	running, _ = ps.HasRunningCoderInTopic("other", "x.md")
+	assert.False(t, running)
+}
+
+func TestLoadLegacyFlatFormat(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "plan-state.json")
+	// Legacy format: flat map without "plans"/"topics" wrapper
+	require.NoError(t, os.WriteFile(path, []byte(`{
+		"2026-02-20-old.md": {"status": "done"},
+		"2026-02-21-active.md": {"status": "in_progress"}
+	}`), 0o644))
+
+	ps, err := Load(dir)
+	require.NoError(t, err)
+
+	assert.Len(t, ps.Plans, 2)
+	assert.Equal(t, StatusDone, ps.Plans["2026-02-20-old.md"].Status)
+	assert.Equal(t, StatusInProgress, ps.Plans["2026-02-21-active.md"].Status)
 }
