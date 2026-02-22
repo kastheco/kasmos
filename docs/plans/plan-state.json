@@ -140,11 +140,12 @@
       "implemented": "2026-02-21"
     },
     "2026-02-22-1a-tree-renderer.md": {
-      "status": "planning",
+      "status": "done",
       "description": "tree-mode rendering branch in Sidebar.String() with indentation, chevrons, and status glyphs",
-      "branch": "plan/1a-tree-renderer",
+      "branch": "kas/1a-tree-renderer-plan",
       "topic": "sidebar",
-      "created_at": "2026-02-22T18:00:00Z"
+      "created_at": "2026-02-22T18:00:00Z",
+      "implemented": "2026-02-22"
     },
     "2026-02-22-1b-tree-navigation.md": {
       "status": "planning",
