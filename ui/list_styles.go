@@ -33,6 +33,16 @@ var completedTitleStyle = lipgloss.NewStyle().
 	Foreground(ColorMuted).
 	Faint(true)
 
+// dimmedTitleStyle is for non-highlighted instances when a filter is active.
+var dimmedTitleStyle = lipgloss.NewStyle().
+	Padding(1, 1, 0, 1).
+	Foreground(ColorMuted)
+
+// dimmedDescStyle matches dimmedTitleStyle for the description line.
+var dimmedDescStyle = lipgloss.NewStyle().
+	Padding(0, 1, 1, 1).
+	Foreground(ColorMuted)
+
 // completedDescStyle renders the description/branch line for implementation-complete instances.
 var completedDescStyle = lipgloss.NewStyle().
 	Padding(0, 1, 1, 1).

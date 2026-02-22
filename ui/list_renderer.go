@@ -23,7 +23,7 @@ func (r *InstanceRenderer) setWidth(width int) {
 	r.width = AdjustPreviewWidth(width)
 }
 
-func (r *InstanceRenderer) Render(i *session.Instance, selected bool, focused bool, hasMultipleRepos bool, rowIndex int) string {
+func (r *InstanceRenderer) Render(i *session.Instance, selected bool, focused bool, hasMultipleRepos bool, rowIndex int, highlighted bool) string {
 	prefix := " "
 	titleS := selectedTitleStyle
 	descS := selectedDescStyle
@@ -44,6 +44,12 @@ func (r *InstanceRenderer) Render(i *session.Instance, selected bool, focused bo
 			titleS = titleStyle
 			descS = listDescStyle
 		}
+	}
+
+	// Dim non-highlighted instances when a highlight filter is active
+	if !highlighted && !selected {
+		titleS = dimmedTitleStyle
+		descS = dimmedDescStyle
 	}
 
 	// add spinner next to title if it's running
@@ -273,7 +279,7 @@ func (l *List) String() string {
 
 	// Render the list.
 	for i, item := range l.items {
-		b.WriteString(l.renderer.Render(item, i == l.selectedIdx, l.focused, len(l.repos) > 1, i))
+		b.WriteString(l.renderer.Render(item, i == l.selectedIdx, l.focused, len(l.repos) > 1, i, l.IsHighlighted(item)))
 		if i != len(l.items)-1 {
 			b.WriteString("\n\n")
 		}
