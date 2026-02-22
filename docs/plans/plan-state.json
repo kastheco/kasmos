@@ -3,6 +3,17 @@
     "status": "done",
     "implemented": "2026-02-20"
   },
+  "2026-02-20-plan-orchestration-design.md": {
+    "status": "done"
+  },
+  "2026-02-20-plan-orchestration.md": {
+    "status": "done",
+    "implemented": "2026-02-20"
+  },
+  "2026-02-20-project-skills-distribution.md": {
+    "status": "done",
+    "implemented": "2026-02-20"
+  },
   "2026-02-20-task-orchestration-design.md": {
     "status": "done",
     "implemented": "2026-02-20"
@@ -15,17 +26,6 @@
     "status": "done",
     "implemented": "2026-02-20"
   },
-  "2026-02-20-project-skills-distribution.md": {
-    "status": "done",
-    "implemented": "2026-02-20"
-  },
-  "2026-02-20-plan-orchestration-design.md": {
-    "status": "done"
-  },
-  "2026-02-20-plan-orchestration.md": {
-    "status": "done",
-    "implemented": "2026-02-20"
-  },
   "2026-02-20-wizard-ux-design.md": {
     "status": "done"
   },
@@ -33,11 +33,15 @@
     "status": "done",
     "implemented": "2026-02-21"
   },
-  "2026-02-21-fix-plan-state-machine.md": {
+  "2026-02-21-agent-customize-gate.md": {
     "status": "done",
     "implemented": "2026-02-21"
   },
   "2026-02-21-fix-naming-and-toast-wrap.md": {
+    "status": "done",
+    "implemented": "2026-02-21"
+  },
+  "2026-02-21-fix-plan-state-machine.md": {
     "status": "done",
     "implemented": "2026-02-21"
   },
@@ -47,19 +51,33 @@
   "2026-02-21-generate-opencode-jsonc.md": {
     "status": "ready"
   },
+  "2026-02-21-init-wizard-refinements.md": {
+    "status": "reviewing"
+  },
+  "2026-02-21-osc11-terminal-bg-design.md": {
+    "status": "done",
+    "implemented": "2026-02-21"
+  },
+  "2026-02-21-osc11-terminal-bg.md": {
+    "status": "done",
+    "implemented": "2026-02-21"
+  },
+  "2026-02-21-plan-centric-sidebar.md": {
+    "status": "ready"
+  },
+  "2026-02-21-plan-instance-grouping.md": {
+    "status": "ready"
+  },
+  "2026-02-21-plan-lifecycle-sessions.md": {
+    "status": "ready"
+  },
   "2026-02-21-rose-pine-moon-design.md": {
     "status": "ready"
   },
   "2026-02-21-rose-pine-moon.md": {
     "status": "ready"
   },
-  "2026-02-21-plan-centric-sidebar.md": {
-    "status": "ready"
-  },
-  "2026-02-21-plan-lifecycle-sessions.md": {
-    "status": "ready"
-  },
-  "2026-02-21-plan-instance-grouping.md": {
+  "2026-02-21-sidebar-nav-showhide.md": {
     "status": "ready"
   },
   "2026-02-21-sidebar-toggle-design.md": {
@@ -70,25 +88,10 @@
     "status": "done",
     "implemented": "2026-02-21"
   },
-  "2026-02-21-sidebar-nav-showhide.md": {
+  "2026-02-21-topics-as-collision-domains-design.md": {
     "status": "ready"
   },
-  "2026-02-21-agent-customize-gate.md": {
-    "status": "done",
-    "implemented": "2026-02-21"
-  },
-  "2026-02-21-osc11-terminal-bg-design.md": {
-    "status": "done",
-    "implemented": "2026-02-21"
-  },
-  "2026-02-21-osc11-terminal-bg.md": {
-    "status": "done",
-    "implemented": "2026-02-21"
-  },
-  "2026-02-21-init-wizard-refinements.md": {
-    "status": "done"
-  },
-  "2026-02-21-topics-as-collision-domains-design.md": {
+  "2026-02-21-topics-collision-domains.md": {
     "status": "ready"
   }
 }
