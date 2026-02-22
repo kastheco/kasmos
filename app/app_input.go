@@ -904,6 +904,10 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		if m.focusedPanel == 0 && m.sidebar.ToggleSelectedExpand() {
 			return m, nil
 		}
+		// In tree mode, Space on non-expandable rows (stages) is a no-op
+		if m.focusedPanel == 0 && m.sidebar.IsTreeMode() {
+			return m, nil
+		}
 		return m.openContextMenu()
 	case keys.KeyGitTab:
 		// Jump directly to git tab
@@ -1009,9 +1013,9 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 	case keys.KeyEnter:
 		// If the sidebar is focused, handle tree-mode interactions.
 		if m.focusedPanel == 0 {
-			// Stage row: trigger the stage action
-			if planFile, stage, ok := m.sidebar.GetSelectedPlanStage(); ok {
-				return m.triggerPlanStage(planFile, stage)
+			// Stage rows are display-only — no action
+			if _, _, isStage := m.sidebar.GetSelectedPlanStage(); isStage {
+				return m, nil
 			}
 			// Plan header: open plan context menu
 			if m.sidebar.IsSelectedPlanHeader() {
@@ -1070,6 +1074,11 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		}
 		return m, tea.WindowSize()
 	case keys.KeyLeft:
+		if m.focusedPanel == 0 && m.sidebar.IsTreeMode() {
+			m.sidebar.Left()
+			m.filterInstancesByTopic()
+			return m, nil
+		}
 		if m.focusedPanel == 0 {
 			// Already on sidebar: hide it and move focus to center
 			if !m.sidebar.IsSearchActive() {
@@ -1091,6 +1100,11 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		}
 		return m, nil
 	case keys.KeyRight:
+		if m.focusedPanel == 0 && m.sidebar.IsTreeMode() {
+			m.sidebar.Right()
+			m.filterInstancesByTopic()
+			return m, nil
+		}
 		// Cycle right: sidebar(0) → preview(1) → list(2). Stop at list.
 		if m.focusedPanel < 2 {
 			m.setFocus(m.focusedPanel + 1)
