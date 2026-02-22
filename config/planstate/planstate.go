@@ -146,15 +146,21 @@ func (ps *PlanState) PlansByTopic(topic string) []PlanInfo {
 	return result
 }
 
-// UngroupedPlans returns all plans with no topic that are not done/completed/cancelled, sorted by filename.
+// UngroupedPlans returns all active plans that either have no topic or whose
+// topic has no matching TopicEntries entry (orphaned), sorted by filename.
 func (ps *PlanState) UngroupedPlans() []PlanInfo {
 	result := make([]PlanInfo, 0)
 	for filename, entry := range ps.Plans {
-		if entry.Topic == "" && entry.Status != StatusDone && entry.Status != StatusCompleted && entry.Status != StatusCancelled {
+		if entry.Status == StatusDone || entry.Status == StatusCompleted || entry.Status == StatusCancelled {
+			continue
+		}
+		// Include plans with no topic, or plans whose topic is orphaned
+		// (has no matching TopicEntries entry) so they don't silently disappear.
+		if entry.Topic == "" || (entry.Topic != "" && !ps.hasTopicEntry(entry.Topic)) {
 			result = append(result, PlanInfo{
 				Filename: filename, Status: entry.Status,
 				Description: entry.Description, Branch: entry.Branch,
-				Topic: "", CreatedAt: entry.CreatedAt,
+				Topic: entry.Topic, CreatedAt: entry.CreatedAt,
 			})
 		}
 	}
@@ -162,6 +168,15 @@ func (ps *PlanState) UngroupedPlans() []PlanInfo {
 		return result[i].Filename < result[j].Filename
 	})
 	return result
+}
+
+// hasTopicEntry returns true if the given topic name exists in TopicEntries.
+func (ps *PlanState) hasTopicEntry(topic string) bool {
+	if ps.TopicEntries == nil {
+		return false
+	}
+	_, exists := ps.TopicEntries[topic]
+	return exists
 }
 
 // HasRunningCoderInTopic checks if any plan in the given topic (other than
