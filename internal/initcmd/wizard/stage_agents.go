@@ -126,6 +126,13 @@ func runSingleAgentForm(state *State, idx int, modelCache map[string][]string) e
 	// Group 2 conditionally visible: harness + enabled toggle
 	var customize bool
 	summary := FormatAgentSummary(*agent)
+	defHarness := ""
+	if len(state.SelectedHarness) > 0 {
+		defHarness = state.SelectedHarness[0]
+	}
+	if IsCustomized(*agent, defHarness) {
+		summary = "\033[1m" + summary + "\033[0m"
+	}
 
 	gateForm := huh.NewForm(
 		// Group 1: summary + customize?

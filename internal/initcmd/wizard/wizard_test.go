@@ -73,11 +73,6 @@ func TestStateToAgentConfigs(t *testing.T) {
 	assert.Equal(t, "chat", configs[2].Role)
 }
 
-func TestDefaultPhases(t *testing.T) {
-	phases := DefaultPhases()
-	assert.Equal(t, []string{"implementing", "spec_review", "quality_review", "planning"}, phases)
-}
-
 func TestDefaultAgentRoles(t *testing.T) {
 	roles := DefaultAgentRoles()
 	assert.Equal(t, []string{"coder", "reviewer", "planner", "chat"}, roles)
@@ -123,6 +118,50 @@ func TestRoleDefaults(t *testing.T) {
 		assert.Equal(t, "high", ch.Effort)
 		assert.Equal(t, "0.3", ch.Temperature)
 		assert.True(t, ch.Enabled)
+	})
+}
+
+func TestIsCustomized(t *testing.T) {
+	t.Run("matches defaults returns false", func(t *testing.T) {
+		// In practice the harness is filled from defaultHarness before IsCustomized is called.
+		a := RoleDefaults()["coder"]
+		a.Harness = "opencode"
+		assert.False(t, IsCustomized(a, "opencode"))
+	})
+
+	t.Run("different model returns true", func(t *testing.T) {
+		a := RoleDefaults()["coder"]
+		a.Model = "anthropic/claude-opus-4-6"
+		assert.True(t, IsCustomized(a, "opencode"))
+	})
+
+	t.Run("different harness returns true", func(t *testing.T) {
+		a := RoleDefaults()["coder"]
+		a.Harness = "claude"
+		assert.True(t, IsCustomized(a, "opencode"))
+	})
+
+	t.Run("different effort returns true", func(t *testing.T) {
+		a := RoleDefaults()["coder"]
+		a.Effort = "high"
+		assert.True(t, IsCustomized(a, "opencode"))
+	})
+
+	t.Run("different temperature returns true", func(t *testing.T) {
+		a := RoleDefaults()["coder"]
+		a.Temperature = "0.5"
+		assert.True(t, IsCustomized(a, "opencode"))
+	})
+
+	t.Run("disabled returns true", func(t *testing.T) {
+		a := RoleDefaults()["coder"]
+		a.Enabled = false
+		assert.True(t, IsCustomized(a, "opencode"))
+	})
+
+	t.Run("unknown role returns false", func(t *testing.T) {
+		a := AgentState{Role: "unknown", Enabled: true}
+		assert.False(t, IsCustomized(a, "opencode"))
 	})
 }
 

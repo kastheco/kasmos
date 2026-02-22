@@ -62,11 +62,6 @@ type AgentState struct {
 	Enabled     bool
 }
 
-// DefaultPhases returns the default lifecycle phase names.
-func DefaultPhases() []string {
-	return []string{"implementing", "spec_review", "quality_review", "planning"}
-}
-
 // DefaultAgentRoles returns the built-in agent role names.
 func DefaultAgentRoles() []string {
 	return []string{"coder", "reviewer", "planner", "chat"}
@@ -105,6 +100,21 @@ func RoleDefaults() map[string]AgentState {
 			Enabled:     true,
 		},
 	}
+}
+
+// IsCustomized returns true if the agent's settings differ from factory RoleDefaults.
+// defaultHarness is the harness that would be assigned if the user didn't customize.
+func IsCustomized(a AgentState, defaultHarness string) bool {
+	defaults, ok := RoleDefaults()[a.Role]
+	if !ok {
+		return false // unknown role, can't compare
+	}
+	defaults.Harness = defaultHarness
+	return a.Harness != defaults.Harness ||
+		a.Model != defaults.Model ||
+		a.Effort != defaults.Effort ||
+		a.Temperature != defaults.Temperature ||
+		a.Enabled != defaults.Enabled
 }
 
 // Run executes all wizard stages in sequence.
