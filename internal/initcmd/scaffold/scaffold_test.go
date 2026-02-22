@@ -238,37 +238,20 @@ func TestToolsReferenceInjected(t *testing.T) {
 		assert.Contains(t, string(content), "claude-opus-4-6")
 	})
 
-	t.Run("filtered tools reference omits unselected tools", func(t *testing.T) {
+	t.Run("cli-tools directive is always present regardless of selectedTools", func(t *testing.T) {
 		dir := t.TempDir()
 		agents := []harness.AgentConfig{
 			{Role: "coder", Harness: "claude", Model: "claude-sonnet-4-6", Enabled: true},
 		}
 
-		_, err := WriteClaudeProject(dir, agents, []string{"sg", "difft"}, false)
-		require.NoError(t, err)
-
-		content, err := os.ReadFile(filepath.Join(dir, ".claude", "agents", "coder.md"))
-		require.NoError(t, err)
-		assert.Contains(t, string(content), "ast-grep")
-		assert.Contains(t, string(content), "difft")
-		assert.NotContains(t, string(content), "comby")
-		assert.NotContains(t, string(content), "typos")
-		assert.NotContains(t, string(content), "watchexec")
-	})
-
-	t.Run("empty tools selection produces no tools reference", func(t *testing.T) {
-		dir := t.TempDir()
-		agents := []harness.AgentConfig{
-			{Role: "coder", Harness: "claude", Model: "claude-sonnet-4-6", Enabled: true},
-		}
-
+		// Even with no selected tools, the mandatory directive is always written
 		_, err := WriteClaudeProject(dir, agents, []string{}, false)
 		require.NoError(t, err)
 
 		content, err := os.ReadFile(filepath.Join(dir, ".claude", "agents", "coder.md"))
 		require.NoError(t, err)
-		assert.NotContains(t, string(content), "ast-grep")
-		assert.NotContains(t, string(content), "Available CLI Tools")
+		assert.Contains(t, string(content), "CLI Tools (MANDATORY)")
+		assert.Contains(t, string(content), "cli-tools")
 	})
 }
 
@@ -278,15 +261,25 @@ func TestWriteProjectSkills(t *testing.T) {
 	results, err := WriteProjectSkills(dir, false)
 	require.NoError(t, err)
 
-	// All three skills written
+	// All four skills written (including cli-tools)
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "golang-pro", "SKILL.md"))
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "tui-design", "SKILL.md"))
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "tmux-orchestration", "SKILL.md"))
+	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "cli-tools", "SKILL.md"))
 
 	// Reference files included
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "tui-design", "references", "bubbletea-patterns.md"))
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "tmux-orchestration", "references", "pane-orchestration.md"))
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "golang-pro", "references", "concurrency.md"))
+
+	// cli-tools resource files included
+	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "cli-tools", "resources", "ast-grep.md"))
+	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "cli-tools", "resources", "comby.md"))
+	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "cli-tools", "resources", "difftastic.md"))
+	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "cli-tools", "resources", "sd.md"))
+	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "cli-tools", "resources", "yq.md"))
+	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "cli-tools", "resources", "typos.md"))
+	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "cli-tools", "resources", "scc.md"))
 
 	// Results track what was written
 	assert.Greater(t, len(results), 0)
@@ -400,6 +393,7 @@ func TestScaffoldAll_IncludesSkills(t *testing.T) {
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "tui-design", "SKILL.md"))
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "tmux-orchestration", "SKILL.md"))
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "golang-pro", "SKILL.md"))
+	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "cli-tools", "SKILL.md"))
 
 	// Symlinks created for each active harness
 	for _, h := range []string{"claude", "opencode"} {

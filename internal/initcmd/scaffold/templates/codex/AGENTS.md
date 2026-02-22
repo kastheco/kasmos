@@ -26,4 +26,7 @@ an entry to `plan-state.json` with `"status": "ready"` immediately after writing
 Unregistered plans are invisible in the klique sidebar.
 Valid statuses: `ready` → `in_progress` → `done`. Only klique transitions beyond `done`.
 
-{{TOOLS_REFERENCE}}
+## CLI Tools
+
+Read the `cli-tools` skill (SKILL.md) at session start. Read individual
+resource files in `resources/` when using that specific tool.

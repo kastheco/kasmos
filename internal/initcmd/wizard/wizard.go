@@ -143,10 +143,8 @@ func Run(registry *harness.Registry, existing *config.TOMLConfigResult) (*State,
 		"planning":       "planner",
 	}
 
-	// Stage 4: Tool discovery
-	if err := runToolsStage(state); err != nil {
-		return nil, err
-	}
+	// Stage 4: Tool discovery removed — cli-tools skill is always written as a project
+	// skill and loaded at runtime. No need to filter by installed tools.
 
 	return state, nil
 }

@@ -14,21 +14,6 @@ import (
 //go:embed templates
 var templates embed.FS
 
-// loadFilteredToolsReference reads the shared tools-reference template and filters
-// it to include only the selected tools. Returns empty string when no tools are
-// selected or on error (non-fatal -- agents work without it, but warns).
-func loadFilteredToolsReference(selectedTools []string) string {
-	content, err := templates.ReadFile("templates/shared/tools-reference.md")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: tools-reference template missing from binary: %v\n", err)
-		return ""
-	}
-	if len(selectedTools) == 0 {
-		return ""
-	}
-	return FilterToolsReference(string(content), selectedTools)
-}
-
 // validateRole ensures a role name is safe for use in filesystem paths.
 // Rejects empty strings and any character outside [a-zA-Z0-9_-].
 func validateRole(role string) error {
@@ -45,10 +30,9 @@ func validateRole(role string) error {
 }
 
 // renderTemplate applies all placeholder substitutions to a template.
-func renderTemplate(content string, agent harness.AgentConfig, toolsRef string) string {
+func renderTemplate(content string, agent harness.AgentConfig) string {
 	rendered := content
 	rendered = strings.ReplaceAll(rendered, "{{MODEL}}", agent.Model)
-	rendered = strings.ReplaceAll(rendered, "{{TOOLS_REFERENCE}}", toolsRef)
 	return rendered
 }
 
@@ -61,7 +45,6 @@ type WriteResult struct {
 // writePerRoleProject is the shared implementation for per-role harnesses (claude, opencode).
 // It scaffolds one .md file per agent role using templates at templates/<harnessName>/agents/<role>.md.
 func writePerRoleProject(dir, harnessName string, agents []harness.AgentConfig, selectedTools []string, force bool) ([]WriteResult, error) {
-	toolsRef := loadFilteredToolsReference(selectedTools)
 	agentDir := filepath.Join(dir, "."+harnessName, "agents")
 	if err := os.MkdirAll(agentDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create .%s/agents: %w", harnessName, err)
@@ -80,7 +63,7 @@ func writePerRoleProject(dir, harnessName string, agents []harness.AgentConfig, 
 			// No template for this role - skip
 			continue
 		}
-		rendered := renderTemplate(string(content), agent, toolsRef)
+		rendered := renderTemplate(string(content), agent)
 		dest := filepath.Join(agentDir, agent.Role+".md")
 		written, err := writeFile(dest, []byte(rendered), force)
 		if err != nil {
@@ -116,7 +99,6 @@ func WriteCodexProject(dir string, agents []harness.AgentConfig, selectedTools [
 		}
 	}
 
-	toolsRef := loadFilteredToolsReference(selectedTools)
 	codexDir := filepath.Join(dir, ".codex")
 	if err := os.MkdirAll(codexDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create .codex: %w", err)
@@ -127,7 +109,7 @@ func WriteCodexProject(dir string, agents []harness.AgentConfig, selectedTools [
 		return nil, fmt.Errorf("read codex template: %w", err)
 	}
 
-	rendered := strings.ReplaceAll(string(content), "{{TOOLS_REFERENCE}}", toolsRef)
+	rendered := string(content)
 	dest := filepath.Join(codexDir, "AGENTS.md")
 	written, err := writeFile(dest, []byte(rendered), force)
 	if err != nil {
