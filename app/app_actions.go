@@ -2,7 +2,10 @@ package app
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
+	"github.com/kastheco/klique/config/planparser"
 	"github.com/kastheco/klique/config/planstate"
 	"github.com/kastheco/klique/internal/initcmd/scaffold"
 	"github.com/kastheco/klique/session"
@@ -438,6 +441,18 @@ func (m *home) triggerPlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 		m.updateSidebarItems()
 		return m.spawnPlanAgent(planFile, "plan", buildPlanPrompt(planstate.DisplayName(planFile), entry.Description))
 	case "implement":
+		// Validate plan has wave annotations before spawning
+		plansDir := filepath.Join(m.activeRepoPath, "docs", "plans")
+		if err := validatePlanHasWaves(plansDir, planFile); err != nil {
+			if setErr := m.planState.SetStatus(planFile, planstate.StatusPlanning); setErr != nil {
+				return m, m.handleError(setErr)
+			}
+			m.loadPlanState()
+			m.updateSidebarPlans()
+			m.updateSidebarItems()
+			m.toastManager.Error("Plan needs ## Wave headers before implementation. Returning to planning.")
+			return m, tea.Batch(m.toastTickCmd(), func() tea.Msg { return planRefreshMsg{} })
+		}
 		if err := m.planState.SetStatus(planFile, planstate.StatusImplementing); err != nil {
 			return m, m.handleError(err)
 		}
@@ -481,6 +496,17 @@ func planStageStatus(planFile, stage string, ps *planstate.PlanState) error {
 		return ps.SetStatus(planFile, planstate.StatusCompleted)
 	}
 	return nil
+}
+
+// validatePlanHasWaves reads a plan file and checks it has ## Wave headers.
+// Returns an error if the plan lacks wave annotations.
+func validatePlanHasWaves(plansDir, planFile string) error {
+	content, err := os.ReadFile(filepath.Join(plansDir, planFile))
+	if err != nil {
+		return fmt.Errorf("read plan: %w", err)
+	}
+	_, err = planparser.Parse(string(content))
+	return err
 }
 
 // isLocked returns true if the given stage cannot be triggered given the current plan status.
