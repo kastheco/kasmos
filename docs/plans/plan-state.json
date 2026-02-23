@@ -282,6 +282,11 @@
       "status": "ready",
       "description": "centralized FSM for plan lifecycle with flock serialization and agent sentinel files",
       "created_at": "2026-02-23T14:00:00Z"
+    },
+    "2026-02-23-update-ascii-art.md": {
+      "status": "ready",
+      "description": "replace KLIQUE ascii art banner with KASMOS using same ANSI Shadow font",
+      "created_at": "2026-02-23T18:00:00Z"
     }
   }
 }
