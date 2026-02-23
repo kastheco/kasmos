@@ -384,10 +384,16 @@ func (w *TabbedWindow) String() string {
 		}
 		style = style.Border(border)
 		style = style.Width(width - style.GetHorizontalFrameSize())
-		if isActive && !w.focusMode {
+		switch {
+		case isActive && i == w.focusedTab && !w.focusMode:
+			// Focused tab in the ring: foam→iris gradient
 			renderedTabs = append(renderedTabs, style.Render(GradientText(t, GradientStart, GradientEnd)))
-		} else {
-			renderedTabs = append(renderedTabs, style.Render(t))
+		case isActive:
+			// Active but not ring-focused: normal text color
+			renderedTabs = append(renderedTabs, style.Render(lipgloss.NewStyle().Foreground(ColorText).Render(t)))
+		default:
+			// Inactive tab: muted
+			renderedTabs = append(renderedTabs, style.Render(lipgloss.NewStyle().Foreground(ColorMuted).Render(t)))
 		}
 	}
 
