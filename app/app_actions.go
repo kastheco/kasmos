@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/kastheco/kasmos/config/planfsm"
 	"github.com/kastheco/kasmos/config/planparser"
 	"github.com/kastheco/kasmos/config/planstate"
 	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
@@ -226,7 +227,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			if err := gitpkg.MergePlanBranch(m.activeRepoPath, entry.Branch); err != nil {
 				return err
 			}
-			if err := m.planState.SetStatus(planFile, planstate.StatusCompleted); err != nil {
+			if err := m.fsm.Transition(planFile, planfsm.ReviewApproved); err != nil {
 				return err
 			}
 			_ = m.saveAllInstances()
@@ -242,7 +243,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		if planFile == "" || m.planState == nil {
 			return m, nil
 		}
-		if err := m.planState.SetStatus(planFile, planstate.StatusCompleted); err != nil {
+		if err := m.fsm.Transition(planFile, planfsm.ReviewApproved); err != nil {
 			return m, m.handleError(err)
 		}
 		m.loadPlanState()
@@ -272,7 +273,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		if planFile == "" {
 			return m, nil
 		}
-		if err := m.setPlanStatus(planFile, planstate.StatusPlanning); err != nil {
+		if err := m.fsm.Transition(planFile, planfsm.PlanStart); err != nil {
 			return m, m.handleError(err)
 		}
 		m.loadPlanState()
@@ -301,7 +302,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			if err := gitpkg.ResetPlanBranch(m.activeRepoPath, entry.Branch); err != nil {
 				return err
 			}
-			if err := m.setPlanStatus(planFile, planstate.StatusPlanning); err != nil {
+			if err := m.fsmForceToPlanning(planFile); err != nil {
 				return err
 			}
 			_ = m.saveAllInstances()
@@ -314,14 +315,72 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
-}
-
-// setPlanStatus updates the status of a plan in plan-state.json.
-func (m *home) setPlanStatus(planFile string, status planstate.Status) error {
+}// fsmSetImplementing transitions the plan to implementing, handling the
+// planning→ready→implementing two-step when called after a planner finishes.
+func (m *home) fsmSetImplementing(planFile string) error {
 	if m.planState == nil {
 		return fmt.Errorf("plan state is not loaded")
 	}
-	return m.planState.SetStatus(planFile, status)
+	entry, ok := m.planState.Entry(planFile)
+	if !ok {
+		return fmt.Errorf("plan not found: %s", planFile)
+	}
+	current := planfsm.Status(entry.Status)
+	if current == planfsm.StatusImplementing {
+		return nil // already implementing (re-spawning coder), no status change
+	}
+	if current == planfsm.StatusPlanning {
+		// Planner finished without writing a sentinel — transition through ready.
+		if err := m.fsm.Transition(planFile, planfsm.PlannerFinished); err != nil {
+			return err
+		}
+	}
+	return m.fsm.Transition(planFile, planfsm.ImplementStart)
+}
+
+// fsmRevertToPlanning moves the plan back to planning state from implementing.
+// Used when implementation can't start (e.g., missing wave headers).
+func (m *home) fsmRevertToPlanning(planFile string) error {
+	if m.planState == nil {
+		return fmt.Errorf("plan state is not loaded")
+	}
+	entry, ok := m.planState.Entry(planFile)
+	if !ok {
+		return fmt.Errorf("plan not found: %s", planFile)
+	}
+	if planfsm.Status(entry.Status) == planfsm.StatusPlanning {
+		return nil // already there
+	}
+	if err := m.fsm.Transition(planFile, planfsm.Cancel); err != nil {
+		return err
+	}
+	return m.fsm.Transition(planFile, planfsm.Reopen)
+}
+
+// fsmForceToPlanning moves the plan to planning from any current state.
+// Used for start-over scenarios where branch history is reset.
+func (m *home) fsmForceToPlanning(planFile string) error {
+	if m.planState == nil {
+		return fmt.Errorf("plan state is not loaded")
+	}
+	entry, ok := m.planState.Entry(planFile)
+	if !ok {
+		return fmt.Errorf("plan not found: %s", planFile)
+	}
+	switch planfsm.Status(entry.Status) {
+	case planfsm.StatusPlanning:
+		return nil
+	case planfsm.StatusCancelled:
+		return m.fsm.Transition(planFile, planfsm.Reopen)
+	case planfsm.StatusDone:
+		return m.fsm.Transition(planFile, planfsm.StartOver)
+	default:
+		// ready, planning, implementing, reviewing → Cancel then Reopen
+		if err := m.fsm.Transition(planFile, planfsm.Cancel); err != nil {
+			return err
+		}
+		return m.fsm.Transition(planFile, planfsm.Reopen)
+	}
 }
 
 // findPlanInstance returns the instance bound to the currently selected plan in the sidebar.
@@ -498,7 +557,7 @@ func (m *home) triggerPlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			conflictName := planstate.DisplayName(conflictPlan)
 			message := fmt.Sprintf("⚠ %s is already running in topic \"%s\"\n\nRunning both plans may cause issues.\nContinue anyway?", conflictName, entry.Topic)
 			proceedAction := func() tea.Msg {
-				if err := planStageStatus(planFile, stage, m.planState); err != nil {
+				if err := m.fsmSetImplementing(planFile); err != nil {
 					return err
 				}
 				return planRefreshMsg{}
@@ -511,7 +570,7 @@ func (m *home) triggerPlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 	// status update + session creation.
 	switch stage {
 	case "plan":
-		if err := m.planState.SetStatus(planFile, planstate.StatusPlanning); err != nil {
+		if err := m.fsm.Transition(planFile, planfsm.PlanStart); err != nil {
 			return m, m.handleError(err)
 		}
 		m.loadPlanState()
@@ -526,10 +585,9 @@ func (m *home) triggerPlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			return m, m.handleError(err)
 		}
 		plan, err := planparser.Parse(string(content))
-		if err != nil {
-			// No wave headers — revert to planning and respawn the planner with a
+		if err != nil {// No wave headers — revert to planning and respawn the planner with a
 			// wave-annotation prompt so the agent adds the required ## Wave sections.
-			if setErr := m.planState.SetStatus(planFile, planstate.StatusPlanning); setErr != nil {
+			if setErr := m.fsmRevertToPlanning(planFile); setErr != nil {
 				return m, m.handleError(setErr)
 			}
 			m.loadPlanState()
@@ -549,7 +607,7 @@ func (m *home) triggerPlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 		orch := NewWaveOrchestrator(planFile, plan)
 		m.waveOrchestrators[planFile] = orch
 
-		if err := m.planState.SetStatus(planFile, planstate.StatusImplementing); err != nil {
+		if err := m.fsmSetImplementing(planFile); err != nil {
 			return m, m.handleError(err)
 		}
 		m.loadPlanState()
@@ -566,32 +624,14 @@ func (m *home) triggerPlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 		planName := planstate.DisplayName(planFile)
 		reviewPrompt := scaffold.LoadReviewPrompt("docs/plans/"+planFile, planName)
 		return m.spawnPlanAgent(planFile, "review", reviewPrompt)
-	}
-
-	// Non-agent stages (finished): just update status.
-	if err := planStageStatus(planFile, stage, m.planState); err != nil {
+	}// Non-agent stages (finished): mark plan done via FSM.
+	if err := m.fsm.Transition(planFile, planfsm.ReviewApproved); err != nil {
 		return m, m.handleError(err)
 	}
 	m.loadPlanState()
 	m.updateSidebarPlans()
 	m.updateSidebarItems()
 	return m, nil
-}
-
-// planStageStatus writes the appropriate status for a plan lifecycle stage to disk.
-// Safe to call from a goroutine — only does disk I/O, no model mutations.
-func planStageStatus(planFile, stage string, ps *planstate.PlanState) error {
-	switch stage {
-	case "plan":
-		return ps.SetStatus(planFile, planstate.StatusPlanning)
-	case "implement":
-		return ps.SetStatus(planFile, planstate.StatusImplementing)
-	case "review":
-		return ps.SetStatus(planFile, planstate.StatusReviewing)
-	case "finished":
-		return ps.SetStatus(planFile, planstate.StatusCompleted)
-	}
-	return nil
 }
 
 // validatePlanHasWaves reads a plan file and checks it has ## Wave headers.

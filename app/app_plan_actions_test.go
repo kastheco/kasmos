@@ -166,12 +166,9 @@ func TestSpawnPlanAgent_PlannerUsesMainBranch(t *testing.T) {
 	if inst.Branch != "" {
 		t.Fatalf("planner instance must have empty Branch (runs on main), got %q", inst.Branch)
 	}
-}
-
-// TestPlanStageStatus_UsesCorrectLifecycleStatuses verifies that planStageStatus
-// writes the new lifecycle-stage status constants (StatusPlanning, StatusImplementing)
-// rather than the generic StatusInProgress for plan and implement stages.
-func TestPlanStageStatus_UsesCorrectLifecycleStatuses(t *testing.T) {
+}// TestFSM_PlanLifecycleStages verifies that the FSM produces the correct status for
+// each stage in the plan lifecycle (plan→implement→review→done).
+func TestFSM_PlanLifecycleStages(t *testing.T) {
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	if err := os.MkdirAll(plansDir, 0o755); err != nil {
@@ -187,26 +184,30 @@ func TestPlanStageStatus_UsesCorrectLifecycleStatuses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tests := []struct {
-		stage      string
+	f := newFSMForTest(plansDir)
+
+	stages := []struct {
+		event      string
 		wantStatus planstate.Status
 	}{
-		{"plan", planstate.StatusPlanning},
-		{"implement", planstate.StatusImplementing},
-		{"review", planstate.StatusReviewing},
-		{"finished", planstate.StatusCompleted},
+		{"plan_start", planstate.StatusPlanning},
+		{"planner_finished", planstate.StatusReady},
+		{"implement_start", planstate.StatusImplementing},
+		{"implement_finished", planstate.StatusReviewing},
+		{"review_approved", planstate.StatusDone},
 	}
 
-	for _, tc := range tests {
-		if err := planStageStatus(planFile, tc.stage, ps); err != nil {
-			t.Fatalf("planStageStatus(%q) error: %v", tc.stage, err)
+	for _, tc := range stages {
+		if err := f.TransitionByName(planFile, tc.event); err != nil {
+			t.Fatalf("TransitionByName(%q, %q) error: %v", planFile, tc.event, err)
 		}
-		entry, ok := ps.Entry(planFile)
+		reloaded, _ := planstate.Load(plansDir)
+		entry, ok := reloaded.Entry(planFile)
 		if !ok {
-			t.Fatalf("plan entry missing after planStageStatus(%q)", tc.stage)
+			t.Fatalf("plan entry missing after %q", tc.event)
 		}
 		if entry.Status != tc.wantStatus {
-			t.Errorf("planStageStatus(%q): got status %q, want %q", tc.stage, entry.Status, tc.wantStatus)
+			t.Errorf("after %q: got status %q, want %q", tc.event, entry.Status, tc.wantStatus)
 		}
 	}
 }

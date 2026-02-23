@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/planparser"
+	"github.com/kastheco/kasmos/config/planfsm"
 	"github.com/kastheco/kasmos/config/planstate"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/ui"
@@ -250,6 +251,7 @@ func TestTriggerPlanStage_ImplementNoWaves_RespawnsPlanner(t *testing.T) {
 		appConfig:         config.DefaultConfig(),
 		planState:         ps,
 		planStateDir:      plansDir,
+		fsm:               planfsm.New(plansDir),
 		activeRepoPath:    dir,
 		program:           "opencode",
 		list:              list,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/planfsm"
 	"github.com/kastheco/kasmos/config/planstate"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session"
@@ -205,6 +206,14 @@ type home struct {
 	// pendingPlannerInstanceTitle is the title of the planner instance that
 	// triggered the current planner-exit confirmation dialog.
 	pendingPlannerInstanceTitle string
+
+	// fsm is the sole writer of plan-state.json. All plan status mutations flow
+	// through fsm.Transition — direct SetStatus calls are not allowed.
+	fsm *planfsm.PlanStateMachine
+
+	// pendingReviewFeedback holds review feedback from sentinel files, keyed by
+	// plan filename, to be injected as context for the next coder session.
+	pendingReviewFeedback map[string]string
 }
 
 func newHome(ctx context.Context, program string, autoYes bool) *home {
@@ -228,21 +237,23 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 	}
 
 	h := &home{
-		ctx:               ctx,
-		spinner:           spinner.New(spinner.WithSpinner(spinner.Dot)),
-		menu:              ui.NewMenu(),
-		tabbedWindow:      ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
-		storage:           storage,
-		appConfig:         appConfig,
-		program:           program,
-		autoYes:           autoYes,
-		state:             stateDefault,
-		appState:          appState,
-		activeRepoPath:    activeRepoPath,
-		planStateDir:      filepath.Join(activeRepoPath, "docs", "plans"),
-		waveOrchestrators: make(map[string]*WaveOrchestrator),
-		plannerPrompted:   make(map[string]bool),
+		ctx:                   ctx,
+		spinner:               spinner.New(spinner.WithSpinner(spinner.Dot)),
+		menu:                  ui.NewMenu(),
+		tabbedWindow:          ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+		storage:               storage,
+		appConfig:             appConfig,
+		program:               program,
+		autoYes:               autoYes,
+		state:                 stateDefault,
+		appState:              appState,
+		activeRepoPath:        activeRepoPath,
+		planStateDir:          filepath.Join(activeRepoPath, "docs", "plans"),
+		waveOrchestrators:     make(map[string]*WaveOrchestrator),
+		plannerPrompted:       make(map[string]bool),
+		pendingReviewFeedback: make(map[string]string),
 	}
+	h.fsm = planfsm.New(h.planStateDir)
 	h.list = ui.NewList(&h.spinner, autoYes)
 	h.toastManager = overlay.NewToastManager(&h.spinner)
 	h.sidebar = ui.NewSidebar()
@@ -327,8 +338,8 @@ func (m *home) updateHandleWindowSizeEvent(msg tea.WindowSizeMsg) {
 		m.textOverlay.SetWidth(int(float32(msg.Width) * 0.6))
 	}
 
-	previewWidth, previewHeight := m.tabbedWindow.GetPreviewSize()
-	if err := m.list.SetSessionPreviewSize(previewWidth, previewHeight); err != nil {
+	previewWidth, previewHeight := m.tabbedWindow.GetPreviewSize()// Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
+				if err := m.list.SetSessionPreviewSize(previewWidth, previewHeight); err != nil {
 		log.ErrorLog.Print(err)
 	}
 	m.menu.SetSize(msg.Width, menuHeight)
@@ -520,8 +531,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				prompt := inst.QueuedPrompt
 				inst.QueuedPrompt = "" // clear immediately to prevent re-send
 				i := inst
-				asyncCmds = append(asyncCmds, func() tea.Msg {
-					if err := i.SendPrompt(prompt); err != nil {
+				asyncCmds = append(asyncCmds, func() tea.Msg {// Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
+				if err := i.SendPrompt(prompt); err != nil {
 						log.WarningLog.Printf("could not send queued prompt to %q: %v", i.Title, err)
 					}
 					return nil
@@ -567,12 +578,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				entry := m.planState.Plans[inst.PlanFile]
 				if entry.Status != planstate.StatusReviewing {
 					continue
-				}
-				// SetStatus writes to disk — acceptable here because reviewer death
-				// is a rare one-shot event (~1ms), not a per-tick cost.
-				if err := m.planState.SetStatus(inst.PlanFile, planstate.StatusCompleted); err != nil {
-					log.WarningLog.Printf("could not mark plan %q completed: %v", inst.PlanFile, err)
-				}
+				}// Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
+				if err := m.fsm.Transition(inst.PlanFile, planfsm.ReviewApproved); err != nil {
+				log.WarningLog.Printf("could not mark plan %q completed: %v", inst.PlanFile, err)
+			}
 			}
 
 			// Planner-exit → implement-prompt: when a planner session's tmux pane
@@ -752,8 +761,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, task := range orch.CurrentWaveTasks() {
 			taskTitle := fmt.Sprintf("%s-T%d", planName, task.Number)
 			for _, inst := range m.list.GetInstances() {
-				if inst.Title == taskTitle && inst.PromptDetected {
-					if err := inst.Pause(); err != nil {
+				if inst.Title == taskTitle && inst.PromptDetected {// Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
+				if err := inst.Pause(); err != nil {
 						log.WarningLog.Printf("could not pause task %s: %v", taskTitle, err)
 					}
 				}
@@ -788,8 +797,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.handleError(msg.err)
 		}
 		// Instance started successfully — add to master list, save and finalize
-		m.allInstances = append(m.allInstances, msg.instance)
-		if err := m.saveAllInstances(); err != nil {
+		m.allInstances = append(m.allInstances, msg.instance)// Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
+				if err := m.saveAllInstances(); err != nil {
 			return m, m.handleError(err)
 		}
 		m.updateSidebarItems()
@@ -824,8 +833,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *home) handleQuit() (tea.Model, tea.Cmd) {
-	m.killGitTab()
-	if err := m.saveAllInstances(); err != nil {
+	m.killGitTab()// Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
+				if err := m.saveAllInstances(); err != nil {
 		return m, m.handleError(err)
 	}
 	return m, tea.Quit

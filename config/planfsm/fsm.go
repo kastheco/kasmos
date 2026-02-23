@@ -66,6 +66,7 @@ var transitionTable = map[Status]map[Event]Status{
 	},
 	StatusDone: {
 		StartOver: StatusPlanning,
+		Cancel:    StatusCancelled, // explicit user cancellation from done
 	},
 	StatusCancelled: {
 		Reopen: StatusPlanning,

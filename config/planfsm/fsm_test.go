@@ -24,6 +24,7 @@ func TestTransition_ValidTransitions(t *testing.T) {
 		{StatusReviewing, ReviewApproved, StatusDone},
 		{StatusReviewing, ReviewChangesRequested, StatusImplementing},
 		{StatusDone, StartOver, StatusPlanning},
+		{StatusDone, Cancel, StatusCancelled},
 		{StatusReady, Cancel, StatusCancelled},
 		{StatusPlanning, Cancel, StatusCancelled},
 		{StatusImplementing, Cancel, StatusCancelled},

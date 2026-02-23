@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/planfsm"
 	"github.com/kastheco/kasmos/config/planstate"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/ui"
@@ -75,6 +76,8 @@ func TestMetadataTickHandler_CoderExitTriggersPrompt(t *testing.T) {
 		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
 		toastManager: overlay.NewToastManager(&sp),
 		planState:    ps,
+		planStateDir: plansDir,
+		fsm:          planfsm.New(plansDir),
 	}
 
 	// Inject a metadataResultMsg with TmuxAlive=false for the coder instance.
@@ -132,6 +135,8 @@ func TestPromptPushBranchThenAdvance_SetStatusErrorPropagates(t *testing.T) {
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
 	h := &home{
 		planState:    ps,
+		planStateDir: plansDir,
+		fsm:          planfsm.New(plansDir),
 		toastManager: overlay.NewToastManager(&sp),
 	}
 
@@ -188,6 +193,8 @@ func TestMetadataTickHandler_NoRepromptWhenConfirmPending(t *testing.T) {
 		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
 		toastManager: overlay.NewToastManager(&sp),
 		planState:    ps,
+		planStateDir: plansDir,
+		fsm:          planfsm.New(plansDir),
 	}
 
 	msg := metadataResultMsg{

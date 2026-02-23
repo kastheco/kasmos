@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/planfsm"
 	"github.com/kastheco/kasmos/config/planparser"
 	"github.com/kastheco/kasmos/config/planstate"
 	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
@@ -603,10 +604,8 @@ func (m *home) checkPlanCompletion() tea.Cmd {
 // transitionToReview marks a plan as "reviewing", pauses the coder session,
 // spawns a reviewer session with the reviewer profile, and returns the start cmd.
 func (m *home) transitionToReview(coderInst *session.Instance) tea.Cmd {
-	planFile := coderInst.PlanFile
-
-	// Guard: update in-memory state before next tick re-reads disk, preventing double-spawn.
-	if err := m.planState.SetStatus(planFile, planstate.StatusReviewing); err != nil {
+	planFile := coderInst.PlanFile// Guard: transition via FSM before next tick re-reads disk, preventing double-spawn.
+	if err := m.fsm.Transition(planFile, planfsm.ImplementFinished); err != nil {
 		log.WarningLog.Printf("could not set plan %q to reviewing: %v", planFile, err)
 	}
 
@@ -812,7 +811,7 @@ func (m *home) promptPushBranchThenAdvance(inst *session.Instance) tea.Cmd {
 				false,
 			)
 		}
-		if err := m.planState.SetStatus(inst.PlanFile, planstate.StatusReviewing); err != nil {
+		if err := m.fsm.Transition(inst.PlanFile, planfsm.ImplementFinished); err != nil {
 			return err
 		}
 		return planRefreshMsg{}
