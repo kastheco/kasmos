@@ -441,9 +441,15 @@ func (m *home) triggerPlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 		m.updateSidebarItems()
 		return m.spawnPlanAgent(planFile, "plan", buildPlanPrompt(planstate.DisplayName(planFile), entry.Description))
 	case "implement":
-		// Validate plan has wave annotations before spawning
+		// Read and parse plan — this also validates wave headers.
 		plansDir := filepath.Join(m.activeRepoPath, "docs", "plans")
-		if err := validatePlanHasWaves(plansDir, planFile); err != nil {
+		content, err := os.ReadFile(filepath.Join(plansDir, planFile))
+		if err != nil {
+			return m, m.handleError(err)
+		}
+		plan, err := planparser.Parse(string(content))
+		if err != nil {
+			// No wave headers — revert to planning so user can annotate the plan.
 			if setErr := m.planState.SetStatus(planFile, planstate.StatusPlanning); setErr != nil {
 				return m, m.handleError(setErr)
 			}
@@ -453,13 +459,17 @@ func (m *home) triggerPlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			m.toastManager.Error("Plan needs ## Wave headers before implementation. Returning to planning.")
 			return m, tea.Batch(m.toastTickCmd(), func() tea.Msg { return planRefreshMsg{} })
 		}
+
+		orch := NewWaveOrchestrator(planFile, plan)
+		m.waveOrchestrators[planFile] = orch
+
 		if err := m.planState.SetStatus(planFile, planstate.StatusImplementing); err != nil {
 			return m, m.handleError(err)
 		}
 		m.loadPlanState()
 		m.updateSidebarPlans()
 		m.updateSidebarItems()
-		return m.spawnPlanAgent(planFile, "implement", buildImplementPrompt(planFile))
+		return m.startNextWave(orch, entry)
 	case "review":
 		if err := m.planState.SetStatus(planFile, planstate.StatusReviewing); err != nil {
 			return m, m.handleError(err)

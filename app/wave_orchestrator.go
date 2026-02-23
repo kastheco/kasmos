@@ -26,11 +26,12 @@ const (
 
 // WaveOrchestrator manages wave-based parallel task execution for a single plan.
 type WaveOrchestrator struct {
-	planFile    string
-	plan        *planparser.Plan
-	state       WaveState
-	currentWave int                // 0-indexed into plan.Waves
-	taskStates  map[int]taskStatus // task number → status
+	planFile          string
+	plan              *planparser.Plan
+	state             WaveState
+	currentWave       int                // 0-indexed into plan.Waves
+	taskStates        map[int]taskStatus // task number → status
+	waitingForConfirm bool               // true once we've shown the wave-complete dialog
 }
 
 // NewWaveOrchestrator creates an orchestrator for the given plan.
@@ -91,6 +92,7 @@ func (o *WaveOrchestrator) StartNextWave() []planparser.Task {
 	}
 	if o.state == WaveStateWaveComplete {
 		o.currentWave++
+		o.waitingForConfirm = false // reset for next wave
 	}
 	if o.currentWave >= len(o.plan.Waves) {
 		o.state = WaveStateAllComplete
@@ -107,16 +109,34 @@ func (o *WaveOrchestrator) StartNextWave() []planparser.Task {
 
 // MarkTaskComplete marks a task as successfully completed.
 // If all tasks in the current wave are done, transitions state.
+// Idempotent: calling again on an already-resolved task is a no-op.
 func (o *WaveOrchestrator) MarkTaskComplete(taskNumber int) {
+	if o.taskStates[taskNumber] != taskRunning {
+		return
+	}
 	o.taskStates[taskNumber] = taskComplete
 	o.checkWaveComplete()
 }
 
 // MarkTaskFailed marks a task as failed.
 // Other tasks in the wave continue. Wave completes when all tasks resolve.
+// Idempotent: calling again on an already-resolved task is a no-op.
 func (o *WaveOrchestrator) MarkTaskFailed(taskNumber int) {
+	if o.taskStates[taskNumber] != taskRunning {
+		return
+	}
 	o.taskStates[taskNumber] = taskFailed
 	o.checkWaveComplete()
+}
+
+// NeedsConfirm returns true if the wave just completed and the user hasn't
+// been shown the confirmation dialog yet. Calling this marks the dialog as shown.
+func (o *WaveOrchestrator) NeedsConfirm() bool {
+	if o.state == WaveStateWaveComplete && !o.waitingForConfirm {
+		o.waitingForConfirm = true
+		return true
+	}
+	return false
 }
 
 // IsCurrentWaveComplete returns true if all tasks in the current wave have resolved.

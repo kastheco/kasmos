@@ -186,6 +186,9 @@ type home struct {
 	cachedPlanFile string
 	// cachedPlanRendered is the glamour-rendered markdown of cachedPlanFile.
 	cachedPlanRendered string
+
+	// waveOrchestrators tracks active wave orchestrations by plan filename.
+	waveOrchestrators map[string]*WaveOrchestrator
 }
 
 func newHome(ctx context.Context, program string, autoYes bool) *home {
@@ -209,18 +212,19 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 	}
 
 	h := &home{
-		ctx:            ctx,
-		spinner:        spinner.New(spinner.WithSpinner(spinner.Dot)),
-		menu:           ui.NewMenu(),
-		tabbedWindow:   ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
-		storage:        storage,
-		appConfig:      appConfig,
-		program:        program,
-		autoYes:        autoYes,
-		state:          stateDefault,
-		appState:       appState,
-		activeRepoPath: activeRepoPath,
-		planStateDir:   filepath.Join(activeRepoPath, "docs", "plans"),
+		ctx:               ctx,
+		spinner:           spinner.New(spinner.WithSpinner(spinner.Dot)),
+		menu:              ui.NewMenu(),
+		tabbedWindow:      ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+		storage:           storage,
+		appConfig:         appConfig,
+		program:           program,
+		autoYes:           autoYes,
+		state:             stateDefault,
+		appState:          appState,
+		activeRepoPath:    activeRepoPath,
+		planStateDir:      filepath.Join(activeRepoPath, "docs", "plans"),
+		waveOrchestrators: make(map[string]*WaveOrchestrator),
 	}
 	h.list = ui.NewList(&h.spinner, autoYes)
 	h.toastManager = overlay.NewToastManager(&h.spinner)
@@ -571,11 +575,72 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if !shouldPromptPushAfterCoderExit(entry, inst, alive) {
 					continue
 				}
+				// Skip wave task instances while their orchestrator is still active.
+				if inst.TaskNumber > 0 {
+					if _, hasOrch := m.waveOrchestrators[inst.PlanFile]; hasOrch {
+						continue
+					}
+				}
 				if cmd := m.promptPushBranchThenAdvance(inst); cmd != nil {
 					asyncCmds = append(asyncCmds, cmd)
 				}
 				// Only prompt for one instance per tick to avoid stacking overlays.
 				break
+			}
+
+			// Wave completion monitoring: check task completion and trigger wave transitions.
+			for planFile, orch := range m.waveOrchestrators {
+				if orch.State() != WaveStateRunning {
+					continue
+				}
+				planName := planstate.DisplayName(planFile)
+				for _, task := range orch.CurrentWaveTasks() {
+					taskTitle := fmt.Sprintf("%s-T%d", planName, task.Number)
+					for _, inst := range m.list.GetInstances() {
+						if inst.Title != taskTitle {
+							continue
+						}
+						alive, collected := tmuxAliveMap[inst.Title]
+						if !collected {
+							continue
+						}
+						if inst.PromptDetected {
+							orch.MarkTaskComplete(task.Number)
+						} else if !alive {
+							orch.MarkTaskFailed(task.Number)
+						}
+					}
+				}
+
+				// If all waves complete, delete orchestrator (coder-exit flow takes over).
+				if orch.State() == WaveStateAllComplete {
+					delete(m.waveOrchestrators, planFile)
+					continue
+				}
+
+				// If wave just completed, show user confirmation (once per wave).
+				if m.state != stateConfirm && orch.NeedsConfirm() {
+					waveNum := orch.CurrentWaveNumber()
+					completed := orch.CompletedTaskCount()
+					failed := orch.FailedTaskCount()
+					total := completed + failed
+					entry, _ := m.planState.Entry(planFile)
+
+					var message string
+					if failed > 0 {
+						message = fmt.Sprintf("Wave %d: %d/%d complete, %d failed. Start Wave %d?",
+							waveNum, completed, total, failed, waveNum+1)
+					} else {
+						message = fmt.Sprintf("Wave %d complete (%d/%d). Start Wave %d?",
+							waveNum, completed, total, waveNum+1)
+					}
+
+					capturedPlanFile := planFile
+					capturedEntry := entry
+					asyncCmds = append(asyncCmds, m.confirmAction(message, func() tea.Msg {
+						return waveAdvanceMsg{planFile: capturedPlanFile, entry: capturedEntry}
+					}))
+				}
 			}
 		}
 
@@ -611,6 +676,24 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateSidebarPlans()
 		m.updateSidebarItems()
 		return m, tea.WindowSize()
+	case waveAdvanceMsg:
+		orch, ok := m.waveOrchestrators[msg.planFile]
+		if !ok {
+			return m, nil
+		}
+		// Pause completed wave's instances before starting the next.
+		planName := planstate.DisplayName(msg.planFile)
+		for _, task := range orch.CurrentWaveTasks() {
+			taskTitle := fmt.Sprintf("%s-T%d", planName, task.Number)
+			for _, inst := range m.list.GetInstances() {
+				if inst.Title == taskTitle && inst.PromptDetected {
+					if err := inst.Pause(); err != nil {
+						log.WarningLog.Printf("could not pause task %s: %v", taskTitle, err)
+					}
+				}
+			}
+		}
+		return m.startNextWave(orch, msg.entry)
 	case instanceStartedMsg:
 		if msg.err != nil {
 			m.list.Kill()
@@ -773,6 +856,12 @@ type killInstanceMsg struct {
 
 // planRefreshMsg triggers a plan state reload and sidebar refresh in Update.
 type planRefreshMsg struct{}
+
+// waveAdvanceMsg is sent when the user confirms advancing to the next wave.
+type waveAdvanceMsg struct {
+	planFile string
+	entry    planstate.PlanEntry
+}
 
 // instanceStartedMsg is sent when an async instance startup completes.
 type instanceStartedMsg struct {

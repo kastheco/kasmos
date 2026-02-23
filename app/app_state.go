@@ -910,3 +910,56 @@ func (m *home) getTopicNames() []string {
 	}
 	return names
 }
+
+// startNextWave spawns all task instances for the orchestrator's next wave.
+func (m *home) startNextWave(orch *WaveOrchestrator, entry planstate.PlanEntry) (tea.Model, tea.Cmd) {
+	tasks := orch.StartNextWave()
+	if tasks == nil {
+		return m, nil
+	}
+
+	planFile := orch.PlanFile()
+	planName := planstate.DisplayName(planFile)
+
+	// Set up shared worktree for all tasks in this wave.
+	shared := gitpkg.NewSharedPlanWorktree(m.activeRepoPath, entry.Branch)
+	if err := shared.Setup(); err != nil {
+		return m, m.handleError(err)
+	}
+
+	var cmds []tea.Cmd
+	for _, task := range tasks {
+		prompt := buildTaskPrompt(orch.plan, task, orch.CurrentWaveNumber(), orch.TotalWaves())
+
+		inst, err := session.NewInstance(session.InstanceOptions{
+			Title:      fmt.Sprintf("%s-T%d", planName, task.Number),
+			Path:       m.activeRepoPath,
+			Program:    m.program,
+			PlanFile:   planFile,
+			AgentType:  session.AgentTypeCoder,
+			TaskNumber: task.Number,
+			WaveNumber: orch.CurrentWaveNumber(),
+		})
+		if err != nil {
+			return m, m.handleError(err)
+		}
+		inst.QueuedPrompt = prompt
+
+		// AddInstance registers in the list immediately; finalizer sets repo name after start.
+		m.newInstanceFinalizer = m.list.AddInstance(inst)
+
+		taskInst := inst // capture for closure
+		startCmd := func() tea.Msg {
+			err := taskInst.StartInSharedWorktree(shared, entry.Branch)
+			return instanceStartedMsg{instance: taskInst, err: err}
+		}
+		cmds = append(cmds, startCmd)
+	}
+
+	waveNum := orch.CurrentWaveNumber()
+	taskCount := len(tasks)
+	m.toastManager.Info(fmt.Sprintf("Wave %d started: %d task(s) running", waveNum, taskCount))
+	cmds = append(cmds, tea.WindowSize(), m.toastTickCmd())
+
+	return m, tea.Batch(cmds...)
+}
