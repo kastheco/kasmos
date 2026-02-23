@@ -258,6 +258,11 @@
       "status": "ready",
       "description": "replace panel focus with 5-slot Tab focus ring (sidebar/agent/diff/git/list) with per-pane arrow key capture",
       "created_at": "2026-02-22T18:30:00Z"
+    },
+    "2026-02-22-tab-focus-ring.md": {
+      "status": "ready",
+      "description": "implement 5-slot Tab focus ring: key defs, focusSlot state, key routing, tests, gradient, help",
+      "created_at": "2026-02-22T18:45:00Z"
     }
   }
 }
