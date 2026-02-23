@@ -21,24 +21,24 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "klique - Agent-Driven IDE for AI Pair Programming",
+  title: "kas - Agent-Driven IDE for AI Pair Programming",
   description:
     "A TUI-based agent-driven IDE that manages multiple AI agents (Claude Code, Codex, Aider, Gemini) in isolated workspaces, so you can work on multiple tasks simultaneously.",
   keywords: [
-    "klique", "tui", "ai", "ide", "agent", "terminal", "tmux",
+    "kasmos", "tui", "ai", "ide", "agent", "terminal", "tmux",
     "claude code", "codex", "aider", "pair programming",
   ],
   authors: [{ name: "kastheco" }],
   openGraph: {
-    title: "klique",
+    title: "kas",
     description:
       "A TUI-based agent-driven IDE for managing multiple AI agents in isolated workspaces",
-    url: "https://github.com/kastheco/klique",
+    url: "https://github.com/kastheco/kasmos",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "klique",
+    title: "kas",
     description:
       "A TUI-based agent-driven IDE for managing multiple AI agents in isolated workspaces",
   },

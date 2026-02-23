@@ -6,19 +6,19 @@ import styles from "./InstallTabs.module.css";
 const installMethods = [
   {
     label: "Homebrew",
-    command: "brew install kastheco/tap/klique",
+    command: "brew install kastheco/tap/kasmos",
   },
   {
     label: "Scoop",
-    command: "scoop bucket add kastheco https://github.com/kastheco/scoop-bucket\nscoop install klique",
+    command: "scoop bucket add kastheco https://github.com/kastheco/scoop-bucket\nscoop install kasmos",
   },
   {
     label: "Go Install",
-    command: "go install github.com/kastheco/klique@latest",
+    command: "go install github.com/kastheco/kasmos@latest",
   },
   {
     label: "Shell Script",
-    command: "curl -fsSL https://raw.githubusercontent.com/kastheco/klique/main/install.sh | bash",
+    command: "curl -fsSL https://raw.githubusercontent.com/kastheco/kasmos/main/install.sh | bash",
   },
 ];
 

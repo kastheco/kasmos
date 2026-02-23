@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "export",
-  basePath: process.env.NODE_ENV === "production" ? "/klique" : "",
+  basePath: process.env.NODE_ENV === "production" ? "/kasmos" : "",
   /* config options here */
 };
 
