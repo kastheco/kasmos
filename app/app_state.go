@@ -567,9 +567,22 @@ func (m *home) checkPlanCompletion() tea.Cmd {
 	if m.planState == nil {
 		return nil
 	}
+	// Guard: if a reviewer already exists for a plan, do not spawn another.
+	// The async metadata tick can overwrite m.planState with a stale snapshot
+	// that still shows StatusDone after transitionToReview already ran and set
+	// StatusReviewing. Without this guard, a second reviewer is spawned.
+	reviewerPlans := make(map[string]bool)
+	for _, inst := range m.list.GetInstances() {
+		if inst.IsReviewer && inst.PlanFile != "" {
+			reviewerPlans[inst.PlanFile] = true
+		}
+	}
 	for _, inst := range m.list.GetInstances() {
 		if inst.PlanFile == "" || inst.IsReviewer {
 			continue
+		}
+		if reviewerPlans[inst.PlanFile] {
+			continue // reviewer already spawned; skip regardless of stale plan state
 		}
 		if !m.planState.IsDone(inst.PlanFile) {
 			continue
