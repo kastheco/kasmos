@@ -196,6 +196,15 @@ type home struct {
 	// pendingWaveAbortAction is the abort action for a failed-wave decision dialog.
 	// Triggered when the user presses 'a' while the failed-wave overlay is active.
 	pendingWaveAbortAction tea.Cmd
+
+	// plannerPrompted tracks plan files whose planner-exit dialog has been
+	// answered (yes or no). Prevents re-prompting every metadata tick.
+	// NOT set on esc — allows re-prompt.
+	plannerPrompted map[string]bool
+
+	// pendingPlannerInstanceTitle is the title of the planner instance that
+	// triggered the current planner-exit confirmation dialog.
+	pendingPlannerInstanceTitle string
 }
 
 func newHome(ctx context.Context, program string, autoYes bool) *home {
@@ -232,6 +241,7 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 		activeRepoPath:    activeRepoPath,
 		planStateDir:      filepath.Join(activeRepoPath, "docs", "plans"),
 		waveOrchestrators: make(map[string]*WaveOrchestrator),
+		plannerPrompted:   make(map[string]bool),
 	}
 	h.list = ui.NewList(&h.spinner, autoYes)
 	h.toastManager = overlay.NewToastManager(&h.spinner)
@@ -565,6 +575,40 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
+			// Planner-exit → implement-prompt: when a planner session's tmux pane
+			// has exited and the plan status is ready, prompt the user to start
+			// implementation. Skip if already prompted (yes/no answered) or if a
+			// confirm overlay is already showing.
+			for _, inst := range m.list.GetInstances() {
+				if m.state == stateConfirm {
+					break
+				}
+				if inst.AgentType != session.AgentTypePlanner || inst.PlanFile == "" {
+					continue
+				}
+				if m.plannerPrompted[inst.PlanFile] {
+					continue
+				}
+				alive, collected := tmuxAliveMap[inst.Title]
+				if !collected || alive {
+					continue
+				}
+				entry, ok := m.planState.Entry(inst.PlanFile)
+				if !ok || entry.Status != planstate.StatusReady {
+					continue
+				}
+				capturedPlanFile := inst.PlanFile
+				capturedTitle := inst.Title
+				m.confirmAction(
+					fmt.Sprintf("Plan '%s' is ready. Start implementation?", planstate.DisplayName(capturedPlanFile)),
+					func() tea.Msg {
+						return plannerCompleteMsg{planFile: capturedPlanFile}
+					},
+				)
+				m.pendingPlannerInstanceTitle = capturedTitle
+				break // one prompt per tick
+			}
+
 			// Coder-exit → push-prompt: when a coder session's tmux pane has exited
 			// and the plan is still in StatusImplementing, prompt the user to push the
 			// implementation branch before advancing to reviewing.
@@ -727,6 +771,16 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.toastManager.Info(fmt.Sprintf("Wave orchestration aborted for %s",
 			planstate.DisplayName(msg.planFile)))
 		return m, m.toastTickCmd()
+	case plannerCompleteMsg:
+		// User confirmed: start implementation. Kill the dead planner instance first.
+		m.plannerPrompted[msg.planFile] = true
+		if m.pendingPlannerInstanceTitle != "" {
+			m.removeFromAllInstances(m.pendingPlannerInstanceTitle)
+			m.saveAllInstances()
+		}
+		m.pendingPlannerInstanceTitle = ""
+		m.updateSidebarItems()
+		return m.triggerPlanStage(msg.planFile, "implement")
 	case instanceStartedMsg:
 		if msg.err != nil {
 			m.list.Kill()
@@ -904,6 +958,12 @@ type waveRetryMsg struct {
 
 // waveAbortMsg is sent when the user chooses "abort" on the failed-wave decision prompt.
 type waveAbortMsg struct {
+	planFile string
+}
+
+// plannerCompleteMsg is sent when the user confirms starting implementation
+// after a planner session finishes.
+type plannerCompleteMsg struct {
 	planFile string
 }
 
