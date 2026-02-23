@@ -1,6 +1,10 @@
 package planfsm
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/kastheco/kasmos/config/planstate"
+)
 
 // Status represents the lifecycle state of a plan.
 type Status string
@@ -80,4 +84,53 @@ func ApplyTransition(current Status, event Event) (Status, error) {
 		return "", fmt.Errorf("invalid transition: %q + %q", current, event)
 	}
 	return next, nil
+}
+
+// PlanStateMachine is the sole writer of plan-state.json. All plan status
+// mutations must flow through Transition(). File-level locking prevents
+// concurrent writes from the TUI and goroutines.
+type PlanStateMachine struct {
+	dir string // docs/plans/ directory
+}
+
+// New creates a PlanStateMachine for the given plans directory.
+func New(dir string) *PlanStateMachine {
+	return &PlanStateMachine{dir: dir}
+}
+
+// Transition applies an event to a plan's current status. It reads the current
+// state from disk, validates the transition, writes the new state, and returns.
+// All I/O is serialized via flock.
+func (m *PlanStateMachine) Transition(planFile string, event Event) error {
+	return m.withLock(func() error {
+		ps, err := planstate.Load(m.dir)
+		if err != nil {
+			return fmt.Errorf("load plan state: %w", err)
+		}
+		entry, ok := ps.Entry(planFile)
+		if !ok {
+			return fmt.Errorf("plan not found: %s", planFile)
+		}
+		currentStatus := mapLegacyStatus(entry.Status)
+		newStatus, err := ApplyTransition(currentStatus, event)
+		if err != nil {
+			return err
+		}
+		entry.Status = planstate.Status(newStatus)
+		ps.Plans[planFile] = entry
+		return ps.Save()
+	})
+}
+
+// mapLegacyStatus converts old planstate statuses to FSM statuses.
+// Handles the consolidated aliases (in_progress → implementing, completed/finished → done).
+func mapLegacyStatus(s planstate.Status) Status {
+	switch s {
+	case "in_progress":
+		return StatusImplementing
+	case "completed", "finished":
+		return StatusDone
+	default:
+		return Status(s)
+	}
 }

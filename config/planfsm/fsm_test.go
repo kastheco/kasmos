@@ -1,8 +1,12 @@
 package planfsm
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/kastheco/kasmos/config/planstate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -63,4 +67,57 @@ func TestIsUserOnly(t *testing.T) {
 	assert.True(t, Reopen.IsUserOnly())
 	assert.False(t, PlannerFinished.IsUserOnly())
 	assert.False(t, ReviewApproved.IsUserOnly())
+}
+
+func TestPlanStateMachine_TransitionWritesToDisk(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	// Seed with a ready plan
+	ps, err := planstate.Load(plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.Register("test.md", "test plan", "plan/test", time.Now()))
+
+	fsm := New(plansDir)
+	err = fsm.Transition("test.md", PlanStart)
+	require.NoError(t, err)
+
+	// Re-read from disk to verify persistence
+	reloaded, err := planstate.Load(plansDir)
+	require.NoError(t, err)
+	entry, ok := reloaded.Entry("test.md")
+	require.True(t, ok)
+	assert.Equal(t, "planning", string(entry.Status))
+}
+
+func TestPlanStateMachine_RejectsInvalidTransition(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	ps, err := planstate.Load(plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.Register("test.md", "test plan", "plan/test", time.Now()))
+
+	fsm := New(plansDir)
+	err = fsm.Transition("test.md", ImplementFinished) // ready → implement_finished is invalid
+	assert.Error(t, err)
+
+	// Status must remain unchanged on disk
+	reloaded, err := planstate.Load(plansDir)
+	require.NoError(t, err)
+	entry, ok := reloaded.Entry("test.md")
+	require.True(t, ok)
+	assert.Equal(t, "ready", string(entry.Status))
+}
+
+func TestPlanStateMachine_MissingPlanReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	fsm := New(plansDir)
+	err := fsm.Transition("nonexistent.md", PlanStart)
+	assert.Error(t, err)
 }
