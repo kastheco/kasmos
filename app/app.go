@@ -576,9 +576,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// Planner-exit → implement-prompt: when a planner session's tmux pane
-			// has exited and the plan status is ready, prompt the user to start
-			// implementation. Skip if already prompted (yes/no answered) or if a
-			// confirm overlay is already showing.
+			// has exited and the plan status is StatusPlanning (planner ran but
+			// implementation not yet started), prompt the user to begin. Skip if
+			// already prompted (yes/no answered) or if a confirm overlay is active.
 			for _, inst := range m.list.GetInstances() {
 				if m.state == stateConfirm {
 					break
@@ -594,7 +594,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					continue
 				}
 				entry, ok := m.planState.Entry(inst.PlanFile)
-				if !ok || entry.Status != planstate.StatusReady {
+				if !ok || entry.Status != planstate.StatusPlanning {
 					continue
 				}
 				capturedPlanFile := inst.PlanFile

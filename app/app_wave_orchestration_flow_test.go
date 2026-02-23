@@ -283,7 +283,7 @@ func TestTriggerPlanStage_ImplementNoWaves_RespawnsPlanner(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestPlannerExit_ShowsImplementConfirm verifies that when a planner session's
-// tmux pane dies and the plan status is ready, a confirmation dialog appears.
+// tmux pane dies and the plan status is StatusPlanning, a confirmation dialog appears.
 func TestPlannerExit_ShowsImplementConfirm(t *testing.T) {
 	const planFile = "2026-02-22-planner-exit.md"
 
@@ -293,7 +293,8 @@ func TestPlannerExit_ShowsImplementConfirm(t *testing.T) {
 	ps, err := planstate.Load(plansDir)
 	require.NoError(t, err)
 	require.NoError(t, ps.Register(planFile, "planner exit test", "plan/planner-exit", time.Now()))
-	// Default status after Register is StatusReady — exactly what we need.
+	// The planner was launched so status is StatusPlanning — prompt fires when pane dies.
+	require.NoError(t, ps.SetStatus(planFile, planstate.StatusPlanning))
 
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:   "planner-exit-inst",
