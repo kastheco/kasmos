@@ -47,9 +47,10 @@ type Tab struct {
 type TabbedWindow struct {
 	tabs []string
 
-	activeTab int
-	height    int
-	width     int
+	activeTab  int
+	focusedTab int // which specific tab (0=agent, 1=diff, 2=git) has Tab-ring focus; -1 = none
+	height     int
+	width      int
 
 	preview    *PreviewPane
 	diff       *DiffPane
@@ -82,10 +83,16 @@ func NewTabbedWindow(preview *PreviewPane, diff *DiffPane, git *GitPane) *Tabbed
 			"\ueae1 Diff",
 			"\ue725 Git",
 		},
-		preview: preview,
-		diff:    diff,
-		git:     git,
+		preview:    preview,
+		diff:       diff,
+		git:        git,
+		focusedTab: -1,
 	}
+}
+
+// SetFocusedTab sets which specific tab has focus ring focus. -1 = none.
+func (w *TabbedWindow) SetFocusedTab(tab int) {
+	w.focusedTab = tab
 }
 
 func (w *TabbedWindow) SetInstance(instance *session.Instance) {
