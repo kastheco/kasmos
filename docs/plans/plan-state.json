@@ -248,7 +248,7 @@
       "implemented": "2026-02-22"
     },
     "2026-02-22-rename-to-kasmos.md": {
-      "status": "planning",
+      "status": "completed",
       "description": "switch name back to kasmos and overtake that repo (rename that one to kasmold first)",
       "branch": "plan/rename-to-kasmos",
       "created_at": "2026-02-22T09:53:24.333455818Z"
