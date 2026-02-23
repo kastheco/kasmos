@@ -29,11 +29,14 @@ Replace the 3-panel focus model (`focusedPanel int`, 0-2) with a 5-slot focus ri
 | `#` (Shift+3) | Jump to slot 3 (Git) |
 | `s` | Jump to slot 0 (Sidebar) |
 
+Note: `1/2/3` remain bound to instance list filters (All/Active/Sort). `!/@/#` (Shift+1/2/3) are distinct characters — no conflict.
+
 ### Removed Bindings
 
 - `h/l/←/→` no longer switch panel focus. Repurposed for in-pane use only.
 - `Shift+Up/Down` for center pane scrolling removed (use Tab-focus + up/down instead).
 - `F1/F2/F3` tab switching removed (replaced by `!/@/#`).
+- `g` (KeyGitTab) removed — redundant with `#` jumping to git slot.
 
 ### Two Tiers of Focus
 
@@ -54,8 +57,8 @@ Gradient constants updated globally: `GradientStart` = `#9ccfd8` (foam), `Gradie
 
 ### Edge Cases
 
-- **Startup:** `focusSlot = 4` (Instance List), same effective default as today.
+- **Startup:** `focusSlot = 0` (Sidebar), matching current `setFocus(0)` default in `newHome`.
 - **Hidden sidebar:** Tab skips slot 0 when sidebar is hidden. Cycles 1→2→3→4→1. `s` key auto-shows sidebar and focuses it.
 - **Git tab lifecycle:** Tab-focusing slot 3 spawns lazygit if not running. Leaving slot 3 kills lazygit. Same lifecycle as today.
-- **Insert mode:** Tab is forwarded to PTY while in insert mode. Ctrl+Space exits to the slot you were on before entering.
+- **Insert mode:** Tab is forwarded to PTY while in insert mode. Ctrl+Space exits to the slot you were on before entering. `!/@/#` exit focus mode and jump to the target slot (replacing the old F1/F2/F3 behavior in `fkeyToTab`).
 - **`h/l` routing:** Slot 0 = tree ops, slot 3 = lazygit PTY, slots 1/2/4 = no-op.

@@ -19,29 +19,42 @@
 
 **Step 1: Remove old bindings and add new ones**
 
-Replace the F1/F2/F3 mappings with Shift+1/2/3 (`!`/`@`/`#`), remove `KeyLeft`/`KeyRight` as panel navigation, and remove `KeyShiftUp`/`KeyShiftDown`:
+In the `KeyName` constants block, make these changes:
+- Remove: `KeyLeft`, `KeyRight`, `KeyShiftUp`, `KeyShiftDown`, `KeyGitTab`
+- Add: `KeyArrowLeft`, `KeyArrowRight` (in-pane horizontal navigation, not panel switching)
 
 In `GlobalKeyStringsMap`, make these changes:
 - Remove: `"f1": KeyTabAgent`, `"f2": KeyTabDiff`, `"f3": KeyTabGit`
 - Remove: `"shift+up": KeyShiftUp`, `"shift+down": KeyShiftDown`
+- Remove: `"g": KeyGitTab`
 - Add: `"!": KeyTabAgent`, `"@": KeyTabDiff`, `"#": KeyTabGit`
-- Change `"left"`, `"h"` from `KeyLeft` to new `KeyArrowLeft`
-- Change `"right"`, `"l"` from `KeyRight` to new `KeyArrowRight`
+- Change `"left"` and `"h"` from `KeyLeft` to `KeyArrowLeft`
+- Change `"right"` and `"l"` from `KeyRight` to `KeyArrowRight`
 
-In the `KeyName` constants:
-- Remove: `KeyLeft`, `KeyRight`, `KeyShiftUp`, `KeyShiftDown`
-- Add: `KeyArrowLeft`, `KeyArrowRight` (in-pane horizontal navigation, not panel switching)
-
-In `GlobalkeyBindings`:
-- Remove: `KeyLeft`, `KeyRight`, `KeyShiftUp`, `KeyShiftDown` bindings
-- Add: `KeyArrowLeft`, `KeyArrowRight` bindings with help text `"←/h"` / `"→/l"`
+In `GlobalkeyBindings`, make these changes:
+- Remove: `KeyLeft`, `KeyRight`, `KeyShiftUp`, `KeyShiftDown`, `KeyGitTab` bindings
+- Add `KeyArrowLeft` binding:
+  ```go
+  KeyArrowLeft: key.NewBinding(
+      key.WithKeys("left", "h"),
+      key.WithHelp("←/h", "left"),
+  ),
+  ```
+- Add `KeyArrowRight` binding:
+  ```go
+  KeyArrowRight: key.NewBinding(
+      key.WithKeys("right", "l"),
+      key.WithHelp("→/l", "right"),
+  ),
+  ```
 - Update `KeyTabAgent` binding: keys `"!"`, help `"!/2/3"` → `"switch tab"`
 - Update `KeyTabDiff` binding: keys `"@"`, help `"@"` → `"diff tab"`
 - Update `KeyTabGit` binding: keys `"#"`, help `"#"` → `"git tab"`
+- Update `KeyTab` binding help text: `"tab"` → `"cycle panes"`
 
-**Step 2: Run tests**
+**Step 2: Verify compilation**
 
-Run: `go build ./...`
+Run: `go build ./keys/...`
 Expected: Compile errors in files that reference removed keys — that's expected, we fix them in subsequent tasks.
 
 **Step 3: Commit**
@@ -56,37 +69,23 @@ git commit -m "refactor: update key definitions for tab focus ring"
 ### Task 2: Replace focusedPanel with focusSlot
 
 **Files:**
-- Modify: `app/app.go:141-142`
-- Modify: `app/app_state.go:77-84`
-- Modify: `ui/tabbed_window.go:58,64-76`
+- Modify: `app/app.go` (field declaration + initialization)
+- Modify: `app/app_state.go` (rewrite `setFocus` → `setFocusSlot`)
+- Modify: `ui/tabbed_window.go` (add `focusedTab` field)
 
-**Step 1: Update the home struct**
+**Step 1: Add slot constants and rewrite setFocus**
 
-In `app/app.go`, replace:
-```go
-// focusedPanel tracks which panel has keyboard focus: 0=sidebar (left), 1=preview/center, 2=instance list (right)
-focusedPanel int
-```
-with:
-```go
-// focusSlot tracks which pane has keyboard focus in the Tab ring:
-// 0=sidebar, 1=agent tab, 2=diff tab, 3=git tab, 4=instance list
-focusSlot int
-```
-
-**Step 2: Rewrite setFocus → setFocusSlot**
-
-In `app/app_state.go`, replace the `setFocus` function (lines 77-84) with:
+In `app/app_state.go`, replace the `setFocus` function (the comment + 4-line function at lines 77-84) with:
 
 ```go
 // focusSlot constants for readability.
 const (
-	slotSidebar  = 0
-	slotAgent    = 1
-	slotDiff     = 2
-	slotGit      = 3
-	slotList     = 4
-	slotCount    = 5
+	slotSidebar = 0
+	slotAgent   = 1
+	slotDiff    = 2
+	slotGit     = 3
+	slotList    = 4
+	slotCount   = 5
 )
 
 // setFocusSlot updates which pane has focus and syncs visual state.
@@ -102,6 +101,9 @@ func (m *home) setFocusSlot(slot int) {
 	// When focusing a center tab, switch the visible tab to match.
 	if centerFocused {
 		m.tabbedWindow.SetActiveTab(slot - slotAgent) // slotAgent=1 → PreviewTab=0, etc.
+		m.tabbedWindow.SetFocusedTab(slot - slotAgent)
+	} else {
+		m.tabbedWindow.SetFocusedTab(-1)
 	}
 }
 
@@ -124,14 +126,36 @@ func (m *home) prevFocusSlot() {
 }
 ```
 
-**Step 3: Add focusedTab helper to TabbedWindow**
+**Step 2: Update the home struct**
 
-In `ui/tabbed_window.go`, add a new field and method so the TabbedWindow knows which specific tab is focused (for gradient rendering):
-
+In `app/app.go`, replace:
 ```go
-// focusedTab tracks which tab (0=agent, 1=diff, 2=git) has Tab-ring focus.
-// -1 means no center tab is focused.
-focusedTab int
+// focusedPanel tracks which panel has keyboard focus: 0=sidebar (left), 1=preview/center, 2=instance list (right)
+focusedPanel int
+```
+with:
+```go
+// focusSlot tracks which pane has keyboard focus in the Tab ring:
+// 0=sidebar, 1=agent tab, 2=diff tab, 3=git tab, 4=instance list
+focusSlot int
+```
+
+**Step 3: Update initialization**
+
+In `app/app.go`, in `newHome()`, replace:
+```go
+h.setFocus(0) // Start with sidebar focused
+```
+with:
+```go
+h.setFocusSlot(slotSidebar) // Start with sidebar focused
+```
+
+**Step 4: Add focusedTab field to TabbedWindow**
+
+In `ui/tabbed_window.go`, add a field to the `TabbedWindow` struct:
+```go
+focusedTab int // which tab (0=agent, 1=diff, 2=git) has Tab-ring focus; -1 = none
 ```
 
 Initialize `focusedTab: -1` in `NewTabbedWindow`.
@@ -144,16 +168,7 @@ func (w *TabbedWindow) SetFocusedTab(tab int) {
 }
 ```
 
-Update `setFocusSlot` to call this:
-```go
-if centerFocused {
-	m.tabbedWindow.SetFocusedTab(slot - slotAgent)
-} else {
-	m.tabbedWindow.SetFocusedTab(-1)
-}
-```
-
-**Step 4: Commit**
+**Step 5: Commit**
 
 ```bash
 git add app/app.go app/app_state.go ui/tabbed_window.go
@@ -166,21 +181,22 @@ git commit -m "refactor: replace focusedPanel with 5-slot focusSlot ring"
 
 **Files:**
 - Modify: `app/app_input.go`
-- Modify: `app/app_actions.go:293`
+- Modify: `app/app_state.go` (rewrite `switchToTab`, `fkeyToTab`)
+- Modify: `app/app_actions.go` (update `openContextMenu`)
 
 This is the largest task. Replace all `focusedPanel` references and rewrite the key handling for the new model.
 
-**Step 1: Fix all focusedPanel → focusSlot references**
+**Step 1: Mechanical rename in app_input.go**
 
 Use `sd` to do a mechanical rename first:
 ```bash
-sd 'focusedPanel' 'focusSlot' app/app_input.go app/app_actions.go
+sd 'focusedPanel' 'focusSlot' app/app_input.go
 sd 'setFocus\(' 'setFocusSlot(' app/app_input.go
 ```
 
 Then manually fix the logic — the old `== 0` checks become `== slotSidebar`, `== 1` becomes center-tab checks, `== 2` becomes `== slotList`.
 
-**Step 2: Rewrite KeyUp/KeyDown handler (lines ~856-873)**
+**Step 2: Rewrite KeyUp/KeyDown handler**
 
 Replace the current up/down handler with slot-aware routing:
 
@@ -191,12 +207,13 @@ case keys.KeyUp:
 	case slotSidebar:
 		m.sidebar.Up()
 		m.filterInstancesByTopic()
-	case slotAgent:
-		m.tabbedWindow.ScrollUp()
-	case slotDiff:
+	case slotAgent, slotDiff:
 		m.tabbedWindow.ScrollUp()
 	case slotGit:
-		// Forwarded to lazygit in the git tab key handler below
+		gitPane := m.tabbedWindow.GetGitPane()
+		if gitPane != nil && gitPane.IsRunning() {
+			gitPane.SendKey([]byte("\x1b[A"))
+		}
 	case slotList:
 		m.list.Up()
 	}
@@ -207,55 +224,75 @@ case keys.KeyDown:
 	case slotSidebar:
 		m.sidebar.Down()
 		m.filterInstancesByTopic()
-	case slotAgent:
-		m.tabbedWindow.ScrollDown()
-	case slotDiff:
+	case slotAgent, slotDiff:
 		m.tabbedWindow.ScrollDown()
 	case slotGit:
-		// Forwarded to lazygit in the git tab key handler below
+		gitPane := m.tabbedWindow.GetGitPane()
+		if gitPane != nil && gitPane.IsRunning() {
+			gitPane.SendKey([]byte("\x1b[B"))
+		}
 	case slotList:
 		m.list.Down()
 	}
 	return m, m.instanceChanged()
 ```
 
-**Step 3: Rewrite KeyTab handler (line ~880)**
+**Step 3: Rewrite KeyTab handler**
 
-Replace the current tab handler (which cycles center tabs) with focus ring cycling:
+Replace the current tab handler (which cycles center tabs via `Toggle()`) with focus ring cycling:
 
 ```go
 case keys.KeyTab:
+	wasGitSlot := m.focusSlot == slotGit
 	m.nextFocusSlot()
-	// Handle git tab lifecycle
-	if m.focusSlot == slotGit {
-		cmd := m.spawnGitTab()
-		return m, tea.Batch(m.instanceChanged(), cmd)
-	}
-	// Kill lazygit when leaving git tab
-	if m.tabbedWindow.IsInGitTab() && m.focusSlot != slotGit {
-		m.killGitTab()
-	}
-	return m, m.instanceChanged()
+	return m, m.handleGitTabTransition(wasGitSlot)
 ```
 
-Note: We need to handle Shift+Tab as well. Add to the raw key handler section (around line 1143 where `tea.KeyTab` is handled):
+**Step 4: Add Shift+Tab handling**
+
+In the raw key handler section (around where `tea.KeyTab` is handled in the `switch msg.Type` block near the end of `handleKeyPress`), there is no `tea.KeyShiftTab` case currently. However, Shift+Tab arrives as a `tea.KeyMsg` with string `"shift+tab"`. Since `"shift+tab"` is NOT in `GlobalKeyStringsMap`, it won't be caught by the `name, ok` lookup. We need to handle it before the global key lookup.
+
+Add this block right after the `if msg.Type == tea.KeyEsc` block and before the viewport forwarding block:
 
 ```go
-case tea.KeyShiftTab:
+// Handle Shift+Tab for reverse focus ring cycling.
+// This key is not in GlobalKeyStringsMap, so we intercept it here.
+if msg.Type == tea.KeyShiftTab {
+	wasGitSlot := m.focusSlot == slotGit
 	m.prevFocusSlot()
-	if m.focusSlot == slotGit {
-		cmd := m.spawnGitTab()
-		return m, tea.Batch(m.instanceChanged(), cmd)
-	}
-	if m.tabbedWindow.IsInGitTab() && m.focusSlot != slotGit {
-		m.killGitTab()
-	}
-	return m, m.instanceChanged()
+	return m, m.handleGitTabTransition(wasGitSlot)
+}
 ```
 
-**Step 4: Rewrite KeyLeft/KeyRight → KeyArrowLeft/KeyArrowRight**
+**Step 5: Add git tab transition helper**
 
-Remove the entire `case keys.KeyLeft:` and `case keys.KeyRight:` blocks (lines ~1076-1112). Replace with in-pane horizontal navigation:
+In `app/app_state.go`, add:
+
+```go
+// handleGitTabTransition manages lazygit spawn/kill when focus moves to/from the git slot.
+func (m *home) handleGitTabTransition(wasGitSlot bool) tea.Cmd {
+	if m.focusSlot == slotGit {
+		cmd := m.spawnGitTab()
+		return tea.Batch(m.instanceChanged(), cmd)
+	}
+	if wasGitSlot {
+		m.killGitTab()
+	}
+	return m.instanceChanged()
+}
+```
+
+**Step 6: Remove KeyShiftUp/KeyShiftDown handler**
+
+Delete the `case keys.KeyShiftUp:` and `case keys.KeyShiftDown:` blocks (the 6 lines that call `m.tabbedWindow.ScrollUp()`/`ScrollDown()`).
+
+**Step 7: Remove KeyGitTab handler**
+
+Delete the entire `case keys.KeyGitTab:` block (the 8 lines that jump directly to git tab).
+
+**Step 8: Rewrite KeyArrowLeft/KeyArrowRight**
+
+Replace the entire `case keys.KeyLeft:` and `case keys.KeyRight:` blocks with in-pane horizontal navigation:
 
 ```go
 case keys.KeyArrowLeft:
@@ -265,10 +302,11 @@ case keys.KeyArrowLeft:
 			m.sidebar.Left()
 			m.filterInstancesByTopic()
 		}
-	case slotDiff:
-		// Future: collapse file section
 	case slotGit:
-		// Forwarded to lazygit PTY (handled in git focus section)
+		gitPane := m.tabbedWindow.GetGitPane()
+		if gitPane != nil && gitPane.IsRunning() {
+			gitPane.SendKey([]byte("\x1b[D"))
+		}
 	}
 	return m, nil
 case keys.KeyArrowRight:
@@ -278,21 +316,18 @@ case keys.KeyArrowRight:
 			m.sidebar.Right()
 			m.filterInstancesByTopic()
 		}
-	case slotDiff:
-		// Future: expand file section
 	case slotGit:
-		// Forwarded to lazygit PTY (handled in git focus section)
+		gitPane := m.tabbedWindow.GetGitPane()
+		if gitPane != nil && gitPane.IsRunning() {
+			gitPane.SendKey([]byte("\x1b[C"))
+		}
 	}
 	return m, nil
 ```
 
-**Step 5: Remove KeyShiftUp/KeyShiftDown handler**
+**Step 9: Rewrite switchToTab in app_state.go**
 
-Delete the `case keys.KeyShiftUp:` and `case keys.KeyShiftDown:` blocks (lines ~874-879). These are no longer needed.
-
-**Step 6: Update KeyTabAgent/KeyTabDiff/KeyTabGit handler**
-
-The existing `case keys.KeyTabAgent, keys.KeyTabDiff, keys.KeyTabGit:` calls `m.switchToTab(name)`. Rewrite `switchToTab` in `app_state.go` to use `setFocusSlot`:
+Replace the existing `switchToTab` function with:
 
 ```go
 func (m *home) switchToTab(name keys.KeyName) (tea.Model, tea.Cmd) {
@@ -312,67 +347,92 @@ func (m *home) switchToTab(name keys.KeyName) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	wasGitTab := m.tabbedWindow.IsInGitTab()
+	wasGitSlot := m.focusSlot == slotGit
 	m.setFocusSlot(targetSlot)
-
-	if wasGitTab && m.focusSlot != slotGit {
-		m.killGitTab()
-	}
-	if m.focusSlot == slotGit {
-		cmd := m.spawnGitTab()
-		return m, tea.Batch(m.instanceChanged(), cmd)
-	}
-	return m, m.instanceChanged()
+	return m, m.handleGitTabTransition(wasGitSlot)
 }
 ```
 
-**Step 7: Update KeyFocusSidebar handler**
+**Step 10: Rewrite fkeyToTab for focus mode**
+
+In `app/app_state.go`, replace `fkeyToTab` with a version that maps `!/@/#` instead of F1/F2/F3:
+
+```go
+// shiftNumToSlot maps !/@/# key strings to focus slots.
+func shiftNumToSlot(key string) (int, bool) {
+	switch key {
+	case "!":
+		return slotAgent, true
+	case "@":
+		return slotDiff, true
+	case "#":
+		return slotGit, true
+	default:
+		return 0, false
+	}
+}
+```
+
+Then in `app/app_input.go`, in the `stateFocusAgent` handler, replace the `fkeyToTab` call:
+
+```go
+// !/@/#: exit focus mode and jump to specific tab slot
+if targetSlot, ok := shiftNumToSlot(msg.String()); ok {
+	wasGitSlot := m.tabbedWindow.IsInGitTab()
+	m.exitFocusMode()
+	m.setFocusSlot(targetSlot)
+	m.menu.SetInDiffTab(m.focusSlot == slotDiff)
+	if wasGitSlot && m.focusSlot != slotGit {
+		m.killGitTab()
+	}
+	if m.focusSlot == slotGit && !wasGitSlot {
+		cmd := m.spawnGitTab()
+		return m, tea.Batch(tea.WindowSize(), m.instanceChanged(), cmd)
+	}
+	return m, tea.Batch(tea.WindowSize(), m.instanceChanged())
+}
+```
+
+**Step 11: Update KeyFocusSidebar handler**
 
 Replace `m.setFocus(0)` calls with `m.setFocusSlot(slotSidebar)`.
 
-**Step 8: Update KeyToggleSidebar handler**
+**Step 12: Update KeyToggleSidebar handler**
 
-Replace `m.setFocus(1)` with `m.setFocusSlot(slotAgent)` when sidebar hides and focus was on sidebar.
+Replace `m.focusedPanel == 0` with `m.focusSlot == slotSidebar` and `m.setFocus(1)` with `m.setFocusSlot(slotAgent)`.
 
-**Step 9: Update KeySpace handler**
+**Step 13: Update KeySpace handler**
 
 Replace `m.focusedPanel == 0` checks with `m.focusSlot == slotSidebar`.
 
-**Step 10: Update KeyEnter handler**
+**Step 14: Update KeyEnter handler**
 
 Replace `m.focusedPanel == 0` check with `m.focusSlot == slotSidebar`.
 
-**Step 11: Update mouse click handler**
+**Step 15: Update KeySearch handler**
 
-In the mouse click section (~lines 113-159), replace `m.setFocus(0/1/2)` calls:
+Replace `m.setFocus(0)` with `m.setFocusSlot(slotSidebar)`.
+
+**Step 16: Update mouse click handler**
+
+In `handleMouse`, replace `m.setFocus(0/1/2)` calls:
 - Sidebar click: `m.setFocusSlot(slotSidebar)`
 - Center click: `m.setFocusSlot(slotAgent + m.tabbedWindow.GetActiveTab())` — focus whichever center tab is visible
 - List click: `m.setFocusSlot(slotList)`
 
-**Step 12: Update app_actions.go**
+**Step 17: Update app_actions.go**
 
-In `app/app_actions.go:293`, replace `m.focusedPanel == 0` with `m.focusSlot == slotSidebar`.
+In `app/app_actions.go`, in `openContextMenu`, replace `m.focusedPanel == 0` with `m.focusSlot == slotSidebar`.
 
-**Step 13: Update KeySearch handler**
+**Step 18: Update handleMenuHighlighting**
 
-Replace `m.setFocus(0)` with `m.setFocusSlot(slotSidebar)`.
+In `app/app_input.go`, in `handleMenuHighlighting`, remove the early-return check for `KeyShiftDown`/`KeyShiftUp` (the 3 lines starting with `if name == keys.KeyShiftDown`). These keys no longer exist.
 
-**Step 14: Git slot arrow key forwarding**
+**Step 19: Update viewport forwarding block**
 
-When `focusSlot == slotGit` and the git pane is running, forward arrow keys to the lazygit PTY. Add a helper or inline the forwarding in the up/down/left/right handlers. The git pane already has PTY forwarding in focus mode — reuse the `keyToBytes` function and `gitPane.Write()` pattern from `stateFocusAgent` handling.
+In the viewport forwarding block (the `if (m.tabbedWindow.IsDocumentMode() || ...)` section), remove the `msg.Type != tea.KeyShiftUp && msg.Type != tea.KeyShiftDown` guard since those keys no longer exist. Simplify to just check `ViewportHandlesKey`.
 
-In the `case keys.KeyUp/KeyDown` and `case keys.KeyArrowLeft/KeyArrowRight` handlers, for `slotGit`:
-```go
-case slotGit:
-	gitPane := m.tabbedWindow.GetGitPane()
-	if gitPane.IsRunning() {
-		gitPane.Write(keyToBytes(msg.(tea.KeyMsg)))
-	}
-```
-
-Note: The `msg` in `handleKeyPress` is the original `tea.KeyMsg`. You'll need to thread it through or capture it. Check how the existing `stateFocusAgent` handler accesses the key msg.
-
-**Step 15: Run tests and fix compilation**
+**Step 20: Run tests and fix compilation**
 
 Run: `go build ./...`
 Fix any remaining compilation errors.
@@ -380,7 +440,7 @@ Fix any remaining compilation errors.
 Run: `go test ./app/... -v`
 Expect test failures — the tests reference `focusedPanel`. Fix in Task 4.
 
-**Step 16: Commit**
+**Step 21: Commit**
 
 ```bash
 git add app/app_input.go app/app_state.go app/app_actions.go
@@ -396,23 +456,92 @@ git commit -m "feat: implement tab focus ring key routing"
 
 **Step 1: Rewrite focus navigation tests**
 
-The existing tests (lines ~491-577) test `focusedPanel` with left/right arrow navigation. Rewrite them for the new model:
+The existing tests (the `TestFocusNavigation` function, lines ~491-577) test `focusedPanel` with left/right arrow navigation. Rewrite them for the new model:
 
-- Remove all tests that assert `focusedPanel` values
+- Replace all `homeModel.focusedPanel` assertions with `homeModel.focusSlot`
+- Replace all `h.setFocus(N)` calls with `h.setFocusSlot(slotXxx)`
 - Remove tests for left/right arrow panel switching (those keys no longer switch panels)
-- Add tests for Tab cycling:
-  - Tab from slot 4 (list) → slot 0 (sidebar)
-  - Tab from slot 0 → slot 1 (agent)
-  - Tab from slot 3 (git) → slot 4 (list)
-  - Shift+Tab from slot 0 → slot 4
-- Add tests for Tab skipping hidden sidebar:
-  - Tab from slot 4 with sidebar hidden → slot 1 (skips 0)
-  - Shift+Tab from slot 1 with sidebar hidden → slot 4 (skips 0)
-- Add tests for `!`/`@`/`#` jumping to specific slots
-- Add tests for `s` jumping to sidebar slot
-- Keep `ctrl+s` toggle tests but update assertions to use `focusSlot`
+- Remove the "left from panel 1 shows and focuses sidebar when hidden" test
+- Remove the "left from sidebar hides sidebar and focuses panel 1" test
+- Remove the "h moves focus to sidebar when panel 1 is focused" test
 
-All assertions change from `homeModel.focusedPanel` to `homeModel.focusSlot` and use the slot constants.
+Add new tests:
+
+```go
+t.Run("Tab cycles forward through all slots", func(t *testing.T) {
+    h := newTestHome()
+    h.setFocusSlot(slotSidebar)
+
+    homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyTab})
+    assert.Equal(t, slotAgent, homeModel.focusSlot)
+})
+
+t.Run("Tab wraps from list to sidebar", func(t *testing.T) {
+    h := newTestHome()
+    h.setFocusSlot(slotList)
+
+    homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyTab})
+    assert.Equal(t, slotSidebar, homeModel.focusSlot)
+})
+
+t.Run("Tab skips sidebar when hidden", func(t *testing.T) {
+    h := newTestHome()
+    h.sidebarHidden = true
+    h.setFocusSlot(slotList)
+
+    homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyTab})
+    assert.Equal(t, slotAgent, homeModel.focusSlot)
+})
+
+t.Run("Shift+Tab cycles backward", func(t *testing.T) {
+    h := newTestHome()
+    h.setFocusSlot(slotAgent)
+
+    homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyShiftTab})
+    assert.Equal(t, slotSidebar, homeModel.focusSlot)
+})
+
+t.Run("Shift+Tab skips sidebar when hidden", func(t *testing.T) {
+    h := newTestHome()
+    h.sidebarHidden = true
+    h.setFocusSlot(slotAgent)
+
+    homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyShiftTab})
+    assert.Equal(t, slotList, homeModel.focusSlot)
+})
+
+t.Run("! jumps to agent slot", func(t *testing.T) {
+    h := newTestHome()
+    h.setFocusSlot(slotList)
+
+    homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("!")})
+    assert.Equal(t, slotAgent, homeModel.focusSlot)
+})
+
+t.Run("@ jumps to diff slot", func(t *testing.T) {
+    h := newTestHome()
+    h.setFocusSlot(slotSidebar)
+
+    homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("@")})
+    assert.Equal(t, slotDiff, homeModel.focusSlot)
+})
+
+t.Run("# jumps to git slot", func(t *testing.T) {
+    h := newTestHome()
+    h.setFocusSlot(slotSidebar)
+
+    homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("#")})
+    assert.Equal(t, slotGit, homeModel.focusSlot)
+})
+```
+
+Keep the `ctrl+s` toggle tests but update assertions:
+- `homeModel.focusedPanel` → `homeModel.focusSlot`
+- `h.setFocus(N)` → `h.setFocusSlot(slotXxx)`
+- `assert.Equal(t, 1, ...)` → `assert.Equal(t, slotAgent, ...)` (when sidebar hides, focus moves to agent slot)
+- `assert.Equal(t, 2, ...)` → `assert.Equal(t, slotList, ...)` (when sidebar was hidden and focus was on list)
+
+Keep `s` key tests but update assertions similarly.
 
 **Step 2: Run tests**
 
@@ -434,8 +563,8 @@ git commit -m "test: rewrite focus navigation tests for tab ring model"
 ### Task 5: Update Gradient and Tab Rendering
 
 **Files:**
-- Modify: `ui/theme.go:25-26`
-- Modify: `ui/tabbed_window.go:333-385`
+- Modify: `ui/theme.go`
+- Modify: `ui/tabbed_window.go`
 
 **Step 1: Update gradient constants**
 
@@ -452,9 +581,7 @@ GradientEnd   = "#c4a7e7" // iris
 
 **Step 2: Update tab label rendering for focus state**
 
-In `ui/tabbed_window.go`, in the `String()` method's tab rendering loop (around line 380), change the gradient condition to only apply when the specific tab is focused:
-
-Replace:
+In `ui/tabbed_window.go`, in the `String()` method's tab rendering loop, replace:
 ```go
 if isActive && !w.focusMode {
 	renderedTabs = append(renderedTabs, style.Render(GradientText(t, GradientStart, GradientEnd)))
@@ -498,16 +625,40 @@ git commit -m "feat: foam→iris gradient on focused tab, muted inactive tabs"
 ### Task 6: Update Help Screen
 
 **Files:**
-- Modify: `app/help.go` (or wherever the help keybinding display is rendered)
+- Modify: `app/help.go`
 
-**Step 1: Find and update help text**
+**Step 1: Update help text**
 
-The help screen likely lists keybindings. Update it to reflect:
-- `Tab` / `Shift+Tab`: cycle panes
-- `!`/`@`/`#`: jump to agent/diff/git
-- Remove `←/h` / `→/l` as panel navigation
-- Remove `Shift+↑/↓` as scroll
-- Remove F1/F2/F3 references
+In `app/help.go`, in `helpTypeGeneral.toContent()`, replace the "Other" section:
+
+Replace:
+```go
+headerStyle.Render("\uf085 Other:"),
+keyStyle.Render("tab")+descStyle.Render("       - Switch between preview, diff and git tabs"),
+keyStyle.Render("g")+descStyle.Render("         - Open git tab (lazygit, ctrl+space to exit)"),
+keyStyle.Render("shift-↓/↑")+descStyle.Render(" - Scroll in diff view"),
+keyStyle.Render("q")+descStyle.Render("         - Quit the application"),
+keyStyle.Render("R")+descStyle.Render("         - Switch repository"),
+```
+
+With:
+```go
+headerStyle.Render("\uf085 Navigation:"),
+keyStyle.Render("tab/S-tab")+descStyle.Render(" - Cycle panes forward/backward"),
+keyStyle.Render("!/2/3")+descStyle.Render("     - Jump to agent/diff/git tab"),
+keyStyle.Render("↑/↓")+descStyle.Render("       - Navigate within focused pane"),
+keyStyle.Render("q")+descStyle.Render("         - Quit the application"),
+keyStyle.Render("R")+descStyle.Render("         - Switch repository"),
+```
+
+Also replace the sidebar navigation line at the bottom:
+```go
+keyStyle.Render("←/h, →/l")+descStyle.Render("  - Switch sidebar and instance list"),
+```
+With:
+```go
+keyStyle.Render("←/h, →/l")+descStyle.Render("  - In-pane navigation (tree expand/collapse)"),
+```
 
 **Step 2: Run and verify**
 
@@ -523,16 +674,12 @@ git commit -m "docs: update help screen for tab focus ring keybindings"
 
 ---
 
-### Task 7: Startup Default and Final Verification
+### Task 7: Final Verification
 
 **Files:**
-- Modify: `app/app.go` (wherever `focusedPanel` is initialized)
+- No new file changes expected (cleanup only if needed)
 
-**Step 1: Set startup default**
-
-Find where the `home` struct is initialized and set `focusSlot: slotList` (value 4) so the instance list is focused on startup, matching current behavior.
-
-**Step 2: Full test suite**
+**Step 1: Full test suite**
 
 Run: `go test ./... -v`
 Expected: All tests pass.
@@ -540,23 +687,21 @@ Expected: All tests pass.
 Run: `go build ./...`
 Expected: Clean build.
 
-**Step 3: Manual smoke test**
+**Step 2: Verify startup default**
 
-Launch the app and verify:
-- Tab cycles: list → sidebar → agent → diff → git → list
-- Shift+Tab cycles backward
-- `!`/`@`/`#` jump to center tabs
-- `s` jumps to sidebar
-- Up/down navigate within the focused pane
-- Arrow keys in sidebar do tree expand/collapse (not panel switch)
-- Git tab receives arrow keys when Tab-focused
-- Insert mode (`i`) still works, Ctrl+Space exits
-- Gradient visible on focused tab label (foam→iris)
-- Unfocused tabs show muted text
+Check that `newHome` initializes `focusSlot` to `slotSidebar` (0). The `h.setFocusSlot(slotSidebar)` call in `newHome` handles this.
 
-**Step 4: Commit**
+**Step 3: Verify no stale references**
+
+Run: `rg 'focusedPanel|KeyLeft[^A]|KeyRight[^A]|KeyShiftUp|KeyShiftDown|KeyGitTab|fkeyToTab' --type go`
+Expected: Zero matches (all old references removed).
+
+Run: `rg 'setFocus\(' --type go`
+Expected: Zero matches (all calls migrated to `setFocusSlot`).
+
+**Step 4: Commit (if any cleanup was needed)**
 
 ```bash
-git add app/app.go
-git commit -m "feat: set instance list as default focus slot on startup"
+git add -A
+git commit -m "chore: final cleanup for tab focus ring"
 ```
