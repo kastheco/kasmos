@@ -2,13 +2,13 @@ package ui
 
 import "strings"
 
-// The base KLIQUE banner — 6 rows tall.
-var fallbackBannerRaw = `██╗  ██╗██╗     ██╗ ██████╗ ██╗   ██╗███████╗
-██║ ██╔╝██║     ██║██╔═══██╗██║   ██║██╔════╝
-█████╔╝ ██║     ██║██║   ██║██║   ██║█████╗
-██╔═██╗ ██║     ██║██║▄▄ ██║██║   ██║██╔══╝
-██║  ██╗███████╗██║╚██████╔╝╚██████╔╝███████╗
-╚═╝  ╚═╝╚══════╝╚═╝ ╚══▀▀═╝  ╚═════╝ ╚══════╝`
+// The base KASMOS banner — 6 rows tall.
+var fallbackBannerRaw = `██╗  ██╗ █████╗ ███████╗███╗   ███╗ ██████╗ ███████╗
+██║ ██╔╝██╔══██╗██╔════╝████╗ ████║██╔═══██╗██╔════╝
+█████╔╝ ███████║███████╗██╔████╔██║██║   ██║███████╗
+██╔═██╗ ██╔══██║╚════██║██║╚██╔╝██║██║   ██║╚════██║
+██║  ██╗██║  ██║███████║██║ ╚═╝ ██║╚██████╔╝███████║
+╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝ ╚═════╝ ╚══════╝`
 
 // Block-art glyphs, each 6 rows to match the banner height.
 // period: small block sitting at the bottom.
@@ -28,10 +28,10 @@ var bannerFrames = func() []string {
 
 	type glyph = [6]string
 	suffixes := [][]glyph{
-		{},                                      // KLIQUE
-		{blockPeriod},                           // KLIQUE.
-		{blockPeriod, blockPeriod},              // KLIQUE..
-		{blockPeriod, blockPeriod, blockPeriod}, // KLIQUE...
+		{},                                      // KASMOS
+		{blockPeriod},                           // KASMOS.
+		{blockPeriod, blockPeriod},              // KASMOS..
+		{blockPeriod, blockPeriod, blockPeriod}, // KASMOS...
 	}
 
 	frames := make([]string, len(suffixes))
