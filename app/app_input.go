@@ -1141,8 +1141,12 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			m.setFocusSlot(slotSidebar)
 			return m, tea.WindowSize()
 		}
-		// s key always jumps directly to the sidebar regardless of current slot.
+		// s key always jumps directly to the left sidebar regardless of current slot.
 		m.setFocusSlot(slotSidebar)
+		return m, nil
+	case keys.KeyFocusList:
+		// t key always jumps directly to the right sidebar (instance list).
+		m.setFocusSlot(slotList)
 		return m, nil
 	case keys.KeyViewPlan:
 		return m.viewSelectedPlan()

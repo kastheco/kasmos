@@ -104,22 +104,29 @@ func (m *home) setFocusSlot(slot int) {
 	}
 }
 
-// nextFocusSlot advances the focus ring forward, skipping sidebar when hidden.
+// nextFocusSlot advances the focus ring forward through the 3 center tabs only.
+// Tab only cycles agent → diff → git → agent. Use 's'/'t' to reach the sidebars.
 func (m *home) nextFocusSlot() {
-	next := (m.focusSlot + 1) % slotCount
-	if next == slotSidebar && m.sidebarHidden {
-		next = slotAgent
+	switch m.focusSlot {
+	case slotAgent:
+		m.setFocusSlot(slotDiff)
+	case slotDiff:
+		m.setFocusSlot(slotGit)
+	default: // slotGit, slotSidebar, slotList — all land on agent
+		m.setFocusSlot(slotAgent)
 	}
-	m.setFocusSlot(next)
 }
 
-// prevFocusSlot moves the focus ring backward, skipping sidebar when hidden.
+// prevFocusSlot moves the focus ring backward through the 3 center tabs only.
 func (m *home) prevFocusSlot() {
-	prev := (m.focusSlot - 1 + slotCount) % slotCount
-	if prev == slotSidebar && m.sidebarHidden {
-		prev = slotList
+	switch m.focusSlot {
+	case slotDiff:
+		m.setFocusSlot(slotAgent)
+	case slotGit:
+		m.setFocusSlot(slotDiff)
+	default: // slotAgent, slotSidebar, slotList — all land on git
+		m.setFocusSlot(slotGit)
 	}
-	m.setFocusSlot(prev)
 }
 
 // enterFocusMode enters focus/insert mode and starts the fast preview ticker.

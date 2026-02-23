@@ -490,61 +490,84 @@ func TestFocusRing(t *testing.T) {
 
 	// --- Tab ring cycling ---
 
-	t.Run("Tab advances focus ring forward", func(t *testing.T) {
+	t.Run("Tab advances through center tabs: agent → diff", func(t *testing.T) {
 		h := newTestHome()
-		h.setFocusSlot(slotSidebar) // slot 0
+		h.setFocusSlot(slotAgent)
+
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyTab})
+
+		assert.Equal(t, slotDiff, homeModel.focusSlot)
+	})
+
+	t.Run("Tab advances through center tabs: diff → git", func(t *testing.T) {
+		h := newTestHome()
+		h.setFocusSlot(slotDiff)
+
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyTab})
+
+		assert.Equal(t, slotGit, homeModel.focusSlot)
+	})
+
+	t.Run("Tab wraps center tabs: git → agent", func(t *testing.T) {
+		h := newTestHome()
+		h.setFocusSlot(slotGit)
 
 		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyTab})
 
 		assert.Equal(t, slotAgent, homeModel.focusSlot)
 	})
 
-	t.Run("Tab wraps from list (4) to sidebar (0)", func(t *testing.T) {
+	t.Run("Tab from sidebar lands on agent", func(t *testing.T) {
 		h := newTestHome()
-		h.setFocusSlot(slotList) // slot 4
+		h.setFocusSlot(slotSidebar)
 
 		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyTab})
 
-		assert.Equal(t, slotSidebar, homeModel.focusSlot)
-	})
-
-	t.Run("Shift+Tab moves focus ring backward", func(t *testing.T) {
-		h := newTestHome()
-		h.setFocusSlot(slotAgent) // slot 1
-
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyShiftTab})
-
-		assert.Equal(t, slotSidebar, homeModel.focusSlot)
-	})
-
-	t.Run("Shift+Tab wraps from sidebar (0) to list (4)", func(t *testing.T) {
-		h := newTestHome()
-		h.setFocusSlot(slotSidebar) // slot 0
-
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyShiftTab})
-
-		assert.Equal(t, slotList, homeModel.focusSlot)
-	})
-
-	t.Run("Tab skips sidebar when hidden", func(t *testing.T) {
-		h := newTestHome()
-		h.sidebarHidden = true
-		h.setFocusSlot(slotList) // slot 4
-
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyTab})
-
-		// Should skip slot 0 (sidebar) and land on slot 1 (agent)
 		assert.Equal(t, slotAgent, homeModel.focusSlot)
 	})
 
-	t.Run("Shift+Tab skips sidebar when hidden", func(t *testing.T) {
+	t.Run("Tab from list lands on agent", func(t *testing.T) {
 		h := newTestHome()
-		h.sidebarHidden = true
-		h.setFocusSlot(slotAgent) // slot 1
+		h.setFocusSlot(slotList)
+
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyTab})
+
+		assert.Equal(t, slotAgent, homeModel.focusSlot)
+	})
+
+	t.Run("Shift+Tab moves backward through center tabs: diff → agent", func(t *testing.T) {
+		h := newTestHome()
+		h.setFocusSlot(slotDiff)
 
 		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyShiftTab})
 
-		// Should skip slot 0 (sidebar) and land on slot 4 (list)
+		assert.Equal(t, slotAgent, homeModel.focusSlot)
+	})
+
+	t.Run("Shift+Tab wraps center tabs: agent → git", func(t *testing.T) {
+		h := newTestHome()
+		h.setFocusSlot(slotAgent)
+
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyShiftTab})
+
+		assert.Equal(t, slotGit, homeModel.focusSlot)
+	})
+
+	t.Run("Shift+Tab from sidebar lands on git", func(t *testing.T) {
+		h := newTestHome()
+		h.setFocusSlot(slotSidebar)
+
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyShiftTab})
+
+		assert.Equal(t, slotGit, homeModel.focusSlot)
+	})
+
+	t.Run("t jumps to list slot", func(t *testing.T) {
+		h := newTestHome()
+		h.setFocusSlot(slotSidebar)
+
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+
 		assert.Equal(t, slotList, homeModel.focusSlot)
 	})
 

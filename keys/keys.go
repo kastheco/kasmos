@@ -50,7 +50,8 @@ const (
 	KeyTabDiff
 	KeyTabGit
 
-	KeyFocusSidebar  // Key for focusing the sidebar / plan list
+	KeyFocusSidebar  // Key for focusing the left sidebar / plan list
+	KeyFocusList     // Key for focusing the right sidebar / instance list
 	KeyViewPlan      // Key for viewing the selected plan's markdown
 	KeyToggleSidebar // Key for toggling sidebar visibility
 )
@@ -86,6 +87,7 @@ var GlobalKeyStringsMap = map[string]KeyName{
 	"3":      KeyCycleSort,
 	"R":      KeyRepoSwitch,
 	"s":      KeyFocusSidebar,
+	"t":      KeyFocusList,
 	"v":      KeyViewPlan,
 	"ctrl+s": KeyToggleSidebar,
 	"g":      KeyGitTab,
@@ -190,7 +192,11 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	),
 	KeyFocusSidebar: key.NewBinding(
 		key.WithKeys("s"),
-		key.WithHelp("s", "select plan"),
+		key.WithHelp("s", "left sidebar"),
+	),
+	KeyFocusList: key.NewBinding(
+		key.WithKeys("t"),
+		key.WithHelp("t", "right sidebar"),
 	),
 	KeyViewPlan: key.NewBinding(
 		key.WithKeys("v"),
