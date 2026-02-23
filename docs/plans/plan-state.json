@@ -271,6 +271,10 @@
     "2026-02-22-wave-orchestration-design.md": {
       "status": "ready",
       "description": "wave-based parallel task execution: planner groups tasks into waves, klique spawns parallel instances per wave on shared worktree"
+    },
+    "2026-02-22-wave-orchestration.md": {
+      "status": "ready",
+      "description": "implement wave orchestration: plan parser, instance fields, orchestrator state machine, validation gate, prompt builder, wiring, wave badge"
     }
   }
 }
