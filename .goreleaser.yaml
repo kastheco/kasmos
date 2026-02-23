@@ -32,8 +32,7 @@ brews:
     install: |
       bin.install "kasmos"
       bin.install_symlink "kasmos" => "kas"
-      bin.install_symlink "kasmos" => "ks"
-      bin.install_symlink "kasmos" => "km"
+      bin.install_symlink "kasmos" => "kms"
     test: |
       system "#{bin}/kas", "version"
 

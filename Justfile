@@ -5,12 +5,11 @@ set dotenv-load := true
 build:
     go build -o kasmos .
 
-# Install to GOPATH/bin (with kas, ks, km aliases)
+# Install to GOPATH/bin (with kas, kms aliases)
 install:
     go install .
     ln -sf "$(go env GOPATH)/bin/kasmos" "$(go env GOPATH)/bin/kas"
-    ln -sf "$(go env GOPATH)/bin/kasmos" "$(go env GOPATH)/bin/ks"
-    ln -sf "$(go env GOPATH)/bin/kasmos" "$(go env GOPATH)/bin/km"
+    ln -sf "$(go env GOPATH)/bin/kasmos" "$(go env GOPATH)/bin/kms"
 
 # Build + install
 bi: build install
