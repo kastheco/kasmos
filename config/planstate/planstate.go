@@ -328,6 +328,17 @@ func (ps *PlanState) Entry(filename string) (PlanEntry, bool) {
 	return entry, ok
 }
 
+// SetBranch assigns a branch name to an existing plan entry and persists to disk.
+func (ps *PlanState) SetBranch(filename, branch string) error {
+	entry, ok := ps.Plans[filename]
+	if !ok {
+		return fmt.Errorf("plan not found: %s", filename)
+	}
+	entry.Branch = branch
+	ps.Plans[filename] = entry
+	return ps.save()
+}
+
 // Save persists the current state to disk.
 func (ps *PlanState) Save() error {
 	return ps.save()

@@ -890,6 +890,14 @@ func (m *home) spawnPlanAgent(planFile, action, prompt string) (tea.Model, tea.C
 			return instanceStartedMsg{instance: inst, err: err}
 		}
 	} else {
+		// Backfill branch name for plans created before the branch field was introduced.
+		if entry.Branch == "" {
+			entry.Branch = gitpkg.PlanBranchFromFile(planFile)
+			if err := m.planState.SetBranch(planFile, entry.Branch); err != nil {
+				return m, m.handleError(fmt.Errorf("failed to assign branch for plan: %w", err))
+			}
+		}
+
 		// Coder and reviewer share the plan's feature branch worktree
 		shared := gitpkg.NewSharedPlanWorktree(m.activeRepoPath, entry.Branch)
 		if err := shared.Setup(); err != nil {
