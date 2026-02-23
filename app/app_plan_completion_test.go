@@ -50,7 +50,7 @@ func TestMetadataTickHandler_CoderExitTriggersPrompt(t *testing.T) {
 	ps, err := planstate.Load(plansDir)
 	require.NoError(t, err)
 	require.NoError(t, ps.Register(planFile, "test feature", "plan/test-feature", time.Now()))
-	require.NoError(t, ps.SetStatus(planFile, planstate.StatusImplementing))
+	seedPlanStatus(t, ps, planFile, planstate.StatusImplementing)
 
 	// Build a coder instance (not started — we inject metadata directly).
 	inst, err := session.NewInstance(session.InstanceOptions{
@@ -108,21 +108,21 @@ func TestMetadataTickHandler_CoderExitTriggersPrompt(t *testing.T) {
 // tea.Msg rather than being silently swallowed with _ =.
 //
 // This is a regression test for the bug where both the push and skip closures
-// in promptPushBranchThenAdvance used _ = m.planState.SetStatus(...), causing
+// in promptPushBranchThenAdvance used _ = m.fsm.Transition(...), causing
 // disk-write failures to be invisible to the user.
 func TestPromptPushBranchThenAdvance_SetStatusErrorPropagates(t *testing.T) {
 	const planFile = "2026-02-21-test-feature.md"
 
-	// Use a planState with a read-only Dir so SetStatus will fail on save.
+	// Use a planState with a read-only Dir so fsm.Transition will fail on save.
 	roDir := t.TempDir()
 	plansDir := filepath.Join(roDir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
 	ps, err := planstate.Load(plansDir)
 	require.NoError(t, err)
 	require.NoError(t, ps.Register(planFile, "test feature", "plan/test-feature", time.Now()))
-	require.NoError(t, ps.SetStatus(planFile, planstate.StatusImplementing))
+	seedPlanStatus(t, ps, planFile, planstate.StatusImplementing)
 
-	// Make the plan-state.json file read-only so the next SetStatus save fails.
+	// Make the plan-state.json file read-only so the next fsm.Transition save fails.
 	stateFile := filepath.Join(plansDir, "plan-state.json")
 	require.NoError(t, os.Chmod(stateFile, 0o444))
 	t.Cleanup(func() { _ = os.Chmod(stateFile, 0o644) })
@@ -149,10 +149,10 @@ func TestPromptPushBranchThenAdvance_SetStatusErrorPropagates(t *testing.T) {
 
 	msg := h.pendingConfirmAction()
 
-	// The returned tea.Msg must be an error, not planRefreshMsg, because SetStatus failed.
+	// The returned tea.Msg must be an error, not planRefreshMsg, because fsm.Transition failed.
 	_, isErr := msg.(error)
 	assert.True(t, isErr,
-		"push action must return error when SetStatus fails, got %T: %v", msg, msg)
+		"push action must return error when fsm.Transition fails, got %T: %v", msg, msg)
 }
 
 // TestMetadataTickHandler_NoRepromptWhenConfirmPending verifies that when the
@@ -168,7 +168,7 @@ func TestMetadataTickHandler_NoRepromptWhenConfirmPending(t *testing.T) {
 	ps, err := planstate.Load(plansDir)
 	require.NoError(t, err)
 	require.NoError(t, ps.Register(planFile, "test feature", "plan/test-feature", time.Now()))
-	require.NoError(t, ps.SetStatus(planFile, planstate.StatusImplementing))
+	seedPlanStatus(t, ps, planFile, planstate.StatusImplementing)
 
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:     "test-feature-implement",
@@ -236,13 +236,13 @@ func TestFullPlanLifecycle_StateTransitions(t *testing.T) {
 		time.Date(2026, 2, 21, 10, 0, 0, 0, time.UTC),
 	))
 
-	require.NoError(t, ps.SetStatus("2026-02-21-auth-refactor.md", planstate.StatusPlanning))
-	require.NoError(t, ps.SetStatus("2026-02-21-auth-refactor.md", planstate.StatusImplementing))
-	require.NoError(t, ps.SetStatus("2026-02-21-auth-refactor.md", planstate.StatusReviewing))
-	require.NoError(t, ps.SetStatus("2026-02-21-auth-refactor.md", planstate.StatusFinished))
+	seedPlanStatus(t, ps, "2026-02-21-auth-refactor.md", planstate.StatusPlanning)
+	seedPlanStatus(t, ps, "2026-02-21-auth-refactor.md", planstate.StatusImplementing)
+	seedPlanStatus(t, ps, "2026-02-21-auth-refactor.md", planstate.StatusReviewing)
+	seedPlanStatus(t, ps, "2026-02-21-auth-refactor.md", planstate.StatusDone)
 
 	entry, ok := ps.Entry("2026-02-21-auth-refactor.md")
 	require.True(t, ok)
-	assert.Equal(t, planstate.StatusFinished, entry.Status)
+	assert.Equal(t, planstate.StatusDone, entry.Status)
 	assert.Equal(t, "plan/auth-refactor", entry.Branch)
 }

@@ -258,7 +258,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		}
 		planName := planstate.DisplayName(planFile)
 		cancelAction := func() tea.Msg {
-			if err := m.planState.SetStatus(planFile, planstate.StatusCancelled); err != nil {
+			if err := m.fsm.Transition(planFile, planfsm.Cancel); err != nil {
 				return err
 			}
 			m.loadPlanState()
@@ -614,7 +614,7 @@ func (m *home) triggerPlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 		m.updateSidebarItems()
 		return m.startNextWave(orch, entry)
 	case "review":
-		if err := m.planState.SetStatus(planFile, planstate.StatusReviewing); err != nil {
+		if err := m.fsm.Transition(planFile, planfsm.ImplementFinished); err != nil {
 			return m, m.handleError(err)
 		}
 		m.loadPlanState()

@@ -84,21 +84,21 @@ func TestPlanLifecycle(t *testing.T) {
 	require.NoError(t, err)
 
 	// Coder picks it up
-	require.NoError(t, ps.SetStatus("test-plan.md", StatusImplementing))
+	require.NoError(t, ps.setStatus("test-plan.md", StatusImplementing))
 	unfinished := ps.Unfinished()
 	require.Len(t, unfinished, 1)
 	assert.Equal(t, StatusImplementing, unfinished[0].Status)
 	assert.False(t, ps.IsDone("test-plan.md"))
 
 	// Coder finishes — transitions to reviewing
-	require.NoError(t, ps.SetStatus("test-plan.md", StatusReviewing))
+	require.NoError(t, ps.setStatus("test-plan.md", StatusReviewing))
 	assert.False(t, ps.IsDone("test-plan.md"))
 	unfinished = ps.Unfinished()
 	require.Len(t, unfinished, 1)
 	assert.Equal(t, StatusReviewing, unfinished[0].Status)
 
 	// Reviewer approves — FSM transitions to done (terminal)
-	require.NoError(t, ps.SetStatus("test-plan.md", StatusDone))
+	require.NoError(t, ps.setStatus("test-plan.md", StatusDone))
 	assert.True(t, ps.IsDone("test-plan.md"))
 	assert.Empty(t, ps.Unfinished())
 
@@ -122,17 +122,17 @@ func TestFullLifecycleNoRespawnLoop(t *testing.T) {
 	require.NoError(t, err)
 
 	// Step 1: ready → implementing
-	require.NoError(t, ps.SetStatus("feature.md", StatusImplementing))
+	require.NoError(t, ps.setStatus("feature.md", StatusImplementing))
 	assert.False(t, ps.IsDone("feature.md"))
 	assert.Len(t, ps.Unfinished(), 1)
 
 	// Step 2: implementing → reviewing
-	require.NoError(t, ps.SetStatus("feature.md", StatusReviewing))
+	require.NoError(t, ps.setStatus("feature.md", StatusReviewing))
 	assert.False(t, ps.IsDone("feature.md"), "reviewing is not done")
 	assert.Len(t, ps.Unfinished(), 1, "reviewing should appear in sidebar")
 
 	// Step 3: reviewer approves → done (terminal)
-	require.NoError(t, ps.SetStatus("feature.md", StatusDone))
+	require.NoError(t, ps.setStatus("feature.md", StatusDone))
 	assert.True(t, ps.IsDone("feature.md"), "done must satisfy IsDone")
 	assert.Empty(t, ps.Unfinished(), "done must not appear in sidebar unfinished list")
 
@@ -152,7 +152,7 @@ func TestSetStatus(t *testing.T) {
 	ps, err := Load(dir)
 	require.NoError(t, err)
 
-	require.NoError(t, ps.SetStatus("a.md", StatusReviewing))
+	require.NoError(t, ps.setStatus("a.md", StatusReviewing))
 	assert.Equal(t, StatusReviewing, ps.Plans["a.md"].Status)
 
 	ps2, err := Load(dir)

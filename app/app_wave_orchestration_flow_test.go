@@ -101,7 +101,7 @@ func TestWaveMonitor_PausedTaskCountsAsFailed(t *testing.T) {
 	ps, err := planstate.Load(plansDir)
 	require.NoError(t, err)
 	require.NoError(t, ps.Register(planFile, "paused task test", "plan/paused-task", time.Now()))
-	require.NoError(t, ps.SetStatus(planFile, planstate.StatusImplementing))
+	seedPlanStatus(t, ps, planFile, planstate.StatusImplementing)
 
 	// Create the task instance but mark it as Paused
 	inst, err := session.NewInstance(session.InstanceOptions{
@@ -156,7 +156,7 @@ func TestWaveMonitor_MissingTaskCountsAsFailed(t *testing.T) {
 	ps, err := planstate.Load(plansDir)
 	require.NoError(t, err)
 	require.NoError(t, ps.Register(planFile, "missing task test", "plan/missing-task", time.Now()))
-	require.NoError(t, ps.SetStatus(planFile, planstate.StatusImplementing))
+	seedPlanStatus(t, ps, planFile, planstate.StatusImplementing)
 
 	// No instance added to the list — the task is "missing"
 	h := waveFlowHome(t, ps, plansDir, map[string]*WaveOrchestrator{planFile: orch})
@@ -241,7 +241,7 @@ func TestTriggerPlanStage_ImplementNoWaves_RespawnsPlanner(t *testing.T) {
 	ps, err := planstate.Load(plansDir)
 	require.NoError(t, err)
 	require.NoError(t, ps.Register(planFile, "no waves test", "plan/no-waves", time.Now()))
-	require.NoError(t, ps.SetStatus(planFile, planstate.StatusPlanning))
+	seedPlanStatus(t, ps, planFile, planstate.StatusPlanning)
 
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
 	list := ui.NewList(&sp, false)
@@ -296,7 +296,7 @@ func TestPlannerExit_ShowsImplementConfirm(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, ps.Register(planFile, "planner exit test", "plan/planner-exit", time.Now()))
 	// The planner was launched so status is StatusPlanning — prompt fires when pane dies.
-	require.NoError(t, ps.SetStatus(planFile, planstate.StatusPlanning))
+	seedPlanStatus(t, ps, planFile, planstate.StatusPlanning)
 
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:   "planner-exit-inst",

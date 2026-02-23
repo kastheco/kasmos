@@ -274,8 +274,9 @@ func (ps *PlanState) IsDone(filename string) bool {
 	return entry.Status == StatusDone
 }
 
-// SetStatus updates a plan's status and persists to disk.
-func (ps *PlanState) SetStatus(filename string, status Status) error {
+// setStatus updates a plan's status and persists to disk.
+// Unexported: only for use within this package (tests). Production code must use planfsm.Transition.
+func (ps *PlanState) setStatus(filename string, status Status) error {
 	if ps.Plans == nil {
 		ps.Plans = make(map[string]PlanEntry)
 	}
