@@ -263,6 +263,14 @@
       "status": "ready",
       "description": "implement 5-slot Tab focus ring: key defs, focusSlot state, key routing, tests, gradient, help",
       "created_at": "2026-02-22T18:45:00Z"
+    },
+    "2026-02-22-contextual-status-bar.md": {
+      "status": "ready",
+      "description": "top status bar showing contextual info (wave progress, repo name, branch) based on focused/selected item"
+    },
+    "2026-02-22-wave-orchestration-design.md": {
+      "status": "ready",
+      "description": "wave-based parallel task execution: planner groups tasks into waves, klique spawns parallel instances per wave on shared worktree"
     }
   }
 }
