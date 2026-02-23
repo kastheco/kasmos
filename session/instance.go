@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/kastheco/klique/session/git"
-	"github.com/kastheco/klique/session/tmux"
+	"github.com/kastheco/kasmos/session/git"
+	"github.com/kastheco/kasmos/session/tmux"
 )
 
 type Status int

@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/kastheco/klique/session/git"
+	"github.com/kastheco/kasmos/session/git"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

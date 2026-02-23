@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/kastheco/klique/config/planstate"
-	"github.com/kastheco/klique/session"
-	"github.com/kastheco/klique/ui"
+	"github.com/kastheco/kasmos/config/planstate"
+	"github.com/kastheco/kasmos/session"
+	"github.com/kastheco/kasmos/ui"
 )
 
 func TestBuildPlanPrompt(t *testing.T) {

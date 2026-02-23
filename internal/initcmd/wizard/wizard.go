@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kastheco/klique/config"
-	"github.com/kastheco/klique/internal/initcmd/harness"
+	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/internal/initcmd/harness"
 )
 
 // BuildProgressNote renders a summary of agent configuration progress.

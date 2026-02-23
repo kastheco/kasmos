@@ -1,10 +1,10 @@
 package ui
 
 import (
-	"github.com/kastheco/klique/keys"
+	"github.com/kastheco/kasmos/keys"
 	"strings"
 
-	"github.com/kastheco/klique/session"
+	"github.com/kastheco/kasmos/session"
 
 	"github.com/charmbracelet/lipgloss"
 )

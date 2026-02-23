@@ -3,7 +3,7 @@ package tmux
 import (
 	"bytes"
 	"fmt"
-	"github.com/kastheco/klique/log"
+	"github.com/kastheco/kasmos/log"
 	"os"
 	"os/exec"
 	"strconv"

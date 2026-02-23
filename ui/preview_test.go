@@ -2,10 +2,10 @@ package ui
 
 import (
 	"fmt"
-	"github.com/kastheco/klique/cmd/cmd_test"
-	"github.com/kastheco/klique/log"
-	"github.com/kastheco/klique/session"
-	"github.com/kastheco/klique/session/tmux"
+	"github.com/kastheco/kasmos/cmd/cmd_test"
+	"github.com/kastheco/kasmos/log"
+	"github.com/kastheco/kasmos/session"
+	"github.com/kastheco/kasmos/session/tmux"
 	"os"
 	"os/exec"
 	"path/filepath"

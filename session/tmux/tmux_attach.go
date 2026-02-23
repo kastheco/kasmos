@@ -3,7 +3,7 @@ package tmux
 import (
 	"context"
 	"fmt"
-	"github.com/kastheco/klique/log"
+	"github.com/kastheco/kasmos/log"
 	"io"
 	"os"
 	"sync"

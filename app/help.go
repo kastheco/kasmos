@@ -2,10 +2,10 @@ package app
 
 import (
 	"fmt"
-	"github.com/kastheco/klique/log"
-	"github.com/kastheco/klique/session"
-	"github.com/kastheco/klique/ui"
-	"github.com/kastheco/klique/ui/overlay"
+	"github.com/kastheco/kasmos/log"
+	"github.com/kastheco/kasmos/session"
+	"github.com/kastheco/kasmos/ui"
+	"github.com/kastheco/kasmos/ui/overlay"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"

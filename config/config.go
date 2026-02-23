@@ -3,7 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/kastheco/klique/log"
+	"github.com/kastheco/kasmos/log"
 	"os"
 	"os/exec"
 	"os/user"

@@ -3,7 +3,7 @@ package git
 import (
 	"errors"
 	"fmt"
-	"github.com/kastheco/klique/log"
+	"github.com/kastheco/kasmos/log"
 	"os"
 	"os/exec"
 	"path/filepath"

@@ -3,8 +3,8 @@ package app
 import (
 	"testing"
 
-	"github.com/kastheco/klique/session"
-	"github.com/kastheco/klique/ui"
+	"github.com/kastheco/kasmos/session"
+	"github.com/kastheco/kasmos/ui"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

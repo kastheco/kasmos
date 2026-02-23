@@ -2,12 +2,12 @@ package app
 
 import (
 	"fmt"
-	"github.com/kastheco/klique/config/planstate"
-	"github.com/kastheco/klique/keys"
-	"github.com/kastheco/klique/log"
-	"github.com/kastheco/klique/session"
-	"github.com/kastheco/klique/ui"
-	"github.com/kastheco/klique/ui/overlay"
+	"github.com/kastheco/kasmos/config/planstate"
+	"github.com/kastheco/kasmos/keys"
+	"github.com/kastheco/kasmos/log"
+	"github.com/kastheco/kasmos/session"
+	"github.com/kastheco/kasmos/ui"
+	"github.com/kastheco/kasmos/ui/overlay"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"

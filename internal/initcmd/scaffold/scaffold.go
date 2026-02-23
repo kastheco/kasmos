@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/kastheco/klique/internal/initcmd/harness"
+	"github.com/kastheco/kasmos/internal/initcmd/harness"
 )
 
 //go:embed templates

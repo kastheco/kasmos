@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kastheco/klique/config"
-	"github.com/kastheco/klique/internal/initcmd/harness"
-	"github.com/kastheco/klique/internal/initcmd/scaffold"
-	"github.com/kastheco/klique/internal/initcmd/wizard"
+	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/internal/initcmd/harness"
+	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
+	"github.com/kastheco/kasmos/internal/initcmd/wizard"
 )
 
 // Options holds the CLI flags for kq init.

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kastheco/klique/config/planparser"
+	"github.com/kastheco/kasmos/config/planparser"
 )
 
 // buildTaskPrompt constructs the prompt for a single task instance.

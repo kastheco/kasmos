@@ -3,8 +3,8 @@ package ui
 import (
 	"errors"
 	"fmt"
-	"github.com/kastheco/klique/log"
-	"github.com/kastheco/klique/session"
+	"github.com/kastheco/kasmos/log"
+	"github.com/kastheco/kasmos/session"
 	"sort"
 	"strings"
 

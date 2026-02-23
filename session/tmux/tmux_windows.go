@@ -3,7 +3,7 @@
 package tmux
 
 import (
-	"github.com/kastheco/klique/log"
+	"github.com/kastheco/kasmos/log"
 	"os"
 	"time"
 

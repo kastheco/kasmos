@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/kastheco/klique/config"
+	"github.com/kastheco/kasmos/config"
 )
 
 // FormatAgentSummary returns a one-line summary of an agent's settings.

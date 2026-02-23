@@ -1,4 +1,4 @@
-module github.com/kastheco/klique
+module github.com/kastheco/kasmos
 
 go 1.24.4
 

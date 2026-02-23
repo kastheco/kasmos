@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/kastheco/klique/config/planstate"
+	"github.com/kastheco/kasmos/config/planstate"
 	zone "github.com/lrstanley/bubblezone"
 	"github.com/mattn/go-runewidth"
 )

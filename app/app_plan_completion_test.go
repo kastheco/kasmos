@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/kastheco/klique/config"
-	"github.com/kastheco/klique/config/planstate"
-	"github.com/kastheco/klique/session"
-	"github.com/kastheco/klique/ui"
-	"github.com/kastheco/klique/ui/overlay"
+	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/planstate"
+	"github.com/kastheco/kasmos/session"
+	"github.com/kastheco/kasmos/ui"
+	"github.com/kastheco/kasmos/ui/overlay"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

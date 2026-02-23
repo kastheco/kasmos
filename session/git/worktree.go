@@ -2,8 +2,8 @@ package git
 
 import (
 	"fmt"
-	"github.com/kastheco/klique/config"
-	"github.com/kastheco/klique/log"
+	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/log"
 	"path/filepath"
 	"time"
 )

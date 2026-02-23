@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"github.com/kastheco/klique/config/planparser"
+	"github.com/kastheco/kasmos/config/planparser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

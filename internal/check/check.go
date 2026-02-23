@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/kastheco/klique/internal/initcmd/harness"
+	"github.com/kastheco/kasmos/internal/initcmd/harness"
 )
 
 // SkillStatus represents the state of a single skill entry.

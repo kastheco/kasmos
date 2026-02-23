@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/kastheco/klique/internal/initcmd/harness"
+	"github.com/kastheco/kasmos/internal/initcmd/harness"
 )
 
 // AuditGlobal checks ~/.agents/skills/ against one harness's global skill dir.

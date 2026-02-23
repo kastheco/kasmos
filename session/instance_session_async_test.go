@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kastheco/klique/cmd/cmd_test"
-	"github.com/kastheco/klique/session/tmux"
+	"github.com/kastheco/kasmos/cmd/cmd_test"
+	"github.com/kastheco/kasmos/session/tmux"
 	"github.com/stretchr/testify/require"
 )
 

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kastheco/klique/internal/initcmd/harness"
+	"github.com/kastheco/kasmos/internal/initcmd/harness"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

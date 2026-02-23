@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kastheco/klique/config/planstate"
+	"github.com/kastheco/kasmos/config/planstate"
 	"github.com/stretchr/testify/require"
 )
 

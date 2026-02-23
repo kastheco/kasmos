@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"github.com/kastheco/klique/config/planstate"
+	"github.com/kastheco/kasmos/config/planstate"
 )
 
 func TestModifyPlanActionSetsPlanning(t *testing.T) {

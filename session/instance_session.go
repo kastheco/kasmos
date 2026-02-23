@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kastheco/klique/log"
-	"github.com/kastheco/klique/session/git"
-	"github.com/kastheco/klique/session/tmux"
+	"github.com/kastheco/kasmos/log"
+	"github.com/kastheco/kasmos/session/git"
+	"github.com/kastheco/kasmos/session/tmux"
 )
 
 func (i *Instance) Preview() (string, error) {

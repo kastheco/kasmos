@@ -3,8 +3,8 @@ package ui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/kastheco/klique/log"
-	"github.com/kastheco/klique/session"
+	"github.com/kastheco/kasmos/log"
+	"github.com/kastheco/kasmos/session"
 )
 
 func tabBorderWithBottom(left, middle, right string) lipgloss.Border {

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/kastheco/klique/config/planstate"
+	"github.com/kastheco/kasmos/config/planstate"
 )
 
 // PlanBranchFromFile derives the git branch name from a plan filename.

@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/kastheco/klique/internal/check"
-	"github.com/kastheco/klique/internal/initcmd/harness"
+	"github.com/kastheco/kasmos/internal/check"
+	"github.com/kastheco/kasmos/internal/initcmd/harness"
 	"github.com/spf13/cobra"
 )
 

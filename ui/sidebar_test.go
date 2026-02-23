@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/kastheco/klique/config/planstate"
+	"github.com/kastheco/kasmos/config/planstate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

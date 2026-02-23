@@ -2,7 +2,7 @@ package git
 
 import (
 	"fmt"
-	"github.com/kastheco/klique/log"
+	"github.com/kastheco/kasmos/log"
 	"os/exec"
 	"strings"
 )

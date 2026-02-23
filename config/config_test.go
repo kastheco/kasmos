@@ -1,7 +1,7 @@
 package config
 
 import (
-	"github.com/kastheco/klique/log"
+	"github.com/kastheco/kasmos/log"
 	"os"
 	"path/filepath"
 	"regexp"

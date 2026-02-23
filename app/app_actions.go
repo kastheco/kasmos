@@ -5,12 +5,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/kastheco/klique/config/planparser"
-	"github.com/kastheco/klique/config/planstate"
-	"github.com/kastheco/klique/internal/initcmd/scaffold"
-	"github.com/kastheco/klique/session"
-	gitpkg "github.com/kastheco/klique/session/git"
-	"github.com/kastheco/klique/ui/overlay"
+	"github.com/kastheco/kasmos/config/planparser"
+	"github.com/kastheco/kasmos/config/planstate"
+	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
+	"github.com/kastheco/kasmos/session"
+	gitpkg "github.com/kastheco/kasmos/session/git"
+	"github.com/kastheco/kasmos/ui/overlay"
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"

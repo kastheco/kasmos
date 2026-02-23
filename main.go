@@ -8,15 +8,15 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/kastheco/klique/app"
-	cmd2 "github.com/kastheco/klique/cmd"
-	"github.com/kastheco/klique/config"
-	"github.com/kastheco/klique/daemon"
-	initcmd "github.com/kastheco/klique/internal/initcmd"
-	"github.com/kastheco/klique/log"
-	"github.com/kastheco/klique/session"
-	"github.com/kastheco/klique/session/git"
-	"github.com/kastheco/klique/session/tmux"
+	"github.com/kastheco/kasmos/app"
+	cmd2 "github.com/kastheco/kasmos/cmd"
+	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/daemon"
+	initcmd "github.com/kastheco/kasmos/internal/initcmd"
+	"github.com/kastheco/kasmos/log"
+	"github.com/kastheco/kasmos/session"
+	"github.com/kastheco/kasmos/session/git"
+	"github.com/kastheco/kasmos/session/tmux"
 	"github.com/spf13/cobra"
 )
 
@@ -149,7 +149,7 @@ var (
 		Short: "Print the version number of klique",
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Printf("klique version %s\n", version)
-			fmt.Printf("https://github.com/kastheco/klique/releases/tag/v%s\n", version)
+			fmt.Printf("https://github.com/kastheco/kasmos/releases/tag/v%s\n", version)
 		},
 	}
 )

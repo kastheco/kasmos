@@ -2,8 +2,8 @@ package tmux
 
 import (
 	"fmt"
-	cmd2 "github.com/kastheco/klique/cmd"
-	"github.com/kastheco/klique/log"
+	cmd2 "github.com/kastheco/kasmos/cmd"
+	"github.com/kastheco/kasmos/log"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kastheco/klique/cmd/cmd_test"
+	"github.com/kastheco/kasmos/cmd/cmd_test"
 
 	"github.com/stretchr/testify/require"
 )

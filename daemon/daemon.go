@@ -2,9 +2,9 @@ package daemon
 
 import (
 	"fmt"
-	"github.com/kastheco/klique/config"
-	"github.com/kastheco/klique/log"
-	"github.com/kastheco/klique/session"
+	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/log"
+	"github.com/kastheco/kasmos/session"
 	"os"
 	"os/exec"
 	"os/signal"

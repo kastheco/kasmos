@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/kastheco/klique/config"
-	"github.com/kastheco/klique/log"
+	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/log"
 )
 
 // InstanceData represents the serializable data of an Instance

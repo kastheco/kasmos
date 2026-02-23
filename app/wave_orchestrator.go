@@ -1,7 +1,7 @@
 package app
 
 import (
-	"github.com/kastheco/klique/config/planparser"
+	"github.com/kastheco/kasmos/config/planparser"
 )
 
 // WaveState represents the current state of wave orchestration for a plan.

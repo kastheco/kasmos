@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kastheco/klique/config"
-	"github.com/kastheco/klique/ui"
+	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/ui"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"

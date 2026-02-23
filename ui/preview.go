@@ -2,7 +2,7 @@ package ui
 
 import (
 	"fmt"
-	"github.com/kastheco/klique/session"
+	"github.com/kastheco/kasmos/session"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"

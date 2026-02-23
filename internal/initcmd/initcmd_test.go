@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/kastheco/klique/config"
+	"github.com/kastheco/kasmos/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
