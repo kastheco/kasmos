@@ -202,6 +202,41 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		m.textInputOverlay.SetSize(60, 3)
 		return m, nil
 
+	case "merge_plan":
+		planFile := m.sidebar.GetSelectedPlanFile()
+		if planFile == "" || m.planState == nil {
+			return m, nil
+		}
+		entry, ok := m.planState.Entry(planFile)
+		if !ok {
+			return m, m.handleError(fmt.Errorf("plan not found: %s", planFile))
+		}
+		if entry.Branch == "" {
+			return m, m.handleError(fmt.Errorf("plan has no branch to merge"))
+		}
+		planName := planstate.DisplayName(planFile)
+		mergeAction := func() tea.Msg {
+			// Kill all instances bound to this plan.
+			for i := len(m.allInstances) - 1; i >= 0; i-- {
+				if m.allInstances[i].PlanFile == planFile {
+					_ = m.allInstances[i].Kill()
+					m.allInstances = append(m.allInstances[:i], m.allInstances[i+1:]...)
+				}
+			}
+			if err := gitpkg.MergePlanBranch(m.activeRepoPath, entry.Branch); err != nil {
+				return err
+			}
+			if err := m.planState.SetStatus(planFile, planstate.StatusCompleted); err != nil {
+				return err
+			}
+			_ = m.saveAllInstances()
+			m.loadPlanState()
+			m.updateSidebarPlans()
+			m.updateSidebarItems()
+			return planRefreshMsg{}
+		}
+		return m, m.confirmAction(fmt.Sprintf("Merge '%s' branch into main?", planName), mergeAction)
+
 	case "mark_plan_done":
 		planFile := m.sidebar.GetSelectedPlanFile()
 		if planFile == "" || m.planState == nil {
@@ -376,6 +411,7 @@ func (m *home) openPlanContextMenu() (tea.Model, tea.Cmd) {
 		overlay.ContextMenuItem{Label: "View plan", Action: "view_plan"},
 		overlay.ContextMenuItem{Label: "Push branch", Action: "push_plan_branch"},
 		overlay.ContextMenuItem{Label: "Create PR", Action: "create_plan_pr"},
+		overlay.ContextMenuItem{Label: "Merge to main", Action: "merge_plan"},
 		overlay.ContextMenuItem{Label: "Mark done", Action: "mark_plan_done"},
 		overlay.ContextMenuItem{Label: "Start over", Action: "start_over_plan"},
 		overlay.ContextMenuItem{Label: "Cancel plan", Action: "cancel_plan"},

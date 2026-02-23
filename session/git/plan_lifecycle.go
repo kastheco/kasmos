@@ -69,6 +69,30 @@ func EnsurePlanBranch(repoPath, branch string) error {
 	return nil
 }
 
+// MergePlanBranch merges the plan branch into the current branch (typically main),
+// removes the worktree, and deletes the plan branch.
+func MergePlanBranch(repoPath, branch string) error {
+	gt := &GitWorktree{repoPath: repoPath, worktreePath: repoPath}
+	worktreePath := PlanWorktreePath(repoPath, branch)
+
+	// Remove worktree first so the branch isn't "checked out" elsewhere.
+	_, _ = gt.runGitCommand(repoPath, "worktree", "remove", "-f", worktreePath)
+	_, _ = gt.runGitCommand(repoPath, "worktree", "prune")
+
+	// Merge the plan branch into the current branch.
+	if _, err := gt.runGitCommand(repoPath, "merge", branch, "--no-ff", "-m",
+		fmt.Sprintf("merge plan branch %s", branch)); err != nil {
+		return fmt.Errorf("merge %s: %w", branch, err)
+	}
+
+	// Delete the plan branch after successful merge.
+	if _, err := gt.runGitCommand(repoPath, "branch", "-d", branch); err != nil {
+		return fmt.Errorf("delete branch %s after merge: %w", branch, err)
+	}
+
+	return nil
+}
+
 // ResetPlanBranch removes the plan worktree (if any), deletes the branch, and
 // recreates it from the current HEAD. Used by "start over".
 func ResetPlanBranch(repoPath, branch string) error {
