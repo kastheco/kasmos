@@ -315,7 +315,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
-}// fsmSetImplementing transitions the plan to implementing, handling the
+} // fsmSetImplementing transitions the plan to implementing, handling the
 // planning→ready→implementing two-step when called after a planner finishes.
 func (m *home) fsmSetImplementing(planFile string) error {
 	if m.planState == nil {
@@ -451,10 +451,9 @@ func (m *home) openPlanContextMenu() (tea.Model, tea.Cmd) {
 	var items []overlay.ContextMenuItem
 	if m.planState != nil {
 		if entry, ok := m.planState.Plans[planFile]; ok {
-			implementing := entry.Status == planstate.StatusInProgress || entry.Status == planstate.StatusImplementing
+			implementing := entry.Status == planstate.StatusImplementing
 			postPlan := implementing || entry.Status == planstate.StatusReviewing ||
-				entry.Status == planstate.StatusDone || entry.Status == planstate.StatusCompleted ||
-				entry.Status == planstate.StatusFinished
+				entry.Status == planstate.StatusDone
 			switch {
 			case !postPlan:
 				// ready or planning: primary action is to write/re-write the plan
@@ -585,7 +584,7 @@ func (m *home) triggerPlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			return m, m.handleError(err)
 		}
 		plan, err := planparser.Parse(string(content))
-		if err != nil {// No wave headers — revert to planning and respawn the planner with a
+		if err != nil { // No wave headers — revert to planning and respawn the planner with a
 			// wave-annotation prompt so the agent adds the required ## Wave sections.
 			if setErr := m.fsmRevertToPlanning(planFile); setErr != nil {
 				return m, m.handleError(setErr)
@@ -624,7 +623,7 @@ func (m *home) triggerPlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 		planName := planstate.DisplayName(planFile)
 		reviewPrompt := scaffold.LoadReviewPrompt("docs/plans/"+planFile, planName)
 		return m.spawnPlanAgent(planFile, "review", reviewPrompt)
-	}// Non-agent stages (finished): mark plan done via FSM.
+	} // Non-agent stages (finished): mark plan done via FSM.
 	if err := m.fsm.Transition(planFile, planfsm.ReviewApproved); err != nil {
 		return m, m.handleError(err)
 	}
@@ -647,7 +646,7 @@ func validatePlanHasWaves(plansDir, planFile string) error {
 
 // isLocked returns true if the given stage cannot be triggered given the current plan status.
 func isLocked(status planstate.Status, stage string) bool {
-	implementing := status == planstate.StatusInProgress || status == planstate.StatusImplementing
+	implementing := status == planstate.StatusImplementing
 	switch stage {
 	case "plan":
 		return false
@@ -657,7 +656,7 @@ func isLocked(status planstate.Status, stage string) bool {
 	case "review":
 		return status == planstate.StatusReady || status == planstate.StatusPlanning || implementing
 	case "finished":
-		return status != planstate.StatusReviewing && status != planstate.StatusDone && status != planstate.StatusCompleted && status != planstate.StatusFinished
+		return status != planstate.StatusReviewing && status != planstate.StatusDone
 	default:
 		return true
 	}

@@ -14,17 +14,14 @@ import (
 type Status string
 
 const (
-	StatusReady      Status = "ready"
-	StatusInProgress Status = "in_progress"
-	StatusDone       Status = "done"
-	StatusReviewing  Status = "reviewing"
-	StatusCompleted  Status = "completed"
-	StatusCancelled  Status = "cancelled"
+	StatusReady     Status = "ready"
+	StatusDone      Status = "done"
+	StatusReviewing Status = "reviewing"
+	StatusCancelled Status = "cancelled"
 
-	// Lifecycle-stage aliases used by the plan/implement/review/finished sidebar stages.
+	// Lifecycle-stage statuses — canonical names used by the FSM.
 	StatusPlanning     Status = "planning"
 	StatusImplementing Status = "implementing"
-	StatusFinished     Status = "finished"
 )
 
 type PlanEntry struct {
@@ -113,6 +110,18 @@ func Load(dir string) (*PlanState, error) {
 		wrapped.Topics = make(map[string]TopicEntry)
 	}
 
+	// Migrate legacy status values to canonical names.
+	for filename, entry := range wrapped.Plans {
+		switch entry.Status {
+		case "in_progress":
+			entry.Status = StatusImplementing
+			wrapped.Plans[filename] = entry
+		case "completed", "finished":
+			entry.Status = StatusDone
+			wrapped.Plans[filename] = entry
+		}
+	}
+
 	return &PlanState{Dir: dir, Plans: wrapped.Plans, TopicEntries: wrapped.Topics}, nil
 }
 
@@ -151,7 +160,7 @@ func (ps *PlanState) PlansByTopic(topic string) []PlanInfo {
 func (ps *PlanState) UngroupedPlans() []PlanInfo {
 	result := make([]PlanInfo, 0)
 	for filename, entry := range ps.Plans {
-		if entry.Status == StatusDone || entry.Status == StatusCompleted || entry.Status == StatusCancelled {
+		if entry.Status == StatusDone || entry.Status == StatusCancelled {
 			continue
 		}
 		// Include plans with no topic, or plans whose topic is orphaned
@@ -180,7 +189,7 @@ func (ps *PlanState) hasTopicEntry(topic string) bool {
 }
 
 // HasRunningCoderInTopic checks if any plan in the given topic (other than
-// excludePlan) has status StatusInProgress. Returns the conflicting plan filename.
+// excludePlan) has status StatusImplementing. Returns the conflicting plan filename.
 func (ps *PlanState) HasRunningCoderInTopic(topic, excludePlan string) (bool, string) {
 	if topic == "" {
 		return false, ""
@@ -189,18 +198,18 @@ func (ps *PlanState) HasRunningCoderInTopic(topic, excludePlan string) (bool, st
 		if filename == excludePlan {
 			continue
 		}
-		if entry.Topic == topic && entry.Status == StatusInProgress {
+		if entry.Topic == topic && entry.Status == StatusImplementing {
 			return true, filename
 		}
 	}
 	return false, ""
 }
 
-// Unfinished returns plans that are not done, completed, or cancelled, sorted by filename.
+// Unfinished returns plans that are not done or cancelled, sorted by filename.
 func (ps *PlanState) Unfinished() []PlanInfo {
 	result := make([]PlanInfo, 0, len(ps.Plans))
 	for filename, entry := range ps.Plans {
-		if entry.Status == StatusDone || entry.Status == StatusCompleted || entry.Status == StatusCancelled {
+		if entry.Status == StatusDone || entry.Status == StatusCancelled {
 			continue
 		}
 		result = append(result, PlanInfo{
@@ -215,11 +224,11 @@ func (ps *PlanState) Unfinished() []PlanInfo {
 	return result
 }
 
-// Finished returns plans that are done or completed, sorted by creation time (newest first).
+// Finished returns plans that are done, sorted by creation time (newest first).
 func (ps *PlanState) Finished() []PlanInfo {
 	result := make([]PlanInfo, 0)
 	for filename, entry := range ps.Plans {
-		if entry.Status != StatusDone && entry.Status != StatusCompleted {
+		if entry.Status != StatusDone {
 			continue
 		}
 		result = append(result, PlanInfo{
@@ -257,7 +266,6 @@ func (ps *PlanState) Cancelled() []PlanInfo {
 }
 
 // IsDone returns true only if the given plan has status StatusDone.
-// StatusCompleted intentionally returns false to prevent re-triggering a reviewer.
 func (ps *PlanState) IsDone(filename string) bool {
 	entry, ok := ps.Plans[filename]
 	if !ok {

@@ -516,7 +516,7 @@ func (m *home) updateSidebarPlans() {
 		plans := m.planState.PlansByTopic(t.Name)
 		planDisplays := make([]ui.PlanDisplay, 0, len(plans))
 		for _, p := range plans {
-			if p.Status == planstate.StatusDone || p.Status == planstate.StatusCompleted || p.Status == planstate.StatusCancelled {
+			if p.Status == planstate.StatusDone || p.Status == planstate.StatusCancelled {
 				continue // finished/cancelled plans handled separately
 			}
 			planDisplays = append(planDisplays, ui.PlanDisplay{
@@ -604,7 +604,7 @@ func (m *home) checkPlanCompletion() tea.Cmd {
 // transitionToReview marks a plan as "reviewing", pauses the coder session,
 // spawns a reviewer session with the reviewer profile, and returns the start cmd.
 func (m *home) transitionToReview(coderInst *session.Instance) tea.Cmd {
-	planFile := coderInst.PlanFile// Guard: transition via FSM before next tick re-reads disk, preventing double-spawn.
+	planFile := coderInst.PlanFile // Guard: transition via FSM before next tick re-reads disk, preventing double-spawn.
 	if err := m.fsm.Transition(planFile, planfsm.ImplementFinished); err != nil {
 		log.WarningLog.Printf("could not set plan %q to reviewing: %v", planFile, err)
 	}

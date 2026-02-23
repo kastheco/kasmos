@@ -38,10 +38,10 @@ func TestUnfinished(t *testing.T) {
 		Dir: "/tmp",
 		Plans: map[string]PlanEntry{
 			"a.md": {Status: StatusReady},
-			"b.md": {Status: StatusInProgress},
+			"b.md": {Status: StatusImplementing},
 			"c.md": {Status: StatusReviewing},
 			"d.md": {Status: StatusDone},
-			"e.md": {Status: StatusCompleted},
+			"e.md": {Status: StatusDone},
 		},
 	}
 
@@ -64,13 +64,15 @@ func TestIsDone(t *testing.T) {
 	}
 
 	assert.True(t, ps.IsDone("a.md"))
-	ps.Plans["c.md"] = PlanEntry{Status: StatusInProgress}
+	ps.Plans["c.md"] = PlanEntry{Status: StatusImplementing}
 	assert.True(t, ps.IsDone("a.md"))
 	assert.False(t, ps.IsDone("missing.md"))
 
-	// completed is NOT done — this is the key invariant that breaks the spawn loop
-	ps.Plans["comp.md"] = PlanEntry{Status: StatusCompleted}
-	assert.False(t, ps.IsDone("comp.md"), "completed should not be treated as done")
+	// Non-terminal statuses are not done
+	ps.Plans["rev.md"] = PlanEntry{Status: StatusReviewing}
+	assert.False(t, ps.IsDone("rev.md"), "reviewing should not be treated as done")
+	ps.Plans["impl.md"] = PlanEntry{Status: StatusImplementing}
+	assert.False(t, ps.IsDone("impl.md"), "implementing should not be treated as done")
 }
 
 func TestPlanLifecycle(t *testing.T) {
@@ -82,41 +84,35 @@ func TestPlanLifecycle(t *testing.T) {
 	require.NoError(t, err)
 
 	// Coder picks it up
-	require.NoError(t, ps.SetStatus("test-plan.md", StatusInProgress))
+	require.NoError(t, ps.SetStatus("test-plan.md", StatusImplementing))
 	unfinished := ps.Unfinished()
 	require.Len(t, unfinished, 1)
-	assert.Equal(t, StatusInProgress, unfinished[0].Status)
+	assert.Equal(t, StatusImplementing, unfinished[0].Status)
 	assert.False(t, ps.IsDone("test-plan.md"))
 
-	// Coder finishes — agent writes "done"
-	require.NoError(t, ps.SetStatus("test-plan.md", StatusDone))
-	assert.True(t, ps.IsDone("test-plan.md"))
-	assert.Empty(t, ps.Unfinished()) // "done" excluded from unfinished
-
-	// kas transitions to "reviewing" (spawns reviewer session)
+	// Coder finishes — transitions to reviewing
 	require.NoError(t, ps.SetStatus("test-plan.md", StatusReviewing))
 	assert.False(t, ps.IsDone("test-plan.md"))
 	unfinished = ps.Unfinished()
 	require.Len(t, unfinished, 1)
 	assert.Equal(t, StatusReviewing, unfinished[0].Status)
 
-	// Reviewer completes — kas marks completed (terminal, not done)
-	require.NoError(t, ps.SetStatus("test-plan.md", StatusCompleted))
-	assert.False(t, ps.IsDone("test-plan.md"))
+	// Reviewer approves — FSM transitions to done (terminal)
+	require.NoError(t, ps.SetStatus("test-plan.md", StatusDone))
+	assert.True(t, ps.IsDone("test-plan.md"))
 	assert.Empty(t, ps.Unfinished())
 
 	// Verify persistence: reload and check final state
 	ps2, err := Load(dir)
 	require.NoError(t, err)
-	assert.Equal(t, StatusCompleted, ps2.Plans["test-plan.md"].Status)
+	assert.Equal(t, StatusDone, ps2.Plans["test-plan.md"].Status)
 }
 
 // TestFullLifecycleNoRespawnLoop walks the complete orchestration state machine and
-// asserts that the terminal `completed` status cannot re-trigger a reviewer session.
+// asserts that the terminal `done` status is correctly reflected in query methods.
 //
-// The bug this tests for: after a reviewer exits, kas wrote "done" which caused
-// IsDone() to return true again, spawning another reviewer — forever. Now kas
-// writes "completed" instead, and IsDone() only matches "done", breaking the cycle.
+// The respawn loop is now prevented by the FSM: once a plan is `done`, the FSM
+// rejects any further ReviewApproved events, so a reviewer cannot be re-spawned.
 func TestFullLifecycleNoRespawnLoop(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "plan-state.json")
@@ -125,35 +121,26 @@ func TestFullLifecycleNoRespawnLoop(t *testing.T) {
 	ps, err := Load(dir)
 	require.NoError(t, err)
 
-	// Step 1: ready → coder picks it up
-	require.NoError(t, ps.SetStatus("feature.md", StatusInProgress))
+	// Step 1: ready → implementing
+	require.NoError(t, ps.SetStatus("feature.md", StatusImplementing))
 	assert.False(t, ps.IsDone("feature.md"))
 	assert.Len(t, ps.Unfinished(), 1)
 
-	// Step 2: coder writes "done"
-	require.NoError(t, ps.SetStatus("feature.md", StatusDone))
-	assert.True(t, ps.IsDone("feature.md"), "IsDone must be true so reviewer gets spawned")
-	assert.Empty(t, ps.Unfinished(), "done should not appear in sidebar")
-
-	// Step 3: kas spawns reviewer, marks "reviewing"
+	// Step 2: implementing → reviewing
 	require.NoError(t, ps.SetStatus("feature.md", StatusReviewing))
 	assert.False(t, ps.IsDone("feature.md"), "reviewing is not done")
 	assert.Len(t, ps.Unfinished(), 1, "reviewing should appear in sidebar")
 
-	// Step 4: reviewer exits — kas marks "completed" (the fix)
-	require.NoError(t, ps.SetStatus("feature.md", StatusCompleted))
-
-	// Critical invariants that break the respawn loop:
-	assert.False(t, ps.IsDone("feature.md"),
-		"completed must NOT satisfy IsDone — otherwise a new reviewer would be spawned")
-	assert.Empty(t, ps.Unfinished(),
-		"completed must not appear in sidebar unfinished list")
+	// Step 3: reviewer approves → done (terminal)
+	require.NoError(t, ps.SetStatus("feature.md", StatusDone))
+	assert.True(t, ps.IsDone("feature.md"), "done must satisfy IsDone")
+	assert.Empty(t, ps.Unfinished(), "done must not appear in sidebar unfinished list")
 
 	// Verify persistence
 	ps2, err := Load(dir)
 	require.NoError(t, err)
-	assert.Equal(t, StatusCompleted, ps2.Plans["feature.md"].Status)
-	assert.False(t, ps2.IsDone("feature.md"))
+	assert.Equal(t, StatusDone, ps2.Plans["feature.md"].Status)
+	assert.True(t, ps2.IsDone("feature.md"))
 	assert.Empty(t, ps2.Unfinished())
 }
 
@@ -195,7 +182,7 @@ func TestPlanEntryWithTopic(t *testing.T) {
 	require.NoError(t, err)
 
 	entry := ps.Plans["2026-02-21-sidebar.md"]
-	assert.Equal(t, StatusInProgress, entry.Status)
+	assert.Equal(t, StatusImplementing, entry.Status)
 	assert.Equal(t, "refactor sidebar", entry.Description)
 	assert.Equal(t, "plan/sidebar", entry.Branch)
 	assert.Equal(t, "ui-refactor", entry.Topic)
@@ -209,7 +196,7 @@ func TestPlansByTopic(t *testing.T) {
 	ps := &PlanState{
 		Dir: "/tmp",
 		Plans: map[string]PlanEntry{
-			"a.md": {Status: StatusInProgress, Topic: "ui"},
+			"a.md": {Status: StatusImplementing, Topic: "ui"},
 			"b.md": {Status: StatusReady, Topic: "ui"},
 			"c.md": {Status: StatusReady, Topic: ""},
 		},
@@ -263,7 +250,7 @@ func TestHasRunningCoderInTopic(t *testing.T) {
 	ps := &PlanState{
 		Dir: "/tmp",
 		Plans: map[string]PlanEntry{
-			"a.md": {Status: StatusInProgress, Topic: "ui"},
+			"a.md": {Status: StatusImplementing, Topic: "ui"},
 			"b.md": {Status: StatusReady, Topic: "ui"},
 		},
 	}
@@ -335,5 +322,5 @@ func TestLoadLegacyFlatFormat(t *testing.T) {
 
 	assert.Len(t, ps.Plans, 2)
 	assert.Equal(t, StatusDone, ps.Plans["2026-02-20-old.md"].Status)
-	assert.Equal(t, StatusInProgress, ps.Plans["2026-02-21-active.md"].Status)
+	assert.Equal(t, StatusImplementing, ps.Plans["2026-02-21-active.md"].Status)
 }

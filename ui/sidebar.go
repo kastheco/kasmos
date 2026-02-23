@@ -277,7 +277,7 @@ func (s *Sidebar) SetItems(
 			items = append(items, SidebarItem{
 				Name:            planstate.DisplayName(p.Filename),
 				ID:              SidebarPlanPrefix + p.Filename,
-				HasRunning:      !isCancelled && (planSt.HasRunning || p.Status == string(planstate.StatusInProgress)),
+				HasRunning:      !isCancelled && (planSt.HasRunning || p.Status == string(planstate.StatusImplementing)),
 				HasNotification: !isCancelled && (planSt.HasNotification || p.Status == string(planstate.StatusReviewing)),
 				IsCancelled:     isCancelled,
 			})
@@ -557,7 +557,7 @@ func (s *Sidebar) effectivePlanStatus(p PlanDisplay) string {
 		return string(planstate.StatusReviewing)
 	}
 	if st.HasRunning {
-		return string(planstate.StatusInProgress)
+		return string(planstate.StatusImplementing)
 	}
 	return p.Status
 }
@@ -576,7 +576,7 @@ func (s *Sidebar) rebuildRows() {
 			Label:           planstate.DisplayName(p.Filename),
 			PlanFile:        p.Filename,
 			Collapsed:       !s.expandedPlans[p.Filename],
-			HasRunning:      effective.Status == string(planstate.StatusInProgress),
+			HasRunning:      effective.Status == string(planstate.StatusImplementing),
 			HasNotification: effective.Status == string(planstate.StatusReviewing),
 			Indent:          0,
 		})
@@ -592,7 +592,7 @@ func (s *Sidebar) rebuildRows() {
 		hasNotification := false
 		for _, p := range t.Plans {
 			eff := s.effectivePlanStatus(p)
-			if eff == string(planstate.StatusInProgress) {
+			if eff == string(planstate.StatusImplementing) {
 				hasRunning = true
 			}
 			if eff == string(planstate.StatusReviewing) {
@@ -619,7 +619,7 @@ func (s *Sidebar) rebuildRows() {
 					Label:           planstate.DisplayName(p.Filename),
 					PlanFile:        p.Filename,
 					Collapsed:       !s.expandedPlans[p.Filename],
-					HasRunning:      effective.Status == string(planstate.StatusInProgress),
+					HasRunning:      effective.Status == string(planstate.StatusImplementing),
 					HasNotification: effective.Status == string(planstate.StatusReviewing),
 					Indent:          2,
 				})
@@ -689,12 +689,10 @@ func planStageRows(p PlanDisplay, indent int) []sidebarRow {
 }
 
 // stageState returns (done, active, locked) for a stage given the plan status.
-// Recognises both the legacy "in_progress" value and the lifecycle alias
-// "implementing" so the sidebar stays correct throughout the full lifecycle.
 func stageState(status, stage string) (done, active, locked bool) {
-	implementing := status == "in_progress" || status == "implementing"
-	postPlan := implementing || status == "reviewing" || status == "done" || status == "completed" || status == "finished"
-	postImpl := status == "reviewing" || status == "done" || status == "completed" || status == "finished"
+	implementing := status == "implementing"
+	postPlan := implementing || status == "reviewing" || status == "done"
+	postImpl := status == "reviewing" || status == "done"
 	switch stage {
 	case "plan":
 		done = postPlan
@@ -705,11 +703,11 @@ func stageState(status, stage string) (done, active, locked bool) {
 		active = implementing
 		locked = status == "ready"
 	case "review":
-		done = status == "done" || status == "completed" || status == "finished"
+		done = status == "done"
 		active = status == "reviewing"
 		locked = status == "ready" || status == "planning" || implementing
 	case "finished":
-		done = status == "done" || status == "completed" || status == "finished"
+		done = status == "done"
 		active = false
 		locked = !postImpl
 	}

@@ -19,7 +19,7 @@ func TestPlanDisplayName(t *testing.T) {
 
 func TestSidebarSetItems_IncludesPlansSectionBeforeTopics(t *testing.T) {
 	s := NewSidebar()
-	s.SetPlans([]PlanDisplay{{Filename: "2026-02-20-plan-orchestration.md", Status: string(planstate.StatusInProgress)}})
+	s.SetPlans([]PlanDisplay{{Filename: "2026-02-20-plan-orchestration.md", Status: string(planstate.StatusImplementing)}})
 	s.SetItems([]string{"alpha"}, map[string]int{"alpha": 1}, 0, map[string]bool{"alpha": false}, map[string]TopicStatus{"alpha": {}}, map[string]TopicStatus{})
 
 	if len(s.items) < 5 {
@@ -78,7 +78,7 @@ func TestSidebarTopicTree(t *testing.T) {
 	s.SetTopicsAndPlans(
 		[]TopicDisplay{
 			{Name: "ui-refactor", Plans: []PlanDisplay{
-				{Filename: "sidebar.md", Status: "in_progress"},
+				{Filename: "sidebar.md", Status: "implementing"},
 				{Filename: "menu.md", Status: "ready"},
 			}},
 		},
@@ -118,7 +118,7 @@ func TestSidebarExpandPlanStages(t *testing.T) {
 	s := NewSidebar()
 	s.SetTopicsAndPlans(
 		nil,
-		[]PlanDisplay{{Filename: "fix.md", Status: "in_progress"}},
+		[]PlanDisplay{{Filename: "fix.md", Status: "implementing"}},
 		nil,
 	)
 
@@ -250,7 +250,7 @@ func TestSidebarTreeRender_TopicWithChevron(t *testing.T) {
 	s.SetTopicsAndPlans(
 		[]TopicDisplay{
 			{Name: "auth", Plans: []PlanDisplay{
-				{Filename: "tokens.md", Status: "in_progress"},
+				{Filename: "tokens.md", Status: "implementing"},
 			}},
 		},
 		nil, nil,
@@ -267,7 +267,7 @@ func TestSidebarTreeRender_ExpandedTopicShowsPlans(t *testing.T) {
 	s.SetTopicsAndPlans(
 		[]TopicDisplay{
 			{Name: "auth", Plans: []PlanDisplay{
-				{Filename: "tokens.md", Status: "in_progress"},
+				{Filename: "tokens.md", Status: "implementing"},
 			}},
 		},
 		nil, nil,
@@ -287,7 +287,7 @@ func TestSidebarTreeRender_ExpandedPlanStages(t *testing.T) {
 	s.SetSize(40, 20)
 	s.SetTopicsAndPlans(
 		nil,
-		[]PlanDisplay{{Filename: "fix.md", Status: "in_progress"}},
+		[]PlanDisplay{{Filename: "fix.md", Status: "implementing"}},
 		nil,
 	)
 
@@ -352,7 +352,7 @@ func TestSidebarTreeRender_TopicAggregateStatus(t *testing.T) {
 	s.SetTopicsAndPlans(
 		[]TopicDisplay{
 			{Name: "auth", Plans: []PlanDisplay{
-				{Filename: "tokens.md", Status: "in_progress"},
+				{Filename: "tokens.md", Status: "implementing"},
 				{Filename: "session.md", Status: "ready"},
 			}},
 		},
@@ -442,7 +442,7 @@ func TestSidebarLeft_MovesToParentPlanFromStage(t *testing.T) {
 	s := NewSidebar()
 	s.SetTopicsAndPlans(
 		nil,
-		[]PlanDisplay{{Filename: "fix.md", Status: "in_progress"}},
+		[]PlanDisplay{{Filename: "fix.md", Status: "implementing"}},
 		nil,
 	)
 
@@ -474,7 +474,7 @@ func TestSidebarRight_NoopOnStage(t *testing.T) {
 	s := NewSidebar()
 	s.SetTopicsAndPlans(
 		nil,
-		[]PlanDisplay{{Filename: "fix.md", Status: "in_progress"}},
+		[]PlanDisplay{{Filename: "fix.md", Status: "implementing"}},
 		nil,
 	)
 
@@ -491,7 +491,7 @@ func TestSidebarRight_ExpandsPlan(t *testing.T) {
 	s := NewSidebar()
 	s.SetTopicsAndPlans(
 		nil,
-		[]PlanDisplay{{Filename: "fix.md", Status: "in_progress"}},
+		[]PlanDisplay{{Filename: "fix.md", Status: "implementing"}},
 		nil,
 	)
 
