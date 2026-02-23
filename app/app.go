@@ -338,8 +338,8 @@ func (m *home) updateHandleWindowSizeEvent(msg tea.WindowSizeMsg) {
 		m.textOverlay.SetWidth(int(float32(msg.Width) * 0.6))
 	}
 
-	previewWidth, previewHeight := m.tabbedWindow.GetPreviewSize()// Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
-				if err := m.list.SetSessionPreviewSize(previewWidth, previewHeight); err != nil {
+	previewWidth, previewHeight := m.tabbedWindow.GetPreviewSize() // Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
+	if err := m.list.SetSessionPreviewSize(previewWidth, previewHeight); err != nil {
 		log.ErrorLog.Print(err)
 	}
 	m.menu.SetSize(msg.Width, menuHeight)
@@ -551,8 +551,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				prompt := inst.QueuedPrompt
 				inst.QueuedPrompt = "" // clear immediately to prevent re-send
 				i := inst
-				asyncCmds = append(asyncCmds, func() tea.Msg {// Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
-				if err := i.SendPrompt(prompt); err != nil {
+				asyncCmds = append(asyncCmds, func() tea.Msg { // Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
+					if err := i.SendPrompt(prompt); err != nil {
 						log.WarningLog.Printf("could not send queued prompt to %q: %v", i.Title, err)
 					}
 					return nil
@@ -598,15 +598,16 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				entry := m.planState.Plans[inst.PlanFile]
 				if entry.Status != planstate.StatusReviewing {
 					continue
-				}// Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
+				}
+				// Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
 				if err := m.fsm.Transition(inst.PlanFile, planfsm.ReviewApproved); err != nil {
-				log.WarningLog.Printf("could not mark plan %q completed: %v", inst.PlanFile, err)
-			}
+					log.WarningLog.Printf("could not mark plan %q completed: %v", inst.PlanFile, err)
+				}
 			}
 
-			// Planner-exit → implement-prompt: when a planner session's tmux pane
-			// has exited and the plan status is StatusPlanning (planner ran but
-			// implementation not yet started), prompt the user to begin. Skip if
+			// Planner-exit → implement-prompt: fires when a planner pane dies and the
+			// plan is StatusPlanning (no sentinel written, tmux-death fallback) or
+			// StatusReady (sentinel processed this tick, FSM transitioned). Skip if
 			// already prompted (yes/no answered) or if a confirm overlay is active.
 			for _, inst := range m.list.GetInstances() {
 				if m.state == stateConfirm {
@@ -623,7 +624,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					continue
 				}
 				entry, ok := m.planState.Entry(inst.PlanFile)
-				if !ok || entry.Status != planstate.StatusPlanning {
+				// Fire for StatusPlanning (crash fallback) and StatusReady (sentinel path).
+				if !ok || (entry.Status != planstate.StatusPlanning && entry.Status != planstate.StatusReady) {
 					continue
 				}
 				capturedPlanFile := inst.PlanFile
@@ -781,8 +783,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, task := range orch.CurrentWaveTasks() {
 			taskTitle := fmt.Sprintf("%s-T%d", planName, task.Number)
 			for _, inst := range m.list.GetInstances() {
-				if inst.Title == taskTitle && inst.PromptDetected {// Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
-				if err := inst.Pause(); err != nil {
+				if inst.Title == taskTitle && inst.PromptDetected { // Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
+					if err := inst.Pause(); err != nil {
 						log.WarningLog.Printf("could not pause task %s: %v", taskTitle, err)
 					}
 				}
@@ -817,8 +819,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.handleError(msg.err)
 		}
 		// Instance started successfully — add to master list, save and finalize
-		m.allInstances = append(m.allInstances, msg.instance)// Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
-				if err := m.saveAllInstances(); err != nil {
+		m.allInstances = append(m.allInstances, msg.instance) // Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
+		if err := m.saveAllInstances(); err != nil {
 			return m, m.handleError(err)
 		}
 		m.updateSidebarItems()
@@ -853,8 +855,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *home) handleQuit() (tea.Model, tea.Cmd) {
-	m.killGitTab()// Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
-				if err := m.saveAllInstances(); err != nil {
+	m.killGitTab() // Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
+	if err := m.saveAllInstances(); err != nil {
 		return m, m.handleError(err)
 	}
 	return m, tea.Quit
@@ -1024,7 +1026,7 @@ type instanceMetadata struct {
 	MemMB              float64
 	ResourceUsageValid bool
 	TmuxAlive          bool
-}// metadataResultMsg carries all per-instance metadata collected by the async tick.
+} // metadataResultMsg carries all per-instance metadata collected by the async tick.
 type metadataResultMsg struct {
 	Results   []instanceMetadata
 	PlanState *planstate.PlanState // pre-loaded plan state (nil if dir not set)
