@@ -10,6 +10,8 @@
 
 ---
 
+## Wave 1
+
 ### Task 1: Replace banner art and update comments
 
 **Files:**
