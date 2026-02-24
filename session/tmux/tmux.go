@@ -151,9 +151,10 @@ func (m *statusMonitor) hash(s string) []byte {
 // Start creates and starts a new tmux session, then attaches to it. Program is the command to run in
 // the session (ex. claude). workdir is the git worktree directory.
 func (t *TmuxSession) Start(workDir string) error {
-	// Check if the session already exists
+	// Reattach to a surviving session from a previous crash/interrupt
+	// instead of killing it — the agent may still be running.
 	if t.DoesSessionExist() {
-		return fmt.Errorf("tmux session already exists: %s", t.sanitizedName)
+		return t.Restore()
 	}
 
 	// Append --dangerously-skip-permissions for Claude programs if enabled
