@@ -312,60 +312,17 @@ func (pt *MockPtyFactory) Start(cmd *exec.Cmd) (*os.File, error) {
 func (pt *MockPtyFactory) Close() {}
 
 // TestPreviewContentWithoutScrolling tests that the preview pane correctly displays content
-// for a new instance without requiring scrolling
+// pushed via SetRawContent (the VT emulator path) without requiring scrolling.
+// In the new architecture, UpdateContent no longer fetches content in normal mode —
+// live content arrives via SetRawContent from the VT emulator tick loop.
 func TestPreviewContentWithoutScrolling(t *testing.T) {
-	// Create test content
-	expectedContent := "$ echo test\ntest"
-
-	// Track session creation state
-	sessionCreated := false
-
-	// Mock command execution
-	cmdExec := cmd_test.MockCmdExec{
-		RunFunc: func(cmd *exec.Cmd) error {
-			cmdStr := cmd.String()
-
-			// Handle tmux session creation and existence checking
-			if strings.Contains(cmdStr, "has-session") {
-				if sessionCreated {
-					return nil // Session exists
-				} else {
-					return fmt.Errorf("session does not exist")
-				}
-			}
-
-			// Handle session creation
-			if strings.Contains(cmdStr, "new-session") {
-				sessionCreated = true
-				return nil
-			}
-
-			return nil
-		},
-		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
-			cmdStr := cmd.String()
-
-			// Handle capture-pane commands for normal preview
-			if strings.Contains(cmdStr, "capture-pane") {
-				// Return our test content for normal preview
-				return []byte(expectedContent), nil
-			}
-
-			return []byte(""), nil
-		},
-	}
-
-	// Setup test environment
-	setup := setupTestEnvironment(t, cmdExec)
-	defer setup.cleanupFn()
-
 	// Create the preview pane
 	previewPane := NewPreviewPane()
-	previewPane.SetSize(80, 30) // Set reasonable size for testing
+	previewPane.SetSize(80, 30)
 
-	// Update the preview content (this should display the content without scrolling)
-	err := previewPane.UpdateContent(setup.instance)
-	require.NoError(t, err)
+	// Simulate the VT emulator pushing rendered content via SetRawContent.
+	expectedContent := "$ echo test\ntest"
+	previewPane.SetRawContent(expectedContent)
 
 	// Verify we're not in scrolling mode
 	require.False(t, previewPane.isScrolling, "Should not be in scrolling mode")

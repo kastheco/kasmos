@@ -154,6 +154,12 @@ func (w *TabbedWindow) SetPreviewContent(content string) {
 	w.preview.SetRawContent(content)
 }
 
+// SetConnectingState shows the animated banner with a "connecting…" message.
+// Called while the preview terminal is being attached to the selected instance.
+func (w *TabbedWindow) SetConnectingState() {
+	w.preview.setFallbackState("connecting…")
+}
+
 // SetDocumentContent sets the preview pane to show a rendered document (plan markdown etc.)
 // with top-aligned display and scroll support.
 func (w *TabbedWindow) SetDocumentContent(content string) {

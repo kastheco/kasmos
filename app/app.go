@@ -424,6 +424,14 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if content, changed := m.previewTerminal.Render(); changed {
 				m.tabbedWindow.SetPreviewContent(content)
 			}
+		} else if m.previewTerminal == nil && !m.tabbedWindow.IsDocumentMode() {
+			// No terminal yet — show a connecting indicator while the attach is in flight.
+			// This covers the window between instanceChanged() tearing down the old terminal
+			// and previewTerminalReadyMsg arriving with the new one.
+			selected := m.list.GetSelectedInstance()
+			if selected != nil && selected.Started() && selected.Status != session.Paused {
+				m.tabbedWindow.SetConnectingState()
+			}
 		}
 		// Banner animation (only when no terminal is active / fallback showing).
 		m.previewTickCount++
