@@ -108,7 +108,7 @@ type Harness interface {
 - **ListModels:** static `["claude-sonnet-4-6", "claude-opus-4-6", "claude-sonnet-4-5", "claude-haiku-4-5"]`
 - **BuildFlags:** `["--model", model, "--effort", effort, ...extra_flags]`
 - **InstallSuperpowers:** `claude plugin marketplace add obra/superpowers-marketplace` then `claude plugin install superpowers@superpowers-marketplace`. Checks `claude plugin list` first to skip if already installed.
-- **ScaffoldProject:** writes `.claude/agents/*.md`, `.claude/commands/spec-kitty.*.md`
+- **ScaffoldProject:** writes `.claude/agents/*.md`, `.claude/commands/*.md`
 - **SupportsTemperature:** false
 - **SupportsEffort:** true
 
@@ -201,7 +201,7 @@ Writing config...
 Scaffolding project: /home/kas/dev/klique
   .claude/agents/reviewer.md     ✓
   .opencode/agents/coder.md      ✓
-  .opencode/skills/spec-kitty/   ✓
+  .opencode/skills/kasmos/       ✓
 
 Done! Run 'kq' to start.
 ```
@@ -221,7 +221,7 @@ klique ships embedded canonical agent templates (coder.md, planner.md, reviewer.
     planner.md
     reviewer.md
   commands/
-    spec-kitty.*.md   # slash commands from embedded templates
+    *.md              # slash commands from embedded templates
   settings.json       # project-level model prefs if needed
 ```
 
@@ -234,7 +234,7 @@ klique ships embedded canonical agent templates (coder.md, planner.md, reviewer.
     planner.md
     reviewer.md
   skills/
-    spec-kitty/SKILL.md
+    kasmos/SKILL.md
     tui-design/SKILL.md
     tmux-orchestration/SKILL.md
 ```

@@ -1886,9 +1886,9 @@ model: {{MODEL}}
 ---
 
 You are the coder agent for klique. Your role is to implement features, fix bugs,
-and write tests according to the spec-kitty work package you've been assigned.
+and write tests according to the work package you've been assigned.
 
-Follow the constitution at `.kittify/memory/constitution.md`.
+Follow the project standards in CLAUDE.md.
 Follow TDD: write failing test, implement, verify pass, commit.
 
 {{TOOLS_REFERENCE}}
@@ -1906,7 +1906,7 @@ model: {{MODEL}}
 You are the reviewer agent for klique. Your role is to review code changes
 for quality, security, spec compliance, and test coverage.
 
-Follow the constitution at `.kittify/memory/constitution.md`.
+Follow the project standards in CLAUDE.md.
 Be specific about issues. Cite line numbers. Use `difft` for structural diffs when reviewing changes.
 
 {{TOOLS_REFERENCE}}
@@ -1924,7 +1924,7 @@ model: {{MODEL}}
 You are the planner agent for klique. Your role is to write specifications,
 create implementation plans, and decompose work into packages.
 
-Follow the constitution at `.kittify/memory/constitution.md`.
+Follow the project standards in CLAUDE.md.
 Research before making architecture decisions. Use `scc` for codebase metrics when scoping work.
 
 {{TOOLS_REFERENCE}}
@@ -1938,8 +1938,8 @@ description: Implementation agent - writes code, fixes bugs, runs tests
 mode: agent
 ---
 
-You are the coder agent. Implement features according to spec-kitty work packages.
-Follow TDD. Follow the constitution at `.kittify/memory/constitution.md`.
+You are the coder agent. Implement features according to your assigned work package.
+Follow TDD. Follow the project standards in CLAUDE.md.
 
 {{TOOLS_REFERENCE}}
 ```
@@ -1953,7 +1953,7 @@ mode: agent
 ---
 
 You are the reviewer agent. Review code for quality, security, and spec compliance.
-Follow the constitution at `.kittify/memory/constitution.md`.
+Follow the project standards in CLAUDE.md.
 Use `difft` for structural diffs when reviewing changes.
 
 {{TOOLS_REFERENCE}}
@@ -1968,7 +1968,7 @@ mode: agent
 ---
 
 You are the planner agent. Write specs, plans, and decompose work into packages.
-Follow the constitution at `.kittify/memory/constitution.md`.
+Follow the project standards in CLAUDE.md.
 Use `scc` for codebase metrics when scoping work.
 
 {{TOOLS_REFERENCE}}
@@ -1981,17 +1981,17 @@ Create `internal/init/scaffold/templates/codex/AGENTS.md`:
 
 ## Coder
 Implementation agent. Writes code, fixes bugs, runs tests.
-Follow TDD. Follow the constitution at `.kittify/memory/constitution.md`.
+Follow TDD. Follow the project standards in CLAUDE.md.
 
 ## Reviewer
 Review agent. Checks quality, security, spec compliance.
 Use `difft` for structural diffs when reviewing changes.
-Follow the constitution at `.kittify/memory/constitution.md`.
+Follow the project standards in CLAUDE.md.
 
 ## Planner
 Planning agent. Writes specs, plans, decomposes work into packages.
 Use `scc` for codebase metrics when scoping work.
-Follow the constitution at `.kittify/memory/constitution.md`.
+Follow the project standards in CLAUDE.md.
 
 {{TOOLS_REFERENCE}}
 ```
