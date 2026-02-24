@@ -562,6 +562,13 @@ func (s *Sidebar) effectivePlanStatus(p PlanDisplay) string {
 	return p.Status
 }
 
+// isPlanActive returns true if the status represents an active lifecycle stage
+// (running instances or an in-progress lifecycle stage like planning/implementing).
+func isPlanActive(status string) bool {
+	return status == string(planstate.StatusPlanning) ||
+		status == string(planstate.StatusImplementing)
+}
+
 // rebuildRows rebuilds the flat row list from the tree structure.
 func (s *Sidebar) rebuildRows() {
 	rows := []sidebarRow{}
@@ -576,7 +583,7 @@ func (s *Sidebar) rebuildRows() {
 			Label:           planstate.DisplayName(p.Filename),
 			PlanFile:        p.Filename,
 			Collapsed:       !s.expandedPlans[p.Filename],
-			HasRunning:      effective.Status == string(planstate.StatusImplementing),
+			HasRunning:      isPlanActive(effective.Status),
 			HasNotification: effective.Status == string(planstate.StatusReviewing),
 			Indent:          0,
 		})
@@ -592,7 +599,7 @@ func (s *Sidebar) rebuildRows() {
 		hasNotification := false
 		for _, p := range t.Plans {
 			eff := s.effectivePlanStatus(p)
-			if eff == string(planstate.StatusImplementing) {
+			if isPlanActive(eff) {
 				hasRunning = true
 			}
 			if eff == string(planstate.StatusReviewing) {
@@ -619,7 +626,7 @@ func (s *Sidebar) rebuildRows() {
 					Label:           planstate.DisplayName(p.Filename),
 					PlanFile:        p.Filename,
 					Collapsed:       !s.expandedPlans[p.Filename],
-					HasRunning:      effective.Status == string(planstate.StatusImplementing),
+					HasRunning:      isPlanActive(effective.Status),
 					HasNotification: effective.Status == string(planstate.StatusReviewing),
 					Indent:          2,
 				})
