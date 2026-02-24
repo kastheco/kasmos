@@ -756,3 +756,169 @@ func TestFocusRing(t *testing.T) {
 		assert.Equal(t, slotAgent, homeModel.focusSlot)
 	})
 }
+
+func TestPreviewTerminal_SelectionChange(t *testing.T) {
+	// Helper to create a minimal home with two started instances.
+	newTestHomeWithInstances := func(t *testing.T) (*home, *session.Instance, *session.Instance) {
+		t.Helper()
+		spin := spinner.New(spinner.WithSpinner(spinner.Dot))
+		h := &home{
+			ctx:          context.Background(),
+			state:        stateDefault,
+			appConfig:    config.DefaultConfig(),
+			list:         ui.NewList(&spin, false),
+			menu:         ui.NewMenu(),
+			sidebar:      ui.NewSidebar(),
+			tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+		}
+
+		instA, err := session.NewInstance(session.InstanceOptions{
+			Title: "instance-A", Path: t.TempDir(), Program: "claude",
+		})
+		require.NoError(t, err)
+		instA.MarkStartedForTest()
+		instA.Status = session.Running
+		instA.CachedContentSet = true // avoid tmux subprocess calls in tests
+
+		instB, err := session.NewInstance(session.InstanceOptions{
+			Title: "instance-B", Path: t.TempDir(), Program: "claude",
+		})
+		require.NoError(t, err)
+		instB.MarkStartedForTest()
+		instB.Status = session.Running
+		instB.CachedContentSet = true
+
+		h.list.AddInstance(instA)()
+		h.list.AddInstance(instB)()
+
+		return h, instA, instB
+	}
+
+	t.Run("swap terminal when selection changes from A to B", func(t *testing.T) {
+		h, _, instB := newTestHomeWithInstances(t)
+
+		// Simulate: previewTerminal is attached to instance "A".
+		dummyTerm := session.NewDummyTerminal()
+		h.previewTerminal = dummyTerm
+		h.previewTerminalInstance = "instance-A"
+
+		// Select instance "B" by reference (sort-order safe).
+		require.True(t, h.list.SelectInstance(instB), "should find instance-B in list")
+
+		// Fire instanceChanged — should tear down old terminal and return spawn cmd.
+		cmd := h.instanceChanged()
+
+		// Old terminal is closed: previewTerminal becomes nil, instance name cleared.
+		assert.Nil(t, h.previewTerminal, "previewTerminal should be nil after selection change")
+		assert.Empty(t, h.previewTerminalInstance, "previewTerminalInstance should be cleared")
+
+		// A tea.Cmd is returned (the async spawn command).
+		assert.NotNil(t, cmd, "instanceChanged should return a tea.Cmd for async spawn")
+	})
+
+	t.Run("tear down terminal when no valid instance selected", func(t *testing.T) {
+		// Use a home with zero instances so GetSelectedInstance returns nil.
+		spin := spinner.New(spinner.WithSpinner(spinner.Dot))
+		h := &home{
+			ctx:          context.Background(),
+			state:        stateDefault,
+			appConfig:    config.DefaultConfig(),
+			list:         ui.NewList(&spin, false),
+			menu:         ui.NewMenu(),
+			sidebar:      ui.NewSidebar(),
+			tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+		}
+
+		// Attach a terminal.
+		dummyTerm := session.NewDummyTerminal()
+		h.previewTerminal = dummyTerm
+		h.previewTerminalInstance = "instance-A"
+
+		cmd := h.instanceChanged()
+
+		assert.Nil(t, h.previewTerminal, "previewTerminal should be torn down")
+		assert.Empty(t, h.previewTerminalInstance, "previewTerminalInstance should be cleared")
+		// No spawn cmd — nothing to attach to.
+		assert.Nil(t, cmd, "no spawn cmd when no valid instance is selected")
+	})
+
+	t.Run("no-op when selection matches current terminal", func(t *testing.T) {
+		h, instA, _ := newTestHomeWithInstances(t)
+
+		dummyTerm := session.NewDummyTerminal()
+		h.previewTerminal = dummyTerm
+		h.previewTerminalInstance = "instance-A"
+
+		// Select instance "A" — same as current terminal (use reference, sort-order safe).
+		require.True(t, h.list.SelectInstance(instA), "should find instance-A in list")
+
+		cmd := h.instanceChanged()
+
+		// Terminal should remain attached (not nil).
+		assert.Equal(t, dummyTerm, h.previewTerminal, "previewTerminal should remain attached")
+		assert.Equal(t, "instance-A", h.previewTerminalInstance, "previewTerminalInstance should remain")
+		// No spawn cmd — terminal already attached.
+		assert.Nil(t, cmd, "no spawn cmd when same instance is selected")
+
+		// Cleanup
+		dummyTerm.Close()
+	})
+
+	t.Run("previewTerminalReadyMsg attaches terminal on match", func(t *testing.T) {
+		h, instA, _ := newTestHomeWithInstances(t)
+		h.list.SelectInstance(instA) // select instance-A
+
+		readyTerm := session.NewDummyTerminal()
+		msg := previewTerminalReadyMsg{
+			term:          readyTerm,
+			instanceTitle: "instance-A",
+		}
+
+		_, cmd := h.Update(msg)
+
+		assert.Equal(t, readyTerm, h.previewTerminal, "previewTerminal should be set from msg")
+		assert.Equal(t, "instance-A", h.previewTerminalInstance, "previewTerminalInstance should match")
+		assert.Nil(t, cmd, "no follow-up cmd expected")
+
+		// Cleanup
+		readyTerm.Close()
+	})
+
+	t.Run("previewTerminalReadyMsg discards stale terminal", func(t *testing.T) {
+		h, _, instB := newTestHomeWithInstances(t)
+		h.list.SelectInstance(instB) // select instance-B (different from msg)
+
+		staleTerm := session.NewDummyTerminal()
+		msg := previewTerminalReadyMsg{
+			term:          staleTerm,
+			instanceTitle: "instance-A", // stale — selection moved to B
+		}
+
+		_, cmd := h.Update(msg)
+
+		// Stale terminal should NOT be attached.
+		assert.Nil(t, h.previewTerminal, "stale terminal should not be attached")
+		assert.Empty(t, h.previewTerminalInstance, "previewTerminalInstance should remain empty")
+		assert.Nil(t, cmd, "no follow-up cmd expected")
+		// staleTerm.Close() was called internally by the handler
+	})
+
+	t.Run("previewTerminalReadyMsg discards on error", func(t *testing.T) {
+		h, instA, _ := newTestHomeWithInstances(t)
+		h.list.SelectInstance(instA)
+
+		errTerm := session.NewDummyTerminal()
+		msg := previewTerminalReadyMsg{
+			term:          errTerm,
+			instanceTitle: "instance-A",
+			err:           fmt.Errorf("tmux attach failed"),
+		}
+
+		_, cmd := h.Update(msg)
+
+		assert.Nil(t, h.previewTerminal, "terminal should not be attached on error")
+		assert.Empty(t, h.previewTerminalInstance)
+		assert.Nil(t, cmd)
+		// errTerm.Close() was called internally by the handler
+	})
+}

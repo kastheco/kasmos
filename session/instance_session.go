@@ -115,6 +115,12 @@ func (i *Instance) SetTmuxSession(session *tmux.TmuxSession) {
 	i.tmuxSession = session
 }
 
+// MarkStartedForTest sets the started flag without spawning a real tmux session.
+// Use only in tests that need to simulate a running instance.
+func (i *Instance) MarkStartedForTest() {
+	i.started = true
+}
+
 // SendKeys sends keys to the tmux session
 func (i *Instance) SendKeys(keys string) error {
 	if !i.started || i.Status == Paused {
