@@ -657,10 +657,11 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 	reviewProgram := reviewProfile.BuildCommand()
 
 	reviewerInst, err := session.NewInstance(session.InstanceOptions{
-		Title:    planName + "-review",
-		Path:     m.activeRepoPath,
-		Program:  reviewProgram,
-		PlanFile: planFile,
+		Title:     planName + "-review",
+		Path:      m.activeRepoPath,
+		Program:   reviewProgram,
+		PlanFile:  planFile,
+		AgentType: session.AgentTypeReviewer,
 	})
 	if err != nil {
 		log.WarningLog.Printf("could not create reviewer instance for %q: %v", planFile, err)
