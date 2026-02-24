@@ -3,11 +3,13 @@ package tmux
 import (
 	"bytes"
 	"fmt"
-	"github.com/kastheco/kasmos/log"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/charmbracelet/x/ansi"
+	"github.com/kastheco/kasmos/log"
 )
 
 // TapEnter sends an Enter keystroke to the tmux pane via tmux send-keys.
@@ -50,17 +52,19 @@ func (t *TmuxSession) HasUpdated() (updated bool, hasPrompt bool) {
 	t.monitor.captureFailures = 0 // reset on success
 
 	// Detect when the program is idle and waiting for user input.
+	plain := ansi.Strip(content)
 	switch {
 	case isClaudeProgram(t.program):
-		hasPrompt = strings.Contains(content, "No, and tell Claude what to do differently")
+		hasPrompt = strings.Contains(plain, "No, and tell Claude what to do differently")
 	case isAiderProgram(t.program):
-		hasPrompt = strings.Contains(content, "(Y)es/(N)o/(D)on't ask again")
+		hasPrompt = strings.Contains(plain, "(Y)es/(N)o/(D)on't ask again")
 	case isGeminiProgram(t.program):
-		hasPrompt = strings.Contains(content, "Yes, allow once")
+		hasPrompt = strings.Contains(plain, "Yes, allow once")
 	case isOpenCodeProgram(t.program):
 		// opencode shows "esc interrupt" in its bottom bar only while a task is running.
 		// When idle and waiting for input, that line disappears. So idle = no interrupt shown.
-		hasPrompt = !strings.Contains(content, "esc interrupt")
+		// Strip ANSI first — "esc" and "interrupt" are separately styled with codes between them.
+		hasPrompt = !strings.Contains(plain, "esc interrupt")
 	}
 
 	newHash := t.monitor.hash(content)
@@ -98,15 +102,16 @@ func (t *TmuxSession) HasUpdatedWithContent() (updated bool, hasPrompt bool, con
 	content = raw
 	captured = true
 
+	plain := ansi.Strip(content)
 	switch {
 	case isClaudeProgram(t.program):
-		hasPrompt = strings.Contains(content, "No, and tell Claude what to do differently")
+		hasPrompt = strings.Contains(plain, "No, and tell Claude what to do differently")
 	case isAiderProgram(t.program):
-		hasPrompt = strings.Contains(content, "(Y)es/(N)o/(D)on't ask again")
+		hasPrompt = strings.Contains(plain, "(Y)es/(N)o/(D)on't ask again")
 	case isGeminiProgram(t.program):
-		hasPrompt = strings.Contains(content, "Yes, allow once")
+		hasPrompt = strings.Contains(plain, "Yes, allow once")
 	case isOpenCodeProgram(t.program):
-		hasPrompt = !strings.Contains(content, "esc interrupt")
+		hasPrompt = !strings.Contains(plain, "esc interrupt")
 	}
 
 	newHash := t.monitor.hash(content)
