@@ -366,6 +366,29 @@ func (m *home) fsmSetImplementing(planFile string) error {
 	return m.fsm.Transition(planFile, planfsm.ImplementStart)
 }
 
+// fsmSetReviewing walks the FSM to reviewing from any earlier state.
+// If already reviewing, it's a no-op (allows re-spawning a reviewer).
+func (m *home) fsmSetReviewing(planFile string) error {
+	if m.planState == nil {
+		return fmt.Errorf("plan state is not loaded")
+	}
+	entry, ok := m.planState.Entry(planFile)
+	if !ok {
+		return fmt.Errorf("plan not found: %s", planFile)
+	}
+	current := planfsm.Status(entry.Status)
+	if current == planfsm.StatusReviewing {
+		return nil // already reviewing, no-op
+	}
+	// Walk through intermediate states to reach implementing first.
+	if current != planfsm.StatusImplementing {
+		if err := m.fsmSetImplementing(planFile); err != nil {
+			return err
+		}
+	}
+	return m.fsm.Transition(planFile, planfsm.ImplementFinished)
+}
+
 // fsmRevertToPlanning moves the plan back to planning state from implementing.
 // Used when implementation can't start (e.g., missing wave headers).
 func (m *home) fsmRevertToPlanning(planFile string) error {
@@ -485,18 +508,25 @@ func (m *home) openPlanContextMenu() (tea.Model, tea.Cmd) {
 	var items []overlay.ContextMenuItem
 	if m.planState != nil {
 		if entry, ok := m.planState.Plans[planFile]; ok {
-			implementing := entry.Status == planstate.StatusImplementing
-			switch {
-			case entry.Status == planstate.StatusReady || entry.Status == planstate.StatusPlanning:
-				// Ready or planning: offer both plan (write/re-write) and implement.
-				// triggerPlanStage("implement") validates wave headers and auto-reverts
-				// to planning if the plan isn't ready, so this is always safe.
-				items = append(items, overlay.ContextMenuItem{Label: "start plan", Action: "start_plan"})
-				items = append(items, overlay.ContextMenuItem{Label: "start implement", Action: "start_implement"})
-			case implementing:
-				items = append(items, overlay.ContextMenuItem{Label: "start implement", Action: "start_implement"})
-			case entry.Status == planstate.StatusReviewing:
-				items = append(items, overlay.ContextMenuItem{Label: "mark finished", Action: "mark_plan_done"})
+			// Offer every forward lifecycle stage from the current state so the
+			// user can manually advance through plan → implement → review → done.
+			switch entry.Status {
+			case planstate.StatusReady, planstate.StatusPlanning:
+				items = append(items,
+					overlay.ContextMenuItem{Label: "start plan", Action: "start_plan"},
+					overlay.ContextMenuItem{Label: "start implement", Action: "start_implement"},
+					overlay.ContextMenuItem{Label: "start review", Action: "start_review"},
+				)
+			case planstate.StatusImplementing:
+				items = append(items,
+					overlay.ContextMenuItem{Label: "start implement", Action: "start_implement"},
+					overlay.ContextMenuItem{Label: "start review", Action: "start_review"},
+				)
+			case planstate.StatusReviewing:
+				items = append(items,
+					overlay.ContextMenuItem{Label: "start review", Action: "start_review"},
+					overlay.ContextMenuItem{Label: "mark finished", Action: "mark_plan_done"},
+				)
 			}
 		}
 	}
@@ -649,7 +679,7 @@ func (m *home) triggerPlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 		m.updateSidebarItems()
 		return m.startNextWave(orch, entry)
 	case "review":
-		if err := m.fsm.Transition(planFile, planfsm.ImplementFinished); err != nil {
+		if err := m.fsmSetReviewing(planFile); err != nil {
 			return m, m.handleError(err)
 		}
 		m.loadPlanState()
@@ -682,17 +712,14 @@ func validatePlanHasWaves(plansDir, planFile string) error {
 }
 
 // isLocked returns true if the given stage cannot be triggered given the current plan status.
+// The context menu already gates which forward stages are offered, so this only
+// guards against truly nonsensical transitions (e.g. marking "finished" when already done).
 func isLocked(status planstate.Status, stage string) bool {
-	implementing := status == planstate.StatusImplementing
 	switch stage {
-	case "plan":
+	case "plan", "implement", "review":
+		// Forward progression is always allowed — the FSM helpers
+		// (fsmSetImplementing, fsmSetReviewing) walk through intermediate states.
 		return false
-	case "implement":
-		// Never locked — triggerPlanStage("implement") validates wave headers
-		// and reverts to planning if the plan isn't ready yet.
-		return false
-	case "review":
-		return status == planstate.StatusReady || status == planstate.StatusPlanning || implementing
 	case "finished":
 		return status != planstate.StatusReviewing
 	default:
