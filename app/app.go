@@ -833,6 +833,18 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle instance changed after confirmation action
 		m.updateSidebarItems()
 		return m, m.instanceChanged()
+	case previewTerminalReadyMsg:
+		// Discard stale attach if selection changed while spawning.
+		selected := m.list.GetSelectedInstance()
+		if msg.err != nil || selected == nil || selected.Title != msg.instanceTitle {
+			if msg.term != nil {
+				msg.term.Close()
+			}
+			return m, nil
+		}
+		m.previewTerminal = msg.term
+		m.previewTerminalInstance = msg.instanceTitle
+		return m, nil
 	case killInstanceMsg:
 		// Async pre-kill checks passed — safe to mutate model in Update.
 		m.list.Kill()

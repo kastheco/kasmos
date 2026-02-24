@@ -425,8 +425,8 @@ func (m *home) removeFromAllInstances(title string) {
 	}
 }
 
-// instanceChanged updates the preview pane, menu, and diff pane based on the selected instance. It returns an error
-// Cmd if there was any error.
+// instanceChanged updates the preview pane, menu, and diff pane based on the selected instance.
+// It returns a tea.Cmd when an async operation is needed (terminal spawn, git tab respawn).
 func (m *home) instanceChanged() tea.Cmd {
 	// selected may be nil
 	selected := m.list.GetSelectedInstance()
@@ -435,6 +435,38 @@ func (m *home) instanceChanged() tea.Cmd {
 	if selected != nil && selected.Notified {
 		selected.Notified = false
 		m.updateSidebarItems()
+	}
+
+	// Manage preview terminal lifecycle on selection change.
+	var spawnCmd tea.Cmd
+	if selected == nil || !selected.Started() || selected.Status == session.Paused {
+		// No valid instance — tear down terminal.
+		if m.previewTerminal != nil {
+			m.previewTerminal.Close()
+		}
+		m.previewTerminal = nil
+		m.previewTerminalInstance = ""
+	} else if selected.Title != m.previewTerminalInstance {
+		// Different instance selected — swap terminal.
+		if m.previewTerminal != nil {
+			m.previewTerminal.Close()
+		}
+		m.previewTerminal = nil
+		m.previewTerminalInstance = ""
+
+		cols, rows := m.tabbedWindow.GetPreviewSize()
+		if cols < 10 {
+			cols = 80
+		}
+		if rows < 5 {
+			rows = 24
+		}
+		capturedTitle := selected.Title
+		capturedInstance := selected
+		spawnCmd = func() tea.Msg {
+			term, err := capturedInstance.NewEmbeddedTerminalForInstance(cols, rows)
+			return previewTerminalReadyMsg{term: term, instanceTitle: capturedTitle, err: err}
+		}
 	}
 
 	m.tabbedWindow.UpdateDiff(selected)
@@ -449,6 +481,12 @@ func (m *home) instanceChanged() tea.Cmd {
 		log.ErrorLog.Printf("preview update error: %v", err)
 	}
 
+	// Collect async commands: terminal spawn and/or git tab respawn.
+	var cmds []tea.Cmd
+	if spawnCmd != nil {
+		cmds = append(cmds, spawnCmd)
+	}
+
 	// Respawn lazygit if the selected instance changed while on the git tab
 	if m.tabbedWindow.IsInGitTab() {
 		gitPane := m.tabbedWindow.GetGitPane()
@@ -457,11 +495,17 @@ func (m *home) instanceChanged() tea.Cmd {
 			title = selected.Title
 		}
 		if gitPane.NeedsRespawn(title) {
-			return m.spawnGitTab()
+			cmds = append(cmds, m.spawnGitTab())
 		}
 	}
 
-	return nil
+	if len(cmds) == 0 {
+		return nil
+	}
+	if len(cmds) == 1 {
+		return cmds[0]
+	}
+	return tea.Batch(cmds...)
 }
 
 // spawnGitTab spawns lazygit for the selected instance and starts the render ticker.
