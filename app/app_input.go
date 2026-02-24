@@ -876,7 +876,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			return m, m.handleError(err)
 		}
 
-		m.newInstanceFinalizer = m.list.AddInstance(instance)
+		m.addInstanceFinalizer(instance, m.list.AddInstance(instance))
 		m.newInstance = instance
 		m.list.SetSelectedInstance(m.list.NumInstances() - 1)
 		m.state = stateNew
@@ -898,7 +898,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			return m, m.handleError(err)
 		}
 
-		m.newInstanceFinalizer = m.list.AddInstance(instance)
+		m.addInstanceFinalizer(instance, m.list.AddInstance(instance))
 		m.newInstance = instance
 		m.list.SetSelectedInstance(m.list.NumInstances() - 1)
 		m.state = stateNew
@@ -920,7 +920,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			return m, m.handleError(err)
 		}
 
-		m.newInstanceFinalizer = m.list.AddInstance(instance)
+		m.addInstanceFinalizer(instance, m.list.AddInstance(instance))
 		m.newInstance = instance
 		m.list.SetSelectedInstance(m.list.NumInstances() - 1)
 		m.state = stateNew

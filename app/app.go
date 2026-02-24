@@ -103,9 +103,11 @@ type home struct {
 
 	// state is the current discrete state of the application
 	state state
-	// newInstanceFinalizer is called when the state is stateNew and then you press enter.
-	// It registers the new instance in the list after the instance has been started.
-	newInstanceFinalizer func()
+	// instanceFinalizers stores per-instance finalizers keyed by instance pointer.
+	// Each finalizer registers the repo name after the instance has started.
+	// Supports concurrent batch spawns (e.g. wave tasks) where multiple
+	// instances start in parallel. Lazily initialized via addInstanceFinalizer.
+	instanceFinalizers map[*session.Instance]func()
 	// newInstance is the instance currently being named in stateNew.
 	// Set when entering stateNew, cleared on Enter/Esc/ctrl+c.
 	newInstance *session.Instance
@@ -249,6 +251,7 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 		appState:              appState,
 		activeRepoPath:        activeRepoPath,
 		planStateDir:          filepath.Join(activeRepoPath, "docs", "plans"),
+		instanceFinalizers:    make(map[*session.Instance]func()),
 		waveOrchestrators:     make(map[string]*WaveOrchestrator),
 		plannerPrompted:       make(map[string]bool),
 		pendingReviewFeedback: make(map[string]string),
@@ -858,8 +861,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.handleError(err)
 		}
 		m.updateSidebarItems()
-		if m.newInstanceFinalizer != nil {
-			m.newInstanceFinalizer()
+		if fn, ok := m.instanceFinalizers[msg.instance]; ok {
+			fn()
+			delete(m.instanceFinalizers, msg.instance)
 		}
 		if m.autoYes {
 			msg.instance.AutoYes = true
@@ -1030,6 +1034,15 @@ type waveAbortMsg struct {
 // after a planner session finishes.
 type plannerCompleteMsg struct {
 	planFile string
+}
+
+// addInstanceFinalizer registers a finalizer for the given instance.
+// Lazily initializes the map so tests that don't pre-initialize it still work.
+func (m *home) addInstanceFinalizer(inst *session.Instance, fn func()) {
+	if m.instanceFinalizers == nil {
+		m.instanceFinalizers = make(map[*session.Instance]func())
+	}
+	m.instanceFinalizers[inst] = fn
 }
 
 // instanceStartedMsg is sent when an async instance startup completes.

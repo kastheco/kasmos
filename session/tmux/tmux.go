@@ -21,6 +21,11 @@ const ProgramAider = "aider"
 const ProgramGemini = "gemini"
 const ProgramOpenCode = "opencode"
 
+// ansiRe strips ANSI escape sequences (SGR, cursor movement, etc.) so that
+// content hashing is not affected by cursor blink, color resets, or other
+// terminal control codes that change between captures of an otherwise-idle pane.
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
 // TmuxSession represents a managed tmux session
 type TmuxSession struct {
 	// Initialized by NewTmuxSession
@@ -140,11 +145,14 @@ func newStatusMonitor() *statusMonitor {
 	return &statusMonitor{}
 }
 
-// hash hashes the string.
+// hash hashes the string after stripping ANSI escape sequences.
+// Stripping ANSI ensures that cursor blink, color resets, and other
+// terminal control codes don't cause false "content changed" detections
+// when the semantic content is actually stable.
 func (m *statusMonitor) hash(s string) []byte {
 	h := sha256.New()
-	// TODO: this allocation sucks since the string is probably large. Ideally, we hash the string directly.
-	h.Write([]byte(s))
+	stripped := ansiRe.ReplaceAllString(s, "")
+	h.Write([]byte(stripped))
 	return h.Sum(nil)
 }
 

@@ -653,7 +653,7 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 	reviewerInst.IsReviewer = true
 	reviewerInst.QueuedPrompt = prompt
 
-	m.newInstanceFinalizer = m.list.AddInstance(reviewerInst)
+	m.addInstanceFinalizer(reviewerInst, m.list.AddInstance(reviewerInst))
 	m.list.SelectInstance(reviewerInst) // sort-order safe, unlike index arithmetic
 
 	m.toastManager.Success(fmt.Sprintf("Implementation complete → review started for %s", planName))
@@ -687,7 +687,7 @@ func (m *home) spawnCoderWithFeedback(planFile, feedback string) tea.Cmd {
 	}
 	coderInst.QueuedPrompt = prompt
 
-	m.newInstanceFinalizer = m.list.AddInstance(coderInst)
+	m.addInstanceFinalizer(coderInst, m.list.AddInstance(coderInst))
 	m.list.SelectInstance(coderInst)
 
 	m.toastManager.Info(fmt.Sprintf("Review changes requested → re-implementing %s", planName))
@@ -965,7 +965,7 @@ func (m *home) spawnPlanAgent(planFile, action, prompt string) (tea.Model, tea.C
 		}
 	}
 
-	m.newInstanceFinalizer = m.list.AddInstance(inst)
+	m.addInstanceFinalizer(inst, m.list.AddInstance(inst))
 	m.list.SelectInstance(inst)
 	return m, tea.Batch(tea.WindowSize(), startCmd)
 }
@@ -1017,7 +1017,7 @@ func (m *home) spawnWaveTasks(orch *WaveOrchestrator, tasks []planparser.Task, e
 		inst.LoadingMessage = "Connecting to shared worktree..."
 
 		// AddInstance registers in the list immediately; finalizer sets repo name after start.
-		m.newInstanceFinalizer = m.list.AddInstance(inst)
+		m.addInstanceFinalizer(inst, m.list.AddInstance(inst))
 
 		taskInst := inst // capture for closure
 		startCmd := func() tea.Msg {

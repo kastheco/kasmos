@@ -87,12 +87,13 @@ func TestSpawnPlanAgent_ReviewerSetsIsReviewer(t *testing.T) {
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
 	list := ui.NewList(&sp, false)
 	h := &home{
-		planState:      ps,
-		activeRepoPath: dir,
-		program:        "opencode",
-		list:           list,
-		menu:           ui.NewMenu(),
-		sidebar:        ui.NewSidebar(),
+		planState:          ps,
+		activeRepoPath:     dir,
+		program:            "opencode",
+		list:               list,
+		menu:               ui.NewMenu(),
+		sidebar:            ui.NewSidebar(),
+		instanceFinalizers: make(map[*session.Instance]func()),
 	}
 
 	h.spawnPlanAgent(planFile, "review", "review prompt")
@@ -144,12 +145,13 @@ func TestSpawnPlanAgent_PlannerUsesMainBranch(t *testing.T) {
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
 	list := ui.NewList(&sp, false)
 	h := &home{
-		planState:      ps,
-		activeRepoPath: dir,
-		program:        "opencode",
-		list:           list,
-		menu:           ui.NewMenu(),
-		sidebar:        ui.NewSidebar(),
+		planState:          ps,
+		activeRepoPath:     dir,
+		program:            "opencode",
+		list:               list,
+		menu:               ui.NewMenu(),
+		sidebar:            ui.NewSidebar(),
+		instanceFinalizers: make(map[*session.Instance]func()),
 	}
 
 	h.spawnPlanAgent(planFile, "plan", "plan prompt")
