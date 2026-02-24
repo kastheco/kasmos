@@ -1178,11 +1178,11 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 				return m, nil
 			}
 			// Not running — fall through to panel navigation
-			m.setFocusSlot(slotSidebar)
+			m.setFocusSlot(slotList)
 		case slotAgent, slotDiff:
-			m.setFocusSlot(slotSidebar)
+			m.setFocusSlot(slotList)
 		case slotList:
-			m.setFocusSlot(slotAgent)
+			m.setFocusSlot(slotSidebar)
 		}
 		return m, nil
 	case keys.KeyArrowRight:
@@ -1193,12 +1193,13 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 				_ = gitPane.SendKey(keyToBytes(msg))
 				return m, nil
 			}
-			// Not running — fall through to panel navigation
-			m.setFocusSlot(slotList)
+			// Not running — no-op (already rightmost)
 		case slotSidebar:
+			m.setFocusSlot(slotList)
+		case slotList:
 			m.setFocusSlot(slotAgent)
 		case slotAgent, slotDiff:
-			m.setFocusSlot(slotList)
+			// Already rightmost — no-op
 		}
 		return m, nil
 	case keys.KeyNewPlan:
