@@ -373,9 +373,42 @@ func SymlinkHarnessSkills(dir, harnessName string) error {
 	return nil
 }
 
+// runtimeDirs lists directories the app expects to exist at runtime.
+// Each path is relative to the project root.
+var runtimeDirs = []string{
+	"docs/plans",
+	filepath.Join("docs", "plans", ".signals"),
+	".worktrees",
+}
+
+// EnsureRuntimeDirs creates all directories the app needs at runtime.
+// Idempotent — safe to call on every init.
+func EnsureRuntimeDirs(dir string) ([]WriteResult, error) {
+	var results []WriteResult
+	for _, rel := range runtimeDirs {
+		abs := filepath.Join(dir, rel)
+		info, err := os.Stat(abs)
+		if err == nil && info.IsDir() {
+			continue // already exists
+		}
+		if err := os.MkdirAll(abs, 0o755); err != nil {
+			return results, fmt.Errorf("create %s: %w", rel, err)
+		}
+		results = append(results, WriteResult{Path: rel + "/", Created: true})
+	}
+	return results, nil
+}
+
 // ScaffoldAll writes project files for all harnesses that have at least one enabled agent.
 func ScaffoldAll(dir string, agents []harness.AgentConfig, selectedTools []string, force bool) ([]WriteResult, error) {
 	var results []WriteResult
+
+	// Ensure all runtime directories exist before writing any files.
+	dirResults, err := EnsureRuntimeDirs(dir)
+	if err != nil {
+		return results, fmt.Errorf("ensure runtime dirs: %w", err)
+	}
+	results = append(results, dirResults...)
 
 	// Write project skills to .agents/skills/.
 	skillResults, err := WriteProjectSkills(dir, force)

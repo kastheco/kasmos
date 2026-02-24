@@ -621,4 +621,32 @@ func TestRun_OpencodeConfigGenerated(t *testing.T) {
 	assert.True(t, hasConfig, "ScaffoldAll should produce opencode.jsonc for opencode agents")
 }
 
+func TestEnsureRuntimeDirs_CreatesAll(t *testing.T) {
+	dir := t.TempDir()
+	results, err := EnsureRuntimeDirs(dir)
+	require.NoError(t, err)
+
+	// All dirs should be created on first run.
+	assert.Len(t, results, len(runtimeDirs), "should create all runtime dirs")
+
+	for _, rel := range runtimeDirs {
+		info, err := os.Stat(filepath.Join(dir, rel))
+		require.NoError(t, err, "dir %s must exist", rel)
+		assert.True(t, info.IsDir(), "%s must be a directory", rel)
+	}
+}
+
+func TestEnsureRuntimeDirs_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+
+	// First run creates dirs.
+	_, err := EnsureRuntimeDirs(dir)
+	require.NoError(t, err)
+
+	// Second run should create nothing new.
+	results, err := EnsureRuntimeDirs(dir)
+	require.NoError(t, err)
+	assert.Empty(t, results, "second run should not create any dirs")
+}
+
 func ptrFloat(f float64) *float64 { return &f }
