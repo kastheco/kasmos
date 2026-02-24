@@ -140,6 +140,34 @@ func (l *List) Down() {
 	}
 }
 
+// RemoveByTitle removes an instance from both allItems and items by title.
+// It does NOT kill the tmux session — the caller is responsible for that.
+// Returns the removed instance, or nil if not found.
+func (l *List) RemoveByTitle(title string) *session.Instance {
+	var target *session.Instance
+	for i, inst := range l.allItems {
+		if inst.Title == title {
+			target = inst
+			l.allItems = append(l.allItems[:i], l.allItems[i+1:]...)
+			break
+		}
+	}
+	if target == nil {
+		return nil
+	}
+	for i, inst := range l.items {
+		if inst == target {
+			// Adjust selection if removing at or after selected index.
+			if i <= l.selectedIdx && l.selectedIdx > 0 {
+				l.selectedIdx--
+			}
+			l.items = append(l.items[:i], l.items[i+1:]...)
+			break
+		}
+	}
+	return target
+}
+
 // Kill removes and kills the currently selected instance.
 func (l *List) Kill() {
 	if len(l.items) == 0 {

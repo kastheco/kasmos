@@ -1,5 +1,8 @@
 {
   "topics": {
+    "automation": {
+      "created_at": "2026-02-24T23:14:58.827108721Z"
+    },
     "sidebar": {
       "created_at": "2026-02-22T18:00:00Z"
     },
@@ -311,7 +314,7 @@
       "created_at": "2026-02-24T02:44:43.679630782Z"
     },
     "2026-02-24-live-preview-terminal.md": {
-      "status": "implementing",
+      "status": "reviewing",
       "description": "replace capture-pane polling with live EmbeddedTerminal VT emulator in preview pane, unify with focus mode",
       "branch": "plan/live-preview-terminal",
       "created_at": "2026-02-24T18:00:00Z"
@@ -322,6 +325,13 @@
       "branch": "plan/orphan-session-recovery",
       "created_at": "2026-02-24T04:07:00Z"
     },
+    "2026-02-24-parallel-fix-agents.md": {
+      "status": "ready",
+      "description": "currently if the reviewer rejects an implementation, a single coder agent is spawned to address everything. instead, the reviewer agent should automatically propose what fixes need to be made that clearly states what (if anything) can be fixed in parallel. kasmos should then automatically follow those steps. the maximum parallel should follow the same rules",
+      "branch": "plan/parallel-fix-agents",
+      "topic": "automation",
+      "created_at": "2026-02-24T23:14:58.827108721Z"
+    },
     "2026-02-24-sentry-integration.md": {
       "status": "ready",
       "description": "add sentry to the project for better debugging experience",
@@ -331,7 +341,9 @@
     },
     "2026-02-24-wizard-tui-redesign.md": {
       "status": "ready",
-      "description": "replace huh-form init wizard with full-screen bubbletea TUI using Rosé Pine Moon aesthetic"
+      "description": "replace huh-form init wizard with full-screen bubbletea TUI using Rosé Pine Moon aesthetic",
+      "topic": "ui",
+      "created_at": "0001-01-01T00:00:00Z"
     }
   }
 }
