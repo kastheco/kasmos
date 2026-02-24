@@ -182,6 +182,12 @@ func (o *WaveOrchestrator) FailedTaskCount() int {
 	return o.countCurrentWaveByStatus(taskFailed)
 }
 
+// IsTaskRunning returns true if the given task number is currently in the running state.
+// Used to gate the "Mark complete" context menu action.
+func (o *WaveOrchestrator) IsTaskRunning(taskNumber int) bool {
+	return o.taskStates[taskNumber] == taskRunning
+}
+
 // HeaderContext returns the plan header for inclusion in task prompts.
 func (o *WaveOrchestrator) HeaderContext() string {
 	return o.plan.HeaderContext()

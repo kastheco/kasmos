@@ -162,6 +162,25 @@ func TestWaveOrchestrator_ResetConfirmAllowsReprompt(t *testing.T) {
 	assert.True(t, orch.NeedsConfirm(), "after ResetConfirm, must return true again")
 }
 
+func TestIsTaskRunning(t *testing.T) {
+	plan := &planparser.Plan{
+		Waves: []planparser.Wave{
+			{Number: 1, Tasks: []planparser.Task{{Number: 1}, {Number: 2}}},
+		},
+	}
+	orch := NewWaveOrchestrator("test.md", plan)
+	orch.StartNextWave()
+
+	assert.True(t, orch.IsTaskRunning(1), "task 1 should be running after StartNextWave")
+	assert.True(t, orch.IsTaskRunning(2), "task 2 should be running after StartNextWave")
+
+	orch.MarkTaskComplete(1)
+	assert.False(t, orch.IsTaskRunning(1), "task 1 should not be running after MarkTaskComplete")
+	assert.True(t, orch.IsTaskRunning(2), "task 2 should still be running")
+
+	assert.False(t, orch.IsTaskRunning(99), "unknown task should return false")
+}
+
 func TestWaveOrchestrator_RetryFailedTasksRestoresRunning(t *testing.T) {
 	plan := &planparser.Plan{
 		Waves: []planparser.Wave{
