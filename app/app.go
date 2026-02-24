@@ -199,6 +199,9 @@ type home struct {
 	// pendingWaveAbortAction is the abort action for a failed-wave decision dialog.
 	// Triggered when the user presses 'a' while the failed-wave overlay is active.
 	pendingWaveAbortAction tea.Cmd
+	// pendingWaveNextAction is the advance action for a failed-wave decision dialog.
+	// Triggered when the user presses 'n' (next wave) while the failed-wave overlay is active.
+	pendingWaveNextAction tea.Cmd
 
 	// plannerPrompted tracks plan files whose planner-exit dialog has been
 	// answered (yes or no). Prevents re-prompting every metadata tick.
@@ -768,7 +771,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if failed > 0 {
 						message := fmt.Sprintf(
 							"Wave %d: %d/%d tasks complete, %d failed.\n\n"+
-								"[r] retry failed   [s] skip, advance   [a] abort",
+								"[r] retry failed   [n] next wave   [a] abort",
 							waveNum, completed, total, failed)
 						m.waveFailedConfirmAction(message, capturedPlanFile, capturedEntry)
 					} else {

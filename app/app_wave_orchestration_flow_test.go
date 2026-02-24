@@ -10,8 +10,8 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kastheco/kasmos/config"
-	"github.com/kastheco/kasmos/config/planparser"
 	"github.com/kastheco/kasmos/config/planfsm"
+	"github.com/kastheco/kasmos/config/planparser"
 	"github.com/kastheco/kasmos/config/planstate"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/ui"
@@ -132,8 +132,10 @@ func TestWaveMonitor_PausedTaskCountsAsFailed(t *testing.T) {
 		"confirmation overlay must be set for failed-wave decision")
 	assert.Equal(t, "r", updated.confirmationOverlay.ConfirmKey,
 		"failed-wave confirm key must be 'r' (retry)")
-	assert.Equal(t, "s", updated.confirmationOverlay.CancelKey,
-		"failed-wave cancel key must be 's' (skip/advance)")
+	assert.Equal(t, "n", updated.confirmationOverlay.CancelKey,
+		"failed-wave cancel key must be 'n' (next wave)")
+	assert.NotNil(t, updated.pendingWaveNextAction,
+		"failed-wave next action must be set for 'n' (next wave)")
 }
 
 // TestWaveMonitor_MissingTaskCountsAsFailed verifies that a task with no matching
@@ -204,14 +206,14 @@ func TestWaveMonitor_AbortKeyDeletesOrchestrator(t *testing.T) {
 		toastManager:               overlay.NewToastManager(&sp),
 		waveOrchestrators:          map[string]*WaveOrchestrator{planFile: orch},
 		pendingWaveConfirmPlanFile: planFile,
-		confirmationOverlay:        overlay.NewConfirmationOverlay("Wave 1 failed. r=retry s=skip a=abort"),
+		confirmationOverlay:        overlay.NewConfirmationOverlay("Wave 1 failed. r=retry n=next wave a=abort"),
 		pendingWaveAbortAction: func() tea.Msg {
 			return waveAbortMsg{planFile: planFile}
 		},
 	}
 	// Set confirm key to 'r' as the failed-wave dialog would
 	h.confirmationOverlay.ConfirmKey = "r"
-	h.confirmationOverlay.CancelKey = "s"
+	h.confirmationOverlay.CancelKey = ""
 
 	// Press 'a' for abort
 	keyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")}

@@ -583,6 +583,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			m.confirmationOverlay = nil
 			m.pendingConfirmAction = nil
 			m.pendingWaveAbortAction = nil
+			m.pendingWaveNextAction = nil
 			m.pendingWaveConfirmPlanFile = ""
 			// Return the action as a tea.Cmd so bubbletea runs it asynchronously.
 			// This prevents blocking the UI during I/O (git push, etc.).
@@ -597,9 +598,22 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			m.confirmationOverlay = nil
 			m.pendingConfirmAction = nil
 			m.pendingWaveAbortAction = nil
+			m.pendingWaveNextAction = nil
 			m.pendingWaveConfirmPlanFile = ""
 			return m, abortAction
 		case m.confirmationOverlay.CancelKey:
+			// If this is the failed-wave dialog and 'n' (next wave) is the cancel key,
+			// fire the advance action instead of the normal cancel/re-prompt logic.
+			if m.pendingWaveNextAction != nil {
+				nextAction := m.pendingWaveNextAction
+				m.state = stateDefault
+				m.confirmationOverlay = nil
+				m.pendingConfirmAction = nil
+				m.pendingWaveAbortAction = nil
+				m.pendingWaveNextAction = nil
+				m.pendingWaveConfirmPlanFile = ""
+				return m, nextAction
+			}
 			// "No" — user explicitly declined.
 			// Reset the orchestrator confirm latch when the user cancels a wave prompt,
 			// so the prompt can reappear on the next metadata tick (fixes deadlock).
@@ -626,6 +640,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			m.confirmationOverlay = nil
 			m.pendingConfirmAction = nil
 			m.pendingWaveAbortAction = nil
+			m.pendingWaveNextAction = nil
 			return m, nil
 		case "esc":
 			// Esc — preserve everything, allow re-prompt on next tick.
@@ -641,6 +656,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			m.confirmationOverlay = nil
 			m.pendingConfirmAction = nil
 			m.pendingWaveAbortAction = nil
+			m.pendingWaveNextAction = nil
 			return m, nil
 		default:
 			return m, nil
@@ -1307,7 +1323,7 @@ func (m *home) waveStandardConfirmAction(message, planFile string, entry plansta
 }
 
 // waveFailedConfirmAction shows a three-choice dialog for a wave that has failed tasks.
-// Keys: r=retry, s=skip/advance, a=abort. The abort action is stored separately so the
+// Keys: r=retry, n=next wave/advance, a=abort. The abort action is stored separately so the
 // stateConfirm key handler can dispatch it on 'a'.
 func (m *home) waveFailedConfirmAction(message, planFile string, entry planstate.PlanEntry) {
 	m.pendingWaveConfirmPlanFile = planFile
@@ -1317,11 +1333,14 @@ func (m *home) waveFailedConfirmAction(message, planFile string, entry planstate
 	m.state = stateConfirm
 	m.confirmationOverlay = overlay.NewConfirmationOverlay(message)
 	m.confirmationOverlay.ConfirmKey = "r"
-	m.confirmationOverlay.CancelKey = "s"
+	m.confirmationOverlay.CancelKey = "n"
 	m.confirmationOverlay.SetWidth(60)
 
 	m.pendingConfirmAction = func() tea.Msg {
 		return waveRetryMsg{planFile: capturedPlanFile, entry: capturedEntry}
+	}
+	m.pendingWaveNextAction = func() tea.Msg {
+		return waveAdvanceMsg{planFile: capturedPlanFile, entry: capturedEntry}
 	}
 	m.pendingWaveAbortAction = func() tea.Msg {
 		return waveAbortMsg{planFile: capturedPlanFile}
