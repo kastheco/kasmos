@@ -292,6 +292,7 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 		}
 	}
 
+	h.updateSidebarPlans()
 	h.updateSidebarItems()
 
 	// Reconstruct in-memory wave orchestrators for plans that were mid-wave
