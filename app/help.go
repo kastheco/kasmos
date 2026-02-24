@@ -63,7 +63,7 @@ func (h helpTypeGeneral) toContent() string {
 		keyStyle.Render("q")+descStyle.Render("         - Quit the application"),
 		"",
 		headerStyle.Render("\uf03a Plans:"),
-		keyStyle.Render("p")+descStyle.Render("         - Create a new plan"),
+		keyStyle.Render("n")+descStyle.Render("         - Create a new plan"),
 		keyStyle.Render("space")+descStyle.Render("     - Expand/collapse plan or topic"),
 		keyStyle.Render("↵/o")+descStyle.Render("       - Plan/topic menu or run stage"),
 		keyStyle.Render("v")+descStyle.Render("         - View selected plan"),
