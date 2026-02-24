@@ -287,6 +287,10 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 
 	h.updateSidebarItems()
 
+	// Reconstruct in-memory wave orchestrators for plans that were mid-wave
+	// when kasmos was last restarted. Must run after loadPlanState and instance load.
+	h.rebuildOrphanedOrchestrators()
+
 	// Persist the active repo so it appears in the picker even if it has no instances
 	if state, ok := h.appState.(*config.State); ok {
 		state.AddRecentRepo(activeRepoPath)

@@ -983,6 +983,104 @@ func (m *home) getTopicNames() []string {
 	return names
 }
 
+// rebuildOrphanedOrchestrators reconstructs in-memory WaveOrchestrators for plans that
+// were mid-wave when kasmos was restarted. Without this, the wave completion monitor and
+// the "Mark complete" context menu action are both inoperative after a restart.
+//
+// For each plan that is StatusImplementing and has task instances (TaskNumber > 0) but
+// no orchestrator, we:
+//  1. Parse the plan file to get the wave/task structure.
+//  2. Fast-forward the orchestrator to the wave the instances are on.
+//  3. Mark tasks as complete for instances that are already paused (finished their work).
+//
+// Tasks that are still running remain in taskRunning state so the metadata tick can
+// detect their completion normally (or the user can mark them complete manually).
+func (m *home) rebuildOrphanedOrchestrators() {
+	if m.planState == nil || m.planStateDir == "" {
+		return
+	}
+
+	// Group task instances by plan file.
+	type taskInst struct {
+		taskNumber int
+		waveNumber int
+		paused     bool
+	}
+	byPlan := make(map[string][]taskInst)
+	for _, inst := range m.list.GetInstances() {
+		if inst.TaskNumber == 0 || inst.PlanFile == "" {
+			continue
+		}
+		byPlan[inst.PlanFile] = append(byPlan[inst.PlanFile], taskInst{
+			taskNumber: inst.TaskNumber,
+			waveNumber: inst.WaveNumber,
+			paused:     inst.Paused(),
+		})
+	}
+
+	for planFile, tasks := range byPlan {
+		// Skip if orchestrator already exists.
+		if _, exists := m.waveOrchestrators[planFile]; exists {
+			continue
+		}
+		// Only reconstruct for implementing plans.
+		entry, ok := m.planState.Entry(planFile)
+		if !ok || entry.Status != planstate.StatusImplementing {
+			continue
+		}
+
+		// Parse the plan file.
+		content, err := os.ReadFile(filepath.Join(m.planStateDir, planFile))
+		if err != nil {
+			log.WarningLog.Printf("rebuildOrphanedOrchestrators: cannot read %s: %v", planFile, err)
+			continue
+		}
+		plan, err := planparser.Parse(string(content))
+		if err != nil {
+			log.WarningLog.Printf("rebuildOrphanedOrchestrators: cannot parse %s: %v", planFile, err)
+			continue
+		}
+
+		orch := NewWaveOrchestrator(planFile, plan)
+
+		// Determine which wave the instances are on (use the max wave number seen).
+		targetWave := 0
+		for _, t := range tasks {
+			if t.waveNumber > targetWave {
+				targetWave = t.waveNumber
+			}
+		}
+
+		// Fast-forward the orchestrator wave-by-wave up to the target wave.
+		// Waves before the target are considered fully complete.
+		for orch.currentWave < len(plan.Waves) {
+			orch.StartNextWave()
+			if orch.CurrentWaveNumber() == targetWave {
+				break
+			}
+			// Mark all tasks in this earlier wave as complete to advance.
+			for _, t := range plan.Waves[orch.currentWave-1].Tasks {
+				orch.MarkTaskComplete(t.Number)
+			}
+		}
+
+		// Now apply the actual task states for the current wave.
+		for _, t := range tasks {
+			if t.waveNumber != targetWave {
+				continue
+			}
+			if t.paused {
+				orch.MarkTaskComplete(t.taskNumber)
+			}
+			// Running tasks stay in taskRunning — metadata tick handles them.
+		}
+
+		m.waveOrchestrators[planFile] = orch
+		log.WarningLog.Printf("rebuildOrphanedOrchestrators: restored orchestrator for %s (wave %d, %d tasks)",
+			planFile, targetWave, len(tasks))
+	}
+}
+
 // spawnWaveTasks creates and starts instances for the given task list within an orchestrator.
 // Used by both startNextWave (initial spawn) and retryFailedWaveTasks (re-spawn failed tasks).
 func (m *home) spawnWaveTasks(orch *WaveOrchestrator, tasks []planparser.Task, entry planstate.PlanEntry) (tea.Model, tea.Cmd) {
