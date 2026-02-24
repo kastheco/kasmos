@@ -688,15 +688,27 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 // killExistingPlanAgent finds and kills any existing instance for the given plan
 // and agent type, removing it from the list. This ensures a fresh tmux session
 // is created instead of reattaching to a stale/errored one.
+// For reviewers, also matches legacy instances that only have IsReviewer set.
 func (m *home) killExistingPlanAgent(planFile, agentType string) {
+	var toRemove []string
 	for _, inst := range m.list.GetInstances() {
-		if inst.PlanFile == planFile && inst.AgentType == agentType {
+		if inst.PlanFile != planFile {
+			continue
+		}
+		match := inst.AgentType == agentType
+		// Legacy reviewer instances may only have IsReviewer without AgentType.
+		if !match && agentType == session.AgentTypeReviewer && inst.IsReviewer {
+			match = true
+		}
+		if match {
 			if err := inst.Kill(); err != nil {
 				log.WarningLog.Printf("could not kill old %s for %q: %v", agentType, planFile, err)
 			}
-			m.removeFromAllInstances(inst.Title)
-			break
+			toRemove = append(toRemove, inst.Title)
 		}
+	}
+	for _, title := range toRemove {
+		m.removeFromAllInstances(title)
 	}
 }
 
