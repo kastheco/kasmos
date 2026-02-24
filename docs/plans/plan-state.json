@@ -2,6 +2,9 @@
   "topics": {
     "sidebar": {
       "created_at": "2026-02-22T18:00:00Z"
+    },
+    "tools": {
+      "created_at": "2026-02-24T20:03:01Z"
     }
   },
   "plans": {
@@ -304,17 +307,24 @@
       "branch": "plan/clickup-import",
       "created_at": "2026-02-24T02:44:43.679630782Z"
     },
+    "2026-02-24-live-preview-terminal.md": {
+      "status": "implementing",
+      "description": "replace capture-pane polling with live EmbeddedTerminal VT emulator in preview pane, unify with focus mode",
+      "branch": "plan/live-preview-terminal",
+      "created_at": "2026-02-24T18:00:00Z"
+    },
     "2026-02-24-orphan-session-recovery.md": {
       "status": "ready",
       "description": "detect orphaned tmux sessions from plan agent crashes and let users reattach or kill them from the sidebar context menu",
       "branch": "plan/orphan-session-recovery",
       "created_at": "2026-02-24T04:07:00Z"
     },
-    "2026-02-24-live-preview-terminal.md": {
+    "2026-02-24-sentry-integration.md": {
       "status": "ready",
-      "description": "replace capture-pane polling with live EmbeddedTerminal VT emulator in preview pane, unify with focus mode",
-      "branch": "plan/live-preview-terminal",
-      "created_at": "2026-02-24T18:00:00Z"
+      "description": "add sentry to the project for better debugging experience",
+      "branch": "plan/sentry-integration",
+      "topic": "tools",
+      "created_at": "2026-02-24T20:03:01.389587403Z"
     }
   }
 }

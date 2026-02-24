@@ -46,6 +46,7 @@ type PickerOverlay struct {
 	width       int
 	submitted   bool
 	cancelled   bool
+	allowCustom bool // when true, typing a non-matching query offers "Create: <query>"
 }
 
 // NewPickerOverlay creates a picker with a title and list of items.
@@ -58,6 +59,11 @@ func NewPickerOverlay(title string, items []string) *PickerOverlay {
 		filtered: filtered,
 		width:    40,
 	}
+}
+
+// SetAllowCustom enables free-text entry when the search query doesn't match any item.
+func (p *PickerOverlay) SetAllowCustom(allow bool) {
+	p.allowCustom = allow
 }
 
 // HandleKeyPress processes input. Returns true when the overlay should close.
@@ -92,6 +98,8 @@ func (p *PickerOverlay) HandleKeyPress(msg tea.KeyMsg) bool {
 	return false
 }
 
+const customPrefix = "+ Create: "
+
 func (p *PickerOverlay) applyFilter() {
 	if p.searchQuery == "" {
 		p.filtered = make([]string, len(p.allItems))
@@ -104,6 +112,11 @@ func (p *PickerOverlay) applyFilter() {
 				p.filtered = append(p.filtered, item)
 			}
 		}
+		// When allowCustom is on and query doesn't exactly match an existing item,
+		// offer to create a new entry with the raw query text.
+		if p.allowCustom && !p.hasExactMatch() {
+			p.filtered = append(p.filtered, customPrefix+p.searchQuery)
+		}
 	}
 	if p.selectedIdx >= len(p.filtered) {
 		p.selectedIdx = len(p.filtered) - 1
@@ -113,12 +126,28 @@ func (p *PickerOverlay) applyFilter() {
 	}
 }
 
+// hasExactMatch returns true if any item matches the search query exactly (case-insensitive).
+func (p *PickerOverlay) hasExactMatch() bool {
+	query := strings.ToLower(p.searchQuery)
+	for _, item := range p.allItems {
+		if strings.ToLower(item) == query {
+			return true
+		}
+	}
+	return false
+}
+
 // Value returns the selected item, or empty string if cancelled or nothing selected.
+// When a custom "Create: <name>" entry is selected, returns just the name.
 func (p *PickerOverlay) Value() string {
 	if p.cancelled || len(p.filtered) == 0 {
 		return ""
 	}
-	return p.filtered[p.selectedIdx]
+	val := p.filtered[p.selectedIdx]
+	if strings.HasPrefix(val, customPrefix) {
+		return strings.TrimPrefix(val, customPrefix)
+	}
+	return val
 }
 
 // IsSubmitted returns true if the user pressed Enter.
@@ -148,7 +177,7 @@ func (p *PickerOverlay) Render() string {
 
 	// Items
 	if len(p.filtered) == 0 {
-		b.WriteString(pickerHintStyle.Render("  No matching topics"))
+		b.WriteString(pickerHintStyle.Render("  No matches"))
 		b.WriteString("\n")
 	} else {
 		for i, item := range p.filtered {

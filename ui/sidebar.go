@@ -172,9 +172,9 @@ type Sidebar struct {
 	repoHovered bool   // true when mouse is hovering over the repo button
 
 	// Three-level tree state (Task 3)
-	rows           []sidebarRow
-	expandedTopics map[string]bool
-	expandedPlans  map[string]bool
+	rows            []sidebarRow
+	collapsedTopics map[string]bool // tracks manually collapsed topics (default = expanded)
+	expandedPlans   map[string]bool
 	// stored data for rebuild
 	treeTopics    []TopicDisplay
 	treeUngrouped []PlanDisplay
@@ -195,11 +195,11 @@ func NewSidebar() *Sidebar {
 		items: []SidebarItem{
 			{Name: "All", ID: SidebarAll},
 		},
-		selectedIdx:    0,
-		focused:        true,
-		expandedTopics: make(map[string]bool),
-		expandedPlans:  make(map[string]bool),
-		planStatuses:   make(map[string]TopicStatus),
+		selectedIdx:     0,
+		focused:         true,
+		collapsedTopics: make(map[string]bool),
+		expandedPlans:   make(map[string]bool),
+		planStatuses:    make(map[string]TopicStatus),
 	}
 }
 
@@ -611,12 +611,12 @@ func (s *Sidebar) rebuildRows() {
 			Kind:            rowKindTopic,
 			ID:              SidebarTopicPrefix + t.Name,
 			Label:           t.Name,
-			Collapsed:       !s.expandedTopics[t.Name],
+			Collapsed:       s.collapsedTopics[t.Name],
 			HasRunning:      hasRunning,
 			HasNotification: hasNotification,
 			Indent:          0,
 		})
-		if s.expandedTopics[t.Name] {
+		if !s.collapsedTopics[t.Name] {
 			for _, p := range t.Plans {
 				effective := p
 				effective.Status = s.effectivePlanStatus(p)
@@ -731,7 +731,7 @@ func (s *Sidebar) ToggleSelectedExpand() bool {
 	switch row.Kind {
 	case rowKindTopic:
 		topicName := row.ID[len(SidebarTopicPrefix):]
-		s.expandedTopics[topicName] = !s.expandedTopics[topicName]
+		s.collapsedTopics[topicName] = !s.collapsedTopics[topicName]
 		s.rebuildRows()
 		return true
 	case rowKindPlan:

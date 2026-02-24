@@ -103,15 +103,15 @@ func TestSidebarExpandTopic(t *testing.T) {
 		nil, nil,
 	)
 
-	// Topic starts collapsed — plan should not be visible
-	assert.False(t, s.HasRowID(SidebarPlanPrefix+"a.md"))
+	// Topic starts expanded — plan should be visible
+	assert.True(t, s.HasRowID(SidebarPlanPrefix+"a.md"))
 
-	// Expand topic
+	// Collapse topic
 	s.SelectByID(SidebarTopicPrefix + "ui")
 	s.ToggleSelectedExpand()
 
-	// Now plan should be visible
-	assert.True(t, s.HasRowID(SidebarPlanPrefix+"a.md"))
+	// Now plan should be hidden
+	assert.False(t, s.HasRowID(SidebarPlanPrefix+"a.md"))
 }
 
 func TestSidebarExpandPlanStages(t *testing.T) {
@@ -273,9 +273,7 @@ func TestSidebarTreeRender_ExpandedTopicShowsPlans(t *testing.T) {
 		nil, nil,
 	)
 
-	s.SelectByID(SidebarTopicPrefix + "auth")
-	s.ToggleSelectedExpand()
-
+	// Topics are expanded by default — plans should be visible immediately
 	output := s.String()
 	assert.Contains(t, output, "auth")
 	assert.Contains(t, output, "tokens")
@@ -374,9 +372,12 @@ func TestSidebarRight_ExpandsCollapsedTopic(t *testing.T) {
 		nil, nil,
 	)
 
+	// Collapse topic first (topics start expanded by default)
 	s.SelectByID(SidebarTopicPrefix + "auth")
+	s.ToggleSelectedExpand()
 	assert.False(t, s.HasRowID(SidebarPlanPrefix+"tokens.md"))
 
+	// Right should expand it
 	s.Right()
 	assert.True(t, s.HasRowID(SidebarPlanPrefix+"tokens.md"))
 }
@@ -392,10 +393,8 @@ func TestSidebarRight_MovesToFirstChildWhenExpanded(t *testing.T) {
 		nil, nil,
 	)
 
+	// Topic starts expanded — Right moves to first child
 	s.SelectByID(SidebarTopicPrefix + "auth")
-	s.ToggleSelectedExpand()
-	s.SelectByID(SidebarTopicPrefix + "auth")
-
 	s.Right()
 	assert.Equal(t, SidebarPlanPrefix+"tokens.md", s.GetSelectedID())
 }
@@ -411,9 +410,9 @@ func TestSidebarLeft_CollapsesExpandedTopic(t *testing.T) {
 		nil, nil,
 	)
 
+	// Topic starts expanded — Left should collapse it
 	s.SelectByID(SidebarTopicPrefix + "auth")
-	s.ToggleSelectedExpand()
-	s.SelectByID(SidebarTopicPrefix + "auth")
+	assert.True(t, s.HasRowID(SidebarPlanPrefix+"tokens.md"))
 
 	s.Left()
 	assert.False(t, s.HasRowID(SidebarPlanPrefix+"tokens.md"))
@@ -430,8 +429,7 @@ func TestSidebarLeft_MovesToParentFromPlan(t *testing.T) {
 		nil, nil,
 	)
 
-	s.SelectByID(SidebarTopicPrefix + "auth")
-	s.ToggleSelectedExpand()
+	// Topic starts expanded — select child plan directly
 	s.SelectByID(SidebarPlanPrefix + "tokens.md")
 
 	s.Left()
