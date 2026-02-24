@@ -697,11 +697,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if !shouldPromptPushAfterCoderExit(entry, inst, alive) {
 					continue
 				}
-				// Skip wave task instances while their orchestrator is still active.
+				// Wave task instances never trigger the single-coder completion flow.
+				// Wave completion is handled by the orchestrator, not the coder-exit prompt.
 				if inst.TaskNumber > 0 {
-					if _, hasOrch := m.waveOrchestrators[inst.PlanFile]; hasOrch {
-						continue
-					}
+					continue
 				}
 				if cmd := m.promptPushBranchThenAdvance(inst); cmd != nil {
 					asyncCmds = append(asyncCmds, cmd)
