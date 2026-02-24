@@ -20,7 +20,8 @@ func TestPlannerPromptBranchPolicy(t *testing.T) {
 		"Only register implementation plans in plan-state.json",
 		"never register design docs",
 		"docs/plans/.signals/planner-finished-",
-		"Never modify `plan-state.json` directly",
+		"KASMOS_MANAGED",
+		"Do not edit `plan-state.json` directly",
 	}
 
 	for _, needle := range required {

@@ -52,17 +52,22 @@ Based on feedback:
 
 ### Step 5: Complete Development
 
-After all tasks complete and verified:
+After all tasks complete and verified, **signal that implementation is done.**
 
-**Signal kasmos** that implementation is done by writing a sentinel file:
+Check whether you're running under kasmos orchestration:
+
+```bash
+echo "${KASMOS_MANAGED:-}"
+```
+
+**If `KASMOS_MANAGED=1`:** Write a sentinel file — kasmos transitions the plan automatically.
 
 ```bash
 touch docs/plans/.signals/implement-finished-<date>-<name>.md
-# e.g. touch docs/plans/.signals/implement-finished-2026-02-24-auth-refactor.md
 ```
 
-The filename must match the plan filename exactly. kasmos detects this file and transitions
-the plan to `reviewing` status in the TUI. **Do not edit `plan-state.json` directly.**
+**If `KASMOS_MANAGED` is unset:** Update `plan-state.json` directly — set the plan's
+status to `"reviewing"`.
 
 Then:
 - Announce: "I'm using the finishing-a-development-branch skill to complete this work."

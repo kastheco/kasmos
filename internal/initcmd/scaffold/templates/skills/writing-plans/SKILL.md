@@ -110,25 +110,38 @@ TodoWrite([
 ])
 ```
 
-**Step 2: Signal kasmos by writing a sentinel file.**
+**Step 2: Register the plan.**
 
-kasmos monitors `docs/plans/.signals/` to detect when agents finish phases. Create an empty file:
+Check whether you're running under kasmos orchestration:
+
+```bash
+echo "${KASMOS_MANAGED:-}"
+```
+
+**If `KASMOS_MANAGED=1` (running inside kasmos):** Write a sentinel file. kasmos monitors
+`docs/plans/.signals/` and will register the plan automatically.
 
 ```bash
 touch docs/plans/.signals/planner-finished-<date>-<name>.md
-# e.g. touch docs/plans/.signals/planner-finished-2026-02-24-auth-refactor.md
 ```
 
-The filename must match the plan filename exactly (same `<date>-<name>.md` portion). kasmos will detect this file, register the plan in `plan-state.json`, and update the TUI sidebar automatically. **Do not edit `plan-state.json` directly** — kasmos owns that file.
+The filename must match the plan filename exactly. **Do not edit `plan-state.json` directly.**
+
+**If `KASMOS_MANAGED` is unset (raw terminal):** Register the plan in `plan-state.json`
+directly. Read the file first, then add an entry with `"status": "ready"`:
+
+```json
+"<date>-<name>.md": { "status": "ready" }
+```
 
 **Step 3: Commit the plan.**
 
 ```bash
-git add docs/plans/<date>-<name>.md
+git add docs/plans/<date>-<name>.md docs/plans/plan-state.json
 git commit -m "plan: <feature name>"
 ```
 
-Do not commit the sentinel file — it is consumed and deleted by kasmos.
+Do not commit sentinel files — they are consumed and deleted by kasmos.
 
 ## Execution Handoff
 

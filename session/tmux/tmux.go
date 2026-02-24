@@ -225,6 +225,13 @@ func (t *TmuxSession) Start(workDir string) error {
 		log.InfoLog.Printf("Warning: failed to enable mouse scrolling for session %s: %v", t.sanitizedName, err)
 	}
 
+	// Inject KASMOS_MANAGED=1 so agents can detect they're running under kasmos orchestration.
+	// This enables skills/prompts to use sentinel files instead of editing plan-state.json directly.
+	envCmd := exec.Command("tmux", "set-environment", "-t", t.sanitizedName, "KASMOS_MANAGED", "1")
+	if err := t.cmdExec.Run(envCmd); err != nil {
+		log.InfoLog.Printf("Warning: failed to set KASMOS_MANAGED env for session %s: %v", t.sanitizedName, err)
+	}
+
 	t.reportProgress(3, "Configuring session...")
 
 	err = t.Restore()

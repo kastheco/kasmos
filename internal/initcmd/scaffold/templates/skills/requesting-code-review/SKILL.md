@@ -46,9 +46,18 @@ Use Task tool with superpowers:code-reviewer type, fill template at `code-review
 - Note Minor issues for later
 - Push back if reviewer is wrong (with reasoning)
 
-**4. Signal kasmos based on outcome:**
+**4. Update plan state based on outcome:**
 
-After all issues are resolved and the reviewer approves, write the appropriate sentinel:
+After all issues are resolved, update plan state at the **final review** that concludes
+the entire implementation phase (skip this for mid-task reviews within subagent-driven-development).
+
+Check whether you're running under kasmos orchestration:
+
+```bash
+echo "${KASMOS_MANAGED:-}"
+```
+
+**If `KASMOS_MANAGED=1`:** Write the appropriate sentinel file.
 
 ```bash
 # Reviewer approved — work is ready to merge/ship
@@ -58,11 +67,8 @@ touch docs/plans/.signals/review-approved-<date>-<name>.md
 touch docs/plans/.signals/review-changes-<date>-<name>.md
 ```
 
-The filename must match the plan filename exactly. kasmos detects this and transitions
-the plan state in the TUI automatically. **Do not edit `plan-state.json` directly.**
-
-Note: for mid-task reviews within subagent-driven-development, skip the sentinel — only
-write it at the final review that concludes the entire implementation phase.
+**If `KASMOS_MANAGED` is unset:** Update `plan-state.json` directly — set the plan's
+status to `"done"` (approved) or `"implementing"` (changes requested).
 
 ## Example
 
@@ -103,8 +109,8 @@ You: [Fix progress indicators]
 - Final review → write sentinel based on outcome
 
 **Ad-Hoc Development:**
-- Review before merge → write sentinel based on outcome
-- Review when stuck → no sentinel needed
+- Review before merge → update plan state based on outcome
+- Review when stuck → no plan state update needed
 
 ## Red Flags
 
@@ -113,7 +119,7 @@ You: [Fix progress indicators]
 - Ignore Critical issues
 - Proceed with unfixed Important issues
 - Argue with valid technical feedback
-- Forget the sentinel on the final review that ends the implementation phase
+- Forget to update plan state on the final review that ends the implementation phase
 
 **If reviewer wrong:**
 - Push back with technical reasoning

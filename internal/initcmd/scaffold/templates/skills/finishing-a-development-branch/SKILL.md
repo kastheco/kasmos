@@ -84,10 +84,7 @@ git merge <feature-branch>
 git branch -d <feature-branch>
 ```
 
-Signal kasmos that the work was approved and merged:
-```bash
-touch docs/plans/.signals/review-approved-<date>-<name>.md
-```
+Signal completion (see "Updating Plan State" below).
 
 Then: Cleanup worktree (Step 5)
 
@@ -108,10 +105,7 @@ EOF
 )"
 ```
 
-Signal kasmos that the work is out for review (approved to proceed):
-```bash
-touch docs/plans/.signals/review-approved-<date>-<name>.md
-```
+Signal completion (see "Updating Plan State" below).
 
 Then: Cleanup worktree (Step 5)
 
@@ -119,7 +113,7 @@ Then: Cleanup worktree (Step 5)
 
 Report: "Keeping branch <name>. Worktree preserved at <path>."
 
-**Don't cleanup worktree. Don't write a sentinel** — the plan stays in `reviewing` status
+**Don't cleanup worktree. Don't update plan state** — the plan stays in `reviewing` status
 until the user decides what to do.
 
 #### Option 4: Discard
@@ -142,10 +136,7 @@ git checkout <base-branch>
 git branch -D <feature-branch>
 ```
 
-Signal kasmos that the work was discarded:
-```bash
-touch docs/plans/.signals/review-approved-<date>-<name>.md
-```
+Signal completion (see "Updating Plan State" below).
 
 Then: Cleanup worktree (Step 5)
 
@@ -165,21 +156,35 @@ git worktree remove <worktree-path>
 
 **For Option 3:** Keep worktree.
 
-## kasmos Sentinel Files
+## Updating Plan State
 
-kasmos monitors `docs/plans/.signals/` to track plan lifecycle. The sentinel filename must
-match the plan filename exactly (same `<date>-<name>.md` portion).
+After executing an option (1, 2, or 4), update plan state based on the environment.
+
+Check whether you're running under kasmos orchestration:
+
+```bash
+echo "${KASMOS_MANAGED:-}"
+```
+
+**If `KASMOS_MANAGED=1`:** Write a sentinel file — kasmos transitions the plan automatically.
 
 | Situation | Sentinel |
 |-----------|----------|
 | Merged locally, PR created, or discarded | `review-approved-<date>-<name>.md` |
 | Reviewer requested changes before merge | `review-changes-<date>-<name>.md` |
 
-**Do not edit `plan-state.json` directly** — kasmos owns that file. The sentinel drives the
-transition automatically.
+```bash
+touch docs/plans/.signals/review-approved-<date>-<name>.md
+```
 
-If a human reviewer requests changes after reviewing a PR, write `review-changes-<date>-<name>.md`
-instead — this transitions the plan back to `implementing` so the coder can address feedback.
+**Do not edit `plan-state.json` directly** when `KASMOS_MANAGED` is set.
+
+**If `KASMOS_MANAGED` is unset:** Update `plan-state.json` directly — set the plan's
+status to `"done"` (for merge/PR/discard) or `"implementing"` (for changes requested).
+
+If a human reviewer requests changes after reviewing a PR, the signal is
+`review-changes-<date>-<name>.md` (kasmos) or status `"implementing"` (direct) — this
+sends the plan back to the coder to address feedback.
 
 ## Quick Reference
 
@@ -208,9 +213,9 @@ instead — this transitions the plan back to `implementing` so the coder can ad
 - **Problem:** Accidentally delete work
 - **Fix:** Require typed "discard" confirmation
 
-**Forgetting the sentinel**
-- **Problem:** kasmos TUI still shows plan as `reviewing` indefinitely
-- **Fix:** Always write the appropriate sentinel for Options 1, 2, 4
+**Forgetting to update plan state**
+- **Problem:** Plan stays in `reviewing` indefinitely
+- **Fix:** Always update plan state for Options 1, 2, 4 (sentinel or direct, depending on env)
 
 ## Red Flags
 
@@ -219,13 +224,13 @@ instead — this transitions the plan back to `implementing` so the coder can ad
 - Merge without verifying tests on result
 - Delete work without confirmation
 - Force-push without explicit request
-- Skip the sentinel for Options 1, 2, or 4
+- Skip updating plan state for Options 1, 2, or 4
 
 **Always:**
 - Verify tests before offering options
 - Present exactly 4 options
 - Get typed confirmation for Option 4
-- Write sentinel before worktree cleanup
+- Update plan state before worktree cleanup
 - Clean up worktree for Options 1 & 4 only
 
 ## Integration
