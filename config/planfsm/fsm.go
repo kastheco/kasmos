@@ -52,6 +52,7 @@ var transitionTable = map[Status]map[Event]Status{
 		Cancel:         StatusCancelled,
 	},
 	StatusPlanning: {
+		PlanStart:       StatusPlanning, // allow restart after crash/interrupt
 		PlannerFinished: StatusReady,
 		Cancel:          StatusCancelled,
 	},

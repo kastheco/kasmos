@@ -18,6 +18,7 @@ func TestTransition_ValidTransitions(t *testing.T) {
 		to    Status
 	}{
 		{StatusReady, PlanStart, StatusPlanning},
+		{StatusPlanning, PlanStart, StatusPlanning}, // restart after crash/interrupt
 		{StatusPlanning, PlannerFinished, StatusReady},
 		{StatusReady, ImplementStart, StatusImplementing},
 		{StatusImplementing, ImplementFinished, StatusReviewing},
