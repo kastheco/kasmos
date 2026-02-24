@@ -149,6 +149,19 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		m.updateSidebarItems()
 		return m, tea.WindowSize()
 
+	case "mark_task_complete":
+		selected := m.list.GetSelectedInstance()
+		if selected == nil || selected.TaskNumber == 0 {
+			return m, nil
+		}
+		orch, ok := m.waveOrchestrators[selected.PlanFile]
+		if !ok {
+			return m, nil
+		}
+		orch.MarkTaskComplete(selected.TaskNumber)
+		m.toastManager.Success(fmt.Sprintf("Task %d marked complete", selected.TaskNumber))
+		return m, m.toastTickCmd()
+
 	case "start_plan":
 		planFile := m.sidebar.GetSelectedPlanFile()
 		if planFile == "" {
@@ -436,8 +449,14 @@ func (m *home) openContextMenu() (tea.Model, tea.Cmd) {
 	items = append(items, overlay.ContextMenuItem{Label: "Create PR", Action: "create_pr_instance"})
 	items = append(items, overlay.ContextMenuItem{Label: "Copy worktree path", Action: "copy_worktree_path"})
 	items = append(items, overlay.ContextMenuItem{Label: "Copy branch name", Action: "copy_branch_name"})
-	// Position at the left edge of the instance list (right column)
-	x := m.sidebarWidth + m.tabsWidth
+	// Wave task: offer manual completion
+	if selected.TaskNumber > 0 {
+		if orch, ok := m.waveOrchestrators[selected.PlanFile]; ok && orch.IsTaskRunning(selected.TaskNumber) {
+			items = append(items, overlay.ContextMenuItem{Label: "Mark complete", Action: "mark_task_complete"})
+		}
+	}
+	// Position at the left edge of the instance list (middle column)
+	x := m.sidebarWidth
 	y := 1 + 4 + m.list.GetSelectedIdx()*4 // PaddingTop(1) + header rows + item offset
 	m.contextMenu = overlay.NewContextMenu(x, y, items)
 	m.state = stateContextMenu

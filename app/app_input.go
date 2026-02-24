@@ -210,6 +210,12 @@ func (m *home) handleRightClick(x, y, contentY int) (tea.Model, tea.Cmd) {
 		items = append(items, overlay.ContextMenuItem{Label: "Create PR", Action: "create_pr_instance"})
 		items = append(items, overlay.ContextMenuItem{Label: "Copy worktree path", Action: "copy_worktree_path"})
 		items = append(items, overlay.ContextMenuItem{Label: "Copy branch name", Action: "copy_branch_name"})
+		// Wave task: offer manual completion
+		if selected.TaskNumber > 0 {
+			if orch, ok := m.waveOrchestrators[selected.PlanFile]; ok && orch.IsTaskRunning(selected.TaskNumber) {
+				items = append(items, overlay.ContextMenuItem{Label: "Mark complete", Action: "mark_task_complete"})
+			}
+		}
 		m.contextMenu = overlay.NewContextMenu(x, y, items)
 		m.state = stateContextMenu
 		return m, nil
