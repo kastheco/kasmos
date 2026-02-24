@@ -491,22 +491,22 @@ func (m *home) openPlanContextMenu() (tea.Model, tea.Cmd) {
 				// Ready or planning: offer both plan (write/re-write) and implement.
 				// triggerPlanStage("implement") validates wave headers and auto-reverts
 				// to planning if the plan isn't ready, so this is always safe.
-				items = append(items, overlay.ContextMenuItem{Label: "Start plan", Action: "start_plan"})
-				items = append(items, overlay.ContextMenuItem{Label: "Start implement", Action: "start_implement"})
+				items = append(items, overlay.ContextMenuItem{Label: "start plan", Action: "start_plan"})
+				items = append(items, overlay.ContextMenuItem{Label: "start implement", Action: "start_implement"})
 			case implementing:
-				items = append(items, overlay.ContextMenuItem{Label: "Start implement", Action: "start_implement"})
+				items = append(items, overlay.ContextMenuItem{Label: "start implement", Action: "start_implement"})
 			case entry.Status == planstate.StatusReviewing:
-				items = append(items, overlay.ContextMenuItem{Label: "Mark finished", Action: "mark_plan_done"})
+				items = append(items, overlay.ContextMenuItem{Label: "mark finished", Action: "mark_plan_done"})
 			}
 		}
 	}
 	items = append(items,
-		overlay.ContextMenuItem{Label: "View plan", Action: "view_plan"},
-		overlay.ContextMenuItem{Label: "Change topic", Action: "change_topic"},
-		overlay.ContextMenuItem{Label: "Merge to main", Action: "merge_plan"},
-		overlay.ContextMenuItem{Label: "Mark done", Action: "mark_plan_done"},
-		overlay.ContextMenuItem{Label: "Start over", Action: "start_over_plan"},
-		overlay.ContextMenuItem{Label: "Cancel plan", Action: "cancel_plan"},
+		overlay.ContextMenuItem{Label: "view plan", Action: "view_plan"},
+		overlay.ContextMenuItem{Label: "set topic", Action: "change_topic"},
+		overlay.ContextMenuItem{Label: "merge to main", Action: "merge_plan"},
+		overlay.ContextMenuItem{Label: "mark done", Action: "mark_plan_done"},
+		overlay.ContextMenuItem{Label: "start over", Action: "start_over_plan"},
+		overlay.ContextMenuItem{Label: "cancel plan", Action: "cancel_plan"},
 	)
 
 	x := m.sidebarWidth
