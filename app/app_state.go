@@ -473,8 +473,18 @@ func (m *home) spawnGitTab() tea.Cmd {
 		return m.handleError(err)
 	}
 
+	// Planner instances run on main branch without a worktree — fall back to
+	// the instance's repo path so lazygit can still open the repo.
+	worktreePath := selected.GetRepoPath()
+	if worktree != nil {
+		worktreePath = worktree.GetWorktreePath()
+	}
+	if worktreePath == "" {
+		return nil
+	}
+
 	gitPane := m.tabbedWindow.GetGitPane()
-	gitPane.Spawn(worktree.GetWorktreePath(), selected.Title)
+	gitPane.Spawn(worktreePath, selected.Title)
 
 	return func() tea.Msg {
 		return gitTabTickMsg{}
