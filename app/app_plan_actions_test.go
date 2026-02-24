@@ -166,7 +166,9 @@ func TestSpawnPlanAgent_PlannerUsesMainBranch(t *testing.T) {
 	if inst.Branch != "" {
 		t.Fatalf("planner instance must have empty Branch (runs on main), got %q", inst.Branch)
 	}
-}// TestFSM_PlanLifecycleStages verifies that the FSM produces the correct status for
+}
+
+// TestFSM_PlanLifecycleStages verifies that the FSM produces the correct status for
 // each stage in the plan lifecycle (plan→implement→review→done).
 func TestFSM_PlanLifecycleStages(t *testing.T) {
 	dir := t.TempDir()

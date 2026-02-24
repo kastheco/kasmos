@@ -167,7 +167,7 @@ func TestSidebarPlanHistory(t *testing.T) {
 	s := NewSidebar()
 	s.SetTopicsAndPlans(
 		nil, nil,
-		[]PlanDisplay{{Filename: "old.md", Status: "completed"}},
+		[]PlanDisplay{{Filename: "old.md", Status: "done"}},
 	)
 
 	assert.True(t, s.HasRowID(SidebarPlanHistoryToggle))

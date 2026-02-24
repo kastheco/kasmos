@@ -604,7 +604,8 @@ func (m *home) checkPlanCompletion() tea.Cmd {
 // transitionToReview marks a plan as "reviewing", pauses the coder session,
 // spawns a reviewer session with the reviewer profile, and returns the start cmd.
 func (m *home) transitionToReview(coderInst *session.Instance) tea.Cmd {
-	planFile := coderInst.PlanFile // Guard: transition via FSM before next tick re-reads disk, preventing double-spawn.
+	// Guard: transition via FSM before next tick re-reads disk, preventing double-spawn.
+	planFile := coderInst.PlanFile
 	if err := m.fsm.Transition(planFile, planfsm.ImplementFinished); err != nil {
 		log.WarningLog.Printf("could not set plan %q to reviewing: %v", planFile, err)
 	}
@@ -615,6 +616,12 @@ func (m *home) transitionToReview(coderInst *session.Instance) tea.Cmd {
 		log.WarningLog.Printf("could not pause coder instance for %q: %v", planFile, err)
 	}
 
+	return m.spawnReviewer(planFile)
+}
+
+// spawnReviewer creates and starts a reviewer session for the given plan.
+// Does NOT perform any FSM transition — the caller is responsible for that.
+func (m *home) spawnReviewer(planFile string) tea.Cmd {
 	planName := planstate.DisplayName(planFile)
 	planPath := "docs/plans/" + planFile
 	prompt := scaffold.LoadReviewPrompt(planPath, planName)
@@ -644,6 +651,40 @@ func (m *home) transitionToReview(coderInst *session.Instance) tea.Cmd {
 	return func() tea.Msg {
 		err := reviewerInst.Start(true)
 		return instanceStartedMsg{instance: reviewerInst, err: err}
+	}
+}
+
+// spawnCoderWithFeedback creates and starts a coder session for the given plan,
+// injecting reviewer feedback into the implementation prompt.
+// Does NOT perform any FSM transition — the caller is responsible for that.
+func (m *home) spawnCoderWithFeedback(planFile, feedback string) tea.Cmd {
+	planName := planstate.DisplayName(planFile)
+	prompt := buildImplementPrompt(planFile)
+	if feedback != "" {
+		prompt += fmt.Sprintf("\n\nReviewer feedback from previous round:\n%s", feedback)
+	}
+
+	coderInst, err := session.NewInstance(session.InstanceOptions{
+		Title:     planName + "-implement",
+		Path:      m.activeRepoPath,
+		Program:   m.program,
+		PlanFile:  planFile,
+		AgentType: session.AgentTypeCoder,
+	})
+	if err != nil {
+		log.WarningLog.Printf("could not create coder instance for %q: %v", planFile, err)
+		return nil
+	}
+	coderInst.QueuedPrompt = prompt
+
+	m.newInstanceFinalizer = m.list.AddInstance(coderInst)
+	m.list.SelectInstance(coderInst)
+
+	m.toastManager.Info(fmt.Sprintf("Review changes requested → re-implementing %s", planName))
+
+	return func() tea.Msg {
+		err := coderInst.Start(true)
+		return instanceStartedMsg{instance: coderInst, err: err}
 	}
 }
 

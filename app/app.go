@@ -338,7 +338,7 @@ func (m *home) updateHandleWindowSizeEvent(msg tea.WindowSizeMsg) {
 		m.textOverlay.SetWidth(int(float32(msg.Width) * 0.6))
 	}
 
-	previewWidth, previewHeight := m.tabbedWindow.GetPreviewSize() // Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
+	previewWidth, previewHeight := m.tabbedWindow.GetPreviewSize()
 	if err := m.list.SetSessionPreviewSize(previewWidth, previewHeight); err != nil {
 		log.ErrorLog.Print(err)
 	}
@@ -490,13 +490,43 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case metadataResultMsg:
 		// Process agent sentinel signals — feed to FSM and consume sentinel files.
 		// Done in Update (main goroutine) so FSM writes are never concurrent.
+		// Side-effect cmds (reviewer/coder spawns) are collected and batched below.
+		var signalCmds []tea.Cmd
 		for _, sig := range msg.Signals {
 			if err := m.fsm.Transition(sig.PlanFile, sig.Event); err != nil {
 				log.WarningLog.Printf("signal %s for %s rejected: %v", sig.Event, sig.PlanFile, err)
+				planfsm.ConsumeSignal(sig)
+				continue
 			}
 			planfsm.ConsumeSignal(sig)
-			if sig.Event == planfsm.ReviewChangesRequested && sig.Body != "" {
-				m.pendingReviewFeedback[sig.PlanFile] = sig.Body
+
+			// Side effects: spawn agents in response to successful transitions.
+			switch sig.Event {
+			case planfsm.ImplementFinished:
+				// Pause the coder that wrote this signal.
+				for _, inst := range m.list.GetInstances() {
+					if inst.PlanFile == sig.PlanFile && inst.AgentType == session.AgentTypeCoder {
+						inst.ImplementationComplete = true
+						_ = inst.Pause()
+						break
+					}
+				}
+				if cmd := m.spawnReviewer(sig.PlanFile); cmd != nil {
+					signalCmds = append(signalCmds, cmd)
+				}
+			case planfsm.ReviewChangesRequested:
+				feedback := sig.Body
+				m.pendingReviewFeedback[sig.PlanFile] = feedback
+				// Pause the reviewer that wrote this signal.
+				for _, inst := range m.list.GetInstances() {
+					if inst.PlanFile == sig.PlanFile && inst.IsReviewer {
+						_ = inst.Pause()
+						break
+					}
+				}
+				if cmd := m.spawnCoderWithFeedback(sig.PlanFile, feedback); cmd != nil {
+					signalCmds = append(signalCmds, cmd)
+				}
 			}
 		}
 		if len(msg.Signals) > 0 {
@@ -551,7 +581,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				prompt := inst.QueuedPrompt
 				inst.QueuedPrompt = "" // clear immediately to prevent re-send
 				i := inst
-				asyncCmds = append(asyncCmds, func() tea.Msg { // Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
+				asyncCmds = append(asyncCmds, func() tea.Msg {
 					if err := i.SendPrompt(prompt); err != nil {
 						log.WarningLog.Printf("could not send queued prompt to %q: %v", i.Title, err)
 					}
@@ -576,7 +606,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Apply plan state loaded in the goroutine (replaces synchronous loadPlanState call).
-		if msg.PlanState != nil {
+		// Skip when signals were processed: loadPlanState() above already gave us fresh state.
+		// msg.PlanState was loaded before signals were scanned, so it would be stale.
+		if msg.PlanState != nil && len(msg.Signals) == 0 {
 			m.planState = msg.PlanState
 		}
 
@@ -744,6 +776,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateSidebarPlans()
 		m.updateSidebarItems()
 		completionCmd := m.checkPlanCompletion()
+		asyncCmds = append(asyncCmds, signalCmds...)
 		asyncCmds = append(asyncCmds, tickUpdateMetadataCmd, completionCmd)
 		return m, tea.Batch(asyncCmds...)
 	case tea.MouseMsg:
@@ -783,7 +816,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, task := range orch.CurrentWaveTasks() {
 			taskTitle := fmt.Sprintf("%s-T%d", planName, task.Number)
 			for _, inst := range m.list.GetInstances() {
-				if inst.Title == taskTitle && inst.PromptDetected { // Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
+				if inst.Title == taskTitle && inst.PromptDetected {
 					if err := inst.Pause(); err != nil {
 						log.WarningLog.Printf("could not pause task %s: %v", taskTitle, err)
 					}
@@ -819,7 +852,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.handleError(msg.err)
 		}
 		// Instance started successfully — add to master list, save and finalize
-		m.allInstances = append(m.allInstances, msg.instance) // Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
+		m.allInstances = append(m.allInstances, msg.instance)
 		if err := m.saveAllInstances(); err != nil {
 			return m, m.handleError(err)
 		}
@@ -855,7 +888,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *home) handleQuit() (tea.Model, tea.Cmd) {
-	m.killGitTab() // Reviewer death → ReviewApproved: one-shot FSM transition, rare event.
+	m.killGitTab()
 	if err := m.saveAllInstances(); err != nil {
 		return m, m.handleError(err)
 	}
@@ -1026,7 +1059,9 @@ type instanceMetadata struct {
 	MemMB              float64
 	ResourceUsageValid bool
 	TmuxAlive          bool
-} // metadataResultMsg carries all per-instance metadata collected by the async tick.
+}
+
+// metadataResultMsg carries all per-instance metadata collected by the async tick.
 type metadataResultMsg struct {
 	Results   []instanceMetadata
 	PlanState *planstate.PlanState // pre-loaded plan state (nil if dir not set)
