@@ -66,7 +66,7 @@ func (h helpTypeGeneral) toContent() string {
 		keyStyle.Render("!/@ /#")+descStyle.Render("        - jump to agent/diff/git tab"),
 		keyStyle.Render("g")+descStyle.Render("             - open lazygit"),
 		keyStyle.Render("↑↓ j/k")+descStyle.Render("       - navigate within focused pane"),
-		keyStyle.Render("←→ h/l")+descStyle.Render("       - expand/collapse (sidebar) or move between panes"),
+		keyStyle.Render("←→ h/l")+descStyle.Render("       - move between panes"),
 		keyStyle.Render("ctrl+s")+descStyle.Render("        - toggle sidebar visibility"),
 		keyStyle.Render("/")+descStyle.Render("             - search plans and instances"),
 		keyStyle.Render("q")+descStyle.Render("             - quit"),
