@@ -446,26 +446,26 @@ func (m *home) openContextMenu() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	items := []overlay.ContextMenuItem{
-		{Label: "Open", Action: "open_instance"},
-		{Label: "Kill", Action: "kill_instance"},
+		{Label: "open", Action: "open_instance"},
+		{Label: "kill", Action: "kill_instance"},
 	}
 	if selected.Status == session.Paused {
-		items = append(items, overlay.ContextMenuItem{Label: "Resume", Action: "resume_instance"})
+		items = append(items, overlay.ContextMenuItem{Label: "resume", Action: "resume_instance"})
 	} else {
-		items = append(items, overlay.ContextMenuItem{Label: "Pause", Action: "pause_instance"})
+		items = append(items, overlay.ContextMenuItem{Label: "pause", Action: "pause_instance"})
 	}
 	if selected.Started() && selected.Status != session.Paused {
-		items = append(items, overlay.ContextMenuItem{Label: "Focus agent", Action: "send_prompt_instance"})
+		items = append(items, overlay.ContextMenuItem{Label: "focus agent", Action: "send_prompt_instance"})
 	}
-	items = append(items, overlay.ContextMenuItem{Label: "Rename", Action: "rename_instance"})
-	items = append(items, overlay.ContextMenuItem{Label: "Push branch", Action: "push_instance"})
-	items = append(items, overlay.ContextMenuItem{Label: "Create PR", Action: "create_pr_instance"})
-	items = append(items, overlay.ContextMenuItem{Label: "Copy worktree path", Action: "copy_worktree_path"})
-	items = append(items, overlay.ContextMenuItem{Label: "Copy branch name", Action: "copy_branch_name"})
+	items = append(items, overlay.ContextMenuItem{Label: "rename", Action: "rename_instance"})
+	items = append(items, overlay.ContextMenuItem{Label: "push branch", Action: "push_instance"})
+	items = append(items, overlay.ContextMenuItem{Label: "create pr", Action: "create_pr_instance"})
+	items = append(items, overlay.ContextMenuItem{Label: "copy worktree path", Action: "copy_worktree_path"})
+	items = append(items, overlay.ContextMenuItem{Label: "copy branch name", Action: "copy_branch_name"})
 	// Wave task: offer manual completion
 	if selected.TaskNumber > 0 {
 		if orch, ok := m.waveOrchestrators[selected.PlanFile]; ok && orch.IsTaskRunning(selected.TaskNumber) {
-			items = append(items, overlay.ContextMenuItem{Label: "Mark complete", Action: "mark_task_complete"})
+			items = append(items, overlay.ContextMenuItem{Label: "mark complete", Action: "mark_task_complete"})
 		}
 	}
 	// Position at the left edge of the instance list (middle column)
@@ -543,8 +543,8 @@ func (m *home) openTopicContextMenu() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	items := []overlay.ContextMenuItem{
-		{Label: "Rename topic", Action: "rename_topic_new"},
-		{Label: "Delete topic (ungroup plans)", Action: "delete_topic_new"},
+		{Label: "rename topic", Action: "rename_topic_new"},
+		{Label: "delete topic (ungroup plans)", Action: "delete_topic_new"},
 	}
 	x := m.sidebarWidth
 	y := 1 + 4 + m.sidebar.GetSelectedIdx()
