@@ -373,6 +373,9 @@ func (ps *PlanState) save() error {
 	if err != nil {
 		return fmt.Errorf("marshal plan state: %w", err)
 	}
+	if err := os.MkdirAll(ps.Dir, 0o755); err != nil {
+		return fmt.Errorf("create plan state dir: %w", err)
+	}
 	path := filepath.Join(ps.Dir, stateFile)
 	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
 		return fmt.Errorf("write plan state: %w", err)
