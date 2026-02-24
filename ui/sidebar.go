@@ -145,6 +145,11 @@ var topicLabelStyle = lipgloss.NewStyle().Foreground(ColorText).Bold(true)
 // historyToggleStyle is for the history section divider.
 var historyToggleStyle = lipgloss.NewStyle().Foreground(ColorMuted)
 
+// Legend styles for the status indicator key at the bottom of the sidebar.
+var legendLabelStyle = lipgloss.NewStyle().Foreground(ColorMuted)
+var legendSepStyle = lipgloss.NewStyle().Foreground(ColorOverlay)
+var legendIdleStyle = lipgloss.NewStyle().Foreground(ColorMuted)
+
 // SidebarItem represents a selectable item in the sidebar.
 type SidebarItem struct {
 	Name            string
@@ -1294,24 +1299,33 @@ func (s *Sidebar) String() string {
 
 	topContent := b.String()
 
+	// Status legend pinned above the repo button at the bottom.
+	legend := sidebarRunningStyle.Render("●") + legendLabelStyle.Render(" running") +
+		legendSepStyle.Render("  ") +
+		sidebarNotifyStyle.Render("◉") + legendLabelStyle.Render(" review") +
+		legendSepStyle.Render("  ") +
+		legendIdleStyle.Render("○") + legendLabelStyle.Render(" idle")
+
 	// Wrap content in the subtle rounded border — use full available height
 	borderHeight := s.height - 2 // account for top border + bottom border
 	if borderHeight < 4 {
 		borderHeight = 4
 	}
 
-	innerContent := topContent
+	// Build bottom section: legend + optional repo button
+	var bottomSection string
+	bottomSection = legend
 	if repoSection != "" {
-		topLines := strings.Count(topContent, "\n") + 1
-		repoLines := strings.Count(repoSection, "\n") + 1
-		// +1 because topContent's trailing \n merges with the gap,
-		// producing 1 fewer line than topLines + gap + repoLines.
-		gap := borderHeight - topLines - repoLines + 1
-		if gap < 1 {
-			gap = 1
-		}
-		innerContent = topContent + strings.Repeat("\n", gap) + repoSection
+		bottomSection = legend + "\n" + repoSection
 	}
+
+	topLines := strings.Count(topContent, "\n") + 1
+	bottomLines := strings.Count(bottomSection, "\n") + 1
+	gap := borderHeight - topLines - bottomLines + 1
+	if gap < 1 {
+		gap = 1
+	}
+	innerContent := topContent + strings.Repeat("\n", gap) + bottomSection
 
 	bordered := borderStyle.Width(innerWidth).Height(borderHeight).Render(innerContent)
 	return lipgloss.Place(s.width, s.height, lipgloss.Left, lipgloss.Top, bordered)

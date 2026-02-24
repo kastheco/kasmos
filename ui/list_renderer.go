@@ -79,8 +79,13 @@ func (r *InstanceRenderer) Render(i *session.Instance, selected bool, focused bo
 		}
 	}
 
-	// Cut the title if it's too long
+	// For wave tasks, show "Wave N · Task N" instead of the full plan-name-W#-T# title.
+	// The plan name is already visible on the branch line so repeating it is redundant.
 	titleText := i.Title
+	if i.WaveNumber > 0 && i.TaskNumber > 0 {
+		titleText = fmt.Sprintf("Wave %d · Task %d", i.WaveNumber, i.TaskNumber)
+	}
+
 	widthAvail := r.width - 3 - runewidth.StringWidth(prefix) - 1
 	if widthAvail > 0 && runewidth.StringWidth(titleText) > widthAvail {
 		titleText = runewidth.Truncate(titleText, widthAvail-3, "...")
@@ -92,8 +97,6 @@ func (r *InstanceRenderer) Render(i *session.Instance, selected bool, focused bo
 		skipPermsIndicator = " \uf132"
 	}
 
-	// Use the plain title for width measurement and rendering.
-	// Wave number is now embedded in the title (e.g. "plan-W1-T2") so no badge needed.
 	titleContentPlain := fmt.Sprintf("%s %s%s", prefix, titleText, skipPermsIndicator)
 	titleContent := fmt.Sprintf("%s %s%s", prefix, titleText, skipPermsIndicator)
 	// Build title line: content + spaces + status icon, all fitting within r.width
