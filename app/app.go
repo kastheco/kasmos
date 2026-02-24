@@ -783,15 +783,16 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 					capturedPlanFile := planFile
 					capturedEntry := entry
+					planName := planstate.DisplayName(planFile)
 					if failed > 0 {
 						message := fmt.Sprintf(
-							"Wave %d: %d/%d tasks complete, %d failed.\n\n"+
+							"%s — Wave %d: %d/%d tasks complete, %d failed.\n\n"+
 								"[r] retry failed   [n] next wave   [a] abort",
-							waveNum, completed, total, failed)
+							planName, waveNum, completed, total, failed)
 						m.waveFailedConfirmAction(message, capturedPlanFile, capturedEntry)
 					} else {
-						message := fmt.Sprintf("Wave %d complete (%d/%d). Start Wave %d?",
-							waveNum, completed, total, waveNum+1)
+						message := fmt.Sprintf("%s — Wave %d complete (%d/%d). Start Wave %d?",
+							planName, waveNum, completed, total, waveNum+1)
 						m.waveStandardConfirmAction(message, capturedPlanFile, capturedEntry)
 					}
 				}
@@ -857,9 +858,27 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.retryFailedWaveTasks(orch, msg.entry)
 	case waveAbortMsg:
 		delete(m.waveOrchestrators, msg.planFile)
+		// Kill and remove all task instances that belong to the aborted plan.
+		// Their tmux sessions are already dead (tasks failed), so no worktree
+		// check is needed — just clean them out of the list.
+		// Collect first to avoid mutating m.allInstances while iterating it.
+		var taskInsts []*session.Instance
+		for _, inst := range m.allInstances {
+			if inst.PlanFile == msg.planFile && inst.TaskNumber > 0 {
+				taskInsts = append(taskInsts, inst)
+			}
+		}
+		for _, inst := range taskInsts {
+			if m.list.SelectInstance(inst) {
+				m.list.Kill()
+			}
+			m.removeFromAllInstances(inst.Title)
+		}
+		m.saveAllInstances()
+		m.updateSidebarItems()
 		m.toastManager.Info(fmt.Sprintf("Wave orchestration aborted for %s",
 			planstate.DisplayName(msg.planFile)))
-		return m, m.toastTickCmd()
+		return m, tea.Batch(tea.WindowSize(), m.instanceChanged(), m.toastTickCmd())
 	case plannerCompleteMsg:
 		// User confirmed: start implementation. Kill the dead planner instance first.
 		m.plannerPrompted[msg.planFile] = true

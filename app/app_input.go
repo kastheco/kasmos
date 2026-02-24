@@ -706,10 +706,11 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 				m.pendingPlanDesc = m.textInputOverlay.GetValue()
 			}
 			m.textInputOverlay = nil
-			// Show topic picker
+			// Show topic picker with custom entry support for new topic names
 			topicNames := m.getTopicNames()
 			topicNames = append([]string{"(No topic)"}, topicNames...)
 			m.pickerOverlay = overlay.NewPickerOverlay("Assign to topic (optional)", topicNames)
+			m.pickerOverlay.SetAllowCustom(true)
 			m.state = stateNewPlanTopic
 			return m, nil
 		}
@@ -1143,8 +1144,12 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			return m, nil
 		}
 		selected := m.list.GetSelectedInstance()
-		if selected == nil || !selected.Started() || selected.Paused() || !selected.TmuxAlive() {
+		if selected == nil || !selected.Started() || selected.Paused() {
 			return m, nil
+		}
+		if !selected.TmuxAlive() {
+			m.toastManager.Error(fmt.Sprintf("Session for '%s' is not running", selected.Title))
+			return m, m.toastTickCmd()
 		}
 		// Show help screen before attaching
 		m.showHelpScreen(helpTypeInstanceAttach{}, func() {
