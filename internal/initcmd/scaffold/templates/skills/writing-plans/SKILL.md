@@ -94,9 +94,25 @@ git commit -m "feat: add specific feature"
 - Reference relevant skills with @ syntax
 - DRY, YAGNI, TDD, frequent commits
 
+## After Saving the Plan
+
+**Immediately after writing the plan file, call `TodoWrite` to populate the session task list.**
+
+Create one todo per `### Task N:` in the plan, all with status `pending` and appropriate priority:
+
+```
+TodoWrite([
+  { content: "Task 1: [Component Name]", status: "pending", priority: "high" },
+  { content: "Task 2: [Component Name]", status: "pending", priority: "high" },
+  ...
+])
+```
+
+This is **mandatory** — the plan state must be reflected in the session todo list so execution tools can track progress. Do not skip this step.
+
 ## Execution Handoff
 
-After saving the plan, offer execution choice:
+After saving the plan and updating todos, offer execution choice:
 
 **"Plan complete and saved to `docs/plans/<filename>.md`. Two execution options:**
 
