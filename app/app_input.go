@@ -128,19 +128,11 @@ func (m *home) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.filterInstancesByTopic()
 			return m, m.instanceChanged()
 		}
-	} else if x < m.sidebarWidth+m.tabsWidth {
-		// Click in preview/diff area (center column): focus whichever center tab is visible
-		m.setFocusSlot(slotAgent + m.tabbedWindow.GetActiveTab())
-		localX := x - m.sidebarWidth
-		if m.tabbedWindow.HandleTabClick(localX, contentY) {
-			m.menu.SetInDiffTab(m.tabbedWindow.IsInDiffTab())
-			return m, m.instanceChanged()
-		}
-	} else {
-		// Click in instance list (right column)
+	} else if x < m.sidebarWidth+m.listWidth {
+		// Click in instance list (middle column)
 		m.setFocusSlot(slotList)
 
-		localX := x - m.sidebarWidth - m.tabsWidth
+		localX := x - m.sidebarWidth
 		// Check if clicking on filter tabs
 		if filter, ok := m.list.HandleTabClick(localX, contentY); ok {
 			m.list.SetStatusFilter(filter)
@@ -156,6 +148,14 @@ func (m *home) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				m.list.SetSelectedInstance(itemIdx)
 				return m, m.instanceChanged()
 			}
+		}
+	} else {
+		// Click in preview/diff area (right column): focus whichever center tab is visible
+		m.setFocusSlot(slotAgent + m.tabbedWindow.GetActiveTab())
+		localX := x - m.sidebarWidth - m.listWidth
+		if m.tabbedWindow.HandleTabClick(localX, contentY) {
+			m.menu.SetInDiffTab(m.tabbedWindow.IsInDiffTab())
+			return m, m.instanceChanged()
 		}
 	}
 
@@ -180,8 +180,8 @@ func (m *home) handleRightClick(x, y, contentY int) (tea.Model, tea.Cmd) {
 			return m.openTopicContextMenu()
 		}
 		return m, nil
-	} else if x >= m.sidebarWidth+m.tabsWidth {
-		// Right-click in instance list (right column) — select the item first
+	} else if x >= m.sidebarWidth && x < m.sidebarWidth+m.listWidth {
+		// Right-click in instance list (middle column) — select the item first
 		listY := contentY - 4
 		if listY >= 0 {
 			itemIdx := m.list.GetItemAtRow(listY)
