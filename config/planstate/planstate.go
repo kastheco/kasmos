@@ -127,9 +127,21 @@ func Load(dir string) (*PlanState, error) {
 
 // Topics returns all topic entries sorted by name.
 func (ps *PlanState) Topics() []TopicInfo {
-	result := make([]TopicInfo, 0, len(ps.TopicEntries))
+	// Discover topics from both TopicEntries and plan topic fields.
+	seen := make(map[string]TopicInfo)
 	for name, entry := range ps.TopicEntries {
-		result = append(result, TopicInfo{Name: name, CreatedAt: entry.CreatedAt})
+		seen[name] = TopicInfo{Name: name, CreatedAt: entry.CreatedAt}
+	}
+	for _, entry := range ps.Plans {
+		if entry.Topic != "" {
+			if _, ok := seen[entry.Topic]; !ok {
+				seen[entry.Topic] = TopicInfo{Name: entry.Topic}
+			}
+		}
+	}
+	result := make([]TopicInfo, 0, len(seen))
+	for _, info := range seen {
+		result = append(result, info)
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].Name < result[j].Name
@@ -155,21 +167,18 @@ func (ps *PlanState) PlansByTopic(topic string) []PlanInfo {
 	return result
 }
 
-// UngroupedPlans returns all active plans that either have no topic or whose
-// topic has no matching TopicEntries entry (orphaned), sorted by filename.
+// UngroupedPlans returns all active plans with no topic, sorted by filename.
 func (ps *PlanState) UngroupedPlans() []PlanInfo {
 	result := make([]PlanInfo, 0)
 	for filename, entry := range ps.Plans {
 		if entry.Status == StatusDone || entry.Status == StatusCancelled {
 			continue
 		}
-		// Include plans with no topic, or plans whose topic is orphaned
-		// (has no matching TopicEntries entry) so they don't silently disappear.
-		if entry.Topic == "" || (entry.Topic != "" && !ps.hasTopicEntry(entry.Topic)) {
+		if entry.Topic == "" {
 			result = append(result, PlanInfo{
 				Filename: filename, Status: entry.Status,
 				Description: entry.Description, Branch: entry.Branch,
-				Topic: entry.Topic, CreatedAt: entry.CreatedAt,
+				CreatedAt: entry.CreatedAt,
 			})
 		}
 	}
