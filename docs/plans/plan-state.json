@@ -293,8 +293,8 @@
       "created_at": "2026-02-23T18:00:00Z"
     },
     "2026-02-24-add-episodic-memory.md": {
-      "status": "ready",
-      "description": "add episodic memory as a default skill when running init scaffolding command",
+      "status": "cancelled",
+      "description": "add episodic memory as a default skill when running init scaffolding command — shelved: none of the available memory plugins (episodic-memory, psychmem, hmem) are mature enough for dual-harness use yet",
       "branch": "plan/add-episodic-memory",
       "created_at": "2026-02-24T03:50:07.986559175Z"
     },
