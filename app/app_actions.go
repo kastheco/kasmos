@@ -159,8 +159,9 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		orch.MarkTaskComplete(selected.TaskNumber)
+		selected.SetStatus(session.Ready)
 		m.toastManager.Success(fmt.Sprintf("task %d marked complete", selected.TaskNumber))
-		return m, m.toastTickCmd()
+		return m, tea.Batch(m.instanceChanged(), m.toastTickCmd())
 
 	case "change_topic":
 		planFile := m.sidebar.GetSelectedPlanFile()
@@ -270,6 +271,19 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if err := m.fsm.Transition(planFile, planfsm.ReviewApproved); err != nil {
+			return m, m.handleError(err)
+		}
+		m.loadPlanState()
+		m.updateSidebarPlans()
+		m.updateSidebarItems()
+		return m, tea.WindowSize()
+
+	case "resume_implement":
+		planFile := m.sidebar.GetSelectedPlanFile()
+		if planFile == "" || m.planState == nil {
+			return m, nil
+		}
+		if err := m.fsm.Transition(planFile, planfsm.Reimplement); err != nil {
 			return m, m.handleError(err)
 		}
 		m.loadPlanState()
@@ -483,8 +497,6 @@ func (m *home) openContextMenu() (tea.Model, tea.Cmd) {
 	items = append(items, overlay.ContextMenuItem{Label: "rename", Action: "rename_instance"})
 	items = append(items, overlay.ContextMenuItem{Label: "push branch", Action: "push_instance"})
 	items = append(items, overlay.ContextMenuItem{Label: "create pr", Action: "create_pr_instance"})
-	items = append(items, overlay.ContextMenuItem{Label: "copy worktree path", Action: "copy_worktree_path"})
-	items = append(items, overlay.ContextMenuItem{Label: "copy branch name", Action: "copy_branch_name"})
 	// Wave task: offer manual completion
 	if selected.TaskNumber > 0 {
 		if orch, ok := m.waveOrchestrators[selected.PlanFile]; ok && orch.IsTaskRunning(selected.TaskNumber) {
@@ -526,6 +538,10 @@ func (m *home) openPlanContextMenu() (tea.Model, tea.Cmd) {
 				items = append(items,
 					overlay.ContextMenuItem{Label: "start review", Action: "start_review"},
 					overlay.ContextMenuItem{Label: "mark finished", Action: "mark_plan_done"},
+				)
+			case planstate.StatusDone:
+				items = append(items,
+					overlay.ContextMenuItem{Label: "resume implement", Action: "resume_implement"},
 				)
 			}
 		}

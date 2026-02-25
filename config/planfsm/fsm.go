@@ -29,6 +29,7 @@ const (
 	ReviewApproved         Event = "review_approved"
 	ReviewChangesRequested Event = "review_changes_requested"
 	StartOver              Event = "start_over"
+	Reimplement            Event = "reimplement"
 	Cancel                 Event = "cancel"
 	Reopen                 Event = "reopen"
 )
@@ -37,7 +38,7 @@ const (
 // never by agent sentinel files.
 func (e Event) IsUserOnly() bool {
 	switch e {
-	case StartOver, Cancel, Reopen:
+	case StartOver, Reimplement, Cancel, Reopen:
 		return true
 	}
 	return false
@@ -66,8 +67,9 @@ var transitionTable = map[Status]map[Event]Status{
 		Cancel:                 StatusCancelled,
 	},
 	StatusDone: {
-		StartOver: StatusPlanning,
-		Cancel:    StatusCancelled, // explicit user cancellation from done
+		StartOver:   StatusPlanning,
+		Reimplement: StatusImplementing, // resume implementation without resetting branch
+		Cancel:      StatusCancelled,    // explicit user cancellation from done
 	},
 	StatusCancelled: {
 		Reopen: StatusPlanning,
