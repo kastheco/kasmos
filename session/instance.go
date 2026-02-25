@@ -148,6 +148,7 @@ func (i *Instance) ToInstanceData() InstanceData {
 		WaveNumber:             i.WaveNumber,
 		IsReviewer:             i.IsReviewer,
 		ImplementationComplete: i.ImplementationComplete,
+		SoloAgent:              i.SoloAgent,
 		QueuedPrompt:           i.QueuedPrompt,
 	}
 
@@ -193,6 +194,7 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		WaveNumber:             data.WaveNumber,
 		IsReviewer:             data.IsReviewer,
 		ImplementationComplete: data.ImplementationComplete,
+		SoloAgent:              data.SoloAgent,
 		QueuedPrompt:           data.QueuedPrompt,
 		gitWorktree: git.NewGitWorktreeFromStorage(
 			data.Worktree.RepoPath,

@@ -639,8 +639,8 @@ func (m *home) triggerPlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 		return m, m.toastTickCmd()
 	}
 
-	// Concurrency gate for implement stage
-	if stage == "implement" && entry.Topic != "" {
+	// Concurrency gate for coder stages
+	if (stage == "implement" || stage == "solo") && entry.Topic != "" {
 		if hasConflict, conflictPlan := m.planState.HasRunningCoderInTopic(entry.Topic, planFile); hasConflict {
 			conflictName := planstate.DisplayName(conflictPlan)
 			message := fmt.Sprintf("⚠ %s is already running in topic \"%s\"\n\nrunning both plans may cause issues.\ncontinue anyway?", conflictName, entry.Topic)
@@ -757,7 +757,7 @@ func validatePlanHasWaves(plansDir, planFile string) error {
 // guards against truly nonsensical transitions (e.g. marking "finished" when already done).
 func isLocked(status planstate.Status, stage string) bool {
 	switch stage {
-	case "plan", "implement", "review":
+	case "plan", "implement", "solo", "review":
 		// Forward progression is always allowed — the FSM helpers
 		// (fsmSetImplementing, fsmSetReviewing) walk through intermediate states.
 		return false
