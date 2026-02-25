@@ -880,6 +880,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.saveAllInstances()
 		m.updateSidebarItems()
 		return m, tea.Batch(tea.WindowSize(), m.instanceChanged())
+	case planStageConfirmedMsg:
+		// User confirmed past the topic-concurrency gate — execute the stage.
+		return m.executePlanStage(msg.planFile, msg.stage)
 	case planRefreshMsg:
 		// Reload plan state and refresh sidebar after async plan mutation.
 		m.loadPlanState()
@@ -1188,6 +1191,14 @@ type instanceChangedMsg struct{}
 // Model mutations (list.Kill, removeFromAllInstances) happen in Update, not in the goroutine.
 type killInstanceMsg struct {
 	title string
+}
+
+// planStageConfirmedMsg is sent when the user confirms proceeding past the
+// topic-concurrency gate. Re-enters plan stage execution skipping the
+// concurrency check that was already acknowledged.
+type planStageConfirmedMsg struct {
+	planFile string
+	stage    string
 }
 
 // planRefreshMsg triggers a plan state reload and sidebar refresh in Update.

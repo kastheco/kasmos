@@ -645,17 +645,36 @@ func (m *home) triggerPlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			conflictName := planstate.DisplayName(conflictPlan)
 			message := fmt.Sprintf("⚠ %s is already running in topic \"%s\"\n\nrunning both plans may cause issues.\ncontinue anyway?", conflictName, entry.Topic)
 			proceedAction := func() tea.Msg {
-				if err := m.fsmSetImplementing(planFile); err != nil {
-					return err
-				}
-				return planRefreshMsg{}
+				return planStageConfirmedMsg{planFile: planFile, stage: stage}
 			}
 			return m, m.confirmAction(message, proceedAction)
 		}
 	}
 
-	// For agent-spawning stages, dispatch to spawnPlanAgent which handles
-	// status update + session creation.
+	return m.executePlanStage(planFile, stage)
+}
+
+// executePlanStage runs the actual stage logic (agent spawn, wave orchestration)
+// after all gates (lock check, concurrency) have passed. Called directly from
+// triggerPlanStage on the normal path, and via planStageConfirmedMsg when the
+// user confirms past the topic-concurrency gate.
+func (m *home) executePlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
+	if m.planState == nil {
+		return m, m.handleError(fmt.Errorf("no plan state loaded"))
+	}
+	entry, ok := m.planState.Plans[planFile]
+	if !ok {
+		return m, m.handleError(fmt.Errorf("missing plan state for %s", planFile))
+	}
+
+	// Backfill branch name for plans created before the branch field existed.
+	if entry.Branch == "" {
+		entry.Branch = gitpkg.PlanBranchFromFile(planFile)
+		if err := m.planState.SetBranch(planFile, entry.Branch); err != nil {
+			return m, m.handleError(fmt.Errorf("failed to assign branch for plan: %w", err))
+		}
+	}
+
 	switch stage {
 	case "plan":
 		if err := m.fsm.Transition(planFile, planfsm.PlanStart); err != nil {

@@ -281,7 +281,10 @@ func TestSpawnPlanAgent_SoloSetsSoloAgentFlag(t *testing.T) {
 	assert.Equal(t, session.AgentTypeCoder, inst.AgentType)
 }
 
-func TestTriggerPlanStage_SoloRespectsTopicConcurrencyGate(t *testing.T) {
+// setupTopicConflictHome creates a home with two plans in the same topic,
+// one already implementing, for testing the concurrency gate.
+func setupTopicConflictHome(t *testing.T) (*home, string) {
+	t.Helper()
 	dir := t.TempDir()
 
 	for _, cmd := range [][]string{
@@ -317,6 +320,11 @@ func TestTriggerPlanStage_SoloRespectsTopicConcurrencyGate(t *testing.T) {
 	h.fsm = newFSMForTest(plansDir).PlanStateMachine
 	h.activeRepoPath = dir
 	h.program = "opencode"
+	return h, targetPlan
+}
+
+func TestTriggerPlanStage_SoloRespectsTopicConcurrencyGate(t *testing.T) {
+	h, targetPlan := setupTopicConflictHome(t)
 
 	model, _ := h.triggerPlanStage(targetPlan, "solo")
 	updated := model.(*home)
@@ -327,4 +335,33 @@ func TestTriggerPlanStage_SoloRespectsTopicConcurrencyGate(t *testing.T) {
 		"confirmation overlay must be shown for solo topic conflict")
 	require.NotNil(t, updated.pendingConfirmAction,
 		"confirm action must be set for solo topic conflict")
+}
+
+// TestTopicConcurrencyConfirm_ReturnsPlanStageConfirmedMsg verifies that
+// confirming the topic-concurrency dialog returns a planStageConfirmedMsg
+// (not just a planRefreshMsg), so the actual stage execution is triggered.
+func TestTopicConcurrencyConfirm_ReturnsPlanStageConfirmedMsg(t *testing.T) {
+	for _, stage := range []string{"solo", "implement"} {
+		t.Run(stage, func(t *testing.T) {
+			h, targetPlan := setupTopicConflictHome(t)
+
+			model, _ := h.triggerPlanStage(targetPlan, stage)
+			updated := model.(*home)
+
+			require.Equal(t, stateConfirm, updated.state,
+				"must show confirmation dialog for topic conflict")
+			require.NotNil(t, updated.pendingConfirmAction,
+				"pending confirm action must be set")
+
+			// Execute the pending confirm action and check the returned message.
+			msg := updated.pendingConfirmAction()
+			stageMsg, ok := msg.(planStageConfirmedMsg)
+			require.True(t, ok,
+				"confirm action must return planStageConfirmedMsg, got %T", msg)
+			assert.Equal(t, targetPlan, stageMsg.planFile,
+				"planStageConfirmedMsg must carry the correct plan file")
+			assert.Equal(t, stage, stageMsg.stage,
+				"planStageConfirmedMsg must carry the correct stage")
+		})
+	}
 }
