@@ -1,131 +1,150 @@
-# kas [![CI](https://github.com/kastheco/kasmos/actions/workflows/build.yml/badge.svg)](https://github.com/kastheco/kasmos/actions/workflows/build.yml) [![GitHub Release](https://img.shields.io/github/v/release/kastheco/kasmos)](https://github.com/kastheco/kasmos/releases/latest) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+# kasmos [![CI](https://github.com/kastheco/kasmos/actions/workflows/build.yml/badge.svg)](https://github.com/kastheco/kasmos/actions/workflows/build.yml) [![GitHub Release](https://img.shields.io/github/v/release/kastheco/kasmos)](https://github.com/kastheco/kasmos/releases/latest) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
-A TUI-based agent-driven IDE that manages multiple [Claude Code](https://github.com/anthropics/claude-code), [Codex](https://github.com/openai/codex), [Gemini](https://github.com/google-gemini/gemini-cli), [Amp](https://github.com/anthropics/amp) and other AI agents in isolated workspaces, so you can work on multiple tasks simultaneously.
+> orchestrate multiple AI agents across parallel plans from your terminal — powered by tmux, git worktrees, and wave-based automation.
 
-![kas Screenshot](assets/screenshot.png)
+![kasmos screenshot](assets/screenshot.png)
 
-### Highlights
-- Complete tasks in the background (including yolo / auto-accept mode)
-- Manage all your agent instances and tasks in one terminal window
-- Review changes before applying them, checkout changes before pushing
-- Each task gets its own isolated git workspace — no conflicts
+---
 
-### Installation
+## what it does
 
-#### Homebrew (macOS / Linux)
+kasmos turns your terminal into a multi-agent control center. each plan gets its own isolated git worktree and tmux session. a planner agent writes the implementation plan, coder agents execute it wave by wave, and a reviewer agent validates the result — all managed from a single TUI.
+
+- **plan-centric workflow** — create plans with name + description, organize into topics, track status through the full lifecycle (planning → implementing → reviewing → done)
+- **wave orchestration** — plans are split into waves; kasmos automatically runs parallel agents per wave, advancing only when all tasks pass
+- **isolated workspaces** — every plan gets a dedicated git worktree and tmux session; no branch conflicts, no shared state
+- **live agent preview** — the center pane embeds a live terminal so you can watch agents work without leaving kasmos
+- **diff + git views** — review changes and git history before merging, right inside the TUI
+- **auto-accept mode** — run agents unattended with a background daemon handling permission prompts
+
+---
+
+## installation
+
+#### homebrew *(coming soon)*
 
 ```bash
 brew install kastheco/tap/kasmos
 ```
 
-#### Scoop (Windows)
-
-```powershell
-scoop bucket add kastheco https://github.com/kastheco/scoop-bucket
-scoop install kasmos
-```
-
-#### Go Install
+#### go install
 
 ```bash
 go install github.com/kastheco/kasmos@latest
 ```
 
-#### Install Script
+#### install script
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kastheco/kasmos/main/install.sh | bash
 ```
 
-This installs the `kasmos` binary in `~/.local/bin`.
-
-To install with a custom name (e.g. `kq`):
+installs the `kasmos` binary to `~/.local/bin`. to install with a custom name:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kastheco/kasmos/main/install.sh | bash -s -- --name kas
+curl -fsSL https://raw.githubusercontent.com/kastheco/kasmos/main/install.sh | bash -s -- --name kq
 ```
 
-#### Download Binary
+#### download binary
 
-Pre-built binaries for macOS, Linux, and Windows are available on the [Releases page](https://github.com/kastheco/kasmos/releases/latest).
+pre-built binaries for macOS, linux, and windows are on the [releases page](https://github.com/kastheco/kasmos/releases/latest).
 
-### Prerequisites
+---
+
+## prerequisites
 
 - [tmux](https://github.com/tmux/tmux/wiki/Installing)
 - [gh](https://cli.github.com/)
+- at least one supported AI CLI: **[opencode](https://github.com/sst/opencode)**, [claude code](https://github.com/anthropics/claude-code), [codex](https://github.com/openai/codex), [gemini CLI](https://github.com/google-gemini/gemini-cli), [amp](https://ampcode.com), or [aider](https://aider.chat)
 
-### Usage
+---
 
-```
-Usage:
-  kas [flags]
-  kas [command]
+## getting started
 
-Available Commands:
-  completion  Generate the autocompletion script for the specified shell
-  debug       Print debug information like config paths
-  help        Help about any command
-  reset       Reset all stored instances
-  version     Print the version number of kas
-
-Flags:
-  -y, --autoyes          [experimental] If enabled, all instances will automatically accept prompts
-  -h, --help             help for kas
-  -p, --program string   Program to run in new instances (e.g. 'aider --model ollama_chat/gemma3:1b')
-```
-
-Run the application with:
+run from within a git repository:
 
 ```bash
-kas
+kasmos
 ```
 
-NOTE: The default program is `claude` and we recommend using the latest version.
+on first run, use the setup wizard to configure your agent harnesses and install skills:
 
-<br />
+```bash
+kasmos init
+```
 
-<b>Using kas with other AI assistants:</b>
-- For [Codex](https://github.com/openai/codex): Set your API key with `export OPENAI_API_KEY=<your_key>`
-- Launch with specific assistants:
-   - Codex: `kas -p "codex"`
-   - Aider: `kas -p "aider ..."`
-   - Gemini: `kas -p "gemini"`
-- Make this the default by modifying the config file (locate with `kas debug`)
+the wizard detects installed agent CLIs, lets you assign roles (planner / coder / reviewer), and scaffolds the project files kasmos needs.
 
-<br />
+---
 
-#### Menu
-The menu at the bottom of the screen shows available commands:
+## usage
 
-##### Instance/Session Management
-- `n` - Create a new session
-- `N` - Create a new session with a prompt
-- `D` - Kill (delete) the selected session
-- `↑/j`, `↓/k` - Navigate between sessions
+```
+usage:
+  kasmos [flags]
+  kasmos [command]
 
-##### Actions
-- `↵/o` - Attach to the selected session to reprompt
-- `ctrl-q` - Detach from session
-- `s` - Commit and push branch to github
-- `c` - Checkout. Commits changes and pauses the session
-- `r` - Resume a paused session
-- `?` - Show help menu
+available commands:
+  init        configure agent harnesses, install superpowers, and scaffold project files
+  reset       reset all stored instances and clean up tmux sessions and worktrees
+  debug       print debug information like config paths
+  version     print the version number
 
-##### Navigation
-- `tab` - Switch between preview tab and diff tab
-- `q` - Quit the application
-- `shift-↓/↑` - Scroll in diff view
+flags:
+  -p, --program string   agent to use for new instances (e.g. 'opencode', 'codex', 'aider --model ...')
+  -y, --autoyes          automatically accept all agent prompts (experimental)
+  -h, --help             help for kasmos
+```
 
-### How It Works
+### keybindings
 
-1. **tmux** to create isolated terminal sessions for each agent
-2. **git worktrees** to isolate codebases so each session works on its own branch
-3. A TUI interface for easy navigation and management
+| key | action |
+|-----|--------|
+| `n` | new plan |
+| `/` | search plans |
+| `space` | open context menu |
+| `tab` | cycle focus (sidebar → list → preview) |
+| `↑ / ↓` or `j / k` | navigate |
+| `i` | interactive mode (focus agent pane) |
+| `ctrl-q` | exit interactive mode |
+| `?` | help |
+| `q` | quit |
 
-### Attribution
+---
 
-kas is a fork of [claude-squad](https://github.com/smtg-ai/claude-squad) by smtg-ai.
+## how it works
 
-### License
+1. **plans** live in `docs/plans/` as markdown files — kasmos creates and tracks them in `plan-state.json`
+2. **topics** group related plans and act as collision domains (only one plan per topic can implement at a time)
+3. **waves** divide implementation into phases — kasmos parses `## Wave N` headers and runs each wave's tasks in parallel
+4. **agents** are spawned in isolated tmux sessions with dedicated git worktrees; the TUI shows live output in the preview pane
+5. **review** is automated — a reviewer agent checks the implementation, and kasmos prompts for merge/PR approval before closing the plan
+
+---
+
+## configuration
+
+config lives at `~/.config/kasmos/config.toml`. locate it with:
+
+```bash
+kasmos debug
+```
+
+key settings:
+
+```toml
+default_program = "opencode"   # default agent CLI
+auto_yes = false               # auto-accept mode
+```
+
+---
+
+## attribution
+
+kasmos is a fork of [claude-squad](https://github.com/smtg-ai/claude-squad) by smtg-ai.
+
+---
+
+## license
 
 [AGPL-3.0](LICENSE.md)
