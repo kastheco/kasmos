@@ -15,3 +15,20 @@ Focus areas:
 - Were any tasks implemented incorrectly or incompletely?
 - Code quality, error handling, test coverage
 - Regressions or unintended side effects introduced by this branch's changes
+
+## When you are done
+
+You MUST write a signal file to indicate your verdict. Without this, the orchestrator
+cannot progress the plan lifecycle.
+
+If approved (no blocking issues):
+```
+echo "Approved. <brief summary>" > docs/plans/.signals/review-approved-{{PLAN_FILE}}
+```
+
+If changes are required (blocking issues found):
+```
+echo "<detailed feedback for the coder>" > docs/plans/.signals/review-changes-{{PLAN_FILE}}
+```
+
+Write exactly one of these signal files before you finish.
