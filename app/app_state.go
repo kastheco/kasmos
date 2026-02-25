@@ -751,7 +751,13 @@ func (m *home) transitionToReview(coderInst *session.Instance) tea.Cmd {
 // spawnReviewer creates and starts a reviewer session for the given plan,
 // using the plan's shared worktree so it reviews the actual implementation branch.
 // Does NOT perform any FSM transition — the caller is responsible for that.
+// Solo agent plans are excluded — the user ends those manually.
 func (m *home) spawnReviewer(planFile string) tea.Cmd {
+	for _, inst := range m.list.GetInstances() {
+		if inst.PlanFile == planFile && inst.SoloAgent {
+			return nil
+		}
+	}
 	planName := planstate.DisplayName(planFile)
 	planPath := "docs/plans/" + planFile
 	prompt := scaffold.LoadReviewPrompt(planPath, planName)

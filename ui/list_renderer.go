@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"github.com/kastheco/kasmos/config/planstate"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session"
 	"math"
@@ -87,8 +88,8 @@ func (r *InstanceRenderer) Render(i *session.Instance, selected bool, focused bo
 		titleText = fmt.Sprintf("wave %d · task %d", i.WaveNumber, i.TaskNumber)
 	case i.AgentType == session.AgentTypeReviewer && i.PlanFile != "":
 		titleText = "review"
-	case i.SoloAgent:
-		titleText = "solo agent"
+	case i.SoloAgent && i.PlanFile != "":
+		titleText = planstate.DisplayName(i.PlanFile)
 	case i.AgentType == session.AgentTypeCoder && i.PlanFile != "" && i.WaveNumber == 0:
 		titleText = "applying fixes"
 	}
@@ -149,6 +150,9 @@ func (r *InstanceRenderer) Render(i *session.Instance, selected bool, focused bo
 	remainingWidth -= diffWidth
 
 	branch := i.Branch
+	if branch == "" {
+		branch = "main"
+	}
 	if i.Started() && hasMultipleRepos {
 		repoName, err := i.RepoName()
 		if err != nil {

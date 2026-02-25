@@ -697,7 +697,8 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 				m.formOverlay = nil
 				topicNames := m.getTopicNames()
 				topicNames = append([]string{"(No topic)"}, topicNames...)
-				m.pickerOverlay = overlay.NewPickerOverlay("assign to topic (optional)", topicNames)
+				pickerTitle := fmt.Sprintf("assign to topic for '%s' (optional)", m.pendingPlanName)
+				m.pickerOverlay = overlay.NewPickerOverlay(pickerTitle, topicNames)
 				m.pickerOverlay.SetAllowCustom(true)
 				m.state = stateNewPlanTopic
 				return m, nil
@@ -918,7 +919,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 	}
 
 	// Delete key: dismiss a finished (non-running) instance from the list.
-	if msg.Type == tea.KeyDelete {
+	if msg.Type == tea.KeyDelete || msg.Type == tea.KeyBackspace {
 		selected := m.list.GetSelectedInstance()
 		if selected != nil && selected.Status != session.Running && selected.Status != session.Loading {
 			title := selected.Title
