@@ -756,3 +756,434 @@ func TestFocusRing(t *testing.T) {
 		assert.Equal(t, slotAgent, homeModel.focusSlot)
 	})
 }
+
+func TestPreviewTerminal_SelectionChange(t *testing.T) {
+	// Helper to create a minimal home with two started instances.
+	newTestHomeWithInstances := func(t *testing.T) (*home, *session.Instance, *session.Instance) {
+		t.Helper()
+		spin := spinner.New(spinner.WithSpinner(spinner.Dot))
+		h := &home{
+			ctx:          context.Background(),
+			state:        stateDefault,
+			appConfig:    config.DefaultConfig(),
+			list:         ui.NewList(&spin, false),
+			menu:         ui.NewMenu(),
+			sidebar:      ui.NewSidebar(),
+			tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+		}
+
+		instA, err := session.NewInstance(session.InstanceOptions{
+			Title: "instance-A", Path: t.TempDir(), Program: "claude",
+		})
+		require.NoError(t, err)
+		instA.MarkStartedForTest()
+		instA.Status = session.Running
+		instA.CachedContentSet = true // avoid tmux subprocess calls in tests
+
+		instB, err := session.NewInstance(session.InstanceOptions{
+			Title: "instance-B", Path: t.TempDir(), Program: "claude",
+		})
+		require.NoError(t, err)
+		instB.MarkStartedForTest()
+		instB.Status = session.Running
+		instB.CachedContentSet = true
+
+		h.list.AddInstance(instA)()
+		h.list.AddInstance(instB)()
+
+		return h, instA, instB
+	}
+
+	t.Run("swap terminal when selection changes from A to B", func(t *testing.T) {
+		h, _, instB := newTestHomeWithInstances(t)
+
+		// Simulate: previewTerminal is attached to instance "A".
+		dummyTerm := session.NewDummyTerminal()
+		h.previewTerminal = dummyTerm
+		h.previewTerminalInstance = "instance-A"
+
+		// Select instance "B" by reference (sort-order safe).
+		require.True(t, h.list.SelectInstance(instB), "should find instance-B in list")
+
+		// Fire instanceChanged — should tear down old terminal and return spawn cmd.
+		cmd := h.instanceChanged()
+
+		// Old terminal is closed: previewTerminal becomes nil, instance name cleared.
+		assert.Nil(t, h.previewTerminal, "previewTerminal should be nil after selection change")
+		assert.Empty(t, h.previewTerminalInstance, "previewTerminalInstance should be cleared")
+
+		// A tea.Cmd is returned (the async spawn command).
+		assert.NotNil(t, cmd, "instanceChanged should return a tea.Cmd for async spawn")
+	})
+
+	t.Run("tear down terminal when no valid instance selected", func(t *testing.T) {
+		// Use a home with zero instances so GetSelectedInstance returns nil.
+		spin := spinner.New(spinner.WithSpinner(spinner.Dot))
+		h := &home{
+			ctx:          context.Background(),
+			state:        stateDefault,
+			appConfig:    config.DefaultConfig(),
+			list:         ui.NewList(&spin, false),
+			menu:         ui.NewMenu(),
+			sidebar:      ui.NewSidebar(),
+			tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+		}
+
+		// Attach a terminal.
+		dummyTerm := session.NewDummyTerminal()
+		h.previewTerminal = dummyTerm
+		h.previewTerminalInstance = "instance-A"
+
+		cmd := h.instanceChanged()
+
+		assert.Nil(t, h.previewTerminal, "previewTerminal should be torn down")
+		assert.Empty(t, h.previewTerminalInstance, "previewTerminalInstance should be cleared")
+		// No spawn cmd — nothing to attach to.
+		assert.Nil(t, cmd, "no spawn cmd when no valid instance is selected")
+	})
+
+	t.Run("no-op when selection matches current terminal", func(t *testing.T) {
+		h, instA, _ := newTestHomeWithInstances(t)
+
+		dummyTerm := session.NewDummyTerminal()
+		h.previewTerminal = dummyTerm
+		h.previewTerminalInstance = "instance-A"
+
+		// Select instance "A" — same as current terminal (use reference, sort-order safe).
+		require.True(t, h.list.SelectInstance(instA), "should find instance-A in list")
+
+		cmd := h.instanceChanged()
+
+		// Terminal should remain attached (not nil).
+		assert.Equal(t, dummyTerm, h.previewTerminal, "previewTerminal should remain attached")
+		assert.Equal(t, "instance-A", h.previewTerminalInstance, "previewTerminalInstance should remain")
+		// No spawn cmd — terminal already attached.
+		assert.Nil(t, cmd, "no spawn cmd when same instance is selected")
+
+		// Cleanup
+		dummyTerm.Close()
+	})
+
+	t.Run("previewTerminalReadyMsg attaches terminal on match", func(t *testing.T) {
+		h, instA, _ := newTestHomeWithInstances(t)
+		h.list.SelectInstance(instA) // select instance-A
+
+		readyTerm := session.NewDummyTerminal()
+		msg := previewTerminalReadyMsg{
+			term:          readyTerm,
+			instanceTitle: "instance-A",
+		}
+
+		_, cmd := h.Update(msg)
+
+		assert.Equal(t, readyTerm, h.previewTerminal, "previewTerminal should be set from msg")
+		assert.Equal(t, "instance-A", h.previewTerminalInstance, "previewTerminalInstance should match")
+		assert.Nil(t, cmd, "no follow-up cmd expected")
+
+		// Cleanup
+		readyTerm.Close()
+	})
+
+	t.Run("previewTerminalReadyMsg discards stale terminal", func(t *testing.T) {
+		h, _, instB := newTestHomeWithInstances(t)
+		h.list.SelectInstance(instB) // select instance-B (different from msg)
+
+		staleTerm := session.NewDummyTerminal()
+		msg := previewTerminalReadyMsg{
+			term:          staleTerm,
+			instanceTitle: "instance-A", // stale — selection moved to B
+		}
+
+		_, cmd := h.Update(msg)
+
+		// Stale terminal should NOT be attached.
+		assert.Nil(t, h.previewTerminal, "stale terminal should not be attached")
+		assert.Empty(t, h.previewTerminalInstance, "previewTerminalInstance should remain empty")
+		assert.Nil(t, cmd, "no follow-up cmd expected")
+		// staleTerm.Close() was called internally by the handler
+	})
+
+	t.Run("previewTerminalReadyMsg discards on error", func(t *testing.T) {
+		h, instA, _ := newTestHomeWithInstances(t)
+		h.list.SelectInstance(instA)
+
+		errTerm := session.NewDummyTerminal()
+		msg := previewTerminalReadyMsg{
+			term:          errTerm,
+			instanceTitle: "instance-A",
+			err:           fmt.Errorf("tmux attach failed"),
+		}
+
+		_, cmd := h.Update(msg)
+
+		assert.Nil(t, h.previewTerminal, "terminal should not be attached on error")
+		assert.Empty(t, h.previewTerminalInstance)
+		assert.Nil(t, cmd)
+		// errTerm.Close() was called internally by the handler
+	})
+}
+
+// TestPreviewTerminal_RenderTickIntegration tests the full preview terminal lifecycle:
+// selection change → previewTerminalReadyMsg → render tick → selection change again.
+func TestPreviewTerminal_RenderTickIntegration(t *testing.T) {
+	newTestHomeWithInstances := func(t *testing.T) (*home, *session.Instance, *session.Instance) {
+		t.Helper()
+		spin := spinner.New(spinner.WithSpinner(spinner.Dot))
+		h := &home{
+			ctx:          context.Background(),
+			state:        stateDefault,
+			appConfig:    config.DefaultConfig(),
+			list:         ui.NewList(&spin, false),
+			menu:         ui.NewMenu(),
+			sidebar:      ui.NewSidebar(),
+			tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+		}
+
+		instA, err := session.NewInstance(session.InstanceOptions{
+			Title: "instance-A", Path: t.TempDir(), Program: "claude",
+		})
+		require.NoError(t, err)
+		instA.MarkStartedForTest()
+		instA.Status = session.Running
+		instA.CachedContentSet = true
+
+		instB, err := session.NewInstance(session.InstanceOptions{
+			Title: "instance-B", Path: t.TempDir(), Program: "claude",
+		})
+		require.NoError(t, err)
+		instB.MarkStartedForTest()
+		instB.Status = session.Running
+		instB.CachedContentSet = true
+
+		h.list.AddInstance(instA)()
+		h.list.AddInstance(instB)()
+
+		return h, instA, instB
+	}
+
+	t.Run("full flow: attach → tick → selection change → discard old terminal", func(t *testing.T) {
+		h, instA, instB := newTestHomeWithInstances(t)
+
+		// Step 1: Select instance A and simulate instanceChanged returning a spawn cmd.
+		require.True(t, h.list.SelectInstance(instA))
+		spawnCmd := h.instanceChanged()
+		assert.NotNil(t, spawnCmd, "instanceChanged should return spawn cmd for new selection")
+		assert.Nil(t, h.previewTerminal, "terminal not yet attached — spawn is async")
+
+		// Step 2: Async spawn completes — deliver previewTerminalReadyMsg for instance A.
+		termA := session.NewDummyTerminal()
+		_, cmd := h.Update(previewTerminalReadyMsg{
+			term:          termA,
+			instanceTitle: "instance-A",
+		})
+		assert.Equal(t, termA, h.previewTerminal, "terminal A should be attached")
+		assert.Equal(t, "instance-A", h.previewTerminalInstance)
+		assert.Nil(t, cmd, "no follow-up cmd from ready msg")
+
+		// Step 3: Render tick fires — terminal is active, tick returns event-driven cmd.
+		_, tickCmd := h.Update(previewTickMsg{})
+		assert.NotNil(t, tickCmd, "previewTickMsg should always return a follow-up tick cmd")
+		// previewTerminal is still attached after the tick.
+		assert.Equal(t, termA, h.previewTerminal, "terminal A should remain attached after tick")
+
+		// Step 4: User selects instance B — old terminal is discarded, new spawn cmd returned.
+		require.True(t, h.list.SelectInstance(instB))
+		spawnCmd2 := h.instanceChanged()
+
+		assert.Nil(t, h.previewTerminal, "old terminal A should be discarded on selection change")
+		assert.Empty(t, h.previewTerminalInstance, "instance name should be cleared")
+		assert.NotNil(t, spawnCmd2, "new spawn cmd should be returned for instance B")
+	})
+
+	t.Run("render tick with nil terminal returns sleep-based cmd", func(t *testing.T) {
+		h, _, _ := newTestHomeWithInstances(t)
+		// No terminal attached.
+		assert.Nil(t, h.previewTerminal)
+
+		_, cmd := h.Update(previewTickMsg{})
+		assert.NotNil(t, cmd, "previewTickMsg should return a follow-up cmd even with nil terminal")
+	})
+
+	t.Run("render tick with active terminal returns event-driven cmd", func(t *testing.T) {
+		h, instA, _ := newTestHomeWithInstances(t)
+		h.list.SelectInstance(instA)
+
+		term := session.NewDummyTerminal()
+		h.previewTerminal = term
+		h.previewTerminalInstance = "instance-A"
+		defer term.Close()
+
+		_, cmd := h.Update(previewTickMsg{})
+		assert.NotNil(t, cmd, "previewTickMsg should return event-driven cmd when terminal is active")
+		// Terminal remains attached after tick.
+		assert.Equal(t, term, h.previewTerminal, "terminal should remain attached after tick")
+	})
+
+	t.Run("stale ready msg after second selection change is discarded", func(t *testing.T) {
+		h, instA, instB := newTestHomeWithInstances(t)
+
+		// Select A, spawn starts.
+		require.True(t, h.list.SelectInstance(instA))
+		h.instanceChanged()
+
+		// Before spawn completes, user switches to B.
+		require.True(t, h.list.SelectInstance(instB))
+		h.instanceChanged()
+
+		// Now the stale ready msg for A arrives.
+		staleTermA := session.NewDummyTerminal()
+		_, cmd := h.Update(previewTerminalReadyMsg{
+			term:          staleTermA,
+			instanceTitle: "instance-A", // stale — selection is now B
+		})
+
+		// Stale terminal must be discarded (not attached).
+		assert.Nil(t, h.previewTerminal, "stale terminal for A should not be attached when B is selected")
+		assert.Empty(t, h.previewTerminalInstance)
+		assert.Nil(t, cmd)
+	})
+}
+
+// TestPreviewTerminalReadyMsg_StaleDiscard verifies that previewTerminalReadyMsg
+// discards the terminal when the selection has changed since the spawn was initiated.
+func TestPreviewTerminalReadyMsg_StaleDiscard(t *testing.T) {
+	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:          context.Background(),
+		state:        stateDefault,
+		appConfig:    config.DefaultConfig(),
+		list:         ui.NewList(&spin, false),
+		menu:         ui.NewMenu(),
+		sidebar:      ui.NewSidebar(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+	}
+
+	// Add instance "B" and select it (simulating selection change after spawn started for "A").
+	instB, err := session.NewInstance(session.InstanceOptions{
+		Title:   "B",
+		Path:    t.TempDir(),
+		Program: "claude",
+	})
+	require.NoError(t, err)
+	h.list.AddInstance(instB)()
+	h.list.SelectInstance(instB) // Select "B" by pointer (sort-order safe)
+
+	// Simulate a stale previewTerminalReadyMsg arriving for "A" (selection already moved to "B").
+	// The handler should discard the terminal since selected.Title != msg.instanceTitle.
+	msg := previewTerminalReadyMsg{
+		term:          nil, // nil is fine — we just check it's discarded
+		instanceTitle: "A",
+		err:           nil,
+	}
+
+	// Process the message through Update.
+	model, cmd := h.Update(msg)
+	homeModel, ok := model.(*home)
+	require.True(t, ok)
+
+	// Terminal should NOT be set — it was stale.
+	assert.Nil(t, homeModel.previewTerminal, "stale terminal should be discarded")
+	assert.Equal(t, "", homeModel.previewTerminalInstance,
+		"previewTerminalInstance should not be set for stale msg")
+	assert.Nil(t, cmd, "no cmd should be returned for stale msg")
+}
+
+// TestPreviewTerminalReadyMsg_AcceptsCurrentInstance verifies that previewTerminalReadyMsg
+// sets the terminal when the instance title matches the current selection.
+func TestPreviewTerminalReadyMsg_AcceptsCurrentInstance(t *testing.T) {
+	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:          context.Background(),
+		state:        stateDefault,
+		appConfig:    config.DefaultConfig(),
+		list:         ui.NewList(&spin, false),
+		menu:         ui.NewMenu(),
+		sidebar:      ui.NewSidebar(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+	}
+
+	// Add instance "A" and select it.
+	instA, err := session.NewInstance(session.InstanceOptions{
+		Title:   "A",
+		Path:    t.TempDir(),
+		Program: "claude",
+	})
+	require.NoError(t, err)
+	h.list.AddInstance(instA)()
+	h.list.SetSelectedInstance(0)
+
+	// Simulate a fresh previewTerminalReadyMsg for "A" (current selection).
+	msg := previewTerminalReadyMsg{
+		term:          nil, // nil terminal — we just verify the instance title is set
+		instanceTitle: "A",
+		err:           nil,
+	}
+
+	model, cmd := h.Update(msg)
+	homeModel, ok := model.(*home)
+	require.True(t, ok)
+
+	// previewTerminalInstance should be set to "A".
+	assert.Equal(t, "A", homeModel.previewTerminalInstance,
+		"previewTerminalInstance should be set when msg matches current selection")
+	assert.Nil(t, cmd, "no cmd should be returned")
+}
+
+// TestFocusMode_ReusesPreviewTerminal verifies that enterFocusMode reuses the
+// existing previewTerminal when it's already attached to the selected instance.
+func TestFocusMode_ReusesPreviewTerminal(t *testing.T) {
+	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:          context.Background(),
+		state:        stateDefault,
+		appConfig:    config.DefaultConfig(),
+		list:         ui.NewList(&spin, false),
+		menu:         ui.NewMenu(),
+		sidebar:      ui.NewSidebar(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+	}
+
+	// Add a started-looking instance. We can't actually start it (no tmux),
+	// but we can test the branch where previewTerminal is already set.
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:   "my-agent",
+		Path:    t.TempDir(),
+		Program: "claude",
+	})
+	require.NoError(t, err)
+	h.list.AddInstance(inst)()
+	h.list.SetSelectedInstance(0)
+
+	// Simulate previewTerminal already attached to "my-agent".
+	// enterFocusMode should detect this and NOT spawn a new terminal.
+	h.previewTerminalInstance = "my-agent"
+	// Instance is not started, so enterFocusMode should return nil (guard check).
+	cmd := h.enterFocusMode()
+
+	assert.Nil(t, cmd, "enterFocusMode should return nil when instance is not started")
+	assert.Equal(t, stateDefault, h.state, "state should remain default when instance is not started")
+}
+
+// TestExitFocusMode_KeepsPreviewTerminal verifies that exitFocusMode does NOT close
+// previewTerminal — it stays alive for preview rendering.
+func TestExitFocusMode_KeepsPreviewTerminal(t *testing.T) {
+	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:          context.Background(),
+		state:        stateFocusAgent,
+		appConfig:    config.DefaultConfig(),
+		list:         ui.NewList(&spin, false),
+		menu:         ui.NewMenu(),
+		sidebar:      ui.NewSidebar(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+	}
+
+	// Set previewTerminalInstance to simulate an attached terminal.
+	h.previewTerminalInstance = "my-agent"
+
+	h.exitFocusMode()
+
+	assert.Equal(t, stateDefault, h.state, "state should return to default after exitFocusMode")
+	assert.Equal(t, "my-agent", h.previewTerminalInstance,
+		"previewTerminalInstance should NOT be cleared by exitFocusMode")
+}

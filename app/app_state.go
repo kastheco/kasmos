@@ -132,18 +132,25 @@ func (m *home) prevFocusSlot() {
 }
 
 // enterFocusMode enters focus/insert mode and starts the fast preview ticker.
-// enterFocusMode directly attaches to the selected instance's tmux session.
-// This takes over the terminal for native performance. Ctrl+Q detaches.
-// enterFocusMode creates an embedded terminal emulator connected to the instance's
-// PTY and starts the 30fps render ticker. Input goes directly to the PTY (zero latency),
-// display is rendered from the emulator's screen buffer (no subprocess calls).
+// enterFocusMode reuses the existing previewTerminal if it is already attached to
+// the selected instance — entering focus just toggles key forwarding to the same
+// terminal. Only spawns a new terminal if none is attached yet (rare fallback).
 func (m *home) enterFocusMode() tea.Cmd {
 	m.tabbedWindow.ClearDocumentMode()
 	selected := m.list.GetSelectedInstance()
-	if selected == nil {
+	if selected == nil || !selected.Started() || selected.Status == session.Paused {
 		return nil
 	}
 
+	// If previewTerminal is already attached to this instance, just enter focus mode.
+	if m.previewTerminal != nil && m.previewTerminalInstance == selected.Title {
+		m.state = stateFocusAgent
+		m.tabbedWindow.SetFocusMode(true)
+		m.menu.SetFocusMode(true)
+		return nil
+	}
+
+	// No terminal yet (shouldn't normally happen) — spawn one synchronously-ish.
 	cols, rows := m.tabbedWindow.GetPreviewSize()
 	if cols < 10 {
 		cols = 80
@@ -155,16 +162,13 @@ func (m *home) enterFocusMode() tea.Cmd {
 	if err != nil {
 		return m.handleError(err)
 	}
-
-	m.embeddedTerminal = term
+	m.previewTerminal = term
+	m.previewTerminalInstance = selected.Title
 	m.state = stateFocusAgent
 	m.tabbedWindow.SetFocusMode(true)
 	m.menu.SetFocusMode(true)
 
-	// Start the 30fps render ticker
-	return func() tea.Msg {
-		return focusPreviewTickMsg{}
-	}
+	return nil
 }
 
 // enterGitFocusMode enters focus mode for the git tab (lazygit).
@@ -193,12 +197,10 @@ func (m *home) enterGitFocusMode() tea.Cmd {
 	}
 }
 
-// exitFocusMode shuts down the embedded terminal and resets state.
+// exitFocusMode resets focus state. previewTerminal stays alive — it continues
+// rendering in normal preview mode after the user exits focus/insert mode.
 func (m *home) exitFocusMode() {
-	if m.embeddedTerminal != nil {
-		m.embeddedTerminal.Close()
-		m.embeddedTerminal = nil
-	}
+	// previewTerminal stays alive — it continues rendering in normal preview mode.
 	m.state = stateDefault
 	m.tabbedWindow.SetFocusMode(false)
 	m.menu.SetFocusMode(false)
@@ -426,8 +428,8 @@ func (m *home) removeFromAllInstances(title string) {
 	}
 }
 
-// instanceChanged updates the preview pane, menu, and diff pane based on the selected instance. It returns an error
-// Cmd if there was any error.
+// instanceChanged updates the preview pane, menu, and diff pane based on the selected instance.
+// It returns a tea.Cmd when an async operation is needed (terminal spawn, git tab respawn).
 func (m *home) instanceChanged() tea.Cmd {
 	// selected may be nil
 	selected := m.list.GetSelectedInstance()
@@ -438,16 +440,47 @@ func (m *home) instanceChanged() tea.Cmd {
 		m.updateSidebarItems()
 	}
 
+	// Manage preview terminal lifecycle on selection change.
+	var spawnCmd tea.Cmd
+	if selected == nil || !selected.Started() || selected.Status == session.Paused {
+		// No valid instance — tear down terminal.
+		if m.previewTerminal != nil {
+			m.previewTerminal.Close()
+		}
+		m.previewTerminal = nil
+		m.previewTerminalInstance = ""
+	} else if selected.Title != m.previewTerminalInstance {
+		// Different instance selected — swap terminal.
+		if m.previewTerminal != nil {
+			m.previewTerminal.Close()
+		}
+		m.previewTerminal = nil
+		m.previewTerminalInstance = ""
+
+		cols, rows := m.tabbedWindow.GetPreviewSize()
+		if cols < 10 {
+			cols = 80
+		}
+		if rows < 5 {
+			rows = 24
+		}
+		capturedTitle := selected.Title
+		capturedInstance := selected
+		spawnCmd = func() tea.Msg {
+			term, err := capturedInstance.NewEmbeddedTerminalForInstance(cols, rows)
+			return previewTerminalReadyMsg{term: term, instanceTitle: capturedTitle, err: err}
+		}
+	}
+
 	m.tabbedWindow.UpdateDiff(selected)
 	m.tabbedWindow.SetInstance(selected)
 	// Update menu with current instance
 	m.menu.SetInstance(selected)
 
-	// If there's no selected instance, we don't need to update the preview.
-	// Preview errors (e.g. dead tmux pane) are transient infrastructure failures —
-	// log them silently rather than spamming the user with toast notifications.
-	if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
-		log.ErrorLog.Printf("preview update error: %v", err)
+	// Collect async commands: terminal spawn and/or git tab respawn.
+	var cmds []tea.Cmd
+	if spawnCmd != nil {
+		cmds = append(cmds, spawnCmd)
 	}
 
 	// Respawn lazygit if the selected instance changed while on the git tab
@@ -458,11 +491,17 @@ func (m *home) instanceChanged() tea.Cmd {
 			title = selected.Title
 		}
 		if gitPane.NeedsRespawn(title) {
-			return m.spawnGitTab()
+			cmds = append(cmds, m.spawnGitTab())
 		}
 	}
 
-	return nil
+	if len(cmds) == 0 {
+		return nil
+	}
+	if len(cmds) == 1 {
+		return cmds[0]
+	}
+	return tea.Batch(cmds...)
 }
 
 // spawnGitTab spawns lazygit for the selected instance and starts the render ticker.

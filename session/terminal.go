@@ -210,6 +210,19 @@ func (t *EmbeddedTerminal) Resize(cols, rows int) {
 	}
 }
 
+// NewDummyTerminal creates a minimal EmbeddedTerminal that can be safely
+// Close()'d without any subprocess or tmux session. Used by tests that need
+// to verify terminal lifecycle management without real infrastructure.
+func NewDummyTerminal() *EmbeddedTerminal {
+	emu := vt.NewSafeEmulator(1, 1)
+	return &EmbeddedTerminal{
+		emu:         emu,
+		cancel:      make(chan struct{}),
+		dataReady:   make(chan struct{}, 1),
+		renderReady: make(chan struct{}, 1),
+	}
+}
+
 // Close shuts down the terminal: stops all goroutines, closes the PTY,
 // and kills the tmux attach process.
 func (t *EmbeddedTerminal) Close() {
