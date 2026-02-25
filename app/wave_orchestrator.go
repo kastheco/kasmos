@@ -188,6 +188,16 @@ func (o *WaveOrchestrator) IsTaskRunning(taskNumber int) bool {
 	return o.taskStates[taskNumber] == taskRunning
 }
 
+// IsTaskComplete returns true if the given task number has completed successfully.
+func (o *WaveOrchestrator) IsTaskComplete(taskNumber int) bool {
+	return o.taskStates[taskNumber] == taskComplete
+}
+
+// IsTaskFailed returns true if the given task number has failed.
+func (o *WaveOrchestrator) IsTaskFailed(taskNumber int) bool {
+	return o.taskStates[taskNumber] == taskFailed
+}
+
 // HeaderContext returns the plan header for inclusion in task prompts.
 func (o *WaveOrchestrator) HeaderContext() string {
 	return o.plan.HeaderContext()

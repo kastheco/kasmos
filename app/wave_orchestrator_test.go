@@ -181,6 +181,36 @@ func TestIsTaskRunning(t *testing.T) {
 	assert.False(t, orch.IsTaskRunning(99), "unknown task should return false")
 }
 
+func TestWaveOrchestrator_TaskStatusQueries(t *testing.T) {
+	plan := &planparser.Plan{
+		Waves: []planparser.Wave{
+			{Number: 1, Tasks: []planparser.Task{
+				{Number: 1, Title: "Task 1"},
+				{Number: 2, Title: "Task 2"},
+				{Number: 3, Title: "Task 3"},
+			}},
+		},
+	}
+	orch := NewWaveOrchestrator("test.md", plan)
+	orch.StartNextWave()
+
+	// All should be running initially.
+	assert.True(t, orch.IsTaskRunning(1))
+	assert.False(t, orch.IsTaskComplete(1))
+	assert.False(t, orch.IsTaskFailed(1))
+
+	orch.MarkTaskComplete(1)
+	assert.True(t, orch.IsTaskComplete(1))
+	assert.False(t, orch.IsTaskRunning(1))
+
+	orch.MarkTaskFailed(2)
+	assert.True(t, orch.IsTaskFailed(2))
+	assert.False(t, orch.IsTaskRunning(2))
+
+	// Task 3 still running.
+	assert.True(t, orch.IsTaskRunning(3))
+}
+
 func TestWaveOrchestrator_RetryFailedTasksRestoresRunning(t *testing.T) {
 	plan := &planparser.Plan{
 		Waves: []planparser.Wave{
