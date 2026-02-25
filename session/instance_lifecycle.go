@@ -44,6 +44,7 @@ func (i *Instance) Start(firstTimeSetup bool) error {
 		i.setLoadingProgress(tmuxStageOffset+stage, desc)
 	}
 	i.tmuxSession = tmuxSession
+	i.transferPromptToCli()
 
 	if firstTimeSetup {
 		i.setLoadingProgress(2, "Creating git worktree...")
@@ -122,6 +123,7 @@ func (i *Instance) StartOnMainBranch() error {
 		i.setLoadingProgress(1+stage, desc)
 	}
 	i.tmuxSession = tmuxSession
+	i.transferPromptToCli()
 
 	var setupErr error
 	defer func() {
@@ -168,6 +170,7 @@ func (i *Instance) StartInSharedWorktree(worktree *git.GitWorktree, branch strin
 		i.setLoadingProgress(1+stage, desc)
 	}
 	i.tmuxSession = tmuxSession
+	i.transferPromptToCli()
 
 	i.setLoadingProgress(2, "Starting tmux session...")
 
@@ -178,6 +181,16 @@ func (i *Instance) StartInSharedWorktree(worktree *git.GitWorktree, branch strin
 	i.started = true
 	i.SetStatus(Running)
 	return nil
+}
+
+// transferPromptToCli moves QueuedPrompt into the tmux session's initialPrompt
+// for programs that support CLI prompt injection. For unsupported programs,
+// QueuedPrompt stays set so the send-keys fallback fires.
+func (i *Instance) transferPromptToCli() {
+	if i.QueuedPrompt != "" && programSupportsCliPrompt(i.Program) {
+		i.tmuxSession.SetInitialPrompt(i.QueuedPrompt)
+		i.QueuedPrompt = ""
+	}
 }
 
 // Kill terminates the instance and cleans up all resources
