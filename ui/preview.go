@@ -287,25 +287,66 @@ func (p *PreviewPane) String() string {
 		// Build fallback text: either animated banner + message, or raw content
 		var fallbackText string
 		if p.previewState.fallbackMsg != "" {
-			// Banner mode: keep art left-aligned as a block (JoinVertical(Center)
-			// re-centers each line individually which makes gradient art jagged).
-			// Instead measure the banner width and manually pad the CTA to sit
-			// centered below it; the outer Align(Center) then centers the whole block.
-			banner := FallBackText(p.bannerFrame)
-			bannerLines := strings.Split(banner, "\n")
-			bannerWidth := lipgloss.Width(bannerLines[0])
-			ctaWidth := lipgloss.Width(p.previewState.fallbackMsg)
-			ctaPad := (bannerWidth - ctaWidth) / 2
-			if ctaPad < 0 {
-				ctaPad = 0
+			bannerLines := BannerLines(p.bannerFrame)
+
+			// Spring load-in: show center N rows during animation
+			if p.springAnim != nil && !p.springAnim.Settled() {
+				visibleRows := p.springAnim.VisibleRows()
+				if visibleRows <= 0 {
+					// Nothing visible yet — show empty space
+					fallbackText = ""
+				} else {
+					totalRows := len(bannerLines)
+					startRow := (totalRows - visibleRows) / 2
+					endRow := startRow + visibleRows
+					if startRow < 0 {
+						startRow = 0
+					}
+					if endRow > totalRows {
+						endRow = totalRows
+					}
+					fallbackText = strings.Join(bannerLines[startRow:endRow], "\n")
+				}
+			} else {
+				// Spring settled (or nil) — full banner with CTA
+				// Banner mode: keep art left-aligned as a block (JoinVertical(Center)
+				// re-centers each line individually which makes gradient art jagged).
+				// Instead measure the banner width and manually pad the CTA to sit
+				// centered below it; the outer Align(Center) then centers the whole block.
+				banner := strings.Join(bannerLines, "\n")
+				bannerWidth := lipgloss.Width(bannerLines[0])
+				ctaWidth := lipgloss.Width(p.previewState.fallbackMsg)
+				ctaPad := (bannerWidth - ctaWidth) / 2
+				if ctaPad < 0 {
+					ctaPad = 0
+				}
+				centeredCTA := strings.Repeat(" ", ctaPad) + p.previewState.fallbackMsg
+				fallbackText = lipgloss.JoinVertical(lipgloss.Left, banner, "", centeredCTA)
 			}
-			centeredCTA := strings.Repeat(" ", ctaPad) + p.previewState.fallbackMsg
-			fallbackText = lipgloss.JoinVertical(lipgloss.Left, banner, "", centeredCTA)
 		} else if p.previewState.text != "" {
 			// Content mode: loading spinner, paused state, etc.
 			fallbackText = p.previewState.text
 		} else {
-			fallbackText = FallBackText(p.bannerFrame)
+			bannerLines := BannerLines(p.bannerFrame)
+			if p.springAnim != nil && !p.springAnim.Settled() {
+				visibleRows := p.springAnim.VisibleRows()
+				if visibleRows <= 0 {
+					fallbackText = ""
+				} else {
+					totalRows := len(bannerLines)
+					startRow := (totalRows - visibleRows) / 2
+					endRow := startRow + visibleRows
+					if startRow < 0 {
+						startRow = 0
+					}
+					if endRow > totalRows {
+						endRow = totalRows
+					}
+					fallbackText = strings.Join(bannerLines[startRow:endRow], "\n")
+				}
+			} else {
+				fallbackText = FallBackText(p.bannerFrame)
+			}
 		}
 
 		// Calculate available height for fallback text
