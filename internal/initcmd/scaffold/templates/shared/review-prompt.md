@@ -23,12 +23,12 @@ cannot progress the plan lifecycle.
 
 If approved (no blocking issues):
 ```
-echo "Approved. <brief summary>" > docs/plans/.signals/review-approved-{{PLAN_FILE}}
+echo "Approved. <brief summary>" > docs/plans/.signals/review-approved-{{PLAN_FILENAME}}
 ```
 
 If changes are required (blocking issues found):
 ```
-echo "<detailed feedback for the coder>" > docs/plans/.signals/review-changes-{{PLAN_FILE}}
+echo "<detailed feedback for the coder>" > docs/plans/.signals/review-changes-{{PLAN_FILENAME}}
 ```
 
 Write exactly one of these signal files before you finish.

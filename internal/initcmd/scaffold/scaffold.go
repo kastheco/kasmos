@@ -458,6 +458,7 @@ func LoadReviewPrompt(planFile, planName string) string {
 		return fmt.Sprintf("Review the implementation of plan: %s\nPlan file: %s", planName, planFile)
 	}
 	result := strings.ReplaceAll(string(content), "{{PLAN_FILE}}", planFile)
+	result = strings.ReplaceAll(result, "{{PLAN_FILENAME}}", filepath.Base(planFile))
 	result = strings.ReplaceAll(result, "{{PLAN_NAME}}", planName)
 	return result
 }

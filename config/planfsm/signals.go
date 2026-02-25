@@ -63,6 +63,9 @@ func parseSignal(dir, filename string) (Signal, bool) {
 			if planFile == "" {
 				return Signal{}, false
 			}
+			// Defensive: strip any path prefix (e.g. "docs/plans/") so the
+			// planFile matches plan-state.json keys which are bare filenames.
+			planFile = filepath.Base(planFile)
 			filePath := filepath.Join(dir, filename)
 			body := ""
 			if data, err := os.ReadFile(filePath); err == nil && len(data) > 0 {
