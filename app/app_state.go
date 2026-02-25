@@ -645,7 +645,8 @@ func (m *home) transitionToReview(coderInst *session.Instance) tea.Cmd {
 	return m.spawnReviewer(planFile)
 }
 
-// spawnReviewer creates and starts a reviewer session for the given plan.
+// spawnReviewer creates and starts a reviewer session for the given plan,
+// using the plan's shared worktree so it reviews the actual implementation branch.
 // Does NOT perform any FSM transition — the caller is responsible for that.
 func (m *home) spawnReviewer(planFile string) tea.Cmd {
 	planName := planstate.DisplayName(planFile)
@@ -655,6 +656,13 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 	// Kill any previous reviewer for this plan so the new session gets a fresh
 	// tmux session instead of reattaching to a stale/errored one.
 	m.killExistingPlanAgent(planFile, session.AgentTypeReviewer)
+
+	// Resolve the plan's branch for the shared worktree.
+	branch := m.planBranch(planFile)
+	if branch == "" {
+		log.WarningLog.Printf("could not resolve branch for plan %q", planFile)
+		return nil
+	}
 
 	// Use the reviewer profile if configured, otherwise fall back to default program.
 	reviewProfile := m.appConfig.ResolveProfile("spec_review", m.program)
@@ -679,8 +687,12 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 
 	m.toastManager.Success(fmt.Sprintf("implementation complete → review started for %s", planName))
 
+	shared := gitpkg.NewSharedPlanWorktree(m.activeRepoPath, branch)
 	return func() tea.Msg {
-		err := reviewerInst.Start(true)
+		if err := shared.Setup(); err != nil {
+			return instanceStartedMsg{instance: reviewerInst, err: err}
+		}
+		err := reviewerInst.StartInSharedWorktree(shared, branch)
 		return instanceStartedMsg{instance: reviewerInst, err: err}
 	}
 }
@@ -725,7 +737,8 @@ func (m *home) killExistingPlanAgent(planFile, agentType string) {
 }
 
 // spawnCoderWithFeedback creates and starts a coder session for the given plan,
-// injecting reviewer feedback into the implementation prompt.
+// injecting reviewer feedback into the implementation prompt. Uses the plan's
+// shared worktree so fixes are applied to the actual implementation branch.
 // Does NOT perform any FSM transition — the caller is responsible for that.
 func (m *home) spawnCoderWithFeedback(planFile, feedback string) tea.Cmd {
 	planName := planstate.DisplayName(planFile)
@@ -737,6 +750,13 @@ func (m *home) spawnCoderWithFeedback(planFile, feedback string) tea.Cmd {
 	// Kill any previous coder for this plan so the new session gets a fresh
 	// tmux session instead of reattaching to a stale/errored one.
 	m.killExistingPlanAgent(planFile, session.AgentTypeCoder)
+
+	// Resolve the plan's branch for the shared worktree.
+	branch := m.planBranch(planFile)
+	if branch == "" {
+		log.WarningLog.Printf("could not resolve branch for plan %q", planFile)
+		return nil
+	}
 
 	coderInst, err := session.NewInstance(session.InstanceOptions{
 		Title:     planName + "-implement",
@@ -756,8 +776,12 @@ func (m *home) spawnCoderWithFeedback(planFile, feedback string) tea.Cmd {
 
 	m.toastManager.Info(fmt.Sprintf("review changes requested → re-implementing %s", planName))
 
+	shared := gitpkg.NewSharedPlanWorktree(m.activeRepoPath, branch)
 	return func() tea.Msg {
-		err := coderInst.Start(true)
+		if err := shared.Setup(); err != nil {
+			return instanceStartedMsg{instance: coderInst, err: err}
+		}
+		err := coderInst.StartInSharedWorktree(shared, branch)
 		return instanceStartedMsg{instance: coderInst, err: err}
 	}
 }
@@ -931,6 +955,22 @@ func (m *home) promptPushBranchThenAdvance(inst *session.Instance) tea.Cmd {
 		return coderCompleteMsg{planFile: capturedPlanFile}
 	}
 	return m.confirmAction(message, func() tea.Msg { return pushAction() })
+}
+
+// planBranch resolves the branch name for a plan, backfilling if needed.
+func (m *home) planBranch(planFile string) string {
+	if m.planState == nil {
+		return ""
+	}
+	entry, ok := m.planState.Entry(planFile)
+	if !ok {
+		return ""
+	}
+	if entry.Branch == "" {
+		entry.Branch = gitpkg.PlanBranchFromFile(planFile)
+		_ = m.planState.SetBranch(planFile, entry.Branch)
+	}
+	return entry.Branch
 }
 
 // buildPlanPrompt returns the initial prompt for a planner agent session.
