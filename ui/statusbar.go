@@ -24,6 +24,7 @@ type StatusBarData struct {
 	PlanStatus string      // "ready", "planning", "implementing", "reviewing", "done"
 	WaveLabel  string      // "wave 2/4" or empty
 	TaskGlyphs []TaskGlyph // per-task status for wave progress
+	FocusMode  bool        // true when in interactive/focus mode
 }
 
 // StatusBar is the top status bar component.
@@ -71,6 +72,11 @@ var statusBarPlanNameStyle = lipgloss.NewStyle().
 var statusBarWaveLabelStyle = lipgloss.NewStyle().
 	Foreground(ColorSubtle).
 	Background(ColorSurface)
+
+var statusBarFocusPillStyle = lipgloss.NewStyle().
+	Foreground(ColorLove).
+	Background(ColorSurface).
+	Bold(true)
 
 func planStatusStyle(status string) string {
 	var fg lipgloss.TerminalColor
@@ -136,7 +142,26 @@ func (s *StatusBar) String() string {
 	}
 
 	sep := statusBarSepStyle.Render(statusBarSep)
-	content := strings.Join(parts, sep)
+	leftContent := strings.Join(parts, sep)
 
-	return statusBarStyle.Width(s.width).Render(content)
+	if !s.data.FocusMode {
+		return statusBarStyle.Width(s.width).Render(leftContent)
+	}
+
+	// Render centered "▸ interactive" pill.
+	// usable width = s.width minus 2 for statusBarStyle padding (0,1 = 1 left + 1 right).
+	const pill = "▸ interactive"
+	renderedPill := statusBarFocusPillStyle.Render(pill)
+	usable := s.width - 2
+	leftLen := lipgloss.Width(leftContent)
+	pillLen := lipgloss.Width(renderedPill)
+	center := (usable - pillLen) / 2
+	gap := center - leftLen
+	if gap < 1 {
+		gap = 1
+	}
+	spacer := lipgloss.NewStyle().Background(ColorSurface).Render(strings.Repeat(" ", gap))
+	combined := leftContent + spacer + renderedPill
+
+	return statusBarStyle.Width(s.width).Render(combined)
 }

@@ -54,7 +54,8 @@ func mergePlanStatus(status ui.TopicStatus, inst *session.Instance, started bool
 // computeStatusBarData builds the StatusBarData from the current app state.
 func (m *home) computeStatusBarData() ui.StatusBarData {
 	data := ui.StatusBarData{
-		RepoName: filepath.Base(m.activeRepoPath),
+		RepoName:  filepath.Base(m.activeRepoPath),
+		FocusMode: m.state == stateFocusAgent,
 	}
 
 	if m.sidebar == nil || m.list == nil {

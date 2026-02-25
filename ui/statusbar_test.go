@@ -145,3 +145,29 @@ func TestStatusBar_EmptyData(t *testing.T) {
 		assert.Contains(t, result, string(c))
 	}
 }
+
+func TestStatusBar_FocusMode(t *testing.T) {
+	sb := NewStatusBar()
+	sb.SetSize(100)
+	sb.SetData(StatusBarData{
+		RepoName:  "kasmos",
+		Branch:    "main",
+		FocusMode: true,
+	})
+
+	result := sb.String()
+	assert.Contains(t, result, "▸ interactive")
+}
+
+func TestStatusBar_NoFocusMode(t *testing.T) {
+	sb := NewStatusBar()
+	sb.SetSize(100)
+	sb.SetData(StatusBarData{
+		RepoName:  "kasmos",
+		Branch:    "main",
+		FocusMode: false,
+	})
+
+	result := sb.String()
+	assert.NotContains(t, result, "interactive")
+}
