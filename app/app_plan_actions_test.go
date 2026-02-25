@@ -12,6 +12,7 @@ import (
 	"github.com/kastheco/kasmos/config/planstate"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/ui"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestBuildPlanPrompt(t *testing.T) {
@@ -31,11 +32,26 @@ func TestBuildImplementPrompt(t *testing.T) {
 	}
 }
 
+func TestBuildSoloPrompt_WithDescription(t *testing.T) {
+	prompt := buildSoloPrompt("auth-refactor", "Refactor JWT auth", "2026-02-21-auth-refactor.md")
+	assert.Contains(t, prompt, "Implement auth-refactor")
+	assert.Contains(t, prompt, "Goal: Refactor JWT auth")
+	assert.Contains(t, prompt, "docs/plans/2026-02-21-auth-refactor.md")
+}
+
+func TestBuildSoloPrompt_StubOnly(t *testing.T) {
+	prompt := buildSoloPrompt("quick-fix", "Fix the login bug", "")
+	assert.Contains(t, prompt, "Implement quick-fix")
+	assert.Contains(t, prompt, "Goal: Fix the login bug")
+	assert.NotContains(t, prompt, "docs/plans/")
+}
+
 func TestAgentTypeForSubItem(t *testing.T) {
 	tests := map[string]string{
 		"plan":      session.AgentTypePlanner,
 		"implement": session.AgentTypeCoder,
 		"review":    session.AgentTypeReviewer,
+		"solo":      session.AgentTypeCoder,
 	}
 	for action, want := range tests {
 		got, ok := agentTypeForSubItem(action)
