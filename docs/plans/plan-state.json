@@ -321,7 +321,7 @@
       "implemented": "2026-02-24"
     },
     "2026-02-24-orphan-session-recovery.md": {
-      "status": "ready",
+      "status": "cancelled",
       "description": "detect orphaned tmux sessions from plan agent crashes and let users reattach or kill them from the sidebar context menu",
       "branch": "plan/orphan-session-recovery",
       "created_at": "2026-02-24T04:07:00Z"

@@ -8,32 +8,35 @@ import (
 )
 
 func TestNewSpringAnim(t *testing.T) {
-	s := NewSpringAnim(6.0)
+	s := NewSpringAnim(6.0, 15)
+	s.SetCTALen(20)
 	require.NotNil(t, s)
 	assert.Equal(t, 0, s.VisibleRows())
 	assert.False(t, s.Settled())
+	assert.False(t, s.CTAReady())
 }
 
 func TestSpringAnim_ConvergesToTarget(t *testing.T) {
-	s := NewSpringAnim(6.0)
+	s := NewSpringAnim(6.0, 15)
+	s.SetCTALen(20)
 
-	// Tick until settled (should settle within 30 ticks at 20fps = 1.5s max)
-	for i := 0; i < 60; i++ {
+	for i := 0; i < 300; i++ {
 		if s.Settled() {
 			break
 		}
 		s.Tick()
 	}
 
-	assert.True(t, s.Settled(), "spring should settle within 60 ticks")
+	assert.True(t, s.Settled(), "spring should settle within 300 ticks")
 	assert.Equal(t, 6, s.VisibleRows(), "should converge to target")
+	assert.True(t, s.CTAReady(), "CTA should be ready after settling")
 }
 
 func TestSpringAnim_VisibleRowsClamped(t *testing.T) {
-	s := NewSpringAnim(6.0)
+	s := NewSpringAnim(6.0, 0)
+	s.SetCTALen(10)
 
-	// Tick a bunch — visible rows should never exceed 6 or go below 0
-	for i := 0; i < 60; i++ {
+	for i := 0; i < 300; i++ {
 		rows := s.VisibleRows()
 		assert.GreaterOrEqual(t, rows, 0, "rows should not be negative")
 		assert.LessOrEqual(t, rows, 6, "rows should not exceed target")
@@ -41,19 +44,66 @@ func TestSpringAnim_VisibleRowsClamped(t *testing.T) {
 	}
 }
 
-func TestSpringAnim_TickReturnsFalseWhenSettled(t *testing.T) {
-	s := NewSpringAnim(6.0)
+func TestSpringAnim_CTADelayed(t *testing.T) {
+	s := NewSpringAnim(6.0, 10)
+	s.SetCTALen(20)
 
-	// Should return true while animating
+	// Tick until all rows visible
+	for i := 0; i < 300; i++ {
+		if s.VisibleRows() >= 6 {
+			break
+		}
+		s.Tick()
+	}
+	require.Equal(t, 6, s.VisibleRows())
+
+	// CTA should not be ready immediately
+	assert.False(t, s.CTAReady(), "CTA should not be ready immediately after unfold")
+
+	// Tick through delay
+	for i := 0; i < 10; i++ {
+		s.Tick()
+	}
+	assert.True(t, s.CTAReady(), "CTA should be ready after delay ticks")
+}
+
+func TestSpringAnim_CTAHorizontalReveal(t *testing.T) {
+	s := NewSpringAnim(6.0, 0) // no delay
+	s.SetCTALen(12)
+
+	// Tick until CTA starts revealing
+	for i := 0; i < 300; i++ {
+		if s.CTAReady() {
+			break
+		}
+		s.Tick()
+	}
+	require.True(t, s.CTAReady())
+
+	// One more tick to start revealing chars
+	s.Tick()
+	chars := s.CTAVisibleChars()
+	assert.Greater(t, chars, 0, "should have some chars visible after tick")
+
+	// Tick until fully revealed
+	for i := 0; i < 20; i++ {
+		s.Tick()
+	}
+	assert.GreaterOrEqual(t, s.CTAVisibleChars(), 12, "should reveal all chars")
+}
+
+func TestSpringAnim_TickReturnsFalseWhenSettled(t *testing.T) {
+	s := NewSpringAnim(6.0, 5)
+	s.SetCTALen(9) // 3 chars/tick * 3 ticks = done fast
+
 	assert.True(t, s.Tick(), "should return true while animating")
 
-	// Tick until settled
-	for i := 0; i < 60; i++ {
+	for i := 0; i < 300; i++ {
 		if !s.Tick() {
 			break
 		}
 	}
 
-	// After settling, Tick returns false
-	assert.False(t, s.Tick(), "should return false after settling")
+	assert.False(t, s.Tick(), "should return false after fully settled")
+	assert.True(t, s.CTAReady())
 }

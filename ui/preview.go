@@ -2,13 +2,13 @@ package ui
 
 import (
 	"fmt"
-	"github.com/kastheco/kasmos/session"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/kastheco/kasmos/session"
 )
 
 var (
@@ -49,7 +49,7 @@ type previewState struct {
 func NewPreviewPane() *PreviewPane {
 	return &PreviewPane{
 		viewport:   viewport.New(0, 0),
-		springAnim: NewSpringAnim(6.0),
+		springAnim: NewSpringAnim(6.0, 15), // 6 rows, 750ms CTA delay
 	}
 }
 
@@ -289,39 +289,80 @@ func (p *PreviewPane) String() string {
 		if p.previewState.fallbackMsg != "" {
 			bannerLines := BannerLines(p.bannerFrame)
 
-			// Spring load-in: show center N rows during animation
-			if p.springAnim != nil && !p.springAnim.Settled() {
-				visibleRows := p.springAnim.VisibleRows()
-				if visibleRows <= 0 {
-					// Nothing visible yet — show empty space
-					fallbackText = ""
-				} else {
-					totalRows := len(bannerLines)
-					startRow := (totalRows - visibleRows) / 2
-					endRow := startRow + visibleRows
-					if startRow < 0 {
-						startRow = 0
-					}
-					if endRow > totalRows {
-						endRow = totalRows
-					}
-					fallbackText = strings.Join(bannerLines[startRow:endRow], "\n")
-				}
-			} else {
-				// Spring settled (or nil) — full banner with CTA
-				// Banner mode: keep art left-aligned as a block (JoinVertical(Center)
-				// re-centers each line individually which makes gradient art jagged).
-				// Instead measure the banner width and manually pad the CTA to sit
-				// centered below it; the outer Align(Center) then centers the whole block.
-				banner := strings.Join(bannerLines, "\n")
+			// Spring load-in: unfold center rows, CTA after delay
+			animating := p.springAnim != nil && !p.springAnim.Settled()
+			visibleRows := len(bannerLines)
+			if animating {
+				visibleRows = p.springAnim.VisibleRows()
+			}
+
+			if visibleRows <= 0 {
+				// Reserve space for banner + blank + CTA so position is stable
 				bannerWidth := lipgloss.Width(bannerLines[0])
-				ctaWidth := lipgloss.Width(p.previewState.fallbackMsg)
-				ctaPad := (bannerWidth - ctaWidth) / 2
+				blankBanner := strings.Repeat(strings.Repeat(" ", bannerWidth)+"\n", len(bannerLines)-1)
+				blankBanner += strings.Repeat(" ", bannerWidth)
+				blankCTA := strings.Repeat(" ", lipgloss.Width(p.previewState.fallbackMsg))
+				fallbackText = lipgloss.JoinVertical(lipgloss.Left, blankBanner, "", blankCTA)
+			} else {
+				totalRows := len(bannerLines)
+				startRow := (totalRows - visibleRows) / 2
+				endRow := startRow + visibleRows
+				if startRow < 0 {
+					startRow = 0
+				}
+				if endRow > totalRows {
+					endRow = totalRows
+				}
+
+				// Pad hidden rows with blank lines to keep total height constant
+				bannerWidth := lipgloss.Width(bannerLines[0])
+				blankLine := strings.Repeat(" ", bannerWidth)
+				var bannerParts []string
+				hiddenTop := startRow
+				for i := 0; i < hiddenTop; i++ {
+					bannerParts = append(bannerParts, blankLine)
+				}
+				bannerParts = append(bannerParts, bannerLines[startRow:endRow]...)
+				hiddenBottom := totalRows - endRow
+				for i := 0; i < hiddenBottom; i++ {
+					bannerParts = append(bannerParts, blankLine)
+				}
+				banner := strings.Join(bannerParts, "\n")
+
+				// Always reserve CTA space; horizontal reveal after delay
+				ctaMsg := p.previewState.fallbackMsg
+				ctaRunes := []rune(ctaMsg)
+				ctaFullWidth := lipgloss.Width(ctaMsg)
+				ctaPad := (bannerWidth - ctaFullWidth) / 2
 				if ctaPad < 0 {
 					ctaPad = 0
 				}
-				centeredCTA := strings.Repeat(" ", ctaPad) + p.previewState.fallbackMsg
-				fallbackText = lipgloss.JoinVertical(lipgloss.Left, banner, "", centeredCTA)
+
+				// Tell the spring how long the CTA is
+				if p.springAnim != nil {
+					p.springAnim.SetCTALen(len(ctaRunes))
+				}
+
+				visChars := len(ctaRunes) // default: show all
+				if p.springAnim != nil && !p.springAnim.Settled() {
+					visChars = p.springAnim.CTAVisibleChars()
+				}
+
+				if visChars <= 0 {
+					// Blank placeholder
+					blankCTA := strings.Repeat(" ", ctaFullWidth)
+					centeredCTA := strings.Repeat(" ", ctaPad) + blankCTA
+					fallbackText = lipgloss.JoinVertical(lipgloss.Left, banner, "", centeredCTA)
+				} else if visChars >= len(ctaRunes) {
+					centeredCTA := strings.Repeat(" ", ctaPad) + ctaMsg
+					fallbackText = lipgloss.JoinVertical(lipgloss.Left, banner, "", centeredCTA)
+				} else {
+					// Partial reveal: show visChars, pad the rest
+					shown := string(ctaRunes[:visChars])
+					remaining := ctaFullWidth - lipgloss.Width(shown)
+					partialCTA := strings.Repeat(" ", ctaPad) + shown + strings.Repeat(" ", remaining)
+					fallbackText = lipgloss.JoinVertical(lipgloss.Left, banner, "", partialCTA)
+				}
 			}
 		} else if p.previewState.text != "" {
 			// Content mode: loading spinner, paused state, etc.
