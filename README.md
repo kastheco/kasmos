@@ -2,7 +2,7 @@
 
 > harness & model-agnostic ai orchestration tool with wave-based automation — powered by superpowers, tmux, and git worktrees.
 
-![kasmos screenshot](assets/screenshot.png)
+![kasmos screenshot](assets/screenshot.gif)
 
 ---
 
