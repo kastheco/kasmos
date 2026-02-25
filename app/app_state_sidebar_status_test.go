@@ -67,3 +67,15 @@ func TestMergePlanStatus(t *testing.T) {
 	unchanged := mergePlanStatus(existing, noPlan, true)
 	assert.Equal(t, existing, unchanged)
 }
+
+func TestComputeStatusBarData_Baseline(t *testing.T) {
+	h := &home{
+		activeRepoPath: "/home/user/repos/kasmos",
+	}
+	h.sidebar = ui.NewSidebar()
+	h.sidebar.SetRepoName("kasmos")
+	h.list = ui.NewList(&h.spinner, false)
+
+	data := h.computeStatusBarData()
+	assert.Equal(t, "kasmos", data.RepoName)
+}

@@ -51,6 +51,70 @@ func mergePlanStatus(status ui.TopicStatus, inst *session.Instance, started bool
 	return status
 }
 
+// computeStatusBarData builds the StatusBarData from the current app state.
+func (m *home) computeStatusBarData() ui.StatusBarData {
+	data := ui.StatusBarData{
+		RepoName: filepath.Base(m.activeRepoPath),
+	}
+
+	if m.sidebar == nil || m.list == nil {
+		if data.Branch == "" {
+			data.Branch = "main"
+		}
+		return data
+	}
+
+	planFile := m.sidebar.GetSelectedPlanFile()
+	selected := m.list.GetSelectedInstance()
+
+	switch {
+	case planFile != "" && m.planState != nil:
+		entry, ok := m.planState.Entry(planFile)
+		if ok {
+			data.Branch = entry.Branch
+			data.PlanName = planstate.DisplayName(planFile)
+			data.PlanStatus = string(entry.Status)
+
+			if orch, orchOK := m.waveOrchestrators[planFile]; orchOK {
+				waveNum := orch.CurrentWaveNumber()
+				totalWaves := orch.TotalWaves()
+				if waveNum > 0 {
+					data.WaveLabel = fmt.Sprintf("wave %d/%d", waveNum, totalWaves)
+					tasks := orch.CurrentWaveTasks()
+					data.TaskGlyphs = make([]ui.TaskGlyph, len(tasks))
+					for i, task := range tasks {
+						switch orch.taskStates[task.Number] {
+						case taskComplete:
+							data.TaskGlyphs[i] = ui.TaskGlyphComplete
+						case taskFailed:
+							data.TaskGlyphs[i] = ui.TaskGlyphFailed
+						case taskRunning:
+							data.TaskGlyphs[i] = ui.TaskGlyphRunning
+						default:
+							data.TaskGlyphs[i] = ui.TaskGlyphPending
+						}
+					}
+				}
+			}
+		}
+	case selected != nil && selected.Branch != "":
+		data.Branch = selected.Branch
+		if selected.PlanFile != "" && m.planState != nil {
+			entry, ok := m.planState.Entry(selected.PlanFile)
+			if ok {
+				data.PlanName = planstate.DisplayName(selected.PlanFile)
+				data.PlanStatus = string(entry.Status)
+			}
+		}
+	}
+
+	if data.Branch == "" {
+		data.Branch = "main"
+	}
+
+	return data
+}
+
 func (m *home) updateSidebarItems() {
 	// Count running/notification instances for status (used by the "All" count badge).
 	// Since topics are now plan-state-based (not instance-based), we still track
