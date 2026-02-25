@@ -366,6 +366,13 @@
       "topic": "ui",
       "created_at": "0001-01-01T00:00:00Z"
     },
+    "2026-02-25-fix-planner-missing-waves.md": {
+      "status": "ready",
+      "description": "the planner agent should always use wave headers when launched via kasmos. a plan i just brainstormed had to go back to planner agent to add the headers",
+      "branch": "plan/fix-planner-missing-waves",
+      "topic": "workflow",
+      "created_at": "2026-02-25T18:40:28.678650334Z"
+    },
     "2026-02-25-improve-cli-tools.md": {
       "status": "ready",
       "description": "update cli-tools to be more strict and ensure rg is ALWAYS used over grep as well as other tools",
@@ -395,7 +402,7 @@
       "created_at": "2026-02-25T18:29:04.610125585Z"
     },
     "2026-02-25-simplify-plan-creation.md": {
-      "status": "planning",
+      "status": "implementing",
       "description": "add name and description for new plans to a single form popup. focuses on name by default - user can use tab navigation to the description input or use arrow down/up to navigate. hitting enter from either input creates the plan since description is optional",
       "branch": "plan/simplify-plan-creation",
       "topic": "workflow",
