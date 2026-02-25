@@ -10,6 +10,8 @@
 
 ---
 
+## Wave 1
+
 ### Task 1: List — add scrollOffset field and ensureSelectedVisible
 
 **Files:**
@@ -531,6 +533,8 @@ git commit -m "feat(ui): add scroll offset to sidebar to prevent history overflo
 ```
 
 ---
+
+## Wave 2
 
 ### Task 3: Verify full build and test suite
 
