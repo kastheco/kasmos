@@ -128,6 +128,8 @@ type home struct {
 	list *ui.List
 	// menu displays the bottom menu
 	menu *ui.Menu
+	// statusBar displays the top contextual status bar
+	statusBar *ui.StatusBar
 	// tabbedWindow displays the tabbed window with preview and diff panes
 	tabbedWindow *ui.TabbedWindow
 	// toastManager manages toast notifications
@@ -257,6 +259,7 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 		ctx:                   ctx,
 		spinner:               spinner.New(spinner.WithSpinner(spinner.Dot)),
 		menu:                  ui.NewMenu(),
+		statusBar:             ui.NewStatusBar(),
 		tabbedWindow:          ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
 		storage:               storage,
 		appConfig:             appConfig,
@@ -340,13 +343,17 @@ func (m *home) updateHandleWindowSizeEvent(msg tea.WindowSizeMsg) {
 	if msg.Height < 2 {
 		menuHeight = 0
 	}
-	contentHeight := msg.Height - menuHeight
+	statusBarHeight := 1
+	contentHeight := msg.Height - menuHeight - statusBarHeight
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
 	m.termWidth = msg.Width
 	m.termHeight = msg.Height
 	m.toastManager.SetSize(msg.Width, msg.Height)
+	if m.statusBar != nil {
+		m.statusBar.SetSize(msg.Width)
+	}
 
 	m.tabbedWindow.SetSize(tabsWidth, contentHeight)
 	m.list.SetSize(listWidth, contentHeight)
@@ -1052,7 +1059,7 @@ func (m *home) handleQuit() (tea.Model, tea.Cmd) {
 
 func (m *home) View() string {
 	// All columns use identical padding and height for uniform alignment.
-	colStyle := lipgloss.NewStyle().PaddingTop(1).Height(m.contentHeight + 1)
+	colStyle := lipgloss.NewStyle().Height(m.contentHeight)
 	previewWithPadding := colStyle.Render(m.tabbedWindow.String())
 
 	// Layout: sidebar | instance list (middle) | preview/tabs (right)
@@ -1066,9 +1073,15 @@ func (m *home) View() string {
 	}
 	cols = append(cols, previewWithPadding)
 	listAndPreview := lipgloss.JoinHorizontal(lipgloss.Top, cols...)
+	statusBarView := ""
+	if m.statusBar != nil {
+		m.statusBar.SetData(m.computeStatusBarData())
+		statusBarView = m.statusBar.String()
+	}
 
 	mainView := lipgloss.JoinVertical(
 		lipgloss.Left,
+		statusBarView,
 		listAndPreview,
 		m.menu.String(),
 	)
@@ -1128,13 +1141,23 @@ func (m *home) View() string {
 
 	// Process bubblezone markers before rendering is complete
 	// (zone markers inflate lipgloss.Width if left in place).
-	result = zone.Scan(result)
+	result = safeZoneScan(result)
 
 	// Height-fill — ensure enough lines for bubbletea's alt-screen renderer.
 	// OSC 11 handles the actual background color; this just pads vertically.
 	result = ui.FillBackground(result, m.termHeight)
 
 	return result
+}
+
+func safeZoneScan(s string) (scanned string) {
+	defer func() {
+		if recover() != nil {
+			scanned = s
+		}
+	}()
+
+	return zone.Scan(s)
 }
 
 // prCreatedMsg is sent when async PR creation succeeds.
