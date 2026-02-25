@@ -32,5 +32,8 @@ func TestStatusBarIncludedInView(t *testing.T) {
 
 	view := h.View()
 	firstLine := strings.SplitN(view, "\n", 2)[0]
-	assert.Contains(t, firstLine, "kasmos")
+	// App name is gradient-rendered (per-char ANSI), so check individual chars.
+	for _, c := range "kasmos" {
+		assert.Contains(t, firstLine, string(c))
+	}
 }

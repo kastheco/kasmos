@@ -53,7 +53,6 @@ var statusBarStyle = lipgloss.NewStyle().
 	Padding(0, 1)
 
 var statusBarAppNameStyle = lipgloss.NewStyle().
-	Foreground(ColorIris).
 	Background(ColorSurface).
 	Bold(true)
 
@@ -112,7 +111,7 @@ func (s *StatusBar) String() string {
 	}
 
 	parts := make([]string, 0, 6)
-	parts = append(parts, statusBarAppNameStyle.Render("kasmos"))
+	parts = append(parts, statusBarAppNameStyle.Render(GradientText("kasmos", GradientStart, GradientEnd)))
 
 	if s.data.RepoName != "" {
 		parts = append(parts, statusBarPlanNameStyle.Render(s.data.RepoName))
