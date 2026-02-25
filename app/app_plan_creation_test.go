@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kastheco/kasmos/config/planstate"
+	"github.com/kastheco/kasmos/ui"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,7 +55,11 @@ func TestCreatePlanRecord(t *testing.T) {
 }
 
 func TestHandleDefaultStateStartsCombinedPlanForm(t *testing.T) {
-	h := &home{state: stateDefault, keySent: true}
+	h := &home{
+		state:        stateDefault,
+		keySent:      true,
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+	}
 
 	model, cmd := h.handleKeyPress(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
 	require.Nil(t, cmd)

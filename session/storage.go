@@ -28,6 +28,7 @@ type InstanceData struct {
 	WaveNumber             int       `json:"wave_number,omitempty"`
 	IsReviewer             bool      `json:"is_reviewer,omitempty"`
 	ImplementationComplete bool      `json:"implementation_complete,omitempty"`
+	SoloAgent              bool      `json:"solo_agent,omitempty"`
 	QueuedPrompt           string    `json:"queued_prompt,omitempty"`
 
 	Program   string          `json:"program"`

@@ -970,6 +970,9 @@ func shouldPromptPushAfterCoderExit(entry planstate.PlanEntry, inst *session.Ins
 	if inst.AgentType != session.AgentTypeCoder {
 		return false
 	}
+	if inst.SoloAgent {
+		return false
+	}
 	if entry.Status != planstate.StatusImplementing {
 		return false
 	}
@@ -1025,6 +1028,15 @@ func buildImplementPrompt(planFile string) string {
 	)
 }
 
+// buildSoloPrompt returns a minimal prompt for a solo agent session.
+// If planFile is non-empty, it references the plan file. Otherwise just name + description.
+func buildSoloPrompt(planName, description, planFile string) string {
+	if planFile != "" {
+		return fmt.Sprintf("Implement %s. Goal: %s. Plan: docs/plans/%s", planName, description, planFile)
+	}
+	return fmt.Sprintf("Implement %s. Goal: %s.", planName, description)
+}
+
 // buildModifyPlanPrompt returns the prompt for modifying an existing plan.
 func buildModifyPlanPrompt(planFile string) string {
 	return fmt.Sprintf("Modify existing plan at docs/plans/%s. Keep the same filename and update only what changed.", planFile)
@@ -1035,7 +1047,7 @@ func agentTypeForSubItem(action string) (string, bool) {
 	switch action {
 	case "plan":
 		return session.AgentTypePlanner, true
-	case "implement":
+	case "implement", "solo":
 		return session.AgentTypeCoder, true
 	case "review":
 		return session.AgentTypeReviewer, true
@@ -1071,6 +1083,9 @@ func (m *home) spawnPlanAgent(planFile, action, prompt string) (tea.Model, tea.C
 	// sidebar-spawned reviewers as well as auto-spawned ones.
 	if agentType == session.AgentTypeReviewer {
 		inst.IsReviewer = true
+	}
+	if action == "solo" {
+		inst.SoloAgent = true
 	}
 	inst.QueuedPrompt = prompt
 

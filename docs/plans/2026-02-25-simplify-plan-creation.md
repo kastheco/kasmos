@@ -10,6 +10,8 @@
 
 ---
 
+## Wave 1: Foundation Components
+
 ### Task 1: ThemeRosePine huh theme
 
 **Files:**
@@ -330,6 +332,8 @@ git commit -m "feat: add FormOverlay component backed by huh"
 
 ---
 
+## Wave 2: Integration
+
 ### Task 3: Wire FormOverlay into app state machine
 
 **Files:**
@@ -445,6 +449,8 @@ git commit -m "feat: wire FormOverlay into plan creation flow"
 ```
 
 ---
+
+## Wave 3: Stabilization
 
 ### Task 4: Update tests
 

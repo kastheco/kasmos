@@ -12,6 +12,8 @@ import (
 	"github.com/kastheco/kasmos/config/planstate"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/ui"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBuildPlanPrompt(t *testing.T) {
@@ -31,11 +33,26 @@ func TestBuildImplementPrompt(t *testing.T) {
 	}
 }
 
+func TestBuildSoloPrompt_WithDescription(t *testing.T) {
+	prompt := buildSoloPrompt("auth-refactor", "Refactor JWT auth", "2026-02-21-auth-refactor.md")
+	assert.Contains(t, prompt, "Implement auth-refactor")
+	assert.Contains(t, prompt, "Goal: Refactor JWT auth")
+	assert.Contains(t, prompt, "docs/plans/2026-02-21-auth-refactor.md")
+}
+
+func TestBuildSoloPrompt_StubOnly(t *testing.T) {
+	prompt := buildSoloPrompt("quick-fix", "Fix the login bug", "")
+	assert.Contains(t, prompt, "Implement quick-fix")
+	assert.Contains(t, prompt, "Goal: Fix the login bug")
+	assert.NotContains(t, prompt, "docs/plans/")
+}
+
 func TestAgentTypeForSubItem(t *testing.T) {
 	tests := map[string]string{
 		"plan":      session.AgentTypePlanner,
 		"implement": session.AgentTypeCoder,
 		"review":    session.AgentTypeReviewer,
+		"solo":      session.AgentTypeCoder,
 	}
 	for action, want := range tests {
 		got, ok := agentTypeForSubItem(action)
@@ -46,6 +63,11 @@ func TestAgentTypeForSubItem(t *testing.T) {
 			t.Fatalf("agentTypeForSubItem(%q) = %q, want %q", action, got, want)
 		}
 	}
+}
+
+func TestIsLocked_AllowsSoloStage(t *testing.T) {
+	assert.False(t, isLocked(planstate.StatusReady, "solo"),
+		"solo stage should be triggerable like implement/review")
 }
 
 // TestSpawnPlanAgent_ReviewerSetsIsReviewer verifies that spawnPlanAgent sets
@@ -214,4 +236,95 @@ func TestFSM_PlanLifecycleStages(t *testing.T) {
 			t.Errorf("after %q: got status %q, want %q", tc.event, entry.Status, tc.wantStatus)
 		}
 	}
+}
+
+func TestSpawnPlanAgent_SoloSetsSoloAgentFlag(t *testing.T) {
+	dir := t.TempDir()
+
+	for _, cmd := range [][]string{
+		{"git", "init", dir},
+		{"git", "-C", dir, "config", "user.email", "test@test.com"},
+		{"git", "-C", dir, "config", "user.name", "Test"},
+		{"git", "-C", dir, "commit", "--allow-empty", "-m", "init"},
+	} {
+		out, err := exec.Command(cmd[0], cmd[1:]...).CombinedOutput()
+		if err != nil {
+			t.Skipf("git setup failed (%v): %s", err, out)
+		}
+	}
+
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := planstate.Load(plansDir)
+	require.NoError(t, err)
+	planFile := "2026-02-25-test-solo.md"
+	require.NoError(t, ps.Register(planFile, "test solo", "plan/test-solo", time.Now()))
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	list := ui.NewList(&sp, false)
+	h := &home{
+		planState:          ps,
+		activeRepoPath:     dir,
+		program:            "opencode",
+		list:               list,
+		menu:               ui.NewMenu(),
+		sidebar:            ui.NewSidebar(),
+		instanceFinalizers: make(map[*session.Instance]func()),
+	}
+
+	h.spawnPlanAgent(planFile, "solo", "solo prompt")
+
+	instances := list.GetInstances()
+	require.NotEmpty(t, instances, "expected instance after spawnPlanAgent(solo)")
+	inst := instances[len(instances)-1]
+	assert.True(t, inst.SoloAgent, "solo agent must have SoloAgent=true")
+	assert.Equal(t, session.AgentTypeCoder, inst.AgentType)
+}
+
+func TestTriggerPlanStage_SoloRespectsTopicConcurrencyGate(t *testing.T) {
+	dir := t.TempDir()
+
+	for _, cmd := range [][]string{
+		{"git", "init", dir},
+		{"git", "-C", dir, "config", "user.email", "test@test.com"},
+		{"git", "-C", dir, "config", "user.name", "Test"},
+		{"git", "-C", dir, "commit", "--allow-empty", "-m", "init"},
+	} {
+		out, err := exec.Command(cmd[0], cmd[1:]...).CombinedOutput()
+		if err != nil {
+			t.Skipf("git setup failed (%v): %s", err, out)
+		}
+	}
+
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	ps, err := planstate.Load(plansDir)
+	require.NoError(t, err)
+
+	const (
+		targetPlan   = "2026-02-25-solo-target.md"
+		conflictPlan = "2026-02-25-conflict.md"
+		topic        = "shared-topic"
+	)
+
+	require.NoError(t, ps.Create(targetPlan, "target", "plan/solo-target", topic, time.Now()))
+	require.NoError(t, ps.Create(conflictPlan, "conflict", "plan/conflict", topic, time.Now()))
+	seedPlanStatus(t, ps, targetPlan, planstate.StatusReady)
+	seedPlanStatus(t, ps, conflictPlan, planstate.StatusImplementing)
+
+	h := waveFlowHome(t, ps, plansDir, make(map[string]*WaveOrchestrator))
+	h.fsm = newFSMForTest(plansDir).PlanStateMachine
+	h.activeRepoPath = dir
+	h.program = "opencode"
+
+	model, _ := h.triggerPlanStage(targetPlan, "solo")
+	updated := model.(*home)
+
+	assert.Equal(t, stateConfirm, updated.state,
+		"solo stage must show topic concurrency confirmation when another plan in topic is implementing")
+	require.NotNil(t, updated.confirmationOverlay,
+		"confirmation overlay must be shown for solo topic conflict")
+	require.NotNil(t, updated.pendingConfirmAction,
+		"confirm action must be set for solo topic conflict")
 }

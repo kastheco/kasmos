@@ -190,6 +190,13 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		}
 		return m.triggerPlanStage(planFile, "implement")
 
+	case "start_solo":
+		planFile := m.sidebar.GetSelectedPlanFile()
+		if planFile == "" {
+			return m, nil
+		}
+		return m.triggerPlanStage(planFile, "solo")
+
 	case "start_review":
 		planFile := m.sidebar.GetSelectedPlanFile()
 		if planFile == "" {
@@ -527,11 +534,13 @@ func (m *home) openPlanContextMenu() (tea.Model, tea.Cmd) {
 				items = append(items,
 					overlay.ContextMenuItem{Label: "start plan", Action: "start_plan"},
 					overlay.ContextMenuItem{Label: "start implement", Action: "start_implement"},
+					overlay.ContextMenuItem{Label: "start solo agent", Action: "start_solo"},
 					overlay.ContextMenuItem{Label: "start review", Action: "start_review"},
 				)
 			case planstate.StatusImplementing:
 				items = append(items,
 					overlay.ContextMenuItem{Label: "start implement", Action: "start_implement"},
+					overlay.ContextMenuItem{Label: "start solo agent", Action: "start_solo"},
 					overlay.ContextMenuItem{Label: "start review", Action: "start_review"},
 				)
 			case planstate.StatusReviewing:
@@ -630,8 +639,8 @@ func (m *home) triggerPlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 		return m, m.toastTickCmd()
 	}
 
-	// Concurrency gate for implement stage
-	if stage == "implement" && entry.Topic != "" {
+	// Concurrency gate for coder stages
+	if (stage == "implement" || stage == "solo") && entry.Topic != "" {
 		if hasConflict, conflictPlan := m.planState.HasRunningCoderInTopic(entry.Topic, planFile); hasConflict {
 			conflictName := planstate.DisplayName(conflictPlan)
 			message := fmt.Sprintf("⚠ %s is already running in topic \"%s\"\n\nrunning both plans may cause issues.\ncontinue anyway?", conflictName, entry.Topic)
@@ -656,6 +665,22 @@ func (m *home) triggerPlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 		m.updateSidebarPlans()
 		m.updateSidebarItems()
 		return m.spawnPlanAgent(planFile, "plan", buildPlanPrompt(planstate.DisplayName(planFile), entry.Description))
+	case "solo":
+		if err := m.fsmSetImplementing(planFile); err != nil {
+			return m, m.handleError(err)
+		}
+		m.loadPlanState()
+		m.updateSidebarPlans()
+		m.updateSidebarItems()
+		// Check if plan .md file exists on disk to decide prompt content.
+		planName := planstate.DisplayName(planFile)
+		planPath := filepath.Join(m.activeRepoPath, "docs", "plans", planFile)
+		refFile := ""
+		if _, err := os.Stat(planPath); err == nil {
+			refFile = planFile
+		}
+		prompt := buildSoloPrompt(planName, entry.Description, refFile)
+		return m.spawnPlanAgent(planFile, "solo", prompt)
 	case "implement":
 		// Read and parse plan — this also validates wave headers.
 		plansDir := filepath.Join(m.activeRepoPath, "docs", "plans")
@@ -732,7 +757,7 @@ func validatePlanHasWaves(plansDir, planFile string) error {
 // guards against truly nonsensical transitions (e.g. marking "finished" when already done).
 func isLocked(status planstate.Status, stage string) bool {
 	switch stage {
-	case "plan", "implement", "review":
+	case "plan", "implement", "solo", "review":
 		// Forward progression is always allowed — the FSM helpers
 		// (fsmSetImplementing, fsmSetReviewing) walk through intermediate states.
 		return false
