@@ -154,3 +154,24 @@ func TestInstanceData_ImplementationCompleteFalseByDefault(t *testing.T) {
 		t.Fatal("expected ImplementationComplete = false for a normal instance")
 	}
 }
+
+func TestInstanceData_RoundTripSoloAgent(t *testing.T) {
+	inst, err := NewInstance(InstanceOptions{
+		Title:   "solo-worker",
+		Path:    "/tmp/repo",
+		Program: "opencode",
+	})
+	if err != nil {
+		t.Fatalf("NewInstance() error = %v", err)
+	}
+	inst.SoloAgent = true
+
+	data := inst.ToInstanceData()
+	restored, err := FromInstanceData(data)
+	if err != nil {
+		t.Fatalf("FromInstanceData() error = %v", err)
+	}
+	if !restored.SoloAgent {
+		t.Fatal("expected SoloAgent = true after InstanceData round-trip")
+	}
+}

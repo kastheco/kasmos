@@ -69,6 +69,9 @@ type Instance struct {
 	// ImplementationComplete is true when the coder finished and the plan transitioned to review.
 	// The instance is auto-paused and rendered with a dim/completed visual style.
 	ImplementationComplete bool
+	// SoloAgent is true when this instance was spawned via "start solo agent" — no
+	// automatic lifecycle transitions (push prompt, review spawning) apply.
+	SoloAgent bool
 	// QueuedPrompt is sent to the session once it becomes ready for the first time. Cleared after send.
 	QueuedPrompt string
 
@@ -145,6 +148,7 @@ func (i *Instance) ToInstanceData() InstanceData {
 		WaveNumber:             i.WaveNumber,
 		IsReviewer:             i.IsReviewer,
 		ImplementationComplete: i.ImplementationComplete,
+		SoloAgent:              i.SoloAgent,
 		QueuedPrompt:           i.QueuedPrompt,
 	}
 
@@ -190,6 +194,7 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		WaveNumber:             data.WaveNumber,
 		IsReviewer:             data.IsReviewer,
 		ImplementationComplete: data.ImplementationComplete,
+		SoloAgent:              data.SoloAgent,
 		QueuedPrompt:           data.QueuedPrompt,
 		gitWorktree: git.NewGitWorktreeFromStorage(
 			data.Worktree.RepoPath,
