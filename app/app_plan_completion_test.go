@@ -27,6 +27,14 @@ func TestShouldPromptPushAfterCoderExit(t *testing.T) {
 	}
 }
 
+func TestShouldPromptPushAfterCoderExit_NoPromptForSoloAgent(t *testing.T) {
+	entry := planstate.PlanEntry{Status: planstate.StatusImplementing}
+	inst := &session.Instance{PlanFile: "p.md", AgentType: session.AgentTypeCoder, SoloAgent: true}
+
+	assert.False(t, shouldPromptPushAfterCoderExit(entry, inst, false),
+		"solo agents must not trigger automatic push prompt")
+}
+
 func TestShouldPromptPushAfterCoderExit_NoPromptForReviewer(t *testing.T) {
 	entry := planstate.PlanEntry{Status: planstate.StatusImplementing}
 	inst := &session.Instance{PlanFile: "p.md", AgentType: session.AgentTypeReviewer}

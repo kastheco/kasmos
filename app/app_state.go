@@ -970,6 +970,9 @@ func shouldPromptPushAfterCoderExit(entry planstate.PlanEntry, inst *session.Ins
 	if inst.AgentType != session.AgentTypeCoder {
 		return false
 	}
+	if inst.SoloAgent {
+		return false
+	}
 	if entry.Status != planstate.StatusImplementing {
 		return false
 	}
