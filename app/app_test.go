@@ -1128,3 +1128,62 @@ func TestPreviewTerminalReadyMsg_AcceptsCurrentInstance(t *testing.T) {
 		"previewTerminalInstance should be set when msg matches current selection")
 	assert.Nil(t, cmd, "no cmd should be returned")
 }
+
+// TestFocusMode_ReusesPreviewTerminal verifies that enterFocusMode reuses the
+// existing previewTerminal when it's already attached to the selected instance.
+func TestFocusMode_ReusesPreviewTerminal(t *testing.T) {
+	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:          context.Background(),
+		state:        stateDefault,
+		appConfig:    config.DefaultConfig(),
+		list:         ui.NewList(&spin, false),
+		menu:         ui.NewMenu(),
+		sidebar:      ui.NewSidebar(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+	}
+
+	// Add a started-looking instance. We can't actually start it (no tmux),
+	// but we can test the branch where previewTerminal is already set.
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:   "my-agent",
+		Path:    t.TempDir(),
+		Program: "claude",
+	})
+	require.NoError(t, err)
+	h.list.AddInstance(inst)()
+	h.list.SetSelectedInstance(0)
+
+	// Simulate previewTerminal already attached to "my-agent".
+	// enterFocusMode should detect this and NOT spawn a new terminal.
+	h.previewTerminalInstance = "my-agent"
+	// Instance is not started, so enterFocusMode should return nil (guard check).
+	cmd := h.enterFocusMode()
+
+	assert.Nil(t, cmd, "enterFocusMode should return nil when instance is not started")
+	assert.Equal(t, stateDefault, h.state, "state should remain default when instance is not started")
+}
+
+// TestExitFocusMode_KeepsPreviewTerminal verifies that exitFocusMode does NOT close
+// previewTerminal — it stays alive for preview rendering.
+func TestExitFocusMode_KeepsPreviewTerminal(t *testing.T) {
+	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:          context.Background(),
+		state:        stateFocusAgent,
+		appConfig:    config.DefaultConfig(),
+		list:         ui.NewList(&spin, false),
+		menu:         ui.NewMenu(),
+		sidebar:      ui.NewSidebar(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+	}
+
+	// Set previewTerminalInstance to simulate an attached terminal.
+	h.previewTerminalInstance = "my-agent"
+
+	h.exitFocusMode()
+
+	assert.Equal(t, stateDefault, h.state, "state should return to default after exitFocusMode")
+	assert.Equal(t, "my-agent", h.previewTerminalInstance,
+		"previewTerminalInstance should NOT be cleared by exitFocusMode")
+}
