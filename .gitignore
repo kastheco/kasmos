@@ -13,6 +13,7 @@ dist/checksums.txt
 docs/plans/.signals/
 docs/plans/.plan-state.lock
 *.bak
+*.test
 .agents/skills/bubbletea/
 .opencode/skills/bubbletea
 .claude/skills/bubbletea
