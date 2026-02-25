@@ -1293,6 +1293,9 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 func keyToBytes(msg tea.KeyMsg) []byte {
 	switch msg.Type {
 	case tea.KeyRunes:
+		if msg.Alt {
+			return append([]byte{0x1b}, []byte(string(msg.Runes))...)
+		}
 		return []byte(string(msg.Runes))
 	case tea.KeyEnter:
 		return []byte{0x0D}
