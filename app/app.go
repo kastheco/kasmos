@@ -425,12 +425,17 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.tabbedWindow.SetPreviewContent(content)
 			}
 		} else if m.previewTerminal == nil && !m.tabbedWindow.IsDocumentMode() {
-			// No terminal yet — show a connecting indicator while the attach is in flight.
-			// This covers the window between instanceChanged() tearing down the old terminal
-			// and previewTerminalReadyMsg arriving with the new one.
+			// No terminal — show appropriate fallback state.
 			selected := m.list.GetSelectedInstance()
-			if selected != nil && selected.Started() && selected.Status != session.Paused {
+			if selected != nil && selected.Started() && selected.Status != session.Paused && selected.Status != session.Loading {
+				// Instance is running but terminal hasn't attached yet — show connecting indicator.
 				m.tabbedWindow.SetConnectingState()
+			} else {
+				// nil, Loading, or Paused — delegate to UpdatePreview which renders the
+				// correct fallback (banner, progress bar, or paused message).
+				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+					log.ErrorLog.Printf("preview update error: %v", err)
+				}
 			}
 		}
 		// Banner animation (only when no terminal is active / fallback showing).
