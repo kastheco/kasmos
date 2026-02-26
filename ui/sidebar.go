@@ -864,6 +864,24 @@ func (s *Sidebar) ToggleSelectedExpand() bool {
 	return false
 }
 
+// SelectedSpaceAction returns the context-sensitive action label for the space
+// key in tree mode: "expand", "collapse", or fallback "toggle".
+func (s *Sidebar) SelectedSpaceAction() string {
+	if !s.useTreeMode || s.selectedIdx < 0 || s.selectedIdx >= len(s.rows) {
+		return "toggle"
+	}
+	row := s.rows[s.selectedIdx]
+	switch row.Kind {
+	case rowKindTopic, rowKindPlan, rowKindHistoryToggle:
+		if row.Collapsed {
+			return "expand"
+		}
+		return "collapse"
+	default:
+		return "toggle"
+	}
+}
+
 // GetSelectedPlanStage returns the plan file and stage if a stage row is selected.
 func (s *Sidebar) GetSelectedPlanStage() (planFile, stage string, ok bool) {
 	if !s.useTreeMode || s.selectedIdx >= len(s.rows) {

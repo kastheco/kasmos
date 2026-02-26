@@ -43,3 +43,22 @@ func TestMenu_SidebarEmptyHidesNewPlanAndUsesUpdatedLabels(t *testing.T) {
 		t.Fatalf("menu should label v as preview; got: %q", out)
 	}
 }
+
+func TestMenu_SidebarSpaceActionLabelOverridesToggle(t *testing.T) {
+	m := NewMenu()
+	m.SetSize(140, 1)
+	m.SetState(StateDefault)
+	m.SetFocusSlot(MenuSlotSidebar)
+
+	m.SetSidebarSpaceAction("expand")
+	out := stripMenuANSI(m.String())
+	if !strings.Contains(out, "space expand") {
+		t.Fatalf("menu should render dynamic sidebar space label; got: %q", out)
+	}
+
+	m.SetSidebarSpaceAction("collapse")
+	out = stripMenuANSI(m.String())
+	if !strings.Contains(out, "space collapse") {
+		t.Fatalf("menu should update sidebar space label to collapse; got: %q", out)
+	}
+}

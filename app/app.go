@@ -1090,6 +1090,9 @@ func (m *home) View() string {
 		m.statusBar.SetData(m.computeStatusBarData())
 		statusBarView = m.statusBar.String()
 	}
+	if m.menu != nil && m.sidebar != nil {
+		m.menu.SetSidebarSpaceAction(m.sidebar.SelectedSpaceAction())
+	}
 
 	mainView := lipgloss.JoinVertical(
 		lipgloss.Left,

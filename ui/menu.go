@@ -43,6 +43,10 @@ type Menu struct {
 	isFocusMode   bool
 	focusSlot     int // which pane is focused (-1 = unknown)
 
+	// sidebarSpaceAction controls the help label for KeySpaceExpand when the
+	// sidebar is focused ("expand" or "collapse").
+	sidebarSpaceAction string
+
 	// keyDown is the key which is pressed. The default is -1.
 	keyDown keys.KeyName
 
@@ -60,10 +64,11 @@ var promptMenuOptions = []keys.KeyName{keys.KeySubmitName}
 
 func NewMenu() *Menu {
 	return &Menu{
-		options:     defaultMenuOptions,
-		state:       StateEmpty,
-		isInDiffTab: false,
-		keyDown:     -1,
+		options:            defaultMenuOptions,
+		state:              StateEmpty,
+		isInDiffTab:        false,
+		keyDown:            -1,
+		sidebarSpaceAction: "toggle",
 	}
 }
 
@@ -120,6 +125,16 @@ const (
 func (m *Menu) SetFocusSlot(slot int) {
 	m.focusSlot = slot
 	m.updateOptions()
+}
+
+// SetSidebarSpaceAction sets the sidebar-specific space-key label.
+func (m *Menu) SetSidebarSpaceAction(action string) {
+	switch action {
+	case "expand", "collapse":
+		m.sidebarSpaceAction = action
+	default:
+		m.sidebarSpaceAction = "toggle"
+	}
 }
 
 // updateOptions updates the menu options based on current state and instance
@@ -259,6 +274,12 @@ func (m *Menu) String() string {
 
 	for i, k := range m.options {
 		binding := keys.GlobalkeyBindings[k]
+		help := binding.Help()
+		helpKey := help.Key
+		helpDesc := help.Desc
+		if k == keys.KeySpaceExpand {
+			helpDesc = m.sidebarSpaceAction
+		}
 
 		var (
 			localActionStyle = actionGroupStyle
@@ -282,11 +303,11 @@ func (m *Menu) String() string {
 		}
 
 		if inActionGroup {
-			s.WriteString(localActionStyle.Render(binding.Help().Key + " " + binding.Help().Desc))
+			s.WriteString(localActionStyle.Render(helpKey + " " + helpDesc))
 		} else {
-			s.WriteString(localKeyStyle.Render(binding.Help().Key))
+			s.WriteString(localKeyStyle.Render(helpKey))
 			s.WriteString(descStyle.Render(" "))
-			s.WriteString(localDescStyle.Render(binding.Help().Desc))
+			s.WriteString(localDescStyle.Render(helpDesc))
 		}
 
 		// Add appropriate separator

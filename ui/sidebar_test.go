@@ -133,6 +133,37 @@ func TestSidebarExpandPlanStages(t *testing.T) {
 	assert.True(t, s.HasRowID(SidebarPlanStagePrefix+"fix.md::finished"))
 }
 
+func TestSidebarSelectedSpaceAction(t *testing.T) {
+	s := NewSidebar()
+	s.SetTopicsAndPlans(
+		[]TopicDisplay{{
+			Name: "ui",
+			Plans: []PlanDisplay{{
+				Filename: "a.md",
+				Status:   "ready",
+			}},
+		}},
+		nil,
+		nil,
+	)
+
+	// Topic headers start expanded; selecting the topic should suggest collapse.
+	require.True(t, s.SelectByID(SidebarTopicPrefix+"ui"))
+	assert.Equal(t, "collapse", s.SelectedSpaceAction())
+
+	// Collapse topic, then selected topic should suggest expand.
+	s.ToggleSelectedExpand()
+	assert.Equal(t, "expand", s.SelectedSpaceAction())
+
+	// Select stage row (non-expandable) should fall back to toggle.
+	require.True(t, s.SelectByID(SidebarTopicPrefix+"ui"))
+	s.ToggleSelectedExpand() // expand topic again
+	require.True(t, s.SelectByID(SidebarPlanPrefix+"a.md"))
+	s.ToggleSelectedExpand() // expand plan stages
+	require.True(t, s.SelectByID(SidebarPlanStagePrefix+"a.md::implement"))
+	assert.Equal(t, "toggle", s.SelectedSpaceAction())
+}
+
 func TestSidebarGetSelectedPlanStage(t *testing.T) {
 	s := NewSidebar()
 	s.SetTopicsAndPlans(
