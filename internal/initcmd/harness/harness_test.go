@@ -113,6 +113,11 @@ func TestCodexAdapter(t *testing.T) {
 	})
 }
 
+func TestCodexAdapter_InstallEnforcement(t *testing.T) {
+	c := &Codex{}
+	assert.NoError(t, c.InstallEnforcement())
+}
+
 func TestOpenCodeAdapter(t *testing.T) {
 	o := &OpenCode{}
 

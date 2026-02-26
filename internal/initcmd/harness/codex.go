@@ -69,6 +69,12 @@ func (c *Codex) InstallSuperpowers() error {
 	return nil
 }
 
+func (c *Codex) InstallEnforcement() error { return nil }
+
+func (c *Claude) InstallEnforcement() error { return nil }
+
+func (o *OpenCode) InstallEnforcement() error { return nil }
+
 func (c *Codex) SupportsTemperature() bool { return true }
 func (c *Codex) SupportsEffort() bool      { return true }
 

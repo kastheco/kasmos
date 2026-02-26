@@ -2,8 +2,8 @@ package harness
 
 // AgentConfig holds the wizard-collected configuration for one agent role.
 type AgentConfig struct {
-	Role        string   // "coder", "reviewer", "planner", or custom
-	Harness     string   // "claude", "opencode", "codex"
+	Role        string // "coder", "reviewer", "planner", or custom
+	Harness     string // "claude", "opencode", "codex"
 	Model       string
 	Temperature *float64 // nil = harness default
 	Effort      string   // "" = harness default
@@ -18,6 +18,7 @@ type Harness interface {
 	ListModels() ([]string, error)
 	BuildFlags(agent AgentConfig) []string
 	InstallSuperpowers() error
+	InstallEnforcement() error
 	SupportsTemperature() bool
 	SupportsEffort() bool
 	ListEffortLevels(model string) []string
