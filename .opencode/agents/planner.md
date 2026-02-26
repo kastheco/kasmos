@@ -19,7 +19,7 @@ The feature branch for implementation is created by kasmos when the user trigger
 
 Only register implementation plans in plan-state.json — never register design docs (*-design.md) as separate entries.
 
-## Plan State (CRITICAL — must follow every time)
+## Plan Registration (CRITICAL — must follow every time)
 
 Plans live in `docs/plans/`. State is tracked in `docs/plans/plan-state.json`.
 Never modify plan file content for state tracking.
@@ -28,11 +28,11 @@ Never modify plan file content for state tracking.
 
 Registration steps (do both, never skip step 2):
 1. Write the plan to `docs/plans/<date>-<name>.md`
-2. Register the plan — check `$KASMOS_MANAGED` to determine method:
+2. Register the plan — check `` to determine method:
 
 **If `KASMOS_MANAGED=1` (running inside kasmos):** Create a sentinel file:
 `docs/plans/.signals/planner-finished-<date>-<name>.md` (empty file — just `touch` it).
-kasmos will detect this and register the plan. **Do not edit `plan-state.json` directly.**
+kasmos will detect this and register the plan. Do not edit `plan-state.json` directly.
 
 **If `KASMOS_MANAGED` is unset (raw terminal):** Read `docs/plans/plan-state.json`, then
 add `"<date>-<name>.md": {"status": "ready"}` and write it back.
