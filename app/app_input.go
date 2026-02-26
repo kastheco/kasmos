@@ -824,7 +824,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 							m.state = stateClickUpFetching
 							m.pickerOverlay = nil
 							m.toastManager.Info("fetching task details...")
-							return m, tea.Batch(m.fetchClickUpTask(r.ID), m.toastTickCmd())
+							return m, tea.Batch(m.fetchClickUpTaskWithTimeout(r.ID), m.toastTickCmd())
 						}
 					}
 				}
@@ -832,6 +832,10 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			m.state = stateDefault
 			m.pickerOverlay = nil
 		}
+		return m, nil
+	}
+
+	if m.state == stateClickUpFetching {
 		return m, nil
 	}
 

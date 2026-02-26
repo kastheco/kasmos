@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/planfsm"
@@ -25,6 +26,8 @@ import (
 )
 
 const GlobalInstanceLimit = 10
+
+const clickUpOpTimeout = 30 * time.Second
 
 // Run is the main entrypoint into the application.
 func Run(ctx context.Context, program string, autoYes bool) error {
@@ -1386,16 +1389,69 @@ func (m *home) toastTickCmd() tea.Cmd {
 
 func (m *home) searchClickUp(query string) tea.Cmd {
 	return func() tea.Msg {
-		importer, err := m.getOrCreateImporter()
+		ctx, cancel := context.WithTimeout(m.ctx, clickUpOpTimeout)
+		defer cancel()
+
+		importer, err := m.getOrCreateImporter(ctx)
 		if err != nil {
-			return clickUpSearchResultMsg{Err: err}
+			return clickUpSearchResultMsg{Err: normalizeClickUpError(err)}
 		}
-		results, err := importer.Search(query)
-		return clickUpSearchResultMsg{Results: results, Err: err}
+
+		searchDone := make(chan clickUpSearchResultMsg, 1)
+		go func() {
+			results, searchErr := importer.Search(query)
+			searchDone <- clickUpSearchResultMsg{Results: results, Err: searchErr}
+		}()
+
+		select {
+		case msg := <-searchDone:
+			msg.Err = normalizeClickUpError(msg.Err)
+			return msg
+		case <-ctx.Done():
+			return clickUpSearchResultMsg{Err: normalizeClickUpError(ctx.Err())}
+		}
 	}
 }
 
-func (m *home) getOrCreateImporter() (*clickup.Importer, error) {
+func (m *home) fetchClickUpTaskWithTimeout(taskID string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(m.ctx, clickUpOpTimeout)
+		defer cancel()
+
+		if m.clickUpImporter == nil {
+			return clickUpTaskFetchedMsg{Err: fmt.Errorf("importer not initialized")}
+		}
+
+		fetchDone := make(chan clickUpTaskFetchedMsg, 1)
+		go func() {
+			task, fetchErr := m.clickUpImporter.FetchTask(taskID)
+			fetchDone <- clickUpTaskFetchedMsg{Task: task, Err: fetchErr}
+		}()
+
+		select {
+		case msg := <-fetchDone:
+			msg.Err = normalizeClickUpError(msg.Err)
+			return msg
+		case <-ctx.Done():
+			return clickUpTaskFetchedMsg{Err: normalizeClickUpError(ctx.Err())}
+		}
+	}
+}
+
+func normalizeClickUpError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.Canceled) {
+		return fmt.Errorf("operation canceled")
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("operation timed out after %s", clickUpOpTimeout)
+	}
+	return err
+}
+
+func (m *home) getOrCreateImporter(ctx context.Context) (*clickup.Importer, error) {
 	if m.clickUpImporter != nil {
 		return m.clickUpImporter, nil
 	}
@@ -1403,7 +1459,7 @@ func (m *home) getOrCreateImporter() (*clickup.Importer, error) {
 		return nil, fmt.Errorf("no clickup MCP server configured")
 	}
 
-	transport, err := m.createTransport(*m.clickUpConfig)
+	transport, err := m.createTransport(ctx, *m.clickUpConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -1426,10 +1482,10 @@ func (m *home) getOrCreateImporter() (*clickup.Importer, error) {
 	return m.clickUpImporter, nil
 }
 
-func (m *home) createTransport(cfg clickup.MCPServerConfig) (mcpclient.Transport, error) {
+func (m *home) createTransport(ctx context.Context, cfg clickup.MCPServerConfig) (mcpclient.Transport, error) {
 	switch cfg.Type {
 	case "http":
-		token, err := m.getClickUpToken()
+		token, err := m.getClickUpToken(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -1445,7 +1501,7 @@ func (m *home) createTransport(cfg clickup.MCPServerConfig) (mcpclient.Transport
 	}
 }
 
-func (m *home) getClickUpToken() (string, error) {
+func (m *home) getClickUpToken(ctx context.Context) (string, error) {
 	path := mcpclient.TokenPath()
 	tok, err := mcpclient.LoadToken(path)
 	if err == nil && !tok.IsExpired() {
@@ -1457,7 +1513,7 @@ func (m *home) getClickUpToken() (string, error) {
 		TokenURL: "https://api.clickup.com/api/v2/oauth/token",
 		ClientID: "kasmos", // TODO: register ClickUp OAuth app
 	}
-	tok, err = mcpclient.OAuthFlow(m.ctx, oauthCfg, nil)
+	tok, err = mcpclient.OAuthFlow(ctx, oauthCfg, nil)
 	if err != nil {
 		return "", fmt.Errorf("oauth: %w", err)
 	}
