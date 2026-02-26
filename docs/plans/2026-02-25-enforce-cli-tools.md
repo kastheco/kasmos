@@ -12,6 +12,8 @@
 
 ---
 
+## Wave 1
+
 ### Task 1: Add InstallEnforcement to Harness interface
 
 **Files:**
@@ -139,6 +141,8 @@ feat(scaffold): add claude enforce-cli-tools hook script template
 ```
 
 ---
+
+## Wave 2
 
 ### Task 3: Implement Claude InstallEnforcement
 
@@ -358,6 +362,8 @@ feat(opencode): implement InstallEnforcement — tool.execute.before plugin
 
 ---
 
+## Wave 3
+
 ### Task 5: Wire InstallEnforcement into kas init
 
 **Files:**
@@ -402,6 +408,8 @@ feat(init): wire InstallEnforcement into kas init pipeline
 ```
 
 ---
+
+## Wave 4
 
 ### Task 6: End-to-end validation
 

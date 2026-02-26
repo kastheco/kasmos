@@ -44,6 +44,8 @@ The mockups from the design session are the source of truth. Key points:
 
 ---
 
+## Wave 1: Foundations (Parallel)
+
 ### Task 1: Palette & Styles Foundation
 
 **Files:**
@@ -226,6 +228,8 @@ git commit -m "feat(wizard): add role and harness metadata for TUI detail panels
 
 ---
 
+## Wave 2: Root Model
+
 ### Task 3: Root Model & Step Interface
 
 **Files:**
@@ -336,6 +340,8 @@ git commit -m "feat(wizard): add root bubbletea model with step routing and grad
 ```
 
 ---
+
+## Wave 3: Step Sub-Models (Parallel)
 
 ### Task 4: Step 1 — Harness Selection Sub-Model
 
@@ -544,6 +550,8 @@ git commit -m "feat(wizard): implement agent configuration browse mode with mast
 
 ---
 
+## Wave 4: Edit Mode & Review Step (Parallel)
+
 ### Task 6: Step 2 — Agent Configuration Sub-Model (Edit Mode)
 
 **Files:**
@@ -744,6 +752,8 @@ git commit -m "feat(wizard): implement review & apply TUI step with summary card
 
 ---
 
+## Wave 5: Integration
+
 ### Task 8: Wire Everything Together
 
 **Files:**
@@ -845,6 +855,8 @@ git commit -m "feat(wizard): wire bubbletea TUI, remove old huh form stages"
 ```
 
 ---
+
+## Wave 6: QA, Polish & Pre-populate (Parallel)
 
 ### Task 9: Manual QA & Polish
 
