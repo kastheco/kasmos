@@ -65,6 +65,8 @@ const (
 	stateNewPlan
 	// stateNewPlanTopic is the state when the user is picking a topic for a new plan.
 	stateNewPlanTopic
+	// stateSpawnAgent is the state when the user is spawning an ad-hoc agent session.
+	stateSpawnAgent
 	// statePRTitle is the state when the user is entering a PR title.
 	statePRTitle
 	// statePRBody is the state when the user is editing the PR body/description.
@@ -1168,6 +1170,8 @@ func (m *home) View() string {
 	case m.state == stateRenameInstance && m.textInputOverlay != nil:
 		result = overlay.PlaceOverlay(0, 0, m.textInputOverlay.Render(), mainView, true, true)
 	case m.state == stateNewPlan && m.formOverlay != nil:
+		result = overlay.PlaceOverlay(0, 0, m.formOverlay.Render(), mainView, true, true)
+	case m.state == stateSpawnAgent && m.formOverlay != nil:
 		result = overlay.PlaceOverlay(0, 0, m.formOverlay.Render(), mainView, true, true)
 	case m.state == stateNewPlanTopic && m.pickerOverlay != nil:
 		result = overlay.PlaceOverlay(0, 0, m.pickerOverlay.Render(), mainView, true, true)

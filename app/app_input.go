@@ -23,7 +23,7 @@ func (m *home) handleMenuHighlighting(msg tea.KeyMsg) (cmd tea.Cmd, returnEarly 
 		m.keySent = false
 		return nil, false
 	}
-	if m.state == statePrompt || m.state == stateHelp || m.state == stateConfirm || m.state == stateNewPlan || m.state == stateNewPlanTopic || m.state == stateSearch || m.state == stateContextMenu || m.state == statePRTitle || m.state == statePRBody || m.state == stateRenameInstance || m.state == stateSendPrompt || m.state == stateFocusAgent || m.state == stateRepoSwitch || m.state == stateChangeTopic || m.state == stateClickUpSearch || m.state == stateClickUpPicker || m.state == stateClickUpFetching {
+	if m.state == statePrompt || m.state == stateHelp || m.state == stateConfirm || m.state == stateNewPlan || m.state == stateNewPlanTopic || m.state == stateSpawnAgent || m.state == stateSearch || m.state == stateContextMenu || m.state == statePRTitle || m.state == statePRBody || m.state == stateRenameInstance || m.state == stateSendPrompt || m.state == stateFocusAgent || m.state == stateRepoSwitch || m.state == stateChangeTopic || m.state == stateClickUpSearch || m.state == stateClickUpPicker || m.state == stateClickUpFetching {
 		return nil, false
 	}
 	// If it's in the global keymap, we should try to highlight it.
@@ -724,6 +724,36 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		return m, nil
 	}
 
+	// Handle spawn agent form state
+	if m.state == stateSpawnAgent {
+		if m.formOverlay == nil {
+			m.state = stateDefault
+			return m, nil
+		}
+		shouldClose := m.formOverlay.HandleKeyPress(msg)
+		if shouldClose {
+			if m.formOverlay.IsSubmitted() {
+				name := m.formOverlay.Name()
+				branch := m.formOverlay.Branch()
+				workPath := m.formOverlay.WorkPath()
+				m.formOverlay = nil
+
+				if name == "" {
+					m.state = stateDefault
+					m.menu.SetState(ui.StateDefault)
+					return m, m.handleError(fmt.Errorf("name cannot be empty"))
+				}
+
+				return m.spawnAdHocAgent(name, branch, workPath)
+			}
+			m.state = stateDefault
+			m.menu.SetState(ui.StateDefault)
+			m.formOverlay = nil
+			return m, tea.WindowSize()
+		}
+		return m, nil
+	}
+
 	// Handle change-topic picker for existing plans
 	if m.state == stateChangeTopic {
 		if m.pickerOverlay == nil {
@@ -985,27 +1015,6 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		m.promptAfterName = true
 
 		return m, nil
-	case keys.KeyNew:
-		if m.list.TotalInstances() >= GlobalInstanceLimit {
-			return m, m.handleError(
-				fmt.Errorf("you can't create more than %d instances", GlobalInstanceLimit))
-		}
-		instance, err := session.NewInstance(session.InstanceOptions{
-			Title:   "",
-			Path:    m.activeRepoPath,
-			Program: m.program,
-		})
-		if err != nil {
-			return m, m.handleError(err)
-		}
-
-		m.addInstanceFinalizer(instance, m.list.AddInstance(instance))
-		m.newInstance = instance
-		m.list.SetSelectedInstance(m.list.NumInstances() - 1)
-		m.state = stateNew
-		m.menu.SetState(ui.StateNewInstance)
-
-		return m, nil
 	case keys.KeyNewSkipPermissions:
 		if m.list.TotalInstances() >= GlobalInstanceLimit {
 			return m, m.handleError(
@@ -1240,16 +1249,6 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			m.state = stateDefault
 		})
 		return m, nil
-	case keys.KeyFocusSidebar:
-		if m.sidebarHidden {
-			// Show and focus in one motion
-			m.sidebarHidden = false
-			m.setFocusSlot(slotSidebar)
-			return m, tea.WindowSize()
-		}
-		// s key always jumps directly to the left sidebar regardless of current slot.
-		m.setFocusSlot(slotSidebar)
-		return m, nil
 	case keys.KeyFocusList:
 		// t key always jumps directly to the instance list — no-op when list is hidden.
 		if m.list.TotalInstances() > 0 {
@@ -1310,6 +1309,14 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 	case keys.KeyNewPlan:
 		m.state = stateNewPlan
 		m.formOverlay = overlay.NewFormOverlay("new plan", 60)
+		return m, nil
+	case keys.KeySpawnAgent:
+		if m.list.TotalInstances() >= GlobalInstanceLimit {
+			return m, m.handleError(
+				fmt.Errorf("you can't create more than %d instances", GlobalInstanceLimit))
+		}
+		m.state = stateSpawnAgent
+		m.formOverlay = overlay.NewSpawnFormOverlay("spawn agent", 60)
 		return m, nil
 	case keys.KeyRepoSwitch:
 		m.state = stateRepoSwitch
