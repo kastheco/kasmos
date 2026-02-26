@@ -143,11 +143,12 @@ func (m *home) updateNavPanelStatus() {
 }
 
 // focusSlot constants for readability.
+// Order matches tab layout: info (first), agent (second), diff (third).
 const (
 	slotNav   = 0
-	slotAgent = 1
-	slotDiff  = 2
-	slotInfo  = 3
+	slotInfo  = 1
+	slotAgent = 2
+	slotDiff  = 3
 	slotCount = 4
 )
 
@@ -158,40 +159,40 @@ func (m *home) setFocusSlot(slot int) {
 	m.menu.SetFocusSlot(slot)
 
 	// Center pane is focused when any of the 3 center tabs is active.
-	centerFocused := slot >= slotAgent && slot <= slotInfo
+	centerFocused := slot >= slotInfo && slot <= slotDiff
 	m.tabbedWindow.SetFocused(centerFocused)
 
 	// When focusing a center tab, switch the visible tab to match and track which tab is focused.
 	if centerFocused {
-		m.tabbedWindow.SetActiveTab(slot - slotAgent) // slotAgent=1 → PreviewTab=0, etc.
-		m.tabbedWindow.SetFocusedTab(slot - slotAgent)
+		m.tabbedWindow.SetActiveTab(slot - slotInfo) // slotInfo=1 → InfoTab=0, etc.
+		m.tabbedWindow.SetFocusedTab(slot - slotInfo)
 	} else {
 		m.tabbedWindow.SetFocusedTab(-1)
 	}
 }
 
 // nextFocusSlot advances the focus ring forward through the 3 center tabs only.
-// Tab only cycles agent → diff → info → agent. Use 's'/'t' to reach the sidebars.
+// Tab only cycles info → agent → diff → info. Use 's'/'t' to reach the sidebars.
 func (m *home) nextFocusSlot() {
 	switch m.focusSlot {
+	case slotInfo:
+		m.setFocusSlot(slotAgent)
 	case slotAgent:
 		m.setFocusSlot(slotDiff)
-	case slotDiff:
+	default: // slotDiff, slotNav — all land on info
 		m.setFocusSlot(slotInfo)
-	default: // slotInfo, slotNav — all land on agent
-		m.setFocusSlot(slotAgent)
 	}
 }
 
 // prevFocusSlot moves the focus ring backward through the 3 center tabs only.
 func (m *home) prevFocusSlot() {
 	switch m.focusSlot {
+	case slotAgent:
+		m.setFocusSlot(slotInfo)
 	case slotDiff:
 		m.setFocusSlot(slotAgent)
-	case slotInfo:
+	default: // slotInfo, slotNav — all land on diff
 		m.setFocusSlot(slotDiff)
-	default: // slotAgent, slotNav — all land on info
-		m.setFocusSlot(slotInfo)
 	}
 }
 
@@ -825,8 +826,12 @@ func withOpenCodeModelFlag(program, model string) string {
 
 // programForAgent resolves the program command for a given agent type
 // (e.g. "coder", "planner") using the kasmos config profile. Falls back to
-// m.program if no profile is configured. Appends --model for opencode.
-// An empty agentType uses the "chat" profile directly.
+// m.program if no profile is configured.
+//
+// For typed agents (coder/planner/reviewer), opencode's own --agent flag
+// handles model selection via its agent config, so we do NOT append --model.
+// For ad-hoc instances (no agent type), we append --model since there is no
+// --agent flag to drive model selection.
 func (m *home) programForAgent(agentType string) string {
 	if m.appConfig == nil {
 		return m.program
@@ -847,9 +852,12 @@ func (m *home) programForAgent(agentType string) string {
 		} else {
 			return m.program
 		}
+		// Ad-hoc sessions have no --agent flag, so pass --model explicitly.
+		prog := profile.BuildCommand()
+		return withOpenCodeModelFlag(prog, profile.Model)
 	}
-	prog := profile.BuildCommand()
-	return withOpenCodeModelFlag(prog, profile.Model)
+	// Typed agents: opencode handles model via --agent <type> + its own config.
+	return profile.BuildCommand()
 }
 
 func normalizeOpenCodeModelID(model string) string {
