@@ -451,6 +451,13 @@
       "topic": "automation",
       "created_at": "2026-02-25T22:00:00Z"
     },
+    "2026-02-26-cleanup-superpowers-cmds.md": {
+      "status": "done",
+      "description": "it seems some superpowers plans keep pushing claude to use grep (specifically writing-plans just now). these should be overriden to reference their modern counterparts",
+      "branch": "plan/cleanup-superpowers-cmds",
+      "topic": "tools",
+      "created_at": "2026-02-26T03:50:14.851365189Z"
+    },
     "2026-02-26-details-tab.md": {
       "status": "done",
       "description": "replace lazygit git tab with a read-only info tab",
