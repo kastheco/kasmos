@@ -145,6 +145,69 @@ func (i *Instance) StartOnMainBranch() error {
 	return nil
 }
 
+// StartOnBranch starts the instance in a worktree checked out to the specified branch.
+// If the branch exists, it reuses it. If not, it creates a new branch from HEAD.
+// Used for ad-hoc agent sessions with a branch override.
+func (i *Instance) StartOnBranch(branch string) error {
+	if i.Title == "" {
+		return fmt.Errorf("instance title cannot be empty")
+	}
+
+	i.LoadingTotal = 8
+	i.LoadingStage = 0
+	i.LoadingMessage = "Initializing..."
+
+	i.setLoadingProgress(1, "Preparing session...")
+	var tmuxSession *tmux.TmuxSession
+	if i.tmuxSession != nil {
+		tmuxSession = i.tmuxSession
+	} else {
+		tmuxSession = tmux.NewTmuxSession(i.Title, i.Program, i.SkipPermissions)
+	}
+	tmuxSession.ProgressFunc = func(stage int, desc string) {
+		i.setLoadingProgress(3+stage, desc)
+	}
+	i.tmuxSession = tmuxSession
+	i.transferPromptToCli()
+
+	i.setLoadingProgress(2, "Creating git worktree...")
+	worktree, branchName, err := git.NewGitWorktreeOnBranch(i.Path, i.Title, branch)
+	if err != nil {
+		return fmt.Errorf("failed to create git worktree on branch %s: %w", branch, err)
+	}
+	i.gitWorktree = worktree
+	i.Branch = branchName
+
+	var setupErr error
+	defer func() {
+		if setupErr != nil {
+			if cleanupErr := i.Kill(); cleanupErr != nil {
+				setupErr = fmt.Errorf("%v (cleanup error: %v)", setupErr, cleanupErr)
+			}
+		} else {
+			i.started = true
+		}
+	}()
+
+	i.setLoadingProgress(3, "Setting up git worktree...")
+	if err := i.gitWorktree.Setup(); err != nil {
+		setupErr = fmt.Errorf("failed to setup git worktree: %w", err)
+		return setupErr
+	}
+
+	i.setLoadingProgress(4, "Starting tmux session...")
+	if err := i.tmuxSession.Start(i.gitWorktree.GetWorktreePath()); err != nil {
+		if cleanupErr := i.gitWorktree.Cleanup(); cleanupErr != nil {
+			err = fmt.Errorf("%v (cleanup error: %v)", err, cleanupErr)
+		}
+		setupErr = fmt.Errorf("failed to start new session: %w", err)
+		return setupErr
+	}
+
+	i.SetStatus(Running)
+	return nil
+}
+
 // StartInSharedWorktree starts the instance using a topic's shared worktree.
 // Unlike Start(), this does NOT create a new git worktree — it uses the one provided.
 func (i *Instance) StartInSharedWorktree(worktree *git.GitWorktree, branch string) error {

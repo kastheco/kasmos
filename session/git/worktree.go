@@ -77,6 +77,38 @@ func NewGitWorktree(repoPath string, sessionName string) (tree *GitWorktree, bra
 	}, branchName, nil
 }
 
+// NewGitWorktreeOnBranch creates a GitWorktree targeting a specific branch name.
+// Unlike NewGitWorktree which auto-generates a branch, this uses the exact branch provided.
+// Setup() will handle whether the branch already exists or needs creating.
+func NewGitWorktreeOnBranch(repoPath, sessionName, branch string) (*GitWorktree, string, error) {
+	branch = sanitizeBranchName(branch)
+
+	absPath, err := filepath.Abs(repoPath)
+	if err != nil {
+		absPath = repoPath
+	}
+
+	repoPath, err = findGitRepoRoot(absPath)
+	if err != nil {
+		return nil, "", err
+	}
+
+	worktreeDir, err := getWorktreeDirectory(repoPath)
+	if err != nil {
+		return nil, "", err
+	}
+
+	worktreePath := filepath.Join(worktreeDir, branch)
+	worktreePath = worktreePath + "_" + fmt.Sprintf("%x", time.Now().UnixNano())
+
+	return &GitWorktree{
+		repoPath:     repoPath,
+		sessionName:  sessionName,
+		branchName:   branch,
+		worktreePath: worktreePath,
+	}, branch, nil
+}
+
 // GetWorktreePath returns the path to the worktree
 func (g *GitWorktree) GetWorktreePath() string {
 	return g.worktreePath

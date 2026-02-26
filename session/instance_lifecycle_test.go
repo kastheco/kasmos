@@ -1,7 +1,10 @@
 package session
 
 import (
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/kastheco/kasmos/cmd/cmd_test"
@@ -9,6 +12,30 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func runCommand(t *testing.T, dir string, name string, args ...string) {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, "command failed: %s %v\n%s", name, args, string(output))
+}
+
+func setupGitRepo(t *testing.T) string {
+	t.Helper()
+
+	repo := t.TempDir()
+	runCommand(t, repo, "git", "init")
+	runCommand(t, repo, "git", "config", "user.email", "test@example.com")
+	runCommand(t, repo, "git", "config", "user.name", "test")
+
+	filePath := filepath.Join(repo, "README.md")
+	require.NoError(t, os.WriteFile(filePath, []byte("test\n"), 0644))
+	runCommand(t, repo, "git", "add", "README.md")
+	runCommand(t, repo, "git", "commit", "-m", "initial")
+
+	return repo
+}
 
 func TestStartTransfersQueuedPromptForOpenCode(t *testing.T) {
 	cmdExec := cmd_test.MockCmdExec{
@@ -55,4 +82,35 @@ func TestStartKeepsQueuedPromptForAider(t *testing.T) {
 
 	// QueuedPrompt should remain — aider doesn't support CLI prompts.
 	assert.Equal(t, "Fix the bug.", inst.QueuedPrompt)
+}
+
+func TestStartOnBranch_SetsFields(t *testing.T) {
+	repoPath := setupGitRepo(t)
+
+	inst, err := NewInstance(InstanceOptions{
+		Title:   "test-branch",
+		Path:    repoPath,
+		Program: "opencode",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "", inst.Branch)
+
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error { return nil },
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			return []byte("Ask anything"), nil
+		},
+	}
+	inst.tmuxSession = tmux.NewTmuxSessionWithDeps("test-branch", "opencode", false, &testPtyFactory{}, cmdExec)
+
+	err = inst.StartOnBranch("feature/task-5")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, inst.Kill())
+	})
+
+	assert.Equal(t, "feature/task-5", inst.Branch)
+	assert.Equal(t, Running, inst.Status)
+	assert.True(t, inst.Started())
+	assert.NotEqual(t, "", inst.GetWorktreePath(), fmt.Sprintf("worktree path should be set for %s", inst.Title))
 }
