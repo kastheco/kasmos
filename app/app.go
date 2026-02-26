@@ -824,6 +824,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		m.updateInfoPane()
 		m.updateSidebarPlans()
 		m.updateSidebarItems()
 		completionCmd := m.checkPlanCompletion()

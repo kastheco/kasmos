@@ -504,10 +504,102 @@ func (m *home) instanceChanged() tea.Cmd {
 
 	m.tabbedWindow.UpdateDiff(selected)
 	m.tabbedWindow.SetInstance(selected)
+	m.updateInfoPane()
 	// Update menu with current instance
 	m.menu.SetInstance(selected)
 
 	return spawnCmd
+}
+
+// updateInfoPane refreshes the info tab data from the selected instance.
+func (m *home) updateInfoPane() {
+	if m.tabbedWindow == nil {
+		return
+	}
+
+	selected := m.list.GetSelectedInstance()
+	if selected == nil {
+		m.setInfoData(ui.InfoData{HasInstance: false})
+		return
+	}
+
+	data := ui.InfoData{
+		HasInstance: true,
+		Title:       selected.Title,
+		Program:     selected.Program,
+		Branch:      selected.Branch,
+		Path:        selected.Path,
+		Status:      statusString(selected.Status),
+		AgentType:   selected.AgentType,
+		TaskNumber:  selected.TaskNumber,
+		WaveNumber:  selected.WaveNumber,
+	}
+
+	if !selected.CreatedAt.IsZero() {
+		data.Created = selected.CreatedAt.Format("2006-01-02 15:04")
+	}
+
+	if selected.PlanFile != "" && m.planState != nil {
+		entry, ok := m.planState.Entry(selected.PlanFile)
+		if ok {
+			data.HasPlan = true
+			data.PlanName = planstate.DisplayName(selected.PlanFile)
+			data.PlanDescription = entry.Description
+			data.PlanStatus = string(entry.Status)
+			data.PlanTopic = entry.Topic
+			data.PlanBranch = entry.Branch
+			if !entry.CreatedAt.IsZero() {
+				data.PlanCreated = entry.CreatedAt.Format("2006-01-02")
+			}
+		}
+
+		if orch, ok := m.waveOrchestrators[selected.PlanFile]; ok {
+			data.TotalWaves = orch.TotalWaves()
+			data.TotalTasks = orch.TotalTasks()
+			tasks := orch.CurrentWaveTasks()
+			data.WaveTasks = make([]ui.WaveTaskInfo, len(tasks))
+			for i, task := range tasks {
+				state := "pending"
+				if orch.IsTaskComplete(task.Number) {
+					state = "complete"
+				} else if orch.IsTaskFailed(task.Number) {
+					state = "failed"
+				} else if orch.IsTaskRunning(task.Number) {
+					state = "running"
+				}
+				data.WaveTasks[i] = ui.WaveTaskInfo{
+					Number: task.Number,
+					State:  state,
+				}
+			}
+		}
+	}
+
+	m.setInfoData(data)
+}
+
+func (m *home) setInfoData(data ui.InfoData) {
+	type infoDataSetter interface {
+		SetInfoData(ui.InfoData)
+	}
+	if setter, ok := any(m.tabbedWindow).(infoDataSetter); ok {
+		setter.SetInfoData(data)
+	}
+}
+
+func statusString(s session.Status) string {
+	switch s {
+	case session.Running:
+		return "running"
+	case session.Ready:
+		return "ready"
+	case session.Loading:
+		return "loading"
+	case session.Paused:
+		return "paused"
+	default:
+		return "unknown"
+	}
 }
 
 // loadPlanState reads plan-state.json from the active repo's docs/plans/ directory.
