@@ -929,14 +929,21 @@ func (n *NavigationPanel) renderNavRow(row navRow, contentWidth int) string {
 
 	case navRowHistoryPlan:
 		label := row.Label
-		maxLabel := contentWidth - 2
+		doneIcon := navCompletedIconStyle.Render("●")
+		doneW := lipgloss.Width(doneIcon)
+		maxLabel := contentWidth - 1 - doneW
 		if maxLabel < 3 {
 			maxLabel = 3
 		}
 		if runewidth.StringWidth(label) > maxLabel {
 			label = runewidth.Truncate(label, maxLabel-1, "…")
 		}
-		return navIdleIconStyle.Render("  " + label)
+		usedW := runewidth.StringWidth(label) + 1 + doneW
+		gap := contentWidth - usedW
+		if gap < 0 {
+			gap = 0
+		}
+		return navIdleIconStyle.Render(label) + strings.Repeat(" ", gap) + " " + doneIcon
 
 	case navRowCancelled:
 		label := row.Label
@@ -1090,7 +1097,8 @@ func (n *NavigationPanel) String() string {
 	// Legend — status icon key
 	legend := navRunningIconStyle.Render("●") + navLegendLabelStyle.Render(" running") +
 		"  " + navNotifyIconStyle.Render("◉") + navLegendLabelStyle.Render(" review") +
-		"  " + navIdleIconStyle.Render("○") + navLegendLabelStyle.Render(" idle")
+		"  " + navIdleIconStyle.Render("○") + navLegendLabelStyle.Render(" idle") +
+		"  " + navCompletedIconStyle.Render("●") + navLegendLabelStyle.Render(" done")
 
 	// Repo switcher
 	var repoSection string
