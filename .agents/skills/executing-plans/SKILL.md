@@ -7,9 +7,9 @@ description: Use when you have a written implementation plan to execute in a sep
 
 ## Overview
 
-Load plan, review critically, execute tasks in batches, report for review between batches.
+Load plan, review critically, execute tasks aligned to wave structure, report for review between waves.
 
-**Core principle:** Batch execution with checkpoints for architect review.
+**Core principle:** Wave-aligned batch execution with checkpoints for architect review.
 
 **Announce at start:** "I'm using the executing-plans skill to implement this plan."
 
@@ -17,9 +17,10 @@ Load plan, review critically, execute tasks in batches, report for review betwee
 
 ### Step 1: Load and Review Plan
 1. Read plan file
-2. Review critically - identify any questions or concerns about the plan
-3. If concerns: Raise them with your human partner before starting
-4. If no concerns: **Create TodoWrite** with one todo per task (all `pending`), then proceed
+2. Check the **Size** field in the plan header (Trivial/Small/Medium/Large)
+3. Review critically - identify any questions or concerns about the plan
+4. If concerns: Raise them with your human partner before starting
+5. If no concerns: **Create TodoWrite** with one todo per task (all `pending`), then proceed
 
 ```
 TodoWrite([
@@ -30,24 +31,31 @@ TodoWrite([
 ```
 
 ### Step 2: Execute Batch
-**Default: First 3 tasks**
 
-For each task:
+**Batch = one wave.** If the plan has no waves, all tasks are one batch.
+
+| Plan size | Batch strategy |
+|-----------|---------------|
+| **Trivial** (1 task) | Execute the single task, self-review, done |
+| **Small** (2–3 tasks, no waves) | Execute all tasks as one batch |
+| **Medium/Large** (with waves) | Execute one wave per batch |
+
+For each task in the batch:
 1. Mark as in_progress in TodoWrite
-2. Follow each step exactly (plan has bite-sized steps)
+2. Follow each step exactly
 3. Run verifications as specified
 4. Mark as completed in TodoWrite
 
 ### Step 3: Report
-When batch complete:
+When batch (wave) complete:
 - Show what was implemented
 - Show verification output
-- Say: "Ready for feedback."
+- Say: "Wave N complete. Ready for feedback."
 
 ### Step 4: Continue
 Based on feedback:
 - Apply changes if needed
-- Execute next batch
+- Execute next wave
 - Repeat until complete
 
 ### Step 5: Complete Development
@@ -97,7 +105,7 @@ Then:
 - Follow plan steps exactly
 - Don't skip verifications
 - Reference skills when plan says to
-- Between batches: just report and wait
+- **Batch = wave** — report at wave boundaries, not after each task
 - Stop when blocked, don't guess
 - Never start implementation on main/master branch without explicit user consent
 

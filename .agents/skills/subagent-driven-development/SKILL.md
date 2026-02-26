@@ -5,9 +5,9 @@ description: Use when executing implementation plans with independent tasks in t
 
 # Subagent-Driven Development
 
-Execute plan by dispatching fresh subagent per task, with two-stage review after each: spec compliance review first, then code quality review.
+Execute plan by dispatching fresh subagent per task, with wave-level review checkpoints.
 
-**Core principle:** Fresh subagent per task + two-stage review (spec then quality) = high quality, fast iteration
+**Core principle:** Fresh subagent per task + review per wave (not per task) = high quality without unnecessary overhead
 
 ## When to Use
 
@@ -32,8 +32,20 @@ digraph when_to_use {
 **vs. Executing Plans (parallel session):**
 - Same session (no context switch)
 - Fresh subagent per task (no context pollution)
-- Two-stage review after each task: spec compliance first, then code quality
+- Review after each wave (not each task) — less overhead
 - Faster iteration (no human-in-loop between tasks)
+
+## Review Model
+
+Reviews are expensive (2 subagent dispatches each). Scale review frequency to plan size:
+
+| Plan size | Review schedule |
+|-----------|----------------|
+| **Trivial** (1 task, no waves) | Implementer self-review only. No separate reviewer dispatch. |
+| **Small** (2–3 tasks, no waves) | Implement all tasks, then one combined spec + quality review. |
+| **Medium/Large** (waves) | Implement all tasks in a wave, then spec + quality review at wave boundary. |
+
+**The key insight:** review at wave boundaries, not task boundaries. A wave is the natural checkpoint — all tasks within it are related and should be reviewed together for coherence.
 
 ## The Process
 
@@ -41,50 +53,70 @@ digraph when_to_use {
 digraph process {
     rankdir=TB;
 
-    subgraph cluster_per_task {
-        label="Per Task";
-        "Dispatch implementer subagent (./implementer-prompt.md)" [shape=box];
-        "Implementer subagent asks questions?" [shape=diamond];
-        "Answer questions, provide context" [shape=box];
-        "Implementer subagent implements, tests, commits, self-reviews" [shape=box];
-        "Dispatch spec reviewer subagent (./spec-reviewer-prompt.md)" [shape=box];
-        "Spec reviewer subagent confirms code matches spec?" [shape=diamond];
-        "Implementer subagent fixes spec gaps" [shape=box];
-        "Dispatch code quality reviewer subagent (./code-quality-reviewer-prompt.md)" [shape=box];
-        "Code quality reviewer subagent approves?" [shape=diamond];
-        "Implementer subagent fixes quality issues" [shape=box];
-        "Mark task complete in TodoWrite" [shape=box];
+    subgraph cluster_per_wave {
+        label="Per Wave (or all tasks if no waves)";
+
+        subgraph cluster_per_task {
+            label="Per Task";
+            "Dispatch implementer subagent" [shape=box];
+            "Implementer asks questions?" [shape=diamond];
+            "Answer questions" [shape=box];
+            "Implementer implements, tests, commits, self-reviews" [shape=box];
+            "Mark task complete" [shape=box];
+        }
+
+        "All tasks in wave done?" [shape=diamond];
+        "Dispatch spec reviewer for wave" [shape=box];
+        "Spec compliant?" [shape=diamond];
+        "Fix spec gaps" [shape=box];
+        "Dispatch quality reviewer for wave" [shape=box];
+        "Quality approved?" [shape=diamond];
+        "Fix quality issues" [shape=box];
     }
 
-    "Read plan, extract all tasks with full text, note context" [shape=box];
-    "Create TodoWrite with ALL tasks as pending" [shape=box];
-    "More tasks remain?" [shape=diamond];
-    "Dispatch final code reviewer subagent for entire implementation" [shape=box];
+    "Read plan, classify size, extract tasks by wave" [shape=box];
+    "Create TodoWrite with ALL tasks" [shape=box];
+    "More waves remain?" [shape=diamond];
     "Write implement-finished sentinel" [shape=box style=filled fillcolor=lightyellow];
-    "Use superpowers:finishing-a-development-branch" [shape=box style=filled fillcolor=lightgreen];
+    "Use finishing-a-development-branch" [shape=box style=filled fillcolor=lightgreen];
 
-    "Read plan, extract all tasks with full text, note context" -> "Create TodoWrite with ALL tasks as pending";
-    "Create TodoWrite with ALL tasks as pending" -> "Dispatch implementer subagent (./implementer-prompt.md)";
-    "Dispatch implementer subagent (./implementer-prompt.md)" -> "Implementer subagent asks questions?";
-    "Implementer subagent asks questions?" -> "Answer questions, provide context" [label="yes"];
-    "Answer questions, provide context" -> "Dispatch implementer subagent (./implementer-prompt.md)";
-    "Implementer subagent asks questions?" -> "Implementer subagent implements, tests, commits, self-reviews" [label="no"];
-    "Implementer subagent implements, tests, commits, self-reviews" -> "Dispatch spec reviewer subagent (./spec-reviewer-prompt.md)";
-    "Dispatch spec reviewer subagent (./spec-reviewer-prompt.md)" -> "Spec reviewer subagent confirms code matches spec?";
-    "Spec reviewer subagent confirms code matches spec?" -> "Implementer subagent fixes spec gaps" [label="no"];
-    "Implementer subagent fixes spec gaps" -> "Dispatch spec reviewer subagent (./spec-reviewer-prompt.md)" [label="re-review"];
-    "Spec reviewer subagent confirms code matches spec?" -> "Dispatch code quality reviewer subagent (./code-quality-reviewer-prompt.md)" [label="yes"];
-    "Dispatch code quality reviewer subagent (./code-quality-reviewer-prompt.md)" -> "Code quality reviewer subagent approves?";
-    "Code quality reviewer subagent approves?" -> "Implementer subagent fixes quality issues" [label="no"];
-    "Implementer subagent fixes quality issues" -> "Dispatch code quality reviewer subagent (./code-quality-reviewer-prompt.md)" [label="re-review"];
-    "Code quality reviewer subagent approves?" -> "Mark task complete in TodoWrite" [label="yes"];
-    "Mark task complete in TodoWrite" -> "More tasks remain?";
-    "More tasks remain?" -> "Dispatch implementer subagent (./implementer-prompt.md)" [label="yes"];
-    "More tasks remain?" -> "Dispatch final code reviewer subagent for entire implementation" [label="no"];
-    "Dispatch final code reviewer subagent for entire implementation" -> "Write implement-finished sentinel";
-    "Write implement-finished sentinel" -> "Use superpowers:finishing-a-development-branch";
+    "Read plan, classify size, extract tasks by wave" -> "Create TodoWrite with ALL tasks";
+    "Create TodoWrite with ALL tasks" -> "Dispatch implementer subagent";
+    "Dispatch implementer subagent" -> "Implementer asks questions?";
+    "Implementer asks questions?" -> "Answer questions" [label="yes"];
+    "Answer questions" -> "Dispatch implementer subagent";
+    "Implementer asks questions?" -> "Implementer implements, tests, commits, self-reviews" [label="no"];
+    "Implementer implements, tests, commits, self-reviews" -> "Mark task complete";
+    "Mark task complete" -> "All tasks in wave done?";
+    "All tasks in wave done?" -> "Dispatch implementer subagent" [label="no — next task"];
+    "All tasks in wave done?" -> "Dispatch spec reviewer for wave" [label="yes"];
+    "Dispatch spec reviewer for wave" -> "Spec compliant?";
+    "Spec compliant?" -> "Fix spec gaps" [label="no"];
+    "Fix spec gaps" -> "Dispatch spec reviewer for wave" [label="re-review"];
+    "Spec compliant?" -> "Dispatch quality reviewer for wave" [label="yes"];
+    "Dispatch quality reviewer for wave" -> "Quality approved?";
+    "Quality approved?" -> "Fix quality issues" [label="no"];
+    "Fix quality issues" -> "Dispatch quality reviewer for wave" [label="re-review"];
+    "Quality approved?" -> "More waves remain?";
+    "More waves remain?" -> "Dispatch implementer subagent" [label="yes — next wave"];
+    "More waves remain?" -> "Write implement-finished sentinel" [label="no"];
+    "Write implement-finished sentinel" -> "Use finishing-a-development-branch";
 }
 ```
+
+## Sizing-Aware Dispatch
+
+On plan load, check the **Size** field in the plan header. If absent, infer from task/wave count:
+
+- **1 task, no waves** → Trivial. One implementer, self-review, done.
+- **2–3 tasks, no waves** → Small. Implement all, then one combined review.
+- **Has waves** → Medium/Large. Implement per wave, review at wave boundary.
+
+**For trivial plans:** skip reviewer subagents entirely. The implementer self-review + the final build/test verification is sufficient. Don't spend 2 extra subagent dispatches reviewing a one-task change.
+
+**For small plans (no waves):** treat all tasks as one wave. Implement them sequentially, then do one spec review and one quality review covering all tasks together. This gives you 2 reviewer dispatches total instead of 2 per task.
+
+**For medium/large plans (with waves):** the spec and quality reviewers review ALL tasks completed in that wave together. The reviewer prompt should include the full wave spec (all task descriptions) and all commits in the wave.
 
 ## TodoWrite — Mandatory on Plan Load
 
@@ -100,12 +132,12 @@ TodoWrite([
 ])
 ```
 
-Mark each task `in_progress` when you dispatch its implementer, and `completed` after both
-reviews pass.
+Mark each task `in_progress` when you dispatch its implementer, and `completed` after it
+passes implementation (not after review — review happens at wave level).
 
 ## Signaling Completion
 
-After the final code reviewer approves and before invoking `finishing-a-development-branch`,
+After the final review passes and before invoking `finishing-a-development-branch`,
 **signal that implementation is done.**
 
 Check whether you're running under kasmos orchestration:
@@ -128,54 +160,81 @@ status to `"reviewing"`.
 ## Prompt Templates
 
 - `./implementer-prompt.md` - Dispatch implementer subagent
-- `./spec-reviewer-prompt.md` - Dispatch spec compliance reviewer subagent
-- `./code-quality-reviewer-prompt.md` - Dispatch code quality reviewer subagent
+- `./spec-reviewer-prompt.md` - Dispatch spec compliance reviewer subagent (at wave boundary)
+- `./code-quality-reviewer-prompt.md` - Dispatch code quality reviewer subagent (at wave boundary)
 
-## Example Workflow
+**When dispatching wave-level reviewers**, include ALL task specs and ALL commits from the wave — not just one task. The reviewer needs the full wave context.
+
+## Example Workflow — Small Plan (no waves, 3 tasks)
 
 ```
 You: I'm using Subagent-Driven Development to execute this plan.
+     Plan size: Small (3 tasks, no waves)
 
-[Read plan file once: docs/plans/feature-plan.md]
-[Extract all 5 tasks with full text and context]
-[Create TodoWrite with all 5 tasks as pending — MANDATORY]
+[Read plan, extract all 3 tasks]
+[Create TodoWrite with all 3 tasks — MANDATORY]
 
-Task 1: Hook installation script
+--- Task 1: Form overlay ---
+[Dispatch implementer with Task 1 spec]
+Implementer: Done. Tests pass. Committed.
+[Mark Task 1 complete]
 
-[Mark Task 1 in_progress in TodoWrite]
-[Dispatch implementation subagent with full task text + context]
+--- Task 2: Key handler + state ---
+[Dispatch implementer with Task 2 spec]
+Implementer: Done. Tests pass. Committed.
+[Mark Task 2 complete]
 
-Implementer: "Before I begin - should the hook be installed at user or system level?"
+--- Task 3: Lifecycle integration ---
+[Dispatch implementer with Task 3 spec]
+Implementer: Done. Tests pass. Committed.
+[Mark Task 3 complete]
 
-You: "User level (~/.config/superpowers/hooks/)"
+--- Wave review (all 3 tasks) ---
+[Dispatch spec reviewer with ALL 3 task specs + all commits]
+Spec reviewer: ✅ All requirements met
 
-Implementer: "Got it. Implementing now..."
-[Later] Implementer:
-  - Implemented install-hook command
-  - Added tests, 5/5 passing
-  - Self-review: Found I missed --force flag, added it
-  - Committed
+[Dispatch quality reviewer with all commits]
+Quality reviewer: ✅ Clean code, good tests
 
-[Dispatch spec compliance reviewer]
-Spec reviewer: ✅ Spec compliant - all requirements met, nothing extra
-
-[Get git SHAs, dispatch code quality reviewer]
-Code reviewer: Strengths: Good test coverage, clean. Issues: None. Approved.
-
-[Mark Task 1 complete in TodoWrite]
-
-...
-
-[After all tasks]
-[Dispatch final code-reviewer]
-Final reviewer: All requirements met, ready to merge
-
-[Write sentinel: touch docs/plans/.signals/implement-finished-<date>-<name>.md]
-
+[Write sentinel]
 Done! Invoking finishing-a-development-branch...
 ```
 
+## Example Workflow — Medium Plan (2 waves)
+
+```
+You: I'm using Subagent-Driven Development to execute this plan.
+     Plan size: Medium (5 tasks, 2 waves)
+
+--- Wave 1: Foundation (Tasks 1-3) ---
+[Implement Task 1, 2, 3 sequentially with fresh subagent each]
+
+[Dispatch spec reviewer for Wave 1 — all 3 task specs + commits]
+Spec reviewer: ✅
+
+[Dispatch quality reviewer for Wave 1]
+Quality reviewer: One issue in Task 2 — missing error handling
+[Dispatch fix subagent for the issue]
+[Re-dispatch quality reviewer]
+Quality reviewer: ✅
+
+--- Wave 2: Integration (Tasks 4-5) ---
+[Implement Task 4, 5 sequentially]
+
+[Dispatch spec reviewer for Wave 2]
+[Dispatch quality reviewer for Wave 2]
+Both: ✅
+
+[Write sentinel]
+Done!
+```
+
 ## Advantages
+
+**vs. Per-task review (old model):**
+- Dramatically fewer subagent dispatches (2 reviewers per wave vs. 2 per task)
+- Reviewers see full wave context — catch integration issues, not just per-task issues
+- No review overhead for trivial tasks that got bundled into a larger task
 
 **vs. Manual execution:**
 - Subagents follow TDD naturally
@@ -188,42 +247,20 @@ Done! Invoking finishing-a-development-branch...
 - Continuous progress (no waiting)
 - Review checkpoints automatic
 
-**Efficiency gains:**
-- No file reading overhead (controller provides full text)
-- Controller curates exactly what context is needed
-- Subagent gets complete information upfront
-- Questions surfaced before work begins (not after)
-
-**Quality gates:**
-- Self-review catches issues before handoff
-- Two-stage review: spec compliance, then code quality
-- Review loops ensure fixes actually work
-- Spec compliance prevents over/under-building
-- Code quality ensures implementation is well-built
-
-**Cost:**
-- More subagent invocations (implementer + 2 reviewers per task)
-- Controller does more prep work (extracting all tasks upfront)
-- Review loops add iterations
-- But catches issues early (cheaper than debugging later)
-
 ## Red Flags
 
 **Never:**
 - Start implementation on main/master branch without explicit user consent
-- Skip reviews (spec compliance OR code quality)
-- Proceed with unfixed issues
+- Skip wave-level reviews (spec compliance AND code quality)
+- Proceed with unfixed issues from review
 - Dispatch multiple implementation subagents in parallel (conflicts)
 - Make subagent read plan file (provide full text instead)
 - Skip scene-setting context (subagent needs to understand where task fits)
 - Ignore subagent questions (answer before letting them proceed)
-- Accept "close enough" on spec compliance (spec reviewer found issues = not done)
-- Skip review loops (reviewer found issues = implementer fixes = review again)
-- Let implementer self-review replace actual review (both are needed)
-- **Start code quality review before spec compliance is ✅** (wrong order)
-- Move to next task while either review has open issues
+- **Review every single task individually** — review at wave boundaries
 - **Skip TodoWrite on plan load** (session task list must reflect plan from the start)
 - **Skip implement-finished sentinel** (kasmos won't know implementation is done)
+- **Create a separate "cleanup" or "polish" task** — bundle cleanup into the task it serves
 
 **If subagent asks questions:**
 - Answer clearly and completely
@@ -231,7 +268,7 @@ Done! Invoking finishing-a-development-branch...
 - Don't rush them into implementation
 
 **If reviewer finds issues:**
-- Implementer (same subagent) fixes them
+- Dispatch fix subagent with specific instructions
 - Reviewer reviews again
 - Repeat until approved
 - Don't skip the re-review
