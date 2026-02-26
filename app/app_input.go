@@ -1016,6 +1016,15 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			return m, nil
 		}
 		selected := m.nav.GetSelectedInstance()
+		// When a plan header is selected (no instance), find the best instance for that plan.
+		if selected == nil {
+			if pf := m.nav.GetSelectedPlanFile(); pf != "" {
+				if best := m.nav.FindPlanInstance(pf); best != nil {
+					m.nav.SelectInstance(best)
+					selected = best
+				}
+			}
+		}
 		if selected == nil || !selected.Started() || selected.Paused() {
 			return m, nil
 		}

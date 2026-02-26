@@ -607,3 +607,127 @@ func TestClickItem(t *testing.T) {
 	n.ClickItem(1)
 	assert.Equal(t, 1, n.selectedIdx)
 }
+
+// ---------- SelectInstance auto-expand ----------
+
+func TestSelectInstance_ExpandsCollapsedPlan(t *testing.T) {
+	n := newTestPanel()
+	plans := []PlanDisplay{{Filename: "p.md"}}
+	inst := makeInst("worker", "p.md", session.Ready)
+	// No running/notification → plan auto-collapses, instance hidden
+	n.SetData(plans, []*session.Instance{inst}, nil, nil, nil)
+	require.Len(t, n.rows, 1, "plan should be auto-collapsed")
+	assert.True(t, n.rows[0].Collapsed)
+
+	// SelectInstance should auto-expand the plan to reveal the instance
+	ok := n.SelectInstance(inst)
+	assert.True(t, ok, "SelectInstance should succeed by expanding the plan")
+	assert.Equal(t, inst, n.GetSelectedInstance())
+	// Plan should now be expanded
+	require.True(t, len(n.rows) >= 2)
+	assert.False(t, n.rows[0].Collapsed)
+}
+
+func TestCycleActive_ExpandsCollapsedPlan(t *testing.T) {
+	n := newTestPanel()
+	plans := []PlanDisplay{
+		{Filename: "a.md"},
+		{Filename: "b.md"},
+	}
+	instA := makeInst("a-worker", "a.md", session.Running)
+	instB := makeInst("b-worker", "b.md", session.Running)
+	statuses := map[string]TopicStatus{
+		"a.md": {HasRunning: true},
+		"b.md": {HasRunning: true},
+	}
+	n.SetData(plans, []*session.Instance{instA, instB}, nil, nil, statuses)
+
+	// Select A, then manually collapse B
+	n.SelectInstance(instA)
+	// Find B's plan header and collapse it
+	for i, row := range n.rows {
+		if row.Kind == navRowPlanHeader && row.PlanFile == "b.md" {
+			n.selectedIdx = i
+			n.ToggleSelectedExpand()
+			break
+		}
+	}
+	// Go back to instA
+	n.SelectInstance(instA)
+
+	// CycleNextActive should find instB even though its plan is collapsed
+	n.CycleNextActive()
+	assert.Equal(t, instB, n.GetSelectedInstance(), "cycle should auto-expand collapsed plan")
+}
+
+// ---------- FindPlanInstance ----------
+
+func TestFindPlanInstance_ReturnsRunning(t *testing.T) {
+	n := newTestPanel()
+	ready := &session.Instance{Title: "ready", PlanFile: "p.md", Status: session.Ready}
+	running := &session.Instance{Title: "running", PlanFile: "p.md", Status: session.Running}
+	n.SetData(nil, []*session.Instance{ready, running}, nil, nil, nil)
+
+	result := n.FindPlanInstance("p.md")
+	assert.Equal(t, running, result, "should prefer running instance")
+}
+
+func TestFindPlanInstance_NoneStarted(t *testing.T) {
+	n := newTestPanel()
+	paused := makeInst("paused", "p.md", session.Paused)
+	n.SetData(nil, []*session.Instance{paused}, nil, nil, nil)
+
+	result := n.FindPlanInstance("p.md")
+	assert.Nil(t, result, "paused-only plan should return nil")
+}
+
+// ---------- rendering ----------
+
+func TestString_SectionHeaders(t *testing.T) {
+	n := newTestPanel()
+	n.SetSize(60, 40)
+	plans := []PlanDisplay{
+		{Filename: "active-plan.md"},
+		{Filename: "idle-plan.md"},
+	}
+	instances := []*session.Instance{
+		makeInst("worker", "active-plan.md", session.Running),
+	}
+	statuses := map[string]TopicStatus{
+		"active-plan.md": {HasRunning: true},
+	}
+	n.SetData(plans, instances, nil, nil, statuses)
+	output := n.String()
+	assert.Contains(t, output, "active")
+	assert.Contains(t, output, "idle")
+}
+
+func TestString_InstanceDisplayTitle(t *testing.T) {
+	n := newTestPanel()
+	n.SetSize(60, 30)
+	plans := []PlanDisplay{{Filename: "p.md"}}
+	inst := &session.Instance{
+		Title:      "p-W2-T5",
+		PlanFile:   "p.md",
+		Status:     session.Running,
+		WaveNumber: 2,
+		TaskNumber: 5,
+	}
+	statuses := map[string]TopicStatus{"p.md": {HasRunning: true}}
+	n.SetData(plans, []*session.Instance{inst}, nil, nil, statuses)
+
+	output := n.String()
+	assert.Contains(t, output, "wave 2")
+	assert.Contains(t, output, "task 5")
+	assert.NotContains(t, output, "W2-T5", "raw wave/task format should not appear")
+}
+
+func TestString_Legend(t *testing.T) {
+	n := newTestPanel()
+	n.SetSize(60, 30)
+	n.SetData(nil, nil, nil, nil, nil)
+	output := n.String()
+	assert.Contains(t, output, "running")
+	assert.Contains(t, output, "review")
+	assert.Contains(t, output, "idle")
+}

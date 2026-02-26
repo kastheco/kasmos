@@ -7,9 +7,11 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/kastheco/kasmos/config/planstate"
 	"github.com/kastheco/kasmos/session"
 	zone "github.com/lrstanley/bubblezone"
+	"github.com/mattn/go-runewidth"
 )
 
 const ZoneRepoSwitch = "repo-switch"
@@ -55,6 +57,28 @@ type navRow struct {
 	HasRunning      bool
 	HasNotification bool
 }
+
+// Navigation panel styles
+var (
+	navItemStyle          = lipgloss.NewStyle().Foreground(ColorText).Padding(0, 1)
+	navSelectedRowStyle   = lipgloss.NewStyle().Background(ColorIris).Foreground(ColorBase).Padding(0, 1)
+	navActiveRowStyle     = lipgloss.NewStyle().Background(ColorOverlay).Foreground(ColorText).Padding(0, 1)
+	navSectionDivStyle    = lipgloss.NewStyle().Foreground(ColorMuted).Padding(0, 1)
+	navPlanLabelStyle     = lipgloss.NewStyle().Foreground(ColorText).Bold(true)
+	navInstanceLabelStyle = lipgloss.NewStyle().Foreground(ColorSubtle)
+	navRunningIconStyle   = lipgloss.NewStyle().Foreground(ColorFoam)
+	navReadyIconStyle     = lipgloss.NewStyle().Foreground(ColorFoam)
+	navNotifyIconStyle    = lipgloss.NewStyle().Foreground(ColorRose)
+	navPausedIconStyle    = lipgloss.NewStyle().Foreground(ColorMuted)
+	navCompletedIconStyle = lipgloss.NewStyle().Foreground(ColorFoam).Faint(true)
+	navIdleIconStyle      = lipgloss.NewStyle().Foreground(ColorMuted)
+	navCancelledLblStyle  = lipgloss.NewStyle().Foreground(ColorMuted).Strikethrough(true)
+	navImportStyle        = lipgloss.NewStyle().Foreground(ColorFoam).Padding(0, 1)
+	navHistoryDivStyle    = lipgloss.NewStyle().Foreground(ColorMuted)
+	navLegendLabelStyle   = lipgloss.NewStyle().Foreground(ColorMuted)
+	navSearchBoxStyle     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(ColorOverlay).Padding(0, 1)
+	navSearchActiveStyle  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(ColorFoam).Padding(0, 1)
+)
 
 type NavigationPanel struct {
 	spinner *spinner.Model
@@ -462,6 +486,19 @@ func (n *NavigationPanel) SelectInstance(inst *session.Instance) bool {
 			return true
 		}
 	}
+	// Instance not visible — may be under a collapsed plan. Expand it.
+	if inst.PlanFile != "" {
+		n.collapsed[inst.PlanFile] = false
+		n.userOverrides[inst.PlanFile] = true
+		n.rebuildRows()
+		for i, row := range n.rows {
+			if row.Instance == inst {
+				n.selectedIdx = i
+				n.clampScroll()
+				return true
+			}
+		}
+	}
 	return false
 }
 
@@ -618,6 +655,187 @@ func (n *NavigationPanel) clampScroll() {
 	}
 }
 
+// FindPlanInstance returns the best interactive candidate for a plan.
+// Priority: running > any non-paused instance. The caller should check
+// Started()/Paused() on the returned instance before entering focus mode.
+func (n *NavigationPanel) FindPlanInstance(planFile string) *session.Instance {
+	var best *session.Instance
+	for _, inst := range n.instances {
+		if inst.PlanFile != planFile || inst.Paused() {
+			continue
+		}
+		if inst.Status == session.Running || inst.Status == session.Loading {
+			return inst
+		}
+		if best == nil {
+			best = inst
+		}
+	}
+	return best
+}
+
+// navInstanceTitle returns a clean display title for an instance in the sidebar.
+func navInstanceTitle(inst *session.Instance) string {
+	switch {
+	case inst.WaveNumber > 0 && inst.TaskNumber > 0:
+		return fmt.Sprintf("wave %d · task %d", inst.WaveNumber, inst.TaskNumber)
+	case inst.AgentType == session.AgentTypeReviewer && inst.PlanFile != "":
+		return "review"
+	case inst.SoloAgent && inst.PlanFile != "":
+		return planstate.DisplayName(inst.PlanFile)
+	case inst.AgentType == session.AgentTypeCoder && inst.PlanFile != "" && inst.WaveNumber == 0:
+		return "applying fixes"
+	default:
+		return inst.Title
+	}
+}
+
+// navInstanceStatusIcon returns a styled status glyph for an instance.
+func (n *NavigationPanel) navInstanceStatusIcon(inst *session.Instance) string {
+	if inst.ImplementationComplete {
+		return navCompletedIconStyle.Render("✓")
+	}
+	switch inst.Status {
+	case session.Running, session.Loading:
+		if n.spinner != nil {
+			return n.spinner.View()
+		}
+		return navRunningIconStyle.Render("●")
+	case session.Ready:
+		if inst.Notified {
+			return navNotifyIconStyle.Render("◉")
+		}
+		return navReadyIconStyle.Render("●")
+	case session.Paused:
+		return navPausedIconStyle.Render("\uf04c")
+	default:
+		return navIdleIconStyle.Render("○")
+	}
+}
+
+// navPlanStatusIcon returns a styled status glyph for a plan header row.
+func navPlanStatusIcon(row navRow) string {
+	if row.HasNotification {
+		return navNotifyIconStyle.Render("◉")
+	}
+	if row.HasRunning {
+		return navRunningIconStyle.Render("●")
+	}
+	return navIdleIconStyle.Render("○")
+}
+
+// navSectionLabel returns a lowercase section label for a plan sort key.
+func navSectionLabel(key int) string {
+	switch key {
+	case 0:
+		return "attention"
+	case 1:
+		return "active"
+	default:
+		return "idle"
+	}
+}
+
+// renderNavRow renders a single row's content (without selection styling).
+func (n *NavigationPanel) renderNavRow(row navRow, contentWidth int) string {
+	switch row.Kind {
+	case navRowPlanHeader:
+		chevron := "▸"
+		if !row.Collapsed {
+			chevron = "▾"
+		}
+		statusIcon := navPlanStatusIcon(row)
+		statusW := lipgloss.Width(statusIcon)
+
+		label := row.Label
+		// Layout: chevron(1) + space(1) + label + gap + space(1) + status
+		maxLabel := contentWidth - 3 - statusW
+		if maxLabel < 3 {
+			maxLabel = 3
+		}
+		if runewidth.StringWidth(label) > maxLabel {
+			label = runewidth.Truncate(label, maxLabel-1, "…")
+		}
+
+		usedW := 2 + runewidth.StringWidth(label) + 1 + statusW
+		gap := contentWidth - usedW
+		if gap < 0 {
+			gap = 0
+		}
+		return chevron + " " + navPlanLabelStyle.Render(label) + strings.Repeat(" ", gap) + " " + statusIcon
+
+	case navRowInstance:
+		inst := row.Instance
+		if inst == nil {
+			return "    " + row.Label
+		}
+		title := navInstanceTitle(inst)
+		statusIcon := n.navInstanceStatusIcon(inst)
+		statusW := lipgloss.Width(statusIcon)
+
+		const indentW = 4
+		// Layout: indent(4) + title + gap + space(1) + status
+		maxLabel := contentWidth - indentW - 1 - statusW
+		if maxLabel < 3 {
+			maxLabel = 3
+		}
+		if runewidth.StringWidth(title) > maxLabel {
+			title = runewidth.Truncate(title, maxLabel-1, "…")
+		}
+
+		usedW := indentW + runewidth.StringWidth(title) + 1 + statusW
+		gap := contentWidth - usedW
+		if gap < 0 {
+			gap = 0
+		}
+		return "    " + navInstanceLabelStyle.Render(title) + strings.Repeat(" ", gap) + " " + statusIcon
+
+	case navRowSoloHeader:
+		return navHistoryDivStyle.Render("── solo ──")
+
+	case navRowHistoryToggle:
+		chevron := "▸"
+		if !row.Collapsed {
+			chevron = "▾"
+		}
+		return navHistoryDivStyle.Render("── " + chevron + " history ──")
+
+	case navRowHistoryPlan:
+		label := row.Label
+		maxLabel := contentWidth - 2
+		if maxLabel < 3 {
+			maxLabel = 3
+		}
+		if runewidth.StringWidth(label) > maxLabel {
+			label = runewidth.Truncate(label, maxLabel-1, "…")
+		}
+		return navIdleIconStyle.Render("  " + label)
+
+	case navRowCancelled:
+		label := row.Label
+		const trailW = 2
+		maxLabel := contentWidth - trailW
+		if maxLabel < 3 {
+			maxLabel = 3
+		}
+		if runewidth.StringWidth(label) > maxLabel {
+			label = runewidth.Truncate(label, maxLabel-1, "…")
+		}
+		usedW := runewidth.StringWidth(label) + trailW
+		gap := contentWidth - usedW
+		if gap < 0 {
+			gap = 0
+		}
+		return navCancelledLblStyle.Render(label) + strings.Repeat(" ", gap) + " " + navCancelledLblStyle.Render("✕")
+
+	case navRowImportAction:
+		return row.Label
+
+	default:
+		return row.Label
+	}
+}
+
 func (n *NavigationPanel) String() string {
 	border := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(ColorOverlay).Padding(0, 1)
 	if n.focused {
@@ -632,67 +850,158 @@ func (n *NavigationPanel) String() string {
 		height = 4
 	}
 
-	search := "search"
-	if n.searchActive {
-		search = n.searchQuery
-		if search == "" {
-			search = " "
-		}
+	itemWidth := innerWidth
+	contentWidth := itemWidth - 2 // account for Padding(0,1) in row styles
+	if contentWidth < 4 {
+		contentWidth = 4
 	}
-	searchBox := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(ColorOverlay).Padding(0, 1).Width(innerWidth - 4).Render(search)
 
-	visible := make([]string, 0, len(n.rows))
+	// Search bar
+	searchWidth := innerWidth - 4
+	if searchWidth < 4 {
+		searchWidth = 4
+	}
+	var searchBox string
+	if n.searchActive {
+		searchText := n.searchQuery
+		if searchText == "" {
+			searchText = " "
+		}
+		searchBox = navSearchActiveStyle.Width(searchWidth).Render(searchText)
+	} else {
+		searchBox = navSearchBoxStyle.Width(searchWidth).Render("\uf002 search")
+	}
+
+	// Build visible items, including section dividers between plan sort-key groups.
+	type visItem struct {
+		line   string
+		rowIdx int // -1 for section dividers
+	}
+	items := make([]visItem, 0, len(n.rows)+4)
+	selectedDisplayIdx := 0
+	lastPlanKey := -1
+
 	for i, row := range n.rows {
+		// Search filter
 		if n.searchActive && n.searchQuery != "" {
 			q := strings.ToLower(n.searchQuery)
-			if !strings.Contains(strings.ToLower(row.Label), q) && !strings.Contains(strings.ToLower(row.PlanFile), q) {
+			if !strings.Contains(strings.ToLower(row.Label), q) &&
+				!strings.Contains(strings.ToLower(row.PlanFile), q) {
 				continue
 			}
 		}
-		prefix := "  "
+
+		// Insert section dividers between plan sort-key groups
+		if row.Kind == navRowPlanHeader {
+			sk := 2
+			if row.HasNotification {
+				sk = 0
+			} else if row.HasRunning {
+				sk = 1
+			}
+			if sk != lastPlanKey {
+				label := navSectionLabel(sk)
+				divLine := navSectionDivStyle.Width(itemWidth).Render("── " + label + " ──")
+				items = append(items, visItem{line: divLine, rowIdx: -1})
+				lastPlanKey = sk
+			}
+		}
+
 		if i == n.selectedIdx {
-			prefix = "▸ "
+			selectedDisplayIdx = len(items)
 		}
-		line := row.Label
-		switch row.Kind {
-		case navRowPlanHeader:
-			ch := "▸"
-			if !row.Collapsed {
-				ch = "▾"
-			}
-			line = ch + " " + row.Label
-		case navRowInstance:
-			line = "  " + row.Label
-		case navRowSoloHeader:
-			line = "-- solo --"
-		case navRowHistoryToggle:
-			ch := "▸"
-			if !row.Collapsed {
-				ch = "▾"
-			}
-			line = "-- " + ch + " history --"
+
+		// Render the row content
+		rawLine := n.renderNavRow(row, contentWidth)
+
+		// Apply selection highlighting
+		isSelected := i == n.selectedIdx
+		var styledLine string
+		if isSelected && n.focused {
+			styledLine = navSelectedRowStyle.Width(itemWidth).Render(ansi.Strip(rawLine))
+		} else if isSelected {
+			styledLine = navActiveRowStyle.Width(itemWidth).Render(ansi.Strip(rawLine))
+		} else if row.Kind == navRowImportAction {
+			styledLine = navImportStyle.Width(itemWidth).Render(rawLine)
+		} else {
+			styledLine = navItemStyle.Width(itemWidth).Render(rawLine)
 		}
-		visible = append(visible, prefix+line)
+
+		items = append(items, visItem{line: styledLine, rowIdx: i})
 	}
 
-	start := n.scrollOffset
-	if start > len(visible) {
-		start = len(visible)
+	// Scroll window — keep the selected item visible
+	avail := n.availRows()
+	start := selectedDisplayIdx - avail/2
+	if start < 0 {
+		start = 0
 	}
-	end := start + n.availRows()
-	if end > len(visible) {
-		end = len(visible)
+	end := start + avail
+	if end > len(items) {
+		end = len(items)
+		start = end - avail
+		if start < 0 {
+			start = 0
+		}
 	}
-	body := strings.Join(visible[start:end], "\n")
+
+	var bodyLines []string
+	for _, item := range items[start:end] {
+		bodyLines = append(bodyLines, item.line)
+	}
+	body := strings.Join(bodyLines, "\n")
 	if body != "" {
 		body += "\n"
 	}
 
-	repoLabel := n.repoName
-	if repoLabel != "" {
-		repoLabel = zone.Mark(ZoneRepoSwitch, lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(ColorOverlay).Padding(0, 1).Width(innerWidth-4).Render(repoLabel+" ▾"))
+	// Legend — status icon key
+	legend := navRunningIconStyle.Render("●") + navLegendLabelStyle.Render(" running") +
+		"  " + navNotifyIconStyle.Render("◉") + navLegendLabelStyle.Render(" review") +
+		"  " + navIdleIconStyle.Render("○") + navLegendLabelStyle.Render(" idle")
+
+	// Repo switcher
+	var repoSection string
+	if n.repoName != "" {
+		btnWidth := innerWidth - 4
+		if btnWidth < 4 {
+			btnWidth = 4
+		}
+		repoBtn := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ColorOverlay).
+			Padding(0, 1).
+			Width(btnWidth).
+			Render(n.repoName + " ▾")
+		repoSection = zone.Mark(ZoneRepoSwitch, repoBtn)
 	}
 
-	content := searchBox + "\n\n" + body + "\n" + repoLabel
-	return lipgloss.Place(n.width, n.height, lipgloss.Left, lipgloss.Top, border.Width(innerWidth).Height(height).Render(content))
+	// Assemble content with bottom-pinned legend + repo button
+	topContent := searchBox + "\n\n" + body
+	var bottomSection string
+	if repoSection != "" {
+		bottomSection = legend + "\n" + repoSection
+	} else {
+		bottomSection = legend
+	}
+
+	topLines := strings.Count(topContent, "\n") + 1
+	bottomLines := strings.Count(bottomSection, "\n") + 1
+	gap := height - topLines - bottomLines + 1
+	if gap < 1 {
+		gap = 1
+	}
+	innerContent := topContent + strings.Repeat("\n", gap) + bottomSection
+
+	bordered := border.Width(innerWidth).Height(height).Render(innerContent)
+	placed := lipgloss.Place(n.width, n.height, lipgloss.Left, lipgloss.Top, bordered)
+
+	// Clamp output to n.height lines
+	if n.height > 0 {
+		lines := strings.Split(placed, "\n")
+		if len(lines) > n.height {
+			lines = lines[:n.height]
+			placed = strings.Join(lines, "\n")
+		}
+	}
+	return placed
 }
