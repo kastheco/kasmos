@@ -10,7 +10,6 @@ const (
 	KeyUp KeyName = iota
 	KeyDown
 	KeyEnter
-	KeyNew
 	KeyKill  // k — soft kill: terminates tmux session, keeps instance in list
 	KeyAbort // K — full abort: kills tmux, removes worktree, removes from list
 	KeyQuit
