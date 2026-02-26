@@ -127,6 +127,25 @@ func TestStatusBar_WaveGlyphs(t *testing.T) {
 	assert.Contains(t, result, "○")
 }
 
+func TestStatusBar_WaveGlyphsAreSpaced(t *testing.T) {
+	sb := NewStatusBar()
+	sb.SetSize(120)
+	sb.SetData(StatusBarData{
+		RepoName:  "kasmos",
+		Branch:    "plan/auth-refactor",
+		WaveLabel: "wave 1/4",
+		TaskGlyphs: []TaskGlyph{
+			TaskGlyphRunning,
+			TaskGlyphPending,
+			TaskGlyphPending,
+		},
+	})
+
+	plain := stripANSI(sb.String())
+	assert.Contains(t, plain, "● ○ ○",
+		"wave task glyphs should have spacing to avoid cramped status bar rendering")
+}
+
 func TestStatusBar_Truncation(t *testing.T) {
 	sb := NewStatusBar()
 	sb.SetSize(40) // narrow terminal

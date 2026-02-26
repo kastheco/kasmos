@@ -112,14 +112,15 @@ func (s *StatusBar) centerBranchGroup() string {
 	branch := statusBarBranchStyle.Render("\ue725 " + s.data.Branch)
 
 	if s.data.WaveLabel != "" && len(s.data.TaskGlyphs) > 0 {
-		var glyphs strings.Builder
+		glyphParts := make([]string, 0, len(s.data.TaskGlyphs))
 		for _, g := range s.data.TaskGlyphs {
-			glyphs.WriteString(taskGlyphStr(g))
+			glyphParts = append(glyphParts, taskGlyphStr(g))
 		}
+		glyphs := strings.Join(glyphParts, " ")
 		return strings.Join([]string{
 			branch,
 			statusBarSepStyle.Render(" · "),
-			statusBarWaveLabelStyle.Render(s.data.WaveLabel) + " " + glyphs.String(),
+			statusBarWaveLabelStyle.Render(s.data.WaveLabel) + " " + glyphs,
 		}, "")
 	}
 
