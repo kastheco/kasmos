@@ -146,8 +146,8 @@ const (
 	slotSidebar = 0
 	slotAgent   = 1
 	slotDiff    = 2
-	slotGit     = 3
-	slotInfo    = slotGit
+	slotInfo    = 3
+	slotGit     = slotInfo
 	slotList    = 4
 	slotCount   = 5
 )
@@ -160,7 +160,7 @@ func (m *home) setFocusSlot(slot int) {
 	m.menu.SetFocusSlot(slot)
 
 	// Center pane is focused when any of the 3 center tabs is active.
-	centerFocused := slot >= slotAgent && slot <= slotGit
+	centerFocused := slot >= slotAgent && slot <= slotInfo
 	m.tabbedWindow.SetFocused(centerFocused)
 
 	// When focusing a center tab, switch the visible tab to match and track which tab is focused.
@@ -173,14 +173,14 @@ func (m *home) setFocusSlot(slot int) {
 }
 
 // nextFocusSlot advances the focus ring forward through the 3 center tabs only.
-// Tab only cycles agent → diff → git → agent. Use 's'/'t' to reach the sidebars.
+// Tab only cycles agent → diff → info → agent. Use 's'/'t' to reach the sidebars.
 func (m *home) nextFocusSlot() {
 	switch m.focusSlot {
 	case slotAgent:
 		m.setFocusSlot(slotDiff)
 	case slotDiff:
-		m.setFocusSlot(slotGit)
-	default: // slotGit, slotSidebar, slotList — all land on agent
+		m.setFocusSlot(slotInfo)
+	default: // slotInfo, slotSidebar, slotList — all land on agent
 		m.setFocusSlot(slotAgent)
 	}
 }
@@ -190,10 +190,10 @@ func (m *home) prevFocusSlot() {
 	switch m.focusSlot {
 	case slotDiff:
 		m.setFocusSlot(slotAgent)
-	case slotGit:
+	case slotInfo:
 		m.setFocusSlot(slotDiff)
-	default: // slotAgent, slotSidebar, slotList — all land on git
-		m.setFocusSlot(slotGit)
+	default: // slotAgent, slotSidebar, slotList — all land on info
+		m.setFocusSlot(slotInfo)
 	}
 }
 
@@ -255,7 +255,7 @@ func (m *home) switchToTab(name keys.KeyName) (tea.Model, tea.Cmd) {
 	case keys.KeyTabDiff:
 		targetSlot = slotDiff
 	case keys.KeyTabGit:
-		targetSlot = slotGit
+		targetSlot = slotInfo
 	default:
 		return m, nil
 	}

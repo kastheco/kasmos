@@ -490,7 +490,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		case "@":
 			jumpSlot, doJump = slotDiff, true
 		case "#":
-			jumpSlot, doJump = slotGit, true
+			jumpSlot, doJump = slotInfo, true
 		}
 		if doJump {
 			m.exitFocusMode()
@@ -977,7 +977,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		case slotSidebar:
 			m.sidebar.Up()
 			m.filterInstancesByTopic()
-		case slotAgent, slotDiff, slotGit:
+		case slotAgent, slotDiff, slotInfo:
 			m.tabbedWindow.ScrollUp()
 		case slotList:
 			m.list.Up()
@@ -989,7 +989,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		case slotSidebar:
 			m.sidebar.Down()
 			m.filterInstancesByTopic()
-		case slotAgent, slotDiff, slotGit:
+		case slotAgent, slotDiff, slotInfo:
 			m.tabbedWindow.ScrollDown()
 		case slotList:
 			m.list.Down()
@@ -1017,7 +1017,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		}
 		return m.openContextMenu()
 	case keys.KeyInfoTab:
-		m.setFocusSlot(slotGit)
+		m.setFocusSlot(slotInfo)
 		return m, m.instanceChanged()
 	case keys.KeyTabAgent, keys.KeyTabDiff, keys.KeyTabInfo:
 		return m.switchToTab(name)
@@ -1201,7 +1201,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 	case keys.KeyArrowLeft:
 		listVisible := m.list.TotalInstances() > 0
 		switch m.focusSlot {
-		case slotGit, slotAgent, slotDiff:
+		case slotInfo, slotAgent, slotDiff:
 			if listVisible {
 				m.setFocusSlot(slotList)
 			} else {
@@ -1214,7 +1214,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 	case keys.KeyArrowRight:
 		listVisible := m.list.TotalInstances() > 0
 		switch m.focusSlot {
-		case slotGit:
+		case slotInfo:
 			// Already rightmost — no-op
 		case slotSidebar:
 			if listVisible {
