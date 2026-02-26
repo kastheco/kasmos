@@ -63,6 +63,8 @@ type Instance struct {
 	TaskNumber int
 	// WaveNumber is the wave number this task belongs to (1-indexed). 0 = not a wave task.
 	WaveNumber int
+	// PeerCount is the number of sibling tasks in the same wave (0 = not a wave task).
+	PeerCount int
 	// IsReviewer is true when this instance is a reviewer session for a plan.
 	// Deprecated: use AgentType == AgentTypeReviewer instead.
 	IsReviewer bool
@@ -146,6 +148,7 @@ func (i *Instance) ToInstanceData() InstanceData {
 		AgentType:              i.AgentType,
 		TaskNumber:             i.TaskNumber,
 		WaveNumber:             i.WaveNumber,
+		PeerCount:              i.PeerCount,
 		IsReviewer:             i.IsReviewer,
 		ImplementationComplete: i.ImplementationComplete,
 		SoloAgent:              i.SoloAgent,
@@ -192,6 +195,7 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		AgentType:              data.AgentType,
 		TaskNumber:             data.TaskNumber,
 		WaveNumber:             data.WaveNumber,
+		PeerCount:              data.PeerCount,
 		IsReviewer:             data.IsReviewer,
 		ImplementationComplete: data.ImplementationComplete,
 		SoloAgent:              data.SoloAgent,
@@ -242,6 +246,8 @@ type InstanceOptions struct {
 	TaskNumber int
 	// WaveNumber is the wave this task belongs to (1-indexed, 0 = not a wave task).
 	WaveNumber int
+	// PeerCount is the number of sibling tasks in the same wave (0 = not a wave task).
+	PeerCount int
 }
 
 func NewInstance(opts InstanceOptions) (*Instance, error) {
@@ -268,6 +274,7 @@ func NewInstance(opts InstanceOptions) (*Instance, error) {
 		AgentType:       opts.AgentType,
 		TaskNumber:      opts.TaskNumber,
 		WaveNumber:      opts.WaveNumber,
+		PeerCount:       opts.PeerCount,
 	}, nil
 }
 

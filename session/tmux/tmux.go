@@ -44,6 +44,12 @@ type TmuxSession struct {
 	// initialPrompt, when non-empty, is baked into the CLI command at Start()
 	// using per-program syntax (--prompt for opencode, positional for claude).
 	initialPrompt string
+	// taskNumber, waveNumber, peerCount are set for wave task instances.
+	// When non-zero, they are prepended as KASMOS_TASK, KASMOS_WAVE, KASMOS_PEERS
+	// env vars to the program command string.
+	taskNumber int
+	waveNumber int
+	peerCount  int
 	// ProgressFunc is called with (stage, description) during Start() to report progress.
 	ProgressFunc func(stage int, desc string)
 
@@ -112,6 +118,15 @@ func (t *TmuxSession) SetAgentType(agentType string) {
 // QueuedPrompt set so the send-keys fallback fires.
 func (t *TmuxSession) SetInitialPrompt(prompt string) {
 	t.initialPrompt = prompt
+}
+
+// SetTaskEnv sets the task identity env vars for parallel wave execution.
+// When set, KASMOS_TASK, KASMOS_WAVE, and KASMOS_PEERS are prepended to the
+// program command string at Start() time.
+func (t *TmuxSession) SetTaskEnv(taskNumber, waveNumber, peerCount int) {
+	t.taskNumber = taskNumber
+	t.waveNumber = waveNumber
+	t.peerCount = peerCount
 }
 
 func (t *TmuxSession) reportProgress(stage int, desc string) {
@@ -199,6 +214,12 @@ func (t *TmuxSession) Start(workDir string) error {
 	// Prepend KASMOS_MANAGED=1 so the agent process sees it from startup.
 	// tmux set-environment (below) only affects new panes, not the initial program.
 	program = "KASMOS_MANAGED=1 " + program
+
+	// Prepend task identity env vars for parallel wave execution.
+	if t.taskNumber > 0 {
+		program = fmt.Sprintf("KASMOS_TASK=%d KASMOS_WAVE=%d KASMOS_PEERS=%d %s",
+			t.taskNumber, t.waveNumber, t.peerCount, program)
+	}
 
 	t.reportProgress(1, "Creating tmux session...")
 

@@ -34,7 +34,9 @@ func (i *Instance) Start(firstTimeSetup bool) error {
 	} else {
 		tmuxSession = tmux.NewTmuxSession(i.Title, i.Program, i.SkipPermissions)
 	}
+	i.tmuxSession = tmuxSession
 	tmuxSession.SetAgentType(i.AgentType)
+	i.setTmuxTaskEnv()
 	// Wire up tmux progress to instance loading progress
 	tmuxStageOffset := 3 // tmux stages start at 4 for first-time, 2 for reload
 	if !firstTimeSetup {
@@ -43,7 +45,6 @@ func (i *Instance) Start(firstTimeSetup bool) error {
 	tmuxSession.ProgressFunc = func(stage int, desc string) {
 		i.setLoadingProgress(tmuxStageOffset+stage, desc)
 	}
-	i.tmuxSession = tmuxSession
 	i.transferPromptToCli()
 
 	if firstTimeSetup {
@@ -118,11 +119,12 @@ func (i *Instance) StartOnMainBranch() error {
 	} else {
 		tmuxSession = tmux.NewTmuxSession(i.Title, i.Program, i.SkipPermissions)
 	}
+	i.tmuxSession = tmuxSession
 	tmuxSession.SetAgentType(i.AgentType)
+	i.setTmuxTaskEnv()
 	tmuxSession.ProgressFunc = func(stage int, desc string) {
 		i.setLoadingProgress(1+stage, desc)
 	}
-	i.tmuxSession = tmuxSession
 	i.transferPromptToCli()
 
 	var setupErr error
@@ -164,11 +166,12 @@ func (i *Instance) StartOnBranch(branch string) error {
 	} else {
 		tmuxSession = tmux.NewTmuxSession(i.Title, i.Program, i.SkipPermissions)
 	}
+	i.tmuxSession = tmuxSession
 	tmuxSession.SetAgentType(i.AgentType)
+	i.setTmuxTaskEnv()
 	tmuxSession.ProgressFunc = func(stage int, desc string) {
 		i.setLoadingProgress(3+stage, desc)
 	}
-	i.tmuxSession = tmuxSession
 	i.transferPromptToCli()
 
 	i.setLoadingProgress(2, "Creating git worktree...")
@@ -229,11 +232,12 @@ func (i *Instance) StartInSharedWorktree(worktree *git.GitWorktree, branch strin
 	} else {
 		tmuxSession = tmux.NewTmuxSession(i.Title, i.Program, i.SkipPermissions)
 	}
+	i.tmuxSession = tmuxSession
 	tmuxSession.SetAgentType(i.AgentType)
+	i.setTmuxTaskEnv()
 	tmuxSession.ProgressFunc = func(stage int, desc string) {
 		i.setLoadingProgress(1+stage, desc)
 	}
-	i.tmuxSession = tmuxSession
 	i.transferPromptToCli()
 
 	i.setLoadingProgress(2, "Starting tmux session...")
@@ -254,6 +258,13 @@ func (i *Instance) transferPromptToCli() {
 	if i.QueuedPrompt != "" && programSupportsCliPrompt(i.Program) {
 		i.tmuxSession.SetInitialPrompt(i.QueuedPrompt)
 		i.QueuedPrompt = ""
+	}
+}
+
+// setTmuxTaskEnv wires task/wave/peer identity to the tmux session for env var injection.
+func (i *Instance) setTmuxTaskEnv() {
+	if i.TaskNumber > 0 && i.tmuxSession != nil {
+		i.tmuxSession.SetTaskEnv(i.TaskNumber, i.WaveNumber, i.PeerCount)
 	}
 }
 
