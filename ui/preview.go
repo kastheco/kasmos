@@ -165,7 +165,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 	}
 	switch {
 	case instance == nil:
-		p.setFallbackState("create [n]ew plan or [s]elect existing")
+		p.setFallbackState("create [n]ew plan or select existing")
 		return nil
 	case instance.Status == session.Loading:
 		// Real progress from instance startup stages

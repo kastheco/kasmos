@@ -619,24 +619,24 @@ func TestFocusRing(t *testing.T) {
 		assert.Equal(t, slotInfo, homeModel.focusSlot)
 	})
 
-	t.Run("s jumps to sidebar slot", func(t *testing.T) {
+	t.Run("s is no-op (sidebar focus shortcut removed)", func(t *testing.T) {
 		h := newTestHome()
 		h.setFocusSlot(slotList)
 
 		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
 
-		assert.Equal(t, slotSidebar, homeModel.focusSlot)
+		assert.Equal(t, slotList, homeModel.focusSlot)
 	})
 
-	t.Run("s shows and focuses sidebar when hidden", func(t *testing.T) {
+	t.Run("s does not show hidden sidebar", func(t *testing.T) {
 		h := newTestHome()
 		h.sidebarHidden = true
 		h.setFocusSlot(slotList)
 
 		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
 
-		assert.False(t, homeModel.sidebarHidden)
-		assert.Equal(t, slotSidebar, homeModel.focusSlot)
+		assert.True(t, homeModel.sidebarHidden)
+		assert.Equal(t, slotList, homeModel.focusSlot)
 	})
 
 	// --- Sidebar toggle (ctrl+s) ---

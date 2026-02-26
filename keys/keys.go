@@ -91,9 +91,9 @@ var GlobalKeyStringsMap = map[string]KeyName{
 	"2":      KeyFilterActive,
 	"3":      KeyCycleSort,
 	"R":      KeyRepoSwitch,
-	"s":      KeyFocusSidebar,
 	"t":      KeyFocusList,
 	"v":      KeyViewPlan,
+	"p":      KeyViewPlan,
 	"ctrl+s": KeyToggleSidebar,
 	"g":      KeyInfoTab,
 	"!":      KeyTabAgent,
@@ -113,7 +113,7 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	),
 	KeyEnter: key.NewBinding(
 		key.WithKeys("enter", "o"),
-		key.WithHelp("↵/o", "open"),
+		key.WithHelp("↵/o", "select"),
 	),
 	KeyNew: key.NewBinding(
 		key.WithKeys("n"),
@@ -208,8 +208,8 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 		key.WithHelp("t", "right sidebar"),
 	),
 	KeyViewPlan: key.NewBinding(
-		key.WithKeys("v"),
-		key.WithHelp("v", "view plan"),
+		key.WithKeys("v", "p"),
+		key.WithHelp("v", "preview"),
 	),
 	KeyToggleSidebar: key.NewBinding(
 		key.WithKeys("ctrl+s"),
@@ -238,7 +238,7 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 
 	KeySpaceExpand: key.NewBinding(
 		key.WithKeys(" "),
-		key.WithHelp("space", "expand/collapse"),
+		key.WithHelp("space", "toggle"),
 	),
 
 	// -- Special keybindings --

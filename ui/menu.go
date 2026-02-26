@@ -53,6 +53,8 @@ type Menu struct {
 
 var defaultMenuOptions = []keys.KeyName{keys.KeyNewPlan, keys.KeySearch, keys.KeySpace, keys.KeyHelp, keys.KeyQuit}
 var defaultSystemGroupSize = 4 // search, space shortcuts, ? help, q quit
+var emptyMenuOptions = []keys.KeyName{keys.KeySearch, keys.KeyHelp, keys.KeyQuit}
+var emptySystemGroupSize = 3
 var newInstanceMenuOptions = []keys.KeyName{keys.KeySubmitName}
 var promptMenuOptions = []keys.KeyName{keys.KeySubmitName}
 
@@ -130,14 +132,14 @@ func (m *Menu) updateOptions() {
 	switch m.state {
 	case StateEmpty:
 		if m.focusSlot == MenuSlotSidebar {
-			m.addSidebarOptions()
+			m.addSidebarOptions(false)
 		} else {
-			m.options = defaultMenuOptions
-			m.systemGroupSize = defaultSystemGroupSize
+			m.options = emptyMenuOptions
+			m.systemGroupSize = emptySystemGroupSize
 		}
 	case StateDefault:
 		if m.focusSlot == MenuSlotSidebar {
-			m.addSidebarOptions()
+			m.addSidebarOptions(true)
 		} else if m.instance != nil {
 			m.addInstanceOptions()
 		} else {
@@ -153,9 +155,12 @@ func (m *Menu) updateOptions() {
 	}
 }
 
-func (m *Menu) addSidebarOptions() {
+func (m *Menu) addSidebarOptions(includeNewPlan bool) {
 	// Sidebar-focused: show plan navigation keybinds
-	options := []keys.KeyName{keys.KeyNewPlan}
+	options := make([]keys.KeyName, 0, 7)
+	if includeNewPlan {
+		options = append(options, keys.KeyNewPlan)
+	}
 	actionGroup := []keys.KeyName{keys.KeyEnter, keys.KeySpaceExpand, keys.KeyViewPlan}
 	systemGroup := []keys.KeyName{keys.KeySearch, keys.KeyHelp, keys.KeyQuit}
 
