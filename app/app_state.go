@@ -236,32 +236,6 @@ func (m *home) enterFocusMode() tea.Cmd {
 	return nil
 }
 
-// enterGitFocusMode enters focus mode for the git tab (lazygit).
-// Spawns lazygit if it's not already running.
-func (m *home) enterGitFocusMode() tea.Cmd {
-	selected := m.list.GetSelectedInstance()
-	if selected == nil || !selected.Started() || selected.Paused() {
-		return nil
-	}
-
-	gitPane := m.tabbedWindow.GetGitPane()
-	if !gitPane.IsRunning() {
-		worktree, err := selected.GetGitWorktree()
-		if err != nil {
-			return m.handleError(err)
-		}
-		gitPane.Spawn(worktree.GetWorktreePath(), selected.Title)
-	}
-
-	m.state = stateFocusAgent
-	m.tabbedWindow.SetFocusMode(true)
-	m.menu.SetFocusMode(true)
-
-	return func() tea.Msg {
-		return gitTabTickMsg{}
-	}
-}
-
 // exitFocusMode resets focus state. previewTerminal stays alive — it continues
 // rendering in normal preview mode after the user exits focus/insert mode.
 func (m *home) exitFocusMode() {
@@ -271,7 +245,7 @@ func (m *home) exitFocusMode() {
 	m.menu.SetFocusMode(false)
 }
 
-// switchToTab switches to the specified tab slot, handling git tab spawn/kill lifecycle.
+// switchToTab switches to the specified tab slot.
 func (m *home) switchToTab(name keys.KeyName) (tea.Model, tea.Cmd) {
 	var targetSlot int
 	switch name {
@@ -289,16 +263,7 @@ func (m *home) switchToTab(name keys.KeyName) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	wasGitTab := m.tabbedWindow.IsInGitTab()
 	m.setFocusSlot(targetSlot)
-
-	if wasGitTab && m.focusSlot != slotGit {
-		m.killGitTab()
-	}
-	if m.focusSlot == slotGit {
-		cmd := m.spawnGitTab()
-		return m, tea.Batch(m.instanceChanged(), cmd)
-	}
 	return m, m.instanceChanged()
 }
 
@@ -494,7 +459,7 @@ func (m *home) removeFromAllInstances(title string) {
 }
 
 // instanceChanged updates the preview pane, menu, and diff pane based on the selected instance.
-// It returns a tea.Cmd when an async operation is needed (terminal spawn, git tab respawn).
+// It returns a tea.Cmd when an async operation is needed (terminal spawn).
 func (m *home) instanceChanged() tea.Cmd {
 	// selected may be nil
 	selected := m.list.GetSelectedInstance()
@@ -542,66 +507,7 @@ func (m *home) instanceChanged() tea.Cmd {
 	// Update menu with current instance
 	m.menu.SetInstance(selected)
 
-	// Collect async commands: terminal spawn and/or git tab respawn.
-	var cmds []tea.Cmd
-	if spawnCmd != nil {
-		cmds = append(cmds, spawnCmd)
-	}
-
-	// Respawn lazygit if the selected instance changed while on the git tab
-	if m.tabbedWindow.IsInGitTab() {
-		gitPane := m.tabbedWindow.GetGitPane()
-		title := ""
-		if selected != nil {
-			title = selected.Title
-		}
-		if gitPane.NeedsRespawn(title) {
-			cmds = append(cmds, m.spawnGitTab())
-		}
-	}
-
-	if len(cmds) == 0 {
-		return nil
-	}
-	if len(cmds) == 1 {
-		return cmds[0]
-	}
-	return tea.Batch(cmds...)
-}
-
-// spawnGitTab spawns lazygit for the selected instance and starts the render ticker.
-func (m *home) spawnGitTab() tea.Cmd {
-	selected := m.list.GetSelectedInstance()
-	if selected == nil || !selected.Started() || selected.Paused() {
-		return nil
-	}
-
-	worktree, err := selected.GetGitWorktree()
-	if err != nil {
-		return m.handleError(err)
-	}
-
-	// Planner instances run on main branch without a worktree — fall back to
-	// the instance's repo path so lazygit can still open the repo.
-	worktreePath := selected.GetRepoPath()
-	if worktree != nil {
-		worktreePath = worktree.GetWorktreePath()
-	}
-	if worktreePath == "" {
-		return nil
-	}
-
-	gitPane := m.tabbedWindow.GetGitPane()
-	gitPane.Spawn(worktreePath, selected.Title)
-
-	return func() tea.Msg {
-		return gitTabTickMsg{}
-	}
-}
-
-// killGitTab kills the lazygit subprocess.
-func (m *home) killGitTab() {
-	m.tabbedWindow.GetGitPane().Kill()
+	return spawnCmd
 }
 
 // loadPlanState reads plan-state.json from the active repo's docs/plans/ directory.

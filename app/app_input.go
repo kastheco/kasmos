@@ -473,7 +473,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		return m, nil
 	}
 
-	// Handle focus mode — forward keys directly to the agent's or lazygit's PTY
+	// Handle focus mode — forward keys directly to the agent's PTY
 	if m.state == stateFocusAgent {
 		// Ctrl+Space exits focus mode
 		if msg.Type == tea.KeyCtrlAt {
@@ -493,16 +493,8 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			jumpSlot, doJump = slotGit, true
 		}
 		if doJump {
-			wasGitTab := m.tabbedWindow.IsInGitTab()
 			m.exitFocusMode()
 			m.setFocusSlot(jumpSlot)
-			if wasGitTab && jumpSlot != slotGit {
-				m.killGitTab()
-			}
-			if jumpSlot == slotGit && !wasGitTab {
-				cmd := m.spawnGitTab()
-				return m, tea.Batch(tea.WindowSize(), m.instanceChanged(), cmd)
-			}
 			return m, tea.Batch(tea.WindowSize(), m.instanceChanged())
 		}
 
@@ -517,24 +509,6 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			// Re-enter focus mode for the newly selected instance
 			focusCmd := m.enterFocusMode()
 			return m, tea.Batch(cmd, focusCmd)
-		}
-
-		// Git tab focus: forward to lazygit
-		if m.tabbedWindow.IsInGitTab() {
-			gitPane := m.tabbedWindow.GetGitPane()
-			if gitPane == nil || !gitPane.IsRunning() {
-				m.exitFocusMode()
-				return m, nil
-			}
-			data := keyToBytes(msg)
-			if data == nil {
-				return m, nil
-			}
-			if err := gitPane.SendKey(data); err != nil {
-				m.exitFocusMode()
-				return m, m.handleError(err)
-			}
-			return m, nil
 		}
 
 		// Preview tab focus: forward to embedded terminal
@@ -906,15 +880,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 
 	// Shift+Tab: reverse focus ring cycle
 	if msg.Type == tea.KeyShiftTab {
-		wasGitSlot := m.focusSlot == slotGit
 		m.prevFocusSlot()
-		if wasGitSlot && m.focusSlot != slotGit {
-			m.killGitTab()
-		}
-		if m.focusSlot == slotGit {
-			cmd := m.spawnGitTab()
-			return m, tea.Batch(m.instanceChanged(), cmd)
-		}
 		return m, m.instanceChanged()
 	}
 
@@ -1011,13 +977,8 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		case slotSidebar:
 			m.sidebar.Up()
 			m.filterInstancesByTopic()
-		case slotAgent, slotDiff:
+		case slotAgent, slotDiff, slotGit:
 			m.tabbedWindow.ScrollUp()
-		case slotGit:
-			gitPane := m.tabbedWindow.GetGitPane()
-			if gitPane != nil && gitPane.IsRunning() {
-				_ = gitPane.SendKey(keyToBytes(msg))
-			}
 		case slotList:
 			m.list.Up()
 		}
@@ -1028,29 +989,14 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		case slotSidebar:
 			m.sidebar.Down()
 			m.filterInstancesByTopic()
-		case slotAgent, slotDiff:
+		case slotAgent, slotDiff, slotGit:
 			m.tabbedWindow.ScrollDown()
-		case slotGit:
-			gitPane := m.tabbedWindow.GetGitPane()
-			if gitPane != nil && gitPane.IsRunning() {
-				_ = gitPane.SendKey(keyToBytes(msg))
-			}
 		case slotList:
 			m.list.Down()
 		}
 		return m, m.instanceChanged()
 	case keys.KeyTab:
-		wasGitSlot := m.focusSlot == slotGit
 		m.nextFocusSlot()
-		// Kill lazygit when leaving git slot
-		if wasGitSlot && m.focusSlot != slotGit {
-			m.killGitTab()
-		}
-		// Spawn lazygit when entering git slot
-		if m.focusSlot == slotGit {
-			cmd := m.spawnGitTab()
-			return m, tea.Batch(m.instanceChanged(), cmd)
-		}
 		return m, m.instanceChanged()
 	case keys.KeyFilterAll:
 		m.list.SetStatusFilter(ui.StatusFilterAll)
@@ -1071,23 +1017,11 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		}
 		return m.openContextMenu()
 	case keys.KeyInfoTab:
-		// Jump directly to info slot
-		if m.focusSlot == slotGit {
-			return m, nil
-		}
-		wasGitSlot := m.tabbedWindow.IsInGitTab()
 		m.setFocusSlot(slotGit)
-		if !wasGitSlot {
-			cmd := m.spawnGitTab()
-			return m, tea.Batch(m.instanceChanged(), cmd)
-		}
 		return m, m.instanceChanged()
 	case keys.KeyTabAgent, keys.KeyTabDiff, keys.KeyTabInfo:
 		return m.switchToTab(name)
 	case keys.KeySendPrompt:
-		if m.tabbedWindow.IsInGitTab() {
-			return m, m.enterGitFocusMode()
-		}
 		selected := m.list.GetSelectedInstance()
 		if selected == nil || !selected.Started() || selected.Paused() {
 			return m, nil
@@ -1263,19 +1197,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 	case keys.KeyArrowLeft:
 		listVisible := m.list.TotalInstances() > 0
 		switch m.focusSlot {
-		case slotGit:
-			gitPane := m.tabbedWindow.GetGitPane()
-			if gitPane != nil && gitPane.IsRunning() {
-				_ = gitPane.SendKey(keyToBytes(msg))
-				return m, nil
-			}
-			// Not running — fall through to panel navigation
-			if listVisible {
-				m.setFocusSlot(slotList)
-			} else {
-				m.setFocusSlot(slotSidebar)
-			}
-		case slotAgent, slotDiff:
+		case slotGit, slotAgent, slotDiff:
 			if listVisible {
 				m.setFocusSlot(slotList)
 			} else {
@@ -1289,12 +1211,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		listVisible := m.list.TotalInstances() > 0
 		switch m.focusSlot {
 		case slotGit:
-			gitPane := m.tabbedWindow.GetGitPane()
-			if gitPane != nil && gitPane.IsRunning() {
-				_ = gitPane.SendKey(keyToBytes(msg))
-				return m, nil
-			}
-			// Not running — no-op (already rightmost)
+			// Already rightmost — no-op
 		case slotSidebar:
 			if listVisible {
 				m.setFocusSlot(slotList)
