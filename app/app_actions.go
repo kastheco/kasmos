@@ -272,11 +272,38 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		}
 		return m, m.confirmAction(fmt.Sprintf("merge '%s' branch into main?", planName), mergeAction)
 
+	case "review_merge":
+		planFile := m.sidebar.GetSelectedPlanFile()
+		if planFile == "" || m.planState == nil {
+			return m, nil
+		}
+		delete(m.pendingApprovals, planFile)
+		m.pendingApprovalPRAction = nil
+		planName := planstate.DisplayName(planFile)
+		capturedPlanFile := planFile
+		mergeAction := func() tea.Msg {
+			return reviewMergeMsg{planFile: capturedPlanFile}
+		}
+		return m, m.confirmAction(fmt.Sprintf("merge '%s' branch into main?", planName), mergeAction)
+
+	case "review_create_pr":
+		planFile := m.sidebar.GetSelectedPlanFile()
+		if planFile == "" || m.planState == nil {
+			return m, nil
+		}
+		delete(m.pendingApprovals, planFile)
+		m.pendingApprovalPRAction = nil
+		capturedPlanFile := planFile
+		return m, func() tea.Msg {
+			return reviewCreatePRMsg{planFile: capturedPlanFile}
+		}
+
 	case "mark_plan_done":
 		planFile := m.sidebar.GetSelectedPlanFile()
 		if planFile == "" || m.planState == nil {
 			return m, nil
 		}
+		delete(m.pendingApprovals, planFile)
 		// Solo agents finish at "implementing" — advance through reviewing in one step.
 		if entry, ok := m.planState.Entry(planFile); ok && entry.Status == "implementing" {
 			if err := m.fsm.Transition(planFile, planfsm.ImplementFinished); err != nil {
@@ -309,6 +336,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		if planFile == "" || m.planState == nil {
 			return m, nil
 		}
+		delete(m.pendingApprovals, planFile)
 		planName := planstate.DisplayName(planFile)
 		cancelAction := func() tea.Msg {
 			if err := m.fsm.Transition(planFile, planfsm.Cancel); err != nil {
@@ -339,6 +367,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		if planFile == "" {
 			return m, nil
 		}
+		delete(m.pendingApprovals, planFile)
 		entry, ok := m.planState.Entry(planFile)
 		if !ok {
 			return m, m.handleError(fmt.Errorf("plan not found: %s", planFile))
@@ -552,6 +581,8 @@ func (m *home) openPlanContextMenu() (tea.Model, tea.Cmd) {
 			case planstate.StatusReviewing:
 				items = append(items,
 					overlay.ContextMenuItem{Label: "start review", Action: "start_review"},
+					overlay.ContextMenuItem{Label: "review & merge", Action: "review_merge"},
+					overlay.ContextMenuItem{Label: "create pr & push", Action: "review_create_pr"},
 					overlay.ContextMenuItem{Label: "mark finished", Action: "mark_plan_done"},
 				)
 			case planstate.StatusDone:
