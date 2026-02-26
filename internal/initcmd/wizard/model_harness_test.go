@@ -72,6 +72,6 @@ func TestHarnessStep_CursorNavigation(t *testing.T) {
 func TestHarnessStep_ViewDoesNotRenderRootHeader(t *testing.T) {
 	h := newHarnessStep([]harness.DetectResult{{Name: "claude", Found: true}})
 	view := h.View(80, 24)
-	assert.NotContains(t, view, "klique init wizard")
+	assert.NotContains(t, view, "kasmos setup")
 	assert.NotContains(t, view, "guided setup for harnesses and agents")
 }

@@ -128,7 +128,7 @@ func (m rootModel) View() string {
 
 	header := lipgloss.JoinVertical(
 		lipgloss.Left,
-		titleStyle.Render(gradientText("klique init wizard", gradientStart, gradientEnd)),
+		titleStyle.Render(gradientText("kasmos setup", gradientStart, gradientEnd)),
 		subtitleStyle.Render("guided setup for harnesses and agents"),
 		renderStepIndicator(m.step, m.totalSteps),
 	)
@@ -139,7 +139,8 @@ func (m rootModel) View() string {
 	}
 	content := m.steps[m.step].View(m.width, contentHeight)
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, "", content)
+	page := lipgloss.JoinVertical(lipgloss.Left, header, "", content)
+	return lipgloss.NewStyle().Padding(1, 2).Render(page)
 }
 
 func (m rootModel) modelCacheForSelectedHarness() map[string][]string {
