@@ -70,6 +70,16 @@ func (g *GitWorktree) setupFromExistingBranch() error {
 		return fmt.Errorf("failed to create worktree from branch %s: %w", g.branchName, err)
 	}
 
+	// Resolve a base commit for diff computation. Try merge-base with HEAD
+	// of the main worktree first; fall back to the branch's own HEAD.
+	if g.baseCommitSHA == "" {
+		if out, err := g.runGitCommand(g.repoPath, "merge-base", "HEAD", g.branchName); err == nil {
+			g.baseCommitSHA = strings.TrimSpace(out)
+		} else if out, err := g.runGitCommand(g.worktreePath, "rev-parse", "HEAD"); err == nil {
+			g.baseCommitSHA = strings.TrimSpace(out)
+		}
+	}
+
 	return nil
 }
 

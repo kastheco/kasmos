@@ -1,8 +1,13 @@
 package git
 
 import (
+	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPlanBranchFromFile(t *testing.T) {
@@ -37,4 +42,41 @@ func TestNewSharedPlanWorktree(t *testing.T) {
 	if gt.GetBranchName() != branch {
 		t.Fatalf("branch = %q, want %q", gt.GetBranchName(), branch)
 	}
+}
+
+func TestSetupFromExistingBranch_SetsBaseCommitSHA(t *testing.T) {
+	repo := initTestRepo(t)
+
+	cmd := exec.Command("git", "-C", repo, "branch", "plan/test-base")
+	require.NoError(t, cmd.Run())
+
+	gt := NewSharedPlanWorktree(repo, "plan/test-base")
+	require.NoError(t, gt.Setup())
+	t.Cleanup(func() { _ = gt.Cleanup() })
+
+	assert.NotEmpty(t, gt.GetBaseCommitSHA(), "baseCommitSHA should be set after Setup")
+}
+
+func initTestRepo(t *testing.T) string {
+	t.Helper()
+
+	repo := t.TempDir()
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		out, err := cmd.CombinedOutput()
+		require.NoErrorf(t, err, "git %v failed: %s", args, string(out))
+	}
+
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "test")
+
+	readmePath := filepath.Join(repo, "README.md")
+	require.NoError(t, os.WriteFile(readmePath, []byte("initial\n"), 0644))
+
+	runGit("add", "README.md")
+	runGit("commit", "-m", "initial commit")
+
+	return repo
 }
