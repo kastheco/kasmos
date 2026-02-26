@@ -1284,9 +1284,9 @@ func (m *home) spawnAdHocAgent(name, branch, workPath string) (tea.Model, tea.Cm
 		}
 
 	default:
-		// No overrides - standard worktree + auto-generated branch
+		// No overrides - run in-place on current branch (no worktree)
 		startCmd = func() tea.Msg {
-			return instanceStartedMsg{instance: inst, err: inst.Start(true)}
+			return instanceStartedMsg{instance: inst, err: inst.StartOnMainBranch()}
 		}
 	}
 
