@@ -11,8 +11,8 @@ func TestUpdatePreview_SkipsWhenFocusMode(t *testing.T) {
 	preview := NewPreviewPane()
 	preview.SetSize(80, 24)
 	diff := NewDiffPane()
-	git := NewGitPane()
-	tw := NewTabbedWindow(preview, diff, git)
+	info := NewInfoPane()
+	tw := NewTabbedWindow(preview, diff, info)
 	tw.SetActiveTab(PreviewTab)
 
 	// Set focus mode - simulates embedded terminal owning the pane.
@@ -34,8 +34,8 @@ func TestUpdatePreview_WorksWhenNotFocusMode(t *testing.T) {
 	preview := NewPreviewPane()
 	preview.SetSize(80, 24)
 	diff := NewDiffPane()
-	git := NewGitPane()
-	tw := NewTabbedWindow(preview, diff, git)
+	info := NewInfoPane()
+	tw := NewTabbedWindow(preview, diff, info)
 	tw.SetActiveTab(PreviewTab)
 
 	// Focus mode OFF - normal path.
@@ -54,8 +54,8 @@ func TestViewportUpdate_DelegatesOnlyForPreviewTab(t *testing.T) {
 	preview.SetSize(30, 5)
 	preview.SetDocumentContent(testDocumentLines(40))
 	diff := NewDiffPane()
-	git := NewGitPane()
-	tw := NewTabbedWindow(preview, diff, git)
+	info := NewInfoPane()
+	tw := NewTabbedWindow(preview, diff, info)
 
 	before := preview.viewport.View()
 

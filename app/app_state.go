@@ -146,7 +146,7 @@ const (
 	slotSidebar = 0
 	slotAgent   = 1
 	slotDiff    = 2
-	slotGit     = 3
+	slotInfo    = 3
 	slotList    = 4
 	slotCount   = 5
 )
@@ -159,7 +159,7 @@ func (m *home) setFocusSlot(slot int) {
 	m.menu.SetFocusSlot(slot)
 
 	// Center pane is focused when any of the 3 center tabs is active.
-	centerFocused := slot >= slotAgent && slot <= slotGit
+	centerFocused := slot >= slotAgent && slot <= slotInfo
 	m.tabbedWindow.SetFocused(centerFocused)
 
 	// When focusing a center tab, switch the visible tab to match and track which tab is focused.
@@ -172,14 +172,14 @@ func (m *home) setFocusSlot(slot int) {
 }
 
 // nextFocusSlot advances the focus ring forward through the 3 center tabs only.
-// Tab only cycles agent → diff → git → agent. Use 's'/'t' to reach the sidebars.
+// Tab only cycles agent → diff → info → agent. Use 's'/'t' to reach the sidebars.
 func (m *home) nextFocusSlot() {
 	switch m.focusSlot {
 	case slotAgent:
 		m.setFocusSlot(slotDiff)
 	case slotDiff:
-		m.setFocusSlot(slotGit)
-	default: // slotGit, slotSidebar, slotList — all land on agent
+		m.setFocusSlot(slotInfo)
+	default: // slotInfo, slotSidebar, slotList — all land on agent
 		m.setFocusSlot(slotAgent)
 	}
 }
@@ -189,10 +189,10 @@ func (m *home) prevFocusSlot() {
 	switch m.focusSlot {
 	case slotDiff:
 		m.setFocusSlot(slotAgent)
-	case slotGit:
+	case slotInfo:
 		m.setFocusSlot(slotDiff)
-	default: // slotAgent, slotSidebar, slotList — all land on git
-		m.setFocusSlot(slotGit)
+	default: // slotAgent, slotSidebar, slotList — all land on info
+		m.setFocusSlot(slotInfo)
 	}
 }
 
@@ -236,32 +236,6 @@ func (m *home) enterFocusMode() tea.Cmd {
 	return nil
 }
 
-// enterGitFocusMode enters focus mode for the git tab (lazygit).
-// Spawns lazygit if it's not already running.
-func (m *home) enterGitFocusMode() tea.Cmd {
-	selected := m.list.GetSelectedInstance()
-	if selected == nil || !selected.Started() || selected.Paused() {
-		return nil
-	}
-
-	gitPane := m.tabbedWindow.GetGitPane()
-	if !gitPane.IsRunning() {
-		worktree, err := selected.GetGitWorktree()
-		if err != nil {
-			return m.handleError(err)
-		}
-		gitPane.Spawn(worktree.GetWorktreePath(), selected.Title)
-	}
-
-	m.state = stateFocusAgent
-	m.tabbedWindow.SetFocusMode(true)
-	m.menu.SetFocusMode(true)
-
-	return func() tea.Msg {
-		return gitTabTickMsg{}
-	}
-}
-
 // exitFocusMode resets focus state. previewTerminal stays alive — it continues
 // rendering in normal preview mode after the user exits focus/insert mode.
 func (m *home) exitFocusMode() {
@@ -271,7 +245,7 @@ func (m *home) exitFocusMode() {
 	m.menu.SetFocusMode(false)
 }
 
-// switchToTab switches to the specified tab slot, handling git tab spawn/kill lifecycle.
+// switchToTab switches to the specified tab slot.
 func (m *home) switchToTab(name keys.KeyName) (tea.Model, tea.Cmd) {
 	var targetSlot int
 	switch name {
@@ -279,8 +253,8 @@ func (m *home) switchToTab(name keys.KeyName) (tea.Model, tea.Cmd) {
 		targetSlot = slotAgent
 	case keys.KeyTabDiff:
 		targetSlot = slotDiff
-	case keys.KeyTabGit:
-		targetSlot = slotGit
+	case keys.KeyTabInfo:
+		targetSlot = slotInfo
 	default:
 		return m, nil
 	}
@@ -289,16 +263,7 @@ func (m *home) switchToTab(name keys.KeyName) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	wasGitTab := m.tabbedWindow.IsInGitTab()
 	m.setFocusSlot(targetSlot)
-
-	if wasGitTab && m.focusSlot != slotGit {
-		m.killGitTab()
-	}
-	if m.focusSlot == slotGit {
-		cmd := m.spawnGitTab()
-		return m, tea.Batch(m.instanceChanged(), cmd)
-	}
 	return m, m.instanceChanged()
 }
 
@@ -494,7 +459,7 @@ func (m *home) removeFromAllInstances(title string) {
 }
 
 // instanceChanged updates the preview pane, menu, and diff pane based on the selected instance.
-// It returns a tea.Cmd when an async operation is needed (terminal spawn, git tab respawn).
+// It returns a tea.Cmd when an async operation is needed (terminal spawn).
 func (m *home) instanceChanged() tea.Cmd {
 	// selected may be nil
 	selected := m.list.GetSelectedInstance()
@@ -539,25 +504,14 @@ func (m *home) instanceChanged() tea.Cmd {
 
 	m.tabbedWindow.UpdateDiff(selected)
 	m.tabbedWindow.SetInstance(selected)
+	m.updateInfoPane()
 	// Update menu with current instance
 	m.menu.SetInstance(selected)
 
-	// Collect async commands: terminal spawn and/or git tab respawn.
+	// Collect async commands.
 	var cmds []tea.Cmd
 	if spawnCmd != nil {
 		cmds = append(cmds, spawnCmd)
-	}
-
-	// Respawn lazygit if the selected instance changed while on the git tab
-	if m.tabbedWindow.IsInGitTab() {
-		gitPane := m.tabbedWindow.GetGitPane()
-		title := ""
-		if selected != nil {
-			title = selected.Title
-		}
-		if gitPane.NeedsRespawn(title) {
-			cmds = append(cmds, m.spawnGitTab())
-		}
 	}
 
 	if len(cmds) == 0 {
@@ -569,39 +523,81 @@ func (m *home) instanceChanged() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// spawnGitTab spawns lazygit for the selected instance and starts the render ticker.
-func (m *home) spawnGitTab() tea.Cmd {
-	selected := m.list.GetSelectedInstance()
-	if selected == nil || !selected.Started() || selected.Paused() {
-		return nil
-	}
-
-	worktree, err := selected.GetGitWorktree()
-	if err != nil {
-		return m.handleError(err)
-	}
-
-	// Planner instances run on main branch without a worktree — fall back to
-	// the instance's repo path so lazygit can still open the repo.
-	worktreePath := selected.GetRepoPath()
-	if worktree != nil {
-		worktreePath = worktree.GetWorktreePath()
-	}
-	if worktreePath == "" {
-		return nil
-	}
-
-	gitPane := m.tabbedWindow.GetGitPane()
-	gitPane.Spawn(worktreePath, selected.Title)
-
-	return func() tea.Msg {
-		return gitTabTickMsg{}
+func statusString(s session.Status) string {
+	switch s {
+	case session.Running:
+		return "running"
+	case session.Ready:
+		return "ready"
+	case session.Loading:
+		return "loading"
+	case session.Paused:
+		return "paused"
+	default:
+		return "unknown"
 	}
 }
 
-// killGitTab kills the lazygit subprocess.
-func (m *home) killGitTab() {
-	m.tabbedWindow.GetGitPane().Kill()
+// updateInfoPane refreshes the info tab data from the selected instance.
+func (m *home) updateInfoPane() {
+	selected := m.list.GetSelectedInstance()
+	if selected == nil {
+		m.tabbedWindow.SetInfoData(ui.InfoData{HasInstance: false})
+		return
+	}
+
+	data := ui.InfoData{
+		HasInstance: true,
+		Title:       selected.Title,
+		Program:     selected.Program,
+		Branch:      selected.Branch,
+		Path:        selected.Path,
+		Status:      statusString(selected.Status),
+		AgentType:   selected.AgentType,
+		TaskNumber:  selected.TaskNumber,
+		WaveNumber:  selected.WaveNumber,
+	}
+
+	if !selected.CreatedAt.IsZero() {
+		data.Created = selected.CreatedAt.Format("2006-01-02 15:04")
+	}
+
+	if selected.PlanFile != "" {
+		if m.planState != nil {
+			entry, ok := m.planState.Entry(selected.PlanFile)
+			if ok {
+				data.HasPlan = true
+				data.PlanName = planstate.DisplayName(selected.PlanFile)
+				data.PlanDescription = entry.Description
+				data.PlanStatus = string(entry.Status)
+				data.PlanTopic = entry.Topic
+				data.PlanBranch = entry.Branch
+				if !entry.CreatedAt.IsZero() {
+					data.PlanCreated = entry.CreatedAt.Format("2006-01-02")
+				}
+			}
+		}
+
+		if orch, ok := m.waveOrchestrators[selected.PlanFile]; ok {
+			data.TotalWaves = orch.TotalWaves()
+			data.TotalTasks = orch.TotalTasks()
+			tasks := orch.CurrentWaveTasks()
+			data.WaveTasks = make([]ui.WaveTaskInfo, len(tasks))
+			for i, task := range tasks {
+				state := "pending"
+				if orch.IsTaskComplete(task.Number) {
+					state = "complete"
+				} else if orch.IsTaskFailed(task.Number) {
+					state = "failed"
+				} else if orch.IsTaskRunning(task.Number) {
+					state = "running"
+				}
+				data.WaveTasks[i] = ui.WaveTaskInfo{Number: task.Number, State: state}
+			}
+		}
+	}
+
+	m.tabbedWindow.SetInfoData(data)
 }
 
 // loadPlanState reads plan-state.json from the active repo's docs/plans/ directory.

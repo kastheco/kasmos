@@ -19,7 +19,7 @@ func TestHandleKeyPress_DocumentModeConsumesViewportNavigationKeys(t *testing.T)
 	preview.SetSize(30, 5)
 	preview.SetDocumentContent(appTestDocumentLines(50))
 
-	tw := ui.NewTabbedWindow(preview, ui.NewDiffPane(), ui.NewGitPane())
+	tw := ui.NewTabbedWindow(preview, ui.NewDiffPane(), ui.NewInfoPane())
 	tw.SetActiveTab(ui.PreviewTab)
 
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
@@ -51,7 +51,7 @@ func TestHandleKeyPress_DocumentModeScrollsWithDownKey(t *testing.T) {
 	preview.SetSize(30, 5)
 	preview.SetDocumentContent(appTestDocumentLines(50))
 
-	tw := ui.NewTabbedWindow(preview, ui.NewDiffPane(), ui.NewGitPane())
+	tw := ui.NewTabbedWindow(preview, ui.NewDiffPane(), ui.NewInfoPane())
 	tw.SetActiveTab(ui.PreviewTab)
 
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))

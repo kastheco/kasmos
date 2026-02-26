@@ -44,12 +44,12 @@ const (
 	KeyCycleSort    // Key for cycling sort mode
 	KeyRepoSwitch   // Key for switching repos
 
-	KeyGitTab // Key for jumping directly to git tab
+	KeyInfoTab // Key for jumping directly to info tab
 
 	// Tab switching keybindings (Shift+1/2/3 = !/@ /#)
 	KeyTabAgent
 	KeyTabDiff
-	KeyTabGit
+	KeyTabInfo
 
 	KeyFocusSidebar  // Key for focusing the left sidebar / plan list
 	KeyFocusList     // Key for focusing the right sidebar / instance list
@@ -57,6 +57,12 @@ const (
 	KeyToggleSidebar // Key for toggling sidebar visibility
 	KeyExitFocus     // Key for exiting focus/interactive mode (ctrl+space)
 	KeySpaceExpand   // Space key with expand/collapse label (sidebar context)
+)
+
+// Backward-compatible aliases; prefer KeyInfoTab/KeyTabInfo.
+const (
+	KeyGitTab = KeyInfoTab
+	KeyTabGit = KeyTabInfo
 )
 
 // GlobalKeyStringsMap is a global, immutable map string to keybinding.
@@ -89,10 +95,10 @@ var GlobalKeyStringsMap = map[string]KeyName{
 	"t":      KeyFocusList,
 	"v":      KeyViewPlan,
 	"ctrl+s": KeyToggleSidebar,
-	"g":      KeyGitTab,
+	"g":      KeyInfoTab,
 	"!":      KeyTabAgent,
 	"@":      KeyTabDiff,
-	"#":      KeyTabGit,
+	"#":      KeyTabInfo,
 }
 
 // GlobalkeyBindings is a global, immutable map of KeyName tot keybinding.
@@ -209,9 +215,9 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 		key.WithKeys("ctrl+s"),
 		key.WithHelp("ctrl+s", "toggle sidebar"),
 	),
-	KeyGitTab: key.NewBinding(
+	KeyInfoTab: key.NewBinding(
 		key.WithKeys("g"),
-		key.WithHelp("g", "git tab"),
+		key.WithHelp("g", "info tab"),
 	),
 	KeyTabAgent: key.NewBinding(
 		key.WithKeys("!"),
@@ -221,9 +227,9 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 		key.WithKeys("@"),
 		key.WithHelp("@", "diff tab"),
 	),
-	KeyTabGit: key.NewBinding(
+	KeyTabInfo: key.NewBinding(
 		key.WithKeys("#"),
-		key.WithHelp("#", "git tab"),
+		key.WithHelp("#", "info tab"),
 	),
 	KeyExitFocus: key.NewBinding(
 		key.WithKeys("ctrl+@"),

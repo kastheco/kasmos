@@ -58,7 +58,7 @@ func TestHandleDefaultStateStartsCombinedPlanForm(t *testing.T) {
 	h := &home{
 		state:        stateDefault,
 		keySent:      true,
-		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewInfoPane()),
 	}
 
 	model, cmd := h.handleKeyPress(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})

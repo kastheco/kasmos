@@ -148,7 +148,7 @@ type home struct {
 	// sidebar displays the topic sidebar
 	sidebar *ui.Sidebar
 	// focusSlot tracks which pane has keyboard focus in the Tab ring:
-	// 0=sidebar, 1=agent tab, 2=diff tab, 3=git tab, 4=instance list
+	// 0=sidebar, 1=agent tab, 2=diff tab, 3=info tab, 4=instance list
 	focusSlot int
 	// pendingPlanName stores the plan name during the two-step plan creation flow
 	pendingPlanName string
@@ -260,7 +260,7 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 		spinner:               spinner.New(spinner.WithSpinner(spinner.Dot)),
 		menu:                  ui.NewMenu(),
 		statusBar:             ui.NewStatusBar(),
-		tabbedWindow:          ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+		tabbedWindow:          ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewInfoPane()),
 		storage:               storage,
 		appConfig:             appConfig,
 		program:               program,
@@ -463,23 +463,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				time.Sleep(50 * time.Millisecond)
 			}
 			return previewTickMsg{}
-		}
-	case gitTabTickMsg:
-		if !m.tabbedWindow.IsInGitTab() {
-			return m, nil
-		}
-		gitPane := m.tabbedWindow.GetGitPane()
-		if !gitPane.IsRunning() {
-			return m, nil
-		}
-		// Only trigger re-render when content changed to avoid flicker
-		content, changed := gitPane.Render()
-		if changed {
-			m.tabbedWindow.SetGitContent(content)
-		}
-		return m, func() tea.Msg {
-			time.Sleep(33 * time.Millisecond)
-			return gitTabTickMsg{}
 		}
 	case keyupMsg:
 		m.menu.ClearKeydown()
@@ -864,6 +847,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.updateSidebarPlans()
 		m.updateSidebarItems()
+		m.updateInfoPane()
 		completionCmd := m.checkPlanCompletion()
 		asyncCmds = append(asyncCmds, signalCmds...)
 		asyncCmds = append(asyncCmds, tickUpdateMetadataCmd, completionCmd)
@@ -1074,7 +1058,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *home) handleQuit() (tea.Model, tea.Cmd) {
-	m.killGitTab()
 	if err := m.saveAllInstances(); err != nil {
 		return m, m.handleError(err)
 	}
@@ -1202,9 +1185,6 @@ type previewTerminalReadyMsg struct {
 	instanceTitle string
 	err           error
 }
-
-// gitTabTickMsg is a 30fps ticker for refreshing the git tab's lazygit rendering.
-type gitTabTickMsg struct{}
 
 type instanceChangedMsg struct{}
 

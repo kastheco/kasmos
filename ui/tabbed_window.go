@@ -34,7 +34,7 @@ var (
 const (
 	PreviewTab int = iota
 	DiffTab
-	GitTab
+	InfoTab
 )
 
 type Tab struct {
@@ -48,17 +48,16 @@ type TabbedWindow struct {
 	tabs []string
 
 	activeTab  int
-	focusedTab int // which specific tab (0=agent, 1=diff, 2=git) has Tab-ring focus; -1 = none
+	focusedTab int // which specific tab (0=agent, 1=diff, 2=info) has Tab-ring focus; -1 = none
 	height     int
 	width      int
 
-	preview    *PreviewPane
-	diff       *DiffPane
-	git        *GitPane
-	instance   *session.Instance
-	focused    bool   // true when this panel has keyboard focus (panel == 1)
-	focusMode  bool   // true when user is typing directly into the agent pane
-	gitContent string // cached git pane content, set by tick when changed
+	preview   *PreviewPane
+	diff      *DiffPane
+	info      *InfoPane
+	instance  *session.Instance
+	focused   bool // true when this panel has keyboard focus (panel == 1)
+	focusMode bool // true when user is typing directly into the agent pane
 }
 
 // SetFocusMode enables or disables the focus/insert mode visual indicator.
@@ -76,16 +75,16 @@ func (w *TabbedWindow) SetFocused(focused bool) {
 	w.focused = focused
 }
 
-func NewTabbedWindow(preview *PreviewPane, diff *DiffPane, git *GitPane) *TabbedWindow {
+func NewTabbedWindow(preview *PreviewPane, diff *DiffPane, info *InfoPane) *TabbedWindow {
 	return &TabbedWindow{
 		tabs: []string{
 			"\uea85 Agent",
 			"\ueae1 Diff",
-			"\ue725 Git",
+			"\uea74 Info",
 		},
 		preview:    preview,
 		diff:       diff,
-		git:        git,
+		info:       info,
 		focusedTab: -1,
 	}
 }
@@ -118,7 +117,7 @@ func (w *TabbedWindow) SetSize(width, height int) {
 
 	w.preview.SetSize(contentWidth, contentHeight)
 	w.diff.SetSize(contentWidth, contentHeight)
-	w.git.SetSize(contentWidth, contentHeight)
+	w.info.SetSize(contentWidth, contentHeight)
 }
 
 func (w *TabbedWindow) GetPreviewSize() (width, height int) {
@@ -193,16 +192,16 @@ func (w *TabbedWindow) ViewportHandlesKey(msg tea.KeyMsg) bool {
 	return w.preview.ViewportHandlesKey(msg)
 }
 
-// SetGitContent caches the git pane content to avoid re-rendering when unchanged.
-func (w *TabbedWindow) SetGitContent(content string) {
-	w.gitContent = content
-}
-
 func (w *TabbedWindow) UpdateDiff(instance *session.Instance) {
 	if w.activeTab != DiffTab {
 		return
 	}
 	w.diff.SetDiff(instance)
+}
+
+// SetInfoData updates the info pane data.
+func (w *TabbedWindow) SetInfoData(data InfoData) {
+	w.info.SetData(data)
 }
 
 // ResetPreviewToNormalMode resets the preview pane to normal mode
@@ -212,7 +211,7 @@ func (w *TabbedWindow) ResetPreviewToNormalMode(instance *session.Instance) erro
 
 // ScrollUp scrolls content. In preview tab, scrolls the preview. In diff tab,
 // navigates to the previous file if files exist, otherwise scrolls.
-// No-op for git tab (lazygit handles its own scrolling).
+// In info tab, scrolls the info pane.
 func (w *TabbedWindow) ScrollUp() {
 	switch w.activeTab {
 	case PreviewTab:
@@ -226,12 +225,14 @@ func (w *TabbedWindow) ScrollUp() {
 		} else {
 			w.diff.ScrollUp()
 		}
+	case InfoTab:
+		w.info.ScrollUp()
 	}
 }
 
 // ScrollDown scrolls content. In preview tab, scrolls the preview. In diff tab,
 // navigates to the next file if files exist, otherwise scrolls.
-// No-op for git tab (lazygit handles its own scrolling).
+// In info tab, scrolls the info pane.
 func (w *TabbedWindow) ScrollDown() {
 	switch w.activeTab {
 	case PreviewTab:
@@ -245,11 +246,13 @@ func (w *TabbedWindow) ScrollDown() {
 		} else {
 			w.diff.ScrollDown()
 		}
+	case InfoTab:
+		w.info.ScrollDown()
 	}
 }
 
 // ContentScrollUp scrolls content without file navigation (for mouse wheel).
-// No-op for git tab.
+// In info tab, scrolls the info pane.
 func (w *TabbedWindow) ContentScrollUp() {
 	switch w.activeTab {
 	case PreviewTab:
@@ -259,11 +262,13 @@ func (w *TabbedWindow) ContentScrollUp() {
 		}
 	case DiffTab:
 		w.diff.ScrollUp()
+	case InfoTab:
+		w.info.ScrollUp()
 	}
 }
 
 // ContentScrollDown scrolls content without file navigation (for mouse wheel).
-// No-op for git tab.
+// In info tab, scrolls the info pane.
 func (w *TabbedWindow) ContentScrollDown() {
 	switch w.activeTab {
 	case PreviewTab:
@@ -273,6 +278,8 @@ func (w *TabbedWindow) ContentScrollDown() {
 		}
 	case DiffTab:
 		w.diff.ScrollDown()
+	case InfoTab:
+		w.info.ScrollDown()
 	}
 }
 
@@ -281,14 +288,9 @@ func (w *TabbedWindow) IsInDiffTab() bool {
 	return w.activeTab == DiffTab
 }
 
-// IsInGitTab returns true if the git tab is currently active
-func (w *TabbedWindow) IsInGitTab() bool {
-	return w.activeTab == GitTab
-}
-
-// GetGitPane returns the git pane for external control.
-func (w *TabbedWindow) GetGitPane() *GitPane {
-	return w.git
+// IsInInfoTab returns true if the info tab is currently active
+func (w *TabbedWindow) IsInInfoTab() bool {
+	return w.activeTab == InfoTab
 }
 
 // SetActiveTab sets the active tab by index.
@@ -415,12 +417,8 @@ func (w *TabbedWindow) String() string {
 		content = w.preview.String()
 	case DiffTab:
 		content = w.diff.String()
-	case GitTab:
-		if w.gitContent != "" {
-			content = w.gitContent
-		} else {
-			content = w.git.String()
-		}
+	case InfoTab:
+		content = w.info.String()
 	}
 	ws := windowStyle.BorderForeground(borderColor)
 	// Subtract the window border width so the total rendered width

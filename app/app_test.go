@@ -475,7 +475,7 @@ func TestFocusRing(t *testing.T) {
 			list:         ui.NewList(&spin, false),
 			menu:         ui.NewMenu(),
 			sidebar:      ui.NewSidebar(),
-			tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+			tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewInfoPane()),
 		}
 	}
 
@@ -514,12 +514,12 @@ func TestFocusRing(t *testing.T) {
 
 		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyTab})
 
-		assert.Equal(t, slotGit, homeModel.focusSlot)
+		assert.Equal(t, slotInfo, homeModel.focusSlot)
 	})
 
 	t.Run("Tab wraps center tabs: git → agent", func(t *testing.T) {
 		h := newTestHome()
-		h.setFocusSlot(slotGit)
+		h.setFocusSlot(slotInfo)
 
 		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyTab})
 
@@ -559,7 +559,7 @@ func TestFocusRing(t *testing.T) {
 
 		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyShiftTab})
 
-		assert.Equal(t, slotGit, homeModel.focusSlot)
+		assert.Equal(t, slotInfo, homeModel.focusSlot)
 	})
 
 	t.Run("Shift+Tab from sidebar lands on git", func(t *testing.T) {
@@ -568,7 +568,7 @@ func TestFocusRing(t *testing.T) {
 
 		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyShiftTab})
 
-		assert.Equal(t, slotGit, homeModel.focusSlot)
+		assert.Equal(t, slotInfo, homeModel.focusSlot)
 	})
 
 	t.Run("t jumps to list slot when instances exist", func(t *testing.T) {
@@ -616,7 +616,7 @@ func TestFocusRing(t *testing.T) {
 
 		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("#")})
 
-		assert.Equal(t, slotGit, homeModel.focusSlot)
+		assert.Equal(t, slotInfo, homeModel.focusSlot)
 	})
 
 	t.Run("s jumps to sidebar slot", func(t *testing.T) {
@@ -845,7 +845,7 @@ func TestPreviewTerminal_SelectionChange(t *testing.T) {
 			list:         ui.NewList(&spin, false),
 			menu:         ui.NewMenu(),
 			sidebar:      ui.NewSidebar(),
-			tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+			tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewInfoPane()),
 		}
 
 		instA, err := session.NewInstance(session.InstanceOptions{
@@ -902,7 +902,7 @@ func TestPreviewTerminal_SelectionChange(t *testing.T) {
 			list:         ui.NewList(&spin, false),
 			menu:         ui.NewMenu(),
 			sidebar:      ui.NewSidebar(),
-			tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+			tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewInfoPane()),
 		}
 
 		// Attach a terminal.
@@ -1012,7 +1012,7 @@ func TestPreviewTerminal_RenderTickIntegration(t *testing.T) {
 			list:         ui.NewList(&spin, false),
 			menu:         ui.NewMenu(),
 			sidebar:      ui.NewSidebar(),
-			tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+			tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewInfoPane()),
 		}
 
 		instA, err := session.NewInstance(session.InstanceOptions{
@@ -1131,7 +1131,7 @@ func TestPreviewTerminalReadyMsg_StaleDiscard(t *testing.T) {
 		list:         ui.NewList(&spin, false),
 		menu:         ui.NewMenu(),
 		sidebar:      ui.NewSidebar(),
-		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewInfoPane()),
 	}
 
 	// Add instance "B" and select it (simulating selection change after spawn started for "A").
@@ -1175,7 +1175,7 @@ func TestPreviewTerminalReadyMsg_AcceptsCurrentInstance(t *testing.T) {
 		list:         ui.NewList(&spin, false),
 		menu:         ui.NewMenu(),
 		sidebar:      ui.NewSidebar(),
-		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewInfoPane()),
 	}
 
 	// Add instance "A" and select it.
@@ -1216,7 +1216,7 @@ func TestFocusMode_ReusesPreviewTerminal(t *testing.T) {
 		list:         ui.NewList(&spin, false),
 		menu:         ui.NewMenu(),
 		sidebar:      ui.NewSidebar(),
-		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewInfoPane()),
 	}
 
 	// Add a started-looking instance. We can't actually start it (no tmux),
@@ -1251,7 +1251,7 @@ func TestExitFocusMode_KeepsPreviewTerminal(t *testing.T) {
 		list:         ui.NewList(&spin, false),
 		menu:         ui.NewMenu(),
 		sidebar:      ui.NewSidebar(),
-		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewInfoPane()),
 	}
 
 	// Set previewTerminalInstance to simulate an attached terminal.

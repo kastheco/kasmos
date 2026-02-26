@@ -448,6 +448,11 @@
       "status": "ready",
       "description": "automate cli-tools enforcement hooks installation during kas init for claude and opencode harnesses",
       "topic": "automation"
+    },
+    "2026-02-26-details-tab.md": {
+      "status": "done",
+      "description": "replace lazygit git tab with a read-only info tab",
+      "topic": "ui"
     }
   }
 }

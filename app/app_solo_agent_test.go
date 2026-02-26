@@ -52,7 +52,7 @@ func TestSoloAgent_NoAutomaticPushPromptOnExit(t *testing.T) {
 		list:              list,
 		menu:              ui.NewMenu(),
 		sidebar:           ui.NewSidebar(),
-		tabbedWindow:      ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewGitPane()),
+		tabbedWindow:      ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewInfoPane()),
 		toastManager:      overlay.NewToastManager(&sp),
 		planState:         ps,
 		planStateDir:      plansDir,
