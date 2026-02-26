@@ -10,7 +10,6 @@ const (
 	KeyUp KeyName = iota
 	KeyDown
 	KeyEnter
-	KeyNew
 	KeyKill  // k — soft kill: terminates tmux session, keeps instance in list
 	KeyAbort // K — full abort: kills tmux, removes worktree, removes from list
 	KeyQuit
@@ -51,7 +50,7 @@ const (
 	KeyTabDiff
 	KeyTabInfo
 
-	KeyFocusSidebar  // Key for focusing the left sidebar / plan list
+	KeySpawnAgent    // s - spawn ad-hoc agent session
 	KeyFocusList     // Key for focusing the right sidebar / instance list
 	KeyViewPlan      // Key for viewing the selected plan's markdown
 	KeyToggleSidebar // Key for toggling sidebar visibility
@@ -91,6 +90,7 @@ var GlobalKeyStringsMap = map[string]KeyName{
 	"2":      KeyFilterActive,
 	"3":      KeyCycleSort,
 	"R":      KeyRepoSwitch,
+	"s":      KeySpawnAgent,
 	"t":      KeyFocusList,
 	"v":      KeyViewPlan,
 	"p":      KeyViewPlan,
@@ -114,10 +114,6 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	KeyEnter: key.NewBinding(
 		key.WithKeys("enter", "o"),
 		key.WithHelp("↵/o", "select"),
-	),
-	KeyNew: key.NewBinding(
-		key.WithKeys("n"),
-		key.WithHelp("n", "new"),
 	),
 	KeyKill: key.NewBinding(
 		key.WithKeys("k"),
@@ -199,9 +195,9 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 		key.WithKeys("R"),
 		key.WithHelp("R", "switch repo"),
 	),
-	KeyFocusSidebar: key.NewBinding(
+	KeySpawnAgent: key.NewBinding(
 		key.WithKeys("s"),
-		key.WithHelp("s", "left sidebar"),
+		key.WithHelp("s", "spawn agent"),
 	),
 	KeyFocusList: key.NewBinding(
 		key.WithKeys("t"),

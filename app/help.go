@@ -43,6 +43,7 @@ func (h helpTypeGeneral) toContent() string {
 		"",
 		headerStyle.Render("sessions:"),
 		keyStyle.Render("↵/o")+descStyle.Render("           - attach to tmux session fullscreen"),
+		keyStyle.Render("s")+descStyle.Render("             - spawn agent"),
 		keyStyle.Render("i")+descStyle.Render("             - interactive mode (type in pane)"),
 		keyStyle.Render("ctrl+space")+descStyle.Render("    - exit fullscreen or interactive mode"),
 		keyStyle.Render("k")+descStyle.Render("             - kill tmux session (keeps instance)"),

@@ -1245,6 +1245,56 @@ func agentTypeForSubItem(action string) (string, bool) {
 	}
 }
 
+// spawnAdHocAgent creates and starts an ad-hoc agent session (no plan, no lifecycle).
+// branch and workPath are optional overrides - empty strings use defaults.
+func (m *home) spawnAdHocAgent(name, branch, workPath string) (tea.Model, tea.Cmd) {
+	path := m.activeRepoPath
+	if workPath != "" {
+		path = workPath
+	}
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:   name,
+		Path:    path,
+		Program: m.program,
+	})
+	if err != nil {
+		return m, m.handleError(err)
+	}
+
+	inst.SetStatus(session.Loading)
+	inst.LoadingTotal = 8
+	inst.LoadingMessage = "preparing session..."
+
+	m.state = stateDefault
+	m.menu.SetState(ui.StateDefault)
+
+	var startCmd tea.Cmd
+	switch {
+	case workPath != "" && branch == "":
+		// Path override only - run in-place on main branch (no worktree)
+		startCmd = func() tea.Msg {
+			return instanceStartedMsg{instance: inst, err: inst.StartOnMainBranch()}
+		}
+
+	case branch != "":
+		// Branch override - create worktree on specified branch
+		startCmd = func() tea.Msg {
+			return instanceStartedMsg{instance: inst, err: inst.StartOnBranch(branch)}
+		}
+
+	default:
+		// No overrides - standard worktree + auto-generated branch
+		startCmd = func() tea.Msg {
+			return instanceStartedMsg{instance: inst, err: inst.Start(true)}
+		}
+	}
+
+	m.addInstanceFinalizer(inst, m.list.AddInstance(inst))
+	m.list.SelectInstance(inst)
+	return m, tea.Batch(tea.WindowSize(), startCmd)
+}
+
 // spawnPlanAgent creates and starts an agent session for the given plan and action.
 func (m *home) spawnPlanAgent(planFile, action, prompt string) (tea.Model, tea.Cmd) {
 	entry, ok := m.planState.Entry(planFile)

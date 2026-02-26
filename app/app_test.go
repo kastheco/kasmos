@@ -30,6 +30,107 @@ func TestMain(m *testing.M) {
 	os.Exit(exitCode)
 }
 
+func newTestHome() *home {
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	return &home{
+		ctx:            context.Background(),
+		state:          stateDefault,
+		appConfig:      config.DefaultConfig(),
+		list:           ui.NewList(&sp, false),
+		menu:           ui.NewMenu(),
+		sidebar:        ui.NewSidebar(),
+		tabbedWindow:   ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewInfoPane()),
+		activeRepoPath: os.TempDir(),
+		program:        "opencode",
+	}
+}
+
+func TestSpawnAdHocAgent_DefaultCreatesWorktree(t *testing.T) {
+	h := newTestHome()
+	model, cmd := h.spawnAdHocAgent("my-agent", "", "")
+	updated := model.(*home)
+	instances := updated.list.GetInstances()
+	require.NotEmpty(t, instances)
+	last := instances[len(instances)-1]
+	assert.Equal(t, "my-agent", last.Title)
+	assert.Equal(t, session.Loading, last.Status)
+	assert.NotNil(t, cmd, "should return async start command")
+}
+
+func TestSpawnAdHocAgent_BranchOverride(t *testing.T) {
+	h := newTestHome()
+	model, cmd := h.spawnAdHocAgent("my-agent", "feature/login", "")
+	updated := model.(*home)
+	instances := updated.list.GetInstances()
+	require.NotEmpty(t, instances)
+	last := instances[len(instances)-1]
+	assert.Equal(t, "my-agent", last.Title)
+	assert.NotNil(t, cmd)
+}
+
+func TestSpawnAdHocAgent_PathOverride(t *testing.T) {
+	h := newTestHome()
+	model, cmd := h.spawnAdHocAgent("my-agent", "", "/tmp/custom-path")
+	updated := model.(*home)
+	instances := updated.list.GetInstances()
+	require.NotEmpty(t, instances)
+	last := instances[len(instances)-1]
+	assert.Equal(t, "my-agent", last.Title)
+	assert.NotNil(t, cmd)
+}
+
+func TestSpawnAgent_KeyOpensFormOverlay(t *testing.T) {
+	h := newTestHome()
+	h.keySent = true
+	model, _ := h.handleKeyPress(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	updated := model.(*home)
+	require.Equal(t, stateSpawnAgent, updated.state)
+	require.NotNil(t, updated.formOverlay, "form overlay must be set")
+}
+
+func TestSpawnAgent_EscCancels(t *testing.T) {
+	h := newTestHome()
+	h.state = stateSpawnAgent
+	h.formOverlay = overlay.NewSpawnFormOverlay("spawn agent", 60)
+
+	h.keySent = true
+	model, _ := h.handleKeyPress(tea.KeyMsg{Type: tea.KeyEsc})
+	updated := model.(*home)
+	assert.Equal(t, stateDefault, updated.state)
+	assert.Nil(t, updated.formOverlay)
+}
+
+func TestSpawnAgent_SubmitCreatesInstance(t *testing.T) {
+	h := newTestHome()
+	h.state = stateSpawnAgent
+	h.formOverlay = overlay.NewSpawnFormOverlay("spawn agent", 60)
+
+	press := func(msg tea.KeyMsg) {
+		h.keySent = true
+		handleModel, _ := h.handleKeyPress(msg)
+		h = handleModel.(*home)
+	}
+
+	for _, r := range "test-agent" {
+		press(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+
+	h.keySent = true
+	model, cmd := h.handleKeyPress(tea.KeyMsg{Type: tea.KeyEnter})
+	updated := model.(*home)
+	assert.Equal(t, stateDefault, updated.state)
+	assert.Nil(t, updated.formOverlay)
+	assert.NotNil(t, cmd, "should return start command")
+
+	instances := updated.list.GetInstances()
+	require.NotEmpty(t, instances)
+	last := instances[len(instances)-1]
+	assert.Equal(t, "test-agent", last.Title)
+	assert.Equal(t, "", last.PlanFile, "ad-hoc instance must have no PlanFile")
+	assert.Equal(t, "", last.AgentType, "ad-hoc instance must have no AgentType")
+	assert.Equal(t, session.Loading, last.Status)
+}
+
 // TestConfirmationModalStateTransitions tests state transitions without full instance setup
 func TestConfirmationModalStateTransitions(t *testing.T) {
 	// Create a minimal home struct for testing state transitions
