@@ -12,6 +12,9 @@
     "ui": {
       "created_at": "2026-02-25T18:29:04.610125585Z"
     },
+    "verify": {
+      "created_at": "2026-02-26T05:12:08.563058582Z"
+    },
     "workflow": {
       "created_at": "2026-02-25T18:28:33.075480763Z"
     }
@@ -478,6 +481,13 @@
       "branch": "plan/opencode-default-harness",
       "topic": "workflow",
       "created_at": "2026-02-26T02:24:21.577814842Z"
+    },
+    "2026-02-26-stepthrough-worktrees.md": {
+      "status": "ready",
+      "description": "stepthrough git worktree and branch usage in both standard and solo agent workflows. ensure it's being used properly, there are no gaps or incorrect commands, and we're cleanly managing history between parallel plan implementations.",
+      "branch": "plan/stepthrough-worktrees",
+      "topic": "verify",
+      "created_at": "2026-02-26T05:12:08.563058582Z"
     }
   }
 }
