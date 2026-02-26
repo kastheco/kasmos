@@ -12,6 +12,48 @@ import (
 	"github.com/kastheco/kasmos/log"
 )
 
+// PermissionChoice represents the user's response to an opencode permission prompt.
+type PermissionChoice int
+
+const (
+	PermissionAllowOnce PermissionChoice = iota
+	PermissionAllowAlways
+	PermissionReject
+)
+
+// TapRight sends a Right arrow keystroke to the tmux pane.
+func (t *TmuxSession) TapRight() error {
+	cmd := exec.Command("tmux", "send-keys", "-t", t.sanitizedName, "Right")
+	return t.cmdExec.Run(cmd)
+}
+
+// SendPermissionResponse sends the key sequence for the given permission choice.
+// Allow once: Enter (already selected). Allow always: Right Enter Enter. Reject: Right Right Enter.
+func (t *TmuxSession) SendPermissionResponse(choice PermissionChoice) error {
+	switch choice {
+	case PermissionAllowOnce:
+		return t.TapEnter()
+	case PermissionAllowAlways:
+		if err := t.TapRight(); err != nil {
+			return err
+		}
+		if err := t.TapEnter(); err != nil {
+			return err
+		}
+		return t.TapEnter()
+	case PermissionReject:
+		if err := t.TapRight(); err != nil {
+			return err
+		}
+		if err := t.TapRight(); err != nil {
+			return err
+		}
+		return t.TapEnter()
+	default:
+		return fmt.Errorf("unknown permission choice: %d", choice)
+	}
+}
+
 // TapEnter sends an Enter keystroke to the tmux pane via tmux send-keys.
 // Using tmux send-keys is more reliable than raw PTY writes for TUI programs
 // (e.g. bubbletea-based CLIs like opencode) that manage their own input loop.
