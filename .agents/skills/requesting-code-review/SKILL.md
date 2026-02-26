@@ -41,10 +41,10 @@ Use Task tool with superpowers:code-reviewer type, fill template at `code-review
 - `{DESCRIPTION}` - Brief summary
 
 **3. Act on feedback:**
-- Fix Critical issues immediately
-- Fix Important issues before proceeding
-- Note Minor issues for later
+- ALL tiers are blocking — Critical, Important, and Minor
+- Fix every issue the reviewer flagged
 - Push back if reviewer is wrong (with reasoning)
+- Loop: fix → re-review → repeat until clean
 
 **4. Update plan state based on outcome:**
 
@@ -92,9 +92,11 @@ HEAD_SHA=$(git rev-parse HEAD)
   Issues:
     Important: Missing progress indicators
     Minor: Magic number (100) for reporting interval
-  Assessment: Ready to proceed
+  Assessment: Not clean — 2 issues remain
 
-You: [Fix progress indicators]
+You: [Fix progress indicators AND magic number]
+[Re-dispatch reviewer]
+Reviewer: Clean — zero issues
 [Continue to Task 3]
 ```
 
@@ -116,9 +118,10 @@ You: [Fix progress indicators]
 
 **Never:**
 - Skip review because "it's simple"
-- Ignore Critical issues
-- Proceed with unfixed Important issues
+- Ignore issues at any severity tier
+- Proceed with unfixed issues, no matter how minor
 - Argue with valid technical feedback
+- Approve with outstanding issues ("note for later")
 - Forget to update plan state on the final review that ends the implementation phase
 
 **If reviewer wrong:**
