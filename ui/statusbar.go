@@ -109,30 +109,24 @@ func (s *StatusBar) centerBranchGroup() string {
 		return ""
 	}
 
-	branch := statusBarBranchStyle.Render("\ue725 " + s.data.Branch)
+	return statusBarBranchStyle.Render("\ue725 " + s.data.Branch)
+}
 
+func (s *StatusBar) leftStatusGroup() string {
 	if s.data.WaveLabel != "" && len(s.data.TaskGlyphs) > 0 {
 		glyphParts := make([]string, 0, len(s.data.TaskGlyphs))
 		for _, g := range s.data.TaskGlyphs {
 			glyphParts = append(glyphParts, taskGlyphStr(g))
 		}
 		glyphs := strings.Join(glyphParts, " ")
-		return strings.Join([]string{
-			branch,
-			statusBarSepStyle.Render(" · "),
-			statusBarWaveLabelStyle.Render(s.data.WaveLabel) + " " + glyphs,
-		}, "")
+		return glyphs + " " + statusBarWaveLabelStyle.Render(s.data.WaveLabel)
 	}
 
 	if s.data.PlanStatus != "" {
-		return strings.Join([]string{
-			branch,
-			statusBarSepStyle.Render(" · "),
-			planStatusStyle(s.data.PlanStatus),
-		}, "")
+		return planStatusStyle(s.data.PlanStatus)
 	}
 
-	return branch
+	return ""
 }
 
 func (s *StatusBar) String() string {
@@ -146,6 +140,9 @@ func (s *StatusBar) String() string {
 	}
 
 	left := statusBarAppNameStyle.Render(GradientText("kasmos", GradientStart, GradientEnd))
+	if leftStatus := s.leftStatusGroup(); leftStatus != "" {
+		left = strings.Join([]string{left, statusBarSepStyle.Render(" · "), leftStatus}, "")
+	}
 	right := ""
 	if s.data.RepoName != "" {
 		right = statusBarPlanNameStyle.Render(s.data.RepoName)

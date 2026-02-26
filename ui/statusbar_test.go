@@ -56,7 +56,7 @@ func TestStatusBar_PlanContext(t *testing.T) {
 	assert.Contains(t, result, "implementing")
 }
 
-func TestStatusBar_BranchAndStatusGrouped(t *testing.T) {
+func TestStatusBar_StatusLeftAlignedAfterLogo(t *testing.T) {
 	sb := NewStatusBar()
 	sb.SetSize(120)
 	sb.SetData(StatusBarData{
@@ -67,14 +67,17 @@ func TestStatusBar_BranchAndStatusGrouped(t *testing.T) {
 	})
 	plain := stripANSI(sb.String())
 
+	appIdx := strings.Index(plain, "kasmos")
 	branchIdx := strings.Index(plain, "plan/auth-refactor")
 	statusIdx := strings.Index(plain, "implementing")
 	repoIdx := strings.LastIndex(plain, "kasmos")
 
+	require.NotEqual(t, -1, appIdx)
 	require.NotEqual(t, -1, branchIdx)
 	require.NotEqual(t, -1, statusIdx)
 	require.NotEqual(t, -1, repoIdx)
-	assert.Greater(t, statusIdx, branchIdx, "status must follow branch as a grouped segment")
+	assert.Greater(t, statusIdx, appIdx, "status must appear after app logo")
+	assert.Greater(t, branchIdx, statusIdx, "branch should no longer be grouped with status")
 	assert.Greater(t, repoIdx, statusIdx, "repo name should be positioned to the right")
 }
 
@@ -144,6 +147,55 @@ func TestStatusBar_WaveGlyphsAreSpaced(t *testing.T) {
 	plain := stripANSI(sb.String())
 	assert.Contains(t, plain, "● ○ ○",
 		"wave task glyphs should have spacing to avoid cramped status bar rendering")
+}
+
+func TestStatusBar_WaveGlyphsAppearBeforeWaveLabel(t *testing.T) {
+	sb := NewStatusBar()
+	sb.SetSize(120)
+	sb.SetData(StatusBarData{
+		RepoName:  "kasmos",
+		Branch:    "plan/auth-refactor",
+		WaveLabel: "wave 1/4",
+		TaskGlyphs: []TaskGlyph{
+			TaskGlyphRunning,
+			TaskGlyphPending,
+			TaskGlyphPending,
+		},
+	})
+
+	plain := stripANSI(sb.String())
+	glyphIdx := strings.Index(plain, "● ○ ○")
+	labelIdx := strings.Index(plain, "wave 1/4")
+	require.NotEqual(t, -1, glyphIdx)
+	require.NotEqual(t, -1, labelIdx)
+	assert.Less(t, glyphIdx, labelIdx,
+		"wave glyphs should appear before the wave label in the status bar")
+}
+
+func TestStatusBar_WaveProgressLeftAlignedAfterLogo(t *testing.T) {
+	sb := NewStatusBar()
+	sb.SetSize(120)
+	sb.SetData(StatusBarData{
+		RepoName:  "kasmos",
+		Branch:    "plan/auth-refactor",
+		WaveLabel: "wave 1/4",
+		TaskGlyphs: []TaskGlyph{
+			TaskGlyphRunning,
+			TaskGlyphPending,
+			TaskGlyphPending,
+		},
+	})
+
+	plain := stripANSI(sb.String())
+	appIdx := strings.Index(plain, "kasmos")
+	waveIdx := strings.Index(plain, "wave 1/4")
+	branchIdx := strings.Index(plain, "plan/auth-refactor")
+
+	require.NotEqual(t, -1, appIdx)
+	require.NotEqual(t, -1, waveIdx)
+	require.NotEqual(t, -1, branchIdx)
+	assert.Greater(t, waveIdx, appIdx, "wave progress should appear after app logo")
+	assert.Greater(t, branchIdx, waveIdx, "branch should remain centered, not grouped with wave progress")
 }
 
 func TestStatusBar_Truncation(t *testing.T) {
