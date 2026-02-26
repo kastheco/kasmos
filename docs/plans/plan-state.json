@@ -336,7 +336,7 @@
       "created_at": "2026-02-24T23:14:58.827108721Z"
     },
     "2026-02-24-review-approval-gate.md": {
-      "status": "ready",
+      "status": "done",
       "description": "manual approval gate after automated review — two-popup flow for merge/PR before plan can be marked done",
       "branch": "plan/review-approval-gate",
       "topic": "automation",
@@ -482,12 +482,26 @@
       "topic": "workflow",
       "created_at": "2026-02-26T02:24:21.577814842Z"
     },
+    "2026-02-26-sentry-analysis.md": {
+      "status": "ready",
+      "description": "have an agent go through sentry backlog to pick out some areas for improvement/patching",
+      "branch": "plan/sentry-analysis",
+      "topic": "verify",
+      "created_at": "2026-02-26T05:14:59.843580163Z"
+    },
     "2026-02-26-stepthrough-worktrees.md": {
       "status": "ready",
       "description": "stepthrough git worktree and branch usage in both standard and solo agent workflows. ensure it's being used properly, there are no gaps or incorrect commands, and we're cleanly managing history between parallel plan implementations.",
       "branch": "plan/stepthrough-worktrees",
       "topic": "verify",
       "created_at": "2026-02-26T05:12:08.563058582Z"
+    },
+    "2026-02-26-validate-recent-merges.md": {
+      "status": "ready",
+      "description": "some work looks like it might've been lost or reverted, review the last few plans merged to determine what's been merged, what's been lost, and what can be recovered",
+      "branch": "plan/validate-recent-merges",
+      "topic": "verify",
+      "created_at": "2026-02-26T05:18:22.559632982Z"
     }
   }
 }

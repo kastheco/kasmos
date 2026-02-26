@@ -12,6 +12,7 @@ import (
 	"github.com/kastheco/kasmos/config/planstate"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/ui"
+	"github.com/kastheco/kasmos/ui/overlay"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -364,4 +365,42 @@ func TestTopicConcurrencyConfirm_ReturnsPlanStageConfirmedMsg(t *testing.T) {
 				"planStageConfirmedMsg must carry the correct stage")
 		})
 	}
+}
+
+func TestExecuteContextAction_MarkPlanDoneFromReadyTransitionsToDone(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	ps, err := planstate.Load(plansDir)
+	require.NoError(t, err)
+
+	planFile := "2026-02-26-review-approval-gate.md"
+	require.NoError(t, ps.Register(planFile, "review approval gate", "plan/review-approval-gate", time.Now()))
+	seedPlanStatus(t, ps, planFile, planstate.StatusReady)
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		planState:      ps,
+		planStateDir:   plansDir,
+		fsm:            newFSMForTest(plansDir).PlanStateMachine,
+		list:           ui.NewList(&sp, false),
+		sidebar:        ui.NewSidebar(),
+		menu:           ui.NewMenu(),
+		tabbedWindow:   ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewInfoPane()),
+		toastManager:   overlay.NewToastManager(&sp),
+		activeRepoPath: dir,
+	}
+
+	h.updateSidebarPlans()
+	require.True(t, h.sidebar.SelectByID(ui.SidebarPlanPrefix+planFile), "plan should be selectable in sidebar")
+
+	_, _ = h.executeContextAction("mark_plan_done")
+
+	reloaded, err := planstate.Load(plansDir)
+	require.NoError(t, err)
+	entry, ok := reloaded.Entry(planFile)
+	require.True(t, ok)
+	assert.Equal(t, planstate.StatusDone, entry.Status,
+		"mark_plan_done should walk ready->implementing->reviewing->done")
 }

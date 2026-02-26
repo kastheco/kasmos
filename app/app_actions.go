@@ -277,14 +277,21 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		if planFile == "" || m.planState == nil {
 			return m, nil
 		}
-		// Solo agents finish at "implementing" — advance through reviewing in one step.
-		if entry, ok := m.planState.Entry(planFile); ok && entry.Status == "implementing" {
-			if err := m.fsm.Transition(planFile, planfsm.ImplementFinished); err != nil {
+		entry, ok := m.planState.Entry(planFile)
+		if !ok {
+			return m, m.handleError(fmt.Errorf("plan not found: %s", planFile))
+		}
+		if entry.Status != planstate.StatusDone {
+			// Walk through any missing lifecycle stages before approval so mark-done
+			// works from ready/implementing/reviewing states.
+			if entry.Status != planstate.StatusReviewing {
+				if err := m.fsmSetReviewing(planFile); err != nil {
+					return m, m.handleError(err)
+				}
+			}
+			if err := m.fsm.Transition(planFile, planfsm.ReviewApproved); err != nil {
 				return m, m.handleError(err)
 			}
-		}
-		if err := m.fsm.Transition(planFile, planfsm.ReviewApproved); err != nil {
-			return m, m.handleError(err)
 		}
 		m.loadPlanState()
 		m.updateSidebarPlans()
