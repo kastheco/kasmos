@@ -1257,6 +1257,8 @@ func (m *home) View() string {
 			log.ErrorLog.Printf("confirmation overlay is nil")
 		}
 		result = overlay.PlaceOverlay(0, 0, m.confirmationOverlay.Render(), mainView, true, true)
+	case m.state == statePermission && m.permissionOverlay != nil:
+		result = overlay.PlaceOverlay(0, 0, m.permissionOverlay.Render(), mainView, true, true)
 	case m.state == stateContextMenu && m.contextMenu != nil:
 		cx, cy := m.contextMenu.GetPosition()
 		result = overlay.PlaceOverlay(cx, cy, m.contextMenu.Render(), mainView, true, false)
