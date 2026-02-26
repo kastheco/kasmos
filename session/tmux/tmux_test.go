@@ -463,13 +463,15 @@ func TestStartClaudeWithLongPromptUsesFile(t *testing.T) {
 	err := s.Start(workdir)
 	require.NoError(t, err)
 
-	// The command should reference a @file instead of inlining the prompt.
+	// The command should reference a @.kasmos/prompt-*.md instead of inlining.
 	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
-	require.Contains(t, cmdStr, "@")
+	require.Contains(t, cmdStr, "@.kasmos/prompt-")
 	require.NotContains(t, cmdStr, longPrompt, "long prompt must not be inlined")
 
-	// The prompt file should exist and contain the prompt.
+	// The prompt file should live under workdir/.kasmos/ and contain the prompt.
 	require.NotEmpty(t, s.promptFile)
+	assert.True(t, strings.HasPrefix(s.promptFile, filepath.Join(workdir, ".kasmos")),
+		"prompt file should be under workdir/.kasmos/")
 	content, err := os.ReadFile(s.promptFile)
 	require.NoError(t, err)
 	assert.Equal(t, longPrompt, string(content))

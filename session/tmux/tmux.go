@@ -208,7 +208,7 @@ func (t *TmuxSession) Start(workDir string) error {
 		case isOpenCodeProgram(t.program):
 			program = program + " --prompt " + shellEscapeSingleQuote(t.initialPrompt)
 		case isClaudeProgram(t.program):
-			program = program + " " + t.promptArg()
+			program = program + " " + t.promptArg(workDir)
 		}
 		// aider/gemini: no CLI prompt support — callers keep QueuedPrompt
 		// set so the send-keys fallback fires from the app tick handler.
