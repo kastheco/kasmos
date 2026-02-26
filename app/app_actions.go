@@ -457,14 +457,18 @@ func (m *home) findPlanInstance() *session.Instance {
 // (plan or instance) and positions it next to the selected item.
 func (m *home) openContextMenu() (tea.Model, tea.Cmd) {
 	if m.focusSlot == slotNav {
-		// Nav panel focused — use plan context menu if a plan is selected
-		if planFile := m.nav.GetSelectedPlanFile(); planFile != "" {
+		// Nav panel focused — instance rows get the instance menu,
+		// plan headers get the plan menu, everything else is a no-op.
+		if inst := m.nav.GetSelectedInstance(); inst != nil {
+			// fall through to instance context menu below
+		} else if planFile := m.nav.GetSelectedPlanFile(); planFile != "" {
 			return m.openPlanContextMenu()
+		} else {
+			return m, nil
 		}
-		return m, nil
 	}
 
-	// Instance list focused — build instance context menu
+	// Build instance context menu (reached from nav or other slots)
 	selected := m.nav.GetSelectedInstance()
 	if selected == nil {
 		return m, nil

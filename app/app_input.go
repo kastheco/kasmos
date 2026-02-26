@@ -996,10 +996,6 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		if m.focusSlot == slotNav && m.nav.ToggleSelectedExpand() {
 			return m, nil
 		}
-		// In nav panel, Space on non-expandable rows is a no-op
-		if m.focusSlot == slotNav {
-			return m, nil
-		}
 		return m.openContextMenu()
 	case keys.KeyInfoTab:
 		// Jump directly to info slot
