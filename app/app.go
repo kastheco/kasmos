@@ -162,7 +162,7 @@ type home struct {
 
 	// nav handles unified navigation state
 	// focusSlot tracks which pane has keyboard focus in the Tab ring:
-	// 0=nav, 1=agent tab, 2=diff tab, 3=info tab
+	// 0=nav, 1=info tab, 2=agent tab, 3=diff tab
 	focusSlot int
 	// pendingPlanName stores the plan name during the two-step plan creation flow
 	pendingPlanName string

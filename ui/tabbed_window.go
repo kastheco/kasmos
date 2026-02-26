@@ -32,9 +32,9 @@ var (
 )
 
 const (
-	PreviewTab int = iota
+	InfoTab int = iota
+	PreviewTab
 	DiffTab
-	InfoTab
 )
 
 type Tab struct {
@@ -48,7 +48,7 @@ type TabbedWindow struct {
 	tabs []string
 
 	activeTab  int
-	focusedTab int // which specific tab (0=agent, 1=diff, 2=info) has Tab-ring focus; -1 = none
+	focusedTab int // which specific tab (0=info, 1=agent, 2=diff) has Tab-ring focus; -1 = none
 	height     int
 	width      int
 
@@ -78,9 +78,9 @@ func (w *TabbedWindow) SetFocused(focused bool) {
 func NewTabbedWindow(preview *PreviewPane, diff *DiffPane, info *InfoPane) *TabbedWindow {
 	return &TabbedWindow{
 		tabs: []string{
+			"\uea74 info",
 			"\uea85 agent",
 			"\ueae1 diff",
-			"\uea74 info",
 		},
 		preview:    preview,
 		diff:       diff,

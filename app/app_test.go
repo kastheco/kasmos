@@ -566,8 +566,6 @@ func TestConfirmationModalVisualAppearance(t *testing.T) {
 }
 
 func TestFocusRing(t *testing.T) {
-	t.Skip("focus ring expectations are being updated for nav-only layout")
-
 	newTestHome := func() *home {
 		spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 		return &home{
@@ -598,7 +596,16 @@ func TestFocusRing(t *testing.T) {
 		return homeModel
 	}
 
-	// --- Tab ring cycling ---
+	// --- Tab ring cycling (info → agent → diff → info) ---
+
+	t.Run("Tab advances through center tabs: info → agent", func(t *testing.T) {
+		h := newTestHome()
+		h.setFocusSlot(slotInfo)
+
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyTab})
+
+		assert.Equal(t, slotAgent, homeModel.focusSlot)
+	})
 
 	t.Run("Tab advances through center tabs: agent → diff", func(t *testing.T) {
 		h := newTestHome()
@@ -609,7 +616,7 @@ func TestFocusRing(t *testing.T) {
 		assert.Equal(t, slotDiff, homeModel.focusSlot)
 	})
 
-	t.Run("Tab advances through center tabs: diff → git", func(t *testing.T) {
+	t.Run("Tab wraps center tabs: diff → info", func(t *testing.T) {
 		h := newTestHome()
 		h.setFocusSlot(slotDiff)
 
@@ -618,31 +625,13 @@ func TestFocusRing(t *testing.T) {
 		assert.Equal(t, slotInfo, homeModel.focusSlot)
 	})
 
-	t.Run("Tab wraps center tabs: git → agent", func(t *testing.T) {
-		h := newTestHome()
-		h.setFocusSlot(slotInfo)
-
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyTab})
-
-		assert.Equal(t, slotNav, homeModel.focusSlot)
-	})
-
-	t.Run("Tab from sidebar lands on agent", func(t *testing.T) {
+	t.Run("Tab from sidebar lands on info", func(t *testing.T) {
 		h := newTestHome()
 		h.setFocusSlot(slotNav)
 
 		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyTab})
 
-		assert.Equal(t, slotAgent, homeModel.focusSlot)
-	})
-
-	t.Run("Tab from list lands on agent", func(t *testing.T) {
-		h := newTestHome()
-		h.setFocusSlot(slotNav)
-
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyTab})
-
-		assert.Equal(t, slotAgent, homeModel.focusSlot)
+		assert.Equal(t, slotInfo, homeModel.focusSlot)
 	})
 
 	t.Run("Shift+Tab moves backward through center tabs: diff → agent", func(t *testing.T) {
@@ -654,7 +643,7 @@ func TestFocusRing(t *testing.T) {
 		assert.Equal(t, slotAgent, homeModel.focusSlot)
 	})
 
-	t.Run("Shift+Tab wraps center tabs: agent → git", func(t *testing.T) {
+	t.Run("Shift+Tab moves backward: agent → info", func(t *testing.T) {
 		h := newTestHome()
 		h.setFocusSlot(slotAgent)
 
@@ -663,32 +652,23 @@ func TestFocusRing(t *testing.T) {
 		assert.Equal(t, slotInfo, homeModel.focusSlot)
 	})
 
-	t.Run("Shift+Tab from sidebar lands on git", func(t *testing.T) {
+	t.Run("Shift+Tab from sidebar lands on diff", func(t *testing.T) {
 		h := newTestHome()
 		h.setFocusSlot(slotNav)
 
 		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyShiftTab})
 
-		assert.Equal(t, slotInfo, homeModel.focusSlot)
+		assert.Equal(t, slotDiff, homeModel.focusSlot)
 	})
 
-	t.Run("t jumps to list slot when instances exist", func(t *testing.T) {
+	t.Run("t jumps to nav slot when instances exist", func(t *testing.T) {
 		h := newTestHome()
 		addTestInstance(t, h)
-		h.setFocusSlot(slotNav)
+		h.setFocusSlot(slotAgent)
 
 		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
 
-		assert.Equal(t, slotAgent, homeModel.focusSlot)
-	})
-
-	t.Run("t is no-op when list is empty", func(t *testing.T) {
-		h := newTestHome()
-		h.setFocusSlot(slotNav)
-
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
-
-		assert.Equal(t, slotAgent, homeModel.focusSlot)
+		assert.Equal(t, slotNav, homeModel.focusSlot)
 	})
 
 	// --- Direct slot jumps ---
@@ -711,7 +691,7 @@ func TestFocusRing(t *testing.T) {
 		assert.Equal(t, slotDiff, homeModel.focusSlot)
 	})
 
-	t.Run("# jumps to git slot", func(t *testing.T) {
+	t.Run("# jumps to info slot", func(t *testing.T) {
 		h := newTestHome()
 		h.setFocusSlot(slotNav)
 
@@ -742,7 +722,7 @@ func TestFocusRing(t *testing.T) {
 
 	// --- Sidebar toggle (ctrl+s) ---
 
-	t.Run("ctrl+s hides sidebar and moves focus from sidebar to agent slot", func(t *testing.T) {
+	t.Run("ctrl+s hides sidebar and moves focus from nav to agent", func(t *testing.T) {
 		h := newTestHome()
 		h.sidebarHidden = false
 		h.setFocusSlot(slotNav)
@@ -750,7 +730,7 @@ func TestFocusRing(t *testing.T) {
 		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyCtrlS})
 
 		assert.True(t, homeModel.sidebarHidden)
-		assert.Equal(t, slotNav, homeModel.focusSlot)
+		assert.Equal(t, slotAgent, homeModel.focusSlot)
 	})
 
 	t.Run("ctrl+s hides sidebar and keeps focus when agent slot is focused", func(t *testing.T) {
@@ -761,7 +741,7 @@ func TestFocusRing(t *testing.T) {
 		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyCtrlS})
 
 		assert.True(t, homeModel.sidebarHidden)
-		assert.Equal(t, slotNav, homeModel.focusSlot)
+		assert.Equal(t, slotAgent, homeModel.focusSlot)
 	})
 
 	t.Run("ctrl+s shows sidebar and keeps focus when sidebar is hidden", func(t *testing.T) {
@@ -775,86 +755,49 @@ func TestFocusRing(t *testing.T) {
 		assert.Equal(t, slotNav, homeModel.focusSlot)
 	})
 
-	// --- Arrow key navigation (layout: sidebar | list | tabs) ---
-	// When instances exist, list acts as a waypoint between sidebar and tabs.
+	// --- Arrow key navigation ---
 
-	t.Run("← from agent moves to list (instances exist)", func(t *testing.T) {
-		h := newTestHome()
-		addTestInstance(t, h)
-		h.setFocusSlot(slotAgent)
+	t.Run("← from any center tab moves to nav", func(t *testing.T) {
+		for _, slot := range []int{slotInfo, slotAgent, slotDiff} {
+			h := newTestHome()
+			h.setFocusSlot(slot)
 
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyLeft})
+			homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyLeft})
 
-		assert.Equal(t, slotAgent, homeModel.focusSlot)
+			assert.Equal(t, slotNav, homeModel.focusSlot)
+		}
 	})
 
-	t.Run("← from diff moves to list (instances exist)", func(t *testing.T) {
-		h := newTestHome()
-		addTestInstance(t, h)
-		h.setFocusSlot(slotDiff)
-
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyLeft})
-
-		assert.Equal(t, slotAgent, homeModel.focusSlot)
-	})
-
-	t.Run("← from list moves to sidebar", func(t *testing.T) {
-		h := newTestHome()
-		addTestInstance(t, h)
-		h.setFocusSlot(slotNav)
-
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyLeft})
-
-		assert.Equal(t, slotNav, homeModel.focusSlot)
-	})
-
-	t.Run("→ from sidebar moves to list (instances exist)", func(t *testing.T) {
-		h := newTestHome()
-		addTestInstance(t, h)
-		h.setFocusSlot(slotNav)
-
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRight})
-
-		assert.Equal(t, slotNav, homeModel.focusSlot)
-	})
-
-	t.Run("→ from list moves to agent", func(t *testing.T) {
-		h := newTestHome()
-		addTestInstance(t, h)
-		h.setFocusSlot(slotNav)
-
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRight})
-
-		assert.Equal(t, slotAgent, homeModel.focusSlot)
-	})
-
-	t.Run("→ from agent is no-op (already rightmost)", func(t *testing.T) {
-		h := newTestHome()
-		h.setFocusSlot(slotAgent)
-
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRight})
-
-		assert.Equal(t, slotAgent, homeModel.focusSlot)
-	})
-
-	// --- Arrow keys skip list when no instances ---
-
-	t.Run("← from agent skips to sidebar (no instances)", func(t *testing.T) {
-		h := newTestHome()
-		h.setFocusSlot(slotAgent)
-
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyLeft})
-
-		assert.Equal(t, slotNav, homeModel.focusSlot)
-	})
-
-	t.Run("→ from sidebar skips to agent (no instances)", func(t *testing.T) {
+	t.Run("→ from nav moves to info (first center tab)", func(t *testing.T) {
 		h := newTestHome()
 		h.setFocusSlot(slotNav)
 
 		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRight})
 
-		assert.Equal(t, slotAgent, homeModel.focusSlot)
+		assert.Equal(t, slotInfo, homeModel.focusSlot)
+	})
+
+	t.Run("→ from center tabs is no-op", func(t *testing.T) {
+		for _, slot := range []int{slotInfo, slotAgent, slotDiff} {
+			h := newTestHome()
+			h.setFocusSlot(slot)
+
+			homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRight})
+
+			assert.Equal(t, slot, homeModel.focusSlot)
+		}
+	})
+
+	// --- Enter key blocked on info tab ---
+
+	t.Run("Enter is no-op when info tab is focused", func(t *testing.T) {
+		h := newTestHome()
+		addTestInstance(t, h)
+		h.setFocusSlot(slotInfo)
+
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
+
+		assert.Equal(t, slotInfo, homeModel.focusSlot)
 	})
 
 	// --- Ctrl+Up/Down: cycle active instances with wrapping ---

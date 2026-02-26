@@ -130,7 +130,7 @@ func (m *home) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 	} else {
 		// Click in preview/diff area (right column): focus whichever center tab is visible
-		m.setFocusSlot(slotAgent + m.tabbedWindow.GetActiveTab())
+		m.setFocusSlot(slotInfo + m.tabbedWindow.GetActiveTab())
 		localX := x - m.navWidth
 		if m.tabbedWindow.HandleTabClick(localX, contentY) {
 			m.menu.SetInDiffTab(m.tabbedWindow.IsInDiffTab())
@@ -1128,6 +1128,10 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		}
 		return m, tea.WindowSize()
 	case keys.KeyEnter:
+		// Info tab is read-only — enter is unreachable there.
+		if m.focusSlot == slotInfo {
+			return m, nil
+		}
 		// If the nav panel is focused, handle plan/instance interactions.
 		if m.focusSlot == slotNav {
 			if m.nav.GetSelectedID() == ui.SidebarImportClickUp {
@@ -1194,12 +1198,10 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		return m, nil
 	case keys.KeyArrowRight:
 		switch m.focusSlot {
-		case slotInfo:
-			// Not running — no-op (already rightmost)
 		case slotNav:
-			m.setFocusSlot(slotAgent)
-		case slotAgent, slotDiff:
-			// Already rightmost — no-op
+			m.setFocusSlot(slotInfo)
+		case slotInfo, slotAgent, slotDiff:
+			// Already in center area — no-op
 		}
 		return m, nil
 	case keys.KeyNewPlan:

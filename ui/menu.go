@@ -115,9 +115,9 @@ func (m *Menu) SetFocusMode(focused bool) {
 // FocusSlot constants mirrored from app package to avoid import cycle.
 const (
 	MenuSlotSidebar = 0
-	MenuSlotAgent   = 1
-	MenuSlotDiff    = 2
-	MenuSlotGit     = 3
+	MenuSlotInfo    = 1
+	MenuSlotAgent   = 2
+	MenuSlotDiff    = 3
 	MenuSlotList    = 4
 )
 
