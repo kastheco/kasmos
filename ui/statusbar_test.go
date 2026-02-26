@@ -8,6 +8,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func stripANSI(s string) string {
+	var b strings.Builder
+	inEsc := false
+	for _, r := range s {
+		if r == '\x1b' {
+			inEsc = true
+		}
+		if !inEsc {
+			b.WriteRune(r)
+		}
+		if inEsc && r == 'm' {
+			inEsc = false
+		}
+	}
+	return b.String()
+}
+
 func TestStatusBar_Baseline(t *testing.T) {
 	sb := NewStatusBar()
 	sb.SetSize(80)
@@ -36,61 +53,51 @@ func TestStatusBar_PlanContext(t *testing.T) {
 	result := sb.String()
 	assert.Contains(t, result, "kasmos")
 	assert.Contains(t, result, "plan/auth-refactor")
-	assert.Contains(t, result, "auth-refactor")
 	assert.Contains(t, result, "implementing")
 }
 
-func TestStatusBar_PlanNameRedundantSuppression(t *testing.T) {
+func TestStatusBar_BranchAndStatusGrouped(t *testing.T) {
 	sb := NewStatusBar()
 	sb.SetSize(120)
-
-	// When plan name is already present in the branch, it must not be rendered
-	// as a separate segment (would appear duplicated in the bar).
 	sb.SetData(StatusBarData{
 		RepoName:   "kasmos",
 		Branch:     "plan/auth-refactor",
 		PlanName:   "auth-refactor",
 		PlanStatus: "implementing",
 	})
-	inBranch := sb.String()
+	plain := stripANSI(sb.String())
 
-	// Render again with a plan name that is NOT in the branch.
+	branchIdx := strings.Index(plain, "plan/auth-refactor")
+	statusIdx := strings.Index(plain, "implementing")
+	repoIdx := strings.LastIndex(plain, "kasmos")
+
+	require.NotEqual(t, -1, branchIdx)
+	require.NotEqual(t, -1, statusIdx)
+	require.NotEqual(t, -1, repoIdx)
+	assert.Greater(t, statusIdx, branchIdx, "status must follow branch as a grouped segment")
+	assert.Greater(t, repoIdx, statusIdx, "repo name should be positioned to the right")
+}
+
+func TestStatusBar_BranchGroupCenteredAndRepoRightAligned(t *testing.T) {
+	sb := NewStatusBar()
+	sb.SetSize(100)
 	sb.SetData(StatusBarData{
-		RepoName:   "kasmos",
+		RepoName:   "my-repo",
 		Branch:     "main",
-		PlanName:   "auth-refactor",
-		PlanStatus: "implementing",
+		PlanStatus: "reviewing",
 	})
-	notInBranch := sb.String()
 
-	// Strip ANSI so we can count plain-text occurrences.
-	stripANSI := func(s string) string {
-		var b strings.Builder
-		inEsc := false
-		for _, r := range s {
-			if r == '\x1b' {
-				inEsc = true
-			}
-			if !inEsc {
-				b.WriteRune(r)
-			}
-			if inEsc && r == 'm' {
-				inEsc = false
-			}
-		}
-		return b.String()
-	}
+	plain := stripANSI(sb.String())
 
-	plain1 := stripANSI(inBranch)
-	plain2 := stripANSI(notInBranch)
+	trimmedRight := strings.TrimRight(plain, " ")
+	assert.True(t, strings.HasSuffix(trimmedRight, "my-repo"),
+		"repo name should be right-aligned at end of status bar")
 
-	// Branch already contains plan name: "auth-refactor" should appear exactly once.
-	assert.Equal(t, 1, strings.Count(plain1, "auth-refactor"),
-		"plan name already in branch must not render as a separate segment")
-
-	// Branch does not contain plan name: it should appear as its own segment.
-	assert.Equal(t, 1, strings.Count(plain2, "auth-refactor"),
-		"plan name not in branch must be rendered")
+	branchIdx := strings.Index(plain, "main")
+	require.NotEqual(t, -1, branchIdx)
+	branchCenter := branchIdx + len("main")/2
+	assert.InDelta(t, 50, branchCenter, 6,
+		"branch group should be centered in the status bar")
 }
 
 func TestStatusBar_WaveGlyphs(t *testing.T) {

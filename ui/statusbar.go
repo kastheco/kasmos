@@ -104,40 +104,97 @@ func taskGlyphStr(g TaskGlyph) string {
 	}
 }
 
-const statusBarSep = " │ "
-
-func (s *StatusBar) String() string {
-	if s.width < 10 {
+func (s *StatusBar) centerBranchGroup() string {
+	if s.data.Branch == "" {
 		return ""
 	}
 
-	parts := make([]string, 0, 6)
-	parts = append(parts, statusBarAppNameStyle.Render(GradientText("kasmos", GradientStart, GradientEnd)))
-
-	if s.data.RepoName != "" {
-		parts = append(parts, statusBarPlanNameStyle.Render(s.data.RepoName))
-	}
-
-	if s.data.Branch != "" {
-		parts = append(parts, statusBarBranchStyle.Render("\ue725 "+s.data.Branch))
-	}
-
-	if s.data.PlanName != "" && !strings.Contains(s.data.Branch, s.data.PlanName) {
-		parts = append(parts, statusBarPlanNameStyle.Render(s.data.PlanName))
-	}
+	branch := statusBarBranchStyle.Render("\ue725 " + s.data.Branch)
 
 	if s.data.WaveLabel != "" && len(s.data.TaskGlyphs) > 0 {
 		var glyphs strings.Builder
 		for _, g := range s.data.TaskGlyphs {
 			glyphs.WriteString(taskGlyphStr(g))
 		}
-		parts = append(parts, statusBarWaveLabelStyle.Render(s.data.WaveLabel)+" "+glyphs.String())
-	} else if s.data.PlanStatus != "" {
-		parts = append(parts, planStatusStyle(s.data.PlanStatus))
+		return strings.Join([]string{
+			branch,
+			statusBarSepStyle.Render(" · "),
+			statusBarWaveLabelStyle.Render(s.data.WaveLabel) + " " + glyphs.String(),
+		}, "")
 	}
 
-	sep := statusBarSepStyle.Render(statusBarSep)
-	leftContent := strings.Join(parts, sep)
+	if s.data.PlanStatus != "" {
+		return strings.Join([]string{
+			branch,
+			statusBarSepStyle.Render(" · "),
+			planStatusStyle(s.data.PlanStatus),
+		}, "")
+	}
 
-	return statusBarStyle.Width(s.width).Render(leftContent)
+	return branch
+}
+
+func (s *StatusBar) String() string {
+	if s.width < 10 {
+		return ""
+	}
+
+	contentWidth := s.width - 2 // statusBarStyle has horizontal padding of 1 on each side
+	if contentWidth < 1 {
+		contentWidth = s.width
+	}
+
+	left := statusBarAppNameStyle.Render(GradientText("kasmos", GradientStart, GradientEnd))
+	right := ""
+	if s.data.RepoName != "" {
+		right = statusBarPlanNameStyle.Render(s.data.RepoName)
+	}
+	center := s.centerBranchGroup()
+
+	leftWidth := lipgloss.Width(left)
+	rightWidth := lipgloss.Width(right)
+	centerWidth := lipgloss.Width(center)
+
+	rightStart := contentWidth - rightWidth
+	if rightStart < leftWidth+1 {
+		rightStart = leftWidth + 1
+	}
+
+	centerStart := (contentWidth - centerWidth) / 2
+	if centerStart < leftWidth+1 {
+		centerStart = leftWidth + 1
+	}
+
+	// Keep branch/status grouped. If it cannot fit between left+right, drop the
+	// whole center group instead of splitting branch and status apart.
+	if center != "" && centerStart+centerWidth > rightStart-1 {
+		center = ""
+		centerWidth = 0
+	}
+
+	var b strings.Builder
+	cursor := 0
+	writeAt := func(start, visualWidth int, text string) {
+		if text == "" {
+			return
+		}
+		if start < cursor {
+			return
+		}
+		if start > cursor {
+			b.WriteString(strings.Repeat(" ", start-cursor))
+		}
+		b.WriteString(text)
+		cursor = start + visualWidth
+	}
+
+	writeAt(0, leftWidth, left)
+	writeAt(centerStart, centerWidth, center)
+	writeAt(rightStart, rightWidth, right)
+
+	if cursor < contentWidth {
+		b.WriteString(strings.Repeat(" ", contentWidth-cursor))
+	}
+
+	return statusBarStyle.Width(s.width).Render(b.String())
 }
