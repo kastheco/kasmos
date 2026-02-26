@@ -35,14 +35,14 @@ func (g *GitWorktree) Diff() *DiffStats {
 		return stats
 	}
 
-	// -N stages untracked files (intent to add), including them in the diff
-	_, err := g.runGitCommand(g.worktreePath, "add", "-N", ".")
-	if err != nil {
-		stats.Error = err
+	base := g.GetBaseCommitSHA()
+	if base == "" {
+		stats.Error = fmt.Errorf("no base commit SHA available")
 		return stats
 	}
 
-	content, err := g.runGitCommand(g.worktreePath, "--no-pager", "diff", g.GetBaseCommitSHA())
+	// Diff tracked changes (read-only, does not touch the index).
+	content, err := g.runGitCommand(g.worktreePath, "--no-pager", "diff", base)
 	if err != nil {
 		stats.Error = err
 		return stats
