@@ -7,6 +7,7 @@ import (
 	"github.com/kastheco/kasmos/config/planfsm"
 	"github.com/kastheco/kasmos/config/planstate"
 	"github.com/kastheco/kasmos/internal/clickup"
+	"github.com/kastheco/kasmos/internal/mcpclient"
 	sentrypkg "github.com/kastheco/kasmos/internal/sentry"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session"
@@ -485,6 +486,32 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clickUpConfig = &msg.Config
 		m.sidebar.SetClickUpAvailable(true)
 		return m, nil
+	case clickUpSearchResultMsg:
+		if msg.Err != nil {
+			m.toastManager.Error("clickup search failed: " + msg.Err.Error())
+			m.state = stateDefault
+			return m, m.toastTickCmd()
+		}
+		if len(msg.Results) == 0 {
+			m.toastManager.Info("no clickup tasks found")
+			m.state = stateDefault
+			return m, m.toastTickCmd()
+		}
+		m.clickUpResults = msg.Results
+		items := make([]string, len(msg.Results))
+		for i, r := range msg.Results {
+			label := r.ID + " · " + r.Name
+			if r.Status != "" {
+				label += " (" + r.Status + ")"
+			}
+			if r.ListName != "" {
+				label += " — " + r.ListName
+			}
+			items[i] = label
+		}
+		m.state = stateClickUpPicker
+		m.pickerOverlay = overlay.NewPickerOverlay("select clickup task", items)
+		return m, nil
 	case tickUpdateMetadataMessage:
 		// Snapshot the instance list for the goroutine. The slice header is
 		// copied but the pointers are shared — CollectMetadata only reads
@@ -917,6 +944,14 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateSidebarPlans()
 		m.updateSidebarItems()
 		return m, tea.WindowSize()
+	case clickUpTaskFetchedMsg:
+		if msg.Err != nil {
+			m.toastManager.Error("clickup fetch failed: " + msg.Err.Error())
+			m.state = stateDefault
+			return m, m.toastTickCmd()
+		}
+		m.state = stateDefault
+		return m.importClickUpTask(msg.Task)
 	case waveAdvanceMsg:
 		orch, ok := m.waveOrchestrators[msg.planFile]
 		if !ok {
@@ -1129,6 +1164,10 @@ func (m *home) View() string {
 	case m.state == stateNewPlan && m.formOverlay != nil:
 		result = overlay.PlaceOverlay(0, 0, m.formOverlay.Render(), mainView, true, true)
 	case m.state == stateNewPlanTopic && m.pickerOverlay != nil:
+		result = overlay.PlaceOverlay(0, 0, m.pickerOverlay.Render(), mainView, true, true)
+	case m.state == stateClickUpSearch && m.textInputOverlay != nil:
+		result = overlay.PlaceOverlay(0, 0, m.textInputOverlay.Render(), mainView, true, true)
+	case m.state == stateClickUpPicker && m.pickerOverlay != nil:
 		result = overlay.PlaceOverlay(0, 0, m.pickerOverlay.Render(), mainView, true, true)
 	case m.state == stateChangeTopic && m.pickerOverlay != nil:
 		result = overlay.PlaceOverlay(0, 0, m.pickerOverlay.Render(), mainView, true, true)
@@ -1343,6 +1382,89 @@ func (m *home) toastTickCmd() tea.Cmd {
 		time.Sleep(50 * time.Millisecond)
 		return overlay.ToastTickMsg{}
 	}
+}
+
+func (m *home) searchClickUp(query string) tea.Cmd {
+	return func() tea.Msg {
+		importer, err := m.getOrCreateImporter()
+		if err != nil {
+			return clickUpSearchResultMsg{Err: err}
+		}
+		results, err := importer.Search(query)
+		return clickUpSearchResultMsg{Results: results, Err: err}
+	}
+}
+
+func (m *home) getOrCreateImporter() (*clickup.Importer, error) {
+	if m.clickUpImporter != nil {
+		return m.clickUpImporter, nil
+	}
+	if m.clickUpConfig == nil {
+		return nil, fmt.Errorf("no clickup MCP server configured")
+	}
+
+	transport, err := m.createTransport(*m.clickUpConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := mcpclient.NewClient(transport)
+	if err != nil {
+		_ = transport.Close()
+		return nil, err
+	}
+	if err := client.Initialize(); err != nil {
+		_ = client.Close()
+		return nil, fmt.Errorf("MCP initialize: %w", err)
+	}
+	if _, err := client.ListTools(); err != nil {
+		_ = client.Close()
+		return nil, fmt.Errorf("MCP list tools: %w", err)
+	}
+
+	m.clickUpImporter = clickup.NewImporter(client)
+	return m.clickUpImporter, nil
+}
+
+func (m *home) createTransport(cfg clickup.MCPServerConfig) (mcpclient.Transport, error) {
+	switch cfg.Type {
+	case "http":
+		token, err := m.getClickUpToken()
+		if err != nil {
+			return nil, err
+		}
+		return mcpclient.NewHTTPTransport(cfg.URL, token), nil
+	case "stdio":
+		envSlice := make([]string, 0, len(cfg.Env))
+		for k, v := range cfg.Env {
+			envSlice = append(envSlice, k+"="+v)
+		}
+		return mcpclient.NewStdioTransport(cfg.Command, cfg.Args, envSlice)
+	default:
+		return nil, fmt.Errorf("unsupported transport type: %s", cfg.Type)
+	}
+}
+
+func (m *home) getClickUpToken() (string, error) {
+	path := mcpclient.TokenPath()
+	tok, err := mcpclient.LoadToken(path)
+	if err == nil && !tok.IsExpired() {
+		return tok.AccessToken, nil
+	}
+
+	oauthCfg := mcpclient.OAuthConfig{
+		AuthURL:  "https://app.clickup.com/api",
+		TokenURL: "https://api.clickup.com/api/v2/oauth/token",
+		ClientID: "kasmos", // TODO: register ClickUp OAuth app
+	}
+	tok, err = mcpclient.OAuthFlow(m.ctx, oauthCfg, nil)
+	if err != nil {
+		return "", fmt.Errorf("oauth: %w", err)
+	}
+	if err := mcpclient.SaveToken(path, tok); err != nil {
+		return "", fmt.Errorf("save token: %w", err)
+	}
+	return tok.AccessToken, nil
 }
 
 func detectClickUpCmd(repoPath string) tea.Cmd {
