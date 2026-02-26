@@ -15,13 +15,14 @@ Use `difft` for structural diffs (not line-based `git diff`) when reviewing chan
 Use `sg` (ast-grep) to verify patterns across the codebase rather than spot-checking.
 Be specific about issues — cite file paths and line numbers.
 
-## Project Skills
+## Review Protocol
 
-Always load when reviewing TUI/UX changes:
-- `tui-design` — terminal aesthetic principles, anti-patterns to flag
+All severity tiers are blocking — Critical, Important, and Minor. The review loop continues
+until you produce a clean pass with zero issues.
 
-Load when reviewing tmux integration, worker backends, or pane management:
-- `tmux-orchestration` — architecture principles, error handling philosophy
+**Self-fix trivial issues** (typos, doc comments, obvious one-liners) directly — commit and
+continue reviewing. Only kick back to the coder for issues requiring debugging, logic changes,
+missing tests, or anything where the right fix isn't immediately obvious.
 
 ## CLI Tools (MANDATORY)
 
