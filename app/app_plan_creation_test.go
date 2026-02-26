@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kastheco/kasmos/config/planstate"
 	"github.com/kastheco/kasmos/ui"
+	"github.com/kastheco/kasmos/ui/overlay"
 	"github.com/stretchr/testify/require"
 )
 
@@ -96,4 +97,28 @@ func TestHandleKeyPressNewPlanTopicWithoutPickerClearsPendingValues(t *testing.T
 	require.Equal(t, stateDefault, updated.state)
 	require.Empty(t, updated.pendingPlanName)
 	require.Empty(t, updated.pendingPlanDesc)
+}
+
+func TestNewPlanTopicPickerShowsPendingPlanName(t *testing.T) {
+	h := &home{
+		state:       stateNewPlan,
+		formOverlay: overlay.NewFormOverlay("new plan", 80),
+	}
+
+	for _, r := range "auth refactor" {
+		model, cmd := h.handleKeyPress(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		require.Nil(t, cmd)
+		updated, ok := model.(*home)
+		require.True(t, ok)
+		h = updated
+	}
+
+	model, cmd := h.handleKeyPress(tea.KeyMsg{Type: tea.KeyEnter})
+	require.Nil(t, cmd)
+
+	updated, ok := model.(*home)
+	require.True(t, ok)
+	require.Equal(t, stateNewPlanTopic, updated.state)
+	require.NotNil(t, updated.pickerOverlay)
+	require.Contains(t, strings.ToLower(updated.pickerOverlay.Render()), "auth refactor")
 }
