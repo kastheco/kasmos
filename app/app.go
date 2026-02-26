@@ -93,6 +93,8 @@ const (
 	stateClickUpPicker
 	// stateClickUpFetching is when kasmos is fetching a full task from ClickUp.
 	stateClickUpFetching
+	// statePermission is when a permission overlay is shown for an opencode permission prompt.
+	statePermission
 )
 
 type home struct {
@@ -159,6 +161,13 @@ type home struct {
 	confirmationOverlay *overlay.ConfirmationOverlay
 	// pendingConfirmAction stores the tea.Cmd to run asynchronously when confirmed
 	pendingConfirmAction tea.Cmd
+
+	// permissionOverlay is shown when an opencode permission dialog is detected.
+	permissionOverlay *overlay.PermissionOverlay
+	// pendingPermissionInstance is the instance that triggered the permission overlay.
+	pendingPermissionInstance *session.Instance
+	// permissionCache caches "allow always" decisions keyed by permission pattern.
+	permissionCache *config.PermissionCache
 
 	// nav handles unified navigation state
 	// focusSlot tracks which pane has keyboard focus in the Tab ring:
@@ -274,6 +283,12 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 		os.Exit(1)
 	}
 
+	permCache := config.NewPermissionCache(activeRepoPath)
+	if configDir, err := config.GetConfigDir(); err == nil {
+		permCache = config.NewPermissionCache(configDir)
+		_ = permCache.Load()
+	}
+
 	h := &home{
 		ctx:                   ctx,
 		spinner:               spinner.New(spinner.WithSpinner(spinner.Dot)),
@@ -292,6 +307,7 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 		waveOrchestrators:     make(map[string]*WaveOrchestrator),
 		plannerPrompted:       make(map[string]bool),
 		pendingReviewFeedback: make(map[string]string),
+		permissionCache:       permCache,
 	}
 	h.fsm = planfsm.New(h.planStateDir)
 	h.nav = ui.NewNavigationPanel(&h.spinner)
@@ -1208,6 +1224,8 @@ func (m *home) View() string {
 			log.ErrorLog.Printf("confirmation overlay is nil")
 		}
 		result = overlay.PlaceOverlay(0, 0, m.confirmationOverlay.Render(), mainView, true, true)
+	case m.state == statePermission && m.permissionOverlay != nil:
+		result = overlay.PlaceOverlay(0, 0, m.permissionOverlay.Render(), mainView, true, true)
 	case m.state == stateContextMenu && m.contextMenu != nil:
 		cx, cy := m.contextMenu.GetPosition()
 		result = overlay.PlaceOverlay(cx, cy, m.contextMenu.Render(), mainView, true, false)
