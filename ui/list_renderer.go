@@ -109,7 +109,7 @@ func (r *InstanceRenderer) Render(i *session.Instance, selected bool, focused bo
 	titleContent := fmt.Sprintf("%s %s%s", prefix, titleText, skipPermsIndicator)
 	// Build title line: content + spaces + status icon, all fitting within r.width
 	titleContentWidth := runewidth.StringWidth(titleContentPlain)
-	joinWidth := runewidth.StringWidth(join)
+	joinWidth := lipgloss.Width(join)
 	titlePad := r.width - titleContentWidth - joinWidth
 	if titlePad < 1 {
 		titlePad = 1
