@@ -5,6 +5,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session"
+	zone "github.com/lrstanley/bubblezone"
 )
 
 func tabBorderWithBottom(left, middle, right string) lipgloss.Border {
@@ -322,31 +323,6 @@ func (w *TabbedWindow) IsPreviewInScrollMode() bool {
 	return w.preview.isScrolling
 }
 
-// HandleTabClick checks if a click at the given local coordinates (relative to
-// the tabbed window's top-left) hits a tab header. Returns true and switches
-// tabs if a tab was clicked.
-func (w *TabbedWindow) HandleTabClick(localX, localY int) bool {
-	// Tab row starts at row 0 in String().
-	// Accept rows 0-2 to generously cover the tab area with borders.
-	if localY < 0 || localY > 2 {
-		return false
-	}
-
-	tabWidth := w.width / len(w.tabs)
-	clickedTab := localX / tabWidth
-	if clickedTab >= len(w.tabs) {
-		clickedTab = len(w.tabs) - 1
-	}
-	if clickedTab < 0 {
-		return false
-	}
-
-	if clickedTab != w.activeTab {
-		w.activeTab = clickedTab
-	}
-	return true
-}
-
 func (w *TabbedWindow) String() string {
 	if w.width == 0 || w.height == 0 {
 		return ""
@@ -394,17 +370,19 @@ func (w *TabbedWindow) String() string {
 		}
 		style = style.Border(border)
 		style = style.Width(width - style.GetHorizontalFrameSize())
+		var rendered string
 		switch {
 		case isActive && i == w.focusedTab && !w.focusMode:
 			// Focused tab in the ring: foam→iris gradient
-			renderedTabs = append(renderedTabs, style.Render(GradientText(t, GradientStart, GradientEnd)))
+			rendered = style.Render(GradientText(t, GradientStart, GradientEnd))
 		case isActive:
 			// Active but not ring-focused: normal text color
-			renderedTabs = append(renderedTabs, style.Render(lipgloss.NewStyle().Foreground(ColorText).Render(t)))
+			rendered = style.Render(lipgloss.NewStyle().Foreground(ColorText).Render(t))
 		default:
 			// Inactive tab: muted
-			renderedTabs = append(renderedTabs, style.Render(lipgloss.NewStyle().Foreground(ColorMuted).Render(t)))
+			rendered = style.Render(lipgloss.NewStyle().Foreground(ColorMuted).Render(t))
 		}
+		renderedTabs = append(renderedTabs, zone.Mark(TabZoneIDs[i], rendered))
 	}
 
 	row := lipgloss.JoinHorizontal(lipgloss.Top, renderedTabs...)
@@ -425,6 +403,10 @@ func (w *TabbedWindow) String() string {
 		lipgloss.Place(
 			innerWidth, w.height-ws.GetVerticalFrameSize()-tabHeight,
 			lipgloss.Left, lipgloss.Top, content))
+
+	if w.activeTab == PreviewTab {
+		window = zone.Mark(ZoneAgentPane, window)
+	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, row, window)
 }

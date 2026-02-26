@@ -14,7 +14,8 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-const ZoneRepoSwitch = "repo-switch"
+// ZoneRepoSwitch is kept for backward compatibility; new code should use ZoneNavRepo.
+const ZoneRepoSwitch = ZoneNavRepo
 
 const (
 	SidebarPlanPrefix        = "__plan__"
@@ -1034,9 +1035,9 @@ func (n *NavigationPanel) String() string {
 		if searchText == "" {
 			searchText = " "
 		}
-		searchBox = navSearchActiveStyle.Width(searchWidth).Render(searchText)
+		searchBox = zone.Mark(ZoneNavSearch, navSearchActiveStyle.Width(searchWidth).Render(searchText))
 	} else {
-		searchBox = navSearchBoxStyle.Width(searchWidth).Render("\uf002 search")
+		searchBox = zone.Mark(ZoneNavSearch, navSearchBoxStyle.Width(searchWidth).Render("\uf002 search"))
 	}
 
 	// Build visible items, including section dividers between plan sort-key groups.
@@ -1120,7 +1121,11 @@ func (n *NavigationPanel) String() string {
 
 	var bodyLines []string
 	for _, item := range items[start:end] {
-		bodyLines = append(bodyLines, item.line)
+		line := item.line
+		if item.rowIdx >= 0 {
+			line = zone.Mark(NavRowZoneID(item.rowIdx), line)
+		}
+		bodyLines = append(bodyLines, line)
 	}
 	body := strings.Join(bodyLines, "\n")
 	if body != "" {
@@ -1146,7 +1151,7 @@ func (n *NavigationPanel) String() string {
 			Padding(0, 1).
 			Width(btnWidth).
 			Render(n.repoName + " ▾")
-		repoSection = zone.Mark(ZoneRepoSwitch, repoBtn)
+		repoSection = zone.Mark(ZoneNavRepo, repoBtn)
 	}
 
 	// Assemble content with bottom-pinned legend + repo button
@@ -1177,5 +1182,9 @@ func (n *NavigationPanel) String() string {
 			placed = strings.Join(lines, "\n")
 		}
 	}
-	return placed
+	return zone.Mark(ZoneNavPanel, placed)
 }
+
+// RowCount returns the number of rows in the navigation panel rows slice.
+// Used by zone-based mouse hit detection to iterate row zones.
+func (n *NavigationPanel) RowCount() int { return len(n.rows) }

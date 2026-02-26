@@ -13,12 +13,16 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	zone "github.com/lrstanley/bubblezone"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // TestMain runs before all tests to set up the test environment
 func TestMain(m *testing.M) {
+	// Initialize bubblezone global manager (required for zone.Mark/zone.Get in tests)
+	zone.NewGlobal()
+
 	// Initialize the logger before any tests run
 	log.Initialize(false)
 	defer log.Close()

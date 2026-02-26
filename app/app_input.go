@@ -87,14 +87,9 @@ func (m *home) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	x, y := msg.X, msg.Y
-
-	// Account for PaddingTop(1) on columns
-	contentY := y - 1
-
 	// Right-click: show context menu
 	if msg.Button == tea.MouseButtonRight {
-		return m.handleRightClick(x, y, contentY)
+		return m.handleRightClick(msg)
 	}
 
 	// Only handle left clicks from here
@@ -102,54 +97,59 @@ func (m *home) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Zone-based click: repo switch button (works regardless of sidebar layout)
-	if zone.Get(ui.ZoneRepoSwitch).InBounds(msg) {
+	// Zone-based click: repo switch button
+	if zone.Get(ui.ZoneNavRepo).InBounds(msg) {
 		m.state = stateRepoSwitch
 		m.pickerOverlay = overlay.NewPickerOverlay("Switch repo", m.buildRepoPickerItems())
 		return m, nil
 	}
 
-	// Determine which column was clicked
-	if x < m.navWidth {
-		// Click in sidebar
+	// Zone-based click: search box
+	if zone.Get(ui.ZoneNavSearch).InBounds(msg) {
 		m.setFocusSlot(slotNav)
+		m.nav.ActivateSearch()
+		m.state = stateSearch
+		return m, nil
+	}
 
-		// Search bar is at rows 0-2 in the sidebar content (border takes 3 rows)
-		if contentY >= 0 && contentY <= 2 {
-			m.nav.ActivateSearch()
-			m.state = stateSearch
-			return m, nil
-		}
-
-		// Sidebar items start after search bar (row 0) + border (2 rows) + blank line (1 row) = row 4
-		itemRow := contentY - 4
-		if itemRow >= 0 {
-			m.tabbedWindow.ClearDocumentMode()
-			m.nav.ClickItem(itemRow + m.nav.GetScrollOffset())
-			return m, m.instanceChanged()
-		}
-	} else {
-		// Click in preview/diff area (right column): focus whichever center tab is visible
-		m.setFocusSlot(slotInfo + m.tabbedWindow.GetActiveTab())
-		localX := x - m.navWidth
-		if m.tabbedWindow.HandleTabClick(localX, contentY) {
+	// Zone-based click: tab headers — loop over all tab zones
+	for i, zoneID := range ui.TabZoneIDs {
+		if zone.Get(zoneID).InBounds(msg) {
+			m.setFocusSlot(slotInfo + i)
+			m.tabbedWindow.SetActiveTab(i)
 			m.menu.SetInDiffTab(m.tabbedWindow.IsInDiffTab())
 			return m, m.instanceChanged()
 		}
 	}
 
+	// Zone-based click: nav panel rows
+	if zone.Get(ui.ZoneNavPanel).InBounds(msg) {
+		m.setFocusSlot(slotNav)
+		for i := range m.nav.RowCount() {
+			if zone.Get(ui.NavRowZoneID(i)).InBounds(msg) {
+				m.tabbedWindow.ClearDocumentMode()
+				m.nav.ClickItem(i)
+				return m, m.instanceChanged()
+			}
+		}
+		return m, nil
+	}
+
+	// Click in tabbed window area (not on a tab header): focus the active tab
+	m.setFocusSlot(slotInfo + m.tabbedWindow.GetActiveTab())
 	return m, nil
 }
 
 // handleRightClick builds and shows a context menu based on what was right-clicked.
-func (m *home) handleRightClick(x, y, contentY int) (tea.Model, tea.Cmd) {
-	if x < m.navWidth {
-		// Right-click in nav panel
-		itemRow := contentY - 4
-		if itemRow >= 0 {
-			m.nav.ClickItem(itemRow + m.nav.GetScrollOffset())
+func (m *home) handleRightClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	// Right-click in nav panel: select the clicked row then show context menu
+	if zone.Get(ui.ZoneNavPanel).InBounds(msg) {
+		for i := range m.nav.RowCount() {
+			if zone.Get(ui.NavRowZoneID(i)).InBounds(msg) {
+				m.nav.ClickItem(i)
+				break
+			}
 		}
-		// Plan header: show plan context menu
 		if planFile := m.nav.GetSelectedPlanFile(); planFile != "" {
 			return m.openPlanContextMenu()
 		}
