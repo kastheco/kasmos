@@ -756,57 +756,57 @@ func TestFocusRing(t *testing.T) {
 		assert.Equal(t, slotAgent, homeModel.focusSlot)
 	})
 
-	// --- Alt+Up/Down: cycle active instances with wrapping ---
+	// --- Ctrl+Up/Down: cycle active instances with wrapping ---
 
-	t.Run("alt+down cycles to next active instance", func(t *testing.T) {
+	t.Run("ctrl+down cycles to next active instance", func(t *testing.T) {
 		h := newTestHome()
 		addTestInstance(t, h)
 		addTestInstance(t, h)
 		addTestInstance(t, h)
 		h.list.SetSelectedInstance(0)
 
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyDown, Alt: true})
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyCtrlDown})
 
 		assert.Equal(t, 1, homeModel.list.SelectedIndex())
 	})
 
-	t.Run("alt+down wraps from last to first", func(t *testing.T) {
+	t.Run("ctrl+down wraps from last to first", func(t *testing.T) {
 		h := newTestHome()
 		addTestInstance(t, h)
 		addTestInstance(t, h)
 		addTestInstance(t, h)
 		h.list.SetSelectedInstance(2)
 
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyDown, Alt: true})
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyCtrlDown})
 
 		assert.Equal(t, 0, homeModel.list.SelectedIndex())
 	})
 
-	t.Run("alt+up cycles to previous active instance", func(t *testing.T) {
+	t.Run("ctrl+up cycles to previous active instance", func(t *testing.T) {
 		h := newTestHome()
 		addTestInstance(t, h)
 		addTestInstance(t, h)
 		addTestInstance(t, h)
 		h.list.SetSelectedInstance(2)
 
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyUp, Alt: true})
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyCtrlUp})
 
 		assert.Equal(t, 1, homeModel.list.SelectedIndex())
 	})
 
-	t.Run("alt+up wraps from first to last", func(t *testing.T) {
+	t.Run("ctrl+up wraps from first to last", func(t *testing.T) {
 		h := newTestHome()
 		addTestInstance(t, h)
 		addTestInstance(t, h)
 		addTestInstance(t, h)
 		h.list.SetSelectedInstance(0)
 
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyUp, Alt: true})
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyCtrlUp})
 
 		assert.Equal(t, 2, homeModel.list.SelectedIndex())
 	})
 
-	t.Run("alt+down skips paused instances", func(t *testing.T) {
+	t.Run("ctrl+down skips paused instances", func(t *testing.T) {
 		h := newTestHome()
 		addTestInstance(t, h) // 0: active
 		addTestInstance(t, h) // 1: will be paused
@@ -814,12 +814,12 @@ func TestFocusRing(t *testing.T) {
 		h.list.GetInstances()[1].Status = session.Paused
 		h.list.SetSelectedInstance(0)
 
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyDown, Alt: true})
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyCtrlDown})
 
 		assert.Equal(t, 2, homeModel.list.SelectedIndex())
 	})
 
-	t.Run("alt+up skips paused instances", func(t *testing.T) {
+	t.Run("ctrl+up skips paused instances", func(t *testing.T) {
 		h := newTestHome()
 		addTestInstance(t, h) // 0: active
 		addTestInstance(t, h) // 1: will be paused
@@ -827,7 +827,7 @@ func TestFocusRing(t *testing.T) {
 		h.list.GetInstances()[1].Status = session.Paused
 		h.list.SetSelectedInstance(2)
 
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyUp, Alt: true})
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyCtrlUp})
 
 		assert.Equal(t, 0, homeModel.list.SelectedIndex())
 	})

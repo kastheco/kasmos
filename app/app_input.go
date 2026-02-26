@@ -499,9 +499,9 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			return m, tea.Batch(tea.WindowSize(), m.instanceChanged())
 		}
 
-		// Alt+Up/Down: cycle through active instances (wrapping) while staying in focus mode
-		if msg.Alt && (msg.Type == tea.KeyUp || msg.Type == tea.KeyDown) {
-			if msg.Type == tea.KeyUp {
+		// Ctrl+Up/Down: cycle through active instances (wrapping) while staying in focus mode
+		if msg.Type == tea.KeyCtrlUp || msg.Type == tea.KeyCtrlDown {
+			if msg.Type == tea.KeyCtrlUp {
 				m.list.CyclePrevActive()
 			} else {
 				m.list.CycleNextActive()
@@ -920,9 +920,9 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		}
 	}
 
-	// Alt+Up/Down: cycle through active instances (wrapping)
-	if msg.Alt && (msg.Type == tea.KeyUp || msg.Type == tea.KeyDown) {
-		if msg.Type == tea.KeyUp {
+	// Ctrl+Up/Down: cycle through active instances (wrapping)
+	if msg.Type == tea.KeyCtrlUp || msg.Type == tea.KeyCtrlDown {
+		if msg.Type == tea.KeyCtrlUp {
 			m.list.CyclePrevActive()
 		} else {
 			m.list.CycleNextActive()

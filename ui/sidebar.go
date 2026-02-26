@@ -749,7 +749,7 @@ func (s *Sidebar) rebuildRows() {
 		rows = append(rows, sidebarRow{
 			Kind:   rowKindImportAction,
 			ID:     SidebarImportClickUp,
-			Label:  "+ Import from ClickUp",
+			Label:  "+ import from clickup",
 			Indent: 0,
 		})
 	}
