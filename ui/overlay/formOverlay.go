@@ -13,17 +13,21 @@ type FormOverlay struct {
 	form      *huh.Form
 	nameVal   string
 	descVal   string
+	branchVal string
+	pathVal   string
 	title     string
 	submitted bool
 	canceled  bool
 	width     int
+	fieldKeys []string
 }
 
 // NewFormOverlay creates a form overlay with name and description inputs.
 func NewFormOverlay(title string, width int) *FormOverlay {
 	f := &FormOverlay{
-		title: title,
-		width: width,
+		title:     title,
+		width:     width,
+		fieldKeys: []string{"name", "desc"},
 	}
 
 	formWidth := width - 6
@@ -41,6 +45,45 @@ func NewFormOverlay(title string, width int) *FormOverlay {
 				Key("desc").
 				Title("description (optional)").
 				Value(&f.descVal),
+		),
+	).
+		WithTheme(ThemeRosePine()).
+		WithWidth(formWidth).
+		WithShowHelp(false).
+		WithShowErrors(false)
+
+	_ = f.form.Init()
+
+	return f
+}
+
+// NewSpawnFormOverlay creates a form overlay with name, branch (optional), and path (optional) inputs.
+func NewSpawnFormOverlay(title string, width int) *FormOverlay {
+	f := &FormOverlay{
+		title:     title,
+		width:     width,
+		fieldKeys: []string{"name", "branch", "path"},
+	}
+
+	formWidth := width - 6
+	if formWidth < 34 {
+		formWidth = 34
+	}
+
+	f.form = huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Key("name").
+				Title("name").
+				Value(&f.nameVal),
+			huh.NewInput().
+				Key("branch").
+				Title("branch (optional)").
+				Value(&f.branchVal),
+			huh.NewInput().
+				Key("path").
+				Title("path (optional)").
+				Value(&f.pathVal),
 		),
 	).
 		WithTheme(ThemeRosePine()).
@@ -75,16 +118,22 @@ func (f *FormOverlay) HandleKeyPress(msg tea.KeyMsg) bool {
 		return true
 
 	case tea.KeyTab, tea.KeyDown:
-		if f.focusedKey() == "desc" {
-			f.updateForm(huh.PrevField())
+		focused := f.focusedKey()
+		if len(f.fieldKeys) > 0 && focused == f.fieldKeys[len(f.fieldKeys)-1] {
+			for i := 0; i < len(f.fieldKeys)-1; i++ {
+				f.updateForm(huh.PrevField())
+			}
 			return false
 		}
 		f.updateForm(huh.NextField())
 		return false
 
 	case tea.KeyShiftTab, tea.KeyUp:
-		if f.focusedKey() == "name" {
-			f.updateForm(huh.NextField())
+		focused := f.focusedKey()
+		if len(f.fieldKeys) > 0 && focused == f.fieldKeys[0] {
+			for i := 0; i < len(f.fieldKeys)-1; i++ {
+				f.updateForm(huh.NextField())
+			}
 			return false
 		}
 		f.updateForm(huh.PrevField())
@@ -141,6 +190,16 @@ func (f *FormOverlay) Name() string {
 // Description returns the description field value.
 func (f *FormOverlay) Description() string {
 	return strings.TrimSpace(f.descVal)
+}
+
+// Branch returns the branch field value.
+func (f *FormOverlay) Branch() string {
+	return strings.TrimSpace(f.branchVal)
+}
+
+// WorkPath returns the path field value.
+func (f *FormOverlay) WorkPath() string {
+	return strings.TrimSpace(f.pathVal)
 }
 
 // IsSubmitted returns true when the form was submitted.
