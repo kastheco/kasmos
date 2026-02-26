@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/kastheco/kasmos/session"
 )
 
 func stripMenuANSI(s string) string {
@@ -60,5 +62,31 @@ func TestMenu_SidebarSpaceActionLabelOverridesToggle(t *testing.T) {
 	out = stripMenuANSI(m.String())
 	if !strings.Contains(out, "space collapse") {
 		t.Fatalf("menu should update sidebar space label to collapse; got: %q", out)
+	}
+}
+
+func TestMenu_InstancePromptDetectedShowsYesKeybind(t *testing.T) {
+	m := NewMenu()
+	m.SetSize(140, 1)
+	m.SetFocusSlot(MenuSlotList)
+	m.SetInstance(&session.Instance{Status: session.Running, PromptDetected: true})
+	m.SetState(StateDefault)
+
+	out := stripMenuANSI(m.String())
+	if !strings.Contains(out, "y yes") {
+		t.Fatalf("menu should show yes keybind for prompted instance; got: %q", out)
+	}
+}
+
+func TestMenu_InstanceWithoutPromptHidesYesKeybind(t *testing.T) {
+	m := NewMenu()
+	m.SetSize(140, 1)
+	m.SetFocusSlot(MenuSlotList)
+	m.SetInstance(&session.Instance{Status: session.Running, PromptDetected: false})
+	m.SetState(StateDefault)
+
+	out := stripMenuANSI(m.String())
+	if strings.Contains(out, "y yes") {
+		t.Fatalf("menu should hide yes keybind when instance has no prompt; got: %q", out)
 	}
 }

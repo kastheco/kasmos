@@ -191,6 +191,9 @@ func (m *Menu) addInstanceOptions() {
 
 	// Action group
 	actionGroup := []keys.KeyName{keys.KeyEnter, keys.KeySendPrompt, keys.KeySpace}
+	if m.instance.PromptDetected && m.instance.Status != session.Paused {
+		actionGroup = append(actionGroup, keys.KeySendYes)
+	}
 	if m.instance.Status == session.Paused {
 		actionGroup = append(actionGroup, keys.KeyResume)
 	}

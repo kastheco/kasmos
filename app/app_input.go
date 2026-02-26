@@ -1107,6 +1107,14 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			return m, nil
 		}
 		return m, m.enterFocusMode()
+	case keys.KeySendYes:
+		selected := m.list.GetSelectedInstance()
+		if selected == nil || !selected.Started() || selected.Paused() || !selected.PromptDetected {
+			return m, nil
+		}
+		selected.QueuedPrompt = "yes"
+		selected.AwaitingWork = true
+		return m, nil
 	case keys.KeyKill:
 		// Soft kill: terminate tmux session only, keep instance in list.
 		selected := m.list.GetSelectedInstance()

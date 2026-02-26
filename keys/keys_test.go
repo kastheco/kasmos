@@ -36,3 +36,15 @@ func TestGlobalKeyBindings_UpdatedStatusLineLabels(t *testing.T) {
 		t.Fatalf("KeyViewPlan help desc = %q, want %q", got, "preview")
 	}
 }
+
+func TestYesKeyInGlobalMap(t *testing.T) {
+	name, ok := GlobalKeyStringsMap["y"]
+	assert.True(t, ok, "'y' must be in GlobalKeyStringsMap")
+	assert.Equal(t, KeySendYes, name)
+}
+
+func TestGlobalKeyBindings_YesLabel(t *testing.T) {
+	if got := GlobalkeyBindings[KeySendYes].Help().Desc; got != "yes" {
+		t.Fatalf("KeySendYes help desc = %q, want %q", got, "yes")
+	}
+}
