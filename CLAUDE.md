@@ -35,4 +35,4 @@ See `~/.claude/projects/-home-kas-dev-klique/memory/` for full WP breakdowns.
 
 ## Workflow
 
-Development follows a wave-based plan execution lifecycle. Each agent works only on the specific task it has been assigned — do not expand scope beyond your assigned work package. When the `KLIQUE_TASK` environment variable is set, it identifies your assigned task; implement only that task.
+Development follows a wave-based plan execution lifecycle. Each agent works only on the specific task it has been assigned — do not expand scope beyond your assigned work package. When `KASMOS_TASK` is set, you are one of several concurrent agents on a shared worktree. `KASMOS_WAVE` identifies your wave, `KASMOS_PEERS` the number of sibling agents. Implement only your assigned task — see your dynamic prompt for specific rules.
