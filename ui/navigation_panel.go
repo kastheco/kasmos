@@ -18,6 +18,7 @@ const ZoneRepoSwitch = "repo-switch"
 
 const (
 	SidebarPlanPrefix        = "__plan__"
+	SidebarTopicPrefix       = "__topic__"
 	SidebarPlanHistoryToggle = "__plan_history_toggle__"
 	SidebarImportClickUp     = "__import_clickup__"
 )
@@ -57,6 +58,7 @@ type navRow struct {
 	Collapsed       bool
 	HasRunning      bool
 	HasNotification bool
+	Indent          int // indentation level in spaces (0 = top-level)
 }
 
 // Navigation panel styles
@@ -89,6 +91,7 @@ type NavigationPanel struct {
 	scrollOffset int
 
 	plans         []PlanDisplay
+	topics        []TopicDisplay
 	instances     []*session.Instance
 	historyPlans  []PlanDisplay
 	cancelled     []PlanDisplay
@@ -143,6 +146,7 @@ func (n *NavigationPanel) SetPlans(plans []PlanDisplay) {
 
 func (n *NavigationPanel) SetTopicsAndPlans(topics []TopicDisplay, ungrouped []PlanDisplay, history []PlanDisplay, cancelled ...[]PlanDisplay) {
 	n.historyPlans = history
+	n.topics = topics
 	if len(cancelled) > 0 {
 		n.cancelled = cancelled[0]
 	}
@@ -207,7 +211,8 @@ func (n *NavigationPanel) rebuildRows() {
 	rows := make([]navRow, 0, len(plans)+len(n.instances)+len(n.historyPlans)+len(n.cancelled)+4)
 
 	// Helper to append a plan header + its child instances.
-	appendPlan := func(p PlanDisplay) {
+	// indent is the indentation level in spaces for the plan row.
+	appendPlan := func(p PlanDisplay, indent int) {
 		insts := instancesByPlan[p.Filename]
 		hasRunning, hasNotification := aggregateNavPlanStatus(insts, n.planStatuses[p.Filename])
 		collapsed := n.isPlanCollapsed(p.Filename, hasRunning, hasNotification)
@@ -219,6 +224,7 @@ func (n *NavigationPanel) rebuildRows() {
 			Collapsed:       collapsed,
 			HasRunning:      hasRunning,
 			HasNotification: hasNotification,
+			Indent:          indent,
 		})
 		if !collapsed {
 			for _, inst := range insts {
@@ -228,31 +234,79 @@ func (n *NavigationPanel) rebuildRows() {
 					Label:    inst.Title,
 					PlanFile: inst.PlanFile,
 					Instance: inst,
+					Indent:   indent,
 				})
 			}
 		}
 	}
 
-	// Emit active plans (sort key 0=attention, 1=running), then solo, then idle (sort key 2).
-	soloInserted := false
+	// Split plans into active (sort key 0,1) and idle (sort key 2).
+	var activePlans, idlePlans []PlanDisplay
 	for _, p := range plans {
 		sk := navPlanSortKey(p, instancesByPlan[p.Filename], n.planStatuses[p.Filename])
-		if sk >= 2 && !soloInserted {
-			soloInserted = true
-			if len(solo) > 0 {
-				rows = append(rows, navRow{Kind: navRowSoloHeader, ID: "__solo__", Label: "solo"})
-				for _, inst := range solo {
-					rows = append(rows, navRow{Kind: navRowInstance, ID: "inst:" + inst.Title, Label: inst.Title, Instance: inst})
-				}
-			}
+		if sk < 2 {
+			activePlans = append(activePlans, p)
+		} else {
+			idlePlans = append(idlePlans, p)
 		}
-		appendPlan(p)
 	}
-	// If all plans were active (or no plans), solo goes at the end of plans.
-	if !soloInserted && len(solo) > 0 {
+
+	// Emit active plans flat.
+	for _, p := range activePlans {
+		appendPlan(p, 0)
+	}
+
+	// Solo instances between active and idle.
+	if len(solo) > 0 {
 		rows = append(rows, navRow{Kind: navRowSoloHeader, ID: "__solo__", Label: "solo"})
 		for _, inst := range solo {
 			rows = append(rows, navRow{Kind: navRowInstance, ID: "inst:" + inst.Title, Label: inst.Title, Instance: inst})
+		}
+	}
+
+	// Idle plans grouped by topic.
+	// Build a set of idle filenames for quick lookup.
+	idleSet := make(map[string]bool, len(idlePlans))
+	for _, p := range idlePlans {
+		idleSet[p.Filename] = true
+	}
+
+	// Emit topics that contain idle plans.
+	emitted := make(map[string]bool)
+	for _, t := range n.topics {
+		var topicIdlePlans []PlanDisplay
+		for _, p := range t.Plans {
+			if idleSet[p.Filename] {
+				topicIdlePlans = append(topicIdlePlans, p)
+			}
+		}
+		if len(topicIdlePlans) == 0 {
+			continue
+		}
+		topicID := SidebarTopicPrefix + t.Name
+		collapsed := n.collapsed[topicID]
+		rows = append(rows, navRow{
+			Kind:      navRowTopicHeader,
+			ID:        topicID,
+			Label:     t.Name,
+			Collapsed: collapsed,
+		})
+		if !collapsed {
+			for _, p := range topicIdlePlans {
+				appendPlan(p, 2)
+				emitted[p.Filename] = true
+			}
+		} else {
+			for _, p := range topicIdlePlans {
+				emitted[p.Filename] = true
+			}
+		}
+	}
+
+	// Emit ungrouped idle plans (no topic).
+	for _, p := range idlePlans {
+		if !emitted[p.Filename] {
+			appendPlan(p, 0)
 		}
 	}
 
@@ -382,6 +436,10 @@ func (n *NavigationPanel) ToggleSelectedExpand() bool {
 	case navRowPlanHeader:
 		n.collapsed[row.PlanFile] = !row.Collapsed
 		n.userOverrides[row.PlanFile] = true
+		n.rebuildRows()
+		return true
+	case navRowTopicHeader:
+		n.collapsed[row.ID] = !row.Collapsed
 		n.rebuildRows()
 		return true
 	case navRowHistoryToggle:
@@ -751,7 +809,7 @@ func navSectionLabel(key int) string {
 	case 1:
 		return "active"
 	default:
-		return "idle"
+		return "plans"
 	}
 }
 
@@ -778,10 +836,12 @@ func (n *NavigationPanel) renderNavRow(row navRow, contentWidth int) string {
 		}
 		statusIcon := navPlanStatusIcon(row)
 		statusW := lipgloss.Width(statusIcon)
+		indent := strings.Repeat(" ", row.Indent)
+		indentW := row.Indent
 
 		label := row.Label
-		// Layout: chevron(1) + space(1) + label + gap + space(1) + status
-		maxLabel := contentWidth - 3 - statusW
+		// Layout: indent + chevron(1) + space(1) + label + gap + space(1) + status
+		maxLabel := contentWidth - indentW - 3 - statusW
 		if maxLabel < 3 {
 			maxLabel = 3
 		}
@@ -789,12 +849,17 @@ func (n *NavigationPanel) renderNavRow(row navRow, contentWidth int) string {
 			label = runewidth.Truncate(label, maxLabel-1, "…")
 		}
 
-		usedW := 2 + runewidth.StringWidth(label) + 1 + statusW
+		usedW := indentW + 2 + runewidth.StringWidth(label) + 1 + statusW
 		gap := contentWidth - usedW
 		if gap < 0 {
 			gap = 0
 		}
-		return chevron + " " + navPlanLabelStyle.Render(label) + strings.Repeat(" ", gap) + " " + statusIcon
+		// Plans under topics use normal weight; top-level plans use bold.
+		labelStyle := navPlanLabelStyle
+		if row.Indent > 0 {
+			labelStyle = navPlanLabelStyle.Bold(false)
+		}
+		return indent + chevron + " " + labelStyle.Render(label) + strings.Repeat(" ", gap) + " " + statusIcon
 
 	case navRowInstance:
 		inst := row.Instance
@@ -810,7 +875,7 @@ func (n *NavigationPanel) renderNavRow(row navRow, contentWidth int) string {
 		statusIcon := n.navInstanceStatusIcon(inst)
 		statusW := lipgloss.Width(statusIcon)
 
-		indentW := 4
+		indentW := row.Indent + 4
 		if isSolo {
 			indentW = 0
 		}
@@ -829,7 +894,7 @@ func (n *NavigationPanel) renderNavRow(row navRow, contentWidth int) string {
 			gap = 0
 		}
 
-		indent := "    "
+		indent := strings.Repeat(" ", indentW)
 		labelStyle := navInstanceLabelStyle
 		if isSolo {
 			indent = ""
@@ -839,6 +904,21 @@ func (n *NavigationPanel) renderNavRow(row navRow, contentWidth int) string {
 
 	case navRowSoloHeader:
 		return navDividerLine("solo", contentWidth)
+
+	case navRowTopicHeader:
+		chevron := "▸"
+		if !row.Collapsed {
+			chevron = "▾"
+		}
+		label := row.Label
+		maxLabel := contentWidth - 2 // chevron + space
+		if maxLabel < 3 {
+			maxLabel = 3
+		}
+		if runewidth.StringWidth(label) > maxLabel {
+			label = runewidth.Truncate(label, maxLabel-1, "…")
+		}
+		return chevron + " " + navPlanLabelStyle.Render(label)
 
 	case navRowHistoryToggle:
 		chevron := "▸"
@@ -952,6 +1032,12 @@ func (n *NavigationPanel) String() string {
 				items = append(items, visItem{line: divLine, rowIdx: -1})
 				lastPlanKey = sk
 			}
+		}
+		// Topic headers are always idle — ensure the idle divider appears.
+		if row.Kind == navRowTopicHeader && lastPlanKey != 2 {
+			divLine := navDividerLine(navSectionLabel(2), itemWidth)
+			items = append(items, visItem{line: divLine, rowIdx: -1})
+			lastPlanKey = 2
 		}
 
 		if i == n.selectedIdx {
