@@ -382,10 +382,16 @@ func (m *home) instanceChanged() tea.Cmd {
 	// selected may be nil
 	selected := m.nav.GetSelectedInstance()
 
-	// Clear notification when user selects this instance — they've seen it
-	if selected != nil && selected.Notified {
-		selected.Notified = false
+	// Clear notification on the previously-viewed instance when the user
+	// navigates away. This prevents the item from jumping out of "attention"
+	// while the user is still looking at it.
+	if m.seenNotified != nil && m.seenNotified != selected {
+		m.seenNotified.Notified = false
+		m.seenNotified = nil
 		m.updateNavPanelStatus()
+	}
+	if selected != nil && selected.Notified {
+		m.seenNotified = selected
 	}
 
 	// Manage preview terminal lifecycle on selection change.

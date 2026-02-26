@@ -120,6 +120,10 @@ type home struct {
 
 	// state is the current discrete state of the application
 	state state
+	// seenNotified tracks an instance whose Notified flag was visible when selected.
+	// The flag is cleared when the user navigates away, not immediately on focus.
+	seenNotified *session.Instance
+
 	// instanceFinalizers stores per-instance finalizers keyed by instance pointer.
 	// Each finalizer registers the repo name after the instance has started.
 	// Supports concurrent batch spawns (e.g. wave tasks) where multiple
