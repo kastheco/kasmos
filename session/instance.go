@@ -291,6 +291,14 @@ func (i *Instance) GetRepoPath() string {
 	return i.gitWorktree.GetRepoPath()
 }
 
+// GetWorktreePath returns the worktree path for this instance, or empty string if unavailable.
+func (i *Instance) GetWorktreePath() string {
+	if i.gitWorktree == nil {
+		return ""
+	}
+	return i.gitWorktree.GetWorktreePath()
+}
+
 func (i *Instance) SetStatus(status Status) {
 	if i.Status == Running && status == Ready {
 		i.Notified = true

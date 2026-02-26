@@ -14,6 +14,11 @@ type Signal struct {
 	filePath string // full path for deletion
 }
 
+// Key returns a dedup key for this signal (event + plan file).
+func (s Signal) Key() string {
+	return string(s.Event) + ":" + s.PlanFile
+}
+
 // sentinelPrefixes maps filename prefixes to FSM events.
 var sentinelPrefixes = []struct {
 	prefix string

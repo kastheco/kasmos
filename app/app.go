@@ -532,6 +532,27 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				signals = planfsm.ScanSignals(planStateDir)
 			}
 
+			// Also scan signals from active worktrees — agents write
+			// sentinel files relative to their CWD which is the worktree,
+			// not the main repo.
+			seen := make(map[string]bool)
+			for _, sig := range signals {
+				seen[sig.Key()] = true
+			}
+			for _, inst := range snapshots {
+				wt := inst.GetWorktreePath()
+				if wt == "" {
+					continue
+				}
+				wtPlansDir := filepath.Join(wt, "docs", "plans")
+				for _, sig := range planfsm.ScanSignals(wtPlansDir) {
+					if !seen[sig.Key()] {
+						seen[sig.Key()] = true
+						signals = append(signals, sig)
+					}
+				}
+			}
+
 			time.Sleep(500 * time.Millisecond)
 			return metadataResultMsg{Results: results, PlanState: ps, Signals: signals}
 		}

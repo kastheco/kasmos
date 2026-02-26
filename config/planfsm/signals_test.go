@@ -74,6 +74,15 @@ func TestScanSignals_RejectsUserOnlyEvents(t *testing.T) {
 	assert.Empty(t, signals)
 }
 
+func TestSignalKey_Dedup(t *testing.T) {
+	a := Signal{Event: ReviewChangesRequested, PlanFile: "foo.md"}
+	b := Signal{Event: ReviewChangesRequested, PlanFile: "foo.md"}
+	c := Signal{Event: ImplementFinished, PlanFile: "foo.md"}
+
+	assert.Equal(t, a.Key(), b.Key(), "same event+planFile should produce same key")
+	assert.NotEqual(t, a.Key(), c.Key(), "different events should produce different keys")
+}
+
 func TestConsumeSignal_DeletesFile(t *testing.T) {
 	dir := t.TempDir()
 	signalsDir := filepath.Join(dir, ".signals")
