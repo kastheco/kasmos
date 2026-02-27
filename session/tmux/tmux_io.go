@@ -28,16 +28,15 @@ func (t *TmuxSession) TapRight() error {
 }
 
 // SendPermissionResponse sends the key sequence for the given permission choice.
-// Allow once: Enter (already selected). Allow always: Right Enter Enter. Reject: Right Right Enter.
+// Allow once: Enter (already selected). Allow always: Right Enter. Reject: Right Right Enter.
 func (t *TmuxSession) SendPermissionResponse(choice PermissionChoice) error {
 	switch choice {
 	case PermissionAllowOnce:
 		return t.TapEnter()
 	case PermissionAllowAlways:
+		// opencode's permission prompt is a single-step selection: arrow to highlight, Enter to confirm.
+		// No additional Enter needed after selecting "allow always".
 		if err := t.TapRight(); err != nil {
-			return err
-		}
-		if err := t.TapEnter(); err != nil {
 			return err
 		}
 		return t.TapEnter()

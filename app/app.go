@@ -268,6 +268,11 @@ type home struct {
 	pendingPermissionInstance *session.Instance
 	// permissionCache caches "allow always" decisions keyed by permission pattern.
 	permissionCache *config.PermissionCache
+	// permissionHandled tracks in-flight auto-approvals: instance → pattern.
+	// Prevents duplicate key sequences when the pane still shows the prompt
+	// across multiple metadata ticks while opencode processes the first response.
+	// Cleared when the pane no longer contains a permission prompt for that instance.
+	permissionHandled map[*session.Instance]string
 }
 
 func newHome(ctx context.Context, program string, autoYes bool) *home {
@@ -317,6 +322,7 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 	permCache := config.NewPermissionCache(configDir)
 	_ = permCache.Load()
 	h.permissionCache = permCache
+	h.permissionHandled = make(map[*session.Instance]string)
 
 	h.nav.SetRepoName(filepath.Base(activeRepoPath))
 	h.tabbedWindow.SetAnimateBanner(appConfig.AnimateBanner)
@@ -692,22 +698,32 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-			// Permission prompt detection for opencode
+			// Permission prompt detection for opencode.
 			if md.PermissionPrompt != nil && m.state == stateDefault {
 				pp := md.PermissionPrompt
 				if pp.Pattern != "" && m.permissionCache != nil && m.permissionCache.IsAllowedAlways(pp.Pattern) {
-					// Auto-approve cached pattern
-					i := inst
-					asyncCmds = append(asyncCmds, func() tea.Msg {
-						return permissionAutoApproveMsg{instance: i}
-					})
+					// Auto-approve cached pattern — but only once per prompt appearance.
+					// Without this guard, every 500ms metadata tick fires a new
+					// permissionAutoApproveMsg while the pane still shows the prompt,
+					// sending duplicate key sequences that corrupt opencode's input state.
+					if m.permissionHandled[inst] != pp.Pattern {
+						m.permissionHandled[inst] = pp.Pattern
+						i := inst
+						asyncCmds = append(asyncCmds, func() tea.Msg {
+							return permissionAutoApproveMsg{instance: i}
+						})
+					}
 				} else {
-					// Show modal
+					// Show modal (statePermission blocks re-entry on subsequent ticks).
 					m.permissionOverlay = overlay.NewPermissionOverlay(inst.Title, pp.Description, pp.Pattern)
 					m.permissionOverlay.SetWidth(55)
 					m.pendingPermissionInstance = inst
 					m.state = statePermission
 				}
+			} else if md.PermissionPrompt == nil {
+				// Prompt cleared — remove the in-flight guard so a future permission
+				// prompt for this instance can trigger auto-approve again.
+				delete(m.permissionHandled, inst)
 			}
 
 			// Deliver queued prompt via async Cmd — SendPrompt contains a 100ms

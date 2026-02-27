@@ -25,8 +25,8 @@ func TestSendPermissionResponse_AllowAlways(t *testing.T) {
 	err := session.SendPermissionResponse(PermissionAllowAlways)
 	require.NoError(t, err)
 
-	// Should send: Right, Enter, Enter
-	assert.GreaterOrEqual(t, len(ranCmds), 3)
+	// Should send: Right, Enter (two commands — opencode's allow-always is a single-step select)
+	assert.Len(t, ranCmds, 2)
 }
 
 func TestSendPermissionResponse_AllowOnce(t *testing.T) {

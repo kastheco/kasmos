@@ -9,15 +9,17 @@ import (
 )
 
 // PermissionChoice mirrors tmux.PermissionChoice to avoid import cycle.
+// Ordering matches opencode's left-to-right menu navigation and tmux.PermissionChoice,
+// so app_input.go can cast directly without a mapping switch.
 type PermissionChoice int
 
 const (
-	PermissionAllowAlways PermissionChoice = iota
-	PermissionAllowOnce
-	PermissionReject
+	PermissionAllowOnce   PermissionChoice = iota // 0 — opencode's default cursor position
+	PermissionAllowAlways                         // 1 — one Right arrow from default
+	PermissionReject                              // 2 — two Right arrows from default
 )
 
-var permissionChoiceLabels = []string{"allow always", "allow once", "reject"}
+var permissionChoiceLabels = []string{"allow once", "allow always", "reject"}
 
 // PermissionOverlay shows a three-choice modal for opencode permission prompts.
 type PermissionOverlay struct {
@@ -35,7 +37,7 @@ func NewPermissionOverlay(instanceTitle, description, pattern string) *Permissio
 		instanceTitle: instanceTitle,
 		description:   description,
 		pattern:       pattern,
-		selectedIdx:   0, // default to "allow always"
+		selectedIdx:   0, // default to "allow once" (opencode's default cursor position)
 		width:         50,
 	}
 }
@@ -68,6 +70,12 @@ func (p *PermissionOverlay) Choice() PermissionChoice {
 // IsConfirmed returns true if the user pressed Enter.
 func (p *PermissionOverlay) IsConfirmed() bool {
 	return p.confirmed
+}
+
+// Pattern returns the permission pattern string extracted from the agent pane.
+// Use this on confirm instead of re-parsing CachedContent, which may have changed.
+func (p *PermissionOverlay) Pattern() string {
+	return p.pattern
 }
 
 // Render draws the permission overlay.

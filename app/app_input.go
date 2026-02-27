@@ -602,13 +602,10 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		if shouldClose {
 			if m.permissionOverlay.IsConfirmed() {
 				choice := m.permissionOverlay.Choice()
+				// Read the pattern from the overlay (captured at detection time) rather than
+				// re-parsing CachedContent, which may have changed since the prompt appeared.
+				pattern := m.permissionOverlay.Pattern()
 				inst := m.pendingPermissionInstance
-				pattern := ""
-				if inst != nil && inst.CachedContentSet {
-					if pp := session.ParsePermissionPrompt(inst.CachedContent, inst.Program); pp != nil {
-						pattern = pp.Pattern
-					}
-				}
 
 				// Cache "allow always" decisions
 				if choice == overlay.PermissionAllowAlways && pattern != "" && m.permissionCache != nil {
@@ -620,18 +617,10 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 				m.state = stateDefault
 
 				if inst != nil {
-					// Map overlay choice to tmux choice
-					var tmuxChoice tmux.PermissionChoice
-					switch choice {
-					case overlay.PermissionAllowAlways:
-						tmuxChoice = tmux.PermissionAllowAlways
-					case overlay.PermissionAllowOnce:
-						tmuxChoice = tmux.PermissionAllowOnce
-					case overlay.PermissionReject:
-						tmuxChoice = tmux.PermissionReject
-					}
+					// overlay.PermissionChoice and tmux.PermissionChoice share the same
+					// iota ordering, so a direct cast is safe.
 					capturedInst := inst
-					capturedChoice := tmuxChoice
+					capturedChoice := tmux.PermissionChoice(choice)
 					m.pendingPermissionInstance = nil
 					return m, func() tea.Msg {
 						capturedInst.SendPermissionResponse(capturedChoice)
