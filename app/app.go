@@ -262,6 +262,12 @@ type home struct {
 	// triggered the current planner-exit confirmation dialog.
 	pendingPlannerInstanceTitle string
 
+	// pendingPlannerPlanFile is the plan file associated with the planner instance
+	// that triggered the current planner-exit confirmation dialog. Set by the
+	// PlannerFinished signal handler so cancel/esc handlers can mark plannerPrompted
+	// without needing to look up the (possibly already removed) instance by title.
+	pendingPlannerPlanFile string
+
 	// fsm is the sole writer of plan-state.json. All plan status mutations flow
 	// through fsm.Transition — direct SetStatus calls are not allowed.
 	fsm *planfsm.PlanStateMachine
@@ -665,6 +671,28 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if cmd := m.spawnCoderWithFeedback(sig.PlanFile, feedback); cmd != nil {
 					signalCmds = append(signalCmds, cmd)
 				}
+			case planfsm.PlannerFinished:
+				capturedPlanFile := sig.PlanFile
+				if m.plannerPrompted[capturedPlanFile] || m.state == stateConfirm {
+					break
+				}
+				// Focus the planner instance so the user sees its output behind the overlay.
+				for _, inst := range m.nav.GetInstances() {
+					if inst.PlanFile == sig.PlanFile && inst.AgentType == session.AgentTypePlanner {
+						if cmd := m.focusInstanceForOverlay(inst); cmd != nil {
+							signalCmds = append(signalCmds, cmd)
+						}
+						m.pendingPlannerInstanceTitle = inst.Title
+						break
+					}
+				}
+				m.pendingPlannerPlanFile = capturedPlanFile
+				m.confirmAction(
+					fmt.Sprintf("plan '%s' is ready. start implementation?", planstate.DisplayName(capturedPlanFile)),
+					func() tea.Msg {
+						return plannerCompleteMsg{planFile: capturedPlanFile}
+					},
+				)
 			}
 		}
 		if len(msg.Signals) > 0 {
@@ -1278,13 +1306,13 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case plannerCompleteMsg:
-		// User confirmed: start implementation. Kill the dead planner instance first.
+		// User confirmed: start implementation. Kill the planner instance (may still be alive
+		// when triggered by the PlannerFinished sentinel, unlike the tmux-death path).
 		m.plannerPrompted[msg.planFile] = true
-		if m.pendingPlannerInstanceTitle != "" {
-			m.removeFromAllInstances(m.pendingPlannerInstanceTitle)
-			m.saveAllInstances()
-		}
+		m.killExistingPlanAgent(msg.planFile, session.AgentTypePlanner)
+		_ = m.saveAllInstances()
 		m.pendingPlannerInstanceTitle = ""
+		m.pendingPlannerPlanFile = ""
 		m.updateNavPanelStatus()
 		return m.triggerPlanStage(msg.planFile, "implement")
 	case instanceStartedMsg:
