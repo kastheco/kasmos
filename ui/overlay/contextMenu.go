@@ -246,3 +246,8 @@ func (c *ContextMenu) Render() string {
 func (c *ContextMenu) GetPosition() (int, int) {
 	return c.x, c.y
 }
+
+// Items returns all menu items (including disabled ones), in original order.
+func (c *ContextMenu) Items() []ContextMenuItem {
+	return c.items
+}
