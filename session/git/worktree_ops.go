@@ -65,6 +65,11 @@ func (g *GitWorktree) setupFromExistingBranch() error {
 	// Clean up any existing worktree first
 	_, _ = g.runGitCommand(g.repoPath, "worktree", "remove", "-f", g.worktreePath) // Ignore error if worktree doesn't exist
 
+	// Sync local branch with remote before creating the worktree.
+	// This prevents local/remote divergence when an agent pushed to origin,
+	// the worktree was removed, and a new agent respawns on the same branch.
+	g.syncBranchWithRemote()
+
 	// Create a new worktree from the existing branch
 	if _, err := g.runGitCommand(g.repoPath, "worktree", "add", g.worktreePath, g.branchName); err != nil {
 		return fmt.Errorf("failed to create worktree from branch %s: %w", g.branchName, err)
@@ -81,6 +86,55 @@ func (g *GitWorktree) setupFromExistingBranch() error {
 	}
 
 	return nil
+}
+
+// syncBranchWithRemote fast-forwards the local branch to match origin if the
+// remote is ahead. This runs while the branch is NOT checked out in any
+// worktree (the old worktree was just removed), so we can safely update the
+// ref. If the branches have diverged (both have unique commits), we rebase
+// local on top of remote to keep a linear history.
+func (g *GitWorktree) syncBranchWithRemote() {
+	remote := "origin/" + g.branchName
+
+	// Fetch the latest remote state for this branch.
+	_, _ = g.runGitCommand(g.repoPath, "fetch", "origin", g.branchName)
+
+	// Check if the remote tracking branch exists.
+	if _, err := g.runGitCommand(g.repoPath, "rev-parse", "--verify", remote); err != nil {
+		return // no remote branch — nothing to sync
+	}
+
+	// Check if local is already up-to-date with remote.
+	localSHA, err := g.runGitCommand(g.repoPath, "rev-parse", g.branchName)
+	if err != nil {
+		return
+	}
+	remoteSHA, err := g.runGitCommand(g.repoPath, "rev-parse", remote)
+	if err != nil {
+		return
+	}
+	if strings.TrimSpace(localSHA) == strings.TrimSpace(remoteSHA) {
+		return // already in sync
+	}
+
+	// Try fast-forward first (remote is strictly ahead).
+	if _, err := g.runGitCommand(g.repoPath, "merge-base", "--is-ancestor", g.branchName, remote); err == nil {
+		// Local is ancestor of remote → safe to fast-forward.
+		if _, err := g.runGitCommand(g.repoPath, "branch", "-f", g.branchName, remote); err != nil {
+			log.WarningLog.Printf("syncBranchWithRemote: fast-forward %s to %s failed: %v", g.branchName, remote, err)
+		}
+		return
+	}
+
+	// Branches diverged — rebase local commits on top of remote.
+	// Since the branch isn't checked out anywhere, we use a temporary worktree.
+	log.InfoLog.Printf("syncBranchWithRemote: %s diverged from %s, rebasing", g.branchName, remote)
+	if _, err := g.runGitCommand(g.repoPath, "rebase", "--onto", remote, remote, g.branchName); err != nil {
+		// Rebase failed (conflicts) — abort and leave as-is. The agent will
+		// see the divergence and can handle it manually.
+		_, _ = g.runGitCommand(g.repoPath, "rebase", "--abort")
+		log.WarningLog.Printf("syncBranchWithRemote: rebase of %s onto %s failed (conflicts?), leaving diverged: %v", g.branchName, remote, err)
+	}
 }
 
 // setupNewWorktree creates a new worktree from HEAD
