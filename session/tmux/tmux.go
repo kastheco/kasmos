@@ -206,9 +206,9 @@ func (t *TmuxSession) Start(workDir string) error {
 	if t.initialPrompt != "" {
 		switch {
 		case isOpenCodeProgram(t.program):
-			program = program + " --prompt " + t.promptArg(workDir)
+			program = program + " --prompt " + t.promptArgOpenCode(workDir)
 		case isClaudeProgram(t.program):
-			program = program + " " + t.promptArg(workDir)
+			program = program + " " + t.promptArgClaude(workDir)
 		}
 		// aider/gemini: no CLI prompt support — callers keep QueuedPrompt
 		// set so the send-keys fallback fires from the app tick handler.
@@ -269,11 +269,14 @@ func (t *TmuxSession) Start(workDir string) error {
 		log.InfoLog.Printf("Warning: failed to set history-limit for session %s: %v", t.sanitizedName, err)
 	}
 
-	// Enable mouse scrolling for the session
-	mouseCmd := exec.Command("tmux", "set-option", "-t", t.sanitizedName, "mouse", "on")
-	if err := t.cmdExec.Run(mouseCmd); err != nil {
-		log.InfoLog.Printf("Warning: failed to enable mouse scrolling for session %s: %v", t.sanitizedName, err)
+	// Hide the tmux status bar — the kasmos TUI provides its own chrome.
+	statusCmd := exec.Command("tmux", "set-option", "-t", t.sanitizedName, "status", "off")
+	if err := t.cmdExec.Run(statusCmd); err != nil {
+		log.InfoLog.Printf("Warning: failed to hide status bar for session %s: %v", t.sanitizedName, err)
 	}
+
+	// Keep mouse off so tmux doesn't intercept scroll-wheel events into copy
+	// mode. The TUI applications (opencode, claude) handle their own mouse/scroll.
 
 	// Inject KASMOS_MANAGED=1 so agents can detect they're running under kasmos orchestration.
 	// This enables skills/prompts to use sentinel files instead of editing plan-state.json directly.
