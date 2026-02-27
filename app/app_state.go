@@ -1373,6 +1373,12 @@ func (m *home) spawnPlanAgent(planFile, action, prompt string) (tea.Model, tea.C
 		return m, m.handleError(fmt.Errorf("unknown plan action: %s", action))
 	}
 
+	// Kill any existing instance of the same type for this plan to prevent
+	// duplicates (e.g. user triggers "start review" when a reviewer already exists).
+	if agentType == session.AgentTypeReviewer || agentType == session.AgentTypePlanner {
+		m.killExistingPlanAgent(planFile, agentType)
+	}
+
 	title := planstate.DisplayName(planFile) + "-" + action
 	if action == "solo" {
 		title = "solo agent"
