@@ -794,14 +794,9 @@ func (m *home) handleTmuxBrowserAction(action overlay.BrowserAction) (tea.Model,
 		m.tmuxBrowser = nil
 		m.state = stateDefault
 		name := item.Name
-		return m, func() tea.Msg {
-			attachCmd := exec.Command("tmux", "attach-session", "-t", name)
-			attachCmd.Stdin = os.Stdin
-			attachCmd.Stdout = os.Stdout
-			attachCmd.Stderr = os.Stderr
-			_ = attachCmd.Run()
+		return m, tea.ExecProcess(exec.Command("tmux", "attach-session", "-t", name), func(err error) tea.Msg {
 			return tmuxAttachReturnMsg{}
-		}
+		})
 
 	default:
 		return m, nil

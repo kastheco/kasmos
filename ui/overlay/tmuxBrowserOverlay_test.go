@@ -52,11 +52,12 @@ func TestTmuxBrowserOverlay_SearchFilter(t *testing.T) {
 	b := NewTmuxBrowserOverlay(items)
 	assert.Len(t, b.filtered, 2)
 
-	// Type "au" to filter
-	b.HandleKeyPress(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
-	b.HandleKeyPress(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	// Type "db" to filter — note: "a" and "k" are action keys when search is empty,
+	// so we use "d" then "b" (non-action-key characters) to enter search mode safely.
+	b.HandleKeyPress(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	b.HandleKeyPress(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
 	assert.Len(t, b.filtered, 1)
-	assert.Equal(t, 0, b.filtered[0]) // index of "auth"
+	assert.Equal(t, 1, b.filtered[0]) // index of "db"
 }
 
 func TestTmuxBrowserOverlay_Actions(t *testing.T) {
