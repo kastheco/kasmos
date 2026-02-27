@@ -41,8 +41,8 @@ func TestMenu_SidebarEmptyHidesNewPlanAndUsesUpdatedLabels(t *testing.T) {
 	if !strings.Contains(out, "space toggle") {
 		t.Fatalf("menu should label space as toggle; got: %q", out)
 	}
-	if !strings.Contains(out, "v preview") {
-		t.Fatalf("menu should label v as preview; got: %q", out)
+	if !strings.Contains(out, "p preview") {
+		t.Fatalf("menu should label p as preview; got: %q", out)
 	}
 }
 

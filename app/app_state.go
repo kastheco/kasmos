@@ -1370,8 +1370,12 @@ func (m *home) spawnPlanAgent(planFile, action, prompt string) (tea.Model, tea.C
 		return m, m.handleError(fmt.Errorf("unknown plan action: %s", action))
 	}
 
+	title := planstate.DisplayName(planFile) + "-" + action
+	if action == "solo" {
+		title = "solo agent"
+	}
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:     planstate.DisplayName(planFile) + "-" + action,
+		Title:     title,
 		Path:      m.activeRepoPath,
 		Program:   m.programForAgent(agentType),
 		PlanFile:  planFile,

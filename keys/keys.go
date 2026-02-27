@@ -97,7 +97,6 @@ var GlobalKeyStringsMap = map[string]KeyName{
 	"t":      KeyTmuxBrowser,
 	"s":      KeySpawnAgent,
 	"T":      KeyFocusList,
-	"v":      KeyViewPlan,
 	"p":      KeyViewPlan,
 	"ctrl+s": KeyToggleSidebar,
 	"g":      KeyInfoTab,
@@ -213,8 +212,8 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 		key.WithHelp("T", "right sidebar"),
 	),
 	KeyViewPlan: key.NewBinding(
-		key.WithKeys("v", "p"),
-		key.WithHelp("v", "preview"),
+		key.WithKeys("p"),
+		key.WithHelp("p", "preview"),
 	),
 	KeyToggleSidebar: key.NewBinding(
 		key.WithKeys("ctrl+s"),
