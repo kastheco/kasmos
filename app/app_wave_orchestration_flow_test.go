@@ -774,6 +774,7 @@ func TestPlannerExit_CancelKillsInstanceAndMarksPrompted(t *testing.T) {
 		waveOrchestrators:           make(map[string]*WaveOrchestrator),
 		plannerPrompted:             make(map[string]bool),
 		pendingPlannerInstanceTitle: "planner-cancel-inst",
+		pendingPlannerPlanFile:      planFile,
 		confirmationOverlay:         overlay.NewConfirmationOverlay("Plan 'cancel-kill' is ready. Start implementation?"),
 		allInstances:                []*session.Instance{inst},
 	}
@@ -790,6 +791,8 @@ func TestPlannerExit_CancelKillsInstanceAndMarksPrompted(t *testing.T) {
 		"planner instance must be removed from allInstances after cancel")
 	assert.Empty(t, updated.pendingPlannerInstanceTitle,
 		"pendingPlannerInstanceTitle must be cleared after cancel")
+	assert.Empty(t, updated.pendingPlannerPlanFile,
+		"pendingPlannerPlanFile must be cleared after cancel")
 }
 
 // --- Focus-before-overlay tests ---

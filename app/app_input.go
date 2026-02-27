@@ -600,18 +600,14 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 				}
 				m.pendingWaveConfirmPlanFile = ""
 			}
-			// Planner-exit "no": kill planner instance, mark prompted, leave plan ready.
-			if m.pendingPlannerInstanceTitle != "" {
-				for _, inst := range m.nav.GetInstances() {
-					if inst.Title == m.pendingPlannerInstanceTitle {
-						m.plannerPrompted[inst.PlanFile] = true
-						break
-					}
-				}
-				m.removeFromAllInstances(m.pendingPlannerInstanceTitle)
-				m.saveAllInstances()
+			// Planner signal "no": kill planner instance, mark prompted, leave plan ready.
+			if m.pendingPlannerPlanFile != "" {
+				m.plannerPrompted[m.pendingPlannerPlanFile] = true
+				m.killExistingPlanAgent(m.pendingPlannerPlanFile, session.AgentTypePlanner)
+				_ = m.saveAllInstances()
 				m.updateNavPanelStatus()
 				m.pendingPlannerInstanceTitle = ""
+				m.pendingPlannerPlanFile = ""
 			}
 			m.state = stateDefault
 			m.confirmationOverlay = nil
@@ -628,8 +624,18 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 				m.pendingWaveConfirmPlanFile = ""
 				m.waveConfirmDismissedAt = time.Now()
 			}
-			// Planner-exit esc: do NOT mark plannerPrompted — allows re-prompt next tick.
-			m.pendingPlannerInstanceTitle = ""
+			// Planner signal esc: same as cancel — signal is consumed, can't re-trigger.
+			if m.pendingPlannerPlanFile != "" {
+				m.plannerPrompted[m.pendingPlannerPlanFile] = true
+				m.killExistingPlanAgent(m.pendingPlannerPlanFile, session.AgentTypePlanner)
+				_ = m.saveAllInstances()
+				m.updateNavPanelStatus()
+				m.pendingPlannerInstanceTitle = ""
+				m.pendingPlannerPlanFile = ""
+			} else {
+				// Legacy path: tmux-death triggered dialog had only pendingPlannerInstanceTitle.
+				m.pendingPlannerInstanceTitle = ""
+			}
 			m.state = stateDefault
 			m.confirmationOverlay = nil
 			m.pendingConfirmAction = nil
