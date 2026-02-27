@@ -39,15 +39,7 @@ lint:
 run *ARGS:
     go run . {{ARGS}}
 
-# Dry-run release (no publish)
-release-dry v:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    echo "==> Dry run for kasmos v{{v}}"
-    goreleaser release --snapshot --clean
-    echo "==> Artifacts in dist/"
-
-# Full release: just release 0.2.1
+# Tag and push a release (CI runs goreleaser): just release 1.0.0
 release v:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -67,7 +59,7 @@ release v:
     echo "    branch: ${BRANCH}"
 
     # 2. Update version in source
-    sed -i "s/var version = \".*\"/var version = \"${VERSION}\"/" main.go
+    sd 'version\s*=\s*"[^"]*"' "version     = \"${VERSION}\"" main.go
     if [[ -n "$(git status --porcelain)" ]]; then
         git add main.go
         git commit -m "release: v${VERSION}"
@@ -78,14 +70,11 @@ release v:
     git tag -a "${TAG}" -m "kasmos ${TAG}"
     echo "    tagged ${TAG}"
 
-    # 4. Push commit + tag
+    # 4. Push commit + tag — CI takes it from here
     git push origin "${BRANCH}"
     git push origin "${TAG}"
-    echo "    pushed to origin"
-
-    # 5. Goreleaser builds, creates GH release, pushes homebrew formula
-    GITHUB_TOKEN="${GH_PAT}" goreleaser release --clean
-    echo "==> Done: https://github.com/kastheco/kasmos/releases/tag/${TAG}"
+    echo "==> Pushed ${TAG}. CI will build and publish the release."
+    echo "    https://github.com/kastheco/kasmos/releases/tag/${TAG}"
 
 # Clean build artifacts
 clean:

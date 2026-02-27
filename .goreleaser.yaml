@@ -36,20 +36,9 @@ brews:
     test: |
       system "#{bin}/kas", "version"
 
-scoops:
-  - repository:
-      owner: kastheco
-      name: scoop-bucket
-      token: "{{ .Env.GH_PAT }}"
-    name: kasmos
-    homepage: "https://github.com/kastheco/kasmos"
-    description: "kas - A TUI-based agent-driven IDE for managing multiple AI agents"
-    license: AGPL-3.0
-
 release:
   prerelease: auto
-  draft: true
-  replace_existing_draft: true
+  draft: false
 
 checksum:
   name_template: 'checksums.txt'
