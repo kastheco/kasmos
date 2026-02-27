@@ -1,0 +1,128 @@
+package cmd
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/kastheco/kasmos/config/planstate"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func setupTestPlanState(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	ps := &planstate.PlanState{
+		Dir:          dir,
+		Plans:        make(map[string]planstate.PlanEntry),
+		TopicEntries: make(map[string]planstate.TopicEntry),
+	}
+	ps.Plans["2026-02-20-test-plan.md"] = planstate.PlanEntry{
+		Status:      "ready",
+		Description: "test plan",
+		Branch:      "plan/test-plan",
+	}
+	ps.Plans["2026-02-20-implementing-plan.md"] = planstate.PlanEntry{
+		Status:      "implementing",
+		Description: "implementing plan",
+		Branch:      "plan/implementing-plan",
+	}
+	require.NoError(t, ps.Save())
+	return dir
+}
+
+func TestPlanList(t *testing.T) {
+	dir := setupTestPlanState(t)
+
+	tests := []struct {
+		name           string
+		statusFilter   string
+		wantContains   []string
+		wantNotContain []string
+	}{
+		{
+			name:         "all plans",
+			wantContains: []string{"2026-02-20-test-plan.md", "2026-02-20-implementing-plan.md"},
+		},
+		{
+			name:           "filter by ready",
+			statusFilter:   "ready",
+			wantContains:   []string{"2026-02-20-test-plan.md"},
+			wantNotContain: []string{"2026-02-20-implementing-plan.md"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output := executePlanList(dir, tt.statusFilter)
+			for _, want := range tt.wantContains {
+				assert.Contains(t, output, want)
+			}
+			for _, notWant := range tt.wantNotContain {
+				assert.NotContains(t, output, notWant)
+			}
+		})
+	}
+}
+
+func TestPlanSetStatus(t *testing.T) {
+	dir := setupTestPlanState(t)
+
+	// Requires --force
+	err := executePlanSetStatus(dir, "2026-02-20-test-plan.md", "done", false)
+	assert.Error(t, err, "should require --force flag")
+
+	// Valid override
+	err = executePlanSetStatus(dir, "2026-02-20-test-plan.md", "done", true)
+	require.NoError(t, err)
+
+	ps, err := planstate.Load(dir)
+	require.NoError(t, err)
+	entry, ok := ps.Entry("2026-02-20-test-plan.md")
+	require.True(t, ok)
+	assert.Equal(t, planstate.Status("done"), entry.Status)
+
+	// Invalid status
+	err = executePlanSetStatus(dir, "2026-02-20-test-plan.md", "bogus", true)
+	assert.Error(t, err, "should reject invalid status")
+}
+
+func TestPlanTransition(t *testing.T) {
+	dir := setupTestPlanState(t)
+
+	// Valid transition: ready → planning via plan_start
+	newStatus, err := executePlanTransition(dir, "2026-02-20-test-plan.md", "plan_start")
+	require.NoError(t, err)
+	assert.Equal(t, "planning", newStatus)
+
+	// Invalid transition (plan is now in "planning" state)
+	_, err = executePlanTransition(dir, "2026-02-20-test-plan.md", "review_approved")
+	assert.Error(t, err)
+}
+
+func TestPlanImplement(t *testing.T) {
+	dir := setupTestPlanState(t)
+	signalsDir := filepath.Join(dir, ".signals")
+	require.NoError(t, os.MkdirAll(signalsDir, 0o755))
+
+	err := executePlanImplement(dir, "2026-02-20-test-plan.md", 1)
+	require.NoError(t, err)
+
+	// Verify plan transitioned to implementing
+	ps, err := planstate.Load(dir)
+	require.NoError(t, err)
+	entry, _ := ps.Entry("2026-02-20-test-plan.md")
+	assert.Equal(t, planstate.Status("implementing"), entry.Status)
+
+	// Verify signal file created
+	entries, err := os.ReadDir(signalsDir)
+	require.NoError(t, err)
+	var found bool
+	for _, e := range entries {
+		if e.Name() == "implement-wave-1-2026-02-20-test-plan.md" {
+			found = true
+		}
+	}
+	assert.True(t, found, "signal file should exist")
+}

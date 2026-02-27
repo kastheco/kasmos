@@ -206,6 +206,7 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(resetCmd)
 	rootCmd.AddCommand(kasSetupCmd)
+	rootCmd.AddCommand(cmd2.NewPlanCmd())
 }
 
 func main() {

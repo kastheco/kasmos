@@ -283,6 +283,25 @@ func (ps *PlanState) Cancelled() []PlanInfo {
 	return result
 }
 
+// List returns all plans (including done and cancelled), sorted by filename.
+func (ps *PlanState) List() []PlanInfo {
+	result := make([]PlanInfo, 0, len(ps.Plans))
+	for filename, entry := range ps.Plans {
+		result = append(result, PlanInfo{
+			Filename:    filename,
+			Status:      entry.Status,
+			Description: entry.Description,
+			Branch:      entry.Branch,
+			Topic:       entry.Topic,
+			CreatedAt:   entry.CreatedAt,
+		})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Filename < result[j].Filename
+	})
+	return result
+}
+
 // IsDone returns true only if the given plan has status StatusDone.
 func (ps *PlanState) IsDone(filename string) bool {
 	entry, ok := ps.Plans[filename]
@@ -290,6 +309,30 @@ func (ps *PlanState) IsDone(filename string) bool {
 		return false
 	}
 	return entry.Status == StatusDone
+}
+
+// ForceSetStatus overrides a plan's status regardless of FSM rules.
+// Validates the status is a known value. Use only for manual overrides (e.g. kq plan set-status --force).
+func (ps *PlanState) ForceSetStatus(filename string, status Status) error {
+	if !isValidStatus(status) {
+		return fmt.Errorf("invalid status %q: must be one of ready, planning, implementing, reviewing, done, cancelled", status)
+	}
+	if _, ok := ps.Plans[filename]; !ok {
+		return fmt.Errorf("plan not found: %s", filename)
+	}
+	entry := ps.Plans[filename]
+	entry.Status = status
+	ps.Plans[filename] = entry
+	return ps.Save()
+}
+
+// isValidStatus returns true if s is a recognised lifecycle status.
+func isValidStatus(s Status) bool {
+	switch s {
+	case StatusReady, StatusPlanning, StatusImplementing, StatusReviewing, StatusDone, StatusCancelled:
+		return true
+	}
+	return false
 }
 
 // setStatus updates a plan's status and persists to disk.
