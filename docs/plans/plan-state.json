@@ -297,7 +297,7 @@
     },
     "2026-02-24-add-episodic-memory.md": {
       "status": "cancelled",
-      "description": "add episodic memory as a default skill when running init scaffolding command — shelved: none of the available memory plugins (episodic-memory, psychmem, hmem) are mature enough for dual-harness use yet",
+      "description": "add episodic memory as a default skill when running init scaffolding command \u2014 shelved: none of the available memory plugins (episodic-memory, psychmem, hmem) are mature enough for dual-harness use yet",
       "branch": "plan/add-episodic-memory",
       "created_at": "2026-02-24T03:50:07.986559175Z"
     },
@@ -330,7 +330,7 @@
     },
     "2026-02-24-review-approval-gate.md": {
       "status": "done",
-      "description": "manual approval gate after automated review — two-popup flow for merge/PR before plan can be marked done",
+      "description": "manual approval gate after automated review \u2014 two-popup flow for merge/PR before plan can be marked done",
       "branch": "plan/review-approval-gate",
       "topic": "automation",
       "created_at": "2026-02-24T23:45:00Z"
@@ -344,14 +344,14 @@
     },
     "2026-02-24-spring.md": {
       "status": "done",
-      "description": "integrate harmonica to add a spring load-in animation for the kasmos logo on launch — scales from small to big — and vertically center both the logo and the call to action line below it",
+      "description": "integrate harmonica to add a spring load-in animation for the kasmos logo on launch \u2014 scales from small to big \u2014 and vertically center both the logo and the call to action line below it",
       "branch": "plan/spring",
       "topic": "ui",
       "created_at": "2026-02-24T23:30:00Z"
     },
     "2026-02-24-wizard-tui-redesign.md": {
       "status": "done",
-      "description": "replace huh-form init wizard with full-screen bubbletea TUI using Rosé Pine Moon aesthetic",
+      "description": "replace huh-form init wizard with full-screen bubbletea TUI using Ros\u00e9 Pine Moon aesthetic",
       "branch": "plan/wizard-tui-redesign",
       "topic": "ui",
       "created_at": "0001-01-01T00:00:00Z",
@@ -442,7 +442,7 @@
     },
     "2026-02-25-solo-agent-mode.md": {
       "status": "done",
-      "description": "start solo agent context menu action — single coder in worktree with minimal prompt, no wave/review lifecycle",
+      "description": "start solo agent context menu action \u2014 single coder in worktree with minimal prompt, no wave/review lifecycle",
       "branch": "plan/solo-agent-mode",
       "topic": "automation",
       "created_at": "2026-02-25T22:00:00Z"
@@ -470,7 +470,7 @@
     },
     "2026-02-26-detect-allow-perms.md": {
       "status": "done",
-      "description": "detect when opencode is asking for perms to Allow once, Allow always, Reject. show a popup dialog allowing the user to pick then propagate their change to the session. if they choose approve always (which should be default selection), you'll send right arrow -\u003e enter -\u003e enter. approve once is a single enter. reject is right arrow -\u003e right arrow -\u003e enter",
+      "description": "detect when opencode is asking for perms to Allow once, Allow always, Reject. show a popup dialog allowing the user to pick then propagate their change to the session. if they choose approve always (which should be default selection), you'll send right arrow -> enter -> enter. approve once is a single enter. reject is right arrow -> right arrow -> enter",
       "branch": "plan/detect-allow-perms",
       "topic": "automation",
       "created_at": "2026-02-26T20:16:31.684660209Z"
@@ -484,7 +484,7 @@
     },
     "2026-02-26-kas-verify-loop.md": {
       "status": "done",
-      "description": "update reviewer instructions to loop reviewer \u003c-\u003e fixer until all tiers pass and ALL issues have been addressed, no matter the severity",
+      "description": "update reviewer instructions to loop reviewer <-> fixer until all tiers pass and ALL issues have been addressed, no matter the severity",
       "branch": "plan/kas-verify-loop",
       "topic": "automation",
       "created_at": "2026-02-26T20:15:09.857895365Z"
@@ -497,7 +497,7 @@
       "created_at": "2026-02-26T05:07:21.925625953Z"
     },
     "2026-02-26-no-plan-to-implement-prompt.md": {
-      "status": "ready",
+      "status": "cancelled",
       "description": "you have to manually kill the planner agent before kasmos shows you the dialog to start implementation",
       "branch": "plan/no-plan-to-implement-prompt",
       "topic": "automation",
@@ -557,7 +557,7 @@
       "created_at": "2026-02-26T16:42:11.713212759Z"
     },
     "2026-02-27-always-focus-sidebar.md": {
-      "status": "ready",
+      "status": "done",
       "description": "the purple focus highlight and keyboard should always cling to the sidebar outside of interactive or attach mode. hitting tab required me to navigate left to get back to sidebar when it should just kept my selection and shown the agent tab instead",
       "branch": "plan/always-focus-sidebar",
       "topic": "ui",
@@ -569,6 +569,34 @@
       "branch": "plan/audit-log",
       "topic": "automation",
       "created_at": "2026-02-27T07:36:50.243680437Z"
+    },
+    "2026-02-27-build-custom-skills.md": {
+      "status": "ready",
+      "description": "build custom skills\n\ngenerate kasmos-specific skills that integrate the existing workflow and superpowers into a self contained, specific skillset",
+      "branch": "plan/build-custom-skills",
+      "topic": "workflow",
+      "created_at": "2026-02-27T18:13:27.704398153Z"
+    },
+    "2026-02-27-canceled-plans-delay-removal.md": {
+      "status": "ready",
+      "description": "canceled plans delay removal\n\nafter cancelling a plan using the sidebar context menu, it remains in the list for 1-2 sec after closing the menu instead of hiding immediately even if still loading the full side effects in the background",
+      "branch": "plan/canceled-plans-delay-removal",
+      "topic": "ui",
+      "created_at": "2026-02-27T18:36:48.99087766Z"
+    },
+    "2026-02-27-cleanup-tracked-state.md": {
+      "status": "ready",
+      "description": "cleanup tracked state\n\nreevaluate what files should be tracked in git. anything covered by scaffolding should probably be excluded and I'm sure there's others that we shouldn't be tracking but are (.codex, .opencode, .claude, etc). evaluate all tracked files and if they reflect best practices for the libraries/frameworks in use",
+      "branch": "plan/cleanup-tracked-state",
+      "topic": "verify",
+      "created_at": "2026-02-27T17:57:15.490968411Z"
+    },
+    "2026-02-27-create-kasmos-custodial-agent.md": {
+      "status": "done",
+      "description": "create custodial agent designed to efficiently and effectively handle touchup tasks and quick fixes geared around issues or ux gaps in the kasmos workflow. things like resetting a plan's status/overriding it, finishing the development branch by merging to main or creating a pr, etc.",
+      "branch": "plan/create-kasmos-custodial-agent",
+      "topic": "workflow",
+      "created_at": "2026-02-27T17:47:32.295296289Z"
     },
     "2026-02-27-ctrl-ud-pagination.md": {
       "status": "done",
@@ -591,12 +619,26 @@
       "created_at": "2026-02-27T16:16:33.640848697Z",
       "implemented": "2026-02-27"
     },
+    "2026-02-27-improve-planner-to-implementation.md": {
+      "status": "ready",
+      "description": "improve planner to implementation\n\nthe automated workflow transition doesn't work until you manually kill the agent. retest with new skills and evaluate if it needs ot be fixed. the same goes for the final stages of the lifecycle, the final review and merge/pr finalization is clunky and difficult to manuver",
+      "branch": "plan/improve-planner-to-implementation",
+      "topic": "workflow",
+      "created_at": "2026-02-27T18:35:51.890862288Z"
+    },
     "2026-02-27-release-1-0-0-failures.md": {
       "status": "done",
       "description": "check github to see the failure reasons and fix then redeploy v1.0.0",
       "branch": "plan/release-1-0-0-failures",
       "topic": "verify",
       "created_at": "2026-02-27T06:41:42.078871243Z"
+    },
+    "2026-02-27-rename-plan-menu.md": {
+      "status": "implementing",
+      "description": "rename plan menu\n\nadd an option to rename plans in their context menu",
+      "branch": "plan/rename-plan-menu",
+      "topic": "ui",
+      "created_at": "2026-02-27T18:37:12.286068441Z"
     },
     "2026-02-27-simplify-new-plan.md": {
       "status": "done",
@@ -611,6 +653,17 @@
       "branch": "plan/tmux-session-summary",
       "topic": "ui",
       "created_at": "2026-02-27T07:41:00.300934469Z"
+    },
+    "2026-02-27-kasmos-native-skills-design.md": {
+      "status": "done",
+      "description": "design doc for kasmos-native skills system",
+      "created_at": "2026-02-27T00:00:00Z"
+    },
+    "2026-02-27-kasmos-native-skills.md": {
+      "status": "ready",
+      "description": "replace superpowers skills with 5 kasmos-native skills",
+      "topic": "workflow",
+      "created_at": "2026-02-27T00:00:00Z"
     }
   }
 }
