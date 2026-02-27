@@ -1,0 +1,51 @@
+package overlay
+
+import (
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/stretchr/testify/assert"
+)
+
+func TestTextInputOverlay_DefaultEnterSubmits(t *testing.T) {
+	ti := NewTextInputOverlay("title", "")
+	closed := ti.HandleKeyPress(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.True(t, closed)
+	assert.True(t, ti.IsSubmitted())
+}
+
+func TestTextInputOverlay_MultilineEnterInsertsNewline(t *testing.T) {
+	ti := NewTextInputOverlay("title", "")
+	ti.SetMultiline(true)
+	// Enter when textarea is focused should NOT submit in multiline mode
+	closed := ti.HandleKeyPress(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.False(t, closed)
+	assert.False(t, ti.IsSubmitted())
+}
+
+func TestTextInputOverlay_MultilineEnterOnButtonSubmits(t *testing.T) {
+	ti := NewTextInputOverlay("title", "")
+	ti.SetMultiline(true)
+	// Tab to button
+	ti.HandleKeyPress(tea.KeyMsg{Type: tea.KeyTab})
+	assert.Equal(t, 1, ti.FocusIndex)
+	// Enter on button submits
+	closed := ti.HandleKeyPress(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.True(t, closed)
+	assert.True(t, ti.IsSubmitted())
+}
+
+func TestTextInputOverlay_MultilineEscCancels(t *testing.T) {
+	ti := NewTextInputOverlay("title", "")
+	ti.SetMultiline(true)
+	closed := ti.HandleKeyPress(tea.KeyMsg{Type: tea.KeyEsc})
+	assert.True(t, closed)
+	assert.True(t, ti.Canceled)
+}
+
+func TestTextInputOverlay_SetPlaceholder(t *testing.T) {
+	ti := NewTextInputOverlay("title", "")
+	ti.SetSize(80, 5) // wide enough so placeholder fits on one line
+	ti.SetPlaceholder("describe what you want to work on...")
+	assert.Contains(t, ti.Render(), "describe what you want to work on")
+}

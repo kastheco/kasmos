@@ -15,6 +15,7 @@ type TextInputOverlay struct {
 	Canceled      bool
 	OnSubmit      func()
 	width, height int
+	multiline     bool
 }
 
 // NewTextInputOverlay creates a new text input overlay with the given title and initial value.
@@ -40,6 +41,17 @@ func NewTextInputOverlay(title string, initialValue string) *TextInputOverlay {
 	}
 }
 
+// SetMultiline enables multiline mode where Enter inserts newlines
+// and the user must Tab to the submit button then press Enter to submit.
+func (t *TextInputOverlay) SetMultiline(enabled bool) {
+	t.multiline = enabled
+}
+
+// SetPlaceholder sets the textarea placeholder text.
+func (t *TextInputOverlay) SetPlaceholder(text string) {
+	t.textarea.Placeholder = text
+}
+
 func (t *TextInputOverlay) SetSize(width, height int) {
 	t.textarea.SetHeight(height)
 	t.width = width
@@ -62,7 +74,12 @@ func (t *TextInputOverlay) HandleKeyPress(msg tea.KeyMsg) bool {
 		t.Canceled = true
 		return true
 	case tea.KeyEnter:
-		// Enter always submits
+		if t.multiline && t.FocusIndex == 0 {
+			// In multiline mode, Enter inserts a newline when textarea is focused
+			t.textarea, _ = t.textarea.Update(msg)
+			return false
+		}
+		// Submit (non-multiline, or button is focused in multiline)
 		t.Submitted = true
 		if t.OnSubmit != nil {
 			t.OnSubmit()
@@ -126,6 +143,9 @@ func (t *TextInputOverlay) Render() string {
 		enterButton = buttonStyle.Render(enterButton)
 	}
 	content += enterButton
+	if t.multiline {
+		content += "  " + lipgloss.NewStyle().Foreground(colorMuted).Render("tab → enter submit · esc cancel")
+	}
 
 	return style.Render(content)
 }
