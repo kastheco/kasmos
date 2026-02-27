@@ -101,6 +101,43 @@ func TestPlanTransition(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestPlanCLI_EndToEnd(t *testing.T) {
+	dir := setupTestPlanState(t)
+	signalsDir := filepath.Join(dir, ".signals")
+	require.NoError(t, os.MkdirAll(signalsDir, 0o755))
+
+	// List all
+	output := executePlanList(dir, "")
+	assert.Contains(t, output, "ready")
+	assert.Contains(t, output, "implementing")
+
+	// Transition ready → planning
+	status, err := executePlanTransition(dir, "2026-02-20-test-plan.md", "plan_start")
+	require.NoError(t, err)
+	assert.Equal(t, "planning", status)
+
+	// Force set back to ready
+	err = executePlanSetStatus(dir, "2026-02-20-test-plan.md", "ready", true)
+	require.NoError(t, err)
+
+	// Implement with wave signal
+	err = executePlanImplement(dir, "2026-02-20-test-plan.md", 2)
+	require.NoError(t, err)
+
+	// Verify signal file
+	entries, _ := os.ReadDir(signalsDir)
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	assert.Contains(t, names, "implement-wave-2-2026-02-20-test-plan.md")
+
+	// Verify final status
+	ps, _ := planstate.Load(dir)
+	entry, _ := ps.Entry("2026-02-20-test-plan.md")
+	assert.Equal(t, planstate.Status("implementing"), entry.Status)
+}
+
 func TestPlanImplement(t *testing.T) {
 	dir := setupTestPlanState(t)
 	signalsDir := filepath.Join(dir, ".signals")
