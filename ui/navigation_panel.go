@@ -42,6 +42,8 @@ const (
 	navRowSoloHeader
 	navRowTopicHeader
 	navRowImportAction
+	navRowDeadToggle
+	navRowDeadPlan
 	navRowHistoryToggle
 	navRowHistoryPlan
 	navRowCancelled
@@ -88,15 +90,18 @@ type NavigationPanel struct {
 	selectedIdx  int
 	scrollOffset int
 
-	plans         []PlanDisplay
-	topics        []TopicDisplay
-	instances     []*session.Instance
-	historyPlans  []PlanDisplay
-	cancelled     []PlanDisplay
-	planStatuses  map[string]TopicStatus
-	collapsed     map[string]bool
-	userOverrides map[string]bool
+	plans          []PlanDisplay
+	topics         []TopicDisplay
+	instances      []*session.Instance
+	deadPlans      []PlanDisplay
+	historyPlans   []PlanDisplay
+	cancelled      []PlanDisplay
+	planStatuses   map[string]TopicStatus
+	collapsed      map[string]bool
+	userOverrides  map[string]bool
+	inspectedPlans map[string]bool
 
+	deadExpanded    bool
 	historyExpanded bool
 	searchActive    bool
 	searchQuery     string
@@ -116,24 +121,26 @@ type TopicDisplay struct {
 
 func NewNavigationPanel(sp *spinner.Model) *NavigationPanel {
 	return &NavigationPanel{
-		spinner:       sp,
-		planStatuses:  make(map[string]TopicStatus),
-		collapsed:     make(map[string]bool),
-		userOverrides: make(map[string]bool),
-		focused:       true,
+		spinner:        sp,
+		planStatuses:   make(map[string]TopicStatus),
+		collapsed:      make(map[string]bool),
+		userOverrides:  make(map[string]bool),
+		inspectedPlans: make(map[string]bool),
+		focused:        true,
 	}
 }
 
 func (n *NavigationPanel) SetData(plans []PlanDisplay, instances []*session.Instance, history []PlanDisplay, cancelled []PlanDisplay, planStatuses map[string]TopicStatus) {
 	n.plans = plans
 	n.instances = instances
-	n.historyPlans = history
 	n.cancelled = cancelled
 	if planStatuses == nil {
 		n.planStatuses = make(map[string]TopicStatus)
 	} else {
 		n.planStatuses = planStatuses
 	}
+	// Split history into dead (has instances or manually inspected) and history.
+	n.splitDeadFromHistory(history)
 	n.rebuildRows()
 }
 
@@ -143,7 +150,6 @@ func (n *NavigationPanel) SetPlans(plans []PlanDisplay) {
 }
 
 func (n *NavigationPanel) SetTopicsAndPlans(topics []TopicDisplay, ungrouped []PlanDisplay, history []PlanDisplay, cancelled ...[]PlanDisplay) {
-	n.historyPlans = history
 	n.topics = topics
 	if len(cancelled) > 0 {
 		n.cancelled = cancelled[0]
@@ -154,6 +160,8 @@ func (n *NavigationPanel) SetTopicsAndPlans(topics []TopicDisplay, ungrouped []P
 		plans = append(plans, t.Plans...)
 	}
 	n.plans = plans
+	// Split history into dead (has instances or manually inspected) and history.
+	n.splitDeadFromHistory(history)
 	n.rebuildRows()
 }
 
@@ -161,6 +169,45 @@ func (n *NavigationPanel) SetItems(_ []string, _ map[string]int, _ int, _ map[st
 	if planStatuses != nil {
 		n.planStatuses = planStatuses
 	}
+	n.rebuildRows()
+}
+
+// splitDeadFromHistory partitions finished plans into dead (has instances or
+// manually inspected) and history (everything else).
+func (n *NavigationPanel) splitDeadFromHistory(finished []PlanDisplay) {
+	instancesByPlan := make(map[string]bool, len(n.instances))
+	for _, inst := range n.instances {
+		if inst.PlanFile != "" {
+			instancesByPlan[inst.PlanFile] = true
+		}
+	}
+	n.deadPlans = nil
+	n.historyPlans = nil
+	for _, p := range finished {
+		if instancesByPlan[p.Filename] || n.inspectedPlans[p.Filename] {
+			n.deadPlans = append(n.deadPlans, p)
+		} else {
+			n.historyPlans = append(n.historyPlans, p)
+		}
+	}
+}
+
+// resplitDead re-partitions dead and history plans based on current instances.
+func (n *NavigationPanel) resplitDead() {
+	all := make([]PlanDisplay, 0, len(n.deadPlans)+len(n.historyPlans))
+	all = append(all, n.deadPlans...)
+	all = append(all, n.historyPlans...)
+	n.splitDeadFromHistory(all)
+}
+
+// InspectPlan moves a history plan into the dead section for manual inspection.
+func (n *NavigationPanel) InspectPlan(planFile string) {
+	if n.inspectedPlans == nil {
+		n.inspectedPlans = make(map[string]bool)
+	}
+	n.inspectedPlans[planFile] = true
+	n.resplitDead()
+	n.deadExpanded = true
 	n.rebuildRows()
 }
 
@@ -206,7 +253,7 @@ func (n *NavigationPanel) rebuildRows() {
 		return strings.ToLower(planstate.DisplayName(pi.Filename)) < strings.ToLower(planstate.DisplayName(pj.Filename))
 	})
 
-	rows := make([]navRow, 0, len(plans)+len(n.instances)+len(n.historyPlans)+len(n.cancelled)+4)
+	rows := make([]navRow, 0, len(plans)+len(n.instances)+len(n.deadPlans)+len(n.historyPlans)+len(n.cancelled)+6)
 
 	// Helper to append a plan header + its child instances.
 	// indent is the indentation level in spaces for the plan row.
@@ -234,6 +281,17 @@ func (n *NavigationPanel) rebuildRows() {
 					Instance: inst,
 					Indent:   indent,
 				})
+			}
+		}
+	}
+
+	// Dead section: done plans with instances or manually inspected.
+	// Shown above active plans so they're accessible for cleanup.
+	if len(n.deadPlans) > 0 {
+		rows = append(rows, navRow{Kind: navRowDeadToggle, ID: "__dead_toggle__", Label: "dead", Collapsed: !n.deadExpanded})
+		if n.deadExpanded {
+			for _, p := range n.deadPlans {
+				appendPlan(p, 2)
 			}
 		}
 	}
@@ -450,6 +508,10 @@ func (n *NavigationPanel) ToggleSelectedExpand() bool {
 		n.collapsed[row.ID] = !row.Collapsed
 		n.rebuildRows()
 		return true
+	case navRowDeadToggle:
+		n.deadExpanded = !n.deadExpanded
+		n.rebuildRows()
+		return true
 	case navRowHistoryToggle:
 		n.historyExpanded = !n.historyExpanded
 		n.rebuildRows()
@@ -537,6 +599,12 @@ func (n *NavigationPanel) Right() {
 		} else {
 			n.Down()
 		}
+	case navRowDeadToggle:
+		if row.Collapsed {
+			n.ToggleSelectedExpand()
+		} else {
+			n.Down()
+		}
 	case navRowHistoryToggle:
 		if row.Collapsed {
 			n.ToggleSelectedExpand()
@@ -564,6 +632,14 @@ func (n *NavigationPanel) IsSelectedPlanHeader() bool {
 	}
 	k := n.rows[n.selectedIdx].Kind
 	return k == navRowPlanHeader || k == navRowHistoryPlan || k == navRowCancelled
+}
+
+// IsSelectedHistoryPlan returns true if the selected row is a history plan entry.
+func (n *NavigationPanel) IsSelectedHistoryPlan() bool {
+	if n.selectedIdx < 0 || n.selectedIdx >= len(n.rows) {
+		return false
+	}
+	return n.rows[n.selectedIdx].Kind == navRowHistoryPlan
 }
 
 func (n *NavigationPanel) GetSelectedID() string {
@@ -697,6 +773,7 @@ func (n *NavigationPanel) NumInstances() int                 { return len(n.inst
 
 func (n *NavigationPanel) AddInstance(inst *session.Instance) func() {
 	n.instances = append(n.instances, inst)
+	n.resplitDead()
 	n.rebuildRows()
 	return func() {}
 }
@@ -705,6 +782,7 @@ func (n *NavigationPanel) RemoveByTitle(title string) *session.Instance {
 	for i, inst := range n.instances {
 		if inst.Title == title {
 			n.instances = append(n.instances[:i], n.instances[i+1:]...)
+			n.resplitDead()
 			n.rebuildRows()
 			return inst
 		}
@@ -771,7 +849,7 @@ func (n *NavigationPanel) SelectedSpaceAction() string {
 		return "toggle"
 	}
 	switch n.rows[n.selectedIdx].Kind {
-	case navRowPlanHeader, navRowHistoryToggle:
+	case navRowPlanHeader, navRowDeadToggle, navRowHistoryToggle:
 		if n.rows[n.selectedIdx].Collapsed {
 			return "expand"
 		}
@@ -1011,6 +1089,13 @@ func (n *NavigationPanel) renderNavRow(row navRow, contentWidth int) string {
 		}
 		return chevron + " " + navPlanLabelStyle.Render(label)
 
+	case navRowDeadToggle:
+		chevron := "▸"
+		if !row.Collapsed {
+			chevron = "▾"
+		}
+		return navDividerLine(chevron+" dead", contentWidth)
+
 	case navRowHistoryToggle:
 		chevron := "▸"
 		if !row.Collapsed {
@@ -1105,6 +1190,7 @@ func (n *NavigationPanel) String() string {
 	items := make([]visItem, 0, len(n.rows)+4)
 	selectedDisplayIdx := 0
 	lastPlanKey := -1
+	inDeadSection := false
 
 	for i, row := range n.rows {
 		// Search filter
@@ -1116,8 +1202,15 @@ func (n *NavigationPanel) String() string {
 			}
 		}
 
+		// Track dead section boundaries to suppress plan-group dividers.
+		if row.Kind == navRowDeadToggle {
+			inDeadSection = true
+		} else if row.Kind != navRowPlanHeader && row.Kind != navRowInstance {
+			inDeadSection = false
+		}
+
 		// Insert section dividers between plan sort-key groups
-		if row.Kind == navRowPlanHeader {
+		if row.Kind == navRowPlanHeader && !inDeadSection {
 			sk := 2
 			if row.HasNotification {
 				sk = 0

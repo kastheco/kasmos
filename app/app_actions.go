@@ -175,6 +175,13 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		}
 		return m.triggerPlanStage(planFile, "review")
 
+	case "inspect_plan":
+		planFile := m.nav.GetSelectedPlanFile()
+		if planFile != "" {
+			m.nav.InspectPlan(planFile)
+		}
+		return m, tea.WindowSize()
+
 	case "view_plan":
 		return m.viewSelectedPlan()
 
@@ -564,6 +571,12 @@ func (m *home) openPlanContextMenu() (tea.Model, tea.Cmd) {
 				)
 			}
 		}
+	}
+	// History plans get an "inspect plan" option to move them to the dead section.
+	if m.nav.IsSelectedHistoryPlan() {
+		items = append(items,
+			overlay.ContextMenuItem{Label: "inspect plan", Action: "inspect_plan"},
+		)
 	}
 	items = append(items,
 		overlay.ContextMenuItem{Label: "view plan", Action: "view_plan"},

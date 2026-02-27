@@ -124,6 +124,84 @@ func TestRebuildRows_HistoryExpanded(t *testing.T) {
 	assert.Equal(t, navRowHistoryPlan, n.rows[2].Kind)
 }
 
+func TestRebuildRows_DeadSection_DonePlanWithInstances(t *testing.T) {
+	n := newTestPanel()
+	history := []PlanDisplay{{Filename: "done-plan.md", Status: "done"}}
+	instances := []*session.Instance{makeInst("worker", "done-plan.md", session.Running)}
+	n.SetData(nil, instances, history, nil, nil)
+
+	// Done plan with instances goes to dead section, not history.
+	// Expect: dead toggle (collapsed) + plan header (under dead, but dead is collapsed so hidden)
+	// Actually dead is collapsed by default, so just the toggle.
+	require.True(t, len(n.rows) >= 1)
+	assert.Equal(t, navRowDeadToggle, n.rows[0].Kind)
+	assert.Equal(t, "dead", n.rows[0].Label)
+	// No history toggle since the only done plan went to dead.
+	for _, row := range n.rows {
+		assert.NotEqual(t, navRowHistoryToggle, row.Kind)
+	}
+}
+
+func TestRebuildRows_DeadSection_Expanded(t *testing.T) {
+	n := newTestPanel()
+	history := []PlanDisplay{{Filename: "done-plan.md", Status: "done"}}
+	instances := []*session.Instance{makeInst("worker", "done-plan.md", session.Running)}
+	n.SetData(nil, instances, history, nil, nil)
+
+	// Expand the dead section.
+	n.selectedIdx = 0
+	n.ToggleSelectedExpand()
+	assert.True(t, n.deadExpanded)
+
+	// dead toggle + plan header + instance
+	require.True(t, len(n.rows) >= 3)
+	assert.Equal(t, navRowDeadToggle, n.rows[0].Kind)
+	assert.Equal(t, navRowPlanHeader, n.rows[1].Kind)
+	assert.Equal(t, "done-plan.md", n.rows[1].PlanFile)
+	assert.Equal(t, navRowInstance, n.rows[2].Kind)
+	assert.Equal(t, "worker", n.rows[2].Label)
+}
+
+func TestRebuildRows_DeadSection_DonePlanWithoutInstances_GoesToHistory(t *testing.T) {
+	n := newTestPanel()
+	history := []PlanDisplay{{Filename: "clean-done.md", Status: "done"}}
+	n.SetData(nil, nil, history, nil, nil)
+
+	// No instances → goes to history, not dead.
+	require.Len(t, n.rows, 1)
+	assert.Equal(t, navRowHistoryToggle, n.rows[0].Kind)
+}
+
+func TestInspectPlan_MovesHistoryToDead(t *testing.T) {
+	n := newTestPanel()
+	history := []PlanDisplay{
+		{Filename: "plan-a.md", Status: "done"},
+		{Filename: "plan-b.md", Status: "done"},
+	}
+	n.SetData(nil, nil, history, nil, nil)
+
+	// Both in history initially.
+	require.Len(t, n.rows, 1)
+	assert.Equal(t, navRowHistoryToggle, n.rows[0].Kind)
+
+	// Inspect plan-a → moves to dead.
+	n.InspectPlan("plan-a.md")
+	assert.True(t, n.deadExpanded)
+
+	// Should have dead toggle + plan header (expanded) + history toggle.
+	var hasDead, hasHistory bool
+	for _, row := range n.rows {
+		if row.Kind == navRowDeadToggle {
+			hasDead = true
+		}
+		if row.Kind == navRowHistoryToggle {
+			hasHistory = true
+		}
+	}
+	assert.True(t, hasDead, "should have dead section")
+	assert.True(t, hasHistory, "plan-b should still be in history")
+}
+
 func TestRebuildRows_ClickUpAvailable(t *testing.T) {
 	n := newTestPanel()
 	n.SetClickUpAvailable(true)
