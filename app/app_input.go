@@ -1443,10 +1443,27 @@ func (m *home) handleError(err error) tea.Cmd {
 	return m.toastTickCmd()
 }
 
+// isInputOverlayActive returns true when the user is actively typing in an
+// input overlay that should not be interrupted by confirmation dialogs.
+func (m *home) isInputOverlayActive() bool {
+	switch m.state {
+	case stateNewPlan, stateNewPlanTopic, statePrompt, stateSendPrompt,
+		statePRTitle, statePRBody, stateRenameInstance, stateRenamePlan,
+		stateSpawnAgent, stateClickUpSearch, stateSearch:
+		return true
+	}
+	return false
+}
+
 // confirmAction shows a confirmation modal and stores the action to execute on confirm.
 // The action is a tea.Cmd that will be returned from Update() to run asynchronously —
 // never called synchronously, which would block the UI during I/O operations.
 func (m *home) confirmAction(message string, action tea.Cmd) tea.Cmd {
+	// Guard: don't overwrite active input overlays — the user is typing.
+	// The metadata tick will re-trigger the confirmation after the overlay closes.
+	if m.isInputOverlayActive() {
+		return nil
+	}
 	m.state = stateConfirm
 	m.pendingConfirmAction = action
 
@@ -1471,6 +1488,10 @@ func (m *home) waveStandardConfirmAction(message, planFile string, entry plansta
 // Keys: r=retry, n=next wave/advance, a=abort. The abort action is stored separately so the
 // stateConfirm key handler can dispatch it on 'a'.
 func (m *home) waveFailedConfirmAction(message, planFile string, entry planstate.PlanEntry) {
+	// Guard: don't overwrite active input overlays — the metadata tick will retry.
+	if m.isInputOverlayActive() {
+		return
+	}
 	m.pendingWaveConfirmPlanFile = planFile
 	capturedPlanFile := planFile
 	capturedEntry := entry

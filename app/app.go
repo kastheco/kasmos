@@ -673,7 +673,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case planfsm.PlannerFinished:
 				capturedPlanFile := sig.PlanFile
-				if m.plannerPrompted[capturedPlanFile] || m.state == stateConfirm {
+				if m.plannerPrompted[capturedPlanFile] || m.state == stateConfirm || m.isInputOverlayActive() {
 					break
 				}
 				// Focus the planner instance so the user sees its output behind the overlay.
@@ -885,7 +885,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Skip when a confirmation overlay is already showing to avoid re-prompting
 			// on every tick while the user is deciding.
 			for _, inst := range m.nav.GetInstances() {
-				if m.state == stateConfirm {
+				if m.state == stateConfirm || m.isInputOverlayActive() {
 					break
 				}
 				alive, collected := tmuxAliveMap[inst.Title]
@@ -977,7 +977,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					delete(m.waveOrchestrators, planFile)
 
-					if m.state != stateConfirm {
+					if m.state != stateConfirm && !m.isInputOverlayActive() {
 						// Focus a task instance so the user can see agent output behind the overlay.
 						if cmd := m.focusPlanInstanceForOverlay(capturedPlanFile); cmd != nil {
 							asyncCmds = append(asyncCmds, cmd)
@@ -993,7 +993,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// orchState must be WaveStateWaveComplete here.
 				// Show wave decision confirm once per wave (NeedsConfirm is one-shot;
 				// ResetConfirm on cancel allows the prompt to reappear next tick).
-				if m.state != stateConfirm && time.Since(m.waveConfirmDismissedAt) > 30*time.Second && orch.NeedsConfirm() {
+				if m.state != stateConfirm && !m.isInputOverlayActive() && time.Since(m.waveConfirmDismissedAt) > 30*time.Second && orch.NeedsConfirm() {
 					waveNum := orch.CurrentWaveNumber()
 					completed := orch.CompletedTaskCount()
 					failed := orch.FailedTaskCount()

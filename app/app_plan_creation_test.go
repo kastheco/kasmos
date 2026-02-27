@@ -137,3 +137,34 @@ func TestNewPlanTopicPickerShowsPendingPlanName(t *testing.T) {
 	require.NotNil(t, updated.pickerOverlay)
 	require.Contains(t, strings.ToLower(updated.pickerOverlay.Render()), "auth refactor")
 }
+
+func TestConfirmActionDeferredWhileNewPlanActive(t *testing.T) {
+	h := &home{
+		state:            stateNewPlan,
+		textInputOverlay: overlay.NewTextInputOverlay("new plan", "my plan description"),
+	}
+	h.textInputOverlay.SetMultiline(true)
+
+	// Simulate a confirmation action arriving while typing
+	h.confirmAction("some confirmation?", func() tea.Msg { return nil })
+
+	// State should NOT have changed to stateConfirm
+	require.Equal(t, stateNewPlan, h.state)
+	require.NotNil(t, h.textInputOverlay)
+	require.Nil(t, h.confirmationOverlay)
+}
+
+func TestConfirmActionDeferredWhileTopicPickerActive(t *testing.T) {
+	h := &home{
+		state:           stateNewPlanTopic,
+		pendingPlanName: "test plan",
+		pendingPlanDesc: "test description",
+		pickerOverlay:   overlay.NewPickerOverlay("topic", []string{"(No topic)"}),
+	}
+
+	h.confirmAction("some confirmation?", func() tea.Msg { return nil })
+
+	require.Equal(t, stateNewPlanTopic, h.state)
+	require.NotNil(t, h.pickerOverlay)
+	require.Nil(t, h.confirmationOverlay)
+}
