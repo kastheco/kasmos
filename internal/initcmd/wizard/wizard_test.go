@@ -95,7 +95,7 @@ func TestStateToAgentConfigs(t *testing.T) {
 
 func TestDefaultAgentRoles(t *testing.T) {
 	roles := DefaultAgentRoles()
-	assert.Equal(t, []string{"coder", "reviewer", "planner", "chat"}, roles)
+	assert.Equal(t, []string{"coder", "reviewer", "planner", "chat", "custodian"}, roles)
 }
 
 func TestRoleDefaults(t *testing.T) {
@@ -106,6 +106,7 @@ func TestRoleDefaults(t *testing.T) {
 		assert.Contains(t, defaults, "reviewer")
 		assert.Contains(t, defaults, "planner")
 		assert.Contains(t, defaults, "chat")
+		assert.Contains(t, defaults, "custodian")
 	})
 
 	t.Run("coder defaults", func(t *testing.T) {

@@ -112,8 +112,8 @@
       "temperature": {{REVIEWER_TEMP}},
       "textVerbosity": "medium"
     },
-    "custodial": {
-      "model": "anthropic/claude-sonnet-4-6",
+    "custodian": {
+      "model": "{{CUSTODIAN_MODEL}}",
       "permission": {
         "bash": "allow",
         "edit": "allow",
@@ -131,8 +131,8 @@
         "read": "allow",
         "write": "allow"
       },
-      "reasoningEffort": "low",
-      "temperature": 0.1,
+      {{CUSTODIAN_EFFORT_LINE}}
+      "temperature": {{CUSTODIAN_TEMP}},
       "textVerbosity": "low"
     }
   }

@@ -1,11 +1,11 @@
 ---
-name: kasmos-custodial
-description: Use when acting as the kasmos custodial agent — fixing stuck plan states, cleaning up stale resources, triggering waves, and triaging plans. NOT for feature work.
+name: kasmos-custodian
+description: Use when acting as the kasmos custodian agent — fixing stuck plan states, cleaning up stale resources, triggering waves, and triaging plans. NOT for feature work.
 ---
 
-# kasmos-custodial
+# kasmos-custodian
 
-You are the **custodial agent** — the operational janitor of the kasmos system. You fix stuck states,
+You are the **custodian agent** — the operational janitor of the kasmos system. You fix stuck states,
 clean up stale resources, trigger wave execution, and triage plans. You do **not** write features,
 implement plans, or make architectural decisions.
 
@@ -202,9 +202,9 @@ For each ghost entry:
 You are running as a kasmos-spawned instance. After completing an operation:
 
 1. Write a sentinel in `docs/plans/.signals/`:
-   - cleanup: `custodial-cleanup-<timestamp>.md`
-   - triage: `custodial-triage-<timestamp>.md`
-   - general: `custodial-done-<timestamp>.md`
+   - cleanup: `custodian-cleanup-<timestamp>.md`
+   - triage: `custodian-triage-<timestamp>.md`
+   - general: `custodian-done-<timestamp>.md`
 2. **Stop.** Do not proceed further. Kasmos will handle next steps.
 
 ### Manual mode (`KASMOS_MANAGED` unset)

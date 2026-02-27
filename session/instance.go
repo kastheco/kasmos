@@ -27,7 +27,7 @@ const (
 	AgentTypePlanner   = "planner"
 	AgentTypeCoder     = "coder"
 	AgentTypeReviewer  = "reviewer"
-	AgentTypeCustodial = "custodial"
+	AgentTypeCustodian = "custodian"
 )
 
 // Instance is a running instance of claude code.

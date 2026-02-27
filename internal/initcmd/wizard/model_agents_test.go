@@ -15,6 +15,8 @@ func TestAgentStep_BrowseNavigation(t *testing.T) {
 		{Role: "coder", Harness: "claude", Model: "claude-sonnet-4-6", Enabled: true},
 		{Role: "reviewer", Harness: "opencode", Model: "gpt-5.3-codex", Enabled: true},
 		{Role: "planner", Harness: "claude", Model: "claude-opus-4-6", Enabled: true},
+		{Role: "chat", Harness: "claude", Model: "claude-sonnet-4-6", Enabled: true},
+		{Role: "custodian", Harness: "claude", Model: "claude-sonnet-4-6", Enabled: true},
 	}
 
 	s := newAgentStep(agents, []string{"claude", "opencode"}, nil)
@@ -27,8 +29,15 @@ func TestAgentStep_BrowseNavigation(t *testing.T) {
 	s.cursorDown()
 	assert.Equal(t, 2, s.cursor)
 
-	s.cursorDown()               // chat is skipped in navigation
-	assert.Equal(t, 2, s.cursor) // clamped at planner
+	// chat and custodian are now navigable
+	s.cursorDown()
+	assert.Equal(t, 3, s.cursor)
+
+	s.cursorDown()
+	assert.Equal(t, 4, s.cursor)
+
+	s.cursorDown()               // clamped at last index
+	assert.Equal(t, 4, s.cursor) // no overflow past custodian
 }
 
 func TestAgentStep_ToggleEnabled(t *testing.T) {

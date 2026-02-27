@@ -38,7 +38,7 @@ type AgentState struct {
 
 // DefaultAgentRoles returns the built-in agent role names.
 func DefaultAgentRoles() []string {
-	return []string{"coder", "reviewer", "planner", "chat"}
+	return []string{"coder", "reviewer", "planner", "chat", "custodian"}
 }
 
 // RoleDefaults returns sensible per-role defaults for fresh inits.
@@ -71,6 +71,13 @@ func RoleDefaults() map[string]AgentState {
 			Model:       "anthropic/claude-sonnet-4-6",
 			Effort:      "high",
 			Temperature: "0.3",
+			Enabled:     true,
+		},
+		"custodian": {
+			Role:        "custodian",
+			Model:       "anthropic/claude-sonnet-4-6",
+			Effort:      "low",
+			Temperature: "0.1",
 			Enabled:     true,
 		},
 	}
