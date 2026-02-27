@@ -67,8 +67,12 @@ kasmos spawned you to implement **one specific task** identified by `KASMOS_TASK
 1. Read the plan file from `docs/plans/`. Find your wave (`KASMOS_WAVE`) and task (`KASMOS_TASK`).
 2. Implement that single task following TDD discipline below.
 3. Commit your work with task number in the commit message.
-4. Write the implement-finished sentinel (see **Signaling** section).
-5. **Stop.** Do not implement other tasks — they belong to sibling agents or future waves.
+4. **Stop.** Do not implement other tasks — they belong to sibling agents or future waves.
+
+**Do NOT write the implement-finished sentinel.** kasmos detects task completion via prompt
+detection (when your agent returns to its input prompt) and handles the
+implementing→reviewing transition through the wave orchestrator. Writing implement-finished
+from a task agent prematurely triggers review and breaks wave orchestration.
 
 ### Manual (KASMOS_MANAGED unset)
 
@@ -320,20 +324,14 @@ For multi-item feedback:
 
 ### Managed (`KASMOS_MANAGED=1`)
 
-After implementing and verifying your assigned task:
+**Do NOT write any sentinel files.** kasmos detects task completion automatically when your
+agent returns to its input prompt. The wave orchestrator handles all lifecycle transitions
+(implementing→reviewing) and reviewer spawning.
 
-```bash
-touch docs/plans/.signals/implement-finished-<date>-<planfilename>.md
-```
+After implementing and committing your task: **stop.** Do not implement other tasks, do not
+write signal files, do not invoke branch finishing — kasmos handles orchestration.
 
-The filename matches the plan filename exactly. Example:
-```bash
-touch docs/plans/.signals/implement-finished-2026-02-27-kasmos-native-skills.md
-```
-
-**Do not edit `plan-state.json` directly** — kasmos reads sentinel files and transitions state.
-
-After writing the sentinel: **stop.** Do not implement other tasks, do not invoke branch finishing — kasmos handles orchestration.
+**Do not edit `plan-state.json` directly.**
 
 ### Manual (KASMOS_MANAGED unset)
 

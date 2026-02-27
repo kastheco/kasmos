@@ -641,6 +641,21 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Side-effect cmds (reviewer/coder spawns) are collected and batched below.
 		var signalCmds []tea.Cmd
 		for _, sig := range msg.Signals {
+			// Guard: if a wave orchestrator is active for this plan, ignore
+			// implement-finished signals. Wave task agents may write this sentinel
+			// after completing their individual task, but the wave orchestrator
+			// owns the implementing→reviewing transition. Without this guard,
+			// the first task to finish prematurely triggers review and pauses
+			// sibling tasks, spawning a "applying fixes" coder alongside the
+			// reviewer.
+			if sig.Event == planfsm.ImplementFinished {
+				if _, hasOrch := m.waveOrchestrators[sig.PlanFile]; hasOrch {
+					log.WarningLog.Printf("ignoring implement-finished signal for %q — wave orchestrator active", sig.PlanFile)
+					planfsm.ConsumeSignal(sig)
+					continue
+				}
+			}
+
 			if err := m.fsm.Transition(sig.PlanFile, sig.Event); err != nil {
 				log.WarningLog.Printf("signal %s for %s rejected: %v", sig.Event, sig.PlanFile, err)
 				planfsm.ConsumeSignal(sig)

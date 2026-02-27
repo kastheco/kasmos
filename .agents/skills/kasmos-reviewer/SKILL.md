@@ -179,13 +179,13 @@ git diff main..HEAD --name-only | xargs typos
 ```bash
 mkdir -p docs/plans/.signals
 echo "Approved. <one-sentence summary of what was reviewed and confirmed>" \
-  > docs/plans/.signals/reviewer-approved-<planfile>
+  > docs/plans/.signals/review-approved-<planfile>
 ```
 
 Example:
 ```bash
 echo "Approved. all 4 tasks complete, tests pass, no issues found." \
-  > docs/plans/.signals/reviewer-approved-2026-02-27-feature.md
+  > docs/plans/.signals/review-approved-2026-02-27-feature.md
 ```
 
 ### Changes Needed
@@ -195,7 +195,7 @@ and file:line citations for every item.
 
 ```bash
 mkdir -p docs/plans/.signals
-cat > docs/plans/.signals/reviewer-requested-changes-<planfile> << 'EOF'
+cat > docs/plans/.signals/review-changes-<planfile> << 'EOF'
 Round N — changes required.
 
 ## critical
