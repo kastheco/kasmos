@@ -84,6 +84,11 @@ func (m *home) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		m.state = stateDefault
 		return m, nil
 	}
+	if m.state == stateTmuxBrowser && msg.Button == tea.MouseButtonLeft {
+		m.tmuxBrowser = nil
+		m.state = stateDefault
+		return m, nil
+	}
 	if m.state != stateDefault {
 		return m, nil
 	}
