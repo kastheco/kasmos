@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/planstate"
 	"github.com/kastheco/kasmos/keys"
 	"github.com/kastheco/kasmos/log"
@@ -651,14 +652,14 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		if shouldClose {
 			if m.permissionOverlay.IsConfirmed() {
 				choice := m.permissionOverlay.Choice()
-				// Read the pattern from the overlay (captured at detection time) rather than
-				// re-parsing CachedContent, which may have changed since the prompt appeared.
-				pattern := m.permissionOverlay.Pattern()
+				// Read the pattern/description from the overlay (captured at detection
+				// time) rather than re-parsing CachedContent, which may have changed.
+				cacheKey := config.CacheKey(m.permissionOverlay.Pattern(), m.permissionOverlay.Description())
 				inst := m.pendingPermissionInstance
 
 				// Cache "allow always" decisions
-				if choice == overlay.PermissionAllowAlways && pattern != "" && m.permissionCache != nil {
-					m.permissionCache.Remember(pattern)
+				if choice == overlay.PermissionAllowAlways && cacheKey != "" && m.permissionCache != nil {
+					m.permissionCache.Remember(cacheKey)
 					_ = m.permissionCache.Save()
 				}
 
@@ -669,7 +670,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 				// prompt for a few ticks while the key sequence propagates.
 				// Without this, the next metadata tick re-opens the modal.
 				if inst != nil {
-					guardKey := pattern
+					guardKey := cacheKey
 					if guardKey == "" {
 						guardKey = "__handled__"
 					}

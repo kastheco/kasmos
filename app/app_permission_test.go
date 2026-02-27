@@ -284,6 +284,32 @@ func TestPermissionCache_AutoApprovesCachedPattern(t *testing.T) {
 	assert.True(t, m.permissionCache.IsAllowedAlways("/opt/*"))
 }
 
+// TestUpdate_PermissionAutoApprove_DescriptionOnly verifies that prompts without
+// a Pattern (e.g. bash command permissions) still auto-approve when the description
+// has been cached via "allow always".
+func TestUpdate_PermissionAutoApprove_DescriptionOnly(t *testing.T) {
+	m := newTestHomeWithCache(t)
+	// Cache by description (no pattern).
+	m.permissionCache.Remember("Execute bash command")
+
+	inst := &session.Instance{Title: "test-agent", Program: "opencode"}
+	inst.MarkStartedForTest()
+	m.nav.AddInstance(inst)()
+
+	pp := &session.PermissionPrompt{Pattern: "", Description: "Execute bash command"}
+	msg := metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "test-agent", PermissionPrompt: pp},
+		},
+	}
+
+	_, cmd := m.Update(msg)
+	approvals := collectAutoApproveMsgs(cmd)
+
+	assert.Len(t, approvals, 1, "description-only prompt should auto-approve when cached")
+	assert.Equal(t, stateDefault, m.state, "auto-approve should not change state")
+}
+
 // TestUpdate_PermissionPrompt_FocusesInstanceBeforeOverlay verifies that when a
 // permission prompt is detected for a non-selected instance, that instance becomes
 // selected before the overlay is shown — so the user sees the agent output behind it.

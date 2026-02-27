@@ -53,3 +53,15 @@ func TestPermissionCache_SaveCreatesDir(t *testing.T) {
 	_, err = os.Stat(filepath.Join(dir, "permission-cache.json"))
 	assert.NoError(t, err)
 }
+
+func TestCacheKey_PrefersPattern(t *testing.T) {
+	assert.Equal(t, "/opt/*", CacheKey("/opt/*", "Access /opt"))
+}
+
+func TestCacheKey_FallsBackToDescription(t *testing.T) {
+	assert.Equal(t, "Execute bash command", CacheKey("", "Execute bash command"))
+}
+
+func TestCacheKey_EmptyBoth(t *testing.T) {
+	assert.Equal(t, "", CacheKey("", ""))
+}

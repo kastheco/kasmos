@@ -78,6 +78,11 @@ func (p *PermissionOverlay) Pattern() string {
 	return p.pattern
 }
 
+// Description returns the permission description shown in the overlay.
+func (p *PermissionOverlay) Description() string {
+	return p.description
+}
+
 // Render draws the permission overlay.
 func (p *PermissionOverlay) Render() string {
 	borderStyle := lipgloss.NewStyle().

@@ -68,3 +68,14 @@ func (c *PermissionCache) Remember(pattern string) {
 	defer c.mu.Unlock()
 	c.patterns[pattern] = "allow_always"
 }
+
+// CacheKey returns a non-empty key for permission caching.
+// Prefers the pattern (e.g. "/opt/*"); falls back to the description
+// (e.g. "Execute bash command") so that permission types without a
+// Patterns section can still be cached.
+func CacheKey(pattern, description string) string {
+	if pattern != "" {
+		return pattern
+	}
+	return description
+}

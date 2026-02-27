@@ -328,8 +328,8 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 	h.nav = ui.NewNavigationPanel(&h.spinner)
 	h.toastManager = overlay.NewToastManager(&h.spinner)
 
-	configDir, _ := config.GetConfigDir()
-	permCache := config.NewPermissionCache(configDir)
+	permCacheDir := filepath.Join(activeRepoPath, ".kasmos")
+	permCache := config.NewPermissionCache(permCacheDir)
 	_ = permCache.Load()
 	h.permissionCache = permCache
 	h.permissionHandled = make(map[*session.Instance]string)
@@ -769,17 +769,18 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Permission prompt detection for opencode.
 			if md.PermissionPrompt != nil && m.state == stateDefault {
 				pp := md.PermissionPrompt
-				// Guard key: use pattern if available, else sentinel.
+				cacheKey := config.CacheKey(pp.Pattern, pp.Description)
+				// Guard key: use cache key if available, else sentinel.
 				// Must match what app_input.go sets on confirm.
-				guardKey := pp.Pattern
+				guardKey := cacheKey
 				if guardKey == "" {
 					guardKey = "__handled__"
 				}
 
 				if _, handled := m.permissionHandled[inst]; handled {
 					// Already handled this prompt appearance — skip until cleared.
-				} else if pp.Pattern != "" && m.permissionCache != nil && m.permissionCache.IsAllowedAlways(pp.Pattern) {
-					// Auto-approve cached pattern.
+				} else if cacheKey != "" && m.permissionCache != nil && m.permissionCache.IsAllowedAlways(cacheKey) {
+					// Auto-approve cached permission.
 					m.permissionHandled[inst] = guardKey
 					i := inst
 					asyncCmds = append(asyncCmds, func() tea.Msg {
