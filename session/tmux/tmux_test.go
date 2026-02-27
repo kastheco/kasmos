@@ -245,7 +245,7 @@ func TestStartTmuxSessionOpenCode(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify new-session used the right program.
-	require.Equal(t, fmt.Sprintf("tmux new-session -d -s kas_oc-session -c %s KASMOS_MANAGED=1 opencode", workdir),
+	require.Equal(t, fmt.Sprintf("tmux new-session -d -s kas_oc-session -c %s KASMOS_MANAGED=1 opencode --print-logs 2>>'%s/.kasmos/logs/kas_oc-session.log'", workdir, workdir),
 		cmd2.ToString(ptyFactory.cmds[0]))
 
 	// Verify no send-keys tap was issued (opencode needs no trust-screen tap).
@@ -327,7 +327,7 @@ func TestStartTmuxSessionInjectsAgentFlag(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(
 		t,
-		fmt.Sprintf("tmux new-session -d -s kas_agent-test -c %s KASMOS_MANAGED=1 opencode --agent planner", workdir),
+		fmt.Sprintf("tmux new-session -d -s kas_agent-test -c %s KASMOS_MANAGED=1 opencode --agent planner --print-logs 2>>'%s/.kasmos/logs/kas_agent-test.log'", workdir, workdir),
 		cmd2.ToString(ptyFactory.cmds[0]),
 	)
 }
@@ -397,7 +397,7 @@ func TestStartOpenCodeWithInitialPrompt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(
 		t,
-		fmt.Sprintf("tmux new-session -d -s kas_oc-prompt -c %s KASMOS_MANAGED=1 opencode --agent planner --prompt 'Plan auth. Goal: JWT tokens.'", workdir),
+		fmt.Sprintf("tmux new-session -d -s kas_oc-prompt -c %s KASMOS_MANAGED=1 opencode --agent planner --prompt 'Plan auth. Goal: JWT tokens.' --print-logs 2>>'%s/.kasmos/logs/kas_oc-prompt.log'", workdir, workdir),
 		cmd2.ToString(ptyFactory.cmds[0]),
 	)
 }
@@ -737,7 +737,7 @@ func TestStartOpenCodeWithPromptContainingSingleQuotes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(
 		t,
-		fmt.Sprintf("tmux new-session -d -s kas_oc-quote -c %s KASMOS_MANAGED=1 opencode --prompt 'it'\\''s a test'", workdir),
+		fmt.Sprintf("tmux new-session -d -s kas_oc-quote -c %s KASMOS_MANAGED=1 opencode --prompt 'it'\\''s a test' --print-logs 2>>'%s/.kasmos/logs/kas_oc-quote.log'", workdir, workdir),
 		cmd2.ToString(ptyFactory.cmds[0]),
 	)
 }

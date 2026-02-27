@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -228,6 +229,16 @@ func (t *TmuxSession) Start(workDir string) error {
 		}
 		// aider/gemini: no CLI prompt support — callers keep QueuedPrompt
 		// set so the send-keys fallback fires from the app tick handler.
+	}
+
+	// Append --print-logs and redirect stderr to a per-session log file so
+	// kasmos-spawned opencode agents always have debug logs available.
+	if isOpenCodeProgram(t.program) {
+		logDir := filepath.Join(workDir, promptDir, "logs")
+		if err := os.MkdirAll(logDir, 0o755); err == nil {
+			logFile := filepath.Join(logDir, t.sanitizedName+".log")
+			program = program + " --print-logs 2>>" + shellEscapeSingleQuote(logFile)
+		}
 	}
 
 	// Prepend KASMOS_MANAGED=1 so the agent process sees it from startup.
