@@ -313,6 +313,7 @@ func (w *TabbedWindow) IsInInfoTab() bool {
 func (w *TabbedWindow) SetActiveTab(tab int) {
 	if tab >= 0 && tab < len(w.tabs) {
 		w.activeTab = tab
+		w.focusedTab = tab
 	}
 }
 

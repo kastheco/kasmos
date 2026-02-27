@@ -169,10 +169,9 @@ func (m *home) setFocusSlot(slot int) {
 	// When focusing a center tab, switch the visible tab to match and track which tab is focused.
 	if centerFocused {
 		m.tabbedWindow.SetActiveTab(slot - slotInfo) // slotInfo=1 → InfoTab=0, etc.
-		m.tabbedWindow.SetFocusedTab(slot - slotInfo)
-	} else {
-		m.tabbedWindow.SetFocusedTab(-1)
 	}
+	// focusedTab always tracks activeTab so the gradient header is visible
+	// regardless of which pane has keyboard focus.
 }
 
 // nextFocusSlot cycles the visible center tab forward (info → agent → diff → info).
