@@ -95,6 +95,7 @@ type NavigationPanel struct {
 	instances      []*session.Instance
 	deadPlans      []PlanDisplay
 	historyPlans   []PlanDisplay
+	promotedPlans  []PlanDisplay // finished plans promoted to active (have running instances)
 	cancelled      []PlanDisplay
 	planStatuses   map[string]TopicStatus
 	collapsed      map[string]bool
@@ -173,19 +174,50 @@ func (n *NavigationPanel) SetItems(_ []string, _ map[string]int, _ int, _ map[st
 	n.rebuildRows()
 }
 
-// splitDeadFromHistory partitions finished plans into dead (has instances or
-// manually inspected) and history (everything else).
+// splitDeadFromHistory partitions finished plans into three buckets:
+//   - promoted (appended to n.plans): has running/loading instances
+//   - dead: has only non-running instances or was manually inspected
+//   - history: no instances at all
 func (n *NavigationPanel) splitDeadFromHistory(finished []PlanDisplay) {
-	instancesByPlan := make(map[string]bool, len(n.instances))
+	type planInfo struct {
+		hasInstances bool
+		hasRunning   bool
+	}
+	infoByPlan := make(map[string]planInfo, len(n.instances))
 	for _, inst := range n.instances {
 		if inst.PlanFile != "" {
-			instancesByPlan[inst.PlanFile] = true
+			info := infoByPlan[inst.PlanFile]
+			info.hasInstances = true
+			if inst.Status == session.Running || inst.Status == session.Loading {
+				info.hasRunning = true
+			}
+			infoByPlan[inst.PlanFile] = info
 		}
+	}
+	// Remove any previously promoted plans from n.plans before re-partitioning.
+	if len(n.promotedPlans) > 0 {
+		promoted := make(map[string]bool, len(n.promotedPlans))
+		for _, p := range n.promotedPlans {
+			promoted[p.Filename] = true
+		}
+		filtered := n.plans[:0]
+		for _, p := range n.plans {
+			if !promoted[p.Filename] {
+				filtered = append(filtered, p)
+			}
+		}
+		n.plans = filtered
 	}
 	n.deadPlans = nil
 	n.historyPlans = nil
+	n.promotedPlans = nil
 	for _, p := range finished {
-		if instancesByPlan[p.Filename] || n.inspectedPlans[p.Filename] {
+		info := infoByPlan[p.Filename]
+		if info.hasRunning {
+			// Running instances → promote to active plans list.
+			n.promotedPlans = append(n.promotedPlans, p)
+			n.plans = append(n.plans, p)
+		} else if info.hasInstances || n.inspectedPlans[p.Filename] {
 			n.deadPlans = append(n.deadPlans, p)
 		} else {
 			n.historyPlans = append(n.historyPlans, p)
@@ -193,10 +225,11 @@ func (n *NavigationPanel) splitDeadFromHistory(finished []PlanDisplay) {
 	}
 }
 
-// resplitDead re-partitions dead and history plans based on current instances.
+// resplitDead re-partitions dead, promoted, and history plans based on current instances.
 func (n *NavigationPanel) resplitDead() {
-	all := make([]PlanDisplay, 0, len(n.deadPlans)+len(n.historyPlans))
+	all := make([]PlanDisplay, 0, len(n.deadPlans)+len(n.promotedPlans)+len(n.historyPlans))
 	all = append(all, n.deadPlans...)
+	all = append(all, n.promotedPlans...)
 	all = append(all, n.historyPlans...)
 	n.splitDeadFromHistory(all)
 }

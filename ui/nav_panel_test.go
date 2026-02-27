@@ -124,19 +124,19 @@ func TestRebuildRows_HistoryExpanded(t *testing.T) {
 	assert.Equal(t, navRowHistoryPlan, n.rows[2].Kind)
 }
 
-func TestRebuildRows_DeadSection_DonePlanWithInstances(t *testing.T) {
+func TestRebuildRows_DeadSection_DonePlanWithNonRunningInstances(t *testing.T) {
 	n := newTestPanel()
 	history := []PlanDisplay{{Filename: "done-plan.md", Status: "done"}}
-	instances := []*session.Instance{makeInst("worker", "done-plan.md", session.Running)}
+	// Ready (non-running) instance — plan goes to dead section.
+	instances := []*session.Instance{makeInst("worker", "done-plan.md", session.Ready)}
 	n.SetData(nil, instances, history, nil, nil)
 
-	// Done plan with instances goes to dead section (expanded by default).
-	// Expect: dead toggle + plan header + instance.
-	require.True(t, len(n.rows) >= 3)
+	// Done plan with non-running instances goes to dead section (expanded by default).
+	// Plan header is auto-collapsed (no running instances), so no child instance rows.
+	require.True(t, len(n.rows) >= 2)
 	assert.Equal(t, navRowDeadToggle, n.rows[0].Kind)
 	assert.Equal(t, "dead", n.rows[0].Label)
 	assert.Equal(t, navRowPlanHeader, n.rows[1].Kind)
-	assert.Equal(t, navRowInstance, n.rows[2].Kind)
 	// No history toggle since the only done plan went to dead.
 	for _, row := range n.rows {
 		assert.NotEqual(t, navRowHistoryToggle, row.Kind)
@@ -146,23 +146,77 @@ func TestRebuildRows_DeadSection_DonePlanWithInstances(t *testing.T) {
 func TestRebuildRows_DeadSection_Collapsible(t *testing.T) {
 	n := newTestPanel()
 	history := []PlanDisplay{{Filename: "done-plan.md", Status: "done"}}
-	instances := []*session.Instance{makeInst("worker", "done-plan.md", session.Running)}
+	// Use Ready (non-running) instance so plan goes to dead section.
+	instances := []*session.Instance{makeInst("worker", "done-plan.md", session.Ready)}
 	n.SetData(nil, instances, history, nil, nil)
 
 	// Dead section is expanded by default.
 	assert.True(t, n.deadExpanded)
-	require.True(t, len(n.rows) >= 3)
+	require.True(t, len(n.rows) >= 2)
 	assert.Equal(t, navRowPlanHeader, n.rows[1].Kind)
 	assert.Equal(t, "done-plan.md", n.rows[1].PlanFile)
-	assert.Equal(t, navRowInstance, n.rows[2].Kind)
-	assert.Equal(t, "worker", n.rows[2].Label)
+	// Plan header is auto-collapsed (no running instances), so instance row is hidden.
 
-	// Collapse it.
+	// Collapse the dead section.
 	n.selectedIdx = 0
 	n.ToggleSelectedExpand()
 	assert.False(t, n.deadExpanded)
 	require.Len(t, n.rows, 1)
 	assert.Equal(t, navRowDeadToggle, n.rows[0].Kind)
+}
+
+func TestRebuildRows_DonePlanWithRunningInstances_AppearsInActiveSection(t *testing.T) {
+	n := newTestPanel()
+	history := []PlanDisplay{{Filename: "done-plan.md", Status: "done"}}
+	instances := []*session.Instance{makeInst("worker", "done-plan.md", session.Running)}
+	n.SetData(nil, instances, history, nil, nil)
+
+	// Done plan with running instances should NOT be in dead section.
+	// It should appear as an active plan (plan header + instance).
+	for _, row := range n.rows {
+		assert.NotEqual(t, navRowDeadToggle, row.Kind,
+			"running instances should not be in dead section")
+	}
+	// Should have plan header + instance in the active area.
+	require.True(t, len(n.rows) >= 2, "expected at least plan header + instance, got %d rows", len(n.rows))
+	assert.Equal(t, navRowPlanHeader, n.rows[0].Kind)
+	assert.Equal(t, "done-plan.md", n.rows[0].PlanFile)
+	assert.Equal(t, navRowInstance, n.rows[1].Kind)
+	assert.Equal(t, "worker", n.rows[1].Label)
+}
+
+func TestRebuildRows_DonePlanWithDeadInstances_GoesToDeadSection(t *testing.T) {
+	n := newTestPanel()
+	history := []PlanDisplay{{Filename: "done-plan.md", Status: "done"}}
+	// Ready (not running) instance — plan should go to dead section.
+	instances := []*session.Instance{makeInst("worker", "done-plan.md", session.Ready)}
+	n.SetData(nil, instances, history, nil, nil)
+
+	// Done plan with only non-running instances goes to dead section.
+	// Plan header is collapsed (no running instances), so we get dead toggle + plan header.
+	require.True(t, len(n.rows) >= 2)
+	assert.Equal(t, navRowDeadToggle, n.rows[0].Kind)
+	assert.Equal(t, "dead", n.rows[0].Label)
+	assert.Equal(t, navRowPlanHeader, n.rows[1].Kind)
+}
+
+func TestRebuildRows_DonePlanMixedInstances_RunningPromotesToActive(t *testing.T) {
+	n := newTestPanel()
+	history := []PlanDisplay{{Filename: "done-plan.md", Status: "done"}}
+	// Mix of running and ready instances — running takes priority.
+	instances := []*session.Instance{
+		makeInst("ready-worker", "done-plan.md", session.Ready),
+		makeInst("running-worker", "done-plan.md", session.Running),
+	}
+	n.SetData(nil, instances, history, nil, nil)
+
+	// Plan has at least one running instance → should be in active section, not dead.
+	for _, row := range n.rows {
+		assert.NotEqual(t, navRowDeadToggle, row.Kind,
+			"plan with running instances should not be in dead section")
+	}
+	assert.Equal(t, navRowPlanHeader, n.rows[0].Kind)
+	assert.Equal(t, "done-plan.md", n.rows[0].PlanFile)
 }
 
 func TestRebuildRows_DeadSection_DonePlanWithoutInstances_GoesToHistory(t *testing.T) {
