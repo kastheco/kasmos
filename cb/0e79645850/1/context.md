@@ -1,0 +1,10 @@
+# Session Context
+
+## User Prompts
+
+### Prompt 1
+
+Generate a concise 3-5 word title for this software task. Respond with ONLY the title in lowercase, nothing else. No quotes, no punctuation.
+
+create a debugging skill and agent type (should probably replace custodian) that's equipped to handle custodian's work but more importantly, is specialized in debugging and investigating issues, tieing up loose ends and targeted verification
+
