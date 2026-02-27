@@ -85,8 +85,8 @@ func WriteClaudeProject(dir string, agents []harness.AgentConfig, selectedTools 
 		return nil, err
 	}
 
-	// Scaffold static agent files (e.g. custodial) that are always present
-	// regardless of wizard configuration.
+	// Scaffold static agent files that are always present regardless of wizard
+	// configuration (currently none; kept for future use).
 	staticResults, err := writeStaticAgents(dir, "claude", force)
 	if err != nil {
 		return nil, err
@@ -123,7 +123,7 @@ func renderOpenCodeConfig(dir string, agents []harness.AgentConfig) (string, err
 	}
 
 	// Substitute per-role placeholders for wizard-configurable agents
-	for _, role := range []string{"coder", "planner", "reviewer"} {
+	for _, role := range []string{"coder", "planner", "reviewer", "custodian"} {
 		upper := strings.ToUpper(role)
 		agent, ok := agentByRole[role]
 		if !ok {
@@ -256,8 +256,8 @@ func WriteOpenCodeProject(dir string, agents []harness.AgentConfig, selectedTool
 		return nil, err
 	}
 
-	// Scaffold static agent files (e.g. custodial) that are always present
-	// regardless of wizard configuration.
+	// Scaffold static agent files that are always present regardless of wizard
+	// configuration (currently none; kept for future use).
 	staticResults, err := writeStaticAgents(dir, "opencode", force)
 	if err != nil {
 		return nil, err
@@ -285,12 +285,12 @@ func WriteOpenCodeProject(dir string, agents []harness.AgentConfig, selectedTool
 }
 
 // staticAgentRoles lists agent roles that are always scaffolded regardless of
-// wizard configuration. These are operational/infrastructure agents that every
-// project gets by default.
-var staticAgentRoles = []string{"custodial"}
+// wizard configuration. Custodian is now wizard-managed; this slice is kept for
+// future static agents and is empty by default.
+var staticAgentRoles = []string{}
 
-// writeStaticAgents writes the static agent .md files (custodial, etc.) that
-// are always present in a project regardless of wizard-configured agents.
+// writeStaticAgents writes static agent .md files that are always present in a
+// project regardless of wizard-configured agents.
 func writeStaticAgents(dir, harnessName string, force bool) ([]WriteResult, error) {
 	agentDir := filepath.Join(dir, "."+harnessName, "agents")
 	if err := os.MkdirAll(agentDir, 0o755); err != nil {

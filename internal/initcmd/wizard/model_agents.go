@@ -196,9 +196,6 @@ func (m *agentStepModel) cursorDown() {
 
 func (m *agentStepModel) maxNavigableIndex() int {
 	max := len(m.agents) - 1
-	if max > 2 {
-		max = 2
-	}
 	if max < 0 {
 		return 0
 	}

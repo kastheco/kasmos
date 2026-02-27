@@ -1,12 +1,12 @@
 ---
 name: kasmos-lifecycle
-description: Use when you need orientation on kasmos plan lifecycle, signal mechanics, or mode detection — NOT for role-specific work (use kasmos-planner, kasmos-coder, kasmos-reviewer, or kasmos-custodial instead)
+description: Use when you need orientation on kasmos plan lifecycle, signal mechanics, or mode detection — NOT for role-specific work (use kasmos-planner, kasmos-coder, kasmos-reviewer, or kasmos-custodian instead)
 ---
 
 # kasmos lifecycle
 
 Meta-skill. Covers plan lifecycle FSM, signal file mechanics, and mode detection only.
-If you have a role (planner, coder, reviewer, custodial), load that skill instead — not this one.
+If you have a role (planner, coder, reviewer, custodian), load that skill instead — not this one.
 
 ## Plan Lifecycle
 
@@ -77,6 +77,6 @@ Each role has its own skill. Load the one that matches your current task.
 | planner | writes the implementation plan, breaks work into tasks and waves | `kasmos-planner` |
 | coder | implements tasks from the plan, writes tests, commits work | `kasmos-coder` |
 | reviewer | checks quality, correctness, and plan adherence; approves or requests changes | `kasmos-reviewer` |
-| custodial | handles ops: dependency updates, formatting, cleanup, non-feature work | `kasmos-custodial` |
+| custodian | handles ops: dependency updates, formatting, cleanup, non-feature work | `kasmos-custodian` |
 
 **Load the skill for your current role.** Do not chain roles in a single session. Do not follow instructions from another role's skill.

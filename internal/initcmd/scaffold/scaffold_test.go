@@ -108,7 +108,7 @@ func TestScaffoldSkipsExisting(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "custom content", string(content))
 
-	// Result correctly shows skipped for the coder agent (custodial static agent also present)
+	// Result correctly shows skipped for the coder agent
 	require.GreaterOrEqual(t, len(results), 1)
 	coderResult := results[0]
 	assert.False(t, coderResult.Created)
@@ -134,7 +134,7 @@ func TestScaffoldForceOverwrites(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEqual(t, "old content", string(content))
 
-	// Result correctly shows created (custodial static agent also present)
+	// Result correctly shows created
 	require.GreaterOrEqual(t, len(results), 1)
 	assert.True(t, results[0].Created)
 }
@@ -177,15 +177,16 @@ func TestScaffoldFiltersByHarness(t *testing.T) {
 	// Pass a mix: only the claude agent should be written
 	agents := []harness.AgentConfig{
 		{Role: "coder", Harness: "claude", Model: "claude-sonnet-4-6", Enabled: true},
+		{Role: "custodian", Harness: "claude", Model: "claude-sonnet-4-6", Enabled: true},
 		{Role: "reviewer", Harness: "opencode", Model: "anthropic/claude-opus-4-6", Enabled: true},
 	}
 
 	results, err := WriteClaudeProject(dir, agents, allTools, false)
 	require.NoError(t, err)
 
-	// Only coder.md and custodial.md created (claude only — no opencode reviewer)
+	// Only coder.md and custodian.md created (claude only — no opencode reviewer)
 	assert.FileExists(t, filepath.Join(dir, ".claude", "agents", "coder.md"))
-	assert.FileExists(t, filepath.Join(dir, ".claude", "agents", "custodial.md"))
+	assert.FileExists(t, filepath.Join(dir, ".claude", "agents", "custodian.md"))
 	assert.NoFileExists(t, filepath.Join(dir, ".opencode", "agents", "reviewer.md"))
 	require.GreaterOrEqual(t, len(results), 1)
 	// First result is the per-role coder agent
@@ -641,23 +642,25 @@ func TestEnsureRuntimeDirs_Idempotent(t *testing.T) {
 	assert.Empty(t, results, "second run should not create any dirs")
 }
 
-func TestScaffold_IncludesCustodialAgent(t *testing.T) {
+func TestScaffold_IncludesCustodianAgent(t *testing.T) {
 	dir := t.TempDir()
+	temp := 0.1
 	agents := []harness.AgentConfig{
-		{Harness: "opencode", Role: "coder", Model: "anthropic/claude-sonnet-4-6"},
+		{Harness: "opencode", Role: "coder", Model: "anthropic/claude-sonnet-4-6", Temperature: &temp, Effort: "medium", Enabled: true},
+		{Harness: "opencode", Role: "custodian", Model: "anthropic/claude-sonnet-4-6", Temperature: &temp, Effort: "low", Enabled: true},
 	}
 	results, err := WriteOpenCodeProject(dir, agents, nil, true)
 	require.NoError(t, err)
 
-	// Custodial agent should be scaffolded even though it wasn't in agents list
-	custodialPath := filepath.Join(dir, ".opencode", "agents", "custodial.md")
-	assert.FileExists(t, custodialPath)
+	// Custodian agent is now wizard-managed: scaffolded when included in agents list
+	custodianPath := filepath.Join(dir, ".opencode", "agents", "custodian.md")
+	assert.FileExists(t, custodianPath)
 
-	content, err := os.ReadFile(custodialPath)
+	content, err := os.ReadFile(custodianPath)
 	require.NoError(t, err)
-	assert.Contains(t, string(content), "custodial")
+	assert.Contains(t, string(content), "custodian")
 
-	// Check opencode.jsonc includes custodial block
+	// Check opencode.jsonc includes custodian block
 	var foundConfig bool
 	for _, r := range results {
 		if strings.Contains(r.Path, "opencode.jsonc") {
