@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/lipgloss"
+	zone "github.com/lrstanley/bubblezone"
 )
 
 var (
@@ -278,7 +279,7 @@ func (p *InfoPane) renderPlanSummary() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ColorOverlay).
 		Padding(0, 2)
-	lines = append(lines, viewDocStyle.Render("enter: view plan doc"))
+	lines = append(lines, zone.Mark(ZoneViewPlan, viewDocStyle.Render("view plan doc")))
 
 	return strings.Join(lines, "\n")
 }

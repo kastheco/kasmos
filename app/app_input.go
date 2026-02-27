@@ -122,6 +122,11 @@ func (m *home) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Zone-based click: "view plan doc" button in info tab
+	if zone.Get(ui.ZoneViewPlan).InBounds(msg) {
+		return m.viewSelectedPlan()
+	}
+
 	// Zone-based click: nav panel rows
 	if zone.Get(ui.ZoneNavPanel).InBounds(msg) {
 		m.setFocusSlot(slotNav)

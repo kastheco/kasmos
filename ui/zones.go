@@ -12,6 +12,7 @@ const (
 	ZoneTabDiff   = "zone-tab-diff"
 	ZoneTabInfo   = "zone-tab-info"
 	ZoneAgentPane = "zone-agent-pane"
+	ZoneViewPlan  = "zone-view-plan"
 )
 
 // TabZoneIDs maps tab index to zone ID.
