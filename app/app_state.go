@@ -369,6 +369,9 @@ func (m *home) switchToRepo(selection string) {
 
 // saveAllInstances saves allInstances (all repos) to storage.
 func (m *home) saveAllInstances() error {
+	if m.storage == nil {
+		return nil
+	}
 	return m.storage.SaveInstances(m.allInstances)
 }
 
