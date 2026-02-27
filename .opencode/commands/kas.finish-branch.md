@@ -18,7 +18,7 @@ Optional: plan filename. If omitted, infer from current git branch.
 ## Process
 
 1. Resolve the plan and its branch:
-   - If argument provided, look up branch from `kq plan list`
+   - If argument provided, look up branch from `kas plan list`
    - If no argument, detect from `git branch --show-current` and match to a plan
 2. Verify the branch has commits ahead of main:
    ```bash
@@ -44,7 +44,7 @@ Optional: plan filename. If omitted, infer from current git branch.
    - **Keep**: do nothing
 6. On merge or PR, update plan status:
    ```bash
-   kq plan set-status <plan-file> done --force
+    kas plan set-status <plan-file> done --force
    ```
 7. If worktree exists for this branch, offer to clean it up:
    ```bash

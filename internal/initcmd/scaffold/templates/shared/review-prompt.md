@@ -8,7 +8,7 @@ IMPORTANT: Only review changes from this branch. Use `git diff main..HEAD` to se
 what was changed by the implementation — do NOT review code that was inherited from main.
 Files may contain code from main that is outside the scope of this plan.
 
-Load the `requesting-code-review` superpowers skill for structured review methodology.
+Use the `kasmos-reviewer` skill for structured review methodology.
 
 Focus areas:
 - Does the implementation match the plan's stated goals and architecture?

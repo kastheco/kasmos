@@ -23,7 +23,7 @@ Find worktrees whose plan is done or cancelled:
 
 ```bash
 git worktree list
-kq plan list
+kas plan list
 ```
 
 Cross-reference: any worktree on a `plan/*` branch where the plan status is `done` or `cancelled` is stale.
@@ -34,7 +34,7 @@ Find local `plan/*` branches with no matching entry in plan-state.json:
 
 ```bash
 git branch --list 'plan/*'
-kq plan list
+kas plan list
 ```
 
 ### Pass 3: Ghost plan entries
@@ -42,7 +42,7 @@ kq plan list
 Find plan entries in plan-state.json that have no corresponding .md file on disk:
 
 ```bash
-kq plan list
+kas plan list
 ls docs/plans/*.md
 ```
 

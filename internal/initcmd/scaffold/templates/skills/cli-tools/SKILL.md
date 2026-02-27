@@ -1,6 +1,6 @@
 ---
 name: cli-tools
-description: Use when performing code search, refactoring, file transformations, diffing, string replacement, structured data processing, spell checking, or codebase metrics. Covers ast-grep, comby, difftastic, sd, yq, typos, and scc. Use instead of legacy tools like grep, sed, awk, diff, and wc for faster, safer, and more accurate results.
+description: Use when performing code search, refactoring, file transformations, diffing, string replacement, structured data processing, spell checking, or codebase metrics — or when about to reach for grep, sed, awk, find, diff, or wc.
 ---
 
 # CLI Tools
@@ -14,15 +14,18 @@ These legacy tools are NEVER permitted. Using them is a violation, not a prefere
 
 | Banned | Replacement | No Exceptions |
 |--------|-------------|---------------|
-| `grep` | `rg` (ripgrep) | Even for simple searches. `rg` is always faster and respects .gitignore |
+| `grep` | `rg` (ripgrep) | Even for simple one-liners. `rg` is faster, respects .gitignore, and handles encoding correctly |
+| `grep -r` | `rg` | Recursive grep is still grep. Always `rg` |
+| `grep -E` | `rg` | Extended regex is still grep. `rg` supports the same patterns |
 | `sed` | `sd` | Even for one-liners. `sd` has saner syntax and no delimiter escaping |
 | `awk` | `yq`/`jq` (structured) or `sd` (text) | No awk for any purpose |
+| `find` | `fd` or glob tools | Even for simple file listing. `fd` respects .gitignore; use `fd -e go` for extension |
 | `diff` (standalone) | `difft` | `git diff` is fine — standalone `diff` is not |
 | `wc -l` | `scc` | Even for single files |
 
 **`git diff` is allowed** — it's a git subcommand, not standalone `diff`. Use `GIT_EXTERNAL_DIFF=difft git diff` when reviewing code changes.
 
-If you catch yourself thinking "grep is fine for this simple case" — it's not. Use `rg`.
+**STOP.** If you are about to type `grep`, `sed`, `awk`, `find`, `diff`, or `wc` — stop and use the replacement. There are no exceptions. "Just this once" is a violation.
 </HARD-GATE>
 
 ## Tool Selection by Task
@@ -34,10 +37,11 @@ Pick the right tool for the job. When multiple tools could work, the table shows
 | Rename symbol across files | `ast-grep` | `sed`/`sd` | AST-aware, won't rename inside strings/comments |
 | Structural code rewrite | `comby` | `sed`/`awk` | Understands balanced delimiters, nesting |
 | Find code pattern | `ast-grep --pattern` | `grep`/`rg` | Matches syntax, not text |
-| Find literal string | `rg` (ripgrep) | `grep` | Fast, respects .gitignore |
+| Find literal string | `rg` | `grep` | Fast, respects .gitignore, correct encoding |
+| Find files by name/extension | `fd` | `find` | Respects .gitignore, simpler syntax |
 | Replace string in files | `sd` | `sed` | No delimiter escaping, sane defaults |
 | Read/modify YAML/TOML/JSON | `yq` / `jq` | `sed`/`awk` | Understands structure, preserves formatting |
-| Review code changes | `difft` | `diff`/`git diff` | Syntax-aware, ignores formatting noise |
+| Review code changes | `difft` | `diff` | Syntax-aware, ignores formatting noise |
 | Spell check code | `typos` | manual | Understands camelCase, identifiers |
 | Count lines / codebase metrics | `scc` | `wc -l`/`cloc` | Fast, includes complexity estimates |
 | Multi-line structural rewrite | `comby` | `sed` | Handles cross-line patterns with holes |
@@ -60,6 +64,25 @@ Both do structural code operations. Choose based on the transformation:
 | Lint-style pattern detection | ast-grep | Rule-based scanning |
 
 ## Quick Reference
+
+### rg (ripgrep)
+
+Fast text search that respects .gitignore. Primary replacement for all `grep` variants.
+
+```bash
+rg 'pattern' [path]                            # basic search (recursive by default)
+rg 'pattern' --type go                         # filter by language type
+rg 'pattern' -g '*.go'                         # filter by glob
+rg 'pattern' -g '*.go' -g '!*_test.go'         # include/exclude globs
+rg -i 'pattern'                                # case insensitive
+rg -F 'literal[0]'                             # fixed string (no regex)
+rg -U 'start\n.*end'                           # multiline match
+rg -l 'pattern'                                # list matching files only
+rg -c 'pattern'                                # count matches per file
+rg --no-heading -n 'pattern'                   # machine-readable output (file:line:match)
+```
+
+**In-depth reference:** [resources/rg.md](resources/rg.md)
 
 ### ast-grep (`ast-grep`)
 
@@ -164,13 +187,16 @@ scc --include-ext go,ts              # specific languages only
 
 ## Violations
 
-These Violations are not suggestions. If you do any of these, you are violating the skill.
+These violations are not suggestions. If you do any of these, you are violating the skill.
 
 | Violation | Required Fix |
 |-----------|-------------|
 | Using `grep` for anything | Use `rg` for text search, `ast-grep` for code patterns |
+| Using `grep -r` (recursive) | Use `rg` — recursive by default, also respects .gitignore |
+| Using `grep -E` (extended regex) | Use `rg` — supports full regex including extended patterns |
 | Using `sed` for anything | Use `sd` for replacements, `ast-grep`/`comby` for refactoring |
 | Using `awk` for anything | Use `yq`/`jq` for structured data, `sd` for text processing |
+| Using `find` for anything | Use `fd` for file finding, glob tools for path patterns |
 | Using standalone `diff` | Use `difft` for syntax-aware structural diffs |
 | Using `wc -l` for counting | Use `scc` for language-aware counts + complexity |
 | Splitting `{` / `}` in comby templates | Always inline: `{:[body]}` not `{\n:[body]\n}` |

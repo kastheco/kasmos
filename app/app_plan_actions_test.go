@@ -28,7 +28,7 @@ func TestBuildPlanPrompt(t *testing.T) {
 	// Wave headers are required for kasmos orchestration — the prompt must
 	// instruct the planner to include them.
 	assert.Contains(t, prompt, "Wave", "plan prompt must mention Wave headers for kasmos orchestration")
-	assert.Contains(t, prompt, "writing-plans", "plan prompt must reference the writing-plans skill")
+	assert.Contains(t, prompt, "kasmos-planner", "plan prompt must reference the kasmos-planner skill")
 }
 
 func TestBuildWaveAnnotationPrompt(t *testing.T) {

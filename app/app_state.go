@@ -1282,7 +1282,7 @@ func (m *home) planBranch(planFile string) string {
 func buildPlanPrompt(planName, description string) string {
 	return fmt.Sprintf(
 		"Plan %s. Goal: %s. "+
-			"Use the `writing-plans` superpowers skill. "+
+			"Use the `kasmos-planner` skill. "+
 			"The plan MUST include ## Wave N sections (at minimum ## Wave 1) "+
 			"grouping all tasks — kasmos requires Wave headers to orchestrate implementation.",
 		planName, description,
@@ -1310,7 +1310,7 @@ func buildWaveAnnotationPrompt(planFile string) string {
 // buildImplementPrompt returns the prompt for a coder agent session.
 func buildImplementPrompt(planFile string) string {
 	return fmt.Sprintf(
-		"Implement docs/plans/%s using the executing-plans superpowers skill. Execute all tasks sequentially.",
+		"Implement docs/plans/%s using the `kasmos-coder` skill. Execute all tasks sequentially.",
 		planFile,
 	)
 }
