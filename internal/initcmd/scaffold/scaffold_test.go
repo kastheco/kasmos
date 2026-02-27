@@ -638,4 +638,30 @@ func TestEnsureRuntimeDirs_Idempotent(t *testing.T) {
 	assert.Empty(t, results, "second run should not create any dirs")
 }
 
+func TestScaffold_IncludesCustodialAgent(t *testing.T) {
+	dir := t.TempDir()
+	agents := []harness.AgentConfig{
+		{Harness: "opencode", Role: "coder", Model: "anthropic/claude-sonnet-4-6"},
+	}
+	results, err := WriteOpenCodeProject(dir, agents, nil, true)
+	require.NoError(t, err)
+
+	// Custodial agent should be scaffolded even though it wasn't in agents list
+	custodialPath := filepath.Join(dir, ".opencode", "agents", "custodial.md")
+	assert.FileExists(t, custodialPath)
+
+	content, err := os.ReadFile(custodialPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "custodial")
+
+	// Check opencode.jsonc includes custodial block
+	var foundConfig bool
+	for _, r := range results {
+		if strings.Contains(r.Path, "opencode.jsonc") {
+			foundConfig = true
+		}
+	}
+	assert.True(t, foundConfig)
+}
+
 func ptrFloat(f float64) *float64 { return &f }

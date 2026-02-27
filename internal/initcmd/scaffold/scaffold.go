@@ -245,6 +245,14 @@ func WriteOpenCodeProject(dir string, agents []harness.AgentConfig, selectedTool
 		return nil, err
 	}
 
+	// Scaffold static agent files (e.g. custodial) that are always present
+	// regardless of wizard configuration.
+	staticResults, err := writeStaticAgents(dir, "opencode", force)
+	if err != nil {
+		return nil, err
+	}
+	results = append(results, staticResults...)
+
 	// Generate opencode.jsonc from template
 	configContent, err := renderOpenCodeConfig(dir, agents)
 	if err != nil {
@@ -262,6 +270,40 @@ func WriteOpenCodeProject(dir string, agents []harness.AgentConfig, selectedTool
 	}
 	results = append(results, WriteResult{Path: rel, Created: written})
 
+	return results, nil
+}
+
+// staticAgentRoles lists agent roles that are always scaffolded regardless of
+// wizard configuration. These are operational/infrastructure agents that every
+// project gets by default.
+var staticAgentRoles = []string{"custodial"}
+
+// writeStaticAgents writes the static agent .md files (custodial, etc.) that
+// are always present in a project regardless of wizard-configured agents.
+func writeStaticAgents(dir, harnessName string, force bool) ([]WriteResult, error) {
+	agentDir := filepath.Join(dir, "."+harnessName, "agents")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create .%s/agents: %w", harnessName, err)
+	}
+
+	var results []WriteResult
+	for _, role := range staticAgentRoles {
+		content, err := templates.ReadFile(fmt.Sprintf("templates/%s/agents/%s.md", harnessName, role))
+		if err != nil {
+			// No template for this static role - skip silently
+			continue
+		}
+		dest := filepath.Join(agentDir, role+".md")
+		written, err := writeFile(dest, content, force)
+		if err != nil {
+			return nil, fmt.Errorf("write static agent %s: %w", role, err)
+		}
+		rel, relErr := filepath.Rel(dir, dest)
+		if relErr != nil {
+			rel = dest
+		}
+		results = append(results, WriteResult{Path: rel, Created: written})
+	}
 	return results, nil
 }
 

@@ -111,6 +111,29 @@
             "reasoningEffort": "medium",
             "temperature": 0.2,
             "textVerbosity": "medium"
+        },
+        "custodial": {
+            "model": "anthropic/claude-sonnet-4-6",
+            "permission": {
+                "bash": "allow",
+                "edit": "allow",
+                "external_directory": {
+                    "*": "ask",
+                    "/home/kas/dev/kasmos/*": "allow",
+                    "/home/kas/dev/kasmos/**": "allow",
+                    "/tmp/*": "allow",
+                    "/tmp/**": "allow",
+                    "/home/kas/.config/opencode/*": "allow",
+                    "/home/kas/.config/opencode/**": "allow"
+                },
+                "glob": "allow",
+                "grep": "allow",
+                "read": "allow",
+                "write": "allow"
+            },
+            "reasoningEffort": "low",
+            "temperature": 0.1,
+            "textVerbosity": "low"
         }
     }
 }
