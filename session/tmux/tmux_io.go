@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/kastheco/kasmos/log"
@@ -27,19 +28,31 @@ func (t *TmuxSession) TapRight() error {
 	return t.cmdExec.Run(cmd)
 }
 
+// sendKeyDelay is the pause between the first and second Enter in opencode's
+// two-step permission flow: selection → confirmation. 300ms gives the TUI time
+// to render the confirmation dialog before the second keystroke arrives.
+const sendKeyDelay = 300 * time.Millisecond
+
 // SendPermissionResponse sends the key sequence for the given permission choice.
-// Allow once: Enter (already selected). Allow always: Right Enter. Reject: Right Right Enter.
+// opencode's permission prompt is a two-step flow:
+//  1. Select the choice (arrow keys + Enter)
+//  2. Confirm the selection (Enter again after a short delay)
+//
+// Allow once: Enter, delay, Enter. Allow always: Right Enter, delay, Enter.
+// Reject: Right Right Enter, delay, Enter.
 func (t *TmuxSession) SendPermissionResponse(choice PermissionChoice) error {
 	switch choice {
 	case PermissionAllowOnce:
-		return t.TapEnter()
+		if err := t.TapEnter(); err != nil {
+			return err
+		}
 	case PermissionAllowAlways:
-		// opencode's permission prompt is a single-step selection: arrow to highlight, Enter to confirm.
-		// No additional Enter needed after selecting "allow always".
 		if err := t.TapRight(); err != nil {
 			return err
 		}
-		return t.TapEnter()
+		if err := t.TapEnter(); err != nil {
+			return err
+		}
 	case PermissionReject:
 		if err := t.TapRight(); err != nil {
 			return err
@@ -47,10 +60,17 @@ func (t *TmuxSession) SendPermissionResponse(choice PermissionChoice) error {
 		if err := t.TapRight(); err != nil {
 			return err
 		}
-		return t.TapEnter()
+		if err := t.TapEnter(); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("unknown permission choice: %d", choice)
 	}
+
+	// Second step: opencode shows a confirmation dialog after the initial
+	// selection. Wait for it to render, then confirm.
+	time.Sleep(sendKeyDelay)
+	return t.TapEnter()
 }
 
 // TapEnter sends an Enter keystroke to the tmux pane via tmux send-keys.

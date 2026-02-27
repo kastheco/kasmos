@@ -25,8 +25,8 @@ func TestSendPermissionResponse_AllowAlways(t *testing.T) {
 	err := session.SendPermissionResponse(PermissionAllowAlways)
 	require.NoError(t, err)
 
-	// Should send: Right, Enter (two commands — opencode's allow-always is a single-step select)
-	assert.Len(t, ranCmds, 2)
+	// Should send: Right, Enter, Enter (three commands — selection + confirmation)
+	assert.Len(t, ranCmds, 3)
 }
 
 func TestSendPermissionResponse_AllowOnce(t *testing.T) {
@@ -45,8 +45,8 @@ func TestSendPermissionResponse_AllowOnce(t *testing.T) {
 	err := session.SendPermissionResponse(PermissionAllowOnce)
 	require.NoError(t, err)
 
-	// Should send: Enter
-	assert.GreaterOrEqual(t, len(ranCmds), 1)
+	// Should send: Enter, Enter (selection + confirmation)
+	assert.Len(t, ranCmds, 2)
 }
 
 func TestSendPermissionResponse_Reject(t *testing.T) {
@@ -65,6 +65,6 @@ func TestSendPermissionResponse_Reject(t *testing.T) {
 	err := session.SendPermissionResponse(PermissionReject)
 	require.NoError(t, err)
 
-	// Should send: Right, Right, Enter
-	assert.GreaterOrEqual(t, len(ranCmds), 3)
+	// Should send: Right, Right, Enter, Enter (selection + confirmation)
+	assert.Len(t, ranCmds, 4)
 }
