@@ -971,6 +971,16 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		return m, m.instanceChanged()
 	}
 
+	// Ctrl+U/D: half-page scroll in agent session preview
+	if msg.Type == tea.KeyCtrlU || msg.Type == tea.KeyCtrlD {
+		if msg.Type == tea.KeyCtrlU {
+			m.tabbedWindow.HalfPageUp()
+		} else {
+			m.tabbedWindow.HalfPageDown()
+		}
+		return m, nil
+	}
+
 	// Handle quit commands first
 	if msg.String() == "ctrl+c" || msg.String() == "q" {
 		return m.handleQuit()

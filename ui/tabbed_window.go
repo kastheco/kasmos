@@ -249,6 +249,24 @@ func (w *TabbedWindow) ScrollDown() {
 	}
 }
 
+// HalfPageUp scrolls the active pane up by half a page.
+func (w *TabbedWindow) HalfPageUp() {
+	if w.activeTab == PreviewTab {
+		if err := w.preview.HalfPageUp(w.instance); err != nil {
+			log.InfoLog.Printf("tabbed window failed to half page up: %v", err)
+		}
+	}
+}
+
+// HalfPageDown scrolls the active pane down by half a page.
+func (w *TabbedWindow) HalfPageDown() {
+	if w.activeTab == PreviewTab {
+		if err := w.preview.HalfPageDown(w.instance); err != nil {
+			log.InfoLog.Printf("tabbed window failed to half page down: %v", err)
+		}
+	}
+}
+
 // ContentScrollUp scrolls content without file navigation (for mouse wheel).
 // In info tab, scrolls the info pane.
 func (w *TabbedWindow) ContentScrollUp() {

@@ -526,6 +526,66 @@ func (p *PreviewPane) ScrollDown(instance *session.Instance) error {
 	return nil
 }
 
+// HalfPageUp scrolls up by half a page in the viewport. Enters scroll mode if not already.
+func (p *PreviewPane) HalfPageUp(instance *session.Instance) error {
+	if p.isDocument {
+		p.viewport.HalfViewUp()
+		return nil
+	}
+
+	if instance == nil || instance.Status == session.Paused {
+		return nil
+	}
+
+	if !p.isScrolling {
+		content, err := instance.PreviewFullHistory()
+		if err != nil {
+			return err
+		}
+
+		footer := lipgloss.NewStyle().
+			Foreground(ColorMuted).
+			Render("ESC to exit scroll mode")
+
+		p.viewport.SetContent(lipgloss.JoinVertical(lipgloss.Left, content, footer))
+		p.viewport.GotoBottom()
+		p.isScrolling = true
+	}
+
+	p.viewport.HalfViewUp()
+	return nil
+}
+
+// HalfPageDown scrolls down by half a page in the viewport. Enters scroll mode if not already.
+func (p *PreviewPane) HalfPageDown(instance *session.Instance) error {
+	if p.isDocument {
+		p.viewport.HalfViewDown()
+		return nil
+	}
+
+	if instance == nil || instance.Status == session.Paused {
+		return nil
+	}
+
+	if !p.isScrolling {
+		content, err := instance.PreviewFullHistory()
+		if err != nil {
+			return err
+		}
+
+		footer := lipgloss.NewStyle().
+			Foreground(ColorMuted).
+			Render("ESC to exit scroll mode")
+
+		p.viewport.SetContent(lipgloss.JoinVertical(lipgloss.Left, content, footer))
+		p.viewport.GotoBottom()
+		p.isScrolling = true
+	}
+
+	p.viewport.HalfViewDown()
+	return nil
+}
+
 // ResetToNormalMode exits scroll mode and returns to normal mode
 func (p *PreviewPane) ResetToNormalMode(instance *session.Instance) error {
 	if instance == nil || instance.Status == session.Paused {
