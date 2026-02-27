@@ -585,11 +585,11 @@
       "created_at": "2026-02-27T18:36:48.99087766Z"
     },
     "2026-02-27-chat-and-custodial-customizations.md": {
-      "status": "reviewing",
-      "description": "chat and custodial customizations\n\nallow configuring chat/custodial agent types via setup wizard (optionally) and rename custodial to custodian",
+      "status": "done",
+      "description": "rename custodial to custodian and make chat/custodian agent types configurable in the setup wizard",
       "branch": "plan/chat-and-custodial-customizations",
-      "topic": "tools",
-      "created_at": "2026-02-27T20:38:56.312200505Z"
+      "topic": "workflow",
+      "created_at": "2026-02-27T22:00:00Z"
     },
     "2026-02-27-cleanup-tracked-state.md": {
       "status": "ready",
@@ -680,7 +680,7 @@
       "created_at": "2026-02-27T19:07:35.357546336Z"
     },
     "2026-02-27-reliable-planner-completion.md": {
-      "status": "planning",
+      "status": "done",
       "description": "make planner explicitly confirm with user before signaling completion, instead of relying on agent remembering to touch sentinel after Q\u0026A",
       "branch": "plan/reliable-planner-completion",
       "topic": "workflow",
@@ -713,13 +713,6 @@
       "branch": "plan/tmux-session-summary",
       "topic": "ui",
       "created_at": "2026-02-27T07:41:00.300934469Z"
-    },
-    "2026-02-27-chat-and-custodial-customizations.md": {
-      "status": "reviewing",
-      "description": "rename custodial to custodian and make chat/custodian agent types configurable in the setup wizard",
-      "branch": "plan/chat-and-custodial-customizations",
-      "topic": "workflow",
-      "created_at": "2026-02-27T22:00:00.000000000Z"
     }
   }
 }
