@@ -112,6 +112,18 @@ func newTmuxSession(name string, program string, skipPermissions bool, ptyFactor
 	}
 }
 
+// NewTmuxSessionFromExisting creates a TmuxSession that wraps an already-running
+// tmux session identified by its raw sanitized name. Used for adopting orphans.
+func NewTmuxSessionFromExisting(sanitizedName string, program string, skipPermissions bool) *TmuxSession {
+	return &TmuxSession{
+		sanitizedName:   sanitizedName,
+		program:         program,
+		skipPermissions: skipPermissions,
+		ptyFactory:      MakePtyFactory(),
+		cmdExec:         cmd.MakeExecutor(),
+	}
+}
+
 // SetAgentType sets the agent type flag to inject at startup (planner/coder/reviewer).
 func (t *TmuxSession) SetAgentType(agentType string) {
 	t.agentType = strings.TrimSpace(agentType)
