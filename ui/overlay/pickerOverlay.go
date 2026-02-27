@@ -61,6 +61,11 @@ func NewPickerOverlay(title string, items []string) *PickerOverlay {
 	}
 }
 
+// SetTitle updates the picker's title text (used when AI title arrives async).
+func (p *PickerOverlay) SetTitle(title string) {
+	p.title = title
+}
+
 // SetAllowCustom enables free-text entry when the search query doesn't match any item.
 func (p *PickerOverlay) SetAllowCustom(allow bool) {
 	p.allowCustom = allow

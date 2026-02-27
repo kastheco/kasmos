@@ -55,7 +55,7 @@ func TestCreatePlanRecord(t *testing.T) {
 	}
 }
 
-func TestHandleDefaultStateStartsCombinedPlanForm(t *testing.T) {
+func TestHandleDefaultStateStartsDescriptionOverlay(t *testing.T) {
 	h := &home{
 		state:        stateDefault,
 		keySent:      true,
@@ -68,7 +68,7 @@ func TestHandleDefaultStateStartsCombinedPlanForm(t *testing.T) {
 	updated, ok := model.(*home)
 	require.True(t, ok)
 	require.Equal(t, stateNewPlan, updated.state)
-	require.NotNil(t, updated.formOverlay)
+	require.NotNil(t, updated.textInputOverlay)
 }
 
 func TestHandleKeyPressNewPlanWithoutOverlayReturnsDefault(t *testing.T) {
@@ -80,6 +80,27 @@ func TestHandleKeyPressNewPlanWithoutOverlayReturnsDefault(t *testing.T) {
 	updated, ok := model.(*home)
 	require.True(t, ok)
 	require.Equal(t, stateDefault, updated.state)
+}
+
+func TestNewPlanSubmitShowsTopicPicker(t *testing.T) {
+	h := &home{
+		state:            stateNewPlan,
+		textInputOverlay: overlay.NewTextInputOverlay("new plan", "refactor auth module"),
+	}
+	h.textInputOverlay.SetMultiline(true)
+
+	// Tab to submit button, then Enter
+	h.handleKeyPress(tea.KeyMsg{Type: tea.KeyTab})
+	model, cmd := h.handleKeyPress(tea.KeyMsg{Type: tea.KeyEnter})
+
+	updated, ok := model.(*home)
+	require.True(t, ok)
+	require.Equal(t, stateNewPlanTopic, updated.state)
+	require.NotNil(t, updated.pickerOverlay)
+	require.NotEmpty(t, updated.pendingPlanName)
+	require.Equal(t, "refactor auth module", updated.pendingPlanDesc)
+	// cmd should be the AI title derivation command (non-nil)
+	require.NotNil(t, cmd)
 }
 
 func TestHandleKeyPressNewPlanTopicWithoutPickerClearsPendingValues(t *testing.T) {
@@ -101,20 +122,14 @@ func TestHandleKeyPressNewPlanTopicWithoutPickerClearsPendingValues(t *testing.T
 
 func TestNewPlanTopicPickerShowsPendingPlanName(t *testing.T) {
 	h := &home{
-		state:       stateNewPlan,
-		formOverlay: overlay.NewFormOverlay("new plan", 80),
+		state:            stateNewPlan,
+		textInputOverlay: overlay.NewTextInputOverlay("new plan", "auth refactor"),
 	}
+	h.textInputOverlay.SetMultiline(true)
 
-	for _, r := range "auth refactor" {
-		model, cmd := h.handleKeyPress(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
-		require.Nil(t, cmd)
-		updated, ok := model.(*home)
-		require.True(t, ok)
-		h = updated
-	}
-
-	model, cmd := h.handleKeyPress(tea.KeyMsg{Type: tea.KeyEnter})
-	require.Nil(t, cmd)
+	// Tab to button, then Enter to submit
+	h.handleKeyPress(tea.KeyMsg{Type: tea.KeyTab})
+	model, _ := h.handleKeyPress(tea.KeyMsg{Type: tea.KeyEnter})
 
 	updated, ok := model.(*home)
 	require.True(t, ok)

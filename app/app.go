@@ -1200,6 +1200,19 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case planTitleMsg:
+		if msg.err == nil && msg.title != "" {
+			// Only update if we're still in the topic picker flow
+			if m.state == stateNewPlanTopic && m.pendingPlanDesc != "" {
+				m.pendingPlanName = msg.title
+				if m.pickerOverlay != nil {
+					m.pickerOverlay.SetTitle(
+						fmt.Sprintf("assign to topic for '%s'", msg.title),
+					)
+				}
+			}
+		}
+		return m, nil
 	case plannerCompleteMsg:
 		// User confirmed: start implementation. Kill the dead planner instance first.
 		m.plannerPrompted[msg.planFile] = true
@@ -1314,8 +1327,8 @@ func (m *home) View() string {
 		result = overlay.PlaceOverlay(0, 0, m.textInputOverlay.Render(), mainView, true, true)
 	case m.state == stateRenameInstance && m.textInputOverlay != nil:
 		result = overlay.PlaceOverlay(0, 0, m.textInputOverlay.Render(), mainView, true, true)
-	case m.state == stateNewPlan && m.formOverlay != nil:
-		result = overlay.PlaceOverlay(0, 0, m.formOverlay.Render(), mainView, true, true)
+	case m.state == stateNewPlan && m.textInputOverlay != nil:
+		result = overlay.PlaceOverlay(0, 0, m.textInputOverlay.Render(), mainView, true, true)
 	case m.state == stateSpawnAgent && m.formOverlay != nil:
 		result = overlay.PlaceOverlay(0, 0, m.formOverlay.Render(), mainView, true, true)
 	case m.state == stateNewPlanTopic && m.pickerOverlay != nil:

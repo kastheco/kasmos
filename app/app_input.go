@@ -660,37 +660,41 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		return m, nil
 	}
 
-	// Handle new plan form state
+	// Handle new plan description state
 	if m.state == stateNewPlan {
-		if m.formOverlay == nil {
+		if m.textInputOverlay == nil {
 			m.state = stateDefault
 			return m, nil
 		}
-		shouldClose := m.formOverlay.HandleKeyPress(msg)
+		shouldClose := m.textInputOverlay.HandleKeyPress(msg)
 		if shouldClose {
-			if m.formOverlay.IsSubmitted() {
-				name := m.formOverlay.Name()
-				if name == "" {
+			if m.textInputOverlay.IsSubmitted() {
+				description := strings.TrimSpace(m.textInputOverlay.GetValue())
+				if description == "" {
 					m.state = stateDefault
 					m.menu.SetState(ui.StateDefault)
-					m.formOverlay = nil
-					return m, m.handleError(fmt.Errorf("plan name cannot be empty"))
+					m.textInputOverlay = nil
+					return m, m.handleError(fmt.Errorf("description cannot be empty"))
 				}
-				// Stash values and show topic picker
-				m.pendingPlanName = name
-				m.pendingPlanDesc = m.formOverlay.Description()
-				m.formOverlay = nil
+				// Derive heuristic title immediately
+				m.pendingPlanName = heuristicPlanTitle(description)
+				m.pendingPlanDesc = description
+				m.textInputOverlay = nil
+
+				// Show topic picker with heuristic title
 				topicNames := m.getTopicNames()
 				topicNames = append([]string{"(No topic)"}, topicNames...)
-				pickerTitle := fmt.Sprintf("assign to topic for '%s' (optional)", m.pendingPlanName)
+				pickerTitle := fmt.Sprintf("assign to topic for '%s'", m.pendingPlanName)
 				m.pickerOverlay = overlay.NewPickerOverlay(pickerTitle, topicNames)
 				m.pickerOverlay.SetAllowCustom(true)
 				m.state = stateNewPlanTopic
-				return m, nil
+
+				// Fire async AI title derivation
+				return m, aiDerivePlanTitleCmd(description)
 			}
 			m.state = stateDefault
 			m.menu.SetState(ui.StateDefault)
-			m.formOverlay = nil
+			m.textInputOverlay = nil
 			return m, tea.WindowSize()
 		}
 		return m, nil
@@ -1295,7 +1299,10 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		return m, nil
 	case keys.KeyNewPlan:
 		m.state = stateNewPlan
-		m.formOverlay = overlay.NewFormOverlay("new plan", 60)
+		m.textInputOverlay = overlay.NewTextInputOverlay("new plan", "")
+		m.textInputOverlay.SetMultiline(true)
+		m.textInputOverlay.SetPlaceholder("describe what you want to work on...")
+		m.textInputOverlay.SetSize(70, 8)
 		return m, nil
 	case keys.KeySpawnAgent:
 		if m.nav.TotalInstances() >= GlobalInstanceLimit {
