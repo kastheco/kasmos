@@ -698,12 +698,12 @@ func TestFocusRing(t *testing.T) {
 		assert.Equal(t, slotInfo, homeModel.focusSlot)
 	})
 
-	t.Run("t jumps to nav slot when instances exist", func(t *testing.T) {
+	t.Run("T jumps to nav slot when instances exist", func(t *testing.T) {
 		h := newTestHome()
 		addTestInstance(t, h)
 		h.setFocusSlot(slotAgent)
 
-		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+		homeModel := handle(t, h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("T")})
 
 		assert.Equal(t, slotNav, homeModel.focusSlot)
 	})

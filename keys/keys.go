@@ -58,7 +58,7 @@ const (
 	KeyExitFocus     // Key for exiting focus/interactive mode (ctrl+space)
 	KeySpaceExpand   // Space key with expand/collapse label (sidebar context)
 
-	KeyTmuxBrowser // T - browse orphaned tmux sessions
+	KeyTmuxBrowser // t - browse orphaned tmux sessions
 )
 
 // Backward-compatible aliases; prefer KeyInfoTab/KeyTabInfo.
@@ -94,9 +94,9 @@ var GlobalKeyStringsMap = map[string]KeyName{
 	"2":      KeyFilterActive,
 	"3":      KeyCycleSort,
 	"R":      KeyRepoSwitch,
-	"T":      KeyTmuxBrowser,
+	"t":      KeyTmuxBrowser,
 	"s":      KeySpawnAgent,
-	"t":      KeyFocusList,
+	"T":      KeyFocusList,
 	"v":      KeyViewPlan,
 	"p":      KeyViewPlan,
 	"ctrl+s": KeyToggleSidebar,
@@ -209,8 +209,8 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 		key.WithHelp("s", "spawn agent"),
 	),
 	KeyFocusList: key.NewBinding(
-		key.WithKeys("t"),
-		key.WithHelp("t", "right sidebar"),
+		key.WithKeys("T"),
+		key.WithHelp("T", "right sidebar"),
 	),
 	KeyViewPlan: key.NewBinding(
 		key.WithKeys("v", "p"),
@@ -247,8 +247,8 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	),
 
 	KeyTmuxBrowser: key.NewBinding(
-		key.WithKeys("T"),
-		key.WithHelp("T", "tmux sessions"),
+		key.WithKeys("t"),
+		key.WithHelp("t", "tmux sessions"),
 	),
 
 	// -- Special keybindings --
