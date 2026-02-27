@@ -16,7 +16,7 @@
 
 > **Justification:** the cli-tools hard gate is embedded inline in every kasmos-native skill. the deep reference files (`resources/*.md`) are loaded on-demand when agents need a specific tool. before writing the 5 skills, we need to ensure the references are accurate, complete, and optimally structured for agent consumption. this wave also evaluates YAML frontmatter across all existing skills to establish best practices for the new skill descriptions.
 
-### Task 1: Audit cli-tools SKILL.md and YAML frontmatter
+### Task 1: Audit cli-tools SKILL.md, add rg quick reference, and improve YAML frontmatter
 
 **Files:**
 - Modify: `.opencode/skills/cli-tools/SKILL.md`
@@ -36,40 +36,104 @@ Evaluate the main cli-tools SKILL.md for:
 
 4. **ast-grep vs comby decision table** — this is a common confusion point. evaluate whether the current table is sufficient or needs examples showing the decision boundary more clearly.
 
-5. **Quick reference sections** — each tool has a 3-4 line quick reference plus a link to the deep reference. evaluate whether the quick references contain the right commands (most commonly needed) or if they should be adjusted.
+5. **Missing rg quick reference** — `rg` (ripgrep) is the most-used tool in the entire skill (it's the primary replacement for the most commonly banned tool, `grep`), yet it has NO quick reference section and NO deep reference file. every other tool has both. add a quick reference section for `rg` in the main SKILL.md between the tool selection table and the ast-grep section. include:
+   - basic search: `rg 'pattern' [path]`
+   - file type filter: `rg 'pattern' --type go` or `rg 'pattern' -g '*.go'`
+   - case insensitive: `rg -i 'pattern'`
+   - fixed string (no regex): `rg -F 'literal[0]'`
+   - multiline: `rg -U 'start\n.*end'`
+   - include/exclude globs: `rg 'pattern' -g '*.go' -g '!*_test.go'`
+   - link to the new deep reference: `resources/rg.md`
 
-6. **Violations table** — evaluate completeness. are there violations agents commonly commit that aren't listed?
+6. **Other quick reference sections** — evaluate whether the existing quick references contain the right commands (most commonly needed) or if they should be adjusted.
+
+7. **Violations table** — evaluate completeness. are there violations agents commonly commit that aren't listed? consider adding rg-specific violations (e.g. using `grep` with `-r` flag, using `grep -E` instead of `rg`).
 
 Apply improvements directly. keep the same overall structure but tighten language, fix any inaccuracies, and ensure the hard gate is as bulletproof as possible. sync changes across all 3 copies (`.opencode/skills/`, `.agents/skills/`, and `internal/initcmd/scaffold/templates/skills/`).
 
-**Commit:** `refactor: audit and improve cli-tools SKILL.md`
+**Commit:** `refactor: audit and improve cli-tools SKILL.md, add rg quick reference`
 
-### Task 2: Audit and improve ast-grep and comby deep references
+### Task 2: Create rg deep reference and audit ast-grep and comby references
 
 **Files:**
+- Create: `.opencode/skills/cli-tools/resources/rg.md`
 - Modify: `.opencode/skills/cli-tools/resources/ast-grep.md`
 - Modify: `.opencode/skills/cli-tools/resources/comby.md`
 
-These are the two most complex tools and the ones agents struggle with most. Evaluate each for:
+**Create rg.md deep reference (~120 lines).** this is the highest-priority gap in the cli-tools skill. `rg` is the most frequently used tool (replaces `grep`, the most commonly banned tool) but has ZERO documentation — no quick reference section (added in Task 1) and no deep reference file. agents consistently trip up on rg's flags and behavior. the reference must cover:
 
-1. **Version accuracy** — ast-grep is listed as 0.40.x, comby as 1.8.1. verify these are current or update.
+1. **Core commands** — basic search, recursive search (default behavior), search specific paths.
 
-2. **ast-grep.md** (158 lines):
-   - metavariable syntax table — is `$$VAR` documented correctly? agents confuse `$$$` vs `$$$ARGS`.
-   - common patterns section — are the Go examples the most useful ones? consider adding TypeScript/Python examples since agents work across languages.
-   - rule files section — is the YAML rule example sufficient? agents often need `constraints` and `has` but these are only mentioned in passing.
-   - the "When to Use" section at the bottom duplicates the main SKILL.md decision table — evaluate whether to keep, remove, or differentiate.
+2. **File targeting (CRITICAL — agents get this wrong constantly):**
+   - `--type` / `-t` flag: `rg 'pattern' -t go` (uses built-in type definitions)
+   - `--type-not` / `-T` flag: `rg 'pattern' -T test` (exclude type)
+   - `--type-list`: show all built-in types
+   - `-g` / `--glob` flag: `rg 'pattern' -g '*.go'` for include, `rg 'pattern' -g '!*_test.go'` for exclude
+   - **common mistake:** using `--include` (grep flag, doesn't exist in rg) — document this explicitly as a pitfall
+   - **common mistake:** using `-g '*.go'` when `-t go` is simpler and more correct
 
-3. **comby.md** (157 lines):
-   - the two "Critical" sections (balanced delimiters and newline collapse) are the most important content. evaluate whether they're prominent enough and whether the examples clearly show the failure mode.
-   - hole syntax table — the `:[var:e]` (expression) hole is underdocumented. agents don't know when to use it vs `:[var]`.
-   - safe patterns for Go — evaluate whether these cover the most common operations agents perform. consider adding "remove a function parameter" and "wrap function body in if-check" patterns.
-   - anti-patterns table — evaluate completeness.
-   - shell quoting section — is this necessary or does it add noise?
+3. **Case sensitivity (agents default wrong):**
+   - default: smart case (case-insensitive if pattern is all lowercase, case-sensitive if any uppercase)
+   - `-i` / `--ignore-case`: force case-insensitive
+   - `-s` / `--case-sensitive`: force case-sensitive
+   - `-S` / `--smart-case`: explicit smart case (the default, but useful to be explicit in scripts)
+   - **common mistake:** assuming rg is always case-sensitive like grep
 
-Apply improvements. focus on clarity for agents: make the most dangerous pitfalls impossible to miss, and ensure the most common operations have copy-paste examples.
+4. **Multiline matching (agents struggle with this):**
+   - `-U` / `--multiline`: enable multiline mode (required for `\n` in patterns)
+   - `--multiline-dotall`: make `.` match `\n` in multiline mode
+   - **common mistake:** trying to match across lines without `-U` flag — rg silently matches nothing
+   - example: `rg -U 'func.*\{[\s\S]*?return nil\n\}' -t go`
 
-**Commit:** `refactor: audit and improve ast-grep and comby references`
+5. **Output control:**
+   - `-l` / `--files-with-matches`: list filenames only (no content)
+   - `-c` / `--count`: count matches per file
+   - `-n` / `--line-number`: show line numbers (default when stdout is terminal)
+   - `--no-heading`: don't group by filename
+   - `--json`: structured JSON output
+   - `-o` / `--only-matching`: print only the matched text
+   - `-A NUM` / `-B NUM` / `-C NUM`: context lines (after/before/both)
+
+6. **Fixed string mode:**
+   - `-F` / `--fixed-strings`: treat pattern as literal (no regex)
+   - critical for patterns containing regex metacharacters: `rg -F 'array[0]'`
+
+7. **Regex syntax notes:**
+   - rg uses Rust's `regex` crate (same as `sd`)
+   - no lookahead/lookbehind (unlike PCRE) — document this limitation explicitly
+   - `\b` for word boundaries: `rg '\bfoo\b'` matches `foo` but not `foobar`
+   - `(?:...)` for non-capturing groups (no `(?=...)` or `(?<=...)`)
+
+8. **Common pitfalls table:**
+
+   | Pitfall | Wrong | Right | Why |
+   |---------|-------|-------|-----|
+   | grep include flag | `rg --include '*.go'` | `rg -t go` or `rg -g '*.go'` | `--include` doesn't exist in rg |
+   | multiline without flag | `rg 'foo\nbar'` | `rg -U 'foo\nbar'` | `\n` is literal without `-U` |
+   | case sensitivity assumption | `rg 'TODO'` (expects case-sensitive) | `rg -s 'TODO'` | smart-case makes all-upper case-insensitive if pattern has no lowercase |
+   | escaping regex chars | `rg 'map[string]'` | `rg -F 'map[string]'` | `[string]` is a character class without `-F` |
+   | PCRE features | `rg '(?<=foo)bar'` | use `rg -P '(?<=foo)bar'` | requires `-P` (PCRE2) flag for lookaround |
+
+**Audit ast-grep.md** (158 lines):
+
+1. **Version accuracy** — ast-grep is listed as 0.40.x. verify current or update.
+2. metavariable syntax table — is `$$VAR` documented correctly? agents confuse `$$$` vs `$$$ARGS`.
+3. common patterns section — are the Go examples the most useful ones? consider adding TypeScript/Python examples since agents work across languages.
+4. rule files section — is the YAML rule example sufficient? agents often need `constraints` and `has` but these are only mentioned in passing.
+5. the "When to Use" section at the bottom duplicates the main SKILL.md decision table — evaluate whether to keep, remove, or differentiate.
+
+**Audit comby.md** (157 lines):
+
+1. **Version accuracy** — comby is listed as 1.8.1. verify current or update.
+2. the two "Critical" sections (balanced delimiters and newline collapse) are the most important content. evaluate whether they're prominent enough and whether the examples clearly show the failure mode.
+3. hole syntax table — the `:[var:e]` (expression) hole is underdocumented. agents don't know when to use it vs `:[var]`.
+4. safe patterns for Go — evaluate whether these cover the most common operations agents perform. consider adding "remove a function parameter" and "wrap function body in if-check" patterns.
+5. anti-patterns table — evaluate completeness.
+6. shell quoting section — is this necessary or does it add noise?
+
+Apply improvements to all three files. focus on clarity for agents: make the most dangerous pitfalls impossible to miss, and ensure the most common operations have copy-paste examples.
+
+**Commit:** `feat: create rg deep reference, audit ast-grep and comby references`
 
 ### Task 3: Audit and improve remaining deep references (difft, sd, yq, typos, scc)
 
