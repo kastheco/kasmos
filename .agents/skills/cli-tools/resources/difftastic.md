@@ -14,16 +14,11 @@ difft old_dir/ new_dir/                # compare directories
 
 ## Git Integration
 
-The most common use case — reviewing changes with syntax-awareness:
-
 ```bash
-# Review branch vs main (the go-to command)
-GIT_EXTERNAL_DIFF=difft git diff main..HEAD
-
-# One-off diff of working tree
+# One-off diff
 GIT_EXTERNAL_DIFF=difft git diff
 
-# One-off log with diff
+# One-off log
 GIT_EXTERNAL_DIFF=difft git log -p -- path/to/file.go
 
 # One-off show
@@ -72,3 +67,9 @@ All options can be set via environment variables prefixed with `DFT_`:
 ## Language Support
 
 Difftastic supports 50+ languages via tree-sitter. Language is detected from file extensions. Override with `--language` flag.
+
+## When to Use difft vs Alternatives
+
+- **difft**: Reviewing refactors, renames, code moves — ignores irrelevant formatting noise
+- **git diff**: When you need patch-compatible output or line-level granularity
+- **diff**: BANNED. Use `difft` instead — always. (`git diff` is fine, standalone `diff` is not.)

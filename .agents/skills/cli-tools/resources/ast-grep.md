@@ -1,7 +1,7 @@
 # ast-grep Reference
 
 Binary: `ast-grep` (alias `sg` if configured)
-Version: 0.41.0
+Version: 0.40.x
 
 AST-based structural code search, lint, and rewrite using tree-sitter grammars. Matches syntax structure, not text — won't accidentally rename inside strings, comments, or unrelated identifiers.
 
@@ -36,69 +36,47 @@ Language is inferred from file extensions when `--lang` is omitted and paths are
 | `$VAR` | Single AST node | `$FUNC($A)` matches `foo(x)` |
 | `$_` | Single node (anonymous, non-capturing) | `$_($A)` matches any call with one arg |
 | `$$$` | Zero or more nodes (anonymous) | `foo($$$)` matches `foo()`, `foo(a)`, `foo(a, b, c)` |
-| `$$$ARGS` | Zero or more nodes (named, captures all) | `foo($$$ARGS)` captures all args as a unit |
+| `$$$ARGS` | Zero or more nodes (named) | `foo($$$ARGS)` captures all args |
 | `$$VAR` | Single node including unnamed tree-sitter nodes | `return $$A` matches `return 123` and `return;` |
-
-**`$$$` vs `$$$ARGS`:** Use `$$$` when you want to ignore the arguments. Use `$$$ARGS` when you need to capture and replay them in the rewrite: `foo($$$ARGS)` → `bar($$$ARGS)`.
 
 **Key behavior:** Same named metavariable used twice must match identical content. `$A == $A` matches `x == x` but not `x == y`.
 
 ## Common Patterns
 
-### Go
-
+### Find all calls to a function
 ```bash
-# Find all calls to a function
 ast-grep run -p 'fmt.Errorf($$$)' -l go
+```
 
-# Rename a function (captures and replays all args)
+### Rename a function
+```bash
 ast-grep run -p 'oldName($$$ARGS)' -r 'newName($$$ARGS)' -l go -U
+```
 
-# Find method calls on any receiver
+### Find method calls on a type
+```bash
 ast-grep run -p '$OBJ.Close()' -l go
+```
 
+### Match specific argument patterns
+```bash
 # Find assert calls where expected is nil
 ast-grep run -p 'assert.Equal($T, nil, $$$)' -l go
+```
 
-# Rewrite error wrapping
-ast-grep run -p 'errors.New($MSG)' -r 'fmt.Errorf($MSG)' -l go -U
+### Swap function arguments
+```bash
+ast-grep run -p 'assertEqual($EXPECTED, $ACTUAL)' -r 'assertEqual($ACTUAL, $EXPECTED)' -l python -U
+```
 
-# Find unused error returns
+### Find unused error returns
+```bash
 ast-grep run -p '$_, _ = $FUNC($$$)' -l go
-
-# Find if-err blocks ignoring the error
-ast-grep run -p 'if $ERR != nil { $_ }' -l go
 ```
 
-### TypeScript / JavaScript
-
+### Rewrite error handling
 ```bash
-# Find all console.log calls
-ast-grep run -p 'console.log($$$)' -l ts
-
-# Replace Promise.then with async/await (find candidates)
-ast-grep run -p '$PROMISE.then($$$)' -l ts
-
-# Find React hook calls
-ast-grep run -p 'useState($INIT)' -l tsx
-
-# Rename import specifier
-ast-grep run -p "import { $OLD } from '$MOD'" \
-             -r "import { $NEW } from '$MOD'" -l ts -U
-```
-
-### Python
-
-```bash
-# Find all print calls (Python 2 to 3 migration)
-ast-grep run -p 'print $$$' -l python
-
-# Find assertions
-ast-grep run -p 'assert $COND, $MSG' -l python
-
-# Find function definitions with specific decorator
-ast-grep run -p '@$DECORATOR
-def $FUNC($$$): ...' -l python
+ast-grep run -p 'errors.New($MSG)' -r 'fmt.Errorf($MSG)' -l go -U
 ```
 
 ## Output Options
@@ -141,10 +119,10 @@ ast-grep run -p 'PATTERN' --strictness relaxed -l go
 
 ## Rule Files (YAML)
 
-For complex matching with constraints and relational checks, use rule files. The `rule` combinator supports `pattern`, `any`, `all`, `not`, `inside`, `has`, `follows`, `precedes`, and `constraints`.
+For complex matching with constraints, use rule files:
 
 ```yaml
-# rule.yml — basic lint rule
+# rule.yml
 id: no-console-log
 language: typescript
 rule:
@@ -153,48 +131,11 @@ message: Remove console.log before committing
 severity: warning
 ```
 
-```yaml
-# rule.yml — with constraints (restrict metavariable content)
-id: no-empty-error-message
-language: go
-rule:
-  pattern: errors.New($MSG)
-  constraints:
-    MSG:
-      regex: '^""$'     # only match empty string literals
-message: errors.New("") creates an unhelpful error
-severity: error
-```
-
-```yaml
-# rule.yml — using 'has' (structural containment)
-id: if-err-unused
-language: go
-rule:
-  pattern: if $ERR != nil {$$$}
-  not:
-    has:
-      pattern: return $ERR
-message: Error is checked but not returned or wrapped
-severity: warning
-```
-
-```yaml
-# rule.yml — using 'inside' (match node inside a context)
-id: no-panic-in-handler
-language: go
-rule:
-  pattern: panic($$$)
-  inside:
-    pattern: func $NAME(w http.ResponseWriter, r *http.Request) {$$$}
-message: panic in HTTP handler will crash the server
-severity: error
-```
-
 ```bash
 ast-grep scan --rule rule.yml
-ast-grep scan --rule rule.yml src/   # specific path
 ```
+
+Rules support `constraints`, `has`, `inside`, `follows`, `precedes`, and boolean combinators (`all`, `any`, `not`).
 
 ## Debugging Patterns
 
@@ -206,8 +147,12 @@ ast-grep run -p 'your_pattern' --debug-query=ast -l go
 ast-grep run -p 'your_pattern' --debug-query=cst -l go
 ```
 
-When a pattern doesn't match what you expect: use `--debug-query=ast` to see the tree structure, then align your metavariables to AST node boundaries.
-
 ## Supported Languages
 
 Go, TypeScript, JavaScript, Python, Rust, C, C++, Java, Kotlin, Swift, Ruby, Lua, and many more. Full list: `ast-grep run --help` or https://ast-grep.github.io/reference/languages.html
+
+## When to Use ast-grep vs Alternatives
+
+- **ast-grep** when you need syntax-aware precision (renames, finding specific call patterns)
+- **comby** when you need multi-line structural rewrites with balanced delimiters
+- **sd/rg** when you're doing simple literal string operations

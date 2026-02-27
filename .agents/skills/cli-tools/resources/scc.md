@@ -25,6 +25,7 @@ scc file.go                    # single file
 | `--no-complexity` | Skip complexity calculation (faster) |
 | `--no-duplicates` | Skip duplicate file detection |
 | `--min-gen` | Include generated files |
+| `-z`, `--min-gen-line-length` | Min line length for generated file detection |
 
 ## Common Operations
 
@@ -35,19 +36,14 @@ scc
 
 Output shows per-language: files, lines, blanks, comments, code, complexity.
 
-### Count only Go files
-```bash
-scc --include-ext go
-```
-
-### Specific languages
-```bash
-scc --include-ext go,ts
-```
-
 ### Per-file breakdown sorted by lines
 ```bash
 scc --by-file --sort lines
+```
+
+### Specific languages only
+```bash
+scc --include-ext go,ts
 ```
 
 ### Exclude test files
@@ -70,6 +66,13 @@ scc --format json
 scc --format wide --by-file
 ```
 
+### Compare directories
+```bash
+scc dir1/
+scc dir2/
+# Compare output manually or use JSON format for programmatic comparison
+```
+
 ## Output Columns
 
 | Column | Meaning |
@@ -81,3 +84,10 @@ scc --format wide --by-file
 | Comments | Comment lines |
 | Code | Code lines (lines - blanks - comments) |
 | Complexity | Estimated cyclomatic complexity |
+
+## When to Use scc vs Alternatives
+
+- **scc**: Fast language-aware metrics with complexity. Best for project scope assessment.
+- **wc -l**: BANNED. Use `scc` instead — even for single files.
+- **cloc**: Legacy alternative (slower, Perl-based)
+- **tokei**: Rust alternative (similar speed, different feature set)
