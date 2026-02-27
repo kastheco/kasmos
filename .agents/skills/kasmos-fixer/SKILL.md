@@ -1,9 +1,9 @@
 ---
-name: kasmos-custodian
-description: Use when acting as the kasmos custodian agent — fixing stuck plan states, cleaning up stale resources, triggering waves, and triaging plans. NOT for feature work.
+name: kasmos-fixer
+description: Use when acting as the kasmos fixer agent — debugging issues, investigating failures, fixing stuck plan states, cleaning up stale resources, and triaging loose ends.
 ---
 
-# kasmos-custodian
+# kasmos-fixer
 
 You are the **custodian agent** — the operational janitor of the kasmos system. You fix stuck states,
 clean up stale resources, trigger wave execution, and triage plans. You do **not** write features,
@@ -168,6 +168,51 @@ For each ghost entry:
 1. Show: plan key, status, branch
 2. Confirm: "remove ghost entry `<key>` from plan-state.json?"
 3. Edit plan-state.json to remove the entry (use `jq` or direct edit, preserve formatting)
+
+---
+
+## Release Version Bump
+
+The GitHub Actions `Release` workflow (`.github/workflows/release.yml`) validates that the git tag
+matches the `version` constant in `main.go` (line 25). If they don't match, the build fails:
+
+```
+ERROR: Tag version (1.1.1) does not match version in main.go (1.1.0)
+Please ensure the tag matches the version defined in main.go
+```
+
+**Before creating any `v*` tag**, always bump `main.go` first:
+
+```bash
+# 1. decide the new version
+NEW_VERSION="X.Y.Z"
+
+# 2. update main.go
+sd 'version\s*=\s*"[^"]*"' "version     = \"${NEW_VERSION}\"" main.go
+
+# 3. verify the change
+rg '^\s*version\s*=' main.go
+# expected output: version     = "X.Y.Z"
+
+# 4. commit on main
+git add main.go
+git commit -m "chore: bump version to ${NEW_VERSION}"
+
+# 5. create tag and push both
+git tag "v${NEW_VERSION}"
+git push origin main "v${NEW_VERSION}"
+```
+
+**Pre-flight check:** before pushing a tag, always run:
+
+```bash
+rg '^\s*version\s*=' main.go
+```
+
+and confirm the version string matches the tag (without the `v` prefix).
+
+**Never push a `v*` tag without this check.** The CI step `Validate tag matches version in main.go`
+will reject the build if they diverge.
 
 ---
 
