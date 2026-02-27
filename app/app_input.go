@@ -633,9 +633,6 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 				m.updateNavPanelStatus()
 				m.pendingPlannerInstanceTitle = ""
 				m.pendingPlannerPlanFile = ""
-			} else {
-				// Legacy path: tmux-death triggered dialog had only pendingPlannerInstanceTitle.
-				m.pendingPlannerInstanceTitle = ""
 			}
 			m.state = stateDefault
 			m.confirmationOverlay = nil
