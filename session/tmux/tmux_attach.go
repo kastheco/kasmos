@@ -3,16 +3,26 @@ package tmux
 import (
 	"context"
 	"fmt"
-	"github.com/kastheco/kasmos/log"
 	"io"
 	"os"
+	"os/exec"
 	"sync"
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/kastheco/kasmos/log"
 )
 
 func (t *TmuxSession) Attach() (chan struct{}, error) {
+	// While attached, prevent the outer tmux session (the one running kasmos)
+	// from intercepting scroll-wheel events into its own copy/scroll mode.
+	if outer := outerTmuxSession(); outer != "" {
+		if outerMouseEnabled(outer) {
+			t.outerMouseWasEnabled = true
+			exec.Command("tmux", "set-option", "-t", outer, "mouse", "off").Run() //nolint:errcheck
+		}
+	}
+
 	t.attachCh = make(chan struct{})
 
 	t.wg = &sync.WaitGroup{}
@@ -92,6 +102,17 @@ func (t *TmuxSession) Attach() (chan struct{}, error) {
 	return t.attachCh, nil
 }
 
+// restoreOuterMouse re-enables mouse on the outer tmux session if Attach disabled it.
+func (t *TmuxSession) restoreOuterMouse() {
+	if !t.outerMouseWasEnabled {
+		return
+	}
+	t.outerMouseWasEnabled = false
+	if outer := outerTmuxSession(); outer != "" {
+		exec.Command("tmux", "set-option", "-t", outer, "mouse", "on").Run() //nolint:errcheck
+	}
+}
+
 // DetachSafely disconnects from the current tmux session without panicking
 func (t *TmuxSession) DetachSafely() error {
 	// Only detach if we're actually attached
@@ -127,6 +148,8 @@ func (t *TmuxSession) DetachSafely() error {
 
 	t.ctx = nil
 
+	t.restoreOuterMouse()
+
 	if len(errs) > 0 {
 		return fmt.Errorf("errors during detach: %v", errs)
 	}
@@ -138,6 +161,7 @@ func (t *TmuxSession) DetachSafely() error {
 func (t *TmuxSession) Detach() {
 	// TODO: control flow is a bit messy here. If there's an error,
 	// I'm not sure if we get into a bad state. Needs testing.
+	t.restoreOuterMouse()
 	defer func() {
 		close(t.attachCh)
 		t.attachCh = nil

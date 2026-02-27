@@ -11,66 +11,56 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestHandleKeyPress_DocumentModeConsumesViewportNavigationKeys(t *testing.T) {
-	preview := ui.NewPreviewPane()
-	preview.SetSize(30, 5)
-	preview.SetDocumentContent(appTestDocumentLines(50))
+func TestHandleKeyPress_DownKeyAlwaysFocusesNav(t *testing.T) {
+	// Up/Down always refocus the sidebar and navigate it, regardless of which
+	// pane was previously focused (when no document/scroll mode is active).
+	for _, slot := range []int{slotInfo, slotAgent, slotDiff} {
+		t.Run(fmt.Sprintf("from slot %d", slot), func(t *testing.T) {
+			spin := spinner.New(spinner.WithSpinner(spinner.Dot))
+			h := &home{
+				ctx:          context.Background(),
+				state:        stateDefault,
+				appConfig:    config.DefaultConfig(),
+				nav:          ui.NewNavigationPanel(&spin),
+				menu:         ui.NewMenu(),
+				tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewInfoPane()),
+				focusSlot:    slot,
+				keySent:      true,
+			}
 
-	tw := ui.NewTabbedWindow(preview, ui.NewDiffPane(), ui.NewInfoPane())
-	tw.SetActiveTab(ui.PreviewTab)
-
-	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
-	h := &home{
-		ctx:          context.Background(),
-		state:        stateDefault,
-		appConfig:    config.DefaultConfig(),
-		nav:          ui.NewNavigationPanel(&spin),
-		menu:         ui.NewMenu(),
-		tabbedWindow: tw,
-		keySent:      true,
+			model, _ := h.handleKeyPress(tea.KeyMsg{Type: tea.KeyDown})
+			homeModel, ok := model.(*home)
+			require.True(t, ok)
+			assert.Equal(t, slotNav, homeModel.focusSlot, "Down must focus nav")
+		})
 	}
-
-	before := preview.String()
-	model, cmd := h.handleKeyPress(tea.KeyMsg{Type: tea.KeyDown})
-	homeModel, ok := model.(*home)
-	require.True(t, ok)
-	require.Nil(t, cmd)
-	require.True(t, homeModel.tabbedWindow.IsDocumentMode())
-	require.NotEqual(t, before, preview.String())
 }
 
-func TestHandleKeyPress_DocumentModeScrollsWithDownKey(t *testing.T) {
-	// In the tab focus ring model, scrolling in document mode uses up/down
-	// when the agent slot (slotAgent) is focused. Shift+Down is no longer a
-	// dedicated scroll binding — Tab-focus + up/down replaces it.
-	preview := ui.NewPreviewPane()
-	preview.SetSize(30, 5)
-	preview.SetDocumentContent(appTestDocumentLines(50))
+func TestHandleKeyPress_UpKeyAlwaysFocusesNav(t *testing.T) {
+	for _, slot := range []int{slotInfo, slotAgent, slotDiff} {
+		t.Run(fmt.Sprintf("from slot %d", slot), func(t *testing.T) {
+			spin := spinner.New(spinner.WithSpinner(spinner.Dot))
+			h := &home{
+				ctx:          context.Background(),
+				state:        stateDefault,
+				appConfig:    config.DefaultConfig(),
+				nav:          ui.NewNavigationPanel(&spin),
+				menu:         ui.NewMenu(),
+				tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewInfoPane()),
+				focusSlot:    slot,
+				keySent:      true,
+			}
 
-	tw := ui.NewTabbedWindow(preview, ui.NewDiffPane(), ui.NewInfoPane())
-	tw.SetActiveTab(ui.PreviewTab)
-
-	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
-	h := &home{
-		ctx:          context.Background(),
-		state:        stateDefault,
-		appConfig:    config.DefaultConfig(),
-		nav:          ui.NewNavigationPanel(&spin),
-		menu:         ui.NewMenu(),
-		tabbedWindow: tw,
-		focusSlot:    slotAgent, // agent slot focused → down scrolls preview
-		keySent:      true,
+			model, _ := h.handleKeyPress(tea.KeyMsg{Type: tea.KeyUp})
+			homeModel, ok := model.(*home)
+			require.True(t, ok)
+			assert.Equal(t, slotNav, homeModel.focusSlot, "Up must focus nav")
+		})
 	}
-
-	before := preview.String()
-	model, _ := h.handleKeyPress(tea.KeyMsg{Type: tea.KeyDown})
-	homeModel, ok := model.(*home)
-	require.True(t, ok)
-	require.True(t, homeModel.tabbedWindow.IsDocumentMode())
-	require.NotEqual(t, before, preview.String())
 }
 
 func appTestDocumentLines(n int) string {

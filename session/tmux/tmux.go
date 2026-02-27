@@ -76,6 +76,9 @@ type TmuxSession struct {
 	ctx    context.Context
 	cancel func()
 	wg     *sync.WaitGroup
+	// outerMouseWasEnabled is set when Attach() disables mouse on the outer tmux
+	// session so Detach() can restore it.
+	outerMouseWasEnabled bool
 }
 
 const TmuxPrefix = "kas_"
@@ -350,7 +353,35 @@ func (t *TmuxSession) Restore() error {
 	}
 	t.ptmx = ptmx
 	t.monitor = newStatusMonitor()
+	// Idempotently hide the status bar — also covers sessions restored from crash
+	// that were created before this option was set.
+	statusCmd := exec.Command("tmux", "set-option", "-t", t.sanitizedName, "status", "off")
+	if err := t.cmdExec.Run(statusCmd); err != nil {
+		log.InfoLog.Printf("Warning: failed to hide status bar for restored session %s: %v", t.sanitizedName, err)
+	}
 	return nil
+}
+
+// outerTmuxSession returns the name of the enclosing tmux session (the one
+// running kasmos), or "" if we are not inside tmux.
+func outerTmuxSession() string {
+	if os.Getenv("TMUX") == "" {
+		return ""
+	}
+	out, err := exec.Command("tmux", "display-message", "-p", "#{session_name}").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// outerMouseEnabled reports whether mouse is currently on in the given tmux session.
+func outerMouseEnabled(session string) bool {
+	out, err := exec.Command("tmux", "show-options", "-t", session, "mouse").Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "on")
 }
 
 // Close terminates the tmux session and cleans up resources

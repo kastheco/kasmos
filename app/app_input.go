@@ -1017,21 +1017,17 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		return m, nil
 	case keys.KeyUp:
 		m.tabbedWindow.ClearDocumentMode()
-		switch m.focusSlot {
-		case slotNav:
-			m.nav.Up()
-		case slotAgent, slotDiff, slotInfo:
-			m.tabbedWindow.ScrollUp()
+		if m.focusSlot != slotNav {
+			m.setFocusSlot(slotNav)
 		}
+		m.nav.Up()
 		return m, m.instanceChanged()
 	case keys.KeyDown:
 		m.tabbedWindow.ClearDocumentMode()
-		switch m.focusSlot {
-		case slotNav:
-			m.nav.Down()
-		case slotAgent, slotDiff, slotInfo:
-			m.tabbedWindow.ScrollDown()
+		if m.focusSlot != slotNav {
+			m.setFocusSlot(slotNav)
 		}
+		m.nav.Down()
 		return m, m.instanceChanged()
 	case keys.KeyTab:
 		m.nextFocusSlot()
