@@ -130,36 +130,39 @@ func TestRebuildRows_DeadSection_DonePlanWithInstances(t *testing.T) {
 	instances := []*session.Instance{makeInst("worker", "done-plan.md", session.Running)}
 	n.SetData(nil, instances, history, nil, nil)
 
-	// Done plan with instances goes to dead section, not history.
-	// Expect: dead toggle (collapsed) + plan header (under dead, but dead is collapsed so hidden)
-	// Actually dead is collapsed by default, so just the toggle.
-	require.True(t, len(n.rows) >= 1)
+	// Done plan with instances goes to dead section (expanded by default).
+	// Expect: dead toggle + plan header + instance.
+	require.True(t, len(n.rows) >= 3)
 	assert.Equal(t, navRowDeadToggle, n.rows[0].Kind)
 	assert.Equal(t, "dead", n.rows[0].Label)
+	assert.Equal(t, navRowPlanHeader, n.rows[1].Kind)
+	assert.Equal(t, navRowInstance, n.rows[2].Kind)
 	// No history toggle since the only done plan went to dead.
 	for _, row := range n.rows {
 		assert.NotEqual(t, navRowHistoryToggle, row.Kind)
 	}
 }
 
-func TestRebuildRows_DeadSection_Expanded(t *testing.T) {
+func TestRebuildRows_DeadSection_Collapsible(t *testing.T) {
 	n := newTestPanel()
 	history := []PlanDisplay{{Filename: "done-plan.md", Status: "done"}}
 	instances := []*session.Instance{makeInst("worker", "done-plan.md", session.Running)}
 	n.SetData(nil, instances, history, nil, nil)
 
-	// Expand the dead section.
-	n.selectedIdx = 0
-	n.ToggleSelectedExpand()
+	// Dead section is expanded by default.
 	assert.True(t, n.deadExpanded)
-
-	// dead toggle + plan header + instance
 	require.True(t, len(n.rows) >= 3)
-	assert.Equal(t, navRowDeadToggle, n.rows[0].Kind)
 	assert.Equal(t, navRowPlanHeader, n.rows[1].Kind)
 	assert.Equal(t, "done-plan.md", n.rows[1].PlanFile)
 	assert.Equal(t, navRowInstance, n.rows[2].Kind)
 	assert.Equal(t, "worker", n.rows[2].Label)
+
+	// Collapse it.
+	n.selectedIdx = 0
+	n.ToggleSelectedExpand()
+	assert.False(t, n.deadExpanded)
+	require.Len(t, n.rows, 1)
+	assert.Equal(t, navRowDeadToggle, n.rows[0].Kind)
 }
 
 func TestRebuildRows_DeadSection_DonePlanWithoutInstances_GoesToHistory(t *testing.T) {

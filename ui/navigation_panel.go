@@ -126,6 +126,7 @@ func NewNavigationPanel(sp *spinner.Model) *NavigationPanel {
 		collapsed:      make(map[string]bool),
 		userOverrides:  make(map[string]bool),
 		inspectedPlans: make(map[string]bool),
+		deadExpanded:   true,
 		focused:        true,
 	}
 }
@@ -1090,11 +1091,7 @@ func (n *NavigationPanel) renderNavRow(row navRow, contentWidth int) string {
 		return chevron + " " + navPlanLabelStyle.Render(label)
 
 	case navRowDeadToggle:
-		chevron := "▸"
-		if !row.Collapsed {
-			chevron = "▾"
-		}
-		return navDividerLine(chevron+" dead", contentWidth)
+		return navDividerLine("dead", contentWidth)
 
 	case navRowHistoryToggle:
 		chevron := "▸"
