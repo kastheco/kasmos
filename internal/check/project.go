@@ -8,7 +8,7 @@ import (
 // EmbeddedSkillNames is the list of kasmos agent skill names that kas setup writes to .agents/skills/.
 var EmbeddedSkillNames = []string{
 	"kasmos-coder",
-	"kasmos-custodian",
+	"kasmos-fixer",
 	"kasmos-lifecycle",
 	"kasmos-planner",
 	"kasmos-reviewer",

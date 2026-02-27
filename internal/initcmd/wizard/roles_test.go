@@ -13,8 +13,8 @@ func TestRoleDescription(t *testing.T) {
 	desc = RoleDescription("unknown")
 	assert.Equal(t, "", desc)
 
-	desc = RoleDescription("custodian")
-	assert.Contains(t, desc, "workflow")
+	desc = RoleDescription("fixer")
+	assert.Contains(t, desc, "debug")
 
 	desc = RoleDescription("chat")
 	assert.Contains(t, desc, "assistant")
@@ -24,13 +24,13 @@ func TestRolePhaseText(t *testing.T) {
 	text := RolePhaseText("coder")
 	assert.Contains(t, text, "implementing")
 
-	text = RolePhaseText("custodian")
-	assert.Contains(t, text, "custodian")
+	text = RolePhaseText("fixer")
+	assert.Contains(t, text, "fixer")
 }
 
-func TestDefaultAgentRoles_IncludesCustodian(t *testing.T) {
+func TestDefaultAgentRoles_IncludesFixer(t *testing.T) {
 	roles := DefaultAgentRoles()
-	assert.Contains(t, roles, "custodian")
+	assert.Contains(t, roles, "fixer")
 	assert.Contains(t, roles, "chat")
 	assert.Len(t, roles, 5)
 }

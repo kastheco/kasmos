@@ -24,10 +24,10 @@ const (
 
 // AgentType constants identify the role of an agent session within a plan lifecycle.
 const (
-	AgentTypePlanner   = "planner"
-	AgentTypeCoder     = "coder"
-	AgentTypeReviewer  = "reviewer"
-	AgentTypeCustodian = "custodian"
+	AgentTypePlanner  = "planner"
+	AgentTypeCoder    = "coder"
+	AgentTypeReviewer = "reviewer"
+	AgentTypeFixer    = "fixer"
 )
 
 // Instance is a running instance of claude code.

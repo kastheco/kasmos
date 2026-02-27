@@ -897,8 +897,8 @@ func (m *home) programForAgent(agentType string) string {
 		profile = m.appConfig.ResolveProfile("planning", m.program)
 	case session.AgentTypeReviewer:
 		profile = m.appConfig.ResolveProfile("quality_review", m.program)
-	case session.AgentTypeCustodian:
-		profile = m.appConfig.ResolveProfile("custodian", m.program)
+	case session.AgentTypeFixer:
+		profile = m.appConfig.ResolveProfile("fixer", m.program)
 	default:
 		// Ad-hoc — use the "chat" profile if available.
 		if p, ok := m.appConfig.Profiles["chat"]; ok && p.Enabled && p.Program != "" {
@@ -1358,13 +1358,13 @@ func (m *home) spawnAdHocAgent(name, branch, workPath string) (tea.Model, tea.Cm
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:   name,
 		Path:    path,
-		Program: m.programForAgent(session.AgentTypeCustodian),
+		Program: m.programForAgent(session.AgentTypeFixer),
 	})
 	if err != nil {
 		return m, m.handleError(err)
 	}
 
-	inst.AgentType = session.AgentTypeCustodian
+	inst.AgentType = session.AgentTypeFixer
 	inst.SetStatus(session.Loading)
 	inst.LoadingTotal = 8
 	inst.LoadingMessage = "preparing session..."
