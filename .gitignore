@@ -8,9 +8,7 @@ kq
 kas
 .worktrees/
 .kasmos/
-dist/artifacts.json
-dist/metadata.json
-dist/checksums.txt
+dist/
 docs/plans/.signals/
 docs/plans/.plan-state.lock
 *.bak
