@@ -560,6 +560,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case prCreatedMsg:
 		m.toastManager.Resolve(m.pendingPRToastID, overlay.ToastSuccess, "PR created!")
 		m.pendingPRToastID = ""
+		m.audit(auditlog.EventPRCreated, fmt.Sprintf("PR created: %s", msg.prTitle),
+			auditlog.WithInstance(msg.instanceTitle),
+		)
 		return m, m.toastTickCmd()
 	case prErrorMsg:
 		log.ErrorLog.Printf("%v", msg.err)
@@ -975,6 +978,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.permissionOverlay.SetWidth(55)
 					m.pendingPermissionInstance = inst
 					m.state = statePermission
+					m.audit(auditlog.EventPermissionDetected,
+						fmt.Sprintf("permission prompt detected for %s", inst.Title),
+						auditlog.WithInstance(inst.Title),
+					)
 				}
 			} else if md.PermissionPrompt == nil {
 				// Prompt cleared — remove the in-flight guard so a future permission
@@ -1074,6 +1081,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				alive, collected := tmuxAliveMap[inst.Title]
 				if collected && !alive {
 					inst.Exited = true
+					m.audit(auditlog.EventAgentFinished, fmt.Sprintf("agent finished: %s", inst.Title),
+						auditlog.WithInstance(inst.Title),
+						auditlog.WithAgent(inst.AgentType),
+						auditlog.WithPlan(inst.PlanFile),
+					)
 				}
 			}
 
@@ -1143,6 +1155,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 					delete(m.waveOrchestrators, planFile)
+					m.audit(auditlog.EventWaveCompleted, "all waves complete: "+planName,
+						auditlog.WithPlan(capturedPlanFile))
 
 					if !m.isUserInOverlay() {
 						// Focus a task instance so the user can see agent output behind the overlay.
@@ -1180,12 +1194,20 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						asyncCmds = append(asyncCmds, cmd)
 					}
 					if failed > 0 {
+						m.audit(auditlog.EventWaveFailed,
+							fmt.Sprintf("wave %d: %d/%d tasks failed", waveNum, failed, total),
+							auditlog.WithPlan(capturedPlanFile),
+							auditlog.WithWave(waveNum, 0))
 						message := fmt.Sprintf(
 							"%s — wave %d: %d/%d tasks complete, %d failed.\n\n"+
 								"[r] retry failed   [n] next wave   [a] abort",
 							planName, waveNum, completed, total, failed)
 						m.waveFailedConfirmAction(message, capturedPlanFile, capturedEntry)
 					} else {
+						m.audit(auditlog.EventWaveCompleted,
+							fmt.Sprintf("wave %d complete: %d/%d tasks", waveNum, completed, total),
+							auditlog.WithPlan(capturedPlanFile),
+							auditlog.WithWave(waveNum, 0))
 						message := fmt.Sprintf("%s — wave %d complete (%d/%d). start wave %d?",
 							planName, waveNum, completed, total, waveNum+1)
 						m.waveStandardConfirmAction(message, capturedPlanFile, capturedEntry)
@@ -1668,7 +1690,10 @@ type permissionResponseMsg struct {
 }
 
 // prCreatedMsg is sent when async PR creation succeeds.
-type prCreatedMsg struct{}
+type prCreatedMsg struct {
+	instanceTitle string
+	prTitle       string
+}
 
 // prErrorMsg is sent when async PR creation fails.
 type prErrorMsg struct {
