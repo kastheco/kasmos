@@ -3,6 +3,8 @@ package cmd
 import (
 	"os/exec"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 type Executor interface {
@@ -29,4 +31,16 @@ func ToString(cmd *exec.Cmd) string {
 		return "<nil>"
 	}
 	return strings.Join(cmd.Args, " ")
+}
+
+// NewRootCmd returns a minimal root cobra command with all subcommands registered.
+// Used in tests and for command discovery.
+func NewRootCmd() *cobra.Command {
+	root := &cobra.Command{
+		Use:   "kas",
+		Short: "kas - Manage multiple AI agents",
+	}
+	root.AddCommand(NewPlanCmd())
+	root.AddCommand(NewServeCmd())
+	return root
 }
