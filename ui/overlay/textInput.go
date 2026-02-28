@@ -58,6 +58,12 @@ func (t *TextInputOverlay) SetSize(width, height int) {
 	t.height = height
 }
 
+// Width returns the current width of the overlay.
+func (t *TextInputOverlay) Width() int { return t.width }
+
+// Height returns the current height of the overlay.
+func (t *TextInputOverlay) Height() int { return t.height }
+
 // HandleKeyPress processes a key press and updates the state accordingly.
 // Returns true if the overlay should be closed.
 func (t *TextInputOverlay) HandleKeyPress(msg tea.KeyMsg) bool {

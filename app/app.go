@@ -387,6 +387,17 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 	return h
 }
 
+// isUserInOverlay returns true when the user is actively interacting with
+// any modal overlay. Used to prevent async metadata-tick handlers from
+// clobbering the active overlay by showing a confirmation dialog.
+func (m *home) isUserInOverlay() bool {
+	switch m.state {
+	case stateDefault:
+		return false
+	}
+	return true
+}
+
 // updateHandleWindowSizeEvent sets the sizes of the components.
 // The components will try to render inside their bounds.
 func (m *home) updateHandleWindowSizeEvent(msg tea.WindowSizeMsg) {
@@ -412,6 +423,9 @@ func (m *home) updateHandleWindowSizeEvent(msg tea.WindowSizeMsg) {
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
+	// Detect actual terminal resize vs spurious tea.WindowSize() side-effects.
+	termResized := msg.Width != m.termWidth || msg.Height != m.termHeight
+
 	m.termWidth = msg.Width
 	m.termHeight = msg.Height
 	m.toastManager.SetSize(msg.Width, msg.Height)
@@ -431,10 +445,14 @@ func (m *home) updateHandleWindowSizeEvent(msg tea.WindowSizeMsg) {
 		m.setFocusSlot(slotAgent)
 	}
 
-	if m.textInputOverlay != nil {
+	// Only resize overlays when the terminal dimensions actually changed.
+	// Many handlers emit tea.WindowSize() as a batched side-effect (e.g.
+	// instanceStartedMsg) — those fire with the same dimensions and should
+	// not overwrite the overlay's explicit sizing.
+	if m.textInputOverlay != nil && termResized {
 		m.textInputOverlay.SetSize(int(float32(msg.Width)*0.6), int(float32(msg.Height)*0.4))
 	}
-	if m.textOverlay != nil {
+	if m.textOverlay != nil && termResized {
 		m.textOverlay.SetWidth(int(float32(msg.Width) * 0.6))
 	}
 
@@ -695,7 +713,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case planfsm.PlannerFinished:
 				capturedPlanFile := sig.PlanFile
-				if m.plannerPrompted[capturedPlanFile] || m.state == stateConfirm {
+				if m.plannerPrompted[capturedPlanFile] || m.isUserInOverlay() {
 					break
 				}
 				// Focus the planner instance so the user sees its output behind the overlay.
@@ -907,7 +925,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Skip when a confirmation overlay is already showing to avoid re-prompting
 			// on every tick while the user is deciding.
 			for _, inst := range m.nav.GetInstances() {
-				if m.state == stateConfirm {
+				if m.isUserInOverlay() {
 					break
 				}
 				alive, collected := tmuxAliveMap[inst.Title]
@@ -1001,7 +1019,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					delete(m.waveOrchestrators, planFile)
 
-					if m.state != stateConfirm {
+					if !m.isUserInOverlay() {
 						// Focus a task instance so the user can see agent output behind the overlay.
 						if cmd := m.focusPlanInstanceForOverlay(capturedPlanFile); cmd != nil {
 							asyncCmds = append(asyncCmds, cmd)
@@ -1017,7 +1035,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// orchState must be WaveStateWaveComplete here.
 				// Show wave decision confirm once per wave (NeedsConfirm is one-shot;
 				// ResetConfirm on cancel allows the prompt to reappear next tick).
-				if m.state != stateConfirm && time.Since(m.waveConfirmDismissedAt) > 30*time.Second && orch.NeedsConfirm() {
+				if !m.isUserInOverlay() && time.Since(m.waveConfirmDismissedAt) > 30*time.Second && orch.NeedsConfirm() {
 					waveNum := orch.CurrentWaveNumber()
 					completed := orch.CompletedTaskCount()
 					failed := orch.FailedTaskCount()

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kastheco/kasmos/config/planstate"
 	"github.com/kastheco/kasmos/ui"
@@ -136,4 +137,50 @@ func TestNewPlanTopicPickerShowsPendingPlanName(t *testing.T) {
 	require.Equal(t, stateNewPlanTopic, updated.state)
 	require.NotNil(t, updated.pickerOverlay)
 	require.Contains(t, strings.ToLower(updated.pickerOverlay.Render()), "auth refactor")
+}
+
+func TestIsUserInOverlay(t *testing.T) {
+	tests := []struct {
+		state    state
+		expected bool
+	}{
+		{stateDefault, false},
+		{stateNewPlan, true},
+		{stateNewPlanTopic, true},
+		{stateConfirm, true},
+		{statePrompt, true},
+		{stateSpawnAgent, true},
+		{stateFocusAgent, true},
+		{statePermission, true},
+	}
+	for _, tt := range tests {
+		h := &home{state: tt.state}
+		require.Equal(t, tt.expected, h.isUserInOverlay(),
+			"isUserInOverlay() for state %d", tt.state)
+	}
+}
+
+func TestNewPlanOverlaySizePreservedOnSpuriousWindowSize(t *testing.T) {
+	s := spinner.New()
+	h := &home{
+		state:        stateNewPlan,
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewInfoPane()),
+		nav:          ui.NewNavigationPanel(&s),
+		menu:         ui.NewMenu(),
+		toastManager: overlay.NewToastManager(&s),
+	}
+	// Simulate initial terminal size.
+	h.updateHandleWindowSizeEvent(tea.WindowSizeMsg{Width: 200, Height: 50})
+
+	// Now create the overlay with a fixed size.
+	h.textInputOverlay = overlay.NewTextInputOverlay("new plan", "")
+	h.textInputOverlay.SetMultiline(true)
+	h.textInputOverlay.SetSize(70, 8)
+
+	// Simulate a spurious WindowSize (same dimensions, triggered by instanceStartedMsg).
+	h.updateHandleWindowSizeEvent(tea.WindowSizeMsg{Width: 200, Height: 50})
+
+	// Overlay should still be 70 wide, not 120 (200*0.6).
+	require.Equal(t, 70, h.textInputOverlay.Width())
+	require.Equal(t, 8, h.textInputOverlay.Height())
 }
