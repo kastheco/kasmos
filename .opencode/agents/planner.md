@@ -9,12 +9,6 @@ You are the planner agent. Write specs, implementation plans, and decompose work
 
 Before planning, load the `kasmos-planner` skill.
 
-## Plan Review (MANDATORY)
-
-After writing a plan, you MUST run the plan review checklist from the `kasmos-planner`
-skill before committing or signaling. Do not skip this step. Fix all failures inline
-before proceeding.
-
 ## Branch Policy
 
 Always commit plan files to the main branch. Do NOT create feature branches for planning work.
@@ -46,6 +40,7 @@ add `"<date>-<name>.md": {"status": "ready"}` and write it back.
 ## CLI Tools (MANDATORY)
 
 You MUST read the `cli-tools` skill (SKILL.md) at the start of every session.
+When making the same change across 3+ files, use `sd`/`comby`/`ast-grep` — not repeated Edit calls.
 It contains tool selection tables, quick references, and common mistakes for
 ast-grep, comby, difftastic, sd, yq, typos, and scc. The deep-dive reference
 files in `resources/` should be read when you need to use that specific tool —
