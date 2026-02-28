@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/kastheco/kasmos/config/planstore"
 )
 
 type Status string
@@ -41,6 +43,8 @@ type PlanState struct {
 	Dir          string
 	Plans        map[string]PlanEntry
 	TopicEntries map[string]TopicEntry
+	store        planstore.Store // non-nil when using remote backend
+	project      string          // project name used with the remote store
 }
 
 type PlanInfo struct {
@@ -129,6 +133,52 @@ func Load(dir string) (*PlanState, error) {
 	// match by slug and rekey the entry. This is self-healing and persisted.
 	if rekeyed := ps.reconcileFilenames(); rekeyed > 0 {
 		_ = ps.save()
+	}
+
+	return ps, nil
+}
+
+// LoadWithStore creates a PlanState backed by a remote store.
+// When store is non-nil, Plans and TopicEntries are populated from the remote
+// store and all subsequent mutations write through to it instead of JSON.
+// dir is retained for file operations (e.g. Rename moves the .md file on disk).
+// When store is nil, this is equivalent to calling Load(dir).
+func LoadWithStore(store planstore.Store, project, dir string) (*PlanState, error) {
+	if store == nil {
+		return Load(dir)
+	}
+
+	plans, err := store.List(project)
+	if err != nil {
+		return nil, fmt.Errorf("plan store: %w", err)
+	}
+
+	topics, err := store.ListTopics(project)
+	if err != nil {
+		return nil, fmt.Errorf("plan store: %w", err)
+	}
+
+	ps := &PlanState{
+		Dir:          dir,
+		Plans:        make(map[string]PlanEntry, len(plans)),
+		TopicEntries: make(map[string]TopicEntry, len(topics)),
+		store:        store,
+		project:      project,
+	}
+
+	for _, e := range plans {
+		ps.Plans[e.Filename] = PlanEntry{
+			Status:      Status(e.Status),
+			Description: e.Description,
+			Branch:      e.Branch,
+			Topic:       e.Topic,
+			CreatedAt:   e.CreatedAt,
+			Implemented: e.Implemented,
+		}
+	}
+
+	for _, t := range topics {
+		ps.TopicEntries[t.Name] = TopicEntry{CreatedAt: t.CreatedAt}
 	}
 
 	return ps, nil
@@ -323,6 +373,12 @@ func (ps *PlanState) ForceSetStatus(filename string, status Status) error {
 	entry := ps.Plans[filename]
 	entry.Status = status
 	ps.Plans[filename] = entry
+	if ps.store != nil {
+		if err := ps.store.Update(ps.project, filename, ps.toPlanstoreEntry(filename, entry)); err != nil {
+			return fmt.Errorf("plan store: %w", err)
+		}
+		return nil
+	}
 	return ps.Save()
 }
 
@@ -344,6 +400,12 @@ func (ps *PlanState) setStatus(filename string, status Status) error {
 	entry := ps.Plans[filename]
 	entry.Status = status
 	ps.Plans[filename] = entry
+	if ps.store != nil {
+		if err := ps.store.Update(ps.project, filename, ps.toPlanstoreEntry(filename, entry)); err != nil {
+			return fmt.Errorf("plan store: %w", err)
+		}
+		return nil
+	}
 	return ps.save()
 }
 
@@ -355,13 +417,14 @@ func (ps *PlanState) Create(filename, description, branch, topic string, created
 	if _, exists := ps.Plans[filename]; exists {
 		return fmt.Errorf("plan already exists: %s", filename)
 	}
-	ps.Plans[filename] = PlanEntry{
+	entry := PlanEntry{
 		Status:      StatusReady,
 		Description: description,
 		Branch:      branch,
 		Topic:       topic,
 		CreatedAt:   createdAt.UTC(),
 	}
+	ps.Plans[filename] = entry
 	// Auto-create topic entry if it doesn't exist
 	if topic != "" {
 		if ps.TopicEntries == nil {
@@ -370,6 +433,22 @@ func (ps *PlanState) Create(filename, description, branch, topic string, created
 		if _, exists := ps.TopicEntries[topic]; !exists {
 			ps.TopicEntries[topic] = TopicEntry{CreatedAt: createdAt.UTC()}
 		}
+	}
+	if ps.store != nil {
+		if err := ps.store.Create(ps.project, ps.toPlanstoreEntry(filename, entry)); err != nil {
+			return fmt.Errorf("plan store: %w", err)
+		}
+		// Auto-create topic in remote store if needed
+		if topic != "" {
+			topicEntry := planstore.TopicEntry{Name: topic, CreatedAt: createdAt.UTC()}
+			if err := ps.store.CreateTopic(ps.project, topicEntry); err != nil {
+				// Ignore "already exists" errors for topics
+				if !isAlreadyExistsError(err) {
+					return fmt.Errorf("plan store: %w", err)
+				}
+			}
+		}
+		return nil
 	}
 	return ps.save()
 }
@@ -383,11 +462,18 @@ func (ps *PlanState) Register(filename, description, branch string, createdAt ti
 	if _, exists := ps.Plans[filename]; exists {
 		return fmt.Errorf("plan already exists: %s", filename)
 	}
-	ps.Plans[filename] = PlanEntry{
+	entry := PlanEntry{
 		Status:      StatusReady,
 		Description: description,
 		Branch:      branch,
 		CreatedAt:   createdAt.UTC(),
+	}
+	ps.Plans[filename] = entry
+	if ps.store != nil {
+		if err := ps.store.Create(ps.project, ps.toPlanstoreEntry(filename, entry)); err != nil {
+			return fmt.Errorf("plan store: %w", err)
+		}
+		return nil
 	}
 	return ps.save()
 }
@@ -406,6 +492,12 @@ func (ps *PlanState) SetBranch(filename, branch string) error {
 	}
 	entry.Branch = branch
 	ps.Plans[filename] = entry
+	if ps.store != nil {
+		if err := ps.store.Update(ps.project, filename, ps.toPlanstoreEntry(filename, entry)); err != nil {
+			return fmt.Errorf("plan store: %w", err)
+		}
+		return nil
+	}
 	return ps.save()
 }
 
@@ -471,6 +563,12 @@ func (ps *PlanState) Rename(oldFilename, newName string) (string, error) {
 	ps.Plans[newFilename] = entry
 	delete(ps.Plans, oldFilename)
 
+	if ps.store != nil {
+		if err := ps.store.Rename(ps.project, oldFilename, newFilename); err != nil {
+			return "", fmt.Errorf("plan store: %w", err)
+		}
+		return newFilename, nil
+	}
 	return newFilename, ps.save()
 }
 
@@ -538,7 +636,36 @@ func (ps *PlanState) reconcileFilenames() int {
 	return rekeyed
 }
 
+// isAlreadyExistsError returns true if the error indicates a duplicate resource.
+func isAlreadyExistsError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "already exists")
+}
+
+// toPlanstoreEntry converts a local PlanEntry to a planstore.PlanEntry for
+// writing to the remote store.
+func (ps *PlanState) toPlanstoreEntry(filename string, e PlanEntry) planstore.PlanEntry {
+	return planstore.PlanEntry{
+		Filename:    filename,
+		Status:      planstore.Status(e.Status),
+		Description: e.Description,
+		Branch:      e.Branch,
+		Topic:       e.Topic,
+		CreatedAt:   e.CreatedAt,
+		Implemented: e.Implemented,
+	}
+}
+
 func (ps *PlanState) save() error {
+	if ps.store != nil {
+		// Remote store: no-op here — mutations write through individually.
+		// save() is called after each mutation; with a store backend the
+		// individual Create/Update/Rename calls already persisted the change.
+		return nil
+	}
 	wrapped := wrappedFormat{
 		Topics: ps.TopicEntries,
 		Plans:  ps.Plans,

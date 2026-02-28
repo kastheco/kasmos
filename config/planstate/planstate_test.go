@@ -1,11 +1,13 @@
 package planstate
 
 import (
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/kastheco/kasmos/config/planstore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -397,4 +399,31 @@ func TestLoadLegacyFlatFormat(t *testing.T) {
 	assert.Len(t, ps.Plans, 2)
 	assert.Equal(t, StatusDone, ps.Plans["2026-02-20-old.md"].Status)
 	assert.Equal(t, StatusImplementing, ps.Plans["2026-02-21-active.md"].Status)
+}
+
+func TestPlanState_WithRemoteStore(t *testing.T) {
+	backend := planstore.NewTestSQLiteStore(t)
+	srv := httptest.NewServer(planstore.NewHandler(backend))
+	defer srv.Close()
+
+	store := planstore.NewHTTPStore(srv.URL, "test-project")
+
+	// Create via store
+	require.NoError(t, store.Create("test-project", planstore.PlanEntry{
+		Filename: "test.md", Status: "ready", Description: "remote plan",
+	}))
+
+	// Load PlanState with remote store
+	ps, err := LoadWithStore(store, "test-project", "/tmp/unused")
+	require.NoError(t, err)
+	assert.Len(t, ps.Plans, 1)
+	assert.Equal(t, StatusReady, ps.Plans["test.md"].Status)
+}
+
+func TestPlanState_FallbackToJSON(t *testing.T) {
+	// When store is nil, Load() works exactly as before (JSON file)
+	dir := t.TempDir()
+	ps, err := Load(dir)
+	require.NoError(t, err)
+	assert.NotNil(t, ps)
 }
