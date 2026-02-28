@@ -1,0 +1,14 @@
+[Unit]
+Description=kasmos plan store server
+Documentation=https://github.com/kastheco/kasmos
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/go/bin/kas serve
+Restart=on-failure
+RestartSec=5
+Environment=HOME=%h
+
+[Install]
+WantedBy=default.target

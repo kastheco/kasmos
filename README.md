@@ -85,7 +85,9 @@ usage:
   kasmos [command]
 
 available commands:
-  setup       configure agent harnesses, install superpowers, and scaffold project files
+  setup       configure agent harnesses, install skills, and scaffold project files
+  plan        manage plan lifecycle (list, set-status, transition, implement)
+  serve       start the plan store http server (sqlite-backed)
   reset       reset all stored instances and clean up tmux sessions and worktrees
   debug       print debug information like config paths
   version     print the version number
@@ -114,11 +116,88 @@ flags:
 
 ## how it works
 
-1. **plans** live in `docs/plans/` as markdown files — kasmos creates and tracks them in `plan-state.json`
+1. **plans** live in `docs/plans/` as markdown files — kasmos tracks state in a local json file or a remote [plan store](#plan-store-remote-state)
 2. **topics** group related plans and act as collision domains (only one plan per topic can implement at a time)
 3. **waves** divide implementation into phases — kasmos parses `## Wave N` headers and runs each wave's tasks in parallel
 4. **agents** are spawned in isolated tmux sessions with dedicated git worktrees; the TUI shows live output in the preview pane
 5. **review** is automated — a reviewer agent checks the implementation, and kasmos prompts for merge/PR approval before closing the plan
+
+---
+
+## plan store (remote state)
+
+by default, plan state lives in a local `docs/plans/plan-state.json` file — git-tracked, which can cause merge conflicts when running parallel worktrees or working across machines. the plan store replaces this with a sqlite-backed http server.
+
+#### start the server
+
+```bash
+kas serve
+```
+
+defaults to `0.0.0.0:7433` with the database at `~/.config/kasmos/plans.db`. override with flags:
+
+```bash
+kas serve --port 8080 --db /path/to/plans.db --bind 127.0.0.1
+```
+
+#### connect kasmos to the store
+
+add one line to `~/.config/kasmos/config.toml`:
+
+```toml
+plan_store = "http://localhost:7433"
+```
+
+for cross-machine access (e.g. over tailscale):
+
+```toml
+plan_store = "http://your-desktop:7433"
+```
+
+on startup, kasmos pings the store — if unreachable it falls back to the local json file with a toast warning. no data loss either way.
+
+#### migrate existing plans
+
+a migration script is included in `contrib/`. it's insert-only — existing entries in the store are skipped:
+
+```bash
+# start the server first, then:
+./contrib/import-plans.sh
+```
+
+the script auto-detects `docs/plans/plan-state.json`, the default store url, and the project name from git. all three can be overridden:
+
+```bash
+./contrib/import-plans.sh path/to/plan-state.json http://host:7433 my-project
+```
+
+#### run as a systemd service
+
+a unit file is provided in `contrib/kasmosdb.service`:
+
+```bash
+cp contrib/kasmosdb.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now kasmosdb
+```
+
+#### rest api
+
+the store exposes a simple rest api for scripting:
+
+```bash
+# health check
+curl http://localhost:7433/v1/ping
+
+# list all plans
+curl http://localhost:7433/v1/projects/kasmos/plans
+
+# filter by status
+curl 'http://localhost:7433/v1/projects/kasmos/plans?status=ready'
+
+# filter by topic
+curl 'http://localhost:7433/v1/projects/kasmos/plans?topic=bugs'
+```
 
 ---
 
@@ -133,8 +212,7 @@ kasmos debug
 key settings:
 
 ```toml
-default_program = "opencode"   # default agent CLI
-auto_yes = false               # auto-accept mode
+plan_store = "http://localhost:7433"  # remote plan store (optional)
 ```
 
 ---
