@@ -560,11 +560,12 @@
       "created_at": "2026-02-26T16:42:11.713212759Z"
     },
     "2026-02-27-ai-slugs-not-working.md": {
-      "status": "ready",
+      "status": "done",
       "description": "ai-slugs-not-working\n\nit keeps using a truncated version of the first line because i dont normally use newlines (except for here)",
       "branch": "plan/ai-slugs-not-working",
       "topic": "bugs",
-      "created_at": "2026-02-27T22:27:26.796165229Z"
+      "created_at": "2026-02-27T22:27:26.796165229Z",
+      "implemented": "2026-02-28"
     },
     "2026-02-27-always-focus-sidebar.md": {
       "status": "done",
