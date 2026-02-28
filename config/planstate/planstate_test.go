@@ -427,3 +427,82 @@ func TestPlanState_FallbackToJSON(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, ps)
 }
+
+func TestSetTopic_LocalJSON(t *testing.T) {
+	dir := t.TempDir()
+	ps, err := Load(dir)
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+	require.NoError(t, ps.Create("2026-02-28-feat.md", "a feature", "plan/feat", "old-topic", now))
+
+	// Change to a new topic (auto-creates topic entry)
+	require.NoError(t, ps.SetTopic("2026-02-28-feat.md", "new-topic"))
+	assert.Equal(t, "new-topic", ps.Plans["2026-02-28-feat.md"].Topic)
+
+	// Topic entry should be auto-created
+	topics := ps.Topics()
+	topicNames := make([]string, len(topics))
+	for i, t := range topics {
+		topicNames[i] = t.Name
+	}
+	assert.Contains(t, topicNames, "new-topic")
+
+	// Persisted to disk
+	ps2, err := Load(dir)
+	require.NoError(t, err)
+	assert.Equal(t, "new-topic", ps2.Plans["2026-02-28-feat.md"].Topic)
+}
+
+func TestSetTopic_ClearTopic(t *testing.T) {
+	dir := t.TempDir()
+	ps, err := Load(dir)
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+	require.NoError(t, ps.Create("2026-02-28-feat.md", "a feature", "plan/feat", "some-topic", now))
+
+	// Clear topic (empty string)
+	require.NoError(t, ps.SetTopic("2026-02-28-feat.md", ""))
+	assert.Equal(t, "", ps.Plans["2026-02-28-feat.md"].Topic)
+
+	// Persisted to disk
+	ps2, err := Load(dir)
+	require.NoError(t, err)
+	assert.Equal(t, "", ps2.Plans["2026-02-28-feat.md"].Topic)
+}
+
+func TestSetTopic_NotFound(t *testing.T) {
+	dir := t.TempDir()
+	ps, err := Load(dir)
+	require.NoError(t, err)
+
+	err = ps.SetTopic("nonexistent.md", "some-topic")
+	assert.Error(t, err)
+}
+
+func TestSetTopic_RemoteStore(t *testing.T) {
+	backend := planstore.NewTestSQLiteStore(t)
+	srv := httptest.NewServer(planstore.NewHandler(backend))
+	defer srv.Close()
+
+	store := planstore.NewHTTPStore(srv.URL, "test-project")
+
+	// Create plan via store
+	require.NoError(t, store.Create("test-project", planstore.PlanEntry{
+		Filename: "test.md", Status: "ready", Description: "remote plan", Topic: "old-topic",
+	}))
+	require.NoError(t, store.CreateTopic("test-project", planstore.TopicEntry{Name: "old-topic", CreatedAt: time.Now().UTC()}))
+
+	ps, err := LoadWithStore(store, "test-project", "/tmp/unused")
+	require.NoError(t, err)
+
+	// Change topic via SetTopic — must write through to remote store
+	require.NoError(t, ps.SetTopic("test.md", "new-topic"))
+	assert.Equal(t, "new-topic", ps.Plans["test.md"].Topic)
+
+	// Verify persisted in remote store by reloading
+	ps2, err := LoadWithStore(store, "test-project", "/tmp/unused")
+	require.NoError(t, err)
+	assert.Equal(t, "new-topic", ps2.Plans["test.md"].Topic)
+}

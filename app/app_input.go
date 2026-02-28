@@ -907,17 +907,13 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 				if picked != "(No topic)" {
 					newTopic = picked
 				}
-				if entry, ok := m.planState.Plans[m.pendingChangeTopicPlan]; ok {
-					entry.Topic = newTopic
-					m.planState.Plans[m.pendingChangeTopicPlan] = entry
-					if err := m.planState.Save(); err != nil {
-						m.state = stateDefault
-						m.pickerOverlay = nil
-						m.pendingChangeTopicPlan = ""
-						return m, m.handleError(err)
-					}
-					m.updateSidebarPlans()
+				if err := m.planState.SetTopic(m.pendingChangeTopicPlan, newTopic); err != nil {
+					m.state = stateDefault
+					m.pickerOverlay = nil
+					m.pendingChangeTopicPlan = ""
+					return m, m.handleError(err)
 				}
+				m.updateSidebarPlans()
 			}
 			m.state = stateDefault
 			m.pickerOverlay = nil

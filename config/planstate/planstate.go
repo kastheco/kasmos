@@ -484,6 +484,43 @@ func (ps *PlanState) Entry(filename string) (PlanEntry, bool) {
 	return entry, ok
 }
 
+// SetTopic assigns a topic to an existing plan entry and persists to disk.
+// If topic is non-empty and does not yet exist in TopicEntries, it is auto-created.
+// Pass an empty string to remove the plan from any topic.
+func (ps *PlanState) SetTopic(filename, topic string) error {
+	entry, ok := ps.Plans[filename]
+	if !ok {
+		return fmt.Errorf("plan not found: %s", filename)
+	}
+	entry.Topic = topic
+	ps.Plans[filename] = entry
+	// Auto-create topic entry if it doesn't exist
+	if topic != "" {
+		if ps.TopicEntries == nil {
+			ps.TopicEntries = make(map[string]TopicEntry)
+		}
+		if _, exists := ps.TopicEntries[topic]; !exists {
+			ps.TopicEntries[topic] = TopicEntry{CreatedAt: time.Now().UTC()}
+		}
+	}
+	if ps.store != nil {
+		if err := ps.store.Update(ps.project, filename, ps.toPlanstoreEntry(filename, entry)); err != nil {
+			return fmt.Errorf("plan store: %w", err)
+		}
+		// Auto-create topic in remote store if needed
+		if topic != "" {
+			topicEntry := planstore.TopicEntry{Name: topic, CreatedAt: ps.TopicEntries[topic].CreatedAt}
+			if err := ps.store.CreateTopic(ps.project, topicEntry); err != nil {
+				if !isAlreadyExistsError(err) {
+					return fmt.Errorf("plan store: %w", err)
+				}
+			}
+		}
+		return nil
+	}
+	return ps.save()
+}
+
 // SetBranch assigns a branch name to an existing plan entry and persists to disk.
 func (ps *PlanState) SetBranch(filename, branch string) error {
 	entry, ok := ps.Plans[filename]
