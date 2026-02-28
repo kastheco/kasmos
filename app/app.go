@@ -510,8 +510,9 @@ func (m *home) updateHandleWindowSizeEvent(msg tea.WindowSizeMsg) {
 	m.nav.SetSize(navWidth, contentHeight)
 	if m.auditPane != nil && m.auditPane.Visible() && navWidth > 0 {
 		// Size audit pane for the nav panel's inner content area.
-		auditInnerW := navWidth - 4 // border (2) + padding (2)
-		auditH := 8                 // 1 header + 7 event lines
+		// border (2) + border padding (2) + item padding (2) = 6
+		auditInnerW := navWidth - 6
+		auditH := 8 // 1 header + 7 event lines
 		if contentHeight < 20 {
 			auditH = 5 // compact for small terminals
 		}
