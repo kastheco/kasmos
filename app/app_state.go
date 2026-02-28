@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	cmd2 "github.com/kastheco/kasmos/cmd"
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/auditlog"
 	"github.com/kastheco/kasmos/config/planfsm"
 	"github.com/kastheco/kasmos/config/planparser"
 	"github.com/kastheco/kasmos/config/planstate"
@@ -1815,4 +1816,21 @@ func (m *home) adoptOrphanSession(item overlay.TmuxBrowserItem) (tea.Model, tea.
 		err := inst.AdoptOrphanTmuxSession(item.Name)
 		return instanceStartedMsg{instance: inst, err: err}
 	}
+}
+
+// audit emits a structured audit event, automatically filling in the Project
+// field from m.planStoreProject. Optional fields (PlanFile, InstanceTitle,
+// AgentType, WaveNumber, TaskNumber, Detail, Level) can be set via EventOption
+// functional options: WithPlan, WithInstance, WithAgent, WithWave, WithDetail,
+// WithLevel.
+func (m *home) audit(kind auditlog.EventKind, msg string, opts ...auditlog.EventOption) {
+	e := auditlog.Event{
+		Kind:    kind,
+		Project: m.planStoreProject,
+		Message: msg,
+	}
+	for _, opt := range opts {
+		opt(&e)
+	}
+	m.auditLogger.Emit(e)
 }

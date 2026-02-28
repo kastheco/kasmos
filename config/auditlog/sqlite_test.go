@@ -78,3 +78,23 @@ func TestSQLiteLogger_QueryOrderDesc(t *testing.T) {
 	require.Len(t, events, 2)
 	assert.Equal(t, "second", events[0].Message) // newest first
 }
+
+func TestSQLiteLogger_SharedDB(t *testing.T) {
+	// Verify the logger can be opened on the same DB path as planstore
+	// (separate table, no conflicts)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "store.db")
+
+	store, err := planstore.NewSQLiteStore(dbPath)
+	require.NoError(t, err)
+	defer store.Close()
+
+	logger, err := auditlog.NewSQLiteLogger(dbPath)
+	require.NoError(t, err)
+	defer logger.Close()
+
+	logger.Emit(auditlog.Event{Kind: auditlog.EventAgentSpawned, Project: "p", Message: "test"})
+	events, err := logger.Query(auditlog.QueryFilter{Project: "p", Limit: 1})
+	require.NoError(t, err)
+	assert.Len(t, events, 1)
+}

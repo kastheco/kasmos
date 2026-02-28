@@ -20,6 +20,42 @@ type Logger interface {
 	Close() error
 }
 
+// EventOption is a functional option for configuring optional Event fields.
+type EventOption func(*Event)
+
+// WithPlan sets the PlanFile field on the event.
+func WithPlan(planFile string) EventOption {
+	return func(e *Event) { e.PlanFile = planFile }
+}
+
+// WithInstance sets the InstanceTitle field on the event.
+func WithInstance(title string) EventOption {
+	return func(e *Event) { e.InstanceTitle = title }
+}
+
+// WithAgent sets the AgentType field on the event.
+func WithAgent(agentType string) EventOption {
+	return func(e *Event) { e.AgentType = agentType }
+}
+
+// WithWave sets the WaveNumber and TaskNumber fields on the event.
+func WithWave(wave, task int) EventOption {
+	return func(e *Event) {
+		e.WaveNumber = wave
+		e.TaskNumber = task
+	}
+}
+
+// WithDetail sets the Detail field on the event (JSON-encoded extra data).
+func WithDetail(detail string) EventOption {
+	return func(e *Event) { e.Detail = detail }
+}
+
+// WithLevel sets the Level field on the event (info, warn, error).
+func WithLevel(level string) EventOption {
+	return func(e *Event) { e.Level = level }
+}
+
 // nopLogger is a no-op Logger used when planstore is unconfigured.
 type nopLogger struct{}
 

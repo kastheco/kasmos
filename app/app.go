@@ -8,6 +8,7 @@ import (
 
 	cmd2 "github.com/kastheco/kasmos/cmd"
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/auditlog"
 	"github.com/kastheco/kasmos/config/planfsm"
 	"github.com/kastheco/kasmos/config/planparser"
 	"github.com/kastheco/kasmos/config/planstate"
@@ -44,8 +45,10 @@ func Run(ctx context.Context, program string, autoYes bool) error {
 	defer sentrypkg.RecoverPanic()
 
 	zone.NewGlobal()
+	h := newHome(ctx, program, autoYes)
+	defer h.auditLogger.Close()
 	p := tea.NewProgram(
-		newHome(ctx, program, autoYes),
+		h,
 		tea.WithAltScreen(),
 		tea.WithMouseAllMotion(), // Full mouse tracking for hover + scroll + click
 	)
@@ -242,6 +245,9 @@ type home struct {
 	planStore planstore.Store
 	// planStoreProject is the project name used with the remote store (derived from repo basename).
 	planStoreProject string
+	// auditLogger records structured audit events to the planstore SQLite database.
+	// Falls back to NopLogger when planstore is HTTP-backed or unconfigured.
+	auditLogger auditlog.Logger
 
 	// previewTickCount counts preview ticks for throttled banner animation
 	previewTickCount int
@@ -378,6 +384,24 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 	} else {
 		h.fsm = planfsm.New(h.planStateDir)
 	}
+
+	// Initialize audit logger. When planstore is SQLite-backed (no PlanStore URL),
+	// share the same DB file so both tables coexist without conflicts.
+	// When planstore is HTTP-backed or unconfigured, use a no-op logger.
+	if appConfig.PlanStore == "" {
+		// SQLite-backed: open (or create) the shared planstore DB for audit events.
+		dbPath := planstore.ResolvedDBPath()
+		if al, err := auditlog.NewSQLiteLogger(dbPath); err != nil {
+			log.WarningLog.Printf("audit logger init failed: %v", err)
+			h.auditLogger = auditlog.NopLogger()
+		} else {
+			h.auditLogger = al
+		}
+	} else {
+		// HTTP-backed or unconfigured: discard audit events for now.
+		h.auditLogger = auditlog.NopLogger()
+	}
+
 	h.nav = ui.NewNavigationPanel(&h.spinner)
 	h.toastManager = overlay.NewToastManager(&h.spinner)
 
