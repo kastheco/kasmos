@@ -1,10 +1,12 @@
 package planfsm
 
 import (
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/kastheco/kasmos/config/planstore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -96,4 +98,36 @@ func TestConsumeSignal_DeletesFile(t *testing.T) {
 
 	_, err := os.Stat(path)
 	assert.True(t, os.IsNotExist(err))
+}
+
+// TestSignals_WithStoreFSM verifies that signals still trigger store-backed FSM transitions.
+// The sentinel file system is decoupled from storage — it just triggers FSM events.
+func TestSignals_WithStoreFSM(t *testing.T) {
+	backend := planstore.NewTestSQLiteStore(t)
+	srv := httptest.NewServer(planstore.NewHandler(backend))
+	defer srv.Close()
+
+	store := planstore.NewHTTPStore(srv.URL, "test-project")
+	err := store.Create("test-project", planstore.PlanEntry{
+		Filename: "test.md", Status: "planning",
+	})
+	require.NoError(t, err)
+
+	// Write a sentinel file in a temp signals dir
+	plansDir := t.TempDir()
+	signalsDir := filepath.Join(plansDir, ".signals")
+	require.NoError(t, os.MkdirAll(signalsDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(signalsDir, "planner-finished-test.md"), nil, 0o644))
+
+	signals := ScanSignals(plansDir)
+	require.Len(t, signals, 1)
+	assert.Equal(t, PlannerFinished, signals[0].Event)
+
+	// Apply via store-backed FSM
+	fsm := NewWithStore(store, "test-project", plansDir)
+	require.NoError(t, fsm.Transition("test.md", signals[0].Event))
+
+	entry, err := store.Get("test-project", "test.md")
+	require.NoError(t, err)
+	assert.Equal(t, "ready", string(entry.Status))
 }

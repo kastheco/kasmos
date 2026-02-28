@@ -8,6 +8,7 @@ import (
 
 	"github.com/kastheco/kasmos/config/planfsm"
 	"github.com/kastheco/kasmos/config/planstate"
+	"github.com/kastheco/kasmos/config/planstore"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +24,23 @@ func executePlanList(plansDir, statusFilter string) string {
 		if statusFilter != "" && string(info.Status) != statusFilter {
 			continue
 		}
+		line := fmt.Sprintf("%-14s %-50s %s", info.Status, info.Filename, info.Branch)
+		sb.WriteString(strings.TrimRight(line, " ") + "\n")
+	}
+	return sb.String()
+}
+
+// executePlanListWithStore returns a formatted string listing all plans from a
+// remote store backend. storeURL is the base URL of the plan store server
+// (e.g. "http://athena:7433") and project is the project name to query.
+func executePlanListWithStore(storeURL, project string) string {
+	store := planstore.NewHTTPStore(storeURL, project)
+	ps, err := planstate.LoadWithStore(store, project, "")
+	if err != nil {
+		return fmt.Sprintf("error: %v", err)
+	}
+	var sb strings.Builder
+	for _, info := range ps.List() {
 		line := fmt.Sprintf("%-14s %-50s %s", info.Status, info.Filename, info.Branch)
 		sb.WriteString(strings.TrimRight(line, " ") + "\n")
 	}

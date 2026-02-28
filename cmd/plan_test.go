@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/kastheco/kasmos/config/planstate"
+	"github.com/kastheco/kasmos/config/planstore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -162,4 +164,21 @@ func TestPlanImplement(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "signal file should exist")
+}
+
+// TestPlanList_WithStore verifies that executePlanListWithStore works with a
+// store-backed HTTP server, returning plan entries from the remote store.
+func TestPlanList_WithStore(t *testing.T) {
+	backend := planstore.NewTestSQLiteStore(t)
+	srv := httptest.NewServer(planstore.NewHandler(backend))
+	defer srv.Close()
+
+	err := backend.Create("test-project", planstore.PlanEntry{
+		Filename: "test.md", Status: "ready", Description: "test plan",
+	})
+	require.NoError(t, err)
+
+	output := executePlanListWithStore(srv.URL, "test-project")
+	assert.Contains(t, output, "test.md")
+	assert.Contains(t, output, "ready")
 }
