@@ -454,7 +454,6 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 					_ = m.saveAllInstances()
 					m.updateSidebarPlans()
 					m.nav.SelectByID(ui.SidebarPlanPrefix + newFile)
-					m.updateNavPanelStatus()
 				}
 			}
 			m.textInputOverlay = nil
@@ -804,7 +803,6 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			}
 			m.loadPlanState()
 			m.updateSidebarPlans()
-			m.updateNavPanelStatus()
 			m.state = stateDefault
 			m.menu.SetState(ui.StateDefault)
 			m.pickerOverlay = nil
@@ -870,7 +868,6 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 						return m, m.handleError(err)
 					}
 					m.updateSidebarPlans()
-					m.updateNavPanelStatus()
 				}
 			}
 			m.state = stateDefault
@@ -901,7 +898,6 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 					}
 					m.loadPlanState()
 					m.updateSidebarPlans()
-					m.updateNavPanelStatus()
 					m.toastManager.Success(fmt.Sprintf("status → %s", picked))
 					m.state = stateDefault
 					m.pickerOverlay = nil

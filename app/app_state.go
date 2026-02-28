@@ -121,29 +121,26 @@ func (m *home) computeStatusBarData() ui.StatusBarData {
 	return data
 }
 
-func (m *home) updateNavPanelStatus() {
-	// Count running/notification instances for status (used by the "All" count badge).
-	// Since topics are now plan-state-based (not instance-based), we still track
-	// instance activity for the top-level status indicators.
-	topicStatuses := make(map[string]ui.TopicStatus)
+// computePlanStatuses builds per-plan instance status flags (running/notification)
+// from the current instance list.
+func (m *home) computePlanStatuses() map[string]ui.TopicStatus {
 	planStatuses := make(map[string]ui.TopicStatus)
-	ungroupedCount := 0
-
 	for _, inst := range m.nav.GetInstances() {
-		ungroupedCount++
-		started := inst.Started()
-
-		st := topicStatuses[""]
-		topicStatuses[""] = mergeTopicStatus(st, inst, started)
-
 		if inst.PlanFile == "" {
 			continue
 		}
 		planSt := planStatuses[inst.PlanFile]
-		planStatuses[inst.PlanFile] = mergePlanStatus(planSt, inst, started)
+		planStatuses[inst.PlanFile] = mergePlanStatus(planSt, inst, inst.Started())
 	}
+	return planStatuses
+}
 
-	m.nav.SetItems(nil, nil, ungroupedCount, nil, topicStatuses, planStatuses)
+// updateNavPanelStatus recomputes plan instance statuses and triggers a row
+// rebuild. Use this after instance mutations (kill, remove, pause) where the
+// plan list itself hasn't changed. When updateSidebarPlans is also called,
+// skip this — updateSidebarPlans already includes plan statuses in its rebuild.
+func (m *home) updateNavPanelStatus() {
+	m.nav.SetItems(nil, nil, 0, nil, nil, m.computePlanStatuses())
 }
 
 // focusSlot constants for readability.
@@ -286,7 +283,6 @@ func (m *home) rebuildInstanceList() {
 	m.planStateDir = filepath.Join(m.activeRepoPath, "docs", "plans")
 	m.loadPlanState()
 	m.updateSidebarPlans()
-	m.updateNavPanelStatus()
 }
 
 // getKnownRepos returns distinct repo paths from allInstances, recent repos, plus activeRepoPath.
@@ -724,13 +720,9 @@ func (m *home) updateSidebarPlans() {
 		})
 	}
 
-	// Feed flat-mode plan list (active plans only — cancelled are hidden)
-	allVisiblePlans := make([]ui.PlanDisplay, 0, len(ungrouped))
-	allVisiblePlans = append(allVisiblePlans, ungrouped...)
-	for _, t := range topics {
-		allVisiblePlans = append(allVisiblePlans, t.Plans...)
-	}
-	m.nav.SetPlans(allVisiblePlans)
+	// Set plan statuses before the rebuild so navPlanSortKey uses
+	// up-to-date running/notification flags in a single pass.
+	m.nav.SetPlanStatuses(m.computePlanStatuses())
 
 	m.nav.SetTopicsAndPlans(topics, ungrouped, history)
 
@@ -831,6 +823,7 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 	}
 	reviewerInst.IsReviewer = true
 	reviewerInst.QueuedPrompt = prompt
+	reviewerInst.SetStatus(session.Loading)
 
 	m.addInstanceFinalizer(reviewerInst, m.nav.AddInstance(reviewerInst))
 	m.nav.SelectInstance(reviewerInst) // sort-order safe, unlike index arithmetic
@@ -998,6 +991,7 @@ func (m *home) spawnCoderWithFeedback(planFile, feedback string) tea.Cmd {
 		return nil
 	}
 	coderInst.QueuedPrompt = prompt
+	coderInst.SetStatus(session.Loading)
 
 	m.addInstanceFinalizer(coderInst, m.nav.AddInstance(coderInst))
 	m.nav.SelectInstance(coderInst)
@@ -1078,7 +1072,6 @@ func (m *home) createPlanEntry(name, description, topic string) error {
 		return err
 	}
 	m.updateSidebarPlans()
-	m.updateNavPanelStatus()
 	return nil
 }
 
@@ -1143,7 +1136,6 @@ func (m *home) finalizePlanCreation(name, description string) error {
 
 	m.loadPlanState()
 	m.updateSidebarPlans()
-	m.updateNavPanelStatus()
 	return nil
 }
 
@@ -1190,7 +1182,6 @@ func (m *home) importClickUpTask(task *clickup.Task) (tea.Model, tea.Cmd) {
 
 	m.loadPlanState()
 	m.updateSidebarPlans()
-	m.updateNavPanelStatus()
 
 	prompt := fmt.Sprintf(`Analyze this imported ClickUp task. The task details and subtasks are included as reference in the plan file.
 

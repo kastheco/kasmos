@@ -374,7 +374,6 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 	}
 
 	h.updateSidebarPlans()
-	h.updateNavPanelStatus()
 
 	// Reconstruct in-memory wave orchestrators for plans that were mid-wave
 	// when kasmos was last restarted. Must run after loadPlanState and instance load.
@@ -1046,7 +1045,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.updateSidebarPlans()
-		m.updateNavPanelStatus()
 		m.updateInfoPane()
 		completionCmd := m.checkPlanCompletion()
 		asyncCmds = append(asyncCmds, signalCmds...)
@@ -1097,7 +1095,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Reload plan state and refresh sidebar after async plan mutation.
 		m.loadPlanState()
 		m.updateSidebarPlans()
-		m.updateNavPanelStatus()
 		return m, tea.WindowSize()
 	case clickUpTaskFetchedMsg:
 		if msg.Err != nil {
@@ -1179,7 +1176,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.loadPlanState()
 		m.updateSidebarPlans()
-		m.updateNavPanelStatus()
 
 		// Spawn reviewer agent for the completed plan.
 		var reviewerCmd tea.Cmd
@@ -1209,7 +1205,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.loadPlanState()
 		m.updateSidebarPlans()
-		m.updateNavPanelStatus()
 
 		var reviewerCmd tea.Cmd
 		if cmd := m.spawnReviewer(planFile); cmd != nil {

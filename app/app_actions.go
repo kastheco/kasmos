@@ -280,7 +280,6 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			_ = m.saveAllInstances()
 			m.loadPlanState()
 			m.updateSidebarPlans()
-			m.updateNavPanelStatus()
 			return planRefreshMsg{}
 		}
 		return m, m.confirmAction(fmt.Sprintf("merge '%s' branch into main?", planName), mergeAction)
@@ -308,7 +307,6 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		}
 		m.loadPlanState()
 		m.updateSidebarPlans()
-		m.updateNavPanelStatus()
 		return m, tea.WindowSize()
 
 	case "request_review":
@@ -321,7 +319,6 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		}
 		m.loadPlanState()
 		m.updateSidebarPlans()
-		m.updateNavPanelStatus()
 		if cmd := m.spawnReviewer(planFile); cmd != nil {
 			return m, cmd
 		}
@@ -337,7 +334,6 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		}
 		m.loadPlanState()
 		m.updateSidebarPlans()
-		m.updateNavPanelStatus()
 		return m, tea.WindowSize()
 
 	case "cancel_plan":
@@ -364,7 +360,6 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		}
 		m.loadPlanState()
 		m.updateSidebarPlans()
-		m.updateNavPanelStatus()
 		return m.spawnPlanAgent(planFile, "plan", buildModifyPlanPrompt(planFile))
 
 	case "start_over_plan":
@@ -394,7 +389,6 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			_ = m.saveAllInstances()
 			m.loadPlanState()
 			m.updateSidebarPlans()
-			m.updateNavPanelStatus()
 			return planRefreshMsg{}
 		}
 		return m, m.confirmAction(fmt.Sprintf("start over plan '%s'? this resets the branch.", planName), startOverAction)
@@ -716,7 +710,6 @@ func (m *home) executePlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 		}
 		m.loadPlanState()
 		m.updateSidebarPlans()
-		m.updateNavPanelStatus()
 		return m.spawnPlanAgent(planFile, "plan", buildPlanPrompt(planstate.DisplayName(planFile), entry.Description))
 	case "solo":
 		if err := m.fsmSetImplementing(planFile); err != nil {
@@ -724,7 +717,6 @@ func (m *home) executePlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 		}
 		m.loadPlanState()
 		m.updateSidebarPlans()
-		m.updateNavPanelStatus()
 		// Check if plan .md file exists on disk to decide prompt content.
 		planName := planstate.DisplayName(planFile)
 		planPath := filepath.Join(m.activeRepoPath, "docs", "plans", planFile)
@@ -750,7 +742,6 @@ func (m *home) executePlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			}
 			m.loadPlanState()
 			m.updateSidebarPlans()
-			m.updateNavPanelStatus()
 			m.toastManager.Info("plan needs ## Wave headers — respawning planner to annotate.")
 			_, spawnCmd := m.spawnPlanAgent(planFile, "plan", buildWaveAnnotationPrompt(planFile))
 			return m, tea.Batch(m.toastTickCmd(), func() tea.Msg { return planRefreshMsg{} }, spawnCmd)
@@ -764,7 +755,6 @@ func (m *home) executePlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 		}
 		m.loadPlanState()
 		m.updateSidebarPlans()
-		m.updateNavPanelStatus()
 		return m.startNextWave(orch, entry)
 	case "review":
 		if err := m.fsmSetReviewing(planFile); err != nil {
@@ -772,7 +762,6 @@ func (m *home) executePlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 		}
 		m.loadPlanState()
 		m.updateSidebarPlans()
-		m.updateNavPanelStatus()
 		planName := planstate.DisplayName(planFile)
 		reviewPrompt := scaffold.LoadReviewPrompt("docs/plans/"+planFile, planName)
 		return m.spawnPlanAgent(planFile, "review", reviewPrompt)
@@ -784,7 +773,6 @@ func (m *home) executePlanStage(planFile, stage string) (tea.Model, tea.Cmd) {
 	}
 	m.loadPlanState()
 	m.updateSidebarPlans()
-	m.updateNavPanelStatus()
 	return m, nil
 }
 

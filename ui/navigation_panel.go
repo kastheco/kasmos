@@ -167,6 +167,15 @@ func (n *NavigationPanel) SetTopicsAndPlans(topics []TopicDisplay, ungrouped []P
 	n.rebuildRows()
 }
 
+// SetPlanStatuses updates plan-level status flags (running/notification)
+// without triggering a row rebuild. Call this before SetTopicsAndPlans so
+// the subsequent rebuild uses correct statuses.
+func (n *NavigationPanel) SetPlanStatuses(statuses map[string]TopicStatus) {
+	if statuses != nil {
+		n.planStatuses = statuses
+	}
+}
+
 func (n *NavigationPanel) SetItems(_ []string, _ map[string]int, _ int, _ map[string]bool, _ map[string]TopicStatus, planStatuses map[string]TopicStatus) {
 	if planStatuses != nil {
 		n.planStatuses = planStatuses
