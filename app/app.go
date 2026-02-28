@@ -92,6 +92,8 @@ const (
 	stateRepoSwitch
 	// stateChangeTopic is the state when the user is changing a plan's topic via picker.
 	stateChangeTopic
+	// stateSetStatus is the state when the user is force-overriding a plan's status via picker.
+	stateSetStatus
 	// stateClickUpSearch is the state when the user is typing a ClickUp search query.
 	stateClickUpSearch
 	// stateClickUpPicker is the state when the user is picking from ClickUp search results.
@@ -187,6 +189,8 @@ type home struct {
 	pendingPRTitle string
 	// pendingChangeTopicPlan stores the plan filename during the change-topic flow
 	pendingChangeTopicPlan string
+	// pendingSetStatusPlan stores the plan filename during the set-status flow
+	pendingSetStatusPlan string
 	// pendingChatAboutPlan stores the plan filename during the chat-about-plan flow
 	pendingChatAboutPlan string
 	// pendingPRToastID stores the toast ID for the in-progress PR creation
@@ -1429,6 +1433,8 @@ func (m *home) View() string {
 	case m.state == stateClickUpPicker && m.pickerOverlay != nil:
 		result = overlay.PlaceOverlay(0, 0, m.pickerOverlay.Render(), mainView, true, true)
 	case m.state == stateChangeTopic && m.pickerOverlay != nil:
+		result = overlay.PlaceOverlay(0, 0, m.pickerOverlay.Render(), mainView, true, true)
+	case m.state == stateSetStatus && m.pickerOverlay != nil:
 		result = overlay.PlaceOverlay(0, 0, m.pickerOverlay.Render(), mainView, true, true)
 	case m.state == stateRepoSwitch && m.pickerOverlay != nil:
 		// Position near the repo button at the bottom of the sidebar

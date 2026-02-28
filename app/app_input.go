@@ -25,7 +25,7 @@ func (m *home) handleMenuHighlighting(msg tea.KeyMsg) (cmd tea.Cmd, returnEarly 
 		m.keySent = false
 		return nil, false
 	}
-	if m.state == statePrompt || m.state == stateHelp || m.state == stateConfirm || m.state == stateNewPlan || m.state == stateNewPlanTopic || m.state == stateSpawnAgent || m.state == stateSearch || m.state == stateContextMenu || m.state == statePRTitle || m.state == statePRBody || m.state == stateRenameInstance || m.state == stateRenamePlan || m.state == stateSendPrompt || m.state == stateFocusAgent || m.state == stateRepoSwitch || m.state == stateChangeTopic || m.state == stateClickUpSearch || m.state == stateClickUpPicker || m.state == stateClickUpFetching || m.state == statePermission || m.state == stateTmuxBrowser || m.state == stateChatAboutPlan {
+	if m.state == statePrompt || m.state == stateHelp || m.state == stateConfirm || m.state == stateNewPlan || m.state == stateNewPlanTopic || m.state == stateSpawnAgent || m.state == stateSearch || m.state == stateContextMenu || m.state == statePRTitle || m.state == statePRBody || m.state == stateRenameInstance || m.state == stateRenamePlan || m.state == stateSendPrompt || m.state == stateFocusAgent || m.state == stateRepoSwitch || m.state == stateChangeTopic || m.state == stateSetStatus || m.state == stateClickUpSearch || m.state == stateClickUpPicker || m.state == stateClickUpFetching || m.state == statePermission || m.state == stateTmuxBrowser || m.state == stateChatAboutPlan {
 		return nil, false
 	}
 	// If it's in the global keymap, we should try to highlight it.
@@ -876,6 +876,42 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			m.state = stateDefault
 			m.pickerOverlay = nil
 			m.pendingChangeTopicPlan = ""
+			return m, tea.WindowSize()
+		}
+		return m, nil
+	}
+
+	// Handle set-status picker for force-overriding a plan's status
+	if m.state == stateSetStatus {
+		if m.pickerOverlay == nil {
+			m.state = stateDefault
+			m.pendingSetStatusPlan = ""
+			return m, nil
+		}
+		shouldClose := m.pickerOverlay.HandleKeyPress(msg)
+		if shouldClose {
+			if m.pickerOverlay.IsSubmitted() && m.planState != nil && m.pendingSetStatusPlan != "" {
+				picked := m.pickerOverlay.Value()
+				if picked != "" {
+					if err := m.planState.ForceSetStatus(m.pendingSetStatusPlan, planstate.Status(picked)); err != nil {
+						m.state = stateDefault
+						m.pickerOverlay = nil
+						m.pendingSetStatusPlan = ""
+						return m, m.handleError(err)
+					}
+					m.loadPlanState()
+					m.updateSidebarPlans()
+					m.updateNavPanelStatus()
+					m.toastManager.Success(fmt.Sprintf("status → %s", picked))
+					m.state = stateDefault
+					m.pickerOverlay = nil
+					m.pendingSetStatusPlan = ""
+					return m, tea.Batch(tea.WindowSize(), m.toastTickCmd())
+				}
+			}
+			m.state = stateDefault
+			m.pickerOverlay = nil
+			m.pendingSetStatusPlan = ""
 			return m, tea.WindowSize()
 		}
 		return m, nil
