@@ -3,6 +3,7 @@ package planstore
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 )
 
 // NewHandler returns an http.Handler that exposes the Store over HTTP.
@@ -19,18 +20,26 @@ func NewHandler(store Store) http.Handler {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// List plans (with optional ?status= filter)
+	// List plans (with optional ?status= and ?topic= filters)
 	mux.HandleFunc("GET /v1/projects/{project}/plans", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		statusFilter := r.URL.Query().Get("status")
+		statusFilters := r.URL.Query()["status"]
+		topicFilter := r.URL.Query().Get("topic")
 
 		var (
 			plans []PlanEntry
 			err   error
 		)
-		if statusFilter != "" {
-			plans, err = store.ListByStatus(project, Status(statusFilter))
-		} else {
+		switch {
+		case topicFilter != "":
+			plans, err = store.ListByTopic(project, topicFilter)
+		case len(statusFilters) > 0:
+			statuses := make([]Status, len(statusFilters))
+			for i, s := range statusFilters {
+				statuses[i] = Status(s)
+			}
+			plans, err = store.ListByStatus(project, statuses...)
+		default:
 			plans, err = store.List(project)
 		}
 		if err != nil {
@@ -164,20 +173,5 @@ func isNotFound(err error) bool {
 	if err == nil {
 		return false
 	}
-	msg := err.Error()
-	return len(msg) >= 9 && msg[len(msg)-9:] == "not found" ||
-		containsSubstring(msg, "not found")
-}
-
-// containsSubstring checks if s contains substr.
-func containsSubstring(s, substr string) bool {
-	if len(substr) > len(s) {
-		return false
-	}
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(err.Error(), "not found")
 }
