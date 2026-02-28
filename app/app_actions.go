@@ -55,14 +55,14 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 	case "pause_instance":
 		selected := m.nav.GetSelectedInstance()
 		if selected != nil && selected.Status != session.Paused {
+			if err := selected.Pause(); err != nil {
+				return m, m.handleError(err)
+			}
 			m.audit(auditlog.EventAgentPaused, "agent paused",
 				auditlog.WithInstance(selected.Title),
 				auditlog.WithAgent(selected.AgentType),
 				auditlog.WithPlan(selected.PlanFile),
 			)
-			if err := selected.Pause(); err != nil {
-				return m, m.handleError(err)
-			}
 			m.saveAllInstances()
 		}
 		return m, tea.Batch(tea.WindowSize(), m.instanceChanged())
@@ -70,14 +70,14 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 	case "resume_instance":
 		selected := m.nav.GetSelectedInstance()
 		if selected != nil && selected.Status == session.Paused {
+			if err := selected.Resume(); err != nil {
+				return m, m.handleError(err)
+			}
 			m.audit(auditlog.EventAgentResumed, "agent resumed",
 				auditlog.WithInstance(selected.Title),
 				auditlog.WithAgent(selected.AgentType),
 				auditlog.WithPlan(selected.PlanFile),
 			)
-			if err := selected.Resume(); err != nil {
-				return m, m.handleError(err)
-			}
 			m.saveAllInstances()
 		}
 		return m, tea.Batch(tea.WindowSize(), m.instanceChanged())

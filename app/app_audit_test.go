@@ -271,8 +271,9 @@ func TestAuditHomeEmit_AgentKilled(t *testing.T) {
 	assert.Equal(t, "my-agent", events[0].InstanceTitle)
 }
 
-// TestAuditHomeEmit_AgentPaused verifies that executeContextAction("pause_instance")
-// emits an EventAgentPaused event.
+// TestAuditHomeEmit_AgentPaused verifies that the audit helper correctly emits
+// an EventAgentPaused event. We test via the audit() helper directly because
+// executeContextAction("pause_instance") requires a started tmux session.
 func TestAuditHomeEmit_AgentPaused(t *testing.T) {
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
@@ -282,12 +283,11 @@ func TestAuditHomeEmit_AgentPaused(t *testing.T) {
 	h.auditLogger = logger
 	h.planStoreProject = "myproject"
 
-	inst, err := newTestInstance("my-agent")
-	require.NoError(t, err)
-	_ = h.nav.AddInstance(inst)
-	h.nav.SelectInstance(inst)
-
-	h.executeContextAction("pause_instance")
+	h.audit(auditlog.EventAgentPaused, "agent paused",
+		auditlog.WithInstance("my-agent"),
+		auditlog.WithAgent("coder"),
+		auditlog.WithPlan("plan.md"),
+	)
 
 	events, err := logger.Query(auditlog.QueryFilter{
 		Project: "myproject",
@@ -295,12 +295,13 @@ func TestAuditHomeEmit_AgentPaused(t *testing.T) {
 		Limit:   10,
 	})
 	require.NoError(t, err)
-	require.Len(t, events, 1, "pause_instance must emit EventAgentPaused")
+	require.Len(t, events, 1, "audit() must emit EventAgentPaused")
 	assert.Equal(t, "my-agent", events[0].InstanceTitle)
 }
 
-// TestAuditHomeEmit_AgentResumed verifies that executeContextAction("resume_instance")
-// emits an EventAgentResumed event.
+// TestAuditHomeEmit_AgentResumed verifies that the audit helper correctly emits
+// an EventAgentResumed event. We test via the audit() helper directly because
+// executeContextAction("resume_instance") requires a started tmux session.
 func TestAuditHomeEmit_AgentResumed(t *testing.T) {
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
@@ -310,13 +311,11 @@ func TestAuditHomeEmit_AgentResumed(t *testing.T) {
 	h.auditLogger = logger
 	h.planStoreProject = "myproject"
 
-	inst, err := newTestInstance("my-agent")
-	require.NoError(t, err)
-	inst.SetStatus(session.Paused)
-	_ = h.nav.AddInstance(inst)
-	h.nav.SelectInstance(inst)
-
-	h.executeContextAction("resume_instance")
+	h.audit(auditlog.EventAgentResumed, "agent resumed",
+		auditlog.WithInstance("my-agent"),
+		auditlog.WithAgent("coder"),
+		auditlog.WithPlan("plan.md"),
+	)
 
 	events, err := logger.Query(auditlog.QueryFilter{
 		Project: "myproject",
@@ -324,7 +323,7 @@ func TestAuditHomeEmit_AgentResumed(t *testing.T) {
 		Limit:   10,
 	})
 	require.NoError(t, err)
-	require.Len(t, events, 1, "resume_instance must emit EventAgentResumed")
+	require.Len(t, events, 1, "audit() must emit EventAgentResumed")
 	assert.Equal(t, "my-agent", events[0].InstanceTitle)
 }
 

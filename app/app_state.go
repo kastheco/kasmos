@@ -1872,18 +1872,6 @@ func (m *home) adoptOrphanSession(item overlay.TmuxBrowserItem) (tea.Model, tea.
 	}
 }
 
-// handleFSMError emits an EventFSMError audit event and then delegates to
-// handleError for toast display and logging. Use this instead of handleError
-// when the error originates from an FSM transition failure.
-func (m *home) handleFSMError(planFile string, transition string, err error) tea.Cmd {
-	m.audit(auditlog.EventFSMError,
-		fmt.Sprintf("FSM transition %q failed for %s: %v", transition, planFile, err),
-		auditlog.WithPlan(planFile),
-		auditlog.WithLevel("error"),
-	)
-	return m.handleError(err)
-}
-
 // audit emits a structured audit event, automatically filling in the Project
 // field from m.planStoreProject. Optional fields (PlanFile, InstanceTitle,
 // AgentType, WaveNumber, TaskNumber, Detail, Level) can be set via EventOption
