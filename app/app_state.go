@@ -637,7 +637,8 @@ func (m *home) updateInfoPane() {
 	m.tabbedWindow.SetInfoData(data)
 }
 
-// loadPlanState reads plan-state.json from the active repo's docs/plans/ directory.
+// loadPlanState reads plan state from the active repo's docs/plans/ directory.
+// When a remote store is configured, uses LoadWithStore to fetch from the server.
 // Called on user-triggered events (plan creation, repo switch, etc.). The periodic
 // metadata tick loads plan state in its goroutine instead.
 // Silently no-ops if the file is missing (project may not use plans).
@@ -645,9 +646,18 @@ func (m *home) loadPlanState() {
 	if m.planStateDir == "" {
 		return
 	}
-	ps, err := planstate.Load(m.planStateDir)
+	var ps *planstate.PlanState
+	var err error
+	if m.planStore != nil {
+		ps, err = planstate.LoadWithStore(m.planStore, m.planStoreProject, m.planStateDir)
+	} else {
+		ps, err = planstate.Load(m.planStateDir)
+	}
 	if err != nil {
 		log.WarningLog.Printf("could not load plan state: %v", err)
+		if m.toastManager != nil {
+			m.toastManager.Error("plan store error: " + err.Error())
+		}
 		return
 	}
 	m.planState = ps
@@ -1055,10 +1065,16 @@ func (m *home) viewSelectedPlan() (tea.Model, tea.Cmd) {
 	}
 }
 
-// createPlanEntry creates a new plan entry in plan-state.json.
+// createPlanEntry creates a new plan entry in plan-state.json (or remote store).
 func (m *home) createPlanEntry(name, description, topic string) error {
 	if m.planState == nil {
-		ps, err := planstate.Load(m.planStateDir)
+		var ps *planstate.PlanState
+		var err error
+		if m.planStore != nil {
+			ps, err = planstate.LoadWithStore(m.planStore, m.planStoreProject, m.planStateDir)
+		} else {
+			ps, err = planstate.Load(m.planStateDir)
+		}
 		if err != nil {
 			return err
 		}
@@ -1069,6 +1085,9 @@ func (m *home) createPlanEntry(name, description, topic string) error {
 	filename := fmt.Sprintf("%s-%s.md", time.Now().UTC().Format("2006-01-02"), slug)
 	branch := "plan/" + slug
 	if err := m.planState.Create(filename, description, branch, topic, time.Now().UTC()); err != nil {
+		if m.toastManager != nil {
+			m.toastManager.Error("plan store error: " + err.Error())
+		}
 		return err
 	}
 	m.updateSidebarPlans()
@@ -1097,16 +1116,28 @@ func renderPlanStub(name, description, filename string) string {
 	return fmt.Sprintf("# %s\n\n## Context\n\n%s\n\n## Notes\n\n- Created by kas lifecycle flow\n- Plan file: %s\n", name, description, filename)
 }
 
-// createPlanRecord registers the plan in plan-state.json (in-memory + persisted).
+// createPlanRecord registers the plan in plan-state.json (or remote store).
 func (m *home) createPlanRecord(planFile, description, branch string, now time.Time) error {
 	if m.planState == nil {
-		ps, err := planstate.Load(m.planStateDir)
+		var ps *planstate.PlanState
+		var err error
+		if m.planStore != nil {
+			ps, err = planstate.LoadWithStore(m.planStore, m.planStoreProject, m.planStateDir)
+		} else {
+			ps, err = planstate.Load(m.planStateDir)
+		}
 		if err != nil {
 			return err
 		}
 		m.planState = ps
 	}
-	return m.planState.Register(planFile, description, branch, now)
+	if err := m.planState.Register(planFile, description, branch, now); err != nil {
+		if m.toastManager != nil {
+			m.toastManager.Error("plan store error: " + err.Error())
+		}
+		return err
+	}
+	return nil
 }
 
 // finalizePlanCreation writes the plan stub file, registers it in plan-state.json,

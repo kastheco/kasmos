@@ -11,6 +11,7 @@ import (
 	"github.com/kastheco/kasmos/config/planfsm"
 	"github.com/kastheco/kasmos/config/planparser"
 	"github.com/kastheco/kasmos/config/planstate"
+	"github.com/kastheco/kasmos/config/planstore"
 	"github.com/kastheco/kasmos/internal/clickup"
 	"github.com/kastheco/kasmos/internal/mcpclient"
 	sentrypkg "github.com/kastheco/kasmos/internal/sentry"
@@ -237,6 +238,10 @@ type home struct {
 	planState *planstate.PlanState
 	// planStateDir is the directory containing plan-state.json (docs/plans/ of active repo).
 	planStateDir string
+	// planStore is the remote plan store client. Nil when unconfigured or unreachable.
+	planStore planstore.Store
+	// planStoreProject is the project name used with the remote store (derived from repo basename).
+	planStoreProject string
 
 	// previewTickCount counts preview ticks for throttled banner animation
 	previewTickCount int
@@ -326,6 +331,7 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 		os.Exit(1)
 	}
 
+	project := filepath.Base(activeRepoPath)
 	h := &home{
 		ctx:                   ctx,
 		spinner:               spinner.New(spinner.WithSpinner(spinner.Dot)),
@@ -340,14 +346,40 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 		appState:              appState,
 		activeRepoPath:        activeRepoPath,
 		planStateDir:          filepath.Join(activeRepoPath, "docs", "plans"),
+		planStoreProject:      project,
 		instanceFinalizers:    make(map[*session.Instance]func()),
 		waveOrchestrators:     make(map[string]*WaveOrchestrator),
 		plannerPrompted:       make(map[string]bool),
 		pendingReviewFeedback: make(map[string]string),
 	}
-	h.fsm = planfsm.New(h.planStateDir)
+
+	// Initialize remote plan store if configured.
+	if appConfig.PlanStore != "" {
+		store, err := planstore.NewStoreFromConfig(appConfig.PlanStore, project)
+		if err != nil {
+			log.WarningLog.Printf("plan store config error: %v", err)
+		} else if store != nil {
+			if pingErr := store.Ping(); pingErr != nil {
+				log.WarningLog.Printf("plan store unreachable: %v", pingErr)
+				// store remains nil — will show toast after toastManager is initialized
+			} else {
+				h.planStore = store
+			}
+		}
+	}
+
+	if h.planStore != nil {
+		h.fsm = planfsm.NewWithStore(h.planStore, project, h.planStateDir)
+	} else {
+		h.fsm = planfsm.New(h.planStateDir)
+	}
 	h.nav = ui.NewNavigationPanel(&h.spinner)
 	h.toastManager = overlay.NewToastManager(&h.spinner)
+
+	// Show a warning toast if the plan store was configured but unreachable.
+	if appConfig.PlanStore != "" && h.planStore == nil {
+		h.toastManager.Error("plan store unreachable — changes won't persist")
+	}
 
 	permCacheDir := filepath.Join(activeRepoPath, ".kasmos")
 	permCache := config.NewPermissionCache(permCacheDir)
@@ -593,6 +625,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		snapshots := make([]*session.Instance, len(instances))
 		copy(snapshots, instances)
 		planStateDir := m.planStateDir // snapshot for goroutine
+		store := m.planStore           // snapshot for goroutine
+		project := m.planStoreProject  // snapshot for goroutine
 
 		return m, func() tea.Msg {
 			results := make([]instanceMetadata, 0, len(snapshots))
@@ -616,11 +650,19 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				})
 			}
 
-			// Load plan state from disk — moved here from the synchronous
-			// Update handler to avoid blocking the event loop every 500ms.
+			// Load plan state — moved here from the synchronous Update handler
+			// to avoid blocking the event loop every 500ms.
+			// When a remote store is configured, use LoadWithStore to keep
+			// in-memory state fresh from the server.
 			var ps *planstate.PlanState
 			if planStateDir != "" {
-				loaded, err := planstate.Load(planStateDir)
+				var loaded *planstate.PlanState
+				var err error
+				if store != nil {
+					loaded, err = planstate.LoadWithStore(store, project, planStateDir)
+				} else {
+					loaded, err = planstate.Load(planStateDir)
+				}
 				if err != nil {
 					log.WarningLog.Printf("could not load plan state: %v", err)
 				} else {

@@ -1,12 +1,14 @@
 package planfsm
 
 import (
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/kastheco/kasmos/config/planstate"
+	"github.com/kastheco/kasmos/config/planstore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -122,4 +124,24 @@ func TestPlanStateMachine_MissingPlanReturnsError(t *testing.T) {
 	fsm := New(plansDir)
 	err := fsm.Transition("nonexistent.md", PlanStart)
 	assert.Error(t, err)
+}
+
+func TestFSM_TransitionWithStore(t *testing.T) {
+	backend := planstore.NewTestSQLiteStore(t)
+	srv := httptest.NewServer(planstore.NewHandler(backend))
+	defer srv.Close()
+
+	store := planstore.NewHTTPStore(srv.URL, "test-project")
+	err := store.Create("test-project", planstore.PlanEntry{
+		Filename: "test.md", Status: "ready",
+	})
+	require.NoError(t, err)
+
+	fsm := NewWithStore(store, "test-project", t.TempDir())
+	require.NoError(t, fsm.Transition("test.md", PlanStart))
+
+	// Verify the store was updated
+	entry, err := store.Get("test-project", "test.md")
+	require.NoError(t, err)
+	assert.Equal(t, "planning", string(entry.Status))
 }
