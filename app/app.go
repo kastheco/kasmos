@@ -254,6 +254,11 @@ type home struct {
 	// waveOrchestrators tracks active wave orchestrations by plan filename.
 	waveOrchestrators map[string]*WaveOrchestrator
 
+	// pendingAllComplete holds plan files whose all-waves-complete prompt was
+	// deferred because an overlay was active when the orchestrator finished.
+	// Drained on each metadata tick once the overlay clears.
+	pendingAllComplete []string
+
 	// pendingWaveConfirmPlanFile is set while a wave-advance (or failed-wave decision)
 	// confirmation overlay is showing, so cancel can reset the orchestrator latch.
 	pendingWaveConfirmPlanFile string
@@ -1048,6 +1053,20 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
+			// Drain deferred all-complete prompts that were blocked by an overlay.
+			if !m.isUserInOverlay() && len(m.pendingAllComplete) > 0 {
+				planFile := m.pendingAllComplete[0]
+				m.pendingAllComplete = m.pendingAllComplete[1:]
+				planName := planstate.DisplayName(planFile)
+				if cmd := m.focusPlanInstanceForOverlay(planFile); cmd != nil {
+					asyncCmds = append(asyncCmds, cmd)
+				}
+				message := fmt.Sprintf("all waves complete for '%s'. push branch and start review?", planName)
+				m.confirmAction(message, func() tea.Msg {
+					return waveAllCompleteMsg{planFile: planFile}
+				})
+			}
+
 			// Wave completion monitoring: check task completion and trigger wave transitions.
 			// We process both WaveStateRunning (check task statuses) and WaveStateWaveComplete
 			// (re-show confirm dialog after user cancelled, resetting the latch via ResetConfirm).
@@ -1110,6 +1129,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.confirmAction(message, func() tea.Msg {
 							return waveAllCompleteMsg{planFile: capturedPlanFile}
 						})
+					} else {
+						// Overlay is active — defer the prompt so it fires on the next
+						// tick when the overlay clears. Without this, the orchestrator
+						// deletion above means we never re-enter this code path.
+						m.pendingAllComplete = append(m.pendingAllComplete, capturedPlanFile)
 					}
 					continue
 				}
