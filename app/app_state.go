@@ -1902,4 +1902,53 @@ func (m *home) audit(kind auditlog.EventKind, msg string, opts ...auditlog.Event
 		opt(&e)
 	}
 	m.auditLogger.Emit(e)
+	m.refreshAuditPane()
+}
+
+// refreshAuditPane queries the audit logger and updates the audit pane display.
+// Called after every audit() emit and on navigation selection changes.
+func (m *home) refreshAuditPane() {
+	if m.auditPane == nil || m.auditLogger == nil {
+		return
+	}
+
+	// Build filter based on current selection.
+	filter := auditlog.QueryFilter{
+		Project: m.planStoreProject,
+		Limit:   50,
+	}
+	filterLabel := "all"
+
+	// Narrow by selected plan or instance if available.
+	if m.nav != nil {
+		if inst := m.nav.GetSelectedInstance(); inst != nil {
+			filter.InstanceTitle = inst.Title
+			filterLabel = inst.Title
+		} else if planFile := m.nav.GetSelectedPlanFile(); planFile != "" {
+			filter.PlanFile = planFile
+			filterLabel = planFile
+		}
+	}
+
+	events, err := m.auditLogger.Query(filter)
+	if err != nil {
+		return
+	}
+
+	displays := make([]ui.AuditEventDisplay, 0, len(events))
+	for _, e := range events {
+		icon, color := ui.EventKindIcon(string(e.Kind))
+		timeStr := e.Timestamp.Format("15:04")
+		displays = append(displays, ui.AuditEventDisplay{
+			Time:    timeStr,
+			Kind:    string(e.Kind),
+			Icon:    icon,
+			Message: e.Message,
+			Color:   color,
+			Level:   e.Level,
+		})
+	}
+
+	m.auditPane.SetEvents(displays)
+	m.auditPane.SetFilter(filterLabel)
 }

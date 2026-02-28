@@ -162,6 +162,8 @@ type home struct {
 
 	// nav displays plans + instances
 	nav *ui.NavigationPanel
+	// auditPane displays recent audit events below the nav panel
+	auditPane *ui.AuditPane
 	// menu displays the bottom menu
 	menu *ui.Menu
 	// statusBar displays the top contextual status bar
@@ -347,6 +349,7 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 		ctx:                   ctx,
 		spinner:               spinner.New(spinner.WithSpinner(spinner.Dot)),
 		menu:                  ui.NewMenu(),
+		auditPane:             ui.NewAuditPane(),
 		statusBar:             ui.NewStatusBar(),
 		tabbedWindow:          ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewInfoPane()),
 		storage:               storage,
@@ -502,7 +505,26 @@ func (m *home) updateHandleWindowSizeEvent(msg tea.WindowSizeMsg) {
 	}
 
 	m.tabbedWindow.SetSize(tabsWidth, contentHeight)
-	m.nav.SetSize(navWidth, contentHeight)
+
+	// Split sidebar height between nav and audit pane when audit pane is visible.
+	if m.auditPane != nil && m.auditPane.Visible() && navWidth > 0 {
+		navH := contentHeight * 60 / 100
+		if navH < 5 {
+			navH = 5
+		}
+		auditH := contentHeight - navH
+		if auditH < 3 {
+			auditH = 3
+			navH = contentHeight - auditH
+		}
+		m.nav.SetSize(navWidth, navH)
+		m.auditPane.SetSize(navWidth, auditH)
+	} else {
+		m.nav.SetSize(navWidth, contentHeight)
+		if m.auditPane != nil {
+			m.auditPane.SetSize(navWidth, 0)
+		}
+	}
 
 	// Store for mouse hit-testing
 	m.navWidth = navWidth
@@ -1569,7 +1591,11 @@ func (m *home) View() string {
 	// Layout: nav | preview/tabs
 	var cols []string
 	if !m.sidebarHidden {
-		cols = append(cols, colStyle.Render(m.nav.String()))
+		sidebarCol := m.nav.String()
+		if m.auditPane != nil && m.auditPane.Visible() {
+			sidebarCol = lipgloss.JoinVertical(lipgloss.Left, m.nav.String(), m.auditPane.String())
+		}
+		cols = append(cols, colStyle.Render(sidebarCol))
 	}
 	cols = append(cols, previewWithPadding)
 	listAndPreview := lipgloss.JoinHorizontal(lipgloss.Top, cols...)

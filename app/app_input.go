@@ -1437,6 +1437,11 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			}
 		}
 		return m, tea.WindowSize()
+	case keys.KeyAuditToggle:
+		if m.auditPane != nil {
+			m.auditPane.ToggleVisible()
+		}
+		return m, tea.WindowSize()
 	case keys.KeyArrowLeft:
 		// Sidebar always has focus — no-op.
 		return m, nil
