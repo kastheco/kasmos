@@ -99,6 +99,9 @@ func (t *TmuxSession) SendKeys(keys string) error {
 // HasUpdated checks if the tmux pane content has changed since the last tick. It also returns true if
 // the tmux pane has a prompt for aider or claude code.
 func (t *TmuxSession) HasUpdated() (updated bool, hasPrompt bool) {
+	if t.monitor == nil {
+		return false, false
+	}
 	content, err := t.CapturePaneContent()
 	if err != nil {
 		t.monitor.captureFailures++
@@ -152,6 +155,9 @@ func (t *TmuxSession) HasUpdated() (updated bool, hasPrompt bool) {
 // HasUpdatedWithContent is like HasUpdated but also returns the raw captured
 // pane content and whether capture succeeded, eliminating duplicate capture-pane calls.
 func (t *TmuxSession) HasUpdatedWithContent() (updated bool, hasPrompt bool, content string, captured bool) {
+	if t.monitor == nil {
+		return false, false, "", false
+	}
 	raw, err := t.CapturePaneContent()
 	if err != nil {
 		t.monitor.captureFailures++
