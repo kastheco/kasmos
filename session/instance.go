@@ -313,7 +313,12 @@ func (i *Instance) GetWorktreePath() string {
 func (i *Instance) SetStatus(status Status) {
 	if i.Status == Running && status == Ready {
 		i.Notified = true
-		SendNotification("kas", fmt.Sprintf("'%s' has finished", i.Title))
+		// Wave task instances are managed by the orchestrator — suppress
+		// per-task desktop notifications; the user gets a toast when the
+		// wave completes instead.
+		if i.TaskNumber == 0 {
+			SendNotification("kas", fmt.Sprintf("'%s' has finished", i.Title))
+		}
 	}
 	if status == Running || status == Loading {
 		i.LastActiveAt = time.Now()
