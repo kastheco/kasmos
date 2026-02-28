@@ -48,3 +48,16 @@ func TestHeuristicPlanTitle_WhitespaceOnly(t *testing.T) {
 	got := heuristicPlanTitle("   \n\n  ")
 	assert.Equal(t, "new plan", got)
 }
+
+func TestHeuristicPlanTitle_SingleLineLong_UsesNaturalBreak(t *testing.T) {
+	desc := "implement a custom verification process, including static analysis and reality checks for all plans"
+	got := heuristicPlanTitle(desc)
+	assert.Equal(t, "implement a custom verification process", got)
+}
+
+func TestHeuristicPlanTitle_SingleLineNoPunctuation_Truncates(t *testing.T) {
+	desc := "refactor the entire authentication subsystem to use JSON web tokens instead of session cookies"
+	got := heuristicPlanTitle(desc)
+	words := len(splitWords(got))
+	assert.LessOrEqual(t, words, 6)
+}

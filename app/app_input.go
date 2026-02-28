@@ -25,7 +25,7 @@ func (m *home) handleMenuHighlighting(msg tea.KeyMsg) (cmd tea.Cmd, returnEarly 
 		m.keySent = false
 		return nil, false
 	}
-	if m.state == statePrompt || m.state == stateHelp || m.state == stateConfirm || m.state == stateNewPlan || m.state == stateNewPlanTopic || m.state == stateSpawnAgent || m.state == stateSearch || m.state == stateContextMenu || m.state == statePRTitle || m.state == statePRBody || m.state == stateRenameInstance || m.state == stateRenamePlan || m.state == stateSendPrompt || m.state == stateFocusAgent || m.state == stateRepoSwitch || m.state == stateChangeTopic || m.state == stateSetStatus || m.state == stateClickUpSearch || m.state == stateClickUpPicker || m.state == stateClickUpFetching || m.state == statePermission || m.state == stateTmuxBrowser || m.state == stateChatAboutPlan {
+	if m.state == statePrompt || m.state == stateHelp || m.state == stateConfirm || m.state == stateNewPlan || m.state == stateNewPlanDeriving || m.state == stateNewPlanTopic || m.state == stateSpawnAgent || m.state == stateSearch || m.state == stateContextMenu || m.state == statePRTitle || m.state == statePRBody || m.state == stateRenameInstance || m.state == stateRenamePlan || m.state == stateSendPrompt || m.state == stateFocusAgent || m.state == stateRepoSwitch || m.state == stateChangeTopic || m.state == stateSetStatus || m.state == stateClickUpSearch || m.state == stateClickUpPicker || m.state == stateClickUpFetching || m.state == statePermission || m.state == stateTmuxBrowser || m.state == stateChatAboutPlan {
 		return nil, false
 	}
 	// If it's in the global keymap, we should try to highlight it.
@@ -752,26 +752,32 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 					m.textInputOverlay = nil
 					return m, m.handleError(fmt.Errorf("description cannot be empty"))
 				}
-				// Derive heuristic title immediately
+				// Set heuristic title as fallback; AI title will replace it when it arrives
 				m.pendingPlanName = heuristicPlanTitle(description)
 				m.pendingPlanDesc = description
 				m.textInputOverlay = nil
-
-				// Show topic picker with heuristic title
-				topicNames := m.getTopicNames()
-				topicNames = append([]string{"(No topic)"}, topicNames...)
-				pickerTitle := fmt.Sprintf("assign to topic for '%s'", m.pendingPlanName)
-				m.pickerOverlay = overlay.NewPickerOverlay(pickerTitle, topicNames)
-				m.pickerOverlay.SetAllowCustom(true)
-				m.state = stateNewPlanTopic
-
-				// Fire async AI title derivation
+				m.state = stateNewPlanDeriving
+				if m.toastManager != nil {
+					m.toastManager.Info("deriving title...")
+					return m, tea.Batch(aiDerivePlanTitleCmd(description), m.toastTickCmd())
+				}
 				return m, aiDerivePlanTitleCmd(description)
 			}
 			m.state = stateDefault
 			m.menu.SetState(ui.StateDefault)
 			m.textInputOverlay = nil
 			return m, tea.WindowSize()
+		}
+		return m, nil
+	}
+
+	// Handle deriving state — waiting for AI title before showing topic picker
+	if m.state == stateNewPlanDeriving {
+		if msg.Type == tea.KeyEscape {
+			m.state = stateDefault
+			m.pendingPlanName = ""
+			m.pendingPlanDesc = ""
+			return m, nil
 		}
 		return m, nil
 	}

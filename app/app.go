@@ -68,6 +68,8 @@ const (
 	stateSearch
 	// stateNewPlan is the state when the user is creating a new plan (name + description form).
 	stateNewPlan
+	// stateNewPlanDeriving is the state when the AI is deriving a plan title.
+	stateNewPlanDeriving
 	// stateNewPlanTopic is the state when the user is picking a topic for a new plan.
 	stateNewPlanTopic
 	// stateSpawnAgent is the state when the user is spawning an ad-hoc agent session.
@@ -1291,8 +1293,20 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case planTitleMsg:
+		if m.state == stateNewPlanDeriving {
+			if msg.err == nil && msg.title != "" {
+				m.pendingPlanName = msg.title
+			}
+			topicNames := m.getTopicNames()
+			topicNames = append([]string{"(No topic)"}, topicNames...)
+			pickerTitle := fmt.Sprintf("assign to topic for '%s'", m.pendingPlanName)
+			m.pickerOverlay = overlay.NewPickerOverlay(pickerTitle, topicNames)
+			m.pickerOverlay.SetAllowCustom(true)
+			m.state = stateNewPlanTopic
+			return m, nil
+		}
+		// Safety net: if title arrives while already in topic picker, update silently
 		if msg.err == nil && msg.title != "" {
-			// Only update if we're still in the topic picker flow
 			if m.state == stateNewPlanTopic && m.pendingPlanDesc != "" {
 				m.pendingPlanName = msg.title
 				if m.pickerOverlay != nil {

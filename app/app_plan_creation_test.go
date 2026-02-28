@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,8 +97,8 @@ func TestNewPlanSubmitShowsTopicPicker(t *testing.T) {
 
 	updated, ok := model.(*home)
 	require.True(t, ok)
-	require.Equal(t, stateNewPlanTopic, updated.state)
-	require.NotNil(t, updated.pickerOverlay)
+	// After submit, we enter the deriving state (not topic picker yet)
+	require.Equal(t, stateNewPlanDeriving, updated.state)
 	require.NotEmpty(t, updated.pendingPlanName)
 	require.Equal(t, "refactor auth module", updated.pendingPlanDesc)
 	// cmd should be the AI title derivation command (non-nil)
@@ -128,15 +129,102 @@ func TestNewPlanTopicPickerShowsPendingPlanName(t *testing.T) {
 	}
 	h.textInputOverlay.SetMultiline(true)
 
-	// Tab to button, then Enter to submit
+	// Tab to button, then Enter to submit — enters deriving state
 	h.handleKeyPress(tea.KeyMsg{Type: tea.KeyTab})
 	model, _ := h.handleKeyPress(tea.KeyMsg{Type: tea.KeyEnter})
 
 	updated, ok := model.(*home)
 	require.True(t, ok)
+	require.Equal(t, stateNewPlanDeriving, updated.state)
+
+	// Simulate AI title arriving — transitions to topic picker
+	model2, _ := updated.Update(planTitleMsg{title: "auth refactor"})
+	updated2, ok := model2.(*home)
+	require.True(t, ok)
+	require.Equal(t, stateNewPlanTopic, updated2.state)
+	require.NotNil(t, updated2.pickerOverlay)
+	require.Contains(t, strings.ToLower(updated2.pickerOverlay.Render()), "auth refactor")
+}
+
+func TestNewPlanSubmitEntersDerivingState(t *testing.T) {
+	h := &home{
+		state:            stateNewPlan,
+		textInputOverlay: overlay.NewTextInputOverlay("new plan", "refactor auth module"),
+	}
+	h.textInputOverlay.SetMultiline(true)
+
+	h.handleKeyPress(tea.KeyMsg{Type: tea.KeyTab})
+	model, cmd := h.handleKeyPress(tea.KeyMsg{Type: tea.KeyEnter})
+
+	updated, ok := model.(*home)
+	require.True(t, ok)
+	require.Equal(t, stateNewPlanDeriving, updated.state)
+	require.Equal(t, "refactor auth module", updated.pendingPlanDesc)
+	require.NotEmpty(t, updated.pendingPlanName)
+	require.NotNil(t, cmd)
+}
+
+func TestDerivingStateTransitionsToTopicOnAITitle(t *testing.T) {
+	h := &home{
+		state:           stateNewPlanDeriving,
+		pendingPlanName: "heuristic-fallback",
+		pendingPlanDesc: "some description",
+	}
+
+	model, _ := h.Update(planTitleMsg{title: "ai derived title"})
+
+	updated, ok := model.(*home)
+	require.True(t, ok)
 	require.Equal(t, stateNewPlanTopic, updated.state)
+	require.Equal(t, "ai derived title", updated.pendingPlanName)
 	require.NotNil(t, updated.pickerOverlay)
-	require.Contains(t, strings.ToLower(updated.pickerOverlay.Render()), "auth refactor")
+}
+
+func TestDerivingStateFallsBackOnAIError(t *testing.T) {
+	h := &home{
+		state:           stateNewPlanDeriving,
+		pendingPlanName: "heuristic fallback title",
+		pendingPlanDesc: "some description",
+	}
+
+	model, _ := h.Update(planTitleMsg{err: fmt.Errorf("timeout")})
+
+	updated, ok := model.(*home)
+	require.True(t, ok)
+	require.Equal(t, stateNewPlanTopic, updated.state)
+	require.Equal(t, "heuristic fallback title", updated.pendingPlanName)
+	require.NotNil(t, updated.pickerOverlay)
+}
+
+func TestDerivingStateBlocksKeyInput(t *testing.T) {
+	h := &home{
+		state:           stateNewPlanDeriving,
+		pendingPlanName: "test",
+		pendingPlanDesc: "test desc",
+	}
+
+	model, cmd := h.handleKeyPress(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+
+	updated, ok := model.(*home)
+	require.True(t, ok)
+	require.Equal(t, stateNewPlanDeriving, updated.state)
+	require.Nil(t, cmd)
+}
+
+func TestDerivingStateEscapeCancels(t *testing.T) {
+	h := &home{
+		state:           stateNewPlanDeriving,
+		pendingPlanName: "test",
+		pendingPlanDesc: "test desc",
+	}
+
+	model, _ := h.handleKeyPress(tea.KeyMsg{Type: tea.KeyEscape})
+
+	updated, ok := model.(*home)
+	require.True(t, ok)
+	require.Equal(t, stateDefault, updated.state)
+	require.Empty(t, updated.pendingPlanName)
+	require.Empty(t, updated.pendingPlanDesc)
 }
 
 func TestIsUserInOverlay(t *testing.T) {

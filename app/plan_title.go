@@ -17,7 +17,8 @@ type planTitleMsg struct {
 }
 
 // heuristicPlanTitle derives a short title from a plan description.
-// Takes the first line, strips common filler prefixes, and truncates to 8 words.
+// Takes the first line, strips common filler prefixes, and uses punctuation-aware
+// truncation for single-line inputs (falls back to 6-word truncation).
 func heuristicPlanTitle(description string) string {
 	text := strings.TrimSpace(description)
 	if text == "" {
@@ -49,12 +50,25 @@ func heuristicPlanTitle(description string) string {
 		return "new plan"
 	}
 
-	// Truncate to 8 words
 	words := splitWords(text)
-	if len(words) > 8 {
-		words = words[:8]
+	if len(words) <= 6 {
+		return strings.Join(words, " ")
 	}
-	return strings.Join(words, " ")
+
+	// Look for a natural break within first 8 words
+	limit := min(8, len(words))
+	first8 := strings.Join(words[:limit], " ")
+	for _, sep := range []string{", ", "; ", ": ", ". ", " - "} {
+		if idx := strings.Index(first8, sep); idx > 0 {
+			candidate := strings.TrimSpace(first8[:idx])
+			if len(splitWords(candidate)) >= 3 {
+				return candidate
+			}
+		}
+	}
+
+	// No natural break — truncate to 6 words
+	return strings.Join(words[:6], " ")
 }
 
 // splitWords splits text on whitespace, returning non-empty tokens.
