@@ -34,9 +34,9 @@ func TestHeuristicPlanTitle_StripsFiller(t *testing.T) {
 func TestHeuristicPlanTitle_TruncatesLongInput(t *testing.T) {
 	desc := "refactor the entire authentication subsystem to use JSON web tokens instead of session cookies across all microservices"
 	got := heuristicPlanTitle(desc)
-	// Should be at most 8 words
+	// Should be at most 6 words (punctuation-aware truncation)
 	words := len(splitWords(got))
-	assert.LessOrEqual(t, words, 8)
+	assert.LessOrEqual(t, words, 6)
 }
 
 func TestHeuristicPlanTitle_EmptyInput(t *testing.T) {
