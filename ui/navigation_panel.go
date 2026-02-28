@@ -1337,7 +1337,7 @@ func (n *NavigationPanel) String() string {
 	}
 
 	// Assemble content with bottom-pinned legend + repo button
-	topContent := searchBox + "\n\n" + body
+	topContent := searchBox + "\n" + body
 	var bottomSection string
 	if repoSection != "" {
 		bottomSection = legend + "\n" + repoSection
