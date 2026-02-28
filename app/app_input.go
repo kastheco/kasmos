@@ -1195,8 +1195,8 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 	case keys.KeySpace:
 		if m.focusSlot == slotNav && m.nav.GetSelectedID() == ui.SidebarImportClickUp {
 			m.state = stateClickUpSearch
-			m.textInputOverlay = overlay.NewTextInputOverlay("search clickup tasks", "")
-			m.textInputOverlay.SetSize(50, 3)
+			m.textInputOverlay = overlay.NewTextInputOverlay("enter clickup id or url", "")
+			m.textInputOverlay.SetSize(50, 1)
 			return m, nil
 		}
 		if m.focusSlot == slotNav && m.nav.ToggleSelectedExpand() {
@@ -1335,8 +1335,8 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		// Sidebar always has focus: handle plan/instance interactions first.
 		if m.nav.GetSelectedID() == ui.SidebarImportClickUp {
 			m.state = stateClickUpSearch
-			m.textInputOverlay = overlay.NewTextInputOverlay("search clickup tasks", "")
-			m.textInputOverlay.SetSize(50, 3)
+			m.textInputOverlay = overlay.NewTextInputOverlay("enter clickup id or url", "")
+			m.textInputOverlay.SetSize(50, 1)
 			return m, nil
 		}
 		// Plan header or plan file: open plan context menu
@@ -1396,8 +1396,8 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		// Toggle expand/collapse on the selected sidebar item (same as space's expand behavior).
 		if m.nav.GetSelectedID() == ui.SidebarImportClickUp {
 			m.state = stateClickUpSearch
-			m.textInputOverlay = overlay.NewTextInputOverlay("search clickup tasks", "")
-			m.textInputOverlay.SetSize(50, 3)
+			m.textInputOverlay = overlay.NewTextInputOverlay("enter clickup id or url", "")
+			m.textInputOverlay.SetSize(50, 1)
 			return m, nil
 		}
 		m.nav.ToggleSelectedExpand()
