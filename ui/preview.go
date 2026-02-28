@@ -54,6 +54,10 @@ func NewPreviewPane() *PreviewPane {
 	return &PreviewPane{
 		viewport:   viewport.New(0, 0),
 		springAnim: NewSpringAnim(6.0, 15), // 6 rows, 750ms CTA delay
+		previewState: previewState{
+			fallback:    true,
+			fallbackMsg: "create [n]ew plan or select existing",
+		},
 	}
 }
 

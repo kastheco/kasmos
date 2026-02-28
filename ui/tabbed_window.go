@@ -59,6 +59,11 @@ type TabbedWindow struct {
 	instance  *session.Instance
 	focused   bool // true when this panel has keyboard focus (panel == 1)
 	focusMode bool // true when user is typing directly into the agent pane
+
+	// showWelcome is true until the user first navigates in the sidebar.
+	// While true, the info tab renders the animated banner + CTA instead
+	// of plan data so the startup logo animation is visible.
+	showWelcome bool
 }
 
 // SetFocusMode enables or disables the focus/insert mode visual indicator.
@@ -83,10 +88,12 @@ func NewTabbedWindow(preview *PreviewPane, diff *DiffPane, info *InfoPane) *Tabb
 			"\uea85 agent",
 			"\ueae1 diff",
 		},
-		preview:    preview,
-		diff:       diff,
-		info:       info,
-		focusedTab: -1,
+		// activeTab defaults to InfoTab (0) — the zero value.
+		preview:     preview,
+		diff:        diff,
+		info:        info,
+		focusedTab:  -1,
+		showWelcome: true,
 	}
 }
 
@@ -310,10 +317,12 @@ func (w *TabbedWindow) IsInInfoTab() bool {
 }
 
 // SetActiveTab sets the active tab by index.
+// Clears the welcome banner on first call so the info pane shows real content.
 func (w *TabbedWindow) SetActiveTab(tab int) {
 	if tab >= 0 && tab < len(w.tabs) {
 		w.activeTab = tab
 		w.focusedTab = tab
+		w.showWelcome = false
 	}
 }
 
@@ -406,12 +415,15 @@ func (w *TabbedWindow) String() string {
 
 	row := lipgloss.JoinHorizontal(lipgloss.Top, renderedTabs...)
 	var content string
-	switch w.activeTab {
-	case PreviewTab:
+	switch {
+	case w.activeTab == InfoTab && w.showWelcome:
+		// Before the user navigates, show the animated banner on the info tab.
 		content = w.preview.String()
-	case DiffTab:
+	case w.activeTab == PreviewTab:
+		content = w.preview.String()
+	case w.activeTab == DiffTab:
 		content = w.diff.String()
-	case InfoTab:
+	case w.activeTab == InfoTab:
 		content = w.info.String()
 	}
 	ws := windowStyle.BorderForeground(borderColor)

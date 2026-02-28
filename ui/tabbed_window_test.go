@@ -15,6 +15,9 @@ func TestUpdatePreview_SkipsWhenFocusMode(t *testing.T) {
 	tw := NewTabbedWindow(preview, diff, info)
 	tw.SetActiveTab(PreviewTab)
 
+	// Clear the initial welcome fallback state so we can verify the no-op.
+	preview.previewState = previewState{}
+
 	// Set focus mode - simulates embedded terminal owning the pane.
 	tw.SetFocusMode(true)
 
@@ -24,7 +27,7 @@ func TestUpdatePreview_SkipsWhenFocusMode(t *testing.T) {
 	err := tw.UpdatePreview(nil)
 	assert.NoError(t, err)
 
-	// Preview should still have its default zero state, not the fallback
+	// Preview should still have the cleared state, not the fallback
 	// banner that UpdateContent(nil) would set.
 	assert.False(t, preview.previewState.fallback,
 		"UpdatePreview should be a no-op when focusMode is true")
