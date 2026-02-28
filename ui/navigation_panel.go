@@ -967,7 +967,7 @@ func navInstanceTitle(inst *session.Instance) string {
 
 // navInstanceStatusIcon returns a styled status glyph for an instance.
 func (n *NavigationPanel) navInstanceStatusIcon(inst *session.Instance) string {
-	if inst.SoloAgent && inst.Exited {
+	if inst.Exited {
 		return navCancelledLblStyle.Render("✕")
 	}
 	if inst.ImplementationComplete {
@@ -1101,8 +1101,8 @@ func (n *NavigationPanel) renderNavRow(row navRow, contentWidth int) string {
 			indent = ""
 			labelStyle = navPlanLabelStyle
 		}
-		// Killed solo agents: grey + strikethrough.
-		if inst.SoloAgent && inst.Exited {
+		// Dead instances: grey + strikethrough.
+		if inst.Exited {
 			labelStyle = navCancelledLblStyle
 			statusIcon = navCancelledLblStyle.Render("✕")
 			statusW = lipgloss.Width(statusIcon)

@@ -75,8 +75,8 @@ type Instance struct {
 	// SoloAgent is true when this instance was spawned via "start solo agent" — no
 	// automatic lifecycle transitions (push prompt, review spawning) apply.
 	SoloAgent bool
-	// Exited is true when a solo agent's tmux session has died. Used by the UI
-	// to render killed solo agents with greyed-out strikethrough styling.
+	// Exited is true when the instance's tmux session has died. Used by the UI
+	// to render dead instances with greyed-out strikethrough styling.
 	Exited bool
 	// QueuedPrompt is sent to the session once it becomes ready for the first time. Cleared after send.
 	QueuedPrompt string
@@ -222,8 +222,26 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		instance.started = true
 		instance.tmuxSession = tmux.NewTmuxSession(instance.Title, instance.Program, instance.SkipPermissions)
 	} else {
-		if err := instance.Start(false); err != nil {
-			return nil, err
+		// Non-destructive restore: check if the tmux session still exists
+		// before attempting to attach. Start(false) calls Kill() on failure
+		// which would destroy a live tmux session — use a gentler path instead.
+		ts := tmux.NewTmuxSession(instance.Title, instance.Program, instance.SkipPermissions)
+		ts.SetAgentType(instance.AgentType)
+		instance.tmuxSession = ts
+
+		if !ts.DoesSessionExist() {
+			// Tmux session is gone — mark as exited so the UI can render it
+			// as dead and allow cleanup, rather than silently dropping it.
+			instance.started = true
+			instance.Exited = true
+			instance.SetStatus(Ready)
+		} else {
+			// Session exists — do the full restore via Start(false) which
+			// attaches the PTY. The tmuxSession is already set so Start()
+			// will reuse it.
+			if err := instance.Start(false); err != nil {
+				return nil, err
+			}
 		}
 	}
 

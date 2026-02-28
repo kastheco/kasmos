@@ -235,6 +235,17 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 				)),
 		))
 		return nil
+	case instance.Exited:
+		p.setFallbackContent(lipgloss.JoinVertical(lipgloss.Center,
+			lipgloss.NewStyle().
+				Foreground(ColorMuted).
+				Render("session exited"),
+			"",
+			lipgloss.NewStyle().
+				Foreground(ColorMuted).
+				Render("press shift+k to remove"),
+		))
+		return nil
 	}
 
 	// If in scroll mode but haven't captured content yet, do it now

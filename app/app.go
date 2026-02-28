@@ -934,10 +934,12 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 
-			// Solo agent death detection: mark solo agents as exited when their
-			// tmux session dies so the UI renders them greyed-out + strikethrough.
+			// Tmux death detection: mark instances as exited when their tmux
+			// session dies so the UI renders them greyed-out + strikethrough
+			// and allows cleanup. Covers solo agents, reviewers, and any
+			// other instance whose tmux session disappears while the TUI runs.
 			for _, inst := range m.nav.GetInstances() {
-				if !inst.SoloAgent || inst.Exited {
+				if inst.Exited || inst.Paused() {
 					continue
 				}
 				alive, collected := tmuxAliveMap[inst.Title]

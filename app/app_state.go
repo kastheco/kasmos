@@ -402,8 +402,8 @@ func (m *home) instanceChanged() tea.Cmd {
 
 	// Manage preview terminal lifecycle on selection change.
 	var spawnCmd tea.Cmd
-	if selected == nil || !selected.Started() || selected.Status == session.Paused {
-		// No valid instance — tear down terminal.
+	if selected == nil || !selected.Started() || selected.Status == session.Paused || selected.Exited {
+		// No valid instance (or dead tmux session) — tear down terminal.
 		if m.previewTerminal != nil {
 			m.previewTerminal.Close()
 		}

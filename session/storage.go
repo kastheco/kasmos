@@ -107,7 +107,10 @@ func (s *Storage) LoadInstances() ([]*Instance, error) {
 		}
 		instance, err := FromInstanceData(data)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create instance %s: %w", data.Title, err)
+			// Log and skip instances that fail to restore (e.g. dead tmux session)
+			// instead of hard-failing, which would prevent ALL instances from loading.
+			log.WarningLog.Printf("skipping unrestorable instance %q: %v", data.Title, err)
+			continue
 		}
 		instances = append(instances, instance)
 	}
