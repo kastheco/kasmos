@@ -147,6 +147,17 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		m.state = stateChangeTopic
 		return m, nil
 
+	case "set_status":
+		planFile := m.nav.GetSelectedPlanFile()
+		if planFile == "" {
+			return m, nil
+		}
+		m.pendingSetStatusPlan = planFile
+		statuses := []string{"ready", "planning", "implementing", "reviewing", "done", "cancelled"}
+		m.pickerOverlay = overlay.NewPickerOverlay("set status", statuses)
+		m.state = stateSetStatus
+		return m, nil
+
 	case "start_plan":
 		planFile := m.nav.GetSelectedPlanFile()
 		if planFile == "" {
@@ -596,6 +607,7 @@ func (m *home) openPlanContextMenu() (tea.Model, tea.Cmd) {
 		overlay.ContextMenuItem{Label: "view plan", Action: "view_plan"},
 		overlay.ContextMenuItem{Label: "rename plan", Action: "rename_plan"},
 		overlay.ContextMenuItem{Label: "set topic", Action: "change_topic"},
+		overlay.ContextMenuItem{Label: "set status", Action: "set_status"},
 		overlay.ContextMenuItem{Label: "merge to main", Action: "merge_plan"},
 		overlay.ContextMenuItem{Label: "mark done", Action: "mark_plan_done"},
 		overlay.ContextMenuItem{Label: "start over", Action: "start_over_plan"},

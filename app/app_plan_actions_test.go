@@ -382,6 +382,40 @@ func TestTopicConcurrencyConfirm_ReturnsPlanStageConfirmedMsg(t *testing.T) {
 	}
 }
 
+func TestExecuteContextAction_SetStatusForceOverridesWithoutFSM(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	ps, err := planstate.Load(plansDir)
+	require.NoError(t, err)
+
+	planFile := "2026-02-28-test-set-status.md"
+	require.NoError(t, ps.Register(planFile, "test set status", "plan/test-set-status", time.Now()))
+	seedPlanStatus(t, ps, planFile, planstate.StatusImplementing)
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		planState:      ps,
+		planStateDir:   plansDir,
+		fsm:            newFSMForTest(plansDir).PlanStateMachine,
+		nav:            ui.NewNavigationPanel(&sp),
+		menu:           ui.NewMenu(),
+		tabbedWindow:   ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewInfoPane()),
+		toastManager:   overlay.NewToastManager(&sp),
+		activeRepoPath: dir,
+	}
+
+	h.updateSidebarPlans()
+	require.True(t, h.nav.SelectByID(ui.SidebarPlanPrefix+planFile))
+
+	// Simulate: context menu selected "set_status", which sets up the picker
+	_, _ = h.executeContextAction("set_status")
+	assert.Equal(t, stateSetStatus, h.state, "set_status action should enter stateSetStatus")
+	assert.NotNil(t, h.pickerOverlay, "picker overlay should be created for status selection")
+	assert.Equal(t, planFile, h.pendingSetStatusPlan, "pending plan file should be stored")
+}
+
 func TestExecuteContextAction_MarkPlanDoneFromReadyTransitionsToDone(t *testing.T) {
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
