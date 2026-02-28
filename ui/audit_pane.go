@@ -25,7 +25,6 @@ type AuditPane struct {
 	width    int
 	height   int
 	visible  bool
-	filter   string // optional plan file filter for scoping displayed events
 }
 
 // NewAuditPane creates a new AuditPane (visible by default).
@@ -86,27 +85,13 @@ func (p *AuditPane) ToggleVisible() {
 // Styles for the audit pane — Rosé Pine Moon palette.
 var (
 	auditDividerStyle = lipgloss.NewStyle().Foreground(ColorMuted)
-	auditLabelStyle   = lipgloss.NewStyle().Foreground(ColorMuted)
-	auditTimeStyle    = lipgloss.NewStyle().Foreground(ColorOverlay)
+	auditTimeStyle    = lipgloss.NewStyle().Foreground(ColorMuted).Faint(true)
 	auditMsgStyle     = lipgloss.NewStyle().Foreground(ColorSubtle)
 	auditWarnMsgStyle = lipgloss.NewStyle().Foreground(ColorGold)
 	auditErrMsgStyle  = lipgloss.NewStyle().Foreground(ColorLove)
-	auditEmptyIcon    = lipgloss.NewStyle().Foreground(ColorOverlay)
-	auditEmptyStyle   = lipgloss.NewStyle().Foreground(ColorMuted).Italic(true)
+	auditEmptyStyle   = lipgloss.NewStyle().Foreground(ColorMuted)
 	auditRowPad       = lipgloss.NewStyle().PaddingLeft(1)
 )
-
-// SetFilter sets a plan file filter. When non-empty, the header shows the plan name
-// and only matching events are displayed.
-func (p *AuditPane) SetFilter(planFile string) {
-	p.filter = planFile
-	p.viewport.SetContent(p.renderBody())
-}
-
-// Filter returns the current filter value.
-func (p *AuditPane) Filter() string {
-	return p.filter
-}
 
 // String renders the audit pane: a 1-line header divider + scrollable body.
 func (p *AuditPane) String() string {
@@ -117,12 +102,8 @@ func (p *AuditPane) String() string {
 
 // renderHeader builds a centered divider: ────── log ──────
 // Matches the nav panel's navDividerLine aesthetic exactly.
-// When a filter is active, shows "log: <filter>" instead.
 func (p *AuditPane) renderHeader() string {
 	inner := " log "
-	if p.filter != "" {
-		inner = " log: " + p.filter + " "
-	}
 	innerW := runewidth.StringWidth(inner)
 	remaining := p.width - innerW
 	if remaining < 2 {
@@ -137,7 +118,7 @@ func (p *AuditPane) renderHeader() string {
 func (p *AuditPane) renderBody() string {
 	if len(p.events) == 0 {
 		return auditRowPad.Render(
-			auditEmptyIcon.Render("·") + " " + auditEmptyStyle.Render("no events"),
+			auditEmptyStyle.Render("· no events"),
 		)
 	}
 

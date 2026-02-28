@@ -1393,7 +1393,7 @@ func (n *NavigationPanel) String() string {
 		repoSection = zone.Mark(ZoneNavRepo, repoBtn)
 	}
 
-	// Assemble content with bottom-pinned audit + legend + repo button
+	// Assemble content with bottom-pinned audit + legend + repo button.
 	topContent := searchBox + "\n" + body
 
 	// Bottom section: legend + optional repo button
@@ -1407,34 +1407,37 @@ func (n *NavigationPanel) String() string {
 	topLines := strings.Count(topContent, "\n") + 1
 	bottomLines := strings.Count(bottomSection, "\n") + 1
 
-	// Reserve space for the audit section if present.
-	auditLines := 0
-	if n.auditView != "" && n.auditHeight > 0 {
-		auditLines = n.auditHeight
+	// Determine how many lines the audit section can use without overflowing.
+	// lipgloss .Height() doesn't truncate overflow, so we must never exceed height.
+	maxAudit := height - topLines - bottomLines // leaves gap=1 at this limit
+	actualAudit := 0
+	auditSection := ""
+	if n.auditView != "" && n.auditHeight > 0 && maxAudit >= 3 {
+		actualAudit = n.auditHeight
+		if actualAudit > maxAudit {
+			actualAudit = maxAudit
+		}
+		// Truncate audit view to actualAudit lines.
+		vlines := strings.SplitN(n.auditView, "\n", actualAudit+1)
+		if len(vlines) > actualAudit {
+			vlines = vlines[:actualAudit]
+		}
+		auditSection = strings.Join(vlines, "\n")
 	}
 
-	gap := height - topLines - bottomLines - auditLines + 1
+	gap := height - topLines - bottomLines - actualAudit + 1
 	if gap < 1 {
 		gap = 1
 	}
 
 	innerContent := topContent + strings.Repeat("\n", gap)
-	if n.auditView != "" && n.auditHeight > 0 {
-		innerContent += n.auditView + "\n"
+	if auditSection != "" {
+		innerContent += auditSection + "\n"
 	}
 	innerContent += bottomSection
 
 	bordered := border.Width(innerWidth).Height(height).Render(innerContent)
 	placed := lipgloss.Place(n.width, n.height, lipgloss.Left, lipgloss.Top, bordered)
-
-	// Clamp output to n.height lines
-	if n.height > 0 {
-		lines := strings.Split(placed, "\n")
-		if len(lines) > n.height {
-			lines = lines[:n.height]
-			placed = strings.Join(lines, "\n")
-		}
-	}
 	return zone.Mark(ZoneNavPanel, placed)
 }
 
