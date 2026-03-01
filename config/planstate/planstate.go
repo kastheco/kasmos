@@ -414,6 +414,39 @@ func (ps *PlanState) setStatus(filename string, status Status) error {
 	return ps.save()
 }
 
+// CreateWithContent adds a new plan entry with markdown content stored in the backend.
+// The plan entry is created with StatusReady, and the content is persisted via store.SetContent.
+// Returns an error if the plan already exists or if the store is not configured.
+func (ps *PlanState) CreateWithContent(filename, description, branch, topic string, createdAt time.Time, content string) error {
+	if err := ps.Create(filename, description, branch, topic, createdAt); err != nil {
+		return err
+	}
+	if ps.store != nil {
+		if err := ps.store.SetContent(ps.project, filename, content); err != nil {
+			return fmt.Errorf("plan store set content: %w", err)
+		}
+	}
+	return nil
+}
+
+// GetContent retrieves the markdown content for the given plan filename from the store.
+// Returns an error if the store is not configured or the plan is not found.
+func (ps *PlanState) GetContent(filename string) (string, error) {
+	if ps.store == nil {
+		return "", fmt.Errorf("no store configured")
+	}
+	return ps.store.GetContent(ps.project, filename)
+}
+
+// SetContent updates the markdown content for the given plan filename in the store.
+// Returns an error if the store is not configured or the plan is not found.
+func (ps *PlanState) SetContent(filename, content string) error {
+	if ps.store == nil {
+		return fmt.Errorf("no store configured")
+	}
+	return ps.store.SetContent(ps.project, filename, content)
+}
+
 // Create adds a new plan entry to the state and auto-creates the topic if needed.
 func (ps *PlanState) Create(filename, description, branch, topic string, createdAt time.Time) error {
 	if ps.Plans == nil {

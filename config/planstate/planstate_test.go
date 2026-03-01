@@ -506,3 +506,30 @@ func TestSetTopic_RemoteStore(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "new-topic", ps2.Plans["test.md"].Topic)
 }
+
+func TestPlanState_CreateWithContent(t *testing.T) {
+	store := planstore.NewTestSQLiteStore(t)
+	ps, err := LoadWithStore(store, "proj", t.TempDir())
+	require.NoError(t, err)
+
+	content := "# Auth Refactor\n\n## Wave 1\n"
+	err = ps.CreateWithContent("2026-02-28-auth.md", "auth refactor", "plan/auth", "", time.Now(), content)
+	require.NoError(t, err)
+
+	got, err := store.GetContent("proj", "2026-02-28-auth.md")
+	require.NoError(t, err)
+	assert.Equal(t, content, got)
+}
+
+func TestPlanState_GetContent(t *testing.T) {
+	store := planstore.NewTestSQLiteStore(t)
+	ps, err := LoadWithStore(store, "proj", t.TempDir())
+	require.NoError(t, err)
+
+	content := "# Plan Content"
+	require.NoError(t, ps.CreateWithContent("test.md", "", "", "", time.Now(), content))
+
+	got, err := ps.GetContent("test.md")
+	require.NoError(t, err)
+	assert.Equal(t, content, got)
+}
