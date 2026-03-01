@@ -1467,7 +1467,9 @@ func (m *home) spawnPlanAgent(planFile, action, prompt string) (tea.Model, tea.C
 
 	title := planstate.DisplayName(planFile) + "-" + action
 	if action == "solo" {
-		title = "solo agent"
+		// Solo sessions run on main branch, so their tmux session names must stay
+		// unique to avoid accidentally reattaching to another solo session.
+		title = planstate.DisplayName(planFile) + "-solo"
 	}
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:     title,

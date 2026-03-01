@@ -297,6 +297,54 @@ func TestSpawnPlanAgent_SoloSetsSoloAgentFlag(t *testing.T) {
 	assert.Equal(t, session.AgentTypeCoder, inst.AgentType)
 }
 
+func TestSpawnPlanAgent_SoloTitlesArePlanScoped(t *testing.T) {
+	dir := t.TempDir()
+
+	for _, cmd := range [][]string{
+		{"git", "init", dir},
+		{"git", "-C", dir, "config", "user.email", "test@test.com"},
+		{"git", "-C", dir, "config", "user.name", "Test"},
+		{"git", "-C", dir, "commit", "--allow-empty", "-m", "init"},
+	} {
+		out, err := exec.Command(cmd[0], cmd[1:]...).CombinedOutput()
+		if err != nil {
+			t.Skipf("git setup failed (%v): %s", err, out)
+		}
+	}
+
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := planstate.Load(plansDir)
+	require.NoError(t, err)
+
+	const firstPlan = "2026-03-01-wrong-timezone.md"
+	const secondPlan = "2026-03-01-rename-solo-agent-label.md"
+	require.NoError(t, ps.Register(firstPlan, "wrong timezone", "plan/wrong-timezone", time.Now()))
+	require.NoError(t, ps.Register(secondPlan, "rename solo agent label", "plan/rename-solo-agent-label", time.Now()))
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	list := ui.NewNavigationPanel(&sp)
+	h := &home{
+		planState:          ps,
+		activeRepoPath:     dir,
+		program:            "opencode",
+		nav:                list,
+		menu:               ui.NewMenu(),
+		instanceFinalizers: make(map[*session.Instance]func()),
+	}
+
+	h.spawnPlanAgent(firstPlan, "solo", "first solo prompt")
+	h.spawnPlanAgent(secondPlan, "solo", "second solo prompt")
+
+	instances := list.GetInstances()
+	require.Len(t, instances, 2, "expected two solo instances")
+
+	assert.Equal(t, "wrong-timezone-solo", instances[0].Title)
+	assert.Equal(t, "rename-solo-agent-label-solo", instances[1].Title)
+	assert.NotEqual(t, instances[0].Title, instances[1].Title,
+		"solo instance titles must be unique so tmux sessions do not collide")
+}
+
 // setupTopicConflictHome creates a home with two plans in the same topic,
 // one already implementing, for testing the concurrency gate.
 func setupTopicConflictHome(t *testing.T) (*home, string) {
