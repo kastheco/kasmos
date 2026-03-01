@@ -1429,6 +1429,10 @@ func (n *NavigationPanel) String() string {
 			header = vlines[0]
 			body = vlines[1:]
 		}
+		// Strip trailing blank lines the viewport may have appended.
+		for len(body) > 0 && strings.TrimSpace(body[len(body)-1]) == "" {
+			body = body[:len(body)-1]
+		}
 		maxBody := cap - 1 // lines available after header
 		if maxBody < 0 {
 			maxBody = 0

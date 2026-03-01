@@ -1904,7 +1904,7 @@ func (m *home) refreshAuditPane() {
 
 	filter := auditlog.QueryFilter{
 		Project: m.planStoreProject,
-		Limit:   50,
+		Limit:   200,
 	}
 
 	events, err := m.auditLogger.Query(filter)
