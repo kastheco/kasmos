@@ -1372,11 +1372,11 @@ func (n *NavigationPanel) String() string {
 		body += "\n"
 	}
 
-	// Legend — status icon key, centered in the pane
+	// Legend — plan status icon key, centered in the pane
 	legendContent := navIdleIconStyle.Render("○") + navLegendLabelStyle.Render(" idle") +
+		"  " + navRunningIconStyle.Render("●") + navLegendLabelStyle.Render(" planning") +
 		"  " + navRunningIconStyle.Render("●") + navLegendLabelStyle.Render(" running") +
-		"  " + navNotifyIconStyle.Render("◉") + navLegendLabelStyle.Render(" review") +
-		"  " + navCompletedIconStyle.Render("●") + navLegendLabelStyle.Render(" done")
+		"  " + navNotifyIconStyle.Render("◉") + navLegendLabelStyle.Render(" review")
 	legend := lipgloss.NewStyle().Width(innerWidth).Align(lipgloss.Center).Render(legendContent)
 
 	// Assemble content: list on top, legend + log pinned to bottom.
@@ -1436,10 +1436,20 @@ func (n *NavigationPanel) String() string {
 		gap = 1
 	}
 
-	// Order: list … gap … legend … log (bottom-pinned)
-	innerContent := topContent + strings.Repeat("\n", gap) + legendSection
+	// Split gap evenly so legend is centered between the list and log sections.
+	gapAbove := gap / 2
+	gapBelow := gap - gapAbove
+	if gapAbove < 1 {
+		gapAbove = 1
+	}
+	if gapBelow < 1 {
+		gapBelow = 1
+	}
+
+	// Order: list … gap-above … legend … gap-below … log (bottom-pinned)
+	innerContent := topContent + strings.Repeat("\n", gapAbove) + legendSection
 	if auditSection != "" {
-		innerContent += "\n" + auditSection
+		innerContent += strings.Repeat("\n", gapBelow) + auditSection
 	}
 
 	bordered := border.Width(innerWidth).Height(height).Render(innerContent)
