@@ -1449,6 +1449,11 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			m.textInputOverlay.SetSize(50, 1)
 			return m, nil
 		}
+		// Right on an instance while in the info tab: jump to the agent tab.
+		if m.nav.GetSelectedInstance() != nil && m.tabbedWindow.IsInInfoTab() {
+			m.tabbedWindow.SetActiveTab(ui.PreviewTab)
+			return m, nil
+		}
 		m.nav.ToggleSelectedExpand()
 		return m, nil
 	case keys.KeyNewPlan:
