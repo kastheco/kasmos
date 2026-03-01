@@ -568,6 +568,8 @@ func (m *home) updateHandleWindowSizeEvent(msg tea.WindowSizeMsg) {
 }
 
 func (m *home) Init() tea.Cmd {
+	m.audit(auditlog.EventSessionStarted, "kasmos started")
+
 	// Upon starting, we want to start the spinner. Whenever we get a spinner.TickMsg, we
 	// update the spinner, which sends a new spinner.TickMsg. I think this lasts forever lol.
 	return tea.Batch(
@@ -1594,12 +1596,14 @@ func (m *home) handleQuit() (tea.Model, tea.Cmd) {
 
 	if hasActive {
 		quitAction := func() tea.Msg {
+			m.audit(auditlog.EventSessionStopped, "kasmos stopped")
 			_ = m.saveAllInstances()
 			return tea.QuitMsg{}
 		}
 		return m, m.confirmAction("quit kasmos? active sessions will be preserved.", quitAction)
 	}
 
+	m.audit(auditlog.EventSessionStopped, "kasmos stopped")
 	if err := m.saveAllInstances(); err != nil {
 		return m, m.handleError(err)
 	}

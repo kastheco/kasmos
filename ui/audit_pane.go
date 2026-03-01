@@ -211,6 +211,10 @@ func EventKindIcon(kind string) (icon string, color lipgloss.Color) {
 		return "!", ColorGold
 	case "permission_answered":
 		return "✓", ColorGold
+	case "session_started":
+		return "▶", ColorFoam
+	case "session_stopped":
+		return "■", ColorMuted
 	case "fsm_error", "error":
 		return "!", ColorLove
 	default:

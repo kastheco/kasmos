@@ -45,6 +45,12 @@ const (
 	EventError              EventKind = "error"
 )
 
+// Session lifecycle events.
+const (
+	EventSessionStarted EventKind = "session_started"
+	EventSessionStopped EventKind = "session_stopped"
+)
+
 // Event is a single audit log entry.
 type Event struct {
 	ID            int64
