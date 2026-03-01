@@ -603,7 +603,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			return m, nil
 		}
 		switch msg.String() {
-		case m.confirmationOverlay.ConfirmKey:
+		case m.confirmationOverlay.ConfirmKey, "enter":
 			action := m.pendingConfirmAction
 			m.state = stateDefault
 			m.confirmationOverlay = nil
