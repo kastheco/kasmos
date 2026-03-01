@@ -1914,11 +1914,20 @@ func (m *home) refreshAuditPane() {
 	for _, e := range events {
 		icon, color := ui.EventKindIcon(string(e.Kind))
 		timeStr := e.Timestamp.Format("15:04")
+		msg := e.Message
+		// Prepend [plan-name] when the event has a plan context and the message
+		// doesn't already embed the plan name (some messages include it inline).
+		if e.PlanFile != "" {
+			label := planstate.DisplayName(e.PlanFile)
+			if !strings.Contains(msg, label) {
+				msg = "[" + label + "] " + msg
+			}
+		}
 		displays = append(displays, ui.AuditEventDisplay{
 			Time:    timeStr,
 			Kind:    string(e.Kind),
 			Icon:    icon,
-			Message: e.Message,
+			Message: msg,
 			Color:   color,
 			Level:   e.Level,
 		})
