@@ -9,6 +9,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// newTestHTTPStore creates an HTTPStore backed by an in-memory SQLiteStore
+// served over a local httptest.Server. The server is closed when the test ends.
+func newTestHTTPStore(t *testing.T) *planstore.HTTPStore {
+	t.Helper()
+	backend := newTestStore(t)
+	srv := httptest.NewServer(planstore.NewHandler(backend))
+	t.Cleanup(srv.Close)
+	return planstore.NewHTTPStore(srv.URL, "kasmos")
+}
+
+func TestHTTPStore_ContentRoundTrip(t *testing.T) {
+	store := newTestHTTPStore(t)
+	entry := planstore.PlanEntry{
+		Filename: "2026-02-28-test.md",
+		Status:   planstore.StatusReady,
+		Content:  "# My Plan\n\nDetails here.",
+	}
+	require.NoError(t, store.Create("proj", entry))
+
+	content, err := store.GetContent("proj", "2026-02-28-test.md")
+	require.NoError(t, err)
+	assert.Equal(t, "# My Plan\n\nDetails here.", content)
+
+	require.NoError(t, store.SetContent("proj", "2026-02-28-test.md", "# Updated Plan"))
+	content, err = store.GetContent("proj", "2026-02-28-test.md")
+	require.NoError(t, err)
+	assert.Equal(t, "# Updated Plan", content)
+}
+
 func TestHTTPStore_RoundTrip(t *testing.T) {
 	backend := newTestStore(t)
 	srv := httptest.NewServer(planstore.NewHandler(backend))

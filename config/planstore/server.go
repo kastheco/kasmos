@@ -2,6 +2,7 @@ package planstore
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -98,6 +99,44 @@ func NewHandler(store Store) http.Handler {
 			return
 		}
 		writeJSON(w, http.StatusOK, entry)
+	})
+
+	// Get plan content
+	mux.HandleFunc("GET /v1/projects/{project}/plans/{filename}/content", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		filename := r.PathValue("filename")
+		content, err := store.GetContent(project, filename)
+		if err != nil {
+			if isNotFound(err) {
+				writeError(w, http.StatusNotFound, "plan not found: "+filename)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "text/markdown")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(content))
+	})
+
+	// Set plan content
+	mux.HandleFunc("PUT /v1/projects/{project}/plans/{filename}/content", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		filename := r.PathValue("filename")
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
+			return
+		}
+		if err := store.SetContent(project, filename, string(body)); err != nil {
+			if isNotFound(err) {
+				writeError(w, http.StatusNotFound, "plan not found: "+filename)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusOK)
 	})
 
 	// Rename plan

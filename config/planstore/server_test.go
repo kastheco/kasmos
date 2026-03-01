@@ -2,6 +2,7 @@ package planstore_test
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -59,4 +60,43 @@ func TestServer_Ping(t *testing.T) {
 	resp, err := http.Get(srv.URL + "/v1/ping")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestServer_ContentEndpoints(t *testing.T) {
+	store := newTestStore(t)
+	srv := httptest.NewServer(planstore.NewHandler(store))
+	defer srv.Close()
+
+	// Create a plan first
+	body := `{"filename":"plan.md","status":"ready","content":"# Initial"}`
+	resp, err := http.Post(srv.URL+"/v1/projects/kasmos/plans", "application/json", strings.NewReader(body))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	resp.Body.Close()
+
+	// GET content
+	resp, err = http.Get(srv.URL + "/v1/projects/kasmos/plans/plan.md/content")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "text/markdown", resp.Header.Get("Content-Type"))
+	gotBody, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	require.NoError(t, err)
+	assert.Equal(t, "# Initial", string(gotBody))
+
+	// PUT content
+	req, err := http.NewRequest(http.MethodPut, srv.URL+"/v1/projects/kasmos/plans/plan.md/content", strings.NewReader("# Updated"))
+	require.NoError(t, err)
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	resp.Body.Close()
+
+	// GET content again to verify update
+	resp, err = http.Get(srv.URL + "/v1/projects/kasmos/plans/plan.md/content")
+	require.NoError(t, err)
+	gotBody, err = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	require.NoError(t, err)
+	assert.Equal(t, "# Updated", string(gotBody))
 }

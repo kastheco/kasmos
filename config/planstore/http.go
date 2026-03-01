@@ -41,6 +41,11 @@ func (s *HTTPStore) planItemURL(project, filename string) string {
 	return fmt.Sprintf("%s/v1/projects/%s/plans/%s", s.baseURL, url.PathEscape(project), url.PathEscape(filename))
 }
 
+// planContentURL builds the URL for a specific plan's content endpoint.
+func (s *HTTPStore) planContentURL(project, filename string) string {
+	return fmt.Sprintf("%s/v1/projects/%s/plans/%s/content", s.baseURL, url.PathEscape(project), url.PathEscape(filename))
+}
+
 // topicURL builds the base URL for a project's topics endpoint.
 func (s *HTTPStore) topicURL(project string) string {
 	return fmt.Sprintf("%s/v1/projects/%s/topics", s.baseURL, url.PathEscape(project))
@@ -167,6 +172,55 @@ func (s *HTTPStore) Rename(project, oldFilename, newFilename string) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return decodeError(resp)
+	}
+	return nil
+}
+
+// GetContent retrieves the raw markdown content for a plan.
+func (s *HTTPStore) GetContent(project, filename string) (string, error) {
+	req, err := http.NewRequest(http.MethodGet, s.planContentURL(project, filename), nil)
+	if err != nil {
+		return "", fmt.Errorf("plan store: build request: %w", err)
+	}
+
+	resp, err := s.do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return "", fmt.Errorf("plan store: plan not found: %s", filename)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", decodeError(resp)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("plan store: read content response: %w", err)
+	}
+	return string(body), nil
+}
+
+// SetContent replaces the raw markdown content for a plan.
+func (s *HTTPStore) SetContent(project, filename, content string) error {
+	req, err := http.NewRequest(http.MethodPut, s.planContentURL(project, filename), strings.NewReader(content))
+	if err != nil {
+		return fmt.Errorf("plan store: build request: %w", err)
+	}
+
+	resp, err := s.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("plan store: plan not found: %s", filename)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return decodeError(resp)
 	}

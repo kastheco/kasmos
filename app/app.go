@@ -46,6 +46,7 @@ func Run(ctx context.Context, program string, autoYes bool) error {
 
 	zone.NewGlobal()
 	h := newHome(ctx, program, autoYes)
+	defer h.embeddedServer.Stop()
 	defer h.auditLogger.Close()
 	if h.permissionStore != nil {
 		defer h.permissionStore.Close()
@@ -242,7 +243,14 @@ type home struct {
 	planState *planstate.PlanState
 	// planStateDir is the directory containing plan-state.json (docs/plans/ of active repo).
 	planStateDir string
-	// planStore is the remote plan store client. Nil when unconfigured or unreachable.
+	// signalsDir is the directory where agent sentinel files are written.
+	// Defaults to <repoRoot>/.kasmos/signals/ (project-local, gitignored).
+	signalsDir string
+	// embeddedServer is the in-process HTTP+SQLite plan store server started on boot.
+	// Always non-nil after newHome() returns.
+	embeddedServer *planstore.EmbeddedServer
+	// planStore is the plan store client. Always non-nil after newHome() returns —
+	// points at the embedded server URL unless appConfig.PlanStore overrides it.
 	planStore planstore.Store
 	// planStoreProject is the project name used with the remote store (derived from repo basename).
 	planStoreProject string
@@ -359,6 +367,7 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 		appState:              appState,
 		activeRepoPath:        activeRepoPath,
 		planStateDir:          filepath.Join(activeRepoPath, "docs", "plans"),
+		signalsDir:            filepath.Join(activeRepoPath, ".kasmos", "signals"),
 		planStoreProject:      project,
 		instanceFinalizers:    make(map[*session.Instance]func()),
 		waveOrchestrators:     make(map[string]*WaveOrchestrator),
@@ -366,30 +375,55 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 		pendingReviewFeedback: make(map[string]string),
 	}
 
-	// Initialize remote plan store if configured.
+	// Always start an embedded plan store server. This gives us a local SQLite
+	// DB as the single source of truth without requiring a separate process.
+	dbPath := planstore.ResolvedDBPath()
+	embSrv, err := planstore.StartEmbedded(dbPath, 0)
+	if err != nil {
+		fmt.Printf("Failed to start embedded plan store: %v\n", err)
+		os.Exit(1)
+	}
+	h.embeddedServer = embSrv
+
+	// Default: use the embedded server's URL for the plan store client.
+	planStoreURL := embSrv.URL()
+	remoteStoreUnreachable := false
+
+	// If a remote plan store is configured, use that URL instead (multi-machine
+	// access over tailscale, etc.). The embedded server still runs for audit log
+	// DB access via its SQLite store.
 	if appConfig.PlanStore != "" {
-		store, err := planstore.NewStoreFromConfig(appConfig.PlanStore, project)
-		if err != nil {
-			log.WarningLog.Printf("plan store config error: %v", err)
-		} else if store != nil {
-			if pingErr := store.Ping(); pingErr != nil {
-				log.WarningLog.Printf("plan store unreachable: %v", pingErr)
-				// store remains nil — will show toast after toastManager is initialized
-			} else {
-				h.planStore = store
+		remoteStore := planstore.NewHTTPStore(appConfig.PlanStore, project)
+		if pingErr := remoteStore.Ping(); pingErr != nil {
+			log.WarningLog.Printf("remote plan store unreachable: %v — falling back to embedded", pingErr)
+			remoteStoreUnreachable = true
+			// planStoreURL stays as the embedded server URL
+		} else {
+			planStoreURL = appConfig.PlanStore
+		}
+	}
+
+	h.planStore = planstore.NewHTTPStore(planStoreURL, project)
+	h.fsm = planfsm.New(h.planStore, project, h.planStateDir)
+
+	// One-time migration: import plan-state.json into the DB if it exists.
+	// Use the embedded store directly (bypasses HTTP round-trip).
+	// Only runs when plan-state.json is present; subsequent boots skip this.
+	planStateJSON := filepath.Join(h.planStateDir, "plan-state.json")
+	if _, statErr := os.Stat(planStateJSON); statErr == nil {
+		migrated, migrateErr := planstore.MigrateFromJSON(embSrv.Store(), project, h.planStateDir)
+		if migrateErr != nil {
+			log.WarningLog.Printf("plan-state.json migration failed: %v", migrateErr)
+		} else {
+			log.InfoLog.Printf("migrated %d plans from plan-state.json to DB", migrated)
+			if renameErr := os.Rename(planStateJSON, planStateJSON+".migrated"); renameErr != nil {
+				log.WarningLog.Printf("failed to rename plan-state.json after migration: %v", renameErr)
 			}
 		}
 	}
 
-	if h.planStore != nil {
-		h.fsm = planfsm.NewWithStore(h.planStore, project, h.planStateDir)
-	} else {
-		h.fsm = planfsm.New(h.planStateDir)
-	}
-
 	// Initialize audit logger. Always uses local SQLite regardless of plan
 	// store backend — audit events are purely local state.
-	dbPath := planstore.ResolvedDBPath()
 	if al, err := auditlog.NewSQLiteLogger(dbPath); err != nil {
 		log.WarningLog.Printf("audit logger init failed: %v", err)
 		h.auditLogger = auditlog.NopLogger()
@@ -400,9 +434,10 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 	h.nav = ui.NewNavigationPanel(&h.spinner)
 	h.toastManager = overlay.NewToastManager(&h.spinner)
 
-	// Show a warning toast if the plan store was configured but unreachable.
-	if appConfig.PlanStore != "" && h.planStore == nil {
-		h.toastManager.Error("plan store unreachable — changes won't persist")
+	// Show a warning toast if a remote plan store was configured but unreachable
+	// (we fell back to the embedded server).
+	if remoteStoreUnreachable {
+		h.toastManager.Error("remote plan store unreachable — using embedded store")
 	}
 
 	permCacheDir := filepath.Join(activeRepoPath, ".kasmos")
@@ -681,6 +716,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		snapshots := make([]*session.Instance, len(instances))
 		copy(snapshots, instances)
 		planStateDir := m.planStateDir // snapshot for goroutine
+		signalsDir := m.signalsDir     // snapshot for goroutine
 		store := m.planStore           // snapshot for goroutine
 		project := m.planStoreProject  // snapshot for goroutine
 
@@ -708,17 +744,12 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Load plan state — moved here from the synchronous Update handler
 			// to avoid blocking the event loop every 500ms.
-			// When a remote store is configured, use LoadWithStore to keep
-			// in-memory state fresh from the server.
+			// Always reads from the store (embedded or remote) — no JSON fallback.
 			var ps *planstate.PlanState
 			if planStateDir != "" {
 				var loaded *planstate.PlanState
 				var err error
-				if store != nil {
-					loaded, err = planstate.LoadWithStore(store, project, planStateDir)
-				} else {
-					loaded, err = planstate.Load(planStateDir)
-				}
+				loaded, err = planstate.Load(store, project, planStateDir)
 				if err != nil {
 					log.WarningLog.Printf("could not load plan state: %v", err)
 				} else {
@@ -726,14 +757,15 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
+			// Scan signals from the project-local signals directory (.kasmos/signals/).
 			var signals []planfsm.Signal
-			if planStateDir != "" {
-				signals = planfsm.ScanSignals(planStateDir)
+			if signalsDir != "" {
+				signals = planfsm.ScanSignals(signalsDir)
 			}
 
 			// Also scan signals from active worktrees — agents write
 			// sentinel files relative to their CWD which is the worktree,
-			// not the main repo.
+			// not the main repo. Worktrees use .kasmos/signals/ as well.
 			seen := make(map[string]bool)
 			for _, sig := range signals {
 				seen[sig.Key()] = true
@@ -743,8 +775,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if wt == "" {
 					continue
 				}
-				wtPlansDir := filepath.Join(wt, "docs", "plans")
-				for _, sig := range planfsm.ScanSignals(wtPlansDir) {
+				wtSignalsDir := filepath.Join(wt, ".kasmos", "signals")
+				for _, sig := range planfsm.ScanSignals(wtSignalsDir) {
 					if !seen[sig.Key()] {
 						seen[sig.Key()] = true
 						signals = append(signals, sig)
@@ -753,8 +785,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			var waveSignals []planfsm.WaveSignal
-			if planStateDir != "" {
-				waveSignals = planfsm.ScanWaveSignals(planStateDir)
+			if signalsDir != "" {
+				waveSignals = planfsm.ScanWaveSignals(signalsDir)
 			}
 
 			tmuxCount := tmux.CountKasSessions(cmd2.MakeExecutor())
@@ -830,6 +862,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case planfsm.PlannerFinished:
 				capturedPlanFile := sig.PlanFile
+				// Ingest the plan content from the agent's worktree into the DB.
+				// Planners run on the main branch, so the plan file is in activeRepoPath.
+				m.ingestPlanContent(capturedPlanFile, m.activeRepoPath)
 				if m.plannerPrompted[capturedPlanFile] {
 					break
 				}
@@ -899,14 +934,13 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				continue
 			}
 
-			// Read and parse the plan
-			plansDir := filepath.Join(m.activeRepoPath, "docs", "plans")
-			content, err := os.ReadFile(filepath.Join(plansDir, ws.PlanFile))
+			// Read and parse the plan from store
+			content, err := m.planStore.GetContent(m.planStoreProject, ws.PlanFile)
 			if err != nil {
 				log.WarningLog.Printf("wave signal: could not read plan %s: %v", ws.PlanFile, err)
 				continue
 			}
-			plan, err := planparser.Parse(string(content))
+			plan, err := planparser.Parse(content)
 			if err != nil {
 				m.toastManager.Error(fmt.Sprintf("plan '%s' has no wave headers", planstate.DisplayName(ws.PlanFile)))
 				continue

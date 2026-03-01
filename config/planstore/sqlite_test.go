@@ -153,3 +153,39 @@ func TestSQLiteStore_ListSortedByFilename(t *testing.T) {
 	assert.Equal(t, "b.md", plans[1].Filename)
 	assert.Equal(t, "c.md", plans[2].Filename)
 }
+
+func TestSQLiteStore_CreateWithContent(t *testing.T) {
+	store := newTestStore(t)
+	entry := planstore.PlanEntry{
+		Filename: "2026-02-28-test.md",
+		Status:   planstore.StatusReady,
+		Content:  "# Test Plan\n\n## Wave 1\n\n### Task 1: Do thing\n",
+	}
+	require.NoError(t, store.Create("proj", entry))
+	got, err := store.Get("proj", "2026-02-28-test.md")
+	require.NoError(t, err)
+	assert.Equal(t, entry.Content, got.Content)
+}
+
+func TestSQLiteStore_GetContent(t *testing.T) {
+	store := newTestStore(t)
+	entry := planstore.PlanEntry{
+		Filename: "2026-02-28-test.md",
+		Status:   planstore.StatusReady,
+		Content:  "# Full Plan Content",
+	}
+	require.NoError(t, store.Create("proj", entry))
+	content, err := store.GetContent("proj", "2026-02-28-test.md")
+	require.NoError(t, err)
+	assert.Equal(t, "# Full Plan Content", content)
+}
+
+func TestSQLiteStore_SetContent(t *testing.T) {
+	store := newTestStore(t)
+	entry := planstore.PlanEntry{Filename: "2026-02-28-test.md", Status: planstore.StatusReady}
+	require.NoError(t, store.Create("proj", entry))
+	require.NoError(t, store.SetContent("proj", "2026-02-28-test.md", "# Updated"))
+	content, err := store.GetContent("proj", "2026-02-28-test.md")
+	require.NoError(t, err)
+	assert.Equal(t, "# Updated", content)
+}
