@@ -12,6 +12,44 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// executePlanRegister registers a plan file that exists on disk but isn't
+// tracked in plan state yet. It extracts a description from the first markdown
+// heading and uses the conventional branch name format.
+func executePlanRegister(plansDir, planFile, branch string) error {
+	fullPath := filepath.Join(plansDir, planFile)
+	if _, err := os.Stat(fullPath); err != nil {
+		return fmt.Errorf("plan file not found on disk: %s", fullPath)
+	}
+	ps, err := planstate.Load(plansDir)
+	if err != nil {
+		return err
+	}
+	// Extract description from first H1 line.
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		return err
+	}
+	desc := strings.TrimSuffix(planFile, ".md")
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "# ") {
+			desc = strings.TrimPrefix(line, "# ")
+			break
+		}
+	}
+	// Default branch: plan/<slug> where slug strips the date prefix.
+	if branch == "" {
+		slug := planFile
+		if len(slug) > 11 && slug[4] == '-' && slug[7] == '-' && slug[10] == '-' {
+			slug = slug[11:]
+		}
+		slug = strings.TrimSuffix(slug, ".md")
+		branch = "plan/" + slug
+	}
+	info, _ := os.Stat(fullPath)
+	createdAt := info.ModTime()
+	return ps.Register(planFile, desc, branch, createdAt)
+}
+
 // executePlanList returns a formatted string listing all plans, optionally
 // filtered by status. Exported for testing without cobra plumbing.
 func executePlanList(plansDir, statusFilter string) string {
@@ -156,6 +194,27 @@ func NewPlanCmd() *cobra.Command {
 	}
 	listCmd.Flags().StringVar(&statusFilter, "status", "", "filter by status (ready, planning, implementing, reviewing, done, cancelled)")
 	planCmd.AddCommand(listCmd)
+
+	// kq plan register
+	var branchFlag string
+	registerCmd := &cobra.Command{
+		Use:   "register <plan-file>",
+		Short: "register an untracked plan file (sets status to ready)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			plansDir, err := resolvePlansDir()
+			if err != nil {
+				return err
+			}
+			if err := executePlanRegister(plansDir, args[0], branchFlag); err != nil {
+				return err
+			}
+			fmt.Printf("registered: %s → ready\n", args[0])
+			return nil
+		},
+	}
+	registerCmd.Flags().StringVar(&branchFlag, "branch", "", "override branch name (default: plan/<slug>)")
+	planCmd.AddCommand(registerCmd)
 
 	// kq plan set-status
 	var forceFlag bool
