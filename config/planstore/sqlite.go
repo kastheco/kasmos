@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS topics (
 );
 `
 
+// contentMigration adds the content column to existing databases that predate it.
+const contentMigration = `ALTER TABLE plans ADD COLUMN content TEXT NOT NULL DEFAULT ''`
+
 // SQLiteStore is a Store implementation backed by a SQLite database.
 type SQLiteStore struct {
 	db *sql.DB
@@ -64,7 +67,48 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("run schema migrations: %w", err)
 	}
 
+	// Add content column if it doesn't exist (upgrade existing databases).
+	if err := migrateAddContentColumn(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate content column: %w", err)
+	}
+
 	return &SQLiteStore{db: db}, nil
+}
+
+// migrateAddContentColumn adds the content column to the plans table if it
+// doesn't already exist. This upgrades databases created before the column
+// was introduced.
+func migrateAddContentColumn(db *sql.DB) error {
+	// Check if the column already exists by querying the table info.
+	rows, err := db.Query("PRAGMA table_info(plans)")
+	if err != nil {
+		return fmt.Errorf("query table info: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull int
+		var dfltValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dfltValue, &pk); err != nil {
+			return fmt.Errorf("scan table info: %w", err)
+		}
+		if name == "content" {
+			return nil // column already exists
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate table info: %w", err)
+	}
+
+	// Column doesn't exist — add it.
+	if _, err := db.Exec(contentMigration); err != nil {
+		return fmt.Errorf("add content column: %w", err)
+	}
+	return nil
 }
 
 // Close releases the database connection.
@@ -81,8 +125,8 @@ func (s *SQLiteStore) Ping() error {
 // Returns an error if a plan with the same filename already exists in the project.
 func (s *SQLiteStore) Create(project string, entry PlanEntry) error {
 	const q = `
-		INSERT INTO plans (project, filename, status, description, branch, topic, created_at, implemented)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO plans (project, filename, status, description, branch, topic, created_at, implemented, content)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	_, err := s.db.Exec(q,
 		project,
@@ -93,6 +137,7 @@ func (s *SQLiteStore) Create(project string, entry PlanEntry) error {
 		entry.Topic,
 		formatTime(entry.CreatedAt),
 		entry.Implemented,
+		entry.Content,
 	)
 	if err != nil {
 		if isUniqueConstraintError(err) {
@@ -107,7 +152,7 @@ func (s *SQLiteStore) Create(project string, entry PlanEntry) error {
 // Returns an error if the plan is not found.
 func (s *SQLiteStore) Get(project, filename string) (PlanEntry, error) {
 	const q = `
-		SELECT filename, status, description, branch, topic, created_at, implemented
+		SELECT filename, status, description, branch, topic, created_at, implemented, content
 		FROM plans
 		WHERE project = ? AND filename = ?
 	`
@@ -120,7 +165,7 @@ func (s *SQLiteStore) Get(project, filename string) (PlanEntry, error) {
 func (s *SQLiteStore) Update(project, filename string, entry PlanEntry) error {
 	const q = `
 		UPDATE plans
-		SET status = ?, description = ?, branch = ?, topic = ?, created_at = ?, implemented = ?
+		SET status = ?, description = ?, branch = ?, topic = ?, created_at = ?, implemented = ?, content = ?
 		WHERE project = ? AND filename = ?
 	`
 	result, err := s.db.Exec(q,
@@ -130,6 +175,7 @@ func (s *SQLiteStore) Update(project, filename string, entry PlanEntry) error {
 		entry.Topic,
 		formatTime(entry.CreatedAt),
 		entry.Implemented,
+		entry.Content,
 		project,
 		filename,
 	)
@@ -174,7 +220,7 @@ func (s *SQLiteStore) Rename(project, oldFilename, newFilename string) error {
 // List returns all plan entries for the given project, sorted by filename.
 func (s *SQLiteStore) List(project string) ([]PlanEntry, error) {
 	const q = `
-		SELECT filename, status, description, branch, topic, created_at, implemented
+		SELECT filename, status, description, branch, topic, created_at, implemented, content
 		FROM plans
 		WHERE project = ?
 		ORDER BY filename ASC
@@ -203,7 +249,7 @@ func (s *SQLiteStore) ListByStatus(project string, statuses ...Status) ([]PlanEn
 	}
 
 	q := fmt.Sprintf(`
-		SELECT filename, status, description, branch, topic, created_at, implemented
+		SELECT filename, status, description, branch, topic, created_at, implemented, content
 		FROM plans
 		WHERE project = ? AND status IN (%s)
 		ORDER BY filename ASC
@@ -221,7 +267,7 @@ func (s *SQLiteStore) ListByStatus(project string, statuses ...Status) ([]PlanEn
 // sorted by filename.
 func (s *SQLiteStore) ListByTopic(project, topic string) ([]PlanEntry, error) {
 	const q = `
-		SELECT filename, status, description, branch, topic, created_at, implemented
+		SELECT filename, status, description, branch, topic, created_at, implemented, content
 		FROM plans
 		WHERE project = ? AND topic = ?
 		ORDER BY filename ASC
@@ -282,10 +328,43 @@ func (s *SQLiteStore) CreateTopic(project string, entry TopicEntry) error {
 	return nil
 }
 
+// GetContent retrieves only the content field for a plan entry.
+// Returns an error if the plan is not found.
+func (s *SQLiteStore) GetContent(project, filename string) (string, error) {
+	const q = `SELECT content FROM plans WHERE project = ? AND filename = ?`
+	var content string
+	err := s.db.QueryRow(q, project, filename).Scan(&content)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("plan not found: %s/%s", project, filename)
+		}
+		return "", fmt.Errorf("get content: %w", err)
+	}
+	return content, nil
+}
+
+// SetContent updates only the content field for an existing plan entry.
+// Returns an error if the plan is not found.
+func (s *SQLiteStore) SetContent(project, filename, content string) error {
+	const q = `UPDATE plans SET content = ? WHERE project = ? AND filename = ?`
+	result, err := s.db.Exec(q, content, project, filename)
+	if err != nil {
+		return fmt.Errorf("set content: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set content rows affected: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("plan not found: %s/%s", project, filename)
+	}
+	return nil
+}
+
 // scanPlanEntry scans a single row into a PlanEntry.
 func scanPlanEntry(row *sql.Row) (PlanEntry, error) {
-	var filename, status, description, branch, topic, createdAt, implemented string
-	if err := row.Scan(&filename, &status, &description, &branch, &topic, &createdAt, &implemented); err != nil {
+	var filename, status, description, branch, topic, createdAt, implemented, content string
+	if err := row.Scan(&filename, &status, &description, &branch, &topic, &createdAt, &implemented, &content); err != nil {
 		if err == sql.ErrNoRows {
 			return PlanEntry{}, fmt.Errorf("plan not found")
 		}
@@ -299,6 +378,7 @@ func scanPlanEntry(row *sql.Row) (PlanEntry, error) {
 		Topic:       topic,
 		CreatedAt:   parseTime(createdAt),
 		Implemented: implemented,
+		Content:     content,
 	}, nil
 }
 
@@ -306,8 +386,8 @@ func scanPlanEntry(row *sql.Row) (PlanEntry, error) {
 func scanPlanEntries(rows *sql.Rows) ([]PlanEntry, error) {
 	var entries []PlanEntry
 	for rows.Next() {
-		var filename, status, description, branch, topic, createdAt, implemented string
-		if err := rows.Scan(&filename, &status, &description, &branch, &topic, &createdAt, &implemented); err != nil {
+		var filename, status, description, branch, topic, createdAt, implemented, content string
+		if err := rows.Scan(&filename, &status, &description, &branch, &topic, &createdAt, &implemented, &content); err != nil {
 			return nil, fmt.Errorf("scan plan: %w", err)
 		}
 		entries = append(entries, PlanEntry{
@@ -318,6 +398,7 @@ func scanPlanEntries(rows *sql.Rows) ([]PlanEntry, error) {
 			Topic:       topic,
 			CreatedAt:   parseTime(createdAt),
 			Implemented: implemented,
+			Content:     content,
 		})
 	}
 	if err := rows.Err(); err != nil {

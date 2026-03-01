@@ -28,6 +28,7 @@ type PlanEntry struct {
 	Topic       string    `json:"topic,omitempty"`
 	CreatedAt   time.Time `json:"created_at,omitempty"`
 	Implemented string    `json:"implemented,omitempty"`
+	Content     string    `json:"content,omitempty"`
 }
 
 // TopicEntry holds the persisted metadata for a topic grouping.
@@ -45,6 +46,10 @@ type Store interface {
 	Get(project, filename string) (PlanEntry, error)
 	Update(project, filename string, entry PlanEntry) error
 	Rename(project, oldFilename, newFilename string) error
+
+	// Content access
+	GetContent(project, filename string) (string, error)
+	SetContent(project, filename, content string) error
 
 	// Queries
 	List(project string) ([]PlanEntry, error)
