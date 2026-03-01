@@ -1417,27 +1417,42 @@ func (n *NavigationPanel) String() string {
 		if actualAudit > maxAudit {
 			actualAudit = maxAudit
 		}
-		// Keep the header (first line) + the last (actualAudit-1) body lines
-		// so the ── log ── divider is always visible and newest events show.
+		// Split the audit view into header (── log ── divider) and body lines.
+		// Keep the last (actualAudit-1) body lines so newest events show.
 		// Drop any leading continuation lines (word-wrap fragments without a
 		// timestamp) so we never show an orphaned tail of a wrapped message.
+		// Pad with blank lines between header and body so events grow upward
+		// from the bottom of the allocated space.
 		vlines := strings.Split(n.auditView, "\n")
-		if len(vlines) > actualAudit {
-			header := vlines[0]
-			body := vlines[1:]
-			keep := actualAudit - 1 // lines available after header
-			if keep > len(body) {
-				keep = len(body)
-			}
-			tail := body[len(body)-keep:]
+		header := ""
+		var body []string
+		if len(vlines) > 0 {
+			header = vlines[0]
+			body = vlines[1:]
+		}
+		maxBody := actualAudit - 1 // lines available after header
+		if maxBody < 0 {
+			maxBody = 0
+		}
+		if len(body) > maxBody {
+			body = body[len(body)-maxBody:]
 			// Skip leading continuation lines — they lack a timestamp and are
 			// just wrapped fragments from a clipped event.
-			for len(tail) > 0 && isAuditContinuationLine(tail[0]) {
-				tail = tail[1:]
+			for len(body) > 0 && isAuditContinuationLine(body[0]) {
+				body = body[1:]
 			}
-			vlines = append([]string{header}, tail...)
 		}
-		auditSection = strings.Join(vlines, "\n")
+		// Pad between header and body so events are bottom-aligned.
+		pad := maxBody - len(body)
+		if pad < 0 {
+			pad = 0
+		}
+		padded := []string{header}
+		if pad > 0 {
+			padded = append(padded, strings.Repeat("\n", pad-1))
+		}
+		padded = append(padded, body...)
+		auditSection = strings.Join(padded, "\n")
 	}
 
 	gap := height - topLines - legendLines - actualAudit + 1
