@@ -1410,19 +1410,11 @@ func (n *NavigationPanel) String() string {
 	// Determine how many lines the audit section can use without overflowing.
 	// lipgloss .Height() doesn't truncate overflow, so we must never exceed height.
 	maxAudit := height - topLines - legendLines // leaves gap=1 at this limit
-	actualAudit := 0
 	auditSection := ""
+	auditLines := 0
 	if n.auditView != "" && n.auditHeight > 0 && maxAudit >= 3 {
-		actualAudit = n.auditHeight
-		if actualAudit > maxAudit {
-			actualAudit = maxAudit
-		}
-		// Split the audit view into header (── log ── divider) and body lines.
-		// Keep the last (actualAudit-1) body lines so newest events show.
-		// Drop any leading continuation lines (word-wrap fragments without a
-		// timestamp) so we never show an orphaned tail of a wrapped message.
-		// Pad with blank lines between header and body so events grow upward
-		// from the bottom of the allocated space.
+		cap := maxAudit
+		// Split into header (── log ──) and event body lines.
 		vlines := strings.Split(n.auditView, "\n")
 		header := ""
 		var body []string
@@ -1430,37 +1422,36 @@ func (n *NavigationPanel) String() string {
 			header = vlines[0]
 			body = vlines[1:]
 		}
-		maxBody := actualAudit - 1 // lines available after header
+		maxBody := cap - 1 // lines available after header
 		if maxBody < 0 {
 			maxBody = 0
 		}
 		if len(body) > maxBody {
 			body = body[len(body)-maxBody:]
-			// Skip leading continuation lines — they lack a timestamp and are
-			// just wrapped fragments from a clipped event.
+			// Drop leading continuation lines (word-wrap fragments without a
+			// timestamp) so we never show an orphaned tail of a wrapped message.
 			for len(body) > 0 && isAuditContinuationLine(body[0]) {
 				body = body[1:]
 			}
 		}
-		// Pad between header and body so events are bottom-aligned.
-		pad := maxBody - len(body)
-		if pad < 0 {
-			pad = 0
+		// Bottom-align: pad between header and body so events grow upward.
+		padCount := maxBody - len(body)
+		lines := make([]string, 0, 1+padCount+len(body))
+		lines = append(lines, header)
+		for i := 0; i < padCount; i++ {
+			lines = append(lines, "")
 		}
-		padded := []string{header}
-		if pad > 0 {
-			padded = append(padded, strings.Repeat("\n", pad-1))
-		}
-		padded = append(padded, body...)
-		auditSection = strings.Join(padded, "\n")
+		lines = append(lines, body...)
+		auditSection = strings.Join(lines, "\n")
+		auditLines = len(lines)
 	}
 
-	gap := height - topLines - legendLines - actualAudit + 1
+	gap := height - topLines - legendLines - auditLines + 1
 	if gap < 1 {
 		gap = 1
 	}
 
-	// Order: list … gap … legend … log
+	// Order: list … gap … legend … log (bottom-pinned)
 	innerContent := topContent + strings.Repeat("\n", gap) + legendSection
 	if auditSection != "" {
 		innerContent += "\n" + auditSection
