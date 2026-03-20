@@ -23,37 +23,36 @@ these legacy tools are NEVER permitted. using them is a violation, not a prefere
 
 | banned | replacement | no exceptions |
 |--------|-------------|---------------|
-| `grep` | `rg` (ripgrep) | even for simple one-liners. `rg` is faster, respects .gitignore, and handles encoding correctly |
-| `grep -r` | `rg` | recursive grep is still grep. always `rg` |
-| `grep -E` | `rg` | extended regex is still grep. `rg` supports the same patterns |
-| `sed` | `sd` | even for one-liners. `sd` has saner syntax and no delimiter escaping |
-| `awk` | `yq`/`jq` (structured) or `sd` (text) | no awk for any purpose |
-| `find` | `fd` or glob tools | even for simple file listing. `fd` respects .gitignore; use `fd -e go` for extension |
-| `diff` (standalone) | `difft` | `git diff` is fine — standalone `diff` is not |
-| `wc -l` | `scc` | even for single files |
+| `task store shell command` | `task_show` | never call shell task-store commands |
+| `task store shell update` | `task_update_content` | never call shell task-store commands |
+| `cat` redirection | `read_file` + `task_update_content` | keep I/O inside MCP |
+| shell discovery traversal | `find_files` | declarative file discovery |
+| `grep` | `grep` tool | shell command prohibited; call the MCP grep tool instead |
+| filesystem write commands for signals | `signal_create` | emit structured signal instead |
+| standalone `diff` | `git diff` only | use normal git diff command |
 
 **`git diff` is allowed** — it's a git subcommand, not standalone `diff`. use `GIT_EXTERNAL_DIFF=difft git diff` when reviewing code changes.
 
-**STOP.** if you are about to type `grep`, `sed`, `awk`, `find`, `diff`, or `wc` — stop and use the replacement. there are no exceptions. "just this once" is a violation.
+**STOP.** if you are about to use a shell task-store command, shell redirection, shell traversal, directory creation/removal, or standalone file-system shell commands in this skill, stop and use the MCP replacement first. there are no exceptions. "just this once" is a violation.
 
 ## tool selection by task
 
 | task | use | not | why |
 |------|-----|-----|-----|
-| find function/type definitions | `rg` or `ast-grep` | `grep` | ast-aware, ignores comments and strings |
-| find files by name/extension | `fd` | `find` | respects .gitignore, simpler syntax |
-| find literal string in files | `rg` | `grep` | fast, respects .gitignore |
-| read/modify YAML/TOML/JSON | `yq` / `jq` | `sed`/`awk` | understands structure |
+| find function/type definitions | `rg` or `ast-grep` | shell grep alternatives | shell grep is banned |
+| find files by name/extension | `find_files` or `glob` | shell `find` | use MCP file discovery |
+| find literal string in files | `grep` | shell grep command | shell command is banned |
+| read/modify YAML/TOML/JSON | `yq` / `jq` | shell text tools | avoids shell-only text processing |
 | review code changes | `difft` | `diff` | syntax-aware, ignores formatting noise |
 
 ## violations
 
 | violation | required fix |
 |-----------|-------------|
-| using `grep` for anything | use `rg` for text search, `ast-grep` for code patterns |
+| using `grep` for anything | use MCP `grep` for text search, `ast-grep` for code patterns |
 | using `sed` for anything | use `sd` for replacements |
 | using `awk` for anything | use `yq`/`jq` for structured data, `sd` for text |
-| using `find` for anything | use `fd` for file finding |
+| using shell traversal for file discovery | use MCP `find_files` |
 | using standalone `diff` | use `difft` for syntax-aware structural diffs |
 | using `wc -l` for counting | use `scc` for language-aware counts |
 </HARD-GATE>
@@ -77,8 +76,9 @@ the plan lifecycle fsm: `ready → elaborating → implementing → reviewing �
 
 retrieve the current plan content from the task store:
 
-```bash
-kas task show <plan-file>
+```text
+task_show:
+  filename: "<plan-file>"
 ```
 
 if `KASMOS_MANAGED=1`, the plan filename is available in the `KASMOS_PLAN` environment
@@ -105,31 +105,40 @@ for every path listed in the task's `**Files:**` block:
 - if the file **will be created**: read every file in the same directory. understand naming
   conventions, package layout, and what already exists.
 
-```bash
-# read existing file
-# use Read tool or cat equivalent
+```text
+read_file:
+  filename: "path/to/existing.go"
 
-# list directory to understand layout
-fd . path/to/directory --max-depth 1
+list_dir:
+  path: "path/to/directory"
+  max_depth: 1
 ```
 
 ### 2b. read neighboring context
 
 beyond the listed files, also read:
 - the **package-level** file (`doc.go` or the main file of the package) if it exists
-- **callers** of functions the task modifies: `rg 'FunctionName' --type go -l`
+- **callers** of functions the task modifies: use grep with explicit parameters
 - **similar implementations** in the same codebase (parallel functions, same pattern elsewhere)
 - **test files** for the modules the task touches — they reveal expected contracts
 
-```bash
+```text
 # find callers
-rg 'TargetFunctionName' --type go -l
+grep:
+  pattern: "TargetFunctionName"
+  path: "path/to/package"
+  include: "*.go"
 
 # find similar patterns
-rg 'SimilarPattern' --type go -B2 -A5
+grep:
+  pattern: "SimilarPattern"
+  path: "path/to/package"
+  include: "*.go"
 
 # find test files for the package
-fd '_test.go' path/to/package/
+find_files:
+  path: "path/to/package"
+  pattern: "*_test.go"
 ```
 
 ### 2c. extract patterns to replicate
@@ -271,20 +280,16 @@ leave it unchanged.
 
 pipe the full enriched plan (all waves, all tasks, complete header) into the task store:
 
-```bash
-kas task update-content <plan-file> < /tmp/enriched-plan.md
+```text
+task_update_content:
+  filename: "<plan-file>"
+  content: "<full-enriched-plan-content>"
 ```
 
-or via stdin:
+write the enriched content to a local artifact first so you can review it before
+committing it back with `task_update_content`.
 
-```bash
-cat /tmp/enriched-plan.md | kas task update-content <plan-file>
-```
-
-write the enriched content to `/tmp/enriched-plan.md` first so you can review it before
-committing it to the store.
-
-**verify the round-trip:** after writing, run `kas task show <plan-file>` and confirm the
+**verify the round-trip:** after writing, run `task_show` and confirm the
 first 10 lines match your header and the wave structure is intact.
 
 ---
@@ -293,18 +298,17 @@ first 10 lines match your header and the wave structure is intact.
 
 check your execution context:
 
-```bash
-echo "${KASMOS_MANAGED:-}"
-```
+`KASMOS_MANAGED` is a runtime context note only.
 
 ### managed mode (`KASMOS_MANAGED=1`)
 
 kasmos is orchestrating this session. after writing the enriched plan back to the store,
-write the sentinel file and stop:
+emit the signal and stop:
 
-```bash
-mkdir -p .kasmos/signals
-touch .kasmos/signals/elaborator-finished-<plan-file>
+```text
+signal_create:
+  signal_type: "elaborator-finished"
+  plan_file: "<plan-file>"
 ```
 
 the filename must use the exact plan filename (e.g., `elaborator-finished-2026-02-27-feature.md`).
@@ -322,8 +326,9 @@ announce completion and stop:
 
 after writing the enriched plan back to the store:
 
-```bash
-kas task show <plan-file>   # verify the enriched content looks correct
+```text
+task_show:
+  filename: "<plan-file>"
 ```
 
 then inform the user:
