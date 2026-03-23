@@ -89,19 +89,22 @@ usage:
   kas [command]
 
 available commands:
-  setup       configure agent harnesses, install skills, and scaffold project files
-  task        manage task lifecycle and content
-  serve       start the task store http server (sqlite-backed)
-  instance    inspect and control managed agent instances
   audit       query audit events
-  tmux        inspect and adopt orphan tmux sessions
-  signal      inspect, emit, and process lifecycle signals
-  daemon      manage the background daemon
-  monitor     inspect daemon health
-  status      show a repository status summary
+  browser     open the admin browser
   check       audit scaffold and skill sync health
-  reset       reset all stored instances and clean up tmux sessions and worktrees
+  daemon      manage the background daemon
   debug       print debug information like config paths
+  instance    inspect and control managed agent instances
+  monitor     inspect daemon health
+  reset       reset all stored instances and clean up tmux sessions and worktrees
+  scaffold    manage project scaffold files
+  serve       start the task store http server (sqlite-backed)
+  setup       configure agent harnesses, install skills, and scaffold project files
+  signal      inspect, emit, and process lifecycle signals
+  skills      manage agent skills
+  status      show a repository status summary
+  task        manage task lifecycle and content
+  tmux        inspect and adopt orphan tmux sessions
   version     print the version number
 
 flags:
@@ -109,6 +112,8 @@ flags:
   -y, --autoyes          automatically accept all agent prompts (experimental)
   -h, --help             help for kas
 ```
+
+cobra also exposes built-in `help` and shell `completion` subcommands.
 
 ### keybindings
 
@@ -128,7 +133,7 @@ flags:
 
 ## how it works
 
-1. **tasks** live in the task store — use `kas task list` to inspect metadata and `kas task show <file>` to read stored markdown
+1. **tasks** live in the task store — use `kas task list` to inspect metadata and `kas task show <task-file>` to read stored markdown
 2. **topics** group related tasks and act as scheduling boundaries (only one implementing task per topic at a time)
 3. **waves** divide implementation into phases — kasmos parses `## Wave N` headers and runs each wave's tasks in parallel
 4. **agents** run in isolated tmux sessions with dedicated git worktrees; the TUI shows live output in the preview pane
@@ -148,12 +153,12 @@ use the `kas task` CLI:
 ```bash
 kas task list                          # list all tasks
 kas task list --status implementing    # filter by status
-kas task show <file>                   # read task content
+kas task show <task-file>              # read task content
 kas task create <name>                 # create a new task
-kas task register <file>               # register a task file from disk
-kas task update-content <file>         # update task content (reads stdin)
-kas task set-status <file> done --force  # force-override status
-kas task transition <file> <event>     # apply FSM event
+kas task register <task-file>          # register a task file from disk
+kas task update-content <task-file>    # update task content (reads stdin)
+kas task set-status <task-file> done --force  # force-override status
+kas task transition <task-file> <event> # apply FSM event
 ```
 
 #### optional remote store

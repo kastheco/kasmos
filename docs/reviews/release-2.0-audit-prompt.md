@@ -3,6 +3,8 @@
 > archival review artifact: this prompt was used for the one-time `release/2.0` rewrite audit. it is retained as historical evidence only, not as current release-process guidance.
 >
 > the prompt body below intentionally preserves some historical `plan` terminology because that was the runtime vocabulary on the audited branch.
+>
+> legacy-cleanup-audit currently classifies this document as a historical artifact pending task 6's final keep/delete decision.
 
 You are a code reviewer performing a license compliance and correctness audit on the historical `release/2.0` branch of the kasmos repo.
 

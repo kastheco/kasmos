@@ -8,7 +8,7 @@ TUI-based multi-agent orchestration IDE. Manages concurrent AI agent sessions (c
 |-----------|---------|
 | `app/` | TUI application logic (bubbletea model, input handling, state) |
 | `cmd/` | CLI entry points (cobra commands: `kas`, `kas task`, `kas instance`, `kas tmux`) |
-| `config/` | Configuration management (repo-rooted `.kasmos/config.toml`, task store wiring, one-time legacy JSON import path, agent profiles) |
+| `config/` | Configuration management (`GetConfigDir` repo-root anchoring, repo-rooted `.kasmos/config.toml`, task store wiring, one-time legacy JSON import path, agent profiles) |
 | `contracts/` | Shared interfaces and types |
 | `daemon/` | Background daemon for auto-accept mode |
 | `internal/` | Internal packages (check, clickup, initcmd, mcpclient, opencodesession, sentry) |
@@ -28,7 +28,7 @@ Key points:
 - Go 1.24+, bubbletea/v2, lipgloss/v2, bubbles/v2
 - Tests: testify assertions, table-driven, no real tmux/git/network in tests
 - Non-blocking I/O: all I/O in `tea.Cmd` goroutines, results as `tea.Msg`
-- Task/config state is project-local under `<repo-root>/.kasmos/`. `config.toml` is the authoritative live config, `taskstore.db` is the default local store, and `config.json` only survives as a narrow one-time import/migration path.
+- Task/config state is project-local under `<repo-root>/.kasmos/` via `config/config.go:GetConfigDir`. `config.toml` is the authoritative live config, `taskstore.db` is the default local store, and `config.json` only survives as a narrow one-time import/migration path handled by `config/config.go:migrateJSONToTOML`.
 - Use current task terminology and command names in docs and prompts: `kas task ...`, not legacy `kas plan ...` guidance.
 - **Lowercase labels**: all user-visible text (toasts, confirmations, overlay titles, instance list titles) must be lowercase to match the app's aesthetic. No title case or sentence case — e.g. "push changes from 'foo'?" not "Push changes from 'foo'?"
 - **Arrow-key navigation in overlays**: use ↑↓ for navigation, not j/k vim bindings. Letter keys should always type into search/filter when present.
