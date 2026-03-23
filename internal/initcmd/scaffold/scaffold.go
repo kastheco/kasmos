@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
@@ -554,6 +555,26 @@ func WriteProjectSkills(dir string, force bool) ([]WriteResult, error) {
 	})
 
 	return results, err
+}
+
+// BundledSkillNames returns the scaffold-managed project skill names embedded in kasmos.
+// These are the skills that setup/scaffold writes into .agents/skills/ by default.
+func BundledSkillNames() ([]string, error) {
+	const prefix = "templates/skills"
+	entries, err := fs.ReadDir(templates, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("read bundled skills: %w", err)
+	}
+
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	sort.Strings(names)
+	return names, nil
 }
 
 // SymlinkHarnessSkills creates symlinks from .<harnessName>/skills/<skill>

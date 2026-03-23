@@ -96,7 +96,7 @@ from a task agent prematurely triggers review and breaks wave orchestration.
 
 You execute the full plan sequentially, wave by wave:
 
-1. Retrieve the plan with `kas task show <plan-file>`. Check its **Size** field to determine wave structure.
+1. Use MCP `task_show` (filename: "<plan-file>") to read the stored plan. Check its `**Size**` field to determine wave structure.
 2. Create a todo list with one item per task (all `pending`), then begin.
 3. Execute one wave at a time: implement each task (TDD), commit, then proceed to next task.
 4. After each wave completes, self-review before starting the next wave.
@@ -360,10 +360,7 @@ Execute waves sequentially:
 3. Implement Wave 2, self-review, continue through all waves
 4. After all waves complete and all tests pass:
 
-```bash
-# Transition the plan to "reviewing" via CLI
-kas task transition <task-file> request_review
-```
+after all waves complete and tests pass, use MCP `task_transition` (filename: "<task-file>", event: "request_review") to move the plan to `reviewing`.
 
 Then handle branch finishing — present these options to the user:
 
@@ -423,9 +420,7 @@ git branch -D <feature-branch>
 ```
 
 Update task status to `done` after options 1, 2, or 4:
-```bash
-kas task set-status <task-file> done --force
-```
+Use MCP `task_transition` (filename: "<task-file>", event: "review_approved", force: true) to force-complete the task.
 
 ---
 

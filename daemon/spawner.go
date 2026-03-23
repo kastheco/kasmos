@@ -356,12 +356,12 @@ func (s *TmuxSpawner) SpawnFixer(ctx context.Context, opts loop.SpawnOpts) error
 	return s.spawnInSharedWorktree(ctx, opts, session.AgentTypeFixer)
 }
 
-// SpawnElaborator launches an elaborator agent on the main branch (no worktree).
-// The elaborator only reads the codebase and updates the task store, so it
+// SpawnElaborator launches the architect elaboration pass on the main branch (no worktree).
+// The architect only reads the codebase and updates the task store, so it
 // does not need an isolated worktree.
 func (s *TmuxSpawner) SpawnElaborator(ctx context.Context, opts loop.SpawnOpts) error {
-	s.logger.Info("spawn elaborator", "plan", opts.PlanFile)
-	return s.spawnOnMainBranch(ctx, opts, session.AgentTypeElaborator, "elaborator")
+	s.logger.Info("spawn architect", "plan", opts.PlanFile)
+	return s.spawnOnMainBranch(ctx, opts, session.AgentTypeElaborator, "architect")
 }
 
 func (s *TmuxSpawner) spawnOnMainBranch(_ context.Context, opts loop.SpawnOpts, agentType, titleSuffix string) error {

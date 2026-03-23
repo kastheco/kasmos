@@ -1078,7 +1078,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 				return mdl, cmd
 			}
 			// Still elaborating — don't re-spawn, just inform.
-			m.toastManager.Info("elaboration still in progress — waiting for elaborator to finish.")
+			m.toastManager.Info("elaboration still in progress — waiting for the architect pass to finish.")
 			return m, nil
 		}
 
@@ -1137,19 +1137,19 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 		m.updateSidebarTasks()
 
 		// Check if an elaborator already ran for this plan (e.g. after TUI restart
-		// where the in-memory orchestrator was lost but the elaborator already
+		// where the in-memory orchestrator was lost but the architect pass already
 		// enriched the plan before crashing). Skip re-elaboration in that case.
 		for _, inst := range m.nav.GetInstances() {
 			if inst.TaskFile == planFile && inst.AgentType == session.AgentTypeElaborator {
 				m.killExistingPlanAgent(planFile, session.AgentTypeElaborator)
-				m.toastManager.Info(fmt.Sprintf("elaborator already ran — starting wave 1 for '%s'", taskstate.DisplayName(planFile)))
-				m.audit(auditlog.EventWaveStarted, "skipping re-elaboration (prior elaborator found)",
+				m.toastManager.Info(fmt.Sprintf("architect pass already ran — starting wave 1 for '%s'", taskstate.DisplayName(planFile)))
+				m.audit(auditlog.EventWaveStarted, "skipping re-elaboration (prior architect found)",
 					auditlog.WithPlan(planFile))
 				return m.startNextWave(orch, entry)
 			}
 		}
 
-		// Elaboration phase: spawn elaborator before starting wave 1.
+		// Elaboration phase: spawn architect before starting wave 1.
 		orch.SetElaborating()
 		return m.spawnElaborator(planFile)
 

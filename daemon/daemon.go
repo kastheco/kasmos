@@ -816,15 +816,15 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			Project:  e.Project,
 		}
 		if err := d.spawner.SpawnElaborator(ctx, opts); err != nil {
-			d.logger.Error("spawn elaborator failed", "plan", a.PlanFile, "err", err)
+			d.logger.Error("spawn architect failed", "plan", a.PlanFile, "err", err)
 			return err
 		}
 		d.broadcaster.Emit(api.Event{
 			Kind:      "agent_spawned",
-			Message:   "elaborator spawned for " + a.PlanFile,
+			Message:   "architect spawned for " + a.PlanFile,
 			Repo:      e.Path,
 			PlanFile:  a.PlanFile,
-			AgentType: "elaborator",
+			AgentType: session.AgentTypeElaborator,
 		})
 		return nil
 	case loop.SpawnFixerAction:
@@ -1111,7 +1111,7 @@ func (d *Daemon) RecoverSessions() (int, error) {
 				{title: fmt.Sprintf("%s-coder", planName), agentType: session.AgentTypeCoder, branch: task.Branch},
 				{title: fmt.Sprintf("%s-fixer", planName), agentType: session.AgentTypeFixer, branch: task.Branch},
 				{title: fmt.Sprintf("%s-reviewer", planName), agentType: session.AgentTypeReviewer, branch: task.Branch},
-				{title: fmt.Sprintf("%s-elaborator", planName), agentType: session.AgentTypeElaborator},
+				{title: fmt.Sprintf("%s-architect", planName), agentType: session.AgentTypeElaborator},
 			}
 
 			for _, candidate := range candidates {

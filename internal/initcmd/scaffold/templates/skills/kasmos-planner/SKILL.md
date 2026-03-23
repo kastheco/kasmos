@@ -98,10 +98,9 @@ read the codebase before asking questions:
 - list current ownership boundaries to avoid duplicating effort
 - confirm integration points and compatibility expectations
 
-```bash
 git log --oneline -20
-rg 'relevant_term' --type go -l
-```
+
+use MCP `grep` (pattern: "relevant_term", glob: "*.go") to locate relevant code paths before asking questions.
 
 ### step 2: ask clarifying questions — one at a time
 
@@ -143,21 +142,19 @@ get explicit approval before drafting the final plan. if the user redirects, upd
 
 plans are stored in the **task store** (sqlite or remote http api), not as files on disk.
 
-**CLI commands for plan content:**
-- **read** existing plan content: `kas task show <plan-file>`
-- **create** a new plan: write content to the sentinel file (managed mode) or use `kas task register` (manual mode)
-- **update** existing plan content: `kas task update-content <plan-file>` (reads from stdin)
+**task-store calls for plan content:**
+- **read** existing plan content: `task_show`
+- **create** a new plan: `task_create`
+- **update** existing plan content: `task_update_content`
 
-**full task lifecycle CLI:**
+**full task lifecycle calls:**
 | Command | Purpose |
 |---------|---------|
-| `kas task list [--status <s>]` | list all tasks, optionally filtered by status |
-| `kas task show <file>` | print plan content from the task store |
-| `kas task create <name>` | create a new task entry (`--content`, `--description`, `--branch`, `--topic`) |
-| `kas task register <file>` | register a plan file from disk into the store |
-| `kas task update-content <file>` | replace plan content (reads from stdin) |
-| `kas task set-status <file> <s>` | force-override status (requires `--force`) |
-| `kas task transition <file> <event>` | apply FSM event (e.g. `plan_start`, `review_approved`) |
+| `task_list [--status <s>]` | list all tasks, optionally filtered by status |
+| `task_show <file>` | print plan content from the task store |
+| `task_create <name>` | create a new task entry (`--content`, `--description`, `--branch`, `--topic`) |
+| `task_update_content <file>` | replace plan content in the task store |
+| `task_transition <file> <event>` | apply FSM event (e.g. `plan_start`, `review_approved`) |
 | `kas task start <file>` | transition to implementing + set up worktree |
 | `kas task start-over <file>` | reset branch, transition back to planning |
 | `kas task push <file>` | commit dirty changes + push task branch |
@@ -193,7 +190,7 @@ append these required, checklist-style sections directly after the header block:
 - [ ] [observable, testable condition]
 
 - good vs vague examples:
-  - good: `when creating a plan via kas task register, the status is `ready` and plan content includes all required sections.`
+  - good: `when creating a plan via task_create, the status is ready and plan content includes all required sections.`
   - good: `when a user runs the documented CLI flow, command output matches the acceptance list within one UI interaction.`
   - vague: `the feature should feel responsive and clean.`
 
@@ -281,15 +278,17 @@ this is mandatory. fix every failure inline before signaling.
 - [ ] unresolved risks and open questions are logged with owners or follow-up plan.
 - [ ] the stored plan is immediately parseable for execution without a follow-up wave-annotation pass.
 
-if all checks pass: proceed to register + signal.
+if all checks pass: proceed to store + signal.
 
 if any check fails: fix inline, then re-run these checks.
 
 ### 1. store and signal the plan
 
-**managed mode:** write the finished plan into the existing task entry with `kas task update-content <plan-file>`, then signal completion.
+**managed mode:** use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>") to store the finished plan.
 
-**manual mode:** update the existing task entry with `kas task update-content <plan-file>`. only use `kas task register` when creating a brand-new standalone plan outside kasmos.
+then use MCP `signal_create` (signal_type: "planner-finished", plan_file: "<plan-file>") after the update succeeds.
+
+**manual mode:** use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>"). only use MCP `task_create` when creating a brand-new standalone plan outside kasmos.
 
 do not commit sentinel files — kasmos consumes and deletes them automatically.
 
@@ -299,19 +298,15 @@ do not commit sentinel files — kasmos consumes and deletes them automatically.
 
 check your execution context:
 
-```bash
-echo "${KASMOS_MANAGED:-}"
-```
+- managed: `KASMOS_MANAGED=1`
+- manual: `KASMOS_MANAGED` unset
 
 ### managed mode (`KASMOS_MANAGED=1`)
 
-kasmos is orchestrating this session. store the plan content first, then write a sentinel file and stop.
+kasmos is orchestrating this session. store the plan content and signal completion.
 
-```bash
-cat /tmp/plan.md | kas task update-content <feature-name>
-mkdir -p .kasmos/signals
-touch .kasmos/signals/planner-finished-<feature-name>
-```
+use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>") to persist the finished plan.
+then use MCP `signal_create` (signal_type: "planner-finished", plan_file: "<plan-file>") to notify completion.
 
 the signal filename must match the task filename exactly (with `planner-finished-` prefix).
 
@@ -325,18 +320,11 @@ announce completion and stop:
 
 ### manual mode (`KASMOS_MANAGED` unset)
 
-store the plan in the task store using the CLI:
+store the plan in the task store using MCP calls.
 
-```bash
-cat /tmp/plan.md | kas task update-content <feature-name>
-```
+if the task does not exist yet, use MCP `task_create` to create it first, then use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>") to persist the plan.
 
-if the task does not exist yet, register it once before updating:
-
-```bash
-kas task register <feature-name>.md
-cat /tmp/plan.md | kas task update-content <feature-name>
-```
+if the task already exists, use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>") directly.
 
 then offer execution choices:
 

@@ -7,9 +7,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func bundledCheckSkillNames(t *testing.T) []string {
+	t.Helper()
+	names, err := scaffold.BundledSkillNames()
+	require.NoError(t, err)
+	return names
+}
 
 // captureCheckOutput runs newCheckCmd() with a temp home/project layout and
 // captures stdout. Returns the output string and whether the command returned nil.
@@ -62,8 +70,7 @@ func TestCheckCmd_NotInProject(t *testing.T) {
 
 func TestCheckCmd_InProject(t *testing.T) {
 	out := captureCheckOutput(t, func(home, project string) {
-		// Create .agents/skills/ with real skill dirs (including SKILL.md) to mark as kas project
-		// Dynamic discovery means skills only appear if directories exist
+		// Create scaffold-bundled skills to mark this as a kas project.
 		for _, name := range []string{"kasmos-coder", "kasmos-planner", "kasmos-reviewer"} {
 			dir := filepath.Join(project, ".agents", "skills", name)
 			require.NoError(t, os.MkdirAll(dir, 0o755))
@@ -154,11 +161,14 @@ func TestCheckCmd_VerboseFlag(t *testing.T) {
 	assert.Contains(t, out, "verbose-skill")
 }
 
-// TestCheckCmd_ShowsAllProjectSkills verifies that all skills placed in .agents/skills/
-// appear in the project section output.
+// TestCheckCmd_ShowsAllProjectSkills verifies that scaffold-bundled project skills
+// placed in .agents/skills/ appear in the project section output.
 func TestCheckCmd_ShowsAllProjectSkills(t *testing.T) {
+	bundled := bundledCheckSkillNames(t)
+	require.GreaterOrEqual(t, len(bundled), 3)
+	skills := bundled[:3]
+
 	out := captureCheckOutput(t, func(home, project string) {
-		skills := []string{"alpha-skill", "beta-skill", "gamma-skill"}
 		for _, name := range skills {
 			dir := filepath.Join(project, ".agents", "skills", name)
 			require.NoError(t, os.MkdirAll(dir, 0o755))
@@ -167,20 +177,20 @@ func TestCheckCmd_ShowsAllProjectSkills(t *testing.T) {
 	})
 
 	assert.Contains(t, out, "Project skills")
-	assert.Contains(t, out, "alpha-skill")
-	assert.Contains(t, out, "beta-skill")
-	assert.Contains(t, out, "gamma-skill")
+	for _, name := range skills {
+		assert.Contains(t, out, name)
+	}
 }
 
 // TestCheckCmd_ShowsCopyGlyph verifies that a non-symlink directory in a harness dir
 // shows the ≈ glyph.
 func TestCheckCmd_ShowsCopyGlyph(t *testing.T) {
 	out := captureCheckOutput(t, func(home, project string) {
-		name := "copy-skill"
+		name := "kasmos-coder"
 		// Create canonical skill (with SKILL.md)
 		skillDir := filepath.Join(project, ".agents", "skills", name)
 		require.NoError(t, os.MkdirAll(skillDir, 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("# copy-skill"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("# kasmos-coder"), 0o644))
 
 		// Create a real (non-symlink) directory in the claude harness project skills dir
 		claudeSkillDir := filepath.Join(project, ".claude", "skills", name)
@@ -193,7 +203,7 @@ func TestCheckCmd_ShowsCopyGlyph(t *testing.T) {
 // TestCheckCmd_ShowsSkillMDWarning verifies that a skill missing SKILL.md shows "no SKILL.md" annotation.
 func TestCheckCmd_ShowsSkillMDWarning(t *testing.T) {
 	out := captureCheckOutput(t, func(home, project string) {
-		name := "no-md-skill"
+		name := "kasmos-coder"
 		// Create canonical skill directory WITHOUT SKILL.md
 		skillDir := filepath.Join(project, ".agents", "skills", name)
 		require.NoError(t, os.MkdirAll(skillDir, 0o755))
@@ -207,7 +217,7 @@ func TestCheckCmd_ShowsSkillMDWarning(t *testing.T) {
 func TestCheckCmd_ShowsRemediation(t *testing.T) {
 	out := captureCheckOutput(t, func(home, project string) {
 		// Create a skill without SKILL.md (so remediation hint for adding SKILL.md is shown)
-		name := "needs-fix-skill"
+		name := "kasmos-coder"
 		skillDir := filepath.Join(project, ".agents", "skills", name)
 		require.NoError(t, os.MkdirAll(skillDir, 0o755))
 		// No SKILL.md — triggers remediation hint

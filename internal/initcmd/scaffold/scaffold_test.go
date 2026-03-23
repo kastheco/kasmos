@@ -268,9 +268,12 @@ func TestWriteProjectSkills(t *testing.T) {
 	results, err := WriteProjectSkills(dir, false)
 	require.NoError(t, err)
 
-	// Generic project skills written (including cli-tools)
+	// Generic project skills written (including cli-tools and kasmos-cli)
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "cli-tools", "SKILL.md"))
+	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "kasmos-cli", "SKILL.md"))
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "kasmos-fixer", "SKILL.md"))
+	assert.NoFileExists(t, filepath.Join(dir, ".agents", "skills", "kasmos-elaborator", "SKILL.md"))
+	assert.NoFileExists(t, filepath.Join(dir, ".agents", "skills", "tui-design", "SKILL.md"))
 
 	fixerSkill, err := os.ReadFile(filepath.Join(dir, ".agents", "skills", "kasmos-fixer", "SKILL.md"))
 	require.NoError(t, err)

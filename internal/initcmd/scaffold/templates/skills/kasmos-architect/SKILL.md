@@ -59,7 +59,7 @@ the plan lifecycle fsm: `ready -> elaborating -> implementing -> reviewing -> do
 
 - planner output enters you when implementation planning is complete and a plan is in task store
 - you decompose and enrich tasks for coders, write the updated plan, and emit architecture metadata
-- you then signal `elaborator-finished-<plan-file>` for backward compatibility so existing orchestrators keep working unchanged
+- you then signal `elaborator-finished-<plan-file>` because the current elaboration gateway consumes that signal name
 - do not implement code; do not review code; stop after signaling and metadata write
 
 ---
@@ -69,17 +69,15 @@ the plan lifecycle fsm: `ready -> elaborating -> implementing -> reviewing -> do
 You produce **both** in a single run, not incrementally:
 
 - updated plan markdown written with: 
-  `kas task update-content <plan-file> < /tmp/enriched-plan.md`
+  use MCP `task_update_content` (filename: "<plan-file>", content: "<full enriched plan>") to persist the rewritten plan.
 - metadata JSON written to `.kasmos/cache/<plan-file>-architect.json` using the raw plan filename slug (for example `.kasmos/cache/skill-prompt-rewrites-architect.json`)
 
 ### required commands
 
-```bash
-kas task show <plan-file>
-kas task update-content <plan-file> < /tmp/enriched-plan.md
-mkdir -p .kasmos/cache
-touch .kasmos/signals/elaborator-finished-<plan-file>
-```
+1. use MCP `task_show` (filename: "<plan-file>") to read the latest plan
+2. use MCP `task_update_content` (filename: "<plan-file>", content: "<full enriched plan>") to persist the rewritten plan.
+3. mkdir -p .kasmos/cache
+4. use MCP `signal_create` (signal_type: "elaborator-finished", plan_file: "<plan-file>") after the round-trip check succeeds.
 
 ---
 
@@ -87,9 +85,7 @@ touch .kasmos/signals/elaborator-finished-<plan-file>
 
 read the latest plan and extract structure before editing anything:
 
-```bash
-kas task show <plan-file>
-```
+use MCP `task_show` (filename: "<plan-file>") to read the latest plan.
 
 verify:
 - plan header (`#`, `**Goal:**`, `**Architecture:**`, `**Tech Stack:**`, `**Size:**`)
@@ -179,30 +175,24 @@ Use `openai/gpt-5.4` cost logic as follows:
 
 ## phase 4: write, verify, signal
 
-1. create `/tmp/enriched-plan.md` with the updated plan
-2. write both outputs:
+1. write metadata output:
 
 ```bash
-kas task update-content <plan-file> < /tmp/enriched-plan.md
 mkdir -p .kasmos/cache
 cat > .kasmos/cache/<plan-file>-architect.json <<'EOF'
 ...json...
 EOF
 ```
 
-3. verify structure and metadata did not break existing plan framing:
+2. verify structure and metadata did not break existing plan framing:
 
-```bash
-kas task show <plan-file>
-```
+use MCP `task_show` (filename: "<plan-file>") to read the latest plan
 
 confirm header/wave/task structure survived before touching signal.
 
-4. signal completion:
+3. signal completion:
 
-```bash
-touch .kasmos/signals/elaborator-finished-<plan-file>
-```
+use MCP `signal_create` (signal_type: "elaborator-finished", plan_file: "<plan-file>") after the round-trip check succeeds.
 
 ---
 
@@ -221,5 +211,5 @@ stop.
 | modifying planner structural blocks | leave `## Wave`, `### Task`, `**Files:**` unchanged |
 | creating import dependency between same-wave tasks | split or move tasks to a later wave |
 | skipping metadata JSON output | generate `.kasmos/cache/<plan-file>-architect.json` in the same run |
-| writing signal before round-trip check | run `kas task show <plan-file>` first |
+| writing signal before round-trip check | run MCP `task_show` (filename: "<plan-file>") first |
 | writing `elaborator-finished` signal with wrong filename | use exact plan file token in filename |

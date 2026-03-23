@@ -36,7 +36,7 @@ all waves complete  ──► implementation finished
 
 Before wave 1 starts, kasmos spawns an **architect** agent (`elaborating` profile) to expand terse task descriptions into coder-ready instructions. The orchestrator enters `WaveStateElaborating` while this runs. No coder tasks launch until elaboration finishes.
 
-If an elaborator already ran for this plan before (e.g. after a TUI restart), kasmos detects the existing instance and skips re-elaboration, jumping straight to wave 1.
+If an architect pass already ran for this plan before (e.g. after a TUI restart), kasmos detects the existing instance and skips re-elaboration, jumping straight to wave 1.
 
 ### skipping elaboration
 
@@ -103,4 +103,4 @@ If a coder agent is in the middle of a wave when you stop it, kasmos will re-rea
 
 - [waves](/docs/concepts/waves) — how wave orchestration works internally
 - [worktrees](/docs/concepts/worktrees) — how each task gets an isolated git branch
-- [agents and roles](/docs/concepts/agents-and-roles) — elaborator, coder, and solo agent profiles
+- [agents and roles](/docs/concepts/agents-and-roles) — architect, coder, and solo agent profiles

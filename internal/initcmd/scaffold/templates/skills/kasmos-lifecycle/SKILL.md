@@ -21,7 +21,7 @@ Plans move through a fixed set of states. Only the transitions listed below are 
 | `reviewing` | `done` | reviewer writes sentinel `reviewer-approved-<planfile>` |
 | `done` | — | terminal state, no further transitions |
 
-State is persisted in the **task store** — a SQLite database (`~/.config/kasmos/kasmos.db` locally) or a remote HTTP API server. Agents never write to the store directly — kasmos owns state transitions. Agents only write sentinel files (managed mode) or use `kas task` CLI commands (manual mode). To retrieve plan content, agents use `kas task show <plan-file>`.
+State is persisted in the **task store** — a SQLite database (`~/.config/kasmos/kasmos.db` locally) or a remote HTTP API server. Agents never write to the store directly — kasmos owns state transitions. Agents emit signals (managed mode) or use task tools (manual mode). To retrieve plan content, agents use MCP `task_show` (`filename: "<plan-file>"`).
 
 ## Signal File Mechanics
 
@@ -41,11 +41,8 @@ Examples:
 3. The sentinel file is consumed (deleted) after processing — do not rely on it persisting
 4. Sentinel content is optional; kasmos uses the filename to determine the event type
 
-**Writing a sentinel (agent side):**
-```bash
-# Signal that planning is complete for a plan
-touch .kasmos/signals/planner-finished-2026-02-27-feature.md
-```
+**Emitting a signal (agent side):** use MCP `signal_create` to emit the equivalent
+`planner-finished-2026-02-27-feature.md` signal as the last action before yielding control.
 
 Keep sentinel writes as the **last action** before yielding control. Do not write a sentinel and then continue modifying plans — kasmos may begin the next phase immediately.
 
@@ -56,17 +53,11 @@ Check `KASMOS_MANAGED` to determine how transitions are handled.
 | Mode | `KASMOS_MANAGED` value | Transition mechanism |
 |------|------------------------|---------------------|
 | managed | `1` (or any non-empty) | write sentinel → kasmos handles the rest |
-| manual | unset or empty | use `kas task` CLI commands (e.g. `kas task register`, `kas task transition`) |
+| manual | unset or empty | use MCP task tools (for example `task_show`, `task_transition`) |
 
-```bash
-if [ -n "$KASMOS_MANAGED" ]; then
-  echo "managed mode: write sentinel and stop"
-else
-  echo "manual mode: use kas task CLI commands to register and transition plans"
-fi
-```
+Check whether `KASMOS_MANAGED` is set; managed sessions emit signals, manual sessions use task tools.
 
-In managed mode: **never** mutate task state yourself. In manual mode: use `kas task` CLI commands — the store backend handles persistence.
+In managed mode: **never** mutate task state yourself. In manual mode: use MCP task tools — the store backend handles persistence.
 
 ## Agent Roles (brief)
 

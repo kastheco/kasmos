@@ -76,9 +76,10 @@ MERGE_BASE=$(git merge-base main HEAD)
 
 GIT_EXTERNAL_DIFF=difft git diff $MERGE_BASE..HEAD
 GIT_EXTERNAL_DIFF=difft git diff $MERGE_BASE..HEAD -- path/to/file.go
-git diff $MERGE_BASE..HEAD --name-only | rg '\.go$' | sd '/[^/]+\.go$' '' | sort -u
 git diff $MERGE_BASE..HEAD --name-only | xargs typos
 ```
+
+Use `git diff $MERGE_BASE..HEAD --name-only` to enumerate changed files. If you need Go-only or package-filtered follow-up, use MCP `grep` / `find_files` rather than shell pipes.
 
 ## Review Checklist
 
@@ -140,11 +141,13 @@ If tests are slow, at minimum run tests for changed packages:
 
 ```bash
 # Identify changed packages
-git diff $MERGE_BASE..HEAD --name-only | rg '\.go$' | sd '/[^/]+\.go$' '' | sort -u
+git diff $MERGE_BASE..HEAD --name-only
 
 # Run them
 go test ./path/to/changed/... ./other/changed/...
 ```
+
+Use `git diff $MERGE_BASE..HEAD --name-only` to enumerate changed files. If you need Go-only or package-filtered follow-up, use MCP `grep` / `find_files` rather than shell pipes.
 
 ## Self-Fix Protocol
 

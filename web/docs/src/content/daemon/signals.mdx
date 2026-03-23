@@ -48,7 +48,7 @@ This calls `taskfsm.AtomicWrite`, which:
 | `implement_finished` | coder / fixer | FSM transition → `reviewing`, spawn reviewer |
 | `implement_task_finished` | wave task agent | wave task complete, possible wave advance |
 | `implement_wave` | daemon / TUI | start next wave |
-| `elaborator_finished` | elaborator | update plan content, begin wave 1 |
+| `elaborator_finished` | architect | update plan content, begin wave 1 |
 | `review_approved` | reviewer | FSM transition → `done` |
 | `review_changes_requested` | reviewer | FSM transition → `implementing`, spawn fixer |
 | `planner_finished` | planner | FSM transition → `ready` |

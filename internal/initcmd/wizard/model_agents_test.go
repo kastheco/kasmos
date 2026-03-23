@@ -167,7 +167,7 @@ func TestAgentStepPrePopulatesFromExisting(t *testing.T) {
 	assert.Equal(t, "openai/gpt-5.3-codex", agents[1].Model)
 }
 
-func TestAgentStepPrePopulatesArchitectFromLegacyElaborator(t *testing.T) {
+func TestAgentStep_IgnoresLegacyElaboratorProfile(t *testing.T) {
 	temp := 0.7
 	existing := &config.TOMLConfigResult{
 		Profiles: map[string]config.AgentProfile{
@@ -192,10 +192,10 @@ func TestAgentStepPrePopulatesArchitectFromLegacyElaborator(t *testing.T) {
 		}
 	}
 	require.Equal(t, "architect", arch.Role, "architect role must be present")
-	assert.Equal(t, "opencode", arch.Harness, "harness should migrate from legacy elaborator profile")
-	assert.Equal(t, "anthropic/claude-opus-4-6", arch.Model)
-	assert.Equal(t, "max", arch.Effort)
-	assert.Equal(t, "0.7", arch.Temperature)
+	assert.Equal(t, "opencode", arch.Harness, "architect should keep the default harness")
+	assert.Equal(t, "openai/gpt-5.3-codex", arch.Model)
+	assert.Equal(t, "high", arch.Effort)
+	assert.Equal(t, "0.1", arch.Temperature)
 	assert.True(t, arch.Enabled)
 }
 
