@@ -100,7 +100,7 @@ read the codebase before asking questions:
 
 git log --oneline -20
 
-use MCP `grep` (pattern: "relevant_term", include: "*.go") to locate relevant code paths before asking questions.
+use MCP `grep` (pattern: "relevant_term", glob: "*.go") to locate relevant code paths before asking questions.
 
 ### step 2: ask clarifying questions — one at a time
 

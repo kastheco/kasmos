@@ -115,7 +115,7 @@ go test ./failing/package/... -v -count=1 -run TestSpecificFailure 2>&1 | head -
 ### Phase 2 — Pattern Analysis
 
 Find working examples in the codebase doing something similar. Use MCP `grep`
-(`pattern: "PatternOfInterest"`, `include: "*.go"`) to locate matching implementations.
+(`pattern: "PatternOfInterest"`, `glob: "*.go"`) to locate matching implementations.
 
 Compare them against the broken code. List **every difference** — don't assume "that can't matter."
 Understand all dependencies: config, env, state, initialization order.
@@ -164,7 +164,7 @@ edge cases:
 
 ### Step 1 — Scan for Incomplete Work
 
-Use MCP `grep` (`pattern: "TODO|FIXME|HACK|XXX|PLACEHOLDER"`, `include: "*.go"`) for
+Use MCP `grep` (`pattern: "TODO|FIXME|HACK|XXX|PLACEHOLDER"`, `glob: "*.go"`) for
 loose-end scans.
 
 ### Step 2 — Cross-reference Plan vs Implementation
@@ -231,7 +231,7 @@ typos
 ```
 
 For file or artifact verification, use MCP `grep` (`pattern: "ExpectedPattern"`,
-`include: "<relevant-glob>"`) or direct file inspection.
+`glob: "<relevant-glob>"`) or direct file inspection.
 
 ### Red Flags — STOP
 
@@ -372,7 +372,7 @@ NEW_VERSION="X.Y.Z"
 sd 'version\s*=\s*"[^"]*"' "version     = \"${NEW_VERSION}\"" main.go
 ```
 
-Then use MCP `grep` (`pattern: "^\\s*version\\s*="`, `include: "main.go"`) or read
+Then use MCP `grep` (`pattern: "^\\s*version\\s*="`, `glob: "main.go"`) or read
 `main.go` directly and confirm it now says `version     = "X.Y.Z"`.
 
 ```bash
@@ -387,7 +387,7 @@ git push origin main "v${NEW_VERSION}"
 ```
 
 **Pre-flight check:** before pushing a tag, use MCP `grep`
-(`pattern: "^\\s*version\\s*="`, `include: "main.go"`) or read `main.go` directly and
+(`pattern: "^\\s*version\\s*="`, `glob: "main.go"`) or read `main.go` directly and
 confirm the version string matches the tag (without the `v` prefix).
 
 **Never push a `v*` tag without this check.** The CI step `Validate tag matches version in main.go`

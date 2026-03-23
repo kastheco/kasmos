@@ -20,7 +20,7 @@ The commands below are derived from current Cobra handlers and help output in th
 | task | `kas task set-status` | `kas task set-status <plan-file> <status> --force` | `--force` |
 | task | `kas task transition` | `kas task transition <plan-file> <event>` | none |
 | task | `kas task show` | `kas task show <plan-file>` | none |
-| task | `kas task update-content` | `kas task update-content <plan-file> [--file <path>]` | `--file` |
+| task | `kas task update-content` | `kas task update-content <plan-file>` | none |
 | task | `kas task start` | `kas task start <plan-file>` | none |
 | task | `kas task implement` | `kas task implement <plan-file> [--wave <n>]` | `--wave` |
 | task | `kas task push` | `kas task push <plan-file> [--message <text>]` | `--message` |
@@ -81,8 +81,8 @@ The commands below are derived from current Cobra handlers and help output in th
 
 ### `kas task update-content`
 - Replaces task content in store.
-- Reads from stdin by default and from `--file` when provided.
-- If neither stdin content nor `--file` path resolves, the command waits for stdin and can appear to hang.
+- Reads updated content from stdin only (no `--file` flag is supported).
+- If stdin is a TTY (no piped or redirected input), the command exits with an error instead of waiting for input.
 
 ### `kas task start`
 - Transitions task to `implementing` via FSM when needed.
@@ -227,13 +227,13 @@ The commands below are derived from current Cobra handlers and help output in th
 ```bash
 kas task create my-feature --description "Add search indexing support" --topic infra --branch plan/my-feature
 kas task show my-feature.md
-kas task update-content my-feature.md --file /tmp/my-feature.md
+cat /tmp/my-feature.md | kas task update-content my-feature.md
 kas task show my-feature.md
 
 # alternate path from disk import
 kas task register plans/my-feature.md --topic infra --branch plan/my-feature
 kas task show my-feature.md
-kas task update-content my-feature.md --file plans/my-feature.md
+cat plans/my-feature.md | kas task update-content my-feature.md
 ```
 
 ### workflow B: branch/worktree lifecycle
@@ -278,8 +278,8 @@ kas tmux list
 
 - `kas task set-status <plan-file> <status>` without `--force` fails by design.
 - `kas task implement <plan-file> --wave 0` fails: `wave number must be >= 1, got 0`.
-- `kas task update-content <plan-file>` reads `/dev/stdin` unless `--file` is passed.
-- `kas task update-content <plan-file>` with neither `--file` nor piped stdin blocks waiting for stdin.
+- `kas task update-content <plan-file>` reads from stdin only.
+- `kas task update-content <plan-file>` with a TTY stdin fails fast with `stdin is a tty; pipe plan content via stdin: cat plan.md | kas task update-content <plan>`.
 - `kas task show <missing-file>` errors as `task not found`.
 - `kas task show <file-with-empty-content>` errors `no content stored`.
 - `kas check` can print full health tables and still exit code `1` when health is below `100%`.
