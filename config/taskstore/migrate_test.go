@@ -49,6 +49,66 @@ func TestMigrateFromJSON(t *testing.T) {
 	assert.Len(t, topics, 1)
 }
 
+func TestMigrateFromJSON_NormalizesLegacyStatusAndFilename(t *testing.T) {
+	store := newTestStore(t)
+	plansDir := t.TempDir()
+
+	stateJSON := `{
+		"plans": {
+			"feature.md": {"status": "in_progress", "description": "legacy impl"},
+			"release": {"status": "completed", "description": "legacy done"}
+		}
+	}`
+	require.NoError(t, os.WriteFile(filepath.Join(plansDir, "plan-state.json"), []byte(stateJSON), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(plansDir, "feature.md"), []byte("# Feature"), 0o644))
+
+	migrated, err := MigrateFromJSON(store, "proj", plansDir)
+	require.NoError(t, err)
+	assert.Equal(t, 2, migrated)
+
+	feature, err := store.Get("proj", "feature")
+	require.NoError(t, err)
+	assert.Equal(t, StatusImplementing, feature.Status)
+
+	release, err := store.Get("proj", "release")
+	require.NoError(t, err)
+	assert.Equal(t, StatusDone, release.Status)
+
+	content, err := store.GetContent("proj", "feature")
+	require.NoError(t, err)
+	assert.Equal(t, "# Feature", content)
+}
+
+func TestMigrateFromJSON_PreservesCollidingMdFilename(t *testing.T) {
+	store := newTestStore(t)
+	plansDir := t.TempDir()
+
+	stateJSON := `{
+		"plans": {
+			"task": {"status": "ready", "description": "bare"},
+			"task.md": {"status": "completed", "description": "collision"}
+		}
+	}`
+	require.NoError(t, os.WriteFile(filepath.Join(plansDir, "plan-state.json"), []byte(stateJSON), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(plansDir, "task.md"), []byte("# Collision"), 0o644))
+
+	migrated, err := MigrateFromJSON(store, "proj", plansDir)
+	require.NoError(t, err)
+	assert.Equal(t, 2, migrated)
+
+	bare, err := store.Get("proj", "task")
+	require.NoError(t, err)
+	assert.Equal(t, StatusReady, bare.Status)
+
+	suffixed, err := store.Get("proj", "task.md")
+	require.NoError(t, err)
+	assert.Equal(t, StatusDone, suffixed.Status)
+
+	content, err := store.GetContent("proj", "task.md")
+	require.NoError(t, err)
+	assert.Equal(t, "# Collision", content)
+}
+
 func TestMigrateFromJSON_Idempotent(t *testing.T) {
 	store := newTestStore(t)
 	plansDir := t.TempDir()
@@ -68,6 +128,30 @@ func TestMigrateFromJSON_NoFile(t *testing.T) {
 	migrated, err := MigrateFromJSON(store, "proj", t.TempDir())
 	require.NoError(t, err)
 	assert.Equal(t, 0, migrated)
+}
+
+func TestMigrateFromJSON_ParseErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{name: "empty file", content: "", want: "parse plan-state.json"},
+		{name: "malformed json", content: "{", want: "parse plan-state.json"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newTestStore(t)
+			plansDir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(plansDir, "plan-state.json"), []byte(tt.content), 0o644))
+
+			migrated, err := MigrateFromJSON(store, "proj", plansDir)
+			require.Error(t, err)
+			assert.Equal(t, 0, migrated)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
 }
 
 func TestMigrateFromPlanstoreDB(t *testing.T) {
@@ -119,9 +203,9 @@ func TestMigrateFromPlanstoreDB(t *testing.T) {
 	`)
 	require.NoError(t, err)
 
-	_, err = oldDB.Exec(`INSERT INTO plans (project, filename, status, description, branch) VALUES ('proj', 'plan-a', 'done', 'old plan', 'plan/a')`)
+	_, err = oldDB.Exec(`INSERT INTO plans (project, filename, status, description, branch) VALUES ('proj', 'plan-a', 'completed', 'old plan', 'plan/a')`)
 	require.NoError(t, err)
-	_, err = oldDB.Exec(`INSERT INTO plans (project, filename, status, description, branch) VALUES ('proj', 'plan-b', 'ready', 'old plan b', 'plan/b')`)
+	_, err = oldDB.Exec(`INSERT INTO plans (project, filename, status, description, branch) VALUES ('proj', 'plan-b.md', 'in_progress', 'old plan b', 'plan/b')`)
 	require.NoError(t, err)
 	_, err = oldDB.Exec(`INSERT INTO topics (project, name, created_at) VALUES ('proj', 'tools', '2026-02-28T00:00:00Z')`)
 	require.NoError(t, err)
@@ -142,9 +226,13 @@ func TestMigrateFromPlanstoreDB(t *testing.T) {
 
 	entryA, err := store.Get("proj", "plan-a")
 	require.NoError(t, err)
-	assert.Equal(t, Status("done"), entryA.Status)
+	assert.Equal(t, StatusDone, entryA.Status)
 	assert.Equal(t, "old plan", entryA.Description)
 	assert.Equal(t, "plan/a", entryA.Branch)
+
+	entryB, err := store.Get("proj", "plan-b")
+	require.NoError(t, err)
+	assert.Equal(t, StatusImplementing, entryB.Status)
 
 	// Verify topics were migrated.
 	topics, err := store.ListTopics("proj")
@@ -211,4 +299,60 @@ func TestMigrateFromPlanstoreDB_AlreadyHasData(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, entries, 1, "migration should be skipped when taskstore already has data")
 	assert.Equal(t, "existing", entries[0].Filename)
+}
+
+func TestMigrateStripMdSuffix_CollisionSafe(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = db.Exec(schema)
+	require.NoError(t, err)
+	_, err = db.Exec(subtasksTableMigration)
+	require.NoError(t, err)
+
+	_, err = db.Exec(`
+		INSERT INTO tasks (project, filename, status) VALUES
+			('proj', 'task', 'ready'),
+			('proj', 'task.md', 'done'),
+			('proj', 'other.md', 'ready')
+	`)
+	require.NoError(t, err)
+	_, err = db.Exec(`
+		INSERT INTO subtasks (project, plan_filename, task_number, title, status) VALUES
+			('proj', 'task', 1, 'bare', 'pending'),
+			('proj', 'task.md', 1, 'suffixed', 'done'),
+			('proj', 'other.md', 1, 'renamed', 'pending')
+	`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrateStripMdSuffix(db))
+
+	rows, err := db.Query(`SELECT filename, status FROM tasks WHERE project = 'proj' ORDER BY filename`)
+	require.NoError(t, err)
+	defer rows.Close()
+
+	var filenames []string
+	for rows.Next() {
+		var filename string
+		var status string
+		require.NoError(t, rows.Scan(&filename, &status))
+		filenames = append(filenames, filename+":"+status)
+	}
+	require.NoError(t, rows.Err())
+	assert.Equal(t, []string{"other:ready", "task:ready", "task.md:done"}, filenames)
+
+	subtaskRows, err := db.Query(`SELECT plan_filename, title FROM subtasks WHERE project = 'proj' ORDER BY plan_filename, title`)
+	require.NoError(t, err)
+	defer subtaskRows.Close()
+
+	var subtaskRefs []string
+	for subtaskRows.Next() {
+		var planFilename string
+		var title string
+		require.NoError(t, subtaskRows.Scan(&planFilename, &title))
+		subtaskRefs = append(subtaskRefs, planFilename+":"+title)
+	}
+	require.NoError(t, subtaskRows.Err())
+	assert.Equal(t, []string{"other:renamed", "task:bare", "task.md:suffixed"}, subtaskRefs)
 }

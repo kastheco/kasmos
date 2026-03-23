@@ -56,7 +56,7 @@ func WithLevel(level string) EventOption {
 	return func(e *Event) { e.Level = level }
 }
 
-// nopLogger is a no-op Logger used when planstore is unconfigured.
+// nopLogger is a no-op Logger used when SQLite-backed audit logging is unavailable.
 type nopLogger struct{}
 
 // NopLogger returns a Logger that discards all events.

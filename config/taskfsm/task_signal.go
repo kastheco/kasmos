@@ -32,10 +32,13 @@ func ParseTaskSignal(filename string) (TaskSignal, bool) {
 	if err != nil || taskNumber < 1 {
 		return TaskSignal{}, false
 	}
+	taskFile := filepath.Base(m[3])
 	return TaskSignal{
 		WaveNumber: wave,
 		TaskNumber: taskNumber,
-		TaskFile:   m[3],
+		// Preserve any .md suffix exactly as signaled; only drop path components.
+		// CLI/MCP ingress and durable store migrations own filename normalization.
+		TaskFile: taskFile,
 	}, true
 }
 
@@ -69,7 +72,6 @@ func ScanTaskSignals(signalsDir string) []TaskSignal {
 			continue
 		}
 		sig.filePath = filepath.Join(signalsDir, entry.Name())
-		sig.TaskFile = filepath.Base(sig.TaskFile)
 		signals = append(signals, sig)
 	}
 	return signals

@@ -14,15 +14,15 @@ func TestScanAllSignals(t *testing.T) {
 	signalsDir := filepath.Join(dir, ".kasmos", "signals")
 	require.NoError(t, os.MkdirAll(signalsDir, 0o755))
 
-	// Write a planner-finished signal
+	// Write a planner-finished signal using the canonical bare task slug.
 	require.NoError(t, os.WriteFile(
-		filepath.Join(signalsDir, "planner-finished-test-plan.md"),
+		filepath.Join(signalsDir, "planner-finished-test-plan"),
 		nil, 0o644,
 	))
 
 	result := ScanAllSignals(dir, nil)
 	assert.Len(t, result.FSMSignals, 1)
-	assert.Equal(t, "test-plan.md", result.FSMSignals[0].TaskFile)
+	assert.Equal(t, "test-plan", result.FSMSignals[0].TaskFile)
 }
 
 func TestScanAllSignals_IncludesWorktrees(t *testing.T) {
@@ -34,12 +34,12 @@ func TestScanAllSignals_IncludesWorktrees(t *testing.T) {
 	wtSignals := filepath.Join(wtDir, ".kasmos", "signals")
 	require.NoError(t, os.MkdirAll(wtSignals, 0o755))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(wtSignals, "implement-finished-wt-plan.md"),
+		filepath.Join(wtSignals, "implement-finished-wt-plan"),
 		nil, 0o644,
 	))
 
 	worktreePaths := []string{wtDir}
 	result := ScanAllSignals(dir, worktreePaths)
 	assert.Len(t, result.FSMSignals, 1)
-	assert.Equal(t, "wt-plan.md", result.FSMSignals[0].TaskFile)
+	assert.Equal(t, "wt-plan", result.FSMSignals[0].TaskFile)
 }

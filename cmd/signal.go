@@ -17,7 +17,8 @@ import (
 )
 
 // validSignalTypes lists the signal types that the gateway pipeline can consume today.
-// architect_finished is intentionally excluded — its FSM consumption is follow-up work.
+// architect_finished is intentionally excluded — the architect pass still signals
+// completion via the retained elaborator_finished compatibility contract.
 var validSignalTypes = map[string]struct{}{
 	"planner_finished":         {},
 	"implement_finished":       {},
@@ -137,7 +138,7 @@ func executeSignalList(signalsDir string) string {
 		lines = append(lines, fmt.Sprintf("%-30s  %s  (wave %d)", "implement_wave", ws.TaskFile, ws.WaveNumber))
 	}
 
-	// Elaboration signals.
+	// Architect-pass completion signals carried on the elaborator_finished contract.
 	for _, es := range taskfsm.ScanElaborationSignals(signalsDir) {
 		lines = append(lines, fmt.Sprintf("%-30s  %s", "elaborator_finished", es.TaskFile))
 	}
@@ -229,7 +230,7 @@ func executeSignalProcess(opts signalProcessOptions) (int, error) {
 		taskfsm.CompleteProcessing(procPath)
 	}
 
-	// Consume elaboration signals atomically (no FSM transition).
+	// Consume architect-pass completion signals atomically (no FSM transition).
 	for _, es := range taskfsm.ScanElaborationSignals(opts.signalsDir) {
 		fn := es.Filename()
 		procPath, err := taskfsm.BeginProcessing(opts.signalsDir, fn)
@@ -312,7 +313,7 @@ func normalizeSignalPayload(signalType, payload string) (string, error) {
 
 	case "elaborator_finished":
 		if payload != "" {
-			return "", fmt.Errorf("elaborator_finished does not accept a payload")
+			return "", fmt.Errorf("elaborator_finished does not accept a payload (architect pass uses this legacy signal name)")
 		}
 		return "", nil
 

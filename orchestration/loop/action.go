@@ -46,7 +46,7 @@ type ReviewChangesAction struct {
 func (ReviewChangesAction) Kind() string  { return "review_changes" }
 func (ReviewChangesAction) sealedAction() {}
 
-// SpawnElaboratorAction instructs the caller to launch an elaborator agent.
+// SpawnElaboratorAction instructs the caller to launch the architect pass.
 type SpawnElaboratorAction struct {
 	PlanFile string
 }
@@ -165,7 +165,7 @@ func (TransitionAction) sealedAction() {}
 type SpawnOpts struct {
 	// PlanFile is the path to the plan markdown file relative to the repo root.
 	PlanFile string
-	// AgentType identifies the agent role: coder, reviewer, elaborator, etc.
+	// AgentType identifies the agent role: coder, reviewer, architect-pass, etc.
 	AgentType string
 	// RepoPath is the absolute filesystem path to the repository root.
 	RepoPath string
@@ -193,7 +193,7 @@ type AgentSpawner interface {
 	SpawnReviewer(ctx context.Context, opts SpawnOpts) error
 	// SpawnCoder launches a coder agent for the given plan.
 	SpawnCoder(ctx context.Context, opts SpawnOpts) error
-	// SpawnElaborator launches an elaborator agent for the given plan.
+	// SpawnElaborator launches the architect pass for the given plan.
 	SpawnElaborator(ctx context.Context, opts SpawnOpts) error
 	// SpawnFixer launches a fixer agent to address PR review feedback.
 	SpawnFixer(ctx context.Context, opts SpawnOpts) error

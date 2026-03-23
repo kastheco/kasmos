@@ -95,8 +95,9 @@ func toTaskFSMHooks(entries []config.TOMLHook) []taskfsm.HookConfig {
 }
 
 // ensureProcessor lazily initializes and returns the signal Processor.
-// Returns nil when taskStore is not set (e.g. in tests that don't need signal processing),
-// in which case the caller must fall back to the legacy FSM signal handling code.
+// Returns nil when taskStore is not set (for example in narrow tests that do
+// not exercise signal processing), in which case the caller uses the inline
+// fallback path in app.Update.
 func (m *home) ensureProcessor() *loop.Processor {
 	autoReviewFix := false
 	maxCycles := 0
@@ -140,7 +141,7 @@ func (m *home) handleReviewChangesRequested(planFile, feedback string) tea.Cmd {
 		cmds = append(cmds, cmd)
 	}
 	for _, inst := range m.nav.GetInstances() {
-		if inst.TaskFile == planFile && inst.IsReviewer {
+		if inst.TaskFile == planFile && isReviewerInstance(inst) {
 			_ = inst.Pause()
 			break
 		}
@@ -302,16 +303,20 @@ func mergePlanStatus(status ui.TopicStatus, inst *session.Instance, started bool
 		return status
 	}
 	if started && !inst.Paused() {
-		if inst.IsReviewer {
+		if isReviewerInstance(inst) {
 			status.HasNotification = true
 		} else {
 			status.HasRunning = true
 		}
 	}
-	if inst.Notified && inst.IsReviewer {
+	if inst.Notified && isReviewerInstance(inst) {
 		status.HasNotification = true
 	}
 	return status
+}
+
+func isReviewerInstance(inst *session.Instance) bool {
+	return inst != nil && (inst.AgentType == session.AgentTypeReviewer || inst.IsReviewer)
 }
 
 // computeStatusBarData builds the StatusBarData from the current app state.
@@ -730,7 +735,7 @@ func (m *home) cleanupPausedDoneReviewers(selected *session.Instance) {
 	}
 	var toCleanup []*session.Instance
 	for _, inst := range m.nav.GetInstances() {
-		if !inst.IsReviewer {
+		if !isReviewerInstance(inst) {
 			continue
 		}
 		if inst.Status != session.Paused {
@@ -1217,12 +1222,12 @@ func (m *home) checkPlanCompletion() tea.Cmd {
 	// StatusReviewing. Without this guard, a second reviewer is spawned.
 	reviewerPlans := make(map[string]bool)
 	for _, inst := range m.nav.GetInstances() {
-		if inst.IsReviewer && inst.TaskFile != "" {
+		if isReviewerInstance(inst) && inst.TaskFile != "" {
 			reviewerPlans[inst.TaskFile] = true
 		}
 	}
 	for _, inst := range m.nav.GetInstances() {
-		if inst.TaskFile == "" || inst.IsReviewer {
+		if inst.TaskFile == "" || isReviewerInstance(inst) {
 			continue
 		}
 		if inst.ImplementationComplete {
@@ -1302,7 +1307,6 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 		log.WarningLog.Printf("could not create reviewer instance for %q: %v", planFile, err)
 		return nil
 	}
-	reviewerInst.IsReviewer = true
 	reviewerInst.QueuedPrompt = prompt
 	reviewerInst.SetStatus(session.Loading)
 
@@ -1466,20 +1470,28 @@ func (m *home) opencodeAgentConfigs() []harness.AgentConfig {
 		}
 	}
 
-	resolve("implementing", session.AgentTypeCoder)
-	resolve("planning", session.AgentTypePlanner)
-	resolve("quality_review", session.AgentTypeReviewer)
-	resolve("fixer", session.AgentTypeFixer)
-	resolve("elaborating", session.AgentTypeElaborator)
+	orderedPhases := []struct {
+		phase string
+		role  string
+	}{
+		{phase: "implementing", role: session.AgentTypeCoder},
+		{phase: "planning", role: session.AgentTypePlanner},
+		{phase: "quality_review", role: session.AgentTypeReviewer},
+		{phase: "fixer", role: session.AgentTypeFixer},
+		{phase: "elaborating", role: session.AgentTypeElaborator},
+	}
+	for _, item := range orderedPhases {
+		resolve(item.phase, item.role)
+	}
 
 	if len(configsByRole) == 0 {
 		return nil
 	}
 
 	configs := make([]harness.AgentConfig, 0, len(configsByRole))
-	for _, phaseRole := range []string{session.AgentTypeCoder, session.AgentTypePlanner, session.AgentTypeReviewer, session.AgentTypeFixer, session.AgentTypeElaborator} {
-		mappedRole := phaseRole
-		if mappedRoleFromConfig, ok := m.appConfig.PhaseRoles[phaseToLookup(phaseRole)]; ok && mappedRoleFromConfig != "" {
+	for _, item := range orderedPhases {
+		mappedRole := item.role
+		if mappedRoleFromConfig, ok := m.appConfig.PhaseRoles[item.phase]; ok && mappedRoleFromConfig != "" {
 			mappedRole = mappedRoleFromConfig
 		}
 		if cfg, ok := configsByRole[mappedRole]; ok {
@@ -1499,23 +1511,6 @@ func isOpenCodeProfile(profile config.AgentProfile) bool {
 	return filepath.Base(fields[0]) == "opencode"
 }
 
-func phaseToLookup(phase string) string {
-	switch phase {
-	case session.AgentTypeCoder:
-		return "implementing"
-	case session.AgentTypePlanner:
-		return "planning"
-	case session.AgentTypeReviewer:
-		return "quality_review"
-	case session.AgentTypeFixer:
-		return "fixer"
-	case session.AgentTypeElaborator:
-		return "elaborating"
-	default:
-		return phase
-	}
-}
-
 // killExistingPlanAgent finds and kills any existing instance for the given plan
 // and agent type, removing it from both the UI list and persistence list.
 //
@@ -1523,8 +1518,6 @@ func phaseToLookup(phase string) string {
 // session. This prevents the metadata-tick death-detection from seeing a dead
 // reviewer in the list and auto-firing ReviewApproved (which would prematurely
 // mark the plan as done).
-//
-// For reviewers, also matches legacy instances that only have IsReviewer set.
 func (m *home) killExistingPlanAgent(planFile, agentType string) {
 	// First pass: identify matching instances by title.
 	var titles []string
@@ -1532,12 +1525,7 @@ func (m *home) killExistingPlanAgent(planFile, agentType string) {
 		if inst.TaskFile != planFile {
 			continue
 		}
-		match := inst.AgentType == agentType
-		// Legacy reviewer instances may only have IsReviewer without AgentType.
-		if !match && agentType == session.AgentTypeReviewer && inst.IsReviewer {
-			match = true
-		}
-		if match {
+		if inst.AgentType == agentType {
 			titles = append(titles, inst.Title)
 		}
 	}
@@ -1644,11 +1632,10 @@ func (m *home) spawnFixerWithFeedback(planFile, feedback string) tea.Cmd {
 	}
 }
 
-// spawnElaborator creates and starts the architect elaboration pass for the given plan.
-// The architect runs on the main branch (not in a worktree) since it only reads the
-// codebase and updates the task store — it does not modify files. When it finishes,
-// it writes an elaborator-finished-<planFile> sentinel that the metadata tick picks up
-// to advance the orchestrator from WaveStateElaborating to wave 1.
+// spawnElaborator creates and starts the architect pass for the given plan.
+// The architect runs on the main branch since it updates the task store without
+// editing implementation files. When it finishes, it writes the retained
+// elaborator_finished sentinel consumed by the metadata tick to advance wave orchestration.
 func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 	if !m.requireDaemonForAgents() {
 		return m, nil
@@ -1656,10 +1643,9 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 	planName := taskstate.DisplayName(planFile)
 	prompt := orchestration.BuildElaborationPrompt(planFile)
 
-	// Clear any stale elaborator-finished sentinel from a prior run before
-	// spawning a new architect pass. Without this, a leftover file (e.g. from a
-	// TUI restart mid-elaboration) would be picked up on the next tick and
-	// advance the orchestrator to wave 1 before the new architect pass finishes.
+	// Clear any stale elaborator_finished sentinel before starting a new pass.
+	// Signal processing is edge-unaware, so a stale file would advance the current
+	// orchestrator immediately instead of waiting for this architect run to finish.
 	taskfsm.ClearElaborationSignal(m.signalsDir, planFile)
 
 	inst, err := session.NewInstance(session.InstanceOptions{
@@ -1668,11 +1654,11 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 		Program:       m.programForAgent(session.AgentTypeElaborator),
 		ExecutionMode: m.executionModeForAgent(session.AgentTypeElaborator),
 		TaskFile:      planFile,
+		AgentType:     session.AgentTypeElaborator,
 	})
 	if err != nil {
 		return m, m.handleError(err)
 	}
-	inst.AgentType = session.AgentTypeElaborator
 	inst.QueuedPrompt = prompt
 	inst.SetStatus(session.Loading)
 	inst.LoadingTotal = 6
@@ -2232,11 +2218,7 @@ func (m *home) spawnTaskAgent(planFile, action, prompt string) (tea.Model, tea.C
 	if err != nil {
 		return m, m.handleError(err)
 	}
-	// Keep IsReviewer in sync with AgentType so the reviewer-completion check
-	// in the metadata tick handler (which gates on inst.IsReviewer) fires for
-	// sidebar-spawned reviewers as well as auto-spawned ones.
 	if agentType == session.AgentTypeReviewer {
-		inst.IsReviewer = true
 		// Set ReviewCycle so the instance carries the same cycle number used in the title.
 		inst.ReviewCycle = reviewCycle + 1
 	}

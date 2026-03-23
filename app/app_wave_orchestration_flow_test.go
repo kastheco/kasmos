@@ -245,9 +245,53 @@ func TestRebuildOrphanedOrchestrators_SkipsPausedOrExitedOnlyPlans(t *testing.T)
 	assert.False(t, exists, "stale paused/exited wave instances must not trigger orchestrator rebuild")
 }
 
-// TestRebuildOrphanedOrchestrators_RestoresWithActiveWaveInstance verifies restart
-// recovery still works when at least one active wave instance exists.
-func TestRebuildOrphanedOrchestrators_RestoresWithActiveWaveInstance(t *testing.T) {
+// TestRebuildOrphanedOrchestrators_IgnoresArchitectOnlyRestartState verifies that
+// restart recovery only rebuilds from persisted active wave-task sessions restored
+// via session.FromInstanceData; an architect-only session must not resurrect wave state.
+func TestRebuildOrphanedOrchestrators_IgnoresArchitectOnlyRestartState(t *testing.T) {
+	const planFile = "architect-only"
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	store := taskstore.NewTestSQLiteStore(t)
+	content := "**Goal:** architect test\n\n## Wave 1\n\n### Task 1: First\n\nDo first.\n"
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusReady,
+		Branch:   "plan/architect-only",
+		Content:  content,
+	}))
+
+	ps, err := taskstate.Load(store, "proj", plansDir)
+	require.NoError(t, err)
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+
+	h := waveFlowHome(t, ps, plansDir, make(map[string]*orchestration.WaveOrchestrator))
+	h.taskStore = store
+	h.taskStoreProject = "proj"
+
+	architectInst, err := session.NewInstance(session.InstanceOptions{
+		Title:     "architect-only-architect",
+		Path:      dir,
+		Program:   "opencode",
+		TaskFile:  planFile,
+		AgentType: session.AgentTypeElaborator,
+	})
+	require.NoError(t, err)
+	architectInst.MarkStartedForTest()
+	h.nav.AddInstance(architectInst)
+
+	h.rebuildOrphanedOrchestrators()
+	_, exists := h.waveOrchestrators[planFile]
+	assert.False(t, exists, "architect-only restart state must not rebuild a wave orchestrator")
+}
+
+// TestRebuildOrphanedOrchestrators_RestoresPersistedActiveWaveInstances verifies the
+// supported restart path: session.FromInstanceData restores active wave instances,
+// then kasmos rebuilds the in-memory orchestrator from that persisted state.
+func TestRebuildOrphanedOrchestrators_RestoresPersistedActiveWaveInstances(t *testing.T) {
 	const planFile = "active-wave"
 
 	dir := t.TempDir()
@@ -1545,7 +1589,7 @@ func (th *waveElabTestHarness) executeTaskStage(planFile, stage string) (tea.Mod
 }
 
 // TestImplementTriggersElaborationBeforeWave1 verifies that triggering "implement"
-// creates a wave orchestrator in the elaborating state and spawns an elaborator instance.
+// creates a wave orchestrator in the elaborating state and spawns the architect pass.
 func TestImplementTriggersElaborationBeforeWave1(t *testing.T) {
 	h := newWaveElabTestHarness(t)
 
@@ -1562,21 +1606,23 @@ func TestImplementTriggersElaborationBeforeWave1(t *testing.T) {
 	assert.Equal(t, orchestration.WaveStateElaborating, orch.State(),
 		"orchestrator must be in elaborating state, not running")
 
-	// An elaborator instance should have been spawned
-	var foundElaborator bool
+	// An architect instance should have been spawned.
+	var foundArchitect bool
 	for _, inst := range m.nav.GetInstances() {
 		if inst.TaskFile == planFile && inst.AgentType == session.AgentTypeElaborator {
-			foundElaborator = true
+			foundArchitect = true
 			assert.Contains(t, inst.QueuedPrompt, "architect",
 				"elaboration prompt must reference the architect role")
+			assert.Contains(t, inst.QueuedPrompt, "elaborator_finished",
+				"architect prompt must retain the legacy completion signal contract")
 			break
 		}
 	}
-	assert.True(t, foundElaborator, "elaborator instance must be spawned")
+	assert.True(t, foundArchitect, "architect instance must be spawned")
 }
 
 // TestImplementDirectlySkipsElaboration verifies that "implement_direct" creates an
-// orchestrator in the running state without spawning an elaborator.
+// orchestrator in the running state without spawning the architect pass.
 func TestImplementDirectlySkipsElaboration(t *testing.T) {
 	h := newWaveElabTestHarness(t)
 
@@ -1592,97 +1638,6 @@ func TestImplementDirectlySkipsElaboration(t *testing.T) {
 	require.True(t, exists, "orchestrator must be created")
 	assert.NotEqual(t, orchestration.WaveStateElaborating, orch.State(),
 		"direct implement must skip elaboration")
-}
-
-// TestDeadElaboratorRecovery verifies that when an elaborator instance dies
-// (tmux exits) while the orchestrator is still in WaveStateElaborating, the
-// metadata tick recovers by removing the dead elaborator and advancing the
-// orchestrator out of the elaborating state (triggering wave 1).
-func TestDeadElaboratorRecovery(t *testing.T) {
-	h := newWaveElabTestHarness(t)
-
-	const planFile = "dead-elab"
-	planContent := "**Goal:** test\n\n## Wave 1\n\n### Task 1: Do thing\n\n**Files:**\n- Create: `foo.go`\n\nImplement foo."
-	h.registerPlan(planFile, planContent, "plan/dead-elab")
-
-	// Set up: create orchestrator in elaborating state with a dead elaborator instance.
-	plan, err := taskparser.Parse(planContent)
-	require.NoError(t, err)
-	orch := orchestration.NewWaveOrchestrator(planFile, plan)
-	orch.SetElaborating()
-	h.h.waveOrchestrators[planFile] = orch
-
-	elaboratorInst := &session.Instance{
-		Title:     "dead-elab-architect",
-		Program:   "opencode",
-		TaskFile:  planFile,
-		AgentType: session.AgentTypeElaborator,
-		Exited:    true, // tmux died
-	}
-	h.h.nav.AddInstance(elaboratorInst)
-
-	// Simulate metadata tick with the elaborator's tmux dead.
-	msg := metadataResultMsg{
-		Results: []instanceMetadata{
-			{Title: "dead-elab-architect", TmuxAlive: false},
-		},
-		PlanState: h.h.taskState,
-	}
-	model, _ := h.h.Update(msg)
-	m := model.(*home)
-
-	// The dead elaborator instance must have been removed.
-	for _, inst := range m.nav.GetInstances() {
-		if inst.TaskFile == planFile && inst.AgentType == session.AgentTypeElaborator {
-			t.Fatal("dead elaborator instance must be removed during recovery")
-		}
-	}
-
-	// The orchestrator must no longer be stuck in elaborating state.
-	// It may have been deleted by cascading wave-monitor logic (since no real
-	// task instances exist in this test), which is fine — the key invariant
-	// is that it's not stuck in WaveStateElaborating.
-	if recoveredOrch, exists := m.waveOrchestrators[planFile]; exists {
-		assert.NotEqual(t, orchestration.WaveStateElaborating, recoveredOrch.State(),
-			"orchestrator must not remain in elaborating state after recovery")
-	}
-}
-
-// TestImplementSkipsElaborationWhenElaboratorAlreadyRan verifies that triggering
-// "implement" when a dead elaborator instance already exists for this plan
-// skips the elaboration phase and goes straight to wave 1.
-func TestImplementSkipsElaborationWhenElaboratorAlreadyRan(t *testing.T) {
-	h := newWaveElabTestHarness(t)
-
-	const planFile = "re-elab"
-	planContent := "**Goal:** test\n\n## Wave 1\n\n### Task 1: Do thing\n\n**Files:**\n- Create: `bar.go`\n\nImplement bar."
-	h.registerPlan(planFile, planContent, "plan/re-elab")
-
-	// Simulate a dead elaborator instance from a prior TUI session.
-	deadElaborator := &session.Instance{
-		Title:     "re-elab-architect",
-		Program:   "opencode",
-		TaskFile:  planFile,
-		AgentType: session.AgentTypeElaborator,
-		Exited:    true,
-	}
-	h.h.nav.AddInstance(deadElaborator)
-
-	model, _ := h.executeTaskStage(planFile, "implement")
-	m := model.(*home)
-
-	// Orchestrator should exist and NOT be in elaborating state.
-	orch, exists := m.waveOrchestrators[planFile]
-	require.True(t, exists, "orchestrator must be created")
-	assert.NotEqual(t, orchestration.WaveStateElaborating, orch.State(),
-		"implement must skip elaboration when a prior elaborator already ran")
-
-	// No new elaborator instance should have been spawned.
-	for _, inst := range m.nav.GetInstances() {
-		if inst.TaskFile == planFile && inst.AgentType == session.AgentTypeElaborator {
-			t.Fatal("no new elaborator should be spawned when one already ran")
-		}
-	}
 }
 
 // TestCoderExit_FocusesCoderInstance_BeforePushConfirm verifies that when a

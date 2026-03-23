@@ -75,8 +75,10 @@ func parseSignal(dir, filename string) (Signal, bool) {
 			if planFile == "" {
 				return Signal{}, false
 			}
-			// Defensive: strip any path prefix so the planFile
-			// matches task store keys which are bare filenames.
+			// Defensive: strip any path prefix so the planFile matches task store
+			// keys which are bare filenames. Do not strip a trailing .md suffix
+			// here: filename normalization is an ingress concern handled by CLI/MCP
+			// entry points and by the durable store migration.
 			planFile = filepath.Base(planFile)
 			filePath := filepath.Join(dir, filename)
 			body := ""

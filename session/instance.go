@@ -59,7 +59,7 @@ type Instance struct {
 	SkipPermissions bool
 	// TaskFile is the plan file this instance is implementing (empty for ad-hoc sessions).
 	TaskFile string
-	// Topic is the plan-state group this instance belongs to.
+	// Topic is the topic group this instance belongs to.
 	Topic string
 	// AgentType identifies the role within a plan lifecycle: planner, coder, reviewer, fixer, or empty.
 	AgentType string
@@ -69,8 +69,8 @@ type Instance struct {
 	WaveNumber int
 	// PeerCount is the number of concurrent sibling tasks in the same wave (0 = not a wave task).
 	PeerCount int
-	// IsReviewer indicates a reviewer session.
-	// Deprecated: check AgentType == AgentTypeReviewer instead.
+	// IsReviewer is a compatibility mirror for older persisted instance data.
+	// New runtime logic should use AgentType == AgentTypeReviewer.
 	IsReviewer bool
 	// ImplementationComplete is set when the coder finishes and the plan transitions to review.
 	ImplementationComplete bool
@@ -153,7 +153,6 @@ func (i *Instance) ToInstanceData() InstanceData {
 		TaskNumber:             i.TaskNumber,
 		WaveNumber:             i.WaveNumber,
 		PeerCount:              i.PeerCount,
-		IsReviewer:             i.IsReviewer,
 		ImplementationComplete: i.ImplementationComplete,
 		SoloAgent:              i.SoloAgent,
 		QueuedPrompt:           i.QueuedPrompt,
@@ -181,6 +180,11 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 	// Normalise empty/unknown mode to tmux for backward compatibility.
 	mode := NormalizeExecutionMode(data.ExecutionMode)
 
+	agentType := data.AgentType
+	if agentType == "" && data.IsReviewer {
+		agentType = AgentTypeReviewer
+	}
+
 	instance := &Instance{
 		Title:                  data.Title,
 		Path:                   data.Path,
@@ -194,11 +198,11 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		ExecutionMode:          mode,
 		SkipPermissions:        data.SkipPermissions,
 		TaskFile:               data.TaskFile,
-		AgentType:              data.AgentType,
+		AgentType:              agentType,
 		TaskNumber:             data.TaskNumber,
 		WaveNumber:             data.WaveNumber,
 		PeerCount:              data.PeerCount,
-		IsReviewer:             data.IsReviewer,
+		IsReviewer:             agentType == AgentTypeReviewer,
 		ImplementationComplete: data.ImplementationComplete,
 		SoloAgent:              data.SoloAgent,
 		QueuedPrompt:           data.QueuedPrompt,
@@ -295,6 +299,7 @@ func NewInstance(opts InstanceOptions) (*Instance, error) {
 		SkipPermissions: opts.SkipPermissions,
 		TaskFile:        opts.TaskFile,
 		AgentType:       opts.AgentType,
+		IsReviewer:      opts.AgentType == AgentTypeReviewer,
 		TaskNumber:      opts.TaskNumber,
 		WaveNumber:      opts.WaveNumber,
 		PeerCount:       opts.PeerCount,

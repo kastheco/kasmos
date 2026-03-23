@@ -19,7 +19,7 @@ func TestBuildTaskPrompt(t *testing.T) {
 		Body:   "**Step 1:** Write the test\n\n**Step 2:** Run it",
 	}
 
-	prompt := BuildTaskPrompt("feature.md", plan, task, 1, 3, 4, nil)
+	prompt := BuildTaskPrompt("feature", plan, task, 1, 3, 4, nil)
 
 	// Plan context
 	assert.Contains(t, prompt, "Build a feature")
@@ -45,14 +45,14 @@ func TestBuildTaskPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "test failures in files outside your task")
 	assert.Contains(t, prompt, "build failure caused by missing types")
 	assert.Contains(t, prompt, "surgical changes")
-	assert.Contains(t, prompt, "implement-task-finished-w1-t2-feature.md")
+	assert.Contains(t, prompt, "implement-task-finished-w1-t2-feature")
 }
 
 func TestBuildTaskPrompt_InlineCoderRules(t *testing.T) {
 	plan := &taskparser.Plan{Goal: "Test feature"}
 	task := taskparser.Task{Number: 1, Title: "Do thing", Body: "Make the change"}
 
-	prompt := BuildTaskPrompt("feature.md", plan, task, 1, 1, 1, nil)
+	prompt := BuildTaskPrompt("feature", plan, task, 1, 1, 1, nil)
 
 	assert.NotContains(t, prompt, "kasmos-coder")
 	assert.NotContains(t, prompt, "cli-tools")
@@ -64,9 +64,19 @@ func TestBuildTaskPrompt_InlineCoderRules(t *testing.T) {
 	assert.Contains(t, prompt, "-run Test")
 	assert.Contains(t, prompt, "go build ./...")
 	// Primary gateway command
-	assert.Contains(t, prompt, "kas signal emit implement_task_finished feature.md")
+	assert.Contains(t, prompt, "kas signal emit implement_task_finished feature")
 	// Fallback filesystem sentinel still present
-	assert.Contains(t, prompt, "touch .kasmos/signals/implement-task-finished-w1-t1-feature.md")
+	assert.Contains(t, prompt, "touch .kasmos/signals/implement-task-finished-w1-t1-feature")
+}
+
+func TestBuildTaskPrompt_PreservesMdPlanTokenWhenProvided(t *testing.T) {
+	plan := &taskparser.Plan{Goal: "Test feature"}
+	task := taskparser.Task{Number: 1, Title: "Do thing", Body: "Make the change"}
+
+	prompt := BuildTaskPrompt("feature.md", plan, task, 1, 1, 1, nil)
+
+	assert.Contains(t, prompt, "kas signal emit implement_task_finished feature.md")
+	assert.Contains(t, prompt, "implement-task-finished-w1-t1-feature.md")
 }
 
 func TestBuildTaskPrompt_ContainsSignalEmit(t *testing.T) {
@@ -80,7 +90,7 @@ func TestBuildTaskPrompt_SingleTask(t *testing.T) {
 	plan := &taskparser.Plan{Goal: "Simple"}
 	task := taskparser.Task{Number: 1, Title: "Only Task", Body: "Do it"}
 
-	prompt := BuildTaskPrompt("feature.md", plan, task, 1, 1, 1, nil)
+	prompt := BuildTaskPrompt("feature", plan, task, 1, 1, 1, nil)
 
 	// Single task shouldn't mention parallel coordination
 	assert.NotContains(t, prompt, "parallel")
@@ -99,7 +109,7 @@ func TestBuildTaskPrompt_WithMeta(t *testing.T) {
 		PreferredModel: "openai/gpt-5.3-codex-spark",
 	}
 
-	prompt := BuildTaskPrompt("feat.md", plan, task, 1, 2, 1, meta)
+	prompt := BuildTaskPrompt("feat", plan, task, 1, 2, 1, meta)
 
 	assert.Contains(t, prompt, "go test ./widget/... -v")
 	assert.Contains(t, prompt, "go vet ./widget/...")
@@ -112,7 +122,7 @@ func TestBuildTaskPrompt_NilMeta(t *testing.T) {
 	plan := &taskparser.Plan{Goal: "Simple"}
 	task := taskparser.Task{Number: 1, Title: "Only Task", Body: "Do it"}
 
-	prompt := BuildTaskPrompt("feat.md", plan, task, 1, 1, 1, nil)
+	prompt := BuildTaskPrompt("feat", plan, task, 1, 1, 1, nil)
 
 	assert.NotContains(t, prompt, "## Verification Commands")
 	assert.Contains(t, prompt, "## Rules")
@@ -173,6 +183,10 @@ func TestBuildElaborationPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "kas signal emit elaborator_finished my-feature")
 	// Fallback filesystem sentinel still present
 	assert.Contains(t, prompt, "elaborator-finished-my-feature")
+	// Role wording should stay on architect even though the external signal stays legacy.
+	assert.Contains(t, prompt, "Signal architect-pass completion with the retained external contract")
+	assert.Contains(t, prompt, "only the completion signal name stays legacy")
+	assert.NotContains(t, prompt, "elaborator agent")
 	// Must instruct to expand task bodies
 	assert.Contains(t, prompt, "implementation detail")
 	// Must instruct to preserve structure
@@ -193,4 +207,11 @@ func TestBuildArchitectPrompt(t *testing.T) {
 	// BuildArchitectPrompt intentionally remains a filesystem-only (touch) prompt
 	// until a gateway consumer for architect-finished is implemented.
 	assert.NotContains(t, prompt, "kas signal emit architect_finished")
+}
+
+func TestBuildElaborationPrompt_RetainsLegacySignalName(t *testing.T) {
+	prompt := BuildElaborationPrompt("my-feature")
+
+	assert.Contains(t, prompt, "only the completion signal name stays legacy")
+	assert.Contains(t, prompt, "kas signal emit elaborator_finished my-feature")
 }

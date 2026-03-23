@@ -54,7 +54,7 @@ curl -fsSL https://raw.githubusercontent.com/kastheco/kasmos/main/install.sh | b
 
 prebuilt release archives are published for macOS and linux on the [releases page](https://github.com/kastheco/kasmos/releases/latest).
 
-> examples below use `kas`. if your machine only has `kasmos`, either use `kasmos` everywhere or add a `kas` symlink.
+the cobra command surface is `kas`. if your install only gives you `kasmos`, either use `kasmos` everywhere or add a `kas` symlink.
 
 ---
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -59,10 +60,30 @@ func MigrateFromJSON(store Store, project, plansDir string) (int, error) {
 	migrated := 0
 
 	// Migrate plans.
-	for filename, jp := range state.Plans {
+	filenames := make([]string, 0, len(state.Plans))
+	for filename := range state.Plans {
+		filenames = append(filenames, filename)
+	}
+	sort.Slice(filenames, func(i, j int) bool {
+		left := normalizeMigratedFilename(filenames[i])
+		right := normalizeMigratedFilename(filenames[j])
+		if left != right {
+			return left < right
+		}
+		leftCanonical := filenames[i] == left
+		rightCanonical := filenames[j] == right
+		if leftCanonical != rightCanonical {
+			return leftCanonical
+		}
+		return filenames[i] < filenames[j]
+	})
+
+	for _, filename := range filenames {
+		jp := state.Plans[filename]
+		storedFilename := normalizeMigratedFilename(filename)
 		entry := TaskEntry{
-			Filename:    filename,
-			Status:      Status(jp.Status),
+			Filename:    storedFilename,
+			Status:      normalizeMigratedStatus(jp.Status),
 			Description: jp.Description,
 			Branch:      jp.Branch,
 			Topic:       jp.Topic,
@@ -73,15 +94,30 @@ func MigrateFromJSON(store Store, project, plansDir string) (int, error) {
 		}
 
 		if err := store.Create(project, entry); err != nil {
-			// Skip if already exists (idempotent).
+			// If the normalized bare slug already exists, keep the colliding legacy
+			// .md filename verbatim rather than clobbering the bare task. This mirrors
+			// the collision-safe behavior of the durable SQLite migration.
 			if strings.Contains(err.Error(), "plan already exists") {
-				continue
+				if storedFilename != filename {
+					entry.Filename = filename
+					if fallbackErr := store.Create(project, entry); fallbackErr != nil {
+						if strings.Contains(fallbackErr.Error(), "plan already exists") {
+							continue
+						}
+						return migrated, fmt.Errorf("migrate plan %s: %w", filename, fallbackErr)
+					}
+					storedFilename = filename
+				} else {
+					continue
+				}
+			} else {
+				return migrated, fmt.Errorf("migrate plan %s: %w", filename, err)
 			}
-			return migrated, fmt.Errorf("migrate plan %s: %w", filename, err)
 		}
 		migrated++
 
-		// Import plan content file content if it exists on disk.
+		// Import legacy content from the original source filename on disk, then store
+		// it under whichever filename was persisted above.
 		mdPath := filepath.Join(plansDir, filename)
 		content, err := os.ReadFile(mdPath)
 		if err != nil {
@@ -90,8 +126,8 @@ func MigrateFromJSON(store Store, project, plansDir string) (int, error) {
 			}
 			// No legacy plan content file — that's fine, content stays empty.
 		} else {
-			if err := store.SetContent(project, filename, string(content)); err != nil {
-				return migrated, fmt.Errorf("set content for %s: %w", filename, err)
+			if err := store.SetContent(project, storedFilename, string(content)); err != nil {
+				return migrated, fmt.Errorf("set content for %s: %w", storedFilename, err)
 			}
 		}
 	}
@@ -151,11 +187,20 @@ func migrateFromPlanstoreDB(db *sql.DB, dbPath string) error {
 	}
 	defer db.Exec("DETACH DATABASE old") //nolint:errcheck
 
-	// Copy plans → tasks (the old table is named "plans").
+	// Copy plans → tasks (the old table is named "plans"). Status aliases are
+	// normalized here because this is an explicit legacy import boundary. Filename
+	// normalization stays in migrateStripMdSuffix so SQLite can keep its OR IGNORE
+	// collision handling when both bare and .md-suffixed rows exist.
 	if tableExistsInAttached(db, "old", "plans") {
 		if _, err := db.Exec(`
 			INSERT OR IGNORE INTO tasks (project, filename, status, description, branch, topic, created_at, implemented)
-			SELECT project, filename, status, description, branch, topic, created_at, implemented
+			SELECT project, filename,
+				CASE status
+					WHEN 'in_progress' THEN 'implementing'
+					WHEN 'completed' THEN 'done'
+					ELSE status
+				END,
+				description, branch, topic, created_at, implemented
 			FROM old.plans
 		`); err != nil {
 			return fmt.Errorf("copy plans to tasks: %w", err)
@@ -302,6 +347,21 @@ func migrateFromPlanstoreDB(db *sql.DB, dbPath string) error {
 	}
 
 	return nil
+}
+
+func normalizeMigratedFilename(filename string) string {
+	return strings.TrimSuffix(filename, ".md")
+}
+
+func normalizeMigratedStatus(status string) Status {
+	switch status {
+	case "in_progress":
+		return StatusImplementing
+	case "completed":
+		return StatusDone
+	default:
+		return Status(status)
+	}
 }
 
 // tableExistsInAttached checks if a table exists in an attached database.

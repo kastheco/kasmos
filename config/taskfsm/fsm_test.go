@@ -184,3 +184,21 @@ func TestFSM_TransitionSkipsTimestampForNonPhaseStatuses(t *testing.T) {
 	assert.True(t, entry.ReviewingAt.IsZero())
 	assert.True(t, entry.DoneAt.IsZero())
 }
+
+func TestMapLegacyStatus(t *testing.T) {
+	tests := []struct {
+		name string
+		in   taskstate.Status
+		want Status
+	}{
+		{name: "canonical implementing", in: taskstate.StatusImplementing, want: StatusImplementing},
+		{name: "legacy in progress", in: "in_progress", want: StatusImplementing},
+		{name: "legacy completed", in: "completed", want: StatusDone},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, mapLegacyStatus(tt.in))
+		})
+	}
+}

@@ -133,6 +133,8 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 		})
 
 	case "elaborator_finished":
+		// The wire contract retains the legacy elaborator_finished signal name,
+		// but internally it marks architect-pass completion.
 		result.ElaborationSignals = append(result.ElaborationSignals, taskfsm.ElaborationSignal{
 			TaskFile: entry.PlanFile,
 		})

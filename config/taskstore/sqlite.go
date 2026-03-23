@@ -235,10 +235,13 @@ func migrateAddContentColumn(db *sql.DB) error {
 }
 
 // migrateStripMdSuffix removes a trailing '.md' suffix from task and subtask
-// plan filenames. This keeps existing task/subtask references in sync after the
-// transition to extension-less plan filenames. OR IGNORE skips any row where
-// stripping '.md' would collide with an already-existing bare-slug entry, so
-// the migration is safe to run on databases that were partially updated.
+// plan filenames already persisted in SQLite. This is the durable compatibility
+// boundary for extension-less store keys after legacy DB imports have copied raw
+// filenames forward. Deeper FSM/signal layers preserve whatever filename they
+// receive and rely on CLI/MCP ingress or this migration for normalization.
+// OR IGNORE skips any row where stripping '.md' would collide with an
+// already-existing bare-slug entry, so the migration is safe to run on
+// databases that were partially updated.
 func migrateStripMdSuffix(db *sql.DB) error {
 	tx, err := db.Begin()
 	if err != nil {

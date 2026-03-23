@@ -423,7 +423,6 @@ func TestFullPlanLifecycle_StateTransitions(t *testing.T) {
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(plansDir, "plan-state.json"), []byte(`{}`), 0o644))
 
 	ps, err := newTestPlanState(t, plansDir)
 	require.NoError(t, err)

@@ -1,8 +1,16 @@
-You are a code reviewer performing a license compliance and correctness audit on the `release/2.0` branch of the kasmos repo.
+# release 2.0 audit prompt (archival)
+
+> archival review artifact: this prompt was used for the one-time `release/2.0` rewrite audit. it is retained as historical evidence only, not as current release-process guidance.
+>
+> the prompt body below intentionally preserves some historical `plan` terminology because that was the runtime vocabulary on the audited branch.
+>
+> legacy-cleanup-audit currently classifies this document as a historical artifact pending task 6's final keep/delete decision.
+
+You are a code reviewer performing a license compliance and correctness audit on the historical `release/2.0` branch of the kasmos repo.
 
 ## Context
 
-This branch contains a **clean-room rewrite** of the entire codebase to remove all AGPL-licensed code. The original codebase was forked from an AGPL project; every `.go` file touched in this branch was supposed to be rewritten from scratch under a new license. The rewrite was done across 6 plans merged in order:
+This branch contains a **clean-room rewrite** of the entire codebase to remove all AGPL-licensed code. The original codebase was forked from an AGPL project; every `.go` file touched in this branch was supposed to be rewritten from scratch under a new license. The rewrite was done across 6 historical work items, whose names still used the old `plan` wording:
 
 1. **01a-rewrite-tmux-layer** — `session/tmux/` (adapters, monitors, pane I/O, session management)
 2. **01b-rewrite-git-layer** — `session/git/` (worktree, diff, git operations)
@@ -66,3 +74,10 @@ Produce a structured report:
 ## Verdict
 PASS / FAIL with summary
 ```
+
+## legacy-cleanup-audit final verification note
+
+- task 10 reran the repository verification commands while closing the audit.
+- `go vet ./...` and `go build ./...` passed; `go mod tidy` produced no `go.mod` or `go.sum` diff.
+- `go test ./...` did not finish cleanly: `app` was blocked by a concurrent shared-worktree edit in `app/app_state.go`, and `daemon` still has deferred expectations around the legacy filesystem-signal path.
+- the canonical retained/deferred inventory now lives in the store-backed `legacy-cleanup-audit` task content rather than this archival prompt.
