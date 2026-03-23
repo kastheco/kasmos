@@ -1647,8 +1647,8 @@ func (m *home) spawnFixerWithFeedback(planFile, feedback string) tea.Cmd {
 	}
 }
 
-// spawnElaborator creates and starts an elaborator agent session for the given plan.
-// The elaborator runs on the main branch (not in a worktree) since it only reads the
+// spawnElaborator creates and starts the architect elaboration pass for the given plan.
+// The architect runs on the main branch (not in a worktree) since it only reads the
 // codebase and updates the task store — it does not modify files. When it finishes,
 // it writes an elaborator-finished-<planFile> sentinel that the metadata tick picks up
 // to advance the orchestrator from WaveStateElaborating to wave 1.
@@ -1660,13 +1660,13 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 	prompt := orchestration.BuildElaborationPrompt(planFile)
 
 	// Clear any stale elaborator-finished sentinel from a prior run before
-	// spawning a new elaborator. Without this, a leftover file (e.g. from a
+	// spawning a new architect pass. Without this, a leftover file (e.g. from a
 	// TUI restart mid-elaboration) would be picked up on the next tick and
-	// advance the orchestrator to wave 1 before the new elaborator finishes.
+	// advance the orchestrator to wave 1 before the new architect pass finishes.
 	taskfsm.ClearElaborationSignal(m.signalsDir, planFile)
 
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:         fmt.Sprintf("%s-elaborator", planName),
+		Title:         fmt.Sprintf("%s-architect", planName),
 		Path:          m.activeRepoPath,
 		Program:       m.programForAgent(session.AgentTypeElaborator),
 		ExecutionMode: m.executionModeForAgent(session.AgentTypeElaborator),
@@ -1691,11 +1691,11 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 		return instanceStartedMsg{instance: inst, err: inst.StartOnMainBranch()}
 	}
 
-	m.audit(auditlog.EventAgentSpawned, fmt.Sprintf("spawned elaborator for %s", planName),
+	m.audit(auditlog.EventAgentSpawned, fmt.Sprintf("spawned architect for %s", planName),
 		auditlog.WithPlan(planFile),
 		auditlog.WithAgent(session.AgentTypeElaborator))
 
-	m.toastManager.Info(fmt.Sprintf("elaborating plan '%s' before implementation", planName))
+	m.toastManager.Info(fmt.Sprintf("creating blueprint for '%s' before implementation", planName))
 	return m, tea.Batch(tea.RequestWindowSize, startCmd, m.toastTickCmd())
 }
 

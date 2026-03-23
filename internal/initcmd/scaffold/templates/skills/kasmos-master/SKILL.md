@@ -51,7 +51,7 @@ These legacy tools are NEVER permitted. Using them is a violation, not a prefere
 
 ## Where You Fit (Role Placement)
 
-Reviewer sequence in final phase: `planner` + `elaborator` + `coder` + `reviewer` + `fixer` + `master`.
+Reviewer sequence in final phase: `planner` + `architect` + `coder` + `reviewer` + `fixer` + `master`.
 
 You are not implementing or fixing. You are the final gate before merge.
 

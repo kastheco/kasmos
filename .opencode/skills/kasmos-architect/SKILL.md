@@ -59,7 +59,7 @@ the plan lifecycle fsm: `ready -> elaborating -> implementing -> reviewing -> do
 
 - planner output enters you when implementation planning is complete and a plan is in task store
 - you decompose and enrich tasks for coders, write the updated plan, and emit architecture metadata
-- you then signal `elaborator-finished-<plan-file>` for backward compatibility so existing orchestrators keep working unchanged
+- you then signal `elaborator-finished-<plan-file>` because the current elaboration gateway consumes that signal name
 - do not implement code; do not review code; stop after signaling and metadata write
 
 ---

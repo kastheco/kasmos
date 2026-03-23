@@ -122,14 +122,14 @@ func BuildBlueprintSkipPrompt(planFile string, plan *taskparser.Plan) string {
 	return sb.String()
 }
 
-// BuildElaborationPrompt returns the prompt for an elaborator agent session.
-// The elaborator reads the plan, deeply reads the codebase for each task's files,
+// BuildElaborationPrompt returns the prompt for the architect-led elaboration pass.
+// The architect reads the plan, deeply reads the codebase for each task's files,
 // and expands task bodies with detailed implementation instructions.
 func BuildElaborationPrompt(planFile string) string {
 	return fmt.Sprintf(
-		"You are the elaborator agent. Your job: enrich a plan's task descriptions with "+
+		"You are the architect agent. Your job: enrich a plan's task descriptions with "+
 			"detailed implementation instructions so coder agents make fewer decisions.\n\n"+
-			"Load the `kasmos-elaborator` skill before starting. Also load `cli-tools`.\n\n"+
+			"Load the `kasmos-architect` skill before starting. Also load `cli-tools`.\n\n"+
 			"## Instructions\n\n"+
 			"1. Retrieve the plan: `kas task show %[1]s`\n"+
 			"2. For each task, read the codebase files listed in its **Files:** section. "+

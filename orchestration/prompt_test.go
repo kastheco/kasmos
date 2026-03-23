@@ -145,6 +145,8 @@ func TestBuildMasterReviewPrompt(t *testing.T) {
 func TestBuildElaborationPrompt(t *testing.T) {
 	prompt := BuildElaborationPrompt("my-feature")
 
+	assert.Contains(t, prompt, "kasmos-architect")
+	assert.NotContains(t, prompt, "kasmos-elaborator")
 	// Must reference the plan file for retrieval
 	assert.Contains(t, prompt, "kas task show my-feature")
 	// Must reference updating the plan

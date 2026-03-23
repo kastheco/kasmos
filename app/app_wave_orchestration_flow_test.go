@@ -1567,8 +1567,8 @@ func TestImplementTriggersElaborationBeforeWave1(t *testing.T) {
 	for _, inst := range m.nav.GetInstances() {
 		if inst.TaskFile == planFile && inst.AgentType == session.AgentTypeElaborator {
 			foundElaborator = true
-			assert.Contains(t, inst.QueuedPrompt, "elaborator",
-				"elaborator prompt must reference the elaborator role")
+			assert.Contains(t, inst.QueuedPrompt, "architect",
+				"elaboration prompt must reference the architect role")
 			break
 		}
 	}
@@ -1613,7 +1613,7 @@ func TestDeadElaboratorRecovery(t *testing.T) {
 	h.h.waveOrchestrators[planFile] = orch
 
 	elaboratorInst := &session.Instance{
-		Title:     "dead-elab-elaborator",
+		Title:     "dead-elab-architect",
 		Program:   "opencode",
 		TaskFile:  planFile,
 		AgentType: session.AgentTypeElaborator,
@@ -1624,7 +1624,7 @@ func TestDeadElaboratorRecovery(t *testing.T) {
 	// Simulate metadata tick with the elaborator's tmux dead.
 	msg := metadataResultMsg{
 		Results: []instanceMetadata{
-			{Title: "dead-elab-elaborator", TmuxAlive: false},
+			{Title: "dead-elab-architect", TmuxAlive: false},
 		},
 		PlanState: h.h.taskState,
 	}
@@ -1660,7 +1660,7 @@ func TestImplementSkipsElaborationWhenElaboratorAlreadyRan(t *testing.T) {
 
 	// Simulate a dead elaborator instance from a prior TUI session.
 	deadElaborator := &session.Instance{
-		Title:     "re-elab-elaborator",
+		Title:     "re-elab-architect",
 		Program:   "opencode",
 		TaskFile:  planFile,
 		AgentType: session.AgentTypeElaborator,

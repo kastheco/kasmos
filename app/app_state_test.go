@@ -113,7 +113,7 @@ func TestSpawnElaborator_PatchesMainBranchOpencodeConfig(t *testing.T) {
 	opencodeDir := filepath.Join(dir, ".opencode")
 	require.NoError(t, os.MkdirAll(opencodeDir, 0o755))
 	configPath := filepath.Join(opencodeDir, "opencode.jsonc")
-	require.NoError(t, os.WriteFile(configPath, []byte(`{"agent":{"elaborator":{"model":"anthropic/old","temperature":0.1,"reasoningEffort":"low"}}}`), 0o644))
+	require.NoError(t, os.WriteFile(configPath, []byte(`{"agent":{"architect":{"model":"anthropic/old","temperature":0.1,"reasoningEffort":"low"}}}`), 0o644))
 
 	planTemp := 0.65
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
@@ -126,10 +126,10 @@ func TestSpawnElaborator_PatchesMainBranchOpencodeConfig(t *testing.T) {
 		toastManager:   overlay.NewToastManager(&sp),
 		appConfig: &config.Config{
 			PhaseRoles: map[string]string{
-				"elaborating": "elaborator",
+				"elaborating": "architect",
 			},
 			Profiles: map[string]config.AgentProfile{
-				"elaborator": {
+				"architect": {
 					Program:     "opencode",
 					Model:       "claude-opus-4-6",
 					Temperature: &planTemp,
@@ -152,7 +152,7 @@ func TestSpawnElaborator_PatchesMainBranchOpencodeConfig(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &cfg))
 	agentCfg, ok := cfg["agent"].(map[string]any)
 	require.True(t, ok)
-	elabCfg, ok := agentCfg["elaborator"].(map[string]any)
+	elabCfg, ok := agentCfg["architect"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "anthropic/claude-opus-4-6", elabCfg["model"])
 	assert.InDelta(t, planTemp, elabCfg["temperature"].(float64), 0.0001)

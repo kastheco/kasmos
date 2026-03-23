@@ -1386,9 +1386,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// Process elaboration signals — elaborator-finished files written by the
-			// elaborator agent once it has enriched all task bodies and stored the
+			// architect agent once it has enriched all task bodies and stored the
 			// updated plan in the task store. On receipt we re-read the plan,
-			// replace it in the orchestrator, kill the elaborator instance, and
+			// replace it in the orchestrator, kill the architect instance, and
 			// start wave 1 normally.
 			for _, es := range msg.ElaborationSignals {
 				taskfsm.ConsumeElaborationSignal(es)
@@ -1636,15 +1636,15 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-			// Dead elaborator recovery: if an elaborator instance died without
+			// Dead architect-pass recovery: if an architect instance died without
 			// writing its signal, recover by re-reading the (possibly enriched)
 			// plan and starting wave 1. Prevents the elaboration loop where a
-			// crashed elaborator leaves the orchestrator stuck forever.
+			// crashed architect pass leaves the orchestrator stuck forever.
 			for planFile, orch := range m.waveOrchestrators {
 				if orch.State() != orchestration.WaveStateElaborating {
 					continue
 				}
-				// Check if the elaborator instance for this plan is dead.
+				// Check if the architect instance for this plan is dead.
 				var deadElaborator *session.Instance
 				for _, inst := range m.nav.GetInstances() {
 					if inst.TaskFile == planFile && inst.AgentType == session.AgentTypeElaborator && inst.Exited {
@@ -1655,9 +1655,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if deadElaborator == nil {
 					continue
 				}
-				log.WarningLog.Printf("elaborator for %q died without signaling — recovering", planFile)
+				log.WarningLog.Printf("architect pass for %q died without signaling — recovering", planFile)
 
-				// Re-read the plan from the store (elaborator may have enriched it before crashing).
+				// Re-read the plan from the store (the architect may have enriched it before crashing).
 				if m.taskStore != nil {
 					if content, err := m.taskStore.GetContent(m.taskStoreProject, planFile); err == nil {
 						if plan, parseErr := taskparser.Parse(content); parseErr == nil {
@@ -1670,7 +1670,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					orch.UpdatePlan(orch.Plan())
 				}
 
-				// Remove the dead elaborator instance.
+				// Remove the dead architect instance.
 				m.killExistingPlanAgent(planFile, session.AgentTypeElaborator)
 
 				entry, ok := m.taskState.Entry(planFile)
@@ -1679,8 +1679,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				planName := taskstate.DisplayName(planFile)
-				m.toastManager.Info(fmt.Sprintf("elaborator crashed — starting wave 1 for '%s'", planName))
-				m.audit(auditlog.EventWaveStarted, "elaborator crash recovery: starting wave 1",
+				m.toastManager.Info(fmt.Sprintf("architect pass crashed — starting wave 1 for '%s'", planName))
+				m.audit(auditlog.EventWaveStarted, "architect crash recovery: starting wave 1",
 					auditlog.WithPlan(planFile))
 
 				mdl, cmd := m.startNextWave(orch, entry)
