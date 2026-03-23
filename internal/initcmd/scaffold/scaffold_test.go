@@ -271,6 +271,7 @@ func TestWriteProjectSkills(t *testing.T) {
 	// Generic project skills written (including cli-tools and kasmos-cli)
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "cli-tools", "SKILL.md"))
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "kasmos-cli", "SKILL.md"))
+	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "kasmos-architect", "SKILL.md"))
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "kasmos-fixer", "SKILL.md"))
 	assert.NoFileExists(t, filepath.Join(dir, ".agents", "skills", "kasmos-elaborator", "SKILL.md"))
 	assert.NoFileExists(t, filepath.Join(dir, ".agents", "skills", "tui-design", "SKILL.md"))
@@ -278,6 +279,14 @@ func TestWriteProjectSkills(t *testing.T) {
 	fixerSkill, err := os.ReadFile(filepath.Join(dir, ".agents", "skills", "kasmos-fixer", "SKILL.md"))
 	require.NoError(t, err)
 	assert.Contains(t, string(fixerSkill), "Scaffolding System Protocol (always before editing skills/agent commands)")
+
+	architectSkill, err := os.ReadFile(filepath.Join(dir, ".agents", "skills", "kasmos-architect", "SKILL.md"))
+	require.NoError(t, err)
+	architectTemplate, err := templates.ReadFile("templates/skills/kasmos-architect/SKILL.md")
+	require.NoError(t, err)
+	assert.Equal(t, string(architectTemplate), string(architectSkill))
+	assert.Contains(t, string(architectSkill), "compatibility note: emit `elaborator-finished` for now")
+	assert.NotContains(t, string(architectSkill), "**elaborator** agent")
 
 	// cli-tools resource files included
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "cli-tools", "resources", "ast-grep.md"))

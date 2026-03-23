@@ -53,13 +53,13 @@ these legacy tools are NEVER permitted. using them is a violation, not a prefere
 
 ## where you fit
 
-the plan lifecycle fsm: `ready -> elaborating -> implementing -> reviewing -> done`
+the task lifecycle fsm still uses a legacy state label: `ready -> elaborating -> implementing -> reviewing -> done`
 
-**your work covers:** `ready → elaborating → ready`
+**your work covers:** the architect decomposition pass during `ready → elaborating → ready`
 
 - planner output enters you when implementation planning is complete and a plan is in task store
 - you decompose and enrich tasks for coders, write the updated plan, and emit architecture metadata
-- you then signal `elaborator-finished-<plan-file>` because the current elaboration gateway consumes that signal name
+- compatibility note: emit `elaborator-finished` for now because the current gateway still consumes that legacy signal name
 - do not implement code; do not review code; stop after signaling and metadata write
 
 ---
@@ -212,4 +212,4 @@ stop.
 | creating import dependency between same-wave tasks | split or move tasks to a later wave |
 | skipping metadata JSON output | generate `.kasmos/cache/<plan-file>-architect.json` in the same run |
 | writing signal before round-trip check | run MCP `task_show` (filename: "<plan-file>") first |
-| writing `elaborator-finished` signal with wrong filename | use exact plan file token in filename |
+| writing the compatibility `elaborator-finished` signal with wrong filename | use exact plan file token in filename |
