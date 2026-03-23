@@ -937,10 +937,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			for _, ts := range taskSignals {
 				seenTaskSignals[ts.Key()] = true
 			}
-			seenElabSignals := make(map[string]bool)
-			for _, es := range elaborationSignals {
-				seenElabSignals[es.TaskFile] = true
-			}
 			if !daemonManagedRepo {
 				for _, inst := range snapshots {
 					wt := inst.GetWorktreePath()
@@ -958,12 +954,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if !seenTaskSignals[ts.Key()] {
 							seenTaskSignals[ts.Key()] = true
 							taskSignals = append(taskSignals, ts)
-						}
-					}
-					for _, es := range taskfsm.ScanElaborationSignals(wtSignalsDir) {
-						if !seenElabSignals[es.TaskFile] {
-							seenElabSignals[es.TaskFile] = true
-							elaborationSignals = append(elaborationSignals, es)
 						}
 					}
 				}
@@ -1060,7 +1050,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							signalCmds = append(signalCmds, cmd)
 						}
 						for _, inst := range m.nav.GetInstances() {
-							if inst.TaskFile == a.PlanFile && inst.IsReviewer {
+							if inst.TaskFile == a.PlanFile && inst.AgentType == session.AgentTypeReviewer {
 								inst.SetStatus(session.Paused)
 								m.nav.SelectInstance(inst)
 								m.updateNavPanelStatus()
@@ -1181,7 +1171,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							signalCmds = append(signalCmds, cmd)
 						}
 						for _, inst := range m.nav.GetInstances() {
-							if inst.TaskFile == sig.TaskFile && inst.IsReviewer {
+							if inst.TaskFile == sig.TaskFile && inst.AgentType == session.AgentTypeReviewer {
 								inst.SetStatus(session.Paused)
 								m.nav.SelectInstance(inst)
 								m.updateNavPanelStatus()
@@ -1430,10 +1420,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						signalCmds = append(signalCmds, cmd)
 					}
 				}
-			} else {
-				for _, es := range msg.ElaborationSignals {
-					taskfsm.ConsumeElaborationSignal(es)
-				}
 			}
 		}
 
@@ -1634,60 +1620,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						auditlog.WithAgent(inst.AgentType),
 						auditlog.WithPlan(inst.TaskFile),
 					)
-				}
-			}
-
-			// Dead architect-pass recovery: if an architect instance died without
-			// writing its signal, recover by re-reading the (possibly enriched)
-			// plan and starting wave 1. Prevents the elaboration loop where a
-			// crashed architect pass leaves the orchestrator stuck forever.
-			for planFile, orch := range m.waveOrchestrators {
-				if orch.State() != orchestration.WaveStateElaborating {
-					continue
-				}
-				// Check if the architect instance for this plan is dead.
-				var deadElaborator *session.Instance
-				for _, inst := range m.nav.GetInstances() {
-					if inst.TaskFile == planFile && inst.AgentType == session.AgentTypeElaborator && inst.Exited {
-						deadElaborator = inst
-						break
-					}
-				}
-				if deadElaborator == nil {
-					continue
-				}
-				log.WarningLog.Printf("architect pass for %q died without signaling — recovering", planFile)
-
-				// Re-read the plan from the store (the architect may have enriched it before crashing).
-				if m.taskStore != nil {
-					if content, err := m.taskStore.GetContent(m.taskStoreProject, planFile); err == nil {
-						if plan, parseErr := taskparser.Parse(content); parseErr == nil {
-							orch.UpdatePlan(plan)
-						}
-					}
-				}
-				// If re-read failed, force out of elaborating with the original plan.
-				if orch.State() == orchestration.WaveStateElaborating {
-					orch.UpdatePlan(orch.Plan())
-				}
-
-				// Remove the dead architect instance.
-				m.killExistingPlanAgent(planFile, session.AgentTypeElaborator)
-
-				entry, ok := m.taskState.Entry(planFile)
-				if !ok {
-					continue
-				}
-
-				planName := taskstate.DisplayName(planFile)
-				m.toastManager.Info(fmt.Sprintf("architect pass crashed — starting wave 1 for '%s'", planName))
-				m.audit(auditlog.EventWaveStarted, "architect crash recovery: starting wave 1",
-					auditlog.WithPlan(planFile))
-
-				mdl, cmd := m.startNextWave(orch, entry)
-				m = mdl.(*home)
-				if cmd != nil {
-					signalCmds = append(signalCmds, cmd)
 				}
 			}
 
@@ -2557,7 +2489,7 @@ type metadataResultMsg struct {
 	Signals            []taskfsm.Signal            // agent sentinel files found this tick
 	TaskSignals        []taskfsm.TaskSignal        // task completion sentinel files found this tick
 	WaveSignals        []taskfsm.WaveSignal        // implement-wave-N signal files found this tick
-	ElaborationSignals []taskfsm.ElaborationSignal // elaborator-finished signal files found this tick
+	ElaborationSignals []taskfsm.ElaborationSignal // architect completion signal files found this tick
 	DaemonManagedRepo  bool                        // true when the active repo is managed by a running daemon
 	TmuxSessionCount   int                         // number of kas_-prefixed tmux sessions
 	PRStateUpdates     []prStateUpdateMsg          // PR review/check state refreshed this tick

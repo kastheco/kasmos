@@ -136,6 +136,39 @@ func TestInstanceData_RoundTripAgentType(t *testing.T) {
 	if roundTrip.AgentType != AgentTypeReviewer {
 		t.Fatalf("ToInstanceData AgentType = %q, want %q", roundTrip.AgentType, AgentTypeReviewer)
 	}
+	if roundTrip.IsReviewer {
+		t.Fatal("deprecated IsReviewer field should not be written for new state")
+	}
+}
+
+func TestFromInstanceData_MigratesLegacyReviewerFlag(t *testing.T) {
+	data := InstanceData{
+		Title:      "legacy-reviewer",
+		Path:       "/tmp/repo",
+		Branch:     "plan/auth-refactor",
+		Status:     Paused,
+		Program:    "opencode",
+		TaskFile:   "auth-refactor",
+		IsReviewer: true,
+		Worktree: GitWorktreeData{
+			RepoPath:      "/tmp/repo",
+			WorktreePath:  "/tmp/repo/.worktrees/legacy-reviewer",
+			SessionName:   "legacy-reviewer",
+			BranchName:    "plan/auth-refactor",
+			BaseCommitSHA: "abc123",
+		},
+	}
+
+	inst, err := FromInstanceData(data)
+	if err != nil {
+		t.Fatalf("FromInstanceData() error = %v", err)
+	}
+	if inst.AgentType != AgentTypeReviewer {
+		t.Fatalf("instance AgentType = %q, want %q", inst.AgentType, AgentTypeReviewer)
+	}
+	if !inst.IsReviewer {
+		t.Fatal("legacy reviewer flag should still hydrate compatibility mirror")
+	}
 }
 
 func TestInstanceData_ImplementationCompleteFalseByDefault(t *testing.T) {

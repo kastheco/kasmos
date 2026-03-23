@@ -88,7 +88,7 @@ func TestSpawnTaskAgent_PatchesMainBranchOpencodeConfig(t *testing.T) {
 	assert.Equal(t, "high", plannerCfg["reasoningEffort"])
 }
 
-func TestSpawnElaborator_PatchesMainBranchOpencodeConfig(t *testing.T) {
+func TestSpawnArchitectPass_PatchesMainBranchOpencodeConfig(t *testing.T) {
 	dir := t.TempDir()
 
 	for _, cmd := range [][]string{
@@ -107,8 +107,8 @@ func TestSpawnElaborator_PatchesMainBranchOpencodeConfig(t *testing.T) {
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
 	ps, err := newTestPlanState(t, plansDir)
 	require.NoError(t, err)
-	planFile := "elaborator-branch-patch.md"
-	require.NoError(t, ps.Register(planFile, "elaborator test plan", "plan/elaborator", time.Now()))
+	planFile := "architect-branch-patch.md"
+	require.NoError(t, ps.Register(planFile, "architect test plan", "plan/architect", time.Now()))
 
 	opencodeDir := filepath.Join(dir, ".opencode")
 	require.NoError(t, os.MkdirAll(opencodeDir, 0o755))

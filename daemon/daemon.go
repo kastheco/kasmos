@@ -443,9 +443,8 @@ func (d *Daemon) tick(ctx context.Context) {
 }
 
 // tickRepo executes one poll cycle for a single repo entry.
-// If the entry has a SignalGateway, it uses the DB-backed pipeline:
-// bridge filesystem sentinels → claim via gateway → Processor.Tick → executeAction → MarkProcessed.
-// If SignalGateway is nil, it falls back to the legacy filesystem-only path.
+// Prefer the DB-backed signal gateway when available; otherwise process the
+// repo's filesystem sentinels directly.
 func (d *Daemon) tickRepo(ctx context.Context, e RepoEntry) {
 	if e.Store == nil || e.Processor == nil {
 		// Processor requires a store; skip repos whose store is unavailable.
@@ -453,7 +452,7 @@ func (d *Daemon) tickRepo(ctx context.Context, e RepoEntry) {
 	}
 
 	if e.SignalGateway == nil {
-		// Legacy filesystem path — unchanged behavior.
+		// Filesystem-only path for repos without a usable signal gateway.
 		scan := loop.ScanAllSignals(e.Path, sharedWorktreePaths(e.Path))
 
 		var actions []loop.Action
