@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -84,5 +86,18 @@ func TestExecuteTaskUpdateContent(t *testing.T) {
 		err = validateUpdateContentStdin(stdinFile)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "stdin is a tty")
+	})
+
+	t.Run("uses file reader when provided", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "plan.md")
+		require.NoError(t, os.WriteFile(path, []byte("# plan\n"), 0o644))
+
+		reader, err := openUpdateContentReader(os.Stdin, path)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = reader.Close() })
+
+		body, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		assert.Equal(t, "# plan\n", string(body))
 	})
 }

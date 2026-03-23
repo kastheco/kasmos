@@ -242,6 +242,20 @@ func validateUpdateContentStdin(stdin *os.File) error {
 	return nil
 }
 
+func openUpdateContentReader(stdin *os.File, filePath string) (io.ReadCloser, error) {
+	if filePath != "" {
+		f, err := os.Open(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("open --file %q: %w", filePath, err)
+		}
+		return f, nil
+	}
+	if err := validateUpdateContentStdin(stdin); err != nil {
+		return nil, err
+	}
+	return stdin, nil
+}
+
 // executeTaskLinkClickUp iterates all plans in the given project, reads their
 // content, parses the ClickUp task ID from the "**Source:** ClickUp <ID>" line,
 // and stores it in the clickup_task_id field for any plan that has an ID in its
@@ -680,9 +694,10 @@ func NewTaskCmd() *cobra.Command {
 	planCmd.AddCommand(showCmd)
 
 	// kq task update-content <plan-file> < content.md
+	var updateContentFile string
 	updateContentCmd := &cobra.Command{
 		Use:   "update-content <plan-file>",
-		Short: "replace plan content in the task store (reads from stdin)",
+		Short: "replace plan content in the task store (reads from stdin or --file)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, project, err := resolveRepoInfo()
@@ -699,16 +714,21 @@ func NewTaskCmd() *cobra.Command {
 			}
 			filename := args[0]
 			trimmedFilename := strings.TrimSuffix(filename, ".md")
-			if err := validateUpdateContentStdin(os.Stdin); err != nil {
+			reader, err := openUpdateContentReader(os.Stdin, updateContentFile)
+			if err != nil {
 				return err
 			}
-			if err := executeTaskUpdateContent(project, filename, os.Stdin, store); err != nil {
+			if reader != os.Stdin {
+				defer reader.Close()
+			}
+			if err := executeTaskUpdateContent(project, filename, reader, store); err != nil {
 				return err
 			}
 			fmt.Printf("updated content for %s\n", trimmedFilename)
 			return nil
 		},
 	}
+	updateContentCmd.Flags().StringVar(&updateContentFile, "file", "", "read updated plan content from a file instead of stdin")
 	planCmd.AddCommand(updateContentCmd)
 
 	// kas task create

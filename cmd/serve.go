@@ -17,6 +17,8 @@ import (
 	"github.com/kastheco/kasmos/internal/mcpserver/fstools"
 	"github.com/kastheco/kasmos/internal/mcpserver/gittools"
 	"github.com/kastheco/kasmos/internal/mcpserver/instancetools"
+	"github.com/kastheco/kasmos/internal/mcpserver/signaltools"
+	"github.com/kastheco/kasmos/internal/mcpserver/tasktools"
 	webassets "github.com/kastheco/kasmos/web"
 	"github.com/spf13/cobra"
 )
@@ -121,12 +123,17 @@ func NewServeCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("get working directory: %w", err)
 				}
+				repoRoot := cwd
 				allowedDirs := []string{cwd}
 				if root, rootErr := config.ResolveRepoRoot(cwd); rootErr == nil && root != "" && root != cwd {
+					repoRoot = root
 					allowedDirs = append(allowedDirs, root)
 				}
+				project := resolveTaskProject(repoRoot)
 				fstools.RegisterTools(mcpSrv.MCPServer(), allowedDirs)
 				gittools.RegisterTools(mcpSrv.MCPServer(), allowedDirs)
+				tasktools.RegisterTools(mcpSrv.MCPServer(), project, mcpSrv.Store())
+				signaltools.RegisterTools(mcpSrv.MCPServer(), project, mcpSrv.Gateway())
 				instancetools.RegisterTools(
 					mcpSrv.MCPServer(),
 					func() config.StateManager { return config.LoadState() },

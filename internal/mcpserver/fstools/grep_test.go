@@ -162,3 +162,38 @@ func TestGrepHandler_Success(t *testing.T) {
 	assert.Equal(t, "rg", capturedName)
 	assert.Contains(t, capturedArgs, "--json")
 }
+
+func TestGrepHandler_LegacyAliasArguments(t *testing.T) {
+	dir := t.TempDir()
+	sb := NewSandbox([]string{dir})
+
+	rgOutput := makeRgMatchLine(filepath.Join(dir, "main.go"), "func Hello() {}\n", 1, 5, 10)
+
+	var capturedArgs []string
+	runner := &mockRunner{
+		outputFn: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			capturedArgs = append(capturedArgs, args...)
+			return []byte(rgOutput), nil
+		},
+	}
+	handler := makeGrepHandler(sb, runner)
+
+	req := mockCallToolRequest(map[string]any{
+		"pattern":        "Hello",
+		"path":           dir,
+		"include":        "*.go",
+		"context_before": 1,
+		"context_after":  3,
+	})
+	result, err := handler(context.Background(), req)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.IsError)
+	assert.Contains(t, capturedArgs, "--glob")
+	assert.Contains(t, capturedArgs, "*.go")
+	assert.Contains(t, capturedArgs, "-B")
+	assert.Contains(t, capturedArgs, "1")
+	assert.Contains(t, capturedArgs, "-A")
+	assert.Contains(t, capturedArgs, "3")
+	assert.NotContains(t, capturedArgs, "-C")
+}

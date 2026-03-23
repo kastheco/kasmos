@@ -3,6 +3,7 @@ package fstools
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -37,14 +38,22 @@ func makeFindHandler(sb *Sandbox, runner CmdRunner) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(fmt.Sprintf("find_files: %v", err)), nil
 		}
 
-		searchPath := req.GetString("path", sb.DefaultDir())
+		searchPath := req.GetString("path", "")
+		if searchPath == "" {
+			searchPath = req.GetString("directory", sb.DefaultDir())
+		}
+		maxDepth := req.GetInt("max_depth", 0)
 
 		validPath, err := sb.Validate(searchPath)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("find_files: %v", err)), nil
 		}
 
-		args := []string{"--color", "never", "--type", "f", "--glob", pattern, validPath}
+		args := []string{"--color", "never", "--type", "f", "--glob", pattern}
+		if maxDepth > 0 {
+			args = append(args, "--max-depth", strconv.Itoa(maxDepth))
+		}
+		args = append(args, validPath)
 		// Errors (including non-zero exit when fd finds no matches) are treated as
 		// zero results; parseFdOutput handles empty or nil output gracefully.
 		out, _ := runner.Output(ctx, "fd", args...)
@@ -70,6 +79,12 @@ func registerFindFiles(srv *server.MCPServer, sb *Sandbox, runner CmdRunner) {
 		),
 		mcp.WithString("path",
 			mcp.Description("directory to search in; defaults to the workspace root"),
+		),
+		mcp.WithString("directory",
+			mcp.Description("Legacy alias for 'path' retained for compatibility"),
+		),
+		mcp.WithNumber("max_depth",
+			mcp.Description("Optional maximum directory depth (legacy compatibility field)"),
 		),
 	)
 	srv.AddTool(tool, makeFindHandler(sb, runner))

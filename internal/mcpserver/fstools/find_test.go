@@ -98,3 +98,27 @@ func TestFindHandler_Success(t *testing.T) {
 	assert.True(t, hasGlob, "fd args should include --glob")
 	assert.True(t, hasType, "fd args should include --type")
 }
+
+func TestFindHandler_LegacyAliasArguments(t *testing.T) {
+	dir := t.TempDir()
+	sb := NewSandbox([]string{dir})
+
+	var capturedArgs []string
+	runner := &mockRunner{
+		outputFn: func(_ context.Context, name string, args ...string) ([]byte, error) {
+			capturedArgs = args
+			return []byte("main.go\n"), nil
+		},
+	}
+
+	handler := makeFindHandler(sb, runner)
+	req := mockCallToolRequest(map[string]any{"pattern": "*.go", "directory": dir, "max_depth": 2})
+
+	result, err := handler(context.Background(), req)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.IsError)
+	assert.Contains(t, capturedArgs, "--max-depth")
+	assert.Contains(t, capturedArgs, "2")
+	assert.Contains(t, capturedArgs, dir)
+}

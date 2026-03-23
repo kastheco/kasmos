@@ -117,7 +117,12 @@ func makeGrepHandler(sb *Sandbox, runner CmdRunner) server.ToolHandlerFunc {
 
 		searchPath := req.GetString("path", sb.DefaultDir())
 		glob := req.GetString("glob", "")
+		if glob == "" {
+			glob = req.GetString("include", "")
+		}
 		contextLines := req.GetInt("context_lines", 0)
+		contextBefore := req.GetInt("context_before", 0)
+		contextAfter := req.GetInt("context_after", 0)
 
 		resolvedPath, err := sb.Validate(searchPath)
 		if err != nil {
@@ -128,7 +133,13 @@ func makeGrepHandler(sb *Sandbox, runner CmdRunner) server.ToolHandlerFunc {
 		if glob != "" {
 			args = append(args, "--glob", glob)
 		}
-		if contextLines > 0 {
+		if contextBefore > 0 {
+			args = append(args, "-B", strconv.Itoa(contextBefore))
+		}
+		if contextAfter > 0 {
+			args = append(args, "-A", strconv.Itoa(contextAfter))
+		}
+		if contextBefore == 0 && contextAfter == 0 && contextLines > 0 {
 			args = append(args, "-C", strconv.Itoa(contextLines))
 		}
 		args = append(args, pattern, resolvedPath)
@@ -174,8 +185,17 @@ func registerGrep(srv *server.MCPServer, sb *Sandbox, runner CmdRunner) {
 		mcp.WithString("glob",
 			mcp.Description("Glob pattern to restrict which files are searched (e.g. '*.go')"),
 		),
+		mcp.WithString("include",
+			mcp.Description("Legacy alias for 'glob' retained for compatibility"),
+		),
 		mcp.WithNumber("context_lines",
 			mcp.Description("Number of context lines to include before and after each match"),
+		),
+		mcp.WithNumber("context_before",
+			mcp.Description("Legacy alias for leading context lines; overrides context_lines when set"),
+		),
+		mcp.WithNumber("context_after",
+			mcp.Description("Legacy alias for trailing context lines; overrides context_lines when set"),
 		),
 	)
 	srv.AddTool(tool, makeGrepHandler(sb, runner))
