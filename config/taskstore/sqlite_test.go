@@ -2,7 +2,6 @@ package taskstore_test
 
 import (
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -55,14 +54,15 @@ func TestSQLiteStore_MdSuffixMigration(t *testing.T) {
 
 	plans, err := store2.List("proj")
 	require.NoError(t, err)
-	for _, plan := range plans {
-		assert.False(t, strings.HasSuffix(plan.Filename, ".md"), "filename %q should not have .md suffix after migration", plan.Filename)
-	}
+	require.Len(t, plans, 2)
+	assert.Equal(t, "bar", plans[0].Filename)
+	assert.Equal(t, "foo", plans[1].Filename)
 
 	// Subtasks must be retrievable by the stripped filename.
 	subs, err := store2.GetSubtasks("proj", "foo")
 	require.NoError(t, err)
 	assert.Len(t, subs, 1)
+	assert.Equal(t, "sub1", subs[0].Title)
 }
 
 func TestSQLiteStore_ListByStatus(t *testing.T) {

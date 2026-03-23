@@ -1564,16 +1564,18 @@ func TestImplementTriggersElaborationBeforeWave1(t *testing.T) {
 		"orchestrator must be in elaborating state, not running")
 
 	// An architect instance should have been spawned.
-	var foundElaborator bool
+	var foundArchitect bool
 	for _, inst := range m.nav.GetInstances() {
 		if inst.TaskFile == planFile && inst.AgentType == session.AgentTypeElaborator {
-			foundElaborator = true
+			foundArchitect = true
 			assert.Contains(t, inst.QueuedPrompt, "architect",
 				"elaboration prompt must reference the architect role")
+			assert.Contains(t, inst.QueuedPrompt, "elaborator_finished",
+				"architect prompt must retain the legacy completion signal contract")
 			break
 		}
 	}
-	assert.True(t, foundElaborator, "architect instance must be spawned")
+	assert.True(t, foundArchitect, "architect instance must be spawned")
 }
 
 // TestImplementDirectlySkipsElaboration verifies that "implement_direct" creates an

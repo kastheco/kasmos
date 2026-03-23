@@ -190,6 +190,7 @@ func TestAgentStep_IgnoresLegacyElaboratorProfile(t *testing.T) {
 	// find the architect agent
 	var arch AgentState
 	for _, a := range agents {
+		require.NotEqual(t, "elaborator", a.Role, "legacy elaborator role should not be scaffolded back into the wizard")
 		if a.Role == "architect" {
 			arch = a
 			break

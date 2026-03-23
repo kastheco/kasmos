@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAgentTypeElaborator_Constant(t *testing.T) {
@@ -19,12 +20,8 @@ func TestNewInstance_SetsPlanFile(t *testing.T) {
 		Program:  "claude",
 		TaskFile: "plan-orchestration",
 	})
-	if err != nil {
-		t.Fatalf("NewInstance() error = %v", err)
-	}
-	if inst.TaskFile != "plan-orchestration" {
-		t.Fatalf("PlanFile = %q, want %q", inst.TaskFile, "plan-orchestration")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "plan-orchestration", inst.TaskFile)
 }
 
 func TestInstanceData_RoundTripPlanFile(t *testing.T) {
@@ -45,17 +42,11 @@ func TestInstanceData_RoundTripPlanFile(t *testing.T) {
 	}
 
 	inst, err := FromInstanceData(data)
-	if err != nil {
-		t.Fatalf("FromInstanceData() error = %v", err)
-	}
-	if inst.TaskFile != "plan" {
-		t.Fatalf("instance PlanFile = %q, want %q", inst.TaskFile, "plan")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "plan", inst.TaskFile)
 
 	roundTrip := inst.ToInstanceData()
-	if roundTrip.TaskFile != "plan" {
-		t.Fatalf("ToInstanceData PlanFile = %q, want %q", roundTrip.TaskFile, "plan")
-	}
+	assert.Equal(t, "plan", roundTrip.TaskFile)
 }
 
 func TestInstanceData_RoundTripImplementationComplete(t *testing.T) {
@@ -77,17 +68,11 @@ func TestInstanceData_RoundTripImplementationComplete(t *testing.T) {
 	}
 
 	inst, err := FromInstanceData(data)
-	if err != nil {
-		t.Fatalf("FromInstanceData() error = %v", err)
-	}
-	if !inst.ImplementationComplete {
-		t.Fatal("expected ImplementationComplete = true after FromInstanceData")
-	}
+	require.NoError(t, err)
+	assert.True(t, inst.ImplementationComplete)
 
 	roundTrip := inst.ToInstanceData()
-	if !roundTrip.ImplementationComplete {
-		t.Fatal("expected ImplementationComplete = true after ToInstanceData round-trip")
-	}
+	assert.True(t, roundTrip.ImplementationComplete)
 }
 
 func TestNewInstance_SetsAgentType(t *testing.T) {
@@ -98,12 +83,8 @@ func TestNewInstance_SetsAgentType(t *testing.T) {
 		TaskFile:  "auth-refactor",
 		AgentType: AgentTypePlanner,
 	})
-	if err != nil {
-		t.Fatalf("NewInstance() error = %v", err)
-	}
-	if inst.AgentType != AgentTypePlanner {
-		t.Fatalf("AgentType = %q, want %q", inst.AgentType, AgentTypePlanner)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, AgentTypePlanner, inst.AgentType)
 }
 
 func TestInstanceData_RoundTripAgentType(t *testing.T) {
@@ -125,20 +106,12 @@ func TestInstanceData_RoundTripAgentType(t *testing.T) {
 	}
 
 	inst, err := FromInstanceData(data)
-	if err != nil {
-		t.Fatalf("FromInstanceData() error = %v", err)
-	}
-	if inst.AgentType != AgentTypeReviewer {
-		t.Fatalf("instance AgentType = %q, want %q", inst.AgentType, AgentTypeReviewer)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, AgentTypeReviewer, inst.AgentType)
 
 	roundTrip := inst.ToInstanceData()
-	if roundTrip.AgentType != AgentTypeReviewer {
-		t.Fatalf("ToInstanceData AgentType = %q, want %q", roundTrip.AgentType, AgentTypeReviewer)
-	}
-	if roundTrip.IsReviewer {
-		t.Fatal("deprecated IsReviewer field should not be written for new state")
-	}
+	assert.Equal(t, AgentTypeReviewer, roundTrip.AgentType)
+	assert.False(t, roundTrip.IsReviewer, "deprecated IsReviewer field should not be written for new state")
 }
 
 func TestFromInstanceData_MigratesLegacyReviewerFlag(t *testing.T) {
@@ -160,15 +133,9 @@ func TestFromInstanceData_MigratesLegacyReviewerFlag(t *testing.T) {
 	}
 
 	inst, err := FromInstanceData(data)
-	if err != nil {
-		t.Fatalf("FromInstanceData() error = %v", err)
-	}
-	if inst.AgentType != AgentTypeReviewer {
-		t.Fatalf("instance AgentType = %q, want %q", inst.AgentType, AgentTypeReviewer)
-	}
-	if !inst.IsReviewer {
-		t.Fatal("legacy reviewer flag should still hydrate compatibility mirror")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, AgentTypeReviewer, inst.AgentType)
+	assert.True(t, inst.IsReviewer, "legacy reviewer flag should still hydrate compatibility mirror")
 }
 
 func TestInstanceData_ImplementationCompleteFalseByDefault(t *testing.T) {
@@ -188,12 +155,8 @@ func TestInstanceData_ImplementationCompleteFalseByDefault(t *testing.T) {
 	}
 
 	inst, err := FromInstanceData(data)
-	if err != nil {
-		t.Fatalf("FromInstanceData() error = %v", err)
-	}
-	if inst.ImplementationComplete {
-		t.Fatal("expected ImplementationComplete = false for a normal instance")
-	}
+	require.NoError(t, err)
+	assert.False(t, inst.ImplementationComplete)
 }
 
 func TestInstanceData_RoundTripSoloAgent(t *testing.T) {
@@ -202,19 +165,13 @@ func TestInstanceData_RoundTripSoloAgent(t *testing.T) {
 		Path:    "/tmp/repo",
 		Program: "opencode",
 	})
-	if err != nil {
-		t.Fatalf("NewInstance() error = %v", err)
-	}
+	require.NoError(t, err)
 	inst.SoloAgent = true
 
 	data := inst.ToInstanceData()
 	restored, err := FromInstanceData(data)
-	if err != nil {
-		t.Fatalf("FromInstanceData() error = %v", err)
-	}
-	if !restored.SoloAgent {
-		t.Fatal("expected SoloAgent = true after InstanceData round-trip")
-	}
+	require.NoError(t, err)
+	assert.True(t, restored.SoloAgent)
 }
 
 // TestInstanceData_RoundTripExecutionMode verifies that ExecutionMode survives a
@@ -250,17 +207,11 @@ func TestInstanceData_RoundTripExecutionMode(t *testing.T) {
 			}
 
 			inst, err := FromInstanceData(data)
-			if err != nil {
-				t.Fatalf("FromInstanceData() error = %v", err)
-			}
-			if inst.ExecutionMode != tt.expected {
-				t.Fatalf("ExecutionMode = %q, want %q", inst.ExecutionMode, tt.expected)
-			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, inst.ExecutionMode)
 
 			roundTrip := inst.ToInstanceData()
-			if roundTrip.ExecutionMode != tt.expected {
-				t.Fatalf("ToInstanceData ExecutionMode = %q, want %q", roundTrip.ExecutionMode, tt.expected)
-			}
+			assert.Equal(t, tt.expected, roundTrip.ExecutionMode)
 		})
 	}
 }
