@@ -61,19 +61,23 @@ pre-built binaries for macOS, linux, and windows are on the [releases page](http
 
 ## getting started
 
+the cobra command surface is `kas`. if your install produced a `kasmos` binary instead,
+substitute `kasmos` in the examples below.
+
 run from within a git repository:
 
 ```bash
-kasmos
+kas
 ```
 
 on first run, use the setup wizard to configure your agent harnesses and install skills:
 
 ```bash
-kasmos setup
+kas setup
 ```
 
-the wizard detects installed agent CLIs, lets you assign roles (planner / coder / reviewer), and scaffolds the project files kasmos needs.
+the wizard detects installed agent CLIs, lets you assign roles, and scaffolds the
+project-local `.kasmos/` files kasmos needs.
 
 ---
 
@@ -81,8 +85,8 @@ the wizard detects installed agent CLIs, lets you assign roles (planner / coder 
 
 ```
 usage:
-  kasmos [flags]
-  kasmos [command]
+  kas [flags]
+  kas [command]
 
 available commands:
   setup       configure agent harnesses, install skills, and scaffold project files
@@ -103,7 +107,7 @@ available commands:
 flags:
   -p, --program string   agent to use for new instances (e.g. 'opencode', 'codex', 'aider --model ...')
   -y, --autoyes          automatically accept all agent prompts (experimental)
-  -h, --help             help for kasmos
+  -h, --help             help for kas
 ```
 
 ### keybindings
@@ -124,11 +128,12 @@ flags:
 
 ## how it works
 
-1. **tasks** are tracked in the task store (SQLite database) — use `kas task list` to see all tasks and `kas task show <file>` to read task content
-2. **topics** group related tasks and act as collision domains (only one task per topic can implement at a time)
+1. **tasks** live in the task store — use `kas task list` to inspect metadata and `kas task show <file>` to read stored markdown
+2. **topics** group related tasks and act as scheduling boundaries (only one implementing task per topic at a time)
 3. **waves** divide implementation into phases — kasmos parses `## Wave N` headers and runs each wave's tasks in parallel
-4. **agents** are spawned in isolated tmux sessions with dedicated git worktrees; the TUI shows live output in the preview pane
-5. **review** is automated — a reviewer agent checks the implementation, and kasmos prompts for merge/PR approval before closing the task
+4. **agents** run in isolated tmux sessions with dedicated git worktrees; the TUI shows live output in the preview pane
+5. **signals** are emitted into the task-store-backed gateway and processed by the daemon; the legacy `.kasmos/signals/` directory remains as a compatibility path, not the primary control plane
+6. **review** is automated — a reviewer agent checks the implementation, and kasmos prompts for merge/PR approval before closing the task
 
 ---
 
@@ -153,10 +158,11 @@ kas task transition <file> <event>     # apply FSM event
 
 #### optional remote store
 
-for multi-machine access (e.g. over tailscale or a team server), add one line to `<repo-root>/.kasmos/config.toml`:
+for multi-machine access (e.g. over tailscale or a team server), point the
+project-local config at an HTTP task store:
 
 ```toml
-plan_store = "http://your-desktop:7433"
+database_url = "http://your-desktop:7433"
 ```
 
 start the remote server with:
@@ -175,9 +181,9 @@ just db-service-enable
 
 #### run the orchestration daemon as a systemd service
 
-`kas signal emit ...` writes to the signal gateway database. a running daemon is what
-claims those rows and advances task lifecycle state outside the legacy filesystem
-sentinel path.
+`kas signal emit ...` writes to the signal gateway. a running daemon claims pending
+signals and advances task lifecycle state. the filesystem sentinel directory is kept
+only for legacy compatibility and local fallback flows.
 
 a user unit is provided in `contrib/kasmos.service`:
 
@@ -197,7 +203,8 @@ task will not advance until the daemon processes it.
 
 #### rest api
 
-the store exposes a simple rest api for scripting:
+the store exposes a simple rest api for scripting. the HTTP surface still uses
+legacy `/plans` path names even though the current CLI is `kas task ...`:
 
 ```bash
 # health check
@@ -220,13 +227,13 @@ curl 'http://localhost:7433/v1/projects/kasmos/plans?topic=bugs'
 config lives at `<repo-root>/.kasmos/config.toml`. locate it with:
 
 ```bash
-kasmos debug
+kas debug
 ```
 
 key settings:
 
 ```toml
-plan_store = "http://localhost:7433"  # remote task store (optional)
+database_url = "http://localhost:7433"  # remote task store (optional)
 ```
 
 ---

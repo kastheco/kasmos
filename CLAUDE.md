@@ -28,9 +28,11 @@ Key points:
 - Go 1.24+, bubbletea/v2, lipgloss/v2, bubbles/v2
 - Tests: testify assertions, table-driven, no real tmux/git/network in tests
 - Non-blocking I/O: all I/O in `tea.Cmd` goroutines, results as `tea.Msg`
-- Config: `<repo-root>/.kasmos/config.toml` is authoritative; `config/config.go:migrateJSONToTOML` only preserves a one-time legacy `config.json` migration path.
+- Task/config state is project-local under `<repo-root>/.kasmos/`. `config.toml` is the live config, `taskstore.db` is the default local store, and `config.json` only survives as a narrow one-time migration path.
+- Use current task terminology and command names in docs and prompts: `kas task ...`, not legacy `kas plan ...` guidance.
 - **Lowercase labels**: all user-visible text (toasts, confirmations, overlay titles, instance list titles) must be lowercase to match the app's aesthetic. No title case or sentence case — e.g. "push changes from 'foo'?" not "Push changes from 'foo'?"
 - **Arrow-key navigation in overlays**: use ↑↓ for navigation, not j/k vim bindings. Letter keys should always type into search/filter when present.
+- Signals are gateway-backed first. `.kasmos/signals/` still exists for compatibility, but do not document filesystem sentinels as the primary lifecycle path.
 
 ## Workflow
 
