@@ -173,6 +173,9 @@ func TestBuildElaborationPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "kas signal emit elaborator_finished my-feature")
 	// Fallback filesystem sentinel still present
 	assert.Contains(t, prompt, "elaborator-finished-my-feature")
+	// Role wording should stay on architect even though the external signal stays legacy.
+	assert.Contains(t, prompt, "Signal architect-pass completion with the retained external contract")
+	assert.NotContains(t, prompt, "elaborator agent")
 	// Must instruct to expand task bodies
 	assert.Contains(t, prompt, "implementation detail")
 	// Must instruct to preserve structure

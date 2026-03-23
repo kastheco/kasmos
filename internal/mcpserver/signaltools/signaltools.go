@@ -79,7 +79,7 @@ func normalizePayload(signalType, payload string) (string, error) {
 		return payload, nil
 	case "elaborator_finished":
 		if payload != "" {
-			return "", fmt.Errorf("elaborator_finished does not accept a payload")
+			return "", fmt.Errorf("elaborator_finished does not accept a payload (architect pass uses this legacy signal name)")
 		}
 		return "", nil
 	default:

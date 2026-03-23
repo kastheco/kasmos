@@ -1644,7 +1644,7 @@ func (m *home) spawnFixerWithFeedback(planFile, feedback string) tea.Cmd {
 	}
 }
 
-// spawnElaborator creates and starts the architect elaboration pass for the given plan.
+// spawnElaborator creates and starts the architect pass for the given plan.
 // The architect runs on the main branch (not in a worktree) since it only reads the
 // codebase and updates the task store — it does not modify files. When it finishes,
 // it writes an elaborator-finished-<planFile> sentinel that the metadata tick picks up
@@ -1656,7 +1656,7 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 	planName := taskstate.DisplayName(planFile)
 	prompt := orchestration.BuildElaborationPrompt(planFile)
 
-	// Clear any stale elaborator-finished sentinel from a prior run before
+	// Clear any stale elaborator-finished sentinel from a prior architect run before
 	// spawning a new architect pass. Without this, a leftover file (e.g. from a
 	// TUI restart mid-elaboration) would be picked up on the next tick and
 	// advance the orchestrator to wave 1 before the new architect pass finishes.

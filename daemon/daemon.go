@@ -541,7 +541,7 @@ func (d *Daemon) tickRepo(ctx context.Context, e RepoEntry) {
 			}
 		}
 
-		// --- Elaboration signals ---
+		// --- Architect-pass completion signals ---
 		for _, es := range scan.ElaborationSignals {
 			sigDir := es.Dir()
 			sigFile := es.Filename()
@@ -562,7 +562,7 @@ func (d *Daemon) tickRepo(ctx context.Context, e RepoEntry) {
 				actions = append(actions, acts...)
 				taskfsm.CompleteProcessing(procPath)
 			} else {
-				d.logger.Warn("dead-lettering elaboration signal", "file", sigFile, "repo", e.Path)
+				d.logger.Warn("dead-lettering architect completion signal", "file", sigFile, "repo", e.Path)
 				taskfsm.FailProcessing(sigDir, sigFile, "no active elaboration state to resume")
 			}
 		}
@@ -732,7 +732,7 @@ func gatewayNoopOutcome(entry *taskstore.SignalEntry) (taskstore.SignalStatus, s
 	case "implement_wave":
 		return taskstore.SignalFailed, "processor could not start the requested wave"
 	case "elaborator_finished":
-		return taskstore.SignalFailed, "no active elaboration state to resume"
+		return taskstore.SignalFailed, "no active architect pass to resume"
 	default:
 		return taskstore.SignalFailed, "signal rejected by processor"
 	}

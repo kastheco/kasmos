@@ -1011,12 +1011,13 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Done in Update (main goroutine) so FSM writes are never concurrent.
 		// Side-effect cmds (reviewer/coder spawns) are collected and batched below.
 		var signalCmds []tea.Cmd
+		proc := m.ensureProcessor()
 		if !msg.DaemonManagedRepo {
 			// Process FSM signals using the Processor when available, falling back to
 			// legacy inline code for home instances that don't have a taskStore
 			// (e.g. tests that build home without a store).
-			proc := m.ensureProcessor()
 			if proc != nil {
+				proc.SyncWaveOrchestrators(m.waveOrchestrators)
 				for planFile := range m.waveOrchestrators {
 					proc.SetWaveOrchestratorActive(planFile, true)
 				}
@@ -1385,53 +1386,53 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-			// Process elaboration signals — elaborator-finished files written by the
-			// architect agent once it has enriched all task bodies and stored the
-			// updated plan in the task store. On receipt we re-read the plan,
-			// replace it in the orchestrator, kill the architect instance, and
-			// start wave 1 normally.
-			for _, es := range msg.ElaborationSignals {
-				taskfsm.ConsumeElaborationSignal(es)
-
-				orch, exists := m.waveOrchestrators[es.TaskFile]
-				if !exists || orch.State() != orchestration.WaveStateElaborating {
-					log.WarningLog.Printf("ignoring elaborator-finished signal for %q — no active elaboration", es.TaskFile)
-					continue
+			// Process architect-pass completion signals. The external contract is
+			// still elaborator_finished, but both the app and daemon should reuse the
+			// shared processor semantics for reloading the enriched plan and advancing
+			// to wave 1.
+			if proc != nil {
+				actions := proc.ProcessElaborationSignals(msg.ElaborationSignals)
+				for _, es := range msg.ElaborationSignals {
+					taskfsm.ConsumeElaborationSignal(es)
 				}
-
-				// Re-read the enriched plan from the store.
-				content, err := m.taskStore.GetContent(m.taskStoreProject, es.TaskFile)
-				if err != nil {
-					log.WarningLog.Printf("elaboration signal: could not read plan %s: %v", es.TaskFile, err)
-					continue
-				}
-				plan, err := taskparser.Parse(content)
-				if err != nil {
-					log.WarningLog.Printf("elaboration signal: could not parse enriched plan %s: %v", es.TaskFile, err)
-					continue
-				}
-
-				// Replace the plan in the orchestrator with the enriched version.
-				orch.UpdatePlan(plan)
-
-				// Kill the elaborator instance.
-				for _, inst := range m.nav.GetInstances() {
-					if inst.TaskFile == es.TaskFile && inst.AgentType == session.AgentTypeElaborator {
-						_ = inst.Kill()
-						break
+				for _, act := range actions {
+					advance, ok := act.(loop.AdvanceWaveAction)
+					if !ok {
+						continue
+					}
+					orch, exists := m.waveOrchestrators[advance.PlanFile]
+					if !exists {
+						continue
+					}
+					for _, inst := range m.nav.GetInstances() {
+						if inst.TaskFile == advance.PlanFile && inst.AgentType == session.AgentTypeElaborator {
+							_ = inst.Kill()
+							break
+						}
+					}
+					entry, ok := m.taskState.Entry(advance.PlanFile)
+					if !ok {
+						continue
+					}
+					waveTasks := orch.CurrentWaveTasks()
+					if len(waveTasks) == 0 {
+						continue
+					}
+					waveNum := orch.CurrentWaveNumber()
+					m.toastManager.Info(fmt.Sprintf("plan elaborated — starting wave %d for '%s'", waveNum, taskstate.DisplayName(advance.PlanFile)))
+					m.audit(auditlog.EventWaveStarted,
+						fmt.Sprintf("wave %d started: %d task(s)", waveNum, len(waveTasks)),
+						auditlog.WithPlan(advance.PlanFile),
+						auditlog.WithWave(waveNum, 0))
+					mdl, cmd := m.spawnWaveTasks(orch, waveTasks, entry)
+					m = mdl.(*home)
+					if cmd != nil {
+						signalCmds = append(signalCmds, cmd)
 					}
 				}
-
-				entry, ok := m.taskState.Entry(es.TaskFile)
-				if !ok {
-					continue
-				}
-
-				m.toastManager.Info(fmt.Sprintf("plan elaborated — starting wave 1 for '%s'", taskstate.DisplayName(es.TaskFile)))
-				mdl, cmd := m.startNextWave(orch, entry)
-				m = mdl.(*home)
-				if cmd != nil {
-					signalCmds = append(signalCmds, cmd)
+			} else {
+				for _, es := range msg.ElaborationSignals {
+					taskfsm.ConsumeElaborationSignal(es)
 				}
 			}
 		}

@@ -173,7 +173,7 @@ func BuildElaborationPrompt(planFile string) string {
 			"4. Preserve the plan structure — do not change wave organization, "+
 			"task numbering, file lists, or the header fields. Only expand task bodies.\n"+
 			"5. Write the updated plan: pipe content to `kas task update-content %[1]s`\n"+
-			"6. Signal completion: `kas signal emit elaborator_finished %[1]s` (or fallback: `touch .kasmos/signals/elaborator-finished-%[1]s`)\n",
+			"6. Signal architect-pass completion with the retained external contract: `kas signal emit elaborator_finished %[1]s` (or fallback: `touch .kasmos/signals/elaborator-finished-%[1]s`)\n",
 		planFile,
 	)
 }

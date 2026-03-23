@@ -83,7 +83,7 @@ func BridgeFilesystemSignals(gw taskstore.SignalGateway, project, repoRoot strin
 		bridged++
 	}
 
-	// --- Elaboration signals (elaborator-finished-<plan>) ---
+	// --- Architect-pass completion signals (elaborator-finished-<plan>) ---
 	for _, es := range scan.ElaborationSignals {
 		payload, err := json.Marshal(map[string]string{})
 		if err != nil {
