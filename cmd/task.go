@@ -20,6 +20,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func normalizeTaskFilename(filename string) string {
+	return strings.TrimSuffix(strings.TrimSpace(filename), ".md")
+}
+
 // executeTaskRegister registers a plan file into the task store. The filePath
 // is resolved relative to the caller's working directory.
 func executeTaskRegister(project, filePath, branch, topic, description string, store taskstore.Store) error {
@@ -31,7 +35,7 @@ func executeTaskRegister(project, filePath, branch, topic, description string, s
 	if err != nil {
 		return err
 	}
-	planFile := strings.TrimSuffix(filepath.Base(filePath), ".md")
+	planFile := normalizeTaskFilename(filepath.Base(filePath))
 	if description == "" {
 		description = planFile
 		for _, line := range strings.Split(string(data), "\n") {
@@ -185,6 +189,7 @@ func executeTaskImplement(repoRoot, project, planFile string, wave int, store ta
 // executeTaskShow retrieves plan content from the task store and returns it
 // as raw markdown. Returns an error if the plan doesn't exist or has no content.
 func executeTaskShow(project, planFile string, store taskstore.Store) (string, error) {
+	planFile = normalizeTaskFilename(planFile)
 	ps, err := loadTaskStateByProject(project, store)
 	if err != nil {
 		return "", err
@@ -212,7 +217,7 @@ func executeTaskUpdateContent(project, filename string, reader io.Reader, store 
 		return fmt.Errorf("no content provided; pipe plan content via stdin: cat plan.md | kas task update-content <plan>")
 	}
 
-	filename = strings.TrimSuffix(filename, ".md")
+	filename = normalizeTaskFilename(filename)
 	ps, err := loadTaskStateByProject(project, store)
 	if err != nil {
 		return err

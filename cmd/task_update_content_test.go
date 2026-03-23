@@ -45,6 +45,24 @@ func TestExecuteTaskUpdateContent(t *testing.T) {
 		assert.Equal(t, taskstore.SubtaskStatusPending, subtasks[0].Status)
 	})
 
+	t.Run("accepts extensionless filename", func(t *testing.T) {
+		store := taskstore.NewTestSQLiteStore(t)
+		project := "test-project"
+		require.NoError(t, store.Create(project, taskstore.TaskEntry{
+			Filename:  "my-plan",
+			Status:    taskstore.StatusReady,
+			CreatedAt: time.Now(),
+		}))
+
+		content := "# Updated Plan\n\n## Wave 1\n\n### Task 1: foo\n"
+		err := executeTaskUpdateContent(project, "my-plan", strings.NewReader(content), store)
+		require.NoError(t, err)
+
+		got, err := store.GetContent(project, "my-plan")
+		require.NoError(t, err)
+		assert.Equal(t, content, got)
+	})
+
 	t.Run("exits 0 when content stored but parse fails (draft plan)", func(t *testing.T) {
 		store := taskstore.NewTestSQLiteStore(t)
 		project := "test-project"

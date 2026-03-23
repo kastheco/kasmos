@@ -29,7 +29,7 @@ func ParseWaveSignal(filename string) (WaveSignal, bool) {
 	}
 	return WaveSignal{
 		WaveNumber: wave,
-		TaskFile:   m[2],
+		TaskFile:   filepath.Base(m[2]),
 	}, true
 }
 

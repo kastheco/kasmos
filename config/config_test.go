@@ -193,7 +193,7 @@ func TestGetConfigDir(t *testing.T) {
 		assert.Equal(t, filepath.Join(repoDir, ".kasmos"), configDir)
 	})
 
-	t.Run("migrates config.toml from legacy XDG location", func(t *testing.T) {
+	t.Run("migrates supported files from legacy XDG location", func(t *testing.T) {
 		tempHome := t.TempDir()
 		t.Setenv("HOME", tempHome)
 		projectDir := t.TempDir()
@@ -205,6 +205,9 @@ func TestGetConfigDir(t *testing.T) {
 		require.NoError(t, os.WriteFile(
 			filepath.Join(legacyDir, "config.toml"),
 			[]byte("[ui]\nanimate_banner = true\n"), 0644))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(legacyDir, "taskstore.db"),
+			[]byte("sqlite"), 0644))
 
 		configDir, err := GetConfigDir()
 		require.NoError(t, err)
@@ -215,8 +218,13 @@ func TestGetConfigDir(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, string(data), "animate_banner")
 
+		migratedDB, err := os.ReadFile(filepath.Join(configDir, "taskstore.db"))
+		require.NoError(t, err)
+		assert.Equal(t, "sqlite", string(migratedDB))
+
 		// Legacy file should still exist (copy, not move)
 		assert.FileExists(t, filepath.Join(legacyDir, "config.toml"))
+		assert.FileExists(t, filepath.Join(legacyDir, "taskstore.db"))
 	})
 
 	t.Run("skips migration when config already exists in .kasmos", func(t *testing.T) {

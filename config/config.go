@@ -55,9 +55,10 @@ func GetConfigDir() (string, error) {
 	home, homeErr := os.UserHomeDir()
 	if homeErr == nil {
 		for _, legacy := range []string{
+			// Keep only the direct pre-repo-root XDG location as a supported
+			// one-time copy source. Older product-name directories are no longer
+			// part of the compatibility contract.
 			filepath.Join(home, ".config", "kasmos"),
-			filepath.Join(home, ".klique"),
-			filepath.Join(home, ".hivemind"),
 		} {
 			if _, statErr := os.Stat(legacy); statErr != nil {
 				continue

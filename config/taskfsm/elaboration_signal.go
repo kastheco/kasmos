@@ -23,6 +23,8 @@ func ParseElaborationSignal(filename string) (ElaborationSignal, bool) {
 	if planFile == "" {
 		return ElaborationSignal{}, false
 	}
+	// Preserve any .md suffix exactly as signaled; deep FSM/orchestrator layers do
+	// not normalize filenames beyond dropping path components.
 	planFile = filepath.Base(planFile)
 	return ElaborationSignal{TaskFile: planFile}, true
 }

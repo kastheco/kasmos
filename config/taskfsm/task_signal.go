@@ -69,6 +69,8 @@ func ScanTaskSignals(signalsDir string) []TaskSignal {
 			continue
 		}
 		sig.filePath = filepath.Join(signalsDir, entry.Name())
+		// Preserve any .md suffix exactly as signaled; compatibility trimming is
+		// limited to CLI/MCP ingress and the durable store migration.
 		sig.TaskFile = filepath.Base(sig.TaskFile)
 		signals = append(signals, sig)
 	}

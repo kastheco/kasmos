@@ -414,7 +414,7 @@ func TestExecuteTaskShow(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
 	project := "test-show-project"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{
-		Filename: "my-plan.md",
+		Filename: "my-plan",
 		Status:   taskstore.StatusReady,
 		Content:  "# My Plan\n\n## Wave 1\n\n### Task 1: Do it\n\nDo the thing.\n",
 	}))
@@ -422,6 +422,20 @@ func TestExecuteTaskShow(t *testing.T) {
 	content, err := executeTaskShow(project, "my-plan.md", store)
 	require.NoError(t, err)
 	assert.Equal(t, "# My Plan\n\n## Wave 1\n\n### Task 1: Do it\n\nDo the thing.\n", content)
+}
+
+func TestExecuteTaskShow_AcceptsExtensionlessFilename(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "test-show-project"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: "my-plan",
+		Status:   taskstore.StatusReady,
+		Content:  "# My Plan\n",
+	}))
+
+	content, err := executeTaskShow(project, "my-plan", store)
+	require.NoError(t, err)
+	assert.Equal(t, "# My Plan\n", content)
 }
 
 func TestExecuteTaskShow_NotFound(t *testing.T) {
@@ -435,7 +449,7 @@ func TestExecuteTaskShow_EmptyContent(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
 	project := "test-empty-project"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{
-		Filename: "empty.md",
+		Filename: "empty",
 		Status:   taskstore.StatusReady,
 	}))
 

@@ -164,8 +164,12 @@ func phaseNameForStatus(s Status) (string, bool) {
 	}
 }
 
-// mapLegacyStatus converts old planstate statuses to FSM statuses.
-// Handles the consolidated aliases (in_progress → implementing, completed/finished → done).
+// mapLegacyStatus converts statuses imported through the explicit legacy
+// migration paths into canonical FSM statuses.
+//
+// Keep these aliases only because MigrateFromJSON and migrateFromPlanstoreDB
+// may still surface pre-v2 persisted values in user data. New store writes use
+// the canonical statuses directly.
 func mapLegacyStatus(s taskstate.Status) Status {
 	switch s {
 	case "in_progress":
