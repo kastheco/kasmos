@@ -59,7 +59,7 @@ type Instance struct {
 	SkipPermissions bool
 	// TaskFile is the plan file this instance is implementing (empty for ad-hoc sessions).
 	TaskFile string
-	// Topic is the plan-state group this instance belongs to.
+	// Topic is the topic group this instance belongs to.
 	Topic string
 	// AgentType identifies the role within a plan lifecycle: planner, coder, reviewer, fixer, or empty.
 	AgentType string
@@ -69,7 +69,7 @@ type Instance struct {
 	WaveNumber int
 	// PeerCount is the number of concurrent sibling tasks in the same wave (0 = not a wave task).
 	PeerCount int
-	// IsReviewer is a deprecated compatibility mirror for older persisted state.
+	// IsReviewer is a compatibility mirror for older persisted instance data.
 	// New runtime logic should use AgentType == AgentTypeReviewer.
 	IsReviewer bool
 	// ImplementationComplete is set when the coder finishes and the plan transitions to review.

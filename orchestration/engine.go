@@ -12,7 +12,7 @@ type WaveState int
 
 const (
 	WaveStateIdle         WaveState = iota // Not started
-	WaveStateElaborating                   // Waiting for elaborator to enrich task descriptions
+	WaveStateElaborating                   // Waiting for the architect pass to enrich task descriptions before wave 1
 	WaveStateRunning                       // Current wave's tasks are running
 	WaveStateWaveComplete                  // Current wave finished, awaiting user confirmation
 	WaveStateAllComplete                   // All waves finished

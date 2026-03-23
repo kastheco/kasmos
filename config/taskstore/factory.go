@@ -6,9 +6,9 @@ import (
 	"github.com/kastheco/kasmos/config"
 )
 
-// NewStoreFromConfig creates a Store from a plan store URL and project name.
-// If storeURL is empty, it returns (nil, nil) — the caller should fall
-// back to legacy plan-state.json behavior.
+// NewStoreFromConfig creates a Store from a remote task store URL and project name.
+// If storeURL is empty, it returns (nil, nil) so the caller can choose the
+// local embedded/SQLite task store path instead.
 // The returned store uses lazy connection: the URL is validated syntactically
 // but no network connection is made until the first operation (or Ping).
 func NewStoreFromConfig(storeURL, project string) (Store, error) {

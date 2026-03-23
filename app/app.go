@@ -310,8 +310,8 @@ type home struct {
 	taskStore taskstore.Store
 	// taskStoreProject is the project name used with the remote store (derived from repo basename).
 	taskStoreProject string
-	// auditLogger records structured audit events to the planstore SQLite database.
-	// Falls back to NopLogger when planstore is HTTP-backed or unconfigured.
+	// auditLogger records structured audit events in the local taskstore SQLite database.
+	// Falls back to NopLogger when the SQLite audit logger cannot be opened.
 	auditLogger auditlog.Logger
 
 	// previewTickCount counts preview ticks for throttled banner animation
@@ -579,7 +579,7 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 }
 
 // activeProject returns the project name derived from the active repo path.
-// This matches how planstore derives the project name (filepath.Base of the repo path).
+// This matches how the task store derives the project name (filepath.Base of the repo path).
 func (m *home) activeProject() string {
 	return filepath.Base(m.activeRepoPath)
 }
@@ -1004,8 +1004,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		proc := m.ensureProcessor()
 		if !msg.DaemonManagedRepo {
 			// Process FSM signals using the Processor when available, falling back to
-			// legacy inline code for home instances that don't have a taskStore
-			// (e.g. tests that build home without a store).
+			// the inline test-only path when a narrow test builds home without a taskStore.
 			if proc != nil {
 				proc.SyncWaveOrchestrators(m.waveOrchestrators)
 				for planFile := range m.waveOrchestrators {
@@ -1376,10 +1375,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-			// Process architect-pass completion signals. The external contract is
-			// still elaborator_finished, but both the app and daemon should reuse the
-			// shared processor semantics for reloading the enriched plan and advancing
-			// to wave 1.
+			// Process architect-pass completion signals. The gateway contract still
+			// uses the elaborator_finished name for compatibility, but the app and
+			// daemon both reuse the shared processor semantics for reloading the
+			// enriched plan and advancing to wave 1.
 			if proc != nil {
 				actions := proc.ProcessElaborationSignals(msg.ElaborationSignals)
 				for _, es := range msg.ElaborationSignals {

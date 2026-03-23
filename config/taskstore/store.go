@@ -1,4 +1,4 @@
-// Package planstore provides a Store interface for plan state persistence,
+// Package taskstore provides a Store interface for task state persistence,
 // with a SQLite implementation for direct DB access and an HTTP implementation
 // for client-server communication.
 package taskstore
@@ -17,7 +17,7 @@ type PRReviewEntry struct {
 }
 
 // Status represents the lifecycle state of a plan.
-// These constants mirror taskstate.Status to keep planstore self-contained
+// These constants mirror taskstate.Status to keep taskstore self-contained
 // and avoid circular imports.
 type Status string
 

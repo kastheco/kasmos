@@ -95,8 +95,9 @@ func toTaskFSMHooks(entries []config.TOMLHook) []taskfsm.HookConfig {
 }
 
 // ensureProcessor lazily initializes and returns the signal Processor.
-// Returns nil when taskStore is not set (e.g. in tests that don't need signal processing),
-// in which case the caller must fall back to the legacy FSM signal handling code.
+// Returns nil when taskStore is not set (for example in narrow tests that do
+// not exercise signal processing), in which case the caller uses the inline
+// fallback path in app.Update.
 func (m *home) ensureProcessor() *loop.Processor {
 	autoReviewFix := false
 	maxCycles := 0
@@ -2218,8 +2219,8 @@ func (m *home) spawnTaskAgent(planFile, action, prompt string) (tea.Model, tea.C
 	if err != nil {
 		return m, m.handleError(err)
 	}
-	// Keep the deprecated reviewer flag in sync so older persistence paths still
-	// round-trip cleanly while AgentType remains the runtime source of truth.
+	// Keep the legacy reviewer flag in sync so older persisted instance records
+	// still round-trip cleanly while AgentType remains the runtime source of truth.
 	if agentType == session.AgentTypeReviewer {
 		inst.IsReviewer = true
 		// Set ReviewCycle so the instance carries the same cycle number used in the title.
