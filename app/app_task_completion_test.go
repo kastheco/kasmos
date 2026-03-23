@@ -667,6 +667,10 @@ func TestReviewChangesSignal_RespawnsFixer(t *testing.T) {
 			foundFixer = true
 			assert.Contains(t, inst.QueuedPrompt, feedback,
 				"fixer prompt must contain reviewer feedback")
+			assert.Contains(t, inst.QueuedPrompt, "not an implementer",
+				"fixer prompt must keep the agent in fix-only mode")
+			assert.NotContains(t, inst.QueuedPrompt, "execute all tasks sequentially",
+				"fixer prompt must not reuse the broad implement prompt")
 			break
 		}
 	}

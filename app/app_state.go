@@ -1566,7 +1566,7 @@ func (m *home) killExistingPlanAgent(planFile, agentType string) {
 }
 
 // spawnFixerWithFeedback creates and starts a fixer session for the given plan,
-// injecting reviewer feedback into the implementation prompt. Uses the plan's
+// injecting reviewer feedback into a dedicated fixer prompt. Uses the plan's
 // shared worktree so fixes are applied to the actual implementation branch.
 // Does NOT perform any FSM transition — the caller is responsible for that.
 func (m *home) spawnFixerWithFeedback(planFile, feedback string) tea.Cmd {
@@ -1574,10 +1574,7 @@ func (m *home) spawnFixerWithFeedback(planFile, feedback string) tea.Cmd {
 		return nil
 	}
 	planName := taskstate.DisplayName(planFile)
-	prompt := buildImplementPrompt(planFile)
-	if feedback != "" {
-		prompt += fmt.Sprintf("\n\nReviewer feedback from previous round:\n%s", feedback)
-	}
+	prompt := orchestration.BuildFixerPrompt(planFile, feedback)
 
 	// Kill any previous fixer (and any legacy feedback-coder) for this plan so
 	// the new session gets a fresh tmux session instead of reattaching to a

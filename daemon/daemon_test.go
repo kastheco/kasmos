@@ -408,6 +408,19 @@ func TestCoderSpawnOpts_ForwardsFeedbackAsPrompt(t *testing.T) {
 	assert.Equal(t, "plan/plan", opts.Branch)
 }
 
+func TestFixerSpawnOpts_UsesFixerPrompt(t *testing.T) {
+	repo := RepoEntry{Path: "/tmp/repo", Project: "repo"}
+	opts := fixerSpawnOpts(repo, "plan.md", "plan/plan", "- [app.go:42] address reviewer feedback")
+
+	assert.Contains(t, opts.Prompt, "Address reviewer feedback for plan: plan.md")
+	assert.Contains(t, opts.Prompt, "not an implementer")
+	assert.Contains(t, opts.Prompt, "address reviewer feedback")
+	assert.NotContains(t, opts.Prompt, "execute all tasks sequentially")
+	assert.Equal(t, "- [app.go:42] address reviewer feedback", opts.Feedback)
+	assert.Equal(t, "/tmp/repo", opts.RepoPath)
+	assert.Equal(t, "plan/plan", opts.Branch)
+}
+
 func TestSharedWorktreePaths(t *testing.T) {
 	repo := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(repo, ".worktrees", "a"), 0o755))

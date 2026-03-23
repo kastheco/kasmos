@@ -828,7 +828,7 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		})
 		return nil
 	case loop.SpawnFixerAction:
-		opts := coderSpawnOpts(e, a.PlanFile, branchFor(a.PlanFile), a.Feedback)
+		opts := fixerSpawnOpts(e, a.PlanFile, branchFor(a.PlanFile), a.Feedback)
 		if err := d.spawner.SpawnFixer(ctx, opts); err != nil {
 			d.logger.Error("spawn fixer failed", "plan", a.PlanFile, "err", err)
 			return err
@@ -1057,6 +1057,17 @@ func coderSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 		Project:  e.Project,
 		Branch:   branch,
 		Prompt:   feedback,
+		Feedback: feedback,
+	}
+}
+
+func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOpts {
+	return loop.SpawnOpts{
+		PlanFile: planFile,
+		RepoPath: e.Path,
+		Project:  e.Project,
+		Branch:   branch,
+		Prompt:   orchestration.BuildFixerPrompt(planFile, feedback),
 		Feedback: feedback,
 	}
 }

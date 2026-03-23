@@ -122,6 +122,35 @@ func BuildBlueprintSkipPrompt(planFile string, plan *taskparser.Plan) string {
 	return sb.String()
 }
 
+// BuildFixerPrompt builds the prompt for a fixer agent responding to reviewer
+// feedback. Unlike implementation prompts, it scopes work to cited review
+// findings and tells the agent not to resume broad plan execution.
+func BuildFixerPrompt(planFile, feedback string) string {
+	var sb strings.Builder
+
+	trimmedFeedback := strings.TrimSpace(feedback)
+
+	sb.WriteString(fmt.Sprintf("Address reviewer feedback for plan: %s\n\n", planFile))
+	sb.WriteString("## Rules\n\n")
+	sb.WriteString("- You are a fixer responding to review findings, not an implementer.\n")
+	sb.WriteString(fmt.Sprintf("- Retrieve the full plan with `kas task show %s` for context, but do NOT resume broad plan implementation.\n", planFile))
+	sb.WriteString("- Fix only the cited review findings with minimal, targeted changes.\n")
+	sb.WriteString("- Investigate root causes before editing code.\n")
+	sb.WriteString("- Use `rg` (not grep), `sd` (not sed), `fd` (not find), `comby`/`ast-grep` for structural changes.\n")
+	sb.WriteString("- Run targeted verification for the affected area first; run broader tests only as needed.\n")
+	sb.WriteString("- When done, stop so kasmos can continue the review loop.\n\n")
+
+	sb.WriteString("## Reviewer feedback\n\n")
+	if trimmedFeedback != "" {
+		sb.WriteString(trimmedFeedback)
+		sb.WriteString("\n")
+	} else {
+		sb.WriteString("No structured reviewer feedback was attached. Inspect the latest reviewer output or PR review comments before making changes, and constrain work to those cited findings only.\n")
+	}
+
+	return sb.String()
+}
+
 // BuildElaborationPrompt returns the prompt for the architect-led elaboration pass.
 // The architect reads the plan, deeply reads the codebase for each task's files,
 // and expands task bodies with detailed implementation instructions.

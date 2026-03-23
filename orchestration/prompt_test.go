@@ -130,6 +130,24 @@ func TestBuildWaveAnnotationPrompt(t *testing.T) {
 	assert.NotContains(t, prompt, "The plan at docs/plans/")
 }
 
+func TestBuildFixerPrompt(t *testing.T) {
+	prompt := BuildFixerPrompt("my-feature", "- [app.go:42] fix the failing review handoff")
+
+	assert.Contains(t, prompt, "Address reviewer feedback for plan: my-feature")
+	assert.Contains(t, prompt, "kas task show my-feature")
+	assert.Contains(t, prompt, "not an implementer")
+	assert.Contains(t, prompt, "fix the failing review handoff")
+	assert.NotContains(t, prompt, "execute all tasks sequentially")
+}
+
+func TestBuildFixerPrompt_WithoutFeedback(t *testing.T) {
+	prompt := BuildFixerPrompt("my-feature", "   ")
+
+	assert.Contains(t, prompt, "No structured reviewer feedback was attached")
+	assert.Contains(t, prompt, "Inspect the latest reviewer output or PR review comments")
+	assert.NotContains(t, prompt, "execute all tasks sequentially")
+}
+
 func TestBuildMasterReviewPrompt(t *testing.T) {
 	prompt := BuildMasterReviewPrompt("my-feature", "diff content here", "PASS: 42 tests")
 
