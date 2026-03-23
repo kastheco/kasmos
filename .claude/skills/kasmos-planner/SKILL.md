@@ -278,7 +278,7 @@ this is mandatory. fix every failure inline before signaling.
 - [ ] unresolved risks and open questions are logged with owners or follow-up plan.
 - [ ] the stored plan is immediately parseable for execution without a follow-up wave-annotation pass.
 
-if all checks pass: proceed to register + signal.
+if all checks pass: proceed to store + signal.
 
 if any check fails: fix inline, then re-run these checks.
 
@@ -298,16 +298,15 @@ do not commit sentinel files — kasmos consumes and deletes them automatically.
 
 check your execution context:
 
-```bash
-echo "${KASMOS_MANAGED:-}"
-```
+- managed: `KASMOS_MANAGED=1`
+- manual: `KASMOS_MANAGED` unset
 
 ### managed mode (`KASMOS_MANAGED=1`)
 
 kasmos is orchestrating this session. store the plan content and signal completion.
 
-use MCP `task_update_content` (filename: "<feature-name>", content: "<full plan markdown>") to persist the finished plan.
-then use MCP `signal_create` (signal_type: "planner-finished", plan_file: "<feature-name>") to notify completion.
+use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>") to persist the finished plan.
+then use MCP `signal_create` (signal_type: "planner-finished", plan_file: "<plan-file>") to notify completion.
 
 **do NOT modify task state directly** — kasmos manages the task store.
 
@@ -319,11 +318,11 @@ announce completion and stop:
 
 ### manual mode (`KASMOS_MANAGED` unset)
 
-store the plan in the task store using MCP calls:
+store the plan in the task store using MCP calls.
 
-if the task does not exist yet, create it using MCP first, then update content:
+if the task does not exist yet, use MCP `task_create` (filename: "<plan-file>") first, then use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>") to persist the plan.
 
-`task_create <feature-name>.md` then `task_update_content <feature-name>`.
+if the task already exists, use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>") directly.
 
 then offer execution choices:
 
