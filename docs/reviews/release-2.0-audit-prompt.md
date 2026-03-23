@@ -1,3 +1,7 @@
+# release 2.0 audit prompt (historical)
+
+> historical review artifact: this prompt was used for the `release/2.0` rewrite audit. keep it as evidence of the release review scope, not as current release-process guidance.
+
 You are a code reviewer performing a license compliance and correctness audit on the `release/2.0` branch of the kasmos repo.
 
 ## Context

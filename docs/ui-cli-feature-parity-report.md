@@ -1,37 +1,39 @@
-# kasmos UI vs CLI Feature Parity Report
+# kasmos UI vs CLI feature parity report (historical)
+
+> historical note: this document describes a pre-task-cli snapshot from before the current `kas task`, `kas instance`, `kas signal`, `kas daemon`, `kas monitor`, `kas audit`, and `kas tmux` surfaces were added. keep it only as release-history context; do not treat it as current operational guidance.
 
 ## Executive Summary
 
-kasmos has a **massive gap** between what the TUI can do and what's available headlessly. The TUI (`app/`) is the primary control surface — it contains ~95% of the orchestration logic. The CLI (`cmd/`) exposes only plan state queries and a plan store HTTP server. There is **no CLI surface** for instance management, agent spawning, wave orchestration, git operations, or signal processing. An agent operating headlessly today can only read/write plan metadata via the HTTP API or the `kas plan` subcommands.
+This report is a retained audit artifact from an earlier CLI surface. It captures why headless parity work was needed at the time, but several command references below now describe superseded `kas plan` flows rather than the current `kas task`-first interface.
 
-## Current CLI Surface
+## Historical CLI Surface Captured By This Report
 
 | Command                                     | What it does                                |
 | ------------------------------------------- | ------------------------------------------- |
 | `kas` (root)                                  | Launches the TUI — not headless             |
-| `kas plan list [--status=X]`                  | List plans with optional status filter      |
-| `kas plan register <file>`                    | Register an untracked plan file             |
-| `kas plan set-status <file> <status> --force` | Force-override plan status (bypasses FSM)   |
-| `kas plan transition <file> <event>`          | Apply FSM event to a plan                   |
-| `kas plan implement <file> --wave=N`          | Write a wave signal file (TUI picks it up)  |
-| `kas plan link-clickup`                       | Backfill ClickUp task IDs from plan content |
-| `kas serve`                                   | Start the plan store HTTP server            |
+| `kas task list [--status=X]`                  | List tasks with optional status filter      |
+| `kas task register <file>`                    | Register an untracked task file             |
+| `kas task set-status <file> <status> --force` | Force-override task status (bypasses FSM)   |
+| `kas task transition <file> <event>`          | Apply FSM event to a task                   |
+| `kas task implement <file> --wave=N`          | Write a wave signal file (historical path)  |
+| `kas task link-clickup`                       | Backfill ClickUp task IDs from task content |
+| `kas serve`                                   | Start the task store HTTP server            |
 | `kas reset`                                   | Delete all instances, clean tmux/worktrees  |
 | `kas debug`                                   | Print config paths                          |
 | `kas version`                                 | Print version                               |
 | `kas setup`                                   | Interactive agent harness wizard            |
 
-## Current HTTP API Surface (plan store)
+## Historical HTTP API Surface Snapshot
 
 | Endpoint                                                       | Method | What it does                                 |
 | -------------------------------------------------------------- | ------ | -------------------------------------------- |
 | `/v1/ping`                                                       | GET    | Health check                                 |
-| `/v1/projects/{project}/plans`                                   | GET    | List plans (with `?status=` / `?topic=` filters) |
-| `/v1/projects/{project}/plans`                                   | POST   | Create plan                                  |
-| `/v1/projects/{project}/plans/{filename}`                        | GET    | Get plan metadata                            |
-| `/v1/projects/{project}/plans/{filename}`                        | PUT    | Update plan metadata                         |
-| `/v1/projects/{project}/plans/{filename}/content`                | GET    | Get plan markdown content                    |
-| `/v1/projects/{project}/plans/{filename}/content`                | PUT    | Set plan markdown content                    |
+| `/v1/projects/{project}/plans`                                   | GET    | List task entries (legacy `/plans` path)    |
+| `/v1/projects/{project}/plans`                                   | POST   | Create task entry                            |
+| `/v1/projects/{project}/plans/{filename}`                        | GET    | Get task metadata                            |
+| `/v1/projects/{project}/plans/{filename}`                        | PUT    | Update task metadata                         |
+| `/v1/projects/{project}/plans/{filename}/content`                | GET    | Get stored task markdown                     |
+| `/v1/projects/{project}/plans/{filename}/content`                | PUT    | Set stored task markdown                     |
 | `/v1/projects/{project}/plans/{filename}/clickup-task-id`        | PUT    | Set ClickUp task ID                          |
 | `/v1/projects/{project}/plans/{filename}/increment-review-cycle` | POST   | Increment review cycle                       |
 | `/v1/projects/{project}/plans/{filename}/rename`                 | POST   | Rename plan                                  |

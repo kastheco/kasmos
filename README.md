@@ -1,6 +1,6 @@
 # kasmos [![CI](https://github.com/kastheco/kasmos/actions/workflows/build.yml/badge.svg)](https://github.com/kastheco/kasmos/actions/workflows/build.yml) [![GitHub Release](https://img.shields.io/github/v/release/kastheco/kasmos)](https://github.com/kastheco/kasmos/releases/latest) [![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](LICENSE.md)
 
-> harness & model-agnostic ai orchestration tool with automated wave-based implementation — powered by superpowers, tmux, and git worktrees.
+> harness & model-agnostic ai orchestration tool with automated wave-based implementation — powered by scaffolded agent skills, tmux, and git worktrees.
 
 ![kasmos screenshot](assets/screenshot.gif)
 
@@ -8,11 +8,11 @@
 
 ## what it does
 
-kasmos turns your terminal into a multi-agent control center. each task gets its own isolated git worktree and a fresh tmux session at every lifecycle stage: a planner agent writes the implementation plan, coder agents execute it wave by wave, and a reviewer agent validates the result — all managed from a single tui.
+kasmos turns your terminal into a multi-agent control center. each task gets its own isolated git worktree and a fresh tmux session at every lifecycle stage: a planner agent writes the implementation plan, an architect can decompose it into coder-ready waves, coder agents execute it wave by wave, and a reviewer agent validates the result — all managed from a single tui.
 
-- **plan-centric workflow** — create plans with name + description, organize into topics, track status through the full lifecycle (planning → implementing → reviewing → done)
-- **wave orchestration** — plans are split into waves; kasmos automatically runs parallel agents per wave, advancing only when all tasks pass
-- **isolated workspaces** — every plan gets a dedicated git worktree and tmux session; no branch conflicts, no shared state
+- **task-centric workflow** — create tasks with name + description, organize them into topics, and track status through the full lifecycle (planning → implementing → reviewing → done)
+- **wave orchestration** — task content is split into waves; kasmos automatically runs parallel agents per wave, advancing only when all tasks pass
+- **isolated workspaces** — every task gets a dedicated git worktree and tmux session; no branch conflicts, no shared state
 - **live agent preview** — the center pane embeds a live terminal so you can watch agents work without leaving kasmos
 - **diff + git views** — review changes and git history before merging, right inside the TUI
 - **auto-accept mode** — run agents unattended with a background daemon handling permission prompts
@@ -86,8 +86,16 @@ usage:
 
 available commands:
   setup       configure agent harnesses, install skills, and scaffold project files
-  plan        manage plan lifecycle (list, set-status, transition, implement)
-  serve       start the plan store http server (sqlite-backed)
+  task        manage task lifecycle and content
+  serve       start the task store http server (sqlite-backed)
+  instance    inspect and control managed agent instances
+  audit       query audit events
+  tmux        inspect and adopt orphan tmux sessions
+  signal      inspect, emit, and process lifecycle signals
+  daemon      manage the background daemon
+  monitor     inspect daemon health
+  status      show a repository status summary
+  check       audit scaffold and skill sync health
   reset       reset all stored instances and clean up tmux sessions and worktrees
   debug       print debug information like config paths
   version     print the version number
@@ -102,11 +110,11 @@ flags:
 
 | key | action |
 |-----|--------|
-| `n` | new plan |
-| `/` | search plans |
+| `n` | new task |
+| `/` | search tasks |
 | `space` | open context menu |
 | `tab` | cycle focus (sidebar → list → preview) |
-| `↑ / ↓` or `j / k` | navigate |
+| `↑ / ↓` | navigate |
 | `i` | interactive mode (focus agent pane) |
 | `ctrl-q` | exit interactive mode |
 | `?` | help |
@@ -116,17 +124,17 @@ flags:
 
 ## how it works
 
-1. **tasks** are tracked in the task store (SQLite database) — use `kas task list` to see all tasks and `kas task show <file>` to read plan content
-2. **topics** group related plans and act as collision domains (only one plan per topic can implement at a time)
+1. **tasks** are tracked in the task store (SQLite database) — use `kas task list` to see all tasks and `kas task show <file>` to read task content
+2. **topics** group related tasks and act as collision domains (only one task per topic can implement at a time)
 3. **waves** divide implementation into phases — kasmos parses `## Wave N` headers and runs each wave's tasks in parallel
 4. **agents** are spawned in isolated tmux sessions with dedicated git worktrees; the TUI shows live output in the preview pane
-5. **review** is automated — a reviewer agent checks the implementation, and kasmos prompts for merge/PR approval before closing the plan
+5. **review** is automated — a reviewer agent checks the implementation, and kasmos prompts for merge/PR approval before closing the task
 
 ---
 
 ## task store
 
-task state is stored in an embedded SQLite database (`~/.config/kasmos/kasmos.db`) that starts automatically when kasmos boots — no server required.
+task state is stored in a project-local SQLite database under `<repo-root>/.kasmos/taskstore.db`. `config/config.go:GetConfigDir` anchors `.kasmos/` to the main repo root even when you launch kasmos from a git worktree.
 
 #### managing tasks
 
@@ -135,17 +143,17 @@ use the `kas task` CLI:
 ```bash
 kas task list                          # list all tasks
 kas task list --status implementing    # filter by status
-kas task show <file>                   # read plan content
+kas task show <file>                   # read task content
 kas task create <name>                 # create a new task
-kas task register <file>               # register a plan file from disk
-kas task update-content <file>         # update plan content (reads stdin)
+kas task register <file>               # register a task file from disk
+kas task update-content <file>         # update task content (reads stdin)
 kas task set-status <file> done --force  # force-override status
 kas task transition <file> <event>     # apply FSM event
 ```
 
 #### optional remote store
 
-for multi-machine access (e.g. over tailscale or a team server), add one line to `~/.config/kasmos/config.toml`:
+for multi-machine access (e.g. over tailscale or a team server), add one line to `<repo-root>/.kasmos/config.toml`:
 
 ```toml
 plan_store = "http://your-desktop:7433"
@@ -168,7 +176,7 @@ just db-service-enable
 #### run the orchestration daemon as a systemd service
 
 `kas signal emit ...` writes to the signal gateway database. a running daemon is what
-claims those rows and advances plan lifecycle state outside the legacy filesystem
+claims those rows and advances task lifecycle state outside the legacy filesystem
 sentinel path.
 
 a user unit is provided in `contrib/kasmos.service`:
@@ -178,14 +186,14 @@ just kasmosd-enable
 just doctord
 ```
 
-or, if you want both the orchestration daemon and plan store service in one step:
+or, if you want both the orchestration daemon and task store service in one step:
 
 ```bash
 just services-enable
 ```
 
 if you only emit a signal but no daemon is running, the signal stays pending and the
-plan will not advance until the daemon processes it.
+task will not advance until the daemon processes it.
 
 #### rest api
 
@@ -195,7 +203,7 @@ the store exposes a simple rest api for scripting:
 # health check
 curl http://localhost:7433/v1/ping
 
-# list all plans
+# list all tasks
 curl http://localhost:7433/v1/projects/kasmos/plans
 
 # filter by status
@@ -209,7 +217,7 @@ curl 'http://localhost:7433/v1/projects/kasmos/plans?topic=bugs'
 
 ## configuration
 
-config lives at `~/.config/kasmos/config.toml`. locate it with:
+config lives at `<repo-root>/.kasmos/config.toml`. locate it with:
 
 ```bash
 kasmos debug
@@ -218,7 +226,7 @@ kasmos debug
 key settings:
 
 ```toml
-plan_store = "http://localhost:7433"  # remote plan store (optional)
+plan_store = "http://localhost:7433"  # remote task store (optional)
 ```
 
 ---
