@@ -15,7 +15,7 @@ func TestStateToTOMLConfig(t *testing.T) {
 				Temperature: temp, Effort: "high", Enabled: true},
 			{Role: "reviewer", Harness: "claude", Model: "claude-opus-4-6",
 				Temperature: "", Effort: "high", Enabled: true},
-			{Role: "planner", Harness: "codex", Model: "gpt-5.3-codex",
+			{Role: "planner", Harness: "codex", Model: "gpt-5-codex",
 				Temperature: "", Effort: "", Enabled: false},
 			{Role: "chat", Harness: "opencode", Model: "anthropic/claude-sonnet-4-6",
 				Temperature: "0.3", Effort: "high", Enabled: true},
@@ -116,7 +116,7 @@ func TestRoleDefaults(t *testing.T) {
 
 	t.Run("coder defaults", func(t *testing.T) {
 		c := defaults["coder"]
-		assert.Equal(t, "openai/gpt-5.3-codex", c.Model)
+		assert.Equal(t, "openai/gpt-5-codex", c.Model)
 		assert.Equal(t, "low", c.Effort)
 		assert.Equal(t, "0.1", c.Temperature)
 		assert.True(t, c.Enabled)
@@ -124,7 +124,7 @@ func TestRoleDefaults(t *testing.T) {
 
 	t.Run("architect defaults", func(t *testing.T) {
 		e := defaults["architect"]
-		assert.Equal(t, "openai/gpt-5.3-codex", e.Model)
+		assert.Equal(t, "openai/gpt-5-codex", e.Model)
 		assert.Equal(t, "high", e.Effort)
 		assert.Equal(t, "0.1", e.Temperature)
 		assert.True(t, e.Enabled)
@@ -140,7 +140,7 @@ func TestRoleDefaults(t *testing.T) {
 
 	t.Run("reviewer defaults", func(t *testing.T) {
 		r := defaults["reviewer"]
-		assert.Equal(t, "openai/gpt-5.3-codex", r.Model)
+		assert.Equal(t, "openai/gpt-5-codex", r.Model)
 		assert.Equal(t, "medium", r.Effort)
 		assert.Equal(t, "0.1", r.Temperature)
 		assert.True(t, r.Enabled)

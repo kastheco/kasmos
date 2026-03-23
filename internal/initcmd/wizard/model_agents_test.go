@@ -13,7 +13,7 @@ import (
 func TestAgentStep_BrowseNavigation(t *testing.T) {
 	agents := []AgentState{
 		{Role: "coder", Harness: "claude", Model: "claude-sonnet-4-6", Enabled: true},
-		{Role: "reviewer", Harness: "opencode", Model: "gpt-5.3-codex", Enabled: true},
+		{Role: "reviewer", Harness: "opencode", Model: "gpt-5-codex", Enabled: true},
 		{Role: "planner", Harness: "claude", Model: "claude-opus-4-6", Enabled: true},
 		{Role: "chat", Harness: "claude", Model: "claude-sonnet-4-6", Enabled: true},
 		{Role: "fixer", Harness: "claude", Model: "claude-sonnet-4-6", Enabled: true},
@@ -164,7 +164,7 @@ func TestAgentStepPrePopulatesFromExisting(t *testing.T) {
 	assert.Equal(t, "high", agents[0].Effort)
 	assert.Equal(t, "0.5", agents[0].Temperature)
 	// reviewer gets defaults
-	assert.Equal(t, "openai/gpt-5.3-codex", agents[1].Model)
+	assert.Equal(t, "openai/gpt-5-codex", agents[1].Model)
 }
 
 func TestAgentStep_IgnoresLegacyElaboratorProfile(t *testing.T) {
@@ -193,7 +193,7 @@ func TestAgentStep_IgnoresLegacyElaboratorProfile(t *testing.T) {
 	}
 	require.Equal(t, "architect", arch.Role, "architect role must be present")
 	assert.Equal(t, "opencode", arch.Harness, "architect should keep the default harness")
-	assert.Equal(t, "openai/gpt-5.3-codex", arch.Model)
+	assert.Equal(t, "openai/gpt-5-codex", arch.Model)
 	assert.Equal(t, "high", arch.Effort)
 	assert.Equal(t, "0.1", arch.Temperature)
 	assert.True(t, arch.Enabled)
@@ -202,7 +202,7 @@ func TestAgentStep_IgnoresLegacyElaboratorProfile(t *testing.T) {
 func TestAgentStep_ViewSeparatorFillsPanelHeight(t *testing.T) {
 	agents := []AgentState{
 		{Role: "coder", Harness: "claude", Model: "anthropic/claude-sonnet-4-6", Enabled: true},
-		{Role: "reviewer", Harness: "opencode", Model: "openai/gpt-5.3-codex", Enabled: true},
+		{Role: "reviewer", Harness: "opencode", Model: "openai/gpt-5-codex", Enabled: true},
 		{Role: "planner", Harness: "claude", Model: "anthropic/claude-opus-4-6", Enabled: true},
 	}
 

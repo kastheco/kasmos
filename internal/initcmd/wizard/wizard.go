@@ -47,14 +47,14 @@ func RoleDefaults() map[string]AgentState {
 	return map[string]AgentState{
 		"coder": {
 			Role:        "coder",
-			Model:       "openai/gpt-5.3-codex",
+			Model:       "openai/gpt-5-codex",
 			Effort:      "low",
 			Temperature: "0.1",
 			Enabled:     true,
 		},
 		"architect": {
 			Role:        "architect",
-			Model:       "openai/gpt-5.3-codex",
+			Model:       "openai/gpt-5-codex",
 			Effort:      "high",
 			Temperature: "0.1",
 			Enabled:     true,
@@ -68,7 +68,7 @@ func RoleDefaults() map[string]AgentState {
 		},
 		"reviewer": {
 			Role:        "reviewer",
-			Model:       "openai/gpt-5.3-codex",
+			Model:       "openai/gpt-5-codex",
 			Effort:      "medium",
 			Temperature: "0.1",
 			Enabled:     true,
@@ -82,7 +82,7 @@ func RoleDefaults() map[string]AgentState {
 		},
 		"fixer": {
 			Role:        "fixer",
-			Model:       "openai/gpt-5.3-codex",
+			Model:       "openai/gpt-5-codex",
 			Effort:      "medium",
 			Temperature: "0.1",
 			Enabled:     true,

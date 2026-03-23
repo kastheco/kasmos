@@ -18,9 +18,13 @@ func (c *Codex) Detect() (string, bool) {
 	return path, true
 }
 
-// ListModels returns a default suggestion. Codex accepts free-text model names.
+// ListModels returns curated suggestions. Codex accepts free-text model names.
 func (c *Codex) ListModels() ([]string, error) {
-	return []string{"gpt-5.3-codex"}, nil
+	return []string{
+		"gpt-5-codex",
+		"gpt-5.4",
+		"gpt-5.3-codex",
+	}, nil
 }
 
 func (c *Codex) BuildFlags(agent AgentConfig) []string {

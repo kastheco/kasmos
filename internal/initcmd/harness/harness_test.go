@@ -43,8 +43,8 @@ func TestClaudeAdapter(t *testing.T) {
 	t.Run("ListModels returns static list", func(t *testing.T) {
 		models, err := c.ListModels()
 		require.NoError(t, err)
-		assert.Contains(t, models, "claude-sonnet-4-6")
-		assert.Contains(t, models, "claude-opus-4-6")
+		assert.Contains(t, models, "sonnet-4-6")
+		assert.Contains(t, models, "opus-4-6")
 		assert.Len(t, models, 4)
 	})
 
@@ -85,18 +85,18 @@ func TestCodexAdapter(t *testing.T) {
 	t.Run("ListModels returns default", func(t *testing.T) {
 		models, err := c.ListModels()
 		require.NoError(t, err)
-		assert.Equal(t, []string{"gpt-5.3-codex"}, models)
+		assert.Equal(t, []string{"gpt-5-codex", "gpt-5.4", "gpt-5.3-codex"}, models)
 	})
 
 	t.Run("BuildFlags with all fields", func(t *testing.T) {
 		temp := 0.3
 		flags := c.BuildFlags(AgentConfig{
-			Model:       "gpt-5.3-codex",
+			Model:       "gpt-5-codex",
 			Effort:      "high",
 			Temperature: &temp,
 		})
 		assert.Equal(t, []string{
-			"-m", "gpt-5.3-codex",
+			"-m", "gpt-5-codex",
 			"-c", "reasoning.effort=high",
 			"-c", "temperature=0.3",
 		}, flags)

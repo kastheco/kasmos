@@ -1,228 +1,318 @@
 # kasmos [![CI](https://github.com/kastheco/kasmos/actions/workflows/build.yml/badge.svg)](https://github.com/kastheco/kasmos/actions/workflows/build.yml) [![GitHub Release](https://img.shields.io/github/v/release/kastheco/kasmos)](https://github.com/kastheco/kasmos/releases/latest) [![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](LICENSE.md)
 
-> harness & model-agnostic ai orchestration tool with automated wave-based implementation — powered by superpowers, tmux, and git worktrees.
+> mcp-first multi-agent orchestration for git repos: task store, streamable-http mcp server, daemon, worktrees, and tui in one tool.
 
 ![kasmos screenshot](assets/screenshot.gif)
 
 ---
 
-## what it does
+## what kasmos is now
 
-kasmos turns your terminal into a multi-agent control center. each task gets its own isolated git worktree and a fresh tmux session at every lifecycle stage: a planner agent writes the implementation plan, coder agents execute it wave by wave, and a reviewer agent validates the result — all managed from a single tui.
+kasmos is no longer just a tmux-driven terminal ui.
 
-- **plan-centric workflow** — create plans with name + description, organize into topics, track status through the full lifecycle (planning → implementing → reviewing → done)
-- **wave orchestration** — plans are split into waves; kasmos automatically runs parallel agents per wave, advancing only when all tasks pass
-- **isolated workspaces** — every plan gets a dedicated git worktree and tmux session; no branch conflicts, no shared state
-- **live agent preview** — the center pane embeds a live terminal so you can watch agents work without leaving kasmos
-- **diff + git views** — review changes and git history before merging, right inside the TUI
-- **auto-accept mode** — run agents unattended with a background daemon handling permission prompts
+it now combines:
+
+- a **repo-local task store** at `<repo-root>/.kasmos/taskstore.db`
+- a **streamable http MCP server** exposed by `kas serve`
+- a **rest api** for remote task-store access
+- a **setup/scaffold system** that writes per-harness agent configs
+- the **tui + daemon** that orchestrate planning, implementation, review, and fixes
+
+the current flow is:
+
+1. run `kas setup` inside a git repo
+2. start `kas serve` to expose rest + mcp
+3. point your mcp-aware clients at `http://127.0.0.1:7434/mcp`
+4. use `kas` to manage tasks, instances, and orchestration
+
+today, step 2 is still explicit: `kas setup` does not configure/start the server for you, and launching `kas` does not auto-spawn `kas serve` if it is missing.
 
 ---
 
-## installation
+## install
 
-#### homebrew
+### homebrew
 
 ```bash
 brew install kastheco/tap/kasmos
 ```
 
-#### go install
+### go install
 
 ```bash
 go install github.com/kastheco/kasmos@latest
+ln -sf "$(go env GOPATH)/bin/kasmos" "$(go env GOPATH)/bin/kas"
 ```
 
-#### install script
+### install script
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kastheco/kasmos/main/install.sh | bash
 ```
 
-installs the `kasmos` binary to `~/.local/bin`. to install with a custom name:
+### download release asset
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/kastheco/kasmos/main/install.sh | bash -s -- --name kq
-```
+prebuilt release archives are published for macOS and linux on the [releases page](https://github.com/kastheco/kasmos/releases/latest).
 
-#### download binary
-
-pre-built binaries for macOS, linux, and windows are on the [releases page](https://github.com/kastheco/kasmos/releases/latest).
+> examples below use `kas`. if your machine only has `kasmos`, either use `kasmos` everywhere or add a `kas` symlink.
 
 ---
 
 ## prerequisites
 
-- [tmux](https://github.com/tmux/tmux/wiki/Installing)
+- git
+- tmux
 - [gh](https://cli.github.com/)
-- at least one supported AI CLI: **[opencode](https://github.com/sst/opencode)**, [claude code](https://github.com/anthropics/claude-code), [codex](https://github.com/openai/codex), [gemini CLI](https://github.com/google-gemini/gemini-cli), [amp](https://ampcode.com), or [aider](https://aider.chat)
+- at least one supported harness cli: `opencode`, `claude`, or `codex`
 
 ---
 
-## getting started
+## quick start
 
-run from within a git repository:
-
-```bash
-kasmos
-```
-
-on first run, use the setup wizard to configure your agent harnesses and install skills:
+from inside a git repo:
 
 ```bash
-kasmos setup
+kas setup
+kas serve --bind 127.0.0.1 --port 7433 --mcp --mcp-port 7434
+kas
 ```
 
-the wizard detects installed agent CLIs, lets you assign roles (planner / coder / reviewer), and scaffolds the project files kasmos needs.
+then connect your mcp client to:
+
+```text
+http://127.0.0.1:7434/mcp
+```
+
+the admin ui is served from the same `kas serve` process at:
+
+```text
+http://127.0.0.1:7433/admin/
+```
 
 ---
 
-## usage
+## setup wizard
 
-```
-usage:
-  kasmos [flags]
-  kasmos [command]
+`kas setup` writes project-local config and scaffold files for the harnesses you select.
 
-available commands:
-  setup       configure agent harnesses, install skills, and scaffold project files
-  plan        manage plan lifecycle (list, set-status, transition, implement)
-  serve       start the plan store http server (sqlite-backed)
-  reset       reset all stored instances and clean up tmux sessions and worktrees
-  debug       print debug information like config paths
-  version     print the version number
+useful variants:
 
-flags:
-  -p, --program string   agent to use for new instances (e.g. 'opencode', 'codex', 'aider --model ...')
-  -y, --autoyes          automatically accept all agent prompts (experimental)
-  -h, --help             help for kasmos
+```bash
+kas setup
+kas setup --force
+kas setup --force --clean
 ```
 
-### keybindings
+- `--clean` ignores the existing `.kasmos/config.toml` and starts from factory defaults
+- `--force` overwrites existing scaffolded files
 
-| key | action |
-|-----|--------|
-| `n` | new plan |
-| `/` | search plans |
-| `space` | open context menu |
-| `tab` | cycle focus (sidebar → list → preview) |
-| `↑ / ↓` or `j / k` | navigate |
-| `i` | interactive mode (focus agent pane) |
-| `ctrl-q` | exit interactive mode |
-| `?` | help |
-| `q` | quit |
+important: `kas setup --force --clean` **does not delete stale files for harnesses you stop using**. it rewrites the selected harness/config paths, but if you are doing a major migration and want a truly clean harness layout, remove stale `.claude/`, `.opencode/`, `.codex/`, or `.agents/skills/` content yourself first.
+
+the wizard/scaffolder writes paths like:
+
+- `.kasmos/config.toml`
+- `.agents/skills/`
+- `.claude/agents/`
+- `.opencode/agents/`
+- `.opencode/opencode.jsonc`
+- `.codex/AGENTS.md`
+
+after setup, verify scaffold health with:
+
+```bash
+kas check -v
+```
+
+`kas setup` currently scaffolds harness config only; it does **not** provision or launch the repo's MCP/REST server.
 
 ---
 
-## how it works
+## mcp server
 
-1. **tasks** are tracked in the task store (SQLite database) — use `kas task list` to see all tasks and `kas task show <file>` to read plan content
-2. **topics** group related plans and act as collision domains (only one plan per topic can implement at a time)
-3. **waves** divide implementation into phases — kasmos parses `## Wave N` headers and runs each wave's tasks in parallel
-4. **agents** are spawned in isolated tmux sessions with dedicated git worktrees; the TUI shows live output in the preview pane
-5. **review** is automated — a reviewer agent checks the implementation, and kasmos prompts for merge/PR approval before closing the plan
+`kas serve` starts two surfaces by default:
 
----
+- rest api on `--port` (default `7433`)
+- streamable-http mcp server on `--mcp-port` (default `7434`)
 
-## task store
-
-task state is stored in an embedded SQLite database (`~/.config/kasmos/kasmos.db`) that starts automatically when kasmos boots — no server required.
-
-#### managing tasks
-
-use the `kas task` CLI:
+run it locally:
 
 ```bash
-kas task list                          # list all tasks
-kas task list --status implementing    # filter by status
-kas task show <file>                   # read plan content
-kas task create <name>                 # create a new task
-kas task register <file>               # register a plan file from disk
-kas task update-content <file>         # update plan content (reads stdin)
-kas task set-status <file> done --force  # force-override status
-kas task transition <file> <event>     # apply FSM event
+kas serve --bind 127.0.0.1 --port 7433 --mcp --mcp-port 7434
 ```
 
-#### optional remote store
+if you want this to be always-on, run `kas serve` under your user service manager or keep it paired with the daemon in your own startup scripts for now.
 
-for multi-machine access (e.g. over tailscale or a team server), add one line to `~/.config/kasmos/config.toml`:
-
-```toml
-plan_store = "http://your-desktop:7433"
-```
-
-start the remote server with:
-
-```bash
-kas serve --port 7433 --db /path/to/kasmos.db
-```
-
-#### run as a systemd service
-
-a unit file is provided in `contrib/kasmosdb.service`:
-
-```bash
-just db-service-enable
-```
-
-#### run the orchestration daemon as a systemd service
-
-`kas signal emit ...` writes to the signal gateway database. a running daemon is what
-claims those rows and advances plan lifecycle state outside the legacy filesystem
-sentinel path.
-
-a user unit is provided in `contrib/kasmos.service`:
-
-```bash
-just kasmosd-enable
-just doctord
-```
-
-or, if you want both the orchestration daemon and plan store service in one step:
+if you do **not** want to launch multiple commands every session, install the bundled user services once:
 
 ```bash
 just services-enable
 ```
 
-if you only emit a signal but no daemon is running, the signal stays pending and the
-plan will not advance until the daemon processes it.
+that enables both:
 
-#### rest api
+- `kasmos.service` → `kas daemon start --foreground`
+- `kasmosdb.service` → `kas serve`
 
-the store exposes a simple rest api for scripting:
+after that, your normal interactive entrypoint can just be:
 
 ```bash
-# health check
-curl http://localhost:7433/v1/ping
+kas
+```
 
-# list all plans
-curl http://localhost:7433/v1/projects/kasmos/plans
+common flags:
 
-# filter by status
-curl 'http://localhost:7433/v1/projects/kasmos/plans?status=ready'
+```bash
+kas serve --help
+```
 
-# filter by topic
-curl 'http://localhost:7433/v1/projects/kasmos/plans?topic=bugs'
+currently the kasmos mcp server exposes tool groups for:
+
+- filesystem: `find_files`, `list_dir`, `read_file`, `grep`
+- git: `git_status`, `git_diff`, `git_log`
+- task store: `task_list`, `task_show`, `task_create`, `task_update_content`, `task_transition`
+- signals: `signal_create`
+- instances: `instance_list`, `instance_pause`, `instance_resume`, `instance_send`
+- daemon: `daemon_status`
+
+filesystem and git tools are sandboxed to the current working directory plus the resolved repo root.
+
+---
+
+## how to configure your local mcp client
+
+### generic / claude-style `.mcp.json`
+
+create a project-local `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "kasmos": {
+      "type": "http",
+      "url": "http://127.0.0.1:7434/mcp"
+    }
+  }
+}
+```
+
+that is the simplest option for any client that supports standard `mcpServers` http entries.
+
+### opencode remote mcp config
+
+if you want to wire the same kasmos server into opencode, add a remote mcp entry to your opencode config:
+
+```jsonc
+{
+  "mcp": {
+    "kasmos": {
+      "type": "remote",
+      "url": "http://127.0.0.1:7434/mcp",
+      "enabled": true
+    }
+  }
+}
+```
+
+you can place that in project-local opencode config alongside the scaffolded `.opencode/opencode.jsonc` content, or in your global opencode config if you want it everywhere.
+
+### remote / multi-machine use
+
+if another machine should use the same task store, point it at the rest api in `.kasmos/config.toml`:
+
+```toml
+database_url = "http://your-host:7433"
+```
+
+then run `kas serve` on the machine that hosts the sqlite db.
+
+---
+
+## current config location
+
+kasmos now anchors project state to the repo root.
+
+- config: `<repo-root>/.kasmos/config.toml`
+- task store: `<repo-root>/.kasmos/taskstore.db`
+- signals: `<repo-root>/.kasmos/signals/`
+
+show the resolved paths with:
+
+```bash
+kas debug
 ```
 
 ---
 
-## configuration
-
-config lives at `~/.config/kasmos/config.toml`. locate it with:
+## useful commands
 
 ```bash
-kasmos debug
+kas task list
+kas task list --status implementing
+kas task show <task-file>
+kas task create <name>
+kas task register <task-file>
+kas task update-content <task-file>
+kas task transition <task-file> <event>
+kas task set-status <task-file> <status> --force
+kas task implement <task-file> [--wave N]
+
+kas serve
+kas scaffold sync
+kas daemon start
+kas monitor
+kas status
 ```
 
-key settings:
+---
 
-```toml
-plan_store = "http://localhost:7433"  # remote plan store (optional)
+## upgrading your local machine to the new mcp-first release
+
+once `v2.0.0-beta` is published, upgrade with one of these:
+
+### homebrew
+
+```bash
+brew update
+brew upgrade kasmos
+```
+
+### go install
+
+```bash
+go install github.com/kastheco/kasmos@v2.0.0-beta
+ln -sf "$(go env GOPATH)/bin/kasmos" "$(go env GOPATH)/bin/kas"
+kas version
+```
+
+### install script / release asset
+
+re-run the installer or replace your binary with the `v2.0.0-beta` release asset, then confirm:
+
+```bash
+kas version
+```
+
+### recommended post-upgrade refresh
+
+```bash
+kas setup --force --clean
+kas check -v
+kas scaffold sync
+```
+
+if you changed which harnesses you use, clean stale harness directories manually before rerunning setup.
+
+---
+
+## development
+
+```bash
+go test ./...
+go build ./...
 ```
 
 ---
 
 ## license
 
-[BSL 1.1](LICENSE.md) - converts to [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) on the change date. see LICENSE.md for details.
+[BSL 1.1](LICENSE.md) - converts to [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) on the change date.
