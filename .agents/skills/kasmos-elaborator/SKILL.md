@@ -74,12 +74,7 @@ the plan lifecycle fsm: `ready → elaborating → implementing → reviewing �
 
 ## phase 1: read the plan
 
-retrieve the current plan content from the task store:
-
-```text
-task_show:
-  filename: "<plan-file>"
-```
+use MCP `task_show` (filename: "<plan-file>") to retrieve the current plan content.
 
 if `KASMOS_MANAGED=1`, the plan filename is available in the `KASMOS_PLAN` environment
 variable. use that directly. if unset, the user must provide the plan filename.
@@ -100,46 +95,24 @@ for **each task** in the plan, before writing any enrichment:
 ### 2a. read the listed files
 
 for every path listed in the task's `**Files:**` block:
-- if the file **already exists**: read it fully. understand its package, types, function
-  signatures, error patterns, and how it integrates with callers.
-- if the file **will be created**: read every file in the same directory. understand naming
-  conventions, package layout, and what already exists.
-
-```text
-read_file:
-  filename: "path/to/existing.go"
-
-list_dir:
-  path: "path/to/directory"
-  max_depth: 1
-```
+- if the file **already exists**: use MCP `read_file` on each file and read it fully.
+  understand its package, types, function signatures, error patterns, and how it integrates
+  with callers.
+- if the file **will be created**: read every file in the same directory using MCP
+  `list_dir` (path: "path/to/directory") or MCP `find_files` (directory, pattern, max_depth)
+  to understand naming conventions, package layout, and what already exists.
 
 ### 2b. read neighboring context
 
 beyond the listed files, also read:
 - the **package-level** file (`doc.go` or the main file of the package) if it exists
-- **callers** of functions the task modifies: use grep with explicit parameters
+- **callers** of functions the task modifies: use MCP `grep` (pattern: "FunctionName", path: "path/to/package", include: "*.go")
 - **similar implementations** in the same codebase (parallel functions, same pattern elsewhere)
 - **test files** for the modules the task touches — they reveal expected contracts
 
-```text
-# find callers
-grep:
-  pattern: "TargetFunctionName"
-  path: "path/to/package"
-  include: "*.go"
-
-# find similar patterns
-grep:
-  pattern: "SimilarPattern"
-  path: "path/to/package"
-  include: "*.go"
-
-# find test files for the package
-find_files:
-  path: "path/to/package"
-  pattern: "*_test.go"
-```
+use MCP `grep` (pattern: "FunctionName", path: "path/to/package", include: "*.go") to find callers.
+use MCP `grep` (pattern: "SimilarPattern", path: "path/to/package", include: "*.go", context_before: 2, context_after: 5) to capture nearby implementations.
+use MCP `find_files` (directory: "path/to/package", pattern: "*_test.go") to enumerate test files.
 
 ### 2c. extract patterns to replicate
 
@@ -278,18 +251,15 @@ leave it unchanged.
 
 ## phase 4: write the enriched plan back
 
-pipe the full enriched plan (all waves, all tasks, complete header) into the task store:
+pipe the full enriched plan (all waves, all tasks, complete header) into the task store using
+MCP `task_update_content`:
 
-```text
-task_update_content:
-  filename: "<plan-file>"
-  content: "<full-enriched-plan-content>"
-```
+- use MCP `task_update_content` (filename: "<plan-file>", content: "<full-enriched-plan-content>")
 
 write the enriched content to a local artifact first so you can review it before
 committing it back with `task_update_content`.
 
-**verify the round-trip:** after writing, run `task_show` and confirm the
+**verify the round-trip:** after writing, use MCP `task_show` and confirm the
 first 10 lines match your header and the wave structure is intact.
 
 ---
@@ -303,13 +273,8 @@ check your execution context:
 ### managed mode (`KASMOS_MANAGED=1`)
 
 kasmos is orchestrating this session. after writing the enriched plan back to the store,
-emit the signal and stop:
-
-```text
-signal_create:
-  signal_type: "elaborator-finished"
-  plan_file: "<plan-file>"
-```
+emit the signal and stop using MCP `signal_create`
+(signal_type: "elaborator-finished", plan_file: "<plan-file>").
 
 the filename must use the exact plan filename (e.g., `elaborator-finished-2026-02-27-feature.md`).
 
@@ -325,11 +290,7 @@ announce completion and stop:
 ### manual mode (`KASMOS_MANAGED` unset)
 
 after writing the enriched plan back to the store:
-
-```text
-task_show:
-  filename: "<plan-file>"
-```
+use MCP `task_show` (filename: "<plan-file>") after writing the enriched plan back to the store.
 
 then inform the user:
 
