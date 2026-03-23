@@ -2218,10 +2218,7 @@ func (m *home) spawnTaskAgent(planFile, action, prompt string) (tea.Model, tea.C
 	if err != nil {
 		return m, m.handleError(err)
 	}
-	// Keep the legacy reviewer flag in sync so older persisted instance records
-	// still round-trip cleanly while AgentType remains the runtime source of truth.
 	if agentType == session.AgentTypeReviewer {
-		inst.IsReviewer = true
 		// Set ReviewCycle so the instance carries the same cycle number used in the title.
 		inst.ReviewCycle = reviewCycle + 1
 	}

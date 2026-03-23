@@ -158,3 +158,59 @@ func TestSpawnArchitectPass_PatchesMainBranchOpencodeConfig(t *testing.T) {
 	assert.InDelta(t, planTemp, elabCfg["temperature"].(float64), 0.0001)
 	assert.Equal(t, "low", elabCfg["reasoningEffort"])
 }
+
+func TestSpawnTaskAgent_ReviewUsesAgentTypeWithoutLegacyReviewerMirror(t *testing.T) {
+	dir := t.TempDir()
+
+	for _, cmd := range [][]string{
+		{"git", "init", dir},
+		{"git", "-C", dir, "config", "user.email", "test@test.com"},
+		{"git", "-C", dir, "config", "user.name", "Test"},
+		{"git", "-C", dir, "commit", "--allow-empty", "-m", "init"},
+	} {
+		out, err := exec.Command(cmd[0], cmd[1:]...).CombinedOutput()
+		if err != nil {
+			t.Skipf("git setup failed (%v): %s", err, out)
+		}
+	}
+
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	planFile := "review-agent.md"
+	require.NoError(t, ps.Register(planFile, "review test plan", "plan/review-agent", time.Now()))
+	require.NoError(t, ps.SetBranch(planFile, "plan/review-agent"))
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	m := &home{
+		taskState:      ps,
+		activeRepoPath: dir,
+		program:        "opencode",
+		nav:            ui.NewNavigationPanel(&sp),
+		menu:           ui.NewMenu(),
+		toastManager:   overlay.NewToastManager(&sp),
+		appConfig: &config.Config{
+			PhaseRoles: map[string]string{
+				"quality_review": session.AgentTypeReviewer,
+			},
+			Profiles: map[string]config.AgentProfile{
+				session.AgentTypeReviewer: {
+					Program: "opencode",
+					Enabled: true,
+				},
+			},
+		},
+		instanceFinalizers: make(map[*session.Instance]func()),
+	}
+
+	_, cmd := m.spawnTaskAgent(planFile, "review", "review prompt")
+	require.NotNil(t, cmd)
+
+	instances := m.nav.GetInstances()
+	require.Len(t, instances, 1)
+	inst := instances[0]
+	assert.Equal(t, session.AgentTypeReviewer, inst.AgentType)
+	assert.False(t, inst.IsReviewer, "new reviewer sessions should rely on agent_type only")
+	assert.Equal(t, 1, inst.ReviewCycle)
+}

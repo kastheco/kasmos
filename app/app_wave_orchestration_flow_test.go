@@ -245,6 +245,49 @@ func TestRebuildOrphanedOrchestrators_SkipsPausedOrExitedOnlyPlans(t *testing.T)
 	assert.False(t, exists, "stale paused/exited wave instances must not trigger orchestrator rebuild")
 }
 
+// TestRebuildOrphanedOrchestrators_IgnoresArchitectOnlyRestartState verifies that
+// restart recovery only rebuilds from persisted active wave-task sessions restored
+// via session.FromInstanceData; an architect-only session must not resurrect wave state.
+func TestRebuildOrphanedOrchestrators_IgnoresArchitectOnlyRestartState(t *testing.T) {
+	const planFile = "architect-only"
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	store := taskstore.NewTestSQLiteStore(t)
+	content := "**Goal:** architect test\n\n## Wave 1\n\n### Task 1: First\n\nDo first.\n"
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusReady,
+		Branch:   "plan/architect-only",
+		Content:  content,
+	}))
+
+	ps, err := taskstate.Load(store, "proj", plansDir)
+	require.NoError(t, err)
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+
+	h := waveFlowHome(t, ps, plansDir, make(map[string]*orchestration.WaveOrchestrator))
+	h.taskStore = store
+	h.taskStoreProject = "proj"
+
+	architectInst, err := session.NewInstance(session.InstanceOptions{
+		Title:     "architect-only-architect",
+		Path:      dir,
+		Program:   "opencode",
+		TaskFile:  planFile,
+		AgentType: session.AgentTypeElaborator,
+	})
+	require.NoError(t, err)
+	architectInst.MarkStartedForTest()
+	h.nav.AddInstance(architectInst)
+
+	h.rebuildOrphanedOrchestrators()
+	_, exists := h.waveOrchestrators[planFile]
+	assert.False(t, exists, "architect-only restart state must not rebuild a wave orchestrator")
+}
+
 // TestRebuildOrphanedOrchestrators_RestoresPersistedActiveWaveInstances verifies the
 // supported restart path: session.FromInstanceData restores active wave instances,
 // then kasmos rebuilds the in-memory orchestrator from that persisted state.
