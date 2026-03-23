@@ -299,6 +299,7 @@ func NewInstance(opts InstanceOptions) (*Instance, error) {
 		SkipPermissions: opts.SkipPermissions,
 		TaskFile:        opts.TaskFile,
 		AgentType:       opts.AgentType,
+		IsReviewer:      opts.AgentType == AgentTypeReviewer,
 		TaskNumber:      opts.TaskNumber,
 		WaveNumber:      opts.WaveNumber,
 		PeerCount:       opts.PeerCount,

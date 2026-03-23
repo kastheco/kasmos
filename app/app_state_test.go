@@ -159,7 +159,7 @@ func TestSpawnArchitectPass_PatchesMainBranchOpencodeConfig(t *testing.T) {
 	assert.Equal(t, "low", elabCfg["reasoningEffort"])
 }
 
-func TestSpawnTaskAgent_ReviewUsesAgentTypeWithoutLegacyReviewerMirror(t *testing.T) {
+func TestSpawnTaskAgent_ReviewKeepsReviewerCompatibilityMirrorSynced(t *testing.T) {
 	dir := t.TempDir()
 
 	for _, cmd := range [][]string{
@@ -211,6 +211,6 @@ func TestSpawnTaskAgent_ReviewUsesAgentTypeWithoutLegacyReviewerMirror(t *testin
 	require.Len(t, instances, 1)
 	inst := instances[0]
 	assert.Equal(t, session.AgentTypeReviewer, inst.AgentType)
-	assert.False(t, inst.IsReviewer, "new reviewer sessions should rely on agent_type only")
+	assert.True(t, inst.IsReviewer, "new reviewer sessions must keep the reviewer compatibility mirror in sync")
 	assert.Equal(t, 1, inst.ReviewCycle)
 }

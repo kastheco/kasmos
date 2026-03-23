@@ -316,7 +316,7 @@ func mergePlanStatus(status ui.TopicStatus, inst *session.Instance, started bool
 }
 
 func isReviewerInstance(inst *session.Instance) bool {
-	return inst != nil && inst.AgentType == session.AgentTypeReviewer
+	return inst != nil && (inst.AgentType == session.AgentTypeReviewer || inst.IsReviewer)
 }
 
 // computeStatusBarData builds the StatusBarData from the current app state.
