@@ -23,6 +23,12 @@ func TestParseElaborationSignal(t *testing.T) {
 			wantFile: "my-feature",
 		},
 		{
+			name:     "preserves md suffix",
+			filename: "elaborator-finished-my-feature.md",
+			wantOk:   true,
+			wantFile: "my-feature.md",
+		},
+		{
 			name:     "not an elaboration signal",
 			filename: "planner-finished-test",
 			wantOk:   false,

@@ -49,8 +49,8 @@ func StartEmbedded(dbPath string, port int) (*EmbeddedServer, error) {
 		// ErrServerClosed is expected on graceful shutdown — ignore it.
 		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			// Nothing useful to do here; the server is embedded and the
-			// caller has no channel to receive errors on. Log would be
-			// ideal but planstore has no logger dependency.
+			// caller has no channel to receive errors on. Logging would be
+			// ideal but taskstore has no logger dependency.
 			_ = err
 		}
 	}()

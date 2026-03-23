@@ -310,8 +310,8 @@ type home struct {
 	taskStore taskstore.Store
 	// taskStoreProject is the project name used with the remote store (derived from repo basename).
 	taskStoreProject string
-	// auditLogger records structured audit events to the planstore SQLite database.
-	// Falls back to NopLogger when planstore is HTTP-backed or unconfigured.
+	// auditLogger records structured audit events in the local taskstore SQLite database.
+	// Falls back to NopLogger when the SQLite audit logger cannot be opened.
 	auditLogger auditlog.Logger
 
 	// previewTickCount counts preview ticks for throttled banner animation
@@ -579,7 +579,7 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 }
 
 // activeProject returns the project name derived from the active repo path.
-// This matches how planstore derives the project name (filepath.Base of the repo path).
+// This matches how the task store derives the project name (filepath.Base of the repo path).
 func (m *home) activeProject() string {
 	return filepath.Base(m.activeRepoPath)
 }
@@ -937,10 +937,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			for _, ts := range taskSignals {
 				seenTaskSignals[ts.Key()] = true
 			}
-			seenElabSignals := make(map[string]bool)
-			for _, es := range elaborationSignals {
-				seenElabSignals[es.TaskFile] = true
-			}
 			if !daemonManagedRepo {
 				for _, inst := range snapshots {
 					wt := inst.GetWorktreePath()
@@ -958,12 +954,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if !seenTaskSignals[ts.Key()] {
 							seenTaskSignals[ts.Key()] = true
 							taskSignals = append(taskSignals, ts)
-						}
-					}
-					for _, es := range taskfsm.ScanElaborationSignals(wtSignalsDir) {
-						if !seenElabSignals[es.TaskFile] {
-							seenElabSignals[es.TaskFile] = true
-							elaborationSignals = append(elaborationSignals, es)
 						}
 					}
 				}
@@ -1011,12 +1001,12 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Done in Update (main goroutine) so FSM writes are never concurrent.
 		// Side-effect cmds (reviewer/coder spawns) are collected and batched below.
 		var signalCmds []tea.Cmd
+		proc := m.ensureProcessor()
 		if !msg.DaemonManagedRepo {
 			// Process FSM signals using the Processor when available, falling back to
-			// legacy inline code for home instances that don't have a taskStore
-			// (e.g. tests that build home without a store).
-			proc := m.ensureProcessor()
+			// the inline test-only path when a narrow test builds home without a taskStore.
 			if proc != nil {
+				proc.SyncWaveOrchestrators(m.waveOrchestrators)
 				for planFile := range m.waveOrchestrators {
 					proc.SetWaveOrchestratorActive(planFile, true)
 				}
@@ -1059,7 +1049,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							signalCmds = append(signalCmds, cmd)
 						}
 						for _, inst := range m.nav.GetInstances() {
-							if inst.TaskFile == a.PlanFile && inst.IsReviewer {
+							if inst.TaskFile == a.PlanFile && inst.AgentType == session.AgentTypeReviewer {
 								inst.SetStatus(session.Paused)
 								m.nav.SelectInstance(inst)
 								m.updateNavPanelStatus()
@@ -1180,7 +1170,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							signalCmds = append(signalCmds, cmd)
 						}
 						for _, inst := range m.nav.GetInstances() {
-							if inst.TaskFile == sig.TaskFile && inst.IsReviewer {
+							if inst.TaskFile == sig.TaskFile && inst.AgentType == session.AgentTypeReviewer {
 								inst.SetStatus(session.Paused)
 								m.nav.SelectInstance(inst)
 								m.updateNavPanelStatus()
@@ -1385,53 +1375,49 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-			// Process elaboration signals — elaborator-finished files written by the
-			// architect agent once it has enriched all task bodies and stored the
-			// updated plan in the task store. On receipt we re-read the plan,
-			// replace it in the orchestrator, kill the architect instance, and
-			// start wave 1 normally.
-			for _, es := range msg.ElaborationSignals {
-				taskfsm.ConsumeElaborationSignal(es)
-
-				orch, exists := m.waveOrchestrators[es.TaskFile]
-				if !exists || orch.State() != orchestration.WaveStateElaborating {
-					log.WarningLog.Printf("ignoring elaborator-finished signal for %q — no active elaboration", es.TaskFile)
-					continue
+			// Process architect-pass completion signals. The gateway contract still
+			// uses the elaborator_finished name for compatibility, but the app and
+			// daemon both reuse the shared processor semantics for reloading the
+			// enriched plan and advancing to wave 1.
+			if proc != nil {
+				actions := proc.ProcessElaborationSignals(msg.ElaborationSignals)
+				for _, es := range msg.ElaborationSignals {
+					taskfsm.ConsumeElaborationSignal(es)
 				}
-
-				// Re-read the enriched plan from the store.
-				content, err := m.taskStore.GetContent(m.taskStoreProject, es.TaskFile)
-				if err != nil {
-					log.WarningLog.Printf("elaboration signal: could not read plan %s: %v", es.TaskFile, err)
-					continue
-				}
-				plan, err := taskparser.Parse(content)
-				if err != nil {
-					log.WarningLog.Printf("elaboration signal: could not parse enriched plan %s: %v", es.TaskFile, err)
-					continue
-				}
-
-				// Replace the plan in the orchestrator with the enriched version.
-				orch.UpdatePlan(plan)
-
-				// Kill the elaborator instance.
-				for _, inst := range m.nav.GetInstances() {
-					if inst.TaskFile == es.TaskFile && inst.AgentType == session.AgentTypeElaborator {
-						_ = inst.Kill()
-						break
+				for _, act := range actions {
+					advance, ok := act.(loop.AdvanceWaveAction)
+					if !ok {
+						continue
 					}
-				}
-
-				entry, ok := m.taskState.Entry(es.TaskFile)
-				if !ok {
-					continue
-				}
-
-				m.toastManager.Info(fmt.Sprintf("plan elaborated — starting wave 1 for '%s'", taskstate.DisplayName(es.TaskFile)))
-				mdl, cmd := m.startNextWave(orch, entry)
-				m = mdl.(*home)
-				if cmd != nil {
-					signalCmds = append(signalCmds, cmd)
+					orch, exists := m.waveOrchestrators[advance.PlanFile]
+					if !exists {
+						continue
+					}
+					for _, inst := range m.nav.GetInstances() {
+						if inst.TaskFile == advance.PlanFile && inst.AgentType == session.AgentTypeElaborator {
+							_ = inst.Kill()
+							break
+						}
+					}
+					entry, ok := m.taskState.Entry(advance.PlanFile)
+					if !ok {
+						continue
+					}
+					waveTasks := orch.CurrentWaveTasks()
+					if len(waveTasks) == 0 {
+						continue
+					}
+					waveNum := orch.CurrentWaveNumber()
+					m.toastManager.Info(fmt.Sprintf("architect pass complete — starting wave %d for '%s'", waveNum, taskstate.DisplayName(advance.PlanFile)))
+					m.audit(auditlog.EventWaveStarted,
+						fmt.Sprintf("wave %d started: %d task(s)", waveNum, len(waveTasks)),
+						auditlog.WithPlan(advance.PlanFile),
+						auditlog.WithWave(waveNum, 0))
+					mdl, cmd := m.spawnWaveTasks(orch, waveTasks, entry)
+					m = mdl.(*home)
+					if cmd != nil {
+						signalCmds = append(signalCmds, cmd)
+					}
 				}
 			}
 		}
@@ -1633,60 +1619,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						auditlog.WithAgent(inst.AgentType),
 						auditlog.WithPlan(inst.TaskFile),
 					)
-				}
-			}
-
-			// Dead architect-pass recovery: if an architect instance died without
-			// writing its signal, recover by re-reading the (possibly enriched)
-			// plan and starting wave 1. Prevents the elaboration loop where a
-			// crashed architect pass leaves the orchestrator stuck forever.
-			for planFile, orch := range m.waveOrchestrators {
-				if orch.State() != orchestration.WaveStateElaborating {
-					continue
-				}
-				// Check if the architect instance for this plan is dead.
-				var deadElaborator *session.Instance
-				for _, inst := range m.nav.GetInstances() {
-					if inst.TaskFile == planFile && inst.AgentType == session.AgentTypeElaborator && inst.Exited {
-						deadElaborator = inst
-						break
-					}
-				}
-				if deadElaborator == nil {
-					continue
-				}
-				log.WarningLog.Printf("architect pass for %q died without signaling — recovering", planFile)
-
-				// Re-read the plan from the store (the architect may have enriched it before crashing).
-				if m.taskStore != nil {
-					if content, err := m.taskStore.GetContent(m.taskStoreProject, planFile); err == nil {
-						if plan, parseErr := taskparser.Parse(content); parseErr == nil {
-							orch.UpdatePlan(plan)
-						}
-					}
-				}
-				// If re-read failed, force out of elaborating with the original plan.
-				if orch.State() == orchestration.WaveStateElaborating {
-					orch.UpdatePlan(orch.Plan())
-				}
-
-				// Remove the dead architect instance.
-				m.killExistingPlanAgent(planFile, session.AgentTypeElaborator)
-
-				entry, ok := m.taskState.Entry(planFile)
-				if !ok {
-					continue
-				}
-
-				planName := taskstate.DisplayName(planFile)
-				m.toastManager.Info(fmt.Sprintf("architect pass crashed — starting wave 1 for '%s'", planName))
-				m.audit(auditlog.EventWaveStarted, "architect crash recovery: starting wave 1",
-					auditlog.WithPlan(planFile))
-
-				mdl, cmd := m.startNextWave(orch, entry)
-				m = mdl.(*home)
-				if cmd != nil {
-					signalCmds = append(signalCmds, cmd)
 				}
 			}
 
@@ -2556,7 +2488,7 @@ type metadataResultMsg struct {
 	Signals            []taskfsm.Signal            // agent sentinel files found this tick
 	TaskSignals        []taskfsm.TaskSignal        // task completion sentinel files found this tick
 	WaveSignals        []taskfsm.WaveSignal        // implement-wave-N signal files found this tick
-	ElaborationSignals []taskfsm.ElaborationSignal // elaborator-finished signal files found this tick
+	ElaborationSignals []taskfsm.ElaborationSignal // architect completion signal files found this tick
 	DaemonManagedRepo  bool                        // true when the active repo is managed by a running daemon
 	TmuxSessionCount   int                         // number of kas_-prefixed tmux sessions
 	PRStateUpdates     []prStateUpdateMsg          // PR review/check state refreshed this tick

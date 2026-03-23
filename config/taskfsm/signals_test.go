@@ -39,6 +39,16 @@ func TestScanSignals_ParsesValidSentinels(t *testing.T) {
 	assert.Equal(t, "fix the tests", signals[0].Body)
 }
 
+func TestScanSignals_PreservesMdSuffix(t *testing.T) {
+	signalsDir := filepath.Join(t.TempDir(), ".kasmos", "signals")
+	require.NoError(t, os.MkdirAll(signalsDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(signalsDir, "planner-finished-feature.md"), nil, 0o644))
+
+	signals := ScanSignals(signalsDir)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "feature.md", signals[0].TaskFile)
+}
+
 func TestScanSignals_IgnoresInvalidFiles(t *testing.T) {
 	signalsDir := filepath.Join(t.TempDir(), ".kasmos", "signals")
 	require.NoError(t, os.MkdirAll(signalsDir, 0o755))

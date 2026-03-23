@@ -73,6 +73,20 @@ func (p *Processor) SetWaveOrchestratorActive(planFile string, active bool) {
 	}
 }
 
+// SyncWaveOrchestrators replaces the processor's orchestrator registry with the
+// caller's current orchestrator set.
+func (p *Processor) SyncWaveOrchestrators(orchestrators map[string]*orchestration.WaveOrchestrator) {
+	p.waveOrchestrators = make(map[string]*orchestration.WaveOrchestrator, len(orchestrators))
+	for planFile, orch := range orchestrators {
+		p.waveOrchestrators[planFile] = orch
+	}
+	for planFile := range p.activeWaveOrchs {
+		if _, ok := orchestrators[planFile]; !ok {
+			delete(p.activeWaveOrchs, planFile)
+		}
+	}
+}
+
 // RegisterOrchestrator creates a wave orchestrator for the given plan with the
 // specified wave number and task numbers in the running state. Intended for
 // tests and daemon restore operations.
@@ -341,8 +355,9 @@ func (p *Processor) ProcessWaveSignals(signals []taskfsm.WaveSignal) []Action {
 	return actions
 }
 
-// ProcessElaborationSignals converts elaborator-finished sentinel signals into
-// AdvanceWaveAction values. It re-reads the enriched plan from the store,
+// ProcessElaborationSignals converts architect-pass completion signals carried
+// over the retained elaborator_finished contract into AdvanceWaveAction values.
+// It re-reads the architect-enriched plan from the store,
 // updates the orchestrator, and emits the action to start wave 1.
 //
 // Extracted from app.go metadataResultMsg handler (lines 1198-1241).
@@ -354,7 +369,7 @@ func (p *Processor) ProcessElaborationSignals(signals []taskfsm.ElaborationSigna
 			continue
 		}
 
-		// Re-read the enriched plan from the store.
+		// Re-read the architect-enriched plan from the store.
 		content, err := p.config.Store.GetContent(p.config.Project, es.TaskFile)
 		if err != nil {
 			continue
@@ -364,7 +379,7 @@ func (p *Processor) ProcessElaborationSignals(signals []taskfsm.ElaborationSigna
 			continue
 		}
 
-		// Replace the plan with the elaborated version and reset orchestrator state.
+		// Replace the plan with the architect-enriched version and reset orchestrator state.
 		orch.UpdatePlan(plan)
 
 		// Start wave 1.

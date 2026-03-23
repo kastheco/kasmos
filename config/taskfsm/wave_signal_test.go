@@ -32,6 +32,13 @@ func TestParseWaveSignal(t *testing.T) {
 			wantPlan: "multi-wave",
 		},
 		{
+			name:     "preserves md suffix and strips path prefix",
+			filename: "implement-wave-2-nested/path/plan.md",
+			wantOK:   true,
+			wantWave: 2,
+			wantPlan: "plan.md",
+		},
+		{
 			name:     "not a wave signal",
 			filename: "planner-finished-test-plan",
 			wantOK:   false,

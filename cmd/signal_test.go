@@ -544,6 +544,20 @@ func TestExecuteSignalEmit_ElaboratorFinishedRejectsPayload(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestExecuteSignalEmit_ElaboratorFinishedStoresEmptyPayload(t *testing.T) {
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+
+	err = executeSignalEmit(gw, "proj", "elaborator_finished", "my-plan", "")
+	require.NoError(t, err)
+
+	signals, err := gw.List("proj", taskstore.SignalPending)
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "", signals[0].Payload)
+}
+
 func TestExecuteSignalEmit_ImplementTaskFinished(t *testing.T) {
 	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
 	require.NoError(t, err)

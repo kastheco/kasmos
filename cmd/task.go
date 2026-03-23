@@ -20,6 +20,27 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func normalizeTaskFilename(filename string) string {
+	return strings.TrimSuffix(strings.TrimSpace(filename), ".md")
+}
+
+func resolveExistingTaskFilename(ps *taskstate.TaskState, filename string) string {
+	raw := strings.TrimSpace(filename)
+	if raw == "" {
+		return ""
+	}
+	if _, ok := ps.Entry(raw); ok {
+		return raw
+	}
+	trimmed := normalizeTaskFilename(raw)
+	if _, ok := ps.Entry(trimmed); ok {
+		return trimmed
+	}
+	// Preserve the original user input when no stored entry matches so callers
+	// can report the exact filename the user asked for.
+	return raw
+}
+
 // executeTaskRegister registers a plan file into the task store. The filePath
 // is resolved relative to the caller's working directory.
 func executeTaskRegister(project, filePath, branch, topic, description string, store taskstore.Store) error {
@@ -31,7 +52,7 @@ func executeTaskRegister(project, filePath, branch, topic, description string, s
 	if err != nil {
 		return err
 	}
-	planFile := strings.TrimSuffix(filepath.Base(filePath), ".md")
+	planFile := normalizeTaskFilename(filepath.Base(filePath))
 	if description == "" {
 		description = planFile
 		for _, line := range strings.Split(string(data), "\n") {
@@ -105,6 +126,7 @@ func executeTaskSetStatus(project, planFile, status string, force bool, store ta
 	if err != nil {
 		return err
 	}
+	planFile = resolveExistingTaskFilename(ps, planFile)
 	return ps.ForceSetStatus(planFile, taskstate.Status(status))
 }
 
@@ -131,11 +153,16 @@ func executeTaskTransition(project, planFile, event string, store taskstore.Stor
 		}
 		return "", fmt.Errorf("unknown event %q; valid events: %s", event, strings.Join(names, ", "))
 	}
+	ps, err := loadTaskStateByProject(project, store)
+	if err != nil {
+		return "", err
+	}
+	planFile = resolveExistingTaskFilename(ps, planFile)
 	fsm := newFSMByProject(project, store)
 	if err := fsm.Transition(planFile, fsmEvent); err != nil {
 		return "", err
 	}
-	ps, err := loadTaskStateByProject(project, store)
+	ps, err = loadTaskStateByProject(project, store)
 	if err != nil {
 		return "", err
 	}
@@ -154,6 +181,7 @@ func executeTaskImplement(repoRoot, project, planFile string, wave int, store ta
 	if err != nil {
 		return err
 	}
+	planFile = resolveExistingTaskFilename(ps, planFile)
 	entry, ok := ps.Entry(planFile)
 	if !ok {
 		return fmt.Errorf("task not found: %s", planFile)
@@ -189,6 +217,7 @@ func executeTaskShow(project, planFile string, store taskstore.Store) (string, e
 	if err != nil {
 		return "", err
 	}
+	planFile = resolveExistingTaskFilename(ps, planFile)
 	if _, ok := ps.Entry(planFile); !ok {
 		return "", fmt.Errorf("task not found: %s", planFile)
 	}
@@ -212,11 +241,11 @@ func executeTaskUpdateContent(project, filename string, reader io.Reader, store 
 		return fmt.Errorf("no content provided; pipe plan content via stdin: cat plan.md | kas task update-content <plan>")
 	}
 
-	filename = strings.TrimSuffix(filename, ".md")
 	ps, err := loadTaskStateByProject(project, store)
 	if err != nil {
 		return err
 	}
+	filename = resolveExistingTaskFilename(ps, filename)
 	var warn *taskstate.IngestWarning
 	if err := ps.IngestContent(filename, content); err != nil {
 		if errors.As(err, &warn) {
@@ -301,6 +330,7 @@ func resolveTaskEntry(project, filename string, store taskstore.Store) (taskstat
 	if err != nil {
 		return taskstate.TaskEntry{}, err
 	}
+	filename = resolveExistingTaskFilename(ps, filename)
 	entry, ok := ps.Entry(filename)
 	if !ok {
 		return taskstate.TaskEntry{}, fmt.Errorf("task not found: %s", filename)
@@ -315,9 +345,9 @@ func resolveTaskEntry(project, filename string, store taskstore.Store) (taskstat
 // branch defaults to "plan/<name>" when empty. If content is non-empty, it is
 // stored alongside the metadata.
 func executeTaskCreate(project, name, description, branch, topic, content string, store taskstore.Store) error {
-	filename := name
+	filename := normalizeTaskFilename(name)
 	if branch == "" {
-		branch = "plan/" + name
+		branch = "plan/" + filename
 	}
 	ps, err := loadTaskStateByProject(project, store)
 	if err != nil {
@@ -340,6 +370,7 @@ func executeTaskStart(repoRoot, project, planFile string, store taskstore.Store)
 	if err != nil {
 		return "", err
 	}
+	planFile = resolveExistingTaskFilename(ps, planFile)
 	entry, ok := ps.Entry(planFile)
 	if !ok {
 		return "", fmt.Errorf("task not found: %s", planFile)
@@ -483,6 +514,12 @@ func executeTaskPR(repoRoot, project, planFile, title string, store taskstore.St
 			return "", fmt.Errorf("open local task store: %w", err)
 		}
 	}
+
+	ps, err := loadTaskStateByProject(project, store)
+	if err != nil {
+		return "", err
+	}
+	planFile = resolveExistingTaskFilename(ps, planFile)
 
 	entry, err := store.Get(project, planFile)
 	if err != nil {

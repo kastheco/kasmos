@@ -17,27 +17,20 @@ import (
 
 func TestBuildPlanFilename(t *testing.T) {
 	got := buildPlanFilename("Auth Refactor", time.Date(2026, 2, 21, 10, 0, 0, 0, time.UTC))
-	want := "auth-refactor"
-	if got != want {
-		t.Fatalf("buildPlanFilename() = %q, want %q", got, want)
-	}
+	require.Equal(t, "auth-refactor", got)
 }
 
 func TestRenderPlanStub(t *testing.T) {
-	stub := renderPlanStub("Auth Refactor", "Refactor JWT auth", "auth-refactor.md")
-	if !strings.Contains(stub, "# Auth Refactor") {
-		t.Fatalf("stub missing title: %s", stub)
-	}
-	if !strings.Contains(stub, "Refactor JWT auth") {
-		t.Fatalf("stub missing description")
-	}
+	stub := renderPlanStub("Auth Refactor", "Refactor JWT auth", "auth-refactor")
+	require.Contains(t, stub, "# Auth Refactor")
+	require.Contains(t, stub, "Refactor JWT auth")
+	require.Contains(t, stub, "Plan file: auth-refactor")
 }
 
 func TestCreatePlanRecord(t *testing.T) {
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(plansDir, "plan-state.json"), []byte(`{}`), 0o644))
 
 	ps, err := newTestPlanState(t, plansDir)
 	require.NoError(t, err)

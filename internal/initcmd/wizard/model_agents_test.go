@@ -183,9 +183,14 @@ func TestAgentStep_IgnoresLegacyElaboratorProfile(t *testing.T) {
 
 	agents := initAgentsFromExisting([]string{"opencode"}, existing)
 
+	// Legacy elaborator profiles remain ignored rather than migrated.
+	// The architect role is the canonical path now, so the wizard must keep its
+	// own defaults instead of silently inheriting stale settings from the
+	// deprecated compatibility-only profile name.
 	// find the architect agent
 	var arch AgentState
 	for _, a := range agents {
+		require.NotEqual(t, "elaborator", a.Role, "legacy elaborator role should not be scaffolded back into the wizard")
 		if a.Role == "architect" {
 			arch = a
 			break

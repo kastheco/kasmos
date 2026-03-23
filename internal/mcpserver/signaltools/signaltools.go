@@ -56,11 +56,17 @@ func normalizePayload(signalType, payload string) (string, error) {
 			return "", fmt.Errorf("implement_task_finished: payload must be valid JSON: %w", err)
 		}
 		wn, ok := m["wave_number"].(float64)
-		if !ok || wn != math.Trunc(wn) {
+		if !ok {
+			return "", fmt.Errorf("implement_task_finished: wave_number must be a number")
+		}
+		if wn != math.Trunc(wn) {
 			return "", fmt.Errorf("implement_task_finished: wave_number must be a whole number")
 		}
 		tn, ok := m["task_number"].(float64)
-		if !ok || tn != math.Trunc(tn) {
+		if !ok {
+			return "", fmt.Errorf("implement_task_finished: task_number must be a number")
+		}
+		if tn != math.Trunc(tn) {
 			return "", fmt.Errorf("implement_task_finished: task_number must be a whole number")
 		}
 		return payload, nil
@@ -73,13 +79,16 @@ func normalizePayload(signalType, payload string) (string, error) {
 			return "", fmt.Errorf("implement_wave: payload must be valid JSON: %w", err)
 		}
 		wn, ok := m["wave_number"].(float64)
-		if !ok || wn != math.Trunc(wn) {
+		if !ok {
+			return "", fmt.Errorf("implement_wave: wave_number must be a number")
+		}
+		if wn != math.Trunc(wn) {
 			return "", fmt.Errorf("implement_wave: wave_number must be a whole number")
 		}
 		return payload, nil
 	case "elaborator_finished":
 		if payload != "" {
-			return "", fmt.Errorf("elaborator_finished does not accept a payload")
+			return "", fmt.Errorf("elaborator_finished does not accept a payload (architect pass uses this legacy signal name)")
 		}
 		return "", nil
 	default:
