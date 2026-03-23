@@ -53,13 +53,13 @@ these legacy tools are NEVER permitted. using them is a violation, not a prefere
 
 ## where you fit
 
-the task lifecycle fsm still uses a legacy state label: `ready -> elaborating -> implementing -> reviewing -> done`
+the task lifecycle fsm still carries a legacy compatibility state label: `ready -> elaborating -> implementing -> reviewing -> done`
 
 **your work covers:** the architect decomposition pass during `ready → elaborating → ready`
 
-- planner output enters you when implementation planning is complete and a plan is in task store
+- planner output enters the architect pass when implementation planning is complete and a plan is in task store
 - you decompose and enrich tasks for coders, write the updated plan, and emit architecture metadata
-- compatibility note: emit `elaborator-finished` for now because the current gateway still consumes that legacy signal name
+- compatibility note: emit `elaborator-finished` exactly as written until the gateway is renamed; this is a signal shim, not an active elaborator role
 - do not implement code; do not review code; stop after signaling and metadata write
 
 ---

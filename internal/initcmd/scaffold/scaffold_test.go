@@ -285,7 +285,8 @@ func TestWriteProjectSkills(t *testing.T) {
 	architectTemplate, err := templates.ReadFile("templates/skills/kasmos-architect/SKILL.md")
 	require.NoError(t, err)
 	assert.Equal(t, string(architectTemplate), string(architectSkill))
-	assert.Contains(t, string(architectSkill), "compatibility note: emit `elaborator-finished` for now")
+	assert.Contains(t, string(architectSkill), "compatibility note: emit `elaborator-finished` exactly as written until the gateway is renamed")
+	assert.Contains(t, string(architectSkill), "signal shim, not an active elaborator role")
 	assert.NotContains(t, string(architectSkill), "**elaborator** agent")
 
 	// cli-tools resource files included
