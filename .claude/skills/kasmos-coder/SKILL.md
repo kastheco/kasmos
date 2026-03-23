@@ -360,7 +360,7 @@ Execute waves sequentially:
 3. Implement Wave 2, self-review, continue through all waves
 4. After all waves complete and all tests pass:
 
-   after all waves complete and tests pass, use MCP `task_transition` (filename: "<task-file>", event: "request_review") to move the plan to `reviewing`.
+after all waves complete and tests pass, use MCP `task_transition` (filename: "<task-file>", event: "request_review") to move the plan to `reviewing`.
 
 Then handle branch finishing — present these options to the user:
 
