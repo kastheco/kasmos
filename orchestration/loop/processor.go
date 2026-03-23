@@ -357,7 +357,7 @@ func (p *Processor) ProcessWaveSignals(signals []taskfsm.WaveSignal) []Action {
 
 // ProcessElaborationSignals converts architect-pass completion signals carried
 // over the retained elaborator_finished contract into AdvanceWaveAction values.
-// It re-reads the enriched plan from the store,
+// It re-reads the architect-enriched plan from the store,
 // updates the orchestrator, and emits the action to start wave 1.
 //
 // Extracted from app.go metadataResultMsg handler (lines 1198-1241).
@@ -369,7 +369,7 @@ func (p *Processor) ProcessElaborationSignals(signals []taskfsm.ElaborationSigna
 			continue
 		}
 
-		// Re-read the enriched plan from the store.
+		// Re-read the architect-enriched plan from the store.
 		content, err := p.config.Store.GetContent(p.config.Project, es.TaskFile)
 		if err != nil {
 			continue
@@ -379,7 +379,7 @@ func (p *Processor) ProcessElaborationSignals(signals []taskfsm.ElaborationSigna
 			continue
 		}
 
-		// Replace the plan with the elaborated version and reset orchestrator state.
+		// Replace the plan with the architect-enriched version and reset orchestrator state.
 		orch.UpdatePlan(plan)
 
 		// Start wave 1.

@@ -83,16 +83,12 @@ func BridgeFilesystemSignals(gw taskstore.SignalGateway, project, repoRoot strin
 		bridged++
 	}
 
-	// --- Architect-pass completion signals (elaborator-finished-<plan>) ---
+	// --- Architect-pass completion signals (legacy elaborator-finished-<plan>) ---
 	for _, es := range scan.ElaborationSignals {
-		payload, err := json.Marshal(map[string]string{})
-		if err != nil {
-			return bridged, fmt.Errorf("marshal elaboration signal payload: %w", err)
-		}
 		entry := taskstore.SignalEntry{
 			PlanFile:   es.TaskFile,
 			SignalType: "elaborator_finished",
-			Payload:    string(payload),
+			Payload:    "",
 		}
 		if err := gw.Create(project, entry); err != nil {
 			return bridged, fmt.Errorf("create elaboration signal: %w", err)

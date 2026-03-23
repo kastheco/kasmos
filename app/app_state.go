@@ -1634,8 +1634,8 @@ func (m *home) spawnFixerWithFeedback(planFile, feedback string) tea.Cmd {
 
 // spawnElaborator creates and starts the architect pass for the given plan.
 // The architect runs on the main branch since it updates the task store without
-// editing implementation files. When it finishes, it writes the architect-complete
-// sentinel consumed by the metadata tick to advance wave orchestration.
+// editing implementation files. When it finishes, it writes the retained
+// elaborator_finished sentinel consumed by the metadata tick to advance wave orchestration.
 func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 	if !m.requireDaemonForAgents() {
 		return m, nil
@@ -1643,10 +1643,9 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 	planName := taskstate.DisplayName(planFile)
 	prompt := orchestration.BuildElaborationPrompt(planFile)
 
-	// Clear any stale architect-complete sentinel from a prior architect run before
-	// spawning a new architect pass. Without this, a leftover file (e.g. from a
-	// TUI restart mid-elaboration) would be picked up on the next tick and
-	// advance the orchestrator to wave 1 before the new architect pass finishes.
+	// Clear any stale elaborator_finished sentinel before starting a new pass.
+	// Signal processing is edge-unaware, so a stale file would advance the current
+	// orchestrator immediately instead of waiting for this architect run to finish.
 	taskfsm.ClearElaborationSignal(m.signalsDir, planFile)
 
 	inst, err := session.NewInstance(session.InstanceOptions{

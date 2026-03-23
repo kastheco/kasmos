@@ -1138,7 +1138,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 
 		// Check whether an architect pass already finished for this plan (for
 		// example after a TUI restart that lost the in-memory orchestrator).
-		// Skip a duplicate enrichment run in that case.
+		// Skip a duplicate architect run in that case.
 		for _, inst := range m.nav.GetInstances() {
 			if inst.TaskFile == planFile && inst.AgentType == session.AgentTypeElaborator {
 				m.killExistingPlanAgent(planFile, session.AgentTypeElaborator)

@@ -208,3 +208,10 @@ func TestBuildArchitectPrompt(t *testing.T) {
 	// until a gateway consumer for architect-finished is implemented.
 	assert.NotContains(t, prompt, "kas signal emit architect_finished")
 }
+
+func TestBuildElaborationPrompt_RetainsLegacySignalName(t *testing.T) {
+	prompt := BuildElaborationPrompt("my-feature")
+
+	assert.Contains(t, prompt, "only the completion signal name stays legacy")
+	assert.Contains(t, prompt, "kas signal emit elaborator_finished my-feature")
+}

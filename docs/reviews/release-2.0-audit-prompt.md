@@ -74,3 +74,10 @@ Produce a structured report:
 ## Verdict
 PASS / FAIL with summary
 ```
+
+## legacy-cleanup-audit final verification note
+
+- task 10 reran the repository verification commands while closing the audit.
+- `go vet ./...` and `go build ./...` passed; `go mod tidy` produced no `go.mod` or `go.sum` diff.
+- `go test ./...` did not finish cleanly: `app` was blocked by a concurrent shared-worktree edit in `app/app_state.go`, and `daemon` still has deferred expectations around the legacy filesystem-signal path.
+- the canonical retained/deferred inventory now lives in the store-backed `legacy-cleanup-audit` task content rather than this archival prompt.
