@@ -49,6 +49,66 @@ func TestMigrateFromJSON(t *testing.T) {
 	assert.Len(t, topics, 1)
 }
 
+func TestMigrateFromJSON_NormalizesLegacyStatusAndFilename(t *testing.T) {
+	store := newTestStore(t)
+	plansDir := t.TempDir()
+
+	stateJSON := `{
+		"plans": {
+			"feature.md": {"status": "in_progress", "description": "legacy impl"},
+			"release": {"status": "completed", "description": "legacy done"}
+		}
+	}`
+	require.NoError(t, os.WriteFile(filepath.Join(plansDir, "plan-state.json"), []byte(stateJSON), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(plansDir, "feature.md"), []byte("# Feature"), 0o644))
+
+	migrated, err := MigrateFromJSON(store, "proj", plansDir)
+	require.NoError(t, err)
+	assert.Equal(t, 2, migrated)
+
+	feature, err := store.Get("proj", "feature")
+	require.NoError(t, err)
+	assert.Equal(t, StatusImplementing, feature.Status)
+
+	release, err := store.Get("proj", "release")
+	require.NoError(t, err)
+	assert.Equal(t, StatusDone, release.Status)
+
+	content, err := store.GetContent("proj", "feature")
+	require.NoError(t, err)
+	assert.Equal(t, "# Feature", content)
+}
+
+func TestMigrateFromJSON_PreservesCollidingMdFilename(t *testing.T) {
+	store := newTestStore(t)
+	plansDir := t.TempDir()
+
+	stateJSON := `{
+		"plans": {
+			"task": {"status": "ready", "description": "bare"},
+			"task.md": {"status": "completed", "description": "collision"}
+		}
+	}`
+	require.NoError(t, os.WriteFile(filepath.Join(plansDir, "plan-state.json"), []byte(stateJSON), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(plansDir, "task.md"), []byte("# Collision"), 0o644))
+
+	migrated, err := MigrateFromJSON(store, "proj", plansDir)
+	require.NoError(t, err)
+	assert.Equal(t, 2, migrated)
+
+	bare, err := store.Get("proj", "task")
+	require.NoError(t, err)
+	assert.Equal(t, StatusReady, bare.Status)
+
+	suffixed, err := store.Get("proj", "task.md")
+	require.NoError(t, err)
+	assert.Equal(t, StatusDone, suffixed.Status)
+
+	content, err := store.GetContent("proj", "task.md")
+	require.NoError(t, err)
+	assert.Equal(t, "# Collision", content)
+}
+
 func TestMigrateFromJSON_Idempotent(t *testing.T) {
 	store := newTestStore(t)
 	plansDir := t.TempDir()
@@ -143,9 +203,9 @@ func TestMigrateFromPlanstoreDB(t *testing.T) {
 	`)
 	require.NoError(t, err)
 
-	_, err = oldDB.Exec(`INSERT INTO plans (project, filename, status, description, branch) VALUES ('proj', 'plan-a', 'done', 'old plan', 'plan/a')`)
+	_, err = oldDB.Exec(`INSERT INTO plans (project, filename, status, description, branch) VALUES ('proj', 'plan-a', 'completed', 'old plan', 'plan/a')`)
 	require.NoError(t, err)
-	_, err = oldDB.Exec(`INSERT INTO plans (project, filename, status, description, branch) VALUES ('proj', 'plan-b', 'ready', 'old plan b', 'plan/b')`)
+	_, err = oldDB.Exec(`INSERT INTO plans (project, filename, status, description, branch) VALUES ('proj', 'plan-b.md', 'in_progress', 'old plan b', 'plan/b')`)
 	require.NoError(t, err)
 	_, err = oldDB.Exec(`INSERT INTO topics (project, name, created_at) VALUES ('proj', 'tools', '2026-02-28T00:00:00Z')`)
 	require.NoError(t, err)
@@ -166,9 +226,13 @@ func TestMigrateFromPlanstoreDB(t *testing.T) {
 
 	entryA, err := store.Get("proj", "plan-a")
 	require.NoError(t, err)
-	assert.Equal(t, Status("done"), entryA.Status)
+	assert.Equal(t, StatusDone, entryA.Status)
 	assert.Equal(t, "old plan", entryA.Description)
 	assert.Equal(t, "plan/a", entryA.Branch)
+
+	entryB, err := store.Get("proj", "plan-b")
+	require.NoError(t, err)
+	assert.Equal(t, StatusImplementing, entryB.Status)
 
 	// Verify topics were migrated.
 	topics, err := store.ListTopics("proj")

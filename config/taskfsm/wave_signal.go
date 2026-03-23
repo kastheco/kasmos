@@ -27,9 +27,12 @@ func ParseWaveSignal(filename string) (WaveSignal, bool) {
 	if err != nil {
 		return WaveSignal{}, false
 	}
+	taskFile := filepath.Base(m[2])
 	return WaveSignal{
 		WaveNumber: wave,
-		TaskFile:   filepath.Base(m[2]),
+		// Preserve any .md suffix exactly as signaled; only drop path components.
+		// CLI/MCP ingress and durable store migrations own filename normalization.
+		TaskFile: taskFile,
 	}, true
 }
 

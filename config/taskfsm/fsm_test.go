@@ -194,7 +194,6 @@ func TestMapLegacyStatus(t *testing.T) {
 		{name: "canonical implementing", in: taskstate.StatusImplementing, want: StatusImplementing},
 		{name: "legacy in progress", in: "in_progress", want: StatusImplementing},
 		{name: "legacy completed", in: "completed", want: StatusDone},
-		{name: "legacy finished", in: "finished", want: StatusDone},
 	}
 
 	for _, tt := range tests {

@@ -208,6 +208,9 @@ func TestGetConfigDir(t *testing.T) {
 		require.NoError(t, os.WriteFile(
 			filepath.Join(legacyDir, "taskstore.db"),
 			[]byte("sqlite"), 0644))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(legacyDir, "state.json"),
+			[]byte(`{"help_screens_seen":1}`), 0644))
 
 		configDir, err := GetConfigDir()
 		require.NoError(t, err)
@@ -222,9 +225,14 @@ func TestGetConfigDir(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "sqlite", string(migratedDB))
 
+		migratedState, err := os.ReadFile(filepath.Join(configDir, "state.json"))
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"help_screens_seen":1}`, string(migratedState))
+
 		// Legacy file should still exist (copy, not move)
 		assert.FileExists(t, filepath.Join(legacyDir, "config.toml"))
 		assert.FileExists(t, filepath.Join(legacyDir, "taskstore.db"))
+		assert.FileExists(t, filepath.Join(legacyDir, "state.json"))
 	})
 
 	t.Run("skips migration when config already exists in .kasmos", func(t *testing.T) {

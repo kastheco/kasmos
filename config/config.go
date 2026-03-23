@@ -28,9 +28,9 @@ var aliasRegex = regexp.MustCompile(`(?:aliased to|->|=)\s*([^\s]+)`)
 // the directory is anchored to the main repository root so all orchestrator
 // state uses a single shared location.
 // On first call without existing config files in the target, it attempts a one-time
-// migration by copying files from legacy XDG directories. The migration is a copy
-// (not a move) so legacy locations are preserved. Any migration error is silently
-// ignored — the new target is always returned.
+// migration by copying files from the retained legacy XDG directory. The migration
+// is a copy (not a move) so legacy locations are preserved. Any migration error is
+// silently ignored — the new target is always returned.
 func GetConfigDir() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -63,7 +63,10 @@ func GetConfigDir() (string, error) {
 			if _, statErr := os.Stat(legacy); statErr != nil {
 				continue
 			}
-			// Legacy dir found — copy known files to target.
+			// Legacy dir found — copy the remaining supported local files.
+			// state.json is still file-backed app state, while taskstore.db remains the
+			// canonical local task store. Older directory names are intentionally not
+			// part of the compatibility contract anymore.
 			if mkErr := os.MkdirAll(target, 0755); mkErr != nil {
 				log.ErrorLog.Printf("failed to create %s: %v", target, mkErr)
 				break

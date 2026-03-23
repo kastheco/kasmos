@@ -115,6 +115,19 @@ func TestPlanSetStatus(t *testing.T) {
 	assert.Error(t, err, "should reject invalid status")
 }
 
+func TestPlanSetStatus_AcceptsMdAliasForCanonicalEntry(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "set-status-alias"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "alias-plan", Status: taskstore.StatusReady}))
+
+	err := executeTaskSetStatus(project, "alias-plan.md", "done", true, store)
+	require.NoError(t, err)
+
+	entry, err := store.Get(project, "alias-plan")
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusDone, entry.Status)
+}
+
 func TestPlanTransition(t *testing.T) {
 	store, _, project := setupTestPlanState(t)
 
@@ -126,6 +139,16 @@ func TestPlanTransition(t *testing.T) {
 	// Invalid transition (plan is now in "planning" state)
 	_, err = executeTaskTransition(project, "test-plan", "review_approved", store)
 	assert.Error(t, err)
+}
+
+func TestPlanTransition_AcceptsMdAliasForCanonicalEntry(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "transition-alias"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "alias-plan", Status: taskstore.StatusReady}))
+
+	status, err := executeTaskTransition(project, "alias-plan.md", "plan_start", store)
+	require.NoError(t, err)
+	assert.Equal(t, "planning", status)
 }
 
 func TestPlanCLI_EndToEnd(t *testing.T) {
@@ -419,12 +442,12 @@ func TestExecuteTaskShow(t *testing.T) {
 		Content:  "# My Plan\n\n## Wave 1\n\n### Task 1: Do it\n\nDo the thing.\n",
 	}))
 
-	content, err := executeTaskShow(project, "my-plan.md", store)
+	content, err := executeTaskShow(project, "my-plan", store)
 	require.NoError(t, err)
 	assert.Equal(t, "# My Plan\n\n## Wave 1\n\n### Task 1: Do it\n\nDo the thing.\n", content)
 }
 
-func TestExecuteTaskShow_AcceptsExtensionlessFilename(t *testing.T) {
+func TestExecuteTaskShow_AcceptsMdSuffixCompatibilityInput(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
 	project := "test-show-project"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{
@@ -433,14 +456,14 @@ func TestExecuteTaskShow_AcceptsExtensionlessFilename(t *testing.T) {
 		Content:  "# My Plan\n",
 	}))
 
-	content, err := executeTaskShow(project, "my-plan", store)
+	content, err := executeTaskShow(project, "my-plan.md", store)
 	require.NoError(t, err)
 	assert.Equal(t, "# My Plan\n", content)
 }
 
 func TestExecuteTaskShow_NotFound(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
-	_, err := executeTaskShow("test-project", "nonexistent.md", store)
+	_, err := executeTaskShow("test-project", "nonexistent", store)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }
@@ -453,7 +476,7 @@ func TestExecuteTaskShow_EmptyContent(t *testing.T) {
 		Status:   taskstore.StatusReady,
 	}))
 
-	_, err := executeTaskShow(project, "empty.md", store)
+	_, err := executeTaskShow(project, "empty", store)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no content")
 }
@@ -516,7 +539,7 @@ func TestResolveTaskEntry(t *testing.T) {
 
 func TestResolveTaskEntry_NotFound(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
-	_, err := resolveTaskEntry("proj", "nope.md", store)
+	_, err := resolveTaskEntry("proj", "nope", store)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }
@@ -531,6 +554,36 @@ func TestResolveTaskEntry_BackfillsBranch(t *testing.T) {
 	entry, err := resolveTaskEntry(project, "no-branch", store)
 	require.NoError(t, err)
 	assert.Equal(t, "plan/no-branch", entry.Branch)
+}
+
+func TestResolveTaskEntry_AcceptsMdAliasForCanonicalEntry(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "resolve-alias"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: "alias-plan",
+		Status:   taskstore.StatusReady,
+		Branch:   "plan/alias-plan",
+	}))
+
+	entry, err := resolveTaskEntry(project, "alias-plan.md", store)
+	require.NoError(t, err)
+	assert.Equal(t, taskstate.StatusReady, entry.Status)
+	assert.Equal(t, "plan/alias-plan", entry.Branch)
+}
+
+func TestResolveTaskEntry_PrefersExactStoredFilename(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "resolve-exact"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: "alias-plan.md",
+		Status:   taskstore.StatusReady,
+		Branch:   "plan/alias-plan-md",
+	}))
+
+	entry, err := resolveTaskEntry(project, "alias-plan.md", store)
+	require.NoError(t, err)
+	assert.Equal(t, taskstate.StatusReady, entry.Status)
+	assert.Equal(t, "plan/alias-plan-md", entry.Branch)
 }
 
 func TestExecuteTaskStart(t *testing.T) {
