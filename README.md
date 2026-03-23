@@ -203,22 +203,23 @@ task will not advance until the daemon processes it.
 
 #### rest api
 
-the store exposes a simple rest api for scripting. the HTTP surface still uses
-legacy `/plans` path names even though the current CLI is `kas task ...`:
+the daemon/task-store HTTP surface is intentionally small. it lives under
+`/v1/repos/{project}/...`; some route segments still use legacy `/plans` naming
+even though the current CLI is `kas task ...`:
 
 ```bash
-# health check
-curl http://localhost:7433/v1/ping
+# daemon/task-store status
+curl http://localhost:7433/v1/status
+
+# list registered repos
+curl http://localhost:7433/v1/repos
 
 # list all tasks
-curl http://localhost:7433/v1/projects/kasmos/plans
-
-# filter by status
-curl 'http://localhost:7433/v1/projects/kasmos/plans?status=ready'
-
-# filter by topic
-curl 'http://localhost:7433/v1/projects/kasmos/plans?topic=bugs'
+curl http://localhost:7433/v1/repos/kasmos/plans
 ```
+
+for filtered task views, use the CLI (`kas task list --status ...`) until the
+HTTP surface grows matching server-side filters.
 
 ---
 
