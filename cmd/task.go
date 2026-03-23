@@ -36,7 +36,9 @@ func resolveExistingTaskFilename(ps *taskstate.TaskState, filename string) strin
 	if _, ok := ps.Entry(trimmed); ok {
 		return trimmed
 	}
-	return trimmed
+	// Preserve the original user input when no stored entry matches so callers
+	// can report the exact filename the user asked for.
+	return raw
 }
 
 // executeTaskRegister registers a plan file into the task store. The filePath

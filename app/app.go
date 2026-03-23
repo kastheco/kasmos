@@ -1408,7 +1408,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						continue
 					}
 					waveNum := orch.CurrentWaveNumber()
-					m.toastManager.Info(fmt.Sprintf("plan elaborated — starting wave %d for '%s'", waveNum, taskstate.DisplayName(advance.PlanFile)))
+					m.toastManager.Info(fmt.Sprintf("architect pass complete — starting wave %d for '%s'", waveNum, taskstate.DisplayName(advance.PlanFile)))
 					m.audit(auditlog.EventWaveStarted,
 						fmt.Sprintf("wave %d started: %d task(s)", waveNum, len(waveTasks)),
 						auditlog.WithPlan(advance.PlanFile),
