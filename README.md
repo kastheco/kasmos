@@ -142,16 +142,53 @@ kas serve --bind 127.0.0.1 --port 7433 --mcp --mcp-port 7434
 
 if you want this to be always-on, run `kas serve` under your user service manager or keep it paired with the daemon in your own startup scripts for now.
 
-if you do **not** want to launch multiple commands every session, install the bundled user services once:
+if you do **not** want to launch multiple commands every session, run the server + daemon as user services.
+
+for packaged installs (brew / release binary), create the units directly:
 
 ```bash
-just services-enable
+mkdir -p ~/.config/systemd/user
+
+cat > ~/.config/systemd/user/kasmosdb.service <<'EOF'
+[Unit]
+Description=kasmos task store and mcp server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/kas serve
+Restart=on-failure
+RestartSec=5
+Environment=HOME=%h
+
+[Install]
+WantedBy=default.target
+EOF
+
+cat > ~/.config/systemd/user/kasmos.service <<'EOF'
+[Unit]
+Description=kasmos orchestration daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/kas daemon start --foreground
+ExecStop=%h/.local/bin/kas daemon stop
+Restart=on-failure
+RestartSec=5
+Environment=HOME=%h
+
+[Install]
+WantedBy=default.target
+EOF
+
+systemctl --user daemon-reload
+systemctl --user enable --now kasmosdb kasmos
 ```
 
-that enables both:
+if your `kas` binary lives somewhere else, replace `%h/.local/bin/kas` with the real path from `command -v kas`.
 
-- `kasmos.service` → `kas daemon start --foreground`
-- `kasmosdb.service` → `kas serve`
+for source checkouts, `just services-enable` still works.
 
 after that, your normal interactive entrypoint can just be:
 
