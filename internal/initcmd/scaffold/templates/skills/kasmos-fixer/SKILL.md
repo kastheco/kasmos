@@ -114,11 +114,8 @@ go test ./failing/package/... -v -count=1 -run TestSpecificFailure 2>&1 | head -
 
 ### Phase 2 — Pattern Analysis
 
-Find working examples in the codebase doing something similar:
-
-```bash
-rg 'PatternOfInterest' --type go
-```
+Find working examples in the codebase doing something similar. Use MCP `grep`
+(`pattern: "PatternOfInterest"`, `include: "*.go"`) to locate matching implementations.
 
 Compare them against the broken code. List **every difference** — don't assume "that can't matter."
 Understand all dependencies: config, env, state, initialization order.
@@ -167,9 +164,8 @@ edge cases:
 
 ### Step 1 — Scan for Incomplete Work
 
-```bash
-rg 'TODO|FIXME|HACK|XXX|PLACEHOLDER' --type go
-```
+Use MCP `grep` (`pattern: "TODO|FIXME|HACK|XXX|PLACEHOLDER"`, `include: "*.go"`) for
+loose-end scans.
 
 ### Step 2 — Cross-reference Plan vs Implementation
 
@@ -185,16 +181,16 @@ If the request is not explicitly triage/cleanup, stop after validating the repor
 
 ```bash
 go test ./... -count=1 -coverprofile=coverage.out
-go tool cover -func=coverage.out | rg '0.0%'  # uncovered functions
+go tool cover -func=coverage.out
 ```
+
+Inspect the coverage summary for `0.0%` entries, or save the summary and search it with MCP `grep`.
 
 ### Step 4 — Error Handling Completeness
 
-```bash
-# Find unhandled errors
-rg 'err\s*:?=.*\n.*[^}]$' --type go -A 1  # rough heuristic
-rg '\berr\b.*:=.*\n[^if]' --type go       # assignment not followed by if
-```
+Use MCP `grep` to spot likely unhandled errors. Good starting heuristics are `\berr\b.*:=`
+and `if err != nil` searches across `*.go`; compare assignment sites against nearby checks
+before concluding anything.
 
 Report findings: list each gap with file, line, and severity (blocking / non-blocking).
 
@@ -232,10 +228,10 @@ go test ./... -count=1
 
 # Spell check before committing
 typos
-
-# Verify specific behavior
-rg 'ExpectedPattern' path/to/file.go
 ```
+
+For file or artifact verification, use MCP `grep` (`pattern: "ExpectedPattern"`,
+`include: "<relevant-glob>"`) or direct file inspection.
 
 ### Red Flags — STOP
 
@@ -256,9 +252,10 @@ Find git worktrees whose associated plan is `done` or `cancelled`:
 
 ```bash
 git worktree list --porcelain
-kas task list --status done
-kas task list --status cancelled
 ```
+
+Use MCP `task_list` with status `done` and `cancelled` to inspect task-store state before
+removing stale worktrees.
 
 Cross-reference. For each stale worktree:
 1. Confirm with user: "remove worktree for plan `<name>` (status: done)?"
@@ -270,8 +267,9 @@ Find local `task/*` branches with no corresponding entry in the task store:
 
 ```bash
 git branch --list 'task/*'
-kas task list
 ```
+
+Use MCP `task_list` with no status filter to compare local branches against tracked tasks.
 
 For each branch not tracked in the task store:
 1. Show: branch name, last commit, commits-ahead-of-main count
@@ -283,65 +281,50 @@ For each branch not tracked in the task store:
 Find entries in the task store with no corresponding branch or worktree:
 
 ```bash
-kas task list
 git branch --list 'task/*'
 ```
+
+Use MCP `task_list` with no status filter to find task-store entries that no longer have a
+matching branch or worktree.
 
 For each ghost entry:
 1. Show: plan name, status, branch
 2. Confirm: "force-set ghost plan `<name>` to cancelled?"
-3. `kas task set-status <name> cancelled --force`
+3. Use MCP `task_transition` (`filename: "<name>"`, `event: "cancel"`) when a valid
+   lifecycle event exists; reserve force-style overrides for confirmed recovery work only.
 
 ---
 
-## Available CLI Commands
+## Available Task-Store Tools
 
-All state mutations go through the `kas` binary. Use `kas`, not `kq`.
+Use MCP task-store tools for plan/task reads and lifecycle mutations. Keep `kas`, not `kq`,
+for execution paths that genuinely require the CLI (for example `kas task implement`).
 
-### `kas task list [--status <status>]`
+### `task_list`
 
-List all tasks with their status, branch, and topic. Supports status filter.
+Use MCP `task_list` to inspect task state. It returns status, branch, and topic data and supports
+the same lifecycle filters used during triage and cleanup.
 
-```bash
-kas task list                        # all tasks
-kas task list --status implementing  # only implementing plans
-kas task list --status ready         # plans waiting to start
-```
+- use MCP `task_list` with no status filter for all tasks
+- use MCP `task_list` with status `implementing` for active implementation plans
+- use MCP `task_list` with status `ready` for plans waiting to start
 
-### `kas task show <plan-file>`
+### `task_show`
 
-Print the plan's full markdown content from the task store. Use this to retrieve plan details
-without reading from disk.
+Use MCP `task_show` (`filename: "my-plan.md"`) to read the stored plan markdown from the task
+store without relying on disk copies.
 
-```bash
-kas task show my-plan.md
-```
+### `task_transition`
 
-### `kas task set-status <task-file> <status> --force`
-
-Force-override a task's status, bypassing the FSM transition table. Requires `--force`.
-Valid statuses: `ready`, `planning`, `implementing`, `reviewing`, `done`, `cancelled`.
-
-```bash
-kas task set-status 2026-02-27-my-plan.md done --force
-```
-
-Use only when FSM transitions are blocked (e.g., a plan stuck with no valid event).
-Always confirm with the user before executing.
-
-### `kas task transition <task-file> <event>`
-
-Apply a named FSM event. Respects the transition table. Preferred over `set-status` when
-a valid event exists.
+Use MCP `task_transition` (`filename: "2026-02-27-my-plan.md"`,
+`event: "review_approved"`) to apply named FSM events. Preferred over force-style recovery
+overrides whenever a valid event exists.
 
 Valid events: `plan_start`, `implement_start`, `review_start`, `review_approved`,
 `review_changes`, `cancel`, `reopen`
 
-```bash
-kas task transition 2026-02-27-my-plan.md review_approved
-```
-
-Prints resulting status on success. On failure, prints current status + valid events.
+If a plan is genuinely stuck with no valid event, any force-style override requires explicit
+user confirmation before execution.
 
 ### `kas task implement <task-file> [--wave N]`
 
@@ -361,7 +344,7 @@ These one-shot commands are usable from any agent context:
 
 | Command | Purpose |
 |---------|---------|
-| `/kas.reset-task <task-file> <status>` | Force-override task status (calls `kas task set-status --force`). Shows before/after. |
+| `/kas.reset-task <task-file> <status>` | Force-override task status for confirmed recovery work. Shows before/after and requires explicit user confirmation. |
 | `/kas.finish-branch [task-file]` | Merge or PR a plan's branch. Infers plan from current branch if omitted. |
 | `/kas.cleanup [--dry-run]` | Three-pass cleanup: stale worktrees → orphan branches → ghost entries. Default dry-run. |
 | `/kas.implement <task-file> [--wave N]` | Set plan to implementing, write wave signal. |
@@ -387,10 +370,12 @@ NEW_VERSION="X.Y.Z"
 
 # 2. update main.go
 sd 'version\s*=\s*"[^"]*"' "version     = \"${NEW_VERSION}\"" main.go
+```
 
-# 3. verify the change
-rg '^\s*version\s*=' main.go
-# expected output: version     = "X.Y.Z"
+Then use MCP `grep` (`pattern: "^\\s*version\\s*="`, `include: "main.go"`) or read
+`main.go` directly and confirm it now says `version     = "X.Y.Z"`.
+
+```bash
 
 # 4. commit on main
 git add main.go
@@ -401,13 +386,9 @@ git tag "v${NEW_VERSION}"
 git push origin main "v${NEW_VERSION}"
 ```
 
-**Pre-flight check:** before pushing a tag, always run:
-
-```bash
-rg '^\s*version\s*=' main.go
-```
-
-and confirm the version string matches the tag (without the `v` prefix).
+**Pre-flight check:** before pushing a tag, use MCP `grep`
+(`pattern: "^\\s*version\\s*="`, `include: "main.go"`) or read `main.go` directly and
+confirm the version string matches the tag (without the `v` prefix).
 
 **Never push a `v*` tag without this check.** The CI step `Validate tag matches version in main.go`
 will reject the build if they diverge.
@@ -416,19 +397,19 @@ will reject the build if they diverge.
 
 ## Safety Rules
 
-1. **`--force` required for status overrides** — `kas task set-status` without `--force` is an error.
-   Never add `--force` without user confirmation.
+1. **Force-style status overrides are recovery-only** — never bypass the normal lifecycle without
+   explicit user confirmation.
 
 2. **Confirm before destructive ops** — worktree removal, branch deletion, and task state changes
    are irreversible. Always show what will change and get explicit confirmation.
 
 3. **Never modify task content** — task content is authored by the planner and stored in the plan
-   store (SQLite/HTTP API). You update status via `kas task` CLI commands only. Never edit plan
-   content directly.
+   store (SQLite/HTTP API). Read it via MCP `task_show` and change lifecycle state via MCP
+   `task_transition` or confirmed recovery tooling. Never edit plan content directly.
 
-4. **FSM transitions validate state** — prefer `kas task transition` over `set-status`. The FSM
-   ensures consistent state. Use `set-status --force` only when a plan is genuinely stuck with no
-   valid FSM event.
+4. **FSM transitions validate state** — prefer MCP `task_transition` over any force-style
+   override. The FSM ensures consistent state. Use overrides only when a plan is genuinely stuck
+   with no valid FSM event.
 
 5. **Dry-run by default** — cleanup operations default to reporting what would change. Execute only
    after the user reviews the dry-run output and confirms.

@@ -25,7 +25,7 @@ State is persisted in the **task store** — a SQLite database (`~/.config/kasmo
 
 ## Signal File Mechanics
 
-Agents communicate state transitions by emitting signals that map to the sentinel conventions in `.kasmos/signals/`.
+Agents communicate state transitions by writing sentinel files into `.kasmos/signals/`.
 
 **Naming convention:** `<event>-<planfile>`
 

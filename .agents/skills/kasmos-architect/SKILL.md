@@ -178,6 +178,7 @@ Use `openai/gpt-5.4` cost logic as follows:
 1. write metadata output:
 
 ```bash
+mkdir -p .kasmos/cache
 cat > .kasmos/cache/<plan-file>-architect.json <<'EOF'
 ...json...
 EOF

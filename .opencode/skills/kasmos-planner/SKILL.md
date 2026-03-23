@@ -308,6 +308,8 @@ kasmos is orchestrating this session. store the plan content and signal completi
 use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>") to persist the finished plan.
 then use MCP `signal_create` (signal_type: "planner-finished", plan_file: "<plan-file>") to notify completion.
 
+the signal filename must match the task filename exactly (with `planner-finished-` prefix).
+
 **do NOT modify task state directly** — kasmos manages the task store.
 
 announce completion and stop:
@@ -320,7 +322,7 @@ announce completion and stop:
 
 store the plan in the task store using MCP calls.
 
-if the task does not exist yet, use MCP `task_create` (filename: "<plan-file>") first, then use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>") to persist the plan.
+if the task does not exist yet, use MCP `task_create` to create it first, then use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>") to persist the plan.
 
 if the task already exists, use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>") directly.
 

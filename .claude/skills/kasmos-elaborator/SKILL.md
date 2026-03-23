@@ -23,36 +23,37 @@ these legacy tools are NEVER permitted. using them is a violation, not a prefere
 
 | banned | replacement | no exceptions |
 |--------|-------------|---------------|
-| `task store shell command` | `task_show` | never call shell task-store commands |
-| `task store shell update` | `task_update_content` | never call shell task-store commands |
-| `cat` redirection | `read_file` + `task_update_content` | keep I/O inside MCP |
-| shell discovery traversal | `find_files` | declarative file discovery |
-| `grep` | `grep` tool | shell command prohibited; call the MCP grep tool instead |
-| filesystem write commands for signals | `signal_create` | emit structured signal instead |
-| standalone `diff` | `git diff` only | use normal git diff command |
+| `grep` | `rg` (ripgrep) | even for simple one-liners. `rg` is faster, respects .gitignore, and handles encoding correctly |
+| `grep -r` | `rg` | recursive grep is still grep. always `rg` |
+| `grep -E` | `rg` | extended regex is still grep. `rg` supports the same patterns |
+| `sed` | `sd` | even for one-liners. `sd` has saner syntax and no delimiter escaping |
+| `awk` | `yq`/`jq` (structured) or `sd` (text) | no awk for any purpose |
+| `find` | `fd` or glob tools | even for simple file listing. `fd` respects .gitignore; use `fd -e go` for extension |
+| `diff` (standalone) | `difft` | `git diff` is fine — standalone `diff` is not |
+| `wc -l` | `scc` | even for single files |
 
 **`git diff` is allowed** — it's a git subcommand, not standalone `diff`. use `GIT_EXTERNAL_DIFF=difft git diff` when reviewing code changes.
 
-**STOP.** if you are about to use a shell task-store command, shell redirection, shell traversal, directory creation/removal, or standalone file-system shell commands in this skill, stop and use the MCP replacement first. there are no exceptions. "just this once" is a violation.
+**STOP.** if you are about to type `grep`, `sed`, `awk`, `find`, `diff`, or `wc` — stop and use the replacement. there are no exceptions. "just this once" is a violation.
 
 ## tool selection by task
 
 | task | use | not | why |
 |------|-----|-----|-----|
-| find function/type definitions | `rg` or `ast-grep` | shell grep alternatives | shell grep is banned |
-| find files by name/extension | `find_files` or `glob` | shell `find` | use MCP file discovery |
-| find literal string in files | `grep` | shell grep command | shell command is banned |
-| read/modify YAML/TOML/JSON | `yq` / `jq` | shell text tools | avoids shell-only text processing |
+| find function/type definitions | `rg` or `ast-grep` | `grep` | ast-aware, ignores comments and strings |
+| find files by name/extension | `fd` | `find` | respects .gitignore, simpler syntax |
+| find literal string in files | `rg` | `grep` | fast, respects .gitignore |
+| read/modify YAML/TOML/JSON | `yq` / `jq` | `sed`/`awk` | understands structure |
 | review code changes | `difft` | `diff` | syntax-aware, ignores formatting noise |
 
 ## violations
 
 | violation | required fix |
 |-----------|-------------|
-| using `grep` for anything | use MCP `grep` for text search, `ast-grep` for code patterns |
+| using `grep` for anything | use `rg` for text search, `ast-grep` for code patterns |
 | using `sed` for anything | use `sd` for replacements |
 | using `awk` for anything | use `yq`/`jq` for structured data, `sd` for text |
-| using shell traversal for file discovery | use MCP `find_files` |
+| using `find` for anything | use `fd` for file finding |
 | using standalone `diff` | use `difft` for syntax-aware structural diffs |
 | using `wc -l` for counting | use `scc` for language-aware counts |
 </HARD-GATE>
@@ -98,9 +99,9 @@ for every path listed in the task's `**Files:**` block:
 - if the file **already exists**: use MCP `read_file` on each file and read it fully.
   understand its package, types, function signatures, error patterns, and how it integrates
   with callers.
-- if the file **will be created**: read every file in the same directory using MCP
-  `list_dir` (path: "path/to/directory") or MCP `find_files` (directory, pattern, max_depth)
-  to understand naming conventions, package layout, and what already exists.
+- if the file **will be created**: read every file in the same directory using MCP `list_dir`
+  (path: "path/to/directory") or MCP `find_files` (directory, pattern, max_depth) to
+  understand naming conventions, package layout, and what already exists.
 
 ### 2b. read neighboring context
 
@@ -256,8 +257,8 @@ MCP `task_update_content`:
 
 - use MCP `task_update_content` (filename: "<plan-file>", content: "<full-enriched-plan-content>")
 
-write the enriched content to a local artifact first so you can review it before
-committing it back with `task_update_content`.
+write the enriched content to `/tmp/enriched-plan.md` first so you can review it before
+committing it to the store.
 
 **verify the round-trip:** after writing, use MCP `task_show` and confirm the
 first 10 lines match your header and the wave structure is intact.
@@ -266,9 +267,7 @@ first 10 lines match your header and the wave structure is intact.
 
 ## signaling
 
-check your execution context:
-
-`KASMOS_MANAGED` is a runtime context note only.
+check whether `KASMOS_MANAGED` is set.
 
 ### managed mode (`KASMOS_MANAGED=1`)
 

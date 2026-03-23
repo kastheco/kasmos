@@ -59,7 +59,7 @@ You are not implementing or fixing. You are the final gate before merge.
 
 Collect these before making a decision:
 
-- `kas task show <plan>` for the plan content, goal, architecture, tasks, and acceptance criteria.
+- use MCP `task_show` (filename: "<plan-file>") to retrieve the stored plan, acceptance criteria, and task list before reviewing the merged diff.
 - implementation evidence from the merged branch: `MERGE_BASE=$(git merge-base main HEAD)` and diff from that point.
 - acceptance-criteria notes from the planner/plan file and any explicit test targets.
 - verification artifacts: scoped `go test` output, full `go test`/CI output, `go build ./...` output, and any deployment/signature checks produced by CI.
@@ -68,7 +68,7 @@ Collect these before making a decision:
 
 ### Phase 1 — Gather evidence
 
-- read plan from `kas task show <plan>` and extract acceptance criteria.
+- use MCP `task_show` (filename: "<plan-file>") to retrieve the stored plan, acceptance criteria, and task list before reviewing the merged diff.
 - identify files changed in the branch:
   - `GIT_EXTERNAL_DIFF=difft git diff $MERGE_BASE..HEAD --name-only`
 - review critical integration points called out by the plan and module boundaries.
