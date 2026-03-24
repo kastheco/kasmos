@@ -32,8 +32,8 @@ func TestGlobalKeyBindings_UpdatedStatusLineLabels(t *testing.T) {
 	if got := GlobalkeyBindings[KeySpaceExpand].Help().Desc; got != "toggle" {
 		t.Fatalf("KeySpaceExpand help desc = %q, want %q", got, "toggle")
 	}
-	if got := GlobalkeyBindings[KeyViewPlan].Help().Desc; got != "preview" {
-		t.Fatalf("KeyViewPlan help desc = %q, want %q", got, "preview")
+	if got := GlobalkeyBindings[KeyViewPlan].Help().Desc; got != "view plan" {
+		t.Fatalf("KeyViewPlan help desc = %q, want %q", got, "view plan")
 	}
 }
 

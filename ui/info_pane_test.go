@@ -195,6 +195,7 @@ func TestInfoPane_InstanceWithTaskAssignment(t *testing.T) {
 	output := pane.String()
 	assert.Contains(t, output, "add dark mode toggle")
 	assert.Contains(t, output, "3 of 6: http endpoints")
+	assert.Contains(t, output, "view plan doc")
 }
 
 func TestInfoPane_InstanceWithResources(t *testing.T) {
@@ -260,6 +261,7 @@ func TestRenderCompact_ShowsPlanMetadata(t *testing.T) {
 	compact := p.RenderCompact(80)
 	assert.NotEmpty(t, compact)
 	assert.True(t, lipgloss.Width(compact) > 0)
+	assert.Contains(t, compact, "view plan [p]")
 }
 
 func TestRenderCompact_EmptyWhenNoData(t *testing.T) {
@@ -282,4 +284,19 @@ func TestRenderCompact_ShowsInstanceTitle(t *testing.T) {
 
 	compact := p.RenderCompact(80)
 	assert.NotEmpty(t, compact)
+}
+
+func TestRenderCompact_ShowsViewPlanHintForInstance(t *testing.T) {
+	p := NewInfoPane()
+	p.SetSize(80, 24)
+	p.SetData(InfoData{
+		HasInstance: true,
+		HasPlan:     true,
+		Title:       "my-plan-coder-1",
+		Status:      "running",
+		PlanName:    "my-plan",
+	})
+
+	compact := p.RenderCompact(80)
+	assert.Contains(t, compact, "view plan [p]")
 }

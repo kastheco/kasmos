@@ -14,11 +14,19 @@ import (
 )
 
 var (
-	infoSectionStyle = lipgloss.NewStyle().Foreground(ColorFoam).Bold(true)
-	infoDividerStyle = lipgloss.NewStyle().Foreground(ColorOverlay)
-	infoLabelStyle   = lipgloss.NewStyle().Foreground(ColorMuted).Width(20)
-	infoValueStyle   = lipgloss.NewStyle().Foreground(ColorText)
+	infoSectionStyle    = lipgloss.NewStyle().Foreground(ColorFoam).Bold(true)
+	infoDividerStyle    = lipgloss.NewStyle().Foreground(ColorOverlay)
+	infoLabelStyle      = lipgloss.NewStyle().Foreground(ColorMuted).Width(20)
+	infoValueStyle      = lipgloss.NewStyle().Foreground(ColorText)
+	infoPlanButtonStyle = lipgloss.NewStyle().Foreground(ColorFoam).
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(ColorOverlay).
+				Padding(0, 1)
 )
+
+func renderViewPlanButton(label string) string {
+	return zone.Mark(ZoneViewPlan, infoPlanButtonStyle.Render(label))
+}
 
 // InfoData carries display data for the info pane.
 // Populated by the app layer from instance + plan + wave state.
@@ -395,6 +403,9 @@ func (p *InfoPane) renderInstanceSection() string {
 		rows = append(rows, p.renderRow("cpu", fmt.Sprintf("%.0f%%", math.Round(p.data.CPUPercent))))
 		rows = append(rows, p.renderRow("memory", fmt.Sprintf("%.0fM", p.data.MemMB)))
 	}
+	if p.data.HasPlan {
+		rows = append(rows, "", renderViewPlanButton("view plan doc"))
+	}
 	return strings.Join(rows, "\n")
 }
 
@@ -444,13 +455,8 @@ func (p *InfoPane) renderPlanSummary() string {
 		}
 		rows = append(rows, infoSectionStyle.Render("instances"), p.renderDivider(), p.renderRow("instances", instanceSummary))
 	}
-	btnStyle := lipgloss.NewStyle().
-		Foreground(ColorFoam).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorOverlay).
-		Padding(0, 2)
 	rows = append(rows, "")
-	rows = append(rows, zone.Mark(ZoneViewPlan, btnStyle.Render("view plan doc")))
+	rows = append(rows, renderViewPlanButton("view plan doc"))
 
 	return strings.Join(rows, "\n\n")
 }
@@ -519,6 +525,9 @@ func (p *InfoPane) RenderCompact(width int) string {
 				lines = append(lines, strings.Join(parts, "  "))
 			}
 		}
+		if d.HasPlan || d.IsPlanHeaderSelected {
+			lines = append(lines, renderViewPlanButton("view plan [p]"))
+		}
 	} else if d.HasInstance && d.Title != "" {
 		nameStyle := lipgloss.NewStyle().Foreground(ColorFoam).Bold(true)
 		statusStyle := lipgloss.NewStyle().Foreground(statusColor(d.Status))
@@ -541,6 +550,9 @@ func (p *InfoPane) RenderCompact(width int) string {
 		}
 		if len(parts) > 0 {
 			lines = append(lines, strings.Join(parts, "  "))
+		}
+		if d.HasPlan {
+			lines = append(lines, renderViewPlanButton("view plan [p]"))
 		}
 	}
 

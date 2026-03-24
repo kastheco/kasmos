@@ -290,7 +290,7 @@ type home struct {
 	// Also used for focus mode — entering focus just forwards keys to this terminal.
 	previewTerminal         *session.EmbeddedTerminal
 	previewTerminalInstance string // title of the instance the terminal is attached to
-	previewRequested        bool   // true after the user explicitly selects the live agent pane
+	previewRequested        bool   // true once the app should keep the live agent preview attached
 	previewClipboardPending bool
 	previewClipboardTarget  byte
 
@@ -693,10 +693,13 @@ func (m *home) updateHandleWindowSizeEvent(msg tea.WindowSizeMsg) {
 
 func (m *home) Init() tea.Cmd {
 	m.audit(auditlog.EventSessionStarted, "kasmos started")
+	m.previewRequested = true
+	initialPreviewCmd := m.instanceChanged()
 
 	// Upon starting, we want to start the spinner. Whenever we get a spinner.TickMsg, we
 	// update the spinner, which sends a new spinner.TickMsg. I think this lasts forever lol.
 	return tea.Batch(
+		initialPreviewCmd,
 		m.spinner.Tick,
 		func() tea.Msg {
 			time.Sleep(50 * time.Millisecond)

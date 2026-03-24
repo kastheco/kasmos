@@ -215,7 +215,7 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	),
 	KeyViewPlan: key.NewBinding(
 		key.WithKeys("p"),
-		key.WithHelp("p", "preview"),
+		key.WithHelp("p", "view plan"),
 	),
 	KeyToggleSidebar: key.NewBinding(
 		key.WithKeys("ctrl+s"),

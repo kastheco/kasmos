@@ -1311,7 +1311,7 @@ func TestPreviewTerminalReadyMsg_AcceptsCurrentInstance(t *testing.T) {
 	assert.Nil(t, cmd, "no cmd should be returned")
 }
 
-func TestInstanceChanged_DoesNotSpawnPreviewWithoutExplicitRequest(t *testing.T) {
+func TestInstanceChanged_AutoRequestsPreview(t *testing.T) {
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 	h := &home{
 		ctx:          context.Background(),
@@ -1342,10 +1342,30 @@ func TestInstanceChanged_DoesNotSpawnPreviewWithoutExplicitRequest(t *testing.T)
 	require.True(t, h.nav.SelectInstance(instB), "should find instance-B in list")
 	cmd := h.instanceChanged()
 
-	assert.Nil(t, cmd, "instanceChanged should not auto-attach preview without explicit request")
+	assert.True(t, h.previewRequested, "instanceChanged should request preview for the selected instance")
+	assert.NotNil(t, cmd, "instanceChanged should auto-attach preview for a running instance")
 	// populateInstanceTabs creates a single tab for the selected solo instance.
 	assert.Equal(t, 1, h.tabbedWindow.TabCount(), "a single instance tab must be populated for the selected instance")
 	assert.Equal(t, 0, h.tabbedWindow.GetActiveTab(), "active tab must be at index 0")
+}
+
+func TestInit_PrimesPreviewForSelectedInstance(t *testing.T) {
+	h := newTestHome()
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:   "instance-A",
+		Path:    t.TempDir(),
+		Program: "claude",
+	})
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	inst.Status = session.Running
+	h.nav.AddInstance(inst)()
+	require.True(t, h.nav.SelectInstance(inst))
+
+	cmd := h.Init()
+
+	assert.True(t, h.previewRequested, "Init should prime the live preview on startup")
+	assert.NotNil(t, cmd, "Init should return the startup command batch")
 }
 
 // TestFocusMode_ReusesPreviewTerminal verifies that enterFocusMode reuses the

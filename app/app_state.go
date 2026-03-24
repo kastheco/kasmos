@@ -782,6 +782,7 @@ func (m *home) cleanupPausedDoneReviewers(selected *session.Instance) {
 func (m *home) instanceChanged() tea.Cmd {
 	// selected may be nil
 	selected := m.nav.GetSelectedInstance()
+	m.previewRequested = true
 	m.cleanupPausedDoneReviewers(selected)
 	selected = m.nav.GetSelectedInstance() // refresh in case list mutation changed selection
 
