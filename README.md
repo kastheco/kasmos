@@ -145,7 +145,7 @@ the wizard/scaffolder writes paths like:
 - `.agents/skills/`
 - `.claude/agents/`
 - `.opencode/agents/`
-- `.opencode/opencode.jsonc`
+- `opencode.jsonc`
 - `.codex/AGENTS.md`
 
 after setup, verify scaffold health with:
@@ -267,7 +267,9 @@ that is the simplest option for any client that supports standard `mcpServers` h
 
 ### opencode remote mcp config
 
-if you want to wire the same kasmos server into opencode, add a remote mcp entry to your opencode config:
+`kas setup` / `kas reset` now scaffold this remote `kasmos` MCP entry into `opencode.jsonc` by default for project-local OpenCode config.
+
+if you need to add or restore it manually, use:
 
 ```jsonc
 {
@@ -281,7 +283,7 @@ if you want to wire the same kasmos server into opencode, add a remote mcp entry
 }
 ```
 
-you can place that in project-local opencode config alongside the scaffolded `.opencode/opencode.jsonc` content, or in your global opencode config if you want it everywhere.
+you can place that in project-local opencode config alongside the scaffolded `opencode.jsonc` content, or in your global opencode config if you want it everywhere.
 
 ### remote / multi-machine use
 

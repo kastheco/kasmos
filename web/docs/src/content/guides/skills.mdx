@@ -19,9 +19,8 @@ Each skill is a directory containing at minimum a `SKILL.md` file. Additional re
     SKILL.md
   cli-tools/
     SKILL.md
-  tui-design/
+  kasmos-cli/
     SKILL.md
-    color-palette.md
 ```
 
 ## built-in project skills
@@ -39,8 +38,6 @@ Each skill is a directory containing at minimum a `SKILL.md` file. Additional re
 | `kasmos-lifecycle` | orientation on plan lifecycle, signal mechanics, and mode detection |
 | `kasmos-cli` | exact `kas` command syntax, flags, and lifecycle transitions |
 | `cli-tools` | code search and refactoring: `rg`, `sd`, `fd`, `difft`, `comby`, `scc` |
-| `tui-design` | design-first workflow for Charm TUI applications (bubbletea, lipgloss) |
-
 These are the directories under `.agents/skills/` and `.opencode/skills/` that exist in this repository.
 
 ## how harnesses load skills
@@ -110,7 +107,7 @@ Global skills (~/.agents/skills):
 Project skills (.agents/skills):
   ✓ cli-tools                claude ✓  opencode ✓
   ✓ kasmos-coder             claude ✓  opencode ✓
-  ✓ tui-design               claude ✓  opencode ✓
+  ✓ kasmos-reviewer          claude ✓  opencode ✓
 
 Health: 3/3 OK (100%)
 ```

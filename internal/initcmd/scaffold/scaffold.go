@@ -276,13 +276,19 @@ func PatchWorktreeConfig(worktreePath string, agents []harness.AgentConfig) erro
 	}
 
 	currentAgentBlocks, _ := current["agent"].(map[string]any)
-	if currentAgentBlocks == nil {
-		return fmt.Errorf("invalid opencode config: missing agent block")
-	}
 	renderedAgentBlocks, _ := rendered["agent"].(map[string]any)
 	renderedMCP, _ := rendered["mcp"].(map[string]any)
 
 	changed := false
+	if currentAgentBlocks == nil {
+		if len(renderedAgentBlocks) > 0 {
+			currentAgentBlocks = cloneMap(renderedAgentBlocks)
+		} else {
+			currentAgentBlocks = map[string]any{}
+		}
+		current["agent"] = currentAgentBlocks
+		changed = true
+	}
 
 	if len(renderedMCP) > 0 {
 		currentMCP, _ := current["mcp"].(map[string]any)

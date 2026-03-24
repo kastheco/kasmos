@@ -849,6 +849,53 @@ func TestPatchWorktreeConfig_AddsMissingAgentBlocks(t *testing.T) {
 	assert.Equal(t, effort, architectCfg["reasoningEffort"])
 }
 
+func TestPatchWorktreeConfig_CreatesAgentBlockWhenMissing(t *testing.T) {
+	dir := t.TempDir()
+	opencodeConfig := `{
+	  "mcp": {
+	    "clickup": {
+	      "type": "remote",
+	      "url": "https://mcp.clickup.com/mcp",
+	      "enabled": true
+	    }
+	  }
+	}`
+	configPath := filepath.Join(dir, "opencode.jsonc")
+	require.NoError(t, os.WriteFile(configPath, []byte(opencodeConfig), 0o644))
+
+	temp := 0.4
+	agents := []harness.AgentConfig{{
+		Role:        "coder",
+		Harness:     "opencode",
+		Model:       "anthropic/claude-sonnet-4-6",
+		Temperature: &temp,
+		Effort:      "medium",
+	}}
+
+	err := PatchWorktreeConfig(dir, agents)
+	require.NoError(t, err)
+
+	updated, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+	assertValidJSON(t, string(updated))
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(updated, &parsed))
+
+	mcp, ok := parsed["mcp"].(map[string]any)
+	require.True(t, ok)
+	assert.Contains(t, mcp, "clickup")
+	assert.Contains(t, mcp, "kasmos")
+
+	agent, ok := parsed["agent"].(map[string]any)
+	require.True(t, ok)
+	coder, ok := agent["coder"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "anthropic/claude-sonnet-4-6", coder["model"])
+	assert.Equal(t, temp, coder["temperature"])
+	assert.Equal(t, "medium", coder["reasoningEffort"])
+}
+
 func TestPatchWorktreeConfig_UsesHarnessForModelNormalization(t *testing.T) {
 	dir := t.TempDir()
 	opencodeConfig := `{
