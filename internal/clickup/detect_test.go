@@ -62,10 +62,8 @@ func TestDetect_FallbackToClaudeSettings(t *testing.T) {
 
 func TestDetect_ProjectOpencodeJSON(t *testing.T) {
 	dir := t.TempDir()
-	ocDir := filepath.Join(dir, ".opencode")
-	require.NoError(t, os.MkdirAll(ocDir, 0o755))
 	ocJSON := `{"mcp":{"clickup":{"type":"remote","url":"https://mcp.clickup.com/mcp","oauth":{},"enabled":true}}}`
-	require.NoError(t, os.WriteFile(filepath.Join(ocDir, "opencode.jsonc"), []byte(ocJSON), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "opencode.jsonc"), []byte(ocJSON), 0o644))
 
 	cfg, found := clickup.DetectMCP(dir, "")
 	assert.True(t, found)
@@ -92,10 +90,8 @@ func TestDetect_OpencodeGlobalConfig(t *testing.T) {
 
 func TestDetect_OpencodeLocalStdio(t *testing.T) {
 	dir := t.TempDir()
-	ocDir := filepath.Join(dir, ".opencode")
-	require.NoError(t, os.MkdirAll(ocDir, 0o755))
 	ocJSON := `{"mcp":{"clickup-tasks":{"type":"local","command":["npx","-y","@taazkareem/clickup-mcp-server@latest"],"enabled":true}}}`
-	require.NoError(t, os.WriteFile(filepath.Join(ocDir, "opencode.json"), []byte(ocJSON), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "opencode.json"), []byte(ocJSON), 0o644))
 
 	cfg, found := clickup.DetectMCP(dir, "")
 	assert.True(t, found)
@@ -107,10 +103,8 @@ func TestDetect_OpencodeLocalStdio(t *testing.T) {
 func TestDetect_OpencodeDisabledServer(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // isolate from real global config
 	dir := t.TempDir()
-	ocDir := filepath.Join(dir, ".opencode")
-	require.NoError(t, os.MkdirAll(ocDir, 0o755))
 	ocJSON := `{"mcp":{"clickup":{"type":"remote","url":"https://mcp.clickup.com/mcp","enabled":false}}}`
-	require.NoError(t, os.WriteFile(filepath.Join(ocDir, "opencode.json"), []byte(ocJSON), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "opencode.json"), []byte(ocJSON), 0o644))
 
 	_, found := clickup.DetectMCP(dir, "")
 	assert.False(t, found)
@@ -118,10 +112,8 @@ func TestDetect_OpencodeDisabledServer(t *testing.T) {
 
 func TestDetect_OpencodeCommandString(t *testing.T) {
 	dir := t.TempDir()
-	ocDir := filepath.Join(dir, ".opencode")
-	require.NoError(t, os.MkdirAll(ocDir, 0o755))
 	ocJSON := `{"mcp":{"clickup":{"type":"local","command":"clickup-mcp","enabled":true}}}`
-	require.NoError(t, os.WriteFile(filepath.Join(ocDir, "opencode.json"), []byte(ocJSON), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "opencode.json"), []byte(ocJSON), 0o644))
 
 	cfg, found := clickup.DetectMCP(dir, "")
 	assert.True(t, found)
@@ -133,14 +125,12 @@ func TestDetect_OpencodeCommandString(t *testing.T) {
 func TestDetect_ProjectMCPJSON_PriorityOverOpencode(t *testing.T) {
 	dir := t.TempDir()
 
-	// Both .mcp.json and .opencode/opencode.json exist — .mcp.json wins.
+	// Both .mcp.json and opencode.json exist — .mcp.json wins.
 	mcpJSON := `{"mcpServers":{"clickup":{"type":"http","url":"https://from-mcp-json.com"}}}`
 	require.NoError(t, os.WriteFile(filepath.Join(dir, ".mcp.json"), []byte(mcpJSON), 0o644))
 
-	ocDir := filepath.Join(dir, ".opencode")
-	require.NoError(t, os.MkdirAll(ocDir, 0o755))
 	ocJSON := `{"mcp":{"clickup":{"type":"remote","url":"https://from-opencode.com","enabled":true}}}`
-	require.NoError(t, os.WriteFile(filepath.Join(ocDir, "opencode.json"), []byte(ocJSON), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "opencode.json"), []byte(ocJSON), 0o644))
 
 	cfg, found := clickup.DetectMCP(dir, "")
 	assert.True(t, found)
@@ -150,8 +140,6 @@ func TestDetect_ProjectMCPJSON_PriorityOverOpencode(t *testing.T) {
 func TestDetect_OpencodeJSONC(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	dir := t.TempDir()
-	ocDir := filepath.Join(dir, ".opencode")
-	require.NoError(t, os.MkdirAll(ocDir, 0o755))
 
 	// JSONC with trailing commas and // comments — matches real opencode configs.
 	ocJSON := `{
@@ -165,7 +153,7 @@ func TestDetect_OpencodeJSONC(t *testing.T) {
         },
     },
 }`
-	require.NoError(t, os.WriteFile(filepath.Join(ocDir, "opencode.jsonc"), []byte(ocJSON), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "opencode.jsonc"), []byte(ocJSON), 0o644))
 
 	cfg, found := clickup.DetectMCP(dir, "")
 	assert.True(t, found)
@@ -173,7 +161,7 @@ func TestDetect_OpencodeJSONC(t *testing.T) {
 	assert.Equal(t, "https://mcp.clickup.com/mcp", cfg.URL)
 }
 
-func TestDetect_OpencodeLegacyJSONFallback(t *testing.T) {
+func TestDetect_OpencodeLegacyDotDirFallback(t *testing.T) {
 	dir := t.TempDir()
 	ocDir := filepath.Join(dir, ".opencode")
 	require.NoError(t, os.MkdirAll(ocDir, 0o755))

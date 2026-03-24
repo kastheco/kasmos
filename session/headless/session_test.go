@@ -177,9 +177,7 @@ func TestHeadlessSession_HasUpdatedWithContent(t *testing.T) {
 
 func TestHeadlessSession_OpenCodeInjectsProjectConfigEnv(t *testing.T) {
 	workDir := t.TempDir()
-	opencodeDir := filepath.Join(workDir, ".opencode")
-	require.NoError(t, os.MkdirAll(opencodeDir, 0o755))
-	configPath := filepath.Join(opencodeDir, "opencode.jsonc")
+	configPath := filepath.Join(workDir, "opencode.jsonc")
 	require.NoError(t, os.WriteFile(configPath, []byte("{}\n"), 0o644))
 
 	binaryPath := filepath.Join(workDir, "opencode")

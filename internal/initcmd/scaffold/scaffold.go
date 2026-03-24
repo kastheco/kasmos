@@ -247,10 +247,10 @@ func patchAgentBlock(agent map[string]any, cfg harness.AgentConfig) (changed boo
 	return changed
 }
 
-// PatchWorktreeConfig updates .opencode/opencode.jsonc with the latest model/
+// PatchWorktreeConfig updates opencode.jsonc with the latest model/
 // temperature/effort values for configured roles.
 func PatchWorktreeConfig(worktreePath string, agents []harness.AgentConfig) error {
-	configPath := filepath.Join(worktreePath, ".opencode", "opencode.jsonc")
+	configPath := filepath.Join(worktreePath, "opencode.jsonc")
 
 	currentBytes, err := os.ReadFile(configPath)
 	if err != nil {
@@ -426,7 +426,7 @@ func removeJSONBlock(s, role string) string {
 	return strings.Join(result, "\n")
 }
 
-// WriteOpenCodeProject scaffolds .opencode/ project files: agent prompts and opencode.jsonc.
+// WriteOpenCodeProject scaffolds .opencode/ project files plus root opencode.jsonc.
 func WriteOpenCodeProject(dir string, agents []harness.AgentConfig, selectedTools []string, force bool) ([]WriteResult, error) {
 	// Scaffold agent .md files (existing behavior)
 	results, err := writePerRoleProject(dir, "opencode", agents, selectedTools, force)
@@ -448,7 +448,7 @@ func WriteOpenCodeProject(dir string, agents []harness.AgentConfig, selectedTool
 		return nil, fmt.Errorf("render opencode.jsonc: %w", err)
 	}
 
-	configDest := filepath.Join(dir, ".opencode", "opencode.jsonc")
+	configDest := filepath.Join(dir, "opencode.jsonc")
 	written, err := writeFile(configDest, []byte(configContent), force)
 	if err != nil {
 		return nil, fmt.Errorf("write opencode.jsonc: %w", err)
@@ -718,7 +718,7 @@ func ScaffoldAll(dir string, agents []harness.AgentConfig, selectedTools []strin
 
 // SyncScaffold incrementally re-syncs embedded skills, agent prompt templates, and harness
 // symlinks without running the interactive wizard or modifying TOML config. If
-// .opencode/opencode.jsonc already exists it is patched via PatchWorktreeConfig so that
+// opencode.jsonc already exists it is patched via PatchWorktreeConfig so that
 // unrelated keys are preserved; otherwise it is rendered from the template and written fresh.
 func SyncScaffold(dir string, agents []harness.AgentConfig) ([]WriteResult, error) {
 	var results []WriteResult
@@ -776,11 +776,10 @@ func SyncScaffold(dir string, agents []harness.AgentConfig) ([]WriteResult, erro
 		}
 	}
 
-	// Handle .opencode/opencode.jsonc: only touch it when opencode is configured
+	// Handle root opencode.jsonc: only touch it when opencode is configured
 	// OR when the file already exists (so we keep an existing config in sync).
-	// Skipping when neither condition holds matches ScaffoldAll behaviour and
-	// avoids creating a stray .opencode tree in Claude-only or Codex-only repos.
-	configPath := filepath.Join(dir, ".opencode", "opencode.jsonc")
+	// Skipping when neither condition holds matches ScaffoldAll behaviour.
+	configPath := filepath.Join(dir, "opencode.jsonc")
 	_, configExists := byHarness["opencode"]
 	_, statErr := os.Stat(configPath)
 	fileExists := statErr == nil
@@ -795,9 +794,6 @@ func SyncScaffold(dir string, agents []harness.AgentConfig) ([]WriteResult, erro
 			configContent, err := renderOpenCodeConfig(dir, agents)
 			if err != nil {
 				return results, fmt.Errorf("render opencode.jsonc: %w", err)
-			}
-			if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-				return results, fmt.Errorf("create .opencode dir: %w", err)
 			}
 			if err := os.WriteFile(configPath, []byte(configContent), 0o644); err != nil {
 				return results, fmt.Errorf("write opencode.jsonc: %w", err)

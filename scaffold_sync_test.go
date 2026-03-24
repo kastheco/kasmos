@@ -197,7 +197,7 @@ func TestScaffoldWorktree_WritesMissingAgentFiles(t *testing.T) {
 
 	err = cmd.RunE(cmd, []string{worktree})
 	require.NoError(t, err)
-	assert.FileExists(t, filepath.Join(worktree, ".opencode", "opencode.jsonc"))
+	assert.FileExists(t, filepath.Join(worktree, "opencode.jsonc"))
 	assert.FileExists(t, filepath.Join(worktree, ".opencode", "agents", "fixer.md"))
 	assert.FileExists(t, filepath.Join(worktree, ".agents", "skills", "kasmos-fixer", "SKILL.md"))
 	assert.Contains(t, buf.String(), "Syncing worktree scaffold")

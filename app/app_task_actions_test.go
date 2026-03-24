@@ -233,11 +233,9 @@ func TestSpawnPlanAgent_PlannerUsesMainBranch(t *testing.T) {
 func TestSpawnTaskAgent_PatchesSharedWorktreeOpencodeConfig(t *testing.T) {
 	dir := t.TempDir()
 
-	// Build a git repo with .opencode/opencode.jsonc committed so the worktree
+	// Build a git repo with root opencode.jsonc committed so the worktree
 	// inherits the file when git worktree add creates it.
-	opencodeDir := filepath.Join(dir, ".opencode")
-	require.NoError(t, os.MkdirAll(opencodeDir, 0o755))
-	configPath := filepath.Join(opencodeDir, "opencode.jsonc")
+	configPath := filepath.Join(dir, "opencode.jsonc")
 	require.NoError(t, os.WriteFile(configPath, []byte(`{"agent":{"coder":{"model":"anthropic/old-coder","temperature":0.1,"reasoningEffort":"low"}}}`), 0o644))
 
 	for _, cmd := range [][]string{
@@ -294,7 +292,7 @@ func TestSpawnTaskAgent_PatchesSharedWorktreeOpencodeConfig(t *testing.T) {
 	// The shared worktree path is derived from the plan branch.
 	branch := gitpkg.TaskBranchFromFile(planFile)
 	worktreePath := gitpkg.TaskWorktreePath(dir, branch)
-	worktreeConfigPath := filepath.Join(worktreePath, ".opencode", "opencode.jsonc")
+	worktreeConfigPath := filepath.Join(worktreePath, "opencode.jsonc")
 
 	data, err := os.ReadFile(worktreeConfigPath)
 	require.NoError(t, err, "worktree opencode.jsonc must exist after shared worktree setup")
@@ -491,9 +489,7 @@ func TestSpawnWaveTasks_HeadlessCoderUsesHeadlessExecution(t *testing.T) {
 func TestSpawnWaveTasks_PatchesSharedWorktreeOpencodeConfig(t *testing.T) {
 	dir := t.TempDir()
 
-	opencodeDir := filepath.Join(dir, ".opencode")
-	require.NoError(t, os.MkdirAll(opencodeDir, 0o755))
-	configPath := filepath.Join(opencodeDir, "opencode.jsonc")
+	configPath := filepath.Join(dir, "opencode.jsonc")
 	require.NoError(t, os.WriteFile(configPath, []byte(`{"agent":{"coder":{"model":"anthropic/old-wave-coder","temperature":0.2,"reasoningEffort":"low"}}}`), 0o644))
 
 	for _, cmd := range [][]string{
@@ -559,7 +555,7 @@ func TestSpawnWaveTasks_PatchesSharedWorktreeOpencodeConfig(t *testing.T) {
 
 	branch := gitpkg.TaskBranchFromFile(planFile)
 	worktreePath := gitpkg.TaskWorktreePath(dir, branch)
-	worktreeConfigPath := filepath.Join(worktreePath, ".opencode", "opencode.jsonc")
+	worktreeConfigPath := filepath.Join(worktreePath, "opencode.jsonc")
 
 	data, err := os.ReadFile(worktreeConfigPath)
 	require.NoError(t, err, "worktree opencode.jsonc must exist after shared worktree setup")

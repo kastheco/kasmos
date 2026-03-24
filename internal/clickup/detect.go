@@ -37,7 +37,7 @@ type opencodeServerEntry struct {
 }
 
 // DetectMCP scans config files for a ClickUp MCP server.
-// repoDir is the project root (checks .mcp.json, .opencode/opencode.jsonc).
+// repoDir is the project root (checks .mcp.json, opencode.jsonc, then legacy .opencode/opencode.jsonc).
 // claudeDir is the Claude config dir (checks settings.json, settings.local.json).
 // Pass empty claudeDir to skip Claude config scanning.
 func DetectMCP(repoDir, claudeDir string) (MCPServerConfig, bool) {
@@ -46,8 +46,10 @@ func DetectMCP(repoDir, claudeDir string) (MCPServerConfig, bool) {
 		return cfg, true
 	}
 
-	// Project-level: .opencode/opencode.jsonc (fallback to .json for compatibility)
+	// Project-level: root opencode.jsonc/json, then legacy .opencode fallback.
 	for _, path := range []string{
+		filepath.Join(repoDir, "opencode.jsonc"),
+		filepath.Join(repoDir, "opencode.json"),
 		filepath.Join(repoDir, ".opencode", "opencode.jsonc"),
 		filepath.Join(repoDir, ".opencode", "opencode.json"),
 	} {

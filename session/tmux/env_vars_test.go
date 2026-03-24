@@ -110,9 +110,7 @@ func TestStartTmuxSession_OpenCodeInjectsProjectConfigEnv(t *testing.T) {
 	}
 
 	workdir := t.TempDir()
-	opencodeDir := filepath.Join(workdir, ".opencode")
-	require.NoError(t, os.MkdirAll(opencodeDir, 0o755))
-	configPath := filepath.Join(opencodeDir, "opencode.jsonc")
+	configPath := filepath.Join(workdir, "opencode.jsonc")
 	require.NoError(t, os.WriteFile(configPath, []byte("{}\n"), 0o644))
 
 	session := newTmuxSession("test-opencode-config", "opencode", false, ptyFactory, cmdExec)

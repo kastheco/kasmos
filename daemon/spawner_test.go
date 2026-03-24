@@ -219,7 +219,7 @@ func TestEnsureWorktreeScaffold_WritesFixerAgentFiles(t *testing.T) {
 
 	err := ensureWorktreeScaffold(dir, "opencode", session.AgentTypeFixer)
 	require.NoError(t, err)
-	assert.FileExists(t, filepath.Join(dir, ".opencode", "opencode.jsonc"))
+	assert.FileExists(t, filepath.Join(dir, "opencode.jsonc"))
 	assert.FileExists(t, filepath.Join(dir, ".opencode", "agents", "fixer.md"))
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "kasmos-fixer", "SKILL.md"))
 }

@@ -442,7 +442,7 @@ func TestWriteOpenCodeProject_GeneratesConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	// Config file created
-	configPath := filepath.Join(dir, ".opencode", "opencode.jsonc")
+	configPath := filepath.Join(dir, "opencode.jsonc")
 	assert.FileExists(t, configPath)
 
 	content, err := os.ReadFile(configPath)
@@ -490,7 +490,7 @@ func TestWriteOpenCodeProject_GeneratesConfig(t *testing.T) {
 	// Config is in the results list
 	var found bool
 	for _, r := range results {
-		if r.Path == ".opencode/opencode.jsonc" {
+		if r.Path == "opencode.jsonc" {
 			found = true
 			assert.True(t, r.Created)
 		}
@@ -507,7 +507,7 @@ func TestWriteOpenCodeProject_NoEffort(t *testing.T) {
 	_, err := WriteOpenCodeProject(dir, agents, nil, false)
 	require.NoError(t, err)
 
-	content, err := os.ReadFile(filepath.Join(dir, ".opencode", "opencode.jsonc"))
+	content, err := os.ReadFile(filepath.Join(dir, "opencode.jsonc"))
 	require.NoError(t, err)
 	s := string(content)
 
@@ -528,7 +528,7 @@ func TestWriteOpenCodeProject_NoTemp(t *testing.T) {
 	_, err := WriteOpenCodeProject(dir, agents, nil, false)
 	require.NoError(t, err)
 
-	content, err := os.ReadFile(filepath.Join(dir, ".opencode", "opencode.jsonc"))
+	content, err := os.ReadFile(filepath.Join(dir, "opencode.jsonc"))
 	require.NoError(t, err)
 	s := string(content)
 
@@ -549,7 +549,7 @@ func TestWriteOpenCodeProject_ValidJSONC_OnlyCoder(t *testing.T) {
 	}
 	_, err := WriteOpenCodeProject(dir, agents, nil, false)
 	require.NoError(t, err)
-	content, err := os.ReadFile(filepath.Join(dir, ".opencode", "opencode.jsonc"))
+	content, err := os.ReadFile(filepath.Join(dir, "opencode.jsonc"))
 	require.NoError(t, err)
 	assertValidJSON(t, string(content))
 }
@@ -563,7 +563,7 @@ func TestWriteOpenCodeProject_ValidJSONC_NoWizardAgents(t *testing.T) {
 	}
 	_, err := WriteOpenCodeProject(dir, agents, nil, false)
 	require.NoError(t, err)
-	content, err := os.ReadFile(filepath.Join(dir, ".opencode", "opencode.jsonc"))
+	content, err := os.ReadFile(filepath.Join(dir, "opencode.jsonc"))
 	require.NoError(t, err)
 	assertValidJSON(t, string(content))
 	assert.Contains(t, string(content), `"mcp"`)
@@ -586,9 +586,7 @@ func TestPatchWorktreeConfig_AddsKasmosMCPToExistingConfig(t *testing.T) {
 	    }
 	  }
 	}`
-	reqPath := filepath.Join(dir, ".opencode")
-	require.NoError(t, os.MkdirAll(reqPath, 0o755))
-	configPath := filepath.Join(reqPath, "opencode.jsonc")
+	configPath := filepath.Join(dir, "opencode.jsonc")
 	require.NoError(t, os.WriteFile(configPath, []byte(opencodeConfig), 0o644))
 
 	temp := 0.2
@@ -635,7 +633,7 @@ func TestWriteOpenCodeProject_IncludesNonOpencodeAgents(t *testing.T) {
 	_, err := WriteOpenCodeProject(dir, agents, nil, false)
 	require.NoError(t, err)
 
-	content, err := os.ReadFile(filepath.Join(dir, ".opencode", "opencode.jsonc"))
+	content, err := os.ReadFile(filepath.Join(dir, "opencode.jsonc"))
 	require.NoError(t, err)
 	s := string(content)
 
@@ -663,7 +661,7 @@ func TestRun_OpencodeConfigGenerated(t *testing.T) {
 
 	var hasConfig bool
 	for _, r := range results {
-		if r.Path == ".opencode/opencode.jsonc" {
+		if r.Path == "opencode.jsonc" {
 			hasConfig = true
 		}
 	}
@@ -741,7 +739,7 @@ func TestScaffold_IncludesMasterAgent(t *testing.T) {
 	masterPath := filepath.Join(dir, ".opencode", "agents", "master.md")
 	assert.FileExists(t, masterPath)
 
-	content, err := os.ReadFile(filepath.Join(dir, ".opencode", "opencode.jsonc"))
+	content, err := os.ReadFile(filepath.Join(dir, "opencode.jsonc"))
 	require.NoError(t, err)
 	assert.Contains(t, string(content), `"master"`)
 	assert.Contains(t, string(content), `"openai/gpt-5.4"`)
@@ -760,9 +758,7 @@ func TestPatchWorktreeConfig_UpdatesModelTempEffortPreservesOtherFields(t *testi
 	    }
 	  }
 	}`
-	reqPath := filepath.Join(dir, ".opencode")
-	require.NoError(t, os.MkdirAll(reqPath, 0o755))
-	configPath := filepath.Join(reqPath, "opencode.jsonc")
+	configPath := filepath.Join(dir, "opencode.jsonc")
 	require.NoError(t, os.WriteFile(configPath, []byte(opencodeConfig), 0o644))
 
 	temp := 0.7
@@ -806,9 +802,7 @@ func TestPatchWorktreeConfig_AddsMissingAgentBlocks(t *testing.T) {
 	    }
 	  }
 	}`
-	reqPath := filepath.Join(dir, ".opencode")
-	require.NoError(t, os.MkdirAll(reqPath, 0o755))
-	configPath := filepath.Join(reqPath, "opencode.jsonc")
+	configPath := filepath.Join(dir, "opencode.jsonc")
 	require.NoError(t, os.WriteFile(configPath, []byte(opencodeConfig), 0o644))
 
 	temp := 0.7
@@ -867,9 +861,7 @@ func TestPatchWorktreeConfig_UsesHarnessForModelNormalization(t *testing.T) {
 	  }
 }
 `
-	reqPath := filepath.Join(dir, ".opencode")
-	require.NoError(t, os.MkdirAll(reqPath, 0o755))
-	configPath := filepath.Join(reqPath, "opencode.jsonc")
+	configPath := filepath.Join(dir, "opencode.jsonc")
 	require.NoError(t, os.WriteFile(configPath, []byte(opencodeConfig), 0o644))
 
 	temp := 0.5
@@ -915,9 +907,7 @@ func TestPatchWorktreeConfig_Idempotent_NoRewriteWhenUnchanged(t *testing.T) {
 	    }
 	  }
 	}`
-	reqPath := filepath.Join(dir, ".opencode")
-	require.NoError(t, os.MkdirAll(reqPath, 0o755))
-	configPath := filepath.Join(reqPath, "opencode.jsonc")
+	configPath := filepath.Join(dir, "opencode.jsonc")
 	require.NoError(t, os.WriteFile(configPath, []byte(opencodeConfig), 0o644))
 
 	temp := 0.3
@@ -986,8 +976,7 @@ func TestSyncScaffold_UpdatesSkillsAndAgentPrompts(t *testing.T) {
 	require.NoError(t, os.WriteFile(skillFile, []byte("old"), 0o644))
 	agentFile := filepath.Join(dir, ".claude", "agents", "coder.md")
 	require.NoError(t, os.WriteFile(agentFile, []byte("old"), 0o644))
-	cfgPath := filepath.Join(dir, ".opencode", "opencode.jsonc")
-	require.NoError(t, os.MkdirAll(filepath.Dir(cfgPath), 0o755))
+	cfgPath := filepath.Join(dir, "opencode.jsonc")
 	require.NoError(t, os.WriteFile(cfgPath, []byte(`{"agent":{"coder":{"model":"anthropic/claude-sonnet-4-6","temperature":0.1,"reasoningEffort":"medium","customField":"preserved"}}}`), 0o644))
 	results, err := SyncScaffold(dir, agents)
 	require.NoError(t, err)
@@ -1024,16 +1013,16 @@ func TestSyncScaffold_RendersConfigWhenMissing(t *testing.T) {
 	agents := []harness.AgentConfig{{Role: "coder", Harness: "opencode", Model: "anthropic/claude-sonnet-4-6", Temperature: &temp, Effort: "medium", Enabled: true}}
 	results, err := SyncScaffold(dir, agents)
 	require.NoError(t, err)
-	configPath := filepath.Join(dir, ".opencode", "opencode.jsonc")
+	configPath := filepath.Join(dir, "opencode.jsonc")
 	assert.FileExists(t, configPath)
 	content, err := os.ReadFile(configPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "anthropic/claude-sonnet-4-6")
-	assert.Contains(t, results, WriteResult{Path: ".opencode/opencode.jsonc", Created: true})
+	assert.Contains(t, results, WriteResult{Path: "opencode.jsonc", Created: true})
 }
 
 // TestSyncScaffold_SkipsOpencodeConfigForNonOpencodeRepo verifies that SyncScaffold
-// does not create .opencode/opencode.jsonc when no opencode agents are configured and
+// does not create opencode.jsonc when no opencode agents are configured and
 // no existing file is present — matching ScaffoldAll behaviour.
 func TestSyncScaffold_SkipsOpencodeConfigForNonOpencodeRepo(t *testing.T) {
 	dir := t.TempDir()
@@ -1042,7 +1031,7 @@ func TestSyncScaffold_SkipsOpencodeConfigForNonOpencodeRepo(t *testing.T) {
 	}
 	_, err := SyncScaffold(dir, agents)
 	require.NoError(t, err)
-	assert.NoFileExists(t, filepath.Join(dir, ".opencode", "opencode.jsonc"),
+	assert.NoFileExists(t, filepath.Join(dir, "opencode.jsonc"),
 		"opencode.jsonc must not be created for claude-only repos")
 }
 
@@ -1051,8 +1040,7 @@ func TestSyncScaffold_SkipsOpencodeConfigForNonOpencodeRepo(t *testing.T) {
 // passed — keeping a pre-existing config in sync when the user later switches profiles.
 func TestSyncScaffold_PatchesExistingOpencodeConfigEvenWithoutOpencodeHarness(t *testing.T) {
 	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, ".opencode", "opencode.jsonc")
-	require.NoError(t, os.MkdirAll(filepath.Dir(cfgPath), 0o755))
+	cfgPath := filepath.Join(dir, "opencode.jsonc")
 	require.NoError(t, os.WriteFile(cfgPath, []byte(`{"agent":{"coder":{"model":"old","customKey":"keep"}}}`), 0o644))
 
 	agents := []harness.AgentConfig{

@@ -40,9 +40,7 @@ func TestSpawnTaskAgent_PatchesMainBranchOpencodeConfig(t *testing.T) {
 	planFile := "plan-branch-patch.md"
 	require.NoError(t, ps.Register(planFile, "test plan", "plan/patch", time.Now()))
 
-	opencodeDir := filepath.Join(dir, ".opencode")
-	require.NoError(t, os.MkdirAll(opencodeDir, 0o755))
-	configPath := filepath.Join(opencodeDir, "opencode.jsonc")
+	configPath := filepath.Join(dir, "opencode.jsonc")
 	require.NoError(t, os.WriteFile(configPath, []byte(`{"agent":{"planner":{"model":"anthropic/old","temperature":0.1,"reasoningEffort":"low"}}}`), 0o644))
 
 	planTemp := 0.7
@@ -111,9 +109,7 @@ func TestSpawnArchitectPass_PatchesMainBranchOpencodeConfig(t *testing.T) {
 	planFile := "architect-branch-patch.md"
 	require.NoError(t, ps.Register(planFile, "architect test plan", "plan/architect", time.Now()))
 
-	opencodeDir := filepath.Join(dir, ".opencode")
-	require.NoError(t, os.MkdirAll(opencodeDir, 0o755))
-	configPath := filepath.Join(opencodeDir, "opencode.jsonc")
+	configPath := filepath.Join(dir, "opencode.jsonc")
 	require.NoError(t, os.WriteFile(configPath, []byte(`{"agent":{"architect":{"model":"anthropic/old","temperature":0.1,"reasoningEffort":"low"}}}`), 0o644))
 
 	planTemp := 0.65
