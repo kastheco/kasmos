@@ -27,7 +27,7 @@ daemon_poll_interval = 0
   [agents.coder]
     enabled = true
     program = "opencode"
-    model = "anthropic/claude-sonnet-4-6"
+    model = "openai/gpt-5.3-codex-spark"
     temperature = 0.1
     effort = "low"
   [agents.fixer]
@@ -35,7 +35,7 @@ daemon_poll_interval = 0
     program = "opencode"
     model = "openai/gpt-5.4"
     temperature = 0.1
-    effort = "medium"
+    effort = "high"
   [agents.master]
     enabled = true
     program = "opencode"
@@ -44,14 +44,14 @@ daemon_poll_interval = 0
     effort = "high"
   [agents.planner]
     enabled = true
-    program = "opencode"
-    model = "anthropic/claude-opus-4-6"
+    program = "claude"
+    model = "claude-opus-4-6"
     temperature = 0.3
     effort = "high"
   [agents.reviewer]
     enabled = true
-    program = "opencode"
-    model = "anthropic/claude-sonnet-4-6"
+    program = "claude"
+    model = "claude-sonnet-4-6"
     temperature = 0.2
     effort = "medium"
 
