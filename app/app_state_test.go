@@ -10,6 +10,7 @@ import (
 
 	"charm.land/bubbles/v2/spinner"
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/ui"
 	"github.com/kastheco/kasmos/ui/overlay"
@@ -213,4 +214,18 @@ func TestSpawnTaskAgent_ReviewKeepsReviewerCompatibilityMirrorSynced(t *testing.
 	assert.Equal(t, session.AgentTypeReviewer, inst.AgentType)
 	assert.True(t, inst.IsReviewer, "new reviewer sessions must keep the reviewer compatibility mirror in sync")
 	assert.Equal(t, 1, inst.ReviewCycle)
+}
+
+func TestBuildChatAboutTaskPrompt_UsesMCPFirst(t *testing.T) {
+	prompt := buildChatAboutTaskPrompt("architect-plan-location", taskstate.TaskEntry{
+		Status:      taskstate.StatusReady,
+		Description: "architect-plan-location",
+		Branch:      "plan/architect-plan-location",
+		Topic:       "bugs",
+	}, "is this still needed given the switch to an mcp server?")
+
+	assert.Contains(t, prompt, "MCP `task_show`")
+	assert.Contains(t, prompt, `filename: "architect-plan-location"`)
+	assert.Contains(t, prompt, "fall back to `kas task show architect-plan-location`")
+	assert.Contains(t, prompt, "## User Question")
 }

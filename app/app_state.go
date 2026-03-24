@@ -2558,7 +2558,7 @@ func buildChatAboutTaskPrompt(planFile string, entry taskstate.TaskEntry, questi
 	if entry.Topic != "" {
 		sb.WriteString(fmt.Sprintf("- **Topic:** %s\n", entry.Topic))
 	}
-	sb.WriteString(fmt.Sprintf("\nRetrieve the full plan with `kas task show %s` for details.\n\n", planFile))
+	sb.WriteString(fmt.Sprintf("\nRetrieve the full plan with MCP `task_show` (filename: %q) for details. If that tool is unavailable, fall back to `kas task show %s`.\n\n", planFile, planFile))
 	sb.WriteString("## User Question\n\n")
 	sb.WriteString(question)
 	return sb.String()
