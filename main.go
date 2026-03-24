@@ -116,47 +116,6 @@ var (
 		},
 	}
 
-	resetCmd = &cobra.Command{
-		Use:   "reset",
-		Short: "Reset all stored instances",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			log.Initialize(false)
-			defer log.Close()
-
-			state := config.LoadState()
-			storage, err := session.NewStorage(state)
-			if err != nil {
-				return fmt.Errorf("failed to initialize storage: %w", err)
-			}
-			if err := storage.DeleteAllInstances(); err != nil {
-				return fmt.Errorf("failed to reset storage: %w", err)
-			}
-			fmt.Println("Storage has been reset successfully")
-
-			if err := tmux.CleanupSessions(cmd2.MakeExecutor()); err != nil {
-				return fmt.Errorf("failed to cleanup tmux sessions: %w", err)
-			}
-			fmt.Println("Tmux sessions have been cleaned up")
-
-			cwd, err := filepath.Abs(".")
-			if err != nil {
-				return fmt.Errorf("failed to get current directory: %w", err)
-			}
-			if err := git.CleanupWorktrees(cwd); err != nil {
-				return fmt.Errorf("failed to cleanup worktrees: %w", err)
-			}
-			fmt.Println("Worktrees have been cleaned up")
-
-			// Kill any daemon that's running.
-			if err := daemon.StopDaemon(); err != nil {
-				return err
-			}
-			fmt.Println("daemon has been stopped")
-
-			return nil
-		},
-	}
-
 	debugCmd = &cobra.Command{
 		Use:   "debug",
 		Short: "Print debug information like config paths",
@@ -198,6 +157,48 @@ func versionString() string {
 		short = short[:7]
 	}
 	return v + "-" + short
+}
+
+func newLegacyResetInstancesCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "instances",
+		Short:        "Reset all stored instances",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			log.Initialize(false)
+			defer log.Close()
+
+			state := config.LoadState()
+			storage, err := session.NewStorage(state)
+			if err != nil {
+				return fmt.Errorf("failed to initialize storage: %w", err)
+			}
+			if err := storage.DeleteAllInstances(); err != nil {
+				return fmt.Errorf("failed to reset storage: %w", err)
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Storage has been reset successfully")
+
+			if err := tmux.CleanupSessions(cmd2.MakeExecutor()); err != nil {
+				return fmt.Errorf("failed to cleanup tmux sessions: %w", err)
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Tmux sessions have been cleaned up")
+
+			cwd, err := filepath.Abs(".")
+			if err != nil {
+				return fmt.Errorf("failed to get current directory: %w", err)
+			}
+			if err := git.CleanupWorktrees(cwd); err != nil {
+				return fmt.Errorf("failed to cleanup worktrees: %w", err)
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Worktrees have been cleaned up")
+
+			if err := daemon.StopDaemon(); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "daemon has been stopped")
+			return nil
+		},
+	}
 }
 
 func init() {
@@ -251,9 +252,13 @@ func init() {
 	kasSetupCmd.Flags().BoolVar(&forceFlag, "force", false, "Overwrite existing project scaffold files")
 	kasSetupCmd.Flags().BoolVar(&cleanFlag, "clean", false, "Ignore existing config, start with factory defaults")
 
+	resetCmd := cmd2.NewResetCmd()
+	resetCmd.AddCommand(newLegacyResetInstancesCmd())
+
 	rootCmd.AddCommand(debugCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(resetCmd)
+	rootCmd.AddCommand(cmd2.NewRestoreCmd())
 	rootCmd.AddCommand(kasSetupCmd)
 	rootCmd.AddCommand(cmd2.NewTaskCmd())
 	rootCmd.AddCommand(cmd2.NewServeCmd())
