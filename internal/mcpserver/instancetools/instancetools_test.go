@@ -95,8 +95,9 @@ func TestInstanceList_Empty(t *testing.T) {
 	assert.False(t, result.IsError)
 
 	text := textResult(t, result)
-	var entries []instanceListEntry
-	require.NoError(t, json.Unmarshal([]byte(text), &entries))
+	var wrapper instanceListResult
+	require.NoError(t, json.Unmarshal([]byte(text), &wrapper))
+	entries := wrapper.Instances
 	assert.Empty(t, entries)
 }
 
@@ -120,8 +121,9 @@ func TestInstanceList_WithTimestamp(t *testing.T) {
 	assert.False(t, result.IsError)
 
 	text := textResult(t, result)
-	var entries []instanceListEntry
-	require.NoError(t, json.Unmarshal([]byte(text), &entries))
+	var wrapper instanceListResult
+	require.NoError(t, json.Unmarshal([]byte(text), &wrapper))
+	entries := wrapper.Instances
 	require.Len(t, entries, 1)
 
 	assert.Equal(t, "my-instance", entries[0].Title)
@@ -152,8 +154,9 @@ func TestInstanceList_ZeroTimestamp(t *testing.T) {
 	assert.False(t, result.IsError)
 
 	text := textResult(t, result)
-	var entries []instanceListEntry
-	require.NoError(t, json.Unmarshal([]byte(text), &entries))
+	var wrapper instanceListResult
+	require.NoError(t, json.Unmarshal([]byte(text), &wrapper))
+	entries := wrapper.Instances
 	require.Len(t, entries, 1)
 	assert.Empty(t, entries[0].CreatedAt)
 }
@@ -172,8 +175,9 @@ func TestInstanceList_StatusFilter(t *testing.T) {
 	assert.False(t, result.IsError)
 
 	text := textResult(t, result)
-	var entries []instanceListEntry
-	require.NoError(t, json.Unmarshal([]byte(text), &entries))
+	var wrapper instanceListResult
+	require.NoError(t, json.Unmarshal([]byte(text), &wrapper))
+	entries := wrapper.Instances
 	require.Len(t, entries, 1)
 	assert.Equal(t, "paused-one", entries[0].Title)
 }

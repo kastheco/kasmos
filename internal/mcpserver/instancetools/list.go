@@ -27,6 +27,11 @@ type instanceListEntry struct {
 	CreatedAt string `json:"created_at,omitempty"`
 }
 
+type instanceListResult struct {
+	Instances []instanceListEntry `json:"instances"`
+	Total     int                 `json:"total"`
+}
+
 // makeInstanceListHandler returns a ToolHandlerFunc that lists all instances.
 // It accepts an optional "status" argument to filter by status label.
 func makeInstanceListHandler(loadState StateLoader) server.ToolHandlerFunc {
@@ -65,7 +70,7 @@ func makeInstanceListHandler(loadState StateLoader) server.ToolHandlerFunc {
 			})
 		}
 
-		result, err := mcp.NewToolResultJSON(entries)
+		result, err := mcp.NewToolResultJSON(instanceListResult{Instances: entries, Total: len(entries)})
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("encode instance_list result: %v", err)), nil
 		}

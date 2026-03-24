@@ -126,7 +126,7 @@ func TestGrepHandler_NoMatchesReturnsEmptyJSON(t *testing.T) {
 	require.NotNil(t, result)
 	assert.False(t, result.IsError)
 	require.Len(t, result.Content, 1)
-	assert.Equal(t, "[]", result.Content[0].(mcp.TextContent).Text)
+	assert.Contains(t, result.Content[0].(mcp.TextContent).Text, `"matches":[]`)
 }
 
 func TestGrepHandler_Success(t *testing.T) {

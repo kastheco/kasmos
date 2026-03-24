@@ -103,7 +103,10 @@ func makeListDirHandler(sb *Sandbox, runner CmdRunner) server.ToolHandlerFunc {
 		}
 
 		entries := parseFdListOutput(out, validPath)
-		result, err := mcp.NewToolResultJSON(entries)
+		result, err := mcp.NewToolResultJSON(struct {
+			Entries []DirEntry `json:"entries"`
+			Total   int        `json:"total"`
+		}{Entries: entries, Total: len(entries)})
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("encode list_dir result: %v", err)), nil
 		}

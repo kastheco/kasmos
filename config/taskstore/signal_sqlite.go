@@ -49,6 +49,14 @@ func NewSQLiteSignalGateway(dbPath string) (*SQLiteSignalGateway, error) {
 		}
 	}
 
+	// Set busy timeout so concurrent writers wait instead of failing with
+	// SQLITE_BUSY immediately. 5 seconds is generous for the short writes
+	// kasmos performs.
+	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("set busy timeout: %w", err)
+	}
+
 	// Enable foreign keys.
 	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
 		db.Close()

@@ -170,10 +170,13 @@ func TestListDirHandler_Success(t *testing.T) {
 	}
 	require.NotEmpty(t, contentText, "expected text content in result")
 
-	var entries []DirEntry
-	require.NoError(t, json.Unmarshal([]byte(contentText), &entries))
-	require.Len(t, entries, 1)
-	assert.Equal(t, "hello.txt", entries[0].Name)
-	assert.False(t, entries[0].IsDir)
-	assert.Equal(t, int64(2), entries[0].Size)
+	var wrapper struct {
+		Entries []DirEntry `json:"entries"`
+		Total   int        `json:"total"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(contentText), &wrapper))
+	require.Len(t, wrapper.Entries, 1)
+	assert.Equal(t, "hello.txt", wrapper.Entries[0].Name)
+	assert.False(t, wrapper.Entries[0].IsDir)
+	assert.Equal(t, int64(2), wrapper.Entries[0].Size)
 }

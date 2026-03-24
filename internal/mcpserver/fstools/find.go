@@ -60,7 +60,10 @@ func makeFindHandler(sb *Sandbox, runner CmdRunner) server.ToolHandlerFunc {
 
 		files := parseFdOutput(out)
 
-		result, err := mcp.NewToolResultJSON(files)
+		result, err := mcp.NewToolResultJSON(struct {
+			Files []string `json:"files"`
+			Total int      `json:"total"`
+		}{Files: files, Total: len(files)})
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("encode find_files result: %v", err)), nil
 		}

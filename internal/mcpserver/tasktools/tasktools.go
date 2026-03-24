@@ -23,6 +23,11 @@ type taskListEntry struct {
 	CreatedAt   time.Time `json:"created_at,omitempty"`
 }
 
+type taskListResult struct {
+	Tasks []taskListEntry `json:"tasks"`
+	Total int             `json:"total"`
+}
+
 type taskMutationResult struct {
 	Filename string `json:"filename"`
 	Status   string `json:"status,omitempty"`
@@ -68,7 +73,7 @@ func makeTaskListHandler(project string, store taskstore.Store) server.ToolHandl
 			})
 		}
 
-		payload, err := mcp.NewToolResultJSON(result)
+		payload, err := mcp.NewToolResultJSON(taskListResult{Tasks: result, Total: len(result)})
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_list: encode result: %v", err)), nil
 		}

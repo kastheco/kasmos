@@ -29,6 +29,13 @@ type GrepMatch struct {
 	MatchText string `json:"match_text"`
 }
 
+// GrepResult wraps grep matches in an object so that MCP structuredContent
+// (which requires a JSON object, not an array) is valid.
+type GrepResult struct {
+	Matches []GrepMatch `json:"matches"`
+	Total   int         `json:"total"`
+}
+
 // rgLine is the top-level structure of a single rg --json output line.
 type rgLine struct {
 	Type string `json:"type"`
@@ -106,6 +113,15 @@ func parseRgJSON(data []byte) ([]GrepMatch, error) {
 	return matches, nil
 }
 
+// emptyGrepResult returns a tool result with zero matches.
+func emptyGrepResult() (*mcp.CallToolResult, error) {
+	result, err := mcp.NewToolResultJSON(GrepResult{Matches: []GrepMatch{}, Total: 0})
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("encode grep result: %v", err)), nil
+	}
+	return result, nil
+}
+
 // makeGrepHandler returns a ToolHandlerFunc that implements the grep tool using
 // rg --json under the given sandbox and runner.
 func makeGrepHandler(sb *Sandbox, runner CmdRunner) server.ToolHandlerFunc {
@@ -129,7 +145,7 @@ func makeGrepHandler(sb *Sandbox, runner CmdRunner) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(fmt.Sprintf("grep: %v", err)), nil
 		}
 
-		args := []string{"--json"}
+		args := []string{"--json", "--no-messages"}
 		if glob != "" {
 			args = append(args, "--glob", glob)
 		}
@@ -147,13 +163,33 @@ func makeGrepHandler(sb *Sandbox, runner CmdRunner) server.ToolHandlerFunc {
 		out, err := runner.Output(ctx, "rg", args...)
 		if err != nil {
 			var exitErr *exec.ExitError
-			if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-				// Exit code 1 means rg found no matches — not an error condition.
-				result, encErr := mcp.NewToolResultJSON([]GrepMatch{})
-				if encErr != nil {
-					return mcp.NewToolResultError(fmt.Sprintf("encode grep result: %v", encErr)), nil
+			if errors.As(err, &exitErr) {
+				switch exitErr.ExitCode() {
+				case 1:
+					// Exit code 1 means rg found no matches — not an error.
+					return emptyGrepResult()
+				case 2:
+					// Exit code 2 means rg encountered errors (e.g. permission
+					// denied on some directories) but may have produced partial
+					// results on stdout. Return whatever matches exist; if none,
+					// return empty rather than error — inaccessible directories
+					// don't invalidate the search.
+					if len(out) > 0 {
+						if partial, parseErr := parseRgJSON(out); parseErr == nil && len(partial) > 0 {
+							result, encErr := mcp.NewToolResultJSON(GrepResult{Matches: partial, Total: len(partial)})
+							if encErr != nil {
+								return mcp.NewToolResultError(fmt.Sprintf("encode grep result: %v", encErr)), nil
+							}
+							return result, nil
+						}
+					}
+					return emptyGrepResult()
+				default:
+					stderr := strings.TrimSpace(string(exitErr.Stderr))
+					if stderr != "" {
+						return mcp.NewToolResultError(fmt.Sprintf("grep: rg failed (exit %d): %s", exitErr.ExitCode(), stderr)), nil
+					}
 				}
-				return result, nil
 			}
 			return mcp.NewToolResultError(fmt.Sprintf("grep: rg failed: %v", err)), nil
 		}
@@ -163,7 +199,7 @@ func makeGrepHandler(sb *Sandbox, runner CmdRunner) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(fmt.Sprintf("grep: parse output: %v", err)), nil
 		}
 
-		result, err := mcp.NewToolResultJSON(matches)
+		result, err := mcp.NewToolResultJSON(GrepResult{Matches: matches, Total: len(matches)})
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("encode grep result: %v", err)), nil
 		}

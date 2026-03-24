@@ -49,11 +49,11 @@ func TestTaskListHandler_FiltersByStatus(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
 
-	var entries []taskListEntry
-	require.NoError(t, json.Unmarshal([]byte(textResult(t, result)), &entries))
-	require.Len(t, entries, 1)
-	assert.Equal(t, "done-plan", entries[0].Filename)
-	assert.Equal(t, "done", entries[0].Status)
+	var wrapper taskListResult
+	require.NoError(t, json.Unmarshal([]byte(textResult(t, result)), &wrapper))
+	require.Len(t, wrapper.Tasks, 1)
+	assert.Equal(t, "done-plan", wrapper.Tasks[0].Filename)
+	assert.Equal(t, "done", wrapper.Tasks[0].Status)
 }
 
 func TestTaskCreateHandler_DefaultsBranchAndReadyStatus(t *testing.T) {
