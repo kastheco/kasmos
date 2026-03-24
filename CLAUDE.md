@@ -34,6 +34,26 @@ Key points:
 - **Arrow-key navigation in overlays**: use ↑↓ for navigation, not j/k vim bindings. Letter keys should always type into search/filter when present.
 - Signals are gateway-backed first. `.kasmos/signals/` still exists for compatibility, but do not document filesystem sentinels as the primary lifecycle path.
 
+## MCP-First Tooling
+
+Always prefer kasmos MCP tools over built-in Claude Code equivalents — they are purpose-built and faster for this codebase.
+
+| Task | Use (kasmos MCP) | Not (built-in) |
+|------|-------------------|-----------------|
+| search file contents | `mcp__kasmos__grep` | Grep |
+| read files | `mcp__kasmos__read_file` | Read |
+| find files by pattern | `mcp__kasmos__find_files` | Glob |
+| list directory | `mcp__kasmos__list_dir` | Bash `ls` |
+| git status | `mcp__kasmos__git_status` | Bash `git status` |
+| git diff | `mcp__kasmos__git_diff` | Bash `git diff` |
+| git log | `mcp__kasmos__git_log` | Bash `git log` |
+| task CRUD | `mcp__kasmos__task_create/show/list/update_content/transition` | Bash `kas task` |
+| lifecycle signals | `mcp__kasmos__signal_create` | Bash `touch .kasmos/signals/` |
+| instance management | `mcp__kasmos__instance_list/pause/resume/send` | Bash `kas instance` |
+| daemon status | `mcp__kasmos__daemon_status` | Bash `kas daemon` |
+
+Built-in tools (Read, Grep, Glob, Bash) are fallback only — use when MCP is unavailable or for operations with no MCP equivalent (e.g., Edit, Write).
+
 ## Workflow
 
 Development follows a wave-based plan execution lifecycle. Each agent works only on the specific task it has been assigned — do not expand scope beyond your assigned work package. When `KASMOS_TASK` is set, you are one of several concurrent agents on a shared worktree. `KASMOS_WAVE` identifies your wave, `KASMOS_PEERS` the number of sibling agents. Implement only your assigned task — see your dynamic prompt for specific rules.
