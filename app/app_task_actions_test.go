@@ -389,6 +389,50 @@ func TestSpawnTaskAgent_PlanUsesDaemonWhenRepoManaged(t *testing.T) {
 	assert.Equal(t, fakeInst.Title, instances[0].Title)
 }
 
+func TestWaitForDaemonPlannerInstance_SkipsExitedPlaceholder(t *testing.T) {
+	oldRestore := restoreInstanceFromData
+	t.Cleanup(func() {
+		restoreInstanceFromData = oldRestore
+	})
+
+	attempts := 0
+	restoreInstanceFromData = func(data session.InstanceData) (*session.Instance, error) {
+		attempts++
+		inst, err := session.NewInstance(session.InstanceOptions{
+			Title:         data.Title,
+			Path:          data.Path,
+			Program:       data.Program,
+			ExecutionMode: data.ExecutionMode,
+			TaskFile:      data.TaskFile,
+			AgentType:     data.AgentType,
+		})
+		if err != nil {
+			return nil, err
+		}
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		if attempts == 1 {
+			inst.Exited = true
+			inst.SetStatus(session.Ready)
+			return inst, nil
+		}
+		return inst, nil
+	}
+
+	inst, err := waitForDaemonPlannerInstance(session.InstanceData{
+		Title:         "planner-test",
+		Path:          t.TempDir(),
+		Program:       "opencode",
+		ExecutionMode: session.ExecutionModeTmux,
+		TaskFile:      "planner-test.md",
+		AgentType:     session.AgentTypePlanner,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, inst)
+	assert.False(t, inst.Exited)
+	assert.GreaterOrEqual(t, attempts, 2)
+}
+
 func TestSpawnWaveTasks_HeadlessCoderUsesHeadlessExecution(t *testing.T) {
 	dir := t.TempDir()
 	for _, cmd := range [][]string{

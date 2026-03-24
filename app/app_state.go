@@ -35,6 +35,28 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+var restoreInstanceFromData = session.FromInstanceData
+
+func waitForDaemonPlannerInstance(data session.InstanceData) (*session.Instance, error) {
+	var lastErr error
+	for range 20 {
+		inst, err := restoreInstanceFromData(data)
+		if err == nil {
+			if inst != nil && !inst.Exited {
+				return inst, nil
+			}
+			lastErr = fmt.Errorf("planner session not live yet")
+		} else {
+			lastErr = err
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("planner session did not appear")
+}
+
 var spawnPlannerWithDaemon = func(repoPath, project, planFile, title, prompt, program string) (*session.Instance, error) {
 	client := daemonpkg.NewSocketClient(defaultDaemonSocketPath())
 	if err := client.StartPlan(project, planFile, prompt, program); err != nil {
@@ -53,19 +75,7 @@ var spawnPlannerWithDaemon = func(repoPath, project, planFile, title, prompt, pr
 		AgentType:     session.AgentTypePlanner,
 	}
 
-	var lastErr error
-	for range 20 {
-		inst, err := session.FromInstanceData(data)
-		if err == nil {
-			return inst, nil
-		}
-		lastErr = err
-		time.Sleep(50 * time.Millisecond)
-	}
-	if lastErr != nil {
-		return nil, lastErr
-	}
-	return nil, fmt.Errorf("planner session did not appear")
+	return waitForDaemonPlannerInstance(data)
 }
 
 type daemonPlannerStartedMsg struct {

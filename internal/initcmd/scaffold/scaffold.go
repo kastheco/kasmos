@@ -35,18 +35,8 @@ func validateRole(role string) error {
 // renderTemplate applies all placeholder substitutions to a template.
 func renderTemplate(content string, agent harness.AgentConfig) string {
 	rendered := content
-	rendered = strings.ReplaceAll(rendered, "{{MODEL}}", normalizeClaudePromptModel(agent.Harness, agent.Model))
+	rendered = strings.ReplaceAll(rendered, "{{MODEL}}", agent.Model)
 	return rendered
-}
-
-func normalizeClaudePromptModel(harnessName, model string) string {
-	model = strings.TrimSpace(model)
-	if model == "" || harnessName != "claude" {
-		return model
-	}
-	model = strings.TrimPrefix(model, "anthropic/")
-	model = strings.TrimPrefix(model, "claude-")
-	return model
 }
 
 // WriteResult tracks scaffold output for summary display.
