@@ -174,3 +174,32 @@ func TestHeadlessSession_HasUpdatedWithContent(t *testing.T) {
 
 	_ = sess.Close()
 }
+
+func TestHeadlessSession_OpenCodeInjectsProjectConfigEnv(t *testing.T) {
+	workDir := t.TempDir()
+	opencodeDir := filepath.Join(workDir, ".opencode")
+	require.NoError(t, os.MkdirAll(opencodeDir, 0o755))
+	configPath := filepath.Join(opencodeDir, "opencode.jsonc")
+	require.NoError(t, os.WriteFile(configPath, []byte("{}\n"), 0o644))
+
+	binaryPath := filepath.Join(workDir, "opencode")
+	script := "#!/bin/sh\nprintf '%s' \"$OPENCODE_CONFIG\"\n"
+	require.NoError(t, os.WriteFile(binaryPath, []byte(script), 0o755))
+
+	sess := headless.New("opencode-env", binaryPath, false)
+	err := sess.Start(workDir)
+	require.NoError(t, err)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !sess.DoesSessionExist() {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	content, err := sess.CapturePaneContent()
+	require.NoError(t, err)
+	assert.Equal(t, configPath, strings.TrimSpace(content))
+	_ = sess.Close()
+}

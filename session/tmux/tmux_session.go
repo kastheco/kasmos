@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/cmd"
+	"github.com/kastheco/kasmos/internal/opencodesession"
 	"github.com/kastheco/kasmos/log"
 	"golang.org/x/term"
 )
@@ -253,6 +254,11 @@ func (t *TmuxSession) Start(workDir string) error {
 		}
 		// aider/gemini: no CLI prompt support — callers keep QueuedPrompt
 		// set so the send-keys fallback fires from the app tick handler.
+	}
+	if isOpenCodeProgram(t.program) {
+		if configPath := opencodesession.ProjectConfigPath(workDir); configPath != "" {
+			program = "OPENCODE_CONFIG=" + shellEscapeSingleQuote(configPath) + " " + program
+		}
 	}
 
 	// Append --print-logs and redirect stderr to a per-session log file so

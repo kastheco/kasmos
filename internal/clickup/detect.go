@@ -13,7 +13,7 @@ type mcpConfigFile struct {
 	MCPServers map[string]json.RawMessage `json:"mcpServers"`
 }
 
-// opencodeConfigFile represents the structure of opencode.json.
+// opencodeConfigFile represents the structure of opencode.jsonc.
 type opencodeConfigFile struct {
 	MCP map[string]json.RawMessage `json:"mcp"`
 }
@@ -37,7 +37,7 @@ type opencodeServerEntry struct {
 }
 
 // DetectMCP scans config files for a ClickUp MCP server.
-// repoDir is the project root (checks .mcp.json, .opencode/opencode.json).
+// repoDir is the project root (checks .mcp.json, .opencode/opencode.jsonc).
 // claudeDir is the Claude config dir (checks settings.json, settings.local.json).
 // Pass empty claudeDir to skip Claude config scanning.
 func DetectMCP(repoDir, claudeDir string) (MCPServerConfig, bool) {
@@ -46,9 +46,14 @@ func DetectMCP(repoDir, claudeDir string) (MCPServerConfig, bool) {
 		return cfg, true
 	}
 
-	// Project-level: .opencode/opencode.json
-	if cfg, ok := scanOpencode(filepath.Join(repoDir, ".opencode", "opencode.json")); ok {
-		return cfg, true
+	// Project-level: .opencode/opencode.jsonc (fallback to .json for compatibility)
+	for _, path := range []string{
+		filepath.Join(repoDir, ".opencode", "opencode.jsonc"),
+		filepath.Join(repoDir, ".opencode", "opencode.json"),
+	} {
+		if cfg, ok := scanOpencode(path); ok {
+			return cfg, true
+		}
 	}
 
 	// User-level: Claude Desktop settings
@@ -64,8 +69,13 @@ func DetectMCP(repoDir, claudeDir string) (MCPServerConfig, bool) {
 
 	// User-level: opencode global config
 	if configDir, err := os.UserConfigDir(); err == nil {
-		if cfg, ok := scanOpencode(filepath.Join(configDir, "opencode", "opencode.json")); ok {
-			return cfg, true
+		for _, path := range []string{
+			filepath.Join(configDir, "opencode", "opencode.jsonc"),
+			filepath.Join(configDir, "opencode", "opencode.json"),
+		} {
+			if cfg, ok := scanOpencode(path); ok {
+				return cfg, true
+			}
 		}
 	}
 

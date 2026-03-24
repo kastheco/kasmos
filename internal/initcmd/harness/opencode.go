@@ -89,7 +89,7 @@ func (o *OpenCode) ListModels() ([]string, error) {
 }
 
 func (o *OpenCode) BuildFlags(agent AgentConfig) []string {
-	// opencode uses project config (opencode.json), not CLI flags for model/temp/effort
+	// opencode uses project config (opencode.jsonc), not CLI flags for model/temp/effort
 	return agent.ExtraFlags
 }
 

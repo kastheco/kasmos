@@ -257,7 +257,21 @@ func TestToolsReferenceInjected(t *testing.T) {
 		content, err := os.ReadFile(filepath.Join(dir, ".claude", "agents", "coder.md"))
 		require.NoError(t, err)
 		assert.NotContains(t, string(content), "{{MODEL}}")
-		assert.Contains(t, string(content), "claude-opus-4-6")
+		assert.Contains(t, string(content), "model: opus-4-6")
+	})
+
+	t.Run("claude prompt model strips provider prefix too", func(t *testing.T) {
+		dir := t.TempDir()
+		agents := []harness.AgentConfig{
+			{Role: "coder", Harness: "claude", Model: "anthropic/claude-sonnet-4-6", Enabled: true},
+		}
+
+		_, err := WriteClaudeProject(dir, agents, allTools, false)
+		require.NoError(t, err)
+
+		content, err := os.ReadFile(filepath.Join(dir, ".claude", "agents", "coder.md"))
+		require.NoError(t, err)
+		assert.Contains(t, string(content), "model: sonnet-4-6")
 	})
 
 }
@@ -566,6 +580,59 @@ func TestWriteOpenCodeProject_ValidJSONC_NoWizardAgents(t *testing.T) {
 	content, err := os.ReadFile(filepath.Join(dir, ".opencode", "opencode.jsonc"))
 	require.NoError(t, err)
 	assertValidJSON(t, string(content))
+	assert.Contains(t, string(content), `"mcp"`)
+	assert.Contains(t, string(content), `"kasmos"`)
+}
+
+func TestPatchWorktreeConfig_AddsKasmosMCPToExistingConfig(t *testing.T) {
+	dir := t.TempDir()
+	opencodeConfig := `{
+	  "agent": {
+	    "coder": {
+	      "model": "anthropic/claude-sonnet-4-6"
+	    }
+	  },
+	  "mcp": {
+	    "clickup": {
+	      "type": "remote",
+	      "url": "https://mcp.clickup.com/mcp",
+	      "enabled": true
+	    }
+	  }
+	}`
+	reqPath := filepath.Join(dir, ".opencode")
+	require.NoError(t, os.MkdirAll(reqPath, 0o755))
+	configPath := filepath.Join(reqPath, "opencode.jsonc")
+	require.NoError(t, os.WriteFile(configPath, []byte(opencodeConfig), 0o644))
+
+	temp := 0.2
+	agents := []harness.AgentConfig{{
+		Role:        "coder",
+		Harness:     "opencode",
+		Model:       "anthropic/claude-sonnet-4-6",
+		Temperature: &temp,
+		Effort:      "medium",
+	}}
+
+	err := PatchWorktreeConfig(dir, agents)
+	require.NoError(t, err)
+
+	updated, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+	assertValidJSON(t, string(updated))
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(updated, &parsed))
+	mcp, ok := parsed["mcp"].(map[string]any)
+	require.True(t, ok)
+	assert.Contains(t, mcp, "clickup")
+	assert.Contains(t, mcp, "kasmos")
+
+	kasmos, ok := mcp["kasmos"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "remote", kasmos["type"])
+	assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
+	assert.Equal(t, true, kasmos["enabled"])
 }
 
 // TestWriteOpenCodeProject_IncludesNonOpencodeAgents verifies that agent roles
@@ -847,6 +914,13 @@ func TestPatchWorktreeConfig_UsesHarnessForModelNormalization(t *testing.T) {
 func TestPatchWorktreeConfig_Idempotent_NoRewriteWhenUnchanged(t *testing.T) {
 	dir := t.TempDir()
 	opencodeConfig := `{
+	  "mcp": {
+	    "kasmos": {
+	      "type": "remote",
+	      "url": "http://127.0.0.1:7434/mcp",
+	      "enabled": true
+	    }
+	  },
 	  "agent": {
 	    "coder": {
 	      "model": "anthropic/claude-sonnet-4-6",
@@ -941,6 +1015,7 @@ func TestSyncScaffold_UpdatesSkillsAndAgentPrompts(t *testing.T) {
 	content, err = os.ReadFile(cfgPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "preserved")
+	assert.Contains(t, string(content), `"kasmos"`)
 	_, err = os.Readlink(filepath.Join(dir, ".claude", "skills", "cli-tools"))
 	assert.NoError(t, err)
 }

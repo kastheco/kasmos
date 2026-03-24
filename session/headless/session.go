@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kastheco/kasmos/internal/opencodesession"
 	"github.com/kastheco/kasmos/session/tmux"
 )
 
@@ -135,6 +136,11 @@ func (s *Session) Start(workDir string) error {
 	// Build the child's environment.
 	env := os.Environ()
 	env = append(env, "KASMOS_MANAGED=1")
+	if filepath.Base(parts[0]) == tmux.ProgramOpenCode {
+		if configPath := opencodesession.ProjectConfigPath(workDir); configPath != "" {
+			env = append(env, fmt.Sprintf("OPENCODE_CONFIG=%s", configPath))
+		}
+	}
 	if s.taskNumber > 0 {
 		env = append(env,
 			fmt.Sprintf("KASMOS_TASK=%d", s.taskNumber),

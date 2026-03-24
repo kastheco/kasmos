@@ -172,7 +172,7 @@ func startPlanBrowserServer(repoRoot, bind string, port int, adminDir string) er
 		return fmt.Errorf("resolve executable: %w", err)
 	}
 
-	args := []string{"serve", "--bind", bind, "--port", strconv.Itoa(port), "--mcp=false"}
+	args := []string{"serve", "--bind", bind, "--port", strconv.Itoa(port)}
 	if adminDir != "" {
 		args = append(args, "--admin-dir", adminDir)
 	}

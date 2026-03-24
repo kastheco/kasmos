@@ -65,7 +65,7 @@ func TestDetect_ProjectOpencodeJSON(t *testing.T) {
 	ocDir := filepath.Join(dir, ".opencode")
 	require.NoError(t, os.MkdirAll(ocDir, 0o755))
 	ocJSON := `{"mcp":{"clickup":{"type":"remote","url":"https://mcp.clickup.com/mcp","oauth":{},"enabled":true}}}`
-	require.NoError(t, os.WriteFile(filepath.Join(ocDir, "opencode.json"), []byte(ocJSON), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(ocDir, "opencode.jsonc"), []byte(ocJSON), 0o644))
 
 	cfg, found := clickup.DetectMCP(dir, "")
 	assert.True(t, found)
@@ -79,7 +79,7 @@ func TestDetect_OpencodeGlobalConfig(t *testing.T) {
 	ocDir := filepath.Join(globalDir, "opencode")
 	require.NoError(t, os.MkdirAll(ocDir, 0o755))
 	ocJSON := `{"mcp":{"clickup":{"type":"remote","url":"https://mcp.clickup.com/mcp","oauth":{},"enabled":true}}}`
-	require.NoError(t, os.WriteFile(filepath.Join(ocDir, "opencode.json"), []byte(ocJSON), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(ocDir, "opencode.jsonc"), []byte(ocJSON), 0o644))
 
 	t.Setenv("XDG_CONFIG_HOME", globalDir)
 
@@ -165,6 +165,19 @@ func TestDetect_OpencodeJSONC(t *testing.T) {
         },
     },
 }`
+	require.NoError(t, os.WriteFile(filepath.Join(ocDir, "opencode.jsonc"), []byte(ocJSON), 0o644))
+
+	cfg, found := clickup.DetectMCP(dir, "")
+	assert.True(t, found)
+	assert.Equal(t, "http", cfg.Type)
+	assert.Equal(t, "https://mcp.clickup.com/mcp", cfg.URL)
+}
+
+func TestDetect_OpencodeLegacyJSONFallback(t *testing.T) {
+	dir := t.TempDir()
+	ocDir := filepath.Join(dir, ".opencode")
+	require.NoError(t, os.MkdirAll(ocDir, 0o755))
+	ocJSON := `{"mcp":{"clickup":{"type":"remote","url":"https://mcp.clickup.com/mcp","enabled":true}}}`
 	require.NoError(t, os.WriteFile(filepath.Join(ocDir, "opencode.json"), []byte(ocJSON), 0o644))
 
 	cfg, found := clickup.DetectMCP(dir, "")

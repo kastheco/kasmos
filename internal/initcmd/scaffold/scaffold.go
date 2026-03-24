@@ -35,8 +35,18 @@ func validateRole(role string) error {
 // renderTemplate applies all placeholder substitutions to a template.
 func renderTemplate(content string, agent harness.AgentConfig) string {
 	rendered := content
-	rendered = strings.ReplaceAll(rendered, "{{MODEL}}", agent.Model)
+	rendered = strings.ReplaceAll(rendered, "{{MODEL}}", normalizeClaudePromptModel(agent.Harness, agent.Model))
 	return rendered
+}
+
+func normalizeClaudePromptModel(harnessName, model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" || harnessName != "claude" {
+		return model
+	}
+	model = strings.TrimPrefix(model, "anthropic/")
+	model = strings.TrimPrefix(model, "claude-")
+	return model
 }
 
 // WriteResult tracks scaffold output for summary display.
@@ -280,8 +290,23 @@ func PatchWorktreeConfig(worktreePath string, agents []harness.AgentConfig) erro
 		return fmt.Errorf("invalid opencode config: missing agent block")
 	}
 	renderedAgentBlocks, _ := rendered["agent"].(map[string]any)
+	renderedMCP, _ := rendered["mcp"].(map[string]any)
 
 	changed := false
+
+	if len(renderedMCP) > 0 {
+		currentMCP, _ := current["mcp"].(map[string]any)
+		if currentMCP == nil {
+			current["mcp"] = cloneMap(renderedMCP)
+			changed = true
+		} else if kasmosEntry, ok := renderedMCP["kasmos"]; ok {
+			if _, exists := currentMCP["kasmos"]; !exists {
+				currentMCP["kasmos"] = kasmosEntry
+				current["mcp"] = currentMCP
+				changed = true
+			}
+		}
+	}
 
 	for _, agent := range agents {
 		currentBlock, ok := currentAgentBlocks[agent.Role].(map[string]any)
