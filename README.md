@@ -108,6 +108,37 @@ kas setup --force --clean
 
 important: `kas setup --force --clean` **does not delete stale files for harnesses you stop using**. it rewrites the selected harness/config paths, but if you are doing a major migration and want a truly clean harness layout, remove stale `.claude/`, `.opencode/`, `.codex/`, or `.agents/skills/` content yourself first.
 
+for already-initialized repos, prefer the built-in backup-first refresh flow instead of manually deleting scaffold state:
+
+```bash
+kas reset
+cat repos.txt | kas reset --dry-run
+cat repos.txt | kas reset --yes
+kas reset repos.txt
+kas reset --ignore-worktrees repos.txt
+```
+
+`kas reset`:
+
+- creates a timestamped backup tarball per repo under `~/kasmos-backups/`
+- preserves `.kasmos/config.toml` and `.kasmos/taskstore.db`
+- refreshes scaffold/runtime state such as `.agents/`, `.claude/`, `.opencode/`, `.codex/`, `.worktrees/`, `.kasmos/cache`, `.kasmos/signals`, and `.mcp.json`
+- re-syncs scaffold files from the current binary and the repo's existing config
+- rewrites `.mcp.json` for the local MCP endpoint
+
+to restore one repo from one backup tarball:
+
+```bash
+kas restore /path/to/backup.tar.gz /path/to/repo
+kas restore --dry-run /path/to/backup.tar.gz /path/to/repo
+```
+
+the old instance cleanup behavior is still available as:
+
+```bash
+kas reset instances
+```
+
 the wizard/scaffolder writes paths like:
 
 - `.kasmos/config.toml`
@@ -295,6 +326,9 @@ kas task implement <task-file> [--wave N]
 
 kas serve
 kas scaffold sync
+kas reset
+kas restore <backup.tar.gz> <repo>
+kas reset instances
 kas daemon start
 kas monitor
 kas status
@@ -332,12 +366,11 @@ kas version
 ### recommended post-upgrade refresh
 
 ```bash
-kas setup --force --clean
-kas check -v
-kas scaffold sync
+cat repos.txt | kas reset --dry-run
+cat repos.txt | kas reset --yes
 ```
 
-if you changed which harnesses you use, clean stale harness directories manually before rerunning setup.
+for a single repo, run `kas reset` from inside that repo instead.
 
 ---
 
