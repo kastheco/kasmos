@@ -24,7 +24,7 @@ func stripMenuANSI(s string) string {
 	return b.String()
 }
 
-func TestMenu_SidebarEmptyHidesNewPlanAndUsesUpdatedLabels(t *testing.T) {
+func TestMenu_SidebarEmptyHidesNewPlanAndUsesCurrentLabels(t *testing.T) {
 	m := NewMenu()
 	m.SetSize(140, 1)
 	m.SetState(StateEmpty)
@@ -41,8 +41,8 @@ func TestMenu_SidebarEmptyHidesNewPlanAndUsesUpdatedLabels(t *testing.T) {
 	if !strings.Contains(out, "space toggle") {
 		t.Fatalf("menu should label space as toggle; got: %q", out)
 	}
-	if !strings.Contains(out, "p preview") {
-		t.Fatalf("menu should label p as preview; got: %q", out)
+	if !strings.Contains(out, "p view plan") {
+		t.Fatalf("menu should label p as view plan; got: %q", out)
 	}
 }
 
