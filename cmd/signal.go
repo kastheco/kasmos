@@ -67,7 +67,11 @@ Use --once to process a single batch and exit.`,
 			if err != nil {
 				return err
 			}
-			store := resolveStore(project)
+			store, err := taskstore.OpenAuthoritativeStore(project)
+			if err != nil {
+				return err
+			}
+			defer store.Close()
 			signalsDir := defaultSignalsDir(repoRoot)
 			if err := os.MkdirAll(signalsDir, 0o755); err != nil {
 				return fmt.Errorf("create signals dir: %w", err)
@@ -278,12 +282,7 @@ review_changes_requested, implement_task_finished, implement_wave, elaborator_fi
 				return err
 			}
 
-			dbPath := taskstore.ResolvedDBPath()
-			if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-				return fmt.Errorf("create kasmos config dir: %w", err)
-			}
-
-			gw, err := taskstore.NewSQLiteSignalGateway(dbPath)
+			gw, err := taskstore.OpenAuthoritativeSignalGateway(project)
 			if err != nil {
 				return fmt.Errorf("open signal gateway: %w", err)
 			}

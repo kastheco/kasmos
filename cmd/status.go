@@ -220,7 +220,11 @@ func NewStatusCmd() *cobra.Command {
 				return err
 			}
 			state := config.LoadState()
-			store := resolveStore(project)
+			store, err := taskstore.OpenAuthoritativeStore(project)
+			if err != nil {
+				return err
+			}
+			defer store.Close()
 			format := "text"
 			if jsonFlag {
 				format = "json"

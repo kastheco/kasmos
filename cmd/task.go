@@ -509,9 +509,9 @@ func executeTaskStartOver(repoRoot, project, planFile string, store taskstore.St
 func executeTaskPR(repoRoot, project, planFile, title string, store taskstore.Store) (string, error) {
 	if store == nil {
 		var err error
-		store, err = localSQLiteStore()
+		store, err = taskstore.OpenAuthoritativeStore(project)
 		if err != nil {
-			return "", fmt.Errorf("open local task store: %w", err)
+			return "", err
 		}
 	}
 
@@ -608,7 +608,15 @@ func NewTaskCmd() *cobra.Command {
 		Short:   "manage task lifecycle (list, set-status, transition, implement)",
 	}
 
-	// kq plan list
+	withAuthoritativeStore := func(project string, fn func(taskstore.Store) error) error {
+		store, err := taskstore.OpenAuthoritativeStore(project)
+		if err != nil {
+			return err
+		}
+		defer store.Close()
+		return fn(store)
+	}
+
 	var statusFilter string
 	listCmd := &cobra.Command{
 		Use:   "list",
@@ -618,14 +626,15 @@ func NewTaskCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Print(executeTaskList(project, statusFilter, resolveStore(project)))
-			return nil
+			return withAuthoritativeStore(project, func(store taskstore.Store) error {
+				fmt.Print(executeTaskList(project, statusFilter, store))
+				return nil
+			})
 		},
 	}
 	listCmd.Flags().StringVar(&statusFilter, "status", "", "filter by status (ready, planning, implementing, reviewing, done, cancelled)")
 	planCmd.AddCommand(listCmd)
 
-	// kq plan register
 	var branchFlag, topicFlag, descriptionFlag string
 	registerCmd := &cobra.Command{
 		Use:   "register <plan-file>",
@@ -636,11 +645,13 @@ func NewTaskCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := executeTaskRegister(project, args[0], branchFlag, topicFlag, descriptionFlag, resolveStore(project)); err != nil {
-				return err
-			}
-			fmt.Printf("registered: %s → ready\n", filepath.Base(args[0]))
-			return nil
+			return withAuthoritativeStore(project, func(store taskstore.Store) error {
+				if err := executeTaskRegister(project, args[0], branchFlag, topicFlag, descriptionFlag, store); err != nil {
+					return err
+				}
+				fmt.Printf("registered: %s → ready\n", filepath.Base(args[0]))
+				return nil
+			})
 		},
 	}
 	registerCmd.Flags().StringVar(&branchFlag, "branch", "", "override branch name (default: plan/<slug>)")
@@ -648,7 +659,6 @@ func NewTaskCmd() *cobra.Command {
 	registerCmd.Flags().StringVar(&descriptionFlag, "description", "", "override description (default: extracted from first # heading)")
 	planCmd.AddCommand(registerCmd)
 
-	// kq plan set-status
 	var forceFlag bool
 	setStatusCmd := &cobra.Command{
 		Use:   "set-status <plan-file> <status>",
@@ -659,17 +669,18 @@ func NewTaskCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := executeTaskSetStatus(project, args[0], args[1], forceFlag, resolveStore(project)); err != nil {
-				return err
-			}
-			fmt.Printf("%s → %s\n", args[0], args[1])
-			return nil
+			return withAuthoritativeStore(project, func(store taskstore.Store) error {
+				if err := executeTaskSetStatus(project, args[0], args[1], forceFlag, store); err != nil {
+					return err
+				}
+				fmt.Printf("%s → %s\n", args[0], args[1])
+				return nil
+			})
 		},
 	}
 	setStatusCmd.Flags().BoolVar(&forceFlag, "force", false, "confirm intent to bypass FSM transition rules")
 	planCmd.AddCommand(setStatusCmd)
 
-	// kq plan transition
 	transitionCmd := &cobra.Command{
 		Use:   "transition <plan-file> <event>",
 		Short: "apply an FSM event to a task",
@@ -679,17 +690,18 @@ func NewTaskCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			newStatus, err := executeTaskTransition(project, args[0], args[1], resolveStore(project))
-			if err != nil {
-				return err
-			}
-			fmt.Printf("%s → %s\n", args[0], newStatus)
-			return nil
+			return withAuthoritativeStore(project, func(store taskstore.Store) error {
+				newStatus, err := executeTaskTransition(project, args[0], args[1], store)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("%s → %s\n", args[0], newStatus)
+				return nil
+			})
 		},
 	}
 	planCmd.AddCommand(transitionCmd)
 
-	// kq plan implement
 	var waveNum int
 	implementCmd := &cobra.Command{
 		Use:   "implement <plan-file>",
@@ -700,17 +712,18 @@ func NewTaskCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := executeTaskImplement(repoRoot, project, args[0], waveNum, resolveStore(project)); err != nil {
-				return err
-			}
-			fmt.Printf("implementation triggered: %s wave %d\n", args[0], waveNum)
-			return nil
+			return withAuthoritativeStore(project, func(store taskstore.Store) error {
+				if err := executeTaskImplement(repoRoot, project, args[0], waveNum, store); err != nil {
+					return err
+				}
+				fmt.Printf("implementation triggered: %s wave %d\n", args[0], waveNum)
+				return nil
+			})
 		},
 	}
 	implementCmd.Flags().IntVar(&waveNum, "wave", 1, "wave number to trigger (default: 1)")
 	planCmd.AddCommand(implementCmd)
 
-	// kq task show
 	showCmd := &cobra.Command{
 		Use:   "show <plan-file>",
 		Short: "print plan content from the task store",
@@ -720,17 +733,18 @@ func NewTaskCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			content, err := executeTaskShow(project, args[0], resolveStore(project))
-			if err != nil {
-				return err
-			}
-			fmt.Print(content)
-			return nil
+			return withAuthoritativeStore(project, func(store taskstore.Store) error {
+				content, err := executeTaskShow(project, args[0], store)
+				if err != nil {
+					return err
+				}
+				fmt.Print(content)
+				return nil
+			})
 		},
 	}
 	planCmd.AddCommand(showCmd)
 
-	// kq task update-content <plan-file> < content.md
 	var updateContentFile string
 	updateContentCmd := &cobra.Command{
 		Use:   "update-content <plan-file>",
@@ -741,34 +755,27 @@ func NewTaskCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			store, _ := resolveStoreConfig(project)
-			if store == nil {
-				store, err = localSQLiteStore()
+			return withAuthoritativeStore(project, func(store taskstore.Store) error {
+				filename := args[0]
+				trimmedFilename := strings.TrimSuffix(filename, ".md")
+				reader, err := openUpdateContentReader(os.Stdin, updateContentFile)
 				if err != nil {
-					return fmt.Errorf("open local task store: %w", err)
+					return err
 				}
-				defer store.Close()
-			}
-			filename := args[0]
-			trimmedFilename := strings.TrimSuffix(filename, ".md")
-			reader, err := openUpdateContentReader(os.Stdin, updateContentFile)
-			if err != nil {
-				return err
-			}
-			if reader != os.Stdin {
-				defer reader.Close()
-			}
-			if err := executeTaskUpdateContent(project, filename, reader, store); err != nil {
-				return err
-			}
-			fmt.Printf("updated content for %s\n", trimmedFilename)
-			return nil
+				if reader != os.Stdin {
+					defer reader.Close()
+				}
+				if err := executeTaskUpdateContent(project, filename, reader, store); err != nil {
+					return err
+				}
+				fmt.Printf("updated content for %s\n", trimmedFilename)
+				return nil
+			})
 		},
 	}
 	updateContentCmd.Flags().StringVar(&updateContentFile, "file", "", "read updated plan content from a file instead of stdin")
 	planCmd.AddCommand(updateContentCmd)
 
-	// kas task create
 	var (
 		createDescription string
 		createBranch      string
@@ -785,11 +792,13 @@ func NewTaskCmd() *cobra.Command {
 				return err
 			}
 			name := args[0]
-			if err := executeTaskCreate(project, name, createDescription, createBranch, createTopic, createContent, resolveStore(project)); err != nil {
-				return err
-			}
-			fmt.Printf("created: %s → ready\n", name)
-			return nil
+			return withAuthoritativeStore(project, func(store taskstore.Store) error {
+				if err := executeTaskCreate(project, name, createDescription, createBranch, createTopic, createContent, store); err != nil {
+					return err
+				}
+				fmt.Printf("created: %s → ready\n", name)
+				return nil
+			})
 		},
 	}
 	createCmd.Flags().StringVar(&createDescription, "description", "", "task description")
@@ -798,7 +807,6 @@ func NewTaskCmd() *cobra.Command {
 	createCmd.Flags().StringVar(&createContent, "content", "", "initial plan content (markdown)")
 	planCmd.AddCommand(createCmd)
 
-	// kas task start
 	startCmd := &cobra.Command{
 		Use:   "start <plan-file>",
 		Short: "transition a task to implementing and set up the git worktree",
@@ -808,17 +816,18 @@ func NewTaskCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			worktreePath, err := executeTaskStart(repoRoot, project, args[0], resolveStore(project))
-			if err != nil {
-				return err
-			}
-			fmt.Printf("started: %s → implementing\nworktree: %s\n", args[0], worktreePath)
-			return nil
+			return withAuthoritativeStore(project, func(store taskstore.Store) error {
+				worktreePath, err := executeTaskStart(repoRoot, project, args[0], store)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("started: %s → implementing\nworktree: %s\n", args[0], worktreePath)
+				return nil
+			})
 		},
 	}
 	planCmd.AddCommand(startCmd)
 
-	// kas task push
 	var pushMessage string
 	pushCmd := &cobra.Command{
 		Use:   "push <plan-file>",
@@ -829,17 +838,18 @@ func NewTaskCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := executeTaskPush(repoRoot, project, args[0], pushMessage, resolveStore(project)); err != nil {
-				return err
-			}
-			fmt.Printf("pushed: %s\n", args[0])
-			return nil
+			return withAuthoritativeStore(project, func(store taskstore.Store) error {
+				if err := executeTaskPush(repoRoot, project, args[0], pushMessage, store); err != nil {
+					return err
+				}
+				fmt.Printf("pushed: %s\n", args[0])
+				return nil
+			})
 		},
 	}
 	pushCmd.Flags().StringVar(&pushMessage, "message", "update from kas", "commit message for dirty changes")
 	planCmd.AddCommand(pushCmd)
 
-	// kas task pr
 	var prTitle string
 	prCmd := &cobra.Command{
 		Use:   "pr <plan-file>",
@@ -850,20 +860,21 @@ func NewTaskCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			url, err := executeTaskPR(repoRoot, project, args[0], prTitle, resolveStore(project))
-			if err != nil {
-				return err
-			}
-			if url != "" {
-				fmt.Println(url)
-			}
-			return nil
+			return withAuthoritativeStore(project, func(store taskstore.Store) error {
+				url, err := executeTaskPR(repoRoot, project, args[0], prTitle, store)
+				if err != nil {
+					return err
+				}
+				if url != "" {
+					fmt.Println(url)
+				}
+				return nil
+			})
 		},
 	}
 	prCmd.Flags().StringVar(&prTitle, "title", "", "PR title (default: task description)")
 	planCmd.AddCommand(prCmd)
 
-	// kas task merge
 	mergeCmd := &cobra.Command{
 		Use:   "merge <plan-file>",
 		Short: "merge the task branch into main and transition to done",
@@ -873,16 +884,17 @@ func NewTaskCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := executeTaskMerge(repoRoot, project, args[0], resolveStore(project)); err != nil {
-				return err
-			}
-			fmt.Printf("merged: %s → done\n", args[0])
-			return nil
+			return withAuthoritativeStore(project, func(store taskstore.Store) error {
+				if err := executeTaskMerge(repoRoot, project, args[0], store); err != nil {
+					return err
+				}
+				fmt.Printf("merged: %s → done\n", args[0])
+				return nil
+			})
 		},
 	}
 	planCmd.AddCommand(mergeCmd)
 
-	// kas task start-over
 	startOverCmd := &cobra.Command{
 		Use:   "start-over <plan-file>",
 		Short: "reset the task branch and transition back to planning",
@@ -892,16 +904,17 @@ func NewTaskCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := executeTaskStartOver(repoRoot, project, args[0], resolveStore(project)); err != nil {
-				return err
-			}
-			fmt.Printf("reset: %s → planning\n", args[0])
-			return nil
+			return withAuthoritativeStore(project, func(store taskstore.Store) error {
+				if err := executeTaskStartOver(repoRoot, project, args[0], store); err != nil {
+					return err
+				}
+				fmt.Printf("reset: %s → planning\n", args[0])
+				return nil
+			})
 		},
 	}
 	planCmd.AddCommand(startOverCmd)
 
-	// kq plan link-clickup
 	var linkProject string
 	linkClickUpCmd := &cobra.Command{
 		Use:   "link-clickup",
@@ -911,24 +924,18 @@ func NewTaskCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			store, project := resolveStoreConfig(repoProject)
-			if store == nil {
-				store, err = localSQLiteStore()
-				if err != nil {
-					return fmt.Errorf("open local task store: %w", err)
+			return withAuthoritativeStore(repoProject, func(store taskstore.Store) error {
+				project := repoProject
+				if linkProject != "" {
+					project = linkProject
 				}
-				defer store.Close()
-				project = repoProject
-			}
-			if linkProject != "" {
-				project = linkProject
-			}
-			n, err := executeTaskLinkClickUp(project, store)
-			if err != nil {
-				return err
-			}
-			fmt.Printf("linked %d plan(s) to ClickUp tasks\n", n)
-			return nil
+				n, err := executeTaskLinkClickUp(project, store)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("linked %d plan(s) to ClickUp tasks\n", n)
+				return nil
+			})
 		},
 	}
 	linkClickUpCmd.Flags().StringVar(&linkProject, "project", "", "project name (default: derived from current directory)")
@@ -937,65 +944,30 @@ func NewTaskCmd() *cobra.Command {
 	return planCmd
 }
 
-// resolveStoreConfig returns the remote store and project name from config.
-// Returns (nil, "") when no remote store is configured.
-func resolveStoreConfig(project string) (taskstore.Store, string) {
-	cfg := config.LoadConfig()
-	if cfg.DatabaseURL == "" {
-		return nil, ""
-	}
-	store, err := taskstore.NewStoreFromConfig(cfg.DatabaseURL, project)
-	if err != nil || store == nil {
-		return nil, ""
-	}
-	return store, project
-}
-
-// localSQLiteStore opens (or creates) the local SQLite task store at the
-// canonical path returned by taskstore.ResolvedDBPath(). Used as a fallback
-// when no remote store is configured.
-func localSQLiteStore() (taskstore.Store, error) {
-	dbPath := taskstore.ResolvedDBPath()
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		return nil, fmt.Errorf("create kasmos config dir: %w", err)
-	}
-	return taskstore.NewSQLiteStore(dbPath)
-}
-
-// loadTaskStateByProject loads task state using the store backend and a project name.
-// When store is nil, falls back to the local SQLite store.
+// loadTaskStateByProject loads task state using the authoritative store for the
+// current project when the caller does not provide one explicitly.
 func loadTaskStateByProject(project string, store taskstore.Store) (*taskstate.TaskState, error) {
 	if store == nil {
 		var err error
-		store, err = localSQLiteStore()
+		store, err = taskstore.OpenAuthoritativeStore(project)
 		if err != nil {
-			return nil, fmt.Errorf("open local task store: %w", err)
+			return nil, err
 		}
 	}
 	return taskstate.Load(store, project, "")
 }
 
-// newFSMByProject creates a TaskStateMachine backed by the given store and project name.
-// When store is nil, falls back to the local SQLite store.
+// newFSMByProject creates a TaskStateMachine backed by the authoritative store
+// for the given project when the caller does not provide one explicitly.
 func newFSMByProject(project string, store taskstore.Store) *taskfsm.TaskStateMachine {
 	if store == nil {
 		var err error
-		store, err = localSQLiteStore()
+		store, err = taskstore.OpenAuthoritativeStore(project)
 		if err != nil {
-			panic("newFSMByProject: open local task store: " + err.Error())
+			panic("newFSMByProject: open authoritative task store: " + err.Error())
 		}
 	}
 	return taskfsm.New(store, project, "")
-}
-
-// resolveStore returns the remote task store from config, or nil if not
-// configured or unreachable.
-func resolveStore(project string) taskstore.Store {
-	store, _ := resolveStoreConfig(project)
-	if store != nil && store.Ping() == nil {
-		return store
-	}
-	return nil
 }
 
 // resolveRepoInfo resolves the main repository root and derives the project

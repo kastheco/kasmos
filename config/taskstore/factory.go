@@ -1,7 +1,10 @@
 package taskstore
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/kastheco/kasmos/config"
 )
@@ -12,10 +15,72 @@ import (
 // The returned store uses lazy connection: the URL is validated syntactically
 // but no network connection is made until the first operation (or Ping).
 func NewStoreFromConfig(storeURL, project string) (Store, error) {
-	if storeURL == "" {
+	if strings.TrimSpace(storeURL) == "" {
 		return nil, nil // no remote store configured
 	}
-	return NewHTTPStore(storeURL, project), nil
+	return NewHTTPStoreWithOptions(HTTPStoreOptions{BaseURL: storeURL, Project: project}), nil
+}
+
+// OpenAuthoritativeStore opens the authoritative task store for the current
+// repo/project. When a remote task store is configured, it must be reachable —
+// callers do not silently fall back to a second local writer. When no remote
+// authority is configured, this returns the repo-root-backed SQLite store.
+func OpenAuthoritativeStore(project string) (Store, error) {
+	cfg := config.LoadConfig()
+	if strings.TrimSpace(cfg.DatabaseURL) == "" {
+		return OpenBackingSQLiteStore()
+	}
+
+	store, err := NewStoreFromConfig(cfg.DatabaseURL, project)
+	if err != nil {
+		return nil, fmt.Errorf("open authoritative task store for project %s: %w", project, err)
+	}
+	if err := store.Ping(); err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("open authoritative task store for project %s: %w", project, err)
+	}
+	return store, nil
+}
+
+// OpenAuthoritativeSignalGateway opens the authoritative signal gateway for the
+// current repo/project. Remote task-store authorities must be reachable; when a
+// remote authority is configured but does not expose signals, this fails fast
+// instead of silently writing to repo-local SQLite.
+func OpenAuthoritativeSignalGateway(project string) (SignalGateway, error) {
+	cfg := config.LoadConfig()
+	if strings.TrimSpace(cfg.DatabaseURL) == "" {
+		return openBackingSQLiteSignalGateway()
+	}
+
+	store, err := NewStoreFromConfig(cfg.DatabaseURL, project)
+	if err != nil {
+		return nil, fmt.Errorf("open authoritative signal gateway for project %s: %w", project, err)
+	}
+	if err := store.Ping(); err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("open authoritative signal gateway for project %s: %w", project, err)
+	}
+	_ = store.Close()
+
+	return nil, fmt.Errorf("open authoritative signal gateway for project %s: remote task store %q does not expose signal gateway access", project, strings.TrimSpace(cfg.DatabaseURL))
+}
+
+// OpenBackingSQLiteStore opens the repo-root-backed SQLite store used by the
+// daemon, embedded server bootstrap, and authoritative local fallback.
+func OpenBackingSQLiteStore() (Store, error) {
+	dbPath := ResolvedDBPath()
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		return nil, fmt.Errorf("create kasmos config dir: %w", err)
+	}
+	return NewSQLiteStore(dbPath)
+}
+
+func openBackingSQLiteSignalGateway() (SignalGateway, error) {
+	dbPath := ResolvedDBPath()
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		return nil, fmt.Errorf("create kasmos config dir: %w", err)
+	}
+	return NewSQLiteSignalGateway(dbPath)
 }
 
 // ResolvedDBPath returns the filesystem path that the factory would use for a

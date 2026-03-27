@@ -41,21 +41,34 @@ func trimFilename(filename string) string {
 	return strings.TrimSuffix(strings.TrimSpace(filename), ".md")
 }
 
+func resolveToolStore(project string, store taskstore.Store) (taskstore.Store, func(), error) {
+	if store != nil {
+		return store, func() {}, nil
+	}
+
+	resolved, err := taskstore.OpenAuthoritativeStore(project)
+	if err != nil {
+		return nil, nil, err
+	}
+	return resolved, func() { _ = resolved.Close() }, nil
+}
+
 func makeTaskListHandler(project string, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if store == nil {
-			return mcp.NewToolResultError("task_list: no task store configured"), nil
+		resolvedStore, closeStore, err := resolveToolStore(project, store)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_list: %v", err)), nil
 		}
+		defer closeStore()
 
 		statusFilter := strings.TrimSpace(req.GetString("status", ""))
 		var (
 			entries []taskstore.TaskEntry
-			err     error
 		)
 		if statusFilter != "" {
-			entries, err = store.ListByStatus(project, taskstore.Status(statusFilter))
+			entries, err = resolvedStore.ListByStatus(project, taskstore.Status(statusFilter))
 		} else {
-			entries, err = store.List(project)
+			entries, err = resolvedStore.List(project)
 		}
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_list: %v", err)), nil
@@ -83,9 +96,11 @@ func makeTaskListHandler(project string, store taskstore.Store) server.ToolHandl
 
 func makeTaskShowHandler(project string, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if store == nil {
-			return mcp.NewToolResultError("task_show: no task store configured"), nil
+		resolvedStore, closeStore, err := resolveToolStore(project, store)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_show: %v", err)), nil
 		}
+		defer closeStore()
 
 		filename, err := req.RequireString("filename")
 		if err != nil {
@@ -93,7 +108,7 @@ func makeTaskShowHandler(project string, store taskstore.Store) server.ToolHandl
 		}
 		filename = trimFilename(filename)
 
-		content, err := store.GetContent(project, filename)
+		content, err := resolvedStore.GetContent(project, filename)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_show: %v", err)), nil
 		}
@@ -106,9 +121,11 @@ func makeTaskShowHandler(project string, store taskstore.Store) server.ToolHandl
 
 func makeTaskCreateHandler(project string, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if store == nil {
-			return mcp.NewToolResultError("task_create: no task store configured"), nil
+		resolvedStore, closeStore, err := resolveToolStore(project, store)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_create: %v", err)), nil
 		}
+		defer closeStore()
 
 		name, err := req.RequireString("name")
 		if err != nil {
@@ -124,7 +141,7 @@ func makeTaskCreateHandler(project string, store taskstore.Store) server.ToolHan
 			branch = "plan/" + name
 		}
 
-		ps, err := taskstate.Load(store, project, "")
+		ps, err := taskstate.Load(resolvedStore, project, "")
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_create: %v", err)), nil
 		}
@@ -149,9 +166,11 @@ func makeTaskCreateHandler(project string, store taskstore.Store) server.ToolHan
 
 func makeTaskUpdateContentHandler(project string, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if store == nil {
-			return mcp.NewToolResultError("task_update_content: no task store configured"), nil
+		resolvedStore, closeStore, err := resolveToolStore(project, store)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_update_content: %v", err)), nil
 		}
+		defer closeStore()
 
 		filename, err := req.RequireString("filename")
 		if err != nil {
@@ -163,7 +182,7 @@ func makeTaskUpdateContentHandler(project string, store taskstore.Store) server.
 		}
 		filename = trimFilename(filename)
 
-		ps, err := taskstate.Load(store, project, "")
+		ps, err := taskstate.Load(resolvedStore, project, "")
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_update_content: %v", err)), nil
 		}
@@ -218,22 +237,22 @@ func normalizeTaskEvent(raw string) (taskfsm.Event, error) {
 	}
 }
 
-func forceStatusForEvent(event taskfsm.Event) (taskstate.Status, error) {
+func forceLifecycleForEvent(event taskfsm.Event) (taskstate.Status, taskstore.ExecutionState, error) {
 	switch event {
 	case taskfsm.PlanStart, taskfsm.StartOver, taskfsm.Reopen:
-		return taskstate.StatusPlanning, nil
+		return taskstate.StatusPlanning, taskstore.ExecutionState{}, nil
 	case taskfsm.PlannerFinished:
-		return taskstate.StatusReady, nil
+		return taskstate.StatusReady, taskfsm.TransitionExecutionState(event, taskfsm.StatusReady), nil
 	case taskfsm.ImplementStart, taskfsm.Reimplement, taskfsm.ReviewChangesRequested:
-		return taskstate.StatusImplementing, nil
+		return taskstate.StatusImplementing, taskstore.ExecutionState{}, nil
 	case taskfsm.ImplementFinished, taskfsm.RequestReview:
-		return taskstate.StatusReviewing, nil
+		return taskstate.StatusReviewing, taskstore.ExecutionState{}, nil
 	case taskfsm.ReviewApproved:
-		return taskstate.StatusDone, nil
+		return taskstate.StatusDone, taskstore.ExecutionState{}, nil
 	case taskfsm.Cancel:
-		return taskstate.StatusCancelled, nil
+		return taskstate.StatusCancelled, taskstore.ExecutionState{}, nil
 	default:
-		return "", fmt.Errorf("no forced target status defined for %q", event)
+		return "", taskstore.ExecutionState{}, fmt.Errorf("no forced target status defined for %q", event)
 	}
 }
 
@@ -254,9 +273,11 @@ func setPhaseTimestampForStatus(store taskstore.Store, project, filename string,
 
 func makeTaskTransitionHandler(project string, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if store == nil {
-			return mcp.NewToolResultError("task_transition: no task store configured"), nil
+		resolvedStore, closeStore, err := resolveToolStore(project, store)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_transition: %v", err)), nil
 		}
+		defer closeStore()
 
 		filename, err := req.RequireString("filename")
 		if err != nil {
@@ -275,28 +296,28 @@ func makeTaskTransitionHandler(project string, store taskstore.Store) server.Too
 		}
 
 		if force {
-			ps, loadErr := taskstate.Load(store, project, "")
+			ps, loadErr := taskstate.Load(resolvedStore, project, "")
 			if loadErr != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("task_transition: %v", loadErr)), nil
 			}
-			status, statusErr := forceStatusForEvent(event)
+			status, state, statusErr := forceLifecycleForEvent(event)
 			if statusErr != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("task_transition: %v", statusErr)), nil
 			}
-			if err := ps.ForceSetStatus(filename, status); err != nil {
+			if err := ps.ForceSetLifecycle(filename, status, state); err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("task_transition: %v", err)), nil
 			}
-			if err := setPhaseTimestampForStatus(store, project, filename, status); err != nil {
+			if err := setPhaseTimestampForStatus(resolvedStore, project, filename, status); err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("task_transition: %v", err)), nil
 			}
 		} else {
-			fsm := taskfsm.New(store, project, "")
+			fsm := taskfsm.New(resolvedStore, project, "")
 			if err := fsm.Transition(filename, event); err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("task_transition: %v", err)), nil
 			}
 		}
 
-		entry, err := store.Get(project, filename)
+		entry, err := resolvedStore.Get(project, filename)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_transition: %v", err)), nil
 		}

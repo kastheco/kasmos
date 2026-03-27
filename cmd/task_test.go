@@ -17,6 +17,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func writeTaskCommandConfig(t *testing.T, repoDir, body string) {
+	t.Helper()
+	configDir := filepath.Join(repoDir, ".kasmos")
+	require.NoError(t, os.MkdirAll(configDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(body), 0o644))
+}
+
 // setupTestPlanState creates an in-memory SQLite store pre-populated with three
 // test plans (ready, implementing, and cancelled) and returns the store, the
 // repo root, and the project name.
@@ -128,6 +135,22 @@ func TestPlanSetStatus_AcceptsMdAliasForCanonicalEntry(t *testing.T) {
 	assert.Equal(t, taskstore.StatusDone, entry.Status)
 }
 
+func TestPlanSetStatus_ManualReadyResetClearsPlannedPhase(t *testing.T) {
+	store, _, project := setupTestPlanState(t)
+	ps, err := taskstate.Load(store, project, "")
+	require.NoError(t, err)
+	require.NoError(t, ps.SetExecutionState("test-plan", taskstore.ExecutionState{Phase: "planned"}))
+
+	err = executeTaskSetStatus(project, "test-plan", "ready", true, store)
+	require.NoError(t, err)
+
+	reloaded, err := taskstate.Load(store, project, "")
+	require.NoError(t, err)
+	entry, ok := reloaded.Entry("test-plan")
+	require.True(t, ok)
+	assert.True(t, taskstate.IsDraftReady(entry))
+}
+
 func TestPlanTransition(t *testing.T) {
 	store, _, project := setupTestPlanState(t)
 
@@ -139,6 +162,22 @@ func TestPlanTransition(t *testing.T) {
 	// Invalid transition (plan is now in "planning" state)
 	_, err = executeTaskTransition(project, "test-plan", "review_approved", store)
 	assert.Error(t, err)
+}
+
+func TestPlanTransition_PlannerFinishedPreservesReadyCompatibility(t *testing.T) {
+	store, _, project := setupTestPlanState(t)
+
+	_, err := executeTaskTransition(project, "test-plan", "plan_start", store)
+	require.NoError(t, err)
+	newStatus, err := executeTaskTransition(project, "test-plan", "planner_finished", store)
+	require.NoError(t, err)
+	assert.Equal(t, "ready", newStatus)
+
+	ps, err := taskstate.Load(store, project, "")
+	require.NoError(t, err)
+	entry, ok := ps.Entry("test-plan")
+	require.True(t, ok)
+	assert.True(t, taskstate.IsPlannedReady(entry))
 }
 
 func TestPlanTransition_AcceptsMdAliasForCanonicalEntry(t *testing.T) {
@@ -169,6 +208,9 @@ func TestPlanCLI_EndToEnd(t *testing.T) {
 	// Force set back to ready
 	err = executeTaskSetStatus(project, "test-plan", "ready", true, store)
 	require.NoError(t, err)
+	ps, err := taskstate.Load(store, project, "")
+	require.NoError(t, err)
+	require.NoError(t, ps.SetExecutionState("test-plan", taskstore.ExecutionState{Phase: "planned"}))
 
 	// Implement with wave signal
 	err = executeTaskImplement(repoRoot, project, "test-plan", 2, store)
@@ -183,7 +225,7 @@ func TestPlanCLI_EndToEnd(t *testing.T) {
 	assert.Contains(t, names, "implement-wave-2-test-plan")
 
 	// Verify final status
-	ps, err := taskstate.Load(store, project, "")
+	ps, err = taskstate.Load(store, project, "")
 	require.NoError(t, err)
 	entry, _ := ps.Entry("test-plan")
 	assert.Equal(t, taskstate.Status("implementing"), entry.Status)
@@ -193,12 +235,15 @@ func TestPlanImplement(t *testing.T) {
 	store, repoRoot, project := setupTestPlanState(t)
 	signalsDir := filepath.Join(repoRoot, ".kasmos", "signals")
 	require.NoError(t, os.MkdirAll(signalsDir, 0o755))
+	ps, err := taskstate.Load(store, project, "")
+	require.NoError(t, err)
+	require.NoError(t, ps.SetExecutionState("test-plan", taskstore.ExecutionState{Phase: "planned"}))
 
-	err := executeTaskImplement(repoRoot, project, "test-plan", 1, store)
+	err = executeTaskImplement(repoRoot, project, "test-plan", 1, store)
 	require.NoError(t, err)
 
 	// Verify plan transitioned to implementing
-	ps, err := taskstate.Load(store, project, "")
+	ps, err = taskstate.Load(store, project, "")
 	require.NoError(t, err)
 	entry, _ := ps.Entry("test-plan")
 	assert.Equal(t, taskstate.Status("implementing"), entry.Status)
@@ -213,6 +258,14 @@ func TestPlanImplement(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "signal file should exist")
+}
+
+func TestPlanImplement_RejectsDraftReadyTask(t *testing.T) {
+	store, repoRoot, project := setupTestPlanState(t)
+
+	err := executeTaskImplement(repoRoot, project, "test-plan", 1, store)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ready but not yet planned")
 }
 
 func TestPlanRegister(t *testing.T) {
@@ -819,4 +872,42 @@ func TestPlanList_WithStore(t *testing.T) {
 	output = executeTaskListWithStore(srv.URL, "test-project", "cancelled")
 	assert.Contains(t, output, "cancelled.md")
 	assert.NotContains(t, output, "test.md")
+}
+
+func TestExecuteTaskCreate_UsesAuthoritativeHTTPStoreWhenStoreNil(t *testing.T) {
+	backend := taskstore.NewTestSQLiteStore(t)
+	srv := httptest.NewServer(taskstore.NewHandler(backend))
+	defer srv.Close()
+
+	repoDir := t.TempDir()
+	writeTaskCommandConfig(t, repoDir, fmt.Sprintf("database_url = %q\n", srv.URL))
+	t.Chdir(repoDir)
+
+	project := filepath.Base(repoDir)
+	require.NoError(t, executeTaskCreate(project, "shared-feature", "shared writer", "", "", "", nil))
+
+	appStore := taskstore.NewHTTPStore(srv.URL, project)
+	entry, err := appStore.Get(project, "shared-feature")
+	require.NoError(t, err)
+	assert.Equal(t, "shared writer", entry.Description)
+	assert.Equal(t, taskstore.StatusReady, entry.Status)
+}
+
+func TestExecuteTaskCreate_FailsFastWhenAuthoritativeStoreUnreachable(t *testing.T) {
+	repoDir := t.TempDir()
+	writeTaskCommandConfig(t, repoDir, "database_url = \"http://127.0.0.1:1\"\n")
+	t.Chdir(repoDir)
+
+	project := filepath.Base(repoDir)
+	err := executeTaskCreate(project, "should-not-diverge", "", "", "", "", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "task store unreachable")
+
+	backingStore, openErr := taskstore.OpenBackingSQLiteStore()
+	require.NoError(t, openErr)
+	defer backingStore.Close()
+
+	entries, listErr := backingStore.List(project)
+	require.NoError(t, listErr)
+	assert.Empty(t, entries)
 }

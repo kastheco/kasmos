@@ -2,9 +2,7 @@ package app
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -1051,11 +1049,7 @@ func (m *home) emitSelectedInstanceSignal(event taskfsm.Event, successToast stri
 	agentType := selected.AgentType
 	project := m.taskStoreProject
 	return func() tea.Msg {
-		dbPath := taskstore.ResolvedDBPath()
-		if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-			return manualSignalResultMsg{err: err}
-		}
-		gw, err := taskstore.NewSQLiteSignalGateway(dbPath)
+		gw, err := taskstore.OpenAuthoritativeSignalGateway(project)
 		if err != nil {
 			return manualSignalResultMsg{err: err}
 		}
