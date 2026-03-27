@@ -1720,6 +1720,43 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 			m.overlays.Show(tio)
 			return m, nil
 		}
+		selected := m.nav.GetSelectedInstance()
+		if selected != nil {
+			if !selected.Started() || selected.Paused() {
+				return m, nil
+			}
+			if !selected.TmuxAlive() {
+				m.toastManager.Error(fmt.Sprintf("session for '%s' is not running", selected.Title))
+				return m, m.toastTickCmd()
+			}
+			if config.NormalizeExecutionMode(string(selected.ExecutionMode)) == config.ExecutionModeHeadless {
+				m.toastManager.Info(fmt.Sprintf("%s is running in headless mode; attach is disabled", selected.Title))
+				return m, nil
+			}
+			// Queue the selected instance, then show the attach help overlay.
+			// Actual attach (via tea.Exec) happens in handleHelpState once the user
+			// dismisses the help screen - this keeps bubbletea's event loop free.
+			m.pendingAttachInstance = selected
+			m.showHelpScreen(helpTypeInstanceAttach{}, nil)
+			// If the overlay was skipped (already seen), showHelpScreen returns without
+			// setting m.state = stateHelp. In that case consume pendingAttachInstance
+			// immediately so the attach is not silently abandoned.
+			if m.state != stateHelp && m.pendingAttachInstance != nil {
+				pending := m.pendingAttachInstance
+				m.pendingAttachInstance = nil
+				if config.NormalizeExecutionMode(string(pending.ExecutionMode)) == config.ExecutionModeHeadless {
+					m.toastManager.Info(fmt.Sprintf("%s is running in headless mode; attach is disabled", pending.Title))
+					return m, nil
+				}
+				return m, tea.Exec(tmux.NewAttachExecCommand(pending), func(err error) tea.Msg {
+					if err != nil {
+						return err
+					}
+					return instanceChangedMsg{}
+				})
+			}
+			return m, nil
+		}
 		// Plan header or plan file: open plan context menu
 		if m.nav.IsSelectedPlanHeader() {
 			return m.openTaskContextMenu()
@@ -1729,40 +1766,6 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		}
 		if m.nav.NumInstances() == 0 {
 			return m, nil
-		}
-		selected := m.nav.GetSelectedInstance()
-		if selected == nil || !selected.Started() || selected.Paused() {
-			return m, nil
-		}
-		if !selected.TmuxAlive() {
-			m.toastManager.Error(fmt.Sprintf("session for '%s' is not running", selected.Title))
-			return m, m.toastTickCmd()
-		}
-		if config.NormalizeExecutionMode(string(selected.ExecutionMode)) == config.ExecutionModeHeadless {
-			m.toastManager.Info(fmt.Sprintf("%s is running in headless mode; attach is disabled", selected.Title))
-			return m, nil
-		}
-		// Queue the selected instance, then show the attach help overlay.
-		// Actual attach (via tea.Exec) happens in handleHelpState once the user
-		// dismisses the help screen — this keeps bubbletea's event loop free.
-		m.pendingAttachInstance = selected
-		m.showHelpScreen(helpTypeInstanceAttach{}, nil)
-		// If the overlay was skipped (already seen), showHelpScreen returns without
-		// setting m.state = stateHelp. In that case consume pendingAttachInstance
-		// immediately so the attach is not silently abandoned.
-		if m.state != stateHelp && m.pendingAttachInstance != nil {
-			pending := m.pendingAttachInstance
-			m.pendingAttachInstance = nil
-			if config.NormalizeExecutionMode(string(pending.ExecutionMode)) == config.ExecutionModeHeadless {
-				m.toastManager.Info(fmt.Sprintf("%s is running in headless mode; attach is disabled", pending.Title))
-				return m, nil
-			}
-			return m, tea.Exec(tmux.NewAttachExecCommand(pending), func(err error) tea.Msg {
-				if err != nil {
-					return err
-				}
-				return instanceChangedMsg{}
-			})
 		}
 		return m, nil
 	case keys.KeyFocusList:
@@ -1861,9 +1864,14 @@ func keyToBytes(msg tea.KeyPressMsg) []byte {
 
 	// Handle modifier combinations first.
 	if msg.Mod.Contains(tea.ModCtrl) {
+		ctrlCode := msg.Code
+		if key := msg.Key(); key.BaseCode != 0 {
+			ctrlCode = key.BaseCode
+		}
+		ctrlCode = unicode.ToLower(ctrlCode)
 		// Ctrl+letter → raw control character byte (0x01..0x1A).
-		if msg.Code >= 'a' && msg.Code <= 'z' {
-			return []byte{byte(msg.Code - 'a' + 1)}
+		if ctrlCode >= 'a' && ctrlCode <= 'z' {
+			return []byte{byte(ctrlCode - 'a' + 1)}
 		}
 	}
 	if msg.Mod.Contains(tea.ModShift) {

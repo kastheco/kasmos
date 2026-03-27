@@ -40,3 +40,37 @@ func TestClipboardMsg_ForwardsResponseToEmbeddedTerminal(t *testing.T) {
 	require.Len(t, sent, 1)
 	require.Equal(t, []byte(ansi.SetSystemClipboard("image-bytes")), sent[0])
 }
+
+func TestPasteMsg_ForwardsBracketedPasteToEmbeddedTerminal(t *testing.T) {
+	h := newTestHome()
+	term := session.NewDummyTerminal()
+	h.previewTerminal = term
+	h.state = stateFocusAgent
+
+	model, cmd := h.Update(tea.PasteMsg{Content: "hello"})
+	updated := model.(*home)
+
+	require.Nil(t, cmd)
+	require.Equal(t, stateFocusAgent, updated.state)
+
+	sent := term.SentKeys()
+	require.Len(t, sent, 1)
+	require.Equal(t, []byte("\x1b[200~hello\x1b[201~"), sent[0])
+}
+
+func TestPasteMsg_EmptyContentForwardsCtrlVToEmbeddedTerminal(t *testing.T) {
+	h := newTestHome()
+	term := session.NewDummyTerminal()
+	h.previewTerminal = term
+	h.state = stateFocusAgent
+
+	model, cmd := h.Update(tea.PasteMsg{Content: ""})
+	updated := model.(*home)
+
+	require.Nil(t, cmd)
+	require.Equal(t, stateFocusAgent, updated.state)
+
+	sent := term.SentKeys()
+	require.Len(t, sent, 1)
+	require.Equal(t, []byte{0x16}, sent[0])
+}

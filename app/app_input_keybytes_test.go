@@ -55,6 +55,14 @@ func TestKeyToBytes_CtrlShiftV(t *testing.T) {
 	require.Equal(t, []byte{0x16}, got, "Ctrl+Shift+V should produce Ctrl+V (0x16)")
 }
 
+func TestKeyToBytes_CtrlShiftUppercaseV(t *testing.T) {
+	msg := tea.KeyPressMsg{Code: 'V', Mod: tea.ModCtrl | tea.ModShift}
+
+	got := keyToBytes(msg)
+
+	require.Equal(t, []byte{0x16}, got, "Ctrl+Shift+V should still produce Ctrl+V when Code is uppercase")
+}
+
 func TestKeyToBytes_ShiftEnterUsesKittySequence(t *testing.T) {
 	msg := tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift}
 

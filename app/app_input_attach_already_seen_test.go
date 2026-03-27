@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/kastheco/kasmos/cmd/cmd_test"
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/session/tmux"
 	"github.com/kastheco/kasmos/ui"
@@ -92,4 +93,39 @@ func TestEnterKey_AttachHelpAlreadySeen_ExecsDirectly(t *testing.T) {
 
 	// pendingAttachInstance must be cleared — it was consumed by the direct Exec path.
 	require.Nil(t, h.pendingAttachInstance, "pendingAttachInstance must be cleared after direct Exec path")
+}
+
+// TestEnterKey_PlanAttachedInstance_Attaches verifies that Enter on an instance row
+// still attaches even when the instance belongs to a plan. Regression for grouped
+// task menus stealing Enter because instance rows also carry TaskFile metadata.
+func TestEnterKey_PlanAttachedInstance_Attaches(t *testing.T) {
+	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
+	state := &mockAppState{seen: 1 << 2}
+
+	h := &home{
+		ctx:          context.Background(),
+		state:        stateDefault,
+		appConfig:    config.DefaultConfig(),
+		nav:          ui.NewNavigationPanel(&spin),
+		menu:         ui.NewMenu(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager: overlay.NewToastManager(&spin),
+		overlays:     overlay.NewManager(),
+		appState:     state,
+	}
+
+	h.setupPlanState(t, "plan-attached-task", taskstate.StatusImplementing, "")
+
+	inst := newStartedInstanceWithMockTmux(t)
+	inst.TaskFile = "plan-attached-task"
+	h.nav.AddInstance(inst)()
+	require.True(t, h.nav.SelectInstance(inst), "precondition: plan-attached instance row must be selectable")
+
+	h.keySent = true
+	_, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	require.NotNil(t, cmd, "Enter on a plan-attached instance must attach, not open the task menu")
+	require.NotEqual(t, stateContextMenu, h.state, "Enter on an instance row must not open the task context menu")
+	require.Nil(t, h.pendingAttachInstance, "pendingAttachInstance must be cleared after direct attach exec path")
+	require.Nil(t, h.overlays.Current(), "instance attach should not leave a context menu overlay open")
 }
