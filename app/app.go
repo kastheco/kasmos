@@ -2097,6 +2097,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			return m, m.handleError(msg.err)
 		}
+		m.loadTaskState()
+		m.updateSidebarTasks()
+		m.updateInfoPane()
 		m.audit(auditlog.EventPromptSent, fmt.Sprintf("queued %s manually", msg.signalType),
 			auditlog.WithPlan(msg.planFile),
 			auditlog.WithInstance(msg.instanceTitle),

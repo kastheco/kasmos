@@ -1140,6 +1140,155 @@ func TestAdvanceReviewCycle_CapturesFeedback(t *testing.T) {
 	assert.Equal(t, "round six findings", entry.LatestReviewFeedback)
 }
 
+func TestManualRecovery_NoSelectionNoOp(t *testing.T) {
+	h := newTestHome()
+	h.taskStoreProject = "test"
+
+	assert.Nil(t, h.emitSelectedInstanceSignal(taskfsm.PlannerFinished, "planner finished signal queued"))
+
+	_, cmd := h.executeContextAction("advance_review_cycle")
+	assert.Nil(t, cmd)
+}
+
+func TestEmitSelectedInstanceSignal_QueuesExpectedGatewayRows(t *testing.T) {
+	tests := []struct {
+		name                  string
+		status                taskstate.Status
+		agentType             string
+		event                 taskfsm.Event
+		successToast          string
+		cachedContent         string
+		wantSignalType        string
+		wantPayloadBody       string
+		wantPersistedFeedback string
+	}{
+		{
+			name:           "planner finished",
+			status:         taskstate.StatusPlanning,
+			agentType:      session.AgentTypePlanner,
+			event:          taskfsm.PlannerFinished,
+			successToast:   "planner finished signal queued",
+			wantSignalType: "planner_finished",
+		},
+		{
+			name:           "architect finished",
+			status:         taskstate.StatusImplementing,
+			agentType:      session.AgentTypeElaborator,
+			event:          taskfsm.ArchitectFinished,
+			successToast:   "architect finished signal queued",
+			wantSignalType: "elaborator_finished",
+		},
+		{
+			name:           "implement finished",
+			status:         taskstate.StatusImplementing,
+			agentType:      session.AgentTypeCoder,
+			event:          taskfsm.ImplementFinished,
+			successToast:   "implement finished signal queued",
+			wantSignalType: "implement_finished",
+		},
+		{
+			name:                  "review approved",
+			status:                taskstate.StatusReviewing,
+			agentType:             session.AgentTypeReviewer,
+			event:                 taskfsm.ReviewApproved,
+			successToast:          "review approved signal queued",
+			cachedContent:         "ship it",
+			wantSignalType:        "review_approved",
+			wantPayloadBody:       "ship it",
+			wantPersistedFeedback: "ship it",
+		},
+		{
+			name:                  "review changes requested",
+			status:                taskstate.StatusReviewing,
+			agentType:             session.AgentTypeReviewer,
+			event:                 taskfsm.ReviewChangesRequested,
+			successToast:          "review changes requested signal queued",
+			cachedContent:         "please fix the failing edge case",
+			wantSignalType:        "review_changes_requested",
+			wantPayloadBody:       "please fix the failing edge case",
+			wantPersistedFeedback: "please fix the failing edge case",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			plansDir := filepath.Join(dir, "docs", "plans")
+			require.NoError(t, os.MkdirAll(plansDir, 0o755))
+			ps, err := newTestPlanState(t, plansDir)
+			require.NoError(t, err)
+
+			const planFile = "feature"
+			require.NoError(t, ps.Create(planFile, "feature", "plan/feature", "", time.Now()))
+			require.NoError(t, ps.ForceSetStatus(planFile, tt.status))
+
+			h := newTestHome()
+			h.taskState = ps
+			h.taskStateDir = plansDir
+			h.taskStoreProject = "test"
+			h.pendingReviewFeedback = make(map[string]string)
+			reviewer := &session.Instance{
+				Title:         tt.name,
+				Path:          dir,
+				Program:       "opencode",
+				TaskFile:      planFile,
+				AgentType:     tt.agentType,
+				CachedContent: tt.cachedContent,
+			}
+			h.nav.AddInstance(reviewer)
+			h.updateSidebarTasks()
+			h.nav.SelectInstance(reviewer)
+
+			cmd := h.emitSelectedInstanceSignal(tt.event, tt.successToast)
+			require.NotNil(t, cmd)
+			msg := cmd()
+			result, ok := msg.(manualSignalResultMsg)
+			require.True(t, ok)
+			require.NoError(t, result.err)
+			assert.Equal(t, tt.wantSignalType, result.signalType)
+			assert.Equal(t, tt.successToast, result.successToast)
+
+			signals := listPendingGatewaySignals(t, "test")
+			require.Len(t, signals, 1)
+			assert.Equal(t, planFile, signals[0].PlanFile)
+			assert.Equal(t, tt.wantSignalType, signals[0].SignalType)
+			assert.Equal(t, tt.wantPayloadBody, decodeSignalPayloadBody(t, signals[0].Payload))
+
+			entry, exists := h.taskState.Entry(planFile)
+			require.True(t, exists)
+			assert.Equal(t, tt.wantPersistedFeedback, entry.LatestReviewFeedback)
+
+			model, updateCmd := h.Update(msg)
+			updated := model.(*home)
+			require.NotNil(t, updateCmd)
+			assert.Contains(t, updated.toastManager.View(), tt.successToast)
+		})
+	}
+}
+
+func listPendingGatewaySignals(t *testing.T, project string) []taskstore.SignalEntry {
+	t.Helper()
+	gw, err := taskstore.NewSQLiteSignalGateway(taskstore.ResolvedDBPath())
+	require.NoError(t, err)
+	defer gw.Close() //nolint:errcheck
+	signals, err := gw.List(project, taskstore.SignalPending)
+	require.NoError(t, err)
+	return signals
+}
+
+func decodeSignalPayloadBody(t *testing.T, payload string) string {
+	t.Helper()
+	if payload == "" {
+		return ""
+	}
+	var body struct {
+		Body string `json:"body"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(payload), &body))
+	return body.Body
+}
+
 func TestMarkReviewChangesRequested_QueuesGatewaySignal(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)

@@ -172,7 +172,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		return m, m.emitSelectedInstanceSignal(taskfsm.PlannerFinished, "planner finished signal queued")
 
 	case "mark_architect_finished":
-		return m, m.emitSelectedInstanceSignal(taskfsm.Event("elaborator_finished"), "architect finished signal queued")
+		return m, m.emitSelectedInstanceSignal(taskfsm.ArchitectFinished, "architect finished signal queued")
 
 	case "mark_implement_finished":
 		return m, m.emitSelectedInstanceSignal(taskfsm.ImplementFinished, "implement finished signal queued")
@@ -191,17 +191,10 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		if err := m.captureSelectedReviewFeedback(selected); err != nil {
 			return m, m.handleError(err)
 		}
-		if err := m.taskState.IncrementReviewCycle(selected.TaskFile); err != nil {
+		cycle, err := m.incrementReviewCycleAndRefresh(selected.TaskFile, selected.Title, selected.AgentType)
+		if err != nil {
 			return m, m.handleError(err)
 		}
-		m.loadTaskState()
-		m.updateSidebarTasks()
-		cycle, _ := m.taskState.ReviewCycle(selected.TaskFile)
-		m.audit(auditlog.EventPlanTransition, fmt.Sprintf("advanced review cycle to %d", cycle),
-			auditlog.WithPlan(selected.TaskFile),
-			auditlog.WithInstance(selected.Title),
-			auditlog.WithAgent(selected.AgentType),
-		)
 		m.toastManager.Success(fmt.Sprintf("advanced review cycle to %d", cycle))
 		return m, m.toastTickCmd()
 
@@ -994,8 +987,55 @@ func (m *home) openTaskContextMenu() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func signalTypeString(event taskfsm.Event) string {
-	return string(event)
+func isReviewFeedbackSignal(event taskfsm.Event) bool {
+	return event == taskfsm.ReviewApproved || event == taskfsm.ReviewChangesRequested
+}
+
+func gatewaySignalTypeForEvent(event taskfsm.Event) (string, error) {
+	return taskfsm.GatewaySignalTypeForEvent(event)
+}
+
+func (m *home) prepareSelectedInstanceSignal(selected *session.Instance, event taskfsm.Event) (string, string, error) {
+	signalType, err := gatewaySignalTypeForEvent(event)
+	if err != nil {
+		return "", "", err
+	}
+	if !isReviewFeedbackSignal(event) {
+		return signalType, "", nil
+	}
+	if err := m.captureSelectedReviewFeedback(selected); err != nil {
+		return "", "", err
+	}
+	return signalType, m.reviewFeedbackPayload(selected), nil
+}
+
+func (m *home) incrementReviewCycleAndRefresh(planFile, instanceTitle, agentType string) (int, error) {
+	if planFile == "" {
+		return 0, fmt.Errorf("task file is empty")
+	}
+	if m.taskState == nil {
+		return 0, fmt.Errorf("task state is not loaded")
+	}
+	if err := m.taskState.IncrementReviewCycle(planFile); err != nil {
+		return 0, err
+	}
+	m.loadTaskState()
+	m.updateSidebarTasks()
+	m.updateInfoPane()
+	cycle, err := m.taskState.ReviewCycle(planFile)
+	if err != nil {
+		return 0, err
+	}
+
+	options := []auditlog.EventOption{auditlog.WithPlan(planFile)}
+	if instanceTitle != "" {
+		options = append(options, auditlog.WithInstance(instanceTitle))
+	}
+	if agentType != "" {
+		options = append(options, auditlog.WithAgent(agentType))
+	}
+	m.audit(auditlog.EventPlanTransition, fmt.Sprintf("advanced review cycle to %d", cycle), options...)
+	return cycle, nil
 }
 
 func (m *home) emitSelectedInstanceSignal(event taskfsm.Event, successToast string) tea.Cmd {
@@ -1003,14 +1043,9 @@ func (m *home) emitSelectedInstanceSignal(event taskfsm.Event, successToast stri
 	if selected == nil || selected.TaskFile == "" || m.taskStoreProject == "" {
 		return nil
 	}
-	if event == taskfsm.ReviewApproved || event == taskfsm.ReviewChangesRequested {
-		if err := m.captureSelectedReviewFeedback(selected); err != nil {
-			return m.handleError(err)
-		}
-	}
-	payload := ""
-	if event == taskfsm.ReviewApproved || event == taskfsm.ReviewChangesRequested {
-		payload = m.reviewFeedbackPayload(selected)
+	signalType, payload, err := m.prepareSelectedInstanceSignal(selected, event)
+	if err != nil {
+		return m.handleError(err)
 	}
 	planFile := selected.TaskFile
 	instanceTitle := selected.Title
@@ -1026,11 +1061,11 @@ func (m *home) emitSelectedInstanceSignal(event taskfsm.Event, successToast stri
 			return manualSignalResultMsg{err: err}
 		}
 		defer gw.Close() //nolint:errcheck
-		if err := taskfsm.EmitGatewaySignal(gw, project, signalTypeString(event), planFile, payload); err != nil {
+		if err := taskfsm.EmitGatewaySignal(gw, project, signalType, planFile, payload); err != nil {
 			return manualSignalResultMsg{err: err}
 		}
 		return manualSignalResultMsg{
-			signalType:    signalTypeString(event),
+			signalType:    signalType,
 			planFile:      planFile,
 			instanceTitle: instanceTitle,
 			agentType:     agentType,
