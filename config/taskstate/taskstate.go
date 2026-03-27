@@ -23,21 +23,63 @@ const (
 	StatusImplementing Status = "implementing"
 )
 
+// IsDraftReady returns true for a ready task that has not yet been promoted to
+// an executable planned state.
+func IsDraftReady(entry TaskEntry) bool {
+	return entry.Status == StatusReady && strings.TrimSpace(entry.ExecutionState.Phase) == ""
+}
+
+// IsPlannedReady returns true for a ready task whose execution metadata marks
+// it as planned and ready to execute.
+func IsPlannedReady(entry TaskEntry) bool {
+	return entry.Status == StatusReady && strings.TrimSpace(entry.ExecutionState.Phase) == "planned"
+}
+
+// IsActiveLifecycle returns true while a task is actively moving through its
+// lifecycle, excluding draft/planned-ready and terminal states.
+func IsActiveLifecycle(entry TaskEntry) bool {
+	switch entry.Status {
+	case StatusPlanning, StatusImplementing, StatusReviewing:
+		return true
+	default:
+		return false
+	}
+}
+
+// CanStartImplementation returns true when implementation can legitimately
+// start or resume from the current task entry.
+func CanStartImplementation(entry TaskEntry) bool {
+	return entry.Status == StatusPlanning || IsPlannedReady(entry) || entry.Status == StatusImplementing
+}
+
+func normalizeExecutionState(status Status, state taskstore.ExecutionState) taskstore.ExecutionState {
+	state.Phase = strings.TrimSpace(state.Phase)
+	state.ActiveAgentType = strings.TrimSpace(state.ActiveAgentType)
+	if status != StatusReady {
+		return taskstore.ExecutionState{}
+	}
+	if state.Phase != "planned" {
+		return taskstore.ExecutionState{}
+	}
+	return taskstore.ExecutionState{Phase: state.Phase}
+}
+
 type TaskEntry struct {
-	Status               Status    `json:"status"`
-	Description          string    `json:"description,omitempty"`
-	Branch               string    `json:"branch,omitempty"`
-	Topic                string    `json:"topic,omitempty"`
-	CreatedAt            time.Time `json:"created_at,omitempty"`
-	Implemented          string    `json:"implemented,omitempty"`
-	PlanningAt           time.Time `json:"planning_at,omitempty"`
-	ImplementingAt       time.Time `json:"implementing_at,omitempty"`
-	ReviewingAt          time.Time `json:"reviewing_at,omitempty"`
-	DoneAt               time.Time `json:"done_at,omitempty"`
-	Goal                 string    `json:"goal,omitempty"`
-	ClickUpTaskID        string    `json:"clickup_task_id,omitempty"`
-	ReviewCycle          int       `json:"review_cycle,omitempty"`
-	LatestReviewFeedback string    `json:"latest_review_feedback,omitempty"`
+	Status               Status                   `json:"status"`
+	ExecutionState       taskstore.ExecutionState `json:"execution_state,omitempty"`
+	Description          string                   `json:"description,omitempty"`
+	Branch               string                   `json:"branch,omitempty"`
+	Topic                string                   `json:"topic,omitempty"`
+	CreatedAt            time.Time                `json:"created_at,omitempty"`
+	Implemented          string                   `json:"implemented,omitempty"`
+	PlanningAt           time.Time                `json:"planning_at,omitempty"`
+	ImplementingAt       time.Time                `json:"implementing_at,omitempty"`
+	ReviewingAt          time.Time                `json:"reviewing_at,omitempty"`
+	DoneAt               time.Time                `json:"done_at,omitempty"`
+	Goal                 string                   `json:"goal,omitempty"`
+	ClickUpTaskID        string                   `json:"clickup_task_id,omitempty"`
+	ReviewCycle          int                      `json:"review_cycle,omitempty"`
+	LatestReviewFeedback string                   `json:"latest_review_feedback,omitempty"`
 }
 
 type TopicEntry struct {
@@ -101,6 +143,7 @@ func Load(store taskstore.Store, project, dir string) (*TaskState, error) {
 		}
 		ps.Plans[e.Filename] = TaskEntry{
 			Status:               Status(e.Status),
+			ExecutionState:       e.ExecutionState,
 			Description:          e.Description,
 			Branch:               e.Branch,
 			Topic:                e.Topic,
@@ -305,6 +348,12 @@ func (ps *TaskState) IsDone(filename string) bool {
 // ForceSetStatus overrides a plan's status regardless of FSM rules.
 // Validates the status is a known value. Use only for manual overrides (e.g. kq plan set-status --force).
 func (ps *TaskState) ForceSetStatus(filename string, status Status) error {
+	return ps.ForceSetLifecycle(filename, status, taskstore.ExecutionState{})
+}
+
+// ForceSetLifecycle overrides a plan's lifecycle status plus any persisted
+// execution metadata used to distinguish draft-ready from planned-ready tasks.
+func (ps *TaskState) ForceSetLifecycle(filename string, status Status, state taskstore.ExecutionState) error {
 	if !isValidStatus(status) {
 		return fmt.Errorf("invalid status %q: must be one of ready, planning, implementing, reviewing, done, cancelled", status)
 	}
@@ -313,6 +362,7 @@ func (ps *TaskState) ForceSetStatus(filename string, status Status) error {
 	}
 	entry := ps.Plans[filename]
 	entry.Status = status
+	entry.ExecutionState = normalizeExecutionState(status, state)
 	ps.Plans[filename] = entry
 	if err := ps.store.Update(ps.project, filename, ps.toTaskstoreEntry(filename, entry)); err != nil {
 		return fmt.Errorf("task store: %w", err)
@@ -337,6 +387,7 @@ func (ps *TaskState) setStatus(filename string, status Status) error {
 	}
 	entry := ps.Plans[filename]
 	entry.Status = status
+	entry.ExecutionState = taskstore.ExecutionState{}
 	ps.Plans[filename] = entry
 	if err := ps.store.Update(ps.project, filename, ps.toTaskstoreEntry(filename, entry)); err != nil {
 		return fmt.Errorf("task store: %w", err)
@@ -636,6 +687,7 @@ func isAlreadyExistsError(err error) bool {
 // writing to the store.
 func (ps *TaskState) toTaskstoreEntry(filename string, e TaskEntry) taskstore.TaskEntry {
 	return taskstore.TaskEntry{
+		ExecutionState:       e.ExecutionState,
 		Filename:             filename,
 		Status:               taskstore.Status(e.Status),
 		Description:          e.Description,
@@ -652,6 +704,27 @@ func (ps *TaskState) toTaskstoreEntry(filename string, e TaskEntry) taskstore.Ta
 		ReviewCycle:          e.ReviewCycle,
 		LatestReviewFeedback: e.LatestReviewFeedback,
 	}
+}
+
+// SetExecutionState updates a plan's fine-grained execution metadata and
+// persists it to the store.
+func (ps *TaskState) SetExecutionState(filename string, state taskstore.ExecutionState) error {
+	entry, ok := ps.Plans[filename]
+	if !ok {
+		return fmt.Errorf("plan not found: %s", filename)
+	}
+	entry.ExecutionState = normalizeExecutionState(entry.Status, state)
+	ps.Plans[filename] = entry
+	if writer, ok := ps.store.(taskstore.ExecutionStateWriter); ok {
+		if err := writer.SetExecutionState(ps.project, filename, entry.ExecutionState); err != nil {
+			return fmt.Errorf("task store: %w", err)
+		}
+		return nil
+	}
+	if err := ps.store.Update(ps.project, filename, ps.toTaskstoreEntry(filename, entry)); err != nil {
+		return fmt.Errorf("task store: %w", err)
+	}
+	return nil
 }
 
 // SetClickUpTaskID assigns a ClickUp task ID to an existing plan entry and

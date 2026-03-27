@@ -18,6 +18,14 @@ func newTestStore(t *testing.T) taskstore.Store {
 	return store
 }
 
+func newConcreteTestStore(t *testing.T) *taskstore.SQLiteStore {
+	t.Helper()
+	store, err := taskstore.NewSQLiteStore(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { store.Close() })
+	return store
+}
+
 func TestSQLiteStore_CreateAndGet(t *testing.T) {
 	store := newTestStore(t)
 	entry := taskstore.TaskEntry{
@@ -106,6 +114,63 @@ func TestSQLiteStore_Update(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, taskstore.StatusImplementing, got.Status)
 	assert.Equal(t, "updated description", got.Description)
+}
+
+func TestSQLiteStore_ExecutionStateRoundTrip(t *testing.T) {
+	store := newConcreteTestStore(t)
+	entry := taskstore.TaskEntry{
+		Filename: "execution-state",
+		Status:   taskstore.StatusImplementing,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           "wave_running",
+			ActiveAgentType: "coder",
+			ActiveWave:      2,
+		},
+	}
+	require.NoError(t, store.Create("proj", entry))
+
+	got, err := store.Get("proj", "execution-state")
+	require.NoError(t, err)
+	assert.Equal(t, entry.ExecutionState, got.ExecutionState)
+
+	entry.ExecutionState = taskstore.ExecutionState{
+		Phase:           "reviewing",
+		ActiveAgentType: "reviewer",
+		ActiveWave:      3,
+	}
+	require.NoError(t, store.Update("proj", "execution-state", entry))
+	require.NoError(t, store.SetExecutionState("proj", "execution-state", taskstore.ExecutionState{
+		Phase:           "fixing",
+		ActiveAgentType: "fixer",
+		ActiveWave:      4,
+	}))
+
+	got, err = store.Get("proj", "execution-state")
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.ExecutionState{
+		Phase:           "fixing",
+		ActiveAgentType: "fixer",
+		ActiveWave:      4,
+	}, got.ExecutionState)
+
+	entries, err := store.List("proj")
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, got.ExecutionState, entries[0].ExecutionState)
+}
+
+func TestSQLiteStore_ExecutionStateZeroValueDefaults(t *testing.T) {
+	store := newTestStore(t)
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{Filename: "defaults", Status: taskstore.StatusReady}))
+
+	got, err := store.Get("proj", "defaults")
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.ExecutionState{}, got.ExecutionState)
+
+	entries, err := store.List("proj")
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, taskstore.ExecutionState{}, entries[0].ExecutionState)
 }
 
 // TestSQLiteStore_UpdatePreservesContent verifies that Update does not

@@ -11,6 +11,9 @@ import (
 // Status represents the lifecycle state of a plan.
 type Status string
 
+// ExecutionPhase represents the persisted fine-grained execution substate.
+type ExecutionPhase string
+
 const (
 	StatusReady        Status = "ready"
 	StatusPlanning     Status = "planning"
@@ -18,6 +21,14 @@ const (
 	StatusReviewing    Status = "reviewing"
 	StatusDone         Status = "done"
 	StatusCancelled    Status = "cancelled"
+
+	ExecutionPhasePlanned                 ExecutionPhase = "planned"
+	ExecutionPhaseArchitecting            ExecutionPhase = "architecting"
+	ExecutionPhaseWaveRunning             ExecutionPhase = "wave_running"
+	ExecutionPhaseWaveWaiting             ExecutionPhase = "wave_waiting"
+	ExecutionPhaseSingleAgentImplementing ExecutionPhase = "single_agent_implementing"
+	ExecutionPhaseFixing                  ExecutionPhase = "fixing"
+	ExecutionPhaseReviewing               ExecutionPhase = "reviewing"
 )
 
 // Event represents a lifecycle transition trigger.
