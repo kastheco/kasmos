@@ -182,6 +182,9 @@ type SpawnOpts struct {
 	Feedback string
 	// Wave is the current wave number (used to set KASMOS_WAVE env var).
 	Wave int
+	// ReviewCycle is the 1-indexed review/fix round used for reviewer/fixer
+	// titles and prompts. Zero means "not a review-cycle agent".
+	ReviewCycle int
 }
 
 // AgentSpawner abstracts tmux session management so the daemon and TUI can

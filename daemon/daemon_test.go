@@ -450,16 +450,32 @@ func TestCoderSpawnOpts_ForwardsFeedbackAsPrompt(t *testing.T) {
 }
 
 func TestFixerSpawnOpts_UsesFixerPrompt(t *testing.T) {
-	repo := RepoEntry{Path: "/tmp/repo", Project: "repo"}
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("repo", taskstore.TaskEntry{Filename: "plan.md", ReviewCycle: 4}))
+	repo := RepoEntry{Path: "/tmp/repo", Project: "repo", Store: store}
 	opts := fixerSpawnOpts(repo, "plan.md", "plan/plan", "- [app.go:42] address reviewer feedback")
 
 	assert.Contains(t, opts.Prompt, "Address reviewer feedback for plan: plan.md")
+	assert.Contains(t, opts.Prompt, "Current fix round: 4")
 	assert.Contains(t, opts.Prompt, "not an implementer")
 	assert.Contains(t, opts.Prompt, "address reviewer feedback")
 	assert.NotContains(t, opts.Prompt, "execute all tasks sequentially")
 	assert.Equal(t, "- [app.go:42] address reviewer feedback", opts.Feedback)
 	assert.Equal(t, "/tmp/repo", opts.RepoPath)
 	assert.Equal(t, "plan/plan", opts.Branch)
+	assert.Equal(t, 4, opts.ReviewCycle)
+}
+
+func TestReviewerSpawnOpts_UsesReviewRoundPrompt(t *testing.T) {
+	repo := RepoEntry{Path: "/tmp/repo", Project: "repo"}
+	entry := taskstore.TaskEntry{Filename: "plan.md", Branch: "plan/plan", ReviewCycle: 5, LatestReviewFeedback: "round 5 findings"}
+	opts := reviewerSpawnOpts(repo, entry)
+
+	assert.Equal(t, "/tmp/repo", opts.RepoPath)
+	assert.Equal(t, "plan/plan", opts.Branch)
+	assert.Equal(t, 6, opts.ReviewCycle)
+	assert.Contains(t, opts.Prompt, "Current review round: 6")
+	assert.Contains(t, opts.Prompt, "round 5 findings")
 }
 
 func TestSharedWorktreePaths(t *testing.T) {

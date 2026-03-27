@@ -324,6 +324,21 @@ func instanceKeyForTask(repoPath, planFile, agentType string, waveNumber, taskNu
 	return repoPath + ":" + planFile + ":" + agentType
 }
 
+func sharedWorktreeAgentTitle(planName, agentType string, reviewCycle int) string {
+	switch agentType {
+	case session.AgentTypeReviewer:
+		if reviewCycle < 1 {
+			reviewCycle = 1
+		}
+		return fmt.Sprintf("%s-review-%d", planName, reviewCycle)
+	case session.AgentTypeFixer:
+		if reviewCycle > 0 {
+			return fmt.Sprintf("%s-fix-%d", planName, reviewCycle)
+		}
+	}
+	return fmt.Sprintf("%s-%s", planName, agentType)
+}
+
 // SpawnReviewer launches a reviewer agent in the plan's shared worktree.
 func (s *TmuxSpawner) SpawnReviewer(ctx context.Context, opts loop.SpawnOpts) error {
 	s.logger.Info("spawn reviewer", "plan", opts.PlanFile, "wave", opts.Wave)
@@ -550,18 +565,19 @@ func (s *TmuxSpawner) spawnInSharedWorktree(_ context.Context, opts loop.SpawnOp
 	}
 
 	planName := taskstate.DisplayName(opts.PlanFile)
-	title := fmt.Sprintf("%s-%s", planName, agentType)
+	title := sharedWorktreeAgentTitle(planName, agentType, opts.ReviewCycle)
 	program := opts.Program
 	if program == "" {
 		program = "opencode"
 	}
 
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:     title,
-		Path:      opts.RepoPath,
-		Program:   program,
-		AgentType: agentType,
-		TaskFile:  opts.PlanFile,
+		Title:       title,
+		Path:        opts.RepoPath,
+		Program:     program,
+		AgentType:   agentType,
+		TaskFile:    opts.PlanFile,
+		ReviewCycle: opts.ReviewCycle,
 	})
 	if err != nil {
 		return fmt.Errorf("TmuxSpawner.%s: create instance: %w", agentType, err)

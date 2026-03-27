@@ -78,6 +78,13 @@ func TestTmuxSpawner_instanceKey(t *testing.T) {
 	assert.Equal(t, "/repo:plan.md:coder:w2:t3", instanceKeyForTask("/repo", "plan.md", "coder", 2, 3))
 }
 
+func TestSharedWorktreeAgentTitle_UsesReviewAndFixCycles(t *testing.T) {
+	assert.Equal(t, "feature-review-1", sharedWorktreeAgentTitle("feature", session.AgentTypeReviewer, 0))
+	assert.Equal(t, "feature-review-6", sharedWorktreeAgentTitle("feature", session.AgentTypeReviewer, 6))
+	assert.Equal(t, "feature-fix-5", sharedWorktreeAgentTitle("feature", session.AgentTypeFixer, 5))
+	assert.Equal(t, "feature-coder", sharedWorktreeAgentTitle("feature", session.AgentTypeCoder, 0))
+}
+
 func TestTmuxSpawner_KillWaveAgents(t *testing.T) {
 	s := NewTmuxSpawner()
 	s.hasAttachedClients = func(_ cmd.Executor, _ string) bool { return false }

@@ -21,6 +21,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
@@ -774,15 +775,20 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		}
 		return entry.Branch
 	}
+	entryFor := func(planFile string) taskstore.TaskEntry {
+		if e.Store == nil {
+			return taskstore.TaskEntry{}
+		}
+		entry, err := e.Store.Get(e.Project, planFile)
+		if err != nil {
+			return taskstore.TaskEntry{}
+		}
+		return entry
+	}
 
 	switch a := action.(type) {
 	case loop.SpawnReviewerAction:
-		opts := loop.SpawnOpts{
-			PlanFile: a.PlanFile,
-			RepoPath: e.Path,
-			Project:  e.Project,
-			Branch:   branchFor(a.PlanFile),
-		}
+		opts := reviewerSpawnOpts(e, entryFor(a.PlanFile))
 		if err := d.spawner.SpawnReviewer(ctx, opts); err != nil {
 			d.logger.Error("spawn reviewer failed", "plan", a.PlanFile, "err", err)
 			return err
@@ -1061,14 +1067,37 @@ func coderSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 	}
 }
 
-func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOpts {
+func reviewerSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
+	reviewRound := entry.ReviewCycle + 1
+	if reviewRound < 1 {
+		reviewRound = 1
+	}
+	planName := taskstate.DisplayName(entry.Filename)
 	return loop.SpawnOpts{
-		PlanFile: planFile,
-		RepoPath: e.Path,
-		Project:  e.Project,
-		Branch:   branch,
-		Prompt:   orchestration.BuildFixerPrompt(planFile, feedback, 1),
-		Feedback: feedback,
+		PlanFile:    entry.Filename,
+		RepoPath:    e.Path,
+		Project:     e.Project,
+		Branch:      entry.Branch,
+		ReviewCycle: reviewRound,
+		Prompt:      scaffold.LoadReviewPrompt(entry.Filename, planName, reviewRound, entry.LatestReviewFeedback),
+	}
+}
+
+func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOpts {
+	reviewCycle := 1
+	if e.Store != nil {
+		if entry, err := e.Store.Get(e.Project, planFile); err == nil && entry.ReviewCycle > 0 {
+			reviewCycle = entry.ReviewCycle
+		}
+	}
+	return loop.SpawnOpts{
+		PlanFile:    planFile,
+		RepoPath:    e.Path,
+		Project:     e.Project,
+		Branch:      branch,
+		ReviewCycle: reviewCycle,
+		Prompt:      orchestration.BuildFixerPrompt(planFile, feedback, reviewCycle),
+		Feedback:    feedback,
 	}
 }
 
