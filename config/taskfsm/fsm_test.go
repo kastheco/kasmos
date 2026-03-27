@@ -185,6 +185,58 @@ func TestFSM_TransitionSkipsTimestampForNonPhaseStatuses(t *testing.T) {
 	assert.True(t, entry.DoneAt.IsZero())
 }
 
+func TestTaskStateMachine_PlannerFinishedMarksPlannedReady(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	dir := t.TempDir()
+
+	ps, err := taskstate.Load(store, "test-proj", dir)
+	require.NoError(t, err)
+	require.NoError(t, ps.Register("test", "test plan", "plan/test", time.Now()))
+
+	fsm := New(store, "test-proj", dir)
+	require.NoError(t, fsm.Transition("test", PlanStart))
+	require.NoError(t, fsm.Transition("test", PlannerFinished))
+
+	reloaded, err := taskstate.Load(store, "test-proj", dir)
+	require.NoError(t, err)
+	entry, ok := reloaded.Entry("test")
+	require.True(t, ok)
+	assert.Equal(t, taskstate.StatusReady, entry.Status)
+	assert.True(t, taskstate.IsPlannedReady(entry))
+	assert.False(t, taskstate.IsDraftReady(entry))
+}
+
+func TestTaskStateMachine_RecoveryTransitionsClearPlannedReadyPhase(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	dir := t.TempDir()
+	const project = "test-proj"
+
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: "reopen-plan",
+		Status:   taskstore.StatusCancelled,
+		ExecutionState: taskstore.ExecutionState{
+			Phase: string(ExecutionPhasePlanned),
+		},
+	}))
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: "start-over-plan",
+		Status:   taskstore.StatusDone,
+		ExecutionState: taskstore.ExecutionState{
+			Phase: string(ExecutionPhasePlanned),
+		},
+	}))
+
+	fsm := New(store, project, dir)
+	require.NoError(t, fsm.Transition("reopen-plan", Reopen))
+	require.NoError(t, fsm.Transition("start-over-plan", StartOver))
+
+	for _, filename := range []string{"reopen-plan", "start-over-plan"} {
+		entry, err := store.Get(project, filename)
+		require.NoError(t, err)
+		assert.Empty(t, entry.ExecutionState.Phase, filename)
+	}
+}
+
 func TestMapLegacyStatus(t *testing.T) {
 	tests := []struct {
 		name string

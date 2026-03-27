@@ -186,6 +186,9 @@ func executeTaskImplement(repoRoot, project, planFile string, wave int, store ta
 	if !ok {
 		return fmt.Errorf("task not found: %s", planFile)
 	}
+	if taskstate.IsDraftReady(entry) {
+		return fmt.Errorf("task is ready but not yet planned: %s", planFile)
+	}
 	current := taskfsm.Status(entry.Status)
 	// If still in planning, finish that phase first (→ ready).
 	if current == taskfsm.StatusPlanning {
@@ -374,6 +377,9 @@ func executeTaskStart(repoRoot, project, planFile string, store taskstore.Store)
 	entry, ok := ps.Entry(planFile)
 	if !ok {
 		return "", fmt.Errorf("task not found: %s", planFile)
+	}
+	if taskstate.IsDraftReady(entry) {
+		return "", fmt.Errorf("task is ready but not yet planned: %s", planFile)
 	}
 
 	current := taskfsm.Status(entry.Status)

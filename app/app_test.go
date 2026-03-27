@@ -2008,6 +2008,9 @@ func TestTaskContextMenu_HasGroupedSubMenus(t *testing.T) {
 func TestTaskContextMenu_ReadyStatus_StartGroupHasAllOptions(t *testing.T) {
 	h := newTestHome()
 	h.setupPlanState(t, "ready-task", taskstate.StatusReady, "")
+	entry := h.taskState.Plans["ready-task"]
+	entry.ExecutionState = taskstore.ExecutionState{Phase: "planned"}
+	h.taskState.Plans["ready-task"] = entry
 	h.nav.SelectByID(ui.SidebarPlanPrefix + "ready-task")
 
 	model, _ := h.openTaskContextMenu()
@@ -2036,4 +2039,31 @@ func TestTaskContextMenu_ReadyStatus_StartGroupHasAllOptions(t *testing.T) {
 	assert.Contains(t, startActions, "start_implement_direct", "start group must contain start_implement_direct for ready status")
 	assert.Contains(t, startActions, "start_solo", "start group must contain start_solo for ready status")
 	assert.Contains(t, startActions, "start_review", "start group must contain start_review for ready status")
+}
+
+func TestTaskContextMenu_DraftReadyStatus_OnlyShowsPlanningStart(t *testing.T) {
+	h := newTestHome()
+	h.setupPlanState(t, "draft-ready-task", taskstate.StatusReady, "")
+	h.nav.SelectByID(ui.SidebarPlanPrefix + "draft-ready-task")
+
+	model, _ := h.openTaskContextMenu()
+	updated := model.(*home)
+	cm, ok := updated.overlays.Current().(*overlay.ContextMenu)
+	require.True(t, ok, "current overlay must be a ContextMenu")
+
+	var startGroup *overlay.ContextMenuItem
+	for _, item := range cm.Items() {
+		if item.Label == "start" {
+			itemCopy := item
+			startGroup = &itemCopy
+			break
+		}
+	}
+	require.NotNil(t, startGroup, "task menu for ready status must have a 'start' group")
+
+	startActions := make([]string, 0, len(startGroup.Children))
+	for _, child := range startGroup.Children {
+		startActions = append(startActions, child.Action)
+	}
+	assert.Equal(t, []string{"start_plan"}, startActions)
 }

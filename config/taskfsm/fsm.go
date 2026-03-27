@@ -105,6 +105,15 @@ func ApplyTransition(current Status, event Event) (Status, error) {
 	return next, nil
 }
 
+// TransitionExecutionState returns the persisted execution metadata that should
+// accompany a successful lifecycle transition.
+func TransitionExecutionState(event Event, next Status) taskstore.ExecutionState {
+	if next == StatusReady && event == PlannerFinished {
+		return taskstore.ExecutionState{Phase: string(ExecutionPhasePlanned)}
+	}
+	return taskstore.ExecutionState{}
+}
+
 // TaskStateMachine is the sole writer of plan state. All plan status mutations
 // must flow through Transition(). The store handles concurrency via SQLite.
 type TaskStateMachine struct {
@@ -140,8 +149,7 @@ func (m *TaskStateMachine) Transition(planFile string, event Event) error {
 	if err != nil {
 		return err
 	}
-	// ForceSetStatus writes through to the store.
-	if err := ps.ForceSetStatus(planFile, taskstate.Status(newStatus)); err != nil {
+	if err := ps.ForceSetLifecycle(planFile, taskstate.Status(newStatus), TransitionExecutionState(event, newStatus)); err != nil {
 		return err
 	}
 	if phase, ok := phaseNameForStatus(newStatus); ok {

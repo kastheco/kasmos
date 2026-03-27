@@ -282,6 +282,33 @@ func TestCreatePlanUngrouped(t *testing.T) {
 	assert.Equal(t, "", entry.Topic)
 }
 
+func TestCreatePlan_StartsDraftReady(t *testing.T) {
+	ps := newTestPS(t)
+
+	require.NoError(t, ps.Create("draft", "draft task", "plan/draft", "", time.Now().UTC()))
+
+	entry, ok := ps.Entry("draft")
+	require.True(t, ok)
+	assert.Equal(t, StatusReady, entry.Status)
+	assert.True(t, IsDraftReady(entry))
+	assert.False(t, IsPlannedReady(entry))
+	assert.Equal(t, taskstore.ExecutionState{}, entry.ExecutionState)
+}
+
+func TestForceSetStatus_ClearsPlannedReadyExecutionState(t *testing.T) {
+	ps := newTestPS(t)
+
+	require.NoError(t, ps.Create("draft", "draft task", "plan/draft", "", time.Now().UTC()))
+	require.NoError(t, ps.SetExecutionState("draft", taskstore.ExecutionState{Phase: "planned"}))
+	require.NoError(t, ps.ForceSetStatus("draft", StatusReady))
+
+	entry, ok := ps.Entry("draft")
+	require.True(t, ok)
+	assert.True(t, IsDraftReady(entry))
+	assert.False(t, IsPlannedReady(entry))
+	assert.Equal(t, taskstore.ExecutionState{}, entry.ExecutionState)
+}
+
 func TestHasRunningCoderInTopic(t *testing.T) {
 	ps := &TaskState{
 		Dir: "/tmp",

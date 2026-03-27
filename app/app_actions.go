@@ -685,6 +685,9 @@ func (m *home) fsmSetImplementing(planFile string) error {
 	if !ok {
 		return fmt.Errorf("task not found: %s", planFile)
 	}
+	if taskstate.IsDraftReady(entry) {
+		return fmt.Errorf("task is ready but not yet planned: %s", planFile)
+	}
 	current := taskfsm.Status(entry.Status)
 	if current == taskfsm.StatusImplementing {
 		return nil // already implementing (re-spawning coder), no status change
@@ -893,7 +896,7 @@ func (m *home) openTaskContextMenu() (tea.Model, tea.Cmd) {
 			// Offer every forward lifecycle stage from the current state so the
 			// user can manually advance through plan → implement → review → done.
 			switch entry.Status {
-			case taskstate.StatusReady, taskstate.StatusPlanning:
+			case taskstate.StatusPlanning:
 				startItems = append(startItems,
 					overlay.ContextMenuItem{Label: "start planning", Action: "start_plan"},
 					overlay.ContextMenuItem{Label: "start implement", Action: "start_implement"},
@@ -901,6 +904,18 @@ func (m *home) openTaskContextMenu() (tea.Model, tea.Cmd) {
 					overlay.ContextMenuItem{Label: "start solo agent", Action: "start_solo"},
 					overlay.ContextMenuItem{Label: "start review", Action: "start_review"},
 				)
+			case taskstate.StatusReady:
+				startItems = append(startItems,
+					overlay.ContextMenuItem{Label: "start planning", Action: "start_plan"},
+				)
+				if taskstate.IsPlannedReady(entry) {
+					startItems = append(startItems,
+						overlay.ContextMenuItem{Label: "start implement", Action: "start_implement"},
+						overlay.ContextMenuItem{Label: "implement directly", Action: "start_implement_direct"},
+						overlay.ContextMenuItem{Label: "start solo agent", Action: "start_solo"},
+						overlay.ContextMenuItem{Label: "start review", Action: "start_review"},
+					)
+				}
 			case taskstate.StatusImplementing:
 				startItems = append(startItems,
 					overlay.ContextMenuItem{Label: "start implement", Action: "start_implement"},
