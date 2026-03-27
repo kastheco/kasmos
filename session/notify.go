@@ -1,6 +1,7 @@
 package session
 
 import (
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -8,7 +9,11 @@ import (
 
 // NotificationsEnabled controls whether desktop notifications are sent.
 // Set from config at startup.
-var NotificationsEnabled = true
+var NotificationsEnabled = defaultNotificationsEnabled()
+
+func defaultNotificationsEnabled() bool {
+	return !strings.HasSuffix(os.Args[0], ".test")
+}
 
 // SendNotification fires a desktop notification. The underlying command is
 // started but not awaited — callers do not block on OS notification delivery.
