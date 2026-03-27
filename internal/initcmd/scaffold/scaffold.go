@@ -81,6 +81,79 @@ func writePerRoleProject(dir, harnessName string, agents []harness.AgentConfig, 
 	return results, nil
 }
 
+// claudeMCPJSON is the default .claude/.mcp.json content registering the kasmos MCP server.
+const claudeMCPJSON = `{
+  "mcpServers": {
+    "kasmos": {
+      "type": "http",
+      "url": "http://127.0.0.1:7434/mcp"
+    }
+  }
+}
+`
+
+// WriteClaudeMCPConfig writes .claude/.mcp.json registering the kasmos MCP server.
+// Respects force: if force is false and the file already exists it is skipped.
+func WriteClaudeMCPConfig(dir string, force bool) (WriteResult, error) {
+	claudeDir := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		return WriteResult{}, fmt.Errorf("create .claude: %w", err)
+	}
+	dest := filepath.Join(claudeDir, ".mcp.json")
+	written, err := writeFile(dest, []byte(claudeMCPJSON), force)
+	if err != nil {
+		return WriteResult{}, fmt.Errorf("write .claude/.mcp.json: %w", err)
+	}
+	rel, relErr := filepath.Rel(dir, dest)
+	if relErr != nil {
+		rel = dest
+	}
+	return WriteResult{Path: rel, Created: written}, nil
+}
+
+// EnsureClaudeMCPEntry patches .claude/.mcp.json to guarantee the kasmos MCP server
+// entry is present. Existing servers added by the user are preserved.
+func EnsureClaudeMCPEntry(dir string) error {
+	dest := filepath.Join(dir, ".claude", ".mcp.json")
+
+	var current map[string]any
+	if data, err := os.ReadFile(dest); err == nil {
+		if jsonErr := json.Unmarshal(data, &current); jsonErr != nil {
+			// Unparseable — start fresh so we don't leave a broken file.
+			current = nil
+		}
+	}
+	if current == nil {
+		current = map[string]any{}
+	}
+
+	servers, _ := current["mcpServers"].(map[string]any)
+	if servers == nil {
+		servers = map[string]any{}
+		current["mcpServers"] = servers
+	}
+
+	if _, exists := servers["kasmos"]; exists {
+		return nil // already registered — nothing to do
+	}
+
+	servers["kasmos"] = map[string]any{
+		"type": "http",
+		"url":  "http://127.0.0.1:7434/mcp",
+	}
+
+	updated, err := json.MarshalIndent(current, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal .claude/.mcp.json: %w", err)
+	}
+	updated = append(updated, '\n')
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return fmt.Errorf("create .claude: %w", err)
+	}
+	return os.WriteFile(dest, updated, 0o644)
+}
+
 // WriteClaudeProject scaffolds .claude/ project files.
 func WriteClaudeProject(dir string, agents []harness.AgentConfig, selectedTools []string, force bool) ([]WriteResult, error) {
 	results, err := writePerRoleProject(dir, "claude", agents, selectedTools, force)
@@ -94,7 +167,16 @@ func WriteClaudeProject(dir string, agents []harness.AgentConfig, selectedTools 
 	if err != nil {
 		return nil, err
 	}
-	return append(results, staticResults...), nil
+	results = append(results, staticResults...)
+
+	// Write .claude/.mcp.json registering the kasmos MCP server.
+	mcpResult, err := WriteClaudeMCPConfig(dir, force)
+	if err != nil {
+		return nil, err
+	}
+	results = append(results, mcpResult)
+
+	return results, nil
 }
 
 // renderOpenCodeConfig reads the embedded opencode.jsonc template and substitutes
@@ -773,6 +855,12 @@ func SyncScaffold(dir string, agents []harness.AgentConfig) ([]WriteResult, erro
 				return results, fmt.Errorf("sync %s static agents: %w", harnessName, err)
 			}
 			harnessResults = append(harnessResults, staticResults...)
+
+			if harnessName == "claude" {
+				if err := EnsureClaudeMCPEntry(dir); err != nil {
+					return results, fmt.Errorf("sync claude .mcp.json: %w", err)
+				}
+			}
 		}
 
 		results = append(results, harnessResults...)

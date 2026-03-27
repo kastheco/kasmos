@@ -60,6 +60,105 @@ func TestScaffoldClaudeProject(t *testing.T) {
 	assert.FileExists(t, filepath.Join(dir, ".claude", "agents", "coder.md"))
 	assert.FileExists(t, filepath.Join(dir, ".claude", "agents", "reviewer.md"))
 	assert.NoFileExists(t, filepath.Join(dir, ".claude", "agents", "planner.md"))
+
+	// MCP config must be written alongside agent files.
+	mcpPath := filepath.Join(dir, ".claude", ".mcp.json")
+	assert.FileExists(t, mcpPath)
+	data, err := os.ReadFile(mcpPath)
+	require.NoError(t, err)
+	var cfg map[string]any
+	require.NoError(t, json.Unmarshal(data, &cfg))
+	servers, ok := cfg["mcpServers"].(map[string]any)
+	require.True(t, ok, "mcpServers key must be present")
+	kasmos, ok := servers["kasmos"].(map[string]any)
+	require.True(t, ok, "kasmos entry must be present")
+	assert.Equal(t, "http", kasmos["type"])
+	assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
+}
+
+func TestWriteClaudeMCPConfig(t *testing.T) {
+	t.Run("creates file with kasmos entry", func(t *testing.T) {
+		dir := t.TempDir()
+		result, err := WriteClaudeMCPConfig(dir, false)
+		require.NoError(t, err)
+		assert.True(t, result.Created)
+		assert.FileExists(t, filepath.Join(dir, ".claude", ".mcp.json"))
+	})
+
+	t.Run("skips existing file when force=false", func(t *testing.T) {
+		dir := t.TempDir()
+		claudeDir := filepath.Join(dir, ".claude")
+		require.NoError(t, os.MkdirAll(claudeDir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(claudeDir, ".mcp.json"), []byte(`{"mcpServers":{}}`), 0o644))
+
+		result, err := WriteClaudeMCPConfig(dir, false)
+		require.NoError(t, err)
+		assert.False(t, result.Created)
+	})
+
+	t.Run("overwrites existing file when force=true", func(t *testing.T) {
+		dir := t.TempDir()
+		claudeDir := filepath.Join(dir, ".claude")
+		require.NoError(t, os.MkdirAll(claudeDir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(claudeDir, ".mcp.json"), []byte(`{"mcpServers":{}}`), 0o644))
+
+		result, err := WriteClaudeMCPConfig(dir, true)
+		require.NoError(t, err)
+		assert.True(t, result.Created)
+
+		data, err := os.ReadFile(filepath.Join(claudeDir, ".mcp.json"))
+		require.NoError(t, err)
+		var cfg map[string]any
+		require.NoError(t, json.Unmarshal(data, &cfg))
+		servers := cfg["mcpServers"].(map[string]any)
+		assert.Contains(t, servers, "kasmos")
+	})
+}
+
+func TestEnsureClaudeMCPEntry(t *testing.T) {
+	t.Run("creates file when missing", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, EnsureClaudeMCPEntry(dir))
+		data, err := os.ReadFile(filepath.Join(dir, ".claude", ".mcp.json"))
+		require.NoError(t, err)
+		var cfg map[string]any
+		require.NoError(t, json.Unmarshal(data, &cfg))
+		servers := cfg["mcpServers"].(map[string]any)
+		assert.Contains(t, servers, "kasmos")
+	})
+
+	t.Run("adds kasmos to existing file without disturbing other servers", func(t *testing.T) {
+		dir := t.TempDir()
+		claudeDir := filepath.Join(dir, ".claude")
+		require.NoError(t, os.MkdirAll(claudeDir, 0o755))
+		existing := `{"mcpServers":{"other-server":{"type":"stdio","command":"foo"}}}`
+		require.NoError(t, os.WriteFile(filepath.Join(claudeDir, ".mcp.json"), []byte(existing), 0o644))
+
+		require.NoError(t, EnsureClaudeMCPEntry(dir))
+
+		data, err := os.ReadFile(filepath.Join(claudeDir, ".mcp.json"))
+		require.NoError(t, err)
+		var cfg map[string]any
+		require.NoError(t, json.Unmarshal(data, &cfg))
+		servers := cfg["mcpServers"].(map[string]any)
+		assert.Contains(t, servers, "kasmos", "kasmos must be added")
+		assert.Contains(t, servers, "other-server", "existing server must be preserved")
+	})
+
+	t.Run("is idempotent when kasmos already present", func(t *testing.T) {
+		dir := t.TempDir()
+		claudeDir := filepath.Join(dir, ".claude")
+		require.NoError(t, os.MkdirAll(claudeDir, 0o755))
+		initial := `{"mcpServers":{"kasmos":{"type":"http","url":"http://127.0.0.1:7434/mcp"}}}`
+		dest := filepath.Join(claudeDir, ".mcp.json")
+		require.NoError(t, os.WriteFile(dest, []byte(initial), 0o644))
+		info1, _ := os.Stat(dest)
+
+		require.NoError(t, EnsureClaudeMCPEntry(dir))
+
+		info2, _ := os.Stat(dest)
+		assert.Equal(t, info1.ModTime(), info2.ModTime(), "file must not be rewritten when already correct")
+	})
 }
 
 func TestScaffoldOpenCodeProject(t *testing.T) {
