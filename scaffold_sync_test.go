@@ -202,3 +202,65 @@ func TestScaffoldWorktree_WritesMissingAgentFiles(t *testing.T) {
 	assert.FileExists(t, filepath.Join(worktree, ".agents", "skills", "kasmos-fixer", "SKILL.md"))
 	assert.Contains(t, buf.String(), "Syncing worktree scaffold")
 }
+
+func TestListExistingWorktrees_FiltersDirectoriesWithGitMarker(t *testing.T) {
+	repo := t.TempDir()
+	wtDir := filepath.Join(repo, ".worktrees")
+	require.NoError(t, os.MkdirAll(wtDir, 0o755))
+
+	keepA := filepath.Join(wtDir, "a")
+	keepB := filepath.Join(wtDir, "b")
+	skipFile := filepath.Join(wtDir, "README")
+	skipDir := filepath.Join(wtDir, "not-a-worktree")
+
+	require.NoError(t, os.MkdirAll(keepA, 0o755))
+	require.NoError(t, os.MkdirAll(keepB, 0o755))
+	require.NoError(t, os.MkdirAll(skipDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(keepA, ".git"), []byte("gitdir: /tmp/a\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(keepB, ".git"), []byte("gitdir: /tmp/b\n"), 0o644))
+	require.NoError(t, os.WriteFile(skipFile, []byte("x"), 0o644))
+
+	worktrees, err := listExistingWorktrees(repo)
+	require.NoError(t, err)
+	assert.Equal(t, []string{keepA, keepB}, worktrees)
+}
+
+func TestScaffoldSync_WorktreesFlagSyncsSiblingWorktrees(t *testing.T) {
+	mainRepo := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(mainRepo, ".git"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(mainRepo, ".kasmos"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(mainRepo, ".kasmos", "config.toml"), []byte(`
+[agents]
+  [agents.fixer]
+    enabled = true
+    program = "opencode"
+    model = "openai/gpt-5.4"
+
+[phases]
+  fixer = "fixer"
+`), 0o644))
+
+	worktreeA := filepath.Join(mainRepo, ".worktrees", "plan-a")
+	worktreeB := filepath.Join(mainRepo, ".worktrees", "plan-b")
+	require.NoError(t, os.MkdirAll(worktreeA, 0o755))
+	require.NoError(t, os.MkdirAll(worktreeB, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(worktreeA, ".git"), []byte("gitdir: /tmp/fake-a\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(worktreeB, ".git"), []byte("gitdir: /tmp/fake-b\n"), 0o644))
+
+	oldCwd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(mainRepo))
+	t.Cleanup(func() { require.NoError(t, os.Chdir(oldCwd)) })
+
+	var buf bytes.Buffer
+	cmd := newScaffoldSyncCmd()
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"--worktrees"})
+	require.NoError(t, cmd.Execute())
+
+	assert.FileExists(t, filepath.Join(mainRepo, "opencode.jsonc"))
+	assert.FileExists(t, filepath.Join(worktreeA, "opencode.jsonc"))
+	assert.FileExists(t, filepath.Join(worktreeB, "opencode.jsonc"))
+	assert.Contains(t, buf.String(), "Syncing worktree scaffold")
+}

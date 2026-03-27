@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -23,7 +24,7 @@ func newScaffoldCmd() *cobra.Command {
 }
 
 func newScaffoldSyncCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Re-sync embedded skills and agent prompt templates from the current binary",
 		Long: `Re-syncs embedded skills, agent prompt templates, harness symlinks, and
@@ -32,6 +33,8 @@ settings — does not re-run the interactive wizard or modify config.`,
 		SilenceUsage: true,
 		RunE:         runScaffoldSync,
 	}
+	cmd.Flags().Bool("worktrees", false, "also sync every existing worktree under the repo's .worktrees directory")
+	return cmd
 }
 
 func newScaffoldWorktreeCmd() *cobra.Command {
@@ -126,6 +129,7 @@ func profilesToAgentConfigs(profiles map[string]config.AgentProfile) []harness.A
 
 func runScaffoldSync(cmd *cobra.Command, args []string) error {
 	out := cmd.OutOrStdout()
+	includeWorktrees, _ := cmd.Flags().GetBool("worktrees")
 
 	agents, err := loadConfiguredAgentConfigs()
 	if err != nil {
@@ -147,23 +151,28 @@ func runScaffoldSync(cmd *cobra.Command, args []string) error {
 		projectDir = root
 	}
 
-	fmt.Fprintf(out, "Syncing scaffold: %s\n", projectDir)
-	results, err := scaffold.SyncScaffold(projectDir, agents)
-	if err != nil {
-		return fmt.Errorf("sync scaffold: %w", err)
+	if err := syncScaffoldTarget(out, "Syncing scaffold", projectDir, agents); err != nil {
+		return err
 	}
 
-	updated := 0
-	unchanged := 0
-	for _, r := range results {
-		if r.Created {
-			fmt.Fprintf(out, "  %-40s updated\n", r.Path)
-			updated++
-		} else {
-			unchanged++
+	if includeWorktrees {
+		repoRoot, err := config.ResolveRepoRoot(projectDir)
+		if err != nil {
+			return fmt.Errorf("resolve repo root for worktrees: %w", err)
+		}
+		worktrees, err := listExistingWorktrees(repoRoot)
+		if err != nil {
+			return fmt.Errorf("list worktrees: %w", err)
+		}
+		for _, worktreeDir := range worktrees {
+			if filepath.Clean(worktreeDir) == filepath.Clean(projectDir) {
+				continue
+			}
+			if err := syncScaffoldTarget(out, "Syncing worktree scaffold", worktreeDir, agents); err != nil {
+				return err
+			}
 		}
 	}
-	fmt.Fprintf(out, "\ndone. %d files updated, %d unchanged.\n", updated, unchanged)
 
 	// Sync global skills to harness directories.
 	registry := harness.NewRegistry()
@@ -205,6 +214,52 @@ func runScaffoldSync(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func syncScaffoldTarget(out io.Writer, label, dir string, agents []harness.AgentConfig) error {
+	fmt.Fprintf(out, "%s: %s\n", label, dir)
+	results, err := scaffold.SyncScaffold(dir, agents)
+	if err != nil {
+		return fmt.Errorf("sync scaffold: %w", err)
+	}
+
+	updated := 0
+	unchanged := 0
+	for _, r := range results {
+		if r.Created {
+			fmt.Fprintf(out, "  %-40s updated\n", r.Path)
+			updated++
+		} else {
+			unchanged++
+		}
+	}
+	fmt.Fprintf(out, "\ndone. %d files updated, %d unchanged.\n", updated, unchanged)
+	return nil
+}
+
+func listExistingWorktrees(repoRoot string) ([]string, error) {
+	worktreesDir := filepath.Join(repoRoot, ".worktrees")
+	entries, err := os.ReadDir(worktreesDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read worktrees dir: %w", err)
+	}
+
+	worktrees := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(worktreesDir, entry.Name())
+		if _, err := os.Stat(filepath.Join(path, ".git")); err != nil {
+			continue
+		}
+		worktrees = append(worktrees, path)
+	}
+	sort.Strings(worktrees)
+	return worktrees, nil
 }
 
 // resolveCheckoutRoot walks up from dir until it finds a directory containing a
@@ -264,24 +319,7 @@ func runScaffoldWorktree(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("worktree root missing .git entry: %s", worktreeDir)
 	}
 
-	fmt.Fprintf(out, "Syncing worktree scaffold: %s\n", worktreeDir)
-	results, err := scaffold.SyncScaffold(worktreeDir, agents)
-	if err != nil {
-		return fmt.Errorf("sync worktree scaffold: %w", err)
-	}
-
-	updated := 0
-	unchanged := 0
-	for _, r := range results {
-		if r.Created {
-			fmt.Fprintf(out, "  %-40s updated\n", r.Path)
-			updated++
-		} else {
-			unchanged++
-		}
-	}
-	fmt.Fprintf(out, "\ndone. %d files updated, %d unchanged.\n", updated, unchanged)
-	return nil
+	return syncScaffoldTarget(out, "Syncing worktree scaffold", worktreeDir, agents)
 }
 
 func init() {

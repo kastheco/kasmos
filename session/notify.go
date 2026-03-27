@@ -38,7 +38,11 @@ func sendLinux(title, body string) {
 	if err != nil {
 		return
 	}
-	_ = exec.Command(path, title, body).Start()
+	_ = exec.Command(path, linuxNotifyArgs(title, body)...).Start()
+}
+
+func linuxNotifyArgs(title, body string) []string {
+	return []string{"-a", "kas", title, body}
 }
 
 // escapeAppleScript escapes backslashes and double-quotes for use inside

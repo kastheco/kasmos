@@ -344,8 +344,9 @@ func (i *Instance) SetStatus(status Status) {
 	if i.Status == Running && status == Ready {
 		i.Notified = true
 		// Wave task instances are managed collectively by the orchestrator.
-		// Only send per-instance notifications for standalone (non-wave) sessions.
-		if i.TaskNumber == 0 {
+		// Only send desktop notifications for actual completion, not transient
+		// idle/quiet Ready states during long-running agent work.
+		if i.shouldSendCompletionNotification() {
 			SendNotification("kas", fmt.Sprintf("'%s' has finished", i.Title))
 		}
 	}
@@ -361,6 +362,13 @@ func (i *Instance) SetStatus(status Status) {
 	}
 
 	i.Status = status
+}
+
+func (i *Instance) shouldSendCompletionNotification() bool {
+	if i.TaskNumber != 0 {
+		return false
+	}
+	return i.Exited || i.ImplementationComplete
 }
 
 // setLoadingProgress updates the loading stage and message shown during startup.

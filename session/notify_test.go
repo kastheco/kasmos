@@ -68,6 +68,10 @@ func TestSendNotificationEnabled(t *testing.T) {
 	defer func() { NotificationsEnabled = orig }()
 
 	assert.NotPanics(t, func() {
-		SendNotification("klique", "agent finished")
+		SendNotification("kas", "agent finished")
 	})
+}
+
+func TestLinuxNotifyArgs_UsesKasAppName(t *testing.T) {
+	assert.Equal(t, []string{"-a", "kas", "kas", "agent finished"}, linuxNotifyArgs("kas", "agent finished"))
 }
