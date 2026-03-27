@@ -225,3 +225,37 @@ func TestBuildChatAboutTaskPrompt_UsesMCPFirst(t *testing.T) {
 	assert.Contains(t, prompt, "fall back to `kas task show architect-plan-location`")
 	assert.Contains(t, prompt, "## User Question")
 }
+
+func TestSyncSharedWorktreeScaffold_WritesHarnessFilesForConfiguredProfiles(t *testing.T) {
+	dir := t.TempDir()
+	reviewerTemp := 0.2
+	fixerTemp := 0.1
+
+	m := &home{
+		appConfig: &config.Config{
+			Profiles: map[string]config.AgentProfile{
+				"reviewer": {
+					Program:     "claude",
+					Model:       "claude-sonnet-4-6",
+					Temperature: &reviewerTemp,
+					Effort:      "medium",
+					Enabled:     true,
+				},
+				"fixer": {
+					Program:     "opencode",
+					Model:       "openai/gpt-5.4",
+					Temperature: &fixerTemp,
+					Effort:      "high",
+					Enabled:     true,
+				},
+			},
+		},
+	}
+
+	require.NoError(t, m.syncSharedWorktreeScaffold(dir))
+	assert.FileExists(t, filepath.Join(dir, ".claude", ".mcp.json"))
+	assert.FileExists(t, filepath.Join(dir, ".claude", "agents", "reviewer.md"))
+	assert.FileExists(t, filepath.Join(dir, ".opencode", "agents", "fixer.md"))
+	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "kasmos-fixer", "SKILL.md"))
+	assert.FileExists(t, filepath.Join(dir, "opencode.jsonc"))
+}

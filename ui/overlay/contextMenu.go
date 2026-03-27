@@ -224,6 +224,14 @@ func (c *ContextMenu) HandleKey(msg tea.KeyPressMsg) Result {
 		// Pop back one level; no-op at root (returns false).
 		c.drillBack()
 		return Result{}
+	case "right":
+		if c.selectedIdx < len(c.filtered) {
+			selected := c.filtered[c.selectedIdx].item
+			if !selected.Disabled && len(selected.Children) > 0 {
+				c.drillIn(selected)
+			}
+		}
+		return Result{}
 	case "up":
 		if len(c.filtered) > 0 {
 			start := c.selectedIdx
@@ -373,9 +381,9 @@ func (c *ContextMenu) View() string {
 
 	b.WriteString("\n")
 	if len(c.stack) > 0 {
-		b.WriteString(st.Hint.Render("← back • ↑↓ nav • space select • esc close"))
+		b.WriteString(st.Hint.Render("← back • ↑↓ nav • → open • space select • esc close"))
 	} else {
-		b.WriteString(st.Hint.Render("↑↓ nav • space select • esc close"))
+		b.WriteString(st.Hint.Render("↑↓ nav • → open • space select • esc close"))
 	}
 
 	return st.FloatingBorder.Width(c.width).Render(b.String())

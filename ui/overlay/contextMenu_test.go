@@ -171,6 +171,47 @@ func TestContextMenu_DrillBack_Left(t *testing.T) {
 	assert.Equal(t, "session", current[0].Label)
 }
 
+// TestContextMenu_DrillIn_RightOnParent verifies that pressing right on an item
+// with Children drills into the sub-menu without dismissing the overlay.
+func TestContextMenu_DrillIn_RightOnParent(t *testing.T) {
+	items := []ContextMenuItem{
+		{
+			Label:  "session",
+			Action: "session",
+			Children: []ContextMenuItem{
+				{Label: "attach", Action: "attach"},
+			},
+		},
+		{Label: "kill", Action: "kill"},
+	}
+	cm := NewContextMenu(items)
+
+	result := cm.HandleKey(tea.KeyPressMsg{Code: tea.KeyRight})
+	assert.False(t, result.Dismissed, "right on a parent must not dismiss the overlay")
+	assert.Empty(t, result.Action, "right on a parent must not return an action")
+
+	current := cm.CurrentItems()
+	require.Len(t, current, 1)
+	assert.Equal(t, "attach", current[0].Label)
+}
+
+// TestContextMenu_RightOnLeafIsNoop verifies that pressing right on a leaf item
+// does not select it or dismiss the overlay.
+func TestContextMenu_RightOnLeafIsNoop(t *testing.T) {
+	items := []ContextMenuItem{
+		{Label: "kill", Action: "kill"},
+	}
+	cm := NewContextMenu(items)
+
+	result := cm.HandleKey(tea.KeyPressMsg{Code: tea.KeyRight})
+	assert.False(t, result.Dismissed, "right on a leaf must not dismiss")
+	assert.Empty(t, result.Action)
+
+	current := cm.CurrentItems()
+	require.Len(t, current, 1)
+	assert.Equal(t, "kill", current[0].Label)
+}
+
 // TestContextMenu_DrillBack_BackspaceWhenSearchEmpty verifies that pressing backspace
 // when the search query is empty pops back one level (not dismissing).
 func TestContextMenu_DrillBack_BackspaceWhenSearchEmpty(t *testing.T) {
@@ -423,10 +464,13 @@ func TestContextMenu_View_SubMenuHintShowsBack(t *testing.T) {
 	cm := NewContextMenu(items)
 	cm.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter}) // drill in
 
-	allText := stripANSI(strings.Join(strings.Split(cm.View(), "\n"), " "))
+	allText := strings.Join(strings.Fields(stripANSI(cm.View())), " ")
 	assert.Contains(t, allText, "← back", "sub-menu hint must include ← back")
-	assert.Contains(t, allText, "space select",
-		"sub-menu hint must say 'space select' (not 'enter select')")
+	assert.Contains(t, allText, "→ open", "sub-menu hint must include → open")
+	assert.Contains(t, allText, "space", "sub-menu hint must include space action")
+	assert.Contains(t, allText, "select", "sub-menu hint must include select action")
+	assert.NotContains(t, allText, "enter select",
+		"sub-menu hint must not regress to enter-based copy")
 }
 
 // TestContextMenu_HandleMouse_DrillInOnParent verifies that left-clicking a parent item

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -1333,12 +1334,11 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 	m.toastManager.Success(fmt.Sprintf("implementation complete → review started for %s", planName))
 
 	shared := gitpkg.NewSharedTaskWorktree(m.activeRepoPath, branch)
-	agents := m.opencodeAgentConfigs()
 	return func() tea.Msg {
 		if err := shared.Setup(); err != nil {
 			return instanceStartedMsg{instance: reviewerInst, err: err}
 		}
-		if err := scaffold.PatchWorktreeConfig(shared.GetWorktreePath(), agents); err != nil {
+		if err := m.syncSharedWorktreeScaffold(shared.GetWorktreePath()); err != nil {
 			return instanceStartedMsg{instance: reviewerInst, err: err}
 		}
 		err := reviewerInst.StartInSharedWorktree(shared, branch)
@@ -1513,6 +1513,91 @@ func (m *home) opencodeAgentConfigs() []harness.AgentConfig {
 	return configs
 }
 
+func scaffoldModelForHarness(harnessName, model string) string {
+	if harnessName == "opencode" {
+		return normalizeOpenCodeModelID(model)
+	}
+	return strings.TrimSpace(model)
+}
+
+func (m *home) scaffoldAgentConfigs() []harness.AgentConfig {
+	if m.appConfig == nil || len(m.appConfig.Profiles) == 0 {
+		return nil
+	}
+
+	harnessSet := map[string]struct{}{}
+	for role, profile := range m.appConfig.Profiles {
+		if role == "chat" {
+			continue
+		}
+		fields := strings.Fields(profile.Program)
+		if len(fields) == 0 {
+			continue
+		}
+		harnessSet[filepath.Base(fields[0])] = struct{}{}
+	}
+
+	roles := make([]string, 0, len(m.appConfig.Profiles))
+	for role := range m.appConfig.Profiles {
+		roles = append(roles, role)
+	}
+	sort.Strings(roles)
+
+	configs := make([]harness.AgentConfig, 0, len(roles))
+	for _, role := range roles {
+		profile := m.appConfig.Profiles[role]
+		if !profile.Enabled {
+			continue
+		}
+
+		fields := strings.Fields(profile.Program)
+		if role != "chat" && len(fields) == 0 {
+			continue
+		}
+
+		if role == "chat" {
+			chatHarnesses := make([]string, 0, len(harnessSet))
+			for harnessName := range harnessSet {
+				chatHarnesses = append(chatHarnesses, harnessName)
+			}
+			sort.Strings(chatHarnesses)
+			if len(chatHarnesses) == 0 && len(fields) > 0 {
+				chatHarnesses = []string{filepath.Base(fields[0])}
+			}
+			for _, harnessName := range chatHarnesses {
+				configs = append(configs, harness.AgentConfig{
+					Role:        role,
+					Harness:     harnessName,
+					Model:       scaffoldModelForHarness(harnessName, profile.Model),
+					Temperature: profile.Temperature,
+					Effort:      profile.Effort,
+					Enabled:     profile.Enabled,
+					ExtraFlags:  profile.Flags,
+				})
+			}
+			continue
+		}
+
+		harnessName := filepath.Base(fields[0])
+		configs = append(configs, harness.AgentConfig{
+			Role:        role,
+			Harness:     harnessName,
+			Model:       scaffoldModelForHarness(harnessName, profile.Model),
+			Temperature: profile.Temperature,
+			Effort:      profile.Effort,
+			Enabled:     profile.Enabled,
+			ExtraFlags:  profile.Flags,
+		})
+	}
+
+	return configs
+}
+
+func (m *home) syncSharedWorktreeScaffold(worktreePath string) error {
+	_, err := scaffold.SyncScaffold(worktreePath, m.scaffoldAgentConfigs())
+	return err
+}
+
 func isOpenCodeProfile(profile config.AgentProfile) bool {
 	fields := strings.Fields(profile.Program)
 	if len(fields) == 0 {
@@ -1630,12 +1715,11 @@ func (m *home) spawnFixerWithFeedback(planFile, feedback string) tea.Cmd {
 	m.toastManager.Info(fmt.Sprintf("review changes requested → applying fixes to %s", planName))
 
 	shared := gitpkg.NewSharedTaskWorktree(m.activeRepoPath, branch)
-	agents := m.opencodeAgentConfigs()
 	return func() tea.Msg {
 		if err := shared.Setup(); err != nil {
 			return instanceStartedMsg{instance: fixerInst, err: err}
 		}
-		if err := scaffold.PatchWorktreeConfig(shared.GetWorktreePath(), agents); err != nil {
+		if err := m.syncSharedWorktreeScaffold(shared.GetWorktreePath()); err != nil {
 			return instanceStartedMsg{instance: fixerInst, err: err}
 		}
 		err := fixerInst.StartInSharedWorktree(shared, branch)
@@ -2282,7 +2366,7 @@ func (m *home) spawnTaskAgent(planFile, action, prompt string) (tea.Model, tea.C
 		if err := shared.Setup(); err != nil {
 			return m, m.handleError(err)
 		}
-		if err := scaffold.PatchWorktreeConfig(shared.GetWorktreePath(), m.opencodeAgentConfigs()); err != nil {
+		if err := m.syncSharedWorktreeScaffold(shared.GetWorktreePath()); err != nil {
 			return m, m.handleError(err)
 		}
 		startCmd = func() tea.Msg {
@@ -2436,7 +2520,7 @@ func (m *home) spawnWaveTasks(orch *orchestration.WaveOrchestrator, tasks []task
 	if err := shared.Setup(); err != nil {
 		return m, m.handleError(err)
 	}
-	if err := scaffold.PatchWorktreeConfig(shared.GetWorktreePath(), m.opencodeAgentConfigs()); err != nil {
+	if err := m.syncSharedWorktreeScaffold(shared.GetWorktreePath()); err != nil {
 		return m, m.handleError(err)
 	}
 
