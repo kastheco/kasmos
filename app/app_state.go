@@ -226,20 +226,28 @@ func (m *home) inferOrphanSessionBinding(title string) (taskFile, agentType, bra
 			continue
 		}
 
+		architectTitle := orchestration.BuildArchitectAgentSpec(filename).Title
+		coderTitle := orchestration.BuildLifecycleAgentTitle(filename, session.AgentTypeCoder, 0)
+		reviewerTitle := orchestration.BuildLifecycleAgentTitle(filename, session.AgentTypeReviewer, 1)
+		fixerTitle := orchestration.BuildLifecycleAgentTitle(filename, session.AgentTypeFixer, 1)
+
 		matchedType := ""
 		matchedCycle := 0
 		switch {
 		case title == planName+"-plan":
 			matchedType = session.AgentTypePlanner
-		case title == planName+"-architect":
+		case title == architectTitle:
 			matchedType = session.AgentTypeElaborator
-		case title == planName+"-coder":
+		case title == coderTitle:
 			matchedType = session.AgentTypeCoder
-		case title == planName+"-reviewer" || title == planName+"-review":
+		case title == planName+"-reviewer" || title == planName+"-review" || title == reviewerTitle:
 			matchedType = session.AgentTypeReviewer
 			matchedCycle = 1
-		case title == planName+"-fixer":
+		case title == planName+"-fixer" || title == fixerTitle:
 			matchedType = session.AgentTypeFixer
+			if title == fixerTitle {
+				matchedCycle = 1
+			}
 		}
 
 		if matchedType == "" {
@@ -1918,7 +1926,7 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	planName := taskstate.DisplayName(planFile)
-	prompt := orchestration.BuildElaborationPrompt(planFile)
+	spec := orchestration.BuildArchitectAgentSpec(planFile)
 
 	// Clear any stale elaborator_finished sentinel before starting a new pass.
 	// Signal processing is edge-unaware, so a stale file would advance the current
@@ -1926,7 +1934,7 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 	taskfsm.ClearElaborationSignal(m.signalsDir, planFile)
 
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:         fmt.Sprintf("%s-architect", planName),
+		Title:         spec.Title,
 		Path:          m.activeRepoPath,
 		Program:       m.programForAgent(session.AgentTypeElaborator),
 		ExecutionMode: m.executionModeForAgent(session.AgentTypeElaborator),
@@ -1936,7 +1944,7 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 	if err != nil {
 		return m, m.handleError(err)
 	}
-	inst.QueuedPrompt = prompt
+	inst.QueuedPrompt = spec.Prompt
 	inst.SetStatus(session.Loading)
 	inst.LoadingTotal = 6
 	inst.LoadingMessage = "elaborating plan..."
@@ -2480,9 +2488,14 @@ func (m *home) spawnTaskAgent(planFile, action, prompt string) (tea.Model, tea.C
 		// unique to avoid accidentally reattaching to another solo session.
 		title = planName + "-solo"
 	} else if action == "review" {
-		// Use cycle-suffixed title so each review round gets a unique tmux session name.
-		reviewCycle, _ = m.taskState.ReviewCycle(planFile)
-		title = fmt.Sprintf("%s-review-%d", planName, reviewCycle+1)
+		// Use the shared reviewer builder so every manual and automated review
+		// round uses the same title/cycle numbering.
+		spec := orchestration.BuildReviewerAgentSpec(planFile, entry.ReviewCycle, m.latestReviewFeedback(planFile))
+		reviewCycle = spec.ReviewCycle
+		title = spec.Title
+		if strings.TrimSpace(prompt) == "" {
+			prompt = spec.Prompt
+		}
 	}
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:         title,
@@ -2497,7 +2510,7 @@ func (m *home) spawnTaskAgent(planFile, action, prompt string) (tea.Model, tea.C
 	}
 	if agentType == session.AgentTypeReviewer {
 		// Set ReviewCycle so the instance carries the same cycle number used in the title.
-		inst.ReviewCycle = reviewCycle + 1
+		inst.ReviewCycle = reviewCycle
 	}
 	if action == "solo" {
 		inst.SoloAgent = true
@@ -2695,8 +2708,6 @@ func (m *home) spawnWaveTasks(orch *orchestration.WaveOrchestrator, tasks []task
 		return m, nil
 	}
 	planFile := orch.TaskFile()
-	planName := taskstate.DisplayName(planFile)
-
 	// Set up shared worktree for all tasks in this batch.
 	shared := gitpkg.NewSharedTaskWorktree(m.activeRepoPath, entry.Branch)
 	if err := shared.Setup(); err != nil {
@@ -2711,7 +2722,7 @@ func (m *home) spawnWaveTasks(orch *orchestration.WaveOrchestrator, tasks []task
 		prompt := orch.BuildTaskPrompt(task, len(tasks))
 
 		inst, err := session.NewInstance(session.InstanceOptions{
-			Title:         fmt.Sprintf("%s-W%d-T%d", planName, orch.CurrentWaveNumber(), task.Number),
+			Title:         orchestration.BuildWaveTaskTitle(planFile, orch.CurrentWaveNumber(), task.Number),
 			Path:          m.activeRepoPath,
 			Program:       m.programForAgent(session.AgentTypeCoder),
 			ExecutionMode: m.executionModeForAgent(session.AgentTypeCoder),

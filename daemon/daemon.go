@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -825,10 +824,12 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		})
 		return nil
 	case loop.SpawnElaboratorAction:
+		spec := orchestration.BuildArchitectAgentSpec(a.PlanFile)
 		opts := loop.SpawnOpts{
 			PlanFile: a.PlanFile,
 			RepoPath: e.Path,
 			Project:  e.Project,
+			Prompt:   spec.Prompt,
 		}
 		if err := d.spawner.SpawnElaborator(ctx, opts); err != nil {
 			d.logger.Error("spawn architect failed", "plan", a.PlanFile, "err", err)
@@ -1118,10 +1119,10 @@ func taskRecoveryCandidates(task taskstore.TaskEntry) []struct {
 		agentType string
 		branch    string
 	}{
-		{title: fmt.Sprintf("%s-coder", planName), agentType: session.AgentTypeCoder, branch: task.Branch},
+		{title: orchestration.BuildLifecycleAgentTitle(task.Filename, session.AgentTypeCoder, 0), agentType: session.AgentTypeCoder, branch: task.Branch},
 		{title: fmt.Sprintf("%s-fixer", planName), agentType: session.AgentTypeFixer, branch: task.Branch},
 		{title: fmt.Sprintf("%s-reviewer", planName), agentType: session.AgentTypeReviewer, branch: task.Branch},
-		{title: fmt.Sprintf("%s-architect", planName), agentType: session.AgentTypeElaborator},
+		{title: orchestration.BuildArchitectAgentSpec(task.Filename).Title, agentType: session.AgentTypeElaborator},
 	}
 
 	maxReview := task.ReviewCycle + 1
@@ -1134,7 +1135,7 @@ func taskRecoveryCandidates(task taskstore.TaskEntry) []struct {
 			agentType string
 			branch    string
 		}{
-			title:     fmt.Sprintf("%s-review-%s", planName, strconv.Itoa(cycle)),
+			title:     orchestration.BuildLifecycleAgentTitle(task.Filename, session.AgentTypeReviewer, cycle),
 			agentType: session.AgentTypeReviewer,
 			branch:    task.Branch,
 		})
@@ -1146,7 +1147,7 @@ func taskRecoveryCandidates(task taskstore.TaskEntry) []struct {
 			agentType string
 			branch    string
 		}{
-			title:     fmt.Sprintf("%s-fix-%s", planName, strconv.Itoa(cycle)),
+			title:     orchestration.BuildLifecycleAgentTitle(task.Filename, session.AgentTypeFixer, cycle),
 			agentType: session.AgentTypeFixer,
 			branch:    task.Branch,
 		})

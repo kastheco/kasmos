@@ -26,5 +26,16 @@ func TestBuildFixerAgentSpec(t *testing.T) {
 func TestBuildLifecycleAgentTitle(t *testing.T) {
 	assert.Equal(t, "feature-review-1", BuildLifecycleAgentTitle("feature", session.AgentTypeReviewer, 0))
 	assert.Equal(t, "feature-fix-2", BuildLifecycleAgentTitle("feature", session.AgentTypeFixer, 2))
+	assert.Equal(t, "feature-architect", BuildLifecycleAgentTitle("feature", session.AgentTypeElaborator, 0))
 	assert.Equal(t, "feature-coder", BuildLifecycleAgentTitle("feature", session.AgentTypeCoder, 0))
+}
+
+func TestBuildArchitectAgentSpec(t *testing.T) {
+	spec := BuildArchitectAgentSpec("feature")
+	assert.Equal(t, "feature-architect", spec.Title)
+	assert.Contains(t, spec.Prompt, "kas signal emit elaborator_finished feature")
+}
+
+func TestBuildWaveTaskTitle(t *testing.T) {
+	assert.Equal(t, "feature-W2-T3", BuildWaveTaskTitle("feature", 2, 3))
 }

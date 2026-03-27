@@ -267,7 +267,10 @@ Valid signal types: planner_finished, implement_finished, review_approved,
 review_changes_requested, implement_task_finished, implement_wave, elaborator_finished`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			signalType := args[0]
+			signalType, err := taskfsm.CanonicalGatewaySignalType(args[0])
+			if err != nil {
+				return err
+			}
 			planFile := args[1]
 
 			_, project, err := resolveRepoInfo()

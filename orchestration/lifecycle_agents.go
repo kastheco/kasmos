@@ -61,3 +61,17 @@ func BuildFixerAgentSpec(planFile string, storedReviewCycle int, feedback string
 		ReviewCycle: reviewCycle,
 	}
 }
+
+// BuildArchitectAgentSpec returns the shared prompt/title metadata for the
+// architect pass that elaborates a plan before wave execution begins.
+func BuildArchitectAgentSpec(planFile string) LifecycleAgentSpec {
+	return LifecycleAgentSpec{
+		Title:  BuildLifecycleAgentTitle(planFile, session.AgentTypeElaborator, 0),
+		Prompt: BuildElaborationPrompt(planFile),
+	}
+}
+
+// BuildWaveTaskTitle returns the canonical title for a wave task instance.
+func BuildWaveTaskTitle(planFile string, waveNumber, taskNumber int) string {
+	return fmt.Sprintf("%s-W%d-T%d", taskstate.DisplayName(planFile), waveNumber, taskNumber)
+}

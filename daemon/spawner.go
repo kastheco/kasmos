@@ -369,8 +369,18 @@ func (s *TmuxSpawner) spawnOnMainBranch(_ context.Context, opts loop.SpawnOpts, 
 		return fmt.Errorf("TmuxSpawner.%s: RepoPath is required", agentType)
 	}
 
-	planName := taskstate.DisplayName(opts.PlanFile)
-	title := fmt.Sprintf("%s-%s", planName, titleSuffix)
+	title := ""
+	prompt := opts.Prompt
+	if agentType == session.AgentTypeElaborator {
+		spec := orchestration.BuildArchitectAgentSpec(opts.PlanFile)
+		title = spec.Title
+		if prompt == "" {
+			prompt = spec.Prompt
+		}
+	} else {
+		planName := taskstate.DisplayName(opts.PlanFile)
+		title = fmt.Sprintf("%s-%s", planName, titleSuffix)
+	}
 	program := opts.Program
 	if program == "" {
 		program = "opencode"
@@ -386,7 +396,7 @@ func (s *TmuxSpawner) spawnOnMainBranch(_ context.Context, opts loop.SpawnOpts, 
 	if err != nil {
 		return fmt.Errorf("TmuxSpawner.%s: create instance: %w", agentType, err)
 	}
-	inst.QueuedPrompt = opts.Prompt
+	inst.QueuedPrompt = prompt
 	inst.SetStatus(session.Loading)
 
 	if err := inst.StartOnMainBranch(); err != nil {
@@ -496,8 +506,7 @@ func (s *TmuxSpawner) SpawnWaveTask(_ context.Context, opts loop.SpawnOpts, task
 		return fmt.Errorf("TmuxSpawner.wave-task: Wave is required")
 	}
 
-	planName := taskstate.DisplayName(opts.PlanFile)
-	title := fmt.Sprintf("%s-W%d-T%d", planName, opts.Wave, task.Number)
+	title := orchestration.BuildWaveTaskTitle(opts.PlanFile, opts.Wave, task.Number)
 	program := opts.Program
 	if program == "" {
 		program = "opencode"

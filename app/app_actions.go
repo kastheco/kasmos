@@ -14,7 +14,6 @@ import (
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
-	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
 	"github.com/kastheco/kasmos/keys"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/session"
@@ -1349,8 +1348,8 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			auditlog.WithPlan(planFile))
 		m.loadTaskState()
 		m.updateSidebarTasks()
-		planName := taskstate.DisplayName(planFile)
-		reviewPrompt := scaffold.LoadReviewPrompt(planFile, planName, m.reviewRound(planFile), m.latestReviewFeedback(planFile))
+		storedCycle, _ := m.taskState.ReviewCycle(planFile)
+		reviewPrompt := orchestration.BuildReviewerAgentSpec(planFile, storedCycle, m.latestReviewFeedback(planFile)).Prompt
 		return m.spawnTaskAgent(planFile, "review", reviewPrompt)
 	}
 
