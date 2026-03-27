@@ -2093,6 +2093,20 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toastManager.Success(fmt.Sprintf("killed session '%s'", msg.name))
 		}
 		return m, m.toastTickCmd()
+	case manualSignalResultMsg:
+		if msg.err != nil {
+			return m, m.handleError(msg.err)
+		}
+		m.audit(auditlog.EventPromptSent, fmt.Sprintf("queued %s manually", msg.signalType),
+			auditlog.WithPlan(msg.planFile),
+			auditlog.WithInstance(msg.instanceTitle),
+			auditlog.WithAgent(msg.agentType),
+		)
+		if msg.successToast != "" {
+			m.toastManager.Success(msg.successToast)
+			return m, m.toastTickCmd()
+		}
+		return m, nil
 	case tmuxAttachReturnMsg:
 		m.toastManager.Info("detached from tmux session")
 		return m, tea.Batch(clearScreenCmd(), tea.RequestWindowSize, m.instanceChanged(), m.toastTickCmd())
@@ -2464,6 +2478,15 @@ type tmuxSessionsMsg struct {
 type tmuxKillResultMsg struct {
 	name string
 	err  error
+}
+
+type manualSignalResultMsg struct {
+	signalType    string
+	planFile      string
+	instanceTitle string
+	agentType     string
+	successToast  string
+	err           error
 }
 
 // tmuxAttachReturnMsg is sent when the user detaches from a passively attached orphan session.

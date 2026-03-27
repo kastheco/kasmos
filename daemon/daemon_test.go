@@ -478,6 +478,17 @@ func TestReviewerSpawnOpts_UsesReviewRoundPrompt(t *testing.T) {
 	assert.Contains(t, opts.Prompt, "round 5 findings")
 }
 
+func TestDaemon_ExecuteAction_ReviewChanges_PersistsLatestFeedback(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{Filename: "plan.md", Status: taskstore.StatusReviewing}))
+	d := &Daemon{logger: slog.Default()}
+	e := RepoEntry{Project: "proj", Store: store}
+	require.NoError(t, d.executeAction(context.Background(), e, loop.ReviewChangesAction{PlanFile: "plan.md", Feedback: "new review findings"}))
+	entry, err := store.Get("proj", "plan.md")
+	require.NoError(t, err)
+	assert.Equal(t, "new review findings", entry.LatestReviewFeedback)
+}
+
 func TestSharedWorktreePaths(t *testing.T) {
 	repo := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(repo, ".worktrees", "a"), 0o755))

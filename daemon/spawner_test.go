@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/cmd"
+	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
 	"github.com/stretchr/testify/assert"
@@ -79,10 +80,10 @@ func TestTmuxSpawner_instanceKey(t *testing.T) {
 }
 
 func TestSharedWorktreeAgentTitle_UsesReviewAndFixCycles(t *testing.T) {
-	assert.Equal(t, "feature-review-1", sharedWorktreeAgentTitle("feature", session.AgentTypeReviewer, 0))
-	assert.Equal(t, "feature-review-6", sharedWorktreeAgentTitle("feature", session.AgentTypeReviewer, 6))
-	assert.Equal(t, "feature-fix-5", sharedWorktreeAgentTitle("feature", session.AgentTypeFixer, 5))
-	assert.Equal(t, "feature-coder", sharedWorktreeAgentTitle("feature", session.AgentTypeCoder, 0))
+	assert.Equal(t, "feature-review-1", orchestration.BuildLifecycleAgentTitle("feature", session.AgentTypeReviewer, 0))
+	assert.Equal(t, "feature-review-6", orchestration.BuildLifecycleAgentTitle("feature", session.AgentTypeReviewer, 6))
+	assert.Equal(t, "feature-fix-5", orchestration.BuildLifecycleAgentTitle("feature", session.AgentTypeFixer, 5))
+	assert.Equal(t, "feature-coder", orchestration.BuildLifecycleAgentTitle("feature", session.AgentTypeCoder, 0))
 }
 
 func TestTmuxSpawner_KillWaveAgents(t *testing.T) {

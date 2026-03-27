@@ -14,6 +14,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
 	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
+	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
 	gitpkg "github.com/kastheco/kasmos/session/git"
@@ -324,21 +325,6 @@ func instanceKeyForTask(repoPath, planFile, agentType string, waveNumber, taskNu
 	return repoPath + ":" + planFile + ":" + agentType
 }
 
-func sharedWorktreeAgentTitle(planName, agentType string, reviewCycle int) string {
-	switch agentType {
-	case session.AgentTypeReviewer:
-		if reviewCycle < 1 {
-			reviewCycle = 1
-		}
-		return fmt.Sprintf("%s-review-%d", planName, reviewCycle)
-	case session.AgentTypeFixer:
-		if reviewCycle > 0 {
-			return fmt.Sprintf("%s-fix-%d", planName, reviewCycle)
-		}
-	}
-	return fmt.Sprintf("%s-%s", planName, agentType)
-}
-
 // SpawnReviewer launches a reviewer agent in the plan's shared worktree.
 func (s *TmuxSpawner) SpawnReviewer(ctx context.Context, opts loop.SpawnOpts) error {
 	s.logger.Info("spawn reviewer", "plan", opts.PlanFile, "wave", opts.Wave)
@@ -564,8 +550,7 @@ func (s *TmuxSpawner) spawnInSharedWorktree(_ context.Context, opts loop.SpawnOp
 		return fmt.Errorf("TmuxSpawner.%s: Branch is required", agentType)
 	}
 
-	planName := taskstate.DisplayName(opts.PlanFile)
-	title := sharedWorktreeAgentTitle(planName, agentType, opts.ReviewCycle)
+	title := orchestration.BuildLifecycleAgentTitle(opts.PlanFile, agentType, opts.ReviewCycle)
 	program := opts.Program
 	if program == "" {
 		program = "opencode"

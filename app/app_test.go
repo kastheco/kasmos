@@ -1915,6 +1915,61 @@ func TestInstanceContextMenu_HasGroupedSubMenus(t *testing.T) {
 	assert.Contains(t, allActions, "restart_instance", "restart_instance must be discoverable in AllItems")
 }
 
+func TestInstanceContextMenu_ReviewerManualActions(t *testing.T) {
+	h := newTestHome()
+	h.setupPlanState(t, "feature", taskstate.StatusReviewing, "")
+	inst, _ := session.NewInstance(session.InstanceOptions{
+		Title:       "feature-review-6",
+		Path:        os.TempDir(),
+		Program:     "opencode",
+		TaskFile:    "feature",
+		AgentType:   session.AgentTypeReviewer,
+		ReviewCycle: 6,
+	})
+	h.nav.AddInstance(inst)
+	h.updateSidebarTasks()
+	h.nav.SelectInstance(inst)
+
+	model, _ := h.openContextMenu()
+	updated := model.(*home)
+	cm, ok := updated.overlays.Current().(*overlay.ContextMenu)
+	require.True(t, ok)
+
+	actions := make([]string, 0)
+	for _, item := range cm.AllItems() {
+		actions = append(actions, item.Action)
+	}
+	assert.Contains(t, actions, "mark_review_approved")
+	assert.Contains(t, actions, "mark_review_changes_requested")
+	assert.Contains(t, actions, "advance_review_cycle")
+}
+
+func TestInstanceContextMenu_CoderManualAction(t *testing.T) {
+	h := newTestHome()
+	h.setupPlanState(t, "feature", taskstate.StatusImplementing, "")
+	inst, _ := session.NewInstance(session.InstanceOptions{
+		Title:     "feature-coder",
+		Path:      os.TempDir(),
+		Program:   "opencode",
+		TaskFile:  "feature",
+		AgentType: session.AgentTypeCoder,
+	})
+	h.nav.AddInstance(inst)
+	h.updateSidebarTasks()
+	h.nav.SelectInstance(inst)
+
+	model, _ := h.openContextMenu()
+	updated := model.(*home)
+	cm, ok := updated.overlays.Current().(*overlay.ContextMenu)
+	require.True(t, ok)
+
+	actions := make([]string, 0)
+	for _, item := range cm.AllItems() {
+		actions = append(actions, item.Action)
+	}
+	assert.Contains(t, actions, "mark_implement_finished")
+}
+
 // TestTaskContextMenu_HasGroupedSubMenus verifies that the task context menu exposes
 // top-level category groups (start, view, sync, config, lifecycle) and that nested
 // actions remain discoverable via AllItems().

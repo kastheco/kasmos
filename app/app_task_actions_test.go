@@ -1104,6 +1104,81 @@ func TestStartFixer_UsesPersistedLatestReviewFeedback(t *testing.T) {
 	assert.Contains(t, fixer.QueuedPrompt, "Current fix round: 4")
 }
 
+func TestAdvanceReviewCycle_CapturesFeedback(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	const planFile = "feature"
+	require.NoError(t, ps.Create(planFile, "feature", "plan/feature", "", time.Now()))
+	for i := 0; i < 5; i++ {
+		require.NoError(t, ps.IncrementReviewCycle(planFile))
+	}
+
+	h := newTestHome()
+	h.taskState = ps
+	h.taskStateDir = plansDir
+	h.fsm = newPlanFSMForTest(t, plansDir)
+	h.activeRepoPath = dir
+	h.taskStoreProject = "test"
+	h.pendingReviewFeedback = make(map[string]string)
+	reviewer := &session.Instance{Title: "feature-review-6", Path: dir, Program: "opencode", TaskFile: planFile, AgentType: session.AgentTypeReviewer, ReviewCycle: 6, CachedContent: "round six findings"}
+	h.nav.AddInstance(reviewer)
+	h.updateSidebarTasks()
+	h.nav.SelectInstance(reviewer)
+
+	_, cmd := h.executeContextAction("advance_review_cycle")
+	require.NotNil(t, cmd)
+	require.IsType(t, overlay.ToastTickMsg{}, cmd())
+
+	cycle, err := h.taskState.ReviewCycle(planFile)
+	require.NoError(t, err)
+	assert.Equal(t, 6, cycle)
+	entry, ok := h.taskState.Entry(planFile)
+	require.True(t, ok)
+	assert.Equal(t, "round six findings", entry.LatestReviewFeedback)
+}
+
+func TestMarkReviewChangesRequested_QueuesGatewaySignal(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	const planFile = "feature"
+	require.NoError(t, ps.Create(planFile, "feature", "plan/feature", "", time.Now()))
+
+	h := newTestHome()
+	h.taskState = ps
+	h.taskStateDir = plansDir
+	h.fsm = newPlanFSMForTest(t, plansDir)
+	h.activeRepoPath = dir
+	h.taskStoreProject = "test"
+	h.pendingReviewFeedback = make(map[string]string)
+	reviewer := &session.Instance{Title: "feature-review-1", Path: dir, Program: "opencode", TaskFile: planFile, AgentType: session.AgentTypeReviewer, ReviewCycle: 1, CachedContent: "review findings"}
+	h.nav.AddInstance(reviewer)
+	h.updateSidebarTasks()
+	h.nav.SelectInstance(reviewer)
+
+	_, cmd := h.executeContextAction("mark_review_changes_requested")
+	require.NotNil(t, cmd)
+	msg := cmd()
+	result, ok := msg.(manualSignalResultMsg)
+	require.True(t, ok)
+	require.NoError(t, result.err)
+
+	gw, err := taskstore.NewSQLiteSignalGateway(taskstore.ResolvedDBPath())
+	require.NoError(t, err)
+	defer gw.Close() //nolint:errcheck
+	signals, err := gw.List("test", taskstore.SignalPending)
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "review_changes_requested", signals[0].SignalType)
+	assert.Contains(t, signals[0].Payload, "review findings")
+}
+
 func TestViewSelectedPlan_ReadsFromStore(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
 	planFile := "test.md"

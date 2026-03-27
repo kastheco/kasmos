@@ -21,7 +21,6 @@ import (
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
-	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
@@ -787,6 +786,16 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 	}
 
 	switch a := action.(type) {
+	case loop.ReviewChangesAction:
+		if e.Store != nil {
+			ps, err := taskstate.Load(e.Store, e.Project, "")
+			if err == nil {
+				if setErr := ps.SetLatestReviewFeedback(a.PlanFile, a.Feedback); setErr != nil {
+					d.logger.Warn("persist latest review feedback failed", "plan", a.PlanFile, "err", setErr)
+				}
+			}
+		}
+		return nil
 	case loop.SpawnReviewerAction:
 		opts := reviewerSpawnOpts(e, entryFor(a.PlanFile))
 		if err := d.spawner.SpawnReviewer(ctx, opts); err != nil {
@@ -1068,18 +1077,14 @@ func coderSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 }
 
 func reviewerSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
-	reviewRound := entry.ReviewCycle + 1
-	if reviewRound < 1 {
-		reviewRound = 1
-	}
-	planName := taskstate.DisplayName(entry.Filename)
+	spec := orchestration.BuildReviewerAgentSpec(entry.Filename, entry.ReviewCycle, entry.LatestReviewFeedback)
 	return loop.SpawnOpts{
 		PlanFile:    entry.Filename,
 		RepoPath:    e.Path,
 		Project:     e.Project,
 		Branch:      entry.Branch,
-		ReviewCycle: reviewRound,
-		Prompt:      scaffold.LoadReviewPrompt(entry.Filename, planName, reviewRound, entry.LatestReviewFeedback),
+		ReviewCycle: spec.ReviewCycle,
+		Prompt:      spec.Prompt,
 	}
 }
 
@@ -1090,13 +1095,14 @@ func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 			reviewCycle = entry.ReviewCycle
 		}
 	}
+	spec := orchestration.BuildFixerAgentSpec(planFile, reviewCycle, feedback)
 	return loop.SpawnOpts{
 		PlanFile:    planFile,
 		RepoPath:    e.Path,
 		Project:     e.Project,
 		Branch:      branch,
-		ReviewCycle: reviewCycle,
-		Prompt:      orchestration.BuildFixerPrompt(planFile, feedback, reviewCycle),
+		ReviewCycle: spec.ReviewCycle,
+		Prompt:      spec.Prompt,
 		Feedback:    feedback,
 	}
 }

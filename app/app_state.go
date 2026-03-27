@@ -278,6 +278,31 @@ func (m *home) clearLatestReviewFeedback(planFile string) {
 	}
 }
 
+func (m *home) reviewFeedbackPayload(inst *session.Instance) string {
+	if inst == nil {
+		return ""
+	}
+	if text := strings.TrimSpace(inst.CachedContent); text != "" {
+		return text
+	}
+	return strings.TrimSpace(m.latestReviewFeedback(inst.TaskFile))
+}
+
+func (m *home) captureSelectedReviewFeedback(inst *session.Instance) error {
+	if inst == nil || inst.TaskFile == "" || m.taskState == nil {
+		return nil
+	}
+	feedback := m.reviewFeedbackPayload(inst)
+	if feedback == "" {
+		return nil
+	}
+	if err := m.taskState.SetLatestReviewFeedback(inst.TaskFile, feedback); err != nil {
+		return fmt.Errorf("persist review feedback: %w", err)
+	}
+	m.pendingReviewFeedback[inst.TaskFile] = feedback
+	return nil
+}
+
 func assemblePRMetadata(
 	entry taskstore.TaskEntry,
 	subtasks []taskstore.SubtaskEntry,
@@ -1436,10 +1461,10 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 			return nil
 		}
 	}
-	planName := taskstate.DisplayName(planFile)
-	prompt := scaffold.LoadReviewPrompt(planFile, planName, m.reviewRound(planFile), m.latestReviewFeedback(planFile))
 	cycle, _ := m.taskState.ReviewCycle(planFile)
-	title := fmt.Sprintf("%s-review-%d", planName, cycle+1)
+	planName := taskstate.DisplayName(planFile)
+	spec := orchestration.BuildReviewerAgentSpec(planFile, cycle, m.latestReviewFeedback(planFile))
+	title := spec.Title
 	if m.hasLiveOrPendingInstance(planFile, session.AgentTypeReviewer, title) {
 		return nil
 	}
@@ -1462,13 +1487,13 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 		ExecutionMode: m.executionModeForAgent(session.AgentTypeReviewer),
 		TaskFile:      planFile,
 		AgentType:     session.AgentTypeReviewer,
-		ReviewCycle:   cycle + 1,
+		ReviewCycle:   spec.ReviewCycle,
 	})
 	if err != nil {
 		log.WarningLog.Printf("could not create reviewer instance for %q: %v", planFile, err)
 		return nil
 	}
-	reviewerInst.QueuedPrompt = prompt
+	reviewerInst.QueuedPrompt = spec.Prompt
 	reviewerInst.SetStatus(session.Loading)
 
 	m.addInstanceFinalizer(reviewerInst, m.nav.AddInstance(reviewerInst))
@@ -1806,12 +1831,13 @@ func (m *home) spawnFixerWithFeedback(planFile, feedback string) tea.Cmd {
 	if !m.requireDaemonForAgents() {
 		return nil
 	}
-	planName := taskstate.DisplayName(planFile)
 	feedback = strings.TrimSpace(feedback)
 	if feedback == "" {
 		feedback = m.latestReviewFeedback(planFile)
 	}
-	prompt := orchestration.BuildFixerPrompt(planFile, feedback, m.fixerRound(planFile))
+	cycle, _ := m.taskState.ReviewCycle(planFile)
+	planName := taskstate.DisplayName(planFile)
+	spec := orchestration.BuildFixerAgentSpec(planFile, cycle, feedback)
 
 	// Kill any previous fixer (and any legacy feedback-coder) for this plan so
 	// the new session gets a fresh tmux session instead of reattaching to a
@@ -1830,8 +1856,7 @@ func (m *home) spawnFixerWithFeedback(planFile, feedback string) tea.Cmd {
 		return nil
 	}
 
-	cycle, _ := m.taskState.ReviewCycle(planFile)
-	title := fmt.Sprintf("%s-fix-%d", planName, cycle)
+	title := spec.Title
 	if m.hasLiveOrPendingInstance(planFile, session.AgentTypeFixer, title) {
 		return nil
 	}
@@ -1842,13 +1867,13 @@ func (m *home) spawnFixerWithFeedback(planFile, feedback string) tea.Cmd {
 		ExecutionMode: m.executionModeForAgent(session.AgentTypeFixer),
 		TaskFile:      planFile,
 		AgentType:     session.AgentTypeFixer,
-		ReviewCycle:   cycle,
+		ReviewCycle:   spec.ReviewCycle,
 	})
 	if err != nil {
 		log.WarningLog.Printf("could not create fixer instance for %q: %v", planFile, err)
 		return nil
 	}
-	fixerInst.QueuedPrompt = prompt
+	fixerInst.QueuedPrompt = spec.Prompt
 	fixerInst.SetStatus(session.Loading)
 
 	m.addInstanceFinalizer(fixerInst, m.nav.AddInstance(fixerInst))

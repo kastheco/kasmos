@@ -1,10 +1,8 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,19 +13,6 @@ import (
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/spf13/cobra"
 )
-
-// validSignalTypes lists the signal types that the gateway pipeline can consume today.
-// architect_finished is intentionally excluded — the architect pass still signals
-// completion via the retained elaborator_finished compatibility contract.
-var validSignalTypes = map[string]struct{}{
-	"planner_finished":         {},
-	"implement_finished":       {},
-	"review_approved":          {},
-	"review_changes_requested": {},
-	"implement_task_finished":  {},
-	"implement_wave":           {},
-	"elaborator_finished":      {},
-}
 
 // signalProcessOptions holds the dependencies for executeSignalProcess,
 // enabling injection in tests without cobra plumbing.
@@ -259,86 +244,13 @@ func defaultSignalsDir(repoRoot string) string {
 //   - implement_wave: must be JSON with numeric wave_number
 //   - elaborator_finished: payload must be empty
 func normalizeSignalPayload(signalType, payload string) (string, error) {
-	switch signalType {
-	case "planner_finished", "implement_finished", "review_approved", "review_changes_requested":
-		if payload == "" {
-			return "", nil
-		}
-		if json.Valid([]byte(payload)) {
-			return payload, nil
-		}
-		b, _ := json.Marshal(map[string]string{"body": payload})
-		return string(b), nil
-
-	case "implement_task_finished":
-		if payload == "" {
-			return "", fmt.Errorf("implement_task_finished requires JSON with wave_number and task_number")
-		}
-		var m map[string]any
-		if err := json.Unmarshal([]byte(payload), &m); err != nil {
-			return "", fmt.Errorf("implement_task_finished: payload must be valid JSON: %w", err)
-		}
-		wn, ok := m["wave_number"].(float64)
-		if !ok {
-			return "", fmt.Errorf("implement_task_finished: wave_number must be a number")
-		}
-		if wn != math.Trunc(wn) {
-			return "", fmt.Errorf("implement_task_finished: wave_number must be a whole number")
-		}
-		tn, ok := m["task_number"].(float64)
-		if !ok {
-			return "", fmt.Errorf("implement_task_finished: task_number must be a number")
-		}
-		if tn != math.Trunc(tn) {
-			return "", fmt.Errorf("implement_task_finished: task_number must be a whole number")
-		}
-		return payload, nil
-
-	case "implement_wave":
-		if payload == "" {
-			return "", fmt.Errorf("implement_wave requires JSON with wave_number")
-		}
-		var m map[string]any
-		if err := json.Unmarshal([]byte(payload), &m); err != nil {
-			return "", fmt.Errorf("implement_wave: payload must be valid JSON: %w", err)
-		}
-		wn, ok := m["wave_number"].(float64)
-		if !ok {
-			return "", fmt.Errorf("implement_wave: wave_number must be a number")
-		}
-		if wn != math.Trunc(wn) {
-			return "", fmt.Errorf("implement_wave: wave_number must be a whole number")
-		}
-		return payload, nil
-
-	case "elaborator_finished":
-		if payload != "" {
-			return "", fmt.Errorf("elaborator_finished does not accept a payload (architect pass uses this legacy signal name)")
-		}
-		return "", nil
-
-	default:
-		return "", fmt.Errorf("unknown signal type %q", signalType)
-	}
+	return taskfsm.NormalizeGatewaySignalPayload(signalType, payload)
 }
 
 // executeSignalEmit validates the signal type, normalises the payload, and
 // inserts a pending signal row via the provided gateway.
 func executeSignalEmit(gw taskstore.SignalGateway, project, signalType, planFile, payload string) error {
-	if _, ok := validSignalTypes[signalType]; !ok {
-		return fmt.Errorf("unknown signal type %q; valid types: planner_finished, implement_finished, review_approved, review_changes_requested, implement_task_finished, implement_wave, elaborator_finished", signalType)
-	}
-
-	normalized, err := normalizeSignalPayload(signalType, payload)
-	if err != nil {
-		return fmt.Errorf("invalid payload: %w", err)
-	}
-
-	return gw.Create(project, taskstore.SignalEntry{
-		PlanFile:   planFile,
-		SignalType: signalType,
-		Payload:    normalized,
-	})
+	return taskfsm.EmitGatewaySignal(gw, project, signalType, planFile, payload)
 }
 
 // newSignalEmitCmd returns the "kas signal emit" subcommand.

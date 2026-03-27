@@ -2,7 +2,9 @@ package app
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
+	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
 	"github.com/kastheco/kasmos/keys"
 	"github.com/kastheco/kasmos/orchestration"
@@ -164,6 +167,43 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		selected.SetStatus(session.Ready)
 		m.toastManager.Success(fmt.Sprintf("task %d marked complete", selected.TaskNumber))
 		return m, tea.Batch(m.instanceChanged(), m.toastTickCmd())
+
+	case "mark_planner_finished":
+		return m, m.emitSelectedInstanceSignal(taskfsm.PlannerFinished, "planner finished signal queued")
+
+	case "mark_architect_finished":
+		return m, m.emitSelectedInstanceSignal(taskfsm.Event("elaborator_finished"), "architect finished signal queued")
+
+	case "mark_implement_finished":
+		return m, m.emitSelectedInstanceSignal(taskfsm.ImplementFinished, "implement finished signal queued")
+
+	case "mark_review_approved":
+		return m, m.emitSelectedInstanceSignal(taskfsm.ReviewApproved, "review approved signal queued")
+
+	case "mark_review_changes_requested":
+		return m, m.emitSelectedInstanceSignal(taskfsm.ReviewChangesRequested, "review changes requested signal queued")
+
+	case "advance_review_cycle":
+		selected := m.nav.GetSelectedInstance()
+		if selected == nil || selected.TaskFile == "" || m.taskState == nil {
+			return m, nil
+		}
+		if err := m.captureSelectedReviewFeedback(selected); err != nil {
+			return m, m.handleError(err)
+		}
+		if err := m.taskState.IncrementReviewCycle(selected.TaskFile); err != nil {
+			return m, m.handleError(err)
+		}
+		m.loadTaskState()
+		m.updateSidebarTasks()
+		cycle, _ := m.taskState.ReviewCycle(selected.TaskFile)
+		m.audit(auditlog.EventPlanTransition, fmt.Sprintf("advanced review cycle to %d", cycle),
+			auditlog.WithPlan(selected.TaskFile),
+			auditlog.WithInstance(selected.Title),
+			auditlog.WithAgent(selected.AgentType),
+		)
+		m.toastManager.Success(fmt.Sprintf("advanced review cycle to %d", cycle))
+		return m, m.toastTickCmd()
 
 	case "change_topic":
 		planFile := m.nav.GetSelectedPlanFile()
@@ -812,6 +852,22 @@ func (m *home) openContextMenu() (tea.Model, tea.Cmd) {
 	manageItems := []overlay.ContextMenuItem{
 		{Label: "rename", Action: "rename_instance"},
 	}
+	if selected.TaskFile != "" && selected.TaskNumber == 0 {
+		switch selected.AgentType {
+		case session.AgentTypePlanner:
+			manageItems = append(manageItems, overlay.ContextMenuItem{Label: "mark planning finished", Action: "mark_planner_finished"})
+		case session.AgentTypeElaborator:
+			manageItems = append(manageItems, overlay.ContextMenuItem{Label: "mark architect finished", Action: "mark_architect_finished"})
+		case session.AgentTypeCoder, session.AgentTypeFixer:
+			manageItems = append(manageItems, overlay.ContextMenuItem{Label: "mark implement finished", Action: "mark_implement_finished"})
+		case session.AgentTypeReviewer:
+			manageItems = append(manageItems,
+				overlay.ContextMenuItem{Label: "mark review approved", Action: "mark_review_approved"},
+				overlay.ContextMenuItem{Label: "mark changes requested", Action: "mark_review_changes_requested"},
+				overlay.ContextMenuItem{Label: "advance review cycle", Action: "advance_review_cycle"},
+			)
+		}
+	}
 	if selected.TaskNumber > 0 {
 		if orch, ok := m.waveOrchestrators[selected.TaskFile]; ok && orch.IsTaskRunning(selected.TaskNumber) {
 			manageItems = append(manageItems, overlay.ContextMenuItem{Label: "mark complete", Action: "mark_task_complete"})
@@ -936,6 +992,51 @@ func (m *home) openTaskContextMenu() (tea.Model, tea.Cmd) {
 	m.overlays.ShowPositioned(overlay.NewContextMenu(items), x, y, false)
 	m.state = stateContextMenu
 	return m, nil
+}
+
+func signalTypeString(event taskfsm.Event) string {
+	return string(event)
+}
+
+func (m *home) emitSelectedInstanceSignal(event taskfsm.Event, successToast string) tea.Cmd {
+	selected := m.nav.GetSelectedInstance()
+	if selected == nil || selected.TaskFile == "" || m.taskStoreProject == "" {
+		return nil
+	}
+	if event == taskfsm.ReviewApproved || event == taskfsm.ReviewChangesRequested {
+		if err := m.captureSelectedReviewFeedback(selected); err != nil {
+			return m.handleError(err)
+		}
+	}
+	payload := ""
+	if event == taskfsm.ReviewApproved || event == taskfsm.ReviewChangesRequested {
+		payload = m.reviewFeedbackPayload(selected)
+	}
+	planFile := selected.TaskFile
+	instanceTitle := selected.Title
+	agentType := selected.AgentType
+	project := m.taskStoreProject
+	return func() tea.Msg {
+		dbPath := taskstore.ResolvedDBPath()
+		if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+			return manualSignalResultMsg{err: err}
+		}
+		gw, err := taskstore.NewSQLiteSignalGateway(dbPath)
+		if err != nil {
+			return manualSignalResultMsg{err: err}
+		}
+		defer gw.Close() //nolint:errcheck
+		if err := taskfsm.EmitGatewaySignal(gw, project, signalTypeString(event), planFile, payload); err != nil {
+			return manualSignalResultMsg{err: err}
+		}
+		return manualSignalResultMsg{
+			signalType:    signalTypeString(event),
+			planFile:      planFile,
+			instanceTitle: instanceTitle,
+			agentType:     agentType,
+			successToast:  successToast,
+		}
+	}
 }
 
 // pushSelectedInstance pushes the selected instance's branch changes.
