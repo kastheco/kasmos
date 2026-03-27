@@ -113,8 +113,9 @@ func WriteClaudeMCPConfig(dir string, force bool) (WriteResult, error) {
 
 // EnsureClaudeMCPEntry patches .claude/.mcp.json to guarantee the kasmos MCP server
 // entry is present. Existing servers added by the user are preserved.
-func EnsureClaudeMCPEntry(dir string) error {
+func EnsureClaudeMCPEntry(dir string) (WriteResult, error) {
 	dest := filepath.Join(dir, ".claude", ".mcp.json")
+	result := WriteResult{Path: filepath.Join(".claude", ".mcp.json"), Created: false}
 
 	var current map[string]any
 	if data, err := os.ReadFile(dest); err == nil {
@@ -134,7 +135,7 @@ func EnsureClaudeMCPEntry(dir string) error {
 	}
 
 	if _, exists := servers["kasmos"]; exists {
-		return nil // already registered — nothing to do
+		return result, nil // already registered — nothing to do
 	}
 
 	servers["kasmos"] = map[string]any{
@@ -144,14 +145,18 @@ func EnsureClaudeMCPEntry(dir string) error {
 
 	updated, err := json.MarshalIndent(current, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal .claude/.mcp.json: %w", err)
+		return result, fmt.Errorf("marshal .claude/.mcp.json: %w", err)
 	}
 	updated = append(updated, '\n')
 
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return fmt.Errorf("create .claude: %w", err)
+		return result, fmt.Errorf("create .claude: %w", err)
 	}
-	return os.WriteFile(dest, updated, 0o644)
+	if err := os.WriteFile(dest, updated, 0o644); err != nil {
+		return result, err
+	}
+	result.Created = true
+	return result, nil
 }
 
 // WriteClaudeProject scaffolds .claude/ project files.
@@ -857,9 +862,11 @@ func SyncScaffold(dir string, agents []harness.AgentConfig) ([]WriteResult, erro
 			harnessResults = append(harnessResults, staticResults...)
 
 			if harnessName == "claude" {
-				if err := EnsureClaudeMCPEntry(dir); err != nil {
+				mcpResult, err := EnsureClaudeMCPEntry(dir)
+				if err != nil {
 					return results, fmt.Errorf("sync claude .mcp.json: %w", err)
 				}
+				harnessResults = append(harnessResults, mcpResult)
 			}
 		}
 
