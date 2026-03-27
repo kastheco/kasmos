@@ -58,7 +58,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			if err != nil {
 				return err
 			}
-			return instanceChangedMsg{}
+			return tmuxAttachReturnMsg{}
 		})
 
 	case "pause_instance":
@@ -235,7 +235,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			return m, m.handleError(fmt.Errorf("task not found: %s", planFile))
 		}
 
-		feedback := m.pendingReviewFeedback[planFile]
+		feedback := m.latestReviewFeedback(planFile)
 		var cmds []tea.Cmd
 		if cmd := m.handleReviewChangesRequested(planFile, feedback); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -861,6 +861,7 @@ func (m *home) openTaskContextMenu() (tea.Model, tea.Cmd) {
 					overlay.ContextMenuItem{Label: "implement directly", Action: "start_implement_direct"},
 					overlay.ContextMenuItem{Label: "start solo agent", Action: "start_solo"},
 					overlay.ContextMenuItem{Label: "start review", Action: "start_review"},
+					overlay.ContextMenuItem{Label: "start fixer", Action: "start_fixer"},
 				)
 			case taskstate.StatusReviewing:
 				startItems = append(startItems,
@@ -1213,7 +1214,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 		m.loadTaskState()
 		m.updateSidebarTasks()
 		planName := taskstate.DisplayName(planFile)
-		reviewPrompt := scaffold.LoadReviewPrompt(planFile, planName)
+		reviewPrompt := scaffold.LoadReviewPrompt(planFile, planName, m.reviewRound(planFile), m.latestReviewFeedback(planFile))
 		return m.spawnTaskAgent(planFile, "review", reviewPrompt)
 	}
 

@@ -226,6 +226,130 @@ func TestBuildChatAboutTaskPrompt_UsesMCPFirst(t *testing.T) {
 	assert.Contains(t, prompt, "## User Question")
 }
 
+func TestSpawnReviewer_SkipsDuplicatePendingSameCycle(t *testing.T) {
+	dir := t.TempDir()
+
+	for _, cmd := range [][]string{
+		{"git", "init", dir},
+		{"git", "-C", dir, "config", "user.email", "test@test.com"},
+		{"git", "-C", dir, "config", "user.name", "Test"},
+		{"git", "-C", dir, "commit", "--allow-empty", "-m", "init"},
+	} {
+		out, err := exec.Command(cmd[0], cmd[1:]...).CombinedOutput()
+		if err != nil {
+			t.Skipf("git setup failed (%v): %s", err, out)
+		}
+	}
+
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	planFile := "review-dedupe.md"
+	require.NoError(t, ps.Register(planFile, "review dedupe", "plan/review-dedupe", time.Now()))
+	require.NoError(t, ps.SetBranch(planFile, "plan/review-dedupe"))
+	require.NoError(t, ps.IncrementReviewCycle(planFile))
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	m := &home{
+		taskState:      ps,
+		activeRepoPath: dir,
+		program:        "opencode",
+		nav:            ui.NewNavigationPanel(&sp),
+		menu:           ui.NewMenu(),
+		toastManager:   overlay.NewToastManager(&sp),
+		appConfig: &config.Config{
+			PhaseRoles: map[string]string{
+				"quality_review": session.AgentTypeReviewer,
+			},
+			Profiles: map[string]config.AgentProfile{
+				session.AgentTypeReviewer: {
+					Program: "opencode",
+					Enabled: true,
+				},
+			},
+		},
+		instanceFinalizers: make(map[*session.Instance]func()),
+	}
+
+	cmd1 := m.spawnReviewer(planFile)
+	require.NotNil(t, cmd1)
+	assert.Len(t, m.instanceFinalizers, 1)
+
+	cmd2 := m.spawnReviewer(planFile)
+	assert.Nil(t, cmd2)
+	assert.Len(t, m.instanceFinalizers, 1)
+}
+
+func TestDedupeInstancesByRepoAndTitle_KeepsNewest(t *testing.T) {
+	dir := t.TempDir()
+	older, err := session.NewInstance(session.InstanceOptions{Title: "feature-review-3", Path: dir, Program: "opencode", TaskFile: "feature", AgentType: session.AgentTypeReviewer})
+	require.NoError(t, err)
+	older.CreatedAt = time.Now().Add(-time.Minute)
+
+	newer, err := session.NewInstance(session.InstanceOptions{Title: "feature-review-3", Path: dir, Program: "opencode", TaskFile: "feature", AgentType: session.AgentTypeReviewer})
+	require.NoError(t, err)
+	newer.CreatedAt = time.Now()
+
+	other, err := session.NewInstance(session.InstanceOptions{Title: "feature-fix-2", Path: dir, Program: "opencode", TaskFile: "feature", AgentType: session.AgentTypeFixer})
+	require.NoError(t, err)
+
+	deduped := dedupeInstancesByRepoAndTitle([]*session.Instance{older, newer, other})
+	require.Len(t, deduped, 2)
+	assert.Same(t, newer, deduped[0])
+	assert.Same(t, other, deduped[1])
+}
+
+func TestInferOrphanSessionBinding_NumberedReviewer(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	planFile := "repo-owned-wakeword-training"
+	require.NoError(t, ps.Register(planFile, "repo owned wakeword training", "plan/wakeword", time.Now()))
+	require.NoError(t, ps.IncrementReviewCycle(planFile))
+	require.NoError(t, ps.IncrementReviewCycle(planFile))
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	m := &home{taskState: ps, nav: ui.NewNavigationPanel(&sp), menu: ui.NewMenu(), toastManager: overlay.NewToastManager(&sp)}
+
+	taskFile, agentType, branch, reviewCycle := m.inferOrphanSessionBinding("repo-owned-wakeword-training-review-2")
+	assert.Equal(t, planFile, taskFile)
+	assert.Equal(t, session.AgentTypeReviewer, agentType)
+	assert.Equal(t, "plan/wakeword", branch)
+	assert.Equal(t, 2, reviewCycle)
+}
+
+func TestAdoptOrphanSession_BindsPlanMetadataFromTitle(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	planFile := "repo-owned-wakeword-training"
+	require.NoError(t, ps.Register(planFile, "repo owned wakeword training", "plan/wakeword", time.Now()))
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	m := &home{
+		taskState:      ps,
+		activeRepoPath: dir,
+		program:        "opencode",
+		nav:            ui.NewNavigationPanel(&sp),
+		menu:           ui.NewMenu(),
+		toastManager:   overlay.NewToastManager(&sp),
+	}
+
+	model, _ := m.adoptOrphanSession(overlay.TmuxBrowserItem{Title: "repo-owned-wakeword-training-review-6", Name: "kas_repo-owned-wakeword-training-review-6"})
+	updated := model.(*home)
+	instances := updated.nav.GetInstances()
+	require.Len(t, instances, 1)
+	assert.Equal(t, planFile, instances[0].TaskFile)
+	assert.Equal(t, session.AgentTypeReviewer, instances[0].AgentType)
+	assert.Equal(t, 6, instances[0].ReviewCycle)
+	assert.Equal(t, "plan/wakeword", instances[0].Branch)
+}
+
 func TestSyncSharedWorktreeScaffold_WritesHarnessFilesForConfiguredProfiles(t *testing.T) {
 	dir := t.TempDir()
 	reviewerTemp := 0.2

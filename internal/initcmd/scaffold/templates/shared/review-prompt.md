@@ -3,6 +3,20 @@ Review the implementation of plan: {{PLAN_NAME}}
 Retrieve the plan content with `kas task show {{PLAN_FILE}}` to understand the goals,
 architecture, and tasks that were implemented.
 
+## Review round context
+
+Current review round: {{CURRENT_REVIEW_ROUND}}
+
+- Round 1 = initial review of the branch
+- Round 2+ = re-review after fixes
+
+For round 2 and later, verify the previous round findings first and only expand scope
+when the fixes introduced regressions or uncovered a new blocking issue.
+
+### Previous round findings
+
+{{PREVIOUS_REVIEW_CONTEXT}}
+
 IMPORTANT: Only review changes from this branch. Use `git diff $MERGE_BASE..HEAD` to see exactly
 what was changed by the implementation — do NOT review code that was inherited from main.
 Files may contain code from main that is outside the scope of this plan.

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
@@ -912,14 +913,23 @@ func SyncScaffold(dir string, agents []harness.AgentConfig) ([]WriteResult, erro
 
 // LoadReviewPrompt reads the embedded review prompt template and fills in the plan placeholders.
 // Falls back to a minimal inline prompt if the template is missing from the binary.
-func LoadReviewPrompt(planFile, planName string) string {
+func LoadReviewPrompt(planFile, planName string, reviewRound int, previousFeedback string) string {
 	content, err := templates.ReadFile("templates/shared/review-prompt.md")
 	if err != nil {
-		return fmt.Sprintf("Review the implementation of plan: %s\nPlan file: %s", planName, planFile)
+		return fmt.Sprintf("Review the implementation of plan: %s\nPlan file: %s\nCurrent review round: %d", planName, planFile, reviewRound)
+	}
+	if reviewRound < 1 {
+		reviewRound = 1
+	}
+	previousContext := strings.TrimSpace(previousFeedback)
+	if previousContext == "" {
+		previousContext = "none — this is the initial review round. perform a full first-pass review of the branch diff."
 	}
 	result := strings.ReplaceAll(string(content), "{{PLAN_FILE}}", planFile)
 	result = strings.ReplaceAll(result, "{{PLAN_FILENAME}}", filepath.Base(planFile))
 	result = strings.ReplaceAll(result, "{{PLAN_NAME}}", planName)
+	result = strings.ReplaceAll(result, "{{CURRENT_REVIEW_ROUND}}", strconv.Itoa(reviewRound))
+	result = strings.ReplaceAll(result, "{{PREVIOUS_REVIEW_CONTEXT}}", previousContext)
 	return result
 }
 

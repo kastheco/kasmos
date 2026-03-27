@@ -1084,13 +1084,15 @@ func TestPatchWorktreeConfig_Idempotent_NoRewriteWhenUnchanged(t *testing.T) {
 }
 
 func TestLoadReviewPrompt_ContainsTieredStructure(t *testing.T) {
-	prompt := LoadReviewPrompt("test-plan.md", "test-plan")
+	prompt := LoadReviewPrompt("test-plan.md", "test-plan", 2, "Round 1 — changes required")
 	assert.Contains(t, prompt, "Phase 0")
 	assert.Contains(t, prompt, "Phase 1")
 	assert.Contains(t, prompt, "Phase 2")
 	assert.Contains(t, prompt, "Phase 3")
 	assert.Contains(t, prompt, "change profile")
 	assert.Contains(t, prompt, "DECISION:")
+	assert.Contains(t, prompt, "Current review round: 2")
+	assert.Contains(t, prompt, "Round 1 — changes required")
 	assert.Contains(t, prompt, "{{true|false}}", "change profile option markers must remain in rendered output")
 	assert.NotContains(t, prompt, "{{PLAN_FILE}}")
 	assert.NotContains(t, prompt, "{{PLAN_FILENAME}}")
@@ -1098,7 +1100,7 @@ func TestLoadReviewPrompt_ContainsTieredStructure(t *testing.T) {
 }
 
 func TestLoadReviewPrompt_UsesMergeBase(t *testing.T) {
-	prompt := LoadReviewPrompt("test-plan.md", "test-plan")
+	prompt := LoadReviewPrompt("test-plan.md", "test-plan", 1, "")
 	assert.Contains(t, prompt, "merge-base")
 	assert.Contains(t, prompt, "MERGE_BASE")
 	assert.NotContains(t, prompt, "git diff main..HEAD",
@@ -1109,7 +1111,7 @@ func TestLoadReviewPrompt_UsesMergeBase(t *testing.T) {
 }
 
 func TestLoadReviewPrompt_UsesGatewayReviewSignals(t *testing.T) {
-	prompt := LoadReviewPrompt("test-plan.md", "test-plan")
+	prompt := LoadReviewPrompt("test-plan.md", "test-plan", 1, "")
 	assert.Contains(t, prompt, "kas signal emit review_approved test-plan.md")
 	assert.Contains(t, prompt, "kas signal emit review_changes_requested test-plan.md")
 	assert.NotContains(t, prompt, ".kasmos/signals/review-approved-")

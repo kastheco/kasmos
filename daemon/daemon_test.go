@@ -203,6 +203,47 @@ func TestDaemon_RecoverSessions_AdoptsTrackedInstances(t *testing.T) {
 	assert.Equal(t, project, running[0].Project)
 }
 
+func TestDaemon_RecoverSessions_AdoptsNumberedReviewerSessions(t *testing.T) {
+	project := "proj"
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:    "feature",
+		Status:      taskstore.StatusReviewing,
+		Branch:      "plan/feature",
+		ReviewCycle: 5,
+	}))
+
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+	d.repos.repos = []RepoEntry{{
+		Path:    "/tmp/proj",
+		Project: project,
+		Store:   store,
+	}}
+	d.spawner.discoverOrphans = func(_ []string) ([]tmuxpkg.SessionInfo, error) {
+		return []tmuxpkg.SessionInfo{{Title: "feature-review-6"}}, nil
+	}
+	var restored session.InstanceData
+	d.spawner.restoreInstance = func(data session.InstanceData) (*session.Instance, error) {
+		restored = data
+		return &session.Instance{Title: data.Title, Path: data.Path, TaskFile: data.TaskFile, AgentType: data.AgentType}, nil
+	}
+
+	recovered, err := d.RecoverSessions()
+	require.NoError(t, err)
+	assert.Equal(t, 1, recovered)
+
+	running := d.spawner.RunningInstances()
+	require.Len(t, running, 1)
+	assert.Equal(t, "feature", running[0].PlanFile)
+	assert.Equal(t, session.AgentTypeReviewer, running[0].AgentType)
+	assert.Equal(t, "feature-review-6", restored.Title)
+}
+
 func TestDaemon_StartPlan_ReturnsBeforeSpawnCompletes(t *testing.T) {
 	project := "proj"
 	store := taskstore.NewTestStore(t)

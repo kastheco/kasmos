@@ -556,10 +556,10 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 		os.Exit(1)
 	}
 
-	h.allInstances = instances
+	h.allInstances = dedupeInstancesByRepoAndTitle(instances)
 
 	// Add instances matching active repo to the nav
-	for _, instance := range instances {
+	for _, instance := range h.allInstances {
 		repoPath := instance.GetRepoPath()
 		if repoPath == "" || repoPath == h.activeRepoPath {
 			h.nav.AddInstance(instance)()
@@ -576,6 +576,35 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 	h.rebuildOrphanedOrchestrators()
 
 	return h
+}
+
+func dedupeInstancesByRepoAndTitle(instances []*session.Instance) []*session.Instance {
+	if len(instances) < 2 {
+		return instances
+	}
+
+	seen := make(map[string]*session.Instance, len(instances))
+	order := make([]string, 0, len(instances))
+	for _, inst := range instances {
+		if inst == nil {
+			continue
+		}
+		key := inst.GetRepoPath() + "\x00" + inst.Title
+		if existing, ok := seen[key]; ok {
+			if existing.CreatedAt.Before(inst.CreatedAt) {
+				seen[key] = inst
+			}
+			continue
+		}
+		seen[key] = inst
+		order = append(order, key)
+	}
+
+	result := make([]*session.Instance, 0, len(order))
+	for _, key := range order {
+		result = append(result, seen[key])
+	}
+	return result
 }
 
 // activeProject returns the project name derived from the active repo path.
@@ -1044,6 +1073,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							signalCmds = append(signalCmds, cmd)
 						}
 					case loop.ReviewApprovedAction:
+						m.clearLatestReviewFeedback(a.PlanFile)
 						planName := taskstate.DisplayName(a.PlanFile)
 						m.audit(auditlog.EventPlanTransition, "reviewing → done (review approved)",
 							auditlog.WithPlan(a.PlanFile))
@@ -1073,6 +1103,13 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							log.WarningLog.Printf("could not increment review cycle for %q: %v", a.PlanFile, err)
 						}
 					case loop.SpawnCoderAction:
+						// Back-compat: older callers may still emit SpawnCoderAction for
+						// review-fix loops even though the processor now emits
+						// SpawnFixerAction.
+						if cmd := m.spawnFixerWithFeedback(a.PlanFile, a.Feedback); cmd != nil {
+							signalCmds = append(signalCmds, cmd)
+						}
+					case loop.SpawnFixerAction:
 						if cmd := m.spawnFixerWithFeedback(a.PlanFile, a.Feedback); cmd != nil {
 							signalCmds = append(signalCmds, cmd)
 						}
@@ -1165,6 +1202,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							signalCmds = append(signalCmds, cmd)
 						}
 					case taskfsm.ReviewApproved:
+						m.clearLatestReviewFeedback(sig.TaskFile)
 						planName := taskstate.DisplayName(sig.TaskFile)
 						m.audit(auditlog.EventPlanTransition, "reviewing → done (review approved)",
 							auditlog.WithPlan(sig.TaskFile))
@@ -1858,7 +1896,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.previewTerminal = msg.term
 		m.previewTerminalInstance = msg.instanceTitle
-		return m, nil
+		if msg.term != nil {
+			previewWidth, previewHeight := m.tabbedWindow.GetPreviewSize()
+			msg.term.Resize(previewWidth, previewHeight)
+		}
+		return m, tea.RequestWindowSize
 	case killInstanceMsg:
 		// Async pre-kill checks passed — pause instead of destroying (branch preserved).
 		for _, inst := range m.allInstances {
@@ -2053,7 +2095,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.toastTickCmd()
 	case tmuxAttachReturnMsg:
 		m.toastManager.Info("detached from tmux session")
-		return m, tea.Batch(tea.RequestWindowSize, m.toastTickCmd())
+		return m, tea.Batch(clearScreenCmd(), tea.RequestWindowSize, m.instanceChanged(), m.toastTickCmd())
 	case permissionAutoApproveMsg:
 		if msg.instance != nil && msg.instance.Started() {
 			i := msg.instance
@@ -2426,6 +2468,12 @@ type tmuxKillResultMsg struct {
 
 // tmuxAttachReturnMsg is sent when the user detaches from a passively attached orphan session.
 type tmuxAttachReturnMsg struct{}
+
+func clearScreenCmd() tea.Cmd {
+	return func() tea.Msg {
+		return tea.ClearScreen()
+	}
+}
 
 // clickUpDetectedMsg is sent at startup when ClickUp MCP is detected.
 type clickUpDetectedMsg struct {

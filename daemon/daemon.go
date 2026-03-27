@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -1066,9 +1067,57 @@ func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 		RepoPath: e.Path,
 		Project:  e.Project,
 		Branch:   branch,
-		Prompt:   orchestration.BuildFixerPrompt(planFile, feedback),
+		Prompt:   orchestration.BuildFixerPrompt(planFile, feedback, 1),
 		Feedback: feedback,
 	}
+}
+
+func taskRecoveryCandidates(task taskstore.TaskEntry) []struct {
+	title     string
+	agentType string
+	branch    string
+} {
+	planName := taskstate.DisplayName(task.Filename)
+	candidates := []struct {
+		title     string
+		agentType string
+		branch    string
+	}{
+		{title: fmt.Sprintf("%s-coder", planName), agentType: session.AgentTypeCoder, branch: task.Branch},
+		{title: fmt.Sprintf("%s-fixer", planName), agentType: session.AgentTypeFixer, branch: task.Branch},
+		{title: fmt.Sprintf("%s-reviewer", planName), agentType: session.AgentTypeReviewer, branch: task.Branch},
+		{title: fmt.Sprintf("%s-architect", planName), agentType: session.AgentTypeElaborator},
+	}
+
+	maxReview := task.ReviewCycle + 1
+	if maxReview < 1 {
+		maxReview = 1
+	}
+	for cycle := 1; cycle <= maxReview; cycle++ {
+		candidates = append(candidates, struct {
+			title     string
+			agentType string
+			branch    string
+		}{
+			title:     fmt.Sprintf("%s-review-%s", planName, strconv.Itoa(cycle)),
+			agentType: session.AgentTypeReviewer,
+			branch:    task.Branch,
+		})
+	}
+
+	for cycle := 1; cycle <= task.ReviewCycle; cycle++ {
+		candidates = append(candidates, struct {
+			title     string
+			agentType string
+			branch    string
+		}{
+			title:     fmt.Sprintf("%s-fix-%s", planName, strconv.Itoa(cycle)),
+			agentType: session.AgentTypeFixer,
+			branch:    task.Branch,
+		})
+	}
+
+	return candidates
 }
 
 // RecoverSessions discovers orphaned kas_ tmux sessions and attempts to
@@ -1112,19 +1161,7 @@ func (d *Daemon) RecoverSessions() (int, error) {
 			continue
 		}
 		for _, task := range tasks {
-			planName := taskstate.DisplayName(task.Filename)
-			candidates := []struct {
-				title     string
-				agentType string
-				branch    string
-			}{
-				{title: fmt.Sprintf("%s-coder", planName), agentType: session.AgentTypeCoder, branch: task.Branch},
-				{title: fmt.Sprintf("%s-fixer", planName), agentType: session.AgentTypeFixer, branch: task.Branch},
-				{title: fmt.Sprintf("%s-reviewer", planName), agentType: session.AgentTypeReviewer, branch: task.Branch},
-				{title: fmt.Sprintf("%s-architect", planName), agentType: session.AgentTypeElaborator},
-			}
-
-			for _, candidate := range candidates {
+			for _, candidate := range taskRecoveryCandidates(task) {
 				if _, ok := orphanTitles[candidate.title]; !ok {
 					continue
 				}

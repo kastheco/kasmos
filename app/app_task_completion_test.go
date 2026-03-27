@@ -746,6 +746,86 @@ func TestMetadataResultMsg_DaemonManagedRepoIgnoresReviewChangesSignal(t *testin
 	assert.Equal(t, taskstate.StatusReviewing, entry.Status)
 }
 
+func TestMetadataResultMsg_ProcessorReviewChangesSignalSpawnsFixer(t *testing.T) {
+	const planFile = "feature"
+	const feedback = "Fix the error handling in auth.go"
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(plansDir, planFile), []byte("# Plan\n## Wave 1\n- Task 1\n"), 0o644))
+
+	store := storeForDir(t, plansDir)
+	ps, err := newTestPlanStateWithStore(t, store, plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.Register(planFile, "feature", "plan/feature", time.Now()))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusReviewing)
+
+	reviewerInst, err := session.NewInstance(session.InstanceOptions{
+		Title:     "feature-review",
+		Path:      dir,
+		Program:   "claude",
+		TaskFile:  planFile,
+		AgentType: session.AgentTypeReviewer,
+	})
+	require.NoError(t, err)
+	reviewerInst.IsReviewer = true
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	list := ui.NewNavigationPanel(&sp)
+	_ = list.AddInstance(reviewerInst)
+
+	appCfg := config.DefaultConfig()
+	appCfg.AutoReviewFix = true
+
+	h := &home{
+		ctx:                   context.Background(),
+		state:                 stateDefault,
+		appConfig:             appCfg,
+		nav:                   list,
+		menu:                  ui.NewMenu(),
+		tabbedWindow:          ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:          overlay.NewToastManager(&sp),
+		overlays:              overlay.NewManager(),
+		taskState:             ps,
+		taskStore:             store,
+		taskStoreProject:      "test",
+		taskStateDir:          plansDir,
+		fsm:                   newPlanFSMForTestWithStore(t, store, plansDir),
+		pendingReviewFeedback: make(map[string]string),
+		plannerPrompted:       make(map[string]bool),
+		coderPushPrompted:     make(map[string]bool),
+		activeRepoPath:        dir,
+		program:               "claude",
+	}
+
+	_, _ = h.Update(metadataResultMsg{
+		PlanState: ps,
+		Signals: []taskfsm.Signal{{
+			Event:    taskfsm.ReviewChangesRequested,
+			TaskFile: planFile,
+			Body:     feedback,
+		}},
+	})
+
+	var foundFixer bool
+	for _, inst := range h.nav.GetInstances() {
+		if inst.TaskFile == planFile && inst.AgentType == session.AgentTypeFixer {
+			foundFixer = true
+			assert.Contains(t, inst.QueuedPrompt, feedback)
+			break
+		}
+	}
+	assert.True(t, foundFixer, "processor-backed review-changes signal must spawn a fixer instance")
+
+	reloaded, err := newTestPlanStateWithStore(t, store, plansDir)
+	require.NoError(t, err)
+	entry, ok := reloaded.Entry(planFile)
+	require.True(t, ok)
+	assert.Equal(t, taskstate.StatusImplementing, entry.Status)
+	assert.Equal(t, 1, entry.ReviewCycle)
+}
+
 func TestTickUpdateMetadata_DaemonManagedRepoSkipsFilesystemReviewSignals(t *testing.T) {
 	dir := t.TempDir()
 	signalsDir := filepath.Join(dir, ".kasmos", "signals")

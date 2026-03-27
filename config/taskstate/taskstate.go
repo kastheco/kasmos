@@ -24,19 +24,20 @@ const (
 )
 
 type TaskEntry struct {
-	Status         Status    `json:"status"`
-	Description    string    `json:"description,omitempty"`
-	Branch         string    `json:"branch,omitempty"`
-	Topic          string    `json:"topic,omitempty"`
-	CreatedAt      time.Time `json:"created_at,omitempty"`
-	Implemented    string    `json:"implemented,omitempty"`
-	PlanningAt     time.Time `json:"planning_at,omitempty"`
-	ImplementingAt time.Time `json:"implementing_at,omitempty"`
-	ReviewingAt    time.Time `json:"reviewing_at,omitempty"`
-	DoneAt         time.Time `json:"done_at,omitempty"`
-	Goal           string    `json:"goal,omitempty"`
-	ClickUpTaskID  string    `json:"clickup_task_id,omitempty"`
-	ReviewCycle    int       `json:"review_cycle,omitempty"`
+	Status               Status    `json:"status"`
+	Description          string    `json:"description,omitempty"`
+	Branch               string    `json:"branch,omitempty"`
+	Topic                string    `json:"topic,omitempty"`
+	CreatedAt            time.Time `json:"created_at,omitempty"`
+	Implemented          string    `json:"implemented,omitempty"`
+	PlanningAt           time.Time `json:"planning_at,omitempty"`
+	ImplementingAt       time.Time `json:"implementing_at,omitempty"`
+	ReviewingAt          time.Time `json:"reviewing_at,omitempty"`
+	DoneAt               time.Time `json:"done_at,omitempty"`
+	Goal                 string    `json:"goal,omitempty"`
+	ClickUpTaskID        string    `json:"clickup_task_id,omitempty"`
+	ReviewCycle          int       `json:"review_cycle,omitempty"`
+	LatestReviewFeedback string    `json:"latest_review_feedback,omitempty"`
 }
 
 type TopicEntry struct {
@@ -99,19 +100,20 @@ func Load(store taskstore.Store, project, dir string) (*TaskState, error) {
 			}
 		}
 		ps.Plans[e.Filename] = TaskEntry{
-			Status:         Status(e.Status),
-			Description:    e.Description,
-			Branch:         e.Branch,
-			Topic:          e.Topic,
-			CreatedAt:      e.CreatedAt,
-			Implemented:    e.Implemented,
-			PlanningAt:     e.PlanningAt,
-			ImplementingAt: e.ImplementingAt,
-			ReviewingAt:    e.ReviewingAt,
-			DoneAt:         e.DoneAt,
-			Goal:           goal,
-			ClickUpTaskID:  e.ClickUpTaskID,
-			ReviewCycle:    e.ReviewCycle,
+			Status:               Status(e.Status),
+			Description:          e.Description,
+			Branch:               e.Branch,
+			Topic:                e.Topic,
+			CreatedAt:            e.CreatedAt,
+			Implemented:          e.Implemented,
+			PlanningAt:           e.PlanningAt,
+			ImplementingAt:       e.ImplementingAt,
+			ReviewingAt:          e.ReviewingAt,
+			DoneAt:               e.DoneAt,
+			Goal:                 goal,
+			ClickUpTaskID:        e.ClickUpTaskID,
+			ReviewCycle:          e.ReviewCycle,
+			LatestReviewFeedback: e.LatestReviewFeedback,
 		}
 	}
 
@@ -634,20 +636,21 @@ func isAlreadyExistsError(err error) bool {
 // writing to the store.
 func (ps *TaskState) toTaskstoreEntry(filename string, e TaskEntry) taskstore.TaskEntry {
 	return taskstore.TaskEntry{
-		Filename:       filename,
-		Status:         taskstore.Status(e.Status),
-		Description:    e.Description,
-		Branch:         e.Branch,
-		Topic:          e.Topic,
-		CreatedAt:      e.CreatedAt,
-		Implemented:    e.Implemented,
-		PlanningAt:     e.PlanningAt,
-		ImplementingAt: e.ImplementingAt,
-		ReviewingAt:    e.ReviewingAt,
-		DoneAt:         e.DoneAt,
-		Goal:           e.Goal,
-		ClickUpTaskID:  e.ClickUpTaskID,
-		ReviewCycle:    e.ReviewCycle,
+		Filename:             filename,
+		Status:               taskstore.Status(e.Status),
+		Description:          e.Description,
+		Branch:               e.Branch,
+		Topic:                e.Topic,
+		CreatedAt:            e.CreatedAt,
+		Implemented:          e.Implemented,
+		PlanningAt:           e.PlanningAt,
+		ImplementingAt:       e.ImplementingAt,
+		ReviewingAt:          e.ReviewingAt,
+		DoneAt:               e.DoneAt,
+		Goal:                 e.Goal,
+		ClickUpTaskID:        e.ClickUpTaskID,
+		ReviewCycle:          e.ReviewCycle,
+		LatestReviewFeedback: e.LatestReviewFeedback,
 	}
 }
 
@@ -690,4 +693,31 @@ func (ps *TaskState) IncrementReviewCycle(filename string) error {
 	entry.ReviewCycle++
 	ps.Plans[filename] = entry
 	return nil
+}
+
+// SetLatestReviewFeedback stores the latest structured reviewer feedback for a plan
+// so re-review and manual fixer restarts can recover the previous round context.
+func (ps *TaskState) SetLatestReviewFeedback(filename, feedback string) error {
+	entry, ok := ps.Plans[filename]
+	if !ok {
+		return fmt.Errorf("plan not found: %s", filename)
+	}
+	trimmed := strings.TrimSpace(feedback)
+	stored, err := ps.store.Get(ps.project, filename)
+	if err != nil {
+		return fmt.Errorf("task store: %w", err)
+	}
+	stored.LatestReviewFeedback = trimmed
+	if err := ps.store.Update(ps.project, filename, stored); err != nil {
+		return fmt.Errorf("task store: %w", err)
+	}
+	entry.ReviewCycle = stored.ReviewCycle
+	entry.LatestReviewFeedback = trimmed
+	ps.Plans[filename] = entry
+	return nil
+}
+
+// ClearLatestReviewFeedback removes any persisted reviewer feedback for a plan.
+func (ps *TaskState) ClearLatestReviewFeedback(filename string) error {
+	return ps.SetLatestReviewFeedback(filename, "")
 }

@@ -125,12 +125,16 @@ func BuildBlueprintSkipPrompt(planFile string, plan *taskparser.Plan) string {
 // BuildFixerPrompt builds the prompt for a fixer agent responding to reviewer
 // feedback. Unlike implementation prompts, it scopes work to cited review
 // findings and tells the agent not to resume broad plan execution.
-func BuildFixerPrompt(planFile, feedback string) string {
+func BuildFixerPrompt(planFile, feedback string, reviewRound int) string {
 	var sb strings.Builder
 
 	trimmedFeedback := strings.TrimSpace(feedback)
+	if reviewRound < 1 {
+		reviewRound = 1
+	}
 
 	sb.WriteString(fmt.Sprintf("Address reviewer feedback for plan: %s\n\n", planFile))
+	sb.WriteString(fmt.Sprintf("Current fix round: %d\n\n", reviewRound))
 	sb.WriteString("## Rules\n\n")
 	sb.WriteString("- You are a fixer responding to review findings, not an implementer.\n")
 	sb.WriteString(fmt.Sprintf("- Retrieve the full plan with `kas task show %s` for context, but do NOT resume broad plan implementation.\n", planFile))

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -142,6 +143,11 @@ func (m *home) ensureProcessor() *loop.Processor {
 
 func (m *home) handleReviewChangesRequested(planFile, feedback string) tea.Cmd {
 	m.pendingReviewFeedback[planFile] = feedback
+	if m.taskState != nil {
+		if err := m.taskState.SetLatestReviewFeedback(planFile, feedback); err != nil {
+			log.WarningLog.Printf("could not persist latest review feedback for %q: %v", planFile, err)
+		}
+	}
 
 	var cmds []tea.Cmd
 	truncated := feedback
@@ -161,6 +167,115 @@ func (m *home) handleReviewChangesRequested(planFile, feedback string) tea.Cmd {
 		return nil
 	}
 	return tea.Batch(cmds...)
+}
+
+func (m *home) reviewRound(planFile string) int {
+	if m.taskState != nil {
+		if cycle, err := m.taskState.ReviewCycle(planFile); err == nil && cycle >= 0 {
+			return cycle + 1
+		}
+	}
+	return 1
+}
+
+func (m *home) fixerRound(planFile string) int {
+	if m.taskState != nil {
+		if cycle, err := m.taskState.ReviewCycle(planFile); err == nil && cycle > 0 {
+			return cycle
+		}
+	}
+	return 1
+}
+
+func (m *home) latestReviewFeedback(planFile string) string {
+	if feedback := strings.TrimSpace(m.pendingReviewFeedback[planFile]); feedback != "" {
+		return feedback
+	}
+	if m.taskState != nil {
+		if entry, ok := m.taskState.Entry(planFile); ok {
+			return strings.TrimSpace(entry.LatestReviewFeedback)
+		}
+	}
+	return ""
+}
+
+func parseOrphanSessionCycle(title, prefix, marker string) (int, bool) {
+	if !strings.HasPrefix(title, prefix+marker) {
+		return 0, false
+	}
+	cycleText := strings.TrimPrefix(title, prefix+marker)
+	if cycleText == "" {
+		return 0, false
+	}
+	cycle, err := strconv.Atoi(cycleText)
+	if err != nil || cycle < 1 {
+		return 0, false
+	}
+	return cycle, true
+}
+
+func (m *home) inferOrphanSessionBinding(title string) (taskFile, agentType, branch string, reviewCycle int) {
+	if m.taskState == nil {
+		return "", "", "", 0
+	}
+
+	bestPrefixLen := -1
+	for filename, entry := range m.taskState.Plans {
+		planName := taskstate.DisplayName(filename)
+		if planName == "" || !strings.HasPrefix(title, planName) {
+			continue
+		}
+
+		matchedType := ""
+		matchedCycle := 0
+		switch {
+		case title == planName+"-plan":
+			matchedType = session.AgentTypePlanner
+		case title == planName+"-architect":
+			matchedType = session.AgentTypeElaborator
+		case title == planName+"-coder":
+			matchedType = session.AgentTypeCoder
+		case title == planName+"-reviewer" || title == planName+"-review":
+			matchedType = session.AgentTypeReviewer
+			matchedCycle = 1
+		case title == planName+"-fixer":
+			matchedType = session.AgentTypeFixer
+		}
+
+		if matchedType == "" {
+			if cycle, ok := parseOrphanSessionCycle(title, planName, "-review-"); ok {
+				matchedType = session.AgentTypeReviewer
+				matchedCycle = cycle
+			} else if cycle, ok := parseOrphanSessionCycle(title, planName, "-fix-"); ok {
+				matchedType = session.AgentTypeFixer
+				matchedCycle = cycle
+			}
+		}
+
+		if matchedType == "" {
+			continue
+		}
+		if len(planName) <= bestPrefixLen {
+			continue
+		}
+
+		bestPrefixLen = len(planName)
+		taskFile = filename
+		agentType = matchedType
+		branch = entry.Branch
+		reviewCycle = matchedCycle
+	}
+
+	return taskFile, agentType, branch, reviewCycle
+}
+
+func (m *home) clearLatestReviewFeedback(planFile string) {
+	delete(m.pendingReviewFeedback, planFile)
+	if m.taskState != nil {
+		if err := m.taskState.ClearLatestReviewFeedback(planFile); err != nil {
+			log.WarningLog.Printf("could not clear latest review feedback for %q: %v", planFile, err)
+		}
+	}
 }
 
 func assemblePRMetadata(
@@ -645,7 +760,7 @@ func (m *home) enterFocusMode() tea.Cmd {
 		m.state = stateFocusAgent
 		m.tabbedWindow.SetFocusMode(true)
 		m.menu.SetFocusMode(true)
-		return nil
+		return tea.RequestWindowSize
 	}
 
 	// No terminal yet — attach asynchronously so focus transitions don't block.
@@ -654,7 +769,7 @@ func (m *home) enterFocusMode() tea.Cmd {
 	m.tabbedWindow.SetFocusMode(true)
 	m.menu.SetFocusMode(true)
 
-	return cmd
+	return tea.Batch(tea.RequestWindowSize, cmd)
 }
 
 // exclamationAutoFocus handles the `!` key in stateDefault: it enters
@@ -728,12 +843,42 @@ func (m *home) saveAllInstances() error {
 
 // removeFromAllInstances removes an instance from the master list by title.
 func (m *home) removeFromAllInstances(title string) {
-	for i, inst := range m.allInstances {
-		if inst.Title == title {
-			m.allInstances = append(m.allInstances[:i], m.allInstances[i+1:]...)
-			return
+	filtered := m.allInstances[:0]
+	for _, inst := range m.allInstances {
+		if inst.Title != title {
+			filtered = append(filtered, inst)
 		}
 	}
+	m.allInstances = filtered
+}
+
+func (m *home) hasLiveOrPendingInstance(planFile, agentType, title string) bool {
+	matches := func(inst *session.Instance) bool {
+		if inst == nil || inst.TaskFile != planFile || inst.AgentType != agentType {
+			return false
+		}
+		if title != "" && inst.Title != title {
+			return false
+		}
+		return !inst.Exited && !inst.Paused()
+	}
+
+	for _, inst := range m.nav.GetInstances() {
+		if matches(inst) {
+			return true
+		}
+	}
+	for _, inst := range m.allInstances {
+		if matches(inst) {
+			return true
+		}
+	}
+	for inst := range m.instanceFinalizers {
+		if matches(inst) {
+			return true
+		}
+	}
+	return false
 }
 
 // cleanupPausedDoneReviewers removes paused reviewer instances whose plan is
@@ -1292,7 +1437,12 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 		}
 	}
 	planName := taskstate.DisplayName(planFile)
-	prompt := scaffold.LoadReviewPrompt(planFile, planName)
+	prompt := scaffold.LoadReviewPrompt(planFile, planName, m.reviewRound(planFile), m.latestReviewFeedback(planFile))
+	cycle, _ := m.taskState.ReviewCycle(planFile)
+	title := fmt.Sprintf("%s-review-%d", planName, cycle+1)
+	if m.hasLiveOrPendingInstance(planFile, session.AgentTypeReviewer, title) {
+		return nil
+	}
 
 	// Kill any previous reviewer for this plan so the new session gets a fresh
 	// tmux session instead of reattaching to a stale/errored one.
@@ -1305,9 +1455,8 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 		return nil
 	}
 
-	cycle, _ := m.taskState.ReviewCycle(planFile)
 	reviewerInst, err := session.NewInstance(session.InstanceOptions{
-		Title:         fmt.Sprintf("%s-review-%d", planName, cycle+1),
+		Title:         title,
 		Path:          m.activeRepoPath,
 		Program:       m.programForAgent(session.AgentTypeReviewer),
 		ExecutionMode: m.executionModeForAgent(session.AgentTypeReviewer),
@@ -1658,7 +1807,11 @@ func (m *home) spawnFixerWithFeedback(planFile, feedback string) tea.Cmd {
 		return nil
 	}
 	planName := taskstate.DisplayName(planFile)
-	prompt := orchestration.BuildFixerPrompt(planFile, feedback)
+	feedback = strings.TrimSpace(feedback)
+	if feedback == "" {
+		feedback = m.latestReviewFeedback(planFile)
+	}
+	prompt := orchestration.BuildFixerPrompt(planFile, feedback, m.fixerRound(planFile))
 
 	// Kill any previous fixer (and any legacy feedback-coder) for this plan so
 	// the new session gets a fresh tmux session instead of reattaching to a
@@ -1678,8 +1831,12 @@ func (m *home) spawnFixerWithFeedback(planFile, feedback string) tea.Cmd {
 	}
 
 	cycle, _ := m.taskState.ReviewCycle(planFile)
+	title := fmt.Sprintf("%s-fix-%d", planName, cycle)
+	if m.hasLiveOrPendingInstance(planFile, session.AgentTypeFixer, title) {
+		return nil
+	}
 	fixerInst, err := session.NewInstance(session.InstanceOptions{
-		Title:         fmt.Sprintf("%s-fix-%d", planName, cycle),
+		Title:         title,
 		Path:          m.activeRepoPath,
 		Program:       m.programForAgent(session.AgentTypeFixer),
 		ExecutionMode: m.executionModeForAgent(session.AgentTypeFixer),
@@ -2711,14 +2868,19 @@ func (m *home) spawnChatAboutTask(planFile, question string) (tea.Model, tea.Cmd
 
 // adoptOrphanSession creates a new Instance backed by an existing orphaned tmux session.
 func (m *home) adoptOrphanSession(item overlay.TmuxBrowserItem) (tea.Model, tea.Cmd) {
+	taskFile, agentType, branch, reviewCycle := m.inferOrphanSessionBinding(item.Title)
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:   item.Title,
-		Path:    m.activeRepoPath,
-		Program: "unknown",
+		Title:       item.Title,
+		Path:        m.activeRepoPath,
+		Program:     m.program,
+		TaskFile:    taskFile,
+		AgentType:   agentType,
+		ReviewCycle: reviewCycle,
 	})
 	if err != nil {
 		return m, m.handleError(err)
 	}
+	inst.Branch = branch
 
 	m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))
 	m.nav.SelectInstance(inst)

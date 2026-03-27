@@ -1053,6 +1053,57 @@ func TestEnsureProcessor_RefreshesReviewFixConfig(t *testing.T) {
 	assert.True(t, foundIncrement)
 }
 
+func TestStartFixer_UsesPersistedLatestReviewFeedback(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	const planFile = "feature"
+	const feedback = "Round 4 — changes required\n\n- [app/app.go:1603] keep the re-review loop stateful"
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename:             planFile,
+		Status:               taskstore.StatusImplementing,
+		Branch:               "plan/feature",
+		ReviewCycle:          4,
+		LatestReviewFeedback: feedback,
+	}))
+
+	ps, err := taskstate.Load(store, "proj", t.TempDir())
+	require.NoError(t, err)
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	nav := ui.NewNavigationPanel(&sp)
+	nav.SetTopicsAndPlans(nil, []ui.PlanDisplay{{Filename: planFile, Status: string(taskstate.StatusImplementing)}}, nil)
+	require.True(t, nav.SelectByID(ui.SidebarPlanPrefix+planFile))
+
+	h := &home{
+		ctx:                   context.Background(),
+		state:                 stateDefault,
+		appConfig:             config.DefaultConfig(),
+		nav:                   nav,
+		menu:                  ui.NewMenu(),
+		tabbedWindow:          ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:          overlay.NewToastManager(&sp),
+		overlays:              overlay.NewManager(),
+		taskState:             ps,
+		taskStore:             store,
+		taskStoreProject:      "proj",
+		pendingReviewFeedback: make(map[string]string),
+		activeRepoPath:        t.TempDir(),
+		program:               "claude",
+	}
+
+	_, _ = h.executeContextAction("start_fixer")
+
+	var fixer *session.Instance
+	for _, inst := range h.nav.GetInstances() {
+		if inst.TaskFile == planFile && inst.AgentType == session.AgentTypeFixer {
+			fixer = inst
+			break
+		}
+	}
+	require.NotNil(t, fixer, "manual start_fixer should spawn a fixer instance from implementing")
+	assert.Contains(t, fixer.QueuedPrompt, feedback)
+	assert.Contains(t, fixer.QueuedPrompt, "Current fix round: 4")
+}
+
 func TestViewSelectedPlan_ReadsFromStore(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
 	planFile := "test.md"

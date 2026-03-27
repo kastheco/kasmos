@@ -988,7 +988,7 @@ func TestPreviewTerminal_SelectionChange(t *testing.T) {
 
 		assert.Equal(t, readyTerm, h.previewTerminal, "previewTerminal should be set from msg")
 		assert.Equal(t, "instance-A", h.previewTerminalInstance, "previewTerminalInstance should match")
-		assert.Nil(t, cmd, "no follow-up cmd expected")
+		assert.NotNil(t, cmd, "preview terminal attach should request a resize refresh")
 
 		// Cleanup
 		readyTerm.Close()
@@ -1090,7 +1090,7 @@ func TestPreviewTerminal_RenderTickIntegration(t *testing.T) {
 		})
 		assert.Equal(t, termA, h.previewTerminal, "terminal A should be attached")
 		assert.Equal(t, "instance-A", h.previewTerminalInstance)
-		assert.Nil(t, cmd, "no follow-up cmd from ready msg")
+		assert.NotNil(t, cmd, "ready msg should request a resize refresh")
 
 		// Step 3: Render tick fires — terminal is active, tick returns event-driven cmd.
 		_, tickCmd := h.Update(previewTickMsg{})
@@ -1308,7 +1308,7 @@ func TestPreviewTerminalReadyMsg_AcceptsCurrentInstance(t *testing.T) {
 	// previewTerminalInstance should be set to "A".
 	assert.Equal(t, "A", homeModel.previewTerminalInstance,
 		"previewTerminalInstance should be set when msg matches current selection")
-	assert.Nil(t, cmd, "no cmd should be returned")
+	assert.NotNil(t, cmd, "preview terminal attach should request a resize refresh")
 }
 
 func TestInstanceChanged_AutoRequestsPreview(t *testing.T) {
@@ -1547,6 +1547,30 @@ func TestStartFixer_AppearsInTaskContextMenu(t *testing.T) {
 	require.True(t, found, "task context menu must include 'start fixer' action")
 }
 
+func TestStartFixer_AppearsInImplementingTaskContextMenu(t *testing.T) {
+	h := newTestHome()
+	h.setupPlanState(t, "implementing-plan", taskstate.StatusImplementing, "")
+
+	h.focusSlot = slotNav
+	h.nav.SelectByID(ui.SidebarPlanPrefix + "implementing-plan")
+
+	model, _ := h.openTaskContextMenu()
+	updated := model.(*home)
+
+	require.Equal(t, stateContextMenu, updated.state)
+	cm, ok := updated.overlays.Current().(*overlay.ContextMenu)
+	require.True(t, ok, "current overlay must be a ContextMenu")
+
+	found := false
+	for _, item := range cm.AllItems() {
+		if item.Action == "start_fixer" {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "implementing task context menu must include 'start fixer' action")
+}
+
 // TestExitFocusMode_KeepsPreviewTerminal verifies that exitFocusMode does NOT close
 // previewTerminal — it stays alive for preview rendering.
 func TestExitFocusMode_KeepsPreviewTerminal(t *testing.T) {
@@ -1607,7 +1631,7 @@ func TestHandleKeyPress_CtrlSpaceTogglesIntoFocusMode(t *testing.T) {
 	updated := model.(*home)
 
 	assert.Equal(t, stateFocusAgent, updated.state)
-	assert.Nil(t, cmd)
+	assert.NotNil(t, cmd)
 }
 
 func TestRestartInstance_AppearsInContextMenu(t *testing.T) {

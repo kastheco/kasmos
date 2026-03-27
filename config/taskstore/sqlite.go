@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 	reviewing_at TEXT    NOT NULL DEFAULT '',
 	done_at     TEXT    NOT NULL DEFAULT '',
 	goal                TEXT    NOT NULL DEFAULT '',
+	latest_review_feedback TEXT NOT NULL DEFAULT '',
 	pr_url              TEXT    NOT NULL DEFAULT '',
 	pr_review_decision  TEXT    NOT NULL DEFAULT '',
 	pr_check_status     TEXT    NOT NULL DEFAULT '',
@@ -95,6 +96,9 @@ const clickupTaskIDMigration = `ALTER TABLE tasks ADD COLUMN clickup_task_id TEX
 
 // reviewCycleMigration adds the review_cycle column to existing databases.
 const reviewCycleMigration = `ALTER TABLE tasks ADD COLUMN review_cycle INTEGER NOT NULL DEFAULT 0`
+
+// latestReviewFeedbackMigration adds the latest_review_feedback column to existing databases.
+const latestReviewFeedbackMigration = `ALTER TABLE tasks ADD COLUMN latest_review_feedback TEXT NOT NULL DEFAULT ''`
 
 // prURLMigration adds the pr_url column to existing databases.
 const prURLMigration = `ALTER TABLE tasks ADD COLUMN pr_url TEXT NOT NULL DEFAULT ''`
@@ -177,6 +181,12 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 	if err := migrateAddColumn(db, "review_cycle", reviewCycleMigration); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate review_cycle column: %w", err)
+	}
+
+	// Add latest_review_feedback column if it doesn't exist (upgrade existing databases).
+	if err := migrateAddColumn(db, "latest_review_feedback", latestReviewFeedbackMigration); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate latest_review_feedback column: %w", err)
 	}
 
 	// Add new task lifecycle phase timestamp and goal columns.
@@ -342,8 +352,8 @@ func (s *SQLiteStore) Ping() error {
 // Returns an error if a task with the same filename already exists in the project.
 func (s *SQLiteStore) Create(project string, entry TaskEntry) error {
 	const q = `
-		INSERT INTO tasks (project, filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, goal, content, clickup_task_id, review_cycle, pr_url, pr_review_decision, pr_check_status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO tasks (project, filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	_, err := s.db.Exec(q,
 		project,
@@ -362,6 +372,7 @@ func (s *SQLiteStore) Create(project string, entry TaskEntry) error {
 		entry.Content,
 		entry.ClickUpTaskID,
 		entry.ReviewCycle,
+		entry.LatestReviewFeedback,
 		entry.PRURL,
 		entry.PRReviewDecision,
 		entry.PRCheckStatus,
@@ -379,7 +390,7 @@ func (s *SQLiteStore) Create(project string, entry TaskEntry) error {
 // Returns an error if the task is not found.
 func (s *SQLiteStore) Get(project, filename string) (TaskEntry, error) {
 	const q = `
-		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, goal, content, clickup_task_id, review_cycle, pr_url, pr_review_decision, pr_check_status
+		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
 		FROM tasks
 		WHERE project = ? AND filename = ?
 	`
@@ -392,7 +403,7 @@ func (s *SQLiteStore) Get(project, filename string) (TaskEntry, error) {
 func (s *SQLiteStore) Update(project, filename string, entry TaskEntry) error {
 	const q = `
 		UPDATE tasks
-		SET status = ?, description = ?, branch = ?, topic = ?, created_at = ?, implemented = ?, planning_at = ?, implementing_at = ?, reviewing_at = ?, done_at = ?, goal = ?, clickup_task_id = ?, review_cycle = ?
+		SET status = ?, description = ?, branch = ?, topic = ?, created_at = ?, implemented = ?, planning_at = ?, implementing_at = ?, reviewing_at = ?, done_at = ?, goal = ?, clickup_task_id = ?, review_cycle = ?, latest_review_feedback = ?
 		WHERE project = ? AND filename = ?
 	`
 	result, err := s.db.Exec(q,
@@ -409,6 +420,7 @@ func (s *SQLiteStore) Update(project, filename string, entry TaskEntry) error {
 		entry.Goal,
 		entry.ClickUpTaskID,
 		entry.ReviewCycle,
+		entry.LatestReviewFeedback,
 		project,
 		filename,
 	)
@@ -453,7 +465,7 @@ func (s *SQLiteStore) Rename(project, oldFilename, newFilename string) error {
 // List returns all task entries for the given project, sorted by filename.
 func (s *SQLiteStore) List(project string) ([]TaskEntry, error) {
 	const q = `
-		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, goal, content, clickup_task_id, review_cycle, pr_url, pr_review_decision, pr_check_status
+		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
 		FROM tasks
 		WHERE project = ?
 		ORDER BY filename ASC
@@ -482,7 +494,7 @@ func (s *SQLiteStore) ListByStatus(project string, statuses ...Status) ([]TaskEn
 	}
 
 	q := fmt.Sprintf(`
-		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, goal, content, clickup_task_id, review_cycle, pr_url, pr_review_decision, pr_check_status
+		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
 		FROM tasks
 		WHERE project = ? AND status IN (%s)
 		ORDER BY filename ASC
@@ -500,7 +512,7 @@ func (s *SQLiteStore) ListByStatus(project string, statuses ...Status) ([]TaskEn
 // sorted by filename.
 func (s *SQLiteStore) ListByTopic(project, topic string) ([]TaskEntry, error) {
 	const q = `
-		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, goal, content, clickup_task_id, review_cycle, pr_url, pr_review_decision, pr_check_status
+		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
 		FROM tasks
 		WHERE project = ? AND topic = ?
 		ORDER BY filename ASC
@@ -897,7 +909,7 @@ func (s *SQLiteStore) ListPendingReviews(project, filename string) ([]PRReviewEn
 
 // scanTaskEntry scans a single row into a TaskEntry.
 func scanTaskEntry(row *sql.Row) (TaskEntry, error) {
-	var filename, status, description, branch, topic, createdAt, implemented, planningAt, implementingAt, reviewingAt, doneAt, goal, content, clickupTaskID string
+	var filename, status, description, branch, topic, createdAt, implemented, planningAt, implementingAt, reviewingAt, doneAt, goal, content, clickupTaskID, latestReviewFeedback string
 	var reviewCycle int
 	var prURL, prReviewDecision, prCheckStatus string
 	if err := row.Scan(
@@ -916,6 +928,7 @@ func scanTaskEntry(row *sql.Row) (TaskEntry, error) {
 		&content,
 		&clickupTaskID,
 		&reviewCycle,
+		&latestReviewFeedback,
 		&prURL,
 		&prReviewDecision,
 		&prCheckStatus,
@@ -926,24 +939,25 @@ func scanTaskEntry(row *sql.Row) (TaskEntry, error) {
 		return TaskEntry{}, fmt.Errorf("scan plan: %w", err)
 	}
 	return TaskEntry{
-		Filename:         filename,
-		Status:           Status(status),
-		Description:      description,
-		Branch:           branch,
-		Topic:            topic,
-		CreatedAt:        parseTime(createdAt),
-		Implemented:      implemented,
-		PlanningAt:       parseTime(planningAt),
-		ImplementingAt:   parseTime(implementingAt),
-		ReviewingAt:      parseTime(reviewingAt),
-		DoneAt:           parseTime(doneAt),
-		Goal:             goal,
-		Content:          content,
-		ClickUpTaskID:    clickupTaskID,
-		ReviewCycle:      reviewCycle,
-		PRURL:            prURL,
-		PRReviewDecision: prReviewDecision,
-		PRCheckStatus:    prCheckStatus,
+		Filename:             filename,
+		Status:               Status(status),
+		Description:          description,
+		Branch:               branch,
+		Topic:                topic,
+		CreatedAt:            parseTime(createdAt),
+		Implemented:          implemented,
+		PlanningAt:           parseTime(planningAt),
+		ImplementingAt:       parseTime(implementingAt),
+		ReviewingAt:          parseTime(reviewingAt),
+		DoneAt:               parseTime(doneAt),
+		Goal:                 goal,
+		Content:              content,
+		ClickUpTaskID:        clickupTaskID,
+		ReviewCycle:          reviewCycle,
+		LatestReviewFeedback: latestReviewFeedback,
+		PRURL:                prURL,
+		PRReviewDecision:     prReviewDecision,
+		PRCheckStatus:        prCheckStatus,
 	}, nil
 }
 
@@ -951,7 +965,7 @@ func scanTaskEntry(row *sql.Row) (TaskEntry, error) {
 func scanTaskEntries(rows *sql.Rows) ([]TaskEntry, error) {
 	var entries []TaskEntry
 	for rows.Next() {
-		var filename, status, description, branch, topic, createdAt, implemented, planningAt, implementingAt, reviewingAt, doneAt, goal, content, clickupTaskID string
+		var filename, status, description, branch, topic, createdAt, implemented, planningAt, implementingAt, reviewingAt, doneAt, goal, content, clickupTaskID, latestReviewFeedback string
 		var reviewCycle int
 		var prURL, prReviewDecision, prCheckStatus string
 		if err := rows.Scan(
@@ -970,6 +984,7 @@ func scanTaskEntries(rows *sql.Rows) ([]TaskEntry, error) {
 			&content,
 			&clickupTaskID,
 			&reviewCycle,
+			&latestReviewFeedback,
 			&prURL,
 			&prReviewDecision,
 			&prCheckStatus,
@@ -977,24 +992,25 @@ func scanTaskEntries(rows *sql.Rows) ([]TaskEntry, error) {
 			return nil, fmt.Errorf("scan plan: %w", err)
 		}
 		entries = append(entries, TaskEntry{
-			Filename:         filename,
-			Status:           Status(status),
-			Description:      description,
-			Branch:           branch,
-			Topic:            topic,
-			CreatedAt:        parseTime(createdAt),
-			Implemented:      implemented,
-			PlanningAt:       parseTime(planningAt),
-			ImplementingAt:   parseTime(implementingAt),
-			ReviewingAt:      parseTime(reviewingAt),
-			DoneAt:           parseTime(doneAt),
-			Goal:             goal,
-			Content:          content,
-			ClickUpTaskID:    clickupTaskID,
-			ReviewCycle:      reviewCycle,
-			PRURL:            prURL,
-			PRReviewDecision: prReviewDecision,
-			PRCheckStatus:    prCheckStatus,
+			Filename:             filename,
+			Status:               Status(status),
+			Description:          description,
+			Branch:               branch,
+			Topic:                topic,
+			CreatedAt:            parseTime(createdAt),
+			Implemented:          implemented,
+			PlanningAt:           parseTime(planningAt),
+			ImplementingAt:       parseTime(implementingAt),
+			ReviewingAt:          parseTime(reviewingAt),
+			DoneAt:               parseTime(doneAt),
+			Goal:                 goal,
+			Content:              content,
+			ClickUpTaskID:        clickupTaskID,
+			ReviewCycle:          reviewCycle,
+			LatestReviewFeedback: latestReviewFeedback,
+			PRURL:                prURL,
+			PRReviewDecision:     prReviewDecision,
+			PRCheckStatus:        prCheckStatus,
 		})
 	}
 	if err := rows.Err(); err != nil {

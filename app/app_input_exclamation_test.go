@@ -33,7 +33,7 @@ func TestHandleKeyPress_ExclamationEntersFocusMode(t *testing.T) {
 	assert.Equal(t, stateFocusAgent, updated.state)
 	// In the new model, ! enters focus mode without changing the instance tab index.
 	assert.Equal(t, 0, updated.tabbedWindow.GetActiveTab())
-	assert.Nil(t, cmd)
+	assert.NotNil(t, cmd)
 }
 
 func TestHandleKeyPress_ExclamationNoOpWithoutRunningInstance(t *testing.T) {
