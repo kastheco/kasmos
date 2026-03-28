@@ -45,6 +45,7 @@ const (
 	KeyTabInfo
 
 	KeySpawnAgent    // s - spawn ad-hoc agent session
+	KeyQuickLaunch   // S - quick launch ad-hoc agent session
 	KeyFocusList     // Key for focusing the right sidebar / instance list
 	KeyViewPlan      // Key for viewing the selected plan's markdown
 	KeyToggleSidebar // Key for toggling sidebar visibility
@@ -80,7 +81,7 @@ var GlobalKeyStringsMap = map[string]KeyName{
 	"c":          KeyCheckout,
 	"r":          KeyResume,
 	"?":          KeyHelp,
-	"S":          KeyNewSkipPermissions,
+	"S":          KeyQuickLaunch,
 	"/":          KeySearch,
 	"left":       KeyArrowLeft,
 	"right":      KeyArrowRight,
@@ -154,8 +155,7 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 		key.WithHelp("r", "resume"),
 	),
 	KeyNewSkipPermissions: key.NewBinding(
-		key.WithKeys("S"),
-		key.WithHelp("S", "new (skip permissions)"),
+		key.WithHelp("", "new (skip permissions)"),
 	),
 	KeySearch: key.NewBinding(
 		key.WithKeys("/"),
@@ -188,6 +188,10 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	KeySpawnAgent: key.NewBinding(
 		key.WithKeys("s"),
 		key.WithHelp("s", "spawn agent"),
+	),
+	KeyQuickLaunch: key.NewBinding(
+		key.WithKeys("S"),
+		key.WithHelp("S", "quick launch"),
 	),
 	KeyFocusList: key.NewBinding(
 		key.WithKeys("T"),
