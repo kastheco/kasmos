@@ -44,14 +44,23 @@ type ProgramAdapter interface {
 // AdapterFor returns the ProgramAdapter for the given program string, or nil
 // if the program has no special adapter (unknown/unsupported program).
 func AdapterFor(program string) ProgramAdapter {
+	binary := programBinary(program)
 	switch {
-	case strings.HasSuffix(program, "claude"):
+	case strings.Contains(binary, "claude"):
 		return claudeAdapter{}
-	case strings.HasSuffix(program, "opencode"):
+	case strings.Contains(binary, "opencode"):
 		return opencodeAdapter{}
 	default:
 		return nil
 	}
+}
+
+func programBinary(program string) string {
+	fields := strings.Fields(strings.ToLower(strings.TrimSpace(program)))
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
 }
 
 // claudeAdapter implements ProgramAdapter for Claude Code.
@@ -126,10 +135,10 @@ func claudeHasPermissionPrompt(lines []string) bool {
 		hasYes := false
 		hasNo := false
 		for _, nearby := range lines[start:end] {
-			switch nearby {
-			case "Yes":
+			switch {
+			case strings.Contains(nearby, "Yes"):
 				hasYes = true
-			case "No":
+			case strings.Contains(nearby, "No"):
 				hasNo = true
 			}
 		}

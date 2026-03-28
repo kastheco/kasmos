@@ -98,20 +98,52 @@ func TestOpenCodeAdapter_ReadyTap(t *testing.T) {
 }
 
 func TestAdapterFor_Claude(t *testing.T) {
-	a := AdapterFor("claude")
-	assert.NotNil(t, a)
-	assert.Equal(t, "Do you trust the files in this folder?", a.ReadyString())
+	tests := []string{
+		"claude",
+		"claude --model opus",
+		"/usr/local/bin/claude --model opus",
+	}
+
+	for _, program := range tests {
+		t.Run(program, func(t *testing.T) {
+			a := AdapterFor(program)
+			assert.NotNil(t, a)
+			assert.Equal(t, "Do you trust the files in this folder?", a.ReadyString())
+		})
+	}
 }
 
 func TestAdapterFor_OpenCode(t *testing.T) {
-	a := AdapterFor("opencode")
-	assert.NotNil(t, a)
-	assert.Equal(t, "Ask anything", a.ReadyString())
+	tests := []string{
+		"opencode",
+		"opencode --agent reviewer",
+		"/usr/local/bin/opencode --agent reviewer",
+	}
+
+	for _, program := range tests {
+		t.Run(program, func(t *testing.T) {
+			a := AdapterFor(program)
+			assert.NotNil(t, a)
+			assert.Equal(t, "Ask anything", a.ReadyString())
+		})
+	}
 }
 
 func TestAdapterFor_Unknown(t *testing.T) {
 	a := AdapterFor("vim")
 	assert.Nil(t, a)
+}
+
+func TestClaudeHasPermissionPrompt_MatchesRenderedChoiceText(t *testing.T) {
+	lines := []string{
+		"Tool approval required",
+		"Bash: git status",
+		"Do you want to proceed?",
+		"❯ Yes, and remember for this session",
+		"No, and tell Claude what to do differently",
+	}
+
+	assert.True(t, claudeHasPermissionPrompt(lines))
 }
 
 func TestClaudeAdapter_SendPermissionResponse(t *testing.T) {
