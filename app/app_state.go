@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -199,82 +198,41 @@ func (m *home) latestReviewFeedback(planFile string) string {
 	return ""
 }
 
-func parseOrphanSessionCycle(title, prefix, marker string) (int, bool) {
-	if !strings.HasPrefix(title, prefix+marker) {
-		return 0, false
+func (m *home) recoveryCandidatesForTask(filename string, entry taskstate.TaskEntry) []orchestration.RecoveryCandidate {
+	storeEntry := taskstore.TaskEntry{
+		Filename:             filename,
+		Status:               taskstore.Status(entry.Status),
+		Branch:               entry.Branch,
+		ReviewCycle:          entry.ReviewCycle,
+		LatestReviewFeedback: entry.LatestReviewFeedback,
+		ExecutionState:       entry.ExecutionState,
 	}
-	cycleText := strings.TrimPrefix(title, prefix+marker)
-	if cycleText == "" {
-		return 0, false
+
+	content := ""
+	phase := executionPhase(entry.ExecutionState.Phase)
+	if (phase == taskfsm.ExecutionPhaseWaveRunning || phase == taskfsm.ExecutionPhaseWaveWaiting) && m.taskStore != nil {
+		if stored, err := m.taskStore.GetContent(m.taskStoreProject, filename); err == nil {
+			content = stored
+		}
 	}
-	cycle, err := strconv.Atoi(cycleText)
-	if err != nil || cycle < 1 {
-		return 0, false
-	}
-	return cycle, true
+
+	return orchestration.BuildRecoveryCandidates(storeEntry, content)
 }
 
-func (m *home) inferOrphanSessionBinding(title string) (taskFile, agentType, branch string, reviewCycle int) {
+func (m *home) inferOrphanSessionBinding(title string) (orchestration.RecoveryCandidate, bool) {
 	if m.taskState == nil {
-		return "", "", "", 0
+		return orchestration.RecoveryCandidate{}, false
 	}
 
-	bestPrefixLen := -1
 	for filename, entry := range m.taskState.Plans {
-		planName := taskstate.DisplayName(filename)
-		if planName == "" || !strings.HasPrefix(title, planName) {
-			continue
-		}
-
-		architectTitle := orchestration.BuildArchitectAgentSpec(filename).Title
-		coderTitle := orchestration.BuildLifecycleAgentTitle(filename, session.AgentTypeCoder, 0)
-		reviewerTitle := orchestration.BuildLifecycleAgentTitle(filename, session.AgentTypeReviewer, 1)
-		fixerTitle := orchestration.BuildLifecycleAgentTitle(filename, session.AgentTypeFixer, 1)
-
-		matchedType := ""
-		matchedCycle := 0
-		switch {
-		case title == planName+"-plan":
-			matchedType = session.AgentTypePlanner
-		case title == architectTitle:
-			matchedType = session.AgentTypeElaborator
-		case title == coderTitle:
-			matchedType = session.AgentTypeCoder
-		case title == planName+"-reviewer" || title == planName+"-review" || title == reviewerTitle:
-			matchedType = session.AgentTypeReviewer
-			matchedCycle = 1
-		case title == planName+"-fixer" || title == fixerTitle:
-			matchedType = session.AgentTypeFixer
-			if title == fixerTitle {
-				matchedCycle = 1
+		for _, candidate := range m.recoveryCandidatesForTask(filename, entry) {
+			if candidate.Title == title {
+				return candidate, true
 			}
 		}
-
-		if matchedType == "" {
-			if cycle, ok := parseOrphanSessionCycle(title, planName, "-review-"); ok {
-				matchedType = session.AgentTypeReviewer
-				matchedCycle = cycle
-			} else if cycle, ok := parseOrphanSessionCycle(title, planName, "-fix-"); ok {
-				matchedType = session.AgentTypeFixer
-				matchedCycle = cycle
-			}
-		}
-
-		if matchedType == "" {
-			continue
-		}
-		if len(planName) <= bestPrefixLen {
-			continue
-		}
-
-		bestPrefixLen = len(planName)
-		taskFile = filename
-		agentType = matchedType
-		branch = entry.Branch
-		reviewCycle = matchedCycle
 	}
 
-	return taskFile, agentType, branch, reviewCycle
+	return orchestration.RecoveryCandidate{}, false
 }
 
 func (m *home) clearLatestReviewFeedback(planFile string) {
@@ -2683,9 +2641,10 @@ func (m *home) rebuildOrphanedOrchestrators() {
 	type taskInst struct {
 		taskNumber int
 		waveNumber int
+		title      string
 		paused     bool
 	}
-	byPlan := make(map[string][]taskInst)
+	byPlan := make(map[string]map[string]taskInst)
 	hasActiveByPlan := make(map[string]bool)
 	for _, inst := range m.nav.GetInstances() {
 		if inst.TaskNumber == 0 || inst.TaskFile == "" {
@@ -2694,17 +2653,29 @@ func (m *home) rebuildOrphanedOrchestrators() {
 		if !inst.Started() || inst.Exited {
 			continue
 		}
-		byPlan[inst.TaskFile] = append(byPlan[inst.TaskFile], taskInst{
+		if byPlan[inst.TaskFile] == nil {
+			byPlan[inst.TaskFile] = make(map[string]taskInst)
+		}
+		key := fmt.Sprintf("w%d:t%d", inst.WaveNumber, inst.TaskNumber)
+		candidate := taskInst{
 			taskNumber: inst.TaskNumber,
 			waveNumber: inst.WaveNumber,
+			title:      inst.Title,
 			paused:     inst.Paused(),
-		})
+		}
+		if existing, ok := byPlan[inst.TaskFile][key]; !ok || (existing.paused && !candidate.paused) || (existing.paused == candidate.paused && existing.title < candidate.title) {
+			byPlan[inst.TaskFile][key] = candidate
+		}
 		if !inst.Paused() {
 			hasActiveByPlan[inst.TaskFile] = true
 		}
 	}
 
-	for planFile, tasks := range byPlan {
+	for planFile, taskSet := range byPlan {
+		tasks := make([]taskInst, 0, len(taskSet))
+		for _, task := range taskSet {
+			tasks = append(tasks, task)
+		}
 		if !hasActiveByPlan[planFile] {
 			log.WarningLog.Printf("rebuildOrphanedOrchestrators: skipping %s — no active wave instances", planFile)
 			continue
@@ -3004,19 +2975,47 @@ func (m *home) spawnChatAboutTask(planFile, question string) (tea.Model, tea.Cmd
 
 // adoptOrphanSession creates a new Instance backed by an existing orphaned tmux session.
 func (m *home) adoptOrphanSession(item overlay.TmuxBrowserItem) (tea.Model, tea.Cmd) {
-	taskFile, agentType, branch, reviewCycle := m.inferOrphanSessionBinding(item.Title)
+	candidate, bound := m.inferOrphanSessionBinding(item.Title)
+	if bound && m.hasLiveOrPendingInstance(candidate.TaskFile, candidate.AgentType, candidate.Title) {
+		for _, inst := range m.nav.GetInstances() {
+			if inst.Title == candidate.Title {
+				m.nav.SelectInstance(inst)
+				break
+			}
+		}
+		return m, nil
+	}
+	for _, inst := range m.nav.GetInstances() {
+		if inst.Title == item.Title {
+			m.nav.SelectInstance(inst)
+			return m, nil
+		}
+	}
+
+	program := m.program
+	if bound && candidate.AgentType != "" {
+		program = m.programForAgent(candidate.AgentType)
+	}
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:       item.Title,
 		Path:        m.activeRepoPath,
-		Program:     m.program,
-		TaskFile:    taskFile,
-		AgentType:   agentType,
-		ReviewCycle: reviewCycle,
+		Program:     program,
+		TaskFile:    candidate.TaskFile,
+		AgentType:   candidate.AgentType,
+		TaskNumber:  candidate.TaskNumber,
+		WaveNumber:  candidate.WaveNumber,
+		ReviewCycle: candidate.ReviewCycle,
 	})
 	if err != nil {
 		return m, m.handleError(err)
 	}
-	inst.Branch = branch
+	if bound {
+		inst.TaskFile = candidate.TaskFile
+		inst.Branch = candidate.Branch
+		if candidate.Branch != "" {
+			inst.BindSharedTaskWorktree(m.activeRepoPath, candidate.Branch)
+		}
+	}
 
 	m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))
 	m.nav.SelectInstance(inst)

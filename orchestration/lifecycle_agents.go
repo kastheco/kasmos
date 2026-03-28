@@ -2,8 +2,12 @@ package orchestration
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/kastheco/kasmos/config/taskfsm"
+	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
+	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
 	"github.com/kastheco/kasmos/session"
 )
@@ -14,6 +18,18 @@ type LifecycleAgentSpec struct {
 	Title       string
 	Prompt      string
 	ReviewCycle int
+}
+
+// RecoveryCandidate describes a single phase-valid session title that may be
+// re-adopted after restart or manual orphan discovery.
+type RecoveryCandidate struct {
+	TaskFile    string
+	Title       string
+	AgentType   string
+	Branch      string
+	ReviewCycle int
+	WaveNumber  int
+	TaskNumber  int
 }
 
 // BuildLifecycleAgentTitle returns the canonical title for a lifecycle agent.
@@ -74,4 +90,79 @@ func BuildArchitectAgentSpec(planFile string) LifecycleAgentSpec {
 // BuildWaveTaskTitle returns the canonical title for a wave task instance.
 func BuildWaveTaskTitle(planFile string, waveNumber, taskNumber int) string {
 	return fmt.Sprintf("%s-W%d-T%d", taskstate.DisplayName(planFile), waveNumber, taskNumber)
+}
+
+// BuildRecoveryCandidates returns the exact session titles that are valid to
+// recover for the task's persisted lifecycle phase.
+func BuildRecoveryCandidates(task taskstore.TaskEntry, planContent string) []RecoveryCandidate {
+	phase := taskfsm.ExecutionPhase(strings.TrimSpace(task.ExecutionState.Phase))
+	switch phase {
+	case taskfsm.ExecutionPhaseArchitecting:
+		spec := BuildArchitectAgentSpec(task.Filename)
+		return []RecoveryCandidate{{
+			TaskFile:  task.Filename,
+			Title:     spec.Title,
+			AgentType: session.AgentTypeElaborator,
+		}}
+	case taskfsm.ExecutionPhaseSingleAgentImplementing:
+		return []RecoveryCandidate{{
+			TaskFile:  task.Filename,
+			Title:     BuildLifecycleAgentTitle(task.Filename, session.AgentTypeCoder, 0),
+			AgentType: session.AgentTypeCoder,
+			Branch:    task.Branch,
+		}}
+	case taskfsm.ExecutionPhaseReviewing:
+		spec := BuildReviewerAgentSpec(task.Filename, task.ReviewCycle, task.LatestReviewFeedback)
+		return []RecoveryCandidate{{
+			TaskFile:    task.Filename,
+			Title:       spec.Title,
+			AgentType:   session.AgentTypeReviewer,
+			Branch:      task.Branch,
+			ReviewCycle: spec.ReviewCycle,
+		}}
+	case taskfsm.ExecutionPhaseFixing:
+		spec := BuildFixerAgentSpec(task.Filename, task.ReviewCycle, task.LatestReviewFeedback)
+		return []RecoveryCandidate{{
+			TaskFile:    task.Filename,
+			Title:       spec.Title,
+			AgentType:   session.AgentTypeFixer,
+			Branch:      task.Branch,
+			ReviewCycle: spec.ReviewCycle,
+		}}
+	case taskfsm.ExecutionPhaseWaveRunning, taskfsm.ExecutionPhaseWaveWaiting:
+		if task.ExecutionState.ActiveWave <= 0 || strings.TrimSpace(planContent) == "" {
+			return nil
+		}
+		plan, err := taskparser.Parse(planContent)
+		if err != nil {
+			return nil
+		}
+		for _, wave := range plan.Waves {
+			if wave.Number != task.ExecutionState.ActiveWave {
+				continue
+			}
+			candidates := make([]RecoveryCandidate, 0, len(wave.Tasks))
+			for _, waveTask := range wave.Tasks {
+				candidates = append(candidates, RecoveryCandidate{
+					TaskFile:   task.Filename,
+					Title:      BuildWaveTaskTitle(task.Filename, wave.Number, waveTask.Number),
+					AgentType:  session.AgentTypeCoder,
+					Branch:     task.Branch,
+					WaveNumber: wave.Number,
+					TaskNumber: waveTask.Number,
+				})
+			}
+			return candidates
+		}
+	case "":
+		if task.Status == taskstore.StatusPlanning {
+			return []RecoveryCandidate{{
+				TaskFile:  task.Filename,
+				Title:     fmt.Sprintf("%s-plan", taskstate.DisplayName(task.Filename)),
+				AgentType: session.AgentTypePlanner,
+			}}
+		}
+	}
+
+	return nil
 }

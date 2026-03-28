@@ -3,6 +3,7 @@ package session
 import (
 	"testing"
 
+	gitpkg "github.com/kastheco/kasmos/session/git"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -112,6 +113,43 @@ func TestInstanceData_RoundTripAgentType(t *testing.T) {
 	roundTrip := inst.ToInstanceData()
 	assert.Equal(t, AgentTypeReviewer, roundTrip.AgentType)
 	assert.False(t, roundTrip.IsReviewer, "deprecated IsReviewer field should not be written for new state")
+}
+
+func TestFromInstanceData_RestoresSharedTaskWorktree(t *testing.T) {
+	data := InstanceData{
+		Title:       "feature-review-2",
+		Path:        "/tmp/repo",
+		Branch:      "plan/feature",
+		Status:      Paused,
+		Program:     "opencode",
+		TaskFile:    "feature",
+		AgentType:   AgentTypeReviewer,
+		ReviewCycle: 2,
+		Worktree: GitWorktreeData{
+			RepoPath:     "/tmp/repo",
+			WorktreePath: gitpkg.TaskWorktreePath("/tmp/repo", "plan/feature"),
+			SessionName:  "feature-review-2",
+			BranchName:   "plan/feature",
+		},
+	}
+
+	inst, err := FromInstanceData(data)
+	require.NoError(t, err)
+	assert.True(t, inst.sharedWorktree)
+	assert.Equal(t, "plan/feature", inst.Branch)
+	assert.Equal(t, 2, inst.ReviewCycle)
+}
+
+func TestBindSharedTaskWorktree(t *testing.T) {
+	inst, err := NewInstance(InstanceOptions{Title: "feature-W2-T2", Path: "/tmp/repo", Program: "opencode", TaskFile: "feature", AgentType: AgentTypeCoder, WaveNumber: 2, TaskNumber: 2})
+	require.NoError(t, err)
+
+	inst.BindSharedTaskWorktree("/tmp/repo", "plan/feature")
+
+	assert.True(t, inst.sharedWorktree)
+	assert.Equal(t, "plan/feature", inst.Branch)
+	require.NotNil(t, inst.gitWorktree)
+	assert.Equal(t, gitpkg.TaskWorktreePath("/tmp/repo", "plan/feature"), inst.gitWorktree.GetWorktreePath())
 }
 
 func TestFromInstanceData_MigratesLegacyReviewerFlag(t *testing.T) {

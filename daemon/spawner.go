@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -69,6 +70,8 @@ type TmuxSpawner struct {
 	restoreInstance    func(session.InstanceData) (*session.Instance, error)
 	cleanupGracePeriod time.Duration
 }
+
+var errInstanceAlreadyTracked = errors.New("instance already tracked")
 
 // NewTmuxSpawner returns a TmuxSpawner. An optional TmuxSpawnerConfig may be
 // provided; if omitted or zero-valued, sensible defaults are used.
@@ -276,6 +279,11 @@ func (s *TmuxSpawner) DiscoverOrphanSessions() []tmuxpkg.SessionInfo {
 // RestoreTrackedInstance re-adopts a previously running agent instance into the
 // spawner's tracking maps.
 func (s *TmuxSpawner) RestoreTrackedInstance(repoPath, project, planFile, agentType string, data session.InstanceData) error {
+	key := instanceKeyForTask(repoPath, planFile, agentType, data.WaveNumber, data.TaskNumber)
+	if s.hasTrackedInstance(key, data.Title) {
+		return errInstanceAlreadyTracked
+	}
+
 	restore := s.restoreInstance
 	if restore == nil {
 		restore = session.FromInstanceData
@@ -286,7 +294,6 @@ func (s *TmuxSpawner) RestoreTrackedInstance(repoPath, project, planFile, agentT
 		return err
 	}
 
-	key := instanceKey(repoPath, planFile, agentType)
 	s.mu.Lock()
 	s.instances[key] = inst
 	s.planFileByKey[key] = planFile
@@ -325,6 +332,28 @@ func instanceKeyForTask(repoPath, planFile, agentType string, waveNumber, taskNu
 	return repoPath + ":" + planFile + ":" + agentType
 }
 
+func (s *TmuxSpawner) hasTrackedInstance(key, title string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if key != "" {
+		if inst, ok := s.instances[key]; ok {
+			if title == "" || inst == nil || inst.Title == title {
+				return true
+			}
+			return false
+		}
+	}
+	if title == "" {
+		return false
+	}
+	for _, inst := range s.instances {
+		if inst != nil && inst.Title == title {
+			return true
+		}
+	}
+	return false
+}
+
 // SpawnReviewer launches a reviewer agent in the plan's shared worktree.
 func (s *TmuxSpawner) SpawnReviewer(ctx context.Context, opts loop.SpawnOpts) error {
 	s.logger.Info("spawn reviewer", "plan", opts.PlanFile, "wave", opts.Wave)
@@ -348,6 +377,11 @@ func (s *TmuxSpawner) SpawnCoder(ctx context.Context, opts loop.SpawnOpts) error
 // first so the fixer starts with a clean slate.
 func (s *TmuxSpawner) SpawnFixer(ctx context.Context, opts loop.SpawnOpts) error {
 	s.logger.Info("spawn fixer", "plan", opts.PlanFile, "wave", opts.Wave)
+	title := orchestration.BuildLifecycleAgentTitle(opts.PlanFile, session.AgentTypeFixer, opts.ReviewCycle)
+	if s.hasTrackedInstance(instanceKey(opts.RepoPath, opts.PlanFile, session.AgentTypeFixer), title) {
+		s.logger.Info("suppress duplicate tracked agent", "plan", opts.PlanFile, "type", session.AgentTypeFixer, "title", title)
+		return nil
+	}
 	if err := s.KillAgent(opts.RepoPath, opts.PlanFile, session.AgentTypeFixer); err != nil {
 		return fmt.Errorf("spawn fixer: kill existing fixer: %w", err)
 	}
@@ -384,6 +418,10 @@ func (s *TmuxSpawner) spawnOnMainBranch(_ context.Context, opts loop.SpawnOpts, 
 	program := opts.Program
 	if program == "" {
 		program = "opencode"
+	}
+	if s.hasTrackedInstance(instanceKey(opts.RepoPath, opts.PlanFile, agentType), title) {
+		s.logger.Info("suppress duplicate tracked agent", "plan", opts.PlanFile, "type", agentType, "title", title)
+		return nil
 	}
 
 	inst, err := session.NewInstance(session.InstanceOptions{
@@ -507,11 +545,15 @@ func (s *TmuxSpawner) SpawnWaveTask(_ context.Context, opts loop.SpawnOpts, task
 	}
 
 	title := orchestration.BuildWaveTaskTitle(opts.PlanFile, opts.Wave, task.Number)
+	key := instanceKeyForTask(opts.RepoPath, opts.PlanFile, session.AgentTypeCoder, opts.Wave, task.Number)
+	if s.hasTrackedInstance(key, title) {
+		s.logger.Info("suppress duplicate tracked wave task", "plan", opts.PlanFile, "wave", opts.Wave, "task", task.Number, "title", title)
+		return nil
+	}
 	program := opts.Program
 	if program == "" {
 		program = "opencode"
 	}
-
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:      title,
 		Path:       opts.RepoPath,
@@ -539,7 +581,6 @@ func (s *TmuxSpawner) SpawnWaveTask(_ context.Context, opts loop.SpawnOpts, task
 		return fmt.Errorf("TmuxSpawner.wave-task: start in shared worktree: %w", err)
 	}
 
-	key := instanceKeyForTask(opts.RepoPath, opts.PlanFile, session.AgentTypeCoder, opts.Wave, task.Number)
 	s.mu.Lock()
 	s.instances[key] = inst
 	s.planFileByKey[key] = opts.PlanFile
@@ -563,6 +604,10 @@ func (s *TmuxSpawner) spawnInSharedWorktree(_ context.Context, opts loop.SpawnOp
 	program := opts.Program
 	if program == "" {
 		program = "opencode"
+	}
+	if s.hasTrackedInstance(instanceKey(opts.RepoPath, opts.PlanFile, agentType), title) {
+		s.logger.Info("suppress duplicate tracked agent", "plan", opts.PlanFile, "type", agentType, "title", title)
+		return nil
 	}
 
 	inst, err := session.NewInstance(session.InstanceOptions{

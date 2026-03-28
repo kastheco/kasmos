@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -37,6 +38,45 @@ func TestTmuxSpawner_KillAgent_NoOp(t *testing.T) {
 	// KillAgent on a non-existent key should return nil (no error).
 	err := s.KillAgent("/tmp/repo", "missing.md", "coder")
 	assert.NoError(t, err)
+}
+
+func TestTmuxSpawner_RestoreTrackedInstance_DeduplicatesTrackedAgent(t *testing.T) {
+	s := NewTmuxSpawner()
+	key := instanceKey("/tmp/repo", "plan.md", session.AgentTypeReviewer)
+	s.instances[key] = &session.Instance{Title: "plan-review-1"}
+	s.planFileByKey[key] = "plan.md"
+	s.agentTypeByKey[key] = session.AgentTypeReviewer
+	s.projectByKey[key] = "proj"
+
+	err := s.RestoreTrackedInstance("/tmp/repo", "proj", "plan.md", session.AgentTypeReviewer, session.InstanceData{
+		Title:     "plan-review-1",
+		Path:      "/tmp/repo",
+		TaskFile:  "plan.md",
+		AgentType: session.AgentTypeReviewer,
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, errInstanceAlreadyTracked))
+}
+
+func TestTmuxSpawner_RestoreTrackedInstance_KeysWaveTasksByWaveAndTask(t *testing.T) {
+	s := NewTmuxSpawner()
+	s.restoreInstance = func(data session.InstanceData) (*session.Instance, error) {
+		return &session.Instance{Title: data.Title, Path: data.Path, TaskFile: data.TaskFile, AgentType: data.AgentType, WaveNumber: data.WaveNumber, TaskNumber: data.TaskNumber}, nil
+	}
+
+	err := s.RestoreTrackedInstance("/tmp/repo", "proj", "plan.md", session.AgentTypeCoder, session.InstanceData{
+		Title:      "plan-W2-T3",
+		Path:       "/tmp/repo",
+		TaskFile:   "plan.md",
+		AgentType:  session.AgentTypeCoder,
+		WaveNumber: 2,
+		TaskNumber: 3,
+	})
+	require.NoError(t, err)
+
+	running := s.RunningInstances()
+	require.Len(t, running, 1)
+	assert.Equal(t, "/tmp/repo:plan.md:coder:w2:t3", running[0].Key)
 }
 
 func TestTmuxSpawner_KillAgent_PreservesTrackingWhenClientAttached(t *testing.T) {
@@ -212,9 +252,10 @@ func TestTmuxSpawner_SpawnFixer_KillsExistingAgents(t *testing.T) {
 	// SpawnFixer should kill both existing agents before failing on missing git.
 	// The error from spawnInSharedWorktree is expected (no real git/tmux).
 	_ = s.SpawnFixer(context.Background(), loop.SpawnOpts{
-		PlanFile: planFile,
-		RepoPath: repoPath,
-		Branch:   "plan/my-plan",
+		PlanFile:    planFile,
+		RepoPath:    repoPath,
+		Branch:      "plan/my-plan",
+		ReviewCycle: 1,
 	})
 
 	// Both the fixer and coder must have been killed (kill called for each).

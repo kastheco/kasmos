@@ -37,6 +37,12 @@ func TestNavInstanceTitle_AdhocInstanceFallsBackToTitle(t *testing.T) {
 	assert.Equal(t, "adhoc-instance", navInstanceTitle(instance))
 }
 
+func TestNavInstanceTitle_FixerUsesLifecycleLabel(t *testing.T) {
+	instance := &session.Instance{TaskFile: "feature", AgentType: session.AgentTypeFixer, ReviewCycle: 2}
+
+	assert.Equal(t, "applying fixes #2", navInstanceTitle(instance))
+}
+
 // ---------- rebuildRows grouping ----------
 
 func TestRebuildRows_EmptyPanel(t *testing.T) {

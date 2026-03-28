@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -17,7 +18,6 @@ import (
 
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskfsm"
-	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
@@ -1195,133 +1195,6 @@ func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 	}
 }
 
-func taskRecoveryCandidates(store taskstore.Store, project string, task taskstore.TaskEntry) []struct {
-	title      string
-	agentType  string
-	branch     string
-	taskNumber int
-	waveNumber int
-} {
-	appendLifecycleCandidates := func(candidates []struct {
-		title      string
-		agentType  string
-		branch     string
-		taskNumber int
-		waveNumber int
-	}) []struct {
-		title      string
-		agentType  string
-		branch     string
-		taskNumber int
-		waveNumber int
-	} {
-		planName := taskstate.DisplayName(task.Filename)
-		candidates = append(candidates,
-			struct {
-				title      string
-				agentType  string
-				branch     string
-				taskNumber int
-				waveNumber int
-			}{title: orchestration.BuildLifecycleAgentTitle(task.Filename, session.AgentTypeCoder, 0), agentType: session.AgentTypeCoder, branch: task.Branch},
-			struct {
-				title      string
-				agentType  string
-				branch     string
-				taskNumber int
-				waveNumber int
-			}{title: fmt.Sprintf("%s-fixer", planName), agentType: session.AgentTypeFixer, branch: task.Branch},
-			struct {
-				title      string
-				agentType  string
-				branch     string
-				taskNumber int
-				waveNumber int
-			}{title: fmt.Sprintf("%s-reviewer", planName), agentType: session.AgentTypeReviewer, branch: task.Branch},
-			struct {
-				title      string
-				agentType  string
-				branch     string
-				taskNumber int
-				waveNumber int
-			}{title: orchestration.BuildArchitectAgentSpec(task.Filename).Title, agentType: session.AgentTypeElaborator},
-		)
-
-		maxReview := task.ReviewCycle + 1
-		if maxReview < 1 {
-			maxReview = 1
-		}
-		for cycle := 1; cycle <= maxReview; cycle++ {
-			candidates = append(candidates, struct {
-				title      string
-				agentType  string
-				branch     string
-				taskNumber int
-				waveNumber int
-			}{
-				title:     orchestration.BuildLifecycleAgentTitle(task.Filename, session.AgentTypeReviewer, cycle),
-				agentType: session.AgentTypeReviewer,
-				branch:    task.Branch,
-			})
-		}
-
-		for cycle := 1; cycle <= task.ReviewCycle; cycle++ {
-			candidates = append(candidates, struct {
-				title      string
-				agentType  string
-				branch     string
-				taskNumber int
-				waveNumber int
-			}{
-				title:     orchestration.BuildLifecycleAgentTitle(task.Filename, session.AgentTypeFixer, cycle),
-				agentType: session.AgentTypeFixer,
-				branch:    task.Branch,
-			})
-		}
-
-		return candidates
-	}
-
-	phase := taskfsm.ExecutionPhase(strings.TrimSpace(task.ExecutionState.Phase))
-	if (phase == taskfsm.ExecutionPhaseWaveRunning || phase == taskfsm.ExecutionPhaseWaveWaiting) && task.ExecutionState.ActiveWave > 0 && store != nil {
-		content, err := store.GetContent(project, task.Filename)
-		if err == nil {
-			if plan, parseErr := taskparser.Parse(content); parseErr == nil {
-				for _, wave := range plan.Waves {
-					if wave.Number != task.ExecutionState.ActiveWave {
-						continue
-					}
-					candidates := make([]struct {
-						title      string
-						agentType  string
-						branch     string
-						taskNumber int
-						waveNumber int
-					}, 0, len(wave.Tasks))
-					for _, taskEntry := range wave.Tasks {
-						candidates = append(candidates, struct {
-							title      string
-							agentType  string
-							branch     string
-							taskNumber int
-							waveNumber int
-						}{
-							title:      orchestration.BuildWaveTaskTitle(task.Filename, wave.Number, taskEntry.Number),
-							agentType:  session.AgentTypeCoder,
-							branch:     task.Branch,
-							taskNumber: taskEntry.Number,
-							waveNumber: wave.Number,
-						})
-					}
-					return candidates
-				}
-			}
-		}
-	}
-
-	return appendLifecycleCandidates(nil)
-}
-
 // RecoverSessions discovers orphaned kas_ tmux sessions and attempts to
 // re-adopt them into the spawner's tracking map. This should be called once
 // on daemon startup, before the first tick.
@@ -1363,42 +1236,55 @@ func (d *Daemon) RecoverSessions() (int, error) {
 			continue
 		}
 		for _, task := range tasks {
-			for _, candidate := range taskRecoveryCandidates(e.Store, e.Project, task) {
-				if _, ok := orphanTitles[candidate.title]; !ok {
+			content := ""
+			phase := taskfsm.ExecutionPhase(strings.TrimSpace(task.ExecutionState.Phase))
+			if (phase == taskfsm.ExecutionPhaseWaveRunning || phase == taskfsm.ExecutionPhaseWaveWaiting) && e.Store != nil {
+				if stored, getErr := e.Store.GetContent(e.Project, task.Filename); getErr == nil {
+					content = stored
+				}
+			}
+			for _, candidate := range orchestration.BuildRecoveryCandidates(task, content) {
+				if _, ok := orphanTitles[candidate.Title]; !ok {
 					continue
 				}
 
 				data := session.InstanceData{
-					Title:         candidate.title,
+					Title:         candidate.Title,
 					Path:          e.Path,
-					Branch:        candidate.branch,
+					Branch:        candidate.Branch,
 					Status:        session.Running,
 					Program:       "opencode",
 					ExecutionMode: session.ExecutionModeTmux,
 					AutoYes:       true,
 					TaskFile:      task.Filename,
-					AgentType:     candidate.agentType,
-					TaskNumber:    candidate.taskNumber,
-					WaveNumber:    candidate.waveNumber,
+					AgentType:     candidate.AgentType,
+					TaskNumber:    candidate.TaskNumber,
+					WaveNumber:    candidate.WaveNumber,
+					ReviewCycle:   candidate.ReviewCycle,
 				}
-				if candidate.branch != "" {
-					shared := gitpkg.NewSharedTaskWorktree(e.Path, candidate.branch)
+				if candidate.Branch != "" {
+					shared := gitpkg.NewSharedTaskWorktree(e.Path, candidate.Branch)
 					data.Worktree = session.GitWorktreeData{
 						RepoPath:     shared.GetRepoPath(),
 						WorktreePath: shared.GetWorktreePath(),
-						SessionName:  candidate.title,
-						BranchName:   candidate.branch,
+						SessionName:  candidate.Title,
+						BranchName:   candidate.Branch,
 					}
 				}
 
-				if err := d.spawner.RestoreTrackedInstance(e.Path, e.Project, task.Filename, candidate.agentType, data); err != nil {
+				if err := d.spawner.RestoreTrackedInstance(e.Path, e.Project, task.Filename, candidate.AgentType, data); err != nil {
+					if errors.Is(err, errInstanceAlreadyTracked) {
+						delete(orphanTitles, candidate.Title)
+						continue
+					}
 					d.logger.Warn("recover sessions: restore instance failed",
-						"session", candidate.title, "repo", e.Path, "plan", task.Filename, "err", err)
+						"session", candidate.Title, "repo", e.Path, "plan", task.Filename, "err", err)
 					continue
 				}
 
 				d.logger.Info("re-adopted orphan session",
-					"session", candidate.title, "repo", e.Path, "plan", task.Filename, "agent", candidate.agentType)
+					"session", candidate.Title, "repo", e.Path, "plan", task.Filename, "agent", candidate.AgentType)
+				delete(orphanTitles, candidate.Title)
 				recovered++
 			}
 		}

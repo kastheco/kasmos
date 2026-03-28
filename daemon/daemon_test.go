@@ -168,8 +168,8 @@ func TestDaemon_RecoverSessions_AdoptsTrackedInstances(t *testing.T) {
 		Status:   taskstore.StatusImplementing,
 		Branch:   "plan/feature",
 		ExecutionState: taskstore.ExecutionState{
-			Phase:           string(taskfsm.ExecutionPhaseFixing),
-			ActiveAgentType: session.AgentTypeFixer,
+			Phase:           string(taskfsm.ExecutionPhaseSingleAgentImplementing),
+			ActiveAgentType: session.AgentTypeCoder,
 		},
 	}))
 
@@ -215,6 +215,10 @@ func TestDaemon_RecoverSessions_AdoptsNumberedReviewerSessions(t *testing.T) {
 		Status:      taskstore.StatusReviewing,
 		Branch:      "plan/feature",
 		ReviewCycle: 5,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseReviewing),
+			ActiveAgentType: session.AgentTypeReviewer,
+		},
 	}))
 
 	d := &Daemon{
@@ -246,6 +250,7 @@ func TestDaemon_RecoverSessions_AdoptsNumberedReviewerSessions(t *testing.T) {
 	assert.Equal(t, "feature", running[0].PlanFile)
 	assert.Equal(t, session.AgentTypeReviewer, running[0].AgentType)
 	assert.Equal(t, "feature-review-6", restored.Title)
+	assert.Equal(t, 6, restored.ReviewCycle)
 }
 
 func TestDaemon_StartPlan_ReturnsBeforeSpawnCompletes(t *testing.T) {

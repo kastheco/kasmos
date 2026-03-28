@@ -145,16 +145,101 @@ func TestDaemon_AutoAdvanceCompletedImplementer_Characterization(t *testing.T) {
 	}
 }
 
-func TestDaemon_RecoverSessions_DeduplicatesAndAdoptsKnownTitles(t *testing.T) {
+func TestDaemon_RecoverSessions_DuplicateSuppressionForCurrentLifecycleAgent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		entry       taskstore.TaskEntry
+		orphanTitle string
+		trackedKey  string
+		trackedType string
+	}{
+		{
+			name: "reviewer already tracked",
+			entry: taskstore.TaskEntry{
+				Filename:    "feature",
+				Status:      taskstore.StatusReviewing,
+				Branch:      "plan/feature",
+				ReviewCycle: 2,
+				ExecutionState: taskstore.ExecutionState{
+					Phase:           string(taskfsm.ExecutionPhaseReviewing),
+					ActiveAgentType: session.AgentTypeReviewer,
+				},
+			},
+			orphanTitle: "feature-review-3",
+			trackedKey:  "/tmp/proj:feature:reviewer",
+			trackedType: session.AgentTypeReviewer,
+		},
+		{
+			name: "fixer already tracked",
+			entry: taskstore.TaskEntry{
+				Filename:    "feature",
+				Status:      taskstore.StatusImplementing,
+				Branch:      "plan/feature",
+				ReviewCycle: 2,
+				ExecutionState: taskstore.ExecutionState{
+					Phase:           string(taskfsm.ExecutionPhaseFixing),
+					ActiveAgentType: session.AgentTypeFixer,
+				},
+			},
+			orphanTitle: "feature-fix-2",
+			trackedKey:  "/tmp/proj:feature:fixer",
+			trackedType: session.AgentTypeFixer,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			const project = "proj"
+			store := taskstore.NewTestStore(t)
+			require.NoError(t, store.Create(project, tt.entry))
+
+			d := &Daemon{
+				repos:       NewRepoManager(),
+				spawner:     NewTmuxSpawner(),
+				logger:      slog.Default(),
+				broadcaster: api.NewEventBroadcaster(),
+			}
+			d.repos.repos = []RepoEntry{{
+				Path:    "/tmp/proj",
+				Project: project,
+				Store:   store,
+			}}
+			d.spawner.discoverOrphans = func(_ []string) ([]tmuxpkg.SessionInfo, error) {
+				return []tmuxpkg.SessionInfo{{Title: tt.orphanTitle}}, nil
+			}
+			d.spawner.instances[tt.trackedKey] = &session.Instance{Title: tt.orphanTitle, Path: "/tmp/proj", TaskFile: "feature", AgentType: tt.trackedType}
+			d.spawner.planFileByKey[tt.trackedKey] = "feature"
+			d.spawner.agentTypeByKey[tt.trackedKey] = tt.trackedType
+			d.spawner.projectByKey[tt.trackedKey] = project
+
+			restored := 0
+			d.spawner.restoreInstance = func(data session.InstanceData) (*session.Instance, error) {
+				restored++
+				return &session.Instance{Title: data.Title, Path: data.Path, TaskFile: data.TaskFile, AgentType: data.AgentType}, nil
+			}
+
+			recovered, err := d.RecoverSessions()
+			require.NoError(t, err)
+			assert.Zero(t, recovered)
+			assert.Zero(t, restored)
+		})
+	}
+}
+
+func TestDaemon_RecoverSessions_AdoptsArchitectForArchitectingPhase(t *testing.T) {
 	t.Parallel()
 
 	const project = "proj"
 	store := taskstore.NewTestStore(t)
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{
-		Filename:    "feature",
-		Status:      taskstore.StatusReviewing,
-		Branch:      "plan/feature",
-		ReviewCycle: 2,
+		Filename: "feature",
+		Status:   taskstore.StatusImplementing,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseArchitecting),
+			ActiveAgentType: session.AgentTypeElaborator,
+		},
 	}))
 
 	d := &Daemon{
@@ -169,33 +254,22 @@ func TestDaemon_RecoverSessions_DeduplicatesAndAdoptsKnownTitles(t *testing.T) {
 		Store:   store,
 	}}
 	d.spawner.discoverOrphans = func(_ []string) ([]tmuxpkg.SessionInfo, error) {
-		return []tmuxpkg.SessionInfo{
-			{Title: "feature-architect"},
-			{Title: "feature-architect"},
-			{Title: "feature-fix-2"},
-			{Title: "feature-review-3"},
-			{Title: "feature-review-4"},
-		}, nil
+		return []tmuxpkg.SessionInfo{{Title: "feature-architect"}, {Title: "feature-review-1"}}, nil
 	}
 
-	var restored []session.InstanceData
+	var restored session.InstanceData
 	d.spawner.restoreInstance = func(data session.InstanceData) (*session.Instance, error) {
-		restored = append(restored, data)
+		restored = data
 		return &session.Instance{Title: data.Title, Path: data.Path, TaskFile: data.TaskFile, AgentType: data.AgentType}, nil
 	}
 
 	recovered, err := d.RecoverSessions()
 	require.NoError(t, err)
-	assert.Equal(t, 3, recovered, "duplicate and unknown orphan titles should be suppressed")
-
-	gotTitles := make([]string, 0, len(restored))
-	for _, data := range restored {
-		gotTitles = append(gotTitles, data.Title)
-	}
-	assert.ElementsMatch(t, []string{"feature-architect", "feature-fix-2", "feature-review-3"}, gotTitles)
-
-	running := d.spawner.RunningInstances()
-	require.Len(t, running, 3)
+	assert.Equal(t, 1, recovered)
+	assert.Equal(t, "feature-architect", restored.Title)
+	assert.Equal(t, session.AgentTypeElaborator, restored.AgentType)
+	assert.Empty(t, restored.Branch)
+	assert.Empty(t, restored.Worktree.WorktreePath)
 }
 
 func TestDaemon_RecoverSessions_UsesPersistedWaveStateForWaveTasks(t *testing.T) {

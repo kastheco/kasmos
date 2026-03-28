@@ -1114,7 +1114,7 @@ func navInstanceTitle(inst *session.Instance) string {
 		return "planning"
 	case inst.SoloAgent && inst.TaskFile != "":
 		return taskstate.DisplayName(inst.TaskFile)
-	case inst.AgentType == session.AgentTypeCoder && inst.TaskFile != "" && inst.WaveNumber == 0:
+	case (inst.AgentType == session.AgentTypeFixer || inst.AgentType == session.AgentTypeCoder) && inst.TaskFile != "" && inst.WaveNumber == 0:
 		if inst.ReviewCycle > 0 {
 			return fmt.Sprintf("applying fixes #%d", inst.ReviewCycle)
 		}
