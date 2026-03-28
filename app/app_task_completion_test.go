@@ -12,6 +12,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
+	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
@@ -22,7 +23,7 @@ import (
 )
 
 func TestShouldPromptPushAfterImplementerExit(t *testing.T) {
-	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing}
+	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder}}
 	inst := &session.Instance{TaskFile: "p", AgentType: session.AgentTypeCoder}
 
 	if !shouldPromptPushAfterImplementerExit(entry, inst, false) {
@@ -31,7 +32,7 @@ func TestShouldPromptPushAfterImplementerExit(t *testing.T) {
 }
 
 func TestShouldPromptPushAfterImplementerExit_HeadlessCoderExited(t *testing.T) {
-	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing}
+	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder}}
 	inst := &session.Instance{
 		TaskFile:      "p.md",
 		AgentType:     session.AgentTypeCoder,
@@ -43,7 +44,7 @@ func TestShouldPromptPushAfterImplementerExit_HeadlessCoderExited(t *testing.T) 
 }
 
 func TestShouldPromptPushAfterImplementerExit_PromptDetectedTriggers(t *testing.T) {
-	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing}
+	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder}}
 	inst := &session.Instance{
 		TaskFile:       "p",
 		AgentType:      session.AgentTypeCoder,
@@ -58,7 +59,7 @@ func TestShouldPromptPushAfterImplementerExit_PromptDetectedTriggers(t *testing.
 }
 
 func TestShouldPromptPushAfterImplementerExit_AwaitingWorkSuppresses(t *testing.T) {
-	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing}
+	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder}}
 	inst := &session.Instance{
 		TaskFile:       "p",
 		AgentType:      session.AgentTypeCoder,
@@ -73,7 +74,7 @@ func TestShouldPromptPushAfterImplementerExit_AwaitingWorkSuppresses(t *testing.
 }
 
 func TestShouldPromptPushAfterImplementerExit_FixerPromptDetectedTriggers(t *testing.T) {
-	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing}
+	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: session.AgentTypeFixer}}
 	inst := &session.Instance{
 		TaskFile:       "p",
 		AgentType:      session.AgentTypeFixer,
@@ -86,7 +87,7 @@ func TestShouldPromptPushAfterImplementerExit_FixerPromptDetectedTriggers(t *tes
 }
 
 func TestShouldPromptPushAfterImplementerExit_NoPromptForSoloAgent(t *testing.T) {
-	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing}
+	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder}}
 	inst := &session.Instance{TaskFile: "p", AgentType: session.AgentTypeCoder, SoloAgent: true}
 
 	assert.False(t, shouldPromptPushAfterImplementerExit(entry, inst, false),
@@ -94,7 +95,7 @@ func TestShouldPromptPushAfterImplementerExit_NoPromptForSoloAgent(t *testing.T)
 }
 
 func TestShouldPromptPushAfterImplementerExit_NoPromptForReviewer(t *testing.T) {
-	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing}
+	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder}}
 	inst := &session.Instance{TaskFile: "p", AgentType: session.AgentTypeReviewer}
 
 	if shouldPromptPushAfterImplementerExit(entry, inst, false) {
@@ -117,6 +118,7 @@ func TestMetadataTickHandler_CoderExitTriggersPrompt(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, ps.Register(planFile, "test feature", "plan/test-feature", time.Now()))
 	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+	require.NoError(t, ps.SetExecutionState(planFile, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder}))
 
 	// Build a coder instance (not started — we inject metadata directly).
 	inst, err := session.NewInstance(session.InstanceOptions{
@@ -184,6 +186,7 @@ func TestMetadataTickHandler_CoderPromptDetectedTriggersPrompt(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, ps.Register(planFile, "test feature", "plan/test-feature", time.Now()))
 	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+	require.NoError(t, ps.SetExecutionState(planFile, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: session.AgentTypeFixer}))
 
 	// Build a fixer instance that has finished its queued work and returned to prompt.
 	inst, err := session.NewInstance(session.InstanceOptions{
@@ -610,6 +613,7 @@ func TestReviewChangesSignal_RespawnsFixer(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, ps.Register(planFile, "feature", "plan/feature", time.Now()))
 	seedPlanStatus(t, ps, planFile, taskstate.StatusReviewing)
+	require.NoError(t, ps.SetExecutionState(planFile, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseReviewing), ActiveAgentType: session.AgentTypeReviewer}))
 
 	// Create a reviewer instance bound to this plan.
 	reviewerInst, err := session.NewInstance(session.InstanceOptions{
@@ -1172,6 +1176,7 @@ func TestReviewApproved_PausesReviewerInsteadOfKilling(t *testing.T) {
 	entry, ok := reloaded.Entry(planFile)
 	require.True(t, ok)
 	assert.Equal(t, taskstate.StatusDone, entry.Status)
+	assert.Equal(t, taskstore.ExecutionState{}, entry.ExecutionState)
 }
 
 // TestPausedReviewer_CleanedUpOnNavigateAway verifies that when the user navigates

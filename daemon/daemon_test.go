@@ -167,6 +167,10 @@ func TestDaemon_RecoverSessions_AdoptsTrackedInstances(t *testing.T) {
 		Filename: "feature.md",
 		Status:   taskstore.StatusImplementing,
 		Branch:   "plan/feature",
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseFixing),
+			ActiveAgentType: session.AgentTypeFixer,
+		},
 	}))
 
 	d := &Daemon{
@@ -304,6 +308,10 @@ func TestDaemon_AutoAdvanceCompletedImplementer_TransitionsToReviewing(t *testin
 		Filename: "feature.md",
 		Status:   taskstore.StatusImplementing,
 		Branch:   "plan/feature",
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseFixing),
+			ActiveAgentType: session.AgentTypeFixer,
+		},
 	}))
 
 	pushCalled := false
@@ -331,6 +339,7 @@ func TestDaemon_AutoAdvanceCompletedImplementer_TransitionsToReviewing(t *testin
 	entry, err := store.Get(project, "feature.md")
 	require.NoError(t, err)
 	assert.Equal(t, taskstore.StatusReviewing, entry.Status)
+	assert.Equal(t, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseReviewing), ActiveAgentType: session.AgentTypeReviewer}, entry.ExecutionState)
 }
 
 func TestDaemon_TickScansSharedWorktreeSignals(t *testing.T) {

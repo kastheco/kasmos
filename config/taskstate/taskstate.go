@@ -55,13 +55,44 @@ func CanStartImplementation(entry TaskEntry) bool {
 func normalizeExecutionState(status Status, state taskstore.ExecutionState) taskstore.ExecutionState {
 	state.Phase = strings.TrimSpace(state.Phase)
 	state.ActiveAgentType = strings.TrimSpace(state.ActiveAgentType)
-	if status != StatusReady {
+	if state.ActiveWave < 0 {
+		state.ActiveWave = 0
+	}
+
+	switch status {
+	case StatusReady:
+		if state.Phase != "planned" {
+			return taskstore.ExecutionState{}
+		}
+		return taskstore.ExecutionState{Phase: state.Phase}
+	case StatusImplementing:
+		switch state.Phase {
+		case "architecting":
+			if state.ActiveAgentType == "" {
+				return taskstore.ExecutionState{}
+			}
+			return taskstore.ExecutionState{Phase: state.Phase, ActiveAgentType: state.ActiveAgentType}
+		case "single_agent_implementing", "fixing":
+			if state.ActiveAgentType == "" {
+				return taskstore.ExecutionState{}
+			}
+			return taskstore.ExecutionState{Phase: state.Phase, ActiveAgentType: state.ActiveAgentType}
+		case "wave_running", "wave_waiting":
+			if state.ActiveAgentType == "" || state.ActiveWave <= 0 {
+				return taskstore.ExecutionState{}
+			}
+			return taskstore.ExecutionState{Phase: state.Phase, ActiveAgentType: state.ActiveAgentType, ActiveWave: state.ActiveWave}
+		default:
+			return taskstore.ExecutionState{}
+		}
+	case StatusReviewing:
+		if state.Phase != "reviewing" || state.ActiveAgentType == "" {
+			return taskstore.ExecutionState{}
+		}
+		return taskstore.ExecutionState{Phase: state.Phase, ActiveAgentType: state.ActiveAgentType}
+	default:
 		return taskstore.ExecutionState{}
 	}
-	if state.Phase != "planned" {
-		return taskstore.ExecutionState{}
-	}
-	return taskstore.ExecutionState{Phase: state.Phase}
 }
 
 type TaskEntry struct {
@@ -725,6 +756,11 @@ func (ps *TaskState) SetExecutionState(filename string, state taskstore.Executio
 		return fmt.Errorf("task store: %w", err)
 	}
 	return nil
+}
+
+// ClearExecutionState removes any persisted fine-grained execution metadata for a plan.
+func (ps *TaskState) ClearExecutionState(filename string) error {
+	return ps.SetExecutionState(filename, taskstore.ExecutionState{})
 }
 
 // SetClickUpTaskID assigns a ClickUp task ID to an existing plan entry and

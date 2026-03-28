@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/kastheco/kasmos/config/taskfsm"
-	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/stretchr/testify/assert"
@@ -82,19 +81,35 @@ func TestProcessor_ProcessFSMSignals_SuppressesImplementFinishedWhenWaveOwnershi
 
 	tests := []struct {
 		name  string
+		entry taskstore.TaskEntry
 		setup func(*Processor)
 	}{
 		{
-			name: "active orchestrator flag suppresses signal",
+			name:  "active orchestrator flag suppresses signal",
+			entry: taskstore.TaskEntry{Filename: "plan.md", Status: taskstore.StatusImplementing},
 			setup: func(p *Processor) {
 				p.SetWaveOrchestratorActive("plan.md", true)
 			},
 		},
 		{
-			name: "registered orchestrator suppresses signal",
+			name:  "registered orchestrator suppresses signal",
+			entry: taskstore.TaskEntry{Filename: "plan.md", Status: taskstore.StatusImplementing},
 			setup: func(p *Processor) {
 				p.RegisterOrchestrator("plan.md", 1, []int{1})
 			},
+		},
+		{
+			name: "persisted wave phase suppresses signal after restart",
+			entry: taskstore.TaskEntry{
+				Filename: "plan.md",
+				Status:   taskstore.StatusImplementing,
+				ExecutionState: taskstore.ExecutionState{
+					Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+					ActiveAgentType: "coder",
+					ActiveWave:      1,
+				},
+			},
+			setup: func(p *Processor) {},
 		},
 	}
 
@@ -105,7 +120,7 @@ func TestProcessor_ProcessFSMSignals_SuppressesImplementFinishedWhenWaveOwnershi
 			defer store.Close()
 
 			const project = "proj"
-			require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "plan.md", Status: taskstore.StatusImplementing}))
+			require.NoError(t, store.Create(project, tt.entry))
 			p := NewProcessor(ProcessorConfig{Store: store, Project: project})
 			tt.setup(p)
 
@@ -131,17 +146,17 @@ func TestProcessor_ProcessElaborationSignals_ResumesArchitectWaveOne(t *testing.
 		planFile = "plan.md"
 	)
 	content := "# Plan\n\n**Goal:** test\n\n## Wave 1\n\n### Task 1: First\n\nDo it.\n"
-	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: planFile, Status: taskstore.StatusImplementing}))
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseArchitecting),
+			ActiveAgentType: "architect",
+		},
+	}))
 	require.NoError(t, store.SetContent(project, planFile, content))
 
-	plan, err := taskparser.Parse(content)
-	require.NoError(t, err)
-	orch := orchestration.NewWaveOrchestrator(planFile, plan)
-	orch.SetStore(store, project)
-	orch.SetElaborating()
-
 	p := NewProcessor(ProcessorConfig{Store: store, Project: project})
-	p.waveOrchestrators[planFile] = orch
 
 	actions := p.ProcessElaborationSignals([]taskfsm.ElaborationSignal{{TaskFile: planFile}})
 	require.Len(t, actions, 1)
@@ -149,6 +164,8 @@ func TestProcessor_ProcessElaborationSignals_ResumesArchitectWaveOne(t *testing.
 	require.True(t, ok)
 	assert.Equal(t, planFile, advance.PlanFile)
 	assert.Equal(t, 1, advance.Wave)
+	orch := p.WaveOrchestrator(planFile)
+	require.NotNil(t, orch)
 	assert.Equal(t, orchestration.WaveStateRunning, orch.State())
 	assert.Equal(t, 1, orch.CurrentWaveNumber())
 	require.NotEmpty(t, orch.CurrentWaveTasks())

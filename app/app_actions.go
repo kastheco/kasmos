@@ -429,6 +429,9 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 					return err
 				}
 			}
+			if err := m.clearExecutionState(planFile); err != nil {
+				return err
+			}
 			m.audit(auditlog.EventPlanMerged, "task merged to main: "+planName,
 				auditlog.WithPlan(planFile))
 			_ = m.saveAllInstances()
@@ -460,6 +463,9 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			}
 			m.audit(auditlog.EventPlanTransition, string(entry.Status)+" → done (manual)",
 				auditlog.WithPlan(planFile))
+		}
+		if err := m.clearExecutionState(planFile); err != nil {
+			return m, m.handleError(err)
 		}
 		m.loadTaskState()
 		m.updateSidebarTasks()
@@ -500,6 +506,9 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		planName := taskstate.DisplayName(planFile)
 		cancelAction := func() tea.Msg {
 			if err := m.fsm.Transition(planFile, taskfsm.Cancel); err != nil {
+				return err
+			}
+			if err := m.clearExecutionState(planFile); err != nil {
 				return err
 			}
 			m.audit(auditlog.EventPlanCancelled, "task cancelled by user: "+planName,
@@ -1357,13 +1366,14 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			auditlog.WithPlan(planFile))
 		m.loadTaskState()
 		m.updateSidebarTasks()
-		storedCycle, _ := m.taskState.ReviewCycle(planFile)
-		reviewPrompt := orchestration.BuildReviewerAgentSpec(planFile, storedCycle, m.latestReviewFeedback(planFile)).Prompt
-		return m.spawnTaskAgent(planFile, "review", reviewPrompt)
+		return m, m.spawnReviewer(planFile)
 	}
 
 	// Non-agent stages (finished): mark plan done via FSM.
 	if err := m.fsm.Transition(planFile, taskfsm.ReviewApproved); err != nil {
+		return m, m.handleError(err)
+	}
+	if err := m.clearExecutionState(planFile); err != nil {
 		return m, m.handleError(err)
 	}
 	m.audit(auditlog.EventPlanTransition, string(entry.Status)+" → done",

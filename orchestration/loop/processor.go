@@ -2,12 +2,28 @@ package loop
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/orchestration"
 )
+
+func (p *Processor) taskEntry(planFile string) (taskstore.TaskEntry, bool) {
+	if p.config.Store == nil {
+		return taskstore.TaskEntry{}, false
+	}
+	entry, err := p.config.Store.Get(p.config.Project, planFile)
+	if err != nil {
+		return taskstore.TaskEntry{}, false
+	}
+	return entry, true
+}
+
+func executionPhaseForEntry(entry taskstore.TaskEntry) taskfsm.ExecutionPhase {
+	return taskfsm.ExecutionPhase(strings.TrimSpace(entry.ExecutionState.Phase))
+}
 
 // ProcessorConfig holds the dependencies needed to construct a Processor.
 type ProcessorConfig struct {
@@ -133,6 +149,12 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 		// Wave task agents write this sentinel after each task, but the wave
 		// orchestrator owns the implementing→reviewing transition.
 		if sig.Event == taskfsm.ImplementFinished {
+			if entry, ok := p.taskEntry(sig.TaskFile); ok {
+				phase := executionPhaseForEntry(entry)
+				if phase == taskfsm.ExecutionPhaseWaveRunning || phase == taskfsm.ExecutionPhaseWaveWaiting {
+					continue
+				}
+			}
 			if p.activeWaveOrchs[sig.TaskFile] {
 				continue
 			}
@@ -311,6 +333,13 @@ func (p *Processor) restoreOrchestratorForTaskSignal(planFile string, waveNumber
 func (p *Processor) ProcessWaveSignals(signals []taskfsm.WaveSignal) []Action {
 	var actions []Action
 	for _, ws := range signals {
+		if entry, ok := p.taskEntry(ws.TaskFile); ok {
+			phase := executionPhaseForEntry(entry)
+			if phase == taskfsm.ExecutionPhaseWaveRunning && entry.ExecutionState.ActiveWave == ws.WaveNumber {
+				continue
+			}
+		}
+
 		// Reject if an orchestrator is already running for this plan.
 		if _, exists := p.waveOrchestrators[ws.TaskFile]; exists {
 			continue
@@ -365,7 +394,10 @@ func (p *Processor) ProcessElaborationSignals(signals []taskfsm.ElaborationSigna
 	var actions []Action
 	for _, es := range signals {
 		orch, exists := p.waveOrchestrators[es.TaskFile]
-		if !exists || orch.State() != orchestration.WaveStateElaborating {
+		if entry, ok := p.taskEntry(es.TaskFile); !ok || executionPhaseForEntry(entry) != taskfsm.ExecutionPhaseArchitecting {
+			continue
+		}
+		if exists && orch.State() != orchestration.WaveStateElaborating {
 			continue
 		}
 
@@ -379,11 +411,21 @@ func (p *Processor) ProcessElaborationSignals(signals []taskfsm.ElaborationSigna
 			continue
 		}
 
-		// Replace the plan with the architect-enriched version and reset orchestrator state.
-		orch.UpdatePlan(plan)
+		if !exists {
+			orch = orchestration.NewWaveOrchestrator(es.TaskFile, plan)
+			if p.config.Store != nil {
+				orch.SetStore(p.config.Store, p.config.Project)
+			}
+			p.waveOrchestrators[es.TaskFile] = orch
+			p.activeWaveOrchs[es.TaskFile] = true
+		} else {
+			// Replace the plan with the architect-enriched version and reset orchestrator state.
+			orch.UpdatePlan(plan)
+		}
 
 		// Start wave 1.
 		orch.StartNextWave()
+		p.activeWaveOrchs[es.TaskFile] = true
 
 		actions = append(actions, AdvanceWaveAction{
 			PlanFile: es.TaskFile,

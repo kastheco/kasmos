@@ -14,6 +14,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
+	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
@@ -44,6 +45,7 @@ func TestExecuteTaskStage_BlueprintSkipSmallPlan(t *testing.T) {
 	const planFile = "small-plan"
 	require.NoError(t, ps.Register(planFile, "small plan", "plan/small-plan", time.Now()))
 	seedPlanStatus(t, ps, planFile, taskstate.StatusReady)
+	require.NoError(t, ps.SetExecutionState(planFile, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhasePlanned)}))
 
 	content := strings.Join([]string{
 		"# Test Plan",
@@ -94,6 +96,7 @@ func TestExecuteTaskStage_BlueprintSkipSmallPlan(t *testing.T) {
 	entry, ok := updated.taskState.Entry(planFile)
 	require.True(t, ok)
 	assert.Equal(t, taskstate.StatusImplementing, entry.Status)
+	assert.Equal(t, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder}, entry.ExecutionState)
 
 	instances := updated.nav.GetInstances()
 	require.Len(t, instances, 1)

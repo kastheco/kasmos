@@ -215,6 +215,9 @@ func (m *PRMonitor) handleReview(ctx context.Context, repo RepoEntry, entry task
 		// Already dispatched on a previous cycle; nothing more to do.
 		return nil
 	}
+	if strings.TrimSpace(entry.ExecutionState.Phase) == "fixing" && strings.TrimSpace(entry.ExecutionState.ActiveAgentType) == "fixer" {
+		return nil
+	}
 
 	// Emit pr_review_detected before any side effect.
 	m.broadcaster.Emit(api.Event{

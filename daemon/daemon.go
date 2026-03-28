@@ -17,6 +17,7 @@ import (
 
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskfsm"
+	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
@@ -638,6 +639,13 @@ func shouldAutoAdvanceImplementer(entry taskstore.TaskEntry, inst *session.Insta
 	if entry.Status != taskstore.StatusImplementing {
 		return false
 	}
+	phase := taskfsm.ExecutionPhase(strings.TrimSpace(entry.ExecutionState.Phase))
+	if phase != taskfsm.ExecutionPhaseSingleAgentImplementing && phase != taskfsm.ExecutionPhaseFixing {
+		return false
+	}
+	if entry.ExecutionState.ActiveAgentType != "" && entry.ExecutionState.ActiveAgentType != inst.AgentType {
+		return false
+	}
 	if !tmuxAlive {
 		return true
 	}
@@ -645,6 +653,28 @@ func shouldAutoAdvanceImplementer(entry taskstore.TaskEntry, inst *session.Insta
 		return true
 	}
 	return false
+}
+
+func setRepoExecutionState(e RepoEntry, planFile string, state taskstore.ExecutionState) error {
+	if e.Store == nil {
+		return fmt.Errorf("task store unavailable for %s", planFile)
+	}
+	ps, err := taskstate.Load(e.Store, e.Project, "")
+	if err != nil {
+		return err
+	}
+	return ps.SetExecutionState(planFile, state)
+}
+
+func clearRepoExecutionState(e RepoEntry, planFile string) error {
+	if e.Store == nil {
+		return fmt.Errorf("task store unavailable for %s", planFile)
+	}
+	ps, err := taskstate.Load(e.Store, e.Project, "")
+	if err != nil {
+		return err
+	}
+	return ps.ClearExecutionState(planFile)
 }
 
 func (d *Daemon) pushInstanceBranch(inst *session.Instance) error {
@@ -678,6 +708,12 @@ func (d *Daemon) autoAdvanceCompletedImplementer(e RepoEntry, inst *session.Inst
 	fsm := taskfsm.New(e.Store, e.Project, "")
 	if err := fsm.Transition(inst.TaskFile, taskfsm.ImplementFinished); err != nil {
 		return false, fmt.Errorf("transition %s to reviewing: %w", inst.TaskFile, err)
+	}
+	if err := setRepoExecutionState(e, inst.TaskFile, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseReviewing),
+		ActiveAgentType: session.AgentTypeReviewer,
+	}); err != nil {
+		return false, fmt.Errorf("persist reviewing execution state for %s: %w", inst.TaskFile, err)
 	}
 
 	return true, nil
@@ -796,6 +832,12 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		}
 		return nil
 	case loop.SpawnReviewerAction:
+		if err := setRepoExecutionState(e, a.PlanFile, taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseReviewing),
+			ActiveAgentType: session.AgentTypeReviewer,
+		}); err != nil {
+			return fmt.Errorf("persist reviewer execution state: %w", err)
+		}
 		opts := reviewerSpawnOpts(e, entryFor(a.PlanFile))
 		if err := d.spawner.SpawnReviewer(ctx, opts); err != nil {
 			d.logger.Error("spawn reviewer failed", "plan", a.PlanFile, "err", err)
@@ -824,6 +866,12 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		})
 		return nil
 	case loop.SpawnElaboratorAction:
+		if err := setRepoExecutionState(e, a.PlanFile, taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseArchitecting),
+			ActiveAgentType: session.AgentTypeElaborator,
+		}); err != nil {
+			return fmt.Errorf("persist architect execution state: %w", err)
+		}
 		spec := orchestration.BuildArchitectAgentSpec(a.PlanFile)
 		opts := loop.SpawnOpts{
 			PlanFile: a.PlanFile,
@@ -844,6 +892,12 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		})
 		return nil
 	case loop.SpawnFixerAction:
+		if err := setRepoExecutionState(e, a.PlanFile, taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseFixing),
+			ActiveAgentType: session.AgentTypeFixer,
+		}); err != nil {
+			return fmt.Errorf("persist fixer execution state: %w", err)
+		}
 		opts := fixerSpawnOpts(e, a.PlanFile, branchFor(a.PlanFile), a.Feedback)
 		if err := d.spawner.SpawnFixer(ctx, opts); err != nil {
 			d.logger.Error("spawn fixer failed", "plan", a.PlanFile, "err", err)
@@ -884,6 +938,9 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		})
 		return nil
 	case loop.ReviewApprovedAction:
+		if err := clearRepoExecutionState(e, a.PlanFile); err != nil {
+			return fmt.Errorf("clear execution state after review approval: %w", err)
+		}
 		d.logger.Info("review approved", "plan", a.PlanFile, "repo", e.Path)
 		d.broadcaster.Emit(api.Event{
 			Kind:     "signal_processed",
@@ -937,6 +994,13 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 	}
 
 	waveNum := orch.CurrentWaveNumber()
+	if err := setRepoExecutionState(e, planFile, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+		ActiveAgentType: session.AgentTypeCoder,
+		ActiveWave:      waveNum,
+	}); err != nil {
+		return fmt.Errorf("persist wave execution state for %s: %w", planFile, err)
+	}
 	peerCount := len(tasks)
 	for _, task := range tasks {
 		prompt := orch.BuildTaskPrompt(task, peerCount)
@@ -992,6 +1056,13 @@ func (d *Daemon) handleWaveTaskComplete(ctx context.Context, e RepoEntry, action
 		}
 
 		if failed > 0 {
+			if err := setRepoExecutionState(e, action.PlanFile, taskstore.ExecutionState{
+				Phase:           string(taskfsm.ExecutionPhaseWaveWaiting),
+				ActiveAgentType: session.AgentTypeCoder,
+				ActiveWave:      waveNum,
+			}); err != nil {
+				return fmt.Errorf("persist failed-wave waiting state for %s: %w", action.PlanFile, err)
+			}
 			e.Processor.ClearWaveOrchestrator(action.PlanFile)
 			d.broadcaster.Emit(api.Event{
 				Kind:     "wave_failed",
@@ -1011,6 +1082,13 @@ func (d *Daemon) handleWaveTaskComplete(ctx context.Context, e RepoEntry, action
 
 		autoAdvanceWaves := d.cfg != nil && d.cfg.AutoAdvanceWaves
 		if !autoAdvanceWaves {
+			if err := setRepoExecutionState(e, action.PlanFile, taskstore.ExecutionState{
+				Phase:           string(taskfsm.ExecutionPhaseWaveWaiting),
+				ActiveAgentType: session.AgentTypeCoder,
+				ActiveWave:      waveNum,
+			}); err != nil {
+				return fmt.Errorf("persist waiting wave state for %s: %w", action.PlanFile, err)
+			}
 			e.Processor.ClearWaveOrchestrator(action.PlanFile)
 			return nil
 		}
@@ -1032,6 +1110,12 @@ func (d *Daemon) handleWaveTaskComplete(ctx context.Context, e RepoEntry, action
 		fsm := taskfsm.New(e.Store, e.Project, "")
 		if err := fsm.Transition(action.PlanFile, taskfsm.ImplementFinished); err != nil {
 			return err
+		}
+		if err := setRepoExecutionState(e, action.PlanFile, taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseReviewing),
+			ActiveAgentType: session.AgentTypeReviewer,
+		}); err != nil {
+			return fmt.Errorf("persist reviewing execution state for %s: %w", action.PlanFile, err)
 		}
 
 		d.broadcaster.Emit(api.Event{
@@ -1108,52 +1192,131 @@ func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 	}
 }
 
-func taskRecoveryCandidates(task taskstore.TaskEntry) []struct {
-	title     string
-	agentType string
-	branch    string
+func taskRecoveryCandidates(store taskstore.Store, project string, task taskstore.TaskEntry) []struct {
+	title      string
+	agentType  string
+	branch     string
+	taskNumber int
+	waveNumber int
 } {
-	planName := taskstate.DisplayName(task.Filename)
-	candidates := []struct {
-		title     string
-		agentType string
-		branch    string
-	}{
-		{title: orchestration.BuildLifecycleAgentTitle(task.Filename, session.AgentTypeCoder, 0), agentType: session.AgentTypeCoder, branch: task.Branch},
-		{title: fmt.Sprintf("%s-fixer", planName), agentType: session.AgentTypeFixer, branch: task.Branch},
-		{title: fmt.Sprintf("%s-reviewer", planName), agentType: session.AgentTypeReviewer, branch: task.Branch},
-		{title: orchestration.BuildArchitectAgentSpec(task.Filename).Title, agentType: session.AgentTypeElaborator},
+	appendLifecycleCandidates := func(candidates []struct {
+		title      string
+		agentType  string
+		branch     string
+		taskNumber int
+		waveNumber int
+	}) []struct {
+		title      string
+		agentType  string
+		branch     string
+		taskNumber int
+		waveNumber int
+	} {
+		planName := taskstate.DisplayName(task.Filename)
+		candidates = append(candidates,
+			struct {
+				title      string
+				agentType  string
+				branch     string
+				taskNumber int
+				waveNumber int
+			}{title: orchestration.BuildLifecycleAgentTitle(task.Filename, session.AgentTypeCoder, 0), agentType: session.AgentTypeCoder, branch: task.Branch},
+			struct {
+				title      string
+				agentType  string
+				branch     string
+				taskNumber int
+				waveNumber int
+			}{title: fmt.Sprintf("%s-fixer", planName), agentType: session.AgentTypeFixer, branch: task.Branch},
+			struct {
+				title      string
+				agentType  string
+				branch     string
+				taskNumber int
+				waveNumber int
+			}{title: fmt.Sprintf("%s-reviewer", planName), agentType: session.AgentTypeReviewer, branch: task.Branch},
+			struct {
+				title      string
+				agentType  string
+				branch     string
+				taskNumber int
+				waveNumber int
+			}{title: orchestration.BuildArchitectAgentSpec(task.Filename).Title, agentType: session.AgentTypeElaborator},
+		)
+
+		maxReview := task.ReviewCycle + 1
+		if maxReview < 1 {
+			maxReview = 1
+		}
+		for cycle := 1; cycle <= maxReview; cycle++ {
+			candidates = append(candidates, struct {
+				title      string
+				agentType  string
+				branch     string
+				taskNumber int
+				waveNumber int
+			}{
+				title:     orchestration.BuildLifecycleAgentTitle(task.Filename, session.AgentTypeReviewer, cycle),
+				agentType: session.AgentTypeReviewer,
+				branch:    task.Branch,
+			})
+		}
+
+		for cycle := 1; cycle <= task.ReviewCycle; cycle++ {
+			candidates = append(candidates, struct {
+				title      string
+				agentType  string
+				branch     string
+				taskNumber int
+				waveNumber int
+			}{
+				title:     orchestration.BuildLifecycleAgentTitle(task.Filename, session.AgentTypeFixer, cycle),
+				agentType: session.AgentTypeFixer,
+				branch:    task.Branch,
+			})
+		}
+
+		return candidates
 	}
 
-	maxReview := task.ReviewCycle + 1
-	if maxReview < 1 {
-		maxReview = 1
-	}
-	for cycle := 1; cycle <= maxReview; cycle++ {
-		candidates = append(candidates, struct {
-			title     string
-			agentType string
-			branch    string
-		}{
-			title:     orchestration.BuildLifecycleAgentTitle(task.Filename, session.AgentTypeReviewer, cycle),
-			agentType: session.AgentTypeReviewer,
-			branch:    task.Branch,
-		})
+	phase := taskfsm.ExecutionPhase(strings.TrimSpace(task.ExecutionState.Phase))
+	if (phase == taskfsm.ExecutionPhaseWaveRunning || phase == taskfsm.ExecutionPhaseWaveWaiting) && task.ExecutionState.ActiveWave > 0 && store != nil {
+		content, err := store.GetContent(project, task.Filename)
+		if err == nil {
+			if plan, parseErr := taskparser.Parse(content); parseErr == nil {
+				for _, wave := range plan.Waves {
+					if wave.Number != task.ExecutionState.ActiveWave {
+						continue
+					}
+					candidates := make([]struct {
+						title      string
+						agentType  string
+						branch     string
+						taskNumber int
+						waveNumber int
+					}, 0, len(wave.Tasks))
+					for _, taskEntry := range wave.Tasks {
+						candidates = append(candidates, struct {
+							title      string
+							agentType  string
+							branch     string
+							taskNumber int
+							waveNumber int
+						}{
+							title:      orchestration.BuildWaveTaskTitle(task.Filename, wave.Number, taskEntry.Number),
+							agentType:  session.AgentTypeCoder,
+							branch:     task.Branch,
+							taskNumber: taskEntry.Number,
+							waveNumber: wave.Number,
+						})
+					}
+					return candidates
+				}
+			}
+		}
 	}
 
-	for cycle := 1; cycle <= task.ReviewCycle; cycle++ {
-		candidates = append(candidates, struct {
-			title     string
-			agentType string
-			branch    string
-		}{
-			title:     orchestration.BuildLifecycleAgentTitle(task.Filename, session.AgentTypeFixer, cycle),
-			agentType: session.AgentTypeFixer,
-			branch:    task.Branch,
-		})
-	}
-
-	return candidates
+	return appendLifecycleCandidates(nil)
 }
 
 // RecoverSessions discovers orphaned kas_ tmux sessions and attempts to
@@ -1197,7 +1360,7 @@ func (d *Daemon) RecoverSessions() (int, error) {
 			continue
 		}
 		for _, task := range tasks {
-			for _, candidate := range taskRecoveryCandidates(task) {
+			for _, candidate := range taskRecoveryCandidates(e.Store, e.Project, task) {
 				if _, ok := orphanTitles[candidate.title]; !ok {
 					continue
 				}
@@ -1212,6 +1375,8 @@ func (d *Daemon) RecoverSessions() (int, error) {
 					AutoYes:       true,
 					TaskFile:      task.Filename,
 					AgentType:     candidate.agentType,
+					TaskNumber:    candidate.taskNumber,
+					WaveNumber:    candidate.waveNumber,
 				}
 				if candidate.branch != "" {
 					shared := gitpkg.NewSharedTaskWorktree(e.Path, candidate.branch)

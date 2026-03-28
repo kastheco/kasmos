@@ -10,7 +10,9 @@ import (
 
 	"charm.land/bubbles/v2/spinner"
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstate"
+	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/ui"
 	"github.com/kastheco/kasmos/ui/overlay"
@@ -108,6 +110,7 @@ func TestSpawnArchitectPass_PatchesMainBranchOpencodeConfig(t *testing.T) {
 	require.NoError(t, err)
 	planFile := "architect-branch-patch.md"
 	require.NoError(t, ps.Register(planFile, "architect test plan", "plan/architect", time.Now()))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
 
 	configPath := filepath.Join(dir, "opencode.jsonc")
 	require.NoError(t, os.WriteFile(configPath, []byte(`{"agent":{"architect":{"model":"anthropic/old","temperature":0.1,"reasoningEffort":"low"}}}`), 0o644))
@@ -142,6 +145,9 @@ func TestSpawnArchitectPass_PatchesMainBranchOpencodeConfig(t *testing.T) {
 	if cmd != nil {
 		_ = cmd()
 	}
+	entry, ok := ps.Entry(planFile)
+	require.True(t, ok)
+	assert.Equal(t, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseArchitecting), ActiveAgentType: session.AgentTypeElaborator}, entry.ExecutionState)
 
 	var cfg map[string]any
 	data, err := os.ReadFile(configPath)
@@ -248,6 +254,7 @@ func TestSpawnReviewer_SkipsDuplicatePendingSameCycle(t *testing.T) {
 	planFile := "review-dedupe.md"
 	require.NoError(t, ps.Register(planFile, "review dedupe", "plan/review-dedupe", time.Now()))
 	require.NoError(t, ps.SetBranch(planFile, "plan/review-dedupe"))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusReviewing)
 	require.NoError(t, ps.IncrementReviewCycle(planFile))
 
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
@@ -275,6 +282,9 @@ func TestSpawnReviewer_SkipsDuplicatePendingSameCycle(t *testing.T) {
 	cmd1 := m.spawnReviewer(planFile)
 	require.NotNil(t, cmd1)
 	assert.Len(t, m.instanceFinalizers, 1)
+	entry, ok := ps.Entry(planFile)
+	require.True(t, ok)
+	assert.Equal(t, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseReviewing), ActiveAgentType: session.AgentTypeReviewer}, entry.ExecutionState)
 
 	cmd2 := m.spawnReviewer(planFile)
 	assert.Nil(t, cmd2)

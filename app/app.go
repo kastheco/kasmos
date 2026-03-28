@@ -1074,6 +1074,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					case loop.ReviewApprovedAction:
 						m.clearLatestReviewFeedback(a.PlanFile)
+						if err := m.clearExecutionState(a.PlanFile); err != nil {
+							log.WarningLog.Printf("could not clear execution state for %q: %v", a.PlanFile, err)
+						}
 						planName := taskstate.DisplayName(a.PlanFile)
 						m.audit(auditlog.EventPlanTransition, "reviewing → done (review approved)",
 							auditlog.WithPlan(a.PlanFile))
@@ -1203,6 +1206,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					case taskfsm.ReviewApproved:
 						m.clearLatestReviewFeedback(sig.TaskFile)
+						if err := m.clearExecutionState(sig.TaskFile); err != nil {
+							log.WarningLog.Printf("could not clear execution state for %q: %v", sig.TaskFile, err)
+						}
 						planName := taskstate.DisplayName(sig.TaskFile)
 						m.audit(auditlog.EventPlanTransition, "reviewing → done (review approved)",
 							auditlog.WithPlan(sig.TaskFile))
@@ -1736,6 +1742,13 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					waveNumFinal := orch.CurrentWaveNumber()
 					completedFinal := orch.CompletedTaskCount()
 					totalFinal := completedFinal + orch.FailedTaskCount()
+					if err := m.setExecutionState(capturedPlanFile, taskstore.ExecutionState{
+						Phase:           string(taskfsm.ExecutionPhaseWaveWaiting),
+						ActiveAgentType: session.AgentTypeCoder,
+						ActiveWave:      waveNumFinal,
+					}); err != nil {
+						log.WarningLog.Printf("could not persist wave waiting state for %q: %v", capturedPlanFile, err)
+					}
 
 					// Pause all task instances (they're done, free up resources).
 					for _, inst := range m.nav.GetInstances() {
@@ -1802,6 +1815,13 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 
 					if failed > 0 {
+						if err := m.setExecutionState(capturedPlanFile, taskstore.ExecutionState{
+							Phase:           string(taskfsm.ExecutionPhaseWaveWaiting),
+							ActiveAgentType: session.AgentTypeCoder,
+							ActiveWave:      waveNum,
+						}); err != nil {
+							log.WarningLog.Printf("could not persist wave waiting state for %q: %v", capturedPlanFile, err)
+						}
 						// Failed wave — always show the decision dialog (retry/next/abort)
 						if cmd := m.focusPlanInstanceForOverlay(capturedPlanFile); cmd != nil {
 							asyncCmds = append(asyncCmds, cmd)
@@ -1827,6 +1847,13 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						})
 						asyncCmds = append(asyncCmds, m.toastTickCmd())
 					} else {
+						if err := m.setExecutionState(capturedPlanFile, taskstore.ExecutionState{
+							Phase:           string(taskfsm.ExecutionPhaseWaveWaiting),
+							ActiveAgentType: session.AgentTypeCoder,
+							ActiveWave:      waveNum,
+						}); err != nil {
+							log.WarningLog.Printf("could not persist wave waiting state for %q: %v", capturedPlanFile, err)
+						}
 						// Manual mode: focus instance and show confirmation dialog
 						if cmd := m.focusPlanInstanceForOverlay(capturedPlanFile); cmd != nil {
 							asyncCmds = append(asyncCmds, cmd)
@@ -1982,9 +2009,23 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// race when the returned tea.Cmd runs concurrently with future Updates
 		// that may mutate m.nav.instances.
 		planFile := msg.planFile
+		if err := m.setExecutionState(planFile, taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseWaveWaiting),
+			ActiveAgentType: session.AgentTypeCoder,
+			ActiveWave:      1,
+		}); err != nil {
+			log.WarningLog.Printf("could not persist wave waiting state for %q: %v", planFile, err)
+		}
 		var pushInst *session.Instance
 		for _, inst := range m.nav.GetInstances() {
 			if inst.TaskFile == planFile && inst.TaskNumber > 0 {
+				if inst.WaveNumber > 0 {
+					_ = m.setExecutionState(planFile, taskstore.ExecutionState{
+						Phase:           string(taskfsm.ExecutionPhaseWaveWaiting),
+						ActiveAgentType: session.AgentTypeCoder,
+						ActiveWave:      inst.WaveNumber,
+					})
+				}
 				pushInst = inst
 				break
 			}

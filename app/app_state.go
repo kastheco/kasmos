@@ -1426,7 +1426,11 @@ func (m *home) checkPlanCompletion() tea.Cmd {
 		if reviewerPlans[inst.TaskFile] {
 			continue // reviewer already spawned; skip regardless of stale plan state
 		}
-		if !m.taskState.IsDone(inst.TaskFile) {
+		entry, ok := m.taskState.Entry(inst.TaskFile)
+		if !ok {
+			continue
+		}
+		if entry.Status != taskstate.StatusReviewing || executionPhase(entry.ExecutionState.Phase) != taskfsm.ExecutionPhaseReviewing {
 			continue
 		}
 		return m.transitionToReview(inst)
@@ -1439,12 +1443,14 @@ func (m *home) checkPlanCompletion() tea.Cmd {
 func (m *home) transitionToReview(coderInst *session.Instance) tea.Cmd {
 	// Guard: transition via FSM before next tick re-reads disk, preventing double-spawn.
 	planFile := coderInst.TaskFile
-	if err := m.fsm.Transition(planFile, taskfsm.ImplementFinished); err != nil {
-		log.WarningLog.Printf("could not set plan %q to reviewing: %v", planFile, err)
-		// Mark complete to break the retry loop — checkPlanCompletion fires
-		// every tick and would re-attempt this transition indefinitely.
-		coderInst.ImplementationComplete = true
-		return nil // FSM rejected — plan is not in implementing state, don't spawn reviewer.
+	if entry, ok := m.taskState.Entry(planFile); !ok || entry.Status != taskstate.StatusReviewing {
+		if err := m.fsm.Transition(planFile, taskfsm.ImplementFinished); err != nil {
+			log.WarningLog.Printf("could not set plan %q to reviewing: %v", planFile, err)
+			// Mark complete to break the retry loop — checkPlanCompletion fires
+			// every tick and would re-attempt this transition indefinitely.
+			coderInst.ImplementationComplete = true
+			return nil // FSM rejected — plan is not in implementing state, don't spawn reviewer.
+		}
 	}
 
 	// Auto-pause the coder instance — its work is done.
@@ -1474,6 +1480,13 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 	spec := orchestration.BuildReviewerAgentSpec(planFile, cycle, m.latestReviewFeedback(planFile))
 	title := spec.Title
 	if m.hasLiveOrPendingInstance(planFile, session.AgentTypeReviewer, title) {
+		return nil
+	}
+	if err := m.setExecutionState(planFile, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseReviewing),
+		ActiveAgentType: session.AgentTypeReviewer,
+	}); err != nil {
+		log.WarningLog.Printf("could not persist reviewer execution state for %q: %v", planFile, err)
 		return nil
 	}
 
@@ -1868,6 +1881,13 @@ func (m *home) spawnFixerWithFeedback(planFile, feedback string) tea.Cmd {
 	if m.hasLiveOrPendingInstance(planFile, session.AgentTypeFixer, title) {
 		return nil
 	}
+	if err := m.setExecutionState(planFile, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseFixing),
+		ActiveAgentType: session.AgentTypeFixer,
+	}); err != nil {
+		log.WarningLog.Printf("could not persist fixer execution state for %q: %v", planFile, err)
+		return nil
+	}
 	fixerInst, err := session.NewInstance(session.InstanceOptions{
 		Title:         title,
 		Path:          m.activeRepoPath,
@@ -1948,6 +1968,12 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 	inst.SetStatus(session.Loading)
 	inst.LoadingTotal = 6
 	inst.LoadingMessage = "elaborating plan..."
+	if err := m.setExecutionState(planFile, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseArchitecting),
+		ActiveAgentType: session.AgentTypeElaborator,
+	}); err != nil {
+		return m, m.handleError(err)
+	}
 
 	m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))
 
@@ -1989,6 +2015,33 @@ func (m *home) clearWaveOrchestratorState(planFile string) {
 	}
 }
 
+func executionPhase(phase string) taskfsm.ExecutionPhase {
+	return taskfsm.ExecutionPhase(strings.TrimSpace(phase))
+}
+
+func isWaveExecutionPhase(phase string) bool {
+	switch executionPhase(phase) {
+	case taskfsm.ExecutionPhaseWaveRunning, taskfsm.ExecutionPhaseWaveWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+func (m *home) setExecutionState(planFile string, state taskstore.ExecutionState) error {
+	if m.taskState == nil {
+		return fmt.Errorf("task state is not loaded")
+	}
+	return m.taskState.SetExecutionState(planFile, state)
+}
+
+func (m *home) clearExecutionState(planFile string) error {
+	if m.taskState == nil {
+		return fmt.Errorf("task state is not loaded")
+	}
+	return m.taskState.ClearExecutionState(planFile)
+}
+
 // hasActiveBlueprintSkipCoder reports whether a non-wave coder is already
 // active for this plan. Used to prevent duplicate small-plan implement spawns
 // when the user re-triggers "implement" while a single-agent implementation is
@@ -2018,6 +2071,12 @@ func (m *home) spawnBlueprintSkipAgent(planFile string, plan *taskparser.Plan) (
 		return m, m.handleError(err)
 	}
 	m.loadTaskState()
+	if err := m.setExecutionState(planFile, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseSingleAgentImplementing),
+		ActiveAgentType: session.AgentTypeCoder,
+	}); err != nil {
+		return m, m.handleError(err)
+	}
 	m.updateSidebarTasks()
 
 	totalTasks := 0
@@ -2283,6 +2342,13 @@ func shouldPromptPushAfterImplementerExit(entry taskstate.TaskEntry, inst *sessi
 		return false
 	}
 	if entry.Status != taskstate.StatusImplementing {
+		return false
+	}
+	phase := executionPhase(entry.ExecutionState.Phase)
+	if phase != taskfsm.ExecutionPhaseSingleAgentImplementing && phase != taskfsm.ExecutionPhaseFixing {
+		return false
+	}
+	if entry.ExecutionState.ActiveAgentType != "" && entry.ExecutionState.ActiveAgentType != inst.AgentType {
 		return false
 	}
 	// Tmux exited — original single-coder completion path.
@@ -2648,9 +2714,9 @@ func (m *home) rebuildOrphanedOrchestrators() {
 		if _, exists := m.waveOrchestrators[planFile]; exists {
 			continue
 		}
-		// Only reconstruct for implementing plans.
+		// Only reconstruct plans that are explicitly on a wave-execution branch.
 		entry, ok := m.taskState.Entry(planFile)
-		if !ok || entry.Status != taskstate.StatusImplementing {
+		if !ok || entry.Status != taskstate.StatusImplementing || !isWaveExecutionPhase(entry.ExecutionState.Phase) {
 			continue
 		}
 
@@ -2666,11 +2732,14 @@ func (m *home) rebuildOrphanedOrchestrators() {
 			continue
 		}
 
-		// Determine which wave the instances are on (use the max wave number seen).
-		targetWave := 0
-		for _, t := range tasks {
-			if t.waveNumber > targetWave {
-				targetWave = t.waveNumber
+		// Prefer the persisted active wave so restart recovery does not depend on
+		// every surviving instance still carrying accurate metadata.
+		targetWave := entry.ExecutionState.ActiveWave
+		if targetWave <= 0 {
+			for _, t := range tasks {
+				if t.waveNumber > targetWave {
+					targetWave = t.waveNumber
+				}
 			}
 		}
 
@@ -2708,6 +2777,13 @@ func (m *home) spawnWaveTasks(orch *orchestration.WaveOrchestrator, tasks []task
 		return m, nil
 	}
 	planFile := orch.TaskFile()
+	if err := m.setExecutionState(planFile, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+		ActiveAgentType: session.AgentTypeCoder,
+		ActiveWave:      orch.CurrentWaveNumber(),
+	}); err != nil {
+		return m, m.handleError(err)
+	}
 	// Set up shared worktree for all tasks in this batch.
 	shared := gitpkg.NewSharedTaskWorktree(m.activeRepoPath, entry.Branch)
 	if err := shared.Setup(); err != nil {

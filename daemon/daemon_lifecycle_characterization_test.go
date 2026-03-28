@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/session"
@@ -43,6 +44,7 @@ func TestDaemon_AutoAdvanceCompletedImplementer_Characterization(t *testing.T) {
 	tests := []struct {
 		name         string
 		entryStatus  taskstore.Status
+		execState    taskstore.ExecutionState
 		inst         session.Instance
 		tmuxAlive    bool
 		wantAdvanced bool
@@ -51,6 +53,7 @@ func TestDaemon_AutoAdvanceCompletedImplementer_Characterization(t *testing.T) {
 		{
 			name:         "coder advances when tmux exits",
 			entryStatus:  taskstore.StatusImplementing,
+			execState:    taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder},
 			inst:         session.Instance{Title: "feature-coder", TaskFile: "feature.md", AgentType: session.AgentTypeCoder},
 			tmuxAlive:    false,
 			wantAdvanced: true,
@@ -59,6 +62,7 @@ func TestDaemon_AutoAdvanceCompletedImplementer_Characterization(t *testing.T) {
 		{
 			name:         "fixer advances when prompt returns and work is finished",
 			entryStatus:  taskstore.StatusImplementing,
+			execState:    taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: session.AgentTypeFixer},
 			inst:         session.Instance{Title: "feature-fixer", TaskFile: "feature.md", AgentType: session.AgentTypeFixer, PromptDetected: true},
 			tmuxAlive:    true,
 			wantAdvanced: true,
@@ -67,6 +71,7 @@ func TestDaemon_AutoAdvanceCompletedImplementer_Characterization(t *testing.T) {
 		{
 			name:         "prompt with awaiting work does not advance",
 			entryStatus:  taskstore.StatusImplementing,
+			execState:    taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: session.AgentTypeFixer},
 			inst:         session.Instance{Title: "feature-fixer", TaskFile: "feature.md", AgentType: session.AgentTypeFixer, PromptDetected: true, AwaitingWork: true},
 			tmuxAlive:    true,
 			wantAdvanced: false,
@@ -75,6 +80,7 @@ func TestDaemon_AutoAdvanceCompletedImplementer_Characterization(t *testing.T) {
 		{
 			name:         "solo agents are ignored",
 			entryStatus:  taskstore.StatusImplementing,
+			execState:    taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder},
 			inst:         session.Instance{Title: "feature-solo", TaskFile: "feature.md", AgentType: session.AgentTypeCoder, SoloAgent: true},
 			tmuxAlive:    false,
 			wantAdvanced: false,
@@ -83,6 +89,7 @@ func TestDaemon_AutoAdvanceCompletedImplementer_Characterization(t *testing.T) {
 		{
 			name:         "wave task agents are ignored",
 			entryStatus:  taskstore.StatusImplementing,
+			execState:    taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseWaveRunning), ActiveAgentType: session.AgentTypeCoder, ActiveWave: 1},
 			inst:         session.Instance{Title: "feature-W1-T1", TaskFile: "feature.md", AgentType: session.AgentTypeCoder, TaskNumber: 1},
 			tmuxAlive:    false,
 			wantAdvanced: false,
@@ -91,6 +98,7 @@ func TestDaemon_AutoAdvanceCompletedImplementer_Characterization(t *testing.T) {
 		{
 			name:         "non implementing plans are ignored",
 			entryStatus:  taskstore.StatusReviewing,
+			execState:    taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseReviewing), ActiveAgentType: session.AgentTypeReviewer},
 			inst:         session.Instance{Title: "feature-fixer", TaskFile: "feature.md", AgentType: session.AgentTypeFixer, PromptDetected: true},
 			tmuxAlive:    true,
 			wantAdvanced: false,
@@ -103,9 +111,10 @@ func TestDaemon_AutoAdvanceCompletedImplementer_Characterization(t *testing.T) {
 			store := taskstore.NewTestStore(t)
 			const project = "proj"
 			require.NoError(t, store.Create(project, taskstore.TaskEntry{
-				Filename: tt.inst.TaskFile,
-				Status:   tt.entryStatus,
-				Branch:   "plan/feature",
+				Filename:       tt.inst.TaskFile,
+				Status:         tt.entryStatus,
+				Branch:         "plan/feature",
+				ExecutionState: tt.execState,
 			}))
 
 			pushes := 0
@@ -127,8 +136,10 @@ func TestDaemon_AutoAdvanceCompletedImplementer_Characterization(t *testing.T) {
 			require.NoError(t, err)
 			if tt.wantAdvanced {
 				assert.Equal(t, taskstore.StatusReviewing, entry.Status)
+				assert.Equal(t, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseReviewing), ActiveAgentType: session.AgentTypeReviewer}, entry.ExecutionState)
 			} else {
 				assert.Equal(t, tt.entryStatus, entry.Status)
+				assert.Equal(t, tt.execState, entry.ExecutionState)
 			}
 		})
 	}
@@ -185,4 +196,51 @@ func TestDaemon_RecoverSessions_DeduplicatesAndAdoptsKnownTitles(t *testing.T) {
 
 	running := d.spawner.RunningInstances()
 	require.Len(t, running, 3)
+}
+
+func TestDaemon_RecoverSessions_UsesPersistedWaveStateForWaveTasks(t *testing.T) {
+	t.Parallel()
+
+	const project = "proj"
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: "feature",
+		Status:   taskstore.StatusImplementing,
+		Branch:   "plan/feature",
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+			ActiveAgentType: session.AgentTypeCoder,
+			ActiveWave:      2,
+		},
+		Content: "# Plan\n\n**Goal:** test\n\n## Wave 1\n\n### Task 1: First\n\nDo first.\n\n## Wave 2\n\n### Task 2: Second\n\nDo second.\n",
+	}))
+
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+	d.repos.repos = []RepoEntry{{
+		Path:    "/tmp/proj",
+		Project: project,
+		Store:   store,
+	}}
+	d.spawner.discoverOrphans = func(_ []string) ([]tmuxpkg.SessionInfo, error) {
+		return []tmuxpkg.SessionInfo{{Title: "feature-W2-T2"}}, nil
+	}
+
+	var restored []session.InstanceData
+	d.spawner.restoreInstance = func(data session.InstanceData) (*session.Instance, error) {
+		restored = append(restored, data)
+		return &session.Instance{Title: data.Title, Path: data.Path, TaskFile: data.TaskFile, AgentType: data.AgentType, TaskNumber: data.TaskNumber, WaveNumber: data.WaveNumber}, nil
+	}
+
+	recovered, err := d.RecoverSessions()
+	require.NoError(t, err)
+	assert.Equal(t, 1, recovered)
+	require.Len(t, restored, 1)
+	assert.Equal(t, "feature-W2-T2", restored[0].Title)
+	assert.Equal(t, 2, restored[0].TaskNumber)
+	assert.Equal(t, 2, restored[0].WaveNumber)
 }
