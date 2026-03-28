@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kastheco/kasmos/config/taskfsm"
+	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -130,6 +132,31 @@ func TestHTTPStore_PhaseTimestamp(t *testing.T) {
 	got, err := backend.Get("kasmos", "plan")
 	require.NoError(t, err)
 	assert.Equal(t, ts, got.PlanningAt)
+}
+
+func TestHTTPStore_ClearExecutionStatePreservesCancelledStatus(t *testing.T) {
+	backend := newTestStore(t)
+	srv := httptest.NewServer(taskstore.NewHandler(backend))
+	defer srv.Close()
+	client := taskstore.NewHTTPStore(srv.URL, "proj")
+
+	require.NoError(t, client.Create("proj", taskstore.TaskEntry{
+		Filename:       "cancel-me",
+		Status:         taskstore.StatusReady,
+		ExecutionState: taskstore.ExecutionState{Phase: "planned"},
+	}))
+
+	ps, err := taskstate.Load(client, "proj", t.TempDir())
+	require.NoError(t, err)
+
+	fsm := taskfsm.New(client, "proj", t.TempDir())
+	require.NoError(t, fsm.Transition("cancel-me", taskfsm.Cancel))
+	require.NoError(t, ps.ClearExecutionState("cancel-me"))
+
+	got, err := client.Get("proj", "cancel-me")
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusCancelled, got.Status)
+	assert.Equal(t, taskstore.ExecutionState{}, got.ExecutionState)
 }
 
 func TestHTTPStore_PlanGoal(t *testing.T) {

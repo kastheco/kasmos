@@ -103,6 +103,50 @@ func NewHandler(store Store) http.Handler {
 		writeJSON(w, http.StatusOK, entry)
 	})
 
+	// Update execution state only.
+	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}/execution-state", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		filename := r.PathValue("filename")
+		var state ExecutionState
+		if err := json.NewDecoder(r.Body).Decode(&state); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+
+		if writer, ok := store.(ExecutionStateWriter); ok {
+			if err := writer.SetExecutionState(project, filename, state); err != nil {
+				if isNotFound(err) {
+					writeError(w, http.StatusNotFound, "task not found: "+filename)
+					return
+				}
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		entry, err := store.Get(project, filename)
+		if err != nil {
+			if isNotFound(err) {
+				writeError(w, http.StatusNotFound, "task not found: "+filename)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		entry.ExecutionState = state
+		if err := store.Update(project, filename, entry); err != nil {
+			if isNotFound(err) {
+				writeError(w, http.StatusNotFound, "task not found: "+filename)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
 	// Get task content
 	mux.HandleFunc("GET /v1/projects/{project}/tasks/{filename}/content", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")

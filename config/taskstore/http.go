@@ -100,6 +100,12 @@ func (s *HTTPStore) taskPhaseTimestampURL(project, filename string) string {
 	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/phase-timestamp", s.baseURL, url.PathEscape(project), url.PathEscape(filename))
 }
 
+// taskExecutionStateURL builds the URL for execution-state-only updates.
+func (s *HTTPStore) taskExecutionStateURL(project, filename string) string {
+	project = s.resolveProject(project)
+	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/execution-state", s.baseURL, url.PathEscape(project), url.PathEscape(filename))
+}
+
 // taskGoalURL builds the URL for a plan goal update.
 func (s *HTTPStore) taskGoalURL(project, filename string) string {
 	project = s.resolveProject(project)
@@ -235,6 +241,30 @@ func (s *HTTPStore) Update(project, filename string, entry TaskEntry) error {
 		return fmt.Errorf("task store: marshal entry: %w", err)
 	}
 	req, err := http.NewRequest(http.MethodPut, s.taskItemURL(project, filename), bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("task store: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return decodeError(resp)
+	}
+	return nil
+}
+
+// SetExecutionState updates only execution lifecycle metadata for a task.
+func (s *HTTPStore) SetExecutionState(project, filename string, state ExecutionState) error {
+	body, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("task store: marshal execution state: %w", err)
+	}
+	req, err := http.NewRequest(http.MethodPut, s.taskExecutionStateURL(project, filename), bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("task store: build request: %w", err)
 	}
