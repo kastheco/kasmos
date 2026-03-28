@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -22,6 +23,14 @@ func writeTaskToolConfig(t *testing.T, repoDir, body string) {
 	configDir := filepath.Join(repoDir, ".kasmos")
 	require.NoError(t, os.MkdirAll(configDir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(body), 0o644))
+}
+
+func initTaskToolTestRepo(t *testing.T, dir string) {
+	t.Helper()
+	out, err := exec.Command("git", "init", dir).CombinedOutput()
+	if err != nil {
+		t.Skipf("git init failed (%v): %s", err, out)
+	}
 }
 
 func mockReq(args map[string]any) mcp.CallToolRequest {
@@ -171,6 +180,7 @@ func TestTaskUpdateContentHandler_UsesAuthoritativeHTTPStoreWhenStoreNil(t *test
 	defer srv.Close()
 
 	repoDir := t.TempDir()
+	initTaskToolTestRepo(t, repoDir)
 	writeTaskToolConfig(t, repoDir, fmt.Sprintf("database_url = %q\n", srv.URL))
 	t.Chdir(repoDir)
 
@@ -187,6 +197,7 @@ func TestTaskUpdateContentHandler_UsesAuthoritativeHTTPStoreWhenStoreNil(t *test
 
 func TestTaskCreateHandler_FailsFastWhenAuthoritativeStoreUnreachable(t *testing.T) {
 	repoDir := t.TempDir()
+	initTaskToolTestRepo(t, repoDir)
 	writeTaskToolConfig(t, repoDir, "database_url = \"http://127.0.0.1:1\"\n")
 	t.Chdir(repoDir)
 

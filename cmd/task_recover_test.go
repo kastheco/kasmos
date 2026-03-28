@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"net/http/httptest"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -12,6 +13,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func initTaskRecoverTestRepo(t *testing.T, dir string) {
+	t.Helper()
+	out, err := exec.Command("git", "init", dir).CombinedOutput()
+	if err != nil {
+		t.Skipf("git init failed (%v): %s", err, out)
+	}
+}
 
 func setupTaskRecoverStore(t *testing.T) (taskstore.Store, string) {
 	t.Helper()
@@ -137,6 +146,7 @@ func TestExecuteTaskRecover_InvalidAction(t *testing.T) {
 func TestExecuteTaskRecover_FailsWhenSignalGatewayAuthorityUnavailable(t *testing.T) {
 	backend := taskstore.NewTestSQLiteStore(t)
 	repoDir := t.TempDir()
+	initTaskRecoverTestRepo(t, repoDir)
 	project := filepath.Base(repoDir)
 
 	require.NoError(t, backend.Create(project, taskstore.TaskEntry{

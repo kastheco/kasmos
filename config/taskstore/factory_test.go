@@ -19,6 +19,16 @@ func writeTestConfig(t *testing.T, repoDir, body string) {
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(body), 0o644))
 }
 
+// initTestRepo creates a bare .git directory so that config.GetConfigDir()
+// anchors to repoDir on CI where temp dirs have no git root.
+func initTestRepo(t *testing.T, repoDir string) {
+	t.Helper()
+	out, err := exec.Command("git", "init", repoDir).CombinedOutput()
+	if err != nil {
+		t.Skipf("git init failed (%v): %s", err, out)
+	}
+}
+
 func TestNewStoreFromConfig_HTTP(t *testing.T) {
 	backend := newTestStore(t)
 	srv := httptest.NewServer(NewHandler(backend))
@@ -49,6 +59,7 @@ func TestOpenAuthoritativeStore_UsesConfiguredHTTPAuthority(t *testing.T) {
 	defer srv.Close()
 
 	repoDir := t.TempDir()
+	initTestRepo(t, repoDir)
 	writeTestConfig(t, repoDir, fmt.Sprintf("database_url = %q\n", srv.URL))
 	t.Chdir(repoDir)
 
@@ -64,6 +75,7 @@ func TestOpenAuthoritativeStore_UsesConfiguredHTTPAuthority(t *testing.T) {
 
 func TestOpenAuthoritativeStore_UnreachableRemoteFails(t *testing.T) {
 	repoDir := t.TempDir()
+	initTestRepo(t, repoDir)
 	writeTestConfig(t, repoDir, "database_url = \"http://127.0.0.1:1\"\n")
 	t.Chdir(repoDir)
 
@@ -75,6 +87,7 @@ func TestOpenAuthoritativeStore_UnreachableRemoteFails(t *testing.T) {
 
 func TestOpenAuthoritativeSignalGateway_UnreachableRemoteFails(t *testing.T) {
 	repoDir := t.TempDir()
+	initTestRepo(t, repoDir)
 	writeTestConfig(t, repoDir, "database_url = \"http://127.0.0.1:1\"\n")
 	t.Chdir(repoDir)
 
