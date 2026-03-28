@@ -246,11 +246,20 @@ func TestDaemonRepoRegisteredMsg_SwitchesToDaemonTaskStoreWithoutConfirmation(t 
 
 	require.NotNil(t, h.embeddedServer, "newHome should start on the embedded store before daemon rebinding")
 
-	model, cmd := h.Update(daemonRepoRegisteredMsg{path: repoDir})
+	// Step 1: daemonRepoRegisteredMsg kicks off the background ping cmd.
+	model, switchCmd := h.Update(daemonRepoRegisteredMsg{path: repoDir})
+	h = model.(*home)
+	require.NotNil(t, switchCmd)
+
+	// Step 2: execute the cmd — pings the daemon socket and returns the switched msg.
+	switchedMsg := switchCmd()
+
+	// Step 3: deliver the result; the in-memory swap and toast happen here.
+	model, toastCmd := h.Update(switchedMsg)
 	updated := model.(*home)
 
-	require.NotNil(t, cmd)
-	_, ok := cmd().(overlay.ToastTickMsg)
+	require.NotNil(t, toastCmd)
+	_, ok := toastCmd().(overlay.ToastTickMsg)
 	require.True(t, ok, "daemon registration should schedule a toast tick")
 
 	assert.Equal(t, stateDefault, updated.state)

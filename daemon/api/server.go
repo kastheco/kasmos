@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kastheco/kasmos/config/taskstore"
@@ -174,9 +175,10 @@ func (s *DaemonState) EventStream() <-chan Event {
 
 // Handler is an http.Handler that exposes the daemon control API.
 type Handler struct {
-	state       StateProvider
-	broadcaster *EventBroadcaster // optional; if set, SSE uses Subscribe()
-	mux         *http.ServeMux
+	state         StateProvider
+	broadcaster   *EventBroadcaster // optional; if set, SSE uses Subscribe()
+	mux           *http.ServeMux
+	storeHandlers sync.Map // project string → http.Handler; avoids per-request ServeMux allocation
 }
 
 // NewHandler creates a Handler backed by the given StateProvider and registers
@@ -328,6 +330,12 @@ func (h *Handler) handleTaskStoreProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fast path: reuse a cached handler to avoid allocating a new ServeMux per request.
+	if cached, ok := h.storeHandlers.Load(project); ok {
+		cached.(http.Handler).ServeHTTP(w, r)
+		return
+	}
+
 	store, err := h.state.TaskStoreForProject(project)
 	if err != nil {
 		switch {
@@ -341,7 +349,11 @@ func (h *Handler) handleTaskStoreProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	taskstore.NewHandler(store).ServeHTTP(w, r)
+	handler := taskstore.NewHandler(store)
+	// LoadOrStore so a concurrent first request doesn't double-register; the
+	// returned value is whichever handler won the race.
+	actual, _ := h.storeHandlers.LoadOrStore(project, handler)
+	actual.(http.Handler).ServeHTTP(w, r)
 }
 
 // handleImplementPlan serves POST /v1/repos/{project}/plans/{filename}/implement.

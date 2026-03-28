@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/taskstore"
 	daemonpkg "github.com/kastheco/kasmos/daemon"
 	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/ui/overlay"
@@ -27,6 +28,19 @@ type daemonStatusMsg struct {
 type daemonRepoRegisteredMsg struct {
 	path string
 }
+
+// daemonTaskStoreSwitchedMsg is delivered after a background goroutine has
+// successfully pinged the daemon-backed store. The Update handler performs the
+// in-memory state swap — no I/O — so the Bubble Tea loop is never blocked.
+type daemonTaskStoreSwitchedMsg struct {
+	store   taskstore.Store
+	project string
+	toast   string
+}
+
+// daemonTaskStoreSwitchErrMsg is delivered when the background ping in
+// switchToDaemonTaskStoreCmd fails. The embedded store remains in use.
+type daemonTaskStoreSwitchErrMsg struct{}
 
 func canonicalRepoPath(repoPath string) string {
 	if repoPath == "" {

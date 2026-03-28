@@ -78,6 +78,15 @@ func defaultDaemonSocketPath() string {
 	return filepath.Join(os.TempDir(), fmt.Sprintf("kasmos-%d", os.Getuid()), "kas.sock")
 }
 
+// resolvedDaemonSocketPath returns the daemon socket path, respecting any
+// socket_path override in daemon.toml — same resolution used by repoManagedByDaemon.
+func resolvedDaemonSocketPath() string {
+	if cfg, err := daemonpkg.LoadDaemonConfig(""); err == nil && cfg.SocketPath != "" {
+		return cfg.SocketPath
+	}
+	return defaultDaemonSocketPath()
+}
+
 func daemonHTTPClient(socketPath string, timeout time.Duration) *http.Client {
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -484,11 +493,12 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 	dbPath := taskstore.ResolvedDBPath()
 	daemonManagedRepo := repoManagedByDaemon(activeRepoPath)
 	if daemonManagedRepo {
+		socketPath := resolvedDaemonSocketPath()
 		daemonStore := taskstore.NewHTTPStoreWithOptions(taskstore.HTTPStoreOptions{
 			BaseURL:    "http://daemon",
 			Project:    project,
-			Client:     daemonHTTPClient(defaultDaemonSocketPath(), 5*time.Second),
-			PingClient: daemonHTTPClient(defaultDaemonSocketPath(), 2*time.Second),
+			Client:     daemonHTTPClient(socketPath, 5*time.Second),
+			PingClient: daemonHTTPClient(socketPath, 2*time.Second),
 		})
 		if pingErr := daemonStore.Ping(); pingErr != nil {
 			log.WarningLog.Printf("daemon-backed task store unreachable: %v — falling back to embedded", pingErr)
@@ -609,23 +619,36 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 	return h
 }
 
-func (m *home) switchToDaemonTaskStore() error {
+// switchToDaemonTaskStoreCmd returns a tea.Cmd that pings the daemon-backed
+// store in a background goroutine. On success it delivers a
+// daemonTaskStoreSwitchedMsg so that the actual in-memory state swap happens
+// back in Update with no I/O — keeping the Bubble Tea loop unblocked.
+func (m *home) switchToDaemonTaskStoreCmd(toast string) tea.Cmd {
 	project := resolveTaskStoreProject(m.activeRepoPath)
-	daemonStore := taskstore.NewHTTPStoreWithOptions(taskstore.HTTPStoreOptions{
-		BaseURL:    "http://daemon",
-		Project:    project,
-		Client:     daemonHTTPClient(defaultDaemonSocketPath(), 5*time.Second),
-		PingClient: daemonHTTPClient(defaultDaemonSocketPath(), 2*time.Second),
-	})
-	if err := daemonStore.Ping(); err != nil {
-		_ = daemonStore.Close()
-		return err
+	socketPath := resolvedDaemonSocketPath()
+	return func() tea.Msg {
+		store := taskstore.NewHTTPStoreWithOptions(taskstore.HTTPStoreOptions{
+			BaseURL:    "http://daemon",
+			Project:    project,
+			Client:     daemonHTTPClient(socketPath, 5*time.Second),
+			PingClient: daemonHTTPClient(socketPath, 2*time.Second),
+		})
+		if err := store.Ping(); err != nil {
+			_ = store.Close()
+			return daemonTaskStoreSwitchErrMsg{}
+		}
+		return daemonTaskStoreSwitchedMsg{store: store, project: project, toast: toast}
 	}
+}
 
+// doSwitchToDaemonTaskStore performs the in-memory state swap after the
+// daemon-backed store has been successfully pinged. No I/O — safe to call from
+// the Bubble Tea Update goroutine.
+func (m *home) doSwitchToDaemonTaskStore(store taskstore.Store, project string) {
 	if m.taskStore != nil {
 		_ = m.taskStore.Close()
 	}
-	m.taskStore = daemonStore
+	m.taskStore = store
 	m.taskStoreProject = project
 	m.fsm = taskfsm.New(m.taskStore, project, m.taskStateDir)
 	m.processor = nil
@@ -634,8 +657,6 @@ func (m *home) switchToDaemonTaskStore() error {
 		m.embeddedServer.Stop()
 		m.embeddedServer = nil
 	}
-
-	return nil
 }
 
 func dedupeInstancesByRepoAndTitle(instances []*session.Instance) []*session.Instance {
@@ -818,24 +839,21 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.toastTickCmd()
 	case daemonStatusMsg:
 		if msg.ready && msg.autoRegistered {
-			if err := m.switchToDaemonTaskStore(); err != nil {
-				m.toastManager.Error("registered repo with daemon but failed to switch task store")
-			} else {
-				m.toastManager.Success("auto-registered repo with daemon")
-			}
-			return m, m.toastTickCmd()
+			return m, m.switchToDaemonTaskStoreCmd("auto-registered repo with daemon")
 		}
 		if !msg.ready {
 			m.showDaemonRequiredDialog(msg)
 		}
 		return m, nil
-	case daemonRepoRegisteredMsg:
-		if err := m.switchToDaemonTaskStore(); err != nil {
-			m.toastManager.Error("registered repo with daemon but failed to switch task store")
-		} else {
-			m.toastManager.Success("registered repo with daemon")
-		}
+	case daemonTaskStoreSwitchedMsg:
+		m.doSwitchToDaemonTaskStore(msg.store, msg.project)
+		m.toastManager.Success(msg.toast)
 		return m, m.toastTickCmd()
+	case daemonTaskStoreSwitchErrMsg:
+		m.toastManager.Error("registered repo with daemon but failed to switch task store")
+		return m, m.toastTickCmd()
+	case daemonRepoRegisteredMsg:
+		return m, m.switchToDaemonTaskStoreCmd("registered repo with daemon")
 	case planBrowserOpenedMsg:
 		if msg.startedServer {
 			m.toastManager.Success("started plan browser server")
