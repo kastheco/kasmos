@@ -72,7 +72,13 @@ func newTestHome() *home {
 func startTestDaemonSocketServer(t *testing.T, handler http.Handler) string {
 	t.Helper()
 
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	// Use os.MkdirTemp with a short prefix so the derived socket path stays
+	// under the 108-byte Unix domain socket limit on Linux, regardless of how
+	// long the test name is.
+	xdgDir, err := os.MkdirTemp("", "ks-")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(xdgDir) })
+	t.Setenv("XDG_RUNTIME_DIR", xdgDir)
 	socketPath := daemonpkg.DefaultSocketPath()
 	require.NoError(t, os.MkdirAll(filepath.Dir(socketPath), 0o755))
 	_ = os.Remove(socketPath)
