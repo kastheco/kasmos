@@ -2,7 +2,9 @@ package app
 
 import (
 	"os"
+	"reflect"
 	"testing"
+	"unsafe"
 
 	"github.com/kastheco/kasmos/session"
 
@@ -11,22 +13,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newTestShortcutInstance(t *testing.T, status session.Status) *session.Instance {
+func newTestShortcutInstance(t *testing.T, status session.Status, started bool) *session.Instance {
 	t.Helper()
 
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title: "test-inst", Path: os.TempDir(), Program: "opencode",
 	})
 	require.NoError(t, err)
-	inst.MarkStartedForTest()
+	if started {
+		inst.MarkStartedForTest()
+	}
 	inst.SetStatus(status)
 
 	return inst
 }
 
+func setEmbeddedTerminalPTYForTest(t *testing.T, term *session.EmbeddedTerminal, ptmx *os.File) {
+	t.Helper()
+
+	field := reflect.ValueOf(term).Elem().FieldByName("ptmx")
+	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Set(reflect.ValueOf(ptmx))
+}
+
 func TestHandleKeyPress_NumberShortcutPassthroughWhenPreviewActive(t *testing.T) {
 	h := newTestHome()
-	inst := newTestShortcutInstance(t, session.Running)
+	inst := newTestShortcutInstance(t, session.Running, true)
 
 	h.nav.AddInstance(inst)()
 	h.nav.SetSelectedInstance(0)
@@ -44,7 +55,7 @@ func TestHandleKeyPress_NumberShortcutPassthroughWhenPreviewActive(t *testing.T)
 
 func TestHandleKeyPress_NumberShortcutNoOpWithoutPreviewTerminal(t *testing.T) {
 	h := newTestHome()
-	inst := newTestShortcutInstance(t, session.Running)
+	inst := newTestShortcutInstance(t, session.Running, true)
 
 	h.nav.AddInstance(inst)()
 	h.nav.SetSelectedInstance(0)
@@ -57,9 +68,22 @@ func TestHandleKeyPress_NumberShortcutNoOpWithoutPreviewTerminal(t *testing.T) {
 	assert.Nil(t, cmd)
 }
 
-func TestHandleKeyPress_NumberShortcutNoOpWhenInstancePaused(t *testing.T) {
+func TestHandleKeyPress_NumberShortcutNoOpWithoutSelectedInstance(t *testing.T) {
 	h := newTestHome()
-	inst := newTestShortcutInstance(t, session.Paused)
+	h.previewTerminal = session.NewDummyTerminal()
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Text: "1", Code: '1'})
+	updated := model.(*home)
+
+	assert.Empty(t, updated.previewTerminal.SentKeys())
+	assert.Equal(t, stateDefault, updated.state)
+	assert.Nil(t, cmd)
+	assert.False(t, updated.toastManager.HasActiveToasts())
+}
+
+func TestHandleKeyPress_NumberShortcutNoOpWhenInstanceNotStarted(t *testing.T) {
+	h := newTestHome()
+	inst := newTestShortcutInstance(t, session.Running, false)
 
 	h.nav.AddInstance(inst)()
 	h.nav.SetSelectedInstance(0)
@@ -72,6 +96,47 @@ func TestHandleKeyPress_NumberShortcutNoOpWhenInstancePaused(t *testing.T) {
 	assert.Empty(t, updated.previewTerminal.SentKeys())
 	assert.Equal(t, stateDefault, updated.state)
 	assert.Nil(t, cmd)
+	assert.False(t, updated.toastManager.HasActiveToasts())
+}
+
+func TestHandleKeyPress_NumberShortcutNoOpWhenInstancePaused(t *testing.T) {
+	h := newTestHome()
+	inst := newTestShortcutInstance(t, session.Paused, true)
+
+	h.nav.AddInstance(inst)()
+	h.nav.SetSelectedInstance(0)
+	h.previewTerminal = session.NewDummyTerminal()
+	h.previewTerminalInstance = inst.Title
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Text: "2", Code: '2'})
+	updated := model.(*home)
+
+	assert.Empty(t, updated.previewTerminal.SentKeys())
+	assert.Equal(t, stateDefault, updated.state)
+	assert.Nil(t, cmd)
+}
+
+func TestHandleKeyPress_NumberShortcutHandlesSendKeyError(t *testing.T) {
+	h := newTestHome()
+	inst := newTestShortcutInstance(t, session.Running, true)
+
+	h.nav.AddInstance(inst)()
+	h.nav.SetSelectedInstance(0)
+	h.previewTerminal = session.NewDummyTerminal()
+	h.previewTerminalInstance = inst.Title
+
+	ptmx, err := os.CreateTemp(t.TempDir(), "closed-pty")
+	require.NoError(t, err)
+	require.NoError(t, ptmx.Close())
+	setEmbeddedTerminalPTYForTest(t, h.previewTerminal, ptmx)
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Text: "3", Code: '3'})
+	updated := model.(*home)
+
+	assert.NotNil(t, cmd)
+	assert.Equal(t, stateDefault, updated.state)
+	assert.True(t, updated.toastManager.HasActiveToasts())
+	assert.Empty(t, updated.previewTerminal.SentKeys())
 }
 
 func TestHandleKeyPress_NumberShortcutPassthroughDigits(t *testing.T) {
@@ -88,7 +153,7 @@ func TestHandleKeyPress_NumberShortcutPassthroughDigits(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			h := newTestHome()
-			inst := newTestShortcutInstance(t, session.Running)
+			inst := newTestShortcutInstance(t, session.Running, true)
 
 			h.nav.AddInstance(inst)()
 			h.nav.SetSelectedInstance(0)

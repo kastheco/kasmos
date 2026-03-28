@@ -1499,7 +1499,9 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 	if m.previewTerminal != nil && (msg.String() == "1" || msg.String() == "2" || msg.String() == "3") {
 		selected := m.nav.GetSelectedInstance()
 		if selected != nil && selected.Started() && !selected.Paused() {
-			_ = m.previewTerminal.SendKey([]byte(msg.Text))
+			if err := m.previewTerminal.SendKey([]byte(msg.Text)); err != nil {
+				return m, m.handleError(err)
+			}
 			return m, nil
 		}
 	}
