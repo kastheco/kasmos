@@ -231,7 +231,8 @@ func (i *Instance) UpdateResourceUsage() {
 	}
 }
 
-// SendPermissionResponse forwards a permission dialog choice to the agent pane.
+// SendPermissionResponse forwards a permission dialog choice to the execution
+// backend. The concrete backend selects any adapter-specific key sequence.
 // No-op if the instance is not started or the execution session is nil.
 func (i *Instance) SendPermissionResponse(choice tmux.PermissionChoice) {
 	if !i.started || i.executionSession == nil {

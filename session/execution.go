@@ -36,6 +36,9 @@ type ExecutionSession interface {
 	// I/O
 	SendKeys(keys string) error
 	TapEnter() error
+	// SendPermissionResponse forwards a permission choice to the execution
+	// backend. Tmux delegates to its adapter-aware session; headless returns
+	// ErrInteractiveOnly.
 	SendPermissionResponse(choice tmux.PermissionChoice) error
 	CapturePaneContent() (string, error)
 	CapturePaneContentWithOptions(start, end string) (string, error)

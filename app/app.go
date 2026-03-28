@@ -1591,7 +1591,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-			// Permission prompt detection for opencode.
+			// Permission prompt detection for supported harnesses.
 			if md.PermissionPrompt != nil && (m.state == stateDefault || m.state == stateFocusAgent) {
 				m.exitFocusModeForDialog()
 				pp := md.PermissionPrompt
@@ -2663,7 +2663,7 @@ type instanceMetadata struct {
 	MemMB              float64
 	ResourceUsageValid bool
 	TmuxAlive          bool
-	PermissionPrompt   *session.PermissionPrompt // non-nil when opencode shows a permission dialog
+	PermissionPrompt   *session.PermissionPrompt // non-nil when a supported harness shows a permission dialog
 }
 
 // metadataResultMsg carries all per-instance metadata collected by the async tick.

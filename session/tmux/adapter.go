@@ -35,23 +35,38 @@ type ProgramAdapter interface {
 	// SupportsCliPrompt reports whether this program supports receiving a prompt
 	// directly from the CLI (as opposed to via send-keys after startup).
 	SupportsCliPrompt() bool
+
+	// SendPermissionResponse sends the harness-specific key sequence for a
+	// permission prompt choice through the tmux session.
+	SendPermissionResponse(session *TmuxSession, choice PermissionChoice) error
 }
 
 // AdapterFor returns the ProgramAdapter for the given program string, or nil
 // if the program has no special adapter (unknown/unsupported program).
 func AdapterFor(program string) ProgramAdapter {
+	binary := programBinary(program)
 	switch {
-	case strings.HasSuffix(program, "claude"):
+	case strings.Contains(binary, "claude"):
 		return claudeAdapter{}
-	case strings.HasSuffix(program, "opencode"):
+	case strings.Contains(binary, "opencode"):
 		return opencodeAdapter{}
 	default:
 		return nil
 	}
 }
 
+func programBinary(program string) string {
+	fields := strings.Fields(strings.ToLower(strings.TrimSpace(program)))
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
+}
+
 // claudeAdapter implements ProgramAdapter for Claude Code.
 type claudeAdapter struct{}
+
+const claudePromptTailLines = 30
 
 func (a claudeAdapter) ReadyString() string {
 	return "Do you trust the files in this folder?"
@@ -62,10 +77,129 @@ func (a claudeAdapter) NeedsTrustTap() bool {
 }
 
 // DetectPrompt returns true when Claude is idle at its input prompt.
-// The idle indicator is the text "No, and tell Claude what to do differently"
-// appearing in the plain (ANSI-stripped) pane content.
+// It classifies the last non-empty lines of plain (ANSI-stripped) pane content,
+// treating permission prompts as authoritative, suppressing active work markers,
+// and otherwise looking for narrow idle markers near the bottom of the pane.
 func (a claudeAdapter) DetectPrompt(plainContent string) bool {
-	return strings.Contains(plainContent, "No, and tell Claude what to do differently")
+	lines := claudeRecentNonEmptyLines(plainContent, claudePromptTailLines)
+	if len(lines) == 0 {
+		return false
+	}
+
+	if claudeHasPermissionPrompt(lines) {
+		return true
+	}
+
+	if claudeHasActivityMarker(lines) {
+		return false
+	}
+
+	if claudeHasReviewPrompt(lines) {
+		return true
+	}
+
+	return claudeHasComposerPrompt(lines)
+}
+
+func claudeRecentNonEmptyLines(content string, limit int) []string {
+	rawLines := strings.Split(content, "\n")
+	lines := make([]string, 0, len(rawLines))
+	for _, line := range rawLines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) <= limit {
+		return lines
+	}
+	return lines[len(lines)-limit:]
+}
+
+func claudeHasPermissionPrompt(lines []string) bool {
+	for i, line := range lines {
+		if !claudeIsPermissionQuestion(line) {
+			continue
+		}
+
+		start := i - 2
+		if start < 0 {
+			start = 0
+		}
+		end := i + 4
+		if end > len(lines) {
+			end = len(lines)
+		}
+
+		hasYes := false
+		hasNo := false
+		for _, nearby := range lines[start:end] {
+			switch {
+			case strings.Contains(nearby, "Yes"):
+				hasYes = true
+			case strings.Contains(nearby, "No"):
+				hasNo = true
+			}
+		}
+		if hasYes && hasNo {
+			return true
+		}
+	}
+
+	return false
+}
+
+func claudeIsPermissionQuestion(line string) bool {
+	if strings.Contains(line, "Do you want to proceed?") {
+		return true
+	}
+	return strings.Contains(line, "Allow tool ") && strings.Contains(line, "?")
+}
+
+func claudeHasActivityMarker(lines []string) bool {
+	for _, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "Editing "):
+			return true
+		case strings.HasPrefix(line, "Writing "):
+			return true
+		case strings.HasPrefix(line, "Reading "):
+			return true
+		case strings.HasPrefix(line, "Running "):
+			return true
+		case strings.Contains(line, "Searching"):
+			return true
+		case strings.HasPrefix(line, "$ "):
+			return true
+		}
+	}
+
+	return false
+}
+
+func claudeHasReviewPrompt(lines []string) bool {
+	for _, line := range lines {
+		if strings.Contains(line, "No, and tell Claude what to do differently") {
+			return true
+		}
+	}
+
+	return false
+}
+
+func claudeHasComposerPrompt(lines []string) bool {
+	start := len(lines) - 3
+	if start < 0 {
+		start = 0
+	}
+	for _, line := range lines[start:] {
+		if line == ">" || line == "›" {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (a claudeAdapter) MaxWaitTime() time.Duration {
