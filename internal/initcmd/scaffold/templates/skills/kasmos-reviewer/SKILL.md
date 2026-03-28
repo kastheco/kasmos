@@ -129,12 +129,15 @@ verdict: approve|changes required
 - [ ] Documentation — exported types and functions have doc comments
 - [ ] Style checks — only report style findings when they materially impact correctness, maintainability in a meaningful way, or violate explicit plan/contract rules
 
-### Running Tests
+### Running Tests and Lint
 
-Run the full test suite before approving. Do not approve on a failing test run.
+Run the full test suite **and** the same lint checks CI runs before approving.
+Do not approve on a failing test run. Do not push without confirming lint.
 
 ```bash
 go test ./...
+gofmt -l .
+go vet ./...
 ```
 
 If tests are slow, at minimum run tests for changed packages:
@@ -197,15 +200,48 @@ Each review cycle is one round. Track rounds explicitly in your signal output.
 Re-review only the items from the previous round plus any regressions introduced by fixes.
 Do not re-litigate closed items.
 
+## Pre-Push Gate
+
+Run these **before every push**, not just before approval. Every self-fix commit
+gets the same checks. Do not rely on CI to catch what you can catch locally.
+
+```bash
+gofmt -l .          # formatting — must produce no output
+go vet ./...        # static analysis
+go test ./...       # full suite
+typos               # spelling in changed files
+```
+
+If any of these fail, fix before pushing. Period.
+
+## Cross-File Review Discipline
+
+When reviewing a finding in one file, check every related file that consumes or
+produces the same value. Examples:
+
+- If `processor.go` suppresses an event for certain phases, verify that
+  `status.go` recovery hints do not suggest that event for those phases.
+- If `gateway_signal.go` canonicalizes a signal name, verify that every call
+  site in `cmd/signal.go`, `daemon/daemon.go`, and `signaltools.go` uses the
+  canonical helper instead of raw strings.
+- If a concurrency guard (check-then-act) is added in one spawn method, verify
+  ALL spawn methods use the same pattern — do not fix one and leave five others
+  with the same race.
+
+Do not review files in isolation. Trace data flow across package boundaries.
+
 ## Verification Before Approval
 
 Before writing `review-approved`:
 
 1. `go test ./...` passes with zero failures
-2. `typos` finds no spelling errors in changed files
-3. All checklist items resolved
-4. All previous round findings confirmed fixed (cite file:line)
-5. No new issues introduced by fixes
+2. `gofmt -l .` produces no output
+3. `go vet ./...` produces no output
+4. `typos` finds no spelling errors in changed files
+5. All checklist items resolved
+6. All previous round findings confirmed fixed (cite file:line)
+7. No new issues introduced by fixes
+8. `gh pr checks` (or equivalent) confirms CI is green — do not approve while checks are pending or failing
 
 ```bash
 # Confirm test pass
