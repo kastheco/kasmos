@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/kastheco/kasmos/cmd/cmd_test"
@@ -13,7 +14,7 @@ func TestSendPermissionResponse_AllowAlways(t *testing.T) {
 	var ranCmds []string
 	exec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error {
-			ranCmds = append(ranCmds, cmd.String())
+			ranCmds = append(ranCmds, strings.Join(cmd.Args, " "))
 			return nil
 		},
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
@@ -25,15 +26,18 @@ func TestSendPermissionResponse_AllowAlways(t *testing.T) {
 	err := session.SendPermissionResponse(PermissionAllowAlways)
 	require.NoError(t, err)
 
-	// Should send: Right, Enter, Enter (three commands — selection + confirmation)
-	assert.Len(t, ranCmds, 3)
+	assert.Equal(t, []string{
+		"tmux send-keys -t kas_test Right",
+		"tmux send-keys -t kas_test Enter",
+		"tmux send-keys -t kas_test Enter",
+	}, ranCmds)
 }
 
 func TestSendPermissionResponse_AllowOnce(t *testing.T) {
 	var ranCmds []string
 	exec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error {
-			ranCmds = append(ranCmds, cmd.String())
+			ranCmds = append(ranCmds, strings.Join(cmd.Args, " "))
 			return nil
 		},
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
@@ -45,15 +49,17 @@ func TestSendPermissionResponse_AllowOnce(t *testing.T) {
 	err := session.SendPermissionResponse(PermissionAllowOnce)
 	require.NoError(t, err)
 
-	// Should send: Enter, Enter (selection + confirmation)
-	assert.Len(t, ranCmds, 2)
+	assert.Equal(t, []string{
+		"tmux send-keys -t kas_test Enter",
+		"tmux send-keys -t kas_test Enter",
+	}, ranCmds)
 }
 
 func TestSendPermissionResponse_Reject(t *testing.T) {
 	var ranCmds []string
 	exec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error {
-			ranCmds = append(ranCmds, cmd.String())
+			ranCmds = append(ranCmds, strings.Join(cmd.Args, " "))
 			return nil
 		},
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
@@ -65,6 +71,76 @@ func TestSendPermissionResponse_Reject(t *testing.T) {
 	err := session.SendPermissionResponse(PermissionReject)
 	require.NoError(t, err)
 
-	// Should send: Right, Right, Enter, Enter (selection + confirmation)
-	assert.Len(t, ranCmds, 4)
+	assert.Equal(t, []string{
+		"tmux send-keys -t kas_test Right",
+		"tmux send-keys -t kas_test Right",
+		"tmux send-keys -t kas_test Enter",
+		"tmux send-keys -t kas_test Enter",
+	}, ranCmds)
+}
+
+func TestSendPermissionResponse_ClaudeAllowOnce(t *testing.T) {
+	var ranCmds []string
+	exec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			ranCmds = append(ranCmds, strings.Join(cmd.Args, " "))
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			return []byte("output"), nil
+		},
+	}
+	session := NewTmuxSessionWithDeps("test", "claude", false, &MockPtyFactory{}, exec)
+
+	err := session.SendPermissionResponse(PermissionAllowOnce)
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{
+		"tmux send-keys -l -t kas_test y",
+		"tmux send-keys -t kas_test Enter",
+	}, ranCmds)
+}
+
+func TestSendPermissionResponse_ClaudeAllowAlways(t *testing.T) {
+	var ranCmds []string
+	exec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			ranCmds = append(ranCmds, strings.Join(cmd.Args, " "))
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			return []byte("output"), nil
+		},
+	}
+	session := NewTmuxSessionWithDeps("test", "claude", false, &MockPtyFactory{}, exec)
+
+	err := session.SendPermissionResponse(PermissionAllowAlways)
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{
+		"tmux send-keys -l -t kas_test y",
+		"tmux send-keys -t kas_test Enter",
+	}, ranCmds)
+}
+
+func TestSendPermissionResponse_ClaudeReject(t *testing.T) {
+	var ranCmds []string
+	exec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			ranCmds = append(ranCmds, strings.Join(cmd.Args, " "))
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			return []byte("output"), nil
+		},
+	}
+	session := NewTmuxSessionWithDeps("test", "claude", false, &MockPtyFactory{}, exec)
+
+	err := session.SendPermissionResponse(PermissionReject)
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{
+		"tmux send-keys -l -t kas_test n",
+		"tmux send-keys -t kas_test Enter",
+	}, ranCmds)
 }

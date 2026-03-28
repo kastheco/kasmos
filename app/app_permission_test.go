@@ -126,6 +126,53 @@ func TestUpdate_PermissionAutoApprove_FiresOnCachedPattern(t *testing.T) {
 	assert.Equal(t, stateDefault, m.state, "auto-approve should not change state")
 }
 
+func TestUpdate_PermissionPromptDetection_ShowsOverlayForClaude(t *testing.T) {
+	m := newTestHomeWithCache(t)
+	inst := &session.Instance{Title: "test-agent", Program: "claude"}
+	inst.MarkStartedForTest()
+	m.nav.AddInstance(inst)()
+
+	pp := &session.PermissionPrompt{Pattern: "Bash", Description: "Allow tool Bash?"}
+	msg := metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "test-agent", PermissionPrompt: pp},
+		},
+	}
+
+	_, _ = m.Update(msg)
+
+	assert.Equal(t, statePermission, m.state)
+	require.NotNil(t, m.overlays.Current(), "permission overlay must be active")
+	_, ok := m.overlays.Current().(*overlay.PermissionOverlay)
+	assert.True(t, ok, "active overlay must be a PermissionOverlay")
+	assert.Equal(t, inst, m.pendingPermissionInstance)
+	assert.Equal(t, "Bash", m.pendingPermissionPattern)
+	assert.Equal(t, "Allow tool Bash?", m.pendingPermissionDesc)
+}
+
+func TestUpdate_PermissionAutoApprove_FiresOnCachedClaudePattern(t *testing.T) {
+	m := newTestHomeWithCache(t)
+	m.permissionStore.Remember(m.activeProject(), "Bash")
+
+	inst := &session.Instance{Title: "test-agent", Program: "claude"}
+	inst.MarkStartedForTest()
+	m.nav.AddInstance(inst)()
+
+	pp := &session.PermissionPrompt{Pattern: "Bash", Description: "Allow tool Bash?"}
+	msg := metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "test-agent", PermissionPrompt: pp},
+		},
+	}
+
+	_, cmd := m.Update(msg)
+	approvals := collectAutoApproveMsgs(cmd)
+
+	assert.Len(t, approvals, 1, "first claude tick should queue exactly one auto-approve")
+	assert.Equal(t, inst, approvals[0].instance)
+	assert.Equal(t, stateDefault, m.state, "auto-approve should not change state")
+}
+
 // TestUpdate_PermissionAutoApprove_DeduplicatesOnMultipleTicks is the critical regression test:
 // a second metadata tick with the same prompt (before opencode clears it) must NOT fire
 // a second auto-approve, which would corrupt opencode's input state.
@@ -154,6 +201,30 @@ func TestUpdate_PermissionAutoApprove_DeduplicatesOnMultipleTicks(t *testing.T) 
 	_, cmd2 := m.Update(msg)
 	approvals2 := collectAutoApproveMsgs(cmd2)
 	assert.Len(t, approvals2, 0, "second tick must not queue a duplicate auto-approve")
+}
+
+func TestUpdate_PermissionAutoApprove_DeduplicatesClaudeOnMultipleTicks(t *testing.T) {
+	m := newTestHomeWithCache(t)
+	m.permissionStore.Remember(m.activeProject(), "Bash")
+
+	inst := &session.Instance{Title: "test-agent", Program: "claude"}
+	inst.MarkStartedForTest()
+	m.nav.AddInstance(inst)()
+
+	pp := &session.PermissionPrompt{Pattern: "Bash", Description: "Allow tool Bash?"}
+	msg := metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "test-agent", PermissionPrompt: pp},
+		},
+	}
+
+	_, cmd1 := m.Update(msg)
+	approvals1 := collectAutoApproveMsgs(cmd1)
+	assert.Len(t, approvals1, 1, "first claude tick should queue one auto-approve")
+
+	_, cmd2 := m.Update(msg)
+	approvals2 := collectAutoApproveMsgs(cmd2)
+	assert.Len(t, approvals2, 0, "second claude tick must not queue a duplicate auto-approve")
 }
 
 // TestUpdate_PermissionAutoApprove_ClearsGuardWhenPromptGone verifies that once the
