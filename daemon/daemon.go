@@ -119,11 +119,23 @@ func (a *daemonStateAdapter) RemoveRepo(project string) error {
 }
 
 func (a *daemonStateAdapter) ListPlans(project string) ([]taskstore.TaskEntry, error) {
+	store, err := a.TaskStoreForProject(project)
+	if err != nil {
+		return nil, err
+	}
+	return store.List(project)
+}
+
+func (a *daemonStateAdapter) TaskStoreForProject(project string) (taskstore.Store, error) {
 	entries := a.d.repos.List()
 	for _, e := range entries {
-		if e.Project == project && e.Store != nil {
-			return e.Store.List(project)
+		if e.Project != project {
+			continue
 		}
+		if e.Store == nil {
+			return nil, fmt.Errorf("%w: %s", api.ErrTaskStoreUnavailable, project)
+		}
+		return e.Store, nil
 	}
 	return nil, fmt.Errorf("project not found: %s", project)
 }

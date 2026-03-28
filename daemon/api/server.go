@@ -5,14 +5,20 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/kastheco/kasmos/config/taskstore"
 )
+
+// ErrTaskStoreUnavailable indicates that a project is registered but its
+// backing task store is currently unavailable.
+var ErrTaskStoreUnavailable = errors.New("task store unavailable")
 
 // ---------------------------------------------------------------------------
 // Wire types
@@ -65,6 +71,7 @@ type StateProvider interface {
 	AddRepo(path string) error
 	RemoveRepo(project string) error
 	ListPlans(project string) ([]taskstore.TaskEntry, error)
+	TaskStoreForProject(project string) (taskstore.Store, error)
 	ListInstances(project string) []InstanceStatus
 	StartPlan(project, filename, prompt, program string) error
 	EventStream() <-chan Event
@@ -135,6 +142,12 @@ func (s *DaemonState) ListPlans(_ string) ([]taskstore.TaskEntry, error) {
 	return nil, nil
 }
 
+// TaskStoreForProject implements StateProvider. DaemonState has no backing
+// store, so it always reports the project as missing.
+func (s *DaemonState) TaskStoreForProject(project string) (taskstore.Store, error) {
+	return nil, fmt.Errorf("project not found: %s", project)
+}
+
 // ListInstances implements StateProvider.
 func (s *DaemonState) ListInstances(_ string) []InstanceStatus {
 	return nil
@@ -203,6 +216,7 @@ func (h *Handler) registerRoutes() {
 	h.mux.HandleFunc("GET /v1/repos/{project}/instances", h.handleListInstances)
 	h.mux.HandleFunc("POST /v1/repos/{project}/plans/{filename}/plan", h.handleStartPlan)
 	h.mux.HandleFunc("POST /v1/repos/{project}/plans/{filename}/implement", h.handleImplementPlan)
+	h.mux.Handle("/v1/projects/", http.HandlerFunc(h.handleTaskStoreProxy))
 
 	h.mux.HandleFunc("GET /v1/events", h.handleEvents)
 }
@@ -303,6 +317,29 @@ func (h *Handler) handleStartPlan(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) handleTaskStoreProxy(w http.ResponseWriter, r *http.Request) {
+	project, err := projectFromTaskstorePath(r.URL.Path)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	store, err := h.state.TaskStoreForProject(project)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrTaskStoreUnavailable):
+			writeError(w, http.StatusServiceUnavailable, err.Error())
+		case strings.HasPrefix(err.Error(), "project not found: "):
+			writeError(w, http.StatusNotFound, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+
+	taskstore.NewHandler(store).ServeHTTP(w, r)
+}
+
 // handleImplementPlan serves POST /v1/repos/{project}/plans/{filename}/implement.
 func (h *Handler) handleImplementPlan(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("project")
@@ -384,4 +421,30 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func writeError(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]string{"error": msg})
+}
+
+func projectFromTaskstorePath(path string) (string, error) {
+	const prefix = "/v1/projects/"
+	if !strings.HasPrefix(path, prefix) {
+		return "", fmt.Errorf("project not found in path: %s", path)
+	}
+	remainder := strings.TrimPrefix(path, prefix)
+	if remainder == "" {
+		return "", fmt.Errorf("project not found in path: %s", path)
+	}
+	project := remainder
+	if slash := strings.IndexByte(remainder, '/'); slash >= 0 {
+		project = remainder[:slash]
+	}
+	if project == "" {
+		return "", fmt.Errorf("project not found in path: %s", path)
+	}
+	decoded, err := url.PathUnescape(project)
+	if err != nil {
+		return "", fmt.Errorf("invalid project path: %w", err)
+	}
+	if decoded == "" {
+		return "", fmt.Errorf("project not found in path: %s", path)
+	}
+	return decoded, nil
 }
