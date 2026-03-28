@@ -7,6 +7,11 @@ import (
 	"strings"
 )
 
+var notifyLookPath = exec.LookPath
+var notifyStart = func(name string, args ...string) error {
+	return exec.Command(name, args...).Start()
+}
+
 // NotificationsEnabled controls whether desktop notifications are sent.
 // Set from config at startup.
 var NotificationsEnabled = defaultNotificationsEnabled()
@@ -33,17 +38,17 @@ func SendNotification(title, body string) {
 func sendDarwin(title, body string) {
 	script := `display notification "` + escapeAppleScript(body) +
 		`" with title "` + escapeAppleScript(title) + `"`
-	_ = exec.Command("osascript", "-e", script).Start()
+	_ = notifyStart("osascript", "-e", script)
 }
 
 // sendLinux delivers a notification via notify-send on Linux.
 // The call is a no-op when notify-send is not installed.
 func sendLinux(title, body string) {
-	path, err := exec.LookPath("notify-send")
+	path, err := notifyLookPath("notify-send")
 	if err != nil {
 		return
 	}
-	_ = exec.Command(path, linuxNotifyArgs(title, body)...).Start()
+	_ = notifyStart(path, linuxNotifyArgs(title, body)...)
 }
 
 func linuxNotifyArgs(title, body string) []string {

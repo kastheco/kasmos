@@ -1,6 +1,8 @@
 package session
 
 import (
+	"fmt"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -61,15 +63,34 @@ func TestSendNotificationDisabled(t *testing.T) {
 
 func TestSendNotificationEnabled(t *testing.T) {
 	// When enabled, SendNotification should not panic on any platform.
-	// (We cannot verify the external command fires without running the OS
-	// notification stack — this just ensures fire-and-forget doesn't crash.)
+	// Stub the process launcher so the test exercises the enabled path without
+	// talking to the real OS notification stack.
 	orig := NotificationsEnabled
+	origLookPath := notifyLookPath
+	origStart := notifyStart
 	NotificationsEnabled = true
-	defer func() { NotificationsEnabled = orig }()
+	defer func() {
+		NotificationsEnabled = orig
+		notifyLookPath = origLookPath
+		notifyStart = origStart
+	}()
+
+	started := false
+	notifyLookPath = func(file string) (string, error) {
+		if runtime.GOOS == "linux" {
+			return "/usr/bin/notify-send", nil
+		}
+		return "", fmt.Errorf("lookup not used on %s", runtime.GOOS)
+	}
+	notifyStart = func(name string, args ...string) error {
+		started = true
+		return nil
+	}
 
 	assert.NotPanics(t, func() {
 		SendNotification("kas", "agent finished")
 	})
+	assert.True(t, started)
 }
 
 func TestLinuxNotifyArgs_UsesKasAppName(t *testing.T) {
