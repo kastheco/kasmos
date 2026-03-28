@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"reflect"
 
 	cmd2 "github.com/kastheco/kasmos/cmd"
@@ -76,6 +78,16 @@ func defaultDaemonSocketPath() string {
 	return filepath.Join(os.TempDir(), fmt.Sprintf("kasmos-%d", os.Getuid()), "kas.sock")
 }
 
+func daemonHTTPClient(socketPath string, timeout time.Duration) *http.Client {
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", socketPath)
+		},
+	}
+	return &http.Client{Transport: transport, Timeout: timeout}
+}
+
 // Run is the main entrypoint into the application.
 func Run(ctx context.Context, program string, autoYes bool, version string) error {
 	// Set the terminal's default background to the theme base color so every
@@ -86,7 +98,9 @@ func Run(ctx context.Context, program string, autoYes bool, version string) erro
 
 	zone.NewGlobal()
 	h := newHome(ctx, program, autoYes, version)
-	defer h.embeddedServer.Stop()
+	if h.embeddedServer != nil {
+		defer h.embeddedServer.Stop()
+	}
 	defer h.auditLogger.Close()
 	if h.permissionStore != nil {
 		defer h.permissionStore.Close()
@@ -302,11 +316,11 @@ type home struct {
 	// signalsDir is the directory where agent sentinel files are written.
 	// Defaults to <repoRoot>/.kasmos/signals/ (project-local, gitignored).
 	signalsDir string
-	// embeddedServer is the in-process HTTP+SQLite task store server started on boot.
-	// Always non-nil after newHome() returns.
+	// embeddedServer is the in-process HTTP+SQLite task store server started on boot
+	// for local fallback mode. Nil when startup reuses the daemon-backed store.
 	embeddedServer *taskstore.EmbeddedServer
 	// taskStore is the task store client. Always non-nil after newHome() returns —
-	// points at the embedded server URL unless appConfig.DatabaseURL overrides it.
+	// points at the daemon, embedded server, or configured remote store.
 	taskStore taskstore.Store
 	// taskStoreProject is the project name used with the remote store (derived from repo basename).
 	taskStoreProject string
@@ -467,43 +481,60 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 		pendingReviewFeedback: make(map[string]string),
 	}
 
-	// Always start an embedded task store server. This gives us a local SQLite
-	// DB as the single source of truth without requiring a separate process.
 	dbPath := taskstore.ResolvedDBPath()
-	embSrv, err := taskstore.StartEmbedded(dbPath, 0)
-	if err != nil {
-		fmt.Printf("Failed to start embedded task store: %v\n", err)
-		os.Exit(1)
-	}
-	h.embeddedServer = embSrv
-
-	// Default: use the embedded server's URL for the task store client.
-	storeURL := embSrv.URL()
-	remoteStoreUnreachable := false
-
-	// If a remote task store is configured, use that URL instead (multi-machine
-	// access over tailscale, etc.). The embedded server still runs for audit log
-	// DB access via its SQLite store.
-	if appConfig.DatabaseURL != "" {
-		remoteStore := taskstore.NewHTTPStore(appConfig.DatabaseURL, project)
-		if pingErr := remoteStore.Ping(); pingErr != nil {
-			log.WarningLog.Printf("remote task store unreachable: %v — falling back to embedded", pingErr)
-			remoteStoreUnreachable = true
-			// storeURL stays as the embedded server URL
+	daemonManagedRepo := repoManagedByDaemon(activeRepoPath)
+	if daemonManagedRepo {
+		daemonStore := taskstore.NewHTTPStoreWithOptions(taskstore.HTTPStoreOptions{
+			BaseURL:    "http://daemon",
+			Project:    project,
+			Client:     daemonHTTPClient(defaultDaemonSocketPath(), 5*time.Second),
+			PingClient: daemonHTTPClient(defaultDaemonSocketPath(), 2*time.Second),
+		})
+		if pingErr := daemonStore.Ping(); pingErr != nil {
+			log.WarningLog.Printf("daemon-backed task store unreachable: %v — falling back to embedded", pingErr)
+			_ = daemonStore.Close()
 		} else {
-			storeURL = appConfig.DatabaseURL
+			h.taskStore = daemonStore
 		}
 	}
 
-	h.taskStore = taskstore.NewHTTPStore(storeURL, project)
+	remoteStoreUnreachable := false
+	if h.taskStore == nil {
+		// Start an embedded task store server for repos that are not yet daemon-managed,
+		// or when the daemon-managed fast path is unavailable.
+		embSrv, err := taskstore.StartEmbedded(dbPath, 0)
+		if err != nil {
+			fmt.Printf("Failed to start embedded task store: %v\n", err)
+			os.Exit(1)
+		}
+		h.embeddedServer = embSrv
+
+		// Default: use the embedded server's URL for the task store client.
+		storeURL := embSrv.URL()
+
+		// If a remote task store is configured, use that URL instead (multi-machine
+		// access over tailscale, etc.). The embedded server still runs for audit log
+		// DB access via its SQLite store.
+		if appConfig.DatabaseURL != "" {
+			remoteStore := taskstore.NewHTTPStore(appConfig.DatabaseURL, project)
+			if pingErr := remoteStore.Ping(); pingErr != nil {
+				log.WarningLog.Printf("remote task store unreachable: %v — falling back to embedded", pingErr)
+				remoteStoreUnreachable = true
+				// storeURL stays as the embedded server URL
+			} else {
+				storeURL = appConfig.DatabaseURL
+			}
+		}
+
+		h.taskStore = taskstore.NewHTTPStore(storeURL, project)
+	}
 	h.fsm = taskfsm.New(h.taskStore, project, h.taskStateDir)
 
 	// One-time migration: import plan-state.json into the DB if it exists.
-	// Use the embedded store directly (bypasses HTTP round-trip).
 	// Only runs when plan-state.json is present; subsequent boots skip this.
 	planStateJSON := filepath.Join(h.taskStateDir, "plan-state.json")
 	if _, statErr := os.Stat(planStateJSON); statErr == nil {
-		migrated, migrateErr := taskstore.MigrateFromJSON(embSrv.Store(), project, h.taskStateDir)
+		migrated, migrateErr := taskstore.MigrateFromJSON(h.taskStore, project, h.taskStateDir)
 		if migrateErr != nil {
 			log.WarningLog.Printf("plan-state.json migration failed: %v", migrateErr)
 		} else {
