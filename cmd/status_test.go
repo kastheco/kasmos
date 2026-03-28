@@ -193,16 +193,46 @@ func TestExecuteStatus_ShowsLifecycleStageDetailsAndRecoveryHints(t *testing.T) 
 	output := executeStatus(state, store, project, ex, "text")
 	assert.Contains(t, output, "planned")
 	assert.Contains(t, output, "architecting")
-	assert.Contains(t, output, "wave-running")
-	assert.Contains(t, output, "waiting")
-	assert.Contains(t, output, "fixing")
-	assert.Contains(t, output, "reviewing")
+	assert.Contains(t, output, "wave 2 running")
+	assert.Contains(t, output, "waiting for confirmation")
+	assert.Contains(t, output, "fixing round 3")
+	assert.Contains(t, output, "reviewing round 3")
 	assert.Contains(t, output, "kas task recover <task-name> --action architect-finished")
 	assert.Contains(t, output, "kas task recover <task-name> --action implement-finished")
 	assert.Contains(t, output, "kas task recover <task-name> --action review-changes --feedback")
 	assert.Contains(t, output, "kas task recover <task-name> --action advance-review-cycle --feedback")
 	assert.Contains(t, output, "yes")
 	assert.Contains(t, output, "wave-waiting-plan")
+}
+
+func TestExecuteStatus_JSONUsesOperatorLifecycleLabels(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "json-lifecycle-project"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:  "wave-plan",
+		Status:    taskstore.StatusImplementing,
+		Branch:    "plan/wave-plan",
+		CreatedAt: time.Now(),
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           "wave_running",
+			ActiveAgentType: "coder",
+			ActiveWave:      4,
+		},
+	}))
+
+	state := newTestStateFromRaw(t, nil)
+	ex := cmd_test.NewMockExecutor()
+	ex.OutputFunc = func(_ *exec.Cmd) ([]byte, error) {
+		return nil, errors.New("no tmux")
+	}
+
+	output := executeStatus(state, store, project, ex, "json")
+	var parsed statusData
+	require.NoError(t, json.Unmarshal([]byte(output), &parsed))
+	require.Len(t, parsed.Tasks, 1)
+	assert.Equal(t, "wave 4 running", parsed.Tasks[0].Stage)
+	assert.Equal(t, "coder", parsed.Tasks[0].ActiveAgentType)
+	assert.Equal(t, 4, parsed.Tasks[0].ActiveWave)
 }
 
 func TestExecuteStatus_NilStore(t *testing.T) {

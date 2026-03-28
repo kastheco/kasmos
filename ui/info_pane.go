@@ -47,6 +47,10 @@ type InfoData struct {
 	PlanTopic       string
 	PlanBranch      string
 	PlanCreated     string
+	ExecutionPhase  string
+	ActiveAgentType string
+	ActiveWave      int
+	ActiveRound     int
 	PlanningAt      time.Time
 	ImplementingAt  time.Time
 	ReviewingAt     time.Time
@@ -217,6 +221,47 @@ func formatPhaseTime(ts time.Time) string {
 	return ts.Format("2006-01-02 15:04")
 }
 
+func infoAgentLabel(agent string) string {
+	switch strings.TrimSpace(agent) {
+	case "", "-":
+		return ""
+	case "elaborator":
+		return "architect"
+	default:
+		return strings.TrimSpace(agent)
+	}
+}
+
+func infoPhaseLabel(phase string, activeWave, activeRound int) string {
+	switch strings.TrimSpace(phase) {
+	case "planned":
+		return "planned"
+	case "architecting":
+		return "architecting"
+	case "wave_running":
+		if activeWave > 0 {
+			return fmt.Sprintf("wave %d running", activeWave)
+		}
+		return "wave running"
+	case "wave_waiting":
+		return "waiting for confirmation"
+	case "single_agent_implementing":
+		return "implementing"
+	case "fixing":
+		if activeRound > 0 {
+			return fmt.Sprintf("fixing round %d", activeRound)
+		}
+		return "fixing"
+	case "reviewing":
+		if activeRound > 0 {
+			return fmt.Sprintf("reviewing round %d", activeRound)
+		}
+		return "reviewing"
+	default:
+		return ""
+	}
+}
+
 func (p *InfoPane) wrapText(text string) []string {
 	if text == "" {
 		return nil
@@ -272,6 +317,18 @@ func (p *InfoPane) renderLifecycleSection() string {
 		infoSectionStyle.Render("lifecycle"),
 		p.renderDivider(),
 	}
+	if phase := infoPhaseLabel(p.data.ExecutionPhase, p.data.ActiveWave, p.data.ActiveRound); phase != "" {
+		rows = append(rows, p.renderRow("current", phase))
+	}
+	if agent := infoAgentLabel(p.data.ActiveAgentType); agent != "" {
+		rows = append(rows, p.renderRow("active agent", agent))
+	}
+	if p.data.ActiveWave > 0 {
+		rows = append(rows, p.renderRow("active wave", fmt.Sprintf("%d", p.data.ActiveWave)))
+	}
+	if p.data.ActiveRound > 0 {
+		rows = append(rows, p.renderRow("round", fmt.Sprintf("%d", p.data.ActiveRound)))
+	}
 	phases := []struct {
 		label   string
 		time    time.Time
@@ -317,6 +374,13 @@ func (p *InfoPane) renderProgressSection() string {
 		p.renderDivider(),
 		p.renderRow("subtasks", fmt.Sprintf("%d/%d %s", p.data.CompletedTasks, p.data.TotalSubtasks, asciiProgressBar(p.data.TotalSubtasks, p.data.CompletedTasks))),
 	}
+	if p.data.ActiveWave > 0 {
+		activeWave := fmt.Sprintf("%d", p.data.ActiveWave)
+		if p.data.TotalWaves > 0 {
+			activeWave = fmt.Sprintf("%d/%d", p.data.ActiveWave, p.data.TotalWaves)
+		}
+		rows = append(rows, p.renderRow("active wave", activeWave))
+	}
 
 	groups := append([]WaveSubtaskGroup{}, p.data.AllWaveSubtasks...)
 	sort.Slice(groups, func(i, j int) bool { return groups[i].WaveNumber < groups[j].WaveNumber })
@@ -346,6 +410,12 @@ func (p *InfoPane) renderPlanSection() string {
 	}
 	if p.data.PlanStatus != "" {
 		rows = append(rows, p.renderStatusRow("status", p.data.PlanStatus))
+	}
+	if phase := infoPhaseLabel(p.data.ExecutionPhase, p.data.ActiveWave, p.data.ActiveRound); phase != "" {
+		rows = append(rows, p.renderRow("phase", phase))
+	}
+	if agent := infoAgentLabel(p.data.ActiveAgentType); agent != "" {
+		rows = append(rows, p.renderRow("active agent", agent))
 	}
 	if p.data.PlanTopic != "" {
 		rows = append(rows, p.renderRow("topic", p.data.PlanTopic))
@@ -388,6 +458,12 @@ func (p *InfoPane) renderInstanceSection() string {
 	}
 	if p.data.PlanGoal != "" {
 		rows = append(rows, p.renderRow("goal", p.data.PlanGoal))
+	}
+	if phase := infoPhaseLabel(p.data.ExecutionPhase, p.data.ActiveWave, p.data.ActiveRound); phase != "" {
+		rows = append(rows, p.renderRow("phase", phase))
+	}
+	if agent := infoAgentLabel(p.data.ActiveAgentType); agent != "" {
+		rows = append(rows, p.renderRow("active agent", agent))
 	}
 	if p.data.WaveNumber > 0 {
 		rows = append(rows, p.renderRow("wave", fmt.Sprintf("%d/%d", p.data.WaveNumber, p.data.TotalWaves)))
@@ -501,8 +577,17 @@ func (p *InfoPane) RenderCompact(width int) string {
 			nameStyle := lipgloss.NewStyle().Foreground(ColorFoam).Bold(true)
 			statusStyle := lipgloss.NewStyle().Foreground(statusColor(d.PlanStatus))
 			line1 := nameStyle.Render(d.PlanName)
+			phase := infoPhaseLabel(d.ExecutionPhase, d.ActiveWave, d.ActiveRound)
+			phaseStyle := lipgloss.NewStyle().Foreground(ColorGold)
+			var states []string
 			if d.PlanStatus != "" {
-				line1 += "  " + statusStyle.Render(d.PlanStatus)
+				states = append(states, statusStyle.Render(d.PlanStatus))
+			}
+			if phase != "" && phase != d.PlanStatus {
+				states = append(states, phaseStyle.Render(phase))
+			}
+			if len(states) > 0 {
+				line1 += "  " + strings.Join(states, " · ")
 			}
 			lines = append(lines, line1)
 
@@ -514,6 +599,15 @@ func (p *InfoPane) RenderCompact(width int) string {
 			}
 			if branch != "" {
 				parts = append(parts, lipgloss.NewStyle().Foreground(ColorMuted).Render(branch))
+			}
+			if agent := infoAgentLabel(d.ActiveAgentType); agent != "" {
+				parts = append(parts, agent)
+			}
+			if d.ActiveWave > 0 {
+				parts = append(parts, fmt.Sprintf("active wave %d", d.ActiveWave))
+			}
+			if d.ActiveRound > 0 {
+				parts = append(parts, fmt.Sprintf("round %d", d.ActiveRound))
 			}
 			if d.WaveNumber > 0 && d.TotalWaves > 0 {
 				parts = append(parts, fmt.Sprintf("wave %d/%d", d.WaveNumber, d.TotalWaves))
@@ -532,8 +626,17 @@ func (p *InfoPane) RenderCompact(width int) string {
 		nameStyle := lipgloss.NewStyle().Foreground(ColorFoam).Bold(true)
 		statusStyle := lipgloss.NewStyle().Foreground(statusColor(d.Status))
 		line1 := nameStyle.Render(d.Title)
+		phase := infoPhaseLabel(d.ExecutionPhase, d.ActiveWave, d.ActiveRound)
+		phaseStyle := lipgloss.NewStyle().Foreground(ColorGold)
+		var states []string
 		if d.Status != "" {
-			line1 += "  " + statusStyle.Render(d.Status)
+			states = append(states, statusStyle.Render(d.Status))
+		}
+		if phase != "" {
+			states = append(states, phaseStyle.Render(phase))
+		}
+		if len(states) > 0 {
+			line1 += "  " + strings.Join(states, " · ")
 		}
 		lines = append(lines, line1)
 
@@ -541,6 +644,15 @@ func (p *InfoPane) RenderCompact(width int) string {
 		var parts []string
 		if d.Branch != "" {
 			parts = append(parts, lipgloss.NewStyle().Foreground(ColorMuted).Render(d.Branch))
+		}
+		if agent := infoAgentLabel(d.ActiveAgentType); agent != "" {
+			parts = append(parts, agent)
+		}
+		if d.ActiveWave > 0 {
+			parts = append(parts, fmt.Sprintf("active wave %d", d.ActiveWave))
+		}
+		if d.ActiveRound > 0 {
+			parts = append(parts, fmt.Sprintf("round %d", d.ActiveRound))
 		}
 		if d.WaveNumber > 0 && d.TotalWaves > 0 {
 			parts = append(parts, fmt.Sprintf("wave %d/%d", d.WaveNumber, d.TotalWaves))

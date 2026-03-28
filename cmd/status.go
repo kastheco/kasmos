@@ -52,30 +52,50 @@ type statusData struct {
 	OrphanSessions []statusOrphan   `json:"orphan_sessions"`
 }
 
-func statusPhaseLabel(phase string) string {
-	switch strings.TrimSpace(phase) {
+func statusAgentLabel(agent string) string {
+	switch strings.TrimSpace(agent) {
+	case "elaborator":
+		return "architect"
+	default:
+		return strings.TrimSpace(agent)
+	}
+}
+
+func statusDisplayReviewRound(entry taskstore.TaskEntry) int {
+	phase := strings.TrimSpace(entry.ExecutionState.Phase)
+	if phase == string(taskfsm.ExecutionPhaseFixing) || phase == string(taskfsm.ExecutionPhaseReviewing) || entry.Status == taskstore.StatusReviewing {
+		return entry.ReviewCycle + 1
+	}
+	return 0
+}
+
+func statusStageForTask(entry taskstore.TaskEntry) string {
+	phase := strings.TrimSpace(entry.ExecutionState.Phase)
+	round := statusDisplayReviewRound(entry)
+	switch phase {
 	case string(taskfsm.ExecutionPhasePlanned):
 		return "planned"
 	case string(taskfsm.ExecutionPhaseArchitecting):
 		return "architecting"
 	case string(taskfsm.ExecutionPhaseWaveRunning):
-		return "wave-running"
+		if entry.ExecutionState.ActiveWave > 0 {
+			return fmt.Sprintf("wave %d running", entry.ExecutionState.ActiveWave)
+		}
+		return "wave running"
 	case string(taskfsm.ExecutionPhaseWaveWaiting):
-		return "waiting"
+		return "waiting for confirmation"
 	case string(taskfsm.ExecutionPhaseSingleAgentImplementing):
 		return "implementing"
 	case string(taskfsm.ExecutionPhaseFixing):
+		if round > 0 {
+			return fmt.Sprintf("fixing round %d", round)
+		}
 		return "fixing"
 	case string(taskfsm.ExecutionPhaseReviewing):
+		if round > 0 {
+			return fmt.Sprintf("reviewing round %d", round)
+		}
 		return "reviewing"
-	default:
-		return ""
-	}
-}
-
-func statusStageForTask(entry taskstore.TaskEntry) string {
-	if phase := statusPhaseLabel(entry.ExecutionState.Phase); phase != "" {
-		return phase
 	}
 	return string(entry.Status)
 }
@@ -95,14 +115,15 @@ func statusRecoveryHints(tasks []statusTask) []string {
 	}
 
 	for _, t := range tasks {
+		phase := strings.TrimSpace(t.Phase)
 		switch {
 		case t.Status == string(taskstore.StatusPlanning):
 			appendHint("  kas task recover <task-name> --action planner-finished                # finish planning safely")
-		case t.Stage == "architecting":
+		case phase == string(taskfsm.ExecutionPhaseArchitecting):
 			appendHint("  kas task recover <task-name> --action architect-finished              # resume architect handoff")
-		case t.Stage == "fixing" || t.Stage == "implementing":
+		case phase == string(taskfsm.ExecutionPhaseFixing) || phase == string(taskfsm.ExecutionPhaseSingleAgentImplementing) || phase == string(taskfsm.ExecutionPhaseWaveRunning) || phase == string(taskfsm.ExecutionPhaseWaveWaiting):
 			appendHint("  kas task recover <task-name> --action implement-finished             # hand implementation to review")
-		case t.Stage == "reviewing":
+		case phase == string(taskfsm.ExecutionPhaseReviewing) || t.Status == string(taskstore.StatusReviewing):
 			appendHint("  kas task recover <task-name> --action review-approved                # finish review")
 			appendHint("  kas task recover <task-name> --action review-changes --feedback ...  # queue fixer recovery")
 			appendHint("  kas task recover <task-name> --action advance-review-cycle --feedback ...  # persist next review round")
@@ -139,9 +160,9 @@ func executeStatus(state config.StateManager, store taskstore.Store, project str
 					Status:            string(e.Status),
 					Stage:             statusStageForTask(e),
 					Phase:             strings.TrimSpace(e.ExecutionState.Phase),
-					ActiveAgentType:   strings.TrimSpace(e.ExecutionState.ActiveAgentType),
+					ActiveAgentType:   statusAgentLabel(e.ExecutionState.ActiveAgentType),
 					ActiveWave:        e.ExecutionState.ActiveWave,
-					ReviewCycle:       e.ReviewCycle,
+					ReviewCycle:       statusDisplayReviewRound(e),
 					HasReviewFeedback: strings.TrimSpace(e.LatestReviewFeedback) != "",
 					Branch:            e.Branch,
 				})
@@ -217,16 +238,8 @@ func executeStatus(state config.StateManager, store taskstore.Store, project str
 		sb.WriteString("  no active tasks\n")
 	} else {
 		w := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "  STATUS\tSTAGE\tAGENT\tWAVE\tCYCLE\tFEEDBACK\tNAME\tBRANCH")
+		fmt.Fprintln(w, "  STATUS\tLIFECYCLE\tAGENT\tFEEDBACK\tNAME\tBRANCH")
 		for _, t := range tasks {
-			wave := "-"
-			if t.ActiveWave > 0 {
-				wave = fmt.Sprintf("%d", t.ActiveWave)
-			}
-			cycle := "-"
-			if t.ReviewCycle > 0 {
-				cycle = fmt.Sprintf("%d", t.ReviewCycle)
-			}
 			feedback := "-"
 			if t.HasReviewFeedback {
 				feedback = "yes"
@@ -235,7 +248,7 @@ func executeStatus(state config.StateManager, store taskstore.Store, project str
 			if agent == "" {
 				agent = "-"
 			}
-			fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", t.Status, t.Stage, agent, wave, cycle, feedback, t.Name, t.Branch)
+			fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\n", t.Status, t.Stage, agent, feedback, t.Name, t.Branch)
 		}
 		w.Flush()
 	}

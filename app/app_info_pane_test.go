@@ -126,6 +126,64 @@ func TestUpdateInfoPaneForPlanHeader_LifecycleTimestamps(t *testing.T) {
 	assert.True(t, data.ReviewingAt.IsZero(), "ReviewingAt must be zero — not set")
 }
 
+func TestUpdateInfoPaneForPlanHeader_PopulatesExecutionPhaseMetadata(t *testing.T) {
+	tests := []struct {
+		name        string
+		status      taskstate.Status
+		state       taskstore.ExecutionState
+		wantPhase   string
+		wantAgent   string
+		wantWave    int
+		wantRound   int
+		prepareHome func(t *testing.T, h *home)
+	}{
+		{
+			name:   "wave waiting",
+			status: taskstate.StatusImplementing,
+			state: taskstore.ExecutionState{
+				Phase:           "wave_waiting",
+				ActiveAgentType: session.AgentTypeCoder,
+				ActiveWave:      2,
+			},
+			wantPhase: "wave_waiting",
+			wantAgent: session.AgentTypeCoder,
+			wantWave:  2,
+		},
+		{
+			name:   "reviewing round",
+			status: taskstate.StatusReviewing,
+			state: taskstore.ExecutionState{
+				Phase:           "reviewing",
+				ActiveAgentType: session.AgentTypeReviewer,
+			},
+			wantPhase: "reviewing",
+			wantAgent: session.AgentTypeReviewer,
+			wantRound: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, _, _, _ := buildInfoPaneHome(t)
+			require.NoError(t, h.taskState.ForceSetLifecycle("plan.md", tt.status, tt.state))
+			if tt.prepareHome != nil {
+				tt.prepareHome(t, h)
+			}
+
+			ok := h.nav.SelectByID(ui.SidebarPlanPrefix + "plan.md")
+			require.True(t, ok)
+
+			h.updateInfoPaneForPlanHeader()
+
+			data := h.tabbedWindow.GetInfoData()
+			assert.Equal(t, tt.wantPhase, data.ExecutionPhase)
+			assert.Equal(t, tt.wantAgent, data.ActiveAgentType)
+			assert.Equal(t, tt.wantWave, data.ActiveWave)
+			assert.Equal(t, tt.wantRound, data.ActiveRound)
+		})
+	}
+}
+
 // TestUpdateInfoPaneForPlanHeader_SubtaskProgress verifies CompletedTasks, TotalSubtasks, and AllWaveSubtasks.
 func TestUpdateInfoPaneForPlanHeader_SubtaskProgress(t *testing.T) {
 	h, _, _, _ := buildInfoPaneHome(t)

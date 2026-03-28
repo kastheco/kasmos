@@ -51,6 +51,9 @@ func TestInfoPane_PlanBoundInstance(t *testing.T) {
 		PlanName:        "my-feature",
 		PlanDescription: "add dark mode toggle",
 		PlanStatus:      "implementing",
+		ExecutionPhase:  "wave_running",
+		ActiveAgentType: "coder",
+		ActiveWave:      2,
 		PlanTopic:       "ui",
 		PlanBranch:      "plan/my-feature",
 		PlanCreated:     "2026-02-25",
@@ -64,6 +67,7 @@ func TestInfoPane_PlanBoundInstance(t *testing.T) {
 	assert.Contains(t, output, "my-feature")
 	assert.Contains(t, output, "add dark mode toggle")
 	assert.Contains(t, output, "implementing")
+	assert.Contains(t, output, "wave 2 running")
 	assert.Contains(t, output, "coder")
 }
 
@@ -148,6 +152,9 @@ func TestInfoPane_PlanSummaryWithGoalAndLifecycle(t *testing.T) {
 		PlanStatus:           "implementing",
 		PlanBranch:           "plan/improved-info-tab",
 		PlanGoal:             "persist subtask statuses and redesign the info pane",
+		ExecutionPhase:       "wave_waiting",
+		ActiveAgentType:      "coder",
+		ActiveWave:           2,
 		PlanningAt:           now.Add(-2 * time.Hour),
 		ImplementingAt:       now.Add(-1 * time.Hour),
 		AllWaveSubtasks: []WaveSubtaskGroup{
@@ -168,6 +175,8 @@ func TestInfoPane_PlanSummaryWithGoalAndLifecycle(t *testing.T) {
 	assert.Contains(t, output, "persist subtask statuses")
 	assert.Contains(t, output, "lifecycle")
 	assert.Contains(t, output, "implementing")
+	assert.Contains(t, output, "waiting for confirmation")
+	assert.Contains(t, output, "active wave")
 	assert.Contains(t, output, "2/4")
 	assert.Contains(t, output, "schema migration")
 	assert.Contains(t, output, "✓")
@@ -248,20 +257,40 @@ func TestInfoPane_NoReviewSectionWhenOutcomeEmpty(t *testing.T) {
 	assert.NotContains(t, output, "approved")
 }
 
+func TestInfoPane_ShowsCurrentReviewRound(t *testing.T) {
+	pane := NewInfoPane()
+	pane.SetSize(60, 40)
+	pane.SetData(InfoData{
+		IsPlanHeaderSelected: true,
+		PlanName:             "test-plan",
+		PlanStatus:           "reviewing",
+		ExecutionPhase:       "reviewing",
+		ActiveAgentType:      "reviewer",
+		ActiveRound:          3,
+	})
+
+	output := pane.String()
+	assert.Contains(t, output, "reviewing round 3")
+	assert.Contains(t, output, "reviewer")
+	assert.Contains(t, output, "round")
+}
+
 func TestRenderCompact_ShowsPlanMetadata(t *testing.T) {
 	p := NewInfoPane()
 	p.SetSize(80, 24)
 	p.SetData(InfoData{
-		HasPlan:    true,
-		PlanName:   "my-feature",
-		PlanStatus: "implementing",
-		PlanBranch: "plan/my-feature",
+		HasPlan:        true,
+		PlanName:       "my-feature",
+		PlanStatus:     "implementing",
+		PlanBranch:     "plan/my-feature",
+		ExecutionPhase: "planned",
 	})
 
 	compact := p.RenderCompact(80)
 	assert.NotEmpty(t, compact)
 	assert.True(t, lipgloss.Width(compact) > 0)
 	assert.Contains(t, compact, "view plan [p]")
+	assert.Contains(t, compact, "planned")
 }
 
 func TestRenderCompact_EmptyWhenNoData(t *testing.T) {
