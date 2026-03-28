@@ -4,9 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/kastheco/kasmos/config/taskstore"
 )
+
+// ArchitectFinished is the canonical internal architect-pass completion event.
+// The persisted gateway signal retains the legacy elaborator_finished wire name.
+const ArchitectFinished Event = "architect_finished"
 
 var validGatewaySignalTypes = map[string]struct{}{
 	"planner_finished":         {},
@@ -18,10 +23,48 @@ var validGatewaySignalTypes = map[string]struct{}{
 	"elaborator_finished":      {},
 }
 
+func gatewaySignalTypeError(raw string) error {
+	return fmt.Errorf("unknown signal type %q; valid types: planner_finished, implement_finished, review_approved, review_changes_requested, implement_task_finished, implement_wave, architect_finished (wire alias: elaborator_finished)", raw)
+}
+
+// CanonicalGatewaySignalType normalizes accepted signal-type aliases to the
+// exact wire-compatible value stored in the signal gateway.
+func CanonicalGatewaySignalType(raw string) (string, error) {
+	normalized := strings.ReplaceAll(strings.TrimSpace(raw), "-", "_")
+	switch normalized {
+	case string(PlannerFinished), string(ImplementFinished), string(ReviewApproved), string(ReviewChangesRequested), "implement_task_finished", "implement_wave":
+		return normalized, nil
+	case "review_changes":
+		return string(ReviewChangesRequested), nil
+	case string(ArchitectFinished), "elaborator_finished":
+		return "elaborator_finished", nil
+	default:
+		return "", gatewaySignalTypeError(raw)
+	}
+}
+
+// GatewaySignalTypeForEvent returns the canonical gateway signal type for a
+// lifecycle event that can be emitted via the signal gateway.
+func GatewaySignalTypeForEvent(event Event) (string, error) {
+	switch event {
+	case PlannerFinished, ImplementFinished, ReviewApproved, ReviewChangesRequested:
+		return string(event), nil
+	case ArchitectFinished, Event("elaborator_finished"):
+		return "elaborator_finished", nil
+	default:
+		return "", fmt.Errorf("event %q does not map to a gateway signal", event)
+	}
+}
+
 // NormalizeGatewaySignalPayload validates and normalizes a raw signal payload
 // into the exact JSON/text shape stored in the gateway database.
 func NormalizeGatewaySignalPayload(signalType, payload string) (string, error) {
-	switch signalType {
+	canonicalType, err := CanonicalGatewaySignalType(signalType)
+	if err != nil {
+		return "", err
+	}
+
+	switch canonicalType {
 	case "planner_finished", "implement_finished", "review_approved", "review_changes_requested":
 		if payload == "" {
 			return "", nil
@@ -78,26 +121,29 @@ func NormalizeGatewaySignalPayload(signalType, payload string) (string, error) {
 			return "", fmt.Errorf("elaborator_finished does not accept a payload (architect pass uses this legacy signal name)")
 		}
 		return "", nil
-
-	default:
-		return "", fmt.Errorf("unknown signal type %q", signalType)
 	}
+
+	return "", gatewaySignalTypeError(signalType)
 }
 
 // EmitGatewaySignal validates, normalizes, and inserts a pending signal row.
 func EmitGatewaySignal(gw taskstore.SignalGateway, project, signalType, planFile, payload string) error {
-	if _, ok := validGatewaySignalTypes[signalType]; !ok {
-		return fmt.Errorf("unknown signal type %q; valid types: planner_finished, implement_finished, review_approved, review_changes_requested, implement_task_finished, implement_wave, elaborator_finished", signalType)
+	canonicalType, err := CanonicalGatewaySignalType(signalType)
+	if err != nil {
+		return err
+	}
+	if _, ok := validGatewaySignalTypes[canonicalType]; !ok {
+		return gatewaySignalTypeError(signalType)
 	}
 
-	normalized, err := NormalizeGatewaySignalPayload(signalType, payload)
+	normalized, err := NormalizeGatewaySignalPayload(canonicalType, payload)
 	if err != nil {
 		return fmt.Errorf("invalid payload: %w", err)
 	}
 
 	return gw.Create(project, taskstore.SignalEntry{
 		PlanFile:   planFile,
-		SignalType: signalType,
+		SignalType: canonicalType,
 		Payload:    normalized,
 	})
 }

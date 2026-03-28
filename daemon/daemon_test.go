@@ -167,6 +167,10 @@ func TestDaemon_RecoverSessions_AdoptsTrackedInstances(t *testing.T) {
 		Filename: "feature.md",
 		Status:   taskstore.StatusImplementing,
 		Branch:   "plan/feature",
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseSingleAgentImplementing),
+			ActiveAgentType: session.AgentTypeCoder,
+		},
 	}))
 
 	d := &Daemon{
@@ -211,6 +215,10 @@ func TestDaemon_RecoverSessions_AdoptsNumberedReviewerSessions(t *testing.T) {
 		Status:      taskstore.StatusReviewing,
 		Branch:      "plan/feature",
 		ReviewCycle: 5,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseReviewing),
+			ActiveAgentType: session.AgentTypeReviewer,
+		},
 	}))
 
 	d := &Daemon{
@@ -242,6 +250,7 @@ func TestDaemon_RecoverSessions_AdoptsNumberedReviewerSessions(t *testing.T) {
 	assert.Equal(t, "feature", running[0].PlanFile)
 	assert.Equal(t, session.AgentTypeReviewer, running[0].AgentType)
 	assert.Equal(t, "feature-review-6", restored.Title)
+	assert.Equal(t, 6, restored.ReviewCycle)
 }
 
 func TestDaemon_StartPlan_ReturnsBeforeSpawnCompletes(t *testing.T) {
@@ -304,6 +313,10 @@ func TestDaemon_AutoAdvanceCompletedImplementer_TransitionsToReviewing(t *testin
 		Filename: "feature.md",
 		Status:   taskstore.StatusImplementing,
 		Branch:   "plan/feature",
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseFixing),
+			ActiveAgentType: session.AgentTypeFixer,
+		},
 	}))
 
 	pushCalled := false
@@ -331,6 +344,7 @@ func TestDaemon_AutoAdvanceCompletedImplementer_TransitionsToReviewing(t *testin
 	entry, err := store.Get(project, "feature.md")
 	require.NoError(t, err)
 	assert.Equal(t, taskstore.StatusReviewing, entry.Status)
+	assert.Equal(t, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseReviewing), ActiveAgentType: session.AgentTypeReviewer}, entry.ExecutionState)
 }
 
 func TestDaemon_TickScansSharedWorktreeSignals(t *testing.T) {
@@ -804,6 +818,62 @@ Do the second thing.
 	require.NotNil(t, orch)
 	assert.Equal(t, 2, orch.CurrentWaveNumber())
 	assert.Equal(t, orchestration.WaveStateRunning, orch.State())
+}
+
+func TestDaemon_ArchitectCompletion_StartsWaveOneAfterRestart(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	project := "test-project"
+	planFile := "architect-restart.md"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseArchitecting),
+			ActiveAgentType: session.AgentTypeElaborator,
+		},
+	}))
+	require.NoError(t, store.SetContent(project, planFile, `# Feature Plan
+
+## Wave 1
+### Task 1: First Thing
+
+Do the first thing.
+`))
+
+	proc := loop.NewProcessor(loop.ProcessorConfig{Store: store, Project: project})
+	actions := proc.ProcessElaborationSignals([]taskfsm.ElaborationSignal{{TaskFile: planFile}})
+	require.Len(t, actions, 1)
+	advance, ok := actions[0].(loop.AdvanceWaveAction)
+	require.True(t, ok)
+
+	d := &Daemon{
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+	e := RepoEntry{
+		Path:      t.TempDir(),
+		Project:   project,
+		Store:     store,
+		Processor: proc,
+	}
+
+	err := d.executeAction(context.Background(), e, advance)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Branch is required")
+
+	orch := proc.WaveOrchestrator(planFile)
+	require.NotNil(t, orch)
+	assert.Equal(t, 1, orch.CurrentWaveNumber())
+	assert.Equal(t, orchestration.WaveStateRunning, orch.State())
+
+	entry, getErr := store.Get(project, planFile)
+	require.NoError(t, getErr)
+	assert.Equal(t, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+		ActiveAgentType: session.AgentTypeCoder,
+		ActiveWave:      1,
+	}, entry.ExecutionState)
 }
 
 func TestReapStuckSignals(t *testing.T) {

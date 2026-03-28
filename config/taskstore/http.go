@@ -18,91 +18,139 @@ type HTTPStore struct {
 	baseURL string
 	project string
 	client  *http.Client
+	ping    *http.Client
+}
+
+// HTTPStoreOptions configures a project-scoped HTTP task store client.
+type HTTPStoreOptions struct {
+	BaseURL    string
+	Project    string
+	Client     *http.Client
+	PingClient *http.Client
 }
 
 // NewHTTPStore creates a new HTTPStore client pointing at baseURL.
 // project is the default project name used when routing requests.
 // The underlying http.Client has a 5-second timeout.
 func NewHTTPStore(baseURL, project string) *HTTPStore {
-	return &HTTPStore{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		project: project,
-		client:  &http.Client{Timeout: 5 * time.Second},
+	return NewHTTPStoreWithOptions(HTTPStoreOptions{BaseURL: baseURL, Project: project})
+}
+
+// NewHTTPStoreWithOptions creates a project-scoped HTTPStore client with
+// optional custom HTTP clients for regular requests and ping checks.
+func NewHTTPStoreWithOptions(options HTTPStoreOptions) *HTTPStore {
+	client := options.Client
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
 	}
+	pingClient := options.PingClient
+	if pingClient == nil {
+		pingClient = &http.Client{Timeout: 2 * time.Second}
+	}
+
+	return &HTTPStore{
+		baseURL: strings.TrimRight(options.BaseURL, "/"),
+		project: strings.TrimSpace(options.Project),
+		client:  client,
+		ping:    pingClient,
+	}
+}
+
+func (s *HTTPStore) resolveProject(project string) string {
+	project = strings.TrimSpace(project)
+	if project != "" {
+		return project
+	}
+	return s.project
 }
 
 // planURL builds the base URL for a project's plans endpoint.
 func (s *HTTPStore) taskURL(project string) string {
+	project = s.resolveProject(project)
 	return fmt.Sprintf("%s/v1/projects/%s/tasks", s.baseURL, url.PathEscape(project))
 }
 
 // taskItemURL builds the URL for a specific task entry.
 func (s *HTTPStore) taskItemURL(project, filename string) string {
+	project = s.resolveProject(project)
 	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s", s.baseURL, url.PathEscape(project), url.PathEscape(filename))
 }
 
 // taskContentURL builds the URL for a specific task's content endpoint.
 func (s *HTTPStore) taskContentURL(project, filename string) string {
+	project = s.resolveProject(project)
 	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/content", s.baseURL, url.PathEscape(project), url.PathEscape(filename))
 }
 
 // taskSubtasksURL builds the URL for a task's subtasks endpoint.
 func (s *HTTPStore) taskSubtasksURL(project, filename string) string {
+	project = s.resolveProject(project)
 	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/subtasks", s.baseURL, url.PathEscape(project), url.PathEscape(filename))
 }
 
 // taskSubtaskStatusURL builds the URL for a specific task's subtask status endpoint.
 func (s *HTTPStore) taskSubtaskStatusURL(project, filename string, taskNumber int) string {
+	project = s.resolveProject(project)
 	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/subtasks/%d/status", s.baseURL, url.PathEscape(project), url.PathEscape(filename), taskNumber)
 }
 
 // taskPhaseTimestampURL builds the URL for phase timestamp updates.
 func (s *HTTPStore) taskPhaseTimestampURL(project, filename string) string {
+	project = s.resolveProject(project)
 	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/phase-timestamp", s.baseURL, url.PathEscape(project), url.PathEscape(filename))
 }
 
 // taskGoalURL builds the URL for a plan goal update.
 func (s *HTTPStore) taskGoalURL(project, filename string) string {
+	project = s.resolveProject(project)
 	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/goal", s.baseURL, url.PathEscape(project), url.PathEscape(filename))
 }
 
 // taskPRURLURL builds the URL for a task's PR URL update endpoint.
 func (s *HTTPStore) taskPRURLURL(project, filename string) string {
+	project = s.resolveProject(project)
 	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/pr-url", s.baseURL, url.PathEscape(project), url.PathEscape(filename))
 }
 
 // taskPRStateURL builds the URL for a task's PR state update endpoint.
 func (s *HTTPStore) taskPRStateURL(project, filename string) string {
+	project = s.resolveProject(project)
 	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/pr-state", s.baseURL, url.PathEscape(project), url.PathEscape(filename))
 }
 
 // prReviewsURL builds the base URL for a task's pr-reviews endpoint.
 func (s *HTTPStore) prReviewsURL(project, filename string) string {
+	project = s.resolveProject(project)
 	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/pr-reviews", s.baseURL, url.PathEscape(project), url.PathEscape(filename))
 }
 
 // prReviewsPendingURL builds the URL for listing pending pr reviews.
 func (s *HTTPStore) prReviewsPendingURL(project, filename string) string {
+	project = s.resolveProject(project)
 	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/pr-reviews/pending", s.baseURL, url.PathEscape(project), url.PathEscape(filename))
 }
 
 // prReviewProcessedURL builds the URL to check if a review has been processed.
 func (s *HTTPStore) prReviewProcessedURL(project, filename string, reviewID int) string {
+	project = s.resolveProject(project)
 	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/pr-reviews/%d/processed", s.baseURL, url.PathEscape(project), url.PathEscape(filename), reviewID)
 }
 
 // prReviewReactedURL builds the URL for marking a review as reacted.
 func (s *HTTPStore) prReviewReactedURL(project, filename string, reviewID int) string {
+	project = s.resolveProject(project)
 	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/pr-reviews/%d/reacted", s.baseURL, url.PathEscape(project), url.PathEscape(filename), reviewID)
 }
 
 // prReviewFixerDispatchedURL builds the URL for marking a review's fixer as dispatched.
 func (s *HTTPStore) prReviewFixerDispatchedURL(project, filename string, reviewID int) string {
+	project = s.resolveProject(project)
 	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/pr-reviews/%d/fixer-dispatched", s.baseURL, url.PathEscape(project), url.PathEscape(filename), reviewID)
 }
 
 // topicURL builds the base URL for a project's topics endpoint.
 func (s *HTTPStore) topicURL(project string) string {
+	project = s.resolveProject(project)
 	return fmt.Sprintf("%s/v1/projects/%s/topics", s.baseURL, url.PathEscape(project))
 }
 
@@ -797,13 +845,12 @@ func (s *HTTPStore) Close() error {
 // Ping checks connectivity to the remote store server.
 // It uses a shorter 2-second timeout for health checks.
 func (s *HTTPStore) Ping() error {
-	pingClient := &http.Client{Timeout: 2 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, s.baseURL+"/v1/ping", nil)
 	if err != nil {
 		return fmt.Errorf("task store: build ping request: %w", err)
 	}
 
-	resp, err := pingClient.Do(req)
+	resp, err := s.ping.Do(req)
 	if err != nil {
 		return fmt.Errorf("task store unreachable: %w", err)
 	}

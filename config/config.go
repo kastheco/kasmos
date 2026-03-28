@@ -219,7 +219,9 @@ func applyConfigDefaults(cfg *Config) {
 	if cfg.DefaultProgram == "" {
 		program, err := GetDefaultCommand()
 		if err != nil {
-			log.ErrorLog.Printf("failed to get default command: %v", err)
+			if log.ErrorLog != nil {
+				log.ErrorLog.Printf("failed to get default command: %v", err)
+			}
 			cfg.DefaultProgram = defaultProgram
 		} else {
 			cfg.DefaultProgram = program
@@ -251,7 +253,9 @@ func DefaultConfig() *Config {
 func branchPrefix() string {
 	u, err := user.Current()
 	if err != nil || u == nil || u.Username == "" {
-		log.ErrorLog.Printf("failed to get current user: %v", err)
+		if log.ErrorLog != nil {
+			log.ErrorLog.Printf("failed to get current user: %v", err)
+		}
 		return "session/"
 	}
 	return fmt.Sprintf("%s/", strings.ToLower(u.Username))
@@ -459,13 +463,17 @@ func migrateJSONToTOML(configDir string) (*Config, bool) {
 func LoadConfig() *Config {
 	dir, err := GetConfigDir()
 	if err != nil {
-		log.ErrorLog.Printf("failed to get config directory: %v", err)
+		if log.ErrorLog != nil {
+			log.ErrorLog.Printf("failed to get config directory: %v", err)
+		}
 		return DefaultConfig()
 	}
 
 	tomlResult, tomlErr := LoadTOMLConfig()
 	if tomlErr != nil {
-		log.WarningLog.Printf("failed to load TOML config: %v", tomlErr)
+		if log.WarningLog != nil {
+			log.WarningLog.Printf("failed to load TOML config: %v", tomlErr)
+		}
 		return DefaultConfig()
 	}
 	if tomlResult != nil {
@@ -478,7 +486,9 @@ func LoadConfig() *Config {
 
 	def := DefaultConfig()
 	if saveErr := SaveTOMLConfigTo(configToTOML(def), filepath.Join(dir, TOMLConfigFileName)); saveErr != nil {
-		log.WarningLog.Printf("failed to save default config: %v", saveErr)
+		if log.WarningLog != nil {
+			log.WarningLog.Printf("failed to save default config: %v", saveErr)
+		}
 	}
 	return def
 }

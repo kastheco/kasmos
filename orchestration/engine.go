@@ -129,13 +129,14 @@ func (o *WaveOrchestrator) SetElaborating() {
 }
 
 // UpdatePlan replaces the plan with an elaborated version and resets the
-// orchestrator to Idle so waves can begin. Task states are cleared since
-// no tasks have started yet.
+// orchestrator to Idle so the caller can explicitly start or resume the next
+// wave. Task states are cleared since no tasks have started yet.
 func (o *WaveOrchestrator) UpdatePlan(plan *taskparser.Plan) {
 	o.plan = plan
 	o.state = WaveStateIdle
 	o.currentWave = 0
 	o.taskStates = make(map[int]taskStatus)
+	o.waitingForConfirm = false
 }
 
 // StartNextWave advances to the next wave and returns its tasks.

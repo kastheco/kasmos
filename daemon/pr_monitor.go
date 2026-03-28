@@ -8,9 +8,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/orchestration/loop"
+	"github.com/kastheco/kasmos/session"
 	gitpkg "github.com/kastheco/kasmos/session/git"
 )
 
@@ -213,6 +215,9 @@ func (m *PRMonitor) handleReview(ctx context.Context, repo RepoEntry, entry task
 	}
 	if pendingEntry == nil {
 		// Already dispatched on a previous cycle; nothing more to do.
+		return nil
+	}
+	if taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase) == taskfsm.ExecutionPhaseFixing && strings.TrimSpace(entry.ExecutionState.ActiveAgentType) == session.AgentTypeFixer {
 		return nil
 	}
 

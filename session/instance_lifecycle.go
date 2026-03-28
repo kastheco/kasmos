@@ -8,7 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstate"
+	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/opencodesession"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session/git"
@@ -99,6 +101,38 @@ func dirtyWorktreeContext(worktreePath string) string {
 		return fmt.Sprintf(" (%s (+%d more))", strings.Join(preview, ", "), len(lines)-len(preview))
 	}
 	return fmt.Sprintf(" (%s)", strings.Join(preview, ", "))
+}
+
+// ShouldAutoAdvanceLifecycleImplementer reports whether the instance matches
+// the persisted single-agent implementation state and has clearly finished its
+// queued work, so the lifecycle can advance to review.
+func ShouldAutoAdvanceLifecycleImplementer(status string, state taskstore.ExecutionState, inst *Instance, tmuxAlive bool) bool {
+	if inst == nil || inst.TaskFile == "" {
+		return false
+	}
+	if inst.AgentType != AgentTypeCoder && inst.AgentType != AgentTypeFixer {
+		return false
+	}
+	if inst.SoloAgent || inst.TaskNumber > 0 {
+		return false
+	}
+	if strings.TrimSpace(status) != string(taskfsm.StatusImplementing) {
+		return false
+	}
+	phase := taskfsm.NormalizeExecutionPhase(state.Phase)
+	if !taskfsm.IsSingleAgentImplementingPhase(phase) {
+		return false
+	}
+	if state.ActiveAgentType != "" && state.ActiveAgentType != inst.AgentType {
+		return false
+	}
+	if !tmuxAlive {
+		return true
+	}
+	if NormalizeExecutionMode(inst.ExecutionMode) == ExecutionModeHeadless && inst.Exited {
+		return true
+	}
+	return inst.PromptDetected && !inst.AwaitingWork
 }
 
 // setProgressFunc injects a progress hook into the execution session if it

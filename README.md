@@ -325,6 +325,7 @@ kas task update-content <task-file>
 kas task transition <task-file> <event>
 kas task set-status <task-file> <status> --force
 kas task implement <task-file> [--wave N]
+kas task recover <task-file> --action <planner-finished|architect-finished|implement-finished|review-approved|review-changes|advance-review-cycle>
 
 kas serve
 kas scaffold sync
@@ -335,6 +336,44 @@ kas daemon start
 kas monitor
 kas status
 ```
+
+---
+
+## lifecycle model
+
+kasmos now exposes lifecycle in two layers:
+
+- `status`: coarse task progress (`ready`, `planning`, `implementing`, `reviewing`, `done`, `cancelled`)
+- `execution_phase`: operator-facing execution detail persisted alongside the task (`planned`, `architecting`, `wave N running`, `waiting for confirmation`, `fixing round N`, `reviewing round N`)
+
+the tui info pane, navigation panel, and `kas status` all use the same vocabulary.
+
+- a `ready` task with `execution_phase=planned` means planning is complete and implementation has not started yet.
+- `architecting` means the architect pass is active before wave execution begins.
+- `wave N running` and `waiting for confirmation` describe wave orchestration progress.
+- `fixing round N` and `reviewing round N` surface the current review/fix cycle instead of only the top-level status.
+
+for a longer operator guide, see [`docs/lifecycle-operator-guide.md`](docs/lifecycle-operator-guide.md).
+
+---
+
+## manual recovery
+
+manual recovery is supported from both the tui and cli.
+
+- tui: open the selected instance or task context menu, then use the `manage` actions such as `mark planning finished`, `mark architect finished`, and `mark implement finished`
+- cli: use `kas task recover <task-file> --action ...`
+
+supported recovery actions:
+
+- `planner-finished`
+- `architect-finished`
+- `implement-finished`
+- `review-approved`
+- `review-changes --feedback ...`
+- `advance-review-cycle --feedback ...`
+
+the architect completion signal still uses the legacy wire name `elaborator_finished` for compatibility. operators should use `architect-finished` in tui and cli surfaces; `elaborator_finished` is retained on the wire only.
 
 ---
 

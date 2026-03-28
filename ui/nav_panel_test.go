@@ -37,6 +37,12 @@ func TestNavInstanceTitle_AdhocInstanceFallsBackToTitle(t *testing.T) {
 	assert.Equal(t, "adhoc-instance", navInstanceTitle(instance))
 }
 
+func TestNavInstanceTitle_FixerUsesLifecycleLabel(t *testing.T) {
+	instance := &session.Instance{TaskFile: "feature", AgentType: session.AgentTypeFixer, ReviewCycle: 2}
+
+	assert.Equal(t, "applying fixes #2", navInstanceTitle(instance))
+}
+
 // ---------- rebuildRows grouping ----------
 
 func TestRebuildRows_EmptyPanel(t *testing.T) {
@@ -304,9 +310,9 @@ func TestSortOrder_NotificationsFirst(t *testing.T) {
 	}
 	n.SetData(plans, instances, nil, nil, statuses)
 
-	// Plans sort alphabetically descending: "running" > "notified".
+	// Notified plans sort above running plans (sort key 0 < 1).
 	require.True(t, len(n.rows) >= 2)
-	assert.Equal(t, "running", n.rows[0].TaskFile)
+	assert.Equal(t, "notified", n.rows[0].TaskFile)
 }
 
 func TestSortOrder_InstancesWithinPlan(t *testing.T) {
@@ -941,7 +947,9 @@ func TestString_Legend(t *testing.T) {
 	n.SetSize(60, 30)
 	n.SetData(nil, nil, nil, nil, nil)
 	output := n.String()
+	assert.Contains(t, output, "planned")
 	assert.Contains(t, output, "running")
+	assert.Contains(t, output, "waiting")
 	assert.Contains(t, output, "review")
 	assert.Contains(t, output, "idle")
 }
@@ -981,6 +989,30 @@ func TestNavPlanSortKey_PlanningStatusIsActive(t *testing.T) {
 	// finished but the plan hasn't transitioned out of "planning" yet.
 	p := PlanDisplay{Filename: "p.md", Status: "planning"}
 	assert.Equal(t, 1, navPlanSortKey(p, nil, TopicStatus{}))
+}
+
+func TestNavPlanSortKey_PlannedReadySortsAheadOfFreshReady(t *testing.T) {
+	planned := PlanDisplay{Filename: "planned.md", Status: "ready", Phase: "planned"}
+	fresh := PlanDisplay{Filename: "fresh.md", Status: "ready"}
+	assert.Less(t, navPlanSortKey(planned, nil, TopicStatus{}), navPlanSortKey(fresh, nil, TopicStatus{}))
+}
+
+func TestString_PlanPhaseLabelsVisible(t *testing.T) {
+	n := newTestPanel()
+	n.SetSize(80, 40)
+	plans := []PlanDisplay{
+		{Filename: "planned-plan", Status: "ready", Phase: "planned"},
+		{Filename: "architect-plan", Status: "implementing", Phase: "architecting", AgentType: session.AgentTypeElaborator},
+		{Filename: "waiting-plan", Status: "implementing", Phase: "wave_waiting", AgentType: session.AgentTypeCoder, ActiveWave: 2},
+		{Filename: "fixing-plan", Status: "implementing", Phase: "fixing", AgentType: session.AgentTypeFixer, ActiveRound: 3},
+	}
+	n.SetData(plans, nil, nil, nil, nil)
+
+	output := n.String()
+	assert.Contains(t, output, "planned-plan · planned")
+	assert.Contains(t, output, "architect-plan · architecting")
+	assert.Contains(t, output, "waiting-plan · waiting for confirmation")
+	assert.Contains(t, output, "fixing-plan · fixing round 3")
 }
 
 func TestString_PlanningStatusPlanAppearsInActiveSection(t *testing.T) {

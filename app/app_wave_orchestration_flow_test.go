@@ -40,6 +40,8 @@ func waveFlowHome(t *testing.T, ps *taskstate.TaskState, plansDir string, orchMa
 		overlays:          overlay.NewManager(),
 		taskState:         ps,
 		taskStateDir:      plansDir,
+		taskStore:         storeForDir(t, plansDir),
+		taskStoreProject:  "test",
 		waveOrchestrators: orchMap,
 	}
 	return h
@@ -209,6 +211,7 @@ func TestRebuildOrphanedOrchestrators_SkipsPausedOrExitedOnlyPlans(t *testing.T)
 	ps, err := taskstate.Load(store, "proj", plansDir)
 	require.NoError(t, err)
 	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+	require.NoError(t, ps.SetExecutionState(planFile, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseWaveRunning), ActiveAgentType: session.AgentTypeCoder, ActiveWave: 1}))
 
 	h := waveFlowHome(t, ps, plansDir, make(map[string]*orchestration.WaveOrchestrator))
 	h.taskStore = store
@@ -267,6 +270,7 @@ func TestRebuildOrphanedOrchestrators_IgnoresArchitectOnlyRestartState(t *testin
 	ps, err := taskstate.Load(store, "proj", plansDir)
 	require.NoError(t, err)
 	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+	require.NoError(t, ps.SetExecutionState(planFile, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseArchitecting), ActiveAgentType: session.AgentTypeElaborator}))
 
 	h := waveFlowHome(t, ps, plansDir, make(map[string]*orchestration.WaveOrchestrator))
 	h.taskStore = store
@@ -310,6 +314,7 @@ func TestRebuildOrphanedOrchestrators_RestoresPersistedActiveWaveInstances(t *te
 	ps, err := taskstate.Load(store, "proj", plansDir)
 	require.NoError(t, err)
 	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+	require.NoError(t, ps.SetExecutionState(planFile, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseWaveRunning), ActiveAgentType: session.AgentTypeCoder, ActiveWave: 1}))
 
 	h := waveFlowHome(t, ps, plansDir, make(map[string]*orchestration.WaveOrchestrator))
 	h.taskStore = store
@@ -657,6 +662,7 @@ func TestWaveAllCompleteMsg_PushIsAsync(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, taskstate.StatusImplementing, entryBefore.Status,
 		"plan must remain implementing before async push completion")
+	assert.Equal(t, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseWaveWaiting), ActiveAgentType: session.AgentTypeCoder, ActiveWave: 1}, entryBefore.ExecutionState)
 
 	msg := cmd()
 	pushMsg, ok := msg.(wavePushCompleteMsg)
@@ -673,6 +679,7 @@ func TestWaveAllCompleteMsg_PushIsAsync(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, taskstate.StatusReviewing, entryAfter.Status,
 		"plan must transition to reviewing after wavePushCompleteMsg")
+	assert.Equal(t, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseReviewing), ActiveAgentType: session.AgentTypeReviewer}, entryAfter.ExecutionState)
 
 	// Ensure caller gets back a usable updated model after async completion.
 	_ = updated
@@ -1577,6 +1584,8 @@ func (th *waveElabTestHarness) registerPlan(planFile, content, branch string) {
 		Status:   taskstore.StatusReady,
 		Branch:   branch,
 		Content:  content,
+		// planned-ready so fsmSetImplementing accepts the plan when implement is triggered.
+		ExecutionState: taskstore.ExecutionState{Phase: "planned"},
 	}))
 	ps, err := taskstate.Load(th.store, "proj", th.plansDir)
 	require.NoError(th.t, err)
@@ -1653,6 +1662,12 @@ func TestCoderExit_FocusesCoderInstance_BeforePushConfirm(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, ps.Register(planFile, "focus coder test", "plan/focus-coder", time.Now()))
 	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+	// ShouldAutoAdvanceLifecycleImplementer checks IsSingleAgentImplementingPhase;
+	// without the execution phase the coder-exit auto-advance never fires.
+	require.NoError(t, ps.SetExecutionState(planFile, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseSingleAgentImplementing),
+		ActiveAgentType: session.AgentTypeCoder,
+	}))
 
 	coderInst := &session.Instance{
 		Title:     "focus-coder-implement",

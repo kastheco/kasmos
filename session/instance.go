@@ -185,10 +185,16 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		agentType = AgentTypeReviewer
 	}
 
+	branch := data.Branch
+	if branch == "" {
+		branch = data.Worktree.BranchName
+	}
+	sharedWorktree := isSharedTaskWorktree(data.Worktree, agentType)
+
 	instance := &Instance{
 		Title:                  data.Title,
 		Path:                   data.Path,
-		Branch:                 data.Branch,
+		Branch:                 branch,
 		Status:                 data.Status,
 		Height:                 data.Height,
 		Width:                  data.Width,
@@ -207,6 +213,7 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		SoloAgent:              data.SoloAgent,
 		QueuedPrompt:           data.QueuedPrompt,
 		ReviewCycle:            data.ReviewCycle,
+		sharedWorktree:         sharedWorktree,
 		gitWorktree: git.NewGitWorktreeFromStorage(
 			data.Worktree.RepoPath,
 			data.Worktree.WorktreePath,
@@ -244,6 +251,18 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 	}
 
 	return instance, nil
+}
+
+func isSharedTaskWorktree(data GitWorktreeData, agentType string) bool {
+	if data.RepoPath == "" || data.WorktreePath == "" || data.BranchName == "" {
+		return false
+	}
+	switch agentType {
+	case AgentTypeCoder, AgentTypeReviewer, AgentTypeFixer:
+		return data.WorktreePath == git.TaskWorktreePath(data.RepoPath, data.BranchName)
+	default:
+		return false
+	}
 }
 
 // InstanceOptions holds the configuration values for creating a new Instance.
@@ -305,6 +324,17 @@ func NewInstance(opts InstanceOptions) (*Instance, error) {
 		PeerCount:       opts.PeerCount,
 		ReviewCycle:     opts.ReviewCycle,
 	}, nil
+}
+
+// BindSharedTaskWorktree attaches shared-worktree metadata to an instance that
+// is being restored or manually re-adopted.
+func (i *Instance) BindSharedTaskWorktree(repoPath, branch string) {
+	if repoPath == "" || branch == "" {
+		return
+	}
+	i.Branch = branch
+	i.gitWorktree = git.NewSharedTaskWorktree(repoPath, branch)
+	i.sharedWorktree = true
 }
 
 // RepoName returns the repository name for this instance.

@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS tasks (
 	implementing_at TEXT NOT NULL DEFAULT '',
 	reviewing_at TEXT    NOT NULL DEFAULT '',
 	done_at     TEXT    NOT NULL DEFAULT '',
+	execution_phase   TEXT    NOT NULL DEFAULT '',
+	active_agent_type TEXT    NOT NULL DEFAULT '',
+	active_wave       INTEGER NOT NULL DEFAULT 0,
 	goal                TEXT    NOT NULL DEFAULT '',
 	latest_review_feedback TEXT NOT NULL DEFAULT '',
 	pr_url              TEXT    NOT NULL DEFAULT '',
@@ -87,6 +90,15 @@ const reviewingAtMigration = `ALTER TABLE tasks ADD COLUMN reviewing_at TEXT NOT
 
 // doneAtMigration adds done_at to existing databases.
 const doneAtMigration = `ALTER TABLE tasks ADD COLUMN done_at TEXT NOT NULL DEFAULT ''`
+
+// executionPhaseMigration adds execution_phase to existing databases.
+const executionPhaseMigration = `ALTER TABLE tasks ADD COLUMN execution_phase TEXT NOT NULL DEFAULT ''`
+
+// activeAgentTypeMigration adds active_agent_type to existing databases.
+const activeAgentTypeMigration = `ALTER TABLE tasks ADD COLUMN active_agent_type TEXT NOT NULL DEFAULT ''`
+
+// activeWaveMigration adds active_wave to existing databases.
+const activeWaveMigration = `ALTER TABLE tasks ADD COLUMN active_wave INTEGER NOT NULL DEFAULT 0`
 
 // goalMigration adds goal to existing databases.
 const goalMigration = `ALTER TABLE tasks ADD COLUMN goal TEXT NOT NULL DEFAULT ''`
@@ -205,6 +217,18 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 	if err := migrateAddColumn(db, "done_at", doneAtMigration); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate done_at column: %w", err)
+	}
+	if err := migrateAddColumn(db, "execution_phase", executionPhaseMigration); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate execution_phase column: %w", err)
+	}
+	if err := migrateAddColumn(db, "active_agent_type", activeAgentTypeMigration); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate active_agent_type column: %w", err)
+	}
+	if err := migrateAddColumn(db, "active_wave", activeWaveMigration); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate active_wave column: %w", err)
 	}
 	if err := migrateAddColumn(db, "goal", goalMigration); err != nil {
 		db.Close()
@@ -352,8 +376,8 @@ func (s *SQLiteStore) Ping() error {
 // Returns an error if a task with the same filename already exists in the project.
 func (s *SQLiteStore) Create(project string, entry TaskEntry) error {
 	const q = `
-		INSERT INTO tasks (project, filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO tasks (project, filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	_, err := s.db.Exec(q,
 		project,
@@ -368,6 +392,9 @@ func (s *SQLiteStore) Create(project string, entry TaskEntry) error {
 		formatTime(entry.ImplementingAt),
 		formatTime(entry.ReviewingAt),
 		formatTime(entry.DoneAt),
+		entry.ExecutionState.Phase,
+		entry.ExecutionState.ActiveAgentType,
+		entry.ExecutionState.ActiveWave,
 		entry.Goal,
 		entry.Content,
 		entry.ClickUpTaskID,
@@ -390,7 +417,7 @@ func (s *SQLiteStore) Create(project string, entry TaskEntry) error {
 // Returns an error if the task is not found.
 func (s *SQLiteStore) Get(project, filename string) (TaskEntry, error) {
 	const q = `
-		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
+		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
 		FROM tasks
 		WHERE project = ? AND filename = ?
 	`
@@ -403,7 +430,7 @@ func (s *SQLiteStore) Get(project, filename string) (TaskEntry, error) {
 func (s *SQLiteStore) Update(project, filename string, entry TaskEntry) error {
 	const q = `
 		UPDATE tasks
-		SET status = ?, description = ?, branch = ?, topic = ?, created_at = ?, implemented = ?, planning_at = ?, implementing_at = ?, reviewing_at = ?, done_at = ?, goal = ?, clickup_task_id = ?, review_cycle = ?, latest_review_feedback = ?
+		SET status = ?, description = ?, branch = ?, topic = ?, created_at = ?, implemented = ?, planning_at = ?, implementing_at = ?, reviewing_at = ?, done_at = ?, execution_phase = ?, active_agent_type = ?, active_wave = ?, goal = ?, clickup_task_id = ?, review_cycle = ?, latest_review_feedback = ?
 		WHERE project = ? AND filename = ?
 	`
 	result, err := s.db.Exec(q,
@@ -417,6 +444,9 @@ func (s *SQLiteStore) Update(project, filename string, entry TaskEntry) error {
 		formatTime(entry.ImplementingAt),
 		formatTime(entry.ReviewingAt),
 		formatTime(entry.DoneAt),
+		entry.ExecutionState.Phase,
+		entry.ExecutionState.ActiveAgentType,
+		entry.ExecutionState.ActiveWave,
 		entry.Goal,
 		entry.ClickUpTaskID,
 		entry.ReviewCycle,
@@ -465,7 +495,7 @@ func (s *SQLiteStore) Rename(project, oldFilename, newFilename string) error {
 // List returns all task entries for the given project, sorted by filename.
 func (s *SQLiteStore) List(project string) ([]TaskEntry, error) {
 	const q = `
-		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
+		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
 		FROM tasks
 		WHERE project = ?
 		ORDER BY filename ASC
@@ -494,7 +524,7 @@ func (s *SQLiteStore) ListByStatus(project string, statuses ...Status) ([]TaskEn
 	}
 
 	q := fmt.Sprintf(`
-		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
+		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
 		FROM tasks
 		WHERE project = ? AND status IN (%s)
 		ORDER BY filename ASC
@@ -512,7 +542,7 @@ func (s *SQLiteStore) ListByStatus(project string, statuses ...Status) ([]TaskEn
 // sorted by filename.
 func (s *SQLiteStore) ListByTopic(project, topic string) ([]TaskEntry, error) {
 	const q = `
-		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
+		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
 		FROM tasks
 		WHERE project = ? AND topic = ?
 		ORDER BY filename ASC
@@ -617,6 +647,23 @@ func (s *SQLiteStore) SetClickUpTaskID(project, filename, taskID string) error {
 	n, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("set clickup_task_id rows affected: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("plan not found: %s/%s", project, filename)
+	}
+	return nil
+}
+
+// SetExecutionState persists fine-grained execution lifecycle metadata.
+func (s *SQLiteStore) SetExecutionState(project, filename string, state ExecutionState) error {
+	const q = `UPDATE tasks SET execution_phase = ?, active_agent_type = ?, active_wave = ? WHERE project = ? AND filename = ?`
+	result, err := s.db.Exec(q, state.Phase, state.ActiveAgentType, state.ActiveWave, project, filename)
+	if err != nil {
+		return fmt.Errorf("set execution state: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set execution state rows affected: %w", err)
 	}
 	if n == 0 {
 		return fmt.Errorf("plan not found: %s/%s", project, filename)
@@ -909,8 +956,8 @@ func (s *SQLiteStore) ListPendingReviews(project, filename string) ([]PRReviewEn
 
 // scanTaskEntry scans a single row into a TaskEntry.
 func scanTaskEntry(row *sql.Row) (TaskEntry, error) {
-	var filename, status, description, branch, topic, createdAt, implemented, planningAt, implementingAt, reviewingAt, doneAt, goal, content, clickupTaskID, latestReviewFeedback string
-	var reviewCycle int
+	var filename, status, description, branch, topic, createdAt, implemented, planningAt, implementingAt, reviewingAt, doneAt, executionPhase, activeAgentType, goal, content, clickupTaskID, latestReviewFeedback string
+	var activeWave, reviewCycle int
 	var prURL, prReviewDecision, prCheckStatus string
 	if err := row.Scan(
 		&filename,
@@ -924,6 +971,9 @@ func scanTaskEntry(row *sql.Row) (TaskEntry, error) {
 		&implementingAt,
 		&reviewingAt,
 		&doneAt,
+		&executionPhase,
+		&activeAgentType,
+		&activeWave,
 		&goal,
 		&content,
 		&clickupTaskID,
@@ -939,13 +989,18 @@ func scanTaskEntry(row *sql.Row) (TaskEntry, error) {
 		return TaskEntry{}, fmt.Errorf("scan plan: %w", err)
 	}
 	return TaskEntry{
-		Filename:             filename,
-		Status:               Status(status),
-		Description:          description,
-		Branch:               branch,
-		Topic:                topic,
-		CreatedAt:            parseTime(createdAt),
-		Implemented:          implemented,
+		Filename:    filename,
+		Status:      Status(status),
+		Description: description,
+		Branch:      branch,
+		Topic:       topic,
+		CreatedAt:   parseTime(createdAt),
+		Implemented: implemented,
+		ExecutionState: ExecutionState{
+			Phase:           executionPhase,
+			ActiveAgentType: activeAgentType,
+			ActiveWave:      activeWave,
+		},
 		PlanningAt:           parseTime(planningAt),
 		ImplementingAt:       parseTime(implementingAt),
 		ReviewingAt:          parseTime(reviewingAt),
@@ -965,8 +1020,8 @@ func scanTaskEntry(row *sql.Row) (TaskEntry, error) {
 func scanTaskEntries(rows *sql.Rows) ([]TaskEntry, error) {
 	var entries []TaskEntry
 	for rows.Next() {
-		var filename, status, description, branch, topic, createdAt, implemented, planningAt, implementingAt, reviewingAt, doneAt, goal, content, clickupTaskID, latestReviewFeedback string
-		var reviewCycle int
+		var filename, status, description, branch, topic, createdAt, implemented, planningAt, implementingAt, reviewingAt, doneAt, executionPhase, activeAgentType, goal, content, clickupTaskID, latestReviewFeedback string
+		var activeWave, reviewCycle int
 		var prURL, prReviewDecision, prCheckStatus string
 		if err := rows.Scan(
 			&filename,
@@ -980,6 +1035,9 @@ func scanTaskEntries(rows *sql.Rows) ([]TaskEntry, error) {
 			&implementingAt,
 			&reviewingAt,
 			&doneAt,
+			&executionPhase,
+			&activeAgentType,
+			&activeWave,
 			&goal,
 			&content,
 			&clickupTaskID,
@@ -992,13 +1050,18 @@ func scanTaskEntries(rows *sql.Rows) ([]TaskEntry, error) {
 			return nil, fmt.Errorf("scan plan: %w", err)
 		}
 		entries = append(entries, TaskEntry{
-			Filename:             filename,
-			Status:               Status(status),
-			Description:          description,
-			Branch:               branch,
-			Topic:                topic,
-			CreatedAt:            parseTime(createdAt),
-			Implemented:          implemented,
+			Filename:    filename,
+			Status:      Status(status),
+			Description: description,
+			Branch:      branch,
+			Topic:       topic,
+			CreatedAt:   parseTime(createdAt),
+			Implemented: implemented,
+			ExecutionState: ExecutionState{
+				Phase:           executionPhase,
+				ActiveAgentType: activeAgentType,
+				ActiveWave:      activeWave,
+			},
 			PlanningAt:           parseTime(planningAt),
 			ImplementingAt:       parseTime(implementingAt),
 			ReviewingAt:          parseTime(reviewingAt),

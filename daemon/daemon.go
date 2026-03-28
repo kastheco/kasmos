@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -10,7 +11,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -555,7 +555,7 @@ func (d *Daemon) tickRepo(ctx context.Context, e RepoEntry) {
 				d.logger.Warn("begin processing failed", "file", sigFile, "repo", e.Path, "err", err)
 				continue
 			}
-			d.logger.Info("processing elaboration signal", "file", sigFile, "repo", e.Path)
+			d.logger.Info("processing architect completion signal", "file", sigFile, "repo", e.Path)
 
 			acts := e.Processor.ProcessElaborationSignals([]taskfsm.ElaborationSignal{es})
 			if len(acts) > 0 {
@@ -563,7 +563,7 @@ func (d *Daemon) tickRepo(ctx context.Context, e RepoEntry) {
 				taskfsm.CompleteProcessing(procPath)
 			} else {
 				d.logger.Warn("dead-lettering architect completion signal", "file", sigFile, "repo", e.Path)
-				taskfsm.FailProcessing(sigDir, sigFile, "no active elaboration state to resume")
+				taskfsm.FailProcessing(sigDir, sigFile, "no active architect pass to resume")
 			}
 		}
 
@@ -626,26 +626,26 @@ func (d *Daemon) tickRepo(ctx context.Context, e RepoEntry) {
 	d.monitorRunningInstances(ctx, e)
 }
 
-func shouldAutoAdvanceImplementer(entry taskstore.TaskEntry, inst *session.Instance, tmuxAlive bool) bool {
-	if inst == nil || inst.TaskFile == "" {
-		return false
+func setRepoExecutionState(e RepoEntry, planFile string, state taskstore.ExecutionState) error {
+	if e.Store == nil {
+		return fmt.Errorf("task store unavailable for %s", planFile)
 	}
-	if inst.AgentType != session.AgentTypeCoder && inst.AgentType != session.AgentTypeFixer {
-		return false
+	ps, err := taskstate.Load(e.Store, e.Project, "")
+	if err != nil {
+		return err
 	}
-	if inst.SoloAgent || inst.TaskNumber > 0 {
-		return false
+	return ps.SetExecutionState(planFile, state)
+}
+
+func clearRepoExecutionState(e RepoEntry, planFile string) error {
+	if e.Store == nil {
+		return fmt.Errorf("task store unavailable for %s", planFile)
 	}
-	if entry.Status != taskstore.StatusImplementing {
-		return false
+	ps, err := taskstate.Load(e.Store, e.Project, "")
+	if err != nil {
+		return err
 	}
-	if !tmuxAlive {
-		return true
-	}
-	if inst.PromptDetected && !inst.AwaitingWork {
-		return true
-	}
-	return false
+	return ps.ClearExecutionState(planFile)
 }
 
 func (d *Daemon) pushInstanceBranch(inst *session.Instance) error {
@@ -668,7 +668,7 @@ func (d *Daemon) autoAdvanceCompletedImplementer(e RepoEntry, inst *session.Inst
 	if err != nil {
 		return false, fmt.Errorf("load task entry for %s: %w", inst.TaskFile, err)
 	}
-	if !shouldAutoAdvanceImplementer(entry, inst, tmuxAlive) {
+	if !session.ShouldAutoAdvanceLifecycleImplementer(string(entry.Status), entry.ExecutionState, inst, tmuxAlive) {
 		return false, nil
 	}
 
@@ -679,6 +679,12 @@ func (d *Daemon) autoAdvanceCompletedImplementer(e RepoEntry, inst *session.Inst
 	fsm := taskfsm.New(e.Store, e.Project, "")
 	if err := fsm.Transition(inst.TaskFile, taskfsm.ImplementFinished); err != nil {
 		return false, fmt.Errorf("transition %s to reviewing: %w", inst.TaskFile, err)
+	}
+	if err := setRepoExecutionState(e, inst.TaskFile, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseReviewing),
+		ActiveAgentType: session.AgentTypeReviewer,
+	}); err != nil {
+		return false, fmt.Errorf("persist reviewing execution state for %s: %w", inst.TaskFile, err)
 	}
 
 	return true, nil
@@ -724,14 +730,22 @@ func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
 }
 
 func gatewayNoopOutcome(entry *taskstore.SignalEntry) (taskstore.SignalStatus, string) {
-	switch entry.SignalType {
+	canonicalType, err := taskfsm.CanonicalGatewaySignalType(entry.SignalType)
+	if err != nil {
+		return taskstore.SignalFailed, "signal rejected by processor"
+	}
+	internalType := canonicalType
+	if canonicalType == "elaborator_finished" {
+		internalType = string(taskfsm.ArchitectFinished)
+	}
+	switch internalType {
 	case "implement_finished":
 		return taskstore.SignalDone, "suppressed implement-finished signal"
 	case "implement_task_finished":
 		return taskstore.SignalFailed, "no active orchestrator / wrong wave / already-finished task"
 	case "implement_wave":
 		return taskstore.SignalFailed, "processor could not start the requested wave"
-	case "elaborator_finished":
+	case string(taskfsm.ArchitectFinished):
 		return taskstore.SignalFailed, "no active architect pass to resume"
 	default:
 		return taskstore.SignalFailed, "signal rejected by processor"
@@ -797,6 +811,12 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		}
 		return nil
 	case loop.SpawnReviewerAction:
+		if err := setRepoExecutionState(e, a.PlanFile, taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseReviewing),
+			ActiveAgentType: session.AgentTypeReviewer,
+		}); err != nil {
+			return fmt.Errorf("persist reviewer execution state: %w", err)
+		}
 		opts := reviewerSpawnOpts(e, entryFor(a.PlanFile))
 		if err := d.spawner.SpawnReviewer(ctx, opts); err != nil {
 			d.logger.Error("spawn reviewer failed", "plan", a.PlanFile, "err", err)
@@ -825,10 +845,18 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		})
 		return nil
 	case loop.SpawnElaboratorAction:
+		if err := setRepoExecutionState(e, a.PlanFile, taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseArchitecting),
+			ActiveAgentType: session.AgentTypeElaborator,
+		}); err != nil {
+			return fmt.Errorf("persist architect execution state: %w", err)
+		}
+		spec := orchestration.BuildArchitectAgentSpec(a.PlanFile)
 		opts := loop.SpawnOpts{
 			PlanFile: a.PlanFile,
 			RepoPath: e.Path,
 			Project:  e.Project,
+			Prompt:   spec.Prompt,
 		}
 		if err := d.spawner.SpawnElaborator(ctx, opts); err != nil {
 			d.logger.Error("spawn architect failed", "plan", a.PlanFile, "err", err)
@@ -843,6 +871,12 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		})
 		return nil
 	case loop.SpawnFixerAction:
+		if err := setRepoExecutionState(e, a.PlanFile, taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseFixing),
+			ActiveAgentType: session.AgentTypeFixer,
+		}); err != nil {
+			return fmt.Errorf("persist fixer execution state: %w", err)
+		}
 		opts := fixerSpawnOpts(e, a.PlanFile, branchFor(a.PlanFile), a.Feedback)
 		if err := d.spawner.SpawnFixer(ctx, opts); err != nil {
 			d.logger.Error("spawn fixer failed", "plan", a.PlanFile, "err", err)
@@ -883,6 +917,9 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		})
 		return nil
 	case loop.ReviewApprovedAction:
+		if err := clearRepoExecutionState(e, a.PlanFile); err != nil {
+			return fmt.Errorf("clear execution state after review approval: %w", err)
+		}
 		d.logger.Info("review approved", "plan", a.PlanFile, "repo", e.Path)
 		d.broadcaster.Emit(api.Event{
 			Kind:     "signal_processed",
@@ -931,11 +968,21 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 	}
 
 	tasks := orch.CurrentWaveTasks()
+	if orch.State() != orchestration.WaveStateRunning {
+		tasks = orch.StartNextWave()
+	}
 	if len(tasks) == 0 {
 		return nil
 	}
 
 	waveNum := orch.CurrentWaveNumber()
+	if err := setRepoExecutionState(e, planFile, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+		ActiveAgentType: session.AgentTypeCoder,
+		ActiveWave:      waveNum,
+	}); err != nil {
+		return fmt.Errorf("persist wave execution state for %s: %w", planFile, err)
+	}
 	peerCount := len(tasks)
 	for _, task := range tasks {
 		prompt := orch.BuildTaskPrompt(task, peerCount)
@@ -991,6 +1038,13 @@ func (d *Daemon) handleWaveTaskComplete(ctx context.Context, e RepoEntry, action
 		}
 
 		if failed > 0 {
+			if err := setRepoExecutionState(e, action.PlanFile, taskstore.ExecutionState{
+				Phase:           string(taskfsm.ExecutionPhaseWaveWaiting),
+				ActiveAgentType: session.AgentTypeCoder,
+				ActiveWave:      waveNum,
+			}); err != nil {
+				return fmt.Errorf("persist failed-wave waiting state for %s: %w", action.PlanFile, err)
+			}
 			e.Processor.ClearWaveOrchestrator(action.PlanFile)
 			d.broadcaster.Emit(api.Event{
 				Kind:     "wave_failed",
@@ -1010,6 +1064,13 @@ func (d *Daemon) handleWaveTaskComplete(ctx context.Context, e RepoEntry, action
 
 		autoAdvanceWaves := d.cfg != nil && d.cfg.AutoAdvanceWaves
 		if !autoAdvanceWaves {
+			if err := setRepoExecutionState(e, action.PlanFile, taskstore.ExecutionState{
+				Phase:           string(taskfsm.ExecutionPhaseWaveWaiting),
+				ActiveAgentType: session.AgentTypeCoder,
+				ActiveWave:      waveNum,
+			}); err != nil {
+				return fmt.Errorf("persist waiting wave state for %s: %w", action.PlanFile, err)
+			}
 			e.Processor.ClearWaveOrchestrator(action.PlanFile)
 			return nil
 		}
@@ -1031,6 +1092,12 @@ func (d *Daemon) handleWaveTaskComplete(ctx context.Context, e RepoEntry, action
 		fsm := taskfsm.New(e.Store, e.Project, "")
 		if err := fsm.Transition(action.PlanFile, taskfsm.ImplementFinished); err != nil {
 			return err
+		}
+		if err := setRepoExecutionState(e, action.PlanFile, taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseReviewing),
+			ActiveAgentType: session.AgentTypeReviewer,
+		}); err != nil {
+			return fmt.Errorf("persist reviewing execution state for %s: %w", action.PlanFile, err)
 		}
 
 		d.broadcaster.Emit(api.Event{
@@ -1107,54 +1174,6 @@ func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 	}
 }
 
-func taskRecoveryCandidates(task taskstore.TaskEntry) []struct {
-	title     string
-	agentType string
-	branch    string
-} {
-	planName := taskstate.DisplayName(task.Filename)
-	candidates := []struct {
-		title     string
-		agentType string
-		branch    string
-	}{
-		{title: fmt.Sprintf("%s-coder", planName), agentType: session.AgentTypeCoder, branch: task.Branch},
-		{title: fmt.Sprintf("%s-fixer", planName), agentType: session.AgentTypeFixer, branch: task.Branch},
-		{title: fmt.Sprintf("%s-reviewer", planName), agentType: session.AgentTypeReviewer, branch: task.Branch},
-		{title: fmt.Sprintf("%s-architect", planName), agentType: session.AgentTypeElaborator},
-	}
-
-	maxReview := task.ReviewCycle + 1
-	if maxReview < 1 {
-		maxReview = 1
-	}
-	for cycle := 1; cycle <= maxReview; cycle++ {
-		candidates = append(candidates, struct {
-			title     string
-			agentType string
-			branch    string
-		}{
-			title:     fmt.Sprintf("%s-review-%s", planName, strconv.Itoa(cycle)),
-			agentType: session.AgentTypeReviewer,
-			branch:    task.Branch,
-		})
-	}
-
-	for cycle := 1; cycle <= task.ReviewCycle; cycle++ {
-		candidates = append(candidates, struct {
-			title     string
-			agentType string
-			branch    string
-		}{
-			title:     fmt.Sprintf("%s-fix-%s", planName, strconv.Itoa(cycle)),
-			agentType: session.AgentTypeFixer,
-			branch:    task.Branch,
-		})
-	}
-
-	return candidates
-}
-
 // RecoverSessions discovers orphaned kas_ tmux sessions and attempts to
 // re-adopt them into the spawner's tracking map. This should be called once
 // on daemon startup, before the first tick.
@@ -1196,40 +1215,55 @@ func (d *Daemon) RecoverSessions() (int, error) {
 			continue
 		}
 		for _, task := range tasks {
-			for _, candidate := range taskRecoveryCandidates(task) {
-				if _, ok := orphanTitles[candidate.title]; !ok {
+			content := ""
+			phase := taskfsm.NormalizeExecutionPhase(task.ExecutionState.Phase)
+			if taskfsm.IsWaveExecutionPhase(phase) && e.Store != nil {
+				if stored, getErr := e.Store.GetContent(e.Project, task.Filename); getErr == nil {
+					content = stored
+				}
+			}
+			for _, candidate := range orchestration.BuildRecoveryCandidates(task, content) {
+				if _, ok := orphanTitles[candidate.Title]; !ok {
 					continue
 				}
 
 				data := session.InstanceData{
-					Title:         candidate.title,
+					Title:         candidate.Title,
 					Path:          e.Path,
-					Branch:        candidate.branch,
+					Branch:        candidate.Branch,
 					Status:        session.Running,
 					Program:       "opencode",
 					ExecutionMode: session.ExecutionModeTmux,
 					AutoYes:       true,
 					TaskFile:      task.Filename,
-					AgentType:     candidate.agentType,
+					AgentType:     candidate.AgentType,
+					TaskNumber:    candidate.TaskNumber,
+					WaveNumber:    candidate.WaveNumber,
+					ReviewCycle:   candidate.ReviewCycle,
 				}
-				if candidate.branch != "" {
-					shared := gitpkg.NewSharedTaskWorktree(e.Path, candidate.branch)
+				if candidate.Branch != "" {
+					shared := gitpkg.NewSharedTaskWorktree(e.Path, candidate.Branch)
 					data.Worktree = session.GitWorktreeData{
 						RepoPath:     shared.GetRepoPath(),
 						WorktreePath: shared.GetWorktreePath(),
-						SessionName:  candidate.title,
-						BranchName:   candidate.branch,
+						SessionName:  candidate.Title,
+						BranchName:   candidate.Branch,
 					}
 				}
 
-				if err := d.spawner.RestoreTrackedInstance(e.Path, e.Project, task.Filename, candidate.agentType, data); err != nil {
+				if err := d.spawner.RestoreTrackedInstance(e.Path, e.Project, task.Filename, candidate.AgentType, data); err != nil {
+					if errors.Is(err, errInstanceAlreadyTracked) {
+						delete(orphanTitles, candidate.Title)
+						continue
+					}
 					d.logger.Warn("recover sessions: restore instance failed",
-						"session", candidate.title, "repo", e.Path, "plan", task.Filename, "err", err)
+						"session", candidate.Title, "repo", e.Path, "plan", task.Filename, "err", err)
 					continue
 				}
 
 				d.logger.Info("re-adopted orphan session",
-					"session", candidate.title, "repo", e.Path, "plan", task.Filename, "agent", candidate.agentType)
+					"session", candidate.Title, "repo", e.Path, "plan", task.Filename, "agent", candidate.AgentType)
+				delete(orphanTitles, candidate.Title)
 				recovered++
 			}
 		}

@@ -2,6 +2,7 @@ package taskfsm
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/kastheco/kasmos/config/taskstate"
@@ -11,6 +12,9 @@ import (
 // Status represents the lifecycle state of a plan.
 type Status string
 
+// ExecutionPhase represents the persisted fine-grained execution substate.
+type ExecutionPhase string
+
 const (
 	StatusReady        Status = "ready"
 	StatusPlanning     Status = "planning"
@@ -18,6 +22,14 @@ const (
 	StatusReviewing    Status = "reviewing"
 	StatusDone         Status = "done"
 	StatusCancelled    Status = "cancelled"
+
+	ExecutionPhasePlanned                 ExecutionPhase = "planned"
+	ExecutionPhaseArchitecting            ExecutionPhase = "architecting"
+	ExecutionPhaseWaveRunning             ExecutionPhase = "wave_running"
+	ExecutionPhaseWaveWaiting             ExecutionPhase = "wave_waiting"
+	ExecutionPhaseSingleAgentImplementing ExecutionPhase = "single_agent_implementing"
+	ExecutionPhaseFixing                  ExecutionPhase = "fixing"
+	ExecutionPhaseReviewing               ExecutionPhase = "reviewing"
 )
 
 // Event represents a lifecycle transition trigger.
@@ -36,6 +48,34 @@ const (
 	Cancel                 Event = "cancel"
 	Reopen                 Event = "reopen"
 )
+
+// NormalizeExecutionPhase trims persisted execution-phase strings and returns
+// the canonical enum form used by lifecycle helpers.
+func NormalizeExecutionPhase(phase string) ExecutionPhase {
+	return ExecutionPhase(strings.TrimSpace(phase))
+}
+
+// IsWaveExecutionPhase reports whether the phase is one of the persisted
+// multi-task wave execution states.
+func IsWaveExecutionPhase(phase ExecutionPhase) bool {
+	switch phase {
+	case ExecutionPhaseWaveRunning, ExecutionPhaseWaveWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsSingleAgentImplementingPhase reports whether the phase represents a single
+// coder/fixer implementation pass that can advance directly to review.
+func IsSingleAgentImplementingPhase(phase ExecutionPhase) bool {
+	switch phase {
+	case ExecutionPhaseSingleAgentImplementing, ExecutionPhaseFixing:
+		return true
+	default:
+		return false
+	}
+}
 
 // IsUserOnly returns true if this event can only be triggered from the TUI,
 // never by agent sentinel files.
@@ -94,6 +134,15 @@ func ApplyTransition(current Status, event Event) (Status, error) {
 	return next, nil
 }
 
+// TransitionExecutionState returns the persisted execution metadata that should
+// accompany a successful lifecycle transition.
+func TransitionExecutionState(event Event, next Status) taskstore.ExecutionState {
+	if next == StatusReady && event == PlannerFinished {
+		return taskstore.ExecutionState{Phase: string(ExecutionPhasePlanned)}
+	}
+	return taskstore.ExecutionState{}
+}
+
 // TaskStateMachine is the sole writer of plan state. All plan status mutations
 // must flow through Transition(). The store handles concurrency via SQLite.
 type TaskStateMachine struct {
@@ -129,8 +178,7 @@ func (m *TaskStateMachine) Transition(planFile string, event Event) error {
 	if err != nil {
 		return err
 	}
-	// ForceSetStatus writes through to the store.
-	if err := ps.ForceSetStatus(planFile, taskstate.Status(newStatus)); err != nil {
+	if err := ps.ForceSetLifecycle(planFile, taskstate.Status(newStatus), TransitionExecutionState(event, newStatus)); err != nil {
 		return err
 	}
 	if phase, ok := phaseNameForStatus(newStatus); ok {

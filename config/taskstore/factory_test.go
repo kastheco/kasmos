@@ -1,6 +1,7 @@
 package taskstore
 
 import (
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -10,6 +11,23 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func writeTestConfig(t *testing.T, repoDir, body string) {
+	t.Helper()
+	configDir := filepath.Join(repoDir, ".kasmos")
+	require.NoError(t, os.MkdirAll(configDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(body), 0o644))
+}
+
+// initTestRepo creates a bare .git directory so that config.GetConfigDir()
+// anchors to repoDir on CI where temp dirs have no git root.
+func initTestRepo(t *testing.T, repoDir string) {
+	t.Helper()
+	out, err := exec.Command("git", "init", repoDir).CombinedOutput()
+	if err != nil {
+		t.Skipf("git init failed (%v): %s", err, out)
+	}
+}
 
 func TestNewStoreFromConfig_HTTP(t *testing.T) {
 	backend := newTestStore(t)
@@ -33,6 +51,50 @@ func TestNewStoreFromConfig_Unreachable(t *testing.T) {
 	// Factory succeeds (lazy connect) but Ping fails
 	require.NoError(t, err)
 	require.Error(t, store.Ping())
+}
+
+func TestOpenAuthoritativeStore_UsesConfiguredHTTPAuthority(t *testing.T) {
+	backend := newTestStore(t)
+	srv := httptest.NewServer(NewHandler(backend))
+	defer srv.Close()
+
+	repoDir := t.TempDir()
+	initTestRepo(t, repoDir)
+	writeTestConfig(t, repoDir, fmt.Sprintf("database_url = %q\n", srv.URL))
+	t.Chdir(repoDir)
+
+	store, err := OpenAuthoritativeStore("test-project")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	require.NoError(t, store.Create("test-project", TaskEntry{Filename: "authoritative", Status: StatusReady}))
+	entry, err := backend.Get("test-project", "authoritative")
+	require.NoError(t, err)
+	assert.Equal(t, StatusReady, entry.Status)
+}
+
+func TestOpenAuthoritativeStore_UnreachableRemoteFails(t *testing.T) {
+	repoDir := t.TempDir()
+	initTestRepo(t, repoDir)
+	writeTestConfig(t, repoDir, "database_url = \"http://127.0.0.1:1\"\n")
+	t.Chdir(repoDir)
+
+	store, err := OpenAuthoritativeStore("test-project")
+	require.Error(t, err)
+	assert.Nil(t, store)
+	assert.Contains(t, err.Error(), "task store unreachable")
+}
+
+func TestOpenAuthoritativeSignalGateway_UnreachableRemoteFails(t *testing.T) {
+	repoDir := t.TempDir()
+	initTestRepo(t, repoDir)
+	writeTestConfig(t, repoDir, "database_url = \"http://127.0.0.1:1\"\n")
+	t.Chdir(repoDir)
+
+	gw, err := OpenAuthoritativeSignalGateway("test-project")
+	require.Error(t, err)
+	assert.Nil(t, gw)
+	assert.Contains(t, err.Error(), "task store unreachable")
 }
 
 func TestResolvedDBPath(t *testing.T) {

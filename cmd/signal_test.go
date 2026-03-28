@@ -119,8 +119,9 @@ func TestExecuteSignalList_WithElaborationSignal(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "elaborator-finished-my-plan"), nil, 0o644))
 
 	result := executeSignalList(dir)
-	assert.Contains(t, result, "elaborator_finished")
+	assert.Contains(t, result, "architect_finished")
 	assert.Contains(t, result, "my-plan")
+	assert.Contains(t, result, "recover: architect-finished")
 }
 
 func TestExecuteSignalList_MultipleSignals(t *testing.T) {

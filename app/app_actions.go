@@ -2,9 +2,7 @@ package app
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -14,7 +12,6 @@ import (
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
-	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
 	"github.com/kastheco/kasmos/keys"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/session"
@@ -172,7 +169,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		return m, m.emitSelectedInstanceSignal(taskfsm.PlannerFinished, "planner finished signal queued")
 
 	case "mark_architect_finished":
-		return m, m.emitSelectedInstanceSignal(taskfsm.Event("elaborator_finished"), "architect finished signal queued")
+		return m, m.emitSelectedInstanceSignal(taskfsm.ArchitectFinished, "architect pass finished signal queued")
 
 	case "mark_implement_finished":
 		return m, m.emitSelectedInstanceSignal(taskfsm.ImplementFinished, "implement finished signal queued")
@@ -191,17 +188,10 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		if err := m.captureSelectedReviewFeedback(selected); err != nil {
 			return m, m.handleError(err)
 		}
-		if err := m.taskState.IncrementReviewCycle(selected.TaskFile); err != nil {
+		cycle, err := m.incrementReviewCycleAndRefresh(selected.TaskFile, selected.Title, selected.AgentType)
+		if err != nil {
 			return m, m.handleError(err)
 		}
-		m.loadTaskState()
-		m.updateSidebarTasks()
-		cycle, _ := m.taskState.ReviewCycle(selected.TaskFile)
-		m.audit(auditlog.EventPlanTransition, fmt.Sprintf("advanced review cycle to %d", cycle),
-			auditlog.WithPlan(selected.TaskFile),
-			auditlog.WithInstance(selected.Title),
-			auditlog.WithAgent(selected.AgentType),
-		)
 		m.toastManager.Success(fmt.Sprintf("advanced review cycle to %d", cycle))
 		return m, m.toastTickCmd()
 
@@ -439,6 +429,9 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 					return err
 				}
 			}
+			if err := m.clearExecutionState(planFile); err != nil {
+				return err
+			}
 			m.audit(auditlog.EventPlanMerged, "task merged to main: "+planName,
 				auditlog.WithPlan(planFile))
 			_ = m.saveAllInstances()
@@ -470,6 +463,9 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			}
 			m.audit(auditlog.EventPlanTransition, string(entry.Status)+" → done (manual)",
 				auditlog.WithPlan(planFile))
+		}
+		if err := m.clearExecutionState(planFile); err != nil {
+			return m, m.handleError(err)
 		}
 		m.loadTaskState()
 		m.updateSidebarTasks()
@@ -510,6 +506,9 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		planName := taskstate.DisplayName(planFile)
 		cancelAction := func() tea.Msg {
 			if err := m.fsm.Transition(planFile, taskfsm.Cancel); err != nil {
+				return err
+			}
+			if err := m.clearExecutionState(planFile); err != nil {
 				return err
 			}
 			m.audit(auditlog.EventPlanCancelled, "task cancelled by user: "+planName,
@@ -694,6 +693,9 @@ func (m *home) fsmSetImplementing(planFile string) error {
 	entry, ok := m.taskState.Entry(planFile)
 	if !ok {
 		return fmt.Errorf("task not found: %s", planFile)
+	}
+	if taskstate.IsDraftReady(entry) {
+		return fmt.Errorf("task is ready but not yet planned: %s", planFile)
 	}
 	current := taskfsm.Status(entry.Status)
 	if current == taskfsm.StatusImplementing {
@@ -903,7 +905,7 @@ func (m *home) openTaskContextMenu() (tea.Model, tea.Cmd) {
 			// Offer every forward lifecycle stage from the current state so the
 			// user can manually advance through plan → implement → review → done.
 			switch entry.Status {
-			case taskstate.StatusReady, taskstate.StatusPlanning:
+			case taskstate.StatusPlanning:
 				startItems = append(startItems,
 					overlay.ContextMenuItem{Label: "start planning", Action: "start_plan"},
 					overlay.ContextMenuItem{Label: "start implement", Action: "start_implement"},
@@ -911,6 +913,18 @@ func (m *home) openTaskContextMenu() (tea.Model, tea.Cmd) {
 					overlay.ContextMenuItem{Label: "start solo agent", Action: "start_solo"},
 					overlay.ContextMenuItem{Label: "start review", Action: "start_review"},
 				)
+			case taskstate.StatusReady:
+				startItems = append(startItems,
+					overlay.ContextMenuItem{Label: "start planning", Action: "start_plan"},
+				)
+				if taskstate.IsPlannedReady(entry) {
+					startItems = append(startItems,
+						overlay.ContextMenuItem{Label: "start implement", Action: "start_implement"},
+						overlay.ContextMenuItem{Label: "implement directly", Action: "start_implement_direct"},
+						overlay.ContextMenuItem{Label: "start solo agent", Action: "start_solo"},
+						overlay.ContextMenuItem{Label: "start review", Action: "start_review"},
+					)
+				}
 			case taskstate.StatusImplementing:
 				startItems = append(startItems,
 					overlay.ContextMenuItem{Label: "start implement", Action: "start_implement"},
@@ -994,8 +1008,55 @@ func (m *home) openTaskContextMenu() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func signalTypeString(event taskfsm.Event) string {
-	return string(event)
+func isReviewFeedbackSignal(event taskfsm.Event) bool {
+	return event == taskfsm.ReviewApproved || event == taskfsm.ReviewChangesRequested
+}
+
+func gatewaySignalTypeForEvent(event taskfsm.Event) (string, error) {
+	return taskfsm.GatewaySignalTypeForEvent(event)
+}
+
+func (m *home) prepareSelectedInstanceSignal(selected *session.Instance, event taskfsm.Event) (string, string, error) {
+	signalType, err := gatewaySignalTypeForEvent(event)
+	if err != nil {
+		return "", "", err
+	}
+	if !isReviewFeedbackSignal(event) {
+		return signalType, "", nil
+	}
+	if err := m.captureSelectedReviewFeedback(selected); err != nil {
+		return "", "", err
+	}
+	return signalType, m.reviewFeedbackPayload(selected), nil
+}
+
+func (m *home) incrementReviewCycleAndRefresh(planFile, instanceTitle, agentType string) (int, error) {
+	if planFile == "" {
+		return 0, fmt.Errorf("task file is empty")
+	}
+	if m.taskState == nil {
+		return 0, fmt.Errorf("task state is not loaded")
+	}
+	if err := m.taskState.IncrementReviewCycle(planFile); err != nil {
+		return 0, err
+	}
+	m.loadTaskState()
+	m.updateSidebarTasks()
+	m.updateInfoPane()
+	cycle, err := m.taskState.ReviewCycle(planFile)
+	if err != nil {
+		return 0, err
+	}
+
+	options := []auditlog.EventOption{auditlog.WithPlan(planFile)}
+	if instanceTitle != "" {
+		options = append(options, auditlog.WithInstance(instanceTitle))
+	}
+	if agentType != "" {
+		options = append(options, auditlog.WithAgent(agentType))
+	}
+	m.audit(auditlog.EventPlanTransition, fmt.Sprintf("advanced review cycle to %d", cycle), options...)
+	return cycle, nil
 }
 
 func (m *home) emitSelectedInstanceSignal(event taskfsm.Event, successToast string) tea.Cmd {
@@ -1003,34 +1064,25 @@ func (m *home) emitSelectedInstanceSignal(event taskfsm.Event, successToast stri
 	if selected == nil || selected.TaskFile == "" || m.taskStoreProject == "" {
 		return nil
 	}
-	if event == taskfsm.ReviewApproved || event == taskfsm.ReviewChangesRequested {
-		if err := m.captureSelectedReviewFeedback(selected); err != nil {
-			return m.handleError(err)
-		}
-	}
-	payload := ""
-	if event == taskfsm.ReviewApproved || event == taskfsm.ReviewChangesRequested {
-		payload = m.reviewFeedbackPayload(selected)
+	signalType, payload, err := m.prepareSelectedInstanceSignal(selected, event)
+	if err != nil {
+		return m.handleError(err)
 	}
 	planFile := selected.TaskFile
 	instanceTitle := selected.Title
 	agentType := selected.AgentType
 	project := m.taskStoreProject
 	return func() tea.Msg {
-		dbPath := taskstore.ResolvedDBPath()
-		if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-			return manualSignalResultMsg{err: err}
-		}
-		gw, err := taskstore.NewSQLiteSignalGateway(dbPath)
+		gw, err := taskstore.OpenAuthoritativeSignalGateway(project)
 		if err != nil {
 			return manualSignalResultMsg{err: err}
 		}
 		defer gw.Close() //nolint:errcheck
-		if err := taskfsm.EmitGatewaySignal(gw, project, signalTypeString(event), planFile, payload); err != nil {
+		if err := taskfsm.EmitGatewaySignal(gw, project, signalType, planFile, payload); err != nil {
 			return manualSignalResultMsg{err: err}
 		}
 		return manualSignalResultMsg{
-			signalType:    signalTypeString(event),
+			signalType:    signalType,
 			planFile:      planFile,
 			instanceTitle: instanceTitle,
 			agentType:     agentType,
@@ -1180,7 +1232,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 				return mdl, cmd
 			}
 			// Still elaborating — don't re-spawn, just inform.
-			m.toastManager.Info("elaboration still in progress — waiting for the architect pass to finish.")
+			m.toastManager.Info("architect pass still in progress — waiting to start the wave.")
 			return m, nil
 		}
 
@@ -1226,6 +1278,26 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			return m.spawnBlueprintSkipAgent(planFile, plan)
 		}
 
+		persistedPhase := taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase)
+		if entry.Status == taskstate.StatusImplementing {
+			switch persistedPhase {
+			case taskfsm.ExecutionPhaseArchitecting:
+				orch := orchestration.NewWaveOrchestrator(planFile, plan)
+				orch.SetStore(m.taskStore, m.taskStoreProject)
+				orch.SetElaborating()
+				m.waveOrchestrators[planFile] = orch
+				m.toastManager.Info("architect pass still in progress — waiting to start the wave.")
+				return m, m.toastTickCmd()
+			case taskfsm.ExecutionPhaseWaveRunning, taskfsm.ExecutionPhaseWaveWaiting:
+				m.rebuildOrphanedOrchestrators()
+				if existingOrch, ok := m.waveOrchestrators[planFile]; ok {
+					return m.startNextWave(existingOrch, entry)
+				}
+				m.toastManager.Info("wave execution already in progress — waiting for active tasks.")
+				return m, m.toastTickCmd()
+			}
+		}
+
 		orch := orchestration.NewWaveOrchestrator(planFile, plan)
 		orch.SetStore(m.taskStore, m.taskStoreProject)
 		m.waveOrchestrators[planFile] = orch
@@ -1237,19 +1309,6 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			auditlog.WithPlan(planFile))
 		m.loadTaskState()
 		m.updateSidebarTasks()
-
-		// Check whether an architect pass already finished for this plan (for
-		// example after a TUI restart that lost the in-memory orchestrator).
-		// Skip a duplicate architect run in that case.
-		for _, inst := range m.nav.GetInstances() {
-			if inst.TaskFile == planFile && inst.AgentType == session.AgentTypeElaborator {
-				m.killExistingPlanAgent(planFile, session.AgentTypeElaborator)
-				m.toastManager.Info(fmt.Sprintf("architect pass already ran — starting wave 1 for '%s'", taskstate.DisplayName(planFile)))
-				m.audit(auditlog.EventWaveStarted, "skipping re-elaboration (prior architect found)",
-					auditlog.WithPlan(planFile))
-				return m.startNextWave(orch, entry)
-			}
-		}
 
 		// Elaboration phase: spawn architect before starting wave 1.
 		orch.SetElaborating()
@@ -1314,13 +1373,14 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			auditlog.WithPlan(planFile))
 		m.loadTaskState()
 		m.updateSidebarTasks()
-		planName := taskstate.DisplayName(planFile)
-		reviewPrompt := scaffold.LoadReviewPrompt(planFile, planName, m.reviewRound(planFile), m.latestReviewFeedback(planFile))
-		return m.spawnTaskAgent(planFile, "review", reviewPrompt)
+		return m, m.spawnReviewer(planFile)
 	}
 
 	// Non-agent stages (finished): mark plan done via FSM.
 	if err := m.fsm.Transition(planFile, taskfsm.ReviewApproved); err != nil {
+		return m, m.handleError(err)
+	}
+	if err := m.clearExecutionState(planFile); err != nil {
 		return m, m.handleError(err)
 	}
 	m.audit(auditlog.EventPlanTransition, string(entry.Status)+" → done",

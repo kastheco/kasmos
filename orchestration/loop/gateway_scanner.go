@@ -66,7 +66,16 @@ func ScanGateway(gw taskstore.SignalGateway, project, claimedBy string) (ScanRes
 
 // ConvertSignalEntry decodes a single SignalEntry and appends it to result.
 func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error {
-	switch entry.SignalType {
+	canonicalType, err := taskfsm.CanonicalGatewaySignalType(entry.SignalType)
+	if err != nil {
+		return err
+	}
+	internalType := canonicalType
+	if canonicalType == "elaborator_finished" {
+		internalType = string(taskfsm.ArchitectFinished)
+	}
+
+	switch internalType {
 	case "planner_finished":
 		body, err := decodeBody(entry.Payload)
 		if err != nil {
@@ -132,9 +141,7 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			TaskFile:   entry.PlanFile,
 		})
 
-	case "elaborator_finished":
-		// The wire contract retains the legacy elaborator_finished signal name,
-		// but internally it marks architect-pass completion.
+	case string(taskfsm.ArchitectFinished):
 		result.ElaborationSignals = append(result.ElaborationSignals, taskfsm.ElaborationSignal{
 			TaskFile: entry.PlanFile,
 		})

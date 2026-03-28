@@ -29,6 +29,10 @@ type PlanDisplay struct {
 	Description string
 	Branch      string
 	Topic       string
+	Phase       string
+	AgentType   string
+	ActiveWave  int
+	ActiveRound int
 }
 
 // TopicStatus captures aggregate run/notification state for a plan.
@@ -66,6 +70,11 @@ type navRow struct {
 	Label           string
 	TaskFile        string
 	PlanStatus      string
+	PlanPhase       string
+	ActiveAgentType string
+	ActiveWave      int
+	ActiveRound     int
+	PlanSortKey     int
 	Instance        *session.Instance
 	Collapsed       bool
 	HasRunning      bool
@@ -85,6 +94,7 @@ var (
 	navRunningIconStyle   = lipgloss.NewStyle().Foreground(ColorFoam)
 	navReadyIconStyle     = lipgloss.NewStyle().Foreground(ColorFoam)
 	navNotifyIconStyle    = lipgloss.NewStyle().Foreground(ColorRose)
+	navWaitingIconStyle   = lipgloss.NewStyle().Foreground(ColorGold)
 	navPausedIconStyle    = lipgloss.NewStyle().Foreground(ColorMuted)
 	navCompletedIconStyle = lipgloss.NewStyle().Foreground(ColorFoam).Faint(true)
 	navIdleIconStyle      = lipgloss.NewStyle().Foreground(ColorMuted)
@@ -331,10 +341,15 @@ func (n *NavigationPanel) rebuildRows() {
 	}
 	sortInsts(solo)
 
-	// Sort plans alphabetically descending (newest date-prefixed names first).
+	// Sort plans by lifecycle priority, then alphabetically descending.
 	sorted := append([]PlanDisplay(nil), n.plans...)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		pi, pj := sorted[i], sorted[j]
+		ki := navPlanSortKey(pi, byPlan[pi.Filename], n.planStatuses[pi.Filename])
+		kj := navPlanSortKey(pj, byPlan[pj.Filename], n.planStatuses[pj.Filename])
+		if ki != kj {
+			return ki < kj
+		}
 		return strings.ToLower(taskstate.DisplayName(pi.Filename)) > strings.ToLower(taskstate.DisplayName(pj.Filename))
 	})
 
@@ -346,12 +361,18 @@ func (n *NavigationPanel) rebuildRows() {
 		insts := byPlan[p.Filename]
 		hasRunning, hasNotif := aggregateNavPlanStatus(insts, n.planStatuses[p.Filename])
 		collapsed := n.isPlanCollapsed(p.Filename, hasRunning, hasNotif)
+		sortKey := navPlanSortKey(p, insts, n.planStatuses[p.Filename])
 		rows = append(rows, navRow{
 			Kind:            navRowPlanHeader,
 			ID:              SidebarPlanPrefix + p.Filename,
-			Label:           taskstate.DisplayName(p.Filename),
+			Label:           navPlanRowLabel(p),
 			TaskFile:        p.Filename,
 			PlanStatus:      p.Status,
+			PlanPhase:       p.Phase,
+			ActiveAgentType: p.AgentType,
+			ActiveWave:      p.ActiveWave,
+			ActiveRound:     p.ActiveRound,
+			PlanSortKey:     sortKey,
 			Collapsed:       collapsed,
 			HasRunning:      hasRunning,
 			HasNotification: hasNotif,
@@ -435,6 +456,15 @@ func (n *NavigationPanel) rebuildRows() {
 			if len(planGroup) == 0 {
 				continue
 			}
+			sort.SliceStable(planGroup, func(i, j int) bool {
+				pi, pj := planGroup[i], planGroup[j]
+				ki := navPlanSortKey(pi, byPlan[pi.Filename], n.planStatuses[pi.Filename])
+				kj := navPlanSortKey(pj, byPlan[pj.Filename], n.planStatuses[pj.Filename])
+				if ki != kj {
+					return ki < kj
+				}
+				return strings.ToLower(taskstate.DisplayName(pi.Filename)) > strings.ToLower(taskstate.DisplayName(pj.Filename))
+			})
 			topicID := SidebarTopicPrefix + t.Name
 			collapsed := n.collapsed[topicID]
 			rows = append(rows, navRow{
@@ -562,7 +592,7 @@ func navInstanceSortKey(inst *session.Instance) int {
 }
 
 // navPlanSortKey returns the sort priority for a plan.
-// 0 = has notification, 1 = running or active lifecycle, 2 = idle.
+// 0 = has notification, 1 = actively running/awaiting action, 2 = planned, 3 = idle.
 func navPlanSortKey(p PlanDisplay, insts []*session.Instance, st TopicStatus) int {
 	hasNotif := st.HasNotification
 	hasRunning := st.HasRunning
@@ -577,11 +607,67 @@ func navPlanSortKey(p PlanDisplay, insts []*session.Instance, st TopicStatus) in
 	switch {
 	case hasNotif:
 		return 0
-	case hasRunning, p.Status == "planning", p.Status == "implementing", p.Status == "reviewing":
+	case hasRunning:
 		return 1
-	default:
+	case strings.TrimSpace(p.Phase) == "architecting",
+		strings.TrimSpace(p.Phase) == "wave_running",
+		strings.TrimSpace(p.Phase) == "wave_waiting",
+		strings.TrimSpace(p.Phase) == "fixing",
+		strings.TrimSpace(p.Phase) == "reviewing",
+		p.Status == "planning",
+		p.Status == "implementing",
+		p.Status == "reviewing":
+		return 1
+	case strings.TrimSpace(p.Phase) == "planned":
 		return 2
+	default:
+		return 3
 	}
+}
+
+func navPlanPhaseLabel(phase string, activeWave, activeRound int) string {
+	switch strings.TrimSpace(phase) {
+	case "planned":
+		return "planned"
+	case "architecting":
+		return "architecting"
+	case "wave_running":
+		if activeWave > 0 {
+			return fmt.Sprintf("wave %d running", activeWave)
+		}
+		return "wave running"
+	case "wave_waiting":
+		return "waiting for confirmation"
+	case "single_agent_implementing":
+		return "implementing"
+	case "fixing":
+		if activeRound > 0 {
+			return fmt.Sprintf("fixing round %d", activeRound)
+		}
+		return "fixing"
+	case "reviewing":
+		if activeRound > 0 {
+			return fmt.Sprintf("reviewing round %d", activeRound)
+		}
+		return "reviewing"
+	default:
+		return ""
+	}
+}
+
+func navPlanRowLabel(p PlanDisplay) string {
+	label := taskstate.DisplayName(p.Filename)
+	stage := navPlanPhaseLabel(p.Phase, p.ActiveWave, p.ActiveRound)
+	if stage == "" {
+		switch p.Status {
+		case "planning", "implementing", "reviewing":
+			stage = p.Status
+		}
+	}
+	if stage == "" {
+		return label
+	}
+	return label + " · " + stage
 }
 
 // aggregateNavPlanStatus derives combined running/notification flags from
@@ -1114,7 +1200,7 @@ func navInstanceTitle(inst *session.Instance) string {
 		return "planning"
 	case inst.SoloAgent && inst.TaskFile != "":
 		return taskstate.DisplayName(inst.TaskFile)
-	case inst.AgentType == session.AgentTypeCoder && inst.TaskFile != "" && inst.WaveNumber == 0:
+	case (inst.AgentType == session.AgentTypeFixer || inst.AgentType == session.AgentTypeCoder) && inst.TaskFile != "" && inst.WaveNumber == 0:
 		if inst.ReviewCycle > 0 {
 			return fmt.Sprintf("applying fixes #%d", inst.ReviewCycle)
 		}
@@ -1159,6 +1245,16 @@ func navPlanStatusIcon(row navRow) string {
 		return navNotifyIconStyle.Render("◉")
 	case row.HasRunning:
 		return navRunningIconStyle.Render("●")
+	case strings.TrimSpace(row.PlanPhase) == "planned":
+		return navReadyIconStyle.Render("◌")
+	case strings.TrimSpace(row.PlanPhase) == "architecting":
+		return navRunningIconStyle.Render("◆")
+	case strings.TrimSpace(row.PlanPhase) == "wave_waiting":
+		return navWaitingIconStyle.Render("◍")
+	case strings.TrimSpace(row.PlanPhase) == "fixing":
+		return navWaitingIconStyle.Render("✦")
+	case strings.TrimSpace(row.PlanPhase) == "reviewing":
+		return navNotifyIconStyle.Render("◉")
 	case row.PlanStatus == "planning":
 		return navRunningIconStyle.Render("●")
 	case row.PlanStatus == "reviewing":
@@ -1404,7 +1500,7 @@ func (n *NavigationPanel) String() string {
 	}
 	items := make([]visItem, 0, len(n.rows)+4)
 	selectedDisplayIdx := 0
-	lastPlanKey := -1 // -1 = no section emitted yet; 0/1 = active; 2 = idle
+	lastPlanKey := -1 // -1 = no section emitted yet; 0/1 = active; 2/3 = plans
 	inDeadSection := false
 
 	for i, row := range n.rows {
@@ -1429,15 +1525,9 @@ func (n *NavigationPanel) String() string {
 			var sk int
 			if row.Kind == navRowTopicHeader {
 				// Topic groups always appear in the idle/plans section.
-				sk = 2
+				sk = 3
 			} else {
-				// Plan header: derive from status flags.
-				if row.HasNotification || row.HasRunning ||
-					row.PlanStatus == "planning" || row.PlanStatus == "implementing" || row.PlanStatus == "reviewing" {
-					sk = 0
-				} else {
-					sk = 2
-				}
+				sk = row.PlanSortKey
 			}
 			if sk != lastPlanKey {
 				items = append(items, visItem{line: navDividerLine(navSectionLabel(sk), itemWidth), rowIdx: -1})
@@ -1496,8 +1586,9 @@ func (n *NavigationPanel) String() string {
 
 	// Legend — icon key centred in the pane.
 	legendContent := navIdleIconStyle.Render("○") + navLegendLabelStyle.Render(" idle") +
-		"  " + navRunningIconStyle.Render("●") + navLegendLabelStyle.Render(" planning") +
+		"  " + navReadyIconStyle.Render("◌") + navLegendLabelStyle.Render(" planned") +
 		"  " + navRunningIconStyle.Render("●") + navLegendLabelStyle.Render(" running") +
+		"  " + navWaitingIconStyle.Render("◍") + navLegendLabelStyle.Render(" waiting") +
 		"  " + navNotifyIconStyle.Render("◉") + navLegendLabelStyle.Render(" review")
 	legend := lipgloss.NewStyle().Width(innerWidth).Align(lipgloss.Center).Render(legendContent)
 

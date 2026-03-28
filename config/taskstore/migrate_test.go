@@ -356,3 +356,98 @@ func TestMigrateStripMdSuffix_CollisionSafe(t *testing.T) {
 	require.NoError(t, subtaskRows.Err())
 	assert.Equal(t, []string{"other:renamed", "task:bare", "task.md:suffixed"}, subtaskRefs)
 }
+
+func TestSQLiteStore_MigratesExecutionStateColumnsFromOldSchema(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "taskstore.db")
+
+	legacyDB, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+
+	_, err = legacyDB.Exec(`
+		CREATE TABLE tasks (
+			id INTEGER PRIMARY KEY,
+			project TEXT NOT NULL,
+			filename TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'ready',
+			description TEXT NOT NULL DEFAULT '',
+			branch TEXT NOT NULL DEFAULT '',
+			topic TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL DEFAULT '',
+			implemented TEXT NOT NULL DEFAULT '',
+			planning_at TEXT NOT NULL DEFAULT '',
+			implementing_at TEXT NOT NULL DEFAULT '',
+			reviewing_at TEXT NOT NULL DEFAULT '',
+			done_at TEXT NOT NULL DEFAULT '',
+			goal TEXT NOT NULL DEFAULT '',
+			content TEXT NOT NULL DEFAULT '',
+			clickup_task_id TEXT NOT NULL DEFAULT '',
+			review_cycle INTEGER NOT NULL DEFAULT 0,
+			latest_review_feedback TEXT NOT NULL DEFAULT '',
+			pr_url TEXT NOT NULL DEFAULT '',
+			pr_review_decision TEXT NOT NULL DEFAULT '',
+			pr_check_status TEXT NOT NULL DEFAULT '',
+			UNIQUE(project, filename)
+		);
+		CREATE TABLE topics (
+			id INTEGER PRIMARY KEY,
+			project TEXT NOT NULL,
+			name TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT '',
+			UNIQUE(project, name)
+		);
+	`)
+	require.NoError(t, err)
+
+	_, err = legacyDB.Exec(`INSERT INTO tasks (project, filename, status, description) VALUES ('proj', 'legacy', 'implementing', 'old row')`)
+	require.NoError(t, err)
+	require.NoError(t, legacyDB.Close())
+
+	store, err := NewSQLiteStore(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { store.Close() })
+
+	entry, err := store.Get("proj", "legacy")
+	require.NoError(t, err)
+	assert.Equal(t, ExecutionState{}, entry.ExecutionState)
+
+	require.True(t, hasTaskColumn(t, store.db, "execution_phase"))
+	require.True(t, hasTaskColumn(t, store.db, "active_agent_type"))
+	require.True(t, hasTaskColumn(t, store.db, "active_wave"))
+
+	require.NoError(t, store.SetExecutionState("proj", "legacy", ExecutionState{
+		Phase:           "wave_running",
+		ActiveAgentType: "coder",
+		ActiveWave:      2,
+	}))
+
+	updated, err := store.Get("proj", "legacy")
+	require.NoError(t, err)
+	assert.Equal(t, ExecutionState{
+		Phase:           "wave_running",
+		ActiveAgentType: "coder",
+		ActiveWave:      2,
+	}, updated.ExecutionState)
+}
+
+func hasTaskColumn(t *testing.T, db *sql.DB, columnName string) bool {
+	t.Helper()
+
+	rows, err := db.Query(`PRAGMA table_info(tasks)`)
+	require.NoError(t, err)
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull int
+		var dfltValue sql.NullString
+		var pk int
+		require.NoError(t, rows.Scan(&cid, &name, &colType, &notNull, &dfltValue, &pk))
+		if name == columnName {
+			return true
+		}
+	}
+	require.NoError(t, rows.Err())
+	return false
+}

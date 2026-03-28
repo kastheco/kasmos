@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/spf13/cobra"
 )
@@ -15,9 +16,15 @@ import (
 // statusTask is the JSON-serialisable representation of a task entry for the
 // status command output.
 type statusTask struct {
-	Name   string `json:"name"`
-	Status string `json:"status"`
-	Branch string `json:"branch"`
+	Name              string `json:"name"`
+	Status            string `json:"status"`
+	Stage             string `json:"stage,omitempty"`
+	Phase             string `json:"phase,omitempty"`
+	ActiveAgentType   string `json:"active_agent_type,omitempty"`
+	ActiveWave        int    `json:"active_wave,omitempty"`
+	ReviewCycle       int    `json:"review_cycle,omitempty"`
+	HasReviewFeedback bool   `json:"has_review_feedback,omitempty"`
+	Branch            string `json:"branch"`
 }
 
 // statusInstance is the JSON-serialisable representation of an instance record
@@ -45,6 +52,90 @@ type statusData struct {
 	OrphanSessions []statusOrphan   `json:"orphan_sessions"`
 }
 
+func statusAgentLabel(agent string) string {
+	switch strings.TrimSpace(agent) {
+	case "elaborator":
+		return "architect"
+	default:
+		return strings.TrimSpace(agent)
+	}
+}
+
+func statusDisplayReviewRound(entry taskstore.TaskEntry) int {
+	phase := strings.TrimSpace(entry.ExecutionState.Phase)
+	if phase == string(taskfsm.ExecutionPhaseFixing) || phase == string(taskfsm.ExecutionPhaseReviewing) || entry.Status == taskstore.StatusReviewing {
+		return entry.ReviewCycle + 1
+	}
+	return 0
+}
+
+func statusStageForTask(entry taskstore.TaskEntry) string {
+	phase := strings.TrimSpace(entry.ExecutionState.Phase)
+	round := statusDisplayReviewRound(entry)
+	switch phase {
+	case string(taskfsm.ExecutionPhasePlanned):
+		return "planned"
+	case string(taskfsm.ExecutionPhaseArchitecting):
+		return "architecting"
+	case string(taskfsm.ExecutionPhaseWaveRunning):
+		if entry.ExecutionState.ActiveWave > 0 {
+			return fmt.Sprintf("wave %d running", entry.ExecutionState.ActiveWave)
+		}
+		return "wave running"
+	case string(taskfsm.ExecutionPhaseWaveWaiting):
+		return "waiting for confirmation"
+	case string(taskfsm.ExecutionPhaseSingleAgentImplementing):
+		return "implementing"
+	case string(taskfsm.ExecutionPhaseFixing):
+		if round > 0 {
+			return fmt.Sprintf("fixing round %d", round)
+		}
+		return "fixing"
+	case string(taskfsm.ExecutionPhaseReviewing):
+		if round > 0 {
+			return fmt.Sprintf("reviewing round %d", round)
+		}
+		return "reviewing"
+	}
+	return string(entry.Status)
+}
+
+func statusRecoveryHints(tasks []statusTask) []string {
+	var hints []string
+	seen := make(map[string]struct{})
+	appendHint := func(hint string) {
+		if hint == "" {
+			return
+		}
+		if _, ok := seen[hint]; ok {
+			return
+		}
+		seen[hint] = struct{}{}
+		hints = append(hints, hint)
+	}
+
+	for _, t := range tasks {
+		phase := strings.TrimSpace(t.Phase)
+		switch {
+		case t.Status == string(taskstore.StatusPlanning):
+			appendHint("  kas task recover <task-name> --action planner-finished                # finish planning safely")
+		case phase == string(taskfsm.ExecutionPhaseArchitecting):
+			appendHint("  kas task recover <task-name> --action architect-finished              # resume architect handoff")
+		case phase == string(taskfsm.ExecutionPhaseFixing) || phase == string(taskfsm.ExecutionPhaseSingleAgentImplementing):
+			appendHint("  kas task recover <task-name> --action implement-finished             # hand implementation to review")
+		case phase == string(taskfsm.ExecutionPhaseReviewing) || t.Status == string(taskstore.StatusReviewing):
+			appendHint("  kas task recover <task-name> --action review-approved                # finish review")
+			appendHint("  kas task recover <task-name> --action review-changes --feedback ...  # queue fixer recovery")
+			appendHint("  kas task recover <task-name> --action advance-review-cycle --feedback ...  # persist next review round")
+		}
+		if t.Status == string(taskstore.StatusReady) {
+			appendHint("  kas task implement <task-name>                                        # start implementing a ready task")
+		}
+	}
+
+	return hints
+}
+
 // executeStatus assembles a unified overview of active tasks, agent instances,
 // and orphan tmux sessions. It is the testable core of NewStatusCmd.
 //
@@ -65,9 +156,15 @@ func executeStatus(state config.StateManager, store taskstore.Store, project str
 					continue
 				}
 				tasks = append(tasks, statusTask{
-					Name:   e.Filename,
-					Status: string(e.Status),
-					Branch: e.Branch,
+					Name:              e.Filename,
+					Status:            string(e.Status),
+					Stage:             statusStageForTask(e),
+					Phase:             strings.TrimSpace(e.ExecutionState.Phase),
+					ActiveAgentType:   statusAgentLabel(e.ExecutionState.ActiveAgentType),
+					ActiveWave:        e.ExecutionState.ActiveWave,
+					ReviewCycle:       statusDisplayReviewRound(e),
+					HasReviewFeedback: strings.TrimSpace(e.LatestReviewFeedback) != "",
+					Branch:            e.Branch,
 				})
 			}
 		}
@@ -141,9 +238,17 @@ func executeStatus(state config.StateManager, store taskstore.Store, project str
 		sb.WriteString("  no active tasks\n")
 	} else {
 		w := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "  STATUS\tNAME\tBRANCH")
+		fmt.Fprintln(w, "  STATUS\tLIFECYCLE\tAGENT\tFEEDBACK\tNAME\tBRANCH")
 		for _, t := range tasks {
-			fmt.Fprintf(w, "  %s\t%s\t%s\n", t.Status, t.Name, t.Branch)
+			feedback := "-"
+			if t.HasReviewFeedback {
+				feedback = "yes"
+			}
+			agent := t.ActiveAgentType
+			if agent == "" {
+				agent = "-"
+			}
+			fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\n", t.Status, t.Stage, agent, feedback, t.Name, t.Branch)
 		}
 		w.Flush()
 	}
@@ -179,13 +284,7 @@ func executeStatus(state config.StateManager, store taskstore.Store, project str
 	}
 
 	// Hints section — only shown when at least one condition applies.
-	var hints []string
-	for _, t := range tasks {
-		if t.Status == string(taskstore.StatusReady) {
-			hints = append(hints, "  kas task implement <task-name>    # start implementing a ready task")
-			break
-		}
-	}
+	hints := statusRecoveryHints(tasks)
 	for _, i := range instances {
 		if i.Status == "paused" {
 			hints = append(hints, "  kas instance resume <title>       # resume a paused instance")
@@ -220,7 +319,11 @@ func NewStatusCmd() *cobra.Command {
 				return err
 			}
 			state := config.LoadState()
-			store := resolveStore(project)
+			store, err := taskstore.OpenAuthoritativeStore(project)
+			if err != nil {
+				return err
+			}
+			defer store.Close()
 			format := "text"
 			if jsonFlag {
 				format = "json"

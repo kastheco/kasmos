@@ -54,3 +54,21 @@ func TestScanGateway_BadPayloadReturnsError(t *testing.T) {
 	require.NoError(t, listErr)
 	assert.Len(t, failed, 1)
 }
+
+func TestConvertSignalEntry_AcceptsArchitectSignalAliasesAtGatewayBoundary(t *testing.T) {
+	t.Parallel()
+
+	entries := []*taskstore.SignalEntry{
+		{PlanFile: "legacy-plan", SignalType: "elaborator_finished"},
+		{PlanFile: "canonical-plan", SignalType: "architect_finished"},
+	}
+
+	var result ScanResult
+	for _, entry := range entries {
+		require.NoError(t, ConvertSignalEntry(entry, &result))
+	}
+
+	require.Len(t, result.ElaborationSignals, 2)
+	assert.Equal(t, "legacy-plan", result.ElaborationSignals[0].TaskFile)
+	assert.Equal(t, "canonical-plan", result.ElaborationSignals[1].TaskFile)
+}

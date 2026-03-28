@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -53,6 +54,7 @@ type TmuxSpawner struct {
 	drainTimeout time.Duration
 	mu           sync.Mutex
 	instances    map[string]*session.Instance
+	replacing    map[string]bool // keys with an active replacement spawn in progress
 	// planFileByKey stores the planFile portion of the key for RunningInstances.
 	planFileByKey  map[string]string
 	agentTypeByKey map[string]string
@@ -69,6 +71,8 @@ type TmuxSpawner struct {
 	restoreInstance    func(session.InstanceData) (*session.Instance, error)
 	cleanupGracePeriod time.Duration
 }
+
+var errInstanceAlreadyTracked = errors.New("instance already tracked")
 
 // NewTmuxSpawner returns a TmuxSpawner. An optional TmuxSpawnerConfig may be
 // provided; if omitted or zero-valued, sensible defaults are used.
@@ -99,6 +103,7 @@ func newTmuxSpawnerWithConfig(logger *slog.Logger, drainTimeout time.Duration) *
 		logger:         logger,
 		drainTimeout:   drainTimeout,
 		instances:      make(map[string]*session.Instance),
+		replacing:      make(map[string]bool),
 		planFileByKey:  make(map[string]string),
 		agentTypeByKey: make(map[string]string),
 		projectByKey:   make(map[string]string),
@@ -276,6 +281,11 @@ func (s *TmuxSpawner) DiscoverOrphanSessions() []tmuxpkg.SessionInfo {
 // RestoreTrackedInstance re-adopts a previously running agent instance into the
 // spawner's tracking maps.
 func (s *TmuxSpawner) RestoreTrackedInstance(repoPath, project, planFile, agentType string, data session.InstanceData) error {
+	key := instanceKeyForTask(repoPath, planFile, agentType, data.WaveNumber, data.TaskNumber)
+	if !s.reserveInstanceSlot(key, data.Title) {
+		return errInstanceAlreadyTracked
+	}
+
 	restore := s.restoreInstance
 	if restore == nil {
 		restore = session.FromInstanceData
@@ -283,16 +293,11 @@ func (s *TmuxSpawner) RestoreTrackedInstance(repoPath, project, planFile, agentT
 
 	inst, err := restore(data)
 	if err != nil {
+		s.releaseReservation(key)
 		return err
 	}
 
-	key := instanceKey(repoPath, planFile, agentType)
-	s.mu.Lock()
-	s.instances[key] = inst
-	s.planFileByKey[key] = planFile
-	s.agentTypeByKey[key] = agentType
-	s.projectByKey[key] = project
-	s.mu.Unlock()
+	s.commitInstance(key, planFile, agentType, project, inst)
 	return nil
 }
 
@@ -325,6 +330,68 @@ func instanceKeyForTask(repoPath, planFile, agentType string, waveNumber, taskNu
 	return repoPath + ":" + planFile + ":" + agentType
 }
 
+// reserveInstanceSlot atomically checks whether key/title is already tracked
+// and, if not, inserts a nil placeholder to block concurrent spawns for the
+// same slot. Returns true when the reservation succeeds — the caller MUST call
+// commitInstance (on success) or releaseReservation (on failure).
+func (s *TmuxSpawner) reserveInstanceSlot(key, title string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if key != "" {
+		if inst, ok := s.instances[key]; ok {
+			if title == "" || inst == nil || inst.Title == title {
+				return false // same agent already tracked or reserved
+			}
+			// Different title at the same key means the caller is replacing an
+			// old agent (e.g. fixer respawn after a new review cycle). Block
+			// concurrent replacements via the replacing map while preserving
+			// the existing instance so KillAgent can still find it.
+			if s.replacing[key] {
+				return false // another replacement is already in progress
+			}
+			s.replacing[key] = true
+			return true
+		}
+	}
+	if title != "" {
+		for _, inst := range s.instances {
+			if inst != nil && inst.Title == title {
+				return false
+			}
+		}
+	}
+	if key != "" {
+		s.instances[key] = nil // placeholder — blocks concurrent callers
+	}
+	return true
+}
+
+// commitInstance replaces a reserved placeholder (nil or old instance being
+// replaced) with the real instance and fills in the tracking metadata maps.
+func (s *TmuxSpawner) commitInstance(key, planFile, agentType, project string, inst *session.Instance) {
+	s.mu.Lock()
+	s.instances[key] = inst
+	s.planFileByKey[key] = planFile
+	s.agentTypeByKey[key] = agentType
+	s.projectByKey[key] = project
+	delete(s.replacing, key)
+	s.mu.Unlock()
+}
+
+// releaseReservation removes a nil placeholder or replacement lock from a
+// failed spawn attempt so the slot can be retried later.
+func (s *TmuxSpawner) releaseReservation(key string) {
+	s.mu.Lock()
+	if s.instances[key] == nil {
+		delete(s.instances, key)
+		delete(s.planFileByKey, key)
+		delete(s.agentTypeByKey, key)
+		delete(s.projectByKey, key)
+	}
+	delete(s.replacing, key)
+	s.mu.Unlock()
+}
+
 // SpawnReviewer launches a reviewer agent in the plan's shared worktree.
 func (s *TmuxSpawner) SpawnReviewer(ctx context.Context, opts loop.SpawnOpts) error {
 	s.logger.Info("spawn reviewer", "plan", opts.PlanFile, "wave", opts.Wave)
@@ -348,13 +415,22 @@ func (s *TmuxSpawner) SpawnCoder(ctx context.Context, opts loop.SpawnOpts) error
 // first so the fixer starts with a clean slate.
 func (s *TmuxSpawner) SpawnFixer(ctx context.Context, opts loop.SpawnOpts) error {
 	s.logger.Info("spawn fixer", "plan", opts.PlanFile, "wave", opts.Wave)
+	key := instanceKey(opts.RepoPath, opts.PlanFile, session.AgentTypeFixer)
+	title := orchestration.BuildLifecycleAgentTitle(opts.PlanFile, session.AgentTypeFixer, opts.ReviewCycle)
+	if !s.reserveInstanceSlot(key, title) {
+		s.logger.Info("suppress duplicate tracked agent", "plan", opts.PlanFile, "type", session.AgentTypeFixer, "title", title)
+		return nil
+	}
+	// KillAgent is nil-safe: it skips the reserved placeholder we just inserted.
 	if err := s.KillAgent(opts.RepoPath, opts.PlanFile, session.AgentTypeFixer); err != nil {
+		s.releaseReservation(key)
 		return fmt.Errorf("spawn fixer: kill existing fixer: %w", err)
 	}
 	if err := s.KillAgent(opts.RepoPath, opts.PlanFile, session.AgentTypeCoder); err != nil {
+		s.releaseReservation(key)
 		return fmt.Errorf("spawn fixer: kill existing coder: %w", err)
 	}
-	return s.spawnInSharedWorktree(ctx, opts, session.AgentTypeFixer)
+	return s.spawnInSharedWorktreeReserved(ctx, opts, session.AgentTypeFixer, key)
 }
 
 // SpawnElaborator launches the architect pass on the main branch.
@@ -369,11 +445,26 @@ func (s *TmuxSpawner) spawnOnMainBranch(_ context.Context, opts loop.SpawnOpts, 
 		return fmt.Errorf("TmuxSpawner.%s: RepoPath is required", agentType)
 	}
 
-	planName := taskstate.DisplayName(opts.PlanFile)
-	title := fmt.Sprintf("%s-%s", planName, titleSuffix)
+	title := ""
+	prompt := opts.Prompt
+	if agentType == session.AgentTypeElaborator {
+		spec := orchestration.BuildArchitectAgentSpec(opts.PlanFile)
+		title = spec.Title
+		if prompt == "" {
+			prompt = spec.Prompt
+		}
+	} else {
+		planName := taskstate.DisplayName(opts.PlanFile)
+		title = fmt.Sprintf("%s-%s", planName, titleSuffix)
+	}
 	program := opts.Program
 	if program == "" {
 		program = "opencode"
+	}
+	key := instanceKey(opts.RepoPath, opts.PlanFile, agentType)
+	if !s.reserveInstanceSlot(key, title) {
+		s.logger.Info("suppress duplicate tracked agent", "plan", opts.PlanFile, "type", agentType, "title", title)
+		return nil
 	}
 
 	inst, err := session.NewInstance(session.InstanceOptions{
@@ -384,22 +475,18 @@ func (s *TmuxSpawner) spawnOnMainBranch(_ context.Context, opts loop.SpawnOpts, 
 		TaskFile:  opts.PlanFile,
 	})
 	if err != nil {
+		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.%s: create instance: %w", agentType, err)
 	}
-	inst.QueuedPrompt = opts.Prompt
+	inst.QueuedPrompt = prompt
 	inst.SetStatus(session.Loading)
 
 	if err := inst.StartOnMainBranch(); err != nil {
+		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.%s: start: %w", agentType, err)
 	}
 
-	key := instanceKey(opts.RepoPath, opts.PlanFile, agentType)
-	s.mu.Lock()
-	s.instances[key] = inst
-	s.planFileByKey[key] = opts.PlanFile
-	s.agentTypeByKey[key] = agentType
-	s.projectByKey[key] = opts.Project
-	s.mu.Unlock()
+	s.commitInstance(key, opts.PlanFile, agentType, opts.Project, inst)
 	return nil
 }
 
@@ -416,12 +503,13 @@ func (s *TmuxSpawner) KillAgent(repoPath, planFile, agentType string) error {
 	// We only remove it after gracefulKill confirms the session was actually
 	// terminated. If a tmux client is attached gracefulKill returns (false,
 	// nil) and the daemon must retain ownership so it can target the session
-	// in future operations.
+	// in future operations. A nil instance (reservation placeholder) is
+	// treated as absent.
 	s.mu.Lock()
 	inst, ok := s.instances[key]
 	s.mu.Unlock()
 
-	if !ok {
+	if !ok || inst == nil {
 		return nil
 	}
 	sessionName := tmuxpkg.ToKasTmuxNamePublic(inst.Title)
@@ -496,13 +584,16 @@ func (s *TmuxSpawner) SpawnWaveTask(_ context.Context, opts loop.SpawnOpts, task
 		return fmt.Errorf("TmuxSpawner.wave-task: Wave is required")
 	}
 
-	planName := taskstate.DisplayName(opts.PlanFile)
-	title := fmt.Sprintf("%s-W%d-T%d", planName, opts.Wave, task.Number)
+	title := orchestration.BuildWaveTaskTitle(opts.PlanFile, opts.Wave, task.Number)
+	key := instanceKeyForTask(opts.RepoPath, opts.PlanFile, session.AgentTypeCoder, opts.Wave, task.Number)
+	if !s.reserveInstanceSlot(key, title) {
+		s.logger.Info("suppress duplicate tracked wave task", "plan", opts.PlanFile, "wave", opts.Wave, "task", task.Number, "title", title)
+		return nil
+	}
 	program := opts.Program
 	if program == "" {
 		program = "opencode"
 	}
-
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:      title,
 		Path:       opts.RepoPath,
@@ -514,6 +605,7 @@ func (s *TmuxSpawner) SpawnWaveTask(_ context.Context, opts loop.SpawnOpts, task
 		PeerCount:  peerCount,
 	})
 	if err != nil {
+		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.wave-task: create instance: %w", err)
 	}
 	inst.QueuedPrompt = prompt
@@ -521,32 +613,45 @@ func (s *TmuxSpawner) SpawnWaveTask(_ context.Context, opts loop.SpawnOpts, task
 
 	shared := gitpkg.NewSharedTaskWorktree(opts.RepoPath, opts.Branch)
 	if err := shared.Setup(); err != nil {
+		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.wave-task: setup shared worktree: %w", err)
 	}
 	if err := ensureWorktreeScaffold(shared.GetWorktreePath(), program, session.AgentTypeCoder); err != nil {
+		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.wave-task: sync scaffold: %w", err)
 	}
 	if err := inst.StartInSharedWorktree(shared, opts.Branch); err != nil {
+		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.wave-task: start in shared worktree: %w", err)
 	}
 
-	key := instanceKeyForTask(opts.RepoPath, opts.PlanFile, session.AgentTypeCoder, opts.Wave, task.Number)
-	s.mu.Lock()
-	s.instances[key] = inst
-	s.planFileByKey[key] = opts.PlanFile
-	s.agentTypeByKey[key] = session.AgentTypeCoder
-	s.projectByKey[key] = opts.Project
-	s.mu.Unlock()
+	s.commitInstance(key, opts.PlanFile, session.AgentTypeCoder, opts.Project, inst)
 	return nil
 }
 
 // spawnInSharedWorktree creates an instance for the given agent type, sets up
 // the plan's shared worktree, and starts the instance inside it.
-func (s *TmuxSpawner) spawnInSharedWorktree(_ context.Context, opts loop.SpawnOpts, agentType string) error {
+func (s *TmuxSpawner) spawnInSharedWorktree(ctx context.Context, opts loop.SpawnOpts, agentType string) error {
+	key := instanceKey(opts.RepoPath, opts.PlanFile, agentType)
+	title := orchestration.BuildLifecycleAgentTitle(opts.PlanFile, agentType, opts.ReviewCycle)
+	if !s.reserveInstanceSlot(key, title) {
+		s.logger.Info("suppress duplicate tracked agent", "plan", opts.PlanFile, "type", agentType, "title", title)
+		return nil
+	}
+	return s.spawnInSharedWorktreeReserved(ctx, opts, agentType, key)
+}
+
+// spawnInSharedWorktreeReserved is the inner spawn path used when the caller
+// has already reserved the instance slot (e.g. SpawnFixer reserves before
+// killing existing agents). The caller MUST have called reserveInstanceSlot
+// for key before entering this function.
+func (s *TmuxSpawner) spawnInSharedWorktreeReserved(_ context.Context, opts loop.SpawnOpts, agentType, key string) error {
 	if opts.RepoPath == "" {
+		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.%s: RepoPath is required", agentType)
 	}
 	if opts.Branch == "" {
+		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.%s: Branch is required", agentType)
 	}
 
@@ -565,6 +670,7 @@ func (s *TmuxSpawner) spawnInSharedWorktree(_ context.Context, opts loop.SpawnOp
 		ReviewCycle: opts.ReviewCycle,
 	})
 	if err != nil {
+		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.%s: create instance: %w", agentType, err)
 	}
 	inst.QueuedPrompt = opts.Prompt
@@ -572,22 +678,19 @@ func (s *TmuxSpawner) spawnInSharedWorktree(_ context.Context, opts loop.SpawnOp
 
 	shared := gitpkg.NewSharedTaskWorktree(opts.RepoPath, opts.Branch)
 	if err := shared.Setup(); err != nil {
+		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.%s: setup shared worktree: %w", agentType, err)
 	}
 	if err := ensureWorktreeScaffold(shared.GetWorktreePath(), program, agentType); err != nil {
+		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.%s: sync scaffold: %w", agentType, err)
 	}
 	if err := inst.StartInSharedWorktree(shared, opts.Branch); err != nil {
+		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.%s: start in shared worktree: %w", agentType, err)
 	}
 
-	key := instanceKey(opts.RepoPath, opts.PlanFile, agentType)
-	s.mu.Lock()
-	s.instances[key] = inst
-	s.planFileByKey[key] = opts.PlanFile
-	s.agentTypeByKey[key] = agentType
-	s.projectByKey[key] = opts.Project
-	s.mu.Unlock()
+	s.commitInstance(key, opts.PlanFile, agentType, opts.Project, inst)
 	return nil
 }
 
