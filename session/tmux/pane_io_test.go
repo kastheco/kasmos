@@ -113,6 +113,37 @@ func TestGetSanitizedName(t *testing.T) {
 	assert.Equal(t, "kas_my-session", s.GetSanitizedName())
 }
 
+func TestSendPermissionResponse_DelegatesToClaudeAdapter(t *testing.T) {
+	var ranCmds []string
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			ranCmds = append(ranCmds, strings.Join(cmd.Args, " "))
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			return []byte(""), nil
+		},
+	}
+	s := NewTmuxSessionWithDeps("claude-perm", "claude", false, &MockPtyFactory{}, cmdExec)
+
+	err := s.SendPermissionResponse(PermissionAllowOnce)
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		"tmux send-keys -l -t kas_claude-perm y",
+		"tmux send-keys -t kas_claude-perm Enter",
+	}, ranCmds)
+}
+
+func TestSendPermissionResponse_UnsupportedProgram(t *testing.T) {
+	s := NewTmuxSessionWithDeps("unsupported-perm", "vim", false, &MockPtyFactory{}, cmd_test.MockCmdExec{
+		RunFunc:    func(cmd *exec.Cmd) error { return nil },
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return nil, nil },
+	})
+
+	err := s.SendPermissionResponse(PermissionAllowOnce)
+	require.EqualError(t, err, "SendPermissionResponse: unsupported program \"vim\"")
+}
+
 func TestHasUpdated_ContentChange(t *testing.T) {
 	callCount := 0
 	cmdExec := cmd_test.MockCmdExec{

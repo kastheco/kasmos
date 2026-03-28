@@ -47,42 +47,58 @@ func (t *TmuxSession) TapDAndEnter() error {
 	return t.cmdExec.Run(cmd)
 }
 
-// SendPermissionResponse sends the appropriate key sequence for the given
-// permission choice, then waits 300ms for the confirmation dialog to appear
-// and confirms with a second Enter.
-//
-// Permission menu layout (left to right):
-//
-//	[Allow Once] → [Allow Always] → [Reject]
-//
-// AllowOnce: Enter (default, no navigation needed) + confirm Enter → 2 commands
-// AllowAlways: Right + Enter + confirm Enter                        → 3 commands
-// Reject: Right + Right + Enter + confirm Enter                     → 4 commands
+// SendPermissionResponse delegates permission prompt responses to the
+// program adapter for this tmux session.
 func (t *TmuxSession) SendPermissionResponse(choice PermissionChoice) error {
+	adapter := AdapterFor(t.program)
+	if adapter == nil {
+		return fmt.Errorf("SendPermissionResponse: unsupported program %q", t.program)
+	}
+	return adapter.SendPermissionResponse(t, choice)
+}
+
+// SendPermissionResponse sends Claude Code's literal yes/no response followed
+// by Enter. AllowAlways intentionally matches AllowOnce because Claude caches
+// permission state above the tmux pane responder layer.
+func (a claudeAdapter) SendPermissionResponse(session *TmuxSession, choice PermissionChoice) error {
+	key := "y"
+	if choice == PermissionReject {
+		key = "n"
+	}
+
+	if err := session.SendKeys(key); err != nil {
+		return fmt.Errorf("SendPermissionResponse: send %q: %w", key, err)
+	}
+	if err := session.TapEnter(); err != nil {
+		return fmt.Errorf("SendPermissionResponse: confirm selection: %w", err)
+	}
+	return nil
+}
+
+// SendPermissionResponse sends OpenCode's menu-navigation key sequence,
+// waits for the confirmation dialog, then confirms it with a second Enter.
+func (a opencodeAdapter) SendPermissionResponse(session *TmuxSession, choice PermissionChoice) error {
 	switch choice {
 	case PermissionAllowAlways:
-		if err := t.TapRight(); err != nil {
+		if err := session.TapRight(); err != nil {
 			return fmt.Errorf("SendPermissionResponse: navigate right: %w", err)
 		}
 	case PermissionReject:
-		if err := t.TapRight(); err != nil {
+		if err := session.TapRight(); err != nil {
 			return fmt.Errorf("SendPermissionResponse: navigate right (1): %w", err)
 		}
-		if err := t.TapRight(); err != nil {
+		if err := session.TapRight(); err != nil {
 			return fmt.Errorf("SendPermissionResponse: navigate right (2): %w", err)
 		}
 	}
 
-	// Confirm the selected choice.
-	if err := t.TapEnter(); err != nil {
+	if err := session.TapEnter(); err != nil {
 		return fmt.Errorf("SendPermissionResponse: confirm selection: %w", err)
 	}
 
-	// Wait for the confirmation dialog to appear before dismissing it.
 	time.Sleep(300 * time.Millisecond)
 
-	// Dismiss the confirmation dialog.
-	if err := t.TapEnter(); err != nil {
+	if err := session.TapEnter(); err != nil {
 		return fmt.Errorf("SendPermissionResponse: confirm dialog: %w", err)
 	}
 	return nil

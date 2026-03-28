@@ -35,6 +35,10 @@ type ProgramAdapter interface {
 	// SupportsCliPrompt reports whether this program supports receiving a prompt
 	// directly from the CLI (as opposed to via send-keys after startup).
 	SupportsCliPrompt() bool
+
+	// SendPermissionResponse sends the harness-specific key sequence for a
+	// permission prompt choice through the tmux session.
+	SendPermissionResponse(session *TmuxSession, choice PermissionChoice) error
 }
 
 // AdapterFor returns the ProgramAdapter for the given program string, or nil

@@ -1,11 +1,28 @@
 package tmux
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
 
+	"github.com/kastheco/kasmos/cmd/cmd_test"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func newPermissionCommandCaptureSession(program string) (*TmuxSession, *[]string) {
+	ranCmds := []string{}
+	exec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			ranCmds = append(ranCmds, strings.Join(cmd.Args, " "))
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			return []byte("output"), nil
+		},
+	}
+	return NewTmuxSessionWithDeps("adapter-test", program, false, &MockPtyFactory{}, exec), &ranCmds
+}
 
 func TestClaudeAdapter_ReadyString(t *testing.T) {
 	a := claudeAdapter{}
@@ -95,4 +112,93 @@ func TestAdapterFor_OpenCode(t *testing.T) {
 func TestAdapterFor_Unknown(t *testing.T) {
 	a := AdapterFor("vim")
 	assert.Nil(t, a)
+}
+
+func TestClaudeAdapter_SendPermissionResponse(t *testing.T) {
+	tests := []struct {
+		name     string
+		choice   PermissionChoice
+		expected []string
+	}{
+		{
+			name:   "allow once",
+			choice: PermissionAllowOnce,
+			expected: []string{
+				"tmux send-keys -l -t kas_adapter-test y",
+				"tmux send-keys -t kas_adapter-test Enter",
+			},
+		},
+		{
+			name:   "allow always",
+			choice: PermissionAllowAlways,
+			expected: []string{
+				"tmux send-keys -l -t kas_adapter-test y",
+				"tmux send-keys -t kas_adapter-test Enter",
+			},
+		},
+		{
+			name:   "reject",
+			choice: PermissionReject,
+			expected: []string{
+				"tmux send-keys -l -t kas_adapter-test n",
+				"tmux send-keys -t kas_adapter-test Enter",
+			},
+		},
+	}
+
+	adapter := claudeAdapter{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session, ranCmds := newPermissionCommandCaptureSession("claude")
+			err := adapter.SendPermissionResponse(session, tt.choice)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, *ranCmds)
+		})
+	}
+}
+
+func TestOpenCodeAdapter_SendPermissionResponse(t *testing.T) {
+	tests := []struct {
+		name     string
+		choice   PermissionChoice
+		expected []string
+	}{
+		{
+			name:   "allow once",
+			choice: PermissionAllowOnce,
+			expected: []string{
+				"tmux send-keys -t kas_adapter-test Enter",
+				"tmux send-keys -t kas_adapter-test Enter",
+			},
+		},
+		{
+			name:   "allow always",
+			choice: PermissionAllowAlways,
+			expected: []string{
+				"tmux send-keys -t kas_adapter-test Right",
+				"tmux send-keys -t kas_adapter-test Enter",
+				"tmux send-keys -t kas_adapter-test Enter",
+			},
+		},
+		{
+			name:   "reject",
+			choice: PermissionReject,
+			expected: []string{
+				"tmux send-keys -t kas_adapter-test Right",
+				"tmux send-keys -t kas_adapter-test Right",
+				"tmux send-keys -t kas_adapter-test Enter",
+				"tmux send-keys -t kas_adapter-test Enter",
+			},
+		},
+	}
+
+	adapter := opencodeAdapter{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session, ranCmds := newPermissionCommandCaptureSession("opencode")
+			err := adapter.SendPermissionResponse(session, tt.choice)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, *ranCmds)
+		})
+	}
 }

@@ -18,6 +18,8 @@ type Session interface {
 	SendKeys(keys string) error
 	TapEnter() error
 	TapRight() error
+	// SendPermissionResponse dispatches an adapter-specific permission response
+	// sequence for the active harness.
 	SendPermissionResponse(choice PermissionChoice) error
 	CapturePaneContent() (string, error)
 	CapturePaneContentWithOptions(start, end string) (string, error)
