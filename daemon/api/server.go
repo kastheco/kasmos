@@ -5,14 +5,25 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kastheco/kasmos/config/taskstore"
 )
+
+// ErrTaskStoreUnavailable indicates that a project is registered but its
+// backing task store is currently unavailable.
+var ErrTaskStoreUnavailable = errors.New("task store unavailable")
+
+// ErrProjectNotFound indicates that no project with the given name is
+// registered with the daemon.
+var ErrProjectNotFound = errors.New("project not found")
 
 // ---------------------------------------------------------------------------
 // Wire types
@@ -65,6 +76,7 @@ type StateProvider interface {
 	AddRepo(path string) error
 	RemoveRepo(project string) error
 	ListPlans(project string) ([]taskstore.TaskEntry, error)
+	TaskStoreForProject(project string) (taskstore.Store, error)
 	ListInstances(project string) []InstanceStatus
 	StartPlan(project, filename, prompt, program string) error
 	EventStream() <-chan Event
@@ -135,6 +147,12 @@ func (s *DaemonState) ListPlans(_ string) ([]taskstore.TaskEntry, error) {
 	return nil, nil
 }
 
+// TaskStoreForProject implements StateProvider. DaemonState has no backing
+// store, so it always reports the project as missing.
+func (s *DaemonState) TaskStoreForProject(project string) (taskstore.Store, error) {
+	return nil, fmt.Errorf("%w: %s", ErrProjectNotFound, project)
+}
+
 // ListInstances implements StateProvider.
 func (s *DaemonState) ListInstances(_ string) []InstanceStatus {
 	return nil
@@ -157,9 +175,10 @@ func (s *DaemonState) EventStream() <-chan Event {
 
 // Handler is an http.Handler that exposes the daemon control API.
 type Handler struct {
-	state       StateProvider
-	broadcaster *EventBroadcaster // optional; if set, SSE uses Subscribe()
-	mux         *http.ServeMux
+	state         StateProvider
+	broadcaster   *EventBroadcaster // optional; if set, SSE uses Subscribe()
+	mux           *http.ServeMux
+	storeHandlers sync.Map // project string → http.Handler; avoids per-request ServeMux allocation
 }
 
 // NewHandler creates a Handler backed by the given StateProvider and registers
@@ -192,6 +211,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) registerRoutes() {
+	h.mux.HandleFunc("GET /v1/ping", h.handlePing)
 	h.mux.HandleFunc("GET /v1/status", h.handleStatus)
 	h.mux.HandleFunc("POST /v1/reload", h.handleReload)
 
@@ -203,6 +223,7 @@ func (h *Handler) registerRoutes() {
 	h.mux.HandleFunc("GET /v1/repos/{project}/instances", h.handleListInstances)
 	h.mux.HandleFunc("POST /v1/repos/{project}/plans/{filename}/plan", h.handleStartPlan)
 	h.mux.HandleFunc("POST /v1/repos/{project}/plans/{filename}/implement", h.handleImplementPlan)
+	h.mux.Handle("/v1/projects/", http.HandlerFunc(h.handleTaskStoreProxy))
 
 	h.mux.HandleFunc("GET /v1/events", h.handleEvents)
 }
@@ -212,6 +233,12 @@ func (h *Handler) registerRoutes() {
 // ---------------------------------------------------------------------------
 
 // handleStatus serves GET /v1/status — daemon overview.
+// handlePing serves GET /v1/ping — liveness check used by taskstore.HTTPStore.Ping().
+// Returns 200 OK so daemon-backed HTTPStores can confirm the socket is reachable.
+func (h *Handler) handlePing(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}
+
 func (h *Handler) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	resp := h.state.Status()
 	writeJSON(w, http.StatusOK, resp)
@@ -256,6 +283,7 @@ func (h *Handler) handleRemoveRepo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
+	h.storeHandlers.Delete(project)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "removed", "project": project})
 }
 
@@ -301,6 +329,39 @@ func (h *Handler) handleStartPlan(w http.ResponseWriter, r *http.Request) {
 		"project":  project,
 		"filename": filename,
 	})
+}
+
+func (h *Handler) handleTaskStoreProxy(w http.ResponseWriter, r *http.Request) {
+	project, err := projectFromTaskstorePath(r.URL.Path)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	// Fast path: reuse a cached handler to avoid allocating a new ServeMux per request.
+	if cached, ok := h.storeHandlers.Load(project); ok {
+		cached.(http.Handler).ServeHTTP(w, r)
+		return
+	}
+
+	store, err := h.state.TaskStoreForProject(project)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrTaskStoreUnavailable):
+			writeError(w, http.StatusServiceUnavailable, err.Error())
+		case errors.Is(err, ErrProjectNotFound):
+			writeError(w, http.StatusNotFound, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+
+	handler := taskstore.NewHandler(store)
+	// LoadOrStore so a concurrent first request doesn't double-register; the
+	// returned value is whichever handler won the race.
+	actual, _ := h.storeHandlers.LoadOrStore(project, handler)
+	actual.(http.Handler).ServeHTTP(w, r)
 }
 
 // handleImplementPlan serves POST /v1/repos/{project}/plans/{filename}/implement.
@@ -384,4 +445,30 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func writeError(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]string{"error": msg})
+}
+
+func projectFromTaskstorePath(path string) (string, error) {
+	const prefix = "/v1/projects/"
+	if !strings.HasPrefix(path, prefix) {
+		return "", fmt.Errorf("project not found in path: %s", path)
+	}
+	remainder := strings.TrimPrefix(path, prefix)
+	if remainder == "" {
+		return "", fmt.Errorf("project not found in path: %s", path)
+	}
+	project := remainder
+	if slash := strings.IndexByte(remainder, '/'); slash >= 0 {
+		project = remainder[:slash]
+	}
+	if project == "" {
+		return "", fmt.Errorf("project not found in path: %s", path)
+	}
+	decoded, err := url.PathUnescape(project)
+	if err != nil {
+		return "", fmt.Errorf("invalid project path: %w", err)
+	}
+	if decoded == "" {
+		return "", fmt.Errorf("project not found in path: %s", path)
+	}
+	return decoded, nil
 }
