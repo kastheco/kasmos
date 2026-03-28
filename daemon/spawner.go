@@ -54,6 +54,7 @@ type TmuxSpawner struct {
 	drainTimeout time.Duration
 	mu           sync.Mutex
 	instances    map[string]*session.Instance
+	replacing    map[string]bool // keys with an active replacement spawn in progress
 	// planFileByKey stores the planFile portion of the key for RunningInstances.
 	planFileByKey  map[string]string
 	agentTypeByKey map[string]string
@@ -102,6 +103,7 @@ func newTmuxSpawnerWithConfig(logger *slog.Logger, drainTimeout time.Duration) *
 		logger:         logger,
 		drainTimeout:   drainTimeout,
 		instances:      make(map[string]*session.Instance),
+		replacing:      make(map[string]bool),
 		planFileByKey:  make(map[string]string),
 		agentTypeByKey: make(map[string]string),
 		projectByKey:   make(map[string]string),
@@ -341,10 +343,13 @@ func (s *TmuxSpawner) reserveInstanceSlot(key, title string) bool {
 				return false // same agent already tracked or reserved
 			}
 			// Different title at the same key means the caller is replacing an
-			// old agent (e.g. fixer respawn after a new review cycle). Allow
-			// the spawn without inserting a nil placeholder — the existing
-			// instance must survive until KillAgent removes it, and
-			// commitInstance will overwrite it once the new agent starts.
+			// old agent (e.g. fixer respawn after a new review cycle). Block
+			// concurrent replacements via the replacing map while preserving
+			// the existing instance so KillAgent can still find it.
+			if s.replacing[key] {
+				return false // another replacement is already in progress
+			}
+			s.replacing[key] = true
 			return true
 		}
 	}
@@ -361,19 +366,20 @@ func (s *TmuxSpawner) reserveInstanceSlot(key, title string) bool {
 	return true
 }
 
-// commitInstance replaces a reserved nil placeholder with the real instance
-// and fills in the tracking metadata maps.
+// commitInstance replaces a reserved placeholder (nil or old instance being
+// replaced) with the real instance and fills in the tracking metadata maps.
 func (s *TmuxSpawner) commitInstance(key, planFile, agentType, project string, inst *session.Instance) {
 	s.mu.Lock()
 	s.instances[key] = inst
 	s.planFileByKey[key] = planFile
 	s.agentTypeByKey[key] = agentType
 	s.projectByKey[key] = project
+	delete(s.replacing, key)
 	s.mu.Unlock()
 }
 
-// releaseReservation removes a nil placeholder from a failed spawn attempt
-// so the slot can be retried later.
+// releaseReservation removes a nil placeholder or replacement lock from a
+// failed spawn attempt so the slot can be retried later.
 func (s *TmuxSpawner) releaseReservation(key string) {
 	s.mu.Lock()
 	if s.instances[key] == nil {
@@ -382,6 +388,7 @@ func (s *TmuxSpawner) releaseReservation(key string) {
 		delete(s.agentTypeByKey, key)
 		delete(s.projectByKey, key)
 	}
+	delete(s.replacing, key)
 	s.mu.Unlock()
 }
 

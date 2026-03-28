@@ -121,7 +121,7 @@ func statusRecoveryHints(tasks []statusTask) []string {
 			appendHint("  kas task recover <task-name> --action planner-finished                # finish planning safely")
 		case phase == string(taskfsm.ExecutionPhaseArchitecting):
 			appendHint("  kas task recover <task-name> --action architect-finished              # resume architect handoff")
-		case phase == string(taskfsm.ExecutionPhaseFixing) || phase == string(taskfsm.ExecutionPhaseSingleAgentImplementing) || phase == string(taskfsm.ExecutionPhaseWaveRunning) || phase == string(taskfsm.ExecutionPhaseWaveWaiting):
+		case phase == string(taskfsm.ExecutionPhaseFixing) || phase == string(taskfsm.ExecutionPhaseSingleAgentImplementing):
 			appendHint("  kas task recover <task-name> --action implement-finished             # hand implementation to review")
 		case phase == string(taskfsm.ExecutionPhaseReviewing) || t.Status == string(taskstore.StatusReviewing):
 			appendHint("  kas task recover <task-name> --action review-approved                # finish review")
