@@ -109,6 +109,102 @@ func TestExecuteStatus_JSON(t *testing.T) {
 	assert.Contains(t, parsed, "orphan_sessions")
 }
 
+func TestExecuteStatus_ShowsLifecycleStageDetailsAndRecoveryHints(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "lifecycle-project"
+
+	entries := []taskstore.TaskEntry{
+		{
+			Filename:  "planned-plan",
+			Status:    taskstore.StatusReady,
+			Branch:    "plan/planned-plan",
+			CreatedAt: time.Now(),
+			ExecutionState: taskstore.ExecutionState{
+				Phase: "planned",
+			},
+		},
+		{
+			Filename:  "architect-plan",
+			Status:    taskstore.StatusImplementing,
+			Branch:    "plan/architect-plan",
+			CreatedAt: time.Now(),
+			ExecutionState: taskstore.ExecutionState{
+				Phase:           "architecting",
+				ActiveAgentType: "architect",
+			},
+		},
+		{
+			Filename:  "wave-running-plan",
+			Status:    taskstore.StatusImplementing,
+			Branch:    "plan/wave-running-plan",
+			CreatedAt: time.Now(),
+			ExecutionState: taskstore.ExecutionState{
+				Phase:           "wave_running",
+				ActiveAgentType: "coder",
+				ActiveWave:      2,
+			},
+		},
+		{
+			Filename:  "wave-waiting-plan",
+			Status:    taskstore.StatusImplementing,
+			Branch:    "plan/wave-waiting-plan",
+			CreatedAt: time.Now(),
+			ExecutionState: taskstore.ExecutionState{
+				Phase:           "wave_waiting",
+				ActiveAgentType: "coder",
+				ActiveWave:      3,
+			},
+		},
+		{
+			Filename:             "fixing-plan",
+			Status:               taskstore.StatusImplementing,
+			Branch:               "plan/fixing-plan",
+			CreatedAt:            time.Now(),
+			ReviewCycle:          2,
+			LatestReviewFeedback: "fix flaky tests",
+			ExecutionState: taskstore.ExecutionState{
+				Phase:           "fixing",
+				ActiveAgentType: "fixer",
+			},
+		},
+		{
+			Filename:             "reviewing-plan",
+			Status:               taskstore.StatusReviewing,
+			Branch:               "plan/reviewing-plan",
+			CreatedAt:            time.Now(),
+			ReviewCycle:          2,
+			LatestReviewFeedback: "round 2",
+			ExecutionState: taskstore.ExecutionState{
+				Phase:           "reviewing",
+				ActiveAgentType: "reviewer",
+			},
+		},
+	}
+	for _, entry := range entries {
+		require.NoError(t, store.Create(project, entry))
+	}
+
+	state := newTestStateFromRaw(t, nil)
+	ex := cmd_test.NewMockExecutor()
+	ex.OutputFunc = func(_ *exec.Cmd) ([]byte, error) {
+		return nil, errors.New("no tmux")
+	}
+
+	output := executeStatus(state, store, project, ex, "text")
+	assert.Contains(t, output, "planned")
+	assert.Contains(t, output, "architecting")
+	assert.Contains(t, output, "wave-running")
+	assert.Contains(t, output, "waiting")
+	assert.Contains(t, output, "fixing")
+	assert.Contains(t, output, "reviewing")
+	assert.Contains(t, output, "kas task recover <task-name> --action architect-finished")
+	assert.Contains(t, output, "kas task recover <task-name> --action implement-finished")
+	assert.Contains(t, output, "kas task recover <task-name> --action review-changes --feedback")
+	assert.Contains(t, output, "kas task recover <task-name> --action advance-review-cycle --feedback")
+	assert.Contains(t, output, "yes")
+	assert.Contains(t, output, "wave-waiting-plan")
+}
+
 func TestExecuteStatus_NilStore(t *testing.T) {
 	state := newTestStateFromRaw(t, []instanceTestData{
 		{Title: "solo", Status: 0, Branch: "main", Program: "claude"},

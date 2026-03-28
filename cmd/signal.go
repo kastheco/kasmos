@@ -23,6 +23,41 @@ type signalProcessOptions struct {
 	store      taskstore.Store
 }
 
+func recoverActionForSignalType(signalType string) string {
+	switch displaySignalType(signalType) {
+	case string(taskfsm.PlannerFinished):
+		return "planner-finished"
+	case string(taskfsm.ImplementFinished):
+		return "implement-finished"
+	case string(taskfsm.ReviewApproved):
+		return "review-approved"
+	case string(taskfsm.ReviewChangesRequested):
+		return "review-changes"
+	case "elaborator_finished":
+		return "architect-finished"
+	default:
+		return ""
+	}
+}
+
+func displaySignalType(signalType string) string {
+	return strings.ReplaceAll(strings.TrimSpace(signalType), "-", "_")
+}
+
+func formatSignalListLine(signalType, planFile string, extra ...string) string {
+	line := fmt.Sprintf("%-30s  %s", displaySignalType(signalType), planFile)
+	if action := recoverActionForSignalType(signalType); action != "" {
+		line += fmt.Sprintf("  (recover: %s)", action)
+	}
+	for _, part := range extra {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		line += "  " + part
+	}
+	return line
+}
+
 // NewSignalCmd returns the "kas signal" cobra command with subcommands.
 func NewSignalCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -119,17 +154,17 @@ func executeSignalList(signalsDir string) string {
 
 	// FSM signals.
 	for _, sig := range taskfsm.ScanSignals(signalsDir) {
-		lines = append(lines, fmt.Sprintf("%-30s  %s", string(sig.Event), sig.TaskFile))
+		lines = append(lines, formatSignalListLine(string(sig.Event), sig.TaskFile))
 	}
 
 	// Wave signals.
 	for _, ws := range taskfsm.ScanWaveSignals(signalsDir) {
-		lines = append(lines, fmt.Sprintf("%-30s  %s  (wave %d)", "implement_wave", ws.TaskFile, ws.WaveNumber))
+		lines = append(lines, formatSignalListLine("implement_wave", ws.TaskFile, fmt.Sprintf("(wave %d)", ws.WaveNumber)))
 	}
 
-	// Architect-pass completion signals carried on the elaborator_finished contract.
+	// Architect-pass completion signals carried on the retained elaborator_finished contract.
 	for _, es := range taskfsm.ScanElaborationSignals(signalsDir) {
-		lines = append(lines, fmt.Sprintf("%-30s  %s", "elaborator_finished", es.TaskFile))
+		lines = append(lines, formatSignalListLine("elaborator_finished", es.TaskFile))
 	}
 
 	if len(lines) == 0 {
@@ -224,10 +259,10 @@ func executeSignalProcess(opts signalProcessOptions) (int, error) {
 		fn := es.Filename()
 		procPath, err := taskfsm.BeginProcessing(opts.signalsDir, fn)
 		if err != nil {
-			log.Printf("signal: begin processing elaboration signal file=%s plan=%s: %v", fn, es.TaskFile, err)
+			log.Printf("signal: begin processing architect signal file=%s plan=%s: %v", fn, es.TaskFile, err)
 			continue
 		}
-		log.Printf("signal: completed file=%s event=elaborator_finished plan=%s outcome=consumed", fn, es.TaskFile)
+		log.Printf("signal: completed file=%s event=%s plan=%s outcome=consumed", fn, displaySignalType("elaborator_finished"), es.TaskFile)
 		taskfsm.CompleteProcessing(procPath)
 	}
 
@@ -246,7 +281,7 @@ func defaultSignalsDir(repoRoot string) string {
 //     review_changes_requested): empty → ""; JSON → kept; plain text → {"body":"..."}
 //   - implement_task_finished: must be JSON with numeric wave_number and task_number
 //   - implement_wave: must be JSON with numeric wave_number
-//   - elaborator_finished: payload must be empty
+//   - architect_finished / elaborator_finished: payload must be empty
 func normalizeSignalPayload(signalType, payload string) (string, error) {
 	return taskfsm.NormalizeGatewaySignalPayload(signalType, payload)
 }
@@ -268,7 +303,8 @@ signal type and plan file. This is the primary mechanism for agents to signal
 completion of a lifecycle phase.
 
 Valid signal types: planner_finished, implement_finished, review_approved,
-review_changes_requested, implement_task_finished, implement_wave, elaborator_finished`,
+review_changes_requested, implement_task_finished, implement_wave,
+architect_finished (wire alias: elaborator_finished)`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			signalType, err := taskfsm.CanonicalGatewaySignalType(args[0])
@@ -292,7 +328,7 @@ review_changes_requested, implement_task_finished, implement_wave, elaborator_fi
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "signal emitted: type=%s plan=%s\n", signalType, planFile)
+			fmt.Fprintf(cmd.OutOrStdout(), "signal emitted: type=%s plan=%s\n", displaySignalType(signalType), planFile)
 			return nil
 		},
 	}

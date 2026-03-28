@@ -170,6 +170,107 @@ func executeTaskTransition(project, planFile, event string, store taskstore.Stor
 	return string(entry.Status), nil
 }
 
+type taskRecoverAction struct {
+	name       string
+	signalType string
+}
+
+func canonicalTaskRecoverAction(raw string) (taskRecoverAction, error) {
+	normalized := strings.ReplaceAll(strings.TrimSpace(raw), "_", "-")
+	if normalized == "" {
+		return taskRecoverAction{}, fmt.Errorf("recovery action is required; valid actions: planner-finished, architect-finished, implement-finished, review-approved, review-changes, advance-review-cycle")
+	}
+
+	signalAction := func(name, signalType string) (taskRecoverAction, error) {
+		canonical, err := taskfsm.CanonicalGatewaySignalType(signalType)
+		if err != nil {
+			return taskRecoverAction{}, err
+		}
+		return taskRecoverAction{name: name, signalType: canonical}, nil
+	}
+
+	switch normalized {
+	case "planner-finished":
+		return signalAction("planner-finished", normalized)
+	case "architect-finished", "elaborator-finished":
+		return signalAction("architect-finished", normalized)
+	case "implement-finished":
+		return signalAction("implement-finished", normalized)
+	case "review-approved":
+		return signalAction("review-approved", normalized)
+	case "review-changes", "review-changes-requested":
+		return signalAction("review-changes", normalized)
+	case "advance-review-cycle":
+		return taskRecoverAction{name: "advance-review-cycle"}, nil
+	default:
+		return taskRecoverAction{}, fmt.Errorf("unknown recovery action %q; valid actions: planner-finished, architect-finished, implement-finished, review-approved, review-changes, advance-review-cycle", raw)
+	}
+}
+
+func taskRecoverRequiresSignalGateway(action taskRecoverAction) bool {
+	return action.signalType != ""
+}
+
+func executeTaskRecover(project, planFile, action, feedback string, store taskstore.Store, gateway taskstore.SignalGateway) error {
+	recoverAction, err := canonicalTaskRecoverAction(action)
+	if err != nil {
+		return err
+	}
+
+	closeStore := false
+	if store == nil {
+		store, err = taskstore.OpenAuthoritativeStore(project)
+		if err != nil {
+			return err
+		}
+		closeStore = true
+	}
+	if closeStore {
+		defer store.Close()
+	}
+
+	ps, err := loadTaskStateByProject(project, store)
+	if err != nil {
+		return err
+	}
+	planFile = resolveExistingTaskFilename(ps, planFile)
+	if _, ok := ps.Entry(planFile); !ok {
+		return fmt.Errorf("task not found: %s", planFile)
+	}
+
+	if recoverAction.name == "advance-review-cycle" {
+		if trimmed := strings.TrimSpace(feedback); trimmed != "" {
+			if err := ps.SetLatestReviewFeedback(planFile, trimmed); err != nil {
+				return fmt.Errorf("persist latest review feedback for %s: %w", planFile, err)
+			}
+		}
+		if err := ps.IncrementReviewCycle(planFile); err != nil {
+			return fmt.Errorf("increment review cycle for %s: %w", planFile, err)
+		}
+		return nil
+	}
+
+	closeGateway := false
+	if gateway == nil && taskRecoverRequiresSignalGateway(recoverAction) {
+		gateway, err = taskstore.OpenAuthoritativeSignalGateway(project)
+		if err != nil {
+			return err
+		}
+		closeGateway = true
+	}
+	if closeGateway {
+		defer gateway.Close() //nolint:errcheck
+	}
+
+	if gateway == nil {
+		return fmt.Errorf("signal gateway unavailable for recovery action %q", recoverAction.name)
+	}
+	if err := executeSignalEmit(gateway, project, recoverAction.signalType, planFile, feedback); err != nil {
+		return fmt.Errorf("queue recovery action %q for %s: %w", recoverAction.name, planFile, err)
+	}
+	return nil
+}
+
 // executeTaskImplement transitions a plan into implementing state and writes
 // a wave signal file so the TUI metadata tick can pick it up.
 func executeTaskImplement(repoRoot, project, planFile string, wave int, store taskstore.Store) error {
@@ -611,7 +712,7 @@ func NewTaskCmd() *cobra.Command {
 	planCmd := &cobra.Command{
 		Use:     "task",
 		Aliases: []string{"t"},
-		Short:   "manage task lifecycle (list, set-status, transition, implement)",
+		Short:   "manage task lifecycle (list, recover, set-status, transition, implement)",
 	}
 
 	withAuthoritativeStore := func(project string, fn func(taskstore.Store) error) error {
@@ -707,6 +808,48 @@ func NewTaskCmd() *cobra.Command {
 		},
 	}
 	planCmd.AddCommand(transitionCmd)
+
+	var (
+		recoverActionName string
+		recoverFeedback   string
+	)
+	recoverCmd := &cobra.Command{
+		Use:   "recover <plan-file>",
+		Short: "queue or apply a lifecycle recovery action for a task",
+		Long: `recover exposes the same manual lifecycle recovery surface used by the tui.
+
+Supported actions:
+  - planner-finished
+  - architect-finished (queued via the retained elaborator_finished signal contract)
+  - implement-finished
+  - review-approved
+  - review-changes
+  - advance-review-cycle`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, project, err := resolveRepoInfo()
+			if err != nil {
+				return err
+			}
+			recoverAction, err := canonicalTaskRecoverAction(recoverActionName)
+			if err != nil {
+				return err
+			}
+			if err := executeTaskRecover(project, args[0], recoverActionName, recoverFeedback, nil, nil); err != nil {
+				return err
+			}
+			if recoverAction.name == "advance-review-cycle" {
+				fmt.Printf("recovery applied: action=%s plan=%s\n", recoverAction.name, args[0])
+				return nil
+			}
+			fmt.Printf("recovery queued: action=%s signal=%s plan=%s\n", recoverAction.name, recoverAction.signalType, args[0])
+			return nil
+		},
+	}
+	recoverCmd.Flags().StringVar(&recoverActionName, "action", "", "recovery action (planner-finished, architect-finished, implement-finished, review-approved, review-changes, advance-review-cycle)")
+	recoverCmd.Flags().StringVar(&recoverFeedback, "feedback", "", "optional reviewer feedback to persist or attach to the queued recovery signal")
+	_ = recoverCmd.MarkFlagRequired("action")
+	planCmd.AddCommand(recoverCmd)
 
 	var waveNum int
 	implementCmd := &cobra.Command{
