@@ -137,7 +137,7 @@ func (a *daemonStateAdapter) TaskStoreForProject(project string) (taskstore.Stor
 		}
 		return e.Store, nil
 	}
-	return nil, fmt.Errorf("project not found: %s", project)
+	return nil, fmt.Errorf("%w: %s", api.ErrProjectNotFound, project)
 }
 
 func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus {

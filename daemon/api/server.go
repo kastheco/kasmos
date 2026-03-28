@@ -20,6 +20,10 @@ import (
 // backing task store is currently unavailable.
 var ErrTaskStoreUnavailable = errors.New("task store unavailable")
 
+// ErrProjectNotFound indicates that no project with the given name is
+// registered with the daemon.
+var ErrProjectNotFound = errors.New("project not found")
+
 // ---------------------------------------------------------------------------
 // Wire types
 // ---------------------------------------------------------------------------
@@ -145,7 +149,7 @@ func (s *DaemonState) ListPlans(_ string) ([]taskstore.TaskEntry, error) {
 // TaskStoreForProject implements StateProvider. DaemonState has no backing
 // store, so it always reports the project as missing.
 func (s *DaemonState) TaskStoreForProject(project string) (taskstore.Store, error) {
-	return nil, fmt.Errorf("project not found: %s", project)
+	return nil, fmt.Errorf("%w: %s", ErrProjectNotFound, project)
 }
 
 // ListInstances implements StateProvider.
@@ -329,7 +333,7 @@ func (h *Handler) handleTaskStoreProxy(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ErrTaskStoreUnavailable):
 			writeError(w, http.StatusServiceUnavailable, err.Error())
-		case strings.HasPrefix(err.Error(), "project not found: "):
+		case errors.Is(err, ErrProjectNotFound):
 			writeError(w, http.StatusNotFound, err.Error())
 		default:
 			writeError(w, http.StatusInternalServerError, err.Error())

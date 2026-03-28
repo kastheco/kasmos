@@ -622,6 +622,9 @@ func (m *home) switchToDaemonTaskStore() error {
 		return err
 	}
 
+	if m.taskStore != nil {
+		_ = m.taskStore.Close()
+	}
 	m.taskStore = daemonStore
 	m.taskStoreProject = project
 	m.fsm = taskfsm.New(m.taskStore, project, m.taskStateDir)
