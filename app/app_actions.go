@@ -169,7 +169,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		return m, m.emitSelectedInstanceSignal(taskfsm.PlannerFinished, "planner finished signal queued")
 
 	case "mark_architect_finished":
-		return m, m.emitSelectedInstanceSignal(taskfsm.ArchitectFinished, "architect finished signal queued")
+		return m, m.emitSelectedInstanceSignal(taskfsm.ArchitectFinished, "architect pass finished signal queued")
 
 	case "mark_implement_finished":
 		return m, m.emitSelectedInstanceSignal(taskfsm.ImplementFinished, "implement finished signal queued")
@@ -1232,7 +1232,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 				return mdl, cmd
 			}
 			// Still elaborating — don't re-spawn, just inform.
-			m.toastManager.Info("elaboration still in progress — waiting for the architect pass to finish.")
+			m.toastManager.Info("architect pass still in progress — waiting to start the wave.")
 			return m, nil
 		}
 

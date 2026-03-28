@@ -1948,7 +1948,7 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 	planName := taskstate.DisplayName(planFile)
 	spec := orchestration.BuildArchitectAgentSpec(planFile)
 
-	// Clear any stale elaborator_finished sentinel before starting a new pass.
+	// Clear any stale elaborator_finished sentinel before starting a new architect pass.
 	// Signal processing is edge-unaware, so a stale file would advance the current
 	// orchestrator immediately instead of waiting for this architect run to finish.
 	taskfsm.ClearElaborationSignal(m.signalsDir, planFile)
@@ -1967,7 +1967,7 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 	inst.QueuedPrompt = spec.Prompt
 	inst.SetStatus(session.Loading)
 	inst.LoadingTotal = 6
-	inst.LoadingMessage = "elaborating plan..."
+	inst.LoadingMessage = "running architect pass..."
 	if err := m.setExecutionState(planFile, taskstore.ExecutionState{
 		Phase:           string(taskfsm.ExecutionPhaseArchitecting),
 		ActiveAgentType: session.AgentTypeElaborator,
@@ -1989,7 +1989,7 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 		auditlog.WithPlan(planFile),
 		auditlog.WithAgent(session.AgentTypeElaborator))
 
-	m.toastManager.Info(fmt.Sprintf("creating blueprint for '%s' before implementation", planName))
+	m.toastManager.Info(fmt.Sprintf("running architect pass for '%s' before implementation", planName))
 	return m, tea.Batch(tea.RequestWindowSize, startCmd, m.toastTickCmd())
 }
 
@@ -2829,6 +2829,30 @@ func (m *home) spawnWaveTasks(orch *orchestration.WaveOrchestrator, tasks []task
 
 	cmds = append(cmds, tea.RequestWindowSize, m.toastTickCmd())
 	return m, tea.Batch(cmds...)
+}
+
+func (m *home) applyAdvanceWaveAction(action loop.AdvanceWaveAction, preStartToast, agentTypeToStop string) (tea.Model, tea.Cmd) {
+	if agentTypeToStop != "" {
+		for _, inst := range m.nav.GetInstances() {
+			if inst.TaskFile == action.PlanFile && inst.AgentType == agentTypeToStop {
+				_ = inst.Kill()
+				break
+			}
+		}
+	}
+
+	orch, exists := m.waveOrchestrators[action.PlanFile]
+	if !exists {
+		return m, nil
+	}
+	entry, ok := m.taskState.Entry(action.PlanFile)
+	if !ok {
+		return m, nil
+	}
+	if preStartToast != "" {
+		m.toastManager.Info(preStartToast)
+	}
+	return m.startNextWave(orch, entry)
 }
 
 // startNextWave advances the orchestrator to the next wave and spawns its task instances.

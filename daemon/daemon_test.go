@@ -815,6 +815,62 @@ Do the second thing.
 	assert.Equal(t, orchestration.WaveStateRunning, orch.State())
 }
 
+func TestDaemon_ArchitectCompletion_StartsWaveOneAfterRestart(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	project := "test-project"
+	planFile := "architect-restart.md"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseArchitecting),
+			ActiveAgentType: session.AgentTypeElaborator,
+		},
+	}))
+	require.NoError(t, store.SetContent(project, planFile, `# Feature Plan
+
+## Wave 1
+### Task 1: First Thing
+
+Do the first thing.
+`))
+
+	proc := loop.NewProcessor(loop.ProcessorConfig{Store: store, Project: project})
+	actions := proc.ProcessElaborationSignals([]taskfsm.ElaborationSignal{{TaskFile: planFile}})
+	require.Len(t, actions, 1)
+	advance, ok := actions[0].(loop.AdvanceWaveAction)
+	require.True(t, ok)
+
+	d := &Daemon{
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+	e := RepoEntry{
+		Path:      t.TempDir(),
+		Project:   project,
+		Store:     store,
+		Processor: proc,
+	}
+
+	err := d.executeAction(context.Background(), e, advance)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Branch is required")
+
+	orch := proc.WaveOrchestrator(planFile)
+	require.NotNil(t, orch)
+	assert.Equal(t, 1, orch.CurrentWaveNumber())
+	assert.Equal(t, orchestration.WaveStateRunning, orch.State())
+
+	entry, getErr := store.Get(project, planFile)
+	require.NoError(t, getErr)
+	assert.Equal(t, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+		ActiveAgentType: session.AgentTypeCoder,
+		ActiveWave:      1,
+	}, entry.ExecutionState)
+}
+
 func TestReapStuckSignals(t *testing.T) {
 	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
 	require.NoError(t, err)

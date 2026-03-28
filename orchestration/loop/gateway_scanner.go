@@ -66,7 +66,12 @@ func ScanGateway(gw taskstore.SignalGateway, project, claimedBy string) (ScanRes
 
 // ConvertSignalEntry decodes a single SignalEntry and appends it to result.
 func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error {
-	switch entry.SignalType {
+	canonicalType, err := taskfsm.CanonicalGatewaySignalType(entry.SignalType)
+	if err != nil {
+		return err
+	}
+
+	switch canonicalType {
 	case "planner_finished":
 		body, err := decodeBody(entry.Payload)
 		if err != nil {

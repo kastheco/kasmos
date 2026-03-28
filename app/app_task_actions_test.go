@@ -1175,7 +1175,7 @@ func TestEmitSelectedInstanceSignal_QueuesExpectedGatewayRows(t *testing.T) {
 			status:         taskstate.StatusImplementing,
 			agentType:      session.AgentTypeElaborator,
 			event:          taskfsm.ArchitectFinished,
-			successToast:   "architect finished signal queued",
+			successToast:   "architect pass finished signal queued",
 			wantSignalType: "elaborator_finished",
 		},
 		{

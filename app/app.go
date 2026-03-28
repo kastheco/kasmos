@@ -1436,31 +1436,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if !ok {
 						continue
 					}
-					orch, exists := m.waveOrchestrators[advance.PlanFile]
-					if !exists {
-						continue
-					}
-					for _, inst := range m.nav.GetInstances() {
-						if inst.TaskFile == advance.PlanFile && inst.AgentType == session.AgentTypeElaborator {
-							_ = inst.Kill()
-							break
-						}
-					}
-					entry, ok := m.taskState.Entry(advance.PlanFile)
-					if !ok {
-						continue
-					}
-					waveTasks := orch.CurrentWaveTasks()
-					if len(waveTasks) == 0 {
-						continue
-					}
-					waveNum := orch.CurrentWaveNumber()
-					m.toastManager.Info(fmt.Sprintf("architect pass complete — starting wave %d for '%s'", waveNum, taskstate.DisplayName(advance.PlanFile)))
-					m.audit(auditlog.EventWaveStarted,
-						fmt.Sprintf("wave %d started: %d task(s)", waveNum, len(waveTasks)),
-						auditlog.WithPlan(advance.PlanFile),
-						auditlog.WithWave(waveNum, 0))
-					mdl, cmd := m.spawnWaveTasks(orch, waveTasks, entry)
+					mdl, cmd := m.applyAdvanceWaveAction(
+						advance,
+						fmt.Sprintf("architect pass complete — starting wave %d for '%s'", advance.Wave, taskstate.DisplayName(advance.PlanFile)),
+						session.AgentTypeElaborator,
+					)
 					m = mdl.(*home)
 					if cmd != nil {
 						signalCmds = append(signalCmds, cmd)

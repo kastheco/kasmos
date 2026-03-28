@@ -555,7 +555,7 @@ func (d *Daemon) tickRepo(ctx context.Context, e RepoEntry) {
 				d.logger.Warn("begin processing failed", "file", sigFile, "repo", e.Path, "err", err)
 				continue
 			}
-			d.logger.Info("processing elaboration signal", "file", sigFile, "repo", e.Path)
+			d.logger.Info("processing architect completion signal", "file", sigFile, "repo", e.Path)
 
 			acts := e.Processor.ProcessElaborationSignals([]taskfsm.ElaborationSignal{es})
 			if len(acts) > 0 {
@@ -989,6 +989,9 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 	}
 
 	tasks := orch.CurrentWaveTasks()
+	if orch.State() != orchestration.WaveStateRunning {
+		tasks = orch.StartNextWave()
+	}
 	if len(tasks) == 0 {
 		return nil
 	}

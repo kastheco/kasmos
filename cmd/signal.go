@@ -33,7 +33,7 @@ func recoverActionForSignalType(signalType string) string {
 		return "review-approved"
 	case string(taskfsm.ReviewChangesRequested):
 		return "review-changes"
-	case "elaborator_finished":
+	case string(taskfsm.ArchitectFinished):
 		return "architect-finished"
 	default:
 		return ""
@@ -41,6 +41,10 @@ func recoverActionForSignalType(signalType string) string {
 }
 
 func displaySignalType(signalType string) string {
+	canonical, err := taskfsm.CanonicalGatewaySignalType(signalType)
+	if err == nil && canonical == "elaborator_finished" {
+		return string(taskfsm.ArchitectFinished)
+	}
 	return strings.ReplaceAll(strings.TrimSpace(signalType), "-", "_")
 }
 

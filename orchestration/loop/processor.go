@@ -8,6 +8,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/orchestration"
+	"github.com/kastheco/kasmos/session"
 )
 
 func (p *Processor) taskEntry(planFile string) (taskstore.TaskEntry, bool) {
@@ -23,6 +24,17 @@ func (p *Processor) taskEntry(planFile string) (taskstore.TaskEntry, bool) {
 
 func executionPhaseForEntry(entry taskstore.TaskEntry) taskfsm.ExecutionPhase {
 	return taskfsm.ExecutionPhase(strings.TrimSpace(entry.ExecutionState.Phase))
+}
+
+func (p *Processor) setExecutionState(planFile string, state taskstore.ExecutionState) error {
+	if p.config.Store == nil {
+		return fmt.Errorf("nil task store")
+	}
+	writer, ok := p.config.Store.(taskstore.ExecutionStateWriter)
+	if !ok {
+		return fmt.Errorf("task store does not support execution state writes")
+	}
+	return writer.SetExecutionState(p.config.Project, planFile, state)
 }
 
 // ProcessorConfig holds the dependencies needed to construct a Processor.
@@ -386,8 +398,9 @@ func (p *Processor) ProcessWaveSignals(signals []taskfsm.WaveSignal) []Action {
 
 // ProcessElaborationSignals converts architect-pass completion signals carried
 // over the retained elaborator_finished contract into AdvanceWaveAction values.
-// It re-reads the architect-enriched plan from the store,
-// updates the orchestrator, and emits the action to start wave 1.
+// It re-reads the architect-enriched plan from the store, updates the
+// orchestrator, persists the wave-running execution phase, and emits the action
+// that starts wave 1.
 //
 // Extracted from app.go metadataResultMsg handler (lines 1198-1241).
 func (p *Processor) ProcessElaborationSignals(signals []taskfsm.ElaborationSignal) []Action {
@@ -416,16 +429,22 @@ func (p *Processor) ProcessElaborationSignals(signals []taskfsm.ElaborationSigna
 			if p.config.Store != nil {
 				orch.SetStore(p.config.Store, p.config.Project)
 			}
+			orch.SetElaborating()
 			p.waveOrchestrators[es.TaskFile] = orch
-			p.activeWaveOrchs[es.TaskFile] = true
-		} else {
-			// Replace the plan with the architect-enriched version and reset orchestrator state.
-			orch.UpdatePlan(plan)
 		}
 
-		// Start wave 1.
-		orch.StartNextWave()
+		// Replace the plan with the architect-enriched version and hand off the
+		// actual wave start to the shared AdvanceWaveAction execution path.
+		orch.UpdatePlan(plan)
 		p.activeWaveOrchs[es.TaskFile] = true
+
+		if err := p.setExecutionState(es.TaskFile, taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+			ActiveAgentType: session.AgentTypeCoder,
+			ActiveWave:      1,
+		}); err != nil {
+			continue
+		}
 
 		actions = append(actions, AdvanceWaveAction{
 			PlanFile: es.TaskFile,

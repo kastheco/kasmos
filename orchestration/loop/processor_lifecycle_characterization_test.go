@@ -6,6 +6,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/orchestration"
+	"github.com/kastheco/kasmos/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -134,7 +135,7 @@ func TestProcessor_ProcessFSMSignals_SuppressesImplementFinishedWhenWaveOwnershi
 	}
 }
 
-func TestProcessor_ProcessElaborationSignals_ResumesArchitectWaveOne(t *testing.T) {
+func TestProcessor_ProcessElaborationSignals_ReloadsEnrichedPlanAndPersistsWaveRunning(t *testing.T) {
 	t.Parallel()
 
 	store, err := taskstore.NewSQLiteStore(":memory:")
@@ -145,7 +146,7 @@ func TestProcessor_ProcessElaborationSignals_ResumesArchitectWaveOne(t *testing.
 		project  = "proj"
 		planFile = "plan.md"
 	)
-	content := "# Plan\n\n**Goal:** test\n\n## Wave 1\n\n### Task 1: First\n\nDo it.\n"
+	content := "# Plan\n\n**Goal:** test\n\n## Wave 1\n\n### Task 1: First\n\nDetailed architect guidance.\n"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{
 		Filename: planFile,
 		Status:   taskstore.StatusImplementing,
@@ -164,9 +165,72 @@ func TestProcessor_ProcessElaborationSignals_ResumesArchitectWaveOne(t *testing.
 	require.True(t, ok)
 	assert.Equal(t, planFile, advance.PlanFile)
 	assert.Equal(t, 1, advance.Wave)
+
+	entry, err := store.Get(project, planFile)
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+		ActiveAgentType: session.AgentTypeCoder,
+		ActiveWave:      1,
+	}, entry.ExecutionState)
+
 	orch := p.WaveOrchestrator(planFile)
 	require.NotNil(t, orch)
-	assert.Equal(t, orchestration.WaveStateRunning, orch.State())
+	assert.Equal(t, orchestration.WaveStateIdle, orch.State())
 	assert.Equal(t, 1, orch.CurrentWaveNumber())
 	require.NotEmpty(t, orch.CurrentWaveTasks())
+	assert.Contains(t, orch.CurrentWaveTasks()[0].Body, "Detailed architect guidance")
+}
+
+func TestProcessor_ProcessElaborationSignals_SuppressesDuplicateAndStaleSignals(t *testing.T) {
+	t.Parallel()
+
+	t.Run("duplicate architect completion only advances once", func(t *testing.T) {
+		store, err := taskstore.NewSQLiteStore(":memory:")
+		require.NoError(t, err)
+		defer store.Close()
+
+		const (
+			project  = "proj"
+			planFile = "plan.md"
+		)
+		content := "# Plan\n\n**Goal:** test\n\n## Wave 1\n\n### Task 1: First\n\nDetailed architect guidance.\n"
+		require.NoError(t, store.Create(project, taskstore.TaskEntry{
+			Filename: planFile,
+			Status:   taskstore.StatusImplementing,
+			ExecutionState: taskstore.ExecutionState{
+				Phase:           string(taskfsm.ExecutionPhaseArchitecting),
+				ActiveAgentType: session.AgentTypeElaborator,
+			},
+		}))
+		require.NoError(t, store.SetContent(project, planFile, content))
+
+		p := NewProcessor(ProcessorConfig{Store: store, Project: project})
+		actions := p.ProcessElaborationSignals([]taskfsm.ElaborationSignal{{TaskFile: planFile}, {TaskFile: planFile}})
+		assert.Len(t, actions, 1)
+	})
+
+	t.Run("stale architect completion is ignored once wave is already running", func(t *testing.T) {
+		store, err := taskstore.NewSQLiteStore(":memory:")
+		require.NoError(t, err)
+		defer store.Close()
+
+		const (
+			project  = "proj"
+			planFile = "plan.md"
+		)
+		require.NoError(t, store.Create(project, taskstore.TaskEntry{
+			Filename: planFile,
+			Status:   taskstore.StatusImplementing,
+			ExecutionState: taskstore.ExecutionState{
+				Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+				ActiveAgentType: session.AgentTypeCoder,
+				ActiveWave:      1,
+			},
+		}))
+		p := NewProcessor(ProcessorConfig{Store: store, Project: project})
+
+		actions := p.ProcessElaborationSignals([]taskfsm.ElaborationSignal{{TaskFile: planFile}})
+		assert.Empty(t, actions)
+	})
 }
