@@ -2,6 +2,7 @@ package taskfsm
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/kastheco/kasmos/config/taskstate"
@@ -47,6 +48,34 @@ const (
 	Cancel                 Event = "cancel"
 	Reopen                 Event = "reopen"
 )
+
+// NormalizeExecutionPhase trims persisted execution-phase strings and returns
+// the canonical enum form used by lifecycle helpers.
+func NormalizeExecutionPhase(phase string) ExecutionPhase {
+	return ExecutionPhase(strings.TrimSpace(phase))
+}
+
+// IsWaveExecutionPhase reports whether the phase is one of the persisted
+// multi-task wave execution states.
+func IsWaveExecutionPhase(phase ExecutionPhase) bool {
+	switch phase {
+	case ExecutionPhaseWaveRunning, ExecutionPhaseWaveWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsSingleAgentImplementingPhase reports whether the phase represents a single
+// coder/fixer implementation pass that can advance directly to review.
+func IsSingleAgentImplementingPhase(phase ExecutionPhase) bool {
+	switch phase {
+	case ExecutionPhaseSingleAgentImplementing, ExecutionPhaseFixing:
+		return true
+	default:
+		return false
+	}
+}
 
 // IsUserOnly returns true if this event can only be triggered from the TUI,
 // never by agent sentinel files.

@@ -1602,12 +1602,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					continue
 				}
 				entry := m.taskState.Plans[inst.TaskFile]
-				if !shouldPromptPushAfterImplementerExit(entry, inst, alive) {
-					continue
-				}
-				// Wave task instances never trigger the single-coder completion flow.
-				// Wave completion is handled by the orchestrator, not the coder-exit prompt.
-				if inst.TaskNumber > 0 {
+				if !session.ShouldAutoAdvanceLifecycleImplementer(string(entry.Status), entry.ExecutionState, inst, alive) {
 					continue
 				}
 				// Skip if the push prompt was already shown and dismissed for this plan.

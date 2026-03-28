@@ -310,7 +310,7 @@ func TestDedupeInstancesByRepoAndTitle_KeepsNewest(t *testing.T) {
 	assert.Same(t, other, deduped[1])
 }
 
-func TestInferOrphanSessionBinding_NumberedReviewer(t *testing.T) {
+func TestAdoptOrphanSession_BindsPersistedReviewerCycle(t *testing.T) {
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -323,14 +323,23 @@ func TestInferOrphanSessionBinding_NumberedReviewer(t *testing.T) {
 	require.NoError(t, ps.ForceSetLifecycle(planFile, taskstate.StatusReviewing, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseReviewing), ActiveAgentType: session.AgentTypeReviewer}))
 
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
-	m := &home{taskState: ps, nav: ui.NewNavigationPanel(&sp), menu: ui.NewMenu(), toastManager: overlay.NewToastManager(&sp)}
+	m := &home{
+		taskState:      ps,
+		activeRepoPath: dir,
+		program:        "opencode",
+		nav:            ui.NewNavigationPanel(&sp),
+		menu:           ui.NewMenu(),
+		toastManager:   overlay.NewToastManager(&sp),
+	}
 
-	candidate, ok := m.inferOrphanSessionBinding("repo-owned-wakeword-training-review-3")
-	require.True(t, ok)
-	assert.Equal(t, planFile, candidate.TaskFile)
-	assert.Equal(t, session.AgentTypeReviewer, candidate.AgentType)
-	assert.Equal(t, "plan/wakeword", candidate.Branch)
-	assert.Equal(t, 3, candidate.ReviewCycle)
+	model, _ := m.adoptOrphanSession(overlay.TmuxBrowserItem{Title: "repo-owned-wakeword-training-review-3", Name: "kas_repo-owned-wakeword-training-review-3"})
+	updated := model.(*home)
+	instances := updated.nav.GetInstances()
+	require.Len(t, instances, 1)
+	assert.Equal(t, planFile, instances[0].TaskFile)
+	assert.Equal(t, session.AgentTypeReviewer, instances[0].AgentType)
+	assert.Equal(t, "plan/wakeword", instances[0].Branch)
+	assert.Equal(t, 3, instances[0].ReviewCycle)
 }
 
 func TestAdoptOrphanSession_BindsPlanMetadataFromTitle(t *testing.T) {
@@ -363,7 +372,7 @@ func TestAdoptOrphanSession_BindsPlanMetadataFromTitle(t *testing.T) {
 	assert.Equal(t, "plan/wakeword", instances[0].Branch)
 }
 
-func TestInferOrphanSessionBinding_RejectsStalePhaseTitle(t *testing.T) {
+func TestAdoptOrphanSession_RejectsStalePhaseTitle(t *testing.T) {
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -374,10 +383,21 @@ func TestInferOrphanSessionBinding_RejectsStalePhaseTitle(t *testing.T) {
 	require.NoError(t, ps.ForceSetLifecycle(planFile, taskstate.StatusReviewing, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseReviewing), ActiveAgentType: session.AgentTypeReviewer}))
 
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
-	m := &home{taskState: ps, nav: ui.NewNavigationPanel(&sp), menu: ui.NewMenu(), toastManager: overlay.NewToastManager(&sp)}
+	m := &home{
+		taskState:      ps,
+		activeRepoPath: dir,
+		program:        "opencode",
+		nav:            ui.NewNavigationPanel(&sp),
+		menu:           ui.NewMenu(),
+		toastManager:   overlay.NewToastManager(&sp),
+	}
 
-	_, ok := m.inferOrphanSessionBinding("feature-fix-1")
-	assert.False(t, ok)
+	model, _ := m.adoptOrphanSession(overlay.TmuxBrowserItem{Title: "feature-fix-1", Name: "kas_feature-fix-1"})
+	updated := model.(*home)
+	instances := updated.nav.GetInstances()
+	require.Len(t, instances, 1)
+	assert.Empty(t, instances[0].TaskFile)
+	assert.Empty(t, instances[0].AgentType)
 }
 
 func TestAdoptOrphanSession_BindsActiveWaveMetadata(t *testing.T) {

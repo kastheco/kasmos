@@ -563,7 +563,7 @@ func (d *Daemon) tickRepo(ctx context.Context, e RepoEntry) {
 				taskfsm.CompleteProcessing(procPath)
 			} else {
 				d.logger.Warn("dead-lettering architect completion signal", "file", sigFile, "repo", e.Path)
-				taskfsm.FailProcessing(sigDir, sigFile, "no active elaboration state to resume")
+				taskfsm.FailProcessing(sigDir, sigFile, "no active architect pass to resume")
 			}
 		}
 
@@ -626,35 +626,6 @@ func (d *Daemon) tickRepo(ctx context.Context, e RepoEntry) {
 	d.monitorRunningInstances(ctx, e)
 }
 
-func shouldAutoAdvanceImplementer(entry taskstore.TaskEntry, inst *session.Instance, tmuxAlive bool) bool {
-	if inst == nil || inst.TaskFile == "" {
-		return false
-	}
-	if inst.AgentType != session.AgentTypeCoder && inst.AgentType != session.AgentTypeFixer {
-		return false
-	}
-	if inst.SoloAgent || inst.TaskNumber > 0 {
-		return false
-	}
-	if entry.Status != taskstore.StatusImplementing {
-		return false
-	}
-	phase := taskfsm.ExecutionPhase(strings.TrimSpace(entry.ExecutionState.Phase))
-	if phase != taskfsm.ExecutionPhaseSingleAgentImplementing && phase != taskfsm.ExecutionPhaseFixing {
-		return false
-	}
-	if entry.ExecutionState.ActiveAgentType != "" && entry.ExecutionState.ActiveAgentType != inst.AgentType {
-		return false
-	}
-	if !tmuxAlive {
-		return true
-	}
-	if inst.PromptDetected && !inst.AwaitingWork {
-		return true
-	}
-	return false
-}
-
 func setRepoExecutionState(e RepoEntry, planFile string, state taskstore.ExecutionState) error {
 	if e.Store == nil {
 		return fmt.Errorf("task store unavailable for %s", planFile)
@@ -697,7 +668,7 @@ func (d *Daemon) autoAdvanceCompletedImplementer(e RepoEntry, inst *session.Inst
 	if err != nil {
 		return false, fmt.Errorf("load task entry for %s: %w", inst.TaskFile, err)
 	}
-	if !shouldAutoAdvanceImplementer(entry, inst, tmuxAlive) {
+	if !session.ShouldAutoAdvanceLifecycleImplementer(string(entry.Status), entry.ExecutionState, inst, tmuxAlive) {
 		return false, nil
 	}
 
@@ -759,14 +730,22 @@ func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
 }
 
 func gatewayNoopOutcome(entry *taskstore.SignalEntry) (taskstore.SignalStatus, string) {
-	switch entry.SignalType {
+	canonicalType, err := taskfsm.CanonicalGatewaySignalType(entry.SignalType)
+	if err != nil {
+		return taskstore.SignalFailed, "signal rejected by processor"
+	}
+	internalType := canonicalType
+	if canonicalType == "elaborator_finished" {
+		internalType = string(taskfsm.ArchitectFinished)
+	}
+	switch internalType {
 	case "implement_finished":
 		return taskstore.SignalDone, "suppressed implement-finished signal"
 	case "implement_task_finished":
 		return taskstore.SignalFailed, "no active orchestrator / wrong wave / already-finished task"
 	case "implement_wave":
 		return taskstore.SignalFailed, "processor could not start the requested wave"
-	case "elaborator_finished":
+	case string(taskfsm.ArchitectFinished):
 		return taskstore.SignalFailed, "no active architect pass to resume"
 	default:
 		return taskstore.SignalFailed, "signal rejected by processor"
@@ -1237,8 +1216,8 @@ func (d *Daemon) RecoverSessions() (int, error) {
 		}
 		for _, task := range tasks {
 			content := ""
-			phase := taskfsm.ExecutionPhase(strings.TrimSpace(task.ExecutionState.Phase))
-			if (phase == taskfsm.ExecutionPhaseWaveRunning || phase == taskfsm.ExecutionPhaseWaveWaiting) && e.Store != nil {
+			phase := taskfsm.NormalizeExecutionPhase(task.ExecutionState.Phase)
+			if taskfsm.IsWaveExecutionPhase(phase) && e.Store != nil {
 				if stored, getErr := e.Store.GetContent(e.Project, task.Filename); getErr == nil {
 					content = stored
 				}

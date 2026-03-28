@@ -209,30 +209,14 @@ func (m *home) recoveryCandidatesForTask(filename string, entry taskstate.TaskEn
 	}
 
 	content := ""
-	phase := executionPhase(entry.ExecutionState.Phase)
-	if (phase == taskfsm.ExecutionPhaseWaveRunning || phase == taskfsm.ExecutionPhaseWaveWaiting) && m.taskStore != nil {
+	phase := taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase)
+	if taskfsm.IsWaveExecutionPhase(phase) && m.taskStore != nil {
 		if stored, err := m.taskStore.GetContent(m.taskStoreProject, filename); err == nil {
 			content = stored
 		}
 	}
 
 	return orchestration.BuildRecoveryCandidates(storeEntry, content)
-}
-
-func (m *home) inferOrphanSessionBinding(title string) (orchestration.RecoveryCandidate, bool) {
-	if m.taskState == nil {
-		return orchestration.RecoveryCandidate{}, false
-	}
-
-	for filename, entry := range m.taskState.Plans {
-		for _, candidate := range m.recoveryCandidatesForTask(filename, entry) {
-			if candidate.Title == title {
-				return candidate, true
-			}
-		}
-	}
-
-	return orchestration.RecoveryCandidate{}, false
 }
 
 func (m *home) clearLatestReviewFeedback(planFile string) {
@@ -1104,6 +1088,13 @@ func (m *home) updateInfoPaneForPlanHeader() {
 		PlanStatus:           string(entry.Status),
 		PlanTopic:            entry.Topic,
 		PlanBranch:           entry.Branch,
+		ExecutionPhase:       strings.TrimSpace(entry.ExecutionState.Phase),
+		ActiveAgentType:      strings.TrimSpace(entry.ExecutionState.ActiveAgentType),
+		ActiveWave:           entry.ExecutionState.ActiveWave,
+	}
+	switch taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase) {
+	case taskfsm.ExecutionPhaseFixing, taskfsm.ExecutionPhaseReviewing:
+		data.ActiveRound = entry.ReviewCycle + 1
 	}
 	if !entry.CreatedAt.IsZero() {
 		data.PlanCreated = entry.CreatedAt.Format("2006-01-02")
@@ -1213,6 +1204,13 @@ func (m *home) updateInfoPane() {
 				data.PlanStatus = string(entry.Status)
 				data.PlanTopic = entry.Topic
 				data.PlanBranch = entry.Branch
+				data.ExecutionPhase = strings.TrimSpace(entry.ExecutionState.Phase)
+				data.ActiveAgentType = strings.TrimSpace(entry.ExecutionState.ActiveAgentType)
+				data.ActiveWave = entry.ExecutionState.ActiveWave
+				switch taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase) {
+				case taskfsm.ExecutionPhaseFixing, taskfsm.ExecutionPhaseReviewing:
+					data.ActiveRound = entry.ReviewCycle + 1
+				}
 				if !entry.CreatedAt.IsZero() {
 					data.PlanCreated = entry.CreatedAt.Format("2006-01-02")
 				}
@@ -1299,12 +1297,22 @@ func (m *home) updateSidebarTasks() {
 			if p.Status == taskstate.StatusDone || p.Status == taskstate.StatusCancelled {
 				continue // finished/cancelled plans handled separately
 			}
+			entry := m.taskState.Plans[p.Filename]
+			activeRound := 0
+			switch taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase) {
+			case taskfsm.ExecutionPhaseFixing, taskfsm.ExecutionPhaseReviewing:
+				activeRound = entry.ReviewCycle + 1
+			}
 			planDisplays = append(planDisplays, ui.PlanDisplay{
 				Filename:    p.Filename,
 				Status:      string(p.Status),
 				Description: p.Description,
 				Branch:      p.Branch,
 				Topic:       p.Topic,
+				Phase:       strings.TrimSpace(entry.ExecutionState.Phase),
+				AgentType:   strings.TrimSpace(entry.ExecutionState.ActiveAgentType),
+				ActiveWave:  entry.ExecutionState.ActiveWave,
+				ActiveRound: activeRound,
 			})
 		}
 		if len(planDisplays) > 0 {
@@ -1316,11 +1324,21 @@ func (m *home) updateSidebarTasks() {
 	ungroupedInfos := m.taskState.UngroupedTasks()
 	ungrouped := make([]ui.PlanDisplay, 0, len(ungroupedInfos))
 	for _, p := range ungroupedInfos {
+		entry := m.taskState.Plans[p.Filename]
+		activeRound := 0
+		switch taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase) {
+		case taskfsm.ExecutionPhaseFixing, taskfsm.ExecutionPhaseReviewing:
+			activeRound = entry.ReviewCycle + 1
+		}
 		ungrouped = append(ungrouped, ui.PlanDisplay{
 			Filename:    p.Filename,
 			Status:      string(p.Status),
 			Description: p.Description,
 			Branch:      p.Branch,
+			Phase:       strings.TrimSpace(entry.ExecutionState.Phase),
+			AgentType:   strings.TrimSpace(entry.ExecutionState.ActiveAgentType),
+			ActiveWave:  entry.ExecutionState.ActiveWave,
+			ActiveRound: activeRound,
 		})
 	}
 
@@ -1340,12 +1358,16 @@ func (m *home) updateSidebarTasks() {
 	finishedInfos := m.taskState.Finished()
 	history := make([]ui.PlanDisplay, 0, len(finishedInfos))
 	for _, p := range finishedInfos {
+		entry := m.taskState.Plans[p.Filename]
 		history = append(history, ui.PlanDisplay{
 			Filename:    p.Filename,
 			Status:      string(p.Status),
 			Description: p.Description,
 			Branch:      p.Branch,
 			Topic:       p.Topic,
+			Phase:       strings.TrimSpace(entry.ExecutionState.Phase),
+			AgentType:   strings.TrimSpace(entry.ExecutionState.ActiveAgentType),
+			ActiveWave:  entry.ExecutionState.ActiveWave,
 		})
 	}
 
@@ -1388,7 +1410,7 @@ func (m *home) checkPlanCompletion() tea.Cmd {
 		if !ok {
 			continue
 		}
-		if entry.Status != taskstate.StatusReviewing || executionPhase(entry.ExecutionState.Phase) != taskfsm.ExecutionPhaseReviewing {
+		if entry.Status != taskstate.StatusReviewing || taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase) != taskfsm.ExecutionPhaseReviewing {
 			continue
 		}
 		return m.transitionToReview(inst)
@@ -1973,19 +1995,6 @@ func (m *home) clearWaveOrchestratorState(planFile string) {
 	}
 }
 
-func executionPhase(phase string) taskfsm.ExecutionPhase {
-	return taskfsm.ExecutionPhase(strings.TrimSpace(phase))
-}
-
-func isWaveExecutionPhase(phase string) bool {
-	switch executionPhase(phase) {
-	case taskfsm.ExecutionPhaseWaveRunning, taskfsm.ExecutionPhaseWaveWaiting:
-		return true
-	default:
-		return false
-	}
-}
-
 func (m *home) setExecutionState(planFile string, state taskstore.ExecutionState) error {
 	if m.taskState == nil {
 		return fmt.Errorf("task state is not loaded")
@@ -2279,49 +2288,6 @@ func dedupePlanFilenameInState(ps *taskstate.TaskState, filename string) string 
 	}
 
 	return filename
-}
-
-// shouldPromptPushAfterImplementerExit returns true when a non-solo coder or
-// fixer session has finished and the plan is still in the implementing state.
-// An implementer is considered finished when its tmux session has exited
-// (tmuxAlive == false) OR when it has returned to a prompt after completing
-// its queued work (PromptDetected && !AwaitingWork).
-func shouldPromptPushAfterImplementerExit(entry taskstate.TaskEntry, inst *session.Instance, tmuxAlive bool) bool {
-	if inst == nil {
-		return false
-	}
-	if inst.TaskFile == "" {
-		return false
-	}
-	if inst.AgentType != session.AgentTypeCoder && inst.AgentType != session.AgentTypeFixer {
-		return false
-	}
-	if inst.SoloAgent {
-		return false
-	}
-	if entry.Status != taskstate.StatusImplementing {
-		return false
-	}
-	phase := executionPhase(entry.ExecutionState.Phase)
-	if phase != taskfsm.ExecutionPhaseSingleAgentImplementing && phase != taskfsm.ExecutionPhaseFixing {
-		return false
-	}
-	if entry.ExecutionState.ActiveAgentType != "" && entry.ExecutionState.ActiveAgentType != inst.AgentType {
-		return false
-	}
-	// Tmux exited — original single-coder completion path.
-	if !tmuxAlive {
-		return true
-	}
-	if config.NormalizeExecutionMode(string(inst.ExecutionMode)) == config.ExecutionModeHeadless && inst.Exited {
-		return true
-	}
-	// Agent returned to prompt after finishing queued work — covers the
-	// review-feedback fixer ("applying fixes") which stays alive in tmux.
-	if inst.PromptDetected && !inst.AwaitingWork {
-		return true
-	}
-	return false
 }
 
 // promptPushBranchThenAdvance shows a confirmation overlay asking the user to
@@ -2687,7 +2653,7 @@ func (m *home) rebuildOrphanedOrchestrators() {
 		}
 		// Only reconstruct plans that are explicitly on a wave-execution branch.
 		entry, ok := m.taskState.Entry(planFile)
-		if !ok || entry.Status != taskstate.StatusImplementing || !isWaveExecutionPhase(entry.ExecutionState.Phase) {
+		if !ok || entry.Status != taskstate.StatusImplementing || !taskfsm.IsWaveExecutionPhase(taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase)) {
 			continue
 		}
 
@@ -2975,7 +2941,24 @@ func (m *home) spawnChatAboutTask(planFile, question string) (tea.Model, tea.Cmd
 
 // adoptOrphanSession creates a new Instance backed by an existing orphaned tmux session.
 func (m *home) adoptOrphanSession(item overlay.TmuxBrowserItem) (tea.Model, tea.Cmd) {
-	candidate, bound := m.inferOrphanSessionBinding(item.Title)
+	var (
+		candidate orchestration.RecoveryCandidate
+		bound     bool
+	)
+	if m.taskState != nil {
+		for filename, entry := range m.taskState.Plans {
+			for _, current := range m.recoveryCandidatesForTask(filename, entry) {
+				if current.Title == item.Title {
+					candidate = current
+					bound = true
+					break
+				}
+			}
+			if bound {
+				break
+			}
+		}
+	}
 	if bound && m.hasLiveOrPendingInstance(candidate.TaskFile, candidate.AgentType, candidate.Title) {
 		for _, inst := range m.nav.GetInstances() {
 			if inst.Title == candidate.Title {

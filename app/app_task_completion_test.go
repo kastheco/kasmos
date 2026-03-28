@@ -26,7 +26,7 @@ func TestShouldPromptPushAfterImplementerExit(t *testing.T) {
 	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder}}
 	inst := &session.Instance{TaskFile: "p", AgentType: session.AgentTypeCoder}
 
-	if !shouldPromptPushAfterImplementerExit(entry, inst, false) {
+	if !session.ShouldAutoAdvanceLifecycleImplementer(string(entry.Status), entry.ExecutionState, inst, false) {
 		t.Fatal("expected push prompt for exited coder")
 	}
 }
@@ -40,7 +40,7 @@ func TestShouldPromptPushAfterImplementerExit_HeadlessCoderExited(t *testing.T) 
 		Exited:        true,
 	}
 
-	assert.True(t, shouldPromptPushAfterImplementerExit(entry, inst, true))
+	assert.True(t, session.ShouldAutoAdvanceLifecycleImplementer(string(entry.Status), entry.ExecutionState, inst, true))
 }
 
 func TestShouldPromptPushAfterImplementerExit_PromptDetectedTriggers(t *testing.T) {
@@ -54,7 +54,7 @@ func TestShouldPromptPushAfterImplementerExit_PromptDetectedTriggers(t *testing.
 
 	// Tmux is still alive but the implementer returned to prompt after finishing
 	// its queued work — this covers the "applying fixes" completion path.
-	assert.True(t, shouldPromptPushAfterImplementerExit(entry, inst, true),
+	assert.True(t, session.ShouldAutoAdvanceLifecycleImplementer(string(entry.Status), entry.ExecutionState, inst, true),
 		"expected push prompt for coder at prompt (PromptDetected && !AwaitingWork)")
 }
 
@@ -69,7 +69,7 @@ func TestShouldPromptPushAfterImplementerExit_AwaitingWorkSuppresses(t *testing.
 
 	// Coder is at prompt but still waiting for its queued prompt to be
 	// delivered — must NOT trigger push prompt yet.
-	assert.False(t, shouldPromptPushAfterImplementerExit(entry, inst, true),
+	assert.False(t, session.ShouldAutoAdvanceLifecycleImplementer(string(entry.Status), entry.ExecutionState, inst, true),
 		"must not trigger push prompt while AwaitingWork is true")
 }
 
@@ -82,7 +82,7 @@ func TestShouldPromptPushAfterImplementerExit_FixerPromptDetectedTriggers(t *tes
 		AwaitingWork:   false,
 	}
 
-	assert.True(t, shouldPromptPushAfterImplementerExit(entry, inst, true),
+	assert.True(t, session.ShouldAutoAdvanceLifecycleImplementer(string(entry.Status), entry.ExecutionState, inst, true),
 		"expected push prompt for fixer at prompt (PromptDetected && !AwaitingWork)")
 }
 
@@ -90,7 +90,7 @@ func TestShouldPromptPushAfterImplementerExit_NoPromptForSoloAgent(t *testing.T)
 	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder}}
 	inst := &session.Instance{TaskFile: "p", AgentType: session.AgentTypeCoder, SoloAgent: true}
 
-	assert.False(t, shouldPromptPushAfterImplementerExit(entry, inst, false),
+	assert.False(t, session.ShouldAutoAdvanceLifecycleImplementer(string(entry.Status), entry.ExecutionState, inst, false),
 		"solo agents must not trigger automatic push prompt")
 }
 
@@ -98,7 +98,7 @@ func TestShouldPromptPushAfterImplementerExit_NoPromptForReviewer(t *testing.T) 
 	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder}}
 	inst := &session.Instance{TaskFile: "p", AgentType: session.AgentTypeReviewer}
 
-	if shouldPromptPushAfterImplementerExit(entry, inst, false) {
+	if session.ShouldAutoAdvanceLifecycleImplementer(string(entry.Status), entry.ExecutionState, inst, false) {
 		t.Fatal("did not expect push prompt for reviewer")
 	}
 }

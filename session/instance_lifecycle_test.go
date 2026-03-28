@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/kastheco/kasmos/cmd/cmd_test"
+	"github.com/kastheco/kasmos/config/taskfsm"
+	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/session/tmux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -244,6 +246,56 @@ func TestKill_DirtyWorktreeReturnsError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "uncommitted changes")
 	assert.Contains(t, err.Error(), "README.md")
+}
+
+func TestShouldAutoAdvanceLifecycleImplementer(t *testing.T) {
+	tests := []struct {
+		name      string
+		status    string
+		state     taskstore.ExecutionState
+		inst      *Instance
+		tmuxAlive bool
+		want      bool
+	}{
+		{
+			name:      "tmux exit advances single coder",
+			status:    string(taskfsm.StatusImplementing),
+			state:     taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: AgentTypeCoder},
+			inst:      &Instance{TaskFile: "feature", AgentType: AgentTypeCoder},
+			tmuxAlive: false,
+			want:      true,
+		},
+		{
+			name:      "prompt return advances fixer",
+			status:    string(taskfsm.StatusImplementing),
+			state:     taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: AgentTypeFixer},
+			inst:      &Instance{TaskFile: "feature", AgentType: AgentTypeFixer, PromptDetected: true},
+			tmuxAlive: true,
+			want:      true,
+		},
+		{
+			name:      "wave task never auto advances",
+			status:    string(taskfsm.StatusImplementing),
+			state:     taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseWaveRunning), ActiveAgentType: AgentTypeCoder, ActiveWave: 1},
+			inst:      &Instance{TaskFile: "feature", AgentType: AgentTypeCoder, TaskNumber: 1},
+			tmuxAlive: false,
+			want:      false,
+		},
+		{
+			name:      "headless exit advances",
+			status:    string(taskfsm.StatusImplementing),
+			state:     taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: AgentTypeCoder},
+			inst:      &Instance{TaskFile: "feature", AgentType: AgentTypeCoder, ExecutionMode: ExecutionModeHeadless, Exited: true},
+			tmuxAlive: true,
+			want:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, ShouldAutoAdvanceLifecycleImplementer(tt.status, tt.state, tt.inst, tt.tmuxAlive))
+		})
+	}
 }
 
 func TestPause_DirtyWorktreeReturnsError(t *testing.T) {

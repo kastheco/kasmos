@@ -254,3 +254,21 @@ func TestMapLegacyStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestExecutionPhaseHelpers(t *testing.T) {
+	t.Run("normalize trims whitespace", func(t *testing.T) {
+		assert.Equal(t, ExecutionPhaseArchitecting, NormalizeExecutionPhase("  architecting  "))
+	})
+
+	t.Run("wave phases are recognized", func(t *testing.T) {
+		assert.True(t, IsWaveExecutionPhase(ExecutionPhaseWaveRunning))
+		assert.True(t, IsWaveExecutionPhase(ExecutionPhaseWaveWaiting))
+		assert.False(t, IsWaveExecutionPhase(ExecutionPhaseArchitecting))
+	})
+
+	t.Run("single agent implementing phases are recognized", func(t *testing.T) {
+		assert.True(t, IsSingleAgentImplementingPhase(ExecutionPhaseSingleAgentImplementing))
+		assert.True(t, IsSingleAgentImplementingPhase(ExecutionPhaseFixing))
+		assert.False(t, IsSingleAgentImplementingPhase(ExecutionPhaseWaveRunning))
+	})
+}

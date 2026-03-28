@@ -1278,6 +1278,26 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			return m.spawnBlueprintSkipAgent(planFile, plan)
 		}
 
+		persistedPhase := taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase)
+		if entry.Status == taskstate.StatusImplementing {
+			switch persistedPhase {
+			case taskfsm.ExecutionPhaseArchitecting:
+				orch := orchestration.NewWaveOrchestrator(planFile, plan)
+				orch.SetStore(m.taskStore, m.taskStoreProject)
+				orch.SetElaborating()
+				m.waveOrchestrators[planFile] = orch
+				m.toastManager.Info("architect pass still in progress — waiting to start the wave.")
+				return m, m.toastTickCmd()
+			case taskfsm.ExecutionPhaseWaveRunning, taskfsm.ExecutionPhaseWaveWaiting:
+				m.rebuildOrphanedOrchestrators()
+				if existingOrch, ok := m.waveOrchestrators[planFile]; ok {
+					return m.startNextWave(existingOrch, entry)
+				}
+				m.toastManager.Info("wave execution already in progress — waiting for active tasks.")
+				return m, m.toastTickCmd()
+			}
+		}
+
 		orch := orchestration.NewWaveOrchestrator(planFile, plan)
 		orch.SetStore(m.taskStore, m.taskStoreProject)
 		m.waveOrchestrators[planFile] = orch
@@ -1289,19 +1309,6 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			auditlog.WithPlan(planFile))
 		m.loadTaskState()
 		m.updateSidebarTasks()
-
-		// Check whether an architect pass already finished for this plan (for
-		// example after a TUI restart that lost the in-memory orchestrator).
-		// Skip a duplicate architect run in that case.
-		for _, inst := range m.nav.GetInstances() {
-			if inst.TaskFile == planFile && inst.AgentType == session.AgentTypeElaborator {
-				m.killExistingPlanAgent(planFile, session.AgentTypeElaborator)
-				m.toastManager.Info(fmt.Sprintf("architect pass already ran — starting wave 1 for '%s'", taskstate.DisplayName(planFile)))
-				m.audit(auditlog.EventWaveStarted, "skipping re-elaboration (prior architect found)",
-					auditlog.WithPlan(planFile))
-				return m.startNextWave(orch, entry)
-			}
-		}
 
 		// Elaboration phase: spawn architect before starting wave 1.
 		orch.SetElaborating()

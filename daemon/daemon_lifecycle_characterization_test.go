@@ -25,6 +25,7 @@ func TestGatewayNoopOutcome_Characterization(t *testing.T) {
 		{name: "implement finished is suppressed", signalType: "implement_finished", status: taskstore.SignalDone, result: "suppressed implement-finished signal"},
 		{name: "wave task failures are explicit", signalType: "implement_task_finished", status: taskstore.SignalFailed, result: "no active orchestrator / wrong wave / already-finished task"},
 		{name: "wave start failures are explicit", signalType: "implement_wave", status: taskstore.SignalFailed, result: "processor could not start the requested wave"},
+		{name: "canonical architect failures stay explicit", signalType: "architect_finished", status: taskstore.SignalFailed, result: "no active architect pass to resume"},
 		{name: "architect resume failures are explicit", signalType: "elaborator_finished", status: taskstore.SignalFailed, result: "no active architect pass to resume"},
 		{name: "unexpected signals are rejected", signalType: "planner_finished", status: taskstore.SignalFailed, result: "signal rejected by processor"},
 	}

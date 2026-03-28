@@ -1517,3 +1517,56 @@ func TestExecuteContextAction_MarkPlanDoneFromReadyTransitionsToDone(t *testing.
 	assert.Equal(t, taskstate.StatusDone, entry.Status,
 		"mark_plan_done should walk ready->implementing->reviewing->done")
 }
+
+func TestExecuteTaskStage_Implement_ReusesPersistedArchitectingState(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	const planFile = "architecting-from-state"
+	const planContent = "# Plan\n\n**Goal:** reuse architect state\n\n## Wave 1\n\n### Task 1: First\n\nDo it.\n"
+
+	store := taskstore.NewTestSQLiteStore(t)
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+		Branch:   "plan/architecting-from-state",
+		Content:  planContent,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseArchitecting),
+			ActiveAgentType: session.AgentTypeElaborator,
+		},
+	}))
+
+	ps, err := taskstate.Load(store, "proj", plansDir)
+	require.NoError(t, err)
+	threshold := 0
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		appConfig:          &config.Config{BlueprintSkipThresholdValue: &threshold},
+		taskState:          ps,
+		taskStore:          store,
+		taskStoreProject:   "proj",
+		taskStateDir:       plansDir,
+		fsm:                taskfsm.New(store, "proj", plansDir),
+		nav:                ui.NewNavigationPanel(&sp),
+		menu:               ui.NewMenu(),
+		tabbedWindow:       ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:       overlay.NewToastManager(&sp),
+		waveOrchestrators:  make(map[string]*orchestration.WaveOrchestrator),
+		instanceFinalizers: make(map[*session.Instance]func()),
+		activeRepoPath:     dir,
+		program:            "opencode",
+	}
+
+	model, _ := h.executeTaskStage(planFile, "implement")
+	updated := model.(*home)
+	orch, ok := updated.waveOrchestrators[planFile]
+	require.True(t, ok)
+	assert.Equal(t, orchestration.WaveStateElaborating, orch.State())
+	assert.Empty(t, updated.nav.GetInstances(), "persisted architecting state must not spawn a duplicate architect")
+	entry, err := store.Get("proj", planFile)
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseArchitecting), ActiveAgentType: session.AgentTypeElaborator}, entry.ExecutionState)
+}

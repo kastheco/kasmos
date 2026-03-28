@@ -70,8 +70,12 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 	if err != nil {
 		return err
 	}
+	internalType := canonicalType
+	if canonicalType == "elaborator_finished" {
+		internalType = string(taskfsm.ArchitectFinished)
+	}
 
-	switch canonicalType {
+	switch internalType {
 	case "planner_finished":
 		body, err := decodeBody(entry.Payload)
 		if err != nil {
@@ -137,9 +141,7 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			TaskFile:   entry.PlanFile,
 		})
 
-	case "elaborator_finished":
-		// The wire contract retains the legacy elaborator_finished signal name,
-		// but internally it marks architect-pass completion.
+	case string(taskfsm.ArchitectFinished):
 		result.ElaborationSignals = append(result.ElaborationSignals, taskfsm.ElaborationSignal{
 			TaskFile: entry.PlanFile,
 		})
