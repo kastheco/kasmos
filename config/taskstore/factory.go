@@ -28,6 +28,9 @@ func NewStoreFromConfig(storeURL, project string) (Store, error) {
 func OpenAuthoritativeStore(project string) (Store, error) {
 	cfg := config.LoadConfig()
 	if strings.TrimSpace(cfg.DatabaseURL) == "" {
+		if store, err := openDaemonBackedStore(project); err == nil {
+			return store, nil
+		}
 		return OpenBackingSQLiteStore()
 	}
 

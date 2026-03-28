@@ -1,7 +1,10 @@
 package taskstore
 
 import (
+	"encoding/json"
 	"fmt"
+	"net"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -27,6 +30,42 @@ func initTestRepo(t *testing.T, repoDir string) {
 	if err != nil {
 		t.Skipf("git init failed (%v): %s", err, out)
 	}
+}
+
+func startTestDaemonSocketServer(t *testing.T, repos []string, handler http.Handler) string {
+	t.Helper()
+
+	socketPath := defaultDaemonSocketPath()
+	require.NoError(t, os.MkdirAll(filepath.Dir(socketPath), 0o755))
+	_ = os.Remove(socketPath)
+
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+
+	registered := make([]daemonRepoStatus, 0, len(repos))
+	for _, project := range repos {
+		registered = append(registered, daemonRepoStatus{Project: project})
+	}
+
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/repos" {
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(registered))
+			return
+		}
+		handler.ServeHTTP(w, r)
+	})}
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+
+	t.Cleanup(func() {
+		require.NoError(t, server.Close())
+		_ = os.Remove(socketPath)
+	})
+
+	return socketPath
 }
 
 func TestNewStoreFromConfig_HTTP(t *testing.T) {
@@ -83,6 +122,70 @@ func TestOpenAuthoritativeStore_UnreachableRemoteFails(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, store)
 	assert.Contains(t, err.Error(), "task store unreachable")
+}
+
+func TestOpenAuthoritativeStore_UsesDaemonWhenProjectRegistered(t *testing.T) {
+	backend := newTestStore(t)
+	taskHandler := NewHandler(backend)
+
+	repoDir := t.TempDir()
+	initTestRepo(t, repoDir)
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	startTestDaemonSocketServer(t, []string{"test-project"}, taskHandler)
+	t.Chdir(repoDir)
+
+	store, err := OpenAuthoritativeStore("test-project")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	_, ok := store.(*HTTPStore)
+	assert.True(t, ok)
+
+	require.NoError(t, store.Create("test-project", TaskEntry{Filename: "daemon-backed", Status: StatusReady}))
+	entry, err := backend.Get("test-project", "daemon-backed")
+	require.NoError(t, err)
+	assert.Equal(t, StatusReady, entry.Status)
+}
+
+func TestOpenAuthoritativeStore_UnreachableDaemonFallsBackToSQLite(t *testing.T) {
+	repoDir := t.TempDir()
+	initTestRepo(t, repoDir)
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	t.Chdir(repoDir)
+
+	store, err := OpenAuthoritativeStore("test-project")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	_, ok := store.(*HTTPStore)
+	assert.False(t, ok)
+
+	require.NoError(t, store.Create("test-project", TaskEntry{Filename: "sqlite-backed", Status: StatusReady}))
+	entry, err := store.Get("test-project", "sqlite-backed")
+	require.NoError(t, err)
+	assert.Equal(t, StatusReady, entry.Status)
+}
+
+func TestOpenAuthoritativeStore_UnregisteredDaemonProjectFallsBackToSQLite(t *testing.T) {
+	backend := newTestStore(t)
+	taskHandler := NewHandler(backend)
+
+	repoDir := t.TempDir()
+	initTestRepo(t, repoDir)
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	startTestDaemonSocketServer(t, []string{"other-project"}, taskHandler)
+	t.Chdir(repoDir)
+
+	store, err := OpenAuthoritativeStore("test-project")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	_, ok := store.(*HTTPStore)
+	assert.False(t, ok)
+
+	require.NoError(t, store.Create("test-project", TaskEntry{Filename: "local-only", Status: StatusReady}))
+	_, err = backend.Get("test-project", "local-only")
+	assert.Error(t, err)
 }
 
 func TestOpenAuthoritativeSignalGateway_UnreachableRemoteFails(t *testing.T) {
