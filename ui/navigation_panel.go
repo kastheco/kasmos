@@ -341,16 +341,10 @@ func (n *NavigationPanel) rebuildRows() {
 	}
 	sortInsts(solo)
 
-	// Sort plans by lifecycle priority, then alphabetically descending.
+	// Sort plans alphabetically descending within each section.
 	sorted := append([]PlanDisplay(nil), n.plans...)
 	sort.SliceStable(sorted, func(i, j int) bool {
-		pi, pj := sorted[i], sorted[j]
-		ki := navPlanSortKey(pi, byPlan[pi.Filename], n.planStatuses[pi.Filename])
-		kj := navPlanSortKey(pj, byPlan[pj.Filename], n.planStatuses[pj.Filename])
-		if ki != kj {
-			return ki < kj
-		}
-		return strings.ToLower(taskstate.DisplayName(pi.Filename)) > strings.ToLower(taskstate.DisplayName(pj.Filename))
+		return strings.ToLower(taskstate.DisplayName(sorted[i].Filename)) > strings.ToLower(taskstate.DisplayName(sorted[j].Filename))
 	})
 
 	capacity := len(sorted) + len(n.instances) + len(n.deadPlans) + len(n.historyPlans) + len(n.cancelled) + 8
@@ -457,13 +451,7 @@ func (n *NavigationPanel) rebuildRows() {
 				continue
 			}
 			sort.SliceStable(planGroup, func(i, j int) bool {
-				pi, pj := planGroup[i], planGroup[j]
-				ki := navPlanSortKey(pi, byPlan[pi.Filename], n.planStatuses[pi.Filename])
-				kj := navPlanSortKey(pj, byPlan[pj.Filename], n.planStatuses[pj.Filename])
-				if ki != kj {
-					return ki < kj
-				}
-				return strings.ToLower(taskstate.DisplayName(pi.Filename)) > strings.ToLower(taskstate.DisplayName(pj.Filename))
+				return strings.ToLower(taskstate.DisplayName(planGroup[i].Filename)) > strings.ToLower(taskstate.DisplayName(planGroup[j].Filename))
 			})
 			topicID := SidebarTopicPrefix + t.Name
 			collapsed := n.collapsed[topicID]
