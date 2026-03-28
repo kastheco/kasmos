@@ -2,7 +2,10 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +14,8 @@ import (
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
+	daemonpkg "github.com/kastheco/kasmos/daemon"
+	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/session/tmux"
@@ -64,6 +69,30 @@ func newTestHome() *home {
 	}
 }
 
+func startTestDaemonSocketServer(t *testing.T, handler http.Handler) string {
+	t.Helper()
+
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	socketPath := daemonpkg.DefaultSocketPath()
+	require.NoError(t, os.MkdirAll(filepath.Dir(socketPath), 0o755))
+	_ = os.Remove(socketPath)
+
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+
+	server := &http.Server{Handler: handler}
+	go func() {
+		_ = server.Serve(listener)
+	}()
+
+	t.Cleanup(func() {
+		require.NoError(t, server.Close())
+		_ = os.Remove(socketPath)
+	})
+
+	return socketPath
+}
+
 func TestShowDaemonRequiredDialog_RegistersRepoOnConfirm(t *testing.T) {
 	registeredPath := ""
 	h := newTestHome()
@@ -100,6 +129,149 @@ func TestShowDaemonRequiredDialog_DoesNotRegisterWhenUnavailable(t *testing.T) {
 	co, ok := h.overlays.Current().(*overlay.ConfirmationOverlay)
 	require.True(t, ok)
 	assert.Contains(t, co.View(), "start the daemon first")
+}
+
+func TestCheckDaemonStatus_AutoRegistersRepoWhenDaemonIsRunning(t *testing.T) {
+	repoPath := filepath.Join(t.TempDir(), "repo")
+	require.NoError(t, os.MkdirAll(repoPath, 0o755))
+
+	oldManaged := repoManagedByDaemon
+	repoManagedByDaemon = func(string) bool { return false }
+	t.Cleanup(func() {
+		repoManagedByDaemon = oldManaged
+	})
+
+	tests := []struct {
+		name            string
+		registerStatus  int
+		wantReady       bool
+		wantAutoReg     bool
+		wantCanRegister bool
+	}{
+		{
+			name:           "successful auto-registration returns ready",
+			registerStatus: http.StatusCreated,
+			wantReady:      true,
+			wantAutoReg:    true,
+		},
+		{
+			name:            "failed auto-registration falls back to confirmation",
+			registerStatus:  http.StatusInternalServerError,
+			wantCanRegister: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			postCalls := 0
+			mux := http.NewServeMux()
+			mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				require.NoError(t, json.NewEncoder(w).Encode(api.StatusResponse{Running: true}))
+			})
+			mux.HandleFunc("POST /v1/repos", func(w http.ResponseWriter, r *http.Request) {
+				postCalls++
+				var req struct {
+					Path string `json:"path"`
+				}
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+				assert.Equal(t, canonicalRepoPath(repoPath), req.Path)
+				w.WriteHeader(tc.registerStatus)
+			})
+
+			startTestDaemonSocketServer(t, mux)
+
+			status := checkDaemonStatus(repoPath)
+
+			assert.Equal(t, 1, postCalls)
+			assert.Equal(t, tc.wantReady, status.ready)
+			assert.Equal(t, tc.wantAutoReg, status.autoRegistered)
+			assert.Equal(t, tc.wantCanRegister, status.canRegisterRepo)
+			if tc.wantCanRegister {
+				assert.Contains(t, status.message, "press y to register it now")
+			} else {
+				assert.Empty(t, status.message)
+			}
+		})
+	}
+}
+
+func TestDaemonRepoRegisteredMsg_SwitchesToDaemonTaskStoreWithoutConfirmation(t *testing.T) {
+	repoDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755))
+
+	oldCwd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(repoDir))
+	t.Cleanup(func() { _ = os.Chdir(oldCwd) })
+
+	backend := taskstore.NewTestSQLiteStore(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/repos", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode([]api.RepoStatus{{
+			Path:    repoDir,
+			Project: "daemon-project",
+		}}))
+	})
+	taskHandler := taskstore.NewHandler(backend)
+	mux.Handle("/v1/ping", taskHandler)
+	mux.Handle("/v1/projects/", taskHandler)
+	startTestDaemonSocketServer(t, mux)
+
+	oldManaged := repoManagedByDaemon
+	repoManagedByDaemon = func(string) bool { return false }
+	t.Cleanup(func() {
+		repoManagedByDaemon = oldManaged
+	})
+
+	h := newHome(context.Background(), "opencode", false, "test")
+	t.Cleanup(func() {
+		if h.embeddedServer != nil {
+			h.embeddedServer.Stop()
+		}
+		if h.taskStore != nil {
+			_ = h.taskStore.Close()
+		}
+		if h.auditLogger != nil {
+			_ = h.auditLogger.Close()
+		}
+	})
+
+	require.NotNil(t, h.embeddedServer, "newHome should start on the embedded store before daemon rebinding")
+
+	model, cmd := h.Update(daemonRepoRegisteredMsg{path: repoDir})
+	updated := model.(*home)
+
+	require.NotNil(t, cmd)
+	_, ok := cmd().(overlay.ToastTickMsg)
+	require.True(t, ok, "daemon registration should schedule a toast tick")
+
+	assert.Equal(t, stateDefault, updated.state)
+	assert.False(t, updated.overlays.IsActive(), "successful rebinding should not open a confirmation overlay")
+	assert.Nil(t, updated.pendingConfirmAction)
+	assert.Nil(t, updated.embeddedServer, "embedded store should be stopped after switching to the daemon store")
+	assert.Equal(t, "daemon-project", updated.taskStoreProject)
+	require.IsType(t, &taskstore.HTTPStore{}, updated.taskStore)
+
+	require.NoError(t, updated.taskStore.Create(updated.taskStoreProject, taskstore.TaskEntry{
+		Filename: "daemon-created",
+		Status:   taskstore.StatusReady,
+	}))
+
+	created, err := backend.Get(updated.taskStoreProject, "daemon-created")
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusReady, created.Status)
+
+	require.NoError(t, backend.Create(updated.taskStoreProject, taskstore.TaskEntry{
+		Filename: "daemon-preloaded",
+		Status:   taskstore.StatusDone,
+	}))
+
+	loaded, err := updated.taskStore.Get(updated.taskStoreProject, "daemon-preloaded")
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusDone, loaded.Status)
+	assert.True(t, updated.toastManager.HasActiveToasts())
 }
 
 func TestView_UsesCellMotionMouseMode(t *testing.T) {

@@ -32,7 +32,7 @@ func initTestRepo(t *testing.T, repoDir string) {
 	}
 }
 
-func startTestDaemonSocketServer(t *testing.T, repos []string, handler http.Handler) string {
+func startTestDaemonSocketServer(t *testing.T, handler http.Handler) string {
 	t.Helper()
 
 	socketPath := defaultDaemonSocketPath()
@@ -42,19 +42,7 @@ func startTestDaemonSocketServer(t *testing.T, repos []string, handler http.Hand
 	listener, err := net.Listen("unix", socketPath)
 	require.NoError(t, err)
 
-	registered := make([]daemonRepoStatus, 0, len(repos))
-	for _, project := range repos {
-		registered = append(registered, daemonRepoStatus{Project: project})
-	}
-
-	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet && r.URL.Path == "/v1/repos" {
-			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(registered))
-			return
-		}
-		handler.ServeHTTP(w, r)
-	})}
+	server := &http.Server{Handler: handler}
 
 	go func() {
 		_ = server.Serve(listener)
@@ -66,6 +54,24 @@ func startTestDaemonSocketServer(t *testing.T, repos []string, handler http.Hand
 	})
 
 	return socketPath
+}
+
+func newTestDaemonTaskStoreMux(t *testing.T, repos []string, taskHandler http.Handler) http.Handler {
+	t.Helper()
+
+	registered := make([]daemonRepoStatus, 0, len(repos))
+	for _, project := range repos {
+		registered = append(registered, daemonRepoStatus{Project: project})
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/repos", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(registered))
+	})
+	mux.Handle("/v1/ping", taskHandler)
+	mux.Handle("/v1/projects/", taskHandler)
+	return mux
 }
 
 func TestNewStoreFromConfig_HTTP(t *testing.T) {
@@ -131,7 +137,7 @@ func TestOpenAuthoritativeStore_UsesDaemonWhenProjectRegistered(t *testing.T) {
 	repoDir := t.TempDir()
 	initTestRepo(t, repoDir)
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-	startTestDaemonSocketServer(t, []string{"test-project"}, taskHandler)
+	startTestDaemonSocketServer(t, newTestDaemonTaskStoreMux(t, []string{"test-project"}, taskHandler))
 	t.Chdir(repoDir)
 
 	store, err := OpenAuthoritativeStore("test-project")
@@ -140,6 +146,11 @@ func TestOpenAuthoritativeStore_UsesDaemonWhenProjectRegistered(t *testing.T) {
 
 	_, ok := store.(*HTTPStore)
 	assert.True(t, ok)
+
+	require.NoError(t, backend.Create("test-project", TaskEntry{Filename: "daemon-preloaded", Status: StatusDone}))
+	loaded, err := store.Get("test-project", "daemon-preloaded")
+	require.NoError(t, err)
+	assert.Equal(t, StatusDone, loaded.Status)
 
 	require.NoError(t, store.Create("test-project", TaskEntry{Filename: "daemon-backed", Status: StatusReady}))
 	entry, err := backend.Get("test-project", "daemon-backed")
@@ -173,17 +184,19 @@ func TestOpenAuthoritativeStore_UnregisteredDaemonProjectFallsBackToSQLite(t *te
 	repoDir := t.TempDir()
 	initTestRepo(t, repoDir)
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-	startTestDaemonSocketServer(t, []string{"other-project"}, taskHandler)
+	startTestDaemonSocketServer(t, newTestDaemonTaskStoreMux(t, []string{"other-project"}, taskHandler))
 	t.Chdir(repoDir)
 
 	store, err := OpenAuthoritativeStore("test-project")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
-	_, ok := store.(*HTTPStore)
-	assert.False(t, ok)
+	require.IsType(t, &SQLiteStore{}, store)
 
 	require.NoError(t, store.Create("test-project", TaskEntry{Filename: "local-only", Status: StatusReady}))
+	local, err := store.Get("test-project", "local-only")
+	require.NoError(t, err)
+	assert.Equal(t, StatusReady, local.Status)
 	_, err = backend.Get("test-project", "local-only")
 	assert.Error(t, err)
 }
