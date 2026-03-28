@@ -1494,6 +1494,16 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		return m, nil
 	}
 
+	// Number shortcuts: pass 1/2/3 through to the agent's PTY when the
+	// embedded VT display is active. One-shot send, no mode change.
+	if m.previewTerminal != nil && (msg.String() == "1" || msg.String() == "2" || msg.String() == "3") {
+		selected := m.nav.GetSelectedInstance()
+		if selected != nil && selected.Started() && !selected.Paused() {
+			_ = m.previewTerminal.SendKey([]byte(msg.Text))
+			return m, nil
+		}
+	}
+
 	name, ok := keys.GlobalKeyStringsMap[msg.String()]
 	if !ok {
 		return m, nil

@@ -38,11 +38,6 @@ const (
 
 	KeySpace // Key for opening context menu on selected item
 
-	// Instance filter keybindings
-	KeyFilterAll    // Key for showing all instances
-	KeyFilterActive // Key for showing only active instances
-	KeyCycleSort    // Key for cycling sort mode
-
 	KeyInfoTab // Key for jumping directly to info tab
 
 	// Tab switching keybindings (Shift+1/2 = !/#)
@@ -94,9 +89,6 @@ var GlobalKeyStringsMap = map[string]KeyName{
 	"y":          KeySendYes,
 	" ":          KeySpace,
 	"space":      KeySpace, // msg.String() returns "space" for tea.KeySpace with Text=" "
-	"1":          KeyFilterAll,
-	"2":          KeyFilterActive,
-	"3":          KeyCycleSort,
 	"t":          KeyTmuxBrowser,
 	"s":          KeySpawnAgent,
 	"L":          KeyAuditToggle,
@@ -192,18 +184,6 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	KeySpace: key.NewBinding(
 		key.WithKeys(" "),
 		key.WithHelp("space", "menu"),
-	),
-	KeyFilterAll: key.NewBinding(
-		key.WithKeys("1"),
-		key.WithHelp("1", "all"),
-	),
-	KeyFilterActive: key.NewBinding(
-		key.WithKeys("2"),
-		key.WithHelp("2", "active"),
-	),
-	KeyCycleSort: key.NewBinding(
-		key.WithKeys("3"),
-		key.WithHelp("3", "sort"),
 	),
 	KeySpawnAgent: key.NewBinding(
 		key.WithKeys("s"),
