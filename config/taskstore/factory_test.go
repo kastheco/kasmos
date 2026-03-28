@@ -35,6 +35,15 @@ func initTestRepo(t *testing.T, repoDir string) {
 func startTestDaemonSocketServer(t *testing.T, handler http.Handler) string {
 	t.Helper()
 
+	// Set HOME and XDG_RUNTIME_DIR to a short temp dir so defaultDaemonSocketPath
+	// never reads a real daemon.toml and test socket paths stay under the 108-byte
+	// Unix domain socket limit on Linux.
+	homeDir, err := os.MkdirTemp("", "ks-")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(homeDir) })
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_RUNTIME_DIR", homeDir)
+
 	socketPath := defaultDaemonSocketPath()
 	require.NoError(t, os.MkdirAll(filepath.Dir(socketPath), 0o755))
 	_ = os.Remove(socketPath)
@@ -161,6 +170,7 @@ func TestOpenAuthoritativeStore_UsesDaemonWhenProjectRegistered(t *testing.T) {
 func TestOpenAuthoritativeStore_UnreachableDaemonFallsBackToSQLite(t *testing.T) {
 	repoDir := t.TempDir()
 	initTestRepo(t, repoDir)
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	t.Chdir(repoDir)
 

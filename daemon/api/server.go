@@ -211,6 +211,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) registerRoutes() {
+	h.mux.HandleFunc("GET /v1/ping", h.handlePing)
 	h.mux.HandleFunc("GET /v1/status", h.handleStatus)
 	h.mux.HandleFunc("POST /v1/reload", h.handleReload)
 
@@ -232,6 +233,12 @@ func (h *Handler) registerRoutes() {
 // ---------------------------------------------------------------------------
 
 // handleStatus serves GET /v1/status — daemon overview.
+// handlePing serves GET /v1/ping — liveness check used by taskstore.HTTPStore.Ping().
+// Returns 200 OK so daemon-backed HTTPStores can confirm the socket is reachable.
+func (h *Handler) handlePing(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}
+
 func (h *Handler) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	resp := h.state.Status()
 	writeJSON(w, http.StatusOK, resp)
@@ -276,6 +283,7 @@ func (h *Handler) handleRemoveRepo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
+	h.storeHandlers.Delete(project)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "removed", "project": project})
 }
 

@@ -491,7 +491,9 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 	}
 
 	dbPath := taskstore.ResolvedDBPath()
-	daemonManagedRepo := repoManagedByDaemon(activeRepoPath)
+	// DatabaseURL always wins — daemon routing only applies when no remote
+	// authority is configured, matching OpenAuthoritativeStore's precedence.
+	daemonManagedRepo := appConfig.DatabaseURL == "" && repoManagedByDaemon(activeRepoPath)
 	if daemonManagedRepo {
 		socketPath := resolvedDaemonSocketPath()
 		daemonStore := taskstore.NewHTTPStoreWithOptions(taskstore.HTTPStoreOptions{

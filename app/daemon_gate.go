@@ -57,7 +57,7 @@ func canonicalRepoPath(repoPath string) string {
 
 func checkDaemonStatus(repoPath string) daemonStatusMsg {
 	repoPath = canonicalRepoPath(repoPath)
-	socketPath := daemonpkg.DefaultSocketPath()
+	socketPath := resolvedDaemonSocketPath()
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			var d net.Dialer
