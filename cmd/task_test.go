@@ -151,6 +151,20 @@ func TestPlanSetStatus_ManualReadyResetClearsPlannedPhase(t *testing.T) {
 	assert.True(t, taskstate.IsDraftReady(entry))
 }
 
+func TestPlanSetStatus_PlannedCreatesPlannedReady(t *testing.T) {
+	store, _, project := setupTestPlanState(t)
+
+	err := executeTaskSetStatus(project, "test-plan", taskstate.ManualOverridePlanned, true, store)
+	require.NoError(t, err)
+
+	reloaded, err := taskstate.Load(store, project, "")
+	require.NoError(t, err)
+	entry, ok := reloaded.Entry("test-plan")
+	require.True(t, ok)
+	assert.True(t, taskstate.IsPlannedReady(entry))
+	assert.False(t, taskstate.IsDraftReady(entry))
+}
+
 func TestPlanTransition(t *testing.T) {
 	store, _, project := setupTestPlanState(t)
 

@@ -962,6 +962,51 @@ func TestExecuteContextAction_SetStatusForceOverridesWithoutFSM(t *testing.T) {
 	assert.Equal(t, planFile, h.pendingSetStatusTask, "pending plan file should be stored")
 }
 
+func TestHandleKeyPress_SetStatusPlannedCreatesPlannedReady(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+
+	planFile := "test-set-status-planned.md"
+	require.NoError(t, ps.Register(planFile, "test set status planned", "plan/test-set-status-planned", time.Now()))
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		taskState:      ps,
+		taskStateDir:   plansDir,
+		fsm:            newFSMForTest(t, plansDir).TaskStateMachine,
+		nav:            ui.NewNavigationPanel(&sp),
+		menu:           ui.NewMenu(),
+		tabbedWindow:   ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:   overlay.NewToastManager(&sp),
+		overlays:       overlay.NewManager(),
+		activeRepoPath: dir,
+	}
+
+	h.updateSidebarTasks()
+	require.True(t, h.nav.SelectByID(ui.SidebarPlanPrefix+planFile))
+
+	_, _ = h.executeContextAction("set_status")
+	require.Equal(t, stateSetStatus, h.state)
+
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Text: taskstate.ManualOverridePlanned})
+	updated := model.(*home)
+	model, _ = updated.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated = model.(*home)
+
+	assert.Equal(t, stateDefault, updated.state)
+	assert.False(t, updated.overlays.IsActive())
+	assert.Empty(t, updated.pendingSetStatusTask)
+
+	entry, ok := ps.Entry(planFile)
+	require.True(t, ok)
+	assert.True(t, taskstate.IsPlannedReady(entry))
+	assert.False(t, taskstate.IsDraftReady(entry))
+}
+
 func TestExecuteTaskStage_BlocksWhenDaemonUnavailable(t *testing.T) {
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")

@@ -21,6 +21,29 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
+func (m *home) applyPendingSetStatus(picked string) (tea.Model, tea.Cmd) {
+	status, state, err := taskstate.ResolveManualOverride(picked)
+	if err != nil {
+		m.state = stateDefault
+		m.pendingSetStatusTask = ""
+		return m, m.handleError(err)
+	}
+	if err := m.taskState.ForceSetLifecycle(m.pendingSetStatusTask, status, state); err != nil {
+		m.state = stateDefault
+		m.pendingSetStatusTask = ""
+		return m, m.handleError(err)
+	}
+	m.audit(auditlog.EventPlanTransition, "manual override → "+picked,
+		auditlog.WithPlan(m.pendingSetStatusTask),
+		auditlog.WithDetail("manual override"))
+	m.loadTaskState()
+	m.updateSidebarTasks()
+	m.toastManager.Success(fmt.Sprintf("status → %s", picked))
+	m.state = stateDefault
+	m.pendingSetStatusTask = ""
+	return m, tea.Batch(tea.RequestWindowSize, m.toastTickCmd())
+}
+
 func (m *home) handleMenuHighlighting(msg tea.KeyPressMsg) (cmd tea.Cmd, returnEarly bool) {
 	// Handle menu highlighting when you press a button. We intercept it here and immediately return to
 	// update the ui while re-sending the keypress. Then, on the next call to this, we actually handle the keypress.
@@ -328,20 +351,7 @@ func (m *home) handleActiveOverlayMouse(msg tea.MouseClickMsg) (tea.Model, tea.C
 		if result.Submitted && m.taskState != nil && m.pendingSetStatusTask != "" {
 			picked := result.Value
 			if picked != "" {
-				if err := m.taskState.ForceSetStatus(m.pendingSetStatusTask, taskstate.Status(picked)); err != nil {
-					m.state = stateDefault
-					m.pendingSetStatusTask = ""
-					return m, m.handleError(err)
-				}
-				m.audit(auditlog.EventPlanTransition, "manual override → "+picked,
-					auditlog.WithPlan(m.pendingSetStatusTask),
-					auditlog.WithDetail("manual override"))
-				m.loadTaskState()
-				m.updateSidebarTasks()
-				m.toastManager.Success(fmt.Sprintf("status → %s", picked))
-				m.state = stateDefault
-				m.pendingSetStatusTask = ""
-				return m, tea.Batch(tea.RequestWindowSize, m.toastTickCmd())
+				return m.applyPendingSetStatus(picked)
 			}
 		}
 		m.state = stateDefault
@@ -1217,20 +1227,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 			if result.Submitted && m.taskState != nil && m.pendingSetStatusTask != "" {
 				picked := result.Value
 				if picked != "" {
-					if err := m.taskState.ForceSetStatus(m.pendingSetStatusTask, taskstate.Status(picked)); err != nil {
-						m.state = stateDefault
-						m.pendingSetStatusTask = ""
-						return m, m.handleError(err)
-					}
-					m.audit(auditlog.EventPlanTransition, "manual override → "+picked,
-						auditlog.WithPlan(m.pendingSetStatusTask),
-						auditlog.WithDetail("manual override"))
-					m.loadTaskState()
-					m.updateSidebarTasks()
-					m.toastManager.Success(fmt.Sprintf("status → %s", picked))
-					m.state = stateDefault
-					m.pendingSetStatusTask = ""
-					return m, tea.Batch(tea.RequestWindowSize, m.toastTickCmd())
+					return m.applyPendingSetStatus(picked)
 				}
 			}
 			m.state = stateDefault

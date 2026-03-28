@@ -309,6 +309,14 @@ func TestForceSetStatus_ClearsPlannedReadyExecutionState(t *testing.T) {
 	assert.Equal(t, taskstore.ExecutionState{}, entry.ExecutionState)
 }
 
+func TestResolveManualOverride_PlannedReturnsPlannedReady(t *testing.T) {
+	status, state, err := ResolveManualOverride(ManualOverridePlanned)
+	require.NoError(t, err)
+	assert.Equal(t, StatusReady, status)
+	assert.Equal(t, taskstore.ExecutionState{Phase: "planned"}, state)
+	assert.Contains(t, ManualOverrideOptions(), ManualOverridePlanned)
+}
+
 func TestHasRunningCoderInTopic(t *testing.T) {
 	ps := &TaskState{
 		Dir: "/tmp",

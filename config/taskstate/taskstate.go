@@ -12,6 +12,18 @@ import (
 
 type Status string
 
+const ManualOverridePlanned = "planned"
+
+var manualOverrideOptions = []string{
+	string(StatusReady),
+	ManualOverridePlanned,
+	string(StatusPlanning),
+	string(StatusImplementing),
+	string(StatusReviewing),
+	string(StatusDone),
+	string(StatusCancelled),
+}
+
 const (
 	StatusReady     Status = "ready"
 	StatusDone      Status = "done"
@@ -33,6 +45,39 @@ func IsDraftReady(entry TaskEntry) bool {
 // it as planned and ready to execute.
 func IsPlannedReady(entry TaskEntry) bool {
 	return entry.Status == StatusReady && strings.TrimSpace(entry.ExecutionState.Phase) == "planned"
+}
+
+// ManualOverrideOptions returns the valid operator-facing lifecycle override
+// targets. This includes the phase-aware planned-ready state exposed as
+// "planned" even though its persisted lifecycle status remains ready.
+func ManualOverrideOptions() []string {
+	options := make([]string, len(manualOverrideOptions))
+	copy(options, manualOverrideOptions)
+	return options
+}
+
+// ResolveManualOverride maps an operator-facing override target to the
+// lifecycle status plus any persisted execution metadata required to represent
+// it faithfully in the task store.
+func ResolveManualOverride(target string) (Status, taskstore.ExecutionState, error) {
+	switch strings.TrimSpace(target) {
+	case string(StatusReady):
+		return StatusReady, taskstore.ExecutionState{}, nil
+	case ManualOverridePlanned:
+		return StatusReady, taskstore.ExecutionState{Phase: ManualOverridePlanned}, nil
+	case string(StatusPlanning):
+		return StatusPlanning, taskstore.ExecutionState{}, nil
+	case string(StatusImplementing):
+		return StatusImplementing, taskstore.ExecutionState{}, nil
+	case string(StatusReviewing):
+		return StatusReviewing, taskstore.ExecutionState{}, nil
+	case string(StatusDone):
+		return StatusDone, taskstore.ExecutionState{}, nil
+	case string(StatusCancelled):
+		return StatusCancelled, taskstore.ExecutionState{}, nil
+	default:
+		return "", taskstore.ExecutionState{}, fmt.Errorf("invalid manual override %q: must be one of %s", target, strings.Join(manualOverrideOptions, ", "))
+	}
 }
 
 // IsActiveLifecycle returns true while a task is actively moving through its

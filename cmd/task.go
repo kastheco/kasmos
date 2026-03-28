@@ -127,7 +127,11 @@ func executeTaskSetStatus(project, planFile, status string, force bool, store ta
 		return err
 	}
 	planFile = resolveExistingTaskFilename(ps, planFile)
-	return ps.ForceSetStatus(planFile, taskstate.Status(status))
+	resolvedStatus, state, err := taskstate.ResolveManualOverride(status)
+	if err != nil {
+		return err
+	}
+	return ps.ForceSetLifecycle(planFile, resolvedStatus, state)
 }
 
 // executeTaskTransition applies a named FSM event to a plan and returns the new status.

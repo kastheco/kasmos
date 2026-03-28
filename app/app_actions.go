@@ -215,8 +215,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.pendingSetStatusTask = planFile
-		statuses := []string{"ready", "planning", "implementing", "reviewing", "done", "cancelled"}
-		m.overlays.Show(overlay.NewPickerOverlay("set status", statuses))
+		m.overlays.Show(overlay.NewPickerOverlay("set status", taskstate.ManualOverrideOptions()))
 		m.state = stateSetStatus
 		return m, nil
 
