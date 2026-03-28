@@ -609,6 +609,32 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 	return h
 }
 
+func (m *home) switchToDaemonTaskStore() error {
+	project := resolveTaskStoreProject(m.activeRepoPath)
+	daemonStore := taskstore.NewHTTPStoreWithOptions(taskstore.HTTPStoreOptions{
+		BaseURL:    "http://daemon",
+		Project:    project,
+		Client:     daemonHTTPClient(defaultDaemonSocketPath(), 5*time.Second),
+		PingClient: daemonHTTPClient(defaultDaemonSocketPath(), 2*time.Second),
+	})
+	if err := daemonStore.Ping(); err != nil {
+		_ = daemonStore.Close()
+		return err
+	}
+
+	m.taskStore = daemonStore
+	m.taskStoreProject = project
+	m.fsm = taskfsm.New(m.taskStore, project, m.taskStateDir)
+	m.processor = nil
+
+	if m.embeddedServer != nil {
+		m.embeddedServer.Stop()
+		m.embeddedServer = nil
+	}
+
+	return nil
+}
+
 func dedupeInstancesByRepoAndTitle(instances []*session.Instance) []*session.Instance {
 	if len(instances) < 2 {
 		return instances
@@ -788,12 +814,24 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 		return m, m.toastTickCmd()
 	case daemonStatusMsg:
+		if msg.ready && msg.autoRegistered {
+			if err := m.switchToDaemonTaskStore(); err != nil {
+				m.toastManager.Error("registered repo with daemon but failed to switch task store")
+			} else {
+				m.toastManager.Success("auto-registered repo with daemon")
+			}
+			return m, m.toastTickCmd()
+		}
 		if !msg.ready {
 			m.showDaemonRequiredDialog(msg)
 		}
 		return m, nil
 	case daemonRepoRegisteredMsg:
-		m.toastManager.Success(fmt.Sprintf("registered repo with daemon: %s", msg.path))
+		if err := m.switchToDaemonTaskStore(); err != nil {
+			m.toastManager.Error("registered repo with daemon but failed to switch task store")
+		} else {
+			m.toastManager.Success("registered repo with daemon")
+		}
 		return m, m.toastTickCmd()
 	case planBrowserOpenedMsg:
 		if msg.startedServer {

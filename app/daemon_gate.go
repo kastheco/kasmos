@@ -21,6 +21,7 @@ type daemonStatusMsg struct {
 	ready           bool
 	message         string
 	canRegisterRepo bool
+	autoRegistered  bool
 }
 
 type daemonRepoRegisteredMsg struct {
@@ -87,6 +88,12 @@ func checkDaemonStatus(repoPath string) daemonStatusMsg {
 		if canonicalRepoPath(repo.Path) == cleanRepoPath {
 			return daemonStatusMsg{ready: true}
 		}
+	}
+
+	if err := registerRepoWithDaemon(repoPath); err == nil {
+		return daemonStatusMsg{ready: true, autoRegistered: true}
+	} else if repoManagedByDaemon(repoPath) {
+		return daemonStatusMsg{ready: true, autoRegistered: true}
 	}
 
 	return daemonStatusMsg{
