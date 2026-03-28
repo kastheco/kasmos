@@ -10,6 +10,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskstate"
+	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/ui"
@@ -74,6 +75,11 @@ func TestFSMSetImplementing_Characterization(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			h, plansDir := newLifecycleCharacterizationHome(t, tt.planFile, tt.initial)
+			// planned-ready is required for fsmSetImplementing to accept a ready task;
+			// planning and implementing cases handle the phase transition themselves.
+			if tt.initial == taskstate.StatusReady {
+				require.NoError(t, h.taskState.SetExecutionState(tt.planFile, taskstore.ExecutionState{Phase: "planned"}))
+			}
 
 			require.NoError(t, h.fsmSetImplementing(tt.planFile))
 

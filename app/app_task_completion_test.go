@@ -370,6 +370,12 @@ func TestMetadataTickHandler_NoRepromptWhenConfirmPending(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, ps.Register(planFile, "test feature", "plan/test-feature", time.Now()))
 	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+	// ShouldAutoAdvanceLifecycleImplementer requires a single-agent phase; without
+	// this the coder-exit check returns false and stateConfirm is never set.
+	require.NoError(t, ps.SetExecutionState(planFile, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseSingleAgentImplementing),
+		ActiveAgentType: session.AgentTypeCoder,
+	}))
 
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:     "test-feature-implement",

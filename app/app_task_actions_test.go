@@ -454,6 +454,22 @@ func TestSpawnWaveTasks_HeadlessCoderUsesHeadlessExecution(t *testing.T) {
 	tasks := orch.StartNextWave()
 	require.Len(t, tasks, 1)
 
+	// spawnWaveTasks persists execution state before spawning; provide a minimal
+	// store and taskState so that write does not short-circuit the spawn.
+	store := taskstore.NewTestSQLiteStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "test.md",
+		Status:   taskstore.StatusImplementing,
+		Branch:   "plan/test",
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+			ActiveAgentType: session.AgentTypeCoder,
+			ActiveWave:      1,
+		},
+	}))
+	ps, err := taskstate.Load(store, "test", "")
+	require.NoError(t, err)
+
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
 	list := ui.NewNavigationPanel(&sp)
 	h := &home{
@@ -463,6 +479,9 @@ func TestSpawnWaveTasks_HeadlessCoderUsesHeadlessExecution(t *testing.T) {
 		menu:               ui.NewMenu(),
 		toastManager:       overlay.NewToastManager(&sp),
 		instanceFinalizers: make(map[*session.Instance]func()),
+		taskState:          ps,
+		taskStore:          store,
+		taskStoreProject:   "test",
 		appConfig: &config.Config{
 			PhaseRoles: map[string]string{"implementing": "coder"},
 			Profiles: map[string]config.AgentProfile{
@@ -1444,6 +1463,8 @@ func TestSoloActionChecksStoreNotDisk(t *testing.T) {
 		Status:   taskstore.StatusReady,
 		Branch:   "plan/test-solo-from-db",
 		Content:  planContent,
+		// planned-ready so fsmSetImplementing accepts it when the solo stage runs.
+		ExecutionState: taskstore.ExecutionState{Phase: "planned"},
 	}))
 
 	ps, err := taskstate.Load(store, "proj", plansDir)
@@ -1492,6 +1513,8 @@ func TestExecuteContextAction_MarkPlanDoneFromReadyTransitionsToDone(t *testing.
 	planFile := "review-approval-gate.md"
 	require.NoError(t, ps.Register(planFile, "review approval gate", "plan/review-approval-gate", time.Now()))
 	seedPlanStatus(t, ps, planFile, taskstate.StatusReady)
+	// planned-ready so mark_plan_done can walk ready→implementing→reviewing→done.
+	require.NoError(t, ps.SetExecutionState(planFile, taskstore.ExecutionState{Phase: "planned"}))
 
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
 	h := &home{

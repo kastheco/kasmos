@@ -1584,6 +1584,8 @@ func (th *waveElabTestHarness) registerPlan(planFile, content, branch string) {
 		Status:   taskstore.StatusReady,
 		Branch:   branch,
 		Content:  content,
+		// planned-ready so fsmSetImplementing accepts the plan when implement is triggered.
+		ExecutionState: taskstore.ExecutionState{Phase: "planned"},
 	}))
 	ps, err := taskstate.Load(th.store, "proj", th.plansDir)
 	require.NoError(th.t, err)
@@ -1660,6 +1662,12 @@ func TestCoderExit_FocusesCoderInstance_BeforePushConfirm(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, ps.Register(planFile, "focus coder test", "plan/focus-coder", time.Now()))
 	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+	// ShouldAutoAdvanceLifecycleImplementer checks IsSingleAgentImplementingPhase;
+	// without the execution phase the coder-exit auto-advance never fires.
+	require.NoError(t, ps.SetExecutionState(planFile, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseSingleAgentImplementing),
+		ActiveAgentType: session.AgentTypeCoder,
+	}))
 
 	coderInst := &session.Instance{
 		Title:     "focus-coder-implement",
