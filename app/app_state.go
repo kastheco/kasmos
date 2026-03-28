@@ -38,9 +38,15 @@ import (
 
 var restoreInstanceFromData = session.FromInstanceData
 
+const (
+	plannerInstancePollInterval = 50 * time.Millisecond
+	plannerInstanceWaitTimeout  = 5 * time.Second
+)
+
 func waitForDaemonPlannerInstance(data session.InstanceData) (*session.Instance, error) {
 	var lastErr error
-	for range 20 {
+	deadline := time.Now().Add(plannerInstanceWaitTimeout)
+	for time.Now().Before(deadline) {
 		inst, err := restoreInstanceFromData(data)
 		if err == nil {
 			if inst != nil && !inst.Exited {
@@ -50,7 +56,7 @@ func waitForDaemonPlannerInstance(data session.InstanceData) (*session.Instance,
 		} else {
 			lastErr = err
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(plannerInstancePollInterval)
 	}
 	if lastErr != nil {
 		return nil, lastErr

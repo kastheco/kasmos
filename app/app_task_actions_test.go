@@ -431,6 +431,50 @@ func TestWaitForDaemonPlannerInstance_SkipsExitedPlaceholder(t *testing.T) {
 	assert.GreaterOrEqual(t, attempts, 2)
 }
 
+func TestWaitForDaemonPlannerInstance_ToleratesSlowStartup(t *testing.T) {
+	oldRestore := restoreInstanceFromData
+	t.Cleanup(func() {
+		restoreInstanceFromData = oldRestore
+	})
+
+	attempts := 0
+	restoreInstanceFromData = func(data session.InstanceData) (*session.Instance, error) {
+		attempts++
+		inst, err := session.NewInstance(session.InstanceOptions{
+			Title:         data.Title,
+			Path:          data.Path,
+			Program:       data.Program,
+			ExecutionMode: data.ExecutionMode,
+			TaskFile:      data.TaskFile,
+			AgentType:     data.AgentType,
+		})
+		if err != nil {
+			return nil, err
+		}
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		if attempts <= 25 {
+			inst.Exited = true
+			inst.SetStatus(session.Ready)
+			return inst, nil
+		}
+		return inst, nil
+	}
+
+	inst, err := waitForDaemonPlannerInstance(session.InstanceData{
+		Title:         "planner-test",
+		Path:          t.TempDir(),
+		Program:       "opencode",
+		ExecutionMode: session.ExecutionModeTmux,
+		TaskFile:      "planner-test.md",
+		AgentType:     session.AgentTypePlanner,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, inst)
+	assert.False(t, inst.Exited)
+	assert.GreaterOrEqual(t, attempts, 26)
+}
+
 func TestSpawnWaveTasks_HeadlessCoderUsesHeadlessExecution(t *testing.T) {
 	dir := t.TempDir()
 	for _, cmd := range [][]string{
@@ -1284,6 +1328,33 @@ func TestEmitSelectedInstanceSignal_QueuesExpectedGatewayRows(t *testing.T) {
 			assert.Contains(t, updated.toastManager.View(), tt.successToast)
 		})
 	}
+}
+
+func TestEmitSelectedInstanceSignal_RejectsPlannerFinishedWithoutWaveHeaders(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	store, ps, _ := newSharedStoreForTest(t, plansDir)
+	const planFile = "needs-waves"
+	require.NoError(t, ps.Register(planFile, "needs waves", "plan/needs-waves", time.Now()))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusPlanning)
+	require.NoError(t, store.SetContent("test", planFile, "# Plan\n\n### Task 1: Missing waves\n\nDo it.\n"))
+
+	h := newTestHome()
+	h.taskState = ps
+	h.taskStateDir = plansDir
+	h.taskStore = store
+	h.taskStoreProject = "test"
+	h.fsm = newPlanFSMForTest(t, plansDir)
+	h.activeRepoPath = dir
+	h.pendingReviewFeedback = make(map[string]string)
+	planner := &session.Instance{Title: "needs-waves-plan", Path: dir, Program: "opencode", TaskFile: planFile, AgentType: session.AgentTypePlanner}
+
+	_, _, err := h.prepareSelectedInstanceSignal(planner, taskfsm.PlannerFinished)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not implementation-ready")
+	assert.Contains(t, err.Error(), "no wave headers found")
 }
 
 func listPendingGatewaySignals(t *testing.T, project string) []taskstore.SignalEntry {

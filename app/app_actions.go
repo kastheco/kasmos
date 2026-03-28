@@ -1016,10 +1016,32 @@ func gatewaySignalTypeForEvent(event taskfsm.Event) (string, error) {
 	return taskfsm.GatewaySignalTypeForEvent(event)
 }
 
+func (m *home) validatePlannerCompletion(planFile string) error {
+	if m.taskStore == nil || m.taskStoreProject == "" {
+		return nil
+	}
+	content, err := m.taskStore.GetContent(m.taskStoreProject, planFile)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(content) == "" {
+		return fmt.Errorf("plan content missing; save the plan before marking planning finished")
+	}
+	if _, err := taskparser.Parse(content); err != nil {
+		return fmt.Errorf("plan is not implementation-ready: %w", err)
+	}
+	return nil
+}
+
 func (m *home) prepareSelectedInstanceSignal(selected *session.Instance, event taskfsm.Event) (string, string, error) {
 	signalType, err := gatewaySignalTypeForEvent(event)
 	if err != nil {
 		return "", "", err
+	}
+	if event == taskfsm.PlannerFinished {
+		if err := m.validatePlannerCompletion(selected.TaskFile); err != nil {
+			return "", "", err
+		}
 	}
 	if !isReviewFeedbackSignal(event) {
 		return signalType, "", nil
