@@ -310,9 +310,9 @@ func TestSortOrder_NotificationsFirst(t *testing.T) {
 	}
 	n.SetData(plans, instances, nil, nil, statuses)
 
-	// Plans sort alphabetically descending: "running" > "notified".
+	// Notified plans sort above running plans (sort key 0 < 1).
 	require.True(t, len(n.rows) >= 2)
-	assert.Equal(t, "running", n.rows[0].TaskFile)
+	assert.Equal(t, "notified", n.rows[0].TaskFile)
 }
 
 func TestSortOrder_InstancesWithinPlan(t *testing.T) {

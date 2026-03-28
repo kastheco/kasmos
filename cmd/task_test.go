@@ -648,6 +648,12 @@ func TestExecuteTaskStart(t *testing.T) {
 		Branch:   "plan/start-plan",
 	}))
 
+	// Promote to planned-ready so executeTaskStart accepts it (draft-ready tasks
+	// are rejected since task 7 distinguished draft from planned).
+	ps, err := taskstate.Load(store, project, "")
+	require.NoError(t, err)
+	require.NoError(t, ps.SetExecutionState("start-plan.md", taskstore.ExecutionState{Phase: "planned"}))
+
 	// Pass empty repoRoot to test FSM-only path (git ops will be skipped
 	// by the test since we don't have a real repo).
 	worktreePath, err := executeTaskStart("", project, "start-plan.md", store)
@@ -655,7 +661,7 @@ func TestExecuteTaskStart(t *testing.T) {
 	assert.Error(t, err)
 
 	// Verify the FSM transitioned to implementing before the git error.
-	ps, _ := taskstate.Load(store, project, "")
+	ps, _ = taskstate.Load(store, project, "")
 	entry, _ := ps.Entry("start-plan.md")
 	assert.Equal(t, taskstate.StatusImplementing, entry.Status)
 
