@@ -1824,7 +1824,11 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		if m.nav.GetSelectedInstance() != nil {
 			return m.openContextMenu()
 		}
-		// Right on plan/topic headers: expand/collapse.
+		// Right on a plan: view the plan (same as [p]).
+		if m.nav.GetSelectedPlanFile() != "" {
+			return m.viewSelectedPlan()
+		}
+		// Right on topic/other headers: expand/collapse.
 		m.nav.ToggleSelectedExpand()
 		return m, nil
 	case keys.KeyNewPlan:
