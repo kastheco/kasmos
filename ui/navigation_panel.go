@@ -625,16 +625,6 @@ func navPlanSortKey(p PlanDisplay, insts []*session.Instance, st TopicStatus) in
 	}
 }
 
-func navPlanAgentLabel(agent string) string {
-	switch strings.TrimSpace(agent) {
-	case "", "-":
-		return ""
-	case "elaborator":
-		return "architect"
-	default:
-		return strings.TrimSpace(agent)
-	}
-}
 
 func navPlanPhaseLabel(phase string, activeWave, activeRound int) string {
 	switch strings.TrimSpace(phase) {

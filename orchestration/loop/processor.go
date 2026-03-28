@@ -436,7 +436,6 @@ func (p *Processor) ProcessElaborationSignals(signals []taskfsm.ElaborationSigna
 		// Replace the plan with the architect-enriched version and hand off the
 		// actual wave start to the shared AdvanceWaveAction execution path.
 		orch.UpdatePlan(plan)
-		p.activeWaveOrchs[es.TaskFile] = true
 
 		if err := p.setExecutionState(es.TaskFile, taskstore.ExecutionState{
 			Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
@@ -445,6 +444,7 @@ func (p *Processor) ProcessElaborationSignals(signals []taskfsm.ElaborationSigna
 		}); err != nil {
 			continue
 		}
+		p.activeWaveOrchs[es.TaskFile] = true
 
 		actions = append(actions, AdvanceWaveAction{
 			PlanFile: es.TaskFile,
