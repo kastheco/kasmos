@@ -1856,6 +1856,8 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		m.state = stateSpawnAgent
 		m.overlays.Show(overlay.NewSpawnFormOverlay("spawn agent", 60))
 		return m, nil
+	case keys.KeyQuickLaunch:
+		return m.quickLaunchAgent()
 	case keys.KeyTmuxBrowser:
 		return m, m.discoverTmuxSessions()
 	case keys.KeySearch:

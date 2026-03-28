@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -84,6 +85,12 @@ var spawnPlannerWithDaemon = func(repoPath, project, planFile, title, prompt, pr
 
 	return waitForDaemonPlannerInstance(data)
 }
+
+var quickLaunchStartOnMain = func(inst *session.Instance) error {
+	return inst.StartOnMainBranch()
+}
+
+var quickLaunchPlaceholderTitleRE = regexp.MustCompile(`^agent-(\d+)$`)
 
 type daemonPlannerStartedMsg struct {
 	instance *session.Instance
@@ -2393,6 +2400,74 @@ func agentTypeForSubItem(action string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+func (m *home) nextPlaceholderName() string {
+	used := make(map[int]struct{})
+	collect := func(inst *session.Instance) {
+		if inst == nil {
+			return
+		}
+		matches := quickLaunchPlaceholderTitleRE.FindStringSubmatch(inst.Title)
+		if len(matches) != 2 {
+			return
+		}
+		n, err := strconv.Atoi(matches[1])
+		if err != nil || n < 1 {
+			return
+		}
+		used[n] = struct{}{}
+	}
+
+	for _, inst := range m.nav.GetInstances() {
+		collect(inst)
+	}
+	for _, inst := range m.allInstances {
+		collect(inst)
+	}
+	for inst := range m.instanceFinalizers {
+		collect(inst)
+	}
+
+	for i := 1; ; i++ {
+		if _, ok := used[i]; !ok {
+			return fmt.Sprintf("agent-%d", i)
+		}
+	}
+}
+
+func (m *home) quickLaunchAgent() (tea.Model, tea.Cmd) {
+	if !m.requireDaemonForAgents() {
+		return m, nil
+	}
+	if m.tmuxSessionCount >= GlobalInstanceLimit {
+		return m, m.handleError(
+			fmt.Errorf("you can't create more than %d instances (%d tmux sessions active)", GlobalInstanceLimit, m.tmuxSessionCount))
+	}
+
+	title := m.nextPlaceholderName()
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:   title,
+		Path:    m.activeRepoPath,
+		Program: m.programForAgent(""),
+	})
+	if err != nil {
+		return m, m.handleError(err)
+	}
+
+	inst.SetStatus(session.Loading)
+	inst.LoadingTotal = 5
+	inst.LoadingMessage = "preparing session..."
+
+	m.state = stateDefault
+	m.menu.SetState(ui.StateDefault)
+	m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))
+	m.nav.SelectInstance(inst)
+
+	startCmd := func() tea.Msg {
+		return instanceStartedMsg{instance: inst, err: quickLaunchStartOnMain(inst)}
+	}
+	return m, tea.Batch(tea.RequestWindowSize, startCmd)
 }
 
 // spawnAdHocAgent creates and starts an ad-hoc agent session (no plan, no lifecycle).
