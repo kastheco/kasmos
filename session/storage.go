@@ -13,6 +13,7 @@ import (
 // InstanceData is the JSON-serializable mirror of Instance fields used for persistence.
 type InstanceData struct {
 	Title           string        `json:"title"`
+	DisplayTitle    string        `json:"display_title,omitempty"`
 	Path            string        `json:"path"`
 	Branch          string        `json:"branch"`
 	Status          Status        `json:"status"`

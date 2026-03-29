@@ -1504,6 +1504,7 @@ func (m *home) openCommandLauncher() (tea.Model, tea.Cmd) {
 		{Label: "new plan", Hint: "n", Action: "new_plan"},
 		{Label: "new instance", Hint: "N", Action: "new_instance"},
 		{Label: "spawn agent", Hint: "s", Action: "spawn_agent"},
+		{Label: "quick launch", Hint: "S", Action: "quick_launch"},
 		{Label: "search", Hint: "/", Action: "search"},
 		{Label: "interactive mode", Hint: "i", Action: "interactive"},
 		{Label: "send yes", Hint: "y", Action: "send_yes"},
@@ -1602,6 +1603,8 @@ func (m *home) executeLauncherAction(action string) (tea.Model, tea.Cmd) {
 		m.state = stateSpawnAgent
 		m.overlays.Show(overlay.NewSpawnFormOverlay("spawn agent", 60))
 		return m, nil
+	case "quick_launch":
+		return m.quickLaunchAgent()
 	case "search":
 		m.nav.ActivateSearch()
 		m.nav.SelectFirst()

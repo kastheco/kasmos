@@ -2310,7 +2310,44 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.autoYes {
 			msg.instance.AutoYes = true
 		}
-		return m, tea.Batch(tea.RequestWindowSize, m.instanceChanged())
+		cmds := []tea.Cmd{tea.RequestWindowSize, m.instanceChanged()}
+		if syncCmd := m.quickLaunchTitleSyncCmd(msg.instance); syncCmd != nil {
+			cmds = append(cmds, syncCmd)
+		}
+		return m, tea.Batch(cmds...)
+	case instanceTitleSyncMsg:
+		if msg.instance == nil {
+			return m, nil
+		}
+		newTitle := slugify(msg.newTitle)
+		if newTitle == "" || msg.instance.DisplayName() == newTitle {
+			return m, nil
+		}
+		for _, inst := range m.nav.GetInstances() {
+			if inst != nil && inst != msg.instance && inst.DisplayName() == newTitle {
+				return m, nil
+			}
+		}
+		for _, inst := range m.allInstances {
+			if inst != nil && inst != msg.instance && inst.DisplayName() == newTitle {
+				return m, nil
+			}
+		}
+		for inst := range m.instanceFinalizers {
+			if inst != nil && inst != msg.instance && inst.DisplayName() == newTitle {
+				return m, nil
+			}
+		}
+		msg.instance.DisplayTitle = newTitle
+		m.populateInstanceTabs()
+		if selected := m.nav.GetSelectedInstance(); selected == msg.instance {
+			m.updateInfoPane()
+		}
+		m.updateNavPanelStatus()
+		if err := m.saveAllInstances(); err != nil {
+			return m, m.handleError(err)
+		}
+		return m, nil
 	case tea.ClipboardMsg:
 		if m.previewClipboardPending {
 			selection := m.previewClipboardTarget

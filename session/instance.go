@@ -3,6 +3,7 @@ package session
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/kastheco/kasmos/session/git"
@@ -33,8 +34,10 @@ const (
 
 // Instance represents a managed agent session with its associated execution backend and git state.
 type Instance struct {
-	// Title is the display name and tmux session identifier for this instance.
+	// Title is the stable tmux session identifier for this instance.
 	Title string
+	// DisplayTitle is an optional user-facing label shown in the UI.
+	DisplayTitle string
 	// Path is the workspace directory for the instance.
 	Path string
 	// Branch is the git branch associated with this instance.
@@ -137,6 +140,7 @@ type Instance struct {
 func (i *Instance) ToInstanceData() InstanceData {
 	data := InstanceData{
 		Title:                  i.Title,
+		DisplayTitle:           i.DisplayTitle,
 		Path:                   i.Path,
 		Branch:                 i.Branch,
 		Status:                 i.Status,
@@ -193,6 +197,7 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 
 	instance := &Instance{
 		Title:                  data.Title,
+		DisplayTitle:           data.DisplayTitle,
 		Path:                   data.Path,
 		Branch:                 branch,
 		Status:                 data.Status,
@@ -253,6 +258,14 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 	return instance, nil
 }
 
+// DisplayName returns the user-facing label for the instance.
+func (i *Instance) DisplayName() string {
+	if strings.TrimSpace(i.DisplayTitle) != "" {
+		return i.DisplayTitle
+	}
+	return i.Title
+}
+
 func isSharedTaskWorktree(data GitWorktreeData, agentType string) bool {
 	if data.RepoPath == "" || data.WorktreePath == "" || data.BranchName == "" {
 		return false
@@ -267,7 +280,7 @@ func isSharedTaskWorktree(data GitWorktreeData, agentType string) bool {
 
 // InstanceOptions holds the configuration values for creating a new Instance.
 type InstanceOptions struct {
-	// Title is the display name and session identifier.
+	// Title is the stable session identifier.
 	Title string
 	// Path is the workspace directory.
 	Path string

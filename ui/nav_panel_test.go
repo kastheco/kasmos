@@ -38,6 +38,12 @@ func TestNavInstanceTitle_AdhocInstanceFallsBackToTitle(t *testing.T) {
 	assert.Equal(t, "adhoc-instance", navInstanceTitle(instance))
 }
 
+func TestNavInstanceTitle_AdhocInstanceUsesDisplayTitle(t *testing.T) {
+	instance := &session.Instance{Title: "agent-1", DisplayTitle: "ship-auth-ui", TaskFile: ""}
+
+	assert.Equal(t, "ship-auth-ui", navInstanceTitle(instance))
+}
+
 func TestNavInstanceTitle_FixerUsesLifecycleLabel(t *testing.T) {
 	instance := &session.Instance{TaskFile: "feature", AgentType: session.AgentTypeFixer, ReviewCycle: 2}
 

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/kastheco/kasmos/internal/clickup"
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
 	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
+	"github.com/kastheco/kasmos/internal/opencodesession"
 	"github.com/kastheco/kasmos/keys"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/orchestration"
@@ -39,8 +41,12 @@ import (
 var restoreInstanceFromData = session.FromInstanceData
 
 const (
-	plannerInstancePollInterval = 50 * time.Millisecond
-	plannerInstanceWaitTimeout  = 5 * time.Second
+	plannerInstancePollInterval      = 50 * time.Millisecond
+	plannerInstanceWaitTimeout       = 5 * time.Second
+	quickLaunchTitleSyncInitialDelay = 500 * time.Millisecond
+	quickLaunchTitleSyncMaxDelay     = 5 * time.Second
+	quickLaunchTitleSyncTimeout      = 30 * time.Second
+	quickLaunchTitleSyncMultiplier   = 1.2
 )
 
 func waitForDaemonPlannerInstance(data session.InstanceData) (*session.Instance, error) {
@@ -85,9 +91,23 @@ var spawnPlannerWithDaemon = func(repoPath, project, planFile, title, prompt, pr
 	return waitForDaemonPlannerInstance(data)
 }
 
+var quickLaunchStartOnMain = func(inst *session.Instance) error {
+	return inst.StartOnMainBranch()
+}
+
+var readQuickLaunchSessionTitle = opencodesession.ReadSessionTitle
+
+var quickLaunchPlaceholderTitleRE = regexp.MustCompile(`^agent-(\d+)$`)
+var quickLaunchDisplayTitleRE = regexp.MustCompile(`[^a-z0-9]+`)
+
 type daemonPlannerStartedMsg struct {
 	instance *session.Instance
 	err      error
+}
+
+type instanceTitleSyncMsg struct {
+	instance *session.Instance
+	newTitle string
 }
 
 // shouldCreatePR returns true when a plan entry is eligible for automatic PR creation:
@@ -644,12 +664,12 @@ func (m *home) populateInstanceTabs() {
 		// Plan header selected — show all instances belonging to this plan.
 		for _, inst := range m.nav.GetInstances() {
 			if inst.TaskFile == planFile {
-				tabs = append(tabs, ui.InstanceTab{Title: inst.Title, Key: inst.Title})
+				tabs = append(tabs, ui.InstanceTab{Title: inst.DisplayName(), Key: inst.Title})
 			}
 		}
 	} else if selected := m.nav.GetSelectedInstance(); selected != nil {
 		// Solo instance selected — show just this one.
-		tabs = []ui.InstanceTab{{Title: selected.Title, Key: selected.Title}}
+		tabs = []ui.InstanceTab{{Title: selected.DisplayName(), Key: selected.Title}}
 	}
 
 	m.tabbedWindow.SetTabs(tabs)
@@ -1167,7 +1187,7 @@ func (m *home) updateInfoPane() {
 
 	data := ui.InfoData{
 		HasInstance: true,
-		Title:       selected.Title,
+		Title:       selected.DisplayName(),
 		Program:     selected.Program,
 		Branch:      selected.Branch,
 		Path:        selected.Path,
@@ -2378,6 +2398,121 @@ func agentTypeForSubItem(action string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+func (m *home) nextPlaceholderName() string {
+	maxUsed := 0
+	collect := func(inst *session.Instance) {
+		if inst == nil {
+			return
+		}
+		matches := quickLaunchPlaceholderTitleRE.FindStringSubmatch(inst.Title)
+		if len(matches) != 2 {
+			return
+		}
+		n, err := strconv.Atoi(matches[1])
+		if err != nil || n < 1 {
+			return
+		}
+		if n > maxUsed {
+			maxUsed = n
+		}
+	}
+
+	for _, inst := range m.nav.GetInstances() {
+		collect(inst)
+	}
+	for _, inst := range m.allInstances {
+		collect(inst)
+	}
+	for inst := range m.instanceFinalizers {
+		collect(inst)
+	}
+
+	return fmt.Sprintf("agent-%d", maxUsed+1)
+}
+
+func (m *home) quickLaunchTitleSyncCmd(inst *session.Instance) tea.Cmd {
+	if inst == nil ||
+		inst.TaskFile != "" ||
+		inst.AgentType != "" ||
+		!strings.HasSuffix(inst.Program, "opencode") ||
+		!quickLaunchPlaceholderTitleRE.MatchString(inst.Title) ||
+		strings.TrimSpace(inst.Path) == "" {
+		return nil
+	}
+
+	return func() tea.Msg {
+		delay := quickLaunchTitleSyncInitialDelay
+		deadline := time.Now().Add(quickLaunchTitleSyncTimeout)
+		for {
+			title, err := readQuickLaunchSessionTitle(inst.Path, inst.CreatedAt)
+			if err != nil {
+				log.WarningLog.Printf("quick launch title sync: %v", err)
+				return nil
+			}
+
+			title = strings.TrimSpace(title)
+			if title != "" && !strings.HasPrefix(title, "kas: ") {
+				return instanceTitleSyncMsg{instance: inst, newTitle: title}
+			}
+
+			if !time.Now().Before(deadline) {
+				return nil
+			}
+			time.Sleep(delay)
+
+			delay = time.Duration(float64(delay) * quickLaunchTitleSyncMultiplier)
+			if delay > quickLaunchTitleSyncMaxDelay {
+				delay = quickLaunchTitleSyncMaxDelay
+			}
+		}
+		return nil
+	}
+}
+
+func slugify(title string) string {
+	title = strings.ToLower(strings.TrimSpace(title))
+	title = quickLaunchDisplayTitleRE.ReplaceAllString(title, "-")
+	title = strings.Trim(title, "-")
+	if len(title) > 40 {
+		title = strings.Trim(title[:40], "-")
+	}
+	return title
+}
+
+func (m *home) quickLaunchAgent() (tea.Model, tea.Cmd) {
+	if !m.requireDaemonForAgents() {
+		return m, nil
+	}
+	if m.tmuxSessionCount >= GlobalInstanceLimit {
+		return m, m.handleError(
+			fmt.Errorf("you can't create more than %d instances (%d tmux sessions active)", GlobalInstanceLimit, m.tmuxSessionCount))
+	}
+
+	title := m.nextPlaceholderName()
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:   title,
+		Path:    m.activeRepoPath,
+		Program: m.programForAgent(""),
+	})
+	if err != nil {
+		return m, m.handleError(err)
+	}
+
+	inst.SetStatus(session.Loading)
+	inst.LoadingTotal = 5
+	inst.LoadingMessage = "preparing session..."
+
+	m.state = stateDefault
+	m.menu.SetState(ui.StateDefault)
+	m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))
+	m.nav.SelectInstance(inst)
+
+	startCmd := func() tea.Msg {
+		return instanceStartedMsg{instance: inst, err: quickLaunchStartOnMain(inst)}
+	}
+	return m, tea.Batch(tea.RequestWindowSize, startCmd)
 }
 
 // spawnAdHocAgent creates and starts an ad-hoc agent session (no plan, no lifecycle).

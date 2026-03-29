@@ -327,13 +327,13 @@ func (n *NavigationPanel) rebuildRows() {
 		}
 	}
 
-	// Sort helpers: instances newest-first by CreatedAt, then alpha by title.
+	// Sort helpers: instances newest-first by CreatedAt, then alpha by display label.
 	sortInsts := func(list []*session.Instance) {
 		sort.SliceStable(list, func(i, j int) bool {
 			if !list[i].CreatedAt.Equal(list[j].CreatedAt) {
 				return list[i].CreatedAt.After(list[j].CreatedAt)
 			}
-			return strings.ToLower(list[i].Title) < strings.ToLower(list[j].Title)
+			return strings.ToLower(list[i].DisplayName()) < strings.ToLower(list[j].DisplayName())
 		})
 	}
 	for _, list := range byPlan {
@@ -377,7 +377,7 @@ func (n *NavigationPanel) rebuildRows() {
 				rows = append(rows, navRow{
 					Kind:     navRowInstance,
 					ID:       "inst:" + inst.Title,
-					Label:    inst.Title,
+					Label:    inst.DisplayName(),
 					TaskFile: inst.TaskFile,
 					Instance: inst,
 					Indent:   indent,
@@ -482,7 +482,7 @@ func (n *NavigationPanel) rebuildRows() {
 			rows = append(rows, navRow{
 				Kind:     navRowInstance,
 				ID:       "inst:" + inst.Title,
-				Label:    inst.Title,
+				Label:    inst.DisplayName(),
 				Instance: inst,
 			})
 		}
@@ -1196,7 +1196,7 @@ func navInstanceTitle(inst *session.Instance) string {
 	case inst.AgentType == session.AgentTypeElaborator && inst.TaskFile != "":
 		return "creating blueprint"
 	default:
-		return inst.Title
+		return inst.DisplayName()
 	}
 }
 

@@ -212,6 +212,24 @@ func TestInstanceData_RoundTripSoloAgent(t *testing.T) {
 	assert.True(t, restored.SoloAgent)
 }
 
+func TestInstanceData_RoundTripDisplayTitle(t *testing.T) {
+	inst, err := NewInstance(InstanceOptions{
+		Title:   "agent-1",
+		Path:    "/tmp/repo",
+		Program: "opencode",
+	})
+	require.NoError(t, err)
+	inst.DisplayTitle = "ship-auth-ui"
+
+	data := inst.ToInstanceData()
+	assert.Equal(t, "ship-auth-ui", data.DisplayTitle)
+
+	restored, err := FromInstanceData(data)
+	require.NoError(t, err)
+	assert.Equal(t, "ship-auth-ui", restored.DisplayTitle)
+	assert.Equal(t, "ship-auth-ui", restored.DisplayName())
+}
+
 // TestInstanceData_RoundTripExecutionMode verifies that ExecutionMode survives a
 // full InstanceData round-trip, and that the empty string normalises to tmux.
 func TestInstanceData_RoundTripExecutionMode(t *testing.T) {

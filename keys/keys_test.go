@@ -18,6 +18,19 @@ func TestSpawnAgentKeyInGlobalMap(t *testing.T) {
 	assert.Equal(t, KeySpawnAgent, name)
 }
 
+func TestQuickLaunchKeyInGlobalMap(t *testing.T) {
+	quickLaunchName, ok := GlobalKeyStringsMap["S"]
+	assert.True(t, ok, "'S' must be in GlobalKeyStringsMap")
+	assert.Equal(t, KeyQuickLaunch, quickLaunchName)
+
+	spawnAgentName, ok := GlobalKeyStringsMap["s"]
+	assert.True(t, ok, "'s' must still be in GlobalKeyStringsMap")
+	assert.Equal(t, KeySpawnAgent, spawnAgentName)
+	assert.NotEqual(t, quickLaunchName, spawnAgentName)
+
+	assert.Equal(t, "quick launch", GlobalkeyBindings[KeyQuickLaunch].Help().Desc)
+}
+
 func TestFocusSidebarRemoved(t *testing.T) {
 	_, ok := GlobalKeyStringsMap["s"]
 	// Should map to KeySpawnAgent, not any legacy sidebar-focus key.
