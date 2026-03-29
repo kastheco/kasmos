@@ -738,7 +738,11 @@ func (m *home) updateHandleWindowSizeEvent(msg tea.WindowSizeMsg) {
 		menuHeight = 0
 	}
 	statusBarHeight := 1
-	contentHeight := msg.Height - menuHeight - statusBarHeight
+	accentHeight := 0
+	if m.appConfig != nil && m.appConfig.AccentColor != "" {
+		accentHeight = 1
+	}
+	contentHeight := msg.Height - menuHeight - statusBarHeight - accentHeight
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
@@ -2514,13 +2518,17 @@ func (m *home) View() tea.View {
 	if m.menu != nil && m.nav != nil {
 		m.menu.SetSidebarSpaceAction(m.nav.SelectedSpaceAction())
 	}
+	accentView := ""
+	if m.appConfig != nil {
+		accentView = ui.NewAccentStrip(m.appConfig.AccentColor, m.termWidth)
+	}
 
-	mainView := lipgloss.JoinVertical(
-		lipgloss.Left,
-		statusBarView,
-		listAndPreview,
-		m.menu.String(),
-	)
+	parts := []string{statusBarView, listAndPreview, m.menu.String()}
+	if accentView != "" {
+		parts = append(parts, accentView)
+	}
+
+	mainView := lipgloss.JoinVertical(lipgloss.Left, parts...)
 
 	result := m.overlays.Render(mainView)
 
