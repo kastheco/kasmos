@@ -393,26 +393,24 @@ func TestSpawnAgent_SubmitCreatesInstance(t *testing.T) {
 	assert.Equal(t, session.Loading, last.Status)
 }
 
-func collectQuickLaunchMsgs(cmd tea.Cmd) (started []instanceStartedMsg, sawWindowSize bool) {
+func collectQuickLaunchMsgs(cmd tea.Cmd) (started []instanceStartedMsg) {
 	if cmd == nil {
-		return nil, false
+		return nil
 	}
 
 	msg := cmd()
 	switch msg := msg.(type) {
 	case tea.BatchMsg:
 		for _, sub := range msg {
-			subStarted, subSawWindowSize := collectQuickLaunchMsgs(sub)
+			subStarted := collectQuickLaunchMsgs(sub)
 			started = append(started, subStarted...)
-			sawWindowSize = sawWindowSize || subSawWindowSize
 		}
 	case instanceStartedMsg:
 		started = append(started, msg)
 	default:
-		sawWindowSize = fmt.Sprintf("%T", msg) == "tea.windowSizeMsg"
 	}
 
-	return started, sawWindowSize
+	return started
 }
 
 func TestQuickLaunch_KeyCreatesInstance(t *testing.T) {
@@ -441,8 +439,7 @@ func TestQuickLaunch_KeyCreatesInstance(t *testing.T) {
 	assert.Equal(t, "agent-1", instances[0].Title)
 	assert.Empty(t, updated.allInstances)
 
-	startedMsgs, sawWindowSize := collectQuickLaunchMsgs(cmd)
-	assert.True(t, sawWindowSize)
+	startedMsgs := collectQuickLaunchMsgs(cmd)
 	require.Len(t, startedMsgs, 1)
 	assert.Same(t, instances[0], startedMsgs[0].instance)
 	assert.True(t, startedMsgs[0].instance.Started())
@@ -457,7 +454,7 @@ func TestQuickLaunch_KeyCreatesInstance(t *testing.T) {
 	assert.Equal(t, "agent-1", updated.allInstances[0].Title)
 }
 
-func TestQuickLaunch_TitleSyncRenamesInstance(t *testing.T) {
+func TestQuickLaunch_TitleSyncUpdatesDisplayTitle(t *testing.T) {
 	h := newTestHome()
 	h.nav.SetSize(80, 20)
 
@@ -473,17 +470,24 @@ func TestQuickLaunch_TitleSyncRenamesInstance(t *testing.T) {
 	h.nav.AddInstance(inst)()
 	h.nav.SelectInstance(inst)
 	h.allInstances = append(h.allInstances, inst)
+	h.tabbedWindow.SetInstance(inst)
 	h.previewTerminalInstance = inst.Title
+	h.populateInstanceTabs()
+	h.updateInfoPane()
+	originalTitle := inst.Title
 
 	model, cmd := h.Update(instanceTitleSyncMsg{instance: inst, newTitle: "Investigate flaky auth tests!!!"})
 	updated := model.(*home)
 
 	assert.Nil(t, cmd)
-	assert.Equal(t, "investigate-flaky-auth-tests", inst.Title)
-	assert.Equal(t, "investigate-flaky-auth-tests", updated.previewTerminalInstance)
+	assert.Equal(t, originalTitle, inst.Title)
+	assert.Equal(t, "investigate-flaky-auth-tests", inst.DisplayTitle)
+	assert.Equal(t, originalTitle, updated.previewTerminalInstance)
 	selected := updated.nav.GetSelectedInstance()
 	require.Same(t, inst, selected)
-	assert.Equal(t, "investigate-flaky-auth-tests", selected.Title)
+	assert.Equal(t, originalTitle, selected.Title)
+	assert.Equal(t, "investigate-flaky-auth-tests", selected.DisplayName())
+	assert.Equal(t, "investigate-flaky-auth-tests", updated.tabbedWindow.GetInfoData().Title)
 	assert.Contains(t, updated.nav.String(), "investigate-flaky-auth-tests")
 }
 

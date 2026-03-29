@@ -1533,28 +1533,6 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		m.promptAfterName = true
 
 		return m, nil
-	case keys.KeyNewSkipPermissions:
-		if m.tmuxSessionCount >= GlobalInstanceLimit {
-			return m, m.handleError(
-				fmt.Errorf("you can't create more than %d instances (%d tmux sessions active)", GlobalInstanceLimit, m.tmuxSessionCount))
-		}
-		instance, err := session.NewInstance(session.InstanceOptions{
-			Title:           "",
-			Path:            m.activeRepoPath,
-			Program:         m.programForAgent(""),
-			SkipPermissions: true,
-		})
-		if err != nil {
-			return m, m.handleError(err)
-		}
-
-		m.addInstanceFinalizer(instance, m.nav.AddInstance(instance))
-		m.newInstance = instance
-		m.nav.SetSelectedInstance(m.nav.NumInstances() - 1)
-		m.state = stateNew
-		m.menu.SetState(ui.StateNewInstance)
-
-		return m, nil
 	case keys.KeyUp:
 		m.tabbedWindow.ClearDocumentMode()
 		if m.focusSlot != slotNav {

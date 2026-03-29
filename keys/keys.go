@@ -22,9 +22,8 @@ const (
 
 	KeyCheckout
 	KeyResume
-	KeyPrompt             // New key for entering a prompt
-	KeyHelp               // Key for showing help screen
-	KeyNewSkipPermissions // Key for creating instance with --dangerously-skip-permissions
+	KeyPrompt // New key for entering a prompt
+	KeyHelp   // Key for showing help screen
 
 	KeyNewPlan    // Key for creating a new plan
 	KeySearch     // Key for activating search
@@ -153,9 +152,6 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	KeyResume: key.NewBinding(
 		key.WithKeys("r"),
 		key.WithHelp("r", "resume"),
-	),
-	KeyNewSkipPermissions: key.NewBinding(
-		key.WithHelp("", "new (skip permissions)"),
 	),
 	KeySearch: key.NewBinding(
 		key.WithKeys("/"),

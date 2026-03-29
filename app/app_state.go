@@ -98,6 +98,7 @@ var quickLaunchStartOnMain = func(inst *session.Instance) error {
 var readQuickLaunchSessionTitle = opencodesession.ReadSessionTitle
 
 var quickLaunchPlaceholderTitleRE = regexp.MustCompile(`^agent-(\d+)$`)
+var quickLaunchDisplayTitleRE = regexp.MustCompile(`[^a-z0-9]+`)
 
 type daemonPlannerStartedMsg struct {
 	instance *session.Instance
@@ -678,12 +679,12 @@ func (m *home) populateInstanceTabs() {
 		// Plan header selected — show all instances belonging to this plan.
 		for _, inst := range m.nav.GetInstances() {
 			if inst.TaskFile == planFile {
-				tabs = append(tabs, ui.InstanceTab{Title: inst.Title, Key: inst.Title})
+				tabs = append(tabs, ui.InstanceTab{Title: inst.DisplayName(), Key: inst.Title})
 			}
 		}
 	} else if selected := m.nav.GetSelectedInstance(); selected != nil {
 		// Solo instance selected — show just this one.
-		tabs = []ui.InstanceTab{{Title: selected.Title, Key: selected.Title}}
+		tabs = []ui.InstanceTab{{Title: selected.DisplayName(), Key: selected.Title}}
 	}
 
 	m.tabbedWindow.SetTabs(tabs)
@@ -1201,7 +1202,7 @@ func (m *home) updateInfoPane() {
 
 	data := ui.InfoData{
 		HasInstance: true,
-		Title:       selected.Title,
+		Title:       selected.DisplayName(),
 		Program:     selected.Program,
 		Branch:      selected.Branch,
 		Path:        selected.Path,
@@ -2459,9 +2460,7 @@ func (m *home) quickLaunchTitleSyncCmd(inst *session.Instance) tea.Cmd {
 	return func() tea.Msg {
 		delay := quickLaunchTitleSyncInitialDelay
 		deadline := time.Now().Add(quickLaunchTitleSyncTimeout)
-		for time.Now().Before(deadline) {
-			time.Sleep(delay)
-
+		for {
 			title, err := readQuickLaunchSessionTitle(inst.Path, inst.CreatedAt)
 			if err != nil {
 				log.WarningLog.Printf("quick launch title sync: %v", err)
@@ -2472,6 +2471,11 @@ func (m *home) quickLaunchTitleSyncCmd(inst *session.Instance) tea.Cmd {
 			if title != "" && !strings.HasPrefix(title, "kas: ") {
 				return instanceTitleSyncMsg{instance: inst, newTitle: title}
 			}
+
+			if !time.Now().Before(deadline) {
+				return nil
+			}
+			time.Sleep(delay)
 
 			delay = time.Duration(float64(delay) * quickLaunchTitleSyncMultiplier)
 			if delay > quickLaunchTitleSyncMaxDelay {
@@ -2484,7 +2488,7 @@ func (m *home) quickLaunchTitleSyncCmd(inst *session.Instance) tea.Cmd {
 
 func slugify(title string) string {
 	title = strings.ToLower(strings.TrimSpace(title))
-	title = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(title, "-")
+	title = quickLaunchDisplayTitleRE.ReplaceAllString(title, "-")
 	title = strings.Trim(title, "-")
 	if len(title) > 40 {
 		title = strings.Trim(title[:40], "-")
