@@ -209,34 +209,3 @@ func SetTitleDirect(workDir string, beforeStart time.Time, title string) error {
 	defer db.Close()
 	return ClaimAndSetTitle(db, workDir, beforeStart, title)
 }
-
-// ReadSessionTitle returns the current title of the first opencode session in
-// workDir created at or after beforeStart. It returns an empty string when no
-// matching session exists.
-func ReadSessionTitle(workDir string, beforeStart time.Time) (string, error) {
-	dbPath := resolveDBPath()
-	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)")
-	if err != nil {
-		return "", fmt.Errorf("opencodesession: open db %s: %w", dbPath, err)
-	}
-	defer db.Close()
-	return readSessionTitleFromDB(db, workDir, beforeStart)
-}
-
-func readSessionTitleFromDB(db *sql.DB, workDir string, beforeStart time.Time) (string, error) {
-	var title string
-	err := db.QueryRow(
-		`SELECT title FROM session
-		 WHERE directory = ? AND time_created >= ?
-		 ORDER BY time_created ASC
-		 LIMIT 1`,
-		workDir, beforeStart.UnixMilli(),
-	).Scan(&title)
-	if err == sql.ErrNoRows {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("opencodesession: read session title: %w", err)
-	}
-	return title, nil
-}
