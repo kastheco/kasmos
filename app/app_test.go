@@ -457,6 +457,36 @@ func TestQuickLaunch_KeyCreatesInstance(t *testing.T) {
 	assert.Equal(t, "agent-1", updated.allInstances[0].Title)
 }
 
+func TestQuickLaunch_TitleSyncRenamesInstance(t *testing.T) {
+	h := newTestHome()
+	h.nav.SetSize(80, 20)
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:   "agent-1",
+		Path:    t.TempDir(),
+		Program: "opencode",
+	})
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	inst.SetStatus(session.Running)
+
+	h.nav.AddInstance(inst)()
+	h.nav.SelectInstance(inst)
+	h.allInstances = append(h.allInstances, inst)
+	h.previewTerminalInstance = inst.Title
+
+	model, cmd := h.Update(instanceTitleSyncMsg{instance: inst, newTitle: "Investigate flaky auth tests!!!"})
+	updated := model.(*home)
+
+	assert.Nil(t, cmd)
+	assert.Equal(t, "investigate-flaky-auth-tests", inst.Title)
+	assert.Equal(t, "investigate-flaky-auth-tests", updated.previewTerminalInstance)
+	selected := updated.nav.GetSelectedInstance()
+	require.Same(t, inst, selected)
+	assert.Equal(t, "investigate-flaky-auth-tests", selected.Title)
+	assert.Contains(t, updated.nav.String(), "investigate-flaky-auth-tests")
+}
+
 func TestQuickLaunch_InstanceLimitEnforced(t *testing.T) {
 	h := newTestHome()
 	h.tmuxSessionCount = GlobalInstanceLimit

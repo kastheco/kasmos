@@ -24,6 +24,7 @@ import (
 	"github.com/kastheco/kasmos/internal/clickup"
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
 	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
+	"github.com/kastheco/kasmos/internal/opencodesession"
 	"github.com/kastheco/kasmos/keys"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/orchestration"
@@ -40,8 +41,12 @@ import (
 var restoreInstanceFromData = session.FromInstanceData
 
 const (
-	plannerInstancePollInterval = 50 * time.Millisecond
-	plannerInstanceWaitTimeout  = 5 * time.Second
+	plannerInstancePollInterval      = 50 * time.Millisecond
+	plannerInstanceWaitTimeout       = 5 * time.Second
+	quickLaunchTitleSyncInitialDelay = 500 * time.Millisecond
+	quickLaunchTitleSyncMaxDelay     = 5 * time.Second
+	quickLaunchTitleSyncTimeout      = 30 * time.Second
+	quickLaunchTitleSyncMultiplier   = 1.2
 )
 
 func waitForDaemonPlannerInstance(data session.InstanceData) (*session.Instance, error) {
@@ -90,11 +95,18 @@ var quickLaunchStartOnMain = func(inst *session.Instance) error {
 	return inst.StartOnMainBranch()
 }
 
+var readQuickLaunchSessionTitle = opencodesession.ReadSessionTitle
+
 var quickLaunchPlaceholderTitleRE = regexp.MustCompile(`^agent-(\d+)$`)
 
 type daemonPlannerStartedMsg struct {
 	instance *session.Instance
 	err      error
+}
+
+type instanceTitleSyncMsg struct {
+	instance *session.Instance
+	newTitle string
 }
 
 // shouldCreatePR returns true when a plan entry is eligible for automatic PR creation:
@@ -2403,7 +2415,7 @@ func agentTypeForSubItem(action string) (string, bool) {
 }
 
 func (m *home) nextPlaceholderName() string {
-	used := make(map[int]struct{})
+	maxUsed := 0
 	collect := func(inst *session.Instance) {
 		if inst == nil {
 			return
@@ -2416,7 +2428,9 @@ func (m *home) nextPlaceholderName() string {
 		if err != nil || n < 1 {
 			return
 		}
-		used[n] = struct{}{}
+		if n > maxUsed {
+			maxUsed = n
+		}
 	}
 
 	for _, inst := range m.nav.GetInstances() {
@@ -2429,11 +2443,53 @@ func (m *home) nextPlaceholderName() string {
 		collect(inst)
 	}
 
-	for i := 1; ; i++ {
-		if _, ok := used[i]; !ok {
-			return fmt.Sprintf("agent-%d", i)
-		}
+	return fmt.Sprintf("agent-%d", maxUsed+1)
+}
+
+func (m *home) quickLaunchTitleSyncCmd(inst *session.Instance) tea.Cmd {
+	if inst == nil ||
+		inst.TaskFile != "" ||
+		inst.AgentType != "" ||
+		!strings.HasSuffix(inst.Program, "opencode") ||
+		!quickLaunchPlaceholderTitleRE.MatchString(inst.Title) ||
+		strings.TrimSpace(inst.Path) == "" {
+		return nil
 	}
+
+	return func() tea.Msg {
+		delay := quickLaunchTitleSyncInitialDelay
+		deadline := time.Now().Add(quickLaunchTitleSyncTimeout)
+		for time.Now().Before(deadline) {
+			time.Sleep(delay)
+
+			title, err := readQuickLaunchSessionTitle(inst.Path, inst.CreatedAt)
+			if err != nil {
+				log.WarningLog.Printf("quick launch title sync: %v", err)
+				return nil
+			}
+
+			title = strings.TrimSpace(title)
+			if title != "" && !strings.HasPrefix(title, "kas: ") {
+				return instanceTitleSyncMsg{instance: inst, newTitle: title}
+			}
+
+			delay = time.Duration(float64(delay) * quickLaunchTitleSyncMultiplier)
+			if delay > quickLaunchTitleSyncMaxDelay {
+				delay = quickLaunchTitleSyncMaxDelay
+			}
+		}
+		return nil
+	}
+}
+
+func slugify(title string) string {
+	title = strings.ToLower(strings.TrimSpace(title))
+	title = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(title, "-")
+	title = strings.Trim(title, "-")
+	if len(title) > 40 {
+		title = strings.Trim(title[:40], "-")
+	}
+	return title
 }
 
 func (m *home) quickLaunchAgent() (tea.Model, tea.Cmd) {
