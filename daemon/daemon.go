@@ -1234,8 +1234,9 @@ func (d *Daemon) RecoverSessions() (int, error) {
 					content = stored
 				}
 			}
-			for _, candidate := range orchestration.BuildRecoveryCandidates(task, content) {
-				if _, ok := orphanTitles[candidate.Title]; !ok {
+			for orphanTitle := range orphanTitles {
+				candidate, ok := orchestration.MatchRecoveryCandidateByTitle(task, content, orphanTitle)
+				if !ok {
 					continue
 				}
 
@@ -1265,7 +1266,7 @@ func (d *Daemon) RecoverSessions() (int, error) {
 
 				if err := d.spawner.RestoreTrackedInstance(e.Path, e.Project, task.Filename, candidate.AgentType, data); err != nil {
 					if errors.Is(err, errInstanceAlreadyTracked) {
-						delete(orphanTitles, candidate.Title)
+						delete(orphanTitles, orphanTitle)
 						continue
 					}
 					d.logger.Warn("recover sessions: restore instance failed",
@@ -1275,7 +1276,7 @@ func (d *Daemon) RecoverSessions() (int, error) {
 
 				d.logger.Info("re-adopted orphan session",
 					"session", candidate.Title, "repo", e.Path, "plan", task.Filename, "agent", candidate.AgentType)
-				delete(orphanTitles, candidate.Title)
+				delete(orphanTitles, orphanTitle)
 				recovered++
 			}
 		}

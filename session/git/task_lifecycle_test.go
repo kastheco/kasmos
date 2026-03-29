@@ -57,6 +57,24 @@ func TestSetupFromExistingBranch_SetsBaseCommitSHA(t *testing.T) {
 	assert.NotEmpty(t, gt.GetBaseCommitSHA(), "baseCommitSHA should be set after Setup")
 }
 
+func TestSetupFromExistingBranch_ReusesRegisteredWorktree(t *testing.T) {
+	repo := initTestRepo(t)
+
+	cmd := exec.Command("git", "-C", repo, "branch", "plan/test-reuse")
+	require.NoError(t, cmd.Run())
+
+	gt := NewSharedTaskWorktree(repo, "plan/test-reuse")
+	require.NoError(t, gt.Setup())
+	t.Cleanup(func() { _ = gt.Cleanup() })
+
+	marker := filepath.Join(gt.GetWorktreePath(), "marker.txt")
+	require.NoError(t, os.WriteFile(marker, []byte("keep\n"), 0o644))
+
+	require.NoError(t, gt.Setup())
+	assert.FileExists(t, marker, "matching shared worktree should be reused, not recreated")
+	assert.NotEmpty(t, gt.GetBaseCommitSHA(), "baseCommitSHA should remain available after reuse")
+}
+
 func TestPreflightMergeTaskBranch_BlocksOverlappingDirtyPaths(t *testing.T) {
 	repo := initTestRepo(t)
 	runGit := func(args ...string) {

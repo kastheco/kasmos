@@ -62,6 +62,10 @@ func (g *GitWorktree) Setup() error {
 // syncs the local branch with the remote, then creates the fresh worktree and
 // resolves the base commit SHA for diff computation.
 func (g *GitWorktree) setupFromExistingBranch() error {
+	if registered, err := g.matchesRegisteredWorktree(); err == nil && registered {
+		return g.resolveBaseCommitSHA()
+	}
+
 	// Remove any stale worktree; ignore errors (it may not exist).
 	_, _ = g.runGitCommand(g.repoPath, "worktree", "remove", "-f", g.worktreePath)
 
@@ -72,15 +76,46 @@ func (g *GitWorktree) setupFromExistingBranch() error {
 		return fmt.Errorf("failed to create worktree from branch %s: %w", g.branchName, err)
 	}
 
-	// Resolve the base commit SHA for diff computation.
-	if g.baseCommitSHA == "" {
-		if out, err := g.runGitCommand(g.repoPath, "merge-base", "HEAD", g.branchName); err == nil {
-			g.baseCommitSHA = strings.TrimSpace(out)
-		} else if out, err := g.runGitCommand(g.worktreePath, "rev-parse", "HEAD"); err == nil {
-			g.baseCommitSHA = strings.TrimSpace(out)
+	return g.resolveBaseCommitSHA()
+}
+
+func (g *GitWorktree) matchesRegisteredWorktree() (bool, error) {
+	out, err := g.runGitCommand(g.repoPath, "worktree", "list", "--porcelain")
+	if err != nil {
+		return false, err
+	}
+
+	var currentPath string
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			currentPath = filepath.Clean(strings.TrimSpace(strings.TrimPrefix(line, "worktree ")))
+		case strings.HasPrefix(line, "branch "):
+			branch := strings.TrimPrefix(strings.TrimSpace(line), "branch refs/heads/")
+			if currentPath == filepath.Clean(g.worktreePath) && branch == g.branchName {
+				if _, statErr := os.Stat(g.worktreePath); statErr == nil {
+					return true, nil
+				}
+			}
 		}
 	}
 
+	return false, nil
+}
+
+func (g *GitWorktree) resolveBaseCommitSHA() error {
+	if g.baseCommitSHA != "" {
+		return nil
+	}
+	if out, err := g.runGitCommand(g.repoPath, "merge-base", "HEAD", g.branchName); err == nil {
+		g.baseCommitSHA = strings.TrimSpace(out)
+		if g.baseCommitSHA != "" {
+			return nil
+		}
+	}
+	if out, err := g.runGitCommand(g.worktreePath, "rev-parse", "HEAD"); err == nil {
+		g.baseCommitSHA = strings.TrimSpace(out)
+	}
 	return nil
 }
 

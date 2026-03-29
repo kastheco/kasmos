@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/kastheco/kasmos/config/taskfsm"
@@ -165,4 +166,111 @@ func BuildRecoveryCandidates(task taskstore.TaskEntry, planContent string) []Rec
 	}
 
 	return nil
+}
+
+// MatchRecoveryCandidateByTitle returns the recovery candidate for an orphaned
+// session title. It first honors the current execution phase via
+// BuildRecoveryCandidates, then falls back to title-based inference so manual
+// adopt/recovery still works when task state drifted after a failed handoff.
+func MatchRecoveryCandidateByTitle(task taskstore.TaskEntry, planContent, title string) (RecoveryCandidate, bool) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return RecoveryCandidate{}, false
+	}
+
+	for _, candidate := range BuildRecoveryCandidates(task, planContent) {
+		if candidate.Title == title {
+			return candidate, true
+		}
+	}
+
+	phase := taskfsm.NormalizeExecutionPhase(task.ExecutionState.Phase)
+	if task.Status != taskstore.StatusImplementing && task.Status != taskstore.StatusReviewing {
+		return RecoveryCandidate{}, false
+	}
+	if phase == taskfsm.ExecutionPhaseArchitecting {
+		return RecoveryCandidate{}, false
+	}
+
+	planName := taskstate.DisplayName(task.Filename)
+	if planName == "" {
+		return RecoveryCandidate{}, false
+	}
+	if title == BuildLifecycleAgentTitle(task.Filename, session.AgentTypeCoder, 0) {
+		return RecoveryCandidate{TaskFile: task.Filename, Title: title, AgentType: session.AgentTypeCoder, Branch: task.Branch}, true
+	}
+	if cycle, ok := parseRecoveryCycleTitle(title, planName, "review"); ok {
+		return RecoveryCandidate{TaskFile: task.Filename, Title: title, AgentType: session.AgentTypeReviewer, Branch: task.Branch, ReviewCycle: cycle}, true
+	}
+	if cycle, ok := parseRecoveryCycleTitle(title, planName, "fix"); ok {
+		return RecoveryCandidate{TaskFile: task.Filename, Title: title, AgentType: session.AgentTypeFixer, Branch: task.Branch, ReviewCycle: cycle}, true
+	}
+	if wave, taskNum, ok := parseWaveRecoveryTitle(title, planName); ok {
+		if waveTaskExists(planContent, wave, taskNum) {
+			return RecoveryCandidate{
+				TaskFile:   task.Filename,
+				Title:      title,
+				AgentType:  session.AgentTypeCoder,
+				Branch:     task.Branch,
+				WaveNumber: wave,
+				TaskNumber: taskNum,
+			}, true
+		}
+	}
+
+	return RecoveryCandidate{}, false
+}
+
+func parseRecoveryCycleTitle(title, planName, role string) (int, bool) {
+	prefix := planName + "-" + role + "-"
+	if !strings.HasPrefix(title, prefix) {
+		return 0, false
+	}
+	cycle, err := strconv.Atoi(strings.TrimPrefix(title, prefix))
+	if err != nil || cycle < 1 {
+		return 0, false
+	}
+	return cycle, true
+}
+
+func parseWaveRecoveryTitle(title, planName string) (int, int, bool) {
+	prefix := planName + "-W"
+	if !strings.HasPrefix(title, prefix) {
+		return 0, 0, false
+	}
+	rest := strings.TrimPrefix(title, prefix)
+	parts := strings.SplitN(rest, "-T", 2)
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	wave, err := strconv.Atoi(parts[0])
+	if err != nil || wave < 1 {
+		return 0, 0, false
+	}
+	taskNum, err := strconv.Atoi(parts[1])
+	if err != nil || taskNum < 1 {
+		return 0, 0, false
+	}
+	return wave, taskNum, true
+}
+
+func waveTaskExists(planContent string, waveNumber, taskNumber int) bool {
+	if strings.TrimSpace(planContent) == "" {
+		return false
+	}
+	plan, err := taskparser.Parse(planContent)
+	if err != nil {
+		return false
+	}
+	for _, wave := range plan.Waves {
+		if wave.Number != waveNumber {
+			continue
+		}
+		for _, task := range wave.Tasks {
+			if task.Number == taskNumber {
+				return true
+			}
+		}
+	}
+	return false
 }

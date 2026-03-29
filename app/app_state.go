@@ -225,6 +225,27 @@ func (m *home) recoveryCandidatesForTask(filename string, entry taskstate.TaskEn
 	return orchestration.BuildRecoveryCandidates(storeEntry, content)
 }
 
+func (m *home) recoveryCandidateForTitle(filename string, entry taskstate.TaskEntry, title string) (orchestration.RecoveryCandidate, bool) {
+	storeEntry := taskstore.TaskEntry{
+		Filename:             filename,
+		Status:               taskstore.Status(entry.Status),
+		Branch:               entry.Branch,
+		ReviewCycle:          entry.ReviewCycle,
+		LatestReviewFeedback: entry.LatestReviewFeedback,
+		ExecutionState:       entry.ExecutionState,
+	}
+
+	content := ""
+	phase := taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase)
+	if taskfsm.IsWaveExecutionPhase(phase) && m.taskStore != nil {
+		if stored, err := m.taskStore.GetContent(m.taskStoreProject, filename); err == nil {
+			content = stored
+		}
+	}
+
+	return orchestration.MatchRecoveryCandidateByTitle(storeEntry, content, title)
+}
+
 func (m *home) clearLatestReviewFeedback(planFile string) {
 	delete(m.pendingReviewFeedback, planFile)
 	if m.taskState != nil {
@@ -2953,12 +2974,9 @@ func (m *home) adoptOrphanSession(item overlay.TmuxBrowserItem) (tea.Model, tea.
 	)
 	if m.taskState != nil {
 		for filename, entry := range m.taskState.Plans {
-			for _, current := range m.recoveryCandidatesForTask(filename, entry) {
-				if current.Title == item.Title {
-					candidate = current
-					bound = true
-					break
-				}
+			if current, ok := m.recoveryCandidateForTitle(filename, entry, item.Title); ok {
+				candidate = current
+				bound = true
 			}
 			if bound {
 				break

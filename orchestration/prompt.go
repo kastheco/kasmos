@@ -21,8 +21,7 @@ func BuildTaskPrompt(planFile string, plan *taskparser.Plan, task taskparser.Tas
 	sb.WriteString("- Run scoped tests before committing: `go test ./pkg/... -run Test<Name> -v`\n")
 	sb.WriteString("- Verify build: `go build ./...`\n")
 	sb.WriteString("- Commit: `git add <specific-files> && git commit -m \"feat(task-N): description\"`\n")
-	sb.WriteString(fmt.Sprintf("- When done: signal completion with `kas signal emit implement_task_finished %s --payload '{\"wave_number\":%d,\"task_number\":%d}'` (or fallback: `touch .kasmos/signals/implement-task-finished-w%d-t%d-%s`), then stop.\n\n",
-		planFile, waveNumber, task.Number, waveNumber, task.Number, planFile))
+	sb.WriteString("- When done: stop and return to the prompt. Do NOT emit lifecycle signals yourself; kasmos detects managed task completion automatically.\n\n")
 
 	// Plan context
 	header := plan.HeaderContext()
@@ -99,8 +98,7 @@ func BuildBlueprintSkipPrompt(planFile string, plan *taskparser.Plan) string {
 	sb.WriteString("- Run scoped tests before committing: `go test ./pkg/... -run Test<Name> -v`\n")
 	sb.WriteString("- Verify build: `go build ./...`\n")
 	sb.WriteString("- Commit: `git add <specific-files> && git commit -m \"feat(task-N): description\"`\n")
-	sb.WriteString(fmt.Sprintf("- When done with ALL tasks: signal completion with `kas signal emit implement_finished %s` (or fallback: `touch .kasmos/signals/implement-finished-%s`), then stop.\n\n",
-		planFile, planFile))
+	sb.WriteString("- When done with ALL tasks: stop and return to the prompt. Do NOT emit lifecycle signals yourself; kasmos handles the review handoff.\n\n")
 
 	// Plan context header.
 	header := plan.HeaderContext()

@@ -45,7 +45,7 @@ func TestBuildTaskPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "test failures in files outside your task")
 	assert.Contains(t, prompt, "build failure caused by missing types")
 	assert.Contains(t, prompt, "surgical changes")
-	assert.Contains(t, prompt, "implement-task-finished-w1-t2-feature")
+	assert.Contains(t, prompt, "Do NOT emit lifecycle signals yourself")
 }
 
 func TestBuildTaskPrompt_InlineCoderRules(t *testing.T) {
@@ -63,10 +63,10 @@ func TestBuildTaskPrompt_InlineCoderRules(t *testing.T) {
 	assert.Contains(t, prompt, "feat(task-N):")
 	assert.Contains(t, prompt, "-run Test")
 	assert.Contains(t, prompt, "go build ./...")
-	// Primary gateway command
-	assert.Contains(t, prompt, "kas signal emit implement_task_finished feature")
-	// Fallback filesystem sentinel still present
-	assert.Contains(t, prompt, "touch .kasmos/signals/implement-task-finished-w1-t1-feature")
+	assert.Contains(t, prompt, "stop and return to the prompt")
+	assert.Contains(t, prompt, "Do NOT emit lifecycle signals yourself")
+	assert.NotContains(t, prompt, "kas signal emit implement_task_finished")
+	assert.NotContains(t, prompt, "implement-task-finished-w1-t1-feature")
 }
 
 func TestBuildTaskPrompt_PreservesMdPlanTokenWhenProvided(t *testing.T) {
@@ -75,15 +75,15 @@ func TestBuildTaskPrompt_PreservesMdPlanTokenWhenProvided(t *testing.T) {
 
 	prompt := BuildTaskPrompt("feature.md", plan, task, 1, 1, 1, nil)
 
-	assert.Contains(t, prompt, "kas signal emit implement_task_finished feature.md")
-	assert.Contains(t, prompt, "implement-task-finished-w1-t1-feature.md")
+	assert.NotContains(t, prompt, "kas signal emit implement_task_finished feature.md")
+	assert.NotContains(t, prompt, "implement-task-finished-w1-t1-feature.md")
 }
 
 func TestBuildTaskPrompt_ContainsSignalEmit(t *testing.T) {
 	plan := &taskparser.Plan{Waves: []taskparser.Wave{{Number: 1, Tasks: []taskparser.Task{{Number: 1, Title: "test", Body: "do stuff"}}}}}
 	prompt := BuildTaskPrompt("my-plan", plan, plan.Waves[0].Tasks[0], 1, 1, 1, nil)
-	assert.Contains(t, prompt, "kas signal emit implement_task_finished my-plan")
-	assert.Contains(t, prompt, "implement-task-finished-w1-t1-my-plan")
+	assert.NotContains(t, prompt, "kas signal emit implement_task_finished my-plan")
+	assert.NotContains(t, prompt, "implement-task-finished-w1-t1-my-plan")
 }
 
 func TestBuildTaskPrompt_SingleTask(t *testing.T) {

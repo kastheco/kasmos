@@ -372,7 +372,7 @@ func TestAdoptOrphanSession_BindsPlanMetadataFromTitle(t *testing.T) {
 	assert.Equal(t, "plan/wakeword", instances[0].Branch)
 }
 
-func TestAdoptOrphanSession_RejectsStalePhaseTitle(t *testing.T) {
+func TestAdoptOrphanSession_BindsStalePhaseTitleToPlan(t *testing.T) {
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -396,8 +396,10 @@ func TestAdoptOrphanSession_RejectsStalePhaseTitle(t *testing.T) {
 	updated := model.(*home)
 	instances := updated.nav.GetInstances()
 	require.Len(t, instances, 1)
-	assert.Empty(t, instances[0].TaskFile)
-	assert.Empty(t, instances[0].AgentType)
+	assert.Equal(t, planFile, instances[0].TaskFile)
+	assert.Equal(t, session.AgentTypeFixer, instances[0].AgentType)
+	assert.Equal(t, "plan/feature", instances[0].Branch)
+	assert.Equal(t, 1, instances[0].ReviewCycle)
 }
 
 func TestAdoptOrphanSession_BindsActiveWaveMetadata(t *testing.T) {

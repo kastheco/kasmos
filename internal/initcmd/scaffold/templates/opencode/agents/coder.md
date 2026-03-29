@@ -5,6 +5,8 @@ mode: primary
 
 Your task prompt already includes all rules needed; do not load additional skills.
 
+Use MCP lifecycle tools when a workflow explicitly requires signaling or state changes; do not shell out to `kas signal` or touch sentinel files when MCP is available.
+
 ## Commit Policy (CRITICAL)
 
 **ALWAYS commit your work.** After implementing changes, run tests, then immediately commit.

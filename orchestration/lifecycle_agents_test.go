@@ -161,3 +161,41 @@ func TestBuildRecoveryCandidates_RejectsStalePhaseTitles(t *testing.T) {
 	require.Len(t, candidates, 1)
 	assert.Equal(t, "feature-review-3", candidates[0].Title)
 }
+
+func TestMatchRecoveryCandidateByTitle_AllowsPhaseDriftForFixer(t *testing.T) {
+	entry := taskstore.TaskEntry{
+		Filename:    "feature",
+		Status:      taskstore.StatusReviewing,
+		Branch:      "plan/feature",
+		ReviewCycle: 2,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseReviewing),
+			ActiveAgentType: session.AgentTypeReviewer,
+		},
+	}
+
+	candidate, ok := MatchRecoveryCandidateByTitle(entry, "", "feature-fix-2")
+	require.True(t, ok)
+	assert.Equal(t, "feature", candidate.TaskFile)
+	assert.Equal(t, session.AgentTypeFixer, candidate.AgentType)
+	assert.Equal(t, "plan/feature", candidate.Branch)
+	assert.Equal(t, 2, candidate.ReviewCycle)
+}
+
+func TestMatchRecoveryCandidateByTitle_ValidatesWaveTaskAgainstPlan(t *testing.T) {
+	entry := taskstore.TaskEntry{
+		Filename: "feature",
+		Status:   taskstore.StatusImplementing,
+		Branch:   "plan/feature",
+	}
+	content := "**Goal:** test\n\n## Wave 2\n\n### Task 2: Second\n\nDo second.\n"
+
+	candidate, ok := MatchRecoveryCandidateByTitle(entry, content, "feature-W2-T2")
+	require.True(t, ok)
+	assert.Equal(t, session.AgentTypeCoder, candidate.AgentType)
+	assert.Equal(t, 2, candidate.WaveNumber)
+	assert.Equal(t, 2, candidate.TaskNumber)
+
+	_, ok = MatchRecoveryCandidateByTitle(entry, content, "feature-W2-T9")
+	assert.False(t, ok)
+}
