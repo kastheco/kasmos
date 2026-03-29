@@ -13,6 +13,48 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCreatePRForApprovedTask_NilStore(t *testing.T) {
+	t.Parallel()
+
+	d := &Daemon{logger: slog.Default(), broadcaster: api.NewEventBroadcaster()}
+	defer d.broadcaster.Close()
+
+	err := d.createPRForApprovedTask(RepoEntry{
+		Path:    t.TempDir(),
+		Project: "test-project",
+		Store:   nil,
+	}, "plan.md", "LGTM")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "task store unavailable")
+}
+
+func TestCreatePRForApprovedTask_NoBranch(t *testing.T) {
+	t.Parallel()
+
+	const (
+		project  = "test-project"
+		planFile = "plan.md"
+	)
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusReviewing,
+		Branch:   "",
+	}))
+
+	d := &Daemon{logger: slog.Default(), broadcaster: api.NewEventBroadcaster()}
+	defer d.broadcaster.Close()
+
+	err := d.createPRForApprovedTask(RepoEntry{
+		Path:    t.TempDir(),
+		Project: project,
+		Store:   store,
+	}, planFile, "LGTM")
+
+	require.NoError(t, err)
+}
+
 func TestDaemon_CreatePRAction_NoBranch_EmitsEvent(t *testing.T) {
 	t.Parallel()
 
