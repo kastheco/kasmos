@@ -341,16 +341,10 @@ func (n *NavigationPanel) rebuildRows() {
 	}
 	sortInsts(solo)
 
-	// Sort plans by lifecycle priority, then alphabetically descending.
+	// Sort plans alphabetically descending within each section.
 	sorted := append([]PlanDisplay(nil), n.plans...)
 	sort.SliceStable(sorted, func(i, j int) bool {
-		pi, pj := sorted[i], sorted[j]
-		ki := navPlanSortKey(pi, byPlan[pi.Filename], n.planStatuses[pi.Filename])
-		kj := navPlanSortKey(pj, byPlan[pj.Filename], n.planStatuses[pj.Filename])
-		if ki != kj {
-			return ki < kj
-		}
-		return strings.ToLower(taskstate.DisplayName(pi.Filename)) > strings.ToLower(taskstate.DisplayName(pj.Filename))
+		return strings.ToLower(taskstate.DisplayName(sorted[i].Filename)) > strings.ToLower(taskstate.DisplayName(sorted[j].Filename))
 	})
 
 	capacity := len(sorted) + len(n.instances) + len(n.deadPlans) + len(n.historyPlans) + len(n.cancelled) + 8
@@ -457,13 +451,7 @@ func (n *NavigationPanel) rebuildRows() {
 				continue
 			}
 			sort.SliceStable(planGroup, func(i, j int) bool {
-				pi, pj := planGroup[i], planGroup[j]
-				ki := navPlanSortKey(pi, byPlan[pi.Filename], n.planStatuses[pi.Filename])
-				kj := navPlanSortKey(pj, byPlan[pj.Filename], n.planStatuses[pj.Filename])
-				if ki != kj {
-					return ki < kj
-				}
-				return strings.ToLower(taskstate.DisplayName(pi.Filename)) > strings.ToLower(taskstate.DisplayName(pj.Filename))
+				return strings.ToLower(taskstate.DisplayName(planGroup[i].Filename)) > strings.ToLower(taskstate.DisplayName(planGroup[j].Filename))
 			})
 			topicID := SidebarTopicPrefix + t.Name
 			collapsed := n.collapsed[topicID]
@@ -1500,7 +1488,7 @@ func (n *NavigationPanel) String() string {
 	}
 	items := make([]visItem, 0, len(n.rows)+4)
 	selectedDisplayIdx := 0
-	lastPlanKey := -1 // -1 = no section emitted yet; 0/1 = active; 2/3 = plans
+	lastSection := ""
 	inDeadSection := false
 
 	for i, row := range n.rows {
@@ -1529,9 +1517,10 @@ func (n *NavigationPanel) String() string {
 			} else {
 				sk = row.PlanSortKey
 			}
-			if sk != lastPlanKey {
-				items = append(items, visItem{line: navDividerLine(navSectionLabel(sk), itemWidth), rowIdx: -1})
-				lastPlanKey = sk
+			section := navSectionLabel(sk)
+			if section != lastSection {
+				items = append(items, visItem{line: navDividerLine(section, itemWidth), rowIdx: -1})
+				lastSection = section
 			}
 		}
 

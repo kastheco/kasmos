@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	"charm.land/bubbles/v2/spinner"
@@ -293,26 +294,47 @@ func TestRebuildRows_ClickUpAvailable(t *testing.T) {
 
 // ---------- sort ordering ----------
 
-func TestSortOrder_NotificationsFirst(t *testing.T) {
+func TestSortOrder_AlphabeticalRegardlessOfNotificationState(t *testing.T) {
 	n := newTestPanel()
 	plans := []PlanDisplay{
-		{Filename: "running"},
-		{Filename: "notified"},
+		{Filename: "beta"},
+		{Filename: "alpha"},
 	}
 	instances := []*session.Instance{
-		makeInst("running-impl", "running", session.Running),
-		makeInst("notified-impl", "notified", session.Running),
+		makeInst("beta-impl", "beta", session.Running),
+		makeInst("alpha-impl", "alpha", session.Running),
 	}
 	instances[1].Notified = true
 	statuses := map[string]TopicStatus{
-		"running":  {HasRunning: true},
-		"notified": {HasNotification: true},
+		"beta":  {HasRunning: true},
+		"alpha": {HasNotification: true},
 	}
 	n.SetData(plans, instances, nil, nil, statuses)
 
-	// Notified plans sort above running plans (sort key 0 < 1).
-	require.True(t, len(n.rows) >= 2)
-	assert.Equal(t, "notified", n.rows[0].TaskFile)
+	// Active plans keep alphabetical ordering within the section even when one plan
+	// is notified and the other is only running.
+	require.True(t, len(n.rows) >= 4)
+	assert.Equal(t, "beta", n.rows[0].TaskFile)
+	assert.Equal(t, "alpha", n.rows[2].TaskFile)
+}
+
+func TestSortOrder_TopicGroupedIdlePlansIgnoreSortKey(t *testing.T) {
+	n := newTestPanel()
+	topics := []TopicDisplay{{
+		Name: "topic-a",
+		Plans: []PlanDisplay{
+			{Filename: "alpha", Phase: "planned"},
+			{Filename: "zeta"},
+		},
+	}}
+	n.SetTopicsAndPlans(topics, nil, nil)
+
+	// Topic-grouped idle plans also keep alphabetical ordering within the topic even
+	// when one plan has a lower navPlanSortKey because it is already planned.
+	require.Len(t, n.rows, 3)
+	assert.Equal(t, navRowTopicHeader, n.rows[0].Kind)
+	assert.Equal(t, "zeta", n.rows[1].TaskFile)
+	assert.Equal(t, "alpha", n.rows[2].TaskFile)
 }
 
 func TestSortOrder_InstancesWithinPlan(t *testing.T) {
@@ -920,6 +942,30 @@ func TestString_SectionHeaders(t *testing.T) {
 	output := n.String()
 	// All plans appear under a single "plans" divider regardless of status.
 	assert.Contains(t, output, "plans")
+}
+
+func TestString_ActiveDividerRenderedOnceForMixedActiveSortKeys(t *testing.T) {
+	n := newTestPanel()
+	n.SetSize(60, 40)
+	plans := []PlanDisplay{
+		{Filename: "beta"},
+		{Filename: "alpha"},
+	}
+	instances := []*session.Instance{
+		makeInst("beta-impl", "beta", session.Running),
+		makeInst("alpha-impl", "alpha", session.Running),
+	}
+	instances[1].Notified = true
+	statuses := map[string]TopicStatus{
+		"beta":  {HasRunning: true},
+		"alpha": {HasNotification: true},
+	}
+	n.SetData(plans, instances, nil, nil, statuses)
+
+	plain := stripANSI(n.String())
+	assert.Equal(t, 1, strings.Count(plain, "active"), "mixed active sort keys should render a single active divider")
+	assert.Contains(t, plain, "beta")
+	assert.Contains(t, plain, "alpha")
 }
 
 func TestString_InstanceDisplayTitle(t *testing.T) {
