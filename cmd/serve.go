@@ -10,15 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/auditlog"
 	"github.com/kastheco/kasmos/config/taskstore"
-	"github.com/kastheco/kasmos/internal/mcpserver"
-	"github.com/kastheco/kasmos/internal/mcpserver/fstools"
-	"github.com/kastheco/kasmos/internal/mcpserver/gittools"
-	"github.com/kastheco/kasmos/internal/mcpserver/instancetools"
-	"github.com/kastheco/kasmos/internal/mcpserver/signaltools"
-	"github.com/kastheco/kasmos/internal/mcpserver/tasktools"
 	webassets "github.com/kastheco/kasmos/web"
 	"github.com/spf13/cobra"
 )
@@ -118,28 +111,10 @@ func NewServeCmd() *cobra.Command {
 
 			var mcpHTTP *http.Server
 			if mcpEnabled {
-				mcpSrv := mcpserver.NewServer(MCPVersion, store, gw)
-				cwd, err := os.Getwd()
+				mcpSrv, err := newConfiguredMCPServer(store, gw)
 				if err != nil {
-					return fmt.Errorf("get working directory: %w", err)
+					return err
 				}
-				repoRoot := cwd
-				allowedDirs := []string{cwd}
-				if root, rootErr := config.ResolveRepoRoot(cwd); rootErr == nil && root != "" && root != cwd {
-					repoRoot = root
-					allowedDirs = append(allowedDirs, root)
-				}
-				project := resolveTaskProject(repoRoot)
-				fstools.RegisterTools(mcpSrv.MCPServer(), allowedDirs)
-				gittools.RegisterTools(mcpSrv.MCPServer(), allowedDirs)
-				tasktools.RegisterTools(mcpSrv.MCPServer(), project, mcpSrv.Store())
-				signaltools.RegisterTools(mcpSrv.MCPServer(), project, mcpSrv.Gateway())
-				instancetools.RegisterTools(
-					mcpSrv.MCPServer(),
-					func() config.StateManager { return config.LoadState() },
-					nil,
-					daemonSocketPath(),
-				)
 				mcpAddr := fmt.Sprintf("%s:%d", bind, mcpPort)
 				mcpHTTP = &http.Server{Addr: mcpAddr, Handler: mcpSrv.Handler()}
 				fmt.Printf("mcp server listening on http://%s/mcp\n", mcpAddr)

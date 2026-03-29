@@ -22,7 +22,7 @@ the current flow is:
 
 1. run `kas setup` inside a git repo
 2. start `kas serve` to expose rest + mcp
-3. point your mcp-aware clients at `http://127.0.0.1:7434/mcp`
+3. point your mcp-aware clients at `http://127.0.0.1:7434/mcp` or run `kas mcp` for stdio-only clients
 4. use `kas` to manage tasks, instances, and orchestration
 
 today, step 2 is still explicit: `kas setup` does not configure/start the server for you, and launching `kas` does not auto-spawn `kas serve` if it is missing.
@@ -173,6 +173,12 @@ kas serve --bind 127.0.0.1 --port 7433 --mcp --mcp-port 7434
 
 if you want this to be always-on, run `kas serve` under your user service manager or keep it paired with the daemon in your own startup scripts for now.
 
+for stdio-only MCP clients such as OpenClaw, run:
+
+```bash
+kas mcp
+```
+
 if you do **not** want to launch multiple commands every session, run the server + daemon as user services.
 
 for packaged installs (brew / release binary), create the units directly:
@@ -264,6 +270,22 @@ create a project-local `.mcp.json`:
 ```
 
 that is the simplest option for any client that supports standard `mcpServers` http entries.
+
+### stdio clients (for example OpenClaw)
+
+use the `kas mcp` command as the server process:
+
+```json
+{
+  "mcpServers": {
+    "kasmos": {
+      "type": "stdio",
+      "command": "kas",
+      "args": ["mcp"]
+    }
+  }
+}
+```
 
 ### opencode remote mcp config
 

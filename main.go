@@ -262,6 +262,7 @@ func init() {
 	rootCmd.AddCommand(kasSetupCmd)
 	rootCmd.AddCommand(cmd2.NewTaskCmd())
 	rootCmd.AddCommand(cmd2.NewServeCmd())
+	rootCmd.AddCommand(cmd2.NewMCPCmd())
 	rootCmd.AddCommand(cmd2.NewBrowserCmd())
 	rootCmd.AddCommand(cmd2.NewInstanceCmd())
 	rootCmd.AddCommand(cmd2.NewAuditCmd())

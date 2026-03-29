@@ -1,0 +1,77 @@
+package cmd
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/mcpserver"
+	"github.com/kastheco/kasmos/internal/mcpserver/fstools"
+	"github.com/kastheco/kasmos/internal/mcpserver/gittools"
+	"github.com/kastheco/kasmos/internal/mcpserver/instancetools"
+	"github.com/kastheco/kasmos/internal/mcpserver/signaltools"
+	"github.com/kastheco/kasmos/internal/mcpserver/tasktools"
+	"github.com/spf13/cobra"
+)
+
+// NewMCPCmd returns a stdio MCP server command for clients that spawn MCP
+// subprocesses directly.
+func NewMCPCmd() *cobra.Command {
+	var db string
+
+	cmd := &cobra.Command{
+		Use:   "mcp",
+		Short: "start the MCP server on stdio",
+		Long:  "Start the kasmos MCP server on stdin/stdout for MCP clients that use stdio transports.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, err := taskstore.NewSQLiteStore(db)
+			if err != nil {
+				return fmt.Errorf("open task store: %w", err)
+			}
+			defer store.Close()
+
+			gw, err := taskstore.NewSQLiteSignalGateway(db)
+			if err != nil {
+				return fmt.Errorf("open signal gateway: %w", err)
+			}
+			defer gw.Close()
+
+			mcpSrv, err := newConfiguredMCPServer(store, gw)
+			if err != nil {
+				return err
+			}
+
+			return mcpSrv.ServeStdio()
+		},
+	}
+
+	cmd.Flags().StringVar(&db, "db", taskstore.ResolvedDBPath(), "path to the SQLite database file")
+	return cmd
+}
+
+func newConfiguredMCPServer(store taskstore.Store, gw taskstore.SignalGateway) (*mcpserver.Server, error) {
+	mcpSrv := mcpserver.NewServer(MCPVersion, store, gw)
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("get working directory: %w", err)
+	}
+	repoRoot := cwd
+	allowedDirs := []string{cwd}
+	if root, rootErr := config.ResolveRepoRoot(cwd); rootErr == nil && root != "" && root != cwd {
+		repoRoot = root
+		allowedDirs = append(allowedDirs, root)
+	}
+	project := resolveTaskProject(repoRoot)
+	fstools.RegisterTools(mcpSrv.MCPServer(), allowedDirs)
+	gittools.RegisterTools(mcpSrv.MCPServer(), allowedDirs)
+	tasktools.RegisterTools(mcpSrv.MCPServer(), project, mcpSrv.Store())
+	signaltools.RegisterTools(mcpSrv.MCPServer(), project, mcpSrv.Gateway())
+	instancetools.RegisterTools(
+		mcpSrv.MCPServer(),
+		func() config.StateManager { return config.LoadState() },
+		nil,
+		daemonSocketPath(),
+	)
+	return mcpSrv, nil
+}

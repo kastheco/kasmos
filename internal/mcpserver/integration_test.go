@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -117,4 +118,60 @@ func TestIntegration_ServerReportsVersion(t *testing.T) {
 	require.NotNil(t, initResult, "Initialize result must not be nil")
 
 	assert.Equal(t, "1.2.3", initResult.ServerInfo.Version, "server version should reflect NewServer argument")
+}
+
+func TestIntegration_StdioClientConnectsAndListsTools(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	stdioTransport := transport.NewStdio(
+		os.Args[0],
+		[]string{"GO_WANT_MCP_STDIO_HELPER=1"},
+		"-test.run=TestMCPStdioHelperProcess",
+		"--",
+		"serve-stdio",
+	)
+
+	c := client.NewClient(stdioTransport)
+	require.NoError(t, c.Start(ctx), "failed to start stdio transport")
+	t.Cleanup(func() { _ = c.Close() })
+
+	initReq := mcp.InitializeRequest{
+		Params: mcp.InitializeParams{
+			ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
+			ClientInfo: mcp.Implementation{
+				Name:    "integration-test",
+				Version: "0.1.0",
+			},
+			Capabilities: mcp.ClientCapabilities{},
+		},
+	}
+
+	initResult, err := c.Initialize(ctx, initReq)
+	require.NoError(t, err, "Initialize must succeed")
+	require.NotNil(t, initResult, "Initialize result must not be nil")
+
+	assert.Equal(t, "kasmos", initResult.ServerInfo.Name, "server name should be 'kasmos'")
+	assert.Equal(t, "0.1.0", initResult.ServerInfo.Version, "server version should match")
+	assert.NotNil(t, initResult.Capabilities.Tools, "server should advertise tools capability")
+
+	toolsResult, err := c.ListTools(ctx, mcp.ListToolsRequest{})
+	require.NoError(t, err, "ListTools must succeed")
+	assert.Empty(t, toolsResult.Tools, "no tools should be registered yet")
+}
+
+func TestMCPStdioHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_MCP_STDIO_HELPER") != "1" {
+		return
+	}
+	if len(os.Args) < 2 || os.Args[len(os.Args)-1] != "serve-stdio" {
+		os.Exit(0)
+	}
+
+	srv := mcpserver.NewServer("0.1.0", nil, nil)
+	if err := srv.ServeStdio(); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "stdio server error: %v\n", err)
+		os.Exit(1)
+	}
+	os.Exit(0)
 }

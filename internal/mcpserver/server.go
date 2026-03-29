@@ -1,5 +1,5 @@
-// Package mcpserver wraps github.com/mark3labs/mcp-go to expose a Streamable
-// HTTP MCP server that shares the kasmos task store and signal gateway. Future
+// Package mcpserver wraps github.com/mark3labs/mcp-go to expose kasmos MCP
+// transports backed by the shared task store and signal gateway. Future
 // task/codebase/instance tool batches attach to the Server to register their
 // tools at startup.
 package mcpserver
@@ -50,6 +50,11 @@ func NewServer(version string, store taskstore.Store, gateway taskstore.SignalGa
 // transport. Mount it on any HTTP mux to serve MCP requests.
 func (s *Server) Handler() http.Handler {
 	return s.handler
+}
+
+// ServeStdio starts the MCP server on stdin/stdout.
+func (s *Server) ServeStdio() error {
+	return server.ServeStdio(s.mcp)
 }
 
 // MCPServer returns the underlying *server.MCPServer so that tool-registration
