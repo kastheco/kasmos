@@ -1488,7 +1488,7 @@ func (n *NavigationPanel) String() string {
 	}
 	items := make([]visItem, 0, len(n.rows)+4)
 	selectedDisplayIdx := 0
-	lastPlanKey := -1 // -1 = no section emitted yet; 0/1 = active; 2/3 = plans
+	lastSection := ""
 	inDeadSection := false
 
 	for i, row := range n.rows {
@@ -1517,9 +1517,10 @@ func (n *NavigationPanel) String() string {
 			} else {
 				sk = row.PlanSortKey
 			}
-			if sk != lastPlanKey {
-				items = append(items, visItem{line: navDividerLine(navSectionLabel(sk), itemWidth), rowIdx: -1})
-				lastPlanKey = sk
+			section := navSectionLabel(sk)
+			if section != lastSection {
+				items = append(items, visItem{line: navDividerLine(section, itemWidth), rowIdx: -1})
+				lastSection = section
 			}
 		}
 

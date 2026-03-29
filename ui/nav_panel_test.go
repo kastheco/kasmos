@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	"charm.land/bubbles/v2/spinner"
@@ -941,6 +942,30 @@ func TestString_SectionHeaders(t *testing.T) {
 	output := n.String()
 	// All plans appear under a single "plans" divider regardless of status.
 	assert.Contains(t, output, "plans")
+}
+
+func TestString_ActiveDividerRenderedOnceForMixedActiveSortKeys(t *testing.T) {
+	n := newTestPanel()
+	n.SetSize(60, 40)
+	plans := []PlanDisplay{
+		{Filename: "beta"},
+		{Filename: "alpha"},
+	}
+	instances := []*session.Instance{
+		makeInst("beta-impl", "beta", session.Running),
+		makeInst("alpha-impl", "alpha", session.Running),
+	}
+	instances[1].Notified = true
+	statuses := map[string]TopicStatus{
+		"beta":  {HasRunning: true},
+		"alpha": {HasNotification: true},
+	}
+	n.SetData(plans, instances, nil, nil, statuses)
+
+	plain := stripANSI(n.String())
+	assert.Equal(t, 1, strings.Count(plain, "active"), "mixed active sort keys should render a single active divider")
+	assert.Contains(t, plain, "beta")
+	assert.Contains(t, plain, "alpha")
 }
 
 func TestString_InstanceDisplayTitle(t *testing.T) {
