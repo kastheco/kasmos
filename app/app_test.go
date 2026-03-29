@@ -18,6 +18,7 @@ import (
 	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session"
+	gitpkg "github.com/kastheco/kasmos/session/git"
 	"github.com/kastheco/kasmos/session/tmux"
 	"github.com/kastheco/kasmos/ui"
 	"github.com/kastheco/kasmos/ui/overlay"
@@ -1944,7 +1945,7 @@ func TestShouldCreatePROnApproval(t *testing.T) {
 }
 
 func TestAssemblePRMetadata_FullEntry(t *testing.T) {
-	meta := assemblePRMetadata(taskstore.TaskEntry{
+	meta := gitpkg.AssemblePRMetadata(taskstore.TaskEntry{
 		Description: "Auth Middleware",
 		Goal:        "add JWT auth to all routes",
 		Branch:      "plan/auth-middleware",
@@ -1965,7 +1966,7 @@ func TestAssemblePRMetadata_FullEntry(t *testing.T) {
 }
 
 func TestAssemblePRMetadata_EmptyContent(t *testing.T) {
-	meta := assemblePRMetadata(taskstore.TaskEntry{
+	meta := gitpkg.AssemblePRMetadata(taskstore.TaskEntry{
 		Description: "quick fix",
 		Goal:        "fix the bug",
 	}, nil, "", 0, "", "", "")
@@ -1979,7 +1980,7 @@ func TestAssemblePRMetadata_EmptyContent(t *testing.T) {
 }
 
 func TestAssemblePRMetadata_InvalidPlanContent(t *testing.T) {
-	meta := assemblePRMetadata(taskstore.TaskEntry{
+	meta := gitpkg.AssemblePRMetadata(taskstore.TaskEntry{
 		Description: "quick fix",
 		Goal:        "fix the bug",
 		Content:     "# no waves here",
