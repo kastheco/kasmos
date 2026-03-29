@@ -61,18 +61,22 @@ func TestStatusBar_StatusLeftAlignedAfterLogo(t *testing.T) {
 		Branch:     "plan/auth-refactor",
 		PlanName:   "auth-refactor",
 		PlanStatus: "implementing",
+		ProjectDir: "myproject",
 	})
 	plain := stripANSI(sb.String())
 
 	appIdx := strings.Index(plain, "kasmos")
-	branchIdx := strings.Index(plain, "plan/auth-refactor")
 	statusIdx := strings.Index(plain, "implementing")
+	projectIdx := strings.Index(plain, "myproject")
+	branchIdx := strings.Index(plain, "plan/auth-refactor")
 
 	require.NotEqual(t, -1, appIdx)
-	require.NotEqual(t, -1, branchIdx)
 	require.NotEqual(t, -1, statusIdx)
+	require.NotEqual(t, -1, projectIdx)
+	require.NotEqual(t, -1, branchIdx)
 	assert.Greater(t, statusIdx, appIdx, "status must appear after app logo")
-	assert.Greater(t, branchIdx, statusIdx, "branch should no longer be grouped with status")
+	assert.Greater(t, projectIdx, statusIdx, "project dir should be centered away from the left status block")
+	assert.Greater(t, branchIdx, projectIdx, "branch should render to the right of the centered project dir")
 }
 
 func TestStatusBar_VersionRenderedAfterLogo(t *testing.T) {
@@ -99,21 +103,22 @@ func TestStatusBar_EmptyVersionSkipped(t *testing.T) {
 	assert.NotContains(t, stripANSI(sb.String()), "v1.")
 }
 
-func TestStatusBar_BranchGroupCentered(t *testing.T) {
+func TestStatusBar_ProjectDirCentered(t *testing.T) {
 	sb := NewStatusBar()
 	sb.SetSize(100)
 	sb.SetData(StatusBarData{
 		Branch:     "main",
 		PlanStatus: "reviewing",
+		ProjectDir: "myproject",
 	})
 
 	plain := stripANSI(sb.String())
 
-	branchIdx := strings.Index(plain, "main")
-	require.NotEqual(t, -1, branchIdx)
-	branchCenter := branchIdx + len("main")/2
-	assert.InDelta(t, 50, branchCenter, 6,
-		"branch group should be centered in the status bar")
+	projectIdx := strings.Index(plain, "myproject")
+	require.NotEqual(t, -1, projectIdx)
+	projectCenter := projectIdx + len("myproject")/2
+	assert.InDelta(t, 50, projectCenter, 6,
+		"project dir should be centered in the status bar")
 }
 
 func TestStatusBar_WaveGlyphs(t *testing.T) {
@@ -186,8 +191,9 @@ func TestStatusBar_WaveProgressLeftAlignedAfterLogo(t *testing.T) {
 	sb := NewStatusBar()
 	sb.SetSize(120)
 	sb.SetData(StatusBarData{
-		Branch:    "plan/auth-refactor",
-		WaveLabel: "wave 1/4",
+		Branch:     "plan/auth-refactor",
+		ProjectDir: "myproject",
+		WaveLabel:  "wave 1/4",
 		TaskGlyphs: []TaskGlyph{
 			TaskGlyphRunning,
 			TaskGlyphPending,
@@ -198,13 +204,16 @@ func TestStatusBar_WaveProgressLeftAlignedAfterLogo(t *testing.T) {
 	plain := stripANSI(sb.String())
 	appIdx := strings.Index(plain, "kasmos")
 	waveIdx := strings.Index(plain, "wave 1/4")
+	projectIdx := strings.Index(plain, "myproject")
 	branchIdx := strings.Index(plain, "plan/auth-refactor")
 
 	require.NotEqual(t, -1, appIdx)
 	require.NotEqual(t, -1, waveIdx)
+	require.NotEqual(t, -1, projectIdx)
 	require.NotEqual(t, -1, branchIdx)
 	assert.Greater(t, waveIdx, appIdx, "wave progress should appear after app logo")
-	assert.Greater(t, branchIdx, waveIdx, "branch should remain centered, not grouped with wave progress")
+	assert.Greater(t, projectIdx, waveIdx, "project dir should remain centered, not grouped with wave progress")
+	assert.Greater(t, branchIdx, projectIdx, "branch should render to the right of the centered project dir")
 }
 
 func TestStatusBar_Truncation(t *testing.T) {
@@ -245,38 +254,39 @@ func TestStatusBar_TmuxSessionCountMovedToMenu(t *testing.T) {
 	assert.NotContains(t, plain, "tmux:")
 }
 
-func TestStatusBar_ProjectDirRightAligned(t *testing.T) {
+func TestStatusBar_BranchRightAligned(t *testing.T) {
 	sb := NewStatusBar()
 	sb.SetSize(100)
 	sb.SetData(StatusBarData{
-		Branch:     "main",
-		ProjectDir: "kasmos",
+		Branch:     "feature/center-right",
+		ProjectDir: "myproject",
 	})
 
 	plain := stripANSI(sb.String())
-	assert.Contains(t, plain, "kasmos")
+	assert.Contains(t, plain, "myproject")
+	assert.Contains(t, plain, "feature/center-right")
 
-	// The project dir should appear after the branch (right-aligned).
-	// Find the rightmost occurrence of "kasmos" (the project dir, not the logo).
-	lastIdx := strings.LastIndex(plain, "kasmos")
-	branchIdx := strings.Index(plain, "main")
-	require.NotEqual(t, -1, lastIdx)
+	projectIdx := strings.Index(plain, "myproject")
+	branchIdx := strings.Index(plain, "feature/center-right")
+	require.NotEqual(t, -1, projectIdx)
 	require.NotEqual(t, -1, branchIdx)
-	assert.Greater(t, lastIdx, branchIdx,
-		"project dir should appear to the right of the branch")
+	assert.Greater(t, branchIdx, projectIdx,
+		"branch should appear to the right of the centered project dir")
 }
 
-func TestStatusBar_ProjectDirDroppedWhenNarrow(t *testing.T) {
+func TestStatusBar_BranchDroppedWhenNarrow(t *testing.T) {
 	sb := NewStatusBar()
 	sb.SetSize(40) // very narrow
 	sb.SetData(StatusBarData{
 		Branch:     "feature/some-long-branch-name",
-		ProjectDir: "my-project",
+		ProjectDir: "myproject",
 	})
 
 	plain := stripANSI(sb.String())
-	// Project dir should be dropped when it can't fit alongside the branch.
 	require.NotEmpty(t, plain)
+	assert.Contains(t, plain, "myproject")
+	assert.NotContains(t, plain, "feature/some-long-branch-name",
+		"branch should drop before the centered project dir on narrow layouts")
 }
 
 func TestStatusBar_FocusModeNoLongerShowsPill(t *testing.T) {
@@ -303,6 +313,29 @@ func TestStatusBar_PRIndicator(t *testing.T) {
 	})
 	rendered := sb.String()
 	assert.Contains(t, rendered, "✓")
+}
+
+func TestStatusBar_PRIndicator_ComposesWithRightAlignedBranch(t *testing.T) {
+	sb := NewStatusBar()
+	sb.SetSize(120)
+	sb.SetData(StatusBarData{
+		Branch:     "plan/test",
+		ProjectDir: "myproject",
+		PRState:    "approved",
+		PRChecks:   "passing",
+	})
+
+	plain := stripANSI(sb.String())
+	projectIdx := strings.Index(plain, "myproject")
+	prIdx := strings.Index(plain, "✓ pr")
+	branchIdx := strings.Index(plain, "plan/test")
+
+	require.NotEqual(t, -1, projectIdx)
+	require.NotEqual(t, -1, prIdx)
+	require.NotEqual(t, -1, branchIdx)
+	assert.Greater(t, prIdx, projectIdx, "pr indicator should render on the right side beside the branch")
+	assert.Greater(t, branchIdx, projectIdx, "branch should remain on the right side of the centered project dir")
+	assert.Less(t, prIdx, branchIdx, "pr indicator should appear before the branch text")
 }
 
 func TestStatusBar_PRIndicator_ChangesRequested(t *testing.T) {
