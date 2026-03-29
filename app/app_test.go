@@ -393,6 +393,113 @@ func TestSpawnAgent_SubmitCreatesInstance(t *testing.T) {
 	assert.Equal(t, session.Loading, last.Status)
 }
 
+func collectQuickLaunchMsgs(cmd tea.Cmd) (started []instanceStartedMsg, sawWindowSize bool) {
+	if cmd == nil {
+		return nil, false
+	}
+
+	msg := cmd()
+	switch msg := msg.(type) {
+	case tea.BatchMsg:
+		for _, sub := range msg {
+			subStarted, subSawWindowSize := collectQuickLaunchMsgs(sub)
+			started = append(started, subStarted...)
+			sawWindowSize = sawWindowSize || subSawWindowSize
+		}
+	case instanceStartedMsg:
+		started = append(started, msg)
+	default:
+		sawWindowSize = fmt.Sprintf("%T", msg) == "tea.windowSizeMsg"
+	}
+
+	return started, sawWindowSize
+}
+
+func TestQuickLaunch_KeyCreatesInstance(t *testing.T) {
+	oldQuickLaunchStartOnMain := quickLaunchStartOnMain
+	quickLaunchStartOnMain = func(inst *session.Instance) error {
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+	t.Cleanup(func() {
+		quickLaunchStartOnMain = oldQuickLaunchStartOnMain
+	})
+
+	h := newTestHome()
+	h.activeRepoPath = t.TempDir()
+	h.keySent = true
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	updated := model.(*home)
+
+	require.NotNil(t, cmd)
+	assert.Equal(t, stateDefault, updated.state)
+	assert.False(t, updated.overlays.IsActive())
+	instances := updated.nav.GetInstances()
+	require.Len(t, instances, 1)
+	assert.Equal(t, "agent-1", instances[0].Title)
+	assert.Empty(t, updated.allInstances)
+
+	startedMsgs, sawWindowSize := collectQuickLaunchMsgs(cmd)
+	assert.True(t, sawWindowSize)
+	require.Len(t, startedMsgs, 1)
+	assert.Same(t, instances[0], startedMsgs[0].instance)
+	assert.True(t, startedMsgs[0].instance.Started())
+	assert.Equal(t, session.Running, startedMsgs[0].instance.Status)
+
+	model, followCmd := updated.Update(startedMsgs[0])
+	updated = model.(*home)
+
+	require.NotNil(t, followCmd)
+	require.Len(t, updated.allInstances, 1)
+	assert.Same(t, instances[0], updated.allInstances[0])
+	assert.Equal(t, "agent-1", updated.allInstances[0].Title)
+}
+
+func TestQuickLaunch_InstanceLimitEnforced(t *testing.T) {
+	h := newTestHome()
+	h.tmuxSessionCount = GlobalInstanceLimit
+	h.keySent = true
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	updated := model.(*home)
+
+	assert.Equal(t, stateDefault, updated.state)
+	assert.False(t, updated.overlays.IsActive())
+	assert.Empty(t, updated.nav.GetInstances())
+	assert.Empty(t, updated.allInstances)
+	require.NotNil(t, cmd)
+	_, ok := cmd().(overlay.ToastTickMsg)
+	require.True(t, ok)
+	assert.True(t, updated.toastManager.HasActiveToasts())
+}
+
+func TestQuickLaunch_PlaceholderNameAvoidsCollisions(t *testing.T) {
+	h := newTestHome()
+	repoPath := t.TempDir()
+	h.activeRepoPath = repoPath
+
+	newPlaceholder := func(title string) *session.Instance {
+		t.Helper()
+		inst, err := session.NewInstance(session.InstanceOptions{
+			Title:   title,
+			Path:    repoPath,
+			Program: "opencode",
+		})
+		require.NoError(t, err)
+		return inst
+	}
+
+	agent1 := newPlaceholder("agent-1")
+	agent3 := newPlaceholder("agent-3")
+	h.nav.AddInstance(agent1)()
+	h.nav.AddInstance(agent3)()
+	h.allInstances = append(h.allInstances, agent1, agent3)
+
+	assert.Equal(t, "agent-4", h.nextPlaceholderName())
+}
+
 // TestConfirmationModalStateTransitions tests state transitions without full instance setup
 func TestConfirmationModalStateTransitions(t *testing.T) {
 	mgr := overlay.NewManager()
