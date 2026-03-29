@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDaemon_CreatePRAction_EmitsEvent(t *testing.T) {
+func TestDaemon_CreatePRAction_NoBranch_EmitsEvent(t *testing.T) {
 	t.Parallel()
 
 	b := api.NewEventBroadcaster()
