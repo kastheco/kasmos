@@ -55,6 +55,16 @@ func (c *SocketClient) ListRepos() ([]api.RepoStatus, error) {
 	return repos, nil
 }
 
+// ListInstances queries GET /v1/repos/{project}/instances and returns the
+// daemon-tracked agent instances for that project.
+func (c *SocketClient) ListInstances(project string) ([]api.InstanceStatus, error) {
+	var instances []api.InstanceStatus
+	if err := c.get("/v1/repos/"+project+"/instances", &instances); err != nil {
+		return nil, err
+	}
+	return instances, nil
+}
+
 // AddRepo sends POST /v1/repos to register a new repository path.
 func (c *SocketClient) AddRepo(path string) error {
 	body := struct {

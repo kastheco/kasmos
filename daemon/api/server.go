@@ -46,11 +46,17 @@ type StatusResponse struct {
 
 // InstanceStatus describes a running agent instance.
 type InstanceStatus struct {
-	ID      string `json:"id"`
-	Project string `json:"project"`
-	Plan    string `json:"plan"`
-	Role    string `json:"role"`
-	Active  bool   `json:"active"`
+	ID          string `json:"id"`
+	Project     string `json:"project"`
+	Plan        string `json:"plan"`
+	Role        string `json:"role"`
+	Active      bool   `json:"active"`
+	Title       string `json:"title,omitempty"`
+	Branch      string `json:"branch,omitempty"`
+	Program     string `json:"program,omitempty"`
+	TaskNumber  int    `json:"task_number,omitempty"`
+	WaveNumber  int    `json:"wave_number,omitempty"`
+	ReviewCycle int    `json:"review_cycle,omitempty"`
 }
 
 // addRepoRequest is the request body for POST /v1/repos.

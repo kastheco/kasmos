@@ -1033,6 +1033,36 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			daemonManagedRepo := repoManagedByDaemon(repoPath)
+			daemonInstances := make([]*session.Instance, 0)
+			if daemonManagedRepo && project != "" {
+				knownTitles := make(map[string]struct{}, len(snapshots))
+				for _, inst := range snapshots {
+					if inst != nil {
+						knownTitles[inst.Title] = struct{}{}
+					}
+				}
+				statuses, err := listDaemonInstances(project)
+				if err != nil {
+					log.WarningLog.Printf("daemon instance sync: list instances for %q: %v", project, err)
+				} else {
+					for _, status := range statuses {
+						title := status.Title
+						if title == "" {
+							continue
+						}
+						if _, exists := knownTitles[title]; exists {
+							continue
+						}
+						inst, err := restoreInstanceFromData(daemonInstanceData(repoPath, status))
+						if err != nil {
+							log.WarningLog.Printf("daemon instance sync: restore %q: %v", title, err)
+							continue
+						}
+						daemonInstances = append(daemonInstances, inst)
+						knownTitles[title] = struct{}{}
+					}
+				}
+			}
 
 			// Scan signals from the project-local signals directory (.kasmos/signals/).
 			var signals []taskfsm.Signal
@@ -1118,7 +1148,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			time.Sleep(200 * time.Millisecond)
-			return metadataResultMsg{Results: results, PlanState: ps, Signals: signals, TaskSignals: taskSignals, WaveSignals: waveSignals, ElaborationSignals: elaborationSignals, DaemonManagedRepo: daemonManagedRepo, TmuxSessionCount: tmuxCount, PRStateUpdates: prStateUpdates}
+			return metadataResultMsg{Results: results, PlanState: ps, Signals: signals, TaskSignals: taskSignals, WaveSignals: waveSignals, ElaborationSignals: elaborationSignals, DaemonManagedRepo: daemonManagedRepo, DaemonInstances: daemonInstances, TmuxSessionCount: tmuxCount, PRStateUpdates: prStateUpdates}
 		}
 	case metadataResultMsg:
 		// Process agent sentinel signals — feed to FSM and consume sentinel files.
@@ -1668,6 +1698,23 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// msg.PlanState was loaded before signals were scanned, so it would be stale.
 		if msg.PlanState != nil && (msg.DaemonManagedRepo || len(msg.Signals) == 0) {
 			m.taskState = msg.PlanState
+		}
+		for _, inst := range msg.DaemonInstances {
+			if inst == nil {
+				continue
+			}
+			exists := false
+			for _, existing := range m.nav.GetInstances() {
+				if existing.Title == inst.Title {
+					exists = true
+					break
+				}
+			}
+			if exists {
+				continue
+			}
+			m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))
+			m.allInstances = append(m.allInstances, inst)
 		}
 
 		// Store the latest tmux session count for the bottom bar.
@@ -2712,6 +2759,7 @@ type metadataResultMsg struct {
 	WaveSignals        []taskfsm.WaveSignal        // implement-wave-N signal files found this tick
 	ElaborationSignals []taskfsm.ElaborationSignal // architect completion signal files found this tick
 	DaemonManagedRepo  bool                        // true when the active repo is managed by a running daemon
+	DaemonInstances    []*session.Instance         // daemon-tracked instances missing from the local nav model
 	TmuxSessionCount   int                         // number of kas_-prefixed tmux sessions
 	PRStateUpdates     []prStateUpdateMsg          // PR review/check state refreshed this tick
 }

@@ -141,21 +141,34 @@ func (a *daemonStateAdapter) TaskStoreForProject(project string) (taskstore.Stor
 }
 
 func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus {
-	all := a.d.spawner.RunningInstances()
-	var out []api.InstanceStatus
-	for _, info := range all {
-		if info.Project != project {
+	entries := a.d.repos.List()
+	for _, entry := range entries {
+		if entry.Project != project {
 			continue
 		}
-		out = append(out, api.InstanceStatus{
-			ID:      info.Key,
-			Project: info.Project,
-			Plan:    info.PlanFile,
-			Role:    info.AgentType,
-			Active:  true,
-		})
+		tracked := a.d.spawner.InstancesForRepo(entry.Path)
+		out := make([]api.InstanceStatus, 0, len(tracked))
+		for _, inst := range tracked {
+			if inst == nil {
+				continue
+			}
+			out = append(out, api.InstanceStatus{
+				ID:          inst.Title,
+				Project:     project,
+				Plan:        inst.TaskFile,
+				Role:        inst.AgentType,
+				Active:      inst.Started() && !inst.Paused() && !inst.Exited,
+				Title:       inst.Title,
+				Branch:      inst.Branch,
+				Program:     inst.Program,
+				TaskNumber:  inst.TaskNumber,
+				WaveNumber:  inst.WaveNumber,
+				ReviewCycle: inst.ReviewCycle,
+			})
+		}
+		return out
 	}
-	return out
+	return nil
 }
 
 func (a *daemonStateAdapter) StartPlan(project, filename, prompt, program string) error {

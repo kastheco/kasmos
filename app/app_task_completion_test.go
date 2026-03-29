@@ -13,6 +13,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
@@ -873,6 +874,87 @@ func TestTickUpdateMetadata_DaemonManagedRepoSkipsFilesystemReviewSignals(t *tes
 	assert.Empty(t, msg.TaskSignals)
 	assert.Empty(t, msg.WaveSignals)
 	assert.Empty(t, msg.ElaborationSignals)
+}
+
+func TestMetadataResultMsg_DaemonManagedRepoAddsMissingDaemonWaveTask(t *testing.T) {
+	dir := t.TempDir()
+
+	oldManaged := repoManagedByDaemon
+	oldList := listDaemonInstances
+	oldRestore := restoreInstanceFromData
+	t.Cleanup(func() {
+		repoManagedByDaemon = oldManaged
+		listDaemonInstances = oldList
+		restoreInstanceFromData = oldRestore
+	})
+
+	repoManagedByDaemon = func(repoPath string) bool {
+		return filepath.Clean(repoPath) == filepath.Clean(dir)
+	}
+	listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
+		require.Equal(t, "test", project)
+		return []api.InstanceStatus{{
+			Title:      "feature-W1-T1",
+			Plan:       "feature",
+			Role:       session.AgentTypeCoder,
+			Branch:     "plan/feature",
+			Program:    "opencode",
+			WaveNumber: 1,
+			TaskNumber: 1,
+			Active:     true,
+		}}, nil
+	}
+	restoreInstanceFromData = func(data session.InstanceData) (*session.Instance, error) {
+		inst, err := session.NewInstance(session.InstanceOptions{
+			Title:         data.Title,
+			Path:          data.Path,
+			Program:       data.Program,
+			ExecutionMode: data.ExecutionMode,
+			TaskFile:      data.TaskFile,
+			AgentType:     data.AgentType,
+			TaskNumber:    data.TaskNumber,
+			WaveNumber:    data.WaveNumber,
+			ReviewCycle:   data.ReviewCycle,
+		})
+		if err != nil {
+			return nil, err
+		}
+		inst.Branch = data.Branch
+		if data.Branch != "" {
+			inst.BindSharedTaskWorktree(data.Path, data.Branch)
+		}
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return inst, nil
+	}
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		state:            stateDefault,
+		nav:              ui.NewNavigationPanel(&sp),
+		menu:             ui.NewMenu(),
+		tabbedWindow:     ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:     overlay.NewToastManager(&sp),
+		overlays:         overlay.NewManager(),
+		activeRepoPath:   dir,
+		taskStoreProject: "test",
+	}
+
+	_, cmd := h.Update(tickUpdateMetadataMessage{})
+	require.NotNil(t, cmd)
+	msg, ok := cmd().(metadataResultMsg)
+	require.True(t, ok)
+	require.Len(t, msg.DaemonInstances, 1)
+
+	updatedModel, _ := h.Update(msg)
+	updated := updatedModel.(*home)
+	instances := updated.nav.GetInstances()
+	require.Len(t, instances, 1)
+	assert.Equal(t, "feature-W1-T1", instances[0].Title)
+	assert.Equal(t, "feature", instances[0].TaskFile)
+	assert.Equal(t, 1, instances[0].WaveNumber)
+	assert.Equal(t, 1, instances[0].TaskNumber)
+	assert.Equal(t, session.AgentTypeCoder, instances[0].AgentType)
 }
 
 // TestReviewerTmuxDeath_DoesNotAutoApprove verifies that when a reviewer's tmux

@@ -13,6 +13,8 @@ import (
 	"github.com/kastheco/kasmos/config/taskstore"
 	daemonpkg "github.com/kastheco/kasmos/daemon"
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/session"
+	gitpkg "github.com/kastheco/kasmos/session/git"
 	"github.com/kastheco/kasmos/ui/overlay"
 
 	tea "charm.land/bubbletea/v2"
@@ -41,6 +43,10 @@ type daemonTaskStoreSwitchedMsg struct {
 // daemonTaskStoreSwitchErrMsg is delivered when the background ping in
 // switchToDaemonTaskStoreCmd fails. The embedded store remains in use.
 type daemonTaskStoreSwitchErrMsg struct{}
+
+var listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
+	return daemonpkg.NewSocketClient(resolvedDaemonSocketPath()).ListInstances(project)
+}
 
 func canonicalRepoPath(repoPath string) string {
 	if repoPath == "" {
@@ -121,6 +127,37 @@ func checkDaemonStatus(repoPath string) daemonStatusMsg {
 
 func registerRepoWithDaemon(repoPath string) error {
 	return daemonpkg.NewSocketClient(daemonpkg.DefaultSocketPath()).AddRepo(canonicalRepoPath(repoPath))
+}
+
+func daemonInstanceData(repoPath string, status api.InstanceStatus) session.InstanceData {
+	program := status.Program
+	if program == "" {
+		program = "opencode"
+	}
+	data := session.InstanceData{
+		Title:         status.Title,
+		Path:          repoPath,
+		Branch:        status.Branch,
+		Status:        session.Running,
+		Program:       program,
+		ExecutionMode: session.ExecutionModeTmux,
+		AutoYes:       true,
+		TaskFile:      status.Plan,
+		AgentType:     status.Role,
+		TaskNumber:    status.TaskNumber,
+		WaveNumber:    status.WaveNumber,
+		ReviewCycle:   status.ReviewCycle,
+	}
+	if status.Branch != "" {
+		shared := gitpkg.NewSharedTaskWorktree(repoPath, status.Branch)
+		data.Worktree = session.GitWorktreeData{
+			RepoPath:     shared.GetRepoPath(),
+			WorktreePath: shared.GetWorktreePath(),
+			SessionName:  status.Title,
+			BranchName:   status.Branch,
+		}
+	}
+	return data
 }
 
 func (m *home) daemonStartupCheckCmd() tea.Cmd {
