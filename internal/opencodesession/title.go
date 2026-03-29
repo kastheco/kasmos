@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // register sqlite driver
@@ -149,6 +150,49 @@ func resolveDBPath() string {
 	return filepath.Join(home, ".local", "share", "opencode", "opencode.db")
 }
 
+func readSessionTitle(db *sql.DB, workDir string, afterTime time.Time) (string, error) {
+	afterTimeMs := afterTime.UnixMilli()
+
+	var (
+		title         string
+		sessionCreate int64
+	)
+	err := db.QueryRow(
+		`SELECT title, time_created FROM session
+		 WHERE directory = ? AND time_created >= ?
+		 ORDER BY time_updated DESC, time_created DESC
+		 LIMIT 1`,
+		workDir, afterTimeMs,
+	).Scan(&title, &sessionCreate)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", fmt.Errorf("opencodesession: read session title: %w", err)
+	}
+
+	if sessionCreate < afterTimeMs {
+		return "", nil
+	}
+	if strings.TrimSpace(title) == "" {
+		return "", nil
+	}
+
+	return title, nil
+}
+
+// ReadSessionTitle opens the opencode SQLite DB and reads the newest matching
+// session title for the working directory created at or after afterTime.
+func ReadSessionTitle(workDir string, afterTime time.Time) (string, error) {
+	dbPath := resolveDBPath()
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)")
+	if err != nil {
+		return "", fmt.Errorf("opencodesession: open db %s: %w", dbPath, err)
+	}
+	defer db.Close()
+	return readSessionTitle(db, workDir, afterTime)
+}
+
 // SetTitleDirect opens the opencode SQLite DB and claims+sets the given
 // pre-built title on the matching session. Use this when the title has already
 // been constructed (e.g. via BuildTitle) and you only need the DB write.
@@ -164,4 +208,35 @@ func SetTitleDirect(workDir string, beforeStart time.Time, title string) error {
 	}
 	defer db.Close()
 	return ClaimAndSetTitle(db, workDir, beforeStart, title)
+}
+
+// ReadSessionTitle returns the current title of the first opencode session in
+// workDir created at or after beforeStart. It returns an empty string when no
+// matching session exists.
+func ReadSessionTitle(workDir string, beforeStart time.Time) (string, error) {
+	dbPath := resolveDBPath()
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)")
+	if err != nil {
+		return "", fmt.Errorf("opencodesession: open db %s: %w", dbPath, err)
+	}
+	defer db.Close()
+	return readSessionTitleFromDB(db, workDir, beforeStart)
+}
+
+func readSessionTitleFromDB(db *sql.DB, workDir string, beforeStart time.Time) (string, error) {
+	var title string
+	err := db.QueryRow(
+		`SELECT title FROM session
+		 WHERE directory = ? AND time_created >= ?
+		 ORDER BY time_created ASC
+		 LIMIT 1`,
+		workDir, beforeStart.UnixMilli(),
+	).Scan(&title)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("opencodesession: read session title: %w", err)
+	}
+	return title, nil
 }

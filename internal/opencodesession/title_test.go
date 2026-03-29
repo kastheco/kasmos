@@ -133,6 +133,50 @@ func TestClaimAndSetTitle_NoMatchReturnsNil(t *testing.T) {
 	assert.NoError(t, err) // best-effort, no error on miss
 }
 
+func TestReadSessionTitle_ReturnsMostRecentMatchingTitle(t *testing.T) {
+	db := setupTestDB(t)
+	base := time.Now()
+	afterTime := base.Add(-1 * time.Second)
+	staleCreated := afterTime.Add(-1 * time.Millisecond).UnixMilli()
+	recentCreated := afterTime.Add(1 * time.Millisecond).UnixMilli()
+	recentUpdated := afterTime.Add(2 * time.Millisecond).UnixMilli()
+
+	_, err := db.Exec(`INSERT INTO session (id, project_id, title, directory, time_created, time_updated)
+		VALUES ('ses_old', 'proj_1', 'stale title', '/work/dir', ?, ?)`, staleCreated, staleCreated)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO session (id, project_id, title, directory, time_created, time_updated)
+		VALUES ('ses_new', 'proj_1', 'generated title', '/work/dir', ?, ?)`, recentCreated, recentUpdated)
+	require.NoError(t, err)
+
+	title, err := readSessionTitle(db, "/work/dir", afterTime)
+	require.NoError(t, err)
+	assert.Equal(t, "generated title", title)
+}
+
+func TestReadSessionTitle_EmptyDBReturnsEmptyString(t *testing.T) {
+	db := setupTestDB(t)
+
+	title, err := readSessionTitle(db, "/work/dir", time.Now())
+	require.NoError(t, err)
+	assert.Empty(t, title)
+}
+
+func TestReadSessionTitle_IgnoresSessionsCreatedBeforeAfterTime(t *testing.T) {
+	db := setupTestDB(t)
+	base := time.Now()
+	afterTime := base
+	created := base.Add(-1 * time.Millisecond).UnixMilli()
+	updated := base.Add(1 * time.Second).UnixMilli()
+
+	_, err := db.Exec(`INSERT INTO session (id, project_id, title, directory, time_created, time_updated)
+		VALUES ('ses_1', 'proj_1', 'stale title', '/work/dir', ?, ?)`, created, updated)
+	require.NoError(t, err)
+
+	title, err := readSessionTitle(db, "/work/dir", afterTime)
+	require.NoError(t, err)
+	assert.Empty(t, title)
+}
+
 func TestClaimAndSetTitle_ParallelClaims(t *testing.T) {
 	db := setupTestDB(t)
 	now := time.Now().UnixMilli()
@@ -168,4 +212,30 @@ func TestClaimAndSetTitle_ParallelClaims(t *testing.T) {
 	assert.True(t, titles["kas: implement plan w1/t1"])
 	assert.True(t, titles["kas: implement plan w1/t2"])
 	assert.True(t, titles["kas: implement plan w1/t3"])
+}
+
+func TestReadSessionTitle_ReturnsFirstMatchingSession(t *testing.T) {
+	db := setupTestDB(t)
+	now := time.Now().UnixMilli()
+
+	_, err := db.Exec(`INSERT INTO session (id, project_id, title, directory, time_created, time_updated)
+		VALUES ('ses_old', 'proj_1', 'too old', '/work/dir', ?, ?)`, now-500, now-500)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO session (id, project_id, title, directory, time_created, time_updated)
+		VALUES ('ses_1', 'proj_1', 'kas: agent-1', '/work/dir', ?, ?)`, now-100, now-100)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO session (id, project_id, title, directory, time_created, time_updated)
+		VALUES ('ses_2', 'proj_1', 'later title', '/work/dir', ?, ?)`, now, now)
+	require.NoError(t, err)
+
+	title, err := readSessionTitleFromDB(db, "/work/dir", time.UnixMilli(now-150))
+	require.NoError(t, err)
+	assert.Equal(t, "kas: agent-1", title)
+}
+
+func TestReadSessionTitle_NoMatchReturnsEmpty(t *testing.T) {
+	db := setupTestDB(t)
+	title, err := readSessionTitleFromDB(db, "/work/dir", time.Now())
+	require.NoError(t, err)
+	assert.Empty(t, title)
 }
