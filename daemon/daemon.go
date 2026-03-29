@@ -941,7 +941,9 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		})
 		return nil
 	case loop.CreatePRAction:
-		d.logger.Info("create pr requested", "plan", a.PlanFile, "repo", e.Path)
+		if err := d.createPRForApprovedTask(e, a.PlanFile, a.ReviewBody); err != nil {
+			d.logger.Warn("create pr after approval failed", "plan", a.PlanFile, "repo", e.Path, "err", err)
+		}
 		d.broadcaster.Emit(api.Event{
 			Kind:     "signal_processed",
 			Message:  "create PR for " + a.PlanFile,
@@ -963,6 +965,80 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		d.logger.Debug("unhandled action", "kind", action.Kind(), "repo", e.Path)
 		return nil
 	}
+}
+
+func (d *Daemon) createPRForApprovedTask(e RepoEntry, planFile, reviewBody string) error {
+	if e.Store == nil {
+		return fmt.Errorf("task store unavailable for %s", planFile)
+	}
+
+	entry, err := e.Store.Get(e.Project, planFile)
+	if err != nil {
+		return fmt.Errorf("load task entry for %s: %w", planFile, err)
+	}
+	if entry.Branch == "" {
+		d.logger.Warn("no branch for approved task; skipping pr creation", "plan", planFile, "repo", e.Path)
+		return nil
+	}
+
+	shared := gitpkg.NewSharedTaskWorktree(e.Path, entry.Branch)
+	if err := shared.Setup(); err != nil {
+		return fmt.Errorf("setup shared worktree for %s: %w", planFile, err)
+	}
+
+	subtasks := []taskstore.SubtaskEntry(nil)
+	if subtasksFromStore, err := e.Store.GetSubtasks(e.Project, planFile); err == nil {
+		subtasks = subtasksFromStore
+	} else {
+		d.logger.Warn("load subtasks for pr creation failed", "plan", planFile, "repo", e.Path, "err", err)
+	}
+
+	base := shared.GetBaseCommitSHA()
+	gitChanges, gitCommits, gitStats := "", "", ""
+	if base != "" {
+		worktreePath := shared.GetWorktreePath()
+		runGit := func(args ...string) string {
+			cmd := exec.Command("git", append([]string{"-C", worktreePath}, args...)...)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				return ""
+			}
+			return strings.TrimSpace(string(out))
+		}
+		gitChanges = runGit("diff", "--name-only", base)
+		gitCommits = runGit("log", "--oneline", base+"..HEAD")
+		gitStats = runGit("diff", "--stat", base)
+	}
+
+	meta := gitpkg.AssemblePRMetadata(entry, subtasks, reviewBody, entry.ReviewCycle, gitChanges, gitCommits, gitStats)
+	planName := taskstate.DisplayName(planFile)
+	title := gitpkg.BuildPRTitle(entry.Description, planName)
+	body := gitpkg.BuildPRBody(meta)
+	commitMsg := fmt.Sprintf("[kas] implementation of '%s'", planName)
+	if err := shared.CreatePR(title, body, commitMsg); err != nil {
+		return fmt.Errorf("create pr for %s: %w", planFile, err)
+	}
+
+	state, err := shared.QueryPRState()
+	if err != nil {
+		return fmt.Errorf("query pr state for %s: %w", planFile, err)
+	}
+	if state.URL == "" {
+		d.logger.Warn("empty pr url after creation", "plan", planFile, "repo", e.Path)
+		return nil
+	}
+
+	if err := e.Store.SetPRURL(e.Project, planFile, state.URL); err != nil {
+		return fmt.Errorf("persist pr url for %s: %w", planFile, err)
+	}
+
+	if state.Number > 0 {
+		if err := shared.PostGitHubReview(state.Number, body, true); err != nil {
+			d.logger.Warn("post approving review failed", "plan", planFile, "repo", e.Path, "pr", state.Number, "err", err)
+		}
+	}
+
+	return nil
 }
 
 func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile string) error {

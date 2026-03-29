@@ -3,6 +3,9 @@ package git
 import (
 	"strconv"
 	"strings"
+
+	"github.com/kastheco/kasmos/config/taskparser"
+	"github.com/kastheco/kasmos/config/taskstore"
 )
 
 // PRMetadata stores parsed plan content and git summary details used to build a PR body.
@@ -24,6 +27,43 @@ type PRSubtask struct {
 	Number int
 	Title  string
 	Status string
+}
+
+// AssemblePRMetadata converts task store and git summary data into PR metadata.
+func AssemblePRMetadata(
+	entry taskstore.TaskEntry,
+	subtasks []taskstore.SubtaskEntry,
+	reviewerSummary string,
+	reviewCycle int,
+	gitChanges, gitCommits, gitStats string,
+) PRMetadata {
+	meta := PRMetadata{
+		Description:     strings.TrimSpace(entry.Description),
+		Goal:            strings.TrimSpace(entry.Goal),
+		ReviewerSummary: strings.TrimSpace(reviewerSummary),
+		ReviewCycle:     reviewCycle,
+		GitChanges:      strings.TrimSpace(gitChanges),
+		GitCommits:      strings.TrimSpace(gitCommits),
+		GitStats:        strings.TrimSpace(gitStats),
+		Subtasks:        make([]PRSubtask, 0, len(subtasks)),
+	}
+
+	if strings.TrimSpace(entry.Content) != "" {
+		if plan, err := taskparser.Parse(entry.Content); err == nil {
+			meta.Architecture = strings.TrimSpace(plan.Architecture)
+			meta.TechStack = strings.TrimSpace(plan.TechStack)
+		}
+	}
+
+	for _, s := range subtasks {
+		meta.Subtasks = append(meta.Subtasks, PRSubtask{
+			Number: s.TaskNumber,
+			Title:  strings.TrimSpace(s.Title),
+			Status: string(s.Status),
+		})
+	}
+
+	return meta
 }
 
 // maxTitleLen is the maximum number of characters in a PR title before

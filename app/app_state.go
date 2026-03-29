@@ -280,42 +280,6 @@ func (m *home) captureSelectedReviewFeedback(inst *session.Instance) error {
 	return nil
 }
 
-func assemblePRMetadata(
-	entry taskstore.TaskEntry,
-	subtasks []taskstore.SubtaskEntry,
-	reviewerSummary string,
-	reviewCycle int,
-	gitChanges, gitCommits, gitStats string,
-) gitpkg.PRMetadata {
-	meta := gitpkg.PRMetadata{
-		Description:     strings.TrimSpace(entry.Description),
-		Goal:            strings.TrimSpace(entry.Goal),
-		ReviewerSummary: strings.TrimSpace(reviewerSummary),
-		ReviewCycle:     reviewCycle,
-		GitChanges:      strings.TrimSpace(gitChanges),
-		GitCommits:      strings.TrimSpace(gitCommits),
-		GitStats:        strings.TrimSpace(gitStats),
-		Subtasks:        make([]gitpkg.PRSubtask, 0, len(subtasks)),
-	}
-
-	if strings.TrimSpace(entry.Content) != "" {
-		if plan, err := taskparser.Parse(entry.Content); err == nil {
-			meta.Architecture = strings.TrimSpace(plan.Architecture)
-			meta.TechStack = strings.TrimSpace(plan.TechStack)
-		}
-	}
-
-	for _, s := range subtasks {
-		meta.Subtasks = append(meta.Subtasks, gitpkg.PRSubtask{
-			Number: s.TaskNumber,
-			Title:  strings.TrimSpace(s.Title),
-			Status: string(s.Status),
-		})
-	}
-
-	return meta
-}
-
 // mapPRReviewDecision maps GitHub review decision strings to internal representation.
 func mapPRReviewDecision(ghValue string) string {
 	switch ghValue {
@@ -386,7 +350,7 @@ func (m *home) createPRAfterApproval(planFile, reviewBody string) tea.Cmd {
 			}
 		}
 
-		meta := assemblePRMetadata(entry, subtasks, reviewBody, entry.ReviewCycle, gitChanges, gitCommits, gitStats)
+		meta := gitpkg.AssemblePRMetadata(entry, subtasks, reviewBody, entry.ReviewCycle, gitChanges, gitCommits, gitStats)
 		title := gitpkg.BuildPRTitle(entry.Description, planName)
 		body := gitpkg.BuildPRBody(meta)
 		commitMsg := fmt.Sprintf("[kas] implementation of '%s'", planName)
