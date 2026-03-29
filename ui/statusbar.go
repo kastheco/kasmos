@@ -76,7 +76,7 @@ var statusBarWaveLabelStyle = lipgloss.NewStyle().
 var statusBarTmuxCountStyle = lipgloss.NewStyle().
 	Foreground(ColorMuted)
 
-var statusBarProjectDirStyle = lipgloss.NewStyle().
+var statusBarRightBranchStyle = lipgloss.NewStyle().
 	Foreground(ColorMuted)
 
 // planStatusStyle returns a styled version of status using semantic colors.
@@ -130,13 +130,13 @@ func (s *StatusBar) rightPRGroup() string {
 	}
 }
 
-// centerBranchGroup builds the centered git branch indicator.
-// Returns an empty string when no branch is set.
-func (s *StatusBar) centerBranchGroup() string {
-	if s.data.Branch == "" {
+// centerProjectGroup builds the centered project indicator.
+// Returns an empty string when no project directory is set.
+func (s *StatusBar) centerProjectGroup() string {
+	if s.data.ProjectDir == "" {
 		return ""
 	}
-	return statusBarBranchStyle.Render("\ue725 " + s.data.Branch)
+	return statusBarBranchStyle.Render(s.data.ProjectDir)
 }
 
 // leftStatusGroup assembles the status segment placed immediately after the logo.
@@ -183,8 +183,8 @@ func (s *StatusBar) String() string {
 		left = left + statusBarSepStyle.Render(" · ") + ls
 	}
 
-	// Build center section: branch indicator.
-	center := s.centerBranchGroup()
+	// Build center section: project indicator.
+	center := s.centerProjectGroup()
 
 	leftWidth := lipgloss.Width(left)
 	centerWidth := lipgloss.Width(center)
@@ -201,33 +201,25 @@ func (s *StatusBar) String() string {
 		centerWidth = 0
 	}
 
-	// Build right section: [prGroup · projectDir] or just one of them.
+	// Build right section: [prGroup · branch] or just one of them.
 	prGroup := s.rightPRGroup()
+	branchGroup := ""
+	if s.data.Branch != "" {
+		branchGroup = statusBarRightBranchStyle.Render("\ue725 " + s.data.Branch)
+	}
 	right := ""
 	rightWidth := 0
 
-	if prGroup != "" && s.data.ProjectDir != "" {
-		// Compose both together.
-		composed := prGroup + statusBarSepStyle.Render(" · ") + statusBarProjectDirStyle.Render(s.data.ProjectDir)
-		composedWidth := lipgloss.Width(composed)
-		rightStart := contentWidth - composedWidth
-		if rightStart >= centerStart+centerWidth+1 {
-			right = composed
-			rightWidth = composedWidth
-		} else {
-			// Can't fit both — try just prGroup.
-			right = prGroup
-			rightWidth = lipgloss.Width(prGroup)
-			if contentWidth-rightWidth < centerStart+centerWidth+1 {
-				right = ""
-				rightWidth = 0
-			}
-		}
-	} else if prGroup != "" {
+	switch {
+	case prGroup != "" && branchGroup != "":
+		right = prGroup + statusBarSepStyle.Render(" · ") + branchGroup
+	case prGroup != "":
 		right = prGroup
-		rightWidth = lipgloss.Width(prGroup)
-	} else if s.data.ProjectDir != "" {
-		right = statusBarProjectDirStyle.Render(s.data.ProjectDir)
+	case branchGroup != "":
+		right = branchGroup
+	}
+
+	if right != "" {
 		rightWidth = lipgloss.Width(right)
 	}
 
