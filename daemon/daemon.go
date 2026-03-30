@@ -47,8 +47,12 @@ type Daemon struct {
 	pushBranch      func(*session.Instance) error
 	killAgent       func(repoPath, planFile, agentType string) error
 	spawnPlanner    func(context.Context, loop.SpawnOpts) error
+	spawnReviewer   func(context.Context, loop.SpawnOpts) error
 	spawnCoder      func(context.Context, loop.SpawnOpts) error
 	spawnElaborator func(context.Context, loop.SpawnOpts) error
+	spawnWaveTask   func(context.Context, loop.SpawnOpts, taskparser.Task, string, int) error
+	killWaveAgents  func(repoPath, planFile string, wave int) error
+	createPR        func(RepoEntry, string, string) error
 	mu              sync.RWMutex
 	startedAt       time.Time
 }
@@ -998,7 +1002,11 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			return fmt.Errorf("persist reviewer execution state: %w", err)
 		}
 		opts := reviewerSpawnOpts(e, entryFor(a.PlanFile))
-		if err := d.spawner.SpawnReviewer(ctx, opts); err != nil {
+		spawnReviewer := d.spawnReviewer
+		if spawnReviewer == nil {
+			spawnReviewer = d.spawner.SpawnReviewer
+		}
+		if err := spawnReviewer(ctx, opts); err != nil {
 			d.logger.Error("spawn reviewer failed", "plan", a.PlanFile, "err", err)
 			return err
 		}
@@ -1122,7 +1130,11 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		})
 		return nil
 	case loop.CreatePRAction:
-		if err := d.createPRForApprovedTask(e, a.PlanFile, a.ReviewBody); err != nil {
+		createPR := d.createPR
+		if createPR == nil {
+			createPR = d.createPRForApprovedTask
+		}
+		if err := createPR(e, a.PlanFile, a.ReviewBody); err != nil {
 			d.logger.Warn("create pr after approval failed", "plan", a.PlanFile, "repo", e.Path, "err", err)
 		}
 		d.broadcaster.Emit(api.Event{
@@ -1245,6 +1257,10 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 	}
 
 	waveNum := orch.CurrentWaveNumber()
+	spawnWaveTask := d.spawnWaveTask
+	if spawnWaveTask == nil {
+		spawnWaveTask = d.spawner.SpawnWaveTask
+	}
 	if err := setRepoExecutionState(e, planFile, taskstore.ExecutionState{
 		Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
 		ActiveAgentType: session.AgentTypeCoder,
@@ -1262,7 +1278,7 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 			Branch:   entry.Branch,
 			Wave:     waveNum,
 		}
-		if err := d.spawner.SpawnWaveTask(ctx, opts, task, prompt, peerCount); err != nil {
+		if err := spawnWaveTask(ctx, opts, task, prompt, peerCount); err != nil {
 			return err
 		}
 	}
@@ -1302,7 +1318,11 @@ func (d *Daemon) handleWaveTaskComplete(ctx context.Context, e RepoEntry, action
 		failed := orch.FailedTaskCount()
 		total := completed + failed
 
-		if err := d.spawner.KillWaveAgents(e.Path, action.PlanFile, waveNum); err != nil {
+		killWaveAgents := d.killWaveAgents
+		if killWaveAgents == nil {
+			killWaveAgents = d.spawner.KillWaveAgents
+		}
+		if err := killWaveAgents(e.Path, action.PlanFile, waveNum); err != nil {
 			return err
 		}
 
@@ -1353,7 +1373,11 @@ func (d *Daemon) handleWaveTaskComplete(ctx context.Context, e RepoEntry, action
 
 	case orchestration.WaveStateAllComplete:
 		waveNum := orch.CurrentWaveNumber()
-		if err := d.spawner.KillWaveAgents(e.Path, action.PlanFile, waveNum); err != nil {
+		killWaveAgents := d.killWaveAgents
+		if killWaveAgents == nil {
+			killWaveAgents = d.spawner.KillWaveAgents
+		}
+		if err := killWaveAgents(e.Path, action.PlanFile, waveNum); err != nil {
 			return err
 		}
 		e.Processor.ClearWaveOrchestrator(action.PlanFile)
