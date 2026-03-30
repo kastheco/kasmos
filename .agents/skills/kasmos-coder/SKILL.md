@@ -221,7 +221,7 @@ Write a failing test reproducing the bug first (TDD discipline applies to bugfix
 
 ## Verification
 
-Before marking completion, before committing, before writing the finished sentinel:
+Before claiming a task is complete, before committing, before marking completion:
 
 ### The Gate
 
@@ -349,7 +349,7 @@ agent returns to its input prompt. The wave orchestrator handles all lifecycle t
 After implementing and committing your task: **stop.** Do not implement other tasks, do not
 write signal files, do not invoke branch finishing — kasmos handles orchestration.
 
-**Do not modify task state directly.**
+**Do not modify task state directly.** When a workflow genuinely requires a lifecycle action, prefer MCP `task_transition` / `signal_create`; do not shell out to `kas signal emit` or touch sentinel files when MCP is available.
 
 ### Manual (KASMOS_MANAGED unset)
 
