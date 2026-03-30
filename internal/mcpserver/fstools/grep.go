@@ -22,11 +22,14 @@ const MaxGrepMatches = 200
 
 // GrepMatch holds information about a single ripgrep match.
 type GrepMatch struct {
-	File      string `json:"file"`
-	Line      int    `json:"line"`
-	Column    int    `json:"column"`
-	Text      string `json:"text"`
-	MatchText string `json:"match_text"`
+	File         string `json:"file"`
+	Line         int    `json:"line"`
+	Column       int    `json:"column"`
+	Text         string `json:"text"`
+	MatchText    string `json:"match_text"`
+	SymbolKind   string `json:"symbol_kind,omitempty"`
+	SymbolName   string `json:"symbol_name,omitempty"`
+	SymbolParent string `json:"symbol_parent,omitempty"`
 }
 
 // GrepResult wraps grep matches in an object so that MCP structuredContent
@@ -124,7 +127,7 @@ func emptyGrepResult() (*mcp.CallToolResult, error) {
 
 // makeGrepHandler returns a ToolHandlerFunc that implements the grep tool using
 // rg --json under the given sandbox and runner.
-func makeGrepHandler(sb *Sandbox, runner CmdRunner) server.ToolHandlerFunc {
+func makeGrepHandler(sb *Sandbox, runner CmdRunner, symbolStore SymbolLookup) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		pattern, err := req.RequireString("pattern")
 		if err != nil {
@@ -176,11 +179,7 @@ func makeGrepHandler(sb *Sandbox, runner CmdRunner) server.ToolHandlerFunc {
 					// don't invalidate the search.
 					if len(out) > 0 {
 						if partial, parseErr := parseRgJSON(out); parseErr == nil && len(partial) > 0 {
-							result, encErr := mcp.NewToolResultJSON(GrepResult{Matches: partial, Total: len(partial)})
-							if encErr != nil {
-								return mcp.NewToolResultError(fmt.Sprintf("encode grep result: %v", encErr)), nil
-							}
-							return result, nil
+							return grepJSONResult(partial, resolvedPath, symbolStore)
 						}
 					}
 					return emptyGrepResult()
@@ -199,16 +198,25 @@ func makeGrepHandler(sb *Sandbox, runner CmdRunner) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(fmt.Sprintf("grep: parse output: %v", err)), nil
 		}
 
-		result, err := mcp.NewToolResultJSON(GrepResult{Matches: matches, Total: len(matches)})
+		result, err := grepJSONResult(matches, resolvedPath, symbolStore)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("encode grep result: %v", err)), nil
+			return mcp.NewToolResultError(fmt.Sprintf("grep: %v", err)), nil
 		}
 		return result, nil
 	}
 }
 
+func grepJSONResult(matches []GrepMatch, resolvedPath string, symbolStore SymbolLookup) (*mcp.CallToolResult, error) {
+	enriched := enrichMatchesWithRoot(matches, symbolStore, resolvedPath)
+	result, err := mcp.NewToolResultJSON(GrepResult{Matches: enriched, Total: len(enriched)})
+	if err != nil {
+		return nil, fmt.Errorf("encode grep result: %w", err)
+	}
+	return result, nil
+}
+
 // registerGrep registers the grep tool with the MCP server.
-func registerGrep(srv *server.MCPServer, sb *Sandbox, runner CmdRunner) {
+func registerGrep(srv *server.MCPServer, sb *Sandbox, opts RegisterOptions) {
 	tool := mcp.NewTool("grep",
 		mcp.WithDescription("Search file contents using ripgrep (rg). Returns structured match objects with file, line, column, and context."),
 		mcp.WithString("pattern",
@@ -234,5 +242,5 @@ func registerGrep(srv *server.MCPServer, sb *Sandbox, runner CmdRunner) {
 			mcp.Description("Legacy alias for trailing context lines; overrides context_lines when set"),
 		),
 	)
-	srv.AddTool(tool, makeGrepHandler(sb, runner))
+	srv.AddTool(tool, makeGrepHandler(sb, opts.Runner, opts.Symbols))
 }

@@ -25,13 +25,16 @@ func addRegistrar(fn registrarFn) {
 
 // RegisterTools wires all registered git tools into srv using the given
 // allowed directories for sandboxing. It is safe to call with a nil srv; in
-// that case it returns without panicking or registering anything.
-func RegisterTools(srv *server.MCPServer, allowedDirs []string) {
+// that case it returns without panicking or registering anything. When runner
+// is nil it defaults to &fstools.ExecRunner{}.
+func RegisterTools(srv *server.MCPServer, allowedDirs []string, runner fstools.CmdRunner) {
 	if srv == nil {
 		return
 	}
+	if runner == nil {
+		runner = &fstools.ExecRunner{}
+	}
 	sb := fstools.NewSandbox(allowedDirs)
-	runner := &fstools.ExecRunner{}
 	for _, fn := range registrars {
 		fn(srv, sb, runner)
 	}

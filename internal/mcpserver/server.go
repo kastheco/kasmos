@@ -12,6 +12,12 @@ import (
 	"github.com/kastheco/kasmos/config/taskstore"
 )
 
+// Closer represents a resource owned by the MCP server wrapper that should be
+// shut down when the server exits.
+type Closer interface {
+	Close() error
+}
+
 // Server holds the MCP server instance, its HTTP handler, and references to the
 // shared task store and signal gateway. Store and Gateway may be nil when no
 // tools have been registered yet; tool handlers should check them at call time.
@@ -20,6 +26,7 @@ type Server struct {
 	handler http.Handler
 	store   taskstore.Store
 	gateway taskstore.SignalGateway
+	closers []Closer
 }
 
 // NewServer constructs a Server with Streamable HTTP transport mounted at /mcp.
@@ -52,8 +59,41 @@ func (s *Server) Handler() http.Handler {
 	return s.handler
 }
 
+// AddCloser registers c to be closed when the server shuts down.
+func (s *Server) AddCloser(c Closer) {
+	if s == nil || c == nil {
+		return
+	}
+	s.closers = append(s.closers, c)
+}
+
+// Close closes all registered resources and returns the first close error, if
+// any, after attempting every closer.
+func (s *Server) Close() error {
+	if s == nil {
+		return nil
+	}
+	closers := s.closers
+	s.closers = nil
+	var firstErr error
+	for _, closer := range closers {
+		if closer == nil {
+			continue
+		}
+		if err := closer.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
 // ServeStdio starts the MCP server on stdin/stdout.
-func (s *Server) ServeStdio() error {
+func (s *Server) ServeStdio() (err error) {
+	defer func() {
+		if closeErr := s.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+	}()
 	return server.ServeStdio(s.mcp)
 }
 

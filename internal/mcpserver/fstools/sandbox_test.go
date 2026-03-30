@@ -102,6 +102,6 @@ func TestSandbox_DefaultDir_Empty(t *testing.T) {
 
 func TestRegisterTools_NilServerDoesNotPanic(t *testing.T) {
 	assert.NotPanics(t, func() {
-		fstools.RegisterTools(nil, []string{t.TempDir()})
+		fstools.RegisterTools(nil, []string{t.TempDir()}, fstools.RegisterOptions{})
 	})
 }

@@ -37,7 +37,7 @@ func textResult(t *testing.T, result *mcp.CallToolResult) string {
 // TestRegisterTools_NilServer verifies RegisterTools does not panic when
 // passed a nil server.
 func TestRegisterTools_NilServer(t *testing.T) {
-	assert.NotPanics(t, func() { RegisterTools(nil, []string{t.TempDir()}) })
+	assert.NotPanics(t, func() { RegisterTools(nil, []string{t.TempDir()}, nil) })
 }
 
 // TestGitStatus_DefaultsToSandboxDir verifies git status defaults to the

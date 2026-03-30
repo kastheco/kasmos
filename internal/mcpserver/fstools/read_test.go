@@ -7,11 +7,30 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type stubFileCache struct {
+	get func(path string, from, lines int, mtime time.Time) (string, int, bool)
+	set func(path string, from, lines int, mtime time.Time, content string, totalLines int)
+}
+
+func (s stubFileCache) Get(path string, from, lines int, mtime time.Time) (string, int, bool) {
+	if s.get == nil {
+		return "", 0, false
+	}
+	return s.get(path, from, lines, mtime)
+}
+
+func (s stubFileCache) Set(path string, from, lines int, mtime time.Time, content string, totalLines int) {
+	if s.set != nil {
+		s.set(path, from, lines, mtime, content, totalLines)
+	}
+}
 
 // TestReadFileLines_FullFile verifies that readFileLines returns all lines
 // with correct 1-based numbering when no offset/limit is applied.
@@ -87,7 +106,7 @@ func TestReadHandler_MissingPath(t *testing.T) {
 	dir := t.TempDir()
 	sb := NewSandbox([]string{dir})
 
-	handler := makeReadFileHandler(sb)
+	handler := makeReadFileHandler(sb, nil)
 	req := mockCallToolRequest(map[string]any{})
 
 	result, err := handler(context.Background(), req)
@@ -105,7 +124,7 @@ func TestReadHandler_PathOutsideSandbox(t *testing.T) {
 	require.NoError(t, os.WriteFile(f, []byte("secret"), 0o644))
 
 	sb := NewSandbox([]string{allowed})
-	handler := makeReadFileHandler(sb)
+	handler := makeReadFileHandler(sb, nil)
 	req := mockCallToolRequest(map[string]any{"path": f})
 
 	result, err := handler(context.Background(), req)
@@ -120,7 +139,7 @@ func TestReadHandler_DirectoryPath(t *testing.T) {
 	dir := t.TempDir()
 	sb := NewSandbox([]string{dir})
 
-	handler := makeReadFileHandler(sb)
+	handler := makeReadFileHandler(sb, nil)
 	req := mockCallToolRequest(map[string]any{"path": dir})
 
 	result, err := handler(context.Background(), req)
@@ -137,7 +156,7 @@ func TestReadHandler_Success(t *testing.T) {
 	require.NoError(t, os.WriteFile(f, []byte("hello\nworld\n"), 0o644))
 
 	sb := NewSandbox([]string{dir})
-	handler := makeReadFileHandler(sb)
+	handler := makeReadFileHandler(sb, nil)
 	req := mockCallToolRequest(map[string]any{"path": f})
 
 	result, err := handler(context.Background(), req)
@@ -150,4 +169,73 @@ func TestReadHandler_Success(t *testing.T) {
 	require.True(t, ok, "expected TextContent")
 	assert.Contains(t, tc.Text, "1: hello")
 	assert.Contains(t, tc.Text, "2: world")
+}
+
+func TestReadHandler_CachedOutputMatchesUncachedOutput(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "hello.txt")
+	require.NoError(t, os.WriteFile(f, []byte("hello\nworld\n"), 0o644))
+
+	sb := NewSandbox([]string{dir})
+	req := mockCallToolRequest(map[string]any{"path": f, "from": 1, "lines": 2})
+
+	uncachedHandler := makeReadFileHandler(sb, nil)
+	uncachedResult, err := uncachedHandler(context.Background(), req)
+	require.NoError(t, err)
+	require.NotNil(t, uncachedResult)
+	require.False(t, uncachedResult.IsError)
+
+	content, total, err := readFileLines(f, 1, 2)
+	require.NoError(t, err)
+	info, err := os.Stat(f)
+	require.NoError(t, err)
+
+	cachedHandler := makeReadFileHandler(sb, stubFileCache{
+		get: func(path string, from, lines int, mtime time.Time) (string, int, bool) {
+			assert.Equal(t, f, path)
+			assert.Equal(t, 1, from)
+			assert.Equal(t, 2, lines)
+			assert.Equal(t, info.ModTime().UnixNano(), mtime.UnixNano())
+			return content, total, true
+		},
+	})
+	cachedResult, err := cachedHandler(context.Background(), req)
+	require.NoError(t, err)
+	require.NotNil(t, cachedResult)
+	require.False(t, cachedResult.IsError)
+
+	uncachedText := uncachedResult.Content[0].(mcp.TextContent).Text
+	cachedText := cachedResult.Content[0].(mcp.TextContent).Text
+	assert.Equal(t, uncachedText, cachedText)
+}
+
+func TestReadHandler_CacheMissPopulatesCache(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "hello.txt")
+	require.NoError(t, os.WriteFile(f, []byte("hello\nworld\n"), 0o644))
+
+	sb := NewSandbox([]string{dir})
+	var cachedContent string
+	var cachedTotal int
+	var cachedMTime time.Time
+
+	handler := makeReadFileHandler(sb, stubFileCache{
+		get: func(path string, from, lines int, mtime time.Time) (string, int, bool) {
+			return "", 0, false
+		},
+		set: func(path string, from, lines int, mtime time.Time, content string, totalLines int) {
+			cachedContent = content
+			cachedTotal = totalLines
+			cachedMTime = mtime
+		},
+	})
+
+	result, err := handler(context.Background(), mockCallToolRequest(map[string]any{"path": f}))
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.IsError)
+	assert.Contains(t, cachedContent, "1: hello")
+	assert.Contains(t, cachedContent, "2: world")
+	assert.Equal(t, 2, cachedTotal)
+	assert.False(t, cachedMTime.IsZero())
 }
