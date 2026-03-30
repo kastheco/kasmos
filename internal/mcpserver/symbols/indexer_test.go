@@ -20,7 +20,7 @@ type fakeWatcher struct {
 	changes chan cache.ChangeSet
 }
 
-func (w *fakeWatcher) Changes() <-chan cache.ChangeSet {
+func (w *fakeWatcher) Subscribe() <-chan cache.ChangeSet {
 	return w.changes
 }
 

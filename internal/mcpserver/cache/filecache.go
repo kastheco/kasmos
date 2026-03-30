@@ -115,7 +115,7 @@ func (c *FileCache) Close() error {
 func (c *FileCache) watchLoop() {
 	defer close(c.doneCh)
 
-	changes := c.watcher.Changes()
+	changes := c.watcher.Subscribe()
 	for {
 		select {
 		case <-c.stopCh:

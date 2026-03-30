@@ -3,6 +3,7 @@ package fstools
 import (
 	"time"
 
+	"github.com/kastheco/kasmos/internal/mcpserver/symbols"
 	"github.com/mark3labs/mcp-go/server"
 )
 
@@ -14,7 +15,7 @@ type FileCache interface {
 
 // SymbolLookup is the optional symbol index used by future fstool handlers.
 type SymbolLookup interface {
-	Lookup(path string, line, column int) (any, bool)
+	LookupAt(path string, line int) *symbols.Symbol
 }
 
 // RegisterOptions controls optional dependencies injected into fstool

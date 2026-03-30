@@ -110,7 +110,7 @@ func (r *CachedRunner) Close() error {
 func (r *CachedRunner) watchLoop() {
 	defer close(r.doneCh)
 
-	changes := r.watcher.Changes()
+	changes := r.watcher.Subscribe()
 	for {
 		select {
 		case <-r.stopCh:
@@ -278,6 +278,9 @@ func ancestorDirs(start, root string) []string {
 func watcherRoot(watcher *Watcher) string {
 	if watcher == nil {
 		return ""
+	}
+	if watcher.root != "" {
+		return filepath.Clean(watcher.root)
 	}
 
 	watcher.mu.Lock()

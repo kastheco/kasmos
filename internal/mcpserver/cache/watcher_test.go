@@ -121,6 +121,26 @@ func TestWatcherAddsNewDirectoriesToWatchSet(t *testing.T) {
 	}, fake.AddedPaths())
 }
 
+func TestWatcherBroadcastsChangesToMultipleSubscribers(t *testing.T) {
+	root := t.TempDir()
+	fake := newFakeFSWatcher()
+	restore := stubFSWatcher(t, fake, nil)
+	defer restore()
+
+	watcher := NewWatcher(root)
+	t.Cleanup(func() {
+		require.NoError(t, watcher.Stop())
+	})
+
+	subA := watcher.Subscribe()
+	subB := watcher.Subscribe()
+	path := filepath.Join(root, "file.txt")
+	fake.events <- fsnotify.Event{Name: path, Op: fsnotify.Write}
+
+	assert.Equal(t, ChangeSet{Modified: []string{filepath.Clean(path)}}, waitForChangeSet(t, subA))
+	assert.Equal(t, ChangeSet{Modified: []string{filepath.Clean(path)}}, waitForChangeSet(t, subB))
+}
+
 func TestNewWatcherDisablesCleanlyWhenFSNotifySetupFails(t *testing.T) {
 	root := t.TempDir()
 	setupErr := errors.New("inotify watches exhausted")

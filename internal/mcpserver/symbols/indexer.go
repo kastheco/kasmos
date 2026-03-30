@@ -66,7 +66,7 @@ type ctagsRecord struct {
 type Indexer struct {
 	root    string
 	runner  Runner
-	watcher interface{ Changes() <-chan cache.ChangeSet }
+	watcher interface{ Subscribe() <-chan cache.ChangeSet }
 	update  func(string, []Symbol)
 	remove  func(string)
 
@@ -81,7 +81,7 @@ type Indexer struct {
 }
 
 // NewIndexer creates a symbol indexer rooted at root.
-func NewIndexer(root string, runner Runner, watcher interface{ Changes() <-chan cache.ChangeSet }, update func(string, []Symbol), remove func(string)) *Indexer {
+func NewIndexer(root string, runner Runner, watcher interface{ Subscribe() <-chan cache.ChangeSet }, update func(string, []Symbol), remove func(string)) *Indexer {
 	if runner == nil {
 		runner = execRunner{}
 	}
@@ -188,7 +188,7 @@ func (i *Indexer) seedTrackedFiles(ctx context.Context) {
 }
 
 func (i *Indexer) watchLoop(ctx context.Context) {
-	changes := i.watcher.Changes()
+	changes := i.watcher.Subscribe()
 	for {
 		select {
 		case <-ctx.Done():

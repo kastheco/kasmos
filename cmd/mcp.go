@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/kastheco/kasmos/internal/mcpserver/gittools"
 	"github.com/kastheco/kasmos/internal/mcpserver/instancetools"
 	"github.com/kastheco/kasmos/internal/mcpserver/signaltools"
+	"github.com/kastheco/kasmos/internal/mcpserver/symbols"
 	"github.com/kastheco/kasmos/internal/mcpserver/tasktools"
 	"github.com/spf13/cobra"
 )
@@ -77,14 +79,27 @@ func newConfiguredMCPServer(store taskstore.Store, gw taskstore.SignalGateway) (
 		return nil, fmt.Errorf("create mcp cache store: %w", err)
 	}
 	watcher := cache.NewWatcher(repoRoot)
+	fileCache := cache.NewFileCache(cacheStore, watcher)
 	runner := cache.NewCachedRunner(&fstools.ExecRunner{}, cacheStore, watcher)
+	symbolStore := symbols.NewStore()
+	indexerCtx, cancelIndexer := context.WithCancel(context.Background())
+	indexer := symbols.NewIndexer(repoRoot, runner, watcher, symbolStore.Update, symbolStore.Remove)
+	indexer.Start(indexerCtx)
+	validator := fstools.NewSandbox(allowedDirs).Validate
+
+	mcpSrv.AddCloser(closeFunc(func() error {
+		cancelIndexer()
+		return nil
+	}))
+	mcpSrv.AddCloser(fileCache)
 	mcpSrv.AddCloser(runner)
 	mcpSrv.AddCloser(closeFunc(watcher.Stop))
 	mcpSrv.AddCloser(cacheStore)
 
 	project := resolveTaskProject(repoRoot)
-	fstools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, fstools.RegisterOptions{Runner: runner})
+	fstools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, fstools.RegisterOptions{Runner: runner, FileCache: fileCache, Symbols: symbolStore})
 	gittools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, runner)
+	symbols.RegisterTool(mcpSrv.MCPServer(), validator, symbolStore, indexer.Available)
 	tasktools.RegisterTools(mcpSrv.MCPServer(), project, mcpSrv.Store())
 	signaltools.RegisterTools(mcpSrv.MCPServer(), project, mcpSrv.Gateway())
 	instancetools.RegisterTools(

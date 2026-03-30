@@ -71,7 +71,7 @@ func TestGrepHandler_MissingPattern(t *testing.T) {
 	dir := t.TempDir()
 	sb := NewSandbox([]string{dir})
 	runner := &mockRunner{}
-	handler := makeGrepHandler(sb, runner)
+	handler := makeGrepHandler(sb, runner, nil)
 
 	req := mockCallToolRequest(map[string]any{}) // no pattern
 	result, err := handler(context.Background(), req)
@@ -85,7 +85,7 @@ func TestGrepHandler_PathOutsideSandbox(t *testing.T) {
 	outside := t.TempDir()
 	sb := NewSandbox([]string{dir})
 	runner := &mockRunner{}
-	handler := makeGrepHandler(sb, runner)
+	handler := makeGrepHandler(sb, runner, nil)
 
 	req := mockCallToolRequest(map[string]any{
 		"pattern": "foo",
@@ -115,7 +115,7 @@ func TestGrepHandler_NoMatchesReturnsEmptyJSON(t *testing.T) {
 			return nil, exitErr
 		},
 	}
-	handler := makeGrepHandler(sb, runner)
+	handler := makeGrepHandler(sb, runner, nil)
 
 	req := mockCallToolRequest(map[string]any{
 		"pattern": "notfound",
@@ -145,7 +145,7 @@ func TestGrepHandler_Success(t *testing.T) {
 			return []byte(rgOutput), nil
 		},
 	}
-	handler := makeGrepHandler(sb, runner)
+	handler := makeGrepHandler(sb, runner, nil)
 
 	req := mockCallToolRequest(map[string]any{
 		"pattern":       "Hello",
@@ -176,7 +176,7 @@ func TestGrepHandler_LegacyAliasArguments(t *testing.T) {
 			return []byte(rgOutput), nil
 		},
 	}
-	handler := makeGrepHandler(sb, runner)
+	handler := makeGrepHandler(sb, runner, nil)
 
 	req := mockCallToolRequest(map[string]any{
 		"pattern":        "Hello",

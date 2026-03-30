@@ -64,6 +64,7 @@ var logWatcherWarningf = func(format string, args ...any) {
 // Watcher batches fsnotify events for a root tree.
 type Watcher struct {
 	watcher  fsWatcher
+	root     string
 	changes  chan ChangeSet
 	disabled bool
 	stopCh   chan struct{}
@@ -73,15 +74,17 @@ type Watcher struct {
 	stopOnce    sync.Once
 	finishOnce  sync.Once
 	watchedDirs map[string]struct{}
+	subscribers map[chan ChangeSet]struct{}
+	finished    bool
 }
 
 // NewWatcher creates a recursive watcher rooted at root.
 func NewWatcher(root string) *Watcher {
 	w := &Watcher{
-		changes:     make(chan ChangeSet, 1),
 		stopCh:      make(chan struct{}),
 		done:        make(chan struct{}),
 		watchedDirs: make(map[string]struct{}),
+		subscribers: make(map[chan ChangeSet]struct{}),
 	}
 
 	cleanRoot, err := filepath.Abs(filepath.Clean(root))
@@ -90,6 +93,7 @@ func NewWatcher(root string) *Watcher {
 		w.disabled = true
 		return w
 	}
+	w.root = cleanRoot
 
 	backend, err := newFSWatcher()
 	if err != nil {
@@ -113,7 +117,36 @@ func NewWatcher(root string) *Watcher {
 
 // Changes returns the debounced change stream.
 func (w *Watcher) Changes() <-chan ChangeSet {
-	return w.changes
+	return w.Subscribe()
+}
+
+// Subscribe registers an independent debounced change subscriber.
+func (w *Watcher) Subscribe() <-chan ChangeSet {
+	if w == nil {
+		ch := make(chan ChangeSet)
+		close(ch)
+		return ch
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.subscribers == nil {
+		if w.changes != nil {
+			return w.changes
+		}
+		ch := make(chan ChangeSet)
+		close(ch)
+		return ch
+	}
+
+	ch := make(chan ChangeSet, 8)
+	if w.finished {
+		close(ch)
+		return ch
+	}
+	w.subscribers[ch] = struct{}{}
+	return ch
 }
 
 // Stop stops the watcher and closes the exported changes channel exactly once.
@@ -156,12 +189,7 @@ func (w *Watcher) run() {
 		modified = make(map[string]struct{})
 		deleted = make(map[string]struct{})
 
-		select {
-		case w.changes <- changeSet:
-			return true
-		case <-w.stopCh:
-			return false
-		}
+		return w.broadcast(changeSet)
 	}
 
 	for {
@@ -295,9 +323,36 @@ func (w *Watcher) dropWatchedTree(path string) {
 
 func (w *Watcher) finish() {
 	w.finishOnce.Do(func() {
-		close(w.changes)
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		w.finished = true
+		for ch := range w.subscribers {
+			close(ch)
+			delete(w.subscribers, ch)
+		}
+		if w.changes != nil {
+			close(w.changes)
+		}
 		close(w.done)
 	})
+}
+
+func (w *Watcher) broadcast(changeSet ChangeSet) bool {
+	w.mu.Lock()
+	subscribers := make([]chan ChangeSet, 0, len(w.subscribers))
+	for ch := range w.subscribers {
+		subscribers = append(subscribers, ch)
+	}
+	w.mu.Unlock()
+
+	for _, ch := range subscribers {
+		select {
+		case ch <- changeSet:
+		case <-w.stopCh:
+			return false
+		}
+	}
+	return true
 }
 
 func markCreated(created, modified, deleted map[string]struct{}, path string) {
