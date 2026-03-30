@@ -50,6 +50,12 @@ func TestNavInstanceTitle_FixerUsesLifecycleLabel(t *testing.T) {
 	assert.Equal(t, "applying fixes #2", navInstanceTitle(instance))
 }
 
+func TestNavInstanceTitle_SmallPlanCoderUsesImplementing(t *testing.T) {
+	instance := &session.Instance{TaskFile: "feature", AgentType: session.AgentTypeCoder, WaveNumber: 0}
+
+	assert.Equal(t, "implementing", navInstanceTitle(instance))
+}
+
 // ---------- rebuildRows grouping ----------
 
 func TestRebuildRows_EmptyPanel(t *testing.T) {
