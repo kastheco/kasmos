@@ -1112,6 +1112,8 @@ func TestLoadReviewPrompt_UsesMergeBase(t *testing.T) {
 
 func TestLoadReviewPrompt_UsesGatewayReviewSignals(t *testing.T) {
 	prompt := LoadReviewPrompt("test-plan.md", "test-plan", 1, "")
+	assert.Contains(t, prompt, "signal_create` (signal_type: \"review-approved\", plan_file: \"test-plan.md\"")
+	assert.Contains(t, prompt, "signal_create` (signal_type: \"review-changes\", plan_file: \"test-plan.md\"")
 	assert.Contains(t, prompt, "kas signal emit review_approved test-plan.md")
 	assert.Contains(t, prompt, "kas signal emit review_changes_requested test-plan.md")
 	assert.NotContains(t, prompt, ".kasmos/signals/review-approved-")
@@ -1123,13 +1125,17 @@ func ptrFloat(f float64) *float64 { return &f }
 func TestSyncScaffold_UpdatesSkillsAndAgentPrompts(t *testing.T) {
 	dir := t.TempDir()
 	temp := 0.1
-	agents := []harness.AgentConfig{{Role: "coder", Harness: "claude", Model: "claude-sonnet-4-6", Temperature: &temp, Enabled: true}, {Role: "coder", Harness: "opencode", Model: "anthropic/claude-sonnet-4-6", Temperature: &temp, Effort: "medium", Enabled: true}}
+	agents := []harness.AgentConfig{{Role: "coder", Harness: "claude", Model: "claude-sonnet-4-6", Temperature: &temp, Enabled: true}, {Role: "planner", Harness: "claude", Model: "claude-opus-4-6", Temperature: &temp, Enabled: true}, {Role: "coder", Harness: "opencode", Model: "anthropic/claude-sonnet-4-6", Temperature: &temp, Effort: "medium", Enabled: true}, {Role: "planner", Harness: "opencode", Model: "anthropic/claude-sonnet-4-6", Temperature: &temp, Effort: "medium", Enabled: true}}
 	_, err := ScaffoldAll(dir, agents, nil, false)
 	require.NoError(t, err)
 	skillFile := filepath.Join(dir, ".agents", "skills", "cli-tools", "SKILL.md")
 	require.NoError(t, os.WriteFile(skillFile, []byte("old"), 0o644))
 	agentFile := filepath.Join(dir, ".claude", "agents", "coder.md")
 	require.NoError(t, os.WriteFile(agentFile, []byte("old"), 0o644))
+	plannerFile := filepath.Join(dir, ".claude", "agents", "planner.md")
+	require.NoError(t, os.WriteFile(plannerFile, []byte("old"), 0o644))
+	opencodePlannerFile := filepath.Join(dir, ".opencode", "agents", "planner.md")
+	require.NoError(t, os.WriteFile(opencodePlannerFile, []byte("old"), 0o644))
 	cfgPath := filepath.Join(dir, "opencode.jsonc")
 	require.NoError(t, os.WriteFile(cfgPath, []byte(`{"agent":{"coder":{"model":"anthropic/claude-sonnet-4-6","temperature":0.1,"reasoningEffort":"medium","customField":"preserved"}}}`), 0o644))
 	results, err := SyncScaffold(dir, agents)
@@ -1142,6 +1148,16 @@ func TestSyncScaffold_UpdatesSkillsAndAgentPrompts(t *testing.T) {
 	content, err = os.ReadFile(agentFile)
 	require.NoError(t, err)
 	assert.NotEqual(t, "old", string(content))
+	content, err = os.ReadFile(plannerFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "signal_create")
+	assert.Contains(t, string(content), "kas signal emit planner_finished <plan-file>")
+	assert.Contains(t, string(content), ".kasmos/signals/planner-finished-<plan-file>")
+	content, err = os.ReadFile(opencodePlannerFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "signal_create")
+	assert.Contains(t, string(content), "kas signal emit planner_finished <plan-file>")
+	assert.Contains(t, string(content), ".kasmos/signals/planner-finished-<plan-file>")
 	content, err = os.ReadFile(cfgPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "preserved")
