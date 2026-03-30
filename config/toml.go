@@ -36,10 +36,11 @@ func (a TOMLAgent) toProfile() AgentProfile {
 
 // TOMLUIConfig holds UI-specific settings from the [ui] TOML table.
 type TOMLUIConfig struct {
-	AnimateBanner      bool  `toml:"animate_banner"`
-	AutoAdvanceWaves   *bool `toml:"auto_advance_waves"`
-	AutoReviewFix      *bool `toml:"auto_review_fix"`
-	MaxReviewFixCycles *int  `toml:"max_review_fix_cycles"`
+	AnimateBanner      bool   `toml:"animate_banner"`
+	AccentColor        string `toml:"accent_color,omitempty"`
+	AutoAdvanceWaves   *bool  `toml:"auto_advance_waves"`
+	AutoReviewFix      *bool  `toml:"auto_review_fix"`
+	MaxReviewFixCycles *int   `toml:"max_review_fix_cycles"`
 }
 
 // TOMLTelemetryConfig holds telemetry settings from the [telemetry] TOML table.
@@ -86,6 +87,7 @@ type TOMLConfigResult struct {
 	Profiles               map[string]AgentProfile
 	PhaseRoles             map[string]string
 	AnimateBanner          bool
+	AccentColor            string
 	AutoAdvanceWaves       *bool
 	AutoReviewFix          *bool
 	MaxReviewFixCycles     *int
@@ -112,6 +114,7 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 		Profiles:               make(map[string]AgentProfile),
 		PhaseRoles:             tc.Phases,
 		AnimateBanner:          tc.UI.AnimateBanner,
+		AccentColor:            tc.UI.AccentColor,
 		AutoAdvanceWaves:       tc.UI.AutoAdvanceWaves,
 		AutoReviewFix:          tc.UI.AutoReviewFix,
 		MaxReviewFixCycles:     tc.UI.MaxReviewFixCycles,

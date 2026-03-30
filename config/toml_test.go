@@ -115,6 +115,21 @@ flags = []
 		_, err = LoadTOMLConfigFrom(tomlPath)
 		assert.Error(t, err)
 	})
+
+	t.Run("parses accent color from ui section", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		tomlPath := filepath.Join(tmpDir, "config.toml")
+		content := `
+[ui]
+accent_color = "#112233"
+`
+		err := os.WriteFile(tomlPath, []byte(content), 0o644)
+		require.NoError(t, err)
+
+		result, err := LoadTOMLConfigFrom(tomlPath)
+		require.NoError(t, err)
+		assert.Equal(t, "#112233", result.AccentColor)
+	})
 }
 
 func TestSaveTOMLConfig(t *testing.T) {
@@ -140,6 +155,7 @@ func TestSaveTOMLConfig(t *testing.T) {
 				},
 			},
 		}
+		original.UI.AccentColor = "#112233"
 
 		err := SaveTOMLConfigTo(original, tomlPath)
 		require.NoError(t, err)
@@ -153,6 +169,7 @@ func TestSaveTOMLConfig(t *testing.T) {
 		assert.Equal(t, ExecutionModeHeadless, coder.ExecutionMode)
 		assert.Equal(t, "anthropic/claude-sonnet-4-6", coder.Model)
 		assert.InDelta(t, 0.5, *coder.Temperature, 0.001)
+		assert.Equal(t, "#112233", loaded.AccentColor)
 	})
 }
 

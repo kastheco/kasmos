@@ -182,6 +182,8 @@ type Config struct {
 	PhaseRoles map[string]string `json:"phase_roles,omitempty"`
 	// AnimateBanner enables the idle banner animation (off by default).
 	AnimateBanner bool `json:"animate_banner,omitempty"`
+	// AccentColor renders an optional full-width accent strip below the menu bar.
+	AccentColor string `json:"accent_color,omitempty"`
 	// AutoAdvanceWaves skips the confirmation dialog after a clean wave.
 	AutoAdvanceWaves bool `json:"auto_advance_waves,omitempty"`
 	// AutoReviewFix enables the automatic review→fix→re-review loop.
@@ -354,6 +356,7 @@ func configFromTOML(result *TOMLConfigResult) *Config {
 		cfg.Profiles = result.Profiles
 		cfg.PhaseRoles = result.PhaseRoles
 		cfg.AnimateBanner = result.AnimateBanner
+		cfg.AccentColor = result.AccentColor
 		cfg.TelemetryEnabled = result.TelemetryEnabled
 		cfg.DatabaseURL = result.DatabaseURL
 		cfg.Hooks = result.Hooks
@@ -401,6 +404,7 @@ func configToTOML(cfg *Config) *TOMLConfig {
 		Agents: agents,
 		UI: TOMLUIConfig{
 			AnimateBanner: cfg.AnimateBanner,
+			AccentColor:   cfg.AccentColor,
 		},
 		Telemetry:            TOMLTelemetryConfig{Enabled: cfg.TelemetryEnabled},
 		Orchestration:        TOMLOrchestrationConfig{BlueprintSkipThreshold: cfg.BlueprintSkipThresholdValue},
