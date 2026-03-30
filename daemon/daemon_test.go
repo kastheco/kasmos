@@ -385,6 +385,75 @@ func TestDaemon_AutoAdvanceCompletedImplementer_TransitionsToReviewing(t *testin
 	assert.Equal(t, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseReviewing), ActiveAgentType: session.AgentTypeReviewer}, entry.ExecutionState)
 }
 
+func TestDaemon_MonitorRunningInstances_EmitsStuckDetectedOncePerExit(t *testing.T) {
+	repo := t.TempDir()
+	project := filepath.Base(repo)
+	store := taskstore.NewTestStore(t)
+	planFile := "feature.md"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseArchitecting),
+			ActiveAgentType: session.AgentTypeElaborator,
+		},
+	}))
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "feature-architect",
+		Path:          repo,
+		Program:       "true",
+		ExecutionMode: session.ExecutionModeHeadless,
+		TaskFile:      planFile,
+		AgentType:     session.AgentTypeElaborator,
+	})
+	require.NoError(t, err)
+	require.NoError(t, inst.StartOnMainBranch())
+	require.Eventually(t, func() bool { return !inst.TmuxAlive() }, time.Second, 10*time.Millisecond)
+
+	d := &Daemon{
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+	e := RepoEntry{Path: repo, Project: project, Store: store}
+
+	key := instanceKey(repo, planFile, session.AgentTypeElaborator)
+	d.spawner.mu.Lock()
+	d.spawner.instances[key] = inst
+	d.spawner.planFileByKey[key] = planFile
+	d.spawner.agentTypeByKey[key] = session.AgentTypeElaborator
+	d.spawner.projectByKey[key] = project
+	d.spawner.mu.Unlock()
+
+	sub := d.broadcaster.Subscribe()
+	t.Cleanup(func() { d.broadcaster.Unsubscribe(sub) })
+
+	d.monitorRunningInstances(context.Background(), e)
+
+	select {
+	case ev := <-sub:
+		assert.Equal(t, api.EventKindStuckDetected, ev.Kind)
+		assert.Equal(t, "agent exited without an auto-advance path for "+planFile, ev.Message)
+		assert.Equal(t, repo, ev.Repo)
+		assert.Equal(t, planFile, ev.PlanFile)
+		assert.Equal(t, session.AgentTypeElaborator, ev.AgentType)
+	case <-time.After(time.Second):
+		t.Fatal("expected stuck_detected event")
+	}
+
+	assert.True(t, inst.Exited)
+	assert.Equal(t, session.Ready, inst.Status)
+
+	d.monitorRunningInstances(context.Background(), e)
+
+	select {
+	case ev := <-sub:
+		t.Fatalf("unexpected extra event: %+v", ev)
+	default:
+	}
+}
+
 func TestDaemon_AutoAdvancePlannerFinished_StartsBlueprintSkipImplementation(t *testing.T) {
 	project := "proj"
 	planFile := "feature.md"

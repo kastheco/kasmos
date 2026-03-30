@@ -298,6 +298,100 @@ func TestShouldAutoAdvanceLifecycleImplementer(t *testing.T) {
 	}
 }
 
+func TestIsStuck(t *testing.T) {
+	tests := []struct {
+		name      string
+		entry     taskstore.TaskEntry
+		inst      *Instance
+		tmuxAlive bool
+		want      bool
+	}{
+		{
+			name: "architect exit is stuck",
+			entry: taskstore.TaskEntry{
+				Status: taskstore.StatusImplementing,
+				ExecutionState: taskstore.ExecutionState{
+					Phase:           string(taskfsm.ExecutionPhaseArchitecting),
+					ActiveAgentType: AgentTypeElaborator,
+				},
+			},
+			inst:      &Instance{TaskFile: "feature", AgentType: AgentTypeElaborator},
+			tmuxAlive: false,
+			want:      true,
+		},
+		{
+			name: "wave wait exit is stuck",
+			entry: taskstore.TaskEntry{
+				Status: taskstore.StatusImplementing,
+				ExecutionState: taskstore.ExecutionState{
+					Phase:           string(taskfsm.ExecutionPhaseWaveWaiting),
+					ActiveAgentType: AgentTypeCoder,
+				},
+			},
+			inst:      &Instance{TaskFile: "feature", AgentType: AgentTypeCoder, TaskNumber: 2},
+			tmuxAlive: false,
+			want:      true,
+		},
+		{
+			name: "single agent exit auto advances instead of stuck",
+			entry: taskstore.TaskEntry{
+				Status: taskstore.StatusImplementing,
+				ExecutionState: taskstore.ExecutionState{
+					Phase:           string(taskfsm.ExecutionPhaseSingleAgentImplementing),
+					ActiveAgentType: AgentTypeCoder,
+				},
+			},
+			inst:      &Instance{TaskFile: "feature", AgentType: AgentTypeCoder},
+			tmuxAlive: false,
+			want:      false,
+		},
+		{
+			name: "reviewing status is not stuck",
+			entry: taskstore.TaskEntry{
+				Status: taskstore.StatusReviewing,
+				ExecutionState: taskstore.ExecutionState{
+					Phase: string(taskfsm.ExecutionPhaseFixing),
+				},
+			},
+			inst:      &Instance{TaskFile: "feature", AgentType: AgentTypeFixer},
+			tmuxAlive: false,
+			want:      false,
+		},
+		{
+			name: "paused instance is not stuck",
+			entry: taskstore.TaskEntry{
+				Status: taskstore.StatusImplementing,
+				ExecutionState: taskstore.ExecutionState{
+					Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+					ActiveAgentType: AgentTypeCoder,
+				},
+			},
+			inst:      &Instance{TaskFile: "feature", AgentType: AgentTypeCoder, Status: Paused},
+			tmuxAlive: false,
+			want:      false,
+		},
+		{
+			name: "active agent mismatch is not stuck",
+			entry: taskstore.TaskEntry{
+				Status: taskstore.StatusImplementing,
+				ExecutionState: taskstore.ExecutionState{
+					Phase:           string(taskfsm.ExecutionPhaseArchitecting),
+					ActiveAgentType: AgentTypeElaborator,
+				},
+			},
+			inst:      &Instance{TaskFile: "feature", AgentType: AgentTypeCoder},
+			tmuxAlive: false,
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, IsStuck(tt.entry, tt.inst, tt.tmuxAlive))
+		})
+	}
+}
+
 func TestPause_DirtyWorktreeReturnsError(t *testing.T) {
 	repoPath := setupGitRepo(t)
 	inst, err := NewInstance(InstanceOptions{

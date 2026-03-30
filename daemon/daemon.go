@@ -329,7 +329,7 @@ func (d *Daemon) startPlanAsync(entry RepoEntry, planFile, prompt, program strin
 	}
 	if d.broadcaster != nil {
 		d.broadcaster.Emit(api.Event{
-			Kind:      "agent_spawned",
+			Kind:      api.EventKindAgentSpawned,
 			Message:   "planner spawned for " + planFile,
 			Repo:      entry.Path,
 			PlanFile:  planFile,
@@ -847,6 +847,9 @@ func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
 		}
 
 		md := inst.CollectMetadata()
+		if md.TmuxAlive && inst.Exited {
+			inst.Exited = false
+		}
 		if md.ContentCaptured {
 			if md.Updated {
 				inst.SetStatus(session.Running)
@@ -865,6 +868,33 @@ func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
 			continue
 		}
 		if !advanced {
+			if md.TmuxAlive || inst.Exited {
+				continue
+			}
+
+			inst.Exited = true
+			if inst.Status == session.Running {
+				inst.SetStatus(session.Ready)
+			}
+
+			if e.Store == nil || inst.TaskFile == "" {
+				continue
+			}
+
+			entry, err := e.Store.Get(e.Project, inst.TaskFile)
+			if err != nil {
+				d.logger.Warn("load task entry for exited instance failed", "repo", e.Path, "plan", inst.TaskFile, "instance", inst.Title, "err", err)
+				continue
+			}
+			if session.IsStuck(entry, inst, md.TmuxAlive) {
+				d.broadcaster.Emit(api.Event{
+					Kind:      api.EventKindStuckDetected,
+					Message:   "agent exited without an auto-advance path for " + inst.TaskFile,
+					Repo:      e.Path,
+					PlanFile:  inst.TaskFile,
+					AgentType: inst.AgentType,
+				})
+			}
 			continue
 		}
 
@@ -973,7 +1003,7 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			return err
 		}
 		d.broadcaster.Emit(api.Event{
-			Kind:      "agent_spawned",
+			Kind:      api.EventKindAgentSpawned,
 			Message:   "reviewer spawned for " + a.PlanFile,
 			Repo:      e.Path,
 			PlanFile:  a.PlanFile,
@@ -991,7 +1021,7 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			return err
 		}
 		d.broadcaster.Emit(api.Event{
-			Kind:      "agent_spawned",
+			Kind:      api.EventKindAgentSpawned,
 			Message:   "coder spawned for " + a.PlanFile,
 			Repo:      e.Path,
 			PlanFile:  a.PlanFile,
@@ -1021,7 +1051,7 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			return err
 		}
 		d.broadcaster.Emit(api.Event{
-			Kind:      "agent_spawned",
+			Kind:      api.EventKindAgentSpawned,
 			Message:   "architect spawned for " + a.PlanFile,
 			Repo:      e.Path,
 			PlanFile:  a.PlanFile,
@@ -1041,7 +1071,7 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			return err
 		}
 		d.broadcaster.Emit(api.Event{
-			Kind:      "agent_spawned",
+			Kind:      api.EventKindAgentSpawned,
 			Message:   "fixer spawned for " + a.PlanFile,
 			Repo:      e.Path,
 			PlanFile:  a.PlanFile,
