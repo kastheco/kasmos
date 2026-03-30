@@ -37,7 +37,7 @@ func (a TOMLAgent) toProfile() AgentProfile {
 // TOMLUIConfig holds UI-specific settings from the [ui] TOML table.
 type TOMLUIConfig struct {
 	AnimateBanner      bool   `toml:"animate_banner"`
-	AccentColor        string `toml:"accent_color"`
+	AccentColor        string `toml:"accent_color,omitempty"`
 	AutoAdvanceWaves   *bool  `toml:"auto_advance_waves"`
 	AutoReviewFix      *bool  `toml:"auto_review_fix"`
 	MaxReviewFixCycles *int   `toml:"max_review_fix_cycles"`
