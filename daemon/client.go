@@ -16,6 +16,7 @@ import (
 // with the daemon over a Unix domain socket using JSON-over-HTTP.
 type SocketClient struct {
 	socketPath string
+	baseURL    string
 	http       *http.Client
 }
 
@@ -30,6 +31,7 @@ func NewSocketClient(socketPath string) *SocketClient {
 	}
 	return &SocketClient{
 		socketPath: socketPath,
+		baseURL:    "http://daemon",
 		http: &http.Client{
 			Transport: transport,
 			Timeout:   10 * time.Second,
@@ -112,7 +114,11 @@ func (c *SocketClient) StartPlan(project, filename, prompt, program string) erro
 // url returns the full HTTP URL for the given path, routed through the Unix socket.
 // The host component is a placeholder since actual routing goes through the socket.
 func (c *SocketClient) url(path string) string {
-	return "http://daemon" + path
+	baseURL := c.baseURL
+	if baseURL == "" {
+		baseURL = "http://daemon"
+	}
+	return baseURL + path
 }
 
 // get performs a GET request and decodes the JSON response into v.
