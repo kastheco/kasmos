@@ -50,6 +50,7 @@ type Daemon struct {
 	spawnReviewer   func(context.Context, loop.SpawnOpts) error
 	spawnCoder      func(context.Context, loop.SpawnOpts) error
 	spawnElaborator func(context.Context, loop.SpawnOpts) error
+	spawnFixer      func(context.Context, loop.SpawnOpts) error
 	spawnWaveTask   func(context.Context, loop.SpawnOpts, taskparser.Task, string, int) error
 	killWaveAgents  func(repoPath, planFile string, wave int) error
 	createPR        func(RepoEntry, string, string) error
@@ -1074,7 +1075,11 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			return fmt.Errorf("persist fixer execution state: %w", err)
 		}
 		opts := fixerSpawnOpts(e, a.PlanFile, branchFor(a.PlanFile), a.Feedback)
-		if err := d.spawner.SpawnFixer(ctx, opts); err != nil {
+		spawnFixer := d.spawnFixer
+		if spawnFixer == nil {
+			spawnFixer = d.spawner.SpawnFixer
+		}
+		if err := spawnFixer(ctx, opts); err != nil {
 			d.logger.Error("spawn fixer failed", "plan", a.PlanFile, "err", err)
 			return err
 		}
@@ -1153,6 +1158,18 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			Repo:     e.Path,
 			PlanFile: a.PlanFile,
 		})
+		return nil
+	case loop.IncrementReviewCycleAction:
+		if e.Store == nil {
+			return fmt.Errorf("task store unavailable for %s", a.PlanFile)
+		}
+		ps, err := taskstate.Load(e.Store, e.Project, "")
+		if err != nil {
+			return fmt.Errorf("load task state for review cycle increment: %w", err)
+		}
+		if err := ps.IncrementReviewCycle(a.PlanFile); err != nil {
+			return fmt.Errorf("increment review cycle: %w", err)
+		}
 		return nil
 	default:
 		d.logger.Debug("unhandled action", "kind", action.Kind(), "repo", e.Path)
