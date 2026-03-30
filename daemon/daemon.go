@@ -18,6 +18,7 @@ import (
 
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskfsm"
+	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
@@ -36,18 +37,20 @@ import (
 // repositories for signal files and executes the resulting actions via the
 // configured AgentSpawner.
 type Daemon struct {
-	cfg          *DaemonConfig
-	repos        *RepoManager
-	spawner      *TmuxSpawner
-	logger       *slog.Logger
-	pidLock      *PIDLock
-	broadcaster  *api.EventBroadcaster
-	prMonitor    *PRMonitor
-	pushBranch   func(*session.Instance) error
-	killAgent    func(repoPath, planFile, agentType string) error
-	spawnPlanner func(context.Context, loop.SpawnOpts) error
-	mu           sync.RWMutex
-	startedAt    time.Time
+	cfg             *DaemonConfig
+	repos           *RepoManager
+	spawner         *TmuxSpawner
+	logger          *slog.Logger
+	pidLock         *PIDLock
+	broadcaster     *api.EventBroadcaster
+	prMonitor       *PRMonitor
+	pushBranch      func(*session.Instance) error
+	killAgent       func(repoPath, planFile, agentType string) error
+	spawnPlanner    func(context.Context, loop.SpawnOpts) error
+	spawnCoder      func(context.Context, loop.SpawnOpts) error
+	spawnElaborator func(context.Context, loop.SpawnOpts) error
+	mu              sync.RWMutex
+	startedAt       time.Time
 }
 
 // daemonStateAdapter adapts the Daemon to the api.StateProvider interface.
@@ -229,6 +232,7 @@ func NewDaemon(cfg *DaemonConfig) (*Daemon, error) {
 	}))
 
 	repos := NewRepoManager()
+	repos.autoAdvance = cfg.AutoAdvance
 	repos.autoReviewFix = cfg.AutoReviewFix
 	repos.maxReviewFixCycles = cfg.MaxReviewFixCycles
 
@@ -702,6 +706,98 @@ func clearRepoExecutionState(e RepoEntry, planFile string) error {
 	return ps.ClearExecutionState(planFile)
 }
 
+func (d *Daemon) plannerStillTracked(repoPath, planFile string) bool {
+	if d.spawner == nil {
+		return false
+	}
+
+	key := instanceKey(repoPath, planFile, session.AgentTypePlanner)
+	for _, inst := range d.spawner.RunningInstances() {
+		if inst.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *Daemon) blueprintSkipThreshold(repoPath string) int {
+	const defaultThreshold = 2
+
+	path := filepath.Join(repoPath, ".kasmos", config.TOMLConfigFileName)
+	result, err := config.LoadTOMLConfigFrom(path)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			d.logger.Warn("load repo config for blueprint-skip failed", "repo", repoPath, "err", err)
+		}
+		return defaultThreshold
+	}
+	if result == nil || result.BlueprintSkipThreshold == nil {
+		return defaultThreshold
+	}
+	return *result.BlueprintSkipThreshold
+}
+
+func (d *Daemon) autoImplementPlan(ctx context.Context, e RepoEntry, planFile string) error {
+	if e.Store == nil {
+		return fmt.Errorf("task store unavailable for %s", planFile)
+	}
+
+	killAgent := d.killAgent
+	if killAgent == nil {
+		killAgent = d.spawner.KillAgent
+	}
+	killErr := killAgent(e.Path, planFile, session.AgentTypePlanner)
+	if killErr != nil {
+		d.logger.Warn("kill planner before auto-implement failed", "repo", e.Path, "plan", planFile, "err", killErr)
+	}
+	if d.plannerStillTracked(e.Path, planFile) {
+		if killErr != nil {
+			return fmt.Errorf("planner agent still tracked for %s after cleanup failure: %w", planFile, killErr)
+		}
+		return fmt.Errorf("planner agent still tracked for %s after cleanup", planFile)
+	}
+
+	content, err := e.Store.GetContent(e.Project, planFile)
+	if err != nil {
+		return fmt.Errorf("load plan content for %s: %w", planFile, err)
+	}
+	if strings.TrimSpace(content) == "" {
+		return fmt.Errorf("load plan content for %s: empty content", planFile)
+	}
+
+	plan, err := taskparser.Parse(content)
+	if err != nil {
+		return fmt.Errorf("parse plan content for %s: %w", planFile, err)
+	}
+
+	if err := taskfsm.New(e.Store, e.Project, "").Transition(planFile, taskfsm.ImplementStart); err != nil {
+		return fmt.Errorf("transition %s to implementing: %w", planFile, err)
+	}
+
+	if orchestration.ShouldBlueprintSkip(plan, d.blueprintSkipThreshold(e.Path)) {
+		if e.Processor != nil {
+			e.Processor.ClearWaveOrchestrator(planFile)
+		}
+		if err := setRepoExecutionState(e, planFile, taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseSingleAgentImplementing),
+			ActiveAgentType: session.AgentTypeCoder,
+		}); err != nil {
+			return fmt.Errorf("persist single-agent execution state for %s: %w", planFile, err)
+		}
+		entry, err := e.Store.Get(e.Project, planFile)
+		if err != nil {
+			return fmt.Errorf("load task entry for %s: %w", planFile, err)
+		}
+		prompt := orchestration.BuildBlueprintSkipPrompt(planFile, plan)
+		return d.executeAction(ctx, e, loop.SpawnCoderAction{
+			PlanFile: entry.Filename,
+			Feedback: prompt,
+		})
+	}
+
+	return d.executeAction(ctx, e, loop.SpawnElaboratorAction{PlanFile: planFile})
+}
+
 func (d *Daemon) pushInstanceBranch(inst *session.Instance) error {
 	if d.pushBranch != nil {
 		return d.pushBranch(inst)
@@ -886,7 +982,11 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		return nil
 	case loop.SpawnCoderAction:
 		opts := coderSpawnOpts(e, a.PlanFile, branchFor(a.PlanFile), a.Feedback)
-		if err := d.spawner.SpawnCoder(ctx, opts); err != nil {
+		spawnCoder := d.spawnCoder
+		if spawnCoder == nil {
+			spawnCoder = d.spawner.SpawnCoder
+		}
+		if err := spawnCoder(ctx, opts); err != nil {
 			d.logger.Error("spawn coder failed", "plan", a.PlanFile, "err", err)
 			return err
 		}
@@ -912,7 +1012,11 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			Project:  e.Project,
 			Prompt:   spec.Prompt,
 		}
-		if err := d.spawner.SpawnElaborator(ctx, opts); err != nil {
+		spawnElaborator := d.spawnElaborator
+		if spawnElaborator == nil {
+			spawnElaborator = d.spawner.SpawnElaborator
+		}
+		if err := spawnElaborator(ctx, opts); err != nil {
 			d.logger.Error("spawn architect failed", "plan", a.PlanFile, "err", err)
 			return err
 		}
@@ -957,6 +1061,11 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			AgentType: a.AgentType,
 		})
 		return nil
+	case loop.AutoImplementAction:
+		if d.cfg == nil || !d.cfg.AutoAdvance {
+			return nil
+		}
+		return d.autoImplementPlan(ctx, e, a.PlanFile)
 	case loop.AdvanceWaveAction:
 		return d.startWaveTasks(ctx, e, a.PlanFile)
 	case loop.TaskCompleteAction:

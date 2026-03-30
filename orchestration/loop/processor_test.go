@@ -186,6 +186,26 @@ func TestProcessor_ProcessFSMSignals_PlannerFinished(t *testing.T) {
 	assert.True(t, found, "expected PlannerCompleteAction")
 }
 
+func TestProcessor_ProcessFSMSignals_PlannerFinished_AutoAdvance(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusPlanning,
+	}))
+
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoAdvance: true})
+	actions := p.ProcessFSMSignals([]taskfsm.Signal{{Event: taskfsm.PlannerFinished, TaskFile: "my-plan.md"}})
+
+	require.Len(t, actions, 2)
+	plannerComplete, ok := actions[0].(PlannerCompleteAction)
+	require.True(t, ok, "expected PlannerCompleteAction first, got %T", actions[0])
+	assert.Equal(t, "my-plan.md", plannerComplete.PlanFile)
+
+	autoImplement, ok := actions[1].(AutoImplementAction)
+	require.True(t, ok, "expected AutoImplementAction second, got %T", actions[1])
+	assert.Equal(t, "my-plan.md", autoImplement.PlanFile)
+}
+
 func TestProcessor_ProcessFSMSignals_SkipIfWaveOrchestratorActive(t *testing.T) {
 	store := taskstore.NewTestStore(t)
 	store.Create("test", taskstore.TaskEntry{

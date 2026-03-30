@@ -47,6 +47,8 @@ type ProcessorConfig struct {
 	Dir string
 	// AutoReviewFix enables automatic fixer spawning after review changes.
 	AutoReviewFix bool
+	// AutoAdvance enables automatic planning→implementing handoff.
+	AutoAdvance bool
 	// MaxReviewFixCycles is the maximum number of review-fix cycles allowed
 	// before emitting ReviewCycleLimitAction instead of SpawnCoderAction.
 	// Zero or negative means unlimited.
@@ -233,6 +235,9 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 
 		case taskfsm.PlannerFinished:
 			actions = append(actions, PlannerCompleteAction{PlanFile: sig.TaskFile})
+			if p.config.AutoAdvance {
+				actions = append(actions, AutoImplementAction{PlanFile: sig.TaskFile})
+			}
 		}
 	}
 	return actions
