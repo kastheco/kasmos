@@ -221,7 +221,7 @@ Write a failing test reproducing the bug first (TDD discipline applies to bugfix
 
 ## Verification
 
-Before claiming a task is complete, before committing, before writing the finished sentinel:
+Before marking completion, before committing, before writing the finished sentinel:
 
 ### The Gate
 
