@@ -228,7 +228,8 @@ func updateRecord(loadState StateLoader, title string, updater func(*instanceRec
 //   - kill:   allowed in any status
 //   - pause:  not allowed when already paused
 //   - resume: only allowed when paused
-//   - send:   not allowed when paused
+//   - send:    not allowed when paused
+//   - capture: not allowed when paused
 func validateAction(rec instanceRecord, action string) error {
 	switch action {
 	case "kill":
@@ -247,6 +248,11 @@ func validateAction(rec instanceRecord, action string) error {
 	case "send":
 		if rec.Status == instancePaused {
 			return fmt.Errorf("cannot send prompt to a paused instance")
+		}
+		return nil
+	case "capture":
+		if rec.Status == instancePaused {
+			return fmt.Errorf("cannot capture pane from a paused instance")
 		}
 		return nil
 	default:
