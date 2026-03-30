@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
@@ -83,6 +85,17 @@ func (r *CachedRunner) Output(ctx context.Context, name string, args ...string) 
 
 	out, err := r.inner.Output(ctx, name, args...)
 	if err != nil {
+		// For rg/fd, exit codes 1 (no matches) and 2 (partial results) are
+		// expected outcomes. Cache the stdout bytes so that repeated identical
+		// calls do not re-spawn the subprocess. On a cache hit, Output returns
+		// (bytes, nil) and the handler parses the bytes normally — for empty
+		// bytes (exit 1) this produces zero matches, which is equivalent to the
+		// handler's exit-code-1 path.
+		if cmd.family != "git" && isRgFdCacheableError(err) {
+			if ctx.Err() == nil {
+				r.storeOutput(cmd, out)
+			}
+		}
 		return out, err
 	}
 	if ctx.Err() != nil {
@@ -273,6 +286,20 @@ func ancestorDirs(start, root string) []string {
 	}
 
 	return dirs
+}
+
+// isRgFdCacheableError reports whether err is an exit-code error that rg or fd
+// can return as part of normal operation: exit 1 means no matches, exit 2 means
+// partial results (e.g. some directories inaccessible). Both produce valid
+// stdout that the handler can parse, so caching them avoids re-spawning the
+// subprocess on repeated identical calls.
+func isRgFdCacheableError(err error) bool {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return false
+	}
+	code := exitErr.ExitCode()
+	return code == 1 || code == 2
 }
 
 func watcherRoot(watcher *Watcher) string {

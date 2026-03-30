@@ -284,6 +284,14 @@ func (w *Watcher) addTree(root string) error {
 		if !d.IsDir() {
 			return nil
 		}
+
+		// Avoid watching internal VCS directories (e.g., .git) to reduce
+		// unnecessary events and pressure on OS watch limits.
+		name := d.Name()
+		if name == ".git" || name == ".hg" || name == ".svn" {
+			return filepath.SkipDir
+		}
+
 		return w.addDir(path)
 	})
 }
@@ -348,8 +356,11 @@ func (w *Watcher) broadcast(changeSet ChangeSet) bool {
 	for _, ch := range subscribers {
 		select {
 		case ch <- changeSet:
+			// delivered successfully
 		case <-w.stopCh:
 			return false
+		default:
+			// subscriber channel is full; drop this update for this subscriber
 		}
 	}
 	return true

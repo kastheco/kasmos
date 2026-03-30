@@ -21,8 +21,12 @@ func enrichMatchesWithRoot(matches []GrepMatch, store SymbolLookup, searchRoot s
 		return enriched
 	}
 
+	// Compute the base directory once for all matches rather than calling
+	// os.Stat per match (up to MaxGrepMatches=200 syscalls per call otherwise).
+	base := resolveSearchBase(searchRoot)
+
 	for i := range enriched {
-		lookupPath := resolveMatchLookupPath(enriched[i].File, searchRoot)
+		lookupPath := resolveMatchLookupPath(enriched[i].File, base)
 		symbol := store.LookupAt(lookupPath, enriched[i].Line)
 		if symbol == nil {
 			continue
@@ -35,16 +39,24 @@ func enrichMatchesWithRoot(matches []GrepMatch, store SymbolLookup, searchRoot s
 	return enriched
 }
 
-func resolveMatchLookupPath(matchFile, searchRoot string) string {
-	cleanFile := filepath.Clean(matchFile)
-	if filepath.IsAbs(cleanFile) || searchRoot == "" {
-		return cleanFile
+// resolveSearchBase returns the directory component of searchRoot, using a
+// single os.Stat call to determine whether the root is itself a file. The
+// result is reused across all matches in a single enrichment pass.
+func resolveSearchBase(searchRoot string) string {
+	if searchRoot == "" {
+		return ""
 	}
-
 	base := filepath.Clean(searchRoot)
 	if info, err := os.Stat(base); err == nil && !info.IsDir() {
-		base = filepath.Dir(base)
+		return filepath.Dir(base)
 	}
+	return base
+}
 
+func resolveMatchLookupPath(matchFile, base string) string {
+	cleanFile := filepath.Clean(matchFile)
+	if filepath.IsAbs(cleanFile) || base == "" {
+		return cleanFile
+	}
 	return filepath.Clean(filepath.Join(base, cleanFile))
 }
