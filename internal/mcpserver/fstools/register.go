@@ -1,10 +1,15 @@
 package fstools
 
-import "github.com/mark3labs/mcp-go/server"
+import (
+	"time"
+
+	"github.com/mark3labs/mcp-go/server"
+)
 
 // FileCache is the optional read-file cache used by future fstool handlers.
 type FileCache interface {
-	Read(path string, from, lines int) (content string, totalLines int, ok bool)
+	Get(path string, from, lines int, mtime time.Time) (content string, totalLines int, ok bool)
+	Set(path string, from, lines int, mtime time.Time, content string, totalLines int)
 }
 
 // SymbolLookup is the optional symbol index used by future fstool handlers.
@@ -33,6 +38,8 @@ var registrars []registrarFn
 func addRegistrar(fn any) {
 	switch typed := fn.(type) {
 	case registrarFn:
+		registrars = append(registrars, typed)
+	case func(srv *server.MCPServer, sb *Sandbox, opts RegisterOptions):
 		registrars = append(registrars, typed)
 	case func(srv *server.MCPServer, sb *Sandbox, runner CmdRunner):
 		registrars = append(registrars, func(srv *server.MCPServer, sb *Sandbox, opts RegisterOptions) {

@@ -76,7 +76,7 @@ func readFileLines(path string, from, maxLines int) (content string, totalLines 
 
 // makeReadFileHandler returns a ToolHandlerFunc that reads a file from the
 // sandbox and returns its contents as numbered lines.
-func makeReadFileHandler(sb *Sandbox) server.ToolHandlerFunc {
+func makeReadFileHandler(sb *Sandbox, fileCache FileCache) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		rawPath, err := req.RequireString("path")
 		if err != nil {
@@ -98,6 +98,9 @@ func makeReadFileHandler(sb *Sandbox) server.ToolHandlerFunc {
 
 		from := req.GetInt("from", 1)
 		lines := req.GetInt("lines", DefaultReadLines)
+		if from < 1 {
+			from = 1
+		}
 		// Clamp lines to the same bounds readFileLines applies internally so
 		// that the header range matches the number of lines actually returned.
 		if lines <= 0 {
@@ -107,15 +110,22 @@ func makeReadFileHandler(sb *Sandbox) server.ToolHandlerFunc {
 			lines = MaxReadLines
 		}
 
-		body, total, err := readFileLines(validatedPath, from, lines)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("read %q: %v", validatedPath, err)), nil
+		mtime := info.ModTime()
+		body, total, hit := "", 0, false
+		if fileCache != nil {
+			body, total, hit = fileCache.Get(validatedPath, from, lines, mtime)
+		}
+		if !hit {
+			body, total, err = readFileLines(validatedPath, from, lines)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("read %q: %v", validatedPath, err)), nil
+			}
+			if fileCache != nil {
+				fileCache.Set(validatedPath, from, lines, mtime, body, total)
+			}
 		}
 
 		// Determine the actual window that was returned.
-		if from < 1 {
-			from = 1
-		}
 		end := from + lines - 1
 		if end > total {
 			end = total
@@ -131,10 +141,8 @@ func makeReadFileHandler(sb *Sandbox) server.ToolHandlerFunc {
 	}
 }
 
-// registerReadFile registers the read_file tool with the MCP server. The
-// runner parameter is accepted but ignored because read_file uses direct file
-// I/O rather than shelling out.
-func registerReadFile(srv *server.MCPServer, sb *Sandbox, _ CmdRunner) {
+// registerReadFile registers the read_file tool with the MCP server.
+func registerReadFile(srv *server.MCPServer, sb *Sandbox, opts RegisterOptions) {
 	tool := mcp.NewTool("read_file",
 		mcp.WithDescription("Read a file and return its contents as numbered lines. "+
 			"Use 'from' and 'lines' to read a specific range."),
@@ -152,5 +160,5 @@ func registerReadFile(srv *server.MCPServer, sb *Sandbox, _ CmdRunner) {
 			)),
 		),
 	)
-	srv.AddTool(tool, makeReadFileHandler(sb))
+	srv.AddTool(tool, makeReadFileHandler(sb, opts.FileCache))
 }
