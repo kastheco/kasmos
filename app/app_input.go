@@ -28,6 +28,12 @@ func (m *home) applyPendingSetStatus(picked string) (tea.Model, tea.Cmd) {
 		m.pendingSetStatusTask = ""
 		return m, m.handleError(err)
 	}
+	if !m.allowLocalTaskMutations() {
+		m.toastManager.Info("manual status overrides are daemon-managed here")
+		m.state = stateDefault
+		m.pendingSetStatusTask = ""
+		return m, tea.Batch(tea.RequestWindowSize, m.toastTickCmd())
+	}
 	if err := m.taskState.ForceSetLifecycle(m.pendingSetStatusTask, status, state); err != nil {
 		m.state = stateDefault
 		m.pendingSetStatusTask = ""

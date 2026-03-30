@@ -696,6 +696,10 @@ func (m *home) activeProject() string {
 	return filepath.Base(m.activeRepoPath)
 }
 
+func (m *home) allowLocalTaskMutations() bool {
+	return !repoManagedByDaemon(m.activeRepoPath)
+}
+
 // isUserInOverlay returns true when the user is actively interacting with
 // any modal overlay. Used to prevent async metadata-tick handlers from
 // clobbering the active overlay by showing a confirmation dialog.
@@ -2161,11 +2165,13 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		planFile := msg.planFile
 		planName := taskstate.DisplayName(planFile)
 
-		if err := m.fsm.Transition(planFile, taskfsm.ImplementFinished); err != nil {
-			log.WarningLog.Printf("wave push-complete: could not transition %q to reviewing: %v", planFile, err)
+		if m.allowLocalTaskMutations() {
+			if err := m.fsm.Transition(planFile, taskfsm.ImplementFinished); err != nil {
+				log.WarningLog.Printf("wave push-complete: could not transition %q to reviewing: %v", planFile, err)
+			}
+			m.loadTaskState()
+			m.updateSidebarTasks()
 		}
-		m.loadTaskState()
-		m.updateSidebarTasks()
 
 		var reviewerCmd tea.Cmd
 		if cmd := m.spawnReviewer(planFile); cmd != nil {
@@ -2179,8 +2185,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		planFile := msg.planFile
 		planName := taskstate.DisplayName(planFile)
 
-		if err := m.fsm.Transition(planFile, taskfsm.ImplementFinished); err != nil {
-			log.WarningLog.Printf("coder-complete: could not transition %q to reviewing: %v", planFile, err)
+		if m.allowLocalTaskMutations() {
+			if err := m.fsm.Transition(planFile, taskfsm.ImplementFinished); err != nil {
+				log.WarningLog.Printf("coder-complete: could not transition %q to reviewing: %v", planFile, err)
+			}
 		}
 
 		// Clear the push-prompt dedup flag — the plan is now in reviewing, so
@@ -2197,8 +2205,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		m.loadTaskState()
-		m.updateSidebarTasks()
+		if m.allowLocalTaskMutations() {
+			m.loadTaskState()
+			m.updateSidebarTasks()
+		}
 
 		var reviewerCmd tea.Cmd
 		if cmd := m.spawnReviewer(planFile); cmd != nil {
