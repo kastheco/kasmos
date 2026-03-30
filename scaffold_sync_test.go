@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
+	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
 )
 
 func TestNewScaffoldCmd_HasSyncSubcommand(t *testing.T) {
@@ -263,4 +265,76 @@ func TestScaffoldSync_WorktreesFlagSyncsSiblingWorktrees(t *testing.T) {
 	assert.FileExists(t, filepath.Join(worktreeA, "opencode.jsonc"))
 	assert.FileExists(t, filepath.Join(worktreeB, "opencode.jsonc"))
 	assert.Contains(t, buf.String(), "Syncing worktree scaffold")
+}
+
+func TestScaffoldSync_RefreshesSignalPromptCopies(t *testing.T) {
+	dir := t.TempDir()
+	agents := []harness.AgentConfig{
+		{Role: "planner", Harness: "claude", Model: "claude-opus-4-6", Enabled: true},
+		{Role: "planner", Harness: "opencode", Model: "anthropic/claude-opus-4-6", Enabled: true},
+		{Role: "reviewer", Harness: "claude", Model: "claude-opus-4-6", Enabled: true},
+	}
+
+	_, err := scaffold.ScaffoldAll(dir, agents, nil, false)
+	require.NoError(t, err)
+
+	targets := []struct {
+		path       string
+		sourcePath string
+		model      string
+	}{
+		{
+			path:       filepath.Join(dir, ".claude", "agents", "planner.md"),
+			sourcePath: filepath.Join("internal", "initcmd", "scaffold", "templates", "claude", "agents", "planner.md"),
+			model:      "claude-opus-4-6",
+		},
+		{
+			path:       filepath.Join(dir, ".opencode", "agents", "planner.md"),
+			sourcePath: filepath.Join("internal", "initcmd", "scaffold", "templates", "opencode", "agents", "planner.md"),
+		},
+		{
+			path:       filepath.Join(dir, ".agents", "skills", "kasmos-architect", "SKILL.md"),
+			sourcePath: filepath.Join("internal", "initcmd", "scaffold", "templates", "skills", "kasmos-architect", "SKILL.md"),
+		},
+		{
+			path:       filepath.Join(dir, ".agents", "skills", "kasmos-reviewer", "SKILL.md"),
+			sourcePath: filepath.Join("internal", "initcmd", "scaffold", "templates", "skills", "kasmos-reviewer", "SKILL.md"),
+		},
+	}
+
+	for _, target := range targets {
+		require.NoError(t, os.WriteFile(target.path, []byte("stale signal instructions\n"), 0o644))
+	}
+
+	var buf bytes.Buffer
+	err = syncScaffoldTarget(&buf, "Syncing scaffold", dir, agents)
+	require.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, ".claude/agents/planner.md")
+	assert.Contains(t, output, ".opencode/agents/planner.md")
+	assert.Contains(t, output, ".agents/skills/kasmos-architect/SKILL.md")
+	assert.Contains(t, output, ".agents/skills/kasmos-reviewer/SKILL.md")
+
+	for _, target := range targets {
+		expected, err := os.ReadFile(target.sourcePath)
+		require.NoError(t, err)
+
+		want := string(expected)
+		if target.model != "" {
+			want = strings.ReplaceAll(want, "{{MODEL}}", target.model)
+		}
+
+		got, err := os.ReadFile(target.path)
+		require.NoError(t, err)
+		assert.Equal(t, want, string(got), target.path)
+	}
+
+	reviewerSkill, err := os.ReadFile(filepath.Join(dir, ".agents", "skills", "kasmos-reviewer", "SKILL.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(reviewerSkill), "Do not write legacy `.kasmos/signals/review-*` files directly.")
+
+	architectSkill, err := os.ReadFile(filepath.Join(dir, ".agents", "skills", "kasmos-architect", "SKILL.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(architectSkill), "use MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"<plan-file>\") after the round-trip check succeeds.")
 }
