@@ -92,7 +92,7 @@ func TestCapturePane_PausedInstance(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.True(t, result.IsError)
-	assert.Contains(t, textResult(t, result), "paused")
+	assert.Contains(t, textResult(t, result), "cannot capture pane from a paused instance")
 }
 
 // TestCapturePane_TmuxFailure verifies that runner failures are surfaced as a

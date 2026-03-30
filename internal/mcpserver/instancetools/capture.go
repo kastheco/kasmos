@@ -32,7 +32,7 @@ func makeCapturePaneHandler(loadState StateLoader, runner CmdRunner) server.Tool
 			return mcp.NewToolResultError(fmt.Sprintf("capture_pane: %v", err)), nil
 		}
 
-		if err := validateAction(rec, "send"); err != nil {
+		if err := validateAction(rec, "capture"); err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("capture_pane: %v", err)), nil
 		}
 
