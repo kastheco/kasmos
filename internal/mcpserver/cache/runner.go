@@ -147,6 +147,8 @@ func (r *CachedRunner) invalidateForChangeSet(change ChangeSet) {
 
 	root := watcherRoot(r.watcher)
 	for path := range paths {
+		r.store.InvalidatePrefix("grep:" + path + ":")
+		r.store.InvalidatePrefix("fd:" + path + ":")
 		for _, dir := range ancestorDirs(filepath.Dir(path), root) {
 			r.store.InvalidatePrefix("grep:" + dir + ":")
 			r.store.InvalidatePrefix("fd:" + dir + ":")
