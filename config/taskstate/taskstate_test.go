@@ -51,6 +51,51 @@ func TestLoadMissing(t *testing.T) {
 	assert.Empty(t, ps.Plans)
 }
 
+func TestLoadFromEntries(t *testing.T) {
+	older := time.Date(2026, time.March, 1, 12, 0, 0, 0, time.UTC)
+	newer := older.Add(2 * time.Hour)
+	ps := LoadFromEntries("/tmp/unused", []taskstore.TaskEntry{
+		{
+			Filename:       "feature-a",
+			Status:         taskstore.StatusImplementing,
+			Description:    "feature a",
+			Branch:         "plan/feature-a",
+			Topic:          "alpha",
+			CreatedAt:      newer,
+			ReviewCycle:    2,
+			ExecutionState: taskstore.ExecutionState{Phase: "wave_running", ActiveAgentType: "coder", ActiveWave: 2},
+		},
+		{
+			Filename:    "feature-b",
+			Status:      taskstore.StatusReady,
+			Description: "feature b",
+			Topic:       "alpha",
+			CreatedAt:   older,
+		},
+		{
+			Filename:    "feature-c",
+			Status:      taskstore.StatusDone,
+			Description: "feature c",
+		},
+	})
+
+	require.NotNil(t, ps)
+	require.Len(t, ps.Plans, 3)
+	assert.Equal(t, StatusImplementing, ps.Plans["feature-a"].Status)
+	assert.Equal(t, taskstore.ExecutionState{Phase: "wave_running", ActiveAgentType: "coder", ActiveWave: 2}, ps.Plans["feature-a"].ExecutionState)
+	assert.Equal(t, 2, ps.Plans["feature-a"].ReviewCycle)
+
+	topics := ps.Topics()
+	require.Len(t, topics, 1)
+	assert.Equal(t, "alpha", topics[0].Name)
+	assert.Equal(t, older, topics[0].CreatedAt)
+
+	byTopic := ps.TasksByTopic("alpha")
+	require.Len(t, byTopic, 2)
+	assert.Equal(t, "feature-a", byTopic[0].Filename)
+	assert.Equal(t, "feature-b", byTopic[1].Filename)
+}
+
 func TestLoad_BackfillsGoalFromContent(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
 	content := "# Test\n\n**Goal:** ship planner metadata\n\n## Wave 1\n\n### Task 1: parse goal\n\nDo it.\n"

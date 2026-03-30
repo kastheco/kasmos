@@ -166,8 +166,8 @@ type TaskState struct {
 	Dir          string
 	Plans        map[string]TaskEntry
 	TopicEntries map[string]TopicEntry
-	store        taskstore.Store // always non-nil
-	project      string          // project name used with the store
+	store        taskstore.Store // nil for read-only snapshots loaded outside the task store
+	project      string          // project name used with the store when store-backed
 }
 
 type TaskInfo struct {
@@ -185,6 +185,55 @@ type TopicInfo struct {
 	CreatedAt time.Time
 }
 
+func taskEntryFromStoreEntry(entry taskstore.TaskEntry, goal string) TaskEntry {
+	return TaskEntry{
+		Status:               Status(entry.Status),
+		ExecutionState:       entry.ExecutionState,
+		Description:          entry.Description,
+		Branch:               entry.Branch,
+		Topic:                entry.Topic,
+		CreatedAt:            entry.CreatedAt,
+		Implemented:          entry.Implemented,
+		PlanningAt:           entry.PlanningAt,
+		ImplementingAt:       entry.ImplementingAt,
+		ReviewingAt:          entry.ReviewingAt,
+		DoneAt:               entry.DoneAt,
+		Goal:                 goal,
+		ClickUpTaskID:        entry.ClickUpTaskID,
+		ReviewCycle:          entry.ReviewCycle,
+		LatestReviewFeedback: entry.LatestReviewFeedback,
+	}
+}
+
+func setTopicEntry(topicEntries map[string]TopicEntry, topic string, createdAt time.Time) {
+	topic = strings.TrimSpace(topic)
+	if topic == "" {
+		return
+	}
+	existing, ok := topicEntries[topic]
+	if !ok || existing.CreatedAt.IsZero() || (!createdAt.IsZero() && createdAt.Before(existing.CreatedAt)) {
+		topicEntries[topic] = TopicEntry{CreatedAt: createdAt}
+	}
+}
+
+// LoadFromEntries creates a read-only TaskState snapshot from task-store-style
+// entries. Topic entries are synthesized from non-empty plan topics so grouped
+// sidebar rendering keeps working when metadata comes from the daemon API.
+func LoadFromEntries(dir string, entries []taskstore.TaskEntry) *TaskState {
+	ps := &TaskState{
+		Dir:          dir,
+		Plans:        make(map[string]TaskEntry, len(entries)),
+		TopicEntries: make(map[string]TopicEntry),
+	}
+
+	for _, entry := range entries {
+		ps.Plans[entry.Filename] = taskEntryFromStoreEntry(entry, entry.Goal)
+		setTopicEntry(ps.TopicEntries, entry.Topic, entry.CreatedAt)
+	}
+
+	return ps
+}
+
 // Load creates a TaskState backed by the given store. Plans and TopicEntries are
 // populated from the store. dir is retained for compatibility and auxiliary path
 // resolution, not for filename migration. The store is always required — there is
@@ -200,13 +249,9 @@ func Load(store taskstore.Store, project, dir string) (*TaskState, error) {
 		return nil, fmt.Errorf("task store: %w", err)
 	}
 
-	ps := &TaskState{
-		Dir:          dir,
-		Plans:        make(map[string]TaskEntry, len(plans)),
-		TopicEntries: make(map[string]TopicEntry, len(topics)),
-		store:        store,
-		project:      project,
-	}
+	ps := LoadFromEntries(dir, plans)
+	ps.store = store
+	ps.project = project
 
 	for _, e := range plans {
 		goal := e.Goal
@@ -217,26 +262,13 @@ func Load(store taskstore.Store, project, dir string) (*TaskState, error) {
 				_ = store.SetPlanGoal(project, e.Filename, goal)
 			}
 		}
-		ps.Plans[e.Filename] = TaskEntry{
-			Status:               Status(e.Status),
-			ExecutionState:       e.ExecutionState,
-			Description:          e.Description,
-			Branch:               e.Branch,
-			Topic:                e.Topic,
-			CreatedAt:            e.CreatedAt,
-			Implemented:          e.Implemented,
-			PlanningAt:           e.PlanningAt,
-			ImplementingAt:       e.ImplementingAt,
-			ReviewingAt:          e.ReviewingAt,
-			DoneAt:               e.DoneAt,
-			Goal:                 goal,
-			ClickUpTaskID:        e.ClickUpTaskID,
-			ReviewCycle:          e.ReviewCycle,
-			LatestReviewFeedback: e.LatestReviewFeedback,
-		}
+		ps.Plans[e.Filename] = taskEntryFromStoreEntry(e, goal)
 	}
 
 	for _, t := range topics {
+		if ps.TopicEntries == nil {
+			ps.TopicEntries = make(map[string]TopicEntry, len(topics))
+		}
 		ps.TopicEntries[t.Name] = TopicEntry{CreatedAt: t.CreatedAt}
 	}
 

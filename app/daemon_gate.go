@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	daemonpkg "github.com/kastheco/kasmos/daemon"
 	"github.com/kastheco/kasmos/daemon/api"
@@ -46,6 +47,31 @@ type daemonTaskStoreSwitchErrMsg struct{}
 
 var listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
 	return daemonpkg.NewSocketClient(resolvedDaemonSocketPath()).ListInstances(project)
+}
+
+var listDaemonTasks = func(project string) ([]api.TaskStatus, error) {
+	return daemonpkg.NewSocketClient(resolvedDaemonSocketPath()).ListTasks(project)
+}
+
+func daemonTaskEntries(statuses []api.TaskStatus) []taskstore.TaskEntry {
+	entries := make([]taskstore.TaskEntry, 0, len(statuses))
+	for _, status := range statuses {
+		entries = append(entries, taskstore.TaskEntry{
+			Filename:       status.Filename,
+			Status:         taskstore.Status(status.Status),
+			ExecutionState: status.ExecutionState,
+			Branch:         status.Branch,
+			PRURL:          status.PRURL,
+			ReviewCycle:    status.ReviewCycle,
+			Description:    status.Description,
+			Topic:          status.Topic,
+		})
+	}
+	return entries
+}
+
+func daemonTaskState(dir string, statuses []api.TaskStatus) *taskstate.TaskState {
+	return taskstate.LoadFromEntries(dir, daemonTaskEntries(statuses))
 }
 
 func canonicalRepoPath(repoPath string) string {

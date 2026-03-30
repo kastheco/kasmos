@@ -1005,6 +1005,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		tickCount := m.metadataTickCount // capture by value for goroutine
 
 		return m, func() tea.Msg {
+			daemonManagedRepo := repoManagedByDaemon(repoPath)
 			results := make([]instanceMetadata, 0, len(snapshots))
 			for _, inst := range snapshots {
 				if !inst.Started() || inst.Paused() {
@@ -1027,9 +1028,21 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Load plan state — moved here from the synchronous Update handler
 			// to avoid blocking the event loop every 500ms.
-			// Always reads from the store (embedded or remote) — no JSON fallback.
+			// Daemon-managed repos read task metadata from the daemon API; other
+			// repos continue to read from the configured task store.
 			var ps *taskstate.TaskState
-			if taskStateDir != "" {
+			var daemonTaskStateLoaded bool
+			if daemonManagedRepo {
+				if project != "" {
+					statuses, err := listDaemonTasks(project)
+					if err != nil {
+						log.WarningLog.Printf("daemon task sync: list tasks for %q: %v", project, err)
+					} else {
+						ps = daemonTaskState(taskStateDir, statuses)
+						daemonTaskStateLoaded = true
+					}
+				}
+			} else if taskStateDir != "" {
 				var loaded *taskstate.TaskState
 				var err error
 				loaded, err = taskstate.Load(store, project, taskStateDir)
@@ -1040,7 +1053,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-			daemonManagedRepo := repoManagedByDaemon(repoPath)
 			daemonInstances := make([]*session.Instance, 0)
 			if daemonManagedRepo && project != "" {
 				knownTitles := make(map[string]struct{}, len(snapshots))
@@ -1156,7 +1168,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			time.Sleep(200 * time.Millisecond)
-			return metadataResultMsg{Results: results, PlanState: ps, Signals: signals, TaskSignals: taskSignals, WaveSignals: waveSignals, ElaborationSignals: elaborationSignals, DaemonManagedRepo: daemonManagedRepo, DaemonInstances: daemonInstances, TmuxSessionCount: tmuxCount, PRStateUpdates: prStateUpdates}
+			return metadataResultMsg{Results: results, PlanState: ps, DaemonTaskState: daemonTaskStateLoaded, Signals: signals, TaskSignals: taskSignals, WaveSignals: waveSignals, ElaborationSignals: elaborationSignals, DaemonManagedRepo: daemonManagedRepo, DaemonInstances: daemonInstances, TmuxSessionCount: tmuxCount, PRStateUpdates: prStateUpdates}
 		}
 	case metadataResultMsg:
 		// Process agent sentinel signals — feed to FSM and consume sentinel files.
@@ -1704,7 +1716,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Apply plan state loaded in the goroutine (replaces synchronous loadTaskState call).
 		// Skip when signals were processed: loadTaskState() above already gave us fresh state.
 		// msg.PlanState was loaded before signals were scanned, so it would be stale.
-		if msg.PlanState != nil && (msg.DaemonManagedRepo || len(msg.Signals) == 0) {
+		if msg.PlanState != nil && (msg.DaemonTaskState || len(msg.Signals) == 0) {
 			m.taskState = msg.PlanState
 		}
 		for _, inst := range msg.DaemonInstances {
@@ -2772,6 +2784,7 @@ type instanceMetadata struct {
 type metadataResultMsg struct {
 	Results            []instanceMetadata
 	PlanState          *taskstate.TaskState        // pre-loaded plan state (nil if dir not set)
+	DaemonTaskState    bool                        // true when PlanState came from the daemon task-list API
 	Signals            []taskfsm.Signal            // agent sentinel files found this tick
 	TaskSignals        []taskfsm.TaskSignal        // task completion sentinel files found this tick
 	WaveSignals        []taskfsm.WaveSignal        // implement-wave-N signal files found this tick
