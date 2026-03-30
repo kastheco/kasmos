@@ -126,6 +126,35 @@ func (a *daemonStateAdapter) ListPlans(project string) ([]taskstore.TaskEntry, e
 	return store.List(project)
 }
 
+func taskStatusFromEntry(entry taskstore.TaskEntry) api.TaskStatus {
+	return api.TaskStatus{
+		Filename:       entry.Filename,
+		Status:         string(entry.Status),
+		ExecutionState: entry.ExecutionState,
+		Branch:         entry.Branch,
+		PRURL:          entry.PRURL,
+		ReviewCycle:    entry.ReviewCycle,
+		Description:    entry.Description,
+		Topic:          entry.Topic,
+	}
+}
+
+func (a *daemonStateAdapter) ListTasks(project string) ([]api.TaskStatus, error) {
+	store, err := a.TaskStoreForProject(project)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := store.List(project)
+	if err != nil {
+		return nil, err
+	}
+	tasks := make([]api.TaskStatus, 0, len(entries))
+	for _, entry := range entries {
+		tasks = append(tasks, taskStatusFromEntry(entry))
+	}
+	return tasks, nil
+}
+
 func (a *daemonStateAdapter) TaskStoreForProject(project string) (taskstore.Store, error) {
 	entries := a.d.repos.List()
 	for _, e := range entries {

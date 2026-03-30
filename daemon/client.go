@@ -65,6 +65,16 @@ func (c *SocketClient) ListInstances(project string) ([]api.InstanceStatus, erro
 	return instances, nil
 }
 
+// ListTasks queries GET /v1/repos/{project}/tasks and returns the lightweight
+// task metadata for that project.
+func (c *SocketClient) ListTasks(project string) ([]api.TaskStatus, error) {
+	var tasks []api.TaskStatus
+	if err := c.get("/v1/repos/"+project+"/tasks", &tasks); err != nil {
+		return nil, err
+	}
+	return tasks, nil
+}
+
 // AddRepo sends POST /v1/repos to register a new repository path.
 func (c *SocketClient) AddRepo(path string) error {
 	body := struct {

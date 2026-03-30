@@ -22,6 +22,7 @@ type startPlanStub struct {
 }
 
 func (s *startPlanStub) ListPlans(_ string) ([]taskstore.TaskEntry, error) { return nil, nil }
+func (s *startPlanStub) ListTasks(_ string) ([]TaskStatus, error)          { return nil, nil }
 func (s *startPlanStub) ListInstances(_ string) []InstanceStatus           { return nil }
 func (s *startPlanStub) EventStream() <-chan Event                         { return make(chan Event) }
 func (s *startPlanStub) StartPlan(project, filename, prompt, program string) error {
@@ -67,6 +68,40 @@ func TestHandler_ListRepos(t *testing.T) {
 	assert.Len(t, repos, 2)
 }
 
+func TestHandler_ListTasksReturnsEmptyArray(t *testing.T) {
+	state := &DaemonState{Running: true}
+	h := NewHandler(state)
+
+	req := httptest.NewRequest("GET", "/v1/repos/test/tasks", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.JSONEq(t, `[]`, w.Body.String())
+}
+
+func TestHandler_ListTasksReturnsProviderEntries(t *testing.T) {
+	state := &taskListStub{tasks: []TaskStatus{{
+		Filename:    "feature.md",
+		Status:      "implementing",
+		Branch:      "plan/feature",
+		ReviewCycle: 2,
+		Description: "ship feature",
+		Topic:       "core",
+	}}}
+	h := NewHandler(state)
+
+	req := httptest.NewRequest("GET", "/v1/repos/test/tasks", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var tasks []TaskStatus
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&tasks))
+	require.Len(t, tasks, 1)
+	assert.Equal(t, state.tasks, tasks)
+}
+
 func TestHandler_StartPlan(t *testing.T) {
 	state := &startPlanStub{}
 	h := NewHandler(state)
@@ -81,4 +116,13 @@ func TestHandler_StartPlan(t *testing.T) {
 	assert.Equal(t, "api-response-logging", state.filename)
 	assert.Equal(t, "plan prompt", state.prompt)
 	assert.Equal(t, "opencode --model x", state.program)
+}
+
+type taskListStub struct {
+	DaemonState
+	tasks []TaskStatus
+}
+
+func (s *taskListStub) ListTasks(_ string) ([]TaskStatus, error) {
+	return s.tasks, nil
 }

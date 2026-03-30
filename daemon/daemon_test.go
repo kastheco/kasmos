@@ -120,6 +120,44 @@ func TestDaemon_AddRepo(t *testing.T) {
 	assert.Len(t, repos, 1)
 }
 
+func TestDaemonStateAdapter_ListTasksMapsEntries(t *testing.T) {
+	const project = "proj"
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:    "feature.md",
+		Status:      taskstore.StatusReviewing,
+		Description: "ship feature",
+		Branch:      "plan/feature",
+		Topic:       "core",
+		ReviewCycle: 3,
+		PRURL:       "https://example.com/pr/1",
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseReviewing),
+			ActiveAgentType: session.AgentTypeReviewer,
+		},
+	}))
+
+	adapter := &daemonStateAdapter{d: &Daemon{repos: NewRepoManager()}}
+	adapter.d.repos.repos = []RepoEntry{{Project: project, Store: store}}
+
+	tasks, err := adapter.ListTasks(project)
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	assert.Equal(t, []api.TaskStatus{{
+		Filename:    "feature.md",
+		Status:      string(taskstore.StatusReviewing),
+		Description: "ship feature",
+		Branch:      "plan/feature",
+		Topic:       "core",
+		ReviewCycle: 3,
+		PRURL:       "https://example.com/pr/1",
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseReviewing),
+			ActiveAgentType: session.AgentTypeReviewer,
+		},
+	}}, tasks)
+}
+
 func TestDaemon_GracefulShutdown_DrainsAgents(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &DaemonConfig{
