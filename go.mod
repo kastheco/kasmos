@@ -14,6 +14,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/charmbracelet/x/vt v0.0.0-20260302105528-e9b285c73169
 	github.com/creack/pty v1.1.24
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/getsentry/sentry-go v0.43.0
 	github.com/go-git/go-git/v5 v5.14.0
 	github.com/lrstanley/bubblezone/v2 v2.0.0
