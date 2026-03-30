@@ -7,6 +7,7 @@ import (
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/mcpserver"
+	"github.com/kastheco/kasmos/internal/mcpserver/cache"
 	"github.com/kastheco/kasmos/internal/mcpserver/fstools"
 	"github.com/kastheco/kasmos/internal/mcpserver/gittools"
 	"github.com/kastheco/kasmos/internal/mcpserver/instancetools"
@@ -50,6 +51,15 @@ func NewMCPCmd() *cobra.Command {
 	return cmd
 }
 
+type closeFunc func() error
+
+func (f closeFunc) Close() error {
+	if f == nil {
+		return nil
+	}
+	return f()
+}
+
 func newConfiguredMCPServer(store taskstore.Store, gw taskstore.SignalGateway) (*mcpserver.Server, error) {
 	mcpSrv := mcpserver.NewServer(MCPVersion, store, gw)
 	cwd, err := os.Getwd()
@@ -62,9 +72,19 @@ func newConfiguredMCPServer(store taskstore.Store, gw taskstore.SignalGateway) (
 		repoRoot = root
 		allowedDirs = append(allowedDirs, root)
 	}
+	cacheStore, err := cache.NewStore(0)
+	if err != nil {
+		return nil, fmt.Errorf("create mcp cache store: %w", err)
+	}
+	watcher := cache.NewWatcher(repoRoot)
+	runner := cache.NewCachedRunner(&fstools.ExecRunner{}, cacheStore, watcher)
+	mcpSrv.AddCloser(runner)
+	mcpSrv.AddCloser(closeFunc(watcher.Stop))
+	mcpSrv.AddCloser(cacheStore)
+
 	project := resolveTaskProject(repoRoot)
-	fstools.RegisterTools(mcpSrv.MCPServer(), allowedDirs)
-	gittools.RegisterTools(mcpSrv.MCPServer(), allowedDirs)
+	fstools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, fstools.RegisterOptions{Runner: runner})
+	gittools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, runner)
 	tasktools.RegisterTools(mcpSrv.MCPServer(), project, mcpSrv.Store())
 	signaltools.RegisterTools(mcpSrv.MCPServer(), project, mcpSrv.Gateway())
 	instancetools.RegisterTools(
