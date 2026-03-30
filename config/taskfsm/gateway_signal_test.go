@@ -8,16 +8,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCanonicalGatewaySignalType(t *testing.T) {
+func TestCanonicalGatewaySignalType_CoversCanonicalAndAliases(t *testing.T) {
 	tests := []struct {
 		name string
 		raw  string
 		want string
 	}{
-		{name: "hyphenated planner", raw: "planner-finished", want: "planner_finished"},
-		{name: "review changes alias", raw: "review_changes", want: "review_changes_requested"},
-		{name: "architect canonical", raw: "architect_finished", want: "elaborator_finished"},
-		{name: "architect wire alias", raw: "elaborator-finished", want: "elaborator_finished"},
+		{name: "planner canonical underscore", raw: "planner_finished", want: "planner_finished"},
+		{name: "planner hyphen alias", raw: "planner-finished", want: "planner_finished"},
+		{name: "implement canonical underscore", raw: "implement_finished", want: "implement_finished"},
+		{name: "implement hyphen alias", raw: "implement-finished", want: "implement_finished"},
+		{name: "review approved canonical underscore", raw: "review_approved", want: "review_approved"},
+		{name: "review approved hyphen alias", raw: "review-approved", want: "review_approved"},
+		{name: "review changes requested canonical underscore", raw: "review_changes_requested", want: "review_changes_requested"},
+		{name: "review changes requested hyphen alias", raw: "review-changes-requested", want: "review_changes_requested"},
+		{name: "review changes underscore alias", raw: "review_changes", want: "review_changes_requested"},
+		{name: "review changes hyphen alias", raw: "review-changes", want: "review_changes_requested"},
+		{name: "implement task finished canonical underscore", raw: "implement_task_finished", want: "implement_task_finished"},
+		{name: "implement task finished hyphen alias", raw: "implement-task-finished", want: "implement_task_finished"},
+		{name: "implement wave canonical underscore", raw: "implement_wave", want: "implement_wave"},
+		{name: "implement wave hyphen alias", raw: "implement-wave", want: "implement_wave"},
+		{name: "elaborator canonical wire name", raw: "elaborator_finished", want: "elaborator_finished"},
+		{name: "elaborator hyphen wire alias", raw: "elaborator-finished", want: "elaborator_finished"},
+		{name: "architect internal alias", raw: "architect_finished", want: "elaborator_finished"},
+		{name: "architect hyphen alias", raw: "architect-finished", want: "elaborator_finished"},
 	}
 
 	for _, tt := range tests {
@@ -27,6 +41,9 @@ func TestCanonicalGatewaySignalType(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+
+	_, err := CanonicalGatewaySignalType("unknown_signal")
+	assert.Error(t, err)
 }
 
 func TestGatewaySignalTypeForEvent(t *testing.T) {
