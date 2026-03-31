@@ -1039,6 +1039,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						log.WarningLog.Printf("daemon task sync: list tasks for %q: %v", project, err)
 					} else {
 						ps = daemonTaskState(taskStateDir, statuses)
+						if store != nil {
+							ps.AttachStore(store, project)
+						}
 						daemonTaskStateLoaded = true
 					}
 				}

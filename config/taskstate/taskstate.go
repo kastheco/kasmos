@@ -176,6 +176,15 @@ func (ps *TaskState) HasStore() bool {
 	return ps.store != nil
 }
 
+// AttachStore binds a persistent store and project name to a TaskState that was
+// created without one (e.g. daemon-synced snapshots via LoadFromEntries). This
+// enables write operations and store-backed reads (subtasks, content) that would
+// otherwise panic on a nil store.
+func (ps *TaskState) AttachStore(store taskstore.Store, project string) {
+	ps.store = store
+	ps.project = project
+}
+
 var errNoStore = fmt.Errorf("task state has no backing store (read-only snapshot)")
 
 func (ps *TaskState) requireStore() error {
@@ -528,6 +537,9 @@ func (ps *TaskState) setStatus(filename string, status Status) error {
 // The plan entry is created with StatusReady, and the content is persisted via store.SetContent.
 // Returns an error if the plan already exists.
 func (ps *TaskState) CreateWithContent(filename, description, branch, topic string, createdAt time.Time, content string) error {
+	if err := ps.requireStore(); err != nil {
+		return err
+	}
 	if err := ps.Create(filename, description, branch, topic, createdAt); err != nil {
 		return err
 	}
@@ -539,11 +551,17 @@ func (ps *TaskState) CreateWithContent(filename, description, branch, topic stri
 
 // GetContent retrieves the markdown content for the given plan filename from the store.
 func (ps *TaskState) GetContent(filename string) (string, error) {
+	if err := ps.requireStore(); err != nil {
+		return "", err
+	}
 	return ps.store.GetContent(ps.project, filename)
 }
 
 // SetContent updates the markdown content for the given plan filename in the store.
 func (ps *TaskState) SetContent(filename, content string) error {
+	if err := ps.requireStore(); err != nil {
+		return err
+	}
 	return ps.store.SetContent(ps.project, filename, content)
 }
 
@@ -564,6 +582,9 @@ func (w *IngestWarning) Unwrap() error { return w.err }
 // structure don't break automation. Store write failures after SetContent
 // remain hard errors.
 func (ps *TaskState) IngestContent(filename, content string) error {
+	if err := ps.requireStore(); err != nil {
+		return err
+	}
 	if _, ok := ps.Plans[filename]; !ok {
 		return fmt.Errorf("plan not found: %s", filename)
 	}
@@ -606,11 +627,17 @@ func (ps *TaskState) IngestContent(filename, content string) error {
 
 // GetSubtasks returns persisted subtasks for the given plan.
 func (ps *TaskState) GetSubtasks(filename string) ([]taskstore.SubtaskEntry, error) {
+	if err := ps.requireStore(); err != nil {
+		return nil, err
+	}
 	return ps.store.GetSubtasks(ps.project, filename)
 }
 
 // UpdateSubtaskStatus updates one persisted subtask status.
 func (ps *TaskState) UpdateSubtaskStatus(filename string, taskNumber int, status taskstore.SubtaskStatus) error {
+	if err := ps.requireStore(); err != nil {
+		return err
+	}
 	return ps.store.UpdateSubtaskStatus(ps.project, filename, taskNumber, status)
 }
 
@@ -693,6 +720,9 @@ func (ps *TaskState) Entry(filename string) (TaskEntry, bool) {
 // If topic is non-empty and does not yet exist in TopicEntries, it is auto-created.
 // Pass an empty string to remove the plan from any topic.
 func (ps *TaskState) SetTopic(filename, topic string) error {
+	if err := ps.requireStore(); err != nil {
+		return err
+	}
 	entry, ok := ps.Plans[filename]
 	if !ok {
 		return fmt.Errorf("plan not found: %s", filename)
@@ -725,6 +755,9 @@ func (ps *TaskState) SetTopic(filename, topic string) error {
 
 // SetBranch assigns a branch name to an existing plan entry and persists to the store.
 func (ps *TaskState) SetBranch(filename, branch string) error {
+	if err := ps.requireStore(); err != nil {
+		return err
+	}
 	entry, ok := ps.Plans[filename]
 	if !ok {
 		return fmt.Errorf("plan not found: %s", filename)
@@ -754,6 +787,9 @@ func DisplayName(filename string) string {
 // newName should be a human-readable name (e.g., "auth refactor") which will be
 // slugified automatically. Returns the new filename on success.
 func (ps *TaskState) Rename(oldFilename, newName string) (string, error) {
+	if err := ps.requireStore(); err != nil {
+		return "", err
+	}
 	entry, ok := ps.Plans[oldFilename]
 	if !ok {
 		return "", fmt.Errorf("plan not found: %s", oldFilename)
@@ -873,6 +909,9 @@ func (ps *TaskState) ClearExecutionState(filename string) error {
 // SetClickUpTaskID assigns a ClickUp task ID to an existing plan entry and
 // persists to the store.
 func (ps *TaskState) SetClickUpTaskID(filename, taskID string) error {
+	if err := ps.requireStore(); err != nil {
+		return err
+	}
 	entry, ok := ps.Plans[filename]
 	if !ok {
 		return fmt.Errorf("plan not found: %s", filename)
@@ -899,6 +938,9 @@ func (ps *TaskState) ReviewCycle(filename string) (int, error) {
 // and persists to the store. Updates the in-memory state to reflect the new value.
 // Returns an error if the plan is not found.
 func (ps *TaskState) IncrementReviewCycle(filename string) error {
+	if err := ps.requireStore(); err != nil {
+		return err
+	}
 	entry, ok := ps.Plans[filename]
 	if !ok {
 		return fmt.Errorf("plan not found: %s", filename)
@@ -914,6 +956,9 @@ func (ps *TaskState) IncrementReviewCycle(filename string) error {
 // SetLatestReviewFeedback stores the latest structured reviewer feedback for a plan
 // so re-review and manual fixer restarts can recover the previous round context.
 func (ps *TaskState) SetLatestReviewFeedback(filename, feedback string) error {
+	if err := ps.requireStore(); err != nil {
+		return err
+	}
 	entry, ok := ps.Plans[filename]
 	if !ok {
 		return fmt.Errorf("plan not found: %s", filename)
