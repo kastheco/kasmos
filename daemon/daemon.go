@@ -136,14 +136,25 @@ func (a *daemonStateAdapter) ListPlans(project string) ([]taskstore.TaskEntry, e
 
 func taskStatusFromEntry(entry taskstore.TaskEntry) api.TaskStatus {
 	return api.TaskStatus{
-		Filename:       entry.Filename,
-		Status:         string(entry.Status),
-		ExecutionState: entry.ExecutionState,
-		Branch:         entry.Branch,
-		PRURL:          entry.PRURL,
-		ReviewCycle:    entry.ReviewCycle,
-		Description:    entry.Description,
-		Topic:          entry.Topic,
+		Filename:             entry.Filename,
+		Status:               string(entry.Status),
+		ExecutionState:       entry.ExecutionState,
+		Branch:               entry.Branch,
+		PRURL:                entry.PRURL,
+		ReviewCycle:          entry.ReviewCycle,
+		Description:          entry.Description,
+		Topic:                entry.Topic,
+		CreatedAt:            entry.CreatedAt,
+		Implemented:          entry.Implemented,
+		PlanningAt:           entry.PlanningAt,
+		ImplementingAt:       entry.ImplementingAt,
+		ReviewingAt:          entry.ReviewingAt,
+		DoneAt:               entry.DoneAt,
+		Goal:                 entry.Goal,
+		ClickUpTaskID:        entry.ClickUpTaskID,
+		LatestReviewFeedback: entry.LatestReviewFeedback,
+		PRReviewDecision:     entry.PRReviewDecision,
+		PRCheckStatus:        entry.PRCheckStatus,
 	}
 }
 

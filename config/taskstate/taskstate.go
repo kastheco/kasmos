@@ -156,6 +156,8 @@ type TaskEntry struct {
 	ClickUpTaskID        string                   `json:"clickup_task_id,omitempty"`
 	ReviewCycle          int                      `json:"review_cycle,omitempty"`
 	LatestReviewFeedback string                   `json:"latest_review_feedback,omitempty"`
+	PRReviewDecision     string                   `json:"pr_review_decision,omitempty"`
+	PRCheckStatus        string                   `json:"pr_check_status,omitempty"`
 }
 
 type TopicEntry struct {
@@ -217,6 +219,8 @@ func taskEntryFromStoreEntry(entry taskstore.TaskEntry, goal string) TaskEntry {
 		ClickUpTaskID:        entry.ClickUpTaskID,
 		ReviewCycle:          entry.ReviewCycle,
 		LatestReviewFeedback: entry.LatestReviewFeedback,
+		PRReviewDecision:     entry.PRReviewDecision,
+		PRCheckStatus:        entry.PRCheckStatus,
 	}
 }
 
@@ -838,6 +842,8 @@ func (ps *TaskState) toTaskstoreEntry(filename string, e TaskEntry) taskstore.Ta
 		ClickUpTaskID:        e.ClickUpTaskID,
 		ReviewCycle:          e.ReviewCycle,
 		LatestReviewFeedback: e.LatestReviewFeedback,
+		PRReviewDecision:     e.PRReviewDecision,
+		PRCheckStatus:        e.PRCheckStatus,
 	}
 }
 

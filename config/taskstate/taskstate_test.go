@@ -54,16 +54,30 @@ func TestLoadMissing(t *testing.T) {
 func TestLoadFromEntries(t *testing.T) {
 	older := time.Date(2026, time.March, 1, 12, 0, 0, 0, time.UTC)
 	newer := older.Add(2 * time.Hour)
+	planningAt := newer.Add(5 * time.Minute)
+	implementingAt := newer.Add(10 * time.Minute)
+	reviewingAt := newer.Add(15 * time.Minute)
+	doneAt := newer.Add(20 * time.Minute)
 	ps := LoadFromEntries("/tmp/unused", []taskstore.TaskEntry{
 		{
-			Filename:       "feature-a",
-			Status:         taskstore.StatusImplementing,
-			Description:    "feature a",
-			Branch:         "plan/feature-a",
-			Topic:          "alpha",
-			CreatedAt:      newer,
-			ReviewCycle:    2,
-			ExecutionState: taskstore.ExecutionState{Phase: "wave_running", ActiveAgentType: "coder", ActiveWave: 2},
+			Filename:             "feature-a",
+			Status:               taskstore.StatusImplementing,
+			Description:          "feature a",
+			Branch:               "plan/feature-a",
+			Topic:                "alpha",
+			CreatedAt:            newer,
+			Implemented:          "yes",
+			PlanningAt:           planningAt,
+			ImplementingAt:       implementingAt,
+			ReviewingAt:          reviewingAt,
+			DoneAt:               doneAt,
+			Goal:                 "keep daemon snapshots authoritative",
+			ClickUpTaskID:        "CU-123",
+			ReviewCycle:          2,
+			LatestReviewFeedback: "wave metadata drifted in the sidebar",
+			PRReviewDecision:     "CHANGES_REQUESTED",
+			PRCheckStatus:        "FAILURE",
+			ExecutionState:       taskstore.ExecutionState{Phase: "wave_running", ActiveAgentType: "coder", ActiveWave: 2},
 		},
 		{
 			Filename:    "feature-b",
@@ -83,7 +97,18 @@ func TestLoadFromEntries(t *testing.T) {
 	require.Len(t, ps.Plans, 3)
 	assert.Equal(t, StatusImplementing, ps.Plans["feature-a"].Status)
 	assert.Equal(t, taskstore.ExecutionState{Phase: "wave_running", ActiveAgentType: "coder", ActiveWave: 2}, ps.Plans["feature-a"].ExecutionState)
+	assert.Equal(t, newer, ps.Plans["feature-a"].CreatedAt)
+	assert.Equal(t, "yes", ps.Plans["feature-a"].Implemented)
+	assert.Equal(t, planningAt, ps.Plans["feature-a"].PlanningAt)
+	assert.Equal(t, implementingAt, ps.Plans["feature-a"].ImplementingAt)
+	assert.Equal(t, reviewingAt, ps.Plans["feature-a"].ReviewingAt)
+	assert.Equal(t, doneAt, ps.Plans["feature-a"].DoneAt)
+	assert.Equal(t, "keep daemon snapshots authoritative", ps.Plans["feature-a"].Goal)
+	assert.Equal(t, "CU-123", ps.Plans["feature-a"].ClickUpTaskID)
 	assert.Equal(t, 2, ps.Plans["feature-a"].ReviewCycle)
+	assert.Equal(t, "wave metadata drifted in the sidebar", ps.Plans["feature-a"].LatestReviewFeedback)
+	assert.Equal(t, "CHANGES_REQUESTED", ps.Plans["feature-a"].PRReviewDecision)
+	assert.Equal(t, "FAILURE", ps.Plans["feature-a"].PRCheckStatus)
 
 	topics := ps.Topics()
 	require.Len(t, topics, 1)

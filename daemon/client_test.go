@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
@@ -15,11 +16,16 @@ import (
 
 func TestSocketClient_ListTasks(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
+		createdAt := time.Date(2026, time.March, 30, 12, 0, 0, 0, time.UTC)
+		planningAt := createdAt.Add(5 * time.Minute)
+		implementingAt := createdAt.Add(10 * time.Minute)
+		reviewingAt := createdAt.Add(15 * time.Minute)
+		doneAt := createdAt.Add(20 * time.Minute)
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Equal(t, http.MethodGet, r.Method)
 			assert.Equal(t, "/v1/repos/cms/tasks", r.URL.Path)
 			w.Header().Set("Content-Type", "application/json")
-			_, err := w.Write([]byte(`[{"filename":"verify-every-fsm-transition","status":"reviewing","execution_state":{"execution_phase":"review","active_agent_type":"reviewer","active_wave":1},"branch":"task/verify-every-fsm-transition","pr_url":"https://github.com/kastheco/kasmos/pull/321","review_cycle":3,"description":"add daemon task-list API tests"}]`))
+			_, err := w.Write([]byte(`[{"filename":"verify-every-fsm-transition","status":"reviewing","execution_state":{"execution_phase":"review","active_agent_type":"reviewer","active_wave":1},"branch":"task/verify-every-fsm-transition","pr_url":"https://github.com/kastheco/kasmos/pull/321","review_cycle":3,"description":"add daemon task-list API tests","topic":"core","created_at":"2026-03-30T12:00:00Z","implemented":"yes","planning_at":"2026-03-30T12:05:00Z","implementing_at":"2026-03-30T12:10:00Z","reviewing_at":"2026-03-30T12:15:00Z","done_at":"2026-03-30T12:20:00Z","goal":"keep daemon snapshots authoritative","clickup_task_id":"CU-123","latest_review_feedback":"wave metadata drifted in the sidebar","pr_review_decision":"APPROVED","pr_check_status":"SUCCESS"}]`))
 			require.NoError(t, err)
 		}))
 		defer srv.Close()
@@ -30,12 +36,24 @@ func TestSocketClient_ListTasks(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, tasks, 1)
 		assert.Equal(t, []api.TaskStatus{{
-			Filename:    "verify-every-fsm-transition",
-			Status:      "reviewing",
-			Branch:      "task/verify-every-fsm-transition",
-			PRURL:       "https://github.com/kastheco/kasmos/pull/321",
-			ReviewCycle: 3,
-			Description: "add daemon task-list API tests",
+			Filename:             "verify-every-fsm-transition",
+			Status:               "reviewing",
+			Branch:               "task/verify-every-fsm-transition",
+			PRURL:                "https://github.com/kastheco/kasmos/pull/321",
+			ReviewCycle:          3,
+			Description:          "add daemon task-list API tests",
+			Topic:                "core",
+			CreatedAt:            createdAt,
+			Implemented:          "yes",
+			PlanningAt:           planningAt,
+			ImplementingAt:       implementingAt,
+			ReviewingAt:          reviewingAt,
+			DoneAt:               doneAt,
+			Goal:                 "keep daemon snapshots authoritative",
+			ClickUpTaskID:        "CU-123",
+			LatestReviewFeedback: "wave metadata drifted in the sidebar",
+			PRReviewDecision:     "APPROVED",
+			PRCheckStatus:        "SUCCESS",
 			ExecutionState: taskstore.ExecutionState{
 				Phase:           "review",
 				ActiveAgentType: "reviewer",

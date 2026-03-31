@@ -123,14 +123,30 @@ func TestDaemon_AddRepo(t *testing.T) {
 func TestDaemonStateAdapter_ListTasksMapsEntries(t *testing.T) {
 	const project = "proj"
 	store := taskstore.NewTestStore(t)
+	createdAt := time.Date(2026, time.March, 30, 12, 0, 0, 0, time.UTC)
+	planningAt := createdAt.Add(5 * time.Minute)
+	implementingAt := createdAt.Add(10 * time.Minute)
+	reviewingAt := createdAt.Add(15 * time.Minute)
+	doneAt := createdAt.Add(20 * time.Minute)
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{
-		Filename:    "feature.md",
-		Status:      taskstore.StatusReviewing,
-		Description: "ship feature",
-		Branch:      "plan/feature",
-		Topic:       "core",
-		ReviewCycle: 3,
-		PRURL:       "https://example.com/pr/1",
+		Filename:             "feature.md",
+		Status:               taskstore.StatusReviewing,
+		Description:          "ship feature",
+		Branch:               "plan/feature",
+		Topic:                "core",
+		CreatedAt:            createdAt,
+		Implemented:          "yes",
+		PlanningAt:           planningAt,
+		ImplementingAt:       implementingAt,
+		ReviewingAt:          reviewingAt,
+		DoneAt:               doneAt,
+		Goal:                 "keep daemon snapshots authoritative",
+		ClickUpTaskID:        "CU-123",
+		ReviewCycle:          3,
+		LatestReviewFeedback: "wave metadata drifted in the sidebar",
+		PRURL:                "https://example.com/pr/1",
+		PRReviewDecision:     "APPROVED",
+		PRCheckStatus:        "SUCCESS",
 		ExecutionState: taskstore.ExecutionState{
 			Phase:           string(taskfsm.ExecutionPhaseReviewing),
 			ActiveAgentType: session.AgentTypeReviewer,
@@ -144,13 +160,24 @@ func TestDaemonStateAdapter_ListTasksMapsEntries(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, tasks, 1)
 	assert.Equal(t, []api.TaskStatus{{
-		Filename:    "feature.md",
-		Status:      string(taskstore.StatusReviewing),
-		Description: "ship feature",
-		Branch:      "plan/feature",
-		Topic:       "core",
-		ReviewCycle: 3,
-		PRURL:       "https://example.com/pr/1",
+		Filename:             "feature.md",
+		Status:               string(taskstore.StatusReviewing),
+		Description:          "ship feature",
+		Branch:               "plan/feature",
+		Topic:                "core",
+		CreatedAt:            createdAt,
+		Implemented:          "yes",
+		PlanningAt:           planningAt,
+		ImplementingAt:       implementingAt,
+		ReviewingAt:          reviewingAt,
+		DoneAt:               doneAt,
+		Goal:                 "keep daemon snapshots authoritative",
+		ClickUpTaskID:        "CU-123",
+		ReviewCycle:          3,
+		LatestReviewFeedback: "wave metadata drifted in the sidebar",
+		PRURL:                "https://example.com/pr/1",
+		PRReviewDecision:     "APPROVED",
+		PRCheckStatus:        "SUCCESS",
 		ExecutionState: taskstore.ExecutionState{
 			Phase:           string(taskfsm.ExecutionPhaseReviewing),
 			ActiveAgentType: session.AgentTypeReviewer,
