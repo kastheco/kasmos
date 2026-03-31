@@ -174,7 +174,7 @@ When self-fixing, commit with `fix: <description> (reviewer self-fix)` before si
 - Debugging work (flaky test, subtle race condition, unclear root cause)
 - Anything requiring more than ~10 lines of new code
 
-When kicking to coder, emit a `review-changes` signal (see Signal Format). Be specific —
+When kicking to coder, write a `review-changes` signal (see Signal Format). Be specific —
 the coder should not have to guess what you want.
 
 ## All Tiers Are Blocking
@@ -187,7 +187,7 @@ Every finding must be resolved before approval. There is no "approved with comme
 | **Important** | Quality or maintainability significantly degraded | missing tests for new logic, copy-paste logic across 3+ sites, exported function without doc |
 | **Minor** | Small issues that accumulate into tech debt | typo in comment, inconsistent naming in a single file, magic number without const |
 
-All three tiers must reach zero before you emit a `review-approved` signal.
+All three tiers must reach zero before you write a `review-approved` signal.
 
 ### Round Tracking
 
@@ -232,7 +232,7 @@ Do not review files in isolation. Trace data flow across package boundaries.
 
 ## Verification Before Approval
 
-Before emitting `review-approved`:
+Before writing `review-approved`:
 
 1. `go test ./...` passes with zero failures
 2. `gofmt -l .` produces no output
@@ -253,16 +253,7 @@ git diff $MERGE_BASE..HEAD --name-only | xargs typos
 
 ## Signal Format
 
-Primary path: use MCP `signal_create`. If MCP is unavailable, fall back to `kas signal emit`.
-Do not write legacy `.kasmos/signals/review-*` files directly.
-
 ### Approved
-
-Primary:
-
-`signal_create` with `signal_type: "review-approved"`, `plan_file: "<planfile>"`, and `payload: "Approved. <one-sentence summary of what was reviewed and confirmed>"`
-
-Fallback when MCP is unavailable:
 
 ```bash
 kas signal emit review_approved <planfile> \
@@ -270,8 +261,6 @@ kas signal emit review_approved <planfile> \
 ```
 
 Example:
-- MCP: `signal_create` with `signal_type: "review-approved"`, `plan_file: "2026-02-27-feature.md"`, `payload: "Approved. all 4 tasks complete, tests pass, no issues found."`
-- CLI fallback:
 ```bash
 kas signal emit review_approved 2026-02-27-feature.md \
   --payload "Approved. all 4 tasks complete, tests pass, no issues found."
@@ -281,12 +270,6 @@ kas signal emit review_approved 2026-02-27-feature.md \
 
 Write a structured heredoc signal. Include the round number, all findings grouped by severity,
 and file:line citations for every item.
-
-Primary:
-
-`signal_create` with `signal_type: "review-changes"`, `plan_file: "<planfile>"`, and the structured review text below as `payload`.
-
-Fallback when MCP is unavailable:
 
 ```bash
 kas signal emit review_changes_requested <planfile> --payload "$(cat <<'EOF'
@@ -326,12 +309,13 @@ EOF
 If there are no findings in a tier, omit that tier header entirely.
 
 Keep findings to short bullet points with concrete remediation requests. Avoid generic review prose.
+Do not write legacy `.kasmos/signals/review-*` files directly.
 
 ### Mode-Specific Behavior
 
 **Managed mode** (`KASMOS_MANAGED=1`):
-Create the review signal and stop. Do not merge, push, or create PRs.
-kasmos reads the gateway signal (or the CLI fallback submission) and handles the next step (spawning another coder wave or
+Write the signal file and stop. Do not merge, push, or create PRs.
+kasmos reads the sentinel and handles the next step (spawning another coder wave or
 presenting merge options to the user).
 
 ```bash
@@ -340,7 +324,7 @@ exit 0  # stop here
 ```
 
 **Manual mode** (unset):
-Create the review signal, then additionally offer the following options to the user:
+Write the signal file, then additionally offer the following options to the user:
 
 - If approved: offer to merge to main, create a PR, keep the branch, or discard it
 - If changes needed: offer to switch back to the coder role, or handle the fixes yourself
