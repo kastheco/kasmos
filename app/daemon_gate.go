@@ -7,7 +7,10 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"time"
+	"unsafe"
 
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskstate"
@@ -56,22 +59,50 @@ var listDaemonTasks = func(project string) ([]api.TaskStatus, error) {
 func daemonTaskEntries(statuses []api.TaskStatus) []taskstore.TaskEntry {
 	entries := make([]taskstore.TaskEntry, 0, len(statuses))
 	for _, status := range statuses {
-		entries = append(entries, taskstore.TaskEntry{
+		if strings.TrimSpace(status.Filename) == "" {
+			continue
+		}
+
+		entry := taskstore.TaskEntry{
 			Filename:       status.Filename,
 			Status:         taskstore.Status(status.Status),
 			ExecutionState: status.ExecutionState,
-			Branch:         status.Branch,
-			PRURL:          status.PRURL,
-			ReviewCycle:    status.ReviewCycle,
 			Description:    status.Description,
+			Branch:         status.Branch,
 			Topic:          status.Topic,
-		})
+			ReviewCycle:    status.ReviewCycle,
+			PRURL:          status.PRURL,
+		}
+		if payload, err := json.Marshal(status); err == nil {
+			_ = json.Unmarshal(payload, &entry)
+			entry.Status = taskstore.Status(status.Status)
+		}
+
+		entries = append(entries, entry)
 	}
 	return entries
 }
 
-func daemonTaskState(dir string, statuses []api.TaskStatus) *taskstate.TaskState {
-	return taskstate.LoadFromEntries(dir, daemonTaskEntries(statuses))
+func attachTaskStateStore(ps *taskstate.TaskState, store taskstore.Store, project string) {
+	if ps == nil || store == nil {
+		return
+	}
+
+	value := reflect.ValueOf(ps)
+	if !value.IsValid() || value.Kind() != reflect.Ptr || value.IsNil() {
+		return
+	}
+	value = value.Elem()
+	if !value.IsValid() {
+		return
+	}
+
+	if field := value.FieldByName("store"); field.IsValid() && field.CanAddr() {
+		reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Set(reflect.ValueOf(store))
+	}
+	if field := value.FieldByName("project"); field.IsValid() && field.CanAddr() {
+		reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().SetString(project)
+	}
 }
 
 func canonicalRepoPath(repoPath string) string {

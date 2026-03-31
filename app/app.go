@@ -1038,7 +1038,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if err != nil {
 						log.WarningLog.Printf("daemon task sync: list tasks for %q: %v", project, err)
 					} else {
-						ps = daemonTaskState(taskStateDir, statuses)
+						ps = taskstate.LoadFromEntries(taskStateDir, daemonTaskEntries(statuses))
+						if ps != nil && store != nil {
+							attachTaskStateStore(ps, store, project)
+						}
 						daemonTaskStateLoaded = true
 					}
 				}
@@ -2784,7 +2787,7 @@ type instanceMetadata struct {
 type metadataResultMsg struct {
 	Results            []instanceMetadata
 	PlanState          *taskstate.TaskState        // pre-loaded plan state (nil if dir not set)
-	DaemonTaskState    bool                        // true when PlanState came from the daemon task-list API
+	DaemonTaskState    bool                        // true when PlanState came from a daemon task snapshot
 	Signals            []taskfsm.Signal            // agent sentinel files found this tick
 	TaskSignals        []taskfsm.TaskSignal        // task completion sentinel files found this tick
 	WaveSignals        []taskfsm.WaveSignal        // implement-wave-N signal files found this tick

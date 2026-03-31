@@ -452,61 +452,48 @@ func (m *home) computeStatusBarData() ui.StatusBarData {
 	planFile := m.nav.GetSelectedPlanFile()
 	selected := m.nav.GetSelectedInstance()
 
-	switch {
-	case planFile != "" && m.taskState != nil:
+	populatePlanStatus := func(planFile string) bool {
+		if planFile == "" || m.taskState == nil {
+			return false
+		}
 		entry, ok := m.taskState.Entry(planFile)
-		if ok {
-			data.Branch = entry.Branch
-			data.PlanName = taskstate.DisplayName(planFile)
-			data.PlanStatus = string(entry.Status)
+		if !ok {
+			return false
+		}
 
-			if orch, orchOK := m.waveOrchestrators[planFile]; orchOK {
-				waveNum := orch.CurrentWaveNumber()
-				totalWaves := orch.TotalWaves()
-				if waveNum > 0 {
-					data.WaveLabel = fmt.Sprintf("wave %d/%d", waveNum, totalWaves)
-					tasks := orch.CurrentWaveTasks()
-					data.TaskGlyphs = make([]ui.TaskGlyph, len(tasks))
-					for i, task := range tasks {
-						switch {
-						case orch.IsTaskComplete(task.Number):
-							data.TaskGlyphs[i] = ui.TaskGlyphComplete
-						case orch.IsTaskFailed(task.Number):
-							data.TaskGlyphs[i] = ui.TaskGlyphFailed
-						case orch.IsTaskRunning(task.Number):
-							data.TaskGlyphs[i] = ui.TaskGlyphRunning
-						default:
-							data.TaskGlyphs[i] = ui.TaskGlyphPending
-						}
-					}
-				}
-			}
+		data.Branch = entry.Branch
+		data.PlanName = taskstate.DisplayName(planFile)
+		data.PlanStatus = string(entry.Status)
 
-			// Populate PR state from the task store (has full PR metadata).
-			if m.taskStore != nil {
-				if storeEntry, err := m.taskStore.Get(m.taskStoreProject, planFile); err == nil && storeEntry.PRURL != "" {
-					data.PRState = mapPRReviewDecision(storeEntry.PRReviewDecision)
-					data.PRChecks = mapPRCheckStatus(storeEntry.PRCheckStatus)
+		wave := entry.ExecutionState.ActiveWave
+		if wave > 0 {
+			if orch := m.waveOrchestrators[planFile]; orch != nil {
+				if totalWaves := orch.TotalWaves(); totalWaves > 0 {
+					data.WaveLabel = fmt.Sprintf("wave %d/%d", wave, totalWaves)
+				} else {
+					data.WaveLabel = fmt.Sprintf("wave %d", wave)
 				}
+				data.TaskGlyphs = statusBarTaskGlyphs(orch, wave)
+			} else {
+				data.WaveLabel = fmt.Sprintf("wave %d", wave)
 			}
 		}
+
+		if m.taskStore != nil {
+			if storeEntry, err := m.taskStore.Get(m.taskStoreProject, planFile); err == nil && storeEntry.PRURL != "" {
+				data.PRState = mapPRReviewDecision(storeEntry.PRReviewDecision)
+				data.PRChecks = mapPRCheckStatus(storeEntry.PRCheckStatus)
+			}
+		}
+
+		return true
+	}
+
+	switch {
+	case populatePlanStatus(planFile):
 	case selected != nil && selected.Branch != "":
 		data.Branch = selected.Branch
-		if selected.TaskFile != "" && m.taskState != nil {
-			entry, ok := m.taskState.Entry(selected.TaskFile)
-			if ok {
-				data.PlanName = taskstate.DisplayName(selected.TaskFile)
-				data.PlanStatus = string(entry.Status)
-
-				// Populate PR state from the task store.
-				if m.taskStore != nil {
-					if storeEntry, err := m.taskStore.Get(m.taskStoreProject, selected.TaskFile); err == nil && storeEntry.PRURL != "" {
-						data.PRState = mapPRReviewDecision(storeEntry.PRReviewDecision)
-						data.PRChecks = mapPRCheckStatus(storeEntry.PRCheckStatus)
-					}
-				}
-			}
-		}
+		populatePlanStatus(selected.TaskFile)
 	}
 
 	if data.Branch == "" {
@@ -514,6 +501,49 @@ func (m *home) computeStatusBarData() ui.StatusBarData {
 	}
 
 	return data
+}
+
+func statusBarTaskGlyphs(orch *orchestration.WaveOrchestrator, wave int) []ui.TaskGlyph {
+	if orch == nil || wave <= 0 || orch.CurrentWaveNumber() != wave {
+		return nil
+	}
+
+	tasks := orch.CurrentWaveTasks()
+	glyphs := make([]ui.TaskGlyph, len(tasks))
+	for i, task := range tasks {
+		switch {
+		case orch.IsTaskComplete(task.Number):
+			glyphs[i] = ui.TaskGlyphComplete
+		case orch.IsTaskFailed(task.Number):
+			glyphs[i] = ui.TaskGlyphFailed
+		case orch.IsTaskRunning(task.Number):
+			glyphs[i] = ui.TaskGlyphRunning
+		default:
+			glyphs[i] = ui.TaskGlyphPending
+		}
+	}
+	return glyphs
+}
+
+func waveTaskInfos(orch *orchestration.WaveOrchestrator, wave int) []ui.WaveTaskInfo {
+	if orch == nil || wave <= 0 || orch.CurrentWaveNumber() != wave {
+		return nil
+	}
+
+	tasks := orch.CurrentWaveTasks()
+	info := make([]ui.WaveTaskInfo, len(tasks))
+	for i, task := range tasks {
+		state := "pending"
+		if orch.IsTaskComplete(task.Number) {
+			state = "complete"
+		} else if orch.IsTaskFailed(task.Number) {
+			state = "failed"
+		} else if orch.IsTaskRunning(task.Number) {
+			state = "running"
+		}
+		info[i] = ui.WaveTaskInfo{Number: task.Number, State: state}
+	}
+	return info
 }
 
 // currentBranch returns the name of the currently checked-out branch in repoPath.
@@ -1140,19 +1170,7 @@ func (m *home) updateInfoPaneForPlanHeader() {
 		orch = o
 		data.TotalWaves = orch.TotalWaves()
 		data.TotalTasks = orch.TotalTasks()
-		tasks := orch.CurrentWaveTasks()
-		data.WaveTasks = make([]ui.WaveTaskInfo, len(tasks))
-		for i, task := range tasks {
-			state := "pending"
-			if orch.IsTaskComplete(task.Number) {
-				state = "complete"
-			} else if orch.IsTaskFailed(task.Number) {
-				state = "failed"
-			} else if orch.IsTaskRunning(task.Number) {
-				state = "running"
-			}
-			data.WaveTasks[i] = ui.WaveTaskInfo{Number: task.Number, State: state}
-		}
+		data.WaveTasks = waveTaskInfos(orch, data.ActiveWave)
 	}
 
 	// Subtask progress (preserve prior zeros as initial values — plan header has no prior state).
@@ -1162,10 +1180,7 @@ func (m *home) updateInfoPaneForPlanHeader() {
 	// Review outcome — shown when the plan has been approved.
 	if entry.Status == taskstate.StatusDone {
 		data.ReviewOutcome = "approved"
-		data.ReviewCycle = 1 // default display cycle
-		if cycle, err := m.taskState.ReviewCycle(planFile); err == nil {
-			data.ReviewCycle = cycle + 1
-		}
+		data.ReviewCycle = entry.ReviewCycle + 1
 	}
 	if m.appConfig != nil && m.appConfig.MaxReviewFixCycles > 0 {
 		data.MaxReviewFixCycles = m.appConfig.MaxReviewFixCycles
@@ -1208,9 +1223,11 @@ func (m *home) updateInfoPane() {
 
 	if selected.TaskFile != "" {
 		var orch *orchestration.WaveOrchestrator
+		entryFound := false
 		if m.taskState != nil {
 			entry, ok := m.taskState.Entry(selected.TaskFile)
 			if ok {
+				entryFound = true
 				data.HasPlan = true
 				data.PlanName = taskstate.DisplayName(selected.TaskFile)
 				data.PlanDescription = entry.Description
@@ -1236,10 +1253,7 @@ func (m *home) updateInfoPane() {
 				// Review outcome — shown when the plan has been approved.
 				if entry.Status == taskstate.StatusDone {
 					data.ReviewOutcome = "approved"
-					data.ReviewCycle = 1 // default display cycle
-					if cycle, err := m.taskState.ReviewCycle(selected.TaskFile); err == nil {
-						data.ReviewCycle = cycle + 1
-					}
+					data.ReviewCycle = entry.ReviewCycle + 1
 				}
 			}
 		}
@@ -1248,18 +1262,22 @@ func (m *home) updateInfoPane() {
 			orch = o
 			data.TotalWaves = orch.TotalWaves()
 			data.TotalTasks = orch.TotalTasks()
-			tasks := orch.CurrentWaveTasks()
-			data.WaveTasks = make([]ui.WaveTaskInfo, len(tasks))
-			for i, task := range tasks {
-				state := "pending"
-				if orch.IsTaskComplete(task.Number) {
-					state = "complete"
-				} else if orch.IsTaskFailed(task.Number) {
-					state = "failed"
-				} else if orch.IsTaskRunning(task.Number) {
-					state = "running"
+			if entryFound {
+				data.WaveTasks = waveTaskInfos(orch, data.ActiveWave)
+			} else {
+				tasks := orch.CurrentWaveTasks()
+				data.WaveTasks = make([]ui.WaveTaskInfo, len(tasks))
+				for i, task := range tasks {
+					state := "pending"
+					if orch.IsTaskComplete(task.Number) {
+						state = "complete"
+					} else if orch.IsTaskFailed(task.Number) {
+						state = "failed"
+					} else if orch.IsTaskRunning(task.Number) {
+						state = "running"
+					}
+					data.WaveTasks[i] = ui.WaveTaskInfo{Number: task.Number, State: state}
 				}
-				data.WaveTasks[i] = ui.WaveTaskInfo{Number: task.Number, State: state}
 			}
 			// Populate TaskTitle from the plan structure.
 			data.TaskTitle = findTaskTitle(orch.Plan(), selected.TaskNumber)
