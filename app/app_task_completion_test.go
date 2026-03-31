@@ -876,7 +876,7 @@ func TestTickUpdateMetadata_DaemonManagedRepoSkipsFilesystemReviewSignals(t *tes
 	assert.Empty(t, msg.ElaborationSignals)
 }
 
-func TestTickUpdateMetadata_DaemonManagedRepoLoadsTaskStateFromDaemonAPI(t *testing.T) {
+func TestTickUpdateMetadata_DaemonManagedRepoCarriesWaveStateForAllSurfaces(t *testing.T) {
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 
@@ -934,6 +934,9 @@ func TestTickUpdateMetadata_DaemonManagedRepoLoadsTaskStateFromDaemonAPI(t *test
 	entry, ok := msg.PlanState.Entry("feature")
 	require.True(t, ok)
 	assert.Equal(t, taskstate.StatusImplementing, entry.Status)
+	assert.Equal(t, string(taskfsm.ExecutionPhaseWaveRunning), entry.ExecutionState.Phase)
+	assert.Equal(t, session.AgentTypeCoder, entry.ExecutionState.ActiveAgentType)
+	assert.Equal(t, 2, entry.ExecutionState.ActiveWave)
 	assert.Equal(t, taskstore.ExecutionState{Phase: "wave_running", ActiveAgentType: session.AgentTypeCoder, ActiveWave: 2}, entry.ExecutionState)
 	assert.Equal(t, 1, entry.ReviewCycle)
 
