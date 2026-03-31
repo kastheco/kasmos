@@ -35,6 +35,7 @@ func TestDaemon_TickRepoGateway_ReviewFixLoop_HappyPath(t *testing.T) {
 	)
 
 	feedback := "- [app.go:42] address reviewer feedback"
+	wantTitles := []string{"feature.md-review-1", "feature.md-fix-1", "feature.md-review-2"}
 
 	store, gw, entry, daemon, events, spawned := newReviewFixHarness(t, taskstore.TaskEntry{
 		Filename: planFile,
@@ -47,9 +48,10 @@ func TestDaemon_TickRepoGateway_ReviewFixLoop_HappyPath(t *testing.T) {
 	daemon.tickRepo(context.Background(), entry)
 
 	require.Len(t, *spawned, 1)
+	assert.Equal(t, []string{session.AgentTypeReviewer}, spawnedAgentTypes(*spawned))
 	assert.Equal(t, reviewFixSpawnRecord{
 		agentType:   session.AgentTypeReviewer,
-		title:       orchestration.BuildLifecycleAgentTitle(planFile, session.AgentTypeReviewer, 1),
+		title:       wantTitles[0],
 		reviewCycle: 1,
 		branch:      branch,
 		prompt:      (*spawned)[0].prompt,
@@ -69,8 +71,9 @@ func TestDaemon_TickRepoGateway_ReviewFixLoop_HappyPath(t *testing.T) {
 	daemon.tickRepo(context.Background(), entry)
 
 	require.Len(t, *spawned, 2)
+	assert.Equal(t, []string{session.AgentTypeReviewer, session.AgentTypeFixer}, spawnedAgentTypes(*spawned))
 	assert.Equal(t, session.AgentTypeFixer, (*spawned)[1].agentType)
-	assert.Equal(t, orchestration.BuildLifecycleAgentTitle(planFile, session.AgentTypeFixer, 1), (*spawned)[1].title)
+	assert.Equal(t, wantTitles[1], (*spawned)[1].title)
 	assert.Equal(t, 1, (*spawned)[1].reviewCycle)
 	assert.Equal(t, branch, (*spawned)[1].branch)
 	assert.Equal(t, feedback, (*spawned)[1].feedback)
@@ -91,8 +94,9 @@ func TestDaemon_TickRepoGateway_ReviewFixLoop_HappyPath(t *testing.T) {
 	daemon.tickRepo(context.Background(), entry)
 
 	require.Len(t, *spawned, 3)
+	assert.Equal(t, []string{session.AgentTypeReviewer, session.AgentTypeFixer, session.AgentTypeReviewer}, spawnedAgentTypes(*spawned))
 	assert.Equal(t, session.AgentTypeReviewer, (*spawned)[2].agentType)
-	assert.Equal(t, orchestration.BuildLifecycleAgentTitle(planFile, session.AgentTypeReviewer, 2), (*spawned)[2].title)
+	assert.Equal(t, wantTitles[2], (*spawned)[2].title)
 	assert.Equal(t, 2, (*spawned)[2].reviewCycle)
 	assert.Equal(t, branch, (*spawned)[2].branch)
 	assert.Contains(t, (*spawned)[2].prompt, feedback, "second reviewer should receive the prior feedback")
@@ -226,6 +230,14 @@ func newReviewFixHarness(t *testing.T, task taskstore.TaskEntry) (taskstore.Stor
 	}
 
 	return store, gw, entry, d, events, &spawned
+}
+
+func spawnedAgentTypes(records []reviewFixSpawnRecord) []string {
+	types := make([]string, 0, len(records))
+	for _, record := range records {
+		types = append(types, record.agentType)
+	}
+	return types
 }
 
 func drainDaemonEvents(events <-chan api.Event) []api.Event {
