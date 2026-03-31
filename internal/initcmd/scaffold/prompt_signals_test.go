@@ -36,8 +36,8 @@ func TestPromptTemplates_UseMCPFirstSignals(t *testing.T) {
 			name: "review prompt routes review outcomes through gateway commands only",
 			path: "templates/shared/review-prompt.md",
 			contains: []string{
-				"You MUST emit exactly one signal before you finish. Use `kas signal emit`; do not write",
-				"legacy `.kasmos/signals/review-*` files directly.",
+				"You MUST emit exactly one signal before you finish. Prefer MCP `signal_create`",
+				"Do not write legacy `.kasmos/signals/review-*` files",
 				"kas signal emit review_approved {{PLAN_FILENAME}}",
 				"kas signal emit review_changes_requested {{PLAN_FILENAME}}",
 			},
