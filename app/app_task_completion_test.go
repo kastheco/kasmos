@@ -876,33 +876,27 @@ func TestTickUpdateMetadata_DaemonManagedRepoSkipsFilesystemReviewSignals(t *tes
 	assert.Empty(t, msg.ElaborationSignals)
 }
 
-func TestTickUpdateMetadata_DaemonManagedRepoLoadsTaskStateFromDaemonAPI(t *testing.T) {
+func TestTickUpdateMetadata_DaemonManagedRepoLoadsTaskStateFromStore(t *testing.T) {
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	// Set up a real store with task state (simulating daemon writes to SQLite).
+	store, ps, _ := newSharedStoreForTest(t, plansDir)
+	require.NoError(t, ps.Create("feature", "feature", "plan/feature", "core", time.Now()))
+	require.NoError(t, ps.ForceSetLifecycle("feature", taskstate.StatusImplementing,
+		taskstore.ExecutionState{Phase: "wave_running", ActiveAgentType: session.AgentTypeCoder, ActiveWave: 2}))
+	require.NoError(t, ps.IncrementReviewCycle("feature"))
 
 	oldManaged := repoManagedByDaemon
-	oldListTasks := listDaemonTasks
 	oldListInstances := listDaemonInstances
 	t.Cleanup(func() {
 		repoManagedByDaemon = oldManaged
-		listDaemonTasks = oldListTasks
 		listDaemonInstances = oldListInstances
 	})
 
 	repoManagedByDaemon = func(repoPath string) bool {
 		return filepath.Clean(repoPath) == filepath.Clean(dir)
-	}
-	listDaemonTasks = func(project string) ([]api.TaskStatus, error) {
-		require.Equal(t, "test", project)
-		return []api.TaskStatus{{
-			Filename:       "feature",
-			Status:         string(taskstore.StatusImplementing),
-			ExecutionState: taskstore.ExecutionState{Phase: "wave_running", ActiveAgentType: session.AgentTypeCoder, ActiveWave: 2},
-			Branch:         "plan/feature",
-			ReviewCycle:    1,
-			Description:    "feature",
-			Topic:          "core",
-		}}, nil
 	}
 	listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
 		require.Equal(t, "test", project)
@@ -919,6 +913,7 @@ func TestTickUpdateMetadata_DaemonManagedRepoLoadsTaskStateFromDaemonAPI(t *test
 		overlays:         overlay.NewManager(),
 		activeRepoPath:   dir,
 		taskStateDir:     plansDir,
+		taskStore:        store,
 		taskStoreProject: "test",
 	}
 

@@ -101,13 +101,13 @@ func TestDaemonSync_MetadataTickReflectsDaemonTaskStateInSidebar(t *testing.T) {
 			name:                "implementing architecting",
 			status:              taskstate.StatusImplementing,
 			executionState:      taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseArchitecting), ActiveAgentType: session.AgentTypeElaborator},
-			description:         "daemon implementing state",
+			description:         "stale local metadata",
 			topic:               "core",
 			expectedSidebarText: "feature · architecting",
 			expectedPlanDisplay: ui.PlanDisplay{
 				Filename:    "feature",
 				Status:      string(taskstate.StatusImplementing),
-				Description: "daemon implementing state",
+				Description: "stale local metadata",
 				Branch:      "plan/feature",
 				Topic:       "core",
 				Phase:       string(taskfsm.ExecutionPhaseArchitecting),
@@ -119,13 +119,13 @@ func TestDaemonSync_MetadataTickReflectsDaemonTaskStateInSidebar(t *testing.T) {
 			status:              taskstate.StatusReviewing,
 			executionState:      taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseReviewing), ActiveAgentType: session.AgentTypeReviewer},
 			reviewCycle:         2,
-			description:         "daemon review state",
+			description:         "stale local metadata",
 			topic:               "core",
 			expectedSidebarText: "feature · reviewing round 3",
 			expectedPlanDisplay: ui.PlanDisplay{
 				Filename:    "feature",
 				Status:      string(taskstate.StatusReviewing),
-				Description: "daemon review state",
+				Description: "stale local metadata",
 				Branch:      "plan/feature",
 				Topic:       "core",
 				Phase:       string(taskfsm.ExecutionPhaseReviewing),
@@ -154,29 +154,24 @@ func TestDaemonSync_MetadataTickReflectsDaemonTaskStateInSidebar(t *testing.T) {
 				Phase:       "planned",
 			}, staleDisplay)
 
+			// Simulate daemon writing updated state to the shared SQLite store.
+			require.NoError(t, h.taskState.ForceSetLifecycle(planFile, tt.status, tt.executionState))
+			if tt.topic != "" {
+				require.NoError(t, h.taskState.SetTopic(planFile, tt.topic))
+			}
+			for i := 0; i < tt.reviewCycle; i++ {
+				require.NoError(t, h.taskState.IncrementReviewCycle(planFile))
+			}
+
 			oldManaged := repoManagedByDaemon
-			oldListTasks := listDaemonTasks
 			oldListInstances := listDaemonInstances
 			t.Cleanup(func() {
 				repoManagedByDaemon = oldManaged
-				listDaemonTasks = oldListTasks
 				listDaemonInstances = oldListInstances
 			})
 
 			repoManagedByDaemon = func(repoPath string) bool {
 				return filepath.Clean(repoPath) == filepath.Clean(dir)
-			}
-			listDaemonTasks = func(project string) ([]api.TaskStatus, error) {
-				require.Equal(t, "test", project)
-				return []api.TaskStatus{{
-					Filename:       planFile,
-					Status:         string(tt.status),
-					ExecutionState: tt.executionState,
-					Branch:         "plan/feature",
-					ReviewCycle:    tt.reviewCycle,
-					Description:    tt.description,
-					Topic:          tt.topic,
-				}}, nil
 			}
 			listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
 				require.Equal(t, "test", project)

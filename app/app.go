@@ -1030,29 +1030,19 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// to avoid blocking the event loop every 500ms.
 			// Daemon-managed repos read task metadata from the daemon API; other
 			// repos continue to read from the configured task store.
+			// Both daemon-managed and local repos load task state from the
+			// same SQLite store. The daemon writes to this store, so reading
+			// it directly gives us authoritative state without a lossy API
+			// roundtrip that drops timestamps, goals, and content.
 			var ps *taskstate.TaskState
 			var daemonTaskStateLoaded bool
-			if daemonManagedRepo {
-				if project != "" {
-					statuses, err := listDaemonTasks(project)
-					if err != nil {
-						log.WarningLog.Printf("daemon task sync: list tasks for %q: %v", project, err)
-					} else {
-						ps = daemonTaskState(taskStateDir, statuses)
-						if store != nil {
-							ps.AttachStore(store, project)
-						}
-						daemonTaskStateLoaded = true
-					}
-				}
-			} else if taskStateDir != "" {
-				var loaded *taskstate.TaskState
-				var err error
-				loaded, err = taskstate.Load(store, project, taskStateDir)
+			if store != nil && taskStateDir != "" && project != "" {
+				loaded, err := taskstate.Load(store, project, taskStateDir)
 				if err != nil {
 					log.WarningLog.Printf("could not load plan state: %v", err)
 				} else {
 					ps = loaded
+					daemonTaskStateLoaded = daemonManagedRepo
 				}
 			}
 
