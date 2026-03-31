@@ -140,6 +140,7 @@ func BuildFixerPrompt(planFile, feedback string, reviewRound int) string {
 	sb.WriteString("- Investigate root causes before editing code.\n")
 	sb.WriteString("- Use `rg` (not grep), `sd` (not sed), `fd` (not find), `comby`/`ast-grep` for structural changes.\n")
 	sb.WriteString("- Run targeted verification for the affected area first; run broader tests only as needed.\n")
+	sb.WriteString("- Do not emit completion signals from this fixer prompt; kasmos advances the review loop after you stop.\n")
 	sb.WriteString("- When done, stop so kasmos can continue the review loop.\n\n")
 
 	sb.WriteString("## Reviewer feedback\n\n")
@@ -175,7 +176,8 @@ func BuildElaborationPrompt(planFile string) string {
 			"4. Preserve the plan structure — do not change wave organization, "+
 			"task numbering, file lists, or the header fields. Only expand task bodies.\n"+
 			"5. Write the updated plan: pipe content to `kas task update-content %[1]s`\n"+
-			"6. Signal architect-pass completion with the retained external contract: `kas signal emit elaborator_finished %[1]s` (or fallback: `touch .kasmos/signals/elaborator-finished-%[1]s`)\n"+
+			"6. Signal architect-pass completion with the retained external contract: prefer MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"%[1]s\")\n"+
+			"   - If MCP is unavailable, use `kas signal emit elaborator_finished %[1]s`; if CLI signaling is also unavailable, fallback: `touch .kasmos/signals/elaborator-finished-%[1]s`\n"+
 			"   - Keep the role wording as architect in your notes and output; only the completion signal name stays legacy.\n",
 		planFile,
 	)
@@ -202,8 +204,8 @@ func BuildArchitectPrompt(planFile string) string {
 
 // BuildWaveAnnotationPrompt returns the prompt used when a planner is respawned
 // to add ## Wave headers to an existing plan that is missing them.
-// It instructs the planner to annotate the plan, commit the change, and write
-// the sentinel signal so kasmos can resume the implementation flow.
+// It instructs the planner to annotate the plan, persist it, and signal
+// completion so kasmos can resume the implementation flow.
 func BuildWaveAnnotationPrompt(planFile string) string {
 	return fmt.Sprintf(
 		"The plan %[1]s is missing ## Wave N headers required for kasmos wave orchestration. "+
@@ -213,7 +215,8 @@ func BuildWaveAnnotationPrompt(planFile string) string {
 			"Keep all existing task content intact; only add the ## Wave headers.\n\n"+
 			"After annotating:\n"+
 			"1. Store the updated plan via `kas task update-content %[1]s` (pipe the content)\n"+
-			"2. Signal completion: `kas signal emit planner_finished %[1]s` (or fallback: `touch .kasmos/signals/planner-finished-%[1]s`)\n"+
+			"2. Signal completion: prefer MCP `signal_create` (signal_type: \"planner-finished\", plan_file: \"%[1]s\")\n"+
+			"   - If MCP is unavailable, use `kas signal emit planner_finished %[1]s`; if CLI signaling is also unavailable, fallback: `touch .kasmos/signals/planner-finished-%[1]s`\n"+
 			"Do not edit plan-state.json directly.",
 		planFile,
 	)

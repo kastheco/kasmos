@@ -133,7 +133,8 @@ func TestBuildWaveAnnotationPrompt(t *testing.T) {
 	prompt := BuildWaveAnnotationPrompt("my-feature")
 	assert.Contains(t, prompt, "kas task show my-feature")
 	assert.Contains(t, prompt, "## Wave")
-	// Primary gateway command
+	assert.Contains(t, prompt, "signal_create` (signal_type: \"planner-finished\", plan_file: \"my-feature\")")
+	// CLI fallback remains documented
 	assert.Contains(t, prompt, "kas signal emit planner_finished my-feature")
 	// Fallback filesystem sentinel still present
 	assert.Contains(t, prompt, "planner-finished-my-feature")
@@ -148,6 +149,7 @@ func TestBuildFixerPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "kas task show my-feature")
 	assert.Contains(t, prompt, "not an implementer")
 	assert.Contains(t, prompt, "fix the failing review handoff")
+	assert.Contains(t, prompt, "Do not emit completion signals from this fixer prompt")
 	assert.NotContains(t, prompt, "execute all tasks sequentially")
 }
 
@@ -181,7 +183,8 @@ func TestBuildElaborationPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "kas task show my-feature")
 	// Must reference updating the plan
 	assert.Contains(t, prompt, "kas task update-content my-feature")
-	// Primary gateway command
+	assert.Contains(t, prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"my-feature\")")
+	// CLI fallback remains documented
 	assert.Contains(t, prompt, "kas signal emit elaborator_finished my-feature")
 	// Fallback filesystem sentinel still present
 	assert.Contains(t, prompt, "elaborator-finished-my-feature")
@@ -215,5 +218,6 @@ func TestBuildElaborationPrompt_RetainsLegacySignalName(t *testing.T) {
 	prompt := BuildElaborationPrompt("my-feature")
 
 	assert.Contains(t, prompt, "only the completion signal name stays legacy")
+	assert.Contains(t, prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"my-feature\")")
 	assert.Contains(t, prompt, "kas signal emit elaborator_finished my-feature")
 }

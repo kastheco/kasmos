@@ -36,6 +36,7 @@ const (
 	KeySendYes    // Key for sending yes to a waiting instance
 
 	KeySpace // Key for opening context menu on selected item
+	KeyCommandLauncher
 
 	KeyInfoTab // Key for jumping directly to info tab
 
@@ -180,6 +181,10 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	KeySpace: key.NewBinding(
 		key.WithKeys(" "),
 		key.WithHelp("space", "menu"),
+	),
+	KeyCommandLauncher: key.NewBinding(
+		key.WithKeys("shift+space"),
+		key.WithHelp("shift+space", "commands"),
 	),
 	KeySpawnAgent: key.NewBinding(
 		key.WithKeys("s"),

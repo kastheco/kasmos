@@ -49,6 +49,9 @@ git diff $MERGE_BASE..HEAD
 ```
 
 If the diff is empty, approve immediately:
+Primary path: use MCP `signal_create` (signal_type: "review-approved", plan_file: "{{PLAN_FILENAME}}", payload: "Approved. empty diff — no changes to review.").
+
+If MCP is unavailable, run:
 ```bash
 kas signal emit review_approved {{PLAN_FILENAME}} --payload "Approved. empty diff — no changes to review."
 ```
@@ -177,13 +180,13 @@ Look for:
 - complex expressions that could be simplified
 - dead code introduced by this branch
 
-Record suggestions in the signal file under `### suggestions (non-blocking)`.
+Record suggestions in the review signal payload under `### suggestions (non-blocking)`.
 
 ---
 
 ## Machine-readable output
 
-Before writing the signal file, output the following block:
+Before emitting the review signal, output the following block:
 
 ```
 DECISION: {{APPROVED|NEEDS_CHANGES|BLOCKED}}
@@ -227,16 +230,20 @@ If any coder-required issues exist, self-fix what you can first, then emit `revi
 
 ## Signals
 
-You MUST emit exactly one signal before you finish. Use `kas signal emit`; do not write
-legacy `.kasmos/signals/review-*` files directly. Without a signal, the orchestrator
-cannot progress the plan lifecycle.
+You MUST emit exactly one signal before you finish. Prefer MCP `signal_create`; if MCP is
+unavailable, use `kas signal emit`. Do not write legacy `.kasmos/signals/review-*` files
+directly. Without a signal, the orchestrator cannot progress the plan lifecycle.
 
 **Approved** (zero coder-required issues remaining after self-fixes):
+- Primary: MCP `signal_create` (signal_type: "review-approved", plan_file: "{{PLAN_FILENAME}}", payload: "Approved. <brief summary>")
+- Fallback when MCP is unavailable:
 ```bash
 kas signal emit review_approved {{PLAN_FILENAME}} --payload "Approved. <brief summary>"
 ```
 
 **Changes required** (issues that need a coder):
+- Primary: MCP `signal_create` (signal_type: "review-changes", plan_file: "{{PLAN_FILENAME}}", payload: "<structured review feedback>")
+- Fallback when MCP is unavailable:
 ```bash
 kas signal emit review_changes_requested {{PLAN_FILENAME}} --payload "$(cat <<'SIGNAL'
 ## review round N

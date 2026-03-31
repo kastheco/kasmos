@@ -120,6 +120,44 @@ func TestDaemon_AddRepo(t *testing.T) {
 	assert.Len(t, repos, 1)
 }
 
+func TestDaemonStateAdapter_ListTasksMapsEntries(t *testing.T) {
+	const project = "proj"
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:    "feature.md",
+		Status:      taskstore.StatusReviewing,
+		Description: "ship feature",
+		Branch:      "plan/feature",
+		Topic:       "core",
+		ReviewCycle: 3,
+		PRURL:       "https://example.com/pr/1",
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseReviewing),
+			ActiveAgentType: session.AgentTypeReviewer,
+		},
+	}))
+
+	adapter := &daemonStateAdapter{d: &Daemon{repos: NewRepoManager()}}
+	adapter.d.repos.repos = []RepoEntry{{Project: project, Store: store}}
+
+	tasks, err := adapter.ListTasks(project)
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	assert.Equal(t, []api.TaskStatus{{
+		Filename:    "feature.md",
+		Status:      string(taskstore.StatusReviewing),
+		Description: "ship feature",
+		Branch:      "plan/feature",
+		Topic:       "core",
+		ReviewCycle: 3,
+		PRURL:       "https://example.com/pr/1",
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseReviewing),
+			ActiveAgentType: session.AgentTypeReviewer,
+		},
+	}}, tasks)
+}
+
 func TestDaemon_GracefulShutdown_DrainsAgents(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &DaemonConfig{
@@ -345,6 +383,183 @@ func TestDaemon_AutoAdvanceCompletedImplementer_TransitionsToReviewing(t *testin
 	require.NoError(t, err)
 	assert.Equal(t, taskstore.StatusReviewing, entry.Status)
 	assert.Equal(t, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseReviewing), ActiveAgentType: session.AgentTypeReviewer}, entry.ExecutionState)
+}
+
+func TestDaemon_MonitorRunningInstances_EmitsStuckDetectedOncePerExit(t *testing.T) {
+	repo := t.TempDir()
+	project := filepath.Base(repo)
+	store := taskstore.NewTestStore(t)
+	planFile := "feature.md"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseArchitecting),
+			ActiveAgentType: session.AgentTypeElaborator,
+		},
+	}))
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "feature-architect",
+		Path:          repo,
+		Program:       "true",
+		ExecutionMode: session.ExecutionModeHeadless,
+		TaskFile:      planFile,
+		AgentType:     session.AgentTypeElaborator,
+	})
+	require.NoError(t, err)
+	require.NoError(t, inst.StartOnMainBranch())
+	require.Eventually(t, func() bool { return !inst.TmuxAlive() }, time.Second, 10*time.Millisecond)
+
+	d := &Daemon{
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+	e := RepoEntry{Path: repo, Project: project, Store: store}
+
+	key := instanceKey(repo, planFile, session.AgentTypeElaborator)
+	d.spawner.mu.Lock()
+	d.spawner.instances[key] = inst
+	d.spawner.planFileByKey[key] = planFile
+	d.spawner.agentTypeByKey[key] = session.AgentTypeElaborator
+	d.spawner.projectByKey[key] = project
+	d.spawner.mu.Unlock()
+
+	sub := d.broadcaster.Subscribe()
+	t.Cleanup(func() { d.broadcaster.Unsubscribe(sub) })
+
+	d.monitorRunningInstances(context.Background(), e)
+
+	select {
+	case ev := <-sub:
+		assert.Equal(t, api.EventKindStuckDetected, ev.Kind)
+		assert.Equal(t, "agent exited without an auto-advance path for "+planFile, ev.Message)
+		assert.Equal(t, repo, ev.Repo)
+		assert.Equal(t, planFile, ev.PlanFile)
+		assert.Equal(t, session.AgentTypeElaborator, ev.AgentType)
+	case <-time.After(time.Second):
+		t.Fatal("expected stuck_detected event")
+	}
+
+	assert.True(t, inst.Exited)
+	assert.Equal(t, session.Ready, inst.Status)
+
+	d.monitorRunningInstances(context.Background(), e)
+
+	select {
+	case ev := <-sub:
+		t.Fatalf("unexpected extra event: %+v", ev)
+	default:
+	}
+}
+
+func TestDaemon_AutoAdvancePlannerFinished_StartsBlueprintSkipImplementation(t *testing.T) {
+	project := "proj"
+	planFile := "feature.md"
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusPlanning,
+		Branch:   "plan/feature",
+	}))
+	require.NoError(t, store.SetContent(project, planFile, "# Plan\n\n**Goal:** test auto advance\n\n**Architecture:** test\n\n**Tech Stack:** go\n\n**Size:** Small\n\n---\n\n## Wave 1\n\n### Task 1: First\n\nImplement the first task."))
+
+	proc := loop.NewProcessor(loop.ProcessorConfig{Store: store, Project: project, AutoAdvance: true})
+
+	var spawned loop.SpawnOpts
+	d := &Daemon{
+		cfg:         &DaemonConfig{AutoAdvance: true},
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		killAgent: func(repoPath, taskFile, agentType string) error {
+			return nil
+		},
+		spawnCoder: func(_ context.Context, opts loop.SpawnOpts) error {
+			spawned = opts
+			return nil
+		},
+	}
+	e := RepoEntry{
+		Path:      t.TempDir(),
+		Project:   project,
+		Store:     store,
+		Processor: proc,
+	}
+
+	actions := proc.ProcessFSMSignals([]taskfsm.Signal{{Event: taskfsm.PlannerFinished, TaskFile: planFile}})
+	require.Len(t, actions, 2)
+
+	for _, action := range actions {
+		require.NoError(t, d.executeAction(context.Background(), e, action))
+	}
+
+	entry, err := store.Get(project, planFile)
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusImplementing, entry.Status)
+	assert.Equal(t, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseSingleAgentImplementing),
+		ActiveAgentType: session.AgentTypeCoder,
+	}, entry.ExecutionState)
+	assert.Equal(t, planFile, spawned.PlanFile)
+	assert.Equal(t, e.Path, spawned.RepoPath)
+	assert.Equal(t, project, spawned.Project)
+	assert.Equal(t, "plan/feature", spawned.Branch)
+	assert.Contains(t, spawned.Prompt, "Implement all 1 task(s) for plan: feature.md")
+}
+
+func TestDaemon_AutoAdvancePlannerFinished_StartsArchitectImplementation(t *testing.T) {
+	project := "proj"
+	planFile := "feature.md"
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusPlanning,
+	}))
+	require.NoError(t, store.SetContent(project, planFile, "# Plan\n\n**Goal:** test auto advance\n\n**Architecture:** test\n\n**Tech Stack:** go\n\n**Size:** Large\n\n---\n\n## Wave 1\n\n### Task 1: First\n\nImplement the first task.\n\n### Task 2: Second\n\nImplement the second task.\n\n### Task 3: Third\n\nImplement the third task."))
+
+	proc := loop.NewProcessor(loop.ProcessorConfig{Store: store, Project: project, AutoAdvance: true})
+
+	var spawned loop.SpawnOpts
+	d := &Daemon{
+		cfg:         &DaemonConfig{AutoAdvance: true},
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		killAgent: func(repoPath, taskFile, agentType string) error {
+			return nil
+		},
+		spawnElaborator: func(_ context.Context, opts loop.SpawnOpts) error {
+			spawned = opts
+			return nil
+		},
+	}
+	e := RepoEntry{
+		Path:      t.TempDir(),
+		Project:   project,
+		Store:     store,
+		Processor: proc,
+	}
+
+	actions := proc.ProcessFSMSignals([]taskfsm.Signal{{Event: taskfsm.PlannerFinished, TaskFile: planFile}})
+	require.Len(t, actions, 2)
+
+	for _, action := range actions {
+		require.NoError(t, d.executeAction(context.Background(), e, action))
+	}
+
+	entry, err := store.Get(project, planFile)
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusImplementing, entry.Status)
+	assert.Equal(t, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseArchitecting),
+		ActiveAgentType: session.AgentTypeElaborator,
+	}, entry.ExecutionState)
+	assert.Equal(t, planFile, spawned.PlanFile)
+	assert.Equal(t, e.Path, spawned.RepoPath)
+	assert.Equal(t, project, spawned.Project)
+	assert.Contains(t, spawned.Prompt, "You are the architect agent")
 }
 
 func TestDaemon_TickScansSharedWorktreeSignals(t *testing.T) {

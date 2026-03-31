@@ -96,6 +96,15 @@ type PlannerCompleteAction struct {
 func (PlannerCompleteAction) Kind() string  { return "planner_complete" }
 func (PlannerCompleteAction) sealedAction() {}
 
+// AutoImplementAction instructs the caller to automatically start
+// implementation for a freshly planned task when auto_advance is enabled.
+type AutoImplementAction struct {
+	PlanFile string
+}
+
+func (AutoImplementAction) Kind() string  { return "auto_implement" }
+func (AutoImplementAction) sealedAction() {}
+
 // TaskCompleteAction signals that an individual task within a wave is done.
 type TaskCompleteAction struct {
 	PlanFile   string

@@ -876,6 +876,72 @@ func TestTickUpdateMetadata_DaemonManagedRepoSkipsFilesystemReviewSignals(t *tes
 	assert.Empty(t, msg.ElaborationSignals)
 }
 
+func TestTickUpdateMetadata_DaemonManagedRepoLoadsTaskStateFromDaemonAPI(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+
+	oldManaged := repoManagedByDaemon
+	oldListTasks := listDaemonTasks
+	oldListInstances := listDaemonInstances
+	t.Cleanup(func() {
+		repoManagedByDaemon = oldManaged
+		listDaemonTasks = oldListTasks
+		listDaemonInstances = oldListInstances
+	})
+
+	repoManagedByDaemon = func(repoPath string) bool {
+		return filepath.Clean(repoPath) == filepath.Clean(dir)
+	}
+	listDaemonTasks = func(project string) ([]api.TaskStatus, error) {
+		require.Equal(t, "test", project)
+		return []api.TaskStatus{{
+			Filename:       "feature",
+			Status:         string(taskstore.StatusImplementing),
+			ExecutionState: taskstore.ExecutionState{Phase: "wave_running", ActiveAgentType: session.AgentTypeCoder, ActiveWave: 2},
+			Branch:         "plan/feature",
+			ReviewCycle:    1,
+			Description:    "feature",
+			Topic:          "core",
+		}}, nil
+	}
+	listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
+		require.Equal(t, "test", project)
+		return nil, nil
+	}
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		state:            stateDefault,
+		nav:              ui.NewNavigationPanel(&sp),
+		menu:             ui.NewMenu(),
+		tabbedWindow:     ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:     overlay.NewToastManager(&sp),
+		overlays:         overlay.NewManager(),
+		activeRepoPath:   dir,
+		taskStateDir:     plansDir,
+		taskStoreProject: "test",
+	}
+
+	_, cmd := h.Update(tickUpdateMetadataMessage{})
+	require.NotNil(t, cmd)
+
+	msg, ok := cmd().(metadataResultMsg)
+	require.True(t, ok)
+	assert.True(t, msg.DaemonManagedRepo)
+	assert.True(t, msg.DaemonTaskState)
+	require.NotNil(t, msg.PlanState)
+
+	entry, ok := msg.PlanState.Entry("feature")
+	require.True(t, ok)
+	assert.Equal(t, taskstate.StatusImplementing, entry.Status)
+	assert.Equal(t, taskstore.ExecutionState{Phase: "wave_running", ActiveAgentType: session.AgentTypeCoder, ActiveWave: 2}, entry.ExecutionState)
+	assert.Equal(t, 1, entry.ReviewCycle)
+
+	topics := msg.PlanState.Topics()
+	require.Len(t, topics, 1)
+	assert.Equal(t, "core", topics[0].Name)
+}
+
 func TestMetadataResultMsg_DaemonManagedRepoAddsMissingDaemonWaveTask(t *testing.T) {
 	dir := t.TempDir()
 

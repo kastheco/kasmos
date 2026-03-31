@@ -82,6 +82,7 @@ type StateProvider interface {
 	AddRepo(path string) error
 	RemoveRepo(project string) error
 	ListPlans(project string) ([]taskstore.TaskEntry, error)
+	ListTasks(project string) ([]TaskStatus, error)
 	TaskStoreForProject(project string) (taskstore.Store, error)
 	ListInstances(project string) []InstanceStatus
 	StartPlan(project, filename, prompt, program string) error
@@ -150,6 +151,12 @@ func (s *DaemonState) RemoveRepo(project string) error {
 // ListPlans implements StateProvider. DaemonState has no backing store, so it
 // always returns an empty list.
 func (s *DaemonState) ListPlans(_ string) ([]taskstore.TaskEntry, error) {
+	return nil, nil
+}
+
+// ListTasks implements StateProvider. DaemonState has no backing store, so it
+// always returns an empty list.
+func (s *DaemonState) ListTasks(_ string) ([]TaskStatus, error) {
 	return nil, nil
 }
 
@@ -226,6 +233,7 @@ func (h *Handler) registerRoutes() {
 	h.mux.HandleFunc("DELETE /v1/repos/{project}", h.handleRemoveRepo)
 
 	h.mux.HandleFunc("GET /v1/repos/{project}/plans", h.handleListPlans)
+	h.mux.HandleFunc("GET /v1/repos/{project}/tasks", h.handleListTasks)
 	h.mux.HandleFunc("GET /v1/repos/{project}/instances", h.handleListInstances)
 	h.mux.HandleFunc("POST /v1/repos/{project}/plans/{filename}/plan", h.handleStartPlan)
 	h.mux.HandleFunc("POST /v1/repos/{project}/plans/{filename}/implement", h.handleImplementPlan)
@@ -305,6 +313,20 @@ func (h *Handler) handleListPlans(w http.ResponseWriter, r *http.Request) {
 		plans = []taskstore.TaskEntry{}
 	}
 	writeJSON(w, http.StatusOK, plans)
+}
+
+// handleListTasks serves GET /v1/repos/{project}/tasks — list task metadata.
+func (h *Handler) handleListTasks(w http.ResponseWriter, r *http.Request) {
+	project := r.PathValue("project")
+	tasks, err := h.state.ListTasks(project)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if tasks == nil {
+		tasks = []TaskStatus{}
+	}
+	writeJSON(w, http.StatusOK, tasks)
 }
 
 // handleListInstances serves GET /v1/repos/{project}/instances — list agents.

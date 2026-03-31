@@ -5,6 +5,14 @@ import (
 	"time"
 )
 
+const (
+	// EventKindAgentSpawned reports that the daemon launched an agent.
+	EventKindAgentSpawned = "agent_spawned"
+	// EventKindStuckDetected reports that an implementing agent exited without a
+	// valid daemon auto-advance path.
+	EventKindStuckDetected = "stuck_detected"
+)
+
 // Event is a daemon event emitted over the SSE stream.
 // It supersedes the stub Event type that was defined in server.go.
 type Event struct {

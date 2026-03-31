@@ -15,15 +15,21 @@ import (
 
 type startPlanStub struct {
 	DaemonState
-	project  string
-	filename string
-	prompt   string
-	program  string
+	project          string
+	filename         string
+	prompt           string
+	program          string
+	listTasksProject string
+	tasks            []TaskStatus
 }
 
 func (s *startPlanStub) ListPlans(_ string) ([]taskstore.TaskEntry, error) { return nil, nil }
-func (s *startPlanStub) ListInstances(_ string) []InstanceStatus           { return nil }
-func (s *startPlanStub) EventStream() <-chan Event                         { return make(chan Event) }
+func (s *startPlanStub) ListTasks(project string) ([]TaskStatus, error) {
+	s.listTasksProject = project
+	return s.tasks, nil
+}
+func (s *startPlanStub) ListInstances(_ string) []InstanceStatus { return nil }
+func (s *startPlanStub) EventStream() <-chan Event               { return make(chan Event) }
 func (s *startPlanStub) StartPlan(project, filename, prompt, program string) error {
 	s.project = project
 	s.filename = filename
@@ -65,6 +71,56 @@ func TestHandler_ListRepos(t *testing.T) {
 	var repos []RepoStatus
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&repos))
 	assert.Len(t, repos, 2)
+}
+
+func TestHandler_ListTasks(t *testing.T) {
+	state := &startPlanStub{tasks: []TaskStatus{{
+		Filename:    "verify-every-fsm-transition",
+		Status:      "implementing",
+		Branch:      "task/w1-t3",
+		PRURL:       "https://github.com/kastheco/kasmos/pull/123",
+		ReviewCycle: 2,
+		Description: "add daemon task-list API tests",
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           "coding",
+			ActiveAgentType: "coder",
+			ActiveWave:      1,
+		},
+	}}}
+	h := NewHandler(state)
+
+	req := httptest.NewRequest("GET", "/v1/repos/cms/tasks", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "cms", state.listTasksProject)
+
+	var tasks []TaskStatus
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&tasks))
+	require.Len(t, tasks, 1)
+	assert.Equal(t, state.tasks, tasks)
+	assert.Equal(t, "verify-every-fsm-transition", tasks[0].Filename)
+	assert.Equal(t, "implementing", tasks[0].Status)
+	assert.Equal(t, taskstore.ExecutionState{Phase: "coding", ActiveAgentType: "coder", ActiveWave: 1}, tasks[0].ExecutionState)
+	assert.Equal(t, "task/w1-t3", tasks[0].Branch)
+	assert.Equal(t, "https://github.com/kastheco/kasmos/pull/123", tasks[0].PRURL)
+	assert.Equal(t, 2, tasks[0].ReviewCycle)
+	assert.Equal(t, "add daemon task-list API tests", tasks[0].Description)
+
+	nilState := &startPlanStub{}
+	nilHandler := NewHandler(nilState)
+	nilReq := httptest.NewRequest("GET", "/v1/repos/cms/tasks", nil)
+	nilW := httptest.NewRecorder()
+	nilHandler.ServeHTTP(nilW, nilReq)
+
+	assert.Equal(t, http.StatusOK, nilW.Code)
+	assert.JSONEq(t, `[]`, nilW.Body.String())
+
+	var emptyTasks []TaskStatus
+	require.NoError(t, json.NewDecoder(bytes.NewReader(nilW.Body.Bytes())).Decode(&emptyTasks))
+	assert.NotNil(t, emptyTasks)
+	assert.Len(t, emptyTasks, 0)
 }
 
 func TestHandler_StartPlan(t *testing.T) {

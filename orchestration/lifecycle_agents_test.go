@@ -36,6 +36,7 @@ func TestBuildLifecycleAgentTitle(t *testing.T) {
 func TestBuildArchitectAgentSpec(t *testing.T) {
 	spec := BuildArchitectAgentSpec("feature")
 	assert.Equal(t, "feature-architect", spec.Title)
+	assert.Contains(t, spec.Prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"feature\")")
 	assert.Contains(t, spec.Prompt, "kas signal emit elaborator_finished feature")
 }
 

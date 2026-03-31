@@ -50,6 +50,21 @@ func TestRightOnInstance_PreviewTab_OpensContextMenu(t *testing.T) {
 		"right on instance from preview tab should open context menu")
 }
 
+func TestSpaceOnInstance_OpensContextMenu(t *testing.T) {
+	h := newTestHome()
+
+	inst := &session.Instance{Title: "test-agent"}
+	h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+
+	h.keySent = true
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	updated := model.(*home)
+
+	assert.Equal(t, stateContextMenu, updated.state,
+		"space on instance should open context menu")
+}
+
 // TestRightOnNonInstanceRow_DoesNotOpenContextMenu verifies that pressing right
 // on a non-instance row (e.g. a topic header with no plan) does not open the
 // context menu or switch tabs.

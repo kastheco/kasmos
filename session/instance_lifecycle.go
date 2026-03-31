@@ -135,6 +135,41 @@ func ShouldAutoAdvanceLifecycleImplementer(status string, state taskstore.Execut
 	return inst.PromptDetected && !inst.AwaitingWork
 }
 
+// IsStuck reports whether an exited instance is stranded in an implementing
+// execution phase that the daemon cannot auto-advance.
+func IsStuck(entry taskstore.TaskEntry, inst *Instance, tmuxAlive bool) bool {
+	if inst == nil || inst.TaskFile == "" || inst.Paused() {
+		return false
+	}
+	if strings.TrimSpace(string(entry.Status)) != string(taskfsm.StatusImplementing) {
+		return false
+	}
+	if ShouldAutoAdvanceLifecycleImplementer(string(entry.Status), entry.ExecutionState, inst, tmuxAlive) {
+		return false
+	}
+
+	phase := taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase)
+	switch phase {
+	case taskfsm.ExecutionPhaseArchitecting,
+		taskfsm.ExecutionPhaseWaveRunning,
+		taskfsm.ExecutionPhaseWaveWaiting,
+		taskfsm.ExecutionPhaseSingleAgentImplementing,
+		taskfsm.ExecutionPhaseFixing:
+	default:
+		return false
+	}
+
+	if entry.ExecutionState.ActiveAgentType != "" && inst.AgentType != "" && entry.ExecutionState.ActiveAgentType != inst.AgentType {
+		return false
+	}
+
+	if !tmuxAlive {
+		return true
+	}
+
+	return NormalizeExecutionMode(inst.ExecutionMode) == ExecutionModeHeadless && inst.Exited
+}
+
 // setProgressFunc injects a progress hook into the execution session if it
 // implements progressReporter (i.e. tmuxExecutionSession). No-op otherwise.
 func (i *Instance) setProgressFunc(fn func(int, string)) {

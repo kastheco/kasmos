@@ -48,6 +48,9 @@ func TestGlobalKeyBindings_UpdatedStatusLineLabels(t *testing.T) {
 	if got := GlobalkeyBindings[KeyViewPlan].Help().Desc; got != "view plan" {
 		t.Fatalf("KeyViewPlan help desc = %q, want %q", got, "view plan")
 	}
+	if got := GlobalkeyBindings[KeyCommandLauncher].Help().Desc; got != "commands" {
+		t.Fatalf("KeyCommandLauncher help desc = %q, want %q", got, "commands")
+	}
 }
 
 func TestYesKeyInGlobalMap(t *testing.T) {

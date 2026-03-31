@@ -18,6 +18,7 @@ import (
 
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskfsm"
+	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
@@ -36,18 +37,25 @@ import (
 // repositories for signal files and executes the resulting actions via the
 // configured AgentSpawner.
 type Daemon struct {
-	cfg          *DaemonConfig
-	repos        *RepoManager
-	spawner      *TmuxSpawner
-	logger       *slog.Logger
-	pidLock      *PIDLock
-	broadcaster  *api.EventBroadcaster
-	prMonitor    *PRMonitor
-	pushBranch   func(*session.Instance) error
-	killAgent    func(repoPath, planFile, agentType string) error
-	spawnPlanner func(context.Context, loop.SpawnOpts) error
-	mu           sync.RWMutex
-	startedAt    time.Time
+	cfg             *DaemonConfig
+	repos           *RepoManager
+	spawner         *TmuxSpawner
+	logger          *slog.Logger
+	pidLock         *PIDLock
+	broadcaster     *api.EventBroadcaster
+	prMonitor       *PRMonitor
+	pushBranch      func(*session.Instance) error
+	killAgent       func(repoPath, planFile, agentType string) error
+	spawnPlanner    func(context.Context, loop.SpawnOpts) error
+	spawnReviewer   func(context.Context, loop.SpawnOpts) error
+	spawnCoder      func(context.Context, loop.SpawnOpts) error
+	spawnElaborator func(context.Context, loop.SpawnOpts) error
+	spawnFixer      func(context.Context, loop.SpawnOpts) error
+	spawnWaveTask   func(context.Context, loop.SpawnOpts, taskparser.Task, string, int) error
+	killWaveAgents  func(repoPath, planFile string, wave int) error
+	createPR        func(RepoEntry, string, string) error
+	mu              sync.RWMutex
+	startedAt       time.Time
 }
 
 // daemonStateAdapter adapts the Daemon to the api.StateProvider interface.
@@ -126,6 +134,35 @@ func (a *daemonStateAdapter) ListPlans(project string) ([]taskstore.TaskEntry, e
 	return store.List(project)
 }
 
+func taskStatusFromEntry(entry taskstore.TaskEntry) api.TaskStatus {
+	return api.TaskStatus{
+		Filename:       entry.Filename,
+		Status:         string(entry.Status),
+		ExecutionState: entry.ExecutionState,
+		Branch:         entry.Branch,
+		PRURL:          entry.PRURL,
+		ReviewCycle:    entry.ReviewCycle,
+		Description:    entry.Description,
+		Topic:          entry.Topic,
+	}
+}
+
+func (a *daemonStateAdapter) ListTasks(project string) ([]api.TaskStatus, error) {
+	store, err := a.TaskStoreForProject(project)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := store.List(project)
+	if err != nil {
+		return nil, err
+	}
+	tasks := make([]api.TaskStatus, 0, len(entries))
+	for _, entry := range entries {
+		tasks = append(tasks, taskStatusFromEntry(entry))
+	}
+	return tasks, nil
+}
+
 func (a *daemonStateAdapter) TaskStoreForProject(project string) (taskstore.Store, error) {
 	entries := a.d.repos.List()
 	for _, e := range entries {
@@ -200,6 +237,7 @@ func NewDaemon(cfg *DaemonConfig) (*Daemon, error) {
 	}))
 
 	repos := NewRepoManager()
+	repos.autoAdvance = cfg.AutoAdvance
 	repos.autoReviewFix = cfg.AutoReviewFix
 	repos.maxReviewFixCycles = cfg.MaxReviewFixCycles
 
@@ -296,7 +334,7 @@ func (d *Daemon) startPlanAsync(entry RepoEntry, planFile, prompt, program strin
 	}
 	if d.broadcaster != nil {
 		d.broadcaster.Emit(api.Event{
-			Kind:      "agent_spawned",
+			Kind:      api.EventKindAgentSpawned,
 			Message:   "planner spawned for " + planFile,
 			Repo:      entry.Path,
 			PlanFile:  planFile,
@@ -673,6 +711,98 @@ func clearRepoExecutionState(e RepoEntry, planFile string) error {
 	return ps.ClearExecutionState(planFile)
 }
 
+func (d *Daemon) plannerStillTracked(repoPath, planFile string) bool {
+	if d.spawner == nil {
+		return false
+	}
+
+	key := instanceKey(repoPath, planFile, session.AgentTypePlanner)
+	for _, inst := range d.spawner.RunningInstances() {
+		if inst.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *Daemon) blueprintSkipThreshold(repoPath string) int {
+	const defaultThreshold = 2
+
+	path := filepath.Join(repoPath, ".kasmos", config.TOMLConfigFileName)
+	result, err := config.LoadTOMLConfigFrom(path)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			d.logger.Warn("load repo config for blueprint-skip failed", "repo", repoPath, "err", err)
+		}
+		return defaultThreshold
+	}
+	if result == nil || result.BlueprintSkipThreshold == nil {
+		return defaultThreshold
+	}
+	return *result.BlueprintSkipThreshold
+}
+
+func (d *Daemon) autoImplementPlan(ctx context.Context, e RepoEntry, planFile string) error {
+	if e.Store == nil {
+		return fmt.Errorf("task store unavailable for %s", planFile)
+	}
+
+	killAgent := d.killAgent
+	if killAgent == nil {
+		killAgent = d.spawner.KillAgent
+	}
+	killErr := killAgent(e.Path, planFile, session.AgentTypePlanner)
+	if killErr != nil {
+		d.logger.Warn("kill planner before auto-implement failed", "repo", e.Path, "plan", planFile, "err", killErr)
+	}
+	if d.plannerStillTracked(e.Path, planFile) {
+		if killErr != nil {
+			return fmt.Errorf("planner agent still tracked for %s after cleanup failure: %w", planFile, killErr)
+		}
+		return fmt.Errorf("planner agent still tracked for %s after cleanup", planFile)
+	}
+
+	content, err := e.Store.GetContent(e.Project, planFile)
+	if err != nil {
+		return fmt.Errorf("load plan content for %s: %w", planFile, err)
+	}
+	if strings.TrimSpace(content) == "" {
+		return fmt.Errorf("load plan content for %s: empty content", planFile)
+	}
+
+	plan, err := taskparser.Parse(content)
+	if err != nil {
+		return fmt.Errorf("parse plan content for %s: %w", planFile, err)
+	}
+
+	if err := taskfsm.New(e.Store, e.Project, "").Transition(planFile, taskfsm.ImplementStart); err != nil {
+		return fmt.Errorf("transition %s to implementing: %w", planFile, err)
+	}
+
+	if orchestration.ShouldBlueprintSkip(plan, d.blueprintSkipThreshold(e.Path)) {
+		if e.Processor != nil {
+			e.Processor.ClearWaveOrchestrator(planFile)
+		}
+		if err := setRepoExecutionState(e, planFile, taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseSingleAgentImplementing),
+			ActiveAgentType: session.AgentTypeCoder,
+		}); err != nil {
+			return fmt.Errorf("persist single-agent execution state for %s: %w", planFile, err)
+		}
+		entry, err := e.Store.Get(e.Project, planFile)
+		if err != nil {
+			return fmt.Errorf("load task entry for %s: %w", planFile, err)
+		}
+		prompt := orchestration.BuildBlueprintSkipPrompt(planFile, plan)
+		return d.executeAction(ctx, e, loop.SpawnCoderAction{
+			PlanFile: entry.Filename,
+			Feedback: prompt,
+		})
+	}
+
+	return d.executeAction(ctx, e, loop.SpawnElaboratorAction{PlanFile: planFile})
+}
+
 func (d *Daemon) pushInstanceBranch(inst *session.Instance) error {
 	if d.pushBranch != nil {
 		return d.pushBranch(inst)
@@ -722,6 +852,9 @@ func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
 		}
 
 		md := inst.CollectMetadata()
+		if md.TmuxAlive && inst.Exited {
+			inst.Exited = false
+		}
 		if md.ContentCaptured {
 			if md.Updated {
 				inst.SetStatus(session.Running)
@@ -740,6 +873,33 @@ func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
 			continue
 		}
 		if !advanced {
+			if md.TmuxAlive || inst.Exited {
+				continue
+			}
+
+			inst.Exited = true
+			if inst.Status == session.Running {
+				inst.SetStatus(session.Ready)
+			}
+
+			if e.Store == nil || inst.TaskFile == "" {
+				continue
+			}
+
+			entry, err := e.Store.Get(e.Project, inst.TaskFile)
+			if err != nil {
+				d.logger.Warn("load task entry for exited instance failed", "repo", e.Path, "plan", inst.TaskFile, "instance", inst.Title, "err", err)
+				continue
+			}
+			if session.IsStuck(entry, inst, md.TmuxAlive) {
+				d.broadcaster.Emit(api.Event{
+					Kind:      api.EventKindStuckDetected,
+					Message:   "agent exited without an auto-advance path for " + inst.TaskFile,
+					Repo:      e.Path,
+					PlanFile:  inst.TaskFile,
+					AgentType: inst.AgentType,
+				})
+			}
 			continue
 		}
 
@@ -843,12 +1003,16 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			return fmt.Errorf("persist reviewer execution state: %w", err)
 		}
 		opts := reviewerSpawnOpts(e, entryFor(a.PlanFile))
-		if err := d.spawner.SpawnReviewer(ctx, opts); err != nil {
+		spawnReviewer := d.spawnReviewer
+		if spawnReviewer == nil {
+			spawnReviewer = d.spawner.SpawnReviewer
+		}
+		if err := spawnReviewer(ctx, opts); err != nil {
 			d.logger.Error("spawn reviewer failed", "plan", a.PlanFile, "err", err)
 			return err
 		}
 		d.broadcaster.Emit(api.Event{
-			Kind:      "agent_spawned",
+			Kind:      api.EventKindAgentSpawned,
 			Message:   "reviewer spawned for " + a.PlanFile,
 			Repo:      e.Path,
 			PlanFile:  a.PlanFile,
@@ -857,12 +1021,16 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		return nil
 	case loop.SpawnCoderAction:
 		opts := coderSpawnOpts(e, a.PlanFile, branchFor(a.PlanFile), a.Feedback)
-		if err := d.spawner.SpawnCoder(ctx, opts); err != nil {
+		spawnCoder := d.spawnCoder
+		if spawnCoder == nil {
+			spawnCoder = d.spawner.SpawnCoder
+		}
+		if err := spawnCoder(ctx, opts); err != nil {
 			d.logger.Error("spawn coder failed", "plan", a.PlanFile, "err", err)
 			return err
 		}
 		d.broadcaster.Emit(api.Event{
-			Kind:      "agent_spawned",
+			Kind:      api.EventKindAgentSpawned,
 			Message:   "coder spawned for " + a.PlanFile,
 			Repo:      e.Path,
 			PlanFile:  a.PlanFile,
@@ -883,12 +1051,16 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			Project:  e.Project,
 			Prompt:   spec.Prompt,
 		}
-		if err := d.spawner.SpawnElaborator(ctx, opts); err != nil {
+		spawnElaborator := d.spawnElaborator
+		if spawnElaborator == nil {
+			spawnElaborator = d.spawner.SpawnElaborator
+		}
+		if err := spawnElaborator(ctx, opts); err != nil {
 			d.logger.Error("spawn architect failed", "plan", a.PlanFile, "err", err)
 			return err
 		}
 		d.broadcaster.Emit(api.Event{
-			Kind:      "agent_spawned",
+			Kind:      api.EventKindAgentSpawned,
 			Message:   "architect spawned for " + a.PlanFile,
 			Repo:      e.Path,
 			PlanFile:  a.PlanFile,
@@ -903,12 +1075,16 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			return fmt.Errorf("persist fixer execution state: %w", err)
 		}
 		opts := fixerSpawnOpts(e, a.PlanFile, branchFor(a.PlanFile), a.Feedback)
-		if err := d.spawner.SpawnFixer(ctx, opts); err != nil {
+		spawnFixer := d.spawnFixer
+		if spawnFixer == nil {
+			spawnFixer = d.spawner.SpawnFixer
+		}
+		if err := spawnFixer(ctx, opts); err != nil {
 			d.logger.Error("spawn fixer failed", "plan", a.PlanFile, "err", err)
 			return err
 		}
 		d.broadcaster.Emit(api.Event{
-			Kind:      "agent_spawned",
+			Kind:      api.EventKindAgentSpawned,
 			Message:   "fixer spawned for " + a.PlanFile,
 			Repo:      e.Path,
 			PlanFile:  a.PlanFile,
@@ -928,6 +1104,11 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			AgentType: a.AgentType,
 		})
 		return nil
+	case loop.AutoImplementAction:
+		if d.cfg == nil || !d.cfg.AutoAdvance {
+			return nil
+		}
+		return d.autoImplementPlan(ctx, e, a.PlanFile)
 	case loop.AdvanceWaveAction:
 		return d.startWaveTasks(ctx, e, a.PlanFile)
 	case loop.TaskCompleteAction:
@@ -954,7 +1135,11 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		})
 		return nil
 	case loop.CreatePRAction:
-		if err := d.createPRForApprovedTask(e, a.PlanFile, a.ReviewBody); err != nil {
+		createPR := d.createPR
+		if createPR == nil {
+			createPR = d.createPRForApprovedTask
+		}
+		if err := createPR(e, a.PlanFile, a.ReviewBody); err != nil {
 			d.logger.Warn("create pr after approval failed", "plan", a.PlanFile, "repo", e.Path, "err", err)
 		}
 		d.broadcaster.Emit(api.Event{
@@ -973,6 +1158,18 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			Repo:     e.Path,
 			PlanFile: a.PlanFile,
 		})
+		return nil
+	case loop.IncrementReviewCycleAction:
+		if e.Store == nil {
+			return fmt.Errorf("task store unavailable for %s", a.PlanFile)
+		}
+		ps, err := taskstate.Load(e.Store, e.Project, "")
+		if err != nil {
+			return fmt.Errorf("load task state for review cycle increment: %w", err)
+		}
+		if err := ps.IncrementReviewCycle(a.PlanFile); err != nil {
+			return fmt.Errorf("increment review cycle: %w", err)
+		}
 		return nil
 	default:
 		d.logger.Debug("unhandled action", "kind", action.Kind(), "repo", e.Path)
@@ -1077,6 +1274,10 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 	}
 
 	waveNum := orch.CurrentWaveNumber()
+	spawnWaveTask := d.spawnWaveTask
+	if spawnWaveTask == nil {
+		spawnWaveTask = d.spawner.SpawnWaveTask
+	}
 	if err := setRepoExecutionState(e, planFile, taskstore.ExecutionState{
 		Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
 		ActiveAgentType: session.AgentTypeCoder,
@@ -1094,7 +1295,7 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 			Branch:   entry.Branch,
 			Wave:     waveNum,
 		}
-		if err := d.spawner.SpawnWaveTask(ctx, opts, task, prompt, peerCount); err != nil {
+		if err := spawnWaveTask(ctx, opts, task, prompt, peerCount); err != nil {
 			return err
 		}
 	}
@@ -1134,7 +1335,11 @@ func (d *Daemon) handleWaveTaskComplete(ctx context.Context, e RepoEntry, action
 		failed := orch.FailedTaskCount()
 		total := completed + failed
 
-		if err := d.spawner.KillWaveAgents(e.Path, action.PlanFile, waveNum); err != nil {
+		killWaveAgents := d.killWaveAgents
+		if killWaveAgents == nil {
+			killWaveAgents = d.spawner.KillWaveAgents
+		}
+		if err := killWaveAgents(e.Path, action.PlanFile, waveNum); err != nil {
 			return err
 		}
 
@@ -1185,7 +1390,11 @@ func (d *Daemon) handleWaveTaskComplete(ctx context.Context, e RepoEntry, action
 
 	case orchestration.WaveStateAllComplete:
 		waveNum := orch.CurrentWaveNumber()
-		if err := d.spawner.KillWaveAgents(e.Path, action.PlanFile, waveNum); err != nil {
+		killWaveAgents := d.killWaveAgents
+		if killWaveAgents == nil {
+			killWaveAgents = d.spawner.KillWaveAgents
+		}
+		if err := killWaveAgents(e.Path, action.PlanFile, waveNum); err != nil {
 			return err
 		}
 		e.Processor.ClearWaveOrchestrator(action.PlanFile)

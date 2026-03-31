@@ -28,6 +28,12 @@ func (m *home) applyPendingSetStatus(picked string) (tea.Model, tea.Cmd) {
 		m.pendingSetStatusTask = ""
 		return m, m.handleError(err)
 	}
+	if !m.allowLocalTaskMutations() {
+		m.toastManager.Info("manual status overrides are daemon-managed here")
+		m.state = stateDefault
+		m.pendingSetStatusTask = ""
+		return m, tea.Batch(tea.RequestWindowSize, m.toastTickCmd())
+	}
 	if err := m.taskState.ForceSetLifecycle(m.pendingSetStatusTask, status, state); err != nil {
 		m.state = stateDefault
 		m.pendingSetStatusTask = ""
@@ -483,18 +489,25 @@ func (m *home) finishPermissionOverlay(result overlay.Result) (tea.Model, tea.Cm
 func (m *home) handleRightClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	// Right-click in nav panel: select the clicked row then show context menu
 	if zone.Get(ui.ZoneNavPanel).InBounds(msg) {
+		clickedRow := false
 		for i := range m.nav.RowCount() {
 			if zone.Get(ui.NavRowZoneID(i)).InBounds(msg) {
 				m.nav.ClickItem(i)
+				m.setFocusSlot(slotNav)
+				clickedRow = true
 				break
 			}
 		}
-		if planFile := m.nav.GetSelectedPlanFile(); planFile != "" {
-			return m.openTaskContextMenu()
+		if clickedRow {
+			return m.openContextMenu()
 		}
 		return m, nil
 	}
 	return m, nil
+}
+
+func isCommandLauncherKey(msg tea.KeyPressMsg) bool {
+	return msg.Code == tea.KeySpace && msg.Mod.Contains(tea.ModShift) || msg.String() == "shift+space"
 }
 
 func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) {
@@ -1491,6 +1504,10 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		return m, nil
 	}
 
+	if isCommandLauncherKey(msg) {
+		return m.openCommandLauncher()
+	}
+
 	// Number shortcuts: pass 1/2/3 through to the agent's PTY when the
 	// embedded VT display is active. One-shot send, no mode change.
 	if m.previewTerminal != nil && (msg.String() == "1" || msg.String() == "2" || msg.String() == "3") {
@@ -1557,10 +1574,15 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 			m.overlays.Show(tio)
 			return m, nil
 		}
-		if m.focusSlot == slotNav && m.nav.ToggleSelectedExpand() {
-			return m, nil
+		if m.focusSlot == slotNav {
+			if m.nav.GetSelectedInstance() != nil {
+				return m.openContextMenu()
+			}
+			if m.nav.ToggleSelectedExpand() {
+				return m, nil
+			}
 		}
-		return m.openCommandLauncher()
+		return m, nil
 	case keys.KeyInfoTab:
 		// Toggle the compact info header without stealing sidebar focus or changing the instance tab.
 		m.tabbedWindow.SetShowInfo(!m.tabbedWindow.IsShowingInfo())
