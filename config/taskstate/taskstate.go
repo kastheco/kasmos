@@ -170,6 +170,21 @@ type TaskState struct {
 	project      string          // project name used with the store when store-backed
 }
 
+// HasStore reports whether this TaskState is backed by a persistent store.
+// Returns false for read-only snapshots (e.g. daemon-synced state).
+func (ps *TaskState) HasStore() bool {
+	return ps.store != nil
+}
+
+var errNoStore = fmt.Errorf("task state has no backing store (read-only snapshot)")
+
+func (ps *TaskState) requireStore() error {
+	if ps.store == nil {
+		return errNoStore
+	}
+	return nil
+}
+
 type TaskInfo struct {
 	Filename    string
 	Status      Status
@@ -462,6 +477,9 @@ func (ps *TaskState) ForceSetStatus(filename string, status Status) error {
 // ForceSetLifecycle overrides a plan's lifecycle status plus any persisted
 // execution metadata used to distinguish draft-ready from planned-ready tasks.
 func (ps *TaskState) ForceSetLifecycle(filename string, status Status, state taskstore.ExecutionState) error {
+	if err := ps.requireStore(); err != nil {
+		return err
+	}
 	if !isValidStatus(status) {
 		return fmt.Errorf("invalid status %q: must be one of ready, planning, implementing, reviewing, done, cancelled", status)
 	}
@@ -490,6 +508,9 @@ func isValidStatus(s Status) bool {
 // setStatus updates a plan's status and persists to the store.
 // Unexported: only for use within this package (tests). Production code must use taskfsm.Transition.
 func (ps *TaskState) setStatus(filename string, status Status) error {
+	if err := ps.requireStore(); err != nil {
+		return err
+	}
 	if ps.Plans == nil {
 		ps.Plans = make(map[string]TaskEntry)
 	}
@@ -595,6 +616,9 @@ func (ps *TaskState) UpdateSubtaskStatus(filename string, taskNumber int, status
 
 // Create adds a new plan entry to the state and auto-creates the topic if needed.
 func (ps *TaskState) Create(filename, description, branch, topic string, createdAt time.Time) error {
+	if err := ps.requireStore(); err != nil {
+		return err
+	}
 	if ps.Plans == nil {
 		ps.Plans = make(map[string]TaskEntry)
 	}
@@ -637,6 +661,9 @@ func (ps *TaskState) Create(filename, description, branch, topic string, created
 // Register adds a new plan entry with metadata and persists to the store.
 // Returns an error if the plan already exists.
 func (ps *TaskState) Register(filename, description, branch string, createdAt time.Time) error {
+	if err := ps.requireStore(); err != nil {
+		return err
+	}
 	if ps.Plans == nil {
 		ps.Plans = make(map[string]TaskEntry)
 	}
@@ -817,6 +844,9 @@ func (ps *TaskState) toTaskstoreEntry(filename string, e TaskEntry) taskstore.Ta
 // SetExecutionState updates a plan's fine-grained execution metadata and
 // persists it to the store.
 func (ps *TaskState) SetExecutionState(filename string, state taskstore.ExecutionState) error {
+	if err := ps.requireStore(); err != nil {
+		return err
+	}
 	entry, ok := ps.Plans[filename]
 	if !ok {
 		return fmt.Errorf("plan not found: %s", filename)

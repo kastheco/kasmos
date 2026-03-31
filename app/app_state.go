@@ -2123,7 +2123,7 @@ func (m *home) viewSelectedPlan() (tea.Model, tea.Cmd) {
 
 // createTaskEntry creates a new plan entry in the store.
 func (m *home) createTaskEntry(name, description, topic string) error {
-	if m.taskState == nil {
+	if m.taskState == nil || !m.taskState.HasStore() {
 		if m.taskStore == nil {
 			return fmt.Errorf("task store not configured")
 		}
@@ -2178,7 +2178,7 @@ func renderPlanStub(name, description, filename string) string {
 
 // createPlanRecord registers the plan in the store.
 func (m *home) createPlanRecord(planFile, description, branch string, now time.Time) error {
-	if m.taskState == nil {
+	if m.taskState == nil || !m.taskState.HasStore() {
 		if m.taskStore == nil {
 			return fmt.Errorf("task store not configured")
 		}
