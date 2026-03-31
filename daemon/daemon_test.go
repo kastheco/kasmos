@@ -185,6 +185,76 @@ func TestDaemonStateAdapter_ListTasksMapsEntries(t *testing.T) {
 	}}, tasks)
 }
 
+func TestDaemonStateAdapter_ListInstancesIncludesWaveTaskMetadata(t *testing.T) {
+	const project = "proj"
+
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+	d.repos.repos = []RepoEntry{{
+		Path:    "/tmp/repo",
+		Project: project,
+	}}
+	d.spawner.restoreInstance = func(data session.InstanceData) (*session.Instance, error) {
+		inst, err := session.NewInstance(session.InstanceOptions{
+			Title:         data.Title,
+			Path:          data.Path,
+			Program:       data.Program,
+			ExecutionMode: data.ExecutionMode,
+			TaskFile:      data.TaskFile,
+			AgentType:     data.AgentType,
+			TaskNumber:    data.TaskNumber,
+			WaveNumber:    data.WaveNumber,
+			ReviewCycle:   data.ReviewCycle,
+		})
+		if err != nil {
+			return nil, err
+		}
+		inst.Branch = data.Branch
+		if data.Branch != "" {
+			inst.BindSharedTaskWorktree(data.Path, data.Branch)
+		}
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return inst, nil
+	}
+
+	err := d.spawner.RestoreTrackedInstance("/tmp/repo", project, "feature", session.AgentTypeCoder, session.InstanceData{
+		Title:         "feature-W2-T3",
+		Path:          "/tmp/repo",
+		Branch:        "plan/feature",
+		Status:        session.Running,
+		Program:       "opencode",
+		ExecutionMode: session.ExecutionModeTmux,
+		TaskFile:      "feature",
+		AgentType:     session.AgentTypeCoder,
+		TaskNumber:    3,
+		WaveNumber:    2,
+		ReviewCycle:   4,
+	})
+	require.NoError(t, err)
+
+	adapter := &daemonStateAdapter{d: d}
+	instances := adapter.ListInstances(project)
+	require.Len(t, instances, 1)
+	assert.Equal(t, api.InstanceStatus{
+		ID:          "feature-W2-T3",
+		Project:     project,
+		Plan:        "feature",
+		Role:        session.AgentTypeCoder,
+		Active:      true,
+		Title:       "feature-W2-T3",
+		Branch:      "plan/feature",
+		Program:     "opencode",
+		TaskNumber:  3,
+		WaveNumber:  2,
+		ReviewCycle: 4,
+	}, instances[0])
+}
+
 func TestDaemon_GracefulShutdown_DrainsAgents(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &DaemonConfig{
@@ -316,6 +386,92 @@ func TestDaemon_RecoverSessions_AdoptsNumberedReviewerSessions(t *testing.T) {
 	assert.Equal(t, session.AgentTypeReviewer, running[0].AgentType)
 	assert.Equal(t, "feature-review-6", restored.Title)
 	assert.Equal(t, 6, restored.ReviewCycle)
+}
+
+func TestDaemon_RecoverSessions_RestoresWaveTaskMetadataForListInstances(t *testing.T) {
+	const project = "proj"
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: "feature",
+		Status:   taskstore.StatusImplementing,
+		Branch:   "plan/feature",
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+			ActiveAgentType: session.AgentTypeCoder,
+			ActiveWave:      2,
+		},
+	}))
+	require.NoError(t, store.SetContent(project, "feature", `# Feature Plan
+
+## Wave 1
+### Task 1: First Thing
+
+Do the first thing.
+
+## Wave 2
+### Task 3: Third Thing
+
+Do the third thing.
+`))
+
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+	d.repos.repos = []RepoEntry{{
+		Path:    "/tmp/proj",
+		Project: project,
+		Store:   store,
+	}}
+	d.spawner.discoverOrphans = func(_ []string) ([]tmuxpkg.SessionInfo, error) {
+		return []tmuxpkg.SessionInfo{{Title: "feature-W2-T3"}}, nil
+	}
+	var restored session.InstanceData
+	d.spawner.restoreInstance = func(data session.InstanceData) (*session.Instance, error) {
+		restored = data
+		inst, err := session.NewInstance(session.InstanceOptions{
+			Title:         data.Title,
+			Path:          data.Path,
+			Program:       data.Program,
+			ExecutionMode: data.ExecutionMode,
+			TaskFile:      data.TaskFile,
+			AgentType:     data.AgentType,
+			TaskNumber:    data.TaskNumber,
+			WaveNumber:    data.WaveNumber,
+			ReviewCycle:   data.ReviewCycle,
+		})
+		if err != nil {
+			return nil, err
+		}
+		inst.Branch = data.Branch
+		if data.Branch != "" {
+			inst.BindSharedTaskWorktree(data.Path, data.Branch)
+		}
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return inst, nil
+	}
+
+	recovered, err := d.RecoverSessions()
+	require.NoError(t, err)
+	assert.Equal(t, 1, recovered)
+	assert.Equal(t, session.AgentTypeCoder, restored.AgentType)
+	assert.Equal(t, 2, restored.WaveNumber)
+	assert.Equal(t, 3, restored.TaskNumber)
+
+	adapter := &daemonStateAdapter{d: d}
+	instances := adapter.ListInstances(project)
+	require.Len(t, instances, 1)
+	assert.Equal(t, "feature", instances[0].Plan)
+	assert.Equal(t, session.AgentTypeCoder, instances[0].Role)
+	assert.Equal(t, "feature-W2-T3", instances[0].Title)
+	assert.Equal(t, "plan/feature", instances[0].Branch)
+	assert.Equal(t, "opencode", instances[0].Program)
+	assert.Equal(t, 2, instances[0].WaveNumber)
+	assert.Equal(t, 3, instances[0].TaskNumber)
+	assert.Equal(t, 0, instances[0].ReviewCycle)
 }
 
 func TestDaemon_StartPlan_ReturnsBeforeSpawnCompletes(t *testing.T) {

@@ -64,19 +64,35 @@ func TestTmuxSpawner_RestoreTrackedInstance_KeysWaveTasksByWaveAndTask(t *testin
 		return &session.Instance{Title: data.Title, Path: data.Path, TaskFile: data.TaskFile, AgentType: data.AgentType, WaveNumber: data.WaveNumber, TaskNumber: data.TaskNumber}, nil
 	}
 
-	err := s.RestoreTrackedInstance("/tmp/repo", "proj", "plan.md", session.AgentTypeCoder, session.InstanceData{
+	data := session.InstanceData{
 		Title:      "plan-W2-T3",
 		Path:       "/tmp/repo",
 		TaskFile:   "plan.md",
 		AgentType:  session.AgentTypeCoder,
 		WaveNumber: 2,
 		TaskNumber: 3,
-	})
+	}
+
+	err := s.RestoreTrackedInstance("/tmp/repo", "proj", "plan.md", session.AgentTypeCoder, data)
 	require.NoError(t, err)
 
 	running := s.RunningInstances()
 	require.Len(t, running, 1)
-	assert.Equal(t, "/tmp/repo:plan.md:coder:w2:t3", running[0].Key)
+	assert.Equal(t, instanceKeyForTask("/tmp/repo", "plan.md", session.AgentTypeCoder, 2, 3), running[0].Key)
+
+	instances := s.InstancesForRepo("/tmp/repo")
+	require.Len(t, instances, 1)
+	assert.Equal(t, data.Title, instances[0].Title)
+	assert.Equal(t, data.TaskFile, instances[0].TaskFile)
+	assert.Equal(t, data.AgentType, instances[0].AgentType)
+	assert.Equal(t, data.WaveNumber, instances[0].WaveNumber)
+	assert.Equal(t, data.TaskNumber, instances[0].TaskNumber)
+
+	err = s.RestoreTrackedInstance("/tmp/repo", "proj", "plan.md", session.AgentTypeCoder, data)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errInstanceAlreadyTracked)
+	assert.Len(t, s.RunningInstances(), 1)
+	assert.Len(t, s.InstancesForRepo("/tmp/repo"), 1)
 }
 
 func TestTmuxSpawner_KillAgent_PreservesTrackingWhenClientAttached(t *testing.T) {
