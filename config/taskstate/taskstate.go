@@ -176,15 +176,6 @@ func (ps *TaskState) HasStore() bool {
 	return ps.store != nil
 }
 
-// AttachStore binds a persistent store and project name to a TaskState that was
-// created without one (e.g. daemon-synced snapshots via LoadFromEntries). This
-// enables write operations and store-backed reads (subtasks, content) that would
-// otherwise panic on a nil store.
-func (ps *TaskState) AttachStore(store taskstore.Store, project string) {
-	ps.store = store
-	ps.project = project
-}
-
 var errNoStore = fmt.Errorf("task state has no backing store (read-only snapshot)")
 
 func (ps *TaskState) requireStore() error {

@@ -185,10 +185,6 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		if selected == nil || selected.TaskFile == "" || m.taskState == nil {
 			return m, nil
 		}
-		if !m.allowLocalTaskMutations() {
-			m.toastManager.Info("review cycle changes are daemon-managed here")
-			return m, m.toastTickCmd()
-		}
 		if err := m.captureSelectedReviewFeedback(selected); err != nil {
 			return m, m.handleError(err)
 		}
@@ -284,18 +280,16 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 					return m, m.toastTickCmd()
 				}
 			}
-			if m.allowLocalTaskMutations() {
-				if err := m.fsm.Transition(planFile, taskfsm.ReviewChangesRequested); err != nil {
-					return m, m.handleError(err)
-				}
-				if err := m.taskState.IncrementReviewCycle(planFile); err != nil {
-					return m, m.handleError(err)
-				}
-				m.audit(auditlog.EventPlanTransition, "reviewing → implementing (manual fixer)",
-					auditlog.WithPlan(planFile))
-				m.loadTaskState()
-				m.updateSidebarTasks()
+			if err := m.fsm.Transition(planFile, taskfsm.ReviewChangesRequested); err != nil {
+				return m, m.handleError(err)
 			}
+			if err := m.taskState.IncrementReviewCycle(planFile); err != nil {
+				return m, m.handleError(err)
+			}
+			m.audit(auditlog.EventPlanTransition, "reviewing → implementing (manual fixer)",
+				auditlog.WithPlan(planFile))
+			m.loadTaskState()
+			m.updateSidebarTasks()
 		}
 
 		if cmd := m.spawnFixerWithFeedback(planFile, feedback); cmd != nil {
