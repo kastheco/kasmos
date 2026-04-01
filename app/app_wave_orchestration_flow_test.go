@@ -1390,6 +1390,69 @@ func TestAutoAdvanceWaves_EmitsAdvanceMsgOnSuccess(t *testing.T) {
 	assert.NotNil(t, cmd, "auto-advance must emit a tea.Cmd containing waveAdvanceMsg")
 }
 
+// TestWaveTaskCompletion_PromptDetectedCompletesOneTaskWave verifies that a
+// wave task returning to prompt after doing real work completes the current
+// one-task wave and shows the next-wave confirmation UI.
+func TestWaveTaskCompletion_PromptDetectedCompletesOneTaskWave(t *testing.T) {
+	const planFile = "prompt-detected-complete"
+
+	plan := &taskparser.Plan{Waves: []taskparser.Wave{
+		{Number: 1, Tasks: []taskparser.Task{{Number: 1, Title: "do work"}}},
+		{Number: 2, Tasks: []taskparser.Task{{Number: 2, Title: "follow up"}}},
+	}}
+	orch := orchestration.NewWaveOrchestrator(planFile, plan)
+	orch.StartNextWave()
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.Register(planFile, "prompt-detected completion test", "plan/prompt-detected-complete", time.Now()))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+
+	planName := taskstate.DisplayName(planFile)
+	instTitle := fmt.Sprintf("%s-W1-T1", planName)
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:      instTitle,
+		Path:       t.TempDir(),
+		Program:    "claude",
+		TaskFile:   planFile,
+		TaskNumber: 1,
+		WaveNumber: 1,
+	})
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	inst.HasWorked = true
+	inst.PromptDetected = true
+	inst.AwaitingWork = false
+
+	h := waveFlowHome(t, ps, plansDir, map[string]*orchestration.WaveOrchestrator{planFile: orch})
+	_ = h.nav.AddInstance(inst)
+
+	model, _ := h.Update(metadataResultMsg{
+		Results:   []instanceMetadata{{Title: instTitle, TmuxAlive: true}},
+		PlanState: ps,
+	})
+	updated := model.(*home)
+
+	assert.Equal(t, orchestration.WaveStateWaveComplete, orch.State(),
+		"prompt-detected completion should resolve the finished wave")
+	assert.Equal(t, stateConfirm, updated.state,
+		"manual wave orchestration should show the next-wave confirmation")
+	require.True(t, updated.overlays.IsActive(),
+		"next-wave confirmation overlay should be visible")
+	co, ok := updated.overlays.Current().(*overlay.ConfirmationOverlay)
+	require.True(t, ok, "current overlay must be a ConfirmationOverlay")
+	assert.Equal(t, "y", co.ConfirmKey,
+		"successful wave completion should show the standard next-wave confirm")
+	assert.Equal(t, 1, orch.CompletedTaskCount(),
+		"completed task should be recorded as successful")
+	assert.Equal(t, 0, orch.FailedTaskCount(),
+		"prompt-detected completion must not count as a failure")
+}
+
 // TestWaveTaskCompletion_RequiresHasWorked verifies that a wave task is NOT
 // auto-completed when PromptDetected is true but HasWorked is false. This
 // prevents permission prompts and early prompt returns from prematurely
@@ -1428,6 +1491,7 @@ func TestWaveTaskCompletion_RequiresHasWorked(t *testing.T) {
 	require.NoError(t, err)
 	inst.PromptDetected = true
 	inst.HasWorked = false // prompt seen but no real work yet
+	inst.AwaitingWork = false
 
 	h := waveFlowHome(t, ps, plansDir, map[string]*orchestration.WaveOrchestrator{planFile: orch})
 	_ = h.nav.AddInstance(inst)
@@ -1446,6 +1510,8 @@ func TestWaveTaskCompletion_RequiresHasWorked(t *testing.T) {
 		"wave must remain running when task has not done real work")
 	assert.NotEqual(t, stateConfirm, updated.state,
 		"no completion dialog should appear before real work is done")
+	assert.False(t, updated.overlays.IsActive(),
+		"no completion overlay should appear before real work is observed")
 
 	// Simulate the agent doing real work and returning to prompt — wave must auto-complete.
 	inst.HasWorked = true
@@ -1495,6 +1561,7 @@ func TestWaveTaskCompletion_IgnoresPromptEchoUpdates(t *testing.T) {
 	require.NoError(t, err)
 	inst.PromptDetected = true
 	inst.HasWorked = false
+	inst.AwaitingWork = false
 
 	h := waveFlowHome(t, ps, plansDir, map[string]*orchestration.WaveOrchestrator{planFile: orch})
 	_ = h.nav.AddInstance(inst)
@@ -1510,6 +1577,10 @@ func TestWaveTaskCompletion_IgnoresPromptEchoUpdates(t *testing.T) {
 
 	assert.Len(t, updated.waveOrchestrators, 1,
 		"orchestrator must still exist when only a prompt-echo update arrived")
+	assert.Equal(t, orchestration.WaveStateRunning, orch.State(),
+		"prompt-echo updates must leave the wave running")
+	assert.False(t, updated.overlays.IsActive(),
+		"prompt-echo updates must not show a completion dialog")
 
 	// Second update: a task-finished signal arrives — now the orchestrator must be removed.
 	model2, _ := updated.Update(metadataResultMsg{
@@ -1523,6 +1594,94 @@ func TestWaveTaskCompletion_IgnoresPromptEchoUpdates(t *testing.T) {
 	})
 	updated2 := model2.(*home)
 	assert.Empty(t, updated2.waveOrchestrators, "orchestrator must be deleted after the task-finished signal arrives")
+}
+
+// TestWaveTaskCompletion_TmuxExitDependsOnHasWorked verifies that a dead tmux
+// session is treated as completion only after the task has produced real work.
+func TestWaveTaskCompletion_TmuxExitDependsOnHasWorked(t *testing.T) {
+	tests := []struct {
+		name             string
+		hasWorked        bool
+		expectCompleted  int
+		expectFailed     int
+		expectConfirmKey string
+		expectOverlay    bool
+	}{
+		{
+			name:             "after real work completes wave",
+			hasWorked:        true,
+			expectCompleted:  1,
+			expectFailed:     0,
+			expectConfirmKey: "y",
+			expectOverlay:    true,
+		},
+		{
+			name:             "before real work fails wave",
+			hasWorked:        false,
+			expectCompleted:  0,
+			expectFailed:     1,
+			expectConfirmKey: "r",
+			expectOverlay:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			planFile := fmt.Sprintf("tmux-exit-%t", tt.hasWorked)
+			plan := &taskparser.Plan{Waves: []taskparser.Wave{
+				{Number: 1, Tasks: []taskparser.Task{{Number: 1, Title: "do work"}}},
+				{Number: 2, Tasks: []taskparser.Task{{Number: 2, Title: "follow up"}}},
+			}}
+			orch := orchestration.NewWaveOrchestrator(planFile, plan)
+			orch.StartNextWave()
+
+			dir := t.TempDir()
+			plansDir := filepath.Join(dir, "docs", "plans")
+			require.NoError(t, os.MkdirAll(plansDir, 0o755))
+			ps, err := newTestPlanState(t, plansDir)
+			require.NoError(t, err)
+			require.NoError(t, ps.Register(planFile, "tmux exit completion test", fmt.Sprintf("plan/%s", planFile), time.Now()))
+			seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+
+			planName := taskstate.DisplayName(planFile)
+			instTitle := fmt.Sprintf("%s-W1-T1", planName)
+
+			inst, err := session.NewInstance(session.InstanceOptions{
+				Title:      instTitle,
+				Path:       t.TempDir(),
+				Program:    "claude",
+				TaskFile:   planFile,
+				TaskNumber: 1,
+				WaveNumber: 1,
+			})
+			require.NoError(t, err)
+			inst.MarkStartedForTest()
+			inst.HasWorked = tt.hasWorked
+
+			h := waveFlowHome(t, ps, plansDir, map[string]*orchestration.WaveOrchestrator{planFile: orch})
+			_ = h.nav.AddInstance(inst)
+
+			model, _ := h.Update(metadataResultMsg{
+				Results:   []instanceMetadata{{Title: instTitle, TmuxAlive: false}},
+				PlanState: ps,
+			})
+			updated := model.(*home)
+
+			assert.Equal(t, orchestration.WaveStateWaveComplete, orch.State(),
+				"resolved first wave should wait for user confirmation")
+			assert.Equal(t, tt.expectCompleted, orch.CompletedTaskCount())
+			assert.Equal(t, tt.expectFailed, orch.FailedTaskCount())
+			assert.Equal(t, stateConfirm, updated.state,
+				"resolving the wave task should show the wave decision UI")
+			assert.Equal(t, tt.expectOverlay, updated.overlays.IsActive())
+
+			if tt.expectOverlay {
+				co, ok := updated.overlays.Current().(*overlay.ConfirmationOverlay)
+				require.True(t, ok, "current overlay must be a ConfirmationOverlay")
+				assert.Equal(t, tt.expectConfirmKey, co.ConfirmKey)
+			}
+		})
+	}
 }
 
 // ---------------------------------------------------------------------------
