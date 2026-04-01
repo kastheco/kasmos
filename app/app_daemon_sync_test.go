@@ -208,3 +208,58 @@ func TestDaemonSync_MetadataTickReflectsDaemonTaskStateInSidebar(t *testing.T) {
 		})
 	}
 }
+
+func TestDaemonSync_MetadataTickRebuildsWaveOrchestratorForDaemonWaveTask(t *testing.T) {
+	const planFile = "feature"
+
+	h, _ := newDaemonSyncTestHome(t, planFile)
+	const content = "# Plan\n\n**Goal:** daemon wave restore\n\n## Wave 1\n\n### Task 1: First\n\nDo first.\n\n### Task 2: Second\n\nDo second.\n"
+	require.NoError(t, h.taskState.IngestContent(planFile, content))
+	require.NoError(t, h.taskState.ForceSetLifecycle(planFile, taskstate.StatusImplementing, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+		ActiveAgentType: session.AgentTypeCoder,
+		ActiveWave:      1,
+	}))
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:      "feature-W1-T1",
+		Path:       h.activeRepoPath,
+		Program:    "opencode",
+		TaskFile:   planFile,
+		AgentType:  session.AgentTypeCoder,
+		TaskNumber: 1,
+		WaveNumber: 1,
+	})
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	inst.SetStatus(session.Running)
+
+	inst2, err := session.NewInstance(session.InstanceOptions{
+		Title:      "feature-W1-T2",
+		Path:       h.activeRepoPath,
+		Program:    "opencode",
+		TaskFile:   planFile,
+		AgentType:  session.AgentTypeCoder,
+		TaskNumber: 2,
+		WaveNumber: 1,
+	})
+	require.NoError(t, err)
+	inst2.MarkStartedForTest()
+	inst2.SetStatus(session.Running)
+
+	model, _ := h.Update(metadataResultMsg{
+		Results:           []instanceMetadata{{Title: inst.Title, TmuxAlive: true}, {Title: inst2.Title, TmuxAlive: true}},
+		PlanState:         h.taskState,
+		DaemonTaskState:   true,
+		DaemonManagedRepo: true,
+		DaemonInstances:   []*session.Instance{inst, inst2},
+	})
+	updated := model.(*home)
+
+	orch, ok := updated.waveOrchestrators[planFile]
+	require.True(t, ok, "daemon-managed wave task should rebuild an orphaned orchestrator")
+	assert.Equal(t, 1, orch.CurrentWaveNumber())
+	assert.Equal(t, orchestration.WaveStateRunning, orch.State())
+	assert.True(t, orch.IsTaskRunning(1), "live daemon wave task should restore as running")
+	assert.True(t, orch.IsTaskRunning(2), "other tasks in the active wave should remain runnable")
+}

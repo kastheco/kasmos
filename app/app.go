@@ -1580,6 +1580,24 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		for _, inst := range msg.DaemonInstances {
+			if inst == nil {
+				continue
+			}
+			exists := false
+			for _, existing := range m.nav.GetInstances() {
+				if existing.Title == inst.Title {
+					exists = true
+					break
+				}
+			}
+			if exists {
+				continue
+			}
+			m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))
+			m.allInstances = append(m.allInstances, inst)
+		}
+
 		// Apply collected metadata to instances — zero I/O, just field writes.
 		// All subprocess calls (TapEnter, SendPrompt) are deferred to tea.Cmds.
 		instanceMap := make(map[string]*session.Instance)
@@ -1708,22 +1726,12 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.PlanState != nil && (msg.DaemonTaskState || len(msg.Signals) == 0) {
 			m.taskState = msg.PlanState
 		}
-		for _, inst := range msg.DaemonInstances {
-			if inst == nil {
-				continue
-			}
-			exists := false
-			for _, existing := range m.nav.GetInstances() {
-				if existing.Title == inst.Title {
-					exists = true
-					break
-				}
-			}
-			if exists {
-				continue
-			}
-			m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))
-			m.allInstances = append(m.allInstances, inst)
+		if msg.DaemonManagedRepo {
+			// Daemon-backed wave tasks are injected into the nav during metadata sync,
+			// after startup recovery has already run. Rebuild orphaned orchestrators on
+			// every daemon-managed tick so restarted/adopted wave tasks regain the
+			// in-memory state required for mark-complete actions and wave advancement.
+			m.rebuildOrphanedOrchestrators()
 		}
 
 		// Store the latest tmux session count for the bottom bar.
