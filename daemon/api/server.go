@@ -84,6 +84,7 @@ type StateProvider interface {
 	ListPlans(project string) ([]taskstore.TaskEntry, error)
 	ListTasks(project string) ([]TaskStatus, error)
 	TaskStoreForProject(project string) (taskstore.Store, error)
+	SignalGatewayForProject(project string) (taskstore.SignalGateway, error)
 	ListInstances(project string) []InstanceStatus
 	StartPlan(project, filename, prompt, program string) error
 	EventStream() <-chan Event
@@ -166,6 +167,12 @@ func (s *DaemonState) TaskStoreForProject(project string) (taskstore.Store, erro
 	return nil, fmt.Errorf("%w: %s", ErrProjectNotFound, project)
 }
 
+// SignalGatewayForProject implements StateProvider. DaemonState has no backing
+// signal gateway, so it always reports the project as missing.
+func (s *DaemonState) SignalGatewayForProject(project string) (taskstore.SignalGateway, error) {
+	return nil, fmt.Errorf("%w: %s", ErrProjectNotFound, project)
+}
+
 // ListInstances implements StateProvider.
 func (s *DaemonState) ListInstances(_ string) []InstanceStatus {
 	return nil
@@ -188,10 +195,11 @@ func (s *DaemonState) EventStream() <-chan Event {
 
 // Handler is an http.Handler that exposes the daemon control API.
 type Handler struct {
-	state         StateProvider
-	broadcaster   *EventBroadcaster // optional; if set, SSE uses Subscribe()
-	mux           *http.ServeMux
-	storeHandlers sync.Map // project string → http.Handler; avoids per-request ServeMux allocation
+	state          StateProvider
+	broadcaster    *EventBroadcaster // optional; if set, SSE uses Subscribe()
+	mux            *http.ServeMux
+	storeHandlers  sync.Map // project string → http.Handler; avoids per-request ServeMux allocation
+	signalHandlers sync.Map // project string → http.Handler; avoids per-request ServeMux allocation
 }
 
 // NewHandler creates a Handler backed by the given StateProvider and registers
@@ -363,6 +371,31 @@ func (h *Handler) handleTaskStoreProxy(w http.ResponseWriter, r *http.Request) {
 	project, err := projectFromTaskstorePath(r.URL.Path)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	if strings.Contains(r.URL.Path, "/signals") {
+		if cached, ok := h.signalHandlers.Load(project); ok {
+			cached.(http.Handler).ServeHTTP(w, r)
+			return
+		}
+
+		gateway, err := h.state.SignalGatewayForProject(project)
+		if err != nil {
+			switch {
+			case errors.Is(err, ErrTaskStoreUnavailable):
+				writeError(w, http.StatusServiceUnavailable, err.Error())
+			case errors.Is(err, ErrProjectNotFound):
+				writeError(w, http.StatusNotFound, err.Error())
+			default:
+				writeError(w, http.StatusInternalServerError, err.Error())
+			}
+			return
+		}
+
+		handler := taskstore.NewSignalHandler(gateway)
+		actual, _ := h.signalHandlers.LoadOrStore(project, handler)
+		actual.(http.Handler).ServeHTTP(w, r)
 		return
 	}
 

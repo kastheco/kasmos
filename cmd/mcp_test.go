@@ -19,10 +19,9 @@ func TestMCPCmd_Exists(t *testing.T) {
 	assert.Equal(t, "mcp", cmd.Name())
 }
 
-func TestMCPCmd_DefaultDBFlag(t *testing.T) {
+func TestMCPCmd_DoesNotExposeSQLiteDBFlag(t *testing.T) {
 	cmd := NewMCPCmd()
-	require.NotNil(t, cmd.Flags().Lookup("db"))
-	assert.NotEmpty(t, cmd.Flags().Lookup("db").DefValue)
+	assert.Nil(t, cmd.Flags().Lookup("db"))
 }
 
 func TestNewConfiguredMCPServer_RegistersSymbolsTool(t *testing.T) {

@@ -52,6 +52,9 @@ func OpenAuthoritativeStore(project string) (Store, error) {
 func OpenAuthoritativeSignalGateway(project string) (SignalGateway, error) {
 	cfg := config.LoadConfig()
 	if strings.TrimSpace(cfg.DatabaseURL) == "" {
+		if gateway, err := openDaemonBackedSignalGateway(project); err == nil {
+			return gateway, nil
+		}
 		return openBackingSQLiteSignalGateway()
 	}
 

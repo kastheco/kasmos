@@ -16,11 +16,25 @@ type signalCreateResult struct {
 	Created    bool   `json:"created"`
 }
 
+func resolveToolGateway(project string, gateway taskstore.SignalGateway) (taskstore.SignalGateway, func(), error) {
+	if gateway != nil {
+		return gateway, func() {}, nil
+	}
+
+	resolved, err := taskstore.OpenDaemonBackedSignalGateway(project)
+	if err != nil {
+		return nil, nil, err
+	}
+	return resolved, func() { _ = resolved.Close() }, nil
+}
+
 func makeSignalCreateHandler(project string, gateway taskstore.SignalGateway) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if gateway == nil {
-			return mcp.NewToolResultError("signal_create: no signal gateway configured"), nil
+		resolvedGateway, closeGateway, err := resolveToolGateway(project, gateway)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("signal_create: %v", err)), nil
 		}
+		defer closeGateway()
 
 		rawType, err := req.RequireString("signal_type")
 		if err != nil {
@@ -37,7 +51,7 @@ func makeSignalCreateHandler(project string, gateway taskstore.SignalGateway) se
 			return mcp.NewToolResultError(fmt.Sprintf("signal_create: %v", err)), nil
 		}
 
-		if err := taskfsm.EmitGatewaySignal(gateway, project, signalType, planFile, payload); err != nil {
+		if err := taskfsm.EmitGatewaySignal(resolvedGateway, project, signalType, planFile, payload); err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("signal_create: %v", err)), nil
 		}
 

@@ -3,6 +3,9 @@ package signaltools
 import (
 	"context"
 	"encoding/json"
+	"net"
+	"net/http"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -23,6 +26,59 @@ func textResult(t *testing.T, result *mcp.CallToolResult) string {
 	tc, ok := result.Content[0].(mcp.TextContent)
 	require.True(t, ok)
 	return tc.Text
+}
+
+type daemonRepoStatus struct {
+	Project string `json:"project"`
+}
+
+func startSignalToolDaemonSocketServer(t *testing.T, handler http.Handler) string {
+	t.Helper()
+
+	homeDir, err := os.MkdirTemp("", "ks-")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(homeDir) })
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_RUNTIME_DIR", homeDir)
+
+	socketPath := filepath.Join(homeDir, "kasmos", "kas.sock")
+	require.NoError(t, os.MkdirAll(filepath.Dir(socketPath), 0o755))
+	_ = os.Remove(socketPath)
+
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+
+	server := &http.Server{Handler: handler}
+	go func() {
+		_ = server.Serve(listener)
+	}()
+
+	t.Cleanup(func() {
+		require.NoError(t, server.Close())
+		_ = os.Remove(socketPath)
+	})
+
+	return socketPath
+}
+
+func newSignalToolDaemonMux(t *testing.T, repos []string, signalHandler http.Handler) http.Handler {
+	t.Helper()
+
+	registered := make([]daemonRepoStatus, 0, len(repos))
+	for _, project := range repos {
+		registered = append(registered, daemonRepoStatus{Project: project})
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/repos", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(registered))
+	})
+	mux.HandleFunc("GET /v1/ping", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.Handle("/v1/projects/", signalHandler)
+	return mux
 }
 
 func TestSignalCreateHandler_CanonicalizesAcceptedSignalTypes(t *testing.T) {
@@ -313,4 +369,28 @@ func TestSignalCreateHandler_PayloadContracts(t *testing.T) {
 			assert.Equal(t, tt.wantSignal, payload.SignalType)
 		})
 	}
+}
+
+func TestSignalCreateHandler_UsesDaemonBackedGatewayWhenGatewayNil(t *testing.T) {
+	project := "test-project"
+	dbPath := filepath.Join(t.TempDir(), "signals.db")
+	gw, err := taskstore.NewSQLiteSignalGateway(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+
+	startSignalToolDaemonSocketServer(t, newSignalToolDaemonMux(t, []string{project}, taskstore.NewSignalHandler(gw)))
+
+	handler := makeSignalCreateHandler(project, nil)
+	result, err := handler(context.Background(), mockReq(map[string]any{
+		"signal_type": "elaborator-finished",
+		"plan_file":   "my-plan",
+	}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+
+	signals, err := gw.List(project, taskstore.SignalPending)
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "elaborator_finished", signals[0].SignalType)
+	assert.Equal(t, "my-plan", signals[0].PlanFile)
 }

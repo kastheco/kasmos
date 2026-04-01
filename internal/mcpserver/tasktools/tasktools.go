@@ -46,7 +46,7 @@ func resolveToolStore(project string, store taskstore.Store) (taskstore.Store, f
 		return store, func() {}, nil
 	}
 
-	resolved, err := taskstore.OpenAuthoritativeStore(project)
+	resolved, err := taskstore.OpenDaemonBackedStore(project)
 	if err != nil {
 		return nil, nil, err
 	}

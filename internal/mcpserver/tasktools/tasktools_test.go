@@ -3,8 +3,8 @@ package tasktools
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"net/http/httptest"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,6 +31,57 @@ func initTaskToolTestRepo(t *testing.T, dir string) {
 	if err != nil {
 		t.Skipf("git init failed (%v): %s", err, out)
 	}
+}
+
+func startTaskToolDaemonSocketServer(t *testing.T, handler http.Handler) string {
+	t.Helper()
+
+	homeDir, err := os.MkdirTemp("", "ks-")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(homeDir) })
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_RUNTIME_DIR", homeDir)
+
+	socketPath := filepath.Join(homeDir, "kasmos", "kas.sock")
+	require.NoError(t, os.MkdirAll(filepath.Dir(socketPath), 0o755))
+	_ = os.Remove(socketPath)
+
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+
+	server := &http.Server{Handler: handler}
+	go func() {
+		_ = server.Serve(listener)
+	}()
+
+	t.Cleanup(func() {
+		require.NoError(t, server.Close())
+		_ = os.Remove(socketPath)
+	})
+
+	return socketPath
+}
+
+func newTaskToolDaemonMux(t *testing.T, repos []string, taskHandler http.Handler) http.Handler {
+	t.Helper()
+
+	registered := make([]taskstoreTestRepoStatus, 0, len(repos))
+	for _, project := range repos {
+		registered = append(registered, taskstoreTestRepoStatus{Project: project})
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/repos", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(registered))
+	})
+	mux.Handle("/v1/ping", taskHandler)
+	mux.Handle("/v1/projects/", taskHandler)
+	return mux
+}
+
+type taskstoreTestRepoStatus struct {
+	Project string `json:"project"`
 }
 
 func mockReq(args map[string]any) mcp.CallToolRequest {
@@ -171,17 +222,14 @@ func TestTaskTransitionHandler_ForcePlannerFinishedKeepsReadyCompatibility(t *te
 	assert.Equal(t, "ready", payload.Status)
 }
 
-func TestTaskUpdateContentHandler_UsesAuthoritativeHTTPStoreWhenStoreNil(t *testing.T) {
+func TestTaskUpdateContentHandler_UsesDaemonBackedStoreWhenStoreNil(t *testing.T) {
 	backend := taskstore.NewTestSQLiteStore(t)
 	project := "test-project"
 	require.NoError(t, backend.Create(project, taskstore.TaskEntry{Filename: "shared-plan", Status: taskstore.StatusReady, CreatedAt: time.Now()}))
 
-	srv := httptest.NewServer(taskstore.NewHandler(backend))
-	defer srv.Close()
-
 	repoDir := t.TempDir()
 	initTaskToolTestRepo(t, repoDir)
-	writeTaskToolConfig(t, repoDir, fmt.Sprintf("database_url = %q\n", srv.URL))
+	startTaskToolDaemonSocketServer(t, newTaskToolDaemonMux(t, []string{project}, taskstore.NewHandler(backend)))
 	t.Chdir(repoDir)
 
 	handler := makeTaskUpdateContentHandler(project, nil)
@@ -189,21 +237,19 @@ func TestTaskUpdateContentHandler_UsesAuthoritativeHTTPStoreWhenStoreNil(t *test
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
 
-	appStore := taskstore.NewHTTPStore(srv.URL, project)
-	content, readErr := appStore.GetContent(project, "shared-plan")
+	content, readErr := backend.GetContent(project, "shared-plan")
 	require.NoError(t, readErr)
 	assert.Equal(t, "# Plan\n\n## Wave 1\n\n### Task 1: write tests\n", content)
 }
 
-func TestTaskCreateHandler_FailsFastWhenAuthoritativeStoreUnreachable(t *testing.T) {
+func TestTaskCreateHandler_FailsFastWhenDaemonStoreUnavailable(t *testing.T) {
 	repoDir := t.TempDir()
 	initTaskToolTestRepo(t, repoDir)
-	writeTaskToolConfig(t, repoDir, "database_url = \"http://127.0.0.1:1\"\n")
 	t.Chdir(repoDir)
 
 	handler := makeTaskCreateHandler("test-project", nil)
 	result, err := handler(context.Background(), mockReq(map[string]any{"name": "new-plan"}))
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
-	assert.Contains(t, textResult(t, result), "task store unreachable")
+	assert.Contains(t, textResult(t, result), "daemon")
 }

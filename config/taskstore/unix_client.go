@@ -32,12 +32,45 @@ func openDaemonBackedStore(project string) (Store, error) {
 	return newUnixSocketHTTPStore(socketPath, project), nil
 }
 
+// OpenDaemonBackedStore opens a daemon-backed task store for a registered project.
+// Unlike OpenAuthoritativeStore, it never falls back to repo-local SQLite.
+func OpenDaemonBackedStore(project string) (Store, error) {
+	return openDaemonBackedStore(project)
+}
+
+func openDaemonBackedSignalGateway(project string) (SignalGateway, error) {
+	socketPath := defaultDaemonSocketPath()
+	registered, err := daemonProjectRegistered(socketPath, project)
+	if err != nil {
+		return nil, err
+	}
+	if !registered {
+		return nil, fmt.Errorf("signal gateway: daemon project %q not registered", strings.TrimSpace(project))
+	}
+	return newUnixSocketHTTPSignalGateway(socketPath, project), nil
+}
+
+// OpenDaemonBackedSignalGateway opens a daemon-backed signal gateway for a
+// registered project. Unlike OpenAuthoritativeSignalGateway, it never falls back
+// to repo-local SQLite.
+func OpenDaemonBackedSignalGateway(project string) (SignalGateway, error) {
+	return openDaemonBackedSignalGateway(project)
+}
+
 func newUnixSocketHTTPStore(socketPath, project string) *HTTPStore {
 	return NewHTTPStoreWithOptions(HTTPStoreOptions{
 		BaseURL:    daemonSocketBaseURL,
 		Project:    project,
 		Client:     newUnixSocketHTTPClient(socketPath, 5*time.Second),
 		PingClient: newUnixSocketHTTPClient(socketPath, 2*time.Second),
+	})
+}
+
+func newUnixSocketHTTPSignalGateway(socketPath, project string) *HTTPSignalGateway {
+	return NewHTTPSignalGatewayWithOptions(HTTPSignalGatewayOptions{
+		BaseURL: daemonSocketBaseURL,
+		Project: project,
+		Client:  newUnixSocketHTTPClient(socketPath, 5*time.Second),
 	})
 }
 

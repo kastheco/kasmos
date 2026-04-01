@@ -83,6 +83,31 @@ func newTestDaemonTaskStoreMux(t *testing.T, repos []string, taskHandler http.Ha
 	return mux
 }
 
+func newTestDaemonMux(t *testing.T, repos []string, taskHandler, signalHandler http.Handler) http.Handler {
+	t.Helper()
+
+	registered := make([]daemonRepoStatus, 0, len(repos))
+	for _, project := range repos {
+		registered = append(registered, daemonRepoStatus{Project: project})
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/repos", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(registered))
+	})
+	mux.HandleFunc("GET /v1/ping", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	if taskHandler != nil {
+		mux.Handle("/v1/projects/", taskHandler)
+	}
+	if signalHandler != nil {
+		mux.Handle("/v1/projects/", signalHandler)
+	}
+	return mux
+}
+
 func TestNewStoreFromConfig_HTTP(t *testing.T) {
 	backend := newTestStore(t)
 	srv := httptest.NewServer(NewHandler(backend))
@@ -221,6 +246,59 @@ func TestOpenAuthoritativeSignalGateway_UnreachableRemoteFails(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, gw)
 	assert.Contains(t, err.Error(), "task store unreachable")
+}
+
+func TestOpenDaemonBackedSignalGateway_UsesDaemonWhenProjectRegistered(t *testing.T) {
+	project := "test-project"
+	dbPath := filepath.Join(t.TempDir(), "signals.db")
+	backend, err := NewSQLiteSignalGateway(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = backend.Close() })
+
+	repoDir := t.TempDir()
+	initTestRepo(t, repoDir)
+	startTestDaemonSocketServer(t, newTestDaemonMux(t, []string{project}, nil, NewSignalHandler(backend)))
+	t.Chdir(repoDir)
+
+	gw, err := OpenDaemonBackedSignalGateway(project)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+
+	require.NoError(t, gw.Create(project, SignalEntry{PlanFile: "feature", SignalType: "planner_finished"}))
+	signals, err := backend.List(project, SignalPending)
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "planner_finished", signals[0].SignalType)
+	assert.Equal(t, "feature", signals[0].PlanFile)
+
+	claimed, err := gw.Claim(project, "worker-1")
+	require.NoError(t, err)
+	require.NotNil(t, claimed)
+	assert.Equal(t, signals[0].PlanFile, claimed.PlanFile)
+	require.NoError(t, gw.MarkProcessed(claimed.ID, SignalDone, "ok"))
+
+	processed, err := backend.List(project, SignalDone)
+	require.NoError(t, err)
+	require.Len(t, processed, 1)
+	assert.Equal(t, claimed.ID, processed[0].ID)
+	assert.Equal(t, "ok", processed[0].Result)
+}
+
+func TestOpenDaemonBackedSignalGateway_UnregisteredProjectFails(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "signals.db")
+	backend, err := NewSQLiteSignalGateway(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = backend.Close() })
+
+	repoDir := t.TempDir()
+	initTestRepo(t, repoDir)
+	startTestDaemonSocketServer(t, newTestDaemonMux(t, []string{"other-project"}, nil, NewSignalHandler(backend)))
+	t.Chdir(repoDir)
+
+	gw, err := OpenDaemonBackedSignalGateway("test-project")
+	require.Error(t, err)
+	assert.Nil(t, gw)
+	assert.Contains(t, err.Error(), "not registered")
 }
 
 func TestResolvedDBPath(t *testing.T) {

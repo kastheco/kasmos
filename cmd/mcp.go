@@ -21,26 +21,12 @@ import (
 // NewMCPCmd returns a stdio MCP server command for clients that spawn MCP
 // subprocesses directly.
 func NewMCPCmd() *cobra.Command {
-	var db string
-
 	cmd := &cobra.Command{
 		Use:   "mcp",
 		Short: "start the MCP server on stdio",
-		Long:  "Start the kasmos MCP server on stdin/stdout for MCP clients that use stdio transports.",
+		Long:  "Start the kasmos MCP server on stdin/stdout for MCP clients that use stdio transports. Task and signal tools resolve through the daemon-backed project authority.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, err := taskstore.NewSQLiteStore(db)
-			if err != nil {
-				return fmt.Errorf("open task store: %w", err)
-			}
-			defer store.Close()
-
-			gw, err := taskstore.NewSQLiteSignalGateway(db)
-			if err != nil {
-				return fmt.Errorf("open signal gateway: %w", err)
-			}
-			defer gw.Close()
-
-			mcpSrv, err := newConfiguredMCPServer(store, gw)
+			mcpSrv, err := newConfiguredMCPServer(nil, nil)
 			if err != nil {
 				return err
 			}
@@ -48,8 +34,6 @@ func NewMCPCmd() *cobra.Command {
 			return mcpSrv.ServeStdio()
 		},
 	}
-
-	cmd.Flags().StringVar(&db, "db", taskstore.ResolvedDBPath(), "path to the SQLite database file")
 	return cmd
 }
 

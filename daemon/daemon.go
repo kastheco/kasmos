@@ -177,6 +177,20 @@ func (a *daemonStateAdapter) TaskStoreForProject(project string) (taskstore.Stor
 	return nil, fmt.Errorf("%w: %s", api.ErrProjectNotFound, project)
 }
 
+func (a *daemonStateAdapter) SignalGatewayForProject(project string) (taskstore.SignalGateway, error) {
+	entries := a.d.repos.List()
+	for _, e := range entries {
+		if e.Project != project {
+			continue
+		}
+		if e.SignalGateway == nil {
+			return nil, fmt.Errorf("%w: %s", api.ErrTaskStoreUnavailable, project)
+		}
+		return e.SignalGateway, nil
+	}
+	return nil, fmt.Errorf("%w: %s", api.ErrProjectNotFound, project)
+}
+
 func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus {
 	entries := a.d.repos.List()
 	for _, entry := range entries {
