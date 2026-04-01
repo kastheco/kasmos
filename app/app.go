@@ -1856,12 +1856,20 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							orch.MarkTaskFailed(task.Number)
 							continue
 						}
+						if inst.HasWorked && inst.PromptDetected && !inst.AwaitingWork {
+							orch.MarkTaskComplete(task.Number)
+							continue
+						}
 						alive, collected := tmuxAliveMap[inst.Title]
 						if !collected {
 							continue
 						}
 						if !alive {
-							orch.MarkTaskFailed(task.Number)
+							if inst.HasWorked {
+								orch.MarkTaskComplete(task.Number)
+							} else {
+								orch.MarkTaskFailed(task.Number)
+							}
 						}
 					}
 					orchState = orch.State() // refresh after task updates
