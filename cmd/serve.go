@@ -99,19 +99,10 @@ func projectFromServePath(path string) (string, bool) {
 
 func newServeMCPServer(store taskstore.Store, gw taskstore.SignalGateway, repoPaths []string) (*mcpserver.Server, error) {
 	if len(repoPaths) == 0 {
-		return newConfiguredMCPServer(store, gw)
+		return newConfiguredMCPServer(store, gw, "")
 	}
 
-	wd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("get working directory: %w", err)
-	}
-	if err := os.Chdir(repoPaths[0]); err != nil {
-		return nil, fmt.Errorf("change working directory to repo %q: %w", repoPaths[0], err)
-	}
-	defer func() { _ = os.Chdir(wd) }()
-
-	return newConfiguredMCPServer(store, gw)
+	return newConfiguredMCPServer(store, gw, repoPaths[0])
 }
 
 // NewServeCmd returns the `kas serve` cobra command.

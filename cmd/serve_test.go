@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
@@ -74,4 +76,39 @@ func TestServeCmd_RepoAndDBMutuallyExclusive(t *testing.T) {
 	err := cmd.Execute()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "mutually exclusive")
+}
+
+func TestServeCmd_ProjectValidationMiddleware404(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	h := projectValidationMiddleware(map[string]struct{}{"known": {}}, next)
+
+	t.Run("missing project returns 404", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/v1/projects/missing/tasks", nil)
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusNotFound, rec.Code)
+		assert.JSONEq(t, `{"error":"project not found: missing"}`, rec.Body.String())
+	})
+
+	t.Run("known project reaches next handler", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/v1/projects/known/tasks", nil)
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusOK, rec.Code)
+	})
+
+	t.Run("non project path passes through", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/v1/ping", nil)
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusOK, rec.Code)
+	})
 }

@@ -26,7 +26,7 @@ func NewMCPCmd() *cobra.Command {
 		Short: "start the MCP server on stdio",
 		Long:  "Start the kasmos MCP server on stdin/stdout for MCP clients that use stdio transports. Task and signal tools resolve through the daemon-backed project authority.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			mcpSrv, err := newConfiguredMCPServer(nil, nil)
+			mcpSrv, err := newConfiguredMCPServer(nil, nil, "")
 			if err != nil {
 				return err
 			}
@@ -46,15 +46,17 @@ func (f closeFunc) Close() error {
 	return f()
 }
 
-func newConfiguredMCPServer(store taskstore.Store, gw taskstore.SignalGateway) (*mcpserver.Server, error) {
+func newConfiguredMCPServer(store taskstore.Store, gw taskstore.SignalGateway, repoRoot string) (*mcpserver.Server, error) {
 	mcpSrv := mcpserver.NewServer(MCPVersion, store, gw)
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("get working directory: %w", err)
+	if repoRoot == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("get working directory: %w", err)
+		}
+		repoRoot = cwd
 	}
-	repoRoot := cwd
-	allowedDirs := []string{cwd}
-	if root, rootErr := config.ResolveRepoRoot(cwd); rootErr == nil && root != "" && root != cwd {
+	allowedDirs := []string{repoRoot}
+	if root, rootErr := config.ResolveRepoRoot(repoRoot); rootErr == nil && root != "" && root != repoRoot {
 		repoRoot = root
 		allowedDirs = append(allowedDirs, root)
 	}
