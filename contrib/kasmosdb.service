@@ -5,6 +5,7 @@ After=network.target
 
 [Service]
 Type=simple
+# example: ExecStart=%h/go/bin/kas serve --repo %h/dev/kasmos
 ExecStart=%h/go/bin/kas serve
 Restart=on-failure
 RestartSec=5

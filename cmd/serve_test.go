@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -46,4 +47,31 @@ func TestServeCmd_MCPDisabled(t *testing.T) {
 	val, err := cmd.Flags().GetBool("mcp")
 	require.NoError(t, err)
 	assert.False(t, val)
+}
+
+func TestServeCmd_RepoFlag(t *testing.T) {
+	cmd := NewServeCmd()
+
+	repoFlag := cmd.Flags().Lookup("repo")
+	require.NotNil(t, repoFlag)
+	assert.Equal(t, "stringSlice", repoFlag.Value.Type())
+
+	err := cmd.Flags().Set("repo", "/tmp/one,/tmp/two")
+	require.NoError(t, err)
+
+	repos, err := cmd.Flags().GetStringSlice("repo")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"/tmp/one", "/tmp/two"}, repos)
+}
+
+func TestServeCmd_RepoAndDBMutuallyExclusive(t *testing.T) {
+	repoRoot := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "taskstore.db")
+
+	cmd := NewServeCmd()
+	cmd.SetArgs([]string{"--db", dbPath, "--repo", repoRoot})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mutually exclusive")
 }
