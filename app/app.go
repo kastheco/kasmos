@@ -1633,12 +1633,14 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					if md.HasPrompt {
 						inst.PromptDetected = true
-						// Defer tmux send-keys to async Cmd (was blocking Update).
-						i := inst
-						asyncCmds = append(asyncCmds, func() tea.Msg {
-							i.TapEnter()
-							return nil
-						})
+						if !(inst.TaskNumber > 0 && inst.HasWorked) {
+							// Defer tmux send-keys to async Cmd (was blocking Update).
+							i := inst
+							asyncCmds = append(asyncCmds, func() tea.Msg {
+								i.TapEnter()
+								return nil
+							})
+						}
 					} else {
 						inst.SetStatus(session.Ready)
 					}
