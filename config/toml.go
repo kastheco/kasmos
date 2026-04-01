@@ -39,6 +39,7 @@ type TOMLUIConfig struct {
 	AnimateBanner      bool   `toml:"animate_banner"`
 	AccentColor        string `toml:"accent_color,omitempty"`
 	AutoAdvanceWaves   *bool  `toml:"auto_advance_waves"`
+	AutoAdvance        *bool  `toml:"auto_advance"`
 	AutoReviewFix      *bool  `toml:"auto_review_fix"`
 	MaxReviewFixCycles *int   `toml:"max_review_fix_cycles"`
 }
@@ -89,6 +90,7 @@ type TOMLConfigResult struct {
 	AnimateBanner          bool
 	AccentColor            string
 	AutoAdvanceWaves       *bool
+	AutoAdvance            *bool
 	AutoReviewFix          *bool
 	MaxReviewFixCycles     *int
 	TelemetryEnabled       *bool
@@ -116,6 +118,7 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 		AnimateBanner:          tc.UI.AnimateBanner,
 		AccentColor:            tc.UI.AccentColor,
 		AutoAdvanceWaves:       tc.UI.AutoAdvanceWaves,
+		AutoAdvance:            tc.UI.AutoAdvance,
 		AutoReviewFix:          tc.UI.AutoReviewFix,
 		MaxReviewFixCycles:     tc.UI.MaxReviewFixCycles,
 		TelemetryEnabled:       tc.Telemetry.Enabled,
