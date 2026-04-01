@@ -1391,9 +1391,11 @@ func TestAutoAdvanceWaves_EmitsAdvanceMsgOnSuccess(t *testing.T) {
 }
 
 // TestWaveTaskCompletion_RequiresHasWorked verifies that a wave task is NOT
-// marked complete when PromptDetected is true but HasWorked is false. This
+// auto-completed when PromptDetected is true but HasWorked is false. This
 // prevents permission prompts and early prompt returns from prematurely
 // completing a wave (especially dangerous with auto-advance enabled).
+// When HasWorked is true, the task auto-completes on the next metadata tick
+// without waiting for a signal.
 func TestWaveTaskCompletion_RequiresHasWorked(t *testing.T) {
 	const planFile = "has-worked-guard"
 
@@ -1425,7 +1427,7 @@ func TestWaveTaskCompletion_RequiresHasWorked(t *testing.T) {
 	})
 	require.NoError(t, err)
 	inst.PromptDetected = true
-	inst.HasWorked = true
+	inst.HasWorked = false // prompt seen but no real work yet
 
 	h := waveFlowHome(t, ps, plansDir, map[string]*orchestration.WaveOrchestrator{planFile: orch})
 	_ = h.nav.AddInstance(inst)
@@ -1437,29 +1439,25 @@ func TestWaveTaskCompletion_RequiresHasWorked(t *testing.T) {
 	model, _ := h.Update(msg)
 	updated := model.(*home)
 
-	// Task must NOT be marked complete — orchestrator stays running.
+	// Task must NOT be auto-completed when HasWorked is false.
 	assert.Len(t, updated.waveOrchestrators, 1,
 		"orchestrator must still exist when HasWorked is false")
 	assert.Equal(t, orchestration.WaveStateRunning, orch.State(),
 		"wave must remain running when task has not done real work")
 	assert.NotEqual(t, stateConfirm, updated.state,
-		"no completion dialog should appear")
+		"no completion dialog should appear before real work is done")
 
-	// Now send a task-finished signal — the orchestrator must be removed.
+	// Simulate the agent doing real work and returning to prompt — wave must auto-complete.
+	inst.HasWorked = true
 	model2, _ := updated.Update(metadataResultMsg{
 		Results:   []instanceMetadata{{Title: instTitle, TmuxAlive: true}},
 		PlanState: ps,
-		TaskSignals: []taskfsm.TaskSignal{{
-			WaveNumber: 1,
-			TaskNumber: 1,
-			TaskFile:   planFile,
-		}},
 	})
-	updated2 := model2.(*home)
+	_ = model2.(*home)
 
-	// Now it should complete.
-	assert.Empty(t, updated2.waveOrchestrators,
-		"orchestrator must be deleted after the task-finished signal arrives")
+	// Single-wave plan: task marked complete → orchestrator goes directly to WaveStateAllComplete.
+	assert.Equal(t, orchestration.WaveStateAllComplete, orch.State(),
+		"wave must be AllComplete after HasWorked=true detected at prompt")
 }
 
 // TestWaveTaskCompletion_IgnoresPromptEchoUpdates verifies that a wave task is
