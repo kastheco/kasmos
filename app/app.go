@@ -1633,12 +1633,16 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					if md.HasPrompt {
 						inst.PromptDetected = true
-						// Defer tmux send-keys to async Cmd (was blocking Update).
-						i := inst
-						asyncCmds = append(asyncCmds, func() tea.Msg {
-							i.TapEnter()
-							return nil
-						})
+						// Don't nudge wave tasks that have finished work — they're done
+						// and the wave monitor will mark them complete on this tick.
+						if !(inst.TaskNumber > 0 && inst.HasWorked) {
+							// Defer tmux send-keys to async Cmd (was blocking Update).
+							i := inst
+							asyncCmds = append(asyncCmds, func() tea.Msg {
+								i.TapEnter()
+								return nil
+							})
+						}
 					} else {
 						inst.SetStatus(session.Ready)
 					}
@@ -1854,12 +1858,23 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							orch.MarkTaskFailed(task.Number)
 							continue
 						}
+						// Auto-detect wave task completion: agent finished work and returned to prompt.
+						// Mirrors the single-agent detection in ShouldAutoAdvanceLifecycleImplementer.
+						if inst.HasWorked && inst.PromptDetected && !inst.AwaitingWork {
+							orch.MarkTaskComplete(task.Number)
+							continue
+						}
 						alive, collected := tmuxAliveMap[inst.Title]
 						if !collected {
 							continue
 						}
 						if !alive {
-							orch.MarkTaskFailed(task.Number)
+							// Tmux died after the agent did real work — treat as completion, not failure.
+							if inst.HasWorked {
+								orch.MarkTaskComplete(task.Number)
+							} else {
+								orch.MarkTaskFailed(task.Number)
+							}
 						}
 					}
 					orchState = orch.State() // refresh after task updates
