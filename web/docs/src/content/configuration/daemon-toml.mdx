@@ -14,7 +14,7 @@ The file is loaded by `daemon.LoadDaemonConfig()`. If the file is absent, all de
 |-------|------|---------|-------------|
 | `poll_interval_sec` | float | `2.0` | how often (in seconds) the daemon scans for signals |
 | `repos` | []string | `[]` | list of absolute repo root paths to manage on daemon startup |
-| `auto_advance` | bool | `false` | when `true`, the daemon automatically transitions a task from `planning` to `implementing` after the planner finishes |
+| `auto_advance` | bool | `true` | when `true`, the daemon automatically transitions a task from `planning` to `implementing` after the planner finishes |
 | `auto_advance_waves` | bool | `true` | when `true`, the daemon automatically starts the next wave after all tasks in the current wave complete |
 | `auto_review_fix` | bool | `true` | when `true`, the daemon automatically dispatches a fixer agent when a review comes back with change requests |
 | `max_review_fix_cycles` | int | `0` (unlimited) | cap on automatic review→fix iterations; `0` means no cap |
@@ -67,7 +67,7 @@ repos = [
   "/home/alice/projects/infra",
 ]
 
-auto_advance       = false
+auto_advance       = true
 auto_advance_waves = true
 auto_review_fix    = true
 

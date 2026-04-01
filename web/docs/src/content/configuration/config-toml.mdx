@@ -55,6 +55,7 @@ effort         = "high"
 | field | type | default | description |
 |-------|------|---------|-------------|
 | `animate_banner` | bool | `false` | enable idle banner animation |
+| `auto_advance` | bool? | `true` | skip the planner→architect confirmation dialog; start elaboration automatically after planning finishes |
 | `auto_advance_waves` | bool? | `true` | skip confirmation dialog after a clean wave |
 | `auto_review_fix` | bool? | `true` | automatically start the review→fix→re-review loop |
 | `max_review_fix_cycles` | int? | `0` (unlimited) | cap the review-fix loop iterations; `0` means no cap |
@@ -62,6 +63,7 @@ effort         = "high"
 ```toml
 [ui]
 animate_banner      = false
+auto_advance        = true
 auto_advance_waves  = true
 auto_review_fix     = true
 max_review_fix_cycles = 3
@@ -172,9 +174,10 @@ model          = "claude-opus-4-5"
 execution_mode = "headless"
 
 [ui]
-animate_banner       = false
-auto_advance_waves   = true
-auto_review_fix      = true
+animate_banner        = false
+auto_advance          = true
+auto_advance_waves    = true
+auto_review_fix       = true
 max_review_fix_cycles = 3
 
 [telemetry]

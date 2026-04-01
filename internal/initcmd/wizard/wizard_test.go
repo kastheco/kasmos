@@ -50,6 +50,8 @@ func TestStateToTOMLConfig(t *testing.T) {
 	require.NotNil(t, tc.UI.AutoReviewFix)
 	assert.True(t, *tc.UI.AutoAdvanceWaves)
 	assert.True(t, *tc.UI.AutoReviewFix)
+	require.NotNil(t, tc.UI.AutoAdvance)
+	assert.True(t, *tc.UI.AutoAdvance)
 
 	// Verify nil temperature when empty
 	reviewer := tc.Agents["reviewer"]

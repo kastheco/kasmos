@@ -153,6 +153,7 @@ func (s *State) ToTOMLConfig() *config.TOMLConfig {
 		Agents: make(map[string]config.TOMLAgent),
 		UI: config.TOMLUIConfig{
 			AutoAdvanceWaves: &trueVal,
+			AutoAdvance:      &trueVal,
 			AutoReviewFix:    &trueVal,
 		},
 	}
