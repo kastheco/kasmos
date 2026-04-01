@@ -48,7 +48,6 @@ var listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
 	return daemonpkg.NewSocketClient(resolvedDaemonSocketPath()).ListInstances(project)
 }
 
-
 func canonicalRepoPath(repoPath string) string {
 	if repoPath == "" {
 		return ""
