@@ -25,7 +25,7 @@ func TestMCPCmd_DoesNotExposeSQLiteDBFlag(t *testing.T) {
 }
 
 func TestNewConfiguredMCPServer_RegistersSymbolsTool(t *testing.T) {
-	srv, err := newConfiguredMCPServer(nil, nil)
+	srv, err := newConfiguredMCPServer(nil, nil, "")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, srv.Close())
