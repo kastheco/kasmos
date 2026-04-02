@@ -339,6 +339,18 @@ func executeTaskShow(project, planFile string, store taskstore.Store) (string, e
 	return content, nil
 }
 
+func executeTaskDelete(project, planFile string, store taskstore.Store) error {
+	ps, err := loadTaskStateByProject(project, store)
+	if err != nil {
+		return err
+	}
+	resolvedFilename := resolveExistingTaskFilename(ps, planFile)
+	if _, ok := ps.Entry(resolvedFilename); !ok {
+		return fmt.Errorf("task not found: %s", planFile)
+	}
+	return store.Delete(project, resolvedFilename)
+}
+
 func executeTaskUpdateContent(project, filename string, reader io.Reader, store taskstore.Store) error {
 	contentBytes, err := io.ReadAll(reader)
 	if err != nil {
@@ -897,6 +909,41 @@ Supported actions:
 		},
 	}
 	planCmd.AddCommand(showCmd)
+
+	var deleteYes bool
+	deleteCmd := &cobra.Command{
+		Use:   "delete <plan-file>",
+		Short: "permanently delete a task from the store",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, project, err := resolveRepoInfo()
+			if err != nil {
+				return err
+			}
+			return withAuthoritativeStore(project, func(store taskstore.Store) error {
+				ps, err := loadTaskStateByProject(project, store)
+				if err != nil {
+					return err
+				}
+				resolvedFilename := resolveExistingTaskFilename(ps, args[0])
+				entry, ok := ps.Entry(resolvedFilename)
+				if !ok {
+					return fmt.Errorf("task not found: %s", args[0])
+				}
+				if !deleteYes {
+					fmt.Printf("delete %s (%s)? pass --yes to confirm\n", resolvedFilename, entry.Status)
+					return nil
+				}
+				if err := executeTaskDelete(project, args[0], store); err != nil {
+					return err
+				}
+				fmt.Printf("deleted %s\n", resolvedFilename)
+				return nil
+			})
+		},
+	}
+	deleteCmd.Flags().BoolVar(&deleteYes, "yes", false, "confirm permanent deletion")
+	planCmd.AddCommand(deleteCmd)
 
 	var updateContentFile string
 	updateContentCmd := &cobra.Command{
