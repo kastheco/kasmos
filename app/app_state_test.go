@@ -466,7 +466,7 @@ func TestSyncSharedWorktreeScaffold_WritesHarnessFilesForConfiguredProfiles(t *t
 	}
 
 	require.NoError(t, m.syncSharedWorktreeScaffold(dir))
-	assert.FileExists(t, filepath.Join(dir, ".claude", ".mcp.json"))
+	assert.FileExists(t, filepath.Join(dir, ".mcp.json"))
 	assert.FileExists(t, filepath.Join(dir, ".claude", "agents", "reviewer.md"))
 	assert.FileExists(t, filepath.Join(dir, ".opencode", "agents", "fixer.md"))
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "kasmos-fixer", "SKILL.md"))

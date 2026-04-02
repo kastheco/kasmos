@@ -21,7 +21,7 @@ type daemonRepoStatus struct {
 }
 
 func openDaemonBackedStore(project string) (Store, error) {
-	socketPath := defaultDaemonSocketPath()
+	socketPath := ResolvedDaemonSocketPath()
 	registered, err := daemonProjectRegistered(socketPath, project)
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func OpenDaemonBackedStore(project string) (Store, error) {
 }
 
 func openDaemonBackedSignalGateway(project string) (SignalGateway, error) {
-	socketPath := defaultDaemonSocketPath()
+	socketPath := ResolvedDaemonSocketPath()
 	registered, err := daemonProjectRegistered(socketPath, project)
 	if err != nil {
 		return nil, err
@@ -118,10 +118,10 @@ type daemonTOMLSocketPath struct {
 	SocketPath string `toml:"socket_path"`
 }
 
-// defaultDaemonSocketPath returns the daemon unix socket path, checking
+// ResolvedDaemonSocketPath returns the daemon unix socket path, checking
 // ~/.config/kasmos/daemon.toml for a configured socket_path override before
 // falling back to the XDG_RUNTIME_DIR / os.TempDir default.
-func defaultDaemonSocketPath() string {
+func ResolvedDaemonSocketPath() string {
 	if home, err := os.UserHomeDir(); err == nil {
 		tomlPath := filepath.Join(home, ".config", "kasmos", "daemon.toml")
 		if data, err := os.ReadFile(tomlPath); err == nil {

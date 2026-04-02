@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
@@ -1379,6 +1381,7 @@ func TestEmitSelectedInstanceSignal_QueuesExpectedGatewayRows(t *testing.T) {
 			const planFile = "feature"
 			require.NoError(t, ps.Create(planFile, "feature", "plan/feature", "", time.Now()))
 			require.NoError(t, ps.ForceSetStatus(planFile, tt.status))
+			gateway := startTestSignalGatewayDaemon(t, "test", dir)
 
 			h := newTestHome()
 			h.taskState = ps
@@ -1406,7 +1409,7 @@ func TestEmitSelectedInstanceSignal_QueuesExpectedGatewayRows(t *testing.T) {
 			assert.Equal(t, tt.wantSignalType, result.signalType)
 			assert.Equal(t, tt.successToast, result.successToast)
 
-			signals := listPendingGatewaySignals(t, "test")
+			signals := listPendingGatewaySignals(t, gateway, "test")
 			require.Len(t, signals, 1)
 			assert.Equal(t, planFile, signals[0].PlanFile)
 			assert.Equal(t, tt.wantSignalType, signals[0].SignalType)
@@ -1451,11 +1454,28 @@ func TestEmitSelectedInstanceSignal_RejectsPlannerFinishedWithoutWaveHeaders(t *
 	assert.Contains(t, err.Error(), "no wave headers found")
 }
 
-func listPendingGatewaySignals(t *testing.T, project string) []taskstore.SignalEntry {
+func startTestSignalGatewayDaemon(t *testing.T, project, repoPath string) taskstore.SignalGateway {
 	t.Helper()
-	gw, err := taskstore.NewSQLiteSignalGateway(taskstore.ResolvedDBPath())
+	gw, err := taskstore.NewSQLiteSignalGateway(filepath.Join(t.TempDir(), "signals.db"))
 	require.NoError(t, err)
-	defer gw.Close() //nolint:errcheck
+	t.Cleanup(func() { _ = gw.Close() })
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/repos", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode([]api.RepoStatus{{
+			Path:    repoPath,
+			Project: project,
+		}}))
+	})
+	mux.Handle("/v1/ping", taskstore.NewHandler(taskstore.NewTestSQLiteStore(t)))
+	mux.Handle("/v1/projects/", taskstore.NewSignalHandler(gw))
+	startTestDaemonSocketServer(t, mux)
+	return gw
+}
+
+func listPendingGatewaySignals(t *testing.T, gw taskstore.SignalGateway, project string) []taskstore.SignalEntry {
+	t.Helper()
 	signals, err := gw.List(project, taskstore.SignalPending)
 	require.NoError(t, err)
 	return signals
@@ -1490,6 +1510,7 @@ func TestMarkReviewChangesRequested_QueuesGatewaySignal(t *testing.T) {
 	h.activeRepoPath = dir
 	h.taskStoreProject = "test"
 	h.pendingReviewFeedback = make(map[string]string)
+	gateway := startTestSignalGatewayDaemon(t, "test", dir)
 	reviewer := &session.Instance{Title: "feature-review-1", Path: dir, Program: "opencode", TaskFile: planFile, AgentType: session.AgentTypeReviewer, ReviewCycle: 1, CachedContent: "review findings"}
 	h.nav.AddInstance(reviewer)
 	h.updateSidebarTasks()
@@ -1502,11 +1523,7 @@ func TestMarkReviewChangesRequested_QueuesGatewaySignal(t *testing.T) {
 	require.True(t, ok)
 	require.NoError(t, result.err)
 
-	gw, err := taskstore.NewSQLiteSignalGateway(taskstore.ResolvedDBPath())
-	require.NoError(t, err)
-	defer gw.Close() //nolint:errcheck
-	signals, err := gw.List("test", taskstore.SignalPending)
-	require.NoError(t, err)
+	signals := listPendingGatewaySignals(t, gateway, "test")
 	require.Len(t, signals, 1)
 	assert.Equal(t, "review_changes_requested", signals[0].SignalType)
 	assert.Contains(t, signals[0].Payload, "review findings")

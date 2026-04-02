@@ -47,7 +47,9 @@ func TestNewHome_UsesMainRepoRootWhenLaunchedFromWorktree(t *testing.T) {
 
 	h := newHome(context.Background(), "opencode", false, "test")
 	t.Cleanup(func() {
-		h.embeddedServer.Stop()
+		if h.embeddedServer != nil {
+			h.embeddedServer.Stop()
+		}
 		h.auditLogger.Close()
 	})
 

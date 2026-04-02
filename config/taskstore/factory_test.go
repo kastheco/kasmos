@@ -35,7 +35,7 @@ func initTestRepo(t *testing.T, repoDir string) {
 func startTestDaemonSocketServer(t *testing.T, handler http.Handler) string {
 	t.Helper()
 
-	// Set HOME and XDG_RUNTIME_DIR to a short temp dir so defaultDaemonSocketPath
+	// Set HOME and XDG_RUNTIME_DIR to a short temp dir so ResolvedDaemonSocketPath
 	// never reads a real daemon.toml and test socket paths stay under the 108-byte
 	// Unix domain socket limit on Linux.
 	homeDir, err := os.MkdirTemp("", "ks-")
@@ -44,7 +44,7 @@ func startTestDaemonSocketServer(t *testing.T, handler http.Handler) string {
 	t.Setenv("HOME", homeDir)
 	t.Setenv("XDG_RUNTIME_DIR", homeDir)
 
-	socketPath := defaultDaemonSocketPath()
+	socketPath := ResolvedDaemonSocketPath()
 	require.NoError(t, os.MkdirAll(filepath.Dir(socketPath), 0o755))
 	_ = os.Remove(socketPath)
 
@@ -192,7 +192,7 @@ func TestOpenAuthoritativeStore_UsesDaemonWhenProjectRegistered(t *testing.T) {
 	assert.Equal(t, StatusReady, entry.Status)
 }
 
-func TestOpenAuthoritativeStore_UnreachableDaemonFallsBackToSQLite(t *testing.T) {
+func TestOpenAuthoritativeStore_UnreachableDaemonFails(t *testing.T) {
 	repoDir := t.TempDir()
 	initTestRepo(t, repoDir)
 	t.Setenv("HOME", t.TempDir())
@@ -200,19 +200,12 @@ func TestOpenAuthoritativeStore_UnreachableDaemonFallsBackToSQLite(t *testing.T)
 	t.Chdir(repoDir)
 
 	store, err := OpenAuthoritativeStore("test-project")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = store.Close() })
-
-	_, ok := store.(*HTTPStore)
-	assert.False(t, ok)
-
-	require.NoError(t, store.Create("test-project", TaskEntry{Filename: "sqlite-backed", Status: StatusReady}))
-	entry, err := store.Get("test-project", "sqlite-backed")
-	require.NoError(t, err)
-	assert.Equal(t, StatusReady, entry.Status)
+	require.Error(t, err)
+	assert.Nil(t, store)
+	assert.Contains(t, err.Error(), "open authoritative task store for project test-project")
 }
 
-func TestOpenAuthoritativeStore_UnregisteredDaemonProjectFallsBackToSQLite(t *testing.T) {
+func TestOpenAuthoritativeStore_UnregisteredDaemonProjectFails(t *testing.T) {
 	backend := newTestStore(t)
 	taskHandler := NewHandler(backend)
 
@@ -223,17 +216,9 @@ func TestOpenAuthoritativeStore_UnregisteredDaemonProjectFallsBackToSQLite(t *te
 	t.Chdir(repoDir)
 
 	store, err := OpenAuthoritativeStore("test-project")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = store.Close() })
-
-	require.IsType(t, &SQLiteStore{}, store)
-
-	require.NoError(t, store.Create("test-project", TaskEntry{Filename: "local-only", Status: StatusReady}))
-	local, err := store.Get("test-project", "local-only")
-	require.NoError(t, err)
-	assert.Equal(t, StatusReady, local.Status)
-	_, err = backend.Get("test-project", "local-only")
-	assert.Error(t, err)
+	require.Error(t, err)
+	assert.Nil(t, store)
+	assert.Contains(t, err.Error(), "not registered")
 }
 
 func TestOpenAuthoritativeSignalGateway_UnreachableRemoteFails(t *testing.T) {
@@ -246,6 +231,37 @@ func TestOpenAuthoritativeSignalGateway_UnreachableRemoteFails(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, gw)
 	assert.Contains(t, err.Error(), "task store unreachable")
+}
+
+func TestOpenAuthoritativeSignalGateway_UnregisteredDaemonProjectFails(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "signals.db")
+	backend, err := NewSQLiteSignalGateway(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = backend.Close() })
+
+	repoDir := t.TempDir()
+	initTestRepo(t, repoDir)
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	startTestDaemonSocketServer(t, newTestDaemonMux(t, []string{"other-project"}, nil, NewSignalHandler(backend)))
+	t.Chdir(repoDir)
+
+	gw, err := OpenAuthoritativeSignalGateway("test-project")
+	require.Error(t, err)
+	assert.Nil(t, gw)
+	assert.Contains(t, err.Error(), "not registered")
+}
+
+func TestResolvedDaemonSocketPath_UsesDaemonTomlOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+
+	configDir := filepath.Join(home, ".config", "kasmos")
+	require.NoError(t, os.MkdirAll(configDir, 0o755))
+	override := filepath.Join(t.TempDir(), "custom.sock")
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "daemon.toml"), []byte("socket_path = \""+override+"\"\n"), 0o644))
+
+	assert.Equal(t, override, ResolvedDaemonSocketPath())
 }
 
 func TestOpenDaemonBackedSignalGateway_UsesDaemonWhenProjectRegistered(t *testing.T) {

@@ -212,7 +212,7 @@ func (m *home) handleHelpState(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				if err != nil {
 					return err
 				}
-				return instanceChangedMsg{}
+				return tmuxAttachReturnMsg{}
 			})
 		}
 

@@ -77,7 +77,7 @@ func startTestDaemonSocketServer(t *testing.T, handler http.Handler) string {
 	// under the 108-byte Unix domain socket limit on Linux, regardless of how
 	// long the test name is.
 	//
-	// Set HOME to the same short temp dir so defaultDaemonSocketPath() never
+	// Set HOME to the same short temp dir so ResolvedDaemonSocketPath() never
 	// reads a real ~/.config/kasmos/daemon.toml and picks up a developer's
 	// configured socket_path, which would break test hermeticity.
 	xdgDir, err := os.MkdirTemp("", "ks-")
@@ -250,7 +250,8 @@ func TestDaemonRepoRegisteredMsg_SwitchesToDaemonTaskStoreWithoutConfirmation(t 
 		}
 	})
 
-	require.NotNil(t, h.embeddedServer, "newHome should start on the embedded store before daemon rebinding")
+	require.Nil(t, h.embeddedServer, "newHome should not start an embedded store fallback")
+	require.IsType(t, &taskstore.HTTPStore{}, h.taskStore)
 
 	// Step 1: daemonRepoRegisteredMsg kicks off the background ping cmd.
 	model, switchCmd := h.Update(daemonRepoRegisteredMsg{path: repoDir})
@@ -271,7 +272,7 @@ func TestDaemonRepoRegisteredMsg_SwitchesToDaemonTaskStoreWithoutConfirmation(t 
 	assert.Equal(t, stateDefault, updated.state)
 	assert.False(t, updated.overlays.IsActive(), "successful rebinding should not open a confirmation overlay")
 	assert.Nil(t, updated.pendingConfirmAction)
-	assert.Nil(t, updated.embeddedServer, "embedded store should be stopped after switching to the daemon store")
+	assert.Nil(t, updated.embeddedServer, "daemon rebinding should not recreate embedded fallback")
 	assert.Equal(t, "daemon-project", updated.taskStoreProject)
 	require.IsType(t, &taskstore.HTTPStore{}, updated.taskStore)
 

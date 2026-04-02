@@ -10,6 +10,7 @@ import (
 	"unsafe"
 
 	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstate"
@@ -262,4 +263,74 @@ func TestDaemonSync_MetadataTickRebuildsWaveOrchestratorForDaemonWaveTask(t *tes
 	assert.Equal(t, orchestration.WaveStateRunning, orch.State())
 	assert.True(t, orch.IsTaskRunning(1), "live daemon wave task should restore as running")
 	assert.True(t, orch.IsTaskRunning(2), "other tasks in the active wave should remain runnable")
+}
+
+func TestDaemonSync_TickSkipsInactiveMissingInstances(t *testing.T) {
+	const planFile = "feature"
+
+	h, dir := newDaemonSyncTestHome(t, planFile)
+
+	oldManaged := repoManagedByDaemon
+	oldListInstances := listDaemonInstances
+	t.Cleanup(func() {
+		repoManagedByDaemon = oldManaged
+		listDaemonInstances = oldListInstances
+	})
+
+	repoManagedByDaemon = func(repoPath string) bool {
+		return filepath.Clean(repoPath) == filepath.Clean(dir)
+	}
+	listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
+		require.Equal(t, "test", project)
+		return []api.InstanceStatus{{
+			Title:  "feature-planning",
+			Plan:   planFile,
+			Role:   session.AgentTypePlanner,
+			Active: false,
+		}}, nil
+	}
+
+	_, cmd := h.Update(tickUpdateMetadataMessage{})
+	require.NotNil(t, cmd)
+
+	msg, ok := cmd().(metadataResultMsg)
+	require.True(t, ok)
+	assert.True(t, msg.DaemonManagedRepo)
+	assert.Equal(t, []string{"feature-planning"}, msg.DaemonTitles)
+	assert.Empty(t, msg.DaemonInstances, "inactive daemon instances should not be rehydrated into the sidebar")
+}
+
+func TestDaemonSync_DeleteDismissedDeadInstanceDoesNotReappear(t *testing.T) {
+	h := newTestHome()
+	h.nav.SetTopicsAndPlans(nil, []ui.PlanDisplay{{Filename: "feature", Status: string(taskstate.StatusPlanning)}}, nil)
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:     "feature-planning",
+		Path:      t.TempDir(),
+		Program:   "opencode",
+		TaskFile:  "feature",
+		AgentType: session.AgentTypePlanner,
+	})
+	require.NoError(t, err)
+	inst.Exited = true
+	inst.SetStatus(session.Ready)
+	_ = h.nav.AddInstance(inst)
+	require.True(t, h.nav.SelectInstance(inst), "dead plan instance should be selectable before deletion")
+	h.allInstances = append(h.allInstances, inst)
+
+	_, _ = h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyDelete})
+	assert.Equal(t, 0, h.nav.TotalInstances(), "delete should remove the dead instance immediately")
+	assert.True(t, h.isInstanceTitleDismissed(inst.Title), "delete should tombstone the title against daemon re-sync")
+
+	model, _ := h.Update(metadataResultMsg{
+		DaemonManagedRepo: true,
+		DaemonTitles:      []string{inst.Title},
+		DaemonInstances:   []*session.Instance{inst},
+	})
+	updated := model.(*home)
+	assert.Equal(t, 0, updated.nav.TotalInstances(), "dismissed dead instance must not be re-added by daemon sync")
+
+	model, _ = updated.Update(metadataResultMsg{DaemonManagedRepo: true})
+	updated = model.(*home)
+	assert.False(t, updated.isInstanceTitleDismissed(inst.Title), "tombstone should clear once the daemon stops reporting the title")
+	assert.Equal(t, 0, updated.nav.TotalInstances())
 }

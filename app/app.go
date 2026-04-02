@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"reflect"
+	"strings"
 
 	cmd2 "github.com/kastheco/kasmos/cmd"
 	"github.com/kastheco/kasmos/config"
@@ -46,17 +47,7 @@ var repoManagedByDaemon = func(repoPath string) bool {
 	if repoPath == "" {
 		return false
 	}
-
-	cfg, err := daemonpkg.LoadDaemonConfig("")
-	if err != nil {
-		return false
-	}
-	socketPath := cfg.SocketPath
-	if socketPath == "" {
-		socketPath = defaultDaemonSocketPath()
-	}
-
-	client := daemonpkg.NewSocketClient(socketPath)
+	client := daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath())
 	repos, err := client.ListRepos()
 	if err != nil {
 		return false
@@ -69,22 +60,6 @@ var repoManagedByDaemon = func(repoPath string) bool {
 		}
 	}
 	return false
-}
-
-func defaultDaemonSocketPath() string {
-	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
-		return filepath.Join(xdg, "kasmos", "kas.sock")
-	}
-	return filepath.Join(os.TempDir(), fmt.Sprintf("kasmos-%d", os.Getuid()), "kas.sock")
-}
-
-// resolvedDaemonSocketPath returns the daemon socket path, respecting any
-// socket_path override in daemon.toml — same resolution used by repoManagedByDaemon.
-func resolvedDaemonSocketPath() string {
-	if cfg, err := daemonpkg.LoadDaemonConfig(""); err == nil && cfg.SocketPath != "" {
-		return cfg.SocketPath
-	}
-	return defaultDaemonSocketPath()
 }
 
 func daemonHTTPClient(socketPath string, timeout time.Duration) *http.Client {
@@ -207,6 +182,9 @@ type home struct {
 
 	// allInstances stores every instance across all repos (master list)
 	allInstances []*session.Instance
+	// dismissedInstanceTitles suppresses daemon re-hydration of rows the user
+	// explicitly deleted from the sidebar until the daemon stops reporting them.
+	dismissedInstanceTitles map[string]struct{}
 
 	// state is the current discrete state of the application
 	state state
@@ -325,11 +303,11 @@ type home struct {
 	// signalsDir is the directory where agent sentinel files are written.
 	// Defaults to <repoRoot>/.kasmos/signals/ (project-local, gitignored).
 	signalsDir string
-	// embeddedServer is the in-process HTTP+SQLite task store server started on boot
-	// for local fallback mode. Nil when startup reuses the daemon-backed store.
+	// embeddedServer is retained for transitional rebinding tests. Startup no longer
+	// launches an embedded task store fallback.
 	embeddedServer *taskstore.EmbeddedServer
-	// taskStore is the task store client. Always non-nil after newHome() returns —
-	// points at the daemon, embedded server, or configured remote store.
+	// taskStore is the authoritative task store client. It points at the daemon or
+	// a configured remote store, and may be nil until daemon registration completes.
 	taskStore taskstore.Store
 	// taskStoreProject is the project name used with the remote store (derived from repo basename).
 	taskStoreProject string
@@ -463,96 +441,65 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 
 	project := resolveTaskStoreProject(activeRepoPath)
 	h := &home{
-		ctx:                   ctx,
-		spinner:               spinner.New(spinner.WithSpinner(spinner.Dot)),
-		menu:                  ui.NewMenu(),
-		auditPane:             ui.NewAuditPane(),
-		statusBar:             ui.NewStatusBar(),
-		tabbedWindow:          ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
-		storage:               storage,
-		appConfig:             appConfig,
-		program:               program,
-		version:               version,
-		autoYes:               autoYes,
-		state:                 stateDefault,
-		appState:              appState,
-		activeRepoPath:        activeRepoPath,
-		taskStateDir:          filepath.Join(activeRepoPath, "docs", "plans"), // legacy: only for JSON migration
-		signalsDir:            filepath.Join(activeRepoPath, ".kasmos", "signals"),
-		taskStoreProject:      project,
-		daemonStatusChecker:   checkDaemonStatus,
-		daemonRepoRegistrar:   registerRepoWithDaemon,
-		planBrowserOpener:     cmd2.OpenPlanBrowser,
-		instanceFinalizers:    make(map[*session.Instance]func()),
-		waveOrchestrators:     make(map[string]*orchestration.WaveOrchestrator),
-		plannerPrompted:       make(map[string]bool),
-		coderPushPrompted:     make(map[string]bool),
-		pendingReviewFeedback: make(map[string]string),
+		ctx:                     ctx,
+		spinner:                 spinner.New(spinner.WithSpinner(spinner.Dot)),
+		menu:                    ui.NewMenu(),
+		auditPane:               ui.NewAuditPane(),
+		statusBar:               ui.NewStatusBar(),
+		tabbedWindow:            ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		storage:                 storage,
+		appConfig:               appConfig,
+		program:                 program,
+		version:                 version,
+		autoYes:                 autoYes,
+		state:                   stateDefault,
+		appState:                appState,
+		activeRepoPath:          activeRepoPath,
+		taskStateDir:            filepath.Join(activeRepoPath, "docs", "plans"), // legacy: only for JSON migration
+		signalsDir:              filepath.Join(activeRepoPath, ".kasmos", "signals"),
+		taskStoreProject:        project,
+		daemonStatusChecker:     checkDaemonStatus,
+		daemonRepoRegistrar:     registerRepoWithDaemon,
+		planBrowserOpener:       cmd2.OpenPlanBrowser,
+		instanceFinalizers:      make(map[*session.Instance]func()),
+		dismissedInstanceTitles: make(map[string]struct{}),
+		waveOrchestrators:       make(map[string]*orchestration.WaveOrchestrator),
+		plannerPrompted:         make(map[string]bool),
+		coderPushPrompted:       make(map[string]bool),
+		pendingReviewFeedback:   make(map[string]string),
 	}
 
 	dbPath := taskstore.ResolvedDBPath()
-	// DatabaseURL always wins — daemon routing only applies when no remote
-	// authority is configured, matching OpenAuthoritativeStore's precedence.
-	daemonManagedRepo := appConfig.DatabaseURL == "" && repoManagedByDaemon(activeRepoPath)
-	if daemonManagedRepo {
-		socketPath := resolvedDaemonSocketPath()
-		daemonStore := taskstore.NewHTTPStoreWithOptions(taskstore.HTTPStoreOptions{
-			BaseURL:    "http://daemon",
-			Project:    project,
-			Client:     daemonHTTPClient(socketPath, 5*time.Second),
-			PingClient: daemonHTTPClient(socketPath, 2*time.Second),
-		})
-		if pingErr := daemonStore.Ping(); pingErr != nil {
-			log.WarningLog.Printf("daemon-backed task store unreachable: %v — falling back to embedded", pingErr)
-			_ = daemonStore.Close()
+	if appConfig.DatabaseURL != "" {
+		remoteStore := taskstore.NewHTTPStore(appConfig.DatabaseURL, project)
+		if pingErr := remoteStore.Ping(); pingErr != nil {
+			fmt.Printf("Failed to connect to remote task store: %v\n", pingErr)
+			os.Exit(1)
+		}
+		h.taskStore = remoteStore
+	} else {
+		daemonStore, err := taskstore.OpenDaemonBackedStore(project)
+		if err != nil {
+			log.WarningLog.Printf("daemon-backed task store unavailable: %v", err)
 		} else {
 			h.taskStore = daemonStore
 		}
 	}
-
-	remoteStoreUnreachable := false
-	if h.taskStore == nil {
-		// Start an embedded task store server for repos that are not yet daemon-managed,
-		// or when the daemon-managed fast path is unavailable.
-		embSrv, err := taskstore.StartEmbedded(dbPath, 0)
-		if err != nil {
-			fmt.Printf("Failed to start embedded task store: %v\n", err)
-			os.Exit(1)
-		}
-		h.embeddedServer = embSrv
-
-		// Default: use the embedded server's URL for the task store client.
-		storeURL := embSrv.URL()
-
-		// If a remote task store is configured, use that URL instead (multi-machine
-		// access over tailscale, etc.). The embedded server still runs for audit log
-		// DB access via its SQLite store.
-		if appConfig.DatabaseURL != "" {
-			remoteStore := taskstore.NewHTTPStore(appConfig.DatabaseURL, project)
-			if pingErr := remoteStore.Ping(); pingErr != nil {
-				log.WarningLog.Printf("remote task store unreachable: %v — falling back to embedded", pingErr)
-				remoteStoreUnreachable = true
-				// storeURL stays as the embedded server URL
-			} else {
-				storeURL = appConfig.DatabaseURL
-			}
-		}
-
-		h.taskStore = taskstore.NewHTTPStore(storeURL, project)
-	}
 	h.fsm = taskfsm.New(h.taskStore, project, h.taskStateDir)
 
-	// One-time migration: import plan-state.json into the DB if it exists.
+	// One-time migration: import plan-state.json into the task store if it exists.
 	// Only runs when plan-state.json is present; subsequent boots skip this.
 	planStateJSON := filepath.Join(h.taskStateDir, "plan-state.json")
-	if _, statErr := os.Stat(planStateJSON); statErr == nil {
-		migrated, migrateErr := taskstore.MigrateFromJSON(h.taskStore, project, h.taskStateDir)
-		if migrateErr != nil {
-			log.WarningLog.Printf("plan-state.json migration failed: %v", migrateErr)
-		} else {
-			log.InfoLog.Printf("migrated %d plans from plan-state.json to DB", migrated)
-			if renameErr := os.Rename(planStateJSON, planStateJSON+".migrated"); renameErr != nil {
-				log.WarningLog.Printf("failed to rename plan-state.json after migration: %v", renameErr)
+	if h.taskStore != nil {
+		if _, statErr := os.Stat(planStateJSON); statErr == nil {
+			migrated, migrateErr := taskstore.MigrateFromJSON(h.taskStore, project, h.taskStateDir)
+			if migrateErr != nil {
+				log.WarningLog.Printf("plan-state.json migration failed: %v", migrateErr)
+			} else {
+				log.InfoLog.Printf("migrated %d plans from plan-state.json to DB", migrated)
+				if renameErr := os.Rename(planStateJSON, planStateJSON+".migrated"); renameErr != nil {
+					log.WarningLog.Printf("failed to rename plan-state.json after migration: %v", renameErr)
+				}
 			}
 		}
 	}
@@ -570,10 +517,8 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 	h.toastManager = overlay.NewToastManager(&h.spinner)
 	h.overlays = overlay.NewManager()
 
-	// Show a warning toast if a remote task store was configured but unreachable
-	// (we fell back to the embedded server).
-	if remoteStoreUnreachable {
-		h.toastManager.Error("remote task store unreachable — using embedded store")
+	if h.taskStore == nil {
+		h.toastManager.Error("daemon task store unavailable")
 	}
 
 	permCacheDir := filepath.Join(activeRepoPath, ".kasmos")
@@ -627,7 +572,7 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 // back in Update with no I/O — keeping the Bubble Tea loop unblocked.
 func (m *home) switchToDaemonTaskStoreCmd(toast string) tea.Cmd {
 	project := resolveTaskStoreProject(m.activeRepoPath)
-	socketPath := resolvedDaemonSocketPath()
+	socketPath := taskstore.ResolvedDaemonSocketPath()
 	return func() tea.Msg {
 		store := taskstore.NewHTTPStoreWithOptions(taskstore.HTTPStoreOptions{
 			BaseURL:    "http://daemon",
@@ -1022,14 +967,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				})
 			}
 
-			// Load plan state — moved here from the synchronous Update handler
-			// to avoid blocking the event loop every 500ms.
-			// Daemon-managed repos read task metadata from the daemon API; other
-			// repos continue to read from the configured task store.
-			// Both daemon-managed and local repos load task state from the
-			// same SQLite store. The daemon writes to this store, so reading
-			// it directly gives us authoritative state without a lossy API
-			// roundtrip that drops timestamps, goals, and content.
+			// Load task state — moved here from the synchronous Update handler
+			// to avoid blocking the event loop every 500ms. The authoritative
+			// store is always the daemon-backed store or an explicitly configured
+			// remote task store; there is no local SQLite fallback writer here.
 			var ps *taskstate.TaskState
 			var daemonTaskStateLoaded bool
 			if store != nil && taskStateDir != "" && project != "" {
@@ -1043,6 +984,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			daemonInstances := make([]*session.Instance, 0)
+			daemonTitles := make([]string, 0)
 			if daemonManagedRepo && project != "" {
 				knownTitles := make(map[string]struct{}, len(snapshots))
 				for _, inst := range snapshots {
@@ -1057,6 +999,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					for _, status := range statuses {
 						title := status.Title
 						if title == "" {
+							continue
+						}
+						daemonTitles = append(daemonTitles, title)
+						if !status.Active {
 							continue
 						}
 						if _, exists := knownTitles[title]; exists {
@@ -1157,7 +1103,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			time.Sleep(200 * time.Millisecond)
-			return metadataResultMsg{Results: results, PlanState: ps, DaemonTaskState: daemonTaskStateLoaded, Signals: signals, TaskSignals: taskSignals, WaveSignals: waveSignals, ElaborationSignals: elaborationSignals, DaemonManagedRepo: daemonManagedRepo, DaemonInstances: daemonInstances, TmuxSessionCount: tmuxCount, PRStateUpdates: prStateUpdates}
+			return metadataResultMsg{Results: results, PlanState: ps, DaemonTaskState: daemonTaskStateLoaded, Signals: signals, TaskSignals: taskSignals, WaveSignals: waveSignals, ElaborationSignals: elaborationSignals, DaemonManagedRepo: daemonManagedRepo, DaemonInstances: daemonInstances, DaemonTitles: daemonTitles, TmuxSessionCount: tmuxCount, PRStateUpdates: prStateUpdates}
 		}
 	case metadataResultMsg:
 		// Process agent sentinel signals — feed to FSM and consume sentinel files.
@@ -1587,8 +1533,12 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		m.reconcileDismissedInstanceTitles(msg.DaemonTitles)
 		for _, inst := range msg.DaemonInstances {
 			if inst == nil {
+				continue
+			}
+			if m.isInstanceTitleDismissed(inst.Title) {
 				continue
 			}
 			exists := false
@@ -2306,7 +2256,21 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tmuxAttachReturnMsg:
 		m.toastManager.Info("detached from tmux session")
-		return m, tea.Batch(clearScreenCmd(), tea.RequestWindowSize, m.instanceChanged(), m.toastTickCmd())
+		// Reset stored dimensions so the next WindowSizeMsg always triggers
+		// termResized==true in updateHandleWindowSizeEvent, forcing a full
+		// layout recalculation including overlay sizing.
+		m.termWidth = 0
+		m.termHeight = 0
+		// Use Sequence (not Batch) so the terminal is cleared before the
+		// window-size query fires — prevents a stale-state render between
+		// alt-screen re-entry and the first correct frame.
+		return m, tea.Sequence(
+			rawClearScreenCmd(),
+			clearScreenCmd(),
+			tea.RequestWindowSize,
+			m.instanceChanged(),
+			m.toastTickCmd(),
+		)
 	case permissionAutoApproveMsg:
 		if msg.instance != nil && msg.instance.Started() {
 			i := msg.instance
@@ -2736,6 +2700,14 @@ func clearScreenCmd() tea.Cmd {
 	}
 }
 
+// rawClearScreenCmd emits ANSI "erase display + cursor home" directly to the
+// terminal, bypassing bubbletea's differential renderer.  This guarantees the
+// physical screen is blank before the renderer's next flush, preventing stale
+// alt-screen content from being visible after returning from tea.Exec.
+func rawClearScreenCmd() tea.Cmd {
+	return tea.Raw("\033[2J\033[H")
+}
+
 // clickUpDetectedMsg is sent at startup when ClickUp MCP is detected.
 type clickUpDetectedMsg struct {
 	Config clickup.MCPServerConfig
@@ -2760,7 +2732,51 @@ func (m *home) addInstanceFinalizer(inst *session.Instance, fn func()) {
 	if m.instanceFinalizers == nil {
 		m.instanceFinalizers = make(map[*session.Instance]func())
 	}
+	m.clearDismissedInstanceTitle(inst.Title)
 	m.instanceFinalizers[inst] = fn
+}
+
+func (m *home) markInstanceTitleDismissed(title string) {
+	if strings.TrimSpace(title) == "" {
+		return
+	}
+	if m.dismissedInstanceTitles == nil {
+		m.dismissedInstanceTitles = make(map[string]struct{})
+	}
+	m.dismissedInstanceTitles[title] = struct{}{}
+}
+
+func (m *home) clearDismissedInstanceTitle(title string) {
+	if m.dismissedInstanceTitles == nil || strings.TrimSpace(title) == "" {
+		return
+	}
+	delete(m.dismissedInstanceTitles, title)
+}
+
+func (m *home) isInstanceTitleDismissed(title string) bool {
+	if m.dismissedInstanceTitles == nil || strings.TrimSpace(title) == "" {
+		return false
+	}
+	_, ok := m.dismissedInstanceTitles[title]
+	return ok
+}
+
+func (m *home) reconcileDismissedInstanceTitles(daemonTitles []string) {
+	if len(m.dismissedInstanceTitles) == 0 {
+		return
+	}
+	seen := make(map[string]struct{}, len(daemonTitles))
+	for _, title := range daemonTitles {
+		if strings.TrimSpace(title) == "" {
+			continue
+		}
+		seen[title] = struct{}{}
+	}
+	for title := range m.dismissedInstanceTitles {
+		if _, ok := seen[title]; !ok {
+			delete(m.dismissedInstanceTitles, title)
+		}
+	}
 }
 
 // instanceStartedMsg is sent when an async instance startup completes.
@@ -2804,6 +2820,7 @@ type metadataResultMsg struct {
 	ElaborationSignals []taskfsm.ElaborationSignal // architect completion signal files found this tick
 	DaemonManagedRepo  bool                        // true when the active repo is managed by a running daemon
 	DaemonInstances    []*session.Instance         // daemon-tracked instances missing from the local nav model
+	DaemonTitles       []string                    // all daemon-reported instance titles for dismissal reconciliation
 	TmuxSessionCount   int                         // number of kas_-prefixed tmux sessions
 	PRStateUpdates     []prStateUpdateMsg          // PR review/check state refreshed this tick
 }

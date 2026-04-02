@@ -289,7 +289,7 @@ if any check fails: fix inline, then re-run these checks.
 then use MCP `signal_create` (signal_type: "planner-finished", plan_file: "<plan-file>") after the update succeeds.
 if MCP is unavailable in your harness, fall back to `kas signal emit planner_finished <plan-file>`; only if the CLI path is also unavailable, fall back to `touch .kasmos/signals/planner-finished-<plan-file>`.
 
-**manual mode:** use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>"). only use MCP `task_create` when creating a brand-new standalone plan outside kasmos.
+**manual mode:** if the user provides explicit store/signal commands, use those exactly. otherwise use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>"). if creating a new task, use MCP `task_create` with the `content` parameter in a single call — never create empty then update separately.
 
 do not commit sentinel files — kasmos consumes and deletes them automatically.
 
@@ -322,11 +322,19 @@ announce completion and stop:
 
 ### manual mode (`KASMOS_MANAGED` unset)
 
-store the plan in the task store using MCP calls.
+**if the user provides explicit store/signal commands in their prompt, use those
+exactly — do not substitute MCP equivalents.** the user knows their environment.
 
-if the task does not exist yet, use MCP `task_create` to create it first, then use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>") to persist the plan.
+otherwise, store the plan in the task store:
 
-if the task already exists, use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>") directly.
+if the task does not exist yet, use `kas task register <plan-file>` (CLI) to create
+it, then `kas task update-content <plan-file> < <plan-file-on-disk>` to persist the
+content. alternatively, use MCP `task_create` with the `content` parameter set to the
+full plan markdown in a single call — never create empty then update separately, as
+the signal consumer may read the empty content before the update lands.
+
+if the task already exists, use `kas task update-content <plan-file>` (CLI) or MCP
+`task_update_content` (filename: "<plan-file>", content: "<full plan markdown>").
 
 then offer execution choices:
 

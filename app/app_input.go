@@ -203,7 +203,7 @@ func (m *home) handleActiveOverlayMouse(msg tea.MouseClickMsg) (tea.Model, tea.C
 				if err != nil {
 					return err
 				}
-				return instanceChangedMsg{}
+				return tmuxAttachReturnMsg{}
 			})
 		}
 		return m, tea.Sequence(tea.RequestWindowSize, func() tea.Msg {
@@ -1489,6 +1489,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		selected := m.nav.GetSelectedInstance()
 		if selected != nil && (selected.Exited || (selected.Status != session.Running && selected.Status != session.Loading)) {
 			title := selected.Title
+			m.markInstanceTitleDismissed(title)
 			m.nav.Remove()
 			m.removeFromAllInstances(title)
 			_ = m.saveAllInstances()
@@ -1755,7 +1756,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 					if err != nil {
 						return err
 					}
-					return instanceChangedMsg{}
+					return tmuxAttachReturnMsg{}
 				})
 			}
 			return m, nil

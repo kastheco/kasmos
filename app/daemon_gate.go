@@ -41,11 +41,12 @@ type daemonTaskStoreSwitchedMsg struct {
 }
 
 // daemonTaskStoreSwitchErrMsg is delivered when the background ping in
-// switchToDaemonTaskStoreCmd fails. The embedded store remains in use.
+// switchToDaemonTaskStoreCmd fails. The app stays unbound from the task store
+// until the daemon-backed authority becomes reachable.
 type daemonTaskStoreSwitchErrMsg struct{}
 
 var listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
-	return daemonpkg.NewSocketClient(resolvedDaemonSocketPath()).ListInstances(project)
+	return daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath()).ListInstances(project)
 }
 
 func canonicalRepoPath(repoPath string) string {
@@ -63,7 +64,7 @@ func canonicalRepoPath(repoPath string) string {
 
 func checkDaemonStatus(repoPath string) daemonStatusMsg {
 	repoPath = canonicalRepoPath(repoPath)
-	socketPath := resolvedDaemonSocketPath()
+	socketPath := taskstore.ResolvedDaemonSocketPath()
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			var d net.Dialer
@@ -126,7 +127,7 @@ func checkDaemonStatus(repoPath string) daemonStatusMsg {
 }
 
 func registerRepoWithDaemon(repoPath string) error {
-	return daemonpkg.NewSocketClient(daemonpkg.DefaultSocketPath()).AddRepo(canonicalRepoPath(repoPath))
+	return daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath()).AddRepo(canonicalRepoPath(repoPath))
 }
 
 func daemonInstanceData(repoPath string, status api.InstanceStatus) session.InstanceData {

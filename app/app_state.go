@@ -71,7 +71,7 @@ func waitForDaemonPlannerInstance(data session.InstanceData) (*session.Instance,
 }
 
 var spawnPlannerWithDaemon = func(repoPath, project, planFile, title, prompt, program string) (*session.Instance, error) {
-	client := daemonpkg.NewSocketClient(defaultDaemonSocketPath())
+	client := daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath())
 	if err := client.StartPlan(project, planFile, prompt, program); err != nil {
 		return nil, err
 	}

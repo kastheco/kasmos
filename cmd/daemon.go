@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/spf13/cobra"
 )
@@ -22,10 +23,7 @@ import (
 // /tmp/kasmos-<uid>/kas.sock. This keeps `kas daemon status` (and friends)
 // talking to the same socket the daemon creates without requiring --socket.
 func daemonSocketPath() string {
-	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
-		return filepath.Join(xdg, "kasmos", "kas.sock")
-	}
-	return filepath.Join(os.TempDir(), fmt.Sprintf("kasmos-%d", os.Getuid()), "kas.sock")
+	return taskstore.ResolvedDaemonSocketPath()
 }
 
 // daemonPIDPath returns the path to the daemon PID file.

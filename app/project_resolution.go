@@ -3,12 +3,13 @@ package app
 import (
 	"path/filepath"
 
+	"github.com/kastheco/kasmos/config/taskstore"
 	daemonpkg "github.com/kastheco/kasmos/daemon"
 	"github.com/kastheco/kasmos/daemon/api"
 )
 
 var listDaemonRepoStatuses = func() ([]api.RepoStatus, error) {
-	return daemonpkg.NewSocketClient(daemonpkg.DefaultSocketPath()).ListRepos()
+	return daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath()).ListRepos()
 }
 
 func daemonProjectForRepo(repoPath string) string {

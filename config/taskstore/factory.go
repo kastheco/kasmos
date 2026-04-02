@@ -24,14 +24,15 @@ func NewStoreFromConfig(storeURL, project string) (Store, error) {
 // OpenAuthoritativeStore opens the authoritative task store for the current
 // repo/project. When a remote task store is configured, it must be reachable —
 // callers do not silently fall back to a second local writer. When no remote
-// authority is configured, this returns the repo-root-backed SQLite store.
+// authority is configured, the daemon-backed store is the only valid authority.
 func OpenAuthoritativeStore(project string) (Store, error) {
 	cfg := config.LoadConfig()
 	if strings.TrimSpace(cfg.DatabaseURL) == "" {
-		if store, err := openDaemonBackedStore(project); err == nil {
-			return store, nil
+		store, err := openDaemonBackedStore(project)
+		if err != nil {
+			return nil, fmt.Errorf("open authoritative task store for project %s: %w", project, err)
 		}
-		return OpenBackingSQLiteStore()
+		return store, nil
 	}
 
 	store, err := NewStoreFromConfig(cfg.DatabaseURL, project)
@@ -48,14 +49,16 @@ func OpenAuthoritativeStore(project string) (Store, error) {
 // OpenAuthoritativeSignalGateway opens the authoritative signal gateway for the
 // current repo/project. Remote task-store authorities must be reachable; when a
 // remote authority is configured but does not expose signals, this fails fast
-// instead of silently writing to repo-local SQLite.
+// instead of silently writing to repo-local SQLite. When no remote authority is
+// configured, the daemon-backed signal gateway is the only valid authority.
 func OpenAuthoritativeSignalGateway(project string) (SignalGateway, error) {
 	cfg := config.LoadConfig()
 	if strings.TrimSpace(cfg.DatabaseURL) == "" {
-		if gateway, err := openDaemonBackedSignalGateway(project); err == nil {
-			return gateway, nil
+		gateway, err := openDaemonBackedSignalGateway(project)
+		if err != nil {
+			return nil, fmt.Errorf("open authoritative signal gateway for project %s: %w", project, err)
 		}
-		return openBackingSQLiteSignalGateway()
+		return gateway, nil
 	}
 
 	store, err := NewStoreFromConfig(cfg.DatabaseURL, project)

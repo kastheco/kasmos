@@ -5,16 +5,15 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
-	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
+	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
 )
 
 var listDaemonRepoStatuses = func() ([]api.RepoStatus, error) {
-	socketPath := defaultDaemonSocketPath()
+	socketPath := taskstore.ResolvedDaemonSocketPath()
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			var d net.Dialer
@@ -38,17 +37,6 @@ var listDaemonRepoStatuses = func() ([]api.RepoStatus, error) {
 		return nil, err
 	}
 	return status.Repos, nil
-}
-
-func defaultDaemonSocketPath() string {
-	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
-		return filepath.Join(xdg, "kasmos", "kas.sock")
-	}
-	return filepath.Join(os.TempDir(), "kasmos-"+itoa(os.Getuid()), "kas.sock")
-}
-
-func itoa(v int) string {
-	return strconv.Itoa(v)
 }
 
 func canonicalRepoPath(repoPath string) string {
