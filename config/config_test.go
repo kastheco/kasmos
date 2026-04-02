@@ -417,9 +417,9 @@ branch_prefix = "test/"
 		tomlPath := filepath.Join(configDir, TOMLConfigFileName)
 		tomlContent := `[ui]
 	auto_advance_waves = false
-auto_advance = false
-auto_review_fix = false
-max_review_fix_cycles = 0
+	auto_advance = false
+	auto_review_fix = false
+	max_review_fix_cycles = 0
 `
 		require.NoError(t, os.WriteFile(tomlPath, []byte(tomlContent), 0644))
 

@@ -1104,6 +1104,38 @@ func TestToggleAutoAdvanceWaves(t *testing.T) {
 	assert.False(t, m.appConfig.AutoAdvanceWaves)
 }
 
+func TestExecuteContextAction_ToggleAutoAdvancePlanner(t *testing.T) {
+	var sp spinner.Model
+	m := &home{
+		appConfig:    &config.Config{AutoAdvance: false, AutoAdvanceWaves: true},
+		toastManager: overlay.NewToastManager(&sp),
+	}
+
+	model, cmd := m.executeContextAction("toggle_auto_advance_planner")
+	updated := model.(*home)
+
+	require.NotNil(t, cmd)
+	assert.True(t, updated.appConfig.AutoAdvance)
+	assert.True(t, updated.appConfig.AutoAdvanceWaves)
+	assert.Contains(t, updated.toastManager.View(), "auto-advance planner: on")
+}
+
+func TestExecuteContextAction_ToggleAutoAdvance_LegacyAliasTargetsWaves(t *testing.T) {
+	var sp spinner.Model
+	m := &home{
+		appConfig:    &config.Config{AutoAdvance: false, AutoAdvanceWaves: false},
+		toastManager: overlay.NewToastManager(&sp),
+	}
+
+	model, cmd := m.executeContextAction("toggle_auto_advance")
+	updated := model.(*home)
+
+	require.NotNil(t, cmd)
+	assert.False(t, updated.appConfig.AutoAdvance)
+	assert.True(t, updated.appConfig.AutoAdvanceWaves)
+	assert.Contains(t, updated.toastManager.View(), "auto-advance waves: on")
+}
+
 func TestToggleAutoReviewFix(t *testing.T) {
 	m := &home{
 		appConfig: &config.Config{AutoReviewFix: false},

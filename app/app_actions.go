@@ -584,7 +584,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			return instanceChangedMsg{}
 		}
 
-	case "toggle_auto_advance":
+	case "toggle_auto_advance_planner":
 		if m.appConfig == nil {
 			return m, nil
 		}
@@ -596,7 +596,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		m.toastManager.Success(fmt.Sprintf("auto-advance planner: %s", label))
 		return m, m.toastTickCmd()
 
-	case "toggle_auto_advance_waves":
+	case "toggle_auto_advance", "toggle_auto_advance_waves":
 		if m.appConfig == nil {
 			return m, nil
 		}
@@ -992,7 +992,7 @@ func (m *home) openTaskContextMenu() (tea.Model, tea.Cmd) {
 	configItems := []overlay.ContextMenuItem{
 		{Label: "rename task", Action: "rename_plan"},
 		{Label: "set topic", Action: "change_topic"},
-		{Label: autoPlannerLabel, Action: "toggle_auto_advance"},
+		{Label: autoPlannerLabel, Action: "toggle_auto_advance_planner"},
 		{Label: autoAdvanceLabel, Action: "toggle_auto_advance_waves"},
 		{Label: autoReviewFixLabel, Action: "toggle_auto_review_fix"},
 		{Label: "set status", Action: "set_status"},

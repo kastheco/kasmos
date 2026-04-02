@@ -3,6 +3,7 @@ package daemon
 import (
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"sync"
 
@@ -99,10 +100,22 @@ func (m *RepoManager) Add(path string) error {
 		hooks = taskfsm.BuildHookRegistry(cfgs)
 	}
 
+	// Prefer project-local auto_advance if explicitly set in config.toml,
+	// falling back to the daemon-level default.
+	autoAdvance := m.autoAdvance
+	projTomlPath := filepath.Join(path, ".kasmos", config.TOMLConfigFileName)
+	if _, err := os.Stat(projTomlPath); err == nil {
+		if result, err := config.LoadTOMLConfigFrom(projTomlPath); err == nil && result.AutoAdvance != nil {
+			autoAdvance = *result.AutoAdvance
+		} else if err != nil {
+			slog.Warn("daemon: failed to read auto_advance from project config, using daemon default", "repo", path, "error", err)
+		}
+	}
+
 	// Create a per-repo processor that persists across poll ticks so that wave
 	// orchestrator state is maintained between cycles.
 	proc := loop.NewProcessor(loop.ProcessorConfig{
-		AutoAdvance:        m.autoAdvance,
+		AutoAdvance:        autoAdvance,
 		AutoReviewFix:      m.autoReviewFix,
 		Store:              store,
 		Project:            project,
