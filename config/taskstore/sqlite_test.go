@@ -215,6 +215,44 @@ func TestSQLiteStore_Rename(t *testing.T) {
 	assert.Equal(t, taskstore.StatusReady, got.Status)
 }
 
+func TestSQLiteStore_Delete(t *testing.T) {
+	store := newTestStore(t)
+
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{Filename: "task-a", Status: taskstore.StatusReady}))
+	require.NoError(t, store.SetContent("proj", "task-a", "# deleted task"))
+	require.NoError(t, store.SetSubtasks("proj", "task-a", []taskstore.SubtaskEntry{{TaskNumber: 1, Title: "child", Status: taskstore.SubtaskStatusPending}}))
+	require.NoError(t, store.RecordPRReview("proj", "task-a", 101, "COMMENTED", "delete me", "reviewer"))
+
+	require.NoError(t, store.Create("other", taskstore.TaskEntry{Filename: "task-a", Status: taskstore.StatusReady}))
+	require.NoError(t, store.SetContent("other", "task-a", "# survivor"))
+
+	require.NoError(t, store.Delete("proj", "task-a"))
+
+	_, err := store.Get("proj", "task-a")
+	require.Error(t, err)
+	assert.Equal(t, "plan not found: proj/task-a", err.Error())
+
+	_, err = store.GetContent("proj", "task-a")
+	require.Error(t, err)
+	assert.Equal(t, "plan not found: proj/task-a", err.Error())
+
+	subtasks, err := store.GetSubtasks("proj", "task-a")
+	require.NoError(t, err)
+	assert.Empty(t, subtasks)
+
+	pending, err := store.ListPendingReviews("proj", "task-a")
+	require.NoError(t, err)
+	assert.Empty(t, pending)
+
+	otherContent, err := store.GetContent("other", "task-a")
+	require.NoError(t, err)
+	assert.Equal(t, "# survivor", otherContent)
+
+	err = store.Delete("proj", "task-a")
+	require.Error(t, err)
+	assert.Equal(t, "plan not found: proj/task-a", err.Error())
+}
+
 func TestSQLiteStore_ListByTopic(t *testing.T) {
 	store := newTestStore(t)
 	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "a", Status: taskstore.StatusReady, Topic: "auth"}))

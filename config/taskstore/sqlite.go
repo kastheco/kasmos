@@ -492,6 +492,24 @@ func (s *SQLiteStore) Rename(project, oldFilename, newFilename string) error {
 	return nil
 }
 
+// Delete removes an existing task entry.
+// Returns an error if the task is not found.
+func (s *SQLiteStore) Delete(project, filename string) error {
+	const q = `DELETE FROM tasks WHERE project = ? AND filename = ?`
+	result, err := s.db.Exec(q, project, filename)
+	if err != nil {
+		return fmt.Errorf("delete plan: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete plan rows affected: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("plan not found: %s/%s", project, filename)
+	}
+	return nil
+}
+
 // List returns all task entries for the given project, sorted by filename.
 func (s *SQLiteStore) List(project string) ([]TaskEntry, error) {
 	const q = `

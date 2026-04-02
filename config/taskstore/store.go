@@ -103,6 +103,7 @@ type Store interface {
 	Get(project, filename string) (TaskEntry, error)
 	Update(project, filename string, entry TaskEntry) error
 	Rename(project, oldFilename, newFilename string) error
+	Delete(project, filename string) error
 
 	// Content access
 	GetContent(project, filename string) (string, error)
