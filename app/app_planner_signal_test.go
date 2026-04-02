@@ -80,6 +80,9 @@ func TestPlannerFinishedSignal_ShowsConfirmDialog(t *testing.T) {
 	const planFile = "feature"
 	h, ps, _, _ := plannerSignalHome(t, planFile)
 
+	// Explicitly disable auto-advance so this test exercises the dialog path.
+	h.appConfig.AutoAdvance = false
+
 	signal := taskfsm.Signal{
 		Event:    taskfsm.PlannerFinished,
 		TaskFile: planFile,
@@ -247,12 +250,45 @@ func TestPlannerTmuxDeath_NoFallbackDialog(t *testing.T) {
 		"plan must remain StatusPlanning when planner pane dies without a sentinel")
 }
 
+// TestPlannerFinishedSignal_AutoAdvance_SkipsDialog verifies that when
+// appConfig.AutoAdvance is true, a PlannerFinished signal skips the confirmation
+// dialog entirely: plannerPrompted is set and no overlay is shown.
+func TestPlannerFinishedSignal_AutoAdvance_SkipsDialog(t *testing.T) {
+	const planFile = "feature"
+	h, ps, _, _ := plannerSignalHome(t, planFile)
+
+	// Enable auto-advance: skip the confirmation dialog.
+	h.appConfig.AutoAdvance = true
+
+	signal := taskfsm.Signal{
+		Event:    taskfsm.PlannerFinished,
+		TaskFile: planFile,
+	}
+	msg := metadataResultMsg{
+		PlanState: ps,
+		Signals:   []taskfsm.Signal{signal},
+	}
+
+	model, _ := h.Update(msg)
+	updated := model.(*home)
+
+	assert.True(t, updated.plannerPrompted[planFile],
+		"plannerPrompted must be set when auto-advance skips the dialog")
+	assert.NotEqual(t, stateConfirm, updated.state,
+		"auto-advance must NOT enter stateConfirm")
+	assert.False(t, updated.overlays.IsActive(),
+		"auto-advance must NOT show a confirmation overlay")
+}
+
 // TestPlannerFinishedSignal_DeferredWhenOverlayActive verifies that when the
 // PlannerFinished signal arrives while an overlay is active, the dialog is NOT
 // lost — it is deferred and shown on the next metadata tick once the overlay clears.
 func TestPlannerFinishedSignal_DeferredWhenOverlayActive(t *testing.T) {
 	const planFile = "feature"
 	h, ps, _, _ := plannerSignalHome(t, planFile)
+
+	// Explicitly disable auto-advance so this test exercises the deferred dialog path.
+	h.appConfig.AutoAdvance = false
 
 	// Simulate an active overlay (e.g. new-plan form is open).
 	existingOverlay := overlay.NewConfirmationOverlay("unrelated question?")

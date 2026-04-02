@@ -64,7 +64,7 @@ type tomlPRMonitorConfig struct {
 type tomlDaemonConfig struct {
 	PollIntervalSec    float64             `toml:"poll_interval_sec"`
 	Repos              []string            `toml:"repos"`
-	AutoAdvance        bool                `toml:"auto_advance"`
+	AutoAdvance        *bool               `toml:"auto_advance"`
 	AutoAdvanceWaves   *bool               `toml:"auto_advance_waves"`
 	AutoReviewFix      *bool               `toml:"auto_review_fix"`
 	MaxReviewFixCycles int                 `toml:"max_review_fix_cycles"`
@@ -76,7 +76,7 @@ type tomlDaemonConfig struct {
 func defaultDaemonConfig() *DaemonConfig {
 	return &DaemonConfig{
 		PollInterval:     2 * time.Second,
-		AutoAdvance:      false,
+		AutoAdvance:      true,
 		AutoAdvanceWaves: true,
 		AutoReviewFix:    true,
 		PRMonitor: PRMonitorConfig{
@@ -120,7 +120,9 @@ func LoadDaemonConfig(path string) (*DaemonConfig, error) {
 	if len(tc.Repos) > 0 {
 		cfg.Repos = tc.Repos
 	}
-	cfg.AutoAdvance = tc.AutoAdvance
+	if tc.AutoAdvance != nil {
+		cfg.AutoAdvance = *tc.AutoAdvance
+	}
 	if tc.AutoAdvanceWaves != nil {
 		cfg.AutoAdvanceWaves = *tc.AutoAdvanceWaves
 	}

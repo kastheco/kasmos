@@ -246,6 +246,38 @@ auto_advance_waves = true
 	})
 }
 
+func TestAutoAdvance(t *testing.T) {
+	t.Run("parses auto_advance from UI section", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		tomlPath := filepath.Join(tmpDir, "config.toml")
+		content := `
+[ui]
+auto_advance = true
+`
+		err := os.WriteFile(tomlPath, []byte(content), 0o644)
+		require.NoError(t, err)
+		tc, err := LoadTOMLConfigFrom(tomlPath)
+		require.NoError(t, err)
+		require.NotNil(t, tc.AutoAdvance)
+		assert.True(t, *tc.AutoAdvance)
+	})
+
+	t.Run("parses auto_advance false from UI section", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		tomlPath := filepath.Join(tmpDir, "config.toml")
+		content := `
+[ui]
+auto_advance = false
+`
+		err := os.WriteFile(tomlPath, []byte(content), 0o644)
+		require.NoError(t, err)
+		tc, err := LoadTOMLConfigFrom(tomlPath)
+		require.NoError(t, err)
+		require.NotNil(t, tc.AutoAdvance)
+		assert.False(t, *tc.AutoAdvance)
+	})
+}
+
 func TestLoadTOMLConfig_Hooks(t *testing.T) {
 	tmpDir := t.TempDir()
 	tomlPath := filepath.Join(tmpDir, "config.toml")

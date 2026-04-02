@@ -584,7 +584,19 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			return instanceChangedMsg{}
 		}
 
-	case "toggle_auto_advance":
+	case "toggle_auto_advance_planner":
+		if m.appConfig == nil {
+			return m, nil
+		}
+		m.appConfig.AutoAdvance = !m.appConfig.AutoAdvance
+		label := "off"
+		if m.appConfig.AutoAdvance {
+			label = "on"
+		}
+		m.toastManager.Success(fmt.Sprintf("auto-advance planner: %s", label))
+		return m, m.toastTickCmd()
+
+	case "toggle_auto_advance", "toggle_auto_advance_waves":
 		if m.appConfig == nil {
 			return m, nil
 		}
@@ -965,6 +977,10 @@ func (m *home) openTaskContextMenu() (tea.Model, tea.Cmd) {
 	}
 
 	// config group: task metadata and toggle options.
+	autoPlannerLabel := "auto-advance planner: off"
+	if m.appConfig != nil && m.appConfig.AutoAdvance {
+		autoPlannerLabel = "auto-advance planner: on"
+	}
 	autoAdvanceLabel := "auto-advance waves: off"
 	if m.appConfig != nil && m.appConfig.AutoAdvanceWaves {
 		autoAdvanceLabel = "auto-advance waves: on"
@@ -976,7 +992,8 @@ func (m *home) openTaskContextMenu() (tea.Model, tea.Cmd) {
 	configItems := []overlay.ContextMenuItem{
 		{Label: "rename task", Action: "rename_plan"},
 		{Label: "set topic", Action: "change_topic"},
-		{Label: autoAdvanceLabel, Action: "toggle_auto_advance"},
+		{Label: autoPlannerLabel, Action: "toggle_auto_advance_planner"},
+		{Label: autoAdvanceLabel, Action: "toggle_auto_advance_waves"},
 		{Label: autoReviewFixLabel, Action: "toggle_auto_review_fix"},
 		{Label: "set status", Action: "set_status"},
 	}

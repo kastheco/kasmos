@@ -116,6 +116,7 @@ func TestDefaultConfig(t *testing.T) {
 		assert.NotEmpty(t, config.DefaultProgram)
 		assert.False(t, config.AutoYes)
 		assert.True(t, config.AutoAdvanceWaves)
+		assert.True(t, config.AutoAdvance)
 		assert.True(t, config.AutoReviewFix)
 		assert.Equal(t, 1000, config.DaemonPollInterval)
 		assert.NotEmpty(t, config.BranchPrefix)
@@ -289,6 +290,7 @@ func TestConfigFromTOML(t *testing.T) {
 		PhaseRoles:             map[string]string{"implementing": "coder"},
 		AnimateBanner:          true,
 		AutoAdvanceWaves:       &trueVal,
+		AutoAdvance:            &trueVal,
 		AutoReviewFix:          &falseVal,
 		MaxReviewFixCycles:     &zeroCycles,
 		TelemetryEnabled:       &falseVal,
@@ -306,6 +308,7 @@ func TestConfigFromTOML(t *testing.T) {
 	assert.False(t, cfg.AreNotificationsEnabled())
 	assert.True(t, cfg.AnimateBanner)
 	assert.True(t, cfg.AutoAdvanceWaves)
+	assert.True(t, cfg.AutoAdvance)
 	assert.False(t, cfg.AutoReviewFix)
 	assert.Equal(t, 0, cfg.MaxReviewFixCycles)
 	require.NotNil(t, cfg.TelemetryEnabled)
@@ -327,6 +330,7 @@ func TestConfigFromTOML_Defaults(t *testing.T) {
 	assert.Equal(t, 1000, cfg.DaemonPollInterval)
 	assert.NotEmpty(t, cfg.BranchPrefix)
 	assert.True(t, cfg.AutoAdvanceWaves)
+	assert.True(t, cfg.AutoAdvance)
 	assert.True(t, cfg.AutoReviewFix)
 	assert.True(t, cfg.AreNotificationsEnabled())
 }
@@ -343,6 +347,7 @@ func TestLoadConfig(t *testing.T) {
 		assert.NotEmpty(t, config.DefaultProgram)
 		assert.False(t, config.AutoYes)
 		assert.True(t, config.AutoAdvanceWaves)
+		assert.True(t, config.AutoAdvance)
 		assert.True(t, config.AutoReviewFix)
 		assert.Equal(t, 1000, config.DaemonPollInterval)
 		assert.NotEmpty(t, config.BranchPrefix)
@@ -396,6 +401,7 @@ branch_prefix = "test/"
 		assert.NotEmpty(t, config.DefaultProgram)
 		assert.False(t, config.AutoYes)
 		assert.True(t, config.AutoAdvanceWaves)
+		assert.True(t, config.AutoAdvance)
 		assert.True(t, config.AutoReviewFix)
 		assert.Equal(t, 1000, config.DaemonPollInterval)
 	})
@@ -411,14 +417,16 @@ branch_prefix = "test/"
 		tomlPath := filepath.Join(configDir, TOMLConfigFileName)
 		tomlContent := `[ui]
 	auto_advance_waves = false
-auto_review_fix = false
-max_review_fix_cycles = 0
+	auto_advance = false
+	auto_review_fix = false
+	max_review_fix_cycles = 0
 `
 		require.NoError(t, os.WriteFile(tomlPath, []byte(tomlContent), 0644))
 
 		config := LoadConfig()
 		require.NotNil(t, config)
 		assert.False(t, config.AutoAdvanceWaves)
+		assert.False(t, config.AutoAdvance)
 		assert.False(t, config.AutoReviewFix)
 		assert.Equal(t, 0, config.MaxReviewFixCycles)
 	})

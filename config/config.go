@@ -186,6 +186,8 @@ type Config struct {
 	AccentColor string `json:"accent_color,omitempty"`
 	// AutoAdvanceWaves skips the confirmation dialog after a clean wave.
 	AutoAdvanceWaves bool `json:"auto_advance_waves,omitempty"`
+	// AutoAdvance skips the confirmation dialog for the planner→architect transition.
+	AutoAdvance bool `json:"auto_advance,omitempty"`
 	// AutoReviewFix enables the automatic review→fix→re-review loop.
 	AutoReviewFix bool `json:"auto_review_fix,omitempty"`
 	// MaxReviewFixCycles caps the review-fix loop iterations (0 = unlimited).
@@ -243,6 +245,7 @@ func DefaultConfig() *Config {
 	cfg := &Config{
 		AutoYes:              false,
 		AutoAdvanceWaves:     true,
+		AutoAdvance:          true,
 		AutoReviewFix:        true,
 		NotificationsEnabled: &trueVal,
 	}
@@ -364,6 +367,9 @@ func configFromTOML(result *TOMLConfigResult) *Config {
 		if result.AutoAdvanceWaves != nil {
 			cfg.AutoAdvanceWaves = *result.AutoAdvanceWaves
 		}
+		if result.AutoAdvance != nil {
+			cfg.AutoAdvance = *result.AutoAdvance
+		}
 		if result.AutoReviewFix != nil {
 			cfg.AutoReviewFix = *result.AutoReviewFix
 		}
@@ -418,7 +424,9 @@ func configToTOML(cfg *Config) *TOMLConfig {
 	}
 	autoReviewFix := cfg.AutoReviewFix
 	autoAdvanceWaves := cfg.AutoAdvanceWaves
+	autoAdvance := cfg.AutoAdvance
 	out.UI.AutoAdvanceWaves = &autoAdvanceWaves
+	out.UI.AutoAdvance = &autoAdvance
 	out.UI.AutoReviewFix = &autoReviewFix
 	maxReviewFixCycles := cfg.MaxReviewFixCycles
 	out.UI.MaxReviewFixCycles = &maxReviewFixCycles

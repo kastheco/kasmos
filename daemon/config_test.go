@@ -14,6 +14,7 @@ func TestDefaultDaemonConfig_PRMonitor(t *testing.T) {
 	cfg := defaultDaemonConfig()
 
 	assert.False(t, cfg.PRMonitor.Enabled, "PRMonitor should be disabled by default")
+	assert.True(t, cfg.AutoAdvance, "auto-advance should be enabled by default")
 	assert.True(t, cfg.AutoAdvanceWaves, "wave auto-advance should be enabled by default")
 	assert.True(t, cfg.AutoReviewFix, "review-fix loop should be enabled by default")
 	assert.Equal(t, 60*time.Second, cfg.PRMonitor.PollInterval, "default PollInterval should be 60s")
@@ -27,6 +28,7 @@ func TestLoadDaemonConfig_MissingFile(t *testing.T) {
 
 	// Verify PR monitor defaults are present
 	assert.False(t, cfg.PRMonitor.Enabled)
+	assert.True(t, cfg.AutoAdvance)
 	assert.True(t, cfg.AutoAdvanceWaves)
 	assert.True(t, cfg.AutoReviewFix)
 	assert.Equal(t, 60*time.Second, cfg.PRMonitor.PollInterval)
@@ -132,6 +134,7 @@ func TestLoadDaemonConfig_PRMonitorAbsent(t *testing.T) {
 	toml := `poll_interval_sec = 5`
 	cfg := loadFromString(t, toml)
 
+	assert.True(t, cfg.AutoAdvance)
 	assert.True(t, cfg.AutoAdvanceWaves)
 	assert.True(t, cfg.AutoReviewFix)
 	assert.False(t, cfg.PRMonitor.Enabled)
@@ -141,11 +144,13 @@ func TestLoadDaemonConfig_PRMonitorAbsent(t *testing.T) {
 
 func TestLoadDaemonConfig_ExplicitFalseOverridesDefaults(t *testing.T) {
 	toml := `
-auto_advance_waves = false
-auto_review_fix = false
+	auto_advance = false
+	auto_advance_waves = false
+	auto_review_fix = false
 `
 	cfg := loadFromString(t, toml)
 
+	assert.False(t, cfg.AutoAdvance)
 	assert.False(t, cfg.AutoAdvanceWaves)
 	assert.False(t, cfg.AutoReviewFix)
 }

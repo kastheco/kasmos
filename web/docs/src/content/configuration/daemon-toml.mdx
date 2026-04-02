@@ -6,7 +6,7 @@ This is the user-level daemon configuration file. It controls how the background
 
 Unlike `config.toml`, this file is **not created automatically**. Create it only when you want to customize daemon behavior beyond the defaults.
 
-The file is loaded by `daemon.LoadDaemonConfig()`. If the file is absent, all defaults apply and the daemon starts in a conservative, non-auto-advancing mode.
+The file is loaded by `daemon.LoadDaemonConfig()`. If the file is absent, all defaults apply and the daemon starts in auto-advancing mode (`auto_advance`, `auto_advance_waves`, and `auto_review_fix` all default to `true`).
 
 ## top-level fields
 
@@ -14,7 +14,7 @@ The file is loaded by `daemon.LoadDaemonConfig()`. If the file is absent, all de
 |-------|------|---------|-------------|
 | `poll_interval_sec` | float | `2.0` | how often (in seconds) the daemon scans for signals |
 | `repos` | []string | `[]` | list of absolute repo root paths to manage on daemon startup |
-| `auto_advance` | bool | `false` | when `true`, the daemon automatically transitions a task from `planning` to `implementing` after the planner finishes |
+| `auto_advance` | bool | `true` | when `true`, the daemon automatically transitions a task from `planning` to `implementing` after the planner finishes |
 | `auto_advance_waves` | bool | `true` | when `true`, the daemon automatically starts the next wave after all tasks in the current wave complete |
 | `auto_review_fix` | bool | `true` | when `true`, the daemon automatically dispatches a fixer agent when a review comes back with change requests |
 | `max_review_fix_cycles` | int | `0` (unlimited) | cap on automatic review→fix iterations; `0` means no cap |
@@ -67,7 +67,7 @@ repos = [
   "/home/alice/projects/infra",
 ]
 
-auto_advance       = false
+auto_advance       = true
 auto_advance_waves = true
 auto_review_fix    = true
 
@@ -87,7 +87,7 @@ This is useful when running multiple daemon instances for different environments
 
 ## relationship to `config.toml`
 
-The `daemon.toml` fields `auto_advance_waves`, `auto_review_fix`, and `max_review_fix_cycles` overlap with the `[ui]` section of `config.toml`. When the daemon is running in headless mode, it uses `daemon.toml` values directly. The project-local `config.toml` values influence the interactive TUI. Keep them in sync if you expect consistent behavior in both modes.
+The `daemon.toml` fields `auto_advance`, `auto_advance_waves`, `auto_review_fix`, and `max_review_fix_cycles` overlap with the `[ui]` section of `config.toml`. In headless mode, the daemon prefers an explicitly set project-local `config.toml` value for `auto_advance`; otherwise it falls back to `daemon.toml`. The other overlapping settings continue to come from `daemon.toml` for headless processing, while project-local `config.toml` values influence the interactive TUI. Keep them in sync if you expect consistent behavior in both modes.
 
 ## starting the daemon
 

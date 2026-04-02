@@ -1277,6 +1277,13 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if m.plannerPrompted[capturedPlanFile] {
 							continue
 						}
+						if m.appConfig != nil && m.appConfig.AutoAdvance {
+							m.plannerPrompted[capturedPlanFile] = true
+							signalCmds = append(signalCmds, func() tea.Msg {
+								return plannerCompleteMsg{planFile: capturedPlanFile}
+							})
+							continue
+						}
 						m.exitFocusModeForDialog()
 						if m.isUserInOverlay() {
 							m.deferredPlannerDialogs = append(m.deferredPlannerDialogs, capturedPlanFile)
