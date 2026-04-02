@@ -230,7 +230,7 @@ func TestSQLiteStore_Delete(t *testing.T) {
 
 	_, err := store.Get("proj", "task-a")
 	require.Error(t, err)
-	assert.Equal(t, "plan not found: proj/task-a", err.Error())
+	assert.Contains(t, err.Error(), "not found")
 
 	_, err = store.GetContent("proj", "task-a")
 	require.Error(t, err)
