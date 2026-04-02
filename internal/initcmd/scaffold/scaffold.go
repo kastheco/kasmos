@@ -93,17 +93,13 @@ const claudeMCPJSON = `{
 }
 `
 
-// WriteClaudeMCPConfig writes .claude/.mcp.json registering the kasmos MCP server.
+// WriteClaudeMCPConfig writes .mcp.json at the project root registering the kasmos MCP server.
 // Respects force: if force is false and the file already exists it is skipped.
 func WriteClaudeMCPConfig(dir string, force bool) (WriteResult, error) {
-	claudeDir := filepath.Join(dir, ".claude")
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		return WriteResult{}, fmt.Errorf("create .claude: %w", err)
-	}
-	dest := filepath.Join(claudeDir, ".mcp.json")
+	dest := filepath.Join(dir, ".mcp.json")
 	written, err := writeFile(dest, []byte(claudeMCPJSON), force)
 	if err != nil {
-		return WriteResult{}, fmt.Errorf("write .claude/.mcp.json: %w", err)
+		return WriteResult{}, fmt.Errorf("write .mcp.json: %w", err)
 	}
 	rel, relErr := filepath.Rel(dir, dest)
 	if relErr != nil {
@@ -112,11 +108,11 @@ func WriteClaudeMCPConfig(dir string, force bool) (WriteResult, error) {
 	return WriteResult{Path: rel, Created: written}, nil
 }
 
-// EnsureClaudeMCPEntry patches .claude/.mcp.json to guarantee the kasmos MCP server
+// EnsureClaudeMCPEntry patches .mcp.json at the project root to guarantee the kasmos MCP server
 // entry is present. Existing servers added by the user are preserved.
 func EnsureClaudeMCPEntry(dir string) (WriteResult, error) {
-	dest := filepath.Join(dir, ".claude", ".mcp.json")
-	result := WriteResult{Path: filepath.Join(".claude", ".mcp.json"), Created: false}
+	dest := filepath.Join(dir, ".mcp.json")
+	result := WriteResult{Path: ".mcp.json", Created: false}
 
 	var current map[string]any
 	if data, err := os.ReadFile(dest); err == nil {
@@ -146,13 +142,9 @@ func EnsureClaudeMCPEntry(dir string) (WriteResult, error) {
 
 	updated, err := json.MarshalIndent(current, "", "  ")
 	if err != nil {
-		return result, fmt.Errorf("marshal .claude/.mcp.json: %w", err)
+		return result, fmt.Errorf("marshal .mcp.json: %w", err)
 	}
 	updated = append(updated, '\n')
-
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return result, fmt.Errorf("create .claude: %w", err)
-	}
 	if err := os.WriteFile(dest, updated, 0o644); err != nil {
 		return result, err
 	}

@@ -61,8 +61,8 @@ func TestScaffoldClaudeProject(t *testing.T) {
 	assert.FileExists(t, filepath.Join(dir, ".claude", "agents", "reviewer.md"))
 	assert.NoFileExists(t, filepath.Join(dir, ".claude", "agents", "planner.md"))
 
-	// MCP config must be written alongside agent files.
-	mcpPath := filepath.Join(dir, ".claude", ".mcp.json")
+	// MCP config must be written at the project root.
+	mcpPath := filepath.Join(dir, ".mcp.json")
 	assert.FileExists(t, mcpPath)
 	data, err := os.ReadFile(mcpPath)
 	require.NoError(t, err)
@@ -82,14 +82,12 @@ func TestWriteClaudeMCPConfig(t *testing.T) {
 		result, err := WriteClaudeMCPConfig(dir, false)
 		require.NoError(t, err)
 		assert.True(t, result.Created)
-		assert.FileExists(t, filepath.Join(dir, ".claude", ".mcp.json"))
+		assert.FileExists(t, filepath.Join(dir, ".mcp.json"))
 	})
 
 	t.Run("skips existing file when force=false", func(t *testing.T) {
 		dir := t.TempDir()
-		claudeDir := filepath.Join(dir, ".claude")
-		require.NoError(t, os.MkdirAll(claudeDir, 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(claudeDir, ".mcp.json"), []byte(`{"mcpServers":{}}`), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".mcp.json"), []byte(`{"mcpServers":{}}`), 0o644))
 
 		result, err := WriteClaudeMCPConfig(dir, false)
 		require.NoError(t, err)
@@ -98,15 +96,13 @@ func TestWriteClaudeMCPConfig(t *testing.T) {
 
 	t.Run("overwrites existing file when force=true", func(t *testing.T) {
 		dir := t.TempDir()
-		claudeDir := filepath.Join(dir, ".claude")
-		require.NoError(t, os.MkdirAll(claudeDir, 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(claudeDir, ".mcp.json"), []byte(`{"mcpServers":{}}`), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".mcp.json"), []byte(`{"mcpServers":{}}`), 0o644))
 
 		result, err := WriteClaudeMCPConfig(dir, true)
 		require.NoError(t, err)
 		assert.True(t, result.Created)
 
-		data, err := os.ReadFile(filepath.Join(claudeDir, ".mcp.json"))
+		data, err := os.ReadFile(filepath.Join(dir, ".mcp.json"))
 		require.NoError(t, err)
 		var cfg map[string]any
 		require.NoError(t, json.Unmarshal(data, &cfg))
@@ -120,8 +116,8 @@ func TestEnsureClaudeMCPEntry(t *testing.T) {
 		dir := t.TempDir()
 		result, err := EnsureClaudeMCPEntry(dir)
 		require.NoError(t, err)
-		assert.Equal(t, WriteResult{Path: ".claude/.mcp.json", Created: true}, result)
-		data, err := os.ReadFile(filepath.Join(dir, ".claude", ".mcp.json"))
+		assert.Equal(t, WriteResult{Path: ".mcp.json", Created: true}, result)
+		data, err := os.ReadFile(filepath.Join(dir, ".mcp.json"))
 		require.NoError(t, err)
 		var cfg map[string]any
 		require.NoError(t, json.Unmarshal(data, &cfg))
@@ -131,16 +127,14 @@ func TestEnsureClaudeMCPEntry(t *testing.T) {
 
 	t.Run("adds kasmos to existing file without disturbing other servers", func(t *testing.T) {
 		dir := t.TempDir()
-		claudeDir := filepath.Join(dir, ".claude")
-		require.NoError(t, os.MkdirAll(claudeDir, 0o755))
 		existing := `{"mcpServers":{"other-server":{"type":"stdio","command":"foo"}}}`
-		require.NoError(t, os.WriteFile(filepath.Join(claudeDir, ".mcp.json"), []byte(existing), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".mcp.json"), []byte(existing), 0o644))
 
 		result, err := EnsureClaudeMCPEntry(dir)
 		require.NoError(t, err)
-		assert.Equal(t, WriteResult{Path: ".claude/.mcp.json", Created: true}, result)
+		assert.Equal(t, WriteResult{Path: ".mcp.json", Created: true}, result)
 
-		data, err := os.ReadFile(filepath.Join(claudeDir, ".mcp.json"))
+		data, err := os.ReadFile(filepath.Join(dir, ".mcp.json"))
 		require.NoError(t, err)
 		var cfg map[string]any
 		require.NoError(t, json.Unmarshal(data, &cfg))
@@ -151,16 +145,14 @@ func TestEnsureClaudeMCPEntry(t *testing.T) {
 
 	t.Run("is idempotent when kasmos already present", func(t *testing.T) {
 		dir := t.TempDir()
-		claudeDir := filepath.Join(dir, ".claude")
-		require.NoError(t, os.MkdirAll(claudeDir, 0o755))
 		initial := `{"mcpServers":{"kasmos":{"type":"http","url":"http://127.0.0.1:7434/mcp"}}}`
-		dest := filepath.Join(claudeDir, ".mcp.json")
+		dest := filepath.Join(dir, ".mcp.json")
 		require.NoError(t, os.WriteFile(dest, []byte(initial), 0o644))
 		info1, _ := os.Stat(dest)
 
 		result, err := EnsureClaudeMCPEntry(dir)
 		require.NoError(t, err)
-		assert.Equal(t, WriteResult{Path: ".claude/.mcp.json", Created: false}, result)
+		assert.Equal(t, WriteResult{Path: ".mcp.json", Created: false}, result)
 
 		info2, _ := os.Stat(dest)
 		assert.Equal(t, info1.ModTime(), info2.ModTime(), "file must not be rewritten when already correct")
@@ -1141,7 +1133,7 @@ func TestSyncScaffold_UpdatesSkillsAndAgentPrompts(t *testing.T) {
 	results, err := SyncScaffold(dir, agents)
 	require.NoError(t, err)
 	assert.NotEmpty(t, results)
-	assert.Contains(t, results, WriteResult{Path: ".claude/.mcp.json", Created: false})
+	assert.Contains(t, results, WriteResult{Path: ".mcp.json", Created: false})
 	content, err := os.ReadFile(skillFile)
 	require.NoError(t, err)
 	assert.NotEqual(t, "old", string(content))
@@ -1172,7 +1164,7 @@ func TestSyncScaffold_CreatesFromScratch(t *testing.T) {
 	results, err := SyncScaffold(dir, agents)
 	require.NoError(t, err)
 	assert.NotEmpty(t, results)
-	assert.Contains(t, results, WriteResult{Path: ".claude/.mcp.json", Created: true})
+	assert.Contains(t, results, WriteResult{Path: ".mcp.json", Created: true})
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "cli-tools", "SKILL.md"))
 	assert.FileExists(t, filepath.Join(dir, ".claude", "agents", "coder.md"))
 	_, err = os.Readlink(filepath.Join(dir, ".claude", "skills", "cli-tools"))
