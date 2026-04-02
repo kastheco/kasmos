@@ -6,7 +6,7 @@ This is the user-level daemon configuration file. It controls how the background
 
 Unlike `config.toml`, this file is **not created automatically**. Create it only when you want to customize daemon behavior beyond the defaults.
 
-The file is loaded by `daemon.LoadDaemonConfig()`. If the file is absent, all defaults apply and the daemon starts in a conservative, non-auto-advancing mode.
+The file is loaded by `daemon.LoadDaemonConfig()`. If the file is absent, all defaults apply and the daemon starts in auto-advancing mode (`auto_advance`, `auto_advance_waves`, and `auto_review_fix` all default to `true`).
 
 ## top-level fields
 
