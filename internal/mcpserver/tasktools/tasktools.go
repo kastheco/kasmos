@@ -32,6 +32,7 @@ type taskMutationResult struct {
 	Filename string `json:"filename"`
 	Status   string `json:"status,omitempty"`
 	Created  bool   `json:"created,omitempty"`
+	Deleted  bool   `json:"deleted,omitempty"`
 	Updated  bool   `json:"updated,omitempty"`
 	Forced   bool   `json:"forced,omitempty"`
 	Warning  string `json:"warning,omitempty"`
@@ -207,6 +208,32 @@ func makeTaskUpdateContentHandler(project string, store taskstore.Store) server.
 	}
 }
 
+func makeTaskDeleteHandler(project string, store taskstore.Store) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		resolvedStore, closeStore, err := resolveToolStore(project, store)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_delete: %v", err)), nil
+		}
+		defer closeStore()
+
+		filename, err := req.RequireString("filename")
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_delete: %v", err)), nil
+		}
+		filename = trimFilename(filename)
+
+		if err := resolvedStore.Delete(project, filename); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_delete: %v", err)), nil
+		}
+
+		payload, err := mcp.NewToolResultJSON(taskMutationResult{Filename: filename, Deleted: true})
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_delete: encode result: %v", err)), nil
+		}
+		return payload, nil
+	}
+}
+
 func normalizeTaskEvent(raw string) (taskfsm.Event, error) {
 	canonical := strings.ReplaceAll(strings.TrimSpace(raw), "-", "_")
 	switch canonical {
@@ -360,6 +387,11 @@ func RegisterTools(srv *server.MCPServer, project string, store taskstore.Store)
 		mcp.WithString("filename", mcp.Required(), mcp.Description("task filename or slug")),
 		mcp.WithString("content", mcp.Required(), mcp.Description("full markdown content to store")),
 	), makeTaskUpdateContentHandler(project, store))
+
+	srv.AddTool(mcp.NewTool("task_delete",
+		mcp.WithDescription("delete a task entry from the task store"),
+		mcp.WithString("filename", mcp.Required(), mcp.Description("task filename or slug")),
+	), makeTaskDeleteHandler(project, store))
 
 	srv.AddTool(mcp.NewTool("task_transition",
 		mcp.WithDescription("apply an FSM event to a task entry"),
