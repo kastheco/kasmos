@@ -234,6 +234,28 @@ func (s *HTTPStore) Get(project, filename string) (TaskEntry, error) {
 	return entry, nil
 }
 
+// Delete permanently removes a task entry.
+func (s *HTTPStore) Delete(project, filename string) error {
+	req, err := http.NewRequest(http.MethodDelete, s.taskItemURL(project, filename), nil)
+	if err != nil {
+		return fmt.Errorf("task store: build request: %w", err)
+	}
+
+	resp, err := s.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("task store: plan not found: %s", filename)
+	}
+	if resp.StatusCode != http.StatusNoContent {
+		return decodeError(resp)
+	}
+	return nil
+}
+
 // Update replaces an existing task entry.
 func (s *HTTPStore) Update(project, filename string, entry TaskEntry) error {
 	body, err := json.Marshal(entry)

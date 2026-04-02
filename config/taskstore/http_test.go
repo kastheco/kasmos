@@ -71,6 +71,29 @@ func TestHTTPStore_RoundTrip(t *testing.T) {
 	assert.Equal(t, taskstore.StatusImplementing, plans[0].Status)
 }
 
+func TestHTTPStore_Delete(t *testing.T) {
+	backend := newTestStore(t)
+	srv := httptest.NewServer(taskstore.NewHandler(backend))
+	defer srv.Close()
+
+	client := taskstore.NewHTTPStore(srv.URL, "kasmos")
+
+	require.NoError(t, client.Create("kasmos", taskstore.TaskEntry{Filename: "delete-me", Status: taskstore.StatusReady}))
+	require.NoError(t, client.Delete("kasmos", "delete-me"))
+
+	_, err := client.Get("kasmos", "delete-me")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+
+	err = client.Delete("kasmos", "delete-me")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+
+	err = client.Delete("kasmos", "missing")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
 func TestHTTPStore_ServerUnreachable(t *testing.T) {
 	client := taskstore.NewHTTPStore("http://127.0.0.1:1", "kasmos")
 	_, err := client.List("kasmos")

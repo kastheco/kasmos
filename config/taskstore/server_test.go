@@ -32,6 +32,50 @@ func TestServer_CreateAndGetPlan(t *testing.T) {
 	assert.Equal(t, taskstore.StatusReady, got.Status)
 }
 
+func TestServer_DeleteTask(t *testing.T) {
+	store := newTestStore(t)
+	srv := httptest.NewServer(taskstore.NewHandler(store))
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/v1/projects/kasmos/tasks", "application/json", strings.NewReader(`{"filename":"delete-me","status":"ready","description":"test"}`))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	resp.Body.Close()
+
+	req, err := http.NewRequest(http.MethodDelete, srv.URL+"/v1/projects/kasmos/tasks/delete-me", nil)
+	require.NoError(t, err)
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	resp.Body.Close()
+
+	resp, err = http.Get(srv.URL + "/v1/projects/kasmos/tasks/delete-me")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	var notFound map[string]string
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&notFound))
+	resp.Body.Close()
+	assert.Contains(t, notFound["error"], "task not found")
+}
+
+func TestServer_DeleteTask_NotFound(t *testing.T) {
+	store := newTestStore(t)
+	srv := httptest.NewServer(taskstore.NewHandler(store))
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodDelete, srv.URL+"/v1/projects/kasmos/tasks/missing", nil)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	var notFound map[string]string
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&notFound))
+	resp.Body.Close()
+	assert.Condition(t, func() bool {
+		return strings.Contains(notFound["error"], "task not found") || strings.Contains(notFound["error"], "plan not found")
+	})
+}
+
 func TestServer_ListByStatus(t *testing.T) {
 	store := newTestStore(t)
 	srv := httptest.NewServer(taskstore.NewHandler(store))
