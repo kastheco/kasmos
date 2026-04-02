@@ -1,6 +1,8 @@
 package session
 
 import (
+	"fmt"
+	"runtime"
 	"testing"
 
 	gitpkg "github.com/kastheco/kasmos/session/git"
@@ -228,6 +230,56 @@ func TestInstanceData_RoundTripDisplayTitle(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "ship-auth-ui", restored.DisplayTitle)
 	assert.Equal(t, "ship-auth-ui", restored.DisplayName())
+}
+
+func TestFromInstanceData_DeadSessionRestoreDoesNotNotifyAgain(t *testing.T) {
+	origEnabled := NotificationsEnabled
+	origLookPath := notifyLookPath
+	origStart := notifyStart
+	NotificationsEnabled = true
+	defer func() {
+		NotificationsEnabled = origEnabled
+		notifyLookPath = origLookPath
+		notifyStart = origStart
+	}()
+
+	started := false
+	notifyLookPath = func(file string) (string, error) {
+		if runtime.GOOS == "linux" {
+			return "/usr/bin/notify-send", nil
+		}
+		return "", fmt.Errorf("lookup not used on %s", runtime.GOOS)
+	}
+	notifyStart = func(name string, args ...string) error {
+		started = true
+		return nil
+	}
+
+	data := InstanceData{
+		Title:         "dead-planner",
+		Path:          "/tmp/repo",
+		Branch:        "feature/test",
+		Status:        Running,
+		Program:       "opencode",
+		ExecutionMode: ExecutionModeHeadless,
+		TaskFile:      "my-plan",
+		AgentType:     AgentTypePlanner,
+		Worktree: GitWorktreeData{
+			RepoPath:      "/tmp/repo",
+			WorktreePath:  "/tmp/repo/.worktrees/dead-planner",
+			SessionName:   "dead-planner",
+			BranchName:    "feature/test",
+			BaseCommitSHA: "abc123",
+		},
+	}
+
+	inst, err := FromInstanceData(data)
+	require.NoError(t, err)
+	assert.True(t, inst.started)
+	assert.True(t, inst.Exited)
+	assert.Equal(t, Ready, inst.Status)
+	assert.True(t, inst.Notified)
+	assert.False(t, started, "restoring a dead saved instance must not re-send desktop notifications")
 }
 
 // TestInstanceData_RoundTripExecutionMode verifies that ExecutionMode survives a

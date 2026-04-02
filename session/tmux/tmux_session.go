@@ -468,9 +468,14 @@ func (t *TmuxSession) Close() error {
 		t.ptmx = nil
 	}
 
-	cmd := exec.Command("tmux", "kill-session", "-t", t.sanitizedName)
-	if err := t.cmdExec.Run(cmd); err != nil {
-		errs = append(errs, fmt.Errorf("error killing tmux session: %w", err))
+	existsCmd := exec.Command("tmux", "has-session", fmt.Sprintf("-t=%s", t.sanitizedName))
+	if err := t.cmdExec.Run(existsCmd); err == nil {
+		cmd := exec.Command("tmux", "kill-session", "-t", t.sanitizedName)
+		if err := t.cmdExec.Run(cmd); err != nil && !isMissingTmuxSessionError(err) {
+			errs = append(errs, fmt.Errorf("error killing tmux session: %w", err))
+		}
+	} else if !isMissingTmuxSessionError(err) {
+		errs = append(errs, fmt.Errorf("error checking tmux session: %w", err))
 	}
 
 	if t.promptFile != "" {
@@ -479,6 +484,11 @@ func (t *TmuxSession) Close() error {
 	}
 
 	return errors.Join(errs...)
+}
+
+func isMissingTmuxSessionError(err error) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 1
 }
 
 // DoesSessionExist returns true if the tmux session is currently running.

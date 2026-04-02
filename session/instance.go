@@ -246,7 +246,11 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		// The session is gone — mark as exited so the UI can display it as dead.
 		instance.started = true
 		instance.Exited = true
-		instance.SetStatus(Ready)
+		// Restore this silently: a persisted dead instance should still appear as
+		// finished/notified in the UI, but must not re-fire the desktop
+		// notification every time the app reloads state.
+		instance.Status = Ready
+		instance.Notified = true
 		return instance, nil
 	}
 
