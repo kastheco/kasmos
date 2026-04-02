@@ -40,9 +40,9 @@ func buildServeRepoRegistration(repoPaths []string) (serveRepoRegistration, erro
 	seenProjects := make(map[string]string, len(repoPaths))
 
 	for _, repoPath := range repoPaths {
-		root, err := filepath.Abs(filepath.Clean(repoPath))
-		if err != nil {
-			return serveRepoRegistration{}, fmt.Errorf("resolve repo path %q: %w", repoPath, err)
+		root := canonicalRepoPath(repoPath)
+		if root == "" {
+			return serveRepoRegistration{}, fmt.Errorf("resolve repo path %q: unable to determine canonical path", repoPath)
 		}
 		if _, exists := seenRoots[root]; exists {
 			return serveRepoRegistration{}, fmt.Errorf("repo already registered: %s", root)
@@ -100,6 +100,9 @@ func projectFromServePath(path string) (string, bool) {
 func newServeMCPServer(store taskstore.Store, gw taskstore.SignalGateway, repoPaths []string) (*mcpserver.Server, error) {
 	if len(repoPaths) == 0 {
 		return newConfiguredMCPServer(store, gw, "")
+	}
+	if len(repoPaths) > 1 {
+		return nil, fmt.Errorf("mcp server currently supports a single repo; multiple --repo values are not allowed when mcp is enabled")
 	}
 
 	return newConfiguredMCPServer(store, gw, repoPaths[0])

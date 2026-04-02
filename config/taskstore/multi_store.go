@@ -7,7 +7,11 @@ import (
 	"time"
 )
 
-const signalSlotShift = 32
+// signalSlotShift allocates the top 16 bits for the repo slot and the bottom
+// 48 bits for the per-repo local signal ID.  SQLite INTEGER PRIMARY KEY is a
+// signed 64-bit integer and rows are auto-incremented; 2^48 ≈ 281 trillion
+// rows per repo is far beyond any practical limit.
+const signalSlotShift = 48
 
 // RepoConfig describes a repository whose local taskstore should be opened.
 type RepoConfig struct {
@@ -133,7 +137,15 @@ func normalizeRepoPath(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve repo path %q: %w", path, err)
 	}
-	return filepath.Clean(absPath), nil
+	resolvedPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		// If the path does not exist yet, fall back to the absolute, cleaned path.
+		if os.IsNotExist(err) {
+			return filepath.Clean(absPath), nil
+		}
+		return "", fmt.Errorf("canonicalize repo path %q: %w", path, err)
+	}
+	return filepath.Clean(resolvedPath), nil
 }
 
 func closeAllStores(stores []Store) {
@@ -196,8 +208,19 @@ func (m *MultiSignalGateway) gatewayForID(id int64) (SignalGateway, int64, error
 	return gateway, localID, nil
 }
 
-func encodeSignalID(slot int, localID int64) int64 {
-	return int64(slot)<<signalSlotShift | localID
+// encodeSignalID encodes a repo slot and per-repo local signal ID into a single
+// int64.  slot must be in [0, 2^15-1] (top 15 usable bits, with bit 63 reserved
+// for the sign) and localID must be in [0, 2^48-1].
+func encodeSignalID(slot int, localID int64) (int64, error) {
+	const localIDMask = (int64(1) << signalSlotShift) - 1
+	const maxSlot = int64(1) << (63 - signalSlotShift) // ensures encoded ID stays positive
+	if int64(slot) < 0 || int64(slot) >= maxSlot {
+		return 0, fmt.Errorf("slot %d exceeds encodable range (max %d)", slot, maxSlot-1)
+	}
+	if localID < 0 || localID > localIDMask {
+		return 0, fmt.Errorf("signal local ID %d exceeds encodable range (max %d)", localID, localIDMask)
+	}
+	return int64(slot)<<signalSlotShift | localID, nil
 }
 
 func decodeSignalID(id int64) (slot int, localID int64, err error) {
@@ -462,7 +485,11 @@ func (m *MultiSignalGateway) List(project string, statuses ...SignalStatus) ([]S
 	}
 	slot := m.slotByProject[project]
 	for i := range entries {
-		entries[i].ID = encodeSignalID(slot, entries[i].ID)
+		encodedID, err := encodeSignalID(slot, entries[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		entries[i].ID = encodedID
 	}
 	return entries, nil
 }
@@ -480,7 +507,11 @@ func (m *MultiSignalGateway) Claim(project, claimedBy string) (*SignalEntry, err
 		return nil, nil
 	}
 	rewritten := *entry
-	rewritten.ID = encodeSignalID(m.slotByProject[project], entry.ID)
+	encodedID, err := encodeSignalID(m.slotByProject[project], entry.ID)
+	if err != nil {
+		return nil, err
+	}
+	rewritten.ID = encodedID
 	return &rewritten, nil
 }
 

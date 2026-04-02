@@ -24,7 +24,15 @@ func NewMultiLogger(repoPaths []string) (*MultiLogger, error) {
 			_ = multi.Close()
 			return nil, fmt.Errorf("resolve repo path %q: %w", repoPath, err)
 		}
-		absPath = filepath.Clean(absPath)
+		resolvedPath, err := filepath.EvalSymlinks(absPath)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				_ = multi.Close()
+				return nil, fmt.Errorf("canonicalize repo path %q: %w", repoPath, err)
+			}
+			resolvedPath = absPath
+		}
+		absPath = filepath.Clean(resolvedPath)
 
 		if _, exists := seenPaths[absPath]; exists {
 			_ = multi.Close()
