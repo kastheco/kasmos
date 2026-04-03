@@ -88,12 +88,14 @@ func makeReadFileHandler(sb *Sandbox, fileCache FileCache) server.ToolHandlerFun
 			return mcp.NewToolResultError(fmt.Sprintf("access denied: %v", err)), nil
 		}
 
+		displayPath := sb.RelPath(validatedPath)
+
 		info, err := os.Stat(validatedPath)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("stat %q: %v", validatedPath, err)), nil
+			return mcp.NewToolResultError(fmt.Sprintf("stat %q: %v", displayPath, err)), nil
 		}
 		if info.IsDir() {
-			return mcp.NewToolResultError(fmt.Sprintf("path is a directory: %s", validatedPath)), nil
+			return mcp.NewToolResultError(fmt.Sprintf("path is a directory: %s", displayPath)), nil
 		}
 
 		from := req.GetInt("from", 1)
@@ -110,8 +112,6 @@ func makeReadFileHandler(sb *Sandbox, fileCache FileCache) server.ToolHandlerFun
 			lines = MaxReadLines
 		}
 
-		displayPath := sb.RelPath(validatedPath)
-
 		mtime := info.ModTime()
 		body, total, hit := "", 0, false
 		if fileCache != nil {
@@ -120,7 +120,7 @@ func makeReadFileHandler(sb *Sandbox, fileCache FileCache) server.ToolHandlerFun
 		if !hit {
 			body, total, err = readFileLines(validatedPath, from, lines)
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("read %q: %v", validatedPath, err)), nil
+				return mcp.NewToolResultError(fmt.Sprintf("read %q: %v", displayPath, err)), nil
 			}
 			if fileCache != nil {
 				fileCache.Set(validatedPath, from, lines, mtime, body, total)
