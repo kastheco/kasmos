@@ -290,6 +290,9 @@ func (t *TmuxSession) Start(workDir string) error {
 			program = "OPENCODE_CONFIG=" + shellEscapeSingleQuote(configPath) + " " + program
 		}
 	}
+	if isClaudeProgram(t.program) {
+		program = "CLAUDE_CODE_NO_FLICKER=1 " + program
+	}
 
 	// Redirect stderr to a per-session log file so kasmos-spawned agents
 	// always have debug logs available for crash diagnosis.

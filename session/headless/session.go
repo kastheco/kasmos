@@ -152,6 +152,9 @@ func (s *Session) Start(workDir string) error {
 	// Build the child's environment.
 	env := os.Environ()
 	env = append(env, "KASMOS_MANAGED=1")
+	if filepath.Base(parts[0]) == tmux.ProgramClaude {
+		env = append(env, "CLAUDE_CODE_NO_FLICKER=1")
+	}
 	if filepath.Base(parts[0]) == tmux.ProgramOpenCode {
 		if configPath := opencodesession.ProjectConfigPath(workDir); configPath != "" {
 			env = append(env, fmt.Sprintf("OPENCODE_CONFIG=%s", configPath))

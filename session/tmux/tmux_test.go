@@ -91,7 +91,7 @@ func TestStartTmuxSession(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, len(ptyFactory.cmds))
 	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]),
-		fmt.Sprintf("tmux new-session -d -s kas_test-session -c %s KASMOS_MANAGED=1 claude", workdir))
+		fmt.Sprintf("tmux new-session -d -s kas_test-session -c %s KASMOS_MANAGED=1 CLAUDE_CODE_NO_FLICKER=1 claude", workdir))
 	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), "2>>'"+workdir+"/.kasmos/logs/kas_test-session.log'")
 	require.Equal(t, "tmux attach-session -t kas_test-session",
 		cmd2.ToString(ptyFactory.cmds[1]))
@@ -133,7 +133,7 @@ func TestStartTmuxSessionWithSkipPermissions(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, len(ptyFactory.cmds))
 	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]),
-		fmt.Sprintf("tmux new-session -d -s kas_test-session -c %s KASMOS_MANAGED=1 claude --dangerously-skip-permissions", workdir))
+		fmt.Sprintf("tmux new-session -d -s kas_test-session -c %s KASMOS_MANAGED=1 CLAUDE_CODE_NO_FLICKER=1 claude --dangerously-skip-permissions", workdir))
 	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), "2>>'"+workdir+"/.kasmos/logs/kas_test-session.log'")
 }
 
@@ -437,7 +437,7 @@ func TestStartClaudeWithInitialPrompt(t *testing.T) {
 	err := s.Start(workdir)
 	require.NoError(t, err)
 	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]),
-		fmt.Sprintf("tmux new-session -d -s kas_claude-prompt -c %s KASMOS_MANAGED=1 claude 'Implement the auth module.'", workdir))
+		fmt.Sprintf("tmux new-session -d -s kas_claude-prompt -c %s KASMOS_MANAGED=1 CLAUDE_CODE_NO_FLICKER=1 claude 'Implement the auth module.'", workdir))
 	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), "2>>'"+workdir+"/.kasmos/logs/kas_claude-prompt.log'")
 }
 
@@ -473,7 +473,7 @@ func TestStartResolvesExecutablePath(t *testing.T) {
 	err := s.Start(workdir)
 	require.NoError(t, err)
 	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]),
-		fmt.Sprintf("tmux new-session -d -s kas_resolved-path -c %s KASMOS_MANAGED=1 '/home/test/.local/bin/claude' --agent planner", workdir))
+		fmt.Sprintf("tmux new-session -d -s kas_resolved-path -c %s KASMOS_MANAGED=1 CLAUDE_CODE_NO_FLICKER=1 '/home/test/.local/bin/claude' --agent planner", workdir))
 	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), "2>>'"+workdir+"/.kasmos/logs/kas_resolved-path.log'")
 }
 
