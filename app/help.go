@@ -70,7 +70,7 @@ func (h helpTypeGeneral) toContent() string {
 		headerStyle.Render("navigation:"),
 		keyStyle.Render("tab/shift+tab")+descStyle.Render(" - cycle tabs (info ↔ agent)"),
 		keyStyle.Render("!")+descStyle.Render("             - interactive + shell mode"),
-		keyStyle.Render("I")+descStyle.Render("             - info tab"),
+		keyStyle.Render("I")+descStyle.Render("             - toggle info header"),
 		keyStyle.Render("↑↓")+descStyle.Render("            - navigate within focused pane"),
 		keyStyle.Render("←→")+descStyle.Render("            - move between panes"),
 		keyStyle.Render("ctrl+s")+descStyle.Render("        - toggle sidebar visibility"),

@@ -197,7 +197,7 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	),
 	KeyInfoTab: key.NewBinding(
 		key.WithKeys("I"),
-		key.WithHelp("I", "info tab"),
+		key.WithHelp("I", "toggle info header"),
 	),
 	KeyTabAgent: key.NewBinding(
 		key.WithKeys("!"),

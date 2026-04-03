@@ -1537,7 +1537,7 @@ func (m *home) openCommandLauncher() (tea.Model, tea.Cmd) {
 		{Label: "toggle sidebar", Hint: "ctrl+s", Action: "toggle_sidebar"},
 		{Label: "toggle audit log", Hint: "L", Action: "toggle_audit"},
 		{Label: "audit log actions", Hint: "A", Action: "audit_cursor"},
-		{Label: "info tab", Hint: "I", Action: "info_tab"},
+		{Label: "toggle info header", Hint: "I", Action: "info_tab"},
 		{Label: "quit", Hint: "q", Action: "quit"},
 	}
 	launcher := overlay.NewCommandLauncherOverlay("commands", items)
