@@ -146,7 +146,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.state = stateRenameInstance
-		tio := overlay.NewTextInputOverlay("rename instance", selected.Title)
+		tio := overlay.NewTextInputOverlay("rename instance", selected.DisplayName())
 		tio.SetSize(60, 3)
 		m.overlays.Show(tio)
 		return m, nil
@@ -161,6 +161,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		orch.MarkTaskComplete(selected.TaskNumber)
+		selected.ImplementationComplete = true
 		selected.SetStatus(session.Ready)
 		m.toastManager.Success(fmt.Sprintf("task %d marked complete", selected.TaskNumber))
 		return m, tea.Batch(m.instanceChanged(), m.toastTickCmd())

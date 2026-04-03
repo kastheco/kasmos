@@ -49,10 +49,29 @@ const (
 	quickLaunchTitleSyncMultiplier   = 1.2
 )
 
-func waitForDaemonPlannerInstance(data session.InstanceData) (*session.Instance, error) {
+func waitForDaemonPlannerInstance(project string, data session.InstanceData) (*session.Instance, error) {
 	var lastErr error
 	deadline := time.Now().Add(plannerInstanceWaitTimeout)
 	for time.Now().Before(deadline) {
+		if project != "" {
+			statuses, err := listDaemonInstances(project)
+			if err == nil {
+				for _, status := range statuses {
+					if status.Title != data.Title || !status.Active {
+						continue
+					}
+					inst, restoreErr := restoreDaemonInstance(data.Path, status)
+					if restoreErr == nil && inst != nil {
+						return inst, nil
+					}
+					lastErr = restoreErr
+					break
+				}
+			} else {
+				lastErr = err
+			}
+		}
+
 		inst, err := restoreInstanceFromData(data)
 		if err == nil {
 			if inst != nil && !inst.Exited {
@@ -79,16 +98,16 @@ var spawnPlannerWithDaemon = func(repoPath, project, planFile, title, prompt, pr
 	data := session.InstanceData{
 		Title:         title,
 		Path:          repoPath,
-		Status:        session.Running,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 		Program:       program,
 		ExecutionMode: session.ExecutionModeTmux,
 		TaskFile:      planFile,
 		AgentType:     session.AgentTypePlanner,
+		Status:        session.Loading,
 	}
 
-	return waitForDaemonPlannerInstance(data)
+	return waitForDaemonPlannerInstance(project, data)
 }
 
 var quickLaunchStartOnMain = func(inst *session.Instance) error {
@@ -827,6 +846,41 @@ func (m *home) saveAllInstances() error {
 	return m.storage.SaveInstances(m.allInstances)
 }
 
+func (m *home) syncInstanceDisplayTitle(inst *session.Instance, rawTitle string) error {
+	if inst == nil {
+		return nil
+	}
+
+	newTitle := slugify(rawTitle)
+	if newTitle == "" || inst.DisplayName() == newTitle {
+		return nil
+	}
+
+	for _, other := range m.nav.GetInstances() {
+		if other != nil && other != inst && other.DisplayName() == newTitle {
+			return nil
+		}
+	}
+	for _, other := range m.allInstances {
+		if other != nil && other != inst && other.DisplayName() == newTitle {
+			return nil
+		}
+	}
+	for other := range m.instanceFinalizers {
+		if other != nil && other != inst && other.DisplayName() == newTitle {
+			return nil
+		}
+	}
+
+	inst.DisplayTitle = newTitle
+	m.populateInstanceTabs()
+	if selected := m.nav.GetSelectedInstance(); selected == inst {
+		m.updateInfoPane()
+	}
+	m.updateNavPanelStatus()
+	return m.saveAllInstances()
+}
+
 // removeFromAllInstances removes an instance from the master list by title.
 func (m *home) removeFromAllInstances(title string) {
 	filtered := m.allInstances[:0]
@@ -1289,6 +1343,8 @@ func (m *home) loadTaskState() {
 		return
 	}
 	m.taskState = ps
+	m.cachedPlanFile = ""
+	m.cachedPlanRendered = ""
 }
 
 // updateSidebarTasks pushes the current plans into the sidebar using the three-level tree API.
@@ -1382,11 +1438,28 @@ func (m *home) updateSidebarTasks() {
 		})
 	}
 
+	// Build cancelled
+	cancelledInfos := m.taskState.Cancelled()
+	cancelled := make([]ui.PlanDisplay, 0, len(cancelledInfos))
+	for _, p := range cancelledInfos {
+		entry := m.taskState.Plans[p.Filename]
+		cancelled = append(cancelled, ui.PlanDisplay{
+			Filename:    p.Filename,
+			Status:      string(p.Status),
+			Description: p.Description,
+			Branch:      p.Branch,
+			Topic:       p.Topic,
+			Phase:       strings.TrimSpace(entry.ExecutionState.Phase),
+			AgentType:   strings.TrimSpace(entry.ExecutionState.ActiveAgentType),
+			ActiveWave:  entry.ExecutionState.ActiveWave,
+		})
+	}
+
 	// Set plan statuses before the rebuild so navPlanSortKey uses
 	// up-to-date running/notification flags in a single pass.
 	m.nav.SetPlanStatuses(m.computePlanStatuses())
 
-	m.nav.SetTopicsAndPlans(topics, ungrouped, history)
+	m.nav.SetTopicsAndPlans(topics, ungrouped, history, cancelled)
 
 }
 
@@ -2713,19 +2786,14 @@ func (m *home) getTopicNames() []string {
 }
 
 // rebuildOrphanedOrchestrators reconstructs in-memory WaveOrchestrators for plans that
-// were mid-wave when kasmos was restarted. Without this, the wave completion monitor and
-// the "Mark complete" context menu action are both inoperative after a restart.
+// were mid-wave when kasmos was restarted. Without this, wave completion/retry/advance
+// flows can strand a plan in wave_running or wave_waiting after restart.
 //
-// For each plan that is StatusImplementing and has active wave-task instances
-// (TaskNumber > 0, started, not paused, not exited) but no orchestrator, we:
-//  1. Parse the plan file to get the wave/task structure.
-//  2. Fast-forward the orchestrator to the wave the instances are on.
-//  3. Mark tasks as complete for instances that are already paused (finished their work).
-//
-// Tasks that are still running remain in taskRunning state so the metadata tick can
-// detect their completion normally (or the user can mark them complete manually).
+// Recovery prefers persisted execution/subtask state from the task store so it still
+// works when no live task tmux sessions survive. When persisted subtask state is not
+// available, it falls back to rebuilding from live task instances.
 func (m *home) rebuildOrphanedOrchestrators() {
-	if m.taskState == nil || m.taskStateDir == "" {
+	if m.taskState == nil || m.taskStateDir == "" || m.taskStore == nil || m.taskStoreProject == "" {
 		return
 	}
 
@@ -2735,6 +2803,7 @@ func (m *home) rebuildOrphanedOrchestrators() {
 		waveNumber int
 		title      string
 		paused     bool
+		exited     bool
 	}
 	byPlan := make(map[string]map[string]taskInst)
 	hasActiveByPlan := make(map[string]bool)
@@ -2742,7 +2811,7 @@ func (m *home) rebuildOrphanedOrchestrators() {
 		if inst.TaskNumber == 0 || inst.TaskFile == "" {
 			continue
 		}
-		if !inst.Started() || inst.Exited {
+		if !inst.Started() {
 			continue
 		}
 		if byPlan[inst.TaskFile] == nil {
@@ -2754,32 +2823,27 @@ func (m *home) rebuildOrphanedOrchestrators() {
 			waveNumber: inst.WaveNumber,
 			title:      inst.Title,
 			paused:     inst.Paused(),
+			exited:     inst.Exited,
 		}
-		if existing, ok := byPlan[inst.TaskFile][key]; !ok || (existing.paused && !candidate.paused) || (existing.paused == candidate.paused && existing.title < candidate.title) {
+		if existing, ok := byPlan[inst.TaskFile][key]; !ok || ((existing.paused || existing.exited) && !(candidate.paused || candidate.exited)) || ((existing.paused || existing.exited) == (candidate.paused || candidate.exited) && existing.title < candidate.title) {
 			byPlan[inst.TaskFile][key] = candidate
 		}
-		if !inst.Paused() {
+		if !inst.Paused() && !inst.Exited {
 			hasActiveByPlan[inst.TaskFile] = true
 		}
 	}
 
-	for planFile, taskSet := range byPlan {
-		tasks := make([]taskInst, 0, len(taskSet))
-		for _, task := range taskSet {
-			tasks = append(tasks, task)
-		}
-		if !hasActiveByPlan[planFile] {
-			log.WarningLog.Printf("rebuildOrphanedOrchestrators: skipping %s — no active wave instances", planFile)
-			continue
-		}
-
+	for planFile, entry := range m.taskState.Plans {
 		// Skip if orchestrator already exists.
 		if _, exists := m.waveOrchestrators[planFile]; exists {
 			continue
 		}
+		// Skip if user dismissed the all-waves-complete prompt for this plan.
+		if m.allCompleteDismissed[planFile] {
+			continue
+		}
 		// Only reconstruct plans that are explicitly on a wave-execution branch.
-		entry, ok := m.taskState.Entry(planFile)
-		if !ok || entry.Status != taskstate.StatusImplementing || !taskfsm.IsWaveExecutionPhase(taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase)) {
+		if entry.Status != taskstate.StatusImplementing || !taskfsm.IsWaveExecutionPhase(taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase)) {
 			continue
 		}
 
@@ -2795,11 +2859,18 @@ func (m *home) rebuildOrphanedOrchestrators() {
 			continue
 		}
 
+		taskToWave := make(map[int]int)
+		for _, wave := range plan.Waves {
+			for _, task := range wave.Tasks {
+				taskToWave[task.Number] = wave.Number
+			}
+		}
+
 		// Prefer the persisted active wave so restart recovery does not depend on
 		// every surviving instance still carrying accurate metadata.
 		targetWave := entry.ExecutionState.ActiveWave
 		if targetWave <= 0 {
-			for _, t := range tasks {
+			for _, t := range byPlan[planFile] {
 				if t.waveNumber > targetWave {
 					targetWave = t.waveNumber
 				}
@@ -2807,29 +2878,93 @@ func (m *home) rebuildOrphanedOrchestrators() {
 		}
 
 		// Guard against malformed legacy task instances with no wave metadata.
-		if targetWave <= 0 {
+		if targetWave <= 0 || targetWave > len(plan.Waves) {
 			log.WarningLog.Printf("rebuildOrphanedOrchestrators: skipping %s — invalid target wave %d", planFile, targetWave)
 			continue
+		}
+
+		completedTasks := make([]int, 0)
+		failedTasks := make([]int, 0)
+		hasPersistedWaveState := false
+		if subtasks, err := m.taskStore.GetSubtasks(m.taskStoreProject, planFile); err == nil {
+			for _, subtask := range subtasks {
+				if taskToWave[subtask.TaskNumber] != targetWave {
+					continue
+				}
+
+				switch subtask.Status {
+				case taskstore.SubtaskStatusRunning,
+					taskstore.SubtaskStatusComplete,
+					taskstore.SubtaskStatusDone,
+					taskstore.SubtaskStatusClosed,
+					taskstore.SubtaskStatusFailed:
+					hasPersistedWaveState = true
+				}
+
+				switch subtask.Status {
+				case taskstore.SubtaskStatusComplete, taskstore.SubtaskStatusDone, taskstore.SubtaskStatusClosed:
+					completedTasks = append(completedTasks, subtask.TaskNumber)
+				case taskstore.SubtaskStatusFailed:
+					failedTasks = append(failedTasks, subtask.TaskNumber)
+				}
+			}
+		} else {
+			log.WarningLog.Printf("rebuildOrphanedOrchestrators: cannot read subtasks for %s: %v", planFile, err)
+		}
+
+		if !hasPersistedWaveState {
+			taskSet := byPlan[planFile]
+			if len(taskSet) == 0 {
+				continue
+			}
+			if !hasActiveByPlan[planFile] {
+				log.WarningLog.Printf("rebuildOrphanedOrchestrators: skipping %s — no persisted wave state and no active wave instances", planFile)
+				continue
+			}
+			completedTasks = completedTasks[:0]
+			for _, task := range taskSet {
+				if task.waveNumber == targetWave && task.paused {
+					completedTasks = append(completedTasks, task.taskNumber)
+				}
+			}
 		}
 
 		orch := orchestration.NewWaveOrchestrator(planFile, plan)
 		orch.SetStore(m.taskStore, m.taskStoreProject)
 
-		// Collect completed tasks for the target wave.
-		var completedTasks []int
-		for _, t := range tasks {
-			if t.waveNumber == targetWave && t.paused {
-				completedTasks = append(completedTasks, t.taskNumber)
-			}
-		}
-
 		// Fast-forward the orchestrator to the target wave, marking earlier waves
 		// as complete and applying actual task states for the target wave.
 		orch.RestoreToWave(targetWave, completedTasks)
+		for _, taskNumber := range failedTasks {
+			orch.MarkTaskFailed(taskNumber)
+		}
+
+		// If the restored orchestrator is already AllComplete, all tasks finished
+		// before the restart (or before the orchestrator was deleted). Don't add
+		// it to waveOrchestrators — the metadata tick would immediately re-show the
+		// "push branch and start review?" prompt on every tick. Queue a single
+		// deferred prompt instead, but only if the prompt isn't already showing
+		// (pendingAllCompleteTaskFile) and the plan isn't already queued.
+		if orch.State() == orchestration.WaveStateAllComplete {
+			if m.pendingAllCompleteTaskFile != planFile {
+				alreadyQueued := false
+				for _, pf := range m.pendingAllComplete {
+					if pf == planFile {
+						alreadyQueued = true
+						break
+					}
+				}
+				if !alreadyQueued {
+					m.pendingAllComplete = append(m.pendingAllComplete, planFile)
+					log.WarningLog.Printf("rebuildOrphanedOrchestrators: %s already all-complete — queued prompt", planFile)
+				}
+			}
+			continue
+		}
 
 		m.waveOrchestrators[planFile] = orch
-		log.WarningLog.Printf("rebuildOrphanedOrchestrators: restored orchestrator for %s (wave %d, %d tasks)",
-			planFile, targetWave, len(tasks))
+		log.WarningLog.Printf("rebuildOrphanedOrchestrators: restored orchestrator for %s (wave %d)",
+			planFile, targetWave)
 	}
 }
 

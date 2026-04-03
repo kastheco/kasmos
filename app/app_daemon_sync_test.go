@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -265,6 +266,51 @@ func TestDaemonSync_MetadataTickRebuildsWaveOrchestratorForDaemonWaveTask(t *tes
 	assert.True(t, orch.IsTaskRunning(2), "other tasks in the active wave should remain runnable")
 }
 
+func TestDaemonSync_MetadataResultShowsAllLoadingWaveTasksImmediately(t *testing.T) {
+	const planFile = "feature"
+
+	h, _ := newDaemonSyncTestHome(t, planFile)
+	const content = "# Plan\n\n**Goal:** daemon wave visibility\n\n## Wave 1\n\n### Task 1: First\n\nDo first.\n\n### Task 2: Second\n\nDo second.\n\n### Task 3: Third\n\nDo third.\n"
+	require.NoError(t, h.taskState.IngestContent(planFile, content))
+	require.NoError(t, h.taskState.ForceSetLifecycle(planFile, taskstate.StatusImplementing, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+		ActiveAgentType: session.AgentTypeCoder,
+		ActiveWave:      1,
+	}))
+
+	var daemonInstances []*session.Instance
+	for _, taskNumber := range []int{1, 2, 3} {
+		inst, err := session.NewInstance(session.InstanceOptions{
+			Title:      fmt.Sprintf("feature-W1-T%d", taskNumber),
+			Path:       h.activeRepoPath,
+			Program:    "opencode",
+			TaskFile:   planFile,
+			AgentType:  session.AgentTypeCoder,
+			TaskNumber: taskNumber,
+			WaveNumber: 1,
+			PeerCount:  3,
+		})
+		require.NoError(t, err)
+		inst.SetStatus(session.Loading)
+		daemonInstances = append(daemonInstances, inst)
+	}
+
+	model, _ := h.Update(metadataResultMsg{
+		PlanState:         h.taskState,
+		DaemonTaskState:   true,
+		DaemonManagedRepo: true,
+		DaemonInstances:   daemonInstances,
+	})
+	updated := model.(*home)
+
+	assert.Len(t, updated.nav.GetInstances(), 3, "all daemon-tracked loading tasks should be rehydrated immediately")
+	require.True(t, updated.nav.SelectByID(ui.SidebarPlanPrefix+planFile))
+	rendered := updated.nav.String()
+	assert.Contains(t, rendered, "wave 1 · task 1")
+	assert.Contains(t, rendered, "wave 1 · task 2")
+	assert.Contains(t, rendered, "wave 1 · task 3")
+}
+
 func TestDaemonSync_TickSkipsInactiveMissingInstances(t *testing.T) {
 	const planFile = "feature"
 
@@ -298,6 +344,97 @@ func TestDaemonSync_TickSkipsInactiveMissingInstances(t *testing.T) {
 	assert.True(t, msg.DaemonManagedRepo)
 	assert.Equal(t, []string{"feature-planning"}, msg.DaemonTitles)
 	assert.Empty(t, msg.DaemonInstances, "inactive daemon instances should not be rehydrated into the sidebar")
+}
+
+func TestDaemonSync_TickUpgradesLoadingPlaceholderWhenSessionAppears(t *testing.T) {
+	const planFile = "feature"
+
+	h, dir := newDaemonSyncTestHome(t, planFile)
+
+	oldManaged := repoManagedByDaemon
+	oldListInstances := listDaemonInstances
+	oldRestore := restoreInstanceFromData
+	t.Cleanup(func() {
+		repoManagedByDaemon = oldManaged
+		listDaemonInstances = oldListInstances
+		restoreInstanceFromData = oldRestore
+	})
+
+	repoManagedByDaemon = func(repoPath string) bool {
+		return filepath.Clean(repoPath) == filepath.Clean(dir)
+	}
+
+	phase := 0
+	listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
+		require.Equal(t, "test", project)
+		status := api.InstanceStatus{
+			Title:   "feature-plan",
+			Plan:    planFile,
+			Role:    session.AgentTypePlanner,
+			Active:  true,
+			Program: "opencode",
+		}
+		if phase == 0 {
+			status.Loading = true
+		}
+		return []api.InstanceStatus{status}, nil
+	}
+
+	restoreInstanceFromData = func(data session.InstanceData) (*session.Instance, error) {
+		if data.Status == session.Loading {
+			return nil, fmt.Errorf("tmux not live yet")
+		}
+		inst, err := session.NewInstance(session.InstanceOptions{
+			Title:         data.Title,
+			Path:          data.Path,
+			Program:       data.Program,
+			ExecutionMode: data.ExecutionMode,
+			TaskFile:      data.TaskFile,
+			AgentType:     data.AgentType,
+			TaskNumber:    data.TaskNumber,
+			WaveNumber:    data.WaveNumber,
+			ReviewCycle:   data.ReviewCycle,
+		})
+		if err != nil {
+			return nil, err
+		}
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return inst, nil
+	}
+
+	_, cmd := h.Update(tickUpdateMetadataMessage{})
+	require.NotNil(t, cmd)
+	msg, ok := cmd().(metadataResultMsg)
+	require.True(t, ok)
+	require.Len(t, msg.DaemonInstances, 1)
+	assert.Equal(t, session.Loading, msg.DaemonInstances[0].Status)
+	assert.False(t, msg.DaemonInstances[0].Started())
+
+	model, _ := h.Update(msg)
+	updated := model.(*home)
+	require.Len(t, updated.nav.GetInstances(), 1)
+	placeholder := updated.nav.GetInstances()[0]
+	assert.Equal(t, session.Loading, placeholder.Status)
+	assert.False(t, placeholder.Started())
+	assert.False(t, placeholder.Exited)
+
+	phase = 1
+	_, cmd = updated.Update(tickUpdateMetadataMessage{})
+	require.NotNil(t, cmd)
+	msg, ok = cmd().(metadataResultMsg)
+	require.True(t, ok)
+	require.Len(t, msg.DaemonInstances, 1)
+	assert.True(t, msg.DaemonInstances[0].Started())
+	assert.Equal(t, session.Running, msg.DaemonInstances[0].Status)
+
+	model, _ = updated.Update(msg)
+	updated = model.(*home)
+	require.Len(t, updated.nav.GetInstances(), 1)
+	live := updated.nav.GetInstances()[0]
+	assert.True(t, live.Started())
+	assert.Equal(t, session.Running, live.Status)
+	assert.False(t, live.Exited)
 }
 
 func TestDaemonSync_DeleteDismissedDeadInstanceDoesNotReappear(t *testing.T) {

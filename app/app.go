@@ -334,6 +334,14 @@ type home struct {
 	// Drained on each metadata tick once the overlay clears.
 	pendingAllComplete []string
 
+	// allCompleteDismissed tracks plan files where the user cancelled the
+	// "all waves complete" confirmation. Prevents rebuildOrphanedOrchestrators
+	// from recreating the orchestrator (which would re-show the prompt).
+	allCompleteDismissed map[string]bool
+	// pendingAllCompleteTaskFile is set while an all-waves-complete confirmation
+	// overlay is showing, so cancel can record the dismissal.
+	pendingAllCompleteTaskFile string
+
 	// pendingWaveConfirmTaskFile is set while a wave-advance (or failed-wave decision)
 	// confirmation overlay is showing, so cancel can reset the orchestrator latch.
 	pendingWaveConfirmTaskFile string
@@ -464,6 +472,7 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 		instanceFinalizers:      make(map[*session.Instance]func()),
 		dismissedInstanceTitles: make(map[string]struct{}),
 		waveOrchestrators:       make(map[string]*orchestration.WaveOrchestrator),
+		allCompleteDismissed:    make(map[string]bool),
 		plannerPrompted:         make(map[string]bool),
 		coderPushPrompted:       make(map[string]bool),
 		pendingReviewFeedback:   make(map[string]string),
@@ -478,11 +487,11 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 		}
 		h.taskStore = remoteStore
 	} else {
-		daemonStore, err := taskstore.OpenDaemonBackedStore(project)
+		localStore, err := taskstore.OpenBackingSQLiteStore()
 		if err != nil {
-			log.WarningLog.Printf("daemon-backed task store unavailable: %v", err)
+			log.WarningLog.Printf("local task store unavailable: %v", err)
 		} else {
-			h.taskStore = daemonStore
+			h.taskStore = localStore
 		}
 	}
 	h.fsm = taskfsm.New(h.taskStore, project, h.taskStateDir)
@@ -517,9 +526,8 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 	h.toastManager = overlay.NewToastManager(&h.spinner)
 	h.overlays = overlay.NewManager()
 
-	if h.taskStore == nil {
-		h.toastManager.Error("daemon task store unavailable")
-	}
+	// Don't show a startup error toast here. Local SQLite is authoritative for
+	// repo-backed task state, and daemon readiness only gates agent workflows.
 
 	permCacheDir := filepath.Join(activeRepoPath, ".kasmos")
 	permStore, err := config.NewSQLitePermissionStore(dbPath)
@@ -564,46 +572,6 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 	h.rebuildOrphanedOrchestrators()
 
 	return h
-}
-
-// switchToDaemonTaskStoreCmd returns a tea.Cmd that pings the daemon-backed
-// store in a background goroutine. On success it delivers a
-// daemonTaskStoreSwitchedMsg so that the actual in-memory state swap happens
-// back in Update with no I/O — keeping the Bubble Tea loop unblocked.
-func (m *home) switchToDaemonTaskStoreCmd(toast string) tea.Cmd {
-	project := resolveTaskStoreProject(m.activeRepoPath)
-	socketPath := taskstore.ResolvedDaemonSocketPath()
-	return func() tea.Msg {
-		store := taskstore.NewHTTPStoreWithOptions(taskstore.HTTPStoreOptions{
-			BaseURL:    "http://daemon",
-			Project:    project,
-			Client:     daemonHTTPClient(socketPath, 5*time.Second),
-			PingClient: daemonHTTPClient(socketPath, 2*time.Second),
-		})
-		if err := store.Ping(); err != nil {
-			_ = store.Close()
-			return daemonTaskStoreSwitchErrMsg{}
-		}
-		return daemonTaskStoreSwitchedMsg{store: store, project: project, toast: toast}
-	}
-}
-
-// doSwitchToDaemonTaskStore performs the in-memory state swap after the
-// daemon-backed store has been successfully pinged. No I/O — safe to call from
-// the Bubble Tea Update goroutine.
-func (m *home) doSwitchToDaemonTaskStore(store taskstore.Store, project string) {
-	if m.taskStore != nil {
-		_ = m.taskStore.Close()
-	}
-	m.taskStore = store
-	m.taskStoreProject = project
-	m.fsm = taskfsm.New(m.taskStore, project, m.taskStateDir)
-	m.processor = nil
-
-	if m.embeddedServer != nil {
-		m.embeddedServer.Stop()
-		m.embeddedServer = nil
-	}
 }
 
 func dedupeInstancesByRepoAndTitle(instances []*session.Instance) []*session.Instance {
@@ -790,21 +758,16 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.toastTickCmd()
 	case daemonStatusMsg:
 		if msg.ready && msg.autoRegistered {
-			return m, m.switchToDaemonTaskStoreCmd("auto-registered repo with daemon")
+			m.toastManager.Success("auto-registered repo with daemon")
+			return m, m.toastTickCmd()
 		}
 		if !msg.ready {
 			m.showDaemonRequiredDialog(msg)
 		}
 		return m, nil
-	case daemonTaskStoreSwitchedMsg:
-		m.doSwitchToDaemonTaskStore(msg.store, msg.project)
-		m.toastManager.Success(msg.toast)
-		return m, m.toastTickCmd()
-	case daemonTaskStoreSwitchErrMsg:
-		m.toastManager.Error("registered repo with daemon but failed to switch task store")
-		return m, m.toastTickCmd()
 	case daemonRepoRegisteredMsg:
-		return m, m.switchToDaemonTaskStoreCmd("registered repo with daemon")
+		m.toastManager.Success("registered repo with daemon")
+		return m, m.toastTickCmd()
 	case planBrowserOpenedMsg:
 		if msg.startedServer {
 			m.toastManager.Success("started plan browser server")
@@ -969,8 +932,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Load task state — moved here from the synchronous Update handler
 			// to avoid blocking the event loop every 500ms. The authoritative
-			// store is always the daemon-backed store or an explicitly configured
-			// remote task store; there is no local SQLite fallback writer here.
+			// store is the repo-local SQLite DB for local repos or the configured
+			// remote store when database_url is set.
 			var ps *taskstate.TaskState
 			var daemonTaskStateLoaded bool
 			if store != nil && taskStateDir != "" && project != "" {
@@ -986,10 +949,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			daemonInstances := make([]*session.Instance, 0)
 			daemonTitles := make([]string, 0)
 			if daemonManagedRepo && project != "" {
-				knownTitles := make(map[string]struct{}, len(snapshots))
+				knownInstances := make(map[string]*session.Instance, len(snapshots))
 				for _, inst := range snapshots {
 					if inst != nil {
-						knownTitles[inst.Title] = struct{}{}
+						knownInstances[inst.Title] = inst
 					}
 				}
 				statuses, err := listDaemonInstances(project)
@@ -1005,16 +968,16 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if !status.Active {
 							continue
 						}
-						if _, exists := knownTitles[title]; exists {
+						if existing, exists := knownInstances[title]; exists && existing != nil && existing.Started() && !existing.Exited && !existing.Paused() {
 							continue
 						}
-						inst, err := restoreInstanceFromData(daemonInstanceData(repoPath, status))
+						inst, err := restoreDaemonInstance(repoPath, status)
 						if err != nil {
 							log.WarningLog.Printf("daemon instance sync: restore %q: %v", title, err)
 							continue
 						}
 						daemonInstances = append(daemonInstances, inst)
-						knownTitles[title] = struct{}{}
+						knownInstances[title] = inst
 					}
 				}
 			}
@@ -1422,10 +1385,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				taskfsm.ConsumeTaskSignal(ts)
 			}
 
-			if len(msg.Signals) > 0 || len(msg.TaskSignals) > 0 {
-				m.loadTaskState() // refresh after signal processing
-			}
-
 			// Retry deferred PlannerFinished dialogs — show the first queued plan
 			// whose dialog was skipped because an overlay was active at signal time.
 			if len(m.deferredPlannerDialogs) > 0 {
@@ -1531,6 +1490,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
+
+			processedSignals := len(msg.Signals) > 0 || len(msg.TaskSignals) > 0 || len(msg.WaveSignals) > 0 || len(msg.ElaborationSignals) > 0
+			if processedSignals {
+				m.loadTaskState() // refresh after signal processing
+			}
 		}
 
 		m.reconcileDismissedInstanceTitles(msg.DaemonTitles)
@@ -1542,9 +1506,27 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				continue
 			}
 			exists := false
+			selected := m.nav.GetSelectedInstance()
+			selectedTitle := ""
+			if selected != nil {
+				selectedTitle = selected.Title
+			}
 			for _, existing := range m.nav.GetInstances() {
 				if existing.Title == inst.Title {
-					exists = true
+					if existing.Started() && !existing.Exited && !existing.Paused() {
+						exists = true
+						break
+					}
+					if !existing.Started() && !inst.Started() && !existing.Exited && existing.Status == inst.Status {
+						exists = true
+						break
+					}
+					m.nav.RemoveByTitle(existing.Title)
+					m.removeFromAllInstances(existing.Title)
+					delete(m.instanceFinalizers, existing)
+					if selectedTitle == existing.Title {
+						selectedTitle = inst.Title
+					}
 					break
 				}
 			}
@@ -1553,6 +1535,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))
 			m.allInstances = append(m.allInstances, inst)
+			if selectedTitle == inst.Title {
+				m.nav.SelectInstance(inst)
+			}
 		}
 
 		// Apply collected metadata to instances — zero I/O, just field writes.
@@ -1682,16 +1667,17 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Apply plan state loaded in the goroutine (replaces synchronous loadTaskState call).
-		// Skip when signals were processed: loadTaskState() above already gave us fresh state.
-		// msg.PlanState was loaded before signals were scanned, so it would be stale.
-		if msg.PlanState != nil && (msg.DaemonTaskState || len(msg.Signals) == 0) {
+		// Skip when any signal type was processed: loadTaskState() above already gave us
+		// fresh state, and msg.PlanState was loaded before signal scanning.
+		processedSignals := len(msg.Signals) > 0 || len(msg.TaskSignals) > 0 || len(msg.WaveSignals) > 0 || len(msg.ElaborationSignals) > 0
+		if msg.PlanState != nil && (msg.DaemonTaskState || !processedSignals) {
 			m.taskState = msg.PlanState
 		}
-		if msg.DaemonManagedRepo {
-			// Daemon-backed wave tasks are injected into the nav during metadata sync,
-			// after startup recovery has already run. Rebuild orphaned orchestrators on
-			// every daemon-managed tick so restarted/adopted wave tasks regain the
-			// in-memory state required for mark-complete actions and wave advancement.
+		if m.taskState != nil {
+			// Rebuild orphaned wave orchestrators on every metadata tick so local and
+			// daemon-managed repos both recover from adopted orphan sessions, exited
+			// task panes, and restart gaps. The helper is idempotent and skips plans
+			// that already have in-memory orchestration state.
 			m.rebuildOrphanedOrchestrators()
 		}
 
@@ -1762,6 +1748,17 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// Drain deferred all-complete prompts that were blocked by an overlay.
+			// First purge any entries the user already dismissed — ticks while the
+			// overlay was showing may have accumulated duplicates.
+			if len(m.pendingAllComplete) > 0 && len(m.allCompleteDismissed) > 0 {
+				filtered := m.pendingAllComplete[:0]
+				for _, pf := range m.pendingAllComplete {
+					if !m.allCompleteDismissed[pf] {
+						filtered = append(filtered, pf)
+					}
+				}
+				m.pendingAllComplete = filtered
+			}
 			if len(m.pendingAllComplete) > 0 {
 				m.exitFocusModeForDialog()
 			}
@@ -1773,6 +1770,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					asyncCmds = append(asyncCmds, cmd)
 				}
 				message := fmt.Sprintf("all waves complete for '%s'. push branch and start review?", planName)
+				delete(m.allCompleteDismissed, planFile)
+				m.pendingAllCompleteTaskFile = planFile
 				m.confirmAction(message, func() tea.Msg {
 					return waveAllCompleteMsg{planFile: planFile}
 				})
@@ -1819,6 +1818,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						// Mirrors the single-agent detection in ShouldAutoAdvanceLifecycleImplementer.
 						if inst.HasWorked && inst.PromptDetected && !inst.AwaitingWork {
 							orch.MarkTaskComplete(task.Number)
+							inst.ImplementationComplete = true
 							continue
 						}
 						alive, collected := tmuxAliveMap[inst.Title]
@@ -1829,6 +1829,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							// Tmux died after the agent did real work — treat as completion, not failure.
 							if inst.HasWorked {
 								orch.MarkTaskComplete(task.Number)
+								inst.ImplementationComplete = true
 							} else {
 								orch.MarkTaskFailed(task.Number)
 							}
@@ -1878,6 +1879,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							asyncCmds = append(asyncCmds, cmd)
 						}
 						message := fmt.Sprintf("all waves complete for '%s'. push branch and start review?", planName)
+						delete(m.allCompleteDismissed, capturedPlanFile)
+						m.pendingAllCompleteTaskFile = capturedPlanFile
 						m.confirmAction(message, func() tea.Msg {
 							return waveAllCompleteMsg{planFile: capturedPlanFile}
 						})
@@ -2112,6 +2115,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// race when the returned tea.Cmd runs concurrently with future Updates
 		// that may mutate m.nav.instances.
 		planFile := msg.planFile
+		delete(m.allCompleteDismissed, planFile)
+		m.pendingAllCompleteTaskFile = ""
 		if err := m.setExecutionState(planFile, taskstore.ExecutionState{
 			Phase:           string(taskfsm.ExecutionPhaseWaveWaiting),
 			ActiveAgentType: session.AgentTypeCoder,
@@ -2369,32 +2374,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.instance == nil {
 			return m, nil
 		}
-		newTitle := slugify(msg.newTitle)
-		if newTitle == "" || msg.instance.DisplayName() == newTitle {
-			return m, nil
-		}
-		for _, inst := range m.nav.GetInstances() {
-			if inst != nil && inst != msg.instance && inst.DisplayName() == newTitle {
-				return m, nil
-			}
-		}
-		for _, inst := range m.allInstances {
-			if inst != nil && inst != msg.instance && inst.DisplayName() == newTitle {
-				return m, nil
-			}
-		}
-		for inst := range m.instanceFinalizers {
-			if inst != nil && inst != msg.instance && inst.DisplayName() == newTitle {
-				return m, nil
-			}
-		}
-		msg.instance.DisplayTitle = newTitle
-		m.populateInstanceTabs()
-		if selected := m.nav.GetSelectedInstance(); selected == msg.instance {
-			m.updateInfoPane()
-		}
-		m.updateNavPanelStatus()
-		if err := m.saveAllInstances(); err != nil {
+		if err := m.syncInstanceDisplayTitle(msg.instance, msg.newTitle); err != nil {
 			return m, m.handleError(err)
 		}
 		return m, nil

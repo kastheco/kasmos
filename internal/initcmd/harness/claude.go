@@ -70,10 +70,10 @@ func (c *Claude) Detect() (string, bool) {
 // ListModels returns the static set of Claude models.
 func (c *Claude) ListModels() ([]string, error) {
 	return []string{
-		"sonnet-4-6",
-		"opus-4-6",
-		"sonnet-4-5",
-		"haiku-4-5",
+		"claude-sonnet-4-6",
+		"claude-opus-4-6",
+		"claude-sonnet-4-5",
+		"claude-haiku-4-5",
 	}, nil
 }
 

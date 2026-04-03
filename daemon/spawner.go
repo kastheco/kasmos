@@ -61,11 +61,16 @@ type TmuxSpawner struct {
 	// projectByKey stores the project name for each running instance so that
 	// ListInstances can filter by project.
 	projectByKey map[string]string
+	// worktreePrepLocks serializes shared-worktree setup/scaffold sync per path
+	// so multiple wave tasks can start concurrently once preparation is done.
+	worktreePrepLocks map[string]*sync.Mutex
 
 	// injectable seams for testability and grace-period checks.
 	hasAttachedClients func(cmd.Executor, string) bool
 	sleep              func(time.Duration)
 	kill               func(*session.Instance) error
+	startOnMain        func(*session.Instance) error
+	startInShared      func(*session.Instance, *gitpkg.GitWorktree, string) error
 	cmdExec            cmd.Executor
 	discoverOrphans    func([]string) ([]tmuxpkg.SessionInfo, error)
 	restoreInstance    func(session.InstanceData) (*session.Instance, error)
@@ -100,24 +105,40 @@ func newTmuxSpawnerWithConfig(logger *slog.Logger, drainTimeout time.Duration) *
 		drainTimeout = 30 * time.Second
 	}
 	return &TmuxSpawner{
-		logger:         logger,
-		drainTimeout:   drainTimeout,
-		instances:      make(map[string]*session.Instance),
-		replacing:      make(map[string]bool),
-		planFileByKey:  make(map[string]string),
-		agentTypeByKey: make(map[string]string),
-		projectByKey:   make(map[string]string),
+		logger:            logger,
+		drainTimeout:      drainTimeout,
+		instances:         make(map[string]*session.Instance),
+		replacing:         make(map[string]bool),
+		planFileByKey:     make(map[string]string),
+		agentTypeByKey:    make(map[string]string),
+		projectByKey:      make(map[string]string),
+		worktreePrepLocks: make(map[string]*sync.Mutex),
 
 		hasAttachedClients: tmuxpkg.HasAttachedClients,
 		sleep:              time.Sleep,
 		kill:               func(inst *session.Instance) error { return inst.Kill() },
-		cmdExec:            cmd.MakeExecutor(),
+		startOnMain:        func(inst *session.Instance) error { return inst.StartOnMainBranch() },
+		startInShared: func(inst *session.Instance, worktree *gitpkg.GitWorktree, branch string) error {
+			return inst.StartInSharedWorktree(worktree, branch)
+		},
+		cmdExec: cmd.MakeExecutor(),
 		discoverOrphans: func(known []string) ([]tmuxpkg.SessionInfo, error) {
 			return tmuxpkg.DiscoverAll(cmd.MakeExecutor(), known)
 		},
 		restoreInstance:    session.FromInstanceData,
 		cleanupGracePeriod: 30 * time.Second,
 	}
+}
+
+func (s *TmuxSpawner) worktreePrepLock(worktreePath string) *sync.Mutex {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.worktreePrepLocks[worktreePath]; ok {
+		return existing
+	}
+	lock := &sync.Mutex{}
+	s.worktreePrepLocks[worktreePath] = lock
+	return lock
 }
 
 // shouldSkipCleanup returns true when a tmux client is attached, indicating
@@ -339,18 +360,27 @@ func (s *TmuxSpawner) reserveInstanceSlot(key, title string) bool {
 	defer s.mu.Unlock()
 	if key != "" {
 		if inst, ok := s.instances[key]; ok {
-			if title == "" || inst == nil || inst.Title == title {
-				return false // same agent already tracked or reserved
+			if inst != nil && inst.Started() && !inst.TmuxAlive() {
+				s.logger.Info("evict stale tracked agent", "key", key, "title", inst.Title)
+				delete(s.instances, key)
+				delete(s.planFileByKey, key)
+				delete(s.agentTypeByKey, key)
+				delete(s.projectByKey, key)
+				delete(s.replacing, key)
+			} else {
+				if title == "" || inst == nil || inst.Title == title {
+					return false // same agent already tracked or reserved
+				}
+				// Different title at the same key means the caller is replacing an
+				// old agent (e.g. fixer respawn after a new review cycle). Block
+				// concurrent replacements via the replacing map while preserving
+				// the existing instance so KillAgent can still find it.
+				if s.replacing[key] {
+					return false // another replacement is already in progress
+				}
+				s.replacing[key] = true
+				return true
 			}
-			// Different title at the same key means the caller is replacing an
-			// old agent (e.g. fixer respawn after a new review cycle). Block
-			// concurrent replacements via the replacing map while preserving
-			// the existing instance so KillAgent can still find it.
-			if s.replacing[key] {
-				return false // another replacement is already in progress
-			}
-			s.replacing[key] = true
-			return true
 		}
 	}
 	if title != "" {
@@ -383,6 +413,22 @@ func (s *TmuxSpawner) commitInstance(key, planFile, agentType, project string, i
 func (s *TmuxSpawner) releaseReservation(key string) {
 	s.mu.Lock()
 	if s.instances[key] == nil {
+		delete(s.instances, key)
+		delete(s.planFileByKey, key)
+		delete(s.agentTypeByKey, key)
+		delete(s.projectByKey, key)
+	}
+	delete(s.replacing, key)
+	s.mu.Unlock()
+}
+
+// discardTrackedInstance removes a tracked instance or placeholder for a failed
+// spawn attempt, but only when the current slot still refers to that same
+// instance (or an unresolved nil placeholder).
+func (s *TmuxSpawner) discardTrackedInstance(key string, inst *session.Instance) {
+	s.mu.Lock()
+	current, ok := s.instances[key]
+	if ok && (current == nil || current == inst) {
 		delete(s.instances, key)
 		delete(s.planFileByKey, key)
 		delete(s.agentTypeByKey, key)
@@ -481,12 +527,11 @@ func (s *TmuxSpawner) spawnOnMainBranch(_ context.Context, opts loop.SpawnOpts, 
 	inst.QueuedPrompt = prompt
 	inst.SetStatus(session.Loading)
 
-	if err := inst.StartOnMainBranch(); err != nil {
-		s.releaseReservation(key)
+	s.commitInstance(key, opts.PlanFile, agentType, opts.Project, inst)
+	if err := s.startOnMain(inst); err != nil {
+		s.discardTrackedInstance(key, inst)
 		return fmt.Errorf("TmuxSpawner.%s: start: %w", agentType, err)
 	}
-
-	s.commitInstance(key, opts.PlanFile, agentType, opts.Project, inst)
 	return nil
 }
 
@@ -612,20 +657,24 @@ func (s *TmuxSpawner) SpawnWaveTask(_ context.Context, opts loop.SpawnOpts, task
 	inst.SetStatus(session.Loading)
 
 	shared := gitpkg.NewSharedTaskWorktree(opts.RepoPath, opts.Branch)
+	prepLock := s.worktreePrepLock(shared.GetWorktreePath())
+	prepLock.Lock()
 	if err := shared.Setup(); err != nil {
+		prepLock.Unlock()
 		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.wave-task: setup shared worktree: %w", err)
 	}
 	if err := ensureWorktreeScaffold(shared.GetWorktreePath(), program, session.AgentTypeCoder); err != nil {
+		prepLock.Unlock()
 		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.wave-task: sync scaffold: %w", err)
 	}
-	if err := inst.StartInSharedWorktree(shared, opts.Branch); err != nil {
-		s.releaseReservation(key)
+	prepLock.Unlock()
+	s.commitInstance(key, opts.PlanFile, session.AgentTypeCoder, opts.Project, inst)
+	if err := s.startInShared(inst, shared, opts.Branch); err != nil {
+		s.discardTrackedInstance(key, inst)
 		return fmt.Errorf("TmuxSpawner.wave-task: start in shared worktree: %w", err)
 	}
-
-	s.commitInstance(key, opts.PlanFile, session.AgentTypeCoder, opts.Project, inst)
 	return nil
 }
 
@@ -685,12 +734,11 @@ func (s *TmuxSpawner) spawnInSharedWorktreeReserved(_ context.Context, opts loop
 		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.%s: sync scaffold: %w", agentType, err)
 	}
-	if err := inst.StartInSharedWorktree(shared, opts.Branch); err != nil {
-		s.releaseReservation(key)
+	s.commitInstance(key, opts.PlanFile, agentType, opts.Project, inst)
+	if err := s.startInShared(inst, shared, opts.Branch); err != nil {
+		s.discardTrackedInstance(key, inst)
 		return fmt.Errorf("TmuxSpawner.%s: start in shared worktree: %w", agentType, err)
 	}
-
-	s.commitInstance(key, opts.PlanFile, agentType, opts.Project, inst)
 	return nil
 }
 

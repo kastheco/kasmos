@@ -296,6 +296,13 @@ func GetDefaultCommand() (string, error) {
 	return "", fmt.Errorf("neither opencode nor claude command found in aliases or PATH")
 }
 
+// ResolveCommandPath locates a command via the user's shell config and PATH.
+// It is intended for background processes whose inherited PATH may omit
+// user-local bin directories such as ~/.local/bin.
+func ResolveCommandPath(name string) (string, error) {
+	return findCommand(name)
+}
+
 // findCommand locates name via the user's login shell and PATH.
 // It sources the appropriate rc file so aliases are visible, then falls
 // back to exec.LookPath when the shell subprocess fails.
@@ -340,6 +347,12 @@ func parseCommandOutput(output string) string {
 	}
 	if m := aliasRegex.FindStringSubmatch(trimmed); len(m) > 1 {
 		return m[1]
+	}
+	if strings.Contains(trimmed, "shell built-in command") {
+		return ""
+	}
+	if strings.HasPrefix(trimmed, "/") {
+		return trimmed
 	}
 	return trimmed
 }

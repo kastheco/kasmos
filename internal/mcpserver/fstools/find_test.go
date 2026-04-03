@@ -2,9 +2,12 @@ package fstools
 
 import (
 	"context"
+	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -71,7 +74,7 @@ func TestFindHandler_Success(t *testing.T) {
 		outputFn: func(_ context.Context, name string, args ...string) ([]byte, error) {
 			capturedName = name
 			capturedArgs = args
-			return []byte("main.go\nutil.go\n"), nil
+			return []byte(filepath.Join(dir, "main.go") + "\n" + filepath.Join(dir, "nested", "util.go") + "\n"), nil
 		},
 	}
 
@@ -97,6 +100,18 @@ func TestFindHandler_Success(t *testing.T) {
 	}
 	assert.True(t, hasGlob, "fd args should include --glob")
 	assert.True(t, hasType, "fd args should include --type")
+
+	require.NotEmpty(t, result.Content)
+	content, ok := result.Content[0].(mcp.TextContent)
+	require.True(t, ok, "expected TextContent")
+
+	var payload struct {
+		Files []string `json:"files"`
+		Total int      `json:"total"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(content.Text), &payload))
+	assert.Equal(t, []string{"main.go", filepath.Join("nested", "util.go")}, payload.Files)
+	assert.Equal(t, len(payload.Files), payload.Total)
 }
 
 func TestFindHandler_LegacyAliasArguments(t *testing.T) {

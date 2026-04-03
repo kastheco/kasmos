@@ -1088,3 +1088,97 @@ func TestString_PlanningStatusPlanAppearsInActiveSection(t *testing.T) {
 	// not dropped to the idle "plans" section.
 	assert.Contains(t, output, "active", "planning status plan should appear in active section")
 }
+
+// ---------- splitDeadFromHistory reactivation ----------
+
+func TestSplitDead_ReactivatedPlanRemainsVisible(t *testing.T) {
+	n := newTestPanel()
+	// Step 1: "foo" is done and gets promoted (running instance).
+	instances := []*session.Instance{makeInst("worker", "foo", session.Running)}
+	n.SetData(nil, instances, []PlanDisplay{{Filename: "foo", Status: "done"}}, nil, nil)
+	var promoted bool
+	for _, row := range n.rows {
+		if row.Kind == navRowPlanHeader && row.TaskFile == "foo" {
+			promoted = true
+		}
+	}
+	require.True(t, promoted, "setup: foo must appear as active plan header after promotion")
+
+	// Step 2: foo transitions done → ready (reactivated, no longer in history).
+	// The instance is still running.
+	n.SetData([]PlanDisplay{{Filename: "foo", Status: "ready"}}, instances, nil /*no history*/, nil, nil)
+
+	var found bool
+	for _, row := range n.rows {
+		if row.Kind == navRowPlanHeader && row.TaskFile == "foo" {
+			found = true
+		}
+	}
+	assert.True(t, found, "reactivated plan must remain visible as navRowPlanHeader")
+}
+
+func TestSplitDead_StillDonePromotedPlanIsRePartitioned(t *testing.T) {
+	n := newTestPanel()
+	instances := []*session.Instance{makeInst("worker", "foo", session.Running)}
+	history := []PlanDisplay{{Filename: "foo", Status: "done"}}
+
+	// Step 1: foo done+promoted.
+	n.SetData(nil, instances, history, nil, nil)
+
+	// Step 2: still done+running — regression guard: must still be in active section.
+	n.SetData(nil, instances, history, nil, nil)
+
+	var found bool
+	for _, row := range n.rows {
+		if row.Kind == navRowPlanHeader && row.TaskFile == "foo" {
+			found = true
+		}
+	}
+	assert.True(t, found, "still-done+running plan must remain in active section after re-partition")
+	for _, row := range n.rows {
+		assert.NotEqual(t, navRowDeadToggle, row.Kind, "still-done+running plan must not appear in dead section")
+	}
+}
+
+func TestSplitDead_PromotedPlanLosesInstances_MovesToDead(t *testing.T) {
+	n := newTestPanel()
+	history := []PlanDisplay{{Filename: "foo", Status: "done"}}
+
+	// Step 1: foo done+promoted (running instance).
+	n.SetData(nil, []*session.Instance{makeInst("worker", "foo", session.Running)}, history, nil, nil)
+
+	// Step 2: instance finishes (no longer running) but plan is still done.
+	n.SetData(nil, []*session.Instance{makeInst("worker", "foo", session.Ready)}, history, nil, nil)
+
+	// foo should move to dead section.
+	require.True(t, n.deadExpanded, "dead section should be auto-expanded")
+	var foundPlan bool
+	for _, row := range n.rows {
+		if row.Kind == navRowPlanHeader && row.TaskFile == "foo" {
+			foundPlan = true
+		}
+	}
+	assert.True(t, foundPlan, "done plan with stopped instances must appear in dead section as plan header")
+	require.Greater(t, len(n.rows), 0)
+	assert.Equal(t, navRowDeadToggle, n.rows[0].Kind, "dead toggle must be first row")
+}
+
+func TestSplitDead_ReactivatedPlanViaSetTopicsAndPlans(t *testing.T) {
+	n := newTestPanel()
+	instances := []*session.Instance{makeInst("worker", "foo", session.Running)}
+
+	// Step 1: done+promoted via SetData (sets instances + history).
+	n.SetData(nil, instances, []PlanDisplay{{Filename: "foo", Status: "done"}}, nil, nil)
+
+	// Step 2: foo reactivated — called via SetTopicsAndPlans (the updateSidebarTasks path).
+	// n.instances is still set from step 1; history is now empty.
+	n.SetTopicsAndPlans(nil, []PlanDisplay{{Filename: "foo", Status: "ready"}}, nil /*no history*/)
+
+	var found bool
+	for _, row := range n.rows {
+		if row.Kind == navRowPlanHeader && row.TaskFile == "foo" {
+			found = true
+		}
+	}
+	assert.True(t, found, "reactivated plan via SetTopicsAndPlans must remain visible as navRowPlanHeader")
+}

@@ -58,6 +58,28 @@ func (s *Sandbox) Validate(path string) (string, error) {
 	return "", fmt.Errorf("path %q is outside allowed directories", path)
 }
 
+// RelPath converts an absolute path within the sandbox to a path relative to
+// the first matching allowed directory. Paths outside the sandbox or already
+// relative are returned unchanged.
+func (s *Sandbox) RelPath(absPath string) string {
+	clean := filepath.Clean(absPath)
+	if !filepath.IsAbs(clean) {
+		return absPath
+	}
+
+	for _, allowed := range s.allowedDirs {
+		if clean == allowed || strings.HasPrefix(clean, allowed+string(os.PathSeparator)) {
+			rel, err := filepath.Rel(allowed, clean)
+			if err == nil {
+				return rel
+			}
+			break
+		}
+	}
+
+	return absPath
+}
+
 // DefaultDir returns the first allowed directory, or "." when no directories
 // were configured.
 func (s *Sandbox) DefaultDir() string {

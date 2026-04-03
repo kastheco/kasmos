@@ -24,9 +24,7 @@ const MaxGrepMatches = 200
 type GrepMatch struct {
 	File         string `json:"file"`
 	Line         int    `json:"line"`
-	Column       int    `json:"column"`
 	Text         string `json:"text"`
-	MatchText    string `json:"match_text"`
 	SymbolKind   string `json:"symbol_kind,omitempty"`
 	SymbolName   string `json:"symbol_name,omitempty"`
 	SymbolParent string `json:"symbol_parent,omitempty"`
@@ -47,22 +45,14 @@ type rgLine struct {
 
 // rgData holds the "data" portion of an rg JSON event line.
 type rgData struct {
-	Path       rgText       `json:"path"`
-	Lines      rgText       `json:"lines"`
-	LineNumber int          `json:"line_number"`
-	Submatches []rgSubmatch `json:"submatches"`
+	Path       rgText `json:"path"`
+	Lines      rgText `json:"lines"`
+	LineNumber int    `json:"line_number"`
 }
 
 // rgText holds a text value from rg JSON output.
 type rgText struct {
 	Text string `json:"text"`
-}
-
-// rgSubmatch holds a single submatch within an rg match event.
-type rgSubmatch struct {
-	Match rgText `json:"match"`
-	Start int    `json:"start"`
-	End   int    `json:"end"`
 }
 
 // parseRgJSON parses the NDJSON output of `rg --json` into a slice of GrepMatch.
@@ -94,19 +84,10 @@ func parseRgJSON(data []byte) ([]GrepMatch, error) {
 			break
 		}
 
-		col := 1
-		matchText := ""
-		if len(rl.Data.Submatches) > 0 {
-			col = rl.Data.Submatches[0].Start + 1
-			matchText = rl.Data.Submatches[0].Match.Text
-		}
-
 		matches = append(matches, GrepMatch{
-			File:      rl.Data.Path.Text,
-			Line:      rl.Data.LineNumber,
-			Column:    col,
-			Text:      strings.TrimRight(rl.Data.Lines.Text, "\n"),
-			MatchText: matchText,
+			File: rl.Data.Path.Text,
+			Line: rl.Data.LineNumber,
+			Text: strings.TrimRight(rl.Data.Lines.Text, "\n"),
 		})
 	}
 
@@ -179,7 +160,7 @@ func makeGrepHandler(sb *Sandbox, runner CmdRunner, symbolStore SymbolLookup) se
 					// don't invalidate the search.
 					if len(out) > 0 {
 						if partial, parseErr := parseRgJSON(out); parseErr == nil && len(partial) > 0 {
-							return grepJSONResult(partial, resolvedPath, symbolStore)
+							return grepJSONResult(partial, resolvedPath, symbolStore, sb)
 						}
 					}
 					return emptyGrepResult()
@@ -198,7 +179,7 @@ func makeGrepHandler(sb *Sandbox, runner CmdRunner, symbolStore SymbolLookup) se
 			return mcp.NewToolResultError(fmt.Sprintf("grep: parse output: %v", err)), nil
 		}
 
-		result, err := grepJSONResult(matches, resolvedPath, symbolStore)
+		result, err := grepJSONResult(matches, resolvedPath, symbolStore, sb)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("grep: %v", err)), nil
 		}
@@ -206,8 +187,11 @@ func makeGrepHandler(sb *Sandbox, runner CmdRunner, symbolStore SymbolLookup) se
 	}
 }
 
-func grepJSONResult(matches []GrepMatch, resolvedPath string, symbolStore SymbolLookup) (*mcp.CallToolResult, error) {
+func grepJSONResult(matches []GrepMatch, resolvedPath string, symbolStore SymbolLookup, sb *Sandbox) (*mcp.CallToolResult, error) {
 	enriched := enrichMatchesWithRoot(matches, symbolStore, resolvedPath)
+	for i := range enriched {
+		enriched[i].File = sb.RelPath(enriched[i].File)
+	}
 	result, err := mcp.NewToolResultJSON(GrepResult{Matches: enriched, Total: len(enriched)})
 	if err != nil {
 		return nil, fmt.Errorf("encode grep result: %w", err)
@@ -218,7 +202,7 @@ func grepJSONResult(matches []GrepMatch, resolvedPath string, symbolStore Symbol
 // registerGrep registers the grep tool with the MCP server.
 func registerGrep(srv *server.MCPServer, sb *Sandbox, opts RegisterOptions) {
 	tool := mcp.NewTool("grep",
-		mcp.WithDescription("Search file contents using ripgrep (rg). Returns structured match objects with file, line, column, and context."),
+		mcp.WithDescription("Search file contents using ripgrep (rg). Returns structured match objects with file, line, text, and optional symbol metadata."),
 		mcp.WithString("pattern",
 			mcp.Required(),
 			mcp.Description("Regular expression pattern to search for"),

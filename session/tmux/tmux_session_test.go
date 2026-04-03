@@ -83,6 +83,36 @@ func TestCleanupSessions_KillsKasAndLegacy(t *testing.T) {
 	assert.NotContains(t, killed, "unrelated")
 }
 
+func TestClose_IgnoresMissingTmuxSession(t *testing.T) {
+	missingSessionErr := func(t *testing.T) error {
+		t.Helper()
+		cmd := exec.Command("sh", "-c", "exit 1")
+		err := cmd.Run()
+		require.Error(t, err)
+		return err
+	}(t)
+
+	var calls []string
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			calls = append(calls, strings.Join(cmd.Args, " "))
+			if len(cmd.Args) >= 2 && cmd.Args[1] == "has-session" {
+				return missingSessionErr
+			}
+			if len(cmd.Args) >= 2 && cmd.Args[1] == "kill-session" {
+				return fmt.Errorf("kill-session should not be called when session is already gone")
+			}
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return nil, nil },
+	}
+
+	s := NewTmuxSessionWithDeps("already-gone", "opencode", false, NewMockPtyFactory(t), cmdExec)
+	require.NoError(t, s.Close())
+	assert.Contains(t, calls, "tmux has-session -t=kas_already-gone")
+	assert.NotContains(t, calls, "tmux kill-session -t kas_already-gone")
+}
+
 func TestDiscoverOrphans_FindsUntracked(t *testing.T) {
 	cmdExec := cmd_test.NewMockExecutor()
 	cmdExec.OutputFunc = func(cmd *exec.Cmd) ([]byte, error) {

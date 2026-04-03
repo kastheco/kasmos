@@ -164,61 +164,26 @@ func TestOpenAuthoritativeStore_UnreachableRemoteFails(t *testing.T) {
 	assert.Contains(t, err.Error(), "task store unreachable")
 }
 
-func TestOpenAuthoritativeStore_UsesDaemonWhenProjectRegistered(t *testing.T) {
-	backend := newTestStore(t)
-	taskHandler := NewHandler(backend)
-
+func TestOpenAuthoritativeStore_UsesRepoLocalSQLiteWhenDatabaseURLUnset(t *testing.T) {
 	repoDir := t.TempDir()
 	initTestRepo(t, repoDir)
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-	startTestDaemonSocketServer(t, newTestDaemonTaskStoreMux(t, []string{"test-project"}, taskHandler))
+	t.Setenv("HOME", t.TempDir())
 	t.Chdir(repoDir)
 
 	store, err := OpenAuthoritativeStore("test-project")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
+	require.IsType(t, &SQLiteStore{}, store)
 
-	_, ok := store.(*HTTPStore)
-	assert.True(t, ok)
+	require.NoError(t, store.Create("test-project", TaskEntry{Filename: "authoritative-local", Status: StatusReady}))
 
-	require.NoError(t, backend.Create("test-project", TaskEntry{Filename: "daemon-preloaded", Status: StatusDone}))
-	loaded, err := store.Get("test-project", "daemon-preloaded")
+	backingStore, err := NewSQLiteStore(ResolvedDBPath())
 	require.NoError(t, err)
-	assert.Equal(t, StatusDone, loaded.Status)
+	t.Cleanup(func() { _ = backingStore.Close() })
 
-	require.NoError(t, store.Create("test-project", TaskEntry{Filename: "daemon-backed", Status: StatusReady}))
-	entry, err := backend.Get("test-project", "daemon-backed")
+	entry, err := backingStore.Get("test-project", "authoritative-local")
 	require.NoError(t, err)
 	assert.Equal(t, StatusReady, entry.Status)
-}
-
-func TestOpenAuthoritativeStore_UnreachableDaemonFails(t *testing.T) {
-	repoDir := t.TempDir()
-	initTestRepo(t, repoDir)
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-	t.Chdir(repoDir)
-
-	store, err := OpenAuthoritativeStore("test-project")
-	require.Error(t, err)
-	assert.Nil(t, store)
-	assert.Contains(t, err.Error(), "open authoritative task store for project test-project")
-}
-
-func TestOpenAuthoritativeStore_UnregisteredDaemonProjectFails(t *testing.T) {
-	backend := newTestStore(t)
-	taskHandler := NewHandler(backend)
-
-	repoDir := t.TempDir()
-	initTestRepo(t, repoDir)
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-	startTestDaemonSocketServer(t, newTestDaemonTaskStoreMux(t, []string{"other-project"}, taskHandler))
-	t.Chdir(repoDir)
-
-	store, err := OpenAuthoritativeStore("test-project")
-	require.Error(t, err)
-	assert.Nil(t, store)
-	assert.Contains(t, err.Error(), "not registered")
 }
 
 func TestOpenAuthoritativeSignalGateway_UnreachableRemoteFails(t *testing.T) {
@@ -233,22 +198,44 @@ func TestOpenAuthoritativeSignalGateway_UnreachableRemoteFails(t *testing.T) {
 	assert.Contains(t, err.Error(), "task store unreachable")
 }
 
-func TestOpenAuthoritativeSignalGateway_UnregisteredDaemonProjectFails(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "signals.db")
-	backend, err := NewSQLiteSignalGateway(dbPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = backend.Close() })
+func TestOpenAuthoritativeSignalGateway_ReachableRemoteFailsWithoutSignalAccess(t *testing.T) {
+	backend := newTestStore(t)
+	srv := httptest.NewServer(NewHandler(backend))
+	defer srv.Close()
 
 	repoDir := t.TempDir()
 	initTestRepo(t, repoDir)
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-	startTestDaemonSocketServer(t, newTestDaemonMux(t, []string{"other-project"}, nil, NewSignalHandler(backend)))
+	writeTestConfig(t, repoDir, fmt.Sprintf("database_url = %q\n", srv.URL))
 	t.Chdir(repoDir)
 
 	gw, err := OpenAuthoritativeSignalGateway("test-project")
 	require.Error(t, err)
 	assert.Nil(t, gw)
-	assert.Contains(t, err.Error(), "not registered")
+	assert.Contains(t, err.Error(), "does not expose signal gateway access")
+}
+
+func TestOpenAuthoritativeSignalGateway_UsesRepoLocalSQLiteWhenDatabaseURLUnset(t *testing.T) {
+	repoDir := t.TempDir()
+	initTestRepo(t, repoDir)
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(repoDir)
+
+	gw, err := OpenAuthoritativeSignalGateway("test-project")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+	require.IsType(t, &SQLiteSignalGateway{}, gw)
+
+	require.NoError(t, gw.Create("test-project", SignalEntry{PlanFile: "feature", SignalType: "planner_finished", Payload: "{}"}))
+
+	backingGateway, err := NewSQLiteSignalGateway(ResolvedDBPath())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = backingGateway.Close() })
+
+	signals, err := backingGateway.List("test-project", SignalPending)
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "feature", signals[0].PlanFile)
+	assert.Equal(t, "planner_finished", signals[0].SignalType)
 }
 
 func TestResolvedDaemonSocketPath_UsesDaemonTomlOverride(t *testing.T) {

@@ -104,6 +104,7 @@ func TestGetDefaultCommand(t *testing.T) {
 	t.Run("handles alias parsing", func(t *testing.T) {
 		assert.Equal(t, "/usr/local/bin/opencode", parseCommandOutput("opencode: aliased to /usr/local/bin/opencode"))
 		assert.Equal(t, "/usr/local/bin/opencode", parseCommandOutput("/usr/local/bin/opencode"))
+		assert.Equal(t, "", parseCommandOutput("true: shell built-in command"))
 		assert.Equal(t, "", parseCommandOutput("   \n"))
 	})
 }

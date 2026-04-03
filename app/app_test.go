@@ -208,7 +208,7 @@ func TestCheckDaemonStatus_AutoRegistersRepoWhenDaemonIsRunning(t *testing.T) {
 	}
 }
 
-func TestDaemonRepoRegisteredMsg_SwitchesToDaemonTaskStoreWithoutConfirmation(t *testing.T) {
+func TestDaemonRepoRegisteredMsg_KeepsLocalTaskStoreWithoutConfirmation(t *testing.T) {
 	repoDir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755))
 
@@ -216,20 +216,6 @@ func TestDaemonRepoRegisteredMsg_SwitchesToDaemonTaskStoreWithoutConfirmation(t 
 	require.NoError(t, err)
 	require.NoError(t, os.Chdir(repoDir))
 	t.Cleanup(func() { _ = os.Chdir(oldCwd) })
-
-	backend := taskstore.NewTestSQLiteStore(t)
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/repos", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode([]api.RepoStatus{{
-			Path:    repoDir,
-			Project: "daemon-project",
-		}}))
-	})
-	taskHandler := taskstore.NewHandler(backend)
-	mux.Handle("/v1/ping", taskHandler)
-	mux.Handle("/v1/projects/", taskHandler)
-	startTestDaemonSocketServer(t, mux)
 
 	oldManaged := repoManagedByDaemon
 	repoManagedByDaemon = func(string) bool { return false }
@@ -251,49 +237,117 @@ func TestDaemonRepoRegisteredMsg_SwitchesToDaemonTaskStoreWithoutConfirmation(t 
 	})
 
 	require.Nil(t, h.embeddedServer, "newHome should not start an embedded store fallback")
-	require.IsType(t, &taskstore.HTTPStore{}, h.taskStore)
+	require.IsType(t, &taskstore.SQLiteStore{}, h.taskStore)
+	assert.Equal(t, filepath.Base(repoDir), h.taskStoreProject)
 
-	// Step 1: daemonRepoRegisteredMsg kicks off the background ping cmd.
-	model, switchCmd := h.Update(daemonRepoRegisteredMsg{path: repoDir})
+	model, toastCmd := h.Update(daemonRepoRegisteredMsg{path: repoDir})
 	h = model.(*home)
-	require.NotNil(t, switchCmd)
-
-	// Step 2: execute the cmd — pings the daemon socket and returns the switched msg.
-	switchedMsg := switchCmd()
-
-	// Step 3: deliver the result; the in-memory swap and toast happen here.
-	model, toastCmd := h.Update(switchedMsg)
-	updated := model.(*home)
 
 	require.NotNil(t, toastCmd)
 	_, ok := toastCmd().(overlay.ToastTickMsg)
 	require.True(t, ok, "daemon registration should schedule a toast tick")
+	updated := h
 
 	assert.Equal(t, stateDefault, updated.state)
-	assert.False(t, updated.overlays.IsActive(), "successful rebinding should not open a confirmation overlay")
+	assert.False(t, updated.overlays.IsActive(), "successful registration should not open a confirmation overlay")
 	assert.Nil(t, updated.pendingConfirmAction)
-	assert.Nil(t, updated.embeddedServer, "daemon rebinding should not recreate embedded fallback")
-	assert.Equal(t, "daemon-project", updated.taskStoreProject)
-	require.IsType(t, &taskstore.HTTPStore{}, updated.taskStore)
+	assert.Nil(t, updated.embeddedServer, "daemon registration should not recreate embedded fallback")
+	require.IsType(t, &taskstore.SQLiteStore{}, updated.taskStore)
+	assert.Equal(t, filepath.Base(repoDir), updated.taskStoreProject)
 
 	require.NoError(t, updated.taskStore.Create(updated.taskStoreProject, taskstore.TaskEntry{
-		Filename: "daemon-created",
+		Filename: "local-created",
 		Status:   taskstore.StatusReady,
 	}))
 
-	created, err := backend.Get(updated.taskStoreProject, "daemon-created")
+	loaded, err := updated.taskStore.Get(updated.taskStoreProject, "local-created")
 	require.NoError(t, err)
-	assert.Equal(t, taskstore.StatusReady, created.Status)
+	assert.Equal(t, taskstore.StatusReady, loaded.Status)
+	assert.True(t, updated.toastManager.HasActiveToasts())
+}
 
-	require.NoError(t, backend.Create(updated.taskStoreProject, taskstore.TaskEntry{
-		Filename: "daemon-preloaded",
-		Status:   taskstore.StatusDone,
+func TestNewHome_AutoRegisterDoesNotShowStaleDaemonUnavailableToast(t *testing.T) {
+	repoDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755))
+
+	oldCwd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(repoDir))
+	t.Cleanup(func() { _ = os.Chdir(oldCwd) })
+
+	project := filepath.Base(repoDir)
+	repoRegistered := false
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		status := api.StatusResponse{Running: true}
+		if repoRegistered {
+			status.Repos = []api.RepoStatus{{Path: repoDir, Project: project}}
+		}
+		require.NoError(t, json.NewEncoder(w).Encode(status))
+	})
+	mux.HandleFunc("GET /v1/repos", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		repos := []api.RepoStatus{}
+		if repoRegistered {
+			repos = append(repos, api.RepoStatus{Path: repoDir, Project: project})
+		}
+		require.NoError(t, json.NewEncoder(w).Encode(repos))
+	})
+	mux.HandleFunc("POST /v1/repos", func(w http.ResponseWriter, r *http.Request) {
+		repoRegistered = true
+		w.WriteHeader(http.StatusCreated)
+	})
+	startTestDaemonSocketServer(t, mux)
+
+	oldManaged := repoManagedByDaemon
+	repoManagedByDaemon = func(string) bool { return false }
+	t.Cleanup(func() {
+		repoManagedByDaemon = oldManaged
+	})
+
+	h := newHome(context.Background(), "opencode", false, "test")
+	t.Cleanup(func() {
+		if h.embeddedServer != nil {
+			h.embeddedServer.Stop()
+		}
+		if h.taskStore != nil {
+			_ = h.taskStore.Close()
+		}
+		if h.auditLogger != nil {
+			_ = h.auditLogger.Close()
+		}
+	})
+
+	require.IsType(t, &taskstore.SQLiteStore{}, h.taskStore)
+	assert.Equal(t, project, h.taskStoreProject)
+	assert.NotContains(t, h.toastManager.View(), "local task store unavailable")
+	assert.NotContains(t, h.toastManager.View(), "daemon task store unavailable")
+
+	statusMsg := h.daemonStartupCheckCmd()()
+	model, toastCmd := h.Update(statusMsg)
+	updated := model.(*home)
+
+	require.NotNil(t, toastCmd)
+	_, ok := toastCmd().(overlay.ToastTickMsg)
+	require.True(t, ok, "daemon auto-registration should schedule a toast tick")
+
+	assert.Contains(t, updated.toastManager.View(), "auto-registered repo with daemon")
+	assert.NotContains(t, updated.toastManager.View(), "local task store unavailable")
+	assert.NotContains(t, updated.toastManager.View(), "daemon task store unavailable")
+	require.IsType(t, &taskstore.SQLiteStore{}, updated.taskStore)
+	assert.Equal(t, project, updated.taskStoreProject)
+	assert.True(t, repoRegistered)
+
+	require.NoError(t, updated.taskStore.Create(updated.taskStoreProject, taskstore.TaskEntry{
+		Filename: "local-created-after-auto-register",
+		Status:   taskstore.StatusReady,
 	}))
 
-	loaded, err := updated.taskStore.Get(updated.taskStoreProject, "daemon-preloaded")
+	created, err := updated.taskStore.Get(updated.taskStoreProject, "local-created-after-auto-register")
 	require.NoError(t, err)
-	assert.Equal(t, taskstore.StatusDone, loaded.Status)
-	assert.True(t, updated.toastManager.HasActiveToasts())
+	assert.Equal(t, taskstore.StatusReady, created.Status)
 }
 
 func TestView_UsesCellMotionMouseMode(t *testing.T) {

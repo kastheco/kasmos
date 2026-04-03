@@ -119,7 +119,9 @@ func (o *OpenCode) ListEffortLevels(model string) []string {
 	switch {
 	case strings.HasPrefix(model, "anthropic/"):
 		return []string{"", "low", "medium", "high", "max"}
-	case strings.Contains(model, "codex"):
+	case strings.Contains(model, "codex"),
+		strings.HasPrefix(model, "openai/"),
+		strings.HasPrefix(model, "gpt-"):
 		return []string{"", "low", "medium", "high", "xhigh"}
 	default:
 		return []string{"", "low", "medium", "high"}

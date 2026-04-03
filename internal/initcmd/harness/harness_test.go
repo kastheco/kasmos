@@ -43,8 +43,8 @@ func TestClaudeAdapter(t *testing.T) {
 	t.Run("ListModels returns static list", func(t *testing.T) {
 		models, err := c.ListModels()
 		require.NoError(t, err)
-		assert.Contains(t, models, "sonnet-4-6")
-		assert.Contains(t, models, "opus-4-6")
+		assert.Contains(t, models, "claude-sonnet-4-6")
+		assert.Contains(t, models, "claude-opus-4-6")
 		assert.Len(t, models, 4)
 	})
 
@@ -232,6 +232,16 @@ func TestOpenCodeAdapter(t *testing.T) {
 
 		t.Run("codex model gets codex levels", func(t *testing.T) {
 			levels := o.ListEffortLevels("gpt-5.3-codex")
+			assert.Equal(t, []string{"", "low", "medium", "high", "xhigh"}, levels)
+		})
+
+		t.Run("openai prefixed model gets xhigh", func(t *testing.T) {
+			levels := o.ListEffortLevels("openai/gpt-5.4")
+			assert.Equal(t, []string{"", "low", "medium", "high", "xhigh"}, levels)
+		})
+
+		t.Run("bare gpt model gets xhigh", func(t *testing.T) {
+			levels := o.ListEffortLevels("gpt-5.4")
 			assert.Equal(t, []string{"", "low", "medium", "high", "xhigh"}, levels)
 		})
 

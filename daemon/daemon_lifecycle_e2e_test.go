@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"testing"
 
 	"github.com/kastheco/kasmos/config/taskfsm"
@@ -100,11 +101,20 @@ Complete the last implementation task and transition into review.
 	}
 
 	var (
+		mu       sync.Mutex
 		events   []string
 		phases   = map[string]taskstore.ExecutionState{}
 		recorder = func(name string) {
+			mu.Lock()
+			defer mu.Unlock()
 			events = append(events, name)
 			phases[name] = entryState().ExecutionState
+		}
+		recorderWithState = func(name string, state taskstore.ExecutionState) {
+			mu.Lock()
+			defer mu.Unlock()
+			events = append(events, name)
+			phases[name] = state
 		}
 	)
 
@@ -134,7 +144,11 @@ Complete the last implementation task and transition into review.
 			assert.Equal(t, branch, opts.Branch)
 			assert.NotEmpty(t, prompt)
 			assert.Greater(t, peerCount, 0)
-			recorder(fmt.Sprintf("spawn:wave-%d:task-%d", opts.Wave, task.Number))
+			recorderWithState(fmt.Sprintf("spawn:wave-%d:task-%d", opts.Wave, task.Number), taskstore.ExecutionState{
+				Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+				ActiveAgentType: session.AgentTypeCoder,
+				ActiveWave:      opts.Wave,
+			})
 			return nil
 		},
 		killWaveAgents: func(repoPath, taskFile string, wave int) error {
@@ -275,15 +289,8 @@ Complete the last implementation task and transition into review.
 	assert.Equal(t, prURL, finalEntry.PRURL)
 	assert.Equal(t, taskstore.ExecutionState{}, phases["create:pr"])
 
-	assert.Equal(t, []string{
-		"kill:planner",
-		"spawn:architect",
-		"spawn:wave-1:task-1",
-		"spawn:wave-1:task-2",
-		"kill:wave-1",
-		"spawn:wave-2:task-3",
-		"kill:wave-2",
-		"spawn:reviewer",
-		"create:pr",
-	}, events)
+	require.Len(t, events, 9)
+	assert.Equal(t, []string{"kill:planner", "spawn:architect"}, events[:2])
+	assert.ElementsMatch(t, []string{"spawn:wave-1:task-1", "spawn:wave-1:task-2"}, events[2:4])
+	assert.Equal(t, []string{"kill:wave-1", "spawn:wave-2:task-3", "kill:wave-2", "spawn:reviewer", "create:pr"}, events[4:])
 }

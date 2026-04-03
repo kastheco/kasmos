@@ -24,7 +24,7 @@ func NewMCPCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mcp",
 		Short: "start the MCP server on stdio",
-		Long:  "Start the kasmos MCP server on stdin/stdout for MCP clients that use stdio transports. Task and signal tools resolve through the daemon-backed project authority.",
+		Long:  "Start the kasmos MCP server on stdin/stdout for MCP clients that use stdio transports. Task tools use the same authoritative project store as the CLI, while signal tools resolve through the shared project signal gateway.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mcpSrv, err := newConfiguredMCPServer(nil, nil, "")
 			if err != nil {

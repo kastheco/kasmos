@@ -4,14 +4,17 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/kastheco/kasmos/cmd"
+	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
+	gitpkg "github.com/kastheco/kasmos/session/git"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -111,6 +114,49 @@ func TestTmuxSpawner_KillAgent_PreservesTrackingWhenClientAttached(t *testing.T)
 	assert.True(t, stillTracked, "instance must remain in tracking maps when kill is deferred due to attached client")
 }
 
+func TestTmuxSpawner_ReserveInstanceSlot_EvictsDeadTrackedAgent(t *testing.T) {
+	s := NewTmuxSpawner()
+
+	const repoPath = "/tmp/repo"
+	const planFile = "my-plan.md"
+	const agentType = session.AgentTypePlanner
+	key := instanceKey(repoPath, planFile, agentType)
+
+	stale, err := session.NewInstance(session.InstanceOptions{
+		Title:         "my-plan-plan",
+		Path:          repoPath,
+		Program:       "true",
+		ExecutionMode: session.ExecutionModeHeadless,
+		TaskFile:      planFile,
+		AgentType:     agentType,
+	})
+	require.NoError(t, err)
+	require.NoError(t, stale.StartOnMainBranch())
+	require.Eventually(t, func() bool { return !stale.TmuxAlive() }, time.Second, 10*time.Millisecond)
+
+	s.mu.Lock()
+	s.instances[key] = stale
+	s.planFileByKey[key] = planFile
+	s.agentTypeByKey[key] = agentType
+	s.projectByKey[key] = "my-project"
+	s.mu.Unlock()
+
+	ok := s.reserveInstanceSlot(key, stale.Title)
+	assert.True(t, ok, "dead tracked agent should be evicted so a replacement can start")
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	inst, tracked := s.instances[key]
+	assert.True(t, tracked, "replacement reservation placeholder should be installed")
+	assert.Nil(t, inst, "replacement reservation should use a nil placeholder until commit")
+	_, hasPlanMeta := s.planFileByKey[key]
+	_, hasAgentMeta := s.agentTypeByKey[key]
+	_, hasProjectMeta := s.projectByKey[key]
+	assert.False(t, hasPlanMeta)
+	assert.False(t, hasAgentMeta)
+	assert.False(t, hasProjectMeta)
+}
+
 func TestTmuxSpawner_instanceKey(t *testing.T) {
 	assert.Equal(t, "/repo:plan.md:coder", instanceKey("/repo", "plan.md", "coder"))
 	assert.Equal(t, "/repo:plan.md:reviewer", instanceKey("/repo", "plan.md", "reviewer"))
@@ -187,6 +233,79 @@ func TestTmuxSpawner_SpawnCoder_MissingBranch(t *testing.T) {
 	})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Branch")
+}
+
+func TestTmuxSpawner_SpawnWaveTask_TracksBeforeStartCompletes(t *testing.T) {
+	repoPath := t.TempDir()
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repoPath}, args...)...)
+		out, err := cmd.CombinedOutput()
+		require.NoErrorf(t, err, "git %v failed: %s", args, string(out))
+	}
+
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	require.NoError(t, os.WriteFile(filepath.Join(repoPath, "tracked.txt"), []byte("base\n"), 0o644))
+	runGit("add", "tracked.txt")
+	runGit("commit", "-m", "init")
+	runGit("checkout", "-b", "plan/feature")
+	runGit("checkout", "-")
+
+	s := NewTmuxSpawner()
+	started := make(chan *session.Instance, 1)
+	release := make(chan struct{})
+	s.startInShared = func(inst *session.Instance, _ *gitpkg.GitWorktree, _ string) error {
+		select {
+		case started <- inst:
+		default:
+		}
+		<-release
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+
+	opts := loop.SpawnOpts{
+		RepoPath: repoPath,
+		Project:  "proj",
+		PlanFile: "feature.md",
+		Branch:   "plan/feature",
+		Program:  "true",
+		Wave:     1,
+	}
+	task := taskparser.Task{Number: 1, Title: "First", Body: "do first"}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- s.SpawnWaveTask(context.Background(), opts, task, "implement it", 3)
+	}()
+
+	var blockedInst *session.Instance
+	select {
+	case blockedInst = <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("wave task start did not reach the injected starter")
+	}
+
+	tracked := s.InstancesForRepo(repoPath)
+	require.Len(t, tracked, 1, "loading wave task should be tracked before start completes")
+	assert.Same(t, blockedInst, tracked[0])
+	assert.Equal(t, session.Loading, tracked[0].Status)
+	assert.False(t, tracked[0].Started())
+
+	d := &Daemon{repos: NewRepoManager(), spawner: s}
+	d.repos.repos = []RepoEntry{{Path: repoPath, Project: "proj"}}
+	statuses := (&daemonStateAdapter{d: d}).ListInstances("proj")
+	require.Len(t, statuses, 1, "loading tracked instance should be exposed to the app")
+	assert.True(t, statuses[0].Active)
+	assert.Equal(t, blockedInst.Title, statuses[0].Title)
+	assert.Equal(t, 1, statuses[0].TaskNumber)
+	assert.Equal(t, 1, statuses[0].WaveNumber)
+
+	close(release)
+	require.NoError(t, <-errCh)
 }
 
 func TestTmuxSpawner_SpawnElaborator_MissingRepoPath(t *testing.T) {

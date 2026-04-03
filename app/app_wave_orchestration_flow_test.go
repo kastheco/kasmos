@@ -354,6 +354,148 @@ func TestRebuildOrphanedOrchestrators_RestoresPersistedActiveWaveInstances(t *te
 	assert.True(t, orch.IsTaskRunning(2), "active task should remain running")
 }
 
+// TestRebuildOrphanedOrchestrators_RestoresExitedWaveFromPersistedSubtasks verifies the
+// stranded-wave recovery path: after restart, a dead wave task can still be reconstructed
+// from persisted execution/subtask state so the next metadata tick can fail the wave and
+// present recovery actions instead of leaving the plan stuck in wave_running forever.
+func TestRebuildOrphanedOrchestrators_RestoresExitedWaveFromPersistedSubtasks(t *testing.T) {
+	const planFile = "exited-wave"
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	store := taskstore.NewTestSQLiteStore(t)
+	content := "**Goal:** exited test\n\n## Wave 1\n\n### Task 1: First\n\nDo first.\n\n## Wave 2\n\n### Task 2: Second\n\nDo second.\n"
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusReady,
+		Branch:   "plan/exited-wave",
+		Content:  content,
+	}))
+	require.NoError(t, store.SetSubtasks("proj", planFile, []taskstore.SubtaskEntry{
+		{TaskNumber: 1, Title: "First", Status: taskstore.SubtaskStatusRunning},
+		{TaskNumber: 2, Title: "Second", Status: taskstore.SubtaskStatusPending},
+	}))
+
+	ps, err := taskstate.Load(store, "proj", plansDir)
+	require.NoError(t, err)
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+	require.NoError(t, ps.SetExecutionState(planFile, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseWaveRunning), ActiveAgentType: session.AgentTypeCoder, ActiveWave: 1}))
+
+	h := waveFlowHome(t, ps, plansDir, make(map[string]*orchestration.WaveOrchestrator))
+	h.taskStore = store
+	h.taskStoreProject = "proj"
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:      "exited-wave-W1-T1",
+		Path:       dir,
+		Program:    "opencode",
+		TaskFile:   planFile,
+		TaskNumber: 1,
+		WaveNumber: 1,
+	})
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	inst.SetStatus(session.Ready)
+	inst.Exited = true
+	h.nav.AddInstance(inst)
+
+	h.rebuildOrphanedOrchestrators()
+	orch, exists := h.waveOrchestrators[planFile]
+	require.True(t, exists, "persisted running subtask should rebuild the orphaned orchestrator")
+	assert.Equal(t, 1, orch.CurrentWaveNumber())
+	assert.Equal(t, orchestration.WaveStateRunning, orch.State())
+	assert.True(t, orch.IsTaskRunning(1), "task 1 should be restored as running from persisted subtask state")
+
+	model, _ := h.Update(metadataResultMsg{
+		Results:   []instanceMetadata{{Title: "exited-wave-W1-T1", TmuxAlive: false}},
+		PlanState: ps,
+	})
+	updated := model.(*home)
+
+	assert.Equal(t, orchestration.WaveStateWaveComplete, orch.State(),
+		"dead restored wave task should resolve the current wave instead of leaving it stranded")
+	assert.Equal(t, stateConfirm, updated.state,
+		"restored dead wave task should surface the failed-wave recovery prompt")
+	require.True(t, updated.overlays.IsActive(),
+		"failed-wave recovery prompt must be shown after restoring a dead wave task")
+	co, ok := updated.overlays.Current().(*overlay.ConfirmationOverlay)
+	require.True(t, ok, "current overlay must be a ConfirmationOverlay")
+	assert.Equal(t, "r", co.ConfirmKey,
+		"failed restored wave should offer retry on the confirm key")
+	assert.NotNil(t, updated.pendingWaveNextAction,
+		"failed restored wave should offer next-wave recovery action")
+}
+
+// TestMetadataTick_RebuildsLocalOrphanedWaveFromPersistedSubtasks verifies the live-session
+// recovery path: local repos should rebuild missing wave orchestration during the normal
+// metadata tick, not only after startup or in daemon-managed mode.
+func TestMetadataTick_RebuildsLocalOrphanedWaveFromPersistedSubtasks(t *testing.T) {
+	const planFile = "local-orphaned-wave"
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	store := taskstore.NewTestSQLiteStore(t)
+	content := "**Goal:** local orphan test\n\n## Wave 1\n\n### Task 1: First\n\nDo first.\n\n## Wave 2\n\n### Task 2: Second\n\nDo second.\n"
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusReady,
+		Branch:   "plan/local-orphaned-wave",
+		Content:  content,
+	}))
+	require.NoError(t, store.SetSubtasks("proj", planFile, []taskstore.SubtaskEntry{
+		{TaskNumber: 1, Title: "First", Status: taskstore.SubtaskStatusRunning},
+		{TaskNumber: 2, Title: "Second", Status: taskstore.SubtaskStatusPending},
+	}))
+
+	ps, err := taskstate.Load(store, "proj", plansDir)
+	require.NoError(t, err)
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+	require.NoError(t, ps.SetExecutionState(planFile, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseWaveRunning), ActiveAgentType: session.AgentTypeCoder, ActiveWave: 1}))
+
+	h := waveFlowHome(t, ps, plansDir, make(map[string]*orchestration.WaveOrchestrator))
+	h.taskStore = store
+	h.taskStoreProject = "proj"
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:      "local-orphaned-wave-W1-T1",
+		Path:       dir,
+		Program:    "opencode",
+		TaskFile:   planFile,
+		TaskNumber: 1,
+		WaveNumber: 1,
+	})
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	inst.SetStatus(session.Ready)
+	inst.Exited = true
+	h.nav.AddInstance(inst)
+
+	model, _ := h.Update(metadataResultMsg{
+		Results:   []instanceMetadata{{Title: "local-orphaned-wave-W1-T1", TmuxAlive: false}},
+		PlanState: ps,
+	})
+	updated := model.(*home)
+
+	orch, exists := updated.waveOrchestrators[planFile]
+	require.True(t, exists, "local metadata tick should rebuild missing wave orchestration")
+	assert.Equal(t, orchestration.WaveStateWaveComplete, orch.State(),
+		"rebuilt local orphaned wave should resolve after the dead task is observed")
+	assert.Equal(t, stateConfirm, updated.state,
+		"rebuilt local orphaned wave should show the failed-wave recovery prompt")
+	require.True(t, updated.overlays.IsActive(),
+		"failed-wave recovery prompt must appear for local orphaned wave recovery")
+	co, ok := updated.overlays.Current().(*overlay.ConfirmationOverlay)
+	require.True(t, ok, "current overlay must be a ConfirmationOverlay")
+	assert.Equal(t, "r", co.ConfirmKey,
+		"rebuilt local orphaned wave should expose retry on the confirm key")
+	assert.NotNil(t, updated.pendingWaveNextAction,
+		"rebuilt local orphaned wave should expose next-wave recovery action")
+}
+
 // TestWaveMonitor_LoadingInstanceNotMarkedFailed verifies that a wave task whose
 // instance exists in the nav list but hasn't finished async startup (Loading status)
 // is NOT prematurely marked as failed. This prevents the "instant all-complete" bug
@@ -1785,6 +1927,62 @@ func TestImplementTriggersElaborationBeforeWave1(t *testing.T) {
 		}
 	}
 	assert.True(t, foundArchitect, "architect instance must be spawned")
+}
+
+func TestElaborationSignal_RefreshesWavePlanAndTaskStateBeforeWave1Starts(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	store := storeForDir(t, plansDir)
+	const planFile = "elab-reload"
+	oldContent := "**Goal:** old\n\n## Wave 1\n\n### Task 1: one\n\nDo one.\n\n### Task 2: two\n\nDo two.\n\n### Task 3: three\n\nDo three.\n\n### Task 4: four\n\nDo four.\n"
+	newContent := "**Goal:** new\n\n## Wave 1\n\n### Task 1: alpha\n\nDo alpha.\n\n### Task 2: beta\n\nDo beta.\n\n## Wave 2\n\n### Task 3: gamma\n\nDo gamma.\n\n### Task 4: delta\n\nDo delta.\n\n### Task 5: epsilon\n\nDo epsilon.\n"
+
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+		Branch:   "plan/elab-reload",
+		Content:  oldContent,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseArchitecting),
+			ActiveAgentType: session.AgentTypeElaborator,
+		},
+	}))
+
+	ps, err := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.IngestContent(planFile, newContent))
+
+	oldPlan, err := taskparser.Parse(oldContent)
+	require.NoError(t, err)
+	orch := orchestration.NewWaveOrchestrator(planFile, oldPlan)
+	orch.SetStore(store, "test")
+	orch.SetElaborating()
+
+	h := waveFlowHome(t, ps, plansDir, map[string]*orchestration.WaveOrchestrator{planFile: orch})
+	h.daemonStatusChecker = func(string) daemonStatusMsg {
+		return daemonStatusMsg{message: "daemon required"}
+	}
+
+	model, _ := h.Update(metadataResultMsg{
+		PlanState:          ps,
+		ElaborationSignals: []taskfsm.ElaborationSignal{{TaskFile: planFile}},
+	})
+	updated := model.(*home)
+
+	updatedOrch, ok := updated.waveOrchestrators[planFile]
+	require.True(t, ok)
+	assert.Equal(t, 2, updatedOrch.TotalWaves(), "architect-enriched wave count must replace the pre-elaboration plan")
+	assert.Equal(t, 5, updatedOrch.TotalTasks(), "architect-enriched task count must replace the pre-elaboration plan")
+	require.Len(t, updatedOrch.CurrentWaveTasks(), 2)
+	assert.Equal(t, "alpha", updatedOrch.CurrentWaveTasks()[0].Title)
+
+	entry, ok := updated.taskState.Entry(planFile)
+	require.True(t, ok)
+	assert.Equal(t, string(taskfsm.ExecutionPhaseWaveRunning), entry.ExecutionState.Phase)
+	assert.Equal(t, session.AgentTypeCoder, entry.ExecutionState.ActiveAgentType)
+	assert.Equal(t, 1, entry.ExecutionState.ActiveWave)
 }
 
 // TestImplementDirectlySkipsElaboration verifies that "implement_direct" creates an

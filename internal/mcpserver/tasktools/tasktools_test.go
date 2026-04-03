@@ -144,6 +144,23 @@ func TestTaskCreateHandler_DefaultsBranchAndReadyStatus(t *testing.T) {
 	assert.Equal(t, taskstore.ExecutionState{}, entry.ExecutionState)
 }
 
+func TestTaskCreateHandler_DecodesEscapedMultilineContent(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "test-project"
+
+	handler := makeTaskCreateHandler(project, store)
+	result, err := handler(context.Background(), mockReq(map[string]any{
+		"name":    "new-plan",
+		"content": "# Plan\\n\\n## Wave 1\\n\\n### Task 1: write tests\\n",
+	}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+
+	content, err := store.GetContent(project, "new-plan")
+	require.NoError(t, err)
+	assert.Equal(t, "# Plan\n\n## Wave 1\n\n### Task 1: write tests\n", content)
+}
+
 func TestTaskUpdateContentHandler_ReturnsWarningForDraft(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
 	project := "test-project"
@@ -191,6 +208,48 @@ func TestTaskDeleteHandler_ReturnsErrorWhenTaskMissing(t *testing.T) {
 	assert.True(t, result.IsError)
 	assert.Contains(t, textResult(t, result), "task_delete:")
 	assert.Contains(t, textResult(t, result), "not found")
+}
+
+func TestTaskUpdateContentHandler_DecodesEscapedMultilineContent(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "test-project"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "my-plan", Status: taskstore.StatusReady, CreatedAt: time.Now()}))
+
+	handler := makeTaskUpdateContentHandler(project, store)
+	result, err := handler(context.Background(), mockReq(map[string]any{
+		"filename": "my-plan",
+		"content":  "# Plan\\n\\n## Wave 1\\n\\n### Task 1: write tests\\n",
+	}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+
+	content, readErr := store.GetContent(project, "my-plan")
+	require.NoError(t, readErr)
+	assert.Equal(t, "# Plan\n\n## Wave 1\n\n### Task 1: write tests\n", content)
+}
+
+func TestTaskShowHandler_UsesAuthoritativeStoreWhenStoreNilEvenWhenDaemonRegistered(t *testing.T) {
+	backend := taskstore.NewTestSQLiteStore(t)
+	project := "test-project"
+	require.NoError(t, backend.Create(project, taskstore.TaskEntry{Filename: "shared-plan", Status: taskstore.StatusReady, CreatedAt: time.Now()}))
+	require.NoError(t, backend.SetContent(project, "shared-plan", "# stale\n"))
+
+	repoDir := t.TempDir()
+	initTaskToolTestRepo(t, repoDir)
+	t.Chdir(repoDir)
+	startTaskToolDaemonSocketServer(t, newTaskToolDaemonMux(t, []string{project}, taskstore.NewHandler(backend)))
+
+	authoritative, err := taskstore.OpenAuthoritativeStore(project)
+	require.NoError(t, err)
+	require.NoError(t, authoritative.Create(project, taskstore.TaskEntry{Filename: "shared-plan", Status: taskstore.StatusReady, CreatedAt: time.Now()}))
+	require.NoError(t, authoritative.SetContent(project, "shared-plan", "# fresh\n"))
+	require.NoError(t, authoritative.Close())
+
+	handler := makeTaskShowHandler(project, nil)
+	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "shared-plan"}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+	assert.Equal(t, "# fresh\n", textResult(t, result))
 }
 
 func TestTaskTransitionHandler_SupportsReviewChangesAlias(t *testing.T) {
@@ -255,27 +314,40 @@ func TestTaskTransitionHandler_ForcePlannerFinishedKeepsReadyCompatibility(t *te
 	assert.Equal(t, "ready", payload.Status)
 }
 
-func TestTaskUpdateContentHandler_UsesDaemonBackedStoreWhenStoreNil(t *testing.T) {
+func TestTaskUpdateContentHandler_UsesAuthoritativeStoreWhenStoreNilEvenWhenDaemonRegistered(t *testing.T) {
 	backend := taskstore.NewTestSQLiteStore(t)
 	project := "test-project"
 	require.NoError(t, backend.Create(project, taskstore.TaskEntry{Filename: "shared-plan", Status: taskstore.StatusReady, CreatedAt: time.Now()}))
+	require.NoError(t, backend.SetContent(project, "shared-plan", "# stale\n"))
 
 	repoDir := t.TempDir()
 	initTaskToolTestRepo(t, repoDir)
 	startTaskToolDaemonSocketServer(t, newTaskToolDaemonMux(t, []string{project}, taskstore.NewHandler(backend)))
 	t.Chdir(repoDir)
 
+	authoritative, err := taskstore.OpenAuthoritativeStore(project)
+	require.NoError(t, err)
+	require.NoError(t, authoritative.Create(project, taskstore.TaskEntry{Filename: "shared-plan", Status: taskstore.StatusReady, CreatedAt: time.Now()}))
+	require.NoError(t, authoritative.Close())
+
 	handler := makeTaskUpdateContentHandler(project, nil)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "shared-plan", "content": "# Plan\n\n## Wave 1\n\n### Task 1: write tests\n"}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
 
-	content, readErr := backend.GetContent(project, "shared-plan")
+	authoritative, err = taskstore.OpenAuthoritativeStore(project)
+	require.NoError(t, err)
+	content, readErr := authoritative.GetContent(project, "shared-plan")
 	require.NoError(t, readErr)
 	assert.Equal(t, "# Plan\n\n## Wave 1\n\n### Task 1: write tests\n", content)
+	require.NoError(t, authoritative.Close())
+
+	staleContent, readErr := backend.GetContent(project, "shared-plan")
+	require.NoError(t, readErr)
+	assert.Equal(t, "# stale\n", staleContent)
 }
 
-func TestTaskCreateHandler_FailsFastWhenDaemonStoreUnavailable(t *testing.T) {
+func TestTaskCreateHandler_UsesAuthoritativeStoreWhenDaemonUnavailable(t *testing.T) {
 	repoDir := t.TempDir()
 	initTaskToolTestRepo(t, repoDir)
 	t.Chdir(repoDir)
@@ -283,6 +355,13 @@ func TestTaskCreateHandler_FailsFastWhenDaemonStoreUnavailable(t *testing.T) {
 	handler := makeTaskCreateHandler("test-project", nil)
 	result, err := handler(context.Background(), mockReq(map[string]any{"name": "new-plan"}))
 	require.NoError(t, err)
-	assert.True(t, result.IsError)
-	assert.Contains(t, textResult(t, result), "daemon")
+	assert.False(t, result.IsError)
+
+	store, err := taskstore.OpenAuthoritativeStore("test-project")
+	require.NoError(t, err)
+	entry, err := store.Get("test-project", "new-plan")
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusReady, entry.Status)
+	assert.Equal(t, "plan/new-plan", entry.Branch)
+	require.NoError(t, store.Close())
 }

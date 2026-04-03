@@ -203,12 +203,14 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 			if inst == nil {
 				continue
 			}
+			active := !inst.Paused() && !inst.Exited && (inst.Started() || inst.Status == session.Loading)
 			out = append(out, api.InstanceStatus{
 				ID:          inst.Title,
 				Project:     project,
 				Plan:        inst.TaskFile,
 				Role:        inst.AgentType,
-				Active:      inst.Started() && !inst.Paused() && !inst.Exited,
+				Active:      active,
+				Loading:     inst.Status == session.Loading,
 				Title:       inst.Title,
 				Branch:      inst.Branch,
 				Program:     inst.Program,
@@ -1300,7 +1302,13 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 		return fmt.Errorf("persist wave execution state for %s: %w", planFile, err)
 	}
 	peerCount := len(tasks)
+	var (
+		wg       sync.WaitGroup
+		errOnce  sync.Once
+		firstErr error
+	)
 	for _, task := range tasks {
+		task := task
 		prompt := orch.BuildTaskPrompt(task, peerCount)
 		opts := loop.SpawnOpts{
 			PlanFile: planFile,
@@ -1309,9 +1317,19 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 			Branch:   entry.Branch,
 			Wave:     waveNum,
 		}
-		if err := spawnWaveTask(ctx, opts, task, prompt, peerCount); err != nil {
-			return err
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := spawnWaveTask(ctx, opts, task, prompt, peerCount); err != nil {
+				errOnce.Do(func() {
+					firstErr = err
+				})
+			}
+		}()
+	}
+	wg.Wait()
+	if firstErr != nil {
+		return firstErr
 	}
 
 	planName := taskstate.DisplayName(planFile)

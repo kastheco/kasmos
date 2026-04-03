@@ -3,10 +3,10 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -419,7 +419,7 @@ func TestWaitForDaemonPlannerInstance_SkipsExitedPlaceholder(t *testing.T) {
 		return inst, nil
 	}
 
-	inst, err := waitForDaemonPlannerInstance(session.InstanceData{
+	inst, err := waitForDaemonPlannerInstance("", session.InstanceData{
 		Title:         "planner-test",
 		Path:          t.TempDir(),
 		Program:       "opencode",
@@ -463,7 +463,7 @@ func TestWaitForDaemonPlannerInstance_ToleratesSlowStartup(t *testing.T) {
 		return inst, nil
 	}
 
-	inst, err := waitForDaemonPlannerInstance(session.InstanceData{
+	inst, err := waitForDaemonPlannerInstance("", session.InstanceData{
 		Title:         "planner-test",
 		Path:          t.TempDir(),
 		Program:       "opencode",
@@ -475,6 +475,45 @@ func TestWaitForDaemonPlannerInstance_ToleratesSlowStartup(t *testing.T) {
 	require.NotNil(t, inst)
 	assert.False(t, inst.Exited)
 	assert.GreaterOrEqual(t, attempts, 26)
+}
+
+func TestWaitForDaemonPlannerInstance_UsesDaemonLoadingPlaceholder(t *testing.T) {
+	oldRestore := restoreInstanceFromData
+	oldListInstances := listDaemonInstances
+	t.Cleanup(func() {
+		restoreInstanceFromData = oldRestore
+		listDaemonInstances = oldListInstances
+	})
+
+	restoreInstanceFromData = func(data session.InstanceData) (*session.Instance, error) {
+		return nil, assert.AnError
+	}
+	listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
+		require.Equal(t, "proj", project)
+		return []api.InstanceStatus{{
+			Title:   "planner-test",
+			Plan:    "planner-test.md",
+			Role:    session.AgentTypePlanner,
+			Active:  true,
+			Loading: true,
+			Program: "opencode",
+		}}, nil
+	}
+
+	inst, err := waitForDaemonPlannerInstance("proj", session.InstanceData{
+		Title:         "planner-test",
+		Path:          t.TempDir(),
+		Program:       "opencode",
+		ExecutionMode: session.ExecutionModeTmux,
+		TaskFile:      "planner-test.md",
+		AgentType:     session.AgentTypePlanner,
+		Status:        session.Loading,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, inst)
+	assert.Equal(t, session.Loading, inst.Status)
+	assert.False(t, inst.Exited)
+	assert.False(t, inst.Started())
 }
 
 func TestSpawnWaveTasks_HeadlessCoderUsesHeadlessExecution(t *testing.T) {
@@ -1381,7 +1420,6 @@ func TestEmitSelectedInstanceSignal_QueuesExpectedGatewayRows(t *testing.T) {
 			const planFile = "feature"
 			require.NoError(t, ps.Create(planFile, "feature", "plan/feature", "", time.Now()))
 			require.NoError(t, ps.ForceSetStatus(planFile, tt.status))
-			gateway := startTestSignalGatewayDaemon(t, "test", dir)
 
 			h := newTestHome()
 			h.taskState = ps
@@ -1409,7 +1447,7 @@ func TestEmitSelectedInstanceSignal_QueuesExpectedGatewayRows(t *testing.T) {
 			assert.Equal(t, tt.wantSignalType, result.signalType)
 			assert.Equal(t, tt.successToast, result.successToast)
 
-			signals := listPendingGatewaySignals(t, gateway, "test")
+			signals := listPendingAuthoritativeSignals(t, "test")
 			require.Len(t, signals, 1)
 			assert.Equal(t, planFile, signals[0].PlanFile)
 			assert.Equal(t, tt.wantSignalType, signals[0].SignalType)
@@ -1454,28 +1492,11 @@ func TestEmitSelectedInstanceSignal_RejectsPlannerFinishedWithoutWaveHeaders(t *
 	assert.Contains(t, err.Error(), "no wave headers found")
 }
 
-func startTestSignalGatewayDaemon(t *testing.T, project, repoPath string) taskstore.SignalGateway {
+func listPendingAuthoritativeSignals(t *testing.T, project string) []taskstore.SignalEntry {
 	t.Helper()
-	gw, err := taskstore.NewSQLiteSignalGateway(filepath.Join(t.TempDir(), "signals.db"))
+	gw, err := taskstore.OpenAuthoritativeSignalGateway(project)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = gw.Close() })
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/repos", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode([]api.RepoStatus{{
-			Path:    repoPath,
-			Project: project,
-		}}))
-	})
-	mux.Handle("/v1/ping", taskstore.NewHandler(taskstore.NewTestSQLiteStore(t)))
-	mux.Handle("/v1/projects/", taskstore.NewSignalHandler(gw))
-	startTestDaemonSocketServer(t, mux)
-	return gw
-}
-
-func listPendingGatewaySignals(t *testing.T, gw taskstore.SignalGateway, project string) []taskstore.SignalEntry {
-	t.Helper()
 	signals, err := gw.List(project, taskstore.SignalPending)
 	require.NoError(t, err)
 	return signals
@@ -1510,7 +1531,6 @@ func TestMarkReviewChangesRequested_QueuesGatewaySignal(t *testing.T) {
 	h.activeRepoPath = dir
 	h.taskStoreProject = "test"
 	h.pendingReviewFeedback = make(map[string]string)
-	gateway := startTestSignalGatewayDaemon(t, "test", dir)
 	reviewer := &session.Instance{Title: "feature-review-1", Path: dir, Program: "opencode", TaskFile: planFile, AgentType: session.AgentTypeReviewer, ReviewCycle: 1, CachedContent: "review findings"}
 	h.nav.AddInstance(reviewer)
 	h.updateSidebarTasks()
@@ -1523,7 +1543,7 @@ func TestMarkReviewChangesRequested_QueuesGatewaySignal(t *testing.T) {
 	require.True(t, ok)
 	require.NoError(t, result.err)
 
-	signals := listPendingGatewaySignals(t, gateway, "test")
+	signals := listPendingAuthoritativeSignals(t, "test")
 	require.Len(t, signals, 1)
 	assert.Equal(t, "review_changes_requested", signals[0].SignalType)
 	assert.Contains(t, signals[0].Payload, "review findings")
@@ -1564,6 +1584,56 @@ func TestViewSelectedPlan_ReadsFromStore(t *testing.T) {
 	require.True(t, ok, "expected planRenderedMsg, got %T", msg)
 	require.NoError(t, renderedMsg.err)
 	assert.Equal(t, planFile, renderedMsg.planFile)
+}
+
+func TestLoadTaskState_InvalidatesCachedRenderedPlan(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	planFile := "test.md"
+	content := "# Draft\n\nInitial body\n"
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusReady,
+		Content:  content,
+	}))
+
+	plansDir := t.TempDir()
+	ps, err := taskstate.Load(store, "proj", plansDir)
+	require.NoError(t, err)
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	nav := ui.NewNavigationPanel(&sp)
+	nav.SetTopicsAndPlans(nil, []ui.PlanDisplay{{Filename: planFile, Status: string(taskstate.StatusReady)}}, nil)
+	require.True(t, nav.SelectByID(ui.SidebarPlanPrefix+planFile))
+
+	h := &home{
+		taskState:          ps,
+		taskStore:          store,
+		taskStoreProject:   "proj",
+		taskStateDir:       plansDir,
+		nav:                nav,
+		tabbedWindow:       ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		cachedPlanFile:     planFile,
+		cachedPlanRendered: "stale rendered content",
+	}
+
+	require.NoError(t, store.SetContent("proj", planFile, "# Updated\n\n## Wave 1\n\n### Task 1: Fresh\n"))
+	h.loadTaskState()
+
+	assert.Empty(t, h.cachedPlanFile)
+	assert.Empty(t, h.cachedPlanRendered)
+
+	_, cmd := h.viewSelectedPlan()
+	require.NotNil(t, cmd, "viewSelectedPlan must re-read store content after task state reload invalidates cache")
+
+	msg := cmd()
+	renderedMsg, ok := msg.(planRenderedMsg)
+	require.True(t, ok, "expected planRenderedMsg, got %T", msg)
+	require.NoError(t, renderedMsg.err)
+	assert.Equal(t, planFile, renderedMsg.planFile)
+	ansiRE := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	plain := ansiRE.ReplaceAllString(renderedMsg.rendered, "")
+	assert.Contains(t, plain, "Updated")
+	assert.Contains(t, plain, "Wave 1")
 }
 
 // TestImplementActionReadsFromStore verifies that the "implement" action reads plan

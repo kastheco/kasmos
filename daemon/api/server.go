@@ -51,6 +51,7 @@ type InstanceStatus struct {
 	Plan        string `json:"plan"`
 	Role        string `json:"role"`
 	Active      bool   `json:"active"`
+	Loading     bool   `json:"loading,omitempty"`
 	Title       string `json:"title,omitempty"`
 	Branch      string `json:"branch,omitempty"`
 	Program     string `json:"program,omitempty"`
