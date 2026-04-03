@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/internal/opencodesession"
 	"github.com/kastheco/kasmos/session/tmux"
 )
@@ -27,6 +28,8 @@ import (
 var ErrInteractiveOnly = errors.New("interactive operation requires tmux execution")
 
 var whiteSpaceRegex = regexp.MustCompile(`\s+`)
+
+var resolveProgramPath = config.ResolveCommandPath
 
 // Session is a headless execution backend that runs the agent program directly
 // via exec.Cmd without tmux. Output is captured in an in-memory buffer and
@@ -59,6 +62,18 @@ func sanitizeName(name string) string {
 	s := whiteSpaceRegex.ReplaceAllString(name, "")
 	s = strings.ReplaceAll(s, ".", "_")
 	return s
+}
+
+func resolveProgramExecutable(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" || strings.Contains(trimmed, "/") {
+		return trimmed
+	}
+	resolved, err := resolveProgramPath(trimmed)
+	if err != nil || resolved == "" {
+		return trimmed
+	}
+	return resolved
 }
 
 // New constructs a new unstarted headless Session.
@@ -130,6 +145,7 @@ func (s *Session) Start(workDir string) error {
 	if len(parts) == 0 {
 		return fmt.Errorf("empty program")
 	}
+	parts[0] = resolveProgramExecutable(parts[0])
 	cmd := exec.Command(parts[0], parts[1:]...)
 	cmd.Dir = workDir
 

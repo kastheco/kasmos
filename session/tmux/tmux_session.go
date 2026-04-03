@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/cmd"
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/internal/opencodesession"
 	"github.com/kastheco/kasmos/log"
 	"golang.org/x/term"
@@ -29,6 +30,8 @@ const ProgramOpenCode = "opencode"
 // content hashing is not affected by cursor blink, color resets, or other
 // terminal control codes that change between captures of an otherwise-idle pane.
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+var resolveProgramPath = config.ResolveCommandPath
 
 // TmuxSession represents a managed tmux session.
 // It implements the Session interface defined in session.go.
@@ -228,6 +231,33 @@ func isOpenCodeProgram(program string) bool {
 	return strings.HasSuffix(program, ProgramOpenCode)
 }
 
+func resolveShellProgram(program string) string {
+	trimmed := strings.TrimSpace(program)
+	if trimmed == "" {
+		return program
+	}
+	end := len(trimmed)
+	for i, r := range trimmed {
+		if r == ' ' || r == '\t' || r == '\n' {
+			end = i
+			break
+		}
+	}
+	cmdName := trimmed[:end]
+	if cmdName == "" || strings.Contains(cmdName, "/") {
+		return trimmed
+	}
+	resolved, err := resolveProgramPath(cmdName)
+	if err != nil || resolved == "" || resolved == cmdName {
+		return trimmed
+	}
+	remainder := ""
+	if end < len(trimmed) {
+		remainder = trimmed[end:]
+	}
+	return shellEscapeSingleQuote(resolved) + remainder
+}
+
 // Start creates and starts a new tmux session, then attaches to it.
 // program is the command to run in the session. workDir is the git worktree directory.
 func (t *TmuxSession) Start(workDir string) error {
@@ -238,8 +268,8 @@ func (t *TmuxSession) Start(workDir string) error {
 	}
 
 	// Append --dangerously-skip-permissions for Claude programs if enabled.
-	program := t.program
-	if t.skipPermissions && isClaudeProgram(program) {
+	program := resolveShellProgram(t.program)
+	if t.skipPermissions && isClaudeProgram(t.program) {
 		program = program + " --dangerously-skip-permissions"
 	}
 	if t.agentType != "" && !strings.Contains(program, "--agent") {

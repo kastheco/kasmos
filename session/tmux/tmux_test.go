@@ -19,7 +19,12 @@ import (
 
 func TestMain(m *testing.M) {
 	log.Initialize(false)
+	origResolve := resolveProgramPath
+	resolveProgramPath = func(name string) (string, error) {
+		return name, fmt.Errorf("test stub: unresolved")
+	}
 	code := m.Run()
+	resolveProgramPath = origResolve
 	log.Close()
 	os.Exit(code)
 }
@@ -431,6 +436,44 @@ func TestStartClaudeWithInitialPrompt(t *testing.T) {
 	require.Equal(
 		t,
 		fmt.Sprintf("tmux new-session -d -s kas_claude-prompt -c %s KASMOS_MANAGED=1 claude 'Implement the auth module.'", workdir),
+		cmd2.ToString(ptyFactory.cmds[0]),
+	)
+}
+
+func TestStartResolvesExecutablePath(t *testing.T) {
+	origResolve := resolveProgramPath
+	defer func() { resolveProgramPath = origResolve }()
+	resolveProgramPath = func(name string) (string, error) {
+		require.Equal(t, "claude", name)
+		return "/home/test/.local/bin/claude", nil
+	}
+
+	ptyFactory := NewMockPtyFactory(t)
+	created := false
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			if strings.Contains(cmd.String(), "has-session") && !created {
+				created = true
+				return fmt.Errorf("session does not exist yet")
+			}
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			if strings.Contains(cmd.String(), "capture-pane") {
+				return []byte("Do you trust the files in this folder?"), nil
+			}
+			return []byte("output"), nil
+		},
+	}
+
+	workdir := t.TempDir()
+	s := newTmuxSession("resolved-path", "claude", false, ptyFactory, cmdExec)
+	s.SetAgentType("planner")
+	err := s.Start(workdir)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		fmt.Sprintf("tmux new-session -d -s kas_resolved-path -c %s KASMOS_MANAGED=1 '/home/test/.local/bin/claude' --agent planner", workdir),
 		cmd2.ToString(ptyFactory.cmds[0]),
 	)
 }
