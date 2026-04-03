@@ -177,6 +177,39 @@ func TestTaskUpdateContentHandler_ReturnsWarningForDraft(t *testing.T) {
 	assert.Contains(t, payload.Warning, "no wave headers found")
 }
 
+func TestTaskDeleteHandler_DeletesStoredTask(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "test-project"
+	filename := "delete-me"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: filename, Status: taskstore.StatusReady, CreatedAt: time.Now()}))
+
+	handler := makeTaskDeleteHandler(project, store)
+	result, err := handler(context.Background(), mockReq(map[string]any{"filename": filename + ".md"}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+
+	var payload taskMutationResult
+	require.NoError(t, json.Unmarshal([]byte(textResult(t, result)), &payload))
+	assert.Equal(t, filename, payload.Filename)
+	assert.True(t, payload.Deleted)
+
+	_, err = store.Get(project, filename)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestTaskDeleteHandler_ReturnsErrorWhenTaskMissing(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "test-project"
+
+	handler := makeTaskDeleteHandler(project, store)
+	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "missing"}))
+	require.NoError(t, err)
+	assert.True(t, result.IsError)
+	assert.Contains(t, textResult(t, result), "task_delete:")
+	assert.Contains(t, textResult(t, result), "not found")
+}
+
 func TestTaskUpdateContentHandler_DecodesEscapedMultilineContent(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
 	project := "test-project"

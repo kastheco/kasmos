@@ -83,6 +83,21 @@ func NewHandler(store Store) http.Handler {
 		writeJSON(w, http.StatusOK, entry)
 	})
 
+	// Delete task
+	mux.HandleFunc("DELETE /v1/projects/{project}/tasks/{filename}", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		filename := r.PathValue("filename")
+		if err := store.Delete(project, filename); err != nil {
+			if isNotFound(err) {
+				writeError(w, http.StatusNotFound, "task not found: "+filename)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
 	// Update task
 	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")

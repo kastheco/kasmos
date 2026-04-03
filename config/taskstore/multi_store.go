@@ -262,6 +262,14 @@ func (m *MultiStore) Rename(project, oldFilename, newFilename string) error {
 	return store.Rename(project, oldFilename, newFilename)
 }
 
+func (m *MultiStore) Delete(project, filename string) error {
+	store, err := m.storeFor(project)
+	if err != nil {
+		return err
+	}
+	return store.Delete(project, filename)
+}
+
 func (m *MultiStore) GetContent(project, filename string) (string, error) {
 	store, err := m.storeFor(project)
 	if err != nil {

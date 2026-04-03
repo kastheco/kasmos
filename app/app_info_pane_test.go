@@ -362,6 +362,9 @@ func (f *failingSubtaskStore) Update(project, filename string, entry taskstore.T
 func (f *failingSubtaskStore) Rename(project, oldFilename, newFilename string) error {
 	return f.inner.Rename(project, oldFilename, newFilename)
 }
+func (f *failingSubtaskStore) Delete(project, filename string) error {
+	return f.inner.Delete(project, filename)
+}
 func (f *failingSubtaskStore) GetContent(project, filename string) (string, error) {
 	return f.inner.GetContent(project, filename)
 }

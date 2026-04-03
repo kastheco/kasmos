@@ -931,3 +931,68 @@ func TestExecuteTaskCreate_FailsFastWhenAuthoritativeStoreUnreachable(t *testing
 	require.NoError(t, listErr)
 	assert.Empty(t, entries)
 }
+
+func TestPromptForDelete_Accept(t *testing.T) {
+	var out strings.Builder
+	ok, err := promptForDelete(strings.NewReader("y\n"), &out, "my-task", "ready")
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Contains(t, out.String(), "delete my-task (ready)? [y/N]: ")
+}
+
+func TestPromptForDelete_Reject(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"explicit no", "n\n"},
+		{"empty input", "\n"},
+		{"random text", "nope\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out strings.Builder
+			ok, err := promptForDelete(strings.NewReader(tt.input), &out, "my-task", "ready")
+			require.NoError(t, err)
+			assert.False(t, ok)
+		})
+	}
+}
+
+func TestPromptForDelete_EOF(t *testing.T) {
+	var out strings.Builder
+	ok, err := promptForDelete(strings.NewReader(""), &out, "my-task", "ready")
+	require.NoError(t, err)
+	assert.False(t, ok)
+}
+
+func TestPromptForDelete_CaseInsensitive(t *testing.T) {
+	var out strings.Builder
+	ok, err := promptForDelete(strings.NewReader("Y\n"), &out, "my-task", "ready")
+	require.NoError(t, err)
+	assert.True(t, ok)
+}
+
+func TestDeleteCmd_WithYesFlag(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "delete-test"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: "doomed",
+		Status:   taskstore.StatusReady,
+	}))
+
+	require.NoError(t, store.Delete(project, "doomed"))
+
+	_, err := store.Get(project, "doomed")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestDeleteCmd_NonTTY_ReturnsError(t *testing.T) {
+	// stdinIsTerminal returns false for non-*os.File readers
+	assert.False(t, stdinIsTerminal(strings.NewReader("anything")))
+}
+
+func TestErrRefusingDeleteWithoutYes(t *testing.T) {
+	assert.Equal(t, "refusing to delete without --yes", errRefusingDeleteWithoutYes.Error())
+}

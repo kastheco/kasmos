@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -337,6 +338,20 @@ func executeTaskShow(project, planFile string, store taskstore.Store) (string, e
 		return "", fmt.Errorf("no content stored for %s", planFile)
 	}
 	return content, nil
+}
+
+var errRefusingDeleteWithoutYes = errors.New("refusing to delete without --yes")
+
+func promptForDelete(r io.Reader, out io.Writer, filename, status string) (bool, error) {
+	scanner := bufio.NewScanner(r)
+	fmt.Fprintf(out, "delete %s (%s)? [y/N]: ", filename, status)
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return false, fmt.Errorf("read confirmation: %w", err)
+		}
+		return false, nil
+	}
+	return strings.TrimSpace(strings.ToLower(scanner.Text())) == "y", nil
 }
 
 func executeTaskUpdateContent(project, filename string, reader io.Reader, store taskstore.Store) error {
@@ -897,6 +912,51 @@ Supported actions:
 		},
 	}
 	planCmd.AddCommand(showCmd)
+
+	var deleteYes bool
+	deleteCmd := &cobra.Command{
+		Use:   "delete <plan-file>",
+		Short: "permanently delete a task from the store",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, project, err := resolveRepoInfo()
+			if err != nil {
+				return err
+			}
+			return withAuthoritativeStore(project, func(store taskstore.Store) error {
+				ps, err := loadTaskStateByProject(project, store)
+				if err != nil {
+					return err
+				}
+				resolvedFilename := resolveExistingTaskFilename(ps, args[0])
+				entry, ok := ps.Entry(resolvedFilename)
+				if !ok {
+					return fmt.Errorf("task not found: %s", args[0])
+				}
+				if !deleteYes {
+					stdin := cmd.InOrStdin()
+					if !stdinIsTerminal(stdin) {
+						return errRefusingDeleteWithoutYes
+					}
+					ok, err := promptForDelete(stdin, cmd.OutOrStdout(), resolvedFilename, string(entry.Status))
+					if err != nil {
+						return err
+					}
+					if !ok {
+						fmt.Fprintln(cmd.OutOrStdout(), "cancelled")
+						return nil
+					}
+				}
+				if err := store.Delete(project, resolvedFilename); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "deleted %s\n", resolvedFilename)
+				return nil
+			})
+		},
+	}
+	deleteCmd.Flags().BoolVar(&deleteYes, "yes", false, "confirm permanent deletion")
+	planCmd.AddCommand(deleteCmd)
 
 	var updateContentFile string
 	updateContentCmd := &cobra.Command{
