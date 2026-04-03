@@ -28,6 +28,9 @@ func TestCanonicalRepoPath_ResolvesWorktreeToMainRepo(t *testing.T) {
 }
 
 func TestNewHome_UsesMainRepoRootWhenLaunchedFromWorktree(t *testing.T) {
+	// Redirect HOME so newHome() uses a fresh isolated global DB.
+	t.Setenv("HOME", t.TempDir())
+
 	mainRepo := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(mainRepo, ".git", "worktrees", "wt-plans"), 0o755))
 
@@ -47,9 +50,6 @@ func TestNewHome_UsesMainRepoRootWhenLaunchedFromWorktree(t *testing.T) {
 
 	h := newHome(context.Background(), "opencode", false, "test")
 	t.Cleanup(func() {
-		if h.embeddedServer != nil {
-			h.embeddedServer.Stop()
-		}
 		h.auditLogger.Close()
 	})
 

@@ -82,9 +82,6 @@ func Run(ctx context.Context, program string, autoYes bool, version string) erro
 
 	zone.NewGlobal()
 	h := newHome(ctx, program, autoYes, version)
-	if h.embeddedServer != nil {
-		defer h.embeddedServer.Stop()
-	}
 	defer h.auditLogger.Close()
 	if h.permissionStore != nil {
 		defer h.permissionStore.Close()
@@ -303,9 +300,6 @@ type home struct {
 	// signalsDir is the directory where agent sentinel files are written.
 	// Defaults to <repoRoot>/.kasmos/signals/ (project-local, gitignored).
 	signalsDir string
-	// embeddedServer is retained for transitional rebinding tests. Startup no longer
-	// launches an embedded task store fallback.
-	embeddedServer *taskstore.EmbeddedServer
 	// taskStore is the authoritative task store client. It points at the daemon or
 	// a configured remote store, and may be nil until daemon registration completes.
 	taskStore taskstore.Store
@@ -492,6 +486,14 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 			log.WarningLog.Printf("local task store unavailable: %v", err)
 		} else {
 			h.taskStore = localStore
+			// Migrate repo-local taskstore.db into the global DB (idempotent no-op
+			// when no local DB exists or data is already present globally).
+			repoKasmosDir := filepath.Join(activeRepoPath, ".kasmos")
+			if n, migErr := taskstore.MigrateRepoLocalToGlobal(localStore, project, repoKasmosDir); migErr != nil {
+				log.WarningLog.Printf("repo-local to global taskstore migration failed: %v", migErr)
+			} else if n > 0 {
+				log.InfoLog.Printf("migrated %d tasks from repo-local taskstore to global DB", n)
+			}
 		}
 	}
 	h.fsm = taskfsm.New(h.taskStore, project, h.taskStateDir)

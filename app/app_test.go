@@ -209,6 +209,10 @@ func TestCheckDaemonStatus_AutoRegistersRepoWhenDaemonIsRunning(t *testing.T) {
 }
 
 func TestDaemonRepoRegisteredMsg_KeepsLocalTaskStoreWithoutConfirmation(t *testing.T) {
+	// Redirect HOME so newHome() uses a fresh isolated global DB instead of
+	// the developer's real ~/.config/kasmos/taskstore.db.
+	t.Setenv("HOME", t.TempDir())
+
 	repoDir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755))
 
@@ -225,9 +229,6 @@ func TestDaemonRepoRegisteredMsg_KeepsLocalTaskStoreWithoutConfirmation(t *testi
 
 	h := newHome(context.Background(), "opencode", false, "test")
 	t.Cleanup(func() {
-		if h.embeddedServer != nil {
-			h.embeddedServer.Stop()
-		}
 		if h.taskStore != nil {
 			_ = h.taskStore.Close()
 		}
@@ -236,7 +237,6 @@ func TestDaemonRepoRegisteredMsg_KeepsLocalTaskStoreWithoutConfirmation(t *testi
 		}
 	})
 
-	require.Nil(t, h.embeddedServer, "newHome should not start an embedded store fallback")
 	require.IsType(t, &taskstore.SQLiteStore{}, h.taskStore)
 	assert.Equal(t, filepath.Base(repoDir), h.taskStoreProject)
 
@@ -251,7 +251,6 @@ func TestDaemonRepoRegisteredMsg_KeepsLocalTaskStoreWithoutConfirmation(t *testi
 	assert.Equal(t, stateDefault, updated.state)
 	assert.False(t, updated.overlays.IsActive(), "successful registration should not open a confirmation overlay")
 	assert.Nil(t, updated.pendingConfirmAction)
-	assert.Nil(t, updated.embeddedServer, "daemon registration should not recreate embedded fallback")
 	require.IsType(t, &taskstore.SQLiteStore{}, updated.taskStore)
 	assert.Equal(t, filepath.Base(repoDir), updated.taskStoreProject)
 
@@ -309,9 +308,6 @@ func TestNewHome_AutoRegisterDoesNotShowStaleDaemonUnavailableToast(t *testing.T
 
 	h := newHome(context.Background(), "opencode", false, "test")
 	t.Cleanup(func() {
-		if h.embeddedServer != nil {
-			h.embeddedServer.Stop()
-		}
 		if h.taskStore != nil {
 			_ = h.taskStore.Close()
 		}
