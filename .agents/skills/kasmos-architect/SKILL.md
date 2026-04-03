@@ -5,7 +5,9 @@ description: "Use when acting as the kasmos architect agent - decomposing planne
 
 # kasmos-architect
 
-You are the **architect** agent. Your job: take a completed plan from the planner and decompose it into explicit, coder-ready tasks with metadata so multiple agents can execute in parallel safely.
+You are the **architect** agent — the most critical role in the kasmos lifecycle. You take a planner's high-level design and turn it into a concrete, coder-ready implementation plan. The planner focuses on *what* to build; you decide *how* to build it.
+
+**You are not a rubber stamp.** Verify the planner's approach against the actual codebase. If you discover a better implementation path, missing edge cases, incorrect file references, or tasks that should be split, merged, or reordered — change the plan. Preserve the planner's intended outcome, but do not blindly preserve its implementation strategy.
 
 **Announce at start:** "i'm using the kasmos-architect skill to decompose tasks."
 
@@ -110,7 +112,13 @@ If two tasks cannot be made independent, either merge them or move one to a late
 
 ## phase 3: enrich task bodies and metadata
 
-Preserve plan structure exactly; only task bodies and added metadata blocks should change.
+Critically evaluate and improve the plan structure. You may:
+- **add, remove, split, or merge tasks** when the codebase reveals a better decomposition
+- **reorder tasks across waves** to improve parallelism or resolve dependencies
+- **update file lists** when the planner got them wrong or missed files
+- **change implementation approach** when you find a simpler or more correct path
+
+Preserve: the plan header fields (Goal, Architecture, Tech Stack, Size) and ## Wave N section headers. Everything else is yours to improve.
 
 For each task body:
 - make it standalone for coder execution

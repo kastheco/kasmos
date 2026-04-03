@@ -2699,19 +2699,21 @@ func buildPlanningPrompt(planFile, planName, description string) string {
 			"Use the `kasmos-planner` skill. "+
 			"The plan MUST include ## Wave N sections (at minimum ## Wave 1) "+
 			"grouping all tasks — kasmos requires Wave headers to orchestrate implementation. "+
-			"After writing the plan, store it with `kas task update-content %s` and then signal completion with `touch .kasmos/signals/planner-finished-%s`.",
-		planName, description, planFile, planFile,
+			"After writing the plan, store it with MCP `task_update_content` (filename: \"%[3]s\") "+
+			"and then signal completion with MCP `signal_create` (signal_type: \"planner-finished\", plan_file: \"%[3]s\"). "+
+			"If MCP is unavailable, fall back to `kas task update-content %[3]s` (pipe content) and `kas signal emit planner_finished %[3]s`.",
+		planName, description, planFile,
 	)
 }
 
 // buildImplementPrompt returns the prompt for a coder agent session.
-// Agents retrieve plan content from the task store via `kas task show` and write
-// sentinel signals to .kasmos/signals/ in their worktree; the TUI ingests them on completion.
+// Agents retrieve plan content from the task store via MCP or CLI and execute all tasks.
 func buildImplementPrompt(planFile string) string {
 	return fmt.Sprintf(
-		"Implement %s. Retrieve the full plan with `kas task show %s` and execute all tasks sequentially. "+
+		"Implement %s. Retrieve the full plan with MCP `task_show` (filename: \"%[1]s\") and execute all tasks sequentially. "+
+			"If MCP is unavailable, fall back to `kas task show %[1]s`. "+
 			"Use rg/sd/fd instead of grep/sed/find. Scope tests with -run TestName. Do not load skills.",
-		planFile, planFile,
+		planFile,
 	)
 }
 

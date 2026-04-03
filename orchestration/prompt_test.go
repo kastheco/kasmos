@@ -179,17 +179,18 @@ func TestBuildElaborationPrompt(t *testing.T) {
 
 	assert.Contains(t, prompt, "kasmos-architect")
 	assert.NotContains(t, prompt, "kasmos-elaborator")
-	// Must reference the plan file for retrieval
-	assert.Contains(t, prompt, "kas task show my-feature")
-	// Must reference updating the plan
-	assert.Contains(t, prompt, "kas task update-content my-feature")
+	// Must reference the plan file for retrieval via MCP
+	assert.Contains(t, prompt, "task_show")
+	assert.Contains(t, prompt, "kas task show my-feature") // CLI fallback
+	// Must reference updating the plan via MCP
+	assert.Contains(t, prompt, "task_update_content")
 	assert.Contains(t, prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"my-feature\")")
 	// CLI fallback remains documented
 	assert.Contains(t, prompt, "kas signal emit elaborator_finished my-feature")
 	// Fallback filesystem sentinel still present
 	assert.Contains(t, prompt, "elaborator-finished-my-feature")
 	// Role wording should stay on architect even though the external signal stays legacy.
-	assert.Contains(t, prompt, "Signal architect-pass completion with the retained external contract")
+	assert.Contains(t, prompt, "Signal architect-pass completion")
 	assert.Contains(t, prompt, "only the completion signal name stays legacy")
 	assert.NotContains(t, prompt, "elaborator agent")
 	// Must instruct to expand task bodies
@@ -204,14 +205,14 @@ func TestBuildArchitectPrompt(t *testing.T) {
 	prompt := BuildArchitectPrompt("my-feature")
 
 	assert.Contains(t, prompt, "kasmos-architect")
-	assert.Contains(t, prompt, "kas task show my-feature")
-	assert.Contains(t, prompt, "kas task update-content my-feature")
-	assert.Contains(t, prompt, "architect-finished-my-feature")
+	assert.Contains(t, prompt, "task_show")
+	assert.Contains(t, prompt, "kas task show my-feature") // CLI fallback
+	assert.Contains(t, prompt, "task_update_content")
+	assert.Contains(t, prompt, "architect-finished")
 	assert.Contains(t, prompt, "architect-v1.json")
 	assert.Contains(t, prompt, "parallel")
-	// BuildArchitectPrompt intentionally remains a filesystem-only (touch) prompt
-	// until a gateway consumer for architect-finished is implemented.
-	assert.NotContains(t, prompt, "kas signal emit architect_finished")
+	// Signal completion should prefer MCP with filesystem fallback
+	assert.Contains(t, prompt, "signal_create")
 }
 
 func TestBuildElaborationPrompt_RetainsLegacySignalName(t *testing.T) {

@@ -41,16 +41,16 @@ func TestBuildPlanPrompt(t *testing.T) {
 	// instruct the planner to include them.
 	assert.Contains(t, prompt, "Wave", "plan prompt must mention Wave headers for kasmos orchestration")
 	assert.Contains(t, prompt, "kasmos-planner", "plan prompt must reference the kasmos-planner skill")
-	assert.Contains(t, prompt, "kas task update-content auth-refactor", "plan prompt must include content storage command")
-	assert.Contains(t, prompt, "planner-finished-auth-refactor", "plan prompt must include planner completion signal")
+	assert.Contains(t, prompt, "task_update_content", "plan prompt must include MCP content storage")
+	assert.Contains(t, prompt, "planner-finished", "plan prompt must include planner completion signal")
 }
 
 func TestBuildWaveAnnotationPrompt(t *testing.T) {
 	prompt := orchestration.BuildWaveAnnotationPrompt("my-feature")
-	assert.Contains(t, prompt, "kas task show my-feature", "prompt must reference kas task show")
+	assert.Contains(t, prompt, "task_show", "prompt must reference MCP task_show")
 	assert.Contains(t, prompt, "## Wave", "prompt must mention ## Wave header format")
-	assert.Contains(t, prompt, "kas task", "prompt must instruct the planner to store content via kas task")
-	assert.Contains(t, prompt, "planner-finished-", "prompt must include the signal file instruction")
+	assert.Contains(t, prompt, "task_update_content", "prompt must instruct the planner to store content via MCP")
+	assert.Contains(t, prompt, "planner-finished", "prompt must include planner completion signal")
 	assert.NotContains(t, prompt, "The plan at docs/plans/", "prompt must not reference disk path for reading")
 }
 

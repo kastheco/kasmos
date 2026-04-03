@@ -159,24 +159,33 @@ func BuildFixerPrompt(planFile, feedback string, reviewRound int) string {
 // and expands task bodies with detailed implementation instructions.
 func BuildElaborationPrompt(planFile string) string {
 	return fmt.Sprintf(
-		"You are the architect agent. Your job: enrich a plan's task descriptions with "+
-			"detailed implementation instructions so coder agents make fewer decisions.\n\n"+
+		"You are the architect agent. You turn a planner's high-level design into a "+
+			"concrete, coder-ready implementation plan. The planner focuses on *what* to build; "+
+			"you decide *how* to build it. Verify the planner's approach against the actual codebase — "+
+			"if you discover a better implementation path, missing edge cases, incorrect file references, "+
+			"or tasks that should be split, merged, or reordered, change the plan. "+
+			"Preserve the planner's intended outcome but not necessarily its implementation strategy.\n\n"+
 			"Load the `kasmos-architect` skill before starting. Also load `cli-tools`.\n\n"+
 			"## Instructions\n\n"+
-			"1. Retrieve the plan: `kas task show %[1]s`\n"+
+			"1. Retrieve the plan: prefer MCP `task_show` (filename: \"%[1]s\"); fall back to `kas task show %[1]s`\n"+
 			"2. For each task, read the codebase files listed in its **Files:** section. "+
 			"Study existing patterns, interfaces, function signatures, error handling, "+
 			"and data flow in those files and their neighbors.\n"+
-			"3. Expand each task body with concrete implementation detail:\n"+
+			"3. Critically evaluate the plan against the actual codebase:\n"+
+			"   - Are the listed files correct? Add missing ones, remove irrelevant ones.\n"+
+			"   - Is the wave/task decomposition optimal? Merge, split, or reorder as needed.\n"+
+			"   - Are there simpler approaches the planner missed?\n"+
+			"   - Would the proposed changes conflict with existing patterns?\n"+
+			"4. Expand each task body with concrete implementation detail:\n"+
 			"   - Exact function signatures to create or modify\n"+
 			"   - Existing codebase patterns to follow (with file references)\n"+
 			"   - Edge cases and error handling requirements\n"+
 			"   - Import paths and dependencies\n"+
 			"   - Concrete code snippets where helpful\n"+
-			"4. Preserve the plan structure — do not change wave organization, "+
-			"task numbering, file lists, or the header fields. Only expand task bodies.\n"+
-			"5. Write the updated plan: pipe content to `kas task update-content %[1]s`\n"+
-			"6. Signal architect-pass completion with the retained external contract: prefer MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"%[1]s\")\n"+
+			"5. Keep ## Wave headers and the plan header fields (Goal, Architecture, Tech Stack, Size). "+
+			"Everything else — task count, task content, file lists, wave assignment — is yours to change.\n"+
+			"6. Write the updated plan: prefer MCP `task_update_content` (filename: \"%[1]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
+			"7. Signal architect-pass completion: prefer MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"%[1]s\")\n"+
 			"   - If MCP is unavailable, use `kas signal emit elaborator_finished %[1]s`; if CLI signaling is also unavailable, fallback: `touch .kasmos/signals/elaborator-finished-%[1]s`\n"+
 			"   - Keep the role wording as architect in your notes and output; only the completion signal name stays legacy.\n",
 		planFile,
@@ -191,12 +200,12 @@ func BuildArchitectPrompt(planFile string) string {
 		"You are the architect agent. Your job: analyze a plan, identify architectural dependencies, and emit compact metadata for downstream orchestration.\n\n"+
 			"Load the `kasmos-architect` and `cli-tools` skills before starting.\n\n"+
 			"## Instructions\n\n"+
-			"1. Retrieve the plan: `kas task show %[1]s`\n"+
+			"1. Retrieve the plan: prefer MCP `task_show` (filename: \"%[1]s\"); fall back to `kas task show %[1]s`\n"+
 			"2. For each task, classify it as `parallel` when it has no file or execution dependency on other tasks in the same wave; otherwise classify it as serial.\n"+
 			"3. Estimate token budgets for each task, including required context depth and expected implementation footprint.\n"+
-			"4. Write the enriched plan back: pipe content to `kas task update-content %[1]s`\n"+
+			"4. Write the enriched plan back: prefer MCP `task_update_content` (filename: \"%[1]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
 			"5. Write architect metadata to `.kasmos/cache/%[1]s-architect.json` using the schema example in `architect-v1.json`.\n"+
-			"6. Signal completion: `touch .kasmos/signals/architect-finished-%[1]s`\n"+
+			"6. Signal completion: prefer MCP `signal_create` (signal_type: \"architect-finished\", plan_file: \"%[1]s\"); fall back to `touch .kasmos/signals/architect-finished-%[1]s`\n"+
 			"7. Note: app/FSM consumption of this new architect-finished signal is follow-up work and should be implemented separately.\n",
 		planFile,
 	)
@@ -209,12 +218,12 @@ func BuildArchitectPrompt(planFile string) string {
 func BuildWaveAnnotationPrompt(planFile string) string {
 	return fmt.Sprintf(
 		"The plan %[1]s is missing ## Wave N headers required for kasmos wave orchestration. "+
-			"Retrieve the plan content with `kas task show %[1]s`, then annotate it by wrapping "+
+			"Retrieve the plan content with MCP `task_show` (filename: \"%[1]s\") — fall back to `kas task show %[1]s` if MCP is unavailable — then annotate it by wrapping "+
 			"all tasks under ## Wave N sections. "+
 			"Every plan needs at least ## Wave 1 — even single-task trivial plans. "+
 			"Keep all existing task content intact; only add the ## Wave headers.\n\n"+
 			"After annotating:\n"+
-			"1. Store the updated plan via `kas task update-content %[1]s` (pipe the content)\n"+
+			"1. Store the updated plan via MCP `task_update_content` (filename: \"%[1]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
 			"2. Signal completion: prefer MCP `signal_create` (signal_type: \"planner-finished\", plan_file: \"%[1]s\")\n"+
 			"   - If MCP is unavailable, use `kas signal emit planner_finished %[1]s`; if CLI signaling is also unavailable, fallback: `touch .kasmos/signals/planner-finished-%[1]s`\n"+
 			"Do not edit plan-state.json directly.",

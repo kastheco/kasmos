@@ -96,3 +96,20 @@ func TestKeybindBrowserEscReturnToDefault(t *testing.T) {
 	assert.Equal(t, stateDefault, m.state)
 	assert.False(t, m.overlays.IsActive())
 }
+
+func TestBuildKeybindBrowserItems_HidesSubmitNameAndRemovedBindings(t *testing.T) {
+	items := buildKeybindBrowserItems()
+
+	var foundInfoTab bool
+	for _, item := range items {
+		assert.NotEqual(t, "submit name", item.Label)
+		assert.NotEqual(t, "checkout", item.Label)
+		assert.NotEqual(t, "right sidebar", item.Label)
+		if item.Label == "toggle info header" {
+			foundInfoTab = true
+			assert.Equal(t, "I", item.Hint)
+		}
+	}
+
+	require.True(t, foundInfoTab, "toggle info header should still be listed in the keybind browser")
+}

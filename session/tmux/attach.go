@@ -36,6 +36,10 @@ func (t *TmuxSession) Attach() (chan struct{}, error) {
 	if t.outerMouseWasEnabled && outer != "" {
 		_ = exec.Command("tmux", "set-option", "-t", outer, "mouse", "off").Run()
 	}
+	// Enable mouse on the inner session so the attached program (e.g. claude code)
+	// can handle scroll events. Start() disables mouse for the kasmos preview
+	// viewport, but during interactive attach the inner program needs it.
+	_ = exec.Command("tmux", "set-option", "-t", t.sanitizedName, "mouse", "on").Run()
 	if err := t.enterRawInputMode(); err != nil {
 		t.restoreOuterMouse()
 		return nil, err
@@ -115,6 +119,9 @@ func (t *TmuxSession) Attach() (chan struct{}, error) {
 func (t *TmuxSession) Detach() {
 	t.exitRawInputMode()
 	t.restoreOuterMouse()
+	// Restore mouse off on the inner session so the kasmos preview viewport
+	// handles scroll events instead of tmux entering copy-mode.
+	_ = exec.Command("tmux", "set-option", "-t", t.sanitizedName, "mouse", "off").Run()
 
 	// Cancel context to signal goroutines.
 	if t.cancel != nil {

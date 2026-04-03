@@ -1585,6 +1585,38 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		// Expire loading placeholders whose daemon spawn has failed or timed out.
+		// Loading placeholders are created when the daemon reports an instance as
+		// loading; if the daemon later reports it inactive (spawn failed) or the
+		// placeholder has been stuck for >30s, remove it so the UI doesn't freeze.
+		if msg.DaemonManagedRepo {
+			activeDaemonTitles := make(map[string]struct{}, len(msg.DaemonInstances))
+			for _, inst := range msg.DaemonInstances {
+				if inst != nil {
+					activeDaemonTitles[inst.Title] = struct{}{}
+				}
+			}
+			daemonTitleSet := make(map[string]struct{}, len(msg.DaemonTitles))
+			for _, t := range msg.DaemonTitles {
+				daemonTitleSet[t] = struct{}{}
+			}
+			for _, existing := range m.nav.GetInstances() {
+				if existing.Started() || existing.Status != session.Loading {
+					continue
+				}
+				_, daemonKnows := daemonTitleSet[existing.Title]
+				_, daemonActive := activeDaemonTitles[existing.Title]
+				stale := !existing.CreatedAt.IsZero() && time.Since(existing.CreatedAt) > 30*time.Second
+				if (daemonKnows && !daemonActive) || stale {
+					log.WarningLog.Printf("expiring stale loading placeholder %q (daemon_known=%v daemon_active=%v age=%v)",
+						existing.Title, daemonKnows, daemonActive, time.Since(existing.CreatedAt).Round(time.Second))
+					m.nav.RemoveByTitle(existing.Title)
+					m.removeFromAllInstances(existing.Title)
+					m.toastManager.Error(fmt.Sprintf("'%s' failed to start — check .kasmos/logs/ for details", existing.Title))
+				}
+			}
+		}
+
 		// Apply collected metadata to instances — zero I/O, just field writes.
 		// All subprocess calls (TapEnter, SendPrompt) are deferred to tea.Cmds.
 		instanceMap := make(map[string]*session.Instance)

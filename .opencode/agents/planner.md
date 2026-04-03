@@ -25,22 +25,22 @@ Only register implementation plans — never register design docs (*-design.md) 
 ## Plan Storage (CRITICAL — must follow every time)
 
 Task state is stored in the **task store** (SQLite database or HTTP API), not in files on disk.
-Never modify task state directly — use `kas task` CLI commands or sentinel files.
+Never modify task state directly — use MCP tools or `kas task` CLI commands; sentinel files are fallback-only.
 
 Kasmos creates the task entry before it spawns you. Your job is to replace that
 entry's placeholder content with the finished plan.
 
 Storage steps (do both, never skip step 2):
 1. Write the full plan content, including required `## Wave N` sections.
-2. Store the plan in the task store with `kas task update-content <plan-file>`.
+2. Store the plan: prefer MCP `task_update_content` (filename: "<plan-file>"); fall back to `kas task update-content <plan-file>` (pipe content).
 
 **If `KASMOS_MANAGED=1` (running inside kasmos):**
-- First store the plan with `kas task update-content <plan-file>`.
-- Then signal completion with `.kasmos/signals/planner-finished-<plan-file>`.
+- First store the plan with MCP `task_update_content`; fall back to `kas task update-content <plan-file>`.
+- Then signal completion: prefer MCP `signal_create` (signal_type: "planner-finished", plan_file: "<plan-file>"); fall back to `kas signal emit planner_finished <plan-file>`.
 - **Do not modify task state directly.**
 
 **If `KASMOS_MANAGED` is unset (raw terminal):**
-- Update the existing task with `kas task update-content <plan-file>`.
+- Update the existing task with MCP `task_update_content`; fall back to `kas task update-content <plan-file>`.
 - If you are creating a brand-new standalone plan outside kasmos, register it once with
   `kas task register <plan-file>.md` before updating it.
 

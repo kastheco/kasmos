@@ -50,6 +50,7 @@ func TestStartTmuxSession_WithTaskEnvVars(t *testing.T) {
 	assert.Contains(t, cmdStr, "KASMOS_WAVE=2")
 	assert.Contains(t, cmdStr, "KASMOS_PEERS=4")
 	assert.Contains(t, cmdStr, "KASMOS_MANAGED=1")
+	assert.Contains(t, cmdStr, "CLAUDE_CODE_NO_FLICKER=1")
 }
 
 func TestStartTmuxSession_WithoutTaskEnvVars(t *testing.T) {
@@ -85,6 +86,7 @@ func TestStartTmuxSession_WithoutTaskEnvVars(t *testing.T) {
 	assert.NotContains(t, cmdStr, "KASMOS_WAVE=")
 	assert.NotContains(t, cmdStr, "KASMOS_PEERS=")
 	assert.Contains(t, cmdStr, "KASMOS_MANAGED=1")
+	assert.Contains(t, cmdStr, "CLAUDE_CODE_NO_FLICKER=1")
 }
 
 func TestStartTmuxSession_OpenCodeInjectsProjectConfigEnv(t *testing.T) {

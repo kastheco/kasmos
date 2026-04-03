@@ -207,9 +207,21 @@ func (t *TmuxSession) reportProgress(stage int, desc string) {
 	}
 }
 
+// programBase returns the base executable name from the first whitespace-delimited
+// token in program. This correctly handles command strings that include flags
+// (e.g. "claude --model opus" → "claude", "/usr/local/bin/opencode" → "opencode").
+func programBase(program string) string {
+	trimmed := strings.TrimSpace(program)
+	exe := trimmed
+	if i := strings.IndexAny(trimmed, " \t"); i >= 0 {
+		exe = trimmed[:i]
+	}
+	return filepath.Base(exe)
+}
+
 // isClaudeProgram returns true if the program string refers to Claude Code.
 func isClaudeProgram(program string) bool {
-	return strings.HasSuffix(program, ProgramClaude)
+	return programBase(program) == ProgramClaude
 }
 
 // isAiderProgram returns true if the program string refers to Aider.
@@ -228,7 +240,7 @@ func isGeminiProgram(program string) bool {
 
 // isOpenCodeProgram returns true if the program string refers to OpenCode.
 func isOpenCodeProgram(program string) bool {
-	return strings.HasSuffix(program, ProgramOpenCode)
+	return programBase(program) == ProgramOpenCode
 }
 
 func resolveShellProgram(program string) string {
@@ -290,14 +302,19 @@ func (t *TmuxSession) Start(workDir string) error {
 			program = "OPENCODE_CONFIG=" + shellEscapeSingleQuote(configPath) + " " + program
 		}
 	}
+	if isClaudeProgram(t.program) {
+		program = "CLAUDE_CODE_NO_FLICKER=1 " + program
+	}
 
-	// Append --print-logs and redirect stderr to a per-session log file so
-	// kasmos-spawned opencode agents always have debug logs available.
-	if isOpenCodeProgram(t.program) {
-		logDir := filepath.Join(workDir, promptDir, "logs")
-		if err := os.MkdirAll(logDir, 0o755); err == nil {
-			logFile := filepath.Join(logDir, t.sanitizedName+".log")
+	// Redirect stderr to a per-session log file so kasmos-spawned agents
+	// always have debug logs available for crash diagnosis.
+	logDir := filepath.Join(workDir, promptDir, "logs")
+	if err := os.MkdirAll(logDir, 0o755); err == nil {
+		logFile := filepath.Join(logDir, t.sanitizedName+".log")
+		if isOpenCodeProgram(t.program) {
 			program = program + " --print-logs 2>>" + shellEscapeSingleQuote(logFile)
+		} else {
+			program = program + " 2>>" + shellEscapeSingleQuote(logFile)
 		}
 	}
 
@@ -422,9 +439,24 @@ func (t *TmuxSession) Start(workDir string) error {
 		// Poll with exponential backoff until the ready string appears or we time out.
 		startTime := time.Now()
 		sleepDuration := 100 * time.Millisecond
+		sessionCheckInterval := 3 * time.Second
+		lastSessionCheck := startTime
 
 		for time.Since(startTime) < maxWaitTime {
 			time.Sleep(sleepDuration)
+
+			// Periodically verify the tmux session is still alive so we
+			// don't spend 30s polling a dead session.
+			if time.Since(lastSessionCheck) >= sessionCheckInterval {
+				lastSessionCheck = time.Now()
+				if !t.DoesSessionExist() {
+					if cleanupErr := t.Close(); cleanupErr != nil {
+						log.ErrorLog.Printf("cleanup after dead session %s: %v", t.sanitizedName, cleanupErr)
+					}
+					return fmt.Errorf("session %s died during startup (program exited immediately — check %s/logs/%s.log for details)", t.sanitizedName, promptDir, t.sanitizedName)
+				}
+			}
+
 			content, err := t.CapturePaneContent()
 			if err == nil && strings.Contains(content, searchString) {
 				if tapFunc != nil {

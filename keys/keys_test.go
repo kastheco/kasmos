@@ -13,29 +13,42 @@ func TestGlobalKeyStringsMap_ViewPlanHasPAlias(t *testing.T) {
 }
 
 func TestSpawnAgentKeyInGlobalMap(t *testing.T) {
-	name, ok := GlobalKeyStringsMap["s"]
-	assert.True(t, ok, "'s' must be in GlobalKeyStringsMap")
+	name, ok := GlobalKeyStringsMap["S"]
+	assert.True(t, ok, "'S' must be in GlobalKeyStringsMap")
 	assert.Equal(t, KeySpawnAgent, name)
 }
 
 func TestQuickLaunchKeyInGlobalMap(t *testing.T) {
-	quickLaunchName, ok := GlobalKeyStringsMap["S"]
-	assert.True(t, ok, "'S' must be in GlobalKeyStringsMap")
+	quickLaunchName, ok := GlobalKeyStringsMap["s"]
+	assert.True(t, ok, "'s' must be in GlobalKeyStringsMap")
 	assert.Equal(t, KeyQuickLaunch, quickLaunchName)
 
-	spawnAgentName, ok := GlobalKeyStringsMap["s"]
-	assert.True(t, ok, "'s' must still be in GlobalKeyStringsMap")
+	spawnAgentName, ok := GlobalKeyStringsMap["S"]
+	assert.True(t, ok, "'S' must still be in GlobalKeyStringsMap")
 	assert.Equal(t, KeySpawnAgent, spawnAgentName)
 	assert.NotEqual(t, quickLaunchName, spawnAgentName)
 
 	assert.Equal(t, "quick launch", GlobalkeyBindings[KeyQuickLaunch].Help().Desc)
 }
 
-func TestFocusSidebarRemoved(t *testing.T) {
-	_, ok := GlobalKeyStringsMap["s"]
-	// Should map to KeySpawnAgent, not any legacy sidebar-focus key.
-	assert.True(t, ok)
-	assert.Equal(t, KeySpawnAgent, GlobalKeyStringsMap["s"])
+func TestRemovedSingleKeyBindings(t *testing.T) {
+	assert.NotContains(t, GlobalKeyStringsMap, "c")
+	assert.NotContains(t, GlobalKeyStringsMap, "g")
+	assert.NotContains(t, GlobalKeyStringsMap, "#")
+	assert.NotContains(t, GlobalKeyStringsMap, "T")
+	assert.NotContains(t, GlobalKeyStringsMap, "k")
+	assert.NotContains(t, GlobalKeyStringsMap, "K")
+}
+
+func TestDestructiveBindingsRequireCtrl(t *testing.T) {
+	assert.Equal(t, KeyKill, GlobalKeyStringsMap["ctrl+k"])
+	assert.Equal(t, KeyAbort, GlobalKeyStringsMap["ctrl+shift+k"])
+}
+
+func TestInfoTabKeyInGlobalMap(t *testing.T) {
+	name, ok := GlobalKeyStringsMap["I"]
+	assert.True(t, ok, "'I' must be in GlobalKeyStringsMap")
+	assert.Equal(t, KeyInfoTab, name)
 }
 
 func TestGlobalKeyBindings_UpdatedStatusLineLabels(t *testing.T) {

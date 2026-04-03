@@ -64,7 +64,7 @@ func checkDaemonStatus(repoPath string) daemonStatusMsg {
 	if err != nil {
 		return daemonStatusMsg{
 			message: fmt.Sprintf(
-				"agent workflows require the kasmos daemon.\n\nstart it in another shell:\n  kas daemon start\n\nthen register this repo:\n  kas daemon add %s",
+				"agent workflows require the kasmos daemon.\n\nstart it with:\n  systemctl --user start kasmos\n\nthen register this repo:\n  kas daemon add %s",
 				repoPath,
 			),
 		}
@@ -74,7 +74,7 @@ func checkDaemonStatus(repoPath string) daemonStatusMsg {
 	if resp.StatusCode >= 300 {
 		return daemonStatusMsg{
 			message: fmt.Sprintf(
-				"agent workflows require the kasmos daemon, but the daemon status check failed.\n\nstart it in another shell:\n  kas daemon start\n\nthen register this repo:\n  kas daemon add %s",
+				"agent workflows require the kasmos daemon, but the daemon status check failed.\n\nstart it with:\n  systemctl --user start kasmos\n\nthen register this repo:\n  kas daemon add %s",
 				repoPath,
 			),
 		}
@@ -84,7 +84,7 @@ func checkDaemonStatus(repoPath string) daemonStatusMsg {
 	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
 		return daemonStatusMsg{
 			message: fmt.Sprintf(
-				"agent workflows require the kasmos daemon, but its status response could not be read.\n\nstart it in another shell:\n  kas daemon start\n\nthen register this repo:\n  kas daemon add %s",
+				"agent workflows require the kasmos daemon, but its status response could not be read.\n\nstart it with:\n  systemctl --user start kasmos\n\nthen register this repo:\n  kas daemon add %s",
 				repoPath,
 			),
 		}

@@ -944,7 +944,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 			return m, tea.RequestWindowSize
 		}
 
-		if msg.Code == tea.KeyEnter && msg.Mod.Contains(tea.ModCtrl) {
+		if msg.Code == tea.KeyEnter && msg.Mod.Contains(tea.ModCtrl) && msg.Mod.Contains(tea.ModShift) {
 			if m.previewTerminal == nil {
 				m.exitFocusMode()
 				return m, tea.RequestWindowSize
@@ -1526,6 +1526,11 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 
 	// Forward key events to the viewport when in document or scroll mode.
 	// This enables viewport native keys like PgUp/PgDn and arrow keys.
+	if m.tabbedWindow.IsDocumentMode() && msg.Code == tea.KeyLeft {
+		m.tabbedWindow.ClearDocumentMode()
+		return m, m.instanceChanged()
+	}
+
 	if m.tabbedWindow.IsDocumentMode() || m.tabbedWindow.IsPreviewInScrollMode() {
 		cmd := m.tabbedWindow.ViewportUpdate(msg)
 
@@ -1857,12 +1862,6 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		}
 		if m.nav.NumInstances() == 0 {
 			return m, nil
-		}
-		return m, nil
-	case keys.KeyFocusList:
-		// t key always jumps directly to the instance list — no-op when list is hidden.
-		if m.nav.TotalInstances() > 0 {
-			m.setFocusSlot(slotNav)
 		}
 		return m, nil
 	case keys.KeyViewPlan:

@@ -33,6 +33,7 @@ Key points:
 - **Lowercase labels**: all user-visible text (toasts, confirmations, overlay titles, instance list titles) must be lowercase to match the app's aesthetic. No title case or sentence case — e.g. "push changes from 'foo'?" not "Push changes from 'foo'?"
 - **Arrow-key navigation in overlays**: use ↑↓ for navigation, not j/k vim bindings. Letter keys should always type into search/filter when present.
 - Signals are gateway-backed first. `.kasmos/signals/` still exists for compatibility, but do not document filesystem sentinels as the primary lifecycle path.
+- **Daemon runs via systemd.** The kasmos daemon and DB server run as `systemctl --user` services (`kasmos` and `kasmosdb`). Always use `systemctl --user restart kasmos` (not `kas daemon start`). The CLI commands (`kas daemon start/stop`) exist for development and CI only.
 
 ## MCP-First Tooling
 
