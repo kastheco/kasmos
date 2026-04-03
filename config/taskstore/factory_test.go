@@ -164,10 +164,11 @@ func TestOpenAuthoritativeStore_UnreachableRemoteFails(t *testing.T) {
 	assert.Contains(t, err.Error(), "task store unreachable")
 }
 
-func TestOpenAuthoritativeStore_UsesRepoLocalSQLiteWhenDatabaseURLUnset(t *testing.T) {
+func TestOpenAuthoritativeStore_UsesGlobalSQLiteWhenDatabaseURLUnset(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	repoDir := t.TempDir()
 	initTestRepo(t, repoDir)
-	t.Setenv("HOME", t.TempDir())
 	t.Chdir(repoDir)
 
 	store, err := OpenAuthoritativeStore("test-project")
@@ -177,7 +178,11 @@ func TestOpenAuthoritativeStore_UsesRepoLocalSQLiteWhenDatabaseURLUnset(t *testi
 
 	require.NoError(t, store.Create("test-project", TaskEntry{Filename: "authoritative-local", Status: StatusReady}))
 
-	backingStore, err := NewSQLiteStore(ResolvedDBPath())
+	// Verify data landed in the global DB, not a repo-local one.
+	globalDBPath := filepath.Join(home, ".config", "kasmos", "taskstore.db")
+	assert.Equal(t, globalDBPath, ResolvedDBPath())
+
+	backingStore, err := NewSQLiteStore(globalDBPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = backingStore.Close() })
 
@@ -214,10 +219,11 @@ func TestOpenAuthoritativeSignalGateway_ReachableRemoteFailsWithoutSignalAccess(
 	assert.Contains(t, err.Error(), "does not expose signal gateway access")
 }
 
-func TestOpenAuthoritativeSignalGateway_UsesRepoLocalSQLiteWhenDatabaseURLUnset(t *testing.T) {
+func TestOpenAuthoritativeSignalGateway_UsesGlobalSQLiteWhenDatabaseURLUnset(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	repoDir := t.TempDir()
 	initTestRepo(t, repoDir)
-	t.Setenv("HOME", t.TempDir())
 	t.Chdir(repoDir)
 
 	gw, err := OpenAuthoritativeSignalGateway("test-project")
@@ -227,7 +233,9 @@ func TestOpenAuthoritativeSignalGateway_UsesRepoLocalSQLiteWhenDatabaseURLUnset(
 
 	require.NoError(t, gw.Create("test-project", SignalEntry{PlanFile: "feature", SignalType: "planner_finished", Payload: "{}"}))
 
-	backingGateway, err := NewSQLiteSignalGateway(ResolvedDBPath())
+	// Verify data landed in the global DB, not a repo-local one.
+	globalDBPath := filepath.Join(home, ".config", "kasmos", "taskstore.db")
+	backingGateway, err := NewSQLiteSignalGateway(globalDBPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = backingGateway.Close() })
 
