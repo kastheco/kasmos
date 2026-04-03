@@ -247,7 +247,7 @@ func TestIsUserInOverlay(t *testing.T) {
 		{stateConfirm, true},
 		{statePrompt, true},
 		{stateSpawnAgent, true},
-		{stateFocusAgent, true},
+		{stateFocusAgent, false},
 		{statePermission, true},
 	}
 	for _, tt := range tests {

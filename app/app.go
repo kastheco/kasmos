@@ -614,7 +614,7 @@ func (m *home) activeProject() string {
 // clobbering the active overlay by showing a confirmation dialog.
 func (m *home) isUserInOverlay() bool {
 	switch m.state {
-	case stateDefault:
+	case stateDefault, stateFocusAgent:
 		return false
 	}
 	return true

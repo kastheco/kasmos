@@ -240,6 +240,73 @@ func TestMetadataTickHandler_CoderPromptDetectedTriggersPrompt(t *testing.T) {
 		"expected confirmation overlay for push-prompt on prompt-detected fixer")
 }
 
+func TestMetadataTickHandler_CoderPromptDetectedInterruptsFocusMode(t *testing.T) {
+	const planFile = "test-feature"
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.Register(planFile, "test feature", "plan/test-feature", time.Now()))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+	require.NoError(t, ps.SetExecutionState(planFile, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseFixing),
+		ActiveAgentType: session.AgentTypeFixer,
+	}))
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:     "test-feature-implement",
+		Path:      t.TempDir(),
+		Program:   "opencode",
+		TaskFile:  planFile,
+		AgentType: session.AgentTypeFixer,
+	})
+	require.NoError(t, err)
+	inst.PromptDetected = true
+	inst.AwaitingWork = false
+	inst.MarkStartedForTest()
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	list := ui.NewNavigationPanel(&sp)
+	_ = list.AddInstance(inst)
+
+	h := &home{
+		ctx:          context.Background(),
+		state:        stateFocusAgent,
+		appConfig:    config.DefaultConfig(),
+		nav:          list,
+		menu:         ui.NewMenu(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager: overlay.NewToastManager(&sp),
+		overlays:     overlay.NewManager(),
+		taskState:    ps,
+		taskStateDir: plansDir,
+		fsm:          newPlanFSMForTest(t, plansDir),
+	}
+	h.tabbedWindow.SetFocusMode(true)
+	h.menu.SetFocusMode(true)
+
+	msg := metadataResultMsg{
+		Results: []instanceMetadata{{
+			Title:     inst.Title,
+			TmuxAlive: true,
+		}},
+		PlanState: ps,
+	}
+
+	model, _ := h.Update(msg)
+	updated, ok := model.(*home)
+	require.True(t, ok)
+
+	assert.Equal(t, stateConfirm, updated.state,
+		"expected stateConfirm when a push prompt interrupts focus mode")
+	assert.True(t, updated.overlays.IsActive(),
+		"expected confirmation overlay to be active when focus mode is interrupted")
+	assert.False(t, updated.tabbedWindow.IsFocusMode(),
+		"focus mode should be cleared when the push prompt is shown")
+}
+
 func TestMetadataTick_TaskFinishedSignalMarksWaveTaskComplete(t *testing.T) {
 	const planFile = "task-finished.md"
 
