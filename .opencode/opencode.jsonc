@@ -48,8 +48,8 @@
         },
         "external_directory": {
           "*": "ask",
-          "/home/kas/dev/kasmos/*": "allow",
-          "/home/kas/dev/kasmos/**": "allow",
+          "/home/kas/dev/*": "allow",
+          "/home/kas/dev/**": "allow",
           "/tmp/*": "allow",
           "/tmp/**": "allow",
           "/home/kas/.config/opencode/*": "allow",
