@@ -374,6 +374,14 @@ func (t *TmuxSession) Start(workDir string) error {
 		log.InfoLog.Printf("Warning: failed to set escape-time for session %s: %v", t.sanitizedName, err)
 	}
 
+	// Disable mouse so tmux does not intercept scroll events or enter copy-mode.
+	// Kasmos handles scrolling in its own preview viewport; inner-session mouse
+	// mode (e.g. from OpenCode's bubbletea) would otherwise swallow wheel events.
+	mouseCmd := exec.Command("tmux", "set-option", "-t", t.sanitizedName, "mouse", "off")
+	if err := t.cmdExec.Run(mouseCmd); err != nil {
+		log.InfoLog.Printf("Warning: failed to disable mouse for session %s: %v", t.sanitizedName, err)
+	}
+
 	// Inject KASMOS_MANAGED=1 so agents can detect they're running under kasmos orchestration.
 	envCmd := exec.Command("tmux", "set-environment", "-t", t.sanitizedName, "KASMOS_MANAGED", "1")
 	if err := t.cmdExec.Run(envCmd); err != nil {
@@ -461,6 +469,11 @@ func (t *TmuxSession) Restore() error {
 	escapeTimeCmd := exec.Command("tmux", "set-option", "-t", t.sanitizedName, "escape-time", "0")
 	if err := t.cmdExec.Run(escapeTimeCmd); err != nil {
 		log.InfoLog.Printf("Warning: failed to set escape-time for restored session %s: %v", t.sanitizedName, err)
+	}
+	// Idempotently disable mouse — covers sessions restored from crash.
+	mouseCmd := exec.Command("tmux", "set-option", "-t", t.sanitizedName, "mouse", "off")
+	if err := t.cmdExec.Run(mouseCmd); err != nil {
+		log.InfoLog.Printf("Warning: failed to disable mouse for restored session %s: %v", t.sanitizedName, err)
 	}
 	return nil
 }

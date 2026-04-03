@@ -234,6 +234,42 @@ func TestStart_OpenCode_NoTrustTap(t *testing.T) {
 	}
 }
 
+func TestStart_DisablesMouseOnInnerSession(t *testing.T) {
+	ptyFactory := NewMockPtyFactory(t)
+	created := false
+	var ranCmds []string
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			ranCmds = append(ranCmds, cmd2.ToString(cmd))
+			if strings.Contains(cmd.String(), "has-session") && !created {
+				created = true
+				return fmt.Errorf("no session")
+			}
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			if strings.Contains(cmd.String(), "capture-pane") {
+				return []byte("Ask anything"), nil
+			}
+			return []byte("output"), nil
+		},
+	}
+
+	workdir := t.TempDir()
+	s := NewTmuxSessionWithDeps("test-mouse", "opencode", false, ptyFactory, cmdExec)
+	err := s.Start(workdir)
+	require.NoError(t, err)
+
+	found := false
+	for _, c := range ranCmds {
+		if strings.Contains(c, "set-option") && strings.Contains(c, "mouse") && strings.Contains(c, "off") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "expected 'tmux set-option ... mouse off' to be run during Start(); ran: %v", ranCmds)
+}
+
 func TestStart_InjectsAgentFlag(t *testing.T) {
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
