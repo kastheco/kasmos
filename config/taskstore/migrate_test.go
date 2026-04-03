@@ -542,6 +542,67 @@ func TestMigrateRepoLocalToGlobal_Idempotent(t *testing.T) {
 	assert.Len(t, entries, 1)
 }
 
+func TestMigrateRepoLocalToGlobal_MigratesAllLocalProjectsAndNormalizesLegacyAlias(t *testing.T) {
+	repoKasmosDir := t.TempDir()
+	localDBPath := filepath.Join(repoKasmosDir, "taskstore.db")
+
+	local := createLocalRepoStore(t, repoKasmosDir)
+	require.NoError(t, local.Create("cms", TaskEntry{
+		Filename:    "cms-task",
+		Status:      StatusReady,
+		Description: "cms project task",
+	}))
+	require.NoError(t, local.Create("kas", TaskEntry{
+		Filename:    "legacy-kas-task",
+		Status:      StatusReady,
+		Description: "legacy kas project task",
+	}))
+	require.NoError(t, local.RecordPRReview("kas", "legacy-kas-task", 77, "approved", "looks good", "alice"))
+	require.NoError(t, local.CreateTopic("kas", TopicEntry{Name: "legacy-topic"}))
+	local.Close()
+
+	localGW, err := NewSQLiteSignalGateway(localDBPath)
+	require.NoError(t, err)
+	require.NoError(t, localGW.Create("kas", SignalEntry{
+		PlanFile:   "legacy-kas-task",
+		SignalType: "planner_finished",
+		Payload:    `{"ok":true}`,
+	}))
+	require.NoError(t, localGW.Close())
+
+	globalDir := t.TempDir()
+	globalDBPath := filepath.Join(globalDir, "taskstore.db")
+	globalStore, err := NewSQLiteStore(globalDBPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { globalStore.Close() })
+
+	migrated, err := MigrateRepoLocalToGlobal(globalStore, "cms", repoKasmosDir)
+	require.NoError(t, err)
+	assert.Equal(t, 2, migrated, "migration should import tasks from every project found in the local DB")
+
+	cmsEntries, err := globalStore.List("cms")
+	require.NoError(t, err)
+	assert.Len(t, cmsEntries, 1)
+	assert.Equal(t, "cms-task", cmsEntries[0].Filename)
+
+	legacyEntries, err := globalStore.List("kasmos")
+	require.NoError(t, err)
+	assert.Len(t, legacyEntries, 1)
+	assert.Equal(t, "legacy-kas-task", legacyEntries[0].Filename)
+
+	legacyTopics, err := globalStore.ListTopics("kasmos")
+	require.NoError(t, err)
+	assert.Len(t, legacyTopics, 1)
+	assert.Equal(t, "legacy-topic", legacyTopics[0].Name)
+
+	assert.True(t, globalStore.IsReviewProcessed("kasmos", "legacy-kas-task", 77))
+
+	var sigCount int
+	err = globalStore.db.QueryRow(`SELECT count(*) FROM signals WHERE project = ? AND plan_file = ?`, "kasmos", "legacy-kas-task").Scan(&sigCount)
+	require.NoError(t, err)
+	assert.Equal(t, 1, sigCount)
+}
+
 func TestMigrateRepoLocalToGlobal_PRReviews(t *testing.T) {
 	repoKasmosDir := t.TempDir()
 	localDBPath := filepath.Join(repoKasmosDir, "taskstore.db")

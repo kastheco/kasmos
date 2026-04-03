@@ -242,6 +242,8 @@ func TestTaskUpdateContentHandler_DecodesEscapedMultilineContent(t *testing.T) {
 }
 
 func TestTaskShowHandler_UsesAuthoritativeStoreWhenStoreNilEvenWhenDaemonRegistered(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
 	backend := taskstore.NewTestSQLiteStore(t)
 	project := "test-project"
 	require.NoError(t, backend.Create(project, taskstore.TaskEntry{Filename: "shared-plan", Status: taskstore.StatusReady, CreatedAt: time.Now()}))
@@ -328,6 +330,8 @@ func TestTaskTransitionHandler_ForcePlannerFinishedKeepsReadyCompatibility(t *te
 }
 
 func TestTaskUpdateContentHandler_UsesAuthoritativeStoreWhenStoreNilEvenWhenDaemonRegistered(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
 	backend := taskstore.NewTestSQLiteStore(t)
 	project := "test-project"
 	require.NoError(t, backend.Create(project, taskstore.TaskEntry{Filename: "shared-plan", Status: taskstore.StatusReady, CreatedAt: time.Now()}))
@@ -361,6 +365,8 @@ func TestTaskUpdateContentHandler_UsesAuthoritativeStoreWhenStoreNilEvenWhenDaem
 }
 
 func TestTaskCreateHandler_UsesAuthoritativeStoreWhenDaemonUnavailable(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
 	repoDir := t.TempDir()
 	initTaskToolTestRepo(t, repoDir)
 	t.Chdir(repoDir)

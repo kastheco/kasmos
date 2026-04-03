@@ -379,42 +379,52 @@ func MigrateRepoLocalToGlobal(globalStore Store, project, repoKasmosDir string) 
 		return 0, fmt.Errorf("open repo-local taskstore: %w", err)
 	}
 
-	tasks, err := localStore.List(project)
+	sourceProjects, err := listMigratedProjects(localStore, project)
 	if err != nil {
 		localStore.Close()
-		return 0, fmt.Errorf("list repo-local tasks: %w", err)
+		return 0, fmt.Errorf("list repo-local projects: %w", err)
 	}
 
 	migrated := 0
-	for _, task := range tasks {
-		// INSERT OR IGNORE semantics: skip tasks that already exist.
-		if err := globalStore.Create(project, task); err != nil {
-			if strings.Contains(err.Error(), "plan already exists") {
-				// Already in global store — fall through to subtask migration.
-			} else {
-				localStore.Close()
-				return migrated, fmt.Errorf("migrate task %s: %w", task.Filename, err)
-			}
-		} else {
-			migrated++
+	for _, sourceProject := range sourceProjects {
+		targetProject := normalizeMigratedProjectName(sourceProject)
+
+		tasks, err := localStore.List(sourceProject)
+		if err != nil {
+			localStore.Close()
+			return 0, fmt.Errorf("list repo-local tasks for project %s: %w", sourceProject, err)
 		}
 
-		// Migrate subtasks (SetSubtasks replaces all — idempotent).
-		if subtasks, subErr := localStore.GetSubtasks(project, task.Filename); subErr == nil && len(subtasks) > 0 {
-			if err := globalStore.SetSubtasks(project, task.Filename, subtasks); err != nil {
-				localStore.Close()
-				return migrated, fmt.Errorf("migrate subtasks for task %s: %w", task.Filename, err)
-			}
-		}
-	}
-
-	// Migrate topics.
-	if topics, err := localStore.ListTopics(project); err == nil {
-		for _, topic := range topics {
-			if err := globalStore.CreateTopic(project, topic); err != nil {
-				if !strings.Contains(err.Error(), "topic already exists") {
+		for _, task := range tasks {
+			// INSERT OR IGNORE semantics: skip tasks that already exist.
+			if err := globalStore.Create(targetProject, task); err != nil {
+				if strings.Contains(err.Error(), "plan already exists") {
+					// Already in global store — fall through to subtask migration.
+				} else {
 					localStore.Close()
-					return migrated, fmt.Errorf("migrate topic %s: %w", topic.Name, err)
+					return migrated, fmt.Errorf("migrate task %s (%s→%s): %w", task.Filename, sourceProject, targetProject, err)
+				}
+			} else {
+				migrated++
+			}
+
+			// Migrate subtasks (SetSubtasks replaces all — idempotent).
+			if subtasks, subErr := localStore.GetSubtasks(sourceProject, task.Filename); subErr == nil && len(subtasks) > 0 {
+				if err := globalStore.SetSubtasks(targetProject, task.Filename, subtasks); err != nil {
+					localStore.Close()
+					return migrated, fmt.Errorf("migrate subtasks for task %s (%s→%s): %w", task.Filename, sourceProject, targetProject, err)
+				}
+			}
+		}
+
+		// Migrate topics.
+		if topics, err := localStore.ListTopics(sourceProject); err == nil {
+			for _, topic := range topics {
+				if err := globalStore.CreateTopic(targetProject, topic); err != nil {
+					if !strings.Contains(err.Error(), "topic already exists") {
+						localStore.Close()
+						return migrated, fmt.Errorf("migrate topic %s (%s→%s): %w", topic.Name, sourceProject, targetProject, err)
+					}
 				}
 			}
 		}
@@ -425,21 +435,85 @@ func MigrateRepoLocalToGlobal(globalStore Store, project, repoKasmosDir string) 
 
 	// Bulk-copy PR reviews and signals via ATTACH when global store is SQLite.
 	if globalSQLite, ok := globalStore.(*SQLiteStore); ok {
-		if err := migrateRepoLocalPRReviews(globalSQLite.db, localDBPath, project); err != nil {
-			return migrated, err
-		}
-		if err := migrateRepoLocalSignals(globalSQLite.db, localDBPath, project); err != nil {
-			return migrated, err
+		for _, sourceProject := range sourceProjects {
+			targetProject := normalizeMigratedProjectName(sourceProject)
+			if err := migrateRepoLocalPRReviews(globalSQLite.db, localDBPath, sourceProject, targetProject); err != nil {
+				return migrated, err
+			}
+			if err := migrateRepoLocalSignals(globalSQLite.db, localDBPath, sourceProject, targetProject); err != nil {
+				return migrated, err
+			}
 		}
 	}
 
 	return migrated, nil
 }
 
+func listMigratedProjects(localStore *SQLiteStore, fallbackProject string) ([]string, error) {
+	seen := make(map[string]struct{})
+	projects := make([]string, 0)
+
+	collect := func(table string) error {
+		var exists int
+		if err := localStore.db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name = ?`, table).Scan(&exists); err != nil {
+			return err
+		}
+		if exists == 0 {
+			return nil
+		}
+		rows, err := localStore.db.Query(fmt.Sprintf(`SELECT DISTINCT project FROM %s WHERE trim(project) <> '' ORDER BY project`, table))
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var project string
+			if err := rows.Scan(&project); err != nil {
+				return err
+			}
+			project = strings.TrimSpace(project)
+			if project == "" {
+				continue
+			}
+			if _, ok := seen[project]; ok {
+				continue
+			}
+			seen[project] = struct{}{}
+			projects = append(projects, project)
+		}
+		return rows.Err()
+	}
+
+	for _, table := range []string{"tasks", "topics", "pr_reviews", "signals"} {
+		if err := collect(table); err != nil {
+			return nil, err
+		}
+	}
+
+	if len(projects) == 0 {
+		fallbackProject = strings.TrimSpace(fallbackProject)
+		if fallbackProject != "" {
+			projects = append(projects, fallbackProject)
+		}
+	}
+	sort.Strings(projects)
+	return projects, nil
+}
+
+func normalizeMigratedProjectName(project string) string {
+	project = strings.TrimSpace(project)
+	switch project {
+	case "kas":
+		return "kasmos"
+	default:
+		return project
+	}
+}
+
 // migrateRepoLocalPRReviews copies PR review records from a repo-local DB into
 // the global DB via ATTACH. Duplicate reviews (same project + plan_filename +
 // review_id) are silently skipped via INSERT OR IGNORE.
-func migrateRepoLocalPRReviews(globalDB *sql.DB, localDBPath, project string) error {
+func migrateRepoLocalPRReviews(globalDB *sql.DB, localDBPath, sourceProject, targetProject string) error {
 	ctx := context.Background()
 	const alias = "local_pr"
 
@@ -470,11 +544,11 @@ func migrateRepoLocalPRReviews(globalDB *sql.DB, localDBPath, project string) er
 		INSERT OR IGNORE INTO pr_reviews
 			(project, plan_filename, review_id, review_state, review_body,
 			 reviewer_login, reaction_posted, fixer_dispatched, created_at)
-		SELECT project, plan_filename, review_id, review_state, review_body,
+		SELECT ?, plan_filename, review_id, review_state, review_body,
 		       reviewer_login, reaction_posted, fixer_dispatched, created_at
 		FROM %s.pr_reviews
 		WHERE project = ?
-	`, alias), project); err != nil {
+	`, alias), targetProject, sourceProject); err != nil {
 		return fmt.Errorf("copy pr_reviews: %w", err)
 	}
 	return nil
@@ -485,7 +559,7 @@ func migrateRepoLocalPRReviews(globalDB *sql.DB, localDBPath, project string) er
 // created_at) since the signals table has no natural unique constraint.
 // BEGIN IMMEDIATE is used to serialise concurrent migrations so the NOT EXISTS
 // check and INSERT are atomic with respect to other writers.
-func migrateRepoLocalSignals(globalDB *sql.DB, localDBPath, project string) error {
+func migrateRepoLocalSignals(globalDB *sql.DB, localDBPath, sourceProject, targetProject string) error {
 	ctx := context.Background()
 	const alias = "local_sig"
 
@@ -532,18 +606,18 @@ func migrateRepoLocalSignals(globalDB *sql.DB, localDBPath, project string) erro
 		INSERT INTO signals
 			(project, plan_file, signal_type, payload, status,
 			 created_at, claimed_by, claimed_at, processed_at, result)
-		SELECT s.project, s.plan_file, s.signal_type, s.payload, s.status,
+		SELECT ?, s.plan_file, s.signal_type, s.payload, s.status,
 		       s.created_at, s.claimed_by, s.claimed_at, s.processed_at, s.result
 		FROM %s.signals s
 		WHERE s.project = ?
 		AND NOT EXISTS (
 			SELECT 1 FROM signals g
-			WHERE g.project = s.project
+			WHERE g.project = ?
 			  AND g.plan_file = s.plan_file
 			  AND g.signal_type = s.signal_type
 			  AND g.created_at = s.created_at
 		)
-	`, alias), project); err != nil {
+	`, alias), targetProject, sourceProject, targetProject); err != nil {
 		return fmt.Errorf("copy signals: %w", err)
 	}
 
