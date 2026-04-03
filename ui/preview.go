@@ -73,6 +73,15 @@ func (p *PreviewPane) TickSpring() {
 // SetRawContent sets preview content from a pre-rendered string (VT emulator path).
 // Clears scroll, document, and fallback flags and marks the pane as raw-terminal.
 func (p *PreviewPane) SetRawContent(content string) {
+	// Keep live terminal frames buffered while the user is inspecting scrollback.
+	// Active sessions can repaint frequently; clearing scroll mode here would snap
+	// the viewport back to the bottom on the next render tick.
+	if p.isScrolling {
+		p.previewState = previewState{text: content}
+		p.isRawTerminal = true
+		return
+	}
+
 	p.previewState = previewState{text: content}
 	p.isScrolling = false
 	p.isDocument = false

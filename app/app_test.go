@@ -2023,6 +2023,29 @@ func TestHandleKeyPress_CtrlSpaceTogglesIntoFocusMode(t *testing.T) {
 	assert.NotNil(t, cmd)
 }
 
+func TestHandleKeyPress_FocusModeKeepsStateWhilePreviewReattaches(t *testing.T) {
+	h := newTestHome()
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:   "test-focus-reattach",
+		Path:    os.TempDir(),
+		Program: "opencode",
+	})
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+	h.state = stateFocusAgent
+	h.previewTerminal = nil
+	h.previewRequested = false
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	updated := model.(*home)
+
+	require.NotNil(t, cmd)
+	require.Equal(t, stateFocusAgent, updated.state)
+	require.True(t, updated.previewRequested)
+}
+
 func TestRestartInstance_AppearsInContextMenu(t *testing.T) {
 	h := newTestHome()
 	inst, _ := session.NewInstance(session.InstanceOptions{

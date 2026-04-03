@@ -372,6 +372,25 @@ func TestPreviewPaneViewportUpdate_NoOpOutsideScrollableModes(t *testing.T) {
 	require.False(t, previewPane.isScrolling)
 }
 
+func TestPreviewPaneSetRawContent_PreservesScrollMode(t *testing.T) {
+	previewPane := NewPreviewPane()
+	previewPane.SetSize(30, 5)
+	previewPane.viewport.SetContent(testDocumentLines(40) + "\nESC to exit scroll mode")
+	previewPane.viewport.GotoBottom()
+	previewPane.viewport.ScrollUp(3)
+	previewPane.isScrolling = true
+
+	before := previewPane.viewport.View()
+
+	previewPane.SetRawContent("live terminal update")
+
+	after := previewPane.viewport.View()
+	require.True(t, previewPane.isScrolling)
+	require.True(t, previewPane.isRawTerminal)
+	require.Equal(t, "live terminal update", previewPane.previewState.text)
+	require.Equal(t, before, after)
+}
+
 func TestPreviewPaneString_RendersScrollbarOnlyWhenScrollable(t *testing.T) {
 	t.Run("shows scrollbar for long document", func(t *testing.T) {
 		previewPane := NewPreviewPane()

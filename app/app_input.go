@@ -916,6 +916,11 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 
 		// Preview tab focus: forward to embedded terminal
 		if m.previewTerminal == nil {
+			selected := m.nav.GetSelectedInstance()
+			if selected != nil && selected.Started() && selected.Status != session.Paused && selected.Status != session.Loading && !selected.Exited {
+				m.previewRequested = true
+				return m, tea.Batch(tea.RequestWindowSize, m.syncPreviewTerminal())
+			}
 			m.exitFocusMode()
 			return m, nil
 		}
