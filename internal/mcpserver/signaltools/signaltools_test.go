@@ -371,14 +371,12 @@ func TestSignalCreateHandler_PayloadContracts(t *testing.T) {
 	}
 }
 
-func TestSignalCreateHandler_UsesDaemonBackedGatewayWhenGatewayNil(t *testing.T) {
+func TestSignalCreateHandler_UsesGlobalSQLiteWhenGatewayNil(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	project := "test-project"
-	dbPath := filepath.Join(t.TempDir(), "signals.db")
-	gw, err := taskstore.NewSQLiteSignalGateway(dbPath)
+	gw, err := taskstore.OpenAuthoritativeSignalGateway(project)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = gw.Close() })
-
-	startSignalToolDaemonSocketServer(t, newSignalToolDaemonMux(t, []string{project}, taskstore.NewSignalHandler(gw)))
 
 	handler := makeSignalCreateHandler(project, nil)
 	result, err := handler(context.Background(), mockReq(map[string]any{

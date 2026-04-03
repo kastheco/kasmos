@@ -914,6 +914,7 @@ func TestExecuteTaskCreate_UsesAuthoritativeHTTPStoreWhenStoreNil(t *testing.T) 
 }
 
 func TestExecuteTaskCreate_FailsFastWhenAuthoritativeStoreUnreachable(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	repoDir := t.TempDir()
 	writeTaskCommandConfig(t, repoDir, "database_url = \"http://127.0.0.1:1\"\n")
 	t.Chdir(repoDir)
