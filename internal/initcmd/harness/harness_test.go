@@ -43,8 +43,8 @@ func TestClaudeAdapter(t *testing.T) {
 	t.Run("ListModels returns static list", func(t *testing.T) {
 		models, err := c.ListModels()
 		require.NoError(t, err)
-		assert.Contains(t, models, "sonnet-4-6")
-		assert.Contains(t, models, "opus-4-6")
+		assert.Contains(t, models, "claude-sonnet-4-6")
+		assert.Contains(t, models, "claude-opus-4-6")
 		assert.Len(t, models, 4)
 	})
 
