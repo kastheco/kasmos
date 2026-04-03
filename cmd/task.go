@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -339,16 +340,18 @@ func executeTaskShow(project, planFile string, store taskstore.Store) (string, e
 	return content, nil
 }
 
-func executeTaskDelete(project, planFile string, store taskstore.Store) error {
-	ps, err := loadTaskStateByProject(project, store)
-	if err != nil {
-		return err
+var errRefusingDeleteWithoutYes = errors.New("refusing to delete without --yes")
+
+func promptForDelete(r io.Reader, out io.Writer, filename, status string) (bool, error) {
+	scanner := bufio.NewScanner(r)
+	fmt.Fprintf(out, "delete %s (%s)? [y/N]: ", filename, status)
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return false, fmt.Errorf("read confirmation: %w", err)
+		}
+		return false, nil
 	}
-	resolvedFilename := resolveExistingTaskFilename(ps, planFile)
-	if _, ok := ps.Entry(resolvedFilename); !ok {
-		return fmt.Errorf("task not found: %s", planFile)
-	}
-	return store.Delete(project, resolvedFilename)
+	return strings.TrimSpace(strings.ToLower(scanner.Text())) == "y", nil
 }
 
 func executeTaskUpdateContent(project, filename string, reader io.Reader, store taskstore.Store) error {
@@ -931,13 +934,23 @@ Supported actions:
 					return fmt.Errorf("task not found: %s", args[0])
 				}
 				if !deleteYes {
-					fmt.Printf("delete %s (%s)? pass --yes to confirm\n", resolvedFilename, entry.Status)
-					return nil
+					stdin := cmd.InOrStdin()
+					if !stdinIsTerminal(stdin) {
+						return errRefusingDeleteWithoutYes
+					}
+					ok, err := promptForDelete(stdin, cmd.OutOrStdout(), resolvedFilename, string(entry.Status))
+					if err != nil {
+						return err
+					}
+					if !ok {
+						fmt.Fprintln(cmd.OutOrStdout(), "cancelled")
+						return nil
+					}
 				}
-				if err := executeTaskDelete(project, args[0], store); err != nil {
+				if err := store.Delete(project, resolvedFilename); err != nil {
 					return err
 				}
-				fmt.Printf("deleted %s\n", resolvedFilename)
+				fmt.Fprintf(cmd.OutOrStdout(), "deleted %s\n", resolvedFilename)
 				return nil
 			})
 		},
