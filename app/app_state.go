@@ -1620,6 +1620,7 @@ func (m *home) loadTaskState() {
 		return
 	}
 	m.taskState = ps
+	m.taskStateLoadedAt = time.Now().UTC()
 	m.cachedPlanFile = ""
 	m.cachedPlanRendered = ""
 }

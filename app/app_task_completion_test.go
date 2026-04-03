@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -653,6 +654,62 @@ func TestMetadataResultMsg_SignalDoesNotClobberFreshPlanState(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, taskstate.StatusReady, entry.Status,
 		"planState must show 'ready' after PlannerFinished signal — stale msg.PlanState must not overwrite it")
+}
+
+func TestMetadataResultMsg_StaleSnapshotDoesNotClobberPlanning(t *testing.T) {
+	const planFile = "feature"
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	store, ps, fsm := newSharedStoreForTest(t, plansDir)
+	require.NoError(t, ps.Register(planFile, "feature", "plan/feature", time.Now()))
+	require.NoError(t, ps.ForceSetLifecycle(planFile, taskstate.StatusReady, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhasePlanned)}))
+
+	stalePlanState, err := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:                   context.Background(),
+		state:                 stateDefault,
+		appConfig:             config.DefaultConfig(),
+		nav:                   ui.NewNavigationPanel(&sp),
+		menu:                  ui.NewMenu(),
+		tabbedWindow:          ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:          overlay.NewToastManager(&sp),
+		overlays:              overlay.NewManager(),
+		taskState:             ps,
+		taskStore:             store,
+		taskStoreProject:      "test",
+		taskStateDir:          plansDir,
+		fsm:                   fsm,
+		waveOrchestrators:     make(map[string]*orchestration.WaveOrchestrator),
+		pendingReviewFeedback: make(map[string]string),
+		plannerPrompted:       make(map[string]bool),
+		coderPushPrompted:     make(map[string]bool),
+	}
+
+	require.NoError(t, h.fsm.Transition(planFile, taskfsm.PlanStart))
+	h.loadTaskState()
+
+	current, ok := h.taskState.Entry(planFile)
+	require.True(t, ok)
+	require.Equal(t, taskstate.StatusPlanning, current.Status)
+	require.NotZero(t, h.taskStateLoadedAt)
+
+	_, _ = h.Update(metadataResultMsg{
+		PlanState:         stalePlanState,
+		PlanStateLoadedAt: h.taskStateLoadedAt.Add(-time.Second),
+	})
+
+	entry, ok := h.taskState.Entry(planFile)
+	require.True(t, ok)
+	assert.Equal(t, taskstate.StatusPlanning, entry.Status,
+		"an older metadata snapshot must not revert a locally-started planner back to ready/planned")
+	assert.Equal(t, "", strings.TrimSpace(entry.ExecutionState.Phase),
+		"stale ready/planned execution state must not overwrite the current planning lifecycle")
 }
 
 // TestImplementFinishedSignal_SpawnsReviewer verifies that when an

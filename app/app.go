@@ -294,6 +294,8 @@ type home struct {
 
 	// taskState holds the parsed task state from the store for the active repo.
 	taskState *taskstate.TaskState
+	// taskStateLoadedAt records when taskState was last refreshed from the store.
+	taskStateLoadedAt time.Time
 	// taskStateDir is the legacy plans directory path. Retained only for JSON migration.
 	// New code should not depend on this path existing on disk.
 	taskStateDir string
@@ -976,8 +978,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// store is the repo-local SQLite DB for local repos or the configured
 			// remote store when database_url is set.
 			var ps *taskstate.TaskState
+			var planStateLoadedAt time.Time
 			var daemonTaskStateLoaded bool
 			if store != nil && taskStateDir != "" && project != "" {
+				planStateLoadedAt = time.Now().UTC()
 				loaded, err := taskstate.Load(store, project, taskStateDir)
 				if err != nil {
 					log.WarningLog.Printf("could not load plan state: %v", err)
@@ -1107,7 +1111,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			time.Sleep(200 * time.Millisecond)
-			return metadataResultMsg{Results: results, PlanState: ps, DaemonTaskState: daemonTaskStateLoaded, Signals: signals, TaskSignals: taskSignals, WaveSignals: waveSignals, ElaborationSignals: elaborationSignals, DaemonManagedRepo: daemonManagedRepo, DaemonInstances: daemonInstances, DaemonTitles: daemonTitles, TmuxSessionCount: tmuxCount, PRStateUpdates: prStateUpdates}
+			return metadataResultMsg{Results: results, PlanState: ps, PlanStateLoadedAt: planStateLoadedAt, DaemonTaskState: daemonTaskStateLoaded, Signals: signals, TaskSignals: taskSignals, WaveSignals: waveSignals, ElaborationSignals: elaborationSignals, DaemonManagedRepo: daemonManagedRepo, DaemonInstances: daemonInstances, DaemonTitles: daemonTitles, TmuxSessionCount: tmuxCount, PRStateUpdates: prStateUpdates}
 		}
 	case metadataResultMsg:
 		// Process agent sentinel signals — feed to FSM and consume sentinel files.
@@ -1712,7 +1716,12 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// fresh state, and msg.PlanState was loaded before signal scanning.
 		processedSignals := len(msg.Signals) > 0 || len(msg.TaskSignals) > 0 || len(msg.WaveSignals) > 0 || len(msg.ElaborationSignals) > 0
 		if msg.PlanState != nil && (msg.DaemonTaskState || !processedSignals) {
-			m.taskState = msg.PlanState
+			if msg.PlanStateLoadedAt.IsZero() || !msg.PlanStateLoadedAt.Before(m.taskStateLoadedAt) {
+				m.taskState = msg.PlanState
+				if !msg.PlanStateLoadedAt.IsZero() {
+					m.taskStateLoadedAt = msg.PlanStateLoadedAt
+				}
+			}
 		}
 		if m.taskState != nil {
 			// Rebuild orphaned wave orchestrators on every metadata tick so local and
@@ -2836,6 +2845,7 @@ type instanceMetadata struct {
 type metadataResultMsg struct {
 	Results            []instanceMetadata
 	PlanState          *taskstate.TaskState        // pre-loaded plan state (nil if dir not set)
+	PlanStateLoadedAt  time.Time                   // when PlanState was loaded in the background tick goroutine
 	DaemonTaskState    bool                        // true when PlanState came from the daemon task-list API
 	Signals            []taskfsm.Signal            // agent sentinel files found this tick
 	TaskSignals        []taskfsm.TaskSignal        // task completion sentinel files found this tick
