@@ -827,6 +827,283 @@ func (m *home) exitFocusMode() {
 	m.menu.SetFocusMode(false)
 }
 
+func (m *home) showAllCompletePrompt(planFile string) {
+	planName := taskstate.DisplayName(planFile)
+	delete(m.allCompleteDismissed, planFile)
+	m.resolveDeferredToast(m.deferredWaveToastIDs, planFile, overlay.ToastInfo,
+		fmt.Sprintf("wave decision ready for '%s'", planName))
+	m.resolveDeferredToast(m.deferredPlannerToastIDs, planFile, overlay.ToastInfo,
+		fmt.Sprintf("implementation prompt ready for '%s'", planName))
+	m.resolveDeferredToast(m.deferredCoderPushToastIDs, planFile, overlay.ToastInfo,
+		fmt.Sprintf("review prompt ready for '%s'", planName))
+	m.pendingAllCompleteTaskFile = planFile
+	m.confirmAction(
+		fmt.Sprintf("all waves complete for '%s'. push branch and start review?", planName),
+		func() tea.Msg {
+			return waveAllCompleteMsg{planFile: planFile}
+		},
+	)
+}
+
+func (m *home) ensureAllCompleteToast(planFile string) {
+	if m.state != stateFocusAgent || m.toastManager == nil {
+		return
+	}
+	if m.allCompleteToastIDs == nil {
+		m.allCompleteToastIDs = make(map[string]string)
+	}
+	if m.allCompleteToastIDs[planFile] != "" {
+		return
+	}
+	planName := taskstate.DisplayName(planFile)
+	m.allCompleteToastIDs[planFile] = m.toastManager.Loading(
+		fmt.Sprintf("all waves complete for '%s'. leave focus mode to review", planName),
+	)
+}
+
+func (m *home) resolveAllCompleteToast(planFile string, typ overlay.ToastType, msg string) {
+	if m.toastManager == nil || m.allCompleteToastIDs == nil {
+		return
+	}
+	id := m.allCompleteToastIDs[planFile]
+	if id == "" {
+		return
+	}
+	m.toastManager.Resolve(id, typ, msg)
+	delete(m.allCompleteToastIDs, planFile)
+}
+
+func (m *home) queueAllCompletePrompt(planFile string) {
+	if m.allCompleteAdvancing != nil && m.allCompleteAdvancing[planFile] {
+		return
+	}
+	if m.pendingAllCompleteTaskFile != planFile {
+		alreadyQueued := false
+		for _, pf := range m.pendingAllComplete {
+			if pf == planFile {
+				alreadyQueued = true
+				break
+			}
+		}
+		if !alreadyQueued {
+			m.pendingAllComplete = append(m.pendingAllComplete, planFile)
+		}
+	}
+	m.ensureAllCompleteToast(planFile)
+}
+
+func appendUniqueString(values []string, value string) []string {
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
+}
+
+func (m *home) queueDeferredToast(toasts map[string]string, key, msg string) {
+	if m.state != stateFocusAgent || m.toastManager == nil || toasts == nil || key == "" {
+		return
+	}
+	if toasts[key] != "" {
+		return
+	}
+	toasts[key] = m.toastManager.Loading(msg)
+}
+
+func (m *home) resolveDeferredToast(toasts map[string]string, key string, typ overlay.ToastType, msg string) {
+	if m.toastManager == nil || toasts == nil || key == "" {
+		return
+	}
+	id := toasts[key]
+	if id == "" {
+		return
+	}
+	m.toastManager.Resolve(id, typ, msg)
+	delete(toasts, key)
+}
+
+func (m *home) queuePlannerDialog(planFile string) {
+	m.deferredPlannerDialogs = appendUniqueString(m.deferredPlannerDialogs, planFile)
+	m.queueDeferredToast(m.deferredPlannerToastIDs, planFile,
+		fmt.Sprintf("task '%s' is ready. leave focus mode to start implementation", taskstate.DisplayName(planFile)))
+}
+
+func (m *home) showPlannerDialog(planFile string) tea.Cmd {
+	m.resolveDeferredToast(m.deferredPlannerToastIDs, planFile, overlay.ToastInfo,
+		fmt.Sprintf("implementation prompt ready for '%s'", taskstate.DisplayName(planFile)))
+	for _, inst := range m.nav.GetInstances() {
+		if inst.TaskFile == planFile && inst.AgentType == session.AgentTypePlanner {
+			m.pendingPlannerInstanceTitle = inst.Title
+			if cmd := m.focusInstanceForOverlay(inst); cmd != nil {
+				m.pendingPlannerTaskFile = planFile
+				m.confirmAction(
+					fmt.Sprintf("task '%s' is ready. start implementation?", taskstate.DisplayName(planFile)),
+					func() tea.Msg { return plannerCompleteMsg{planFile: planFile} },
+				)
+				return cmd
+			}
+			break
+		}
+	}
+	m.pendingPlannerTaskFile = planFile
+	m.confirmAction(
+		fmt.Sprintf("task '%s' is ready. start implementation?", taskstate.DisplayName(planFile)),
+		func() tea.Msg { return plannerCompleteMsg{planFile: planFile} },
+	)
+	return nil
+}
+
+func (m *home) queueCoderPushDialog(planFile string) {
+	m.deferredCoderPushDialogs = appendUniqueString(m.deferredCoderPushDialogs, planFile)
+	m.queueDeferredToast(m.deferredCoderPushToastIDs, planFile,
+		fmt.Sprintf("implementation finished for '%s'. leave focus mode to start review", taskstate.DisplayName(planFile)))
+}
+
+func (m *home) findLifecycleImplementer(planFile string) *session.Instance {
+	var fallback *session.Instance
+	for _, inst := range m.nav.GetInstances() {
+		if inst.TaskFile != planFile {
+			continue
+		}
+		if inst.AgentType != session.AgentTypeCoder && inst.AgentType != session.AgentTypeFixer {
+			continue
+		}
+		if fallback == nil {
+			fallback = inst
+		}
+		if !inst.Paused() && !inst.Exited {
+			return inst
+		}
+	}
+	return fallback
+}
+
+func (m *home) showCoderPushDialog(planFile string) tea.Cmd {
+	m.resolveDeferredToast(m.deferredCoderPushToastIDs, planFile, overlay.ToastInfo,
+		fmt.Sprintf("review prompt ready for '%s'", taskstate.DisplayName(planFile)))
+	inst := m.findLifecycleImplementer(planFile)
+	if inst == nil {
+		return nil
+	}
+	if cmd := m.focusInstanceForOverlay(inst); cmd != nil {
+		_ = m.promptPushBranchThenAdvance(inst)
+		return cmd
+	}
+	return m.promptPushBranchThenAdvance(inst)
+}
+
+func (m *home) queueWaveDialog(planFile string) {
+	m.deferredWaveDialogs = appendUniqueString(m.deferredWaveDialogs, planFile)
+	m.queueDeferredToast(m.deferredWaveToastIDs, planFile,
+		fmt.Sprintf("wave complete for '%s'. leave focus mode to continue", taskstate.DisplayName(planFile)))
+}
+
+func (m *home) showWaveDialog(planFile string, orch *orchestration.WaveOrchestrator) []tea.Cmd {
+	if orch == nil || orch.State() != orchestration.WaveStateWaveComplete {
+		return nil
+	}
+	m.resolveDeferredToast(m.deferredWaveToastIDs, planFile, overlay.ToastInfo,
+		fmt.Sprintf("wave decision ready for '%s'", taskstate.DisplayName(planFile)))
+	waveNum := orch.CurrentWaveNumber()
+	completed := orch.CompletedTaskCount()
+	failed := orch.FailedTaskCount()
+	total := completed + failed
+	entry, _ := m.taskState.Entry(planFile)
+	planName := taskstate.DisplayName(planFile)
+	cmds := make([]tea.Cmd, 0, 2)
+	if failed == 0 && orch.ShouldPostWaveCompleteComment() {
+		detail := fmt.Sprintf("%d/%d: %d/%d tasks", waveNum, orch.TotalWaves(), completed, total)
+		if cmd := m.postClickUpProgress(planFile, "wave_complete", detail); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	if cmd := m.focusPlanInstanceForOverlay(planFile); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	if failed == 0 && m.appConfig != nil && m.appConfig.AutoAdvanceWaves {
+		m.toastManager.Info(fmt.Sprintf("%s — wave %d complete, auto-advancing...", planName, waveNum))
+		capturedEntry := entry
+		capturedPlanFile := planFile
+		cmds = append(cmds, func() tea.Msg {
+			return waveAdvanceMsg{planFile: capturedPlanFile, entry: capturedEntry}
+		})
+		return cmds
+	}
+	capturedEntry := entry
+	capturedPlanFile := planFile
+	message := fmt.Sprintf("Wave %d complete (%d/%d tasks succeeded). Start Wave %d?", waveNum, completed, total, waveNum+1)
+	if failed > 0 {
+		message = fmt.Sprintf("Wave %d complete with failures (%d succeeded, %d failed). [n]ext wave, [r]etry failed, or [a]bort?", waveNum, completed, failed)
+		m.pendingWaveAbortAction = func() tea.Msg {
+			return waveAbortMsg{planFile: capturedPlanFile}
+		}
+		m.pendingWaveNextAction = func() tea.Msg {
+			return waveAdvanceMsg{planFile: capturedPlanFile, entry: capturedEntry}
+		}
+	} else {
+		m.pendingWaveAbortAction = nil
+		m.pendingWaveNextAction = nil
+	}
+	m.pendingWaveConfirmTaskFile = capturedPlanFile
+	m.confirmAction(message, func() tea.Msg {
+		return waveAdvanceMsg{planFile: capturedPlanFile, entry: capturedEntry}
+	})
+	return cmds
+}
+
+func (m *home) queuePermissionPrompt(inst *session.Instance, pattern, desc string) {
+	if inst == nil {
+		return
+	}
+	for _, existing := range m.deferredPermissionPrompts {
+		if existing.instance == inst && existing.pattern == pattern && existing.desc == desc {
+			return
+		}
+	}
+	m.deferredPermissionPrompts = append(m.deferredPermissionPrompts, deferredPermissionPrompt{instance: inst, pattern: pattern, desc: desc})
+	m.queueDeferredToast(m.deferredPermissionToastIDs, inst.Title,
+		fmt.Sprintf("permission prompt waiting for %s. leave focus mode to respond", inst.Title))
+}
+
+func (m *home) clearDeferredPermissionPrompt(inst *session.Instance) {
+	if inst == nil {
+		return
+	}
+	filtered := m.deferredPermissionPrompts[:0]
+	for _, deferred := range m.deferredPermissionPrompts {
+		if deferred.instance != inst {
+			filtered = append(filtered, deferred)
+		}
+	}
+	m.deferredPermissionPrompts = filtered
+	m.resolveDeferredToast(m.deferredPermissionToastIDs, inst.Title, overlay.ToastInfo,
+		fmt.Sprintf("permission prompt cleared for %s", inst.Title))
+}
+
+func (m *home) showPermissionPrompt(deferred deferredPermissionPrompt) tea.Cmd {
+	inst := deferred.instance
+	if inst == nil {
+		return nil
+	}
+	m.resolveDeferredToast(m.deferredPermissionToastIDs, inst.Title, overlay.ToastInfo,
+		fmt.Sprintf("permission prompt ready for %s", inst.Title))
+	if cmd := m.focusInstanceForOverlay(inst); cmd != nil {
+		m.pendingPermissionPattern = deferred.pattern
+		m.pendingPermissionDesc = deferred.desc
+		m.overlays.Show(overlay.NewPermissionOverlay(inst.Title, deferred.desc, deferred.pattern))
+		m.pendingPermissionInstance = inst
+		m.state = statePermission
+		return cmd
+	}
+	m.pendingPermissionPattern = deferred.pattern
+	m.pendingPermissionDesc = deferred.desc
+	m.overlays.Show(overlay.NewPermissionOverlay(inst.Title, deferred.desc, deferred.pattern))
+	m.pendingPermissionInstance = inst
+	m.state = statePermission
+	return nil
+}
+
 // switchToTab toggles the compact info header without stealing focus from the sidebar.
 // The sidebar (slotNav) always retains keyboard focus.
 func (m *home) switchToTab(name keys.KeyName) (tea.Model, tea.Cmd) {
@@ -2842,6 +3119,11 @@ func (m *home) rebuildOrphanedOrchestrators() {
 		if m.allCompleteDismissed[planFile] {
 			continue
 		}
+		// Skip if the user already accepted the final review prompt and the push /
+		// review transition is still in flight.
+		if m.allCompleteAdvancing[planFile] {
+			continue
+		}
 		// Only reconstruct plans that are explicitly on a wave-execution branch.
 		if entry.Status != taskstate.StatusImplementing || !taskfsm.IsWaveExecutionPhase(taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase)) {
 			continue
@@ -2947,17 +3229,8 @@ func (m *home) rebuildOrphanedOrchestrators() {
 		// (pendingAllCompleteTaskFile) and the plan isn't already queued.
 		if orch.State() == orchestration.WaveStateAllComplete {
 			if m.pendingAllCompleteTaskFile != planFile {
-				alreadyQueued := false
-				for _, pf := range m.pendingAllComplete {
-					if pf == planFile {
-						alreadyQueued = true
-						break
-					}
-				}
-				if !alreadyQueued {
-					m.pendingAllComplete = append(m.pendingAllComplete, planFile)
-					log.WarningLog.Printf("rebuildOrphanedOrchestrators: %s already all-complete — queued prompt", planFile)
-				}
+				m.queueAllCompletePrompt(planFile)
+				log.WarningLog.Printf("rebuildOrphanedOrchestrators: %s already all-complete — queued prompt", planFile)
 			}
 			continue
 		}

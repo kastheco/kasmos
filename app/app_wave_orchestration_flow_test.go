@@ -828,6 +828,176 @@ func TestWaveAllCompleteMsg_PushIsAsync(t *testing.T) {
 
 }
 
+// TestWaveAllCompleteMsg_DoesNotRepromptWhilePushInFlight verifies that once the
+// user confirms the final all-waves-complete dialog, a metadata tick arriving
+// before the async push finishes does not re-show the same confirmation.
+func TestWaveAllCompleteMsg_DoesNotRepromptWhilePushInFlight(t *testing.T) {
+	const planFile = "review-in-flight"
+
+	planContent := "**Goal:** verify dedupe\n\n## Wave 1\n\n### Task 1: only\n\nDo it.\n"
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{{
+			Number: 1,
+			Tasks:  []taskparser.Task{{Number: 1, Title: "only", Body: "Do it."}},
+		}},
+	}
+	orch := orchestration.NewWaveOrchestrator(planFile, plan)
+	orch.StartNextWave()
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.Register(planFile, "review in flight test", "plan/review-in-flight", time.Now()))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+	store := storeForDir(t, plansDir)
+	require.NoError(t, store.SetContent("test", planFile, planContent))
+	orch.SetStore(store, "test")
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:      "review-in-flight-W1-T1",
+		Path:       t.TempDir(),
+		Program:    "claude",
+		TaskFile:   planFile,
+		TaskNumber: 1,
+		WaveNumber: 1,
+	})
+	require.NoError(t, err)
+
+	h := waveFlowHome(t, ps, plansDir, map[string]*orchestration.WaveOrchestrator{planFile: orch})
+	h.fsm = newPlanFSMForTest(t, plansDir)
+	_ = h.nav.AddInstance(inst)
+
+	model, _ := h.Update(metadataResultMsg{
+		Results:   []instanceMetadata{{Title: inst.Title, TmuxAlive: true}},
+		PlanState: ps,
+		TaskSignals: []taskfsm.TaskSignal{{
+			WaveNumber: 1,
+			TaskNumber: 1,
+			TaskFile:   planFile,
+		}},
+	})
+	updated := model.(*home)
+	require.Equal(t, stateConfirm, updated.state)
+
+	model, cmd := updated.handleKeyPress(tea.KeyPressMsg{Code: 'y', Text: "y"})
+	updated = model.(*home)
+	require.Equal(t, stateDefault, updated.state)
+
+	msg := cmd()
+	require.IsType(t, waveAllCompleteMsg{}, msg)
+
+	model, cmd = updated.Update(msg)
+	require.NotNil(t, cmd, "confirming all-complete must kick off async push")
+	updated = model.(*home)
+
+	model, _ = updated.Update(metadataResultMsg{
+		Results:   []instanceMetadata{{Title: inst.Title, TmuxAlive: false}},
+		PlanState: ps,
+	})
+	updated = model.(*home)
+
+	assert.Equal(t, stateDefault, updated.state,
+		"metadata tick during in-flight push must not re-show the all-complete prompt")
+	assert.False(t, updated.overlays.IsActive(),
+		"no confirmation overlay should be active while push-to-review is already in flight")
+	assert.Empty(t, updated.pendingAllComplete,
+		"no deferred all-complete prompt should be queued while push-to-review is already in flight")
+}
+
+// TestWaveMonitor_AllComplete_DefersWhileFocusModeActive verifies that the final
+// review prompt does not steal focus from an active agent pane. Instead it
+// queues the prompt and shows a sticky toast until focus mode is left.
+func TestWaveMonitor_AllComplete_DefersWhileFocusModeActive(t *testing.T) {
+	const planFile = "focus-deferred-review"
+
+	planContent := "**Goal:** verify focus-mode deferral\n\n## Wave 1\n\n### Task 1: only\n\nDo it.\n"
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{{
+			Number: 1,
+			Tasks:  []taskparser.Task{{Number: 1, Title: "only", Body: "Do it."}},
+		}},
+	}
+	orch := orchestration.NewWaveOrchestrator(planFile, plan)
+	orch.StartNextWave()
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.Register(planFile, "focus deferral test", "plan/focus-deferred-review", time.Now()))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+	store := storeForDir(t, plansDir)
+	require.NoError(t, store.SetContent("test", planFile, planContent))
+	orch.SetStore(store, "test")
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:      "focus-deferred-review-W1-T1",
+		Path:       t.TempDir(),
+		Program:    "claude",
+		TaskFile:   planFile,
+		TaskNumber: 1,
+		WaveNumber: 1,
+	})
+	require.NoError(t, err)
+
+	h := waveFlowHome(t, ps, plansDir, map[string]*orchestration.WaveOrchestrator{planFile: orch})
+	h.fsm = newPlanFSMForTest(t, plansDir)
+	h.state = stateFocusAgent
+	h.tabbedWindow.SetFocusMode(true)
+	h.menu.SetFocusMode(true)
+	_ = h.nav.AddInstance(inst)
+
+	model, _ := h.Update(metadataResultMsg{
+		Results:   []instanceMetadata{{Title: inst.Title, TmuxAlive: true}},
+		PlanState: ps,
+		TaskSignals: []taskfsm.TaskSignal{{
+			WaveNumber: 1,
+			TaskNumber: 1,
+			TaskFile:   planFile,
+		}},
+	})
+	updated := model.(*home)
+
+	assert.Equal(t, stateFocusAgent, updated.state,
+		"all-complete should not force-exit focus mode")
+	assert.False(t, updated.overlays.IsActive(),
+		"all-complete should not show a confirmation overlay while focus mode is active")
+	assert.Contains(t, updated.pendingAllComplete, planFile,
+		"all-complete prompt must be queued until focus mode ends")
+	assert.True(t, updated.toastManager.HasActiveToasts(),
+		"a sticky toast should notify the user while focus mode remains active")
+	toastView := updated.toastManager.View()
+	assert.Contains(t, toastView, "all waves complete",
+		"toast should mention the completed wave set")
+	assert.Contains(t, toastView, "focus mode to review",
+		"toast should explain how to surface the deferred review prompt")
+
+	model, _ = updated.Update(metadataResultMsg{
+		Results:   []instanceMetadata{{Title: inst.Title, TmuxAlive: false}},
+		PlanState: ps,
+	})
+	updated = model.(*home)
+	assert.Equal(t, stateFocusAgent, updated.state,
+		"later metadata ticks should still avoid stealing focus")
+	assert.False(t, updated.overlays.IsActive(),
+		"later metadata ticks should not show the prompt until focus mode ends")
+
+	updated.exitFocusMode()
+	model, _ = updated.Update(metadataResultMsg{
+		Results:   []instanceMetadata{{Title: inst.Title, TmuxAlive: false}},
+		PlanState: ps,
+	})
+	updated = model.(*home)
+
+	assert.Equal(t, stateConfirm, updated.state,
+		"once focus mode ends, the queued all-complete prompt should appear")
+	assert.True(t, updated.overlays.IsActive(),
+		"queued all-complete prompt should become an overlay after focus mode ends")
+}
+
 // TestWaveMonitor_AllComplete_MultiWave verifies the flow with a multi-wave plan
 // where all waves complete sequentially (wave 1 done → advance → wave 2 done → review prompt).
 func TestWaveMonitor_AllComplete_MultiWave(t *testing.T) {

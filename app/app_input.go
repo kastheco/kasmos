@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/auditlog"
 	"github.com/kastheco/kasmos/config/taskstate"
@@ -78,6 +79,13 @@ func (m *home) handleMenuHighlighting(msg tea.KeyPressMsg) (cmd tea.Cmd, returnE
 
 // handleMouseWheel processes mouse wheel events for scrolling.
 func (m *home) handleMouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
+	if handled, err := m.forwardMouseWheelToFocusedTerminal(msg); handled {
+		if err != nil {
+			return m, m.handleError(err)
+		}
+		return m, nil
+	}
+
 	if m.tabbedWindow.IsDocumentMode() {
 		switch msg.Button {
 		case tea.MouseWheelUp:
@@ -98,6 +106,39 @@ func (m *home) handleMouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m *home) forwardMouseWheelToFocusedTerminal(msg tea.MouseWheelMsg) (bool, error) {
+	if m.state != stateFocusAgent || m.previewTerminal == nil {
+		return false, nil
+	}
+
+	agentPane := zone.Get(ui.ZoneAgentPane)
+	if !agentPane.InBounds(msg) {
+		return false, nil
+	}
+
+	previewWidth, previewHeight := m.tabbedWindow.GetPreviewSize()
+	if previewWidth <= 0 || previewHeight <= 0 {
+		return true, nil
+	}
+
+	x, y := agentPane.Pos(msg)
+	if x < 1 || y < 0 || y >= previewHeight || x > previewWidth {
+		// Ignore wheel events that land on the preview border chrome, but still
+		// consume them so focus mode doesn't fall back to kasmos scroll mode.
+		return true, nil
+	}
+	x-- // ZoneAgentPane includes the left window border; the terminal does not.
+
+	button := ansi.EncodeMouseButton(
+		ansi.MouseButton(msg.Button),
+		false,
+		msg.Mod.Contains(tea.ModShift),
+		msg.Mod.Contains(tea.ModAlt),
+		msg.Mod.Contains(tea.ModCtrl),
+	)
+	return true, m.previewTerminal.SendKey([]byte(ansi.MouseSgr(button, x, y, false)))
 }
 
 // handleMouseClick processes mouse click events for left/right click interactions.
@@ -216,6 +257,12 @@ func (m *home) handleActiveOverlayMouse(msg tea.MouseClickMsg) (tea.Model, tea.C
 
 	case stateConfirm:
 		if result.Submitted {
+			if m.pendingAllCompleteTaskFile != "" {
+				if m.allCompleteAdvancing == nil {
+					m.allCompleteAdvancing = make(map[string]bool)
+				}
+				m.allCompleteAdvancing[m.pendingAllCompleteTaskFile] = true
+			}
 			action := m.pendingConfirmAction
 			m.state = stateDefault
 			m.pendingConfirmAction = nil
@@ -232,7 +279,10 @@ func (m *home) handleActiveOverlayMouse(msg tea.MouseClickMsg) (tea.Model, tea.C
 			m.waveConfirmDismissedAt = time.Now()
 		}
 		if m.pendingAllCompleteTaskFile != "" {
-			m.allCompleteDismissed[m.pendingAllCompleteTaskFile] = true
+			planFile := m.pendingAllCompleteTaskFile
+			m.allCompleteDismissed[planFile] = true
+			m.resolveAllCompleteToast(planFile, overlay.ToastInfo,
+				fmt.Sprintf("review deferred for '%s'", taskstate.DisplayName(planFile)))
 			m.pendingAllCompleteTaskFile = ""
 		}
 		if m.pendingPlannerTaskFile != "" {
@@ -998,6 +1048,12 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		if result.Dismissed {
 			if result.Submitted {
 				// Confirmed (ConfirmKey pressed).
+				if m.pendingAllCompleteTaskFile != "" {
+					if m.allCompleteAdvancing == nil {
+						m.allCompleteAdvancing = make(map[string]bool)
+					}
+					m.allCompleteAdvancing[m.pendingAllCompleteTaskFile] = true
+				}
 				action := m.pendingConfirmAction
 				m.state = stateDefault
 				m.pendingConfirmAction = nil
@@ -1018,6 +1074,13 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 					}
 					m.pendingWaveConfirmTaskFile = ""
 					m.waveConfirmDismissedAt = time.Now()
+				}
+				if m.pendingAllCompleteTaskFile != "" {
+					planFile := m.pendingAllCompleteTaskFile
+					m.allCompleteDismissed[planFile] = true
+					m.resolveAllCompleteToast(planFile, overlay.ToastInfo,
+						fmt.Sprintf("review deferred for '%s'", taskstate.DisplayName(planFile)))
+					m.pendingAllCompleteTaskFile = ""
 				}
 				// Planner signal esc: same as cancel — signal is consumed, can't re-trigger.
 				if m.pendingPlannerTaskFile != "" {
@@ -1052,6 +1115,13 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 					orch.ResetConfirm()
 				}
 				m.pendingWaveConfirmTaskFile = ""
+			}
+			if m.pendingAllCompleteTaskFile != "" {
+				planFile := m.pendingAllCompleteTaskFile
+				m.allCompleteDismissed[planFile] = true
+				m.resolveAllCompleteToast(planFile, overlay.ToastInfo,
+					fmt.Sprintf("review deferred for '%s'", taskstate.DisplayName(planFile)))
+				m.pendingAllCompleteTaskFile = ""
 			}
 			// Planner signal "no": kill planner instance, mark prompted, leave plan ready.
 			if m.pendingPlannerTaskFile != "" {

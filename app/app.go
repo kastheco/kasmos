@@ -338,6 +338,12 @@ type home struct {
 	// "all waves complete" confirmation. Prevents rebuildOrphanedOrchestrators
 	// from recreating the orchestrator (which would re-show the prompt).
 	allCompleteDismissed map[string]bool
+	// allCompleteAdvancing tracks plans whose final review prompt was already
+	// accepted and are currently pushing / transitioning to review.
+	allCompleteAdvancing map[string]bool
+	// allCompleteToastIDs tracks sticky toast notifications for plans whose final
+	// review prompt is deferred while focus mode is active.
+	allCompleteToastIDs map[string]string
 	// pendingAllCompleteTaskFile is set while an all-waves-complete confirmation
 	// overlay is showing, so cancel can record the dismissal.
 	pendingAllCompleteTaskFile string
@@ -372,6 +378,21 @@ type home struct {
 	// could not be shown because an overlay was active at signal-processing time.
 	// On each metadata tick, any queued plans are shown once the overlay clears.
 	deferredPlannerDialogs []string
+	// deferredPlannerToastIDs tracks sticky planner-ready notifications while
+	// focus mode remains active.
+	deferredPlannerToastIDs map[string]string
+	// deferredCoderPushDialogs holds plan files whose implementer-finished push
+	// prompt is waiting for the user to leave focus mode.
+	deferredCoderPushDialogs []string
+	// deferredCoderPushToastIDs tracks sticky implementer-finished notifications
+	// while focus mode remains active.
+	deferredCoderPushToastIDs map[string]string
+	// deferredWaveDialogs holds plan files whose wave-complete decision dialog is
+	// waiting for the user to leave focus mode.
+	deferredWaveDialogs []string
+	// deferredWaveToastIDs tracks sticky wave-complete notifications while focus
+	// mode remains active.
+	deferredWaveToastIDs map[string]string
 
 	// pendingPlannerInstanceTitle is the title of the planner instance that
 	// triggered the current planner-exit confirmation dialog.
@@ -422,6 +443,18 @@ type home struct {
 	// across multiple metadata ticks while opencode processes the first response.
 	// Cleared when the pane no longer contains a permission prompt for that instance.
 	permissionHandled map[*session.Instance]string
+	// deferredPermissionPrompts queues permission overlays until the user leaves
+	// focus mode explicitly.
+	deferredPermissionPrompts []deferredPermissionPrompt
+	// deferredPermissionToastIDs tracks sticky permission notifications keyed by
+	// instance title while focus mode remains active.
+	deferredPermissionToastIDs map[string]string
+}
+
+type deferredPermissionPrompt struct {
+	instance *session.Instance
+	pattern  string
+	desc     string
 }
 
 func newHome(ctx context.Context, program string, autoYes bool, version string) *home {
@@ -449,33 +482,39 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 
 	project := resolveTaskStoreProject(activeRepoPath)
 	h := &home{
-		ctx:                     ctx,
-		spinner:                 spinner.New(spinner.WithSpinner(spinner.Dot)),
-		menu:                    ui.NewMenu(),
-		auditPane:               ui.NewAuditPane(),
-		statusBar:               ui.NewStatusBar(),
-		tabbedWindow:            ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
-		storage:                 storage,
-		appConfig:               appConfig,
-		program:                 program,
-		version:                 version,
-		autoYes:                 autoYes,
-		state:                   stateDefault,
-		appState:                appState,
-		activeRepoPath:          activeRepoPath,
-		taskStateDir:            filepath.Join(activeRepoPath, "docs", "plans"), // legacy: only for JSON migration
-		signalsDir:              filepath.Join(activeRepoPath, ".kasmos", "signals"),
-		taskStoreProject:        project,
-		daemonStatusChecker:     checkDaemonStatus,
-		daemonRepoRegistrar:     registerRepoWithDaemon,
-		planBrowserOpener:       cmd2.OpenPlanBrowser,
-		instanceFinalizers:      make(map[*session.Instance]func()),
-		dismissedInstanceTitles: make(map[string]struct{}),
-		waveOrchestrators:       make(map[string]*orchestration.WaveOrchestrator),
-		allCompleteDismissed:    make(map[string]bool),
-		plannerPrompted:         make(map[string]bool),
-		coderPushPrompted:       make(map[string]bool),
-		pendingReviewFeedback:   make(map[string]string),
+		ctx:                        ctx,
+		spinner:                    spinner.New(spinner.WithSpinner(spinner.Dot)),
+		menu:                       ui.NewMenu(),
+		auditPane:                  ui.NewAuditPane(),
+		statusBar:                  ui.NewStatusBar(),
+		tabbedWindow:               ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		storage:                    storage,
+		appConfig:                  appConfig,
+		program:                    program,
+		version:                    version,
+		autoYes:                    autoYes,
+		state:                      stateDefault,
+		appState:                   appState,
+		activeRepoPath:             activeRepoPath,
+		taskStateDir:               filepath.Join(activeRepoPath, "docs", "plans"), // legacy: only for JSON migration
+		signalsDir:                 filepath.Join(activeRepoPath, ".kasmos", "signals"),
+		taskStoreProject:           project,
+		daemonStatusChecker:        checkDaemonStatus,
+		daemonRepoRegistrar:        registerRepoWithDaemon,
+		planBrowserOpener:          cmd2.OpenPlanBrowser,
+		instanceFinalizers:         make(map[*session.Instance]func()),
+		dismissedInstanceTitles:    make(map[string]struct{}),
+		waveOrchestrators:          make(map[string]*orchestration.WaveOrchestrator),
+		allCompleteDismissed:       make(map[string]bool),
+		allCompleteAdvancing:       make(map[string]bool),
+		allCompleteToastIDs:        make(map[string]string),
+		plannerPrompted:            make(map[string]bool),
+		deferredPlannerToastIDs:    make(map[string]string),
+		deferredCoderPushToastIDs:  make(map[string]string),
+		deferredWaveToastIDs:       make(map[string]string),
+		coderPushPrompted:          make(map[string]bool),
+		pendingReviewFeedback:      make(map[string]string),
+		deferredPermissionToastIDs: make(map[string]string),
 	}
 
 	dbPath := taskstore.ResolvedDBPath()
@@ -1747,34 +1786,28 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-			// Drain deferred all-complete prompts that were blocked by an overlay.
-			// First purge any entries the user already dismissed — ticks while the
-			// overlay was showing may have accumulated duplicates.
-			if len(m.pendingAllComplete) > 0 && len(m.allCompleteDismissed) > 0 {
+			// Drain deferred all-complete prompts that were blocked by an overlay or
+			// by focus mode. First purge entries the user already dismissed or has
+			// already accepted, since earlier ticks may have accumulated duplicates.
+			if len(m.pendingAllComplete) > 0 && (len(m.allCompleteDismissed) > 0 || len(m.allCompleteAdvancing) > 0) {
 				filtered := m.pendingAllComplete[:0]
 				for _, pf := range m.pendingAllComplete {
-					if !m.allCompleteDismissed[pf] {
+					if !m.allCompleteDismissed[pf] && !m.allCompleteAdvancing[pf] {
 						filtered = append(filtered, pf)
 					}
 				}
 				m.pendingAllComplete = filtered
 			}
-			if len(m.pendingAllComplete) > 0 {
+			if len(m.pendingAllComplete) > 0 && m.state != stateFocusAgent {
 				m.exitFocusModeForDialog()
 			}
-			if !m.isUserInOverlay() && len(m.pendingAllComplete) > 0 {
+			if m.state != stateFocusAgent && !m.isUserInOverlay() && len(m.pendingAllComplete) > 0 {
 				planFile := m.pendingAllComplete[0]
 				m.pendingAllComplete = m.pendingAllComplete[1:]
-				planName := taskstate.DisplayName(planFile)
 				if cmd := m.focusPlanInstanceForOverlay(planFile); cmd != nil {
 					asyncCmds = append(asyncCmds, cmd)
 				}
-				message := fmt.Sprintf("all waves complete for '%s'. push branch and start review?", planName)
-				delete(m.allCompleteDismissed, planFile)
-				m.pendingAllCompleteTaskFile = planFile
-				m.confirmAction(message, func() tea.Msg {
-					return waveAllCompleteMsg{planFile: planFile}
-				})
+				m.showAllCompletePrompt(planFile)
 			}
 
 			// Wave completion monitoring: check task completion and trigger wave transitions.
@@ -1872,23 +1905,22 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 
-					m.exitFocusModeForDialog()
-					if !m.isUserInOverlay() {
-						// Focus a task instance so the user can see agent output behind the overlay.
-						if cmd := m.focusPlanInstanceForOverlay(capturedPlanFile); cmd != nil {
-							asyncCmds = append(asyncCmds, cmd)
-						}
-						message := fmt.Sprintf("all waves complete for '%s'. push branch and start review?", planName)
-						delete(m.allCompleteDismissed, capturedPlanFile)
-						m.pendingAllCompleteTaskFile = capturedPlanFile
-						m.confirmAction(message, func() tea.Msg {
-							return waveAllCompleteMsg{planFile: capturedPlanFile}
-						})
+					if m.state == stateFocusAgent {
+						m.queueAllCompletePrompt(capturedPlanFile)
 					} else {
-						// Overlay is active — defer the prompt so it fires on the next
-						// tick when the overlay clears. Without this, the orchestrator
-						// deletion above means we never re-enter this code path.
-						m.pendingAllComplete = append(m.pendingAllComplete, capturedPlanFile)
+						m.exitFocusModeForDialog()
+						if !m.isUserInOverlay() {
+							// Focus a task instance so the user can see agent output behind the overlay.
+							if cmd := m.focusPlanInstanceForOverlay(capturedPlanFile); cmd != nil {
+								asyncCmds = append(asyncCmds, cmd)
+							}
+							m.showAllCompletePrompt(capturedPlanFile)
+						} else {
+							// Another overlay is active — defer the prompt so it fires on
+							// a later tick when the overlay clears. Without this, the
+							// orchestrator deletion above means we never re-enter here.
+							m.queueAllCompletePrompt(capturedPlanFile)
+						}
 					}
 					continue
 				}
@@ -2115,7 +2147,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// race when the returned tea.Cmd runs concurrently with future Updates
 		// that may mutate m.nav.instances.
 		planFile := msg.planFile
-		delete(m.allCompleteDismissed, planFile)
+		if m.allCompleteAdvancing == nil {
+			m.allCompleteAdvancing = make(map[string]bool)
+		}
+		m.allCompleteAdvancing[planFile] = true
 		m.pendingAllCompleteTaskFile = ""
 		if err := m.setExecutionState(planFile, taskstore.ExecutionState{
 			Phase:           string(taskfsm.ExecutionPhaseWaveWaiting),
@@ -2150,6 +2185,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// After async push completes for wave flow, transition and spawn reviewer.
 		planFile := msg.planFile
 		planName := taskstate.DisplayName(planFile)
+		delete(m.allCompleteAdvancing, planFile)
 
 		if err := m.fsm.Transition(planFile, taskfsm.ImplementFinished); err != nil {
 			log.WarningLog.Printf("wave push-complete: could not transition %q to reviewing: %v", planFile, err)
@@ -2161,7 +2197,12 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.spawnReviewer(planFile); cmd != nil {
 			reviewerCmd = cmd
 		}
-		m.toastManager.Info(fmt.Sprintf("all waves complete for '%s' — starting review", planName))
+		toastMsg := fmt.Sprintf("all waves complete for '%s'. starting review", planName)
+		if m.allCompleteToastIDs != nil && m.allCompleteToastIDs[planFile] != "" {
+			m.resolveAllCompleteToast(planFile, overlay.ToastSuccess, toastMsg)
+		} else {
+			m.toastManager.Info(toastMsg)
+		}
 		return m, tea.Batch(tea.RequestWindowSize, reviewerCmd, m.toastTickCmd())
 	case coderCompleteMsg:
 		// Single-plan implementation finished and user confirmed push.
