@@ -69,6 +69,8 @@ type TmuxSpawner struct {
 	hasAttachedClients func(cmd.Executor, string) bool
 	sleep              func(time.Duration)
 	kill               func(*session.Instance) error
+	startOnMain        func(*session.Instance) error
+	startInShared      func(*session.Instance, *gitpkg.GitWorktree, string) error
 	cmdExec            cmd.Executor
 	discoverOrphans    func([]string) ([]tmuxpkg.SessionInfo, error)
 	restoreInstance    func(session.InstanceData) (*session.Instance, error)
@@ -115,7 +117,11 @@ func newTmuxSpawnerWithConfig(logger *slog.Logger, drainTimeout time.Duration) *
 		hasAttachedClients: tmuxpkg.HasAttachedClients,
 		sleep:              time.Sleep,
 		kill:               func(inst *session.Instance) error { return inst.Kill() },
-		cmdExec:            cmd.MakeExecutor(),
+		startOnMain:        func(inst *session.Instance) error { return inst.StartOnMainBranch() },
+		startInShared: func(inst *session.Instance, worktree *gitpkg.GitWorktree, branch string) error {
+			return inst.StartInSharedWorktree(worktree, branch)
+		},
+		cmdExec: cmd.MakeExecutor(),
 		discoverOrphans: func(known []string) ([]tmuxpkg.SessionInfo, error) {
 			return tmuxpkg.DiscoverAll(cmd.MakeExecutor(), known)
 		},
@@ -416,6 +422,22 @@ func (s *TmuxSpawner) releaseReservation(key string) {
 	s.mu.Unlock()
 }
 
+// discardTrackedInstance removes a tracked instance or placeholder for a failed
+// spawn attempt, but only when the current slot still refers to that same
+// instance (or an unresolved nil placeholder).
+func (s *TmuxSpawner) discardTrackedInstance(key string, inst *session.Instance) {
+	s.mu.Lock()
+	current, ok := s.instances[key]
+	if ok && (current == nil || current == inst) {
+		delete(s.instances, key)
+		delete(s.planFileByKey, key)
+		delete(s.agentTypeByKey, key)
+		delete(s.projectByKey, key)
+	}
+	delete(s.replacing, key)
+	s.mu.Unlock()
+}
+
 // SpawnReviewer launches a reviewer agent in the plan's shared worktree.
 func (s *TmuxSpawner) SpawnReviewer(ctx context.Context, opts loop.SpawnOpts) error {
 	s.logger.Info("spawn reviewer", "plan", opts.PlanFile, "wave", opts.Wave)
@@ -505,12 +527,11 @@ func (s *TmuxSpawner) spawnOnMainBranch(_ context.Context, opts loop.SpawnOpts, 
 	inst.QueuedPrompt = prompt
 	inst.SetStatus(session.Loading)
 
-	if err := inst.StartOnMainBranch(); err != nil {
-		s.releaseReservation(key)
+	s.commitInstance(key, opts.PlanFile, agentType, opts.Project, inst)
+	if err := s.startOnMain(inst); err != nil {
+		s.discardTrackedInstance(key, inst)
 		return fmt.Errorf("TmuxSpawner.%s: start: %w", agentType, err)
 	}
-
-	s.commitInstance(key, opts.PlanFile, agentType, opts.Project, inst)
 	return nil
 }
 
@@ -649,12 +670,11 @@ func (s *TmuxSpawner) SpawnWaveTask(_ context.Context, opts loop.SpawnOpts, task
 		return fmt.Errorf("TmuxSpawner.wave-task: sync scaffold: %w", err)
 	}
 	prepLock.Unlock()
-	if err := inst.StartInSharedWorktree(shared, opts.Branch); err != nil {
-		s.releaseReservation(key)
+	s.commitInstance(key, opts.PlanFile, session.AgentTypeCoder, opts.Project, inst)
+	if err := s.startInShared(inst, shared, opts.Branch); err != nil {
+		s.discardTrackedInstance(key, inst)
 		return fmt.Errorf("TmuxSpawner.wave-task: start in shared worktree: %w", err)
 	}
-
-	s.commitInstance(key, opts.PlanFile, session.AgentTypeCoder, opts.Project, inst)
 	return nil
 }
 
@@ -714,12 +734,11 @@ func (s *TmuxSpawner) spawnInSharedWorktreeReserved(_ context.Context, opts loop
 		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.%s: sync scaffold: %w", agentType, err)
 	}
-	if err := inst.StartInSharedWorktree(shared, opts.Branch); err != nil {
-		s.releaseReservation(key)
+	s.commitInstance(key, opts.PlanFile, agentType, opts.Project, inst)
+	if err := s.startInShared(inst, shared, opts.Branch); err != nil {
+		s.discardTrackedInstance(key, inst)
 		return fmt.Errorf("TmuxSpawner.%s: start in shared worktree: %w", agentType, err)
 	}
-
-	s.commitInstance(key, opts.PlanFile, agentType, opts.Project, inst)
 	return nil
 }
 

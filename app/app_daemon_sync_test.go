@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -263,6 +264,51 @@ func TestDaemonSync_MetadataTickRebuildsWaveOrchestratorForDaemonWaveTask(t *tes
 	assert.Equal(t, orchestration.WaveStateRunning, orch.State())
 	assert.True(t, orch.IsTaskRunning(1), "live daemon wave task should restore as running")
 	assert.True(t, orch.IsTaskRunning(2), "other tasks in the active wave should remain runnable")
+}
+
+func TestDaemonSync_MetadataResultShowsAllLoadingWaveTasksImmediately(t *testing.T) {
+	const planFile = "feature"
+
+	h, _ := newDaemonSyncTestHome(t, planFile)
+	const content = "# Plan\n\n**Goal:** daemon wave visibility\n\n## Wave 1\n\n### Task 1: First\n\nDo first.\n\n### Task 2: Second\n\nDo second.\n\n### Task 3: Third\n\nDo third.\n"
+	require.NoError(t, h.taskState.IngestContent(planFile, content))
+	require.NoError(t, h.taskState.ForceSetLifecycle(planFile, taskstate.StatusImplementing, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+		ActiveAgentType: session.AgentTypeCoder,
+		ActiveWave:      1,
+	}))
+
+	var daemonInstances []*session.Instance
+	for _, taskNumber := range []int{1, 2, 3} {
+		inst, err := session.NewInstance(session.InstanceOptions{
+			Title:      fmt.Sprintf("feature-W1-T%d", taskNumber),
+			Path:       h.activeRepoPath,
+			Program:    "opencode",
+			TaskFile:   planFile,
+			AgentType:  session.AgentTypeCoder,
+			TaskNumber: taskNumber,
+			WaveNumber: 1,
+			PeerCount:  3,
+		})
+		require.NoError(t, err)
+		inst.SetStatus(session.Loading)
+		daemonInstances = append(daemonInstances, inst)
+	}
+
+	model, _ := h.Update(metadataResultMsg{
+		PlanState:         h.taskState,
+		DaemonTaskState:   true,
+		DaemonManagedRepo: true,
+		DaemonInstances:   daemonInstances,
+	})
+	updated := model.(*home)
+
+	assert.Len(t, updated.nav.GetInstances(), 3, "all daemon-tracked loading tasks should be rehydrated immediately")
+	require.True(t, updated.nav.SelectByID(ui.SidebarPlanPrefix+planFile))
+	rendered := updated.nav.String()
+	assert.Contains(t, rendered, "wave 1 · task 1")
+	assert.Contains(t, rendered, "wave 1 · task 2")
+	assert.Contains(t, rendered, "wave 1 · task 3")
 }
 
 func TestDaemonSync_TickSkipsInactiveMissingInstances(t *testing.T) {
