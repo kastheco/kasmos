@@ -207,9 +207,21 @@ func (t *TmuxSession) reportProgress(stage int, desc string) {
 	}
 }
 
+// programBase returns the base executable name from the first whitespace-delimited
+// token in program. This correctly handles command strings that include flags
+// (e.g. "claude --model opus" → "claude", "/usr/local/bin/opencode" → "opencode").
+func programBase(program string) string {
+	trimmed := strings.TrimSpace(program)
+	exe := trimmed
+	if i := strings.IndexAny(trimmed, " \t"); i >= 0 {
+		exe = trimmed[:i]
+	}
+	return filepath.Base(exe)
+}
+
 // isClaudeProgram returns true if the program string refers to Claude Code.
 func isClaudeProgram(program string) bool {
-	return strings.HasSuffix(program, ProgramClaude)
+	return programBase(program) == ProgramClaude
 }
 
 // isAiderProgram returns true if the program string refers to Aider.
@@ -228,7 +240,7 @@ func isGeminiProgram(program string) bool {
 
 // isOpenCodeProgram returns true if the program string refers to OpenCode.
 func isOpenCodeProgram(program string) bool {
-	return strings.HasSuffix(program, ProgramOpenCode)
+	return programBase(program) == ProgramOpenCode
 }
 
 func resolveShellProgram(program string) string {

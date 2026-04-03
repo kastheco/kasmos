@@ -25,7 +25,7 @@ Only register implementation plans — never register design docs (*-design.md) 
 ## Plan Storage (CRITICAL — must follow every time)
 
 Task state is stored in the **task store** (SQLite database or HTTP API), not in files on disk.
-Never modify task state directly — use `kas task` CLI commands or sentinel files.
+Never modify task state directly — use MCP tools or `kas task` CLI commands; sentinel files are fallback-only.
 
 Kasmos creates the task entry before it spawns you. Your job is to replace that
 entry's placeholder content with the finished plan.
