@@ -248,19 +248,29 @@ func (n *NavigationPanel) splitDeadFromHistory(finished []PlanDisplay) {
 		byPlan[inst.TaskFile] = entry
 	}
 
-	// Strip previously promoted plans from n.plans to avoid duplicates.
+	// Strip previously promoted plans from n.plans, but ONLY those still in
+	// the incoming finished list. A plan that transitioned out of "done"
+	// (e.g. via start_over) is no longer finished and must stay in n.plans.
 	if len(n.promotedPlans) > 0 {
+		finishedSet := make(map[string]bool, len(finished))
+		for _, p := range finished {
+			finishedSet[p.Filename] = true
+		}
 		promoted := make(map[string]bool, len(n.promotedPlans))
 		for _, p := range n.promotedPlans {
-			promoted[p.Filename] = true
-		}
-		kept := n.plans[:0]
-		for _, p := range n.plans {
-			if !promoted[p.Filename] {
-				kept = append(kept, p)
+			if finishedSet[p.Filename] {
+				promoted[p.Filename] = true
 			}
 		}
-		n.plans = kept
+		if len(promoted) > 0 {
+			kept := n.plans[:0]
+			for _, p := range n.plans {
+				if !promoted[p.Filename] {
+					kept = append(kept, p)
+				}
+			}
+			n.plans = kept
+		}
 	}
 
 	n.deadPlans = nil
