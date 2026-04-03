@@ -1889,10 +1889,6 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 	case keys.KeyAuditCursor:
 		return m.enterAuditCursorMode()
 	case keys.KeyArrowLeft:
-		if m.tabbedWindow.IsDocumentMode() {
-			m.tabbedWindow.ClearDocumentMode()
-			return m, m.instanceChanged()
-		}
 		// With multiple instance tabs, navigate to the previous tab.
 		if m.tabbedWindow.TabCount() > 1 {
 			m.tabbedWindow.PrevTab()

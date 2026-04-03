@@ -38,7 +38,7 @@ const (
 	KeySpace // Key for opening context menu on selected item
 	KeyCommandLauncher
 
-	KeyInfoTab // Key for jumping directly to info tab
+	KeyInfoTab // Key for toggling the compact info header visibility
 
 	// Tab switching keybindings
 	KeyTabAgent

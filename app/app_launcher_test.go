@@ -105,11 +105,11 @@ func TestBuildKeybindBrowserItems_HidesSubmitNameAndRemovedBindings(t *testing.T
 		assert.NotEqual(t, "submit name", item.Label)
 		assert.NotEqual(t, "checkout", item.Label)
 		assert.NotEqual(t, "right sidebar", item.Label)
-		if item.Label == "info tab" {
+		if item.Label == "toggle info header" {
 			foundInfoTab = true
 			assert.Equal(t, "I", item.Hint)
 		}
 	}
 
-	require.True(t, foundInfoTab, "info tab should still be listed in the keybind browser")
+	require.True(t, foundInfoTab, "toggle info header should still be listed in the keybind browser")
 }
