@@ -47,16 +47,16 @@ func TestHandleKeyPress_ExclamationNoOpWithoutRunningInstance(t *testing.T) {
 	assert.Nil(t, cmd)
 }
 
-func TestHandleKeyPress_PoundTogglesInfoHeader(t *testing.T) {
+func TestHandleKeyPress_ShiftITogglesInfoHeader(t *testing.T) {
 	h := newTestHome()
 	// showInfo starts as true (from NewTabbedWindow).
 	wasShowing := h.tabbedWindow.IsShowingInfo()
 	h.keySent = true
 
-	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: '#', Text: "#"})
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'I', Text: "I"})
 	updated := model.(*home)
 
-	// # toggles the compact info header, not the instance tab index.
+	// I toggles the compact info header, not the instance tab index.
 	assert.Equal(t, !wasShowing, updated.tabbedWindow.IsShowingInfo())
 	assert.Equal(t, stateDefault, updated.state)
 	assert.Nil(t, cmd)

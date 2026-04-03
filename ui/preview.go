@@ -237,7 +237,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		p.setFallbackContent(lipgloss.JoinVertical(lipgloss.Center,
 			lipgloss.NewStyle().Foreground(ColorMuted).Render("session exited"),
 			"",
-			lipgloss.NewStyle().Foreground(ColorMuted).Render("press shift+k to remove"),
+			lipgloss.NewStyle().Foreground(ColorMuted).Render("press delete to remove"),
 		))
 		return nil
 	}

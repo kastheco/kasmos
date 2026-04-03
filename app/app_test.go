@@ -394,7 +394,7 @@ func TestSpawnAdHocAgent_PathOverride(t *testing.T) {
 func TestSpawnAgent_KeyOpensFormOverlay(t *testing.T) {
 	h := newTestHome()
 	h.keySent = true
-	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 's', Text: "s"})
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
 	updated := model.(*home)
 	require.Equal(t, stateSpawnAgent, updated.state)
 	require.True(t, updated.overlays.IsActive(), "form overlay must be set")
@@ -480,7 +480,7 @@ func TestQuickLaunch_KeyCreatesInstance(t *testing.T) {
 	h.activeRepoPath = t.TempDir()
 	h.keySent = true
 
-	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 's', Text: "s"})
 	updated := model.(*home)
 
 	require.NotNil(t, cmd)
@@ -548,7 +548,7 @@ func TestQuickLaunch_InstanceLimitEnforced(t *testing.T) {
 	h.tmuxSessionCount = GlobalInstanceLimit
 	h.keySent = true
 
-	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 's', Text: "s"})
 	updated := model.(*home)
 
 	assert.Equal(t, stateDefault, updated.state)
@@ -1032,14 +1032,14 @@ func TestFocusRing(t *testing.T) {
 		assert.Equal(t, 0, homeModel.tabbedWindow.GetActiveTab(), "active index must stay at 0 with zero tabs")
 	})
 
-	t.Run("T jumps to nav slot when instances exist", func(t *testing.T) {
+	t.Run("T is no-op when right-sidebar shortcut is removed", func(t *testing.T) {
 		h := newTestHome()
 		addTestInstance(t, h)
 		h.setFocusSlot(slotAgent)
 
 		homeModel := handle(t, h, tea.KeyPressMsg{Code: 'T', Text: "T"})
 
-		assert.Equal(t, slotNav, homeModel.focusSlot)
+		assert.Equal(t, slotAgent, homeModel.focusSlot)
 	})
 
 	// --- Direct keybinds (!/@/#) ---
@@ -1053,32 +1053,34 @@ func TestFocusRing(t *testing.T) {
 		assert.Equal(t, stateDefault, homeModel.state, "! without running instance must not enter focus mode")
 	})
 
-	t.Run("# toggles compact info header visibility, sidebar keeps focus", func(t *testing.T) {
+	t.Run("I toggles compact info header visibility, sidebar keeps focus", func(t *testing.T) {
 		h := newTestHome()
 		// showInfo starts as true (from NewTabbedWindow).
 		wasShowing := h.tabbedWindow.IsShowingInfo()
 
-		homeModel := handle(t, h, tea.KeyPressMsg{Code: '#', Text: "#"})
+		homeModel := handle(t, h, tea.KeyPressMsg{Code: 'I', Text: "I"})
 
 		assert.Equal(t, slotNav, homeModel.focusSlot, "sidebar must retain focus")
-		assert.Equal(t, !wasShowing, homeModel.tabbedWindow.IsShowingInfo(), "# must toggle info header visibility")
+		assert.Equal(t, !wasShowing, homeModel.tabbedWindow.IsShowingInfo(), "I must toggle info header visibility")
 	})
 
-	t.Run("s is no-op (sidebar focus shortcut removed)", func(t *testing.T) {
+	t.Run("# is no-op (direct info-tab shortcut removed)", func(t *testing.T) {
 		h := newTestHome()
+		wasShowing := h.tabbedWindow.IsShowingInfo()
 		h.setFocusSlot(slotNav)
 
-		homeModel := handle(t, h, tea.KeyPressMsg{Code: 's', Text: "s"})
+		homeModel := handle(t, h, tea.KeyPressMsg{Code: '#', Text: "#"})
 
 		assert.Equal(t, slotNav, homeModel.focusSlot)
+		assert.Equal(t, wasShowing, homeModel.tabbedWindow.IsShowingInfo())
 	})
 
-	t.Run("s does not show hidden sidebar", func(t *testing.T) {
+	t.Run("T does not show hidden sidebar", func(t *testing.T) {
 		h := newTestHome()
 		h.sidebarHidden = true
 		h.setFocusSlot(slotNav)
 
-		homeModel := handle(t, h, tea.KeyPressMsg{Code: 's', Text: "s"})
+		homeModel := handle(t, h, tea.KeyPressMsg{Code: 'T', Text: "T"})
 
 		assert.True(t, homeModel.sidebarHidden)
 		assert.Equal(t, slotNav, homeModel.focusSlot)
@@ -1129,6 +1131,15 @@ func TestFocusRing(t *testing.T) {
 
 		assert.Equal(t, slotNav, homeModel.focusSlot, "sidebar must remain focused after ←")
 		assert.Equal(t, ui.PreviewTab, homeModel.tabbedWindow.GetActiveTab(), "active tab must not change on ←")
+	})
+
+	t.Run("← closes plan preview opened in document mode", func(t *testing.T) {
+		h := newTestHome()
+		h.tabbedWindow.SetDocumentContent("# test plan")
+
+		homeModel := handle(t, h, tea.KeyPressMsg{Code: tea.KeyLeft})
+
+		assert.False(t, homeModel.tabbedWindow.IsDocumentMode(), "left arrow must close document mode")
 	})
 
 	t.Run("→ toggles expand on selected sidebar item", func(t *testing.T) {
@@ -1979,7 +1990,25 @@ func TestExitFocusMode_KeepsPreviewTerminal(t *testing.T) {
 		"previewTerminalInstance should NOT be cleared by exitFocusMode")
 }
 
-func TestHandleKeyPress_CtrlEnterSubmitsAndExitsFocusMode(t *testing.T) {
+func TestHandleKeyPress_CtrlShiftEnterSubmitsAndExitsFocusMode(t *testing.T) {
+	h := newTestHome()
+	h.state = stateFocusAgent
+	h.previewTerminal = session.NewDummyTerminal()
+	h.previewTerminalInstance = "test-agent"
+	h.keySent = true
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModCtrl | tea.ModShift})
+	updated := model.(*home)
+
+	sent := updated.previewTerminal.SentKeys()
+	require.Len(t, sent, 1)
+	assert.Equal(t, []byte{0x0D}, sent[0])
+	assert.Equal(t, stateDefault, updated.state)
+	assert.Equal(t, "test-agent", updated.previewTerminalInstance)
+	require.NotNil(t, cmd)
+}
+
+func TestHandleKeyPress_CtrlEnterStaysInFocusMode(t *testing.T) {
 	h := newTestHome()
 	h.state = stateFocusAgent
 	h.previewTerminal = session.NewDummyTerminal()
@@ -1991,10 +2020,9 @@ func TestHandleKeyPress_CtrlEnterSubmitsAndExitsFocusMode(t *testing.T) {
 
 	sent := updated.previewTerminal.SentKeys()
 	require.Len(t, sent, 1)
-	assert.Equal(t, []byte{0x0D}, sent[0])
-	assert.Equal(t, stateDefault, updated.state)
-	assert.Equal(t, "test-agent", updated.previewTerminalInstance)
-	require.NotNil(t, cmd)
+	assert.Equal(t, kittyCSIu(13, tea.ModCtrl), sent[0])
+	assert.Equal(t, stateFocusAgent, updated.state)
+	assert.Nil(t, cmd)
 }
 
 func TestHandleKeyPress_CtrlSpaceTogglesIntoFocusMode(t *testing.T) {
@@ -2101,7 +2129,7 @@ func TestDeleteKey_AllowsRemovalOfExitedRunningInstance(t *testing.T) {
 		"delete should remove exited instance even if status is Running")
 }
 
-func TestKillKey_NoopsOnExitedInstance(t *testing.T) {
+func TestCtrlKill_NoopsOnExitedInstance(t *testing.T) {
 	h := newTestHome()
 	inst, err := newTestInstance("exited-reviewer")
 	require.NoError(t, err)
@@ -2112,10 +2140,10 @@ func TestKillKey_NoopsOnExitedInstance(t *testing.T) {
 	h.nav.SelectInstance(inst)
 
 	h.keySent = true
-	msg := tea.KeyPressMsg{Code: 'k', Text: "k"}
+	msg := tea.KeyPressMsg{Code: 'k', Text: "k", Mod: tea.ModCtrl}
 	_, cmd := h.handleKeyPress(msg)
 
-	assert.Nil(t, cmd, "k should no-op on an already-exited instance")
+	assert.Nil(t, cmd, "ctrl+k should no-op on an already-exited instance")
 }
 
 func TestMetadataTick_ExitedInstanceTransitionsToReady(t *testing.T) {

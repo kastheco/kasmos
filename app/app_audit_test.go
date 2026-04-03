@@ -274,11 +274,11 @@ func TestAuditHomeEmit_AgentKilled(t *testing.T) {
 	assert.Equal(t, "my-agent", events[0].InstanceTitle)
 }
 
-// TestAuditHomeEmit_AgentKilled_KeybindK verifies that the k keybind kill path
+// TestAuditHomeEmit_AgentKilled_KeybindCtrlK verifies that the ctrl+k keybind kill path
 // emits EventAgentKilled. Because session.Instance.Started() is not settable
 // from outside the session package without real tmux, we test the audit emission
-// directly via the audit() helper — the same code path the k handler calls.
-func TestAuditHomeEmit_AgentKilled_KeybindK(t *testing.T) {
+// directly via the audit() helper — the same code path the ctrl+k handler calls.
+func TestAuditHomeEmit_AgentKilled_KeybindCtrlK(t *testing.T) {
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -287,7 +287,7 @@ func TestAuditHomeEmit_AgentKilled_KeybindK(t *testing.T) {
 	h.auditLogger = logger
 	h.taskStoreProject = "myproject"
 
-	// Simulate the audit call that the k keybind handler makes after the
+	// Simulate the audit call that the ctrl+k keybind handler makes after the
 	// started/paused guard passes.
 	h.audit(auditlog.EventAgentKilled, "killed instance",
 		auditlog.WithInstance("my-agent"),
@@ -301,7 +301,7 @@ func TestAuditHomeEmit_AgentKilled_KeybindK(t *testing.T) {
 		Limit:   10,
 	})
 	require.NoError(t, err)
-	require.Len(t, events, 1, "k keybind must emit EventAgentKilled")
+	require.Len(t, events, 1, "ctrl+k keybind must emit EventAgentKilled")
 	assert.Equal(t, "my-agent", events[0].InstanceTitle)
 	assert.Contains(t, events[0].Message, "killed instance")
 }

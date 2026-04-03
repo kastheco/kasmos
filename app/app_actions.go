@@ -1521,15 +1521,15 @@ func (m *home) openCommandLauncher() (tea.Model, tea.Cmd) {
 		{Label: "view keybinds", Hint: "?", Action: "view_keybinds"},
 		{Label: "new plan", Hint: "n", Action: "new_plan"},
 		{Label: "new instance", Hint: "N", Action: "new_instance"},
-		{Label: "spawn agent", Hint: "s", Action: "spawn_agent"},
-		{Label: "quick launch", Hint: "S", Action: "quick_launch"},
+		{Label: "spawn agent", Hint: "S", Action: "spawn_agent"},
+		{Label: "quick launch", Hint: "s", Action: "quick_launch"},
 		{Label: "search", Hint: "/", Action: "search"},
 		{Label: "interactive mode", Hint: "i", Action: "interactive"},
 		{Label: "send yes", Hint: "y", Action: "send_yes"},
-		{Label: "kill session", Hint: "k", Action: "kill"},
-		{Label: "stop session", Hint: "K", Action: "abort"},
+		{Label: "kill session", Hint: "ctrl+k", Action: "kill"},
+		{Label: "stop session", Hint: "ctrl+shift+k", Action: "abort"},
 		{Label: "resume session", Hint: "r", Action: "resume"},
-		{Label: "checkout branch", Hint: "c", Action: "checkout"},
+		{Label: "checkout branch", Hint: "", Action: "checkout"},
 		{Label: "create pull request", Hint: "P", Action: "create_pr"},
 		{Label: "preview plan", Hint: "p", Action: "preview"},
 		{Label: "context menu", Hint: "→", Action: "context_menu"},
@@ -1537,7 +1537,7 @@ func (m *home) openCommandLauncher() (tea.Model, tea.Cmd) {
 		{Label: "toggle sidebar", Hint: "ctrl+s", Action: "toggle_sidebar"},
 		{Label: "toggle audit log", Hint: "L", Action: "toggle_audit"},
 		{Label: "audit log actions", Hint: "A", Action: "audit_cursor"},
-		{Label: "info tab", Hint: "g", Action: "info_tab"},
+		{Label: "info tab", Hint: "I", Action: "info_tab"},
 		{Label: "quit", Hint: "q", Action: "quit"},
 	}
 	launcher := overlay.NewCommandLauncherOverlay("commands", items)
@@ -1560,7 +1560,10 @@ func (m *home) openKeybindBrowser() (tea.Model, tea.Cmd) {
 // the keybind browser. Uses keys.GlobalkeyBindings to get label and key text.
 func buildKeybindBrowserItems() []overlay.LauncherItem {
 	var items []overlay.LauncherItem
-	for _, binding := range keys.GlobalkeyBindings {
+	for name, binding := range keys.GlobalkeyBindings {
+		if name == keys.KeySubmitName {
+			continue
+		}
 		help := binding.Help()
 		if help.Key == "" || help.Desc == "" {
 			continue
