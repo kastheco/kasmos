@@ -798,8 +798,11 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				newName := result.Value
 				selected := m.nav.GetSelectedInstance()
 				if selected != nil && newName != "" {
-					selected.Title = newName
-					m.saveAllInstances()
+					if err := m.syncInstanceDisplayTitle(selected, newName); err != nil {
+						m.state = stateDefault
+						m.menu.SetState(ui.StateDefault)
+						return m, m.handleError(err)
+					}
 				}
 			}
 			m.state = stateDefault

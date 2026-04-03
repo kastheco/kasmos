@@ -827,6 +827,41 @@ func (m *home) saveAllInstances() error {
 	return m.storage.SaveInstances(m.allInstances)
 }
 
+func (m *home) syncInstanceDisplayTitle(inst *session.Instance, rawTitle string) error {
+	if inst == nil {
+		return nil
+	}
+
+	newTitle := slugify(rawTitle)
+	if newTitle == "" || inst.DisplayName() == newTitle {
+		return nil
+	}
+
+	for _, other := range m.nav.GetInstances() {
+		if other != nil && other != inst && other.DisplayName() == newTitle {
+			return nil
+		}
+	}
+	for _, other := range m.allInstances {
+		if other != nil && other != inst && other.DisplayName() == newTitle {
+			return nil
+		}
+	}
+	for other := range m.instanceFinalizers {
+		if other != nil && other != inst && other.DisplayName() == newTitle {
+			return nil
+		}
+	}
+
+	inst.DisplayTitle = newTitle
+	m.populateInstanceTabs()
+	if selected := m.nav.GetSelectedInstance(); selected == inst {
+		m.updateInfoPane()
+	}
+	m.updateNavPanelStatus()
+	return m.saveAllInstances()
+}
+
 // removeFromAllInstances removes an instance from the master list by title.
 func (m *home) removeFromAllInstances(title string) {
 	filtered := m.allInstances[:0]
