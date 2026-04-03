@@ -1727,6 +1727,17 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// Drain deferred all-complete prompts that were blocked by an overlay.
+			// First purge any entries the user already dismissed — ticks while the
+			// overlay was showing may have accumulated duplicates.
+			if len(m.pendingAllComplete) > 0 && len(m.allCompleteDismissed) > 0 {
+				filtered := m.pendingAllComplete[:0]
+				for _, pf := range m.pendingAllComplete {
+					if !m.allCompleteDismissed[pf] {
+						filtered = append(filtered, pf)
+					}
+				}
+				m.pendingAllComplete = filtered
+			}
 			if len(m.pendingAllComplete) > 0 {
 				m.exitFocusModeForDialog()
 			}

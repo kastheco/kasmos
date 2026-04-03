@@ -2872,18 +2872,21 @@ func (m *home) rebuildOrphanedOrchestrators() {
 		// before the restart (or before the orchestrator was deleted). Don't add
 		// it to waveOrchestrators — the metadata tick would immediately re-show the
 		// "push branch and start review?" prompt on every tick. Queue a single
-		// deferred prompt instead, deduplicating against existing entries.
+		// deferred prompt instead, but only if the prompt isn't already showing
+		// (pendingAllCompleteTaskFile) and the plan isn't already queued.
 		if orch.State() == orchestration.WaveStateAllComplete {
-			alreadyQueued := false
-			for _, pf := range m.pendingAllComplete {
-				if pf == planFile {
-					alreadyQueued = true
-					break
+			if m.pendingAllCompleteTaskFile != planFile {
+				alreadyQueued := false
+				for _, pf := range m.pendingAllComplete {
+					if pf == planFile {
+						alreadyQueued = true
+						break
+					}
 				}
-			}
-			if !alreadyQueued {
-				m.pendingAllComplete = append(m.pendingAllComplete, planFile)
-				log.WarningLog.Printf("rebuildOrphanedOrchestrators: %s already all-complete — queued prompt", planFile)
+				if !alreadyQueued {
+					m.pendingAllComplete = append(m.pendingAllComplete, planFile)
+					log.WarningLog.Printf("rebuildOrphanedOrchestrators: %s already all-complete — queued prompt", planFile)
+				}
 			}
 			continue
 		}
