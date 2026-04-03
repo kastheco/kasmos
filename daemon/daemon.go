@@ -1300,7 +1300,13 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 		return fmt.Errorf("persist wave execution state for %s: %w", planFile, err)
 	}
 	peerCount := len(tasks)
+	var (
+		wg       sync.WaitGroup
+		errOnce  sync.Once
+		firstErr error
+	)
 	for _, task := range tasks {
+		task := task
 		prompt := orch.BuildTaskPrompt(task, peerCount)
 		opts := loop.SpawnOpts{
 			PlanFile: planFile,
@@ -1309,9 +1315,19 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 			Branch:   entry.Branch,
 			Wave:     waveNum,
 		}
-		if err := spawnWaveTask(ctx, opts, task, prompt, peerCount); err != nil {
-			return err
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := spawnWaveTask(ctx, opts, task, prompt, peerCount); err != nil {
+				errOnce.Do(func() {
+					firstErr = err
+				})
+			}
+		}()
+	}
+	wg.Wait()
+	if firstErr != nil {
+		return firstErr
 	}
 
 	planName := taskstate.DisplayName(planFile)

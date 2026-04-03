@@ -61,6 +61,9 @@ type TmuxSpawner struct {
 	// projectByKey stores the project name for each running instance so that
 	// ListInstances can filter by project.
 	projectByKey map[string]string
+	// worktreePrepLocks serializes shared-worktree setup/scaffold sync per path
+	// so multiple wave tasks can start concurrently once preparation is done.
+	worktreePrepLocks map[string]*sync.Mutex
 
 	// injectable seams for testability and grace-period checks.
 	hasAttachedClients func(cmd.Executor, string) bool
@@ -100,13 +103,14 @@ func newTmuxSpawnerWithConfig(logger *slog.Logger, drainTimeout time.Duration) *
 		drainTimeout = 30 * time.Second
 	}
 	return &TmuxSpawner{
-		logger:         logger,
-		drainTimeout:   drainTimeout,
-		instances:      make(map[string]*session.Instance),
-		replacing:      make(map[string]bool),
-		planFileByKey:  make(map[string]string),
-		agentTypeByKey: make(map[string]string),
-		projectByKey:   make(map[string]string),
+		logger:            logger,
+		drainTimeout:      drainTimeout,
+		instances:         make(map[string]*session.Instance),
+		replacing:         make(map[string]bool),
+		planFileByKey:     make(map[string]string),
+		agentTypeByKey:    make(map[string]string),
+		projectByKey:      make(map[string]string),
+		worktreePrepLocks: make(map[string]*sync.Mutex),
 
 		hasAttachedClients: tmuxpkg.HasAttachedClients,
 		sleep:              time.Sleep,
@@ -118,6 +122,17 @@ func newTmuxSpawnerWithConfig(logger *slog.Logger, drainTimeout time.Duration) *
 		restoreInstance:    session.FromInstanceData,
 		cleanupGracePeriod: 30 * time.Second,
 	}
+}
+
+func (s *TmuxSpawner) worktreePrepLock(worktreePath string) *sync.Mutex {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.worktreePrepLocks[worktreePath]; ok {
+		return existing
+	}
+	lock := &sync.Mutex{}
+	s.worktreePrepLocks[worktreePath] = lock
+	return lock
 }
 
 // shouldSkipCleanup returns true when a tmux client is attached, indicating
@@ -621,14 +636,19 @@ func (s *TmuxSpawner) SpawnWaveTask(_ context.Context, opts loop.SpawnOpts, task
 	inst.SetStatus(session.Loading)
 
 	shared := gitpkg.NewSharedTaskWorktree(opts.RepoPath, opts.Branch)
+	prepLock := s.worktreePrepLock(shared.GetWorktreePath())
+	prepLock.Lock()
 	if err := shared.Setup(); err != nil {
+		prepLock.Unlock()
 		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.wave-task: setup shared worktree: %w", err)
 	}
 	if err := ensureWorktreeScaffold(shared.GetWorktreePath(), program, session.AgentTypeCoder); err != nil {
+		prepLock.Unlock()
 		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.wave-task: sync scaffold: %w", err)
 	}
+	prepLock.Unlock()
 	if err := inst.StartInSharedWorktree(shared, opts.Branch); err != nil {
 		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.wave-task: start in shared worktree: %w", err)

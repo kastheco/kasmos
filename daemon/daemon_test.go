@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/config/taskfsm"
+	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/orchestration"
@@ -1033,6 +1034,78 @@ Do the second thing.
 	require.NotNil(t, orch)
 	assert.Equal(t, 2, orch.CurrentWaveNumber())
 	assert.Equal(t, orchestration.WaveStateRunning, orch.State())
+}
+
+func TestDaemon_StartWaveTasks_SpawnsWaveTasksConcurrently(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	project := "test-project"
+	planFile := "concurrent-wave.md"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+		Branch:   "plan/concurrent-wave",
+	}))
+	require.NoError(t, store.SetContent(project, planFile, `# Feature Plan
+
+## Wave 1
+### Task 1: First Thing
+
+Do the first thing.
+
+### Task 2: Second Thing
+
+Do the second thing.
+`))
+
+	proc := loop.NewProcessor(loop.ProcessorConfig{Store: store, Project: project})
+	actions := proc.ProcessWaveSignals([]taskfsm.WaveSignal{{TaskFile: planFile, WaveNumber: 1}})
+	require.Len(t, actions, 1)
+	advance, ok := actions[0].(loop.AdvanceWaveAction)
+	require.True(t, ok)
+
+	started := make(chan int, 2)
+	release := make(chan struct{})
+	d := &Daemon{
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		spawnWaveTask: func(_ context.Context, opts loop.SpawnOpts, task taskparser.Task, prompt string, peerCount int) error {
+			assert.Equal(t, planFile, opts.PlanFile)
+			assert.Equal(t, 1, opts.Wave)
+			assert.Equal(t, 2, peerCount)
+			assert.NotEmpty(t, prompt)
+			started <- task.Number
+			<-release
+			return nil
+		},
+	}
+	e := RepoEntry{
+		Path:      t.TempDir(),
+		Project:   project,
+		Store:     store,
+		Processor: proc,
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- d.executeAction(context.Background(), e, advance)
+	}()
+
+	seen := make(map[int]bool, 2)
+	deadline := time.After(200 * time.Millisecond)
+	for len(seen) < 2 {
+		select {
+		case taskNum := <-started:
+			seen[taskNum] = true
+		case <-deadline:
+			t.Fatal("expected both wave task spawns to begin before either returned")
+		}
+	}
+
+	close(release)
+	require.NoError(t, <-errCh)
+	assert.True(t, seen[1])
+	assert.True(t, seen[2])
 }
 
 func TestDaemon_ArchitectCompletion_StartsWaveOneAfterRestart(t *testing.T) {
