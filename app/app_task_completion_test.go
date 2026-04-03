@@ -297,6 +297,8 @@ func TestMetadataTickHandler_UpdatedPromptFrameTriggersPrompt(t *testing.T) {
 
 	assert.True(t, inst.PromptDetected,
 		"updated prompt frames must still mark the instance as prompt-detected")
+	assert.Equal(t, session.Ready, inst.Status,
+		"updated prompt frames at a prompt must settle to ready, not keep spinning as running")
 	assert.Equal(t, stateConfirm, updated.state,
 		"updated prompt frames must still trigger the implementer completion prompt")
 	assert.True(t, updated.overlays.IsActive(),

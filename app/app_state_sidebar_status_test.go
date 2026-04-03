@@ -52,6 +52,7 @@ func TestMergePlanStatus(t *testing.T) {
 	assert.False(t, st.HasRunning)
 
 	coder := newSidebarStatusTestInstance(t, "plan")
+	coder.Status = session.Running
 	st = mergePlanStatus(st, coder, true)
 	assert.True(t, st.HasRunning)
 	assert.True(t, st.HasNotification)
@@ -61,6 +62,13 @@ func TestMergePlanStatus(t *testing.T) {
 	paused := mergePlanStatus(ui.TopicStatus{}, pausedCoder, true)
 	assert.False(t, paused.HasRunning)
 	assert.False(t, paused.HasNotification)
+
+	promptedPlanner := newSidebarStatusTestInstance(t, "plan")
+	promptedPlanner.Status = session.Running
+	promptedPlanner.PromptDetected = true
+	prompted := mergePlanStatus(ui.TopicStatus{}, promptedPlanner, true)
+	assert.False(t, prompted.HasRunning,
+		"prompt-detected planners/coders sitting at a shell prompt must not keep the plan in running state")
 
 	noPlan := newSidebarStatusTestInstance(t, "")
 	existing := ui.TopicStatus{HasRunning: true}

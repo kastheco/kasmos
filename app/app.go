@@ -1601,7 +1601,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				inst.CachedContentSet = true
 
 				if md.Updated {
-					inst.SetStatus(session.Running)
 					// Mark that the agent has produced real work only after the
 					// queued task prompt has been dispatched and we observe
 					// non-prompt output. This prevents startup/prologue output and
@@ -1614,6 +1613,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				if md.HasPrompt {
+					inst.SetStatus(session.Ready)
 					inst.PromptDetected = true
 					// Don't nudge wave tasks that have finished work — they're done
 					// and the wave monitor will mark them complete on this tick.
@@ -1625,7 +1625,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							return nil
 						})
 					}
-				} else if !md.Updated {
+				} else if md.Updated {
+					inst.SetStatus(session.Running)
+				} else {
 					inst.SetStatus(session.Ready)
 				}
 				if inst.Status != session.Running {

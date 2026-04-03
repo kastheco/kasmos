@@ -436,7 +436,7 @@ func mergePlanStatus(status ui.TopicStatus, inst *session.Instance, started bool
 	if started && !inst.Paused() {
 		if isReviewerInstance(inst) {
 			status.HasNotification = true
-		} else {
+		} else if (inst.Status == session.Running || inst.Status == session.Loading) && !inst.PromptDetected {
 			status.HasRunning = true
 		}
 	}

@@ -874,13 +874,13 @@ func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
 			inst.Exited = false
 		}
 		if md.ContentCaptured {
-			if md.Updated {
-				inst.SetStatus(session.Running)
-			}
 			if md.HasPrompt {
+				inst.SetStatus(session.Ready)
 				inst.PromptDetected = true
 				inst.TapEnter()
-			} else if !md.Updated {
+			} else if md.Updated {
+				inst.SetStatus(session.Running)
+			} else {
 				inst.SetStatus(session.Ready)
 			}
 		}
