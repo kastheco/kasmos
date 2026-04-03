@@ -89,6 +89,37 @@ func TestSandbox_Validate_SymlinkEscape(t *testing.T) {
 	assert.Contains(t, err.Error(), "outside allowed directories")
 }
 
+func TestSandbox_RelPath_NestedFile(t *testing.T) {
+	dir := t.TempDir()
+	sb := fstools.NewSandbox([]string{dir})
+
+	path := filepath.Join(resolvedDir(t, dir), "sub", ".", "file.txt")
+
+	assert.Equal(t, filepath.Join("sub", "file.txt"), sb.RelPath(path))
+}
+
+func TestSandbox_RelPath_Root(t *testing.T) {
+	dir := t.TempDir()
+	sb := fstools.NewSandbox([]string{dir})
+
+	assert.Equal(t, ".", sb.RelPath(resolvedDir(t, dir)))
+}
+
+func TestSandbox_RelPath_RelativePathUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	sb := fstools.NewSandbox([]string{dir})
+
+	assert.Equal(t, filepath.Join("sub", "file.txt"), sb.RelPath(filepath.Join("sub", "file.txt")))
+}
+
+func TestSandbox_RelPath_OutsidePathUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	sb := fstools.NewSandbox([]string{dir})
+
+	assert.Equal(t, outside, sb.RelPath(outside))
+}
+
 func TestSandbox_DefaultDir_WithDirs(t *testing.T) {
 	dir := t.TempDir()
 	sb := fstools.NewSandbox([]string{dir})
