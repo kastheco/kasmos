@@ -652,7 +652,7 @@ persist task status updates
 	assert.Equal(t, taskstore.SubtaskStatusPending, subtasks[2].Status)
 }
 
-func TestTaskState_IngestContent_ParseFailureStillStoresContent(t *testing.T) {
+func TestTaskState_IngestContent_DraftWithoutWavesStoresMetadataAndClearsSubtasks(t *testing.T) {
 	ps, store := newTestPSWithStore(t)
 	require.NoError(t, ps.Create("plan", "", "plan/plan", "", time.Now().UTC()))
 
@@ -665,21 +665,19 @@ func TestTaskState_IngestContent_ParseFailureStillStoresContent(t *testing.T) {
 
 	invalidContent := "# Plan\n\n**Goal:** parsed but no waves"
 	err := ps.IngestContent("plan", invalidContent)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "parse plan content")
-	var warn *IngestWarning
-	assert.ErrorAs(t, err, &warn, "expected IngestWarning so callers can treat it as non-fatal")
+	require.NoError(t, err)
 
 	storedContent, contentErr := ps.GetContent("plan")
 	require.NoError(t, contentErr)
 	assert.Equal(t, invalidContent, storedContent)
 
+	entry, ok := ps.Entry("plan")
+	require.True(t, ok)
+	assert.Equal(t, "parsed but no waves", entry.Goal)
+
 	subtasks, subtaskErr := ps.GetSubtasks("plan")
 	require.NoError(t, subtaskErr)
-	require.Len(t, subtasks, 1)
-	assert.Equal(t, seeded[0].TaskNumber, subtasks[0].TaskNumber)
-	assert.Equal(t, seeded[0].Title, subtasks[0].Title)
-	assert.Equal(t, seeded[0].Status, subtasks[0].Status)
+	assert.Empty(t, subtasks)
 }
 
 func TestTaskState_LoadRequiresStore(t *testing.T) {

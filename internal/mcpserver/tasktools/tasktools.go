@@ -3,7 +3,6 @@ package tasktools
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -211,15 +210,7 @@ func makeTaskUpdateContentHandler(project string, store taskstore.Store) server.
 			return mcp.NewToolResultError(fmt.Sprintf("task_update_content: %v", err)), nil
 		}
 
-		var warn *taskstate.IngestWarning
 		if err := ps.IngestContent(filename, content); err != nil {
-			if errors.As(err, &warn) {
-				payload, encErr := mcp.NewToolResultJSON(taskMutationResult{Filename: filename, Updated: true, Warning: warn.Error()})
-				if encErr != nil {
-					return mcp.NewToolResultError(fmt.Sprintf("task_update_content: encode warning result: %v", encErr)), nil
-				}
-				return payload, nil
-			}
 			return mcp.NewToolResultError(fmt.Sprintf("task_update_content: %v", err)), nil
 		}
 

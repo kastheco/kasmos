@@ -556,22 +556,10 @@ func (ps *TaskState) SetContent(filename, content string) error {
 	return ps.store.SetContent(ps.project, filename, content)
 }
 
-// IngestWarning is returned by IngestContent when content was stored
-// successfully but plan-structure parsing failed (e.g. no Wave sections yet).
-// Only parse failures are downgraded; store write errors remain fatal.
-// The raw content is always persisted; callers may treat this as non-fatal.
-type IngestWarning struct {
-	err error
-}
-
-func (w *IngestWarning) Error() string { return w.err.Error() }
-func (w *IngestWarning) Unwrap() error { return w.err }
-
-// IngestContent stores plan content and parses metadata for goal/subtasks.
-// Content is always persisted even when parsing fails. A parse failure is
-// returned as [IngestWarning] (non-fatal) so draft plans without full wave
-// structure don't break automation. Store write failures after SetContent
-// remain hard errors.
+// IngestContent stores task markdown and updates derived metadata.
+// Draft content without wave headers is valid persisted state: metadata is
+// extracted, stale subtasks are cleared, and no warning is returned. Once wave
+// headers are present, executable subtask rows are rebuilt from the parsed plan.
 func (ps *TaskState) IngestContent(filename, content string) error {
 	if err := ps.requireStore(); err != nil {
 		return err
@@ -584,15 +572,25 @@ func (ps *TaskState) IngestContent(filename, content string) error {
 		return fmt.Errorf("task store set content: %w", err)
 	}
 
-	plan, err := taskparser.Parse(content)
-	if err != nil {
-		// Content is stored; structure is not yet valid. Downgrade to warning
-		// so callers (e.g. kas task update-content) can exit 0 on drafts.
-		return &IngestWarning{err: fmt.Errorf("parse plan content: %w", err)}
+	meta := taskparser.ExtractMetadata(content)
+	if err := ps.store.SetPlanGoal(ps.project, filename, meta.Goal); err != nil {
+		return fmt.Errorf("task store set plan goal: %w", err)
 	}
 
-	if err := ps.store.SetPlanGoal(ps.project, filename, plan.Goal); err != nil {
-		return fmt.Errorf("task store set plan goal: %w", err)
+	entry := ps.Plans[filename]
+	entry.Goal = meta.Goal
+	ps.Plans[filename] = entry
+
+	if !taskparser.HasWaveHeaders(content) {
+		if err := ps.store.SetSubtasks(ps.project, filename, nil); err != nil {
+			return fmt.Errorf("task store clear subtasks: %w", err)
+		}
+		return nil
+	}
+
+	plan, err := taskparser.Parse(content)
+	if err != nil {
+		return fmt.Errorf("parse plan content: %w", err)
 	}
 
 	subtasks := make([]taskstore.SubtaskEntry, 0)
@@ -608,10 +606,6 @@ func (ps *TaskState) IngestContent(filename, content string) error {
 	if err := ps.store.SetSubtasks(ps.project, filename, subtasks); err != nil {
 		return fmt.Errorf("task store set subtasks: %w", err)
 	}
-
-	entry := ps.Plans[filename]
-	entry.Goal = plan.Goal
-	ps.Plans[filename] = entry
 
 	return nil
 }

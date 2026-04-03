@@ -161,10 +161,15 @@ func TestTaskCreateHandler_DecodesEscapedMultilineContent(t *testing.T) {
 	assert.Equal(t, "# Plan\n\n## Wave 1\n\n### Task 1: write tests\n", content)
 }
 
-func TestTaskUpdateContentHandler_ReturnsWarningForDraft(t *testing.T) {
+func TestTaskUpdateContentHandler_StoresDraftWithoutWarning(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
 	project := "test-project"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "draft", Status: taskstore.StatusReady, CreatedAt: time.Now()}))
+	require.NoError(t, store.SetSubtasks(project, "draft", []taskstore.SubtaskEntry{{
+		TaskNumber: 1,
+		Title:      "stale",
+		Status:     taskstore.SubtaskStatusDone,
+	}}))
 
 	handler := makeTaskUpdateContentHandler(project, store)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "draft", "content": "# Draft\n\n**Goal:** in progress\n"}))
@@ -174,7 +179,15 @@ func TestTaskUpdateContentHandler_ReturnsWarningForDraft(t *testing.T) {
 	var payload taskMutationResult
 	require.NoError(t, json.Unmarshal([]byte(textResult(t, result)), &payload))
 	assert.True(t, payload.Updated)
-	assert.Contains(t, payload.Warning, "no wave headers found")
+	assert.Empty(t, payload.Warning)
+
+	entry, err := store.Get(project, "draft")
+	require.NoError(t, err)
+	assert.Equal(t, "in progress", entry.Goal)
+
+	subtasks, err := store.GetSubtasks(project, "draft")
+	require.NoError(t, err)
+	assert.Empty(t, subtasks)
 }
 
 func TestTaskDeleteHandler_DeletesStoredTask(t *testing.T) {

@@ -369,15 +369,7 @@ func executeTaskUpdateContent(project, filename string, reader io.Reader, store 
 		return err
 	}
 	filename = resolveExistingTaskFilename(ps, filename)
-	var warn *taskstate.IngestWarning
 	if err := ps.IngestContent(filename, content); err != nil {
-		if errors.As(err, &warn) {
-			// Content was stored successfully; only metadata extraction failed.
-			// Print a warning but exit 0 so automation isn't broken by drafts
-			// that don't yet have full plan structure (e.g. no Wave sections).
-			fmt.Fprintf(os.Stderr, "warning: %v\n", warn)
-			return nil
-		}
 		return fmt.Errorf("update content for %s: %w", filename, err)
 	}
 	return nil

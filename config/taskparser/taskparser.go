@@ -2,6 +2,7 @@
 package taskparser
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -29,6 +30,19 @@ type Plan struct {
 	Waves        []Wave
 }
 
+// Metadata captures the header fields that can be extracted from any stored
+// task markdown, even when the content is still a draft and has no wave
+// structure yet.
+type Metadata struct {
+	Goal         string
+	Architecture string
+	TechStack    string
+}
+
+// ErrNoWaveHeaders is returned when markdown content has no executable wave
+// sections yet. Draft content can still be stored and indexed via ExtractMetadata.
+var ErrNoWaveHeaders = errors.New("no wave headers found in plan; add ## Wave N sections before implementing")
+
 // HeaderContext returns the plan header as a string suitable for task prompts.
 func (p *Plan) HeaderContext() string {
 	var sb strings.Builder
@@ -42,6 +56,27 @@ func (p *Plan) HeaderContext() string {
 		sb.WriteString("**Tech Stack:** " + p.TechStack + "\n")
 	}
 	return sb.String()
+}
+
+// ExtractMetadata pulls header fields from plan markdown without requiring any
+// wave/task structure.
+func ExtractMetadata(content string) Metadata {
+	meta := Metadata{}
+	if m := goalRe.FindStringSubmatch(content); len(m) > 1 {
+		meta.Goal = strings.TrimSpace(m[1])
+	}
+	if m := archRe.FindStringSubmatch(content); len(m) > 1 {
+		meta.Architecture = strings.TrimSpace(m[1])
+	}
+	if m := techRe.FindStringSubmatch(content); len(m) > 1 {
+		meta.TechStack = strings.TrimSpace(m[1])
+	}
+	return meta
+}
+
+// HasWaveHeaders reports whether the content includes executable wave sections.
+func HasWaveHeaders(content string) bool {
+	return waveHeaderRe.MatchString(content)
 }
 
 var (
@@ -62,23 +97,17 @@ func Parse(content string) (*Plan, error) {
 		return nil, fmt.Errorf("empty plan content")
 	}
 
-	plan := &Plan{}
-
-	// Extract header fields
-	if m := goalRe.FindStringSubmatch(content); len(m) > 1 {
-		plan.Goal = strings.TrimSpace(m[1])
-	}
-	if m := archRe.FindStringSubmatch(content); len(m) > 1 {
-		plan.Architecture = strings.TrimSpace(m[1])
-	}
-	if m := techRe.FindStringSubmatch(content); len(m) > 1 {
-		plan.TechStack = strings.TrimSpace(m[1])
+	meta := ExtractMetadata(content)
+	plan := &Plan{
+		Goal:         meta.Goal,
+		Architecture: meta.Architecture,
+		TechStack:    meta.TechStack,
 	}
 
 	// Find all wave header positions
 	waveMatches := waveHeaderRe.FindAllStringSubmatchIndex(content, -1)
 	if len(waveMatches) == 0 {
-		return nil, fmt.Errorf("no wave headers found in plan; add ## Wave N sections before implementing")
+		return nil, ErrNoWaveHeaders
 	}
 
 	// Split content into wave sections

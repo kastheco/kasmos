@@ -1,6 +1,7 @@
 package taskparser
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -88,7 +89,33 @@ Step 1: do it too
 `
 	_, err := Parse(input)
 	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrNoWaveHeaders)
 	assert.Contains(t, err.Error(), "no wave headers found")
+}
+
+func TestExtractMetadata_DoesNotRequireWaves(t *testing.T) {
+	input := `# Notes
+
+**Goal:** untangle ingest and parse
+**Architecture:** separate save-time metadata from execution-time validation
+**Tech Stack:** go, sqlite
+
+## Step 1
+
+Draft notes only.
+`
+
+	meta := ExtractMetadata(input)
+	assert.Equal(t, Metadata{
+		Goal:         "untangle ingest and parse",
+		Architecture: "separate save-time metadata from execution-time validation",
+		TechStack:    "go, sqlite",
+	}, meta)
+	assert.False(t, HasWaveHeaders(input))
+
+	_, err := Parse(input)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrNoWaveHeaders))
 }
 
 func TestParsePlan_EmptyPlan(t *testing.T) {
