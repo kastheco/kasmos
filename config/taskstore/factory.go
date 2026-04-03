@@ -24,11 +24,11 @@ func NewStoreFromConfig(storeURL, project string) (Store, error) {
 // OpenAuthoritativeStore opens the authoritative task store for the current
 // repo/project. When a remote task store is configured, it must be reachable —
 // callers do not silently fall back to a second local writer. When no remote
-// authority is configured, the daemon-backed store is the only valid authority.
+// authority is configured, repo-local SQLite is the only valid authority.
 func OpenAuthoritativeStore(project string) (Store, error) {
 	cfg := config.LoadConfig()
 	if strings.TrimSpace(cfg.DatabaseURL) == "" {
-		store, err := openDaemonBackedStore(project)
+		store, err := OpenBackingSQLiteStore()
 		if err != nil {
 			return nil, fmt.Errorf("open authoritative task store for project %s: %w", project, err)
 		}
@@ -50,11 +50,11 @@ func OpenAuthoritativeStore(project string) (Store, error) {
 // current repo/project. Remote task-store authorities must be reachable; when a
 // remote authority is configured but does not expose signals, this fails fast
 // instead of silently writing to repo-local SQLite. When no remote authority is
-// configured, the daemon-backed signal gateway is the only valid authority.
+// configured, repo-local SQLite is the only valid authority.
 func OpenAuthoritativeSignalGateway(project string) (SignalGateway, error) {
 	cfg := config.LoadConfig()
 	if strings.TrimSpace(cfg.DatabaseURL) == "" {
-		gateway, err := openDaemonBackedSignalGateway(project)
+		gateway, err := OpenBackingSQLiteSignalGateway()
 		if err != nil {
 			return nil, fmt.Errorf("open authoritative signal gateway for project %s: %w", project, err)
 		}
@@ -84,7 +84,9 @@ func OpenBackingSQLiteStore() (Store, error) {
 	return NewSQLiteStore(dbPath)
 }
 
-func openBackingSQLiteSignalGateway() (SignalGateway, error) {
+// OpenBackingSQLiteSignalGateway opens the repo-root-backed SQLite signal
+// gateway used by local authoritative signal writers.
+func OpenBackingSQLiteSignalGateway() (SignalGateway, error) {
 	dbPath := ResolvedDBPath()
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		return nil, fmt.Errorf("create kasmos config dir: %w", err)

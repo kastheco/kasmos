@@ -1643,11 +1643,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.PlanState != nil && (msg.DaemonTaskState || !processedSignals) {
 			m.taskState = msg.PlanState
 		}
-		if msg.DaemonManagedRepo {
-			// Daemon-backed wave tasks are injected into the nav during metadata sync,
-			// after startup recovery has already run. Rebuild orphaned orchestrators on
-			// every daemon-managed tick so restarted/adopted wave tasks regain the
-			// in-memory state required for mark-complete actions and wave advancement.
+		if m.taskState != nil {
+			// Rebuild orphaned wave orchestrators on every metadata tick so local and
+			// daemon-managed repos both recover from adopted orphan sessions, exited
+			// task panes, and restart gaps. The helper is idempotent and skips plans
+			// that already have in-memory orchestration state.
 			m.rebuildOrphanedOrchestrators()
 		}
 
