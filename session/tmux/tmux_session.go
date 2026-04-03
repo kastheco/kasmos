@@ -291,13 +291,15 @@ func (t *TmuxSession) Start(workDir string) error {
 		}
 	}
 
-	// Append --print-logs and redirect stderr to a per-session log file so
-	// kasmos-spawned opencode agents always have debug logs available.
-	if isOpenCodeProgram(t.program) {
-		logDir := filepath.Join(workDir, promptDir, "logs")
-		if err := os.MkdirAll(logDir, 0o755); err == nil {
-			logFile := filepath.Join(logDir, t.sanitizedName+".log")
+	// Redirect stderr to a per-session log file so kasmos-spawned agents
+	// always have debug logs available for crash diagnosis.
+	logDir := filepath.Join(workDir, promptDir, "logs")
+	if err := os.MkdirAll(logDir, 0o755); err == nil {
+		logFile := filepath.Join(logDir, t.sanitizedName+".log")
+		if isOpenCodeProgram(t.program) {
 			program = program + " --print-logs 2>>" + shellEscapeSingleQuote(logFile)
+		} else {
+			program = program + " 2>>" + shellEscapeSingleQuote(logFile)
 		}
 	}
 
@@ -422,9 +424,24 @@ func (t *TmuxSession) Start(workDir string) error {
 		// Poll with exponential backoff until the ready string appears or we time out.
 		startTime := time.Now()
 		sleepDuration := 100 * time.Millisecond
+		sessionCheckInterval := 3 * time.Second
+		lastSessionCheck := startTime
 
 		for time.Since(startTime) < maxWaitTime {
 			time.Sleep(sleepDuration)
+
+			// Periodically verify the tmux session is still alive so we
+			// don't spend 30s polling a dead session.
+			if time.Since(lastSessionCheck) >= sessionCheckInterval {
+				lastSessionCheck = time.Now()
+				if !t.DoesSessionExist() {
+					if cleanupErr := t.Close(); cleanupErr != nil {
+						log.ErrorLog.Printf("cleanup after dead session %s: %v", t.sanitizedName, cleanupErr)
+					}
+					return fmt.Errorf("session %s died during startup (program exited immediately — check %s/logs/%s.log for details)", t.sanitizedName, promptDir, t.sanitizedName)
+				}
+			}
+
 			content, err := t.CapturePaneContent()
 			if err == nil && strings.Contains(content, searchString) {
 				if tapFunc != nil {
