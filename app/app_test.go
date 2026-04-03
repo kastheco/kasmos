@@ -477,7 +477,7 @@ func TestQuickLaunch_KeyCreatesInstance(t *testing.T) {
 	})
 
 	h := newTestHome()
-	h.activeRepoPath = t.TempDir()
+	h.activeRepoPath = filepath.Join(t.TempDir(), "myrepo")
 	h.keySent = true
 
 	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 's', Text: "s"})
@@ -488,7 +488,7 @@ func TestQuickLaunch_KeyCreatesInstance(t *testing.T) {
 	assert.False(t, updated.overlays.IsActive())
 	instances := updated.nav.GetInstances()
 	require.Len(t, instances, 1)
-	assert.Equal(t, "agent-1", instances[0].Title)
+	assert.Equal(t, "myrepo-agent-1", instances[0].Title)
 	assert.Equal(t, session.AgentTypeFixer, instances[0].AgentType)
 	assert.Equal(t, h.programForAgent(session.AgentTypeFixer), instances[0].Program)
 	assert.Empty(t, updated.allInstances)
@@ -505,7 +505,7 @@ func TestQuickLaunch_KeyCreatesInstance(t *testing.T) {
 	require.NotNil(t, followCmd)
 	require.Len(t, updated.allInstances, 1)
 	assert.Same(t, instances[0], updated.allInstances[0])
-	assert.Equal(t, "agent-1", updated.allInstances[0].Title)
+	assert.Equal(t, "myrepo-agent-1", updated.allInstances[0].Title)
 }
 
 func TestQuickLaunch_TitleSyncUpdatesDisplayTitle(t *testing.T) {
@@ -565,7 +565,7 @@ func TestQuickLaunch_InstanceLimitEnforced(t *testing.T) {
 
 func TestQuickLaunch_PlaceholderNameAvoidsCollisions(t *testing.T) {
 	h := newTestHome()
-	repoPath := t.TempDir()
+	repoPath := filepath.Join(t.TempDir(), "myrepo")
 	h.activeRepoPath = repoPath
 
 	newPlaceholder := func(title string) *session.Instance {
@@ -579,13 +579,13 @@ func TestQuickLaunch_PlaceholderNameAvoidsCollisions(t *testing.T) {
 		return inst
 	}
 
-	agent1 := newPlaceholder("agent-1")
-	agent3 := newPlaceholder("agent-3")
+	agent1 := newPlaceholder("myrepo-agent-1")
+	agent3 := newPlaceholder("myrepo-agent-3")
 	h.nav.AddInstance(agent1)()
 	h.nav.AddInstance(agent3)()
 	h.allInstances = append(h.allInstances, agent1, agent3)
 
-	assert.Equal(t, "agent-4", h.nextPlaceholderName())
+	assert.Equal(t, "myrepo-agent-4", h.nextPlaceholderName())
 }
 
 // TestConfirmationModalStateTransitions tests state transitions without full instance setup

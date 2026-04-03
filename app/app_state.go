@@ -116,7 +116,7 @@ var quickLaunchStartOnMain = func(inst *session.Instance) error {
 
 var readQuickLaunchSessionTitle = opencodesession.ReadSessionTitle
 
-var quickLaunchPlaceholderTitleRE = regexp.MustCompile(`^agent-(\d+)$`)
+var quickLaunchPlaceholderTitleRE = regexp.MustCompile(`^(?:.+-)?agent-(\d+)$`)
 var quickLaunchDisplayTitleRE = regexp.MustCompile(`[^a-z0-9]+`)
 
 type daemonPlannerStartedMsg struct {
@@ -2782,7 +2782,8 @@ func (m *home) nextPlaceholderName() string {
 		collect(inst)
 	}
 
-	return fmt.Sprintf("agent-%d", maxUsed+1)
+	prefix := filepath.Base(m.activeRepoPath)
+	return fmt.Sprintf("%s-agent-%d", prefix, maxUsed+1)
 }
 
 func (m *home) quickLaunchTitleSyncCmd(inst *session.Instance) tea.Cmd {
