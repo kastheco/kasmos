@@ -1410,6 +1410,7 @@ func TestEmitSelectedInstanceSignal_QueuesExpectedGatewayRows(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
 			dir := t.TempDir()
 			t.Chdir(dir)
 			plansDir := filepath.Join(dir, "docs", "plans")
@@ -1515,6 +1516,7 @@ func decodeSignalPayloadBody(t *testing.T, payload string) string {
 }
 
 func TestMarkReviewChangesRequested_QueuesGatewaySignal(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	dir := t.TempDir()
 	t.Chdir(dir)
 	plansDir := filepath.Join(dir, "docs", "plans")

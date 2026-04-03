@@ -505,6 +505,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 			// Close broadcaster after HTTP server shuts down so no new SSE
 			// connections are started after we signal EOF.
 			d.broadcaster.Close()
+			// Release the shared global taskstore connection pool.
+			d.repos.Close()
 			return nil
 
 		case <-ticker.C:

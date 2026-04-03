@@ -21,7 +21,7 @@ func resolveToolGateway(project string, gateway taskstore.SignalGateway) (taskst
 		return gateway, func() {}, nil
 	}
 
-	resolved, err := taskstore.OpenDaemonBackedSignalGateway(project)
+	resolved, err := taskstore.OpenAuthoritativeSignalGateway(project)
 	if err != nil {
 		return nil, nil, err
 	}

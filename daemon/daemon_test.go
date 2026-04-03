@@ -112,6 +112,8 @@ func TestDaemon_AddRepo(t *testing.T) {
 	}
 	d, err := NewDaemon(cfg)
 	require.NoError(t, err)
+	// Use an isolated test store so the test does not touch the real global DB.
+	d.repos = newTestRepoManager(t)
 
 	tmpDir := t.TempDir()
 	err = d.AddRepo(tmpDir)
@@ -190,6 +192,8 @@ func TestDaemon_RecoverOnRestart(t *testing.T) {
 	}
 	d, err := NewDaemon(cfg)
 	require.NoError(t, err)
+	// Use an isolated test store so the test does not touch the real global DB.
+	d.repos = newTestRepoManager(t)
 
 	repoDir := t.TempDir()
 	require.NoError(t, d.AddRepo(repoDir))

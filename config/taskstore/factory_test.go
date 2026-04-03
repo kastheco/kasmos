@@ -1,10 +1,7 @@
 package taskstore
 
 import (
-	"encoding/json"
 	"fmt"
-	"net"
-	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -30,82 +27,6 @@ func initTestRepo(t *testing.T, repoDir string) {
 	if err != nil {
 		t.Skipf("git init failed (%v): %s", err, out)
 	}
-}
-
-func startTestDaemonSocketServer(t *testing.T, handler http.Handler) string {
-	t.Helper()
-
-	// Set HOME and XDG_RUNTIME_DIR to a short temp dir so ResolvedDaemonSocketPath
-	// never reads a real daemon.toml and test socket paths stay under the 108-byte
-	// Unix domain socket limit on Linux.
-	homeDir, err := os.MkdirTemp("", "ks-")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = os.RemoveAll(homeDir) })
-	t.Setenv("HOME", homeDir)
-	t.Setenv("XDG_RUNTIME_DIR", homeDir)
-
-	socketPath := ResolvedDaemonSocketPath()
-	require.NoError(t, os.MkdirAll(filepath.Dir(socketPath), 0o755))
-	_ = os.Remove(socketPath)
-
-	listener, err := net.Listen("unix", socketPath)
-	require.NoError(t, err)
-
-	server := &http.Server{Handler: handler}
-
-	go func() {
-		_ = server.Serve(listener)
-	}()
-
-	t.Cleanup(func() {
-		require.NoError(t, server.Close())
-		_ = os.Remove(socketPath)
-	})
-
-	return socketPath
-}
-
-func newTestDaemonTaskStoreMux(t *testing.T, repos []string, taskHandler http.Handler) http.Handler {
-	t.Helper()
-
-	registered := make([]daemonRepoStatus, 0, len(repos))
-	for _, project := range repos {
-		registered = append(registered, daemonRepoStatus{Project: project})
-	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/repos", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(registered))
-	})
-	mux.Handle("/v1/ping", taskHandler)
-	mux.Handle("/v1/projects/", taskHandler)
-	return mux
-}
-
-func newTestDaemonMux(t *testing.T, repos []string, taskHandler, signalHandler http.Handler) http.Handler {
-	t.Helper()
-
-	registered := make([]daemonRepoStatus, 0, len(repos))
-	for _, project := range repos {
-		registered = append(registered, daemonRepoStatus{Project: project})
-	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/repos", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(registered))
-	})
-	mux.HandleFunc("GET /v1/ping", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	if taskHandler != nil {
-		mux.Handle("/v1/projects/", taskHandler)
-	}
-	if signalHandler != nil {
-		mux.Handle("/v1/projects/", signalHandler)
-	}
-	return mux
 }
 
 func TestNewStoreFromConfig_HTTP(t *testing.T) {
@@ -164,10 +85,11 @@ func TestOpenAuthoritativeStore_UnreachableRemoteFails(t *testing.T) {
 	assert.Contains(t, err.Error(), "task store unreachable")
 }
 
-func TestOpenAuthoritativeStore_UsesRepoLocalSQLiteWhenDatabaseURLUnset(t *testing.T) {
+func TestOpenAuthoritativeStore_UsesGlobalSQLiteWhenDatabaseURLUnset(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	repoDir := t.TempDir()
 	initTestRepo(t, repoDir)
-	t.Setenv("HOME", t.TempDir())
 	t.Chdir(repoDir)
 
 	store, err := OpenAuthoritativeStore("test-project")
@@ -177,7 +99,11 @@ func TestOpenAuthoritativeStore_UsesRepoLocalSQLiteWhenDatabaseURLUnset(t *testi
 
 	require.NoError(t, store.Create("test-project", TaskEntry{Filename: "authoritative-local", Status: StatusReady}))
 
-	backingStore, err := NewSQLiteStore(ResolvedDBPath())
+	// Verify data landed in the global DB, not a repo-local one.
+	globalDBPath := filepath.Join(home, ".config", "kasmos", "taskstore.db")
+	assert.Equal(t, globalDBPath, ResolvedDBPath())
+
+	backingStore, err := NewSQLiteStore(globalDBPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = backingStore.Close() })
 
@@ -214,10 +140,11 @@ func TestOpenAuthoritativeSignalGateway_ReachableRemoteFailsWithoutSignalAccess(
 	assert.Contains(t, err.Error(), "does not expose signal gateway access")
 }
 
-func TestOpenAuthoritativeSignalGateway_UsesRepoLocalSQLiteWhenDatabaseURLUnset(t *testing.T) {
+func TestOpenAuthoritativeSignalGateway_UsesGlobalSQLiteWhenDatabaseURLUnset(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	repoDir := t.TempDir()
 	initTestRepo(t, repoDir)
-	t.Setenv("HOME", t.TempDir())
 	t.Chdir(repoDir)
 
 	gw, err := OpenAuthoritativeSignalGateway("test-project")
@@ -227,7 +154,9 @@ func TestOpenAuthoritativeSignalGateway_UsesRepoLocalSQLiteWhenDatabaseURLUnset(
 
 	require.NoError(t, gw.Create("test-project", SignalEntry{PlanFile: "feature", SignalType: "planner_finished", Payload: "{}"}))
 
-	backingGateway, err := NewSQLiteSignalGateway(ResolvedDBPath())
+	// Verify data landed in the global DB, not a repo-local one.
+	globalDBPath := filepath.Join(home, ".config", "kasmos", "taskstore.db")
+	backingGateway, err := NewSQLiteSignalGateway(globalDBPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = backingGateway.Close() })
 
@@ -251,94 +180,36 @@ func TestResolvedDaemonSocketPath_UsesDaemonTomlOverride(t *testing.T) {
 	assert.Equal(t, override, ResolvedDaemonSocketPath())
 }
 
-func TestOpenDaemonBackedSignalGateway_UsesDaemonWhenProjectRegistered(t *testing.T) {
-	project := "test-project"
-	dbPath := filepath.Join(t.TempDir(), "signals.db")
-	backend, err := NewSQLiteSignalGateway(dbPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = backend.Close() })
-
-	repoDir := t.TempDir()
-	initTestRepo(t, repoDir)
-	startTestDaemonSocketServer(t, newTestDaemonMux(t, []string{project}, nil, NewSignalHandler(backend)))
-	t.Chdir(repoDir)
-
-	gw, err := OpenDaemonBackedSignalGateway(project)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = gw.Close() })
-
-	require.NoError(t, gw.Create(project, SignalEntry{PlanFile: "feature", SignalType: "planner_finished"}))
-	signals, err := backend.List(project, SignalPending)
-	require.NoError(t, err)
-	require.Len(t, signals, 1)
-	assert.Equal(t, "planner_finished", signals[0].SignalType)
-	assert.Equal(t, "feature", signals[0].PlanFile)
-
-	claimed, err := gw.Claim(project, "worker-1")
-	require.NoError(t, err)
-	require.NotNil(t, claimed)
-	assert.Equal(t, signals[0].PlanFile, claimed.PlanFile)
-	require.NoError(t, gw.MarkProcessed(claimed.ID, SignalDone, "ok"))
-
-	processed, err := backend.List(project, SignalDone)
-	require.NoError(t, err)
-	require.Len(t, processed, 1)
-	assert.Equal(t, claimed.ID, processed[0].ID)
-	assert.Equal(t, "ok", processed[0].Result)
-}
-
-func TestOpenDaemonBackedSignalGateway_UnregisteredProjectFails(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "signals.db")
-	backend, err := NewSQLiteSignalGateway(dbPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = backend.Close() })
-
-	repoDir := t.TempDir()
-	initTestRepo(t, repoDir)
-	startTestDaemonSocketServer(t, newTestDaemonMux(t, []string{"other-project"}, nil, NewSignalHandler(backend)))
-	t.Chdir(repoDir)
-
-	gw, err := OpenDaemonBackedSignalGateway("test-project")
-	require.Error(t, err)
-	assert.Nil(t, gw)
-	assert.Contains(t, err.Error(), "not registered")
-}
-
 func TestResolvedDBPath(t *testing.T) {
-	runGit := func(t *testing.T, repo string, args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
-		out, err := cmd.CombinedOutput()
-		require.NoErrorf(t, err, "git %v failed: %s", args, string(out))
-	}
+	t.Run("returns global taskstore.db under HOME/.config/kasmos", func(t *testing.T) {
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
 
-	t.Run("returns taskstore.db under .kasmos in working directory", func(t *testing.T) {
+		dbPath := ResolvedDBPath()
+
+		assert.Equal(t, filepath.Join(homeDir, ".config", "kasmos", "taskstore.db"), dbPath)
+	})
+
+	t.Run("same global path regardless of working directory or git repo", func(t *testing.T) {
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+
+		// change into an unrelated temp dir — path must not change
 		projectDir := t.TempDir()
 		t.Chdir(projectDir)
 
 		dbPath := ResolvedDBPath()
-
-		assert.Equal(t, filepath.Join(projectDir, ".kasmos", "taskstore.db"), dbPath)
+		assert.Equal(t, filepath.Join(homeDir, ".config", "kasmos", "taskstore.db"), dbPath)
 	})
+}
 
-	t.Run("returns taskstore.db under main repo root from worktree", func(t *testing.T) {
-		repoDir := t.TempDir()
-		t.Setenv("HOME", t.TempDir())
+func TestGlobalDBPath(t *testing.T) {
+	t.Run("returns path under HOME/.config/kasmos", func(t *testing.T) {
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
 
-		runGit(t, repoDir, "init", "-b", "main")
-		runGit(t, repoDir, "config", "user.email", "test@example.com")
-		runGit(t, repoDir, "config", "user.name", "test")
-		require.NoError(t, os.WriteFile(filepath.Join(repoDir, "README.md"), []byte("init\n"), 0o644))
-		runGit(t, repoDir, "add", ".")
-		runGit(t, repoDir, "commit", "-m", "initial")
+		dbPath := GlobalDBPath()
 
-		runGit(t, repoDir, "branch", "plan/worktree-db")
-		worktreeParent := t.TempDir()
-		worktreeDir := filepath.Join(worktreeParent, "worktree-db")
-		runGit(t, repoDir, "worktree", "add", worktreeDir, "plan/worktree-db")
-		t.Chdir(worktreeDir)
-
-		dbPath := ResolvedDBPath()
-		assert.Equal(t, filepath.Join(repoDir, ".kasmos", "taskstore.db"), dbPath)
+		assert.Equal(t, filepath.Join(homeDir, ".config", "kasmos", "taskstore.db"), dbPath)
 	})
 }

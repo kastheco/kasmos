@@ -64,14 +64,14 @@ func GetConfigDir() (string, error) {
 				continue
 			}
 			// Legacy dir found — copy the remaining supported local files.
-			// state.json is still file-backed app state, while taskstore.db remains the
-			// canonical local task store. Older directory names are intentionally not
-			// part of the compatibility contract anymore.
+			// state.json is still file-backed app state. taskstore.db is NOT copied
+			// because the global DB at ~/.config/kasmos/taskstore.db is used directly.
+			// Older directory names are intentionally not part of the compatibility contract anymore.
 			if mkErr := os.MkdirAll(target, 0755); mkErr != nil {
 				log.ErrorLog.Printf("failed to create %s: %v", target, mkErr)
 				break
 			}
-			for _, fname := range []string{"config.json", "config.toml", "state.json", "taskstore.db"} {
+			for _, fname := range []string{"config.json", "config.toml", "state.json"} {
 				copyIfMissing(filepath.Join(legacy, fname), filepath.Join(target, fname))
 			}
 			break
