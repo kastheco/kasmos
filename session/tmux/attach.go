@@ -26,8 +26,7 @@ var (
 //  1. PTY output → os.Stdout (io.Copy)
 //  2. os.Stdin → PTY, with Ctrl+Q (0x11) and Ctrl+Space (0x00) as detach keys
 //
-// A 50 ms nuke window discards any buffered stdin bytes that accumulated
-// before the attach. Window-size monitoring is started via monitorWindowSize.
+// Window-size monitoring is started via monitorWindowSize.
 //
 // Returns a channel that is closed when Detach completes.
 func (t *TmuxSession) Attach() (chan struct{}, error) {
@@ -67,15 +66,6 @@ func (t *TmuxSession) Attach() (chan struct{}, error) {
 		defer wg.Done()
 
 		buf := make([]byte, 4096)
-
-		// Nuke window: discard any stdin bytes buffered before we attached.
-		// We do short deadline reads for ~50ms to drain the buffer.
-		nukeEnd := time.Now().Add(50 * time.Millisecond)
-		for time.Now().Before(nukeEnd) {
-			_ = os.Stdin.SetReadDeadline(time.Now().Add(5 * time.Millisecond))
-			_, _ = os.Stdin.Read(buf)
-		}
-		_ = os.Stdin.SetReadDeadline(time.Time{}) // clear deadline
 
 		for {
 			select {
