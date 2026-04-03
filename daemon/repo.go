@@ -19,10 +19,11 @@ type RepoEntry struct {
 	Path string
 	// Project is the basename of the repository directory (e.g. "my-project").
 	Project string
-	// Store is the per-repo task store (embedded SQLite).
+	// Store is the global task store shared by all registered repos.
 	// It may be nil when the store has not yet been opened or is unavailable.
+	// Per-repo data is namespaced by the project column inside the global DB.
 	Store taskstore.Store
-	// SignalGateway is the DB-backed signal gateway for this repo.
+	// SignalGateway is the global DB-backed signal gateway shared by all registered repos.
 	// It may be nil when the gateway has not yet been opened or is unavailable.
 	SignalGateway taskstore.SignalGateway
 	// SignalsDir is the path to the signals directory (<repo>/.kasmos/signals/).
@@ -34,23 +35,44 @@ type RepoEntry struct {
 
 // RepoManager tracks registered repositories for the daemon.
 // It is safe for concurrent use.
+//
+// All registered repos share a single global SQLite store at
+// ~/.config/kasmos/taskstore.db; per-repo data is namespaced by the project
+// column. The store is lazy-opened on the first Add() call and closed via
+// Close() or when the last repo entry is removed.
 type RepoManager struct {
 	mu                 sync.RWMutex
 	repos              []RepoEntry
 	autoAdvance        bool
 	autoReviewFix      bool
 	maxReviewFixCycles int
+	// globalStore is the shared backing store, lazy-opened on the first Add().
+	globalStore taskstore.Store
+	// globalGateway is the shared signal gateway, lazy-opened on the first Add().
+	globalGateway taskstore.SignalGateway
+	// openStore and openGateway are the factory functions used to open the
+	// global store and gateway. They default to the package-level backing
+	// openers and may be overridden in tests.
+	openStore   func() (taskstore.Store, error)
+	openGateway func() (taskstore.SignalGateway, error)
 }
 
 // NewRepoManager returns an empty, ready-to-use RepoManager.
 func NewRepoManager() *RepoManager {
-	return &RepoManager{}
+	return &RepoManager{
+		openStore:   taskstore.OpenBackingSQLiteStore,
+		openGateway: taskstore.OpenBackingSQLiteSignalGateway,
+	}
 }
 
 // Add registers a repository by absolute path.
 // It derives the project name from the directory basename and sets the signals dir.
-// A per-repo SQLite taskstore is opened at <path>/.kasmos/taskstore.db; any
-// error opening the store is non-fatal — the entry is added with a nil Store.
+// The global SQLite taskstore (~/.config/kasmos/taskstore.db) is opened lazily on
+// the first Add() call and shared across all repos; per-repo data is namespaced by
+// the project column. Any error opening the global store is non-fatal — the entry
+// is added with a nil Store.
+// On each Add a one-time migration from the repo's legacy local taskstore.db is
+// attempted (a no-op when the local file does not exist or is already migrated).
 // Returns an error if path is already registered.
 func (m *RepoManager) Add(path string) error {
 	m.mu.Lock()
@@ -66,18 +88,33 @@ func (m *RepoManager) Add(path string) error {
 			return fmt.Errorf("repo with basename %q already registered (path: %s); rename one of the directories or use distinct names", project, r.Path)
 		}
 	}
+
 	kasmosDir := filepath.Join(path, ".kasmos")
 	signalsDir := filepath.Join(kasmosDir, "signals")
-	dbPath := filepath.Join(kasmosDir, "taskstore.db")
 
-	var store taskstore.Store
-	if s, err := taskstore.NewSQLiteStore(dbPath); err == nil {
-		store = s
+	// Lazy-open the global store on first Add().
+	if m.globalStore == nil {
+		if s, err := m.openStore(); err == nil {
+			m.globalStore = s
+		} else {
+			slog.Warn("daemon: failed to open global taskstore", "error", err)
+		}
 	}
 
-	var gw taskstore.SignalGateway
-	if g, err := taskstore.NewSQLiteSignalGateway(dbPath); err == nil {
-		gw = g
+	// Lazy-open the global signal gateway on first Add().
+	if m.globalGateway == nil {
+		if g, err := m.openGateway(); err == nil {
+			m.globalGateway = g
+		} else {
+			slog.Warn("daemon: failed to open global signal gateway", "error", err)
+		}
+	}
+
+	// Migrate any existing repo-local tasks into the global store (idempotent).
+	if m.globalStore != nil {
+		if _, err := taskstore.MigrateRepoLocalToGlobal(m.globalStore, project, kasmosDir); err != nil {
+			slog.Warn("daemon: failed to migrate repo-local tasks to global store", "repo", path, "error", err)
+		}
 	}
 
 	// Build a hook registry by reading the per-repo config.toml.
@@ -117,7 +154,7 @@ func (m *RepoManager) Add(path string) error {
 	proc := loop.NewProcessor(loop.ProcessorConfig{
 		AutoAdvance:        autoAdvance,
 		AutoReviewFix:      m.autoReviewFix,
-		Store:              store,
+		Store:              m.globalStore,
 		Project:            project,
 		MaxReviewFixCycles: m.maxReviewFixCycles,
 		Hooks:              hooks,
@@ -126,15 +163,16 @@ func (m *RepoManager) Add(path string) error {
 	m.repos = append(m.repos, RepoEntry{
 		Path:          path,
 		Project:       project,
-		Store:         store,
-		SignalGateway: gw,
+		Store:         m.globalStore,
+		SignalGateway: m.globalGateway,
 		SignalsDir:    signalsDir,
 		Processor:     proc,
 	})
 	return nil
 }
 
-// Remove deregisters a repository by absolute path, closing its store if open.
+// Remove deregisters a repository by absolute path.
+// The shared global store and gateway are closed only when the last repo is removed.
 // Returns an error if path is not registered.
 func (m *RepoManager) Remove(path string) error {
 	m.mu.Lock()
@@ -142,13 +180,10 @@ func (m *RepoManager) Remove(path string) error {
 
 	for i, r := range m.repos {
 		if r.Path == path {
-			if r.Store != nil {
-				_ = r.Store.Close()
-			}
-			if r.SignalGateway != nil {
-				_ = r.SignalGateway.Close()
-			}
 			m.repos = append(m.repos[:i], m.repos[i+1:]...)
+			if len(m.repos) == 0 {
+				m.closeGlobalLocked()
+			}
 			return nil
 		}
 	}
@@ -156,24 +191,43 @@ func (m *RepoManager) Remove(path string) error {
 }
 
 // RemoveByProject deregisters a repository by its project name (the basename
-// of the repo path). Closing its store if open. Returns an error if not found.
+// of the repo path). Returns an error if not found.
+// The shared global store and gateway are closed only when the last repo is removed.
 func (m *RepoManager) RemoveByProject(project string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	for i, r := range m.repos {
 		if r.Project == project {
-			if r.Store != nil {
-				_ = r.Store.Close()
-			}
-			if r.SignalGateway != nil {
-				_ = r.SignalGateway.Close()
-			}
 			m.repos = append(m.repos[:i], m.repos[i+1:]...)
+			if len(m.repos) == 0 {
+				m.closeGlobalLocked()
+			}
 			return nil
 		}
 	}
 	return fmt.Errorf("repo not registered: %s", project)
+}
+
+// Close closes the shared global store and signal gateway.
+// It is safe to call even when no repos are registered.
+func (m *RepoManager) Close() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.closeGlobalLocked()
+}
+
+// closeGlobalLocked closes and nils the global store and gateway.
+// Caller must hold m.mu.
+func (m *RepoManager) closeGlobalLocked() {
+	if m.globalStore != nil {
+		_ = m.globalStore.Close()
+		m.globalStore = nil
+	}
+	if m.globalGateway != nil {
+		_ = m.globalGateway.Close()
+		m.globalGateway = nil
+	}
 }
 
 // List returns a snapshot of all currently registered repositories.
