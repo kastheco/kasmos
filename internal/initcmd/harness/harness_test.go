@@ -235,6 +235,16 @@ func TestOpenCodeAdapter(t *testing.T) {
 			assert.Equal(t, []string{"", "low", "medium", "high", "xhigh"}, levels)
 		})
 
+		t.Run("openai prefixed model gets xhigh", func(t *testing.T) {
+			levels := o.ListEffortLevels("openai/gpt-5.4")
+			assert.Equal(t, []string{"", "low", "medium", "high", "xhigh"}, levels)
+		})
+
+		t.Run("bare gpt model gets xhigh", func(t *testing.T) {
+			levels := o.ListEffortLevels("gpt-5.4")
+			assert.Equal(t, []string{"", "low", "medium", "high", "xhigh"}, levels)
+		})
+
 		t.Run("other model gets generic levels", func(t *testing.T) {
 			levels := o.ListEffortLevels("deepseek/deepseek-r1")
 			assert.Equal(t, []string{"", "low", "medium", "high"}, levels)
