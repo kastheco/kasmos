@@ -2869,12 +2869,22 @@ func (m *home) rebuildOrphanedOrchestrators() {
 		}
 
 		// If the restored orchestrator is already AllComplete, all tasks finished
-		// before the restart. Don't re-add it — the metadata tick would immediately
-		// re-show the "push branch and start review?" prompt on every tick. Instead
-		// queue a single deferred prompt via pendingAllComplete.
+		// before the restart (or before the orchestrator was deleted). Don't add
+		// it to waveOrchestrators — the metadata tick would immediately re-show the
+		// "push branch and start review?" prompt on every tick. Queue a single
+		// deferred prompt instead, deduplicating against existing entries.
 		if orch.State() == orchestration.WaveStateAllComplete {
-			m.pendingAllComplete = append(m.pendingAllComplete, planFile)
-			log.WarningLog.Printf("rebuildOrphanedOrchestrators: %s already all-complete — queued prompt", planFile)
+			alreadyQueued := false
+			for _, pf := range m.pendingAllComplete {
+				if pf == planFile {
+					alreadyQueued = true
+					break
+				}
+			}
+			if !alreadyQueued {
+				m.pendingAllComplete = append(m.pendingAllComplete, planFile)
+				log.WarningLog.Printf("rebuildOrphanedOrchestrators: %s already all-complete — queued prompt", planFile)
+			}
 			continue
 		}
 
