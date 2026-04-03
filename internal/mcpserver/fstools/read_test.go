@@ -167,6 +167,7 @@ func TestReadHandler_Success(t *testing.T) {
 	require.NotEmpty(t, result.Content)
 	tc, ok := result.Content[0].(mcp.TextContent)
 	require.True(t, ok, "expected TextContent")
+	assert.True(t, strings.HasPrefix(tc.Text, "[hello.txt]"), "header should start with relative path [hello.txt], got: %q", tc.Text)
 	assert.Contains(t, tc.Text, "1: hello")
 	assert.Contains(t, tc.Text, "2: world")
 }

@@ -110,6 +110,8 @@ func makeReadFileHandler(sb *Sandbox, fileCache FileCache) server.ToolHandlerFun
 			lines = MaxReadLines
 		}
 
+		displayPath := sb.RelPath(validatedPath)
+
 		mtime := info.ModTime()
 		body, total, hit := "", 0, false
 		if fileCache != nil {
@@ -136,7 +138,7 @@ func makeReadFileHandler(sb *Sandbox, fileCache FileCache) server.ToolHandlerFun
 			end = total
 		}
 
-		header := fmt.Sprintf("[%s] (lines %d-%d of %d)\n", validatedPath, from, end, total)
+		header := fmt.Sprintf("[%s] (lines %d-%d of %d)\n", displayPath, from, end, total)
 		return mcp.NewToolResultText(header + body), nil
 	}
 }
