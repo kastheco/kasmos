@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -1564,6 +1565,56 @@ func TestViewSelectedPlan_ReadsFromStore(t *testing.T) {
 	require.True(t, ok, "expected planRenderedMsg, got %T", msg)
 	require.NoError(t, renderedMsg.err)
 	assert.Equal(t, planFile, renderedMsg.planFile)
+}
+
+func TestLoadTaskState_InvalidatesCachedRenderedPlan(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	planFile := "test.md"
+	content := "# Draft\n\nInitial body\n"
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusReady,
+		Content:  content,
+	}))
+
+	plansDir := t.TempDir()
+	ps, err := taskstate.Load(store, "proj", plansDir)
+	require.NoError(t, err)
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	nav := ui.NewNavigationPanel(&sp)
+	nav.SetTopicsAndPlans(nil, []ui.PlanDisplay{{Filename: planFile, Status: string(taskstate.StatusReady)}}, nil)
+	require.True(t, nav.SelectByID(ui.SidebarPlanPrefix+planFile))
+
+	h := &home{
+		taskState:          ps,
+		taskStore:          store,
+		taskStoreProject:   "proj",
+		taskStateDir:       plansDir,
+		nav:                nav,
+		tabbedWindow:       ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		cachedPlanFile:     planFile,
+		cachedPlanRendered: "stale rendered content",
+	}
+
+	require.NoError(t, store.SetContent("proj", planFile, "# Updated\n\n## Wave 1\n\n### Task 1: Fresh\n"))
+	h.loadTaskState()
+
+	assert.Empty(t, h.cachedPlanFile)
+	assert.Empty(t, h.cachedPlanRendered)
+
+	_, cmd := h.viewSelectedPlan()
+	require.NotNil(t, cmd, "viewSelectedPlan must re-read store content after task state reload invalidates cache")
+
+	msg := cmd()
+	renderedMsg, ok := msg.(planRenderedMsg)
+	require.True(t, ok, "expected planRenderedMsg, got %T", msg)
+	require.NoError(t, renderedMsg.err)
+	assert.Equal(t, planFile, renderedMsg.planFile)
+	ansiRE := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	plain := ansiRE.ReplaceAllString(renderedMsg.rendered, "")
+	assert.Contains(t, plain, "Updated")
+	assert.Contains(t, plain, "Wave 1")
 }
 
 // TestImplementActionReadsFromStore verifies that the "implement" action reads plan

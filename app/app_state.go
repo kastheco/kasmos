@@ -1289,6 +1289,8 @@ func (m *home) loadTaskState() {
 		return
 	}
 	m.taskState = ps
+	m.cachedPlanFile = ""
+	m.cachedPlanRendered = ""
 }
 
 // updateSidebarTasks pushes the current plans into the sidebar using the three-level tree API.
