@@ -296,6 +296,96 @@ func TestDaemonRepoRegisteredMsg_SwitchesToDaemonTaskStoreWithoutConfirmation(t 
 	assert.True(t, updated.toastManager.HasActiveToasts())
 }
 
+func TestNewHome_AutoRegisterDoesNotShowStaleDaemonUnavailableToast(t *testing.T) {
+	repoDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755))
+
+	oldCwd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(repoDir))
+	t.Cleanup(func() { _ = os.Chdir(oldCwd) })
+
+	backend := taskstore.NewTestSQLiteStore(t)
+	project := filepath.Base(repoDir)
+	repoRegistered := false
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		status := api.StatusResponse{Running: true}
+		if repoRegistered {
+			status.Repos = []api.RepoStatus{{Path: repoDir, Project: project}}
+		}
+		require.NoError(t, json.NewEncoder(w).Encode(status))
+	})
+	mux.HandleFunc("GET /v1/repos", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		repos := []api.RepoStatus{}
+		if repoRegistered {
+			repos = append(repos, api.RepoStatus{Path: repoDir, Project: project})
+		}
+		require.NoError(t, json.NewEncoder(w).Encode(repos))
+	})
+	mux.HandleFunc("POST /v1/repos", func(w http.ResponseWriter, r *http.Request) {
+		repoRegistered = true
+		w.WriteHeader(http.StatusCreated)
+	})
+	taskHandler := taskstore.NewHandler(backend)
+	mux.Handle("/v1/ping", taskHandler)
+	mux.Handle("/v1/projects/", taskHandler)
+	startTestDaemonSocketServer(t, mux)
+
+	oldManaged := repoManagedByDaemon
+	repoManagedByDaemon = func(string) bool { return false }
+	t.Cleanup(func() {
+		repoManagedByDaemon = oldManaged
+	})
+
+	h := newHome(context.Background(), "opencode", false, "test")
+	t.Cleanup(func() {
+		if h.embeddedServer != nil {
+			h.embeddedServer.Stop()
+		}
+		if h.taskStore != nil {
+			_ = h.taskStore.Close()
+		}
+		if h.auditLogger != nil {
+			_ = h.auditLogger.Close()
+		}
+	})
+
+	require.Nil(t, h.taskStore, "startup should begin before daemon auto-registration rebinding")
+	assert.NotContains(t, h.toastManager.View(), "daemon task store unavailable")
+
+	statusMsg := h.daemonStartupCheckCmd()()
+	model, switchCmd := h.Update(statusMsg)
+	h = model.(*home)
+	require.NotNil(t, switchCmd)
+
+	switchedMsg := switchCmd()
+	model, toastCmd := h.Update(switchedMsg)
+	updated := model.(*home)
+
+	require.NotNil(t, toastCmd)
+	_, ok := toastCmd().(overlay.ToastTickMsg)
+	require.True(t, ok, "daemon auto-registration should schedule a toast tick")
+
+	assert.Contains(t, updated.toastManager.View(), "auto-registered repo with daemon")
+	assert.NotContains(t, updated.toastManager.View(), "daemon task store unavailable")
+	require.IsType(t, &taskstore.HTTPStore{}, updated.taskStore)
+	assert.Equal(t, project, updated.taskStoreProject)
+	assert.True(t, repoRegistered)
+
+	require.NoError(t, updated.taskStore.Create(updated.taskStoreProject, taskstore.TaskEntry{
+		Filename: "daemon-created-after-auto-register",
+		Status:   taskstore.StatusReady,
+	}))
+
+	created, err := backend.Get(updated.taskStoreProject, "daemon-created-after-auto-register")
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusReady, created.Status)
+}
+
 func TestView_UsesCellMotionMouseMode(t *testing.T) {
 	h := newTestHome()
 	h.termHeight = 20

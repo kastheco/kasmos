@@ -517,9 +517,10 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 	h.toastManager = overlay.NewToastManager(&h.spinner)
 	h.overlays = overlay.NewManager()
 
-	if h.taskStore == nil {
-		h.toastManager.Error("daemon task store unavailable")
-	}
+	// Don't show a startup error toast here. The async daemon startup check that
+	// runs from Init may immediately auto-register the repo and rebind the task
+	// store, which would otherwise leave a stale "daemon task store unavailable"
+	// error toast visible next to the success toast.
 
 	permCacheDir := filepath.Join(activeRepoPath, ".kasmos")
 	permStore, err := config.NewSQLitePermissionStore(dbPath)
