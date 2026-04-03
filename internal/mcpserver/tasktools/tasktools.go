@@ -2,6 +2,7 @@ package tasktools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -41,12 +42,33 @@ func trimFilename(filename string) string {
 	return strings.TrimSuffix(strings.TrimSpace(filename), ".md")
 }
 
+// normalizeTaskContentArg decodes JSON-style escaped multiline markdown when a
+// client sends literal "\\n" / "\\r" sequences instead of real line breaks.
+// Already-multiline input is returned unchanged.
+func normalizeTaskContentArg(content string) string {
+	if strings.Contains(content, "\n") || strings.Contains(content, "\r") {
+		return content
+	}
+	if !strings.Contains(content, `\n`) && !strings.Contains(content, `\r`) {
+		return content
+	}
+
+	quoted := `"` + strings.ReplaceAll(content, `"`, `\"`) + `"`
+	var decoded string
+	if err := json.Unmarshal([]byte(quoted), &decoded); err == nil {
+		if strings.Contains(decoded, "\n") || strings.Contains(decoded, "\r") {
+			return decoded
+		}
+	}
+	return content
+}
+
 func resolveToolStore(project string, store taskstore.Store) (taskstore.Store, func(), error) {
 	if store != nil {
 		return store, func() {}, nil
 	}
 
-	resolved, err := taskstore.OpenDaemonBackedStore(project)
+	resolved, err := taskstore.OpenAuthoritativeStore(project)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -136,7 +158,7 @@ func makeTaskCreateHandler(project string, store taskstore.Store) server.ToolHan
 		description := req.GetString("description", "")
 		branch := req.GetString("branch", "")
 		topic := req.GetString("topic", "")
-		content := req.GetString("content", "")
+		content := normalizeTaskContentArg(req.GetString("content", ""))
 		if branch == "" {
 			branch = "plan/" + name
 		}
@@ -180,6 +202,7 @@ func makeTaskUpdateContentHandler(project string, store taskstore.Store) server.
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_update_content: %v", err)), nil
 		}
+		content = normalizeTaskContentArg(content)
 		filename = trimFilename(filename)
 
 		ps, err := taskstate.Load(resolvedStore, project, "")
