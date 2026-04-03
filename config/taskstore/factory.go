@@ -94,16 +94,19 @@ func OpenBackingSQLiteSignalGateway() (SignalGateway, error) {
 	return NewSQLiteSignalGateway(dbPath)
 }
 
-// ResolvedDBPath returns the filesystem path that the factory would use for a
-// local SQLite taskstore. It delegates to config.GetConfigDir() to resolve the
-// project-local config directory (<repo-root>/.kasmos/ when in a git repo) and
-// appends "taskstore.db".
-// This path is shared with the auditlog SQLiteLogger so both can coexist in
-// the same database file (each using a separate table).
-func ResolvedDBPath() string {
-	dir, err := config.GetConfigDir()
+// GlobalDBPath returns the global taskstore path: ~/.config/kasmos/taskstore.db.
+func GlobalDBPath() string {
+	home, err := os.UserHomeDir()
 	if err != nil {
 		return filepath.Join(".", ".kasmos", "taskstore.db")
 	}
-	return filepath.Join(dir, "taskstore.db")
+	return filepath.Join(home, ".config", "kasmos", "taskstore.db")
+}
+
+// ResolvedDBPath returns the filesystem path that the factory would use for a
+// local SQLite taskstore.
+// This path is shared with the auditlog SQLiteLogger so both can coexist in
+// the same database file (each using a separate table).
+func ResolvedDBPath() string {
+	return GlobalDBPath()
 }
