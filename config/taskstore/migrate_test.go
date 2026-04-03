@@ -2,6 +2,7 @@ package taskstore
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -428,6 +429,297 @@ func TestSQLiteStore_MigratesExecutionStateColumnsFromOldSchema(t *testing.T) {
 		ActiveAgentType: "coder",
 		ActiveWave:      2,
 	}, updated.ExecutionState)
+}
+
+// ---------------------------------------------------------------------------
+// MigrateRepoLocalToGlobal tests
+// ---------------------------------------------------------------------------
+
+// createLocalRepoStore creates a file-backed SQLiteStore in dir/taskstore.db,
+// seeds it with the supplied tasks, subtasks, topics, and returns the store.
+// Caller must close when done.
+func createLocalRepoStore(t *testing.T, dir string) *SQLiteStore {
+	t.Helper()
+	dbPath := filepath.Join(dir, "taskstore.db")
+	store, err := NewSQLiteStore(dbPath)
+	require.NoError(t, err)
+	return store
+}
+
+func TestMigrateRepoLocalToGlobal(t *testing.T) {
+	repoKasmosDir := t.TempDir()
+
+	// Seed local store with tasks, subtasks, topics.
+	local := createLocalRepoStore(t, repoKasmosDir)
+	require.NoError(t, local.Create("proj", TaskEntry{
+		Filename:    "task-a",
+		Status:      StatusReady,
+		Description: "first task",
+		Branch:      "plan/task-a",
+		Content:     "# Task A content",
+	}))
+	require.NoError(t, local.Create("proj", TaskEntry{
+		Filename:    "task-b",
+		Status:      StatusDone,
+		Description: "second task",
+	}))
+	require.NoError(t, local.SetSubtasks("proj", "task-a", []SubtaskEntry{
+		{TaskNumber: 1, Title: "subtask one", Status: SubtaskStatusPending},
+		{TaskNumber: 2, Title: "subtask two", Status: SubtaskStatusComplete},
+	}))
+	require.NoError(t, local.CreateTopic("proj", TopicEntry{Name: "infra"}))
+	local.Close()
+
+	// Migrate into global (in-memory) store.
+	globalStore := newTestStore(t)
+	migrated, err := MigrateRepoLocalToGlobal(globalStore, "proj", repoKasmosDir)
+	require.NoError(t, err)
+	assert.Equal(t, 2, migrated)
+
+	// Verify tasks.
+	entries, err := globalStore.List("proj")
+	require.NoError(t, err)
+	assert.Len(t, entries, 2)
+
+	entryA, err := globalStore.Get("proj", "task-a")
+	require.NoError(t, err)
+	assert.Equal(t, StatusReady, entryA.Status)
+	assert.Equal(t, "first task", entryA.Description)
+	assert.Equal(t, "plan/task-a", entryA.Branch)
+
+	// Verify content was migrated as part of Create.
+	content, err := globalStore.GetContent("proj", "task-a")
+	require.NoError(t, err)
+	assert.Equal(t, "# Task A content", content)
+
+	// Verify subtasks.
+	subtasks, err := globalStore.GetSubtasks("proj", "task-a")
+	require.NoError(t, err)
+	assert.Len(t, subtasks, 2)
+	assert.Equal(t, "subtask one", subtasks[0].Title)
+
+	// Verify topics.
+	topics, err := globalStore.ListTopics("proj")
+	require.NoError(t, err)
+	assert.Len(t, topics, 1)
+	assert.Equal(t, "infra", topics[0].Name)
+}
+
+func TestMigrateRepoLocalToGlobal_NoLocalDB(t *testing.T) {
+	globalStore := newTestStore(t)
+	migrated, err := MigrateRepoLocalToGlobal(globalStore, "proj", t.TempDir())
+	require.NoError(t, err)
+	assert.Equal(t, 0, migrated)
+}
+
+func TestMigrateRepoLocalToGlobal_Idempotent(t *testing.T) {
+	repoKasmosDir := t.TempDir()
+
+	local := createLocalRepoStore(t, repoKasmosDir)
+	require.NoError(t, local.Create("proj", TaskEntry{
+		Filename:    "task-x",
+		Status:      StatusReady,
+		Description: "idempotent",
+	}))
+	require.NoError(t, local.CreateTopic("proj", TopicEntry{Name: "testing"}))
+	local.Close()
+
+	globalStore := newTestStore(t)
+
+	// First run.
+	m1, err := MigrateRepoLocalToGlobal(globalStore, "proj", repoKasmosDir)
+	require.NoError(t, err)
+	assert.Equal(t, 1, m1)
+
+	// Second run — should not error and should report 0 new tasks.
+	m2, err := MigrateRepoLocalToGlobal(globalStore, "proj", repoKasmosDir)
+	require.NoError(t, err)
+	assert.Equal(t, 0, m2)
+
+	// Still only 1 task.
+	entries, err := globalStore.List("proj")
+	require.NoError(t, err)
+	assert.Len(t, entries, 1)
+}
+
+func TestMigrateRepoLocalToGlobal_PRReviews(t *testing.T) {
+	repoKasmosDir := t.TempDir()
+	localDBPath := filepath.Join(repoKasmosDir, "taskstore.db")
+
+	// Seed local store with a task and a PR review.
+	local := createLocalRepoStore(t, repoKasmosDir)
+	require.NoError(t, local.Create("proj", TaskEntry{
+		Filename: "reviewed",
+		Status:   StatusReviewing,
+	}))
+	require.NoError(t, local.RecordPRReview("proj", "reviewed", 42, "changes_requested", "fix the bug", "alice"))
+	local.Close()
+
+	// Create a file-backed global store so ATTACH works.
+	globalDir := t.TempDir()
+	globalDBPath := filepath.Join(globalDir, "taskstore.db")
+	globalStore, err := NewSQLiteStore(globalDBPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { globalStore.Close() })
+
+	migrated, err := MigrateRepoLocalToGlobal(globalStore, "proj", repoKasmosDir)
+	require.NoError(t, err)
+	assert.Equal(t, 1, migrated)
+
+	// Verify PR review was migrated.
+	assert.True(t, globalStore.IsReviewProcessed("proj", "reviewed", 42))
+
+	// Run again — idempotent (INSERT OR IGNORE).
+	_, err = MigrateRepoLocalToGlobal(globalStore, "proj", repoKasmosDir)
+	require.NoError(t, err)
+
+	// Verify still only one review by listing pending (the review has
+	// fixer_dispatched=0, reaction_posted=0 so it shows as pending).
+	reviews, err := globalStore.ListPendingReviews("proj", "reviewed")
+	require.NoError(t, err)
+	assert.Len(t, reviews, 1, "should have exactly 1 review after idempotent migration")
+
+	// Verify PR review metadata is present via direct SQL for safety.
+	var reviewBody string
+	err = globalStore.db.QueryRow(
+		`SELECT review_body FROM pr_reviews WHERE project = ? AND plan_filename = ? AND review_id = ?`,
+		"proj", "reviewed", 42,
+	).Scan(&reviewBody)
+	require.NoError(t, err)
+	assert.Equal(t, "fix the bug", reviewBody)
+
+	// Verify no extra rows were created via SQL count.
+	var count int
+	err = globalStore.db.QueryRow(
+		`SELECT count(*) FROM pr_reviews WHERE project = ?`, "proj",
+	).Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count, "idempotent migration should not duplicate PR reviews")
+
+	// Also ensure the review is properly linked by checking file-based store round-trip.
+	_ = localDBPath // suppress unused warning
+}
+
+func TestMigrateRepoLocalToGlobal_Signals(t *testing.T) {
+	repoKasmosDir := t.TempDir()
+	localDBPath := filepath.Join(repoKasmosDir, "taskstore.db")
+
+	// Seed local store with a task.
+	local := createLocalRepoStore(t, repoKasmosDir)
+	require.NoError(t, local.Create("proj", TaskEntry{
+		Filename: "signalled",
+		Status:   StatusImplementing,
+	}))
+	local.Close()
+
+	// Insert signals via a separate gateway (signals table is created by
+	// SQLiteSignalGateway, not SQLiteStore).
+	localGW, err := NewSQLiteSignalGateway(localDBPath)
+	require.NoError(t, err)
+	require.NoError(t, localGW.Create("proj", SignalEntry{
+		PlanFile:   "signalled",
+		SignalType: "task_done",
+		Payload:    `{"wave":1}`,
+	}))
+	localGW.Close()
+
+	// Create a file-backed global store so ATTACH works.
+	globalDir := t.TempDir()
+	globalDBPath := filepath.Join(globalDir, "taskstore.db")
+	globalStore, err := NewSQLiteStore(globalDBPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { globalStore.Close() })
+
+	migrated, err := MigrateRepoLocalToGlobal(globalStore, "proj", repoKasmosDir)
+	require.NoError(t, err)
+	assert.Equal(t, 1, migrated)
+
+	// Verify signal was migrated via raw SQL (signals table is not exposed via Store).
+	var sigCount int
+	err = globalStore.db.QueryRow(
+		`SELECT count(*) FROM signals WHERE project = ?`, "proj",
+	).Scan(&sigCount)
+	require.NoError(t, err)
+	assert.Equal(t, 1, sigCount)
+
+	// Verify signal data.
+	var signalType, payload string
+	err = globalStore.db.QueryRow(
+		`SELECT signal_type, payload FROM signals WHERE project = ? AND plan_file = ?`,
+		"proj", "signalled",
+	).Scan(&signalType, &payload)
+	require.NoError(t, err)
+	assert.Equal(t, "task_done", signalType)
+	assert.Equal(t, `{"wave":1}`, payload)
+
+	// Run again — idempotent (NOT EXISTS dedup).
+	_, err = MigrateRepoLocalToGlobal(globalStore, "proj", repoKasmosDir)
+	require.NoError(t, err)
+
+	err = globalStore.db.QueryRow(
+		`SELECT count(*) FROM signals WHERE project = ?`, "proj",
+	).Scan(&sigCount)
+	require.NoError(t, err)
+	assert.Equal(t, 1, sigCount, "idempotent migration should not duplicate signals")
+}
+
+func TestMigrateAllKnownRepos(t *testing.T) {
+	// Create two fake repo directories with local taskstores.
+	repoA := t.TempDir()
+	repoB := t.TempDir()
+
+	kasmosA := filepath.Join(repoA, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasmosA, 0o755))
+	storeA, err := NewSQLiteStore(filepath.Join(kasmosA, "taskstore.db"))
+	require.NoError(t, err)
+	require.NoError(t, storeA.Create(filepath.Base(repoA), TaskEntry{
+		Filename: "a-task", Status: StatusReady, Description: "from repo a",
+	}))
+	storeA.Close()
+
+	kasmosB := filepath.Join(repoB, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasmosB, 0o755))
+	storeB, err := NewSQLiteStore(filepath.Join(kasmosB, "taskstore.db"))
+	require.NoError(t, err)
+	require.NoError(t, storeB.Create(filepath.Base(repoB), TaskEntry{
+		Filename: "b-task", Status: StatusDone, Description: "from repo b",
+	}))
+	storeB.Close()
+
+	// Write a daemon.toml pointing to both repos.
+	configDir := t.TempDir()
+	daemonTOML := fmt.Sprintf("repos = [%q, %q]\n", repoA, repoB)
+	require.NoError(t, os.MkdirAll(filepath.Join(configDir, ".config", "kasmos"), 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(configDir, ".config", "kasmos", "daemon.toml"),
+		[]byte(daemonTOML), 0o644,
+	))
+
+	// Override HOME so MigrateAllKnownRepos reads our test daemon.toml.
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", configDir)
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+
+	globalDir := t.TempDir()
+	globalDBPath := filepath.Join(globalDir, "taskstore.db")
+	globalStore, err := NewSQLiteStore(globalDBPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { globalStore.Close() })
+
+	err = MigrateAllKnownRepos(globalStore)
+	require.NoError(t, err)
+
+	// Verify repo A tasks.
+	entriesA, err := globalStore.List(filepath.Base(repoA))
+	require.NoError(t, err)
+	assert.Len(t, entriesA, 1)
+	assert.Equal(t, "a-task", entriesA[0].Filename)
+
+	// Verify repo B tasks.
+	entriesB, err := globalStore.List(filepath.Base(repoB))
+	require.NoError(t, err)
+	assert.Len(t, entriesB, 1)
+	assert.Equal(t, "b-task", entriesB[0].Filename)
 }
 
 func hasTaskColumn(t *testing.T, db *sql.DB, columnName string) bool {

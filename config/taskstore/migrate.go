@@ -10,6 +10,10 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/BurntSushi/toml"
+
+	"github.com/kastheco/kasmos/config"
 )
 
 // jsonTaskEntry is the on-disk format for a single plan in plan-state.json.
@@ -343,6 +347,193 @@ func migrateFromPlanstoreDB(db *sql.DB, dbPath string) error {
 			FROM old.audit_events
 		`); err != nil {
 			return fmt.Errorf("copy audit_events: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// MigrateRepoLocalToGlobal copies tasks, content, subtasks, topics, PR reviews,
+// and signals from a repo-local taskstore.db into the global store. If the
+// repo-local DB does not exist, it returns (0, nil) — a no-op. The migration
+// is idempotent: duplicate tasks, topics, and PR reviews are silently skipped;
+// subtasks are overwritten (SetSubtasks replaces all); signals are deduplicated
+// by (project, plan_file, signal_type, created_at).
+//
+// Returns the number of tasks successfully migrated (newly created).
+func MigrateRepoLocalToGlobal(globalStore Store, project, repoKasmosDir string) (int, error) {
+	localDBPath := filepath.Join(repoKasmosDir, "taskstore.db")
+
+	if _, err := os.Stat(localDBPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("stat repo-local taskstore: %w", err)
+	}
+
+	// Open the repo-local DB. NewSQLiteStore runs schema migrations as a
+	// side-effect but they are idempotent no-ops on an already-current DB.
+	localStore, err := NewSQLiteStore(localDBPath)
+	if err != nil {
+		return 0, fmt.Errorf("open repo-local taskstore: %w", err)
+	}
+
+	tasks, err := localStore.List(project)
+	if err != nil {
+		localStore.Close()
+		return 0, fmt.Errorf("list repo-local tasks: %w", err)
+	}
+
+	migrated := 0
+	for _, task := range tasks {
+		// INSERT OR IGNORE semantics: skip tasks that already exist.
+		if err := globalStore.Create(project, task); err != nil {
+			if strings.Contains(err.Error(), "plan already exists") {
+				// Already in global store — fall through to subtask migration.
+			} else {
+				localStore.Close()
+				return migrated, fmt.Errorf("migrate task %s: %w", task.Filename, err)
+			}
+		} else {
+			migrated++
+		}
+
+		// Migrate subtasks (SetSubtasks replaces all — idempotent).
+		if subtasks, subErr := localStore.GetSubtasks(project, task.Filename); subErr == nil && len(subtasks) > 0 {
+			_ = globalStore.SetSubtasks(project, task.Filename, subtasks)
+		}
+	}
+
+	// Migrate topics.
+	if topics, err := localStore.ListTopics(project); err == nil {
+		for _, topic := range topics {
+			if err := globalStore.CreateTopic(project, topic); err != nil {
+				if !strings.Contains(err.Error(), "topic already exists") {
+					localStore.Close()
+					return migrated, fmt.Errorf("migrate topic %s: %w", topic.Name, err)
+				}
+			}
+		}
+	}
+
+	// Close local store before ATTACH to avoid WAL lock contention.
+	localStore.Close()
+
+	// Bulk-copy PR reviews and signals via ATTACH when global store is SQLite.
+	if globalSQLite, ok := globalStore.(*SQLiteStore); ok {
+		migrateRepoLocalPRReviews(globalSQLite.db, localDBPath, project)
+		migrateRepoLocalSignals(globalSQLite.db, localDBPath, project)
+	}
+
+	return migrated, nil
+}
+
+// migrateRepoLocalPRReviews copies PR review records from a repo-local DB into
+// the global DB via ATTACH. Duplicate reviews (same project + plan_filename +
+// review_id) are silently skipped via INSERT OR IGNORE.
+func migrateRepoLocalPRReviews(globalDB *sql.DB, localDBPath, project string) {
+	const alias = "local_pr"
+	if _, err := globalDB.Exec(fmt.Sprintf("ATTACH DATABASE %q AS %s", localDBPath, alias)); err != nil {
+		return
+	}
+	defer globalDB.Exec(fmt.Sprintf("DETACH DATABASE %s", alias)) //nolint:errcheck
+
+	if !tableExistsInAttached(globalDB, alias, "pr_reviews") {
+		return
+	}
+
+	// pr_reviews has UNIQUE(project, plan_filename, review_id), so OR IGNORE
+	// provides idempotency.
+	_, _ = globalDB.Exec(fmt.Sprintf(`
+		INSERT OR IGNORE INTO pr_reviews
+			(project, plan_filename, review_id, review_state, review_body,
+			 reviewer_login, reaction_posted, fixer_dispatched, created_at)
+		SELECT project, plan_filename, review_id, review_state, review_body,
+		       reviewer_login, reaction_posted, fixer_dispatched, created_at
+		FROM %s.pr_reviews
+		WHERE project = ?
+	`, alias), project)
+}
+
+// migrateRepoLocalSignals copies signals from a repo-local DB into the global
+// DB via ATTACH. Signals are deduplicated by (project, plan_file, signal_type,
+// created_at) since the signals table has no natural unique constraint.
+func migrateRepoLocalSignals(globalDB *sql.DB, localDBPath, project string) {
+	const alias = "local_sig"
+	if _, err := globalDB.Exec(fmt.Sprintf("ATTACH DATABASE %q AS %s", localDBPath, alias)); err != nil {
+		return
+	}
+	defer globalDB.Exec(fmt.Sprintf("DETACH DATABASE %s", alias)) //nolint:errcheck
+
+	if !tableExistsInAttached(globalDB, alias, "signals") {
+		return
+	}
+
+	// Ensure the global signals table exists (SQLiteStore does not create it;
+	// only SQLiteSignalGateway does).
+	_, _ = globalDB.Exec(signalsSchema)
+
+	_, _ = globalDB.Exec(fmt.Sprintf(`
+		INSERT INTO signals
+			(project, plan_file, signal_type, payload, status,
+			 created_at, claimed_by, claimed_at, processed_at, result)
+		SELECT s.project, s.plan_file, s.signal_type, s.payload, s.status,
+		       s.created_at, s.claimed_by, s.claimed_at, s.processed_at, s.result
+		FROM %s.signals s
+		WHERE s.project = ?
+		AND NOT EXISTS (
+			SELECT 1 FROM signals g
+			WHERE g.project = s.project
+			  AND g.plan_file = s.plan_file
+			  AND g.signal_type = s.signal_type
+			  AND g.created_at = s.created_at
+		)
+	`, alias), project)
+}
+
+// daemonTOMLRepos holds the minimal subset of daemon.toml needed to enumerate
+// registered repos without importing the daemon package.
+type daemonTOMLRepos struct {
+	Repos []string `toml:"repos"`
+}
+
+// MigrateAllKnownRepos migrates repo-local taskstore data into the global
+// store for every repo listed in daemon.toml, plus the current repo (via
+// config.GetConfigDir). Errors from individual repos are returned immediately.
+func MigrateAllKnownRepos(globalStore Store) error {
+	seen := make(map[string]struct{})
+
+	// Scan daemon.toml for registered repos.
+	if home, err := os.UserHomeDir(); err == nil {
+		tomlPath := filepath.Join(home, ".config", "kasmos", "daemon.toml")
+		if data, err := os.ReadFile(tomlPath); err == nil {
+			var cfg daemonTOMLRepos
+			if _, decErr := toml.Decode(string(data), &cfg); decErr == nil {
+				for _, repoPath := range cfg.Repos {
+					repoPath = filepath.Clean(repoPath)
+					if _, dup := seen[repoPath]; dup {
+						continue
+					}
+					seen[repoPath] = struct{}{}
+
+					project := filepath.Base(repoPath)
+					kasmosDir := filepath.Join(repoPath, ".kasmos")
+					if _, err := MigrateRepoLocalToGlobal(globalStore, project, kasmosDir); err != nil {
+						return fmt.Errorf("migrate repo %s: %w", repoPath, err)
+					}
+				}
+			}
+		}
+	}
+
+	// Also try the current repo.
+	if kasmosDir, err := config.GetConfigDir(); err == nil {
+		repoRoot := filepath.Clean(filepath.Dir(kasmosDir))
+		if _, dup := seen[repoRoot]; !dup {
+			project := filepath.Base(repoRoot)
+			if _, err := MigrateRepoLocalToGlobal(globalStore, project, kasmosDir); err != nil {
+				return fmt.Errorf("migrate current repo %s: %w", repoRoot, err)
+			}
 		}
 	}
 
