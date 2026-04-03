@@ -106,6 +106,12 @@ func (t *TmuxSession) Attach() (chan struct{}, error) {
 	// Start platform-specific window-size monitoring.
 	t.monitorWindowSize()
 
+	// Set initial window size to match the current terminal immediately,
+	// since monitorWindowSize only responds to subsequent SIGWINCH signals.
+	if sz, err := pty.GetsizeFull(os.Stdout); err == nil && sz.Cols > 0 && sz.Rows > 0 {
+		_ = t.updateWindowSize(sz.Cols, sz.Rows)
+	}
+
 	return ch, nil
 }
 

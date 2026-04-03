@@ -1818,6 +1818,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						// Mirrors the single-agent detection in ShouldAutoAdvanceLifecycleImplementer.
 						if inst.HasWorked && inst.PromptDetected && !inst.AwaitingWork {
 							orch.MarkTaskComplete(task.Number)
+							inst.ImplementationComplete = true
 							continue
 						}
 						alive, collected := tmuxAliveMap[inst.Title]
@@ -1828,6 +1829,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							// Tmux died after the agent did real work — treat as completion, not failure.
 							if inst.HasWorked {
 								orch.MarkTaskComplete(task.Number)
+								inst.ImplementationComplete = true
 							} else {
 								orch.MarkTaskFailed(task.Number)
 							}
