@@ -1384,11 +1384,28 @@ func (m *home) updateSidebarTasks() {
 		})
 	}
 
+	// Build cancelled
+	cancelledInfos := m.taskState.Cancelled()
+	cancelled := make([]ui.PlanDisplay, 0, len(cancelledInfos))
+	for _, p := range cancelledInfos {
+		entry := m.taskState.Plans[p.Filename]
+		cancelled = append(cancelled, ui.PlanDisplay{
+			Filename:    p.Filename,
+			Status:      string(p.Status),
+			Description: p.Description,
+			Branch:      p.Branch,
+			Topic:       p.Topic,
+			Phase:       strings.TrimSpace(entry.ExecutionState.Phase),
+			AgentType:   strings.TrimSpace(entry.ExecutionState.ActiveAgentType),
+			ActiveWave:  entry.ExecutionState.ActiveWave,
+		})
+	}
+
 	// Set plan statuses before the rebuild so navPlanSortKey uses
 	// up-to-date running/notification flags in a single pass.
 	m.nav.SetPlanStatuses(m.computePlanStatuses())
 
-	m.nav.SetTopicsAndPlans(topics, ungrouped, history)
+	m.nav.SetTopicsAndPlans(topics, ungrouped, history, cancelled)
 
 }
 
