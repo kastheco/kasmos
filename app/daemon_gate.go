@@ -31,20 +31,6 @@ type daemonRepoRegisteredMsg struct {
 	path string
 }
 
-// daemonTaskStoreSwitchedMsg is delivered after a background goroutine has
-// successfully pinged the daemon-backed store. The Update handler performs the
-// in-memory state swap — no I/O — so the Bubble Tea loop is never blocked.
-type daemonTaskStoreSwitchedMsg struct {
-	store   taskstore.Store
-	project string
-	toast   string
-}
-
-// daemonTaskStoreSwitchErrMsg is delivered when the background ping in
-// switchToDaemonTaskStoreCmd fails. The app stays unbound from the task store
-// until the daemon-backed authority becomes reachable.
-type daemonTaskStoreSwitchErrMsg struct{}
-
 var listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
 	return daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath()).ListInstances(project)
 }

@@ -478,11 +478,11 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 		}
 		h.taskStore = remoteStore
 	} else {
-		daemonStore, err := taskstore.OpenDaemonBackedStore(project)
+		localStore, err := taskstore.OpenBackingSQLiteStore()
 		if err != nil {
-			log.WarningLog.Printf("daemon-backed task store unavailable: %v", err)
+			log.WarningLog.Printf("local task store unavailable: %v", err)
 		} else {
-			h.taskStore = daemonStore
+			h.taskStore = localStore
 		}
 	}
 	h.fsm = taskfsm.New(h.taskStore, project, h.taskStateDir)
@@ -517,10 +517,8 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 	h.toastManager = overlay.NewToastManager(&h.spinner)
 	h.overlays = overlay.NewManager()
 
-	// Don't show a startup error toast here. The async daemon startup check that
-	// runs from Init may immediately auto-register the repo and rebind the task
-	// store, which would otherwise leave a stale "daemon task store unavailable"
-	// error toast visible next to the success toast.
+	// Don't show a startup error toast here. Local SQLite is authoritative for
+	// repo-backed task state, and daemon readiness only gates agent workflows.
 
 	permCacheDir := filepath.Join(activeRepoPath, ".kasmos")
 	permStore, err := config.NewSQLitePermissionStore(dbPath)
@@ -565,46 +563,6 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 	h.rebuildOrphanedOrchestrators()
 
 	return h
-}
-
-// switchToDaemonTaskStoreCmd returns a tea.Cmd that pings the daemon-backed
-// store in a background goroutine. On success it delivers a
-// daemonTaskStoreSwitchedMsg so that the actual in-memory state swap happens
-// back in Update with no I/O — keeping the Bubble Tea loop unblocked.
-func (m *home) switchToDaemonTaskStoreCmd(toast string) tea.Cmd {
-	project := resolveTaskStoreProject(m.activeRepoPath)
-	socketPath := taskstore.ResolvedDaemonSocketPath()
-	return func() tea.Msg {
-		store := taskstore.NewHTTPStoreWithOptions(taskstore.HTTPStoreOptions{
-			BaseURL:    "http://daemon",
-			Project:    project,
-			Client:     daemonHTTPClient(socketPath, 5*time.Second),
-			PingClient: daemonHTTPClient(socketPath, 2*time.Second),
-		})
-		if err := store.Ping(); err != nil {
-			_ = store.Close()
-			return daemonTaskStoreSwitchErrMsg{}
-		}
-		return daemonTaskStoreSwitchedMsg{store: store, project: project, toast: toast}
-	}
-}
-
-// doSwitchToDaemonTaskStore performs the in-memory state swap after the
-// daemon-backed store has been successfully pinged. No I/O — safe to call from
-// the Bubble Tea Update goroutine.
-func (m *home) doSwitchToDaemonTaskStore(store taskstore.Store, project string) {
-	if m.taskStore != nil {
-		_ = m.taskStore.Close()
-	}
-	m.taskStore = store
-	m.taskStoreProject = project
-	m.fsm = taskfsm.New(m.taskStore, project, m.taskStateDir)
-	m.processor = nil
-
-	if m.embeddedServer != nil {
-		m.embeddedServer.Stop()
-		m.embeddedServer = nil
-	}
 }
 
 func dedupeInstancesByRepoAndTitle(instances []*session.Instance) []*session.Instance {
@@ -791,21 +749,16 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.toastTickCmd()
 	case daemonStatusMsg:
 		if msg.ready && msg.autoRegistered {
-			return m, m.switchToDaemonTaskStoreCmd("auto-registered repo with daemon")
+			m.toastManager.Success("auto-registered repo with daemon")
+			return m, m.toastTickCmd()
 		}
 		if !msg.ready {
 			m.showDaemonRequiredDialog(msg)
 		}
 		return m, nil
-	case daemonTaskStoreSwitchedMsg:
-		m.doSwitchToDaemonTaskStore(msg.store, msg.project)
-		m.toastManager.Success(msg.toast)
-		return m, m.toastTickCmd()
-	case daemonTaskStoreSwitchErrMsg:
-		m.toastManager.Error("registered repo with daemon but failed to switch task store")
-		return m, m.toastTickCmd()
 	case daemonRepoRegisteredMsg:
-		return m, m.switchToDaemonTaskStoreCmd("registered repo with daemon")
+		m.toastManager.Success("registered repo with daemon")
+		return m, m.toastTickCmd()
 	case planBrowserOpenedMsg:
 		if msg.startedServer {
 			m.toastManager.Success("started plan browser server")
@@ -970,8 +923,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Load task state — moved here from the synchronous Update handler
 			// to avoid blocking the event loop every 500ms. The authoritative
-			// store is always the daemon-backed store or an explicitly configured
-			// remote task store; there is no local SQLite fallback writer here.
+			// store is the repo-local SQLite DB for local repos or the configured
+			// remote store when database_url is set.
 			var ps *taskstate.TaskState
 			var daemonTaskStateLoaded bool
 			if store != nil && taskStateDir != "" && project != "" {
@@ -1423,10 +1376,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				taskfsm.ConsumeTaskSignal(ts)
 			}
 
-			if len(msg.Signals) > 0 || len(msg.TaskSignals) > 0 {
-				m.loadTaskState() // refresh after signal processing
-			}
-
 			// Retry deferred PlannerFinished dialogs — show the first queued plan
 			// whose dialog was skipped because an overlay was active at signal time.
 			if len(m.deferredPlannerDialogs) > 0 {
@@ -1531,6 +1480,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						signalCmds = append(signalCmds, cmd)
 					}
 				}
+			}
+
+			processedSignals := len(msg.Signals) > 0 || len(msg.TaskSignals) > 0 || len(msg.WaveSignals) > 0 || len(msg.ElaborationSignals) > 0
+			if processedSignals {
+				m.loadTaskState() // refresh after signal processing
 			}
 		}
 
@@ -1683,9 +1637,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Apply plan state loaded in the goroutine (replaces synchronous loadTaskState call).
-		// Skip when signals were processed: loadTaskState() above already gave us fresh state.
-		// msg.PlanState was loaded before signals were scanned, so it would be stale.
-		if msg.PlanState != nil && (msg.DaemonTaskState || len(msg.Signals) == 0) {
+		// Skip when any signal type was processed: loadTaskState() above already gave us
+		// fresh state, and msg.PlanState was loaded before signal scanning.
+		processedSignals := len(msg.Signals) > 0 || len(msg.TaskSignals) > 0 || len(msg.WaveSignals) > 0 || len(msg.ElaborationSignals) > 0
+		if msg.PlanState != nil && (msg.DaemonTaskState || !processedSignals) {
 			m.taskState = msg.PlanState
 		}
 		if msg.DaemonManagedRepo {

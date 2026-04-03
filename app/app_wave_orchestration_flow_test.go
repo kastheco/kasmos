@@ -1787,6 +1787,62 @@ func TestImplementTriggersElaborationBeforeWave1(t *testing.T) {
 	assert.True(t, foundArchitect, "architect instance must be spawned")
 }
 
+func TestElaborationSignal_RefreshesWavePlanAndTaskStateBeforeWave1Starts(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	store := storeForDir(t, plansDir)
+	const planFile = "elab-reload"
+	oldContent := "**Goal:** old\n\n## Wave 1\n\n### Task 1: one\n\nDo one.\n\n### Task 2: two\n\nDo two.\n\n### Task 3: three\n\nDo three.\n\n### Task 4: four\n\nDo four.\n"
+	newContent := "**Goal:** new\n\n## Wave 1\n\n### Task 1: alpha\n\nDo alpha.\n\n### Task 2: beta\n\nDo beta.\n\n## Wave 2\n\n### Task 3: gamma\n\nDo gamma.\n\n### Task 4: delta\n\nDo delta.\n\n### Task 5: epsilon\n\nDo epsilon.\n"
+
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+		Branch:   "plan/elab-reload",
+		Content:  oldContent,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseArchitecting),
+			ActiveAgentType: session.AgentTypeElaborator,
+		},
+	}))
+
+	ps, err := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.IngestContent(planFile, newContent))
+
+	oldPlan, err := taskparser.Parse(oldContent)
+	require.NoError(t, err)
+	orch := orchestration.NewWaveOrchestrator(planFile, oldPlan)
+	orch.SetStore(store, "test")
+	orch.SetElaborating()
+
+	h := waveFlowHome(t, ps, plansDir, map[string]*orchestration.WaveOrchestrator{planFile: orch})
+	h.daemonStatusChecker = func(string) daemonStatusMsg {
+		return daemonStatusMsg{message: "daemon required"}
+	}
+
+	model, _ := h.Update(metadataResultMsg{
+		PlanState:          ps,
+		ElaborationSignals: []taskfsm.ElaborationSignal{{TaskFile: planFile}},
+	})
+	updated := model.(*home)
+
+	updatedOrch, ok := updated.waveOrchestrators[planFile]
+	require.True(t, ok)
+	assert.Equal(t, 2, updatedOrch.TotalWaves(), "architect-enriched wave count must replace the pre-elaboration plan")
+	assert.Equal(t, 5, updatedOrch.TotalTasks(), "architect-enriched task count must replace the pre-elaboration plan")
+	require.Len(t, updatedOrch.CurrentWaveTasks(), 2)
+	assert.Equal(t, "alpha", updatedOrch.CurrentWaveTasks()[0].Title)
+
+	entry, ok := updated.taskState.Entry(planFile)
+	require.True(t, ok)
+	assert.Equal(t, string(taskfsm.ExecutionPhaseWaveRunning), entry.ExecutionState.Phase)
+	assert.Equal(t, session.AgentTypeCoder, entry.ExecutionState.ActiveAgentType)
+	assert.Equal(t, 1, entry.ExecutionState.ActiveWave)
+}
+
 // TestImplementDirectlySkipsElaboration verifies that "implement_direct" creates an
 // orchestrator in the running state without spawning the architect pass.
 func TestImplementDirectlySkipsElaboration(t *testing.T) {
