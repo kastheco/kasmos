@@ -1600,7 +1600,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				if md.Updated {
 					inst.SetStatus(session.Running)
-					inst.PromptDetected = false
 					// Mark that the agent has produced real work only after the
 					// queued task prompt has been dispatched and we observe
 					// non-prompt output. This prevents startup/prologue output and
@@ -1611,25 +1610,24 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if md.Content != "" {
 						inst.LastActivity = session.ParseActivity(md.Content, inst.Program)
 					}
-				} else {
-					if md.HasPrompt {
-						inst.PromptDetected = true
-						// Don't nudge wave tasks that have finished work — they're done
-						// and the wave monitor will mark them complete on this tick.
-						if !(inst.TaskNumber > 0 && inst.HasWorked) {
-							// Defer tmux send-keys to async Cmd (was blocking Update).
-							i := inst
-							asyncCmds = append(asyncCmds, func() tea.Msg {
-								i.TapEnter()
-								return nil
-							})
-						}
-					} else {
-						inst.SetStatus(session.Ready)
+				}
+				if md.HasPrompt {
+					inst.PromptDetected = true
+					// Don't nudge wave tasks that have finished work — they're done
+					// and the wave monitor will mark them complete on this tick.
+					if !(inst.TaskNumber > 0 && inst.HasWorked) {
+						// Defer tmux send-keys to async Cmd (was blocking Update).
+						i := inst
+						asyncCmds = append(asyncCmds, func() tea.Msg {
+							i.TapEnter()
+							return nil
+						})
 					}
-					if inst.Status != session.Running {
-						inst.LastActivity = nil
-					}
+				} else if !md.Updated {
+					inst.SetStatus(session.Ready)
+				}
+				if inst.Status != session.Running {
+					inst.LastActivity = nil
 				}
 			}
 

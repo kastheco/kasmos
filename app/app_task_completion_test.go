@@ -240,6 +240,69 @@ func TestMetadataTickHandler_CoderPromptDetectedTriggersPrompt(t *testing.T) {
 		"expected confirmation overlay for push-prompt on prompt-detected fixer")
 }
 
+func TestMetadataTickHandler_UpdatedPromptFrameTriggersPrompt(t *testing.T) {
+	const planFile = "test-feature"
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.Register(planFile, "test feature", "plan/test-feature", time.Now()))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+	require.NoError(t, ps.SetExecutionState(planFile, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: session.AgentTypeFixer}))
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:     "test-feature-implement",
+		Path:      t.TempDir(),
+		Program:   "opencode",
+		TaskFile:  planFile,
+		AgentType: session.AgentTypeFixer,
+	})
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	list := ui.NewNavigationPanel(&sp)
+	_ = list.AddInstance(inst)
+
+	h := &home{
+		ctx:          context.Background(),
+		state:        stateDefault,
+		appConfig:    config.DefaultConfig(),
+		nav:          list,
+		menu:         ui.NewMenu(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager: overlay.NewToastManager(&sp),
+		overlays:     overlay.NewManager(),
+		taskState:    ps,
+		taskStateDir: plansDir,
+		fsm:          newPlanFSMForTest(t, plansDir),
+	}
+
+	msg := metadataResultMsg{
+		Results: []instanceMetadata{{
+			Title:           inst.Title,
+			ContentCaptured: true,
+			Updated:         true,
+			HasPrompt:       true,
+			TmuxAlive:       true,
+		}},
+		PlanState: ps,
+	}
+
+	model, _ := h.Update(msg)
+	updated, ok := model.(*home)
+	require.True(t, ok)
+
+	assert.True(t, inst.PromptDetected,
+		"updated prompt frames must still mark the instance as prompt-detected")
+	assert.Equal(t, stateConfirm, updated.state,
+		"updated prompt frames must still trigger the implementer completion prompt")
+	assert.True(t, updated.overlays.IsActive(),
+		"updated prompt frames must still show the push/review confirmation overlay")
+}
+
 func TestMetadataTickHandler_CoderPromptDetectedInterruptsFocusMode(t *testing.T) {
 	const planFile = "test-feature"
 

@@ -79,10 +79,15 @@ func (m *home) handleMenuHighlighting(msg tea.KeyPressMsg) (cmd tea.Cmd, returnE
 
 // handleMouseWheel processes mouse wheel events for scrolling.
 func (m *home) handleMouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
-	if handled, err := m.forwardMouseWheelToFocusedTerminal(msg); handled {
+	if handled, err := m.forwardMouseWheelToPreviewTerminal(msg); handled {
 		if err != nil {
 			return m, m.handleError(err)
 		}
+		return m, nil
+	}
+
+	agentPane := zone.Get(ui.ZoneAgentPane)
+	if !agentPane.InBounds(msg) {
 		return m, nil
 	}
 
@@ -97,7 +102,7 @@ func (m *home) handleMouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 	}
 
 	selected := m.nav.GetSelectedInstance()
-	if selected != nil && selected.Status != session.Paused {
+	if selected != nil && selected.Status != session.Paused && m.previewTerminal == nil {
 		switch msg.Button {
 		case tea.MouseWheelUp:
 			m.tabbedWindow.ContentScrollUp()
@@ -108,8 +113,8 @@ func (m *home) handleMouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *home) forwardMouseWheelToFocusedTerminal(msg tea.MouseWheelMsg) (bool, error) {
-	if m.state != stateFocusAgent || m.previewTerminal == nil {
+func (m *home) forwardMouseWheelToPreviewTerminal(msg tea.MouseWheelMsg) (bool, error) {
+	if m.previewTerminal == nil || m.tabbedWindow.IsDocumentMode() {
 		return false, nil
 	}
 
