@@ -19,15 +19,13 @@ func TestEnrichMatches_DefinitionAddsSymbolMetadata(t *testing.T) {
 	store := symbols.NewStore()
 	store.Update(path, []symbols.Symbol{{Name: "Hello", Kind: "function", Line: 12, End: 14}})
 
-	input := []GrepMatch{{File: path, Line: 12, Column: 1, Text: "func Hello() {}", MatchText: "Hello"}}
+	input := []GrepMatch{{File: path, Line: 12, Text: "func Hello() {}"}}
 	enriched := EnrichMatches(input, store)
 
 	assert.Equal(t, []GrepMatch{{
 		File:       path,
 		Line:       12,
-		Column:     1,
 		Text:       "func Hello() {}",
-		MatchText:  "Hello",
 		SymbolKind: "function",
 		SymbolName: "Hello",
 	}}, enriched)
@@ -61,7 +59,7 @@ func TestGrepHandler_PartialResultsStillUseEnrichmentPath(t *testing.T) {
 	require.IsType(t, (*exec.ExitError)(nil), exitErr)
 
 	runner := &mockRunner{outputFn: func(context.Context, string, ...string) ([]byte, error) {
-		return []byte(makeRgMatchLine(path, "func Hello() {}\n", 1, 5, 10)), exitErr
+		return []byte(makeRgMatchLine(path, "func Hello() {}\n", 1)), exitErr
 	}}
 	handler := makeGrepHandler(sb, runner, store)
 
@@ -72,6 +70,7 @@ func TestGrepHandler_PartialResultsStillUseEnrichmentPath(t *testing.T) {
 	var payload GrepResult
 	require.NoError(t, json.Unmarshal([]byte(result.Content[0].(mcp.TextContent).Text), &payload))
 	require.Len(t, payload.Matches, 1)
+	assert.Equal(t, "sample.go", payload.Matches[0].File)
 	assert.Equal(t, "Hello", payload.Matches[0].SymbolName)
 	assert.Equal(t, "function", payload.Matches[0].SymbolKind)
 }

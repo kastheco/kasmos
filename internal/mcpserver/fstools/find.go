@@ -59,6 +59,9 @@ func makeFindHandler(sb *Sandbox, runner CmdRunner) server.ToolHandlerFunc {
 		out, _ := runner.Output(ctx, "fd", args...)
 
 		files := parseFdOutput(out)
+		for i := range files {
+			files[i] = sb.RelPath(files[i])
+		}
 
 		result, err := mcp.NewToolResultJSON(struct {
 			Files []string `json:"files"`
