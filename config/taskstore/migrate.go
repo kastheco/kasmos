@@ -1,6 +1,7 @@
 package taskstore
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -400,7 +401,10 @@ func MigrateRepoLocalToGlobal(globalStore Store, project, repoKasmosDir string) 
 
 		// Migrate subtasks (SetSubtasks replaces all — idempotent).
 		if subtasks, subErr := localStore.GetSubtasks(project, task.Filename); subErr == nil && len(subtasks) > 0 {
-			_ = globalStore.SetSubtasks(project, task.Filename, subtasks)
+			if err := globalStore.SetSubtasks(project, task.Filename, subtasks); err != nil {
+				localStore.Close()
+				return migrated, fmt.Errorf("migrate subtasks for task %s: %w", task.Filename, err)
+			}
 		}
 	}
 
@@ -421,8 +425,12 @@ func MigrateRepoLocalToGlobal(globalStore Store, project, repoKasmosDir string) 
 
 	// Bulk-copy PR reviews and signals via ATTACH when global store is SQLite.
 	if globalSQLite, ok := globalStore.(*SQLiteStore); ok {
-		migrateRepoLocalPRReviews(globalSQLite.db, localDBPath, project)
-		migrateRepoLocalSignals(globalSQLite.db, localDBPath, project)
+		if err := migrateRepoLocalPRReviews(globalSQLite.db, localDBPath, project); err != nil {
+			return migrated, err
+		}
+		if err := migrateRepoLocalSignals(globalSQLite.db, localDBPath, project); err != nil {
+			return migrated, err
+		}
 	}
 
 	return migrated, nil
@@ -431,20 +439,34 @@ func MigrateRepoLocalToGlobal(globalStore Store, project, repoKasmosDir string) 
 // migrateRepoLocalPRReviews copies PR review records from a repo-local DB into
 // the global DB via ATTACH. Duplicate reviews (same project + plan_filename +
 // review_id) are silently skipped via INSERT OR IGNORE.
-func migrateRepoLocalPRReviews(globalDB *sql.DB, localDBPath, project string) {
+func migrateRepoLocalPRReviews(globalDB *sql.DB, localDBPath, project string) error {
+	ctx := context.Background()
 	const alias = "local_pr"
-	if _, err := globalDB.Exec(fmt.Sprintf("ATTACH DATABASE %q AS %s", localDBPath, alias)); err != nil {
-		return
-	}
-	defer globalDB.Exec(fmt.Sprintf("DETACH DATABASE %s", alias)) //nolint:errcheck
 
-	if !tableExistsInAttached(globalDB, alias, "pr_reviews") {
-		return
+	conn, err := globalDB.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire conn for pr_reviews migration: %w", err)
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf("ATTACH DATABASE %q AS %s", localDBPath, alias)); err != nil {
+		return fmt.Errorf("attach local DB for pr_reviews: %w", err)
+	}
+	defer conn.ExecContext(ctx, fmt.Sprintf("DETACH DATABASE %s", alias)) //nolint:errcheck
+
+	var hasTable int
+	if err := conn.QueryRowContext(ctx,
+		fmt.Sprintf("SELECT count(*) FROM %s.sqlite_master WHERE type='table' AND name='pr_reviews'", alias),
+	).Scan(&hasTable); err != nil {
+		return fmt.Errorf("check pr_reviews table in local DB: %w", err)
+	}
+	if hasTable == 0 {
+		return nil
 	}
 
 	// pr_reviews has UNIQUE(project, plan_filename, review_id), so OR IGNORE
 	// provides idempotency.
-	_, _ = globalDB.Exec(fmt.Sprintf(`
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`
 		INSERT OR IGNORE INTO pr_reviews
 			(project, plan_filename, review_id, review_state, review_body,
 			 reviewer_login, reaction_posted, fixer_dispatched, created_at)
@@ -452,28 +474,61 @@ func migrateRepoLocalPRReviews(globalDB *sql.DB, localDBPath, project string) {
 		       reviewer_login, reaction_posted, fixer_dispatched, created_at
 		FROM %s.pr_reviews
 		WHERE project = ?
-	`, alias), project)
+	`, alias), project); err != nil {
+		return fmt.Errorf("copy pr_reviews: %w", err)
+	}
+	return nil
 }
 
 // migrateRepoLocalSignals copies signals from a repo-local DB into the global
 // DB via ATTACH. Signals are deduplicated by (project, plan_file, signal_type,
 // created_at) since the signals table has no natural unique constraint.
-func migrateRepoLocalSignals(globalDB *sql.DB, localDBPath, project string) {
+// BEGIN IMMEDIATE is used to serialise concurrent migrations so the NOT EXISTS
+// check and INSERT are atomic with respect to other writers.
+func migrateRepoLocalSignals(globalDB *sql.DB, localDBPath, project string) error {
+	ctx := context.Background()
 	const alias = "local_sig"
-	if _, err := globalDB.Exec(fmt.Sprintf("ATTACH DATABASE %q AS %s", localDBPath, alias)); err != nil {
-		return
-	}
-	defer globalDB.Exec(fmt.Sprintf("DETACH DATABASE %s", alias)) //nolint:errcheck
 
-	if !tableExistsInAttached(globalDB, alias, "signals") {
-		return
+	conn, err := globalDB.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire conn for signals migration: %w", err)
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf("ATTACH DATABASE %q AS %s", localDBPath, alias)); err != nil {
+		return fmt.Errorf("attach local DB for signals: %w", err)
+	}
+	defer conn.ExecContext(ctx, fmt.Sprintf("DETACH DATABASE %s", alias)) //nolint:errcheck
+
+	var hasTable int
+	if err := conn.QueryRowContext(ctx,
+		fmt.Sprintf("SELECT count(*) FROM %s.sqlite_master WHERE type='table' AND name='signals'", alias),
+	).Scan(&hasTable); err != nil {
+		return fmt.Errorf("check signals table in local DB: %w", err)
+	}
+	if hasTable == 0 {
+		return nil
 	}
 
 	// Ensure the global signals table exists (SQLiteStore does not create it;
-	// only SQLiteSignalGateway does).
-	_, _ = globalDB.Exec(signalsSchema)
+	// only SQLiteSignalGateway does). This is a no-op when the table already exists.
+	if _, err := conn.ExecContext(ctx, signalsSchema); err != nil {
+		return fmt.Errorf("ensure signals schema: %w", err)
+	}
 
-	_, _ = globalDB.Exec(fmt.Sprintf(`
+	// BEGIN IMMEDIATE acquires a write lock immediately, serialising concurrent
+	// migrations so the NOT EXISTS deduplication check is concurrency-safe.
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return fmt.Errorf("begin immediate for signals migration: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			conn.ExecContext(ctx, "ROLLBACK") //nolint:errcheck
+		}
+	}()
+
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`
 		INSERT INTO signals
 			(project, plan_file, signal_type, payload, status,
 			 created_at, claimed_by, claimed_at, processed_at, result)
@@ -488,7 +543,15 @@ func migrateRepoLocalSignals(globalDB *sql.DB, localDBPath, project string) {
 			  AND g.signal_type = s.signal_type
 			  AND g.created_at = s.created_at
 		)
-	`, alias), project)
+	`, alias), project); err != nil {
+		return fmt.Errorf("copy signals: %w", err)
+	}
+
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+		return fmt.Errorf("commit signals migration: %w", err)
+	}
+	committed = true
+	return nil
 }
 
 // daemonTOMLRepos holds the minimal subset of daemon.toml needed to enumerate
