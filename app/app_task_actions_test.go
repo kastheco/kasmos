@@ -18,6 +18,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
@@ -418,7 +419,7 @@ func TestWaitForDaemonPlannerInstance_SkipsExitedPlaceholder(t *testing.T) {
 		return inst, nil
 	}
 
-	inst, err := waitForDaemonPlannerInstance(session.InstanceData{
+	inst, err := waitForDaemonPlannerInstance("", session.InstanceData{
 		Title:         "planner-test",
 		Path:          t.TempDir(),
 		Program:       "opencode",
@@ -462,7 +463,7 @@ func TestWaitForDaemonPlannerInstance_ToleratesSlowStartup(t *testing.T) {
 		return inst, nil
 	}
 
-	inst, err := waitForDaemonPlannerInstance(session.InstanceData{
+	inst, err := waitForDaemonPlannerInstance("", session.InstanceData{
 		Title:         "planner-test",
 		Path:          t.TempDir(),
 		Program:       "opencode",
@@ -474,6 +475,45 @@ func TestWaitForDaemonPlannerInstance_ToleratesSlowStartup(t *testing.T) {
 	require.NotNil(t, inst)
 	assert.False(t, inst.Exited)
 	assert.GreaterOrEqual(t, attempts, 26)
+}
+
+func TestWaitForDaemonPlannerInstance_UsesDaemonLoadingPlaceholder(t *testing.T) {
+	oldRestore := restoreInstanceFromData
+	oldListInstances := listDaemonInstances
+	t.Cleanup(func() {
+		restoreInstanceFromData = oldRestore
+		listDaemonInstances = oldListInstances
+	})
+
+	restoreInstanceFromData = func(data session.InstanceData) (*session.Instance, error) {
+		return nil, assert.AnError
+	}
+	listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
+		require.Equal(t, "proj", project)
+		return []api.InstanceStatus{{
+			Title:   "planner-test",
+			Plan:    "planner-test.md",
+			Role:    session.AgentTypePlanner,
+			Active:  true,
+			Loading: true,
+			Program: "opencode",
+		}}, nil
+	}
+
+	inst, err := waitForDaemonPlannerInstance("proj", session.InstanceData{
+		Title:         "planner-test",
+		Path:          t.TempDir(),
+		Program:       "opencode",
+		ExecutionMode: session.ExecutionModeTmux,
+		TaskFile:      "planner-test.md",
+		AgentType:     session.AgentTypePlanner,
+		Status:        session.Loading,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, inst)
+	assert.Equal(t, session.Loading, inst.Status)
+	assert.False(t, inst.Exited)
+	assert.False(t, inst.Started())
 }
 
 func TestSpawnWaveTasks_HeadlessCoderUsesHeadlessExecution(t *testing.T) {

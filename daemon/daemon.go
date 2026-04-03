@@ -210,6 +210,7 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 				Plan:        inst.TaskFile,
 				Role:        inst.AgentType,
 				Active:      active,
+				Loading:     inst.Status == session.Loading,
 				Title:       inst.Title,
 				Branch:      inst.Branch,
 				Program:     inst.Program,

@@ -49,10 +49,29 @@ const (
 	quickLaunchTitleSyncMultiplier   = 1.2
 )
 
-func waitForDaemonPlannerInstance(data session.InstanceData) (*session.Instance, error) {
+func waitForDaemonPlannerInstance(project string, data session.InstanceData) (*session.Instance, error) {
 	var lastErr error
 	deadline := time.Now().Add(plannerInstanceWaitTimeout)
 	for time.Now().Before(deadline) {
+		if project != "" {
+			statuses, err := listDaemonInstances(project)
+			if err == nil {
+				for _, status := range statuses {
+					if status.Title != data.Title || !status.Active {
+						continue
+					}
+					inst, restoreErr := restoreDaemonInstance(data.Path, status)
+					if restoreErr == nil && inst != nil {
+						return inst, nil
+					}
+					lastErr = restoreErr
+					break
+				}
+			} else {
+				lastErr = err
+			}
+		}
+
 		inst, err := restoreInstanceFromData(data)
 		if err == nil {
 			if inst != nil && !inst.Exited {
@@ -79,16 +98,16 @@ var spawnPlannerWithDaemon = func(repoPath, project, planFile, title, prompt, pr
 	data := session.InstanceData{
 		Title:         title,
 		Path:          repoPath,
-		Status:        session.Running,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 		Program:       program,
 		ExecutionMode: session.ExecutionModeTmux,
 		TaskFile:      planFile,
 		AgentType:     session.AgentTypePlanner,
+		Status:        session.Loading,
 	}
 
-	return waitForDaemonPlannerInstance(data)
+	return waitForDaemonPlannerInstance(project, data)
 }
 
 var quickLaunchStartOnMain = func(inst *session.Instance) error {

@@ -121,11 +121,15 @@ func daemonInstanceData(repoPath string, status api.InstanceStatus) session.Inst
 	if program == "" {
 		program = "opencode"
 	}
+	instStatus := session.Running
+	if status.Loading {
+		instStatus = session.Loading
+	}
 	data := session.InstanceData{
 		Title:         status.Title,
 		Path:          repoPath,
 		Branch:        status.Branch,
-		Status:        session.Running,
+		Status:        instStatus,
 		Program:       program,
 		ExecutionMode: session.ExecutionModeTmux,
 		AutoYes:       true,
@@ -145,6 +149,71 @@ func daemonInstanceData(repoPath string, status api.InstanceStatus) session.Inst
 		}
 	}
 	return data
+}
+
+func daemonLoadingTotal(status api.InstanceStatus) int {
+	switch {
+	case status.TaskNumber > 0:
+		return 8
+	case status.Role == session.AgentTypePlanner, status.Role == session.AgentTypeElaborator:
+		return 5
+	default:
+		return 6
+	}
+}
+
+func newDaemonLoadingInstance(repoPath string, status api.InstanceStatus) (*session.Instance, error) {
+	program := status.Program
+	if program == "" {
+		program = "opencode"
+	}
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         status.Title,
+		Path:          repoPath,
+		Program:       program,
+		ExecutionMode: session.ExecutionModeTmux,
+		AutoYes:       true,
+		TaskFile:      status.Plan,
+		AgentType:     status.Role,
+		TaskNumber:    status.TaskNumber,
+		WaveNumber:    status.WaveNumber,
+		ReviewCycle:   status.ReviewCycle,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if status.Branch != "" {
+		inst.BindSharedTaskWorktree(repoPath, status.Branch)
+	}
+	inst.SetStatus(session.Loading)
+	inst.LoadingTotal = daemonLoadingTotal(status)
+	inst.LoadingStage = 1
+	inst.LoadingMessage = "waiting for session..."
+	return inst, nil
+}
+
+func restoreDaemonInstance(repoPath string, status api.InstanceStatus) (*session.Instance, error) {
+	inst, err := restoreInstanceFromData(daemonInstanceData(repoPath, status))
+	if err == nil && inst != nil && !inst.Exited {
+		return inst, nil
+	}
+	if status.Active && status.Loading {
+		placeholder, placeholderErr := newDaemonLoadingInstance(repoPath, status)
+		if placeholderErr == nil {
+			return placeholder, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("restore daemon loading instance %q: %w (placeholder: %v)", status.Title, err, placeholderErr)
+		}
+		return nil, placeholderErr
+	}
+	if err != nil {
+		return nil, err
+	}
+	if inst != nil && inst.Exited {
+		return nil, fmt.Errorf("daemon instance %q restored as exited", status.Title)
+	}
+	return nil, fmt.Errorf("daemon instance %q unavailable", status.Title)
 }
 
 func (m *home) daemonStartupCheckCmd() tea.Cmd {

@@ -949,10 +949,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			daemonInstances := make([]*session.Instance, 0)
 			daemonTitles := make([]string, 0)
 			if daemonManagedRepo && project != "" {
-				knownTitles := make(map[string]struct{}, len(snapshots))
+				knownInstances := make(map[string]*session.Instance, len(snapshots))
 				for _, inst := range snapshots {
 					if inst != nil {
-						knownTitles[inst.Title] = struct{}{}
+						knownInstances[inst.Title] = inst
 					}
 				}
 				statuses, err := listDaemonInstances(project)
@@ -968,16 +968,16 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if !status.Active {
 							continue
 						}
-						if _, exists := knownTitles[title]; exists {
+						if existing, exists := knownInstances[title]; exists && existing != nil && existing.Started() && !existing.Exited && !existing.Paused() {
 							continue
 						}
-						inst, err := restoreInstanceFromData(daemonInstanceData(repoPath, status))
+						inst, err := restoreDaemonInstance(repoPath, status)
 						if err != nil {
 							log.WarningLog.Printf("daemon instance sync: restore %q: %v", title, err)
 							continue
 						}
 						daemonInstances = append(daemonInstances, inst)
-						knownTitles[title] = struct{}{}
+						knownInstances[title] = inst
 					}
 				}
 			}
@@ -1506,9 +1506,27 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				continue
 			}
 			exists := false
+			selected := m.nav.GetSelectedInstance()
+			selectedTitle := ""
+			if selected != nil {
+				selectedTitle = selected.Title
+			}
 			for _, existing := range m.nav.GetInstances() {
 				if existing.Title == inst.Title {
-					exists = true
+					if existing.Started() && !existing.Exited && !existing.Paused() {
+						exists = true
+						break
+					}
+					if !existing.Started() && !inst.Started() && !existing.Exited && existing.Status == inst.Status {
+						exists = true
+						break
+					}
+					m.nav.RemoveByTitle(existing.Title)
+					m.removeFromAllInstances(existing.Title)
+					delete(m.instanceFinalizers, existing)
+					if selectedTitle == existing.Title {
+						selectedTitle = inst.Title
+					}
 					break
 				}
 			}
@@ -1517,6 +1535,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))
 			m.allInstances = append(m.allInstances, inst)
+			if selectedTitle == inst.Title {
+				m.nav.SelectInstance(inst)
+			}
 		}
 
 		// Apply collected metadata to instances — zero I/O, just field writes.
