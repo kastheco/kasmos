@@ -17,7 +17,7 @@ daemon_poll_interval = 0
     program = "opencode"
     model = "openai/gpt-5.4"
     temperature = 0.2
-    effort = "high"
+    effort = "xhigh"
   [agents.chat]
     enabled = true
     program = "opencode"
@@ -29,11 +29,11 @@ daemon_poll_interval = 0
     program = "claude"
     model = "claude-sonnet-4-6"
     temperature = 0.1
-    effort = "low"
+    effort = "medium"
   [agents.fixer]
     enabled = true
-    program = "opencode"
-    model = "openai/gpt-5.4"
+    program = "claude"
+    model = "claude-opus-4-6"
     temperature = 0.1
     effort = "high"
   [agents.master]
@@ -58,6 +58,7 @@ daemon_poll_interval = 0
 [ui]
   animate_banner = false
   auto_advance_waves = true
+  auto_advance = true
   auto_review_fix = true
 
 [telemetry]
