@@ -93,6 +93,67 @@ const claudeMCPJSON = `{
 }
 `
 
+// EnsureClaudeProjectSettings patches .claude/settings.json so Claude auto-enables
+// project MCP servers and pre-approves the kasmos server while preserving any
+// existing hooks and user settings.
+func EnsureClaudeProjectSettings(dir string) (WriteResult, error) {
+	dest := filepath.Join(dir, ".claude", "settings.json")
+	result := WriteResult{Path: filepath.Join(".claude", "settings.json"), Created: false}
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return result, fmt.Errorf("create .claude: %w", err)
+	}
+
+	var current map[string]any
+	if data, err := os.ReadFile(dest); err == nil {
+		if jsonErr := json.Unmarshal(data, &current); jsonErr != nil {
+			current = nil
+		}
+	}
+	if current == nil {
+		current = map[string]any{}
+	}
+
+	changed := false
+	if enabled, ok := current["enableAllProjectMcpServers"].(bool); !ok || !enabled {
+		current["enableAllProjectMcpServers"] = true
+		changed = true
+	}
+
+	enabledServers, ok := current["enabledMcpjsonServers"].([]any)
+	if !ok {
+		current["enabledMcpjsonServers"] = []any{"kasmos"}
+		changed = true
+	} else {
+		hasKasmos := false
+		for _, server := range enabledServers {
+			if name, ok := server.(string); ok && name == "kasmos" {
+				hasKasmos = true
+				break
+			}
+		}
+		if !hasKasmos {
+			current["enabledMcpjsonServers"] = append(enabledServers, "kasmos")
+			changed = true
+		}
+	}
+
+	if !changed {
+		return result, nil
+	}
+
+	updated, err := json.MarshalIndent(current, "", "  ")
+	if err != nil {
+		return result, fmt.Errorf("marshal .claude/settings.json: %w", err)
+	}
+	updated = append(updated, '\n')
+	if err := os.WriteFile(dest, updated, 0o644); err != nil {
+		return result, fmt.Errorf("write .claude/settings.json: %w", err)
+	}
+	result.Created = true
+	return result, nil
+}
+
 // WriteClaudeMCPConfig writes .mcp.json at the project root registering the kasmos MCP server.
 // Respects force: if force is false and the file already exists it is skipped.
 func WriteClaudeMCPConfig(dir string, force bool) (WriteResult, error) {
@@ -166,6 +227,12 @@ func WriteClaudeProject(dir string, agents []harness.AgentConfig, selectedTools 
 		return nil, err
 	}
 	results = append(results, staticResults...)
+
+	settingsResult, err := EnsureClaudeProjectSettings(dir)
+	if err != nil {
+		return nil, err
+	}
+	results = append(results, settingsResult)
 
 	// Write .claude/.mcp.json registering the kasmos MCP server.
 	mcpResult, err := WriteClaudeMCPConfig(dir, force)

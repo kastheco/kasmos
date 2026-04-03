@@ -74,6 +74,73 @@ func TestScaffoldClaudeProject(t *testing.T) {
 	require.True(t, ok, "kasmos entry must be present")
 	assert.Equal(t, "http", kasmos["type"])
 	assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
+
+	settingsPath := filepath.Join(dir, ".claude", "settings.json")
+	assert.FileExists(t, settingsPath)
+	settingsData, err := os.ReadFile(settingsPath)
+	require.NoError(t, err)
+	var settings map[string]any
+	require.NoError(t, json.Unmarshal(settingsData, &settings))
+	assert.Equal(t, true, settings["enableAllProjectMcpServers"])
+	enabledServers, ok := settings["enabledMcpjsonServers"].([]any)
+	require.True(t, ok, "enabledMcpjsonServers key must be present")
+	assert.Contains(t, enabledServers, "kasmos")
+}
+
+func TestEnsureClaudeProjectSettings(t *testing.T) {
+	t.Run("creates file when missing", func(t *testing.T) {
+		dir := t.TempDir()
+
+		result, err := EnsureClaudeProjectSettings(dir)
+		require.NoError(t, err)
+		assert.Equal(t, WriteResult{Path: filepath.Join(".claude", "settings.json"), Created: true}, result)
+
+		data, err := os.ReadFile(filepath.Join(dir, ".claude", "settings.json"))
+		require.NoError(t, err)
+		var settings map[string]any
+		require.NoError(t, json.Unmarshal(data, &settings))
+		assert.Equal(t, true, settings["enableAllProjectMcpServers"])
+		assert.Contains(t, settings["enabledMcpjsonServers"], "kasmos")
+	})
+
+	t.Run("preserves existing settings and appends kasmos once", func(t *testing.T) {
+		dir := t.TempDir()
+		settingsPath := filepath.Join(dir, ".claude", "settings.json")
+		require.NoError(t, os.MkdirAll(filepath.Dir(settingsPath), 0o755))
+		existing := `{
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [{ "type": "command", "command": "notify.sh" }]
+      }
+    ]
+  },
+  "enabledMcpjsonServers": ["clickup"]
+}`
+		require.NoError(t, os.WriteFile(settingsPath, []byte(existing), 0o644))
+
+		result, err := EnsureClaudeProjectSettings(dir)
+		require.NoError(t, err)
+		assert.Equal(t, WriteResult{Path: filepath.Join(".claude", "settings.json"), Created: true}, result)
+
+		data, err := os.ReadFile(settingsPath)
+		require.NoError(t, err)
+		var settings map[string]any
+		require.NoError(t, json.Unmarshal(data, &settings))
+		assert.Equal(t, true, settings["enableAllProjectMcpServers"])
+		assert.Contains(t, settings["enabledMcpjsonServers"], "clickup")
+		assert.Contains(t, settings["enabledMcpjsonServers"], "kasmos")
+		assert.Contains(t, settings["hooks"], "Notification")
+
+		result, err = EnsureClaudeProjectSettings(dir)
+		require.NoError(t, err)
+		assert.Equal(t, WriteResult{Path: filepath.Join(".claude", "settings.json"), Created: false}, result)
+
+		data, err = os.ReadFile(settingsPath)
+		require.NoError(t, err)
+		assert.Equal(t, 1, strings.Count(string(data), `"kasmos"`))
+	})
 }
 
 func TestWriteClaudeMCPConfig(t *testing.T) {
