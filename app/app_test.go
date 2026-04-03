@@ -489,6 +489,8 @@ func TestQuickLaunch_KeyCreatesInstance(t *testing.T) {
 	instances := updated.nav.GetInstances()
 	require.Len(t, instances, 1)
 	assert.Equal(t, "agent-1", instances[0].Title)
+	assert.Equal(t, session.AgentTypeFixer, instances[0].AgentType)
+	assert.Equal(t, h.programForAgent(session.AgentTypeFixer), instances[0].Program)
 	assert.Empty(t, updated.allInstances)
 
 	startedMsgs := collectQuickLaunchMsgs(cmd)

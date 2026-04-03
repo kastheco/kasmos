@@ -2788,7 +2788,7 @@ func (m *home) nextPlaceholderName() string {
 func (m *home) quickLaunchTitleSyncCmd(inst *session.Instance) tea.Cmd {
 	if inst == nil ||
 		inst.TaskFile != "" ||
-		inst.AgentType != "" ||
+		(inst.AgentType != "" && inst.AgentType != session.AgentTypeFixer) ||
 		!strings.HasSuffix(inst.Program, "opencode") ||
 		!quickLaunchPlaceholderTitleRE.MatchString(inst.Title) ||
 		strings.TrimSpace(inst.Path) == "" {
@@ -2845,9 +2845,11 @@ func (m *home) quickLaunchAgent() (tea.Model, tea.Cmd) {
 
 	title := m.nextPlaceholderName()
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:   title,
-		Path:    m.activeRepoPath,
-		Program: m.programForAgent(""),
+		Title:         title,
+		Path:          m.activeRepoPath,
+		Program:       m.programForAgent(session.AgentTypeFixer),
+		ExecutionMode: m.executionModeForAgent(session.AgentTypeFixer),
+		AgentType:     session.AgentTypeFixer,
 	})
 	if err != nil {
 		return m, m.handleError(err)
