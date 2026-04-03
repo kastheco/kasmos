@@ -19,8 +19,8 @@ func TestPlannerPromptBranchPolicy(t *testing.T) {
 		"Do NOT create feature branches for planning work.",
 		"Only register implementation plans",
 		"never register design docs",
-		"kas task update-content",
-		".kasmos/signals/planner-finished-",
+		"task_update_content",
+		"planner-finished",
 		"KASMOS_MANAGED",
 		"Never modify task state directly",
 		"plan review", // planner must reference the review step

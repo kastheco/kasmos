@@ -670,10 +670,10 @@ func TestTriggerPlanStage_ImplementNoWaves_RespawnsPlanner(t *testing.T) {
 		"spawned instance must be a planner")
 	assert.Contains(t, plannerInst.QueuedPrompt, "Wave",
 		"planner prompt must mention Wave headers")
-	assert.Contains(t, plannerInst.QueuedPrompt, "planner-finished-",
-		"planner prompt must include the signal file instruction for kasmos completion detection")
-	assert.Contains(t, plannerInst.QueuedPrompt, "kas task",
-		"planner prompt must instruct the planner to store the annotated plan")
+	assert.Contains(t, plannerInst.QueuedPrompt, "planner-finished",
+		"planner prompt must include planner completion signal")
+	assert.Contains(t, plannerInst.QueuedPrompt, "task_update_content",
+		"planner prompt must instruct the planner to store the annotated plan via MCP")
 }
 
 // ---------------------------------------------------------------------------
