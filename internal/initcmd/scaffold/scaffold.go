@@ -1,6 +1,7 @@
 package scaffold
 
 import (
+	"bytes"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -43,7 +44,7 @@ func renderTemplate(content string, agent harness.AgentConfig) string {
 // WriteResult tracks scaffold output for summary display.
 type WriteResult struct {
 	Path    string
-	Created bool // true=written, false=skipped (file already existed)
+	Created bool // true=content changed or created, false=already up-to-date
 }
 
 // writePerRoleProject is the shared implementation for per-role harnesses (claude, opencode).
@@ -993,11 +994,17 @@ func LoadReviewPrompt(planFile, planName string, reviewRound int, previousFeedba
 }
 
 // writeFile writes content to path. If force is false and the file exists, skip.
-// Returns true if the file was actually written, false if skipped.
+// When force is true and the file already exists, the existing content is compared
+// byte-for-byte against the new content; if identical the write is skipped.
+// Returns true if the file was created or its content changed, false if already up-to-date.
 func writeFile(path string, content []byte, force bool) (bool, error) {
 	if !force {
 		if _, err := os.Stat(path); err == nil {
 			return false, nil // skip existing
+		}
+	} else {
+		if existing, err := os.ReadFile(path); err == nil && bytes.Equal(existing, content) {
+			return false, nil // content unchanged — skip write
 		}
 	}
 	return true, os.WriteFile(path, content, 0o644)

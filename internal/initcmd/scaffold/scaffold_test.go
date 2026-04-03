@@ -1282,3 +1282,119 @@ func TestSyncScaffold_PatchesExistingOpencodeConfigEvenWithoutOpencodeHarness(t 
 	// File must still exist (patched, not deleted).
 	assert.FileExists(t, cfgPath)
 }
+
+func TestWriteFile_ContentComparison(t *testing.T) {
+	content := []byte("hello world\n")
+	different := []byte("different content\n")
+
+	t.Run("force=true, file does not exist, writes and returns true", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "file.txt")
+
+		written, err := writeFile(path, content, true)
+		require.NoError(t, err)
+		assert.True(t, written)
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, content, got)
+	})
+
+	t.Run("force=true, file exists with same content, skips and returns false", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "file.txt")
+		require.NoError(t, os.WriteFile(path, content, 0o644))
+
+		written, err := writeFile(path, content, true)
+		require.NoError(t, err)
+		assert.False(t, written)
+	})
+
+	t.Run("force=true, file exists with different content, overwrites and returns true", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "file.txt")
+		require.NoError(t, os.WriteFile(path, different, 0o644))
+
+		written, err := writeFile(path, content, true)
+		require.NoError(t, err)
+		assert.True(t, written)
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, content, got)
+	})
+
+	t.Run("force=false, file exists, skips and returns false", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "file.txt")
+		require.NoError(t, os.WriteFile(path, different, 0o644))
+
+		written, err := writeFile(path, content, false)
+		require.NoError(t, err)
+		assert.False(t, written)
+		// original content must be untouched
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, different, got)
+	})
+
+	t.Run("force=false, file does not exist, writes and returns true", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "file.txt")
+
+		written, err := writeFile(path, content, false)
+		require.NoError(t, err)
+		assert.True(t, written)
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, content, got)
+	})
+}
+
+// TestSyncScaffold_ContentAwareSync verifies that syncing an already-up-to-date
+// scaffold directory reports zero files as created/changed.
+func TestSyncScaffold_ContentAwareSync(t *testing.T) {
+	dir := t.TempDir()
+	agents := []harness.AgentConfig{
+		{Role: "coder", Harness: "claude", Model: "claude-sonnet-4-6", Enabled: true},
+	}
+
+	// First sync — all files should be created.
+	firstResults, err := SyncScaffold(dir, agents)
+	require.NoError(t, err)
+	created := 0
+	for _, r := range firstResults {
+		if r.Created {
+			created++
+		}
+	}
+	assert.Greater(t, created, 0, "first sync should create at least one file")
+
+	// Second sync — no content changed, so nothing should be reported as created.
+	secondResults, err := SyncScaffold(dir, agents)
+	require.NoError(t, err)
+	for _, r := range secondResults {
+		assert.False(t, r.Created, "file %q should be unchanged on second sync", r.Path)
+	}
+
+	// Mutate one of the written files, then sync again — only that file should be updated.
+	// Skip directory results (Path ends with "/") from EnsureRuntimeDirs.
+	var mutated string
+	for _, r := range firstResults {
+		if r.Created && !strings.HasSuffix(r.Path, "/") {
+			mutated = r.Path
+			break
+		}
+	}
+	require.NotEmpty(t, mutated, "need a created file to mutate")
+	mutatedAbs := filepath.Join(dir, mutated)
+	require.NoError(t, os.WriteFile(mutatedAbs, []byte("tampered content\n"), 0o644))
+
+	thirdResults, err := SyncScaffold(dir, agents)
+	require.NoError(t, err)
+	updatedPaths := []string{}
+	for _, r := range thirdResults {
+		if r.Created {
+			updatedPaths = append(updatedPaths, r.Path)
+		}
+	}
+	assert.Equal(t, []string{mutated}, updatedPaths, "only the mutated file should be reported as updated")
+}
