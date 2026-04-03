@@ -2868,6 +2868,16 @@ func (m *home) rebuildOrphanedOrchestrators() {
 			orch.MarkTaskFailed(taskNumber)
 		}
 
+		// If the restored orchestrator is already AllComplete, all tasks finished
+		// before the restart. Don't re-add it — the metadata tick would immediately
+		// re-show the "push branch and start review?" prompt on every tick. Instead
+		// queue a single deferred prompt via pendingAllComplete.
+		if orch.State() == orchestration.WaveStateAllComplete {
+			m.pendingAllComplete = append(m.pendingAllComplete, planFile)
+			log.WarningLog.Printf("rebuildOrphanedOrchestrators: %s already all-complete — queued prompt", planFile)
+			continue
+		}
+
 		m.waveOrchestrators[planFile] = orch
 		log.WarningLog.Printf("rebuildOrphanedOrchestrators: restored orchestrator for %s (wave %d)",
 			planFile, targetWave)
