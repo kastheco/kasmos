@@ -231,6 +231,10 @@ func (m *home) handleActiveOverlayMouse(msg tea.MouseClickMsg) (tea.Model, tea.C
 			m.pendingWaveConfirmTaskFile = ""
 			m.waveConfirmDismissedAt = time.Now()
 		}
+		if m.pendingAllCompleteTaskFile != "" {
+			m.allCompleteDismissed[m.pendingAllCompleteTaskFile] = true
+			m.pendingAllCompleteTaskFile = ""
+		}
 		if m.pendingPlannerTaskFile != "" {
 			m.plannerPrompted[m.pendingPlannerTaskFile] = true
 			m.killExistingPlanAgent(m.pendingPlannerTaskFile, session.AgentTypePlanner)

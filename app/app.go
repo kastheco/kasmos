@@ -334,6 +334,14 @@ type home struct {
 	// Drained on each metadata tick once the overlay clears.
 	pendingAllComplete []string
 
+	// allCompleteDismissed tracks plan files where the user cancelled the
+	// "all waves complete" confirmation. Prevents rebuildOrphanedOrchestrators
+	// from recreating the orchestrator (which would re-show the prompt).
+	allCompleteDismissed map[string]bool
+	// pendingAllCompleteTaskFile is set while an all-waves-complete confirmation
+	// overlay is showing, so cancel can record the dismissal.
+	pendingAllCompleteTaskFile string
+
 	// pendingWaveConfirmTaskFile is set while a wave-advance (or failed-wave decision)
 	// confirmation overlay is showing, so cancel can reset the orchestrator latch.
 	pendingWaveConfirmTaskFile string
@@ -464,6 +472,7 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 		instanceFinalizers:      make(map[*session.Instance]func()),
 		dismissedInstanceTitles: make(map[string]struct{}),
 		waveOrchestrators:       make(map[string]*orchestration.WaveOrchestrator),
+		allCompleteDismissed:    make(map[string]bool),
 		plannerPrompted:         make(map[string]bool),
 		coderPushPrompted:       make(map[string]bool),
 		pendingReviewFeedback:   make(map[string]string),
@@ -1729,6 +1738,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					asyncCmds = append(asyncCmds, cmd)
 				}
 				message := fmt.Sprintf("all waves complete for '%s'. push branch and start review?", planName)
+				delete(m.allCompleteDismissed, planFile)
+				m.pendingAllCompleteTaskFile = planFile
 				m.confirmAction(message, func() tea.Msg {
 					return waveAllCompleteMsg{planFile: planFile}
 				})
@@ -1834,6 +1845,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							asyncCmds = append(asyncCmds, cmd)
 						}
 						message := fmt.Sprintf("all waves complete for '%s'. push branch and start review?", planName)
+						delete(m.allCompleteDismissed, capturedPlanFile)
+						m.pendingAllCompleteTaskFile = capturedPlanFile
 						m.confirmAction(message, func() tea.Msg {
 							return waveAllCompleteMsg{planFile: capturedPlanFile}
 						})
@@ -2068,6 +2081,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// race when the returned tea.Cmd runs concurrently with future Updates
 		// that may mutate m.nav.instances.
 		planFile := msg.planFile
+		delete(m.allCompleteDismissed, planFile)
+		m.pendingAllCompleteTaskFile = ""
 		if err := m.setExecutionState(planFile, taskstore.ExecutionState{
 			Phase:           string(taskfsm.ExecutionPhaseWaveWaiting),
 			ActiveAgentType: session.AgentTypeCoder,

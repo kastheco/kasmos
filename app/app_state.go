@@ -2767,6 +2767,10 @@ func (m *home) rebuildOrphanedOrchestrators() {
 		if _, exists := m.waveOrchestrators[planFile]; exists {
 			continue
 		}
+		// Skip if user dismissed the all-waves-complete prompt for this plan.
+		if m.allCompleteDismissed[planFile] {
+			continue
+		}
 		// Only reconstruct plans that are explicitly on a wave-execution branch.
 		if entry.Status != taskstate.StatusImplementing || !taskfsm.IsWaveExecutionPhase(taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase)) {
 			continue
