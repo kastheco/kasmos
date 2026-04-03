@@ -270,6 +270,33 @@ func TestStart_DisablesMouseOnInnerSession(t *testing.T) {
 	assert.True(t, found, "expected 'tmux set-option ... mouse off' to be run during Start(); ran: %v", ranCmds)
 }
 
+func TestRestore_DisablesMouseOnRestoredSession(t *testing.T) {
+	ptyFactory := NewMockPtyFactory(t)
+	var ranCmds []string
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			ranCmds = append(ranCmds, cmd2.ToString(cmd))
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			return []byte("output"), nil
+		},
+	}
+
+	s := NewTmuxSessionWithDeps("test-restore-mouse", "opencode", false, ptyFactory, cmdExec)
+	err := s.Restore()
+	require.NoError(t, err)
+
+	found := false
+	for _, c := range ranCmds {
+		if strings.Contains(c, "set-option") && strings.Contains(c, "mouse") && strings.Contains(c, "off") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "expected 'tmux set-option ... mouse off' to be run during Restore(); ran: %v", ranCmds)
+}
+
 func TestStart_InjectsAgentFlag(t *testing.T) {
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
