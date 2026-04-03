@@ -339,18 +339,27 @@ func (s *TmuxSpawner) reserveInstanceSlot(key, title string) bool {
 	defer s.mu.Unlock()
 	if key != "" {
 		if inst, ok := s.instances[key]; ok {
-			if title == "" || inst == nil || inst.Title == title {
-				return false // same agent already tracked or reserved
+			if inst != nil && inst.Started() && !inst.TmuxAlive() {
+				s.logger.Info("evict stale tracked agent", "key", key, "title", inst.Title)
+				delete(s.instances, key)
+				delete(s.planFileByKey, key)
+				delete(s.agentTypeByKey, key)
+				delete(s.projectByKey, key)
+				delete(s.replacing, key)
+			} else {
+				if title == "" || inst == nil || inst.Title == title {
+					return false // same agent already tracked or reserved
+				}
+				// Different title at the same key means the caller is replacing an
+				// old agent (e.g. fixer respawn after a new review cycle). Block
+				// concurrent replacements via the replacing map while preserving
+				// the existing instance so KillAgent can still find it.
+				if s.replacing[key] {
+					return false // another replacement is already in progress
+				}
+				s.replacing[key] = true
+				return true
 			}
-			// Different title at the same key means the caller is replacing an
-			// old agent (e.g. fixer respawn after a new review cycle). Block
-			// concurrent replacements via the replacing map while preserving
-			// the existing instance so KillAgent can still find it.
-			if s.replacing[key] {
-				return false // another replacement is already in progress
-			}
-			s.replacing[key] = true
-			return true
 		}
 	}
 	if title != "" {

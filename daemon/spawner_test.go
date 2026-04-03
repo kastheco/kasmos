@@ -111,6 +111,49 @@ func TestTmuxSpawner_KillAgent_PreservesTrackingWhenClientAttached(t *testing.T)
 	assert.True(t, stillTracked, "instance must remain in tracking maps when kill is deferred due to attached client")
 }
 
+func TestTmuxSpawner_ReserveInstanceSlot_EvictsDeadTrackedAgent(t *testing.T) {
+	s := NewTmuxSpawner()
+
+	const repoPath = "/tmp/repo"
+	const planFile = "my-plan.md"
+	const agentType = session.AgentTypePlanner
+	key := instanceKey(repoPath, planFile, agentType)
+
+	stale, err := session.NewInstance(session.InstanceOptions{
+		Title:         "my-plan-plan",
+		Path:          repoPath,
+		Program:       "true",
+		ExecutionMode: session.ExecutionModeHeadless,
+		TaskFile:      planFile,
+		AgentType:     agentType,
+	})
+	require.NoError(t, err)
+	require.NoError(t, stale.StartOnMainBranch())
+	require.Eventually(t, func() bool { return !stale.TmuxAlive() }, time.Second, 10*time.Millisecond)
+
+	s.mu.Lock()
+	s.instances[key] = stale
+	s.planFileByKey[key] = planFile
+	s.agentTypeByKey[key] = agentType
+	s.projectByKey[key] = "my-project"
+	s.mu.Unlock()
+
+	ok := s.reserveInstanceSlot(key, stale.Title)
+	assert.True(t, ok, "dead tracked agent should be evicted so a replacement can start")
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	inst, tracked := s.instances[key]
+	assert.True(t, tracked, "replacement reservation placeholder should be installed")
+	assert.Nil(t, inst, "replacement reservation should use a nil placeholder until commit")
+	_, hasPlanMeta := s.planFileByKey[key]
+	_, hasAgentMeta := s.agentTypeByKey[key]
+	_, hasProjectMeta := s.projectByKey[key]
+	assert.False(t, hasPlanMeta)
+	assert.False(t, hasAgentMeta)
+	assert.False(t, hasProjectMeta)
+}
+
 func TestTmuxSpawner_instanceKey(t *testing.T) {
 	assert.Equal(t, "/repo:plan.md:coder", instanceKey("/repo", "plan.md", "coder"))
 	assert.Equal(t, "/repo:plan.md:reviewer", instanceKey("/repo", "plan.md", "reviewer"))
