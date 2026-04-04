@@ -365,8 +365,23 @@ func TestSpawnAdHocAgent_DefaultCreatesWorktree(t *testing.T) {
 	require.NotEmpty(t, instances)
 	last := instances[len(instances)-1]
 	assert.Equal(t, "my-agent", last.Title)
+	assert.Equal(t, session.AgentTypeMaster, last.AgentType, "spawned instance must use the master agent")
+	assert.Equal(t, "claude", last.Program)
 	assert.Equal(t, session.Loading, last.Status)
 	assert.NotNil(t, cmd, "should return async start command")
+}
+
+func TestExecuteLauncherAction_NewInstanceUsesClaudeMasterAgent(t *testing.T) {
+	h := newTestHome()
+
+	model, cmd := h.executeLauncherAction("new_instance")
+	updated := model.(*home)
+
+	require.Nil(t, cmd)
+	require.Equal(t, stateNew, updated.state)
+	require.NotNil(t, updated.newInstance)
+	assert.Equal(t, session.AgentTypeMaster, updated.newInstance.AgentType)
+	assert.Equal(t, "claude", updated.newInstance.Program)
 }
 
 func TestSpawnAdHocAgent_BranchOverride(t *testing.T) {
@@ -441,7 +456,7 @@ func TestSpawnAgent_SubmitCreatesInstance(t *testing.T) {
 	last := instances[len(instances)-1]
 	assert.Equal(t, "test-agent", last.Title)
 	assert.Equal(t, "", last.TaskFile, "ad-hoc instance must have no PlanFile")
-	assert.Equal(t, session.AgentTypeFixer, last.AgentType, "spawned instance must be fixer")
+	assert.Equal(t, session.AgentTypeMaster, last.AgentType, "spawned instance must use the master agent")
 	assert.Equal(t, session.Loading, last.Status)
 }
 
@@ -2406,6 +2421,7 @@ func TestInstanceContextMenu_CoderManualAction(t *testing.T) {
 		actions = append(actions, item.Action)
 	}
 	assert.Contains(t, actions, "mark_implement_finished")
+	assert.Contains(t, actions, "merge_instance")
 }
 
 // TestTaskContextMenu_HasGroupedSubMenus verifies that the task context menu exposes

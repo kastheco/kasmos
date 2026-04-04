@@ -30,6 +30,7 @@ const (
 	AgentTypeReviewer   = "reviewer"
 	AgentTypeFixer      = "fixer"
 	AgentTypeElaborator = "architect"
+	AgentTypeMaster     = "master"
 )
 
 // Instance represents a managed agent session with its associated execution backend and git state.
@@ -64,7 +65,7 @@ type Instance struct {
 	TaskFile string
 	// Topic is the topic group this instance belongs to.
 	Topic string
-	// AgentType identifies the role within a plan lifecycle: planner, coder, reviewer, fixer, or empty.
+	// AgentType identifies the role within a plan lifecycle: planner, coder, reviewer, fixer, architect, master, or empty.
 	AgentType string
 	// TaskNumber is the 1-indexed task number within a plan wave (0 = not a wave task).
 	TaskNumber int
@@ -299,7 +300,7 @@ type InstanceOptions struct {
 	SkipPermissions bool
 	// TaskFile binds this instance to a plan from plan-state.
 	TaskFile string
-	// AgentType is the role of this instance within a plan: planner, coder, reviewer, fixer, or empty.
+	// AgentType is the role of this instance within a plan: planner, coder, reviewer, fixer, architect, master, or empty.
 	AgentType string
 	// TaskNumber is the 1-indexed task number within a plan wave (0 = not a wave task).
 	TaskNumber int

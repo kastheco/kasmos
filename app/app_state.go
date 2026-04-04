@@ -2871,6 +2871,23 @@ func (m *home) quickLaunchAgent() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(tea.RequestWindowSize, startCmd)
 }
 
+// newNamedAgentInstance builds the interactive ad-hoc session used by the
+// launcher "new instance" flow and the explicit spawn-agent form.
+//
+// These sessions intentionally launch Claude's master agent instead of a
+// lifecycle role so naming a general-purpose agent opens Claude Code directly.
+func (m *home) newNamedAgentInstance(title, path string) (*session.Instance, error) {
+	if strings.TrimSpace(path) == "" {
+		path = m.activeRepoPath
+	}
+	return session.NewInstance(session.InstanceOptions{
+		Title:     title,
+		Path:      path,
+		Program:   "claude",
+		AgentType: session.AgentTypeMaster,
+	})
+}
+
 // spawnAdHocAgent creates and starts an ad-hoc agent session (no plan, no lifecycle).
 // branch and workPath are optional overrides - empty strings use defaults.
 func (m *home) spawnAdHocAgent(name, branch, workPath string) (tea.Model, tea.Cmd) {
@@ -2882,16 +2899,11 @@ func (m *home) spawnAdHocAgent(name, branch, workPath string) (tea.Model, tea.Cm
 		path = workPath
 	}
 
-	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:   name,
-		Path:    path,
-		Program: m.programForAgent(session.AgentTypeFixer),
-	})
+	inst, err := m.newNamedAgentInstance(name, path)
 	if err != nil {
 		return m, m.handleError(err)
 	}
 
-	inst.AgentType = session.AgentTypeFixer
 	inst.SetStatus(session.Loading)
 	inst.LoadingTotal = 8
 	inst.LoadingMessage = "preparing session..."
@@ -2920,9 +2932,9 @@ func (m *home) spawnAdHocAgent(name, branch, workPath string) (tea.Model, tea.Cm
 		}
 	}
 
-	m.audit(auditlog.EventAgentSpawned, fmt.Sprintf("spawned fixer agent: %s", name),
+	m.audit(auditlog.EventAgentSpawned, fmt.Sprintf("spawned %s agent: %s", session.AgentTypeMaster, name),
 		auditlog.WithInstance(name),
-		auditlog.WithAgent(session.AgentTypeFixer),
+		auditlog.WithAgent(session.AgentTypeMaster),
 	)
 
 	m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))

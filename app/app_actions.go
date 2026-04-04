@@ -98,6 +98,13 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		}
 		return m.pushSelectedInstance()
 
+	case "merge_instance":
+		selected := m.nav.GetSelectedInstance()
+		if selected == nil {
+			return m, nil
+		}
+		return m.mergeTaskToMain(selected.TaskFile)
+
 	case "create_pr_instance":
 		selected := m.nav.GetSelectedInstance()
 		if selected == nil {
@@ -390,56 +397,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "merge_plan":
-		planFile := m.nav.GetSelectedPlanFile()
-		if planFile == "" || m.taskState == nil {
-			return m, nil
-		}
-		entry, ok := m.taskState.Entry(planFile)
-		if !ok {
-			return m, m.handleError(fmt.Errorf("task not found: %s", planFile))
-		}
-		if entry.Branch == "" {
-			return m, m.handleError(fmt.Errorf("plan has no branch to merge"))
-		}
-		planName := taskstate.DisplayName(planFile)
-		mergeAction := func() tea.Msg {
-			if err := gitpkg.PreflightMergeTaskBranch(m.activeRepoPath, entry.Branch); err != nil {
-				return err
-			}
-			// Kill all instances bound to this plan.
-			for i := len(m.allInstances) - 1; i >= 0; i-- {
-				if m.allInstances[i].TaskFile == planFile {
-					if err := m.allInstances[i].Kill(); err != nil {
-						return err
-					}
-					m.allInstances = append(m.allInstances[:i], m.allInstances[i+1:]...)
-				}
-			}
-			if err := gitpkg.MergeTaskBranch(m.activeRepoPath, entry.Branch); err != nil {
-				return err
-			}
-			// Walk through FSM to done if not already there.
-			if taskfsm.Status(entry.Status) != taskfsm.StatusDone {
-				if taskfsm.Status(entry.Status) != taskfsm.StatusReviewing {
-					if err := m.fsmSetReviewing(planFile); err != nil {
-						return err
-					}
-				}
-				if err := m.fsm.Transition(planFile, taskfsm.ReviewApproved); err != nil {
-					return err
-				}
-			}
-			if err := m.clearExecutionState(planFile); err != nil {
-				return err
-			}
-			m.audit(auditlog.EventPlanMerged, "task merged to main: "+planName,
-				auditlog.WithPlan(planFile))
-			_ = m.saveAllInstances()
-			m.loadTaskState()
-			m.updateSidebarTasks()
-			return taskRefreshMsg{}
-		}
-		return m, m.confirmAction(fmt.Sprintf("merge '%s' branch into main?", planName), mergeAction)
+		return m.mergeTaskToMain(m.nav.GetSelectedPlanFile())
 
 	case "mark_plan_done":
 		planFile := m.nav.GetSelectedPlanFile()
@@ -696,6 +654,58 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *home) mergeTaskToMain(planFile string) (tea.Model, tea.Cmd) {
+	if planFile == "" || m.taskState == nil {
+		return m, nil
+	}
+	entry, ok := m.taskState.Entry(planFile)
+	if !ok {
+		return m, m.handleError(fmt.Errorf("task not found: %s", planFile))
+	}
+	if entry.Branch == "" {
+		return m, m.handleError(fmt.Errorf("plan has no branch to merge"))
+	}
+	planName := taskstate.DisplayName(planFile)
+	mergeAction := func() tea.Msg {
+		if err := gitpkg.PreflightMergeTaskBranch(m.activeRepoPath, entry.Branch); err != nil {
+			return err
+		}
+		// Kill all instances bound to this plan.
+		for i := len(m.allInstances) - 1; i >= 0; i-- {
+			if m.allInstances[i].TaskFile == planFile {
+				if err := m.allInstances[i].Kill(); err != nil {
+					return err
+				}
+				m.allInstances = append(m.allInstances[:i], m.allInstances[i+1:]...)
+			}
+		}
+		if err := gitpkg.MergeTaskBranch(m.activeRepoPath, entry.Branch); err != nil {
+			return err
+		}
+		// Walk through FSM to done if not already there.
+		if taskfsm.Status(entry.Status) != taskfsm.StatusDone {
+			if taskfsm.Status(entry.Status) != taskfsm.StatusReviewing {
+				if err := m.fsmSetReviewing(planFile); err != nil {
+					return err
+				}
+			}
+			if err := m.fsm.Transition(planFile, taskfsm.ReviewApproved); err != nil {
+				return err
+			}
+		}
+		if err := m.clearExecutionState(planFile); err != nil {
+			return err
+		}
+		m.audit(auditlog.EventPlanMerged, "task merged to main: "+planName,
+			auditlog.WithPlan(planFile))
+		_ = m.saveAllInstances()
+		m.loadTaskState()
+		m.updateSidebarTasks()
+		return taskRefreshMsg{}
+	}
+	return m, m.confirmAction(fmt.Sprintf("merge '%s' branch into main?", planName), mergeAction)
+}
+
 // fsmSetImplementing transitions the plan to implementing, handling the
 // planning→ready→implementing two-step when called after a planner finishes.
 func (m *home) fsmSetImplementing(planFile string) error {
@@ -859,6 +869,7 @@ func (m *home) openContextMenu() (tea.Model, tea.Cmd) {
 		{Label: "create pr", Action: "create_pr_instance"},
 	}
 	if selected.TaskFile != "" {
+		syncItems = append(syncItems, overlay.ContextMenuItem{Label: "merge to main", Action: "merge_instance"})
 		syncItems = append(syncItems, overlay.ContextMenuItem{Label: "open in browser", Action: "open_plan_browser"})
 	}
 
@@ -1600,11 +1611,7 @@ func (m *home) executeLauncherAction(action string) (tea.Model, tea.Cmd) {
 				fmt.Errorf("you can't create more than %d instances (%d tmux sessions active)",
 					GlobalInstanceLimit, m.tmuxSessionCount))
 		}
-		instance, err := session.NewInstance(session.InstanceOptions{
-			Title:   "",
-			Path:    m.activeRepoPath,
-			Program: m.programForAgent(""),
-		})
+		instance, err := m.newNamedAgentInstance("", m.activeRepoPath)
 		if err != nil {
 			return m, m.handleError(err)
 		}

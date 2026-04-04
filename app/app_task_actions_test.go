@@ -1130,6 +1130,80 @@ func TestSpawnAdHocAgent_BlocksWhenDaemonUnavailable(t *testing.T) {
 	assert.Contains(t, co.View(), "kas daemon add")
 }
 
+func TestMergeInstance_UsesSelectedInstanceTask(t *testing.T) {
+	dir := t.TempDir()
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		out, err := cmd.CombinedOutput()
+		require.NoErrorf(t, err, "git %v failed: %s", args, string(out))
+	}
+
+	runGit("init")
+	runGit("config", "user.email", "test@test.com")
+	runGit("config", "user.name", "Test")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("base\n"), 0o644))
+	runGit("add", "tracked.txt")
+	runGit("commit", "-m", "init")
+	runGit("checkout", "-b", "plan/merge-instance")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("branch change\n"), 0o644))
+	runGit("add", "tracked.txt")
+	runGit("commit", "-m", "branch change")
+	runGit("checkout", "-")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("dirty local change\n"), 0o644))
+
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+
+	const planFile = "merge-instance"
+	require.NoError(t, ps.Register(planFile, "merge instance", "plan/merge-instance", time.Now()))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusReviewing)
+
+	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:     "merge-instance-reviewer",
+		Path:      dir,
+		Program:   "claude",
+		TaskFile:  planFile,
+		AgentType: session.AgentTypeReviewer,
+	})
+	require.NoError(t, err)
+
+	h := &home{
+		taskState:      ps,
+		taskStateDir:   plansDir,
+		nav:            ui.NewNavigationPanel(&spin),
+		menu:           ui.NewMenu(),
+		tabbedWindow:   ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:   overlay.NewToastManager(&spin),
+		overlays:       overlay.NewManager(),
+		activeRepoPath: dir,
+		allInstances:   []*session.Instance{inst},
+	}
+
+	h.nav.AddInstance(inst)
+	h.updateSidebarTasks()
+	require.True(t, h.nav.SelectInstance(inst))
+
+	model, cmd := h.executeContextAction("merge_instance")
+	updated := model.(*home)
+	require.Nil(t, cmd)
+	require.Equal(t, stateConfirm, updated.state)
+	require.NotNil(t, updated.pendingConfirmAction)
+
+	msg := updated.pendingConfirmAction()
+	mergeErr, ok := msg.(error)
+	require.True(t, ok, "pending confirm action must return the preflight error, got %T", msg)
+	assert.ErrorContains(t, mergeErr, "uncommitted changes overlap")
+	assert.Len(t, updated.allInstances, 1, "preflight must stop before any bound instance is removed")
+
+	entry, ok := updated.taskState.Entry(planFile)
+	require.True(t, ok)
+	assert.Equal(t, taskstate.StatusReviewing, entry.Status)
+}
+
 func TestToggleAutoAdvanceWaves(t *testing.T) {
 	m := &home{
 		appConfig: &config.Config{AutoAdvanceWaves: false},

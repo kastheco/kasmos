@@ -241,7 +241,7 @@ func TestAuditHomeEmit_AgentSpawned(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, events, 1, "spawnAdHocAgent must emit EventAgentSpawned")
-	assert.Equal(t, "fixer", events[0].AgentType)
+	assert.Equal(t, session.AgentTypeMaster, events[0].AgentType)
 	assert.Equal(t, "my-fixer", events[0].InstanceTitle)
 }
 
