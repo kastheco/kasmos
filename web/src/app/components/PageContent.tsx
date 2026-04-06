@@ -94,11 +94,7 @@ export default function PageContent() {
               View on GitHub
             </a>
             <a
-              href={
-                process.env.NODE_ENV === "production"
-                  ? "/kasmos/docs"
-                  : "/docs"
-              }
+              href="/docs"
               className={styles.ctaSecondary}
             >
               Read the Docs

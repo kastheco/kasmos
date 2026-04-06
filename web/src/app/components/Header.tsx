@@ -29,9 +29,7 @@ export default function Header() {
           GitHub
         </a>
         <a
-          href={
-            process.env.NODE_ENV === "production" ? "/kasmos/docs" : "/docs"
-          }
+          href="/docs"
           className={styles.navLink}
         >
           Docs
