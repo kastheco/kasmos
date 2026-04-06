@@ -26,7 +26,16 @@ func NewMCPCmd() *cobra.Command {
 		Short: "start the MCP server on stdio",
 		Long:  "Start the kasmos MCP server on stdin/stdout for MCP clients that use stdio transports. Task tools use the same authoritative project store as the CLI, while signal tools resolve through the shared project signal gateway.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			mcpSrv, err := newConfiguredMCPServer(nil, nil, nil)
+			// Open a single shared *sql.DB so task and signal tools reuse
+			// one connection pool for the lifetime of the stdio session,
+			// instead of opening+closing a fresh DB per tool call.
+			sharedDB, store, gw, _, err := openServeSQLiteBackends(taskstore.ResolvedDBPath())
+			if err != nil {
+				return err
+			}
+			defer sharedDB.Close()
+
+			mcpSrv, err := newConfiguredMCPServer(store, gw, nil)
 			if err != nil {
 				return err
 			}

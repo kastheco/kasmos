@@ -1123,12 +1123,18 @@ func (m *home) emitSelectedInstanceSignal(event taskfsm.Event, successToast stri
 	instanceTitle := selected.Title
 	agentType := selected.AgentType
 	project := m.taskStoreProject
+	gw := m.signalGateway
 	return func() tea.Msg {
-		gw, err := taskstore.OpenAuthoritativeSignalGateway(project)
-		if err != nil {
-			return manualSignalResultMsg{err: err}
+		if gw == nil {
+			// Fall back to per-call open when no shared gateway is available
+			// (e.g. remote task store mode).
+			var err error
+			gw, err = taskstore.OpenAuthoritativeSignalGateway(project)
+			if err != nil {
+				return manualSignalResultMsg{err: err}
+			}
+			defer gw.Close() //nolint:errcheck
 		}
-		defer gw.Close() //nolint:errcheck
 		if err := taskfsm.EmitGatewaySignal(gw, project, signalType, planFile, payload); err != nil {
 			return manualSignalResultMsg{err: err}
 		}
