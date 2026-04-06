@@ -31,6 +31,7 @@ function countByStatus(tasks: TaskEntry[]): Record<Status, number> {
     done: 0,
     cancelled: 0,
   };
+  if (!tasks) return counts;
   for (const task of tasks) {
     if (task.status in counts) {
       counts[task.status]++;
