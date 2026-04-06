@@ -8,7 +8,6 @@ import ScrollReveal from "./ScrollReveal";
 import FeatureCard from "./FeatureCard";
 import InstallTabs from "./InstallTabs";
 import Header from "./Header";
-import BeeCompanion from "./BeeCompanion";
 import PixelBee from "./PixelBee";
 
 const features = [
@@ -61,7 +60,6 @@ export default function PageContent() {
   return (
     <div className={styles.page}>
       <StarField />
-      <BeeCompanion />
 
       <div className={`${styles.glowOrb} ${styles.glowAmber}`} />
       <div className={`${styles.glowOrb} ${styles.glowTeal}`} />
