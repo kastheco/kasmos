@@ -25,11 +25,12 @@ const (
 )
 
 var (
-	browserHTTPClient httpGetter = &http.Client{Timeout: 500 * time.Millisecond}
-	browserOpenURL               = openURL
-	browserExecutable            = os.Executable
-	browserStartServe            = startPlanBrowserServer
-	browserWaitReady             = waitForPlanBrowserReady
+	browserHTTPClient  httpGetter = &http.Client{Timeout: 500 * time.Millisecond}
+	browserOpenURL                = openURL
+	browserExecutable             = os.Executable
+	browserExecCommand            = exec.Command
+	browserStartServe             = startPlanBrowserServer
+	browserWaitReady              = waitForPlanBrowserReady
 )
 
 // OpenPlanBrowser starts or reuses kas serve and opens the plan browser.
@@ -172,12 +173,20 @@ func startPlanBrowserServer(repoRoot, bind string, port int, adminDir string) er
 		return fmt.Errorf("resolve executable: %w", err)
 	}
 
-	args := []string{"serve", "--bind", bind, "--port", strconv.Itoa(port)}
+	args := []string{"serve", "--bind", bind, "--port", strconv.Itoa(port), "--mcp=false"}
+	repos, err := listDaemonRepoStatuses()
+	if err != nil || len(repos) == 0 {
+		args = append(args, "--repo", repoRoot)
+	} else {
+		for _, repo := range repos {
+			args = append(args, "--repo", repo.Path)
+		}
+	}
 	if adminDir != "" {
 		args = append(args, "--admin-dir", adminDir)
 	}
 
-	cmd := exec.Command(exe, args...)
+	cmd := browserExecCommand(exe, args...)
 	cmd.Dir = repoRoot
 
 	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)

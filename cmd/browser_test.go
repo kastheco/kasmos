@@ -2,9 +2,12 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"os/exec"
 	"testing"
 
+	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -111,6 +114,89 @@ func TestOpenPlanBrowser_ReusesRunningServer(t *testing.T) {
 	assert.Equal(t, 0, startCalls)
 	assert.Equal(t, "http://127.0.0.1:7433/admin/?project=kasmos", url)
 	assert.Equal(t, url, opened)
+}
+
+func TestStartPlanBrowserServer_UsesDaemonRepos(t *testing.T) {
+	repoRoot := t.TempDir()
+	adminDir := t.TempDir()
+
+	oldExecutable := browserExecutable
+	oldExecCommand := browserExecCommand
+	oldListRepos := listDaemonRepoStatuses
+	defer func() {
+		browserExecutable = oldExecutable
+		browserExecCommand = oldExecCommand
+		listDaemonRepoStatuses = oldListRepos
+	}()
+
+	browserExecutable = func() (string, error) {
+		return "/fake/kas", nil
+	}
+	listDaemonRepoStatuses = func() ([]api.RepoStatus, error) {
+		return []api.RepoStatus{{Path: "/repos/one"}, {Path: "/repos/two"}}, nil
+	}
+
+	var gotExe string
+	var gotArgs []string
+	browserExecCommand = func(name string, args ...string) *exec.Cmd {
+		gotExe = name
+		gotArgs = append([]string(nil), args...)
+		return exec.Command("true")
+	}
+
+	require.NoError(t, startPlanBrowserServer(repoRoot, "127.0.0.1", 7433, adminDir))
+	assert.Equal(t, "/fake/kas", gotExe)
+	assert.Equal(t, []string{
+		"serve", "--bind", "127.0.0.1", "--port", "7433", "--mcp=false",
+		"--repo", "/repos/one",
+		"--repo", "/repos/two",
+		"--admin-dir", adminDir,
+	}, gotArgs)
+}
+
+func TestStartPlanBrowserServer_FallsBackToRepoRoot(t *testing.T) {
+	tests := []struct {
+		name  string
+		err   error
+		repos []api.RepoStatus
+	}{
+		{name: "daemon unavailable", err: errors.New("daemon unavailable")},
+		{name: "no repos", repos: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repoRoot := t.TempDir()
+
+			oldExecutable := browserExecutable
+			oldExecCommand := browserExecCommand
+			oldListRepos := listDaemonRepoStatuses
+			defer func() {
+				browserExecutable = oldExecutable
+				browserExecCommand = oldExecCommand
+				listDaemonRepoStatuses = oldListRepos
+			}()
+
+			browserExecutable = func() (string, error) {
+				return "/fake/kas", nil
+			}
+			listDaemonRepoStatuses = func() ([]api.RepoStatus, error) {
+				return tt.repos, tt.err
+			}
+
+			var gotArgs []string
+			browserExecCommand = func(name string, args ...string) *exec.Cmd {
+				gotArgs = append([]string(nil), args...)
+				return exec.Command("true")
+			}
+
+			require.NoError(t, startPlanBrowserServer(repoRoot, "127.0.0.1", 7433, ""))
+			assert.Equal(t, []string{
+				"serve", "--bind", "127.0.0.1", "--port", "7433", "--mcp=false",
+				"--repo", repoRoot,
+			}, gotArgs)
+		})
+	}
 }
 
 type httpClientStub struct {
