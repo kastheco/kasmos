@@ -1,7 +1,7 @@
 [Unit]
 Description=kasmos plan store server
 Documentation=https://github.com/kastheco/kasmos
-After=network.target
+After=network.target kasmos.service
 
 [Service]
 Type=simple

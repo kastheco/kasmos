@@ -13,6 +13,7 @@ import (
 
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/mcpserver/routing"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -103,7 +104,7 @@ func TestTaskShowHandler_ReturnsStoredContent(t *testing.T) {
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "my-plan", Status: taskstore.StatusReady, CreatedAt: time.Now()}))
 	require.NoError(t, store.SetContent(project, "my-plan", "# plan\n"))
 
-	handler := makeTaskShowHandler(project, store)
+	handler := makeTaskShowHandler(routing.NewRegisterConfig(project, nil), store)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "my-plan.md"}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -116,7 +117,7 @@ func TestTaskListHandler_FiltersByStatus(t *testing.T) {
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "ready-plan", Status: taskstore.StatusReady, CreatedAt: time.Now()}))
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "done-plan", Status: taskstore.StatusDone, CreatedAt: time.Now()}))
 
-	handler := makeTaskListHandler(project, store)
+	handler := makeTaskListHandler(routing.NewRegisterConfig(project, nil), store)
 	result, err := handler(context.Background(), mockReq(map[string]any{"status": "done"}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -132,7 +133,7 @@ func TestTaskCreateHandler_DefaultsBranchAndReadyStatus(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
 	project := "test-project"
 
-	handler := makeTaskCreateHandler(project, store)
+	handler := makeTaskCreateHandler(routing.NewRegisterConfig(project, nil), store)
 	result, err := handler(context.Background(), mockReq(map[string]any{"name": "new-plan"}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -148,7 +149,7 @@ func TestTaskCreateHandler_DecodesEscapedMultilineContent(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
 	project := "test-project"
 
-	handler := makeTaskCreateHandler(project, store)
+	handler := makeTaskCreateHandler(routing.NewRegisterConfig(project, nil), store)
 	result, err := handler(context.Background(), mockReq(map[string]any{
 		"name":    "new-plan",
 		"content": "# Plan\\n\\n## Wave 1\\n\\n### Task 1: write tests\\n",
@@ -171,7 +172,7 @@ func TestTaskUpdateContentHandler_StoresDraftWithoutWarning(t *testing.T) {
 		Status:     taskstore.SubtaskStatusDone,
 	}}))
 
-	handler := makeTaskUpdateContentHandler(project, store)
+	handler := makeTaskUpdateContentHandler(routing.NewRegisterConfig(project, nil), store)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "draft", "content": "# Draft\n\n**Goal:** in progress\n"}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -196,7 +197,7 @@ func TestTaskDeleteHandler_DeletesStoredTask(t *testing.T) {
 	filename := "delete-me"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: filename, Status: taskstore.StatusReady, CreatedAt: time.Now()}))
 
-	handler := makeTaskDeleteHandler(project, store)
+	handler := makeTaskDeleteHandler(routing.NewRegisterConfig(project, nil), store)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": filename + ".md"}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -215,7 +216,7 @@ func TestTaskDeleteHandler_ReturnsErrorWhenTaskMissing(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
 	project := "test-project"
 
-	handler := makeTaskDeleteHandler(project, store)
+	handler := makeTaskDeleteHandler(routing.NewRegisterConfig(project, nil), store)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "missing"}))
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
@@ -228,7 +229,7 @@ func TestTaskUpdateContentHandler_DecodesEscapedMultilineContent(t *testing.T) {
 	project := "test-project"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "my-plan", Status: taskstore.StatusReady, CreatedAt: time.Now()}))
 
-	handler := makeTaskUpdateContentHandler(project, store)
+	handler := makeTaskUpdateContentHandler(routing.NewRegisterConfig(project, nil), store)
 	result, err := handler(context.Background(), mockReq(map[string]any{
 		"filename": "my-plan",
 		"content":  "# Plan\\n\\n## Wave 1\\n\\n### Task 1: write tests\\n",
@@ -260,7 +261,7 @@ func TestTaskShowHandler_UsesAuthoritativeStoreWhenStoreNilEvenWhenDaemonRegiste
 	require.NoError(t, authoritative.SetContent(project, "shared-plan", "# fresh\n"))
 	require.NoError(t, authoritative.Close())
 
-	handler := makeTaskShowHandler(project, nil)
+	handler := makeTaskShowHandler(routing.NewRegisterConfig(project, nil), nil)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "shared-plan"}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -272,7 +273,7 @@ func TestTaskTransitionHandler_SupportsReviewChangesAlias(t *testing.T) {
 	project := "test-project"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "my-plan", Status: taskstore.StatusReviewing, CreatedAt: time.Now()}))
 
-	handler := makeTaskTransitionHandler(project, store)
+	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "my-plan", "event": "review_changes"}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -287,7 +288,7 @@ func TestTaskTransitionHandler_ForceCompletesWhenRequested(t *testing.T) {
 	project := "test-project"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "my-plan", Status: taskstore.StatusReady, CreatedAt: time.Now()}))
 
-	handler := makeTaskTransitionHandler(project, store)
+	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "my-plan", "event": "review_approved", "force": true}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -307,7 +308,7 @@ func TestTaskTransitionHandler_ForcePlannerFinishedKeepsReadyCompatibility(t *te
 	project := "test-project"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "my-plan", Status: taskstore.StatusPlanning, CreatedAt: time.Now()}))
 
-	handler := makeTaskTransitionHandler(project, store)
+	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "my-plan", "event": "planner_finished", "force": true}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -347,7 +348,7 @@ func TestTaskUpdateContentHandler_UsesAuthoritativeStoreWhenStoreNilEvenWhenDaem
 	require.NoError(t, authoritative.Create(project, taskstore.TaskEntry{Filename: "shared-plan", Status: taskstore.StatusReady, CreatedAt: time.Now()}))
 	require.NoError(t, authoritative.Close())
 
-	handler := makeTaskUpdateContentHandler(project, nil)
+	handler := makeTaskUpdateContentHandler(routing.NewRegisterConfig(project, nil), nil)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "shared-plan", "content": "# Plan\n\n## Wave 1\n\n### Task 1: write tests\n"}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -371,7 +372,7 @@ func TestTaskCreateHandler_UsesAuthoritativeStoreWhenDaemonUnavailable(t *testin
 	initTaskToolTestRepo(t, repoDir)
 	t.Chdir(repoDir)
 
-	handler := makeTaskCreateHandler("test-project", nil)
+	handler := makeTaskCreateHandler(routing.NewRegisterConfig("test-project", nil), nil)
 	result, err := handler(context.Background(), mockReq(map[string]any{"name": "new-plan"}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -383,4 +384,177 @@ func TestTaskCreateHandler_UsesAuthoritativeStoreWhenDaemonUnavailable(t *testin
 	assert.Equal(t, taskstore.StatusReady, entry.Status)
 	assert.Equal(t, "plan/new-plan", entry.Branch)
 	require.NoError(t, store.Close())
+}
+
+// --- Multi-repo project routing tests ---
+
+func newTestRepoRoot(t *testing.T, path string) string {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(path, 0o755))
+	absPath, err := filepath.Abs(path)
+	require.NoError(t, err)
+	return filepath.Clean(absPath)
+}
+
+func seedRepoTask(t *testing.T, repoPath string, entry taskstore.TaskEntry, content string) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoPath, ".kasmos"), 0o755))
+	store, err := taskstore.NewSQLiteStore(filepath.Join(repoPath, ".kasmos", "taskstore.db"))
+	require.NoError(t, err)
+	require.NoError(t, store.Create(filepath.Base(repoPath), entry))
+	if content != "" {
+		require.NoError(t, store.SetContent(filepath.Base(repoPath), entry.Filename, content))
+	}
+	require.NoError(t, store.Close())
+}
+
+func TestTaskShowHandler_MultiRepoRoutesToCorrectProject(t *testing.T) {
+	repoA := newTestRepoRoot(t, filepath.Join(t.TempDir(), "alpha-repo"))
+	repoB := newTestRepoRoot(t, filepath.Join(t.TempDir(), "beta-repo"))
+
+	projectA := filepath.Base(repoA)
+	projectB := filepath.Base(repoB)
+
+	seedRepoTask(t, repoA, taskstore.TaskEntry{Filename: "alpha-task", Status: taskstore.StatusReady, CreatedAt: time.Now()}, "# alpha\n")
+	seedRepoTask(t, repoB, taskstore.TaskEntry{Filename: "beta-task", Status: taskstore.StatusReady, CreatedAt: time.Now()}, "# beta\n")
+
+	multi, err := taskstore.NewMultiStore([]taskstore.RepoConfig{{Path: repoA}, {Path: repoB}})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = multi.Close() })
+
+	rc := routing.NewRegisterConfig("", []string{projectA, projectB})
+	handler := makeTaskShowHandler(rc, multi)
+
+	// Correct dispatch to alpha
+	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "alpha-task", "project": projectA}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+	assert.Equal(t, "# alpha\n", textResult(t, result))
+
+	// Correct dispatch to beta
+	result, err = handler(context.Background(), mockReq(map[string]any{"filename": "beta-task", "project": projectB}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+	assert.Equal(t, "# beta\n", textResult(t, result))
+
+	// Cross-project lookup fails (alpha-task not in beta)
+	result, err = handler(context.Background(), mockReq(map[string]any{"filename": "alpha-task", "project": projectB}))
+	require.NoError(t, err)
+	assert.True(t, result.IsError)
+	assert.Contains(t, textResult(t, result), "not found")
+}
+
+func TestTaskUpdateContentHandler_MultiRepoDoesNotMutateSibling(t *testing.T) {
+	repoA := newTestRepoRoot(t, filepath.Join(t.TempDir(), "alpha-repo"))
+	repoB := newTestRepoRoot(t, filepath.Join(t.TempDir(), "beta-repo"))
+
+	projectA := filepath.Base(repoA)
+	projectB := filepath.Base(repoB)
+
+	seedRepoTask(t, repoA, taskstore.TaskEntry{Filename: "shared-name", Status: taskstore.StatusReady, CreatedAt: time.Now()}, "# alpha original\n")
+	seedRepoTask(t, repoB, taskstore.TaskEntry{Filename: "shared-name", Status: taskstore.StatusReady, CreatedAt: time.Now()}, "# beta original\n")
+
+	multi, err := taskstore.NewMultiStore([]taskstore.RepoConfig{{Path: repoA}, {Path: repoB}})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = multi.Close() })
+
+	rc := routing.NewRegisterConfig("", []string{projectA, projectB})
+	handler := makeTaskUpdateContentHandler(rc, multi)
+
+	// Update alpha's content
+	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "shared-name", "content": "# alpha updated\n", "project": projectA}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+
+	// Verify alpha was updated
+	alphaContent, err := multi.GetContent(projectA, "shared-name")
+	require.NoError(t, err)
+	assert.Equal(t, "# alpha updated\n", alphaContent)
+
+	// Verify beta was NOT mutated
+	betaContent, err := multi.GetContent(projectB, "shared-name")
+	require.NoError(t, err)
+	assert.Equal(t, "# beta original\n", betaContent)
+}
+
+func TestTaskShowHandler_MultiRepoRequiresProjectArg(t *testing.T) {
+	repoA := newTestRepoRoot(t, filepath.Join(t.TempDir(), "alpha-repo"))
+	repoB := newTestRepoRoot(t, filepath.Join(t.TempDir(), "beta-repo"))
+
+	projectA := filepath.Base(repoA)
+	projectB := filepath.Base(repoB)
+
+	multi, err := taskstore.NewMultiStore([]taskstore.RepoConfig{{Path: repoA}, {Path: repoB}})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = multi.Close() })
+
+	rc := routing.NewRegisterConfig("", []string{projectA, projectB})
+	handler := makeTaskShowHandler(rc, multi)
+
+	// Missing project arg in multi-repo mode must error
+	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "some-task"}))
+	require.NoError(t, err)
+	assert.True(t, result.IsError)
+	assert.Contains(t, textResult(t, result), "project argument is required")
+}
+
+func TestTaskShowHandler_MultiRepoRejectsUnknownProject(t *testing.T) {
+	repoA := newTestRepoRoot(t, filepath.Join(t.TempDir(), "alpha-repo"))
+
+	projectA := filepath.Base(repoA)
+
+	multi, err := taskstore.NewMultiStore([]taskstore.RepoConfig{{Path: repoA}})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = multi.Close() })
+
+	// Two projects registered but request unknown one
+	rc := routing.NewRegisterConfig("", []string{projectA, "other-project"})
+	handler := makeTaskShowHandler(rc, multi)
+
+	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "task", "project": "nonexistent"}))
+	require.NoError(t, err)
+	assert.True(t, result.IsError)
+	assert.Contains(t, textResult(t, result), "project not found: nonexistent")
+}
+
+func TestTaskShowHandler_SingleProjectInMultiModeAcceptsWithoutArg(t *testing.T) {
+	repoA := newTestRepoRoot(t, filepath.Join(t.TempDir(), "solo-repo"))
+	projectA := filepath.Base(repoA)
+
+	seedRepoTask(t, repoA, taskstore.TaskEntry{Filename: "solo-task", Status: taskstore.StatusReady, CreatedAt: time.Now()}, "# solo\n")
+
+	multi, err := taskstore.NewMultiStore([]taskstore.RepoConfig{{Path: repoA}})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = multi.Close() })
+
+	// Single project in projects list — project arg should be optional
+	rc := routing.NewRegisterConfig("", []string{projectA})
+	handler := makeTaskShowHandler(rc, multi)
+
+	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "solo-task"}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+	assert.Equal(t, "# solo\n", textResult(t, result))
+}
+
+func TestTaskShowHandler_FixedProjectRejectsDifferentProjectArg(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "fixed-project"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "my-task", Status: taskstore.StatusReady, CreatedAt: time.Now()}))
+	require.NoError(t, store.SetContent(project, "my-task", "# content\n"))
+
+	rc := routing.NewRegisterConfig(project, nil)
+	handler := makeTaskShowHandler(rc, store)
+
+	// Providing a different project in fixed mode must error
+	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "my-task", "project": "other-project"}))
+	require.NoError(t, err)
+	assert.True(t, result.IsError)
+	assert.Contains(t, textResult(t, result), "project not found: other-project")
+
+	// Providing the same project is OK
+	result, err = handler(context.Background(), mockReq(map[string]any{"filename": "my-task", "project": project}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+	assert.Equal(t, "# content\n", textResult(t, result))
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/mcpserver/routing"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -75,8 +76,12 @@ func resolveToolStore(project string, store taskstore.Store) (taskstore.Store, f
 	return resolved, func() { _ = resolved.Close() }, nil
 }
 
-func makeTaskListHandler(project string, store taskstore.Store) server.ToolHandlerFunc {
+func makeTaskListHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_list: %v", err)), nil
+		}
 		resolvedStore, closeStore, err := resolveToolStore(project, store)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_list: %v", err)), nil
@@ -116,8 +121,12 @@ func makeTaskListHandler(project string, store taskstore.Store) server.ToolHandl
 	}
 }
 
-func makeTaskShowHandler(project string, store taskstore.Store) server.ToolHandlerFunc {
+func makeTaskShowHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_show: %v", err)), nil
+		}
 		resolvedStore, closeStore, err := resolveToolStore(project, store)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_show: %v", err)), nil
@@ -141,8 +150,12 @@ func makeTaskShowHandler(project string, store taskstore.Store) server.ToolHandl
 	}
 }
 
-func makeTaskCreateHandler(project string, store taskstore.Store) server.ToolHandlerFunc {
+func makeTaskCreateHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_create: %v", err)), nil
+		}
 		resolvedStore, closeStore, err := resolveToolStore(project, store)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_create: %v", err)), nil
@@ -186,8 +199,12 @@ func makeTaskCreateHandler(project string, store taskstore.Store) server.ToolHan
 	}
 }
 
-func makeTaskUpdateContentHandler(project string, store taskstore.Store) server.ToolHandlerFunc {
+func makeTaskUpdateContentHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_update_content: %v", err)), nil
+		}
 		resolvedStore, closeStore, err := resolveToolStore(project, store)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_update_content: %v", err)), nil
@@ -222,8 +239,12 @@ func makeTaskUpdateContentHandler(project string, store taskstore.Store) server.
 	}
 }
 
-func makeTaskDeleteHandler(project string, store taskstore.Store) server.ToolHandlerFunc {
+func makeTaskDeleteHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_delete: %v", err)), nil
+		}
 		resolvedStore, closeStore, err := resolveToolStore(project, store)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_delete: %v", err)), nil
@@ -312,8 +333,12 @@ func setPhaseTimestampForStatus(store taskstore.Store, project, filename string,
 	}
 }
 
-func makeTaskTransitionHandler(project string, store taskstore.Store) server.ToolHandlerFunc {
+func makeTaskTransitionHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_transition: %v", err)), nil
+		}
 		resolvedStore, closeStore, err := resolveToolStore(project, store)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_transition: %v", err)), nil
@@ -372,20 +397,27 @@ func makeTaskTransitionHandler(project string, store taskstore.Store) server.Too
 }
 
 // RegisterTools wires the task MCP tools into srv.
-func RegisterTools(srv *server.MCPServer, project string, store taskstore.Store) {
+// When projects is non-empty, multi-project routing is enabled and each tool
+// accepts an optional "project" argument. When projects has zero or one entry,
+// project is used as the fixed binding and the "project" argument is optional.
+func RegisterTools(srv *server.MCPServer, project string, projects []string, store taskstore.Store) {
 	if srv == nil {
 		return
 	}
 
+	rc := routing.NewRegisterConfig(project, projects)
+
 	srv.AddTool(mcp.NewTool("task_list",
 		mcp.WithDescription("list task store entries, optionally filtered by status"),
 		mcp.WithString("status", mcp.Description("optional task status filter")),
-	), makeTaskListHandler(project, store))
+		mcp.WithString("project", mcp.Description("target project name (required in multi-repo mode)")),
+	), makeTaskListHandler(rc, store))
 
 	srv.AddTool(mcp.NewTool("task_show",
 		mcp.WithDescription("read stored markdown content for a task"),
 		mcp.WithString("filename", mcp.Required(), mcp.Description("task filename or slug")),
-	), makeTaskShowHandler(project, store))
+		mcp.WithString("project", mcp.Description("target project name (required in multi-repo mode)")),
+	), makeTaskShowHandler(rc, store))
 
 	srv.AddTool(mcp.NewTool("task_create",
 		mcp.WithDescription("create a new task entry in the task store"),
@@ -394,23 +426,27 @@ func RegisterTools(srv *server.MCPServer, project string, store taskstore.Store)
 		mcp.WithString("branch", mcp.Description("git branch name (defaults to plan/<name>)")),
 		mcp.WithString("topic", mcp.Description("task topic grouping")),
 		mcp.WithString("content", mcp.Description("initial markdown content for the task")),
-	), makeTaskCreateHandler(project, store))
+		mcp.WithString("project", mcp.Description("target project name (required in multi-repo mode)")),
+	), makeTaskCreateHandler(rc, store))
 
 	srv.AddTool(mcp.NewTool("task_update_content",
 		mcp.WithDescription("replace stored markdown content for a task"),
 		mcp.WithString("filename", mcp.Required(), mcp.Description("task filename or slug")),
 		mcp.WithString("content", mcp.Required(), mcp.Description("full markdown content to store")),
-	), makeTaskUpdateContentHandler(project, store))
+		mcp.WithString("project", mcp.Description("target project name (required in multi-repo mode)")),
+	), makeTaskUpdateContentHandler(rc, store))
 
 	srv.AddTool(mcp.NewTool("task_delete",
 		mcp.WithDescription("delete a task entry from the task store"),
 		mcp.WithString("filename", mcp.Required(), mcp.Description("task filename or slug")),
-	), makeTaskDeleteHandler(project, store))
+		mcp.WithString("project", mcp.Description("target project name (required in multi-repo mode)")),
+	), makeTaskDeleteHandler(rc, store))
 
 	srv.AddTool(mcp.NewTool("task_transition",
 		mcp.WithDescription("apply an FSM event to a task entry"),
 		mcp.WithString("filename", mcp.Required(), mcp.Description("task filename or slug")),
 		mcp.WithString("event", mcp.Required(), mcp.Description("task FSM event name")),
 		mcp.WithBoolean("force", mcp.Description("when true, force-set the target status for the event")),
-	), makeTaskTransitionHandler(project, store))
+		mcp.WithString("project", mcp.Description("target project name (required in multi-repo mode)")),
+	), makeTaskTransitionHandler(rc, store))
 }

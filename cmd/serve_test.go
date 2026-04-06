@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
+	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -111,4 +113,80 @@ func TestServeCmd_ProjectValidationMiddleware404(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, rec.Code)
 	})
+}
+
+func TestResolveServeRepoPaths_AutoDetectsDaemonRepos(t *testing.T) {
+	repoA := t.TempDir() // e.g. /tmp/TestXXX/alpha
+	repoB := t.TempDir() // e.g. /tmp/TestXXX/bravo
+
+	old := listDaemonRepoStatuses
+	listDaemonRepoStatuses = func() ([]api.RepoStatus, error) {
+		return []api.RepoStatus{
+			{Path: repoA, Project: filepath.Base(repoA)},
+			{Path: repoB, Project: filepath.Base(repoB)},
+		}, nil
+	}
+	t.Cleanup(func() { listDaemonRepoStatuses = old })
+
+	cmd := NewServeCmd()
+	// Neither --db nor --repo set → auto-detect.
+	got, err := resolveServeRepoPaths(cmd, nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{repoA, repoB}, got)
+}
+
+func TestResolveServeRepoPaths_SkipsAutoDetectWhenDBFlagSet(t *testing.T) {
+	old := listDaemonRepoStatuses
+	listDaemonRepoStatuses = func() ([]api.RepoStatus, error) {
+		t.Fatal("should not call daemon when --db is set")
+		return nil, nil
+	}
+	t.Cleanup(func() { listDaemonRepoStatuses = old })
+
+	cmd := NewServeCmd()
+	require.NoError(t, cmd.Flags().Set("db", "/tmp/custom.db"))
+
+	got, err := resolveServeRepoPaths(cmd, nil)
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
+func TestResolveServeRepoPaths_FallsBackWhenDaemonUnavailable(t *testing.T) {
+	old := listDaemonRepoStatuses
+	listDaemonRepoStatuses = func() ([]api.RepoStatus, error) {
+		return nil, fmt.Errorf("connection refused")
+	}
+	t.Cleanup(func() { listDaemonRepoStatuses = old })
+
+	cmd := NewServeCmd()
+	got, err := resolveServeRepoPaths(cmd, nil)
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
+func TestResolveServeRepoPaths_ReturnsExplicitRepos(t *testing.T) {
+	old := listDaemonRepoStatuses
+	listDaemonRepoStatuses = func() ([]api.RepoStatus, error) {
+		t.Fatal("should not call daemon when explicit repos provided")
+		return nil, nil
+	}
+	t.Cleanup(func() { listDaemonRepoStatuses = old })
+
+	cmd := NewServeCmd()
+	explicit := []string{"/tmp/one", "/tmp/two"}
+	got, err := resolveServeRepoPaths(cmd, explicit)
+	require.NoError(t, err)
+	assert.Equal(t, explicit, got)
+}
+
+func TestServeMCPServer_MultipleReposNoError(t *testing.T) {
+	// After Task 2, newServeMCPServer delegates to newConfiguredMCPServer
+	// which accepts multiple roots. Verify no error is returned for the
+	// multi-root case (we pass nil store/gw since newConfiguredMCPServer
+	// tolerates them for the purpose of MCP server construction).
+	repoA := t.TempDir()
+	repoB := t.TempDir()
+	srv, err := newServeMCPServer(nil, nil, []string{repoA, repoB})
+	require.NoError(t, err)
+	assert.NotNil(t, srv)
 }

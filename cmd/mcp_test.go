@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -25,7 +27,7 @@ func TestMCPCmd_DoesNotExposeSQLiteDBFlag(t *testing.T) {
 }
 
 func TestNewConfiguredMCPServer_RegistersSymbolsTool(t *testing.T) {
-	srv, err := newConfiguredMCPServer(nil, nil, "")
+	srv, err := newConfiguredMCPServer(nil, nil, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, srv.Close())
@@ -83,6 +85,88 @@ func TestNewConfiguredMCPServer_RegistersSymbolsTool(t *testing.T) {
 	assert.Contains(t, names, "symbols")
 	assert.Contains(t, names, "grep")
 	assert.Contains(t, names, "read_file")
+}
+
+// makeTempGitRepo creates a temp dir with a .git marker directory so
+// resolveTaskProject treats it as a repo root. It does not create a valid
+// git repository.
+func makeTempGitRepo(t *testing.T, name string) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), name)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".git"), 0o755))
+	return dir
+}
+
+func mcpToolsList(t *testing.T, h http.Handler) []string {
+	t.Helper()
+	initBody, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+		"params": map[string]any{
+			"protocolVersion": "2024-11-05",
+			"capabilities":    map[string]any{},
+			"clientInfo":      map[string]any{"name": "test", "version": "0.0.1"},
+		},
+	})
+	require.NoError(t, err)
+	initReq := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(initBody))
+	initReq.Header.Set("Content-Type", "application/json")
+	initReq.Header.Set("Accept", "application/json, text/event-stream")
+	initRec := httptest.NewRecorder()
+	h.ServeHTTP(initRec, initReq)
+	require.Equal(t, http.StatusOK, initRec.Code)
+
+	listBody, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+	require.NoError(t, err)
+	listReq := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(listBody))
+	listReq.Header.Set("Content-Type", "application/json")
+	listReq.Header.Set("Accept", "application/json, text/event-stream")
+	if sessionID := initRec.Header().Get("Mcp-Session-Id"); sessionID != "" {
+		listReq.Header.Set("Mcp-Session-Id", sessionID)
+	}
+	listRec := httptest.NewRecorder()
+	h.ServeHTTP(listRec, listReq)
+	require.Equal(t, http.StatusOK, listRec.Code)
+
+	var resp struct {
+		Result struct {
+			Tools []struct {
+				Name string `json:"name"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	decodeMCPPayload(t, listRec, &resp)
+	names := make([]string, 0, len(resp.Result.Tools))
+	for _, tool := range resp.Result.Tools {
+		names = append(names, tool.Name)
+	}
+	return names
+}
+
+func TestNewConfiguredMCPServer_MultiRoot_ConstructsAndCloses(t *testing.T) {
+	repo1 := makeTempGitRepo(t, "alpha")
+	repo2 := makeTempGitRepo(t, "beta")
+
+	srv, err := newConfiguredMCPServer(nil, nil, []string{repo1, repo2})
+	require.NoError(t, err)
+	require.NoError(t, srv.Close())
+}
+
+func TestNewConfiguredMCPServer_MultiRoot_RegistersExpectedTools(t *testing.T) {
+	repo1 := makeTempGitRepo(t, "alpha")
+	repo2 := makeTempGitRepo(t, "beta")
+
+	srv, err := newConfiguredMCPServer(nil, nil, []string{repo1, repo2})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, srv.Close()) })
+
+	names := mcpToolsList(t, srv.Handler())
+	assert.Contains(t, names, "symbols")
+	assert.Contains(t, names, "grep")
+	assert.Contains(t, names, "read_file")
+	assert.Contains(t, names, "task_list")
+	assert.Contains(t, names, "signal_create")
 }
 
 func decodeMCPPayload(t *testing.T, rec *httptest.ResponseRecorder, out any) {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/mcpserver/routing"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -28,8 +29,12 @@ func resolveToolGateway(project string, gateway taskstore.SignalGateway) (taskst
 	return resolved, func() { _ = resolved.Close() }, nil
 }
 
-func makeSignalCreateHandler(project string, gateway taskstore.SignalGateway) server.ToolHandlerFunc {
+func makeSignalCreateHandler(rc routing.RegisterConfig, gateway taskstore.SignalGateway) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("signal_create: %v", err)), nil
+		}
 		resolvedGateway, closeGateway, err := resolveToolGateway(project, gateway)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("signal_create: %v", err)), nil
@@ -64,15 +69,21 @@ func makeSignalCreateHandler(project string, gateway taskstore.SignalGateway) se
 }
 
 // RegisterTools wires the signal MCP tools into srv.
-func RegisterTools(srv *server.MCPServer, project string, gateway taskstore.SignalGateway) {
+// When projects is non-empty, multi-project routing is enabled and the tool
+// accepts an optional "project" argument. When projects has zero or one entry,
+// project is used as the fixed binding and the "project" argument is optional.
+func RegisterTools(srv *server.MCPServer, project string, projects []string, gateway taskstore.SignalGateway) {
 	if srv == nil {
 		return
 	}
+
+	rc := routing.NewRegisterConfig(project, projects)
 
 	srv.AddTool(mcp.NewTool("signal_create",
 		mcp.WithDescription("create a pending lifecycle signal in the signal gateway"),
 		mcp.WithString("signal_type", mcp.Required(), mcp.Description("signal type (underscore or hyphen form)")),
 		mcp.WithString("plan_file", mcp.Required(), mcp.Description("task filename associated with the signal")),
 		mcp.WithString("payload", mcp.Description("optional payload string or JSON")),
-	), makeSignalCreateHandler(project, gateway))
+		mcp.WithString("project", mcp.Description("target project name (required in multi-repo mode)")),
+	), makeSignalCreateHandler(rc, gateway))
 }

@@ -97,22 +97,30 @@ func projectFromServePath(path string) (string, bool) {
 	return rest, true
 }
 
-func newServeMCPServer(store taskstore.Store, gw taskstore.SignalGateway, repoPaths []string) (*mcpserver.Server, error) {
-	if len(repoPaths) == 0 {
-		// When no --repo is passed, try to auto-detect from the daemon's
-		// registered repos. Without this, the MCP server falls back to
-		// filepath.Base(cwd) for the project name, which is wrong when
-		// kas serve runs from $HOME (e.g. via systemd).
-		if repos, err := listDaemonRepoStatuses(); err == nil && len(repos) == 1 {
-			return newConfiguredMCPServer(store, gw, repos[0].Path)
-		}
-		return newConfiguredMCPServer(store, gw, "")
+// resolveServeRepoPaths returns the repo paths to use for multi-repo bootstrap.
+// If explicit paths are provided via --repo, they are returned unchanged. When
+// --db is set, the empty slice is returned so the single-DB path stays
+// authoritative. Otherwise the daemon is queried for registered repos.
+func resolveServeRepoPaths(cmd *cobra.Command, repoPaths []string) ([]string, error) {
+	if len(repoPaths) > 0 {
+		return repoPaths, nil
 	}
-	if len(repoPaths) > 1 {
-		return nil, fmt.Errorf("mcp server currently supports a single repo; multiple --repo values are not allowed when mcp is enabled")
+	if cmd.Flags().Changed("db") {
+		return repoPaths, nil
 	}
+	repos, err := listDaemonRepoStatuses()
+	if err != nil || len(repos) == 0 {
+		return repoPaths, nil
+	}
+	roots := make([]string, 0, len(repos))
+	for _, r := range repos {
+		roots = append(roots, r.Path)
+	}
+	return roots, nil
+}
 
-	return newConfiguredMCPServer(store, gw, repoPaths[0])
+func newServeMCPServer(store taskstore.Store, gw taskstore.SignalGateway, repoPaths []string) (*mcpserver.Server, error) {
+	return newConfiguredMCPServer(store, gw, repoPaths)
 }
 
 // NewServeCmd returns the `kas serve` cobra command.
@@ -138,12 +146,17 @@ func NewServeCmd() *cobra.Command {
 				return fmt.Errorf("--db and --repo are mutually exclusive")
 			}
 
+			// Auto-detect daemon repos when neither --repo nor --db is set.
+			repoPaths, err := resolveServeRepoPaths(cmd, repoPaths)
+			if err != nil {
+				return err
+			}
+
 			var (
 				store    taskstore.Store
 				gw       taskstore.SignalGateway
 				logger   auditlog.Logger
 				repoRegs serveRepoRegistration
-				err      error
 			)
 
 			if len(repoPaths) > 0 {
