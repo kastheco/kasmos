@@ -105,6 +105,24 @@ func (m *Manager) HandleKey(msg tea.KeyPressMsg) Result {
 	return result
 }
 
+// HandlePaste delegates bracketed paste content to the active overlay if it
+// implements PasteHandler. Returns a zero Result if inactive, if m is nil, or
+// if the active overlay does not implement PasteHandler.
+func (m *Manager) HandlePaste(content string) Result {
+	if m == nil || m.active == nil {
+		return Result{}
+	}
+	handler, ok := m.active.(PasteHandler)
+	if !ok {
+		return Result{}
+	}
+	result := handler.HandlePaste(content)
+	if result.Dismissed {
+		m.Dismiss()
+	}
+	return result
+}
+
 // HandleMouse delegates mouse clicks to the active overlay. Returns a zero Result
 // if inactive or if m is nil.
 func (m *Manager) HandleMouse(msg tea.MouseClickMsg) Result {

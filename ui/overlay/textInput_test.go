@@ -70,3 +70,24 @@ func TestTextInputOverlay_HandleKey_Cancel(t *testing.T) {
 	assert.True(t, result.Dismissed)
 	assert.False(t, result.Submitted)
 }
+
+func TestTextInputOverlay_HandlePaste_InsertsText(t *testing.T) {
+	ti := NewTextInputOverlay("title", "")
+	result := ti.HandlePaste("pasted text")
+	assert.False(t, result.Dismissed)
+	assert.Equal(t, "pasted text", ti.textarea.Value())
+}
+
+func TestTextInputOverlay_HandlePaste_IgnoredWhenButtonFocused(t *testing.T) {
+	ti := NewTextInputOverlay("title", "")
+	// Tab to the button
+	ti.HandleKey(tea.KeyPressMsg{Code: tea.KeyTab})
+	assert.Equal(t, 1, ti.FocusIndex)
+	result := ti.HandlePaste("pasted text")
+	assert.False(t, result.Dismissed)
+	assert.Equal(t, "", ti.textarea.Value())
+}
+
+func TestTextInputOverlay_ImplementsPasteHandler(t *testing.T) {
+	var _ PasteHandler = NewTextInputOverlay("title", "")
+}

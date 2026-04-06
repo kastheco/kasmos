@@ -2478,6 +2478,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case tea.PasteMsg:
+		// Route paste to any active overlay that supports it first.
+		if m.overlays.IsActive() {
+			m.overlays.HandlePaste(msg.Content)
+			return m, nil
+		}
 		// Forward pasted text to the embedded PTY in focus mode.
 		if m.state == stateFocusAgent && m.previewTerminal != nil {
 			if content := msg.Content; content != "" {
