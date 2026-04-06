@@ -179,6 +179,26 @@ func TestResolveServeRepoPaths_ReturnsExplicitRepos(t *testing.T) {
 	assert.Equal(t, explicit, got)
 }
 
+func TestServeOpenSQLiteBackends_SharedDB(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test_serve.db")
+
+	sharedDB, store, gw, logger, err := openServeSQLiteBackends(dbPath)
+	require.NoError(t, err)
+	require.NotNil(t, sharedDB)
+	require.NotNil(t, store)
+	require.NotNil(t, gw)
+	require.NotNil(t, logger)
+
+	// Verify the underlying DB is reachable.
+	require.NoError(t, sharedDB.Ping())
+
+	// store/gw/logger Close() are no-ops; only sharedDB.Close() tears down the pool.
+	require.NoError(t, store.Close())
+	require.NoError(t, gw.Close())
+	require.NoError(t, logger.Close())
+	require.NoError(t, sharedDB.Close())
+}
+
 func TestServeMCPServer_MultipleReposNoError(t *testing.T) {
 	// After Task 2, newServeMCPServer delegates to newConfiguredMCPServer
 	// which accepts multiple roots. Verify no error is returned for the

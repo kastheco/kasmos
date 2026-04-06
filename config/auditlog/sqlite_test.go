@@ -98,3 +98,93 @@ func TestSQLiteLogger_SharedDB(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, events, 1)
 }
+
+// ---------------------------------------------------------------------------
+// FromDB constructor tests
+// ---------------------------------------------------------------------------
+
+func TestSQLiteLoggerFromDB_BasicOps(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "shared.db")
+
+	db, err := taskstore.OpenSharedDB(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	logger, err := auditlog.NewSQLiteLoggerFromDB(db)
+	require.NoError(t, err)
+
+	logger.Emit(auditlog.Event{
+		Kind:          auditlog.EventAgentSpawned,
+		Project:       "proj",
+		InstanceTitle: "plan-coder",
+		Message:       "from-db test",
+	})
+
+	events, err := logger.Query(auditlog.QueryFilter{Project: "proj", Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, auditlog.EventAgentSpawned, events[0].Kind)
+	assert.Equal(t, "from-db test", events[0].Message)
+	assert.Equal(t, "plan-coder", events[0].InstanceTitle)
+	assert.False(t, events[0].Timestamp.IsZero())
+}
+
+func TestSQLiteLoggerFromDB_CloseIsNoOp(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "shared.db")
+
+	db, err := taskstore.OpenSharedDB(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	logger, err := auditlog.NewSQLiteLoggerFromDB(db)
+	require.NoError(t, err)
+
+	// Close must be a no-op — it must not close the shared *sql.DB.
+	require.NoError(t, logger.Close())
+
+	// The underlying pool must still be alive.
+	require.NoError(t, db.Ping())
+
+	// A second logger on the same DB must still work.
+	logger2, err := auditlog.NewSQLiteLoggerFromDB(db)
+	require.NoError(t, err)
+	logger2.Emit(auditlog.Event{Kind: auditlog.EventAgentFinished, Project: "proj", Message: "still alive"})
+	events, err := logger2.Query(auditlog.QueryFilter{Project: "proj", Limit: 10})
+	require.NoError(t, err)
+	assert.Len(t, events, 1)
+	assert.Equal(t, "still alive", events[0].Message)
+}
+
+func TestSQLiteLoggerFromDB_SharedPoolWithStore(t *testing.T) {
+	// Verify that logger and store can share the same *sql.DB without conflict
+	// (each operates on separate tables).
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "shared.db")
+
+	db, err := taskstore.OpenSharedDB(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	store, err := taskstore.NewSQLiteStoreFromDB(db)
+	require.NoError(t, err)
+
+	logger, err := auditlog.NewSQLiteLoggerFromDB(db)
+	require.NoError(t, err)
+
+	// Interleave store and logger operations.
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{Filename: "shared-task", Status: taskstore.StatusReady}))
+	logger.Emit(auditlog.Event{Kind: auditlog.EventAgentSpawned, Project: "proj", TaskFile: "shared-task", Message: "spawned"})
+	require.NoError(t, store.Update("proj", "shared-task", taskstore.TaskEntry{Filename: "shared-task", Status: taskstore.StatusImplementing}))
+	logger.Emit(auditlog.Event{Kind: auditlog.EventPlanTransition, Project: "proj", TaskFile: "shared-task", Message: "implementing"})
+
+	// Both tables must reflect the writes.
+	got, err := store.Get("proj", "shared-task")
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusImplementing, got.Status)
+
+	events, err := logger.Query(auditlog.QueryFilter{Project: "proj", Limit: 10})
+	require.NoError(t, err)
+	assert.Len(t, events, 2)
+}

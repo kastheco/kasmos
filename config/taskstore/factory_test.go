@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/kastheco/kasmos/config/auditlog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -212,4 +213,96 @@ func TestGlobalDBPath(t *testing.T) {
 
 		assert.Equal(t, filepath.Join(homeDir, ".config", "kasmos", "taskstore.db"), dbPath)
 	})
+}
+
+// ---------------------------------------------------------------------------
+// OpenSharedDB / OpenBackingSharedDB tests
+// ---------------------------------------------------------------------------
+
+func TestOpenBackingSharedDB(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	db, err := OpenBackingSharedDB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	// The resolved path must be under HOME/.config/kasmos/taskstore.db.
+	expectedPath := filepath.Join(home, ".config", "kasmos", "taskstore.db")
+	assert.Equal(t, expectedPath, ResolvedDBPath())
+
+	// The file must actually exist on disk.
+	_, statErr := os.Stat(expectedPath)
+	assert.NoError(t, statErr, "taskstore.db must be created on disk")
+
+	// Schema-backed operations must succeed through a FromDB-constructed store.
+	store, err := NewSQLiteStoreFromDB(db)
+	require.NoError(t, err)
+	require.NoError(t, store.Create("proj", TaskEntry{Filename: "backing-test", Status: StatusReady}))
+	got, err := store.Get("proj", "backing-test")
+	require.NoError(t, err)
+	assert.Equal(t, StatusReady, got.Status)
+
+	// And through a FromDB-constructed gateway.
+	gw, err := NewSQLiteSignalGatewayFromDB(db)
+	require.NoError(t, err)
+	require.NoError(t, gw.Create("proj", SignalEntry{
+		PlanFile:   "backing-test",
+		SignalType: "planner_finished",
+		Payload:    "{}",
+	}))
+	signals, err := gw.List("proj", SignalPending)
+	require.NoError(t, err)
+	assert.Len(t, signals, 1)
+}
+
+func TestSharedDB_LifecycleOwnership(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "shared.db")
+
+	sharedDB, err := OpenSharedDB(dbPath)
+	require.NoError(t, err)
+	// sharedDB.Close() is the only call that tears down the pool.
+	defer func() { require.NoError(t, sharedDB.Close()) }()
+
+	store, err := NewSQLiteStoreFromDB(sharedDB)
+	require.NoError(t, err)
+
+	gateway, err := NewSQLiteSignalGatewayFromDB(sharedDB)
+	require.NoError(t, err)
+
+	logger, err := auditlog.NewSQLiteLoggerFromDB(sharedDB)
+	require.NoError(t, err)
+
+	// Verify all three backends work before any Close calls.
+	require.NoError(t, store.Create("proj", TaskEntry{Filename: "task-1", Status: StatusReady}))
+	require.NoError(t, gateway.Create("proj", SignalEntry{PlanFile: "task-1", SignalType: "planner_finished", Payload: "{}"}))
+	logger.Emit(auditlog.Event{Kind: auditlog.EventAgentSpawned, Project: "proj", Message: "init"})
+
+	// Closing the store must be a no-op: gateway and logger must still work.
+	require.NoError(t, store.Close())
+	require.NoError(t, sharedDB.Ping(), "shared pool must survive store.Close()")
+	require.NoError(t, gateway.Create("proj", SignalEntry{PlanFile: "task-1", SignalType: "implement_finished", Payload: "{}"}))
+	logger.Emit(auditlog.Event{Kind: auditlog.EventAgentFinished, Project: "proj", Message: "after store close"})
+
+	// Closing the gateway must be a no-op: store and logger must still work.
+	require.NoError(t, gateway.Close())
+	require.NoError(t, sharedDB.Ping(), "shared pool must survive gateway.Close()")
+	require.NoError(t, store.Create("proj", TaskEntry{Filename: "task-2", Status: StatusReady}))
+	logger.Emit(auditlog.Event{Kind: auditlog.EventPlanTransition, Project: "proj", Message: "after gateway close"})
+
+	// Closing the logger must be a no-op: store and gateway must still work.
+	require.NoError(t, logger.Close())
+	require.NoError(t, sharedDB.Ping(), "shared pool must survive logger.Close()")
+	require.NoError(t, store.Create("proj", TaskEntry{Filename: "task-3", Status: StatusReady}))
+	require.NoError(t, gateway.Create("proj", SignalEntry{PlanFile: "task-3", SignalType: "planner_finished", Payload: "{}"}))
+
+	// Verify all data is visible before tearing down.
+	entries, err := store.List("proj")
+	require.NoError(t, err)
+	assert.Len(t, entries, 3, "all tasks must be persisted")
+
+	signals, err := gateway.List("proj", SignalPending)
+	require.NoError(t, err)
+	assert.Len(t, signals, 3, "all signals must be persisted")
 }

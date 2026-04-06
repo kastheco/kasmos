@@ -10,6 +10,82 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// ---------------------------------------------------------------------------
+// FromDB constructor tests
+// ---------------------------------------------------------------------------
+
+func TestSQLiteStoreFromDB_BasicOps(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "shared.db")
+
+	db, err := taskstore.OpenSharedDB(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	store, err := taskstore.NewSQLiteStoreFromDB(db)
+	require.NoError(t, err)
+
+	// Basic CRUD through a FromDB-constructed store.
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename: "from-db-task",
+		Status:   taskstore.StatusReady,
+	}))
+
+	got, err := store.Get("proj", "from-db-task")
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusReady, got.Status)
+	assert.Equal(t, "from-db-task", got.Filename)
+}
+
+func TestSQLiteStoreFromDB_CloseIsNoOp(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "shared.db")
+
+	db, err := taskstore.OpenSharedDB(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	store, err := taskstore.NewSQLiteStoreFromDB(db)
+	require.NoError(t, err)
+
+	// Close must be a no-op — it must not close the shared *sql.DB.
+	require.NoError(t, store.Close())
+
+	// The underlying pool must still be alive.
+	require.NoError(t, db.Ping())
+
+	// A second store on the same DB must still work.
+	store2, err := taskstore.NewSQLiteStoreFromDB(db)
+	require.NoError(t, err)
+	require.NoError(t, store2.Create("proj", taskstore.TaskEntry{Filename: "still-alive", Status: taskstore.StatusReady}))
+	got, err := store2.Get("proj", "still-alive")
+	require.NoError(t, err)
+	assert.Equal(t, "still-alive", got.Filename)
+}
+
+func TestSQLiteStoreFromDB_NoMigrateFromPlanstoreDB(t *testing.T) {
+	// NewSQLiteStoreFromDB must not attempt the planstore.db path-based import.
+	// Verified by succeeding on a temp dir that has no planstore.db sibling.
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "taskstore.db")
+
+	db, err := taskstore.OpenSharedDB(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	store, err := taskstore.NewSQLiteStoreFromDB(db)
+	require.NoError(t, err)
+
+	// Schema must be fully functional.
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename: "schema-ok",
+		Status:   taskstore.StatusReady,
+	}))
+	got, err := store.Get("proj", "schema-ok")
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusReady, got.Status)
+}
+
 func newTestStore(t *testing.T) taskstore.Store {
 	t.Helper()
 	store, err := taskstore.NewSQLiteStore(":memory:")

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,18 +11,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newTestRepoManager returns a RepoManager that uses a temp-dir SQLite store
-// and gateway instead of the real global path at ~/.config/kasmos/taskstore.db.
-// This keeps tests hermetic and avoids touching the user's real taskstore.
+// newTestRepoManager returns a RepoManager that uses a temp-file SQLite store
+// opened via the shared-DB path instead of the real global path at
+// ~/.config/kasmos/taskstore.db. This keeps tests hermetic.
 func newTestRepoManager(t *testing.T) *RepoManager {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	return &RepoManager{
-		openStore: func() (taskstore.Store, error) {
-			return taskstore.NewSQLiteStore(dbPath)
-		},
-		openGateway: func() (taskstore.SignalGateway, error) {
-			return taskstore.NewSQLiteSignalGateway(dbPath)
+		openDB: func() (*sql.DB, error) {
+			return taskstore.OpenSharedDB(dbPath)
 		},
 	}
 }
@@ -81,31 +79,62 @@ func TestRepoManager_SharedGlobalStore(t *testing.T) {
 	assert.Same(t, repos[0].SignalGateway, repos[1].SignalGateway)
 }
 
+// TestRepoManager_SharedGlobalDB verifies that after Add() the manager holds a
+// non-nil globalDB and that both repos' store and gateway are derived from it.
+// It also checks that a second Add() reuses the same globalDB (no second open).
+func TestRepoManager_SharedGlobalDB(t *testing.T) {
+	rm := newTestRepoManager(t)
+
+	// Before any Add, globalDB must be nil.
+	assert.Nil(t, rm.globalDB)
+
+	require.NoError(t, rm.Add("/home/user/project-a"))
+
+	// After the first Add, globalDB must be open.
+	require.NotNil(t, rm.globalDB)
+	firstDB := rm.globalDB
+
+	require.NoError(t, rm.Add("/home/user/project-b"))
+
+	// Second Add must reuse the same *sql.DB — pointer equality.
+	assert.Same(t, firstDB, rm.globalDB, "globalDB must not be re-opened on subsequent Add calls")
+
+	repos := rm.List()
+	require.Len(t, repos, 2)
+	// Both repos see the same store and gateway, both backed by globalDB.
+	assert.Same(t, repos[0].Store, repos[1].Store)
+	assert.Same(t, repos[0].SignalGateway, repos[1].SignalGateway)
+}
+
 // TestRepoManager_CloseReleasesGlobalStore verifies that Close() closes the
-// shared global store and gateway without error.
+// shared global store, gateway, and underlying DB, nulling all three fields.
 func TestRepoManager_CloseReleasesGlobalStore(t *testing.T) {
 	rm := newTestRepoManager(t)
 	require.NoError(t, rm.Add("/home/user/project-a"))
 	require.NotNil(t, rm.globalStore)
 	require.NotNil(t, rm.globalGateway)
+	require.NotNil(t, rm.globalDB)
 
 	rm.Close()
 
 	assert.Nil(t, rm.globalStore)
 	assert.Nil(t, rm.globalGateway)
+	assert.Nil(t, rm.globalDB)
 }
 
 // TestRepoManager_RemoveLastClosesGlobalStore verifies that removing the last
-// registered repo closes the shared global store and gateway.
+// registered repo closes the shared global store, gateway, and underlying DB.
 func TestRepoManager_RemoveLastClosesGlobalStore(t *testing.T) {
 	rm := newTestRepoManager(t)
 	require.NoError(t, rm.Add("/home/user/project-a"))
 	require.NotNil(t, rm.globalStore)
+	require.NotNil(t, rm.globalDB)
 
 	require.NoError(t, rm.Remove("/home/user/project-a"))
 
 	assert.Nil(t, rm.globalStore)
 	assert.Nil(t, rm.globalGateway)
+	assert.Nil(t, rm.globalDB)
 }
 
 // TestRepoManager_RemoveNonLastKeepsGlobalStore verifies that removing a repo
@@ -115,12 +144,15 @@ func TestRepoManager_RemoveNonLastKeepsGlobalStore(t *testing.T) {
 	require.NoError(t, rm.Add("/home/user/project-a"))
 	require.NoError(t, rm.Add("/home/user/project-b"))
 	storeRef := rm.globalStore
+	dbRef := rm.globalDB
 
 	require.NoError(t, rm.Remove("/home/user/project-a"))
 
-	// Store must still be open and reachable via the remaining entry.
+	// Store and DB must still be open and reachable via the remaining entry.
 	assert.NotNil(t, rm.globalStore)
+	assert.NotNil(t, rm.globalDB)
 	assert.Same(t, storeRef, rm.globalStore)
+	assert.Same(t, dbRef, rm.globalDB)
 	repos := rm.List()
 	require.Len(t, repos, 1)
 	assert.Same(t, storeRef, repos[0].Store)

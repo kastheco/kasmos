@@ -45,7 +45,8 @@ type PermissionStore interface {
 
 // SQLitePermissionStore is a PermissionStore backed by a SQLite database.
 type SQLitePermissionStore struct {
-	db *sql.DB
+	db     *sql.DB
+	ownsDB bool // true when this store opened the DB; false for FromDB construction
 }
 
 // NewSQLitePermissionStore opens (or creates) a SQLite database at dbPath and
@@ -69,11 +70,28 @@ func NewSQLitePermissionStore(dbPath string) (*SQLitePermissionStore, error) {
 		return nil, fmt.Errorf("run schema migrations: %w", err)
 	}
 
-	return &SQLitePermissionStore{db: db}, nil
+	return &SQLitePermissionStore{db: db, ownsDB: true}, nil
 }
 
-// Close releases the database connection.
+// NewSQLitePermissionStoreFromDB creates a SQLitePermissionStore using an
+// existing *sql.DB connection pool. The caller is responsible for setting
+// PRAGMAs (WAL, busy_timeout, foreign_keys) before calling this — only
+// schema migrations are run. Close() on the returned store is a no-op;
+// the caller owns the *sql.DB lifecycle.
+func NewSQLitePermissionStoreFromDB(db *sql.DB) (*SQLitePermissionStore, error) {
+	if _, err := db.Exec(permissionSchema); err != nil {
+		return nil, fmt.Errorf("run schema migrations: %w", err)
+	}
+	return &SQLitePermissionStore{db: db, ownsDB: false}, nil
+}
+
+// Close releases the database connection. When the store was created via
+// NewSQLitePermissionStoreFromDB, Close is a no-op because the caller owns
+// the shared *sql.DB.
 func (s *SQLitePermissionStore) Close() error {
+	if !s.ownsDB {
+		return nil
+	}
 	return s.db.Close()
 }
 

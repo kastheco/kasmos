@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"strings"
 
+	"database/sql"
+
 	cmd2 "github.com/kastheco/kasmos/cmd"
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/auditlog"
@@ -82,6 +84,9 @@ func Run(ctx context.Context, program string, autoYes bool, version string) erro
 
 	zone.NewGlobal()
 	h := newHome(ctx, program, autoYes, version)
+	if h.sharedDB != nil {
+		defer h.sharedDB.Close()
+	}
 	defer h.auditLogger.Close()
 	if h.permissionStore != nil {
 		defer h.permissionStore.Close()
@@ -302,11 +307,18 @@ type home struct {
 	// signalsDir is the directory where agent sentinel files are written.
 	// Defaults to <repoRoot>/.kasmos/signals/ (project-local, gitignored).
 	signalsDir string
+	// sharedDB is the single *sql.DB connection pool shared by the task store,
+	// signal gateway, audit logger, and permission store. Owned by Run(); nil
+	// when a remote task store is configured.
+	sharedDB *sql.DB
 	// taskStore is the authoritative task store client. It points at the daemon or
 	// a configured remote store, and may be nil until daemon registration completes.
 	taskStore taskstore.Store
 	// taskStoreProject is the project name used with the remote store (derived from repo basename).
 	taskStoreProject string
+	// signalGateway is the authoritative signal gateway, shared across all signal
+	// actions. Nil when a remote task store is configured (signals go through HTTP).
+	signalGateway taskstore.SignalGateway
 	// auditLogger records structured audit events in the local taskstore SQLite database.
 	// Falls back to NopLogger when the SQLite audit logger cannot be opened.
 	auditLogger auditlog.Logger
@@ -513,7 +525,6 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 		deferredPermissionToastIDs: make(map[string]string),
 	}
 
-	dbPath := taskstore.ResolvedDBPath()
 	if appConfig.DatabaseURL != "" {
 		remoteStore := taskstore.NewHTTPStore(appConfig.DatabaseURL, project)
 		if pingErr := remoteStore.Ping(); pingErr != nil {
@@ -521,16 +532,16 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 			os.Exit(1)
 		}
 		h.taskStore = remoteStore
+		// Audit logger and permission store still use local SQLite even
+		// with a remote task store — open their own shared pool.
+		h.sharedDB, h.auditLogger, h.permissionStore = openLocalSharedBackends()
 	} else {
-		localStore, err := taskstore.OpenBackingSQLiteStore()
-		if err != nil {
-			log.WarningLog.Printf("local task store unavailable: %v", err)
-		} else {
-			h.taskStore = localStore
+		h.sharedDB, h.taskStore, h.signalGateway, h.auditLogger, h.permissionStore = openAllSharedBackends()
+		if h.taskStore != nil {
 			// Migrate repo-local taskstore.db into the global DB (idempotent no-op
 			// when no local DB exists or data is already present globally).
 			repoKasmosDir := filepath.Join(activeRepoPath, ".kasmos")
-			if n, migErr := taskstore.MigrateRepoLocalToGlobal(localStore, project, repoKasmosDir); migErr != nil {
+			if n, migErr := taskstore.MigrateRepoLocalToGlobal(h.taskStore, project, repoKasmosDir); migErr != nil {
 				log.WarningLog.Printf("repo-local to global taskstore migration failed: %v", migErr)
 			} else if n > 0 {
 				log.InfoLog.Printf("migrated %d tasks from repo-local taskstore to global DB", n)
@@ -556,15 +567,6 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 		}
 	}
 
-	// Initialize audit logger. Always uses local SQLite regardless of plan
-	// store backend — audit events are purely local state.
-	if al, err := auditlog.NewSQLiteLogger(dbPath); err != nil {
-		log.WarningLog.Printf("audit logger init failed: %v", err)
-		h.auditLogger = auditlog.NopLogger()
-	} else {
-		h.auditLogger = al
-	}
-
 	h.nav = ui.NewNavigationPanel(&h.spinner)
 	h.toastManager = overlay.NewToastManager(&h.spinner)
 	h.overlays = overlay.NewManager()
@@ -573,14 +575,10 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 	// repo-backed task state, and daemon readiness only gates agent workflows.
 
 	permCacheDir := filepath.Join(activeRepoPath, ".kasmos")
-	permStore, err := config.NewSQLitePermissionStore(dbPath)
-	if err != nil {
-		log.WarningLog.Printf("permission store init failed: %v", err)
-	} else {
-		if migrateErr := config.MigratePermissionCache(permCacheDir, project, permStore); migrateErr != nil {
+	if h.permissionStore != nil {
+		if migrateErr := config.MigratePermissionCache(permCacheDir, project, h.permissionStore); migrateErr != nil {
 			log.WarningLog.Printf("permission cache migration failed: %v", migrateErr)
 		}
-		h.permissionStore = permStore
 	}
 	h.permissionHandled = make(map[*session.Instance]string)
 
@@ -644,6 +642,73 @@ func dedupeInstancesByRepoAndTitle(instances []*session.Instance) []*session.Ins
 		result = append(result, seen[key])
 	}
 	return result
+}
+
+// openAllSharedBackends opens a single shared *sql.DB and derives the task
+// store, signal gateway, audit logger, and permission store from it. Used when
+// no remote task store is configured so all four subsystems share one pool.
+func openAllSharedBackends() (*sql.DB, taskstore.Store, taskstore.SignalGateway, auditlog.Logger, config.PermissionStore) {
+	sharedDB, err := taskstore.OpenBackingSharedDB()
+	if err != nil {
+		log.WarningLog.Printf("shared db init failed: %v", err)
+		return nil, nil, nil, auditlog.NopLogger(), nil
+	}
+
+	store, err := taskstore.NewSQLiteStoreFromDB(sharedDB)
+	if err != nil {
+		log.WarningLog.Printf("task store init from shared db failed: %v", err)
+		sharedDB.Close()
+		return nil, nil, nil, auditlog.NopLogger(), nil
+	}
+
+	gw, err := taskstore.NewSQLiteSignalGatewayFromDB(sharedDB)
+	if err != nil {
+		log.WarningLog.Printf("signal gateway init from shared db failed: %v", err)
+		sharedDB.Close()
+		return nil, nil, nil, auditlog.NopLogger(), nil
+	}
+
+	al, err := auditlog.NewSQLiteLoggerFromDB(sharedDB)
+	if err != nil {
+		log.WarningLog.Printf("audit logger init from shared db failed: %v", err)
+		sharedDB.Close()
+		return nil, nil, nil, auditlog.NopLogger(), nil
+	}
+
+	permStore, err := config.NewSQLitePermissionStoreFromDB(sharedDB)
+	if err != nil {
+		log.WarningLog.Printf("permission store init from shared db failed: %v", err)
+		sharedDB.Close()
+		return nil, nil, nil, auditlog.NopLogger(), nil
+	}
+
+	return sharedDB, store, gw, al, permStore
+}
+
+// openLocalSharedBackends opens a shared *sql.DB for the audit logger and
+// permission store only (used when the task store is remote).
+func openLocalSharedBackends() (*sql.DB, auditlog.Logger, config.PermissionStore) {
+	sharedDB, err := taskstore.OpenBackingSharedDB()
+	if err != nil {
+		log.WarningLog.Printf("shared db init failed: %v", err)
+		return nil, auditlog.NopLogger(), nil
+	}
+
+	al, err := auditlog.NewSQLiteLoggerFromDB(sharedDB)
+	if err != nil {
+		log.WarningLog.Printf("audit logger init from shared db failed: %v", err)
+		sharedDB.Close()
+		return nil, auditlog.NopLogger(), nil
+	}
+
+	permStore, err := config.NewSQLitePermissionStoreFromDB(sharedDB)
+	if err != nil {
+		log.WarningLog.Printf("permission store init from shared db failed: %v", err)
+		sharedDB.Close()
+		return nil, auditlog.NopLogger(), nil
+	}
+
+	return sharedDB, al, permStore
 }
 
 // activeProject returns the project name derived from the active repo path.
