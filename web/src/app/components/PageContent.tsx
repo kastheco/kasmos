@@ -13,21 +13,27 @@ import PixelBee from "./PixelBee";
 const features = [
   {
     icon: "\u{1F916}",
-    title: "Multi-Agent Management",
+    title: "Multi-Agent Orchestration",
     description:
-      "Run Claude Code, Codex, Aider, and Gemini CLI side-by-side. Supervise all your AI agents from a single terminal UI.",
+      "Run claude, codex, gemini, amp, and other AI agents concurrently. Each gets an isolated git worktree and tmux session.",
   },
   {
-    icon: "\u{1F500}",
-    title: "Isolated Git Workspaces",
+    icon: "\u{1F30A}",
+    title: "Wave-Based Lifecycle",
     description:
-      "Each agent works in its own git worktree. No conflicts, no overwrites. Merge when you're ready.",
+      "Plans decompose into waves of parallel tasks. Agents execute, reviewers verify, masters do final QA. Structured pipeline from planning \u2192 implementing \u2192 reviewing \u2192 done.",
   },
   {
-    icon: "\u{1F50D}",
-    title: "Live Preview & Diff",
+    icon: "\u{1F527}",
+    title: "MCP Server Architecture",
     description:
-      "See real-time diffs of what your agents are changing. Review every line before it hits your codebase.",
+      "kasmos exposes an MCP server for task CRUD, signals, instance management, and codebase tools. Agents interact through MCP, not filesystem hacks.",
+  },
+  {
+    icon: "\u{1F5C2}",
+    title: "Multi-Repo Support",
+    description:
+      "Manage tasks across multiple repositories from a single daemon. Each repo gets its own config and task store.",
   },
   {
     icon: "\u{1F4BE}",
@@ -40,12 +46,6 @@ const features = [
     title: "Auto-commit & PR",
     description:
       "Automatically commit agent work and create pull requests. Ship faster with less manual overhead.",
-  },
-  {
-    icon: "\u{1F310}",
-    title: "Universal Agent Support",
-    description:
-      "Works with any CLI-based AI agent. If it runs in a terminal, kasmos can manage it.",
   },
 ];
 
@@ -127,6 +127,95 @@ export default function PageContent() {
             {features.map((feature, i) => (
               <ScrollReveal key={feature.title} delay={i * 0.1}>
                 <FeatureCard {...feature} />
+              </ScrollReveal>
+            ))}
+          </div>
+        </section>
+
+        {/* How it Works */}
+        <section className={styles.section}>
+          <ScrollReveal>
+            <h2 className={styles.sectionTitle}>How it Works</h2>
+            <p className={styles.sectionSubtitle}>
+              kasmos decomposes your feature spec into waves of parallel tasks,
+              each executed by a specialized agent in its own isolated worktree.
+            </p>
+          </ScrollReveal>
+
+          <ScrollReveal>
+            <div className={styles.lifecyclePipeline}>
+              {(
+                [
+                  { label: "planning", color: "amber" },
+                  { label: "implementing", color: "teal" },
+                  { label: "reviewing", color: "amber" },
+                  { label: "done", color: "teal" },
+                ] as const
+              ).map((step, i, arr) => (
+                <div key={step.label} className={styles.lifecycleStepGroup}>
+                  <div
+                    className={`${styles.lifecycleStep} ${step.color === "amber" ? styles.lifecycleAmber : styles.lifecycleTeal}`}
+                  >
+                    <span className={styles.lifecycleStepNum}>{i + 1}</span>
+                    <span className={styles.lifecycleStepLabel}>{step.label}</span>
+                  </div>
+                  {i < arr.length - 1 && (
+                    <div className={styles.lifecycleArrow}>→</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </ScrollReveal>
+
+          <div className={styles.agentsGrid}>
+            {(
+              [
+                {
+                  role: "planner",
+                  icon: "📋",
+                  desc: "Writes the feature spec and breaks it into high-level tasks.",
+                  color: "amber",
+                },
+                {
+                  role: "architect",
+                  icon: "🏗️",
+                  desc: "Decomposes the plan into implementation waves with inter-task dependencies.",
+                  color: "teal",
+                },
+                {
+                  role: "elaborator",
+                  icon: "✍️",
+                  desc: "Enriches each task with exact file paths, interfaces, and acceptance criteria.",
+                  color: "amber",
+                },
+                {
+                  role: "coder",
+                  icon: "⚡",
+                  desc: "Implements the task in an isolated git worktree, following TDD.",
+                  color: "teal",
+                },
+                {
+                  role: "reviewer",
+                  icon: "🔍",
+                  desc: "Checks correctness, spec compliance, and code quality per task.",
+                  color: "amber",
+                },
+                {
+                  role: "master",
+                  icon: "🎯",
+                  desc: "Performs final holistic review across all merged changes before shipping.",
+                  color: "teal",
+                },
+              ] as const
+            ).map((agent, i) => (
+              <ScrollReveal key={agent.role} delay={i * 0.08}>
+                <div
+                  className={`${styles.agentCard} ${agent.color === "amber" ? styles.agentAmber : styles.agentTeal}`}
+                >
+                  <span className={styles.agentIcon}>{agent.icon}</span>
+                  <span className={styles.agentRole}>{agent.role}</span>
+                  <p className={styles.agentDesc}>{agent.desc}</p>
+                </div>
               </ScrollReveal>
             ))}
           </div>
