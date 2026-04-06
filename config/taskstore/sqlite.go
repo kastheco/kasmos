@@ -530,7 +530,7 @@ func (s *SQLiteStore) List(project string) ([]TaskEntry, error) {
 // the provided statuses, sorted by filename.
 func (s *SQLiteStore) ListByStatus(project string, statuses ...Status) ([]TaskEntry, error) {
 	if len(statuses) == 0 {
-		return nil, nil
+		return []TaskEntry{}, nil
 	}
 
 	placeholders := make([]string, len(statuses))
@@ -587,7 +587,7 @@ func (s *SQLiteStore) ListTopics(project string) ([]TopicEntry, error) {
 	}
 	defer rows.Close()
 
-	var topics []TopicEntry
+	topics := []TopicEntry{}
 	for rows.Next() {
 		var name, createdAt string
 		if err := rows.Scan(&name, &createdAt); err != nil {
@@ -751,7 +751,7 @@ func (s *SQLiteStore) GetSubtasks(project, filename string) ([]SubtaskEntry, err
 	}
 	defer rows.Close()
 
-	var subtasks []SubtaskEntry
+	subtasks := []SubtaskEntry{}
 	for rows.Next() {
 		var taskNumber int
 		var title, status string
@@ -1036,7 +1036,7 @@ func scanTaskEntry(row *sql.Row) (TaskEntry, error) {
 
 // scanTaskEntries scans multiple rows into a slice of TaskEntry.
 func scanTaskEntries(rows *sql.Rows) ([]TaskEntry, error) {
-	var entries []TaskEntry
+	entries := []TaskEntry{}
 	for rows.Next() {
 		var filename, status, description, branch, topic, createdAt, implemented, planningAt, implementingAt, reviewingAt, doneAt, executionPhase, activeAgentType, goal, content, clickupTaskID, latestReviewFeedback string
 		var activeWave, reviewCycle int

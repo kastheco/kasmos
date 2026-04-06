@@ -25,11 +25,12 @@ const (
 )
 
 var (
-	browserHTTPClient httpGetter = &http.Client{Timeout: 500 * time.Millisecond}
-	browserOpenURL               = openURL
-	browserExecutable            = os.Executable
-	browserStartServe            = startPlanBrowserServer
-	browserWaitReady             = waitForPlanBrowserReady
+	browserHTTPClient  httpGetter = &http.Client{Timeout: 500 * time.Millisecond}
+	browserOpenURL                = openURL
+	browserExecutable             = os.Executable
+	browserExecCommand            = exec.Command
+	browserStartServe             = startPlanBrowserServer
+	browserWaitReady              = waitForPlanBrowserReady
 )
 
 // OpenPlanBrowser starts or reuses kas serve and opens the plan browser.
@@ -53,9 +54,17 @@ func NewBrowserCmd() *cobra.Command {
 		Short: "open the admin plan browser",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			repoRoot, err := filepath.Abs(".")
+			repoRoot, err := resolveRepoRoot(".")
 			if err != nil {
 				return fmt.Errorf("resolve repo path: %w", err)
+			}
+
+			// Normalize relative adminDir before changing the working directory
+			// to repoRoot, so --admin-dir stays correct from the caller's cwd.
+			if adminDir != "" && !filepath.IsAbs(adminDir) {
+				if abs, err := filepath.Abs(adminDir); err == nil {
+					adminDir = abs
+				}
 			}
 
 			planFile := ""
@@ -172,12 +181,27 @@ func startPlanBrowserServer(repoRoot, bind string, port int, adminDir string) er
 		return fmt.Errorf("resolve executable: %w", err)
 	}
 
-	args := []string{"serve", "--bind", bind, "--port", strconv.Itoa(port)}
+	args := []string{"serve", "--bind", bind, "--port", strconv.Itoa(port), "--mcp=false"}
+	repos, err := listDaemonRepoStatuses()
+	if err != nil || len(repos) == 0 {
+		args = append(args, "--repo", repoRoot)
+	} else {
+		hasCurrentRepo := false
+		for _, repo := range repos {
+			args = append(args, "--repo", repo.Path)
+			if repo.Path == repoRoot {
+				hasCurrentRepo = true
+			}
+		}
+		if !hasCurrentRepo {
+			args = append(args, "--repo", repoRoot)
+		}
+	}
 	if adminDir != "" {
 		args = append(args, "--admin-dir", adminDir)
 	}
 
-	cmd := exec.Command(exe, args...)
+	cmd := browserExecCommand(exe, args...)
 	cmd.Dir = repoRoot
 
 	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)

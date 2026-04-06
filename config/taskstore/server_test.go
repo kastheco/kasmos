@@ -508,3 +508,36 @@ func TestServer_PRReviews_BadRequestOnMalformedBody(t *testing.T) {
 	resp.Body.Close()
 	assert.Contains(t, errBody["error"], "invalid request body")
 }
+
+func TestServer_EmptyListEndpointsReturnJSONArray(t *testing.T) {
+	store := newTestStore(t)
+	srv := httptest.NewServer(taskstore.NewHandler(store))
+	defer srv.Close()
+
+	// Seed one task so /subtasks route passes the not-found preflight.
+	body := `{"filename":"plan","status":"ready","description":"test"}`
+	resp, err := http.Post(srv.URL+"/v1/projects/proj/tasks", "application/json", strings.NewReader(body))
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"empty tasks list", "/v1/projects/empty/tasks"},
+		{"empty subtasks list", "/v1/projects/proj/tasks/plan/subtasks"},
+		{"empty topics list", "/v1/projects/proj/topics"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, err := http.Get(srv.URL + tt.path)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			raw, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			assert.Equal(t, "[]\n", string(raw))
+		})
+	}
+}

@@ -72,9 +72,9 @@ export function resolveProjectName(
 }
 
 export async function listTasks(project: string): Promise<TaskEntry[]> {
-  return requestJSON<TaskEntry[]>(
+  return (await requestJSON<TaskEntry[] | null>(
     `/v1/projects/${encodeURIComponent(project)}/tasks`,
-  );
+  )) ?? [];
 }
 
 export async function getTask(
@@ -99,21 +99,22 @@ export async function getSubtasks(
   project: string,
   filename: string,
 ): Promise<SubtaskEntry[]> {
-  return requestJSON<SubtaskEntry[]>(
+  return (await requestJSON<SubtaskEntry[] | null>(
     `/v1/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(filename)}/subtasks`,
-  );
+  )) ?? [];
 }
 
 export async function listTopics(project: string): Promise<TopicEntry[]> {
-  return requestJSON<TopicEntry[]>(
+  return (await requestJSON<TopicEntry[] | null>(
     `/v1/projects/${encodeURIComponent(project)}/topics`,
-  );
+  )) ?? [];
 }
 
 export async function listAuditEvents(project: string): Promise<AuditEvent[]> {
-  const raw = await requestJSON<AuditEventResponse[]>(
-    `/v1/projects/${encodeURIComponent(project)}/audit-events`,
-  );
+  const raw =
+    (await requestJSON<AuditEventResponse[] | null>(
+      `/v1/projects/${encodeURIComponent(project)}/audit-events`,
+    )) ?? [];
   return raw.map(normalizeAuditEvent);
 }
 
@@ -133,6 +134,6 @@ export async function fetchAuditEvents(
   if (filter?.limit != null) params.set("limit", String(filter.limit));
   const qs = params.toString();
   const url = `/v1/projects/${encodeURIComponent(project)}/audit-events${qs ? `?${qs}` : ""}`;
-  const raw = await requestJSON<AuditEventResponse[]>(url);
+  const raw = (await requestJSON<AuditEventResponse[] | null>(url)) ?? [];
   return raw.map(normalizeAuditEvent);
 }
