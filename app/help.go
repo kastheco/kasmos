@@ -68,7 +68,7 @@ func (h helpTypeGeneral) toContent() string {
 		keyStyle.Render("b")+descStyle.Render("             - open plan browser"),
 		"",
 		headerStyle.Render("navigation:"),
-		keyStyle.Render("tab/shift+tab")+descStyle.Render(" - cycle tabs (info ↔ agent)"),
+		keyStyle.Render("tab")+descStyle.Render("           - cycle tabs"),
 		keyStyle.Render("!")+descStyle.Render("             - interactive + shell mode"),
 		keyStyle.Render("I")+descStyle.Render("             - toggle info header"),
 		keyStyle.Render("↑↓")+descStyle.Render("            - navigate within focused pane"),

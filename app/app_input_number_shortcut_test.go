@@ -170,3 +170,36 @@ func TestHandleKeyPress_NumberShortcutPassthroughDigits(t *testing.T) {
 		})
 	}
 }
+
+func TestHandleKeyPress_CtrlOPassesThroughToPTY(t *testing.T) {
+	h := newTestHome()
+	inst := newTestShortcutInstance(t, session.Running, true)
+
+	h.nav.AddInstance(inst)()
+	h.nav.SetSelectedInstance(0)
+	h.previewTerminal = session.NewDummyTerminal()
+	h.previewTerminalInstance = inst.Title
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'o', Mod: tea.ModCtrl})
+	updated := model.(*home)
+
+	require.Len(t, updated.previewTerminal.SentKeys(), 1)
+	assert.Equal(t, []byte{0x0F}, updated.previewTerminal.SentKeys()[0])
+	assert.Equal(t, stateDefault, updated.state)
+	assert.Nil(t, cmd)
+}
+
+func TestHandleKeyPress_CtrlONoOpWithoutPreviewTerminal(t *testing.T) {
+	h := newTestHome()
+	inst := newTestShortcutInstance(t, session.Running, true)
+
+	h.nav.AddInstance(inst)()
+	h.nav.SetSelectedInstance(0)
+	h.previewTerminal = nil
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'o', Mod: tea.ModCtrl})
+	updated := model.(*home)
+
+	assert.Equal(t, stateDefault, updated.state)
+	assert.Nil(t, cmd)
+}

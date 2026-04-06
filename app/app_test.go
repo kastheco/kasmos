@@ -1001,34 +1001,6 @@ func TestFocusRing(t *testing.T) {
 		assert.Equal(t, 0, homeModel.tabbedWindow.GetActiveTab(), "active tab must wrap to first")
 	})
 
-	t.Run("Shift+Tab reverses active tab from second to first, sidebar stays focused", func(t *testing.T) {
-		h := newTestHome()
-		h.tabbedWindow.SetTabs([]ui.InstanceTab{
-			{Title: "tab-0", Key: "tab-0"},
-			{Title: "tab-1", Key: "tab-1"},
-		})
-		h.tabbedWindow.SetActiveTab(1)
-
-		homeModel := handle(t, h, tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
-
-		assert.Equal(t, slotNav, homeModel.focusSlot, "sidebar must retain focus")
-		assert.Equal(t, 0, homeModel.tabbedWindow.GetActiveTab(), "active tab must reverse to first")
-	})
-
-	t.Run("Shift+Tab wraps active tab from first to last, sidebar stays focused", func(t *testing.T) {
-		h := newTestHome()
-		h.tabbedWindow.SetTabs([]ui.InstanceTab{
-			{Title: "tab-0", Key: "tab-0"},
-			{Title: "tab-1", Key: "tab-1"},
-		})
-		h.tabbedWindow.SetActiveTab(0)
-
-		homeModel := handle(t, h, tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
-
-		assert.Equal(t, slotNav, homeModel.focusSlot, "sidebar must retain focus")
-		assert.Equal(t, 1, homeModel.tabbedWindow.GetActiveTab(), "active tab must wrap to last")
-	})
-
 	t.Run("Tab with zero tabs is no-op, active index stays at 0", func(t *testing.T) {
 		h := newTestHome()
 		// No instance tabs seeded — Tab should be a no-op.
@@ -1039,14 +1011,18 @@ func TestFocusRing(t *testing.T) {
 		assert.Equal(t, 0, homeModel.tabbedWindow.GetActiveTab(), "active index must stay at 0 with zero tabs")
 	})
 
-	t.Run("Shift+Tab with zero tabs is no-op, active index stays at 0", func(t *testing.T) {
+	t.Run("Shift+Tab is a no-op in default state", func(t *testing.T) {
 		h := newTestHome()
-		// No instance tabs seeded — Shift+Tab should be a no-op.
+		h.tabbedWindow.SetTabs([]ui.InstanceTab{
+			{Title: "tab-0", Key: "tab-0"},
+			{Title: "tab-1", Key: "tab-1"},
+		})
+		h.tabbedWindow.SetActiveTab(1)
 
 		homeModel := handle(t, h, tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
 
 		assert.Equal(t, slotNav, homeModel.focusSlot, "sidebar must retain focus")
-		assert.Equal(t, 0, homeModel.tabbedWindow.GetActiveTab(), "active index must stay at 0 with zero tabs")
+		assert.Equal(t, 1, homeModel.tabbedWindow.GetActiveTab(), "active tab must be unchanged")
 	})
 
 	t.Run("T is no-op when right-sidebar shortcut is removed", func(t *testing.T) {

@@ -1590,11 +1590,6 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		return m.handleQuit()
 	}
 
-	// Shift+Tab: reverse focus ring cycle (don't call instanceChanged — it auto-switches tabs)
-	if msg.String() == "shift+tab" {
-		return m, m.prevFocusSlot()
-	}
-
 	// Delete key: dismiss a finished (non-running) instance from the list.
 	if msg.Code == tea.KeyDelete || msg.Code == tea.KeyBackspace {
 		selected := m.nav.GetSelectedInstance()
@@ -1620,6 +1615,17 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		selected := m.nav.GetSelectedInstance()
 		if selected != nil && selected.Started() && !selected.Paused() {
 			if err := m.previewTerminal.SendKey([]byte(msg.Text)); err != nil {
+				return m, m.handleError(err)
+			}
+			return m, nil
+		}
+	}
+
+	// Ctrl+O: pass through to the agent's PTY (e.g. claude code "open file").
+	if m.previewTerminal != nil && msg.Code == 'o' && msg.Mod.Contains(tea.ModCtrl) {
+		selected := m.nav.GetSelectedInstance()
+		if selected != nil && selected.Started() && !selected.Paused() {
+			if err := m.previewTerminal.SendKey([]byte{0x0F}); err != nil {
 				return m, m.handleError(err)
 			}
 			return m, nil
