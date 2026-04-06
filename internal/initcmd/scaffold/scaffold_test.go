@@ -72,8 +72,11 @@ func TestScaffoldClaudeProject(t *testing.T) {
 	require.True(t, ok, "mcpServers key must be present")
 	kasmos, ok := servers["kasmos"].(map[string]any)
 	require.True(t, ok, "kasmos entry must be present")
-	assert.Equal(t, "http", kasmos["type"])
-	assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
+	assert.Equal(t, "stdio", kasmos["type"])
+	assert.Equal(t, "kas", kasmos["command"])
+	args, ok := kasmos["args"].([]any)
+	require.True(t, ok, "args must be an array")
+	assert.Equal(t, []any{"mcp"}, args)
 
 	settingsPath := filepath.Join(dir, ".claude", "settings.json")
 	assert.FileExists(t, settingsPath)
@@ -210,9 +213,29 @@ func TestEnsureClaudeMCPEntry(t *testing.T) {
 		assert.Contains(t, servers, "other-server", "existing server must be preserved")
 	})
 
-	t.Run("is idempotent when kasmos already present", func(t *testing.T) {
+	t.Run("migrates http to stdio when kasmos uses http", func(t *testing.T) {
 		dir := t.TempDir()
 		initial := `{"mcpServers":{"kasmos":{"type":"http","url":"http://127.0.0.1:7434/mcp"}}}`
+		dest := filepath.Join(dir, ".mcp.json")
+		require.NoError(t, os.WriteFile(dest, []byte(initial), 0o644))
+
+		result, err := EnsureClaudeMCPEntry(dir)
+		require.NoError(t, err)
+		assert.Equal(t, WriteResult{Path: ".mcp.json", Created: true}, result)
+
+		data, err := os.ReadFile(dest)
+		require.NoError(t, err)
+		var cfg map[string]any
+		require.NoError(t, json.Unmarshal(data, &cfg))
+		servers := cfg["mcpServers"].(map[string]any)
+		kasmos := servers["kasmos"].(map[string]any)
+		assert.Equal(t, "stdio", kasmos["type"])
+		assert.Equal(t, "kas", kasmos["command"])
+	})
+
+	t.Run("is idempotent when kasmos already uses stdio", func(t *testing.T) {
+		dir := t.TempDir()
+		initial := `{"mcpServers":{"kasmos":{"type":"stdio","command":"kas","args":["mcp"]}}}`
 		dest := filepath.Join(dir, ".mcp.json")
 		require.NoError(t, os.WriteFile(dest, []byte(initial), 0o644))
 		info1, _ := os.Stat(dest)

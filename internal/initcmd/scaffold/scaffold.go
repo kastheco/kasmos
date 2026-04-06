@@ -83,12 +83,13 @@ func writePerRoleProject(dir, harnessName string, agents []harness.AgentConfig, 
 	return results, nil
 }
 
-// claudeMCPJSON is the default .claude/.mcp.json content registering the kasmos MCP server.
+// claudeMCPJSON is the default .mcp.json content registering the kasmos MCP server via stdio.
 const claudeMCPJSON = `{
   "mcpServers": {
     "kasmos": {
-      "type": "http",
-      "url": "http://127.0.0.1:7434/mcp"
+      "type": "stdio",
+      "command": "kas",
+      "args": ["mcp"]
     }
   }
 }
@@ -193,14 +194,20 @@ func EnsureClaudeMCPEntry(dir string) (WriteResult, error) {
 		current["mcpServers"] = servers
 	}
 
-	if _, exists := servers["kasmos"]; exists {
-		return result, nil // already registered — nothing to do
+	want := map[string]any{
+		"type":    "stdio",
+		"command": "kas",
+		"args":    []any{"mcp"},
 	}
 
-	servers["kasmos"] = map[string]any{
-		"type": "http",
-		"url":  "http://127.0.0.1:7434/mcp",
+	if existing, exists := servers["kasmos"]; exists {
+		// Migrate http → stdio if needed.
+		if entry, ok := existing.(map[string]any); ok && entry["type"] == "stdio" {
+			return result, nil // already correct — nothing to do
+		}
 	}
+
+	servers["kasmos"] = want
 
 	updated, err := json.MarshalIndent(current, "", "  ")
 	if err != nil {
