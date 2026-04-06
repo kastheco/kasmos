@@ -123,7 +123,8 @@ const prCheckStatusMigration = `ALTER TABLE tasks ADD COLUMN pr_check_status TEX
 
 // SQLiteStore is a Store implementation backed by a SQLite database.
 type SQLiteStore struct {
-	db *sql.DB
+	db     *sql.DB
+	ownsDB bool // when true, Close() closes the underlying *sql.DB
 }
 
 // NewSQLiteStore opens (or creates) a SQLite database at dbPath and runs
@@ -156,15 +157,9 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("enable foreign keys: %w", err)
 	}
 
-	// Migrate: rename plans → tasks (if old table exists).
-	// This MUST run before the schema CREATE TABLE so that existing data in the
-	// plans table is preserved. If we create an empty tasks table first, the
-	// rename migration sees tasks already exists and skips, orphaning old data.
-	migrateRenameTable(db, "plans", "tasks")
-
-	if _, err := db.Exec(schema); err != nil {
+	if err := runStoreMigrations(db); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("run schema migrations: %w", err)
+		return nil, err
 	}
 
 	// Migrate data from legacy planstore.db if it exists in the same directory
@@ -177,96 +172,101 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 		}
 	}
 
-	// Add content column if it doesn't exist (upgrade existing databases).
-	if err := migrateAddContentColumn(db); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrate content column: %w", err)
-	}
-
-	// Add clickup_task_id column if it doesn't exist (upgrade existing databases).
-	if err := migrateAddColumn(db, "clickup_task_id", clickupTaskIDMigration); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrate clickup_task_id column: %w", err)
-	}
-
-	// Add review_cycle column if it doesn't exist (upgrade existing databases).
-	if err := migrateAddColumn(db, "review_cycle", reviewCycleMigration); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrate review_cycle column: %w", err)
-	}
-
-	// Add latest_review_feedback column if it doesn't exist (upgrade existing databases).
-	if err := migrateAddColumn(db, "latest_review_feedback", latestReviewFeedbackMigration); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrate latest_review_feedback column: %w", err)
-	}
-
-	// Add new task lifecycle phase timestamp and goal columns.
-	if err := migrateAddColumn(db, "planning_at", planningAtMigration); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrate planning_at column: %w", err)
-	}
-	if err := migrateAddColumn(db, "implementing_at", implementingAtMigration); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrate implementing_at column: %w", err)
-	}
-	if err := migrateAddColumn(db, "reviewing_at", reviewingAtMigration); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrate reviewing_at column: %w", err)
-	}
-	if err := migrateAddColumn(db, "done_at", doneAtMigration); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrate done_at column: %w", err)
-	}
-	if err := migrateAddColumn(db, "execution_phase", executionPhaseMigration); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrate execution_phase column: %w", err)
-	}
-	if err := migrateAddColumn(db, "active_agent_type", activeAgentTypeMigration); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrate active_agent_type column: %w", err)
-	}
-	if err := migrateAddColumn(db, "active_wave", activeWaveMigration); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrate active_wave column: %w", err)
-	}
-	if err := migrateAddColumn(db, "goal", goalMigration); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrate goal column: %w", err)
-	}
-
-	// Add PR metadata columns if they don't exist (upgrade existing databases).
-	if err := migrateAddColumn(db, "pr_url", prURLMigration); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrate pr_url column: %w", err)
-	}
-	if err := migrateAddColumn(db, "pr_review_decision", prReviewDecisionMigration); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrate pr_review_decision column: %w", err)
-	}
-	if err := migrateAddColumn(db, "pr_check_status", prCheckStatusMigration); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrate pr_check_status column: %w", err)
-	}
-
-	// Create subtasks table if missing.
-	if _, err := db.Exec(subtasksTableMigration); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("create subtasks table: %w", err)
-	}
-
-	// Create pr_reviews table if missing.
-	if _, err := db.Exec(prReviewsTableMigration); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("create pr_reviews table: %w", err)
-	}
-
+	// Strip .md suffix AFTER legacy imports so imported filenames are also
+	// normalized. This is idempotent — safe to run on already-clean DBs.
 	if err := migrateStripMdSuffix(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate strip .md suffix: %w", err)
 	}
 
-	return &SQLiteStore{db: db}, nil
+	return &SQLiteStore{db: db, ownsDB: true}, nil
+}
+
+// NewSQLiteStoreFromDB creates a SQLiteStore using an existing *sql.DB
+// connection pool. The caller is responsible for setting PRAGMAs (WAL,
+// busy_timeout, foreign_keys) before calling this — only schema migrations
+// are run. Close() on the returned store is a no-op; the caller owns the
+// *sql.DB lifecycle.
+func NewSQLiteStoreFromDB(db *sql.DB) (*SQLiteStore, error) {
+	if err := runStoreMigrations(db); err != nil {
+		return nil, err
+	}
+	return &SQLiteStore{db: db, ownsDB: false}, nil
+}
+
+// runStoreMigrations runs all schema migrations on the given *sql.DB.
+// It does NOT set PRAGMAs or open the connection — the caller must do that.
+// Legacy planstore.db migration requires the file path and is handled
+// separately by NewSQLiteStore.
+func runStoreMigrations(db *sql.DB) error {
+	// Migrate: rename plans → tasks (if old table exists).
+	migrateRenameTable(db, "plans", "tasks")
+
+	if _, err := db.Exec(schema); err != nil {
+		return fmt.Errorf("run schema migrations: %w", err)
+	}
+
+	// Add content column if it doesn't exist.
+	if err := migrateAddContentColumn(db); err != nil {
+		return fmt.Errorf("migrate content column: %w", err)
+	}
+
+	if err := migrateAddColumn(db, "clickup_task_id", clickupTaskIDMigration); err != nil {
+		return fmt.Errorf("migrate clickup_task_id column: %w", err)
+	}
+	if err := migrateAddColumn(db, "review_cycle", reviewCycleMigration); err != nil {
+		return fmt.Errorf("migrate review_cycle column: %w", err)
+	}
+	if err := migrateAddColumn(db, "latest_review_feedback", latestReviewFeedbackMigration); err != nil {
+		return fmt.Errorf("migrate latest_review_feedback column: %w", err)
+	}
+	if err := migrateAddColumn(db, "planning_at", planningAtMigration); err != nil {
+		return fmt.Errorf("migrate planning_at column: %w", err)
+	}
+	if err := migrateAddColumn(db, "implementing_at", implementingAtMigration); err != nil {
+		return fmt.Errorf("migrate implementing_at column: %w", err)
+	}
+	if err := migrateAddColumn(db, "reviewing_at", reviewingAtMigration); err != nil {
+		return fmt.Errorf("migrate reviewing_at column: %w", err)
+	}
+	if err := migrateAddColumn(db, "done_at", doneAtMigration); err != nil {
+		return fmt.Errorf("migrate done_at column: %w", err)
+	}
+	if err := migrateAddColumn(db, "execution_phase", executionPhaseMigration); err != nil {
+		return fmt.Errorf("migrate execution_phase column: %w", err)
+	}
+	if err := migrateAddColumn(db, "active_agent_type", activeAgentTypeMigration); err != nil {
+		return fmt.Errorf("migrate active_agent_type column: %w", err)
+	}
+	if err := migrateAddColumn(db, "active_wave", activeWaveMigration); err != nil {
+		return fmt.Errorf("migrate active_wave column: %w", err)
+	}
+	if err := migrateAddColumn(db, "goal", goalMigration); err != nil {
+		return fmt.Errorf("migrate goal column: %w", err)
+	}
+	if err := migrateAddColumn(db, "pr_url", prURLMigration); err != nil {
+		return fmt.Errorf("migrate pr_url column: %w", err)
+	}
+	if err := migrateAddColumn(db, "pr_review_decision", prReviewDecisionMigration); err != nil {
+		return fmt.Errorf("migrate pr_review_decision column: %w", err)
+	}
+	if err := migrateAddColumn(db, "pr_check_status", prCheckStatusMigration); err != nil {
+		return fmt.Errorf("migrate pr_check_status column: %w", err)
+	}
+	if _, err := db.Exec(subtasksTableMigration); err != nil {
+		return fmt.Errorf("create subtasks table: %w", err)
+	}
+	if _, err := db.Exec(prReviewsTableMigration); err != nil {
+		return fmt.Errorf("create pr_reviews table: %w", err)
+	}
+	// NOTE: migrateStripMdSuffix is called separately by NewSQLiteStore after
+	// migrateFromPlanstoreDB so that imported filenames are also normalized.
+	// NewSQLiteStoreFromDB also calls it since the shared DB may not have run
+	// the path-based constructor.
+	if err := migrateStripMdSuffix(db); err != nil {
+		return fmt.Errorf("migrate strip .md suffix: %w", err)
+	}
+	return nil
 }
 
 // migrateAddContentColumn adds the content column to the tasks table if it
@@ -364,6 +364,9 @@ func migrateRenameTable(db *sql.DB, oldName, newName string) {
 
 // Close releases the database connection.
 func (s *SQLiteStore) Close() error {
+	if !s.ownsDB {
+		return nil
+	}
 	return s.db.Close()
 }
 

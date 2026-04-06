@@ -166,25 +166,30 @@ func NewServeCmd() *cobra.Command {
 				}
 			}
 
-			// Always use the single global DB — the project column already
-			// namespaces per-repo data.  The old MultiStore path opened
-			// per-repo <repo>/.kasmos/taskstore.db files which diverged
-			// from the daemon/TUI/CLI that all use the global DB.
-			store, err = taskstore.NewSQLiteStore(db)
+			// Open a single shared *sql.DB and derive all subsystems from
+			// it. This eliminates SQLITE_BUSY contention that occurred when
+			// store, gateway, and audit logger each opened independent
+			// connection pools on the same file.
+			sharedDB, err := taskstore.OpenSharedDB(db)
+			if err != nil {
+				return fmt.Errorf("open shared db: %w", err)
+			}
+			defer sharedDB.Close()
+
+			store, err = taskstore.NewSQLiteStoreFromDB(sharedDB)
 			if err != nil {
 				return fmt.Errorf("open task store: %w", err)
 			}
-			gw, err = taskstore.NewSQLiteSignalGateway(db)
+			gw, err = taskstore.NewSQLiteSignalGatewayFromDB(sharedDB)
 			if err != nil {
-				_ = store.Close()
 				return fmt.Errorf("open signal gateway: %w", err)
 			}
-			logger, err = auditlog.NewSQLiteLogger(db)
+			logger, err = auditlog.NewSQLiteLoggerFromDB(sharedDB)
 			if err != nil {
-				_ = gw.Close()
-				_ = store.Close()
 				return fmt.Errorf("open audit logger: %w", err)
 			}
+			// store/gw/logger Close() are no-ops (ownsDB=false);
+			// sharedDB.Close() handles the actual connection teardown.
 			defer store.Close()
 			defer gw.Close()
 			defer logger.Close()

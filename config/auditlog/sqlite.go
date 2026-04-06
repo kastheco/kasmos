@@ -33,7 +33,8 @@ const maxQueryLimit = 500
 
 // SQLiteLogger is a Logger backed by a SQLite database.
 type SQLiteLogger struct {
-	db *sql.DB
+	db     *sql.DB
+	ownsDB bool // when true, Close() closes the underlying *sql.DB
 }
 
 // NewSQLiteLogger opens (or creates) a SQLite database at dbPath, runs the
@@ -50,7 +51,18 @@ func NewSQLiteLogger(dbPath string) (*SQLiteLogger, error) {
 		return nil, fmt.Errorf("run audit log schema: %w", err)
 	}
 
-	return &SQLiteLogger{db: db}, nil
+	return &SQLiteLogger{db: db, ownsDB: true}, nil
+}
+
+// NewSQLiteLoggerFromDB creates a SQLiteLogger using an existing *sql.DB
+// connection pool. The caller is responsible for setting PRAGMAs before
+// calling this — only the audit_events schema is created. Close() on the
+// returned logger is a no-op; the caller owns the *sql.DB lifecycle.
+func NewSQLiteLoggerFromDB(db *sql.DB) (*SQLiteLogger, error) {
+	if _, err := db.Exec(auditSchema); err != nil {
+		return nil, fmt.Errorf("run audit log schema: %w", err)
+	}
+	return &SQLiteLogger{db: db, ownsDB: false}, nil
 }
 
 // Emit inserts an audit event into the database. If the event's Timestamp is
@@ -174,6 +186,9 @@ func (l *SQLiteLogger) Query(f QueryFilter) ([]Event, error) {
 
 // Close releases the database connection.
 func (l *SQLiteLogger) Close() error {
+	if !l.ownsDB {
+		return nil
+	}
 	return l.db.Close()
 }
 

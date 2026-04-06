@@ -1,12 +1,14 @@
 package taskstore
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/kastheco/kasmos/config"
+	_ "modernc.org/sqlite" // register sqlite driver
 )
 
 // NewStoreFromConfig creates a Store from a remote task store URL and project name.
@@ -92,6 +94,48 @@ func OpenBackingSQLiteSignalGateway() (SignalGateway, error) {
 		return nil, fmt.Errorf("create kasmos config dir: %w", err)
 	}
 	return NewSQLiteSignalGateway(dbPath)
+}
+
+// OpenSharedDB opens a single *sql.DB with WAL mode, busy_timeout, and foreign
+// keys enabled. Callers pass the returned handle to NewSQLiteStoreFromDB,
+// NewSQLiteSignalGatewayFromDB, and auditlog.NewSQLiteLoggerFromDB so that all
+// subsystems share one connection pool and avoid SQLITE_BUSY contention.
+// The caller owns the returned *sql.DB and must close it after all subsystems
+// are done.
+func OpenSharedDB(dbPath string) (*sql.DB, error) {
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("open shared sqlite db: %w", err)
+	}
+
+	if dbPath != ":memory:" {
+		if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("set WAL mode: %w", err)
+		}
+	}
+
+	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("set busy timeout: %w", err)
+	}
+
+	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("enable foreign keys: %w", err)
+	}
+
+	return db, nil
+}
+
+// OpenBackingSharedDB is a convenience wrapper that calls OpenSharedDB with
+// the resolved global DB path (~/.config/kasmos/taskstore.db).
+func OpenBackingSharedDB() (*sql.DB, error) {
+	dbPath := ResolvedDBPath()
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		return nil, fmt.Errorf("create kasmos config dir: %w", err)
+	}
+	return OpenSharedDB(dbPath)
 }
 
 // GlobalDBPath returns the global taskstore path: ~/.config/kasmos/taskstore.db.

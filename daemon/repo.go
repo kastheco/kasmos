@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"os"
@@ -46,13 +47,18 @@ type RepoManager struct {
 	autoAdvance        bool
 	autoReviewFix      bool
 	maxReviewFixCycles int
+	// globalDB is the single shared *sql.DB, lazy-opened on the first Add().
+	// Both globalStore and globalGateway are derived from it.
+	globalDB *sql.DB
 	// globalStore is the shared backing store, lazy-opened on the first Add().
 	globalStore taskstore.Store
 	// globalGateway is the shared signal gateway, lazy-opened on the first Add().
 	globalGateway taskstore.SignalGateway
-	// openStore and openGateway are the factory functions used to open the
-	// global store and gateway. They default to the package-level backing
-	// openers and may be overridden in tests.
+	// openDB is the factory function used to open the shared database.
+	// It defaults to taskstore.OpenBackingSharedDB and may be overridden in tests.
+	openDB func() (*sql.DB, error)
+	// openStore and openGateway are legacy factory functions kept for test
+	// compatibility. When openDB is set (the default), these are ignored.
 	openStore   func() (taskstore.Store, error)
 	openGateway func() (taskstore.SignalGateway, error)
 }
@@ -60,8 +66,7 @@ type RepoManager struct {
 // NewRepoManager returns an empty, ready-to-use RepoManager.
 func NewRepoManager() *RepoManager {
 	return &RepoManager{
-		openStore:   taskstore.OpenBackingSQLiteStore,
-		openGateway: taskstore.OpenBackingSQLiteSignalGateway,
+		openDB: taskstore.OpenBackingSharedDB,
 	}
 }
 
@@ -92,21 +97,41 @@ func (m *RepoManager) Add(path string) error {
 	kasmosDir := filepath.Join(path, ".kasmos")
 	signalsDir := filepath.Join(kasmosDir, "signals")
 
-	// Lazy-open the global store on first Add().
-	if m.globalStore == nil {
-		if s, err := m.openStore(); err == nil {
-			m.globalStore = s
+	// Lazy-open the shared DB, store, and gateway on first Add().
+	if m.globalDB == nil && m.globalStore == nil {
+		if m.openDB != nil {
+			// Preferred path: single shared *sql.DB for all subsystems.
+			if db, err := m.openDB(); err == nil {
+				m.globalDB = db
+				if s, err := taskstore.NewSQLiteStoreFromDB(db); err == nil {
+					m.globalStore = s
+				} else {
+					slog.Warn("daemon: failed to create store from shared db", "error", err)
+				}
+				if g, err := taskstore.NewSQLiteSignalGatewayFromDB(db); err == nil {
+					m.globalGateway = g
+				} else {
+					slog.Warn("daemon: failed to create gateway from shared db", "error", err)
+				}
+			} else {
+				slog.Warn("daemon: failed to open shared db", "error", err)
+			}
 		} else {
-			slog.Warn("daemon: failed to open global taskstore", "error", err)
-		}
-	}
-
-	// Lazy-open the global signal gateway on first Add().
-	if m.globalGateway == nil {
-		if g, err := m.openGateway(); err == nil {
-			m.globalGateway = g
-		} else {
-			slog.Warn("daemon: failed to open global signal gateway", "error", err)
+			// Legacy path: separate factory functions (used by tests).
+			if m.openStore != nil {
+				if s, err := m.openStore(); err == nil {
+					m.globalStore = s
+				} else {
+					slog.Warn("daemon: failed to open global taskstore", "error", err)
+				}
+			}
+			if m.openGateway != nil {
+				if g, err := m.openGateway(); err == nil {
+					m.globalGateway = g
+				} else {
+					slog.Warn("daemon: failed to open global signal gateway", "error", err)
+				}
+			}
 		}
 	}
 
@@ -217,9 +242,10 @@ func (m *RepoManager) Close() {
 	m.closeGlobalLocked()
 }
 
-// closeGlobalLocked closes and nils the global store and gateway.
+// closeGlobalLocked closes and nils the global store, gateway, and shared DB.
 // Caller must hold m.mu.
 func (m *RepoManager) closeGlobalLocked() {
+	// Close store and gateway first (no-ops when backed by shared DB).
 	if m.globalStore != nil {
 		_ = m.globalStore.Close()
 		m.globalStore = nil
@@ -227,6 +253,11 @@ func (m *RepoManager) closeGlobalLocked() {
 	if m.globalGateway != nil {
 		_ = m.globalGateway.Close()
 		m.globalGateway = nil
+	}
+	// Close the shared DB last — this is the actual connection teardown.
+	if m.globalDB != nil {
+		_ = m.globalDB.Close()
+		m.globalDB = nil
 	}
 }
 

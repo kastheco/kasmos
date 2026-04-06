@@ -30,7 +30,8 @@ CREATE INDEX IF NOT EXISTS idx_signals_project_status_created_at
 
 // SQLiteSignalGateway is a SignalGateway backed by a SQLite database.
 type SQLiteSignalGateway struct {
-	db *sql.DB
+	db     *sql.DB
+	ownsDB bool // when true, Close() closes the underlying *sql.DB
 }
 
 // NewSQLiteSignalGateway opens (or creates) a SQLite database at dbPath and
@@ -68,7 +69,19 @@ func NewSQLiteSignalGateway(dbPath string) (*SQLiteSignalGateway, error) {
 		return nil, fmt.Errorf("create signals schema: %w", err)
 	}
 
-	return &SQLiteSignalGateway{db: db}, nil
+	return &SQLiteSignalGateway{db: db, ownsDB: true}, nil
+}
+
+// NewSQLiteSignalGatewayFromDB creates a SQLiteSignalGateway using an existing
+// *sql.DB connection pool. The caller is responsible for setting PRAGMAs (WAL,
+// busy_timeout, foreign_keys) before calling this — only the signals schema is
+// created. Close() on the returned gateway is a no-op; the caller owns the
+// *sql.DB lifecycle.
+func NewSQLiteSignalGatewayFromDB(db *sql.DB) (*SQLiteSignalGateway, error) {
+	if _, err := db.Exec(signalsSchema); err != nil {
+		return nil, fmt.Errorf("create signals schema: %w", err)
+	}
+	return &SQLiteSignalGateway{db: db, ownsDB: false}, nil
 }
 
 // Create inserts a new pending signal for the given project.
@@ -228,8 +241,13 @@ func (g *SQLiteSignalGateway) BackdateClaimedAt(id int64, age time.Duration) err
 	return nil
 }
 
-// Close releases the underlying database connection.
+// Close releases the underlying database connection. When the gateway was
+// created via NewSQLiteSignalGatewayFromDB, Close is a no-op because the
+// caller owns the shared *sql.DB.
 func (g *SQLiteSignalGateway) Close() error {
+	if !g.ownsDB {
+		return nil
+	}
 	return g.db.Close()
 }
 
