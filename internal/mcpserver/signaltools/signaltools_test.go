@@ -234,7 +234,7 @@ func TestSignalCreateHandler_CanonicalizesAcceptedSignalTypes(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = gw.Close() })
 
-			handler := makeSignalCreateHandler("test-project", gw)
+			handler := makeSignalCreateHandler(newRegisterConfig("test-project", nil), gw)
 			result, err := handler(context.Background(), mockReq(map[string]any{"signal_type": tt.signalType, "plan_file": "my-plan", "payload": tt.payload}))
 			require.NoError(t, err)
 			assert.False(t, result.IsError)
@@ -342,7 +342,7 @@ func TestSignalCreateHandler_PayloadContracts(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = gw.Close() })
 
-			handler := makeSignalCreateHandler("test-project", gw)
+			handler := makeSignalCreateHandler(newRegisterConfig("test-project", nil), gw)
 			result, err := handler(context.Background(), mockReq(map[string]any{"signal_type": tt.signalType, "plan_file": "my-plan", "payload": tt.payload}))
 			require.NoError(t, err)
 
@@ -371,6 +371,84 @@ func TestSignalCreateHandler_PayloadContracts(t *testing.T) {
 	}
 }
 
+func TestSignalCreateHandler_MultiRepoRoutesToCorrectProject(t *testing.T) {
+	dirA := filepath.Join(t.TempDir(), "alpha-repo")
+	dirB := filepath.Join(t.TempDir(), "beta-repo")
+	require.NoError(t, os.MkdirAll(filepath.Join(dirA, ".kasmos"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dirB, ".kasmos"), 0o755))
+
+	projectA := filepath.Base(dirA)
+	projectB := filepath.Base(dirB)
+
+	multi, err := taskstore.NewMultiSignalGateway([]taskstore.RepoConfig{{Path: dirA}, {Path: dirB}})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = multi.Close() })
+
+	rc := newRegisterConfig("", []string{projectA, projectB})
+	handler := makeSignalCreateHandler(rc, multi)
+
+	// Signal routed to alpha
+	result, err := handler(context.Background(), mockReq(map[string]any{
+		"signal_type": "elaborator_finished",
+		"plan_file":   "alpha-plan",
+		"project":     projectA,
+	}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+
+	alphaSignals, err := multi.List(projectA, taskstore.SignalPending)
+	require.NoError(t, err)
+	require.Len(t, alphaSignals, 1)
+	assert.Equal(t, "elaborator_finished", alphaSignals[0].SignalType)
+	assert.Equal(t, "alpha-plan", alphaSignals[0].PlanFile)
+
+	// Signal routed to beta
+	result, err = handler(context.Background(), mockReq(map[string]any{
+		"signal_type": "planner_finished",
+		"plan_file":   "beta-plan",
+		"project":     projectB,
+	}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+
+	betaSignals, err := multi.List(projectB, taskstore.SignalPending)
+	require.NoError(t, err)
+	require.Len(t, betaSignals, 1)
+	assert.Equal(t, "planner_finished", betaSignals[0].SignalType)
+	assert.Equal(t, "beta-plan", betaSignals[0].PlanFile)
+
+	// Alpha should still have only its own signal
+	alphaSignals, err = multi.List(projectA, taskstore.SignalPending)
+	require.NoError(t, err)
+	assert.Len(t, alphaSignals, 1)
+}
+
+func TestSignalCreateHandler_MultiRepoRequiresProjectArg(t *testing.T) {
+	dirA := filepath.Join(t.TempDir(), "alpha-repo")
+	dirB := filepath.Join(t.TempDir(), "beta-repo")
+	require.NoError(t, os.MkdirAll(filepath.Join(dirA, ".kasmos"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dirB, ".kasmos"), 0o755))
+
+	projectA := filepath.Base(dirA)
+	projectB := filepath.Base(dirB)
+
+	multi, err := taskstore.NewMultiSignalGateway([]taskstore.RepoConfig{{Path: dirA}, {Path: dirB}})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = multi.Close() })
+
+	rc := newRegisterConfig("", []string{projectA, projectB})
+	handler := makeSignalCreateHandler(rc, multi)
+
+	// Missing project arg in multi-repo mode must error
+	result, err := handler(context.Background(), mockReq(map[string]any{
+		"signal_type": "elaborator_finished",
+		"plan_file":   "some-plan",
+	}))
+	require.NoError(t, err)
+	assert.True(t, result.IsError)
+	assert.Contains(t, textResult(t, result), "project argument is required")
+}
+
 func TestSignalCreateHandler_UsesGlobalSQLiteWhenGatewayNil(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	project := "test-project"
@@ -378,7 +456,7 @@ func TestSignalCreateHandler_UsesGlobalSQLiteWhenGatewayNil(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = gw.Close() })
 
-	handler := makeSignalCreateHandler(project, nil)
+	handler := makeSignalCreateHandler(newRegisterConfig(project, nil), nil)
 	result, err := handler(context.Background(), mockReq(map[string]any{
 		"signal_type": "elaborator-finished",
 		"plan_file":   "my-plan",
