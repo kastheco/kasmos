@@ -99,6 +99,13 @@ func projectFromServePath(path string) (string, bool) {
 
 func newServeMCPServer(store taskstore.Store, gw taskstore.SignalGateway, repoPaths []string) (*mcpserver.Server, error) {
 	if len(repoPaths) == 0 {
+		// When no --repo is passed, try to auto-detect from the daemon's
+		// registered repos. Without this, the MCP server falls back to
+		// filepath.Base(cwd) for the project name, which is wrong when
+		// kas serve runs from $HOME (e.g. via systemd).
+		if repos, err := listDaemonRepoStatuses(); err == nil && len(repos) == 1 {
+			return newConfiguredMCPServer(store, gw, repos[0].Path)
+		}
 		return newConfiguredMCPServer(store, gw, "")
 	}
 	if len(repoPaths) > 1 {
