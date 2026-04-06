@@ -618,6 +618,61 @@ func TestSelectByID(t *testing.T) {
 	assert.Equal(t, "b", n.GetSelectedPlanFile())
 }
 
+func TestSelectNextOrPrevExcludingTask_PrefersNextOutsideTaskGroup(t *testing.T) {
+	n := newTestPanel()
+	plans := []PlanDisplay{{Filename: "b"}, {Filename: "a"}}
+	instances := []*session.Instance{makeInst("b-impl", "b", session.Running)}
+	statuses := map[string]TopicStatus{"b": {HasRunning: true}}
+	n.SetData(plans, instances, nil, nil, statuses)
+
+	require.Len(t, n.rows, 3)
+	assert.Equal(t, "b", n.rows[0].TaskFile)
+	assert.Equal(t, "b", n.rows[1].TaskFile)
+	assert.Equal(t, "a", n.rows[2].TaskFile)
+
+	n.selectedIdx = 0
+	ok := n.SelectNextOrPrevExcludingTask("b")
+	assert.True(t, ok)
+	assert.Equal(t, 2, n.selectedIdx)
+	assert.Equal(t, "a", n.GetSelectedPlanFile())
+}
+
+func TestSelectNextOrPrevExcludingTask_FallsBackToPrevious(t *testing.T) {
+	n := newTestPanel()
+	plans := []PlanDisplay{{Filename: "b"}, {Filename: "a"}}
+	n.SetData(plans, nil, nil, nil, nil)
+
+	n.selectedIdx = 1
+	ok := n.SelectNextOrPrevExcludingTask("a")
+	assert.True(t, ok)
+	assert.Equal(t, 0, n.selectedIdx)
+	assert.Equal(t, "b", n.GetSelectedPlanFile())
+}
+
+func TestNavigation_PageDownAndPageUp(t *testing.T) {
+	n := newTestPanel()
+	n.SetSize(80, 16)
+	plans := []PlanDisplay{
+		{Filename: "g"},
+		{Filename: "f"},
+		{Filename: "e"},
+		{Filename: "d"},
+		{Filename: "c"},
+		{Filename: "b"},
+		{Filename: "a"},
+	}
+	n.SetData(plans, nil, nil, nil, nil)
+
+	assert.Equal(t, 0, n.selectedIdx)
+	n.PageDown()
+	assert.Greater(t, n.selectedIdx, 0)
+
+	afterPageDown := n.selectedIdx
+	n.PageUp()
+	assert.Less(t, n.selectedIdx, afterPageDown)
+	assert.Equal(t, 0, n.selectedIdx)
+}
+
 func TestSelectInstance(t *testing.T) {
 	n := newTestPanel()
 	inst1 := makeInst("s1", "", session.Running)

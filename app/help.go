@@ -72,6 +72,7 @@ func (h helpTypeGeneral) toContent() string {
 		keyStyle.Render("!")+descStyle.Render("             - interactive + shell mode"),
 		keyStyle.Render("I")+descStyle.Render("             - toggle info header"),
 		keyStyle.Render("↑↓")+descStyle.Render("            - navigate within focused pane"),
+		keyStyle.Render("pgup/pgdown")+descStyle.Render("   - page through the sidebar"),
 		keyStyle.Render("←→")+descStyle.Render("            - move between panes"),
 		keyStyle.Render("ctrl+s")+descStyle.Render("        - toggle sidebar visibility"),
 		keyStyle.Render("L")+descStyle.Render("             - toggle audit log pane"),

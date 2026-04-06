@@ -1487,6 +1487,12 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		case msg.String() == "down":
 			m.nav.Down()
 			return m, m.instanceChanged()
+		case msg.Code == tea.KeyPgUp:
+			m.nav.PageUp()
+			return m, m.instanceChanged()
+		case msg.Code == tea.KeyPgDown:
+			m.nav.PageDown()
+			return m, m.instanceChanged()
 		case msg.Code == tea.KeyBackspace:
 			q := m.nav.GetSearchQuery()
 			if len(q) > 0 {
@@ -1553,6 +1559,19 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		} else {
 			m.nav.CycleNextActive()
 		}
+		return m, m.instanceChanged()
+	}
+
+	if msg.Code == tea.KeyPgUp || msg.Code == tea.KeyPgDown {
+		if msg.Code == tea.KeyPgUp {
+			m.nav.PageUp()
+		} else {
+			m.nav.PageDown()
+		}
+		if m.focusSlot != slotNav {
+			m.setFocusSlot(slotNav)
+		}
+		m.tabbedWindow.ClearDocumentMode()
 		return m, m.instanceChanged()
 	}
 

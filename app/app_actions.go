@@ -463,6 +463,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		}
 		planName := taskstate.DisplayName(planFile)
 		cancelAction := func() tea.Msg {
+			m.nav.SelectNextOrPrevExcludingTask(planFile)
 			if err := m.fsm.Transition(planFile, taskfsm.Cancel); err != nil {
 				return err
 			}

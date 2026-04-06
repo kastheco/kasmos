@@ -38,16 +38,18 @@ func newCancelDelayHome(t *testing.T, store taskstore.Store, ps *taskstate.TaskS
 	storage, err := session.NewStorage(config.DefaultState())
 	require.NoError(t, err)
 	return &home{
-		taskState:      ps,
-		taskStateDir:   plansDir,
-		fsm:            taskfsm.New(store, "test", plansDir),
-		nav:            ui.NewNavigationPanel(&sp),
-		menu:           ui.NewMenu(),
-		tabbedWindow:   ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
-		toastManager:   overlay.NewToastManager(&sp),
-		overlays:       overlay.NewManager(),
-		storage:        storage,
-		activeRepoPath: repoDir,
+		taskState:        ps,
+		taskStore:        store,
+		taskStoreProject: "test",
+		taskStateDir:     plansDir,
+		fsm:              taskfsm.New(store, "test", plansDir),
+		nav:              ui.NewNavigationPanel(&sp),
+		menu:             ui.NewMenu(),
+		tabbedWindow:     ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:     overlay.NewToastManager(&sp),
+		overlays:         overlay.NewManager(),
+		storage:          storage,
+		activeRepoPath:   repoDir,
 	}
 }
 
@@ -77,6 +79,36 @@ func TestCancelPlan_ConfirmActionReturnsPlanRefreshMsg(t *testing.T) {
 	_, ok := msg.(taskRefreshMsg)
 	assert.True(t, ok,
 		"cancel_plan confirm action must return taskRefreshMsg so Update() fires immediately; got %T (nil means no re-render until next tick)", msg)
+}
+
+func TestCancelPlan_SelectionMovesToNextPlanBeforeCancellation(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	store, ps, _ := newSharedStoreForTest(t, plansDir)
+
+	planA := "alpha.md"
+	planB := "beta.md"
+	require.NoError(t, ps.Register(planA, "alpha", "plan/alpha", time.Now()))
+	require.NoError(t, ps.Register(planB, "beta", "plan/beta", time.Now()))
+
+	h := newCancelDelayHome(t, store, ps, plansDir, dir)
+	h.updateSidebarTasks()
+	require.True(t, h.nav.SelectByID(ui.SidebarPlanPrefix+planB), "beta must be selectable")
+
+	_, _ = h.executeContextAction("cancel_plan")
+	require.NotNil(t, h.pendingConfirmAction, "cancel_plan must set pendingConfirmAction")
+
+	msg := h.pendingConfirmAction()
+	assert.Equal(t, ui.SidebarPlanPrefix+planA, h.nav.GetSelectedID(),
+		"selection should move to the next surviving task before the cancelled task is rebuilt at the bottom")
+
+	updatedModel, _ := h.Update(msg)
+	updated := updatedModel.(*home)
+	assert.Equal(t, ui.SidebarPlanPrefix+planA, updated.nav.GetSelectedID(),
+		"selection should stay on the adjacent active task after the refresh")
+	assert.Equal(t, taskstate.StatusCancelled, updated.taskState.Plans[planB].Status)
 }
 
 // TestRenamePlan_SelectionFollowsRenamedPlan verifies that after the rename

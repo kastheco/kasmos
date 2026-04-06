@@ -860,6 +860,53 @@ func (n *NavigationPanel) Down() {
 	n.selectedIdx = orig
 }
 
+// PageUp moves the selection up by one visible page.
+func (n *NavigationPanel) PageUp() {
+	for i := 0; i < n.availRows(); i++ {
+		prev := n.selectedIdx
+		n.Up()
+		if n.selectedIdx == prev {
+			return
+		}
+	}
+}
+
+// PageDown moves the selection down by one visible page.
+func (n *NavigationPanel) PageDown() {
+	for i := 0; i < n.availRows(); i++ {
+		prev := n.selectedIdx
+		n.Down()
+		if n.selectedIdx == prev {
+			return
+		}
+	}
+}
+
+// SelectNextOrPrevExcludingTask selects the next visible row that does not
+// belong to taskFile, or the previous one if no later row exists.
+func (n *NavigationPanel) SelectNextOrPrevExcludingTask(taskFile string) bool {
+	if taskFile == "" || n.selectedIdx < 0 || n.selectedIdx >= len(n.rows) {
+		return false
+	}
+	for _, dir := range []int{1, -1} {
+		for i := n.selectedIdx + dir; i >= 0 && i < len(n.rows); i += dir {
+			if n.rows[i].Kind == navRowSoloHeader {
+				continue
+			}
+			if !n.rowMatchesSearch(i) {
+				continue
+			}
+			if n.rows[i].TaskFile == taskFile {
+				continue
+			}
+			n.selectedIdx = i
+			n.clampScroll()
+			return true
+		}
+	}
+	return false
+}
+
 // Left collapses an expanded plan header, or jumps to the parent header when on an instance.
 func (n *NavigationPanel) Left() {
 	if n.selectedIdx < 0 || n.selectedIdx >= len(n.rows) {
