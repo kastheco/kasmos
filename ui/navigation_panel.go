@@ -60,7 +60,6 @@ const (
 	navRowDeadPlan
 	navRowHistoryToggle
 	navRowHistoryPlan
-	navRowCancelled
 )
 
 // navRow holds the data for a single rendered row in the navigation panel.
@@ -503,7 +502,10 @@ func (n *NavigationPanel) rebuildRows() {
 	emitPlanGroup(idlePlans, 0, emitted)
 
 	// History section (collapsed toggle, expands to list).
-	if len(n.historyPlans) > 0 {
+	historyPlans := make([]PlanDisplay, 0, len(n.historyPlans)+len(n.cancelled))
+	historyPlans = append(historyPlans, n.historyPlans...)
+	historyPlans = append(historyPlans, n.cancelled...)
+	if len(historyPlans) > 0 {
 		rows = append(rows, navRow{
 			Kind:      navRowHistoryToggle,
 			ID:        SidebarPlanHistoryToggle,
@@ -511,25 +513,16 @@ func (n *NavigationPanel) rebuildRows() {
 			Collapsed: !n.historyExpanded,
 		})
 		if n.historyExpanded {
-			for _, p := range n.historyPlans {
+			for _, p := range historyPlans {
 				rows = append(rows, navRow{
-					Kind:     navRowHistoryPlan,
-					ID:       SidebarPlanPrefix + p.Filename,
-					Label:    taskstate.DisplayName(p.Filename),
-					TaskFile: p.Filename,
+					Kind:       navRowHistoryPlan,
+					ID:         SidebarPlanPrefix + p.Filename,
+					Label:      taskstate.DisplayName(p.Filename),
+					TaskFile:   p.Filename,
+					PlanStatus: p.Status,
 				})
 			}
 		}
-	}
-
-	// Cancelled plans (always shown, no toggle).
-	for _, p := range n.cancelled {
-		rows = append(rows, navRow{
-			Kind:     navRowCancelled,
-			ID:       SidebarPlanPrefix + p.Filename,
-			Label:    taskstate.DisplayName(p.Filename),
-			TaskFile: p.Filename,
-		})
 	}
 
 	n.rows = rows
@@ -978,7 +971,7 @@ func (n *NavigationPanel) IsSelectedPlanHeader() bool {
 		return false
 	}
 	k := n.rows[n.selectedIdx].Kind
-	return k == navRowPlanHeader || k == navRowHistoryPlan || k == navRowCancelled
+	return k == navRowPlanHeader || k == navRowHistoryPlan
 }
 
 func (n *NavigationPanel) IsSelectedHistoryPlan() bool {
@@ -1446,38 +1439,26 @@ func (n *NavigationPanel) renderNavRow(row navRow, contentWidth int) string {
 
 	case navRowHistoryPlan:
 		label := row.Label
-		doneIcon := navCompletedIconStyle.Render("●")
-		doneW := lipgloss.Width(doneIcon)
-		maxLabel := contentWidth - 1 - doneW
+		icon := navCompletedIconStyle.Render("●")
+		labelStyle := navIdleIconStyle
+		if row.PlanStatus == "cancelled" {
+			icon = navCancelledLblStyle.Render("✕")
+			labelStyle = navCancelledLblStyle
+		}
+		iconW := lipgloss.Width(icon)
+		maxLabel := contentWidth - 1 - iconW
 		if maxLabel < 3 {
 			maxLabel = 3
 		}
 		if runewidth.StringWidth(label) > maxLabel {
 			label = runewidth.Truncate(label, maxLabel-1, "…")
 		}
-		usedW := runewidth.StringWidth(label) + 1 + doneW
+		usedW := runewidth.StringWidth(label) + 1 + iconW
 		gap := contentWidth - usedW
 		if gap < 0 {
 			gap = 0
 		}
-		return navIdleIconStyle.Render(label) + strings.Repeat(" ", gap) + " " + doneIcon
-
-	case navRowCancelled:
-		label := row.Label
-		const trailW = 2
-		maxLabel := contentWidth - trailW
-		if maxLabel < 3 {
-			maxLabel = 3
-		}
-		if runewidth.StringWidth(label) > maxLabel {
-			label = runewidth.Truncate(label, maxLabel-1, "…")
-		}
-		usedW := runewidth.StringWidth(label) + trailW
-		gap := contentWidth - usedW
-		if gap < 0 {
-			gap = 0
-		}
-		return navCancelledLblStyle.Render(label) + strings.Repeat(" ", gap) + " " + navCancelledLblStyle.Render("✕")
+		return labelStyle.Render(label) + strings.Repeat(" ", gap) + " " + icon
 
 	case navRowImportAction:
 		labelW := runewidth.StringWidth(row.Label)
