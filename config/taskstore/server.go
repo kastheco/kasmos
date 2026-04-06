@@ -49,6 +49,9 @@ func NewHandler(store Store) http.Handler {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		if plans == nil {
+			plans = make([]TaskEntry, 0)
+		}
 		writeJSON(w, http.StatusOK, plans)
 	})
 
