@@ -183,6 +183,126 @@
   gap: 24px;
 }
 
+/* ====== LIFECYCLE PIPELINE ====== */
+.lifecyclePipeline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0;
+  margin-bottom: 64px;
+}
+
+.lifecycleStepGroup {
+  display: flex;
+  align-items: center;
+}
+
+.lifecycleStep {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 24px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  min-width: 120px;
+}
+
+.lifecycleAmber {
+  background: rgba(240, 168, 104, 0.08);
+  border-color: rgba(240, 168, 104, 0.25);
+}
+
+.lifecycleTeal {
+  background: rgba(126, 200, 216, 0.08);
+  border-color: rgba(126, 200, 216, 0.25);
+}
+
+.lifecycleStepNum {
+  font-size: 11px;
+  font-family: var(--font-geist-mono);
+  color: var(--foreground-tertiary);
+  line-height: 1;
+}
+
+.lifecycleStepLabel {
+  font-size: 14px;
+  font-family: var(--font-geist-mono);
+  font-weight: 600;
+  color: var(--foreground);
+  text-transform: lowercase;
+  letter-spacing: 0.5px;
+}
+
+.lifecycleArrow {
+  font-size: 20px;
+  color: var(--foreground-tertiary);
+  padding: 0 12px;
+  line-height: 1;
+}
+
+/* ====== AGENTS GRID ====== */
+.agentsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.agentCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  backdrop-filter: blur(8px);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.agentCard:hover {
+  transform: translateY(-3px);
+}
+
+.agentAmber {
+  background: rgba(240, 168, 104, 0.06);
+  border-color: rgba(240, 168, 104, 0.2);
+}
+
+.agentAmber:hover {
+  box-shadow: 0 8px 30px rgba(240, 168, 104, 0.12);
+}
+
+.agentTeal {
+  background: rgba(126, 200, 216, 0.06);
+  border-color: rgba(126, 200, 216, 0.2);
+}
+
+.agentTeal:hover {
+  box-shadow: 0 8px 30px rgba(126, 200, 216, 0.12);
+}
+
+.agentIcon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.agentRole {
+  font-size: 15px;
+  font-weight: 700;
+  font-family: var(--font-geist-mono);
+  color: var(--foreground);
+  text-transform: lowercase;
+  letter-spacing: 0.5px;
+}
+
+.agentDesc {
+  font-size: 13px;
+  color: var(--foreground-secondary);
+  line-height: 1.55;
+  margin: 0;
+}
+
 /* ====== INSTALL SECTION ====== */
 .installSection {
   display: flex;
@@ -233,6 +353,25 @@
     gap: 16px;
   }
 
+  .agentsGrid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .lifecycleStep {
+    min-width: 90px;
+    padding: 12px 16px;
+  }
+
+  .lifecycleStepLabel {
+    font-size: 12px;
+  }
+
+  .lifecycleArrow {
+    padding: 0 6px;
+    font-size: 16px;
+  }
+
   .hero {
     padding: 100px 16px 60px;
   }
@@ -256,6 +395,10 @@
 
 @media (min-width: 769px) and (max-width: 1024px) {
   .featuresGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .agentsGrid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
