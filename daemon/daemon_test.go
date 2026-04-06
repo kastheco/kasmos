@@ -512,6 +512,7 @@ Do the first thing.
 	require.NoError(t, err)
 	require.NoError(t, inst.StartOnMainBranch())
 	require.Eventually(t, func() bool { return !inst.TmuxAlive() }, time.Second, 10*time.Millisecond)
+	inst.HasWorked = true
 
 	reviewerSpawned := 0
 	killedWaveAgents := 0

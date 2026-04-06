@@ -167,31 +167,37 @@ func TestShouldProcessWaveTaskCompletion(t *testing.T) {
 	}{
 		{
 			name:      "prompt-returned task completes",
-			inst:      session.Instance{TaskFile: "feature.md", TaskNumber: 3, WaveNumber: 2, PromptDetected: true},
+			inst:      session.Instance{TaskFile: "feature.md", TaskNumber: 3, WaveNumber: 2, HasWorked: true, PromptDetected: true},
 			tmuxAlive: true,
 			want:      true,
 		},
 		{
 			name:      "exited tmux task completes",
-			inst:      session.Instance{TaskFile: "feature.md", TaskNumber: 3, WaveNumber: 2},
+			inst:      session.Instance{TaskFile: "feature.md", TaskNumber: 3, WaveNumber: 2, HasWorked: true},
 			tmuxAlive: false,
 			want:      true,
 		},
 		{
 			name:      "awaiting work does not complete",
-			inst:      session.Instance{TaskFile: "feature.md", TaskNumber: 3, WaveNumber: 2, PromptDetected: true, AwaitingWork: true},
+			inst:      session.Instance{TaskFile: "feature.md", TaskNumber: 3, WaveNumber: 2, HasWorked: true, PromptDetected: true, AwaitingWork: true},
+			tmuxAlive: true,
+			want:      false,
+		},
+		{
+			name:      "no work does not complete",
+			inst:      session.Instance{TaskFile: "feature.md", TaskNumber: 3, WaveNumber: 2, PromptDetected: true},
 			tmuxAlive: true,
 			want:      false,
 		},
 		{
 			name:      "already completed does not repeat",
-			inst:      session.Instance{TaskFile: "feature.md", TaskNumber: 3, WaveNumber: 2, PromptDetected: true, ImplementationComplete: true},
+			inst:      session.Instance{TaskFile: "feature.md", TaskNumber: 3, WaveNumber: 2, HasWorked: true, PromptDetected: true, ImplementationComplete: true},
 			tmuxAlive: true,
 			want:      false,
 		},
 		{
 			name:      "active wave fallback from entry",
-			inst:      session.Instance{TaskFile: "feature.md", TaskNumber: 3, PromptDetected: true},
+			inst:      session.Instance{TaskFile: "feature.md", TaskNumber: 3, HasWorked: true, PromptDetected: true},
 			tmuxAlive: true,
 			want:      true,
 		},

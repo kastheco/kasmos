@@ -874,7 +874,7 @@ func shouldProcessWaveTaskCompletion(entry taskstore.TaskEntry, inst *session.In
 	if taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase) != taskfsm.ExecutionPhaseWaveRunning {
 		return taskfsm.TaskSignal{}, false
 	}
-	if inst.ImplementationComplete {
+	if inst.ImplementationComplete || !inst.HasWorked {
 		return taskfsm.TaskSignal{}, false
 	}
 
@@ -957,6 +957,9 @@ func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
 				inst.TapEnter()
 			} else if md.Updated {
 				inst.SetStatus(session.Running)
+				if inst.TaskNumber > 0 && !inst.HasWorked && inst.QueuedPrompt == "" {
+					inst.HasWorked = true
+				}
 			} else {
 				inst.SetStatus(session.Ready)
 			}
