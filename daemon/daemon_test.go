@@ -459,6 +459,114 @@ func TestDaemon_MonitorRunningInstances_EmitsStuckDetectedOncePerExit(t *testing
 	}
 }
 
+func TestDaemon_MonitorRunningInstances_CompletesExitedWaveTask(t *testing.T) {
+	repo := t.TempDir()
+	project := filepath.Base(repo)
+	planFile := "feature.md"
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+		Branch:   "plan/feature",
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseArchitecting),
+			ActiveAgentType: session.AgentTypeCoder,
+		},
+	}))
+	require.NoError(t, store.SetContent(project, planFile, `# Feature Plan
+
+**Goal:** test wave completion
+
+**Architecture:** test
+
+**Tech Stack:** go
+
+---
+
+## Wave 1
+
+### Task 1: First Thing
+
+Do the first thing.
+`))
+
+	proc := loop.NewProcessor(loop.ProcessorConfig{Store: store, Project: project, AutoAdvance: true})
+	actions := proc.ProcessWaveSignals([]taskfsm.WaveSignal{{TaskFile: planFile, WaveNumber: 1}})
+	require.Len(t, actions, 1)
+	require.NoError(t, setRepoExecutionState(RepoEntry{Project: project, Store: store}, planFile, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+		ActiveAgentType: session.AgentTypeCoder,
+		ActiveWave:      1,
+	}))
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "feature-W1-T1",
+		Path:          repo,
+		Program:       "true",
+		ExecutionMode: session.ExecutionModeHeadless,
+		TaskFile:      planFile,
+		AgentType:     session.AgentTypeCoder,
+		WaveNumber:    1,
+		TaskNumber:    1,
+	})
+	require.NoError(t, err)
+	require.NoError(t, inst.StartOnMainBranch())
+	require.Eventually(t, func() bool { return !inst.TmuxAlive() }, time.Second, 10*time.Millisecond)
+
+	reviewerSpawned := 0
+	killedWaveAgents := 0
+	d := &Daemon{
+		cfg:         &DaemonConfig{AutoAdvanceWaves: true},
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		spawnReviewer: func(context.Context, loop.SpawnOpts) error {
+			reviewerSpawned++
+			return nil
+		},
+		killWaveAgents: func(repoPath, pf string, wave int) error {
+			killedWaveAgents++
+			assert.Equal(t, repo, repoPath)
+			assert.Equal(t, planFile, pf)
+			assert.Equal(t, 1, wave)
+			return nil
+		},
+	}
+	e := RepoEntry{Path: repo, Project: project, Store: store, Processor: proc}
+
+	key := instanceKeyForTask(repo, planFile, session.AgentTypeCoder, 1, 1)
+	d.spawner.mu.Lock()
+	d.spawner.instances[key] = inst
+	d.spawner.planFileByKey[key] = planFile
+	d.spawner.agentTypeByKey[key] = session.AgentTypeCoder
+	d.spawner.projectByKey[key] = project
+	d.spawner.mu.Unlock()
+
+	sub := d.broadcaster.Subscribe()
+	t.Cleanup(func() { d.broadcaster.Unsubscribe(sub) })
+
+	d.monitorRunningInstances(context.Background(), e)
+
+	entry, err := store.Get(project, planFile)
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusReviewing, entry.Status)
+	assert.Equal(t, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseReviewing), ActiveAgentType: session.AgentTypeReviewer}, entry.ExecutionState)
+	assert.True(t, inst.ImplementationComplete)
+	assert.True(t, inst.Exited)
+	assert.Equal(t, 1, reviewerSpawned)
+	assert.Equal(t, 1, killedWaveAgents)
+	assert.Nil(t, proc.WaveOrchestrator(planFile))
+
+	for {
+		select {
+		case ev := <-sub:
+			assert.NotEqual(t, api.EventKindStuckDetected, ev.Kind)
+		default:
+			return
+		}
+	}
+}
+
 func TestDaemon_AutoAdvancePlannerFinished_StartsBlueprintSkipImplementation(t *testing.T) {
 	project := "proj"
 	planFile := "feature.md"

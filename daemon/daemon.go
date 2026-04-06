@@ -863,6 +863,82 @@ func (d *Daemon) autoAdvanceCompletedImplementer(e RepoEntry, inst *session.Inst
 	return true, nil
 }
 
+func shouldProcessWaveTaskCompletion(entry taskstore.TaskEntry, inst *session.Instance, tmuxAlive bool) (taskfsm.TaskSignal, bool) {
+	if inst == nil || inst.TaskFile == "" || inst.TaskNumber < 1 {
+		return taskfsm.TaskSignal{}, false
+	}
+	if strings.TrimSpace(string(entry.Status)) != string(taskfsm.StatusImplementing) {
+		return taskfsm.TaskSignal{}, false
+	}
+	if taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase) != taskfsm.ExecutionPhaseWaveRunning {
+		return taskfsm.TaskSignal{}, false
+	}
+	if inst.ImplementationComplete {
+		return taskfsm.TaskSignal{}, false
+	}
+
+	waveNumber := inst.WaveNumber
+	if waveNumber == 0 {
+		waveNumber = entry.ExecutionState.ActiveWave
+	}
+	if waveNumber < 1 {
+		return taskfsm.TaskSignal{}, false
+	}
+	if entry.ExecutionState.ActiveWave > 0 && waveNumber != entry.ExecutionState.ActiveWave {
+		return taskfsm.TaskSignal{}, false
+	}
+
+	finished := false
+	if inst.PromptDetected && !inst.AwaitingWork {
+		finished = true
+	}
+	if !tmuxAlive {
+		finished = true
+	}
+	if !finished {
+		return taskfsm.TaskSignal{}, false
+	}
+
+	return taskfsm.TaskSignal{TaskFile: inst.TaskFile, WaveNumber: waveNumber, TaskNumber: inst.TaskNumber}, true
+}
+
+func (d *Daemon) processCompletedWaveTask(ctx context.Context, e RepoEntry, inst *session.Instance, tmuxAlive bool) (bool, error) {
+	if e.Store == nil || e.Processor == nil || inst == nil || inst.TaskFile == "" {
+		return false, nil
+	}
+
+	entry, err := e.Store.Get(e.Project, inst.TaskFile)
+	if err != nil {
+		return false, fmt.Errorf("load task entry for %s: %w", inst.TaskFile, err)
+	}
+
+	ts, ok := shouldProcessWaveTaskCompletion(entry, inst, tmuxAlive)
+	if !ok {
+		return false, nil
+	}
+
+	actions := e.Processor.ProcessTaskSignals([]taskfsm.TaskSignal{ts})
+	if len(actions) == 0 {
+		return false, nil
+	}
+
+	for _, action := range actions {
+		if err := d.executeAction(ctx, e, action); err != nil {
+			return false, err
+		}
+	}
+
+	inst.ImplementationComplete = true
+	if !tmuxAlive {
+		inst.Exited = true
+		if inst.Status == session.Running {
+			inst.SetStatus(session.Ready)
+		}
+	}
+
+	return true, nil
+}
+
 func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
 	for _, inst := range d.spawner.InstancesForRepo(e.Path) {
 		if inst == nil || inst.Paused() || !inst.Started() {
@@ -883,6 +959,15 @@ func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
 			} else {
 				inst.SetStatus(session.Ready)
 			}
+		}
+
+		completedWaveTask, err := d.processCompletedWaveTask(ctx, e, inst, md.TmuxAlive)
+		if err != nil {
+			d.logger.Warn("wave task completion handling failed", "repo", e.Path, "plan", inst.TaskFile, "instance", inst.Title, "err", err)
+			continue
+		}
+		if completedWaveTask {
+			continue
 		}
 
 		advanced, err := d.autoAdvanceCompletedImplementer(e, inst, md.TmuxAlive)

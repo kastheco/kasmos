@@ -146,6 +146,70 @@ func TestDaemon_AutoAdvanceCompletedImplementer_Characterization(t *testing.T) {
 	}
 }
 
+func TestShouldProcessWaveTaskCompletion(t *testing.T) {
+	t.Parallel()
+
+	entry := taskstore.TaskEntry{
+		Filename: "feature.md",
+		Status:   taskstore.StatusImplementing,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+			ActiveAgentType: session.AgentTypeCoder,
+			ActiveWave:      2,
+		},
+	}
+
+	tests := []struct {
+		name      string
+		inst      session.Instance
+		tmuxAlive bool
+		want      bool
+	}{
+		{
+			name:      "prompt-returned task completes",
+			inst:      session.Instance{TaskFile: "feature.md", TaskNumber: 3, WaveNumber: 2, PromptDetected: true},
+			tmuxAlive: true,
+			want:      true,
+		},
+		{
+			name:      "exited tmux task completes",
+			inst:      session.Instance{TaskFile: "feature.md", TaskNumber: 3, WaveNumber: 2},
+			tmuxAlive: false,
+			want:      true,
+		},
+		{
+			name:      "awaiting work does not complete",
+			inst:      session.Instance{TaskFile: "feature.md", TaskNumber: 3, WaveNumber: 2, PromptDetected: true, AwaitingWork: true},
+			tmuxAlive: true,
+			want:      false,
+		},
+		{
+			name:      "already completed does not repeat",
+			inst:      session.Instance{TaskFile: "feature.md", TaskNumber: 3, WaveNumber: 2, PromptDetected: true, ImplementationComplete: true},
+			tmuxAlive: true,
+			want:      false,
+		},
+		{
+			name:      "active wave fallback from entry",
+			inst:      session.Instance{TaskFile: "feature.md", TaskNumber: 3, PromptDetected: true},
+			tmuxAlive: true,
+			want:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ts, ok := shouldProcessWaveTaskCompletion(entry, &tt.inst, tt.tmuxAlive)
+			assert.Equal(t, tt.want, ok)
+			if tt.want {
+				assert.Equal(t, "feature.md", ts.TaskFile)
+				assert.Equal(t, 2, ts.WaveNumber)
+				assert.Equal(t, 3, ts.TaskNumber)
+			}
+		})
+	}
+}
+
 func TestDaemon_RecoverSessions_DuplicateSuppressionForCurrentLifecycleAgent(t *testing.T) {
 	t.Parallel()
 
