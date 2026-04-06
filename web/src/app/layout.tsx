@@ -21,9 +21,9 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "kasmos - Agent-Driven IDE for AI Pair Programming",
+  title: "kasmos - agent-driven IDE for AI pair programming",
   description:
-    "A TUI-based agent-driven IDE that manages multiple AI agents (Claude Code, Codex, Aider, Gemini) in isolated workspaces, so you can work on multiple tasks simultaneously.",
+    "a TUI-based agent-driven IDE that manages multiple AI agents (Claude Code, Codex, Aider, Gemini) in isolated workspaces, so you can work on multiple tasks simultaneously.",
   keywords: [
     "kasmos", "tui", "ai", "ide", "agent", "terminal", "tmux",
     "claude code", "codex", "aider", "pair programming",
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "kasmos",
     description:
-      "A TUI-based agent-driven IDE for managing multiple AI agents in isolated workspaces",
+      "a TUI-based agent-driven IDE for managing multiple AI agents in isolated workspaces",
     url: "https://github.com/kastheco/kasmos",
     type: "website",
   },
@@ -40,7 +40,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "kasmos",
     description:
-      "A TUI-based agent-driven IDE for managing multiple AI agents in isolated workspaces",
+      "a TUI-based agent-driven IDE for managing multiple AI agents in isolated workspaces",
   },
 };
 

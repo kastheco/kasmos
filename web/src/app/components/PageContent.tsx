@@ -13,47 +13,47 @@ import PixelBee from "./PixelBee";
 const features = [
   {
     icon: "\u{1F916}",
-    title: "Multi-Agent Orchestration",
+    title: "multi-agent orchestration",
     description:
-      "Run claude, codex, gemini, amp, and other AI agents concurrently. Each gets an isolated git worktree and tmux session.",
+      "run claude, codex, gemini, amp, and other AI agents concurrently. each gets an isolated git worktree and tmux session.",
   },
   {
     icon: "\u{1F30A}",
-    title: "Wave-Based Lifecycle",
+    title: "wave-based lifecycle",
     description:
-      "Plans decompose into waves of parallel tasks. An architect pass structures each wave before coders implement. Reviewers verify the work, and fixers apply requested changes — looping back to review until the task is clean.",
+      "plans decompose into waves of parallel tasks. an architect pass structures each wave before coders implement. reviewers verify the work, and fixers apply requested changes — looping back to review until the task is clean.",
   },
   {
     icon: "\u{1F527}",
-    title: "MCP Server Architecture",
+    title: "MCP server architecture",
     description:
-      "kasmos exposes an MCP server for task CRUD, signals, instance management, and codebase tools. Agents interact through MCP, not filesystem hacks.",
+      "kasmos exposes an MCP server for task CRUD, signals, instance management, and codebase tools. agents interact through MCP, not filesystem hacks.",
   },
   {
     icon: "\u{1F5C2}",
-    title: "Multi-Repo Support",
+    title: "multi-repo support",
     description:
-      "Manage tasks across multiple repositories from a single daemon. Each repo gets its own config and task store.",
+      "manage tasks across multiple repositories from a single daemon. each repo gets its own config and task store.",
   },
   {
     icon: "\u{1F4BE}",
-    title: "Session Persistence",
+    title: "session persistence",
     description:
-      "Sessions survive restarts. Pick up where you left off, even after rebooting your machine.",
+      "sessions survive restarts. pick up where you left off, even after rebooting your machine.",
   },
   {
     icon: "\u{1F680}",
-    title: "Auto-commit & PR",
+    title: "auto-commit & PR",
     description:
-      "Automatically commit agent work and create pull requests. Ship faster with less manual overhead.",
+      "automatically commit agent work and create pull requests. ship faster with less manual overhead.",
   },
 ];
 
 const typewriterTexts = [
-  "Run agents in parallel across isolated worktrees",
-  "Wave-based execution with lifecycle signals",
+  "run agents in parallel across isolated worktrees",
+  "wave-based execution with lifecycle signals",
   "MCP-powered orchestration built-in",
-  "Concurrent agents, zero conflicts",
+  "concurrent agents, zero conflicts",
 ];
 
 export default function PageContent() {
@@ -81,7 +81,7 @@ export default function PageContent() {
           </div>
           <div className={styles.heroCtas}>
             <a href="#install" className={styles.ctaPrimary}>
-              Install Now
+              install now
             </a>
             <a
               href="https://github.com/kastheco/kasmos"
@@ -89,13 +89,13 @@ export default function PageContent() {
               rel="noopener noreferrer"
               className={styles.ctaSecondary}
             >
-              View on GitHub
+              view on github
             </a>
             <a
               href="/docs"
               className={styles.ctaSecondary}
             >
-              Read the Docs
+              read the docs
             </a>
           </div>
         </section>
@@ -103,9 +103,9 @@ export default function PageContent() {
         {/* Features */}
         <section className={styles.section}>
           <ScrollReveal>
-            <h2 className={styles.sectionTitle}>Why kasmos?</h2>
+            <h2 className={styles.sectionTitle}>why kasmos?</h2>
             <p className={styles.sectionSubtitle}>
-              Wave-based execution, isolated worktrees, and MCP-native tooling — everything you need to run concurrent AI agents at scale.
+              wave-based execution, isolated worktrees, and MCP-native tooling — everything you need to run concurrent AI agents at scale.
             </p>
           </ScrollReveal>
           <div className={styles.featuresGrid}>
@@ -120,7 +120,7 @@ export default function PageContent() {
         {/* How it Works */}
         <section className={styles.section}>
           <ScrollReveal>
-            <h2 className={styles.sectionTitle}>How it Works</h2>
+            <h2 className={styles.sectionTitle}>how it works</h2>
             <p className={styles.sectionSubtitle}>
               kasmos decomposes your feature spec into waves of parallel tasks,
               each executed by a specialized agent in its own isolated worktree.
@@ -165,31 +165,31 @@ export default function PageContent() {
                 {
                   role: "planner",
                   icon: "📋",
-                  desc: "Writes the feature spec and breaks it into high-level tasks.",
+                  desc: "writes the feature spec and breaks it into high-level tasks.",
                   color: "amber",
                 },
                 {
                   role: "architect",
                   icon: "🏗️",
-                  desc: "Decomposes the plan into implementation waves with inter-task dependencies.",
+                  desc: "decomposes the plan into implementation waves with inter-task dependencies.",
                   color: "teal",
                 },
                 {
                   role: "coder",
                   icon: "⚡",
-                  desc: "Implements the task in an isolated git worktree, following TDD.",
+                  desc: "implements the task in an isolated git worktree, following TDD.",
                   color: "teal",
                 },
                 {
                   role: "reviewer",
                   icon: "🔍",
-                  desc: "Checks correctness, spec compliance, and code quality per task.",
+                  desc: "checks correctness, spec compliance, and code quality per task.",
                   color: "amber",
                 },
                 {
                   role: "fixer",
                   icon: "🔧",
-                  desc: "Applies reviewer feedback, debugs issues, and prepares the work for re-review.",
+                  desc: "applies reviewer feedback, debugs issues, and prepares the work for re-review.",
                   color: "amber",
                 },
                 /* temporarily hidden — master role not currently active in the default pipeline */
@@ -217,13 +217,13 @@ export default function PageContent() {
         {/* Installation */}
         <section id="install" className={styles.section}>
           <ScrollReveal className={styles.installSection}>
-            <h2 className={styles.sectionTitle}>Get Started</h2>
+            <h2 className={styles.sectionTitle}>get started</h2>
             <p className={styles.sectionSubtitle}>
-              Install kasmos in seconds. Works on macOS, Linux, and Windows.
+              install kasmos in seconds. works on macOS, Linux, and Windows.
             </p>
             <InstallTabs />
             <p className={styles.installPrereqs}>
-              Prerequisites: tmux, gh (GitHub CLI)
+              prerequisites: tmux, gh (GitHub CLI)
             </p>
           </ScrollReveal>
         </section>
@@ -240,13 +240,13 @@ export default function PageContent() {
             >
               kastheco
             </a>
-            . Licensed under{" "}
+            . licensed under{" "}
             <a
               href="https://github.com/kastheco/kasmos/blob/main/LICENSE.md"
               target="_blank"
               rel="noopener noreferrer"
             >
-              MIT License
+              MIT license
             </a>
           </p>
         </footer>

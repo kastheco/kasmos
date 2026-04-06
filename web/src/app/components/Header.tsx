@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import styles from "./Header.module.css";
-import PixelBee from "./PixelBee";
 
 export default function Header() {
   const [scrolled, setScrolled] = useState(false);
@@ -16,7 +15,6 @@ export default function Header() {
   return (
     <header className={`${styles.header} ${scrolled ? styles.scrolled : ""}`}>
       <a href="#" className={styles.logoWrapper}>
-        <PixelBee scale={2} bob={false} />
         <span className={styles.logo}>kasmos</span>
       </a>
       <nav className={styles.nav}>
@@ -26,13 +24,13 @@ export default function Header() {
           rel="noopener noreferrer"
           className={styles.navLink}
         >
-          GitHub
+          github
         </a>
         <a
           href="/docs"
           className={styles.navLink}
         >
-          Docs
+          docs
         </a>
         <a
           href="https://github.com/kastheco/kasmos/releases"
@@ -40,7 +38,7 @@ export default function Header() {
           rel="noopener noreferrer"
           className={styles.navLink}
         >
-          Releases
+          releases
         </a>
       </nav>
     </header>

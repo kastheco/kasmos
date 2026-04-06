@@ -5,19 +5,19 @@ import styles from "./InstallTabs.module.css";
 
 const installMethods = [
   {
-    label: "Homebrew",
+    label: "homebrew",
     command: "brew install kastheco/tap/kasmos",
   },
   {
-    label: "Scoop",
+    label: "scoop",
     command: "scoop bucket add kastheco https://github.com/kastheco/scoop-bucket\nscoop install kasmos",
   },
   {
-    label: "Go Install",
+    label: "go install",
     command: "go install github.com/kastheco/kasmos@latest",
   },
   {
-    label: "Shell Script",
+    label: "shell script",
     command: "curl -fsSL https://raw.githubusercontent.com/kastheco/kasmos/main/install.sh | bash",
   },
 ];
@@ -68,12 +68,12 @@ export default function InstallTabs() {
           {copied ? (
             <>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              Copied
+              copied
             </>
           ) : (
             <>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              Copy
+              copy
             </>
           )}
         </button>
