@@ -552,20 +552,17 @@ func (i *Instance) Restart() error {
 	}
 
 	// Reset ephemeral per-run state.
-	i.Exited = false
-	i.PromptDetected = false
-	i.HasWorked = false
-	i.AwaitingWork = false
-	i.Notified = false
-	i.CachedContentSet = false
-	i.CachedContent = ""
+	i.resetEphemeralState()
 
 	i.SetStatus(Running)
 	return nil
 }
 
 // Resume recreates the worktree for a paused instance and reconnects or starts
-// a fresh execution session inside it.
+// a fresh execution session inside it. The behaviour depends on worktree ownership:
+//   - nil worktree (main-branch / planner): uses i.Path, no worktree setup/cleanup
+//   - shared worktree: reuses existing worktree path, no setup/cleanup (Pause never removed it)
+//   - owned worktree: recreates via Setup(), cleans up on failure
 func (i *Instance) Resume() error {
 	if !i.started {
 		return fmt.Errorf("cannot resume instance that has not been started")
@@ -574,46 +571,79 @@ func (i *Instance) Resume() error {
 		return fmt.Errorf("can only resume paused instances")
 	}
 
-	checked, err := i.gitWorktree.IsBranchCheckedOut()
-	if err != nil {
-		log.ErrorLog.Print(err)
-		return fmt.Errorf("failed to check if branch is checked out: %w", err)
-	}
-	if checked {
-		return fmt.Errorf("cannot resume: branch is checked out, please switch to a different branch")
+	// Determine working directory and perform worktree setup based on ownership.
+	var workDir string
+	switch {
+	case i.gitWorktree == nil:
+		// Main-branch / planner instance — no worktree involved.
+		workDir = i.Path
+
+	case i.sharedWorktree:
+		// Shared worktree — Pause() never removed it, so just reuse.
+		workDir = i.gitWorktree.GetWorktreePath()
+
+	default:
+		// Owned worktree — guard against branch conflicts and recreate.
+		checked, err := i.gitWorktree.IsBranchCheckedOut()
+		if err != nil {
+			log.ErrorLog.Print(err)
+			return fmt.Errorf("failed to check if branch is checked out: %w", err)
+		}
+		if checked {
+			return fmt.Errorf("cannot resume: branch is checked out, please switch to a different branch")
+		}
+
+		if err := i.gitWorktree.Setup(); err != nil {
+			log.ErrorLog.Print(err)
+			return fmt.Errorf("failed to setup git worktree: %w", err)
+		}
+		workDir = i.gitWorktree.GetWorktreePath()
 	}
 
-	if err := i.gitWorktree.Setup(); err != nil {
-		log.ErrorLog.Print(err)
-		return fmt.Errorf("failed to setup git worktree: %w", err)
-	}
-
-	worktreePath := i.gitWorktree.GetWorktreePath()
-
+	// Reconnect or start a fresh execution session.
 	if i.executionSession.DoesSessionExist() {
 		if restoreErr := i.executionSession.Restore(); restoreErr != nil {
 			log.ErrorLog.Print(restoreErr)
 			// Fall back to a fresh session start.
-			if startErr := i.executionSession.Start(worktreePath); startErr != nil {
+			if startErr := i.executionSession.Start(workDir); startErr != nil {
 				log.ErrorLog.Print(startErr)
-				if cleanupErr := i.gitWorktree.Cleanup(); cleanupErr != nil {
-					startErr = fmt.Errorf("%v (cleanup: %v)", startErr, cleanupErr)
-					log.ErrorLog.Print(startErr)
+				if i.gitWorktree != nil && !i.sharedWorktree {
+					if cleanupErr := i.gitWorktree.Cleanup(); cleanupErr != nil {
+						startErr = fmt.Errorf("%v (cleanup: %v)", startErr, cleanupErr)
+						log.ErrorLog.Print(startErr)
+					}
 				}
 				return fmt.Errorf("failed to start new session: %w", startErr)
 			}
 		}
 	} else {
-		if err := i.executionSession.Start(worktreePath); err != nil {
+		if err := i.executionSession.Start(workDir); err != nil {
 			log.ErrorLog.Print(err)
-			if cleanupErr := i.gitWorktree.Cleanup(); cleanupErr != nil {
-				err = fmt.Errorf("%v (cleanup: %v)", err, cleanupErr)
-				log.ErrorLog.Print(err)
+			if i.gitWorktree != nil && !i.sharedWorktree {
+				if cleanupErr := i.gitWorktree.Cleanup(); cleanupErr != nil {
+					err = fmt.Errorf("%v (cleanup: %v)", err, cleanupErr)
+					log.ErrorLog.Print(err)
+				}
 			}
 			return fmt.Errorf("failed to start new session: %w", err)
 		}
 	}
 
+	// Reset ephemeral per-run state (mirrors Restart).
+	i.resetEphemeralState()
+
 	i.SetStatus(Running)
 	return nil
+}
+
+// resetEphemeralState zeroes transient per-run flags so an instance appears
+// freshly started. Used by both Restart() and Resume().
+func (i *Instance) resetEphemeralState() {
+	i.Exited = false
+	i.PromptDetected = false
+	i.HasWorked = false
+	i.AwaitingWork = false
+	i.Notified = false
+	i.CachedContentSet = false
+	i.CachedContent = ""
 }

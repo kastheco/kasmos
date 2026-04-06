@@ -488,3 +488,121 @@ func TestInstance_AttachReturnsErrorForHeadlessExecution(t *testing.T) {
 	// The error originates from the headless session, which reports interactive-only.
 	assert.Contains(t, err.Error(), "interactive")
 }
+
+func TestResume_MainBranchPaused_UsesRepoPathAndClearsEphemeralState(t *testing.T) {
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc:    func(cmd *exec.Cmd) error { return nil },
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return []byte(""), nil },
+	}
+
+	inst := &Instance{
+		Title:            "test-resume-main",
+		Path:             t.TempDir(),
+		Program:          "opencode",
+		Status:           Paused,
+		started:          true,
+		gitWorktree:      nil, // main-branch instance
+		Exited:           true,
+		PromptDetected:   true,
+		HasWorked:        true,
+		AwaitingWork:     true,
+		Notified:         true,
+		CachedContentSet: true,
+		CachedContent:    "stale",
+	}
+	inst.executionSession = newMockTmuxSession(inst.Title, inst.Program, &testPtyFactory{}, cmdExec)
+
+	err := inst.Resume()
+	require.NoError(t, err)
+	assert.Equal(t, Running, inst.Status)
+	assert.False(t, inst.Exited)
+	assert.False(t, inst.PromptDetected)
+	assert.False(t, inst.HasWorked)
+	assert.False(t, inst.AwaitingWork)
+	assert.False(t, inst.Notified)
+	assert.False(t, inst.CachedContentSet)
+	assert.Empty(t, inst.CachedContent)
+}
+
+func TestResume_SharedWorktree_ReusesExistingPath(t *testing.T) {
+	repoPath := setupGitRepo(t)
+
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc:    func(cmd *exec.Cmd) error { return nil },
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return []byte(""), nil },
+	}
+
+	// Create a branch so we can reference it
+	runCommand(t, repoPath, "git", "branch", "plan/feature")
+
+	inst := &Instance{
+		Title:          "test-resume-shared",
+		Path:           repoPath,
+		Branch:         "plan/feature",
+		Program:        "opencode",
+		Status:         Paused,
+		started:        true,
+		sharedWorktree: true,
+	}
+	inst.BindSharedTaskWorktree(repoPath, "plan/feature")
+	inst.executionSession = newMockTmuxSession(inst.Title, inst.Program, &testPtyFactory{}, cmdExec)
+
+	err := inst.Resume()
+	require.NoError(t, err)
+	assert.Equal(t, Running, inst.Status)
+}
+
+func TestResume_OwnedWorktree_RecreatesWorktree(t *testing.T) {
+	repoPath := setupGitRepo(t)
+
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc:    func(cmd *exec.Cmd) error { return nil },
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return []byte(""), nil },
+	}
+
+	inst, err := NewInstance(InstanceOptions{
+		Title:   "test-resume-owned",
+		Path:    repoPath,
+		Program: "opencode",
+	})
+	require.NoError(t, err)
+	inst.executionSession = newMockTmuxSession(inst.Title, inst.Program, &testPtyFactory{}, cmdExec)
+
+	err = inst.StartOnBranch("resume-owned-branch")
+	require.NoError(t, err)
+
+	// Pause removes the worktree
+	err = inst.Pause()
+	require.NoError(t, err)
+	assert.Equal(t, Paused, inst.Status)
+
+	// Resume should recreate it
+	err = inst.Resume()
+	require.NoError(t, err)
+	assert.Equal(t, Running, inst.Status)
+	assert.NotEmpty(t, inst.GetWorktreePath())
+	_, statErr := os.Stat(inst.GetWorktreePath())
+	assert.NoError(t, statErr, "worktree path should exist after resume")
+
+	// Cleanup
+	t.Cleanup(func() {
+		if inst.gitWorktree != nil {
+			_ = inst.gitWorktree.Remove()
+			_ = inst.gitWorktree.Prune()
+		}
+	})
+}
+
+func TestResume_NotStarted_ReturnsError(t *testing.T) {
+	inst := &Instance{Title: "never-started", started: false}
+	err := inst.Resume()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not been started")
+}
+
+func TestResume_NotPaused_ReturnsError(t *testing.T) {
+	inst := &Instance{Title: "running-resume", started: true, Status: Running}
+	err := inst.Resume()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "paused")
+}

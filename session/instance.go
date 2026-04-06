@@ -196,6 +196,20 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 	}
 	sharedWorktree := isSharedTaskWorktree(data.Worktree, agentType)
 
+	// Only restore a GitWorktree if the persisted data contains valid worktree
+	// info. Main-branch / planner instances have an empty Worktree block and
+	// must keep gitWorktree == nil so Resume() knows to skip worktree ops.
+	var restoredWorktree *git.GitWorktree
+	if data.Worktree.RepoPath != "" && data.Worktree.BranchName != "" {
+		restoredWorktree = git.NewGitWorktreeFromStorage(
+			data.Worktree.RepoPath,
+			data.Worktree.WorktreePath,
+			data.Worktree.SessionName,
+			data.Worktree.BranchName,
+			data.Worktree.BaseCommitSHA,
+		)
+	}
+
 	instance := &Instance{
 		Title:                  data.Title,
 		DisplayTitle:           data.DisplayTitle,
@@ -220,13 +234,7 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		QueuedPrompt:           data.QueuedPrompt,
 		ReviewCycle:            data.ReviewCycle,
 		sharedWorktree:         sharedWorktree,
-		gitWorktree: git.NewGitWorktreeFromStorage(
-			data.Worktree.RepoPath,
-			data.Worktree.WorktreePath,
-			data.Worktree.SessionName,
-			data.Worktree.BranchName,
-			data.Worktree.BaseCommitSHA,
-		),
+		gitWorktree:            restoredWorktree,
 	}
 
 	if instance.Paused() {

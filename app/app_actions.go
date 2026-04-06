@@ -1698,7 +1698,7 @@ func (m *home) executeLauncherAction(action string) (tea.Model, tea.Cmd) {
 		return m, m.confirmAction(message, killAction)
 	case "resume":
 		selected := m.nav.GetSelectedInstance()
-		if selected == nil {
+		if selected == nil || !selected.Paused() {
 			return m, nil
 		}
 		if err := selected.Resume(); err != nil {

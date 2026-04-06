@@ -323,3 +323,30 @@ func TestInstanceData_RoundTripExecutionMode(t *testing.T) {
 		})
 	}
 }
+
+func TestFromInstanceData_PausedMainBranchLeavesWorktreeNil(t *testing.T) {
+	data := InstanceData{
+		Title:   "planner-main",
+		Path:    "/tmp/repo",
+		Status:  Paused,
+		Program: "opencode",
+		// Empty Worktree block — main-branch instance.
+	}
+
+	inst, err := FromInstanceData(data)
+	require.NoError(t, err)
+	assert.True(t, inst.Started(), "paused instances should be marked started")
+	assert.Nil(t, inst.gitWorktree, "main-branch instance should have nil gitWorktree")
+	assert.NotNil(t, inst.executionSession, "execution session should be prepared")
+	assert.Equal(t, Paused, inst.Status)
+
+	// Round-trip: the empty worktree should stay empty.
+	roundTrip := inst.ToInstanceData()
+	assert.Empty(t, roundTrip.Worktree.RepoPath)
+	assert.Empty(t, roundTrip.Worktree.BranchName)
+
+	// Restore again and confirm nil is preserved.
+	inst2, err := FromInstanceData(roundTrip)
+	require.NoError(t, err)
+	assert.Nil(t, inst2.gitWorktree)
+}

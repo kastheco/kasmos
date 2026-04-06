@@ -1819,7 +1819,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		return m, nil
 	case keys.KeyResume:
 		selected := m.nav.GetSelectedInstance()
-		if selected == nil {
+		if selected == nil || !selected.Paused() {
 			return m, nil
 		}
 		if err := selected.Resume(); err != nil {
