@@ -154,28 +154,6 @@
   line-height: 1.6;
 }
 
-/* ====== VIDEO SECTION ====== */
-.videoSection {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 40px 20px 100px;
-}
-
-.videoWrapper {
-  position: relative;
-  border-radius: 16px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 0 60px rgba(240, 168, 104, 0.08), 0 0 120px rgba(126, 200, 216, 0.05);
-}
-
-.video {
-  width: 100%;
-  display: block;
-  aspect-ratio: 16 / 10;
-  background: #000;
-}
-
 /* ====== FEATURES GRID ====== */
 .featuresGrid {
   display: grid;
@@ -240,6 +218,24 @@
   color: var(--foreground-tertiary);
   padding: 0 12px;
   line-height: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.lifecycleArrowLoop {
+  color: var(--accent-amber);
+  font-size: 22px;
+}
+
+.lifecycleLoopNote {
+  font-size: 9px;
+  font-family: var(--font-geist-mono);
+  color: var(--foreground-tertiary);
+  text-transform: lowercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
 }
 
 /* ====== AGENTS GRID ====== */
@@ -368,8 +364,16 @@
   }
 
   .lifecycleArrow {
-    padding: 0 6px;
+    padding: 0 4px;
+    font-size: 14px;
+  }
+
+  .lifecycleArrowLoop {
     font-size: 16px;
+  }
+
+  .lifecycleLoopNote {
+    display: none;
   }
 
   .hero {
