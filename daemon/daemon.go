@@ -1067,6 +1067,7 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			PlanFile: a.PlanFile,
 			RepoPath: e.Path,
 			Project:  e.Project,
+			Program:  programForAgent(e.Path, session.AgentTypeElaborator),
 			Prompt:   spec.Prompt,
 		}
 		spawnElaborator := d.spawnElaborator
@@ -1317,6 +1318,7 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 			RepoPath: e.Path,
 			Project:  e.Project,
 			Branch:   entry.Branch,
+			Program:  programForAgent(e.Path, session.AgentTypeCoder),
 			Wave:     waveNum,
 		}
 		wg.Add(1)
@@ -1476,12 +1478,50 @@ func sharedWorktreePaths(repoPath string) []string {
 	return paths
 }
 
+// programForAgent resolves the configured program command for a given agent
+// type by reading the repo's config.toml profiles. Returns an empty string
+// when no config exists or the profile is unconfigured, letting the spawner
+// apply its own default.
+func programForAgent(repoPath, agentType string) string {
+	configPath := filepath.Join(repoPath, ".kasmos", config.TOMLConfigFileName)
+	result, err := config.LoadTOMLConfigFrom(configPath)
+	if err != nil {
+		return ""
+	}
+	defaultProgram := result.DefaultProgram
+
+	cfg := &config.Config{
+		PhaseRoles: result.PhaseRoles,
+		Profiles:   result.Profiles,
+	}
+
+	var phase string
+	switch agentType {
+	case session.AgentTypeCoder:
+		phase = "implementing"
+	case session.AgentTypePlanner:
+		phase = "planning"
+	case session.AgentTypeReviewer:
+		phase = "quality_review"
+	case session.AgentTypeFixer:
+		phase = "fixer"
+	case session.AgentTypeElaborator:
+		phase = "elaborating"
+	default:
+		return defaultProgram
+	}
+
+	profile := cfg.ResolveProfile(phase, defaultProgram)
+	return profile.BuildCommand()
+}
+
 func coderSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOpts {
 	return loop.SpawnOpts{
 		PlanFile: planFile,
 		RepoPath: e.Path,
 		Project:  e.Project,
 		Branch:   branch,
+		Program:  programForAgent(e.Path, session.AgentTypeCoder),
 		Prompt:   feedback,
 		Feedback: feedback,
 	}
@@ -1494,6 +1534,7 @@ func reviewerSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
 		RepoPath:    e.Path,
 		Project:     e.Project,
 		Branch:      entry.Branch,
+		Program:     programForAgent(e.Path, session.AgentTypeReviewer),
 		ReviewCycle: spec.ReviewCycle,
 		Prompt:      spec.Prompt,
 	}
@@ -1512,6 +1553,7 @@ func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 		RepoPath:    e.Path,
 		Project:     e.Project,
 		Branch:      branch,
+		Program:     programForAgent(e.Path, session.AgentTypeFixer),
 		ReviewCycle: spec.ReviewCycle,
 		Prompt:      spec.Prompt,
 		Feedback:    feedback,

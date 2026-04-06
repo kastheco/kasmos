@@ -304,29 +304,27 @@ func (p *Processor) restoreOrchestratorForTaskSignal(planFile string, waveNumber
 
 	completed := make([]int, 0)
 	failed := make([]int, 0)
-	hasActiveState := false
+	hasRunning := false
+	waveTaskCount := 0
 	for _, subtask := range subtasks {
 		if taskToWave[subtask.TaskNumber] != waveNumber {
 			continue
 		}
+		waveTaskCount++
 
 		switch subtask.Status {
-		case taskstore.SubtaskStatusRunning,
-			taskstore.SubtaskStatusComplete,
-			taskstore.SubtaskStatusDone,
-			taskstore.SubtaskStatusClosed,
-			taskstore.SubtaskStatusFailed:
-			hasActiveState = true
-		}
-
-		switch subtask.Status {
+		case taskstore.SubtaskStatusRunning:
+			hasRunning = true
 		case taskstore.SubtaskStatusComplete, taskstore.SubtaskStatusDone, taskstore.SubtaskStatusClosed:
 			completed = append(completed, subtask.TaskNumber)
 		case taskstore.SubtaskStatusFailed:
 			failed = append(failed, subtask.TaskNumber)
 		}
 	}
-	if !hasActiveState {
+	// Don't restore if there are no tasks in this wave or if all tasks are
+	// already resolved (complete/done/failed). Without a running task the
+	// signal is stale and restoring would flicker subtask statuses.
+	if waveTaskCount == 0 || (!hasRunning && len(completed)+len(failed) == waveTaskCount) {
 		return nil
 	}
 
