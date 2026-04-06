@@ -97,20 +97,29 @@ func projectFromServePath(path string) (string, bool) {
 	return rest, true
 }
 
-func newServeMCPServer(store taskstore.Store, gw taskstore.SignalGateway, repoPaths []string) (*mcpserver.Server, error) {
-	if len(repoPaths) == 0 {
-		// When no --repo is passed, auto-detect all daemon-registered repos so
-		// agents write to the correct project regardless of CWD.
-		if repos, err := listDaemonRepoStatuses(); err == nil && len(repos) > 0 {
-			roots := make([]string, 0, len(repos))
-			for _, r := range repos {
-				roots = append(roots, r.Path)
-			}
-			return newConfiguredMCPServer(store, gw, roots)
-		}
-		return newConfiguredMCPServer(store, gw, nil)
+// resolveServeRepoPaths returns the repo paths to use for multi-repo bootstrap.
+// If explicit paths are provided via --repo, they are returned unchanged. When
+// --db is set, the empty slice is returned so the single-DB path stays
+// authoritative. Otherwise the daemon is queried for registered repos.
+func resolveServeRepoPaths(cmd *cobra.Command, repoPaths []string) ([]string, error) {
+	if len(repoPaths) > 0 {
+		return repoPaths, nil
 	}
+	if cmd.Flags().Changed("db") {
+		return repoPaths, nil
+	}
+	repos, err := listDaemonRepoStatuses()
+	if err != nil || len(repos) == 0 {
+		return repoPaths, nil
+	}
+	roots := make([]string, 0, len(repos))
+	for _, r := range repos {
+		roots = append(roots, r.Path)
+	}
+	return roots, nil
+}
 
+func newServeMCPServer(store taskstore.Store, gw taskstore.SignalGateway, repoPaths []string) (*mcpserver.Server, error) {
 	return newConfiguredMCPServer(store, gw, repoPaths)
 }
 
@@ -137,12 +146,17 @@ func NewServeCmd() *cobra.Command {
 				return fmt.Errorf("--db and --repo are mutually exclusive")
 			}
 
+			// Auto-detect daemon repos when neither --repo nor --db is set.
+			repoPaths, err := resolveServeRepoPaths(cmd, repoPaths)
+			if err != nil {
+				return err
+			}
+
 			var (
 				store    taskstore.Store
 				gw       taskstore.SignalGateway
 				logger   auditlog.Logger
 				repoRegs serveRepoRegistration
-				err      error
 			)
 
 			if len(repoPaths) > 0 {
