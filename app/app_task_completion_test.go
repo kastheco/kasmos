@@ -306,7 +306,7 @@ func TestMetadataTickHandler_UpdatedPromptFrameTriggersPrompt(t *testing.T) {
 		"updated prompt frames must still show the push/review confirmation overlay")
 }
 
-func TestMetadataTickHandler_CoderPromptDetectedInterruptsFocusMode(t *testing.T) {
+func TestMetadataTickHandler_CoderPromptDeferredInFocusMode(t *testing.T) {
 	const planFile = "test-feature"
 
 	dir := t.TempDir()
@@ -338,17 +338,18 @@ func TestMetadataTickHandler_CoderPromptDetectedInterruptsFocusMode(t *testing.T
 	_ = list.AddInstance(inst)
 
 	h := &home{
-		ctx:          context.Background(),
-		state:        stateFocusAgent,
-		appConfig:    config.DefaultConfig(),
-		nav:          list,
-		menu:         ui.NewMenu(),
-		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
-		toastManager: overlay.NewToastManager(&sp),
-		overlays:     overlay.NewManager(),
-		taskState:    ps,
-		taskStateDir: plansDir,
-		fsm:          newPlanFSMForTest(t, plansDir),
+		ctx:                       context.Background(),
+		state:                     stateFocusAgent,
+		appConfig:                 config.DefaultConfig(),
+		nav:                       list,
+		menu:                      ui.NewMenu(),
+		tabbedWindow:              ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:              overlay.NewToastManager(&sp),
+		overlays:                  overlay.NewManager(),
+		taskState:                 ps,
+		taskStateDir:              plansDir,
+		fsm:                       newPlanFSMForTest(t, plansDir),
+		deferredCoderPushToastIDs: make(map[string]string),
 	}
 	h.tabbedWindow.SetFocusMode(true)
 	h.menu.SetFocusMode(true)
@@ -365,12 +366,12 @@ func TestMetadataTickHandler_CoderPromptDetectedInterruptsFocusMode(t *testing.T
 	updated, ok := model.(*home)
 	require.True(t, ok)
 
-	assert.Equal(t, stateConfirm, updated.state,
-		"expected stateConfirm when a push prompt interrupts focus mode")
-	assert.True(t, updated.overlays.IsActive(),
-		"expected confirmation overlay to be active when focus mode is interrupted")
-	assert.False(t, updated.tabbedWindow.IsFocusMode(),
-		"focus mode should be cleared when the push prompt is shown")
+	assert.Equal(t, stateFocusAgent, updated.state,
+		"focus mode must not be interrupted by coder push prompt")
+	assert.True(t, updated.tabbedWindow.IsFocusMode(),
+		"tabbed window should remain in focus mode")
+	assert.Contains(t, updated.deferredCoderPushDialogs, planFile,
+		"push prompt should be deferred for later")
 }
 
 func TestMetadataTick_TaskFinishedSignalMarksWaveTaskComplete(t *testing.T) {

@@ -663,16 +663,6 @@ func (m *home) isUserInOverlay() bool {
 	return true
 }
 
-// exitFocusModeForDialog exits focus/interactive mode if active, so that an
-// incoming dialog (permission prompt, wave completion, planner-finished, etc.)
-// can be displayed immediately. Focus mode is not a real overlay — it just
-// forwards keys to the embedded PTY — so it is safe to interrupt.
-func (m *home) exitFocusModeForDialog() {
-	if m.state == stateFocusAgent {
-		m.exitFocusMode()
-	}
-}
-
 // updateHandleWindowSizeEvent sets the sizes of the components.
 // The components will try to render inside their bounds.
 func (m *home) updateHandleWindowSizeEvent(msg tea.WindowSizeMsg) {
@@ -1238,8 +1228,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							})
 							continue
 						}
-						m.exitFocusModeForDialog()
-						if m.isUserInOverlay() {
+						if m.state == stateFocusAgent || m.isUserInOverlay() {
 							m.deferredPlannerDialogs = append(m.deferredPlannerDialogs, capturedPlanFile)
 							continue
 						}
@@ -1376,8 +1365,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if m.plannerPrompted[capturedPlanFile] {
 							break
 						}
-						m.exitFocusModeForDialog()
-						if m.isUserInOverlay() {
+						if m.state == stateFocusAgent || m.isUserInOverlay() {
 							m.deferredPlannerDialogs = append(m.deferredPlannerDialogs, capturedPlanFile)
 							break
 						}
@@ -1431,11 +1419,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// Retry deferred PlannerFinished dialogs — show the first queued plan
-			// whose dialog was skipped because an overlay was active at signal time.
-			if len(m.deferredPlannerDialogs) > 0 {
-				m.exitFocusModeForDialog()
-			}
-			if len(m.deferredPlannerDialogs) > 0 && !m.isUserInOverlay() {
+			// whose dialog was skipped because an overlay or focus mode was active.
+			if len(m.deferredPlannerDialogs) > 0 && m.state != stateFocusAgent && !m.isUserInOverlay() {
 				planFile := m.deferredPlannerDialogs[0]
 				m.deferredPlannerDialogs = m.deferredPlannerDialogs[1:]
 				if !m.plannerPrompted[planFile] {
@@ -1673,7 +1658,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Permission prompt detection for supported harnesses.
 			if md.PermissionPrompt != nil && (m.state == stateDefault || m.state == stateFocusAgent) {
-				m.exitFocusModeForDialog()
 				pp := md.PermissionPrompt
 				cacheKey := config.CacheKey(pp.Pattern, pp.Description)
 				// Guard key: use cache key if available, else sentinel.
@@ -1692,6 +1676,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					asyncCmds = append(asyncCmds, func() tea.Msg {
 						return permissionAutoApproveMsg{instance: i}
 					})
+				} else if m.state == stateFocusAgent {
+					// Defer permission overlay until the user leaves focus mode.
+					m.queuePermissionPrompt(inst, pp.Pattern, pp.Description)
 				} else {
 					// Focus the instance so the user can see the agent output behind the overlay.
 					if cmd := m.focusInstanceForOverlay(inst); cmd != nil {
@@ -1795,8 +1782,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.coderPushPrompted[inst.TaskFile] {
 					continue
 				}
+				if m.state == stateFocusAgent {
+					m.queueCoderPushDialog(inst.TaskFile)
+					break
+				}
 				// Focus the implementer instance so the user can see its output behind the overlay.
-				m.exitFocusModeForDialog()
 				if cmd := m.focusInstanceForOverlay(inst); cmd != nil {
 					asyncCmds = append(asyncCmds, cmd)
 				}
@@ -1841,9 +1831,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.pendingAllComplete = filtered
 			}
-			if len(m.pendingAllComplete) > 0 && m.state != stateFocusAgent {
-				m.exitFocusModeForDialog()
-			}
 			if m.state != stateFocusAgent && !m.isUserInOverlay() && len(m.pendingAllComplete) > 0 {
 				planFile := m.pendingAllComplete[0]
 				m.pendingAllComplete = m.pendingAllComplete[1:]
@@ -1851,6 +1838,35 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					asyncCmds = append(asyncCmds, cmd)
 				}
 				m.showAllCompletePrompt(planFile)
+			}
+
+			// Drain deferred coder-push dialogs when focus mode is no longer active.
+			if m.state != stateFocusAgent && !m.isUserInOverlay() && len(m.deferredCoderPushDialogs) > 0 {
+				planFile := m.deferredCoderPushDialogs[0]
+				m.deferredCoderPushDialogs = m.deferredCoderPushDialogs[1:]
+				if cmd := m.showCoderPushDialog(planFile); cmd != nil {
+					asyncCmds = append(asyncCmds, cmd)
+				}
+			}
+
+			// Drain deferred wave-complete dialogs when focus mode is no longer active.
+			if m.state != stateFocusAgent && !m.isUserInOverlay() && len(m.deferredWaveDialogs) > 0 {
+				planFile := m.deferredWaveDialogs[0]
+				m.deferredWaveDialogs = m.deferredWaveDialogs[1:]
+				if orch, ok := m.waveOrchestrators[planFile]; ok {
+					for _, cmd := range m.showWaveDialog(planFile, orch) {
+						asyncCmds = append(asyncCmds, cmd)
+					}
+				}
+			}
+
+			// Drain deferred permission prompts when focus mode is no longer active.
+			if m.state != stateFocusAgent && !m.isUserInOverlay() && len(m.deferredPermissionPrompts) > 0 {
+				deferred := m.deferredPermissionPrompts[0]
+				m.deferredPermissionPrompts = m.deferredPermissionPrompts[1:]
+				if cmd := m.showPermissionPrompt(deferred); cmd != nil {
+					asyncCmds = append(asyncCmds, cmd)
+				}
 			}
 
 			// Wave completion monitoring: check task completion and trigger wave transitions.
@@ -1951,7 +1967,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.state == stateFocusAgent {
 						m.queueAllCompletePrompt(capturedPlanFile)
 					} else {
-						m.exitFocusModeForDialog()
 						if !m.isUserInOverlay() {
 							// Focus a task instance so the user can see agent output behind the overlay.
 							if cmd := m.focusPlanInstanceForOverlay(capturedPlanFile); cmd != nil {
@@ -1972,8 +1987,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Show wave decision confirm once per wave (NeedsConfirm is one-shot;
 				// ResetConfirm on cancel allows the prompt to reappear next tick).
 				needsConfirm := orch.NeedsConfirm()
-				if needsConfirm {
-					m.exitFocusModeForDialog()
+				if needsConfirm && m.state == stateFocusAgent {
+					m.queueWaveDialog(planFile)
+					orch.ResetConfirm()
+					continue
 				}
 				if !m.isUserInOverlay() && time.Since(m.waveConfirmDismissedAt) > 30*time.Second && needsConfirm {
 					waveNum := orch.CurrentWaveNumber()
