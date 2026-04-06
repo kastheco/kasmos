@@ -132,13 +132,19 @@ func TestRebuildRows_MixedPlanAndSolo(t *testing.T) {
 func TestRebuildRows_HistoryAndCancelled(t *testing.T) {
 	n := newTestPanel()
 	history := []PlanDisplay{{Filename: "old-plan"}}
-	cancelled := []PlanDisplay{{Filename: "bad-plan"}}
+	cancelled := []PlanDisplay{{Filename: "bad-plan", Status: "cancelled"}}
 	n.SetData(nil, nil, history, cancelled, nil)
 
-	// history toggle + cancelled row
-	require.Len(t, n.rows, 2)
+	// Cancelled plans stay under history instead of rendering as a separate section.
+	require.Len(t, n.rows, 1)
 	assert.Equal(t, navRowHistoryToggle, n.rows[0].Kind)
-	assert.Equal(t, navRowCancelled, n.rows[1].Kind)
+
+	n.selectedIdx = 0
+	n.ToggleSelectedExpand()
+	require.Len(t, n.rows, 3)
+	assert.Equal(t, navRowHistoryPlan, n.rows[1].Kind)
+	assert.Equal(t, navRowHistoryPlan, n.rows[2].Kind)
+	assert.Equal(t, "cancelled", n.rows[2].PlanStatus)
 }
 
 func TestRebuildRows_HistoryExpanded(t *testing.T) {

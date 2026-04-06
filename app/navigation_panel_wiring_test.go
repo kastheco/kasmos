@@ -23,7 +23,7 @@ func TestNewHomeInitializesNavigationPanel(t *testing.T) {
 	require.NotNil(t, h.nav)
 }
 
-func TestUpdateSidebarTasks_CancelledTaskAppearsInNav(t *testing.T) {
+func TestUpdateSidebarTasks_CancelledTaskAppearsInHistory(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -61,9 +61,11 @@ func TestUpdateSidebarTasks_CancelledTaskAppearsInNav(t *testing.T) {
 
 	h.updateSidebarTasks()
 
-	// The nav panel must expose a selectable row for the cancelled plan.
+	// Cancelled plans live under history and become selectable when that section is expanded.
+	require.True(t, h.nav.SelectByID(ui.SidebarPlanHistoryToggle), "history toggle must exist")
+	require.True(t, h.nav.ToggleSelectedExpand(), "history toggle must expand")
+
 	ok := h.nav.SelectByID(ui.SidebarPlanPrefix + planFile)
-	require.True(t, ok, "cancelled plan must produce a selectable nav row")
-	// IsSelectedPlanHeader returns true for navRowCancelled rows.
-	assert.True(t, h.nav.IsSelectedPlanHeader(), "selected cancelled row must satisfy IsSelectedPlanHeader")
+	require.True(t, ok, "cancelled plan must produce a selectable history row")
+	assert.True(t, h.nav.IsSelectedPlanHeader(), "selected cancelled history row must satisfy IsSelectedPlanHeader")
 }
