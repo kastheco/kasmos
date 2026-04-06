@@ -107,7 +107,7 @@ func TestRepoManager_SharedGlobalDB(t *testing.T) {
 }
 
 // TestRepoManager_CloseReleasesGlobalStore verifies that Close() closes the
-// shared global store, gateway, and underlying DB, nilllng all three fields.
+// shared global store, gateway, and underlying DB, nulling all three fields.
 func TestRepoManager_CloseReleasesGlobalStore(t *testing.T) {
 	rm := newTestRepoManager(t)
 	require.NoError(t, rm.Add("/home/user/project-a"))
