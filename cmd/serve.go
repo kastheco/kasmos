@@ -99,20 +99,19 @@ func projectFromServePath(path string) (string, bool) {
 
 func newServeMCPServer(store taskstore.Store, gw taskstore.SignalGateway, repoPaths []string) (*mcpserver.Server, error) {
 	if len(repoPaths) == 0 {
-		// When no --repo is passed, try to auto-detect from the daemon's
-		// registered repos. Without this, the MCP server falls back to
-		// filepath.Base(cwd) for the project name, which is wrong when
-		// kas serve runs from $HOME (e.g. via systemd).
-		if repos, err := listDaemonRepoStatuses(); err == nil && len(repos) == 1 {
-			return newConfiguredMCPServer(store, gw, repos[0].Path)
+		// When no --repo is passed, auto-detect all daemon-registered repos so
+		// agents write to the correct project regardless of CWD.
+		if repos, err := listDaemonRepoStatuses(); err == nil && len(repos) > 0 {
+			roots := make([]string, 0, len(repos))
+			for _, r := range repos {
+				roots = append(roots, r.Path)
+			}
+			return newConfiguredMCPServer(store, gw, roots)
 		}
-		return newConfiguredMCPServer(store, gw, "")
-	}
-	if len(repoPaths) > 1 {
-		return nil, fmt.Errorf("mcp server currently supports a single repo; multiple --repo values are not allowed when mcp is enabled")
+		return newConfiguredMCPServer(store, gw, nil)
 	}
 
-	return newConfiguredMCPServer(store, gw, repoPaths[0])
+	return newConfiguredMCPServer(store, gw, repoPaths)
 }
 
 // NewServeCmd returns the `kas serve` cobra command.
