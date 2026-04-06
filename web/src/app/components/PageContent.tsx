@@ -50,10 +50,10 @@ const features = [
 ];
 
 const typewriterTexts = [
-  "Supervise multiple AI agents at once",
-  "Ship features 10x faster",
-  "Review diffs before merging",
-  "Isolated workspaces, zero conflicts",
+  "Run agents in parallel across isolated worktrees",
+  "Wave-based execution with lifecycle signals",
+  "MCP-powered orchestration built-in",
+  "Concurrent agents, zero conflicts",
 ];
 
 export default function PageContent() {
@@ -74,7 +74,7 @@ export default function PageContent() {
             kasmos
           </GradientText>
           <p className={styles.heroSubtitle}>
-            The agent-driven IDE for your terminal
+            multi-agent orchestration for your terminal
           </p>
           <div className={styles.heroTypewriter}>
             <TypewriterText texts={typewriterTexts} />
@@ -120,8 +120,7 @@ export default function PageContent() {
           <ScrollReveal>
             <h2 className={styles.sectionTitle}>Why kasmos?</h2>
             <p className={styles.sectionSubtitle}>
-              Everything you need to manage multiple AI coding agents from one
-              place.
+              Wave-based execution, isolated worktrees, and MCP-native tooling — everything you need to run concurrent AI agents at scale.
             </p>
           </ScrollReveal>
           <div className={styles.featuresGrid}>
