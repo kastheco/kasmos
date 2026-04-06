@@ -10,6 +10,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/mcpserver/routing"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -63,51 +64,6 @@ func normalizeTaskContentArg(content string) string {
 	return content
 }
 
-// registerConfig holds the project-routing state built once at registration time.
-type registerConfig struct {
-	fixedProject string
-	projects     map[string]struct{}
-}
-
-func newRegisterConfig(project string, projects []string) registerConfig {
-	rc := registerConfig{projects: make(map[string]struct{}, len(projects))}
-	for _, p := range projects {
-		rc.projects[p] = struct{}{}
-	}
-	if len(rc.projects) <= 1 {
-		rc.fixedProject = project
-	}
-	return rc
-}
-
-// resolveProjectArg extracts the target project from a tool request, enforcing
-// single-project and multi-project routing rules.
-func resolveProjectArg(req mcp.CallToolRequest, fixedProject string, allowed map[string]struct{}) (string, error) {
-	reqProject := strings.TrimSpace(req.GetString("project", ""))
-
-	if fixedProject != "" {
-		if reqProject == "" || reqProject == fixedProject {
-			return fixedProject, nil
-		}
-		return "", fmt.Errorf("project not found: %s", reqProject)
-	}
-
-	// Multi-project mode with no fixed binding.
-	if reqProject == "" {
-		if len(allowed) == 1 {
-			for p := range allowed {
-				return p, nil
-			}
-		}
-		return "", fmt.Errorf("project argument is required when multiple projects are configured")
-	}
-
-	if _, ok := allowed[reqProject]; !ok {
-		return "", fmt.Errorf("project not found: %s", reqProject)
-	}
-	return reqProject, nil
-}
-
 func resolveToolStore(project string, store taskstore.Store) (taskstore.Store, func(), error) {
 	if store != nil {
 		return store, func() {}, nil
@@ -120,9 +76,9 @@ func resolveToolStore(project string, store taskstore.Store) (taskstore.Store, f
 	return resolved, func() { _ = resolved.Close() }, nil
 }
 
-func makeTaskListHandler(rc registerConfig, store taskstore.Store) server.ToolHandlerFunc {
+func makeTaskListHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		project, err := resolveProjectArg(req, rc.fixedProject, rc.projects)
+		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_list: %v", err)), nil
 		}
@@ -165,9 +121,9 @@ func makeTaskListHandler(rc registerConfig, store taskstore.Store) server.ToolHa
 	}
 }
 
-func makeTaskShowHandler(rc registerConfig, store taskstore.Store) server.ToolHandlerFunc {
+func makeTaskShowHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		project, err := resolveProjectArg(req, rc.fixedProject, rc.projects)
+		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_show: %v", err)), nil
 		}
@@ -194,9 +150,9 @@ func makeTaskShowHandler(rc registerConfig, store taskstore.Store) server.ToolHa
 	}
 }
 
-func makeTaskCreateHandler(rc registerConfig, store taskstore.Store) server.ToolHandlerFunc {
+func makeTaskCreateHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		project, err := resolveProjectArg(req, rc.fixedProject, rc.projects)
+		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_create: %v", err)), nil
 		}
@@ -243,9 +199,9 @@ func makeTaskCreateHandler(rc registerConfig, store taskstore.Store) server.Tool
 	}
 }
 
-func makeTaskUpdateContentHandler(rc registerConfig, store taskstore.Store) server.ToolHandlerFunc {
+func makeTaskUpdateContentHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		project, err := resolveProjectArg(req, rc.fixedProject, rc.projects)
+		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_update_content: %v", err)), nil
 		}
@@ -283,9 +239,9 @@ func makeTaskUpdateContentHandler(rc registerConfig, store taskstore.Store) serv
 	}
 }
 
-func makeTaskDeleteHandler(rc registerConfig, store taskstore.Store) server.ToolHandlerFunc {
+func makeTaskDeleteHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		project, err := resolveProjectArg(req, rc.fixedProject, rc.projects)
+		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_delete: %v", err)), nil
 		}
@@ -377,9 +333,9 @@ func setPhaseTimestampForStatus(store taskstore.Store, project, filename string,
 	}
 }
 
-func makeTaskTransitionHandler(rc registerConfig, store taskstore.Store) server.ToolHandlerFunc {
+func makeTaskTransitionHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		project, err := resolveProjectArg(req, rc.fixedProject, rc.projects)
+		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_transition: %v", err)), nil
 		}
@@ -449,7 +405,7 @@ func RegisterTools(srv *server.MCPServer, project string, projects []string, sto
 		return
 	}
 
-	rc := newRegisterConfig(project, projects)
+	rc := routing.NewRegisterConfig(project, projects)
 
 	srv.AddTool(mcp.NewTool("task_list",
 		mcp.WithDescription("list task store entries, optionally filtered by status"),

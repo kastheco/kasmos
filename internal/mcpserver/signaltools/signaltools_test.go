@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/mcpserver/routing"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -234,7 +235,7 @@ func TestSignalCreateHandler_CanonicalizesAcceptedSignalTypes(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = gw.Close() })
 
-			handler := makeSignalCreateHandler(newRegisterConfig("test-project", nil), gw)
+			handler := makeSignalCreateHandler(routing.NewRegisterConfig("test-project", nil), gw)
 			result, err := handler(context.Background(), mockReq(map[string]any{"signal_type": tt.signalType, "plan_file": "my-plan", "payload": tt.payload}))
 			require.NoError(t, err)
 			assert.False(t, result.IsError)
@@ -342,7 +343,7 @@ func TestSignalCreateHandler_PayloadContracts(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = gw.Close() })
 
-			handler := makeSignalCreateHandler(newRegisterConfig("test-project", nil), gw)
+			handler := makeSignalCreateHandler(routing.NewRegisterConfig("test-project", nil), gw)
 			result, err := handler(context.Background(), mockReq(map[string]any{"signal_type": tt.signalType, "plan_file": "my-plan", "payload": tt.payload}))
 			require.NoError(t, err)
 
@@ -384,7 +385,7 @@ func TestSignalCreateHandler_MultiRepoRoutesToCorrectProject(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = multi.Close() })
 
-	rc := newRegisterConfig("", []string{projectA, projectB})
+	rc := routing.NewRegisterConfig("", []string{projectA, projectB})
 	handler := makeSignalCreateHandler(rc, multi)
 
 	// Signal routed to alpha
@@ -436,7 +437,7 @@ func TestSignalCreateHandler_MultiRepoRequiresProjectArg(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = multi.Close() })
 
-	rc := newRegisterConfig("", []string{projectA, projectB})
+	rc := routing.NewRegisterConfig("", []string{projectA, projectB})
 	handler := makeSignalCreateHandler(rc, multi)
 
 	// Missing project arg in multi-repo mode must error
@@ -456,7 +457,7 @@ func TestSignalCreateHandler_UsesGlobalSQLiteWhenGatewayNil(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = gw.Close() })
 
-	handler := makeSignalCreateHandler(newRegisterConfig(project, nil), nil)
+	handler := makeSignalCreateHandler(routing.NewRegisterConfig(project, nil), nil)
 	result, err := handler(context.Background(), mockReq(map[string]any{
 		"signal_type": "elaborator-finished",
 		"plan_file":   "my-plan",

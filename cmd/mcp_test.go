@@ -87,8 +87,9 @@ func TestNewConfiguredMCPServer_RegistersSymbolsTool(t *testing.T) {
 	assert.Contains(t, names, "read_file")
 }
 
-// makeTempGitRepo creates a minimal git repo (just a .git directory) in a temp
-// dir whose base name is the provided name so resolveTaskProject returns it.
+// makeTempGitRepo creates a temp dir with a .git marker directory so
+// resolveTaskProject treats it as a repo root. It does not create a valid
+// git repository.
 func makeTempGitRepo(t *testing.T, name string) string {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), name)

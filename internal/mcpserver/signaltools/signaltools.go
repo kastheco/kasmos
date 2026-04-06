@@ -3,10 +3,10 @@ package signaltools
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/mcpserver/routing"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -15,51 +15,6 @@ type signalCreateResult struct {
 	PlanFile   string `json:"plan_file"`
 	SignalType string `json:"signal_type"`
 	Created    bool   `json:"created"`
-}
-
-// registerConfig holds the project-routing state built once at registration time.
-type registerConfig struct {
-	fixedProject string
-	projects     map[string]struct{}
-}
-
-func newRegisterConfig(project string, projects []string) registerConfig {
-	rc := registerConfig{projects: make(map[string]struct{}, len(projects))}
-	for _, p := range projects {
-		rc.projects[p] = struct{}{}
-	}
-	if len(rc.projects) <= 1 {
-		rc.fixedProject = project
-	}
-	return rc
-}
-
-// resolveProjectArg extracts the target project from a tool request, enforcing
-// single-project and multi-project routing rules.
-func resolveProjectArg(req mcp.CallToolRequest, fixedProject string, allowed map[string]struct{}) (string, error) {
-	reqProject := strings.TrimSpace(req.GetString("project", ""))
-
-	if fixedProject != "" {
-		if reqProject == "" || reqProject == fixedProject {
-			return fixedProject, nil
-		}
-		return "", fmt.Errorf("project not found: %s", reqProject)
-	}
-
-	// Multi-project mode with no fixed binding.
-	if reqProject == "" {
-		if len(allowed) == 1 {
-			for p := range allowed {
-				return p, nil
-			}
-		}
-		return "", fmt.Errorf("project argument is required when multiple projects are configured")
-	}
-
-	if _, ok := allowed[reqProject]; !ok {
-		return "", fmt.Errorf("project not found: %s", reqProject)
-	}
-	return reqProject, nil
 }
 
 func resolveToolGateway(project string, gateway taskstore.SignalGateway) (taskstore.SignalGateway, func(), error) {
@@ -74,9 +29,9 @@ func resolveToolGateway(project string, gateway taskstore.SignalGateway) (taskst
 	return resolved, func() { _ = resolved.Close() }, nil
 }
 
-func makeSignalCreateHandler(rc registerConfig, gateway taskstore.SignalGateway) server.ToolHandlerFunc {
+func makeSignalCreateHandler(rc routing.RegisterConfig, gateway taskstore.SignalGateway) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		project, err := resolveProjectArg(req, rc.fixedProject, rc.projects)
+		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("signal_create: %v", err)), nil
 		}
@@ -122,7 +77,7 @@ func RegisterTools(srv *server.MCPServer, project string, projects []string, gat
 		return
 	}
 
-	rc := newRegisterConfig(project, projects)
+	rc := routing.NewRegisterConfig(project, projects)
 
 	srv.AddTool(mcp.NewTool("signal_create",
 		mcp.WithDescription("create a pending lifecycle signal in the signal gateway"),
