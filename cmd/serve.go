@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -123,6 +124,38 @@ func newServeMCPServer(store taskstore.Store, gw taskstore.SignalGateway, repoPa
 	return newConfiguredMCPServer(store, gw, repoPaths)
 }
 
+// openServeSQLiteBackends opens a single shared *sql.DB at dbPath and derives
+// the task store, signal gateway, and audit logger from it. All three subsystems
+// share the same connection pool, eliminating SQLITE_BUSY contention.
+//
+// On any constructor failure the shared pool is closed before the error is
+// returned, so callers never receive a leaked *sql.DB in the error path.
+// The caller owns the returned *sql.DB and must call sharedDB.Close() when done;
+// the Store/SignalGateway/Logger Close() methods are no-ops (ownsDB=false) and
+// exist only to make the ownership boundary explicit.
+func openServeSQLiteBackends(dbPath string) (*sql.DB, taskstore.Store, taskstore.SignalGateway, auditlog.Logger, error) {
+	sharedDB, err := taskstore.OpenSharedDB(dbPath)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("open shared db: %w", err)
+	}
+	store, err := taskstore.NewSQLiteStoreFromDB(sharedDB)
+	if err != nil {
+		sharedDB.Close()
+		return nil, nil, nil, nil, fmt.Errorf("open task store: %w", err)
+	}
+	gw, err := taskstore.NewSQLiteSignalGatewayFromDB(sharedDB)
+	if err != nil {
+		sharedDB.Close()
+		return nil, nil, nil, nil, fmt.Errorf("open signal gateway: %w", err)
+	}
+	logger, err := auditlog.NewSQLiteLoggerFromDB(sharedDB)
+	if err != nil {
+		sharedDB.Close()
+		return nil, nil, nil, nil, fmt.Errorf("open audit logger: %w", err)
+	}
+	return sharedDB, store, gw, logger, nil
+}
+
 // NewServeCmd returns the `kas serve` cobra command.
 // It starts an HTTP server backed by a SQLite task store, and optionally
 // an MCP server on a second port sharing the same store and signal gateway.
@@ -152,12 +185,7 @@ func NewServeCmd() *cobra.Command {
 				return err
 			}
 
-			var (
-				store    taskstore.Store
-				gw       taskstore.SignalGateway
-				logger   auditlog.Logger
-				repoRegs serveRepoRegistration
-			)
+			var repoRegs serveRepoRegistration
 
 			if len(repoPaths) > 0 {
 				repoRegs, err = buildServeRepoRegistration(repoPaths)
@@ -170,24 +198,11 @@ func NewServeCmd() *cobra.Command {
 			// it. This eliminates SQLITE_BUSY contention that occurred when
 			// store, gateway, and audit logger each opened independent
 			// connection pools on the same file.
-			sharedDB, err := taskstore.OpenSharedDB(db)
+			sharedDB, store, gw, logger, err := openServeSQLiteBackends(db)
 			if err != nil {
-				return fmt.Errorf("open shared db: %w", err)
+				return err
 			}
 			defer sharedDB.Close()
-
-			store, err = taskstore.NewSQLiteStoreFromDB(sharedDB)
-			if err != nil {
-				return fmt.Errorf("open task store: %w", err)
-			}
-			gw, err = taskstore.NewSQLiteSignalGatewayFromDB(sharedDB)
-			if err != nil {
-				return fmt.Errorf("open signal gateway: %w", err)
-			}
-			logger, err = auditlog.NewSQLiteLoggerFromDB(sharedDB)
-			if err != nil {
-				return fmt.Errorf("open audit logger: %w", err)
-			}
 			// store/gw/logger Close() are no-ops (ownsDB=false);
 			// sharedDB.Close() handles the actual connection teardown.
 			defer store.Close()
