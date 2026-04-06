@@ -22,6 +22,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/internal/initcmd/harness"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
@@ -1483,6 +1484,11 @@ func sharedWorktreePaths(repoPath string) []string {
 // when no config exists or the profile is unconfigured, letting the spawner
 // apply its own default.
 func programForAgent(repoPath, agentType string) string {
+	return programForAgentWithRegistry(repoPath, agentType, harness.NewRegistry())
+}
+
+// programForAgentWithRegistry is the testable core of programForAgent.
+func programForAgentWithRegistry(repoPath, agentType string, registry *harness.Registry) string {
 	configPath := filepath.Join(repoPath, ".kasmos", config.TOMLConfigFileName)
 	result, err := config.LoadTOMLConfigFrom(configPath)
 	if err != nil {
@@ -1512,7 +1518,46 @@ func programForAgent(repoPath, agentType string) string {
 	}
 
 	profile := cfg.ResolveProfile(phase, defaultProgram)
-	return profile.BuildCommand()
+	return buildProgramCommand(profile, registry)
+}
+
+// buildProgramCommand synthesizes the full command string for an agent profile
+// using the harness registry to generate harness-aware flags (model, effort,
+// temperature). Falls back to the generic BuildCommand() for unknown programs
+// or inline program strings that already contain spaces.
+func buildProgramCommand(profile config.AgentProfile, registry *harness.Registry) string {
+	program := strings.TrimSpace(profile.Program)
+	if program == "" {
+		return ""
+	}
+
+	// If the program string already contains spaces (inline arguments),
+	// preserve legacy behavior — do not reinterpret it.
+	if strings.Contains(program, " ") {
+		return profile.BuildCommand()
+	}
+
+	// Look up the harness adapter by the basename of the program path.
+	adapter := registry.Get(filepath.Base(program))
+	if adapter == nil {
+		// Unknown program — fall back to generic join.
+		return profile.BuildCommand()
+	}
+
+	// Build harness-aware flags from the profile's model/effort/temperature fields.
+	agentCfg := harness.AgentConfig{
+		Harness:     adapter.Name(),
+		Model:       profile.Model,
+		Effort:      profile.Effort,
+		Temperature: profile.Temperature,
+		ExtraFlags:  profile.Flags,
+	}
+	flags := adapter.BuildFlags(agentCfg)
+
+	if len(flags) == 0 {
+		return program
+	}
+	return program + " " + strings.Join(flags, " ")
 }
 
 func coderSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOpts {
