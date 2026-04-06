@@ -21,7 +21,7 @@ const features = [
     icon: "\u{1F30A}",
     title: "Wave-Based Lifecycle",
     description:
-      "Plans decompose into waves of parallel tasks. Agents execute, reviewers verify, masters do final QA. Structured pipeline from planning \u2192 implementing \u2192 reviewing \u2192 done.",
+      "Plans decompose into waves of parallel tasks. An architect pass structures each wave before coders implement. Reviewers verify the work, and fixers apply requested changes — looping back to review until the task is clean.",
   },
   {
     icon: "\u{1F527}",
@@ -100,21 +100,6 @@ export default function PageContent() {
           </div>
         </section>
 
-        {/* Demo Video */}
-        <ScrollReveal className={styles.videoSection}>
-          <div className={styles.videoWrapper}>
-            <video
-              controls
-              autoPlay
-              muted
-              loop
-              playsInline
-              className={styles.video}
-              src="https://github.com/user-attachments/assets/aef18253-e58f-4525-9032-f5a3d66c975a"
-            />
-          </div>
-        </ScrollReveal>
-
         {/* Features */}
         <section className={styles.section}>
           <ScrollReveal>
@@ -146,9 +131,11 @@ export default function PageContent() {
             <div className={styles.lifecyclePipeline}>
               {(
                 [
-                  { label: "planning", color: "amber" },
-                  { label: "implementing", color: "teal" },
-                  { label: "reviewing", color: "amber" },
+                  { label: "planning", color: "amber", arrow: "→" },
+                  { label: "architect", color: "teal", arrow: "→" },
+                  { label: "implementing", color: "teal", arrow: "→" },
+                  { label: "reviewing", color: "amber", arrow: "⇄", note: "review/fix loop" },
+                  { label: "fixer", color: "amber", arrow: "→" },
                   { label: "done", color: "teal" },
                 ] as const
               ).map((step, i, arr) => (
@@ -160,7 +147,12 @@ export default function PageContent() {
                     <span className={styles.lifecycleStepLabel}>{step.label}</span>
                   </div>
                   {i < arr.length - 1 && (
-                    <div className={styles.lifecycleArrow}>→</div>
+                    <div className={`${styles.lifecycleArrow}${"arrow" in step && step.arrow === "⇄" ? ` ${styles.lifecycleArrowLoop}` : ""}`}>
+                      {"arrow" in step ? step.arrow : "→"}
+                      {"note" in step && step.note ? (
+                        <span className={styles.lifecycleLoopNote}>{step.note}</span>
+                      ) : null}
+                    </div>
                   )}
                 </div>
               ))}
@@ -183,12 +175,6 @@ export default function PageContent() {
                   color: "teal",
                 },
                 {
-                  role: "elaborator",
-                  icon: "✍️",
-                  desc: "Enriches each task with exact file paths, interfaces, and acceptance criteria.",
-                  color: "amber",
-                },
-                {
                   role: "coder",
                   icon: "⚡",
                   desc: "Implements the task in an isolated git worktree, following TDD.",
@@ -201,11 +187,18 @@ export default function PageContent() {
                   color: "amber",
                 },
                 {
-                  role: "master",
-                  icon: "🎯",
-                  desc: "Performs final holistic review across all merged changes before shipping.",
-                  color: "teal",
+                  role: "fixer",
+                  icon: "🔧",
+                  desc: "Applies reviewer feedback, debugs issues, and prepares the work for re-review.",
+                  color: "amber",
                 },
+                /* temporarily hidden — master role not currently active in the default pipeline */
+                // {
+                //   role: "master",
+                //   icon: "🎯",
+                //   desc: "Performs final holistic review across all merged changes before shipping.",
+                //   color: "teal",
+                // },
               ] as const
             ).map((agent, i) => (
               <ScrollReveal key={agent.role} delay={i * 0.08}>
