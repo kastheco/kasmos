@@ -77,3 +77,8 @@ func TestGlobalKeyBindings_YesLabel(t *testing.T) {
 		t.Fatalf("KeySendYes help desc = %q, want %q", got, "yes")
 	}
 }
+
+func TestGlobalKeyBindings_PageLabels(t *testing.T) {
+	assert.Equal(t, "page up", GlobalkeyBindings[KeyPageUp].Help().Desc)
+	assert.Equal(t, "page down", GlobalkeyBindings[KeyPageDown].Help().Desc)
+}

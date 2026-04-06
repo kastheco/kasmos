@@ -9,6 +9,8 @@ type KeyName int
 const (
 	KeyUp KeyName = iota
 	KeyDown
+	KeyPageUp
+	KeyPageDown
 	KeyEnter
 	KeyKill  // ctrl+k — soft kill: terminates tmux session, keeps instance in list
 	KeyAbort // ctrl+shift+k — full abort: kills tmux, removes worktree, removes from list
@@ -110,6 +112,14 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	KeyDown: key.NewBinding(
 		key.WithKeys("down"),
 		key.WithHelp("↓", "down"),
+	),
+	KeyPageUp: key.NewBinding(
+		key.WithKeys("pgup"),
+		key.WithHelp("pgup", "page up"),
+	),
+	KeyPageDown: key.NewBinding(
+		key.WithKeys("pgdown"),
+		key.WithHelp("pgdown", "page down"),
 	),
 	KeyEnter: key.NewBinding(
 		key.WithKeys("enter", "o"),

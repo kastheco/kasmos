@@ -2129,7 +2129,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Reload plan state and refresh sidebar after async plan mutation.
 		m.loadTaskState()
 		m.updateSidebarTasks()
-		return m, tea.RequestWindowSize
+		return m, tea.Batch(tea.RequestWindowSize, m.instanceChanged())
 	case clickUpTaskFetchedMsg:
 		if msg.Err != nil {
 			m.toastManager.Error("clickup fetch failed: " + msg.Err.Error())
