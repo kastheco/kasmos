@@ -29,3 +29,9 @@ type Overlay interface {
 type MouseHandler interface {
 	HandleMouse(relX, relY int, button tea.MouseButton) Result
 }
+
+// PasteHandler is an optional interface for overlays that support bracketed paste
+// (e.g. Ctrl+Shift+V or voice dictation). Mirrors the MouseHandler pattern.
+type PasteHandler interface {
+	HandlePaste(content string) Result
+}

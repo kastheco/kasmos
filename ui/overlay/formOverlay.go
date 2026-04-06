@@ -184,6 +184,21 @@ func (f *FormOverlay) HandleKey(msg tea.KeyPressMsg) Result {
 	}
 }
 
+// HandlePaste implements PasteHandler. Strips newlines from content and injects
+// runes into the currently focused form field.
+func (f *FormOverlay) HandlePaste(content string) Result {
+	if content == "" {
+		return Result{}
+	}
+	// Strip newlines — form inputs are single-line.
+	content = strings.ReplaceAll(content, "\n", " ")
+	content = strings.ReplaceAll(content, "\r", "")
+	for _, r := range content {
+		f.updateForm(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	return Result{}
+}
+
 // View implements Overlay. Returns the rendered overlay string.
 func (f *FormOverlay) View() string {
 	w := f.width

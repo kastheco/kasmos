@@ -216,3 +216,22 @@ func TestFormOverlay_HandleKey_Cancel(t *testing.T) {
 	assert.True(t, result.Dismissed)
 	assert.False(t, result.Submitted)
 }
+
+func TestFormOverlay_HandlePaste_InsertsIntoFocusedField(t *testing.T) {
+	f := NewFormOverlay("new plan", 60)
+	result := f.HandlePaste("my-task")
+	assert.False(t, result.Dismissed)
+	assert.Equal(t, "my-task", f.Name())
+}
+
+func TestFormOverlay_HandlePaste_StripsNewlines(t *testing.T) {
+	f := NewFormOverlay("new plan", 60)
+	result := f.HandlePaste("line1\nline2\r\nline3")
+	assert.False(t, result.Dismissed)
+	// Newlines replaced with spaces, \r stripped
+	assert.Equal(t, "line1 line2 line3", f.Name())
+}
+
+func TestFormOverlay_ImplementsPasteHandler(t *testing.T) {
+	var _ PasteHandler = NewFormOverlay("title", 60)
+}

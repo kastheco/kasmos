@@ -113,6 +113,15 @@ func (t *TextInputOverlay) HandleKey(msg tea.KeyPressMsg) Result {
 	}
 }
 
+// HandlePaste implements PasteHandler. Inserts pasted text into the textarea
+// when the text field is focused (FocusIndex == 0).
+func (t *TextInputOverlay) HandlePaste(content string) Result {
+	if t.FocusIndex == 0 && content != "" {
+		t.textarea.InsertString(content)
+	}
+	return Result{}
+}
+
 // View renders the text input overlay content.
 // Implements the Overlay interface.
 func (t *TextInputOverlay) View() string {
