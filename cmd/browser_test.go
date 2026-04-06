@@ -150,6 +150,7 @@ func TestStartPlanBrowserServer_UsesDaemonRepos(t *testing.T) {
 		"serve", "--bind", "127.0.0.1", "--port", "7433", "--mcp=false",
 		"--repo", "/repos/one",
 		"--repo", "/repos/two",
+		"--repo", repoRoot,
 		"--admin-dir", adminDir,
 	}, gotArgs)
 }
