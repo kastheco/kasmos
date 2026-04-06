@@ -1,6 +1,7 @@
 package taskstore_test
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -81,4 +82,63 @@ func TestSQLiteSignalGateway_ProjectIsolation(t *testing.T) {
 	claimed, err := gw.Claim("proj-b", "worker-1")
 	require.NoError(t, err)
 	assert.Nil(t, claimed)
+}
+
+// ---------------------------------------------------------------------------
+// FromDB constructor tests
+// ---------------------------------------------------------------------------
+
+func TestSQLiteSignalGatewayFromDB_BasicOps(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "shared.db")
+
+	db, err := taskstore.OpenSharedDB(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	gw, err := taskstore.NewSQLiteSignalGatewayFromDB(db)
+	require.NoError(t, err)
+
+	require.NoError(t, gw.Create("proj", taskstore.SignalEntry{
+		PlanFile:   "feature",
+		SignalType: "planner_finished",
+		Payload:    "{}",
+	}))
+
+	signals, err := gw.List("proj", taskstore.SignalPending)
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "feature", signals[0].PlanFile)
+	assert.Equal(t, "planner_finished", signals[0].SignalType)
+	assert.False(t, signals[0].CreatedAt.IsZero())
+}
+
+func TestSQLiteSignalGatewayFromDB_CloseIsNoOp(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "shared.db")
+
+	db, err := taskstore.OpenSharedDB(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	gw, err := taskstore.NewSQLiteSignalGatewayFromDB(db)
+	require.NoError(t, err)
+
+	// Close must be a no-op — it must not close the shared *sql.DB.
+	require.NoError(t, gw.Close())
+
+	// The underlying pool must still be alive.
+	require.NoError(t, db.Ping())
+
+	// A second gateway on the same DB must still work.
+	gw2, err := taskstore.NewSQLiteSignalGatewayFromDB(db)
+	require.NoError(t, err)
+	require.NoError(t, gw2.Create("proj", taskstore.SignalEntry{
+		PlanFile:   "plan2",
+		SignalType: "implement_finished",
+		Payload:    "{}",
+	}))
+	signals, err := gw2.List("proj", taskstore.SignalPending)
+	require.NoError(t, err)
+	assert.Len(t, signals, 1)
 }
