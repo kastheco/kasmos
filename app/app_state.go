@@ -168,7 +168,7 @@ func (m *home) ensureProcessor() *loop.Processor {
 
 func (m *home) handleReviewChangesRequested(planFile, feedback string) tea.Cmd {
 	m.pendingReviewFeedback[planFile] = feedback
-	if m.taskState != nil {
+	if m.allowLocalTaskMutations() && m.taskState != nil {
 		if err := m.taskState.SetLatestReviewFeedback(planFile, feedback); err != nil {
 			log.WarningLog.Printf("could not persist latest review feedback for %q: %v", planFile, err)
 		}
@@ -268,7 +268,7 @@ func (m *home) recoveryCandidateForTitle(filename string, entry taskstate.TaskEn
 
 func (m *home) clearLatestReviewFeedback(planFile string) {
 	delete(m.pendingReviewFeedback, planFile)
-	if m.taskState != nil {
+	if m.allowLocalTaskMutations() && m.taskState != nil {
 		if err := m.taskState.ClearLatestReviewFeedback(planFile); err != nil {
 			log.WarningLog.Printf("could not clear latest review feedback for %q: %v", planFile, err)
 		}
@@ -293,8 +293,10 @@ func (m *home) captureSelectedReviewFeedback(inst *session.Instance) error {
 	if feedback == "" {
 		return nil
 	}
-	if err := m.taskState.SetLatestReviewFeedback(inst.TaskFile, feedback); err != nil {
-		return fmt.Errorf("persist review feedback: %w", err)
+	if m.allowLocalTaskMutations() {
+		if err := m.taskState.SetLatestReviewFeedback(inst.TaskFile, feedback); err != nil {
+			return fmt.Errorf("persist review feedback: %w", err)
+		}
 	}
 	m.pendingReviewFeedback[inst.TaskFile] = feedback
 	return nil
@@ -2007,6 +2009,9 @@ func (m *home) clearWaveOrchestratorState(planFile string) {
 }
 
 func (m *home) setExecutionState(planFile string, state taskstore.ExecutionState) error {
+	if !m.allowLocalTaskMutations() {
+		return nil
+	}
 	if m.taskState == nil {
 		return fmt.Errorf("task state is not loaded")
 	}
@@ -2014,6 +2019,9 @@ func (m *home) setExecutionState(planFile string, state taskstore.ExecutionState
 }
 
 func (m *home) clearExecutionState(planFile string) error {
+	if !m.allowLocalTaskMutations() {
+		return nil
+	}
 	if m.taskState == nil {
 		return fmt.Errorf("task state is not loaded")
 	}

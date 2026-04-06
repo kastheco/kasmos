@@ -1,0 +1,77 @@
+Caught panic:
+
+runtime error: invalid memory address or nil pointer dereference
+
+Restoring terminal...
+
+goroutine 1 [running]:
+runtime/debug.Stack()
+        /usr/lib/go/src/runtime/debug/stack.go:26 +0x5e
+charm.land/bubbletea/v2.(*Program).recoverFromPanic(0xb1c0c97e3c0, {0x127b160, 0x21f8a50})
+        /home/kas/go/pkg/mod/charm.land/bubbletea/v2@v2.0.1/tea.go:1259 +0x151
+charm.land/bubbletea/v2.(*Program).Run.func2()
+        /home/kas/go/pkg/mod/charm.land/bubbletea/v2@v2.0.1/tea.go:1010 +0x10c
+panic({0x127b160?, 0x21f8a50?})
+        /usr/lib/go/src/runtime/panic.go:860 +0x13a
+github.com/kastheco/kasmos/config/taskstate.(*TaskState).Create(0xb1c0c819e40, {0xb1c10346ae0, 0x20}, {0xb1c0e3a0300, 0x2f6}, {0xb1c0c5f7b00, 0x25}, {0xb1c0d7683f8, 0x4}, {0x1480aed, ...})
+        /home/kas/dev/kasmos/config/taskstate/taskstate.go:621 +0x74a
+github.com/kastheco/kasmos/app.(*home).createTaskEntry(0xb1c0c8ba008, {0xb1c0e3a0300, 0x20}, {0xb1c0e3a0300, 0x2f6}, {0xb1c0d7683f8, 0x4})
+        /home/kas/dev/kasmos/app/app_state.go:2140 +0x205
+github.com/kastheco/kasmos/app.(*home).handleKeyPress(0xb1c0c8ba008, {{0x0, 0x0}, 0x0, 0xd, 0x0, 0x0, 0x0})
+        /home/kas/dev/kasmos/app/app_input.go:1154 +0x3b69
+github.com/kastheco/kasmos/app.(*home).Update(0xb1c0c8ba008, {0x1368d40?, 0xb1c0efc6bd0})
+        /home/kas/dev/kasmos/app/app.go:2041 +0x10f9
+charm.land/bubbletea/v2.(*Program).eventLoop(0xb1c0c97e3c0, {0x16e5db0?, 0xb1c0c8ba008?}, 0xb1c0ca3a9a0)
+        /home/kas/go/pkg/mod/charm.land/bubbletea/v2@v2.0.1/tea.go:852 +0xe46
+charm.land/bubbletea/v2.(*Program).Run(0xb1c0c97e3c0)
+        /home/kas/go/pkg/mod/charm.land/bubbletea/v2@v2.0.1/tea.go:1124 +0xa95
+github.com/kastheco/kasmos/app.Run({0x16e7ee0, 0x226f2a0}, {0xb1c0ca2c000, 0x20}, 0x0, {0xb1c0cb14220, 0xd})
+        /home/kas/dev/kasmos/app/app.go:118 +0x20b
+main.init.func1(0xb1c0caae700?, {0x13c51c1?, 0x4?, 0x13c515d?})
+        /home/kas/dev/kasmos/main.go:115 +0x490
+github.com/spf13/cobra.(*Command).execute(0x2213c20, {0xb1c0c72a0b0, 0x0, 0x0})
+        /home/kas/go/pkg/mod/github.com/spf13/cobra@v1.9.1/command.go:1015 +0xb14
+github.com/spf13/cobra.(*Command).ExecuteC(0x2213c20)
+        /home/kas/go/pkg/mod/github.com/spf13/cobra@v1.9.1/command.go:1148 +0x465
+github.com/spf13/cobra.(*Command).Execute(...)
+        /home/kas/go/pkg/mod/github.com/spf13/cobra@v1.9.1/command.go:1071
+main.main()
+        /home/kas/dev/kasmos/main.go:277 +0x1e
+
+wrote logs to /tmp/kas.log
+Error: program was killed: program experienced a panic
+Usage:
+  kas [flags]
+  kas [command]
+
+Available Commands:
+  audit       query audit events
+  browser     open the admin plan browser
+  check       Audit skills sync health across all harnesses
+  completion  Generate the autocompletion script for the specified shell
+  daemon      manage the kasmos background daemon
+  debug       Print debug information like config paths
+  help        Help about any command
+  instance    manage agent instances (list, kill, pause, resume, send)
+  mcp         start the MCP server on stdio
+  monitor     monitor the kasmos daemon event stream
+  reset       Backup and refresh kasmos scaffold state across repos
+  restore     Restore one kasmos repo backup into one repo
+  scaffold    Manage project scaffold files
+  serve       start the task store HTTP server
+  setup       Configure agent harnesses and scaffold project files
+  signal      inspect and process agent lifecycle signals
+  skills      Manage agent skills
+  status      show overview of tasks, instances, and orphan tmux sessions
+  task        manage task lifecycle (list, recover, set-status, transition, implement)
+  tmux        manage orphan tmux sessions
+  version     Print the version number of kas
+
+Flags:
+  -y, --autoyes          [experimental] If enabled, all instances will automatically accept prompts
+  -h, --help             help for kas
+  -p, --program string   Program to run in new instances (e.g. 'aider --model ollama_chat/gemma3:1b')
+
+Use "kas [command] --help" for more information about a command.
+
+program was killed: program experienced a panic

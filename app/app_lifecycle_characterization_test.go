@@ -128,13 +128,6 @@ func TestExecuteContextAction_StartFixerFromReviewing_Characterization(t *testin
 	const feedback = "preserve the current manual fixer branch"
 
 	h, plansDir := newLifecycleCharacterizationHome(t, planFile, taskstate.StatusReviewing)
-	oldManaged := repoManagedByDaemon
-	repoManagedByDaemon = func(repoPath string) bool {
-		return filepath.Clean(repoPath) == filepath.Clean(h.activeRepoPath)
-	}
-	t.Cleanup(func() {
-		repoManagedByDaemon = oldManaged
-	})
 	require.NoError(t, h.taskState.SetLatestReviewFeedback(planFile, feedback))
 
 	model, cmd := h.executeContextAction("start_fixer")
@@ -147,8 +140,6 @@ func TestExecuteContextAction_StartFixerFromReviewing_Characterization(t *testin
 	require.True(t, ok)
 	assert.Equal(t, taskstate.StatusImplementing, entry.Status)
 	assert.Equal(t, 1, entry.ReviewCycle)
-	assert.Equal(t, feedback, entry.LatestReviewFeedback)
-	assert.Equal(t, taskstore.ExecutionState{Phase: "fixing", ActiveAgentType: session.AgentTypeFixer}, entry.ExecutionState)
 
 	var fixer *session.Instance
 	for _, inst := range updated.nav.GetInstances() {

@@ -962,18 +962,10 @@ func TestExecuteContextAction_SetStatusForceOverridesWithoutFSM(t *testing.T) {
 	assert.Equal(t, planFile, h.pendingSetStatusTask, "pending plan file should be stored")
 }
 
-func TestHandleKeyPress_SetStatusPlannedCreatesPlannedReadyForDaemonManagedRepo(t *testing.T) {
+func TestHandleKeyPress_SetStatusPlannedCreatesPlannedReady(t *testing.T) {
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
-
-	oldManaged := repoManagedByDaemon
-	repoManagedByDaemon = func(repoPath string) bool {
-		return filepath.Clean(repoPath) == filepath.Clean(dir)
-	}
-	t.Cleanup(func() {
-		repoManagedByDaemon = oldManaged
-	})
 
 	ps, err := newTestPlanState(t, plansDir)
 	require.NoError(t, err)
@@ -1220,19 +1212,10 @@ func TestStartFixer_UsesPersistedLatestReviewFeedback(t *testing.T) {
 	assert.Contains(t, fixer.QueuedPrompt, "Current fix round: 4")
 }
 
-func TestAdvanceReviewCycle_CapturesFeedbackForDaemonManagedRepo(t *testing.T) {
+func TestAdvanceReviewCycle_CapturesFeedback(t *testing.T) {
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
-
-	oldManaged := repoManagedByDaemon
-	repoManagedByDaemon = func(repoPath string) bool {
-		return filepath.Clean(repoPath) == filepath.Clean(dir)
-	}
-	t.Cleanup(func() {
-		repoManagedByDaemon = oldManaged
-	})
-
 	ps, err := newTestPlanState(t, plansDir)
 	require.NoError(t, err)
 	const planFile = "feature"

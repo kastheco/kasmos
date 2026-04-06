@@ -221,7 +221,7 @@ Write a failing test reproducing the bug first (TDD discipline applies to bugfix
 
 ## Verification
 
-Before claiming a task is complete, before committing, before marking completion:
+Before claiming a task is complete, before committing, before reporting completion:
 
 ### The Gate
 
@@ -349,7 +349,7 @@ agent returns to its input prompt. The wave orchestrator handles all lifecycle t
 After implementing and committing your task: **stop.** Do not implement other tasks, do not
 write signal files, do not invoke branch finishing — kasmos handles orchestration.
 
-**Do not modify task state directly.** When a workflow genuinely requires a lifecycle action, prefer MCP `task_transition` / `signal_create`; do not shell out to `kas signal emit` or touch sentinel files when MCP is available.
+**Do not modify task state directly.** When a workflow genuinely requires a lifecycle action, prefer MCP `task_transition` / `signal_create`; if MCP is unavailable, use `kas task transition` / `kas signal emit`; use sentinel files only as a last resort.
 
 ### Manual (KASMOS_MANAGED unset)
 
@@ -361,6 +361,7 @@ Execute waves sequentially:
 4. After all waves complete and all tests pass:
 
 after all waves complete and tests pass, use MCP `task_transition` (filename: "<task-file>", event: "request_review") to move the plan to `reviewing`.
+if MCP is unavailable in this manual workflow, fall back to `kas task transition <task-file> request_review` before offering branch-finishing options.
 
 Then handle branch finishing — present these options to the user:
 
@@ -436,4 +437,4 @@ Use MCP `task_transition` (filename: "<task-file>", event: "review_approved", fo
 | Implementing unclear review feedback | Ask for clarification on ALL unclear items first |
 | Running project-wide formatters | Scope formatters to your changed files only |
 | Modifying task state directly when `KASMOS_MANAGED=1` | Do NOT write sentinels either — kasmos detects task completion automatically when agent returns to prompt |
-| Implementing sibling tasks in managed mode | Implement ONE task (KASMOS_TASK), then signal and stop |
+| Implementing sibling tasks in managed mode | Implement ONE task (KASMOS_TASK), then stop and let kasmos detect completion |
