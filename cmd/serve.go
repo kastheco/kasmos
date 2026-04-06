@@ -164,37 +164,26 @@ func NewServeCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				store, err = taskstore.NewMultiStore(repoRegs.configs)
-				if err != nil {
-					return fmt.Errorf("open task store: %w", err)
-				}
-				gw, err = taskstore.NewMultiSignalGateway(repoRegs.configs)
-				if err != nil {
-					_ = store.Close()
-					return fmt.Errorf("open signal gateway: %w", err)
-				}
-				logger, err = auditlog.NewMultiLogger(repoPaths)
-				if err != nil {
-					_ = gw.Close()
-					_ = store.Close()
-					return fmt.Errorf("open audit logger: %w", err)
-				}
-			} else {
-				store, err = taskstore.NewSQLiteStore(db)
-				if err != nil {
-					return fmt.Errorf("open task store: %w", err)
-				}
-				gw, err = taskstore.NewSQLiteSignalGateway(db)
-				if err != nil {
-					_ = store.Close()
-					return fmt.Errorf("open signal gateway: %w", err)
-				}
-				logger, err = auditlog.NewSQLiteLogger(db)
-				if err != nil {
-					_ = gw.Close()
-					_ = store.Close()
-					return fmt.Errorf("open audit logger: %w", err)
-				}
+			}
+
+			// Always use the single global DB — the project column already
+			// namespaces per-repo data.  The old MultiStore path opened
+			// per-repo <repo>/.kasmos/taskstore.db files which diverged
+			// from the daemon/TUI/CLI that all use the global DB.
+			store, err = taskstore.NewSQLiteStore(db)
+			if err != nil {
+				return fmt.Errorf("open task store: %w", err)
+			}
+			gw, err = taskstore.NewSQLiteSignalGateway(db)
+			if err != nil {
+				_ = store.Close()
+				return fmt.Errorf("open signal gateway: %w", err)
+			}
+			logger, err = auditlog.NewSQLiteLogger(db)
+			if err != nil {
+				_ = gw.Close()
+				_ = store.Close()
+				return fmt.Errorf("open audit logger: %w", err)
 			}
 			defer store.Close()
 			defer gw.Close()
