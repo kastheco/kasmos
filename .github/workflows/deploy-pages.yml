@@ -40,11 +40,6 @@ jobs:
       - name: Install dependencies
         run: cd web && npm ci
 
-      - name: Update Next.js config for static export
-        run: |
-          cd web
-          # Add output: 'export' to next.config.ts
-
       - name: Build website
         run: cd web && npm run build
 
@@ -55,7 +50,7 @@ jobs:
         run: cd web/docs && npm run build
 
       - name: Merge docs into marketing site output
-        run: mkdir -p web/out/docs && cp -R web/docs/out/. web/out/docs/
+        run: mkdir -p web/out/docs && cp -R web/docs/out/docs/. web/out/docs/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

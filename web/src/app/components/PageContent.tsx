@@ -8,27 +8,32 @@ import ScrollReveal from "./ScrollReveal";
 import FeatureCard from "./FeatureCard";
 import InstallTabs from "./InstallTabs";
 import Header from "./Header";
-import BeeCompanion from "./BeeCompanion";
 import PixelBee from "./PixelBee";
 
 const features = [
   {
     icon: "\u{1F916}",
-    title: "Multi-Agent Management",
+    title: "Multi-Agent Orchestration",
     description:
-      "Run Claude Code, Codex, Aider, and Gemini CLI side-by-side. Supervise all your AI agents from a single terminal UI.",
+      "Run claude, codex, gemini, amp, and other AI agents concurrently. Each gets an isolated git worktree and tmux session.",
   },
   {
-    icon: "\u{1F500}",
-    title: "Isolated Git Workspaces",
+    icon: "\u{1F30A}",
+    title: "Wave-Based Lifecycle",
     description:
-      "Each agent works in its own git worktree. No conflicts, no overwrites. Merge when you're ready.",
+      "Plans decompose into waves of parallel tasks. Agents execute, reviewers verify, masters do final QA. Structured pipeline from planning \u2192 implementing \u2192 reviewing \u2192 done.",
   },
   {
-    icon: "\u{1F50D}",
-    title: "Live Preview & Diff",
+    icon: "\u{1F527}",
+    title: "MCP Server Architecture",
     description:
-      "See real-time diffs of what your agents are changing. Review every line before it hits your codebase.",
+      "kasmos exposes an MCP server for task CRUD, signals, instance management, and codebase tools. Agents interact through MCP, not filesystem hacks.",
+  },
+  {
+    icon: "\u{1F5C2}",
+    title: "Multi-Repo Support",
+    description:
+      "Manage tasks across multiple repositories from a single daemon. Each repo gets its own config and task store.",
   },
   {
     icon: "\u{1F4BE}",
@@ -42,26 +47,19 @@ const features = [
     description:
       "Automatically commit agent work and create pull requests. Ship faster with less manual overhead.",
   },
-  {
-    icon: "\u{1F310}",
-    title: "Universal Agent Support",
-    description:
-      "Works with any CLI-based AI agent. If it runs in a terminal, kas can manage it.",
-  },
 ];
 
 const typewriterTexts = [
-  "Supervise multiple AI agents at once",
-  "Ship features 10x faster",
-  "Review diffs before merging",
-  "Isolated workspaces, zero conflicts",
+  "Run agents in parallel across isolated worktrees",
+  "Wave-based execution with lifecycle signals",
+  "MCP-powered orchestration built-in",
+  "Concurrent agents, zero conflicts",
 ];
 
 export default function PageContent() {
   return (
     <div className={styles.page}>
       <StarField />
-      <BeeCompanion />
 
       <div className={`${styles.glowOrb} ${styles.glowAmber}`} />
       <div className={`${styles.glowOrb} ${styles.glowTeal}`} />
@@ -73,10 +71,10 @@ export default function PageContent() {
         <section className={styles.hero}>
           <PixelBee scale={3} bob className={styles.heroBee} />
           <GradientText as="h1" className={styles.heroTitle}>
-            kas
+            kasmos
           </GradientText>
           <p className={styles.heroSubtitle}>
-            The agent-driven IDE for your terminal
+            multi-agent orchestration for your terminal
           </p>
           <div className={styles.heroTypewriter}>
             <TypewriterText texts={typewriterTexts} />
@@ -94,11 +92,7 @@ export default function PageContent() {
               View on GitHub
             </a>
             <a
-              href={
-                process.env.NODE_ENV === "production"
-                  ? "/kasmos/docs"
-                  : "/docs"
-              }
+              href="/docs"
               className={styles.ctaSecondary}
             >
               Read the Docs
@@ -124,10 +118,9 @@ export default function PageContent() {
         {/* Features */}
         <section className={styles.section}>
           <ScrollReveal>
-            <h2 className={styles.sectionTitle}>Why kas?</h2>
+            <h2 className={styles.sectionTitle}>Why kasmos?</h2>
             <p className={styles.sectionSubtitle}>
-              Everything you need to manage multiple AI coding agents from one
-              place.
+              Wave-based execution, isolated worktrees, and MCP-native tooling — everything you need to run concurrent AI agents at scale.
             </p>
           </ScrollReveal>
           <div className={styles.featuresGrid}>
@@ -139,12 +132,101 @@ export default function PageContent() {
           </div>
         </section>
 
+        {/* How it Works */}
+        <section className={styles.section}>
+          <ScrollReveal>
+            <h2 className={styles.sectionTitle}>How it Works</h2>
+            <p className={styles.sectionSubtitle}>
+              kasmos decomposes your feature spec into waves of parallel tasks,
+              each executed by a specialized agent in its own isolated worktree.
+            </p>
+          </ScrollReveal>
+
+          <ScrollReveal>
+            <div className={styles.lifecyclePipeline}>
+              {(
+                [
+                  { label: "planning", color: "amber" },
+                  { label: "implementing", color: "teal" },
+                  { label: "reviewing", color: "amber" },
+                  { label: "done", color: "teal" },
+                ] as const
+              ).map((step, i, arr) => (
+                <div key={step.label} className={styles.lifecycleStepGroup}>
+                  <div
+                    className={`${styles.lifecycleStep} ${step.color === "amber" ? styles.lifecycleAmber : styles.lifecycleTeal}`}
+                  >
+                    <span className={styles.lifecycleStepNum}>{i + 1}</span>
+                    <span className={styles.lifecycleStepLabel}>{step.label}</span>
+                  </div>
+                  {i < arr.length - 1 && (
+                    <div className={styles.lifecycleArrow}>→</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </ScrollReveal>
+
+          <div className={styles.agentsGrid}>
+            {(
+              [
+                {
+                  role: "planner",
+                  icon: "📋",
+                  desc: "Writes the feature spec and breaks it into high-level tasks.",
+                  color: "amber",
+                },
+                {
+                  role: "architect",
+                  icon: "🏗️",
+                  desc: "Decomposes the plan into implementation waves with inter-task dependencies.",
+                  color: "teal",
+                },
+                {
+                  role: "elaborator",
+                  icon: "✍️",
+                  desc: "Enriches each task with exact file paths, interfaces, and acceptance criteria.",
+                  color: "amber",
+                },
+                {
+                  role: "coder",
+                  icon: "⚡",
+                  desc: "Implements the task in an isolated git worktree, following TDD.",
+                  color: "teal",
+                },
+                {
+                  role: "reviewer",
+                  icon: "🔍",
+                  desc: "Checks correctness, spec compliance, and code quality per task.",
+                  color: "amber",
+                },
+                {
+                  role: "master",
+                  icon: "🎯",
+                  desc: "Performs final holistic review across all merged changes before shipping.",
+                  color: "teal",
+                },
+              ] as const
+            ).map((agent, i) => (
+              <ScrollReveal key={agent.role} delay={i * 0.08}>
+                <div
+                  className={`${styles.agentCard} ${agent.color === "amber" ? styles.agentAmber : styles.agentTeal}`}
+                >
+                  <span className={styles.agentIcon}>{agent.icon}</span>
+                  <span className={styles.agentRole}>{agent.role}</span>
+                  <p className={styles.agentDesc}>{agent.desc}</p>
+                </div>
+              </ScrollReveal>
+            ))}
+          </div>
+        </section>
+
         {/* Installation */}
         <section id="install" className={styles.section}>
           <ScrollReveal className={styles.installSection}>
             <h2 className={styles.sectionTitle}>Get Started</h2>
             <p className={styles.sectionSubtitle}>
-              Install kas in seconds. Works on macOS, Linux, and Windows.
+              Install kasmos in seconds. Works on macOS, Linux, and Windows.
             </p>
             <InstallTabs />
             <p className={styles.installPrereqs}>
@@ -157,7 +239,7 @@ export default function PageContent() {
         <footer className={styles.footer}>
           <div className={styles.footerGradientLine} />
           <p className={styles.footerText}>
-            &copy; {new Date().getFullYear()} kas by{" "}
+            &copy; {new Date().getFullYear()} kasmos by{" "}
             <a
               href="https://github.com/kastheco"
               target="_blank"
