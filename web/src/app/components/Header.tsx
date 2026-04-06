@@ -17,7 +17,7 @@ export default function Header() {
     <header className={`${styles.header} ${scrolled ? styles.scrolled : ""}`}>
       <a href="#" className={styles.logoWrapper}>
         <PixelBee scale={2} bob={false} />
-        <span className={styles.logo}>kas</span>
+        <span className={styles.logo}>kasmos</span>
       </a>
       <nav className={styles.nav}>
         <a
