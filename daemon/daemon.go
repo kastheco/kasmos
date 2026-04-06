@@ -873,7 +873,7 @@ func shouldProcessWaveTaskCompletion(entry taskstore.TaskEntry, inst *session.In
 	if taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase) != taskfsm.ExecutionPhaseWaveRunning {
 		return taskfsm.TaskSignal{}, false
 	}
-	if inst.ImplementationComplete || !inst.HasWorked {
+	if inst.ImplementationComplete {
 		return taskfsm.TaskSignal{}, false
 	}
 
@@ -922,6 +922,12 @@ func (d *Daemon) processCompletedWaveTask(ctx context.Context, e RepoEntry, inst
 		return false, nil
 	}
 
+	for _, action := range actions {
+		if err := d.executeAction(ctx, e, action); err != nil {
+			return false, err
+		}
+	}
+
 	inst.ImplementationComplete = true
 	if !tmuxAlive {
 		inst.Exited = true
@@ -930,11 +936,6 @@ func (d *Daemon) processCompletedWaveTask(ctx context.Context, e RepoEntry, inst
 		}
 	}
 
-	for _, action := range actions {
-		if err := d.executeAction(ctx, e, action); err != nil {
-			return false, err
-		}
-	}
 	return true, nil
 }
 
