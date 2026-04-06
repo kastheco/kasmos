@@ -224,6 +224,9 @@ func NewHandler(store Store) http.Handler {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		if subtasks == nil {
+			subtasks = []SubtaskEntry{}
+		}
 		writeJSON(w, http.StatusOK, subtasks)
 	})
 
@@ -545,6 +548,9 @@ func NewHandler(store Store) http.Handler {
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
+		}
+		if topics == nil {
+			topics = []TopicEntry{}
 		}
 		writeJSON(w, http.StatusOK, topics)
 	})

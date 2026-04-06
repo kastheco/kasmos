@@ -623,3 +623,55 @@ func TestSQLiteStore_PRReviews_OrderedByReviewID(t *testing.T) {
 	assert.Equal(t, 200, pending[1].ReviewID)
 	assert.Equal(t, 300, pending[2].ReviewID)
 }
+
+func TestSQLiteStore_EmptySlices(t *testing.T) {
+	store := newTestStore(t)
+
+	// Seed one task so Get-dependent queries work.
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename: "plan",
+		Status:   taskstore.StatusReady,
+	}))
+
+	t.Run("List returns non-nil empty slice", func(t *testing.T) {
+		got, err := store.List("empty-project")
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Empty(t, got)
+	})
+
+	t.Run("ListByTopic returns non-nil empty slice", func(t *testing.T) {
+		got, err := store.ListByTopic("proj", "missing-topic")
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Empty(t, got)
+	})
+
+	t.Run("ListByStatus with matches returns non-nil empty slice", func(t *testing.T) {
+		got, err := store.ListByStatus("proj", taskstore.StatusDone)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Empty(t, got)
+	})
+
+	t.Run("ListByStatus zero-arg returns non-nil empty slice", func(t *testing.T) {
+		got, err := store.ListByStatus("proj")
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Empty(t, got)
+	})
+
+	t.Run("GetSubtasks returns non-nil empty slice", func(t *testing.T) {
+		got, err := store.GetSubtasks("proj", "plan")
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Empty(t, got)
+	})
+
+	t.Run("ListTopics returns non-nil empty slice", func(t *testing.T) {
+		got, err := store.ListTopics("proj")
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Empty(t, got)
+	})
+}

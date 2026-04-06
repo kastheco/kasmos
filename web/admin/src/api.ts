@@ -99,9 +99,9 @@ export async function getSubtasks(
   project: string,
   filename: string,
 ): Promise<SubtaskEntry[]> {
-  return requestJSON<SubtaskEntry[]>(
+  return (await requestJSON<SubtaskEntry[] | null>(
     `/v1/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(filename)}/subtasks`,
-  );
+  )) ?? [];
 }
 
 export async function listTopics(project: string): Promise<TopicEntry[]> {
