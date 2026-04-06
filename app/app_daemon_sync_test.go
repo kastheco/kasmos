@@ -437,6 +437,36 @@ func TestDaemonSync_TickUpgradesLoadingPlaceholderWhenSessionAppears(t *testing.
 	assert.False(t, live.Exited)
 }
 
+func TestDaemonSync_TUIStartedLoadingInstanceNotExpired(t *testing.T) {
+	h := newTestHome()
+	h.activeRepoPath = t.TempDir()
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:     "kasmos-agent-1",
+		Path:      h.activeRepoPath,
+		Program:   "claude",
+		AgentType: session.AgentTypeFixer,
+	})
+	require.NoError(t, err)
+	inst.SetStatus(session.Loading)
+	// Backdate CreatedAt so the instance looks stale (>30s old).
+	inst.CreatedAt = time.Now().Add(-60 * time.Second)
+
+	h.nav.AddInstance(inst)
+	h.allInstances = append(h.allInstances, inst)
+	require.Equal(t, 1, h.nav.TotalInstances())
+
+	// Simulate a daemon sync where the daemon doesn't know about this instance.
+	model, _ := h.Update(metadataResultMsg{
+		DaemonManagedRepo: true,
+		DaemonTitles:      []string{},
+		DaemonInstances:   nil,
+	})
+	updated := model.(*home)
+	assert.Equal(t, 1, updated.nav.TotalInstances(),
+		"TUI-started loading instance must not be expired just because daemon doesn't know about it")
+}
+
 func TestDaemonSync_DeleteDismissedDeadInstanceDoesNotReappear(t *testing.T) {
 	h := newTestHome()
 	h.nav.SetTopicsAndPlans(nil, []ui.PlanDisplay{{Filename: "feature", Status: string(taskstate.StatusPlanning)}}, nil)

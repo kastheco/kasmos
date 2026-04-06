@@ -1607,7 +1607,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				_, daemonKnows := daemonTitleSet[existing.Title]
 				_, daemonActive := activeDaemonTitles[existing.Title]
 				stale := !existing.CreatedAt.IsZero() && time.Since(existing.CreatedAt) > 30*time.Second
-				if (daemonKnows && !daemonActive) || stale {
+				if daemonKnows && (!daemonActive || stale) {
 					log.WarningLog.Printf("expiring stale loading placeholder %q (daemon_known=%v daemon_active=%v age=%v)",
 						existing.Title, daemonKnows, daemonActive, time.Since(existing.CreatedAt).Round(time.Second))
 					m.nav.RemoveByTitle(existing.Title)
