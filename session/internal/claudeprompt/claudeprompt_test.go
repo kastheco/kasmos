@@ -62,6 +62,20 @@ func TestFind(t *testing.T) {
 			wantPattern: "go vet:*",
 		},
 		{
+			name: "legacy Do you want to proceed with Yes/No",
+			content: strings.Join([]string{
+				"Claude wants to execute the following command:",
+				"Bash: git status",
+				"",
+				"Do you want to proceed?",
+				"  Yes",
+				"  No",
+			}, "\n"),
+			wantNil:     false,
+			wantDesc:    "Bash: git status",
+			wantPattern: "Bash: git status",
+		},
+		{
 			name: "legacy Allow tool question",
 			content: strings.Join([]string{
 				"Allow tool Bash (git diff HEAD~1)?",

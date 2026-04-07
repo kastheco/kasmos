@@ -104,10 +104,23 @@ func findLegacyPrompt(lines []string) *Prompt {
 			continue
 		}
 
-		description := extractToolFromQuestion(t)
+		description := findLegacyDescription(lines, i, t)
 		return &Prompt{Description: description, Pattern: description}
 	}
 	return nil
+}
+
+// findLegacyDescription returns the human-readable tool detail for a legacy
+// prompt. "Allow tool ...?" embeds the detail in the question itself, while
+// "Do you want to proceed?" relies on the closest preceding detail line
+// (e.g. "Bash: git status").
+func findLegacyDescription(lines []string, questionIdx int, question string) string {
+	if strings.EqualFold(strings.TrimSpace(question), "Do you want to proceed?") {
+		if description := findDescriptionBefore(lines, questionIdx); description != "" {
+			return description
+		}
+	}
+	return extractToolFromQuestion(question)
 }
 
 // findDescriptionBefore returns the tool-detail line immediately preceding the
