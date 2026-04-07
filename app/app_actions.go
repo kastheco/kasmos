@@ -1617,7 +1617,6 @@ func (m *home) taskLauncherItems(planFile string, entry taskstate.TaskEntry) []o
 		overlay.LauncherItem{Label: "set topic", Action: "change_topic"},
 		overlay.LauncherItem{Label: "cancel task", Action: "cancel_plan"},
 	)
-	_ = planFile // consumed by executeContextAction via the shared dispatcher
 	return items
 }
 
