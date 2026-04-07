@@ -313,11 +313,14 @@ func infoDisplayedWaveTotal(waveNumber, totalWaves int) int {
 // TotalTasks for legacy or non-wave instances.
 // When the total is unknown (zero), total is returned as 0 and callers must
 // render numerator-only (e.g. "task 3") to avoid misleading "N/0" displays.
+// Note: the wave-local path guarantees total > 0 via the waveTaskCount > 0 guard.
 func infoDisplayedTaskCounter(taskNumber, totalTasks, waveTaskIndex, waveTaskCount int) (current, total int, ok bool) {
 	if waveTaskIndex > 0 && waveTaskCount > 0 {
+		// waveTaskCount > 0 guaranteed by the guard above; total is always known here.
 		return waveTaskIndex, waveTaskCount, true
 	}
 	if taskNumber > 0 {
+		// totalTasks may be 0 (unknown); callers handle tot==0 as numerator-only.
 		return taskNumber, totalTasks, true
 	}
 	return 0, 0, false

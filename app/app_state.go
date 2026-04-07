@@ -3307,7 +3307,7 @@ func (m *home) spawnWaveTasks(orch *orchestration.WaveOrchestrator, tasks []task
 			TaskNumber:    task.Number,
 			WaveNumber:    orch.CurrentWaveNumber(),
 			PeerCount:     len(tasks),
-			WaveTaskIndex: waveTaskPos[task.Number],
+			WaveTaskIndex: waveTaskPos[task.Number], // 0 (unknown) if task not in current wave — safe, never happens in practice
 			WaveTaskCount: waveTaskCount,
 		})
 		if err != nil {
