@@ -3,6 +3,7 @@ package wizard
 import (
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
 	"github.com/stretchr/testify/assert"
 )
@@ -74,4 +75,27 @@ func TestHarnessStep_ViewDoesNotRenderRootHeader(t *testing.T) {
 	view := h.View(80, 24)
 	assert.NotContains(t, view, "kasmos setup")
 	assert.NotContains(t, view, "guided setup for harnesses and agents")
+}
+
+func TestHarnessStep_TabAdvancesWhenSelectionExists(t *testing.T) {
+	h := newHarnessStep([]harness.DetectResult{
+		{Name: "claude", Path: "/usr/bin/claude", Found: true},
+	})
+	_, cmd := h.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	assert.NotNil(t, cmd, "tab should return a non-nil cmd when a harness is selected")
+	msg := cmd()
+	_, isDone := msg.(stepDoneMsg)
+	assert.True(t, isDone, "cmd should emit stepDoneMsg")
+}
+
+func TestHarnessStep_EnterTogglesCurrentItem(t *testing.T) {
+	h := newHarnessStep([]harness.DetectResult{
+		{Name: "claude", Path: "/usr/bin/claude", Found: true},
+	})
+	h.cursor = 0
+	initialState := h.selected["claude"]
+
+	_, cmd := h.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	assert.Nil(t, cmd, "enter should not return a cmd")
+	assert.Equal(t, !initialState, h.selected["claude"], "enter should toggle selection")
 }
