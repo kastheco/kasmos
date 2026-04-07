@@ -115,17 +115,9 @@ On daemon startup, before the first poll tick, `taskfsm.RecoverInFlight(signalsD
 
 ### writing a filesystem signal directly
 
-```sh
-kas signal emit implement_finished my-plan
-```
+Legacy agents or low-level tooling can write to the filesystem path by calling `taskfsm.AtomicWrite` in `config/taskfsm/signalfs.go`. The write is atomic: the payload is staged under `staging/` and renamed into the signals root in a single syscall. The daemon bridge picks it up on the next tick and promotes it to a DB-backed row.
 
-This calls `taskfsm.AtomicWrite`, which:
-
-1. Creates `staging/`, `processing/`, and `failed/` if they do not exist.
-2. Writes the payload to `signals/staging/<filename>`.
-3. Renames `staging/<filename>` → `signals/<filename>` atomically.
-
-The daemon bridge will pick this up and promote it to the DB on the next tick.
+> **Note:** `kas signal emit` routes to the DB gateway, not the filesystem. Use it from the command line to write DB-backed signals; the filesystem path is for legacy agents that cannot call the gateway directly.
 
 ## inspecting signals
 
