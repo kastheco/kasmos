@@ -329,3 +329,122 @@ func TestRenderCompact_ShowsViewPlanHintForInstance(t *testing.T) {
 	compact := p.RenderCompact(80)
 	assert.Contains(t, compact, "view plan [p]")
 }
+
+// TestInfoPane_WaveLocalTaskCounters verifies that compact output uses wave-local
+// task counters (WaveTaskIndex/WaveTaskCount) when both are set.
+func TestInfoPane_WaveLocalTaskCounters(t *testing.T) {
+	p := NewInfoPane()
+	p.SetSize(80, 24)
+	p.SetData(InfoData{
+		HasInstance:   true,
+		HasPlan:       true,
+		Title:         "my-feature-coder-1",
+		Status:        "running",
+		PlanName:      "my-feature",
+		WaveNumber:    2,
+		TotalWaves:    2,
+		TaskNumber:    3,
+		TotalTasks:    6,
+		WaveTaskIndex: 1,
+		WaveTaskCount: 2,
+	})
+
+	compact := p.RenderCompact(80)
+	// wave-local counter preferred over global
+	assert.Contains(t, compact, "task 1/2")
+	// global counter must not appear
+	assert.NotContains(t, compact, "task 3/6")
+}
+
+// TestInfoPane_SuppressActiveWaveWhenInstanceHasWaveCounter checks that
+// "active wave N" is not emitted alongside an instance-level "wave N/M".
+func TestInfoPane_SuppressActiveWaveWhenInstanceHasWaveCounter(t *testing.T) {
+	p := NewInfoPane()
+	p.SetSize(80, 24)
+	p.SetData(InfoData{
+		HasInstance:   true,
+		HasPlan:       true,
+		Title:         "my-feature-coder-1",
+		Status:        "running",
+		PlanName:      "my-feature",
+		ActiveWave:    2,
+		WaveNumber:    2,
+		TotalWaves:    3,
+		WaveTaskIndex: 1,
+		WaveTaskCount: 2,
+	})
+
+	compact := p.RenderCompact(80)
+	// wave N/M should appear for the instance
+	assert.Contains(t, compact, "wave 2/3")
+	// "active wave N" is redundant and must be suppressed
+	assert.NotContains(t, compact, "active wave 2")
+}
+
+// TestInfoPane_ClampedWaveDenominator verifies the denominator is clamped when
+// TotalWaves is stale and smaller than WaveNumber.
+func TestInfoPane_ClampedWaveDenominator(t *testing.T) {
+	p := NewInfoPane()
+	p.SetSize(80, 24)
+	p.SetData(InfoData{
+		HasInstance: true,
+		HasPlan:     true,
+		Title:       "my-feature-coder",
+		Status:      "running",
+		PlanName:    "my-feature",
+		WaveNumber:  2,
+		TotalWaves:  1, // stale — must be clamped to 2
+	})
+
+	compact := p.RenderCompact(80)
+	assert.Contains(t, compact, "wave 2/2")
+	assert.NotContains(t, compact, "wave 2/1")
+}
+
+// TestInfoPane_InstanceSectionWaveLocalCounter verifies that the full instance
+// section uses wave-local counters instead of the global task position.
+func TestInfoPane_InstanceSectionWaveLocalCounter(t *testing.T) {
+	pane := NewInfoPane()
+	pane.SetSize(70, 30)
+	pane.SetData(InfoData{
+		HasInstance:   true,
+		HasPlan:       true,
+		Title:         "my-feature-coder",
+		Status:        "running",
+		PlanName:      "my-feature",
+		AgentType:     "coder",
+		TaskNumber:    3,
+		TotalTasks:    6,
+		TaskTitle:     "http endpoints",
+		WaveTaskIndex: 2,
+		WaveTaskCount: 3,
+	})
+
+	output := pane.String()
+	// wave-local counter should be displayed
+	assert.Contains(t, output, "2 of 3: http endpoints")
+	// global counter must not appear
+	assert.NotContains(t, output, "3 of 6")
+}
+
+// TestInfoPane_FallbackToGlobalCounterWhenNoWaveFields verifies legacy instances
+// (WaveTaskIndex == 0) still show a sensible global counter.
+func TestInfoPane_FallbackToGlobalCounterWhenNoWaveFields(t *testing.T) {
+	pane := NewInfoPane()
+	pane.SetSize(70, 30)
+	pane.SetData(InfoData{
+		HasInstance:   true,
+		HasPlan:       true,
+		Title:         "my-feature-coder",
+		Status:        "running",
+		PlanName:      "my-feature",
+		TaskNumber:    3,
+		TotalTasks:    6,
+		TaskTitle:     "http endpoints",
+		WaveTaskIndex: 0, // legacy — not set
+		WaveTaskCount: 0,
+	})
+
+	output := pane.String()
+	assert.Contains(t, output, "3 of 6: http endpoints")
+}

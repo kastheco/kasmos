@@ -1517,15 +1517,17 @@ func (m *home) updateInfoPane() {
 	}
 
 	data := ui.InfoData{
-		HasInstance: true,
-		Title:       selected.DisplayName(),
-		Program:     selected.Program,
-		Branch:      selected.Branch,
-		Path:        selected.Path,
-		Status:      statusString(selected.Status),
-		AgentType:   selected.AgentType,
-		TaskNumber:  selected.TaskNumber,
-		WaveNumber:  selected.WaveNumber,
+		HasInstance:   true,
+		Title:         selected.DisplayName(),
+		Program:       selected.Program,
+		Branch:        selected.Branch,
+		Path:          selected.Path,
+		Status:        statusString(selected.Status),
+		AgentType:     selected.AgentType,
+		TaskNumber:    selected.TaskNumber,
+		WaveNumber:    selected.WaveNumber,
+		WaveTaskIndex: selected.WaveTaskIndex,
+		WaveTaskCount: selected.WaveTaskCount,
 	}
 
 	if !selected.CreatedAt.IsZero() {
@@ -3283,7 +3285,7 @@ func (m *home) spawnWaveTasks(orch *orchestration.WaveOrchestrator, tasks []task
 	}
 
 	var cmds []tea.Cmd
-	for _, task := range tasks {
+	for i, task := range tasks {
 		prompt := orch.BuildTaskPrompt(task, len(tasks))
 
 		inst, err := session.NewInstance(session.InstanceOptions{
@@ -3296,6 +3298,8 @@ func (m *home) spawnWaveTasks(orch *orchestration.WaveOrchestrator, tasks []task
 			TaskNumber:    task.Number,
 			WaveNumber:    orch.CurrentWaveNumber(),
 			PeerCount:     len(tasks),
+			WaveTaskIndex: i + 1,
+			WaveTaskCount: len(tasks),
 		})
 		if err != nil {
 			return m, m.handleError(err)
