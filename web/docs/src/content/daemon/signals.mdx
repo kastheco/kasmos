@@ -1,59 +1,18 @@
 # signals
 
-Signals are the messaging layer between agent processes and the daemon. An agent (planner, coder, reviewer, etc.) writes a signal file when it completes a lifecycle phase; the daemon picks it up and drives the next FSM transition.
+Signals are the messaging layer between agent processes and the daemon. An agent (planner, coder, reviewer, etc.) emits a signal when it completes a lifecycle phase; the daemon picks it up and drives the next FSM transition.
 
-kasmos supports two signal paths: a **filesystem path** for direct writes from agents, and a **DB-backed path** for atomic, auditable processing. Both paths coexist — the daemon bridges filesystem signals into the DB on every tick.
+The **primary signal path is the DB-backed gateway** — signals are rows in the `signals` SQLite table inside each repo's `taskstore.db`. This path is atomic, auditable, and safely concurrent. A secondary **filesystem path** exists for compatibility and is automatically bridged into the DB on every daemon tick.
 
-## filesystem path
-
-The filesystem path is implemented in `config/taskfsm/signalfs.go`. Signals are plain files written atomically to the repo's signals directory.
-
-### directory layout
-
-```
-<repo>/.kasmos/signals/
-├── staging/           # atomic write staging area
-├── processing/        # signals currently being processed by the daemon
-├── failed/            # dead-lettered signals
-│   └── *.reason       # companion file with ISO-8601 timestamp + failure reason
-└── <signal-file>      # pending signals ready for pickup
-```
-
-- **`staging/`** — agents write here first, then atomically rename to the parent dir via `AtomicWrite`. This prevents the daemon from picking up a partially written file.
-- **`processing/`** — the daemon moves a file here via `BeginProcessing` before dispatching. If the daemon crashes between pick-up and completion, the file stays in `processing/`.
-- **`failed/`** — `FailProcessing` moves rejected signals here and writes a `.reason` file. Inspect these to debug signal routing failures.
-
-### startup recovery
-
-On daemon startup, before the first poll tick, `taskfsm.RecoverInFlight(signalsDir)` scans `processing/` and moves any leftover files back to the signals root so they can be re-dispatched. If a newer signal with the same name already exists in the root (written after the crash), the stale in-flight copy is discarded to avoid overwriting newer state.
-
-### writing a signal
-
-Agents write signals using `kas signal emit`:
+> **Prefer `kas signal emit` over writing sentinel files directly.** The CLI routes signals through the DB gateway, giving you audit history, stuck-signal recovery, and proper error messages.
 
 ```sh
-kas signal emit implement_finished my-plan --payload '{}'
+# emit a signal (DB gateway path — preferred)
+kas signal emit implement_finished my-plan
+kas signal emit implement_task_finished my-plan --payload '{"wave_number":2,"task_number":3}'
 ```
 
-This calls `taskfsm.AtomicWrite`, which:
-
-1. Creates `staging/`, `processing/`, and `failed/` if they do not exist.
-2. Writes the payload to `signals/staging/<filename>`.
-3. Renames `staging/<filename>` → `signals/<filename>` atomically.
-
-### signal types (filesystem)
-
-| signal type | emitted by | triggers |
-|-------------|------------|---------|
-| `implement_finished` | coder / fixer | FSM transition → `reviewing`, spawn reviewer |
-| `implement_task_finished` | wave task agent | wave task complete, possible wave advance |
-| `implement_wave` | daemon / TUI | start next wave |
-| `elaborator_finished` | architect | update plan content, begin wave 1 |
-| `review_approved` | reviewer | FSM transition → `done` |
-| `review_changes_requested` | reviewer | FSM transition → `implementing`, spawn fixer |
-| `planner_finished` | planner | FSM transition → `ready` |
-
-## DB-backed path
+## DB-backed gateway (primary path)
 
 The DB-backed signal gateway is implemented in `config/taskstore/signal_sqlite.go`. Signals are rows in the `signals` SQLite table inside each repo's `taskstore.db`.
 
@@ -97,6 +56,20 @@ pending
 
 `Claim` is a serializable transaction: it updates the row to `processing` in a single `UPDATE … WHERE id = (SELECT … LIMIT 1)` and then re-fetches the claimed row. Concurrent daemon instances or restarted processes cannot claim the same signal twice.
 
+### signal types
+
+| signal type | emitted by | triggers |
+|-------------|------------|---------|
+| `implement_finished` | coder / fixer | FSM transition → `reviewing`, spawn reviewer |
+| `implement_task_finished` | wave task agent | wave task complete, possible wave advance |
+| `implement_wave` | daemon / TUI | start next wave |
+| `elaborator_finished` | architect | update plan content, begin wave 1 |
+| `review_approved` | reviewer | FSM transition → `done` |
+| `review_changes_requested` | reviewer | FSM transition → `implementing`, spawn fixer |
+| `planner_finished` | planner | FSM transition → `ready` |
+
+> **Architect completion:** the canonical internal event is `architect_finished`, but the persisted gateway signal wire name is `elaborator_finished` (a legacy alias preserved for compatibility). `kas signal emit architect_finished` is accepted and normalized to `elaborator_finished` transparently.
+
 ### writing a DB signal
 
 ```sh
@@ -114,6 +87,37 @@ The daemon runs a reaper goroutine every 30 seconds. It calls `gateway.ResetStuc
 On each tick, `loop.BridgeFilesystemSignals` scans the repo's filesystem signals directory (and all shared worktrees under `.worktrees/`) and inserts any signal files it finds as `pending` rows in the DB. The filesystem files are then consumed (deleted) by the bridge so they are not re-inserted on the next tick.
 
 This means agents can write to the filesystem path without knowing whether a gateway is present — the daemon transparently upgrades them to the DB-backed flow when a gateway is available.
+
+## filesystem path (compatibility / legacy)
+
+The filesystem path is preserved for backward compatibility and for low-level debugging. Agents that cannot reach the daemon directly may still write signal files; the bridge ensures they enter the DB-backed flow on the next tick.
+
+The filesystem path is implemented in `config/taskfsm/signalfs.go`. Signals are plain files written atomically to the repo's signals directory.
+
+### directory layout
+
+```
+<repo>/.kasmos/signals/
+├── staging/           # atomic write staging area
+├── processing/        # signals currently being processed by the daemon
+├── failed/            # dead-lettered signals
+│   └── *.reason       # companion file with ISO-8601 timestamp + failure reason
+└── <signal-file>      # pending signals ready for pickup
+```
+
+- **`staging/`** — agents write here first, then atomically rename to the parent dir via `AtomicWrite`. This prevents the daemon from picking up a partially written file.
+- **`processing/`** — the daemon moves a file here via `BeginProcessing` before dispatching. If the daemon crashes between pick-up and completion, the file stays in `processing/`.
+- **`failed/`** — `FailProcessing` moves rejected signals here and writes a `.reason` file. Inspect these to debug signal routing failures.
+
+### startup recovery
+
+On daemon startup, before the first poll tick, `taskfsm.RecoverInFlight(signalsDir)` scans `processing/` and moves any leftover files back to the signals root so they can be re-dispatched. If a newer signal with the same name already exists in the root (written after the crash), the stale in-flight copy is discarded to avoid overwriting newer state.
+
+### writing a filesystem signal directly
+
+Legacy agents or low-level tooling can write to the filesystem path by calling `taskfsm.AtomicWrite` in `config/taskfsm/signalfs.go`. The write is atomic: the payload is staged under `staging/` and renamed into the signals root in a single syscall. The daemon bridge picks it up on the next tick and promotes it to a DB-backed row.
+
+> **Note:** `kas signal emit` routes to the DB gateway, not the filesystem. Use it from the command line to write DB-backed signals; the filesystem path is for legacy agents that cannot call the gateway directly.
 
 ## inspecting signals
 

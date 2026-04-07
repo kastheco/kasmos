@@ -13,6 +13,33 @@ Every task in kasmos moves through a finite state machine (FSM) defined in `conf
 | `done` | the task is complete and merged (or ready to merge) |
 | `cancelled` | explicitly stopped; can be reopened |
 
+## execution phases
+
+While `status` is the coarse lifecycle stage, tasks in the `implementing` and adjacent states carry a finer-grained `ExecutionPhase` that records where the orchestration engine is within that stage.
+
+| phase | meaning |
+|-------|---------|
+| `planned` | planner finished; task is ready to start implementation |
+| `architecting` | architect agent is decomposing the plan into waves |
+| `wave_running` | at least one wave of coder agents is running |
+| `wave_waiting` | current wave finished; waiting for the next wave gate |
+| `single_agent_implementing` | running as a single coder (no wave decomposition) |
+| `fixing` | fixer/remediation agent is addressing review feedback |
+| `reviewing` | reviewer agent is active |
+
+### how phases are set
+
+The `planner_finished` event writes `ExecutionState{Phase: "planned"}` via `TransitionExecutionState` in `config/taskfsm/fsm.go`. All other events leave the phase empty; the orchestration engine writes it directly as agent sessions advance.
+
+### draft-ready vs planned-ready
+
+A `ready` task can be in one of two substates:
+
+- **draft-ready** — `status: ready`, `execution_phase: ""` (empty). The task has been registered but the planner has not yet finished. `implement_start` is **rejected** for draft-ready tasks — both `kas task implement` and the TUI's "implement" action return an error (`"task is ready but not yet planned"`).
+- **planned-ready** — `status: ready`, `execution_phase: "planned"`. The planner finished successfully and the task is safe to hand off to coder agents.
+
+Use `taskstate.IsDraftReady(entry)` and `taskstate.IsPlannedReady(entry)` to distinguish them programmatically.
+
 ## events
 
 Events trigger transitions. Some events are **user-only** (can only be fired from the TUI) and cannot be emitted by agent sentinel files.

@@ -19,12 +19,21 @@ The reviewer agent runs in a tmux session by default (reviewer sessions always u
 
 ## manual review trigger
 
-You can start a review at any time from the plan context menu:
+There are two distinct ways to trigger a review manually, and they work differently.
 
-- open the context menu (`↵` on the plan header) → **start review**
-- or from the CLI: `kas task transition <task-file> request_review`
+### TUI: start review (from context menu)
 
-This transitions the plan to `reviewing` and spawns a fresh reviewer even if implementation hasn't formally finished.
+Open the context menu (`↵` on the plan header) → **start review**.
+
+This action is available from several statuses — `planning`, `ready` (when planned), `implementing`, and `reviewing`. It calls `fsmSetReviewing`, which walks the FSM forward through intermediate states (planning → implementing → reviewing) as needed before spawning a fresh reviewer. It does **not** require the task to be in `done` first; it drives the task to `reviewing` from wherever it currently is.
+
+### CLI: request_review (done → reviewing retrigger)
+
+```bash
+kas task transition <task-file> request_review
+```
+
+This is a narrower FSM transition: it is only valid when the task is already in the `done` state (see `config/taskfsm/fsm.go`). It moves `done → reviewing` and spawns a reviewer — useful to re-review a branch that was marked done but not yet merged. In the TUI this action appears in the context menu as **request review** only when the task is in `done`.
 
 ## reviewer outcomes
 
@@ -37,12 +46,12 @@ The reviewer agent emits one of two signals when it finishes:
 
 ### approval path
 
-When the reviewer approves, the plan moves to `done`. kasmos can optionally auto-create a GitHub PR at this point (configure `auto_create_pr = true` in `kasmos.toml`).
+When the reviewer approves, the plan moves to `done`. The orchestration loop processor then checks whether the task is eligible for automatic PR creation: if the task has a branch and no PR URL is already recorded, it emits a `CreatePRAction`. The daemon picks this up and calls the GitHub PR creation flow — no config knob is needed; the behavior is automatic when the eligibility criteria are met.
 
-You can also create a PR manually:
+If you want to create a PR manually (or the automatic path was skipped for any reason):
 - press `P` with the plan or instance selected
 - open the context menu → **create pr**
-- `kas task pr <task-file>` (if available as a CLI command)
+- `kas task pr <task-file>` from the CLI
 
 kasmos builds the PR title and body from the plan's goal, architecture, tech stack, git diff stats, and reviewer summary.
 

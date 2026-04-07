@@ -23,10 +23,12 @@ Maps lifecycle phase names to agent role names. kasmos uses this to look up whic
 
 ```toml
 [phases]
-planning   = "planner"
-elaborating = "architect"
-implementing = "coder"
-reviewing  = "reviewer"
+planning      = "planner"
+elaborating   = "architect"
+implementing  = "coder"
+reviewing     = "reviewer"
+master_review = "master"
+fixer         = "fixer"
 ```
 
 The phase names on the left are fixed lifecycle identifiers. The role names on the right must match keys in the `[agents]` table.
@@ -129,7 +131,7 @@ events  = ["review_approved"]
 | `command` | string | (command) shell command to execute |
 | `events` | []string | FSM event names that trigger this hook |
 
-Valid event names: `plan_start`, `planner_finished`, `implement_start`, `implement_finished`, `request_review`, `review_approved`, `review_changes`, `start_over`, `reimplement`, `cancel`, `reopen`.
+Valid event names: `plan_start`, `planner_finished`, `implement_start`, `implement_finished`, `request_review`, `review_approved`, `review_changes_requested`, `start_over`, `reimplement`, `cancel`, `reopen`.
 
 ## full example
 
@@ -143,10 +145,12 @@ branch_prefix         = "alice/"
 notifications_enabled = true
 
 [phases]
-planning     = "planner"
-elaborating  = "architect"
-implementing = "coder"
-reviewing    = "reviewer"
+planning      = "planner"
+elaborating   = "architect"
+implementing  = "coder"
+reviewing     = "reviewer"
+master_review = "master"
+fixer         = "fixer"
 
 [agents.planner]
 enabled        = true
@@ -172,6 +176,18 @@ enabled        = true
 program        = "claude"
 model          = "claude-opus-4-5"
 execution_mode = "headless"
+
+[agents.master]
+enabled        = true
+program        = "claude"
+model          = "claude-opus-4-5"
+execution_mode = "headless"
+
+[agents.fixer]
+enabled        = true
+program        = "claude"
+model          = "claude-sonnet-4-5"
+execution_mode = "tmux"
 
 [ui]
 animate_banner        = false

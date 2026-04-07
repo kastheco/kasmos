@@ -16,6 +16,8 @@ The `orchestration.WaveOrchestrator` in `orchestration/engine.go` tracks five st
 
 ```
 Idle
+ ├─ SetElaborating() ──► Elaborating
+ │                        └─ UpdatePlan() ──► Idle
  └─ StartNextWave() ──► Running
                          ├─ tasks complete ──► WaveComplete (if more waves remain)
                          │                    └─ user confirms ──► Running (next wave)
@@ -53,7 +55,7 @@ Configure this in `kasmos.toml`:
 
 ```toml
 [orchestration]
-blueprint_skip_threshold = 3
+blueprint_skip_threshold = 2
 ```
 
 When blueprint skip is active, the task goes directly to a single coder agent — no elaboration, no wave confirmation dialogs.

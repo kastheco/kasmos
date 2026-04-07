@@ -59,10 +59,10 @@ Headless mode is preferred for automated wave work (many concurrent tasks). Tmux
 
 ## phase-to-role mapping
 
-kasmos maps lifecycle phases to role names in `kasmos.toml` under `[phase_roles]`. When you run `kas setup`, the wizard writes defaults based on which harnesses you select:
+kasmos maps lifecycle phases to role names in `kasmos.toml` under `[phases]`. When you run `kas setup`, the wizard writes defaults based on which harnesses you select:
 
 ```toml
-[phase_roles]
+[phases]
 planning = "planner"
 elaborating = "architect"
 implementing = "coder"
@@ -70,14 +70,14 @@ reviewing = "reviewer"
 master_review = "master"
 fixer = "fixer"
 
-[profiles.coder]
+[agents.coder]
 program = "claude"
 model = "anthropic/claude-sonnet-4-6"
 effort = "low"
 execution_mode = "headless"
 enabled = true
 
-[profiles.planner]
+[agents.planner]
 program = "claude"
 model = "anthropic/claude-opus-4-6"
 effort = "high"
