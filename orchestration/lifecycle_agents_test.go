@@ -195,13 +195,15 @@ func TestMatchRecoveryCandidateByTitle_ValidatesWaveTaskAgainstPlan(t *testing.T
 		Status:   taskstore.StatusImplementing,
 		Branch:   "plan/feature",
 	}
+	// Parse() renumbers tasks globally to 1..N. The single task in wave 2
+	// becomes task 1 after renumbering.
 	content := "**Goal:** test\n\n## Wave 2\n\n### Task 2: Second\n\nDo second.\n"
 
-	candidate, ok := MatchRecoveryCandidateByTitle(entry, content, "feature-W2-T2")
+	candidate, ok := MatchRecoveryCandidateByTitle(entry, content, "feature-W2-T1")
 	require.True(t, ok)
 	assert.Equal(t, session.AgentTypeCoder, candidate.AgentType)
 	assert.Equal(t, 2, candidate.WaveNumber)
-	assert.Equal(t, 2, candidate.TaskNumber)
+	assert.Equal(t, 1, candidate.TaskNumber)
 	assert.Equal(t, 1, candidate.WaveTaskIndex, "only task in wave so index=1")
 	assert.Equal(t, 1, candidate.WaveTaskCount, "only task in wave so count=1")
 
