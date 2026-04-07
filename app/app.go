@@ -1982,6 +1982,16 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							inst.ImplementationComplete = true
 							continue
 						}
+						// For daemon-managed instances, HasWorked may not be set (the daemon
+						// API doesn't communicate it). If the TUI detected a prompt AND the
+						// daemon already marked this subtask complete in the store, trust it.
+						// This avoids false positives from startup prompt noise.
+						if !inst.HasWorked && inst.PromptDetected && !inst.AwaitingWork && inst.TaskNumber > 0 &&
+							m.isSubtaskPersistedComplete(planFile, task.Number) {
+							orch.MarkTaskComplete(task.Number)
+							inst.ImplementationComplete = true
+							continue
+						}
 						alive, collected := tmuxAliveMap[inst.Title]
 						if !collected {
 							continue
@@ -1989,6 +1999,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if !alive {
 							// Tmux died after the agent did real work — treat as completion, not failure.
 							if inst.HasWorked {
+								orch.MarkTaskComplete(task.Number)
+								inst.ImplementationComplete = true
+							} else if m.isSubtaskPersistedComplete(planFile, task.Number) {
+								// Daemon already marked this task complete in the store
+								// but the TUI never saw it working. Trust the store.
 								orch.MarkTaskComplete(task.Number)
 								inst.ImplementationComplete = true
 							} else {

@@ -2360,6 +2360,30 @@ func (m *home) blueprintSkipThreshold() int {
 	return m.appConfig.BlueprintSkipThreshold()
 }
 
+// isSubtaskPersistedComplete checks whether the store has the given subtask
+// marked as complete/done/closed. Used as a fallback when the TUI can't detect
+// completion from live instance state (e.g. daemon-managed repos where the
+// daemon marked the task complete before the TUI saw it working).
+func (m *home) isSubtaskPersistedComplete(planFile string, taskNumber int) bool {
+	if m.taskStore == nil || m.taskStoreProject == "" {
+		return false
+	}
+	subtasks, err := m.taskStore.GetSubtasks(m.taskStoreProject, planFile)
+	if err != nil {
+		return false
+	}
+	for _, st := range subtasks {
+		if st.TaskNumber == taskNumber {
+			switch st.Status {
+			case taskstore.SubtaskStatusComplete, taskstore.SubtaskStatusDone, taskstore.SubtaskStatusClosed:
+				return true
+			}
+			return false
+		}
+	}
+	return false
+}
+
 // clearWaveOrchestratorState removes any wave-orchestrator bookkeeping for the
 // given plan from both the home model and the processor-backed signal gate.
 // This is required before switching an implementing plan onto the single-agent
