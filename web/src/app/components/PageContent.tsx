@@ -247,7 +247,7 @@ export default function PageContent() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              MIT license
+              BSL 1.1
             </a>
           </p>
         </footer>

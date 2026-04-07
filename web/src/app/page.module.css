@@ -22,7 +22,7 @@
 .glowAmber {
   width: 600px;
   height: 600px;
-  background: var(--glow-gold);
+  background: var(--glow-rose);
   top: -200px;
   left: -100px;
 }
@@ -30,7 +30,7 @@
 .glowTeal {
   width: 500px;
   height: 500px;
-  background: var(--glow-foam);
+  background: var(--glow-iris);
   bottom: -150px;
   right: -100px;
 }
@@ -47,6 +47,8 @@
 }
 
 .heroBee {
+  width: 220px;
+  height: 220px;
   margin-bottom: 24px;
 }
 
@@ -54,7 +56,7 @@
   font-size: clamp(48px, 10vw, 96px);
   font-weight: 800;
   font-family: var(--font-geist-mono);
-  background: linear-gradient(135deg, var(--accent-gold), var(--accent-foam));
+  background: linear-gradient(135deg, var(--accent-rose), var(--accent-iris));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -95,7 +97,7 @@
   font-size: 16px;
   font-weight: 600;
   color: #232136;
-  background: linear-gradient(135deg, var(--accent-gold), var(--accent-foam));
+  background: linear-gradient(135deg, var(--accent-rose), var(--accent-iris));
   border-radius: 12px;
   transition: transform 0.2s, box-shadow 0.2s;
   text-decoration: none;
@@ -103,7 +105,7 @@
 
 .ctaPrimary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 30px rgba(246, 193, 119, 0.3);
+  box-shadow: 0 8px 30px rgba(196, 167, 231, 0.3);
 }
 
 .ctaSecondary {
@@ -123,8 +125,8 @@
 
 .ctaSecondary:hover {
   transform: translateY(-2px);
-  border-color: rgba(156, 207, 216, 0.4);
-  box-shadow: 0 8px 30px rgba(156, 207, 216, 0.15);
+  border-color: rgba(196, 167, 231, 0.4);
+  box-shadow: 0 8px 30px rgba(196, 167, 231, 0.15);
 }
 
 /* ====== SECTION COMMON ====== */
@@ -321,7 +323,7 @@
 .footerGradientLine {
   width: 60px;
   height: 2px;
-  background: linear-gradient(90deg, var(--accent-gold), var(--accent-foam));
+  background: linear-gradient(90deg, var(--accent-rose), var(--accent-iris));
   margin: 0 auto 24px;
   border-radius: 1px;
 }
@@ -337,7 +339,7 @@
 }
 
 .footerText a:hover {
-  color: var(--accent-gold);
+  color: var(--accent-iris);
 }
 
 /* ====== RESPONSIVE ====== */
