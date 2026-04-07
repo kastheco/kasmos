@@ -22,7 +22,7 @@
 - **multi-harness support** — works with claude, opencode, codex, and other mcp-aware agents
 - **tui + daemon** — interactive tui for task management plus a headless daemon for automated orchestration
 - **git worktree isolation** — each task runs in its own branch and worktree; merges are handled at review time
-- **cross-platform services** — systemd (linux) and launchd (macos) for always-on operation
+- **cross-platform services** — systemd (linux) and launchd (macos) for always-on operation; see [service management docs](https://kasmos.kasthe.co/docs/service-management)
 
 ---
 
