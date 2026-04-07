@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/kastheco/kasmos/cmd/cmd_test"
 	"github.com/kastheco/kasmos/config/taskfsm"
@@ -266,12 +267,56 @@ func TestShouldAutoAdvanceLifecycleImplementer(t *testing.T) {
 			want:      true,
 		},
 		{
-			name:      "prompt return advances fixer",
-			status:    string(taskfsm.StatusImplementing),
-			state:     taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: AgentTypeFixer},
-			inst:      &Instance{TaskFile: "feature", AgentType: AgentTypeFixer, PromptDetected: true},
+			name:  "prompt return advances fixer after stability window",
+			status: string(taskfsm.StatusImplementing),
+			state:  taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: AgentTypeFixer},
+			inst: &Instance{
+				TaskFile:              "feature",
+				AgentType:             AgentTypeFixer,
+				PromptDetected:        true,
+				CompletionPromptSince: time.Now().Add(-(CompletionPromptStabilityWindow + 10*time.Millisecond)),
+			},
 			tmuxAlive: true,
 			want:      true,
+		},
+		{
+			name:  "permission blocked fixer prompt does not advance",
+			status: string(taskfsm.StatusImplementing),
+			state:  taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: AgentTypeFixer},
+			inst: &Instance{
+				TaskFile:              "feature",
+				AgentType:             AgentTypeFixer,
+				PromptDetected:        true,
+				PermissionBlocked:     true,
+				CompletionPromptSince: time.Now().Add(-(CompletionPromptStabilityWindow + 10*time.Millisecond)),
+			},
+			tmuxAlive: true,
+			want:      false,
+		},
+		{
+			name:  "fixer prompt within stability window does not advance",
+			status: string(taskfsm.StatusImplementing),
+			state:  taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: AgentTypeFixer},
+			inst: &Instance{
+				TaskFile:              "feature",
+				AgentType:             AgentTypeFixer,
+				PromptDetected:        true,
+				CompletionPromptSince: time.Now().Add(-10 * time.Millisecond),
+			},
+			tmuxAlive: true,
+			want:      false,
+		},
+		{
+			name:  "fixer prompt with zero CompletionPromptSince does not advance",
+			status: string(taskfsm.StatusImplementing),
+			state:  taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: AgentTypeFixer},
+			inst: &Instance{
+				TaskFile:       "feature",
+				AgentType:      AgentTypeFixer,
+				PromptDetected: true,
+			},
+			tmuxAlive: true,
+			want:      false,
 		},
 		{
 			name:      "wave task never auto advances",
@@ -496,19 +541,21 @@ func TestResume_MainBranchPaused_UsesRepoPathAndClearsEphemeralState(t *testing.
 	}
 
 	inst := &Instance{
-		Title:            "test-resume-main",
-		Path:             t.TempDir(),
-		Program:          "opencode",
-		Status:           Paused,
-		started:          true,
-		gitWorktree:      nil, // main-branch instance
-		Exited:           true,
-		PromptDetected:   true,
-		HasWorked:        true,
-		AwaitingWork:     true,
-		Notified:         true,
-		CachedContentSet: true,
-		CachedContent:    "stale",
+		Title:                 "test-resume-main",
+		Path:                  t.TempDir(),
+		Program:               "opencode",
+		Status:                Paused,
+		started:               true,
+		gitWorktree:           nil, // main-branch instance
+		Exited:                true,
+		PromptDetected:        true,
+		HasWorked:             true,
+		AwaitingWork:          true,
+		Notified:              true,
+		CachedContentSet:      true,
+		CachedContent:         "stale",
+		PermissionBlocked:     true,
+		CompletionPromptSince: time.Now().Add(-time.Second),
 	}
 	inst.executionSession = newMockTmuxSession(inst.Title, inst.Program, &testPtyFactory{}, cmdExec)
 
@@ -522,6 +569,8 @@ func TestResume_MainBranchPaused_UsesRepoPathAndClearsEphemeralState(t *testing.
 	assert.False(t, inst.Notified)
 	assert.False(t, inst.CachedContentSet)
 	assert.Empty(t, inst.CachedContent)
+	assert.False(t, inst.PermissionBlocked, "PermissionBlocked should be cleared on resume")
+	assert.True(t, inst.CompletionPromptSince.IsZero(), "CompletionPromptSince should be zeroed on resume")
 }
 
 func TestResume_SharedWorktree_ReusesExistingPath(t *testing.T) {
