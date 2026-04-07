@@ -461,8 +461,14 @@ func kasmosEntryIsUpToDate(existing, rendered map[string]any) bool {
 		if !ok {
 			return false
 		}
-		rb, _ := json.Marshal(rv)
-		eb, _ := json.Marshal(ev)
+		rb, err := json.Marshal(rv)
+		if err != nil {
+			return false
+		}
+		eb, err := json.Marshal(ev)
+		if err != nil {
+			return false
+		}
 		if string(rb) != string(eb) {
 			return false
 		}

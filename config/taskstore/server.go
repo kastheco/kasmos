@@ -71,6 +71,10 @@ func NewHandler(store Store) http.Handler {
 			return
 		}
 		entry.Filename = normalizeFilename(entry.Filename)
+		if entry.Filename == "" {
+			writeError(w, http.StatusBadRequest, "filename must not be empty")
+			return
+		}
 		if err := store.Create(project, entry); err != nil {
 			writeError(w, http.StatusConflict, err.Error())
 			return
@@ -113,12 +117,24 @@ func NewHandler(store Store) http.Handler {
 	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
 		filename := normalizeFilename(r.PathValue("filename"))
+		if filename == "" {
+			writeError(w, http.StatusBadRequest, "invalid task filename")
+			return
+		}
 		var entry TaskEntry
 		if err := json.NewDecoder(r.Body).Decode(&entry); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return
 		}
 		entry.Filename = normalizeFilename(entry.Filename)
+		if entry.Filename == "" {
+			writeError(w, http.StatusBadRequest, "invalid task filename")
+			return
+		}
+		if entry.Filename != filename {
+			writeError(w, http.StatusBadRequest, "task filename does not match path")
+			return
+		}
 		if err := store.Update(project, filename, entry); err != nil {
 			if isNotFound(err) {
 				writeError(w, http.StatusNotFound, "task not found: "+filename)
