@@ -1456,6 +1456,78 @@ func TestPlannerExit_FocusesPlannerInstance_BeforeConfirm(t *testing.T) {
 		"planner-exit overlay should auto-focus the planner instance")
 }
 
+// TestWaveMonitor_WaveComplete_DeferredWhenOverlayActive verifies that when an
+// intermediate wave completes while the user is in a non-focus overlay (e.g.
+// context menu or confirmation dialog), the wave-advance dialog is deferred
+// and shown on the next tick when the overlay clears — not swallowed.
+func TestWaveMonitor_WaveComplete_DeferredWhenOverlayActive(t *testing.T) {
+	const planFile = "deferred-wave"
+
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{
+			{Number: 1, Tasks: []taskparser.Task{{Number: 1, Title: "W1T1", Body: "task 1"}}},
+			{Number: 2, Tasks: []taskparser.Task{{Number: 2, Title: "W2T1", Body: "task 2"}}},
+		},
+	}
+	orch := orchestration.NewWaveOrchestrator(planFile, plan)
+	orch.StartNextWave()
+	// Wave 1 task finishes — orchestrator transitions to WaveStateWaveComplete.
+	orch.MarkTaskComplete(1)
+	require.Equal(t, orchestration.WaveStateWaveComplete, orch.State())
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.Register(planFile, "deferred wave test", "plan/deferred-wave", time.Now()))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:      "deferred-wave-W1-T1",
+		Path:       t.TempDir(),
+		Program:    "claude",
+		TaskFile:   planFile,
+		TaskNumber: 1,
+		WaveNumber: 1,
+	})
+	require.NoError(t, err)
+
+	h := waveFlowHome(t, ps, plansDir, map[string]*orchestration.WaveOrchestrator{planFile: orch})
+	_ = h.nav.AddInstance(inst)
+
+	// Simulate user being in a non-focus overlay (e.g. context menu).
+	h.state = stateConfirm
+
+	msg := metadataResultMsg{
+		Results:   []instanceMetadata{{Title: "deferred-wave-W1-T1", TmuxAlive: true}},
+		PlanState: ps,
+	}
+	model, _ := h.Update(msg)
+	updated := model.(*home)
+
+	// Orchestrator must still exist (intermediate wave, not all-complete).
+	require.Contains(t, updated.waveOrchestrators, planFile,
+		"orchestrator must survive intermediate wave completion")
+
+	// The wave dialog must be deferred, not swallowed.
+	assert.Contains(t, updated.deferredWaveDialogs, planFile,
+		"wave-advance dialog must be queued when overlay blocks")
+
+	// Simulate overlay clearing and another metadata tick.
+	updated.state = stateDefault
+	msg2 := metadataResultMsg{
+		Results:   []instanceMetadata{{Title: "deferred-wave-W1-T1", TmuxAlive: true}},
+		PlanState: ps,
+	}
+	model2, _ := updated.Update(msg2)
+	updated2 := model2.(*home)
+
+	// Deferred wave dialog must have been drained.
+	assert.Empty(t, updated2.deferredWaveDialogs,
+		"deferredWaveDialogs must be drained after overlay clears")
+}
+
 // TestWaveMonitor_AllComplete_DeferredWhenOverlayActive verifies that when all
 // waves complete while the user is in an overlay (e.g. confirmation dialog),
 // the review prompt is deferred and shown on the next tick when the overlay clears.

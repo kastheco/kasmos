@@ -996,7 +996,7 @@ func (m *home) showCoderPushDialog(planFile string) tea.Cmd {
 func (m *home) queueWaveDialog(planFile string) {
 	m.deferredWaveDialogs = appendUniqueString(m.deferredWaveDialogs, planFile)
 	m.queueDeferredToast(m.deferredWaveToastIDs, planFile,
-		fmt.Sprintf("wave complete for '%s'. leave focus mode to continue", taskstate.DisplayName(planFile)))
+		fmt.Sprintf("wave complete for '%s'. dismiss overlay to continue", taskstate.DisplayName(planFile)))
 }
 
 func (m *home) showWaveDialog(planFile string, orch *orchestration.WaveOrchestrator) []tea.Cmd {

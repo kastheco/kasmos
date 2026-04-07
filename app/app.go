@@ -2061,6 +2061,14 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					orch.ResetConfirm()
 					continue
 				}
+				if needsConfirm && m.isUserInOverlay() {
+					// Overlay active but not focus mode — queue for later.
+					// Do NOT ResetConfirm: the deferred drain handles showing
+					// the dialog, and keeping waitingForConfirm=true prevents
+					// the wave monitor from re-queuing on every tick.
+					m.queueWaveDialog(planFile)
+					continue
+				}
 				if !m.isUserInOverlay() && time.Since(m.waveConfirmDismissedAt) > 30*time.Second && needsConfirm {
 					waveNum := orch.CurrentWaveNumber()
 					completed := orch.CompletedTaskCount()
