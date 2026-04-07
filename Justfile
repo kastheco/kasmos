@@ -110,6 +110,18 @@ setup:
 # Build + install + run
 kas: build install bin
 
+# restart systemd user services (daemon + task store)
+restart-services:
+    systemctl --user daemon-reload
+    systemctl --user restart kasmos kasmosdb
+
+# scaffold
+scaffold:
+    kas scaffold sync --worktrees
+
+# Build + install + scaffold + restart
+update: build install restart-services scaffold 
+
 # Alias for kas
 kms: kas
 
