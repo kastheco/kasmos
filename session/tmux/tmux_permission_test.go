@@ -96,7 +96,7 @@ func TestSendPermissionResponse_ClaudeAllowOnce(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
-		"tmux send-keys -l -t kas_test y",
+		"tmux send-keys -l -t kas_test 1",
 		"tmux send-keys -t kas_test Enter",
 	}, ranCmds)
 }
@@ -118,7 +118,7 @@ func TestSendPermissionResponse_ClaudeAllowAlways(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
-		"tmux send-keys -l -t kas_test y",
+		"tmux send-keys -l -t kas_test 2",
 		"tmux send-keys -t kas_test Enter",
 	}, ranCmds)
 }
@@ -140,7 +140,6 @@ func TestSendPermissionResponse_ClaudeReject(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
-		"tmux send-keys -l -t kas_test n",
-		"tmux send-keys -t kas_test Enter",
+		"tmux send-keys -t kas_test Escape",
 	}, ranCmds)
 }

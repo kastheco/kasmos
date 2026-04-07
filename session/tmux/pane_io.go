@@ -57,13 +57,23 @@ func (t *TmuxSession) SendPermissionResponse(choice PermissionChoice) error {
 	return adapter.SendPermissionResponse(t, choice)
 }
 
-// SendPermissionResponse sends Claude Code's literal yes/no response followed
-// by Enter. AllowAlways intentionally matches AllowOnce because Claude caches
-// permission state above the tmux pane responder layer.
+// SendPermissionResponse sends Claude Code's numbered-choice response for a
+// permission prompt. AllowOnce sends "1" (first Yes option) followed by Enter;
+// AllowAlways sends "2" (second Yes option) followed by Enter. Reject sends
+// Escape to dismiss the dialog — the position of "No" varies between 2- and
+// 3-option prompts so a numbered key cannot be used reliably.
 func (a claudeAdapter) SendPermissionResponse(session *TmuxSession, choice PermissionChoice) error {
-	key := "y"
 	if choice == PermissionReject {
-		key = "n"
+		cmd := exec.Command("tmux", "send-keys", "-t", session.sanitizedName, "Escape")
+		if err := session.cmdExec.Run(cmd); err != nil {
+			return fmt.Errorf("SendPermissionResponse: send Escape: %w", err)
+		}
+		return nil
+	}
+
+	key := "1"
+	if choice == PermissionAllowAlways {
+		key = "2"
 	}
 
 	if err := session.SendKeys(key); err != nil {

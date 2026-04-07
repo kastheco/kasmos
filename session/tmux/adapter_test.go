@@ -42,9 +42,53 @@ func TestClaudeAdapter_DetectPrompt(t *testing.T) {
 			want:    true,
 		},
 		{
-			name:    "permission prompt",
-			content: strings.Join([]string{"Allow tool Bash to run 'go test ./...'?", "Yes", "No"}, "\n"),
-			want:    true,
+			name: "2-option numbered prompt",
+			content: strings.Join([]string{
+				"Allow tool Bash to run 'go test ./...'?",
+				"1. Yes, allow once",
+				"2. No, and tell Claude what to do differently",
+			}, "\n"),
+			want: true,
+		},
+		{
+			name: "3-option numbered prompt",
+			content: strings.Join([]string{
+				"Allow tool Bash to run 'go test ./...'?",
+				"1. Yes, allow once",
+				"2. Yes, allow always",
+				"3. No, and tell Claude what to do differently",
+			}, "\n"),
+			want: true,
+		},
+		{
+			name: "numbered prompt without question text",
+			content: strings.Join([]string{
+				"Tool approval required",
+				"1. Yes, allow once",
+				"2. Yes, allow always",
+				"3. No, and tell Claude what to do differently",
+			}, "\n"),
+			want: true,
+		},
+		{
+			name: "numbered task list false positive",
+			content: strings.Join([]string{
+				"Here are the tasks:",
+				"1. Write the tests",
+				"2. Implement the feature",
+				"3. Deploy to production",
+			}, "\n"),
+			want: false,
+		},
+		{
+			name: "numbered list containing Yes/No in ordinary prose false positive",
+			content: strings.Join([]string{
+				"User: No, I changed my mind.",
+				"Assistant: Yes, that makes sense.",
+				"1. First consideration",
+				"2. Second consideration",
+			}, "\n"),
+			want: false,
 		},
 		{
 			name:    "active running line",
@@ -60,6 +104,16 @@ func TestClaudeAdapter_DetectPrompt(t *testing.T) {
 			name:    "ordinary transcript mentions yes and no",
 			content: strings.Join([]string{"User: No, I changed my mind.", "Assistant: Yes, that makes sense."}, "\n"),
 			want:    false,
+		},
+		{
+			name: "stale numbered prompt plus Running activity marker returns false",
+			content: strings.Join([]string{
+				"Allow tool Bash to run 'go test ./...'?",
+				"1. Yes, allow once",
+				"2. No, and tell Claude what to do differently",
+				"Running go test ./...",
+			}, "\n"),
+			want: false,
 		},
 		{
 			name:    "active work suppresses stale review marker",
@@ -134,18 +188,6 @@ func TestAdapterFor_Unknown(t *testing.T) {
 	assert.Nil(t, a)
 }
 
-func TestClaudeHasPermissionPrompt_MatchesRenderedChoiceText(t *testing.T) {
-	lines := []string{
-		"Tool approval required",
-		"Bash: git status",
-		"Do you want to proceed?",
-		"❯ Yes, and remember for this session",
-		"No, and tell Claude what to do differently",
-	}
-
-	assert.True(t, claudeHasPermissionPrompt(lines))
-}
-
 func TestClaudeAdapter_SendPermissionResponse(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -156,7 +198,7 @@ func TestClaudeAdapter_SendPermissionResponse(t *testing.T) {
 			name:   "allow once",
 			choice: PermissionAllowOnce,
 			expected: []string{
-				"tmux send-keys -l -t kas_adapter-test y",
+				"tmux send-keys -l -t kas_adapter-test 1",
 				"tmux send-keys -t kas_adapter-test Enter",
 			},
 		},
@@ -164,7 +206,7 @@ func TestClaudeAdapter_SendPermissionResponse(t *testing.T) {
 			name:   "allow always",
 			choice: PermissionAllowAlways,
 			expected: []string{
-				"tmux send-keys -l -t kas_adapter-test y",
+				"tmux send-keys -l -t kas_adapter-test 2",
 				"tmux send-keys -t kas_adapter-test Enter",
 			},
 		},
@@ -172,8 +214,7 @@ func TestClaudeAdapter_SendPermissionResponse(t *testing.T) {
 			name:   "reject",
 			choice: PermissionReject,
 			expected: []string{
-				"tmux send-keys -l -t kas_adapter-test n",
-				"tmux send-keys -t kas_adapter-test Enter",
+				"tmux send-keys -t kas_adapter-test Escape",
 			},
 		},
 	}
