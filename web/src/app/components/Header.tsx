@@ -14,8 +14,14 @@ export default function Header() {
 
   return (
     <header className={`${styles.header} ${scrolled ? styles.scrolled : ""}`}>
-      <a href="#" className={styles.logoWrapper}>
-        <span className={styles.logo}>kasmos</span>
+      <a href="/" className={styles.logoWrapper}>
+        <img
+          src="/logo-k.png"
+          alt="kasmos"
+          className={styles.logoImage}
+          width={32}
+          height={32}
+        />
       </a>
       <nav className={styles.nav}>
         <a

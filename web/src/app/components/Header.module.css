@@ -25,17 +25,12 @@
   text-decoration: none;
 }
 
-.logo {
-  font-size: 20px;
-  font-weight: 700;
-  font-family: var(--font-geist-mono);
-  background: linear-gradient(135deg, var(--accent-rose), var(--accent-iris));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  letter-spacing: 1px;
-  text-transform: lowercase;
-  text-decoration: none;
+.logoImage {
+  display: block;
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .nav {

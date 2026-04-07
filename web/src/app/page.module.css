@@ -53,17 +53,18 @@
 }
 
 .heroTitle {
-  font-size: clamp(48px, 10vw, 96px);
-  font-weight: 800;
-  font-family: var(--font-geist-mono);
-  background: linear-gradient(135deg, var(--accent-rose), var(--accent-iris));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  letter-spacing: 2px;
-  text-transform: lowercase;
-  line-height: 1.1;
-  margin-bottom: 24px;
+  margin: 0 0 24px;
+  padding: 0;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.heroWordmark {
+  width: min(600px, 80vw);
+  height: auto;
+  display: block;
 }
 
 .heroSubtitle {
