@@ -2884,19 +2884,84 @@ func (m *home) quickLaunchAgent() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(tea.RequestWindowSize, startCmd)
 }
 
+// availableSpawnPrograms returns the deduplicated, sorted list of harness programs
+// that can be used when spawning an ad-hoc agent. It collects programs from enabled
+// config profiles, the DefaultProgram, and falls back to m.program when nothing else
+// is configured.
+func (m *home) availableSpawnPrograms() []string {
+	seen := make(map[string]struct{})
+	if m.appConfig != nil {
+		for _, profile := range m.appConfig.Profiles {
+			if !profile.Enabled {
+				continue
+			}
+			p := strings.TrimSpace(profile.Program)
+			if p != "" {
+				seen[p] = struct{}{}
+			}
+		}
+		if dp := strings.TrimSpace(m.appConfig.DefaultProgram); dp != "" {
+			seen[dp] = struct{}{}
+		}
+	}
+	if len(seen) == 0 {
+		p := strings.TrimSpace(m.program)
+		if p == "" {
+			p = "claude"
+		}
+		seen[p] = struct{}{}
+	}
+	programs := make([]string, 0, len(seen))
+	for p := range seen {
+		programs = append(programs, p)
+	}
+	sort.Strings(programs)
+	return programs
+}
+
+// beginSpawnAgentFlow is the shared entry point for both the S-key binding and the
+// "spawn_agent" launcher action. It checks the tmux session limit then either shows
+// the harness picker (multiple programs available) or goes directly to the spawn form
+// (exactly one program available).
+func (m *home) beginSpawnAgentFlow() (tea.Model, tea.Cmd) {
+	if m.tmuxSessionCount >= GlobalInstanceLimit {
+		return m, m.handleError(
+			fmt.Errorf("you can't create more than %d instances (%d tmux sessions active)", GlobalInstanceLimit, m.tmuxSessionCount))
+	}
+	programs := m.availableSpawnPrograms()
+	if len(programs) == 1 {
+		m.showSpawnAgentForm(programs[0])
+		return m, nil
+	}
+	m.overlays.Show(overlay.NewPickerOverlay("select harness", programs))
+	m.state = stateSpawnHarnessPicker
+	return m, nil
+}
+
+// showSpawnAgentForm stores the selected harness program and opens the spawn name form.
+func (m *home) showSpawnAgentForm(program string) {
+	m.pendingSpawnProgram = program
+	m.state = stateSpawnAgent
+	m.overlays.Show(overlay.NewSpawnFormOverlay("spawn agent", 60))
+}
+
 // newNamedAgentInstance builds the interactive ad-hoc session used by the
 // launcher "new instance" flow and the explicit spawn-agent form.
 //
-// These sessions intentionally launch Claude's master agent instead of a
-// lifecycle role so naming a general-purpose agent opens Claude Code directly.
-func (m *home) newNamedAgentInstance(title, path string) (*session.Instance, error) {
+// These sessions launch the given program as a master agent. If program is empty,
+// "claude" is used as a safe default so existing callers remain unaffected.
+func (m *home) newNamedAgentInstance(title, path, program string) (*session.Instance, error) {
 	if strings.TrimSpace(path) == "" {
 		path = m.activeRepoPath
+	}
+	p := strings.TrimSpace(program)
+	if p == "" {
+		p = "claude"
 	}
 	return session.NewInstance(session.InstanceOptions{
 		Title:           title,
 		Path:            path,
-		Program:         "claude",
+		Program:         p,
 		AgentType:       session.AgentTypeMaster,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
 	})
@@ -2904,7 +2969,8 @@ func (m *home) newNamedAgentInstance(title, path string) (*session.Instance, err
 
 // spawnAdHocAgent creates and starts an ad-hoc agent session (no plan, no lifecycle).
 // branch and workPath are optional overrides - empty strings use defaults.
-func (m *home) spawnAdHocAgent(name, branch, workPath string) (tea.Model, tea.Cmd) {
+// program selects which harness binary to launch; empty falls back to "claude".
+func (m *home) spawnAdHocAgent(name, branch, workPath, program string) (tea.Model, tea.Cmd) {
 	if !m.requireDaemonForAgents() {
 		return m, nil
 	}
@@ -2913,7 +2979,7 @@ func (m *home) spawnAdHocAgent(name, branch, workPath string) (tea.Model, tea.Cm
 		path = workPath
 	}
 
-	inst, err := m.newNamedAgentInstance(name, path)
+	inst, err := m.newNamedAgentInstance(name, path, program)
 	if err != nil {
 		return m, m.handleError(err)
 	}

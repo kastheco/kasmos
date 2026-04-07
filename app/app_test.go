@@ -359,7 +359,7 @@ func TestView_UsesCellMotionMouseMode(t *testing.T) {
 
 func TestSpawnAdHocAgent_DefaultCreatesWorktree(t *testing.T) {
 	h := newTestHome()
-	model, cmd := h.spawnAdHocAgent("my-agent", "", "")
+	model, cmd := h.spawnAdHocAgent("my-agent", "", "", "")
 	updated := model.(*home)
 	instances := updated.nav.GetInstances()
 	require.NotEmpty(t, instances)
@@ -386,7 +386,7 @@ func TestExecuteLauncherAction_NewInstanceUsesClaudeMasterAgent(t *testing.T) {
 
 func TestSpawnAdHocAgent_BranchOverride(t *testing.T) {
 	h := newTestHome()
-	model, cmd := h.spawnAdHocAgent("my-agent", "feature/login", "")
+	model, cmd := h.spawnAdHocAgent("my-agent", "feature/login", "", "")
 	updated := model.(*home)
 	instances := updated.nav.GetInstances()
 	require.NotEmpty(t, instances)
@@ -397,7 +397,7 @@ func TestSpawnAdHocAgent_BranchOverride(t *testing.T) {
 
 func TestSpawnAdHocAgent_PathOverride(t *testing.T) {
 	h := newTestHome()
-	model, cmd := h.spawnAdHocAgent("my-agent", "", "/tmp/custom-path")
+	model, cmd := h.spawnAdHocAgent("my-agent", "", "/tmp/custom-path", "")
 	updated := model.(*home)
 	instances := updated.nav.GetInstances()
 	require.NotEmpty(t, instances)
@@ -458,6 +458,157 @@ func TestSpawnAgent_SubmitCreatesInstance(t *testing.T) {
 	assert.Equal(t, "", last.TaskFile, "ad-hoc instance must have no PlanFile")
 	assert.Equal(t, session.AgentTypeMaster, last.AgentType, "spawned instance must use the master agent")
 	assert.Equal(t, session.Loading, last.Status)
+}
+
+func TestAvailableSpawnPrograms_DedupesSortedEnabledProfiles(t *testing.T) {
+	h := newTestHome()
+	h.appConfig = &config.Config{
+		DefaultProgram: "claude",
+		Profiles: map[string]config.AgentProfile{
+			"role-a": {Program: "opencode", Enabled: true},
+			"role-b": {Program: "opencode", Enabled: true}, // duplicate
+			"role-c": {Program: "codex", Enabled: true},
+			"role-d": {Program: "disabled", Enabled: false}, // ignored
+			"role-e": {Program: "", Enabled: true},          // blank ignored
+		},
+	}
+	programs := h.availableSpawnPrograms()
+	assert.Equal(t, []string{"claude", "codex", "opencode"}, programs)
+}
+
+func TestAvailableSpawnPrograms_IncludesDefaultProgram(t *testing.T) {
+	h := newTestHome()
+	h.appConfig = &config.Config{DefaultProgram: "amp"}
+	programs := h.availableSpawnPrograms()
+	assert.Equal(t, []string{"amp"}, programs)
+}
+
+func TestAvailableSpawnPrograms_IgnoresDisabledAndBlankProfiles(t *testing.T) {
+	h := newTestHome()
+	h.appConfig = &config.Config{
+		DefaultProgram: "claude",
+		Profiles: map[string]config.AgentProfile{
+			"bad-a": {Program: "disabled-prog", Enabled: false},
+			"bad-b": {Program: "", Enabled: true},
+		},
+	}
+	programs := h.availableSpawnPrograms()
+	assert.Equal(t, []string{"claude"}, programs)
+}
+
+func TestAvailableSpawnPrograms_FallsBackToProgramField(t *testing.T) {
+	h := newTestHome()
+	h.appConfig = nil
+	h.program = "codex"
+	programs := h.availableSpawnPrograms()
+	assert.Equal(t, []string{"codex"}, programs)
+}
+
+func TestSpawnAgent_MultiplePrograms_OpensPicker(t *testing.T) {
+	h := newTestHome()
+	h.appConfig = &config.Config{
+		DefaultProgram: "claude",
+		Profiles: map[string]config.AgentProfile{
+			"opencode-role": {Program: "opencode", Enabled: true},
+		},
+	}
+	h.keySent = true
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	updated := model.(*home)
+	require.Equal(t, stateSpawnHarnessPicker, updated.state)
+	require.True(t, updated.overlays.IsActive(), "picker overlay must be active")
+	_, ok := updated.overlays.Current().(*overlay.PickerOverlay)
+	require.True(t, ok, "active overlay must be a PickerOverlay")
+}
+
+func TestSpawnAgent_OneProgram_OpensFormDirectly(t *testing.T) {
+	h := newTestHome()
+	h.appConfig = &config.Config{DefaultProgram: "codex"}
+	h.keySent = true
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	updated := model.(*home)
+	require.Equal(t, stateSpawnAgent, updated.state)
+	require.True(t, updated.overlays.IsActive(), "form overlay must be active")
+	_, ok := updated.overlays.Current().(*overlay.FormOverlay)
+	require.True(t, ok, "active overlay must be a FormOverlay")
+	assert.Equal(t, "codex", updated.pendingSpawnProgram)
+}
+
+func TestSpawnAgent_LauncherAction_MultiplePrograms_OpensPicker(t *testing.T) {
+	h := newTestHome()
+	h.appConfig = &config.Config{
+		DefaultProgram: "claude",
+		Profiles: map[string]config.AgentProfile{
+			"opencode-role": {Program: "opencode", Enabled: true},
+		},
+	}
+	model, _ := h.executeLauncherAction("spawn_agent")
+	updated := model.(*home)
+	require.Equal(t, stateSpawnHarnessPicker, updated.state)
+	_, ok := updated.overlays.Current().(*overlay.PickerOverlay)
+	require.True(t, ok, "launcher spawn_agent with multiple programs must show PickerOverlay")
+}
+
+func TestSpawnAgent_LauncherAction_OneProgram_OpensForm(t *testing.T) {
+	h := newTestHome()
+	h.appConfig = &config.Config{DefaultProgram: "amp"}
+	model, _ := h.executeLauncherAction("spawn_agent")
+	updated := model.(*home)
+	require.Equal(t, stateSpawnAgent, updated.state)
+	_, ok := updated.overlays.Current().(*overlay.FormOverlay)
+	require.True(t, ok, "launcher spawn_agent with one program must show FormOverlay")
+	assert.Equal(t, "amp", updated.pendingSpawnProgram)
+}
+
+func TestSpawnHarnessPicker_EscReturnsToDefault(t *testing.T) {
+	h := newTestHome()
+	h.appConfig = &config.Config{
+		DefaultProgram: "claude",
+		Profiles: map[string]config.AgentProfile{
+			"opencode-role": {Program: "opencode", Enabled: true},
+		},
+	}
+	h.state = stateSpawnHarnessPicker
+	h.pendingSpawnProgram = "opencode"
+	h.overlays.Show(overlay.NewPickerOverlay("select harness", []string{"claude", "opencode"}))
+
+	h.keySent = true
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEscape})
+	updated := model.(*home)
+	assert.Equal(t, stateDefault, updated.state)
+	assert.Empty(t, updated.pendingSpawnProgram)
+	assert.False(t, updated.overlays.IsActive())
+}
+
+func TestSpawnAgent_SubmitCreatesInstanceWithChosenProgram(t *testing.T) {
+	h := newTestHome()
+	h.pendingSpawnProgram = "opencode"
+	h.state = stateSpawnAgent
+	h.overlays.Show(overlay.NewSpawnFormOverlay("spawn agent", 60))
+
+	press := func(msg tea.KeyPressMsg) {
+		h.keySent = true
+		handleModel, _ := h.handleKeyPress(msg)
+		h = handleModel.(*home)
+	}
+
+	for _, r := range "my-opencode-agent" {
+		press(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+
+	h.keySent = true
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := model.(*home)
+	assert.Equal(t, stateDefault, updated.state)
+	assert.Empty(t, updated.pendingSpawnProgram)
+	assert.NotNil(t, cmd)
+
+	instances := updated.nav.GetInstances()
+	require.NotEmpty(t, instances)
+	last := instances[len(instances)-1]
+	assert.Equal(t, "my-opencode-agent", last.Title)
+	assert.Equal(t, "opencode", last.Program)
+	assert.Equal(t, session.AgentTypeMaster, last.AgentType)
 }
 
 func collectQuickLaunchMsgs(cmd tea.Cmd) (started []instanceStartedMsg) {
