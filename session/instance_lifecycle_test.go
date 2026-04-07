@@ -267,7 +267,7 @@ func TestShouldAutoAdvanceLifecycleImplementer(t *testing.T) {
 			want:      true,
 		},
 		{
-			name:  "prompt return advances fixer after stability window",
+			name:   "prompt return advances fixer after stability window",
 			status: string(taskfsm.StatusImplementing),
 			state:  taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: AgentTypeFixer},
 			inst: &Instance{
@@ -280,7 +280,7 @@ func TestShouldAutoAdvanceLifecycleImplementer(t *testing.T) {
 			want:      true,
 		},
 		{
-			name:  "permission blocked fixer prompt does not advance",
+			name:   "permission blocked fixer prompt does not advance",
 			status: string(taskfsm.StatusImplementing),
 			state:  taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: AgentTypeFixer},
 			inst: &Instance{
@@ -294,7 +294,7 @@ func TestShouldAutoAdvanceLifecycleImplementer(t *testing.T) {
 			want:      false,
 		},
 		{
-			name:  "fixer prompt within stability window does not advance",
+			name:   "fixer prompt within stability window does not advance",
 			status: string(taskfsm.StatusImplementing),
 			state:  taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: AgentTypeFixer},
 			inst: &Instance{
@@ -307,7 +307,7 @@ func TestShouldAutoAdvanceLifecycleImplementer(t *testing.T) {
 			want:      false,
 		},
 		{
-			name:  "fixer prompt with zero CompletionPromptSince does not advance",
+			name:   "fixer prompt with zero CompletionPromptSince does not advance",
 			status: string(taskfsm.StatusImplementing),
 			state:  taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: AgentTypeFixer},
 			inst: &Instance{

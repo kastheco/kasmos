@@ -48,10 +48,11 @@ func TestShouldPromptPushAfterImplementerExit_HeadlessCoderExited(t *testing.T) 
 func TestShouldPromptPushAfterImplementerExit_PromptDetectedTriggers(t *testing.T) {
 	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder}}
 	inst := &session.Instance{
-		TaskFile:       "p",
-		AgentType:      session.AgentTypeCoder,
-		PromptDetected: true,
-		AwaitingWork:   false,
+		TaskFile:              "p",
+		AgentType:             session.AgentTypeCoder,
+		PromptDetected:        true,
+		AwaitingWork:          false,
+		CompletionPromptSince: time.Now().Add(-(session.CompletionPromptStabilityWindow + 10*time.Millisecond)),
 	}
 
 	// Tmux is still alive but the implementer returned to prompt after finishing
@@ -78,10 +79,11 @@ func TestShouldPromptPushAfterImplementerExit_AwaitingWorkSuppresses(t *testing.
 func TestShouldPromptPushAfterImplementerExit_FixerPromptDetectedTriggers(t *testing.T) {
 	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: session.AgentTypeFixer}}
 	inst := &session.Instance{
-		TaskFile:       "p",
-		AgentType:      session.AgentTypeFixer,
-		PromptDetected: true,
-		AwaitingWork:   false,
+		TaskFile:              "p",
+		AgentType:             session.AgentTypeFixer,
+		PromptDetected:        true,
+		AwaitingWork:          false,
+		CompletionPromptSince: time.Now().Add(-(session.CompletionPromptStabilityWindow + 10*time.Millisecond)),
 	}
 
 	assert.True(t, session.ShouldAutoAdvanceLifecycleImplementer(string(entry.Status), entry.ExecutionState, inst, true),
@@ -201,6 +203,7 @@ func TestMetadataTickHandler_CoderPromptDetectedTriggersPrompt(t *testing.T) {
 	require.NoError(t, err)
 	inst.PromptDetected = true
 	inst.AwaitingWork = false
+	inst.CompletionPromptSince = time.Now().Add(-(session.CompletionPromptStabilityWindow + 10*time.Millisecond))
 
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
 	list := ui.NewNavigationPanel(&sp)
@@ -262,6 +265,10 @@ func TestMetadataTickHandler_UpdatedPromptFrameTriggersPrompt(t *testing.T) {
 	})
 	require.NoError(t, err)
 	inst.MarkStartedForTest()
+	// Simulate that the prompt has already been stable for longer than the
+	// stability window so that ShouldAutoAdvanceLifecycleImplementer returns
+	// true on this tick (HasPrompt=true will set PromptDetected during Update).
+	inst.CompletionPromptSince = time.Now().Add(-(session.CompletionPromptStabilityWindow + 10*time.Millisecond))
 
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
 	list := ui.NewNavigationPanel(&sp)
@@ -331,6 +338,7 @@ func TestMetadataTickHandler_CoderPromptDeferredInFocusMode(t *testing.T) {
 	require.NoError(t, err)
 	inst.PromptDetected = true
 	inst.AwaitingWork = false
+	inst.CompletionPromptSince = time.Now().Add(-(session.CompletionPromptStabilityWindow + 10*time.Millisecond))
 	inst.MarkStartedForTest()
 
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
