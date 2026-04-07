@@ -98,6 +98,8 @@ func checkFile(absPath, relPath string) []string {
 	//   "github.com/kastheco/kasmos/cmd"                → cmd
 	aliasMap := map[string]string{} // local name → category key
 
+	var violations []string
+
 	for _, imp := range f.Imports {
 		importPath := strings.Trim(imp.Path.Value, `"`)
 		var canonKey string
@@ -112,8 +114,16 @@ func checkFile(absPath, relPath string) []string {
 			continue
 		}
 
+		// Dot-imports bypass the selector-based AST matching because all exported
+		// names land in the file's own namespace (no qualifier prefix). Flag the
+		// dot-import itself as a violation and skip adding to aliasMap.
+		if imp.Name != nil && imp.Name.Name == "." {
+			violations = append(violations, relPath+`: dot-imports "`+importPath+`" — dot-importing banned packages bypasses the real-tmux guard`)
+			continue
+		}
+
 		var localName string
-		if imp.Name != nil && imp.Name.Name != "" && imp.Name.Name != "_" && imp.Name.Name != "." {
+		if imp.Name != nil && imp.Name.Name != "" && imp.Name.Name != "_" {
 			localName = imp.Name.Name
 		} else {
 			// Default: last path segment.
@@ -123,11 +133,9 @@ func checkFile(absPath, relPath string) []string {
 		aliasMap[localName] = canonKey
 	}
 
-	if len(aliasMap) == 0 {
+	if len(aliasMap) == 0 && len(violations) == 0 {
 		return nil // no relevant imports → nothing to check
 	}
-
-	var violations []string
 
 	ast.Inspect(f, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
