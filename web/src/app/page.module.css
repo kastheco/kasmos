@@ -22,7 +22,7 @@
 .glowAmber {
   width: 600px;
   height: 600px;
-  background: var(--glow-amber);
+  background: var(--glow-gold);
   top: -200px;
   left: -100px;
 }
@@ -30,7 +30,7 @@
 .glowTeal {
   width: 500px;
   height: 500px;
-  background: var(--glow-teal);
+  background: var(--glow-foam);
   bottom: -150px;
   right: -100px;
 }
@@ -42,7 +42,7 @@
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 120px 20px 80px;
+  padding: 120px 20px 120px;
   position: relative;
 }
 
@@ -54,7 +54,7 @@
   font-size: clamp(48px, 10vw, 96px);
   font-weight: 800;
   font-family: var(--font-geist-mono);
-  background: linear-gradient(135deg, var(--accent-amber), var(--accent-teal));
+  background: linear-gradient(135deg, var(--accent-gold), var(--accent-foam));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -94,8 +94,8 @@
   padding: 14px 32px;
   font-size: 16px;
   font-weight: 600;
-  color: #0a0b14;
-  background: linear-gradient(135deg, var(--accent-amber), var(--accent-teal));
+  color: #232136;
+  background: linear-gradient(135deg, var(--accent-gold), var(--accent-foam));
   border-radius: 12px;
   transition: transform 0.2s, box-shadow 0.2s;
   text-decoration: none;
@@ -103,7 +103,7 @@
 
 .ctaPrimary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 30px rgba(240, 168, 104, 0.3);
+  box-shadow: 0 8px 30px rgba(246, 193, 119, 0.3);
 }
 
 .ctaSecondary {
@@ -115,7 +115,7 @@
   font-weight: 500;
   color: var(--foreground);
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(224, 222, 244, 0.15);
   border-radius: 12px;
   transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
   text-decoration: none;
@@ -123,8 +123,8 @@
 
 .ctaSecondary:hover {
   transform: translateY(-2px);
-  border-color: rgba(126, 200, 216, 0.4);
-  box-shadow: 0 8px 30px rgba(126, 200, 216, 0.15);
+  border-color: rgba(156, 207, 216, 0.4);
+  box-shadow: 0 8px 30px rgba(156, 207, 216, 0.15);
 }
 
 /* ====== SECTION COMMON ====== */
@@ -186,13 +186,13 @@
 }
 
 .lifecycleAmber {
-  background: rgba(240, 168, 104, 0.08);
-  border-color: rgba(240, 168, 104, 0.25);
+  background: rgba(246, 193, 119, 0.08);
+  border-color: rgba(246, 193, 119, 0.25);
 }
 
 .lifecycleTeal {
-  background: rgba(126, 200, 216, 0.08);
-  border-color: rgba(126, 200, 216, 0.25);
+  background: rgba(156, 207, 216, 0.08);
+  border-color: rgba(156, 207, 216, 0.25);
 }
 
 .lifecycleStepNum {
@@ -223,7 +223,7 @@
 }
 
 .lifecycleArrowLoop {
-  color: var(--accent-amber);
+  color: var(--accent-gold);
   font-size: 22px;
 }
 
@@ -259,21 +259,21 @@
 }
 
 .agentAmber {
-  background: rgba(240, 168, 104, 0.06);
-  border-color: rgba(240, 168, 104, 0.2);
+  background: rgba(246, 193, 119, 0.06);
+  border-color: rgba(246, 193, 119, 0.2);
 }
 
 .agentAmber:hover {
-  box-shadow: 0 8px 30px rgba(240, 168, 104, 0.12);
+  box-shadow: 0 8px 30px rgba(246, 193, 119, 0.12);
 }
 
 .agentTeal {
-  background: rgba(126, 200, 216, 0.06);
-  border-color: rgba(126, 200, 216, 0.2);
+  background: rgba(156, 207, 216, 0.06);
+  border-color: rgba(156, 207, 216, 0.2);
 }
 
 .agentTeal:hover {
-  box-shadow: 0 8px 30px rgba(126, 200, 216, 0.12);
+  box-shadow: 0 8px 30px rgba(156, 207, 216, 0.12);
 }
 
 .agentIcon {
@@ -315,13 +315,13 @@
 .footer {
   text-align: center;
   padding: 40px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid rgba(224, 222, 244, 0.05);
 }
 
 .footerGradientLine {
   width: 60px;
   height: 2px;
-  background: linear-gradient(90deg, var(--accent-amber), var(--accent-teal));
+  background: linear-gradient(90deg, var(--accent-gold), var(--accent-foam));
   margin: 0 auto 24px;
   border-radius: 1px;
 }
@@ -337,7 +337,7 @@
 }
 
 .footerText a:hover {
-  color: var(--accent-amber);
+  color: var(--accent-gold);
 }
 
 /* ====== RESPONSIVE ====== */
@@ -374,7 +374,7 @@
   }
 
   .hero {
-    padding: 100px 16px 60px;
+    padding: 100px 16px 96px;
   }
 
   .section {

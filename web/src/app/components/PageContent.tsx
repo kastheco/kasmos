@@ -8,7 +8,7 @@ import ScrollReveal from "./ScrollReveal";
 import FeatureCard from "./FeatureCard";
 import InstallTabs from "./InstallTabs";
 import Header from "./Header";
-import PixelBee from "./PixelBee";
+import OrchestrationVisual from "./OrchestrationVisual";
 
 const features = [
   {
@@ -69,7 +69,7 @@ export default function PageContent() {
 
         {/* Hero */}
         <section className={styles.hero}>
-          <PixelBee scale={3} bob className={styles.heroBee} />
+          <OrchestrationVisual className={styles.heroBee} />
           <GradientText as="h1" className={styles.heroTitle}>
             kasmos
           </GradientText>
@@ -223,7 +223,8 @@ export default function PageContent() {
             </p>
             <InstallTabs />
             <p className={styles.installPrereqs}>
-              prerequisites: tmux, gh (GitHub CLI)
+              prerequisites: tmux, gh, and at least one supported AI CLI —{" "}
+              <a href="/docs/getting-started/prerequisites/">see full list</a>
             </p>
           </ScrollReveal>
         </section>

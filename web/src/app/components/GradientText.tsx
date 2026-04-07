@@ -20,7 +20,7 @@ export default function GradientText({
     <Tag
       className={className}
       style={{
-        background: "linear-gradient(135deg, #F0A868, #7EC8D8)",
+        background: "linear-gradient(135deg, #9ccfd8, #c4a7e7)",
         WebkitBackgroundClip: "text",
         backgroundClip: "text",
         color: "transparent",

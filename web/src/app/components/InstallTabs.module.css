@@ -1,6 +1,6 @@
 .terminal {
-  background: rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(35, 33, 54, 0.7);
+  border: 1px solid rgba(224, 222, 244, 0.08);
   border-radius: 12px;
   overflow: hidden;
   width: 100%;
@@ -13,8 +13,8 @@
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.03);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(224, 222, 244, 0.03);
+  border-bottom: 1px solid rgba(224, 222, 244, 0.06);
 }
 
 .dot {
@@ -31,8 +31,8 @@
   display: flex;
   gap: 0;
   padding: 0 16px;
-  background: rgba(255, 255, 255, 0.02);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(224, 222, 244, 0.02);
+  border-bottom: 1px solid rgba(224, 222, 244, 0.06);
   overflow-x: auto;
 }
 
@@ -40,7 +40,7 @@
   padding: 10px 16px;
   font-size: 13px;
   font-family: var(--font-geist-mono);
-  color: #666;
+  color: var(--foreground-tertiary);
   cursor: pointer;
   border: none;
   background: none;
@@ -50,12 +50,12 @@
 }
 
 .tab:hover {
-  color: #aaa;
+  color: var(--foreground-secondary);
 }
 
 .tabActive {
-  color: #F0A868;
-  border-bottom-color: #F0A868;
+  color: var(--accent-foam);
+  border-bottom-color: var(--accent-foam);
 }
 
 .content {
@@ -65,7 +65,7 @@
 .command {
   font-family: var(--font-geist-mono);
   font-size: 14px;
-  color: #7EC8D8;
+  color: var(--accent-iris);
   line-height: 1.8;
   white-space: pre-wrap;
   word-break: break-all;
@@ -73,7 +73,7 @@
 }
 
 .prompt {
-  color: #F0A868;
+  color: var(--accent-gold);
   user-select: none;
 }
 
@@ -90,20 +90,52 @@
   padding: 6px 12px;
   font-size: 12px;
   font-family: var(--font-geist-mono);
-  color: #888;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--foreground-secondary);
+  background: rgba(224, 222, 244, 0.05);
+  border: 1px solid rgba(224, 222, 244, 0.1);
   border-radius: 6px;
   cursor: pointer;
   transition: color 0.2s, border-color 0.2s;
 }
 
 .copyBtn:hover {
-  color: #F0A868;
-  border-color: rgba(240, 168, 104, 0.3);
+  color: var(--accent-foam);
+  border-color: rgba(156, 207, 216, 0.3);
 }
 
 .copied {
   color: #28c840;
   border-color: rgba(40, 200, 64, 0.3);
+}
+
+.releasesPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 0;
+  min-height: 56px;
+}
+
+.releasesDescription {
+  font-family: var(--font-geist-mono);
+  font-size: 14px;
+  color: var(--foreground-secondary);
+  line-height: 1.7;
+  margin: 0;
+}
+
+.releasesLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-geist-mono);
+  font-size: 13px;
+  color: var(--accent-foam);
+  text-decoration: none;
+  transition: opacity 0.2s;
+}
+
+.releasesLink:hover {
+  opacity: 0.8;
+  text-decoration: underline;
 }

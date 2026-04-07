@@ -10,7 +10,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   userScalable: true,
-  themeColor: "#0a0b14",
+  themeColor: "#232136",
 };
 
 export const metadata: Metadata = {
@@ -62,9 +62,9 @@ export default async function RootLayout({
     <html lang="en" dir="ltr" suppressHydrationWarning>
       <Head
         color={{
-          hue: 28,
-          saturation: 82,
-          lightness: { dark: 67, light: 40 },
+          hue: 265,
+          saturation: 60,
+          lightness: { dark: 72, light: 40 },
         }}
       />
       <body>

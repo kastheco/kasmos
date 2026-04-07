@@ -1,6 +1,6 @@
 /* ============================
    kasmos docs — custom theme
-   Matches kasmos amber/teal palette from web/src/app/globals.css.
+   Matches kasmos Rosé Pine Moon palette from web/src/app/globals.css.
    Selectors are kept shallow (:root, html, body, pre, code, a) so
    Nextra upgrades stay easy. Nextra handles dark-mode toggling via a
    .dark class on <html>; we do NOT hard-lock to dark-only styles.
@@ -8,11 +8,11 @@
 
 /* --- Palette tokens (always available) --- */
 :root {
-  --kas-bg: #0a0b14;
-  --kas-accent-amber: #f0a868;
-  --kas-accent-teal: #7ec8d8;
-  --kas-glow-amber: rgba(240, 168, 104, 0.12);
-  --kas-glow-teal: rgba(126, 200, 216, 0.12);
+  --kas-bg: #232136;
+  --kas-accent-iris: #c4a7e7;
+  --kas-accent-foam: #9ccfd8;
+  --kas-glow-iris: rgba(196, 167, 231, 0.12);
+  --kas-glow-foam: rgba(156, 207, 216, 0.12);
 }
 
 /* --- Smooth text rendering --- */
@@ -31,17 +31,17 @@ body {
 html.dark body {
   background-color: var(--kas-bg);
   background-image:
-    radial-gradient(ellipse at 15% 20%, var(--kas-glow-amber) 0%, transparent 55%),
-    radial-gradient(ellipse at 85% 80%, var(--kas-glow-teal) 0%, transparent 55%);
+    radial-gradient(ellipse at 15% 20%, var(--kas-glow-iris) 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 80%, var(--kas-glow-foam) 0%, transparent 55%);
 }
 
-/* Links — amber primary, teal on hover */
+/* Links — iris primary, foam on hover */
 html.dark a {
-  color: var(--kas-accent-amber);
+  color: var(--kas-accent-iris);
 }
 
 html.dark a:hover {
-  color: var(--kas-accent-teal);
+  color: var(--kas-accent-foam);
 }
 
 /* Fenced code blocks: add a subtle dark surface so they remain
@@ -63,12 +63,12 @@ html.dark code:not(pre code) {
 
 /* ============================================================
    LIGHT MODE
-   Amber/teal must be darkened for sufficient contrast on white.
+   Iris/foam must be darkened for sufficient contrast on white.
    ============================================================ */
 
-/* Links — darkened amber for readability on light background */
+/* Links — darkened iris for readability on light background */
 html:not(.dark) a {
-  color: #b87030;
+  color: #6b4fa0;
 }
 
 html:not(.dark) a:hover {
@@ -96,12 +96,12 @@ html:not(.dark) code:not(pre code) {
 
 /* High-contrast focus outline on the darker shell */
 :focus-visible {
-  outline: 2px solid var(--kas-accent-amber);
+  outline: 2px solid var(--kas-accent-iris);
   outline-offset: 2px;
 }
 
 /* Selection highlight */
 ::selection {
-  background: rgba(240, 168, 104, 0.35);
+  background: rgba(196, 167, 231, 0.35);
   color: #fff;
 }

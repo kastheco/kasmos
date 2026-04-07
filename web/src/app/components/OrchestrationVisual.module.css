@@ -1,0 +1,75 @@
+@keyframes drift {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes nodePulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+@keyframes lineFade {
+  0%, 100% { opacity: 0.12; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes centerPulse {
+  0%, 100% { opacity: 0.8; r: 12px; }
+  50% { opacity: 1; r: 13px; }
+}
+
+/* Container */
+.visual {
+  animation: drift 5s ease-in-out infinite;
+  overflow: visible;
+}
+
+/* Lines */
+.line {
+  stroke-width: 1.5;
+  animation: lineFade 3s ease-in-out infinite;
+}
+
+/* Peripheral nodes */
+.node {
+  animation: nodePulse 3s ease-in-out infinite;
+}
+
+/* Central orchestrator */
+.center {
+  fill: var(--accent-foam, #9ccfd8);
+  animation: centerPulse 2.5s ease-in-out infinite;
+}
+
+/* Color variants */
+.foam {
+  fill: var(--accent-foam, #9ccfd8);
+  stroke: var(--accent-foam, #9ccfd8);
+}
+
+.iris {
+  fill: var(--accent-iris, #c4a7e7);
+  stroke: var(--accent-iris, #c4a7e7);
+}
+
+.gold {
+  fill: var(--accent-gold, #f6c177);
+  stroke: var(--accent-gold, #f6c177);
+}
+
+/* Animation delays */
+.delay1 { animation-delay: 0.5s; }
+.delay2 { animation-delay: 1s; }
+.delay3 { animation-delay: 1.5s; }
+.delay4 { animation-delay: 2s; }
+.delay5 { animation-delay: 2.5s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .visual,
+  .line,
+  .node,
+  .center {
+    animation: none;
+    opacity: 0.6;
+  }
+}
