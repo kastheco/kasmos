@@ -1228,7 +1228,11 @@ func (n *NavigationPanel) RowCount() int { return len(n.rows) }
 func navInstanceTitle(inst *session.Instance) string {
 	switch {
 	case inst.WaveNumber > 0 && inst.TaskNumber > 0:
-		return fmt.Sprintf("wave %d · task %d", inst.WaveNumber, inst.TaskNumber)
+		taskIndex := inst.WaveTaskIndex
+		if taskIndex == 0 {
+			taskIndex = inst.TaskNumber
+		}
+		return fmt.Sprintf("wave %d · task %d", inst.WaveNumber, taskIndex)
 	case inst.AgentType == session.AgentTypeReviewer && inst.TaskFile != "":
 		if inst.ReviewCycle > 0 {
 			return fmt.Sprintf("review #%d", inst.ReviewCycle)

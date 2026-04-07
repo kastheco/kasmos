@@ -56,6 +56,28 @@ func TestNavInstanceTitle_SmallPlanCoderUsesImplementing(t *testing.T) {
 	assert.Equal(t, "implementing", navInstanceTitle(instance))
 }
 
+func TestNavInstanceTitle_WaveCoderUsesWaveTaskIndex(t *testing.T) {
+	instance := &session.Instance{
+		AgentType:     session.AgentTypeCoder,
+		WaveNumber:    2,
+		TaskNumber:    3,
+		WaveTaskIndex: 1,
+	}
+
+	assert.Equal(t, "wave 2 · task 1", navInstanceTitle(instance))
+}
+
+func TestNavInstanceTitle_WaveCoderFallsBackToTaskNumberWhenIndexZero(t *testing.T) {
+	instance := &session.Instance{
+		AgentType:     session.AgentTypeCoder,
+		WaveNumber:    2,
+		TaskNumber:    3,
+		WaveTaskIndex: 0,
+	}
+
+	assert.Equal(t, "wave 2 · task 3", navInstanceTitle(instance))
+}
+
 // ---------- rebuildRows grouping ----------
 
 func TestRebuildRows_EmptyPanel(t *testing.T) {
