@@ -90,12 +90,10 @@ html:not(.dark) code:not(pre code) {
   font-size: 0.875em;
 }
 
-/* Footer / theme-switch area: force dark surface so the Nextra
-   theme toggle doesn't show a white background strip. */
-html.dark footer,
-html.dark [data-nextra-footer] {
-  background-color: var(--kas-bg);
-  border-top-color: rgba(255, 255, 255, 0.06);
+/* Footer wrapper: Nextra uses neutral-900 (~#303030) which is lighter
+   than the navbar's --nextra-bg (#111). Override to match the navbar. */
+html.dark .x\:dark\:bg-neutral-900 {
+  background-color: rgb(17, 17, 17) !important;
 }
 
 /* ============================================================
