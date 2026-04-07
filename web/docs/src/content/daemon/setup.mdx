@@ -1,24 +1,25 @@
 # setup
 
-kasmos ships two systemd user service units in `contrib/` and a set of Just recipes for managing them. This page covers both.
+kasmos ships service unit templates in `contrib/` and a set of Just recipes for managing them. The `Justfile` recipes auto-detect whether you are on linux (systemd) or macOS (launchd) and apply the right tooling automatically. This page covers both.
 
 ## prerequisites
 
 - `kasmos` binary installed in `~/go/bin/` (via `just install` or `go install .`)
 - `kas` symlink created (the install recipe does this automatically)
-- systemd user session available (`loginctl enable-linger` on headless servers)
+- **linux only** — systemd user session available (`loginctl enable-linger` on headless servers)
+- **macOS only** — no extra setup needed; launchd is always available
 
 ## just recipes
 
-All daemon management is available through the `Justfile` at the repo root.
+All daemon management is available through the `Justfile` at the repo root. The recipes detect `$(uname -s)` at runtime so the same commands work on both platforms.
 
 ### install and enable
 
 ```sh
-# install the orchestration daemon (kasmos.service) and enable it now
+# install the orchestration daemon and enable it now
 just kasmosd-enable
 
-# install the plan store service (kasmosdb.service) and enable it now
+# install the plan store service and enable it now
 just db-service-enable
 
 # enable both services in one step
@@ -28,15 +29,17 @@ just services-enable
 `kasmosd-enable` runs in three stages:
 
 1. Calls `just install` — builds and installs the binary, creates `kas` / `kms` symlinks.
-2. Copies `contrib/kasmos.service` to `~/.config/systemd/user/` and reloads the daemon.
-3. Runs `systemctl --user enable --now kasmos`.
+2. Installs the service definition for the current platform:
+   - **linux** — copies `contrib/kasmos.service` to `~/.config/systemd/user/` and reloads the daemon.
+   - **macOS** — renders `contrib/kasmos.plist` with the current `$HOME` and binary path, copies it to `~/Library/LaunchAgents/`, and loads it with `launchctl`.
+3. Enables and starts the service.
 
-`db-service-enable` does the same for `contrib/kasmosdb.service`, which runs `kas serve` as a background HTTP task store.
+`db-service-enable` does the same for the plan store service (`kas serve`), which exposes the task store for remote inspection and the TUI on port 7433 (configurable with `--port`).
 
 ### direct daemon start/stop
 
 ```sh
-# start the daemon in the foreground (useful for debugging or systemd override)
+# start the daemon in the foreground (useful for debugging)
 just kasmosd-start    # runs: kas daemon start
 
 # stop the daemon by PID
@@ -55,13 +58,15 @@ just doctord
 `doctord` prints a structured report:
 
 - whether the `kas` binary is on `$PATH`
-- install and active state of `kasmos.service` and `kasmosdb.service`
+- install and active state of both services
 - whether the daemon socket is present at the expected path
 - a "next steps" block listing the relevant `just` recipes
 
-## systemd service units
+## service units
 
-### `contrib/kasmos.service` — orchestration daemon
+### linux — systemd
+
+`contrib/kasmos.service`:
 
 ```ini
 [Unit]
@@ -84,28 +89,63 @@ SyslogIdentifier=kasmos
 WantedBy=default.target
 ```
 
-`%h` expands to the user's home directory. Logs go to the journal (`journalctl --user -u kasmos -f`).
+`%h` expands to the user's home directory. Logs go to the journal:
 
-### `contrib/kasmosdb.service` — plan store server
-
-```ini
-[Unit]
-Description=kasmos plan store server
-Documentation=https://github.com/kastheco/kasmos
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=%h/go/bin/kas serve
-Restart=on-failure
-RestartSec=5
-Environment=HOME=%h
-
-[Install]
-WantedBy=default.target
+```sh
+journalctl --user -u kasmos -f
 ```
 
-`kas serve` starts an HTTP server that exposes the task store for remote inspection and the TUI. The default port is 7433 (configurable with `--port`).
+`contrib/kasmosdb.service` follows the same pattern for `kas serve`.
+
+### macOS — launchd
+
+`contrib/kasmos.plist` (rendered by `just kasmosd-enable` with the active `$HOME`):
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.kastheco.kasmos</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/you/go/bin/kas</string>
+    <string>daemon</string>
+    <string>start</string>
+    <string>--foreground</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/you/Library/Logs/kasmos/daemon.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/you/Library/Logs/kasmos/daemon.log</string>
+</dict>
+</plist>
+```
+
+Logs are written to `~/Library/Logs/kasmos/daemon.log`:
+
+```sh
+tail -f ~/Library/Logs/kasmos/daemon.log
+```
+
+Manage the service manually:
+
+```sh
+# load and start
+launchctl load ~/Library/LaunchAgents/com.kastheco.kasmos.plist
+
+# stop and unload
+launchctl unload ~/Library/LaunchAgents/com.kastheco.kasmos.plist
+
+# check status
+launchctl list | grep kasmos
+```
 
 ## daemon config file
 
@@ -131,8 +171,11 @@ reactions = ["eyes"]
 # check socket presence (fastest check)
 kas daemon status
 
-# view live logs
+# view live logs — linux
 journalctl --user -u kasmos -f
+
+# view live logs — macOS
+tail -f ~/Library/Logs/kasmos/daemon.log
 
 # run the diagnostic script
 just doctord
@@ -141,7 +184,7 @@ just doctord
 The socket lives at:
 
 - `$XDG_RUNTIME_DIR/kasmos/kas.sock` (when `XDG_RUNTIME_DIR` is set — typical on systemd desktop sessions)
-- `/tmp/kasmos-<uid>/kas.sock` (fallback)
+- `/tmp/kasmos-<uid>/kas.sock` (fallback, also used on macOS)
 
 ## manual foreground run
 
