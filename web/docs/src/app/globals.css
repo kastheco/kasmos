@@ -90,12 +90,15 @@ html:not(.dark) code:not(pre code) {
   font-size: 0.875em;
 }
 
-/* Footer: match the navbar's near-black background in dark mode.
-   Target every plausible Nextra footer wrapper. */
-html.dark footer,
-html.dark footer ~ *,
-html.dark [class*="bg-neutral-900"],
-html.dark [class*="bg-gray-100"] {
+/* Theme-switcher bar at sidebar bottom: sits inside <aside> as
+   .nextra-sidebar-footer with x:bg-nextra-bg. Force it to match
+   the navbar's near-black in dark mode. */
+html.dark .nextra-sidebar-footer {
+  background-color: rgb(17, 17, 17) !important;
+}
+
+/* Bottom-of-page footer (copyright line) */
+html.dark footer {
   background-color: rgb(17, 17, 17) !important;
 }
 
@@ -105,26 +108,28 @@ html.dark [class*="bg-gray-100"] {
    Does NOT affect doc body content.
    ============================================================ */
 
-/* Left sidebar nav links */
-nav a,
+/* Left sidebar: all labels, folder names, and links */
+.nextra-sidebar *,
+/* Left sidebar folder toggle ("Docs") */
+aside button,
 /* Breadcrumb trail */
 nav[aria-label="breadcrumb"],
 nav[aria-label="breadcrumb"] * {
   text-transform: lowercase;
 }
 
-/* Right sidebar "On This Page" heading + TOC links */
-aside h4,
-aside nav,
-aside nav a,
-aside p,
-aside a {
+/* Right sidebar "On This Page" heading + TOC links + help links */
+.nextra-toc *,
+aside [aria-label="table of contents"],
+aside [aria-label="table of contents"] * {
   text-transform: lowercase;
 }
 
 /* Footer text */
 footer,
-footer * {
+footer *,
+.nextra-sidebar-footer,
+.nextra-sidebar-footer * {
   text-transform: lowercase;
 }
 
