@@ -1,12 +1,21 @@
 set shell := ["bash", "-cu"]
 set dotenv-load := true
 
+# Ensure admin SPA is built (installs deps only when node_modules is missing)
+admin-ensure:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ ! -d web/admin/node_modules ]]; then
+        cd web/admin && npm ci
+    fi
+    cd web/admin && npm run build
+
 # Build kasmos binary
-build:
+build: admin-ensure
     go build -o kasmos .
 
 # Install to GOPATH/bin (with kas, kms aliases)
-install:
+install: admin-ensure
     go install .
     ln -sf "$(go env GOPATH)/bin/kasmos" "$(go env GOPATH)/bin/kas"
     ln -sf "$(go env GOPATH)/bin/kasmos" "$(go env GOPATH)/bin/kms"
