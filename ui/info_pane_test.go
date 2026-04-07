@@ -401,6 +401,50 @@ func TestInfoPane_ClampedWaveDenominator(t *testing.T) {
 	assert.NotContains(t, compact, "wave 2/1")
 }
 
+// TestInfoPane_WaveTotalUnknown verifies that when TotalWaves is 0 (unknown),
+// the wave counter is shown without a denominator to avoid misleading "wave 2/2".
+func TestInfoPane_WaveTotalUnknown(t *testing.T) {
+	p := NewInfoPane()
+	p.SetSize(80, 24)
+	p.SetData(InfoData{
+		HasInstance: true,
+		HasPlan:     true,
+		Title:       "my-feature-coder",
+		Status:      "running",
+		PlanName:    "my-feature",
+		WaveNumber:  2,
+		TotalWaves:  0, // unknown
+	})
+
+	compact := p.RenderCompact(80)
+	assert.Contains(t, compact, "wave 2")
+	assert.NotContains(t, compact, "wave 2/2")
+	assert.NotContains(t, compact, "wave 2/0")
+}
+
+// TestInfoPane_TaskTotalUnknown verifies that when TotalTasks is 0 (unknown) and
+// WaveTaskIndex is also unknown, the task counter is suppressed entirely to avoid
+// a misleading "task 3/0" display.
+func TestInfoPane_TaskTotalUnknown(t *testing.T) {
+	p := NewInfoPane()
+	p.SetSize(80, 24)
+	p.SetData(InfoData{
+		HasInstance:   true,
+		HasPlan:       true,
+		Title:         "my-feature-coder",
+		Status:        "running",
+		PlanName:      "my-feature",
+		TaskNumber:    3,
+		TotalTasks:    0, // unknown
+		WaveTaskIndex: 0,
+		WaveTaskCount: 0,
+	})
+
+	compact := p.RenderCompact(80)
+	assert.NotContains(t, compact, "task 3/0")
+	assert.NotContains(t, compact, "task 3")
+}
+
 // TestInfoPane_InstanceSectionWaveLocalCounter verifies that the full instance
 // section uses wave-local counters instead of the global task position.
 func TestInfoPane_InstanceSectionWaveLocalCounter(t *testing.T) {

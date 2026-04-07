@@ -295,7 +295,12 @@ func (p *InfoPane) wrapText(text string) []string {
 
 // infoDisplayedWaveTotal returns the wave denominator clamped so it is never
 // smaller than the numerator (guards against stale TotalWaves metadata).
+// Returns 0 when totalWaves is unknown (<= 0); callers must render
+// numerator-only (e.g. "wave 2") in that case.
 func infoDisplayedWaveTotal(waveNumber, totalWaves int) int {
+	if totalWaves <= 0 {
+		return 0
+	}
 	if totalWaves < waveNumber {
 		return waveNumber
 	}
@@ -306,11 +311,13 @@ func infoDisplayedWaveTotal(waveNumber, totalWaves int) int {
 // for a task assignment. Wave-local counters (WaveTaskIndex / WaveTaskCount)
 // are preferred when both are non-zero; falls back to global TaskNumber /
 // TotalTasks for legacy or non-wave instances.
+// Returns ok=false when no usable counter is available or when the total is
+// unknown (to avoid misleading "N/0" displays).
 func infoDisplayedTaskCounter(taskNumber, totalTasks, waveTaskIndex, waveTaskCount int) (current, total int, ok bool) {
 	if waveTaskIndex > 0 && waveTaskCount > 0 {
 		return waveTaskIndex, waveTaskCount, true
 	}
-	if taskNumber > 0 {
+	if taskNumber > 0 && totalTasks > 0 {
 		return taskNumber, totalTasks, true
 	}
 	return 0, 0, false
@@ -493,7 +500,13 @@ func (p *InfoPane) renderInstanceSection() string {
 	}
 	if p.data.WaveNumber > 0 {
 		waveTotal := infoDisplayedWaveTotal(p.data.WaveNumber, p.data.TotalWaves)
-		rows = append(rows, p.renderRow("wave", fmt.Sprintf("%d/%d", p.data.WaveNumber, waveTotal)))
+		var waveText string
+		if waveTotal > 0 {
+			waveText = fmt.Sprintf("%d/%d", p.data.WaveNumber, waveTotal)
+		} else {
+			waveText = fmt.Sprintf("%d", p.data.WaveNumber)
+		}
+		rows = append(rows, p.renderRow("wave", waveText))
 	}
 	if cur, tot, ok := infoDisplayedTaskCounter(p.data.TaskNumber, p.data.TotalTasks, p.data.WaveTaskIndex, p.data.WaveTaskCount); ok {
 		taskText := fmt.Sprintf("%d of %d", cur, tot)
@@ -641,7 +654,11 @@ func (p *InfoPane) RenderCompact(width int) string {
 			}
 			if d.WaveNumber > 0 {
 				waveTotal := infoDisplayedWaveTotal(d.WaveNumber, d.TotalWaves)
-				parts = append(parts, fmt.Sprintf("wave %d/%d", d.WaveNumber, waveTotal))
+				if waveTotal > 0 {
+					parts = append(parts, fmt.Sprintf("wave %d/%d", d.WaveNumber, waveTotal))
+				} else {
+					parts = append(parts, fmt.Sprintf("wave %d", d.WaveNumber))
+				}
 			}
 			if cur, tot, ok := infoDisplayedTaskCounter(d.TaskNumber, d.TotalTasks, d.WaveTaskIndex, d.WaveTaskCount); ok {
 				parts = append(parts, fmt.Sprintf("task %d/%d", cur, tot))
@@ -689,7 +706,11 @@ func (p *InfoPane) RenderCompact(width int) string {
 		}
 		if d.WaveNumber > 0 {
 			waveTotal := infoDisplayedWaveTotal(d.WaveNumber, d.TotalWaves)
-			parts = append(parts, fmt.Sprintf("wave %d/%d", d.WaveNumber, waveTotal))
+			if waveTotal > 0 {
+				parts = append(parts, fmt.Sprintf("wave %d/%d", d.WaveNumber, waveTotal))
+			} else {
+				parts = append(parts, fmt.Sprintf("wave %d", d.WaveNumber))
+			}
 		}
 		if cur, tot, ok := infoDisplayedTaskCounter(d.TaskNumber, d.TotalTasks, d.WaveTaskIndex, d.WaveTaskCount); ok {
 			parts = append(parts, fmt.Sprintf("task %d/%d", cur, tot))

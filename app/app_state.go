@@ -3284,8 +3284,17 @@ func (m *home) spawnWaveTasks(orch *orchestration.WaveOrchestrator, tasks []task
 		return m, m.handleError(err)
 	}
 
+	// Derive WaveTaskIndex/WaveTaskCount from the full current wave so that
+	// retried tasks (a subset of the wave) still carry the correct position.
+	allWaveTasks := orch.CurrentWaveTasks()
+	waveTaskCount := len(allWaveTasks)
+	waveTaskPos := make(map[int]int, len(allWaveTasks))
+	for i, t := range allWaveTasks {
+		waveTaskPos[t.Number] = i + 1
+	}
+
 	var cmds []tea.Cmd
-	for i, task := range tasks {
+	for _, task := range tasks {
 		prompt := orch.BuildTaskPrompt(task, len(tasks))
 
 		inst, err := session.NewInstance(session.InstanceOptions{
@@ -3298,8 +3307,8 @@ func (m *home) spawnWaveTasks(orch *orchestration.WaveOrchestrator, tasks []task
 			TaskNumber:    task.Number,
 			WaveNumber:    orch.CurrentWaveNumber(),
 			PeerCount:     len(tasks),
-			WaveTaskIndex: i + 1,
-			WaveTaskCount: len(tasks),
+			WaveTaskIndex: waveTaskPos[task.Number],
+			WaveTaskCount: waveTaskCount,
 		})
 		if err != nil {
 			return m, m.handleError(err)
