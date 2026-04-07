@@ -423,11 +423,11 @@ func TestInfoPane_WaveTotalUnknown(t *testing.T) {
 }
 
 // TestInfoPane_TaskTotalUnknown verifies that when TotalTasks is 0 (unknown) and
-// WaveTaskIndex is also unknown, the task counter is suppressed entirely to avoid
-// a misleading "task 3/0" display.
+// WaveTaskIndex is also unknown, only the numerator is shown to avoid a misleading
+// "task 3/0" display. This is tested for both the compact and full rendering paths.
 func TestInfoPane_TaskTotalUnknown(t *testing.T) {
 	p := NewInfoPane()
-	p.SetSize(80, 24)
+	p.SetSize(80, 30)
 	p.SetData(InfoData{
 		HasInstance:   true,
 		HasPlan:       true,
@@ -440,9 +440,15 @@ func TestInfoPane_TaskTotalUnknown(t *testing.T) {
 		WaveTaskCount: 0,
 	})
 
+	// compact path
 	compact := p.RenderCompact(80)
 	assert.NotContains(t, compact, "task 3/0")
-	assert.NotContains(t, compact, "task 3")
+	assert.NotContains(t, compact, "3/0")
+
+	// full rendering path
+	full := p.String()
+	assert.NotContains(t, full, "3 of 0")
+	assert.NotContains(t, full, "3/0")
 }
 
 // TestInfoPane_InstanceSectionWaveLocalCounter verifies that the full instance

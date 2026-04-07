@@ -311,13 +311,13 @@ func infoDisplayedWaveTotal(waveNumber, totalWaves int) int {
 // for a task assignment. Wave-local counters (WaveTaskIndex / WaveTaskCount)
 // are preferred when both are non-zero; falls back to global TaskNumber /
 // TotalTasks for legacy or non-wave instances.
-// Returns ok=false when no usable counter is available or when the total is
-// unknown (to avoid misleading "N/0" displays).
+// When the total is unknown (zero), total is returned as 0 and callers must
+// render numerator-only (e.g. "task 3") to avoid misleading "N/0" displays.
 func infoDisplayedTaskCounter(taskNumber, totalTasks, waveTaskIndex, waveTaskCount int) (current, total int, ok bool) {
 	if waveTaskIndex > 0 && waveTaskCount > 0 {
 		return waveTaskIndex, waveTaskCount, true
 	}
-	if taskNumber > 0 && totalTasks > 0 {
+	if taskNumber > 0 {
 		return taskNumber, totalTasks, true
 	}
 	return 0, 0, false
@@ -509,9 +509,17 @@ func (p *InfoPane) renderInstanceSection() string {
 		rows = append(rows, p.renderRow("wave", waveText))
 	}
 	if cur, tot, ok := infoDisplayedTaskCounter(p.data.TaskNumber, p.data.TotalTasks, p.data.WaveTaskIndex, p.data.WaveTaskCount); ok {
-		taskText := fmt.Sprintf("%d of %d", cur, tot)
-		if p.data.TaskTitle != "" {
-			taskText = fmt.Sprintf("%d of %d: %s", cur, tot, p.data.TaskTitle)
+		var taskText string
+		if tot > 0 {
+			taskText = fmt.Sprintf("%d of %d", cur, tot)
+			if p.data.TaskTitle != "" {
+				taskText = fmt.Sprintf("%d of %d: %s", cur, tot, p.data.TaskTitle)
+			}
+		} else {
+			taskText = fmt.Sprintf("%d", cur)
+			if p.data.TaskTitle != "" {
+				taskText = fmt.Sprintf("%d: %s", cur, p.data.TaskTitle)
+			}
 		}
 		rows = append(rows, p.renderRow("task", taskText))
 	}
@@ -661,7 +669,11 @@ func (p *InfoPane) RenderCompact(width int) string {
 				}
 			}
 			if cur, tot, ok := infoDisplayedTaskCounter(d.TaskNumber, d.TotalTasks, d.WaveTaskIndex, d.WaveTaskCount); ok {
-				parts = append(parts, fmt.Sprintf("task %d/%d", cur, tot))
+				if tot > 0 {
+					parts = append(parts, fmt.Sprintf("task %d/%d", cur, tot))
+				} else {
+					parts = append(parts, fmt.Sprintf("task %d", cur))
+				}
 			}
 			if len(parts) > 0 {
 				lines = append(lines, strings.Join(parts, "  "))
@@ -713,7 +725,11 @@ func (p *InfoPane) RenderCompact(width int) string {
 			}
 		}
 		if cur, tot, ok := infoDisplayedTaskCounter(d.TaskNumber, d.TotalTasks, d.WaveTaskIndex, d.WaveTaskCount); ok {
-			parts = append(parts, fmt.Sprintf("task %d/%d", cur, tot))
+			if tot > 0 {
+				parts = append(parts, fmt.Sprintf("task %d/%d", cur, tot))
+			} else {
+				parts = append(parts, fmt.Sprintf("task %d", cur))
+			}
 		}
 		if len(parts) > 0 {
 			lines = append(lines, strings.Join(parts, "  "))
