@@ -1661,16 +1661,6 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		return m, m.instanceChanged()
 	}
 
-	// Ctrl+U/D: half-page scroll in agent session preview
-	if msg.Code == 'u' && msg.Mod.Contains(tea.ModCtrl) || msg.Code == 'd' && msg.Mod.Contains(tea.ModCtrl) {
-		if msg.Code == 'u' && msg.Mod.Contains(tea.ModCtrl) {
-			m.tabbedWindow.HalfPageUp()
-		} else {
-			m.tabbedWindow.HalfPageDown()
-		}
-		return m, nil
-	}
-
 	// Handle quit commands first
 	if msg.String() == "ctrl+c" || msg.String() == "q" {
 		return m.handleQuit()
@@ -1718,12 +1708,91 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		}
 	}
 
+	// Double-tap detection (default-state path only; all non-default states have
+	// already returned early above via their own handlers at lines 617–1556).
+	// canonicalDoubleTapKey returns "" for ctrl/alt chords — those flow through
+	// the GlobalKeyStringsMap lookup below unchanged.
+	if dtKey := canonicalDoubleTapKey(msg); dtKey != "" {
+		// Conflict-free keys (k, K, u, d): no single-press binding — swallow 1st tap,
+		// dispatch mapped action on the 2nd tap within the threshold.
+		if action, ok := keys.DoubleTapMap[dtKey]; ok {
+			if m.ensureDoubleTap().Detect(dtKey) {
+				return m.handleResolvedKey(action)
+			}
+			// First tap: swallow (no single-press action for these keys).
+			return m, nil
+		}
+
+		// Debounced keys (s, space): first tap defers via timeout; second tap within
+		// the window cancels the timeout and fires the double-tap action.
+		if action, ok := keys.DebouncedDoubleTapMap[dtKey]; ok {
+			if m.pendingDoubleTapKey == dtKey {
+				// Second tap — cancel pending and dispatch double-tap action immediately.
+				m.pendingDoubleTapKey = ""
+				m.pendingDoubleTapAction = 0
+				m.pendingDoubleTapSeq++
+				return m.handleResolvedKey(action)
+			}
+			// Flush any pending action for a different debounced key first.
+			if m.pendingDoubleTapKey != "" {
+				prevAction := m.pendingDoubleTapAction
+				m.pendingDoubleTapKey = ""
+				m.pendingDoubleTapAction = 0
+				_, flushCmd := m.handleResolvedKey(prevAction)
+				// Then start pending for the incoming key.
+				singleAction := keys.GlobalKeyStringsMap[dtKey]
+				m.pendingDoubleTapKey = dtKey
+				m.pendingDoubleTapAction = singleAction
+				m.pendingDoubleTapSeq++
+				seq := m.pendingDoubleTapSeq
+				return m, tea.Batch(flushCmd, scheduleDoubleTapTimeout(m.doubleTapThreshold(), dtKey, seq))
+			}
+			// First tap: defer single-press until the debounce timeout fires.
+			singleAction := keys.GlobalKeyStringsMap[dtKey]
+			m.pendingDoubleTapKey = dtKey
+			m.pendingDoubleTapAction = singleAction
+			m.pendingDoubleTapSeq++
+			seq := m.pendingDoubleTapSeq
+			return m, scheduleDoubleTapTimeout(m.doubleTapThreshold(), dtKey, seq)
+		}
+
+		// Unrelated printable key: reset conflict-free tracker so stale state does
+		// not accumulate (e.g. k → a → k should not count as k+k).
+		m.ensureDoubleTap().Reset()
+		// Flush any pending debounced action before processing the new key.
+		if m.pendingDoubleTapKey != "" {
+			prevAction := m.pendingDoubleTapAction
+			m.pendingDoubleTapKey = ""
+			m.pendingDoubleTapAction = 0
+			_, flushCmd := m.handleResolvedKey(prevAction)
+			name, ok := keys.GlobalKeyStringsMap[msg.String()]
+			if !ok {
+				return m, flushCmd
+			}
+			_, newCmd := m.handleResolvedKey(name)
+			return m, tea.Batch(flushCmd, newCmd)
+		}
+	}
+
 	name, ok := keys.GlobalKeyStringsMap[msg.String()]
 	if !ok {
 		return m, nil
 	}
+	return m.handleResolvedKey(name)
+}
 
+// handleResolvedKey dispatches a resolved KeyName action. It is called both
+// from the direct key path (handleKeyPress) and from the debounce-timeout path
+// (handleDoubleTapTimeout) so that ctrl-chord actions and double-tap actions
+// remain behaviourally identical.
+func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 	switch name {
+	case keys.KeyHalfPageUp:
+		m.tabbedWindow.HalfPageUp()
+		return m, nil
+	case keys.KeyHalfPageDown:
+		m.tabbedWindow.HalfPageDown()
+		return m, nil
 	case keys.KeyHelp:
 		return m.openKeybindBrowser()
 	case keys.KeyPrompt:
@@ -2055,6 +2124,67 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 	default:
 		return m, nil
 	}
+}
+
+// canonicalDoubleTapKey returns the canonical double-tap token for msg, or ""
+// if the key should not participate in double-tap detection.
+//
+// Rules:
+//   - ctrl or alt modifier → "" (leave on existing paths)
+//   - empty Text → "" (special keys: arrows, function keys, etc.)
+//   - Text == " " → "space"  (normalise to match DebouncedDoubleTapMap["space"])
+//   - any other single printable rune → that character  (includes shift-only like "K")
+//   - anything else → ""
+func canonicalDoubleTapKey(msg tea.KeyPressMsg) string {
+	if msg.Mod.Contains(tea.ModCtrl) || msg.Mod.Contains(tea.ModAlt) {
+		return ""
+	}
+	if len(msg.Text) == 0 {
+		return ""
+	}
+	if msg.Text == " " {
+		return "space"
+	}
+	runes := []rune(msg.Text)
+	if len(runes) != 1 || !unicode.IsPrint(runes[0]) {
+		return ""
+	}
+	return msg.Text
+}
+
+// doubleTapThreshold returns the configured double-tap timing window.
+// Returns 300 ms when appConfig is nil (lightweight test environments).
+func (m *home) doubleTapThreshold() time.Duration {
+	if m.appConfig != nil {
+		return m.appConfig.DoubleTapThreshold()
+	}
+	return 300 * time.Millisecond
+}
+
+// ensureDoubleTap lazily initialises m.doubleTap from the current config threshold.
+// Lazy init lets tests use bare &home{} or newTestHome() without a
+// DoubleTapTracker constructor call.
+func (m *home) ensureDoubleTap() *keys.DoubleTapTracker {
+	if m.doubleTap == nil {
+		m.doubleTap = keys.NewDoubleTapTracker(m.doubleTapThreshold())
+	}
+	return m.doubleTap
+}
+
+// handleDoubleTapTimeout is called from Update when a doubleTapTimeoutMsg arrives.
+// If the timeout is still fresh (matching key and seq, state is stateDefault, pending
+// is set), the queued single-press action is dispatched via handleResolvedKey.
+func (m *home) handleDoubleTapTimeout(msg doubleTapTimeoutMsg) (tea.Model, tea.Cmd) {
+	if m.state != stateDefault ||
+		m.pendingDoubleTapKey == "" ||
+		msg.key != m.pendingDoubleTapKey ||
+		msg.seq != m.pendingDoubleTapSeq {
+		return m, nil
+	}
+	action := m.pendingDoubleTapAction
+	m.pendingDoubleTapKey = ""
+	m.pendingDoubleTapAction = 0
+	return m.handleResolvedKey(action)
 }
 
 // keyToBytes translates a Bubble Tea key message to raw bytes for PTY forwarding.

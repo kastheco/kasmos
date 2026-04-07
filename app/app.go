@@ -13,6 +13,7 @@ import (
 
 	cmd2 "github.com/kastheco/kasmos/cmd"
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/keys"
 	"github.com/kastheco/kasmos/config/auditlog"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
@@ -212,6 +213,18 @@ type home struct {
 
 	// keySent is used to manage underlining menu items
 	keySent bool
+
+	// doubleTap tracks conflict-free double-tap state (k, K, u, d). Lazily
+	// initialised on first key press so tests using bare &home{} keep working.
+	doubleTap *keys.DoubleTapTracker
+
+	// pendingDoubleTapKey is the canonical key awaiting its debounce timeout (s, space).
+	pendingDoubleTapKey string
+	// pendingDoubleTapAction is the single-press action queued for the pending key.
+	pendingDoubleTapAction keys.KeyName
+	// pendingDoubleTapSeq is incremented each time a new debounce is started so
+	// that stale doubleTapTimeoutMsg values can be detected and dropped.
+	pendingDoubleTapSeq int
 
 	// -- UI Components --
 
@@ -2115,6 +2128,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleMouseClick(msg)
 	case tea.MouseWheelMsg:
 		return m.handleMouseWheel(msg)
+	case doubleTapTimeoutMsg:
+		return m.handleDoubleTapTimeout(msg)
 	case tea.KeyPressMsg:
 		return m.handleKeyPress(msg)
 	case tea.WindowSizeMsg:
@@ -2886,6 +2901,22 @@ type instanceStartedMsg struct {
 }
 
 type keyupMsg struct{}
+
+// doubleTapTimeoutMsg fires when the debounce window expires for a debounced
+// key (s, space). If no second tap arrived in the window, the original
+// single-press action is dispatched via handleDoubleTapTimeout.
+type doubleTapTimeoutMsg struct {
+	key string
+	seq int
+}
+
+// scheduleDoubleTapTimeout returns a Cmd that delivers doubleTapTimeoutMsg after
+// delay. Overrideable in tests to make timing synchronous without real sleeps.
+var scheduleDoubleTapTimeout = func(delay time.Duration, key string, seq int) tea.Cmd {
+	return tea.Tick(delay, func(time.Time) tea.Msg {
+		return doubleTapTimeoutMsg{key: key, seq: seq}
+	})
+}
 
 // planRenderedMsg delivers the async glamour render result back to the Update loop.
 type planRenderedMsg struct {

@@ -2,11 +2,13 @@ package app
 
 import (
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/ui"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestRightOnInstance_OpensContextMenu verifies that pressing right on an
@@ -51,18 +53,34 @@ func TestRightOnInstance_PreviewTab_OpensContextMenu(t *testing.T) {
 }
 
 func TestSpaceOnInstance_OpensContextMenu(t *testing.T) {
+	// Space is now debounced: the first tap schedules a timeout and KeySpace fires
+	// only when the timeout message arrives (no second space within the window).
+	var capturedTimeout doubleTapTimeoutMsg
+	orig := scheduleDoubleTapTimeout
+	scheduleDoubleTapTimeout = func(_ time.Duration, key string, seq int) tea.Cmd {
+		capturedTimeout = doubleTapTimeoutMsg{key: key, seq: seq}
+		return func() tea.Msg { return capturedTimeout }
+	}
+	t.Cleanup(func() { scheduleDoubleTapTimeout = orig })
+
 	h := newTestHome()
 
 	inst := &session.Instance{Title: "test-agent"}
 	h.nav.AddInstance(inst)
 	h.nav.SelectInstance(inst)
 
+	// First space: debounced — pending set, timeout scheduled.
 	h.keySent = true
 	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 	updated := model.(*home)
+	require.Equal(t, "space", updated.pendingDoubleTapKey, "pending must be set after first space")
+
+	// Fire the timeout: dispatches KeySpace → opens context menu.
+	model, _ = updated.Update(capturedTimeout)
+	updated = model.(*home)
 
 	assert.Equal(t, stateContextMenu, updated.state,
-		"space on instance should open context menu")
+		"space on instance should open context menu after timeout fires")
 }
 
 // TestRightOnNonInstanceRow_DoesNotOpenContextMenu verifies that pressing right
