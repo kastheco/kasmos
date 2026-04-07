@@ -168,8 +168,9 @@ func EnsureClaudeProjectSettings(dir string) (WriteResult, error) {
 		}
 	}
 
-	// Ensure permissions.allow contains all kasmos MCP tool entries.
-	// Existing deny rules and non-kasmos allow entries are preserved.
+	// Ensure Claude project settings also maintain permissions.allow entries
+	// for all kasmos MCP tools while preserving existing deny rules and
+	// non-kasmos allow entries.
 	perms, _ := current["permissions"].(map[string]any)
 	if perms == nil {
 		perms = map[string]any{}
