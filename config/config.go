@@ -202,6 +202,9 @@ type Config struct {
 	// blueprint-skip mode is used instead of wave orchestration.
 	// When nil, the default threshold of 2 applies.
 	BlueprintSkipThresholdValue *int `json:"blueprint_skip_threshold,omitempty"`
+	// ClaudeNoFlicker sets CLAUDE_CODE_NO_FLICKER for spawned claude agents.
+	// Defaults to false (CLAUDE_CODE_NO_FLICKER=0) so prompt detection works in spawned agents.
+	ClaudeNoFlicker bool `json:"claude_no_flicker,omitempty"`
 }
 
 // BlueprintSkipThreshold returns the configured threshold for single-agent mode.
@@ -389,6 +392,9 @@ func configFromTOML(result *TOMLConfigResult) *Config {
 		if result.MaxReviewFixCycles != nil {
 			cfg.MaxReviewFixCycles = *result.MaxReviewFixCycles
 		}
+		if result.ClaudeNoFlicker != nil {
+			cfg.ClaudeNoFlicker = *result.ClaudeNoFlicker
+		}
 	}
 	applyConfigDefaults(cfg)
 	return cfg
@@ -435,6 +441,8 @@ func configToTOML(cfg *Config) *TOMLConfig {
 		NotificationsEnabled: cfg.NotificationsEnabled,
 		Hooks:                cfg.Hooks,
 	}
+	claudeNoFlicker := cfg.ClaudeNoFlicker
+	out.ClaudeNoFlicker = &claudeNoFlicker
 	autoReviewFix := cfg.AutoReviewFix
 	autoAdvanceWaves := cfg.AutoAdvanceWaves
 	autoAdvance := cfg.AutoAdvance
