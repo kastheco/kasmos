@@ -999,56 +999,87 @@ func (m *home) queueWaveDialog(planFile string) {
 		fmt.Sprintf("wave complete for '%s'. dismiss overlay to continue", taskstate.DisplayName(planFile)))
 }
 
+// showWaveDialog is the single source of truth for intermediate wave decisions.
+// It handles all pre-work (toast, ClickUp, focus, persistence, audit) before
+// showing a WaveDecisionOverlay and transitioning to stateWaveDecision.
 func (m *home) showWaveDialog(planFile string, orch *orchestration.WaveOrchestrator) []tea.Cmd {
 	if orch == nil || orch.State() != orchestration.WaveStateWaveComplete {
 		return nil
 	}
-	m.resolveDeferredToast(m.deferredWaveToastIDs, planFile, overlay.ToastInfo,
-		fmt.Sprintf("wave decision ready for '%s'", taskstate.DisplayName(planFile)))
 	waveNum := orch.CurrentWaveNumber()
 	completed := orch.CompletedTaskCount()
 	failed := orch.FailedTaskCount()
 	total := completed + failed
-	entry, _ := m.taskState.Entry(planFile)
 	planName := taskstate.DisplayName(planFile)
-	cmds := make([]tea.Cmd, 0, 2)
+
+	m.resolveDeferredToast(m.deferredWaveToastIDs, planFile, overlay.ToastInfo,
+		fmt.Sprintf("wave decision ready for '%s'", planName))
+
+	cmds := make([]tea.Cmd, 0, 4)
+
+	// Post intermediate ClickUp comment for successful waves.
 	if failed == 0 && orch.ShouldPostWaveCompleteComment() {
 		detail := fmt.Sprintf("%d/%d: %d/%d tasks", waveNum, orch.TotalWaves(), completed, total)
 		if cmd := m.postClickUpProgress(planFile, "wave_complete", detail); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	}
+
+	// Focus a task instance so the user can see agent output behind the overlay.
 	if cmd := m.focusPlanInstanceForOverlay(planFile); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
+
+	// Auto-advance path: emit audit, toast, and dispatch advance without overlay.
 	if failed == 0 && m.appConfig != nil && m.appConfig.AutoAdvanceWaves {
+		m.audit(auditlog.EventWaveCompleted,
+			fmt.Sprintf("wave %d complete: %d/%d tasks (auto-advancing)", waveNum, completed, total),
+			auditlog.WithPlan(planFile),
+			auditlog.WithWave(waveNum, 0))
 		m.toastManager.Info(fmt.Sprintf("%s — wave %d complete, auto-advancing...", planName, waveNum))
-		capturedEntry := entry
+		entry, _ := m.taskState.Entry(planFile)
 		capturedPlanFile := planFile
+		capturedEntry := entry
 		cmds = append(cmds, func() tea.Msg {
 			return waveAdvanceMsg{planFile: capturedPlanFile, entry: capturedEntry}
 		})
 		return cmds
 	}
-	capturedEntry := entry
-	capturedPlanFile := planFile
-	message := fmt.Sprintf("Wave %d complete (%d/%d tasks succeeded). Start Wave %d?", waveNum, completed, total, waveNum+1)
-	if failed > 0 {
-		message = fmt.Sprintf("Wave %d complete with failures (%d succeeded, %d failed). [n]ext wave, [r]etry failed, or [a]bort?", waveNum, completed, failed)
-		m.pendingWaveAbortAction = func() tea.Msg {
-			return waveAbortMsg{planFile: capturedPlanFile}
-		}
-		m.pendingWaveNextAction = func() tea.Msg {
-			return waveAdvanceMsg{planFile: capturedPlanFile, entry: capturedEntry}
-		}
-	} else {
-		m.pendingWaveAbortAction = nil
-		m.pendingWaveNextAction = nil
+
+	// Persist wave-waiting execution state.
+	if err := m.setExecutionState(planFile, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseWaveWaiting),
+		ActiveAgentType: session.AgentTypeCoder,
+		ActiveWave:      waveNum,
+	}); err != nil {
+		log.WarningLog.Printf("could not persist wave waiting state for %q: %v", planFile, err)
 	}
-	m.pendingWaveConfirmTaskFile = capturedPlanFile
-	m.confirmAction(message, func() tea.Msg {
-		return waveAdvanceMsg{planFile: capturedPlanFile, entry: capturedEntry}
+
+	// Emit audit event before showing the overlay.
+	if failed > 0 {
+		m.audit(auditlog.EventWaveFailed,
+			fmt.Sprintf("wave %d: %d/%d tasks failed", waveNum, failed, total),
+			auditlog.WithPlan(planFile),
+			auditlog.WithWave(waveNum, 0))
+	} else {
+		m.audit(auditlog.EventWaveCompleted,
+			fmt.Sprintf("wave %d complete: %d/%d tasks", waveNum, completed, total),
+			auditlog.WithPlan(planFile),
+			auditlog.WithWave(waveNum, 0))
+	}
+
+	// Show the dedicated wave decision overlay.
+	wo := overlay.NewWaveDecisionOverlay(overlay.WaveDecisionInput{
+		PlanFile:   planFile,
+		PlanName:   planName,
+		WaveNumber: waveNum,
+		TotalWaves: orch.TotalWaves(),
+		Completed:  completed,
+		Failed:     failed,
+		Total:      total,
 	})
+	m.overlays.Show(wo)
+	m.state = stateWaveDecision
 	return cmds
 }
 
