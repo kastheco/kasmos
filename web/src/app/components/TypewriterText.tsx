@@ -50,7 +50,7 @@ export default function TypewriterText({
       <motion.span
         animate={{ opacity: [1, 0] }}
         transition={{ duration: 0.5, repeat: Infinity, repeatType: "reverse" }}
-        style={{ display: "inline-block", width: "2px", height: "1em", background: "#F0A868", marginLeft: "2px", verticalAlign: "text-bottom" }}
+        style={{ display: "inline-block", width: "2px", height: "1em", background: "var(--accent-foam)", marginLeft: "2px", verticalAlign: "text-bottom" }}
       />
     </span>
   );

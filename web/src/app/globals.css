@@ -1,15 +1,20 @@
 :root {
-  --background: #0a0b14;
-  --foreground: #ededed;
-  --foreground-secondary: #888888;
-  --foreground-tertiary: #555555;
-  --accent-amber: #F0A868;
-  --accent-teal: #7EC8D8;
-  --card-bg: rgba(255, 255, 255, 0.03);
-  --card-border: rgba(255, 255, 255, 0.06);
-  --card-border-hover: rgba(240, 168, 104, 0.3);
-  --glow-amber: rgba(240, 168, 104, 0.15);
-  --glow-teal: rgba(126, 200, 216, 0.15);
+  --background: #232136;
+  --foreground: #e0def4;
+  --foreground-secondary: #908caa;
+  --foreground-tertiary: #6e6a86;
+  --accent-foam: #9ccfd8;
+  --accent-iris: #c4a7e7;
+  --accent-gold: #f6c177;
+  --accent-rose: #ea9a97;
+  --accent-pine: #3e8fb0;
+  --surface: #2a273f;
+  --overlay: #393552;
+  --card-bg: rgba(224, 222, 244, 0.03);
+  --card-border: rgba(224, 222, 244, 0.06);
+  --card-border-hover: rgba(196, 167, 231, 0.30);
+  --glow-gold: rgba(246, 193, 119, 0.15);
+  --glow-foam: rgba(156, 207, 216, 0.15);
 }
 
 html,
@@ -47,6 +52,6 @@ pre, code {
 }
 
 ::selection {
-  background: rgba(240, 168, 104, 0.3);
-  color: #fff;
+  background: rgba(196, 167, 231, 0.3);
+  color: #e0def4;
 }
