@@ -181,7 +181,15 @@ kas mcp
 
 if you do **not** want to launch multiple commands every session, run the server + daemon as user services.
 
-for packaged installs (brew / release binary), create the units directly:
+**preferred path (source checkouts):** `just services-enable` detects your OS and wires up the right service manager automatically.
+
+```bash
+just services-enable
+```
+
+for packaged installs (brew / release binary), follow the manual steps for your platform below.
+
+### linux (systemd)
 
 ```bash
 mkdir -p ~/.config/systemd/user
@@ -225,7 +233,30 @@ systemctl --user enable --now kasmosdb kasmos
 
 if your `kas` binary lives somewhere else, replace `%h/.local/bin/kas` with the real path from `command -v kas`.
 
-for source checkouts, `just services-enable` still works.
+### macos (launchd)
+
+plist templates are shipped in `contrib/`. install them into `~/Library/LaunchAgents/` and load them with `launchctl`:
+
+```bash
+# render and install the plists (replace the kas path if needed)
+KAS=$(command -v kas)
+sed "s|__KAS__|$KAS|g; s|__HOME__|$HOME|g" \
+  contrib/com.kasmos.taskstore.plist > ~/Library/LaunchAgents/com.kasmos.taskstore.plist
+sed "s|__KAS__|$KAS|g; s|__HOME__|$HOME|g" \
+  contrib/com.kasmos.daemon.plist   > ~/Library/LaunchAgents/com.kasmos.daemon.plist
+
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kasmos.taskstore.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kasmos.daemon.plist
+```
+
+logs land in `~/Library/Logs/kasmos/`. to stop the services:
+
+```bash
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.kasmos.taskstore.plist
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.kasmos.daemon.plist
+```
+
+see the [docs](https://kasmos.dev/docs/service-management) for full details on both platforms.
 
 after that, your normal interactive entrypoint can just be:
 
