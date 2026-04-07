@@ -60,6 +60,9 @@ const (
 	KeyAuditToggle // L - toggle audit log pane visibility
 	KeyAuditCursor // A - enter audit log cursor mode (navigate log lines)
 	KeyBrowser     // b - open the admin plan browser
+
+	KeyHalfPageUp   // ctrl+u — scroll preview half-page up
+	KeyHalfPageDown // ctrl+d — scroll preview half-page down
 )
 
 // Backward-compatible aliases; prefer KeyInfoTab/KeyTabInfo.
@@ -78,6 +81,8 @@ var GlobalKeyStringsMap = map[string]KeyName{
 	"n":            KeyNewPlan,
 	"ctrl+k":       KeyKill,
 	"ctrl+shift+k": KeyAbort,
+	"ctrl+u":       KeyHalfPageUp,
+	"ctrl+d":       KeyHalfPageDown,
 	"q":            KeyQuit,
 	"tab":          KeyTab,
 	"r":            KeyResume,
@@ -127,11 +132,11 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	),
 	KeyKill: key.NewBinding(
 		key.WithKeys("ctrl+k"),
-		key.WithHelp("ctrl+k", "kill"),
+		key.WithHelp("ctrl+k / k+k", "kill"),
 	),
 	KeyAbort: key.NewBinding(
 		key.WithKeys("ctrl+shift+k"),
-		key.WithHelp("ctrl+shift+k", "abort"),
+		key.WithHelp("ctrl+shift+k / K+K", "abort"),
 	),
 	KeyHelp: key.NewBinding(
 		key.WithKeys("?"),
@@ -203,7 +208,7 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	),
 	KeyToggleSidebar: key.NewBinding(
 		key.WithKeys("ctrl+s"),
-		key.WithHelp("ctrl+s", "toggle sidebar"),
+		key.WithHelp("ctrl+s / s+s", "toggle sidebar"),
 	),
 	KeyInfoTab: key.NewBinding(
 		key.WithKeys("I"),
@@ -215,7 +220,7 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	),
 	KeyExitFocus: key.NewBinding(
 		key.WithKeys("ctrl+space"),
-		key.WithHelp("ctrl+space", "exit focus"),
+		key.WithHelp("ctrl+space / ␣+␣", "exit focus"),
 	),
 	KeySubmitExit: key.NewBinding(
 		key.WithKeys("ctrl+shift+enter"),
@@ -247,10 +252,44 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 		key.WithHelp("b", "browser"),
 	),
 
+	KeyHalfPageUp: key.NewBinding(
+		key.WithKeys("ctrl+u"),
+		key.WithHelp("ctrl+u / u+u", "half-page up"),
+	),
+
+	KeyHalfPageDown: key.NewBinding(
+		key.WithKeys("ctrl+d"),
+		key.WithHelp("ctrl+d / d+d", "half-page down"),
+	),
+
 	// -- Special keybindings --
 
 	KeySubmitName: key.NewBinding(
 		key.WithKeys("enter"),
 		key.WithHelp("enter", "submit name"),
 	),
+}
+
+// DoubleTapMap maps the canonical single-character key to the action it
+// triggers on a double-tap. These keys are conflict-free (no single-press
+// binding) so they are handled by DoubleTapTracker in the keys package.
+//
+// Keys: k → kill, K → abort, u → half-page up, d → half-page down.
+var DoubleTapMap = map[string]KeyName{
+	"k": KeyKill,
+	"K": KeyAbort,
+	"u": KeyHalfPageUp,
+	"d": KeyHalfPageDown,
+}
+
+// DebouncedDoubleTapMap maps canonical keys that already have a single-press
+// binding but should also trigger an action on double-tap. The first tap is
+// deferred until a debounce timeout fires; if a second tap arrives within the
+// window the double-tap action fires instead and the single-press is cancelled.
+//
+// Keys: s → toggle sidebar, space → exit focus.
+// Use "space" as the canonical form; do not store both " " and "space".
+var DebouncedDoubleTapMap = map[string]KeyName{
+	"s":     KeyToggleSidebar,
+	"space": KeyExitFocus,
 }

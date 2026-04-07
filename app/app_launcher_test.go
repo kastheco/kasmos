@@ -233,6 +233,39 @@ func TestBuildLauncherItems_PausedInstance(t *testing.T) {
 	assert.True(t, launcherHasAction(items, "restart_instance"), "restart_instance must always be present")
 }
 
+// TestBuildKeybindBrowserItems_DoubleTapHints verifies that GlobalkeyBindings
+// now carries double-tap hint text for every action that gained an alternative
+// key sequence.  buildKeybindBrowserItems surfaces these via the Hint field so
+// users can discover them via the keybind browser (?).
+func TestBuildKeybindBrowserItems_DoubleTapHints(t *testing.T) {
+	items := buildKeybindBrowserItems()
+
+	// Build a label → hint map for convenient assertions.
+	hints := make(map[string]string)
+	for _, item := range items {
+		hints[item.Label] = item.Hint
+	}
+
+	cases := []struct {
+		label   string
+		wantSub string // substring expected in the Hint field
+	}{
+		{"kill", "k+k"},
+		{"abort", "K+K"},
+		{"toggle sidebar", "s+s"},
+		{"exit focus", "␣+␣"},
+		{"half-page up", "u+u"},
+		{"half-page down", "d+d"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			hint, ok := hints[tc.label]
+			require.True(t, ok, "binding %q must appear in keybind browser", tc.label)
+			assert.Contains(t, hint, tc.wantSub, "hint for %q must include double-tap key %q", tc.label, tc.wantSub)
+		})
+	}
+}
+
 // TestBuildLauncherItems_PromptDetected verifies that send_yes appears when the
 // selected instance is started, not paused, and has PromptDetected set.
 func TestBuildLauncherItems_PromptDetected(t *testing.T) {

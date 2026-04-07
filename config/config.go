@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/kastheco/kasmos/log"
 )
@@ -16,6 +17,10 @@ import (
 const (
 	// defaultProgram is the fallback program name when command detection fails.
 	defaultProgram = "opencode"
+
+	// defaultDoubleTapThresholdMS is the default timing window (ms) for double-tap
+	// key detection. Two taps within this window register as ctrl+<key>.
+	defaultDoubleTapThresholdMS = 300
 )
 
 // aliasRegex matches shell alias output to extract the real command path.
@@ -205,6 +210,10 @@ type Config struct {
 	// ClaudeNoFlicker sets CLAUDE_CODE_NO_FLICKER for spawned claude agents.
 	// Defaults to false (CLAUDE_CODE_NO_FLICKER=0) so prompt detection works in spawned agents.
 	ClaudeNoFlicker bool `json:"claude_no_flicker,omitempty"`
+	// DoubleTapThresholdMS is the maximum gap in milliseconds between two taps of the
+	// same key for them to count as a double-tap (ctrl+ alternative).
+	// When nil or <= 0, the default of 300ms applies. See DoubleTapThreshold().
+	DoubleTapThresholdMS *int `json:"double_tap_threshold_ms,omitempty"`
 }
 
 // BlueprintSkipThreshold returns the configured threshold for single-agent mode.
@@ -215,6 +224,16 @@ func (c *Config) BlueprintSkipThreshold() int {
 		return 2
 	}
 	return *c.BlueprintSkipThresholdValue
+}
+
+// DoubleTapThreshold returns the timing window for double-tap key detection.
+// Two consecutive taps of the same key within this window register as ctrl+<key>.
+// Defaults to 300ms when not configured or when the value is <= 0.
+func (c *Config) DoubleTapThreshold() time.Duration {
+	if c.DoubleTapThresholdMS == nil || *c.DoubleTapThresholdMS <= 0 {
+		return defaultDoubleTapThresholdMS * time.Millisecond
+	}
+	return time.Duration(*c.DoubleTapThresholdMS) * time.Millisecond
 }
 
 // applyConfigDefaults fills in zero-value fields of cfg with sensible defaults.
@@ -245,12 +264,14 @@ func applyConfigDefaults(cfg *Config) {
 // DefaultConfig builds a Config populated with sensible out-of-the-box values.
 func DefaultConfig() *Config {
 	trueVal := true
+	dtThreshold := defaultDoubleTapThresholdMS
 	cfg := &Config{
 		AutoYes:              false,
 		AutoAdvanceWaves:     true,
 		AutoAdvance:          true,
 		AutoReviewFix:        true,
 		NotificationsEnabled: &trueVal,
+		DoubleTapThresholdMS: &dtThreshold,
 	}
 	applyConfigDefaults(cfg)
 	return cfg
@@ -380,6 +401,7 @@ func configFromTOML(result *TOMLConfigResult) *Config {
 		cfg.DatabaseURL = result.DatabaseURL
 		cfg.Hooks = result.Hooks
 		cfg.BlueprintSkipThresholdValue = result.BlueprintSkipThreshold
+		cfg.DoubleTapThresholdMS = result.DoubleTapThresholdMS
 		if result.AutoAdvanceWaves != nil {
 			cfg.AutoAdvanceWaves = *result.AutoAdvanceWaves
 		}
@@ -433,6 +455,7 @@ func configToTOML(cfg *Config) *TOMLConfig {
 		},
 		Telemetry:            TOMLTelemetryConfig{Enabled: cfg.TelemetryEnabled},
 		Orchestration:        TOMLOrchestrationConfig{BlueprintSkipThreshold: cfg.BlueprintSkipThresholdValue},
+		Keybinds:             TOMLKeybindsConfig{DoubleTapThresholdMS: cfg.DoubleTapThresholdMS},
 		DatabaseURL:          cfg.DatabaseURL,
 		DefaultProgram:       cfg.DefaultProgram,
 		AutoYes:              cfg.AutoYes,

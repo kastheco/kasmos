@@ -329,6 +329,75 @@ events = ["review_approved"]
 	assert.Equal(t, []string{"review_approved"}, command.Events)
 }
 
+func TestKeybindsDoubleTapThreshold(t *testing.T) {
+	t.Run("parses double_tap_threshold_ms from keybinds section", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		tomlPath := filepath.Join(tmpDir, "config.toml")
+		content := `
+[keybinds]
+double_tap_threshold_ms = 250
+`
+		err := os.WriteFile(tomlPath, []byte(content), 0o644)
+		require.NoError(t, err)
+
+		result, err := LoadTOMLConfigFrom(tomlPath)
+		require.NoError(t, err)
+		require.NotNil(t, result.DoubleTapThresholdMS)
+		assert.Equal(t, 250, *result.DoubleTapThresholdMS)
+	})
+
+	t.Run("absent keybinds section leaves DoubleTapThresholdMS nil", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		tomlPath := filepath.Join(tmpDir, "config.toml")
+		content := `
+[ui]
+animate_banner = false
+`
+		err := os.WriteFile(tomlPath, []byte(content), 0o644)
+		require.NoError(t, err)
+
+		result, err := LoadTOMLConfigFrom(tomlPath)
+		require.NoError(t, err)
+		assert.Nil(t, result.DoubleTapThresholdMS)
+	})
+
+	t.Run("round-trips keybinds through SaveTOMLConfigTo and LoadTOMLConfigFrom", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		tomlPath := filepath.Join(tmpDir, "config.toml")
+
+		ms := 400
+		tc := &TOMLConfig{
+			Keybinds: TOMLKeybindsConfig{DoubleTapThresholdMS: &ms},
+		}
+
+		err := SaveTOMLConfigTo(tc, tomlPath)
+		require.NoError(t, err)
+
+		loaded, err := LoadTOMLConfigFrom(tomlPath)
+		require.NoError(t, err)
+		require.NotNil(t, loaded.DoubleTapThresholdMS)
+		assert.Equal(t, 400, *loaded.DoubleTapThresholdMS)
+	})
+
+	t.Run("default config writes double_tap_threshold_ms to TOML", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		tomlPath := filepath.Join(tmpDir, "config.toml")
+
+		def := DefaultConfig()
+		err := SaveTOMLConfigTo(configToTOML(def), tomlPath)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(tomlPath)
+		require.NoError(t, err)
+		assert.Contains(t, string(data), "double_tap_threshold_ms")
+
+		loaded, err := LoadTOMLConfigFrom(tomlPath)
+		require.NoError(t, err)
+		require.NotNil(t, loaded.DoubleTapThresholdMS)
+		assert.Equal(t, 300, *loaded.DoubleTapThresholdMS)
+	})
+}
+
 func TestLoadHooksForRepo(t *testing.T) {
 	t.Run("returns nil when config.toml absent", func(t *testing.T) {
 		repoDir := t.TempDir()

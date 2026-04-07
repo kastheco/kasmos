@@ -82,3 +82,60 @@ func TestGlobalKeyBindings_PageLabels(t *testing.T) {
 	assert.Equal(t, "page up", GlobalkeyBindings[KeyPageUp].Help().Desc)
 	assert.Equal(t, "page down", GlobalkeyBindings[KeyPageDown].Help().Desc)
 }
+
+// TestHalfPageKeysInGlobalMap asserts ctrl+u / ctrl+d are registered.
+func TestHalfPageKeysInGlobalMap(t *testing.T) {
+	assert.Equal(t, KeyHalfPageUp, GlobalKeyStringsMap["ctrl+u"], "ctrl+u must map to KeyHalfPageUp")
+	assert.Equal(t, KeyHalfPageDown, GlobalKeyStringsMap["ctrl+d"], "ctrl+d must map to KeyHalfPageDown")
+}
+
+// TestHalfPageBindingsHaveDoubleTapHint asserts help text mentions the double-tap alternative.
+func TestHalfPageBindingsHaveDoubleTapHint(t *testing.T) {
+	upDesc := GlobalkeyBindings[KeyHalfPageUp].Help().Desc
+	downDesc := GlobalkeyBindings[KeyHalfPageDown].Help().Desc
+	assert.Equal(t, "half-page up", upDesc)
+	assert.Equal(t, "half-page down", downDesc)
+	assert.Contains(t, GlobalkeyBindings[KeyHalfPageUp].Help().Key, "ctrl+u")
+	assert.Contains(t, GlobalkeyBindings[KeyHalfPageDown].Help().Key, "ctrl+d")
+}
+
+// TestDestructiveBindingsHaveDoubleTapHint checks that kill/abort help text
+// exposes the double-tap hint so the key-bind browser shows it.
+func TestDestructiveBindingsHaveDoubleTapHint(t *testing.T) {
+	killKey := GlobalkeyBindings[KeyKill].Help().Key
+	abortKey := GlobalkeyBindings[KeyAbort].Help().Key
+	assert.Contains(t, killKey, "k+k", "KeyKill help key should mention k+k double-tap")
+	assert.Contains(t, abortKey, "K+K", "KeyAbort help key should mention K+K double-tap")
+}
+
+// TestDoubleTapMapEntries asserts the four conflict-free double-tap entries.
+func TestDoubleTapMapEntries(t *testing.T) {
+	assert.Equal(t, KeyKill, DoubleTapMap["k"])
+	assert.Equal(t, KeyAbort, DoubleTapMap["K"])
+	assert.Equal(t, KeyHalfPageUp, DoubleTapMap["u"])
+	assert.Equal(t, KeyHalfPageDown, DoubleTapMap["d"])
+}
+
+// TestDoubleTapMapDoesNotContainBoundKeys asserts that keys with existing
+// single-press bindings are NOT in DoubleTapMap (they belong in DebouncedDoubleTapMap).
+func TestDoubleTapMapDoesNotContainBoundKeys(t *testing.T) {
+	assert.NotContains(t, DoubleTapMap, "s", "s has a single-press binding; use DebouncedDoubleTapMap")
+	assert.NotContains(t, DoubleTapMap, "space", "space has a single-press binding; use DebouncedDoubleTapMap")
+}
+
+// TestDebouncedDoubleTapMapEntries asserts the app-layer debounced entries.
+func TestDebouncedDoubleTapMapEntries(t *testing.T) {
+	assert.Equal(t, KeyToggleSidebar, DebouncedDoubleTapMap["s"])
+	assert.Equal(t, KeyExitFocus, DebouncedDoubleTapMap["space"])
+	// Canonical form is "space", not " ".
+	assert.NotContains(t, DebouncedDoubleTapMap, " ", `store "space" not " " to keep the map canonical`)
+}
+
+// TestRemovedSingleKeyBindings_StillAbsent re-asserts existing guarantee that
+// destructive keys (k, K) remain absent from GlobalKeyStringsMap.
+func TestRemovedSingleKeyBindings_StillAbsent(t *testing.T) {
+	assert.NotContains(t, GlobalKeyStringsMap, "k", "k must not have a single-press binding")
+	assert.NotContains(t, GlobalKeyStringsMap, "K", "K must not have a single-press binding")
+	assert.NotContains(t, GlobalKeyStringsMap, "u", "u must not have a single-press binding")
+	assert.NotContains(t, GlobalKeyStringsMap, "d", "d must not have a single-press binding")
+}

@@ -647,12 +647,29 @@ func TestQuickLaunch_KeyCreatesInstance(t *testing.T) {
 		quickLaunchStartOnMain = oldQuickLaunchStartOnMain
 	})
 
+	// Pressing 's' now uses the debounced double-tap path: the first tap schedules
+	// a timeout, and KeyQuickLaunch fires only when the timeout message arrives.
+	// Override the scheduler so tests do not block on real wall-clock time.
+	var capturedTimeoutMsg doubleTapTimeoutMsg
+	oldSchedule := scheduleDoubleTapTimeout
+	scheduleDoubleTapTimeout = func(_ time.Duration, key string, seq int) tea.Cmd {
+		capturedTimeoutMsg = doubleTapTimeoutMsg{key: key, seq: seq}
+		return func() tea.Msg { return capturedTimeoutMsg }
+	}
+	t.Cleanup(func() { scheduleDoubleTapTimeout = oldSchedule })
+
 	h := newTestHome()
 	h.activeRepoPath = filepath.Join(t.TempDir(), "myrepo")
 	h.keySent = true
 
-	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 's', Text: "s"})
+	// First s: sets pending + schedules debounce timeout (no instance yet).
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 's', Text: "s"})
 	updated := model.(*home)
+	require.Equal(t, "s", updated.pendingDoubleTapKey, "pending must be set after first s")
+
+	// Fire the timeout: dispatches KeyQuickLaunch → instance created.
+	model, cmd := updated.Update(capturedTimeoutMsg)
+	updated = model.(*home)
 
 	require.NotNil(t, cmd)
 	assert.Equal(t, stateDefault, updated.state)
@@ -717,12 +734,28 @@ func TestQuickLaunch_TitleSyncUpdatesDisplayTitle(t *testing.T) {
 }
 
 func TestQuickLaunch_InstanceLimitEnforced(t *testing.T) {
+	// s is debounced: limit check happens inside quickLaunchAgent which runs after
+	// the single-tap timeout fires.
+	var capturedTimeout doubleTapTimeoutMsg
+	oldSchedule := scheduleDoubleTapTimeout
+	scheduleDoubleTapTimeout = func(_ time.Duration, key string, seq int) tea.Cmd {
+		capturedTimeout = doubleTapTimeoutMsg{key: key, seq: seq}
+		return func() tea.Msg { return capturedTimeout }
+	}
+	t.Cleanup(func() { scheduleDoubleTapTimeout = oldSchedule })
+
 	h := newTestHome()
 	h.tmuxSessionCount = GlobalInstanceLimit
 	h.keySent = true
 
-	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 's', Text: "s"})
+	// First s: debounced — schedules timeout (no limit check yet).
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 's', Text: "s"})
 	updated := model.(*home)
+	require.Equal(t, "s", updated.pendingDoubleTapKey, "pending must be set after first s")
+
+	// Fire the timeout: quickLaunchAgent runs → hits limit → error toast.
+	model, cmd := updated.Update(capturedTimeout)
+	updated = model.(*home)
 
 	assert.Equal(t, stateDefault, updated.state)
 	assert.False(t, updated.overlays.IsActive())

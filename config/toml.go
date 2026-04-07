@@ -67,6 +67,14 @@ type TOMLOrchestrationConfig struct {
 	BlueprintSkipThreshold *int `toml:"blueprint_skip_threshold,omitempty"`
 }
 
+// TOMLKeybindsConfig holds key-handling settings from the [keybinds] TOML table.
+type TOMLKeybindsConfig struct {
+	// DoubleTapThresholdMS is the maximum gap in milliseconds between two taps
+	// of the same key for them to register as a double-tap (ctrl+ alternative).
+	// When nil or <= 0, the default of 300ms applies.
+	DoubleTapThresholdMS *int `toml:"double_tap_threshold_ms,omitempty"`
+}
+
 // TOMLConfig is the top-level TOML file structure.
 type TOMLConfig struct {
 	Phases               map[string]string       `toml:"phases"`
@@ -74,6 +82,7 @@ type TOMLConfig struct {
 	UI                   TOMLUIConfig            `toml:"ui"`
 	Telemetry            TOMLTelemetryConfig     `toml:"telemetry"`
 	Orchestration        TOMLOrchestrationConfig `toml:"orchestration"`
+	Keybinds             TOMLKeybindsConfig      `toml:"keybinds"`
 	DatabaseURL          string                  `toml:"database_url,omitempty"`
 	DefaultProgram       string                  `toml:"default_program,omitempty"`
 	AutoYes              bool                    `toml:"auto_yes,omitempty"`
@@ -97,6 +106,7 @@ type TOMLConfigResult struct {
 	TelemetryEnabled       *bool
 	DatabaseURL            string
 	BlueprintSkipThreshold *int
+	DoubleTapThresholdMS   *int
 	DefaultProgram         string
 	AutoYes                bool
 	DaemonPollInterval     int
@@ -126,6 +136,7 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 		TelemetryEnabled:       tc.Telemetry.Enabled,
 		DatabaseURL:            tc.DatabaseURL,
 		BlueprintSkipThreshold: tc.Orchestration.BlueprintSkipThreshold,
+		DoubleTapThresholdMS:   tc.Keybinds.DoubleTapThresholdMS,
 		DefaultProgram:         tc.DefaultProgram,
 		AutoYes:                tc.AutoYes,
 		DaemonPollInterval:     tc.DaemonPollInterval,

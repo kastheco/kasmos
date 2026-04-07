@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -472,6 +473,8 @@ func TestLoadConfig_MigratesJSON(t *testing.T) {
 	assert.Contains(t, string(written), `notifications_enabled = false`)
 }
 
+func intPtr(i int) *int { return &i }
+
 func boolPtr(b bool) *bool { return &b }
 
 func TestIsTelemetryEnabled(t *testing.T) {
@@ -490,4 +493,57 @@ func TestIsTelemetryEnabled(t *testing.T) {
 			assert.Equal(t, tt.expected, cfg.IsTelemetryEnabled())
 		})
 	}
+}
+
+func TestDoubleTapThreshold(t *testing.T) {
+	tests := []struct {
+		name     string
+		field    *int
+		expected time.Duration
+	}{
+		{"nil uses default 300ms", nil, 300 * time.Millisecond},
+		{"zero uses default 300ms", intPtr(0), 300 * time.Millisecond},
+		{"negative uses default 300ms", intPtr(-1), 300 * time.Millisecond},
+		{"explicit 200ms", intPtr(200), 200 * time.Millisecond},
+		{"explicit 500ms", intPtr(500), 500 * time.Millisecond},
+		{"explicit 300ms (same as default)", intPtr(300), 300 * time.Millisecond},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{DoubleTapThresholdMS: tt.field}
+			assert.Equal(t, tt.expected, cfg.DoubleTapThreshold())
+		})
+	}
+}
+
+func TestDefaultConfig_DoubleTapThreshold(t *testing.T) {
+	cfg := DefaultConfig()
+	require.NotNil(t, cfg.DoubleTapThresholdMS)
+	assert.Equal(t, 300, *cfg.DoubleTapThresholdMS)
+	assert.Equal(t, 300*time.Millisecond, cfg.DoubleTapThreshold())
+}
+
+func TestConfigFromTOML_DoubleTapThreshold(t *testing.T) {
+	t.Run("explicit threshold round-trips through configFromTOML", func(t *testing.T) {
+		ms := 150
+		result := &TOMLConfigResult{
+			Profiles:             map[string]AgentProfile{},
+			PhaseRoles:           map[string]string{},
+			DoubleTapThresholdMS: &ms,
+		}
+		cfg := configFromTOML(result)
+		require.NotNil(t, cfg.DoubleTapThresholdMS)
+		assert.Equal(t, 150, *cfg.DoubleTapThresholdMS)
+		assert.Equal(t, 150*time.Millisecond, cfg.DoubleTapThreshold())
+	})
+
+	t.Run("nil threshold from TOML falls back to default in helper", func(t *testing.T) {
+		result := &TOMLConfigResult{
+			Profiles:   map[string]AgentProfile{},
+			PhaseRoles: map[string]string{},
+		}
+		cfg := configFromTOML(result)
+		// DoubleTapThresholdMS is nil (not set in TOML); helper uses 300ms default.
+		assert.Equal(t, 300*time.Millisecond, cfg.DoubleTapThreshold())
+	})
 }
