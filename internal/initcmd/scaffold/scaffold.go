@@ -83,6 +83,34 @@ func writePerRoleProject(dir, harnessName string, agents []harness.AgentConfig, 
 	return results, nil
 }
 
+// kasmosMCPToolPermissions is the canonical list of kasmos MCP tool permission
+// strings pre-approved in .claude/settings.json so agents in new worktrees do
+// not receive "press 1 to approve" prompts for routine kasmos operations.
+var kasmosMCPToolPermissions = []string{
+	"mcp__kasmos__grep",
+	"mcp__kasmos__read_file",
+	"mcp__kasmos__find_files",
+	"mcp__kasmos__list_dir",
+	"mcp__kasmos__git_status",
+	"mcp__kasmos__git_diff",
+	"mcp__kasmos__git_log",
+	"mcp__kasmos__task_list",
+	"mcp__kasmos__task_show",
+	"mcp__kasmos__task_create",
+	"mcp__kasmos__task_update_content",
+	"mcp__kasmos__task_delete",
+	"mcp__kasmos__task_transition",
+	"mcp__kasmos__signal_create",
+	"mcp__kasmos__instance_list",
+	"mcp__kasmos__instance_pause",
+	"mcp__kasmos__instance_resume",
+	"mcp__kasmos__instance_send",
+	"mcp__kasmos__capture_pane",
+	"mcp__kasmos__list_sessions",
+	"mcp__kasmos__daemon_status",
+	"mcp__kasmos__symbols",
+}
+
 // claudeMCPJSON is the default .mcp.json content registering the kasmos MCP server via stdio.
 const claudeMCPJSON = `{
   "mcpServers": {
@@ -139,6 +167,30 @@ func EnsureClaudeProjectSettings(dir string) (WriteResult, error) {
 			changed = true
 		}
 	}
+
+	// Ensure Claude project settings also maintain permissions.allow entries
+	// for all kasmos MCP tools while preserving existing deny rules and
+	// non-kasmos allow entries.
+	perms, _ := current["permissions"].(map[string]any)
+	if perms == nil {
+		perms = map[string]any{}
+		current["permissions"] = perms
+	}
+	allowRaw, _ := perms["allow"].([]any)
+	existing := make(map[string]bool, len(allowRaw))
+	for _, entry := range allowRaw {
+		if s, ok := entry.(string); ok {
+			existing[s] = true
+		}
+	}
+	for _, tool := range kasmosMCPToolPermissions {
+		if !existing[tool] {
+			allowRaw = append(allowRaw, tool)
+			existing[tool] = true
+			changed = true
+		}
+	}
+	perms["allow"] = allowRaw
 
 	if !changed {
 		return result, nil
@@ -935,6 +987,12 @@ func SyncScaffold(dir string, agents []harness.AgentConfig) ([]WriteResult, erro
 					return results, fmt.Errorf("sync claude .mcp.json: %w", err)
 				}
 				harnessResults = append(harnessResults, mcpResult)
+
+				settingsResult, err := EnsureClaudeProjectSettings(dir)
+				if err != nil {
+					return results, fmt.Errorf("sync claude settings: %w", err)
+				}
+				harnessResults = append(harnessResults, settingsResult)
 			}
 		}
 
