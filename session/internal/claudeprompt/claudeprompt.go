@@ -202,7 +202,16 @@ func isNumberedNo(trimmed string) bool {
 
 // isNumberedChoice reports whether trimmed begins with a single digit, a
 // period, a space, and then the given word prefix (e.g. "1. Yes, allow once").
+// Cursor/chrome prefixes such as "❯ ", "> ", or ") " before the digit are
+// stripped before checking.
 func isNumberedChoice(trimmed, word string) bool {
+	// Strip TUI cursor/chrome prefixes.
+	for _, pfx := range []string{"❯ ", ") ", "> "} {
+		if strings.HasPrefix(trimmed, pfx) {
+			trimmed = trimmed[len(pfx):]
+			break
+		}
+	}
 	// Minimum: "1. Y" or "1. N" = 4 chars
 	if len(trimmed) < 4 {
 		return false
