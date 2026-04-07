@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kastheco/kasmos/cmd/cmd_test"
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
@@ -38,6 +39,10 @@ func TestMain(m *testing.M) {
 	// Initialize the logger before any tests run
 	log.Initialize(false)
 	defer log.Close()
+
+	// Prevent tests from reaching the live tmux server via outerTmuxSession()
+	_ = os.Unsetenv("TMUX")
+	_ = os.Unsetenv("TMUX_PANE")
 
 	// Run all tests
 	exitCode := m.Run()
@@ -1775,7 +1780,13 @@ func TestTmuxBrowserActions(t *testing.T) {
 		inst.TaskFile = "auth"
 		inst.AgentType = session.AgentTypeCoder
 		inst.MarkStartedForTest()
-		inst.SetTmuxSession(tmux.NewTmuxSession("auth-impl", "claude", false))
+		inst.SetTmuxSession(tmux.NewTmuxSessionWithDeps(
+			"auth-impl",
+			"claude",
+			false,
+			&noopPtyFactory{},
+			cmd_test.NewMockExecutor(),
+		))
 		h.allInstances = append(h.allInstances, inst)
 
 		msg := tmuxSessionsMsg{
