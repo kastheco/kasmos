@@ -12,8 +12,8 @@ func TestDoubleTapTracker(t *testing.T) {
 	threshold := 400 * time.Millisecond
 
 	tests := []struct {
-		name   string
-		taps   []struct {
+		name string
+		taps []struct {
 			key    string
 			offset time.Duration // relative to epoch
 		}
