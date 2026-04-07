@@ -283,4 +283,3 @@ func waveTaskPosition(planContent string, waveNumber, taskNumber int) (index, co
 	}
 	return 0, 0, false
 }
-
