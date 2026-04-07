@@ -107,7 +107,7 @@ func TestDefaultAgentRoles(t *testing.T) {
 func TestRoleDefaults(t *testing.T) {
 	defaults := RoleDefaults()
 
-	t.Run("has all four roles", func(t *testing.T) {
+	t.Run("has all seven roles", func(t *testing.T) {
 		assert.Contains(t, defaults, "coder")
 		assert.Contains(t, defaults, "reviewer")
 		assert.Contains(t, defaults, "planner")

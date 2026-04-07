@@ -145,6 +145,18 @@ func TestAgentStep_EffortCycle(t *testing.T) {
 	assert.Equal(t, "high", s.agents[0].Effort)
 }
 
+// agentByRole finds an agent by role name, failing the test if not found.
+func agentByRole(t *testing.T, agents []AgentState, role string) AgentState {
+	t.Helper()
+	for _, a := range agents {
+		if a.Role == role {
+			return a
+		}
+	}
+	t.Fatalf("agent with role %q not found", role)
+	return AgentState{}
+}
+
 func TestAgentStepPrePopulatesFromExisting(t *testing.T) {
 	temp := 0.5
 	existing := &config.TOMLConfigResult{
@@ -160,11 +172,62 @@ func TestAgentStepPrePopulatesFromExisting(t *testing.T) {
 	}
 
 	agents := initAgentsFromExisting([]string{"claude", "opencode"}, existing)
-	assert.Equal(t, "opencode", agents[0].Harness) // coder from existing
-	assert.Equal(t, "high", agents[0].Effort)
-	assert.Equal(t, "0.5", agents[0].Temperature)
-	// architect gets defaults (agents[1] per DefaultAgentRoles order)
-	assert.Equal(t, "openai/gpt-5.4", agents[1].Model)
+
+	coder := agentByRole(t, agents, "coder")
+	assert.Equal(t, "opencode", coder.Harness)
+	assert.Equal(t, "high", coder.Effort)
+	assert.Equal(t, "0.5", coder.Temperature)
+
+	// architect gets defaults when not present in existing config
+	arch := agentByRole(t, agents, "architect")
+	assert.Equal(t, "opencode", arch.Harness)
+	assert.Equal(t, "openai/gpt-5.4", arch.Model)
+	assert.Equal(t, "xhigh", arch.Effort)
+	assert.Equal(t, "0.2", arch.Temperature)
+
+	reviewer := agentByRole(t, agents, "reviewer")
+	assert.Equal(t, "claude", reviewer.Harness)
+	assert.Equal(t, "claude-sonnet-4-6", reviewer.Model)
+	assert.Equal(t, "medium", reviewer.Effort)
+	assert.Equal(t, "0.2", reviewer.Temperature)
+}
+
+func TestInitAgentsFromExisting_UsesPreferredHarnessWhenSelected(t *testing.T) {
+	agents := initAgentsFromExisting([]string{"claude", "opencode"}, nil)
+
+	// coder prefers "claude" — available, so it should be selected
+	coder := agentByRole(t, agents, "coder")
+	assert.Equal(t, "claude", coder.Harness)
+
+	// architect prefers "opencode" — available, so it should be selected
+	arch := agentByRole(t, agents, "architect")
+	assert.Equal(t, "opencode", arch.Harness)
+}
+
+func TestInitAgentsFromExisting_FallsBackWhenPreferredHarnessUnavailable(t *testing.T) {
+	// Only "opencode" is available; claude-preferring roles must fall back to it
+	agents := initAgentsFromExisting([]string{"opencode"}, nil)
+
+	coder := agentByRole(t, agents, "coder")
+	assert.Equal(t, "opencode", coder.Harness, "coder should fall back to opencode when claude unavailable")
+
+	reviewer := agentByRole(t, agents, "reviewer")
+	assert.Equal(t, "opencode", reviewer.Harness, "reviewer should fall back to opencode when claude unavailable")
+
+	// architect already prefers opencode, so no fallback needed
+	arch := agentByRole(t, agents, "architect")
+	assert.Equal(t, "opencode", arch.Harness)
+}
+
+func TestInitAgentsFromExisting_FallsBackToClaudeWhenOpenCodeUnavailable(t *testing.T) {
+	// Only "claude" is available; opencode-preferring roles must fall back to it
+	agents := initAgentsFromExisting([]string{"claude"}, nil)
+
+	arch := agentByRole(t, agents, "architect")
+	assert.Equal(t, "claude", arch.Harness, "architect should fall back to claude when opencode unavailable")
+
+	chat := agentByRole(t, agents, "chat")
+	assert.Equal(t, "claude", chat.Harness, "chat should fall back to claude when opencode unavailable")
 }
 
 func TestAgentStep_IgnoresLegacyElaboratorProfile(t *testing.T) {
