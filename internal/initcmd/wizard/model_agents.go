@@ -42,19 +42,12 @@ func initAgentsFromExisting(harnesses []string, existing *config.TOMLConfigResul
 	defaults := RoleDefaults()
 	agents := make([]AgentState, 0, len(roles))
 
-	defaultHarness := ""
-	if len(harnesses) > 0 {
-		defaultHarness = harnesses[0]
-	}
-
 	for _, role := range roles {
 		as := defaults[role]
 		if as.Role == "" {
 			as = AgentState{Role: role, Enabled: true}
 		}
-		if as.Harness == "" {
-			as.Harness = defaultHarness
-		}
+		as.Harness = resolveAgentHarness(as.Harness, harnesses)
 
 		if existing != nil {
 			if profile, ok := existing.Profiles[role]; ok {

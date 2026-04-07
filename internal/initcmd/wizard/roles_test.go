@@ -68,3 +68,10 @@ func TestRoleDefaults_HasAllRoles(t *testing.T) {
 		assert.True(t, ok, "RoleDefaults should have entry for %q", role)
 	}
 }
+
+func TestRoleDefaults_AllHarnessesNonEmpty(t *testing.T) {
+	defaults := RoleDefaults()
+	for role, state := range defaults {
+		assert.NotEmpty(t, state.Harness, "RoleDefaults[%q].Harness must not be empty", role)
+	}
+}
