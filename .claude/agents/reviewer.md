@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Code review agent for quality and spec compliance
-model: claude-sonnet-4-6
+model: 
 ---
 
 You are the reviewer agent. Review code for quality, security, and spec compliance.
