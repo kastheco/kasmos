@@ -158,17 +158,18 @@ kas task transition my-feature implement_start
 
 | event | description |
 |-------|-------------|
-| `plan_start` | move from `ready` to `planning` |
-| `planner_finished` | move from `planning` to `ready` |
-| `implement_start` | move from `ready` to `implementing` |
-| `implement_finished` | move from `implementing` to `reviewing` |
-| `request_review` | request a review (within `implementing`) |
-| `review_approved` | move from `reviewing` to `done` |
-| `review_changes` | move from `reviewing` back to `implementing` |
-| `start_over` | reset from `done` back to `planning` |
-| `reimplement` | re-enter `implementing` from `reviewing` |
-| `cancel` | cancel the task |
-| `reopen` | reopen a cancelled task |
+| `plan_start` | `ready` or `planning` → `planning` (start or restart planner) |
+| `planner_finished` | `planning` → `ready` (sets execution phase to `planned`) |
+| `implement_start` | `ready` (planned-ready only) → `implementing` |
+| `implement_finished` | `implementing` → `reviewing` |
+| `request_review` | `done` → `reviewing` (retrigger a reviewer without resetting) |
+| `review_approved` | `reviewing` → `done` |
+| `review_changes_requested` | `reviewing` → `implementing` (canonical event name) |
+| `review_changes` | alias for `review_changes_requested` accepted by the CLI only |
+| `start_over` | `done` → `planning` (full reset) |
+| `reimplement` | `done` → `implementing` (resume without resetting branch) |
+| `cancel` | cancel the task from any active status |
+| `reopen` | `cancelled` → `planning` |
 
 ---
 
@@ -188,7 +189,7 @@ kas task implement my-feature --wave 1
 |------|---------|-------------|
 | `--wave` | `1` | wave number to trigger (must be ≥ 1) |
 
-If the task is still in `planning`, the command first applies `planner_finished` (→ `ready`) then `implement_start`. The wave signal file is written to `.kasmos/signals/implement-wave-<n>-<plan-file>`.
+If the task is still in `planning`, the command first applies `planner_finished` (→ `ready`, setting execution phase to `planned`) then `implement_start`. If the task is `ready` but still in draft-ready state (execution phase is empty — the planner has not finished), the command returns an error. The wave signal file is written to `.kasmos/signals/implement-wave-<n>-<plan-file>`.
 
 ---
 
