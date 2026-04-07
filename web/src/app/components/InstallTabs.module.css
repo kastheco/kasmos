@@ -107,3 +107,35 @@
   color: #28c840;
   border-color: rgba(40, 200, 64, 0.3);
 }
+
+.releasesPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 0;
+  min-height: 56px;
+}
+
+.releasesDescription {
+  font-family: var(--font-geist-mono);
+  font-size: 14px;
+  color: var(--foreground-secondary);
+  line-height: 1.7;
+  margin: 0;
+}
+
+.releasesLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-geist-mono);
+  font-size: 13px;
+  color: var(--accent-foam);
+  text-decoration: none;
+  transition: opacity 0.2s;
+}
+
+.releasesLink:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+}

@@ -223,7 +223,8 @@ export default function PageContent() {
             </p>
             <InstallTabs />
             <p className={styles.installPrereqs}>
-              prerequisites: tmux, gh (GitHub CLI)
+              prerequisites: tmux, gh, and at least one supported AI CLI —{" "}
+              <a href="/docs/getting-started/prerequisites/">see full list</a>
             </p>
           </ScrollReveal>
         </section>
