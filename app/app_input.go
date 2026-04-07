@@ -384,6 +384,10 @@ func (m *home) handleActiveOverlayMouse(msg tea.MouseClickMsg) (tea.Model, tea.C
 		return m, tea.RequestWindowSize
 
 	case stateSpawnHarnessPicker:
+		if result.Submitted && result.Value != "" {
+			m.showSpawnAgentForm(result.Value)
+			return m, nil
+		}
 		m.pendingSpawnProgram = ""
 		m.state = stateDefault
 		m.menu.SetState(ui.StateDefault)
