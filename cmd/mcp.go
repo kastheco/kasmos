@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 
@@ -35,7 +36,7 @@ func NewMCPCmd() *cobra.Command {
 			}
 			defer sharedDB.Close()
 
-			mcpSrv, err := newConfiguredMCPServer(store, gw, nil)
+			mcpSrv, err := newConfiguredMCPServer(store, gw, sharedDB, nil)
 			if err != nil {
 				return err
 			}
@@ -56,23 +57,32 @@ func (f closeFunc) Close() error {
 }
 
 // newConfiguredMCPServer constructs an MCP server wired to the provided store
-// and signal gateway. repoRoots controls the file-system scope:
+// and signal gateway. sharedDB, when non-nil, is used to derive task/signal
+// project routing from the DB in the zero-repo single-root path instead of
+// falling back to the cwd basename. repoRoots controls the file-system scope:
 //
 //   - nil / empty: fall back to the working directory (single-root, cached path)
 //   - one root: single-root cached path (watcher + CachedRunner + FileCache)
 //   - many roots: multi-root uncached path (ExecRunner, one watcher+indexer per root)
-func newConfiguredMCPServer(store taskstore.Store, gw taskstore.SignalGateway, repoRoots []string) (*mcpserver.Server, error) {
+func newConfiguredMCPServer(store taskstore.Store, gw taskstore.SignalGateway, sharedDB *sql.DB, repoRoots []string) (*mcpserver.Server, error) {
 	mcpSrv := mcpserver.NewServer(MCPVersion, store, gw)
 
 	if len(repoRoots) <= 1 {
-		return newConfiguredMCPServerSingleRoot(mcpSrv, repoRoots)
+		return newConfiguredMCPServerSingleRoot(mcpSrv, sharedDB, repoRoots)
 	}
 	return newConfiguredMCPServerMultiRoot(mcpSrv, repoRoots)
 }
 
 // newConfiguredMCPServerSingleRoot handles the zero-or-one root case, preserving
 // the existing cached watcher path for stdio and single-repo serve.
-func newConfiguredMCPServerSingleRoot(mcpSrv *mcpserver.Server, repoRoots []string) (*mcpserver.Server, error) {
+//
+// When repoRoots is empty (zero-repo path) and sharedDB is non-nil, task and
+// signal project routing is derived from the DB rather than from the cwd
+// basename:
+//   - exactly one project in DB → register tools with that project as fixed binding
+//   - multiple projects → register tools in multi-project mode (empty fixed project)
+//   - zero projects or query error → fall back to resolveTaskProject(cwd)
+func newConfiguredMCPServerSingleRoot(mcpSrv *mcpserver.Server, sharedDB *sql.DB, repoRoots []string) (*mcpserver.Server, error) {
 	repoRoot := ""
 	if len(repoRoots) == 1 {
 		repoRoot = repoRoots[0]
@@ -111,12 +121,38 @@ func newConfiguredMCPServerSingleRoot(mcpSrv *mcpserver.Server, repoRoots []stri
 	mcpSrv.AddCloser(closeFunc(watcher.Stop))
 	mcpSrv.AddCloser(cacheStore)
 
-	project := resolveTaskProject(repoRoot)
+	// Determine task/signal project routing.
+	// In the zero-repo path (no explicit repoRoots), prefer DB-derived projects
+	// over the cwd-basename fallback so that a mismatched working directory
+	// (e.g. /home/kas when the project is "kasmos") still routes correctly.
+	fixedProject := ""
+	var dbProjects []string
+	if len(repoRoots) == 0 && sharedDB != nil {
+		if ps, queryErr := taskstore.ListDistinctProjectsFromDB(sharedDB); queryErr == nil && len(ps) > 0 {
+			dbProjects = ps
+		}
+	}
+	switch len(dbProjects) {
+	case 0:
+		// No DB info (explicit root given, DB unavailable, or empty DB): use
+		// the existing cwd-basename fallback.
+		fixedProject = resolveTaskProject(repoRoot)
+	case 1:
+		// Exactly one project in the DB: bind task/signal tools to it directly.
+		fixedProject = dbProjects[0]
+	default:
+		// Multiple projects: register in multi-project mode (empty fixedProject,
+		// non-nil projects list). File/git/symbol tools still use the single
+		// filesystem root because we do not fabricate repo paths from DB slugs.
+		fixedProject = ""
+		// dbProjects is passed through below.
+	}
+
 	fstools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, fstools.RegisterOptions{Runner: runner, FileCache: fileCache, Symbols: symbolStore})
 	gittools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, runner)
 	symbols.RegisterTool(mcpSrv.MCPServer(), validator, symbolStore, indexer.Available)
-	tasktools.RegisterTools(mcpSrv.MCPServer(), project, nil, mcpSrv.Store())
-	signaltools.RegisterTools(mcpSrv.MCPServer(), project, nil, mcpSrv.Gateway())
+	tasktools.RegisterTools(mcpSrv.MCPServer(), fixedProject, dbProjects, mcpSrv.Store())
+	signaltools.RegisterTools(mcpSrv.MCPServer(), fixedProject, dbProjects, mcpSrv.Gateway())
 	instancetools.RegisterTools(
 		mcpSrv.MCPServer(),
 		func() config.StateManager { return config.LoadState() },
@@ -144,8 +180,10 @@ func newConfiguredMCPServerMultiRoot(mcpSrv *mcpserver.Server, repoRoots []strin
 	}
 
 	// If deduplication collapsed to a single root, fall back to the cached path.
+	// In the multi-root code path there are always explicit roots, so DB-based
+	// project routing is not needed (pass nil for sharedDB).
 	if len(normalized) == 1 {
-		return newConfiguredMCPServerSingleRoot(mcpSrv, normalized)
+		return newConfiguredMCPServerSingleRoot(mcpSrv, nil, normalized)
 	}
 
 	// Build the union of allowed directories (each root plus its resolved root).

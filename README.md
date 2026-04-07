@@ -287,9 +287,9 @@ use the `kas mcp` command as the server process:
 }
 ```
 
-### opencode remote mcp config
+### opencode local mcp config
 
-`kas setup` / `kas reset` now scaffold this remote `kasmos` MCP entry into `opencode.jsonc` by default for project-local OpenCode config.
+`kas setup` / `kas reset` scaffold a local stdio `kasmos` MCP entry into `opencode.jsonc`. each opencode session runs `kas mcp` directly from the correct repo root, so the MCP server always binds to the right project without relying on a running `kas serve` process.
 
 if you need to add or restore it manually, use:
 
@@ -297,8 +297,8 @@ if you need to add or restore it manually, use:
 {
   "mcp": {
     "kasmos": {
-      "type": "remote",
-      "url": "http://127.0.0.1:7434/mcp",
+      "type": "local",
+      "command": ["kas", "mcp"],
       "enabled": true
     }
   }
@@ -306,6 +306,8 @@ if you need to add or restore it manually, use:
 ```
 
 you can place that in project-local opencode config alongside the scaffolded `opencode.jsonc` content, or in your global opencode config if you want it everywhere.
+
+existing `opencode.jsonc` files that still contain the old remote entry (`type: "remote"`, `url: "http://127.0.0.1:7434/mcp"`) are automatically migrated to the local transport on the next `kas setup` or `kas reset`.
 
 ### remote / multi-machine use
 
