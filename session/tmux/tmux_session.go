@@ -58,6 +58,9 @@ type TmuxSession struct {
 	taskNumber int
 	waveNumber int
 	peerCount  int
+	// noFlicker controls whether CLAUDE_CODE_NO_FLICKER is set to 1 or 0.
+	// Defaults to false (0) so prompt detection works correctly in spawned agents.
+	noFlicker bool
 	// ProgressFunc is called with (stage, description) during Start() to report progress.
 	ProgressFunc func(stage int, desc string)
 	// promptFile is the path to a temporary file containing the initial prompt.
@@ -200,6 +203,12 @@ func (t *TmuxSession) SetProgressFunc(fn func(stage int, desc string)) {
 	t.ProgressFunc = fn
 }
 
+// SetNoFlicker controls whether CLAUDE_CODE_NO_FLICKER is set to 1 (true) or 0 (false).
+// Must be called before Start().
+func (t *TmuxSession) SetNoFlicker(enabled bool) {
+	t.noFlicker = enabled
+}
+
 // reportProgress calls ProgressFunc if set.
 func (t *TmuxSession) reportProgress(stage int, desc string) {
 	if t.ProgressFunc != nil {
@@ -303,7 +312,11 @@ func (t *TmuxSession) Start(workDir string) error {
 		}
 	}
 	if isClaudeProgram(t.program) {
-		program = "CLAUDE_CODE_NO_FLICKER=1 " + program
+		flickerVal := "0"
+		if t.noFlicker {
+			flickerVal = "1"
+		}
+		program = "CLAUDE_CODE_NO_FLICKER=" + flickerVal + " " + program
 	}
 
 	// Redirect stderr to a per-session log file so kasmos-spawned agents

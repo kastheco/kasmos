@@ -80,6 +80,7 @@ type TOMLConfig struct {
 	DaemonPollInterval   int                     `toml:"daemon_poll_interval,omitempty"`
 	BranchPrefix         string                  `toml:"branch_prefix,omitempty"`
 	NotificationsEnabled *bool                   `toml:"notifications_enabled,omitempty"`
+	ClaudeNoFlicker      *bool                   `toml:"claude_no_flicker,omitempty"`
 	Hooks                []TOMLHook              `toml:"hooks"`
 }
 
@@ -101,6 +102,7 @@ type TOMLConfigResult struct {
 	DaemonPollInterval     int
 	BranchPrefix           string
 	NotificationsEnabled   *bool
+	ClaudeNoFlicker        *bool
 	Hooks                  []TOMLHook
 }
 
@@ -129,6 +131,7 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 		DaemonPollInterval:     tc.DaemonPollInterval,
 		BranchPrefix:           tc.BranchPrefix,
 		NotificationsEnabled:   tc.NotificationsEnabled,
+		ClaudeNoFlicker:        tc.ClaudeNoFlicker,
 		Hooks:                  tc.Hooks,
 	}
 

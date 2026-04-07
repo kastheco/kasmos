@@ -197,6 +197,7 @@ func (i *Instance) Start(firstTimeSetup bool) error {
 	i.setLoadingProgress(1, "Preparing session...")
 	i.executionSession = i.prepareExecutionSession()
 	i.executionSession.SetAgentType(i.AgentType)
+	i.executionSession.SetNoFlicker(i.ClaudeNoFlicker)
 	i.setExecutionTaskEnv()
 	i.configureSessionTitle()
 
@@ -272,6 +273,7 @@ func (i *Instance) StartOnMainBranch() error {
 	i.setLoadingProgress(1, "Preparing session...")
 	i.executionSession = i.prepareExecutionSession()
 	i.executionSession.SetAgentType(i.AgentType)
+	i.executionSession.SetNoFlicker(i.ClaudeNoFlicker)
 	i.setExecutionTaskEnv()
 	i.configureSessionTitle()
 	i.setProgressFunc(func(stage int, desc string) {
@@ -313,6 +315,7 @@ func (i *Instance) StartOnBranch(branch string) error {
 	i.setLoadingProgress(1, "Preparing session...")
 	i.executionSession = i.prepareExecutionSession()
 	i.executionSession.SetAgentType(i.AgentType)
+	i.executionSession.SetNoFlicker(i.ClaudeNoFlicker)
 	i.setExecutionTaskEnv()
 	i.configureSessionTitle()
 	i.setProgressFunc(func(stage int, desc string) {
