@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -24,8 +25,6 @@ import (
 // The check uses go/ast so comments and string literals do not trigger false positives.
 // Import aliases are resolved per-file so renamed imports still match.
 func TestNoRealTmuxInTests(t *testing.T) {
-	t.Helper()
-
 	// Resolve repo root: two levels up from session/tmux (the package under test).
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -88,7 +87,7 @@ func checkFile(absPath, relPath string) []string {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, absPath, nil, 0)
 	if err != nil {
-		// Unparseable files are not our concern here.
+		// Unparsable files are not our concern here.
 		return nil
 	}
 
@@ -97,11 +96,6 @@ func checkFile(absPath, relPath string) []string {
 	//   "os/exec"                                       → exec
 	//   "github.com/kastheco/kasmos/session/tmux"       → tmux
 	//   "github.com/kastheco/kasmos/cmd"                → cmd
-	type pkgInfo struct {
-		alias    string // local name used in code
-		canonKey string // which category: "exec", "tmux", "cmd"
-	}
-
 	aliasMap := map[string]string{} // local name → category key
 
 	for _, imp := range f.Imports {
@@ -156,7 +150,7 @@ func checkFile(absPath, relPath string) []string {
 		}
 
 		pos := fset.Position(call.Pos())
-		loc := relPath + ":" + itoa(pos.Line)
+		loc := relPath + ":" + strconv.Itoa(pos.Line)
 		fn := sel.Sel.Name
 
 		switch category {
@@ -193,28 +187,4 @@ func checkFile(absPath, relPath string) []string {
 	})
 
 	return violations
-}
-
-// itoa converts an int to its decimal string without importing strconv at package scope.
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	negative := n < 0
-	if negative {
-		n = -n
-	}
-	digits := make([]byte, 0, 10)
-	for n > 0 {
-		digits = append(digits, byte('0'+n%10))
-		n /= 10
-	}
-	// reverse
-	for i, j := 0, len(digits)-1; i < j; i, j = i+1, j-1 {
-		digits[i], digits[j] = digits[j], digits[i]
-	}
-	if negative {
-		return "-" + string(digits)
-	}
-	return string(digits)
 }
