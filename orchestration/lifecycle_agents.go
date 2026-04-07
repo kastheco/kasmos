@@ -284,23 +284,3 @@ func waveTaskPosition(planContent string, waveNumber, taskNumber int) (index, co
 	return 0, 0, false
 }
 
-func waveTaskExists(planContent string, waveNumber, taskNumber int) bool {
-	if strings.TrimSpace(planContent) == "" {
-		return false
-	}
-	plan, err := taskparser.Parse(planContent)
-	if err != nil {
-		return false
-	}
-	for _, wave := range plan.Waves {
-		if wave.Number != waveNumber {
-			continue
-		}
-		for _, task := range wave.Tasks {
-			if task.Number == taskNumber {
-				return true
-			}
-		}
-	}
-	return false
-}
