@@ -1,43 +1,36 @@
-# systemd services
+# service management
 
-kasmos ships two systemd user service units in `contrib/`. They let you keep the orchestration daemon and the remote task store running persistently across reboots without requiring a dedicated server process in your shell.
+kasmos ships service unit files in `contrib/` for both Linux (systemd) and macOS (launchd). They keep the orchestration daemon and the remote task store running persistently across reboots without requiring a dedicated shell session.
 
 ## service units
 
 | unit | binary | purpose |
 |------|--------|---------|
-| `kasmos.service` | `kas daemon start --foreground` | orchestration daemon — claims signals and advances plan lifecycle |
-| `kasmosdb.service` | `kas serve` | remote task store HTTP server on port `7433` |
+| `kasmos` | `kas daemon start --foreground` | orchestration daemon — claims signals and advances plan lifecycle |
+| `kasmosdb` | `kas serve` | remote task store HTTP server on port `7433` |
+
+---
+
+## linux (systemd)
 
 Both units run under your user account (`systemctl --user`) and depend on the `kas` binary being on `$PATH` at `~/go/bin/kas`.
 
-## installation and enabling
-
-### orchestration daemon only
+### preferred workflow (just)
 
 ```bash
+# install and start both services
+just services-enable
+
+# orchestration daemon only
 just kasmosd-enable
-```
 
-This copies `contrib/kasmos.service` to `~/.config/systemd/user/`, runs `systemctl --user daemon-reload`, and enables + starts the unit.
-
-### task store server only
-
-```bash
+# task store server only
 just db-service-enable
 ```
 
-This copies `contrib/kasmosdb.service` to `~/.config/systemd/user/`, reloads systemd, and enables + starts the unit.
+Each `just` recipe copies the appropriate `.service` file from `contrib/` to `~/.config/systemd/user/`, runs `systemctl --user daemon-reload`, and enables + starts the unit.
 
-### both at once
-
-```bash
-just services-enable
-```
-
-Equivalent to running both commands above in sequence.
-
-## manual installation (without just)
+### manual installation
 
 If you do not have `just` installed:
 
@@ -55,14 +48,14 @@ systemctl --user daemon-reload
 systemctl --user enable --now kasmosdb
 ```
 
-## checking service status
+### checking service status
 
 ```bash
 systemctl --user status kasmos
 systemctl --user status kasmosdb
 ```
 
-## reading logs
+### reading logs
 
 ```bash
 journalctl --user -u kasmos          # orchestration daemon logs
@@ -71,7 +64,7 @@ journalctl --user -u kasmos -f       # follow live output
 journalctl --user -u kasmos --since "1 hour ago"
 ```
 
-## stopping and disabling
+### stopping and disabling
 
 ```bash
 systemctl --user stop kasmos
@@ -81,65 +74,7 @@ systemctl --user stop kasmosdb
 systemctl --user disable kasmosdb
 ```
 
-## running the daemon directly (without systemd)
-
-For debugging or one-shot runs, start the daemon in the foreground:
-
-```bash
-kas daemon start --foreground
-```
-
-Or use just:
-
-```bash
-just kasmosd-start
-```
-
-Check running daemon status:
-
-```bash
-kas daemon status
-```
-
-Stop the daemon:
-
-```bash
-kas daemon stop
-# or:
-just kasmosd-stop
-```
-
-## diagnosing installation
-
-Use the built-in doctor command to verify the daemon and task store are installed and responding:
-
-```bash
-just doctord
-```
-
-Output example:
-
-```
-== kasmos daemon doctor ==
-
-binary:
-/home/user/go/bin/kas
-
-user units:
-- kasmos.service: installed, enabled=enabled, active=active
-- kasmosdb.service: installed, enabled=enabled, active=active
-
-daemon api:
-daemon socket present: /run/user/1000/kasmos/kas.sock
-
-next steps:
-- just kasmosd-enable      # install + enable orchestration daemon
-- just db-service-enable   # install + enable plan store service
-- just services-enable     # enable both services
-- just kasmosd-start       # direct foreground/background daemon start
-```
-
-## service file contents
+### service file contents
 
 `contrib/kasmos.service`:
 
@@ -183,11 +118,208 @@ WantedBy=default.target
 
 `%h` expands to your home directory. Both units use `Restart=on-failure` so they recover from crashes without manual intervention.
 
+---
+
+## macos (launchd)
+
+On macOS, kasmos uses launchd plists in `contrib/`. Plists are loaded per-user via `launchctl` and live in `~/Library/LaunchAgents/`.
+
+### preferred workflow (just)
+
+```bash
+# install and load both agents
+just services-enable
+
+# orchestration daemon only
+just kasmosd-enable
+
+# task store server only
+just db-service-enable
+```
+
+Each `just` recipe renders the plist template with your `$HOME` and the path to the `kas` binary, copies it to `~/Library/LaunchAgents/`, and calls `launchctl bootstrap` to load it immediately.
+
+### manual installation
+
+```bash
+mkdir -p ~/Library/LaunchAgents
+
+# orchestration daemon
+# replace /usr/local/bin/kas with the actual path to your kas binary
+cat contrib/io.kasmos.daemon.plist.tmpl \
+  | sed "s|{{KAS_BIN}}|$(which kas)|g; s|{{HOME}}|$HOME|g" \
+  > ~/Library/LaunchAgents/io.kasmos.daemon.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.kasmos.daemon.plist
+
+# task store
+cat contrib/io.kasmos.db.plist.tmpl \
+  | sed "s|{{KAS_BIN}}|$(which kas)|g; s|{{HOME}}|$HOME|g" \
+  > ~/Library/LaunchAgents/io.kasmos.db.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.kasmos.db.plist
+```
+
+### checking service status
+
+```bash
+launchctl list | grep kasmos
+```
+
+Look for `io.kasmos.daemon` and `io.kasmos.db`. A PID in the first column means the service is running.
+
+### reading logs
+
+```bash
+tail -f ~/Library/Logs/kasmos/daemon.log    # orchestration daemon logs
+tail -f ~/Library/Logs/kasmos/db.log        # task store logs
+```
+
+### stopping and unloading
+
+```bash
+# stop and remove from session (survives reboot)
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/io.kasmos.daemon.plist
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/io.kasmos.db.plist
+
+# to also delete the plist files (permanent removal)
+rm ~/Library/LaunchAgents/io.kasmos.daemon.plist
+rm ~/Library/LaunchAgents/io.kasmos.db.plist
+```
+
+### plist template contents
+
+`contrib/io.kasmos.daemon.plist.tmpl`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.kasmos.daemon</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{KAS_BIN}}</string>
+    <string>daemon</string>
+    <string>start</string>
+    <string>--foreground</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>{{HOME}}</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>{{HOME}}/Library/Logs/kasmos/daemon.log</string>
+  <key>StandardErrorPath</key>
+  <string>{{HOME}}/Library/Logs/kasmos/daemon.log</string>
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>
+```
+
+`contrib/io.kasmos.db.plist.tmpl`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.kasmos.db</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{KAS_BIN}}</string>
+    <string>serve</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>{{HOME}}</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>{{HOME}}/Library/Logs/kasmos/db.log</string>
+  <key>StandardErrorPath</key>
+  <string>{{HOME}}/Library/Logs/kasmos/db.log</string>
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>
+```
+
+`KeepAlive=true` is the launchd equivalent of `Restart=on-failure` — launchd will restart the process if it exits.
+
+---
+
+## running the daemon directly (without a service manager)
+
+For debugging or one-shot runs, start the daemon in the foreground:
+
+```bash
+kas daemon start --foreground
+```
+
+Or use just:
+
+```bash
+just kasmosd-start
+```
+
+Check running daemon status:
+
+```bash
+kas daemon status
+```
+
+Stop the daemon:
+
+```bash
+kas daemon stop
+# or:
+just kasmosd-stop
+```
+
+## diagnosing installation
+
+Use the built-in doctor command to verify the daemon and task store are installed and responding:
+
+```bash
+just doctord
+```
+
+Output example (linux):
+
+```
+== kasmos daemon doctor ==
+
+binary:
+/home/user/go/bin/kas
+
+user units:
+- kasmos.service: installed, enabled=enabled, active=active
+- kasmosdb.service: installed, enabled=enabled, active=active
+
+daemon api:
+daemon socket present: /run/user/1000/kasmos/kas.sock
+
+next steps:
+- just kasmosd-enable      # install + enable orchestration daemon
+- just db-service-enable   # install + enable plan store service
+- just services-enable     # enable both services
+- just kasmosd-start       # direct foreground/background daemon start
+```
+
 ## why the daemon matters for signals
 
 When an agent emits a `kas signal emit ...` command, the signal is written as a pending row in the task store database. The orchestration daemon is what actually claims that row and advances the plan's lifecycle state (e.g. from `implementing` → `reviewing`).
 
-If you emit signals without a running daemon, signals accumulate as `pending` rows but plans do not advance. Start the daemon — either via systemd or `kas daemon start --foreground` — before running headless agent workflows that rely on signal-driven orchestration.
+If you emit signals without a running daemon, signals accumulate as `pending` rows but plans do not advance. Start the daemon — either via the service manager or `kas daemon start --foreground` — before running headless agent workflows that rely on signal-driven orchestration.
 
 ## related
 
