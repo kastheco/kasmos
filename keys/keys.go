@@ -283,8 +283,9 @@ var DoubleTapMap = map[string]KeyName{
 }
 
 // DebouncedDoubleTapMap maps canonical keys that already have a single-press
-// binding but should also trigger an action on double-tap. App-level debounce
-// state is required because the first tap must dispatch immediately.
+// binding but should also trigger an action on double-tap. The first tap is
+// deferred until a debounce timeout fires; if a second tap arrives within the
+// window the double-tap action fires instead and the single-press is cancelled.
 //
 // Keys: s → toggle sidebar, space → exit focus.
 // Use "space" as the canonical form; do not store both " " and "space".

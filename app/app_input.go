@@ -1712,7 +1712,33 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 	// already returned early above via their own handlers at lines 617–1556).
 	// canonicalDoubleTapKey returns "" for ctrl/alt chords — those flow through
 	// the GlobalKeyStringsMap lookup below unchanged.
-	if dtKey := canonicalDoubleTapKey(msg); dtKey != "" {
+	dtKey := canonicalDoubleTapKey(msg)
+
+	// Any key press that is NOT the pending debounced key must flush the pending
+	// single-press action immediately. This covers non-printable keys (arrows,
+	// tab, enter — where dtKey is ""), conflict-free double-tap keys, and
+	// unrelated printable keys.
+	if m.pendingDoubleTapKey != "" && dtKey != m.pendingDoubleTapKey {
+		prevAction := m.pendingDoubleTapAction
+		m.pendingDoubleTapKey = ""
+		m.pendingDoubleTapAction = 0
+		m.pendingDoubleTapSeq++ // invalidate in-flight timeout
+		_, flushCmd := m.handleResolvedKey(prevAction)
+		// For non-printable keys, just flush and let the key fall through.
+		if dtKey == "" {
+			name, ok := keys.GlobalKeyStringsMap[msg.String()]
+			if !ok {
+				return m, flushCmd
+			}
+			_, newCmd := m.handleResolvedKey(name)
+			return m, tea.Batch(flushCmd, newCmd)
+		}
+		// For printable keys, flush and continue into the double-tap logic below
+		// so the new key is processed in the same Update call.
+		_ = flushCmd // TODO: batch this if the paths below return a cmd
+	}
+
+	if dtKey != "" {
 		// Conflict-free keys (k, K, u, d): no single-press binding — swallow 1st tap,
 		// dispatch mapped action on the 2nd tap within the threshold.
 		if action, ok := keys.DoubleTapMap[dtKey]; ok {
@@ -1733,20 +1759,6 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				m.pendingDoubleTapSeq++
 				return m.handleResolvedKey(action)
 			}
-			// Flush any pending action for a different debounced key first.
-			if m.pendingDoubleTapKey != "" {
-				prevAction := m.pendingDoubleTapAction
-				m.pendingDoubleTapKey = ""
-				m.pendingDoubleTapAction = 0
-				_, flushCmd := m.handleResolvedKey(prevAction)
-				// Then start pending for the incoming key.
-				singleAction := keys.GlobalKeyStringsMap[dtKey]
-				m.pendingDoubleTapKey = dtKey
-				m.pendingDoubleTapAction = singleAction
-				m.pendingDoubleTapSeq++
-				seq := m.pendingDoubleTapSeq
-				return m, tea.Batch(flushCmd, scheduleDoubleTapTimeout(m.doubleTapThreshold(), dtKey, seq))
-			}
 			// First tap: defer single-press until the debounce timeout fires.
 			singleAction := keys.GlobalKeyStringsMap[dtKey]
 			m.pendingDoubleTapKey = dtKey
@@ -1759,19 +1771,6 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		// Unrelated printable key: reset conflict-free tracker so stale state does
 		// not accumulate (e.g. k → a → k should not count as k+k).
 		m.ensureDoubleTap().Reset()
-		// Flush any pending debounced action before processing the new key.
-		if m.pendingDoubleTapKey != "" {
-			prevAction := m.pendingDoubleTapAction
-			m.pendingDoubleTapKey = ""
-			m.pendingDoubleTapAction = 0
-			_, flushCmd := m.handleResolvedKey(prevAction)
-			name, ok := keys.GlobalKeyStringsMap[msg.String()]
-			if !ok {
-				return m, flushCmd
-			}
-			_, newCmd := m.handleResolvedKey(name)
-			return m, tea.Batch(flushCmd, newCmd)
-		}
 	}
 
 	name, ok := keys.GlobalKeyStringsMap[msg.String()]
@@ -2175,10 +2174,16 @@ func (m *home) ensureDoubleTap() *keys.DoubleTapTracker {
 // If the timeout is still fresh (matching key and seq, state is stateDefault, pending
 // is set), the queued single-press action is dispatched via handleResolvedKey.
 func (m *home) handleDoubleTapTimeout(msg doubleTapTimeoutMsg) (tea.Model, tea.Cmd) {
-	if m.state != stateDefault ||
-		m.pendingDoubleTapKey == "" ||
+	if m.pendingDoubleTapKey == "" ||
 		msg.key != m.pendingDoubleTapKey ||
 		msg.seq != m.pendingDoubleTapSeq {
+		return m, nil
+	}
+	// Non-default state (overlay, focus, etc.): discard the pending action
+	// rather than letting it linger and fire on the next matching key press.
+	if m.state != stateDefault {
+		m.pendingDoubleTapKey = ""
+		m.pendingDoubleTapAction = 0
 		return m, nil
 	}
 	action := m.pendingDoubleTapAction

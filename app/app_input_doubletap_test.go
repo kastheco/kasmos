@@ -356,9 +356,10 @@ func TestHandleKeyPressDoubleTap_StaleTimeout_EmptyPendingIgnored(t *testing.T) 
 	assert.Equal(t, stateDefault, m.state)
 }
 
-// TestHandleKeyPressDoubleTap_StaleTimeout_NonDefaultStateIgnored verifies that a
-// timeout arriving while the model is not in stateDefault is silently dropped.
-func TestHandleKeyPressDoubleTap_StaleTimeout_NonDefaultStateIgnored(t *testing.T) {
+// TestHandleKeyPressDoubleTap_StaleTimeout_NonDefaultStateClearsPending verifies
+// that a timeout arriving while the model is not in stateDefault clears the
+// pending state so it doesn't linger and fire unexpectedly on the next key press.
+func TestHandleKeyPressDoubleTap_StaleTimeout_NonDefaultStateClearsPending(t *testing.T) {
 	h := newTestHome()
 	h.state = stateConfirm // not stateDefault
 	h.pendingDoubleTapKey = "s"
@@ -368,8 +369,9 @@ func TestHandleKeyPressDoubleTap_StaleTimeout_NonDefaultStateIgnored(t *testing.
 	msg := doubleTapTimeoutMsg{key: "s", seq: 1}
 	result, cmd := h.Update(msg)
 	m := result.(*home)
-	assert.Nil(t, cmd, "timeout in non-default state must be dropped")
-	assert.Equal(t, "s", m.pendingDoubleTapKey, "pending must remain")
+	assert.Nil(t, cmd, "timeout in non-default state must not dispatch")
+	assert.Empty(t, m.pendingDoubleTapKey, "pending must be cleared to avoid stale fire")
+	assert.Zero(t, m.pendingDoubleTapAction, "pending action must be cleared")
 }
 
 // -- Helper: canonicalDoubleTapKey ---------------------------------------------------
