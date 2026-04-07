@@ -509,6 +509,99 @@ func TestServer_PRReviews_BadRequestOnMalformedBody(t *testing.T) {
 	assert.Contains(t, errBody["error"], "invalid request body")
 }
 
+// TestServer_NormalizeFilename verifies that .md-suffixed names and bare slugs
+// are treated as the same stored task across every ingress point.
+func TestServer_NormalizeFilename(t *testing.T) {
+	t.Run("create with .md suffix stores bare slug", func(t *testing.T) {
+		store := newTestStore(t)
+		srv := httptest.NewServer(taskstore.NewHandler(store))
+		defer srv.Close()
+
+		resp, err := http.Post(srv.URL+"/v1/projects/kasmos/tasks", "application/json",
+			strings.NewReader(`{"filename":"plan.md","status":"ready","description":"test"}`))
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusCreated, resp.StatusCode)
+		resp.Body.Close()
+
+		// The stored entry must use the bare slug.
+		got, err := store.Get("kasmos", "plan")
+		require.NoError(t, err)
+		assert.Equal(t, "plan", got.Filename)
+	})
+
+	t.Run("GET with .md suffix and bare slug retrieve same entry", func(t *testing.T) {
+		store := newTestStore(t)
+		srv := httptest.NewServer(taskstore.NewHandler(store))
+		defer srv.Close()
+
+		require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReady}))
+
+		for _, variant := range []string{"plan.md", "plan"} {
+			t.Run(variant, func(t *testing.T) {
+				resp, err := http.Get(srv.URL + "/v1/projects/kasmos/tasks/" + variant)
+				require.NoError(t, err)
+				defer resp.Body.Close()
+				assert.Equal(t, http.StatusOK, resp.StatusCode)
+				var got taskstore.TaskEntry
+				require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
+				assert.Equal(t, "plan", got.Filename)
+			})
+		}
+	})
+
+	t.Run("PUT content with .md suffix and GET bare slug round-trip", func(t *testing.T) {
+		store := newTestStore(t)
+		srv := httptest.NewServer(taskstore.NewHandler(store))
+		defer srv.Close()
+
+		require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReady}))
+
+		// Write via .md-suffixed path.
+		req, err := http.NewRequest(http.MethodPut,
+			srv.URL+"/v1/projects/kasmos/tasks/plan.md/content",
+			strings.NewReader("# hello"))
+		require.NoError(t, err)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		resp.Body.Close()
+
+		// Read back via bare slug.
+		resp, err = http.Get(srv.URL + "/v1/projects/kasmos/tasks/plan/content")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		raw, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		assert.Equal(t, "# hello", string(raw))
+	})
+
+	t.Run("rename with .md new_filename stores bare slug", func(t *testing.T) {
+		store := newTestStore(t)
+		srv := httptest.NewServer(taskstore.NewHandler(store))
+		defer srv.Close()
+
+		require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReady}))
+
+		req, err := http.NewRequest(http.MethodPost,
+			srv.URL+"/v1/projects/kasmos/tasks/plan/rename",
+			strings.NewReader(`{"new_filename":"renamed.md"}`))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		resp.Body.Close()
+
+		// Old name gone, new bare slug exists.
+		_, err = store.Get("kasmos", "plan")
+		assert.Error(t, err)
+		got, err := store.Get("kasmos", "renamed")
+		require.NoError(t, err)
+		assert.Equal(t, "renamed", got.Filename)
+	})
+}
+
 func TestServer_EmptyListEndpointsReturnJSONArray(t *testing.T) {
 	store := newTestStore(t)
 	srv := httptest.NewServer(taskstore.NewHandler(store))
