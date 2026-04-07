@@ -1,13 +1,30 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/kastheco/kasmos/config/taskstate"
+	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/session"
+	"github.com/kastheco/kasmos/ui"
 	"github.com/kastheco/kasmos/ui/overlay"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// launcherHasAction reports whether any item in the list carries the given action.
+func launcherHasAction(items []overlay.LauncherItem, action string) bool {
+	for _, it := range items {
+		if it.Action == action {
+			return true
+		}
+	}
+	return false
+}
 
 func TestShiftSpaceOpensCommandLauncher(t *testing.T) {
 	h := newTestHome()
@@ -112,4 +129,118 @@ func TestBuildKeybindBrowserItems_HidesSubmitNameAndRemovedBindings(t *testing.T
 	}
 
 	require.True(t, foundInfoTab, "toggle info header should still be listed in the keybind browser")
+}
+
+// TestBuildLauncherItems_NoSelection_OnlyGlobalActions verifies that when nothing
+// is selected in the nav panel, buildLauncherItems returns only the global items
+// and none of the selection-dependent instance or task actions.
+func TestBuildLauncherItems_NoSelection_OnlyGlobalActions(t *testing.T) {
+	h := newTestHome()
+	// No plans, no instances — nothing selected.
+
+	items := h.buildLauncherItems()
+
+	// Must include every global action.
+	for _, want := range []string{
+		"view_keybinds", "new_plan", "new_instance", "spawn_agent",
+		"quick_launch", "search", "tmux_browser", "toggle_sidebar",
+		"toggle_audit", "audit_cursor", "info_tab", "quit",
+	} {
+		assert.True(t, launcherHasAction(items, want), "global action %q must be present", want)
+	}
+
+	// Must NOT include instance-only or task-only actions.
+	for _, absent := range []string{
+		"kill_instance", "restart_instance", "open_instance", "resume_instance",
+		"send_yes", "start_implement", "view_plan",
+	} {
+		assert.False(t, launcherHasAction(items, absent), "selection-dependent action %q must be absent with no selection", absent)
+	}
+}
+
+// TestBuildLauncherItems_PlannedReadyTask verifies that when a planned-ready task
+// is selected, start_implement appears and instance-only actions are absent.
+func TestBuildLauncherItems_PlannedReadyTask(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	store, ps, _ := newSharedStoreForTest(t, plansDir)
+	const planFile = "my-feature.md"
+	require.NoError(t, ps.Register(planFile, "my feature", "plan/my-feature", time.Now()))
+	// Force the task to planned-ready status (StatusReady + Phase=planned).
+	require.NoError(t, ps.ForceSetLifecycle(planFile, taskstate.StatusReady, taskstore.ExecutionState{Phase: taskstate.ManualOverridePlanned}))
+
+	h := newLifecycleE2EHome(t, dir, plansDir, store, ps, newPlanFSMForTestWithStore(t, store, plansDir))
+	h.updateSidebarTasks()
+
+	// Select the plan header row in the nav panel.
+	h.nav.SetPlans([]ui.PlanDisplay{{Filename: planFile, Status: "ready", Phase: "planned"}})
+	h.nav.ClickItem(0)
+	require.Equal(t, planFile, h.nav.GetSelectedPlanFile(), "plan must be selected")
+
+	items := h.buildLauncherItems()
+
+	assert.True(t, launcherHasAction(items, "start_implement"), "start_implement must be present for planned-ready task")
+	// Instance-only actions must be absent when a plan (not an instance) is selected.
+	assert.False(t, launcherHasAction(items, "kill_instance"), "kill_instance must be absent for task selection")
+	assert.False(t, launcherHasAction(items, "restart_instance"), "restart_instance must be absent for task selection")
+	assert.False(t, launcherHasAction(items, "send_yes"), "send_yes must be absent for task selection")
+	// Global actions must still be present.
+	assert.True(t, launcherHasAction(items, "new_plan"), "global new_plan must still be present")
+}
+
+// TestBuildLauncherItems_RunningInstance verifies that when a started, non-paused
+// instance is selected, open_instance, kill_instance, and restart_instance are present.
+func TestBuildLauncherItems_RunningInstance(t *testing.T) {
+	h := newTestHome()
+	inst, err := newTestInstance("running-agent")
+	require.NoError(t, err)
+	inst.MarkStartedForTest() // simulate a running session
+	_ = h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+
+	items := h.buildLauncherItems()
+
+	assert.True(t, launcherHasAction(items, "open_instance"), "open_instance must be present for running instance")
+	assert.True(t, launcherHasAction(items, "kill_instance"), "kill_instance must be present for running instance")
+	assert.True(t, launcherHasAction(items, "restart_instance"), "restart_instance must be present for running instance")
+	// resume_instance must be absent (not paused).
+	assert.False(t, launcherHasAction(items, "resume_instance"), "resume_instance must be absent for non-paused instance")
+	// send_yes must be absent (PromptDetected is false by default).
+	assert.False(t, launcherHasAction(items, "send_yes"), "send_yes must be absent when PromptDetected is false")
+}
+
+// TestBuildLauncherItems_PausedInstance verifies that resume_instance is present
+// and open_instance is absent when the selected instance is paused.
+func TestBuildLauncherItems_PausedInstance(t *testing.T) {
+	h := newTestHome()
+	inst, err := newTestInstance("paused-agent")
+	require.NoError(t, err)
+	inst.SetStatus(session.Paused)
+	_ = h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+
+	items := h.buildLauncherItems()
+
+	assert.True(t, launcherHasAction(items, "resume_instance"), "resume_instance must be present for paused instance")
+	assert.False(t, launcherHasAction(items, "open_instance"), "open_instance must be absent for paused instance")
+	assert.True(t, launcherHasAction(items, "kill_instance"), "kill_instance must always be present")
+	assert.True(t, launcherHasAction(items, "restart_instance"), "restart_instance must always be present")
+}
+
+// TestBuildLauncherItems_PromptDetected verifies that send_yes appears when the
+// selected instance is started, not paused, and has PromptDetected set.
+func TestBuildLauncherItems_PromptDetected(t *testing.T) {
+	h := newTestHome()
+	inst, err := newTestInstance("prompt-agent")
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	inst.PromptDetected = true
+	_ = h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+
+	items := h.buildLauncherItems()
+
+	assert.True(t, launcherHasAction(items, "send_yes"), "send_yes must be present when PromptDetected is true")
 }

@@ -1576,24 +1576,16 @@ func isLocked(status taskstate.Status, stage string) bool {
 	}
 }
 
-// openCommandLauncher builds and shows the global command launcher overlay.
-func (m *home) openCommandLauncher() (tea.Model, tea.Cmd) {
-	items := []overlay.LauncherItem{
+// globalLauncherItems returns the always-available command launcher items that
+// do not depend on the current selection (task or instance).
+func globalLauncherItems() []overlay.LauncherItem {
+	return []overlay.LauncherItem{
 		{Label: "view keybinds", Hint: "?", Action: "view_keybinds"},
 		{Label: "new plan", Hint: "n", Action: "new_plan"},
 		{Label: "new instance", Hint: "N", Action: "new_instance"},
 		{Label: "spawn agent", Hint: "S", Action: "spawn_agent"},
 		{Label: "quick launch", Hint: "s", Action: "quick_launch"},
 		{Label: "search", Hint: "/", Action: "search"},
-		{Label: "interactive mode", Hint: "i", Action: "interactive"},
-		{Label: "send yes", Hint: "y", Action: "send_yes"},
-		{Label: "kill session", Hint: "ctrl+k", Action: "kill"},
-		{Label: "stop session", Hint: "ctrl+shift+k", Action: "abort"},
-		{Label: "resume session", Hint: "r", Action: "resume"},
-		{Label: "checkout branch", Hint: "", Action: "checkout"},
-		{Label: "create pull request", Hint: "P", Action: "create_pr"},
-		{Label: "preview plan", Hint: "p", Action: "preview"},
-		{Label: "context menu", Hint: "→", Action: "context_menu"},
 		{Label: "tmux sessions", Hint: "t", Action: "tmux_browser"},
 		{Label: "toggle sidebar", Hint: "ctrl+s", Action: "toggle_sidebar"},
 		{Label: "toggle audit log", Hint: "L", Action: "toggle_audit"},
@@ -1601,7 +1593,106 @@ func (m *home) openCommandLauncher() (tea.Model, tea.Cmd) {
 		{Label: "toggle info header", Hint: "I", Action: "info_tab"},
 		{Label: "quit", Hint: "q", Action: "quit"},
 	}
-	launcher := overlay.NewCommandLauncherOverlay("commands", items)
+}
+
+// taskLauncherItems builds launcher items for the currently selected task.
+// It reuses taskLifecycleItems for lifecycle actions, then appends task-scoped
+// management actions. planFile is used for reference only (not dispatched here).
+func (m *home) taskLauncherItems(planFile string, entry taskstate.TaskEntry) []overlay.LauncherItem {
+	var items []overlay.LauncherItem
+
+	// Lifecycle actions from the shared builder (ordered by likelihood).
+	for _, cm := range taskLifecycleItems(entry) {
+		items = append(items, overlay.LauncherItem{Label: cm.Label, Action: cm.Action})
+	}
+
+	// Task-scoped management and sync actions.
+	items = append(items,
+		overlay.LauncherItem{Label: "view task", Action: "view_plan"},
+		overlay.LauncherItem{Label: "chat about this", Action: "chat_about_plan"},
+		overlay.LauncherItem{Label: "create pr", Action: "create_plan_pr"},
+		overlay.LauncherItem{Label: "merge to main", Action: "merge_plan"},
+		overlay.LauncherItem{Label: "open in browser", Action: "open_plan_browser"},
+		overlay.LauncherItem{Label: "rename task", Action: "rename_plan"},
+		overlay.LauncherItem{Label: "set topic", Action: "change_topic"},
+		overlay.LauncherItem{Label: "cancel task", Action: "cancel_plan"},
+	)
+	_ = planFile // consumed by executeContextAction via the shared dispatcher
+	return items
+}
+
+// instanceLauncherItems builds launcher items for the given instance.
+// Context-sensitive items (attach controls, signals, send_yes) are prepended
+// so the most actionable items appear first in the list.
+func (m *home) instanceLauncherItems(inst *session.Instance) []overlay.LauncherItem {
+	var items []overlay.LauncherItem
+
+	// Attachment control: open when running, resume when paused.
+	if inst.Paused() {
+		items = append(items, overlay.LauncherItem{Label: "resume", Action: "resume_instance"})
+	} else if inst.Started() {
+		items = append(items, overlay.LauncherItem{Label: "open", Action: "open_instance"})
+	}
+
+	items = append(items,
+		overlay.LauncherItem{Label: "kill", Action: "kill_instance"},
+		overlay.LauncherItem{Label: "restart", Action: "restart_instance"},
+	)
+
+	if inst.Started() && !inst.Paused() {
+		items = append(items, overlay.LauncherItem{Label: "focus agent", Action: "send_prompt_instance"})
+	}
+
+	items = append(items,
+		overlay.LauncherItem{Label: "push branch", Action: "push_instance"},
+		overlay.LauncherItem{Label: "create pr", Action: "create_pr_instance"},
+	)
+
+	if inst.TaskFile != "" {
+		items = append(items, overlay.LauncherItem{Label: "merge to main", Action: "merge_instance"})
+	}
+
+	// Task-owner lifecycle signal actions (from the shared builder).
+	for _, cm := range instanceSignalItems(inst) {
+		switch cm.Action {
+		// Skip items already emitted above to avoid duplicates.
+		case "resume_instance", "open_instance", "kill_instance", "restart_instance":
+			continue
+		}
+		items = append(items, overlay.LauncherItem{Label: cm.Label, Action: cm.Action})
+	}
+
+	// send_yes is launcher-only: emit only when the agent is waiting for input.
+	if inst.Started() && !inst.Paused() && inst.PromptDetected {
+		items = append(items, overlay.LauncherItem{Label: "send yes", Hint: "y", Action: "send_yes"})
+	}
+
+	return items
+}
+
+// buildLauncherItems constructs the full launcher item list: context-sensitive
+// items for the current selection (task or instance) are prepended, then the
+// always-available global items are appended.
+func (m *home) buildLauncherItems() []overlay.LauncherItem {
+	var items []overlay.LauncherItem
+
+	if inst := m.nav.GetSelectedInstance(); inst != nil {
+		items = append(items, m.instanceLauncherItems(inst)...)
+	} else if planFile := m.nav.GetSelectedPlanFile(); planFile != "" {
+		if m.taskState != nil {
+			if entry, ok := m.taskState.Entry(planFile); ok {
+				items = append(items, m.taskLauncherItems(planFile, entry)...)
+			}
+		}
+	}
+
+	items = append(items, globalLauncherItems()...)
+	return items
+}
+
+// openCommandLauncher builds and shows the global command launcher overlay.
+func (m *home) openCommandLauncher() (tea.Model, tea.Cmd) {
+	launcher := overlay.NewCommandLauncherOverlay("commands", m.buildLauncherItems())
 	m.overlays.Show(launcher)
 	m.state = stateLauncher
 	return m, nil
@@ -1640,9 +1731,9 @@ func buildKeybindBrowserItems() []overlay.LauncherItem {
 	return items
 }
 
-// executeLauncherAction dispatches a command launcher action to the appropriate
-// app method. Each case mirrors the inline handler for the corresponding key
-// in handleKeyPress.
+// executeLauncherAction dispatches a command launcher action. Global-only actions
+// are handled explicitly here; all other actions (task/instance lifecycle, signals)
+// fall through to executeContextAction which owns the shared dispatch logic.
 func (m *home) executeLauncherAction(action string) (tea.Model, tea.Cmd) {
 	switch action {
 	case "view_keybinds":
@@ -1682,97 +1773,6 @@ func (m *home) executeLauncherAction(action string) (tea.Model, tea.Cmd) {
 		m.state = stateSearch
 		m.setFocusSlot(slotNav)
 		return m, nil
-	case "interactive":
-		m.previewRequested = true
-		selected := m.nav.GetSelectedInstance()
-		if selected == nil {
-			if pf := m.nav.GetSelectedPlanFile(); pf != "" {
-				if best := m.nav.FindPlanInstance(pf); best != nil {
-					m.nav.SelectInstance(best)
-					selected = best
-				}
-			}
-		}
-		if selected == nil || !selected.Started() || selected.Paused() {
-			return m, nil
-		}
-		return m, m.enterFocusMode()
-	case "send_yes":
-		selected := m.nav.GetSelectedInstance()
-		if selected == nil || !selected.Started() || selected.Paused() || !selected.PromptDetected {
-			return m, nil
-		}
-		selected.QueuedPrompt = "yes"
-		selected.AwaitingWork = true
-		return m, nil
-	case "kill":
-		selected := m.nav.GetSelectedInstance()
-		if selected == nil || !selected.Started() || selected.Paused() || selected.Exited {
-			return m, nil
-		}
-		inst := selected
-		return m, func() tea.Msg {
-			inst.StopTmux()
-			inst.SetStatus(session.Ready)
-			return instanceChangedMsg{}
-		}
-	case "abort":
-		selected := m.nav.GetSelectedInstance()
-		if selected == nil {
-			return m, nil
-		}
-		title := selected.Title
-		killAction := func() tea.Msg {
-			worktree, err := selected.GetGitWorktree()
-			if err != nil {
-				return err
-			}
-			checkedOut, err := worktree.IsBranchCheckedOut()
-			if err != nil {
-				return err
-			}
-			if checkedOut {
-				return fmt.Errorf("instance %s is currently checked out", selected.Title)
-			}
-			return killInstanceMsg{title: title}
-		}
-		message := fmt.Sprintf("stop session '%s'? branch will be preserved.", selected.Title)
-		return m, m.confirmAction(message, killAction)
-	case "resume":
-		selected := m.nav.GetSelectedInstance()
-		if selected == nil || !selected.Paused() {
-			return m, nil
-		}
-		if err := selected.Resume(); err != nil {
-			return m, m.handleError(err)
-		}
-		return m, tea.RequestWindowSize
-	case "checkout":
-		selected := m.nav.GetSelectedInstance()
-		if selected == nil {
-			return m, nil
-		}
-		m.showHelpScreen(helpTypeInstanceCheckout{}, func() {
-			if err := selected.Pause(); err != nil {
-				m.handleError(err)
-			}
-			m.instanceChanged()
-		})
-		return m, nil
-	case "create_pr":
-		selected := m.nav.GetSelectedInstance()
-		if selected == nil {
-			return m, nil
-		}
-		m.state = statePRTitle
-		tio := overlay.NewTextInputOverlay("pr title", selected.Title)
-		tio.SetSize(60, 3)
-		m.overlays.Show(tio)
-		return m, nil
-	case "preview":
-		return m.viewSelectedPlan()
-	case "context_menu":
-		return m.openContextMenu()
 	case "tmux_browser":
 		return m, m.discoverTmuxSessions()
 	case "toggle_sidebar":
@@ -1797,6 +1797,21 @@ func (m *home) executeLauncherAction(action string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "quit":
 		return m.handleQuit()
+
+	// send_yes is launcher-only: queue a "yes" answer to the current agent prompt.
+	// The selection and state guards match those in instanceLauncherItems.
+	case "send_yes":
+		selected := m.nav.GetSelectedInstance()
+		if selected == nil || !selected.Started() || selected.Paused() || !selected.PromptDetected {
+			return m, nil
+		}
+		selected.QueuedPrompt = "yes"
+		selected.AwaitingWork = true
+		return m, nil
 	}
-	return m, nil
+
+	// All remaining actions (task/instance lifecycle, signals, sync operations)
+	// are handled by the shared context-action dispatcher so the logic is not
+	// duplicated between the launcher and the context menu.
+	return m.executeContextAction(action)
 }
