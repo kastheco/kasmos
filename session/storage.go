@@ -32,6 +32,8 @@ type InstanceData struct {
 	TaskNumber             int    `json:"task_number,omitempty"`
 	WaveNumber             int    `json:"wave_number,omitempty"`
 	PeerCount              int    `json:"peer_count,omitempty"`
+	WaveTaskIndex          int    `json:"wave_task_index,omitempty"`
+	WaveTaskCount          int    `json:"wave_task_count,omitempty"`
 	IsReviewer             bool   `json:"is_reviewer,omitempty"`
 	ImplementationComplete bool   `json:"implementation_complete,omitempty"`
 	SoloAgent              bool   `json:"solo_agent,omitempty"`

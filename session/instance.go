@@ -73,6 +73,10 @@ type Instance struct {
 	WaveNumber int
 	// PeerCount is the number of concurrent sibling tasks in the same wave (0 = not a wave task).
 	PeerCount int
+	// WaveTaskIndex is the 1-indexed position of this task within its wave (0 = unknown / non-wave task).
+	WaveTaskIndex int
+	// WaveTaskCount is the total number of tasks in this task's wave (0 = unknown / non-wave task).
+	WaveTaskCount int
 	// IsReviewer is a compatibility mirror for older persisted instance data.
 	// New runtime logic should use AgentType == AgentTypeReviewer.
 	IsReviewer bool
@@ -162,6 +166,8 @@ func (i *Instance) ToInstanceData() InstanceData {
 		TaskNumber:             i.TaskNumber,
 		WaveNumber:             i.WaveNumber,
 		PeerCount:              i.PeerCount,
+		WaveTaskIndex:          i.WaveTaskIndex,
+		WaveTaskCount:          i.WaveTaskCount,
 		ImplementationComplete: i.ImplementationComplete,
 		SoloAgent:              i.SoloAgent,
 		QueuedPrompt:           i.QueuedPrompt,
@@ -233,6 +239,8 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		TaskNumber:             data.TaskNumber,
 		WaveNumber:             data.WaveNumber,
 		PeerCount:              data.PeerCount,
+		WaveTaskIndex:          data.WaveTaskIndex,
+		WaveTaskCount:          data.WaveTaskCount,
 		IsReviewer:             agentType == AgentTypeReviewer,
 		ImplementationComplete: data.ImplementationComplete,
 		SoloAgent:              data.SoloAgent,
@@ -322,6 +330,10 @@ type InstanceOptions struct {
 	WaveNumber int
 	// PeerCount is the number of concurrent sibling tasks in the same wave.
 	PeerCount int
+	// WaveTaskIndex is the 1-indexed position of this task within its wave (0 = unknown / non-wave task).
+	WaveTaskIndex int
+	// WaveTaskCount is the total number of tasks in this task's wave (0 = unknown / non-wave task).
+	WaveTaskCount int
 	// ReviewCycle is the 1-indexed review/fix cycle number (0 = not a cycle instance).
 	ReviewCycle int
 	// ClaudeNoFlicker controls whether CLAUDE_CODE_NO_FLICKER=1 is set for the agent process.
@@ -357,6 +369,8 @@ func NewInstance(opts InstanceOptions) (*Instance, error) {
 		TaskNumber:      opts.TaskNumber,
 		WaveNumber:      opts.WaveNumber,
 		PeerCount:       opts.PeerCount,
+		WaveTaskIndex:   opts.WaveTaskIndex,
+		WaveTaskCount:   opts.WaveTaskCount,
 		ReviewCycle:     opts.ReviewCycle,
 		ClaudeNoFlicker: opts.ClaudeNoFlicker,
 	}, nil

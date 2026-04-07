@@ -1182,7 +1182,7 @@ Do the second thing.
 		spawner:     NewTmuxSpawner(),
 		logger:      slog.Default(),
 		broadcaster: api.NewEventBroadcaster(),
-		spawnWaveTask: func(_ context.Context, opts loop.SpawnOpts, task taskparser.Task, prompt string, peerCount int) error {
+		spawnWaveTask: func(_ context.Context, opts loop.SpawnOpts, task taskparser.Task, prompt string, _ int, peerCount int) error {
 			assert.Equal(t, planFile, opts.PlanFile)
 			assert.Equal(t, 1, opts.Wave)
 			assert.Equal(t, 2, peerCount)

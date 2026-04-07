@@ -618,7 +618,7 @@ func (s *TmuxSpawner) KillWaveAgents(repoPath, planFile string, waveNumber int) 
 }
 
 // SpawnWaveTask launches a coder instance for a specific task within a wave.
-func (s *TmuxSpawner) SpawnWaveTask(_ context.Context, opts loop.SpawnOpts, task taskparser.Task, prompt string, peerCount int) error {
+func (s *TmuxSpawner) SpawnWaveTask(_ context.Context, opts loop.SpawnOpts, task taskparser.Task, prompt string, waveTaskIndex int, peerCount int) error {
 	if opts.RepoPath == "" {
 		return fmt.Errorf("TmuxSpawner.wave-task: RepoPath is required")
 	}
@@ -640,14 +640,16 @@ func (s *TmuxSpawner) SpawnWaveTask(_ context.Context, opts loop.SpawnOpts, task
 		program = "opencode"
 	}
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:      title,
-		Path:       opts.RepoPath,
-		Program:    program,
-		AgentType:  session.AgentTypeCoder,
-		TaskFile:   opts.PlanFile,
-		TaskNumber: task.Number,
-		WaveNumber: opts.Wave,
-		PeerCount:  peerCount,
+		Title:         title,
+		Path:          opts.RepoPath,
+		Program:       program,
+		AgentType:     session.AgentTypeCoder,
+		TaskFile:      opts.PlanFile,
+		TaskNumber:    task.Number,
+		WaveNumber:    opts.Wave,
+		PeerCount:     peerCount,
+		WaveTaskIndex: waveTaskIndex,
+		WaveTaskCount: peerCount,
 	})
 	if err != nil {
 		s.releaseReservation(key)

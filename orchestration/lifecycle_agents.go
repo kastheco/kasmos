@@ -24,13 +24,15 @@ type LifecycleAgentSpec struct {
 // RecoveryCandidate describes a single phase-valid session title that may be
 // re-adopted after restart or manual orphan discovery.
 type RecoveryCandidate struct {
-	TaskFile    string
-	Title       string
-	AgentType   string
-	Branch      string
-	ReviewCycle int
-	WaveNumber  int
-	TaskNumber  int
+	TaskFile      string
+	Title         string
+	AgentType     string
+	Branch        string
+	ReviewCycle   int
+	WaveNumber    int
+	TaskNumber    int
+	WaveTaskIndex int
+	WaveTaskCount int
 }
 
 // BuildLifecycleAgentTitle returns the canonical title for a lifecycle agent.
@@ -143,14 +145,16 @@ func BuildRecoveryCandidates(task taskstore.TaskEntry, planContent string) []Rec
 				continue
 			}
 			candidates := make([]RecoveryCandidate, 0, len(wave.Tasks))
-			for _, waveTask := range wave.Tasks {
+			for i, waveTask := range wave.Tasks {
 				candidates = append(candidates, RecoveryCandidate{
-					TaskFile:   task.Filename,
-					Title:      BuildWaveTaskTitle(task.Filename, wave.Number, waveTask.Number),
-					AgentType:  session.AgentTypeCoder,
-					Branch:     task.Branch,
-					WaveNumber: wave.Number,
-					TaskNumber: waveTask.Number,
+					TaskFile:      task.Filename,
+					Title:         BuildWaveTaskTitle(task.Filename, wave.Number, waveTask.Number),
+					AgentType:     session.AgentTypeCoder,
+					Branch:        task.Branch,
+					WaveNumber:    wave.Number,
+					TaskNumber:    waveTask.Number,
+					WaveTaskIndex: i + 1,
+					WaveTaskCount: len(wave.Tasks),
 				})
 			}
 			return candidates
@@ -206,14 +210,16 @@ func MatchRecoveryCandidateByTitle(task taskstore.TaskEntry, planContent, title 
 		return RecoveryCandidate{TaskFile: task.Filename, Title: title, AgentType: session.AgentTypeFixer, Branch: task.Branch, ReviewCycle: cycle}, true
 	}
 	if wave, taskNum, ok := parseWaveRecoveryTitle(title, planName); ok {
-		if waveTaskExists(planContent, wave, taskNum) {
+		if index, count, found := waveTaskPosition(planContent, wave, taskNum); found {
 			return RecoveryCandidate{
-				TaskFile:   task.Filename,
-				Title:      title,
-				AgentType:  session.AgentTypeCoder,
-				Branch:     task.Branch,
-				WaveNumber: wave,
-				TaskNumber: taskNum,
+				TaskFile:      task.Filename,
+				Title:         title,
+				AgentType:     session.AgentTypeCoder,
+				Branch:        task.Branch,
+				WaveNumber:    wave,
+				TaskNumber:    taskNum,
+				WaveTaskIndex: index,
+				WaveTaskCount: count,
 			}, true
 		}
 	}
@@ -254,23 +260,26 @@ func parseWaveRecoveryTitle(title, planName string) (int, int, bool) {
 	return wave, taskNum, true
 }
 
-func waveTaskExists(planContent string, waveNumber, taskNumber int) bool {
+// waveTaskPosition returns the 1-indexed position of taskNumber within the
+// given wave and the total task count for that wave. ok is false when the task
+// cannot be found or the plan cannot be parsed.
+func waveTaskPosition(planContent string, waveNumber, taskNumber int) (index, count int, ok bool) {
 	if strings.TrimSpace(planContent) == "" {
-		return false
+		return 0, 0, false
 	}
 	plan, err := taskparser.Parse(planContent)
 	if err != nil {
-		return false
+		return 0, 0, false
 	}
 	for _, wave := range plan.Waves {
 		if wave.Number != waveNumber {
 			continue
 		}
-		for _, task := range wave.Tasks {
+		for i, task := range wave.Tasks {
 			if task.Number == taskNumber {
-				return true
+				return i + 1, len(wave.Tasks), true
 			}
 		}
 	}
-	return false
+	return 0, 0, false
 }

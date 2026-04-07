@@ -72,13 +72,15 @@ type InfoData struct {
 	MemMB      float64
 
 	// Wave / task context (zero values mean no wave info)
-	AgentType  string
-	WaveNumber int
-	TotalWaves int
-	TaskNumber int
-	TotalTasks int
-	WaveTasks  []WaveTaskInfo
-	TaskTitle  string
+	AgentType     string
+	WaveNumber    int
+	TotalWaves    int
+	TaskNumber    int
+	TotalTasks    int
+	WaveTasks     []WaveTaskInfo
+	TaskTitle     string
+	WaveTaskIndex int // 1-indexed position within the wave (0 = unknown / non-wave)
+	WaveTaskCount int // total tasks in this wave (0 = unknown / non-wave)
 
 	// Review outcome (populated when plan is done)
 	ReviewCycle        int
@@ -291,6 +293,39 @@ func (p *InfoPane) wrapText(text string) []string {
 	return lines
 }
 
+// infoDisplayedWaveTotal returns the wave denominator clamped so it is never
+// smaller than the numerator (guards against stale TotalWaves metadata).
+// Returns 0 when totalWaves is unknown (<= 0); callers must render
+// numerator-only (e.g. "wave 2") in that case.
+func infoDisplayedWaveTotal(waveNumber, totalWaves int) int {
+	if totalWaves <= 0 {
+		return 0
+	}
+	if totalWaves < waveNumber {
+		return waveNumber
+	}
+	return totalWaves
+}
+
+// infoDisplayedTaskCounter returns the (current, total, ok) counter to show
+// for a task assignment. Wave-local counters (WaveTaskIndex / WaveTaskCount)
+// are preferred when both are non-zero; falls back to global TaskNumber /
+// TotalTasks for legacy or non-wave instances.
+// When the total is unknown (zero), total is returned as 0 and callers must
+// render numerator-only (e.g. "task 3") to avoid misleading "N/0" displays.
+// Note: the wave-local path guarantees total > 0 via the waveTaskCount > 0 guard.
+func infoDisplayedTaskCounter(taskNumber, totalTasks, waveTaskIndex, waveTaskCount int) (current, total int, ok bool) {
+	if waveTaskIndex > 0 && waveTaskCount > 0 {
+		// waveTaskCount > 0 guaranteed by the guard above; total is always known here.
+		return waveTaskIndex, waveTaskCount, true
+	}
+	if taskNumber > 0 {
+		// totalTasks may be 0 (unknown); callers handle tot==0 as numerator-only.
+		return taskNumber, totalTasks, true
+	}
+	return 0, 0, false
+}
+
 // renderDivider renders a horizontal rule sized to the pane width.
 func (p *InfoPane) renderDivider() string {
 	w := p.width - 4
@@ -377,7 +412,8 @@ func (p *InfoPane) renderProgressSection() string {
 	if p.data.ActiveWave > 0 {
 		activeWave := fmt.Sprintf("%d", p.data.ActiveWave)
 		if p.data.TotalWaves > 0 {
-			activeWave = fmt.Sprintf("%d/%d", p.data.ActiveWave, p.data.TotalWaves)
+			waveTotal := infoDisplayedWaveTotal(p.data.ActiveWave, p.data.TotalWaves)
+			activeWave = fmt.Sprintf("%d/%d", p.data.ActiveWave, waveTotal)
 		}
 		rows = append(rows, p.renderRow("active wave", activeWave))
 	}
@@ -466,12 +502,27 @@ func (p *InfoPane) renderInstanceSection() string {
 		rows = append(rows, p.renderRow("active agent", agent))
 	}
 	if p.data.WaveNumber > 0 {
-		rows = append(rows, p.renderRow("wave", fmt.Sprintf("%d/%d", p.data.WaveNumber, p.data.TotalWaves)))
+		waveTotal := infoDisplayedWaveTotal(p.data.WaveNumber, p.data.TotalWaves)
+		var waveText string
+		if waveTotal > 0 {
+			waveText = fmt.Sprintf("%d/%d", p.data.WaveNumber, waveTotal)
+		} else {
+			waveText = fmt.Sprintf("%d", p.data.WaveNumber)
+		}
+		rows = append(rows, p.renderRow("wave", waveText))
 	}
-	if p.data.TaskNumber > 0 {
-		taskText := fmt.Sprintf("%d of %d", p.data.TaskNumber, p.data.TotalTasks)
-		if p.data.TaskTitle != "" {
-			taskText = fmt.Sprintf("%d of %d: %s", p.data.TaskNumber, p.data.TotalTasks, p.data.TaskTitle)
+	if cur, tot, ok := infoDisplayedTaskCounter(p.data.TaskNumber, p.data.TotalTasks, p.data.WaveTaskIndex, p.data.WaveTaskCount); ok {
+		var taskText string
+		if tot > 0 {
+			taskText = fmt.Sprintf("%d of %d", cur, tot)
+			if p.data.TaskTitle != "" {
+				taskText = fmt.Sprintf("%d of %d: %s", cur, tot, p.data.TaskTitle)
+			}
+		} else {
+			taskText = fmt.Sprintf("%d", cur)
+			if p.data.TaskTitle != "" {
+				taskText = fmt.Sprintf("%d: %s", cur, p.data.TaskTitle)
+			}
 		}
 		rows = append(rows, p.renderRow("task", taskText))
 	}
@@ -603,17 +654,29 @@ func (p *InfoPane) RenderCompact(width int) string {
 			if agent := infoAgentLabel(d.ActiveAgentType); agent != "" {
 				parts = append(parts, agent)
 			}
-			if d.ActiveWave > 0 {
+			// Show "active wave N" only when the selected instance has no concrete
+			// wave counter of its own (which would make the label redundant).
+			hasInstanceWave := d.WaveNumber > 0
+			if d.ActiveWave > 0 && !hasInstanceWave {
 				parts = append(parts, fmt.Sprintf("active wave %d", d.ActiveWave))
 			}
 			if d.ActiveRound > 0 {
 				parts = append(parts, fmt.Sprintf("round %d", d.ActiveRound))
 			}
-			if d.WaveNumber > 0 && d.TotalWaves > 0 {
-				parts = append(parts, fmt.Sprintf("wave %d/%d", d.WaveNumber, d.TotalWaves))
+			if d.WaveNumber > 0 {
+				waveTotal := infoDisplayedWaveTotal(d.WaveNumber, d.TotalWaves)
+				if waveTotal > 0 {
+					parts = append(parts, fmt.Sprintf("wave %d/%d", d.WaveNumber, waveTotal))
+				} else {
+					parts = append(parts, fmt.Sprintf("wave %d", d.WaveNumber))
+				}
 			}
-			if d.TaskNumber > 0 && d.TotalTasks > 0 {
-				parts = append(parts, fmt.Sprintf("task %d/%d", d.TaskNumber, d.TotalTasks))
+			if cur, tot, ok := infoDisplayedTaskCounter(d.TaskNumber, d.TotalTasks, d.WaveTaskIndex, d.WaveTaskCount); ok {
+				if tot > 0 {
+					parts = append(parts, fmt.Sprintf("task %d/%d", cur, tot))
+				} else {
+					parts = append(parts, fmt.Sprintf("task %d", cur))
+				}
 			}
 			if len(parts) > 0 {
 				lines = append(lines, strings.Join(parts, "  "))
@@ -648,17 +711,28 @@ func (p *InfoPane) RenderCompact(width int) string {
 		if agent := infoAgentLabel(d.ActiveAgentType); agent != "" {
 			parts = append(parts, agent)
 		}
-		if d.ActiveWave > 0 {
+		// Suppress "active wave N" when a concrete wave counter is already shown.
+		hasInstanceWave := d.WaveNumber > 0
+		if d.ActiveWave > 0 && !hasInstanceWave {
 			parts = append(parts, fmt.Sprintf("active wave %d", d.ActiveWave))
 		}
 		if d.ActiveRound > 0 {
 			parts = append(parts, fmt.Sprintf("round %d", d.ActiveRound))
 		}
-		if d.WaveNumber > 0 && d.TotalWaves > 0 {
-			parts = append(parts, fmt.Sprintf("wave %d/%d", d.WaveNumber, d.TotalWaves))
+		if d.WaveNumber > 0 {
+			waveTotal := infoDisplayedWaveTotal(d.WaveNumber, d.TotalWaves)
+			if waveTotal > 0 {
+				parts = append(parts, fmt.Sprintf("wave %d/%d", d.WaveNumber, waveTotal))
+			} else {
+				parts = append(parts, fmt.Sprintf("wave %d", d.WaveNumber))
+			}
 		}
-		if d.TaskNumber > 0 && d.TotalTasks > 0 {
-			parts = append(parts, fmt.Sprintf("task %d/%d", d.TaskNumber, d.TotalTasks))
+		if cur, tot, ok := infoDisplayedTaskCounter(d.TaskNumber, d.TotalTasks, d.WaveTaskIndex, d.WaveTaskCount); ok {
+			if tot > 0 {
+				parts = append(parts, fmt.Sprintf("task %d/%d", cur, tot))
+			} else {
+				parts = append(parts, fmt.Sprintf("task %d", cur))
+			}
 		}
 		if len(parts) > 0 {
 			lines = append(lines, strings.Join(parts, "  "))

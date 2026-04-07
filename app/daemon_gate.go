@@ -138,6 +138,8 @@ func daemonInstanceData(repoPath string, status api.InstanceStatus) session.Inst
 		TaskNumber:    status.TaskNumber,
 		WaveNumber:    status.WaveNumber,
 		ReviewCycle:   status.ReviewCycle,
+		WaveTaskIndex: status.WaveTaskIndex,
+		WaveTaskCount: status.WaveTaskCount,
 	}
 	if status.Branch != "" {
 		shared := gitpkg.NewSharedTaskWorktree(repoPath, status.Branch)
@@ -178,6 +180,8 @@ func newDaemonLoadingInstance(repoPath string, status api.InstanceStatus) (*sess
 		TaskNumber:    status.TaskNumber,
 		WaveNumber:    status.WaveNumber,
 		ReviewCycle:   status.ReviewCycle,
+		WaveTaskIndex: status.WaveTaskIndex,
+		WaveTaskCount: status.WaveTaskCount,
 	})
 	if err != nil {
 		return nil, err

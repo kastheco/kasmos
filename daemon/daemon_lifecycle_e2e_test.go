@@ -137,7 +137,7 @@ Complete the last implementation task and transition into review.
 			recorder("spawn:architect")
 			return nil
 		},
-		spawnWaveTask: func(_ context.Context, opts loop.SpawnOpts, task taskparser.Task, prompt string, peerCount int) error {
+		spawnWaveTask: func(_ context.Context, opts loop.SpawnOpts, task taskparser.Task, prompt string, _ int, peerCount int) error {
 			assert.Equal(t, planFile, opts.PlanFile)
 			assert.Equal(t, repo.Path, opts.RepoPath)
 			assert.Equal(t, project, opts.Project)

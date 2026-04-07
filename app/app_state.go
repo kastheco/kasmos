@@ -1517,15 +1517,17 @@ func (m *home) updateInfoPane() {
 	}
 
 	data := ui.InfoData{
-		HasInstance: true,
-		Title:       selected.DisplayName(),
-		Program:     selected.Program,
-		Branch:      selected.Branch,
-		Path:        selected.Path,
-		Status:      statusString(selected.Status),
-		AgentType:   selected.AgentType,
-		TaskNumber:  selected.TaskNumber,
-		WaveNumber:  selected.WaveNumber,
+		HasInstance:   true,
+		Title:         selected.DisplayName(),
+		Program:       selected.Program,
+		Branch:        selected.Branch,
+		Path:          selected.Path,
+		Status:        statusString(selected.Status),
+		AgentType:     selected.AgentType,
+		TaskNumber:    selected.TaskNumber,
+		WaveNumber:    selected.WaveNumber,
+		WaveTaskIndex: selected.WaveTaskIndex,
+		WaveTaskCount: selected.WaveTaskCount,
 	}
 
 	if !selected.CreatedAt.IsZero() {
@@ -3363,21 +3365,31 @@ func (m *home) spawnWaveTasks(orch *orchestration.WaveOrchestrator, tasks []task
 		return m, m.handleError(err)
 	}
 
+	// Derive WaveTaskIndex/WaveTaskCount from the full current wave so that
+	// retried tasks (a subset of the wave) still carry the correct position.
+	allWaveTasks := orch.CurrentWaveTasks()
+	waveTaskCount := len(allWaveTasks)
+	waveTaskPos := make(map[int]int, len(allWaveTasks))
+	for i, t := range allWaveTasks {
+		waveTaskPos[t.Number] = i + 1
+	}
+
 	var cmds []tea.Cmd
 	for _, task := range tasks {
 		prompt := orch.BuildTaskPrompt(task, len(tasks))
 
 		inst, err := session.NewInstance(session.InstanceOptions{
-			Title:           orchestration.BuildWaveTaskTitle(planFile, orch.CurrentWaveNumber(), task.Number),
-			Path:            m.activeRepoPath,
-			Program:         m.programForAgent(session.AgentTypeCoder),
-			ExecutionMode:   m.executionModeForAgent(session.AgentTypeCoder),
-			TaskFile:        planFile,
-			AgentType:       session.AgentTypeCoder,
-			TaskNumber:      task.Number,
-			WaveNumber:      orch.CurrentWaveNumber(),
-			PeerCount:       len(tasks),
-			ClaudeNoFlicker: m.claudeNoFlicker(),
+			Title:         orchestration.BuildWaveTaskTitle(planFile, orch.CurrentWaveNumber(), task.Number),
+			Path:          m.activeRepoPath,
+			Program:       m.programForAgent(session.AgentTypeCoder),
+			ExecutionMode: m.executionModeForAgent(session.AgentTypeCoder),
+			TaskFile:      planFile,
+			AgentType:     session.AgentTypeCoder,
+			TaskNumber:    task.Number,
+			WaveNumber:    orch.CurrentWaveNumber(),
+			PeerCount:     len(tasks),
+			WaveTaskIndex: waveTaskPos[task.Number], // 0 (unknown) if task not in current wave — safe, never happens in practice
+			WaveTaskCount: waveTaskCount,
 		})
 		if err != nil {
 			return m, m.handleError(err)
