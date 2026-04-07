@@ -119,8 +119,11 @@ kas daemon status
 # watch live events from the daemon (includes pr_review_detected etc.)
 curl --unix-socket "$XDG_RUNTIME_DIR/kasmos/kas.sock" http://kas/v1/events
 
-# view daemon logs (includes pr_monitor: prefixed entries)
+# view daemon logs (includes pr_monitor: prefixed entries) — linux
 journalctl --user -u kasmos -f
+
+# view daemon logs — macOS
+tail -f ~/Library/Logs/kasmos/daemon.log
 ```
 
 Inspect the `pr_reviews` table directly:

@@ -9,7 +9,7 @@ const meta: MetaRecord = {
   "managing-instances": "managing instances",
   recipes: "recipes",
   "remote-task-store": "remote task store",
-  "systemd-services": "systemd services",
+  "systemd-services": "service management",
   skills: "skills",
   "agent-harnesses": "agent harnesses",
 };

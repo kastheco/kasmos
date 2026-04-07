@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
+	"github.com/kastheco/kasmos/internal/platform"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -31,6 +33,21 @@ func TestDaemonStatusCmd_NotRunning(t *testing.T) {
 		combined += err.Error()
 	}
 	assert.Contains(t, combined, "not running")
+}
+
+func TestDaemonStartCmd_UsesPlatformSpecificHelpText(t *testing.T) {
+	cmd := newDaemonStartCmd()
+	manager := platform.ServiceManagerName()
+
+	assert.Contains(t, cmd.Long, manager,
+		"Long description should reference the platform service manager (%q)", manager)
+
+	foregroundFlag := cmd.Flags().Lookup("foreground")
+	if assert.NotNil(t, foregroundFlag, "expected --foreground flag to be defined") {
+		assert.True(t, strings.Contains(foregroundFlag.Usage, manager),
+			"--foreground usage should reference the platform service manager (%q), got: %q",
+			manager, foregroundFlag.Usage)
+	}
 }
 
 func TestDaemonStatusCmd_UsesUpdatedSocketFlagValue(t *testing.T) {

@@ -13,6 +13,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstore"
 	daemonpkg "github.com/kastheco/kasmos/daemon"
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/internal/platform"
 	"github.com/kastheco/kasmos/session"
 	gitpkg "github.com/kastheco/kasmos/session/git"
 	"github.com/kastheco/kasmos/ui/overlay"
@@ -33,6 +34,22 @@ type daemonRepoRegisteredMsg struct {
 
 var listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
 	return daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath()).ListInstances(project)
+}
+
+// daemonStartCommand is a seam that tests can replace to verify the call site
+// delegates to the platform package without depending on the host OS.
+var daemonStartCommand = platform.DaemonStartCommand
+
+// daemonRequiredMessage formats the user-facing message shown when the kasmos
+// daemon is unavailable or not yet managing this repo. prefix describes the
+// specific failure; repoPath is shown in the registration hint.
+func daemonRequiredMessage(prefix, repoPath string) string {
+	return fmt.Sprintf(
+		"%s\n\nstart it with:\n  %s\n\nthen register this repo:\n  kas daemon add %s",
+		prefix,
+		daemonStartCommand(),
+		repoPath,
+	)
 }
 
 func canonicalRepoPath(repoPath string) string {
@@ -63,8 +80,8 @@ func checkDaemonStatus(repoPath string) daemonStatusMsg {
 	resp, err := client.Get("http://daemon/v1/status")
 	if err != nil {
 		return daemonStatusMsg{
-			message: fmt.Sprintf(
-				"agent workflows require the kasmos daemon.\n\nstart it with:\n  systemctl --user start kasmos\n\nthen register this repo:\n  kas daemon add %s",
+			message: daemonRequiredMessage(
+				"agent workflows require the kasmos daemon.",
 				repoPath,
 			),
 		}
@@ -73,8 +90,8 @@ func checkDaemonStatus(repoPath string) daemonStatusMsg {
 
 	if resp.StatusCode >= 300 {
 		return daemonStatusMsg{
-			message: fmt.Sprintf(
-				"agent workflows require the kasmos daemon, but the daemon status check failed.\n\nstart it with:\n  systemctl --user start kasmos\n\nthen register this repo:\n  kas daemon add %s",
+			message: daemonRequiredMessage(
+				"agent workflows require the kasmos daemon, but the daemon status check failed.",
 				repoPath,
 			),
 		}
@@ -83,8 +100,8 @@ func checkDaemonStatus(repoPath string) daemonStatusMsg {
 	var status api.StatusResponse
 	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
 		return daemonStatusMsg{
-			message: fmt.Sprintf(
-				"agent workflows require the kasmos daemon, but its status response could not be read.\n\nstart it with:\n  systemctl --user start kasmos\n\nthen register this repo:\n  kas daemon add %s",
+			message: daemonRequiredMessage(
+				"agent workflows require the kasmos daemon, but its status response could not be read.",
 				repoPath,
 			),
 		}
