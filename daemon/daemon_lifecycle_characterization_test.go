@@ -3,6 +3,7 @@ package daemon
 import (
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
@@ -61,10 +62,14 @@ func TestDaemon_AutoAdvanceCompletedImplementer_Characterization(t *testing.T) {
 			wantPushes:   1,
 		},
 		{
-			name:         "fixer advances when prompt returns and work is finished",
-			entryStatus:  taskstore.StatusImplementing,
-			execState:    taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: session.AgentTypeFixer},
-			inst:         session.Instance{Title: "feature-fixer", TaskFile: "feature.md", AgentType: session.AgentTypeFixer, PromptDetected: true},
+			name:        "fixer advances when prompt returns and work is finished",
+			entryStatus: taskstore.StatusImplementing,
+			execState:   taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: session.AgentTypeFixer},
+			inst: session.Instance{
+				Title: "feature-fixer", TaskFile: "feature.md", AgentType: session.AgentTypeFixer,
+				PromptDetected:        true,
+				CompletionPromptSince: time.Now().Add(-(session.CompletionPromptStabilityWindow + 10*time.Millisecond)),
+			},
 			tmuxAlive:    true,
 			wantAdvanced: true,
 			wantPushes:   1,
@@ -74,6 +79,20 @@ func TestDaemon_AutoAdvanceCompletedImplementer_Characterization(t *testing.T) {
 			entryStatus:  taskstore.StatusImplementing,
 			execState:    taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: session.AgentTypeFixer},
 			inst:         session.Instance{Title: "feature-fixer", TaskFile: "feature.md", AgentType: session.AgentTypeFixer, PromptDetected: true, AwaitingWork: true},
+			tmuxAlive:    true,
+			wantAdvanced: false,
+			wantPushes:   0,
+		},
+		{
+			name:        "permission-blocked fixer does not advance",
+			entryStatus: taskstore.StatusImplementing,
+			execState:   taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: session.AgentTypeFixer},
+			inst: session.Instance{
+				Title: "feature-fixer", TaskFile: "feature.md", AgentType: session.AgentTypeFixer,
+				PromptDetected:        true,
+				PermissionBlocked:     true,
+				CompletionPromptSince: time.Now().Add(-(session.CompletionPromptStabilityWindow + 10*time.Millisecond)),
+			},
 			tmuxAlive:    true,
 			wantAdvanced: false,
 			wantPushes:   0,
@@ -166,8 +185,11 @@ func TestShouldProcessWaveTaskCompletion(t *testing.T) {
 		want      bool
 	}{
 		{
-			name:      "prompt-returned task completes",
-			inst:      session.Instance{TaskFile: "feature.md", TaskNumber: 3, WaveNumber: 2, HasWorked: true, PromptDetected: true},
+			name: "prompt-returned task completes",
+			inst: session.Instance{
+				TaskFile: "feature.md", TaskNumber: 3, WaveNumber: 2, HasWorked: true, PromptDetected: true,
+				CompletionPromptSince: time.Now().Add(-(session.CompletionPromptStabilityWindow + 10*time.Millisecond)),
+			},
 			tmuxAlive: true,
 			want:      true,
 		},
@@ -196,10 +218,32 @@ func TestShouldProcessWaveTaskCompletion(t *testing.T) {
 			want:      false,
 		},
 		{
-			name:      "active wave fallback from entry",
-			inst:      session.Instance{TaskFile: "feature.md", TaskNumber: 3, HasWorked: true, PromptDetected: true},
+			name: "active wave fallback from entry",
+			inst: session.Instance{
+				TaskFile: "feature.md", TaskNumber: 3, HasWorked: true, PromptDetected: true,
+				CompletionPromptSince: time.Now().Add(-(session.CompletionPromptStabilityWindow + 10*time.Millisecond)),
+			},
 			tmuxAlive: true,
 			want:      true,
+		},
+		{
+			name: "permission-blocked task does not complete",
+			inst: session.Instance{
+				TaskFile: "feature.md", TaskNumber: 3, WaveNumber: 2, HasWorked: true, PromptDetected: true,
+				PermissionBlocked:     true,
+				CompletionPromptSince: time.Now().Add(-(session.CompletionPromptStabilityWindow + 10*time.Millisecond)),
+			},
+			tmuxAlive: true,
+			want:      false,
+		},
+		{
+			name: "unstable prompt does not complete",
+			inst: session.Instance{
+				TaskFile: "feature.md", TaskNumber: 3, WaveNumber: 2, HasWorked: true, PromptDetected: true,
+				CompletionPromptSince: time.Now().Add(-10 * time.Millisecond),
+			},
+			tmuxAlive: true,
+			want:      false,
 		},
 	}
 

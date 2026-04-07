@@ -892,7 +892,7 @@ func shouldProcessWaveTaskCompletion(entry taskstore.TaskEntry, inst *session.In
 	}
 
 	finished := false
-	if inst.PromptDetected && !inst.AwaitingWork {
+	if inst.HasStableCompletionPrompt(time.Now()) {
 		finished = true
 	}
 	if !tmuxAlive {
@@ -943,6 +943,7 @@ func (d *Daemon) processCompletedWaveTask(ctx context.Context, e RepoEntry, inst
 }
 
 func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
+	now := time.Now()
 	for _, inst := range d.spawner.InstancesForRepo(e.Path) {
 		if inst == nil || inst.Paused() || !inst.Started() {
 			continue
@@ -966,6 +967,9 @@ func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
 				inst.SetStatus(session.Ready)
 			}
 		}
+
+		inst.PermissionBlocked = (md.PermissionPrompt != nil)
+		inst.UpdateCompletionPromptState(now)
 
 		completedWaveTask, err := d.processCompletedWaveTask(ctx, e, inst, md.TmuxAlive)
 		if err != nil {
