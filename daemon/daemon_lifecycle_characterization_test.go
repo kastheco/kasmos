@@ -388,4 +388,6 @@ func TestDaemon_RecoverSessions_UsesPersistedWaveStateForWaveTasks(t *testing.T)
 	assert.Equal(t, "feature-W2-T2", restored[0].Title)
 	assert.Equal(t, 2, restored[0].TaskNumber)
 	assert.Equal(t, 2, restored[0].WaveNumber)
+	assert.Equal(t, 1, restored[0].WaveTaskIndex, "only task in wave 2 so index=1")
+	assert.Equal(t, 1, restored[0].WaveTaskCount, "only task in wave 2 so count=1")
 }

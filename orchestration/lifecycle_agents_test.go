@@ -46,14 +46,16 @@ func TestBuildWaveTaskTitle(t *testing.T) {
 
 func TestBuildRecoveryCandidates_PhaseAwareLifecycleSessions(t *testing.T) {
 	tests := []struct {
-		name      string
-		entry     taskstore.TaskEntry
-		content   string
-		wantTitle string
-		wantType  string
-		wantCycle int
-		wantWave  int
-		wantTask  int
+		name          string
+		entry         taskstore.TaskEntry
+		content       string
+		wantTitle     string
+		wantType      string
+		wantCycle     int
+		wantWave      int
+		wantTask      int
+		wantTaskIndex int
+		wantTaskCount int
 	}{
 		{
 			name: "architecting recovers architect only",
@@ -126,11 +128,13 @@ func TestBuildRecoveryCandidates_PhaseAwareLifecycleSessions(t *testing.T) {
 					ActiveWave:      2,
 				},
 			},
-			content:   "**Goal:** test\n\n## Wave 1\n\n### Task 1: First\n\nDo first.\n\n## Wave 2\n\n### Task 2: Second\n\nDo second.\n",
-			wantTitle: "feature-W2-T2",
-			wantType:  session.AgentTypeCoder,
-			wantWave:  2,
-			wantTask:  2,
+			content:       "**Goal:** test\n\n## Wave 1\n\n### Task 1: First\n\nDo first.\n\n## Wave 2\n\n### Task 2: Second\n\nDo second.\n",
+			wantTitle:     "feature-W2-T2",
+			wantType:      session.AgentTypeCoder,
+			wantWave:      2,
+			wantTask:      2,
+			wantTaskIndex: 1,
+			wantTaskCount: 1,
 		},
 	}
 
@@ -143,6 +147,8 @@ func TestBuildRecoveryCandidates_PhaseAwareLifecycleSessions(t *testing.T) {
 			assert.Equal(t, tt.wantCycle, candidates[0].ReviewCycle)
 			assert.Equal(t, tt.wantWave, candidates[0].WaveNumber)
 			assert.Equal(t, tt.wantTask, candidates[0].TaskNumber)
+			assert.Equal(t, tt.wantTaskIndex, candidates[0].WaveTaskIndex)
+			assert.Equal(t, tt.wantTaskCount, candidates[0].WaveTaskCount)
 		})
 	}
 }
@@ -196,6 +202,8 @@ func TestMatchRecoveryCandidateByTitle_ValidatesWaveTaskAgainstPlan(t *testing.T
 	assert.Equal(t, session.AgentTypeCoder, candidate.AgentType)
 	assert.Equal(t, 2, candidate.WaveNumber)
 	assert.Equal(t, 2, candidate.TaskNumber)
+	assert.Equal(t, 1, candidate.WaveTaskIndex, "only task in wave so index=1")
+	assert.Equal(t, 1, candidate.WaveTaskCount, "only task in wave so count=1")
 
 	_, ok = MatchRecoveryCandidateByTitle(entry, content, "feature-W2-T9")
 	assert.False(t, ok)

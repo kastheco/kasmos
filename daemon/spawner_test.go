@@ -279,7 +279,7 @@ func TestTmuxSpawner_SpawnWaveTask_TracksBeforeStartCompletes(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- s.SpawnWaveTask(context.Background(), opts, task, "implement it", 3)
+		errCh <- s.SpawnWaveTask(context.Background(), opts, task, "implement it", 1, 3)
 	}()
 
 	var blockedInst *session.Instance
@@ -303,6 +303,8 @@ func TestTmuxSpawner_SpawnWaveTask_TracksBeforeStartCompletes(t *testing.T) {
 	assert.Equal(t, blockedInst.Title, statuses[0].Title)
 	assert.Equal(t, 1, statuses[0].TaskNumber)
 	assert.Equal(t, 1, statuses[0].WaveNumber)
+	assert.Equal(t, 1, statuses[0].WaveTaskIndex, "WaveTaskIndex must be 1 for first task in wave")
+	assert.Equal(t, 3, statuses[0].WaveTaskCount, "WaveTaskCount must equal peerCount")
 
 	close(release)
 	require.NoError(t, <-errCh)

@@ -52,7 +52,7 @@ type Daemon struct {
 	spawnCoder      func(context.Context, loop.SpawnOpts) error
 	spawnElaborator func(context.Context, loop.SpawnOpts) error
 	spawnFixer      func(context.Context, loop.SpawnOpts) error
-	spawnWaveTask   func(context.Context, loop.SpawnOpts, taskparser.Task, string, int) error
+	spawnWaveTask   func(context.Context, loop.SpawnOpts, taskparser.Task, string, int, int) error
 	killWaveAgents  func(repoPath, planFile string, wave int) error
 	createPR        func(RepoEntry, string, string) error
 	mu              sync.RWMutex
@@ -206,18 +206,20 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 			}
 			active := !inst.Paused() && !inst.Exited && (inst.Started() || inst.Status == session.Loading)
 			out = append(out, api.InstanceStatus{
-				ID:          inst.Title,
-				Project:     project,
-				Plan:        inst.TaskFile,
-				Role:        inst.AgentType,
-				Active:      active,
-				Loading:     inst.Status == session.Loading,
-				Title:       inst.Title,
-				Branch:      inst.Branch,
-				Program:     inst.Program,
-				TaskNumber:  inst.TaskNumber,
-				WaveNumber:  inst.WaveNumber,
-				ReviewCycle: inst.ReviewCycle,
+				ID:            inst.Title,
+				Project:       project,
+				Plan:          inst.TaskFile,
+				Role:          inst.AgentType,
+				Active:        active,
+				Loading:       inst.Status == session.Loading,
+				Title:         inst.Title,
+				Branch:        inst.Branch,
+				Program:       inst.Program,
+				TaskNumber:    inst.TaskNumber,
+				WaveNumber:    inst.WaveNumber,
+				ReviewCycle:   inst.ReviewCycle,
+				WaveTaskIndex: inst.WaveTaskIndex,
+				WaveTaskCount: inst.WaveTaskCount,
 			})
 		}
 		return out
@@ -1399,8 +1401,9 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 		errOnce  sync.Once
 		firstErr error
 	)
-	for _, task := range tasks {
+	for i, task := range tasks {
 		task := task
+		waveTaskIndex := i + 1
 		prompt := orch.BuildTaskPrompt(task, peerCount)
 		opts := loop.SpawnOpts{
 			PlanFile: planFile,
@@ -1413,7 +1416,7 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := spawnWaveTask(ctx, opts, task, prompt, peerCount); err != nil {
+			if err := spawnWaveTask(ctx, opts, task, prompt, waveTaskIndex, peerCount); err != nil {
 				errOnce.Do(func() {
 					firstErr = err
 				})
@@ -1760,6 +1763,8 @@ func (d *Daemon) RecoverSessions() (int, error) {
 					TaskNumber:    candidate.TaskNumber,
 					WaveNumber:    candidate.WaveNumber,
 					ReviewCycle:   candidate.ReviewCycle,
+					WaveTaskIndex: candidate.WaveTaskIndex,
+					WaveTaskCount: candidate.WaveTaskCount,
 				}
 				if candidate.Branch != "" {
 					shared := gitpkg.NewSharedTaskWorktree(e.Path, candidate.Branch)
