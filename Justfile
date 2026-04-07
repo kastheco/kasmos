@@ -39,6 +39,7 @@ kasmosd-install: install
         cp contrib/kasmos.service ~/.config/systemd/user/
         systemctl --user daemon-reload
         ;;
+      *) echo "error: unsupported platform '$(uname -s)'" >&2; exit 1 ;;
     esac
 
 # Enable and start the kasmos user service
@@ -52,6 +53,7 @@ kasmosd-enable: kasmosd-install
       Linux)
         systemctl --user enable --now kasmos
         ;;
+      *) echo "error: unsupported platform '$(uname -s)'" >&2; exit 1 ;;
     esac
 
 # Install the plan store user service unit
@@ -79,6 +81,7 @@ db-service-install: install
         cp contrib/kasmosdb.service ~/.config/systemd/user/
         systemctl --user daemon-reload
         ;;
+      *) echo "error: unsupported platform '$(uname -s)'" >&2; exit 1 ;;
     esac
 
 # Enable and start the plan store user service
@@ -92,6 +95,7 @@ db-service-enable: db-service-install
       Linux)
         systemctl --user enable --now kasmosdb
         ;;
+      *) echo "error: unsupported platform '$(uname -s)'" >&2; exit 1 ;;
     esac
 
 # Install and start both user services
@@ -181,6 +185,10 @@ doctord:
         echo "- just services-enable     # enable both services"
         echo "- just kasmosd-start       # direct foreground/background daemon start"
         ;;
+      *)
+        echo "error: unsupported platform '$(uname -s)' — kasmos services require Linux (systemd) or macOS (launchd)" >&2
+        exit 1
+        ;;
     esac
 
 # Backward-compatible aliases
@@ -215,6 +223,7 @@ restart-services:
         systemctl --user daemon-reload
         systemctl --user restart kasmos kasmosdb
         ;;
+      *) echo "error: unsupported platform '$(uname -s)'" >&2; exit 1 ;;
     esac
 
 # scaffold

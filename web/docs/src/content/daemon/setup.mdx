@@ -184,7 +184,7 @@ just doctord
 The socket lives at:
 
 - `$XDG_RUNTIME_DIR/kasmos/kas.sock` (when `XDG_RUNTIME_DIR` is set — typical on systemd desktop sessions)
-- `/tmp/kasmos-<uid>/kas.sock` (fallback, also used on macOS)
+- `os.TempDir()/kasmos-<uid>/kas.sock` (fallback; on macOS this is typically `$TMPDIR`, e.g. `/var/folders/.../kasmos-<uid>/kas.sock`, not `/tmp`)
 
 ## manual foreground run
 

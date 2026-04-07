@@ -238,6 +238,8 @@ if your `kas` binary lives somewhere else, replace `%h/.local/bin/kas` with the 
 plist templates are shipped in `contrib/`. install them into `~/Library/LaunchAgents/` and load them with `launchctl`:
 
 ```bash
+mkdir -p ~/Library/LaunchAgents ~/Library/Logs/kasmos
+
 # render and install the plists (replace the kas path if needed)
 KAS=$(command -v kas)
 sed "s|__KAS_BIN__|$KAS|g; s|__HOME__|$HOME|g" \

@@ -208,11 +208,14 @@ func TestStopServices_Linux_BothInactive(t *testing.T) {
 
 	var stopCalled bool
 	platformRunCommand = func(name string, args ...string) error {
-		// is-active returns non-zero (inactive) for both services.
-		if len(args) > 0 && args[len(args)-1] != "kasmos" && args[len(args)-1] != "kasmosdb" {
-			// stop command
-			stopCalled = true
+		// Detect the stop invocation by looking for the "stop" subcommand.
+		for _, arg := range args {
+			if arg == "stop" {
+				stopCalled = true
+				return nil
+			}
 		}
+		// is-active returns non-zero (inactive) for both services.
 		return errors.New("inactive")
 	}
 
