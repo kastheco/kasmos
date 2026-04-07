@@ -246,6 +246,7 @@ func TestIsUserInOverlay(t *testing.T) {
 		{stateNewPlanTopic, true},
 		{stateConfirm, true},
 		{statePrompt, true},
+		{stateSpawnHarnessPicker, true},
 		{stateSpawnAgent, true},
 		{stateFocusAgent, false},
 		{statePermission, true},

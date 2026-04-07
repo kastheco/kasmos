@@ -52,7 +52,7 @@ func (m *home) handleMenuHighlighting(msg tea.KeyPressMsg) (cmd tea.Cmd, returnE
 		m.keySent = false
 		return nil, false
 	}
-	if m.state == statePrompt || m.state == stateHelp || m.state == stateConfirm || m.state == stateNewPlan || m.state == stateNewPlanDeriving || m.state == stateNewPlanTopic || m.state == stateSpawnAgent || m.state == stateSearch || m.state == stateContextMenu || m.state == statePRTitle || m.state == statePRBody || m.state == stateRenameInstance || m.state == stateRenameTask || m.state == stateSendPrompt || m.state == stateFocusAgent || m.state == stateChangeTopic || m.state == stateSetStatus || m.state == stateClickUpSearch || m.state == stateClickUpPicker || m.state == stateClickUpFetching || m.state == stateClickUpWorkspacePicker || m.state == statePermission || m.state == stateTmuxBrowser || m.state == stateChatAboutTask || m.state == stateAuditCursor || m.state == stateLauncher || m.state == stateKeybindBrowser {
+	if m.state == statePrompt || m.state == stateHelp || m.state == stateConfirm || m.state == stateNewPlan || m.state == stateNewPlanDeriving || m.state == stateNewPlanTopic || m.state == stateSpawnHarnessPicker || m.state == stateSpawnAgent || m.state == stateSearch || m.state == stateContextMenu || m.state == statePRTitle || m.state == statePRBody || m.state == stateRenameInstance || m.state == stateRenameTask || m.state == stateSendPrompt || m.state == stateFocusAgent || m.state == stateChangeTopic || m.state == stateSetStatus || m.state == stateClickUpSearch || m.state == stateClickUpPicker || m.state == stateClickUpFetching || m.state == stateClickUpWorkspacePicker || m.state == statePermission || m.state == stateTmuxBrowser || m.state == stateChatAboutTask || m.state == stateAuditCursor || m.state == stateLauncher || m.state == stateKeybindBrowser {
 		return nil, false
 	}
 	// If it's in the global keymap, we should try to highlight it.
@@ -383,7 +383,14 @@ func (m *home) handleActiveOverlayMouse(msg tea.MouseClickMsg) (tea.Model, tea.C
 		m.pendingPlanDesc = ""
 		return m, tea.RequestWindowSize
 
+	case stateSpawnHarnessPicker:
+		m.pendingSpawnProgram = ""
+		m.state = stateDefault
+		m.menu.SetState(ui.StateDefault)
+		return m, tea.RequestWindowSize
+
 	case stateSpawnAgent:
+		m.pendingSpawnProgram = ""
 		m.state = stateDefault
 		m.menu.SetState(ui.StateDefault)
 		return m, tea.RequestWindowSize
@@ -1250,9 +1257,32 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		return m, nil
 	}
 
+	// Handle harness picker state (first step of spawn flow when multiple programs available)
+	if m.state == stateSpawnHarnessPicker {
+		if !m.overlays.IsActive() {
+			m.pendingSpawnProgram = ""
+			m.state = stateDefault
+			m.menu.SetState(ui.StateDefault)
+			return m, nil
+		}
+		result := m.overlays.HandleKey(msg)
+		if result.Dismissed {
+			if result.Submitted && result.Value != "" {
+				m.showSpawnAgentForm(result.Value)
+				return m, nil
+			}
+			m.pendingSpawnProgram = ""
+			m.state = stateDefault
+			m.menu.SetState(ui.StateDefault)
+			return m, tea.RequestWindowSize
+		}
+		return m, nil
+	}
+
 	// Handle spawn agent form state
 	if m.state == stateSpawnAgent {
 		if !m.overlays.IsActive() {
+			m.pendingSpawnProgram = ""
 			m.state = stateDefault
 			return m, nil
 		}
@@ -1266,13 +1296,17 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				workPath := fo.WorkPath()
 
 				if name == "" {
+					m.pendingSpawnProgram = ""
 					m.state = stateDefault
 					m.menu.SetState(ui.StateDefault)
 					return m, m.handleError(fmt.Errorf("name cannot be empty"))
 				}
 
-				return m.spawnAdHocAgent(name, branch, workPath)
+				selectedProgram := m.pendingSpawnProgram
+				m.pendingSpawnProgram = ""
+				return m.spawnAdHocAgent(name, branch, workPath, selectedProgram)
 			}
+			m.pendingSpawnProgram = ""
 			m.state = stateDefault
 			m.menu.SetState(ui.StateDefault)
 			return m, tea.RequestWindowSize
@@ -1955,13 +1989,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		m.overlays.Show(tio)
 		return m, nil
 	case keys.KeySpawnAgent:
-		if m.tmuxSessionCount >= GlobalInstanceLimit {
-			return m, m.handleError(
-				fmt.Errorf("you can't create more than %d instances (%d tmux sessions active)", GlobalInstanceLimit, m.tmuxSessionCount))
-		}
-		m.state = stateSpawnAgent
-		m.overlays.Show(overlay.NewSpawnFormOverlay("spawn agent", 60))
-		return m, nil
+		return m.beginSpawnAgentFlow()
 	case keys.KeyQuickLaunch:
 		return m.quickLaunchAgent()
 	case keys.KeyTmuxBrowser:

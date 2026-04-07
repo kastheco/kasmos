@@ -116,6 +116,8 @@ const (
 	stateNewPlanDeriving
 	// stateNewPlanTopic is the state when the user is picking a topic for a new plan.
 	stateNewPlanTopic
+	// stateSpawnHarnessPicker is the state when the user is selecting a harness program for ad-hoc spawn.
+	stateSpawnHarnessPicker
 	// stateSpawnAgent is the state when the user is spawning an ad-hoc agent session.
 	stateSpawnAgent
 	// statePRTitle is the state when the user is entering a PR title.
@@ -244,6 +246,8 @@ type home struct {
 	// pendingPRWorktree is a GitWorktree built from taskState for plan-level PR
 	// creation flows where no running instance is available. Cleared after use.
 	pendingPRWorktree *gitpkg.GitWorktree
+	// pendingSpawnProgram stores the selected harness program during the two-step spawn flow
+	pendingSpawnProgram string
 	// pendingChangeTopicTask stores the plan filename during the change-topic flow
 	pendingChangeTopicTask string
 	// pendingSetStatusTask stores the plan filename during the set-status flow
