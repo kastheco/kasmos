@@ -88,6 +88,24 @@ func TestScaffoldClaudeProject(t *testing.T) {
 	enabledServers, ok := settings["enabledMcpjsonServers"].([]any)
 	require.True(t, ok, "enabledMcpjsonServers key must be present")
 	assert.Contains(t, enabledServers, "kasmos")
+	assertAllMCPToolsAllowed(t, settings)
+}
+
+func assertAllMCPToolsAllowed(t *testing.T, settings map[string]any) {
+	t.Helper()
+	perms, ok := settings["permissions"].(map[string]any)
+	require.True(t, ok, "permissions key must be present")
+	allowRaw, ok := perms["allow"].([]any)
+	require.True(t, ok, "permissions.allow must be present and an array")
+	var allowed []string
+	for _, entry := range allowRaw {
+		if s, ok := entry.(string); ok {
+			allowed = append(allowed, s)
+		}
+	}
+	for _, tool := range kasmosMCPToolPermissions {
+		assert.Contains(t, allowed, tool, "permissions.allow must contain %q", tool)
+	}
 }
 
 func TestEnsureClaudeProjectSettings(t *testing.T) {
@@ -104,6 +122,7 @@ func TestEnsureClaudeProjectSettings(t *testing.T) {
 		require.NoError(t, json.Unmarshal(data, &settings))
 		assert.Equal(t, true, settings["enableAllProjectMcpServers"])
 		assert.Contains(t, settings["enabledMcpjsonServers"], "kasmos")
+		assertAllMCPToolsAllowed(t, settings)
 	})
 
 	t.Run("preserves existing settings and appends kasmos once", func(t *testing.T) {
@@ -135,6 +154,7 @@ func TestEnsureClaudeProjectSettings(t *testing.T) {
 		assert.Contains(t, settings["enabledMcpjsonServers"], "clickup")
 		assert.Contains(t, settings["enabledMcpjsonServers"], "kasmos")
 		assert.Contains(t, settings["hooks"], "Notification")
+		assertAllMCPToolsAllowed(t, settings)
 
 		result, err = EnsureClaudeProjectSettings(dir)
 		require.NoError(t, err)
@@ -143,6 +163,71 @@ func TestEnsureClaudeProjectSettings(t *testing.T) {
 		data, err = os.ReadFile(settingsPath)
 		require.NoError(t, err)
 		assert.Equal(t, 1, strings.Count(string(data), `"kasmos"`))
+	})
+
+	t.Run("does not duplicate existing mcp entries", func(t *testing.T) {
+		dir := t.TempDir()
+		settingsPath := filepath.Join(dir, ".claude", "settings.json")
+		require.NoError(t, os.MkdirAll(filepath.Dir(settingsPath), 0o755))
+		// Pre-populate with a subset of kasmos MCP tools already present.
+		pre := map[string]any{
+			"enableAllProjectMcpServers": true,
+			"enabledMcpjsonServers":      []any{"kasmos"},
+			"permissions": map[string]any{
+				"allow": []any{
+					"mcp__kasmos__grep",
+					"mcp__kasmos__read_file",
+					"mcp__kasmos__git_status",
+				},
+			},
+		}
+		preBytes, err := json.Marshal(pre)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(settingsPath, preBytes, 0o644))
+
+		_, err = EnsureClaudeProjectSettings(dir)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(settingsPath)
+		require.NoError(t, err)
+		var settings map[string]any
+		require.NoError(t, json.Unmarshal(data, &settings))
+		assertAllMCPToolsAllowed(t, settings)
+
+		// Verify no duplicates: count occurrences of each pre-populated tool.
+		content := string(data)
+		assert.Equal(t, 1, strings.Count(content, `"mcp__kasmos__grep"`), "mcp__kasmos__grep must appear exactly once")
+		assert.Equal(t, 1, strings.Count(content, `"mcp__kasmos__read_file"`), "mcp__kasmos__read_file must appear exactly once")
+		assert.Equal(t, 1, strings.Count(content, `"mcp__kasmos__git_status"`), "mcp__kasmos__git_status must appear exactly once")
+	})
+
+	t.Run("preserves deny rules", func(t *testing.T) {
+		dir := t.TempDir()
+		settingsPath := filepath.Join(dir, ".claude", "settings.json")
+		require.NoError(t, os.MkdirAll(filepath.Dir(settingsPath), 0o755))
+		pre := map[string]any{
+			"permissions": map[string]any{
+				"deny": []any{"Agent(Explore)", "Agent(Plan)"},
+			},
+		}
+		preBytes, err := json.Marshal(pre)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(settingsPath, preBytes, 0o644))
+
+		_, err = EnsureClaudeProjectSettings(dir)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(settingsPath)
+		require.NoError(t, err)
+		var settings map[string]any
+		require.NoError(t, json.Unmarshal(data, &settings))
+		perms, ok := settings["permissions"].(map[string]any)
+		require.True(t, ok, "permissions must be present")
+		deny, ok := perms["deny"].([]any)
+		require.True(t, ok, "permissions.deny must be present")
+		assert.Contains(t, deny, "Agent(Explore)", "deny list must be preserved")
+		assert.Contains(t, deny, "Agent(Plan)", "deny list must be preserved")
+		assertAllMCPToolsAllowed(t, settings)
 	})
 }
 
@@ -1248,6 +1333,12 @@ func TestSyncScaffold_UpdatesSkillsAndAgentPrompts(t *testing.T) {
 	assert.Contains(t, string(content), `"kasmos"`)
 	_, err = os.Readlink(filepath.Join(dir, ".claude", "skills", "cli-tools"))
 	assert.NoError(t, err)
+
+	settingsData, err := os.ReadFile(filepath.Join(dir, ".claude", "settings.json"))
+	require.NoError(t, err)
+	var syncSettings map[string]any
+	require.NoError(t, json.Unmarshal(settingsData, &syncSettings))
+	assertAllMCPToolsAllowed(t, syncSettings)
 }
 
 func TestSyncScaffold_CreatesFromScratch(t *testing.T) {
@@ -1261,6 +1352,12 @@ func TestSyncScaffold_CreatesFromScratch(t *testing.T) {
 	assert.FileExists(t, filepath.Join(dir, ".claude", "agents", "coder.md"))
 	_, err = os.Readlink(filepath.Join(dir, ".claude", "skills", "cli-tools"))
 	assert.NoError(t, err)
+
+	settingsData, err := os.ReadFile(filepath.Join(dir, ".claude", "settings.json"))
+	require.NoError(t, err)
+	var settings map[string]any
+	require.NoError(t, json.Unmarshal(settingsData, &settings))
+	assertAllMCPToolsAllowed(t, settings)
 }
 
 func TestSyncScaffold_RendersConfigWhenMissing(t *testing.T) {

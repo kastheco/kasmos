@@ -5,6 +5,30 @@
     "kasmos"
   ],
   "permissions": {
+    "allow": [
+      "mcp__kasmos__grep",
+      "mcp__kasmos__read_file",
+      "mcp__kasmos__find_files",
+      "mcp__kasmos__list_dir",
+      "mcp__kasmos__git_status",
+      "mcp__kasmos__git_diff",
+      "mcp__kasmos__git_log",
+      "mcp__kasmos__task_list",
+      "mcp__kasmos__task_show",
+      "mcp__kasmos__task_create",
+      "mcp__kasmos__task_update_content",
+      "mcp__kasmos__task_delete",
+      "mcp__kasmos__task_transition",
+      "mcp__kasmos__signal_create",
+      "mcp__kasmos__instance_list",
+      "mcp__kasmos__instance_pause",
+      "mcp__kasmos__instance_resume",
+      "mcp__kasmos__instance_send",
+      "mcp__kasmos__capture_pane",
+      "mcp__kasmos__list_sessions",
+      "mcp__kasmos__daemon_status",
+      "mcp__kasmos__symbols"
+    ],
     "deny": [
       "Agent(Explore)",
       "Agent(Plan)"
