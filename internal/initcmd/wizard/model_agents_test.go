@@ -267,6 +267,79 @@ func TestAgentStep_IgnoresLegacyElaboratorProfile(t *testing.T) {
 	assert.True(t, arch.Enabled)
 }
 
+func TestAgentStep_HarnessCycleAutoSelectsFirstModel(t *testing.T) {
+	agents := []AgentState{
+		{Role: "coder", Harness: "opencode", Model: "openai/gpt-5.4", Enabled: true},
+	}
+	modelCache := map[string][]string{
+		"opencode": {"openai/gpt-5.4", "openai/gpt-4o"},
+		"claude":   {"claude-opus-4-6", "claude-sonnet-4-6"},
+	}
+
+	s := newAgentStep(agents, []string{"opencode", "claude"}, modelCache)
+	s.enterEditMode()
+	s.editField = 0
+
+	s.cycleFieldValue(1) // opencode -> claude
+	assert.Equal(t, "claude", s.agents[0].Harness)
+	assert.Equal(t, "claude-opus-4-6", s.agents[0].Model, "model should auto-select first from new harness cache")
+}
+
+func TestAgentStep_HarnessCycleKeepsSharedModel(t *testing.T) {
+	sharedModel := "shared/model-v1"
+	agents := []AgentState{
+		{Role: "coder", Harness: "opencode", Model: sharedModel, Enabled: true},
+	}
+	modelCache := map[string][]string{
+		"opencode": {sharedModel, "openai/gpt-5.4"},
+		"claude":   {"claude-opus-4-6", sharedModel},
+	}
+
+	s := newAgentStep(agents, []string{"opencode", "claude"}, modelCache)
+	s.enterEditMode()
+	s.editField = 0
+
+	s.cycleFieldValue(1) // opencode -> claude
+	assert.Equal(t, "claude", s.agents[0].Harness)
+	assert.Equal(t, sharedModel, s.agents[0].Model, "model should be preserved when still valid in new harness cache")
+}
+
+func TestAgentStep_ModelFieldEnterSelectsAndAdvances(t *testing.T) {
+	agents := []AgentState{
+		{Role: "coder", Harness: "claude", Model: "claude-sonnet-4-6", Enabled: true},
+	}
+	modelCache := map[string][]string{
+		"claude": {"claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5"},
+	}
+
+	s := newAgentStep(agents, []string{"claude"}, modelCache)
+	s.enterEditMode()
+	s.editField = 1
+	s.moveModelCursor(2) // point at claude-haiku-4-5
+
+	_, _ = s.updateEditMode(tea.KeyPressMsg{Code: tea.KeyEnter})
+	assert.Equal(t, "claude-haiku-4-5", s.agents[0].Model, "enter should select the highlighted model")
+	assert.Equal(t, 2, s.editField, "enter on model field should advance to next field (effort)")
+}
+
+func TestAgentStep_StaleEffortNormalizedOnHarnessSwitch(t *testing.T) {
+	agents := []AgentState{
+		{Role: "coder", Harness: "opencode", Model: "openai/gpt-5.4", Effort: "xhigh", Enabled: true},
+	}
+	modelCache := map[string][]string{
+		"opencode": {"openai/gpt-5.4"},
+		"claude":   {"claude-sonnet-4-6"},
+	}
+
+	s := newAgentStep(agents, []string{"opencode", "claude"}, modelCache)
+	s.enterEditMode()
+	s.editField = 0
+
+	s.cycleFieldValue(1) // opencode -> claude
+	assert.Equal(t, "claude", s.agents[0].Harness)
+	assert.NotEqual(t, "xhigh", s.agents[0].Effort, "stale xhigh effort must be normalized when switching to claude")
+}
+
 func TestAgentStep_ViewSeparatorFillsPanelHeight(t *testing.T) {
 	agents := []AgentState{
 		{Role: "coder", Harness: "claude", Model: "anthropic/claude-sonnet-4-6", Enabled: true},
