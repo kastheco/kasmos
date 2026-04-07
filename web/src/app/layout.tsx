@@ -21,6 +21,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://kasmos.kasthe.co"),
   title: "kasmos - agent-driven IDE for AI pair programming",
   description:
     "a TUI-based agent-driven IDE that manages multiple AI agents (Claude Code, Codex, Aider, Gemini) in isolated workspaces, so you can work on multiple tasks simultaneously.",
@@ -33,14 +34,26 @@ export const metadata: Metadata = {
     title: "kasmos",
     description:
       "a TUI-based agent-driven IDE for managing multiple AI agents in isolated workspaces",
-    url: "https://github.com/kastheco/kasmos",
+    url: "https://kasmos.kasthe.co",
     type: "website",
+    images: [{ url: "/og-image.png" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "kasmos",
     description:
       "a TUI-based agent-driven IDE for managing multiple AI agents in isolated workspaces",
+    images: ["/og-image.png"],
+  },
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
   },
 };
 
