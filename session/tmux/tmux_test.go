@@ -23,6 +23,8 @@ func TestMain(m *testing.M) {
 	resolveProgramPath = func(name string) (string, error) {
 		return name, fmt.Errorf("test stub: unresolved")
 	}
+	_ = os.Unsetenv("TMUX")
+	_ = os.Unsetenv("TMUX_PANE")
 	code := m.Run()
 	resolveProgramPath = origResolve
 	log.Close()

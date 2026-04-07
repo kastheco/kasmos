@@ -12,5 +12,7 @@ func TestMain(m *testing.M) {
 	// Initialize bubblezone global manager (required for zone.Mark/zone.Get in tests)
 	zone.NewGlobal()
 
+	_ = os.Unsetenv("TMUX")
+	_ = os.Unsetenv("TMUX_PANE")
 	os.Exit(m.Run())
 }
