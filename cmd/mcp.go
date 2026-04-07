@@ -123,7 +123,7 @@ func newConfiguredMCPServerSingleRoot(mcpSrv *mcpserver.Server, sharedDB *sql.DB
 
 	// Determine task/signal project routing.
 	// In the zero-repo path (no explicit repoRoots), prefer DB-derived projects
-	// over the cwd-basename fallback so that a mis-matched working directory
+	// over the cwd-basename fallback so that a mismatched working directory
 	// (e.g. /home/kas when the project is "kasmos") still routes correctly.
 	fixedProject := ""
 	var dbProjects []string
