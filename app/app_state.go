@@ -1025,11 +1025,6 @@ func (m *home) showWaveDialog(planFile string, orch *orchestration.WaveOrchestra
 		}
 	}
 
-	// Focus a task instance so the user can see agent output behind the overlay.
-	if cmd := m.focusPlanInstanceForOverlay(planFile); cmd != nil {
-		cmds = append(cmds, cmd)
-	}
-
 	// Auto-advance path: emit audit, toast, and dispatch advance without overlay.
 	if failed == 0 && m.appConfig != nil && m.appConfig.AutoAdvanceWaves {
 		m.audit(auditlog.EventWaveCompleted,
@@ -1066,6 +1061,11 @@ func (m *home) showWaveDialog(planFile string, orch *orchestration.WaveOrchestra
 			fmt.Sprintf("wave %d complete: %d/%d tasks", waveNum, completed, total),
 			auditlog.WithPlan(planFile),
 			auditlog.WithWave(waveNum, 0))
+	}
+
+	// Focus a task instance so the user can see agent output behind the overlay.
+	if cmd := m.focusPlanInstanceForOverlay(planFile); cmd != nil {
+		cmds = append(cmds, cmd)
 	}
 
 	// Show the dedicated wave decision overlay.

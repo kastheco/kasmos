@@ -191,18 +191,22 @@ func TestBuildLauncherItems_PlannedReadyTask(t *testing.T) {
 }
 
 // TestBuildLauncherItems_RunningInstance verifies that when a started, non-paused
-// instance is selected, open_instance, kill_instance, and restart_instance are present.
+// instance is selected, kill_instance and restart_instance are present.
+// open_instance requires TmuxAlive() which MarkStartedForTest does not provide,
+// so it must be absent in this scenario.
 func TestBuildLauncherItems_RunningInstance(t *testing.T) {
 	h := newTestHome()
 	inst, err := newTestInstance("running-agent")
 	require.NoError(t, err)
-	inst.MarkStartedForTest() // simulate a running session
+	inst.MarkStartedForTest() // simulate a running session (no real tmux session)
 	_ = h.nav.AddInstance(inst)
 	h.nav.SelectInstance(inst)
 
 	items := h.buildLauncherItems()
 
-	assert.True(t, launcherHasAction(items, "open_instance"), "open_instance must be present for running instance")
+	// open_instance requires TmuxAlive(); MarkStartedForTest does not create a real
+	// tmux session, so open_instance must be absent here.
+	assert.False(t, launcherHasAction(items, "open_instance"), "open_instance must be absent when TmuxAlive is false")
 	assert.True(t, launcherHasAction(items, "kill_instance"), "kill_instance must be present for running instance")
 	assert.True(t, launcherHasAction(items, "restart_instance"), "restart_instance must be present for running instance")
 	// resume_instance must be absent (not paused).

@@ -1626,10 +1626,10 @@ func (m *home) taskLauncherItems(planFile string, entry taskstate.TaskEntry) []o
 func (m *home) instanceLauncherItems(inst *session.Instance) []overlay.LauncherItem {
 	var items []overlay.LauncherItem
 
-	// Attachment control: open when running, resume when paused.
+	// Attachment control: open when running with an attachable tmux session, resume when paused.
 	if inst.Paused() {
 		items = append(items, overlay.LauncherItem{Label: "resume", Action: "resume_instance"})
-	} else if inst.Started() {
+	} else if inst.Started() && !inst.Paused() && inst.TmuxAlive() {
 		items = append(items, overlay.LauncherItem{Label: "open", Action: "open_instance"})
 	}
 
