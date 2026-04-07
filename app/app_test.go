@@ -2459,13 +2459,71 @@ func TestHandleMouseClick_InsideAgentPane_StaysInFocusMode(t *testing.T) {
 		"precondition: tabbed window must be in focus mode")
 }
 
-// TestInstanceContextMenu_HasGroupedSubMenus verifies that the instance context menu
-// exposes top-level category groups (session, sync, manage) rather than a flat list,
-// and that nested actions remain discoverable via AllItems().
-func TestInstanceContextMenu_HasGroupedSubMenus(t *testing.T) {
+// TestTaskLifecycleItems verifies the lifecycle item builder returns the correct
+// actions in the correct order for each task status.
+func TestTaskLifecycleItems(t *testing.T) {
+	makeEntry := func(status taskstate.Status, phase string) taskstate.TaskEntry {
+		return taskstate.TaskEntry{
+			Status:         status,
+			ExecutionState: taskstore.ExecutionState{Phase: phase},
+		}
+	}
+
+	cases := []struct {
+		name    string
+		entry   taskstate.TaskEntry
+		actions []string
+	}{
+		{
+			name:    "planning",
+			entry:   makeEntry(taskstate.StatusPlanning, ""),
+			actions: []string{"start_plan", "start_implement", "start_implement_direct", "start_solo", "start_review"},
+		},
+		{
+			name:    "draft ready",
+			entry:   makeEntry(taskstate.StatusReady, ""),
+			actions: []string{"start_plan"},
+		},
+		{
+			name:    "planned ready",
+			entry:   makeEntry(taskstate.StatusReady, "planned"),
+			actions: []string{"start_implement", "start_implement_direct", "start_plan", "start_solo", "start_review"},
+		},
+		{
+			name:    "implementing",
+			entry:   makeEntry(taskstate.StatusImplementing, ""),
+			actions: []string{"start_review", "start_fixer", "start_implement", "start_implement_direct", "start_solo"},
+		},
+		{
+			name:    "reviewing",
+			entry:   makeEntry(taskstate.StatusReviewing, ""),
+			actions: []string{"mark_plan_done", "start_fixer", "start_review"},
+		},
+		{
+			name:    "done",
+			entry:   makeEntry(taskstate.StatusDone, ""),
+			actions: []string{"request_review", "resume_implement"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			items := taskLifecycleItems(tc.entry)
+			got := make([]string, 0, len(items))
+			for _, item := range items {
+				got = append(got, item.Action)
+			}
+			assert.Equal(t, tc.actions, got)
+		})
+	}
+}
+
+// TestInstanceContextMenu_Running_RootItems verifies that a running attachable instance
+// promotes open, kill, and restart to the root level of the context menu.
+func TestInstanceContextMenu_Running_RootItems(t *testing.T) {
 	h := newTestHome()
 	inst, _ := session.NewInstance(session.InstanceOptions{
-		Title:   "test-grouped-instance",
+		Title:   "test-running-instance",
 		Path:    os.TempDir(),
 		Program: "opencode",
 	})
@@ -2478,21 +2536,20 @@ func TestInstanceContextMenu_HasGroupedSubMenus(t *testing.T) {
 	cm, ok := updated.overlays.Current().(*overlay.ContextMenu)
 	require.True(t, ok, "current overlay must be a ContextMenu")
 
-	// Top-level items must be the category groups, not individual actions.
-	topLabels := make([]string, 0, len(cm.Items()))
+	// Root-level items must include the promoted session controls.
+	rootActions := make([]string, 0, len(cm.Items()))
 	for _, item := range cm.Items() {
-		topLabels = append(topLabels, item.Label)
+		rootActions = append(rootActions, item.Action)
 	}
-	assert.Contains(t, topLabels, "session", "instance menu must have 'session' group at top level")
-	assert.Contains(t, topLabels, "sync", "instance menu must have 'sync' group at top level")
-	assert.Contains(t, topLabels, "manage", "instance menu must have 'manage' group at top level")
+	assert.Contains(t, rootActions, "kill_instance", "kill must be a root item for a running instance")
+	assert.Contains(t, rootActions, "restart_instance", "restart must be a root item for a running instance")
 
-	// Nested actions must still be discoverable via AllItems().
+	// Nested actions remain discoverable via AllItems.
 	allActions := make([]string, 0)
 	for _, item := range cm.AllItems() {
 		allActions = append(allActions, item.Action)
 	}
-	assert.Contains(t, allActions, "restart_instance", "restart_instance must be discoverable in AllItems")
+	assert.Contains(t, allActions, "push_instance", "push_instance must be discoverable in AllItems")
 }
 
 func TestInstanceContextMenu_ReviewerManualActions(t *testing.T) {
@@ -2552,8 +2609,8 @@ func TestInstanceContextMenu_CoderManualAction(t *testing.T) {
 }
 
 // TestTaskContextMenu_HasGroupedSubMenus verifies that the task context menu exposes
-// top-level category groups (start, view, sync, config, lifecycle) and that nested
-// actions remain discoverable via AllItems().
+// the expected structure: promoted lifecycle actions at root, followed by grouped
+// sections (start, sync, config, lifecycle), with no separate 'view' group.
 func TestTaskContextMenu_HasGroupedSubMenus(t *testing.T) {
 	h := newTestHome()
 	h.setupPlanState(t, "review-task", taskstate.StatusReviewing, "")
@@ -2564,18 +2621,25 @@ func TestTaskContextMenu_HasGroupedSubMenus(t *testing.T) {
 	cm, ok := updated.overlays.Current().(*overlay.ContextMenu)
 	require.True(t, ok, "current overlay must be a ContextMenu")
 
-	// Top-level items must be the category groups, not individual actions.
 	topLabels := make([]string, 0, len(cm.Items()))
 	for _, item := range cm.Items() {
 		topLabels = append(topLabels, item.Label)
 	}
-	assert.Contains(t, topLabels, "start", "task menu must have 'start' group at top level")
-	assert.Contains(t, topLabels, "view", "task menu must have 'view' group at top level")
+	// sync, config and lifecycle groups must always be present.
 	assert.Contains(t, topLabels, "sync", "task menu must have 'sync' group at top level")
 	assert.Contains(t, topLabels, "config", "task menu must have 'config' group at top level")
 	assert.Contains(t, topLabels, "lifecycle", "task menu must have 'lifecycle' group at top level")
+	// The old monolithic 'view' group is gone; view task and chat appear at root.
+	assert.NotContains(t, topLabels, "view", "task menu must not have a separate 'view' group")
+	// view task and chat about this are direct root actions.
+	topActions := make([]string, 0)
+	for _, item := range cm.Items() {
+		topActions = append(topActions, item.Action)
+	}
+	assert.Contains(t, topActions, "view_plan", "view task must be a root action")
+	assert.Contains(t, topActions, "chat_about_plan", "chat about this must be a root action")
 
-	// Nested actions must still be discoverable via AllItems().
+	// Nested actions remain discoverable via AllItems.
 	allActions := make([]string, 0)
 	for _, item := range cm.AllItems() {
 		allActions = append(allActions, item.Action)
@@ -2584,9 +2648,10 @@ func TestTaskContextMenu_HasGroupedSubMenus(t *testing.T) {
 	assert.Contains(t, allActions, "start_fixer", "start_fixer must be discoverable in AllItems for reviewing status")
 }
 
-// TestTaskContextMenu_ReadyStatus_StartGroupHasAllOptions verifies that when a task
-// is in the ready state, the 'start' sub-menu group contains all the expected options.
-func TestTaskContextMenu_ReadyStatus_StartGroupHasAllOptions(t *testing.T) {
+// TestTaskContextMenu_PlannedReady_PromotedRootItems verifies that for a planned-ready
+// task the first two lifecycle actions are promoted to root and the rest go into the
+// 'start' subgroup.
+func TestTaskContextMenu_PlannedReady_PromotedRootItems(t *testing.T) {
 	h := newTestHome()
 	h.setupPlanState(t, "ready-task", taskstate.StatusReady, "")
 	entry := h.taskState.Plans["ready-task"]
@@ -2599,7 +2664,13 @@ func TestTaskContextMenu_ReadyStatus_StartGroupHasAllOptions(t *testing.T) {
 	cm, ok := updated.overlays.Current().(*overlay.ContextMenu)
 	require.True(t, ok, "current overlay must be a ContextMenu")
 
-	// Find the "start" group in the top-level items.
+	// The first two root items must be the top lifecycle actions for planned-ready.
+	rootItems := cm.Items()
+	require.GreaterOrEqual(t, len(rootItems), 2, "menu must have at least 2 root items")
+	assert.Equal(t, "start_implement", rootItems[0].Action, "first root item must be start_implement for planned-ready")
+	assert.Equal(t, "start_implement_direct", rootItems[1].Action, "second root item must be start_implement_direct for planned-ready")
+
+	// Remaining lifecycle actions go into the 'start' subgroup.
 	var startGroup *overlay.ContextMenuItem
 	for _, item := range cm.Items() {
 		if item.Label == "start" {
@@ -2608,20 +2679,19 @@ func TestTaskContextMenu_ReadyStatus_StartGroupHasAllOptions(t *testing.T) {
 			break
 		}
 	}
-	require.NotNil(t, startGroup, "task menu for ready status must have a 'start' group")
-
-	// All ready-status start actions must be present as children.
+	require.NotNil(t, startGroup, "task menu for planned-ready status must have a 'start' subgroup for remaining items")
 	startActions := make([]string, 0, len(startGroup.Children))
 	for _, child := range startGroup.Children {
 		startActions = append(startActions, child.Action)
 	}
-	assert.Contains(t, startActions, "start_plan", "start group must contain start_plan for ready status")
-	assert.Contains(t, startActions, "start_implement", "start group must contain start_implement for ready status")
-	assert.Contains(t, startActions, "start_implement_direct", "start group must contain start_implement_direct for ready status")
-	assert.Contains(t, startActions, "start_solo", "start group must contain start_solo for ready status")
-	assert.Contains(t, startActions, "start_review", "start group must contain start_review for ready status")
+	assert.Contains(t, startActions, "start_plan", "start subgroup must contain start_plan")
+	assert.Contains(t, startActions, "start_solo", "start subgroup must contain start_solo")
+	assert.Contains(t, startActions, "start_review", "start subgroup must contain start_review")
 }
 
+// TestTaskContextMenu_DraftReadyStatus_OnlyShowsPlanningStart verifies that for a
+// draft-ready task the single lifecycle action (start_plan) is promoted to root and
+// no 'start' subgroup is rendered.
 func TestTaskContextMenu_DraftReadyStatus_OnlyShowsPlanningStart(t *testing.T) {
 	h := newTestHome()
 	h.setupPlanState(t, "draft-ready-task", taskstate.StatusReady, "")
@@ -2632,19 +2702,15 @@ func TestTaskContextMenu_DraftReadyStatus_OnlyShowsPlanningStart(t *testing.T) {
 	cm, ok := updated.overlays.Current().(*overlay.ContextMenu)
 	require.True(t, ok, "current overlay must be a ContextMenu")
 
-	var startGroup *overlay.ContextMenuItem
+	// start_plan must be a direct root action.
+	rootActions := make([]string, 0)
 	for _, item := range cm.Items() {
-		if item.Label == "start" {
-			itemCopy := item
-			startGroup = &itemCopy
-			break
-		}
+		rootActions = append(rootActions, item.Action)
 	}
-	require.NotNil(t, startGroup, "task menu for ready status must have a 'start' group")
+	assert.Contains(t, rootActions, "start_plan", "start_plan must be a root action for draft-ready")
 
-	startActions := make([]string, 0, len(startGroup.Children))
-	for _, child := range startGroup.Children {
-		startActions = append(startActions, child.Action)
+	// No 'start' subgroup should be present (only one lifecycle item, fully promoted).
+	for _, item := range cm.Items() {
+		assert.NotEqual(t, "start", item.Label, "no 'start' subgroup expected when all lifecycle items are promoted")
 	}
-	assert.Equal(t, []string{"start_plan"}, startActions)
 }
