@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/kastheco/kasmos/session/internal/claudeprompt"
 )
 
 // PermissionPrompt represents a detected permission request from an agent.
@@ -24,7 +25,11 @@ func ParsePermissionPrompt(content string, program string) *PermissionPrompt {
 	case strings.Contains(lowerProgram, "opencode"):
 		return parseOpenCodePermissionPrompt(lines)
 	case strings.Contains(lowerProgram, "claude"):
-		return parseClaudePermissionPrompt(lines)
+		match := claudeprompt.Find(clean)
+		if match == nil {
+			return nil
+		}
+		return &PermissionPrompt{Description: match.Description, Pattern: match.Pattern}
 	default:
 		return nil
 	}
@@ -107,110 +112,4 @@ func parseOpenCodePermissionPrompt(lines []string) *PermissionPrompt {
 	}
 
 	return prompt
-}
-
-func parseClaudePermissionPrompt(lines []string) *PermissionPrompt {
-	const claudeTailLines = 30
-	if start := len(lines) - claudeTailLines; start > 0 {
-		lines = lines[start:]
-	}
-
-	questionIdx := -1
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		if strings.Contains(trimmed, "Do you want to proceed?") || strings.Contains(trimmed, "Allow tool ") {
-			questionIdx = i
-		}
-	}
-	if questionIdx < 0 {
-		return nil
-	}
-
-	hasYes := false
-	hasNo := false
-	for i := questionIdx + 1; i < len(lines) && i <= questionIdx+3; i++ {
-		trimmed := strings.TrimSpace(lines[i])
-		if trimmed == "" {
-			continue
-		}
-		if strings.Contains(trimmed, "Yes") {
-			hasYes = true
-		}
-		if strings.Contains(trimmed, "No") {
-			hasNo = true
-		}
-		if hasYes && hasNo {
-			break
-		}
-	}
-	if !hasYes || !hasNo {
-		return nil
-	}
-
-	question := strings.TrimSpace(lines[questionIdx])
-	prevDetail := ""
-	for i := questionIdx - 1; i >= 0; i-- {
-		trimmed := strings.TrimSpace(lines[i])
-		if trimmed == "" {
-			continue
-		}
-		prevDetail = trimmed
-		break
-	}
-
-	description := question
-	if isClaudePermissionDetailLine(prevDetail) {
-		description = prevDetail
-	}
-
-	pattern := extractClaudeToolPattern(question)
-	if pattern == "" && isClaudePermissionDetailLine(prevDetail) {
-		pattern = prevDetail
-	}
-
-	return &PermissionPrompt{
-		Description: description,
-		Pattern:     pattern,
-	}
-}
-
-func isClaudePermissionDetailLine(line string) bool {
-	trimmed := strings.TrimSpace(line)
-	if trimmed == "" {
-		return false
-	}
-
-	lower := strings.ToLower(trimmed)
-	switch {
-	case strings.Contains(lower, "tool "):
-		return true
-	case strings.Contains(trimmed, "/"):
-		return true
-	case strings.Contains(trimmed, `\\`):
-		return true
-	case strings.Contains(trimmed, ": "):
-		return true
-	case strings.HasPrefix(trimmed, "$ "):
-		return true
-	case strings.HasPrefix(trimmed, "> "):
-		return true
-	default:
-		return false
-	}
-}
-
-func extractClaudeToolPattern(question string) string {
-	lower := strings.ToLower(question)
-	idx := strings.Index(lower, "allow tool ")
-	if idx < 0 {
-		return ""
-	}
-
-	pattern := strings.TrimSpace(question[idx+len("allow tool "):])
-	pattern = strings.TrimSuffix(pattern, "?")
-	pattern = strings.TrimSpace(pattern)
-	return pattern
 }
