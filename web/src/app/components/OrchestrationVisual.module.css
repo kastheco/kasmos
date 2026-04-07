@@ -37,7 +37,7 @@
 
 /* Central orchestrator */
 .center {
-  fill: var(--accent-teal, #7ec8d8);
+  fill: var(--accent-foam, #9ccfd8);
   animation: centerPulse 2.5s ease-in-out infinite;
 }
 
