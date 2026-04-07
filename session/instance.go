@@ -123,6 +123,14 @@ type Instance struct {
 	// Prevents permission prompts or early returns from prematurely completing a wave.
 	HasWorked bool
 
+	// PermissionBlocked is true when the agent is waiting on a permission prompt.
+	// Runtime-only: not persisted. Prevents permission dialogs from looking like completion prompts.
+	PermissionBlocked bool
+
+	// CompletionPromptSince records when the current completion-eligible prompt state began.
+	// Runtime-only: not persisted. Used to enforce the stability window before auto-advancing.
+	CompletionPromptSince time.Time
+
 	// CPUPercent is the last sampled CPU utilisation of the agent process.
 	CPUPercent float64
 	// MemMB is the last sampled memory usage of the agent process in megabytes.
@@ -435,6 +443,8 @@ func (i *Instance) SetStatus(status Status) {
 		i.LastActiveAt = time.Now()
 		i.PromptDetected = false
 		i.Notified = false
+		i.PermissionBlocked = false
+		i.CompletionPromptSince = time.Time{}
 	}
 
 	if status == Running {

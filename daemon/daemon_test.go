@@ -373,10 +373,11 @@ func TestDaemon_AutoAdvanceCompletedImplementer_TransitionsToReviewing(t *testin
 	}
 	e := RepoEntry{Project: project, Store: store}
 	inst := &session.Instance{
-		Title:          "feature-fixer",
-		TaskFile:       "feature.md",
-		AgentType:      session.AgentTypeFixer,
-		PromptDetected: true,
+		Title:                 "feature-fixer",
+		TaskFile:              "feature.md",
+		AgentType:             session.AgentTypeFixer,
+		PromptDetected:        true,
+		CompletionPromptSince: time.Now().Add(-(session.CompletionPromptStabilityWindow + 10*time.Millisecond)),
 	}
 
 	advanced, err := d.autoAdvanceCompletedImplementer(e, inst, true)
@@ -566,6 +567,56 @@ Do the first thing.
 			return
 		}
 	}
+}
+
+func TestDaemon_MonitorRunningInstances_SetsCompletionPromptSinceWhenPromptDetected(t *testing.T) {
+	repo := t.TempDir()
+	project := filepath.Base(repo)
+	store := taskstore.NewTestStore(t)
+	planFile := "feature.md"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseArchitecting),
+			ActiveAgentType: session.AgentTypeElaborator,
+		},
+	}))
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "feature-architect",
+		Path:          repo,
+		Program:       "true",
+		ExecutionMode: session.ExecutionModeHeadless,
+		TaskFile:      planFile,
+		AgentType:     session.AgentTypeElaborator,
+	})
+	require.NoError(t, err)
+	require.NoError(t, inst.StartOnMainBranch())
+	require.Eventually(t, func() bool { return !inst.TmuxAlive() }, time.Second, 10*time.Millisecond)
+
+	// Pre-set prompt state so UpdateCompletionPromptState has something to record.
+	inst.PromptDetected = true
+
+	d := &Daemon{
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+	e := RepoEntry{Path: repo, Project: project, Store: store}
+
+	key := instanceKey(repo, planFile, session.AgentTypeElaborator)
+	d.spawner.mu.Lock()
+	d.spawner.instances[key] = inst
+	d.spawner.planFileByKey[key] = planFile
+	d.spawner.agentTypeByKey[key] = session.AgentTypeElaborator
+	d.spawner.projectByKey[key] = project
+	d.spawner.mu.Unlock()
+
+	d.monitorRunningInstances(context.Background(), e)
+
+	assert.False(t, inst.CompletionPromptSince.IsZero(),
+		"UpdateCompletionPromptState should populate CompletionPromptSince when prompt is detected and not blocked")
 }
 
 func TestDaemon_AutoAdvancePlannerFinished_StartsBlueprintSkipImplementation(t *testing.T) {

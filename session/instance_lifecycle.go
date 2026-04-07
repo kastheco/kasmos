@@ -132,7 +132,9 @@ func ShouldAutoAdvanceLifecycleImplementer(status string, state taskstore.Execut
 	if NormalizeExecutionMode(inst.ExecutionMode) == ExecutionModeHeadless && inst.Exited {
 		return true
 	}
-	return inst.PromptDetected && !inst.AwaitingWork
+	now := time.Now()
+	inst.UpdateCompletionPromptState(now)
+	return inst.HasStableCompletionPrompt(now)
 }
 
 // IsStuck reports whether an exited instance is stranded in an implementing
@@ -649,4 +651,6 @@ func (i *Instance) resetEphemeralState() {
 	i.Notified = false
 	i.CachedContentSet = false
 	i.CachedContent = ""
+	i.PermissionBlocked = false
+	i.CompletionPromptSince = time.Time{}
 }
