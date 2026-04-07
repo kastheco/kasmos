@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router";
 import { fetchAuditEvents, resolveProjectName } from "../api";
+import { useAutoRefresh } from "../hooks/useAutoRefresh";
+import LastUpdated from "../components/LastUpdated";
+import Skeleton from "../components/Skeleton";
 import type { AuditEvent } from "../types";
 import styles from "./AuditPage.module.css";
 
@@ -97,9 +100,6 @@ export default function AuditPage() {
   const { search } = useLocation();
   const project = resolveProjectName(search);
 
-  const [events, setEvents] = useState<AuditEvent[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [kind, setKind] = useState("");
   const [taskInput, setTaskInput] = useState("");
   const [taskFile, setTaskFile] = useState("");
@@ -112,32 +112,25 @@ export default function AuditPage() {
     return () => clearTimeout(timer);
   }, [taskInput]);
 
-  // Fetch events whenever project, kind, taskFile, or limit changes
+  const { data, loading, error, lastUpdatedAt, isRefreshing } =
+    useAutoRefresh<AuditEvent[]>(
+      () =>
+        fetchAuditEvents(project, {
+          kind: kind || undefined,
+          task: taskFile || undefined,
+          limit,
+        }),
+      [project, kind, taskFile, limit],
+    );
+
+  const events = data ?? [];
+
+  // Clear expandedRowId when the refreshed event list no longer contains it
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    fetchAuditEvents(project, {
-      kind: kind || undefined,
-      task: taskFile || undefined,
-      limit,
-    })
-      .then((data) => {
-        if (cancelled) return;
-        setEvents(data);
-        setLoading(false);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : "unknown error");
-        setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [project, kind, taskFile, limit]);
+    if (expandedRowId !== null && !events.some((e) => e.id === expandedRowId)) {
+      setExpandedRowId(null);
+    }
+  }, [events, expandedRowId]);
 
   function toggleRow(event: AuditEvent) {
     if (!event.detail) return;
@@ -221,7 +214,10 @@ export default function AuditPage() {
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.heading}>audit log</h1>
+      <div className={styles.headingRow}>
+        <h1 className={styles.heading}>audit log</h1>
+        <LastUpdated timestamp={lastUpdatedAt} isRefreshing={isRefreshing} />
+      </div>
 
       <div className={styles.filters}>
         <select
@@ -261,28 +257,36 @@ export default function AuditPage() {
       {error && <p className={styles.errorMsg}>{error}</p>}
 
       <div className={styles.tableWrapper}>
-        {loading && <p className={styles.loading}>loading...</p>}
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <th>timestamp</th>
-              <th>level</th>
-              <th>kind</th>
-              <th>task</th>
-              <th>message</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows}
-            {!loading && events.length === 0 && (
+        {loading ? (
+          <>
+            <Skeleton variant="row" />
+            {Array.from({ length: 5 }, (_, i) => (
+              <Skeleton key={i} variant="row" />
+            ))}
+          </>
+        ) : (
+          <table className={styles.table}>
+            <thead>
               <tr>
-                <td colSpan={5} className={styles.emptyCell}>
-                  no events found
-                </td>
+                <th>timestamp</th>
+                <th>level</th>
+                <th>kind</th>
+                <th>task</th>
+                <th>message</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows}
+              {events.length === 0 && (
+                <tr>
+                  <td colSpan={5} className={styles.emptyCell}>
+                    no events found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

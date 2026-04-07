@@ -219,6 +219,27 @@
   font-size: 14px;
 }
 
+/* ── Fenced code language label ── */
+
+.codeBlock {
+  position: relative;
+}
+
+.codeLangLabel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--foreground-tertiary);
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 0 6px 0 6px;
+  pointer-events: none;
+}
+
 /* ── Responsive: collapse below 900px ── */
 
 @media (max-width: 900px) {

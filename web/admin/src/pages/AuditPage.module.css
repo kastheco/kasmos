@@ -4,11 +4,18 @@
   max-width: 100%;
 }
 
+.headingRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
 .heading {
   font-size: 22px;
   font-weight: 700;
   color: var(--foreground);
-  margin-bottom: 24px;
+  margin: 0;
   text-transform: lowercase;
 }
 
