@@ -15,7 +15,7 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://kasmos.kasthe.co"),
-  title: "kas docs",
+  title: "kasmos docs",
   description:
     "Documentation for kasmos — a TUI-based orchestration platform for managing AI agents, wave-based tasks, headless execution, daemon workflows, and the kas CLI.",
   keywords: [
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
     icon: "/docs/favicon.ico",
   },
   openGraph: {
-    title: "kas docs",
+    title: "kasmos docs",
     description:
       "Documentation for kasmos — TUI orchestration, headless execution, wave-based workflows, and CLI reference",
     url: "https://kasmos.kasthe.co/docs",
@@ -43,7 +43,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "kas docs",
+    title: "kasmos docs",
     description:
       "Documentation for kasmos — TUI orchestration, headless execution, wave-based workflows, and CLI reference",
     images: ["/docs/og-image.png"],
@@ -55,7 +55,7 @@ const navbar = (
     logo={
       <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
         <img src="/docs/logo-k.png" alt="" aria-hidden="true" width={24} height={24} />
-        <b>kas docs</b>
+        <b>kasmos docs</b>
       </span>
     }
     projectLink="https://github.com/kastheco/kasmos"

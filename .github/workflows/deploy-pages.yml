@@ -54,6 +54,10 @@ jobs:
           mkdir -p web/out/docs
           cp -R web/docs/out/docs/. web/out/docs/
           cp -R web/docs/out/_next/. web/out/docs/_next/
+          # Copy public assets (favicon, logo, og-image) into /docs/
+          for f in web/docs/out/*.ico web/docs/out/*.png; do
+            [ -f "$f" ] && cp "$f" web/out/docs/
+          done
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
