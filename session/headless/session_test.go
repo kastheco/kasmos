@@ -223,6 +223,32 @@ func TestHeadlessSession_ClaudeInjectsNoFlickerEnv(t *testing.T) {
 
 	content, err := sess.CapturePaneContent()
 	require.NoError(t, err)
+	assert.Equal(t, "0", strings.TrimSpace(content))
+	_ = sess.Close()
+}
+
+func TestHeadlessSession_ClaudeNoFlickerEnabledProducesOne(t *testing.T) {
+	workDir := t.TempDir()
+
+	binaryPath := filepath.Join(workDir, "claude")
+	script := "#!/bin/sh\nprintf '%s' \"$CLAUDE_CODE_NO_FLICKER\"\n"
+	require.NoError(t, os.WriteFile(binaryPath, []byte(script), 0o755))
+
+	sess := headless.New("claude-env-on", binaryPath, false)
+	sess.SetNoFlicker(true)
+	err := sess.Start(workDir)
+	require.NoError(t, err)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !sess.DoesSessionExist() {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	content, err := sess.CapturePaneContent()
+	require.NoError(t, err)
 	assert.Equal(t, "1", strings.TrimSpace(content))
 	_ = sess.Close()
 }

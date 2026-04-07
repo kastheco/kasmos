@@ -232,7 +232,7 @@ func TestAuditHomeEmit_AgentSpawned(t *testing.T) {
 	h.taskStoreProject = "myproject"
 
 	// spawnAdHocAgent should emit EventAgentSpawned
-	h.spawnAdHocAgent("my-fixer", "", "")
+	h.spawnAdHocAgent("my-fixer", "", "", "")
 
 	events, err := logger.Query(auditlog.QueryFilter{
 		Project: "myproject",

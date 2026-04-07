@@ -1618,7 +1618,7 @@ func (m *home) executeLauncherAction(action string) (tea.Model, tea.Cmd) {
 				fmt.Errorf("you can't create more than %d instances (%d tmux sessions active)",
 					GlobalInstanceLimit, m.tmuxSessionCount))
 		}
-		instance, err := m.newNamedAgentInstance("", m.activeRepoPath)
+		instance, err := m.newNamedAgentInstance("", m.activeRepoPath, "claude")
 		if err != nil {
 			return m, m.handleError(err)
 		}
@@ -1630,14 +1630,7 @@ func (m *home) executeLauncherAction(action string) (tea.Model, tea.Cmd) {
 		m.promptAfterName = true
 		return m, nil
 	case "spawn_agent":
-		if m.tmuxSessionCount >= GlobalInstanceLimit {
-			return m, m.handleError(
-				fmt.Errorf("you can't create more than %d instances (%d tmux sessions active)",
-					GlobalInstanceLimit, m.tmuxSessionCount))
-		}
-		m.state = stateSpawnAgent
-		m.overlays.Show(overlay.NewSpawnFormOverlay("spawn agent", 60))
-		return m, nil
+		return m.beginSpawnAgentFlow()
 	case "quick_launch":
 		return m.quickLaunchAgent()
 	case "search":

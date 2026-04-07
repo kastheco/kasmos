@@ -39,6 +39,7 @@ type InstanceData struct {
 	SoloAgent              bool   `json:"solo_agent,omitempty"`
 	QueuedPrompt           string `json:"queued_prompt,omitempty"`
 	ReviewCycle            int    `json:"review_cycle,omitempty"`
+	ClaudeNoFlicker        bool   `json:"claude_no_flicker,omitempty"`
 
 	Worktree GitWorktreeData `json:"worktree"`
 }

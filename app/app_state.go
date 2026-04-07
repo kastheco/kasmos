@@ -1846,13 +1846,14 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 	}
 
 	reviewerInst, err := session.NewInstance(session.InstanceOptions{
-		Title:         title,
-		Path:          m.activeRepoPath,
-		Program:       m.programForAgent(session.AgentTypeReviewer),
-		ExecutionMode: m.executionModeForAgent(session.AgentTypeReviewer),
-		TaskFile:      planFile,
-		AgentType:     session.AgentTypeReviewer,
-		ReviewCycle:   spec.ReviewCycle,
+		Title:           title,
+		Path:            m.activeRepoPath,
+		Program:         m.programForAgent(session.AgentTypeReviewer),
+		ExecutionMode:   m.executionModeForAgent(session.AgentTypeReviewer),
+		TaskFile:        planFile,
+		AgentType:       session.AgentTypeReviewer,
+		ReviewCycle:     spec.ReviewCycle,
+		ClaudeNoFlicker: m.claudeNoFlicker(),
 	})
 	if err != nil {
 		log.WarningLog.Printf("could not create reviewer instance for %q: %v", planFile, err)
@@ -1967,6 +1968,15 @@ func (m *home) executionModeForAgent(agentType string) session.ExecutionMode {
 		return session.ExecutionModeTmux
 	}
 	return mode
+}
+
+// claudeNoFlicker returns the configured CLAUDE_CODE_NO_FLICKER value.
+// Defaults to false when the config is nil.
+func (m *home) claudeNoFlicker() bool {
+	if m.appConfig == nil {
+		return false
+	}
+	return m.appConfig.ClaudeNoFlicker
 }
 
 func normalizeOpenCodeModelID(model string) string {
@@ -2233,13 +2243,14 @@ func (m *home) spawnFixerWithFeedback(planFile, feedback string) tea.Cmd {
 		return nil
 	}
 	fixerInst, err := session.NewInstance(session.InstanceOptions{
-		Title:         title,
-		Path:          m.activeRepoPath,
-		Program:       m.programForAgent(session.AgentTypeFixer),
-		ExecutionMode: m.executionModeForAgent(session.AgentTypeFixer),
-		TaskFile:      planFile,
-		AgentType:     session.AgentTypeFixer,
-		ReviewCycle:   spec.ReviewCycle,
+		Title:           title,
+		Path:            m.activeRepoPath,
+		Program:         m.programForAgent(session.AgentTypeFixer),
+		ExecutionMode:   m.executionModeForAgent(session.AgentTypeFixer),
+		TaskFile:        planFile,
+		AgentType:       session.AgentTypeFixer,
+		ReviewCycle:     spec.ReviewCycle,
+		ClaudeNoFlicker: m.claudeNoFlicker(),
 	})
 	if err != nil {
 		log.WarningLog.Printf("could not create fixer instance for %q: %v", planFile, err)
@@ -2298,12 +2309,13 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 	taskfsm.ClearElaborationSignal(m.signalsDir, planFile)
 
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:         spec.Title,
-		Path:          m.activeRepoPath,
-		Program:       m.programForAgent(session.AgentTypeElaborator),
-		ExecutionMode: m.executionModeForAgent(session.AgentTypeElaborator),
-		TaskFile:      planFile,
-		AgentType:     session.AgentTypeElaborator,
+		Title:           spec.Title,
+		Path:            m.activeRepoPath,
+		Program:         m.programForAgent(session.AgentTypeElaborator),
+		ExecutionMode:   m.executionModeForAgent(session.AgentTypeElaborator),
+		TaskFile:        planFile,
+		AgentType:       session.AgentTypeElaborator,
+		ClaudeNoFlicker: m.claudeNoFlicker(),
 	})
 	if err != nil {
 		return m, m.handleError(err)
@@ -2848,11 +2860,12 @@ func (m *home) quickLaunchAgent() (tea.Model, tea.Cmd) {
 
 	title := m.nextPlaceholderName()
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:         title,
-		Path:          m.activeRepoPath,
-		Program:       m.programForAgent(session.AgentTypeFixer),
-		ExecutionMode: m.executionModeForAgent(session.AgentTypeFixer),
-		AgentType:     session.AgentTypeFixer,
+		Title:           title,
+		Path:            m.activeRepoPath,
+		Program:         m.programForAgent(session.AgentTypeFixer),
+		ExecutionMode:   m.executionModeForAgent(session.AgentTypeFixer),
+		AgentType:       session.AgentTypeFixer,
+		ClaudeNoFlicker: m.claudeNoFlicker(),
 	})
 	if err != nil {
 		return m, m.handleError(err)
@@ -2873,26 +2886,93 @@ func (m *home) quickLaunchAgent() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(tea.RequestWindowSize, startCmd)
 }
 
+// availableSpawnPrograms returns the deduplicated, sorted list of harness programs
+// that can be used when spawning an ad-hoc agent. It collects programs from enabled
+// config profiles, the DefaultProgram, and falls back to m.program when nothing else
+// is configured.
+func (m *home) availableSpawnPrograms() []string {
+	seen := make(map[string]struct{})
+	if m.appConfig != nil {
+		for _, profile := range m.appConfig.Profiles {
+			if !profile.Enabled {
+				continue
+			}
+			p := strings.TrimSpace(profile.Program)
+			if p != "" {
+				seen[p] = struct{}{}
+			}
+		}
+		if dp := strings.TrimSpace(m.appConfig.DefaultProgram); dp != "" {
+			seen[dp] = struct{}{}
+		}
+	}
+	if len(seen) == 0 {
+		p := strings.TrimSpace(m.program)
+		if p == "" {
+			p = "claude"
+		}
+		seen[p] = struct{}{}
+	}
+	programs := make([]string, 0, len(seen))
+	for p := range seen {
+		programs = append(programs, p)
+	}
+	sort.Strings(programs)
+	return programs
+}
+
+// beginSpawnAgentFlow is the shared entry point for both the S-key binding and the
+// "spawn_agent" launcher action. It checks the tmux session limit then either shows
+// the harness picker (multiple programs available) or goes directly to the spawn form
+// (exactly one program available).
+func (m *home) beginSpawnAgentFlow() (tea.Model, tea.Cmd) {
+	if m.tmuxSessionCount >= GlobalInstanceLimit {
+		return m, m.handleError(
+			fmt.Errorf("you can't create more than %d instances (%d tmux sessions active)", GlobalInstanceLimit, m.tmuxSessionCount))
+	}
+	programs := m.availableSpawnPrograms()
+	if len(programs) == 1 {
+		m.showSpawnAgentForm(programs[0])
+		return m, nil
+	}
+	m.overlays.Show(overlay.NewPickerOverlay("select harness", programs))
+	m.state = stateSpawnHarnessPicker
+	return m, nil
+}
+
+// showSpawnAgentForm stores the selected harness program and opens the spawn name form.
+func (m *home) showSpawnAgentForm(program string) {
+	m.pendingSpawnProgram = program
+	m.state = stateSpawnAgent
+	m.overlays.Show(overlay.NewSpawnFormOverlay("spawn agent", 60))
+}
+
 // newNamedAgentInstance builds the interactive ad-hoc session used by the
 // launcher "new instance" flow and the explicit spawn-agent form.
 //
-// These sessions intentionally launch Claude's master agent instead of a
-// lifecycle role so naming a general-purpose agent opens Claude Code directly.
-func (m *home) newNamedAgentInstance(title, path string) (*session.Instance, error) {
+// These sessions launch the given program as a master agent. If program is empty,
+// "claude" is used as a safe default so existing callers remain unaffected.
+func (m *home) newNamedAgentInstance(title, path, program string) (*session.Instance, error) {
 	if strings.TrimSpace(path) == "" {
 		path = m.activeRepoPath
 	}
+	p := strings.TrimSpace(program)
+	if p == "" {
+		p = "claude"
+	}
 	return session.NewInstance(session.InstanceOptions{
-		Title:     title,
-		Path:      path,
-		Program:   "claude",
-		AgentType: session.AgentTypeMaster,
+		Title:           title,
+		Path:            path,
+		Program:         p,
+		AgentType:       session.AgentTypeMaster,
+		ClaudeNoFlicker: m.claudeNoFlicker(),
 	})
 }
 
 // spawnAdHocAgent creates and starts an ad-hoc agent session (no plan, no lifecycle).
 // branch and workPath are optional overrides - empty strings use defaults.
-func (m *home) spawnAdHocAgent(name, branch, workPath string) (tea.Model, tea.Cmd) {
+// program selects which harness binary to launch; empty falls back to "claude".
+func (m *home) spawnAdHocAgent(name, branch, workPath, program string) (tea.Model, tea.Cmd) {
 	if !m.requireDaemonForAgents() {
 		return m, nil
 	}
@@ -2901,7 +2981,7 @@ func (m *home) spawnAdHocAgent(name, branch, workPath string) (tea.Model, tea.Cm
 		path = workPath
 	}
 
-	inst, err := m.newNamedAgentInstance(name, path)
+	inst, err := m.newNamedAgentInstance(name, path, program)
 	if err != nil {
 		return m, m.handleError(err)
 	}
@@ -2984,12 +3064,13 @@ func (m *home) spawnTaskAgent(planFile, action, prompt string) (tea.Model, tea.C
 		}
 	}
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:         title,
-		Path:          m.activeRepoPath,
-		Program:       m.programForAgent(agentType),
-		ExecutionMode: m.executionModeForAgent(agentType),
-		TaskFile:      planFile,
-		AgentType:     agentType,
+		Title:           title,
+		Path:            m.activeRepoPath,
+		Program:         m.programForAgent(agentType),
+		ExecutionMode:   m.executionModeForAgent(agentType),
+		TaskFile:        planFile,
+		AgentType:       agentType,
+		ClaudeNoFlicker: m.claudeNoFlicker(),
 	})
 	if err != nil {
 		return m, m.handleError(err)
@@ -3461,11 +3542,12 @@ func (m *home) spawnChatAboutTask(planFile, question string) (tea.Model, tea.Cmd
 	title := planName + "-chat"
 
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:     title,
-		Path:      m.activeRepoPath,
-		Program:   m.programForAgent(session.AgentTypeFixer),
-		TaskFile:  planFile,
-		AgentType: session.AgentTypeFixer,
+		Title:           title,
+		Path:            m.activeRepoPath,
+		Program:         m.programForAgent(session.AgentTypeFixer),
+		TaskFile:        planFile,
+		AgentType:       session.AgentTypeFixer,
+		ClaudeNoFlicker: m.claudeNoFlicker(),
 	})
 	if err != nil {
 		return m, m.handleError(err)
@@ -3542,14 +3624,15 @@ func (m *home) adoptOrphanSession(item overlay.TmuxBrowserItem) (tea.Model, tea.
 		program = m.programForAgent(candidate.AgentType)
 	}
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:       item.Title,
-		Path:        m.activeRepoPath,
-		Program:     program,
-		TaskFile:    candidate.TaskFile,
-		AgentType:   candidate.AgentType,
-		TaskNumber:  candidate.TaskNumber,
-		WaveNumber:  candidate.WaveNumber,
-		ReviewCycle: candidate.ReviewCycle,
+		Title:           item.Title,
+		Path:            m.activeRepoPath,
+		Program:         program,
+		TaskFile:        candidate.TaskFile,
+		AgentType:       candidate.AgentType,
+		TaskNumber:      candidate.TaskNumber,
+		WaveNumber:      candidate.WaveNumber,
+		ReviewCycle:     candidate.ReviewCycle,
+		ClaudeNoFlicker: m.claudeNoFlicker(),
 	})
 	if err != nil {
 		return m, m.handleError(err)

@@ -115,6 +115,10 @@ type Instance struct {
 	// ReviewCycle is the 1-indexed count of review/fix cycles for this instance (0 = not a cycle instance).
 	ReviewCycle int
 
+	// ClaudeNoFlicker controls whether CLAUDE_CODE_NO_FLICKER=1 is set for the agent process.
+	// Defaults to false (CLAUDE_CODE_NO_FLICKER=0) so prompt detection works in spawned agents.
+	ClaudeNoFlicker bool
+
 	// HasWorked is true once the agent produces at least one content update after receiving its task.
 	// Prevents permission prompts or early returns from prematurely completing a wave.
 	HasWorked bool
@@ -168,6 +172,7 @@ func (i *Instance) ToInstanceData() InstanceData {
 		SoloAgent:              i.SoloAgent,
 		QueuedPrompt:           i.QueuedPrompt,
 		ReviewCycle:            i.ReviewCycle,
+		ClaudeNoFlicker:        i.ClaudeNoFlicker,
 	}
 
 	if i.gitWorktree != nil {
@@ -241,6 +246,7 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		SoloAgent:              data.SoloAgent,
 		QueuedPrompt:           data.QueuedPrompt,
 		ReviewCycle:            data.ReviewCycle,
+		ClaudeNoFlicker:        data.ClaudeNoFlicker,
 		sharedWorktree:         sharedWorktree,
 		gitWorktree:            restoredWorktree,
 	}
@@ -330,6 +336,9 @@ type InstanceOptions struct {
 	WaveTaskCount int
 	// ReviewCycle is the 1-indexed review/fix cycle number (0 = not a cycle instance).
 	ReviewCycle int
+	// ClaudeNoFlicker controls whether CLAUDE_CODE_NO_FLICKER=1 is set for the agent process.
+	// Defaults to false (CLAUDE_CODE_NO_FLICKER=0) so prompt detection works in spawned agents.
+	ClaudeNoFlicker bool
 }
 
 // NewInstance constructs a new unstarted Instance from the given options.
@@ -363,6 +372,7 @@ func NewInstance(opts InstanceOptions) (*Instance, error) {
 		WaveTaskIndex:   opts.WaveTaskIndex,
 		WaveTaskCount:   opts.WaveTaskCount,
 		ReviewCycle:     opts.ReviewCycle,
+		ClaudeNoFlicker: opts.ClaudeNoFlicker,
 	}, nil
 }
 

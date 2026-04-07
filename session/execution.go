@@ -57,6 +57,7 @@ type ExecutionSession interface {
 	// Configuration (builder-style, called before Start)
 	SetAgentType(agentType string)
 	SetInitialPrompt(prompt string)
+	SetNoFlicker(enabled bool)
 	SetTaskEnv(taskNumber, waveNumber, peerCount int)
 	SetSessionTitle(title string)
 	SetTitleFunc(fn func(workDir string, beforeStart time.Time, title string))
@@ -139,6 +140,7 @@ func (w *tmuxExecutionSession) GetSanitizedName() string { return w.s.GetSanitiz
 // Configuration
 func (w *tmuxExecutionSession) SetAgentType(agentType string)  { w.s.SetAgentType(agentType) }
 func (w *tmuxExecutionSession) SetInitialPrompt(prompt string) { w.s.SetInitialPrompt(prompt) }
+func (w *tmuxExecutionSession) SetNoFlicker(enabled bool)      { w.s.SetNoFlicker(enabled) }
 func (w *tmuxExecutionSession) SetTaskEnv(taskNumber, waveNumber, peerCount int) {
 	w.s.SetTaskEnv(taskNumber, waveNumber, peerCount)
 }

@@ -41,54 +41,62 @@ func DefaultAgentRoles() []string {
 	return []string{"coder", "architect", "reviewer", "planner", "chat", "fixer", "master"}
 }
 
-// RoleDefaults returns sensible per-role defaults for fresh inits.
-// Harness is left empty; the caller fills it from selected harnesses.
+// RoleDefaults returns proven per-role defaults for fresh inits.
+// Each entry includes a preferred Harness; resolveAgentHarness selects
+// the actual harness based on what the user has installed.
 func RoleDefaults() map[string]AgentState {
 	return map[string]AgentState{
 		"coder": {
 			Role:        "coder",
-			Model:       "openai/gpt-5-codex",
-			Effort:      "low",
+			Harness:     "claude",
+			Model:       "claude-sonnet-4-6",
+			Effort:      "medium",
 			Temperature: "0.1",
 			Enabled:     true,
 		},
 		"architect": {
 			Role:        "architect",
-			Model:       "openai/gpt-5-codex",
-			Effort:      "high",
-			Temperature: "0.1",
+			Harness:     "opencode",
+			Model:       "openai/gpt-5.4",
+			Effort:      "xhigh",
+			Temperature: "0.2",
 			Enabled:     true,
 		},
 		"planner": {
 			Role:        "planner",
-			Model:       "anthropic/claude-opus-4-6",
+			Harness:     "claude",
+			Model:       "claude-opus-4-6",
 			Effort:      "high",
 			Temperature: "0.3",
 			Enabled:     true,
 		},
 		"reviewer": {
 			Role:        "reviewer",
-			Model:       "openai/gpt-5-codex",
+			Harness:     "claude",
+			Model:       "claude-sonnet-4-6",
 			Effort:      "medium",
-			Temperature: "0.1",
+			Temperature: "0.2",
 			Enabled:     true,
 		},
 		"chat": {
 			Role:        "chat",
-			Model:       "anthropic/claude-sonnet-4-6",
-			Effort:      "high",
+			Harness:     "opencode",
+			Model:       "openai/gpt-5.4",
+			Effort:      "medium",
 			Temperature: "0.3",
 			Enabled:     true,
 		},
 		"fixer": {
 			Role:        "fixer",
-			Model:       "openai/gpt-5-codex",
-			Effort:      "medium",
+			Harness:     "claude",
+			Model:       "claude-opus-4-6",
+			Effort:      "high",
 			Temperature: "0.1",
 			Enabled:     true,
 		},
 		"master": {
 			Role:        "master",
+			Harness:     "opencode",
 			Model:       "openai/gpt-5.4",
 			Effort:      "high",
 			Temperature: "0.2",
@@ -97,14 +105,33 @@ func RoleDefaults() map[string]AgentState {
 	}
 }
 
+// resolveAgentHarness returns the effective harness for an agent given
+// the user's selected harnesses. Returns preferred when it is non-empty
+// and present in harnesses, otherwise returns harnesses[0], otherwise "".
+func resolveAgentHarness(preferred string, harnesses []string) string {
+	if preferred != "" {
+		for _, h := range harnesses {
+			if h == preferred {
+				return preferred
+			}
+		}
+	}
+	if len(harnesses) > 0 {
+		return harnesses[0]
+	}
+	return ""
+}
+
 // IsCustomized returns true if the agent's settings differ from factory RoleDefaults.
-// defaultHarness is the harness that would be assigned if the user didn't customize.
-func IsCustomized(a AgentState, defaultHarness string) bool {
+// harnesses is the list of selected harnesses; the effective default harness is
+// resolved via resolveAgentHarness so that the preferred harness is used when
+// available, otherwise falling back to the first selected harness.
+func IsCustomized(a AgentState, harnesses []string) bool {
 	defaults, ok := RoleDefaults()[a.Role]
 	if !ok {
 		return false // unknown role, can't compare
 	}
-	defaults.Harness = defaultHarness
+	defaults.Harness = resolveAgentHarness(defaults.Harness, harnesses)
 	return a.Harness != defaults.Harness ||
 		a.Model != defaults.Model ||
 		a.Effort != defaults.Effort ||
