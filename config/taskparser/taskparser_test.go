@@ -131,10 +131,13 @@ func TestParsePlan_TaskHeaderSeparatorVariants(t *testing.T) {
 		wantTtl string
 	}{
 		{"colon", "### Task 1: Do thing", 1, "Do thing"},
-		{"em-dash", "### Task 2 \u2014 Do thing", 2, "Do thing"},
-		{"en-dash", "### Task 3 \u2013 Do thing", 3, "Do thing"},
-		{"hyphen", "### Task 4 - Do thing", 4, "Do thing"},
-		{"colon-no-space", "### Task 5:Do thing", 5, "Do thing"},
+		// Renumbering assigns 1..N in traversal order, so every single-task plan gets number 1
+		// regardless of what the markdown says. The wantNum=1 values below are intentional;
+		// wantTtl still verifies the regex correctly handles each separator variant.
+		{"em-dash", "### Task 2 \u2014 Do thing", 1, "Do thing"},
+		{"en-dash", "### Task 3 \u2013 Do thing", 1, "Do thing"},
+		{"hyphen", "### Task 4 - Do thing", 1, "Do thing"},
+		{"colon-no-space", "### Task 5:Do thing", 1, "Do thing"},
 		{"backtick-title", "### Task 1 \u2014 `kas audit` subcommand", 1, "`kas audit` subcommand"},
 	}
 	for _, tt := range tests {
@@ -179,6 +182,89 @@ Body of task 3.
 	assert.Equal(t, "Patch main branch", plan.Waves[0].Tasks[1].Title)
 	require.Len(t, plan.Waves[1].Tasks, 1)
 	assert.Equal(t, "Tests", plan.Waves[1].Tasks[0].Title)
+}
+
+func TestParsePlan_PerWaveTaskNumbersRenumberedGlobally(t *testing.T) {
+	// Plans authored with per-wave numbering (Task 1, Task 2 in every wave)
+	// must produce globally unique task numbers after parsing.
+	input := `# Plan
+
+**Goal:** fix duplicate subtask keys
+
+## Wave 1
+
+### Task 1: alpha
+
+Body of alpha.
+
+### Task 2: beta
+
+Body of beta.
+
+## Wave 2
+
+### Task 1: gamma
+
+Body of gamma.
+
+### Task 2: delta
+
+Body of delta.
+`
+	plan, err := Parse(input)
+	require.NoError(t, err)
+	require.Len(t, plan.Waves, 2)
+	require.Len(t, plan.Waves[0].Tasks, 2)
+	require.Len(t, plan.Waves[1].Tasks, 2)
+
+	assert.Equal(t, 1, plan.Waves[0].Tasks[0].Number)
+	assert.Equal(t, "alpha", plan.Waves[0].Tasks[0].Title)
+	assert.Equal(t, 2, plan.Waves[0].Tasks[1].Number)
+	assert.Equal(t, "beta", plan.Waves[0].Tasks[1].Title)
+	assert.Equal(t, 3, plan.Waves[1].Tasks[0].Number)
+	assert.Equal(t, "gamma", plan.Waves[1].Tasks[0].Title)
+	assert.Equal(t, 4, plan.Waves[1].Tasks[1].Number)
+	assert.Equal(t, "delta", plan.Waves[1].Tasks[1].Title)
+}
+
+func TestParsePlan_AlreadyGlobalTaskNumbersRemainStable(t *testing.T) {
+	// Parse() always renumbers tasks to 1..N in document order. This test
+	// verifies that plans already using sequential global numbers produce
+	// the expected output (i.e., renumbering is a stable no-op).
+	input := `# Plan
+
+**Goal:** keep stable global numbers
+
+## Wave 1
+
+### Task 1: first
+
+Body 1.
+
+### Task 2: second
+
+Body 2.
+
+## Wave 2
+
+### Task 3: third
+
+Body 3.
+
+### Task 4: fourth
+
+Body 4.
+`
+	plan, err := Parse(input)
+	require.NoError(t, err)
+	require.Len(t, plan.Waves, 2)
+	require.Len(t, plan.Waves[0].Tasks, 2)
+	require.Len(t, plan.Waves[1].Tasks, 2)
+
+	assert.Equal(t, 1, plan.Waves[0].Tasks[0].Number)
+	assert.Equal(t, 2, plan.Waves[0].Tasks[1].Number)
+	assert.Equal(t, 3, plan.Waves[1].Tasks[0].Number)
+	assert.Equal(t, 4, plan.Waves[1].Tasks[1].Number)
 }
 
 func TestParsePlan_HeaderExtraction(t *testing.T) {

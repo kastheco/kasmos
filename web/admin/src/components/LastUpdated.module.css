@@ -1,0 +1,6 @@
+.root {
+  font-size: 0.75rem;
+  color: var(--foreground-tertiary);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}

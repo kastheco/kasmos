@@ -61,3 +61,34 @@
   padding: 32px;
   overflow-y: auto;
 }
+
+@media (max-width: 768px) {
+  .container {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: auto;
+    flex-shrink: unset;
+    padding: 12px 16px;
+    border-right: none;
+    border-bottom: 1px solid var(--card-border);
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .logoSub {
+    display: none;
+  }
+
+  .navList {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .main {
+    padding: 16px;
+  }
+}
