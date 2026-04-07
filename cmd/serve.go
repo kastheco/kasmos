@@ -120,8 +120,8 @@ func resolveServeRepoPaths(cmd *cobra.Command, repoPaths []string) ([]string, er
 	return roots, nil
 }
 
-func newServeMCPServer(store taskstore.Store, gw taskstore.SignalGateway, repoPaths []string) (*mcpserver.Server, error) {
-	return newConfiguredMCPServer(store, gw, repoPaths)
+func newServeMCPServer(store taskstore.Store, gw taskstore.SignalGateway, sharedDB *sql.DB, repoPaths []string) (*mcpserver.Server, error) {
+	return newConfiguredMCPServer(store, gw, sharedDB, repoPaths)
 }
 
 // openServeSQLiteBackends opens a single shared *sql.DB at dbPath and derives
@@ -273,7 +273,7 @@ func NewServeCmd() *cobra.Command {
 
 			var mcpHTTP *http.Server
 			if mcpEnabled {
-				mcpSrv, err := newServeMCPServer(store, gw, repoRegs.roots)
+				mcpSrv, err := newServeMCPServer(store, gw, sharedDB, repoRegs.roots)
 				if err != nil {
 					return err
 				}

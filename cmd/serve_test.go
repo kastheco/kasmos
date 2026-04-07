@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -200,13 +201,39 @@ func TestServeOpenSQLiteBackends_SharedDB(t *testing.T) {
 }
 
 func TestServeMCPServer_MultipleReposNoError(t *testing.T) {
-	// After Task 2, newServeMCPServer delegates to newConfiguredMCPServer
-	// which accepts multiple roots. Verify no error is returned for the
-	// multi-root case (we pass nil store/gw since newConfiguredMCPServer
-	// tolerates them for the purpose of MCP server construction).
+	// newServeMCPServer delegates to newConfiguredMCPServer which accepts
+	// multiple roots. Verify no error is returned for the multi-root case
+	// (nil store/gw/sharedDB are tolerated for MCP server construction).
 	repoA := t.TempDir()
 	repoB := t.TempDir()
-	srv, err := newServeMCPServer(nil, nil, []string{repoA, repoB})
+	srv, err := newServeMCPServer(nil, nil, nil, []string{repoA, repoB})
 	require.NoError(t, err)
 	assert.NotNil(t, srv)
+}
+
+func TestServeMCPServer_ZeroRepoDB_RoutesFromDB(t *testing.T) {
+	// Parity test: newServeMCPServer with zero repos and a sharedDB must
+	// share the same DB-backed routing behaviour as the kas mcp path.
+	dbPath := filepath.Join(t.TempDir(), "serve_test.db")
+	sharedDB, store, gw, _, err := openServeSQLiteBackends(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { sharedDB.Close() })
+
+	require.NoError(t, store.Create("myproject", taskstore.TaskEntry{
+		Filename:    "my-task",
+		Status:      taskstore.StatusReady,
+		Description: "serve routing test",
+		Content:     "serve DB routing content",
+	}))
+
+	srv, err := newServeMCPServer(store, gw, sharedDB, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, srv.Close()) })
+
+	// task_show without a project arg should succeed: DB has exactly one project.
+	content, isError := mcpToolsCall(t, srv.Handler(), "task_show", map[string]any{
+		"filename": "my-task",
+	})
+	assert.False(t, isError, "task_show should succeed with DB-derived project in serve path; got: %s", content)
+	assert.Contains(t, content, "serve DB routing content")
 }
