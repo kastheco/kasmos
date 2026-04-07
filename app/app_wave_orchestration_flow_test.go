@@ -65,26 +65,28 @@ func TestWaveMonitor_CancelWaveAdvanceRePrompts(t *testing.T) {
 
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
 	mgr1 := overlay.NewManager()
-	mgr1.Show(overlay.NewConfirmationOverlay("Wave 1 complete. Start Wave 2?"))
+	mgr1.Show(overlay.NewWaveDecisionOverlay(overlay.WaveDecisionInput{
+		PlanFile: "test", PlanName: "test", WaveNumber: 1, TotalWaves: 2,
+		Completed: 1, Failed: 0, Total: 1,
+	}))
 	h := &home{
-		ctx:                        context.Background(),
-		state:                      stateConfirm,
-		appConfig:                  config.DefaultConfig(),
-		nav:                        ui.NewNavigationPanel(&sp),
-		menu:                       ui.NewMenu(),
-		tabbedWindow:               ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
-		toastManager:               overlay.NewToastManager(&sp),
-		overlays:                   mgr1,
-		waveOrchestrators:          map[string]*orchestration.WaveOrchestrator{"test": orch},
-		pendingWaveConfirmTaskFile: "test",
+		ctx:               context.Background(),
+		state:             stateWaveDecision,
+		appConfig:         config.DefaultConfig(),
+		nav:               ui.NewNavigationPanel(&sp),
+		menu:              ui.NewMenu(),
+		tabbedWindow:      ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:      overlay.NewToastManager(&sp),
+		overlays:          mgr1,
+		waveOrchestrators: map[string]*orchestration.WaveOrchestrator{"test": orch},
 	}
 
-	// Press 'n' (cancel key = default "n")
-	keyMsg := tea.KeyPressMsg{Code: 'n', Text: "n"}
+	// Press esc to dismiss the wave decision overlay
+	keyMsg := tea.KeyPressMsg{Code: tea.KeyEscape}
 	_, _ = h.handleKeyPress(keyMsg)
 
 	// Orchestrator latch must be reset so the next tick can re-prompt
-	assert.True(t, orch.NeedsConfirm(), "cancel must reset orchestrator confirm latch for re-prompt")
+	assert.True(t, orch.NeedsConfirm(), "esc must reset orchestrator confirm latch for re-prompt")
 }
 
 // TestWaveMonitor_PausedTaskCountsAsFailed verifies that a paused task instance
@@ -133,18 +135,16 @@ func TestWaveMonitor_PausedTaskCountsAsFailed(t *testing.T) {
 	updated := model.(*home)
 
 	// Wave must have detected failure and shown the failed-wave decision prompt
-	assert.Equal(t, stateConfirm, updated.state,
+	assert.Equal(t, stateWaveDecision, updated.state,
 		"paused task must trigger wave-failed decision prompt")
 	require.True(t, updated.overlays.IsActive(),
-		"confirmation overlay must be set for failed-wave decision")
-	co1, ok1 := updated.overlays.Current().(*overlay.ConfirmationOverlay)
-	require.True(t, ok1, "current overlay must be a ConfirmationOverlay")
-	assert.Equal(t, "r", co1.ConfirmKey,
-		"failed-wave confirm key must be 'r' (retry)")
-	assert.Equal(t, "n", co1.CancelKey,
-		"failed-wave cancel key must be 'n' (next wave)")
-	assert.NotNil(t, updated.pendingWaveNextAction,
-		"failed-wave next action must be set for 'n' (next wave)")
+		"wave decision overlay must be set for failed-wave decision")
+	wd1, ok1 := updated.overlays.Current().(*overlay.WaveDecisionOverlay)
+	require.True(t, ok1, "current overlay must be a WaveDecisionOverlay")
+	assert.Greater(t, wd1.Input().Failed, 0,
+		"failed-wave overlay must report failures")
+	assert.Equal(t, 1, wd1.Input().WaveNumber,
+		"wave decision must report the correct wave number")
 }
 
 // TestWaveMonitor_MissingTaskCountsAsFailed verifies that a task with no matching
@@ -180,13 +180,13 @@ func TestWaveMonitor_MissingTaskCountsAsFailed(t *testing.T) {
 	updated := model.(*home)
 
 	// Missing task must be treated as failed and trigger the failed-wave prompt
-	assert.Equal(t, stateConfirm, updated.state,
+	assert.Equal(t, stateWaveDecision, updated.state,
 		"missing task must trigger wave-failed decision prompt")
 	require.True(t, updated.overlays.IsActive())
-	co2, ok2 := updated.overlays.Current().(*overlay.ConfirmationOverlay)
-	require.True(t, ok2, "current overlay must be a ConfirmationOverlay")
-	assert.Equal(t, "r", co2.ConfirmKey,
-		"failed-wave confirm key must be 'r' (retry)")
+	wd2, ok2 := updated.overlays.Current().(*overlay.WaveDecisionOverlay)
+	require.True(t, ok2, "current overlay must be a WaveDecisionOverlay")
+	assert.Greater(t, wd2.Input().Failed, 0,
+		"failed-wave overlay must report failures")
 }
 
 // TestRebuildOrphanedOrchestrators_SkipsPausedOrExitedOnlyPlans verifies restart
@@ -416,16 +416,16 @@ func TestRebuildOrphanedOrchestrators_RestoresExitedWaveFromPersistedSubtasks(t 
 
 	assert.Equal(t, orchestration.WaveStateWaveComplete, orch.State(),
 		"dead restored wave task should resolve the current wave instead of leaving it stranded")
-	assert.Equal(t, stateConfirm, updated.state,
+	assert.Equal(t, stateWaveDecision, updated.state,
 		"restored dead wave task should surface the failed-wave recovery prompt")
 	require.True(t, updated.overlays.IsActive(),
 		"failed-wave recovery prompt must be shown after restoring a dead wave task")
-	co, ok := updated.overlays.Current().(*overlay.ConfirmationOverlay)
-	require.True(t, ok, "current overlay must be a ConfirmationOverlay")
-	assert.Equal(t, "r", co.ConfirmKey,
-		"failed restored wave should offer retry on the confirm key")
-	assert.NotNil(t, updated.pendingWaveNextAction,
-		"failed restored wave should offer next-wave recovery action")
+	wdRestored, okRestored := updated.overlays.Current().(*overlay.WaveDecisionOverlay)
+	require.True(t, okRestored, "current overlay must be a WaveDecisionOverlay")
+	assert.Greater(t, wdRestored.Input().Failed, 0,
+		"failed restored wave should report failures")
+	assert.Equal(t, 1, wdRestored.Input().WaveNumber,
+		"failed restored wave should report the correct wave number")
 }
 
 // TestMetadataTick_RebuildsLocalOrphanedWaveFromPersistedSubtasks verifies the live-session
@@ -484,16 +484,14 @@ func TestMetadataTick_RebuildsLocalOrphanedWaveFromPersistedSubtasks(t *testing.
 	require.True(t, exists, "local metadata tick should rebuild missing wave orchestration")
 	assert.Equal(t, orchestration.WaveStateWaveComplete, orch.State(),
 		"rebuilt local orphaned wave should resolve after the dead task is observed")
-	assert.Equal(t, stateConfirm, updated.state,
+	assert.Equal(t, stateWaveDecision, updated.state,
 		"rebuilt local orphaned wave should show the failed-wave recovery prompt")
 	require.True(t, updated.overlays.IsActive(),
 		"failed-wave recovery prompt must appear for local orphaned wave recovery")
-	co, ok := updated.overlays.Current().(*overlay.ConfirmationOverlay)
-	require.True(t, ok, "current overlay must be a ConfirmationOverlay")
-	assert.Equal(t, "r", co.ConfirmKey,
-		"rebuilt local orphaned wave should expose retry on the confirm key")
-	assert.NotNil(t, updated.pendingWaveNextAction,
-		"rebuilt local orphaned wave should expose next-wave recovery action")
+	wdLocal, okLocal := updated.overlays.Current().(*overlay.WaveDecisionOverlay)
+	require.True(t, okLocal, "current overlay must be a WaveDecisionOverlay")
+	assert.Greater(t, wdLocal.Input().Failed, 0,
+		"rebuilt local orphaned wave should report failures")
 }
 
 // TestWaveMonitor_LoadingInstanceNotMarkedFailed verifies that a wave task whose
@@ -585,28 +583,34 @@ func TestWaveMonitor_AbortKeyDeletesOrchestrator(t *testing.T) {
 	require.Equal(t, orchestration.WaveStateWaveComplete, orch.State())
 
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
-	abortCo := overlay.NewConfirmationOverlay("Wave 1 failed. r=retry n=next wave a=abort")
-	abortCo.ConfirmKey = "r"
-	abortCo.CancelKey = ""
 	mgrAbort := overlay.NewManager()
-	mgrAbort.Show(abortCo)
+	mgrAbort.Show(overlay.NewWaveDecisionOverlay(overlay.WaveDecisionInput{
+		PlanFile: planFile, PlanName: planFile, WaveNumber: 1, TotalWaves: 2,
+		Completed: 0, Failed: 1, Total: 1,
+	}))
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.Register(planFile, "abort test", "plan/abort-test", time.Now()))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+
 	h := &home{
-		ctx:                        context.Background(),
-		state:                      stateConfirm,
-		appConfig:                  config.DefaultConfig(),
-		nav:                        ui.NewNavigationPanel(&sp),
-		menu:                       ui.NewMenu(),
-		tabbedWindow:               ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
-		toastManager:               overlay.NewToastManager(&sp),
-		overlays:                   mgrAbort,
-		waveOrchestrators:          map[string]*orchestration.WaveOrchestrator{planFile: orch},
-		pendingWaveConfirmTaskFile: planFile,
-		pendingWaveAbortAction: func() tea.Msg {
-			return waveAbortMsg{planFile: planFile}
-		},
+		ctx:               context.Background(),
+		state:             stateWaveDecision,
+		appConfig:         config.DefaultConfig(),
+		nav:               ui.NewNavigationPanel(&sp),
+		menu:              ui.NewMenu(),
+		tabbedWindow:      ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:      overlay.NewToastManager(&sp),
+		overlays:          mgrAbort,
+		waveOrchestrators: map[string]*orchestration.WaveOrchestrator{planFile: orch},
+		taskState:         ps,
 	}
 
-	// Press 'a' for abort
+	// Press 'a' for abort — direct shortcut on failure overlay
 	keyMsg := tea.KeyPressMsg{Code: 'a', Text: "a"}
 	model, cmd := h.handleKeyPress(keyMsg)
 	updated := model.(*home)
@@ -614,7 +618,6 @@ func TestWaveMonitor_AbortKeyDeletesOrchestrator(t *testing.T) {
 	// State must return to default and abort action must be returned as cmd
 	assert.Equal(t, stateDefault, updated.state, "state must return to default after abort")
 	assert.False(t, updated.overlays.IsActive(), "overlay must be cleared after abort")
-	assert.Nil(t, updated.pendingWaveAbortAction, "abort action must be cleared")
 	assert.NotNil(t, cmd, "abort tea.Cmd must be returned so Update can execute it")
 }
 
@@ -1331,7 +1334,7 @@ func TestWaveMonitor_FocusesTaskInstance_WhenWaveCompleteShown(t *testing.T) {
 	model, _ := h.Update(msg)
 	updated := model.(*home)
 
-	assert.Equal(t, stateConfirm, updated.state, "should show wave-advance confirm")
+	assert.Equal(t, stateWaveDecision, updated.state, "should show wave-advance decision")
 	// The task instance should be selected, not the other one.
 	assert.Equal(t, taskInst, updated.nav.GetSelectedInstance(),
 		"wave-advance overlay should auto-focus a task instance for the plan")
@@ -1392,7 +1395,7 @@ func TestWaveMonitor_FocusesTaskInstance_WhenFailedWaveShown(t *testing.T) {
 	model, _ := h.Update(msg)
 	updated := model.(*home)
 
-	assert.Equal(t, stateConfirm, updated.state, "should show failed-wave decision")
+	assert.Equal(t, stateWaveDecision, updated.state, "should show failed-wave decision")
 	assert.Equal(t, taskInst, updated.nav.GetSelectedInstance(),
 		"failed-wave overlay should auto-focus a task instance for the plan")
 }
@@ -1526,6 +1529,22 @@ func TestWaveMonitor_WaveComplete_DeferredWhenOverlayActive(t *testing.T) {
 	// Deferred wave dialog must have been drained.
 	assert.Empty(t, updated2.deferredWaveDialogs,
 		"deferredWaveDialogs must be drained after overlay clears")
+
+	// The wave decision overlay must now be shown.
+	assert.Equal(t, stateWaveDecision, updated2.state,
+		"deferred wave dialog must be shown as wave decision after overlay clears")
+	assert.True(t, updated2.overlays.IsActive(),
+		"wave decision overlay must be active after deferred dialog is drained")
+	wdDeferred, okDeferred := updated2.overlays.Current().(*overlay.WaveDecisionOverlay)
+	require.True(t, okDeferred, "current overlay must be a WaveDecisionOverlay after deferred drain")
+	assert.Equal(t, planFile, wdDeferred.Input().PlanFile,
+		"deferred wave decision overlay must reference the correct plan")
+
+	// The plan must already be in wave_waiting state.
+	entry2, entryOK := updated2.taskState.Entry(planFile)
+	require.True(t, entryOK, "plan entry must exist after deferred wave dialog")
+	assert.Equal(t, string(taskfsm.ExecutionPhaseWaveWaiting), entry2.ExecutionState.Phase,
+		"plan must be in wave_waiting phase before user sees the overlay")
 }
 
 // TestWaveMonitor_AllComplete_DeferredWhenOverlayActive verifies that when all
@@ -1704,14 +1723,14 @@ func TestAutoAdvanceWaves_ShowsConfirmOnFailure(t *testing.T) {
 	updated := model.(*home)
 
 	// Even with auto-advance enabled, failures must show the decision dialog
-	assert.Equal(t, stateConfirm, updated.state,
+	assert.Equal(t, stateWaveDecision, updated.state,
 		"failed wave must show decision dialog even when auto-advance is enabled")
 	require.True(t, updated.overlays.IsActive(),
-		"confirmation overlay must be set for failed-wave decision")
-	co4, ok4 := updated.overlays.Current().(*overlay.ConfirmationOverlay)
-	require.True(t, ok4, "current overlay must be a ConfirmationOverlay")
-	assert.Equal(t, "r", co4.ConfirmKey,
-		"failed-wave confirm key must be 'r' (retry)")
+		"wave decision overlay must be set for failed-wave decision")
+	wd4, ok4 := updated.overlays.Current().(*overlay.WaveDecisionOverlay)
+	require.True(t, ok4, "current overlay must be a WaveDecisionOverlay")
+	assert.Greater(t, wd4.Input().Failed, 0,
+		"failed-wave overlay must report failures")
 }
 
 // TestAutoAdvanceWaves_EmitsAdvanceMsgOnSuccess verifies that when AutoAdvanceWaves
@@ -1823,14 +1842,14 @@ func TestWaveTaskCompletion_PromptDetectedCompletesOneTaskWave(t *testing.T) {
 
 	assert.Equal(t, orchestration.WaveStateWaveComplete, orch.State(),
 		"prompt-detected completion should resolve the finished wave")
-	assert.Equal(t, stateConfirm, updated.state,
-		"manual wave orchestration should show the next-wave confirmation")
+	assert.Equal(t, stateWaveDecision, updated.state,
+		"manual wave orchestration should show the wave decision overlay")
 	require.True(t, updated.overlays.IsActive(),
-		"next-wave confirmation overlay should be visible")
-	co, ok := updated.overlays.Current().(*overlay.ConfirmationOverlay)
-	require.True(t, ok, "current overlay must be a ConfirmationOverlay")
-	assert.Equal(t, "y", co.ConfirmKey,
-		"successful wave completion should show the standard next-wave confirm")
+		"wave decision overlay should be visible")
+	wdPrompt, okPrompt := updated.overlays.Current().(*overlay.WaveDecisionOverlay)
+	require.True(t, okPrompt, "current overlay must be a WaveDecisionOverlay")
+	assert.Equal(t, 0, wdPrompt.Input().Failed,
+		"successful wave completion should show the success-variant decision overlay")
 	assert.Equal(t, 1, orch.CompletedTaskCount(),
 		"completed task should be recorded as successful")
 	assert.Equal(t, 0, orch.FailedTaskCount(),
@@ -2052,17 +2071,23 @@ func TestWaveTaskCompletion_TmuxExitDependsOnHasWorked(t *testing.T) {
 			updated := model.(*home)
 
 			assert.Equal(t, orchestration.WaveStateWaveComplete, orch.State(),
-				"resolved first wave should wait for user confirmation")
+				"resolved first wave should wait for user decision")
 			assert.Equal(t, tt.expectCompleted, orch.CompletedTaskCount())
 			assert.Equal(t, tt.expectFailed, orch.FailedTaskCount())
-			assert.Equal(t, stateConfirm, updated.state,
+			assert.Equal(t, stateWaveDecision, updated.state,
 				"resolving the wave task should show the wave decision UI")
 			assert.Equal(t, tt.expectOverlay, updated.overlays.IsActive())
 
 			if tt.expectOverlay {
-				co, ok := updated.overlays.Current().(*overlay.ConfirmationOverlay)
-				require.True(t, ok, "current overlay must be a ConfirmationOverlay")
-				assert.Equal(t, tt.expectConfirmKey, co.ConfirmKey)
+				wdTmux, okTmux := updated.overlays.Current().(*overlay.WaveDecisionOverlay)
+				require.True(t, okTmux, "current overlay must be a WaveDecisionOverlay")
+				if tt.expectFailed > 0 {
+					assert.Greater(t, wdTmux.Input().Failed, 0,
+						"failed wave should show failure overlay variant")
+				} else {
+					assert.Equal(t, 0, wdTmux.Input().Failed,
+						"successful wave should show success overlay variant")
+				}
 			}
 		})
 	}

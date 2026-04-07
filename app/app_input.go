@@ -52,7 +52,7 @@ func (m *home) handleMenuHighlighting(msg tea.KeyPressMsg) (cmd tea.Cmd, returnE
 		m.keySent = false
 		return nil, false
 	}
-	if m.state == statePrompt || m.state == stateHelp || m.state == stateConfirm || m.state == stateNewPlan || m.state == stateNewPlanDeriving || m.state == stateNewPlanTopic || m.state == stateSpawnHarnessPicker || m.state == stateSpawnAgent || m.state == stateSearch || m.state == stateContextMenu || m.state == statePRTitle || m.state == statePRBody || m.state == stateRenameInstance || m.state == stateRenameTask || m.state == stateSendPrompt || m.state == stateFocusAgent || m.state == stateChangeTopic || m.state == stateSetStatus || m.state == stateClickUpSearch || m.state == stateClickUpPicker || m.state == stateClickUpFetching || m.state == stateClickUpWorkspacePicker || m.state == statePermission || m.state == stateTmuxBrowser || m.state == stateChatAboutTask || m.state == stateAuditCursor || m.state == stateLauncher || m.state == stateKeybindBrowser {
+	if m.state == statePrompt || m.state == stateHelp || m.state == stateConfirm || m.state == stateNewPlan || m.state == stateNewPlanDeriving || m.state == stateNewPlanTopic || m.state == stateSpawnHarnessPicker || m.state == stateSpawnAgent || m.state == stateSearch || m.state == stateContextMenu || m.state == statePRTitle || m.state == statePRBody || m.state == stateRenameInstance || m.state == stateRenameTask || m.state == stateSendPrompt || m.state == stateFocusAgent || m.state == stateChangeTopic || m.state == stateSetStatus || m.state == stateClickUpSearch || m.state == stateClickUpPicker || m.state == stateClickUpFetching || m.state == stateClickUpWorkspacePicker || m.state == statePermission || m.state == stateTmuxBrowser || m.state == stateChatAboutTask || m.state == stateAuditCursor || m.state == stateLauncher || m.state == stateKeybindBrowser || m.state == stateWaveDecision {
 		return nil, false
 	}
 	// If it's in the global keymap, we should try to highlight it.
@@ -271,17 +271,7 @@ func (m *home) handleActiveOverlayMouse(msg tea.MouseClickMsg) (tea.Model, tea.C
 			action := m.pendingConfirmAction
 			m.state = stateDefault
 			m.pendingConfirmAction = nil
-			m.pendingWaveAbortAction = nil
-			m.pendingWaveNextAction = nil
-			m.pendingWaveConfirmTaskFile = ""
 			return m, action
-		}
-		if m.pendingWaveConfirmTaskFile != "" {
-			if orch, ok := m.waveOrchestrators[m.pendingWaveConfirmTaskFile]; ok {
-				orch.ResetConfirm()
-			}
-			m.pendingWaveConfirmTaskFile = ""
-			m.waveConfirmDismissedAt = time.Now()
 		}
 		if m.pendingAllCompleteTaskFile != "" {
 			planFile := m.pendingAllCompleteTaskFile
@@ -300,8 +290,52 @@ func (m *home) handleActiveOverlayMouse(msg tea.MouseClickMsg) (tea.Model, tea.C
 		}
 		m.state = stateDefault
 		m.pendingConfirmAction = nil
-		m.pendingWaveAbortAction = nil
-		m.pendingWaveNextAction = nil
+		return m, nil
+
+	case stateWaveDecision:
+		// Outside click behaves like esc: dismiss, reset latch, start cooldown.
+		wd, ok := current.(*overlay.WaveDecisionOverlay)
+		if result.Submitted && ok {
+			planFile := wd.Input().PlanFile
+			m.state = stateDefault
+			switch result.Action {
+			case "advance":
+				entry, entryOK := m.taskState.Entry(planFile)
+				if !entryOK {
+					return m, m.handleError(fmt.Errorf("task not found: %s", planFile))
+				}
+				capturedEntry := entry
+				capturedPlanFile := planFile
+				return m, func() tea.Msg {
+					return waveAdvanceMsg{planFile: capturedPlanFile, entry: capturedEntry}
+				}
+			case "retry":
+				entry, entryOK := m.taskState.Entry(planFile)
+				if !entryOK {
+					return m, m.handleError(fmt.Errorf("task not found: %s", planFile))
+				}
+				capturedEntry := entry
+				capturedPlanFile := planFile
+				return m, func() tea.Msg {
+					return waveRetryMsg{planFile: capturedPlanFile, entry: capturedEntry}
+				}
+			case "abort":
+				capturedPlanFile := planFile
+				return m, func() tea.Msg {
+					return waveAbortMsg{planFile: capturedPlanFile}
+				}
+			}
+			return m, nil
+		}
+		// Dismissed without submit (outside click or cancel button).
+		if ok {
+			planFile := wd.Input().PlanFile
+			if orch, orchOK := m.waveOrchestrators[planFile]; orchOK {
+				orch.ResetConfirm()
+			}
+			m.waveConfirmDismissedAt = time.Now()
+		}
+		m.state = stateDefault
 		return m, nil
 
 	case statePrompt:
@@ -1035,22 +1069,12 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		return m, nil
 	}
 
-	// Handle confirmation state
+	// Handle confirmation state (generic: all-complete, planner, coder-push).
+	// Wave decisions are handled separately by stateWaveDecision below.
 	if m.state == stateConfirm {
 		if !m.overlays.IsActive() {
 			m.state = stateDefault
 			return m, nil
-		}
-		// Pre-intercept 'a' (abort) before delegating to the overlay.
-		if msg.String() == "a" && m.pendingWaveAbortAction != nil {
-			abortAction := m.pendingWaveAbortAction
-			m.overlays.Dismiss()
-			m.state = stateDefault
-			m.pendingConfirmAction = nil
-			m.pendingWaveAbortAction = nil
-			m.pendingWaveNextAction = nil
-			m.pendingWaveConfirmTaskFile = ""
-			return m, abortAction
 		}
 		// Pre-intercept 'enter' as an alias for the confirm key.
 		// ConfirmationOverlay.HandleKey only handles ConfirmKey ("y"/"r"), not "enter".
@@ -1073,9 +1097,6 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				action := m.pendingConfirmAction
 				m.state = stateDefault
 				m.pendingConfirmAction = nil
-				m.pendingWaveAbortAction = nil
-				m.pendingWaveNextAction = nil
-				m.pendingWaveConfirmTaskFile = ""
 				// Return the action as a tea.Cmd so bubbletea runs it asynchronously.
 				// This prevents blocking the UI during I/O (git push, etc.).
 				return m, action
@@ -1083,14 +1104,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 			// Cancelled (CancelKey or Esc).
 			cancelKey := result.Action // Action holds the key that triggered cancel
 			if cancelKey == "" {
-				// Esc dismiss — preserve everything, allow re-prompt on next tick (after cooldown).
-				if m.pendingWaveConfirmTaskFile != "" {
-					if orch, ok := m.waveOrchestrators[m.pendingWaveConfirmTaskFile]; ok {
-						orch.ResetConfirm()
-					}
-					m.pendingWaveConfirmTaskFile = ""
-					m.waveConfirmDismissedAt = time.Now()
-				}
+				// Esc dismiss.
 				if m.pendingAllCompleteTaskFile != "" {
 					planFile := m.pendingAllCompleteTaskFile
 					m.allCompleteDismissed[planFile] = true
@@ -1109,29 +1123,9 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				}
 				m.state = stateDefault
 				m.pendingConfirmAction = nil
-				m.pendingWaveAbortAction = nil
-				m.pendingWaveNextAction = nil
 				return m, nil
 			}
-			// CancelKey pressed — check if this is the failed-wave dialog where CancelKey="n" fires advance.
-			if m.pendingWaveNextAction != nil {
-				nextAction := m.pendingWaveNextAction
-				m.state = stateDefault
-				m.pendingConfirmAction = nil
-				m.pendingWaveAbortAction = nil
-				m.pendingWaveNextAction = nil
-				m.pendingWaveConfirmTaskFile = ""
-				return m, nextAction
-			}
 			// "No" — user explicitly declined.
-			// Reset the orchestrator confirm latch when the user cancels a wave prompt,
-			// so the prompt can reappear on the next metadata tick (fixes deadlock).
-			if m.pendingWaveConfirmTaskFile != "" {
-				if orch, ok := m.waveOrchestrators[m.pendingWaveConfirmTaskFile]; ok {
-					orch.ResetConfirm()
-				}
-				m.pendingWaveConfirmTaskFile = ""
-			}
 			if m.pendingAllCompleteTaskFile != "" {
 				planFile := m.pendingAllCompleteTaskFile
 				m.allCompleteDismissed[planFile] = true
@@ -1150,9 +1144,63 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 			}
 			m.state = stateDefault
 			m.pendingConfirmAction = nil
-			m.pendingWaveAbortAction = nil
-			m.pendingWaveNextAction = nil
 			return m, nil
+		}
+		return m, nil
+	}
+
+	// Handle wave decision state (intermediate wave: advance / retry / abort).
+	if m.state == stateWaveDecision {
+		if !m.overlays.IsActive() {
+			m.state = stateDefault
+			return m, nil
+		}
+		current := m.overlays.Current()
+		result := m.overlays.HandleKey(msg)
+		if result.Dismissed {
+			wd, ok := current.(*overlay.WaveDecisionOverlay)
+			if !ok {
+				m.state = stateDefault
+				return m, nil
+			}
+			planFile := wd.Input().PlanFile
+			if !result.Submitted {
+				// esc or cancel button — reset latch and start cooldown.
+				if orch, orchOK := m.waveOrchestrators[planFile]; orchOK {
+					orch.ResetConfirm()
+				}
+				m.waveConfirmDismissedAt = time.Now()
+				m.state = stateDefault
+				return m, nil
+			}
+			m.state = stateDefault
+			switch result.Action {
+			case "advance":
+				entry, entryOK := m.taskState.Entry(planFile)
+				if !entryOK {
+					return m, m.handleError(fmt.Errorf("task not found: %s", planFile))
+				}
+				capturedEntry := entry
+				capturedPlanFile := planFile
+				return m, func() tea.Msg {
+					return waveAdvanceMsg{planFile: capturedPlanFile, entry: capturedEntry}
+				}
+			case "retry":
+				entry, entryOK := m.taskState.Entry(planFile)
+				if !entryOK {
+					return m, m.handleError(fmt.Errorf("task not found: %s", planFile))
+				}
+				capturedEntry := entry
+				capturedPlanFile := planFile
+				return m, func() tea.Msg {
+					return waveRetryMsg{planFile: capturedPlanFile, entry: capturedEntry}
+				}
+			case "abort":
+				capturedPlanFile := planFile
+				return m, func() tea.Msg {
+					return waveAbortMsg{planFile: capturedPlanFile}
+				}
+			}
 		}
 		return m, nil
 	}
@@ -2118,43 +2166,6 @@ func (m *home) confirmAction(message string, action tea.Cmd) tea.Cmd {
 	m.overlays.Show(co)
 
 	return nil
-}
-
-// waveStandardConfirmAction shows the wave-advance confirmation for a wave with no failures.
-// Stores the plan file so the cancel path can reset the orchestrator confirm latch.
-func (m *home) waveStandardConfirmAction(message, planFile string, entry taskstate.TaskEntry) {
-	m.pendingWaveConfirmTaskFile = planFile
-	capturedPlanFile := planFile
-	capturedEntry := entry
-	m.confirmAction(message, func() tea.Msg {
-		return waveAdvanceMsg{planFile: capturedPlanFile, entry: capturedEntry}
-	})
-}
-
-// waveFailedConfirmAction shows a three-choice dialog for a wave that has failed tasks.
-// Keys: r=retry, n=next wave/advance, a=abort. The abort action is stored separately so the
-// stateConfirm key handler can dispatch it on 'a'.
-func (m *home) waveFailedConfirmAction(message, planFile string, entry taskstate.TaskEntry) {
-	m.pendingWaveConfirmTaskFile = planFile
-	capturedPlanFile := planFile
-	capturedEntry := entry
-
-	m.state = stateConfirm
-	co := overlay.NewConfirmationOverlay(message)
-	co.ConfirmKey = "r"
-	co.CancelKey = "n"
-	co.SetSize(60, 0)
-	m.overlays.Show(co)
-
-	m.pendingConfirmAction = func() tea.Msg {
-		return waveRetryMsg{planFile: capturedPlanFile, entry: capturedEntry}
-	}
-	m.pendingWaveNextAction = func() tea.Msg {
-		return waveAdvanceMsg{planFile: capturedPlanFile, entry: capturedEntry}
-	}
-	m.pendingWaveAbortAction = func() tea.Msg {
-		return waveAbortMsg{planFile: capturedPlanFile}
-	}
 }
 
 // keydownCallback clears the menu option highlighting after 500ms.

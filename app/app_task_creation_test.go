@@ -250,6 +250,7 @@ func TestIsUserInOverlay(t *testing.T) {
 		{stateSpawnAgent, true},
 		{stateFocusAgent, false},
 		{statePermission, true},
+		{stateWaveDecision, true},
 	}
 	for _, tt := range tests {
 		h := &home{state: tt.state}

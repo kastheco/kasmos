@@ -161,6 +161,8 @@ const (
 	stateLauncher
 	// stateKeybindBrowser is the state when the keybind browser overlay is shown.
 	stateKeybindBrowser
+	// stateWaveDecision is the state when an intermediate wave decision overlay is shown.
+	stateWaveDecision
 )
 
 type home struct {
@@ -360,19 +362,9 @@ type home struct {
 	// overlay is showing, so cancel can record the dismissal.
 	pendingAllCompleteTaskFile string
 
-	// pendingWaveConfirmTaskFile is set while a wave-advance (or failed-wave decision)
-	// confirmation overlay is showing, so cancel can reset the orchestrator latch.
-	pendingWaveConfirmTaskFile string
 	// waveConfirmDismissedAt is the time the wave confirm dialog was last dismissed
 	// via Esc. Used to impose a cooldown before re-showing the dialog.
 	waveConfirmDismissedAt time.Time
-
-	// pendingWaveAbortAction is the abort action for a failed-wave decision dialog.
-	// Triggered when the user presses 'a' while the failed-wave overlay is active.
-	pendingWaveAbortAction tea.Cmd
-	// pendingWaveNextAction is the advance action for a failed-wave decision dialog.
-	// Triggered when the user presses 'n' (next wave) while the failed-wave overlay is active.
-	pendingWaveNextAction tea.Cmd
 
 	// plannerPrompted tracks plan files whose planner-exit dialog has been
 	// answered (yes or no). Prevents re-prompting every metadata tick.
@@ -2068,8 +2060,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				// orchState must be orchestration.WaveStateWaveComplete here.
-				// Show wave decision confirm once per wave (NeedsConfirm is one-shot;
-				// ResetConfirm on cancel allows the prompt to reappear next tick).
+				// Show wave decision once per wave (NeedsConfirm is one-shot;
+				// ResetConfirm on dismiss allows the prompt to reappear next tick).
 				needsConfirm := orch.NeedsConfirm()
 				if needsConfirm && m.state == stateFocusAgent {
 					m.queueWaveDialog(planFile)
@@ -2085,77 +2077,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					continue
 				}
 				if !m.isUserInOverlay() && time.Since(m.waveConfirmDismissedAt) > 30*time.Second && needsConfirm {
-					waveNum := orch.CurrentWaveNumber()
-					completed := orch.CompletedTaskCount()
-					failed := orch.FailedTaskCount()
-					total := completed + failed
-					entry, _ := m.taskState.Entry(planFile)
-
-					capturedPlanFile := planFile
-					capturedEntry := entry
-					planName := taskstate.DisplayName(planFile)
-
-					// Post intermediate wave complete comment to ClickUp for
-					// multi-wave plans with no failures.
-					if failed == 0 && orch.ShouldPostWaveCompleteComment() {
-						detail := fmt.Sprintf("%d/%d: %d/%d tasks", waveNum, orch.TotalWaves(), completed, total)
-						if cmd := m.postClickUpProgress(capturedPlanFile, "wave_complete", detail); cmd != nil {
-							asyncCmds = append(asyncCmds, cmd)
-						}
-					}
-
-					if failed > 0 {
-						if err := m.setExecutionState(capturedPlanFile, taskstore.ExecutionState{
-							Phase:           string(taskfsm.ExecutionPhaseWaveWaiting),
-							ActiveAgentType: session.AgentTypeCoder,
-							ActiveWave:      waveNum,
-						}); err != nil {
-							log.WarningLog.Printf("could not persist wave waiting state for %q: %v", capturedPlanFile, err)
-						}
-						// Failed wave — always show the decision dialog (retry/next/abort)
-						if cmd := m.focusPlanInstanceForOverlay(capturedPlanFile); cmd != nil {
-							asyncCmds = append(asyncCmds, cmd)
-						}
-						m.audit(auditlog.EventWaveFailed,
-							fmt.Sprintf("wave %d: %d/%d tasks failed", waveNum, failed, total),
-							auditlog.WithPlan(capturedPlanFile),
-							auditlog.WithWave(waveNum, 0))
-						message := fmt.Sprintf(
-							"%s — wave %d: %d/%d tasks complete, %d failed.\n\n"+
-								"[r] retry failed   [n] next wave   [a] abort",
-							planName, waveNum, completed, total, failed)
-						m.waveFailedConfirmAction(message, capturedPlanFile, capturedEntry)
-					} else if m.appConfig.AutoAdvanceWaves {
-						// Auto-advance: skip confirmation, directly advance to next wave
-						m.audit(auditlog.EventWaveCompleted,
-							fmt.Sprintf("wave %d complete: %d/%d tasks (auto-advancing)", waveNum, completed, total),
-							auditlog.WithPlan(capturedPlanFile),
-							auditlog.WithWave(waveNum, 0))
-						m.toastManager.Info(fmt.Sprintf("%s — wave %d complete, auto-advancing...", planName, waveNum))
-						asyncCmds = append(asyncCmds, func() tea.Msg {
-							return waveAdvanceMsg{planFile: capturedPlanFile, entry: capturedEntry}
-						})
-						asyncCmds = append(asyncCmds, m.toastTickCmd())
-					} else {
-						if err := m.setExecutionState(capturedPlanFile, taskstore.ExecutionState{
-							Phase:           string(taskfsm.ExecutionPhaseWaveWaiting),
-							ActiveAgentType: session.AgentTypeCoder,
-							ActiveWave:      waveNum,
-						}); err != nil {
-							log.WarningLog.Printf("could not persist wave waiting state for %q: %v", capturedPlanFile, err)
-						}
-						// Manual mode: focus instance and show confirmation dialog
-						if cmd := m.focusPlanInstanceForOverlay(capturedPlanFile); cmd != nil {
-							asyncCmds = append(asyncCmds, cmd)
-						}
-						m.audit(auditlog.EventWaveCompleted,
-							fmt.Sprintf("wave %d complete: %d/%d tasks", waveNum, completed, total),
-							auditlog.WithPlan(capturedPlanFile),
-							auditlog.WithWave(waveNum, 0))
-						message := fmt.Sprintf("%s — wave %d complete (%d/%d). start wave %d?",
-							planName, waveNum, completed, total, waveNum+1)
-						m.waveStandardConfirmAction(message, capturedPlanFile, capturedEntry)
-					}
+					asyncCmds = append(asyncCmds, m.showWaveDialog(planFile, orch)...)
 				}
 			}
 		}
