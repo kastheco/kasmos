@@ -90,10 +90,42 @@ html:not(.dark) code:not(pre code) {
   font-size: 0.875em;
 }
 
-/* Footer wrapper: Nextra uses neutral-900 (~#303030) which is lighter
-   than the navbar's --nextra-bg (#111). Override to match the navbar. */
-html.dark .x\:dark\:bg-neutral-900 {
+/* Footer: match the navbar's near-black background in dark mode.
+   Target every plausible Nextra footer wrapper. */
+html.dark footer,
+html.dark footer ~ *,
+html.dark [class*="bg-neutral-900"],
+html.dark [class*="bg-gray-100"] {
   background-color: rgb(17, 17, 17) !important;
+}
+
+/* ============================================================
+   LOWERCASE UI CHROME
+   Sidebar nav, breadcrumbs, TOC headings, and footer text.
+   Does NOT affect doc body content.
+   ============================================================ */
+
+/* Left sidebar nav links */
+nav a,
+/* Breadcrumb trail */
+nav[aria-label="breadcrumb"],
+nav[aria-label="breadcrumb"] * {
+  text-transform: lowercase;
+}
+
+/* Right sidebar "On This Page" heading + TOC links */
+aside h4,
+aside nav,
+aside nav a,
+aside p,
+aside a {
+  text-transform: lowercase;
+}
+
+/* Footer text */
+footer,
+footer * {
+  text-transform: lowercase;
 }
 
 /* ============================================================

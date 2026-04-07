@@ -9,6 +9,8 @@ const meta: MetaRecord = {
   configuration: "configuration",
   contributing: "contributing",
   faq: "faq",
+  daemon: "daemon",
+  headless: "headless",
 };
 
 export default meta;
