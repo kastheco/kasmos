@@ -240,9 +240,9 @@ plist templates are shipped in `contrib/`. install them into `~/Library/LaunchAg
 ```bash
 # render and install the plists (replace the kas path if needed)
 KAS=$(command -v kas)
-sed "s|__KAS__|$KAS|g; s|__HOME__|$HOME|g" \
+sed "s|__KAS_BIN__|$KAS|g; s|__HOME__|$HOME|g" \
   contrib/com.kasmos.taskstore.plist > ~/Library/LaunchAgents/com.kasmos.taskstore.plist
-sed "s|__KAS__|$KAS|g; s|__HOME__|$HOME|g" \
+sed "s|__KAS_BIN__|$KAS|g; s|__HOME__|$HOME|g" \
   contrib/com.kasmos.daemon.plist   > ~/Library/LaunchAgents/com.kasmos.daemon.plist
 
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kasmos.taskstore.plist

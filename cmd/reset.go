@@ -22,14 +22,14 @@ import (
 )
 
 var (
-	repoResetNow                     = time.Now
-	repoResetSync                    = defaultRepoResetSync
-	repoResetWriteMCP                = defaultRepoResetWriteMCP
-	repoResetStopServices            = defaultRepoResetStopServices
-	openPromptTTY                    = defaultOpenPromptTTY
-	repoResetRestartServicesCommand  = platform.RestartServicesCommand
-	repoResetStopUserServices        = platform.StopServices
-	repoResetStopDaemonByPID         = stopDaemonByPID
+	repoResetNow                    = time.Now
+	repoResetSync                   = defaultRepoResetSync
+	repoResetWriteMCP               = defaultRepoResetWriteMCP
+	repoResetStopServices           = defaultRepoResetStopServices
+	openPromptTTY                   = defaultOpenPromptTTY
+	repoResetRestartServicesCommand = platform.RestartServicesCommand
+	repoResetStopUserServices       = platform.StopServices
+	repoResetStopDaemonByPID        = stopDaemonByPID
 )
 
 var managedBackupPaths = []string{

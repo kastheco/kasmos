@@ -31,7 +31,7 @@ just services-enable
 1. Calls `just install` — builds and installs the binary, creates `kas` / `kms` symlinks.
 2. Installs the service definition for the current platform:
    - **linux** — copies `contrib/kasmos.service` to `~/.config/systemd/user/` and reloads the daemon.
-   - **macOS** — renders `contrib/kasmos.plist` with the current `$HOME` and binary path, copies it to `~/Library/LaunchAgents/`, and loads it with `launchctl`.
+   - **macOS** — renders `contrib/com.kasmos.daemon.plist` with the current `$HOME` and binary path, copies it to `~/Library/LaunchAgents/`, and loads it with `launchctl`.
 3. Enables and starts the service.
 
 `db-service-enable` does the same for the plan store service (`kas serve`), which exposes the task store for remote inspection and the TUI on port 7433 (configurable with `--port`).
@@ -99,7 +99,7 @@ journalctl --user -u kasmos -f
 
 ### macOS — launchd
 
-`contrib/kasmos.plist` (rendered by `just kasmosd-enable` with the active `$HOME`):
+`contrib/com.kasmos.daemon.plist` (rendered by `just kasmosd-enable` with the active `$HOME`):
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -108,7 +108,7 @@ journalctl --user -u kasmos -f
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.kastheco.kasmos</string>
+  <string>com.kasmos.daemon</string>
   <key>ProgramArguments</key>
   <array>
     <string>/Users/you/go/bin/kas</string>
@@ -123,7 +123,7 @@ journalctl --user -u kasmos -f
   <key>StandardOutPath</key>
   <string>/Users/you/Library/Logs/kasmos/daemon.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/you/Library/Logs/kasmos/daemon.log</string>
+  <string>/Users/you/Library/Logs/kasmos/daemon.err.log</string>
 </dict>
 </plist>
 ```
@@ -138,10 +138,10 @@ Manage the service manually:
 
 ```sh
 # load and start
-launchctl load ~/Library/LaunchAgents/com.kastheco.kasmos.plist
+launchctl load ~/Library/LaunchAgents/com.kasmos.daemon.plist
 
 # stop and unload
-launchctl unload ~/Library/LaunchAgents/com.kastheco.kasmos.plist
+launchctl unload ~/Library/LaunchAgents/com.kasmos.daemon.plist
 
 # check status
 launchctl list | grep kasmos
