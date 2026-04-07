@@ -27,8 +27,8 @@ mkdir -p "$web_public" "$docs_public"
 echo "→ logo-k.png (200×200)"
 magick "$k_src" -resize 200x200 -strip -define png:compression-level=9 "$web_public/logo-k.png"
 
-echo "→ logo-full.png (600 wide)"
-magick "$full_src" -resize 600x -strip -define png:compression-level=9 "$web_public/logo-full.png"
+echo "→ logo-full.png (1200 wide)"
+magick "$full_src" -resize 1200x -strip -define png:compression-level=9 "$web_public/logo-full.png"
 
 echo "→ favicon.ico (16/32/48)"
 magick "$k_src" -background none -define icon:auto-resize=16,32,48 "$web_public/favicon.ico"

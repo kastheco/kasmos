@@ -27,8 +27,8 @@
 
 .logoImage {
   display: block;
-  width: 32px;
-  height: 32px;
+  height: 24px;
+  width: auto;
   object-fit: contain;
   flex-shrink: 0;
 }

@@ -17,11 +17,9 @@ export default function Header() {
     <header className={`${styles.header} ${scrolled ? styles.scrolled : ""}`}>
       <Link href="/" className={styles.logoWrapper}>
         <img
-          src="/logo-k.png"
+          src="/logo-full.png"
           alt="kasmos"
           className={styles.logoImage}
-          width={32}
-          height={32}
         />
       </Link>
       <nav className={styles.nav}>

@@ -108,7 +108,7 @@ export default function PageContent() {
         {/* Features */}
         <section className={styles.section}>
           <ScrollReveal>
-            <h2 className={styles.sectionTitle}>why kasmos?</h2>
+            <h2 className={styles.sectionTitle}>why <span className={styles.gradientInline}>kasmos</span>?</h2>
             <p className={styles.sectionSubtitle}>
               wave-based execution, isolated worktrees, and MCP-native tooling — everything you need to run concurrent AI agents at scale.
             </p>
