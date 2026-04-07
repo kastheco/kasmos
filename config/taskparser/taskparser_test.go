@@ -181,6 +181,88 @@ Body of task 3.
 	assert.Equal(t, "Tests", plan.Waves[1].Tasks[0].Title)
 }
 
+func TestParsePlan_PerWaveTaskNumbersRenumberedGlobally(t *testing.T) {
+	// Plans authored with per-wave numbering (Task 1, Task 2 in every wave)
+	// must produce globally unique task numbers after parsing.
+	input := `# Plan
+
+**Goal:** fix duplicate subtask keys
+
+## Wave 1
+
+### Task 1: alpha
+
+Body of alpha.
+
+### Task 2: beta
+
+Body of beta.
+
+## Wave 2
+
+### Task 1: gamma
+
+Body of gamma.
+
+### Task 2: delta
+
+Body of delta.
+`
+	plan, err := Parse(input)
+	require.NoError(t, err)
+	require.Len(t, plan.Waves, 2)
+	require.Len(t, plan.Waves[0].Tasks, 2)
+	require.Len(t, plan.Waves[1].Tasks, 2)
+
+	assert.Equal(t, 1, plan.Waves[0].Tasks[0].Number)
+	assert.Equal(t, "alpha", plan.Waves[0].Tasks[0].Title)
+	assert.Equal(t, 2, plan.Waves[0].Tasks[1].Number)
+	assert.Equal(t, "beta", plan.Waves[0].Tasks[1].Title)
+	assert.Equal(t, 3, plan.Waves[1].Tasks[0].Number)
+	assert.Equal(t, "gamma", plan.Waves[1].Tasks[0].Title)
+	assert.Equal(t, 4, plan.Waves[1].Tasks[1].Number)
+	assert.Equal(t, "delta", plan.Waves[1].Tasks[1].Title)
+}
+
+func TestParsePlan_AlreadyGlobalTaskNumbersRemainStable(t *testing.T) {
+	// Plans already using globally-unique numbers (1, 2, 3, 4 across waves)
+	// must not be changed by the renumbering pass.
+	input := `# Plan
+
+**Goal:** keep stable global numbers
+
+## Wave 1
+
+### Task 1: first
+
+Body 1.
+
+### Task 2: second
+
+Body 2.
+
+## Wave 2
+
+### Task 3: third
+
+Body 3.
+
+### Task 4: fourth
+
+Body 4.
+`
+	plan, err := Parse(input)
+	require.NoError(t, err)
+	require.Len(t, plan.Waves, 2)
+	require.Len(t, plan.Waves[0].Tasks, 2)
+	require.Len(t, plan.Waves[1].Tasks, 2)
+
+	assert.Equal(t, 1, plan.Waves[0].Tasks[0].Number)
+	assert.Equal(t, 2, plan.Waves[0].Tasks[1].Number)
+	assert.Equal(t, 3, plan.Waves[1].Tasks[0].Number)
+	assert.Equal(t, 4, plan.Waves[1].Tasks[1].Number)
+}
+
 func TestParsePlan_HeaderExtraction(t *testing.T) {
 	input := `# Plan
 
