@@ -22,6 +22,7 @@ export function useAutoRefresh<T>(
 
   const mountedRef = useRef(true);
   const hasDataRef = useRef(false);
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -32,6 +33,8 @@ export function useAutoRefresh<T>(
 
   const refresh = useCallback(async () => {
     if (!mountedRef.current) return;
+    if (inFlightRef.current) return; // skip if previous refresh still running
+    inFlightRef.current = true;
 
     const hadData = hasDataRef.current;
     if (hadData) {
@@ -58,6 +61,7 @@ export function useAutoRefresh<T>(
         setData(null);
       }
     } finally {
+      inFlightRef.current = false;
       if (mountedRef.current) {
         setLoading(false);
         setIsRefreshing(false);

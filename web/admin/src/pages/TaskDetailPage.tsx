@@ -19,13 +19,13 @@ type TaskDetailData = {
 };
 
 const mdComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
-  input(props) {
+  input({ node: _node, ...props }) {
     if (props.type === "checkbox") {
       return <input {...props} disabled />;
     }
     return <input {...props} />;
   },
-  pre({ children, ...rest }) {
+  pre({ node: _node, children, ...rest }) {
     const child = Array.isArray(children) ? children[0] : children;
     const className =
       child && typeof child === "object" && "props" in child
@@ -42,7 +42,7 @@ const mdComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
     }
     return <pre {...rest}>{children}</pre>;
   },
-  code({ className, children, ...rest }) {
+  code({ node: _node, className, children, ...rest }) {
     return (
       <code className={className} {...rest}>
         {children}

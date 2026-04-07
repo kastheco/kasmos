@@ -228,8 +228,9 @@ Body of delta.
 }
 
 func TestParsePlan_AlreadyGlobalTaskNumbersRemainStable(t *testing.T) {
-	// Plans already using globally-unique numbers (1, 2, 3, 4 across waves)
-	// must not be changed by the renumbering pass.
+	// Parse() always renumbers tasks to 1..N in document order. This test
+	// verifies that plans already using sequential global numbers produce
+	// the expected output (i.e., renumbering is a stable no-op).
 	input := `# Plan
 
 **Goal:** keep stable global numbers
