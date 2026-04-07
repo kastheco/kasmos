@@ -17,15 +17,19 @@ import (
 	"github.com/kastheco/kasmos/config"
 	initcmdharness "github.com/kastheco/kasmos/internal/initcmd/harness"
 	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
+	"github.com/kastheco/kasmos/internal/platform"
 	"github.com/spf13/cobra"
 )
 
 var (
-	repoResetNow          = time.Now
-	repoResetSync         = defaultRepoResetSync
-	repoResetWriteMCP     = defaultRepoResetWriteMCP
-	repoResetStopServices = defaultRepoResetStopServices
-	openPromptTTY         = defaultOpenPromptTTY
+	repoResetNow                     = time.Now
+	repoResetSync                    = defaultRepoResetSync
+	repoResetWriteMCP                = defaultRepoResetWriteMCP
+	repoResetStopServices            = defaultRepoResetStopServices
+	openPromptTTY                    = defaultOpenPromptTTY
+	repoResetRestartServicesCommand  = platform.RestartServicesCommand
+	repoResetStopUserServices        = platform.StopServices
+	repoResetStopDaemonByPID         = stopDaemonByPID
 )
 
 var managedBackupPaths = []string{
@@ -173,7 +177,7 @@ func runRepoReset(args []string, opts repoResetOptions) error {
 	}
 
 	fmt.Fprintf(opts.Stdout, "\nbackups root: %s\n", backupRoot)
-	fmt.Fprintln(opts.Stdout, "restart services with: systemctl --user start kasmosdb kasmos")
+	fmt.Fprintf(opts.Stdout, "restart services with: %s\n", repoResetRestartServicesCommand())
 
 	if failures > 0 {
 		return fmt.Errorf("reset completed with %d failure(s)", failures)
@@ -640,22 +644,18 @@ func defaultRepoResetStopServices(opts repoResetOptions) error {
 		fmt.Fprintln(opts.Stdout, "[dry-run] would stop daemon and user services if running")
 		return nil
 	}
-	if err := stopDaemonByPID(daemonPIDPath()); err != nil {
-		fmt.Fprintf(opts.Stderr, "warning: failed to stop daemon: %v\n", err)
+	// Stop service-manager units first (best-effort).
+	if err := repoResetStopUserServices(); err != nil {
+		fmt.Fprintf(opts.Stderr, "warning: failed to stop user services: %v\n", err)
 	}
-	if _, err := exec.LookPath("systemctl"); err != nil {
-		return nil
-	}
-	check := exec.Command("systemctl", "--user", "is-active", "--quiet", "kasmos")
-	if err := check.Run(); err != nil {
-		check2 := exec.Command("systemctl", "--user", "is-active", "--quiet", "kasmosdb")
-		if err2 := check2.Run(); err2 != nil {
-			return nil
+	// PID-based shutdown is a fallback for manually daemonized runs only.
+	// The foreground service-manager path never writes a PID file, so skip
+	// the warning when there is no file.
+	pidPath := daemonPIDPath()
+	if _, err := os.Stat(pidPath); err == nil {
+		if err := repoResetStopDaemonByPID(pidPath); err != nil {
+			fmt.Fprintf(opts.Stderr, "warning: failed to stop daemon by pid: %v\n", err)
 		}
-	}
-	cmd := exec.Command("systemctl", "--user", "stop", "kasmos", "kasmosdb")
-	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(opts.Stderr, "warning: failed to stop user services kasmos/kasmosdb: %v\n", err)
 	}
 	return nil
 }
