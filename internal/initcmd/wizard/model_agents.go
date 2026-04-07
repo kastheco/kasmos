@@ -619,10 +619,28 @@ func (m *agentStepModel) syncModelChoices() {
 			}
 		}
 		if !found {
-			a.Model = m.filteredModels[0]
+			if a.Model == "" || m.isModelFromAnyCache(a.Model) {
+				// Empty model or a model from another harness's list — auto-select
+				// the first suggestion. Free-text models (not in any cache) are
+				// preserved since harnesses like codex accept arbitrary names.
+				a.Model = m.filteredModels[0]
+			}
 		}
 	}
 	m.syncEffortForCurrentAgent()
+}
+
+// isModelFromAnyCache returns true if the model appears in any harness's cached
+// model list. Free-text models (not in any cache) return false.
+func (m *agentStepModel) isModelFromAnyCache(model string) bool {
+	for _, models := range m.modelCache {
+		for _, mdl := range models {
+			if mdl == model {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (m *agentStepModel) applyModelFilter() {
