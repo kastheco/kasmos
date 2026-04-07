@@ -2,7 +2,6 @@
 
 import styles from "../page.module.css";
 import StarField from "./StarField";
-import GradientText from "./GradientText";
 import TypewriterText from "./TypewriterText";
 import ScrollReveal from "./ScrollReveal";
 import FeatureCard from "./FeatureCard";
@@ -70,9 +69,15 @@ export default function PageContent() {
         {/* Hero */}
         <section className={styles.hero}>
           <OrchestrationVisual className={styles.heroBee} />
-          <GradientText as="h1" className={styles.heroTitle}>
-            kasmos
-          </GradientText>
+          <h1 className={styles.heroTitle}>
+            <img
+              src="/logo-full.png"
+              alt="kasmos"
+              className={styles.heroWordmark}
+              width={600}
+              height={338}
+            />
+          </h1>
           <p className={styles.heroSubtitle}>
             multi-agent orchestration for your terminal
           </p>
