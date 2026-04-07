@@ -8,6 +8,7 @@ const withNextra = nextra({
 const nextConfig: NextConfig = {
   output: "export",
   trailingSlash: true,
+  assetPrefix: "/docs",
   images: {
     unoptimized: true,
   },

@@ -50,7 +50,10 @@ jobs:
         run: cd web/docs && npm run build
 
       - name: Merge docs into marketing site output
-        run: mkdir -p web/out/docs && cp -R web/docs/out/docs/. web/out/docs/
+        run: |
+          mkdir -p web/out/docs
+          cp -R web/docs/out/docs/. web/out/docs/
+          cp -R web/docs/out/_next/. web/out/docs/_next/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
