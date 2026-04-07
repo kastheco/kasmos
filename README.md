@@ -399,9 +399,9 @@ the architect completion signal still uses the legacy wire name `elaborator_fini
 
 ---
 
-## upgrading your local machine to the new mcp-first release
+## upgrading to v2.0.0
 
-once `v2.0.0-beta` is published, upgrade with one of these:
+upgrade to the stable release with one of these:
 
 ### homebrew
 
@@ -413,14 +413,14 @@ brew upgrade kasmos
 ### go install
 
 ```bash
-go install github.com/kastheco/kasmos@v2.0.0-beta
+go install github.com/kastheco/kasmos@v2.0.0
 ln -sf "$(go env GOPATH)/bin/kasmos" "$(go env GOPATH)/bin/kas"
 kas version
 ```
 
 ### install script / release asset
 
-re-run the installer or replace your binary with the `v2.0.0-beta` release asset, then confirm:
+re-run the installer or replace your binary with the `v2.0.0` release asset, then confirm:
 
 ```bash
 kas version
