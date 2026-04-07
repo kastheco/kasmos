@@ -45,6 +45,7 @@ type Session struct {
 	taskNumber    int
 	waveNumber    int
 	peerCount     int
+	noFlicker     bool
 	sessionTitle  string
 	titleFunc     func(workDir string, beforeStart time.Time, title string)
 
@@ -101,6 +102,10 @@ func (s *Session) SetTaskEnv(task, wave, peers int) {
 	s.peerCount = peers
 }
 
+// SetNoFlicker controls whether CLAUDE_CODE_NO_FLICKER is set to 1 (true) or 0 (false).
+// Must be called before Start().
+func (s *Session) SetNoFlicker(enabled bool) { s.noFlicker = enabled }
+
 // SetSessionTitle stores the session title (no-op for headless).
 func (s *Session) SetSessionTitle(title string) { s.sessionTitle = title }
 
@@ -153,7 +158,11 @@ func (s *Session) Start(workDir string) error {
 	env := os.Environ()
 	env = append(env, "KASMOS_MANAGED=1")
 	if filepath.Base(parts[0]) == tmux.ProgramClaude {
-		env = append(env, "CLAUDE_CODE_NO_FLICKER=1")
+		flickerVal := "0"
+		if s.noFlicker {
+			flickerVal = "1"
+		}
+		env = append(env, "CLAUDE_CODE_NO_FLICKER="+flickerVal)
 	}
 	if filepath.Base(parts[0]) == tmux.ProgramOpenCode {
 		if configPath := opencodesession.ProjectConfigPath(workDir); configPath != "" {
