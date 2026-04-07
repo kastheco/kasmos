@@ -45,7 +45,8 @@ func TestBuildTaskPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "test failures in files outside your task")
 	assert.Contains(t, prompt, "build failure caused by missing types")
 	assert.Contains(t, prompt, "surgical changes")
-	assert.Contains(t, prompt, "Do NOT emit lifecycle signals yourself")
+	assert.Contains(t, prompt, "signal_create")
+	assert.Contains(t, prompt, "implement-task-finished")
 }
 
 func TestBuildTaskPrompt_InlineCoderRules(t *testing.T) {
@@ -63,10 +64,9 @@ func TestBuildTaskPrompt_InlineCoderRules(t *testing.T) {
 	assert.Contains(t, prompt, "feat(task-N):")
 	assert.Contains(t, prompt, "-run Test")
 	assert.Contains(t, prompt, "go build ./...")
-	assert.Contains(t, prompt, "stop and return to the prompt")
-	assert.Contains(t, prompt, "Do NOT emit lifecycle signals yourself")
-	assert.NotContains(t, prompt, "kas signal emit implement_task_finished")
-	assert.NotContains(t, prompt, "implement-task-finished-w1-t1-feature")
+	assert.Contains(t, prompt, "signal_create")
+	assert.Contains(t, prompt, `"implement-task-finished"`)
+	assert.Contains(t, prompt, `\"wave\":1,\"task\":1`)
 }
 
 func TestBuildTaskPrompt_PreservesMdPlanTokenWhenProvided(t *testing.T) {

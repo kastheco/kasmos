@@ -163,11 +163,12 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		if selected == nil || selected.TaskNumber == 0 {
 			return m, nil
 		}
-		orch, ok := m.waveOrchestrators[selected.TaskFile]
-		if !ok {
-			return m, nil
+		if orch, ok := m.waveOrchestrators[selected.TaskFile]; ok {
+			orch.MarkTaskComplete(selected.TaskNumber)
+		} else if m.taskStore != nil && m.taskStoreProject != "" {
+			// No orchestrator — persist directly to store so the daemon sees it.
+			_ = m.taskStore.UpdateSubtaskStatus(m.taskStoreProject, selected.TaskFile, selected.TaskNumber, taskstore.SubtaskStatusComplete)
 		}
-		orch.MarkTaskComplete(selected.TaskNumber)
 		selected.ImplementationComplete = true
 		selected.SetStatus(session.Ready)
 		m.toastManager.Success(fmt.Sprintf("task %d marked complete", selected.TaskNumber))
@@ -983,7 +984,12 @@ func (m *home) openContextMenu() (tea.Model, tea.Cmd) {
 		manageItems = append(manageItems, overlay.ContextMenuItem{Label: "advance review cycle", Action: "advance_review_cycle"})
 	}
 	if selected.TaskNumber > 0 {
-		if orch, ok := m.waveOrchestrators[selected.TaskFile]; ok && orch.IsTaskRunning(selected.TaskNumber) {
+		if orch, ok := m.waveOrchestrators[selected.TaskFile]; ok {
+			if !orch.IsTaskComplete(selected.TaskNumber) {
+				manageItems = append(manageItems, overlay.ContextMenuItem{Label: "mark complete", Action: "mark_task_complete"})
+			}
+		} else {
+			// No orchestrator — still offer manual completion for wave tasks.
 			manageItems = append(manageItems, overlay.ContextMenuItem{Label: "mark complete", Action: "mark_task_complete"})
 		}
 	}

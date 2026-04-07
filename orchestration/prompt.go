@@ -21,7 +21,8 @@ func BuildTaskPrompt(planFile string, plan *taskparser.Plan, task taskparser.Tas
 	sb.WriteString("- Run scoped tests before committing: `go test ./pkg/... -run Test<Name> -v`\n")
 	sb.WriteString("- Verify build: `go build ./...`\n")
 	sb.WriteString("- Commit: `git add <specific-files> && git commit -m \"feat(task-N): description\"`\n")
-	sb.WriteString("- When done: stop and return to the prompt. Do NOT emit lifecycle signals yourself; kasmos detects managed task completion automatically.\n\n")
+	sb.WriteString(fmt.Sprintf("- When done: signal completion with MCP `signal_create` (signal_type: \"implement-task-finished\", plan_file: \"%s\", payload: \"{\\\"wave\\\":%d,\\\"task\\\":%d}\"). Then stop.\n\n",
+		planFile, waveNumber, task.Number))
 
 	// Plan context
 	header := plan.HeaderContext()
