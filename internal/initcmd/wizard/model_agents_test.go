@@ -163,8 +163,8 @@ func TestAgentStepPrePopulatesFromExisting(t *testing.T) {
 	assert.Equal(t, "opencode", agents[0].Harness) // coder from existing
 	assert.Equal(t, "high", agents[0].Effort)
 	assert.Equal(t, "0.5", agents[0].Temperature)
-	// reviewer gets defaults
-	assert.Equal(t, "openai/gpt-5-codex", agents[1].Model)
+	// architect gets defaults (agents[1] per DefaultAgentRoles order)
+	assert.Equal(t, "openai/gpt-5.4", agents[1].Model)
 }
 
 func TestAgentStep_IgnoresLegacyElaboratorProfile(t *testing.T) {
@@ -198,9 +198,9 @@ func TestAgentStep_IgnoresLegacyElaboratorProfile(t *testing.T) {
 	}
 	require.Equal(t, "architect", arch.Role, "architect role must be present")
 	assert.Equal(t, "opencode", arch.Harness, "architect should keep the default harness")
-	assert.Equal(t, "openai/gpt-5-codex", arch.Model)
-	assert.Equal(t, "high", arch.Effort)
-	assert.Equal(t, "0.1", arch.Temperature)
+	assert.Equal(t, "openai/gpt-5.4", arch.Model)
+	assert.Equal(t, "xhigh", arch.Effort)
+	assert.Equal(t, "0.2", arch.Temperature)
 	assert.True(t, arch.Enabled)
 }
 
