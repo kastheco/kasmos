@@ -324,6 +324,62 @@ func TestInstanceData_RoundTripExecutionMode(t *testing.T) {
 	}
 }
 
+func TestInstanceData_RoundTripWaveTaskMetadata(t *testing.T) {
+	data := InstanceData{
+		Title:         "wave-coder-2",
+		Path:          "/tmp/repo",
+		Branch:        "plan/feature",
+		Status:        Paused,
+		Program:       "claude",
+		TaskFile:      "feature",
+		AgentType:     AgentTypeCoder,
+		WaveNumber:    3,
+		TaskNumber:    5,
+		PeerCount:     6,
+		WaveTaskIndex: 2,
+		WaveTaskCount: 6,
+		Worktree: GitWorktreeData{
+			RepoPath:      "/tmp/repo",
+			WorktreePath:  "/tmp/repo/.worktrees/wave-coder-2",
+			SessionName:   "wave-coder-2",
+			BranchName:    "plan/feature",
+			BaseCommitSHA: "abc123",
+		},
+	}
+
+	inst, err := FromInstanceData(data)
+	require.NoError(t, err)
+	assert.Equal(t, 2, inst.WaveTaskIndex, "WaveTaskIndex must be restored from persisted data")
+	assert.Equal(t, 6, inst.WaveTaskCount, "WaveTaskCount must be restored from persisted data")
+
+	roundTrip := inst.ToInstanceData()
+	assert.Equal(t, 2, roundTrip.WaveTaskIndex, "WaveTaskIndex must survive ToInstanceData round-trip")
+	assert.Equal(t, 6, roundTrip.WaveTaskCount, "WaveTaskCount must survive ToInstanceData round-trip")
+}
+
+func TestInstanceData_WaveTaskMetadataZeroFromOldState(t *testing.T) {
+	// Simulate old persisted state that has no wave_task_index / wave_task_count keys.
+	data := InstanceData{
+		Title:   "old-instance",
+		Path:    "/tmp/repo",
+		Branch:  "feature/legacy",
+		Status:  Paused,
+		Program: "opencode",
+		Worktree: GitWorktreeData{
+			RepoPath:      "/tmp/repo",
+			WorktreePath:  "/tmp/repo/.worktrees/old-instance",
+			SessionName:   "old-instance",
+			BranchName:    "feature/legacy",
+			BaseCommitSHA: "aaa111",
+		},
+	}
+
+	inst, err := FromInstanceData(data)
+	require.NoError(t, err)
+	assert.Equal(t, 0, inst.WaveTaskIndex, "missing wave_task_index in old state must restore as zero")
+	assert.Equal(t, 0, inst.WaveTaskCount, "missing wave_task_count in old state must restore as zero")
+}
+
 func TestFromInstanceData_PausedMainBranchLeavesWorktreeNil(t *testing.T) {
 	data := InstanceData{
 		Title:   "planner-main",
