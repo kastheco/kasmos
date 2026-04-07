@@ -33,7 +33,7 @@ func (r *reviewStep) Update(msg tea.Msg) (stepModel, tea.Cmd) {
 	}
 
 	switch keyMsg.String() {
-	case "enter":
+	case "enter", "tab":
 		return r, func() tea.Msg { return stepDoneMsg{} }
 	case "esc":
 		return r, func() tea.Msg { return stepBackMsg{} }
@@ -70,7 +70,7 @@ func (r *reviewStep) View(width, height int) string {
 		fmt.Sprintf("%s %s", labelStyle.Render("config:"), pathStyle.Render(reviewConfigPath)),
 		fmt.Sprintf("%s %s", labelStyle.Render("scaffold:"), pathStyle.Render(strings.Join(reviewScaffoldPaths(r.harnesses), " "))),
 		"",
-		hintDescStyle.Render("enter apply · esc go back · q quit"),
+		hintDescStyle.Render("enter/tab apply · esc go back · q quit"),
 	)
 
 	body := lipgloss.JoinVertical(lipgloss.Left, rows...)
