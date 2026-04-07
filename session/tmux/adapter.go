@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/kastheco/kasmos/session/internal/claudeprompt"
 )
 
 // ProgramAdapter encapsulates program-specific behavior for readiness detection,
@@ -77,21 +79,22 @@ func (a claudeAdapter) NeedsTrustTap() bool {
 }
 
 // DetectPrompt returns true when Claude is idle at its input prompt.
-// It classifies the last non-empty lines of plain (ANSI-stripped) pane content,
-// treating permission prompts as authoritative, suppressing active work markers,
-// and otherwise looking for narrow idle markers near the bottom of the pane.
+// It classifies the last non-empty lines of plain (ANSI-stripped) pane content.
+// Activity markers are checked first so live work suppresses stale permission
+// scrollback. Permission prompts are then detected via the shared claudeprompt
+// classifier (numbered-choice format). Review and composer prompts are checked last.
 func (a claudeAdapter) DetectPrompt(plainContent string) bool {
 	lines := claudeRecentNonEmptyLines(plainContent, claudePromptTailLines)
 	if len(lines) == 0 {
 		return false
 	}
 
-	if claudeHasPermissionPrompt(lines) {
-		return true
-	}
-
 	if claudeHasActivityMarker(lines) {
 		return false
+	}
+
+	if claudeprompt.Find(plainContent) != nil {
+		return true
 	}
 
 	if claudeHasReviewPrompt(lines) {
@@ -115,46 +118,6 @@ func claudeRecentNonEmptyLines(content string, limit int) []string {
 		return lines
 	}
 	return lines[len(lines)-limit:]
-}
-
-func claudeHasPermissionPrompt(lines []string) bool {
-	for i, line := range lines {
-		if !claudeIsPermissionQuestion(line) {
-			continue
-		}
-
-		start := i - 2
-		if start < 0 {
-			start = 0
-		}
-		end := i + 4
-		if end > len(lines) {
-			end = len(lines)
-		}
-
-		hasYes := false
-		hasNo := false
-		for _, nearby := range lines[start:end] {
-			switch {
-			case strings.Contains(nearby, "Yes"):
-				hasYes = true
-			case strings.Contains(nearby, "No"):
-				hasNo = true
-			}
-		}
-		if hasYes && hasNo {
-			return true
-		}
-	}
-
-	return false
-}
-
-func claudeIsPermissionQuestion(line string) bool {
-	if strings.Contains(line, "Do you want to proceed?") {
-		return true
-	}
-	return strings.Contains(line, "Allow tool ") && strings.Contains(line, "?")
 }
 
 func claudeHasActivityMarker(lines []string) bool {

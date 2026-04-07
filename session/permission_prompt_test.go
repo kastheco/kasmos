@@ -13,6 +13,7 @@ func TestParsePermissionPrompt(t *testing.T) {
 		program string
 		want    *PermissionPrompt
 	}{
+		// ── opencode tests (unchanged regression coverage) ──────────────────────
 		{
 			name: "opencode detects prompt",
 			content: `
@@ -68,13 +69,16 @@ stateDefault and opens the modal again.`,
 			program: "opencode",
 			want:    nil,
 		},
+
+		// ── Claude numbered-choice prompts ────────────────────────────────────
 		{
-			name: "claude detects tool approval prompt",
+			name: "claude detects 3-option numbered prompt",
 			content: `Tool approval required
 Bash: git status
 Do you want to proceed?
-Yes, allow once
-No, and tell Claude what to do differently
+1. Yes, allow once
+2. Yes, allow always
+3. No
 `,
 			program: "claude",
 			want: &PermissionPrompt{
@@ -83,8 +87,61 @@ No, and tell Claude what to do differently
 			},
 		},
 		{
+			name: "claude detects 2-option numbered prompt",
+			content: `Tool approval required
+Bash: ls -la
+Do you want to proceed?
+1. Yes, allow once
+2. No
+`,
+			program: "claude",
+			want: &PermissionPrompt{
+				Description: "Bash: ls -la",
+				Pattern:     "Bash: ls -la",
+			},
+		},
+		{
+			name: "claude detects numbered prompt with blank lines before choices",
+			content: `Tool approval required
+Bash: go vet ./...
+
+Do you want to proceed?
+
+1. Yes, allow once
+2. Yes, and don't ask again for: go vet:*
+3. No
+`,
+			program: "claude",
+			want: &PermissionPrompt{
+				Description: "Bash: go vet ./...",
+				Pattern:     "go vet:*",
+			},
+		},
+		{
+			name: "claude detects structural fallback without question text",
+			content: `Bash: make build
+1. Yes, allow once
+2. No
+`,
+			program: "claude",
+			want: &PermissionPrompt{
+				Description: "Bash: make build",
+				Pattern:     "Bash: make build",
+			},
+		},
+		{
 			name:    "claude no prompt present",
 			content: `normal claude conversation output without any approval prompt`,
+			program: "claude",
+			want:    nil,
+		},
+		{
+			name: "claude numbered task list is not a prompt",
+			content: `Here is my plan:
+1. Fix detection
+2. Update tests
+3. Deploy
+`,
 			program: "claude",
 			want:    nil,
 		},
@@ -99,11 +156,24 @@ Allow tool Bash? maybe, but there is no approval UI here.
 		},
 		{
 			name:    "claude handles ansi prompt content",
-			content: "\x1b[1mTool approval required\x1b[0m\n\x1b[36mBash: git status\x1b[0m\n\x1b[33mDo you want to proceed?\x1b[0m\n\x1b[32mYes, allow once\x1b[0m\n\x1b[31mNo, and tell Claude what to do differently\x1b[0m\n",
+			content: "\x1b[1mTool approval required\x1b[0m\n\x1b[36mBash: git status\x1b[0m\n\x1b[33mDo you want to proceed?\x1b[0m\n\x1b[32m1. Yes, allow once\x1b[0m\n\x1b[31m2. No\x1b[0m\n",
 			program: "wrapper /usr/local/bin/claude --dangerously-skip-permissions",
 			want: &PermissionPrompt{
 				Description: "Bash: git status",
 				Pattern:     "Bash: git status",
+			},
+		},
+		// ── Legacy Claude yes/no shape (regression: must not break older prompts) ──
+		{
+			name: "claude legacy Allow tool prompt still detected",
+			content: `Allow tool Bash?
+Yes
+No
+`,
+			program: "claude",
+			want: &PermissionPrompt{
+				Description: "Bash",
+				Pattern:     "Bash",
 			},
 		},
 	}

@@ -129,7 +129,7 @@ func TestSendPermissionResponse_DelegatesToClaudeAdapter(t *testing.T) {
 	err := s.SendPermissionResponse(PermissionAllowOnce)
 	require.NoError(t, err)
 	assert.Equal(t, []string{
-		"tmux send-keys -l -t kas_claude-perm y",
+		"tmux send-keys -l -t kas_claude-perm 1",
 		"tmux send-keys -t kas_claude-perm Enter",
 	}, ranCmds)
 }
