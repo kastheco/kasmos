@@ -5,10 +5,11 @@ set dotenv-load := true
 admin-ensure:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [[ ! -d web/admin/node_modules ]]; then
-        cd web/admin && npm ci
+    cd web/admin
+    if [[ ! -d node_modules ]]; then
+        npm ci
     fi
-    cd web/admin && npm run build
+    npm run build
 
 # Build kasmos binary
 build: admin-ensure

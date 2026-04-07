@@ -131,10 +131,13 @@ func TestParsePlan_TaskHeaderSeparatorVariants(t *testing.T) {
 		wantTtl string
 	}{
 		{"colon", "### Task 1: Do thing", 1, "Do thing"},
-		{"em-dash", "### Task 2 \u2014 Do thing", 2, "Do thing"},
-		{"en-dash", "### Task 3 \u2013 Do thing", 3, "Do thing"},
-		{"hyphen", "### Task 4 - Do thing", 4, "Do thing"},
-		{"colon-no-space", "### Task 5:Do thing", 5, "Do thing"},
+		// Renumbering assigns 1..N in traversal order, so every single-task plan gets number 1
+		// regardless of what the markdown says. The wantNum=1 values below are intentional;
+		// wantTtl still verifies the regex correctly handles each separator variant.
+		{"em-dash", "### Task 2 \u2014 Do thing", 1, "Do thing"},
+		{"en-dash", "### Task 3 \u2013 Do thing", 1, "Do thing"},
+		{"hyphen", "### Task 4 - Do thing", 1, "Do thing"},
+		{"colon-no-space", "### Task 5:Do thing", 1, "Do thing"},
 		{"backtick-title", "### Task 1 \u2014 `kas audit` subcommand", 1, "`kas audit` subcommand"},
 	}
 	for _, tt := range tests {
