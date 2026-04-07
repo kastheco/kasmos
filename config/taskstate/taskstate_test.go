@@ -753,6 +753,59 @@ func TestSetClickUpTaskID_NotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "not found")
 }
 
+func TestTaskState_IngestContent_PerWaveTaskNumbers(t *testing.T) {
+	ps := newTestPS(t)
+	require.NoError(t, ps.Create("plan", "", "plan/plan", "", time.Now().UTC()))
+
+	// Plan uses per-wave numbering: Wave 1 has Task 1 and Task 2, Wave 2 also
+	// has Task 1 and Task 2. After parse the numbers must be 1..4 globally.
+	content := `# Plan
+
+**Goal:** renumber per-wave tasks
+
+## Wave 1
+
+### Task 1: alpha
+
+Do alpha.
+
+### Task 2: beta
+
+Do beta.
+
+## Wave 2
+
+### Task 1: gamma
+
+Do gamma.
+
+### Task 2: delta
+
+Do delta.
+`
+	require.NoError(t, ps.IngestContent("plan", content))
+
+	subtasks, err := ps.GetSubtasks("plan")
+	require.NoError(t, err)
+	require.Len(t, subtasks, 4)
+
+	assert.Equal(t, 1, subtasks[0].TaskNumber)
+	assert.Equal(t, "alpha", subtasks[0].Title)
+	assert.Equal(t, taskstore.SubtaskStatusPending, subtasks[0].Status)
+
+	assert.Equal(t, 2, subtasks[1].TaskNumber)
+	assert.Equal(t, "beta", subtasks[1].Title)
+	assert.Equal(t, taskstore.SubtaskStatusPending, subtasks[1].Status)
+
+	assert.Equal(t, 3, subtasks[2].TaskNumber)
+	assert.Equal(t, "gamma", subtasks[2].Title)
+	assert.Equal(t, taskstore.SubtaskStatusPending, subtasks[2].Status)
+
+	assert.Equal(t, 4, subtasks[3].TaskNumber)
+	assert.Equal(t, "delta", subtasks[3].Title)
+	assert.Equal(t, taskstore.SubtaskStatusPending, subtasks[3].Status)
+}
+
 func TestTaskState_ReviewCycle(t *testing.T) {
 	ps := newTestPS(t)
 	require.NoError(t, ps.Create("test", "desc", "plan/test", "", time.Now()))

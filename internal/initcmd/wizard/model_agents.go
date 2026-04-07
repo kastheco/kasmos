@@ -235,7 +235,7 @@ func (m *agentStepModel) renderRolePanel(width, height int) string {
 
 	hint := "j/k navigate · enter edit · space toggle · tab next step · q quit"
 	if m.mode == agentEditMode {
-		hint = "tab next field · h/l cycle · / filter models · esc done editing"
+		hint = "enter select/next · tab next field · h/l cycle · / filter models · esc done editing"
 	}
 	rows = append(rows, "", hintDescStyle.Render(hint))
 	panel := strings.Join(rows, "\n")
@@ -346,7 +346,6 @@ func (m *agentStepModel) cycleFieldValue(direction int) {
 		next = next % len(m.harnesses)
 		a.Harness = m.harnesses[next]
 		m.syncModelChoices()
-		m.syncEffortForCurrentAgent()
 		m.syncTemperatureInput()
 	case 2:
 		levels := m.effortOptions(a.Harness, a.Model)
@@ -405,7 +404,7 @@ func (m *agentStepModel) updateEditMode(keyMsg tea.KeyPressMsg) (stepModel, tea.
 			return m, nil
 		case "enter":
 			m.selectCurrentModel()
-			m.filtering = false
+			m.nextField()
 			return m, nil
 		case "backspace", "ctrl+h":
 			if m.filtering && len(m.filterText) > 0 {
@@ -611,6 +610,37 @@ func (m *agentStepModel) syncModelChoices() {
 	m.filterText = ""
 	m.filtering = false
 	m.applyModelFilter()
+	if len(m.filteredModels) > 0 {
+		found := false
+		for _, mdl := range m.filteredModels {
+			if mdl == a.Model {
+				found = true
+				break
+			}
+		}
+		if !found {
+			if a.Model == "" || m.isModelFromAnyCache(a.Model) {
+				// Empty model or a model from another harness's list — auto-select
+				// the first suggestion. Free-text models (not in any cache) are
+				// preserved since harnesses like codex accept arbitrary names.
+				a.Model = m.filteredModels[0]
+			}
+		}
+	}
+	m.syncEffortForCurrentAgent()
+}
+
+// isModelFromAnyCache returns true if the model appears in any harness's cached
+// model list. Free-text models (not in any cache) return false.
+func (m *agentStepModel) isModelFromAnyCache(model string) bool {
+	for _, models := range m.modelCache {
+		for _, mdl := range models {
+			if mdl == model {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (m *agentStepModel) applyModelFilter() {

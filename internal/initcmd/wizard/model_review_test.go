@@ -47,6 +47,15 @@ func TestReviewStep_QReturnsStepCancelMsg(t *testing.T) {
 	assert.True(t, ok)
 }
 
+func TestReviewStep_TabTriggersApply(t *testing.T) {
+	r := newReviewStep(nil, nil)
+	_, cmd := r.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	require.NotNil(t, cmd)
+	msg := cmd()
+	_, ok := msg.(stepDoneMsg)
+	assert.True(t, ok)
+}
+
 func TestReviewStep_ViewDoesNotRenderStepDots(t *testing.T) {
 	r := newReviewStep(nil, []string{"claude"})
 	view := r.View(100, 20)

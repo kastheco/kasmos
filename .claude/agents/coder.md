@@ -1,7 +1,6 @@
 ---
 name: coder
 description: Implementation agent for writing and modifying code
-model: claude-sonnet-4-6
 ---
 
 Your task prompt already includes all rules needed; do not load additional skills.

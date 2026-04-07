@@ -886,8 +886,69 @@ func TestPatchWorktreeConfig_AddsKasmosMCPToExistingConfig(t *testing.T) {
 
 	kasmos, ok := mcp["kasmos"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "remote", kasmos["type"])
-	assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
+	assert.Equal(t, "local", kasmos["type"])
+	assert.Equal(t, []any{"kas", "mcp"}, kasmos["command"])
+	assert.NotContains(t, kasmos, "url", "url key must not be present in local transport entry")
+	assert.Equal(t, true, kasmos["enabled"])
+}
+
+func TestPatchWorktreeConfig_MigratesRemoteEntryToLocal(t *testing.T) {
+	dir := t.TempDir()
+	opencodeConfig := `{
+	  "agent": {
+	    "coder": {
+	      "model": "anthropic/claude-sonnet-4-6"
+	    }
+	  },
+	  "mcp": {
+	    "clickup": {
+	      "type": "remote",
+	      "url": "https://mcp.clickup.com/mcp",
+	      "enabled": true
+	    },
+	    "kasmos": {
+	      "type": "remote",
+	      "url": "http://127.0.0.1:7434/mcp",
+	      "enabled": true
+	    }
+	  }
+	}`
+	configPath := filepath.Join(dir, "opencode.jsonc")
+	require.NoError(t, os.WriteFile(configPath, []byte(opencodeConfig), 0o644))
+
+	temp := 0.2
+	agents := []harness.AgentConfig{{
+		Role:        "coder",
+		Harness:     "opencode",
+		Model:       "anthropic/claude-sonnet-4-6",
+		Temperature: &temp,
+		Effort:      "medium",
+	}}
+
+	err := PatchWorktreeConfig(dir, agents)
+	require.NoError(t, err)
+
+	updated, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+	assertValidJSON(t, string(updated))
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(updated, &parsed))
+	mcp, ok := parsed["mcp"].(map[string]any)
+	require.True(t, ok)
+
+	// clickup must be preserved untouched
+	clickup, ok := mcp["clickup"].(map[string]any)
+	require.True(t, ok, "clickup MCP server must be preserved")
+	assert.Equal(t, "remote", clickup["type"])
+	assert.Equal(t, "https://mcp.clickup.com/mcp", clickup["url"])
+
+	// kasmos must be migrated to local stdio
+	kasmos, ok := mcp["kasmos"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "local", kasmos["type"])
+	assert.Equal(t, []any{"kas", "mcp"}, kasmos["command"])
+	assert.NotContains(t, kasmos, "url", "url key must be removed when migrating to local transport")
 	assert.Equal(t, true, kasmos["enabled"])
 }
 
@@ -1213,8 +1274,8 @@ func TestPatchWorktreeConfig_Idempotent_NoRewriteWhenUnchanged(t *testing.T) {
 	opencodeConfig := `{
 	  "mcp": {
 	    "kasmos": {
-	      "type": "remote",
-	      "url": "http://127.0.0.1:7434/mcp",
+	      "type": "local",
+	      "command": ["kas", "mcp"],
 	      "enabled": true
 	    }
 	  },

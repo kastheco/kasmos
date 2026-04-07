@@ -414,6 +414,68 @@ func findLineComment(line string) int {
 	return -1
 }
 
+// ensureOpenCodeKasmosMCPEntry ensures mcp.kasmos uses the local stdio transport.
+// It creates the entry when absent and rewrites stale remote entries to the
+// rendered local form, removing the obsolete url key. Unrelated MCP servers
+// (e.g. clickup) and non-conflicting extra keys on mcp.kasmos are preserved.
+// Returns true if currentMCP was modified.
+func ensureOpenCodeKasmosMCPEntry(currentMCP map[string]any, renderedKasmos map[string]any) bool {
+	if renderedKasmos == nil {
+		return false
+	}
+	existing, exists := currentMCP["kasmos"]
+	if !exists {
+		currentMCP["kasmos"] = cloneMap(renderedKasmos)
+		return true
+	}
+	existingMap, ok := existing.(map[string]any)
+	if !ok {
+		currentMCP["kasmos"] = cloneMap(renderedKasmos)
+		return true
+	}
+	// Check whether the existing entry already matches the rendered local entry.
+	if kasmosEntryIsUpToDate(existingMap, renderedKasmos) {
+		return false
+	}
+	// Migrate: preserve non-conflicting extra keys but apply all rendered keys
+	// and remove the url key that belongs exclusively to the remote transport.
+	updated := cloneMap(existingMap)
+	for k, v := range renderedKasmos {
+		updated[k] = v
+	}
+	delete(updated, "url")
+	currentMCP["kasmos"] = updated
+	return true
+}
+
+// kasmosEntryIsUpToDate returns true when existing already contains every key
+// from rendered with matching values and does not carry a stale url key.
+// Values are compared via JSON serialisation to handle []any slices correctly.
+func kasmosEntryIsUpToDate(existing, rendered map[string]any) bool {
+	// A url key indicates the stale remote transport — always needs migration.
+	if _, hasURL := existing["url"]; hasURL {
+		return false
+	}
+	for k, rv := range rendered {
+		ev, ok := existing[k]
+		if !ok {
+			return false
+		}
+		rb, err := json.Marshal(rv)
+		if err != nil {
+			return false
+		}
+		eb, err := json.Marshal(ev)
+		if err != nil {
+			return false
+		}
+		if string(rb) != string(eb) {
+			return false
+		}
+	}
+	return true
+}
+
 // cloneMap copies a map[string]any shallowly.
 func cloneMap(m map[string]any) map[string]any {
 	if m == nil {
@@ -500,14 +562,13 @@ func PatchWorktreeConfig(worktreePath string, agents []harness.AgentConfig) erro
 	if len(renderedMCP) > 0 {
 		currentMCP, _ := current["mcp"].(map[string]any)
 		if currentMCP == nil {
-			current["mcp"] = cloneMap(renderedMCP)
+			currentMCP = map[string]any{}
+			current["mcp"] = currentMCP
+		}
+		renderedKasmos, _ := renderedMCP["kasmos"].(map[string]any)
+		if ensureOpenCodeKasmosMCPEntry(currentMCP, renderedKasmos) {
+			current["mcp"] = currentMCP
 			changed = true
-		} else if kasmosEntry, ok := renderedMCP["kasmos"]; ok {
-			if _, exists := currentMCP["kasmos"]; !exists {
-				currentMCP["kasmos"] = kasmosEntry
-				current["mcp"] = currentMCP
-				changed = true
-			}
 		}
 	}
 

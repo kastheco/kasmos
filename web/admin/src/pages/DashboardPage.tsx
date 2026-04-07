@@ -1,8 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useLocation } from "react-router";
 import { listTasks, listAuditEvents, resolveProjectName } from "../api";
+import { useAutoRefresh } from "../hooks/useAutoRefresh";
+import LastUpdated from "../components/LastUpdated";
+import Skeleton from "../components/Skeleton";
 import type { AuditEvent, Status, TaskEntry } from "../types";
 import styles from "./DashboardPage.module.css";
+
+type DashboardData = { tasks: TaskEntry[]; events: AuditEvent[] };
 
 const STATUS_ORDER: Status[] = [
   "ready",
@@ -57,54 +62,47 @@ function formatRelativeTime(timestamp: string): string {
 }
 
 export default function DashboardPage() {
-  const [tasks, setTasks] = useState<TaskEntry[]>([]);
-  const [events, setEvents] = useState<AuditEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
   const { search } = useLocation();
   const project = useMemo(() => resolveProjectName(search), [search]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    Promise.all([listTasks(project), listAuditEvents(project)])
-      .then(([fetchedTasks, fetchedEvents]) => {
-        if (cancelled) return;
-        setTasks(fetchedTasks);
-        setEvents(fetchedEvents.slice(0, 20));
-        setLoading(false);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : "failed to load data");
-        setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [project]);
-
-  const counts = useMemo(() => countByStatus(tasks), [tasks]);
-
-  if (loading) {
-    return (
-      <div className={styles.page}>
-        <h1 className={styles.pageTitle}>dashboard</h1>
-        <p className={styles.loadingText}>loading...</p>
-      </div>
+  const { data, loading, error, lastUpdatedAt, isRefreshing } =
+    useAutoRefresh<DashboardData>(
+      async () => {
+        const [tasks, allEvents] = await Promise.all([
+          listTasks(project),
+          listAuditEvents(project),
+        ]);
+        return { tasks, events: allEvents.slice(0, 20) };
+      },
+      [project],
     );
-  }
+
+  const tasks = data?.tasks ?? [];
+  const events = data?.events ?? [];
+  const counts = useMemo(() => countByStatus(tasks), [tasks]);
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.pageTitle}>dashboard</h1>
+      <div className={styles.titleRow}>
+        <h1 className={styles.pageTitle}>dashboard</h1>
+        <LastUpdated timestamp={lastUpdatedAt} isRefreshing={isRefreshing} />
+      </div>
 
-      {error ? (
-        <div className={styles.error}>{error}</div>
+      {error && <div className={styles.error}>{error}</div>}
+
+      {loading ? (
+        <>
+          <h2 className={styles.sectionTitle}>task status</h2>
+          <div className={styles.cardsGrid}>
+            {Array.from({ length: 6 }, (_, i) => (
+              <Skeleton key={i} variant="card" />
+            ))}
+          </div>
+          <h2 className={styles.sectionTitle}>recent activity</h2>
+          {Array.from({ length: 5 }, (_, i) => (
+            <Skeleton key={i} variant="row" />
+          ))}
+        </>
       ) : (
         <>
           <h2 className={styles.sectionTitle}>task status</h2>

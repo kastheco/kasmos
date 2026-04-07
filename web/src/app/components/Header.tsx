@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import styles from "./Header.module.css";
 
 export default function Header() {
@@ -14,9 +15,15 @@ export default function Header() {
 
   return (
     <header className={`${styles.header} ${scrolled ? styles.scrolled : ""}`}>
-      <a href="#" className={styles.logoWrapper}>
-        <span className={styles.logo}>kasmos</span>
-      </a>
+      <Link href="/" className={styles.logoWrapper}>
+        <img
+          src="/logo-k.png"
+          alt="kasmos"
+          className={styles.logoImage}
+          width={32}
+          height={32}
+        />
+      </Link>
       <nav className={styles.nav}>
         <a
           href="https://github.com/kastheco/kasmos"
@@ -26,12 +33,12 @@ export default function Header() {
         >
           github
         </a>
-        <a
+        <Link
           href="/docs"
           className={styles.navLink}
         >
           docs
-        </a>
+        </Link>
         <a
           href="https://github.com/kastheco/kasmos/releases"
           target="_blank"

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="web/public/logo-full.png" alt="kasmos" width="500" />
+</p>
+
 # kasmos [![CI](https://github.com/kastheco/kasmos/actions/workflows/build.yml/badge.svg)](https://github.com/kastheco/kasmos/actions/workflows/build.yml) [![GitHub Release](https://img.shields.io/github/v/release/kastheco/kasmos)](https://github.com/kastheco/kasmos/releases/latest) [![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](LICENSE.md)
 
 > mcp-first multi-agent orchestration for git repos: task store, streamable-http mcp server, daemon, worktrees, and tui in one tool.
@@ -181,7 +185,15 @@ kas mcp
 
 if you do **not** want to launch multiple commands every session, run the server + daemon as user services.
 
-for packaged installs (brew / release binary), create the units directly:
+**preferred path (source checkouts):** `just services-enable` detects your OS and wires up the right service manager automatically.
+
+```bash
+just services-enable
+```
+
+for packaged installs (brew / release binary), follow the manual steps for your platform below.
+
+### linux (systemd)
 
 ```bash
 mkdir -p ~/.config/systemd/user
@@ -225,7 +237,32 @@ systemctl --user enable --now kasmosdb kasmos
 
 if your `kas` binary lives somewhere else, replace `%h/.local/bin/kas` with the real path from `command -v kas`.
 
-for source checkouts, `just services-enable` still works.
+### macos (launchd)
+
+plist templates are shipped in `contrib/`. install them into `~/Library/LaunchAgents/` and load them with `launchctl`:
+
+```bash
+mkdir -p ~/Library/LaunchAgents ~/Library/Logs/kasmos
+
+# render and install the plists (replace the kas path if needed)
+KAS=$(command -v kas)
+sed "s|__KAS_BIN__|$KAS|g; s|__HOME__|$HOME|g" \
+  contrib/com.kasmos.taskstore.plist > ~/Library/LaunchAgents/com.kasmos.taskstore.plist
+sed "s|__KAS_BIN__|$KAS|g; s|__HOME__|$HOME|g" \
+  contrib/com.kasmos.daemon.plist   > ~/Library/LaunchAgents/com.kasmos.daemon.plist
+
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kasmos.taskstore.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kasmos.daemon.plist
+```
+
+logs land in `~/Library/Logs/kasmos/`. to stop the services:
+
+```bash
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.kasmos.taskstore.plist
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.kasmos.daemon.plist
+```
+
+see the [docs](https://kasmos.dev/docs/service-management) for full details on both platforms.
 
 after that, your normal interactive entrypoint can just be:
 
@@ -287,9 +324,9 @@ use the `kas mcp` command as the server process:
 }
 ```
 
-### opencode remote mcp config
+### opencode local mcp config
 
-`kas setup` / `kas reset` now scaffold this remote `kasmos` MCP entry into `opencode.jsonc` by default for project-local OpenCode config.
+`kas setup` / `kas reset` scaffold a local stdio `kasmos` MCP entry into `opencode.jsonc`. each opencode session runs `kas mcp` directly from the correct repo root, so the MCP server always binds to the right project without relying on a running `kas serve` process.
 
 if you need to add or restore it manually, use:
 
@@ -297,8 +334,8 @@ if you need to add or restore it manually, use:
 {
   "mcp": {
     "kasmos": {
-      "type": "remote",
-      "url": "http://127.0.0.1:7434/mcp",
+      "type": "local",
+      "command": ["kas", "mcp"],
       "enabled": true
     }
   }
@@ -306,6 +343,8 @@ if you need to add or restore it manually, use:
 ```
 
 you can place that in project-local opencode config alongside the scaffolded `opencode.jsonc` content, or in your global opencode config if you want it everywhere.
+
+existing `opencode.jsonc` files that still contain the old remote entry (`type: "remote"`, `url: "http://127.0.0.1:7434/mcp"`) are automatically migrated to the local transport on the next `kas setup` or `kas reset`.
 
 ### remote / multi-machine use
 

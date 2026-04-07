@@ -47,9 +47,9 @@ func (h *harnessStep) Update(msg tea.Msg) (stepModel, tea.Cmd) {
 		h.cursorDown()
 	case "k", "up":
 		h.cursorUp()
-	case " ", "space":
+	case " ", "space", "enter":
 		h.toggle()
-	case "enter":
+	case "tab":
 		if h.canProceed() {
 			return h, func() tea.Msg { return stepDoneMsg{} }
 		}
@@ -101,7 +101,7 @@ func (h *harnessStep) View(width, height int) string {
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, hintDescStyle.Render("space toggle · enter continue · q quit"))
+	lines = append(lines, hintDescStyle.Render("space/enter toggle · tab continue · q quit"))
 
 	body := lipgloss.JoinVertical(lipgloss.Left, lines...)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Top, body)

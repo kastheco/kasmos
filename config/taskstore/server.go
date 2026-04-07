@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+// normalizeFilename strips a trailing ".md" suffix and surrounding whitespace
+// from a raw task filename, matching the slug semantics used by the CLI and MCP
+// tools (see cmd/task.go and internal/mcpserver/tasktools/tasktools.go).
+func normalizeFilename(raw string) string {
+	return strings.TrimSuffix(strings.TrimSpace(raw), ".md")
+}
+
 // NewHandler returns an http.Handler that exposes the Store over HTTP.
 // It uses Go 1.22+ ServeMux pattern matching for method+path routing.
 func NewHandler(store Store) http.Handler {
@@ -63,6 +70,11 @@ func NewHandler(store Store) http.Handler {
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return
 		}
+		entry.Filename = normalizeFilename(entry.Filename)
+		if entry.Filename == "" {
+			writeError(w, http.StatusBadRequest, "filename must not be empty")
+			return
+		}
 		if err := store.Create(project, entry); err != nil {
 			writeError(w, http.StatusConflict, err.Error())
 			return
@@ -73,7 +85,7 @@ func NewHandler(store Store) http.Handler {
 	// Get task
 	mux.HandleFunc("GET /v1/projects/{project}/tasks/{filename}", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 		entry, err := store.Get(project, filename)
 		if err != nil {
 			if isNotFound(err) {
@@ -89,7 +101,7 @@ func NewHandler(store Store) http.Handler {
 	// Delete task
 	mux.HandleFunc("DELETE /v1/projects/{project}/tasks/{filename}", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 		if err := store.Delete(project, filename); err != nil {
 			if isNotFound(err) {
 				writeError(w, http.StatusNotFound, "task not found: "+filename)
@@ -104,10 +116,23 @@ func NewHandler(store Store) http.Handler {
 	// Update task
 	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
+		if filename == "" {
+			writeError(w, http.StatusBadRequest, "invalid task filename")
+			return
+		}
 		var entry TaskEntry
 		if err := json.NewDecoder(r.Body).Decode(&entry); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		entry.Filename = normalizeFilename(entry.Filename)
+		if entry.Filename == "" {
+			writeError(w, http.StatusBadRequest, "invalid task filename")
+			return
+		}
+		if entry.Filename != filename {
+			writeError(w, http.StatusBadRequest, "task filename does not match path")
 			return
 		}
 		if err := store.Update(project, filename, entry); err != nil {
@@ -124,7 +149,7 @@ func NewHandler(store Store) http.Handler {
 	// Update execution state only.
 	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}/execution-state", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 		var state ExecutionState
 		if err := json.NewDecoder(r.Body).Decode(&state); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
@@ -168,7 +193,7 @@ func NewHandler(store Store) http.Handler {
 	// Get task content
 	mux.HandleFunc("GET /v1/projects/{project}/tasks/{filename}/content", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 		content, err := store.GetContent(project, filename)
 		if err != nil {
 			if isNotFound(err) {
@@ -186,7 +211,7 @@ func NewHandler(store Store) http.Handler {
 	// Set task content
 	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}/content", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
@@ -206,7 +231,7 @@ func NewHandler(store Store) http.Handler {
 	// Get subtasks
 	mux.HandleFunc("GET /v1/projects/{project}/tasks/{filename}/subtasks", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 		if _, err := store.Get(project, filename); err != nil {
 			if isNotFound(err) {
 				writeError(w, http.StatusNotFound, err.Error())
@@ -233,7 +258,7 @@ func NewHandler(store Store) http.Handler {
 	// Set subtasks
 	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}/subtasks", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 		if _, err := store.Get(project, filename); err != nil {
 			if isNotFound(err) {
 				writeError(w, http.StatusNotFound, err.Error())
@@ -261,7 +286,7 @@ func NewHandler(store Store) http.Handler {
 	// Update a subtask status
 	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}/subtasks/{taskNumber}/status", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 		taskNumberRaw := r.PathValue("taskNumber")
 		taskNumber, err := strconv.Atoi(taskNumberRaw)
 		if err != nil {
@@ -292,7 +317,7 @@ func NewHandler(store Store) http.Handler {
 	// Set a phase timestamp
 	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}/phase-timestamp", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 
 		type setPhaseTimestampRequest struct {
 			Phase string    `json:"phase"`
@@ -318,7 +343,7 @@ func NewHandler(store Store) http.Handler {
 	// Set a plan goal
 	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}/goal", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 
 		type setPlanGoalRequest struct {
 			Goal string `json:"goal"`
@@ -343,7 +368,7 @@ func NewHandler(store Store) http.Handler {
 	// Set ClickUp task ID
 	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}/clickup-task-id", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 		var req struct {
 			ClickUpTaskID string `json:"clickup_task_id"`
 		}
@@ -365,7 +390,7 @@ func NewHandler(store Store) http.Handler {
 	// Increment review cycle
 	mux.HandleFunc("POST /v1/projects/{project}/tasks/{filename}/increment-review-cycle", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 		if err := store.IncrementReviewCycle(project, filename); err != nil {
 			if isNotFound(err) {
 				writeError(w, http.StatusNotFound, "task not found: "+filename)
@@ -380,7 +405,7 @@ func NewHandler(store Store) http.Handler {
 	// Set PR URL
 	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}/pr-url", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 		var req struct {
 			PRURL string `json:"pr_url"`
 		}
@@ -402,7 +427,7 @@ func NewHandler(store Store) http.Handler {
 	// Set PR state
 	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}/pr-state", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 		var req struct {
 			PRReviewDecision string `json:"pr_review_decision"`
 			PRCheckStatus    string `json:"pr_check_status"`
@@ -425,7 +450,7 @@ func NewHandler(store Store) http.Handler {
 	// Rename task
 	mux.HandleFunc("POST /v1/projects/{project}/tasks/{filename}/rename", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 		var req struct {
 			NewFilename string `json:"new_filename"`
 		}
@@ -433,6 +458,7 @@ func NewHandler(store Store) http.Handler {
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return
 		}
+		req.NewFilename = normalizeFilename(req.NewFilename)
 		if req.NewFilename == "" {
 			writeError(w, http.StatusBadRequest, "new_filename is required")
 			return
@@ -451,7 +477,7 @@ func NewHandler(store Store) http.Handler {
 	// Record PR review (idempotent — duplicate review IDs are silently ignored)
 	mux.HandleFunc("POST /v1/projects/{project}/tasks/{filename}/pr-reviews", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 		var req struct {
 			ReviewID      int    `json:"review_id"`
 			ReviewState   string `json:"review_state"`
@@ -476,7 +502,7 @@ func NewHandler(store Store) http.Handler {
 	// List pending PR reviews (fixer not yet dispatched)
 	mux.HandleFunc("GET /v1/projects/{project}/tasks/{filename}/pr-reviews/pending", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 		entries, err := store.ListPendingReviews(project, filename)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
@@ -488,7 +514,7 @@ func NewHandler(store Store) http.Handler {
 	// Check if a PR review has been processed (row exists in pr_reviews)
 	mux.HandleFunc("GET /v1/projects/{project}/tasks/{filename}/pr-reviews/{reviewID}/processed", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 		reviewIDRaw := r.PathValue("reviewID")
 		reviewID, err := strconv.Atoi(reviewIDRaw)
 		if err != nil {
@@ -502,7 +528,7 @@ func NewHandler(store Store) http.Handler {
 	// Mark a PR review reaction as posted
 	mux.HandleFunc("POST /v1/projects/{project}/tasks/{filename}/pr-reviews/{reviewID}/reacted", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 		reviewIDRaw := r.PathValue("reviewID")
 		reviewID, err := strconv.Atoi(reviewIDRaw)
 		if err != nil {
@@ -523,7 +549,7 @@ func NewHandler(store Store) http.Handler {
 	// Mark a PR review's fixer agent as dispatched
 	mux.HandleFunc("POST /v1/projects/{project}/tasks/{filename}/pr-reviews/{reviewID}/fixer-dispatched", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
-		filename := r.PathValue("filename")
+		filename := normalizeFilename(r.PathValue("filename"))
 		reviewIDRaw := r.PathValue("reviewID")
 		reviewID, err := strconv.Atoi(reviewIDRaw)
 		if err != nil {

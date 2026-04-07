@@ -137,6 +137,18 @@ func Parse(content string) (*Plan, error) {
 		})
 	}
 
+	// Post-process: renumber all tasks globally (1..N) in traversal order across
+	// all waves. This prevents duplicate task numbers when per-wave plans use
+	// Task 1, Task 2 in every wave, which would produce a SQLite UNIQUE violation
+	// when subtasks are persisted.
+	counter := 1
+	for i := range plan.Waves {
+		for j := range plan.Waves[i].Tasks {
+			plan.Waves[i].Tasks[j].Number = counter
+			counter++
+		}
+	}
+
 	return plan, nil
 }
 

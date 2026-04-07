@@ -14,6 +14,7 @@ import (
 
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/internal/platform"
 	"github.com/spf13/cobra"
 )
 
@@ -66,10 +67,12 @@ func newDaemonStartCmd() *cobra.Command {
 	var foreground bool
 	var configPath string
 
+	manager := platform.ServiceManagerName()
+
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "start the kasmos daemon",
-		Long:  "start the kasmos multi-repo orchestration daemon. by default it daemonizes; use --foreground for systemd.",
+		Long:  "start the kasmos multi-repo orchestration daemon. by default it daemonizes; use --foreground for " + manager + ".",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			execPath, err := os.Executable()
 			if err != nil {
@@ -131,7 +134,7 @@ func newDaemonStartCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&foreground, "foreground", false, "run in foreground (for systemd / direct invocation)")
+	cmd.Flags().BoolVar(&foreground, "foreground", false, "run in foreground (for "+manager+" / direct invocation)")
 	cmd.Flags().StringVar(&configPath, "config", "", "path to daemon TOML config file")
 	return cmd
 }

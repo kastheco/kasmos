@@ -137,6 +137,63 @@ func TestExecuteTaskUpdateContent(t *testing.T) {
 		assert.Contains(t, err.Error(), "stdin is a tty")
 	})
 
+	t.Run("per-wave task numbers are renumbered globally", func(t *testing.T) {
+		store := taskstore.NewTestSQLiteStore(t)
+		project := "test-project"
+		err := store.Create(project, taskstore.TaskEntry{
+			Filename:  "my-plan",
+			Status:    taskstore.StatusReady,
+			CreatedAt: time.Now(),
+		})
+		require.NoError(t, err)
+
+		// Both waves use Task 1 / Task 2 — the parser must renumber them 1..4.
+		content := strings.Join([]string{
+			"# Per-Wave Plan",
+			"",
+			"**Goal:** global renumber",
+			"",
+			"## Wave 1",
+			"",
+			"### Task 1: alpha",
+			"",
+			"Do alpha.",
+			"",
+			"### Task 2: beta",
+			"",
+			"Do beta.",
+			"",
+			"## Wave 2",
+			"",
+			"### Task 1: gamma",
+			"",
+			"Do gamma.",
+			"",
+			"### Task 2: delta",
+			"",
+			"Do delta.",
+			"",
+		}, "\n")
+
+		err = executeTaskUpdateContent(project, "my-plan", strings.NewReader(content), store)
+		require.NoError(t, err)
+
+		subtasks, err := store.GetSubtasks(project, "my-plan")
+		require.NoError(t, err)
+		require.Len(t, subtasks, 4)
+		assert.Equal(t, 1, subtasks[0].TaskNumber)
+		assert.Equal(t, "alpha", subtasks[0].Title)
+		assert.Equal(t, 2, subtasks[1].TaskNumber)
+		assert.Equal(t, "beta", subtasks[1].Title)
+		assert.Equal(t, 3, subtasks[2].TaskNumber)
+		assert.Equal(t, "gamma", subtasks[2].Title)
+		assert.Equal(t, 4, subtasks[3].TaskNumber)
+		assert.Equal(t, "delta", subtasks[3].Title)
+		for _, st := range subtasks {
+			assert.Equal(t, taskstore.SubtaskStatusPending, st.Status)
+		}
+	})
+
 	t.Run("uses file reader when provided", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "plan.md")
 		require.NoError(t, os.WriteFile(path, []byte("# plan\n"), 0o644))
