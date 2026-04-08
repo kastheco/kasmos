@@ -62,6 +62,28 @@ func TestFind(t *testing.T) {
 			wantPattern: "go vet:*",
 		},
 		{
+			name: "quoted numbered choices without structured detail are not a prompt",
+			content: strings.Join([]string{
+				"The reviewer wrote down the approval UI for reference:",
+				"This command requires approval",
+				"1. Yes, allow once",
+				"2. Yes, and don't ask again for: scc /tmp/*",
+				"3. No",
+			}, "\n"),
+			wantNil: true,
+		},
+		{
+			name: "do you want to proceed requires structured detail",
+			content: strings.Join([]string{
+				"Tool approval required",
+				"This command requires approval",
+				"Do you want to proceed?",
+				"1. Yes, allow once",
+				"2. No",
+			}, "\n"),
+			wantNil: true,
+		},
+		{
 			name: "legacy Do you want to proceed with Yes/No",
 			content: strings.Join([]string{
 				"Claude wants to execute the following command:",

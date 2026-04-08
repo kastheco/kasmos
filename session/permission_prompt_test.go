@@ -130,6 +130,28 @@ Do you want to proceed?
 			},
 		},
 		{
+			name: "claude ignores quoted numbered choices without structured detail",
+			content: `The reviewer quoted the old approval UI:
+This command requires approval
+1. Yes, allow once
+2. Yes, and don't ask again for: scc /tmp/*
+3. No
+`,
+			program: "claude",
+			want:    nil,
+		},
+		{
+			name: "claude do you want to proceed requires structured detail",
+			content: `Tool approval required
+This command requires approval
+Do you want to proceed?
+1. Yes, allow once
+2. No
+`,
+			program: "claude",
+			want:    nil,
+		},
+		{
 			name:    "claude no prompt present",
 			content: `normal claude conversation output without any approval prompt`,
 			program: "claude",

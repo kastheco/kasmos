@@ -8,6 +8,7 @@ import (
 
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
+	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/session"
 	"github.com/stretchr/testify/assert"
@@ -168,4 +169,63 @@ func TestMarkTaskComplete_SetsImplementationComplete(t *testing.T) {
 		"mark_task_complete must set ImplementationComplete so sidebar shows checkmark")
 	assert.True(t, orch.IsTaskComplete(1),
 		"task must be marked complete in orchestrator")
+}
+
+// TestPersistedSubtaskCompletionSetsImplementationComplete verifies that when a
+// daemon-managed repo has already marked a wave subtask complete in the store,
+// the sidebar instance picks up the completed glyph on the next metadata tick.
+func TestPersistedSubtaskCompletionSetsImplementationComplete(t *testing.T) {
+	const planFile = "persisted-complete"
+
+	content := `# Plan
+
+**Goal:** show completed task glyphs
+
+## Wave 1
+
+### Task 1: first
+
+Finish the first task.
+
+### Task 2: second
+
+Finish the second task.
+`
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.Create(planFile, "persisted completion", "plan/persisted-complete", "", time.Now()))
+	require.NoError(t, ps.IngestContent(planFile, content))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+	require.NoError(t, ps.UpdateSubtaskStatus(planFile, 1, taskstore.SubtaskStatusComplete))
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         taskstate.DisplayName(planFile) + "-W1-T1",
+		Path:          t.TempDir(),
+		Program:       "claude",
+		TaskFile:      planFile,
+		TaskNumber:    1,
+		WaveNumber:    1,
+		WaveTaskIndex: 1,
+		WaveTaskCount: 2,
+	})
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	inst.SetStatus(session.Running)
+
+	h := waveFlowHome(t, ps, plansDir, nil)
+	_ = h.nav.AddInstance(inst)
+
+	model, _ := h.Update(metadataResultMsg{
+		Results:           []instanceMetadata{{Title: inst.Title, TmuxAlive: true}},
+		PlanState:         ps,
+		DaemonManagedRepo: true,
+	})
+	_ = model.(*home)
+
+	assert.True(t, inst.ImplementationComplete,
+		"persisted complete subtask must set ImplementationComplete so the sidebar shows a checkmark")
 }

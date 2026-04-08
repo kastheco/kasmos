@@ -570,6 +570,34 @@ func (s *TmuxSpawner) KillAgent(repoPath, planFile, agentType string) error {
 	return err
 }
 
+// ForceKillAgent stops the running agent of the given type for the plan
+// unconditionally, bypassing the gracefulKill attached-client check. This is
+// used for lifecycle transitions where the agent has explicitly signalled
+// completion, so it is safe to kill even when a tmux client is attached (e.g.
+// the kasmos TUI PTY capture).
+func (s *TmuxSpawner) ForceKillAgent(repoPath, planFile, agentType string) error {
+	s.logger.Info("force kill agent", "repo", repoPath, "plan", planFile, "type", agentType)
+
+	key := instanceKey(repoPath, planFile, agentType)
+
+	s.mu.Lock()
+	inst, ok := s.instances[key]
+	s.mu.Unlock()
+
+	if !ok || inst == nil {
+		return nil
+	}
+
+	err := s.kill(inst)
+	s.mu.Lock()
+	delete(s.instances, key)
+	delete(s.planFileByKey, key)
+	delete(s.agentTypeByKey, key)
+	delete(s.projectByKey, key)
+	s.mu.Unlock()
+	return err
+}
+
 // KillWaveAgents stops all tracked task agents for the given plan/wave. It is a
 // no-op when there are no matching task instances.
 func (s *TmuxSpawner) KillWaveAgents(repoPath, planFile string, waveNumber int) error {

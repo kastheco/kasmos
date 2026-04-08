@@ -123,7 +123,7 @@ Complete the last implementation task and transition into review.
 		spawner:     NewTmuxSpawner(),
 		logger:      slog.Default(),
 		broadcaster: api.NewEventBroadcaster(),
-		killAgent: func(repoPath, taskFile, agentType string) error {
+		forceKillAgent: func(repoPath, taskFile, agentType string) error {
 			assert.Equal(t, repo.Path, repoPath)
 			assert.Equal(t, planFile, taskFile)
 			assert.Equal(t, session.AgentTypePlanner, agentType)

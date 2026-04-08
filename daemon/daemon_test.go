@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kastheco/kasmos/cmd"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstore"
@@ -725,6 +726,64 @@ func TestDaemon_AutoAdvancePlannerFinished_StartsArchitectImplementation(t *test
 	assert.Equal(t, e.Path, spawned.RepoPath)
 	assert.Equal(t, project, spawned.Project)
 	assert.Contains(t, spawned.Prompt, "You are the architect agent")
+}
+
+func TestDaemon_AutoImplementPlan_ForceKillsEvenWithAttachedClients(t *testing.T) {
+	project := "proj"
+	planFile := "feature.md"
+	store := taskstore.NewTestStore(t)
+	// StatusReady is the state after PlannerFinished — autoImplementPlan transitions
+	// it to StatusImplementing via ImplementStart.
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusReady,
+	}))
+	// Large plan so the architect (elaborator) path is taken.
+	require.NoError(t, store.SetContent(project, planFile, "# Plan\n\n**Goal:** test force kill\n\n**Architecture:** test\n\n**Tech Stack:** go\n\n**Size:** Large\n\n---\n\n## Wave 1\n\n### Task 1: First\n\nFirst.\n\n### Task 2: Second\n\nSecond.\n\n### Task 3: Third\n\nThird."))
+
+	// Set up a spawner where a client is always attached — KillAgent would defer,
+	// but ForceKillAgent must kill unconditionally.
+	spawner := NewTmuxSpawner()
+	spawner.hasAttachedClients = func(_ cmd.Executor, _ string) bool { return true }
+	spawner.sleep = func(_ time.Duration) {}
+	killCalled := false
+	spawner.kill = func(_ *session.Instance) error {
+		killCalled = true
+		return nil
+	}
+
+	// Register a tracked planner so plannerStillTracked returns true before kill.
+	const repoPath = "/tmp/repo"
+	plannerKey := instanceKey(repoPath, planFile, session.AgentTypePlanner)
+	spawner.mu.Lock()
+	spawner.instances[plannerKey] = &session.Instance{Title: "feature-plan"}
+	spawner.planFileByKey[plannerKey] = planFile
+	spawner.agentTypeByKey[plannerKey] = session.AgentTypePlanner
+	spawner.projectByKey[plannerKey] = project
+	spawner.mu.Unlock()
+
+	var spawned loop.SpawnOpts
+	d := &Daemon{
+		cfg:         &DaemonConfig{AutoAdvance: true},
+		spawner:     spawner,
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		spawnElaborator: func(_ context.Context, opts loop.SpawnOpts) error {
+			spawned = opts
+			return nil
+		},
+	}
+	e := RepoEntry{
+		Path:    repoPath,
+		Project: project,
+		Store:   store,
+	}
+
+	err := d.autoImplementPlan(context.Background(), e, planFile)
+	require.NoError(t, err)
+	assert.True(t, killCalled, "planner must be force-killed even when tmux client is attached")
+	assert.False(t, d.plannerStillTracked(repoPath, planFile), "planner must be removed from tracking after force kill")
+	assert.Equal(t, planFile, spawned.PlanFile, "architect must be spawned after planner is cleared")
 }
 
 func TestDaemon_TickScansSharedWorktreeSignals(t *testing.T) {
