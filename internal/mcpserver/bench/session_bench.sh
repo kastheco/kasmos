@@ -47,6 +47,16 @@ for f in "$FILE_SMALL" "$FILE_MEDIUM" "$FILE_LARGE"; do
   fi
 done
 
+# ── helper: portable nanosecond timestamp ─────────────────────────────────────
+# macOS date(1) does not support %N; fall back to python3 or perl.
+if date +%s%N 2>/dev/null | grep -qv N; then
+  _now_ns() { date +%s%N; }
+elif command -v python3 &>/dev/null; then
+  _now_ns() { python3 -c 'import time; print(int(time.time()*1e9))'; }
+else
+  _now_ns() { perl -MTime::HiRes=time -e 'printf "%d\n",time()*1e9'; }
+fi
+
 # ── helper: time a command N times and report min/mean/max in ms ──────────────
 time_cmd() {
   local label="$1"; shift
@@ -55,9 +65,9 @@ time_cmd() {
 
   for i in $(seq 1 "$runs"); do
     local t0 t1 elapsed
-    t0=$(date +%s%N)
+    t0=$(_now_ns)
     "$@" > /dev/null 2>&1
-    t1=$(date +%s%N)
+    t1=$(_now_ns)
     elapsed=$(( (t1 - t0) / 1000000 ))  # ns → ms
     (( elapsed < min )) && min=$elapsed
     (( elapsed > max )) && max=$elapsed
@@ -115,7 +125,7 @@ if [[ "$SKIP_GO_BENCH" -eq 0 ]]; then
       jq -r '
         .operations[] |
         "  \(.key)\n" +
-        "    mcp  p50=\(.arms[] | select(.arm=="mcp") | .latency.p50_ns / 1e6 | round)ms" +
+        "    mcp_warm p50=\(.arms[] | select(.arm=="mcp_warm") | .latency.p50_ns / 1e6 | round)ms" +
         "  direct p50=\(.arms[] | select(.arm=="direct") | .latency.p50_ns / 1e6 | round)ms" +
         "  bash   p50=\(.arms[] | select(.arm=="bash") | .latency.p50_ns / 1e6 | round)ms" +
         "  (overhead mcp/direct=\(.mcp_vs_direct)x  mcp/bash=\(.mcp_vs_bash)x)"

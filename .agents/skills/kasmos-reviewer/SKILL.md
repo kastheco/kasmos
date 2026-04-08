@@ -260,7 +260,7 @@ Do not write legacy `.kasmos/signals/review-*` files directly.
 
 Primary:
 
-`signal_create` with `signal_type: "review-approved"`, `plan_file: "<planfile>"`, and `payload: "Approved. <one-sentence summary of what was reviewed and confirmed>"`
+`signal_create` with `signal_type: "review-approved"`, `plan_file: "<planfile>"`, `project: "$KASMOS_PROJECT"`, and `payload: "Approved. <one-sentence summary of what was reviewed and confirmed>"`
 
 Fallback when MCP is unavailable:
 
@@ -270,7 +270,7 @@ kas signal emit review_approved <planfile> \
 ```
 
 Example:
-- MCP: `signal_create` with `signal_type: "review-approved"`, `plan_file: "2026-02-27-feature.md"`, `payload: "Approved. all 4 tasks complete, tests pass, no issues found."`
+- MCP: `signal_create` with `signal_type: "review-approved"`, `plan_file: "2026-02-27-feature.md"`, `project: "$KASMOS_PROJECT"`, `payload: "Approved. all 4 tasks complete, tests pass, no issues found."`
 - CLI fallback:
 ```bash
 kas signal emit review_approved 2026-02-27-feature.md \
@@ -284,7 +284,7 @@ and file:line citations for every item.
 
 Primary:
 
-`signal_create` with `signal_type: "review-changes"`, `plan_file: "<planfile>"`, and the structured review text below as `payload`.
+`signal_create` with `signal_type: "review-changes"`, `plan_file: "<planfile>"`, `project: "$KASMOS_PROJECT"`, and the structured review text below as `payload`.
 
 Fallback when MCP is unavailable:
 

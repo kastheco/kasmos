@@ -115,7 +115,8 @@ Key fields to compare:
 | JSON field | meaning |
 |------------|---------|
 | `.operations[].key` | scenario identifier, e.g. `read_small`, `grep_narrow` |
-| `.arms[] where .arm=="mcp" | .latency.p50_ns` | MCP p50 latency (ns) |
+| `.arms[] where .arm=="mcp_warm" | .latency.p50_ns` | MCP warm-path p50 latency (ns) |
+| `.arms[] where .arm=="mcp_cold" | .latency.p50_ns` | MCP cold-path p50 latency (ns) |
 | `.arms[] where .arm=="direct" | .latency.p50_ns` | direct function-call p50 |
 | `.arms[] where .arm=="bash" | .latency.p50_ns` | shell-subprocess p50 |
 | `.mcp_vs_direct` | multiplier: MCP p50 / direct p50 |
@@ -139,7 +140,7 @@ KAS_MCP_NOCACHE=1 KAS_MCP_BENCH_REPORT=/tmp/report_nocache.json \
 Then diff the two JSON reports:
 
 ```sh
-jq -r '.operations[] | "\(.key)  p50=\(.arms[] | select(.arm=="mcp") | .latency.p50_ns)"' \
+jq -r '.operations[] | "\(.key)  p50=\(.arms[] | select(.arm=="mcp_warm") | .latency.p50_ns)"' \
   /tmp/mcp_bench_report_*.json
 ```
 
