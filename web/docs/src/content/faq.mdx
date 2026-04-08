@@ -22,20 +22,23 @@ see `LICENSE.md` in the repository root for the full license text.
 
 **task** is the primary term: the CLI uses `kas task list`, `kas task create`, `kas task transition`, etc. Some internal identifiers (variable names, older comments) still say `plan` — they refer to the same concept. Follow the CLI when in doubt.
 
-A task is a unit of implementation work tracked through the lifecycle `ready → planning → implementing → reviewing → done`.
+a task is a unit of implementation work tracked through the lifecycle `ready → planning → planned → implementing → reviewing → done`.
 
 ## what are the task lifecycle states?
 
-tasks move through a finite state machine:
+tasks move through a finite state machine. the FSM has six statuses, plus a composite "planned" state visible in the TUI:
 
 | status | description |
 |--------|-------------|
 | `ready` | registered and waiting to be started |
 | `planning` | a planner agent is writing the implementation plan |
+| `planned` | plan is written; task is `ready` with execution phase `planned` — waiting for implementation to start |
 | `implementing` | a coder agent is working on the task |
 | `reviewing` | a reviewer agent is checking the implementation |
 | `done` | approved and complete |
 | `cancelled` | explicitly cancelled |
+
+`planned` is not a separate FSM status — it's a `ready` task whose execution phase has been set to `"planned"` by the planner. the TUI and daemon use this to distinguish fresh tasks from tasks that have a plan and are ready for implementation.
 
 transitions are driven by CLI events (`kas task transition <task> <event>`) or by agent signals. you can recover a stuck task with `kas task set-status <task> <status> --force`.
 
@@ -58,12 +61,15 @@ headless mode captures output to an in-memory buffer and appends it to a log fil
 
 ## what happens if the daemon isn't running when an agent emits a signal?
 
-signals are durable. agents emit signals via `kas signal emit`, which writes a record to the SQLite-backed signals table. the daemon picks them up when it's running — it claims pending signals atomically and drives FSM transitions.
+signals are durable. kasmos has two signal paths:
+
+- **gateway-backed (primary):** agents emit signals via MCP `signal_create` or `kas signal emit`, which writes a record to the SQLite-backed signals table. the daemon claims pending signals atomically and drives FSM transitions.
+- **filesystem sentinels (legacy):** `.kasmos/signals/` files, processed by `kas signal process`. exists for compatibility but is not the primary path.
 
 if the daemon is not running:
-- signals accumulate in the store in `pending` state
+- gateway signals accumulate in the store in `pending` state
 - no FSM transitions happen automatically
-- you can manually process pending signals with `kas signal process` once the daemon is back
+- signals are processed once the daemon restarts
 
 for normal installs, the daemon runs as a systemd user service. restart it with:
 
@@ -89,10 +95,10 @@ the task store is a **global** SQLite database at `~/.config/kasmos/taskstore.db
 
 repo-local state (`.kasmos/config.toml`, signal files, cache) remains anchored to the main repo root and is separate from the global store.
 
-## what is `kas check` for?
+## how do i verify my scaffold is in sync?
 
-`kas check` audits that agent harness skills are in sync across all registered harness directories (`.agents/skills`, `.claude/`, `.Claude/`, etc.). it's useful after you've edited skills under `~/.agents/skills` or the project `.agents/skills` to verify the scaffolded copies in each harness directory reflect the latest version. run `kas check -v` for verbose output.
+`kas reset` refreshes scaffolded harness files (agent prompts, skills, `.mcp.json`) to match the current templates, creating a backup first. `kas setup` performs the initial scaffold and is safe to re-run. there is no separate audit command — use `kas reset` when skill or prompt files seem stale after an upgrade.
 
 ## can i use kasmos with agents other than claude code?
 
-yes. the `--program` flag (or `defaultProgram` in config) selects which agent binary to invoke. kasmos has been used with claude code, aider, codex, gemini, opencode, and amp. each agent profile can choose tmux or headless execution independently.
+yes. the `--program` flag (or `default_program` in config.toml) selects the fallback agent binary. kasmos auto-detects `opencode` first, then falls back to `claude`. each agent profile in `[agents.<role>]` can specify its own `program` and choose tmux or headless execution independently. kasmos has been used with claude code, codex, gemini, opencode, and amp.
