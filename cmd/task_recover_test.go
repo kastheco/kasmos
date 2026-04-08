@@ -97,6 +97,20 @@ func TestExecuteTaskRecover_QueuesSignalActions(t *testing.T) {
 			wantSignalType: "review_changes_requested",
 			wantPayload:    `{"body":"fix the tests"}`,
 		},
+		{
+			name:           "readiness approved queues readiness_approved signal",
+			action:         "readiness-approved",
+			planFile:       "review-plan",
+			wantSignalType: "readiness_approved",
+		},
+		{
+			name:           "readiness changes queues readiness_changes_requested with feedback",
+			action:         "readiness-changes",
+			planFile:       "review-plan",
+			feedback:       "address security findings",
+			wantSignalType: "readiness_changes_requested",
+			wantPayload:    `{"body":"address security findings"}`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -131,6 +145,28 @@ func TestExecuteTaskRecover_AdvanceReviewCyclePersistsFeedbackFirst(t *testing.T
 	assert.Equal(t, string(taskfsm.ExecutionPhaseReviewing), entry.ExecutionState.Phase)
 }
 
+func TestCanonicalTaskRecoverAction_ReadinessAliases(t *testing.T) {
+	tests := []struct {
+		raw            string
+		wantName       string
+		wantSignalType string
+	}{
+		{"readiness-approved", "readiness-approved", "readiness_approved"},
+		{"readiness_approved", "readiness-approved", "readiness_approved"},
+		{"readiness-changes", "readiness-changes", "readiness_changes_requested"},
+		{"readiness-changes-requested", "readiness-changes", "readiness_changes_requested"},
+		{"readiness_changes", "readiness-changes", "readiness_changes_requested"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.raw, func(t *testing.T) {
+			action, err := canonicalTaskRecoverAction(tt.raw)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantName, action.name)
+			assert.Equal(t, tt.wantSignalType, action.signalType)
+		})
+	}
+}
+
 func TestExecuteTaskRecover_InvalidAction(t *testing.T) {
 	store, project := setupTaskRecoverStore(t)
 	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
@@ -141,6 +177,7 @@ func TestExecuteTaskRecover_InvalidAction(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown recovery action")
 	assert.Contains(t, err.Error(), "advance-review-cycle")
+	assert.Contains(t, err.Error(), "readiness-approved")
 }
 
 func TestExecuteTaskRecover_FailsWhenSignalGatewayAuthorityUnavailable(t *testing.T) {

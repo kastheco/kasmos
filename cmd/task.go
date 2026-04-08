@@ -183,7 +183,7 @@ type taskRecoverAction struct {
 func canonicalTaskRecoverAction(raw string) (taskRecoverAction, error) {
 	normalized := strings.ReplaceAll(strings.TrimSpace(raw), "_", "-")
 	if normalized == "" {
-		return taskRecoverAction{}, fmt.Errorf("recovery action is required; valid actions: planner-finished, architect-finished, implement-finished, review-approved, review-changes, advance-review-cycle")
+		return taskRecoverAction{}, fmt.Errorf("recovery action is required; valid actions: planner-finished, architect-finished, implement-finished, review-approved, review-changes, readiness-approved, readiness-changes, advance-review-cycle")
 	}
 
 	signalAction := func(name, signalType string) (taskRecoverAction, error) {
@@ -205,10 +205,14 @@ func canonicalTaskRecoverAction(raw string) (taskRecoverAction, error) {
 		return signalAction("review-approved", normalized)
 	case "review-changes", "review-changes-requested":
 		return signalAction("review-changes", normalized)
+	case "readiness-approved":
+		return signalAction("readiness-approved", normalized)
+	case "readiness-changes", "readiness-changes-requested":
+		return signalAction("readiness-changes", normalized)
 	case "advance-review-cycle":
 		return taskRecoverAction{name: "advance-review-cycle"}, nil
 	default:
-		return taskRecoverAction{}, fmt.Errorf("unknown recovery action %q; valid actions: planner-finished, architect-finished, implement-finished, review-approved, review-changes, advance-review-cycle", raw)
+		return taskRecoverAction{}, fmt.Errorf("unknown recovery action %q; valid actions: planner-finished, architect-finished, implement-finished, review-approved, review-changes, readiness-approved, readiness-changes, advance-review-cycle", raw)
 	}
 }
 

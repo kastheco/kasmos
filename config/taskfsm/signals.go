@@ -11,6 +11,10 @@ type Signal struct {
 	Event    Event
 	TaskFile string
 	Body     string // file contents (e.g. review feedback)
+	// Origin identifies the agent that produced the signal. Gateway-converted
+	// readiness signals set this to "master"; filesystem sentinel scans leave
+	// it empty.
+	Origin   string
 	filePath string // full path for deletion
 }
 
