@@ -30,6 +30,10 @@ const (
 	ExecutionPhaseSingleAgentImplementing ExecutionPhase = "single_agent_implementing"
 	ExecutionPhaseFixing                  ExecutionPhase = "fixing"
 	ExecutionPhaseReviewing               ExecutionPhase = "reviewing"
+	// ExecutionPhaseReadinessReview is a sub-state of reviewing in which the
+	// master agent performs a holistic readiness check before final approval.
+	// It lives inside StatusReviewing; no new coarse lifecycle status is added.
+	ExecutionPhaseReadinessReview ExecutionPhase = "readiness_reviewing"
 )
 
 // Event represents a lifecycle transition trigger.

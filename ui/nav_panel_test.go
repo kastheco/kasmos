@@ -1265,3 +1265,52 @@ func TestSplitDead_ReactivatedPlanViaSetTopicsAndPlans(t *testing.T) {
 	}
 	assert.True(t, found, "reactivated plan via SetTopicsAndPlans must remain visible as navRowPlanHeader")
 }
+
+// ---------- readiness review ----------
+
+func TestNavPlanRowLabel_ReadinessReview(t *testing.T) {
+	p := PlanDisplay{
+		Filename: "feature-auth",
+		Status:   "reviewing",
+		Phase:    "readiness_reviewing",
+	}
+	label := navPlanRowLabel(p)
+	assert.Equal(t, "feature-auth · readiness review", label,
+		"sidebar row label must be '<name> · readiness review'")
+}
+
+func TestNavPlanSortKey_ReadinessReviewingIsActive(t *testing.T) {
+	p := PlanDisplay{
+		Filename: "auth-feature",
+		Status:   "reviewing",
+		Phase:    "readiness_reviewing",
+	}
+	key := navPlanSortKey(p, nil, TopicStatus{})
+	assert.Equal(t, 1, key, "readiness_reviewing must sort as active (key 1)")
+}
+
+func TestNavPlanPhaseLabel_ReadinessReview(t *testing.T) {
+	assert.Equal(t, "readiness review", navPlanPhaseLabel("readiness_reviewing", 0, 0))
+	// wave and round values are ignored for readiness review
+	assert.Equal(t, "readiness review", navPlanPhaseLabel("readiness_reviewing", 2, 3))
+}
+
+func TestString_ReadinessReviewPlanAppearsInActiveSection(t *testing.T) {
+	n := newTestPanel()
+	n.SetSize(60, 40)
+	n.SetData(
+		[]PlanDisplay{
+			{
+				Filename: "auth-feature",
+				Status:   "reviewing",
+				Phase:    "readiness_reviewing",
+				AgentType: "master",
+			},
+		},
+		nil, nil, nil, nil,
+	)
+
+	output := n.String()
+	require.NotEmpty(t, output)
+	assert.Contains(t, output, "readiness review", "readiness review phase must be visible in sidebar")
+}

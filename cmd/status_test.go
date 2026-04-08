@@ -235,6 +235,56 @@ func TestExecuteStatus_JSONUsesOperatorLifecycleLabels(t *testing.T) {
 	assert.Equal(t, 4, parsed.Tasks[0].ActiveWave)
 }
 
+func TestExecuteStatus_ReadinessReviewPhase(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "readiness-project"
+
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:    "master-check",
+		Status:      taskstore.StatusReviewing,
+		Branch:      "plan/master-check",
+		CreatedAt:   time.Now(),
+		ReviewCycle: 1,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           "readiness_reviewing",
+			ActiveAgentType: "master",
+		},
+	}))
+
+	state := newTestStateFromRaw(t, nil)
+	ex := cmd_test.NewMockExecutor()
+	ex.OutputFunc = func(_ *exec.Cmd) ([]byte, error) {
+		return nil, errors.New("no tmux")
+	}
+
+	t.Run("text output shows readiness review label without round", func(t *testing.T) {
+		output := executeStatus(state, store, project, ex, "text")
+		assert.Contains(t, output, "readiness review", "stage label must be readiness review")
+		// review round must not be shown — readiness review is master-owned
+		assert.NotContains(t, output, "round", "round counter must not appear for readiness review")
+	})
+
+	t.Run("json output has correct stage and no review cycle", func(t *testing.T) {
+		output := executeStatus(state, store, project, ex, "json")
+		var parsed statusData
+		require.NoError(t, json.Unmarshal([]byte(output), &parsed))
+		require.Len(t, parsed.Tasks, 1)
+		task := parsed.Tasks[0]
+		assert.Equal(t, "readiness review", task.Stage)
+		assert.Equal(t, "master", task.ActiveAgentType)
+		assert.Equal(t, 0, task.ReviewCycle, "review cycle must be 0 for readiness review")
+	})
+
+	t.Run("recovery hints show readiness-approved and readiness-changes", func(t *testing.T) {
+		output := executeStatus(state, store, project, ex, "text")
+		assert.Contains(t, output, "kas task recover <task-name> --action readiness-approved")
+		assert.Contains(t, output, "kas task recover <task-name> --action readiness-changes --feedback")
+		// standard review hints must not appear for readiness review
+		assert.NotContains(t, output, "--action review-approved")
+		assert.NotContains(t, output, "--action review-changes")
+	})
+}
+
 func TestExecuteStatus_NilStore(t *testing.T) {
 	state := newTestStateFromRaw(t, []instanceTestData{
 		{Title: "solo", Status: 0, Branch: "main", Program: "claude"},
