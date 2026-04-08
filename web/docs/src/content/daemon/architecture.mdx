@@ -30,10 +30,10 @@ Each registered repo is represented as a `RepoEntry`:
 | field | type | role |
 |-------|------|------|
 | `Path` | `string` | absolute filesystem path |
-| `Project` | `string` | `filepath.Base(path)` — the repo's canonical name |
-| `Store` | `taskstore.Store` | SQLite task store at `<path>/.kasmos/taskstore.db` (may be nil) |
-| `SignalGateway` | `taskstore.SignalGateway` | DB-backed signal gateway opened on the same DB (may be nil) |
-| `SignalsDir` | `string` | `<path>/.kasmos/signals/` |
+| `Project` | `string` | `filepath.Base(path)` — the repo's canonical name; used as the namespace key inside the shared DB |
+| `Store` | `taskstore.Store` | handle into the **shared global** task store (`~/.config/kasmos/taskstore.db`), scoped to this repo's `project` name (may be nil if the DB could not be opened) |
+| `SignalGateway` | `taskstore.SignalGateway` | handle into the **shared global** signal gateway (same DB, same open call) — reused across all registered repos (may be nil) |
+| `SignalsDir` | `string` | `<path>/.kasmos/signals/` — repo-local filesystem directory; still scanned by `BridgeFilesystemSignals` for backward compatibility |
 | `Processor` | `*loop.Processor` | per-repo signal processor that persists wave orchestrator state between ticks |
 
 `Processor` is created once per `Add` call and reused on every tick. This keeps `WaveOrchestrator` state alive across poll cycles without re-reading from disk.
@@ -91,20 +91,21 @@ for {
 }
 ```
 
-`tickRepo` chooses between two signal processing paths:
+`tickRepo` chooses between two signal processing paths depending on gateway availability:
 
-**DB-backed path** (when `entry.SignalGateway != nil`):
-1. `loop.BridgeFilesystemSignals` — scans `<repo>/.kasmos/signals/` and all shared worktrees; inserts any new signal files as `pending` rows in the `signals` table.
+**DB-backed path** (primary — when `entry.SignalGateway != nil`):
+1. `loop.BridgeFilesystemSignals` — scans `<repo>/.kasmos/signals/` and all shared worktrees under `<repo>/.worktrees/`; inserts any new filesystem sentinel files as `pending` rows in the shared `signals` table. This is a compatibility bridge — the canonical way to emit signals is `kas signal emit`.
 2. `gateway.Claim(project, workerID)` — atomically transitions one `pending` row to `processing` and returns it.
 3. `loop.ConvertSignalEntry(entry, &scan)` — decodes the DB row into a typed `ScanResult`.
 4. `processor.Tick(scan)` → `[]Action` — feeds the scan to the processor.
 5. `executeAction(ctx, entry, action)` for each action.
 6. `gateway.MarkProcessed(id, status, result)` — marks the row `done` or `failed`.
-7. Repeat from step 2 until no pending signals remain.
+7. Repeat from step 2 until no pending signals remain for this repo's project.
 
-**Legacy filesystem path** (when `SignalGateway` is nil):
-- Reads signals directly from `staging/`, `processing/`, and `failed/` subdirs under `.kasmos/signals/`.
+**Legacy filesystem path** (fallback — when `SignalGateway` is nil, e.g. shared DB unavailable):
+- Reads signals directly from `staging/`, `processing/`, and `failed/` subdirs under `<repo>/.kasmos/signals/`.
 - Each signal is moved to `processing/` before handling, then deleted (`CompleteProcessing`) or dead-lettered to `failed/` (`FailProcessing`).
+- This path exists so the daemon degrades gracefully; it is not the recommended signal API.
 
 ## reaper goroutine
 

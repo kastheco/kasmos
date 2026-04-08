@@ -126,9 +126,9 @@ journalctl --user -u kasmos -f
 tail -f ~/Library/Logs/kasmos/daemon.log
 ```
 
-Inspect the `pr_reviews` table directly:
+Inspect the `pr_reviews` table directly (the DB is shared globally; always filter by project):
 
 ```sh
-sqlite3 /path/to/project/.kasmos/taskstore.db \
-    "SELECT plan_file, review_id, state, fixer_dispatched, reaction_posted FROM pr_reviews;"
+sqlite3 ~/.config/kasmos/taskstore.db \
+    "SELECT plan_filename, review_id, review_state, fixer_dispatched, reaction_posted FROM pr_reviews WHERE project = 'your-project';"
 ```

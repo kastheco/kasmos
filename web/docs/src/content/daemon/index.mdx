@@ -4,12 +4,14 @@ The kasmos daemon (`kasmosd`) is a multi-repo background orchestrator that runs 
 
 ## what the daemon does
 
-At its core the daemon is a poll loop with four concerns:
+At its core the daemon is a poll loop with four concerns, executed in this order on every tick:
 
-1. **Signal scanning** — on every tick it reads `.kasmos/signals/` in each registered repo (and any shared worktrees under `.worktrees/`) and bridges newly written filesystem sentinel files into the SQLite-backed signal gateway.
-2. **Signal claiming** — it atomically claims pending signals from the gateway so that concurrent or restarted instances never double-process.
-3. **Action dispatch** — it feeds each claimed signal through a per-repo `loop.Processor` which produces typed `Action` values (spawn coder, spawn reviewer, advance wave, etc.), then executes those actions via the `TmuxSpawner`.
-4. **Lifecycle advance** — it monitors running tmux sessions for completion, automatically pushes branches, transitions the FSM, and spawns the next agent role.
+1. **Signal bridging** — `loop.BridgeFilesystemSignals` scans `<repo>/.kasmos/signals/` (and any shared worktrees under `<repo>/.worktrees/`) and inserts any newly written filesystem sentinel files as `pending` rows in the shared SQLite-backed signal gateway. This is a compatibility step so that tools or agents that still write sentinel files can be picked up automatically.
+2. **Signal claiming** — the daemon atomically claims pending signals from the shared gateway (`gateway.Claim(project, workerID)`) so that concurrent or restarted instances never double-process the same signal.
+3. **Action dispatch** — each claimed signal is fed through a per-repo `loop.Processor` which produces typed `Action` values (spawn coder, spawn reviewer, advance wave, etc.), then executes those actions via the `TmuxSpawner`.
+4. **Lifecycle advance** — the daemon monitors running tmux sessions for completion, automatically pushes branches, transitions the FSM, and spawns the next agent role.
+
+The primary way to emit signals is `kas signal emit`, which writes directly to the shared gateway. The filesystem bridge (step 1) exists for backward compatibility — do not rely on manually writing sentinel files in new workflows.
 
 The daemon exposes a Unix domain socket control API so `kas daemon status`, `add`, and `remove` can reach it without restart.
 
@@ -27,7 +29,7 @@ The daemon exposes a Unix domain socket control API so `kas daemon status`, `add
 
 - **No daemon** — signals emitted into the DB (via `kas signal emit`) remain `pending` indefinitely. Nothing processes them until the daemon starts.
 - **Startup recovery** — on startup, the daemon calls `taskfsm.RecoverInFlight` to move any files left in `processing/` back to the signals root, preventing permanent loss after a crash.
-- **Unavailable store** — repos whose `.kasmos/taskstore.db` cannot be opened are registered with a `nil` store. The daemon skips them on each tick rather than crashing the whole poll cycle.
+- **Unavailable store** — if the shared global task store (`~/.config/kasmos/taskstore.db`) cannot be opened when a repo is registered, that repo is registered with a `nil` store and `nil` gateway. The daemon logs a warning and skips it on each tick rather than crashing the whole poll cycle.
 - **Duplicate basenames** — two repos with the same directory name (e.g. `/work/foo` and `/archive/foo`) cannot be registered simultaneously. The daemon rejects the second registration with an error.
 
 ## quick links
