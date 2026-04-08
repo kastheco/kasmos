@@ -15,12 +15,13 @@ func TestProcessor_LifecycleSignalMatrix(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		entry      taskstore.TaskEntry
-		signal     taskfsm.Signal
-		autoFix    bool
-		wantStatus taskstore.Status
-		wantKinds  []string
+		name               string
+		entry              taskstore.TaskEntry
+		signal             taskfsm.Signal
+		autoFix            bool
+		autoReadiness      bool
+		wantStatus         taskstore.Status
+		wantKinds          []string
 	}{
 		{
 			name:       "planner finished",
@@ -44,6 +45,22 @@ func TestProcessor_LifecycleSignalMatrix(t *testing.T) {
 			wantKinds:  []string{"review_approved", "create_pr"},
 		},
 		{
+			name:          "review approved intercepted when readiness enabled",
+			entry:         taskstore.TaskEntry{Filename: "plan.md", Status: taskstore.StatusReviewing, Branch: "plan/plan"},
+			signal:        taskfsm.Signal{TaskFile: "plan.md", Event: taskfsm.ReviewApproved, Body: "lgtm"},
+			autoReadiness: true,
+			wantStatus:    taskstore.StatusReviewing, // FSM not advanced — master must approve
+			wantKinds:     []string{"spawn_master"},
+		},
+		{
+			name:          "master-origin readiness approved flows through",
+			entry:         taskstore.TaskEntry{Filename: "plan.md", Status: taskstore.StatusReviewing, Branch: "plan/plan", ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseReadinessReview), ActiveAgentType: session.AgentTypeMaster}},
+			signal:        taskfsm.Signal{TaskFile: "plan.md", Event: taskfsm.ReviewApproved, Body: "ready", Origin: "master"},
+			autoReadiness: true,
+			wantStatus:    taskstore.StatusDone,
+			wantKinds:     []string{"review_approved", "create_pr"},
+		},
+		{
 			name:       "review changes requested",
 			entry:      taskstore.TaskEntry{Filename: "plan.md", Status: taskstore.StatusReviewing, Branch: "plan/plan"},
 			signal:     taskfsm.Signal{TaskFile: "plan.md", Event: taskfsm.ReviewChangesRequested, Body: "fix the tests"},
@@ -61,7 +78,7 @@ func TestProcessor_LifecycleSignalMatrix(t *testing.T) {
 
 			const project = "proj"
 			require.NoError(t, store.Create(project, tt.entry))
-			p := NewProcessor(ProcessorConfig{Store: store, Project: project, AutoReviewFix: tt.autoFix})
+			p := NewProcessor(ProcessorConfig{Store: store, Project: project, AutoReviewFix: tt.autoFix, AutoReadinessReview: tt.autoReadiness})
 
 			actions := p.ProcessFSMSignals([]taskfsm.Signal{tt.signal})
 			gotKinds := make([]string, 0, len(actions))

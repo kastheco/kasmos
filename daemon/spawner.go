@@ -486,6 +486,29 @@ func (s *TmuxSpawner) SpawnElaborator(ctx context.Context, opts loop.SpawnOpts) 
 	return s.spawnOnMainBranch(ctx, opts, session.AgentTypeElaborator, "architect")
 }
 
+// SpawnMaster launches the master agent in the plan's shared worktree to perform
+// the holistic readiness review. Any running master or reviewer instance for the
+// same plan is killed first so the master starts with a clean slate.
+func (s *TmuxSpawner) SpawnMaster(ctx context.Context, opts loop.SpawnOpts) error {
+	s.logger.Info("spawn master", "plan", opts.PlanFile)
+	key := instanceKey(opts.RepoPath, opts.PlanFile, session.AgentTypeMaster)
+	title := orchestration.BuildLifecycleAgentTitle(opts.PlanFile, session.AgentTypeMaster, 0)
+	if !s.reserveInstanceSlot(key, title) {
+		s.logger.Info("suppress duplicate tracked agent", "plan", opts.PlanFile, "type", session.AgentTypeMaster, "title", title)
+		return nil
+	}
+	// Kill any existing master and reviewer so the new master starts fresh.
+	if err := s.KillAgent(opts.RepoPath, opts.PlanFile, session.AgentTypeMaster); err != nil {
+		s.releaseReservation(key)
+		return fmt.Errorf("spawn master: kill existing master: %w", err)
+	}
+	if err := s.KillAgent(opts.RepoPath, opts.PlanFile, session.AgentTypeReviewer); err != nil {
+		s.releaseReservation(key)
+		return fmt.Errorf("spawn master: kill existing reviewer: %w", err)
+	}
+	return s.spawnInSharedWorktreeReserved(ctx, opts, session.AgentTypeMaster, key)
+}
+
 func (s *TmuxSpawner) spawnOnMainBranch(_ context.Context, opts loop.SpawnOpts, agentType, titleSuffix string) error {
 	if opts.RepoPath == "" {
 		return fmt.Errorf("TmuxSpawner.%s: RepoPath is required", agentType)

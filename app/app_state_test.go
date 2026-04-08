@@ -473,3 +473,25 @@ func TestSyncSharedWorktreeScaffold_WritesHarnessFilesForConfiguredProfiles(t *t
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "kasmos-fixer", "SKILL.md"))
 	assert.FileExists(t, filepath.Join(dir, "opencode.jsonc"))
 }
+
+func TestProfileForAgent_MasterUsesReadinessReviewProfile(t *testing.T) {
+	temp := 0.0
+	m := &home{
+		program: "opencode",
+		appConfig: &config.Config{
+			PhaseRoles: map[string]string{
+				"readiness_review": "master",
+			},
+			Profiles: map[string]config.AgentProfile{
+				"master": {
+					Program:     "claude",
+					Enabled:     true,
+					Temperature: &temp,
+				},
+			},
+		},
+	}
+	profile := m.profileForAgent(session.AgentTypeMaster)
+	assert.Equal(t, "claude", profile.Program,
+		"master agent must resolve via the readiness_review phase profile")
+}

@@ -43,6 +43,21 @@ func TestBuildArchitectAgentSpec(t *testing.T) {
 	assert.Contains(t, spec.Prompt, `project: "myproject"`)
 }
 
+func TestBuildMasterAgentSpec(t *testing.T) {
+	spec := BuildMasterAgentSpec("feature", "myproject")
+	assert.Equal(t, "feature-master", spec.Title)
+	assert.Contains(t, spec.Prompt, "kasmos-master")
+	assert.Contains(t, spec.Prompt, `project: "myproject"`)
+	assert.Contains(t, spec.Prompt, "readiness-approved")
+	assert.Contains(t, spec.Prompt, "readiness-changes-requested")
+	// Prompt must not reference filesystem sentinels
+	assert.NotContains(t, spec.Prompt, "touch .kasmos/signals/master-approved")
+}
+
+func TestBuildLifecycleAgentTitle_Master(t *testing.T) {
+	assert.Equal(t, "feature-master", BuildLifecycleAgentTitle("feature", session.AgentTypeMaster, 0))
+}
+
 func TestBuildWaveTaskTitle(t *testing.T) {
 	assert.Equal(t, "feature-W2-T3", BuildWaveTaskTitle("feature", 2, 3))
 }
@@ -118,6 +133,20 @@ func TestBuildRecoveryCandidates_PhaseAwareLifecycleSessions(t *testing.T) {
 			},
 			wantTitle: "feature-coder",
 			wantType:  session.AgentTypeCoder,
+		},
+		{
+			name: "readiness reviewing recovers master agent",
+			entry: taskstore.TaskEntry{
+				Filename: "feature",
+				Status:   taskstore.StatusReviewing,
+				Branch:   "plan/feature",
+				ExecutionState: taskstore.ExecutionState{
+					Phase:           string(taskfsm.ExecutionPhaseReadinessReview),
+					ActiveAgentType: session.AgentTypeMaster,
+				},
+			},
+			wantTitle: "feature-master",
+			wantType:  session.AgentTypeMaster,
 		},
 		{
 			name: "active wave recovers only active wave tasks",

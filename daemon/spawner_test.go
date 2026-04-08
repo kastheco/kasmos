@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -473,4 +474,92 @@ func TestTmuxSpawner_GracefulKill_KillsAfterSecondCheck(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, killed, "should report killed when no client is attached")
 	assert.True(t, killCalled, "kill must be called when no client is attached after grace period")
+}
+
+func TestTmuxSpawner_SpawnMaster_MissingRepoPath(t *testing.T) {
+	s := NewTmuxSpawner()
+	err := s.SpawnMaster(context.Background(), loop.SpawnOpts{
+		PlanFile: "plan.md",
+		Branch:   "plan/feature",
+		Program:  "opencode",
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "RepoPath")
+}
+
+func TestTmuxSpawner_SpawnMaster_KillsExistingMasterAndReviewer(t *testing.T) {
+	s := NewTmuxSpawner()
+	s.hasAttachedClients = func(_ cmd.Executor, _ string) bool { return false }
+	s.sleep = func(_ time.Duration) {}
+	killedKeys := []string{}
+	s.kill = func(inst *session.Instance) error {
+		killedKeys = append(killedKeys, inst.Title)
+		return nil
+	}
+
+	const repoPath = "/tmp/repo"
+	const planFile = "plan.md"
+
+	// Pre-populate a tracked reviewer and master instance.
+	masterKey := instanceKey(repoPath, planFile, session.AgentTypeMaster)
+	reviewerKey := instanceKey(repoPath, planFile, session.AgentTypeReviewer)
+	s.mu.Lock()
+	s.instances[masterKey] = &session.Instance{Title: "plan-master"}
+	s.planFileByKey[masterKey] = planFile
+	s.agentTypeByKey[masterKey] = session.AgentTypeMaster
+	s.projectByKey[masterKey] = "proj"
+	s.instances[reviewerKey] = &session.Instance{Title: "plan-review-1"}
+	s.planFileByKey[reviewerKey] = planFile
+	s.agentTypeByKey[reviewerKey] = session.AgentTypeReviewer
+	s.projectByKey[reviewerKey] = "proj"
+	s.mu.Unlock()
+
+	// SpawnMaster should kill both before spawning — simulate with a start error
+	// so we can inspect the side effects without a real worktree.
+	s.startInShared = func(_ *session.Instance, _ *gitpkg.GitWorktree, _ string) error {
+		return fmt.Errorf("no worktree in test")
+	}
+
+	_ = s.SpawnMaster(context.Background(), loop.SpawnOpts{
+		PlanFile: planFile,
+		RepoPath: repoPath,
+		Branch:   "plan/plan",
+		Program:  "opencode",
+		Project:  "proj",
+	})
+
+	assert.Contains(t, killedKeys, "plan-master", "existing master must be killed before spawning")
+	assert.Contains(t, killedKeys, "plan-review-1", "existing reviewer must be killed before spawning")
+}
+
+func TestTmuxSpawner_SpawnMaster_DedupliatesTrackedInstance(t *testing.T) {
+	s := NewTmuxSpawner()
+	const repoPath = "/tmp/repo"
+	const planFile = "plan.md"
+
+	// Pre-populate an already-tracked master instance.
+	// Title must match what BuildLifecycleAgentTitle("plan.md","master",0) produces so
+	// reserveInstanceSlot treats this as a dedup, not a replacement.
+	key := instanceKey(repoPath, planFile, session.AgentTypeMaster)
+	s.mu.Lock()
+	s.instances[key] = &session.Instance{Title: "plan.md-master"}
+	s.planFileByKey[key] = planFile
+	s.agentTypeByKey[key] = session.AgentTypeMaster
+	s.projectByKey[key] = "proj"
+	s.mu.Unlock()
+
+	startCalled := false
+	s.startInShared = func(_ *session.Instance, _ *gitpkg.GitWorktree, _ string) error {
+		startCalled = true
+		return nil
+	}
+
+	err := s.SpawnMaster(context.Background(), loop.SpawnOpts{
+		PlanFile: planFile,
+		RepoPath: repoPath,
+		Branch:   "plan/plan",
+		Program:  "opencode",
+	})
+	assert.NoError(t, err)
+	assert.False(t, startCalled, "SpawnMaster must no-op when master is already tracked")
 }

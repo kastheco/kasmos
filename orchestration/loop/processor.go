@@ -49,6 +49,10 @@ type ProcessorConfig struct {
 	AutoReviewFix bool
 	// AutoAdvance enables automatic planning→implementing handoff.
 	AutoAdvance bool
+	// AutoReadinessReview enables the post-reviewer master-agent readiness gate.
+	// When true, a reviewer approval (non-master origin) is intercepted and converted
+	// into a SpawnMasterAction instead of flowing directly to ReviewApprovedAction.
+	AutoReadinessReview bool
 	// MaxReviewFixCycles is the maximum number of review-fix cycles allowed
 	// before emitting ReviewCycleLimitAction instead of SpawnCoderAction.
 	// Zero or negative means unlimited.
@@ -90,6 +94,11 @@ func NewProcessor(cfg ProcessorConfig) *Processor {
 func (p *Processor) SetReviewFixConfig(enabled bool, maxCycles int) {
 	p.config.AutoReviewFix = enabled
 	p.config.MaxReviewFixCycles = maxCycles
+}
+
+// SetReadinessReviewConfig updates the runtime readiness-review gate setting.
+func (p *Processor) SetReadinessReviewConfig(enabled bool) {
+	p.config.AutoReadinessReview = enabled
 }
 
 // SetWaveOrchestratorActive marks or unmarks a plan as having an active wave
@@ -174,6 +183,33 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			}
 			if _, hasOrch := p.waveOrchestrators[sig.TaskFile]; hasOrch {
 				continue
+			}
+		}
+
+		// Readiness-review gate: intercept reviewer approval when AutoReadinessReview
+		// is enabled, and validate/guard master-origin readiness signals.
+		if sig.Event == taskfsm.ReviewApproved || sig.Event == taskfsm.ReviewChangesRequested {
+			entry, ok := p.taskEntry(sig.TaskFile)
+			if ok {
+				phase := taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase)
+				if sig.Origin == "master" {
+					// Master-origin signals are only valid during the readiness-reviewing phase
+					// with an active master agent. Drop stale signals from other phases.
+					if phase != taskfsm.ExecutionPhaseReadinessReview ||
+						strings.TrimSpace(entry.ExecutionState.ActiveAgentType) != session.AgentTypeMaster {
+						continue
+					}
+					// Valid master signal — fall through to normal FSM transition + switch.
+				} else if sig.Event == taskfsm.ReviewApproved && p.config.AutoReadinessReview {
+					// Reviewer approved but readiness gate is active — intercept.
+					if phase == taskfsm.ExecutionPhaseReadinessReview {
+						// Stale duplicate reviewer approval while master is already running.
+						continue
+					}
+					// Intercept: redirect to master spawn instead of direct approval.
+					actions = append(actions, SpawnMasterAction{PlanFile: sig.TaskFile})
+					continue
+				}
 			}
 		}
 

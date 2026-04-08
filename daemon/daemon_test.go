@@ -1387,6 +1387,79 @@ Do the first thing.
 	}, entry.ExecutionState)
 }
 
+func TestDaemon_ExecuteAction_SpawnMaster_PersistsExecutionStateAndEmitsEvent(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	const project = "test-project"
+	const planFile = "master-plan.md"
+	const branch = "plan/master-plan"
+
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusReviewing,
+		Branch:   branch,
+	}))
+
+	spawnCalled := false
+	var broadcaster = api.NewEventBroadcaster()
+	sub := broadcaster.Subscribe()
+	t.Cleanup(func() { broadcaster.Unsubscribe(sub) })
+
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: broadcaster,
+		spawnMaster: func(_ context.Context, opts loop.SpawnOpts) error {
+			spawnCalled = true
+			assert.Equal(t, planFile, opts.PlanFile)
+			assert.Equal(t, branch, opts.Branch)
+			return nil
+		},
+	}
+	e := RepoEntry{Path: t.TempDir(), Project: project, Store: store}
+
+	err := d.executeAction(context.Background(), e, loop.SpawnMasterAction{PlanFile: planFile})
+	require.NoError(t, err)
+	assert.True(t, spawnCalled, "spawnMaster must be called")
+
+	// Verify execution state was persisted.
+	entry, getErr := store.Get(project, planFile)
+	require.NoError(t, getErr)
+	assert.Equal(t, string(taskfsm.ExecutionPhaseReadinessReview), entry.ExecutionState.Phase)
+	assert.Equal(t, session.AgentTypeMaster, entry.ExecutionState.ActiveAgentType)
+
+	// Verify broadcast event.
+	select {
+	case ev := <-sub:
+		assert.Equal(t, api.EventKindAgentSpawned, ev.Kind)
+		assert.Equal(t, session.AgentTypeMaster, ev.AgentType)
+		assert.Equal(t, planFile, ev.PlanFile)
+	case <-time.After(time.Second):
+		t.Fatal("expected agent_spawned event")
+	}
+}
+
+func TestDaemon_ExecuteAction_SpawnMaster_BranchEmpty_Fails(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	const project = "test-project"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: "master-plan.md",
+		Status:   taskstore.StatusReviewing,
+	}))
+
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+	e := RepoEntry{Path: t.TempDir(), Project: project, Store: store}
+
+	err := d.executeAction(context.Background(), e, loop.SpawnMasterAction{PlanFile: "master-plan.md"})
+	require.Error(t, err, "executeAction must propagate spawn error when branch is empty")
+	assert.Contains(t, err.Error(), "Branch is required")
+}
+
 func TestReapStuckSignals(t *testing.T) {
 	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
 	require.NoError(t, err)

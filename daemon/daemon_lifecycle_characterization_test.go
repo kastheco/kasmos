@@ -28,6 +28,8 @@ func TestGatewayNoopOutcome_Characterization(t *testing.T) {
 		{name: "wave start failures are explicit", signalType: "implement_wave", status: taskstore.SignalFailed, result: "processor could not start the requested wave"},
 		{name: "canonical architect failures stay explicit", signalType: "architect_finished", status: taskstore.SignalFailed, result: "no active architect pass to resume"},
 		{name: "architect resume failures are explicit", signalType: "elaborator_finished", status: taskstore.SignalFailed, result: "no active architect pass to resume"},
+		{name: "stray readiness_approved is explicit", signalType: "readiness_approved", status: taskstore.SignalFailed, result: "no active readiness review to resume"},
+		{name: "stray readiness_changes_requested is explicit", signalType: "readiness_changes_requested", status: taskstore.SignalFailed, result: "no active readiness review to resume"},
 		{name: "unexpected signals are rejected", signalType: "planner_finished", status: taskstore.SignalFailed, result: "signal rejected by processor"},
 	}
 

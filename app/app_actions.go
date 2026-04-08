@@ -189,6 +189,12 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 	case "mark_review_changes_requested":
 		return m, m.emitSelectedInstanceSignal(taskfsm.ReviewChangesRequested, "review changes requested signal queued")
 
+	case "mark_readiness_approved":
+		return m, m.emitSelectedRawSignal("readiness_approved", "readiness approved signal queued")
+
+	case "mark_readiness_changes_requested":
+		return m, m.emitSelectedRawSignal("readiness_changes_requested", "readiness changes requested signal queued")
+
 	case "advance_review_cycle":
 		selected := m.nav.GetSelectedInstance()
 		if selected == nil || selected.TaskFile == "" || m.taskState == nil {
@@ -866,11 +872,17 @@ func taskLifecycleItems(entry taskstate.TaskEntry) []overlay.ContextMenuItem {
 			{Label: "start solo agent", Action: "start_solo"},
 		}
 	case taskstate.StatusReviewing:
-		return []overlay.ContextMenuItem{
+		items := []overlay.ContextMenuItem{
 			{Label: "mark finished", Action: "mark_plan_done"},
 			{Label: "start fixer", Action: "start_fixer"},
-			{Label: "start review", Action: "start_review"},
 		}
+		// "start review" resets the active review session; suppress it during the
+		// readiness_reviewing phase so operators cannot clobber a running master check.
+		phase := taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase)
+		if phase != taskfsm.ExecutionPhaseReadinessReview {
+			items = append(items, overlay.ContextMenuItem{Label: "start review", Action: "start_review"})
+		}
+		return items
 	case taskstate.StatusDone:
 		return []overlay.ContextMenuItem{
 			{Label: "request review", Action: "request_review"},
@@ -920,6 +932,11 @@ func instanceSignalItems(inst *session.Instance) []overlay.ContextMenuItem {
 			items = append(items, overlay.ContextMenuItem{Label: "mark architect finished", Action: "mark_architect_finished"})
 		case session.AgentTypeCoder, session.AgentTypeFixer:
 			items = append(items, overlay.ContextMenuItem{Label: "mark implement finished", Action: "mark_implement_finished"})
+		case session.AgentTypeMaster:
+			items = append(items,
+				overlay.ContextMenuItem{Label: "mark readiness approved", Action: "mark_readiness_approved"},
+				overlay.ContextMenuItem{Label: "mark readiness changes requested", Action: "mark_readiness_changes_requested"},
+			)
 		}
 	}
 
@@ -1185,6 +1202,42 @@ func (m *home) emitSelectedInstanceSignal(event taskfsm.Event, successToast stri
 			defer gw.Close() //nolint:errcheck
 		}
 		if err := taskfsm.EmitGatewaySignal(gw, project, signalType, planFile, payload); err != nil {
+			return manualSignalResultMsg{err: err}
+		}
+		return manualSignalResultMsg{
+			signalType:    signalType,
+			planFile:      planFile,
+			instanceTitle: instanceTitle,
+			agentType:     agentType,
+			successToast:  successToast,
+		}
+	}
+}
+
+// emitSelectedRawSignal emits a raw gateway signal type for the selected
+// instance's plan. Unlike emitSelectedInstanceSignal it bypasses the FSM-event
+// → signal-type mapping and is used for signal types that have no FSM event
+// constant (e.g. readiness_approved, readiness_changes_requested).
+func (m *home) emitSelectedRawSignal(signalType, successToast string) tea.Cmd {
+	selected := m.nav.GetSelectedInstance()
+	if selected == nil || selected.TaskFile == "" || m.taskStoreProject == "" {
+		return nil
+	}
+	planFile := selected.TaskFile
+	instanceTitle := selected.Title
+	agentType := selected.AgentType
+	project := m.taskStoreProject
+	gw := m.signalGateway
+	return func() tea.Msg {
+		if gw == nil {
+			var err error
+			gw, err = taskstore.OpenAuthoritativeSignalGateway(project)
+			if err != nil {
+				return manualSignalResultMsg{err: err}
+			}
+			defer gw.Close() //nolint:errcheck
+		}
+		if err := taskfsm.EmitGatewaySignal(gw, project, signalType, planFile, ""); err != nil {
 			return manualSignalResultMsg{err: err}
 		}
 		return manualSignalResultMsg{

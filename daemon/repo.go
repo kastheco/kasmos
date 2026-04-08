@@ -44,9 +44,10 @@ type RepoEntry struct {
 type RepoManager struct {
 	mu                 sync.RWMutex
 	repos              []RepoEntry
-	autoAdvance        bool
-	autoReviewFix      bool
-	maxReviewFixCycles int
+	autoAdvance          bool
+	autoReviewFix        bool
+	autoReadinessReview  bool
+	maxReviewFixCycles   int
 	// globalDB is the single shared *sql.DB, lazy-opened on the first Add().
 	// Both globalStore and globalGateway are derived from it.
 	globalDB *sql.DB
@@ -177,12 +178,13 @@ func (m *RepoManager) Add(path string) error {
 	// Create a per-repo processor that persists across poll ticks so that wave
 	// orchestrator state is maintained between cycles.
 	proc := loop.NewProcessor(loop.ProcessorConfig{
-		AutoAdvance:        autoAdvance,
-		AutoReviewFix:      m.autoReviewFix,
-		Store:              m.globalStore,
-		Project:            project,
-		MaxReviewFixCycles: m.maxReviewFixCycles,
-		Hooks:              hooks,
+		AutoAdvance:         autoAdvance,
+		AutoReviewFix:       m.autoReviewFix,
+		AutoReadinessReview: m.autoReadinessReview,
+		Store:               m.globalStore,
+		Project:             project,
+		MaxReviewFixCycles:  m.maxReviewFixCycles,
+		Hooks:               hooks,
 	})
 
 	m.repos = append(m.repos, RepoEntry{

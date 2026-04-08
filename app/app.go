@@ -1265,6 +1265,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if cmd := m.spawnFixerWithFeedback(a.PlanFile, a.Feedback); cmd != nil {
 							signalCmds = append(signalCmds, cmd)
 						}
+					case loop.SpawnMasterAction:
+						if cmd := m.spawnMaster(a.PlanFile); cmd != nil {
+							signalCmds = append(signalCmds, cmd)
+						}
 					case loop.ReviewCycleLimitAction:
 						planName := taskstate.DisplayName(a.PlanFile)
 						m.toastManager.Error(fmt.Sprintf(
