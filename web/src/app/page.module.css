@@ -363,6 +363,28 @@
     gap: 12px;
   }
 
+  .lifecyclePipeline {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-start;
+    padding-bottom: 8px;
+    margin-left: -16px;
+    margin-right: -16px;
+    padding-left: 16px;
+    padding-right: 16px;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+
+  .lifecyclePipeline::-webkit-scrollbar {
+    display: none;
+  }
+
+  .lifecycleStepGroup {
+    scroll-snap-align: start;
+    flex-shrink: 0;
+  }
+
   .lifecycleStep {
     padding: 10px 12px;
   }
@@ -382,6 +404,10 @@
 
   .lifecycleLoopNote {
     display: none;
+  }
+
+  .heroTypewriter {
+    min-height: 3em;
   }
 
   .hero {
