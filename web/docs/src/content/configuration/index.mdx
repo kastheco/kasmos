@@ -14,7 +14,7 @@ Every git repository managed by kasmos gets its own `.kasmos/` directory anchore
 
 The path is resolved by `config.GetConfigDir()`, which calls `config.ResolveRepoRoot()` to locate the main repo root even when invoked from inside a git worktree. This means all worktrees of the same repo share one configuration.
 
-kasmos writes this file on first boot (`kas setup` or first interactive launch). If `config.toml` does not exist, a default is created. If only a legacy `config.json` exists, its settings are imported into `config.toml` automatically.
+On first boot (`kas setup` or first interactive launch), kasmos uses `config.toml` if it already exists. Otherwise, if a legacy `config.json` is present, kasmos migrates its settings into `config.toml` automatically and renames the JSON file to `config.json.migrated`. If neither file exists, kasmos creates a default `config.toml`.
 
 See [config.toml reference](/docs/configuration/config-toml) for all fields.
 

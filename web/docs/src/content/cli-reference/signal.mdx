@@ -62,7 +62,7 @@ kas signal emit architect_finished my-feature
 |------|-------------|
 | `--payload` | optional JSON payload (required for `implement_task_finished` and `implement_wave`) |
 
-The signal is inserted as a `pending` row in the SQLite gateway database (`signals` table). The daemon or `kas signal process` picks it up and applies the corresponding FSM transition.
+The signal is inserted as a `pending` row in the SQLite gateway database (`signals` table). The daemon picks it up and applies the corresponding FSM transition. `kas signal process` is only for the filesystem compatibility path under `.kasmos/signals/`.
 
 ---
 

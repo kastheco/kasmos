@@ -116,10 +116,10 @@ On daemon startup, before the first poll tick, `taskfsm.RecoverInFlight(signalsD
 ## inspecting signals
 
 ```sh
-# list pending signals
+# list pending filesystem sentinel files in .kasmos/signals/ (compatibility path only)
 kas signal list
 
-# emit a signal manually (useful for testing or resuming a stuck task)
+# emit a DB-backed signal (primary path — daemon processes these automatically)
 kas signal emit implement_finished my-plan
 ```
 

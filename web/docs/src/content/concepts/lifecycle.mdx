@@ -122,7 +122,7 @@ kas task transition my-feature reopen
 
 ### from agents (signals)
 
-Agents emit **agent signals** via `kas signal emit`. The signal is written to the SQLite-backed signals table and picked up by the daemon, which drives FSM transitions. A compatibility path also exists: signals written as files under `.kasmos/signals/` are processed by `kas signal process` and during daemon startup. Either way, the orchestration loop claims pending signals atomically before calling `Transition()` on the FSM.
+Agents emit **agent signals** via `kas signal emit`. The signal is written to the SQLite-backed signals table and picked up by the daemon, which drives FSM transitions. A compatibility path also exists: signals written as files under `.kasmos/signals/` can be processed by `kas signal process`. On daemon startup, kasmos only recovers any files left in `.kasmos/signals/processing/` back to the root; file-based signals are then bridged/processed on subsequent daemon ticks. Either way, the orchestration loop claims pending signals atomically before calling `Transition()` on the FSM.
 
 ## forcing a status
 
