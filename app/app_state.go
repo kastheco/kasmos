@@ -1087,8 +1087,13 @@ func (m *home) queuePermissionPrompt(inst *session.Instance, pattern, desc strin
 	if inst == nil {
 		return
 	}
-	for _, existing := range m.deferredPermissionPrompts {
-		if existing.instance == inst && existing.pattern == pattern && existing.desc == desc {
+	// An instance can have at most one active permission prompt. Dedup on
+	// instance identity and update the latest pattern/desc in place so
+	// minor pane-content drift between ticks doesn't grow the queue.
+	for i, existing := range m.deferredPermissionPrompts {
+		if existing.instance == inst {
+			m.deferredPermissionPrompts[i].pattern = pattern
+			m.deferredPermissionPrompts[i].desc = desc
 			return
 		}
 	}
