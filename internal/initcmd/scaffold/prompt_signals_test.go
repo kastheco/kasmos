@@ -18,8 +18,8 @@ func TestPromptTemplates_UseMCPFirstSignals(t *testing.T) {
 			name: "planner skill uses signal_create and preserves planner-finished contract",
 			path: "templates/skills/kasmos-planner/SKILL.md",
 			contains: []string{
-				"use MCP `task_update_content` (filename: \"<plan-file>\", content: \"<full plan markdown>\") to persist the finished plan.",
-				"then use MCP `signal_create` (signal_type: \"planner-finished\", plan_file: \"<plan-file>\") to notify completion.",
+				"use MCP `task_update_content` (filename: \"<plan-file>\", content: \"<full plan markdown>\", project: \"$KASMOS_PROJECT\") to persist the finished plan.",
+				"then use MCP `signal_create` (signal_type: \"planner-finished\", plan_file: \"<plan-file>\", project: \"$KASMOS_PROJECT\") to notify completion.",
 				"the signal filename must match the task filename exactly (with `planner-finished-` prefix).",
 			},
 		},
@@ -28,7 +28,7 @@ func TestPromptTemplates_UseMCPFirstSignals(t *testing.T) {
 			path: "templates/skills/kasmos-architect/SKILL.md",
 			contains: []string{
 				"compatibility note: emit `elaborator-finished` exactly as written until the gateway is renamed; this is a signal shim, not an active elaborator role",
-				"use MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"<plan-file>\") after the round-trip check succeeds.",
+				"use MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"<plan-file>\", project: \"$KASMOS_PROJECT\") after the round-trip check succeeds.",
 				"writing the compatibility `elaborator-finished` signal with wrong filename",
 			},
 		},

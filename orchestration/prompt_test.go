@@ -19,7 +19,7 @@ func TestBuildTaskPrompt(t *testing.T) {
 		Body:   "**Step 1:** Write the test\n\n**Step 2:** Run it",
 	}
 
-	prompt := BuildTaskPrompt("feature", plan, task, 1, 3, 4, nil)
+	prompt := BuildTaskPrompt("feature", plan, task, 1, 3, 4, "myproject", nil)
 
 	// Plan context
 	assert.Contains(t, prompt, "Build a feature")
@@ -47,13 +47,14 @@ func TestBuildTaskPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "surgical changes")
 	assert.Contains(t, prompt, "signal_create")
 	assert.Contains(t, prompt, "implement-task-finished")
+	assert.Contains(t, prompt, `project: "myproject"`)
 }
 
 func TestBuildTaskPrompt_InlineCoderRules(t *testing.T) {
 	plan := &taskparser.Plan{Goal: "Test feature"}
 	task := taskparser.Task{Number: 1, Title: "Do thing", Body: "Make the change"}
 
-	prompt := BuildTaskPrompt("feature", plan, task, 1, 1, 1, nil)
+	prompt := BuildTaskPrompt("feature", plan, task, 1, 1, 1, "testproject", nil)
 
 	assert.NotContains(t, prompt, "kasmos-coder")
 	assert.NotContains(t, prompt, "cli-tools")
@@ -73,7 +74,7 @@ func TestBuildTaskPrompt_PreservesMdPlanTokenWhenProvided(t *testing.T) {
 	plan := &taskparser.Plan{Goal: "Test feature"}
 	task := taskparser.Task{Number: 1, Title: "Do thing", Body: "Make the change"}
 
-	prompt := BuildTaskPrompt("feature.md", plan, task, 1, 1, 1, nil)
+	prompt := BuildTaskPrompt("feature.md", plan, task, 1, 1, 1, "testproject", nil)
 
 	assert.NotContains(t, prompt, "kas signal emit implement_task_finished feature.md")
 	assert.NotContains(t, prompt, "implement-task-finished-w1-t1-feature.md")
@@ -81,7 +82,7 @@ func TestBuildTaskPrompt_PreservesMdPlanTokenWhenProvided(t *testing.T) {
 
 func TestBuildTaskPrompt_ContainsSignalEmit(t *testing.T) {
 	plan := &taskparser.Plan{Waves: []taskparser.Wave{{Number: 1, Tasks: []taskparser.Task{{Number: 1, Title: "test", Body: "do stuff"}}}}}
-	prompt := BuildTaskPrompt("my-plan", plan, plan.Waves[0].Tasks[0], 1, 1, 1, nil)
+	prompt := BuildTaskPrompt("my-plan", plan, plan.Waves[0].Tasks[0], 1, 1, 1, "testproject", nil)
 	assert.NotContains(t, prompt, "kas signal emit implement_task_finished my-plan")
 	assert.NotContains(t, prompt, "implement-task-finished-w1-t1-my-plan")
 }
@@ -90,7 +91,7 @@ func TestBuildTaskPrompt_SingleTask(t *testing.T) {
 	plan := &taskparser.Plan{Goal: "Simple"}
 	task := taskparser.Task{Number: 1, Title: "Only Task", Body: "Do it"}
 
-	prompt := BuildTaskPrompt("feature", plan, task, 1, 1, 1, nil)
+	prompt := BuildTaskPrompt("feature", plan, task, 1, 1, 1, "testproject", nil)
 
 	// Single task shouldn't mention parallel coordination
 	assert.NotContains(t, prompt, "parallel")
@@ -109,7 +110,7 @@ func TestBuildTaskPrompt_WithMeta(t *testing.T) {
 		PreferredModel: "openai/gpt-5.3-codex-spark",
 	}
 
-	prompt := BuildTaskPrompt("feat", plan, task, 1, 2, 1, meta)
+	prompt := BuildTaskPrompt("feat", plan, task, 1, 2, 1, "testproject", meta)
 
 	assert.Contains(t, prompt, "go test ./widget/... -v")
 	assert.Contains(t, prompt, "go vet ./widget/...")
@@ -122,7 +123,7 @@ func TestBuildTaskPrompt_NilMeta(t *testing.T) {
 	plan := &taskparser.Plan{Goal: "Simple"}
 	task := taskparser.Task{Number: 1, Title: "Only Task", Body: "Do it"}
 
-	prompt := BuildTaskPrompt("feat", plan, task, 1, 1, 1, nil)
+	prompt := BuildTaskPrompt("feat", plan, task, 1, 1, 1, "testproject", nil)
 
 	assert.NotContains(t, prompt, "## Verification Commands")
 	assert.Contains(t, prompt, "## Rules")
@@ -130,10 +131,10 @@ func TestBuildTaskPrompt_NilMeta(t *testing.T) {
 }
 
 func TestBuildWaveAnnotationPrompt(t *testing.T) {
-	prompt := BuildWaveAnnotationPrompt("my-feature")
+	prompt := BuildWaveAnnotationPrompt("my-feature", "myproject")
 	assert.Contains(t, prompt, "kas task show my-feature")
 	assert.Contains(t, prompt, "## Wave")
-	assert.Contains(t, prompt, "signal_create` (signal_type: \"planner-finished\", plan_file: \"my-feature\")")
+	assert.Contains(t, prompt, "signal_create` (signal_type: \"planner-finished\", plan_file: \"my-feature\", project: \"myproject\")")
 	// CLI fallback remains documented
 	assert.Contains(t, prompt, "kas signal emit planner_finished my-feature")
 	// Fallback filesystem sentinel still present
@@ -142,11 +143,12 @@ func TestBuildWaveAnnotationPrompt(t *testing.T) {
 }
 
 func TestBuildFixerPrompt(t *testing.T) {
-	prompt := BuildFixerPrompt("my-feature", "- [app.go:42] fix the failing review handoff", 3)
+	prompt := BuildFixerPrompt("my-feature", "myproject", "- [app.go:42] fix the failing review handoff", 3)
 
 	assert.Contains(t, prompt, "Address reviewer feedback for plan: my-feature")
 	assert.Contains(t, prompt, "Current fix round: 3")
 	assert.Contains(t, prompt, "kas task show my-feature")
+	assert.Contains(t, prompt, `project: "myproject"`)
 	assert.Contains(t, prompt, "not an implementer")
 	assert.Contains(t, prompt, "fix the failing review handoff")
 	assert.Contains(t, prompt, "Do not emit completion signals from this fixer prompt")
@@ -154,7 +156,7 @@ func TestBuildFixerPrompt(t *testing.T) {
 }
 
 func TestBuildFixerPrompt_WithoutFeedback(t *testing.T) {
-	prompt := BuildFixerPrompt("my-feature", "   ", 2)
+	prompt := BuildFixerPrompt("my-feature", "myproject", "   ", 2)
 
 	assert.Contains(t, prompt, "No structured reviewer feedback was attached")
 	assert.Contains(t, prompt, "Inspect the latest reviewer output or PR review comments")
@@ -163,28 +165,30 @@ func TestBuildFixerPrompt_WithoutFeedback(t *testing.T) {
 }
 
 func TestBuildMasterReviewPrompt(t *testing.T) {
-	prompt := BuildMasterReviewPrompt("my-feature", "diff content here", "PASS: 42 tests")
+	prompt := BuildMasterReviewPrompt("my-feature", "myproject", "diff content here", "PASS: 42 tests")
 
 	assert.Contains(t, prompt, "my-feature")
 	assert.Contains(t, prompt, "diff content here")
 	assert.Contains(t, prompt, "PASS: 42 tests")
 	assert.Contains(t, prompt, "kasmos-master")
 	assert.Contains(t, prompt, "master-approved-my-feature")
+	assert.Contains(t, prompt, `project: "myproject"`)
 	assert.Contains(t, prompt, "## Test Results")
 	assert.Contains(t, prompt, "## Diff")
 }
 
 func TestBuildElaborationPrompt(t *testing.T) {
-	prompt := BuildElaborationPrompt("my-feature")
+	prompt := BuildElaborationPrompt("my-feature", "myproject")
 
 	assert.Contains(t, prompt, "kasmos-architect")
 	assert.NotContains(t, prompt, "kasmos-elaborator")
 	// Must reference the plan file for retrieval via MCP
 	assert.Contains(t, prompt, "task_show")
 	assert.Contains(t, prompt, "kas task show my-feature") // CLI fallback
+	assert.Contains(t, prompt, `project: "myproject"`)
 	// Must reference updating the plan via MCP
 	assert.Contains(t, prompt, "task_update_content")
-	assert.Contains(t, prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"my-feature\")")
+	assert.Contains(t, prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"my-feature\", project: \"myproject\")")
 	// CLI fallback remains documented
 	assert.Contains(t, prompt, "kas signal emit elaborator_finished my-feature")
 	// Fallback filesystem sentinel still present
@@ -202,11 +206,12 @@ func TestBuildElaborationPrompt(t *testing.T) {
 }
 
 func TestBuildArchitectPrompt(t *testing.T) {
-	prompt := BuildArchitectPrompt("my-feature")
+	prompt := BuildArchitectPrompt("my-feature", "myproject")
 
 	assert.Contains(t, prompt, "kasmos-architect")
 	assert.Contains(t, prompt, "task_show")
 	assert.Contains(t, prompt, "kas task show my-feature") // CLI fallback
+	assert.Contains(t, prompt, `project: "myproject"`)
 	assert.Contains(t, prompt, "task_update_content")
 	assert.Contains(t, prompt, "architect-finished")
 	assert.Contains(t, prompt, "architect-v1.json")
@@ -216,9 +221,9 @@ func TestBuildArchitectPrompt(t *testing.T) {
 }
 
 func TestBuildElaborationPrompt_RetainsLegacySignalName(t *testing.T) {
-	prompt := BuildElaborationPrompt("my-feature")
+	prompt := BuildElaborationPrompt("my-feature", "myproject")
 
 	assert.Contains(t, prompt, "only the completion signal name stays legacy")
-	assert.Contains(t, prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"my-feature\")")
+	assert.Contains(t, prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"my-feature\", project: \"myproject\")")
 	assert.Contains(t, prompt, "kas signal emit elaborator_finished my-feature")
 }

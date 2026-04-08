@@ -487,7 +487,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		}
 		m.loadTaskState()
 		m.updateSidebarTasks()
-		return m.spawnTaskAgent(planFile, "plan", buildModifyTaskPrompt(planFile))
+		return m.spawnTaskAgent(planFile, "plan", buildModifyTaskPrompt(planFile, m.taskStoreProject))
 
 	case "start_over_plan":
 		planFile := m.nav.GetSelectedPlanFile()
@@ -1305,7 +1305,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			auditlog.WithPlan(planFile))
 		m.loadTaskState()
 		m.updateSidebarTasks()
-		return m.spawnTaskAgent(planFile, "plan", buildPlanningPrompt(planFile, taskstate.DisplayName(planFile), entry.Description))
+		return m.spawnTaskAgent(planFile, "plan", buildPlanningPrompt(planFile, taskstate.DisplayName(planFile), entry.Description, m.taskStoreProject))
 	case "solo":
 		// Check store content before fsmSetImplementing — the FSM transition calls
 		// store.Update which overwrites the content field with an empty string.
@@ -1324,7 +1324,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			auditlog.WithPlan(planFile))
 		m.loadTaskState()
 		m.updateSidebarTasks()
-		prompt := buildSoloPrompt(planName, entry.Description, refFile)
+		prompt := buildSoloPrompt(planName, entry.Description, refFile, m.taskStoreProject)
 		return m.spawnTaskAgent(planFile, "solo", prompt)
 	case "implement":
 		// If an orchestrator already exists (e.g. elaboration finished, or waves
@@ -1358,7 +1358,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			m.loadTaskState()
 			m.updateSidebarTasks()
 			m.toastManager.Info("plan content missing — respawning planner to write plan content.")
-			_, spawnCmd := m.spawnTaskAgent(planFile, "plan", buildPlanningPrompt(planFile, taskstate.DisplayName(planFile), entry.Description))
+			_, spawnCmd := m.spawnTaskAgent(planFile, "plan", buildPlanningPrompt(planFile, taskstate.DisplayName(planFile), entry.Description, m.taskStoreProject))
 			return m, tea.Batch(m.toastTickCmd(), func() tea.Msg { return taskRefreshMsg{} }, spawnCmd)
 		}
 		plan, err := taskparser.Parse(rawContent)
@@ -1371,7 +1371,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			m.loadTaskState()
 			m.updateSidebarTasks()
 			m.toastManager.Info("task needs ## Wave headers — respawning planner to annotate.")
-			_, spawnCmd := m.spawnTaskAgent(planFile, "plan", orchestration.BuildWaveAnnotationPrompt(planFile))
+			_, spawnCmd := m.spawnTaskAgent(planFile, "plan", orchestration.BuildWaveAnnotationPrompt(planFile, m.taskStoreProject))
 			return m, tea.Batch(m.toastTickCmd(), func() tea.Msg { return taskRefreshMsg{} }, spawnCmd)
 		}
 
@@ -1437,7 +1437,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			m.loadTaskState()
 			m.updateSidebarTasks()
 			m.toastManager.Info("plan content missing — respawning planner to write plan content.")
-			_, spawnCmd := m.spawnTaskAgent(planFile, "plan", buildPlanningPrompt(planFile, taskstate.DisplayName(planFile), entry.Description))
+			_, spawnCmd := m.spawnTaskAgent(planFile, "plan", buildPlanningPrompt(planFile, taskstate.DisplayName(planFile), entry.Description, m.taskStoreProject))
 			return m, tea.Batch(m.toastTickCmd(), func() tea.Msg { return taskRefreshMsg{} }, spawnCmd)
 		}
 		plan, err := taskparser.Parse(rawContent)
@@ -1449,7 +1449,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			m.loadTaskState()
 			m.updateSidebarTasks()
 			m.toastManager.Info("task needs ## Wave headers — respawning planner to annotate.")
-			_, spawnCmd := m.spawnTaskAgent(planFile, "plan", orchestration.BuildWaveAnnotationPrompt(planFile))
+			_, spawnCmd := m.spawnTaskAgent(planFile, "plan", orchestration.BuildWaveAnnotationPrompt(planFile, m.taskStoreProject))
 			return m, tea.Batch(m.toastTickCmd(), func() tea.Msg { return taskRefreshMsg{} }, spawnCmd)
 		}
 

@@ -1158,7 +1158,7 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		}); err != nil {
 			return fmt.Errorf("persist architect execution state: %w", err)
 		}
-		spec := orchestration.BuildArchitectAgentSpec(a.PlanFile)
+		spec := orchestration.BuildArchitectAgentSpec(a.PlanFile, e.Project)
 		opts := loop.SpawnOpts{
 			PlanFile: a.PlanFile,
 			RepoPath: e.Path,
@@ -1669,7 +1669,7 @@ func coderSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 }
 
 func reviewerSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
-	spec := orchestration.BuildReviewerAgentSpec(entry.Filename, entry.ReviewCycle, entry.LatestReviewFeedback)
+	spec := orchestration.BuildReviewerAgentSpec(entry.Filename, e.Project, entry.ReviewCycle, entry.LatestReviewFeedback)
 	return loop.SpawnOpts{
 		PlanFile:    entry.Filename,
 		RepoPath:    e.Path,
@@ -1688,7 +1688,7 @@ func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 			reviewCycle = entry.ReviewCycle
 		}
 	}
-	spec := orchestration.BuildFixerAgentSpec(planFile, reviewCycle, feedback)
+	spec := orchestration.BuildFixerAgentSpec(planFile, e.Project, reviewCycle, feedback)
 	return loop.SpawnOpts{
 		PlanFile:    planFile,
 		RepoPath:    e.Path,

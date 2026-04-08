@@ -59,6 +59,7 @@ type ExecutionSession interface {
 	SetInitialPrompt(prompt string)
 	SetNoFlicker(enabled bool)
 	SetTaskEnv(taskNumber, waveNumber, peerCount int)
+	SetProject(project string)
 	SetSessionTitle(title string)
 	SetTitleFunc(fn func(workDir string, beforeStart time.Time, title string))
 }
@@ -144,6 +145,7 @@ func (w *tmuxExecutionSession) SetNoFlicker(enabled bool)      { w.s.SetNoFlicke
 func (w *tmuxExecutionSession) SetTaskEnv(taskNumber, waveNumber, peerCount int) {
 	w.s.SetTaskEnv(taskNumber, waveNumber, peerCount)
 }
+func (w *tmuxExecutionSession) SetProject(project string)    { w.s.SetProject(project) }
 func (w *tmuxExecutionSession) SetSessionTitle(title string) { w.s.SetSessionTitle(title) }
 func (w *tmuxExecutionSession) SetTitleFunc(fn func(workDir string, beforeStart time.Time, title string)) {
 	w.s.SetTitleFunc(fn)

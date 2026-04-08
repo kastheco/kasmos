@@ -28,6 +28,15 @@ func TestNormalizeExecutionMode(t *testing.T) {
 	}
 }
 
+func TestSetProject_DelegatesToBackend(t *testing.T) {
+	// Verify SetProject is accepted by both backend types without panicking.
+	tmuxSess := NewExecutionSession(ExecutionModeTmux, "test", "claude", false)
+	tmuxSess.SetProject("myrepo")
+
+	headlessSess := NewExecutionSession(ExecutionModeHeadless, "test", "claude", false)
+	headlessSess.SetProject("myrepo")
+}
+
 func TestNewExecutionSession(t *testing.T) {
 	tests := []struct {
 		name     string

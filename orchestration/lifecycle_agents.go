@@ -54,7 +54,7 @@ func BuildLifecycleAgentTitle(planFile, agentType string, reviewCycle int) strin
 
 // BuildReviewerAgentSpec returns the shared prompt/title/cycle metadata for a
 // reviewer spawn. storedReviewCycle is the persisted completed fix-cycle count.
-func BuildReviewerAgentSpec(planFile string, storedReviewCycle int, previousFeedback string) LifecycleAgentSpec {
+func BuildReviewerAgentSpec(planFile, project string, storedReviewCycle int, previousFeedback string) LifecycleAgentSpec {
 	reviewRound := storedReviewCycle + 1
 	if reviewRound < 1 {
 		reviewRound = 1
@@ -62,31 +62,31 @@ func BuildReviewerAgentSpec(planFile string, storedReviewCycle int, previousFeed
 	planName := taskstate.DisplayName(planFile)
 	return LifecycleAgentSpec{
 		Title:       BuildLifecycleAgentTitle(planFile, session.AgentTypeReviewer, reviewRound),
-		Prompt:      scaffold.LoadReviewPrompt(planFile, planName, reviewRound, previousFeedback),
+		Prompt:      scaffold.LoadReviewPrompt(planFile, planName, project, reviewRound, previousFeedback),
 		ReviewCycle: reviewRound,
 	}
 }
 
 // BuildFixerAgentSpec returns the shared prompt/title/cycle metadata for a
 // fixer spawn. storedReviewCycle is the persisted current fix round.
-func BuildFixerAgentSpec(planFile string, storedReviewCycle int, feedback string) LifecycleAgentSpec {
+func BuildFixerAgentSpec(planFile, project string, storedReviewCycle int, feedback string) LifecycleAgentSpec {
 	reviewCycle := storedReviewCycle
 	if reviewCycle < 1 {
 		reviewCycle = 1
 	}
 	return LifecycleAgentSpec{
 		Title:       BuildLifecycleAgentTitle(planFile, session.AgentTypeFixer, reviewCycle),
-		Prompt:      BuildFixerPrompt(planFile, feedback, reviewCycle),
+		Prompt:      BuildFixerPrompt(planFile, project, feedback, reviewCycle),
 		ReviewCycle: reviewCycle,
 	}
 }
 
 // BuildArchitectAgentSpec returns the shared prompt/title metadata for the
 // architect pass that elaborates a plan before wave execution begins.
-func BuildArchitectAgentSpec(planFile string) LifecycleAgentSpec {
+func BuildArchitectAgentSpec(planFile, project string) LifecycleAgentSpec {
 	return LifecycleAgentSpec{
 		Title:  BuildLifecycleAgentTitle(planFile, session.AgentTypeElaborator, 0),
-		Prompt: BuildElaborationPrompt(planFile),
+		Prompt: BuildElaborationPrompt(planFile, project),
 	}
 }
 
@@ -101,7 +101,7 @@ func BuildRecoveryCandidates(task taskstore.TaskEntry, planContent string) []Rec
 	phase := taskfsm.ExecutionPhase(strings.TrimSpace(task.ExecutionState.Phase))
 	switch phase {
 	case taskfsm.ExecutionPhaseArchitecting:
-		spec := BuildArchitectAgentSpec(task.Filename)
+		spec := BuildArchitectAgentSpec(task.Filename, "")
 		return []RecoveryCandidate{{
 			TaskFile:  task.Filename,
 			Title:     spec.Title,
@@ -115,7 +115,7 @@ func BuildRecoveryCandidates(task taskstore.TaskEntry, planContent string) []Rec
 			Branch:    task.Branch,
 		}}
 	case taskfsm.ExecutionPhaseReviewing:
-		spec := BuildReviewerAgentSpec(task.Filename, task.ReviewCycle, task.LatestReviewFeedback)
+		spec := BuildReviewerAgentSpec(task.Filename, "", task.ReviewCycle, task.LatestReviewFeedback)
 		return []RecoveryCandidate{{
 			TaskFile:    task.Filename,
 			Title:       spec.Title,
@@ -124,7 +124,7 @@ func BuildRecoveryCandidates(task taskstore.TaskEntry, planContent string) []Rec
 			ReviewCycle: spec.ReviewCycle,
 		}}
 	case taskfsm.ExecutionPhaseFixing:
-		spec := BuildFixerAgentSpec(task.Filename, task.ReviewCycle, task.LatestReviewFeedback)
+		spec := BuildFixerAgentSpec(task.Filename, "", task.ReviewCycle, task.LatestReviewFeedback)
 		return []RecoveryCandidate{{
 			TaskFile:    task.Filename,
 			Title:       spec.Title,

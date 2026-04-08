@@ -58,6 +58,9 @@ type TmuxSession struct {
 	taskNumber int
 	waveNumber int
 	peerCount  int
+	// project is the repository base name, set via SetProject. When non-empty,
+	// KASMOS_PROJECT=<project> is prepended before KASMOS_MANAGED=1 at Start() time.
+	project string
 	// noFlicker controls whether CLAUDE_CODE_NO_FLICKER is set to 1 or 0.
 	// Defaults to false (0) so prompt detection works correctly in spawned agents.
 	noFlicker bool
@@ -209,6 +212,12 @@ func (t *TmuxSession) SetNoFlicker(enabled bool) {
 	t.noFlicker = enabled
 }
 
+// SetProject sets the repository project name injected as KASMOS_PROJECT at Start() time.
+// Must be called before Start(). An empty string disables the injection.
+func (t *TmuxSession) SetProject(project string) {
+	t.project = project
+}
+
 // reportProgress calls ProgressFunc if set.
 func (t *TmuxSession) reportProgress(stage int, desc string) {
 	if t.ProgressFunc != nil {
@@ -334,6 +343,11 @@ func (t *TmuxSession) Start(workDir string) error {
 	// Prepend KASMOS_MANAGED=1 so the agent process sees it from startup.
 	program = "KASMOS_MANAGED=1 " + program
 
+	// Prepend KASMOS_PROJECT before KASMOS_MANAGED so agents know which repo they are in.
+	if t.project != "" {
+		program = "KASMOS_PROJECT=" + shellEscapeSingleQuote(t.project) + " " + program
+	}
+
 	// Prepend task identity env vars for parallel wave execution.
 	if t.taskNumber > 0 {
 		program = fmt.Sprintf("KASMOS_TASK=%d KASMOS_WAVE=%d KASMOS_PEERS=%d %s",
@@ -416,6 +430,13 @@ func (t *TmuxSession) Start(workDir string) error {
 	envCmd := exec.Command("tmux", "set-environment", "-t", t.sanitizedName, "KASMOS_MANAGED", "1")
 	if err := t.cmdExec.Run(envCmd); err != nil {
 		log.InfoLog.Printf("Warning: failed to set KASMOS_MANAGED env for session %s: %v", t.sanitizedName, err)
+	}
+	// Inject KASMOS_PROJECT so attached shells and any subprocess inherit the repo name.
+	if t.project != "" {
+		projectEnvCmd := exec.Command("tmux", "set-environment", "-t", t.sanitizedName, "KASMOS_PROJECT", t.project)
+		if err := t.cmdExec.Run(projectEnvCmd); err != nil {
+			log.InfoLog.Printf("Warning: failed to set KASMOS_PROJECT env for session %s: %v", t.sanitizedName, err)
+		}
 	}
 
 	t.reportProgress(3, "Configuring session...")

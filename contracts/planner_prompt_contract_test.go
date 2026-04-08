@@ -23,7 +23,8 @@ func TestPlannerPromptBranchPolicy(t *testing.T) {
 		"planner-finished",
 		"KASMOS_MANAGED",
 		"Never modify task state directly",
-		"plan review", // planner must reference the review step
+		"plan review",                // planner must reference the review step
+		`project: "$KASMOS_PROJECT"`, // project arg must be shown in MCP tool examples
 	}
 
 	for _, needle := range required {

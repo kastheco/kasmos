@@ -37,6 +37,13 @@ func TestSetTaskEnv(t *testing.T) {
 	assert.Equal(t, 4, s.peerCount)
 }
 
+func TestSetProject(t *testing.T) {
+	s := NewTmuxSession("test", "claude", false)
+	assert.Empty(t, s.project, "project should be empty by default")
+	s.SetProject("myrepo")
+	assert.Equal(t, "myrepo", s.project)
+}
+
 func TestNewReset_PreservesDeps(t *testing.T) {
 	pty := NewMockPtyFactory(t)
 	exec := cmd_test.NewMockExecutor()

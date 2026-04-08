@@ -212,14 +212,15 @@ func TestInstanceResume_Success(t *testing.T) {
 	assert.True(t, hasCall(*calls, "git", "-C", repoPath, "worktree", "add", agentPath, branchName),
 		"expected git worktree add call with branch; calls: %v", *calls)
 
-	// Find the tmux new-session call and verify the program begins with KASMOS_MANAGED=1.
+	// Find the tmux new-session call and verify the program begins with
+	// KASMOS_PROJECT=<repo-basename> KASMOS_MANAGED=1 (repo-basename derived from "/repo").
 	var foundTmuxCall bool
 	for _, call := range *calls {
 		if len(call) >= 8 && call[0] == "tmux" && call[1] == "new-session" {
 			foundTmuxCall = true
 			programArg := call[len(call)-1]
-			assert.True(t, strings.HasPrefix(programArg, "KASMOS_MANAGED=1"),
-				"program arg should begin with KASMOS_MANAGED=1, got: %q", programArg)
+			assert.True(t, strings.HasPrefix(programArg, "KASMOS_PROJECT='repo' KASMOS_MANAGED=1"),
+				"program arg should begin with KASMOS_PROJECT='repo' KASMOS_MANAGED=1, got: %q", programArg)
 		}
 	}
 	assert.True(t, foundTmuxCall, "expected tmux new-session call; calls: %v", *calls)

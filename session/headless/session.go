@@ -46,8 +46,11 @@ type Session struct {
 	waveNumber    int
 	peerCount     int
 	noFlicker     bool
-	sessionTitle  string
-	titleFunc     func(workDir string, beforeStart time.Time, title string)
+	// project is the repository base name. When non-empty, KASMOS_PROJECT=<project>
+	// is appended to the child process environment at Start() time.
+	project      string
+	sessionTitle string
+	titleFunc    func(workDir string, beforeStart time.Time, title string)
 
 	// mu protects cmd, buf, done, lastContent.
 	mu          sync.Mutex
@@ -106,6 +109,10 @@ func (s *Session) SetTaskEnv(task, wave, peers int) {
 // Must be called before Start().
 func (s *Session) SetNoFlicker(enabled bool) { s.noFlicker = enabled }
 
+// SetProject sets the repository project name injected as KASMOS_PROJECT at Start() time.
+// Must be called before Start(). An empty string disables the injection.
+func (s *Session) SetProject(project string) { s.project = project }
+
 // SetSessionTitle stores the session title (no-op for headless).
 func (s *Session) SetSessionTitle(title string) { s.sessionTitle = title }
 
@@ -155,8 +162,14 @@ func (s *Session) Start(workDir string) error {
 	cmd.Dir = workDir
 
 	// Build the child's environment.
+	// Injected env vars: KASMOS_MANAGED, KASMOS_PROJECT (when set),
+	// CLAUDE_CODE_NO_FLICKER (claude), OPENCODE_CONFIG (opencode),
+	// KASMOS_TASK/KASMOS_WAVE/KASMOS_PEERS (wave tasks).
 	env := os.Environ()
 	env = append(env, "KASMOS_MANAGED=1")
+	if s.project != "" {
+		env = append(env, "KASMOS_PROJECT="+s.project)
+	}
 	if filepath.Base(parts[0]) == tmux.ProgramClaude {
 		flickerVal := "0"
 		if s.noFlicker {

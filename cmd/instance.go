@@ -123,6 +123,19 @@ func kasTmuxName(title string) string {
 	return "kas_" + name
 }
 
+// resumeProject derives the repository base name from an instance record for use
+// in KASMOS_PROJECT injection. It prefers Worktree.RepoPath and falls back to Path.
+// Returns "" when neither is populated so the caller can skip the env var entirely.
+func resumeProject(rec instanceRecord) string {
+	if rec.Worktree.RepoPath != "" {
+		return filepath.Base(filepath.Clean(rec.Worktree.RepoPath))
+	}
+	if rec.Path != "" {
+		return filepath.Base(filepath.Clean(rec.Path))
+	}
+	return ""
+}
+
 // buildResumeCommand reconstructs the tmux program command string for a resumed
 // instance.  It mirrors the env-var and flag injection performed by TmuxSession.Start()
 // so that the resumed agent is indistinguishable from a freshly started one.
@@ -153,6 +166,11 @@ func buildResumeCommand(rec instanceRecord, worktreePath string) string {
 
 	// Prepend KASMOS_MANAGED=1 so the agent knows it is managed by kasmos.
 	program = "KASMOS_MANAGED=1 " + program
+
+	// Prepend KASMOS_PROJECT before KASMOS_MANAGED so agents know which repo they are in.
+	if project := resumeProject(rec); project != "" {
+		program = "KASMOS_PROJECT='" + strings.ReplaceAll(project, "'", "'\\''") + "' " + program
+	}
 
 	// Prepend task identity env vars for parallel wave execution.
 	if rec.TaskNumber > 0 {

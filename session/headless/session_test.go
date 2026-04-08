@@ -227,6 +227,63 @@ func TestHeadlessSession_ClaudeInjectsNoFlickerEnv(t *testing.T) {
 	_ = sess.Close()
 }
 
+func TestHeadlessSession_ProjectEnvInjection(t *testing.T) {
+	workDir := t.TempDir()
+
+	// Create a tiny script that prints $KASMOS_PROJECT.
+	binaryPath := filepath.Join(workDir, "myagent")
+	script := "#!/bin/sh\nprintf '%s' \"$KASMOS_PROJECT\"\n"
+	require.NoError(t, os.WriteFile(binaryPath, []byte(script), 0o755))
+
+	sess := headless.New("project-env-test", binaryPath, false)
+	sess.SetProject("myrepo")
+	err := sess.Start(workDir)
+	require.NoError(t, err)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !sess.DoesSessionExist() {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	content, err := sess.CapturePaneContent()
+	require.NoError(t, err)
+	assert.Equal(t, "myrepo", strings.TrimSpace(content))
+	_ = sess.Close()
+}
+
+func TestHeadlessSession_NoProjectEnvWhenEmpty(t *testing.T) {
+	workDir := t.TempDir()
+
+	// Control the outer env so we can assert the child inherits it unchanged.
+	t.Setenv("KASMOS_PROJECT", "outer")
+
+	// Script prints the value of KASMOS_PROJECT.
+	binaryPath := filepath.Join(workDir, "checkproject")
+	script := "#!/bin/sh\nprintf '%s' \"$KASMOS_PROJECT\"\n"
+	require.NoError(t, os.WriteFile(binaryPath, []byte(script), 0o755))
+
+	sess := headless.New("no-project-test", binaryPath, false)
+	// SetProject NOT called — the session should NOT override the inherited value.
+	err := sess.Start(workDir)
+	require.NoError(t, err)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !sess.DoesSessionExist() {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	content, err := sess.CapturePaneContent()
+	require.NoError(t, err)
+	assert.Equal(t, "outer", strings.TrimSpace(content))
+	_ = sess.Close()
+}
+
 func TestHeadlessSession_ClaudeNoFlickerEnabledProducesOne(t *testing.T) {
 	workDir := t.TempDir()
 

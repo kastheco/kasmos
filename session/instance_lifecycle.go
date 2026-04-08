@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -38,11 +39,29 @@ func (i *Instance) transferPromptToCli() {
 	}
 }
 
-// setExecutionTaskEnv pushes wave/task/peer identity into the execution session environment
-// so that agents spawned inside the session inherit the orchestration context.
+// projectName derives the repository base name from the instance's attached
+// worktree. Returns "" when no worktree is attached or the repo path is empty.
+func (i *Instance) projectName() string {
+	if i.gitWorktree != nil {
+		if p := i.gitWorktree.GetRepoPath(); p != "" {
+			return filepath.Base(filepath.Clean(p))
+		}
+	}
+	return ""
+}
+
+// setExecutionTaskEnv pushes wave/task/peer identity and the project name into
+// the execution session environment so that agents spawned inside the session
+// inherit the orchestration context.
 func (i *Instance) setExecutionTaskEnv() {
-	if i.TaskNumber > 0 && i.executionSession != nil {
+	if i.executionSession == nil {
+		return
+	}
+	if i.TaskNumber > 0 {
 		i.executionSession.SetTaskEnv(i.TaskNumber, i.WaveNumber, i.PeerCount)
+	}
+	if project := i.projectName(); project != "" {
+		i.executionSession.SetProject(project)
 	}
 }
 
