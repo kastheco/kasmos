@@ -49,9 +49,9 @@ const features = [
 ];
 
 const typewriterTexts = [
-  "run agents in parallel across isolated worktrees",
-  "wave-based execution with lifecycle signals",
-  "MCP-powered orchestration built-in",
+  "parallel agents, isolated worktrees",
+  "wave-based execution with signals",
+  "MCP-powered orchestration",
   "concurrent agents, zero conflicts",
 ];
 

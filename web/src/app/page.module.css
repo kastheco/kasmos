@@ -406,10 +406,6 @@
     display: none;
   }
 
-  .heroTypewriter {
-    min-height: 3em;
-  }
-
   .hero {
     padding: 100px 16px 96px;
   }
