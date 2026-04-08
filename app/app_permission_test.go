@@ -262,6 +262,42 @@ func TestUpdate_PermissionAutoApprove_ClearsGuardWhenPromptGone(t *testing.T) {
 	assert.Len(t, approvals, 1, "should fire again after guard is cleared")
 }
 
+// TestUpdate_PermissionAutoApprove_DifferentPromptBypassesGuard verifies that when
+// a new permission prompt with a different cache key appears before the pane clears,
+// the dedup guard does not block auto-approval of the new prompt.
+func TestUpdate_PermissionAutoApprove_DifferentPromptBypassesGuard(t *testing.T) {
+	m := newTestHomeWithCache(t)
+	m.permissionStore.Remember(m.activeProject(), "Bash: ls -la")
+	m.permissionStore.Remember(m.activeProject(), "Bash: git status")
+
+	inst := &session.Instance{Title: "test-agent", Program: "claude"}
+	inst.MarkStartedForTest()
+	m.nav.AddInstance(inst)()
+
+	ppA := &session.PermissionPrompt{Pattern: "Bash: ls -la", Description: "Bash: ls -la"}
+	ppB := &session.PermissionPrompt{Pattern: "Bash: git status", Description: "Bash: git status"}
+
+	tickA := metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "test-agent", PermissionPrompt: ppA},
+		},
+	}
+	tickB := metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "test-agent", PermissionPrompt: ppB},
+		},
+	}
+
+	// First tick — prompt A fires, guard set.
+	_, cmd1 := m.Update(tickA)
+	assert.Len(t, collectAutoApproveMsgs(cmd1), 1, "prompt A should auto-approve")
+
+	// Second tick — prompt B appears (no nil gap). Guard key differs so it must fire.
+	_, cmd2 := m.Update(tickB)
+	assert.Len(t, collectAutoApproveMsgs(cmd2), 1,
+		"prompt B should auto-approve even without a nil gap, because the cache key differs")
+}
+
 // TestHandleKeyPress_PermissionEnter_SendsResponse verifies that pressing Enter while
 // in statePermission triggers a SendPermissionResponse cmd and returns to stateDefault.
 func TestHandleKeyPress_PermissionEnter_SendsResponse(t *testing.T) {

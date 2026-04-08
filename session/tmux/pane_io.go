@@ -58,10 +58,11 @@ func (t *TmuxSession) SendPermissionResponse(choice PermissionChoice) error {
 }
 
 // SendPermissionResponse sends Claude Code's numbered-choice response for a
-// permission prompt. AllowOnce sends "1" (first Yes option) followed by Enter;
-// AllowAlways sends "2" (second Yes option) followed by Enter. Reject sends
-// Escape to dismiss the dialog — the position of "No" varies between 2- and
-// 3-option prompts so a numbered key cannot be used reliably.
+// permission prompt. Both AllowOnce and AllowAlways send "1" (first Yes option)
+// followed by Enter. Kasmos handles "allow always" persistence internally via
+// its permission store — we cannot send "2" because Claude Code's 2-option
+// prompts (e.g. shell-expansion confirmations) use "2" for No. Reject sends
+// Escape to dismiss the dialog.
 func (a claudeAdapter) SendPermissionResponse(session *TmuxSession, choice PermissionChoice) error {
 	if choice == PermissionReject {
 		cmd := exec.Command("tmux", "send-keys", "-t", session.sanitizedName, "Escape")
@@ -71,13 +72,11 @@ func (a claudeAdapter) SendPermissionResponse(session *TmuxSession, choice Permi
 		return nil
 	}
 
-	key := "1"
-	if choice == PermissionAllowAlways {
-		key = "2"
-	}
-
-	if err := session.SendKeys(key); err != nil {
-		return fmt.Errorf("SendPermissionResponse: send %q: %w", key, err)
+	// Always select option 1 (Yes). Claude Code prompts vary between 2 and 3
+	// options — "2" means "No" on 2-option prompts, so it is never safe to
+	// send. Kasmos auto-approves cached permissions on subsequent appearances.
+	if err := session.SendKeys("1"); err != nil {
+		return fmt.Errorf("SendPermissionResponse: send \"1\": %w", err)
 	}
 	if err := session.TapEnter(); err != nil {
 		return fmt.Errorf("SendPermissionResponse: confirm selection: %w", err)

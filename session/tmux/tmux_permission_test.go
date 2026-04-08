@@ -118,7 +118,7 @@ func TestSendPermissionResponse_ClaudeAllowAlways(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
-		"tmux send-keys -l -t kas_test 2",
+		"tmux send-keys -l -t kas_test 1",
 		"tmux send-keys -t kas_test Enter",
 	}, ranCmds)
 }

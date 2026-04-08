@@ -206,7 +206,7 @@ func TestClaudeAdapter_SendPermissionResponse(t *testing.T) {
 			name:   "allow always",
 			choice: PermissionAllowAlways,
 			expected: []string{
-				"tmux send-keys -l -t kas_adapter-test 2",
+				"tmux send-keys -l -t kas_adapter-test 1",
 				"tmux send-keys -t kas_adapter-test Enter",
 			},
 		},

@@ -1741,8 +1741,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					guardKey = "__handled__"
 				}
 
-				if _, handled := m.permissionHandled[inst]; handled {
-					// Already handled this prompt appearance — skip until cleared.
+				if storedKey, handled := m.permissionHandled[inst]; handled && storedKey == guardKey {
+					// Same prompt still visible — skip until cleared.
 				} else if cacheKey != "" && m.permissionStore != nil && m.permissionStore.IsAllowedAlways(m.activeProject(), cacheKey) {
 					// Auto-approve cached permission.
 					m.permissionHandled[inst] = guardKey
