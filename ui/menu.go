@@ -278,35 +278,47 @@ func (m *Menu) placeLine(
 }
 
 // renderFocusMode produces the interactive-mode status row with an inverted
-// rose background spanning the full width.
+// rose background filling edge-to-edge.
 func (m *Menu) renderFocusMode() string {
 	frame := focusModeFrames[int(time.Now().UnixMilli()/100)%len(focusModeFrames)]
-	badge := focusBarStyle.Render("interactive") + focusBarSpinnerStyle.Render(" "+frame)
+
+	// Build styled segments — all on the rose background.
+	label := focusBarStyle.Render(" interactive") + focusBarSpinnerStyle.Render(" "+frame)
 	hint := focusBarDimStyle.Render("ctrl+space") + focusBarStyle.Render(" exit")
-	content := badge + focusBarStyle.Render("  ") + hint
-
-	cw := lipgloss.Width(content)
-	cs := (m.width - cw) / 2
-	if cs < 0 {
-		cs = 0
-	}
-
-	// Build the line content with positioning, then wrap the whole thing
-	// in the inverted background so blank space is also rose-colored.
-	tr := ""
-	tw := 0
+	tmux := ""
 	if m.tmuxSessionCount > 0 {
-		tr = focusBarDimStyle.Render(fmt.Sprintf("tmux:%d", m.tmuxSessionCount))
-		tw = lipgloss.Width(tr)
-	}
-	rs := m.width - tw - 1
-	if rs < cs+cw {
-		rs = cs + cw
+		tmux = focusBarDimStyle.Render(fmt.Sprintf("tmux:%d ", m.tmuxSessionCount))
 	}
 
-	line := m.placeLine(cs, cw, content, rs, tw, tr)
+	// Measure visual widths.
+	lw := lipgloss.Width(label)
+	hw := lipgloss.Width(hint)
+	tw := lipgloss.Width(tmux)
 
-	// Apply the rose background to the entire bar width including padding.
+	// Calculate gaps so label+hint is roughly centered and tmux is right-aligned.
+	centerBlock := label + focusBarStyle.Render("  ") + hint
+	cbw := lw + 2 + hw
+	leftPad := (m.width - cbw) / 2
+	if leftPad < 1 {
+		leftPad = 1
+	}
+	rightPad := m.width - leftPad - cbw - tw
+	if rightPad < 0 {
+		rightPad = 0
+	}
+
+	// Compose with rose-background spaces so every cell is colored.
+	sp := func(n int) string {
+		if n <= 0 {
+			return ""
+		}
+		return focusBarStyle.Render(strings.Repeat(" ", n))
+	}
+
+	line := sp(leftPad) + centerBlock + sp(rightPad) + tmux
+
+	// Ensure the line fills exactly m.width — lipgloss Width pads with
+	// background-colored spaces.
 	return lipgloss.NewStyle().
 		Background(ColorLove).
 		Width(m.width).
