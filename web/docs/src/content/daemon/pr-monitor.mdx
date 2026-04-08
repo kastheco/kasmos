@@ -61,7 +61,7 @@ Not every PR review spawns a fixer. The `shouldTriggerFixer` predicate applies t
 
 ## idempotency and the `pr_reviews` table
 
-Every review is recorded in the `pr_reviews` SQLite table with `INSERT OR IGNORE`, keyed on `(project, plan_file, review_id)`. This means:
+Every review is recorded in the `pr_reviews` SQLite table with `INSERT OR IGNORE`, keyed on `(project, plan_filename, review_id)`. This means:
 
 - Repeated polls of the same review are safe — no duplicate fixer dispatches.
 - The `fixer_dispatched` column tracks whether the action was already taken. The monitor skips reviews where `fixer_dispatched = 1`.
