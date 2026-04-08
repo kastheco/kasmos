@@ -1140,6 +1140,23 @@ func (m *home) showPermissionPrompt(deferred deferredPermissionPrompt) tea.Cmd {
 	return nil
 }
 
+// snapshotPaneOnCompletion writes the instance's pane content to a log file
+// when a wave task is marked complete. This provides debugging data for
+// diagnosing false-positive completion detection. Only writes when the
+// instance has cached content and a .kasmos directory exists.
+func (m *home) snapshotPaneOnCompletion(inst *session.Instance, planFile string, taskNumber, waveNumber int) {
+	if !inst.CachedContentSet || inst.CachedContent == "" {
+		return
+	}
+	logDir := filepath.Join(m.activeRepoPath, ".kasmos", "logs", "completions")
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		return
+	}
+	slug := taskstate.DisplayName(planFile)
+	filename := fmt.Sprintf("%s-W%d-T%d-%d.log", slug, waveNumber, taskNumber, time.Now().Unix())
+	_ = os.WriteFile(filepath.Join(logDir, filename), []byte(inst.CachedContent), 0o644)
+}
+
 // switchToTab toggles the compact info header without stealing focus from the sidebar.
 // The sidebar (slotNav) always retains keyboard focus.
 func (m *home) switchToTab(name keys.KeyName) (tea.Model, tea.Cmd) {

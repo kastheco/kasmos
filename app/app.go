@@ -1776,6 +1776,12 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				delete(m.permissionHandled, inst)
 			}
 
+			// Mirror the daemon's PermissionBlocked tracking so the TUI wave
+			// completion monitor doesn't mistake a permission prompt for task
+			// completion (the composer prompt and permission prompt both set
+			// PromptDetected=true).
+			inst.PermissionBlocked = (md.PermissionPrompt != nil)
+
 			// Deliver queued prompt via async Cmd — SendPrompt contains a 100ms
 			// sleep + two tmux subprocess calls that were blocking the event loop.
 			if inst.QueuedPrompt != "" && (inst.Status == session.Ready || inst.PromptDetected) {
@@ -1991,9 +1997,12 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 						// Auto-detect wave task completion: agent finished work and returned to prompt.
 						// Mirrors the single-agent detection in ShouldAutoAdvanceLifecycleImplementer.
-						if inst.HasWorked && inst.PromptDetected && !inst.AwaitingWork {
+						// Guard: do NOT mark complete while a permission prompt is active — the agent
+						// is waiting for approval, not finished with its task.
+						if inst.HasWorked && inst.PromptDetected && !inst.AwaitingWork && !inst.PermissionBlocked {
 							orch.MarkTaskComplete(task.Number)
 							inst.ImplementationComplete = true
+							m.snapshotPaneOnCompletion(inst, planFile, task.Number, orch.CurrentWaveNumber())
 							continue
 						}
 						// For daemon-managed instances, HasWorked may not be set (the daemon
