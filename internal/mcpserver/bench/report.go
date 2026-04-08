@@ -10,13 +10,13 @@ import (
 // LatencyStats holds statistical measurements for a set of duration samples,
 // all values in nanoseconds.
 type LatencyStats struct {
-	Min    int64   `json:"min_ns"`
-	P50    int64   `json:"p50_ns"`
-	P95    int64   `json:"p95_ns"`
-	P99    int64   `json:"p99_ns"`
-	Max    int64   `json:"max_ns"`
-	Mean   int64   `json:"mean_ns"`
-	Count  int     `json:"count"`
+	Min   int64 `json:"min_ns"`
+	P50   int64 `json:"p50_ns"`
+	P95   int64 `json:"p95_ns"`
+	P99   int64 `json:"p99_ns"`
+	Max   int64 `json:"max_ns"`
+	Mean  int64 `json:"mean_ns"`
+	Count int   `json:"count"`
 }
 
 // ArmStats captures per-arm (mcp / direct / bash) latency for one scenario.
@@ -28,18 +28,18 @@ type ArmStats struct {
 // OperationReport groups all arm results for a single scenario key, plus
 // computed overhead multipliers (mcp / direct, mcp / bash).
 type OperationReport struct {
-	Key               string     `json:"key"`
-	Arms              []ArmStats `json:"arms"`
-	MCPvsDirect       float64    `json:"mcp_vs_direct"`
-	MCPvsBash         float64    `json:"mcp_vs_bash"`
+	Key         string     `json:"key"`
+	Arms        []ArmStats `json:"arms"`
+	MCPvsDirect float64    `json:"mcp_vs_direct"`
+	MCPvsBash   float64    `json:"mcp_vs_bash"`
 }
 
 // BenchmarkReport is the top-level container written to the JSON report file.
 type BenchmarkReport struct {
-	GoVersion string            `json:"go_version"`
-	GOOS      string            `json:"goos"`
-	GOARCH    string            `json:"goarch"`
-	NoCache   bool              `json:"nocache"`
+	GoVersion  string            `json:"go_version"`
+	GOOS       string            `json:"goos"`
+	GOARCH     string            `json:"goarch"`
+	NoCache    bool              `json:"nocache"`
 	Operations []OperationReport `json:"operations"`
 }
 

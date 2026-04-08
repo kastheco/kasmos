@@ -114,8 +114,8 @@ func TestBuildReport_ArmOrder(t *testing.T) {
 
 func TestBuildReport_Table(t *testing.T) {
 	tests := []struct {
-		name        string
-		armSamples  map[string][]int64
+		name         string
+		armSamples   map[string][]int64
 		wantVsDirect float64
 		wantVsBash   float64
 	}{

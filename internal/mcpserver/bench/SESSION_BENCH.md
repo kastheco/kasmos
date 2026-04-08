@@ -114,12 +114,12 @@ Key fields to compare:
 
 | JSON field | meaning |
 |------------|---------|
-| `.operations[].key` | scenario identifier, e.g. `read_file/small/cold` |
+| `.operations[].key` | scenario identifier, e.g. `read_small`, `grep_narrow` |
 | `.arms[] where .arm=="mcp" | .latency.p50_ns` | MCP p50 latency (ns) |
 | `.arms[] where .arm=="direct" | .latency.p50_ns` | direct function-call p50 |
 | `.arms[] where .arm=="bash" | .latency.p50_ns` | shell-subprocess p50 |
-| `.overhead_mcp_vs_direct` | multiplier: MCP p50 / direct p50 |
-| `.overhead_mcp_vs_bash` | multiplier: MCP p50 / bash p50 |
+| `.mcp_vs_direct` | multiplier: MCP p50 / direct p50 |
+| `.mcp_vs_bash` | multiplier: MCP p50 / bash p50 |
 
 The "direct" arm simulates the cost of a built-in tool (in-process Go call with
 no subprocess). Compare it to the built-in timings you recorded in Step 2 to

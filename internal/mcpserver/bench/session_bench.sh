@@ -118,7 +118,7 @@ if [[ "$SKIP_GO_BENCH" -eq 0 ]]; then
         "    mcp  p50=\(.arms[] | select(.arm=="mcp") | .latency.p50_ns / 1e6 | round)ms" +
         "  direct p50=\(.arms[] | select(.arm=="direct") | .latency.p50_ns / 1e6 | round)ms" +
         "  bash   p50=\(.arms[] | select(.arm=="bash") | .latency.p50_ns / 1e6 | round)ms" +
-        "  (overhead mcp/direct=\(.overhead_mcp_vs_direct)x  mcp/bash=\(.overhead_mcp_vs_bash)x)"
+        "  (overhead mcp/direct=\(.mcp_vs_direct)x  mcp/bash=\(.mcp_vs_bash)x)"
       ' "$REPORT_FILE" 2>/dev/null || true
     fi
   else
