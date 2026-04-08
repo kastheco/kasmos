@@ -66,7 +66,7 @@ func TestBuildTaskPrompt_InlineCoderRules(t *testing.T) {
 	assert.Contains(t, prompt, "go build ./...")
 	assert.Contains(t, prompt, "signal_create")
 	assert.Contains(t, prompt, `"implement-task-finished"`)
-	assert.Contains(t, prompt, `\"wave\":1,\"task\":1`)
+	assert.Contains(t, prompt, `\"wave_number\":1,\"task_number\":1`)
 }
 
 func TestBuildTaskPrompt_PreservesMdPlanTokenWhenProvided(t *testing.T) {

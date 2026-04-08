@@ -67,7 +67,17 @@ func findNumberedPrompt(lines []string) *Prompt {
 		return nil
 	}
 
-	description := findDescriptionBefore(lines, firstChoiceIdx)
+	questionIdx, hasQuestion := findPermissionQuestionBefore(lines, firstChoiceIdx)
+	description := ""
+	if hasQuestion {
+		description = findDescriptionForQuestion(lines, questionIdx, strings.TrimSpace(lines[questionIdx]))
+	} else {
+		description = findStructuredDescriptionBefore(lines, firstChoiceIdx)
+	}
+	if description == "" {
+		return nil
+	}
+
 	pattern := extractPatternFromChoices(lines, firstChoiceIdx)
 	if pattern == "" {
 		pattern = description
@@ -104,61 +114,74 @@ func findLegacyPrompt(lines []string) *Prompt {
 			continue
 		}
 
-		description := findLegacyDescription(lines, i, t)
+		description := findDescriptionForQuestion(lines, i, t)
+		if description == "" {
+			continue
+		}
 		return &Prompt{Description: description, Pattern: description}
 	}
 	return nil
 }
 
-// findLegacyDescription returns the human-readable tool detail for a legacy
-// prompt. "Allow tool ...?" embeds the detail in the question itself, while
-// "Do you want to proceed?" relies on the closest preceding detail line
-// (e.g. "Bash: git status").
-func findLegacyDescription(lines []string, questionIdx int, question string) string {
+// findDescriptionForQuestion returns the human-readable tool detail for a prompt.
+// "Allow tool ...?" embeds the detail in the question itself, while
+// "Do you want to proceed?" relies on the closest preceding structured detail
+// line (for example "Bash: git status").
+func findDescriptionForQuestion(lines []string, questionIdx int, question string) string {
 	if strings.EqualFold(strings.TrimSpace(question), "Do you want to proceed?") {
-		if description := findDescriptionBefore(lines, questionIdx); description != "" {
-			return description
-		}
+		return findStructuredDescriptionBefore(lines, questionIdx)
 	}
 	return extractToolFromQuestion(question)
 }
 
-// findDescriptionBefore returns the tool-detail line immediately preceding the
-// first numbered choice. It skips blank lines and question lines (ending with
-// "?"). Lines with no structural marker (colon or slash) are treated as generic
-// headers and skipped; if no structured line is found a second pass picks the
-// closest non-empty line regardless.
-func findDescriptionBefore(lines []string, beforeIdx int) string {
-	// First pass: prefer structured lines (contain ":" or "/").
+// findStructuredDescriptionBefore returns the closest preceding structured
+// detail line before beforeIdx. Generic prose is intentionally rejected so that
+// quoted transcript text like "This command requires approval" does not look
+// like a live permission dialog.
+func findStructuredDescriptionBefore(lines []string, beforeIdx int) string {
 	for i := beforeIdx - 1; i >= 0; i-- {
 		t := strings.TrimSpace(lines[i])
 		if t == "" {
 			continue
 		}
 		if strings.HasSuffix(t, "?") {
-			continue
-		}
-		if strings.Contains(t, ":") || strings.Contains(t, "/") {
-			return t
-		}
-	}
-
-	// Second pass: accept any non-empty, non-question line.
-	for i := beforeIdx - 1; i >= 0; i-- {
-		t := strings.TrimSpace(lines[i])
-		if t == "" {
-			continue
-		}
-		if strings.HasSuffix(t, "?") {
-			// Try to extract from "Allow tool X?" question.
-			if lower := strings.ToLower(t); strings.Contains(lower, "allow tool ") {
+			if isPermissionQuestion(t) && !strings.EqualFold(t, "Do you want to proceed?") {
 				return extractToolFromQuestion(t)
 			}
 			continue
 		}
-		return t
+		if isStructuredDescriptionLine(t) {
+			return t
+		}
 	}
 	return ""
+}
+
+func findPermissionQuestionBefore(lines []string, beforeIdx int) (int, bool) {
+	start := beforeIdx - 6
+	if start < 0 {
+		start = 0
+	}
+	for i := beforeIdx - 1; i >= start; i-- {
+		if isPermissionQuestion(strings.TrimSpace(lines[i])) {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+func isStructuredDescriptionLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if idx := strings.Index(trimmed, ":"); idx > 0 && idx < len(trimmed)-1 {
+		prefixWords := strings.Fields(strings.TrimSpace(trimmed[:idx]))
+		if len(prefixWords) >= 1 && len(prefixWords) <= 2 {
+			return true
+		}
+	}
+
+	return strings.HasPrefix(trimmed, "/") ||
+		strings.HasPrefix(trimmed, "./") ||
+		strings.HasPrefix(trimmed, "../")
 }
 
 // extractPatternFromChoices scans numbered choices starting at from for the

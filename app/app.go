@@ -1817,6 +1817,15 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if m.taskState != nil {
+			for _, inst := range m.nav.GetInstances() {
+				if inst == nil || inst.TaskFile == "" || inst.TaskNumber < 1 || inst.ImplementationComplete {
+					continue
+				}
+				if m.isSubtaskPersistedComplete(inst.TaskFile, inst.TaskNumber) {
+					inst.ImplementationComplete = true
+				}
+			}
+
 			// Rebuild orphaned wave orchestrators on every metadata tick so local and
 			// daemon-managed repos both recover from adopted orphan sessions, exited
 			// task panes, and restart gaps. The helper is idempotent and skips plans
