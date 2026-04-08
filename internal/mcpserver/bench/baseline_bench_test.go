@@ -18,9 +18,10 @@ import (
 
 // ─── shared cross-arm sample collector ──────────────────────────────────────
 //
-// Task 2 (mcp_bench_test.go) adds arm "mcp" into the same map by calling
-// addBenchSample.  All arms present after the full suite runs; only present
-// arms appear in the JSON output when a subset is exercised.
+// All benchmark arms (mcp_cold, mcp_warm, direct, bash) record into this
+// shared map via addBenchSample.  Each Benchmark* function calls
+// flushBenchReport at completion; the last writer produces the final JSON
+// containing all accumulated arms.
 
 var (
 	benchSamplesMu sync.Mutex

@@ -75,23 +75,24 @@ func TestMultiplier_Normal(t *testing.T) {
 
 func TestBuildReport_Basic(t *testing.T) {
 	armSamples := map[string][]int64{
-		"mcp":    {200, 200, 200},
-		"direct": {100, 100, 100},
-		"bash":   {50, 50, 50},
+		"mcp_warm": {200, 200, 200},
+		"mcp_cold": {400, 400, 400},
+		"direct":   {100, 100, 100},
+		"bash":     {50, 50, 50},
 	}
 	op := BuildReport("read_small", armSamples)
 	assert.Equal(t, "read_small", op.Key)
-	assert.Len(t, op.Arms, 3)
-	// mcp(200) / direct(100) = 2.0
+	assert.Len(t, op.Arms, 4)
+	// mcp_warm(200) / direct(100) = 2.0
 	assert.InDelta(t, 2.0, op.MCPvsDirect, 0.0001)
-	// mcp(200) / bash(50) = 4.0
+	// mcp_warm(200) / bash(50) = 4.0
 	assert.InDelta(t, 4.0, op.MCPvsBash, 0.0001)
 }
 
 func TestBuildReport_MissingArms(t *testing.T) {
-	// Only mcp present — denominators are zero
+	// Only mcp_warm present — denominators are zero
 	armSamples := map[string][]int64{
-		"mcp": {500},
+		"mcp_warm": {500},
 	}
 	op := BuildReport("find_extension", armSamples)
 	assert.Equal(t, float64(0), op.MCPvsDirect)
@@ -100,16 +101,18 @@ func TestBuildReport_MissingArms(t *testing.T) {
 
 func TestBuildReport_ArmOrder(t *testing.T) {
 	armSamples := map[string][]int64{
-		"bash":   {50},
-		"mcp":    {200},
-		"direct": {100},
+		"bash":     {50},
+		"mcp_warm": {200},
+		"mcp_cold": {400},
+		"direct":   {100},
 	}
 	op := BuildReport("grep_narrow", armSamples)
-	// canonical order: mcp, direct, bash
-	require.Len(t, op.Arms, 3)
-	assert.Equal(t, "mcp", op.Arms[0].Arm)
-	assert.Equal(t, "direct", op.Arms[1].Arm)
-	assert.Equal(t, "bash", op.Arms[2].Arm)
+	// canonical order: mcp_cold, mcp_warm, direct, bash
+	require.Len(t, op.Arms, 4)
+	assert.Equal(t, "mcp_cold", op.Arms[0].Arm)
+	assert.Equal(t, "mcp_warm", op.Arms[1].Arm)
+	assert.Equal(t, "direct", op.Arms[2].Arm)
+	assert.Equal(t, "bash", op.Arms[3].Arm)
 }
 
 func TestBuildReport_Table(t *testing.T) {
@@ -122,7 +125,7 @@ func TestBuildReport_Table(t *testing.T) {
 		{
 			name: "equal arms",
 			armSamples: map[string][]int64{
-				"mcp": {100}, "direct": {100}, "bash": {100},
+				"mcp_warm": {100}, "direct": {100}, "bash": {100},
 			},
 			wantVsDirect: 1.0,
 			wantVsBash:   1.0,
@@ -130,10 +133,18 @@ func TestBuildReport_Table(t *testing.T) {
 		{
 			name: "mcp faster than direct",
 			armSamples: map[string][]int64{
-				"mcp": {50}, "direct": {200}, "bash": {100},
+				"mcp_warm": {50}, "direct": {200}, "bash": {100},
 			},
 			wantVsDirect: 0.25,
 			wantVsBash:   0.5,
+		},
+		{
+			name: "legacy mcp arm fallback",
+			armSamples: map[string][]int64{
+				"mcp": {200}, "direct": {100}, "bash": {50},
+			},
+			wantVsDirect: 2.0,
+			wantVsBash:   4.0,
 		},
 	}
 	for _, tc := range tests {
@@ -147,9 +158,10 @@ func TestBuildReport_Table(t *testing.T) {
 
 func TestBuildReport_DeterministicJSON(t *testing.T) {
 	armSamples := map[string][]int64{
-		"mcp":    {300, 310, 290},
-		"direct": {100, 110, 90},
-		"bash":   {50, 55, 45},
+		"mcp_warm": {300, 310, 290},
+		"mcp_cold": {600, 610, 590},
+		"direct":   {100, 110, 90},
+		"bash":     {50, 55, 45},
 	}
 	op := BuildReport("grep_narrow", armSamples)
 	b1, err := json.MarshalIndent(op, "", "  ")
@@ -170,7 +182,7 @@ func TestWriteReport(t *testing.T) {
 		NoCache:   false,
 		Operations: []OperationReport{
 			BuildReport("read_small", map[string][]int64{
-				"mcp": {200}, "direct": {100}, "bash": {50},
+				"mcp_warm": {200}, "direct": {100}, "bash": {50},
 			}),
 		},
 	}

@@ -93,12 +93,17 @@ func Multiplier(a, b int64) float64 {
 }
 
 // BuildReport assembles an OperationReport for a single scenario key given
-// arm sample slices.  armSamples is keyed by arm name ("mcp","direct","bash").
+// arm sample slices.  armSamples is keyed by arm name
+// ("mcp_cold","mcp_warm","direct","bash").  Overhead ratios use "mcp_warm"
+// (steady-state cached latency) as the MCP numerator; falls back to "mcp" for
+// backward compatibility with tests that use a single merged arm.
 func BuildReport(key string, armSamples map[string][]int64) OperationReport {
 	arms := make([]ArmStats, 0, len(armSamples))
-	// stable order
-	order := []string{"mcp", "direct", "bash"}
+	// stable order — cold/warm before legacy "mcp"
+	order := []string{"mcp_cold", "mcp_warm", "mcp", "direct", "bash"}
+	inOrder := make(map[string]bool, len(order))
 	for _, name := range order {
+		inOrder[name] = true
 		samples, ok := armSamples[name]
 		if !ok {
 			continue
@@ -109,7 +114,6 @@ func BuildReport(key string, armSamples map[string][]int64) OperationReport {
 		})
 	}
 	// any remaining arms not in canonical order
-	inOrder := map[string]bool{"mcp": true, "direct": true, "bash": true}
 	for name, samples := range armSamples {
 		if !inOrder[name] {
 			arms = append(arms, ArmStats{
@@ -124,12 +128,16 @@ func BuildReport(key string, armSamples map[string][]int64) OperationReport {
 		Arms: arms,
 	}
 
-	// find mcp p50 for ratio computation
+	// find mcp p50 for ratio computation — prefer mcp_warm, fall back to mcp
 	var mcpP50, directP50, bashP50 int64
 	for _, a := range arms {
 		switch a.Arm {
-		case "mcp":
+		case "mcp_warm":
 			mcpP50 = a.Latency.P50
+		case "mcp":
+			if mcpP50 == 0 {
+				mcpP50 = a.Latency.P50
+			}
 		case "direct":
 			directP50 = a.Latency.P50
 		case "bash":

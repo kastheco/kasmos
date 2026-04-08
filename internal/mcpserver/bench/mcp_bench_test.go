@@ -2,74 +2,12 @@ package bench
 
 import (
 	"context"
-	"os"
-	"runtime"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 )
-
-// ─── sample collector ─────────────────────────────────────────────────────────
-
-// sampleCollector accumulates nanosecond duration samples per scenario key and
-// arm label, then serialises them into a BenchmarkReport on flush.
-type sampleCollector struct {
-	mu      sync.Mutex
-	samples map[string]map[string][]int64 // scenario key → arm → ns durations
-}
-
-func newSampleCollector() *sampleCollector {
-	return &sampleCollector{
-		samples: make(map[string]map[string][]int64),
-	}
-}
-
-// record appends ns samples under the given key/arm pair.
-func (sc *sampleCollector) record(key, arm string, ns []int64) {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
-	if sc.samples[key] == nil {
-		sc.samples[key] = make(map[string][]int64)
-	}
-	sc.samples[key][arm] = append(sc.samples[key][arm], ns...)
-}
-
-// flush writes the accumulated samples to the path given by KAS_MCP_BENCH_REPORT.
-// If the env var is unset, flush is a no-op.
-func (sc *sampleCollector) flush(b *testing.B) {
-	reportPath := os.Getenv("KAS_MCP_BENCH_REPORT")
-	if reportPath == "" {
-		return
-	}
-
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
-
-	noCache := os.Getenv("KAS_MCP_NOCACHE") == "1"
-	report := &BenchmarkReport{
-		GoVersion:  runtime.Version(),
-		GOOS:       runtime.GOOS,
-		GOARCH:     runtime.GOARCH,
-		NoCache:    noCache,
-		Operations: make([]OperationReport, 0, len(sc.samples)),
-	}
-
-	// Emit operations in scenario-catalog order so the JSON is stable.
-	for _, s := range scenarios {
-		armSamples, ok := sc.samples[s.key]
-		if !ok {
-			continue
-		}
-		report.Operations = append(report.Operations, BuildReport(s.key, armSamples))
-	}
-
-	if err := WriteReport(reportPath, report); err != nil {
-		b.Errorf("sampleCollector.flush: WriteReport %q: %v", reportPath, err)
-	}
-}
 
 // ─── request builder ──────────────────────────────────────────────────────────
 
@@ -165,12 +103,10 @@ func validateResult(b *testing.B, sc scenario, result *mcp.CallToolResult) {
 //     the measured loop begins.
 //
 // Sub-benchmark names follow the pattern "tool/variant/cold|warm" so they are
-// addressable with -bench regexp filters.  Results are accumulated by a shared
-// sampleCollector and serialised to KAS_MCP_BENCH_REPORT on completion.
+// addressable with -bench regexp filters.  Results are accumulated into the
+// shared benchSamples map via addBenchSample and flushed to
+// KAS_MCP_BENCH_REPORT on completion.
 func BenchmarkMCP(b *testing.B) {
-	col := newSampleCollector()
-	b.Cleanup(func() { col.flush(b) })
-
 	ctx := context.Background()
 
 	for _, sc := range scenarios {
@@ -182,7 +118,6 @@ func BenchmarkMCP(b *testing.B) {
 		b.Run(baseName+"/cold", func(b *testing.B) {
 			// Create one client per sub-benchmark; do NOT recreate per iteration.
 			c := newMCPStdioClient(b, true /* nocache */)
-			samples := make([]int64, 0, b.N)
 
 			// Validate result shape once, untimed, before the measured loop.
 			b.StopTimer()
@@ -203,17 +138,14 @@ func BenchmarkMCP(b *testing.B) {
 				if result.IsError {
 					b.Fatalf("scenario %s mcp_cold iter %d: tool returned error", sc.key, i)
 				}
-				samples = append(samples, elapsed.Nanoseconds())
+				addBenchSample(sc.key, "mcp_cold", elapsed.Nanoseconds())
 			}
-
-			col.record(sc.key, "mcp_cold", samples)
 		})
 
 		// ── warm arm ──────────────────────────────────────────────────────
 		b.Run(baseName+"/warm", func(b *testing.B) {
 			// Cache enabled; prime fills the ristretto cache before timing starts.
 			c := newMCPStdioClient(b, false /* nocache – let cache work */)
-			samples := make([]int64, 0, b.N)
 
 			// Prime call: fills the application-level cache (untimed).
 			b.StopTimer()
@@ -234,10 +166,9 @@ func BenchmarkMCP(b *testing.B) {
 				if result.IsError {
 					b.Fatalf("scenario %s mcp_warm iter %d: tool returned error", sc.key, i)
 				}
-				samples = append(samples, elapsed.Nanoseconds())
+				addBenchSample(sc.key, "mcp_warm", elapsed.Nanoseconds())
 			}
-
-			col.record(sc.key, "mcp_warm", samples)
 		})
 	}
+	flushBenchReport()
 }
