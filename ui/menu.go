@@ -76,10 +76,18 @@ const (
 var focusModeFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 // Styles specific to focus / interactive mode overlay.
-var focusDotStyle = lipgloss.NewStyle().Foreground(ColorLove).Bold(true)
-var focusLabelStyle = lipgloss.NewStyle().Foreground(ColorLove).Bold(true)
-var focusHintKeyStyle = lipgloss.NewStyle().Foreground(ColorSubtle)
-var focusHintDescStyle = lipgloss.NewStyle().Foreground(ColorMuted)
+// The entire bar is inverted: rose/love background with dark text.
+var focusBarStyle = lipgloss.NewStyle().
+	Background(ColorLove).
+	Foreground(ColorBase).
+	Bold(true)
+var focusBarDimStyle = lipgloss.NewStyle().
+	Background(ColorLove).
+	Foreground(lipgloss.Color("#3e3858"))
+var focusBarSpinnerStyle = lipgloss.NewStyle().
+	Background(ColorLove).
+	Foreground(ColorBase).
+	Bold(true)
 
 // NewMenu constructs a Menu in the StateEmpty state with sensible defaults.
 func NewMenu() *Menu {
@@ -269,12 +277,13 @@ func (m *Menu) placeLine(
 	return sb.String()
 }
 
-// renderFocusMode produces the interactive-mode status row.
+// renderFocusMode produces the interactive-mode status row with an inverted
+// rose background spanning the full width.
 func (m *Menu) renderFocusMode() string {
 	frame := focusModeFrames[int(time.Now().UnixMilli()/100)%len(focusModeFrames)]
-	badge := focusLabelStyle.Render("interactive") + " " + focusDotStyle.Render(frame)
-	hint := focusHintKeyStyle.Render("ctrl+space") + " " + focusHintDescStyle.Render("exit")
-	content := badge + "  " + hint
+	badge := focusBarStyle.Render("interactive") + focusBarSpinnerStyle.Render(" "+frame)
+	hint := focusBarDimStyle.Render("ctrl+space") + focusBarStyle.Render(" exit")
+	content := badge + focusBarStyle.Render("  ") + hint
 
 	cw := lipgloss.Width(content)
 	cs := (m.width - cw) / 2
@@ -282,13 +291,26 @@ func (m *Menu) renderFocusMode() string {
 		cs = 0
 	}
 
-	tr, tw := m.tmuxCountRendered()
+	// Build the line content with positioning, then wrap the whole thing
+	// in the inverted background so blank space is also rose-colored.
+	tr := ""
+	tw := 0
+	if m.tmuxSessionCount > 0 {
+		tr = focusBarDimStyle.Render(fmt.Sprintf("tmux:%d", m.tmuxSessionCount))
+		tw = lipgloss.Width(tr)
+	}
 	rs := m.width - tw - 1
 	if rs < cs+cw {
 		rs = cs + cw
 	}
 
-	return m.placeLine(cs, cw, content, rs, tw, tr)
+	line := m.placeLine(cs, cw, content, rs, tw, tr)
+
+	// Apply the rose background to the entire bar width including padding.
+	return lipgloss.NewStyle().
+		Background(ColorLove).
+		Width(m.width).
+		Render(line)
 }
 
 // buildOptionText assembles the raw option text (before wrapping in menuStyle).
