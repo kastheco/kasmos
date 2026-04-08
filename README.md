@@ -4,7 +4,7 @@
 
 # [![CI](https://github.com/kastheco/kasmos/actions/workflows/build.yml/badge.svg)](https://github.com/kastheco/kasmos/actions/workflows/build.yml) [![GitHub Release](https://img.shields.io/github/v/release/kastheco/kasmos)](https://github.com/kastheco/kasmos/releases/latest) [![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](LICENSE.md) [![docs](https://img.shields.io/badge/docs-kasmos.kasthe.co-blue)](https://kasmos.kasthe.co)
 
-> mcp-first multi-agent orchestration for git repos: task store, streamable-http mcp server, daemon, worktrees, and tui in one tool.
+> mcp-first multi-agent orchestration for git repos: task store, stdio mcp server, daemon, worktrees, and tui in one tool.
 
 [**docs →** kasmos.kasthe.co](https://kasmos.kasthe.co)
 
@@ -16,8 +16,8 @@
 
 ## features
 
-- **repo-local task store** — tasks live at `<repo-root>/.kasmos/taskstore.db`, versioned alongside your code
-- **streamable-http mcp server** — `kas serve` exposes filesystem, git, task, signal, and instance tools over http
+- **global task store** — tasks live at `~/.config/kasmos/taskstore.db`, shared across all managed repos via the daemon
+- **stdio mcp server** — `kas mcp` exposes filesystem, git, task, signal, and instance tools over stdio; agents connect via `.mcp.json`
 - **wave-based orchestration** — planning → architect → implement → review lifecycle with per-wave agent concurrency
 - **multi-harness support** — works with claude, opencode, codex, and other mcp-aware agents
 - **tui + daemon** — interactive tui for task management plus a headless daemon for automated orchestration
@@ -59,16 +59,11 @@ the primary command surface is `kas`; if your install only provides `kasmos`, ad
 from inside a git repo:
 
 ```bash
-kas setup        # scaffold harness configs and project state
-kas serve        # start rest api (port 7433) + mcp server (port 7434)
+kas setup        # scaffold harness configs (.mcp.json, agent prompts)
 kas              # open the tui
 ```
 
-connect your mcp client to:
-
-```
-http://127.0.0.1:7434/mcp
-```
+`kas setup` writes `.mcp.json` so mcp-aware agents (claude, opencode, codex) automatically connect to the kasmos stdio mcp server.
 
 see the [getting started guide](https://kasmos.kasthe.co/docs/getting-started) for a full walkthrough including harness setup and your first task.
 
@@ -76,10 +71,7 @@ see the [getting started guide](https://kasmos.kasthe.co/docs/getting-started) f
 
 ## mcp server
 
-`kas serve` starts two surfaces:
-
-- **rest api** on port `7433` — task store access for remote or multi-machine setups
-- **streamable-http mcp** on port `7434` — tool endpoint for mcp-aware agents
+`kas mcp` starts a stdio mcp server that agents connect to via `.mcp.json`. `kas serve` is an optional http surface for the admin web ui and rest api.
 
 tool groups exposed:
 
@@ -92,7 +84,7 @@ tool groups exposed:
 | instances | `instance_list`, `instance_pause`, `instance_resume`, `instance_send` |
 | daemon | `daemon_status` |
 
-filesystem and git tools are sandboxed to the repo root. see the [mcp server docs](https://kasmos.kasthe.co/docs/mcp-server) for client configuration details.
+filesystem and git tools are sandboxed to the repo root. `kas setup` writes the `.mcp.json` that registers the server; see the [mcp server docs](https://kasmos.kasthe.co/docs/mcp-server) for details.
 
 ---
 
@@ -100,7 +92,7 @@ filesystem and git tools are sandboxed to the repo root. see the [mcp server doc
 
 ```bash
 kas setup                              # scaffold project config and harness files
-kas serve                              # start rest + mcp server
+kas serve                              # start rest api + admin web ui
 kas task list                          # list all tasks
 kas task create <name>                 # create a new task
 kas task show <task-file>              # show task details
