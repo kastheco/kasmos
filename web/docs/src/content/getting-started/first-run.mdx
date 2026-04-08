@@ -12,17 +12,24 @@ This applies both to the interactive TUI (`kas`) and most subcommands. The proje
 
 ## project config directory
 
-kasmos stores all project state under `<repo-root>/.kasmos/`. This directory is created automatically on first run or after `kas setup`:
+kasmos separates repo-local runtime directories from the global task store.
+
+**repo-local** — created automatically under `<repo-root>` on first run or after `kas setup`:
 
 | path | purpose |
 |------|---------|
 | `.kasmos/config.toml` | agent and phase configuration |
-| `.kasmos/taskstore.db` | SQLite task store (plans, signals, task state) |
-| `.kasmos/signals/` | legacy filesystem signal sentinels |
+| `.kasmos/signals/` | compatibility signal sentinel directory |
 | `.kasmos/cache/` | runtime cache |
 | `.worktrees/` | git worktrees created for each agent instance |
 
-Use `kas debug` to print the resolved config directory path for the current repository.
+**global task store** — shared across all projects on this machine:
+
+| path | purpose |
+|------|---------|
+| `~/.config/kasmos/taskstore.db` | SQLite task store (plans, signals, task state) |
+
+The resolved DB path can be overridden via `database_url` in `.kasmos/config.toml` to point at a remote store. Use `kas debug` to print the resolved config and DB paths for the current repository.
 
 ## launching the TUI
 
