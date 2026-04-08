@@ -114,6 +114,41 @@ func TestTmuxSpawner_KillAgent_PreservesTrackingWhenClientAttached(t *testing.T)
 	assert.True(t, stillTracked, "instance must remain in tracking maps when kill is deferred due to attached client")
 }
 
+func TestTmuxSpawner_ForceKillAgent_KillsEvenWithAttachedClients(t *testing.T) {
+	s := NewTmuxSpawner()
+
+	// Simulate a client always attached — ForceKillAgent must still kill.
+	s.hasAttachedClients = func(_ cmd.Executor, _ string) bool { return true }
+	s.sleep = func(_ time.Duration) {}
+	killCalled := false
+	s.kill = func(_ *session.Instance) error {
+		killCalled = true
+		return nil
+	}
+
+	const repoPath = "/tmp/repo"
+	const planFile = "my-plan.md"
+	const agentType = session.AgentTypePlanner
+	key := instanceKey(repoPath, planFile, agentType)
+	inst := &session.Instance{Title: "my-plan-plan"}
+	s.mu.Lock()
+	s.instances[key] = inst
+	s.planFileByKey[key] = planFile
+	s.agentTypeByKey[key] = agentType
+	s.projectByKey[key] = "my-project"
+	s.mu.Unlock()
+
+	err := s.ForceKillAgent(repoPath, planFile, agentType)
+	assert.NoError(t, err)
+	assert.True(t, killCalled, "kill must be called even when a tmux client is attached")
+
+	// Instance must be removed from all tracking maps unconditionally.
+	s.mu.Lock()
+	_, stillTracked := s.instances[key]
+	s.mu.Unlock()
+	assert.False(t, stillTracked, "instance must be removed from tracking maps after force kill")
+}
+
 func TestTmuxSpawner_ReserveInstanceSlot_EvictsDeadTrackedAgent(t *testing.T) {
 	s := NewTmuxSpawner()
 

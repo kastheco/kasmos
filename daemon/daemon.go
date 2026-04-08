@@ -47,6 +47,7 @@ type Daemon struct {
 	prMonitor       *PRMonitor
 	pushBranch      func(*session.Instance) error
 	killAgent       func(repoPath, planFile, agentType string) error
+	forceKillAgent  func(repoPath, planFile, agentType string) error
 	spawnPlanner    func(context.Context, loop.SpawnOpts) error
 	spawnReviewer   func(context.Context, loop.SpawnOpts) error
 	spawnCoder      func(context.Context, loop.SpawnOpts) error
@@ -768,11 +769,11 @@ func (d *Daemon) autoImplementPlan(ctx context.Context, e RepoEntry, planFile st
 		return fmt.Errorf("task store unavailable for %s", planFile)
 	}
 
-	killAgent := d.killAgent
-	if killAgent == nil {
-		killAgent = d.spawner.KillAgent
+	forceKillAgent := d.forceKillAgent
+	if forceKillAgent == nil {
+		forceKillAgent = d.spawner.ForceKillAgent
 	}
-	killErr := killAgent(e.Path, planFile, session.AgentTypePlanner)
+	killErr := forceKillAgent(e.Path, planFile, session.AgentTypePlanner)
 	if killErr != nil {
 		d.logger.Warn("kill planner before auto-implement failed", "repo", e.Path, "plan", planFile, "err", killErr)
 	}
