@@ -76,10 +76,18 @@ const (
 var focusModeFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 // Styles specific to focus / interactive mode overlay.
-var focusDotStyle = lipgloss.NewStyle().Foreground(ColorLove).Bold(true)
-var focusLabelStyle = lipgloss.NewStyle().Foreground(ColorLove).Bold(true)
-var focusHintKeyStyle = lipgloss.NewStyle().Foreground(ColorSubtle)
-var focusHintDescStyle = lipgloss.NewStyle().Foreground(ColorMuted)
+// The entire bar is inverted: rose/love background with dark text.
+var focusBarStyle = lipgloss.NewStyle().
+	Background(ColorLove).
+	Foreground(ColorBase).
+	Bold(true)
+var focusBarDimStyle = lipgloss.NewStyle().
+	Background(ColorLove).
+	Foreground(lipgloss.Color("#3e3858"))
+var focusBarSpinnerStyle = lipgloss.NewStyle().
+	Background(ColorLove).
+	Foreground(ColorBase).
+	Bold(true)
 
 // NewMenu constructs a Menu in the StateEmpty state with sensible defaults.
 func NewMenu() *Menu {
@@ -269,26 +277,53 @@ func (m *Menu) placeLine(
 	return sb.String()
 }
 
-// renderFocusMode produces the interactive-mode status row.
+// renderFocusMode produces the interactive-mode status row with an inverted
+// rose background filling edge-to-edge.
 func (m *Menu) renderFocusMode() string {
 	frame := focusModeFrames[int(time.Now().UnixMilli()/100)%len(focusModeFrames)]
-	badge := focusLabelStyle.Render("interactive") + " " + focusDotStyle.Render(frame)
-	hint := focusHintKeyStyle.Render("ctrl+space") + " " + focusHintDescStyle.Render("exit")
-	content := badge + "  " + hint
 
-	cw := lipgloss.Width(content)
-	cs := (m.width - cw) / 2
-	if cs < 0 {
-		cs = 0
+	// Build styled segments — all on the rose background.
+	label := focusBarStyle.Render("interactive") + focusBarSpinnerStyle.Render(" "+frame)
+	hint := focusBarDimStyle.Render("ctrl+space") + focusBarStyle.Render(" exit")
+	tmux := ""
+	if m.tmuxSessionCount > 0 {
+		tmux = focusBarDimStyle.Render(fmt.Sprintf("tmux:%d ", m.tmuxSessionCount))
 	}
 
-	tr, tw := m.tmuxCountRendered()
-	rs := m.width - tw - 1
-	if rs < cs+cw {
-		rs = cs + cw
+	// Measure visual widths.
+	lw := lipgloss.Width(label)
+	hw := lipgloss.Width(hint)
+	tw := lipgloss.Width(tmux)
+
+	// Calculate gaps so label+hint is roughly centered and tmux is right-aligned.
+	centerBlock := label + focusBarStyle.Render("  ") + hint
+	cbw := lw + 2 + hw
+	leftPad := (m.width - cbw) / 2
+	if leftPad < 1 {
+		leftPad = 1
+	}
+	rightPad := m.width - leftPad - cbw - tw
+	if rightPad < 0 {
+		rightPad = 0
 	}
 
-	return m.placeLine(cs, cw, content, rs, tw, tr)
+	// Compose with rose-background spaces so every cell is colored.
+	sp := func(n int) string {
+		if n <= 0 {
+			return ""
+		}
+		return focusBarStyle.Render(strings.Repeat(" ", n))
+	}
+
+	line := sp(leftPad) + centerBlock + sp(rightPad) + tmux
+
+	// Pad any remaining width so the background reaches the right edge.
+	lineWidth := lipgloss.Width(line)
+	if lineWidth < m.width {
+		line += sp(m.width - lineWidth)
+	}
+
+	return line
 }
 
 // buildOptionText assembles the raw option text (before wrapping in menuStyle).

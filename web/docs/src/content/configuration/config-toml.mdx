@@ -15,6 +15,7 @@ kasmos generates this file on first boot via `kas setup`. You can safely edit it
 | `daemon_poll_interval` | int (ms) | `1000` | how often the daemon checks session state (milliseconds) |
 | `branch_prefix` | string | `<username>/` | prefix prepended to git branch names created by kasmos |
 | `notifications_enabled` | bool? | `true` | desktop notifications; `null` defaults to enabled |
+| `claude_no_flicker` | bool? | `false` | set `CLAUDE_CODE_NO_FLICKER=1` on spawned claude agents; reduces TUI flicker but may affect prompt detection |
 | `database_url` | string | — | remote task store URL (e.g. `http://host:7433`); local SQLite used when empty |
 
 ## `[phases]` — lifecycle phase-to-role mapping
@@ -143,6 +144,7 @@ auto_yes              = false
 daemon_poll_interval  = 1000
 branch_prefix         = "alice/"
 notifications_enabled = true
+claude_no_flicker     = false
 
 [phases]
 planning      = "planner"

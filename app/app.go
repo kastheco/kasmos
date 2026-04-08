@@ -2642,7 +2642,9 @@ func (m *home) View() tea.View {
 		m.menu.SetSidebarSpaceAction(m.nav.SelectedSpaceAction())
 	}
 	accentView := ""
-	if m.appConfig != nil {
+	if m.state == stateFocusAgent {
+		// No accent strip in focus mode — the rose menu bar extends to the bottom edge.
+	} else if m.appConfig != nil {
 		accentView = ui.NewAccentStrip(m.appConfig.AccentColor, m.termWidth)
 	}
 

@@ -49,9 +49,9 @@ const features = [
 ];
 
 const typewriterTexts = [
-  "run agents in parallel across isolated worktrees",
-  "wave-based execution with lifecycle signals",
-  "MCP-powered orchestration built-in",
+  "parallel agents, isolated worktrees",
+  "wave-based execution with signals",
+  "MCP-powered orchestration",
   "concurrent agents, zero conflicts",
 ];
 
@@ -132,6 +132,7 @@ export default function PageContent() {
             </p>
           </ScrollReveal>
 
+          {/* Desktop: horizontal pipeline */}
           <ScrollReveal>
             <div className={styles.lifecyclePipeline}>
               {(
@@ -141,7 +142,7 @@ export default function PageContent() {
                   { label: "implementing", color: "teal", arrow: "→" },
                   { label: "reviewing", color: "amber", arrow: "⇄", note: "review/fix loop" },
                   { label: "fixer", color: "amber", arrow: "→" },
-                  { label: "done", color: "teal" },
+                  { label: "pr created", color: "teal" },
                 ] as const
               ).map((step, i, arr) => (
                 <div key={step.label} className={styles.lifecycleStepGroup}>
@@ -161,6 +162,49 @@ export default function PageContent() {
                   )}
                 </div>
               ))}
+            </div>
+          </ScrollReveal>
+
+          {/* Mobile: vertical pipeline */}
+          <ScrollReveal>
+            <div className={styles.lifecycleMobile}>
+              <div className={styles.lifecycleMobileRow}>
+                <div className={`${styles.lifecycleStep} ${styles.lifecycleAmber}`}>
+                  <span className={styles.lifecycleStepNum}>1</span>
+                  <span className={styles.lifecycleStepLabel}>planning</span>
+                </div>
+                <span className={styles.lifecycleMobileHArrow}>→</span>
+                <div className={`${styles.lifecycleStep} ${styles.lifecycleTeal}`}>
+                  <span className={styles.lifecycleStepNum}>2</span>
+                  <span className={styles.lifecycleStepLabel}>architect</span>
+                </div>
+              </div>
+              <span className={styles.lifecycleMobileVArrow}>↓</span>
+              <div className={styles.lifecycleMobileRow}>
+                <div className={`${styles.lifecycleStep} ${styles.lifecycleTeal}`}>
+                  <span className={styles.lifecycleStepNum}>3</span>
+                  <span className={styles.lifecycleStepLabel}>implementing</span>
+                </div>
+              </div>
+              <span className={styles.lifecycleMobileVArrow}>↓</span>
+              <div className={styles.lifecycleMobileRow}>
+                <div className={`${styles.lifecycleStep} ${styles.lifecycleAmber}`}>
+                  <span className={styles.lifecycleStepNum}>4</span>
+                  <span className={styles.lifecycleStepLabel}>reviewing</span>
+                </div>
+                <span className={`${styles.lifecycleMobileHArrow} ${styles.lifecycleArrowLoop}`}>⇄</span>
+                <div className={`${styles.lifecycleStep} ${styles.lifecycleAmber}`}>
+                  <span className={styles.lifecycleStepNum}>5</span>
+                  <span className={styles.lifecycleStepLabel}>fixer</span>
+                </div>
+              </div>
+              <span className={styles.lifecycleMobileVArrow}>↓</span>
+              <div className={styles.lifecycleMobileRow}>
+                <div className={`${styles.lifecycleStep} ${styles.lifecycleTeal}`}>
+                  <span className={styles.lifecycleStepNum}>6</span>
+                  <span className={styles.lifecycleStepLabel}>pr created</span>
+                </div>
+              </div>
             </div>
           </ScrollReveal>
 

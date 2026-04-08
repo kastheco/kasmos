@@ -247,6 +247,36 @@
   white-space: nowrap;
 }
 
+/* ====== LIFECYCLE MOBILE (vertical) ====== */
+.lifecycleMobile {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 64px;
+}
+
+.lifecycleMobileRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+
+.lifecycleMobileHArrow {
+  font-size: 18px;
+  color: var(--foreground-tertiary);
+  padding: 0 10px;
+  line-height: 1;
+}
+
+.lifecycleMobileVArrow {
+  font-size: 20px;
+  color: var(--foreground-tertiary);
+  padding: 8px 0;
+  line-height: 1;
+}
+
 /* ====== AGENTS GRID ====== */
 .agentsGrid {
   display: grid;
@@ -363,25 +393,12 @@
     gap: 12px;
   }
 
-  .lifecycleStep {
-    padding: 10px 12px;
-  }
-
-  .lifecycleStepLabel {
-    font-size: 12px;
-  }
-
-  .lifecycleArrow {
-    padding: 0 4px;
-    font-size: 14px;
-  }
-
-  .lifecycleArrowLoop {
-    font-size: 16px;
-  }
-
-  .lifecycleLoopNote {
+  .lifecyclePipeline {
     display: none;
+  }
+
+  .lifecycleMobile {
+    display: flex;
   }
 
   .hero {
