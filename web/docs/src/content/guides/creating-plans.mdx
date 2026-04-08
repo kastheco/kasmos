@@ -12,7 +12,7 @@ add jwt authentication with refresh tokens and a /me endpoint
 
 Press `enter` (or `ctrl+enter` in multiline mode) to submit. kasmos registers the plan in the task store with status `ready` and a normalized filename derived from your description.
 
-The plan content is **not** written to a checked-in markdown file. Everything lives in the task store at `<repo-root>/.kasmos/taskstore.db`. Use `kas task list` to see all registered plans and their current status.
+The plan content is **not** written to a checked-in markdown file. Everything lives in the global task store at `~/.config/kasmos/taskstore.db`. Use `kas task list` to see all registered plans and their current status.
 
 ## step 2 — start the planner
 
@@ -21,9 +21,10 @@ With the plan selected, press `↵` to open the context menu and choose **start 
 The planner agent:
 1. reads the task description from the store
 2. writes a structured implementation plan (with `## Wave N` headers and `### Task N: title` sections)
-3. stores the content back via `kas task update-content` (or via signal)
+3. stores the content back via `kas task update-content`
+4. emits a `planner_finished` signal to notify the orchestration loop
 
-When the planner finishes, it emits a `planner_finished` signal. The orchestration loop picks this up and transitions the plan to `ready`, making the implementation stages available.
+The orchestration loop picks up the signal and transitions the plan to `ready`, making the implementation stages available.
 
 ## lifecycle from new to ready
 

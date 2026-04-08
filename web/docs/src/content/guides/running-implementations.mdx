@@ -57,7 +57,7 @@ If **auto-advance waves** is enabled (toggle from the plan context menu), the di
 For small plans, wave orchestration adds unnecessary overhead. When the total number of tasks across all waves is at or below the configured threshold, kasmos skips elaboration and wave orchestration entirely and hands the whole plan to a single coder agent.
 
 ```toml
-# kasmos.toml
+# .kasmos/config.toml
 [orchestration]
 blueprint_skip_threshold = 2   # default: 2
 ```

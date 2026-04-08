@@ -27,6 +27,8 @@ The `kas daemon status`, `add`, and `remove` subcommands connect to this socket 
 
 Start the kasmos daemon.
 
+> **Note for persistent installs:** long-running user installations should manage the daemon via the systemd user service (`systemctl --user start kasmos`) rather than this command. `kas daemon start` and `kas daemon stop` are primarily intended for foreground use, debugging, and CI environments where a service manager is not available.
+
 ```
 kas daemon start [--foreground] [--config <path>]
 ```

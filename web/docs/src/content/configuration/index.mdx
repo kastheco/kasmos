@@ -14,7 +14,7 @@ Every git repository managed by kasmos gets its own `.kasmos/` directory anchore
 
 The path is resolved by `config.GetConfigDir()`, which calls `config.ResolveRepoRoot()` to locate the main repo root even when invoked from inside a git worktree. This means all worktrees of the same repo share one configuration.
 
-kasmos writes this file on first boot (`kas setup` or first interactive launch). If neither `config.toml` nor the legacy `config.json` exists, a default `config.toml` is created. If only a `config.json` exists, it is migrated to `config.toml` and renamed to `config.json.migrated`.
+On first boot (`kas setup` or first interactive launch), kasmos uses `config.toml` if it already exists. Otherwise, if a legacy `config.json` is present, kasmos migrates its settings into `config.toml` automatically and renames the JSON file to `config.json.migrated`. If neither file exists, kasmos creates a default `config.toml`.
 
 See [config.toml reference](/docs/configuration/config-toml) for all fields.
 
@@ -30,17 +30,13 @@ The path is resolved by `daemon.LoadDaemonConfig()`. If the file is absent, daem
 
 See [daemon.toml reference](/docs/configuration/daemon-toml) for all fields.
 
-## legacy migration
+## first-run bootstrap
 
-On first invocation in a project, `config.GetConfigDir()` performs a **one-time, best-effort copy** from these legacy paths (in order) if `.kasmos/config.toml` does not already exist:
+On first invocation in a project, kasmos performs a **one-time, best-effort copy** of config files from `~/.config/kasmos/` into the new project-local `.kasmos/` directory, if `.kasmos/config.toml` does not already exist.
 
-| legacy path | tool |
-|-------------|------|
-| `~/.config/kasmos/` | early kasmos |
-| `~/.klique/` | klique (predecessor) |
-| `~/.hivemind/` | hivemind (predecessor) |
+The copy is **not a move** — the source location is preserved. Files copied: `config.json`, `config.toml`, `state.json`. Any copy error is silently ignored so startup is never blocked.
 
-The migration is a **copy, not a move** — the legacy location is preserved. Files copied: `config.json`, `config.toml`, `state.json`, `taskstore.db`. Any migration error is silently ignored so startup is never blocked.
+The global task store (`~/.config/kasmos/taskstore.db`) is never copied — it is shared across all projects and namespaced internally by project name.
 
 ## inspecting resolved paths
 

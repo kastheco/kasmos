@@ -33,7 +33,7 @@ This action is available from several statuses — `planning`, `ready` (when pla
 kas task transition <task-file> request_review
 ```
 
-This is a narrower FSM transition: it is only valid when the task is already in the `done` state (see `config/taskfsm/fsm.go`). It moves `done → reviewing` and spawns a reviewer — useful to re-review a branch that was marked done but not yet merged. In the TUI this action appears in the context menu as **request review** only when the task is in `done`.
+This is a narrower FSM transition: it is only valid when the task is already in the `done` state. It moves `done → reviewing` and spawns a reviewer — useful to re-review a branch that was marked done but not yet merged. In the TUI this action appears in the context menu as **request review** only when the task is in `done`.
 
 ## reviewer outcomes
 
@@ -71,7 +71,7 @@ The fixer applies the requested changes on the same branch. When it finishes, th
 
 ### auto review-fix loop
 
-Enable automatic cycling from the plan context menu (**auto review-fix loop: on**) or in `kasmos.toml`:
+Enable automatic cycling from the plan context menu (**auto review-fix loop: on**) or in `.kasmos/config.toml`:
 
 ```toml
 auto_review_fix = true

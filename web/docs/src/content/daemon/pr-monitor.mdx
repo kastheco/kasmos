@@ -61,7 +61,7 @@ Not every PR review spawns a fixer. The `shouldTriggerFixer` predicate applies t
 
 ## idempotency and the `pr_reviews` table
 
-Every review is recorded in the `pr_reviews` SQLite table with `INSERT OR IGNORE`, keyed on `(project, plan_file, review_id)`. This means:
+Every review is recorded in the `pr_reviews` SQLite table with `INSERT OR IGNORE`, keyed on `(project, plan_filename, review_id)`. This means:
 
 - Repeated polls of the same review are safe — no duplicate fixer dispatches.
 - The `fixer_dispatched` column tracks whether the action was already taken. The monitor skips reviews where `fixer_dispatched = 1`.
@@ -126,9 +126,9 @@ journalctl --user -u kasmos -f
 tail -f ~/Library/Logs/kasmos/daemon.log
 ```
 
-Inspect the `pr_reviews` table directly:
+Inspect the `pr_reviews` table directly (the DB is shared globally; always filter by project):
 
 ```sh
-sqlite3 /path/to/project/.kasmos/taskstore.db \
-    "SELECT plan_file, review_id, state, fixer_dispatched, reaction_posted FROM pr_reviews;"
+sqlite3 ~/.config/kasmos/taskstore.db \
+    "SELECT plan_filename, review_id, review_state, fixer_dispatched, reaction_posted FROM pr_reviews WHERE project = 'your-project';"
 ```

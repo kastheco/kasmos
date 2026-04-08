@@ -1,6 +1,6 @@
 # multi-repo
 
-The kasmos daemon can manage any number of repositories simultaneously. Each repo runs its own poll loop with fully isolated state — signal directories, task store, and wave orchestrator are never shared.
+The kasmos daemon can manage any number of repositories simultaneously. Each repo runs its own poll loop. The **task store and signal gateway are shared globally** (`~/.config/kasmos/taskstore.db`) — project namespacing inside the DB prevents collisions between repos. The signal directory (`<repo>/.kasmos/signals/`) and the wave orchestrator (`loop.Processor`) remain per-repo.
 
 ## registration
 
@@ -54,17 +54,19 @@ This constraint exists because the project name is the primary key for signal ro
 
 ## per-repo resources
 
-When a repo is registered, `RepoManager.Add` sets up three isolated resources:
+When a repo is registered, `RepoManager.Add` opens (or reuses) the shared global DB and records the following per-repo state:
 
-| resource | path | purpose |
-|----------|------|---------|
-| task store | `<repo>/.kasmos/taskstore.db` | SQLite task/subtask/signal storage |
-| signal gateway | same DB file | atomic signal claim/mark-processed |
-| signals directory | `<repo>/.kasmos/signals/` | filesystem sentinel files |
+| resource | location | shared? | purpose |
+|----------|----------|---------|---------|
+| task store | `~/.config/kasmos/taskstore.db` | **global** (namespaced by `project`) | SQLite task/subtask/signal storage |
+| signal gateway | same global DB file | **global** (namespaced by `project`) | atomic signal claim/mark-processed |
+| signals directory | `<repo>/.kasmos/signals/` | per-repo | filesystem sentinel files, bridged into the gateway each tick |
 
-Opening the task store can fail (e.g. the `.kasmos/` directory does not exist yet, or the DB is locked). This is **non-fatal** — the repo is registered with `Store: nil` and `SignalGateway: nil`. The daemon logs a warning and skips the repo on each tick rather than crashing.
+`RepoManager.Add` lazy-opens the global DB once; subsequent `Add` calls for other repos reuse the same open `Store` and `SignalGateway` handles. Project namespacing inside the DB ensures that task and signal rows from `backend` and `frontend` never collide, even though they share the same SQLite file.
 
-A repo with a nil store becomes fully functional as soon as the DB is created and the daemon restarts or the repo is removed and re-added.
+Opening the global DB can fail (e.g. `~/.config/kasmos/` does not exist or the DB is locked). This is **non-fatal** — the repo is registered with `Store: nil` and `SignalGateway: nil`. The daemon logs a warning and skips the repo on each tick rather than crashing.
+
+A repo with a nil store becomes fully functional as soon as the DB is accessible and the repo is removed and re-added (or the daemon is restarted).
 
 ## per-repo processor
 
@@ -84,7 +86,7 @@ The processor is **created once** and reused across all tick cycles. This is imp
 
 ## shared worktrees
 
-The daemon scans for signal files not only in `<repo>/.kasmos/signals/` but also in all directories under `<repo>/.worktrees/`:
+On each tick, `loop.BridgeFilesystemSignals` scans not only `<repo>/.kasmos/signals/` but also all directories under `<repo>/.worktrees/`:
 
 ```
 <repo>/.worktrees/
@@ -94,11 +96,11 @@ The daemon scans for signal files not only in `<repo>/.kasmos/signals/` but also
     └── .kasmos/signals/    ← also scanned
 ```
 
-This allows wave task agents running in isolated worktrees to emit signals that the daemon can pick up from the main repo's tick. The bridge function `loop.BridgeFilesystemSignals` handles all worktree paths in a single call.
+Any filesystem sentinel files found are inserted as `pending` rows in the shared signal gateway. This is **compatibility plumbing** — it lets older agents or tooling that writes sentinel files continue to work without changes. New workflows should emit signals directly via `kas signal emit`, which writes to the gateway without touching the filesystem.
 
 ## hooks
 
-When a repo is registered, `config.LoadHooksForRepo(path)` reads its `kasmos.toml` for any `[[hooks]]` entries:
+When a repo is registered, `config.LoadHooksForRepo(path)` reads its `.kasmos/config.toml` for any `[[hooks]]` entries:
 
 ```toml
 [[hooks]]
@@ -137,4 +139,4 @@ auto_review_fix = true
 max_review_fix_cycles = 2
 ```
 
-Each project (`backend`, `frontend`) gets its own task store at `<project>/.kasmos/taskstore.db`, its own signal directory, and its own `loop.Processor`. Plans, waves, and agents from one project never interfere with the other.
+Both projects (`backend`, `frontend`) share the global task store at `~/.config/kasmos/taskstore.db`. Each gets its own `SignalsDir` (`<project>/.kasmos/signals/`) and its own `loop.Processor`. Project namespacing inside the shared DB ensures that plans, waves, and signals from one project never interfere with the other.

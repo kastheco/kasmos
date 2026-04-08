@@ -1,6 +1,6 @@
 # lifecycle
 
-Every task in kasmos moves through a finite state machine (FSM) defined in `config/taskfsm/fsm.go`. The FSM validates all transitions, writes new status to the task store, and records phase timestamps.
+Every task in kasmos moves through a finite state machine (FSM). The FSM validates all transitions, writes new status to the task store, and records phase timestamps.
 
 ## statuses
 
@@ -29,7 +29,7 @@ While `status` is the coarse lifecycle stage, tasks in the `implementing` and ad
 
 ### how phases are set
 
-The `planner_finished` event writes `ExecutionState{Phase: "planned"}` via `TransitionExecutionState` in `config/taskfsm/fsm.go`. All other events leave the phase empty; the orchestration engine writes it directly as agent sessions advance.
+The `planner_finished` event writes `ExecutionState{Phase: "planned"}`. All other events leave the phase empty; the orchestration engine writes it directly as agent sessions advance.
 
 ### draft-ready vs planned-ready
 
@@ -38,11 +38,9 @@ A `ready` task can be in one of two substates:
 - **draft-ready** — `status: ready`, `execution_phase: ""` (empty). The task has been registered but the planner has not yet finished. `implement_start` is **rejected** for draft-ready tasks — both `kas task implement` and the TUI's "implement" action return an error (`"task is ready but not yet planned"`).
 - **planned-ready** — `status: ready`, `execution_phase: "planned"`. The planner finished successfully and the task is safe to hand off to coder agents.
 
-Use `taskstate.IsDraftReady(entry)` and `taskstate.IsPlannedReady(entry)` to distinguish them programmatically.
-
 ## events
 
-Events trigger transitions. Some events are **user-only** (can only be fired from the TUI) and cannot be emitted by agent sentinel files.
+Events trigger transitions. Some events are **user-only** (can only be fired from the TUI or CLI) and cannot be emitted as agent signals.
 
 | event | user-only | description |
 |-------|-----------|-------------|
@@ -124,7 +122,7 @@ kas task transition my-feature reopen
 
 ### from agents (signals)
 
-Agents emit signals by creating files under `.kasmos/signals/` or by writing to the SQLite-backed signal gateway. The orchestration loop (`orchestration/loop`) scans for these signals and calls `Transition()` on the FSM.
+Agents emit **agent signals** via `kas signal emit`. The signal is written to the SQLite-backed signals table and picked up by the daemon, which drives FSM transitions. A compatibility path also exists: signals written as files under `.kasmos/signals/` can be processed by `kas signal process`. On daemon startup, kasmos only recovers any files left in `.kasmos/signals/processing/` back to the root; file-based signals are then bridged/processed on subsequent daemon ticks. Either way, the orchestration loop claims pending signals atomically before calling `Transition()` on the FSM.
 
 ## forcing a status
 

@@ -38,5 +38,5 @@ Running `kas` with no subcommand launches the interactive terminal UI (Bubble Te
 
 - `kas` requires a git repository in the working directory or any parent directory. If no repository is found, the interactive TUI exits immediately with an error.
 - Most subcommands resolve the project name from the basename of the repository root (e.g. `/home/user/myproject` → project `myproject`).
-- Task store queries fall back to a local SQLite file at `~/.kasmos/taskstore.db` (or `<repo-root>/.kasmos/taskstore.db`) when no remote store is configured.
+- Task store queries fall back to a local SQLite file at `~/.config/kasmos/taskstore.db` when no remote store is configured.
 - Filenames passed to `kas task` subcommands are normalized: a trailing `.md` extension is stripped automatically.

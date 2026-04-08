@@ -7,23 +7,21 @@ The task store is the authoritative database for all kasmos task state. It track
 
 ## local SQLite
 
-**Default path:** `<repo-root>/.kasmos/taskstore.db`
+**Default path:** `~/.config/kasmos/taskstore.db`
 
-The path is resolved by `taskstore.ResolvedDBPath()`, which delegates to `config.GetConfigDir()` to anchor the database to the main repository root (the same directory as `config.toml`). This means all git worktrees of the same repository share one task store.
+The task store is a **global, cross-project database**. Tasks from different repositories are separated by project name (derived from the repo root directory name), so one file serves all your projects. All git worktrees of the same repository share the same project namespace in this store.
 
 ```sh
 # inspect the resolved DB path
 kas debug
 ```
 
-The SQLite database is shared with the audit log (`config/auditlog`). Both subsystems use separate tables in the same file.
-
 ### SQLite characteristics
 
 - **No configuration required** — kasmos creates the file on first use.
-- **Migrations run automatically** on startup via `taskstore.MigrateDB()`.
+- **Migrations run automatically** when the store opens.
 - **Concurrent access** from multiple agents is safe because kasmos uses WAL mode and per-operation transactions.
-- **Worktree-safe** — `taskstore.ResolvedDBPath()` always returns the main repo root path, never the worktree path.
+- **Worktree-safe** — all worktrees of the same repository share one project namespace in the global store.
 
 ## remote HTTP store
 
@@ -109,12 +107,12 @@ Task filenames in the store are always stored without a `.md` suffix. The CLI (`
 
 ## signals
 
-The task store also provides a SQLite-backed signal table for daemon coordination. Signals can be in states `pending`, `processing`, `done`, or `failed`. The daemon bridges filesystem sentinel files (`.kasmos/signals/`) into the DB-backed gateway atomically. See [signals](/docs/cli-reference/signal) for details.
+The task store includes a `signals` table for daemon coordination. Signals transition through `pending`, `processing`, `done`, and `failed` states. Use `kas signal emit` to create signals programmatically — this is the primary DB-backed entrypoint. See [signals](/docs/cli-reference/signal) for details.
 
 ## backing up
 
 The local SQLite file can be backed up with any standard file copy while kasmos is not running. To create a safe online backup:
 
 ```sh
-sqlite3 .kasmos/taskstore.db ".backup backup.db"
+sqlite3 ~/.config/kasmos/taskstore.db ".backup backup.db"
 ```

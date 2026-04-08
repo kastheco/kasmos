@@ -1,6 +1,6 @@
 # remote task store
 
-By default, kasmos uses an embedded SQLite database at `<repo-root>/.kasmos/taskstore.db`. For multi-machine setups — such as agents running on a remote server while you monitor from a laptop — you can run the task store as a standalone HTTP server and point kasmos at it.
+By default, kasmos uses a local SQLite database at `~/.config/kasmos/taskstore.db`. For multi-machine setups — such as agents running on a remote server while you monitor from a laptop — you can run the task store as a standalone HTTP server and point kasmos at it.
 
 ## starting the server
 
@@ -15,7 +15,7 @@ Default values:
 | flag | default |
 |------|---------|
 | `--port` | `7433` |
-| `--db` | `<repo-root>/.kasmos/taskstore.db` |
+| `--db` | `~/.config/kasmos/taskstore.db` |
 | `--bind` | `0.0.0.0` |
 
 The server also exposes an admin UI at `/admin/` for browsing task state in a browser.

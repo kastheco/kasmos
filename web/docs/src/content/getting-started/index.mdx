@@ -22,7 +22,7 @@ kas             # launch the TUI
 
 ## what kasmos manages
 
-1. **tasks** — stored in a SQLite database under `<repo-root>/.kasmos/`; use `kas task list` to inspect
+1. **tasks** — stored in the global SQLite task store at `~/.config/kasmos/taskstore.db`; use `kas task list` to inspect
 2. **topics** — group related plans; only one plan per topic can be implementing at a time
 3. **waves** — plans are split into phases (`## Wave N` headers); tasks within a wave run in parallel
 4. **agents** — spawned in tmux sessions or headless mode with dedicated git worktrees; live output is visible in the TUI preview pane
