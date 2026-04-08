@@ -62,7 +62,7 @@ func buildResumeProgram(rec instanceRecord, worktreePath string) string {
 
 	// Prepend KASMOS_PROJECT before KASMOS_MANAGED so agents know which repo they are in.
 	if project := resumeProject(rec); project != "" {
-		program = "KASMOS_PROJECT=" + project + " " + program
+		program = "KASMOS_PROJECT='" + strings.ReplaceAll(project, "'", "'\\''") + "' " + program
 	}
 
 	// Prepend task identity env vars for parallel wave execution.

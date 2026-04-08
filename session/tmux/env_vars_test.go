@@ -120,10 +120,10 @@ func TestStartTmuxSession_WithProjectEnvVar(t *testing.T) {
 	require.GreaterOrEqual(t, len(ptyFactory.cmds), 1)
 
 	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
-	assert.Contains(t, cmdStr, "KASMOS_PROJECT=kasmos")
+	assert.Contains(t, cmdStr, "KASMOS_PROJECT='kasmos'")
 	assert.Contains(t, cmdStr, "KASMOS_MANAGED=1")
 	// KASMOS_PROJECT must appear before KASMOS_MANAGED in the command string.
-	projIdx := strings.Index(cmdStr, "KASMOS_PROJECT=kasmos")
+	projIdx := strings.Index(cmdStr, "KASMOS_PROJECT='kasmos'")
 	managedIdx := strings.Index(cmdStr, "KASMOS_MANAGED=1")
 	assert.Less(t, projIdx, managedIdx, "KASMOS_PROJECT should precede KASMOS_MANAGED")
 }

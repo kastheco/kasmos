@@ -219,8 +219,8 @@ func TestInstanceResume_Success(t *testing.T) {
 		if len(call) >= 8 && call[0] == "tmux" && call[1] == "new-session" {
 			foundTmuxCall = true
 			programArg := call[len(call)-1]
-			assert.True(t, strings.HasPrefix(programArg, "KASMOS_PROJECT=repo KASMOS_MANAGED=1"),
-				"program arg should begin with KASMOS_PROJECT=repo KASMOS_MANAGED=1, got: %q", programArg)
+			assert.True(t, strings.HasPrefix(programArg, "KASMOS_PROJECT='repo' KASMOS_MANAGED=1"),
+				"program arg should begin with KASMOS_PROJECT='repo' KASMOS_MANAGED=1, got: %q", programArg)
 		}
 	}
 	assert.True(t, foundTmuxCall, "expected tmux new-session call; calls: %v", *calls)

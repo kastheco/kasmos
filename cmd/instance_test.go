@@ -426,8 +426,8 @@ func TestBuildResumeCommand_WithProjectFromRepoPath(t *testing.T) {
 		},
 	}
 	got := buildResumeCommand(rec, "/worktrees/my-coder")
-	assert.True(t, strings.HasPrefix(got, "KASMOS_PROJECT=myproject KASMOS_MANAGED=1"),
-		"expected KASMOS_PROJECT=myproject KASMOS_MANAGED=1 prefix, got: %q", got)
+	assert.True(t, strings.HasPrefix(got, "KASMOS_PROJECT='myproject' KASMOS_MANAGED=1"),
+		"expected KASMOS_PROJECT='myproject' KASMOS_MANAGED=1 prefix, got: %q", got)
 }
 
 // TestBuildResumeCommand_WithProjectFallbackToPath verifies that when Worktree.RepoPath
@@ -439,8 +439,8 @@ func TestBuildResumeCommand_WithProjectFallbackToPath(t *testing.T) {
 		Path:    "/home/user/anotherrepo",
 	}
 	got := buildResumeCommand(rec, "/worktrees/my-coder")
-	assert.True(t, strings.HasPrefix(got, "KASMOS_PROJECT=anotherrepo KASMOS_MANAGED=1"),
-		"expected KASMOS_PROJECT=anotherrepo KASMOS_MANAGED=1 prefix, got: %q", got)
+	assert.True(t, strings.HasPrefix(got, "KASMOS_PROJECT='anotherrepo' KASMOS_MANAGED=1"),
+		"expected KASMOS_PROJECT='anotherrepo' KASMOS_MANAGED=1 prefix, got: %q", got)
 }
 
 // TestResumeProject_PrefersRepoPath verifies that resumeProject returns the

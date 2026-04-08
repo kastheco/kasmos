@@ -345,7 +345,7 @@ func (t *TmuxSession) Start(workDir string) error {
 
 	// Prepend KASMOS_PROJECT before KASMOS_MANAGED so agents know which repo they are in.
 	if t.project != "" {
-		program = "KASMOS_PROJECT=" + t.project + " " + program
+		program = "KASMOS_PROJECT=" + shellEscapeSingleQuote(t.project) + " " + program
 	}
 
 	// Prepend task identity env vars for parallel wave execution.

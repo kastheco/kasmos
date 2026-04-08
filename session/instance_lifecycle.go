@@ -39,17 +39,13 @@ func (i *Instance) transferPromptToCli() {
 	}
 }
 
-// projectName derives the repository base name from the instance's metadata.
-// It prefers the repo-root path from an attached worktree and falls back to i.Path.
-// Returns "" when neither source provides a non-empty path.
+// projectName derives the repository base name from the instance's attached
+// worktree. Returns "" when no worktree is attached or the repo path is empty.
 func (i *Instance) projectName() string {
 	if i.gitWorktree != nil {
 		if p := i.gitWorktree.GetRepoPath(); p != "" {
 			return filepath.Base(filepath.Clean(p))
 		}
-	}
-	if i.Path != "" {
-		return filepath.Base(filepath.Clean(i.Path))
 	}
 	return ""
 }

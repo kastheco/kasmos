@@ -257,13 +257,16 @@ func TestHeadlessSession_ProjectEnvInjection(t *testing.T) {
 func TestHeadlessSession_NoProjectEnvWhenEmpty(t *testing.T) {
 	workDir := t.TempDir()
 
-	// Script prints "PRESENT" if KASMOS_PROJECT is set, else "ABSENT".
+	// Control the outer env so we can assert the child inherits it unchanged.
+	t.Setenv("KASMOS_PROJECT", "outer")
+
+	// Script prints the value of KASMOS_PROJECT.
 	binaryPath := filepath.Join(workDir, "checkproject")
-	script := "#!/bin/sh\nif [ -n \"$KASMOS_PROJECT\" ]; then printf PRESENT; else printf ABSENT; fi\n"
+	script := "#!/bin/sh\nprintf '%s' \"$KASMOS_PROJECT\"\n"
 	require.NoError(t, os.WriteFile(binaryPath, []byte(script), 0o755))
 
 	sess := headless.New("no-project-test", binaryPath, false)
-	// SetProject NOT called.
+	// SetProject NOT called — the session should NOT override the inherited value.
 	err := sess.Start(workDir)
 	require.NoError(t, err)
 
@@ -277,10 +280,7 @@ func TestHeadlessSession_NoProjectEnvWhenEmpty(t *testing.T) {
 
 	content, err := sess.CapturePaneContent()
 	require.NoError(t, err)
-	// KASMOS_PROJECT may be inherited from the outer shell — only verify the
-	// session itself did NOT inject it when SetProject was not called.
-	// We can't assert "ABSENT" because the outer test environment might have it set.
-	_ = content
+	assert.Equal(t, "outer", strings.TrimSpace(content))
 	_ = sess.Close()
 }
 
