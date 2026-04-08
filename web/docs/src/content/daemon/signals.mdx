@@ -2,7 +2,7 @@
 
 Signals are the messaging layer between agent processes and the daemon. An agent (planner, coder, reviewer, etc.) emits a signal when it completes a lifecycle phase; the daemon picks it up and drives the next FSM transition.
 
-The **primary signal path is the DB-backed gateway** — signals are rows in the `signals` SQLite table inside each repo's `taskstore.db`. This path is atomic, auditable, and safely concurrent. A secondary **filesystem path** exists for compatibility and is automatically bridged into the DB on every daemon tick.
+The **primary signal path is the DB-backed gateway** — signals are rows in the `signals` SQLite table in the shared global store at `~/.config/kasmos/taskstore.db`. This path is atomic, auditable, and safely concurrent. A secondary **filesystem path** exists for compatibility and is automatically bridged into the DB on every daemon tick.
 
 > **Prefer `kas signal emit` over writing sentinel files directly.** The CLI routes signals through the DB gateway, giving you audit history, stuck-signal recovery, and proper error messages.
 
@@ -14,7 +14,7 @@ kas signal emit implement_task_finished my-plan --payload '{"wave_number":2,"tas
 
 ## DB-backed gateway (primary path)
 
-The DB-backed signal gateway is implemented in `config/taskstore/signal_sqlite.go`. Signals are rows in the `signals` SQLite table inside each repo's `taskstore.db`.
+The DB-backed signal gateway is implemented in `config/taskstore/signal_sqlite.go`. Signals are rows in the `signals` SQLite table in the shared global store at `~/.config/kasmos/taskstore.db`.
 
 ### schema
 
@@ -113,17 +113,11 @@ The filesystem path is implemented in `config/taskfsm/signalfs.go`. Signals are 
 
 On daemon startup, before the first poll tick, `taskfsm.RecoverInFlight(signalsDir)` scans `processing/` and moves any leftover files back to the signals root so they can be re-dispatched. If a newer signal with the same name already exists in the root (written after the crash), the stale in-flight copy is discarded to avoid overwriting newer state.
 
-### writing a filesystem signal directly
-
-Legacy agents or low-level tooling can write to the filesystem path by calling `taskfsm.AtomicWrite` in `config/taskfsm/signalfs.go`. The write is atomic: the payload is staged under `staging/` and renamed into the signals root in a single syscall. The daemon bridge picks it up on the next tick and promotes it to a DB-backed row.
-
-> **Note:** `kas signal emit` routes to the DB gateway, not the filesystem. Use it from the command line to write DB-backed signals; the filesystem path is for legacy agents that cannot call the gateway directly.
-
 ## inspecting signals
 
 ```sh
-# list pending signals for a project
-kas signal list my-project
+# list pending signals
+kas signal list
 
 # emit a signal manually (useful for testing or resuming a stuck task)
 kas signal emit implement_finished my-plan
