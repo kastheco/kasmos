@@ -77,6 +77,13 @@ func findNumberedPrompt(lines []string) *Prompt {
 		return nil
 	}
 
+	// Reject Claude Code's trust screen ("Do you trust the files in this
+	// folder?") which has numbered Yes/No choices but is not a permission
+	// prompt — kasmos handles it via the trust-tap mechanism.
+	if isTrustScreenBefore(lines, firstChoiceIdx) {
+		return nil
+	}
+
 	questionIdx, hasQuestion := findPermissionQuestionBefore(lines, firstChoiceIdx)
 	description := ""
 	if hasQuestion {
@@ -88,9 +95,14 @@ func findNumberedPrompt(lines []string) *Prompt {
 	// When a recognized permission question appears with numbered choices
 	// at the pane bottom, the structural evidence is definitive — accept
 	// even without a colon-prefixed tool description. Fall back to any
-	// non-empty, non-question content line above the question.
+	// non-empty, non-question content line within a small window above
+	// the question.
 	if description == "" && hasQuestion {
-		for i := questionIdx - 1; i >= 0; i-- {
+		start := questionIdx - maxDescriptionDistance
+		if start < 0 {
+			start = 0
+		}
+		for i := questionIdx - 1; i >= start; i-- {
 			t := strings.TrimSpace(lines[i])
 			if t != "" && !strings.HasSuffix(t, "?") {
 				description = t
@@ -123,6 +135,24 @@ func isPromptAtBottom(lines []string, lastChoiceIdx int) bool {
 		return false
 	}
 	return true
+}
+
+// isTrustScreenBefore returns true when the lines immediately before
+// the first numbered choice contain Claude Code's workspace trust
+// question ("Do you trust the files in this folder?"). This dialog
+// uses the same Yes/No format as permission prompts but is handled
+// separately via the trust-tap mechanism.
+func isTrustScreenBefore(lines []string, firstChoiceIdx int) bool {
+	start := firstChoiceIdx - 6
+	if start < 0 {
+		start = 0
+	}
+	for i := firstChoiceIdx - 1; i >= start; i-- {
+		if strings.Contains(strings.ToLower(strings.TrimSpace(lines[i])), "do you trust the files") {
+			return true
+		}
+	}
+	return false
 }
 
 // isFooterChrome returns true for Claude Code's bottom-bar lines
@@ -181,12 +211,24 @@ func findDescriptionForQuestion(lines []string, questionIdx int, question string
 	return extractToolFromQuestion(question)
 }
 
+// maxDescriptionDistance is the maximum number of lines above the question
+// or first choice that findStructuredDescriptionBefore will search. Claude
+// Code always places the tool header within a few lines of the prompt — a
+// larger window picks up unrelated file content (e.g. "47 [coverage:run]"
+// from a config file diff) and produces wrong descriptions.
+const maxDescriptionDistance = 8
+
 // findStructuredDescriptionBefore returns the closest preceding structured
-// detail line before beforeIdx. Generic prose is intentionally rejected so that
-// quoted transcript text like "This command requires approval" does not look
-// like a live permission dialog.
+// detail line before beforeIdx, searching at most maxDescriptionDistance
+// lines. Generic prose is intentionally rejected so that quoted transcript
+// text like "This command requires approval" does not look like a live
+// permission dialog.
 func findStructuredDescriptionBefore(lines []string, beforeIdx int) string {
-	for i := beforeIdx - 1; i >= 0; i-- {
+	start := beforeIdx - maxDescriptionDistance
+	if start < 0 {
+		start = 0
+	}
+	for i := beforeIdx - 1; i >= start; i-- {
 		t := strings.TrimSpace(lines[i])
 		if t == "" {
 			continue
