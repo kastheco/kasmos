@@ -21,7 +21,7 @@ Plans move through a fixed set of states. Only the transitions listed below are 
 | `reviewing` | `done` | reviewer writes sentinel `reviewer-approved-<planfile>` |
 | `done` | — | terminal state, no further transitions |
 
-State is persisted in the **task store** — a SQLite database (`~/.config/kasmos/kasmos.db` locally) or a remote HTTP API server. Agents never write to the store directly — kasmos owns state transitions. Agents emit signals (managed mode) or use task tools (manual mode). To retrieve plan content, agents use MCP `task_show` (`filename: "<plan-file>"`, `project: "$KASMOS_PROJECT"`).
+State is persisted in the **task store** — a SQLite database (`~/.config/kasmos/kasmos.db` locally) or a remote HTTP API server. Agents never write to the store directly — kasmos owns state transitions. Agents emit signals (managed mode) or use task tools (manual mode). To retrieve plan content, agents use MCP `task_show` (`filename: "<plan-file>"`).
 
 ## Signal File Mechanics
 
@@ -41,7 +41,7 @@ Examples:
 3. The sentinel file is consumed (deleted) after processing — do not rely on it persisting
 4. Sentinel content is optional; kasmos uses the filename to determine the event type
 
-**Emitting a signal (agent side):** use MCP `signal_create` (including `project: "$KASMOS_PROJECT"`) to emit the equivalent
+**Emitting a signal (agent side):** use MCP `signal_create` to emit the equivalent
 `planner-finished-2026-02-27-feature.md` signal as the last action before yielding control.
 
 Keep sentinel writes as the **last action** before yielding control. Do not write a sentinel and then continue modifying plans — kasmos may begin the next phase immediately.

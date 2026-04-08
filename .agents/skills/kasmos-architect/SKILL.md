@@ -71,15 +71,15 @@ the task lifecycle fsm still carries a legacy compatibility state label: `ready 
 You produce **both** in a single run, not incrementally:
 
 - updated plan markdown written with: 
-  use MCP `task_update_content` (filename: "<plan-file>", content: "<full enriched plan>", project: "$KASMOS_PROJECT") to persist the rewritten plan.
+  use MCP `task_update_content` (filename: "<plan-file>", content: "<full enriched plan>") to persist the rewritten plan.
 - metadata JSON written to `.kasmos/cache/<plan-file>-architect.json` using the raw plan filename slug (for example `.kasmos/cache/skill-prompt-rewrites-architect.json`)
 
 ### required commands
 
-1. use MCP `task_show` (filename: "<plan-file>", project: "$KASMOS_PROJECT") to read the latest plan
-2. use MCP `task_update_content` (filename: "<plan-file>", content: "<full enriched plan>", project: "$KASMOS_PROJECT") to persist the rewritten plan.
+1. use MCP `task_show` (filename: "<plan-file>") to read the latest plan
+2. use MCP `task_update_content` (filename: "<plan-file>", content: "<full enriched plan>") to persist the rewritten plan.
 3. mkdir -p .kasmos/cache
-4. use MCP `signal_create` (signal_type: "elaborator-finished", plan_file: "<plan-file>", project: "$KASMOS_PROJECT") after the round-trip check succeeds.
+4. use MCP `signal_create` (signal_type: "elaborator-finished", plan_file: "<plan-file>") after the round-trip check succeeds.
 
 ---
 
@@ -87,7 +87,7 @@ You produce **both** in a single run, not incrementally:
 
 read the latest plan and extract structure before editing anything:
 
-use MCP `task_show` (filename: "<plan-file>", project: "$KASMOS_PROJECT") to read the latest plan.
+use MCP `task_show` (filename: "<plan-file>") to read the latest plan.
 
 verify:
 - plan header (`#`, `**Goal:**`, `**Architecture:**`, `**Tech Stack:**`, `**Size:**`)
@@ -194,13 +194,13 @@ EOF
 
 2. verify structure and metadata did not break existing plan framing:
 
-use MCP `task_show` (filename: "<plan-file>", project: "$KASMOS_PROJECT") to read the latest plan
+use MCP `task_show` (filename: "<plan-file>") to read the latest plan
 
 confirm header/wave/task structure survived before touching signal.
 
 3. signal completion:
 
-use MCP `signal_create` (signal_type: "elaborator-finished", plan_file: "<plan-file>", project: "$KASMOS_PROJECT") after the round-trip check succeeds.
+use MCP `signal_create` (signal_type: "elaborator-finished", plan_file: "<plan-file>") after the round-trip check succeeds.
 
 ---
 
@@ -219,5 +219,5 @@ stop.
 | modifying planner structural blocks | leave `## Wave`, `### Task`, `**Files:**` unchanged |
 | creating import dependency between same-wave tasks | split or move tasks to a later wave |
 | skipping metadata JSON output | generate `.kasmos/cache/<plan-file>-architect.json` in the same run |
-| writing signal before round-trip check | run MCP `task_show` (filename: "<plan-file>", project: "$KASMOS_PROJECT") first |
+| writing signal before round-trip check | run MCP `task_show` (filename: "<plan-file>") first |
 | writing the compatibility `elaborator-finished` signal with wrong filename | use exact plan file token in filename |

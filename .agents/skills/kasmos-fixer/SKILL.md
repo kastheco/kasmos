@@ -290,7 +290,7 @@ matching branch or worktree.
 For each ghost entry:
 1. Show: plan name, status, branch
 2. Confirm: "force-set ghost plan `<name>` to cancelled?"
-3. Use MCP `task_transition` (`filename: "<name>"`, `event: "cancel"`, `project: "$KASMOS_PROJECT"`) when a valid
+3. Use MCP `task_transition` (`filename: "<name>"`, `event: "cancel"`) when a valid
    lifecycle event exists; reserve force-style overrides for confirmed recovery work only.
 
 ---
@@ -303,7 +303,7 @@ for execution paths that genuinely require the CLI (for example `kas task implem
 ### `task_list`
 
 Use MCP `task_list` to inspect task state. It returns status, branch, and topic data and supports
-the same lifecycle filters used during triage and cleanup. Always include `project: "$KASMOS_PROJECT"`.
+the same lifecycle filters used during triage and cleanup.
 
 - use MCP `task_list` with no status filter for all tasks
 - use MCP `task_list` with status `implementing` for active implementation plans
@@ -311,13 +311,13 @@ the same lifecycle filters used during triage and cleanup. Always include `proje
 
 ### `task_show`
 
-Use MCP `task_show` (`filename: "my-plan.md"`, `project: "$KASMOS_PROJECT"`) to read the stored plan markdown from the task
+Use MCP `task_show` (`filename: "my-plan.md"`) to read the stored plan markdown from the task
 store without relying on disk copies.
 
 ### `task_transition`
 
 Use MCP `task_transition` (`filename: "2026-02-27-my-plan.md"`,
-`event: "review_approved"`, `project: "$KASMOS_PROJECT"`) to apply named FSM events. Preferred over force-style recovery
+`event: "review_approved"`) to apply named FSM events. Preferred over force-style recovery
 overrides whenever a valid event exists.
 
 Valid events: `plan_start`, `implement_start`, `review_start`, `review_approved`,

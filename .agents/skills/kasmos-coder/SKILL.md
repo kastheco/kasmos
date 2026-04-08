@@ -96,7 +96,7 @@ from a task agent prematurely triggers review and breaks wave orchestration.
 
 You execute the full plan sequentially, wave by wave:
 
-1. Use MCP `task_show` (filename: "<plan-file>", project: "$KASMOS_PROJECT") to read the stored plan. Check its `**Size**` field to determine wave structure.
+1. Use MCP `task_show` (filename: "<plan-file>") to read the stored plan. Check its `**Size**` field to determine wave structure.
 2. Create a todo list with one item per task (all `pending`), then begin.
 3. Execute one wave at a time: implement each task (TDD), commit, then proceed to next task.
 4. After each wave completes, self-review before starting the next wave.
@@ -360,7 +360,7 @@ Execute waves sequentially:
 3. Implement Wave 2, self-review, continue through all waves
 4. After all waves complete and all tests pass:
 
-after all waves complete and tests pass, use MCP `task_transition` (filename: "<task-file>", event: "request_review", project: "$KASMOS_PROJECT") to move the plan to `reviewing`.
+after all waves complete and tests pass, use MCP `task_transition` (filename: "<task-file>", event: "request_review") to move the plan to `reviewing`.
 if MCP is unavailable in this manual workflow, fall back to `kas task transition <task-file> request_review` before offering branch-finishing options.
 
 Then handle branch finishing — present these options to the user:
@@ -421,7 +421,7 @@ git branch -D <feature-branch>
 ```
 
 Update task status to `done` after options 1, 2, or 4:
-Use MCP `task_transition` (filename: "<task-file>", event: "review_approved", force: true, project: "$KASMOS_PROJECT") to force-complete the task.
+Use MCP `task_transition` (filename: "<task-file>", event: "review_approved", force: true) to force-complete the task.
 
 ---
 

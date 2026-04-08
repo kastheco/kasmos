@@ -284,12 +284,12 @@ if any check fails: fix inline, then re-run these checks.
 
 ### 1. store and signal the plan
 
-**managed mode:** use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>", project: "$KASMOS_PROJECT") to store the finished plan.
+**managed mode:** use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>") to store the finished plan.
 
-then use MCP `signal_create` (signal_type: "planner-finished", plan_file: "<plan-file>", project: "$KASMOS_PROJECT") after the update succeeds.
+then use MCP `signal_create` (signal_type: "planner-finished", plan_file: "<plan-file>") after the update succeeds.
 if MCP is unavailable in your harness, fall back to `kas signal emit planner_finished <plan-file>`; only if the CLI path is also unavailable, fall back to `touch .kasmos/signals/planner-finished-<plan-file>`.
 
-**manual mode:** if the user provides explicit store/signal commands, use those exactly. otherwise use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>", project: "$KASMOS_PROJECT"). if creating a new task, use MCP `task_create` with the `content` and `project: "$KASMOS_PROJECT"` parameters in a single call — never create empty then update separately.
+**manual mode:** if the user provides explicit store/signal commands, use those exactly. otherwise use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>"). if creating a new task, use MCP `task_create` with the `content` parameter in a single call — never create empty then update separately.
 
 do not commit sentinel files — kasmos consumes and deletes them automatically.
 
@@ -306,8 +306,8 @@ check your execution context:
 
 kasmos is orchestrating this session. store the plan content and signal completion.
 
-use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>", project: "$KASMOS_PROJECT") to persist the finished plan.
-then use MCP `signal_create` (signal_type: "planner-finished", plan_file: "<plan-file>", project: "$KASMOS_PROJECT") to notify completion.
+use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>") to persist the finished plan.
+then use MCP `signal_create` (signal_type: "planner-finished", plan_file: "<plan-file>") to notify completion.
 if MCP is unavailable in your harness, fall back to `kas signal emit planner_finished <plan-file>`; only if the CLI path is also unavailable, fall back to `touch .kasmos/signals/planner-finished-<plan-file>`.
 
 the signal filename must match the task filename exactly (with `planner-finished-` prefix).
@@ -329,11 +329,12 @@ otherwise, store the plan in the task store:
 
 if the task does not exist yet, use `kas task register <plan-file>` (CLI) to create
 it, then `kas task update-content <plan-file> < <plan-file-on-disk>` to persist the
-content. alternatively, use MCP `task_create` with the `content` and `project: "$KASMOS_PROJECT"` parameters set in a single call — never create empty then update separately, as
+content. alternatively, use MCP `task_create` with the `content` parameter set to the
+full plan markdown in a single call — never create empty then update separately, as
 the signal consumer may read the empty content before the update lands.
 
 if the task already exists, use `kas task update-content <plan-file>` (CLI) or MCP
-`task_update_content` (filename: "<plan-file>", content: "<full plan markdown>", project: "$KASMOS_PROJECT").
+`task_update_content` (filename: "<plan-file>", content: "<full plan markdown>").
 
 then offer execution choices:
 
