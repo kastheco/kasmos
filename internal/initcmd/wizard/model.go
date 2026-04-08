@@ -41,13 +41,13 @@ func newRootModel(registry *harness.Registry, existing *config.TOMLConfigResult)
 	state := &State{
 		Registry: registry,
 		PhaseMapping: map[string]string{
-			"implementing":   "coder",
-			"elaborating":    "architect",
-			"spec_review":    "reviewer",
-			"quality_review": "reviewer",
-			"planning":       "planner",
-			"fixer":          "fixer",
-			"master_review":  "master",
+			"implementing":     "coder",
+			"elaborating":      "architect",
+			"spec_review":      "reviewer",
+			"quality_review":   "reviewer",
+			"planning":         "planner",
+			"fixer":            "fixer",
+			"readiness_review": "master",
 		},
 	}
 	if registry != nil {

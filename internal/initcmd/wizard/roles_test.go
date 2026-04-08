@@ -51,7 +51,7 @@ func TestRoleDescription_Master(t *testing.T) {
 func TestRolePhaseText_Master(t *testing.T) {
 	phase := RolePhaseText("master")
 	assert.NotEmpty(t, phase)
-	assert.Contains(t, phase, "master_review")
+	assert.Contains(t, phase, "readiness_review")
 }
 
 func TestDefaultAgentRoles_IncludesFixer(t *testing.T) {

@@ -181,6 +181,28 @@ poll_interval_sec = 90
 	assert.Equal(t, 90*time.Second, cfg.PRMonitor.PollInterval)
 }
 
+func TestLoadDaemonConfig_AutoReadinessReview(t *testing.T) {
+	t.Run("explicit false round-trips cleanly", func(t *testing.T) {
+		cfg := loadFromString(t, `auto_readiness_review = false`)
+		assert.False(t, cfg.AutoReadinessReview)
+	})
+
+	t.Run("explicit true is loaded correctly", func(t *testing.T) {
+		cfg := loadFromString(t, `auto_readiness_review = true`)
+		assert.True(t, cfg.AutoReadinessReview)
+	})
+
+	t.Run("absent key defaults to false", func(t *testing.T) {
+		cfg := loadFromString(t, `poll_interval_sec = 2`)
+		assert.False(t, cfg.AutoReadinessReview)
+	})
+
+	t.Run("defaultDaemonConfig disables readiness review", func(t *testing.T) {
+		cfg := defaultDaemonConfig()
+		assert.False(t, cfg.AutoReadinessReview)
+	})
+}
+
 // loadFromString writes toml content to a temp file and calls LoadDaemonConfig.
 func loadFromString(t *testing.T, content string) *DaemonConfig {
 	t.Helper()
