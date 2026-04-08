@@ -30,6 +30,7 @@ docs/plans/
 # Actual skill directories in .claude/skills/ (with SKILL.md) remain tracked.
 .opencode/skills/*
 !.opencode/skills/*/
+/.opencode/package-lock.json
 .codex/skills/*
 # .claude/skills/ has both real dirs and symlinks — ignore files (symlinks), keep dirs
 .claude/skills/*
