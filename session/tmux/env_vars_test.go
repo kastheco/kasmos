@@ -89,6 +89,80 @@ func TestStartTmuxSession_WithoutTaskEnvVars(t *testing.T) {
 	assert.Contains(t, cmdStr, "CLAUDE_CODE_NO_FLICKER=0")
 }
 
+func TestStartTmuxSession_WithProjectEnvVar(t *testing.T) {
+	log.Initialize(false)
+	defer log.Close()
+
+	ptyFactory := NewMockPtyFactory(t)
+	created := false
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			if strings.Contains(cmd.String(), "has-session") && !created {
+				created = true
+				return fmt.Errorf("session does not exist")
+			}
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			if strings.Contains(cmd.String(), "capture-pane") {
+				return []byte("Do you trust the files in this folder?"), nil
+			}
+			return []byte("output"), nil
+		},
+	}
+
+	workdir := t.TempDir()
+	session := newTmuxSession("test-project", "claude", false, ptyFactory, cmdExec)
+	session.SetProject("kasmos")
+
+	err := session.Start(workdir)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(ptyFactory.cmds), 1)
+
+	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	assert.Contains(t, cmdStr, "KASMOS_PROJECT=kasmos")
+	assert.Contains(t, cmdStr, "KASMOS_MANAGED=1")
+	// KASMOS_PROJECT must appear before KASMOS_MANAGED in the command string.
+	projIdx := strings.Index(cmdStr, "KASMOS_PROJECT=kasmos")
+	managedIdx := strings.Index(cmdStr, "KASMOS_MANAGED=1")
+	assert.Less(t, projIdx, managedIdx, "KASMOS_PROJECT should precede KASMOS_MANAGED")
+}
+
+func TestStartTmuxSession_WithoutProject_NoProjectEnvVar(t *testing.T) {
+	log.Initialize(false)
+	defer log.Close()
+
+	ptyFactory := NewMockPtyFactory(t)
+	created := false
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			if strings.Contains(cmd.String(), "has-session") && !created {
+				created = true
+				return fmt.Errorf("session does not exist")
+			}
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			if strings.Contains(cmd.String(), "capture-pane") {
+				return []byte("Do you trust the files in this folder?"), nil
+			}
+			return []byte("output"), nil
+		},
+	}
+
+	workdir := t.TempDir()
+	session := newTmuxSession("test-no-project", "claude", false, ptyFactory, cmdExec)
+	// SetProject not called — env var should be absent.
+
+	err := session.Start(workdir)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(ptyFactory.cmds), 1)
+
+	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	assert.NotContains(t, cmdStr, "KASMOS_PROJECT=")
+	assert.Contains(t, cmdStr, "KASMOS_MANAGED=1")
+}
+
 func TestStartTmuxSession_OpenCodeInjectsProjectConfigEnv(t *testing.T) {
 	log.Initialize(false)
 	defer log.Close()

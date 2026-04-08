@@ -405,6 +405,7 @@ func TestKillCmd_SetsInstanceToPaused(t *testing.T) {
 
 // TestBuildResumeCommand_BasicClaude verifies that a basic Claude instance gets
 // KASMOS_MANAGED=1 prepended and no extra flags for default settings.
+// When neither Worktree.RepoPath nor Path is set, KASMOS_PROJECT is absent.
 func TestBuildResumeCommand_BasicClaude(t *testing.T) {
 	rec := instanceRecord{
 		Title:   "my-coder",
@@ -412,6 +413,59 @@ func TestBuildResumeCommand_BasicClaude(t *testing.T) {
 	}
 	got := buildResumeCommand(rec, "/worktrees/my-coder")
 	assert.Equal(t, "KASMOS_MANAGED=1 claude", got)
+}
+
+// TestBuildResumeCommand_WithProjectFromRepoPath verifies that KASMOS_PROJECT is
+// derived from Worktree.RepoPath and prepended before KASMOS_MANAGED=1.
+func TestBuildResumeCommand_WithProjectFromRepoPath(t *testing.T) {
+	rec := instanceRecord{
+		Title:   "my-coder",
+		Program: "claude",
+		Worktree: instanceWorktree{
+			RepoPath: "/home/user/myproject",
+		},
+	}
+	got := buildResumeCommand(rec, "/worktrees/my-coder")
+	assert.True(t, strings.HasPrefix(got, "KASMOS_PROJECT=myproject KASMOS_MANAGED=1"),
+		"expected KASMOS_PROJECT=myproject KASMOS_MANAGED=1 prefix, got: %q", got)
+}
+
+// TestBuildResumeCommand_WithProjectFallbackToPath verifies that when Worktree.RepoPath
+// is empty but Path is set, KASMOS_PROJECT is derived from Path.
+func TestBuildResumeCommand_WithProjectFallbackToPath(t *testing.T) {
+	rec := instanceRecord{
+		Title:   "my-coder",
+		Program: "claude",
+		Path:    "/home/user/anotherrepo",
+	}
+	got := buildResumeCommand(rec, "/worktrees/my-coder")
+	assert.True(t, strings.HasPrefix(got, "KASMOS_PROJECT=anotherrepo KASMOS_MANAGED=1"),
+		"expected KASMOS_PROJECT=anotherrepo KASMOS_MANAGED=1 prefix, got: %q", got)
+}
+
+// TestResumeProject_PrefersRepoPath verifies that resumeProject returns the
+// base name of Worktree.RepoPath when it is populated.
+func TestResumeProject_PrefersRepoPath(t *testing.T) {
+	rec := instanceRecord{
+		Path: "/home/user/fallback",
+		Worktree: instanceWorktree{
+			RepoPath: "/home/user/primary",
+		},
+	}
+	assert.Equal(t, "primary", resumeProject(rec))
+}
+
+// TestResumeProject_FallsBackToPath verifies the Path fallback.
+func TestResumeProject_FallsBackToPath(t *testing.T) {
+	rec := instanceRecord{Path: "/home/user/fallback"}
+	assert.Equal(t, "fallback", resumeProject(rec))
+}
+
+// TestResumeProject_EmptyWhenNeitherSet verifies that an empty string is returned
+// when both sources are absent, so KASMOS_PROJECT is not injected.
+func TestResumeProject_EmptyWhenNeitherSet(t *testing.T) {
+	rec := instanceRecord{}
+	assert.Equal(t, "", resumeProject(rec))
 }
 
 // TestBuildResumeCommand_SkipPermissions verifies --dangerously-skip-permissions is appended for Claude.

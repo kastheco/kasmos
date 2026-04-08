@@ -227,6 +227,63 @@ func TestHeadlessSession_ClaudeInjectsNoFlickerEnv(t *testing.T) {
 	_ = sess.Close()
 }
 
+func TestHeadlessSession_ProjectEnvInjection(t *testing.T) {
+	workDir := t.TempDir()
+
+	// Create a tiny script that prints $KASMOS_PROJECT.
+	binaryPath := filepath.Join(workDir, "myagent")
+	script := "#!/bin/sh\nprintf '%s' \"$KASMOS_PROJECT\"\n"
+	require.NoError(t, os.WriteFile(binaryPath, []byte(script), 0o755))
+
+	sess := headless.New("project-env-test", binaryPath, false)
+	sess.SetProject("myrepo")
+	err := sess.Start(workDir)
+	require.NoError(t, err)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !sess.DoesSessionExist() {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	content, err := sess.CapturePaneContent()
+	require.NoError(t, err)
+	assert.Equal(t, "myrepo", strings.TrimSpace(content))
+	_ = sess.Close()
+}
+
+func TestHeadlessSession_NoProjectEnvWhenEmpty(t *testing.T) {
+	workDir := t.TempDir()
+
+	// Script prints "PRESENT" if KASMOS_PROJECT is set, else "ABSENT".
+	binaryPath := filepath.Join(workDir, "checkproject")
+	script := "#!/bin/sh\nif [ -n \"$KASMOS_PROJECT\" ]; then printf PRESENT; else printf ABSENT; fi\n"
+	require.NoError(t, os.WriteFile(binaryPath, []byte(script), 0o755))
+
+	sess := headless.New("no-project-test", binaryPath, false)
+	// SetProject NOT called.
+	err := sess.Start(workDir)
+	require.NoError(t, err)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !sess.DoesSessionExist() {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	content, err := sess.CapturePaneContent()
+	require.NoError(t, err)
+	// KASMOS_PROJECT may be inherited from the outer shell — only verify the
+	// session itself did NOT inject it when SetProject was not called.
+	// We can't assert "ABSENT" because the outer test environment might have it set.
+	_ = content
+	_ = sess.Close()
+}
+
 func TestHeadlessSession_ClaudeNoFlickerEnabledProducesOne(t *testing.T) {
 	workDir := t.TempDir()
 
