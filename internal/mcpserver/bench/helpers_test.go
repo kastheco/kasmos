@@ -22,7 +22,18 @@ var (
 	kasBinaryPath string
 	// fixtureRoot is the directory that contains the synthetic fixture tree.
 	fixtureRoot string
+	// benchToolsMissing is set when rg/fd aren't available (e.g. CI).
+	// Tests that need them call skipIfNoBenchTools.
+	benchToolsMissing bool
 )
+
+// skipIfNoBenchTools skips a test that requires rg/fd when they aren't installed.
+func skipIfNoBenchTools(tb testing.TB) {
+	tb.Helper()
+	if benchToolsMissing {
+		tb.Skip("skipping: rg/fd not found in PATH")
+	}
+}
 
 // ─── scenario model ──────────────────────────────────────────────────────────
 
@@ -91,11 +102,13 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	// Verify required CLI tools — skip the entire suite if missing (CI may not have rg/fd).
+	// Check for required CLI tools. Bench/smoke tests that need rg/fd call
+	// skipIfNoBenchTools(t) individually; report_test.go runs regardless.
 	for _, tool := range []string{"rg", "fd"} {
 		if _, err := exec.LookPath(tool); err != nil {
-			fmt.Fprintf(os.Stderr, "bench: required tool %q not found in PATH, skipping bench suite\n", tool)
-			os.Exit(0)
+			fmt.Fprintf(os.Stderr, "bench: tool %q not found in PATH — bench/smoke tests will be skipped\n", tool)
+			benchToolsMissing = true
+			break
 		}
 	}
 
@@ -217,8 +230,6 @@ func newMCPStdioClient(tb testing.TB, nocache bool) *client.Client {
 	env := []string{}
 	if nocache {
 		env = append(env, "KAS_MCP_NOCACHE=1")
-	} else {
-		env = append(env, "KAS_MCP_NOCACHE=0")
 	}
 
 	stdioTransport := transport.NewStdioWithOptions(

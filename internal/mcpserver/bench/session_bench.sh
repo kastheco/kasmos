@@ -106,7 +106,7 @@ if [[ "$SKIP_GO_BENCH" -eq 0 ]]; then
   REPORT_FILE="$(mktemp /tmp/mcp_bench_report_XXXXXX.json)"
   echo "── Go benchmark suite ────────────────────────────────────────────────"
   echo "report will be written to: ${REPORT_FILE}"
-  echo "(set KAS_MCP_NOCACHE=1 to disable the ristretto cache arm)"
+  echo "(the suite runs both mcp_cold and mcp_warm arms automatically)"
   echo ""
 
   if KAS_MCP_BENCH_REPORT="$REPORT_FILE" \

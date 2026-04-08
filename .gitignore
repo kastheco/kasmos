@@ -22,6 +22,7 @@ dist/
 # Plan markdown files — content lives in the task store DB, not on disk
 docs/plans/
 *.test
+internal/mcpserver/bench/testdata/kas_bench
 .mcp.json
 # Bundled skill data (large, fetched locally)
 .agents/skills/bubbletea/

@@ -14,6 +14,7 @@ import (
 // subprocess exposes at least the three tools the benchmark exercises:
 // read_file, grep, and find_files.
 func TestSmoke_StdioClientListsRequiredTools(t *testing.T) {
+	skipIfNoBenchTools(t)
 	c := newMCPStdioClient(t, false)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

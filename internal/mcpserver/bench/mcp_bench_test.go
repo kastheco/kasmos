@@ -107,6 +107,7 @@ func validateResult(b *testing.B, sc scenario, result *mcp.CallToolResult) {
 // shared benchSamples map via addBenchSample and flushed to
 // KAS_MCP_BENCH_REPORT on completion.
 func BenchmarkMCP(b *testing.B) {
+	skipIfNoBenchTools(b)
 	ctx := context.Background()
 
 	for _, sc := range scenarios {

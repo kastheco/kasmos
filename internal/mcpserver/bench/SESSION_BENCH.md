@@ -115,12 +115,10 @@ Key fields to compare:
 | JSON field | meaning |
 |------------|---------|
 | `.operations[].key` | scenario identifier, e.g. `read_small`, `grep_narrow` |
-| `.arms[] where .arm=="mcp_warm" | .latency.p50_ns` | MCP warm-path p50 latency (ns) |
-| `.arms[] where .arm=="mcp_cold" | .latency.p50_ns` | MCP cold-path p50 latency (ns) |
-| `.arms[] where .arm=="direct" | .latency.p50_ns` | direct function-call p50 |
-| `.arms[] where .arm=="bash" | .latency.p50_ns` | shell-subprocess p50 |
-| `.mcp_vs_direct` | multiplier: MCP p50 / direct p50 |
-| `.mcp_vs_bash` | multiplier: MCP p50 / bash p50 |
+| `.operations[].arms[]` (filter by `.arm`) | per-arm latency; arms are `mcp_cold`, `mcp_warm`, `direct`, `bash` |
+| `.latency.p50_ns` | p50 latency in nanoseconds within each arm |
+| `.mcp_vs_direct` | multiplier: MCP warm p50 / direct p50 |
+| `.mcp_vs_bash` | multiplier: MCP warm p50 / bash p50 |
 
 The "direct" arm simulates the cost of a built-in tool (in-process Go call with
 no subprocess). Compare it to the built-in timings you recorded in Step 2 to
@@ -128,23 +126,18 @@ validate that the synthetic baseline is in the right ballpark.
 
 ---
 
-## Step 4 — re-run with cache disabled (optional)
+## Step 4 — compare cold vs warm cache (built-in)
 
-To isolate the ristretto cache benefit, re-run the Go suite with:
-
-```sh
-KAS_MCP_NOCACHE=1 KAS_MCP_BENCH_REPORT=/tmp/report_nocache.json \
-  go test ./internal/mcpserver/bench/... -run '^$' -bench . -benchtime=1x
-```
-
-Then diff the two JSON reports:
+The benchmark suite already runs separate `mcp_cold` (cache disabled) and
+`mcp_warm` (cache enabled) arms in a single run. Compare them in the JSON
+report:
 
 ```sh
-jq -r '.operations[] | "\(.key)  p50=\(.arms[] | select(.arm=="mcp_warm") | .latency.p50_ns)"' \
+jq -r '.operations[] | "\(.key)  cold=\(.arms[] | select(.arm=="mcp_cold") | .latency.p50_ns / 1e6 | round)ms  warm=\(.arms[] | select(.arm=="mcp_warm") | .latency.p50_ns / 1e6 | round)ms"' \
   /tmp/mcp_bench_report_*.json
 ```
 
-A large p50 increase with `KAS_MCP_NOCACHE=1` confirms that caching is
+A large gap between cold and warm p50 confirms that the ristretto cache is
 contributing meaningfully to warm-path latency.
 
 ---

@@ -189,6 +189,7 @@ func parseFDOutputBench(data []byte) []string {
 // (read_file) and bare subprocess invocations of rg/fd without MCP or shell
 // startup overhead.  Arm label: "direct".
 func BenchmarkDirect(b *testing.B) {
+	skipIfNoBenchTools(b)
 	for _, sc := range scenarios {
 		sc := sc
 		b.Run(sc.key, func(b *testing.B) {
@@ -300,6 +301,7 @@ func benchDirectFindFiles(b *testing.B, sc scenario) {
 // command-parsing overhead by wrapping each command in "sh -lc".
 // Arm label: "bash".
 func BenchmarkBash(b *testing.B) {
+	skipIfNoBenchTools(b)
 	for _, sc := range scenarios {
 		sc := sc
 		b.Run(sc.key, func(b *testing.B) {
@@ -323,7 +325,8 @@ func benchBashReadFile(b *testing.B, sc scenario) {
 	path := filepath.Join(fixtureRoot, sc.file)
 	// cat -n numbers every line; aligns with the numbered-line output that
 	// agents read from the built-in Read tool.
-	shellCmd := fmt.Sprintf("cat -n %q", path)
+	sq := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
+	shellCmd := fmt.Sprintf("cat -n %s", sq(path))
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -344,11 +347,14 @@ func benchBashGrep(b *testing.B, sc scenario) {
 	b.Helper()
 	searchPath := filepath.Join(fixtureRoot, sc.path)
 
+	// Use single quotes to avoid double-escaping regex metacharacters (%q
+	// produces Go-quoted strings that break patterns like `fmt\.Errorf`).
+	sq := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 	var shellCmd string
 	if sc.glob != "" {
-		shellCmd = fmt.Sprintf("rg --no-messages -g %q %q %q", sc.glob, sc.pattern, searchPath)
+		shellCmd = fmt.Sprintf("rg --no-messages -g %s %s %s", sq(sc.glob), sq(sc.pattern), sq(searchPath))
 	} else {
-		shellCmd = fmt.Sprintf("rg --no-messages %q %q", sc.pattern, searchPath)
+		shellCmd = fmt.Sprintf("rg --no-messages %s %s", sq(sc.pattern), sq(searchPath))
 	}
 
 	b.ResetTimer()
@@ -372,11 +378,12 @@ func benchBashFindFiles(b *testing.B, sc scenario) {
 	searchPath := filepath.Join(fixtureRoot, sc.path)
 
 	var shellCmd string
+	sq := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 	if sc.maxDepth > 0 {
-		shellCmd = fmt.Sprintf("fd --color never --type f --glob %q --max-depth %d %q",
-			sc.pattern, sc.maxDepth, searchPath)
+		shellCmd = fmt.Sprintf("fd --color never --type f --glob %s --max-depth %d %s",
+			sq(sc.pattern), sc.maxDepth, sq(searchPath))
 	} else {
-		shellCmd = fmt.Sprintf("fd --color never --type f --glob %q %q", sc.pattern, searchPath)
+		shellCmd = fmt.Sprintf("fd --color never --type f --glob %s %s", sq(sc.pattern), sq(searchPath))
 	}
 
 	b.ResetTimer()
