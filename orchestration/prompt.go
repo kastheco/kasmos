@@ -8,7 +8,7 @@ import (
 )
 
 // BuildTaskPrompt constructs the prompt for a single task instance.
-func BuildTaskPrompt(planFile string, plan *taskparser.Plan, task taskparser.Task, waveNumber, totalWaves, peerCount int, meta *TaskMeta) string {
+func BuildTaskPrompt(planFile string, plan *taskparser.Plan, task taskparser.Task, waveNumber, totalWaves, peerCount int, project string, meta *TaskMeta) string {
 	var sb strings.Builder
 
 	sb.WriteString(fmt.Sprintf("Implement Task %d: %s\n\n", task.Number, task.Title))
@@ -21,8 +21,8 @@ func BuildTaskPrompt(planFile string, plan *taskparser.Plan, task taskparser.Tas
 	sb.WriteString("- Run scoped tests before committing: `go test ./pkg/... -run Test<Name> -v`\n")
 	sb.WriteString("- Verify build: `go build ./...`\n")
 	sb.WriteString("- Commit: `git add <specific-files> && git commit -m \"feat(task-N): description\"`\n")
-	sb.WriteString(fmt.Sprintf("- When done: signal completion with MCP `signal_create` (signal_type: \"implement-task-finished\", plan_file: \"%s\", payload: \"{\\\"wave\\\":%d,\\\"task\\\":%d}\"). Then stop.\n\n",
-		planFile, waveNumber, task.Number))
+	sb.WriteString(fmt.Sprintf("- When done: signal completion with MCP `signal_create` (signal_type: \"implement-task-finished\", plan_file: \"%s\", project: \"%s\", payload: \"{\\\"wave\\\":%d,\\\"task\\\":%d}\"). Then stop.\n\n",
+		planFile, project, waveNumber, task.Number))
 
 	// Plan context
 	header := plan.HeaderContext()
@@ -124,7 +124,7 @@ func BuildBlueprintSkipPrompt(planFile string, plan *taskparser.Plan) string {
 // BuildFixerPrompt builds the prompt for a fixer agent responding to reviewer
 // feedback. Unlike implementation prompts, it scopes work to cited review
 // findings and tells the agent not to resume broad plan execution.
-func BuildFixerPrompt(planFile, feedback string, reviewRound int) string {
+func BuildFixerPrompt(planFile, project, feedback string, reviewRound int) string {
 	var sb strings.Builder
 
 	trimmedFeedback := strings.TrimSpace(feedback)
@@ -136,7 +136,7 @@ func BuildFixerPrompt(planFile, feedback string, reviewRound int) string {
 	sb.WriteString(fmt.Sprintf("Current fix round: %d\n\n", reviewRound))
 	sb.WriteString("## Rules\n\n")
 	sb.WriteString("- You are a fixer responding to review findings, not an implementer.\n")
-	sb.WriteString(fmt.Sprintf("- Retrieve the full plan with `kas task show %s` for context, but do NOT resume broad plan implementation.\n", planFile))
+	sb.WriteString(fmt.Sprintf("- Retrieve the full plan: prefer MCP `task_show` (filename: %q, project: %q); fall back to `kas task show %s` for context, but do NOT resume broad plan implementation.\n", planFile, project, planFile))
 	sb.WriteString("- Fix only the cited review findings with minimal, targeted changes.\n")
 	sb.WriteString("- Investigate root causes before editing code.\n")
 	sb.WriteString("- Use `rg` (not grep), `sd` (not sed), `fd` (not find), `comby`/`ast-grep` for structural changes.\n")
@@ -158,7 +158,7 @@ func BuildFixerPrompt(planFile, feedback string, reviewRound int) string {
 // BuildElaborationPrompt returns the prompt for the architect-led elaboration pass.
 // The architect reads the plan, deeply reads the codebase for each task's files,
 // and expands task bodies with detailed implementation instructions.
-func BuildElaborationPrompt(planFile string) string {
+func BuildElaborationPrompt(planFile, project string) string {
 	return fmt.Sprintf(
 		"You are the architect agent. You turn a planner's high-level design into a "+
 			"concrete, coder-ready implementation plan. The planner focuses on *what* to build; "+
@@ -168,7 +168,7 @@ func BuildElaborationPrompt(planFile string) string {
 			"Preserve the planner's intended outcome but not necessarily its implementation strategy.\n\n"+
 			"Load the `kasmos-architect` skill before starting. Also load `cli-tools`.\n\n"+
 			"## Instructions\n\n"+
-			"1. Retrieve the plan: prefer MCP `task_show` (filename: \"%[1]s\"); fall back to `kas task show %[1]s`\n"+
+			"1. Retrieve the plan: prefer MCP `task_show` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task show %[1]s`\n"+
 			"2. For each task, read the codebase files listed in its **Files:** section. "+
 			"Study existing patterns, interfaces, function signatures, error handling, "+
 			"and data flow in those files and their neighbors.\n"+
@@ -185,30 +185,30 @@ func BuildElaborationPrompt(planFile string) string {
 			"   - Concrete code snippets where helpful\n"+
 			"5. Keep ## Wave headers and the plan header fields (Goal, Architecture, Tech Stack, Size). "+
 			"Everything else — task count, task content, file lists, wave assignment — is yours to change.\n"+
-			"6. Write the updated plan: prefer MCP `task_update_content` (filename: \"%[1]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
-			"7. Signal architect-pass completion: prefer MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"%[1]s\")\n"+
+			"6. Write the updated plan: prefer MCP `task_update_content` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
+			"7. Signal architect-pass completion: prefer MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"%[1]s\", project: \"%[2]s\")\n"+
 			"   - If MCP is unavailable, use `kas signal emit elaborator_finished %[1]s`; if CLI signaling is also unavailable, fallback: `touch .kasmos/signals/elaborator-finished-%[1]s`\n"+
 			"   - Keep the role wording as architect in your notes and output; only the completion signal name stays legacy.\n",
-		planFile,
+		planFile, project,
 	)
 }
 
 // BuildArchitectPrompt returns the prompt for an architect agent session.
 // The architect identifies task relationships and emits metadata for planning
 // and orchestration decisions.
-func BuildArchitectPrompt(planFile string) string {
+func BuildArchitectPrompt(planFile, project string) string {
 	return fmt.Sprintf(
 		"You are the architect agent. Your job: analyze a plan, identify architectural dependencies, and emit compact metadata for downstream orchestration.\n\n"+
 			"Load the `kasmos-architect` and `cli-tools` skills before starting.\n\n"+
 			"## Instructions\n\n"+
-			"1. Retrieve the plan: prefer MCP `task_show` (filename: \"%[1]s\"); fall back to `kas task show %[1]s`\n"+
+			"1. Retrieve the plan: prefer MCP `task_show` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task show %[1]s`\n"+
 			"2. For each task, classify it as `parallel` when it has no file or execution dependency on other tasks in the same wave; otherwise classify it as serial.\n"+
 			"3. Estimate token budgets for each task, including required context depth and expected implementation footprint.\n"+
-			"4. Write the enriched plan back: prefer MCP `task_update_content` (filename: \"%[1]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
+			"4. Write the enriched plan back: prefer MCP `task_update_content` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
 			"5. Write architect metadata to `.kasmos/cache/%[1]s-architect.json` using the schema example in `architect-v1.json`.\n"+
-			"6. Signal completion: prefer MCP `signal_create` (signal_type: \"architect-finished\", plan_file: \"%[1]s\"); fall back to `touch .kasmos/signals/architect-finished-%[1]s`\n"+
+			"6. Signal completion: prefer MCP `signal_create` (signal_type: \"architect-finished\", plan_file: \"%[1]s\", project: \"%[2]s\"); fall back to `touch .kasmos/signals/architect-finished-%[1]s`\n"+
 			"7. Note: app/FSM consumption of this new architect-finished signal is follow-up work and should be implemented separately.\n",
-		planFile,
+		planFile, project,
 	)
 }
 
@@ -216,35 +216,33 @@ func BuildArchitectPrompt(planFile string) string {
 // to add ## Wave headers to an existing plan that is missing them.
 // It instructs the planner to annotate the plan, persist it, and signal
 // completion so kasmos can resume the implementation flow.
-func BuildWaveAnnotationPrompt(planFile string) string {
+func BuildWaveAnnotationPrompt(planFile, project string) string {
 	return fmt.Sprintf(
 		"The plan %[1]s is missing ## Wave N headers required for kasmos wave orchestration. "+
-			"Retrieve the plan content with MCP `task_show` (filename: \"%[1]s\") — fall back to `kas task show %[1]s` if MCP is unavailable — then annotate it by wrapping "+
+			"Retrieve the plan content with MCP `task_show` (filename: \"%[1]s\", project: \"%[2]s\") — fall back to `kas task show %[1]s` if MCP is unavailable — then annotate it by wrapping "+
 			"all tasks under ## Wave N sections. "+
 			"Every plan needs at least ## Wave 1 — even single-task trivial plans. "+
 			"Keep all existing task content intact; only add the ## Wave headers.\n\n"+
 			"After annotating:\n"+
-			"1. Store the updated plan via MCP `task_update_content` (filename: \"%[1]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
-			"2. Signal completion: prefer MCP `signal_create` (signal_type: \"planner-finished\", plan_file: \"%[1]s\")\n"+
+			"1. Store the updated plan via MCP `task_update_content` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
+			"2. Signal completion: prefer MCP `signal_create` (signal_type: \"planner-finished\", plan_file: \"%[1]s\", project: \"%[2]s\")\n"+
 			"   - If MCP is unavailable, use `kas signal emit planner_finished %[1]s`; if CLI signaling is also unavailable, fallback: `touch .kasmos/signals/planner-finished-%[1]s`\n"+
 			"Do not edit plan-state.json directly.",
-		planFile,
+		planFile, project,
 	)
 }
 
 // BuildMasterReviewPrompt defines the review task prompt for the kasmos-master role.
 // Signal consumption is intentionally left for follow-up app/FSM work, so this builder
 // only standardizes the instructions and completion signal contract.
-func BuildMasterReviewPrompt(planFile, diffContent, testResults string) string {
+func BuildMasterReviewPrompt(planFile, project, diffContent, testResults string) string {
 	return fmt.Sprintf(
 		"You are the master review agent. Load the `kasmos-master` skill, read the plan with "+
-			"`kas task show %[1]s`, then review the proposed change for plan alignment and merge readiness.\n\n"+
+			"MCP `task_show` (filename: %[1]q, project: %[2]q) — fall back to `kas task show %[1]s` if MCP is unavailable — then review the proposed change for plan alignment and merge readiness.\n\n"+
 			"## Review Task\n"+
 			"- Determine whether the diff should be merged and signal your decision with `touch .kasmos/signals/master-approved-%[1]s` when complete.\n\n"+
-			"## Test Results\n%s\n\n"+
-			"## Diff\n%s\n",
-		planFile,
-		testResults,
-		diffContent,
+			"## Test Results\n%[4]s\n\n"+
+			"## Diff\n%[3]s\n",
+		planFile, project, diffContent, testResults,
 	)
 }

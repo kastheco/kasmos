@@ -391,12 +391,14 @@ func TestBuildTaskPrompt_Method(t *testing.T) {
 		},
 	}
 	orch := NewWaveOrchestrator("plan", plan)
+	orch.SetStore(nil, "testproject")
 	orch.StartNextWave()
 	prompt := orch.BuildTaskPrompt(plan.Waves[0].Tasks[0], 2)
 	assert.Contains(t, prompt, "Task 1")
 	assert.Contains(t, prompt, "Test goal")
 	assert.Contains(t, prompt, "Wave 1 of 1")
 	assert.Contains(t, prompt, "parallel") // peerCount > 1
+	assert.Contains(t, prompt, `project: "testproject"`)
 }
 
 func TestWaveOrchestrator_PreferredModelForTask(t *testing.T) {

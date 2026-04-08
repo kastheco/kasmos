@@ -1312,7 +1312,7 @@ func TestPatchWorktreeConfig_Idempotent_NoRewriteWhenUnchanged(t *testing.T) {
 }
 
 func TestLoadReviewPrompt_ContainsTieredStructure(t *testing.T) {
-	prompt := LoadReviewPrompt("test-plan.md", "test-plan", 2, "Round 1 — changes required")
+	prompt := LoadReviewPrompt("test-plan.md", "test-plan", "myproject", 2, "Round 1 — changes required")
 	assert.Contains(t, prompt, "Phase 0")
 	assert.Contains(t, prompt, "Phase 1")
 	assert.Contains(t, prompt, "Phase 2")
@@ -1325,10 +1325,11 @@ func TestLoadReviewPrompt_ContainsTieredStructure(t *testing.T) {
 	assert.NotContains(t, prompt, "{{PLAN_FILE}}")
 	assert.NotContains(t, prompt, "{{PLAN_FILENAME}}")
 	assert.NotContains(t, prompt, "{{PLAN_NAME}}")
+	assert.NotContains(t, prompt, "{{PROJECT}}")
 }
 
 func TestLoadReviewPrompt_UsesMergeBase(t *testing.T) {
-	prompt := LoadReviewPrompt("test-plan.md", "test-plan", 1, "")
+	prompt := LoadReviewPrompt("test-plan.md", "test-plan", "myproject", 1, "")
 	assert.Contains(t, prompt, "merge-base")
 	assert.Contains(t, prompt, "MERGE_BASE")
 	assert.NotContains(t, prompt, "git diff main..HEAD",
@@ -1339,13 +1340,19 @@ func TestLoadReviewPrompt_UsesMergeBase(t *testing.T) {
 }
 
 func TestLoadReviewPrompt_UsesGatewayReviewSignals(t *testing.T) {
-	prompt := LoadReviewPrompt("test-plan.md", "test-plan", 1, "")
-	assert.Contains(t, prompt, "signal_create` (signal_type: \"review-approved\", plan_file: \"test-plan.md\"")
-	assert.Contains(t, prompt, "signal_create` (signal_type: \"review-changes\", plan_file: \"test-plan.md\"")
+	prompt := LoadReviewPrompt("test-plan.md", "test-plan", "myproject", 1, "")
+	assert.Contains(t, prompt, "signal_create` (signal_type: \"review-approved\", plan_file: \"test-plan.md\", project: \"myproject\"")
+	assert.Contains(t, prompt, "signal_create` (signal_type: \"review-changes\", plan_file: \"test-plan.md\", project: \"myproject\"")
 	assert.Contains(t, prompt, "kas signal emit review_approved test-plan.md")
 	assert.Contains(t, prompt, "kas signal emit review_changes_requested test-plan.md")
 	assert.NotContains(t, prompt, ".kasmos/signals/review-approved-")
 	assert.NotContains(t, prompt, ".kasmos/signals/review-changes-")
+}
+
+func TestLoadReviewPrompt_SubstitutesProject(t *testing.T) {
+	prompt := LoadReviewPrompt("test-plan.md", "test-plan", "myproject", 1, "")
+	assert.Contains(t, prompt, `project: "myproject"`)
+	assert.NotContains(t, prompt, "{{PROJECT}}")
 }
 
 func ptrFloat(f float64) *float64 { return &f }

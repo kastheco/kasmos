@@ -11,19 +11,21 @@ import (
 )
 
 func TestBuildReviewerAgentSpec(t *testing.T) {
-	spec := BuildReviewerAgentSpec("feature", 5, "round 5 findings")
+	spec := BuildReviewerAgentSpec("feature", "myproject", 5, "round 5 findings")
 	assert.Equal(t, "feature-review-6", spec.Title)
 	assert.Equal(t, 6, spec.ReviewCycle)
 	assert.Contains(t, spec.Prompt, "Current review round: 6")
 	assert.Contains(t, spec.Prompt, "round 5 findings")
+	assert.Contains(t, spec.Prompt, `project: "myproject"`)
 }
 
 func TestBuildFixerAgentSpec(t *testing.T) {
-	spec := BuildFixerAgentSpec("feature", 6, "fix these")
+	spec := BuildFixerAgentSpec("feature", "myproject", 6, "fix these")
 	assert.Equal(t, "feature-fix-6", spec.Title)
 	assert.Equal(t, 6, spec.ReviewCycle)
 	assert.Contains(t, spec.Prompt, "Current fix round: 6")
 	assert.Contains(t, spec.Prompt, "fix these")
+	assert.Contains(t, spec.Prompt, `project: "myproject"`)
 }
 
 func TestBuildLifecycleAgentTitle(t *testing.T) {
@@ -34,10 +36,11 @@ func TestBuildLifecycleAgentTitle(t *testing.T) {
 }
 
 func TestBuildArchitectAgentSpec(t *testing.T) {
-	spec := BuildArchitectAgentSpec("feature")
+	spec := BuildArchitectAgentSpec("feature", "myproject")
 	assert.Equal(t, "feature-architect", spec.Title)
-	assert.Contains(t, spec.Prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"feature\")")
+	assert.Contains(t, spec.Prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"feature\", project: \"myproject\")")
 	assert.Contains(t, spec.Prompt, "kas signal emit elaborator_finished feature")
+	assert.Contains(t, spec.Prompt, `project: "myproject"`)
 }
 
 func TestBuildWaveTaskTitle(t *testing.T) {

@@ -219,7 +219,7 @@ func TestSpawnTaskAgent_ReviewKeepsReviewerCompatibilityMirrorSynced(t *testing.
 }
 
 func TestBuildChatAboutTaskPrompt_UsesMCPFirst(t *testing.T) {
-	prompt := buildChatAboutTaskPrompt("architect-plan-location", taskstate.TaskEntry{
+	prompt := buildChatAboutTaskPrompt("architect-plan-location", "myproject", taskstate.TaskEntry{
 		Status:      taskstate.StatusReady,
 		Description: "architect-plan-location",
 		Branch:      "plan/architect-plan-location",
@@ -228,6 +228,7 @@ func TestBuildChatAboutTaskPrompt_UsesMCPFirst(t *testing.T) {
 
 	assert.Contains(t, prompt, "MCP `task_show`")
 	assert.Contains(t, prompt, `filename: "architect-plan-location"`)
+	assert.Contains(t, prompt, `project: "myproject"`)
 	assert.Contains(t, prompt, "fall back to `kas task show architect-plan-location`")
 	assert.Contains(t, prompt, "## User Question")
 }

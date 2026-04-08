@@ -1852,7 +1852,7 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 	}
 	cycle, _ := m.taskState.ReviewCycle(planFile)
 	planName := taskstate.DisplayName(planFile)
-	spec := orchestration.BuildReviewerAgentSpec(planFile, cycle, m.latestReviewFeedback(planFile))
+	spec := orchestration.BuildReviewerAgentSpec(planFile, m.taskStoreProject, cycle, m.latestReviewFeedback(planFile))
 	title := spec.Title
 	if m.hasLiveOrPendingInstance(planFile, session.AgentTypeReviewer, title) {
 		return nil
@@ -2243,7 +2243,7 @@ func (m *home) spawnFixerWithFeedback(planFile, feedback string) tea.Cmd {
 	}
 	cycle, _ := m.taskState.ReviewCycle(planFile)
 	planName := taskstate.DisplayName(planFile)
-	spec := orchestration.BuildFixerAgentSpec(planFile, cycle, feedback)
+	spec := orchestration.BuildFixerAgentSpec(planFile, m.taskStoreProject, cycle, feedback)
 
 	// Kill any previous fixer (and any legacy feedback-coder) for this plan so
 	// the new session gets a fresh tmux session instead of reattaching to a
@@ -2332,7 +2332,7 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	planName := taskstate.DisplayName(planFile)
-	spec := orchestration.BuildArchitectAgentSpec(planFile)
+	spec := orchestration.BuildArchitectAgentSpec(planFile, m.taskStoreProject)
 
 	// Clear any stale elaborator_finished sentinel before starting a new architect pass.
 	// Signal processing is edge-unaware, so a stale file would advance the current
@@ -2762,49 +2762,49 @@ func (m *home) taskBranch(planFile string) string {
 // buildPlanningPrompt returns the initial prompt for a planner agent session.
 // The prompt explicitly requires ## Wave N headers because kasmos uses them
 // for wave orchestration — without them, implementation cannot start.
-func buildPlanningPrompt(planFile, planName, description string) string {
+func buildPlanningPrompt(planFile, planName, description, project string) string {
 	return fmt.Sprintf(
 		"Plan %s. Goal: %s. "+
 			"Use the `kasmos-planner` skill. "+
 			"The plan MUST include ## Wave N sections (at minimum ## Wave 1) "+
 			"grouping all tasks — kasmos requires Wave headers to orchestrate implementation. "+
-			"After writing the plan, store it with MCP `task_update_content` (filename: \"%[3]s\") "+
-			"and then signal completion with MCP `signal_create` (signal_type: \"planner-finished\", plan_file: \"%[3]s\"). "+
+			"After writing the plan, store it with MCP `task_update_content` (filename: \"%[3]s\", project: \"%[4]s\") "+
+			"and then signal completion with MCP `signal_create` (signal_type: \"planner-finished\", plan_file: \"%[3]s\", project: \"%[4]s\"). "+
 			"If MCP is unavailable, fall back to `kas task update-content %[3]s` (pipe content) and `kas signal emit planner_finished %[3]s`.",
-		planName, description, planFile,
+		planName, description, planFile, project,
 	)
 }
 
 // buildImplementPrompt returns the prompt for a coder agent session.
 // Agents retrieve plan content from the task store via MCP or CLI and execute all tasks.
-func buildImplementPrompt(planFile string) string {
+func buildImplementPrompt(planFile, project string) string {
 	return fmt.Sprintf(
-		"Implement %s. Retrieve the full plan with MCP `task_show` (filename: \"%[1]s\") and execute all tasks sequentially. "+
+		"Implement %s. Retrieve the full plan with MCP `task_show` (filename: \"%[1]s\", project: \"%[2]s\") and execute all tasks sequentially. "+
 			"If MCP is unavailable, fall back to `kas task show %[1]s`. "+
 			"Use rg/sd/fd instead of grep/sed/find. Scope tests with -run TestName. Do not load skills.",
-		planFile,
+		planFile, project,
 	)
 }
 
 // buildSoloPrompt returns a minimal prompt for a solo agent session.
-// If planFile is non-empty, it references the plan via kas task show. Otherwise just name + description.
-func buildSoloPrompt(planName, description, planFile string) string {
+// If planFile is non-empty, it references the plan via MCP task_show with project, or CLI fallback.
+func buildSoloPrompt(planName, description, planFile, project string) string {
 	const rules = "Commit with task number in message. Use rg/sd/fd instead of grep/sed/find. Scope tests with -run TestName. Do not load skills."
 	if planFile != "" {
 		return fmt.Sprintf(
-			"Implement %s. Goal: %s. Retrieve the full plan with `kas task show %s`. %s",
-			planName, description, planFile, rules,
+			"Implement %s. Goal: %s. Retrieve the full plan with MCP `task_show` (filename: %q, project: %q) — fall back to `kas task show %s`. %s",
+			planName, description, planFile, project, planFile, rules,
 		)
 	}
 	return fmt.Sprintf("Implement %s. Goal: %s. %s", planName, description, rules)
 }
 
 // buildModifyTaskPrompt returns the prompt for modifying an existing plan.
-func buildModifyTaskPrompt(planFile string) string {
+func buildModifyTaskPrompt(planFile, project string) string {
 	return fmt.Sprintf(
-		"Modify existing plan %s. Retrieve current content with `kas task show %s`. "+
+		"Modify existing plan %s. Retrieve current content with MCP `task_show` (filename: %q, project: %q) — fall back to `kas task show %s`. "+
 			"Keep the same filename and update only what changed.",
-		planFile, planFile,
+		planFile, planFile, project, planFile,
 	)
 }
 
@@ -3111,7 +3111,7 @@ func (m *home) spawnTaskAgent(planFile, action, prompt string) (tea.Model, tea.C
 	} else if action == "review" {
 		// Use the shared reviewer builder so every manual and automated review
 		// round uses the same title/cycle numbering.
-		spec := orchestration.BuildReviewerAgentSpec(planFile, entry.ReviewCycle, m.latestReviewFeedback(planFile))
+		spec := orchestration.BuildReviewerAgentSpec(planFile, m.taskStoreProject, entry.ReviewCycle, m.latestReviewFeedback(planFile))
 		reviewCycle = spec.ReviewCycle
 		title = spec.Title
 		if strings.TrimSpace(prompt) == "" {
@@ -3558,7 +3558,7 @@ func (m *home) discoverTmuxSessions() tea.Cmd {
 }
 
 // buildChatAboutTaskPrompt builds the custodian prompt for a chat-about-plan session.
-func buildChatAboutTaskPrompt(planFile string, entry taskstate.TaskEntry, question string) string {
+func buildChatAboutTaskPrompt(planFile, project string, entry taskstate.TaskEntry, question string) string {
 	name := taskstate.DisplayName(planFile)
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("You are answering a question about the plan '%s'.\n\n", name))
@@ -3574,7 +3574,7 @@ func buildChatAboutTaskPrompt(planFile string, entry taskstate.TaskEntry, questi
 	if entry.Topic != "" {
 		sb.WriteString(fmt.Sprintf("- **Topic:** %s\n", entry.Topic))
 	}
-	sb.WriteString(fmt.Sprintf("\nRetrieve the full plan with MCP `task_show` (filename: %q) for details. If that tool is unavailable, fall back to `kas task show %s`.\n\n", planFile, planFile))
+	sb.WriteString(fmt.Sprintf("\nRetrieve the full plan with MCP `task_show` (filename: %q, project: %q) for details. If that tool is unavailable, fall back to `kas task show %s`.\n\n", planFile, project, planFile))
 	sb.WriteString("## User Question\n\n")
 	sb.WriteString(question)
 	return sb.String()
@@ -3592,7 +3592,7 @@ func (m *home) spawnChatAboutTask(planFile, question string) (tea.Model, tea.Cmd
 	if !ok {
 		return m, m.handleError(fmt.Errorf("task not found: %s", planFile))
 	}
-	prompt := buildChatAboutTaskPrompt(planFile, entry, question)
+	prompt := buildChatAboutTaskPrompt(planFile, m.taskStoreProject, entry, question)
 	planName := taskstate.DisplayName(planFile)
 	title := planName + "-chat"
 

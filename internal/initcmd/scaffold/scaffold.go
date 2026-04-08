@@ -1099,7 +1099,7 @@ func SyncScaffold(dir string, agents []harness.AgentConfig) ([]WriteResult, erro
 
 // LoadReviewPrompt reads the embedded review prompt template and fills in the plan placeholders.
 // Falls back to a minimal inline prompt if the template is missing from the binary.
-func LoadReviewPrompt(planFile, planName string, reviewRound int, previousFeedback string) string {
+func LoadReviewPrompt(planFile, planName, project string, reviewRound int, previousFeedback string) string {
 	content, err := templates.ReadFile("templates/shared/review-prompt.md")
 	if err != nil {
 		return fmt.Sprintf("Review the implementation of plan: %s\nPlan file: %s\nCurrent review round: %d", planName, planFile, reviewRound)
@@ -1114,6 +1114,7 @@ func LoadReviewPrompt(planFile, planName string, reviewRound int, previousFeedba
 	result := strings.ReplaceAll(string(content), "{{PLAN_FILE}}", planFile)
 	result = strings.ReplaceAll(result, "{{PLAN_FILENAME}}", filepath.Base(planFile))
 	result = strings.ReplaceAll(result, "{{PLAN_NAME}}", planName)
+	result = strings.ReplaceAll(result, "{{PROJECT}}", project)
 	result = strings.ReplaceAll(result, "{{CURRENT_REVIEW_ROUND}}", strconv.Itoa(reviewRound))
 	result = strings.ReplaceAll(result, "{{PREVIOUS_REVIEW_CONTEXT}}", previousContext)
 	return result

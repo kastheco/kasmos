@@ -494,7 +494,7 @@ func (s *TmuxSpawner) spawnOnMainBranch(_ context.Context, opts loop.SpawnOpts, 
 	title := ""
 	prompt := opts.Prompt
 	if agentType == session.AgentTypeElaborator {
-		spec := orchestration.BuildArchitectAgentSpec(opts.PlanFile)
+		spec := orchestration.BuildArchitectAgentSpec(opts.PlanFile, opts.Project)
 		title = spec.Title
 		if prompt == "" {
 			prompt = spec.Prompt
