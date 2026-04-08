@@ -13,62 +13,41 @@ All worktrees live under the main repository root in a `.worktrees/` directory:
 ```
 <repo-root>/
 ├── .git/             ← main repository
-├── .kasmos/          ← kasmos config and taskstore
+├── .kasmos/          ← repo-local config and runtime state
 ├── .worktrees/
 │   ├── kas/feature-a_1718000000000000/   ← agent 1
 │   └── kas/feature-b_1718000000000001/   ← agent 2
 └── ...
 ```
 
-The path is constructed in `session/git/worktree.go`:
-
-```go
-func getWorktreeDirectory(repoPath string) (string, error) {
-    if repoPath == "" {
-        return "", fmt.Errorf("repo path is required for worktree directory")
-    }
-    return filepath.Join(repoPath, ".worktrees"), nil
-}
-```
-
 Each worktree directory name is `<branch-prefix><session-name>_<unix-nano>` to avoid collisions when agents are restarted.
 
-## config anchoring
+## config anchoring and the task store
 
-kasmos configuration always lives in the **main repo root**, not in individual worktrees. `config.ResolveRepoRoot()` handles both cases:
+kasmos separates two kinds of state:
 
-**regular repo**: `.git` is a directory → the current directory is the repo root.
+- **repo-local runtime state** lives under `<repo-root>/.kasmos/`: `config.toml`, signal files, cache, and worktree checkout metadata. This state is specific to the repository.
+- **the task store** (`~/.config/kasmos/taskstore.db`) is a single global SQLite database shared across all projects on the machine. All worktrees and all concurrent agents read and write the same database, which is how the daemon and parallel coders coordinate.
 
-**git worktree**: `.git` is a file containing `gitdir: <path>` → kasmos reads the `commondir` pointer inside that path to locate the main repository's `.git` directory, then takes its parent.
-
-```go
-// ResolveRepoRoot returns the main repository root for dir.
-// It supports both normal repos and git worktrees.
-func ResolveRepoRoot(dir string) (string, error) {
-    // ... reads .git file, follows commondir pointer ...
-    return filepath.Dir(mainGitDir), nil
-}
-```
-
-This means `<repo-root>/.kasmos/taskstore.db` is always the same database no matter which worktree an agent is running in.
+`config.GetConfigDir()` resolves the main repo root even when called from inside a git worktree (where `.git` is a file rather than a directory), so all worktrees share the same repo-local config while still pointing at the same global task store.
 
 ## creating a worktree
 
-When an agent is launched, `session/git/worktree.go` creates the worktree:
+When an agent is launched, kasmos creates the worktree:
 
-1. `NewGitWorktree(repoPath, sessionName)` generates a branch name from `config.BranchPrefix` + session name, sanitizes it, and picks a unique path under `.worktrees/`.
-2. `GitWorktree.Setup()` runs `git worktree add -b <branch> <path>` to create the worktree.
-3. The instance stores `worktreePath` and `branchName` so it can be restored later.
+1. a branch name is generated from the configured branch prefix and session name, sanitized, and given a unique path under `.worktrees/`.
+2. `git worktree add -b <branch> <path>` creates the worktree on disk.
+3. the instance stores the worktree path and branch name so it can be restored later.
 
-To use an existing branch, `NewGitWorktreeOnBranch(repoPath, sessionName, branch)` skips branch name generation.
+To use an existing branch, kasmos accepts an explicit branch name and skips generation.
 
 ## checkout flow
 
 When you press `c` in the TUI on a running instance:
 
-1. The instance is paused (agent process killed; branch preserved).
-2. The branch name is copied to the clipboard.
-3. kasmos shows a help screen (`helpTypeInstanceCheckout`) explaining how to check out the branch in your main working tree.
+1. the instance is paused (agent process killed; branch preserved).
+2. the branch name is copied to the clipboard.
+3. kasmos shows a help screen explaining how to check out the branch in your main working tree.
 
 You can then `git checkout <branch>` or open the branch in your editor to inspect and continue the work.
 
@@ -76,19 +55,19 @@ You can then `git checkout <branch>` or open the branch in your editor to inspec
 
 When you resume a paused instance:
 
-1. `instance.Resume()` in `session/instance_lifecycle.go` calls `Start()` again.
-2. The execution session (tmux or headless) is recreated from the stored `ExecutionMode`, `Program`, and `worktreePath`.
-3. The agent restarts inside the same worktree, with the same branch, and can pick up where it left off.
+1. `Resume()` calls `Start()` again.
+2. the execution session (tmux or headless) is recreated from the stored execution mode, program, and worktree path.
+3. the agent restarts inside the same worktree, with the same branch, and can pick up where it left off.
 
 ## orphan adoption
 
 Tmux sessions that existed before kasmos was started — or whose kasmos instances were lost — are called **orphaned sessions**. Press `T` in the TUI to browse them. kasmos shows which tmux pane names look like agent sessions and lets you adopt them as tracked instances.
 
-Orphan adoption reconstructs a minimal `Instance` from the tmux session metadata so kasmos can track its status, pause it cleanly, and associate it with a task file.
+Orphan adoption reconstructs a minimal instance from the tmux session metadata so kasmos can track its status, pause it cleanly, and associate it with a task file.
 
 ## shared worktree safety (for agents)
 
-When `KASMOS_TASK` or `KASMOS_PEERS` is set, multiple agents are working in the same worktree tree (wave parallelism). Each agent is assigned non-overlapping files by the architect metadata. Key rules:
+When `KASMOS_TASK` or `KASMOS_PEERS` is set, multiple agents are working in the same worktree (wave parallelism). Each agent is assigned non-overlapping files by the architect metadata. Key rules:
 
 - Never `git add .` or `git add -A` — only add your assigned files
 - Never run formatters across the whole project

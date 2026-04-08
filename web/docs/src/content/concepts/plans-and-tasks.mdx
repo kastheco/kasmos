@@ -1,6 +1,6 @@
 # plans and tasks
 
-kasmos uses the terms **task** and **plan** interchangeably across the codebase (older code paths say "plan"; the CLI and task store say "task"). A task is a markdown document that the parser in `config/taskparser/taskparser.go` reads to extract waves, tasks, and header metadata.
+A **task** is a markdown document that kasmos parses to extract waves, task headers, and metadata. The CLI command group is `kas task ...`; you may also see `plan` in older internal identifiers — both refer to the same concept.
 
 ## required header fields
 
@@ -12,12 +12,7 @@ Every task document must contain these bold key-value fields near the top:
 **Tech Stack:** languages, frameworks, and tools involved
 ```
 
-The parser extracts them with:
-- `**Goal:**` → `Plan.Goal`
-- `**Architecture:**` → `Plan.Architecture`
-- `**Tech Stack:**` → `Plan.TechStack`
-
-These fields are injected into every agent prompt via `Plan.HeaderContext()`, giving all coder agents full context about the overall goal.
+These fields are injected into every agent prompt, giving all coder agents full context about the overall goal.
 
 ## wave headers
 
@@ -29,7 +24,7 @@ Waves partition tasks into sequential groups. The parser accepts both level-2 an
 ### Wave 3
 ```
 
-At least one wave header is required. Without it, `taskparser.Parse` returns an error:
+At least one wave header is required. Without it, parsing returns an error:
 
 ```
 no wave headers found in plan; add ## Wave N sections before implementing
@@ -74,7 +69,7 @@ Attach the middleware to protected routes...
 
 ## the task store is the source of truth
 
-The markdown file on disk holds the task **content**. Status, branch, topic, timestamps, and subtask state live in the task store (a SQLite database at `<repo-root>/.kasmos/taskstore.db`).
+The markdown file on disk holds the task **content**. Status, branch, topic, timestamps, and subtask state live in the task store — a SQLite database at `~/.config/kasmos/taskstore.db` (shared across all projects on the machine).
 
 | operation | command |
 |-----------|---------|
@@ -88,4 +83,4 @@ The store normalizes filenames: a trailing `.md` suffix is stripped, so `my-feat
 
 ## wave orchestration skipping
 
-For very small tasks (configurable via `blueprint_skip_threshold` in `kasmos.toml`), kasmos skips wave orchestration entirely and hands the whole task to a single coder agent. See [waves](/docs/concepts/waves) for details.
+For very small tasks (configurable via `blueprint_skip_threshold` in `.kasmos/config.toml`), kasmos skips wave orchestration entirely and hands the whole task to a single coder agent. See [waves](/docs/concepts/waves) for details.

@@ -8,28 +8,7 @@ Multiple tasks in the same codebase area can create merge conflicts or race cond
 
 ## the collision gate
 
-The collision gate is implemented in `config/taskstate/taskstate.go`:
-
-```go
-// HasRunningCoderInTopic checks if any plan in the given topic (other than
-// excludePlan) has status StatusImplementing. Returns the conflicting plan filename.
-func (ps *TaskState) HasRunningCoderInTopic(topic, excludePlan string) (bool, string) {
-    if topic == "" {
-        return false, ""
-    }
-    for filename, entry := range ps.Plans {
-        if filename == excludePlan {
-            continue
-        }
-        if entry.Topic == topic && entry.Status == StatusImplementing {
-            return true, filename
-        }
-    }
-    return false, ""
-}
-```
-
-When `HasRunningCoderInTopic` returns `true`, `app/app_actions.go` shows a warning overlay naming the conflicting task. You can:
+When you try to start a coder on a task, kasmos checks whether any other task in the same topic is already in the `implementing` status. If one is found, kasmos shows a warning overlay naming the conflicting task. You can:
 
 - **cancel** and wait for the existing task to finish
 - **confirm** to proceed anyway (you take responsibility for merge conflicts)
@@ -38,7 +17,7 @@ The gate only applies to the `implementing` status. Planning, reviewing, and don
 
 ## tasks without a topic
 
-Tasks with an empty topic (`topic == ""`) bypass the gate entirely. `HasRunningCoderInTopic` returns `false` immediately when the topic string is empty. This is the default for tasks created without an explicit topic assignment.
+Tasks with no topic assigned bypass the gate entirely. This is the default for tasks created without an explicit topic.
 
 ## setting a topic
 
@@ -49,14 +28,6 @@ kas task register my-feature.md
 # then in the TUI: select task → context menu → assign topic
 ```
 
-## topic entries
+## topic groups
 
-The task store keeps a `TopicEntry` for each unique topic name, recording when it was first created:
-
-```go
-type TopicEntry struct {
-    CreatedAt time.Time `json:"created_at"`
-}
-```
-
-Topics are listed in the TUI sidebar as collapsible groups. Expanding a topic shows all tasks assigned to it, their statuses, and any running agents.
+The TUI sidebar shows topics as collapsible groups. Expanding a topic shows all tasks assigned to it, their statuses, and any running agents.
