@@ -2,23 +2,28 @@
 
 The task store is the authoritative database for all kasmos task state. It tracks task status, content, subtasks, phase timestamps, PR state, review cycles, and signals. kasmos supports two backends:
 
-1. **local SQLite** (default) — a single file on disk, no server required.
+1. **global SQLite** (default) — a single machine-wide database shared by all repos.
 2. **remote HTTP store** — a kasmos server instance, used for team or CI environments.
 
-## local SQLite
+## global SQLite
 
 **Default path:** `~/.config/kasmos/taskstore.db`
 
-The task store is a **global, cross-project database**. Tasks from different repositories are separated by project name (derived from the repo root directory name), so one file serves all your projects. All git worktrees of the same repository share the same project namespace in this store.
+The task store is a **machine-global, cross-project database** — not repo-local. Tasks from different repositories are separated by project name (derived from the repo root directory name), so one file serves all your projects. All git worktrees of the same repository share the same project namespace.
+
+The `kasmosdb` systemd service manages the database. Agents connect to it via the kasmos MCP server (`kas mcp`), which opens the SQLite backend directly over stdio.
 
 ```sh
 # inspect the resolved DB path
 kas debug
+
+# check the kasmosdb service
+systemctl --user status kasmosdb
 ```
 
 ### SQLite characteristics
 
-- **No configuration required** — kasmos creates the file on first use.
+- **No per-repo configuration required** — kasmos creates the global file on first use.
 - **Migrations run automatically** when the store opens.
 - **Concurrent access** from multiple agents is safe because kasmos uses WAL mode and per-operation transactions.
 - **Worktree-safe** — all worktrees of the same repository share one project namespace in the global store.
