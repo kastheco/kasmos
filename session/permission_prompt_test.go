@@ -141,12 +141,48 @@ This command requires approval
 			want:    nil,
 		},
 		{
-			name: "claude do you want to proceed requires structured detail",
+			name: "claude do you want to proceed with question at bottom detects prompt",
 			content: `Tool approval required
 This command requires approval
 Do you want to proceed?
 1. Yes, allow once
 2. No
+`,
+			program: "claude",
+			want: &PermissionPrompt{
+				Description: "This command requires approval",
+				Pattern:     "This command requires approval",
+			},
+		},
+		{
+			name: "claude tool error before question detected",
+			content: `Bash command
+
+Run shell command
+
+Unhandled node type: string
+
+Do you want to proceed?
+) 1. Yes
+  2. No
+
+Esc to cancel · Tab to amend · ctrl+e to explain
+`,
+			program: "claude",
+			want: &PermissionPrompt{
+				Description: "Unhandled node type: string",
+				Pattern:     "Unhandled node type: string",
+			},
+		},
+		{
+			name: "claude stale prompt with content after is not detected",
+			content: `Bash: git status
+Do you want to proceed?
+1. Yes, allow once
+2. No
+
+I'll try a different approach.
+Tool error: command failed
 `,
 			program: "claude",
 			want:    nil,

@@ -48,6 +48,7 @@ func Find(plainContent string) *Prompt {
 // findNumberedPrompt detects the current Claude Code numbered-choice dialog.
 func findNumberedPrompt(lines []string) *Prompt {
 	firstChoiceIdx := -1
+	lastChoiceIdx := -1
 	hasYes := false
 	hasNo := false
 
@@ -58,12 +59,21 @@ func findNumberedPrompt(lines []string) *Prompt {
 			if firstChoiceIdx < 0 {
 				firstChoiceIdx = i
 			}
+			lastChoiceIdx = i
 		} else if isNumberedNo(t) {
 			hasNo = true
+			lastChoiceIdx = i
 		}
 	}
 
 	if !hasYes || !hasNo || firstChoiceIdx < 0 {
+		return nil
+	}
+
+	// An active permission prompt sits at the bottom of the pane. If
+	// substantial content follows the last numbered choice, the choices
+	// are stale scrollback from an already-answered prompt.
+	if !isPromptAtBottom(lines, lastChoiceIdx) {
 		return nil
 	}
 
@@ -74,6 +84,21 @@ func findNumberedPrompt(lines []string) *Prompt {
 	} else {
 		description = findStructuredDescriptionBefore(lines, firstChoiceIdx)
 	}
+
+	// When a recognized permission question appears with numbered choices
+	// at the pane bottom, the structural evidence is definitive — accept
+	// even without a colon-prefixed tool description. Fall back to any
+	// non-empty, non-question content line above the question.
+	if description == "" && hasQuestion {
+		for i := questionIdx - 1; i >= 0; i-- {
+			t := strings.TrimSpace(lines[i])
+			if t != "" && !strings.HasSuffix(t, "?") {
+				description = t
+				break
+			}
+		}
+	}
+
 	if description == "" {
 		return nil
 	}
@@ -84,6 +109,28 @@ func findNumberedPrompt(lines []string) *Prompt {
 	}
 
 	return &Prompt{Description: description, Pattern: pattern}
+}
+
+// isPromptAtBottom returns true when nothing but blank lines and footer
+// chrome (keyboard-hint bars) follows the last numbered choice. This
+// prevents stale prompts in the scrollback from triggering detection.
+func isPromptAtBottom(lines []string, lastChoiceIdx int) bool {
+	for i := lastChoiceIdx + 1; i < len(lines); i++ {
+		t := strings.TrimSpace(lines[i])
+		if t == "" || isFooterChrome(t) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// isFooterChrome returns true for Claude Code's bottom-bar lines
+// (e.g. "Esc to cancel · Tab to amend · ctrl+e to explain").
+func isFooterChrome(line string) bool {
+	return strings.Contains(line, "Esc to cancel") ||
+		strings.Contains(line, "ctrl+e to explain") ||
+		strings.Contains(line, "Tab to amend")
 }
 
 // findLegacyPrompt detects the old Claude Code "Yes" / "No" permission dialog

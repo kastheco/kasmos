@@ -116,6 +116,19 @@ func TestClaudeAdapter_DetectPrompt(t *testing.T) {
 			want: false,
 		},
 		{
+			name: "stale numbered prompt with tool error output returns false",
+			content: strings.Join([]string{
+				"Bash: git diff",
+				"Do you want to proceed?",
+				"1. Yes, allow once",
+				"2. No",
+				"",
+				"The diff shows no changes.",
+				"Tool error: exit code 1",
+			}, "\n"),
+			want: false,
+		},
+		{
 			name:    "active work suppresses stale review marker",
 			content: strings.Join([]string{"No, and tell Claude what to do differently", "Running go test ./..."}, "\n"),
 			want:    false,
