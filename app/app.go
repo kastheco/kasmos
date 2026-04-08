@@ -2643,7 +2643,7 @@ func (m *home) View() tea.View {
 	}
 	accentView := ""
 	if m.state == stateFocusAgent {
-		accentView = ui.NewAccentStrip("#eb6f92", m.termWidth)
+		// No accent strip in focus mode — the rose menu bar extends to the bottom edge.
 	} else if m.appConfig != nil {
 		accentView = ui.NewAccentStrip(m.appConfig.AccentColor, m.termWidth)
 	}

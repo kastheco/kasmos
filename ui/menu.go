@@ -283,7 +283,7 @@ func (m *Menu) renderFocusMode() string {
 	frame := focusModeFrames[int(time.Now().UnixMilli()/100)%len(focusModeFrames)]
 
 	// Build styled segments — all on the rose background.
-	label := focusBarStyle.Render(" interactive") + focusBarSpinnerStyle.Render(" "+frame)
+	label := focusBarStyle.Render("interactive") + focusBarSpinnerStyle.Render(" "+frame)
 	hint := focusBarDimStyle.Render("ctrl+space") + focusBarStyle.Render(" exit")
 	tmux := ""
 	if m.tmuxSessionCount > 0 {
@@ -317,12 +317,13 @@ func (m *Menu) renderFocusMode() string {
 
 	line := sp(leftPad) + centerBlock + sp(rightPad) + tmux
 
-	// Ensure the line fills exactly m.width — lipgloss Width pads with
-	// background-colored spaces.
-	return lipgloss.NewStyle().
-		Background(ColorLove).
-		Width(m.width).
-		Render(line)
+	// Pad any remaining width so the background reaches the right edge.
+	lineWidth := lipgloss.Width(line)
+	if lineWidth < m.width {
+		line += sp(m.width - lineWidth)
+	}
+
+	return line
 }
 
 // buildOptionText assembles the raw option text (before wrapping in menuStyle).
