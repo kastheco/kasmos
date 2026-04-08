@@ -247,6 +247,36 @@
   white-space: nowrap;
 }
 
+/* ====== LIFECYCLE MOBILE (vertical) ====== */
+.lifecycleMobile {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 64px;
+}
+
+.lifecycleMobileRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+
+.lifecycleMobileHArrow {
+  font-size: 18px;
+  color: var(--foreground-tertiary);
+  padding: 0 10px;
+  line-height: 1;
+}
+
+.lifecycleMobileVArrow {
+  font-size: 20px;
+  color: var(--foreground-tertiary);
+  padding: 8px 0;
+  line-height: 1;
+}
+
 /* ====== AGENTS GRID ====== */
 .agentsGrid {
   display: grid;
@@ -364,46 +394,11 @@
   }
 
   .lifecyclePipeline {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    justify-content: flex-start;
-    padding-bottom: 8px;
-    margin-left: -16px;
-    margin-right: -16px;
-    padding-left: 16px;
-    padding-right: 16px;
-    scroll-snap-type: x mandatory;
-    scrollbar-width: none;
-  }
-
-  .lifecyclePipeline::-webkit-scrollbar {
     display: none;
   }
 
-  .lifecycleStepGroup {
-    scroll-snap-align: start;
-    flex-shrink: 0;
-  }
-
-  .lifecycleStep {
-    padding: 10px 12px;
-  }
-
-  .lifecycleStepLabel {
-    font-size: 12px;
-  }
-
-  .lifecycleArrow {
-    padding: 0 4px;
-    font-size: 14px;
-  }
-
-  .lifecycleArrowLoop {
-    font-size: 16px;
-  }
-
-  .lifecycleLoopNote {
-    display: none;
+  .lifecycleMobile {
+    display: flex;
   }
 
   .hero {
