@@ -136,8 +136,8 @@ Emit verify outcomes through the signal gateway. Do not write legacy filesystem 
 
 Primary path — use MCP `signal_create`:
 
-- `signal_create` with `signal_type: "verify-approved"`, `plan_file: "<planfile>"`, `project: "$KASMOS_PROJECT"` when all criteria pass.
-- `signal_create` with `signal_type: "verify-failed"`, `plan_file: "<planfile>"`, `project: "$KASMOS_PROJECT"` when work is blocked and follow-up is required.
+- `signal_create` with `signal_type: "verify_approved"`, `plan_file: "<planfile>"`, `project: "$KASMOS_PROJECT"` when all criteria pass.
+- `signal_create` with `signal_type: "verify_failed"`, `plan_file: "<planfile>"`, `project: "$KASMOS_PROJECT"` when work is blocked and follow-up is required.
 
 Fallback when MCP is unavailable — use `kas signal emit`:
 
