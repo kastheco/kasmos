@@ -26,11 +26,11 @@ var manualOverrideOptions = []string{
 }
 
 const (
-	StatusReady      Status = "ready"
-	StatusDone       Status = "done"
-	StatusReviewing  Status = "reviewing"
-	StatusVerifying  Status = "verifying"
-	StatusCancelled  Status = "cancelled"
+	StatusReady     Status = "ready"
+	StatusDone      Status = "done"
+	StatusReviewing Status = "reviewing"
+	StatusVerifying Status = "verifying"
+	StatusCancelled Status = "cancelled"
 
 	// Lifecycle-stage statuses — canonical names used by the FSM.
 	StatusPlanning     Status = "planning"

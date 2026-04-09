@@ -92,7 +92,6 @@ func TestSignalKey_Dedup(t *testing.T) {
 	assert.NotEqual(t, a.Key(), c.Key(), "different events should produce different keys")
 }
 
-
 func TestConsumeSignal_DeletesFile(t *testing.T) {
 	dir := t.TempDir()
 	signalsDir := filepath.Join(dir, ".signals")

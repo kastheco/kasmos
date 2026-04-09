@@ -277,4 +277,3 @@ func TestExecutionPhaseHelpers(t *testing.T) {
 		assert.False(t, IsSingleAgentImplementingPhase(ExecutionPhaseWaveRunning))
 	})
 }
-
