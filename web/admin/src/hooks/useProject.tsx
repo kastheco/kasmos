@@ -2,7 +2,6 @@ import {
   createContext,
   useContext,
   useEffect,
-  useRef,
   type JSX,
 } from "react";
 import { useSearchParams } from "react-router";
@@ -72,13 +71,7 @@ export function ProjectProvider({
 
   // Write the resolved project back into the URL when it differs (replace so
   // we don't pollute history with auto-selected values).
-  const didMount = useRef(false);
-  const prevProject = useRef<string>("");
-
   useEffect(() => {
-    if (!didMount.current) {
-      didMount.current = true;
-    }
     if (project && project !== urlProject) {
       setSearchParams(
         (prev) => {
@@ -89,7 +82,6 @@ export function ProjectProvider({
         { replace: true },
       );
     }
-    prevProject.current = project;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project]);
 
