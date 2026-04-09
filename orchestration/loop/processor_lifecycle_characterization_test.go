@@ -42,7 +42,7 @@ func TestProcessor_LifecycleSignalMatrix(t *testing.T) {
 			entry:      taskstore.TaskEntry{Filename: "plan.md", Status: taskstore.StatusReviewing, Branch: "plan/plan"},
 			signal:     taskfsm.Signal{TaskFile: "plan.md", Event: taskfsm.ReviewApproved, Body: "lgtm"},
 			wantStatus: taskstore.StatusDone,
-			wantKinds:  []string{"review_approved", "create_pr"},
+			wantKinds:  []string{"review_approved", "verify_approved", "create_pr"},
 		},
 		{
 			name:          "review approved transitions to verifying and spawns master when readiness enabled",
@@ -50,7 +50,7 @@ func TestProcessor_LifecycleSignalMatrix(t *testing.T) {
 			signal:        taskfsm.Signal{TaskFile: "plan.md", Event: taskfsm.ReviewApproved, Body: "lgtm"},
 			autoReadiness: true,
 			wantStatus:    taskstore.StatusVerifying,
-			wantKinds:     []string{"spawn_master"},
+			wantKinds:     []string{"review_approved", "spawn_master"},
 		},
 		{
 			name:          "verify approved from master transitions to done",
@@ -58,7 +58,16 @@ func TestProcessor_LifecycleSignalMatrix(t *testing.T) {
 			signal:        taskfsm.Signal{TaskFile: "plan.md", Event: taskfsm.VerifyApproved, Body: "ready"},
 			autoReadiness: true,
 			wantStatus:    taskstore.StatusDone,
-			wantKinds:     []string{"review_approved", "create_pr"},
+			wantKinds:     []string{"verify_approved", "create_pr"},
+		},
+		{
+			name:          "verify failed transitions verifying to implementing",
+			entry:         taskstore.TaskEntry{Filename: "plan.md", Status: taskstore.StatusVerifying, Branch: "plan/plan", ExecutionState: taskstore.ExecutionState{ActiveAgentType: session.AgentTypeMaster}},
+			signal:        taskfsm.Signal{TaskFile: "plan.md", Event: taskfsm.VerifyFailed, Body: "fix edge cases"},
+			autoFix:       true,
+			autoReadiness: true,
+			wantStatus:    taskstore.StatusImplementing,
+			wantKinds:     []string{"verify_failed", "increment_review_cycle", "spawn_fixer"},
 		},
 		{
 			name:       "review changes requested",

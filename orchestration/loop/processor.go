@@ -197,18 +197,26 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 
 		case taskfsm.ReviewApproved:
 			// ReviewApproved transitions reviewing → verifying.
+			// Always emit ReviewApprovedAction first: it carries reviewer side-effects
+			// (audit log, toast, ClickUp progress, reviewer pause) that are independent
+			// of whether the task waits for a master agent or completes immediately.
+			actions = append(actions, ReviewApprovedAction{
+				PlanFile:   sig.TaskFile,
+				ReviewBody: sig.Body,
+			})
 			if p.config.AutoReadinessReview {
-				// Readiness gate active: spawn master agent to perform holistic check.
-				// ReviewApprovedAction side-effects fire when VerifyApproved arrives.
+				// Readiness gate active: spawn master agent for holistic check.
+				// VerifyApprovedAction side-effects fire when VerifyApproved arrives.
 				actions = append(actions, SpawnMasterAction{PlanFile: sig.TaskFile})
-			} else {
-				// No readiness gate: emit review-approved side effects and immediately
-				// chain verify_approved so the task moves from verifying → done.
-				actions = append(actions, ReviewApprovedAction{
+				break
+			}
+			// No readiness gate: chain verify_approved immediately so the task moves
+			// from verifying → done inside the processor (single FSM driver).
+			if err := p.fsm.Transition(sig.TaskFile, taskfsm.VerifyApproved); err == nil {
+				actions = append(actions, VerifyApprovedAction{
 					PlanFile:   sig.TaskFile,
 					ReviewBody: sig.Body,
 				})
-				_ = p.fsm.Transition(sig.TaskFile, taskfsm.VerifyApproved)
 				if p.config.Store != nil {
 					if entry, err := p.config.Store.Get(p.config.Project, sig.TaskFile); err == nil {
 						if shouldCreatePR(entry) {
@@ -223,7 +231,7 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 
 		case taskfsm.VerifyApproved:
 			// VerifyApproved transitions verifying → done (emitted by master agent).
-			actions = append(actions, ReviewApprovedAction{
+			actions = append(actions, VerifyApprovedAction{
 				PlanFile:   sig.TaskFile,
 				ReviewBody: sig.Body,
 			})
@@ -240,7 +248,7 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 
 		case taskfsm.VerifyFailed:
 			// VerifyFailed transitions verifying → implementing (emitted by master agent).
-			actions = append(actions, ReviewChangesAction{
+			actions = append(actions, VerifyFailedAction{
 				PlanFile: sig.TaskFile,
 				Feedback: sig.Body,
 			})

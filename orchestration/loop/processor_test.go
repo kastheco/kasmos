@@ -422,10 +422,13 @@ func TestProcessor_AutoReadinessReview_ReviewApprovedIntercepted(t *testing.T) {
 
 	actions := p.ProcessFSMSignals(signals)
 
-	// Must emit SpawnMasterAction, not ReviewApprovedAction
-	require.Len(t, actions, 1)
-	master, ok := actions[0].(SpawnMasterAction)
-	require.True(t, ok, "expected SpawnMasterAction, got %T", actions[0])
+	// Must emit ReviewApprovedAction first (reviewer side-effects), then SpawnMasterAction.
+	require.Len(t, actions, 2)
+	ra, ok := actions[0].(ReviewApprovedAction)
+	require.True(t, ok, "expected ReviewApprovedAction first, got %T", actions[0])
+	assert.Equal(t, "my-plan.md", ra.PlanFile)
+	master, ok := actions[1].(SpawnMasterAction)
+	require.True(t, ok, "expected SpawnMasterAction second, got %T", actions[1])
 	assert.Equal(t, "my-plan.md", master.PlanFile)
 }
 
@@ -493,11 +496,11 @@ func TestProcessor_VerifyApprovedProcessedInVerifyingStatus(t *testing.T) {
 
 	var foundApproved bool
 	for _, a := range actions {
-		if _, ok := a.(ReviewApprovedAction); ok {
+		if _, ok := a.(VerifyApprovedAction); ok {
 			foundApproved = true
 		}
 	}
-	assert.True(t, foundApproved, "verify_approved in verifying status must produce ReviewApprovedAction")
+	assert.True(t, foundApproved, "verify_approved in verifying status must produce VerifyApprovedAction")
 }
 
 func TestProcessor_VerifyFailedDroppedOutsideVerifyingStatus(t *testing.T) {
@@ -517,6 +520,43 @@ func TestProcessor_VerifyFailedDroppedOutsideVerifyingStatus(t *testing.T) {
 
 	actions := p.ProcessFSMSignals(signals)
 	assert.Empty(t, actions, "verify_failed outside verifying status must be silently dropped by FSM")
+}
+
+func TestProcessor_VerifyFailedEmitsVerifyFailedAction(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusVerifying,
+		Branch:   "plan/my-plan",
+		ExecutionState: taskstore.ExecutionState{
+			ActiveAgentType: session.AgentTypeMaster,
+		},
+	})
+
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true})
+	signals := []taskfsm.Signal{
+		{Event: taskfsm.VerifyFailed, TaskFile: "my-plan.md", Body: "issues found"},
+	}
+
+	actions := p.ProcessFSMSignals(signals)
+	var foundVerifyFailed, foundFixer, foundIncrement bool
+	for _, a := range actions {
+		if vf, ok := a.(VerifyFailedAction); ok {
+			assert.Equal(t, "my-plan.md", vf.PlanFile)
+			assert.Equal(t, "issues found", vf.Feedback)
+			foundVerifyFailed = true
+		}
+		if sf, ok := a.(SpawnFixerAction); ok {
+			assert.Equal(t, "issues found", sf.Feedback)
+			foundFixer = true
+		}
+		if _, ok := a.(IncrementReviewCycleAction); ok {
+			foundIncrement = true
+		}
+	}
+	assert.True(t, foundVerifyFailed, "expected VerifyFailedAction")
+	assert.True(t, foundFixer, "expected SpawnFixerAction")
+	assert.True(t, foundIncrement, "expected IncrementReviewCycleAction")
 }
 
 func TestProcessor_SetReadinessReviewConfig(t *testing.T) {
