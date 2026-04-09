@@ -35,7 +35,7 @@ readiness_review = "master"   # also accepted as master_review (backward-compat 
 
 The phase names on the left are fixed lifecycle identifiers. The role names on the right must match keys in the `[agents]` table.
 
-> **`readiness_review` vs `master_review`:** `readiness_review` is the canonical phase key. The old key `master_review` is accepted as a backward-compatible alias and is resolved to `readiness_review` at profile resolution time (not at load time). New configs should use `readiness_review`.
+> **`readiness_review` vs `master_review`:** `readiness_review` is the canonical phase key — it maps to the master agent role that runs during the `verifying` FSM status. The old key `master_review` is accepted as a backward-compatible alias and is resolved to `readiness_review` at profile resolution time (not at load time). New configs should use `readiness_review`.
 
 ## `[agents.<role>]` — agent profiles
 
@@ -65,7 +65,7 @@ effort         = "high"
 | `auto_advance_waves` | bool? | `true` | skip confirmation dialog after a clean wave |
 | `auto_review_fix` | bool? | `true` | automatically start the review→fix→re-review loop |
 | `max_review_fix_cycles` | int? | `0` (unlimited) | cap the review-fix loop iterations; `0` means no cap |
-| `auto_readiness_review` | bool? | `true` | intercept reviewer approval and hand off to the master agent for a holistic readiness check before the task transitions to `done`. Set to `false` to skip the readiness review phase. |
+| `auto_readiness_review` | bool? | `true` | when `true`, reviewer approval transitions the task to `verifying` status and spawns the master agent for a holistic readiness check before `done`. When `false`, `review_approved` flows directly to `done` and no master agent is spawned. |
 
 ```toml
 [ui]
@@ -74,7 +74,7 @@ auto_advance          = true
 auto_advance_waves    = true
 auto_review_fix       = true
 max_review_fix_cycles = 3
-auto_readiness_review = true    # set to false to skip the master readiness gate
+auto_readiness_review = true    # set to false to skip verifying status and go directly to done
 ```
 
 ## `[telemetry]` — crash reporting

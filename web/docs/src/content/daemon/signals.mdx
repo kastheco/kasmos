@@ -64,15 +64,15 @@ pending
 | `implement_task_finished` | wave task agent | wave task complete, possible wave advance |
 | `implement_wave` | daemon / TUI | start next wave |
 | `elaborator_finished` | architect | update plan content, begin wave 1 |
-| `review_approved` | reviewer | FSM transition → `done` (or → `readiness_reviewing` phase when `auto_readiness_review = true`) |
+| `review_approved` | reviewer | FSM transition `reviewing → verifying` (spawn master agent) when `auto_readiness_review = true`; otherwise `reviewing → done` |
 | `review_changes_requested` | reviewer | FSM transition → `implementing`, spawn fixer |
 | `planner_finished` | planner | FSM transition → `ready` |
-| `readiness_approved` | master agent | FSM transition → `done` (only valid during `readiness_reviewing` phase) |
-| `readiness_changes_requested` | master agent | FSM transition → `implementing`, spawn fixer (only valid during `readiness_reviewing` phase) |
+| `verify_approved` | master agent | FSM transition `verifying → done` |
+| `verify_failed` | master agent | FSM transition `verifying → implementing`, spawn fixer |
 
 > **Architect completion:** the canonical internal event is `architect_finished`, but the persisted gateway signal wire name is `elaborator_finished` (a legacy alias preserved for compatibility). `kas signal emit architect_finished` is accepted and normalized to `elaborator_finished` transparently.
 
-> **Readiness signals:** `readiness_approved` and `readiness_changes_requested` are only accepted while the task's execution phase is `readiness_reviewing` (master agent active). Aliases accepted: `readiness-approved`, `readiness-changes`, `readiness-changes-requested`, `master_approved`. These signals are emitted by the master agent as its final verdict on the full implementation.
+> **Deprecated aliases:** `readiness_approved` → `verify_approved`; `readiness_changes_requested` / `readiness-changes` / `readiness-changes-requested` / `master_approved` → `verify_failed`. These aliases are accepted at ingress and canonicalized — use `verify_approved` / `verify_failed` in new automation.
 
 ### writing a DB signal
 
