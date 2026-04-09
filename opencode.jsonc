@@ -108,7 +108,7 @@
         "read": "allow",
         "write": "allow"
       },
-      "reasoningEffort": "high",
+      "reasoningEffort": "medium",
       "temperature": 0.1,
       "textVerbosity": "low"
     },
@@ -199,9 +199,12 @@
   },
   "mcp": {
     "kasmos": {
-      "type": "local",
-      "command": ["kas", "mcp"],
-      "enabled": true
+      "command": [
+        "kas",
+        "mcp"
+      ],
+      "enabled": true,
+      "type": "local"
     }
   }
 }

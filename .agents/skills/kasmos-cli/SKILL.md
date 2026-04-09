@@ -73,7 +73,6 @@ The commands below are derived from current Cobra handlers and help output in th
 ### `kas task transition`
 - Applies FSM event names only (no free-form status).
 - Valid events: `plan_start`, `planner_finished`, `implement_start`, `implement_finished`, `review_approved`, `review_changes`, `request_review`, `start_over`, `reimplement`, `cancel`, `reopen`.
-- Note: `readiness_approved` and `readiness_changes_requested` are gateway signal types, not FSM event names. Use `kas signal emit readiness_approved <planfile>` rather than `kas task transition`.
 
 ### `kas task show`
 - Prints stored task content.
@@ -152,8 +151,6 @@ The commands below are derived from current Cobra handlers and help output in th
 - Unknown plans and invalid transitions are consumed and logged, not returned as fatal errors (`cmd/signal.go:153`, `cmd/signal.go:160`).
 - `review_changes_requested` also increments the stored review-cycle counter (`cmd/signal.go:167`, `cmd/signal_test.go:313`).
 - Wave and elaboration signals are consumed but not transitioned by the FSM (`cmd/signal.go:183`).
-- `readiness_approved` — emitted by the master agent after a successful readiness review; transitions the task to `done` when the task is in the `readiness_reviewing` execution phase.
-- `readiness_changes_requested` — emitted by the master agent when the implementation needs further work; sends the task back to `implementing`.
 
 ## audit commands
 

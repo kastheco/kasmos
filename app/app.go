@@ -1242,7 +1242,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								if cmd := m.instanceChanged(); cmd != nil {
 									signalCmds = append(signalCmds, cmd)
 								}
-								break
 							}
 						}
 					case loop.CreatePRAction:
@@ -1385,7 +1384,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								if cmd := m.instanceChanged(); cmd != nil {
 									signalCmds = append(signalCmds, cmd)
 								}
-								break
 							}
 						}
 						if m.taskStore != nil {

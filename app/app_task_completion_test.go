@@ -1483,9 +1483,20 @@ func TestReviewApproved_PausesReviewerInsteadOfKilling(t *testing.T) {
 	reviewer.IsReviewer = true
 	reviewer.SetStatus(session.Running)
 
+	master, err := session.NewInstance(session.InstanceOptions{
+		Title:     "feature-master-1",
+		Path:      dir,
+		Program:   "opencode",
+		TaskFile:  planFile,
+		AgentType: session.AgentTypeMaster,
+	})
+	require.NoError(t, err)
+	master.SetStatus(session.Running)
+
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
 	nav := ui.NewNavigationPanel(&sp)
 	_ = nav.AddInstance(reviewer)
+	_ = nav.AddInstance(master)
 
 	h := &home{
 		ctx:          context.Background(),
@@ -1517,6 +1528,16 @@ func TestReviewApproved_PausesReviewerInsteadOfKilling(t *testing.T) {
 	}
 	require.NotNil(t, reviewerAfter, "reviewer must remain in nav after approval")
 	assert.Equal(t, session.Paused, reviewerAfter.Status)
+
+	var masterAfter *session.Instance
+	for _, inst := range h.nav.GetInstances() {
+		if inst.TaskFile == planFile && inst.AgentType == session.AgentTypeMaster {
+			masterAfter = inst
+			break
+		}
+	}
+	require.NotNil(t, masterAfter, "master must remain in nav after approval")
+	assert.Equal(t, session.Paused, masterAfter.Status)
 
 	reloaded, err := newTestPlanState(t, plansDir)
 	require.NoError(t, err)
