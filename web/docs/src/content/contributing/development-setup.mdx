@@ -22,9 +22,9 @@ The `Justfile` at the repo root provides the main developer commands:
 
 | command | what it does |
 |---------|--------------|
-| `just build` | compiles `kasmos` binary |
-| `just install` | `go install .` and creates `kas` / `kms` symlinks in `$GOPATH/bin` |
-| `just run <args>` | `go run . <args>` — no pre-build needed |
+| `just build` | compiles `kas` binary |
+| `just install` | `go install ./cmd/kas` and creates optional `kms` alias in `$GOPATH/bin` |
+| `just run <args>` | `go run ./cmd/kas <args>` — no pre-build needed |
 | `just test` | `go test ./...` |
 | `just lint` | `go vet ./...` |
 | `just setup` | runs `kas setup --force` to scaffold agent harness config |
@@ -33,7 +33,7 @@ The `Justfile` at the repo root provides the main developer commands:
 If you prefer plain `go` commands without `just`:
 
 ```bash
-go build -o kasmos .          # build
+go build -o kas ./cmd/kas     # build
 go test ./...                  # test
 go vet ./...                   # vet
 gofmt -w .                     # format (CI enforces this)
@@ -44,12 +44,12 @@ gofmt -w .                     # format (CI enforces this)
 After building, confirm the binary works:
 
 ```bash
-./kasmos version
+./kas version
 # or, after just install:
 kas version
 ```
 
-`kasmos` requires the current directory to be inside a git repository when launching the interactive TUI. Running it from the repo root is the simplest path.
+`kas` requires the current directory to be inside a git repository when launching the interactive TUI. Running it from the repo root is the simplest path.
 
 ## web: marketing site
 

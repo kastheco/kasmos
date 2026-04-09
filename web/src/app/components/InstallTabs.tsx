@@ -28,7 +28,7 @@ const installMethods: InstallMethod[] = [
   {
     label: "go install",
     kind: "command",
-    command: "go install github.com/kastheco/kasmos@latest",
+    command: "go install github.com/kastheco/kasmos/cmd/kas@latest",
   },
   {
     label: "shell script",

@@ -2,7 +2,7 @@
 
 ## what's the difference between kasmos and kas?
 
-`kas` is the CLI command name — it's what you type in your terminal. `kasmos` is the binary artifact name produced by the build. After installation, `just install` symlinks both `kas` and `kms` to the same binary. In source code and docs you'll see both names; they refer to the same program.
+`kas` is both the CLI command and the binary artifact name. `kasmos` is the project and module namespace (`github.com/kastheco/kasmos`) — it appears in Homebrew formula names, Go module paths, and service unit names, but the compiled binary you run is `kas`. After `just install`, an optional `kms` short alias is also created.
 
 ## is kasmos open source?
 

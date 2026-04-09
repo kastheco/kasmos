@@ -5,7 +5,7 @@ klique
 kasmos
 **.DS_Store
 kq
-kas
+/kas
 .worktrees/
 /.kasmos/*
 !/.kasmos/config.toml

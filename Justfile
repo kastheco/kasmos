@@ -11,15 +11,15 @@ admin-ensure:
     fi
     npm run build
 
-# Build kasmos binary
+# Build kas binary
 build: admin-ensure
-    go build -o kasmos .
+    go build -o kas ./cmd/kas
 
-# Install to GOPATH/bin (with kas, kms aliases)
+# Install to GOPATH/bin (with kms alias)
 install: admin-ensure
-    go install .
-    ln -sf "$(go env GOPATH)/bin/kasmos" "$(go env GOPATH)/bin/kas"
-    ln -sf "$(go env GOPATH)/bin/kasmos" "$(go env GOPATH)/bin/kms"
+    rm -f "$(go env GOPATH)/bin/kasmos"
+    go install ./cmd/kas
+    ln -sf "$(go env GOPATH)/bin/kas" "$(go env GOPATH)/bin/kms"
 
 # Build + install
 bi: build install
@@ -254,9 +254,9 @@ test:
 lint:
     go vet ./...
 
-# Run kasmos (pass-through args)
+# Run kas (pass-through args)
 run *ARGS:
-    go run . {{ARGS}}
+    go run ./cmd/kas {{ARGS}}
 
 # Tag and push a release (CI runs goreleaser): just release 1.0.0
 release v:
@@ -278,9 +278,9 @@ release v:
     echo "    branch: ${BRANCH}"
 
     # 2. Update version in source
-    sd 'version\s*=\s*"[^"]*"' "version     = \"${VERSION}\"" main.go
+    sd 'version\s*=\s*"[^"]*"' "version     = \"${VERSION}\"" cmd/kas/main.go
     if [[ -n "$(git status --porcelain)" ]]; then
-        git add main.go
+        git add cmd/kas/main.go
         git commit -m "release: v${VERSION}"
         echo "    committed version bump"
     fi
@@ -317,5 +317,5 @@ docs-build:
 
 # Clean build artifacts
 clean:
-    rm -f kasmos
+    rm -f kas kasmos
     rm -rf dist/

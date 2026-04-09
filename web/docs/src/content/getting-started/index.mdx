@@ -18,7 +18,7 @@ kas setup       # configure harnesses and scaffold project files
 kas             # launch the TUI
 ```
 
-`kas` (the Cobra root command) is the interactive entry point. The binary built by `make build` or `just build` is named `kasmos`, but `just install` also creates `kas` and `kms` symlinks under `$(go env GOPATH)/bin`.
+`kas` is the interactive entry point. `make build` and `just build` produce a `kas` binary directly; `just install` also creates an optional `kms` short alias under `$(go env GOPATH)/bin`.
 
 ## what kasmos manages
 

@@ -355,30 +355,30 @@ These one-shot commands are usable from any agent context:
 ## Release Version Bump
 
 The GitHub Actions `Release` workflow (`.github/workflows/release.yml`) validates that the git tag
-matches the `version` constant in `main.go` (line 25). If they don't match, the build fails:
+matches the version constant in `cmd/kas/main.go`. If they don't match, the build fails:
 
 ```
-ERROR: Tag version (1.1.1) does not match version in main.go (1.1.0)
-Please ensure the tag matches the version defined in main.go
+ERROR: Tag version (1.1.1) does not match version in cmd/kas/main.go (1.1.0)
+Please ensure the tag matches the version defined in cmd/kas/main.go
 ```
 
-**Before creating any `v*` tag**, always bump `main.go` first:
+**Before creating any `v*` tag**, always bump `cmd/kas/main.go` first:
 
 ```bash
 # 1. decide the new version
 NEW_VERSION="X.Y.Z"
 
-# 2. update main.go
-sd 'version\s*=\s*"[^"]*"' "version     = \"${NEW_VERSION}\"" main.go
+# 2. update cmd/kas/main.go
+sd 'version\s*=\s*"[^"]*"' "version     = \"${NEW_VERSION}\"" cmd/kas/main.go
 ```
 
-Then use MCP `grep` (`pattern: "^\\s*version\\s*="`, `glob: "main.go"`) or read
-`main.go` directly and confirm it now says `version     = "X.Y.Z"`.
+Then use MCP `grep` (`pattern: "^\\s*version\\s*="`, `glob: "cmd/kas/main.go"`) or read
+`cmd/kas/main.go` directly and confirm it now says `version     = "X.Y.Z"`.
 
 ```bash
 
 # 4. commit on main
-git add main.go
+git add cmd/kas/main.go
 git commit -m "chore: bump version to ${NEW_VERSION}"
 
 # 5. create tag and push both
@@ -387,10 +387,10 @@ git push origin main "v${NEW_VERSION}"
 ```
 
 **Pre-flight check:** before pushing a tag, use MCP `grep`
-(`pattern: "^\\s*version\\s*="`, `glob: "main.go"`) or read `main.go` directly and
+(`pattern: "^\\s*version\\s*="`, `glob: "cmd/kas/main.go"`) or read `cmd/kas/main.go` directly and
 confirm the version string matches the tag (without the `v` prefix).
 
-**Never push a `v*` tag without this check.** The CI step `Validate tag matches version in main.go`
+**Never push a `v*` tag without this check.** The CI step `Validate tag matches version in cmd/kas/main.go`
 will reject the build if they diverge.
 
 ---

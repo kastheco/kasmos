@@ -37,7 +37,7 @@ brew install kastheco/tap/kasmos
 ### go install
 
 ```bash
-go install github.com/kastheco/kasmos@latest
+go install github.com/kastheco/kasmos/cmd/kas@latest
 ```
 
 ### install script
@@ -50,7 +50,7 @@ curl -fsSL https://raw.githubusercontent.com/kastheco/kasmos/main/install.sh | b
 
 prebuilt binaries for macos and linux are on the [releases page](https://github.com/kastheco/kasmos/releases/latest).
 
-the primary command surface is `kas`; if your install only provides `kasmos`, add a `kas` symlink or use `kasmos` in its place.
+the compiled binary is `kas`. `kasmos` remains the project name, module path (`github.com/kastheco/kasmos`), config namespace (`.kasmos/`, `~/.config/kasmos/`), and release archive prefix — only the installed binary artifact is named `kas`.
 
 ---
 

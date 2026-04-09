@@ -44,21 +44,21 @@ These commands are available for one-shot operations:
 
 ## Release Operations
 
-When creating a release tag, you **must** bump the `version` constant in `main.go` first.
-The CI/CD `Release` workflow validates that the tag matches `main.go` — mismatches fail the build.
+When creating a release tag, you **must** bump the `version` constant in `cmd/kas/main.go` first.
+The CI/CD `Release` workflow validates that the tag matches `cmd/kas/main.go` — mismatches fail the build.
 
 ```bash
 # 1. determine new version
 NEW_VERSION="X.Y.Z"
 
-# 2. bump version in main.go (line 25: version = "...")
-sd 'version\s*=\s*"[^"]*"' "version     = \"${NEW_VERSION}\"" main.go
+# 2. bump version in cmd/kas/main.go
+sd 'version\s*=\s*"[^"]*"' "version     = \"${NEW_VERSION}\"" cmd/kas/main.go
 
 # 3. verify it matches
-rg '^\s*version\s*=' main.go
+rg '^\s*version\s*=' cmd/kas/main.go
 
 # 4. commit the bump on main
-git add main.go
+git add cmd/kas/main.go
 git commit -m "chore: bump version to ${NEW_VERSION}"
 
 # 5. tag and push
@@ -66,7 +66,7 @@ git tag "v${NEW_VERSION}"
 git push origin main "v${NEW_VERSION}"
 ```
 
-**Never push a `v*` tag without first verifying `main.go` version matches.**
+**Never push a `v*` tag without first verifying `cmd/kas/main.go` version matches.**
 
 ## Behavior
 

@@ -42,11 +42,11 @@ jobs:
         GOOS: ${{ matrix.goos }}
         GOARCH: ${{ matrix.goarch }}
       run: |
-        go build -v -o build/${{ matrix.goos }}_${{ matrix.goarch }}/kasmos
+        go build -v -o build/${{ matrix.goos }}_${{ matrix.goarch }}/kas ./cmd/kas
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: kasmos-${{ matrix.goos }}-${{ matrix.goarch }}
+        name: kas-${{ matrix.goos }}-${{ matrix.goarch }}
         path: build/${{ matrix.goos }}_${{ matrix.goarch }}/*
         retention-days: 7

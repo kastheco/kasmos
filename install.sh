@@ -143,7 +143,7 @@ extract_and_install() {
     fi
 
     # Install binary with desired name
-    mv "${tmp_dir}/kasmos" "$bin_dir/$INSTALL_NAME${extension}"
+    mv "${tmp_dir}/kas" "$bin_dir/$INSTALL_NAME${extension}"
     rm -rf "$tmp_dir"
 
     if [ ! -f "$bin_dir/$INSTALL_NAME${extension}" ]; then
@@ -267,7 +267,7 @@ check_and_install_dependencies() {
 
 main() {
     # Parse command line arguments
-    INSTALL_NAME="kasmos"
+    INSTALL_NAME="kas"
     UPGRADE_MODE=false
     
     while [[ $# -gt 0 ]]; do
