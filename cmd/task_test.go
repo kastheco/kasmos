@@ -827,6 +827,48 @@ func TestExecuteTaskMerge_IntegrationWithRealRepo(t *testing.T) {
 	assert.Empty(t, strings.TrimSpace(string(out)))
 }
 
+func TestExecuteTaskMerge_WalksVerifyingToDone(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "merge-verifying"
+	branch := "plan/verifying-merge"
+
+	// Create a real git repo.
+	repo := t.TempDir()
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		out, err := cmd.CombinedOutput()
+		require.NoErrorf(t, err, "git %v: %s", args, out)
+	}
+	runGit("init", "-b", "main")
+	runGit("config", "user.email", "test@test.com")
+	runGit("config", "user.name", "test")
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "README.md"), []byte("init\n"), 0644))
+	runGit("add", ".")
+	runGit("commit", "-m", "initial")
+
+	runGit("branch", branch)
+	runGit("checkout", branch)
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "feature.go"), []byte("package feature\n"), 0644))
+	runGit("add", ".")
+	runGit("commit", "-m", "add feature")
+	runGit("checkout", "main")
+
+	// Task is already in verifying state — merge should apply only VerifyApproved.
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: "verifying-merge.md",
+		Status:   taskstore.StatusVerifying,
+		Branch:   branch,
+	}))
+
+	err := executeTaskMerge(repo, project, "verifying-merge.md", store)
+	require.NoError(t, err)
+
+	ps, _ := taskstate.Load(store, project, "")
+	entry, _ := ps.Entry("verifying-merge.md")
+	assert.Equal(t, taskstate.StatusDone, entry.Status)
+}
+
 func TestExecuteTaskStartOver_IntegrationWithRealRepo(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
 	project := "startover-integration"
