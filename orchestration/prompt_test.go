@@ -171,15 +171,20 @@ func TestBuildMasterReviewPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "my-feature")
 	assert.Contains(t, prompt, "kasmos-master")
 	assert.Contains(t, prompt, `project: "myproject"`)
-	// MCP-first readiness signal emission
-	assert.Contains(t, prompt, "signal_create` (signal_type: \"readiness-approved\"")
-	assert.Contains(t, prompt, "signal_create` (signal_type: \"readiness-changes-requested\"")
+	// Runs during verifying FSM state
+	assert.Contains(t, prompt, "verifying")
+	// MCP-first verify signal emission
+	assert.Contains(t, prompt, "signal_create` (signal_type: \"verify-approved\"")
+	assert.Contains(t, prompt, "signal_create` (signal_type: \"verify-failed\"")
 	// CLI fallback
-	assert.Contains(t, prompt, "kas signal emit readiness_approved my-feature")
-	assert.Contains(t, prompt, "kas signal emit readiness_changes_requested my-feature")
+	assert.Contains(t, prompt, "kas signal emit verify_approved my-feature")
+	assert.Contains(t, prompt, "kas signal emit verify_failed my-feature")
 	// Evidence gathering
 	assert.Contains(t, prompt, "Merge-base diff")
 	assert.Contains(t, prompt, "MERGE_BASE")
+	// No readiness-specific signal types (now uses verify-*)
+	assert.NotContains(t, prompt, "readiness-approved")
+	assert.NotContains(t, prompt, "readiness-changes-requested")
 	// No filesystem sentinels
 	assert.NotContains(t, prompt, "touch .kasmos/signals/master-approved")
 	// No pre-computed diff arguments

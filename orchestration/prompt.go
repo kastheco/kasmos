@@ -232,12 +232,12 @@ func BuildWaveAnnotationPrompt(planFile, project string) string {
 }
 
 // BuildMasterReviewPrompt returns the prompt for the master agent's holistic
-// readiness review. The agent gathers its own evidence (merge-base diff,
-// verification results) in the session rather than receiving pre-computed diffs,
-// mirroring the reviewer/fixer prompt style.
+// readiness review. The agent runs during the verifying FSM state and gathers
+// its own evidence (merge-base diff, verification results) in the session rather
+// than receiving pre-computed diffs, mirroring the reviewer/fixer prompt style.
 func BuildMasterReviewPrompt(planFile, project string) string {
 	return fmt.Sprintf(
-		"You are the master readiness review agent.\n\n"+
+		"You are the master readiness review agent. You run during the `verifying` FSM state.\n\n"+
 			"Load the `kasmos-master` skill before starting.\n\n"+
 			"## Instructions\n\n"+
 			"1. Retrieve the plan: prefer MCP `task_show` (filename: %[1]q, project: %[2]q); fall back to `kas task show %[1]s`\n"+
@@ -245,10 +245,10 @@ func BuildMasterReviewPrompt(planFile, project string) string {
 			"   - Merge-base diff: `MERGE_BASE=$(git merge-base HEAD main) && git diff $MERGE_BASE HEAD`\n"+
 			"   - Run verification: `go build ./... && go test ./...` (or the plan's verify_checks)\n"+
 			"3. Review the implementation holistically against the plan and signal your decision:\n"+
-			"   - Approved: prefer MCP `signal_create` (signal_type: \"readiness-approved\", plan_file: %[1]q, project: %[2]q); fall back to `kas signal emit readiness_approved %[1]s`\n"+
-			"   - Changes requested: prefer MCP `signal_create` (signal_type: \"readiness-changes-requested\", plan_file: %[1]q, project: %[2]q); fall back to `kas signal emit readiness_changes_requested %[1]s`\n"+
+			"   - Approved: prefer MCP `signal_create` (signal_type: \"verify-approved\", plan_file: %[1]q, project: %[2]q); fall back to `kas signal emit verify_approved %[1]s`\n"+
+			"   - Changes requested: prefer MCP `signal_create` (signal_type: \"verify-failed\", plan_file: %[1]q, project: %[2]q); fall back to `kas signal emit verify_failed %[1]s`\n"+
 			"   - Include your review summary in the signal payload body field.\n\n"+
-			"Do not emit `review_approved` or `review_changes_requested` — use the readiness-specific signal types above.",
+			"Do not emit `review_approved` or `review_changes_requested` — use `verify-approved` or `verify-failed` above.",
 		planFile, project,
 	)
 }
