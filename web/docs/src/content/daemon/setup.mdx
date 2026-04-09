@@ -4,8 +4,7 @@ kasmos ships service unit templates in `contrib/` and a set of Just recipes for 
 
 ## prerequisites
 
-- `kasmos` binary installed in `~/go/bin/` (via `just install` or `go install .`)
-- `kas` symlink created (the install recipe does this automatically)
+- `kas` binary installed in `~/go/bin/` (via `just install` or `go install github.com/kastheco/kasmos/cmd/kas@latest`)
 - **linux only** — systemd user session available (`loginctl enable-linger` on headless servers)
 - **macOS only** — no extra setup needed; launchd is always available
 
@@ -28,7 +27,7 @@ just services-enable
 
 `kasmosd-enable` runs in three stages:
 
-1. Calls `just install` — builds and installs the binary, creates `kas` / `kms` symlinks.
+1. Calls `just install` — builds and installs the `kas` binary, creates the optional `kms` alias.
 2. Installs the service definition for the current platform:
    - **linux** — copies `contrib/kasmos.service` to `~/.config/systemd/user/` and reloads the daemon.
    - **macOS** — renders `contrib/com.kasmos.daemon.plist` with the current `$HOME` and binary path, copies it to `~/Library/LaunchAgents/`, and loads it with `launchctl`.
