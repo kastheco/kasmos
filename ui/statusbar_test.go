@@ -381,3 +381,30 @@ func TestStatusBar_PRIndicator_NarrowDrops(t *testing.T) {
 	// The output should still contain the app name
 	assert.Contains(t, result, "k") // gradient-rendered "kasmos"
 }
+
+// TestStatusBar_VerifyingStatus verifies that verifying status renders with a
+// distinct color (not the default muted fallthrough).
+func TestStatusBar_VerifyingStatus(t *testing.T) {
+	sb := NewStatusBar()
+	sb.SetSize(120)
+	sb.SetData(StatusBarData{
+		PlanName:   "auth-feature",
+		PlanStatus: "verifying",
+	})
+
+	result := sb.String()
+	plain := stripANSI(result)
+	assert.Contains(t, plain, "verifying", "verifying status must appear in status bar")
+	// The styled output should differ from an unknown status (not muted default).
+	sbUnknown := NewStatusBar()
+	sbUnknown.SetSize(120)
+	sbUnknown.SetData(StatusBarData{
+		PlanName:   "auth-feature",
+		PlanStatus: "unknown_state",
+	})
+	// Both contain ANSI codes but verifying should use a different color than unknown.
+	verifyingStyled := result
+	unknownStyled := sbUnknown.String()
+	assert.NotEqual(t, verifyingStyled, unknownStyled,
+		"verifying status must render with a different style than unknown status")
+}

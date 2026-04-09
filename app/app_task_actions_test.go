@@ -2018,8 +2018,8 @@ func TestInstanceSignalItems_MasterAgent_HasReadinessSignals(t *testing.T) {
 	for _, item := range items {
 		actions = append(actions, item.Action)
 	}
-	assert.Contains(t, actions, "mark_readiness_approved", "master instance must offer mark_readiness_approved action")
-	assert.Contains(t, actions, "mark_readiness_changes_requested", "master instance must offer mark_readiness_changes_requested action")
+	assert.Contains(t, actions, "mark_verify_approved", "master instance must offer mark_verify_approved action")
+	assert.Contains(t, actions, "mark_verify_failed", "master instance must offer mark_verify_failed action")
 }
 
 func TestExecuteContextAction_MarkReadinessApproved(t *testing.T) {
@@ -2053,7 +2053,7 @@ func TestExecuteContextAction_MarkReadinessApproved(t *testing.T) {
 	h.updateSidebarTasks()
 	h.nav.SelectInstance(master)
 
-	_, cmd := h.executeContextAction("mark_readiness_approved")
+	_, cmd := h.executeContextAction("mark_verify_approved")
 	require.NotNil(t, cmd)
 	msg := cmd()
 	result, ok := msg.(manualSignalResultMsg)
@@ -2096,7 +2096,7 @@ func TestExecuteContextAction_MarkReadinessChangesRequested(t *testing.T) {
 	h.updateSidebarTasks()
 	h.nav.SelectInstance(master)
 
-	_, cmd := h.executeContextAction("mark_readiness_changes_requested")
+	_, cmd := h.executeContextAction("mark_verify_failed")
 	require.NotNil(t, cmd)
 	msg := cmd()
 	result, ok := msg.(manualSignalResultMsg)

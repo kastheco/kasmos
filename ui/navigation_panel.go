@@ -608,7 +608,8 @@ func navPlanSortKey(p PlanDisplay, insts []*session.Instance, st TopicStatus) in
 		strings.TrimSpace(p.Phase) == "readiness_reviewing",
 		p.Status == "planning",
 		p.Status == "implementing",
-		p.Status == "reviewing":
+		p.Status == "reviewing",
+		p.Status == "verifying":
 		return 1
 	case strings.TrimSpace(p.Phase) == "planned":
 		return 2
@@ -654,7 +655,7 @@ func navPlanRowLabel(p PlanDisplay) string {
 	stage := navPlanPhaseLabel(p.Phase, p.ActiveWave, p.ActiveRound)
 	if stage == "" {
 		switch p.Status {
-		case "planning", "implementing", "reviewing":
+		case "planning", "implementing", "reviewing", "verifying":
 			stage = p.Status
 		}
 	}

@@ -189,11 +189,11 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 	case "mark_review_changes_requested":
 		return m, m.emitSelectedInstanceSignal(taskfsm.ReviewChangesRequested, "review changes requested signal queued")
 
-	case "mark_readiness_approved":
-		return m, m.emitSelectedRawSignal("readiness_approved", "readiness approved signal queued")
+	case "mark_verify_approved":
+		return m, m.emitSelectedInstanceSignal(taskfsm.VerifyApproved, "verify approved signal queued")
 
-	case "mark_readiness_changes_requested":
-		return m, m.emitSelectedRawSignal("readiness_changes_requested", "readiness changes requested signal queued")
+	case "mark_verify_failed":
+		return m, m.emitSelectedInstanceSignal(taskfsm.VerifyFailed, "verify failed signal queued")
 
 	case "advance_review_cycle":
 		selected := m.nav.GetSelectedInstance()
@@ -697,12 +697,18 @@ func (m *home) mergeTaskToMain(planFile string) (tea.Model, tea.Cmd) {
 		}
 		// Walk through FSM to done if not already there.
 		if taskfsm.Status(entry.Status) != taskfsm.StatusDone {
-			if taskfsm.Status(entry.Status) != taskfsm.StatusReviewing {
+			if taskfsm.Status(entry.Status) != taskfsm.StatusReviewing &&
+				taskfsm.Status(entry.Status) != taskfsm.StatusVerifying {
 				if err := m.fsmSetReviewing(planFile); err != nil {
 					return err
 				}
 			}
-			if err := m.fsm.Transition(planFile, taskfsm.ReviewApproved); err != nil {
+			if taskfsm.Status(entry.Status) != taskfsm.StatusVerifying {
+				if err := m.fsm.Transition(planFile, taskfsm.ReviewApproved); err != nil {
+					return err
+				}
+			}
+			if err := m.fsm.Transition(planFile, taskfsm.VerifyApproved); err != nil {
 				return err
 			}
 		}
@@ -877,12 +883,17 @@ func taskLifecycleItems(entry taskstate.TaskEntry) []overlay.ContextMenuItem {
 			{Label: "start solo agent", Action: "start_solo"},
 		}
 	case taskstate.StatusReviewing:
-		items := []overlay.ContextMenuItem{
+		return []overlay.ContextMenuItem{
 			{Label: "mark finished", Action: "mark_plan_done"},
 			{Label: "start fixer", Action: "start_fixer"},
 			{Label: "start review", Action: "start_review"},
 		}
-		return items
+	case taskstate.StatusVerifying:
+		return []overlay.ContextMenuItem{
+			{Label: "mark verify approved", Action: "mark_verify_approved"},
+			{Label: "mark verify failed", Action: "mark_verify_failed"},
+			{Label: "start fixer", Action: "start_fixer"},
+		}
 	case taskstate.StatusDone:
 		return []overlay.ContextMenuItem{
 			{Label: "request review", Action: "request_review"},
@@ -934,8 +945,8 @@ func instanceSignalItems(inst *session.Instance) []overlay.ContextMenuItem {
 			items = append(items, overlay.ContextMenuItem{Label: "mark implement finished", Action: "mark_implement_finished"})
 		case session.AgentTypeMaster:
 			items = append(items,
-				overlay.ContextMenuItem{Label: "mark readiness approved", Action: "mark_readiness_approved"},
-				overlay.ContextMenuItem{Label: "mark readiness changes requested", Action: "mark_readiness_changes_requested"},
+				overlay.ContextMenuItem{Label: "mark verify approved", Action: "mark_verify_approved"},
+				overlay.ContextMenuItem{Label: "mark verify failed", Action: "mark_verify_failed"},
 			)
 		}
 	}
@@ -1104,7 +1115,8 @@ func (m *home) openTaskContextMenu() (tea.Model, tea.Cmd) {
 }
 
 func isReviewFeedbackSignal(event taskfsm.Event) bool {
-	return event == taskfsm.ReviewApproved || event == taskfsm.ReviewChangesRequested
+	return event == taskfsm.ReviewApproved || event == taskfsm.ReviewChangesRequested ||
+		event == taskfsm.VerifyApproved || event == taskfsm.VerifyFailed
 }
 
 func gatewaySignalTypeForEvent(event taskfsm.Event) (string, error) {
@@ -1536,8 +1548,11 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 	}
 
 	// Non-agent stages (finished): mark plan done via FSM.
-	if err := m.fsm.Transition(planFile, taskfsm.ReviewApproved); err != nil {
-		return m, m.handleError(err)
+	// Skip ReviewApproved if already in verifying — it has been applied already.
+	if taskfsm.Status(entry.Status) != taskfsm.StatusVerifying {
+		if err := m.fsm.Transition(planFile, taskfsm.ReviewApproved); err != nil {
+			return m, m.handleError(err)
+		}
 	}
 	if err := m.fsm.Transition(planFile, taskfsm.VerifyApproved); err != nil {
 		return m, m.handleError(err)
@@ -1632,7 +1647,7 @@ func isLocked(status taskstate.Status, stage string) bool {
 		// (fsmSetImplementing, fsmSetReviewing) walk through intermediate states.
 		return false
 	case "finished":
-		return status != taskstate.StatusReviewing
+		return status != taskstate.StatusReviewing && status != taskstate.StatusVerifying
 	default:
 		return true
 	}
