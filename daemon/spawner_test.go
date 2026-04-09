@@ -532,7 +532,7 @@ func TestTmuxSpawner_SpawnMaster_KillsExistingMasterAndReviewer(t *testing.T) {
 	assert.Contains(t, killedKeys, "plan-review-1", "existing reviewer must be killed before spawning")
 }
 
-func TestTmuxSpawner_SpawnMaster_DedupliatesTrackedInstance(t *testing.T) {
+func TestTmuxSpawner_SpawnMaster_DeduplicatesTrackedInstance(t *testing.T) {
 	s := NewTmuxSpawner()
 	const repoPath = "/tmp/repo"
 	const planFile = "plan.md"

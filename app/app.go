@@ -1716,7 +1716,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					inst.PromptDetected = true
 					// Don't nudge wave tasks that have finished work — they're done
 					// and the wave monitor will mark them complete on this tick.
-					if !(inst.TaskNumber > 0 && inst.HasWorked) {
+					// Skip TapEnter when a permission prompt is detected — the
+					// permission handler below will deal with it. Firing both
+					// causes the second handler to send "1" as literal text.
+					if !(inst.TaskNumber > 0 && inst.HasWorked) && md.PermissionPrompt == nil {
 						// Defer tmux send-keys to async Cmd (was blocking Update).
 						i := inst
 						asyncCmds = append(asyncCmds, func() tea.Msg {

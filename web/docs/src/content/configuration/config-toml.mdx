@@ -35,7 +35,7 @@ readiness_review = "master"   # opt-in; also accepted as master_review (backward
 
 The phase names on the left are fixed lifecycle identifiers. The role names on the right must match keys in the `[agents]` table.
 
-> **`readiness_review` vs `master_review`:** `readiness_review` is the canonical phase key. The old key `master_review` is accepted as a backward-compatible alias and is transparently normalised to `readiness_review` at load time. New configs should use `readiness_review`.
+> **`readiness_review` vs `master_review`:** `readiness_review` is the canonical phase key. The old key `master_review` is accepted as a backward-compatible alias and is resolved to `readiness_review` at profile resolution time (not at load time). New configs should use `readiness_review`.
 
 ## `[agents.<role>]` — agent profiles
 

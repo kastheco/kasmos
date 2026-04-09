@@ -60,7 +60,7 @@ GIT_EXTERNAL_DIFF=difft git diff $MERGE_BASE..HEAD -- path/to/file.go
 ```
 
 In **managed mode** (`KASMOS_MANAGED=1`): kasmos spawned you after receiving the
-`coder-finished-<planfile>` sentinel. Review, signal outcome, and stop. Do not merge,
+`implement-finished-<planfile>` signal. Review, signal outcome, and stop. Do not merge,
 push, or create PRs — kasmos handles post-approval actions.
 
 In **manual mode** (unset): you were invoked directly or self-dispatched. After signaling,

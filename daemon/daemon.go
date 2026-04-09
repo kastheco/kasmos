@@ -960,7 +960,12 @@ func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
 			if md.HasPrompt {
 				inst.SetStatus(session.Ready)
 				inst.PromptDetected = true
-				inst.TapEnter()
+				// Skip TapEnter for permission prompts — avoid sending
+				// literal "1" as text when both auto_yes and permission
+				// bypass are active.
+				if md.PermissionPrompt == nil {
+					inst.TapEnter()
+				}
 			} else if md.Updated {
 				inst.SetStatus(session.Running)
 				if inst.TaskNumber > 0 && !inst.HasWorked && inst.QueuedPrompt == "" {

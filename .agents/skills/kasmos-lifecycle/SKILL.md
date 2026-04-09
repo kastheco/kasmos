@@ -15,36 +15,61 @@ Plans move through a fixed set of states. Only the transitions listed below are 
 | From | To | Triggering Event |
 |------|----|-----------------|
 | `ready` | `planning` | kasmos assigns a planner agent to the plan |
-| `planning` | `implementing` | planner writes sentinel `planner-finished-<planfile>` |
-| `implementing` | `reviewing` | coder writes sentinel `coder-finished-<planfile>` |
-| `reviewing` | `implementing` | reviewer writes sentinel `reviewer-requested-changes-<planfile>` |
-| `reviewing` | `done` | reviewer writes sentinel `reviewer-approved-<planfile>` |
+| `planning` | `implementing` | planner emits signal `planner-finished-<planfile>` |
+| `implementing` | `reviewing` | coder emits signal `implement-finished-<planfile>` |
+| `reviewing` | `implementing` | reviewer emits signal `review-changes-<planfile>` |
+| `reviewing` | `done` | reviewer emits signal `review-approved-<planfile>` |
 | `done` | — | terminal state, no further transitions |
 
-State is persisted in the **task store** — a SQLite database (`~/.config/kasmos/kasmos.db` locally) or a remote HTTP API server. Agents never write to the store directly — kasmos owns state transitions. Agents emit signals (managed mode) or use task tools (manual mode). To retrieve plan content, agents use MCP `task_show` (`filename: "<plan-file>"`, `project: "$KASMOS_PROJECT"`).
+State is persisted in the **task store** — a SQLite database (`~/.config/kasmos/taskstore.db` locally) or a remote HTTP API server. Agents never write to the store directly — kasmos owns state transitions. Agents emit signals (managed mode) or use task tools (manual mode). To retrieve plan content, agents use MCP `task_show` (`filename: "<plan-file>"`, `project: "$KASMOS_PROJECT"`).
 
-## Signal File Mechanics
+### Readiness Review Execution Phase
 
-Agents communicate state transitions by writing sentinel files into `.kasmos/signals/`.
+When `auto_readiness_review` is enabled, kasmos intercepts the `review_approved` signal and transitions the task into the `readiness_reviewing` **execution phase** before marking it done. This is a sub-phase within the `reviewing` FSM state — the FSM state itself does not change.
 
-**Naming convention:** `<event>-<planfile>`
+| FSM State | Execution Phase | Description |
+|-----------|----------------|-------------|
+| `reviewing` | `readiness_reviewing` | master agent performs holistic readiness gate |
+
+The master agent signals its decision using readiness-specific signal types:
+
+| Signal type (MCP) | CLI equivalent | Effect |
+|-------------------|---------------|--------|
+| `readiness-approved` | `kas signal emit readiness_approved <planfile>` | completes the task (transitions to `done`) |
+| `readiness-changes-requested` | `kas signal emit readiness_changes_requested <planfile>` | sends the task back to `implementing` for fixes |
+
+If readiness review is disabled, `review_approved` transitions the task directly to `done` without the `readiness_reviewing` phase.
+
+## Signal Mechanics
+
+Signals are gateway-backed. Agents emit signals via the DB-backed signal gateway — `.kasmos/signals/` sentinel files still exist for compatibility but are not the primary path.
+
+**Primary path — MCP `signal_create`:**
+
+Use MCP `signal_create` with `signal_type`, `plan_file`, and `project: "$KASMOS_PROJECT"` to emit signals. This writes directly to the signal gateway.
+
+**Fallback — `kas signal emit`:**
+
+```bash
+kas signal emit <signal_type> <planfile>
+```
+
+**Last-resort fallback — sentinel files:**
+
+Write a sentinel file to `.kasmos/signals/` only when MCP and CLI are both unavailable. Naming convention: `<event>-<planfile>`.
 
 Examples:
 - `planner-finished-2026-02-27-feature.md`
-- `coder-finished-2026-02-27-feature.md`
-- `reviewer-approved-2026-02-27-feature.md`
-- `reviewer-requested-changes-2026-02-27-feature.md`
+- `implement-finished-2026-02-27-feature.md`
+- `review-approved-2026-02-27-feature.md`
+- `review-changes-2026-02-27-feature.md`
 
-**How kasmos processes sentinels:**
-1. kasmos scans `.kasmos/signals/` every ~500ms
-2. On detecting a sentinel, kasmos reads it, validates the event against the current task state, and applies the transition
-3. The sentinel file is consumed (deleted) after processing — do not rely on it persisting
-4. Sentinel content is optional; kasmos uses the filename to determine the event type
+**How kasmos processes signals:**
+1. The gateway receives signals via MCP, CLI, or sentinel file scan (~500ms)
+2. kasmos validates the event against the current task state and applies the transition
+3. Sentinel files are consumed (deleted) after processing — do not rely on them persisting
 
-**Emitting a signal (agent side):** use MCP `signal_create` (including `project: "$KASMOS_PROJECT"`) to emit the equivalent
-`planner-finished-2026-02-27-feature.md` signal as the last action before yielding control.
-
-Keep sentinel writes as the **last action** before yielding control. Do not write a sentinel and then continue modifying plans — kasmos may begin the next phase immediately.
+Keep signal emission as the **last action** before yielding control. Do not emit a signal and then continue modifying plans — kasmos may begin the next phase immediately.
 
 ## Mode Detection
 

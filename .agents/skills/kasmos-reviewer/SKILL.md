@@ -60,7 +60,7 @@ GIT_EXTERNAL_DIFF=difft git diff $MERGE_BASE..HEAD -- path/to/file.go
 ```
 
 In **managed mode** (`KASMOS_MANAGED=1`): kasmos spawned you after receiving the
-`coder-finished-<planfile>` sentinel. Review, signal outcome, and stop. Do not merge,
+`implement-finished-<planfile>` signal. Review, signal outcome, and stop. Do not merge,
 push, or create PRs — kasmos handles post-approval actions.
 
 In **manual mode** (unset): you were invoked directly or self-dispatched. After signaling,
@@ -128,6 +128,16 @@ verdict: approve|changes required
 - [ ] Imports — no unused imports, no import cycles introduced
 - [ ] Documentation — exported types and functions have doc comments
 - [ ] Style checks — only report style findings when they materially impact correctness, maintainability in a meaningful way, or violate explicit plan/contract rules
+
+### Integration Hazards
+
+Run these checks whenever the diff touches signals, config keys, FSM state, or execution phases:
+
+- [ ] Signal type names are consistent between emitting code and the consuming gateway (no typo drift between `readiness-approved` and `readiness_approved` style variants)
+- [ ] Config keys use the canonical key (`readiness_review`); `master_review` must only appear as an alias, not a primary key in new code
+- [ ] FSM transitions are wired in all code paths that touch the affected states (daemon, processor, TUI)
+- [ ] Operator labels / execution phase strings match across orchestration code and UI components
+- [ ] New gateway signals have corresponding test coverage in signal_test.go or equivalent
 
 ### Running Tests and Lint
 
@@ -326,6 +336,12 @@ EOF
 If there are no findings in a tier, omit that tier header entirely.
 
 Keep findings to short bullet points with concrete remediation requests. Avoid generic review prose.
+
+### Readiness Review Handoff
+
+When `auto_readiness_review` is enabled in the daemon config, kasmos will automatically spawn the master agent after it processes your `review-approved` signal. You do not need to do anything extra — emit your normal approval signal and stop. The orchestrator handles the handoff into the `readiness_reviewing` execution phase.
+
+If readiness review is disabled, `review-approved` transitions the task directly to `done`.
 
 ### Mode-Specific Behavior
 
