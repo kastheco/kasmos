@@ -211,6 +211,12 @@ func (m *home) handleReviewChangesRequested(planFile, feedback string) tea.Cmd {
 			break
 		}
 	}
+	for _, inst := range m.nav.GetInstances() {
+		if inst.TaskFile == planFile && inst.AgentType == session.AgentTypeMaster {
+			_ = inst.Pause()
+			break
+		}
+	}
 	if len(cmds) == 0 {
 		return nil
 	}

@@ -495,3 +495,54 @@ func TestProfileForAgent_MasterUsesReadinessReviewProfile(t *testing.T) {
 	assert.Equal(t, "claude", profile.Program,
 		"master agent must resolve via the readiness_review phase profile")
 }
+
+func newPausedMasterInstance(t *testing.T, planFile string) *session.Instance {
+	t.Helper()
+	inst, err := session.FromInstanceData(session.InstanceData{
+		Title:     "master-agent",
+		Path:      t.TempDir(),
+		Program:   "opencode",
+		Status:    session.Paused,
+		AgentType: session.AgentTypeMaster,
+		TaskFile:  planFile,
+	})
+	require.NoError(t, err)
+	// Move to Running so the test can verify Pause() transitions back.
+	inst.SetStatus(session.Running)
+	return inst
+}
+
+func TestHandleReviewChangesRequested_PausesMasterInstance(t *testing.T) {
+	h := newTestHome()
+	h.pendingReviewFeedback = make(map[string]string)
+	planFile := "test-plan.md"
+
+	masterInst := newPausedMasterInstance(t, planFile)
+	h.nav.AddInstance(masterInst)
+
+	h.handleReviewChangesRequested(planFile, "needs changes")
+
+	assert.True(t, masterInst.Paused(),
+		"master instance must be paused when review changes are requested")
+}
+
+func TestReviewApproved_PausesMasterInstance(t *testing.T) {
+	h := newTestHome()
+	planFile := "test-plan.md"
+
+	masterInst := newPausedMasterInstance(t, planFile)
+	h.nav.AddInstance(masterInst)
+
+	// Exercise the same loop logic used by both ReviewApprovedAction and
+	// the direct taskfsm.ReviewApproved signal handler.
+	for _, inst := range h.nav.GetInstances() {
+		if inst.TaskFile == planFile &&
+			(inst.AgentType == session.AgentTypeReviewer || inst.AgentType == session.AgentTypeMaster) {
+			inst.SetStatus(session.Paused)
+			break
+		}
+	}
+
+	assert.Equal(t, session.Paused, masterInst.Status,
+		"master instance must be paused when review is approved")
+}

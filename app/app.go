@@ -1234,7 +1234,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							signalCmds = append(signalCmds, cmd)
 						}
 						for _, inst := range m.nav.GetInstances() {
-							if inst.TaskFile == a.PlanFile && inst.AgentType == session.AgentTypeReviewer {
+							if inst.TaskFile == a.PlanFile &&
+								(inst.AgentType == session.AgentTypeReviewer || inst.AgentType == session.AgentTypeMaster) {
 								inst.SetStatus(session.Paused)
 								m.nav.SelectInstance(inst)
 								m.updateNavPanelStatus()
@@ -1376,7 +1377,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							signalCmds = append(signalCmds, cmd)
 						}
 						for _, inst := range m.nav.GetInstances() {
-							if inst.TaskFile == sig.TaskFile && inst.AgentType == session.AgentTypeReviewer {
+							if inst.TaskFile == sig.TaskFile &&
+								(inst.AgentType == session.AgentTypeReviewer || inst.AgentType == session.AgentTypeMaster) {
 								inst.SetStatus(session.Paused)
 								m.nav.SelectInstance(inst)
 								m.updateNavPanelStatus()
