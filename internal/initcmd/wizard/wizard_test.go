@@ -58,8 +58,8 @@ func TestStateToTOMLConfig(t *testing.T) {
 	assert.Nil(t, reviewer.Temperature)
 }
 
-func TestStateToTOMLConfig_ReadinessReviewOptIn(t *testing.T) {
-	// auto_readiness_review should be written as false (discoverable but opt-in)
+func TestStateToTOMLConfig_ReadinessReviewOptOut(t *testing.T) {
+	// auto_readiness_review should be written as true (enabled by default, opt-out)
 	state := &State{
 		Agents: []AgentState{
 			{Role: "coder", Harness: "opencode", Model: "model", Enabled: true},
@@ -70,7 +70,7 @@ func TestStateToTOMLConfig_ReadinessReviewOptIn(t *testing.T) {
 	tc := state.ToTOMLConfig()
 
 	require.NotNil(t, tc.UI.AutoReadinessReview, "AutoReadinessReview must be explicitly written")
-	assert.False(t, *tc.UI.AutoReadinessReview, "AutoReadinessReview must default to false")
+	assert.True(t, *tc.UI.AutoReadinessReview, "AutoReadinessReview must default to true")
 }
 
 func TestStateToTOMLConfig_WritesReadinessReviewPhase(t *testing.T) {

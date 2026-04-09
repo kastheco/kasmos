@@ -113,7 +113,7 @@ func TestInitCreatesConfigWithReadinessReviewPhase(t *testing.T) {
 
 	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, ".kasmos"), 0o755))
 
-	falseVal := false
+	trueVal := true
 	temp := 0.2
 	tc := &config.TOMLConfig{
 		Phases: map[string]string{
@@ -132,7 +132,7 @@ func TestInitCreatesConfigWithReadinessReviewPhase(t *testing.T) {
 			},
 		},
 		UI: config.TOMLUIConfig{
-			AutoReadinessReview: &falseVal,
+			AutoReadinessReview: &trueVal,
 		},
 	}
 
@@ -146,7 +146,7 @@ func TestInitCreatesConfigWithReadinessReviewPhase(t *testing.T) {
 	assert.Empty(t, result.PhaseRoles["master_review"])
 	assert.Equal(t, "opencode", result.Profiles["master"].Program)
 	assert.Equal(t, "openai/gpt-5.4", result.Profiles["master"].Model)
-	// auto_readiness_review written explicitly as false
+	// auto_readiness_review written explicitly as true
 	require.NotNil(t, result.AutoReadinessReview)
-	assert.False(t, *result.AutoReadinessReview)
+	assert.True(t, *result.AutoReadinessReview)
 }

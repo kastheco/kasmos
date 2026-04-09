@@ -20,7 +20,7 @@ func DefaultAgentRoles() []string {
 | `planner` | `planning` | breaks features into structured implementation plans |
 | `chat` | (ad-hoc) | general-purpose assistant; available in all phases |
 | `fixer` | `fixer` | debugger and investigator; fixes stuck states and failures |
-| `master` | `readiness_review` | holistic readiness reviewer; runs after reviewer approval when `auto_readiness_review = true` (opt-in gate). Config alias `master_review` is accepted for backward compatibility. |
+| `master` | `readiness_review` | holistic readiness reviewer; runs after reviewer approval (enabled by default; disable with `auto_readiness_review = false`). Config alias `master_review` is accepted for backward compatibility. |
 
 ## agent profile
 

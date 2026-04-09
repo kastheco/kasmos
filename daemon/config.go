@@ -80,10 +80,11 @@ type tomlDaemonConfig struct {
 // defaultDaemonConfig returns a DaemonConfig populated with sensible defaults.
 func defaultDaemonConfig() *DaemonConfig {
 	return &DaemonConfig{
-		PollInterval:     2 * time.Second,
-		AutoAdvance:      true,
-		AutoAdvanceWaves: true,
-		AutoReviewFix:    true,
+		PollInterval:        2 * time.Second,
+		AutoAdvance:         true,
+		AutoAdvanceWaves:    true,
+		AutoReviewFix:       true,
+		AutoReadinessReview: true,
 		PRMonitor: PRMonitorConfig{
 			Enabled:      false,
 			PollInterval: 60 * time.Second,

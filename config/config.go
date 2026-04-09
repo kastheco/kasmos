@@ -198,7 +198,7 @@ type Config struct {
 	// MaxReviewFixCycles caps the review-fix loop iterations (0 = unlimited).
 	MaxReviewFixCycles int `json:"max_review_fix_cycles,omitempty"`
 	// AutoReadinessReview enables the post-reviewer master-agent readiness gate.
-	// Disabled by default; must be explicitly opted in.
+	// Enabled by default; set to false to skip the readiness review phase.
 	AutoReadinessReview bool `json:"auto_readiness_review,omitempty"`
 	// TelemetryEnabled controls Sentry crash reporting; defaults to true when nil.
 	TelemetryEnabled *bool `json:"telemetry_enabled,omitempty"`
@@ -273,6 +273,7 @@ func DefaultConfig() *Config {
 		AutoAdvanceWaves:     true,
 		AutoAdvance:          true,
 		AutoReviewFix:        true,
+		AutoReadinessReview:  true,
 		NotificationsEnabled: &trueVal,
 		DoubleTapThresholdMS: &dtThreshold,
 	}

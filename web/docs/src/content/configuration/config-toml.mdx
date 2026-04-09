@@ -30,7 +30,7 @@ implementing     = "coder"
 spec_review      = "reviewer"
 quality_review   = "reviewer"
 fixer            = "fixer"
-readiness_review = "master"   # opt-in; also accepted as master_review (backward-compat alias)
+readiness_review = "master"   # also accepted as master_review (backward-compat alias)
 ```
 
 The phase names on the left are fixed lifecycle identifiers. The role names on the right must match keys in the `[agents]` table.
@@ -65,7 +65,7 @@ effort         = "high"
 | `auto_advance_waves` | bool? | `true` | skip confirmation dialog after a clean wave |
 | `auto_review_fix` | bool? | `true` | automatically start the review→fix→re-review loop |
 | `max_review_fix_cycles` | int? | `0` (unlimited) | cap the review-fix loop iterations; `0` means no cap |
-| `auto_readiness_review` | bool? | `false` | when `true`, intercept reviewer approval and hand off to the master agent for a holistic readiness check before the task transitions to `done`. Opt-in — default is disabled. |
+| `auto_readiness_review` | bool? | `true` | intercept reviewer approval and hand off to the master agent for a holistic readiness check before the task transitions to `done`. Set to `false` to skip the readiness review phase. |
 
 ```toml
 [ui]
@@ -74,7 +74,7 @@ auto_advance          = true
 auto_advance_waves    = true
 auto_review_fix       = true
 max_review_fix_cycles = 3
-auto_readiness_review = false   # set to true to enable the master readiness gate
+auto_readiness_review = true    # set to false to skip the master readiness gate
 ```
 
 ## `[telemetry]` — crash reporting
@@ -203,7 +203,7 @@ auto_advance          = true
 auto_advance_waves    = true
 auto_review_fix       = true
 max_review_fix_cycles = 3
-auto_readiness_review = false
+auto_readiness_review = true
 
 [telemetry]
 enabled = true

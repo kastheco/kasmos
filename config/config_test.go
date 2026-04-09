@@ -496,18 +496,18 @@ func TestAutoReadinessReviewConfig(t *testing.T) {
 		assert.True(t, cfg.AutoReadinessReview)
 	})
 
-	t.Run("nil AutoReadinessReview leaves field false (opt-in default)", func(t *testing.T) {
+	t.Run("nil AutoReadinessReview defaults to true (opt-out default)", func(t *testing.T) {
 		result := &TOMLConfigResult{
 			Profiles:   map[string]AgentProfile{},
 			PhaseRoles: map[string]string{},
 		}
 		cfg := configFromTOML(result)
-		assert.False(t, cfg.AutoReadinessReview)
+		assert.True(t, cfg.AutoReadinessReview)
 	})
 
-	t.Run("DefaultConfig disables readiness review", func(t *testing.T) {
+	t.Run("DefaultConfig enables readiness review", func(t *testing.T) {
 		cfg := DefaultConfig()
-		assert.False(t, cfg.AutoReadinessReview)
+		assert.True(t, cfg.AutoReadinessReview)
 	})
 }
 

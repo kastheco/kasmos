@@ -18,7 +18,7 @@ The file is loaded by `daemon.LoadDaemonConfig()`. If the file is absent, all de
 | `auto_advance_waves` | bool | `true` | when `true`, the daemon automatically starts the next wave after all tasks in the current wave complete |
 | `auto_review_fix` | bool | `true` | when `true`, the daemon automatically dispatches a fixer agent when a review comes back with change requests |
 | `max_review_fix_cycles` | int | `0` (unlimited) | cap on automatic review→fix iterations; `0` means no cap |
-| `auto_readiness_review` | bool | `false` | when `true`, the daemon intercepts reviewer approval and hands off to the master agent for a holistic readiness check before the task moves to `done`. Opt-in — disabled by default. |
+| `auto_readiness_review` | bool | `true` | the daemon intercepts reviewer approval and hands off to the master agent for a holistic readiness check before the task moves to `done`. Set to `false` to skip the readiness review phase. |
 | `socket_path` | string | see below | Unix domain socket path for the control API; overrides the runtime default when set |
 
 **Default socket path** — when `socket_path` is not set in `daemon.toml`, the daemon and all CLI clients resolve the path at runtime using the same two-tier logic (see `daemon/daemon.go` `defaultSocketPath` and `config/taskstore/unix_client.go` `ResolvedDaemonSocketPath`):

@@ -173,10 +173,9 @@ func parseTemperature(s string) *float64 {
 
 // ToTOMLConfig converts wizard state to the TOML config structure.
 // Disabled agents are included so their configuration is preserved across re-runs.
-// auto_readiness_review is written as false so the feature is discoverable but opt-in.
+// auto_readiness_review is written as true (enabled by default, opt-out).
 func (s *State) ToTOMLConfig() *config.TOMLConfig {
 	trueVal := true
-	falseVal := false
 	tc := &config.TOMLConfig{
 		Phases: s.PhaseMapping,
 		Agents: make(map[string]config.TOMLAgent),
@@ -184,7 +183,7 @@ func (s *State) ToTOMLConfig() *config.TOMLConfig {
 			AutoAdvanceWaves:    &trueVal,
 			AutoAdvance:         &trueVal,
 			AutoReviewFix:       &trueVal,
-			AutoReadinessReview: &falseVal,
+			AutoReadinessReview: &trueVal,
 		},
 	}
 
