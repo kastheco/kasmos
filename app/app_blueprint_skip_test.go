@@ -103,7 +103,7 @@ func TestExecuteTaskStage_BlueprintSkipSmallPlan(t *testing.T) {
 	assert.Equal(t, session.AgentTypeCoder, instances[0].AgentType)
 	assert.Equal(t, planFile, instances[0].TaskFile)
 	assert.Contains(t, instances[0].QueuedPrompt, "First task")
-	assert.Contains(t, instances[0].QueuedPrompt, "Do NOT emit lifecycle signals yourself")
+	assert.Contains(t, instances[0].QueuedPrompt, "signal_create")
 }
 
 func TestExecuteTaskStage_BlueprintSkipDirectClearsStaleOrchestrator(t *testing.T) {
@@ -183,7 +183,7 @@ func TestExecuteTaskStage_BlueprintSkipDirectClearsStaleOrchestrator(t *testing.
 	require.Len(t, instances, 1)
 	assert.Equal(t, session.AgentTypeCoder, instances[0].AgentType)
 	assert.Equal(t, planFile, instances[0].TaskFile)
-	assert.Contains(t, instances[0].QueuedPrompt, "Do NOT emit lifecycle signals yourself")
+	assert.Contains(t, instances[0].QueuedPrompt, "signal_create")
 }
 
 func TestExecuteTaskStage_BlueprintSkipDirectClearsProcessorWaveState(t *testing.T) {

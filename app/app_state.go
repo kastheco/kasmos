@@ -2594,7 +2594,7 @@ func (m *home) spawnBlueprintSkipAgent(planFile string, plan *taskparser.Plan) (
 	}
 	m.toastManager.Info(fmt.Sprintf("small plan (%d tasks) - running single agent", totalTasks))
 
-	model, cmd := m.spawnTaskAgent(planFile, "implement", orchestration.BuildBlueprintSkipPrompt(planFile, plan))
+	model, cmd := m.spawnTaskAgent(planFile, "implement", orchestration.BuildBlueprintSkipPrompt(planFile, plan, m.taskStoreProject))
 	return model, tea.Batch(cmd, m.toastTickCmd())
 }
 

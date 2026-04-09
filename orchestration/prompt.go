@@ -80,7 +80,7 @@ func BuildTaskPrompt(planFile string, plan *taskparser.Plan, task taskparser.Tas
 // count is at or below the blueprint_skip_threshold so wave orchestration is skipped.
 // The agent signals implement_finished directly when done, which triggers the
 // existing review flow without any wave orchestration machinery.
-func BuildBlueprintSkipPrompt(planFile string, plan *taskparser.Plan) string {
+func BuildBlueprintSkipPrompt(planFile string, plan *taskparser.Plan, project string) string {
 	var sb strings.Builder
 
 	// Count total tasks for the header message.
@@ -99,7 +99,7 @@ func BuildBlueprintSkipPrompt(planFile string, plan *taskparser.Plan) string {
 	sb.WriteString("- Run scoped tests before committing: `go test ./pkg/... -run Test<Name> -v`\n")
 	sb.WriteString("- Verify build: `go build ./...`\n")
 	sb.WriteString("- Commit: `git add <specific-files> && git commit -m \"feat(task-N): description\"`\n")
-	sb.WriteString("- When done with ALL tasks: stop and return to the prompt. Do NOT emit lifecycle signals yourself; kasmos handles the review handoff.\n\n")
+	sb.WriteString(fmt.Sprintf("- When done with ALL tasks: signal completion with MCP `signal_create` (signal_type: \"implement-finished\", plan_file: %q, project: %q). Then stop.\n\n", planFile, project))
 
 	// Plan context header.
 	header := plan.HeaderContext()
@@ -141,8 +141,7 @@ func BuildFixerPrompt(planFile, project, feedback string, reviewRound int) strin
 	sb.WriteString("- Investigate root causes before editing code.\n")
 	sb.WriteString("- Use `rg` (not grep), `sd` (not sed), `fd` (not find), `comby`/`ast-grep` for structural changes.\n")
 	sb.WriteString("- Run targeted verification for the affected area first; run broader tests only as needed.\n")
-	sb.WriteString("- Do not emit completion signals from this fixer prompt; kasmos advances the review loop after you stop.\n")
-	sb.WriteString("- When done, stop so kasmos can continue the review loop.\n\n")
+	sb.WriteString(fmt.Sprintf("- When done: signal completion with MCP `signal_create` (signal_type: \"implement-finished\", plan_file: %q, project: %q). Then stop.\n\n", planFile, project))
 
 	sb.WriteString("## Reviewer feedback\n\n")
 	if trimmedFeedback != "" {

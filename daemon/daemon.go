@@ -817,7 +817,7 @@ func (d *Daemon) autoImplementPlan(ctx context.Context, e RepoEntry, planFile st
 		if err != nil {
 			return fmt.Errorf("load task entry for %s: %w", planFile, err)
 		}
-		prompt := orchestration.BuildBlueprintSkipPrompt(planFile, plan)
+		prompt := orchestration.BuildBlueprintSkipPrompt(planFile, plan, e.Project)
 		return d.executeAction(ctx, e, loop.SpawnCoderAction{
 			PlanFile: entry.Filename,
 			Feedback: prompt,

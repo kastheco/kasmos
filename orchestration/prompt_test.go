@@ -151,7 +151,8 @@ func TestBuildFixerPrompt(t *testing.T) {
 	assert.Contains(t, prompt, `project: "myproject"`)
 	assert.Contains(t, prompt, "not an implementer")
 	assert.Contains(t, prompt, "fix the failing review handoff")
-	assert.Contains(t, prompt, "Do not emit completion signals from this fixer prompt")
+	assert.Contains(t, prompt, "signal_create")
+	assert.Contains(t, prompt, "implement-finished")
 	assert.NotContains(t, prompt, "execute all tasks sequentially")
 }
 
