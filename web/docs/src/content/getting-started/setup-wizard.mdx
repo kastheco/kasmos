@@ -56,13 +56,13 @@ The wizard pre-seeds a fixed phase → role mapping in code. You do **not** conf
 
 ```toml
 [phases]
-implementing   = "coder"
-elaborating    = "architect"
-spec_review    = "reviewer"
-quality_review = "reviewer"
-planning       = "planner"
-fixer          = "fixer"
-master_review  = "master"
+implementing     = "coder"
+elaborating      = "architect"
+spec_review      = "reviewer"
+quality_review   = "reviewer"
+planning         = "planner"
+fixer            = "fixer"
+readiness_review = "master"
 ```
 
 These map each lifecycle phase to an agent role. The role name determines which `[agents.*]` block kasmos uses when spawning an agent for that phase.
@@ -92,13 +92,13 @@ The generated `config.toml` uses these fields (all from `config/toml.go`):
 ```toml
 # phase → role mapping
 [phases]
-implementing   = "coder"
-planning       = "planner"
-spec_review    = "reviewer"
-quality_review = "reviewer"
-elaborating    = "architect"
-fixer          = "fixer"
-master_review  = "master"
+implementing     = "coder"
+planning         = "planner"
+spec_review      = "reviewer"
+quality_review   = "reviewer"
+elaborating      = "architect"
+fixer            = "fixer"
+readiness_review = "master"   # canonical key; master_review accepted as backward-compat alias
 
 # per-role agent configuration
 [agents.coder]

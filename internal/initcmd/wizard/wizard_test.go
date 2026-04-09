@@ -58,6 +58,40 @@ func TestStateToTOMLConfig(t *testing.T) {
 	assert.Nil(t, reviewer.Temperature)
 }
 
+func TestStateToTOMLConfig_ReadinessReviewOptIn(t *testing.T) {
+	// auto_readiness_review should be written as false (discoverable but opt-in)
+	state := &State{
+		Agents: []AgentState{
+			{Role: "coder", Harness: "opencode", Model: "model", Enabled: true},
+		},
+		PhaseMapping: map[string]string{"implementing": "coder"},
+	}
+
+	tc := state.ToTOMLConfig()
+
+	require.NotNil(t, tc.UI.AutoReadinessReview, "AutoReadinessReview must be explicitly written")
+	assert.False(t, *tc.UI.AutoReadinessReview, "AutoReadinessReview must default to false")
+}
+
+func TestStateToTOMLConfig_WritesReadinessReviewPhase(t *testing.T) {
+	// Wizard should seed readiness_review (not master_review) as the canonical key
+	state := &State{
+		Agents: []AgentState{
+			{Role: "master", Harness: "opencode", Model: "openai/gpt-5.4", Enabled: true},
+		},
+		PhaseMapping: map[string]string{
+			"implementing":     "coder",
+			"readiness_review": "master",
+		},
+	}
+
+	tc := state.ToTOMLConfig()
+
+	assert.Equal(t, "master", tc.Phases["readiness_review"], "canonical key must be readiness_review")
+	_, hasMasterReview := tc.Phases["master_review"]
+	assert.False(t, hasMasterReview, "wizard output must not contain legacy master_review key")
+}
+
 func TestStateToAgentConfigs(t *testing.T) {
 	t.Run("chat is fanned out to all selected harnesses", func(t *testing.T) {
 		state := &State{

@@ -473,3 +473,55 @@ func TestSyncSharedWorktreeScaffold_WritesHarnessFilesForConfiguredProfiles(t *t
 	assert.FileExists(t, filepath.Join(dir, ".agents", "skills", "kasmos-fixer", "SKILL.md"))
 	assert.FileExists(t, filepath.Join(dir, "opencode.jsonc"))
 }
+
+func TestProfileForAgent_MasterUsesReadinessReviewProfile(t *testing.T) {
+	temp := 0.0
+	m := &home{
+		program: "opencode",
+		appConfig: &config.Config{
+			PhaseRoles: map[string]string{
+				"readiness_review": "master",
+			},
+			Profiles: map[string]config.AgentProfile{
+				"master": {
+					Program:     "claude",
+					Enabled:     true,
+					Temperature: &temp,
+				},
+			},
+		},
+	}
+	profile := m.profileForAgent(session.AgentTypeMaster)
+	assert.Equal(t, "claude", profile.Program,
+		"master agent must resolve via the readiness_review phase profile")
+}
+
+func newPausedMasterInstance(t *testing.T, planFile string) *session.Instance {
+	t.Helper()
+	inst, err := session.FromInstanceData(session.InstanceData{
+		Title:     "master-agent",
+		Path:      t.TempDir(),
+		Program:   "opencode",
+		Status:    session.Paused,
+		AgentType: session.AgentTypeMaster,
+		TaskFile:  planFile,
+	})
+	require.NoError(t, err)
+	// Move to Running so the test can verify Pause() transitions back.
+	inst.SetStatus(session.Running)
+	return inst
+}
+
+func TestHandleReviewChangesRequested_PausesMasterInstance(t *testing.T) {
+	h := newTestHome()
+	h.pendingReviewFeedback = make(map[string]string)
+	planFile := "test-plan.md"
+
+	masterInst := newPausedMasterInstance(t, planFile)
+	h.nav.AddInstance(masterInst)
+
+	h.handleReviewChangesRequested(planFile, "needs changes")
+
+	assert.True(t, masterInst.Paused(),
+		"master instance must be paused when review changes are requested")
+}

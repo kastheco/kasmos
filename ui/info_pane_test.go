@@ -498,3 +498,33 @@ func TestInfoPane_FallbackToGlobalCounterWhenNoWaveFields(t *testing.T) {
 	output := pane.String()
 	assert.Contains(t, output, "3 of 6: http endpoints")
 }
+
+// TestInfoPane_ReadinessReviewPhase verifies that a task in the readiness_reviewing
+// sub-phase shows "readiness review" as the phase label, "master" as the active agent,
+// and suppresses the review round counter entirely.
+func TestInfoPane_ReadinessReviewPhase(t *testing.T) {
+	pane := NewInfoPane()
+	pane.SetSize(70, 40)
+	pane.SetData(InfoData{
+		IsPlanHeaderSelected: true,
+		PlanName:             "auth-feature",
+		PlanStatus:           "reviewing",
+		ExecutionPhase:       "readiness_reviewing",
+		ActiveAgentType:      "master",
+		// ActiveRound is set to simulate a non-zero value that must be suppressed.
+		ActiveRound: 2,
+	})
+
+	output := pane.String()
+	assert.Contains(t, output, "readiness review", "phase label must be readiness review")
+	assert.Contains(t, output, "master", "active agent must be master")
+	// The round counter must NOT appear for readiness review.
+	assert.NotContains(t, output, "round", "round counter must be suppressed for readiness review")
+}
+
+// TestInfoPane_ReadinessReviewPhaseLabel exercises the infoPhaseLabel helper directly.
+func TestInfoPane_ReadinessReviewPhaseLabel(t *testing.T) {
+	assert.Equal(t, "readiness review", infoPhaseLabel("readiness_reviewing", 0, 0))
+	// activeWave and activeRound are ignored for readiness review
+	assert.Equal(t, "readiness review", infoPhaseLabel("readiness_reviewing", 3, 2))
+}

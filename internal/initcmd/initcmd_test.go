@@ -105,3 +105,48 @@ func TestInitCreatesConfigWithMasterPhase(t *testing.T) {
 	assert.Equal(t, "opencode", result.Profiles["master"].Program)
 	assert.Equal(t, "openai/gpt-5.4", result.Profiles["master"].Model)
 }
+
+func TestInitCreatesConfigWithReadinessReviewPhase(t *testing.T) {
+	projectDir := t.TempDir()
+	t.Chdir(projectDir)
+	t.Setenv("HOME", t.TempDir())
+
+	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, ".kasmos"), 0o755))
+
+	falseVal := false
+	temp := 0.2
+	tc := &config.TOMLConfig{
+		Phases: map[string]string{
+			"implementing":     "coder",
+			"planning":         "planner",
+			"readiness_review": "master",
+		},
+		Agents: map[string]config.TOMLAgent{
+			"master": {
+				Enabled:     true,
+				Program:     "opencode",
+				Model:       "openai/gpt-5.4",
+				Temperature: &temp,
+				Effort:      "high",
+				Flags:       []string{},
+			},
+		},
+		UI: config.TOMLUIConfig{
+			AutoReadinessReview: &falseVal,
+		},
+	}
+
+	require.NoError(t, config.SaveTOMLConfig(tc))
+
+	result, err := config.LoadTOMLConfigFrom(filepath.Join(projectDir, ".kasmos", "config.toml"))
+	require.NoError(t, err)
+
+	// Canonical key is readiness_review
+	assert.Equal(t, "master", result.PhaseRoles["readiness_review"])
+	assert.Empty(t, result.PhaseRoles["master_review"])
+	assert.Equal(t, "opencode", result.Profiles["master"].Program)
+	assert.Equal(t, "openai/gpt-5.4", result.Profiles["master"].Model)
+	// auto_readiness_review written explicitly as false
+	require.NotNil(t, result.AutoReadinessReview)
+	assert.False(t, *result.AutoReadinessReview)
+}

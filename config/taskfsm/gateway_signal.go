@@ -14,17 +14,19 @@ import (
 const ArchitectFinished Event = "architect_finished"
 
 var validGatewaySignalTypes = map[string]struct{}{
-	"planner_finished":         {},
-	"implement_finished":       {},
-	"review_approved":          {},
-	"review_changes_requested": {},
-	"implement_task_finished":  {},
-	"implement_wave":           {},
-	"elaborator_finished":      {},
+	"planner_finished":            {},
+	"implement_finished":          {},
+	"review_approved":             {},
+	"review_changes_requested":    {},
+	"implement_task_finished":     {},
+	"implement_wave":              {},
+	"elaborator_finished":         {},
+	"readiness_approved":          {},
+	"readiness_changes_requested": {},
 }
 
 func gatewaySignalTypeError(raw string) error {
-	return fmt.Errorf("unknown signal type %q; valid types: planner_finished, implement_finished, review_approved, review_changes_requested, implement_task_finished, implement_wave, architect_finished (wire alias: elaborator_finished)", raw)
+	return fmt.Errorf("unknown signal type %q; valid types: planner_finished, implement_finished, review_approved, review_changes_requested, readiness_approved, readiness_changes_requested, implement_task_finished, implement_wave, architect_finished (wire alias: elaborator_finished)", raw)
 }
 
 // CanonicalGatewaySignalType normalizes accepted signal-type aliases to the
@@ -38,6 +40,10 @@ func CanonicalGatewaySignalType(raw string) (string, error) {
 		return string(ReviewChangesRequested), nil
 	case string(ArchitectFinished), "elaborator_finished":
 		return "elaborator_finished", nil
+	case "readiness_approved", "master_approved":
+		return "readiness_approved", nil
+	case "readiness_changes_requested", "readiness_changes":
+		return "readiness_changes_requested", nil
 	default:
 		return "", gatewaySignalTypeError(raw)
 	}
@@ -65,7 +71,8 @@ func NormalizeGatewaySignalPayload(signalType, payload string) (string, error) {
 	}
 
 	switch canonicalType {
-	case "planner_finished", "implement_finished", "review_approved", "review_changes_requested":
+	case "planner_finished", "implement_finished", "review_approved", "review_changes_requested",
+		"readiness_approved", "readiness_changes_requested":
 		if payload == "" {
 			return "", nil
 		}

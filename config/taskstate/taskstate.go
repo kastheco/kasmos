@@ -131,10 +131,21 @@ func normalizeExecutionState(status Status, state taskstore.ExecutionState) task
 			return taskstore.ExecutionState{}
 		}
 	case StatusReviewing:
-		if state.Phase != "reviewing" || state.ActiveAgentType == "" {
+		switch state.Phase {
+		case "reviewing":
+			if state.ActiveAgentType == "" {
+				return taskstore.ExecutionState{}
+			}
+			return taskstore.ExecutionState{Phase: state.Phase, ActiveAgentType: state.ActiveAgentType}
+		case "readiness_reviewing":
+			if state.ActiveAgentType == "" {
+				return taskstore.ExecutionState{}
+			}
+			// ActiveWave is always zeroed for the readiness review sub-phase.
+			return taskstore.ExecutionState{Phase: state.Phase, ActiveAgentType: state.ActiveAgentType}
+		default:
 			return taskstore.ExecutionState{}
 		}
-		return taskstore.ExecutionState{Phase: state.Phase, ActiveAgentType: state.ActiveAgentType}
 	default:
 		return taskstore.ExecutionState{}
 	}

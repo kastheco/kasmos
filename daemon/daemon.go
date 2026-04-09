@@ -53,6 +53,7 @@ type Daemon struct {
 	spawnCoder      func(context.Context, loop.SpawnOpts) error
 	spawnElaborator func(context.Context, loop.SpawnOpts) error
 	spawnFixer      func(context.Context, loop.SpawnOpts) error
+	spawnMaster     func(context.Context, loop.SpawnOpts) error
 	spawnWaveTask   func(context.Context, loop.SpawnOpts, taskparser.Task, string, int, int) error
 	killWaveAgents  func(repoPath, planFile string, wave int) error
 	createPR        func(RepoEntry, string, string) error
@@ -259,6 +260,7 @@ func NewDaemon(cfg *DaemonConfig) (*Daemon, error) {
 	repos := NewRepoManager()
 	repos.autoAdvance = cfg.AutoAdvance
 	repos.autoReviewFix = cfg.AutoReviewFix
+	repos.autoReadinessReview = cfg.AutoReadinessReview
 	repos.maxReviewFixCycles = cfg.MaxReviewFixCycles
 
 	d := &Daemon{
@@ -958,7 +960,12 @@ func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
 			if md.HasPrompt {
 				inst.SetStatus(session.Ready)
 				inst.PromptDetected = true
-				inst.TapEnter()
+				// Skip TapEnter for permission prompts — avoid sending
+				// literal "1" as text when both auto_yes and permission
+				// bypass are active.
+				if md.PermissionPrompt == nil {
+					inst.TapEnter()
+				}
 			} else if md.Updated {
 				inst.SetStatus(session.Running)
 				if inst.TaskNumber > 0 && !inst.HasWorked && inst.QueuedPrompt == "" {
@@ -1046,6 +1053,8 @@ func gatewayNoopOutcome(entry *taskstore.SignalEntry) (taskstore.SignalStatus, s
 		return taskstore.SignalFailed, "processor could not start the requested wave"
 	case string(taskfsm.ArchitectFinished):
 		return taskstore.SignalFailed, "no active architect pass to resume"
+	case "readiness_approved", "readiness_changes_requested":
+		return taskstore.SignalFailed, "no active readiness review to resume"
 	default:
 		return taskstore.SignalFailed, "signal rejected by processor"
 	}
@@ -1204,6 +1213,30 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			Repo:      e.Path,
 			PlanFile:  a.PlanFile,
 			AgentType: "fixer",
+		})
+		return nil
+	case loop.SpawnMasterAction:
+		if err := setRepoExecutionState(e, a.PlanFile, taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseReadinessReview),
+			ActiveAgentType: session.AgentTypeMaster,
+		}); err != nil {
+			return fmt.Errorf("persist master execution state: %w", err)
+		}
+		opts := masterSpawnOpts(e, entryFor(a.PlanFile))
+		spawnMaster := d.spawnMaster
+		if spawnMaster == nil {
+			spawnMaster = d.spawner.SpawnMaster
+		}
+		if err := spawnMaster(ctx, opts); err != nil {
+			d.logger.Error("spawn master failed", "plan", a.PlanFile, "err", err)
+			return err
+		}
+		d.broadcaster.Emit(api.Event{
+			Kind:      api.EventKindAgentSpawned,
+			Message:   "master spawned for " + a.PlanFile,
+			Repo:      e.Path,
+			PlanFile:  a.PlanFile,
+			AgentType: session.AgentTypeMaster,
 		})
 		return nil
 	case loop.PausePlanAgentAction:
@@ -1609,6 +1642,8 @@ func programForAgentWithRegistry(repoPath, agentType string, registry *harness.R
 		phase = "fixer"
 	case session.AgentTypeElaborator:
 		phase = "elaborating"
+	case session.AgentTypeMaster:
+		phase = "readiness_review"
 	default:
 		return defaultProgram
 	}
@@ -1698,6 +1733,18 @@ func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 		ReviewCycle: spec.ReviewCycle,
 		Prompt:      spec.Prompt,
 		Feedback:    feedback,
+	}
+}
+
+func masterSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
+	spec := orchestration.BuildMasterAgentSpec(entry.Filename, e.Project)
+	return loop.SpawnOpts{
+		PlanFile: entry.Filename,
+		RepoPath: e.Path,
+		Project:  e.Project,
+		Branch:   entry.Branch,
+		Program:  programForAgent(e.Path, session.AgentTypeMaster),
+		Prompt:   spec.Prompt,
 	}
 }
 

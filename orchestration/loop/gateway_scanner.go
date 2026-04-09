@@ -120,6 +120,30 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			Body:     body,
 		})
 
+	case "readiness_approved":
+		body, err := decodeBody(entry.Payload)
+		if err != nil {
+			return err
+		}
+		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
+			Event:    taskfsm.ReviewApproved,
+			TaskFile: entry.PlanFile,
+			Body:     body,
+			Origin:   "master",
+		})
+
+	case "readiness_changes_requested":
+		body, err := decodeBody(entry.Payload)
+		if err != nil {
+			return err
+		}
+		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
+			Event:    taskfsm.ReviewChangesRequested,
+			TaskFile: entry.PlanFile,
+			Body:     body,
+			Origin:   "master",
+		})
+
 	case "implement_task_finished":
 		var p taskPayload
 		if err := json.Unmarshal([]byte(entry.Payload), &p); err != nil {

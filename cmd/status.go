@@ -63,6 +63,11 @@ func statusAgentLabel(agent string) string {
 
 func statusDisplayReviewRound(entry taskstore.TaskEntry) int {
 	phase := strings.TrimSpace(entry.ExecutionState.Phase)
+	// Readiness review is a master-owned sub-phase; cycles belong to the
+	// reviewer/fixer loop, so no round label is shown here.
+	if phase == string(taskfsm.ExecutionPhaseReadinessReview) {
+		return 0
+	}
 	if phase == string(taskfsm.ExecutionPhaseFixing) || phase == string(taskfsm.ExecutionPhaseReviewing) || entry.Status == taskstore.StatusReviewing {
 		return entry.ReviewCycle + 1
 	}
@@ -96,6 +101,8 @@ func statusStageForTask(entry taskstore.TaskEntry) string {
 			return fmt.Sprintf("reviewing round %d", round)
 		}
 		return "reviewing"
+	case string(taskfsm.ExecutionPhaseReadinessReview):
+		return "readiness review"
 	}
 	return string(entry.Status)
 }
@@ -123,6 +130,9 @@ func statusRecoveryHints(tasks []statusTask) []string {
 			appendHint("  kas task recover <task-name> --action architect-finished              # resume architect handoff")
 		case phase == string(taskfsm.ExecutionPhaseFixing) || phase == string(taskfsm.ExecutionPhaseSingleAgentImplementing):
 			appendHint("  kas task recover <task-name> --action implement-finished             # hand implementation to review")
+		case phase == string(taskfsm.ExecutionPhaseReadinessReview):
+			appendHint("  kas task recover <task-name> --action readiness-approved                        # finish readiness review")
+			appendHint("  kas task recover <task-name> --action readiness-changes --feedback ...          # queue readiness fixer recovery")
 		case phase == string(taskfsm.ExecutionPhaseReviewing) || t.Status == string(taskstore.StatusReviewing):
 			appendHint("  kas task recover <task-name> --action review-approved                # finish review")
 			appendHint("  kas task recover <task-name> --action review-changes --feedback ...  # queue fixer recovery")

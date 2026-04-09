@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	version              = "2.1.8"
+	version              = "2.2.0"
 	commitHash           = ""
 	programFlag          string
 	autoYesFlag          bool

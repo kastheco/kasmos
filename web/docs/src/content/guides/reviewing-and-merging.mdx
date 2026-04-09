@@ -46,7 +46,34 @@ The reviewer agent emits one of two signals when it finishes:
 
 ### approval path
 
-When the reviewer approves, the plan moves to `done`. The orchestration loop processor then checks whether the task is eligible for automatic PR creation: if the task has a branch and no PR URL is already recorded, it emits a `CreatePRAction`. The daemon picks this up and calls the GitHub PR creation flow — no config knob is needed; the behavior is automatic when the eligibility criteria are met.
+When the reviewer approves, the plan normally moves to `done`. If `auto_readiness_review = true` in `daemon.toml` (or the project `config.toml`), the processor **intercepts** the `review_approved` signal and instead:
+
+1. sets the execution phase to `readiness_reviewing`
+2. spawns the **master agent** on the same worktree
+3. shows a toast: `review approved → readiness check started for <plan>`
+
+The master agent performs a holistic check against the plan spec. When it finishes, it emits one of the readiness signals:
+
+| signal | transition | result |
+|--------|-----------|--------|
+| `readiness_approved` | `reviewing` (`readiness_reviewing` phase) → `done` | plan is marked done; PR/merge become available |
+| `readiness_changes_requested` | `reviewing` (`readiness_reviewing` phase) → `implementing` | feedback is stored; a fixer agent is spawned |
+
+**Emit these with the MCP tool** (preferred):
+```json
+{"signal_type": "readiness-approved", "plan_file": "<plan>", "project": "<project>"}
+```
+or with the CLI:
+```bash
+kas signal emit readiness_approved <plan>
+kas signal emit readiness_changes_requested <plan>
+```
+
+When readiness review is **disabled** (the default), `review_approved` flows directly to `done` as before.
+
+**The FSM status table is unchanged** — no new FSM status was added. `reviewing → done` still flows through `review_approved`; the `readiness_reviewing` execution phase is a sub-state within `reviewing` managed by the orchestration engine.
+
+After readiness approval (or when readiness review is disabled), the processor checks whether the task is eligible for automatic PR creation: if the task has a branch and no PR URL is already recorded, it emits a `CreatePRAction`. The daemon picks this up and calls the GitHub PR creation flow — no config knob is needed; the behavior is automatic when the eligibility criteria are met.
 
 If you want to create a PR manually (or the automatic path was skipped for any reason):
 - press `P` with the plan or instance selected

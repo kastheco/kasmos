@@ -44,8 +44,8 @@ An **agent** is a running AI assistant (claude, opencode, codex, etc.) executing
 | `planner` | planning |
 | `architect` | elaborating |
 | `coder` | implementing |
-| `reviewer` | reviewing |
-| `master` | master_review |
+| `reviewer` | spec_review, quality_review |
+| `master` | readiness_review |
 | `fixer` | fixer |
 | `chat` | (ad-hoc) |
 
@@ -58,7 +58,7 @@ See [agents and roles](/docs/concepts/agents-and-roles) for profile fields and e
 Every task moves through a finite state machine:
 
 ```
-ready → planning → ready → implementing → reviewing → done
+ready → planning → ready → implementing → reviewing → [readiness review →] done
 ```
 
 Cancelled and reopened tasks are also handled.

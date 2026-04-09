@@ -473,6 +473,92 @@ func TestLoadConfig_MigratesJSON(t *testing.T) {
 	assert.Contains(t, string(written), `notifications_enabled = false`)
 }
 
+func TestAutoReadinessReviewConfig(t *testing.T) {
+	t.Run("explicit false round-trips through configFromTOML", func(t *testing.T) {
+		falseVal := false
+		result := &TOMLConfigResult{
+			Profiles:            map[string]AgentProfile{},
+			PhaseRoles:          map[string]string{},
+			AutoReadinessReview: &falseVal,
+		}
+		cfg := configFromTOML(result)
+		assert.False(t, cfg.AutoReadinessReview)
+	})
+
+	t.Run("explicit true round-trips through configFromTOML", func(t *testing.T) {
+		trueVal := true
+		result := &TOMLConfigResult{
+			Profiles:            map[string]AgentProfile{},
+			PhaseRoles:          map[string]string{},
+			AutoReadinessReview: &trueVal,
+		}
+		cfg := configFromTOML(result)
+		assert.True(t, cfg.AutoReadinessReview)
+	})
+
+	t.Run("nil AutoReadinessReview leaves field false (opt-in default)", func(t *testing.T) {
+		result := &TOMLConfigResult{
+			Profiles:   map[string]AgentProfile{},
+			PhaseRoles: map[string]string{},
+		}
+		cfg := configFromTOML(result)
+		assert.False(t, cfg.AutoReadinessReview)
+	})
+
+	t.Run("DefaultConfig disables readiness review", func(t *testing.T) {
+		cfg := DefaultConfig()
+		assert.False(t, cfg.AutoReadinessReview)
+	})
+}
+
+func TestResolveProfile_ReadinessReviewAlias(t *testing.T) {
+	masterProfile := AgentProfile{Program: "opencode", Enabled: true, ExecutionMode: ExecutionModeTmux}
+
+	t.Run("readiness_review resolves via master_review alias", func(t *testing.T) {
+		cfg := &Config{
+			PhaseRoles: map[string]string{"master_review": "master"},
+			Profiles:   map[string]AgentProfile{"master": masterProfile},
+		}
+		profile := cfg.ResolveProfile("readiness_review", "claude")
+		assert.Equal(t, "opencode", profile.Program)
+	})
+
+	t.Run("master_review resolves via readiness_review alias", func(t *testing.T) {
+		cfg := &Config{
+			PhaseRoles: map[string]string{"readiness_review": "master"},
+			Profiles:   map[string]AgentProfile{"master": masterProfile},
+		}
+		profile := cfg.ResolveProfile("master_review", "claude")
+		assert.Equal(t, "opencode", profile.Program)
+	})
+
+	t.Run("direct readiness_review mapping takes precedence when both keys present", func(t *testing.T) {
+		directProfile := AgentProfile{Program: "claude", Enabled: true, ExecutionMode: ExecutionModeTmux}
+		legacyProfile := AgentProfile{Program: "codex", Enabled: true, ExecutionMode: ExecutionModeTmux}
+		cfg := &Config{
+			PhaseRoles: map[string]string{
+				"readiness_review": "direct_master",
+				"master_review":    "legacy_master",
+			},
+			Profiles: map[string]AgentProfile{
+				"direct_master": directProfile,
+				"legacy_master": legacyProfile,
+			},
+		}
+		profile := cfg.ResolveProfile("readiness_review", "fallback")
+		assert.Equal(t, "claude", profile.Program)
+	})
+
+	t.Run("neither alias present falls back to default", func(t *testing.T) {
+		cfg := &Config{
+			PhaseRoles: map[string]string{"implementing": "coder"},
+			Profiles:   map[string]AgentProfile{"coder": {Program: "opencode", Enabled: true}},
+		}
+		profile := cfg.ResolveProfile("readiness_review", "fallback")
+		assert.Equal(t, "fallback", profile.Program)
+	})
+}
+
 func intPtr(i int) *int { return &i }
 
 func boolPtr(b bool) *bool { return &b }

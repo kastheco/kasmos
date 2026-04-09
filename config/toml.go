@@ -36,12 +36,13 @@ func (a TOMLAgent) toProfile() AgentProfile {
 
 // TOMLUIConfig holds UI-specific settings from the [ui] TOML table.
 type TOMLUIConfig struct {
-	AnimateBanner      bool   `toml:"animate_banner"`
-	AccentColor        string `toml:"accent_color,omitempty"`
-	AutoAdvanceWaves   *bool  `toml:"auto_advance_waves"`
-	AutoAdvance        *bool  `toml:"auto_advance"`
-	AutoReviewFix      *bool  `toml:"auto_review_fix"`
-	MaxReviewFixCycles *int   `toml:"max_review_fix_cycles"`
+	AnimateBanner       bool   `toml:"animate_banner"`
+	AccentColor         string `toml:"accent_color,omitempty"`
+	AutoAdvanceWaves    *bool  `toml:"auto_advance_waves"`
+	AutoAdvance         *bool  `toml:"auto_advance"`
+	AutoReviewFix       *bool  `toml:"auto_review_fix"`
+	MaxReviewFixCycles  *int   `toml:"max_review_fix_cycles"`
+	AutoReadinessReview *bool  `toml:"auto_readiness_review"`
 }
 
 // TOMLTelemetryConfig holds telemetry settings from the [telemetry] TOML table.
@@ -103,6 +104,7 @@ type TOMLConfigResult struct {
 	AutoAdvance            *bool
 	AutoReviewFix          *bool
 	MaxReviewFixCycles     *int
+	AutoReadinessReview    *bool
 	TelemetryEnabled       *bool
 	DatabaseURL            string
 	BlueprintSkipThreshold *int
@@ -133,6 +135,7 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 		AutoAdvance:            tc.UI.AutoAdvance,
 		AutoReviewFix:          tc.UI.AutoReviewFix,
 		MaxReviewFixCycles:     tc.UI.MaxReviewFixCycles,
+		AutoReadinessReview:    tc.UI.AutoReadinessReview,
 		TelemetryEnabled:       tc.Telemetry.Enabled,
 		DatabaseURL:            tc.DatabaseURL,
 		BlueprintSkipThreshold: tc.Orchestration.BlueprintSkipThreshold,

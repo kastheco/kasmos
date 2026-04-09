@@ -197,6 +197,9 @@ type Config struct {
 	AutoReviewFix bool `json:"auto_review_fix,omitempty"`
 	// MaxReviewFixCycles caps the review-fix loop iterations (0 = unlimited).
 	MaxReviewFixCycles int `json:"max_review_fix_cycles,omitempty"`
+	// AutoReadinessReview enables the post-reviewer master-agent readiness gate.
+	// Disabled by default; must be explicitly opted in.
+	AutoReadinessReview bool `json:"auto_readiness_review,omitempty"`
 	// TelemetryEnabled controls Sentry crash reporting; defaults to true when nil.
 	TelemetryEnabled *bool `json:"telemetry_enabled,omitempty"`
 	// DatabaseURL is the remote kasmos store URL; uses local file when empty.
@@ -414,6 +417,9 @@ func configFromTOML(result *TOMLConfigResult) *Config {
 		if result.MaxReviewFixCycles != nil {
 			cfg.MaxReviewFixCycles = *result.MaxReviewFixCycles
 		}
+		if result.AutoReadinessReview != nil {
+			cfg.AutoReadinessReview = *result.AutoReadinessReview
+		}
 		if result.ClaudeNoFlicker != nil {
 			cfg.ClaudeNoFlicker = *result.ClaudeNoFlicker
 		}
@@ -474,6 +480,8 @@ func configToTOML(cfg *Config) *TOMLConfig {
 	out.UI.AutoReviewFix = &autoReviewFix
 	maxReviewFixCycles := cfg.MaxReviewFixCycles
 	out.UI.MaxReviewFixCycles = &maxReviewFixCycles
+	autoReadinessReview := cfg.AutoReadinessReview
+	out.UI.AutoReadinessReview = &autoReadinessReview
 	return out
 }
 

@@ -26,6 +26,7 @@ While `status` is the coarse lifecycle stage, tasks in the `implementing` and ad
 | `single_agent_implementing` | running as a single coder (no wave decomposition) |
 | `fixing` | fixer/remediation agent is addressing review feedback |
 | `reviewing` | reviewer agent is active |
+| `readiness_reviewing` | master agent is running the holistic readiness gate after reviewer approval (opt-in; requires `auto_readiness_review = true`) |
 
 ### how phases are set
 
@@ -49,12 +50,16 @@ Events trigger transitions. Some events are **user-only** (can only be fired fro
 | `implement_start` | no | start coder agents |
 | `implement_finished` | no | all coders signalled completion |
 | `request_review` | **yes** | manually trigger a reviewer |
-| `review_approved` | no | reviewer approved the implementation |
+| `review_approved` | no | reviewer approved the implementation; intercepted when `auto_readiness_review = true` |
 | `review_changes_requested` | no | reviewer requested changes |
+| `readiness_approved` | no | master agent approved during readiness review (→ `done`) |
+| `readiness_changes_requested` | no | master agent requested changes during readiness review (→ `implementing`) |
 | `start_over` | **yes** | reset to planning from done |
 | `reimplement` | **yes** | resume implementation from done without resetting branch |
 | `cancel` | **yes** | cancel the task from any active status |
 | `reopen` | **yes** | reopen a cancelled task back to planning |
+
+> **Readiness review signals:** `readiness_approved` and `readiness_changes_requested` are emitted by the master agent during the optional readiness gate phase. They are only accepted while the task's execution phase is `readiness_reviewing`. Aliases: `readiness-approved`, `readiness-changes`, `readiness-changes-requested`, `master_approved`.
 
 ## transition table
 
@@ -74,9 +79,13 @@ implementing
   └─ cancel              → cancelled
 
 reviewing
-  ├─ review_approved     → done
+  ├─ review_approved     → done  [or → readiness_reviewing phase when auto_readiness_review=true]
   ├─ review_changes_requested → implementing
   └─ cancel              → cancelled
+
+  (readiness_reviewing sub-phase — reviewing status, master agent active)
+  ├─ readiness_approved          → done
+  └─ readiness_changes_requested → implementing
 
 done
   ├─ start_over          → planning

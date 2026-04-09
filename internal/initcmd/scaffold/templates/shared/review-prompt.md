@@ -268,3 +268,15 @@ SIGNAL
 
 Include the round number (1 for first review, 2 for re-review after fixes, etc.).
 Omit empty tiers. Every item must have a `file:line` reference.
+
+---
+
+## Readiness review handoff
+
+When `auto_readiness_review` is enabled in the daemon config, kasmos will automatically
+spawn the master readiness agent after processing your `review-approved` signal. The task
+transitions into the `readiness_reviewing` execution phase and the master agent performs a
+final holistic check before the plan completes.
+
+You do not need to do anything differently — emit your normal approval signal and stop.
+If readiness review is disabled, `review-approved` transitions the task directly to `done`.

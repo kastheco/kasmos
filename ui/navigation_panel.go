@@ -605,6 +605,7 @@ func navPlanSortKey(p PlanDisplay, insts []*session.Instance, st TopicStatus) in
 		strings.TrimSpace(p.Phase) == "wave_waiting",
 		strings.TrimSpace(p.Phase) == "fixing",
 		strings.TrimSpace(p.Phase) == "reviewing",
+		strings.TrimSpace(p.Phase) == "readiness_reviewing",
 		p.Status == "planning",
 		p.Status == "implementing",
 		p.Status == "reviewing":
@@ -641,6 +642,8 @@ func navPlanPhaseLabel(phase string, activeWave, activeRound int) string {
 			return fmt.Sprintf("reviewing round %d", activeRound)
 		}
 		return "reviewing"
+	case "readiness_reviewing":
+		return "readiness review"
 	default:
 		return ""
 	}

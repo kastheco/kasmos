@@ -806,6 +806,63 @@ Do delta.
 	assert.Equal(t, taskstore.SubtaskStatusPending, subtasks[3].Status)
 }
 
+func TestNormalizeExecutionState_ReadinessReviewing(t *testing.T) {
+	t.Run("valid readiness_reviewing with master agent is preserved", func(t *testing.T) {
+		result := normalizeExecutionState(StatusReviewing, taskstore.ExecutionState{
+			Phase:           "readiness_reviewing",
+			ActiveAgentType: "master",
+			ActiveWave:      0,
+		})
+		assert.Equal(t, taskstore.ExecutionState{
+			Phase:           "readiness_reviewing",
+			ActiveAgentType: "master",
+		}, result)
+	})
+
+	t.Run("readiness_reviewing without agent type is discarded", func(t *testing.T) {
+		result := normalizeExecutionState(StatusReviewing, taskstore.ExecutionState{
+			Phase:           "readiness_reviewing",
+			ActiveAgentType: "",
+		})
+		assert.Equal(t, taskstore.ExecutionState{}, result)
+	})
+
+	t.Run("readiness_reviewing active wave is zeroed in output", func(t *testing.T) {
+		// ActiveWave must be zeroed for the readiness review sub-phase even if
+		// a stale value is present in the persisted row.
+		result := normalizeExecutionState(StatusReviewing, taskstore.ExecutionState{
+			Phase:           "readiness_reviewing",
+			ActiveAgentType: "master",
+			ActiveWave:      3,
+		})
+		assert.Equal(t, taskstore.ExecutionState{
+			Phase:           "readiness_reviewing",
+			ActiveAgentType: "master",
+		}, result)
+		assert.Equal(t, 0, result.ActiveWave, "ActiveWave must be zeroed for readiness review")
+	})
+
+	t.Run("existing reviewing phase still accepted for StatusReviewing", func(t *testing.T) {
+		result := normalizeExecutionState(StatusReviewing, taskstore.ExecutionState{
+			Phase:           "reviewing",
+			ActiveAgentType: "reviewer",
+		})
+		assert.Equal(t, taskstore.ExecutionState{
+			Phase:           "reviewing",
+			ActiveAgentType: "reviewer",
+		}, result)
+	})
+
+	t.Run("unknown phase under StatusReviewing is discarded", func(t *testing.T) {
+		result := normalizeExecutionState(StatusReviewing, taskstore.ExecutionState{
+			Phase:           "wave_running",
+			ActiveAgentType: "coder",
+			ActiveWave:      1,
+		})
+		assert.Equal(t, taskstore.ExecutionState{}, result)
+	})
+}
+
 func TestTaskState_ReviewCycle(t *testing.T) {
 	ps := newTestPS(t)
 	require.NoError(t, ps.Create("test", "desc", "plan/test", "", time.Now()))

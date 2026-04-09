@@ -146,6 +146,16 @@ type SpawnFixerAction struct {
 func (SpawnFixerAction) Kind() string  { return "spawn_fixer" }
 func (SpawnFixerAction) sealedAction() {}
 
+// SpawnMasterAction instructs the caller to launch the master agent for the
+// holistic readiness review phase. It is emitted by the processor when a
+// reviewer approves and AutoReadinessReview is enabled.
+type SpawnMasterAction struct {
+	PlanFile string
+}
+
+func (SpawnMasterAction) Kind() string  { return "spawn_master" }
+func (SpawnMasterAction) sealedAction() {}
+
 // PausePlanAgentAction instructs the caller to pause (kill) the running agent
 // of the given type for the plan.
 type PausePlanAgentAction struct {
@@ -209,6 +219,9 @@ type AgentSpawner interface {
 	SpawnElaborator(ctx context.Context, opts SpawnOpts) error
 	// SpawnFixer launches a fixer agent to address PR review feedback.
 	SpawnFixer(ctx context.Context, opts SpawnOpts) error
+	// SpawnMaster launches the master agent for the holistic readiness review.
+	// Any running master or reviewer instance for the plan is killed first.
+	SpawnMaster(ctx context.Context, opts SpawnOpts) error
 	// KillAgent stops the running agent of the given type for the plan.
 	// repoPath is the absolute path to the repository root and is required to
 	// disambiguate agents across multiple registered repos that share the same

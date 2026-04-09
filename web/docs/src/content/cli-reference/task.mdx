@@ -278,6 +278,41 @@ kas task start-over my-feature
 
 ---
 
+### recover
+
+Manually emit a recovery signal to unstick a task that is in the wrong phase or state.
+
+```
+kas task recover <plan-file> --action <action> [--feedback <text>]
+```
+
+```sh
+kas task recover my-feature --action implement-finished
+kas task recover my-feature --action review-approved
+kas task recover my-feature --action readiness-approved
+kas task recover my-feature --action readiness-changes --feedback "spec section 3 is not addressed"
+```
+
+| flag | description |
+|------|-------------|
+| `--action` | the recovery action to perform (see table below) |
+| `--feedback` | feedback text; required for `review-changes`, `readiness-changes`, and `advance-review-cycle` |
+
+| action | signal emitted | notes |
+|--------|---------------|-------|
+| `planner-finished` | `planner_finished` | |
+| `architect-finished` | `elaborator_finished` | |
+| `implement-finished` | `implement_finished` | |
+| `review-approved` | `review_approved` | |
+| `review-changes` | `review_changes_requested` | requires `--feedback` |
+| `advance-review-cycle` | `review_changes_requested` | requires `--feedback`; alias for `review-changes` |
+| `readiness-approved` | `readiness_approved` | only valid during `readiness_reviewing` phase |
+| `readiness-changes` / `readiness-changes-requested` | `readiness_changes_requested` | only valid during `readiness_reviewing` phase; requires `--feedback` |
+
+`readiness-approved` and `readiness-changes` are the manual recovery path for the master readiness gate. Use them when the master agent session ended before it could emit a signal. The `kas status` command shows these hints automatically when a task is stuck in the `readiness_reviewing` execution phase.
+
+---
+
 ### link-clickup
 
 Scan all tasks in the project and backfill ClickUp task IDs by parsing `**Source:** ClickUp <ID>` lines from plan content.

@@ -259,6 +259,8 @@ func infoPhaseLabel(phase string, activeWave, activeRound int) string {
 			return fmt.Sprintf("reviewing round %d", activeRound)
 		}
 		return "reviewing"
+	case "readiness_reviewing":
+		return "readiness review"
 	default:
 		return ""
 	}
@@ -361,7 +363,9 @@ func (p *InfoPane) renderLifecycleSection() string {
 	if p.data.ActiveWave > 0 {
 		rows = append(rows, p.renderRow("active wave", fmt.Sprintf("%d", p.data.ActiveWave)))
 	}
-	if p.data.ActiveRound > 0 {
+	// Suppress round counter for readiness review — cycles belong to the
+	// reviewer/fixer loop, not the master-owned readiness sub-phase.
+	if p.data.ActiveRound > 0 && strings.TrimSpace(p.data.ExecutionPhase) != "readiness_reviewing" {
 		rows = append(rows, p.renderRow("round", fmt.Sprintf("%d", p.data.ActiveRound)))
 	}
 	phases := []struct {

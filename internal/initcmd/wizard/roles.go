@@ -23,7 +23,7 @@ func RolePhaseText(role string) string {
 		"planner":   "Default for phases: planning",
 		"chat":      "Available in all phases (ad-hoc)",
 		"fixer":     "Default for phases: fixer",
-		"master":    "Default for phases: master_review",
+		"master":    "Default for phases: readiness_review",
 	}
 	return phases[role]
 }

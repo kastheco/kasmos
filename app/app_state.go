@@ -157,12 +157,15 @@ func toTaskFSMHooks(entries []config.TOMLHook) []taskfsm.HookConfig {
 func (m *home) ensureProcessor() *loop.Processor {
 	autoReviewFix := false
 	maxCycles := 0
+	autoReadinessReview := false
 	if m.appConfig != nil {
 		autoReviewFix = m.appConfig.AutoReviewFix
 		maxCycles = m.appConfig.MaxReviewFixCycles
+		autoReadinessReview = m.appConfig.AutoReadinessReview
 	}
 	if m.processor != nil {
 		m.processor.SetReviewFixConfig(autoReviewFix, maxCycles)
+		m.processor.SetReadinessReviewConfig(autoReadinessReview)
 		return m.processor
 	}
 	if m.taskStore == nil {
@@ -175,12 +178,13 @@ func (m *home) ensureProcessor() *loop.Processor {
 		}
 	}
 	m.processor = loop.NewProcessor(loop.ProcessorConfig{
-		AutoReviewFix:      autoReviewFix,
-		Store:              m.taskStore,
-		Project:            m.taskStoreProject,
-		Dir:                m.taskStateDir,
-		MaxReviewFixCycles: maxCycles,
-		Hooks:              hooks,
+		AutoReviewFix:       autoReviewFix,
+		AutoReadinessReview: autoReadinessReview,
+		Store:               m.taskStore,
+		Project:             m.taskStoreProject,
+		Dir:                 m.taskStateDir,
+		MaxReviewFixCycles:  maxCycles,
+		Hooks:               hooks,
 	})
 	return m.processor
 }
@@ -203,6 +207,12 @@ func (m *home) handleReviewChangesRequested(planFile, feedback string) tea.Cmd {
 	}
 	for _, inst := range m.nav.GetInstances() {
 		if inst.TaskFile == planFile && isReviewerInstance(inst) {
+			_ = inst.Pause()
+			break
+		}
+	}
+	for _, inst := range m.nav.GetInstances() {
+		if inst.TaskFile == planFile && inst.AgentType == session.AgentTypeMaster {
 			_ = inst.Pause()
 			break
 		}
@@ -1939,6 +1949,83 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 	}
 }
 
+// spawnMaster creates and starts the master readiness agent for the given plan.
+// It sets the execution state to readiness_reviewing, kills any existing master
+// and reviewer instances, and launches the master in the plan's shared worktree.
+func (m *home) spawnMaster(planFile string) tea.Cmd {
+	if !m.requireDaemonForAgents() {
+		return nil
+	}
+	for _, inst := range m.nav.GetInstances() {
+		if inst.TaskFile == planFile && inst.SoloAgent {
+			return nil
+		}
+	}
+	planName := taskstate.DisplayName(planFile)
+	spec := orchestration.BuildMasterAgentSpec(planFile, m.taskStoreProject)
+	title := spec.Title
+	if m.hasLiveOrPendingInstance(planFile, session.AgentTypeMaster, title) {
+		return nil
+	}
+	if err := m.setExecutionState(planFile, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseReadinessReview),
+		ActiveAgentType: session.AgentTypeMaster,
+	}); err != nil {
+		log.WarningLog.Printf("could not persist master execution state for %q: %v", planFile, err)
+		return nil
+	}
+
+	// Kill any previous master and reviewer so the new session starts fresh.
+	m.killExistingPlanAgent(planFile, session.AgentTypeMaster)
+	m.killExistingPlanAgent(planFile, session.AgentTypeReviewer)
+
+	// Resolve the plan's branch for the shared worktree.
+	branch := m.taskBranch(planFile)
+	if branch == "" {
+		log.WarningLog.Printf("could not resolve branch for plan %q", planFile)
+		return nil
+	}
+
+	masterInst, err := session.NewInstance(session.InstanceOptions{
+		Title:           title,
+		Path:            m.activeRepoPath,
+		Program:         m.programForAgent(session.AgentTypeMaster),
+		ExecutionMode:   m.executionModeForAgent(session.AgentTypeMaster),
+		TaskFile:        planFile,
+		AgentType:       session.AgentTypeMaster,
+		ClaudeNoFlicker: m.claudeNoFlicker(),
+	})
+	if err != nil {
+		log.WarningLog.Printf("could not create master instance for %q: %v", planFile, err)
+		return nil
+	}
+	masterInst.QueuedPrompt = spec.Prompt
+	masterInst.SetStatus(session.Loading)
+
+	m.addInstanceFinalizer(masterInst, m.nav.AddInstance(masterInst))
+	m.nav.SelectInstance(masterInst)
+
+	m.audit(auditlog.EventAgentSpawned, fmt.Sprintf("spawned master readiness agent for %s", planName),
+		auditlog.WithPlan(planFile),
+		auditlog.WithInstance(masterInst.Title),
+		auditlog.WithAgent(session.AgentTypeMaster),
+	)
+
+	m.toastManager.Info(fmt.Sprintf("review approved → readiness check started for %s", planName))
+
+	shared := gitpkg.NewSharedTaskWorktree(m.activeRepoPath, branch)
+	return func() tea.Msg {
+		if err := shared.Setup(); err != nil {
+			return instanceStartedMsg{instance: masterInst, err: err}
+		}
+		if err := m.syncSharedWorktreeScaffold(shared.GetWorktreePath()); err != nil {
+			return instanceStartedMsg{instance: masterInst, err: err}
+		}
+		err := masterInst.StartInSharedWorktree(shared, branch)
+		return instanceStartedMsg{instance: masterInst, err: err}
+	}
+}
+
 func withOpenCodeModelFlag(program, model string) string {
 	model = normalizeOpenCodeModelID(model)
 	if model == "" {
@@ -1985,6 +2072,8 @@ func (m *home) profileForAgent(agentType string) config.AgentProfile {
 		profile = m.appConfig.ResolveProfile("fixer", m.program)
 	case session.AgentTypeElaborator:
 		profile = m.appConfig.ResolveProfile("elaborating", m.program)
+	case session.AgentTypeMaster:
+		profile = m.appConfig.ResolveProfile("readiness_review", m.program)
 	default:
 		if p, ok := m.appConfig.Profiles["chat"]; ok && p.Enabled && p.Program != "" {
 			profile = p

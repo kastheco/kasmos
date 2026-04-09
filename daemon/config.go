@@ -44,6 +44,10 @@ type DaemonConfig struct {
 	// MaxReviewFixCycles caps the review-fix loop iterations (0 = unlimited).
 	MaxReviewFixCycles int `toml:"max_review_fix_cycles"`
 
+	// AutoReadinessReview enables the post-reviewer master-agent readiness gate.
+	// Disabled by default; must be explicitly opted in.
+	AutoReadinessReview bool `toml:"auto_readiness_review"`
+
 	// SocketPath is the Unix domain socket path for the control API.
 	// Defaults to ~/.config/kasmos/daemon.sock when empty.
 	SocketPath string `toml:"socket_path"`
@@ -62,14 +66,15 @@ type tomlPRMonitorConfig struct {
 // tomlDaemonConfig is the raw TOML representation, using seconds for duration
 // fields so the config file stays human-readable.
 type tomlDaemonConfig struct {
-	PollIntervalSec    float64             `toml:"poll_interval_sec"`
-	Repos              []string            `toml:"repos"`
-	AutoAdvance        *bool               `toml:"auto_advance"`
-	AutoAdvanceWaves   *bool               `toml:"auto_advance_waves"`
-	AutoReviewFix      *bool               `toml:"auto_review_fix"`
-	MaxReviewFixCycles int                 `toml:"max_review_fix_cycles"`
-	SocketPath         string              `toml:"socket_path"`
-	PRMonitor          tomlPRMonitorConfig `toml:"pr_monitor"`
+	PollIntervalSec     float64             `toml:"poll_interval_sec"`
+	Repos               []string            `toml:"repos"`
+	AutoAdvance         *bool               `toml:"auto_advance"`
+	AutoAdvanceWaves    *bool               `toml:"auto_advance_waves"`
+	AutoReviewFix       *bool               `toml:"auto_review_fix"`
+	MaxReviewFixCycles  int                 `toml:"max_review_fix_cycles"`
+	AutoReadinessReview *bool               `toml:"auto_readiness_review"`
+	SocketPath          string              `toml:"socket_path"`
+	PRMonitor           tomlPRMonitorConfig `toml:"pr_monitor"`
 }
 
 // defaultDaemonConfig returns a DaemonConfig populated with sensible defaults.
@@ -130,6 +135,9 @@ func LoadDaemonConfig(path string) (*DaemonConfig, error) {
 		cfg.AutoReviewFix = *tc.AutoReviewFix
 	}
 	cfg.MaxReviewFixCycles = tc.MaxReviewFixCycles
+	if tc.AutoReadinessReview != nil {
+		cfg.AutoReadinessReview = *tc.AutoReadinessReview
+	}
 	cfg.SocketPath = tc.SocketPath
 
 	// PRMonitor section

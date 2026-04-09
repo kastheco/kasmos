@@ -6,6 +6,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/orchestration"
+	"github.com/kastheco/kasmos/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -404,4 +405,138 @@ func TestProcessor_ProcessFSMSignals_ReviewCycleBelowLimit(t *testing.T) {
 		}
 	}
 	assert.True(t, foundFixer, "expected SpawnFixerAction when below cycle limit")
+}
+
+func TestProcessor_AutoReadinessReview_ReviewApprovedIntercepted(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusReviewing,
+		Branch:   "plan/my-plan",
+	})
+
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReadinessReview: true})
+	signals := []taskfsm.Signal{
+		{Event: taskfsm.ReviewApproved, TaskFile: "my-plan.md", Body: "LGTM"},
+	}
+
+	actions := p.ProcessFSMSignals(signals)
+
+	// Must emit SpawnMasterAction, not ReviewApprovedAction
+	require.Len(t, actions, 1)
+	master, ok := actions[0].(SpawnMasterAction)
+	require.True(t, ok, "expected SpawnMasterAction, got %T", actions[0])
+	assert.Equal(t, "my-plan.md", master.PlanFile)
+}
+
+func TestProcessor_AutoReadinessReview_DisabledPassesThrough(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusReviewing,
+		Branch:   "plan/my-plan",
+	})
+
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReadinessReview: false})
+	signals := []taskfsm.Signal{
+		{Event: taskfsm.ReviewApproved, TaskFile: "my-plan.md", Body: "LGTM"},
+	}
+
+	actions := p.ProcessFSMSignals(signals)
+
+	var foundApproved bool
+	for _, a := range actions {
+		if _, ok := a.(ReviewApprovedAction); ok {
+			foundApproved = true
+		}
+	}
+	assert.True(t, foundApproved, "expected ReviewApprovedAction when readiness review is disabled")
+}
+
+func TestProcessor_AutoReadinessReview_StaleReviewerApprovalIgnored(t *testing.T) {
+	// While the master agent is active (readiness_reviewing phase), a stale
+	// duplicate reviewer approval must be silently dropped.
+	store := taskstore.NewTestStore(t)
+	store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusReviewing,
+		Branch:   "plan/my-plan",
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseReadinessReview),
+			ActiveAgentType: session.AgentTypeMaster,
+		},
+	})
+
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReadinessReview: true})
+	// Reviewer-origin signal (no Origin field)
+	signals := []taskfsm.Signal{
+		{Event: taskfsm.ReviewApproved, TaskFile: "my-plan.md", Body: "LGTM"},
+	}
+
+	actions := p.ProcessFSMSignals(signals)
+	assert.Empty(t, actions, "stale reviewer approval during readiness_reviewing must be dropped")
+}
+
+func TestProcessor_MasterOriginApproval_AcceptedDuringReadinessReview(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusReviewing,
+		Branch:   "plan/my-plan",
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseReadinessReview),
+			ActiveAgentType: session.AgentTypeMaster,
+		},
+	})
+
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReadinessReview: true})
+	// Master-origin readiness approval
+	signals := []taskfsm.Signal{
+		{Event: taskfsm.ReviewApproved, TaskFile: "my-plan.md", Body: "ready", Origin: "master"},
+	}
+
+	actions := p.ProcessFSMSignals(signals)
+
+	var foundApproved bool
+	for _, a := range actions {
+		if _, ok := a.(ReviewApprovedAction); ok {
+			foundApproved = true
+		}
+	}
+	assert.True(t, foundApproved, "master-origin readiness_approved must flow to ReviewApprovedAction")
+}
+
+func TestProcessor_MasterOriginApproval_RejectedOutsideReadinessReview(t *testing.T) {
+	// Master-origin signals arriving when not in readiness_reviewing must be dropped.
+	store := taskstore.NewTestStore(t)
+	store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusReviewing,
+		Branch:   "plan/my-plan",
+		// Reviewing phase, reviewer agent — not readiness_reviewing
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseReviewing),
+			ActiveAgentType: session.AgentTypeReviewer,
+		},
+	})
+
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReadinessReview: true})
+	signals := []taskfsm.Signal{
+		{Event: taskfsm.ReviewApproved, TaskFile: "my-plan.md", Body: "ready", Origin: "master"},
+	}
+
+	actions := p.ProcessFSMSignals(signals)
+	assert.Empty(t, actions, "master-origin signal outside readiness_reviewing must be dropped")
+}
+
+func TestProcessor_SetReadinessReviewConfig(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test"})
+	assert.False(t, p.config.AutoReadinessReview)
+
+	p.SetReadinessReviewConfig(true)
+	assert.True(t, p.config.AutoReadinessReview)
+
+	p.SetReadinessReviewConfig(false)
+	assert.False(t, p.config.AutoReadinessReview)
 }

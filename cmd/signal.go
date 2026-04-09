@@ -35,6 +35,10 @@ func recoverActionForSignalType(signalType string) string {
 		return "review-changes"
 	case string(taskfsm.ArchitectFinished):
 		return "architect-finished"
+	case "readiness_approved":
+		return "readiness-approved"
+	case "readiness_changes_requested":
+		return "readiness-changes"
 	default:
 		return ""
 	}
@@ -307,8 +311,9 @@ signal type and plan file. This is the primary mechanism for agents to signal
 completion of a lifecycle phase.
 
 Valid signal types: planner_finished, implement_finished, review_approved,
-review_changes_requested, implement_task_finished, implement_wave,
-architect_finished (wire alias: elaborator_finished)`,
+review_changes_requested, readiness_approved (alias: master_approved),
+readiness_changes_requested (alias: readiness_changes), implement_task_finished,
+implement_wave, architect_finished (wire alias: elaborator_finished)`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			signalType, err := taskfsm.CanonicalGatewaySignalType(args[0])

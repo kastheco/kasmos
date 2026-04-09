@@ -32,6 +32,14 @@ func TestCanonicalGatewaySignalType_CoversCanonicalAndAliases(t *testing.T) {
 		{name: "elaborator hyphen wire alias", raw: "elaborator-finished", want: "elaborator_finished"},
 		{name: "architect internal alias", raw: "architect_finished", want: "elaborator_finished"},
 		{name: "architect hyphen alias", raw: "architect-finished", want: "elaborator_finished"},
+		{name: "readiness approved canonical", raw: "readiness_approved", want: "readiness_approved"},
+		{name: "readiness approved hyphen alias", raw: "readiness-approved", want: "readiness_approved"},
+		{name: "master approved alias", raw: "master_approved", want: "readiness_approved"},
+		{name: "master approved hyphen alias", raw: "master-approved", want: "readiness_approved"},
+		{name: "readiness changes requested canonical", raw: "readiness_changes_requested", want: "readiness_changes_requested"},
+		{name: "readiness changes requested hyphen alias", raw: "readiness-changes-requested", want: "readiness_changes_requested"},
+		{name: "readiness changes short alias", raw: "readiness_changes", want: "readiness_changes_requested"},
+		{name: "readiness changes short hyphen alias", raw: "readiness-changes", want: "readiness_changes_requested"},
 	}
 
 	for _, tt := range tests {
@@ -78,6 +86,82 @@ func TestNormalizeGatewaySignalPayload_AcceptsAliases(t *testing.T) {
 	payload, err = NormalizeGatewaySignalPayload("architect_finished", "")
 	require.NoError(t, err)
 	assert.Equal(t, "", payload)
+}
+
+func TestNormalizeGatewaySignalPayload_ReadinessSignals(t *testing.T) {
+	tests := []struct {
+		name        string
+		signalType  string
+		payload     string
+		wantPayload string
+	}{
+		{
+			name:        "readiness_approved empty payload",
+			signalType:  "readiness_approved",
+			payload:     "",
+			wantPayload: "",
+		},
+		{
+			name:        "readiness_approved plain text wrapped in body",
+			signalType:  "readiness_approved",
+			payload:     "lgtm",
+			wantPayload: `{"body":"lgtm"}`,
+		},
+		{
+			name:        "readiness_approved json passthrough",
+			signalType:  "readiness_approved",
+			payload:     `{"body":"all good"}`,
+			wantPayload: `{"body":"all good"}`,
+		},
+		{
+			name:        "readiness_changes_requested plain text wrapped",
+			signalType:  "readiness_changes_requested",
+			payload:     "address security findings",
+			wantPayload: `{"body":"address security findings"}`,
+		},
+		{
+			name:        "master_approved alias normalizes payload",
+			signalType:  "master_approved",
+			payload:     "ship it",
+			wantPayload: `{"body":"ship it"}`,
+		},
+		{
+			name:        "readiness_changes alias normalizes payload",
+			signalType:  "readiness-changes",
+			payload:     "fix the edge cases",
+			wantPayload: `{"body":"fix the edge cases"}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NormalizeGatewaySignalPayload(tt.signalType, tt.payload)
+			require.NoError(t, err)
+			if tt.wantPayload == "" {
+				assert.Equal(t, "", got)
+			} else {
+				assert.JSONEq(t, tt.wantPayload, got)
+			}
+		})
+	}
+}
+
+func TestEmitGatewaySignal_ReadinessSignalsCanonicalize(t *testing.T) {
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+
+	require.NoError(t, EmitGatewaySignal(gw, "proj", "master-approved", "feature", "lgtm"))
+	require.NoError(t, EmitGatewaySignal(gw, "proj", "readiness-changes", "feature", "needs work"))
+
+	signals, err := gw.List("proj", taskstore.SignalPending)
+	require.NoError(t, err)
+	require.Len(t, signals, 2)
+
+	assert.Equal(t, "readiness_approved", signals[0].SignalType)
+	assert.JSONEq(t, `{"body":"lgtm"}`, signals[0].Payload)
+
+	assert.Equal(t, "readiness_changes_requested", signals[1].SignalType)
+	assert.JSONEq(t, `{"body":"needs work"}`, signals[1].Payload)
 }
 
 func TestEmitGatewaySignal_CanonicalizesStoredSignalType(t *testing.T) {

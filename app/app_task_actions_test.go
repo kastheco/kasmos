@@ -1925,3 +1925,185 @@ func TestExecuteTaskStage_Implement_ReusesPersistedArchitectingState(t *testing.
 	require.NoError(t, err)
 	assert.Equal(t, taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseArchitecting), ActiveAgentType: session.AgentTypeElaborator}, entry.ExecutionState)
 }
+
+// ── readiness review TUI wiring ──────────────────────────────────────────────
+
+func TestEnsureProcessor_RefreshesReadinessReviewConfig(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename: "feature.md",
+		Status:   taskstore.StatusReviewing,
+	}))
+
+	h := &home{
+		appConfig:             &config.Config{AutoReadinessReview: false},
+		taskStore:             store,
+		taskStoreProject:      "proj",
+		taskStateDir:          t.TempDir(),
+		pendingReviewFeedback: make(map[string]string),
+	}
+
+	proc := h.ensureProcessor()
+	require.NotNil(t, proc)
+
+	// Simulate a reviewer approval with AutoReadinessReview disabled — must pass through.
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename: "alpha.md",
+		Status:   taskstore.StatusReviewing,
+	}))
+	actions := proc.ProcessFSMSignals([]taskfsm.Signal{{
+		Event:    taskfsm.ReviewApproved,
+		TaskFile: "alpha.md",
+	}})
+	_, isApproved := findAction[loop.ReviewApprovedAction](actions)
+	assert.True(t, isApproved, "with readiness disabled, ReviewApproved should pass through")
+
+	// Enable readiness review and refresh the processor.
+	h.appConfig.AutoReadinessReview = true
+	proc = h.ensureProcessor()
+
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename: "beta.md",
+		Status:   taskstore.StatusReviewing,
+	}))
+	actions = proc.ProcessFSMSignals([]taskfsm.Signal{{
+		Event:    taskfsm.ReviewApproved,
+		TaskFile: "beta.md",
+	}})
+	_, isSpawnMaster := findAction[loop.SpawnMasterAction](actions)
+	assert.True(t, isSpawnMaster, "with readiness enabled, ReviewApproved should produce SpawnMasterAction")
+}
+
+// findAction is a generic helper that searches a slice of loop.Action for a value of type T.
+func findAction[T loop.Action](actions []loop.Action) (T, bool) {
+	for _, a := range actions {
+		if v, ok := a.(T); ok {
+			return v, true
+		}
+	}
+	var zero T
+	return zero, false
+}
+
+func TestTaskLifecycleItems_NoStartReviewDuringReadinessPhase(t *testing.T) {
+	// When the execution phase is readiness_reviewing, taskLifecycleItems must not
+	// include the "start_review" action — that would reset the readiness gate.
+	reviewingEntry := taskstate.TaskEntry{
+		Status: taskstate.StatusReviewing,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseReadinessReview),
+			ActiveAgentType: session.AgentTypeMaster,
+		},
+	}
+
+	items := taskLifecycleItems(reviewingEntry)
+	for _, item := range items {
+		assert.NotEqual(t, "start_review", item.Action,
+			"start_review must be absent during readiness_reviewing phase")
+	}
+}
+
+func TestInstanceSignalItems_MasterAgent_HasReadinessSignals(t *testing.T) {
+	inst := &session.Instance{
+		Title:     "my-plan.md-master",
+		TaskFile:  "my-plan.md",
+		AgentType: session.AgentTypeMaster,
+	}
+
+	items := instanceSignalItems(inst)
+
+	var actions []string
+	for _, item := range items {
+		actions = append(actions, item.Action)
+	}
+	assert.Contains(t, actions, "mark_readiness_approved", "master instance must offer mark_readiness_approved action")
+	assert.Contains(t, actions, "mark_readiness_changes_requested", "master instance must offer mark_readiness_changes_requested action")
+}
+
+func TestExecuteContextAction_MarkReadinessApproved(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir := t.TempDir()
+	t.Chdir(dir)
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	const planFile = "feature"
+	require.NoError(t, ps.Create(planFile, "feature", "plan/feature", "", time.Now()))
+	require.NoError(t, ps.ForceSetLifecycle(planFile, taskstate.StatusReviewing, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseReadinessReview),
+		ActiveAgentType: session.AgentTypeMaster,
+	}))
+
+	h := newTestHome()
+	h.taskState = ps
+	h.taskStateDir = plansDir
+	h.activeRepoPath = dir
+	h.taskStoreProject = "test"
+	h.pendingReviewFeedback = make(map[string]string)
+	master := &session.Instance{
+		Title:     planFile + "-master",
+		Path:      dir,
+		Program:   "opencode",
+		TaskFile:  planFile,
+		AgentType: session.AgentTypeMaster,
+	}
+	h.nav.AddInstance(master)
+	h.updateSidebarTasks()
+	h.nav.SelectInstance(master)
+
+	_, cmd := h.executeContextAction("mark_readiness_approved")
+	require.NotNil(t, cmd)
+	msg := cmd()
+	result, ok := msg.(manualSignalResultMsg)
+	require.True(t, ok)
+	require.NoError(t, result.err)
+
+	signals := listPendingAuthoritativeSignals(t, "test")
+	require.Len(t, signals, 1)
+	assert.Equal(t, "readiness_approved", signals[0].SignalType)
+}
+
+func TestExecuteContextAction_MarkReadinessChangesRequested(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir := t.TempDir()
+	t.Chdir(dir)
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	const planFile = "feature"
+	require.NoError(t, ps.Create(planFile, "feature", "plan/feature", "", time.Now()))
+	require.NoError(t, ps.ForceSetLifecycle(planFile, taskstate.StatusReviewing, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseReadinessReview),
+		ActiveAgentType: session.AgentTypeMaster,
+	}))
+
+	h := newTestHome()
+	h.taskState = ps
+	h.taskStateDir = plansDir
+	h.activeRepoPath = dir
+	h.taskStoreProject = "test"
+	h.pendingReviewFeedback = make(map[string]string)
+	master := &session.Instance{
+		Title:     planFile + "-master",
+		Path:      dir,
+		Program:   "opencode",
+		TaskFile:  planFile,
+		AgentType: session.AgentTypeMaster,
+	}
+	h.nav.AddInstance(master)
+	h.updateSidebarTasks()
+	h.nav.SelectInstance(master)
+
+	_, cmd := h.executeContextAction("mark_readiness_changes_requested")
+	require.NotNil(t, cmd)
+	msg := cmd()
+	result, ok := msg.(manualSignalResultMsg)
+	require.True(t, ok)
+	require.NoError(t, result.err)
+
+	signals := listPendingAuthoritativeSignals(t, "test")
+	require.Len(t, signals, 1)
+	assert.Equal(t, "readiness_changes_requested", signals[0].SignalType)
+}

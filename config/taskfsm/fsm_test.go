@@ -272,3 +272,21 @@ func TestExecutionPhaseHelpers(t *testing.T) {
 		assert.False(t, IsSingleAgentImplementingPhase(ExecutionPhaseWaveRunning))
 	})
 }
+
+func TestReadinessReviewPhaseConstant(t *testing.T) {
+	t.Run("constant has expected value", func(t *testing.T) {
+		assert.Equal(t, ExecutionPhase("readiness_reviewing"), ExecutionPhaseReadinessReview)
+	})
+
+	t.Run("normalize round-trips readiness_reviewing", func(t *testing.T) {
+		assert.Equal(t, ExecutionPhaseReadinessReview, NormalizeExecutionPhase("  readiness_reviewing  "))
+	})
+
+	t.Run("readiness review is not a wave phase", func(t *testing.T) {
+		assert.False(t, IsWaveExecutionPhase(ExecutionPhaseReadinessReview))
+	})
+
+	t.Run("readiness review is not a single agent implementing phase", func(t *testing.T) {
+		assert.False(t, IsSingleAgentImplementingPhase(ExecutionPhaseReadinessReview))
+	})
+}

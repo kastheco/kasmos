@@ -398,6 +398,91 @@ animate_banner = false
 	})
 }
 
+func TestAutoReadinessReview(t *testing.T) {
+	t.Run("explicit false round-trips cleanly", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		tomlPath := filepath.Join(tmpDir, "config.toml")
+		content := `
+[ui]
+auto_readiness_review = false
+`
+		err := os.WriteFile(tomlPath, []byte(content), 0o644)
+		require.NoError(t, err)
+
+		result, err := LoadTOMLConfigFrom(tomlPath)
+		require.NoError(t, err)
+		require.NotNil(t, result.AutoReadinessReview)
+		assert.False(t, *result.AutoReadinessReview)
+	})
+
+	t.Run("explicit true is loaded correctly", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		tomlPath := filepath.Join(tmpDir, "config.toml")
+		content := `
+[ui]
+auto_readiness_review = true
+`
+		err := os.WriteFile(tomlPath, []byte(content), 0o644)
+		require.NoError(t, err)
+
+		result, err := LoadTOMLConfigFrom(tomlPath)
+		require.NoError(t, err)
+		require.NotNil(t, result.AutoReadinessReview)
+		assert.True(t, *result.AutoReadinessReview)
+	})
+
+	t.Run("absent key leaves AutoReadinessReview nil", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		tomlPath := filepath.Join(tmpDir, "config.toml")
+		content := `
+[ui]
+animate_banner = false
+`
+		err := os.WriteFile(tomlPath, []byte(content), 0o644)
+		require.NoError(t, err)
+
+		result, err := LoadTOMLConfigFrom(tomlPath)
+		require.NoError(t, err)
+		assert.Nil(t, result.AutoReadinessReview)
+	})
+}
+
+func TestMasterReviewBackwardCompat(t *testing.T) {
+	t.Run("config with only master_review phase loads correctly", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		tomlPath := filepath.Join(tmpDir, "config.toml")
+		content := `
+[phases]
+implementing = "coder"
+master_review = "master"
+`
+		err := os.WriteFile(tomlPath, []byte(content), 0o644)
+		require.NoError(t, err)
+
+		result, err := LoadTOMLConfigFrom(tomlPath)
+		require.NoError(t, err)
+		assert.Equal(t, "master", result.PhaseRoles["master_review"])
+		assert.Empty(t, result.PhaseRoles["readiness_review"])
+	})
+
+	t.Run("new config uses readiness_review as canonical key", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		tomlPath := filepath.Join(tmpDir, "config.toml")
+		content := `
+[phases]
+implementing = "coder"
+readiness_review = "master"
+`
+		err := os.WriteFile(tomlPath, []byte(content), 0o644)
+		require.NoError(t, err)
+
+		result, err := LoadTOMLConfigFrom(tomlPath)
+		require.NoError(t, err)
+		assert.Equal(t, "master", result.PhaseRoles["readiness_review"])
+		assert.Empty(t, result.PhaseRoles["master_review"])
+	})
+}
+
 func TestLoadHooksForRepo(t *testing.T) {
 	t.Run("returns nil when config.toml absent", func(t *testing.T) {
 		repoDir := t.TempDir()

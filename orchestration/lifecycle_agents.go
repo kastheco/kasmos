@@ -90,6 +90,16 @@ func BuildArchitectAgentSpec(planFile, project string) LifecycleAgentSpec {
 	}
 }
 
+// BuildMasterAgentSpec returns the shared prompt/title metadata for the master
+// agent holistic readiness review. The session title follows the canonical
+// "<plan>-master" pattern so recovery/orphan adoption works automatically.
+func BuildMasterAgentSpec(planFile, project string) LifecycleAgentSpec {
+	return LifecycleAgentSpec{
+		Title:  BuildLifecycleAgentTitle(planFile, session.AgentTypeMaster, 0),
+		Prompt: BuildMasterReviewPrompt(planFile, project),
+	}
+}
+
 // BuildWaveTaskTitle returns the canonical title for a wave task instance.
 func BuildWaveTaskTitle(planFile string, waveNumber, taskNumber int) string {
 	return fmt.Sprintf("%s-W%d-T%d", taskstate.DisplayName(planFile), waveNumber, taskNumber)
@@ -122,6 +132,14 @@ func BuildRecoveryCandidates(task taskstore.TaskEntry, planContent string) []Rec
 			AgentType:   session.AgentTypeReviewer,
 			Branch:      task.Branch,
 			ReviewCycle: spec.ReviewCycle,
+		}}
+	case taskfsm.ExecutionPhaseReadinessReview:
+		spec := BuildMasterAgentSpec(task.Filename, "")
+		return []RecoveryCandidate{{
+			TaskFile:  task.Filename,
+			Title:     spec.Title,
+			AgentType: session.AgentTypeMaster,
+			Branch:    task.Branch,
 		}}
 	case taskfsm.ExecutionPhaseFixing:
 		spec := BuildFixerAgentSpec(task.Filename, "", task.ReviewCycle, task.LatestReviewFeedback)

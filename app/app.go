@@ -1233,15 +1233,24 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if cmd := m.postClickUpProgress(a.PlanFile, "review_approved", ""); cmd != nil {
 							signalCmds = append(signalCmds, cmd)
 						}
+						// Pause all reviewer/master instances first, then select
+						// one and call instanceChanged once. Calling instanceChanged
+						// in-loop triggers cleanupPausedDoneReviewers which can
+						// remove a just-paused reviewer before all instances are
+						// processed.
+						var lastPaused *session.Instance
 						for _, inst := range m.nav.GetInstances() {
-							if inst.TaskFile == a.PlanFile && inst.AgentType == session.AgentTypeReviewer {
+							if inst.TaskFile == a.PlanFile &&
+								(inst.AgentType == session.AgentTypeReviewer || inst.AgentType == session.AgentTypeMaster) {
 								inst.SetStatus(session.Paused)
-								m.nav.SelectInstance(inst)
-								m.updateNavPanelStatus()
-								if cmd := m.instanceChanged(); cmd != nil {
-									signalCmds = append(signalCmds, cmd)
-								}
-								break
+								lastPaused = inst
+							}
+						}
+						if lastPaused != nil {
+							m.nav.SelectInstance(lastPaused)
+							m.updateNavPanelStatus()
+							if cmd := m.instanceChanged(); cmd != nil {
+								signalCmds = append(signalCmds, cmd)
 							}
 						}
 					case loop.CreatePRAction:
@@ -1263,6 +1272,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					case loop.SpawnFixerAction:
 						if cmd := m.spawnFixerWithFeedback(a.PlanFile, a.Feedback); cmd != nil {
+							signalCmds = append(signalCmds, cmd)
+						}
+					case loop.SpawnMasterAction:
+						if cmd := m.spawnMaster(a.PlanFile); cmd != nil {
 							signalCmds = append(signalCmds, cmd)
 						}
 					case loop.ReviewCycleLimitAction:
@@ -1371,15 +1384,22 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if cmd := m.postClickUpProgress(sig.TaskFile, "review_approved", ""); cmd != nil {
 							signalCmds = append(signalCmds, cmd)
 						}
+						// Pause all reviewer/master instances first, then select
+						// one and call instanceChanged once — same rationale as
+						// the processor path above.
+						var lastPaused *session.Instance
 						for _, inst := range m.nav.GetInstances() {
-							if inst.TaskFile == sig.TaskFile && inst.AgentType == session.AgentTypeReviewer {
+							if inst.TaskFile == sig.TaskFile &&
+								(inst.AgentType == session.AgentTypeReviewer || inst.AgentType == session.AgentTypeMaster) {
 								inst.SetStatus(session.Paused)
-								m.nav.SelectInstance(inst)
-								m.updateNavPanelStatus()
-								if cmd := m.instanceChanged(); cmd != nil {
-									signalCmds = append(signalCmds, cmd)
-								}
-								break
+								lastPaused = inst
+							}
+						}
+						if lastPaused != nil {
+							m.nav.SelectInstance(lastPaused)
+							m.updateNavPanelStatus()
+							if cmd := m.instanceChanged(); cmd != nil {
+								signalCmds = append(signalCmds, cmd)
 							}
 						}
 						if m.taskStore != nil {
@@ -1712,7 +1732,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					inst.PromptDetected = true
 					// Don't nudge wave tasks that have finished work — they're done
 					// and the wave monitor will mark them complete on this tick.
-					if !(inst.TaskNumber > 0 && inst.HasWorked) {
+					// Skip TapEnter when a permission prompt is detected — the
+					// permission handler below will deal with it. Firing both
+					// causes the second handler to send "1" as literal text.
+					if !(inst.TaskNumber > 0 && inst.HasWorked) && md.PermissionPrompt == nil {
 						// Defer tmux send-keys to async Cmd (was blocking Update).
 						i := inst
 						asyncCmds = append(asyncCmds, func() tea.Msg {

@@ -31,13 +31,27 @@ func NormalizeExecutionMode(mode string) string {
 
 // ResolveProfile looks up the agent profile for a given lifecycle phase.
 // Falls back to defaultProgram if any link is missing, empty, or disabled.
+//
+// Aliasing: "readiness_review" and "master_review" are treated as equivalent
+// phase names for backward compatibility. When the requested phase is not
+// directly mapped, the alternate name is tried automatically. If both keys
+// are present in PhaseRoles, the directly-requested name takes precedence.
 func (c *Config) ResolveProfile(phase string, defaultProgram string) AgentProfile {
 	if c.PhaseRoles == nil || c.Profiles == nil {
 		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeTmux}
 	}
 	roleName, ok := c.PhaseRoles[phase]
 	if !ok {
-		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeTmux}
+		// Apply readiness_review <-> master_review compatibility alias.
+		switch phase {
+		case "readiness_review":
+			roleName, ok = c.PhaseRoles["master_review"]
+		case "master_review":
+			roleName, ok = c.PhaseRoles["readiness_review"]
+		}
+		if !ok {
+			return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeTmux}
+		}
 	}
 	profile, ok := c.Profiles[roleName]
 	if !ok {

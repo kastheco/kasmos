@@ -20,7 +20,7 @@ func DefaultAgentRoles() []string {
 | `planner` | `planning` | breaks features into structured implementation plans |
 | `chat` | (ad-hoc) | general-purpose assistant; available in all phases |
 | `fixer` | `fixer` | debugger and investigator; fixes stuck states and failures |
-| `master` | `master_review` | final holistic reviewer; checks the full implementation against the plan spec |
+| `master` | `readiness_review` | holistic readiness reviewer; runs after reviewer approval when `auto_readiness_review = true` (opt-in gate). Config alias `master_review` is accepted for backward compatibility. |
 
 ## agent profile
 
@@ -63,12 +63,13 @@ kasmos maps lifecycle phases to role names in `.kasmos/config.toml` under `[phas
 
 ```toml
 [phases]
-planning = "planner"
-elaborating = "architect"
-implementing = "coder"
-reviewing = "reviewer"
-master_review = "master"
-fixer = "fixer"
+planning       = "planner"
+elaborating    = "architect"
+implementing   = "coder"
+spec_review    = "reviewer"
+quality_review = "reviewer"
+fixer          = "fixer"
+readiness_review = "master"   # canonical key; master_review is accepted as a backward-compat alias
 
 [agents.coder]
 program = "claude"

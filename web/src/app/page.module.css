@@ -171,18 +171,20 @@
   gap: 24px;
 }
 
-/* ====== LIFECYCLE PIPELINE ====== */
-.lifecyclePipeline {
+/* ====== LIFECYCLE GRID (unified – desktop + mobile) ====== */
+.lifecycleGrid {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 0;
   margin-bottom: 64px;
 }
 
-.lifecycleStepGroup {
+.lifecycleRow {
   display: flex;
   align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0;
 }
 
 .lifecycleStep {
@@ -194,6 +196,10 @@
   border-radius: 12px;
   border: 1px solid transparent;
   white-space: nowrap;
+}
+
+.lifecycleStepWide {
+  min-width: 148px;
 }
 
 .lifecycleAmber {
@@ -222,7 +228,7 @@
   letter-spacing: 0.5px;
 }
 
-.lifecycleArrow {
+.lifecycleHArrow {
   font-size: 20px;
   color: var(--foreground-tertiary);
   padding: 0 12px;
@@ -231,6 +237,13 @@
   flex-direction: column;
   align-items: center;
   gap: 4px;
+}
+
+.lifecycleVConnector {
+  font-size: 20px;
+  color: var(--foreground-tertiary);
+  padding: 8px 0;
+  line-height: 1;
 }
 
 .lifecycleArrowLoop {
@@ -245,36 +258,6 @@
   text-transform: lowercase;
   letter-spacing: 0.3px;
   white-space: nowrap;
-}
-
-/* ====== LIFECYCLE MOBILE (vertical) ====== */
-.lifecycleMobile {
-  display: none;
-  flex-direction: column;
-  align-items: center;
-  gap: 0;
-  margin-bottom: 64px;
-}
-
-.lifecycleMobileRow {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
-}
-
-.lifecycleMobileHArrow {
-  font-size: 18px;
-  color: var(--foreground-tertiary);
-  padding: 0 10px;
-  line-height: 1;
-}
-
-.lifecycleMobileVArrow {
-  font-size: 20px;
-  color: var(--foreground-tertiary);
-  padding: 8px 0;
-  line-height: 1;
 }
 
 /* ====== AGENTS GRID ====== */
@@ -391,14 +374,6 @@
   .agentsGrid {
     grid-template-columns: 1fr;
     gap: 12px;
-  }
-
-  .lifecyclePipeline {
-    display: none;
-  }
-
-  .lifecycleMobile {
-    display: flex;
   }
 
   .hero {

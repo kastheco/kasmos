@@ -165,16 +165,25 @@ func TestBuildFixerPrompt_WithoutFeedback(t *testing.T) {
 }
 
 func TestBuildMasterReviewPrompt(t *testing.T) {
-	prompt := BuildMasterReviewPrompt("my-feature", "myproject", "diff content here", "PASS: 42 tests")
+	prompt := BuildMasterReviewPrompt("my-feature", "myproject")
 
 	assert.Contains(t, prompt, "my-feature")
-	assert.Contains(t, prompt, "diff content here")
-	assert.Contains(t, prompt, "PASS: 42 tests")
 	assert.Contains(t, prompt, "kasmos-master")
-	assert.Contains(t, prompt, "master-approved-my-feature")
 	assert.Contains(t, prompt, `project: "myproject"`)
-	assert.Contains(t, prompt, "## Test Results")
-	assert.Contains(t, prompt, "## Diff")
+	// MCP-first readiness signal emission
+	assert.Contains(t, prompt, "signal_create` (signal_type: \"readiness-approved\"")
+	assert.Contains(t, prompt, "signal_create` (signal_type: \"readiness-changes-requested\"")
+	// CLI fallback
+	assert.Contains(t, prompt, "kas signal emit readiness_approved my-feature")
+	assert.Contains(t, prompt, "kas signal emit readiness_changes_requested my-feature")
+	// Evidence gathering
+	assert.Contains(t, prompt, "Merge-base diff")
+	assert.Contains(t, prompt, "MERGE_BASE")
+	// No filesystem sentinels
+	assert.NotContains(t, prompt, "touch .kasmos/signals/master-approved")
+	// No pre-computed diff arguments
+	assert.NotContains(t, prompt, "## Diff")
+	assert.NotContains(t, prompt, "## Test Results")
 }
 
 func TestBuildElaborationPrompt(t *testing.T) {
