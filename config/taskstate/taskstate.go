@@ -20,15 +20,17 @@ var manualOverrideOptions = []string{
 	string(StatusPlanning),
 	string(StatusImplementing),
 	string(StatusReviewing),
+	string(StatusVerifying),
 	string(StatusDone),
 	string(StatusCancelled),
 }
 
 const (
-	StatusReady     Status = "ready"
-	StatusDone      Status = "done"
-	StatusReviewing Status = "reviewing"
-	StatusCancelled Status = "cancelled"
+	StatusReady      Status = "ready"
+	StatusDone       Status = "done"
+	StatusReviewing  Status = "reviewing"
+	StatusVerifying  Status = "verifying"
+	StatusCancelled  Status = "cancelled"
 
 	// Lifecycle-stage statuses — canonical names used by the FSM.
 	StatusPlanning     Status = "planning"
@@ -71,6 +73,8 @@ func ResolveManualOverride(target string) (Status, taskstore.ExecutionState, err
 		return StatusImplementing, taskstore.ExecutionState{}, nil
 	case string(StatusReviewing):
 		return StatusReviewing, taskstore.ExecutionState{}, nil
+	case string(StatusVerifying):
+		return StatusVerifying, taskstore.ExecutionState{}, nil
 	case string(StatusDone):
 		return StatusDone, taskstore.ExecutionState{}, nil
 	case string(StatusCancelled):
@@ -84,7 +88,7 @@ func ResolveManualOverride(target string) (Status, taskstore.ExecutionState, err
 // lifecycle, excluding draft/planned-ready and terminal states.
 func IsActiveLifecycle(entry TaskEntry) bool {
 	switch entry.Status {
-	case StatusPlanning, StatusImplementing, StatusReviewing:
+	case StatusPlanning, StatusImplementing, StatusReviewing, StatusVerifying:
 		return true
 	default:
 		return false
@@ -137,15 +141,14 @@ func normalizeExecutionState(status Status, state taskstore.ExecutionState) task
 				return taskstore.ExecutionState{}
 			}
 			return taskstore.ExecutionState{Phase: state.Phase, ActiveAgentType: state.ActiveAgentType}
-		case "readiness_reviewing":
-			if state.ActiveAgentType == "" {
-				return taskstore.ExecutionState{}
-			}
-			// ActiveWave is always zeroed for the readiness review sub-phase.
-			return taskstore.ExecutionState{Phase: state.Phase, ActiveAgentType: state.ActiveAgentType}
 		default:
 			return taskstore.ExecutionState{}
 		}
+	case StatusVerifying:
+		if state.Phase != "" && state.Phase != "verifying" {
+			return taskstore.ExecutionState{}
+		}
+		return taskstore.ExecutionState{ActiveAgentType: state.ActiveAgentType}
 	default:
 		return taskstore.ExecutionState{}
 	}
@@ -162,6 +165,7 @@ type TaskEntry struct {
 	PlanningAt           time.Time                `json:"planning_at,omitempty"`
 	ImplementingAt       time.Time                `json:"implementing_at,omitempty"`
 	ReviewingAt          time.Time                `json:"reviewing_at,omitempty"`
+	VerifyingAt          time.Time                `json:"verifying_at,omitempty"`
 	DoneAt               time.Time                `json:"done_at,omitempty"`
 	Goal                 string                   `json:"goal,omitempty"`
 	ClickUpTaskID        string                   `json:"clickup_task_id,omitempty"`
@@ -223,6 +227,7 @@ func taskEntryFromStoreEntry(entry taskstore.TaskEntry, goal string) TaskEntry {
 		PlanningAt:           entry.PlanningAt,
 		ImplementingAt:       entry.ImplementingAt,
 		ReviewingAt:          entry.ReviewingAt,
+		VerifyingAt:          entry.VerifyingAt,
 		DoneAt:               entry.DoneAt,
 		Goal:                 goal,
 		ClickUpTaskID:        entry.ClickUpTaskID,
@@ -510,7 +515,7 @@ func (ps *TaskState) ForceSetLifecycle(filename string, status Status, state tas
 // isValidStatus returns true if s is a recognised lifecycle status.
 func isValidStatus(s Status) bool {
 	switch s {
-	case StatusReady, StatusPlanning, StatusImplementing, StatusReviewing, StatusDone, StatusCancelled:
+	case StatusReady, StatusPlanning, StatusImplementing, StatusReviewing, StatusVerifying, StatusDone, StatusCancelled:
 		return true
 	}
 	return false
@@ -865,6 +870,7 @@ func (ps *TaskState) toTaskstoreEntry(filename string, e TaskEntry) taskstore.Ta
 		PlanningAt:           e.PlanningAt,
 		ImplementingAt:       e.ImplementingAt,
 		ReviewingAt:          e.ReviewingAt,
+		VerifyingAt:          e.VerifyingAt,
 		DoneAt:               e.DoneAt,
 		Goal:                 e.Goal,
 		ClickUpTaskID:        e.ClickUpTaskID,

@@ -602,6 +602,32 @@ func TestServer_NormalizeFilename(t *testing.T) {
 	})
 }
 
+func TestServer_PhaseTimestamp_Verifying(t *testing.T) {
+	store := newTestStore(t)
+	srv := httptest.NewServer(taskstore.NewHandler(store))
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/v1/projects/kasmos/tasks", "application/json",
+		strings.NewReader(`{"filename":"plan","status":"ready"}`))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	resp.Body.Close()
+
+	req, err := http.NewRequest(http.MethodPut,
+		srv.URL+"/v1/projects/kasmos/tasks/plan/phase-timestamp",
+		strings.NewReader(`{"phase":"verifying","timestamp":"2026-03-15T10:00:00Z"}`))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	resp.Body.Close()
+
+	got, err := store.Get("kasmos", "plan")
+	require.NoError(t, err)
+	assert.False(t, got.VerifyingAt.IsZero(), "verifying_at must be set after phase-timestamp PUT with verifying phase")
+}
+
 func TestServer_EmptyListEndpointsReturnJSONArray(t *testing.T) {
 	store := newTestStore(t)
 	srv := httptest.NewServer(taskstore.NewHandler(store))

@@ -533,6 +533,7 @@ func TestSQLiteStore_PhaseTimestamps(t *testing.T) {
 	require.NoError(t, store.SetPhaseTimestamp("kasmos", "plan", "planning", time.Now().UTC()))
 	require.NoError(t, store.SetPhaseTimestamp("kasmos", "plan", "implementing", time.Now().UTC()))
 	require.NoError(t, store.SetPhaseTimestamp("kasmos", "plan", "reviewing", time.Now().UTC()))
+	require.NoError(t, store.SetPhaseTimestamp("kasmos", "plan", "verifying", time.Now().UTC()))
 	require.NoError(t, store.SetPhaseTimestamp("kasmos", "plan", "done", time.Now().UTC()))
 
 	got, err := store.Get("kasmos", "plan")
@@ -540,11 +541,57 @@ func TestSQLiteStore_PhaseTimestamps(t *testing.T) {
 	assert.False(t, got.PlanningAt.IsZero())
 	assert.False(t, got.ImplementingAt.IsZero())
 	assert.False(t, got.ReviewingAt.IsZero())
+	assert.False(t, got.VerifyingAt.IsZero())
 	assert.False(t, got.DoneAt.IsZero())
 
 	err = store.SetPhaseTimestamp("kasmos", "plan", "unknown", time.Now().UTC())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown phase")
+}
+
+func TestSQLiteStore_VerifyingAtRoundTrip(t *testing.T) {
+	store := newTestStore(t)
+	ts := time.Date(2026, 3, 15, 10, 0, 0, 0, time.UTC)
+
+	entry := taskstore.TaskEntry{
+		Filename:    "verifying-plan",
+		Status:      taskstore.StatusVerifying,
+		VerifyingAt: ts,
+	}
+	require.NoError(t, store.Create("proj", entry))
+
+	got, err := store.Get("proj", "verifying-plan")
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusVerifying, got.Status)
+	assert.Equal(t, ts, got.VerifyingAt, "verifying_at must survive Create+Get round-trip")
+
+	// Update and verify it persists.
+	ts2 := ts.Add(time.Hour)
+	got.VerifyingAt = ts2
+	require.NoError(t, store.Update("proj", "verifying-plan", got))
+
+	got2, err := store.Get("proj", "verifying-plan")
+	require.NoError(t, err)
+	assert.Equal(t, ts2, got2.VerifyingAt, "verifying_at must survive Update round-trip")
+
+	// Verify it appears in List.
+	list, err := store.List("proj")
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, ts2, list[0].VerifyingAt, "verifying_at must appear in List results")
+
+	// Verify it appears in ListByStatus.
+	byStatus, err := store.ListByStatus("proj", taskstore.StatusVerifying)
+	require.NoError(t, err)
+	require.Len(t, byStatus, 1)
+	assert.Equal(t, ts2, byStatus[0].VerifyingAt)
+
+	// Verify SetPhaseTimestamp works for verifying.
+	ts3 := ts.Add(2 * time.Hour)
+	require.NoError(t, store.SetPhaseTimestamp("proj", "verifying-plan", "verifying", ts3))
+	got3, err := store.Get("proj", "verifying-plan")
+	require.NoError(t, err)
+	assert.Equal(t, ts3, got3.VerifyingAt, "SetPhaseTimestamp('verifying') must update verifying_at")
 }
 
 func TestSQLiteStore_PlanGoal(t *testing.T) {
