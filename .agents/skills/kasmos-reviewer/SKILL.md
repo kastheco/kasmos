@@ -339,9 +339,9 @@ Keep findings to short bullet points with concrete remediation requests. Avoid g
 
 ### Readiness Review Handoff
 
-When `auto_readiness_review` is enabled in the daemon config, kasmos transitions the task to the `verifying` FSM state after processing your `review-approved` signal and then spawns the master agent. You do not need to do anything extra — emit your normal approval signal and stop.
+When `auto_readiness_review` is enabled in the daemon config, kasmos will automatically spawn the master agent after it processes your `review-approved` signal. You do not need to do anything extra — emit your normal approval signal and stop. The orchestrator handles the handoff into the `readiness_reviewing` execution phase.
 
-If `auto_readiness_review` is disabled, `review-approved` causes the processor to immediately chain `verify-approved`, transitioning the task directly to `done` without spawning the master agent.
+If readiness review is disabled, `review-approved` transitions the task directly to `done`.
 
 ### Mode-Specific Behavior
 
