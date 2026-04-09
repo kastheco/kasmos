@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
-import { Link, useLocation } from "react-router";
-import { fetchAuditEvents, resolveProjectName } from "../api";
+import { Link } from "react-router";
+import { fetchAuditEvents } from "../api";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
+import { useProject } from "../hooks/useProject";
 import LastUpdated from "../components/LastUpdated";
 import Skeleton from "../components/Skeleton";
 import type { AuditEvent } from "../types";
@@ -97,8 +98,7 @@ function levelClass(level: string): string {
 }
 
 export default function AuditPage() {
-  const { search } = useLocation();
-  const project = resolveProjectName(search);
+  const { project, projectSearch } = useProject();
 
   const [kind, setKind] = useState("");
   const [taskInput, setTaskInput] = useState("");
@@ -183,7 +183,10 @@ export default function AuditPage() {
         <td>
           {event.task_file ? (
             <Link
-              to={`/tasks/${encodeURIComponent(event.task_file)}`}
+              to={{
+                pathname: `/tasks/${encodeURIComponent(event.task_file)}`,
+                search: projectSearch,
+              }}
               className={styles.taskLink}
               onClick={(e) => e.stopPropagation()}
             >
