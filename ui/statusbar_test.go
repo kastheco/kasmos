@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/lipgloss/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -380,4 +381,26 @@ func TestStatusBar_PRIndicator_NarrowDrops(t *testing.T) {
 	require.NotEmpty(t, result)
 	// The output should still contain the app name
 	assert.Contains(t, result, "k") // gradient-rendered "kasmos"
+}
+
+// TestStatusBar_VerifyingStatus verifies that verifying status renders with a
+// distinct color (not the default muted fallthrough).
+func TestStatusBar_VerifyingStatus(t *testing.T) {
+	sb := NewStatusBar()
+	sb.SetSize(120)
+	sb.SetData(StatusBarData{
+		PlanName:   "auth-feature",
+		PlanStatus: "verifying",
+	})
+
+	result := sb.String()
+	plain := stripANSI(result)
+	assert.Contains(t, plain, "verifying", "verifying status must appear in status bar")
+	// Verify that verifying uses a distinct style (ColorIris) rather than the
+	// muted default. Compare the styled rendering of "verifying" against a
+	// muted-rendered version of the same text to confirm the color differs.
+	mutedVerifying := lipgloss.NewStyle().Foreground(ColorMuted).Render("verifying")
+	styledVerifying := planStatusStyle("verifying")
+	assert.NotEqual(t, styledVerifying, mutedVerifying,
+		"verifying status must not use the muted default color")
 }

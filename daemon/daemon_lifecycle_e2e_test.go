@@ -274,11 +274,15 @@ Complete the last implementation task and transition into review.
 	assert.Empty(t, beforeApproval.PRURL)
 
 	reviewApprovedActions := proc.ProcessFSMSignals([]taskfsm.Signal{{TaskFile: planFile, Event: taskfsm.ReviewApproved, Body: "lgtm"}})
-	require.Len(t, reviewApprovedActions, 2)
+	require.Len(t, reviewApprovedActions, 3)
 	assert.Equal(t, "review_approved", reviewApprovedActions[0].Kind())
-	assert.Equal(t, "create_pr", reviewApprovedActions[1].Kind())
+	assert.Equal(t, "verify_approved", reviewApprovedActions[1].Kind())
+	assert.Equal(t, "create_pr", reviewApprovedActions[2].Kind())
 
 	execActions(reviewApprovedActions[:1])
+	// ReviewApprovedAction is lightweight — it does not clear execution state.
+	// The FSM transitions (reviewing→verifying→done, chained by the processor
+	// for !AutoReadinessReview) already zero the execution state.
 	assertState(taskstore.StatusDone, taskstore.ExecutionState{})
 	assert.Empty(t, entryState().PRURL)
 

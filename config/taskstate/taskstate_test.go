@@ -807,16 +807,15 @@ Do delta.
 }
 
 func TestNormalizeExecutionState_ReadinessReviewing(t *testing.T) {
-	t.Run("valid readiness_reviewing with master agent is preserved", func(t *testing.T) {
+	// readiness_reviewing is no longer a valid sub-phase — it routes through
+	// the default branch and is discarded for StatusReviewing.
+	t.Run("readiness_reviewing is now discarded under StatusReviewing", func(t *testing.T) {
 		result := normalizeExecutionState(StatusReviewing, taskstore.ExecutionState{
 			Phase:           "readiness_reviewing",
 			ActiveAgentType: "master",
 			ActiveWave:      0,
 		})
-		assert.Equal(t, taskstore.ExecutionState{
-			Phase:           "readiness_reviewing",
-			ActiveAgentType: "master",
-		}, result)
+		assert.Equal(t, taskstore.ExecutionState{}, result)
 	})
 
 	t.Run("readiness_reviewing without agent type is discarded", func(t *testing.T) {
@@ -825,21 +824,6 @@ func TestNormalizeExecutionState_ReadinessReviewing(t *testing.T) {
 			ActiveAgentType: "",
 		})
 		assert.Equal(t, taskstore.ExecutionState{}, result)
-	})
-
-	t.Run("readiness_reviewing active wave is zeroed in output", func(t *testing.T) {
-		// ActiveWave must be zeroed for the readiness review sub-phase even if
-		// a stale value is present in the persisted row.
-		result := normalizeExecutionState(StatusReviewing, taskstore.ExecutionState{
-			Phase:           "readiness_reviewing",
-			ActiveAgentType: "master",
-			ActiveWave:      3,
-		})
-		assert.Equal(t, taskstore.ExecutionState{
-			Phase:           "readiness_reviewing",
-			ActiveAgentType: "master",
-		}, result)
-		assert.Equal(t, 0, result.ActiveWave, "ActiveWave must be zeroed for readiness review")
 	})
 
 	t.Run("existing reviewing phase still accepted for StatusReviewing", func(t *testing.T) {
@@ -861,6 +845,99 @@ func TestNormalizeExecutionState_ReadinessReviewing(t *testing.T) {
 		})
 		assert.Equal(t, taskstore.ExecutionState{}, result)
 	})
+}
+
+func TestNormalizeExecutionState_Verifying(t *testing.T) {
+	t.Run("empty phase preserves active agent type", func(t *testing.T) {
+		result := normalizeExecutionState(StatusVerifying, taskstore.ExecutionState{
+			ActiveAgentType: "master",
+		})
+		assert.Equal(t, taskstore.ExecutionState{ActiveAgentType: "master"}, result)
+		assert.Equal(t, 0, result.ActiveWave, "ActiveWave must be zeroed for verifying")
+	})
+
+	t.Run("verifying phase string is accepted as compatibility input", func(t *testing.T) {
+		result := normalizeExecutionState(StatusVerifying, taskstore.ExecutionState{
+			Phase:           "verifying",
+			ActiveAgentType: "master",
+		})
+		assert.Equal(t, taskstore.ExecutionState{ActiveAgentType: "master"}, result)
+	})
+
+	t.Run("unrelated phase is discarded", func(t *testing.T) {
+		result := normalizeExecutionState(StatusVerifying, taskstore.ExecutionState{
+			Phase:           "wave_running",
+			ActiveAgentType: "coder",
+			ActiveWave:      2,
+		})
+		assert.Equal(t, taskstore.ExecutionState{}, result)
+	})
+
+	t.Run("no agent type results in empty state", func(t *testing.T) {
+		result := normalizeExecutionState(StatusVerifying, taskstore.ExecutionState{})
+		assert.Equal(t, taskstore.ExecutionState{}, result)
+	})
+
+	t.Run("active wave is zeroed even when provided", func(t *testing.T) {
+		result := normalizeExecutionState(StatusVerifying, taskstore.ExecutionState{
+			ActiveAgentType: "master",
+			ActiveWave:      3,
+		})
+		assert.Equal(t, taskstore.ExecutionState{ActiveAgentType: "master"}, result)
+		assert.Equal(t, 0, result.ActiveWave)
+	})
+}
+
+func TestTaskEntryFromStoreEntry_MigratesReadinessReviewingToVerifying(t *testing.T) {
+	// Tasks persisted as reviewing+readiness_reviewing (pre-verifying FSM)
+	// must be migrated on load to StatusVerifying so master agents can complete.
+	storeEntry := taskstore.TaskEntry{
+		Filename: "test-plan",
+		Status:   taskstore.StatusReviewing,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           "readiness_reviewing",
+			ActiveAgentType: "master",
+		},
+		Branch: "plan/test-plan",
+	}
+
+	entry := taskEntryFromStoreEntry(storeEntry, "some goal")
+	assert.Equal(t, StatusVerifying, entry.Status, "reviewing+readiness_reviewing must migrate to verifying")
+	assert.Empty(t, entry.ExecutionState.Phase, "phase must be cleared after migration")
+	assert.Equal(t, "master", entry.ExecutionState.ActiveAgentType, "agent type must be preserved")
+	assert.Equal(t, "plan/test-plan", entry.Branch, "branch must be preserved")
+}
+
+func TestTaskEntryFromStoreEntry_ReviewingWithoutReadinessStaysReviewing(t *testing.T) {
+	storeEntry := taskstore.TaskEntry{
+		Filename: "test-plan",
+		Status:   taskstore.StatusReviewing,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           "reviewing",
+			ActiveAgentType: "reviewer",
+		},
+	}
+
+	entry := taskEntryFromStoreEntry(storeEntry, "some goal")
+	assert.Equal(t, StatusReviewing, entry.Status, "normal reviewing tasks must not be migrated")
+	assert.Equal(t, "reviewing", entry.ExecutionState.Phase)
+}
+
+func TestIsActiveLifecycle_IncludesVerifying(t *testing.T) {
+	assert.True(t, IsActiveLifecycle(TaskEntry{Status: StatusVerifying}))
+	assert.True(t, IsActiveLifecycle(TaskEntry{Status: StatusPlanning}))
+	assert.True(t, IsActiveLifecycle(TaskEntry{Status: StatusImplementing}))
+	assert.True(t, IsActiveLifecycle(TaskEntry{Status: StatusReviewing}))
+	assert.False(t, IsActiveLifecycle(TaskEntry{Status: StatusReady}))
+	assert.False(t, IsActiveLifecycle(TaskEntry{Status: StatusDone}))
+	assert.False(t, IsActiveLifecycle(TaskEntry{Status: StatusCancelled}))
+}
+
+func TestResolveManualOverride_Verifying(t *testing.T) {
+	status, state, err := ResolveManualOverride("verifying")
+	require.NoError(t, err)
+	assert.Equal(t, StatusVerifying, status)
+	assert.Equal(t, taskstore.ExecutionState{}, state)
 }
 
 func TestTaskState_ReviewCycle(t *testing.T) {

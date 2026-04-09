@@ -1222,36 +1222,61 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							signalCmds = append(signalCmds, cmd)
 						}
 					case loop.ReviewApprovedAction:
+						// Reviewer-side handoff: pause reviewer instances, clear stale
+						// feedback, audit reviewing → verifying. Terminal side-effects
+						// (execution state, ClickUp, success toast) fire in VerifyApprovedAction.
 						m.clearLatestReviewFeedback(a.PlanFile)
+						planName := taskstate.DisplayName(a.PlanFile)
+						m.audit(auditlog.EventPlanTransition, "reviewing → verifying (review approved)",
+							auditlog.WithPlan(a.PlanFile))
+						m.toastManager.Info(fmt.Sprintf("review approved — verifying: %s", planName))
+						var lastPausedReviewer *session.Instance
+						for _, inst := range m.nav.GetInstances() {
+							if inst.TaskFile == a.PlanFile && inst.AgentType == session.AgentTypeReviewer {
+								inst.SetStatus(session.Paused)
+								lastPausedReviewer = inst
+							}
+						}
+						if lastPausedReviewer != nil {
+							m.nav.SelectInstance(lastPausedReviewer)
+							m.updateNavPanelStatus()
+							if cmd := m.instanceChanged(); cmd != nil {
+								signalCmds = append(signalCmds, cmd)
+							}
+						}
+					case loop.VerifyApprovedAction:
+						// Terminal verification approval: clear execution state, pause
+						// master instances, audit verifying → done, post ClickUp progress.
 						if err := m.clearExecutionState(a.PlanFile); err != nil {
 							log.WarningLog.Printf("could not clear execution state for %q: %v", a.PlanFile, err)
 						}
 						planName := taskstate.DisplayName(a.PlanFile)
-						m.audit(auditlog.EventPlanTransition, "reviewing → done (review approved)",
+						m.audit(auditlog.EventPlanTransition, "verifying → done (verify approved)",
 							auditlog.WithPlan(a.PlanFile))
 						m.toastManager.Success(fmt.Sprintf("review approved: %s", planName))
 						if cmd := m.postClickUpProgress(a.PlanFile, "review_approved", ""); cmd != nil {
 							signalCmds = append(signalCmds, cmd)
 						}
-						// Pause all reviewer/master instances first, then select
-						// one and call instanceChanged once. Calling instanceChanged
-						// in-loop triggers cleanupPausedDoneReviewers which can
-						// remove a just-paused reviewer before all instances are
-						// processed.
-						var lastPaused *session.Instance
+						// Pause all master instances, then select one and call instanceChanged.
+						var lastPausedMaster *session.Instance
 						for _, inst := range m.nav.GetInstances() {
-							if inst.TaskFile == a.PlanFile &&
-								(inst.AgentType == session.AgentTypeReviewer || inst.AgentType == session.AgentTypeMaster) {
+							if inst.TaskFile == a.PlanFile && inst.AgentType == session.AgentTypeMaster {
 								inst.SetStatus(session.Paused)
-								lastPaused = inst
+								lastPausedMaster = inst
 							}
 						}
-						if lastPaused != nil {
-							m.nav.SelectInstance(lastPaused)
+						if lastPausedMaster != nil {
+							m.nav.SelectInstance(lastPausedMaster)
 							m.updateNavPanelStatus()
 							if cmd := m.instanceChanged(); cmd != nil {
 								signalCmds = append(signalCmds, cmd)
 							}
+						}
+					case loop.VerifyFailedAction:
+						m.audit(auditlog.EventPlanTransition, "verifying → implementing (verify failed)",
+							auditlog.WithPlan(a.PlanFile))
+						if cmd := m.handleReviewChangesRequested(a.PlanFile, a.Feedback); cmd != nil {
+							signalCmds = append(signalCmds, cmd)
 						}
 					case loop.CreatePRAction:
 						signalCmds = append(signalCmds, m.createPRAfterApproval(a.PlanFile, a.ReviewBody))
@@ -1373,6 +1398,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							signalCmds = append(signalCmds, cmd)
 						}
 					case taskfsm.ReviewApproved:
+						// In the legacy test-only path (no processor), chain through
+						// VerifyApproved immediately — there is no readiness-review gate.
+						if err := m.fsm.Transition(sig.TaskFile, taskfsm.VerifyApproved); err != nil {
+							log.WarningLog.Printf("chained verify-approved for %q rejected: %v", sig.TaskFile, err)
+						}
 						m.clearLatestReviewFeedback(sig.TaskFile)
 						if err := m.clearExecutionState(sig.TaskFile); err != nil {
 							log.WarningLog.Printf("could not clear execution state for %q: %v", sig.TaskFile, err)

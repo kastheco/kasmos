@@ -87,6 +87,8 @@ func planStatusStyle(status string) string {
 		fg = ColorFoam
 	case "reviewing", "done":
 		fg = ColorRose
+	case "verifying":
+		fg = ColorIris
 	default:
 		fg = ColorMuted
 	}

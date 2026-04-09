@@ -355,7 +355,7 @@ These one-shot commands are usable from any agent context:
 ## Release Version Bump
 
 The GitHub Actions `Release` workflow (`.github/workflows/release.yml`) validates that the git tag
-matches the `version` constant in `cmd/kas/main.go` (line 25). If they don't match, the build fails:
+matches the version constant in `cmd/kas/main.go`. If they don't match, the build fails:
 
 ```
 ERROR: Tag version (1.1.1) does not match version in cmd/kas/main.go (1.1.0)

@@ -942,6 +942,70 @@ func TestDaemon_ExecuteAction_ReviewChanges_PersistsLatestFeedback(t *testing.T)
 	assert.Equal(t, "new review findings", entry.LatestReviewFeedback)
 }
 
+func TestDaemon_ExecuteAction_VerifyApproved_ClearsExecutionStateAndEmitsEvent(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename: "plan.md",
+		Status:   taskstore.StatusVerifying,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseReviewing),
+			ActiveAgentType: session.AgentTypeReviewer,
+		},
+	}))
+	broadcaster := api.NewEventBroadcaster()
+	sub := broadcaster.Subscribe()
+	t.Cleanup(func() {
+		broadcaster.Unsubscribe(sub)
+		broadcaster.Close()
+	})
+	d := &Daemon{logger: slog.Default(), broadcaster: broadcaster}
+	e := RepoEntry{Project: "proj", Store: store}
+
+	require.NoError(t, d.executeAction(context.Background(), e, loop.VerifyApprovedAction{PlanFile: "plan.md", ReviewBody: "ship it"}))
+
+	entry, err := store.Get("proj", "plan.md")
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.ExecutionState{}, entry.ExecutionState, "VerifyApprovedAction must clear execution state")
+
+	select {
+	case ev := <-sub:
+		assert.Equal(t, "signal_processed", ev.Kind)
+		assert.Equal(t, "plan.md", ev.PlanFile)
+	case <-time.After(time.Second):
+		t.Fatal("expected signal_processed event")
+	}
+}
+
+func TestDaemon_ExecuteAction_VerifyFailed_PersistsFeedbackAndEmitsEvent(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename: "plan.md",
+		Status:   taskstore.StatusVerifying,
+	}))
+	broadcaster := api.NewEventBroadcaster()
+	sub := broadcaster.Subscribe()
+	t.Cleanup(func() {
+		broadcaster.Unsubscribe(sub)
+		broadcaster.Close()
+	})
+	d := &Daemon{logger: slog.Default(), broadcaster: broadcaster}
+	e := RepoEntry{Project: "proj", Store: store}
+
+	require.NoError(t, d.executeAction(context.Background(), e, loop.VerifyFailedAction{PlanFile: "plan.md", Feedback: "not ready yet"}))
+
+	entry, err := store.Get("proj", "plan.md")
+	require.NoError(t, err)
+	assert.Equal(t, "not ready yet", entry.LatestReviewFeedback, "VerifyFailedAction must persist feedback")
+
+	select {
+	case ev := <-sub:
+		assert.Equal(t, "signal_processed", ev.Kind)
+		assert.Equal(t, "plan.md", ev.PlanFile)
+	case <-time.After(time.Second):
+		t.Fatal("expected signal_processed event")
+	}
+}
+
 func TestSharedWorktreePaths(t *testing.T) {
 	repo := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(repo, ".worktrees", "a"), 0o755))
@@ -1393,9 +1457,12 @@ func TestDaemon_ExecuteAction_SpawnMaster_PersistsExecutionStateAndEmitsEvent(t 
 	const planFile = "master-plan.md"
 	const branch = "plan/master-plan"
 
+	// In real usage, ReviewApproved transitions the task to StatusVerifying
+	// before SpawnMasterAction is emitted. Use StatusVerifying here so that
+	// normalizeExecutionState preserves the master AgentType field.
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{
 		Filename: planFile,
-		Status:   taskstore.StatusReviewing,
+		Status:   taskstore.StatusVerifying,
 		Branch:   branch,
 	}))
 
@@ -1422,10 +1489,10 @@ func TestDaemon_ExecuteAction_SpawnMaster_PersistsExecutionStateAndEmitsEvent(t 
 	require.NoError(t, err)
 	assert.True(t, spawnCalled, "spawnMaster must be called")
 
-	// Verify execution state was persisted.
+	// Verify execution state was persisted (phase is not set; status is tracked at FSM level).
 	entry, getErr := store.Get(project, planFile)
 	require.NoError(t, getErr)
-	assert.Equal(t, string(taskfsm.ExecutionPhaseReadinessReview), entry.ExecutionState.Phase)
+	assert.Empty(t, entry.ExecutionState.Phase)
 	assert.Equal(t, session.AgentTypeMaster, entry.ExecutionState.ActiveAgentType)
 
 	// Verify broadcast event.

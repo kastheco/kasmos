@@ -29,8 +29,11 @@ func TestTransition_ValidTransitions(t *testing.T) {
 		{StatusPlanning, PlannerFinished, StatusReady},
 		{StatusReady, ImplementStart, StatusImplementing},
 		{StatusImplementing, ImplementFinished, StatusReviewing},
-		{StatusReviewing, ReviewApproved, StatusDone},
+		{StatusReviewing, ReviewApproved, StatusVerifying},
 		{StatusReviewing, ReviewChangesRequested, StatusImplementing},
+		{StatusVerifying, VerifyApproved, StatusDone},
+		{StatusVerifying, VerifyFailed, StatusImplementing},
+		{StatusVerifying, Cancel, StatusCancelled},
 		{StatusDone, StartOver, StatusPlanning},
 		{StatusDone, Cancel, StatusCancelled},
 		{StatusReady, Cancel, StatusCancelled},
@@ -155,6 +158,7 @@ func TestFSM_TransitionRecordsPhaseTimestamp(t *testing.T) {
 	require.NoError(t, fsm.Transition("test", ImplementStart))
 	require.NoError(t, fsm.Transition("test", ImplementFinished))
 	require.NoError(t, fsm.Transition("test", ReviewApproved))
+	require.NoError(t, fsm.Transition("test", VerifyApproved))
 
 	entry, err := store.Get("test-proj", "test")
 	require.NoError(t, err)
@@ -162,6 +166,7 @@ func TestFSM_TransitionRecordsPhaseTimestamp(t *testing.T) {
 	assert.False(t, entry.PlanningAt.IsZero())
 	assert.False(t, entry.ImplementingAt.IsZero())
 	assert.False(t, entry.ReviewingAt.IsZero())
+	assert.False(t, entry.VerifyingAt.IsZero())
 	assert.False(t, entry.DoneAt.IsZero())
 }
 
@@ -270,23 +275,5 @@ func TestExecutionPhaseHelpers(t *testing.T) {
 		assert.True(t, IsSingleAgentImplementingPhase(ExecutionPhaseSingleAgentImplementing))
 		assert.True(t, IsSingleAgentImplementingPhase(ExecutionPhaseFixing))
 		assert.False(t, IsSingleAgentImplementingPhase(ExecutionPhaseWaveRunning))
-	})
-}
-
-func TestReadinessReviewPhaseConstant(t *testing.T) {
-	t.Run("constant has expected value", func(t *testing.T) {
-		assert.Equal(t, ExecutionPhase("readiness_reviewing"), ExecutionPhaseReadinessReview)
-	})
-
-	t.Run("normalize round-trips readiness_reviewing", func(t *testing.T) {
-		assert.Equal(t, ExecutionPhaseReadinessReview, NormalizeExecutionPhase("  readiness_reviewing  "))
-	})
-
-	t.Run("readiness review is not a wave phase", func(t *testing.T) {
-		assert.False(t, IsWaveExecutionPhase(ExecutionPhaseReadinessReview))
-	})
-
-	t.Run("readiness review is not a single agent implementing phase", func(t *testing.T) {
-		assert.False(t, IsSingleAgentImplementingPhase(ExecutionPhaseReadinessReview))
 	})
 }

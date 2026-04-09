@@ -779,7 +779,8 @@ func TestFSM_PlanLifecycleStages(t *testing.T) {
 		{"planner_finished", taskstate.StatusReady},
 		{"implement_start", taskstate.StatusImplementing},
 		{"implement_finished", taskstate.StatusReviewing},
-		{"review_approved", taskstate.StatusDone},
+		{"review_approved", taskstate.StatusVerifying},
+		{"verify_approved", taskstate.StatusDone},
 	}
 
 	for _, tc := range stages {
@@ -1985,22 +1986,23 @@ func findAction[T loop.Action](actions []loop.Action) (T, bool) {
 	return zero, false
 }
 
-func TestTaskLifecycleItems_NoStartReviewDuringReadinessPhase(t *testing.T) {
-	// When the execution phase is readiness_reviewing, taskLifecycleItems must not
-	// include the "start_review" action — that would reset the readiness gate.
+func TestTaskLifecycleItems_StartReviewAvailableDuringReviewing(t *testing.T) {
+	// In the new FSM, StatusReviewing tasks always offer "start_review".
+	// Verification is tracked by StatusVerifying (a separate FSM status).
 	reviewingEntry := taskstate.TaskEntry{
 		Status: taskstate.StatusReviewing,
 		ExecutionState: taskstore.ExecutionState{
-			Phase:           string(taskfsm.ExecutionPhaseReadinessReview),
-			ActiveAgentType: session.AgentTypeMaster,
+			ActiveAgentType: session.AgentTypeReviewer,
 		},
 	}
 
 	items := taskLifecycleItems(reviewingEntry)
+	var actions []string
 	for _, item := range items {
-		assert.NotEqual(t, "start_review", item.Action,
-			"start_review must be absent during readiness_reviewing phase")
+		actions = append(actions, item.Action)
 	}
+	assert.Contains(t, actions, "start_review",
+		"start_review must be available for reviewing tasks in the new FSM")
 }
 
 func TestInstanceSignalItems_MasterAgent_HasReadinessSignals(t *testing.T) {
@@ -2016,8 +2018,8 @@ func TestInstanceSignalItems_MasterAgent_HasReadinessSignals(t *testing.T) {
 	for _, item := range items {
 		actions = append(actions, item.Action)
 	}
-	assert.Contains(t, actions, "mark_readiness_approved", "master instance must offer mark_readiness_approved action")
-	assert.Contains(t, actions, "mark_readiness_changes_requested", "master instance must offer mark_readiness_changes_requested action")
+	assert.Contains(t, actions, "mark_verify_approved", "master instance must offer mark_verify_approved action")
+	assert.Contains(t, actions, "mark_verify_failed", "master instance must offer mark_verify_failed action")
 }
 
 func TestExecuteContextAction_MarkReadinessApproved(t *testing.T) {
@@ -2030,8 +2032,7 @@ func TestExecuteContextAction_MarkReadinessApproved(t *testing.T) {
 	require.NoError(t, err)
 	const planFile = "feature"
 	require.NoError(t, ps.Create(planFile, "feature", "plan/feature", "", time.Now()))
-	require.NoError(t, ps.ForceSetLifecycle(planFile, taskstate.StatusReviewing, taskstore.ExecutionState{
-		Phase:           string(taskfsm.ExecutionPhaseReadinessReview),
+	require.NoError(t, ps.ForceSetLifecycle(planFile, taskstate.StatusVerifying, taskstore.ExecutionState{
 		ActiveAgentType: session.AgentTypeMaster,
 	}))
 
@@ -2052,7 +2053,7 @@ func TestExecuteContextAction_MarkReadinessApproved(t *testing.T) {
 	h.updateSidebarTasks()
 	h.nav.SelectInstance(master)
 
-	_, cmd := h.executeContextAction("mark_readiness_approved")
+	_, cmd := h.executeContextAction("mark_verify_approved")
 	require.NotNil(t, cmd)
 	msg := cmd()
 	result, ok := msg.(manualSignalResultMsg)
@@ -2061,7 +2062,7 @@ func TestExecuteContextAction_MarkReadinessApproved(t *testing.T) {
 
 	signals := listPendingAuthoritativeSignals(t, "test")
 	require.Len(t, signals, 1)
-	assert.Equal(t, "readiness_approved", signals[0].SignalType)
+	assert.Equal(t, "verify_approved", signals[0].SignalType)
 }
 
 func TestExecuteContextAction_MarkReadinessChangesRequested(t *testing.T) {
@@ -2074,8 +2075,7 @@ func TestExecuteContextAction_MarkReadinessChangesRequested(t *testing.T) {
 	require.NoError(t, err)
 	const planFile = "feature"
 	require.NoError(t, ps.Create(planFile, "feature", "plan/feature", "", time.Now()))
-	require.NoError(t, ps.ForceSetLifecycle(planFile, taskstate.StatusReviewing, taskstore.ExecutionState{
-		Phase:           string(taskfsm.ExecutionPhaseReadinessReview),
+	require.NoError(t, ps.ForceSetLifecycle(planFile, taskstate.StatusVerifying, taskstore.ExecutionState{
 		ActiveAgentType: session.AgentTypeMaster,
 	}))
 
@@ -2096,7 +2096,7 @@ func TestExecuteContextAction_MarkReadinessChangesRequested(t *testing.T) {
 	h.updateSidebarTasks()
 	h.nav.SelectInstance(master)
 
-	_, cmd := h.executeContextAction("mark_readiness_changes_requested")
+	_, cmd := h.executeContextAction("mark_verify_failed")
 	require.NotNil(t, cmd)
 	msg := cmd()
 	result, ok := msg.(manualSignalResultMsg)
@@ -2105,5 +2105,5 @@ func TestExecuteContextAction_MarkReadinessChangesRequested(t *testing.T) {
 
 	signals := listPendingAuthoritativeSignals(t, "test")
 	require.Len(t, signals, 1)
-	assert.Equal(t, "readiness_changes_requested", signals[0].SignalType)
+	assert.Equal(t, "verify_failed", signals[0].SignalType)
 }

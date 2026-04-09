@@ -48,8 +48,12 @@ func TestBuildMasterAgentSpec(t *testing.T) {
 	assert.Equal(t, "readiness-review-1", spec.Title)
 	assert.Contains(t, spec.Prompt, "kasmos-master")
 	assert.Contains(t, spec.Prompt, `project: "myproject"`)
-	assert.Contains(t, spec.Prompt, "readiness-approved")
-	assert.Contains(t, spec.Prompt, "readiness-changes-requested")
+	assert.Contains(t, spec.Prompt, "verify_approved")
+	assert.Contains(t, spec.Prompt, "verify_failed")
+	assert.Contains(t, spec.Prompt, "verifying")
+	// Must not use the old readiness-specific signal types
+	assert.NotContains(t, spec.Prompt, "readiness-approved")
+	assert.NotContains(t, spec.Prompt, "readiness-changes-requested")
 	// Prompt must not reference filesystem sentinels
 	assert.NotContains(t, spec.Prompt, "touch .kasmos/signals/master-approved")
 }
@@ -133,20 +137,6 @@ func TestBuildRecoveryCandidates_PhaseAwareLifecycleSessions(t *testing.T) {
 			},
 			wantTitle: "feature-coder",
 			wantType:  session.AgentTypeCoder,
-		},
-		{
-			name: "readiness reviewing recovers master agent",
-			entry: taskstore.TaskEntry{
-				Filename: "feature",
-				Status:   taskstore.StatusReviewing,
-				Branch:   "plan/feature",
-				ExecutionState: taskstore.ExecutionState{
-					Phase:           string(taskfsm.ExecutionPhaseReadinessReview),
-					ActiveAgentType: session.AgentTypeMaster,
-				},
-			},
-			wantTitle: "readiness-review-1",
-			wantType:  session.AgentTypeMaster,
 		},
 		{
 			name: "active wave recovers only active wave tasks",
@@ -241,4 +231,37 @@ func TestMatchRecoveryCandidateByTitle_ValidatesWaveTaskAgainstPlan(t *testing.T
 
 	_, ok = MatchRecoveryCandidateByTitle(entry, content, "feature-W2-T9")
 	assert.False(t, ok)
+}
+
+func TestBuildRecoveryCandidates_StatusVerifying_RecoversMaster(t *testing.T) {
+	entry := taskstore.TaskEntry{
+		Filename: "feature",
+		Status:   taskstore.StatusVerifying,
+		Branch:   "plan/feature",
+		ExecutionState: taskstore.ExecutionState{
+			ActiveAgentType: session.AgentTypeMaster,
+		},
+	}
+
+	candidates := BuildRecoveryCandidates(entry, "")
+	require.Len(t, candidates, 1)
+	assert.Equal(t, "readiness-review-1", candidates[0].Title)
+	assert.Equal(t, session.AgentTypeMaster, candidates[0].AgentType)
+	assert.Equal(t, "feature", candidates[0].TaskFile)
+}
+
+func TestMatchRecoveryCandidateByTitle_StatusVerifying_MatchesMasterTitle(t *testing.T) {
+	entry := taskstore.TaskEntry{
+		Filename: "feature",
+		Status:   taskstore.StatusVerifying,
+		Branch:   "plan/feature",
+		ExecutionState: taskstore.ExecutionState{
+			ActiveAgentType: session.AgentTypeMaster,
+		},
+	}
+
+	candidate, ok := MatchRecoveryCandidateByTitle(entry, "", "readiness-review-1")
+	require.True(t, ok)
+	assert.Equal(t, "feature", candidate.TaskFile)
+	assert.Equal(t, session.AgentTypeMaster, candidate.AgentType)
 }

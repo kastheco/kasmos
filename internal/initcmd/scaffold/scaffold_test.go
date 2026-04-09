@@ -1357,9 +1357,10 @@ func TestLoadReviewPrompt_SubstitutesProject(t *testing.T) {
 
 func TestLoadReviewPrompt_MentionsReadinessReviewHandoff(t *testing.T) {
 	prompt := LoadReviewPrompt("test-plan.md", "test-plan", "myproject", 1, "")
-	assert.Contains(t, prompt, "readiness review")
-	assert.Contains(t, prompt, "readiness_reviewing")
+	assert.Contains(t, prompt, "Readiness review handoff")
+	assert.Contains(t, prompt, "verifying")
 	assert.Contains(t, prompt, "auto_readiness_review")
+	assert.NotContains(t, prompt, "readiness_reviewing")
 }
 
 func ptrFloat(f float64) *float64 { return &f }

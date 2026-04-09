@@ -32,6 +32,7 @@ const (
 	StatusReady        Status = "ready"
 	StatusDone         Status = "done"
 	StatusReviewing    Status = "reviewing"
+	StatusVerifying    Status = "verifying"
 	StatusCancelled    Status = "cancelled"
 	StatusPlanning     Status = "planning"
 	StatusImplementing Status = "implementing"
@@ -50,6 +51,7 @@ type TaskEntry struct {
 	PlanningAt           time.Time      `json:"planning_at,omitempty"`
 	ImplementingAt       time.Time      `json:"implementing_at,omitempty"`
 	ReviewingAt          time.Time      `json:"reviewing_at,omitempty"`
+	VerifyingAt          time.Time      `json:"verifying_at,omitempty"`
 	DoneAt               time.Time      `json:"done_at,omitempty"`
 	Goal                 string         `json:"goal,omitempty"`
 	Content              string         `json:"content,omitempty"`

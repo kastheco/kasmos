@@ -1524,6 +1524,7 @@ func (m *home) updateInfoPaneForPlanHeader() {
 	data.PlanningAt = entry.PlanningAt
 	data.ImplementingAt = entry.ImplementingAt
 	data.ReviewingAt = entry.ReviewingAt
+	data.VerifyingAt = entry.VerifyingAt
 	data.DoneAt = entry.DoneAt
 
 	// Include wave progress if an orchestrator exists for this plan.
@@ -1626,6 +1627,7 @@ func (m *home) updateInfoPane() {
 				data.PlanningAt = entry.PlanningAt
 				data.ImplementingAt = entry.ImplementingAt
 				data.ReviewingAt = entry.ReviewingAt
+				data.VerifyingAt = entry.VerifyingAt
 				data.DoneAt = entry.DoneAt
 				// Review outcome — shown when the plan has been approved.
 				if entry.Status == taskstate.StatusDone {
@@ -1950,8 +1952,9 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 }
 
 // spawnMaster creates and starts the master readiness agent for the given plan.
-// It sets the execution state to readiness_reviewing, kills any existing master
-// and reviewer instances, and launches the master in the plan's shared worktree.
+// It persists verifying-compatible execution metadata (AgentTypeMaster), kills
+// any existing master and reviewer instances, and launches the master in the
+// plan's shared worktree.
 func (m *home) spawnMaster(planFile string) tea.Cmd {
 	if !m.requireDaemonForAgents() {
 		return nil
@@ -1968,7 +1971,6 @@ func (m *home) spawnMaster(planFile string) tea.Cmd {
 		return nil
 	}
 	if err := m.setExecutionState(planFile, taskstore.ExecutionState{
-		Phase:           string(taskfsm.ExecutionPhaseReadinessReview),
 		ActiveAgentType: session.AgentTypeMaster,
 	}); err != nil {
 		log.WarningLog.Printf("could not persist master execution state for %q: %v", planFile, err)

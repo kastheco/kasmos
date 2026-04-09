@@ -25,20 +25,14 @@ State is persisted in the **task store** — a SQLite database (`~/.config/kasmo
 
 ### Readiness Review Execution Phase
 
-When `auto_readiness_review` is enabled, kasmos intercepts the `review_approved` signal and transitions the task into the `readiness_reviewing` **execution phase** before marking it done. This is a sub-phase within the `reviewing` FSM state — the FSM state itself does not change.
-
-| FSM State | Execution Phase | Description |
-|-----------|----------------|-------------|
-| `reviewing` | `readiness_reviewing` | master agent performs holistic readiness gate |
-
-The master agent signals its decision using readiness-specific signal types:
+`verifying` is a first-class FSM state between `reviewing` and `done`. When the reviewer emits `review-approved`, kasmos transitions the task to `verifying`. The master readiness agent then runs and issues one of two verdicts:
 
 | Signal type (MCP) | CLI equivalent | Effect |
 |-------------------|---------------|--------|
-| `readiness-approved` | `kas signal emit readiness_approved <planfile>` | completes the task (transitions to `done`) |
-| `readiness-changes-requested` | `kas signal emit readiness_changes_requested <planfile>` | sends the task back to `implementing` for fixes |
+| `verify-approved` | `kas signal emit verify_approved <planfile>` | completes the task (transitions to `done`) |
+| `verify-failed` | `kas signal emit verify_failed <planfile>` | sends the task back to `implementing` for fixes |
 
-If readiness review is disabled, `review_approved` transitions the task directly to `done` without the `readiness_reviewing` phase.
+If `auto_readiness_review` is disabled, `review_approved` transitions the task directly to `done` without entering `verifying`.
 
 ## Signal Mechanics
 

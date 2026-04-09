@@ -20,6 +20,7 @@ const (
 	StatusPlanning     Status = "planning"
 	StatusImplementing Status = "implementing"
 	StatusReviewing    Status = "reviewing"
+	StatusVerifying    Status = "verifying"
 	StatusDone         Status = "done"
 	StatusCancelled    Status = "cancelled"
 
@@ -30,10 +31,6 @@ const (
 	ExecutionPhaseSingleAgentImplementing ExecutionPhase = "single_agent_implementing"
 	ExecutionPhaseFixing                  ExecutionPhase = "fixing"
 	ExecutionPhaseReviewing               ExecutionPhase = "reviewing"
-	// ExecutionPhaseReadinessReview is a sub-state of reviewing in which the
-	// master agent performs a holistic readiness check before final approval.
-	// It lives inside StatusReviewing; no new coarse lifecycle status is added.
-	ExecutionPhaseReadinessReview ExecutionPhase = "readiness_reviewing"
 )
 
 // Event represents a lifecycle transition trigger.
@@ -46,6 +43,8 @@ const (
 	ImplementFinished      Event = "implement_finished"
 	ReviewApproved         Event = "review_approved"
 	ReviewChangesRequested Event = "review_changes_requested"
+	VerifyApproved         Event = "verify_approved"
+	VerifyFailed           Event = "verify_failed"
 	RequestReview          Event = "request_review"
 	StartOver              Event = "start_over"
 	Reimplement            Event = "reimplement"
@@ -109,9 +108,14 @@ var transitionTable = map[Status]map[Event]Status{
 		Cancel:            StatusCancelled,
 	},
 	StatusReviewing: {
-		ReviewApproved:         StatusDone,
+		ReviewApproved:         StatusVerifying,
 		ReviewChangesRequested: StatusImplementing,
 		Cancel:                 StatusCancelled,
+	},
+	StatusVerifying: {
+		VerifyApproved: StatusDone,
+		VerifyFailed:   StatusImplementing,
+		Cancel:         StatusCancelled,
 	},
 	StatusDone: {
 		StartOver:     StatusPlanning,
@@ -209,6 +213,8 @@ func phaseNameForStatus(s Status) (string, bool) {
 		return "implementing", true
 	case StatusReviewing:
 		return "reviewing", true
+	case StatusVerifying:
+		return "verifying", true
 	case StatusDone:
 		return "done", true
 	default:

@@ -113,6 +113,18 @@ func BuildWaveTaskTitle(planFile string, waveNumber, taskNumber int) string {
 // BuildRecoveryCandidates returns the exact session titles that are valid to
 // recover for the task's persisted lifecycle phase.
 func BuildRecoveryCandidates(task taskstore.TaskEntry, planContent string) []RecoveryCandidate {
+	// Master agent recovery: task enters StatusVerifying when ReviewApproved fires.
+	// The execution state has no phase — only ActiveAgentType is set to master.
+	if task.Status == taskstore.StatusVerifying {
+		spec := BuildMasterAgentSpec(task.Filename, "")
+		return []RecoveryCandidate{{
+			TaskFile:  task.Filename,
+			Title:     spec.Title,
+			AgentType: session.AgentTypeMaster,
+			Branch:    task.Branch,
+		}}
+	}
+
 	phase := taskfsm.ExecutionPhase(strings.TrimSpace(task.ExecutionState.Phase))
 	switch phase {
 	case taskfsm.ExecutionPhaseArchitecting:
@@ -137,14 +149,6 @@ func BuildRecoveryCandidates(task taskstore.TaskEntry, planContent string) []Rec
 			AgentType:   session.AgentTypeReviewer,
 			Branch:      task.Branch,
 			ReviewCycle: spec.ReviewCycle,
-		}}
-	case taskfsm.ExecutionPhaseReadinessReview:
-		spec := BuildMasterAgentSpec(task.Filename, "")
-		return []RecoveryCandidate{{
-			TaskFile:  task.Filename,
-			Title:     spec.Title,
-			AgentType: session.AgentTypeMaster,
-			Branch:    task.Branch,
 		}}
 	case taskfsm.ExecutionPhaseFixing:
 		spec := BuildFixerAgentSpec(task.Filename, "", task.ReviewCycle, task.LatestReviewFeedback)
@@ -212,7 +216,7 @@ func MatchRecoveryCandidateByTitle(task taskstore.TaskEntry, planContent, title 
 	}
 
 	phase := taskfsm.NormalizeExecutionPhase(task.ExecutionState.Phase)
-	if task.Status != taskstore.StatusImplementing && task.Status != taskstore.StatusReviewing {
+	if task.Status != taskstore.StatusImplementing && task.Status != taskstore.StatusReviewing && task.Status != taskstore.StatusVerifying {
 		return RecoveryCandidate{}, false
 	}
 	if phase == taskfsm.ExecutionPhaseArchitecting {

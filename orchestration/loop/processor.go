@@ -186,33 +186,6 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			}
 		}
 
-		// Readiness-review gate: intercept reviewer approval when AutoReadinessReview
-		// is enabled, and validate/guard master-origin readiness signals.
-		if sig.Event == taskfsm.ReviewApproved || sig.Event == taskfsm.ReviewChangesRequested {
-			entry, ok := p.taskEntry(sig.TaskFile)
-			if ok {
-				phase := taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase)
-				if sig.Origin == "master" {
-					// Master-origin signals are only valid during the readiness-reviewing phase
-					// with an active master agent. Drop stale signals from other phases.
-					if phase != taskfsm.ExecutionPhaseReadinessReview ||
-						strings.TrimSpace(entry.ExecutionState.ActiveAgentType) != session.AgentTypeMaster {
-						continue
-					}
-					// Valid master signal — fall through to normal FSM transition + switch.
-				} else if sig.Event == taskfsm.ReviewApproved && p.config.AutoReadinessReview {
-					// Reviewer approved but readiness gate is active — intercept.
-					if phase == taskfsm.ExecutionPhaseReadinessReview {
-						// Stale duplicate reviewer approval while master is already running.
-						continue
-					}
-					// Intercept: redirect to master spawn instead of direct approval.
-					actions = append(actions, SpawnMasterAction{PlanFile: sig.TaskFile})
-					continue
-				}
-			}
-		}
-
 		if err := p.fsm.Transition(sig.TaskFile, sig.Event); err != nil {
 			// Invalid or already-consumed transition — skip silently.
 			continue
@@ -223,15 +196,45 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			actions = append(actions, SpawnReviewerAction{PlanFile: sig.TaskFile})
 
 		case taskfsm.ReviewApproved:
-			// Always emit ReviewApprovedAction so callers can perform side effects
-			// (audit log, toast, ClickUp progress, reviewer pause) regardless of
-			// whether a PR will be created.
+			// ReviewApproved transitions reviewing → verifying.
+			// Always emit ReviewApprovedAction first: it carries reviewer side-effects
+			// (audit log, toast, ClickUp progress, reviewer pause) that are independent
+			// of whether the task waits for a master agent or completes immediately.
 			actions = append(actions, ReviewApprovedAction{
 				PlanFile:   sig.TaskFile,
 				ReviewBody: sig.Body,
 			})
-			// Additionally emit CreatePRAction only when the plan is eligible
-			// (has a branch and no existing PR URL).
+			if p.config.AutoReadinessReview {
+				// Readiness gate active: spawn master agent for holistic check.
+				// VerifyApprovedAction side-effects fire when VerifyApproved arrives.
+				actions = append(actions, SpawnMasterAction{PlanFile: sig.TaskFile})
+				break
+			}
+			// No readiness gate: chain verify_approved immediately so the task moves
+			// from verifying → done inside the processor (single FSM driver).
+			if err := p.fsm.Transition(sig.TaskFile, taskfsm.VerifyApproved); err == nil {
+				actions = append(actions, VerifyApprovedAction{
+					PlanFile:   sig.TaskFile,
+					ReviewBody: sig.Body,
+				})
+				if p.config.Store != nil {
+					if entry, err := p.config.Store.Get(p.config.Project, sig.TaskFile); err == nil {
+						if shouldCreatePR(entry) {
+							actions = append(actions, CreatePRAction{
+								PlanFile:   sig.TaskFile,
+								ReviewBody: sig.Body,
+							})
+						}
+					}
+				}
+			}
+
+		case taskfsm.VerifyApproved:
+			// VerifyApproved transitions verifying → done (emitted by master agent).
+			actions = append(actions, VerifyApprovedAction{
+				PlanFile:   sig.TaskFile,
+				ReviewBody: sig.Body,
+			})
 			if p.config.Store != nil {
 				if entry, err := p.config.Store.Get(p.config.Project, sig.TaskFile); err == nil {
 					if shouldCreatePR(entry) {
@@ -242,6 +245,33 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 					}
 				}
 			}
+
+		case taskfsm.VerifyFailed:
+			// VerifyFailed transitions verifying → implementing (emitted by master agent).
+			actions = append(actions, VerifyFailedAction{
+				PlanFile: sig.TaskFile,
+				Feedback: sig.Body,
+			})
+			if !p.config.AutoReviewFix {
+				break
+			}
+			if p.config.MaxReviewFixCycles > 0 && p.config.Store != nil {
+				if entry, err := p.config.Store.Get(p.config.Project, sig.TaskFile); err == nil {
+					if entry.ReviewCycle+1 > p.config.MaxReviewFixCycles {
+						actions = append(actions, ReviewCycleLimitAction{
+							PlanFile: sig.TaskFile,
+							Cycle:    entry.ReviewCycle + 1,
+							Limit:    p.config.MaxReviewFixCycles,
+						})
+						break
+					}
+				}
+			}
+			actions = append(actions, IncrementReviewCycleAction{PlanFile: sig.TaskFile})
+			actions = append(actions, SpawnFixerAction{
+				PlanFile: sig.TaskFile,
+				Feedback: sig.Body,
+			})
 
 		case taskfsm.ReviewChangesRequested:
 			actions = append(actions, ReviewChangesAction{

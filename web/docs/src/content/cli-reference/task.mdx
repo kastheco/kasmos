@@ -32,7 +32,7 @@ kas task list --status implementing
 
 | flag | description |
 |------|-------------|
-| `--status` | filter by status: `ready`, `planning`, `implementing`, `reviewing`, `done`, `cancelled` |
+| `--status` | filter by status: `ready`, `planning`, `implementing`, `reviewing`, `verifying`, `done`, `cancelled` |
 
 When `--status` is omitted, `cancelled` tasks are hidden from the output.
 
@@ -140,7 +140,7 @@ kas task set-status my-feature ready --force
 |------|-------------|
 | `--force` | required; confirms intent to bypass FSM (safety guard) |
 
-Valid statuses: `ready`, `planning`, `implementing`, `reviewing`, `done`, `cancelled`.
+Valid statuses: `ready`, `planning`, `implementing`, `reviewing`, `verifying`, `done`, `cancelled`.
 
 ---
 
@@ -163,9 +163,11 @@ kas task transition my-feature implement_start
 | `implement_start` | `ready` (planned-ready only) → `implementing` |
 | `implement_finished` | `implementing` → `reviewing` |
 | `request_review` | `done` → `reviewing` (retrigger a reviewer without resetting) |
-| `review_approved` | `reviewing` → `done` |
+| `review_approved` | `reviewing → verifying` (when `auto_readiness_review = true`) or `reviewing → done` |
 | `review_changes_requested` | `reviewing` → `implementing` (canonical event name) |
 | `review_changes` | alias for `review_changes_requested` accepted by the CLI only |
+| `verify_approved` | `verifying` → `done` |
+| `verify_failed` | `verifying` → `implementing` |
 | `start_over` | `done` → `planning` (full reset) |
 | `reimplement` | `done` → `implementing` (resume without resetting branch) |
 | `cancel` | cancel the task from any active status |
@@ -289,14 +291,14 @@ kas task recover <plan-file> --action <action> [--feedback <text>]
 ```sh
 kas task recover my-feature --action implement-finished
 kas task recover my-feature --action review-approved
-kas task recover my-feature --action readiness-approved
-kas task recover my-feature --action readiness-changes --feedback "spec section 3 is not addressed"
+kas task recover my-feature --action verify-approved
+kas task recover my-feature --action verify-failed --feedback "spec section 3 is not addressed"
 ```
 
 | flag | description |
 |------|-------------|
 | `--action` | the recovery action to perform (see table below) |
-| `--feedback` | feedback text; required for `review-changes`, `readiness-changes`, and `advance-review-cycle` |
+| `--feedback` | feedback text; required for `review-changes`, `verify-failed`, and `advance-review-cycle` |
 
 | action | signal emitted | notes |
 |--------|---------------|-------|
@@ -306,10 +308,10 @@ kas task recover my-feature --action readiness-changes --feedback "spec section 
 | `review-approved` | `review_approved` | |
 | `review-changes` | `review_changes_requested` | requires `--feedback` |
 | `advance-review-cycle` | `review_changes_requested` | requires `--feedback`; alias for `review-changes` |
-| `readiness-approved` | `readiness_approved` | only valid during `readiness_reviewing` phase |
-| `readiness-changes` / `readiness-changes-requested` | `readiness_changes_requested` | only valid during `readiness_reviewing` phase; requires `--feedback` |
+| `verify-approved` | `verify_approved` | only valid while task is in `verifying` status |
+| `verify-failed` | `verify_failed` | only valid while task is in `verifying` status; requires `--feedback` |
 
-`readiness-approved` and `readiness-changes` are the manual recovery path for the master readiness gate. Use them when the master agent session ended before it could emit a signal. The `kas status` command shows these hints automatically when a task is stuck in the `readiness_reviewing` execution phase.
+`verify-approved` and `verify-failed` are the manual recovery path for the master agent gate. Use them when the master agent session ended before it could emit a signal. The `kas status` command shows these hints automatically when a task is stuck in the `verifying` status.
 
 ---
 

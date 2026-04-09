@@ -22,7 +22,7 @@ see `LICENSE.md` in the repository root for the full license text.
 
 **task** is the primary term: the CLI uses `kas task list`, `kas task create`, `kas task transition`, etc. Some internal identifiers (variable names, older comments) still say `plan` — they refer to the same concept. Follow the CLI when in doubt.
 
-a task is a unit of implementation work tracked through the lifecycle `ready → planning → planned → implementing → reviewing → done`. when `auto_readiness_review = true`, a master agent runs a holistic readiness check between reviewer approval and `done`; this appears as the `readiness_reviewing` execution phase within the `reviewing` status.
+a task is a unit of implementation work tracked through the lifecycle `ready → planning → planned → implementing → reviewing → [verifying →] done`. when `auto_readiness_review = true` (the default), reviewer approval transitions the task to the `verifying` status where a master agent runs a holistic readiness check before the task moves to `done`.
 
 ## what are the task lifecycle states?
 
@@ -34,7 +34,8 @@ tasks move through a finite state machine. the FSM has six statuses, plus a comp
 | `planning` | a planner agent is writing the implementation plan |
 | `planned` | plan is written; task is `ready` with execution phase `planned` — waiting for implementation to start |
 | `implementing` | a coder agent is working on the task |
-| `reviewing` | a reviewer agent is checking the implementation (may include a `readiness_reviewing` sub-phase if `auto_readiness_review = true`) |
+| `reviewing` | a reviewer agent is checking the implementation |
+| `verifying` | a master agent is running the holistic readiness gate (only entered when `auto_readiness_review = true`) |
 | `done` | approved and complete |
 | `cancelled` | explicitly cancelled |
 

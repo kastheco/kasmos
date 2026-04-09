@@ -156,6 +156,30 @@ type SpawnMasterAction struct {
 func (SpawnMasterAction) Kind() string  { return "spawn_master" }
 func (SpawnMasterAction) sealedAction() {}
 
+// VerifyApprovedAction is emitted when a VerifyApproved FSM signal is
+// processed (verifying → done). It signals that the verification phase passed
+// and the task is done. CreatePRAction is emitted immediately after when
+// eligible. Callers that need to react to reviewer approval unconditionally
+// should handle ReviewApprovedAction instead.
+type VerifyApprovedAction struct {
+	PlanFile   string
+	ReviewBody string
+}
+
+func (VerifyApprovedAction) Kind() string  { return "verify_approved" }
+func (VerifyApprovedAction) sealedAction() {}
+
+// VerifyFailedAction is emitted when a VerifyFailed FSM signal is processed
+// (verifying → implementing). It carries fixer feedback so callers can surface
+// the failure and dispatch a fixer agent when AutoReviewFix is enabled.
+type VerifyFailedAction struct {
+	PlanFile string
+	Feedback string
+}
+
+func (VerifyFailedAction) Kind() string  { return "verify_failed" }
+func (VerifyFailedAction) sealedAction() {}
+
 // PausePlanAgentAction instructs the caller to pause (kill) the running agent
 // of the given type for the plan.
 type PausePlanAgentAction struct {

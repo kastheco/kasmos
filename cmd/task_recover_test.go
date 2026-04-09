@@ -98,17 +98,31 @@ func TestExecuteTaskRecover_QueuesSignalActions(t *testing.T) {
 			wantPayload:    `{"body":"fix the tests"}`,
 		},
 		{
-			name:           "readiness approved queues readiness_approved signal",
-			action:         "readiness-approved",
+			name:           "verify-approved canonical action queues verify_approved signal",
+			action:         "verify-approved",
 			planFile:       "review-plan",
-			wantSignalType: "readiness_approved",
+			wantSignalType: "verify_approved",
 		},
 		{
-			name:           "readiness changes queues readiness_changes_requested with feedback",
+			name:           "verify-failed canonical action queues verify_failed with feedback",
+			action:         "verify-failed",
+			planFile:       "review-plan",
+			feedback:       "fix edge cases",
+			wantSignalType: "verify_failed",
+			wantPayload:    `{"body":"fix edge cases"}`,
+		},
+		{
+			name:           "readiness-approved alias queues verify_approved signal",
+			action:         "readiness-approved",
+			planFile:       "review-plan",
+			wantSignalType: "verify_approved",
+		},
+		{
+			name:           "readiness-changes alias queues verify_failed with feedback",
 			action:         "readiness-changes",
 			planFile:       "review-plan",
 			feedback:       "address security findings",
-			wantSignalType: "readiness_changes_requested",
+			wantSignalType: "verify_failed",
 			wantPayload:    `{"body":"address security findings"}`,
 		},
 	}
@@ -145,17 +159,38 @@ func TestExecuteTaskRecover_AdvanceReviewCyclePersistsFeedbackFirst(t *testing.T
 	assert.Equal(t, string(taskfsm.ExecutionPhaseReviewing), entry.ExecutionState.Phase)
 }
 
+func TestCanonicalTaskRecoverAction_VerifyActions(t *testing.T) {
+	tests := []struct {
+		raw            string
+		wantName       string
+		wantSignalType string
+	}{
+		{"verify-approved", "verify-approved", "verify_approved"},
+		{"verify_approved", "verify-approved", "verify_approved"},
+		{"verify-failed", "verify-failed", "verify_failed"},
+		{"verify_failed", "verify-failed", "verify_failed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.raw, func(t *testing.T) {
+			action, err := canonicalTaskRecoverAction(tt.raw)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantName, action.name)
+			assert.Equal(t, tt.wantSignalType, action.signalType)
+		})
+	}
+}
+
 func TestCanonicalTaskRecoverAction_ReadinessAliases(t *testing.T) {
 	tests := []struct {
 		raw            string
 		wantName       string
 		wantSignalType string
 	}{
-		{"readiness-approved", "readiness-approved", "readiness_approved"},
-		{"readiness_approved", "readiness-approved", "readiness_approved"},
-		{"readiness-changes", "readiness-changes", "readiness_changes_requested"},
-		{"readiness-changes-requested", "readiness-changes", "readiness_changes_requested"},
-		{"readiness_changes", "readiness-changes", "readiness_changes_requested"},
+		{"readiness-approved", "readiness-approved", "verify_approved"},
+		{"readiness_approved", "readiness-approved", "verify_approved"},
+		{"readiness-changes", "readiness-changes", "verify_failed"},
+		{"readiness-changes-requested", "readiness-changes", "verify_failed"},
+		{"readiness_changes", "readiness-changes", "verify_failed"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.raw, func(t *testing.T) {
@@ -177,7 +212,8 @@ func TestExecuteTaskRecover_InvalidAction(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown recovery action")
 	assert.Contains(t, err.Error(), "advance-review-cycle")
-	assert.Contains(t, err.Error(), "readiness-approved")
+	assert.Contains(t, err.Error(), "verify-approved")
+	assert.Contains(t, err.Error(), "verify-failed")
 }
 
 func TestExecuteTaskRecover_FailsWhenSignalGatewayAuthorityUnavailable(t *testing.T) {

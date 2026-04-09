@@ -235,18 +235,17 @@ func TestExecuteStatus_JSONUsesOperatorLifecycleLabels(t *testing.T) {
 	assert.Equal(t, 4, parsed.Tasks[0].ActiveWave)
 }
 
-func TestExecuteStatus_ReadinessReviewPhase(t *testing.T) {
+func TestExecuteStatus_VerifyingPhase(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
-	project := "readiness-project"
+	project := "verifying-project"
 
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{
 		Filename:    "master-check",
-		Status:      taskstore.StatusReviewing,
+		Status:      taskstore.StatusVerifying,
 		Branch:      "plan/master-check",
 		CreatedAt:   time.Now(),
 		ReviewCycle: 1,
 		ExecutionState: taskstore.ExecutionState{
-			Phase:           "readiness_reviewing",
 			ActiveAgentType: "master",
 		},
 	}))
@@ -257,11 +256,11 @@ func TestExecuteStatus_ReadinessReviewPhase(t *testing.T) {
 		return nil, errors.New("no tmux")
 	}
 
-	t.Run("text output shows readiness review label without round", func(t *testing.T) {
+	t.Run("text output shows verifying status without round counter", func(t *testing.T) {
 		output := executeStatus(state, store, project, ex, "text")
-		assert.Contains(t, output, "readiness review", "stage label must be readiness review")
-		// review round must not be shown — readiness review is master-owned
-		assert.NotContains(t, output, "round", "round counter must not appear for readiness review")
+		assert.Contains(t, output, "verifying", "status label must be verifying")
+		// review round must not be shown for verifying state
+		assert.NotContains(t, output, "round", "round counter must not appear for verifying state")
 	})
 
 	t.Run("json output has correct stage and no review cycle", func(t *testing.T) {
@@ -270,16 +269,16 @@ func TestExecuteStatus_ReadinessReviewPhase(t *testing.T) {
 		require.NoError(t, json.Unmarshal([]byte(output), &parsed))
 		require.Len(t, parsed.Tasks, 1)
 		task := parsed.Tasks[0]
-		assert.Equal(t, "readiness review", task.Stage)
+		assert.Equal(t, "verifying", task.Stage)
 		assert.Equal(t, "master", task.ActiveAgentType)
-		assert.Equal(t, 0, task.ReviewCycle, "review cycle must be 0 for readiness review")
+		assert.Equal(t, 0, task.ReviewCycle, "review cycle must be 0 for verifying state")
 	})
 
-	t.Run("recovery hints show readiness-approved and readiness-changes", func(t *testing.T) {
+	t.Run("recovery hints show verify-approved and verify-failed", func(t *testing.T) {
 		output := executeStatus(state, store, project, ex, "text")
-		assert.Contains(t, output, "kas task recover <task-name> --action readiness-approved")
-		assert.Contains(t, output, "kas task recover <task-name> --action readiness-changes --feedback")
-		// standard review hints must not appear for readiness review
+		assert.Contains(t, output, "kas task recover <task-name> --action verify-approved")
+		assert.Contains(t, output, "kas task recover <task-name> --action verify-failed --feedback")
+		// standard review hints must not appear for verifying state
 		assert.NotContains(t, output, "--action review-approved")
 		assert.NotContains(t, output, "--action review-changes")
 	})
