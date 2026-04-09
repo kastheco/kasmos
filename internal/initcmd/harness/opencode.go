@@ -24,6 +24,7 @@ export const EnforceCLIToolsPlugin = async ({ client, directory }) => {
     { pattern: /(^|[|;&` + "`" + `]\s*|\$\(\s*)\bsed\b/, name: "sed", replacement: "sd or comby", reason: "sd for simple replacements, comby for structural/multi-line rewrites" },
     { pattern: /(^|[|;&` + "`" + `]\s*|\$\(\s*)\bawk\b/, name: "awk", replacement: "yq/jq, sd, or comby", reason: "yq/jq for structured data, sd for text, comby for code patterns" },
     { pattern: /\bwc\s+(-\w*l|--lines)\b|\bwc\b.*\s-l\b/, name: "wc -l", replacement: "scc", reason: "scc provides language-aware line counts with complexity estimates" },
+    { pattern: /\bpip3?\b.*--break-system-packages/, name: "pip --break-system-packages", replacement: "a virtual environment (python -m venv) or uv", reason: "installing packages system-wide with --break-system-packages risks breaking the system Python" },
   ];
 
   // diff needs special handling (allow git diff)

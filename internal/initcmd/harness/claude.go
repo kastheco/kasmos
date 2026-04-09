@@ -51,6 +51,12 @@ if echo "$COMMAND" | grep -qP '\bwc\s+(-\w*l|--lines)\b|\bwc\b.*\s-l\b'; then
   exit 2
 fi
 
+# pip --break-system-packages -> use venv or uv
+if echo "$COMMAND" | grep -qP '\bpip3?\b.*--break-system-packages'; then
+  echo "BLOCKED: 'pip --break-system-packages' is banned. Use a virtual environment (python -m venv) or uv instead." >&2
+  exit 2
+fi
+
 exit 0
 `
 
