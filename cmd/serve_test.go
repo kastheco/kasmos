@@ -237,3 +237,50 @@ func TestServeMCPServer_ZeroRepoDB_RoutesFromDB(t *testing.T) {
 	assert.False(t, isError, "task_show should succeed with DB-derived project in serve path; got: %s", content)
 	assert.Contains(t, content, "serve DB routing content")
 }
+
+func TestNewProjectListHandler_SortedDistinctProjects(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "projects_test.db")
+	sharedDB, store, gw, _, err := openServeSQLiteBackends(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { sharedDB.Close() })
+
+	// Seed tasks in multiple projects (including duplicates and a signal project).
+	require.NoError(t, store.Create("zebra", taskstore.TaskEntry{Filename: "t1", Status: taskstore.StatusReady}))
+	require.NoError(t, store.Create("alpha", taskstore.TaskEntry{Filename: "t2", Status: taskstore.StatusReady}))
+	require.NoError(t, store.Create("zebra", taskstore.TaskEntry{Filename: "t3", Status: taskstore.StatusReady}))
+	require.NoError(t, gw.Create("beta", taskstore.SignalEntry{PlanFile: "plan", SignalType: "planner_finished", Payload: "{}"}))
+
+	h := newProjectListHandler(sharedDB)
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	assert.JSONEq(t, `["alpha","beta","zebra"]`, rec.Body.String())
+}
+
+func TestNewProjectListHandler_EmptyDB(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "empty_projects.db")
+	sharedDB, _, _, _, err := openServeSQLiteBackends(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { sharedDB.Close() })
+
+	h := newProjectListHandler(sharedDB)
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.JSONEq(t, `[]`, rec.Body.String())
+}
+
+func TestNewProjectListHandler_NilDB(t *testing.T) {
+	h := newProjectListHandler(nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.JSONEq(t, `{"error":"projects db unavailable"}`, rec.Body.String())
+}

@@ -156,6 +156,31 @@ func openServeSQLiteBackends(dbPath string) (*sql.DB, taskstore.Store, taskstore
 	return sharedDB, store, gw, logger, nil
 }
 
+// newProjectListHandler returns an HTTP handler that responds with a sorted,
+// deduplicated JSON array of project names found in the shared SQLite database.
+// If sharedDB is nil (single-DB mode not yet initialised), it returns a 500
+// with a JSON error body so callers get a structured failure instead of a panic.
+func newProjectListHandler(sharedDB *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if sharedDB == nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "projects db unavailable"})
+			return
+		}
+		projects, err := taskstore.ListDistinctProjectsFromDB(sharedDB)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		if projects == nil {
+			projects = []string{}
+		}
+		_ = json.NewEncoder(w).Encode(projects)
+	}
+}
+
 // NewServeCmd returns the `kas serve` cobra command.
 // It starts an HTTP server backed by a SQLite task store, and optionally
 // an MCP server on a second port sharing the same store and signal gateway.
@@ -218,6 +243,9 @@ func NewServeCmd() *cobra.Command {
 
 			rootMux := http.NewServeMux()
 			rootMux.Handle("/v1/ping", taskAPI)
+			// Global project listing endpoint — outside projectValidationMiddleware
+			// because it has no {project} path segment.
+			rootMux.Handle("GET /v1/projects", newProjectListHandler(sharedDB))
 			// Route audit-events exactly, then fall through to the task API for everything else.
 			// Go 1.22+ mux gives the more-specific method+path pattern precedence over the
 			// plain prefix, so GET audit-events is handled by auditAPI and all other
