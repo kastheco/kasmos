@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -157,12 +158,26 @@ func openServeSQLiteBackends(dbPath string) (*sql.DB, taskstore.Store, taskstore
 }
 
 // newProjectListHandler returns an HTTP handler that responds with a sorted,
-// deduplicated JSON array of project names found in the shared SQLite database.
-// If sharedDB is nil (single-DB mode not yet initialised), it returns a 500
-// with a JSON error body so callers get a structured failure instead of a panic.
-func newProjectListHandler(sharedDB *sql.DB) http.HandlerFunc {
+// deduplicated JSON array of project names. In repo-scoped mode (validProjects
+// non-empty), it returns exactly the registered project names so that stale
+// DB-only entries are excluded and newly registered repos with no task rows
+// still appear. In bare-DB mode it queries the shared SQLite database.
+func newProjectListHandler(sharedDB *sql.DB, validProjects map[string]struct{}) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+
+		// Repo-scoped mode: return exactly the registered project names.
+		if len(validProjects) > 0 {
+			projects := make([]string, 0, len(validProjects))
+			for p := range validProjects {
+				projects = append(projects, p)
+			}
+			sort.Strings(projects)
+			_ = json.NewEncoder(w).Encode(projects)
+			return
+		}
+
+		// Bare-DB mode: query all distinct projects from the database.
 		if sharedDB == nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "projects db unavailable"})
@@ -243,9 +258,9 @@ func NewServeCmd() *cobra.Command {
 
 			rootMux := http.NewServeMux()
 			rootMux.Handle("/v1/ping", taskAPI)
-			// Global project listing endpoint — outside projectValidationMiddleware
-			// because it has no {project} path segment.
-			rootMux.Handle("GET /v1/projects", newProjectListHandler(sharedDB))
+			// Project listing endpoint — scoped to repoRegs.valid when repos
+			// are configured so it stays consistent with projectValidationMiddleware.
+			rootMux.Handle("GET /v1/projects", newProjectListHandler(sharedDB, repoRegs.valid))
 			// Route audit-events exactly, then fall through to the task API for everything else.
 			// Go 1.22+ mux gives the more-specific method+path pattern precedence over the
 			// plain prefix, so GET audit-events is handled by auditAPI and all other
