@@ -51,7 +51,7 @@ The CI/CD `Release` workflow validates that the tag matches `cmd/kas/main.go` â€
 # 1. determine new version
 NEW_VERSION="X.Y.Z"
 
-# 2. bump the version constant in cmd/kas/main.go
+# 2. bump version in cmd/kas/main.go
 sd 'version\s*=\s*"[^"]*"' "version     = \"${NEW_VERSION}\"" cmd/kas/main.go
 
 # 3. verify it matches
