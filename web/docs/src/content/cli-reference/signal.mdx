@@ -14,8 +14,10 @@ Alias: `kas sig`
 |-------------|---------|-------------|
 | `planner_finished` | optional JSON or text | planner agent finished writing the plan |
 | `implement_finished` | optional JSON or text | all coder agents finished implementation |
-| `review_approved` | optional JSON or text | reviewer approved the implementation |
+| `review_approved` | optional JSON or text | reviewer approved the implementation; may be intercepted when `auto_readiness_review = true` |
 | `review_changes_requested` | optional JSON or text | reviewer requested changes |
+| `readiness_approved` | optional JSON or text | master agent approved during readiness review (→ `done`); only valid during `readiness_reviewing` phase. Aliases: `readiness-approved`, `master_approved` |
+| `readiness_changes_requested` | optional JSON or text | master agent requested changes during readiness review (→ `implementing`); only valid during `readiness_reviewing` phase. Aliases: `readiness-changes`, `readiness-changes-requested` |
 | `implement_task_finished` | `{"wave_number": N, "task_number": N}` | a single coder task in a wave finished |
 | `implement_wave` | `{"wave_number": N}` | a full wave finished |
 | `elaborator_finished` | _(none)_ | architect agent finished enriching the plan |
@@ -23,7 +25,7 @@ Alias: `kas sig`
 
 ### payload rules
 
-- **FSM signals** (`planner_finished`, `implement_finished`, `review_approved`, `review_changes_requested`): payload is optional. If provided and valid JSON, it is stored verbatim. Plain text is wrapped as `{"body": "..."}`.
+- **FSM signals** (`planner_finished`, `implement_finished`, `review_approved`, `review_changes_requested`, `readiness_approved`, `readiness_changes_requested`): payload is optional. If provided and valid JSON, it is stored verbatim. Plain text is wrapped as `{"body": "..."}`.
 - **`implement_task_finished`**: payload is **required** and must be JSON containing integer fields `wave_number` and `task_number`.
 - **`implement_wave`**: payload is **required** and must be JSON containing an integer `wave_number`.
 - **`elaborator_finished`** / **`architect_finished`**: payload must be **empty**.

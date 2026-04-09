@@ -18,7 +18,7 @@
 
 - **global task store** — tasks live at `~/.config/kasmos/taskstore.db`, shared across all managed repos via the daemon
 - **stdio mcp server** — `kas mcp` exposes filesystem, git, task, signal, and instance tools over stdio; agents connect via `.mcp.json`
-- **wave-based orchestration** — planning → architect → implement → review lifecycle with per-wave agent concurrency
+- **wave-based orchestration** — planning → architect → implement → review → readiness review lifecycle with per-wave agent concurrency
 - **multi-harness support** — works with claude, opencode, codex, and other mcp-aware agents
 - **tui + daemon** — interactive tui for task management plus a headless daemon for automated orchestration
 - **git worktree isolation** — each task runs in its own branch and worktree; merges are handled at review time

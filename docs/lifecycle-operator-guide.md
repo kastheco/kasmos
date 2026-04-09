@@ -17,6 +17,7 @@ the main operator phrases are:
 - `waiting for confirmation`
 - `fixing round N`
 - `reviewing round N`
+- `readiness review`
 
 examples:
 
@@ -26,6 +27,7 @@ examples:
 - `implementing` + `waiting for confirmation`: the active wave finished and kasmos is waiting for the next explicit handoff
 - `implementing` + `fixing round 3`: the fixer is applying round-3 review feedback
 - `reviewing` + `reviewing round 3`: the reviewer is running round 3
+- `reviewing` + `readiness review`: reviewer approved; the master agent is running the holistic readiness gate before the task transitions to `done`
 
 ## where it shows up
 
@@ -59,6 +61,10 @@ supported actions:
 - `review-approved`
 - `review-changes --feedback ...`
 - `advance-review-cycle --feedback ...`
+- `readiness-approved`
+- `readiness-changes --feedback ...`
+
+`readiness-approved` and `readiness-changes` apply only while the task is in the `readiness_reviewing` execution phase (master agent active). they correspond to `readiness_approved` / `readiness_changes_requested` gateway signals.
 
 ## compatibility note for architect completion
 
