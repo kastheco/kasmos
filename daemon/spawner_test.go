@@ -542,7 +542,7 @@ func TestTmuxSpawner_SpawnMaster_DeduplicatesTrackedInstance(t *testing.T) {
 	// reserveInstanceSlot treats this as a dedup, not a replacement.
 	key := instanceKey(repoPath, planFile, session.AgentTypeMaster)
 	s.mu.Lock()
-	s.instances[key] = &session.Instance{Title: "readiness review #1"}
+	s.instances[key] = &session.Instance{Title: "readiness-review-1"}
 	s.planFileByKey[key] = planFile
 	s.agentTypeByKey[key] = session.AgentTypeMaster
 	s.projectByKey[key] = "proj"

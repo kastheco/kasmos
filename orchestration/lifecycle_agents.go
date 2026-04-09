@@ -52,7 +52,7 @@ func BuildLifecycleAgentTitle(planFile, agentType string, reviewCycle int) strin
 		if reviewCycle < 1 {
 			reviewCycle = 1
 		}
-		return fmt.Sprintf("readiness review #%d", reviewCycle)
+		return fmt.Sprintf("readiness-review-%d", reviewCycle)
 	}
 	return fmt.Sprintf("%s-%s", planName, agentType)
 }

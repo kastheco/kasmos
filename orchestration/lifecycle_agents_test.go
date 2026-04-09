@@ -45,7 +45,7 @@ func TestBuildArchitectAgentSpec(t *testing.T) {
 
 func TestBuildMasterAgentSpec(t *testing.T) {
 	spec := BuildMasterAgentSpec("feature", "myproject")
-	assert.Equal(t, "readiness review #1", spec.Title)
+	assert.Equal(t, "readiness-review-1", spec.Title)
 	assert.Contains(t, spec.Prompt, "kasmos-master")
 	assert.Contains(t, spec.Prompt, `project: "myproject"`)
 	assert.Contains(t, spec.Prompt, "readiness-approved")
@@ -55,7 +55,7 @@ func TestBuildMasterAgentSpec(t *testing.T) {
 }
 
 func TestBuildLifecycleAgentTitle_Master(t *testing.T) {
-	assert.Equal(t, "readiness review #1", BuildLifecycleAgentTitle("feature", session.AgentTypeMaster, 0))
+	assert.Equal(t, "readiness-review-1", BuildLifecycleAgentTitle("feature", session.AgentTypeMaster, 0))
 }
 
 func TestBuildWaveTaskTitle(t *testing.T) {
@@ -145,7 +145,7 @@ func TestBuildRecoveryCandidates_PhaseAwareLifecycleSessions(t *testing.T) {
 					ActiveAgentType: session.AgentTypeMaster,
 				},
 			},
-			wantTitle: "readiness review #1",
+			wantTitle: "readiness-review-1",
 			wantType:  session.AgentTypeMaster,
 		},
 		{
