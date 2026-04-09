@@ -1233,15 +1233,24 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if cmd := m.postClickUpProgress(a.PlanFile, "review_approved", ""); cmd != nil {
 							signalCmds = append(signalCmds, cmd)
 						}
+						// Pause all reviewer/master instances first, then select
+						// one and call instanceChanged once. Calling instanceChanged
+						// in-loop triggers cleanupPausedDoneReviewers which can
+						// remove a just-paused reviewer before all instances are
+						// processed.
+						var lastPaused *session.Instance
 						for _, inst := range m.nav.GetInstances() {
 							if inst.TaskFile == a.PlanFile &&
 								(inst.AgentType == session.AgentTypeReviewer || inst.AgentType == session.AgentTypeMaster) {
 								inst.SetStatus(session.Paused)
-								m.nav.SelectInstance(inst)
-								m.updateNavPanelStatus()
-								if cmd := m.instanceChanged(); cmd != nil {
-									signalCmds = append(signalCmds, cmd)
-								}
+								lastPaused = inst
+							}
+						}
+						if lastPaused != nil {
+							m.nav.SelectInstance(lastPaused)
+							m.updateNavPanelStatus()
+							if cmd := m.instanceChanged(); cmd != nil {
+								signalCmds = append(signalCmds, cmd)
 							}
 						}
 					case loop.CreatePRAction:
@@ -1375,15 +1384,22 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if cmd := m.postClickUpProgress(sig.TaskFile, "review_approved", ""); cmd != nil {
 							signalCmds = append(signalCmds, cmd)
 						}
+						// Pause all reviewer/master instances first, then select
+						// one and call instanceChanged once — same rationale as
+						// the processor path above.
+						var lastPaused *session.Instance
 						for _, inst := range m.nav.GetInstances() {
 							if inst.TaskFile == sig.TaskFile &&
 								(inst.AgentType == session.AgentTypeReviewer || inst.AgentType == session.AgentTypeMaster) {
 								inst.SetStatus(session.Paused)
-								m.nav.SelectInstance(inst)
-								m.updateNavPanelStatus()
-								if cmd := m.instanceChanged(); cmd != nil {
-									signalCmds = append(signalCmds, cmd)
-								}
+								lastPaused = inst
+							}
+						}
+						if lastPaused != nil {
+							m.nav.SelectInstance(lastPaused)
+							m.updateNavPanelStatus()
+							if cmd := m.instanceChanged(); cmd != nil {
+								signalCmds = append(signalCmds, cmd)
 							}
 						}
 						if m.taskStore != nil {
