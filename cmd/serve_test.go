@@ -250,7 +250,7 @@ func TestNewProjectListHandler_SortedDistinctProjects(t *testing.T) {
 	require.NoError(t, store.Create("zebra", taskstore.TaskEntry{Filename: "t3", Status: taskstore.StatusReady}))
 	require.NoError(t, gw.Create("beta", taskstore.SignalEntry{PlanFile: "plan", SignalType: "planner_finished", Payload: "{}"}))
 
-	h := newProjectListHandler(sharedDB)
+	h := newProjectListHandler(sharedDB, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/projects", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -266,7 +266,7 @@ func TestNewProjectListHandler_EmptyDB(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { sharedDB.Close() })
 
-	h := newProjectListHandler(sharedDB)
+	h := newProjectListHandler(sharedDB, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/projects", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -276,11 +276,53 @@ func TestNewProjectListHandler_EmptyDB(t *testing.T) {
 }
 
 func TestNewProjectListHandler_NilDB(t *testing.T) {
-	h := newProjectListHandler(nil)
+	h := newProjectListHandler(nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/projects", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
 	assert.JSONEq(t, `{"error":"projects db unavailable"}`, rec.Body.String())
+}
+
+func TestNewProjectListHandler_RepoScopedExcludesStaleDBProjects(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "scoped.db")
+	sharedDB, store, _, _, err := openServeSQLiteBackends(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { sharedDB.Close() })
+
+	// DB has three projects, but only two are in the valid set.
+	require.NoError(t, store.Create("active", taskstore.TaskEntry{Filename: "t1", Status: taskstore.StatusReady}))
+	require.NoError(t, store.Create("stale", taskstore.TaskEntry{Filename: "t2", Status: taskstore.StatusReady}))
+	require.NoError(t, store.Create("also-active", taskstore.TaskEntry{Filename: "t3", Status: taskstore.StatusReady}))
+
+	valid := map[string]struct{}{"active": {}, "also-active": {}}
+	h := newProjectListHandler(sharedDB, valid)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	// "stale" must NOT appear; result is sorted.
+	assert.JSONEq(t, `["active","also-active"]`, rec.Body.String())
+}
+
+func TestNewProjectListHandler_RepoScopedIncludesRepoWithNoDBRows(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "no_rows.db")
+	sharedDB, _, _, _, err := openServeSQLiteBackends(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { sharedDB.Close() })
+
+	// DB is empty, but two repos are registered.
+	valid := map[string]struct{}{"fresh-repo": {}, "another-repo": {}}
+	h := newProjectListHandler(sharedDB, valid)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	// Both registered repos appear even though the DB has no rows for them.
+	assert.JSONEq(t, `["another-repo","fresh-repo"]`, rec.Body.String())
 }
