@@ -42,7 +42,7 @@ import (
 	zone "github.com/lrstanley/bubblezone/v2"
 )
 
-const GlobalInstanceLimit = 20
+const GlobalInstanceLimit = 50
 
 const clickUpOpTimeout = 30 * time.Second
 
