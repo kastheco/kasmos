@@ -29,6 +29,7 @@ function formatDate(value?: string): string {
   if (!value) return "—";
   const d = new Date(value);
   if (isNaN(d.getTime())) return "—";
+  if (d.getFullYear() <= 1) return "—";
   return d.toISOString().slice(0, 10);
 }
 

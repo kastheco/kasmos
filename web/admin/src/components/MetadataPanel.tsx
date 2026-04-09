@@ -10,6 +10,7 @@ function formatTimestamp(value?: string): string {
   try {
     const d = new Date(value);
     if (isNaN(d.getTime())) return value;
+    if (d.getFullYear() <= 1) return "—";
     return d.toLocaleString(undefined, {
       year: "numeric",
       month: "short",
