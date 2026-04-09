@@ -114,12 +114,14 @@ export default function AuditPage() {
 
   const { data, loading, error, lastUpdatedAt, isRefreshing } =
     useAutoRefresh<AuditEvent[]>(
-      () =>
-        fetchAuditEvents(project, {
+      async () => {
+        if (!project) return [];
+        return fetchAuditEvents(project, {
           kind: kind || undefined,
           task: taskFile || undefined,
           limit,
-        }),
+        });
+      },
       [project, kind, taskFile, limit],
     );
 

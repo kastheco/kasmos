@@ -67,6 +67,7 @@ export default function DashboardPage() {
   const { data, loading, error, lastUpdatedAt, isRefreshing } =
     useAutoRefresh<DashboardData>(
       async () => {
+        if (!project) return { tasks: [], events: [] };
         const [tasks, allEvents] = await Promise.all([
           listTasks(project),
           listAuditEvents(project),

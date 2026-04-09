@@ -43,8 +43,12 @@ export function ProjectProvider({
   const storedProject = localStorage.getItem(STORAGE_KEY) ?? "";
 
   let project: string;
-  if (projects.length === 0) {
-    // Fallback: keep whatever is in the URL or use legacy resolver
+  if (loading && projects.length === 0) {
+    // List hasn't loaded yet — do not expose an unvalidated fallback that
+    // would trigger page fetches against a potentially wrong project name.
+    project = "";
+  } else if (projects.length === 0) {
+    // List loaded but empty — use legacy fallback
     project =
       urlProject || resolveProjectName(window.location.search);
   } else if (urlProject && projects.includes(urlProject)) {

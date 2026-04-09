@@ -42,6 +42,7 @@ export default function TasksPage() {
   const { data, loading, error, lastUpdatedAt, isRefreshing } =
     useAutoRefresh<TaskEntry[]>(
       async () => {
+        if (!project) return [];
         const data = await listTasks(project);
         return [...data].sort(
           (a, b) =>
