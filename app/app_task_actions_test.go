@@ -2005,7 +2005,7 @@ func TestTaskLifecycleItems_NoStartReviewDuringReadinessPhase(t *testing.T) {
 
 func TestInstanceSignalItems_MasterAgent_HasReadinessSignals(t *testing.T) {
 	inst := &session.Instance{
-		Title:     "my-plan.md-master",
+		Title:     "readiness review #1",
 		TaskFile:  "my-plan.md",
 		AgentType: session.AgentTypeMaster,
 	}
@@ -2042,7 +2042,7 @@ func TestExecuteContextAction_MarkReadinessApproved(t *testing.T) {
 	h.taskStoreProject = "test"
 	h.pendingReviewFeedback = make(map[string]string)
 	master := &session.Instance{
-		Title:     planFile + "-master",
+		Title:     "readiness review #1",
 		Path:      dir,
 		Program:   "opencode",
 		TaskFile:  planFile,
@@ -2086,7 +2086,7 @@ func TestExecuteContextAction_MarkReadinessChangesRequested(t *testing.T) {
 	h.taskStoreProject = "test"
 	h.pendingReviewFeedback = make(map[string]string)
 	master := &session.Instance{
-		Title:     planFile + "-master",
+		Title:     "readiness review #1",
 		Path:      dir,
 		Program:   "opencode",
 		TaskFile:  planFile,

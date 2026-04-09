@@ -504,7 +504,7 @@ func TestTmuxSpawner_SpawnMaster_KillsExistingMasterAndReviewer(t *testing.T) {
 	masterKey := instanceKey(repoPath, planFile, session.AgentTypeMaster)
 	reviewerKey := instanceKey(repoPath, planFile, session.AgentTypeReviewer)
 	s.mu.Lock()
-	s.instances[masterKey] = &session.Instance{Title: "plan-master"}
+	s.instances[masterKey] = &session.Instance{Title: "plan-master-old"}
 	s.planFileByKey[masterKey] = planFile
 	s.agentTypeByKey[masterKey] = session.AgentTypeMaster
 	s.projectByKey[masterKey] = "proj"
@@ -528,7 +528,7 @@ func TestTmuxSpawner_SpawnMaster_KillsExistingMasterAndReviewer(t *testing.T) {
 		Project:  "proj",
 	})
 
-	assert.Contains(t, killedKeys, "plan-master", "existing master must be killed before spawning")
+	assert.Contains(t, killedKeys, "plan-master-old", "existing master must be killed before spawning")
 	assert.Contains(t, killedKeys, "plan-review-1", "existing reviewer must be killed before spawning")
 }
 
@@ -542,7 +542,7 @@ func TestTmuxSpawner_SpawnMaster_DeduplicatesTrackedInstance(t *testing.T) {
 	// reserveInstanceSlot treats this as a dedup, not a replacement.
 	key := instanceKey(repoPath, planFile, session.AgentTypeMaster)
 	s.mu.Lock()
-	s.instances[key] = &session.Instance{Title: "plan.md-master"}
+	s.instances[key] = &session.Instance{Title: "readiness review #1"}
 	s.planFileByKey[key] = planFile
 	s.agentTypeByKey[key] = session.AgentTypeMaster
 	s.projectByKey[key] = "proj"
