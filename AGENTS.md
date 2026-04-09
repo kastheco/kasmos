@@ -20,7 +20,7 @@ Key rules repeated from those files because they affect code changes here:
 `kasmos` is a Go application with several surfaces:
 
 - a Bubble Tea/Lip Gloss terminal UI (`app/`, `ui/`)
-- a Cobra CLI (`main.go`, `cmd/`, `check.go`)
+- a Cobra CLI (`cmd/kas/main.go`, `cmd/`, `check.go`)
 - a multi-repo background daemon with a Unix-socket control API (`daemon/`)
 - a SQLite/HTTP-backed task store (`config/taskstore/`, `config/taskstate/`)
 - orchestration and prompt generation for planner/coder/reviewer agents (`orchestration/`)
@@ -34,19 +34,19 @@ The main Go module is `github.com/kastheco/kasmos` (`go.mod`). The codebase uses
 
 Observed wrappers:
 
-- `make build` → `go build -o kasmos .`
+- `make build` → `go build -o kas ./cmd/kas`
 - `make test` → `go test ./... -v`
 - `make run ARGS='...'` → run the built binary
-- `just build` → `go build -o kasmos .`
+- `just build` → `go build -o kas ./cmd/kas`
 - `just test` → `go test ./...`
 - `just lint` → `go vet ./...`
-- `just run ...` → `go run . ...`
-- `just install` → `go install .` and symlink `kas` / `kms`
+- `just run ...` → `go run ./cmd/kas ...`
+- `just install` → `go install ./cmd/kas` and symlink `kms`
 - `just setup` → `kas setup --force`
 
 Observed direct commands in docs/CI:
 
-- `go build -o kasmos .`
+- `go build -o kas ./cmd/kas`
 - `go test ./...`
 - `go test -v ./...`
 - `go vet ./...`
@@ -67,7 +67,7 @@ Observed scripts:
 
 ### Useful repo-specific CLI commands
 
-The Cobra root command is `kas`, even though the built binary is named `kasmos` by Make/Just. Current root commands are registered in `main.go` and include:
+The Cobra root command is `kas`. The installed/built binary artifact is also named `kas` (entrypoint: `cmd/kas/main.go`); `kasmos` is the project/module name, not the binary name. Current root commands are registered in `cmd/kas/main.go` and include:
 
 - `kas setup`
 - `kas check`
@@ -107,19 +107,19 @@ Observed CI workflows:
 - `.github/workflows/build.yml` runs `go test -v ./...` and cross-builds for `linux`/`darwin` on `amd64` and `arm64`.
 - `.github/workflows/lint.yml` runs `golangci-lint` and fails on `gofmt -l .` output.
 - `.github/workflows/deploy-pages.yml` builds the Next.js site under `web/` and uploads `web/out`.
-- `.github/workflows/release.yml` requires the pushed tag version to match `version` in `main.go`, then runs GoReleaser.
+- `.github/workflows/release.yml` requires the pushed tag version to match `version` in `cmd/kas/main.go`, then runs GoReleaser.
 
 Observed release tooling:
 
 - `.goreleaser.yaml` packages `kasmos` for `darwin`/`linux` on `amd64` and `arm64`.
 - Homebrew publishing is configured through the `kastheco/homebrew-tap` cask.
-- `Justfile` has a `release <version>` helper that bumps `main.go`, commits, tags, and pushes.
+- `Justfile` has a `release <version>` helper that bumps `cmd/kas/main.go`, commits, tags, and pushes.
 
 ## Code organization
 
 High-value directories:
 
-- `main.go` — app entrypoint, root Cobra wiring, interactive TUI startup, setup/reset/debug/version.
+- `cmd/kas/main.go` — app entrypoint, root Cobra wiring, interactive TUI startup, setup/reset/debug/version.
 - `check.go` — `kas check`, used to audit skill sync across harnesses.
 - `cmd/` — CLI subcommands for tasks, daemon, monitor, signal, tmux, instances, audit, serve.
 - `app/` — main Bubble Tea model/state machine and TUI orchestration glue.
@@ -242,7 +242,7 @@ Observed in `cmd/signal.go`, `config/taskstore/signal*.go`, `orchestration/loop/
 
 ## Other important gotchas
 
-- `main.go` refuses to launch the interactive app unless the current directory is inside a git repository.
+- `cmd/kas/main.go` refuses to launch the interactive app unless the current directory is inside a git repository.
 - `go.mod` replaces `github.com/charmbracelet/x/vt` with the local patch at `./_patches/vt`; do not remove or “clean up” that replace directive casually.
 - `web/next.config.ts` uses `output: "export"` and sets `basePath` to `/kasmos` in production; this matters for asset paths and GitHub Pages behavior.
 - `kas check` audits harness skill sync from `~/.agents/skills` and project `.agents/skills` into per-harness directories; use it if you touch scaffolded skills/harness config.
@@ -279,7 +279,7 @@ Act like a kasmos agent in this repository: stay in role, avoid scope creep, inv
 - Run `go test ./...` for Go changes.
 - Run `go build ./...` when build paths, startup flow, command wiring, packaging, or release flow changes.
 - For `web/**` changes, use Node 20 and run `cd web && npm ci && npm run build`.
-- For release work, ensure the `version` constant in `main.go` matches any `v*` tag.
+- For release work, ensure the `version` constant in `cmd/kas/main.go` matches any `v*` tag.
 
 ## Reviewer posture
 
