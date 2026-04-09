@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Bump version in main.go and create git tag (without pushing)
+# Bump version in cmd/kas/main.go and create git tag (without pushing)
 
 # Path to main.go
-MAIN_FILE="main.go"
+MAIN_FILE="cmd/kas/main.go"
 
 # Check if main.go exists
 if [ ! -f "$MAIN_FILE" ]; then
@@ -33,7 +33,7 @@ NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
 
 echo "New version: $NEW_VERSION"
 
-# Update version in main.go - using a more direct approach with awk
+# Update version in cmd/kas/main.go - using a more direct approach with awk
 awk -v old="version[ ]*=[ ]*\"$CURRENT_VERSION\"" -v new="version     = \"$NEW_VERSION\"" '{gsub(old, new); print}' "$MAIN_FILE" > temp.go && mv temp.go "$MAIN_FILE"
 
 # Commit the change

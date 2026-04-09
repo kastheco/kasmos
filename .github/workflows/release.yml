@@ -23,32 +23,32 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Validate tag matches version in main.go
+      - name: Validate tag matches version in cmd/kas/main.go
         run: |
-          # Extract version from main.go
-          VERSION=$(grep -E '^[[:space:]]*version[[:space:]]*=' main.go | sed -E 's/.*"([^"]+)".*/\1/')
-          
+          # Extract version from cmd/kas/main.go
+          VERSION=$(grep -E '^[[:space:]]*version[[:space:]]*=' cmd/kas/main.go | sed -E 's/.*"([^"]+)".*/\1/')
+
           # Get the tag name: prefer workflow_dispatch input, fall back to GITHUB_REF
           if [ -n "${{ github.event.inputs.tag }}" ]; then
             TAG_NAME="${{ github.event.inputs.tag }}"
           else
             TAG_NAME=${GITHUB_REF#refs/tags/}
           fi
-          
+
           # Remove 'v' prefix from tag if present
           TAG_VERSION=${TAG_NAME#v}
-          
-          echo "Version in main.go: $VERSION"
+
+          echo "Version in cmd/kas/main.go: $VERSION"
           echo "Tag version: $TAG_VERSION"
-          
+
           # Compare versions
           if [ "$VERSION" != "$TAG_VERSION" ]; then
-            echo "ERROR: Tag version ($TAG_VERSION) does not match version in main.go ($VERSION)"
-            echo "Please ensure the tag matches the version defined in main.go"
+            echo "ERROR: Tag version ($TAG_VERSION) does not match version in cmd/kas/main.go ($VERSION)"
+            echo "Please ensure the tag matches the version defined in cmd/kas/main.go"
             exit 1
           fi
-          
-          echo "✅ Tag version matches main.go version: $VERSION"
+
+          echo "✅ Tag version matches cmd/kas/main.go version: $VERSION"
 
       - name: Set tag ref for workflow_dispatch
         if: github.event_name == 'workflow_dispatch'

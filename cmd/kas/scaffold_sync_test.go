@@ -285,20 +285,20 @@ func TestScaffoldSync_RefreshesSignalPromptCopies(t *testing.T) {
 	}{
 		{
 			path:       filepath.Join(dir, ".claude", "agents", "planner.md"),
-			sourcePath: filepath.Join("internal", "initcmd", "scaffold", "templates", "claude", "agents", "planner.md"),
+			sourcePath: filepath.Join("..", "..", "internal", "initcmd", "scaffold", "templates", "claude", "agents", "planner.md"),
 			model:      "claude-opus-4-6",
 		},
 		{
 			path:       filepath.Join(dir, ".opencode", "agents", "planner.md"),
-			sourcePath: filepath.Join("internal", "initcmd", "scaffold", "templates", "opencode", "agents", "planner.md"),
+			sourcePath: filepath.Join("..", "..", "internal", "initcmd", "scaffold", "templates", "opencode", "agents", "planner.md"),
 		},
 		{
 			path:       filepath.Join(dir, ".agents", "skills", "kasmos-architect", "SKILL.md"),
-			sourcePath: filepath.Join("internal", "initcmd", "scaffold", "templates", "skills", "kasmos-architect", "SKILL.md"),
+			sourcePath: filepath.Join("..", "..", "internal", "initcmd", "scaffold", "templates", "skills", "kasmos-architect", "SKILL.md"),
 		},
 		{
 			path:       filepath.Join(dir, ".agents", "skills", "kasmos-reviewer", "SKILL.md"),
-			sourcePath: filepath.Join("internal", "initcmd", "scaffold", "templates", "skills", "kasmos-reviewer", "SKILL.md"),
+			sourcePath: filepath.Join("..", "..", "internal", "initcmd", "scaffold", "templates", "skills", "kasmos-reviewer", "SKILL.md"),
 		},
 	}
 

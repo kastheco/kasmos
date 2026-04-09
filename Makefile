@@ -1,13 +1,13 @@
 .PHONY: run build test clean
 
 run: build
-	./kasmos $(ARGS)
+	./kas $(ARGS)
 
 build:
-	go build -o kasmos .
+	go build -o kas ./cmd/kas
 
 test:
 	go test ./... -v
 
 clean:
-	rm -f kasmos
+	rm -f kas kasmos

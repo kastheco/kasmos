@@ -1,7 +1,8 @@
 version: 2
 
 builds:
-  - binary: kasmos
+  - main: ./cmd/kas
+    binary: kas
     goos:
       - darwin
       - linux
@@ -27,7 +28,7 @@ homebrew_casks:
     description: "kas - A TUI-based agent-driven IDE for managing multiple AI agents"
     license: "MIT"
     binaries:
-      - kasmos
+      - kas
 
 release:
   prerelease: auto
