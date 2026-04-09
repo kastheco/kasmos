@@ -1752,6 +1752,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					})
 				} else if m.state == stateFocusAgent {
 					// Defer permission overlay until the user leaves focus mode.
+					// Set the guard so subsequent ticks skip the full detection
+					// path (cacheKey computation + IsAllowedAlways query).
+					m.permissionHandled[inst] = guardKey
 					m.queuePermissionPrompt(inst, pp.Pattern, pp.Description)
 				} else {
 					// Focus the instance so the user can see the agent output behind the overlay.
