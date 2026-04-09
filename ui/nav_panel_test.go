@@ -1301,9 +1301,9 @@ func TestString_ReadinessReviewPlanAppearsInActiveSection(t *testing.T) {
 	n.SetData(
 		[]PlanDisplay{
 			{
-				Filename: "auth-feature",
-				Status:   "reviewing",
-				Phase:    "readiness_reviewing",
+				Filename:  "auth-feature",
+				Status:    "reviewing",
+				Phase:     "readiness_reviewing",
 				AgentType: "master",
 			},
 		},

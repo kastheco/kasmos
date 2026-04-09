@@ -42,12 +42,12 @@ type RepoEntry struct {
 // column. The store is lazy-opened on the first Add() call and closed via
 // Close() or when the last repo entry is removed.
 type RepoManager struct {
-	mu                 sync.RWMutex
-	repos              []RepoEntry
-	autoAdvance          bool
-	autoReviewFix        bool
-	autoReadinessReview  bool
-	maxReviewFixCycles   int
+	mu                  sync.RWMutex
+	repos               []RepoEntry
+	autoAdvance         bool
+	autoReviewFix       bool
+	autoReadinessReview bool
+	maxReviewFixCycles  int
 	// globalDB is the single shared *sql.DB, lazy-opened on the first Add().
 	// Both globalStore and globalGateway are derived from it.
 	globalDB *sql.DB

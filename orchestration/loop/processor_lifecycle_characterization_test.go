@@ -15,13 +15,13 @@ func TestProcessor_LifecycleSignalMatrix(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name               string
-		entry              taskstore.TaskEntry
-		signal             taskfsm.Signal
-		autoFix            bool
-		autoReadiness      bool
-		wantStatus         taskstore.Status
-		wantKinds          []string
+		name          string
+		entry         taskstore.TaskEntry
+		signal        taskfsm.Signal
+		autoFix       bool
+		autoReadiness bool
+		wantStatus    taskstore.Status
+		wantKinds     []string
 	}{
 		{
 			name:       "planner finished",
