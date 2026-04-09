@@ -888,6 +888,41 @@ func TestNormalizeExecutionState_Verifying(t *testing.T) {
 	})
 }
 
+func TestTaskEntryFromStoreEntry_MigratesReadinessReviewingToVerifying(t *testing.T) {
+	// Tasks persisted as reviewing+readiness_reviewing (pre-verifying FSM)
+	// must be migrated on load to StatusVerifying so master agents can complete.
+	storeEntry := taskstore.TaskEntry{
+		Filename: "test-plan",
+		Status:   taskstore.StatusReviewing,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           "readiness_reviewing",
+			ActiveAgentType: "master",
+		},
+		Branch: "plan/test-plan",
+	}
+
+	entry := taskEntryFromStoreEntry(storeEntry, "some goal")
+	assert.Equal(t, StatusVerifying, entry.Status, "reviewing+readiness_reviewing must migrate to verifying")
+	assert.Empty(t, entry.ExecutionState.Phase, "phase must be cleared after migration")
+	assert.Equal(t, "master", entry.ExecutionState.ActiveAgentType, "agent type must be preserved")
+	assert.Equal(t, "plan/test-plan", entry.Branch, "branch must be preserved")
+}
+
+func TestTaskEntryFromStoreEntry_ReviewingWithoutReadinessStaysReviewing(t *testing.T) {
+	storeEntry := taskstore.TaskEntry{
+		Filename: "test-plan",
+		Status:   taskstore.StatusReviewing,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           "reviewing",
+			ActiveAgentType: "reviewer",
+		},
+	}
+
+	entry := taskEntryFromStoreEntry(storeEntry, "some goal")
+	assert.Equal(t, StatusReviewing, entry.Status, "normal reviewing tasks must not be migrated")
+	assert.Equal(t, "reviewing", entry.ExecutionState.Phase)
+}
+
 func TestIsActiveLifecycle_IncludesVerifying(t *testing.T) {
 	assert.True(t, IsActiveLifecycle(TaskEntry{Status: StatusVerifying}))
 	assert.True(t, IsActiveLifecycle(TaskEntry{Status: StatusPlanning}))

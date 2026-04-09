@@ -121,6 +121,7 @@ func BuildRecoveryCandidates(task taskstore.TaskEntry, planContent string) []Rec
 			TaskFile:  task.Filename,
 			Title:     spec.Title,
 			AgentType: session.AgentTypeMaster,
+			Branch:    task.Branch,
 		}}
 	}
 

@@ -72,8 +72,8 @@ The commands below are derived from current Cobra handlers and help output in th
 
 ### `kas task transition`
 - Applies FSM event names only (no free-form status).
-- Valid events: `plan_start`, `planner_finished`, `implement_start`, `implement_finished`, `review_approved`, `review_changes`, `request_review`, `start_over`, `reimplement`, `cancel`, `reopen`.
-- Note: `verify_approved` and `verify_failed` are gateway signal types, not FSM event names. Use `kas signal emit verify_approved <planfile>` rather than `kas task transition`. Legacy aliases `readiness_approved` and `readiness_changes_requested` are also accepted as gateway signals.
+- Valid events: `plan_start`, `planner_finished`, `implement_start`, `implement_finished`, `review_approved`, `review_changes`, `request_review`, `start_over`, `reimplement`, `cancel`, `reopen`, `verify_approved`, `verify_failed`.
+- Note: `verify_approved` and `verify_failed` are also accepted as gateway signals via `kas signal emit`. Agents should prefer `kas signal emit verify_approved <planfile>` over `kas task transition` for consistency with other signal-driven workflows. Legacy aliases `readiness_approved` and `readiness_changes_requested` are also accepted as gateway signals.
 
 ### `kas task show`
 - Prints stored task content.

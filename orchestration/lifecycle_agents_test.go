@@ -48,8 +48,8 @@ func TestBuildMasterAgentSpec(t *testing.T) {
 	assert.Equal(t, "readiness-review-1", spec.Title)
 	assert.Contains(t, spec.Prompt, "kasmos-master")
 	assert.Contains(t, spec.Prompt, `project: "myproject"`)
-	assert.Contains(t, spec.Prompt, "verify-approved")
-	assert.Contains(t, spec.Prompt, "verify-failed")
+	assert.Contains(t, spec.Prompt, "verify_approved")
+	assert.Contains(t, spec.Prompt, "verify_failed")
 	assert.Contains(t, spec.Prompt, "verifying")
 	// Must not use the old readiness-specific signal types
 	assert.NotContains(t, spec.Prompt, "readiness-approved")

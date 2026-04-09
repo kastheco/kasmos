@@ -245,10 +245,10 @@ func BuildMasterReviewPrompt(planFile, project string) string {
 			"   - Merge-base diff: `MERGE_BASE=$(git merge-base HEAD main) && git diff $MERGE_BASE HEAD`\n"+
 			"   - Run verification: `go build ./... && go test ./...` (or the plan's verify_checks)\n"+
 			"3. Review the implementation holistically against the plan and signal your decision:\n"+
-			"   - Approved: prefer MCP `signal_create` (signal_type: \"verify-approved\", plan_file: %[1]q, project: %[2]q); fall back to `kas signal emit verify_approved %[1]s`\n"+
-			"   - Changes requested: prefer MCP `signal_create` (signal_type: \"verify-failed\", plan_file: %[1]q, project: %[2]q); fall back to `kas signal emit verify_failed %[1]s`\n"+
+			"   - Approved: prefer MCP `signal_create` (signal_type: \"verify_approved\", plan_file: %[1]q, project: %[2]q); fall back to `kas signal emit verify_approved %[1]s`\n"+
+			"   - Changes requested: prefer MCP `signal_create` (signal_type: \"verify_failed\", plan_file: %[1]q, project: %[2]q); fall back to `kas signal emit verify_failed %[1]s`\n"+
 			"   - Include your review summary in the signal payload body field.\n\n"+
-			"Do not emit `review_approved` or `review_changes_requested` — use `verify-approved` or `verify-failed` above.",
+			"Do not emit `review_approved` or `review_changes_requested` — use `verify_approved` or `verify_failed` above.",
 		planFile, project,
 	)
 }

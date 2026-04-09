@@ -133,7 +133,7 @@ verdict: approve|changes required
 
 Run these checks whenever the diff touches signals, config keys, FSM state, or execution phases:
 
-- [ ] Signal type names are consistent between emitting code and the consuming gateway (no typo drift between `readiness-approved` and `readiness_approved` style variants)
+- [ ] Signal type names are consistent between emitting code and the consuming gateway (no typo drift between `verify-approved` and `verify_approved` style variants)
 - [ ] Config keys use the canonical key (`readiness_review`); `master_review` must only appear as an alias, not a primary key in new code
 - [ ] FSM transitions are wired in all code paths that touch the affected states (daemon, processor, TUI)
 - [ ] Operator labels / execution phase strings match across orchestration code and UI components

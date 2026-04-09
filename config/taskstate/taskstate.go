@@ -216,9 +216,19 @@ type TopicInfo struct {
 }
 
 func taskEntryFromStoreEntry(entry taskstore.TaskEntry, goal string) TaskEntry {
+	status := Status(entry.Status)
+	execState := entry.ExecutionState
+
+	// Migrate legacy reviewing+readiness_reviewing rows to the new verifying
+	// FSM state so in-flight readiness gates can complete after upgrade.
+	if status == StatusReviewing && strings.TrimSpace(execState.Phase) == "readiness_reviewing" {
+		status = StatusVerifying
+		execState.Phase = ""
+	}
+
 	return TaskEntry{
-		Status:               Status(entry.Status),
-		ExecutionState:       entry.ExecutionState,
+		Status:               status,
+		ExecutionState:       execState,
 		Description:          entry.Description,
 		Branch:               entry.Branch,
 		Topic:                entry.Topic,

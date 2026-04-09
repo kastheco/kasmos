@@ -173,9 +173,9 @@ func TestBuildMasterReviewPrompt(t *testing.T) {
 	assert.Contains(t, prompt, `project: "myproject"`)
 	// Runs during verifying FSM state
 	assert.Contains(t, prompt, "verifying")
-	// MCP-first verify signal emission
-	assert.Contains(t, prompt, "signal_create` (signal_type: \"verify-approved\"")
-	assert.Contains(t, prompt, "signal_create` (signal_type: \"verify-failed\"")
+	// MCP-first verify signal emission (canonical underscore form)
+	assert.Contains(t, prompt, "signal_create` (signal_type: \"verify_approved\"")
+	assert.Contains(t, prompt, "signal_create` (signal_type: \"verify_failed\"")
 	// CLI fallback
 	assert.Contains(t, prompt, "kas signal emit verify_approved my-feature")
 	assert.Contains(t, prompt, "kas signal emit verify_failed my-feature")
