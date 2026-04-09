@@ -303,6 +303,12 @@ func (s *TmuxSpawner) DiscoverOrphanSessions() []tmuxpkg.SessionInfo {
 // spawner's tracking maps.
 func (s *TmuxSpawner) RestoreTrackedInstance(repoPath, project, planFile, agentType string, data session.InstanceData) error {
 	key := instanceKeyForTask(repoPath, planFile, agentType, data.WaveNumber, data.TaskNumber)
+	s.mu.Lock()
+	if _, ok := s.instances[key]; ok {
+		s.mu.Unlock()
+		return errInstanceAlreadyTracked
+	}
+	s.mu.Unlock()
 	if !s.reserveInstanceSlot(key, data.Title) {
 		return errInstanceAlreadyTracked
 	}
@@ -360,7 +366,9 @@ func (s *TmuxSpawner) reserveInstanceSlot(key, title string) bool {
 	defer s.mu.Unlock()
 	if key != "" {
 		if inst, ok := s.instances[key]; ok {
-			if inst != nil && inst.Started() && !inst.TmuxAlive() {
+			stale := inst != nil && (inst.Started() && !inst.TmuxAlive())
+			neverStarted := inst != nil && !inst.Started() && inst.Status != session.Loading
+			if stale || neverStarted {
 				s.logger.Info("evict stale tracked agent", "key", key, "title", inst.Title)
 				delete(s.instances, key)
 				delete(s.planFileByKey, key)

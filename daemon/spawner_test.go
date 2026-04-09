@@ -415,8 +415,10 @@ func TestTmuxSpawner_SpawnFixer_KillsExistingAgents(t *testing.T) {
 		ReviewCycle: 1,
 	})
 
-	// Both the fixer and coder must have been killed (kill called for each).
-	assert.Len(t, killCalls, 2, "expected kill calls for fixer and coder")
+	// The old fixer instance was never started, so reserveInstanceSlot evicts
+	// it directly. Only the coder (at a separate key) goes through KillAgent.
+	assert.Len(t, killCalls, 1, "expected kill call for coder only; unstarted fixer is evicted")
+	assert.Contains(t, killCalls, "my-plan-coder")
 }
 
 func TestEnsureWorktreeScaffold_WritesFixerAgentFiles(t *testing.T) {
@@ -528,7 +530,10 @@ func TestTmuxSpawner_SpawnMaster_KillsExistingMasterAndReviewer(t *testing.T) {
 		Project:  "proj",
 	})
 
-	assert.Contains(t, killedKeys, "plan-master-old", "existing master must be killed before spawning")
+	// The old master instance was never started, so reserveInstanceSlot evicts
+	// it directly rather than routing through KillAgent. Only the reviewer
+	// (tracked at a separate key) goes through the kill path.
+	assert.NotContains(t, killedKeys, "plan-master-old", "unstarted master should be evicted, not killed")
 	assert.Contains(t, killedKeys, "plan-review-1", "existing reviewer must be killed before spawning")
 }
 
@@ -537,12 +542,14 @@ func TestTmuxSpawner_SpawnMaster_DeduplicatesTrackedInstance(t *testing.T) {
 	const repoPath = "/tmp/repo"
 	const planFile = "plan.md"
 
-	// Pre-populate an already-tracked master instance.
+	// Pre-populate an already-tracked master instance in Loading state.
 	// Title must match what BuildLifecycleAgentTitle("plan.md","master",0) produces so
 	// reserveInstanceSlot treats this as a dedup, not a replacement.
 	key := instanceKey(repoPath, planFile, session.AgentTypeMaster)
+	liveInst := &session.Instance{Title: "readiness-review-1"}
+	liveInst.SetStatus(session.Loading)
 	s.mu.Lock()
-	s.instances[key] = &session.Instance{Title: "readiness-review-1"}
+	s.instances[key] = liveInst
 	s.planFileByKey[key] = planFile
 	s.agentTypeByKey[key] = session.AgentTypeMaster
 	s.projectByKey[key] = "proj"
