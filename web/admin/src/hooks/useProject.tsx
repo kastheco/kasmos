@@ -70,8 +70,12 @@ export function ProjectProvider({
   };
 
   // Write the resolved project back into the URL when it differs (replace so
-  // we don't pollute history with auto-selected values).
+  // we don't pollute history with auto-selected values).  Skip while the
+  // project list is still loading — the fallback value resolved from an empty
+  // list must not be committed to the URL or it will override localStorage /
+  // first-project precedence once the real list arrives.
   useEffect(() => {
+    if (loading) return;
     if (project && project !== urlProject) {
       setSearchParams(
         (prev) => {
@@ -83,7 +87,7 @@ export function ProjectProvider({
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project]);
+  }, [project, loading]);
 
   // Guard: if the list refreshed and the current selection disappeared, switch
   // to the first available project.
