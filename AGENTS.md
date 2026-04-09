@@ -20,7 +20,7 @@ Key rules repeated from those files because they affect code changes here:
 `kasmos` is a Go application with several surfaces:
 
 - a Bubble Tea/Lip Gloss terminal UI (`app/`, `ui/`)
-- a Cobra CLI (`cmd/kas/main.go`, `cmd/`, `check.go`)
+- a Cobra CLI (`cmd/kas/main.go`, `cmd/kas/check.go`, `cmd/`)
 - a multi-repo background daemon with a Unix-socket control API (`daemon/`)
 - a SQLite/HTTP-backed task store (`config/taskstore/`, `config/taskstate/`)
 - orchestration and prompt generation for planner/coder/reviewer agents (`orchestration/`)
@@ -120,7 +120,7 @@ Observed release tooling:
 High-value directories:
 
 - `cmd/kas/main.go` — app entrypoint, root Cobra wiring, interactive TUI startup, setup/reset/debug/version.
-- `check.go` — `kas check`, used to audit skill sync across harnesses.
+- `cmd/kas/check.go` — `kas check`, used to audit skill sync across harnesses.
 - `cmd/` — CLI subcommands for tasks, daemon, monitor, signal, tmux, instances, audit, serve.
 - `app/` — main Bubble Tea model/state machine and TUI orchestration glue.
 - `ui/` — rendering components such as navigation, status bar, info pane, overlays.

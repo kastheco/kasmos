@@ -7,7 +7,7 @@ kasmos is a Go application with several surfaces that work together: an interact
 | path | what lives here |
 |------|----------------|
 | `cmd/kas/` | app entrypoint, Cobra root wiring, TUI startup, `setup` / `reset` / `debug` / `version` |
-| `check.go` | `kas check` — audits skill sync across agent harnesses |
+| `cmd/kas/check.go` | `kas check` — audits skill sync across agent harnesses |
 | `cmd/` | CLI subcommands: `task`, `daemon`, `monitor`, `signal`, `tmux`, `instance`, `audit`, `serve` |
 | `app/` | main Bubble Tea model, TUI state machine, orchestration glue |
 | `ui/` | rendering components: nav, status bar, info pane, overlays |
