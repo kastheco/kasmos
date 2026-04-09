@@ -1,0 +1,44 @@
+.switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 16px;
+  border-top: 1px solid var(--card-border);
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--foreground-secondary);
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+
+.select {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  padding: 6px 10px;
+  outline: none;
+  width: 100%;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  appearance: auto;
+}
+
+.select:focus {
+  border-color: var(--accent-amber);
+  box-shadow: 0 0 0 2px var(--glow-amber);
+}
+
+.select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.select option {
+  background: #1a1b26;
+}
