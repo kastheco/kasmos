@@ -1270,13 +1270,43 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		})
 		return nil
 	case loop.ReviewApprovedAction:
+		// Lightweight: reviewer side-effects only. Execution state is cleared in
+		// VerifyApprovedAction so that recovery works during the verifying window.
+		d.logger.Info("reviewer approved", "plan", a.PlanFile, "repo", e.Path)
+		d.broadcaster.Emit(api.Event{
+			Kind:     "review_approved",
+			Message:  "reviewer approved " + a.PlanFile,
+			Repo:     e.Path,
+			PlanFile: a.PlanFile,
+		})
+		return nil
+	case loop.VerifyApprovedAction:
+		// Terminal lifecycle event: verification passed, task moves to done.
 		if err := clearRepoExecutionState(e, a.PlanFile); err != nil {
-			return fmt.Errorf("clear execution state after review approval: %w", err)
+			return fmt.Errorf("clear execution state after verify approval: %w", err)
 		}
-		d.logger.Info("review approved", "plan", a.PlanFile, "repo", e.Path)
+		d.logger.Info("verify approved", "plan", a.PlanFile, "repo", e.Path)
 		d.broadcaster.Emit(api.Event{
 			Kind:     "signal_processed",
-			Message:  "review approved for " + a.PlanFile,
+			Message:  "verify approved for " + a.PlanFile,
+			Repo:     e.Path,
+			PlanFile: a.PlanFile,
+		})
+		return nil
+	case loop.VerifyFailedAction:
+		// Persist latest feedback so fixer agents receive it via SpawnFixer opts.
+		if e.Store != nil {
+			ps, err := taskstate.Load(e.Store, e.Project, "")
+			if err == nil {
+				if setErr := ps.SetLatestReviewFeedback(a.PlanFile, a.Feedback); setErr != nil {
+					d.logger.Warn("persist verify failed feedback failed", "plan", a.PlanFile, "err", setErr)
+				}
+			}
+		}
+		d.logger.Info("verify failed", "plan", a.PlanFile, "repo", e.Path)
+		d.broadcaster.Emit(api.Event{
+			Kind:     "signal_processed",
+			Message:  "verify failed for " + a.PlanFile,
 			Repo:     e.Path,
 			PlanFile: a.PlanFile,
 		})

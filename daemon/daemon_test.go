@@ -942,6 +942,70 @@ func TestDaemon_ExecuteAction_ReviewChanges_PersistsLatestFeedback(t *testing.T)
 	assert.Equal(t, "new review findings", entry.LatestReviewFeedback)
 }
 
+func TestDaemon_ExecuteAction_VerifyApproved_ClearsExecutionStateAndEmitsEvent(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename: "plan.md",
+		Status:   taskstore.StatusVerifying,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseReviewing),
+			ActiveAgentType: session.AgentTypeReviewer,
+		},
+	}))
+	broadcaster := api.NewEventBroadcaster()
+	sub := broadcaster.Subscribe()
+	t.Cleanup(func() {
+		broadcaster.Unsubscribe(sub)
+		broadcaster.Close()
+	})
+	d := &Daemon{logger: slog.Default(), broadcaster: broadcaster}
+	e := RepoEntry{Project: "proj", Store: store}
+
+	require.NoError(t, d.executeAction(context.Background(), e, loop.VerifyApprovedAction{PlanFile: "plan.md", ReviewBody: "ship it"}))
+
+	entry, err := store.Get("proj", "plan.md")
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.ExecutionState{}, entry.ExecutionState, "VerifyApprovedAction must clear execution state")
+
+	select {
+	case ev := <-sub:
+		assert.Equal(t, "signal_processed", ev.Kind)
+		assert.Equal(t, "plan.md", ev.PlanFile)
+	case <-time.After(time.Second):
+		t.Fatal("expected signal_processed event")
+	}
+}
+
+func TestDaemon_ExecuteAction_VerifyFailed_PersistsFeedbackAndEmitsEvent(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename: "plan.md",
+		Status:   taskstore.StatusVerifying,
+	}))
+	broadcaster := api.NewEventBroadcaster()
+	sub := broadcaster.Subscribe()
+	t.Cleanup(func() {
+		broadcaster.Unsubscribe(sub)
+		broadcaster.Close()
+	})
+	d := &Daemon{logger: slog.Default(), broadcaster: broadcaster}
+	e := RepoEntry{Project: "proj", Store: store}
+
+	require.NoError(t, d.executeAction(context.Background(), e, loop.VerifyFailedAction{PlanFile: "plan.md", Feedback: "not ready yet"}))
+
+	entry, err := store.Get("proj", "plan.md")
+	require.NoError(t, err)
+	assert.Equal(t, "not ready yet", entry.LatestReviewFeedback, "VerifyFailedAction must persist feedback")
+
+	select {
+	case ev := <-sub:
+		assert.Equal(t, "signal_processed", ev.Kind)
+		assert.Equal(t, "plan.md", ev.PlanFile)
+	case <-time.After(time.Second):
+		t.Fatal("expected signal_processed event")
+	}
+}
+
 func TestSharedWorktreePaths(t *testing.T) {
 	repo := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(repo, ".worktrees", "a"), 0o755))

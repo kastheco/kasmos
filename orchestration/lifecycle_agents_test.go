@@ -228,3 +228,36 @@ func TestMatchRecoveryCandidateByTitle_ValidatesWaveTaskAgainstPlan(t *testing.T
 	_, ok = MatchRecoveryCandidateByTitle(entry, content, "feature-W2-T9")
 	assert.False(t, ok)
 }
+
+func TestBuildRecoveryCandidates_StatusVerifying_RecoversMaster(t *testing.T) {
+	entry := taskstore.TaskEntry{
+		Filename: "feature",
+		Status:   taskstore.StatusVerifying,
+		Branch:   "plan/feature",
+		ExecutionState: taskstore.ExecutionState{
+			ActiveAgentType: session.AgentTypeMaster,
+		},
+	}
+
+	candidates := BuildRecoveryCandidates(entry, "")
+	require.Len(t, candidates, 1)
+	assert.Equal(t, "readiness-review-1", candidates[0].Title)
+	assert.Equal(t, session.AgentTypeMaster, candidates[0].AgentType)
+	assert.Equal(t, "feature", candidates[0].TaskFile)
+}
+
+func TestMatchRecoveryCandidateByTitle_StatusVerifying_MatchesMasterTitle(t *testing.T) {
+	entry := taskstore.TaskEntry{
+		Filename: "feature",
+		Status:   taskstore.StatusVerifying,
+		Branch:   "plan/feature",
+		ExecutionState: taskstore.ExecutionState{
+			ActiveAgentType: session.AgentTypeMaster,
+		},
+	}
+
+	candidate, ok := MatchRecoveryCandidateByTitle(entry, "", "readiness-review-1")
+	require.True(t, ok)
+	assert.Equal(t, "feature", candidate.TaskFile)
+	assert.Equal(t, session.AgentTypeMaster, candidate.AgentType)
+}

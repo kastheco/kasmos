@@ -426,6 +426,38 @@ func TestPRMonitor_HandleReview_StatusDoneAlsoPolleed(t *testing.T) {
 	assert.True(t, ok, "expected SpawnFixerAction for done task, got %T", (*f.actions)[0])
 }
 
+func TestPRMonitor_HandleReview_StatusVerifyingAlsoPolled(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	project := "test-project"
+	repoPath := t.TempDir()
+	const prNum = 66
+
+	// Task is in "verifying" status — should still be polled for PR reviews.
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: "verifying-plan.md",
+		Status:   taskstore.StatusVerifying,
+		Branch:   "review/verifying-plan",
+		PRURL:    fmt.Sprintf("https://github.com/owner/repo/pull/%d", prNum),
+	}))
+
+	fakeReview := gitpkg.PRReview{
+		ID: 4, State: "COMMENTED", Body: "minor nit during verify", User: "reviewer",
+	}
+
+	f := newMonitorFixture(t, project, repoPath, store, 0,
+		func(string, int) (bool, error) { return true, nil },
+		func(string, int) ([]gitpkg.PRReview, error) { return []gitpkg.PRReview{fakeReview}, nil },
+		func(string, int, int) ([]gitpkg.PRReviewComment, error) { return nil, nil },
+		func(string, int, string) error { return nil },
+	)
+
+	f.m.pollOnce(context.Background())
+
+	require.Len(t, *f.actions, 1)
+	_, ok := (*f.actions)[0].(loop.SpawnFixerAction)
+	assert.True(t, ok, "expected SpawnFixerAction for verifying task, got %T", (*f.actions)[0])
+}
+
 // ─── Review-fix cycle limit ───────────────────────────────────────────────────
 
 func TestPRMonitor_HandleReview_CycleLimit(t *testing.T) {
