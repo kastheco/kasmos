@@ -1393,9 +1393,12 @@ func TestDaemon_ExecuteAction_SpawnMaster_PersistsExecutionStateAndEmitsEvent(t 
 	const planFile = "master-plan.md"
 	const branch = "plan/master-plan"
 
+	// In real usage, ReviewApproved transitions the task to StatusVerifying
+	// before SpawnMasterAction is emitted. Use StatusVerifying here so that
+	// normalizeExecutionState preserves the master AgentType field.
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{
 		Filename: planFile,
-		Status:   taskstore.StatusReviewing,
+		Status:   taskstore.StatusVerifying,
 		Branch:   branch,
 	}))
 
@@ -1422,10 +1425,10 @@ func TestDaemon_ExecuteAction_SpawnMaster_PersistsExecutionStateAndEmitsEvent(t 
 	require.NoError(t, err)
 	assert.True(t, spawnCalled, "spawnMaster must be called")
 
-	// Verify execution state was persisted.
+	// Verify execution state was persisted (phase is not set; status is tracked at FSM level).
 	entry, getErr := store.Get(project, planFile)
 	require.NoError(t, getErr)
-	assert.Equal(t, string(taskfsm.ExecutionPhaseReadinessReview), entry.ExecutionState.Phase)
+	assert.Empty(t, entry.ExecutionState.Phase)
 	assert.Equal(t, session.AgentTypeMaster, entry.ExecutionState.ActiveAgentType)
 
 	// Verify broadcast event.

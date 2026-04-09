@@ -19,8 +19,10 @@ func TestTaskStateMachine_LifecycleSignalMatrix(t *testing.T) {
 	}{
 		{name: "planner finished", initial: taskstore.StatusPlanning, event: PlannerFinished, wantStatus: taskstore.StatusReady},
 		{name: "implement finished", initial: taskstore.StatusImplementing, event: ImplementFinished, wantStatus: taskstore.StatusReviewing},
-		{name: "review approved", initial: taskstore.StatusReviewing, event: ReviewApproved, wantStatus: taskstore.StatusDone},
+		{name: "review approved", initial: taskstore.StatusReviewing, event: ReviewApproved, wantStatus: taskstore.StatusVerifying},
 		{name: "review changes requested", initial: taskstore.StatusReviewing, event: ReviewChangesRequested, wantStatus: taskstore.StatusImplementing},
+		{name: "verify approved", initial: taskstore.StatusVerifying, event: VerifyApproved, wantStatus: taskstore.StatusDone},
+		{name: "verify failed", initial: taskstore.StatusVerifying, event: VerifyFailed, wantStatus: taskstore.StatusImplementing},
 	}
 
 	for _, tt := range tests {

@@ -453,46 +453,40 @@ func TestProcessor_AutoReadinessReview_DisabledPassesThrough(t *testing.T) {
 	assert.True(t, foundApproved, "expected ReviewApprovedAction when readiness review is disabled")
 }
 
-func TestProcessor_AutoReadinessReview_StaleReviewerApprovalIgnored(t *testing.T) {
-	// While the master agent is active (readiness_reviewing phase), a stale
-	// duplicate reviewer approval must be silently dropped.
+func TestProcessor_VerifyApprovedDroppedOutsideVerifyingStatus(t *testing.T) {
+	// verify_approved arriving when the task is not in verifying state must be
+	// rejected by the FSM and produce no actions.
 	store := taskstore.NewTestStore(t)
 	store.Create("test", taskstore.TaskEntry{
 		Filename: "my-plan.md",
 		Status:   taskstore.StatusReviewing,
 		Branch:   "plan/my-plan",
-		ExecutionState: taskstore.ExecutionState{
-			Phase:           string(taskfsm.ExecutionPhaseReadinessReview),
-			ActiveAgentType: session.AgentTypeMaster,
-		},
 	})
 
 	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReadinessReview: true})
-	// Reviewer-origin signal (no Origin field)
 	signals := []taskfsm.Signal{
-		{Event: taskfsm.ReviewApproved, TaskFile: "my-plan.md", Body: "LGTM"},
+		{Event: taskfsm.VerifyApproved, TaskFile: "my-plan.md", Body: "ready"},
 	}
 
 	actions := p.ProcessFSMSignals(signals)
-	assert.Empty(t, actions, "stale reviewer approval during readiness_reviewing must be dropped")
+	assert.Empty(t, actions, "verify_approved outside verifying status must be silently dropped by FSM")
 }
 
-func TestProcessor_MasterOriginApproval_AcceptedDuringReadinessReview(t *testing.T) {
+func TestProcessor_VerifyApprovedProcessedInVerifyingStatus(t *testing.T) {
+	// verify_approved when the task is in verifying state transitions to done.
 	store := taskstore.NewTestStore(t)
 	store.Create("test", taskstore.TaskEntry{
 		Filename: "my-plan.md",
-		Status:   taskstore.StatusReviewing,
+		Status:   taskstore.StatusVerifying,
 		Branch:   "plan/my-plan",
 		ExecutionState: taskstore.ExecutionState{
-			Phase:           string(taskfsm.ExecutionPhaseReadinessReview),
 			ActiveAgentType: session.AgentTypeMaster,
 		},
 	})
 
 	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReadinessReview: true})
-	// Master-origin readiness approval
 	signals := []taskfsm.Signal{
-		{Event: taskfsm.ReviewApproved, TaskFile: "my-plan.md", Body: "ready", Origin: "master"},
+		{Event: taskfsm.VerifyApproved, TaskFile: "my-plan.md", Body: "ready"},
 	}
 
 	actions := p.ProcessFSMSignals(signals)
@@ -503,30 +497,26 @@ func TestProcessor_MasterOriginApproval_AcceptedDuringReadinessReview(t *testing
 			foundApproved = true
 		}
 	}
-	assert.True(t, foundApproved, "master-origin readiness_approved must flow to ReviewApprovedAction")
+	assert.True(t, foundApproved, "verify_approved in verifying status must produce ReviewApprovedAction")
 }
 
-func TestProcessor_MasterOriginApproval_RejectedOutsideReadinessReview(t *testing.T) {
-	// Master-origin signals arriving when not in readiness_reviewing must be dropped.
+func TestProcessor_VerifyFailedDroppedOutsideVerifyingStatus(t *testing.T) {
+	// verify_failed arriving when the task is not in verifying state must be
+	// rejected by the FSM.
 	store := taskstore.NewTestStore(t)
 	store.Create("test", taskstore.TaskEntry{
 		Filename: "my-plan.md",
 		Status:   taskstore.StatusReviewing,
 		Branch:   "plan/my-plan",
-		// Reviewing phase, reviewer agent — not readiness_reviewing
-		ExecutionState: taskstore.ExecutionState{
-			Phase:           string(taskfsm.ExecutionPhaseReviewing),
-			ActiveAgentType: session.AgentTypeReviewer,
-		},
 	})
 
-	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReadinessReview: true})
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test"})
 	signals := []taskfsm.Signal{
-		{Event: taskfsm.ReviewApproved, TaskFile: "my-plan.md", Body: "ready", Origin: "master"},
+		{Event: taskfsm.VerifyFailed, TaskFile: "my-plan.md", Body: "issues found"},
 	}
 
 	actions := p.ProcessFSMSignals(signals)
-	assert.Empty(t, actions, "master-origin signal outside readiness_reviewing must be dropped")
+	assert.Empty(t, actions, "verify_failed outside verifying status must be silently dropped by FSM")
 }
 
 func TestProcessor_SetReadinessReviewConfig(t *testing.T) {

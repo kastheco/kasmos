@@ -138,14 +138,6 @@ func BuildRecoveryCandidates(task taskstore.TaskEntry, planContent string) []Rec
 			Branch:      task.Branch,
 			ReviewCycle: spec.ReviewCycle,
 		}}
-	case taskfsm.ExecutionPhaseReadinessReview:
-		spec := BuildMasterAgentSpec(task.Filename, "")
-		return []RecoveryCandidate{{
-			TaskFile:  task.Filename,
-			Title:     spec.Title,
-			AgentType: session.AgentTypeMaster,
-			Branch:    task.Branch,
-		}}
 	case taskfsm.ExecutionPhaseFixing:
 		spec := BuildFixerAgentSpec(task.Filename, "", task.ReviewCycle, task.LatestReviewFeedback)
 		return []RecoveryCandidate{{

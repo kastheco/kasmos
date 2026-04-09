@@ -32,14 +32,19 @@ func TestCanonicalGatewaySignalType_CoversCanonicalAndAliases(t *testing.T) {
 		{name: "elaborator hyphen wire alias", raw: "elaborator-finished", want: "elaborator_finished"},
 		{name: "architect internal alias", raw: "architect_finished", want: "elaborator_finished"},
 		{name: "architect hyphen alias", raw: "architect-finished", want: "elaborator_finished"},
-		{name: "readiness approved canonical", raw: "readiness_approved", want: "readiness_approved"},
-		{name: "readiness approved hyphen alias", raw: "readiness-approved", want: "readiness_approved"},
-		{name: "master approved alias", raw: "master_approved", want: "readiness_approved"},
-		{name: "master approved hyphen alias", raw: "master-approved", want: "readiness_approved"},
-		{name: "readiness changes requested canonical", raw: "readiness_changes_requested", want: "readiness_changes_requested"},
-		{name: "readiness changes requested hyphen alias", raw: "readiness-changes-requested", want: "readiness_changes_requested"},
-		{name: "readiness changes short alias", raw: "readiness_changes", want: "readiness_changes_requested"},
-		{name: "readiness changes short hyphen alias", raw: "readiness-changes", want: "readiness_changes_requested"},
+		{name: "verify approved canonical", raw: "verify_approved", want: "verify_approved"},
+		{name: "verify approved hyphen alias", raw: "verify-approved", want: "verify_approved"},
+		{name: "verify failed canonical", raw: "verify_failed", want: "verify_failed"},
+		{name: "verify failed hyphen alias", raw: "verify-failed", want: "verify_failed"},
+		// deprecated readiness/master aliases canonicalize to verify_*
+		{name: "readiness approved alias", raw: "readiness_approved", want: "verify_approved"},
+		{name: "readiness approved hyphen alias", raw: "readiness-approved", want: "verify_approved"},
+		{name: "master approved alias", raw: "master_approved", want: "verify_approved"},
+		{name: "master approved hyphen alias", raw: "master-approved", want: "verify_approved"},
+		{name: "readiness changes requested alias", raw: "readiness_changes_requested", want: "verify_failed"},
+		{name: "readiness changes requested hyphen alias", raw: "readiness-changes-requested", want: "verify_failed"},
+		{name: "readiness changes short alias", raw: "readiness_changes", want: "verify_failed"},
+		{name: "readiness changes short hyphen alias", raw: "readiness-changes", want: "verify_failed"},
 	}
 
 	for _, tt := range tests {
@@ -62,6 +67,8 @@ func TestGatewaySignalTypeForEvent(t *testing.T) {
 	}{
 		{name: "planner finished", event: PlannerFinished, want: "planner_finished"},
 		{name: "review changes requested", event: ReviewChangesRequested, want: "review_changes_requested"},
+		{name: "verify approved", event: VerifyApproved, want: "verify_approved"},
+		{name: "verify failed", event: VerifyFailed, want: "verify_failed"},
 		{name: "architect finished", event: ArchitectFinished, want: "elaborator_finished"},
 		{name: "legacy elaborator finished", event: Event("elaborator_finished"), want: "elaborator_finished"},
 	}
@@ -88,7 +95,7 @@ func TestNormalizeGatewaySignalPayload_AcceptsAliases(t *testing.T) {
 	assert.Equal(t, "", payload)
 }
 
-func TestNormalizeGatewaySignalPayload_ReadinessSignals(t *testing.T) {
+func TestNormalizeGatewaySignalPayload_VerifySignals(t *testing.T) {
 	tests := []struct {
 		name        string
 		signalType  string
@@ -96,29 +103,30 @@ func TestNormalizeGatewaySignalPayload_ReadinessSignals(t *testing.T) {
 		wantPayload string
 	}{
 		{
-			name:        "readiness_approved empty payload",
-			signalType:  "readiness_approved",
+			name:        "verify_approved empty payload",
+			signalType:  "verify_approved",
 			payload:     "",
 			wantPayload: "",
 		},
 		{
-			name:        "readiness_approved plain text wrapped in body",
-			signalType:  "readiness_approved",
+			name:        "verify_approved plain text wrapped in body",
+			signalType:  "verify_approved",
 			payload:     "lgtm",
 			wantPayload: `{"body":"lgtm"}`,
 		},
 		{
-			name:        "readiness_approved json passthrough",
-			signalType:  "readiness_approved",
+			name:        "verify_approved json passthrough",
+			signalType:  "verify_approved",
 			payload:     `{"body":"all good"}`,
 			wantPayload: `{"body":"all good"}`,
 		},
 		{
-			name:        "readiness_changes_requested plain text wrapped",
-			signalType:  "readiness_changes_requested",
+			name:        "verify_failed plain text wrapped",
+			signalType:  "verify_failed",
 			payload:     "address security findings",
 			wantPayload: `{"body":"address security findings"}`,
 		},
+		// deprecated alias still normalizes payload correctly
 		{
 			name:        "master_approved alias normalizes payload",
 			signalType:  "master_approved",
@@ -145,7 +153,27 @@ func TestNormalizeGatewaySignalPayload_ReadinessSignals(t *testing.T) {
 	}
 }
 
-func TestEmitGatewaySignal_ReadinessSignalsCanonicalize(t *testing.T) {
+func TestEmitGatewaySignal_VerifySignalsCanonicalize(t *testing.T) {
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+
+	// canonical new types
+	require.NoError(t, EmitGatewaySignal(gw, "proj", "verify_approved", "feature", "lgtm"))
+	require.NoError(t, EmitGatewaySignal(gw, "proj", "verify_failed", "feature", "needs work"))
+
+	signals, err := gw.List("proj", taskstore.SignalPending)
+	require.NoError(t, err)
+	require.Len(t, signals, 2)
+
+	assert.Equal(t, "verify_approved", signals[0].SignalType)
+	assert.JSONEq(t, `{"body":"lgtm"}`, signals[0].Payload)
+
+	assert.Equal(t, "verify_failed", signals[1].SignalType)
+	assert.JSONEq(t, `{"body":"needs work"}`, signals[1].Payload)
+}
+
+func TestEmitGatewaySignal_DeprecatedAliasesCanonicalize(t *testing.T) {
 	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = gw.Close() })
@@ -157,10 +185,10 @@ func TestEmitGatewaySignal_ReadinessSignalsCanonicalize(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, signals, 2)
 
-	assert.Equal(t, "readiness_approved", signals[0].SignalType)
+	assert.Equal(t, "verify_approved", signals[0].SignalType)
 	assert.JSONEq(t, `{"body":"lgtm"}`, signals[0].Payload)
 
-	assert.Equal(t, "readiness_changes_requested", signals[1].SignalType)
+	assert.Equal(t, "verify_failed", signals[1].SignalType)
 	assert.JSONEq(t, `{"body":"needs work"}`, signals[1].Payload)
 }
 

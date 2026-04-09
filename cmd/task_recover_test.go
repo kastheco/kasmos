@@ -98,17 +98,17 @@ func TestExecuteTaskRecover_QueuesSignalActions(t *testing.T) {
 			wantPayload:    `{"body":"fix the tests"}`,
 		},
 		{
-			name:           "readiness approved queues readiness_approved signal",
+			name:           "readiness-approved alias queues verify_approved signal",
 			action:         "readiness-approved",
 			planFile:       "review-plan",
-			wantSignalType: "readiness_approved",
+			wantSignalType: "verify_approved",
 		},
 		{
-			name:           "readiness changes queues readiness_changes_requested with feedback",
+			name:           "readiness-changes alias queues verify_failed with feedback",
 			action:         "readiness-changes",
 			planFile:       "review-plan",
 			feedback:       "address security findings",
-			wantSignalType: "readiness_changes_requested",
+			wantSignalType: "verify_failed",
 			wantPayload:    `{"body":"address security findings"}`,
 		},
 	}
@@ -151,11 +151,11 @@ func TestCanonicalTaskRecoverAction_ReadinessAliases(t *testing.T) {
 		wantName       string
 		wantSignalType string
 	}{
-		{"readiness-approved", "readiness-approved", "readiness_approved"},
-		{"readiness_approved", "readiness-approved", "readiness_approved"},
-		{"readiness-changes", "readiness-changes", "readiness_changes_requested"},
-		{"readiness-changes-requested", "readiness-changes", "readiness_changes_requested"},
-		{"readiness_changes", "readiness-changes", "readiness_changes_requested"},
+		{"readiness-approved", "readiness-approved", "verify_approved"},
+		{"readiness_approved", "readiness-approved", "verify_approved"},
+		{"readiness-changes", "readiness-changes", "verify_failed"},
+		{"readiness-changes-requested", "readiness-changes", "verify_failed"},
+		{"readiness_changes", "readiness-changes", "verify_failed"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.raw, func(t *testing.T) {

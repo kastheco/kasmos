@@ -417,13 +417,18 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		}
 		if entry.Status != taskstate.StatusDone {
 			// Walk through any missing lifecycle stages before approval so mark-done
-			// works from ready/implementing/reviewing states.
-			if entry.Status != taskstate.StatusReviewing {
+			// works from ready/implementing/reviewing/verifying states.
+			if entry.Status != taskstate.StatusReviewing && entry.Status != taskstate.StatusVerifying {
 				if err := m.fsmSetReviewing(planFile); err != nil {
 					return m, m.handleError(err)
 				}
 			}
-			if err := m.fsm.Transition(planFile, taskfsm.ReviewApproved); err != nil {
+			if entry.Status != taskstate.StatusVerifying {
+				if err := m.fsm.Transition(planFile, taskfsm.ReviewApproved); err != nil {
+					return m, m.handleError(err)
+				}
+			}
+			if err := m.fsm.Transition(planFile, taskfsm.VerifyApproved); err != nil {
 				return m, m.handleError(err)
 			}
 			m.audit(auditlog.EventPlanTransition, string(entry.Status)+" → done (manual)",
@@ -875,12 +880,7 @@ func taskLifecycleItems(entry taskstate.TaskEntry) []overlay.ContextMenuItem {
 		items := []overlay.ContextMenuItem{
 			{Label: "mark finished", Action: "mark_plan_done"},
 			{Label: "start fixer", Action: "start_fixer"},
-		}
-		// "start review" resets the active review session; suppress it during the
-		// readiness_reviewing phase so operators cannot clobber a running master check.
-		phase := taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase)
-		if phase != taskfsm.ExecutionPhaseReadinessReview {
-			items = append(items, overlay.ContextMenuItem{Label: "start review", Action: "start_review"})
+			{Label: "start review", Action: "start_review"},
 		}
 		return items
 	case taskstate.StatusDone:
@@ -1537,6 +1537,9 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 
 	// Non-agent stages (finished): mark plan done via FSM.
 	if err := m.fsm.Transition(planFile, taskfsm.ReviewApproved); err != nil {
+		return m, m.handleError(err)
+	}
+	if err := m.fsm.Transition(planFile, taskfsm.VerifyApproved); err != nil {
 		return m, m.handleError(err)
 	}
 	if err := m.clearExecutionState(planFile); err != nil {

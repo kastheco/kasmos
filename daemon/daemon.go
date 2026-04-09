@@ -1053,8 +1053,8 @@ func gatewayNoopOutcome(entry *taskstore.SignalEntry) (taskstore.SignalStatus, s
 		return taskstore.SignalFailed, "processor could not start the requested wave"
 	case string(taskfsm.ArchitectFinished):
 		return taskstore.SignalFailed, "no active architect pass to resume"
-	case "readiness_approved", "readiness_changes_requested":
-		return taskstore.SignalFailed, "no active readiness review to resume"
+	case string(taskfsm.VerifyApproved), string(taskfsm.VerifyFailed):
+		return taskstore.SignalFailed, "signal rejected outside verifying state"
 	default:
 		return taskstore.SignalFailed, "signal rejected by processor"
 	}
@@ -1217,7 +1217,6 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		return nil
 	case loop.SpawnMasterAction:
 		if err := setRepoExecutionState(e, a.PlanFile, taskstore.ExecutionState{
-			Phase:           string(taskfsm.ExecutionPhaseReadinessReview),
 			ActiveAgentType: session.AgentTypeMaster,
 		}); err != nil {
 			return fmt.Errorf("persist master execution state: %w", err)

@@ -233,6 +233,15 @@ func executeSignalProcess(opts signalProcessOptions) (int, error) {
 			continue
 		}
 
+		// For review-approved from the legacy sentinel path, chain through
+		// VerifyApproved immediately — there is no readiness-review gate in
+		// the filesystem signal flow.
+		if sig.Event == taskfsm.ReviewApproved {
+			if err := fsm.Transition(sig.TaskFile, taskfsm.VerifyApproved); err != nil {
+				log.Printf("signal: chained verify-approved failed file=%s plan=%s: %v", fn, sig.TaskFile, err)
+			}
+		}
+
 		// For review-changes, increment the review cycle counter.
 		if sig.Event == taskfsm.ReviewChangesRequested {
 			ps2, err := taskstate.Load(opts.store, opts.project, "")

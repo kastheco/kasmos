@@ -1968,7 +1968,6 @@ func (m *home) spawnMaster(planFile string) tea.Cmd {
 		return nil
 	}
 	if err := m.setExecutionState(planFile, taskstore.ExecutionState{
-		Phase:           string(taskfsm.ExecutionPhaseReadinessReview),
 		ActiveAgentType: session.AgentTypeMaster,
 	}); err != nil {
 		log.WarningLog.Printf("could not persist master execution state for %q: %v", planFile, err)

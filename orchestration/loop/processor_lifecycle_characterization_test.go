@@ -45,17 +45,17 @@ func TestProcessor_LifecycleSignalMatrix(t *testing.T) {
 			wantKinds:  []string{"review_approved", "create_pr"},
 		},
 		{
-			name:          "review approved intercepted when readiness enabled",
+			name:          "review approved transitions to verifying and spawns master when readiness enabled",
 			entry:         taskstore.TaskEntry{Filename: "plan.md", Status: taskstore.StatusReviewing, Branch: "plan/plan"},
 			signal:        taskfsm.Signal{TaskFile: "plan.md", Event: taskfsm.ReviewApproved, Body: "lgtm"},
 			autoReadiness: true,
-			wantStatus:    taskstore.StatusReviewing, // FSM not advanced — master must approve
+			wantStatus:    taskstore.StatusVerifying,
 			wantKinds:     []string{"spawn_master"},
 		},
 		{
-			name:          "master-origin readiness approved flows through",
-			entry:         taskstore.TaskEntry{Filename: "plan.md", Status: taskstore.StatusReviewing, Branch: "plan/plan", ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseReadinessReview), ActiveAgentType: session.AgentTypeMaster}},
-			signal:        taskfsm.Signal{TaskFile: "plan.md", Event: taskfsm.ReviewApproved, Body: "ready", Origin: "master"},
+			name:          "verify approved from master transitions to done",
+			entry:         taskstore.TaskEntry{Filename: "plan.md", Status: taskstore.StatusVerifying, Branch: "plan/plan", ExecutionState: taskstore.ExecutionState{ActiveAgentType: session.AgentTypeMaster}},
+			signal:        taskfsm.Signal{TaskFile: "plan.md", Event: taskfsm.VerifyApproved, Body: "ready"},
 			autoReadiness: true,
 			wantStatus:    taskstore.StatusDone,
 			wantKinds:     []string{"review_approved", "create_pr"},

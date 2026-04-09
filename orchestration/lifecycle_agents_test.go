@@ -135,20 +135,6 @@ func TestBuildRecoveryCandidates_PhaseAwareLifecycleSessions(t *testing.T) {
 			wantType:  session.AgentTypeCoder,
 		},
 		{
-			name: "readiness reviewing recovers master agent",
-			entry: taskstore.TaskEntry{
-				Filename: "feature",
-				Status:   taskstore.StatusReviewing,
-				Branch:   "plan/feature",
-				ExecutionState: taskstore.ExecutionState{
-					Phase:           string(taskfsm.ExecutionPhaseReadinessReview),
-					ActiveAgentType: session.AgentTypeMaster,
-				},
-			},
-			wantTitle: "readiness-review-1",
-			wantType:  session.AgentTypeMaster,
-		},
-		{
 			name: "active wave recovers only active wave tasks",
 			entry: taskstore.TaskEntry{
 				Filename: "feature",

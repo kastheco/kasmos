@@ -24,7 +24,9 @@ func TestExecuteTaskTransition_LifecycleMatrix(t *testing.T) {
 		{name: "plan start", initial: taskstore.StatusReady, event: "plan_start", wantStatus: "planning"},
 		{name: "planner finished", initial: taskstore.StatusPlanning, event: "planner_finished", wantStatus: "ready"},
 		{name: "implement finished", initial: taskstore.StatusImplementing, event: "implement_finished", wantStatus: "reviewing"},
-		{name: "review approved", initial: taskstore.StatusReviewing, event: "review_approved", wantStatus: "done"},
+		{name: "review approved", initial: taskstore.StatusReviewing, event: "review_approved", wantStatus: "verifying"},
+		{name: "verify approved", initial: taskstore.StatusVerifying, event: "verify_approved", wantStatus: "done"},
+		{name: "verify failed", initial: taskstore.StatusVerifying, event: "verify_failed", wantStatus: "implementing"},
 		{name: "review changes alias", initial: taskstore.StatusReviewing, event: "review_changes", wantStatus: "implementing"},
 		{name: "review changes requested is still unknown", initial: taskstore.StatusReviewing, event: "review_changes_requested", wantErrText: "unknown event"},
 	}

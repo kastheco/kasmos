@@ -1373,6 +1373,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							signalCmds = append(signalCmds, cmd)
 						}
 					case taskfsm.ReviewApproved:
+						// In the legacy test-only path (no processor), chain through
+						// VerifyApproved immediately — there is no readiness-review gate.
+						if err := m.fsm.Transition(sig.TaskFile, taskfsm.VerifyApproved); err != nil {
+							log.WarningLog.Printf("chained verify-approved for %q rejected: %v", sig.TaskFile, err)
+						}
 						m.clearLatestReviewFeedback(sig.TaskFile)
 						if err := m.clearExecutionState(sig.TaskFile); err != nil {
 							log.WarningLog.Printf("could not clear execution state for %q: %v", sig.TaskFile, err)

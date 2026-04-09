@@ -143,6 +143,8 @@ func executeTaskTransition(project, planFile, event string, store taskstore.Stor
 		"implement_start":    taskfsm.ImplementStart,
 		"implement_finished": taskfsm.ImplementFinished,
 		"review_approved":    taskfsm.ReviewApproved,
+		"verify_approved":    taskfsm.VerifyApproved,
+		"verify_failed":      taskfsm.VerifyFailed,
 		"review_changes":     taskfsm.ReviewChangesRequested,
 		"request_review":     taskfsm.RequestReview,
 		"start_over":         taskfsm.StartOver,
@@ -587,7 +589,10 @@ func executeTaskMerge(repoRoot, project, planFile string, store taskstore.Store)
 			}
 		}
 	}
-	return fsm.Transition(planFile, taskfsm.ReviewApproved)
+	if err := fsm.Transition(planFile, taskfsm.ReviewApproved); err != nil {
+		return err
+	}
+	return fsm.Transition(planFile, taskfsm.VerifyApproved)
 }
 
 // executeTaskStartOver removes the plan worktree, deletes and recreates the

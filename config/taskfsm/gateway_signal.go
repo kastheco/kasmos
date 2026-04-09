@@ -14,23 +14,27 @@ import (
 const ArchitectFinished Event = "architect_finished"
 
 var validGatewaySignalTypes = map[string]struct{}{
-	"planner_finished":            {},
-	"implement_finished":          {},
-	"review_approved":             {},
-	"review_changes_requested":    {},
-	"implement_task_finished":     {},
-	"implement_wave":              {},
-	"elaborator_finished":         {},
-	"readiness_approved":          {},
-	"readiness_changes_requested": {},
+	"planner_finished":         {},
+	"implement_finished":       {},
+	"review_approved":          {},
+	"review_changes_requested": {},
+	"implement_task_finished":  {},
+	"implement_wave":           {},
+	"elaborator_finished":      {},
+	"verify_approved":          {},
+	"verify_failed":            {},
 }
 
 func gatewaySignalTypeError(raw string) error {
-	return fmt.Errorf("unknown signal type %q; valid types: planner_finished, implement_finished, review_approved, review_changes_requested, readiness_approved, readiness_changes_requested, implement_task_finished, implement_wave, architect_finished (wire alias: elaborator_finished)", raw)
+	return fmt.Errorf("unknown signal type %q; valid types: planner_finished, implement_finished, review_approved, review_changes_requested, verify_approved, verify_failed, implement_task_finished, implement_wave, architect_finished (wire alias: elaborator_finished)", raw)
 }
 
 // CanonicalGatewaySignalType normalizes accepted signal-type aliases to the
 // exact wire-compatible value stored in the signal gateway.
+//
+// Deprecated aliases for one-release compatibility:
+//   - readiness_approved, readiness-approved, master_approved, master-approved → verify_approved
+//   - readiness_changes_requested, readiness-changes-requested, readiness_changes, readiness-changes → verify_failed
 func CanonicalGatewaySignalType(raw string) (string, error) {
 	normalized := strings.ReplaceAll(strings.TrimSpace(raw), "-", "_")
 	switch normalized {
@@ -40,10 +44,14 @@ func CanonicalGatewaySignalType(raw string) (string, error) {
 		return string(ReviewChangesRequested), nil
 	case string(ArchitectFinished), "elaborator_finished":
 		return "elaborator_finished", nil
+	case string(VerifyApproved):
+		return string(VerifyApproved), nil
+	case string(VerifyFailed):
+		return string(VerifyFailed), nil
 	case "readiness_approved", "master_approved":
-		return "readiness_approved", nil
+		return string(VerifyApproved), nil
 	case "readiness_changes_requested", "readiness_changes":
-		return "readiness_changes_requested", nil
+		return string(VerifyFailed), nil
 	default:
 		return "", gatewaySignalTypeError(raw)
 	}
@@ -54,6 +62,8 @@ func CanonicalGatewaySignalType(raw string) (string, error) {
 func GatewaySignalTypeForEvent(event Event) (string, error) {
 	switch event {
 	case PlannerFinished, ImplementFinished, ReviewApproved, ReviewChangesRequested:
+		return string(event), nil
+	case VerifyApproved, VerifyFailed:
 		return string(event), nil
 	case ArchitectFinished, Event("elaborator_finished"):
 		return "elaborator_finished", nil
@@ -72,7 +82,7 @@ func NormalizeGatewaySignalPayload(signalType, payload string) (string, error) {
 
 	switch canonicalType {
 	case "planner_finished", "implement_finished", "review_approved", "review_changes_requested",
-		"readiness_approved", "readiness_changes_requested":
+		"verify_approved", "verify_failed":
 		if payload == "" {
 			return "", nil
 		}
