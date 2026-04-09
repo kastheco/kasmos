@@ -17,7 +17,7 @@ build: admin-ensure
 
 # Install to GOPATH/bin (with kms alias)
 install: admin-ensure
-    rm -f "$(go env GOPATH)/bin/kas" "$(go env GOPATH)/bin/kasmos"
+    rm -f "$(go env GOPATH)/bin/kasmos"
     go install ./cmd/kas
     ln -sf "$(go env GOPATH)/bin/kas" "$(go env GOPATH)/bin/kms"
 
