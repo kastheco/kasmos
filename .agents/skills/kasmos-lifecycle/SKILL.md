@@ -23,6 +23,23 @@ Plans move through a fixed set of states. Only the transitions listed below are 
 
 State is persisted in the **task store** — a SQLite database (`~/.config/kasmos/kasmos.db` locally) or a remote HTTP API server. Agents never write to the store directly — kasmos owns state transitions. Agents emit signals (managed mode) or use task tools (manual mode). To retrieve plan content, agents use MCP `task_show` (`filename: "<plan-file>"`, `project: "$KASMOS_PROJECT"`).
 
+### Readiness Review Execution Phase
+
+When `auto_readiness_review` is enabled, kasmos intercepts the `review_approved` signal and transitions the task into the `readiness_reviewing` **execution phase** before marking it done. This is a sub-phase within the `reviewing` FSM state — the FSM state itself does not change.
+
+| FSM State | Execution Phase | Description |
+|-----------|----------------|-------------|
+| `reviewing` | `readiness_reviewing` | master agent performs holistic readiness gate |
+
+The master agent signals its decision using readiness-specific signal types:
+
+| Signal type (MCP) | CLI equivalent | Effect |
+|-------------------|---------------|--------|
+| `readiness-approved` | `kas signal emit readiness_approved <planfile>` | completes the task (transitions to `done`) |
+| `readiness-changes-requested` | `kas signal emit readiness_changes_requested <planfile>` | sends the task back to `implementing` for fixes |
+
+If readiness review is disabled, `review_approved` transitions the task directly to `done` without the `readiness_reviewing` phase.
+
 ## Signal File Mechanics
 
 Agents communicate state transitions by writing sentinel files into `.kasmos/signals/`.
