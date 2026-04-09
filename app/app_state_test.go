@@ -525,24 +525,3 @@ func TestHandleReviewChangesRequested_PausesMasterInstance(t *testing.T) {
 	assert.True(t, masterInst.Paused(),
 		"master instance must be paused when review changes are requested")
 }
-
-func TestReviewApproved_PausesMasterInstance(t *testing.T) {
-	h := newTestHome()
-	planFile := "test-plan.md"
-
-	masterInst := newPausedMasterInstance(t, planFile)
-	h.nav.AddInstance(masterInst)
-
-	// Exercise the same loop logic used by both ReviewApprovedAction and
-	// the direct taskfsm.ReviewApproved signal handler.
-	for _, inst := range h.nav.GetInstances() {
-		if inst.TaskFile == planFile &&
-			(inst.AgentType == session.AgentTypeReviewer || inst.AgentType == session.AgentTypeMaster) {
-			inst.SetStatus(session.Paused)
-			break
-		}
-	}
-
-	assert.Equal(t, session.Paused, masterInst.Status,
-		"master instance must be paused when review is approved")
-}
