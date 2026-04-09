@@ -59,7 +59,7 @@ type Instance struct {
 	UpdatedAt time.Time
 	// AutoYes causes the instance to auto-confirm prompts.
 	AutoYes bool
-	// SkipPermissions enables the --dangerously-skip-permissions flag for Claude.
+	// SkipPermissions enables the --permission-mode bypassPermissions flag for Claude.
 	SkipPermissions bool
 	// TaskFile is the plan file this instance is implementing (empty for ad-hoc sessions).
 	TaskFile string
@@ -326,7 +326,7 @@ type InstanceOptions struct {
 	ExecutionMode ExecutionMode
 	// AutoYes enables automatic confirmation of agent prompts.
 	AutoYes bool
-	// SkipPermissions enables --dangerously-skip-permissions for Claude.
+	// SkipPermissions enables --permission-mode bypassPermissions for Claude.
 	SkipPermissions bool
 	// TaskFile binds this instance to a plan from plan-state.
 	TaskFile string

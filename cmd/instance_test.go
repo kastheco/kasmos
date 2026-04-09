@@ -468,7 +468,7 @@ func TestResumeProject_EmptyWhenNeitherSet(t *testing.T) {
 	assert.Equal(t, "", resumeProject(rec))
 }
 
-// TestBuildResumeCommand_SkipPermissions verifies --dangerously-skip-permissions is appended for Claude.
+// TestBuildResumeCommand_SkipPermissions verifies --permission-mode bypassPermissions is appended for Claude.
 func TestBuildResumeCommand_SkipPermissions(t *testing.T) {
 	rec := instanceRecord{
 		Title:           "my-coder",
@@ -476,7 +476,7 @@ func TestBuildResumeCommand_SkipPermissions(t *testing.T) {
 		SkipPermissions: true,
 	}
 	got := buildResumeCommand(rec, "/worktrees/my-coder")
-	assert.Contains(t, got, "--dangerously-skip-permissions")
+	assert.Contains(t, got, "--permission-mode bypassPermissions")
 	assert.Contains(t, got, "KASMOS_MANAGED=1")
 }
 

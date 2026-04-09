@@ -16,7 +16,7 @@ func New(name, program string, skipPermissions bool) *Session {
 }
 ```
 
-`New` returns an unstarted `*Session`. The `name` is the human-readable label shown in the TUI; `sanitizedName` strips whitespace and replaces dots with underscores — it is used as the log file stem. `program` is the full command string including arguments (e.g. `"claude --dangerously-skip-permissions"`).
+`New` returns an unstarted `*Session`. The `name` is the human-readable label shown in the TUI; `sanitizedName` strips whitespace and replaces dots with underscores — it is used as the log file stem. `program` is the full command string including arguments (e.g. `"claude --permission-mode bypassPermissions"`).
 
 Before calling `Start`, the caller may configure the session with builder methods:
 

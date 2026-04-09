@@ -67,7 +67,7 @@ Not all headless limitations are errors. Some operations are silently accepted a
 
 tmux sessions detect permission prompts by scanning pane output for known patterns. headless sessions cannot do this — `hasPrompt` is always `false` in both `HasUpdated()` and `HasUpdatedWithContent()`. The `ParsePermissionPrompt` path in `CollectMetadata` still runs (it checks the content string), but `SendPermissionResponse` cannot be called to respond.
 
-**consequence:** if your agent program pauses waiting for a permission confirmation, a headless session will stall indefinitely. Use `--dangerously-skip-permissions` (or equivalent flags) for programs that would otherwise prompt, or use tmux mode so kasmos can detect and respond to prompts automatically.
+**consequence:** if your agent program pauses waiting for a permission confirmation, a headless session will stall indefinitely. Use `--permission-mode bypassPermissions` (or equivalent flags) for programs that would otherwise prompt, or use tmux mode so kasmos can detect and respond to prompts automatically.
 
 ## embedded terminal
 
@@ -89,7 +89,7 @@ Headless instances display as read-only log output in the preview pane. Focus mo
 
 ```
 need to attach interactively?       → tmux
-agent may request permissions?      → tmux (unless --dangerously-skip-permissions)
+agent may request permissions?      → tmux (unless --permission-mode bypassPermissions)
 running in a headless CI pipeline?  → headless
 running parallel wave agents?       → headless (lower overhead)
 need kas monitor live attach?       → tmux
@@ -101,7 +101,7 @@ You can mix modes within a single plan — for example, run coders headlessly an
 [agents.coder]
 enabled        = true
 program        = "claude"
-flags          = ["--dangerously-skip-permissions"]
+flags          = ["--permission-mode bypassPermissions"]
 execution_mode = "headless"
 
 [agents.reviewer]

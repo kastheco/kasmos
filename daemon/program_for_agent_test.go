@@ -107,12 +107,12 @@ func TestBuildProgramCommand(t *testing.T) {
 		{
 			name: "inline program with spaces falls back to BuildCommand",
 			profile: config.AgentProfile{
-				Program: "claude --dangerously-skip-permissions",
+				Program: "claude --permission-mode bypassPermissions",
 				Model:   "claude-opus-4-6",
 				Effort:  "high",
 				Flags:   []string{"--verbose"},
 			},
-			want: "claude --dangerously-skip-permissions --verbose",
+			want: "claude --permission-mode bypassPermissions --verbose",
 		},
 		{
 			name: "program with absolute path uses basename for lookup",

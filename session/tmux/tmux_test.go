@@ -135,7 +135,7 @@ func TestStartTmuxSessionWithSkipPermissions(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, len(ptyFactory.cmds))
 	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]),
-		fmt.Sprintf("tmux new-session -d -s kas_test-session -c %s KASMOS_MANAGED=1 CLAUDE_CODE_NO_FLICKER=0 claude --dangerously-skip-permissions", workdir))
+		fmt.Sprintf("tmux new-session -d -s kas_test-session -c %s KASMOS_MANAGED=1 CLAUDE_CODE_NO_FLICKER=0 claude --permission-mode bypassPermissions", workdir))
 	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), "2>>'"+workdir+"/.kasmos/logs/kas_test-session.log'")
 }
 

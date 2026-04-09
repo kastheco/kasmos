@@ -35,9 +35,9 @@ func resumeProject(rec instanceRecord) string {
 func buildResumeProgram(rec instanceRecord, worktreePath string) string {
 	program := rec.Program
 
-	// Append --dangerously-skip-permissions for Claude programs if originally enabled.
+	// Append --permission-mode bypassPermissions for Claude programs if originally enabled.
 	if rec.SkipPermissions && strings.HasSuffix(program, "claude") {
-		program += " --dangerously-skip-permissions"
+		program += " --permission-mode bypassPermissions"
 	}
 
 	// Append --agent flag for typed roles (planner, coder, reviewer, fixer).

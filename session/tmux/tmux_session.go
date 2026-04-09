@@ -45,7 +45,7 @@ type TmuxSession struct {
 	ptyFactory PtyFactory
 	// cmdExec is used to execute commands in the tmux session.
 	cmdExec cmd.Executor
-	// skipPermissions appends --dangerously-skip-permissions to Claude commands.
+	// skipPermissions appends --permission-mode bypassPermissions to Claude commands.
 	skipPermissions bool
 	// agentType, when non-empty, appends --agent <type> to the program command.
 	agentType string
@@ -297,10 +297,11 @@ func (t *TmuxSession) Start(workDir string) error {
 		return t.Restore()
 	}
 
-	// Append --dangerously-skip-permissions for Claude programs if enabled.
+	// Append --permission-mode bypassPermissions for Claude programs if enabled.
+	// This is the modern replacement for --permission-mode bypassPermissions.
 	program := resolveShellProgram(t.program)
 	if t.skipPermissions && isClaudeProgram(t.program) {
-		program = program + " --dangerously-skip-permissions"
+		program = program + " --permission-mode bypassPermissions"
 	}
 	if t.agentType != "" && !strings.Contains(program, "--agent") {
 		program = program + " --agent " + t.agentType

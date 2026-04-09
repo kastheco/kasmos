@@ -215,7 +215,7 @@ Allow tool Bash? maybe, but there is no approval UI here.
 		{
 			name:    "claude handles ansi prompt content",
 			content: "\x1b[1mTool approval required\x1b[0m\n\x1b[36mBash: git status\x1b[0m\n\x1b[33mDo you want to proceed?\x1b[0m\n\x1b[32m1. Yes, allow once\x1b[0m\n\x1b[31m2. No\x1b[0m\n",
-			program: "wrapper /usr/local/bin/claude --dangerously-skip-permissions",
+			program: "wrapper /usr/local/bin/claude --permission-mode bypassPermissions",
 			want: &PermissionPrompt{
 				Description: "Bash: git status",
 				Pattern:     "Bash: git status",

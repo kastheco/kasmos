@@ -57,7 +57,7 @@ type instanceRecord struct {
 	Program   string         `json:"program"`
 	AutoYes   bool           `json:"auto_yes"`
 
-	// SkipPermissions, when true, passes --dangerously-skip-permissions to Claude.
+	// SkipPermissions, when true, passes --permission-mode bypassPermissions to Claude.
 	SkipPermissions bool `json:"skip_permissions"`
 
 	// Optional plan/orchestration fields — must stay in sync with InstanceData.
@@ -142,9 +142,9 @@ func resumeProject(rec instanceRecord) string {
 func buildResumeCommand(rec instanceRecord, worktreePath string) string {
 	program := rec.Program
 
-	// Append --dangerously-skip-permissions for Claude if originally enabled.
+	// Append --permission-mode bypassPermissions for Claude if originally enabled.
 	if rec.SkipPermissions && strings.HasSuffix(program, "claude") {
-		program += " --dangerously-skip-permissions"
+		program += " --permission-mode bypassPermissions"
 	}
 
 	// Append --agent flag for typed roles (planner, coder, reviewer, fixer).

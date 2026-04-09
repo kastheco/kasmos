@@ -208,7 +208,7 @@ func TestStart_WithSkipPermissions(t *testing.T) {
 	s := NewTmuxSessionWithDeps("test-skip", "claude", true, ptyFactory, cmdExec)
 	err := s.Start(workdir)
 	require.NoError(t, err)
-	assert.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), "--dangerously-skip-permissions")
+	assert.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), "--permission-mode bypassPermissions")
 }
 
 func TestStart_OpenCode_NoTrustTap(t *testing.T) {

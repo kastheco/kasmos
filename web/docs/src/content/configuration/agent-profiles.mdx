@@ -29,10 +29,10 @@ The mode is normalized by `config.NormalizeExecutionMode()`: any unrecognized va
 strings.Join(append([]string{p.Program}, p.Flags...), " ")
 ```
 
-For example, a profile with `program = "claude"` and `flags = ["--dangerously-skip-permissions"]` produces:
+For example, a profile with `program = "claude"` and `flags = ["--permission-mode bypassPermissions"]` produces:
 
 ```
-claude --dangerously-skip-permissions
+claude --permission-mode bypassPermissions
 ```
 
 The model and other flags that kasmos injects into the prompt are not part of `BuildCommand()` — they are handled separately by the orchestration layer.
@@ -58,10 +58,10 @@ enabled        = true
 program        = "claude"
 model          = "claude-sonnet-4-5"
 execution_mode = "tmux"
-flags          = ["--dangerously-skip-permissions"]
+flags          = ["--permission-mode bypassPermissions"]
 ```
 
-Launches `claude --dangerously-skip-permissions` in a new tmux window. The `-p <prompt>` and `--model` flags are injected by kasmos before appending `flags`.
+Launches `claude --permission-mode bypassPermissions` in a new tmux window. The `-p <prompt>` and `--model` flags are injected by kasmos before appending `flags`.
 
 ### opencode (headless, high-effort planner)
 
@@ -114,7 +114,7 @@ enabled        = true
 program        = "claude"
 model          = "claude-sonnet-4-5"
 execution_mode = "tmux"
-flags          = ["--dangerously-skip-permissions"]
+flags          = ["--permission-mode bypassPermissions"]
 
 [agents.reviewer]
 enabled        = true

@@ -84,7 +84,7 @@ type instanceRecord struct {
 	Program   string         `json:"program"`
 	AutoYes   bool           `json:"auto_yes"`
 
-	// SkipPermissions, when true, passes --dangerously-skip-permissions to Claude.
+	// SkipPermissions, when true, passes --permission-mode bypassPermissions to Claude.
 	SkipPermissions bool `json:"skip_permissions"`
 
 	// Optional plan/orchestration fields — must stay in sync with InstanceData.

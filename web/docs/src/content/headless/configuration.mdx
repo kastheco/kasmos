@@ -10,7 +10,7 @@ Each `[agents.<role>]` block in `config.toml` accepts an optional `execution_mod
 [agents.coder]
 enabled         = true
 program         = "claude"
-flags           = ["--dangerously-skip-permissions"]
+flags           = ["--permission-mode bypassPermissions"]
 execution_mode  = "headless"
 ```
 
@@ -48,7 +48,7 @@ Unknown values — including typos like `"Headless"` or `"HEADLESS"` — silentl
 enabled         = true
 program         = "claude"
 model           = "claude-opus-4-5"
-flags           = ["--dangerously-skip-permissions"]
+flags           = ["--permission-mode bypassPermissions"]
 execution_mode  = "headless"
 
 [agents.reviewer]
