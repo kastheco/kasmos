@@ -1431,6 +1431,8 @@ func TestEmitSelectedInstanceSignal_QueuesExpectedGatewayRows(t *testing.T) {
 	tests := []struct {
 		name                  string
 		status                taskstate.Status
+		executionPhase        string // persisted execution phase required for FSM gating
+		executionAgentType    string // required alongside executionPhase by normalizeExecutionState
 		agentType             string
 		event                 taskfsm.Event
 		successToast          string
@@ -1448,20 +1450,24 @@ func TestEmitSelectedInstanceSignal_QueuesExpectedGatewayRows(t *testing.T) {
 			wantSignalType: "planner_finished",
 		},
 		{
-			name:           "architect finished",
-			status:         taskstate.StatusImplementing,
-			agentType:      session.AgentTypeElaborator,
-			event:          taskfsm.ArchitectFinished,
-			successToast:   "architect pass finished signal queued",
-			wantSignalType: "elaborator_finished",
+			name:               "architect finished",
+			status:             taskstate.StatusImplementing,
+			executionPhase:     string(taskfsm.ExecutionPhaseArchitecting),
+			executionAgentType: session.AgentTypeElaborator,
+			agentType:          session.AgentTypeElaborator,
+			event:              taskfsm.ArchitectFinished,
+			successToast:       "architect pass finished signal queued",
+			wantSignalType:     "elaborator_finished",
 		},
 		{
-			name:           "implement finished",
-			status:         taskstate.StatusImplementing,
-			agentType:      session.AgentTypeCoder,
-			event:          taskfsm.ImplementFinished,
-			successToast:   "implement finished signal queued",
-			wantSignalType: "implement_finished",
+			name:               "implement finished",
+			status:             taskstate.StatusImplementing,
+			executionPhase:     string(taskfsm.ExecutionPhaseSingleAgentImplementing),
+			executionAgentType: session.AgentTypeCoder,
+			agentType:          session.AgentTypeCoder,
+			event:              taskfsm.ImplementFinished,
+			successToast:       "implement finished signal queued",
+			wantSignalType:     "implement_finished",
 		},
 		{
 			name:                  "review approved",
@@ -1499,7 +1505,14 @@ func TestEmitSelectedInstanceSignal_QueuesExpectedGatewayRows(t *testing.T) {
 
 			const planFile = "feature"
 			require.NoError(t, ps.Create(planFile, "feature", "plan/feature", "", time.Now()))
-			require.NoError(t, ps.ForceSetStatus(planFile, tt.status))
+			if tt.executionPhase != "" {
+				require.NoError(t, ps.ForceSetLifecycle(planFile, tt.status, taskstore.ExecutionState{
+					Phase:           tt.executionPhase,
+					ActiveAgentType: tt.executionAgentType,
+				}))
+			} else {
+				require.NoError(t, ps.ForceSetStatus(planFile, tt.status))
+			}
 
 			h := newTestHome()
 			h.taskState = ps
@@ -1604,6 +1617,8 @@ func TestMarkReviewChangesRequested_QueuesGatewaySignal(t *testing.T) {
 	require.NoError(t, err)
 	const planFile = "feature"
 	require.NoError(t, ps.Create(planFile, "feature", "plan/feature", "", time.Now()))
+	// The reviewer signal is only offered when the task is in reviewing state.
+	require.NoError(t, ps.ForceSetStatus(planFile, taskstate.StatusReviewing))
 
 	h := newTestHome()
 	h.taskState = ps
@@ -2011,8 +2026,9 @@ func TestInstanceSignalItems_MasterAgent_HasReadinessSignals(t *testing.T) {
 		TaskFile:  "my-plan.md",
 		AgentType: session.AgentTypeMaster,
 	}
+	entry := taskstate.TaskEntry{Status: taskstate.StatusVerifying}
 
-	items := instanceSignalItems(inst)
+	items := instanceSignalItems(inst, entry, true)
 
 	var actions []string
 	for _, item := range items {

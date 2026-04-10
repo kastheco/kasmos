@@ -13,6 +13,7 @@ import (
 
 	"github.com/kastheco/kasmos/cmd/cmd_test"
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	daemonpkg "github.com/kastheco/kasmos/daemon"
@@ -2633,6 +2634,14 @@ func TestInstanceContextMenu_ReviewerManualActions(t *testing.T) {
 func TestInstanceContextMenu_CoderManualAction(t *testing.T) {
 	h := newTestHome()
 	h.setupPlanState(t, "feature", taskstate.StatusImplementing, "")
+	// mark_implement_finished is only offered when the task is in a single-agent
+	// implementing phase (solo/fixer) rather than a wave-based phase.
+	// ActiveAgentType is required by normalizeExecutionState for this phase.
+	require.NoError(t, h.taskState.ForceSetLifecycle("feature", taskstate.StatusImplementing,
+		taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseSingleAgentImplementing),
+			ActiveAgentType: session.AgentTypeCoder,
+		}))
 	inst, _ := session.NewInstance(session.InstanceOptions{
 		Title:     "feature-coder",
 		Path:      os.TempDir(),

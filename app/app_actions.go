@@ -271,12 +271,15 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 
 	case "start_fixer":
 		planFile := m.nav.GetSelectedPlanFile()
-		if planFile == "" || m.taskState == nil {
+		if planFile == "" {
 			return m, nil
 		}
-		entry, ok := m.taskState.Entry(planFile)
+		entry, ok := m.refreshTaskEntry(planFile)
 		if !ok {
 			return m, m.handleError(fmt.Errorf("task not found: %s", planFile))
+		}
+		if !taskActionStillAllowed(entry, "start_fixer") {
+			return m, lifecycleActionRejected("task state changed; start fixer no longer available")
 		}
 
 		feedback := m.latestReviewFeedback(planFile)
@@ -408,12 +411,15 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 
 	case "mark_plan_done":
 		planFile := m.nav.GetSelectedPlanFile()
-		if planFile == "" || m.taskState == nil {
+		if planFile == "" {
 			return m, nil
 		}
-		entry, ok := m.taskState.Entry(planFile)
+		entry, ok := m.refreshTaskEntry(planFile)
 		if !ok {
-			return m, m.handleError(fmt.Errorf("task not found: %s", planFile))
+			return m, lifecycleActionRejected("task not found; mark done cancelled")
+		}
+		if entry.Status == taskstate.StatusCancelled {
+			return m, lifecycleActionRejected("task is cancelled; mark done not available")
 		}
 		if entry.Status != taskstate.StatusDone {
 			// Walk through any missing lifecycle stages before approval so mark-done
@@ -443,8 +449,15 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 
 	case "request_review":
 		planFile := m.nav.GetSelectedPlanFile()
-		if planFile == "" || m.taskState == nil {
+		if planFile == "" {
 			return m, nil
+		}
+		freshEntry, freshOk := m.refreshTaskEntry(planFile)
+		if !freshOk {
+			return m, lifecycleActionRejected("task not found; request review cancelled")
+		}
+		if !taskActionStillAllowed(freshEntry, "request_review") {
+			return m, lifecycleActionRejected("task state changed; request review no longer available")
 		}
 		if err := m.fsm.Transition(planFile, taskfsm.RequestReview); err != nil {
 			return m, m.handleError(err)
@@ -458,8 +471,15 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 
 	case "resume_implement":
 		planFile := m.nav.GetSelectedPlanFile()
-		if planFile == "" || m.taskState == nil {
+		if planFile == "" {
 			return m, nil
+		}
+		freshEntry, freshOk := m.refreshTaskEntry(planFile)
+		if !freshOk {
+			return m, lifecycleActionRejected("task not found; resume implement cancelled")
+		}
+		if !taskActionStillAllowed(freshEntry, "resume_implement") {
+			return m, lifecycleActionRejected("task state changed; resume implement no longer available")
 		}
 		if err := m.fsm.Transition(planFile, taskfsm.Reimplement); err != nil {
 			return m, m.handleError(err)
@@ -470,11 +490,20 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 
 	case "cancel_plan":
 		planFile := m.nav.GetSelectedPlanFile()
-		if planFile == "" || m.taskState == nil {
+		if planFile == "" {
 			return m, nil
 		}
 		planName := taskstate.DisplayName(planFile)
 		cancelAction := func() tea.Msg {
+			// Re-validate with a fresh snapshot: the task may have changed while the
+			// confirmation overlay was open.
+			freshEntry, freshOk := m.refreshTaskEntry(planFile)
+			if !freshOk {
+				return lifecycleActionRejectedMsg{message: "task not found; cancel aborted"}
+			}
+			if freshEntry.Status == taskstate.StatusCancelled || freshEntry.Status == taskstate.StatusDone {
+				return lifecycleActionRejectedMsg{message: "task state changed; cancel no longer needed"}
+			}
 			m.nav.SelectNextOrPrevExcludingTask(planFile)
 			if err := m.fsm.Transition(planFile, taskfsm.Cancel); err != nil {
 				return err
@@ -505,12 +534,17 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		if planFile == "" {
 			return m, nil
 		}
-		entry, ok := m.taskState.Entry(planFile)
-		if !ok {
-			return m, m.handleError(fmt.Errorf("task not found: %s", planFile))
-		}
 		planName := taskstate.DisplayName(planFile)
 		startOverAction := func() tea.Msg {
+			// Re-validate with a fresh snapshot: the task may have changed while the
+			// confirmation overlay was open.
+			freshEntry, freshOk := m.refreshTaskEntry(planFile)
+			if !freshOk {
+				return lifecycleActionRejectedMsg{message: "task not found; start over aborted"}
+			}
+			if freshEntry.Status == taskstate.StatusCancelled {
+				return lifecycleActionRejectedMsg{message: "task is cancelled; start over not available"}
+			}
 			// Kill all instances bound to this plan
 			for i := len(m.allInstances) - 1; i >= 0; i-- {
 				if m.allInstances[i].TaskFile == planFile {
@@ -518,13 +552,13 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 					m.allInstances = append(m.allInstances[:i], m.allInstances[i+1:]...)
 				}
 			}
-			if err := gitpkg.ResetTaskBranch(m.activeRepoPath, entry.Branch); err != nil {
+			if err := gitpkg.ResetTaskBranch(m.activeRepoPath, freshEntry.Branch); err != nil {
 				return err
 			}
 			if err := m.fsmForceToPlanning(planFile); err != nil {
 				return err
 			}
-			m.audit(auditlog.EventPlanTransition, string(entry.Status)+" → planning (start over)",
+			m.audit(auditlog.EventPlanTransition, string(freshEntry.Status)+" → planning (start over)",
 				auditlog.WithPlan(planFile),
 				auditlog.WithDetail("start over: branch reset"))
 			_ = m.saveAllInstances()
@@ -831,6 +865,34 @@ func (m *home) fsmForceToPlanning(planFile string) error {
 	}
 }
 
+// refreshTaskEntry loads a fresh TaskEntry from the store for the given plan file.
+// It re-runs loadTaskState() so the in-memory snapshot matches the DB, then calls
+// updateSidebarTasks and updateInfoPane so nav/info surfaces stay consistent.
+// Falls back to the cached m.taskState when no store is configured, so unit tests
+// that don't wire up a real store continue to work.
+func (m *home) refreshTaskEntry(planFile string) (taskstate.TaskEntry, bool) {
+	if planFile == "" {
+		return taskstate.TaskEntry{}, false
+	}
+	if m.taskStore != nil && m.taskStateDir != "" {
+		m.loadTaskState()
+		if m.taskState == nil {
+			return taskstate.TaskEntry{}, false
+		}
+		entry, ok := m.taskState.Entry(planFile)
+		if ok {
+			m.updateSidebarTasks()
+			m.updateInfoPane()
+		}
+		return entry, ok
+	}
+	// No store configured — fall back to cached snapshot.
+	if m.taskState == nil {
+		return taskstate.TaskEntry{}, false
+	}
+	return m.taskState.Entry(planFile)
+}
+
 // findTaskInstance returns the instance bound to the currently selected plan in the sidebar.
 // Returns nil if no plan is selected or no instance is bound to it.
 func (m *home) findTaskInstance() *session.Instance {
@@ -912,10 +974,46 @@ func splitPromotedItems(items []overlay.ContextMenuItem, limit int) (promoted, r
 	return items[:limit], items[limit:]
 }
 
+// actionAvailable reports whether any item (at root level) in items has the given action.
+func actionAvailable(items []overlay.ContextMenuItem, action string) bool {
+	for _, item := range items {
+		if item.Action == action {
+			return true
+		}
+	}
+	return false
+}
+
+// taskActionStillAllowed returns true when the given task lifecycle action is
+// offered by taskLifecycleItems for the fresh entry.  Use this to guard actions
+// that were valid when the menu was built but may no longer be valid after the
+// daemon advances the FSM while the overlay is open.
+func taskActionStillAllowed(entry taskstate.TaskEntry, action string) bool {
+	return actionAvailable(taskLifecycleItems(entry), action)
+}
+
+// instanceSignalStillAllowed returns true when the given signal action is still
+// offered by instanceSignalItems for the fresh entry.  Both the action string
+// and the corresponding FSM event are accepted so callers remain explicit.
+func instanceSignalStillAllowed(inst *session.Instance, entry taskstate.TaskEntry, action string, event taskfsm.Event) bool {
+	return actionAvailable(instanceSignalItems(inst, entry, true), action)
+}
+
+// lifecycleActionRejected returns a Cmd that delivers a lifecycleActionRejectedMsg
+// to the Update loop.  Use this to surface stale-state rejections as plain toasts
+// rather than audit-log errors.
+func lifecycleActionRejected(message string) tea.Cmd {
+	return func() tea.Msg {
+		return lifecycleActionRejectedMsg{message: message}
+	}
+}
+
 // instanceSignalItems returns the promoted root-level items for an instance context
 // menu: attachment controls (open/resume/kill/restart) and any task lifecycle
 // signal actions that the instance is authorised to emit.
-func instanceSignalItems(inst *session.Instance) []overlay.ContextMenuItem {
+// entry and hasEntry must come from a freshly loaded TaskEntry so that lifecycle
+// signal items reflect the DB state rather than the cached snapshot.
+func instanceSignalItems(inst *session.Instance, entry taskstate.TaskEntry, hasEntry bool) []overlay.ContextMenuItem {
 	var items []overlay.ContextMenuItem
 
 	isAttachable := inst.Started() && !inst.Paused() && inst.TmuxAlive()
@@ -930,24 +1028,38 @@ func instanceSignalItems(inst *session.Instance) []overlay.ContextMenuItem {
 	)
 
 	// Task-owner lifecycle signal actions — only for the top-level task agent.
-	if inst.TaskFile != "" && inst.TaskNumber == 0 {
+	// Wave-task rows (TaskNumber > 0) are managed by subtask completion, not FSM signals.
+	// Guard every action with the fresh entry so stale menus don't offer invalid transitions.
+	if inst.TaskFile != "" && inst.TaskNumber == 0 && hasEntry {
 		switch inst.AgentType {
 		case session.AgentTypeReviewer:
-			items = append(items,
-				overlay.ContextMenuItem{Label: "mark review approved", Action: "mark_review_approved"},
-				overlay.ContextMenuItem{Label: "mark changes requested", Action: "mark_review_changes_requested"},
-			)
+			if _, err := taskfsm.ApplyTransition(taskfsm.Status(entry.Status), taskfsm.ReviewApproved); err == nil {
+				items = append(items,
+					overlay.ContextMenuItem{Label: "mark review approved", Action: "mark_review_approved"},
+					overlay.ContextMenuItem{Label: "mark changes requested", Action: "mark_review_changes_requested"},
+				)
+			}
 		case session.AgentTypePlanner:
-			items = append(items, overlay.ContextMenuItem{Label: "mark planning finished", Action: "mark_planner_finished"})
+			if _, err := taskfsm.ApplyTransition(taskfsm.Status(entry.Status), taskfsm.PlannerFinished); err == nil {
+				items = append(items, overlay.ContextMenuItem{Label: "mark planning finished", Action: "mark_planner_finished"})
+			}
 		case session.AgentTypeElaborator:
-			items = append(items, overlay.ContextMenuItem{Label: "mark architect finished", Action: "mark_architect_finished"})
+			if entry.Status == taskstate.StatusImplementing &&
+				taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase) == taskfsm.ExecutionPhaseArchitecting {
+				items = append(items, overlay.ContextMenuItem{Label: "mark architect finished", Action: "mark_architect_finished"})
+			}
 		case session.AgentTypeCoder, session.AgentTypeFixer:
-			items = append(items, overlay.ContextMenuItem{Label: "mark implement finished", Action: "mark_implement_finished"})
+			if entry.Status == taskstate.StatusImplementing &&
+				taskfsm.IsSingleAgentImplementingPhase(taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase)) {
+				items = append(items, overlay.ContextMenuItem{Label: "mark implement finished", Action: "mark_implement_finished"})
+			}
 		case session.AgentTypeMaster:
-			items = append(items,
-				overlay.ContextMenuItem{Label: "mark verify approved", Action: "mark_verify_approved"},
-				overlay.ContextMenuItem{Label: "mark verify failed", Action: "mark_verify_failed"},
-			)
+			if entry.Status == taskstate.StatusVerifying {
+				items = append(items,
+					overlay.ContextMenuItem{Label: "mark verify approved", Action: "mark_verify_approved"},
+					overlay.ContextMenuItem{Label: "mark verify failed", Action: "mark_verify_failed"},
+				)
+			}
 		}
 	}
 
@@ -975,9 +1087,22 @@ func (m *home) openContextMenu() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// For task-backed top-level agents, refresh the entry so lifecycle signal
+	// items reflect DB state rather than the cached snapshot.
+	var entry taskstate.TaskEntry
+	var hasEntry bool
+	if selected.TaskFile != "" && selected.TaskNumber == 0 {
+		entry, hasEntry = m.refreshTaskEntry(selected.TaskFile)
+		// Re-read selected in case the sidebar was updated by the refresh.
+		selected = m.nav.GetSelectedInstance()
+		if selected == nil {
+			return m, nil
+		}
+	}
+
 	// Promoted root-level items: attachment controls + task lifecycle signals.
 	var items []overlay.ContextMenuItem
-	items = append(items, instanceSignalItems(selected)...)
+	items = append(items, instanceSignalItems(selected, entry, hasEntry)...)
 
 	// session subgroup: secondary session controls (pause/focus).
 	var sessionItems []overlay.ContextMenuItem
@@ -1025,6 +1150,13 @@ func (m *home) openContextMenu() (tea.Model, tea.Cmd) {
 		items = append(items, overlay.ContextMenuItem{Label: "manage", Children: manageItems})
 	}
 
+	// Track the lifecycle snapshot so the metadata tick can dismiss the menu
+	// if the FSM state changes while it is open.
+	if selected.TaskFile != "" && selected.TaskNumber == 0 && hasEntry {
+		m.contextMenuTaskFile = selected.TaskFile
+		m.contextMenuTaskStatus, m.contextMenuTaskPhase = lifecycleSnapshot(entry)
+	}
+
 	// Position at the left edge of the instance list (middle column).
 	x := m.navWidth
 	y := 1 + 4 + m.nav.GetSelectedIdx() // PaddingTop(1) + header rows + item offset
@@ -1039,12 +1171,13 @@ func (m *home) openTaskContextMenu() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Build lifecycle items via the shared helper and promote the top two to root.
+	// Build lifecycle items via the shared helper using a fresh store snapshot so
+	// draft-ready vs planned-ready drift (and any other FSM change) is reflected
+	// before the menu is constructed.
+	entry, entryOk := m.refreshTaskEntry(planFile)
 	var allLifecycle []overlay.ContextMenuItem
-	if m.taskState != nil {
-		if entry, ok := m.taskState.Plans[planFile]; ok {
-			allLifecycle = taskLifecycleItems(entry)
-		}
+	if entryOk {
+		allLifecycle = taskLifecycleItems(entry)
 	}
 	promoted, remaining := splitPromotedItems(allLifecycle, 2)
 
@@ -1106,6 +1239,12 @@ func (m *home) openTaskContextMenu() (tea.Model, tea.Cmd) {
 		{Label: "cancel task", Action: "cancel_plan"},
 	}
 	items = append(items, overlay.ContextMenuItem{Label: "lifecycle", Children: lifecycleItems})
+
+	// Track lifecycle snapshot so the metadata tick can dismiss the menu on FSM change.
+	if entryOk {
+		m.contextMenuTaskFile = planFile
+		m.contextMenuTaskStatus, m.contextMenuTaskPhase = lifecycleSnapshot(entry)
+	}
 
 	x := m.navWidth
 	y := 1 + 4 + m.nav.GetSelectedIdx()
@@ -1188,11 +1327,40 @@ func (m *home) incrementReviewCycleAndRefresh(planFile, instanceTitle, agentType
 	return cycle, nil
 }
 
+// eventToSignalAction maps a lifecycle FSM event to the action string that appears in
+// instanceSignalItems so that emitSelectedInstanceSignal can validate with
+// instanceSignalStillAllowed without duplicating the mapping table.
+var eventToSignalAction = map[taskfsm.Event]string{
+	taskfsm.PlannerFinished:        "mark_planner_finished",
+	taskfsm.ArchitectFinished:      "mark_architect_finished",
+	taskfsm.ImplementFinished:      "mark_implement_finished",
+	taskfsm.ReviewApproved:         "mark_review_approved",
+	taskfsm.ReviewChangesRequested: "mark_review_changes_requested",
+	taskfsm.VerifyApproved:         "mark_verify_approved",
+	taskfsm.VerifyFailed:           "mark_verify_failed",
+}
+
 func (m *home) emitSelectedInstanceSignal(event taskfsm.Event, successToast string) tea.Cmd {
 	selected := m.nav.GetSelectedInstance()
 	if selected == nil || selected.TaskFile == "" || m.taskStoreProject == "" {
 		return nil
 	}
+
+	// Refresh task state for task-backed top-level agents before gating the signal.
+	if selected.TaskFile != "" && selected.TaskNumber == 0 {
+		entry, hasEntry := m.refreshTaskEntry(selected.TaskFile)
+		// Re-read selected after a possible sidebar refresh.
+		selected = m.nav.GetSelectedInstance()
+		if selected == nil {
+			return nil
+		}
+		if action, ok := eventToSignalAction[event]; ok {
+			if !hasEntry || !instanceSignalStillAllowed(selected, entry, action, event) {
+				return lifecycleActionRejected("task state changed; signal cancelled")
+			}
+		}
+	}
+
 	signalType, payload, err := m.prepareSelectedInstanceSignal(selected, event)
 	if err != nil {
 		return m.handleError(err)
@@ -1292,10 +1460,7 @@ func (m *home) pushSelectedInstance() (tea.Model, tea.Cmd) {
 // It checks if the stage is locked, applies the concurrency gate for the
 // implement stage, and then executes the stage transition.
 func (m *home) triggerTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
-	if m.taskState == nil {
-		return m, m.handleError(fmt.Errorf("no task state loaded"))
-	}
-	entry, ok := m.taskState.Plans[planFile]
+	entry, ok := m.refreshTaskEntry(planFile)
 	if !ok {
 		return m, m.handleError(fmt.Errorf("missing task state for %s", planFile))
 	}
@@ -1729,7 +1894,14 @@ func (m *home) instanceLauncherItems(inst *session.Instance) []overlay.LauncherI
 	}
 
 	// Task-owner lifecycle signal actions (from the shared builder).
-	for _, cm := range instanceSignalItems(inst) {
+	// Refresh the task entry so that the launcher offers the same gated actions
+	// as the context menu rather than stale cached state.
+	var sigEntry taskstate.TaskEntry
+	var sigHasEntry bool
+	if inst.TaskFile != "" && inst.TaskNumber == 0 {
+		sigEntry, sigHasEntry = m.refreshTaskEntry(inst.TaskFile)
+	}
+	for _, cm := range instanceSignalItems(inst, sigEntry, sigHasEntry) {
 		switch cm.Action {
 		// Skip items already emitted above to avoid duplicates.
 		case "resume_instance", "open_instance", "kill_instance", "restart_instance":
