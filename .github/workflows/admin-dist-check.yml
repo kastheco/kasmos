@@ -6,6 +6,7 @@ on:
     paths:
       - 'web/admin/src/**'
       - 'web/admin/package.json'
+      - 'web/admin/package-lock.json'
       - 'web/admin/vite.config.ts'
       - 'web/admin/tsconfig*.json'
       - '.github/workflows/admin-dist-check.yml'
@@ -14,6 +15,7 @@ on:
     paths:
       - 'web/admin/src/**'
       - 'web/admin/package.json'
+      - 'web/admin/package-lock.json'
       - 'web/admin/vite.config.ts'
       - 'web/admin/tsconfig*.json'
       - '.github/workflows/admin-dist-check.yml'
