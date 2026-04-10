@@ -3544,10 +3544,25 @@ func (m *home) spawnWaveTasks(orch *orchestration.WaveOrchestrator, tasks []task
 
 	var cmds []tea.Cmd
 	for _, task := range tasks {
+		title := orchestration.BuildWaveTaskTitle(planFile, orch.CurrentWaveNumber(), task.Number)
+
+		// Skip if an instance with this title already exists (e.g. daemon
+		// already spawned the wave task before the TUI's auto-advance fired).
+		alreadyExists := false
+		for _, existing := range m.nav.GetInstances() {
+			if existing.Title == title {
+				alreadyExists = true
+				break
+			}
+		}
+		if alreadyExists {
+			continue
+		}
+
 		prompt := orch.BuildTaskPrompt(task, len(tasks))
 
 		inst, err := session.NewInstance(session.InstanceOptions{
-			Title:         orchestration.BuildWaveTaskTitle(planFile, orch.CurrentWaveNumber(), task.Number),
+			Title:         title,
 			Path:          m.activeRepoPath,
 			Program:       m.programForAgent(session.AgentTypeCoder),
 			ExecutionMode: m.executionModeForAgent(session.AgentTypeCoder),
