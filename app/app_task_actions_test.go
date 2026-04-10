@@ -2123,3 +2123,329 @@ func TestExecuteContextAction_MarkReadinessChangesRequested(t *testing.T) {
 	require.Len(t, signals, 1)
 	assert.Equal(t, "verify_failed", signals[0].SignalType)
 }
+
+// TestEmitSelectedInstanceSignal_RejectsStaleLifecycleState verifies that
+// emitSelectedInstanceSignal returns a lifecycleActionRejectedMsg when the
+// task's FSM state has drifted since the menu was opened.
+//
+// Scenario: the reviewer instance sees StatusReviewing at menu-build time.
+// Before the signal is emitted, the daemon regresses the task back to
+// StatusImplementing (e.g. a manual intervention).  The stale guard must
+// detect this and cancel the signal without writing a gateway row.
+func TestEmitSelectedInstanceSignal_RejectsStaleLifecycleState(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir := t.TempDir()
+	t.Chdir(dir)
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	store, ps, fsm := newSharedStoreForTest(t, plansDir)
+	const planFile = "stale-signal"
+	require.NoError(t, ps.Create(planFile, "stale signal", "plan/stale-signal", "", time.Now()))
+	// Put the task into reviewing so mark_review_approved is a valid action.
+	require.NoError(t, ps.ForceSetStatus(planFile, taskstate.StatusReviewing))
+
+	h := newTestHome()
+	h.taskState = ps
+	h.taskStore = store
+	h.taskStateDir = plansDir
+	h.activeRepoPath = dir
+	h.taskStoreProject = "test"
+	h.fsm = fsm
+	h.pendingReviewFeedback = make(map[string]string)
+
+	reviewer := &session.Instance{
+		Title:     "stale-signal-review-1",
+		Path:      dir,
+		Program:   "opencode",
+		TaskFile:  planFile,
+		AgentType: session.AgentTypeReviewer,
+	}
+	h.nav.AddInstance(reviewer)
+	h.updateSidebarTasks()
+	h.nav.SelectInstance(reviewer)
+
+	// Simulate the daemon advancing the task back to implementing while the
+	// menu was open (state drift).
+	require.NoError(t, ps.ForceSetStatus(planFile, taskstate.StatusImplementing))
+
+	// emitSelectedInstanceSignal must detect the stale state and reject with
+	// a lifecycleActionRejectedMsg — no error toast, no gateway row.
+	cmd := h.emitSelectedInstanceSignal(taskfsm.ReviewApproved, "review approved signal queued")
+	require.NotNil(t, cmd, "stale signal must return a non-nil Cmd (the rejection Cmd)")
+	msg := cmd()
+
+	rejected, ok := msg.(lifecycleActionRejectedMsg)
+	require.True(t, ok, "expected lifecycleActionRejectedMsg, got %T: %v", msg, msg)
+	assert.Contains(t, rejected.message, "task state changed",
+		"rejection message must describe the state-change reason")
+
+	// No gateway row must have been written.
+	signals := listPendingAuthoritativeSignals(t, "test")
+	assert.Empty(t, signals, "stale signal rejection must not write any gateway rows")
+}
+
+// TestExecuteContextAction_StartReviewRejectsStaleState verifies that
+// start_review does not spawn a reviewer agent when the task has advanced to a
+// terminal state (Done) between menu-open and action execution.
+//
+// The guard is exercised through the FSM: refreshTaskEntry reloads the DB row,
+// and fsmSetReviewing fails because Done→implementing is not an allowed
+// transition, so no agent is ever created.
+func TestExecuteContextAction_StartReviewRejectsStaleState(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	// Create task in store before loading ps so the Plans map is populated.
+	store := taskstore.NewTestSQLiteStore(t)
+	const planFile = "stale-review"
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+		Branch:   "plan/stale-review",
+	}))
+
+	ps, err := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
+	fsm := taskfsm.New(store, "test", plansDir)
+
+	// Advance to Done — simulating what the daemon would do while the context
+	// menu was open (the TUI still shows implementing, but the DB says done).
+	require.NoError(t, fsm.Transition(planFile, taskfsm.ImplementFinished))
+	require.NoError(t, fsm.Transition(planFile, taskfsm.ReviewApproved))
+	require.NoError(t, fsm.Transition(planFile, taskfsm.VerifyApproved))
+	// Verify precondition: task must be Done before the stale action.
+	ps2, err2 := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err2)
+	entry, ok := ps2.Entry(planFile)
+	require.True(t, ok)
+	require.Equal(t, taskstate.StatusDone, entry.Status, "precondition: task must be Done before the stale action")
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:          context.Background(),
+		state:        stateDefault,
+		appConfig:    config.DefaultConfig(),
+		nav:          ui.NewNavigationPanel(&sp),
+		menu:         ui.NewMenu(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager: overlay.NewToastManager(&sp),
+		overlays:     overlay.NewManager(),
+		daemonStatusChecker: func(string) daemonStatusMsg {
+			return daemonStatusMsg{ready: true}
+		},
+		taskState:          ps,
+		taskStore:          store,
+		taskStoreProject:   "test",
+		taskStateDir:       plansDir,
+		fsm:                fsm,
+		activeRepoPath:     dir,
+		program:            "opencode",
+		instanceFinalizers: make(map[*session.Instance]func()),
+	}
+	h.updateSidebarTasks()
+	require.True(t, h.nav.SelectByID(ui.SidebarPlanPrefix+planFile))
+
+	instancesBefore := len(h.nav.GetInstances())
+
+	_, cmd := h.executeContextAction("start_review")
+	// The rejection may be an error Cmd (FSM transition failed) or a
+	// lifecycleActionRejectedMsg — either way the key invariant is that no
+	// new agent was spawned and the FSM state did not regress.
+	_ = cmd
+
+	assert.Equal(t, instancesBefore, len(h.nav.GetInstances()),
+		"stale start_review must not spawn any agent instances")
+
+	// Reload from store to confirm FSM state was not mutated.
+	reloaded, err := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
+	freshEntry, exists := reloaded.Entry(planFile)
+	require.True(t, exists)
+	assert.Equal(t, taskstate.StatusDone, freshEntry.Status,
+		"stale start_review must not mutate FSM state from Done")
+}
+
+// TestExecuteContextAction_StartFixerRejectsStaleState verifies that
+// start_fixer returns a lifecycleActionRejectedMsg and does not spawn a fixer
+// agent when the task has advanced to Done between menu-open and execution.
+func TestExecuteContextAction_StartFixerRejectsStaleState(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	// Create task in store before loading ps so the Plans map is populated.
+	store := taskstore.NewTestSQLiteStore(t)
+	const planFile = "stale-fixer"
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusReviewing,
+		Branch:   "plan/stale-fixer",
+	}))
+
+	ps, err := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
+	fsm := taskfsm.New(store, "test", plansDir)
+
+	// Simulate daemon advancing to Done while confirmation/menu was open.
+	require.NoError(t, fsm.Transition(planFile, taskfsm.ReviewApproved))
+	require.NoError(t, fsm.Transition(planFile, taskfsm.VerifyApproved))
+	// Verify precondition via fresh load.
+	ps2, err2 := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err2)
+	entry, ok := ps2.Entry(planFile)
+	require.True(t, ok)
+	require.Equal(t, taskstate.StatusDone, entry.Status, "precondition: task must be Done before the stale action")
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:          context.Background(),
+		state:        stateDefault,
+		appConfig:    config.DefaultConfig(),
+		nav:          ui.NewNavigationPanel(&sp),
+		menu:         ui.NewMenu(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager: overlay.NewToastManager(&sp),
+		overlays:     overlay.NewManager(),
+		daemonStatusChecker: func(string) daemonStatusMsg {
+			return daemonStatusMsg{ready: true}
+		},
+		taskState:             ps,
+		taskStore:             store,
+		taskStoreProject:      "test",
+		taskStateDir:          plansDir,
+		fsm:                   fsm,
+		activeRepoPath:        dir,
+		program:               "opencode",
+		pendingReviewFeedback: make(map[string]string),
+		instanceFinalizers:    make(map[*session.Instance]func()),
+	}
+	h.updateSidebarTasks()
+	require.True(t, h.nav.SelectByID(ui.SidebarPlanPrefix+planFile))
+
+	instancesBefore := len(h.nav.GetInstances())
+
+	_, cmd := h.executeContextAction("start_fixer")
+	require.NotNil(t, cmd, "stale start_fixer must return a rejection Cmd")
+	msg := cmd()
+
+	// The rejection must be via lifecycleActionRejectedMsg, not an error toast.
+	rejected, ok := msg.(lifecycleActionRejectedMsg)
+	require.True(t, ok, "expected lifecycleActionRejectedMsg, got %T: %v", msg, msg)
+	assert.Contains(t, rejected.message, "task state changed",
+		"rejection message must indicate that task state changed")
+
+	assert.Equal(t, instancesBefore, len(h.nav.GetInstances()),
+		"stale start_fixer must not spawn any fixer instances")
+}
+
+// TestExecuteContextAction_CancelPlanRevalidatesOnConfirm verifies that the
+// cancel confirm action re-fetches task state before committing the cancel.
+//
+// Scenario: the user opens the cancel dialog when the task is implementing.
+// While the confirmation overlay is visible, the daemon advances the task to
+// Done.  When the user confirms, the cancelAction closure must detect the
+// stale state and surface a lifecycleActionRejectedMsg rather than
+// erroneously cancelling an already-done task.
+func TestExecuteContextAction_CancelPlanRevalidatesOnConfirm(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	// Create task in store before loading ps so the Plans map is populated.
+	store := taskstore.NewTestSQLiteStore(t)
+	const planFile = "stale-cancel"
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+		Branch:   "plan/stale-cancel",
+	}))
+
+	ps, err := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
+	fsm := taskfsm.New(store, "test", plansDir)
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:          context.Background(),
+		state:        stateDefault,
+		appConfig:    config.DefaultConfig(),
+		nav:          ui.NewNavigationPanel(&sp),
+		menu:         ui.NewMenu(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager: overlay.NewToastManager(&sp),
+		overlays:     overlay.NewManager(),
+		daemonStatusChecker: func(string) daemonStatusMsg {
+			return daemonStatusMsg{ready: true}
+		},
+		taskState:          ps,
+		taskStore:          store,
+		taskStoreProject:   "test",
+		taskStateDir:       plansDir,
+		fsm:                fsm,
+		activeRepoPath:     dir,
+		program:            "opencode",
+		instanceFinalizers: make(map[*session.Instance]func()),
+	}
+	h.updateSidebarTasks()
+	require.True(t, h.nav.SelectByID(ui.SidebarPlanPrefix+planFile))
+
+	// Trigger cancel_plan to install the pendingConfirmAction.
+	_, confirmCmd := h.executeContextAction("cancel_plan")
+	// confirmAction returns nil (the confirm overlay is shown synchronously).
+	assert.Nil(t, confirmCmd, "confirmAction must return nil Cmd")
+	require.NotNil(t, h.pendingConfirmAction, "cancel_plan must set pendingConfirmAction")
+
+	// Simulate daemon advancing to Done while the confirmation overlay is open.
+	require.NoError(t, fsm.Transition(planFile, taskfsm.ImplementFinished))
+	require.NoError(t, fsm.Transition(planFile, taskfsm.ReviewApproved))
+	require.NoError(t, fsm.Transition(planFile, taskfsm.VerifyApproved))
+
+	// User confirms — the pending action must detect the stale state.
+	msg := h.pendingConfirmAction()
+
+	rejected, ok := msg.(lifecycleActionRejectedMsg)
+	require.True(t, ok, "expected lifecycleActionRejectedMsg after state drift, got %T: %v", msg, msg)
+	assert.Contains(t, rejected.message, "task state changed",
+		"rejection message must indicate the task state changed")
+
+	// The task must still be Done, not Cancelled.
+	reloaded, err := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
+	freshEntry, exists := reloaded.Entry(planFile)
+	require.True(t, exists)
+	assert.Equal(t, taskstate.StatusDone, freshEntry.Status,
+		"cancel on a Done task must be rejected; task must remain Done not Cancelled")
+}
+
+// TestInstanceSignalItems_ReviewerAgent_WhenVerifying_NoSignals is a negative
+// case: a reviewer instance paired with a StatusVerifying task must NOT be
+// offered mark_review_approved or mark_review_changes_requested because the
+// FSM does not allow ReviewApproved from StatusVerifying.
+//
+// This mirrors the positive case in TestInstanceSignalItems_MasterAgent_HasReadinessSignals
+// and verifies that instanceSignalItems and emitSelectedInstanceSignal share the
+// same FSM-gating rules — so stale menus can never offer actions the action
+// handler would reject.
+func TestInstanceSignalItems_ReviewerAgent_WhenVerifying_NoSignals(t *testing.T) {
+	inst := &session.Instance{
+		Title:     "stale-reviewer-1",
+		TaskFile:  "my-plan.md",
+		AgentType: session.AgentTypeReviewer,
+	}
+	// StatusVerifying is entered after the reviewer approved — the reviewer
+	// signal items must no longer be offered at this point.
+	entry := taskstate.TaskEntry{Status: taskstate.StatusVerifying}
+
+	items := instanceSignalItems(inst, entry, true)
+
+	var actions []string
+	for _, item := range items {
+		actions = append(actions, item.Action)
+	}
+	assert.NotContains(t, actions, "mark_review_approved",
+		"reviewer must NOT offer mark_review_approved when task is verifying")
+	assert.NotContains(t, actions, "mark_review_changes_requested",
+		"reviewer must NOT offer mark_review_changes_requested when task is verifying")
+}
