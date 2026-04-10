@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/kastheco/kasmos/internal/binpath"
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
 )
 
@@ -111,17 +112,20 @@ var kasmosMCPToolPermissions = []string{
 	"mcp__kasmos__symbols",
 }
 
-// claudeMCPJSON is the default .mcp.json content registering the kasmos MCP server via stdio.
-const claudeMCPJSON = `{
+// claudeMCPJSON returns the default .mcp.json content registering the kasmos
+// MCP server via stdio using the given kas executable path.
+func claudeMCPJSON(kasPath string) string {
+	return fmt.Sprintf(`{
   "mcpServers": {
     "kasmos": {
       "type": "stdio",
-      "command": "kas",
+      "command": %q,
       "args": ["mcp"]
     }
   }
 }
-`
+`, kasPath)
+}
 
 // EnsureClaudeProjectSettings patches .claude/settings.json so Claude auto-enables
 // project MCP servers and pre-approves the kasmos server while preserving any
@@ -211,8 +215,9 @@ func EnsureClaudeProjectSettings(dir string) (WriteResult, error) {
 // WriteClaudeMCPConfig writes .mcp.json at the project root registering the kasmos MCP server.
 // Respects force: if force is false and the file already exists it is skipped.
 func WriteClaudeMCPConfig(dir string, force bool) (WriteResult, error) {
+	kasPath := binpath.ResolveOrFallback().Executable
 	dest := filepath.Join(dir, ".mcp.json")
-	written, err := writeFile(dest, []byte(claudeMCPJSON), force)
+	written, err := writeFile(dest, []byte(claudeMCPJSON(kasPath)), force)
 	if err != nil {
 		return WriteResult{}, fmt.Errorf("write .mcp.json: %w", err)
 	}
@@ -223,9 +228,28 @@ func WriteClaudeMCPConfig(dir string, force bool) (WriteResult, error) {
 	return WriteResult{Path: rel, Created: written}, nil
 }
 
+// claudeMCPEntryUpToDate returns true when entry already has the correct stdio
+// transport pointing at kasPath with args ["mcp"].
+func claudeMCPEntryUpToDate(entry map[string]any, kasPath string) bool {
+	if entry["type"] != "stdio" {
+		return false
+	}
+	if entry["command"] != kasPath {
+		return false
+	}
+	args, _ := entry["args"].([]any)
+	if len(args) != 1 {
+		return false
+	}
+	s, ok := args[0].(string)
+	return ok && s == "mcp"
+}
+
 // EnsureClaudeMCPEntry patches .mcp.json at the project root to guarantee the kasmos MCP server
-// entry is present. Existing servers added by the user are preserved.
+// entry is present and uses the resolved kas executable path. Existing non-kasmos servers are
+// preserved. Legacy HTTP entries and bare "kas" command entries are rewritten in place.
 func EnsureClaudeMCPEntry(dir string) (WriteResult, error) {
+	kasPath := binpath.ResolveOrFallback().Executable
 	dest := filepath.Join(dir, ".mcp.json")
 	result := WriteResult{Path: ".mcp.json", Created: false}
 
@@ -248,13 +272,12 @@ func EnsureClaudeMCPEntry(dir string) (WriteResult, error) {
 
 	want := map[string]any{
 		"type":    "stdio",
-		"command": "kas",
+		"command": kasPath,
 		"args":    []any{"mcp"},
 	}
 
 	if existing, exists := servers["kasmos"]; exists {
-		// Migrate http → stdio if needed.
-		if entry, ok := existing.(map[string]any); ok && entry["type"] == "stdio" {
+		if entry, ok := existing.(map[string]any); ok && claudeMCPEntryUpToDate(entry, kasPath) {
 			return result, nil // already correct — nothing to do
 		}
 	}
@@ -318,7 +341,10 @@ func renderOpenCodeConfig(dir string, agents []harness.AgentConfig) (string, err
 		return "", fmt.Errorf("get home dir: %w", err)
 	}
 
+	kasPath := binpath.ResolveOrFallback().Executable
+
 	rendered := string(content)
+	rendered = strings.ReplaceAll(rendered, "{{KAS_PATH}}", kasPath)
 	rendered = strings.ReplaceAll(rendered, "{{HOME_DIR}}", homeDir)
 	rendered = strings.ReplaceAll(rendered, "{{PROJECT_DIR}}", dir)
 

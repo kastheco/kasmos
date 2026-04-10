@@ -83,7 +83,7 @@ By default it:
   - preserves .kasmos/config.toml and .kasmos/taskstore.db
   - removes scaffold/runtime directories such as .claude/, .opencode/, .codex/
   - re-syncs scaffold files from the current repo config
-  - rewrites .mcp.json to point at the local kasmos MCP endpoint`,
+  - rewrites .mcp.json to use the resolved kas binary via stdio transport`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			prompt := cmd.InOrStdin()
 			if !yes && !dryRun && !stdinIsTerminal(cmd.InOrStdin()) {
@@ -635,8 +635,8 @@ func profilesToAgentConfigs(profiles map[string]config.AgentProfile) []initcmdha
 }
 
 func defaultRepoResetWriteMCP(repo string) error {
-	content := "{\n  \"mcpServers\": {\n    \"kasmos\": {\n      \"type\": \"http\",\n      \"url\": \"http://127.0.0.1:7434/mcp\"\n    }\n  }\n}\n"
-	return os.WriteFile(filepath.Join(repo, ".mcp.json"), []byte(content), 0o644)
+	_, err := scaffold.EnsureClaudeMCPEntry(repo)
+	return err
 }
 
 func defaultRepoResetStopServices(opts repoResetOptions) error {

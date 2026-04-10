@@ -3,7 +3,7 @@
   "mcp": {
     "kasmos": {
       "type": "local",
-      "command": ["kas", "mcp"],
+      "command": ["{{KAS_PATH}}", "mcp"],
       "enabled": true
     }
   },
