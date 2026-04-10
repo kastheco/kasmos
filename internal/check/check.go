@@ -3,6 +3,7 @@ package check
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
 )
@@ -63,9 +64,10 @@ type ProjectSkillEntry struct {
 
 // AuditResult is the complete output of kas check.
 type AuditResult struct {
-	Global    []HarnessResult
-	Project   []ProjectSkillEntry
-	InProject bool // whether cwd is a kas project
+	Global     []HarnessResult
+	Project    []ProjectSkillEntry
+	InProject  bool              // whether cwd is a kas project
+	BinaryPath *BinaryPathResult // always populated
 }
 
 // Audit runs all three audit layers and returns a complete result.
@@ -91,6 +93,9 @@ func Audit(home, projectDir string, registry *harness.Registry) *AuditResult {
 	if result.InProject {
 		result.Project = AuditProject(projectDir, harnessNames)
 	}
+
+	// Binary path audit — always populated regardless of project detection.
+	result.BinaryPath = AuditBinaryPaths(home, projectDir, runtime.GOOS)
 
 	return result
 }
@@ -126,6 +131,12 @@ func (r *AuditResult) Summary() (int, int) {
 				ok++
 			}
 		}
+	}
+	// Binary path checks
+	if r.BinaryPath != nil {
+		bpOK, bpTotal := r.BinaryPath.summary()
+		ok += bpOK
+		total += bpTotal
 	}
 	return ok, total
 }

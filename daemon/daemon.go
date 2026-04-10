@@ -22,10 +22,10 @@ import (
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/internal/binpath"
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/orchestration"
-	"github.com/kastheco/kasmos/internal/binpath"
 	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
 	gitpkg "github.com/kastheco/kasmos/session/git"
@@ -426,6 +426,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 		d.logger.Warn("recover sessions failed", "err", recErr)
 	} else if recovered > 0 {
 		d.logger.Info("recovered orphan sessions", "count", recovered)
+	}
+
+	// Warn about binary-path skew in each registered repo's project files.
+	// This is best-effort: errors are swallowed so they never block startup.
+	for _, e := range d.repos.List() {
+		warnBinaryPathSkew(d.logger, e.Path)
 	}
 
 	// Remove any stale socket file before listening.
@@ -2030,4 +2036,38 @@ func StopDaemon() error {
 
 	log.InfoLog.Printf("daemon stopped (PID=%d)", pid)
 	return nil
+}
+
+// warnBinaryPathSkew inspects the project files in repoPath and logs a Warn
+// entry for every kasmos binary reference that does not match the running kas
+// executable. Missing files and healthy matches are silently ignored.
+// Errors during resolution are also silently swallowed so startup is never
+// blocked.
+func warnBinaryPathSkew(logger *slog.Logger, repoPath string) {
+	info, err := binpath.Resolve()
+	if err != nil {
+		// Cannot determine running path — skip the audit rather than spamming noise.
+		return
+	}
+
+	refs := binpath.InspectProjectFiles(repoPath)
+	for _, ref := range refs {
+		if ref.Note != "" && strings.Contains(ref.Note, "not installed") {
+			continue
+		}
+		// Healthy: normalized path matches running canonical.
+		if ref.Normalized != "" && ref.Normalized == info.Canonical {
+			continue
+		}
+		// Nothing to report if both paths are empty (parse failure, etc.).
+		if ref.RawPath == "" && ref.Normalized == "" {
+			continue
+		}
+		logger.Warn("binary path skew detected",
+			"repo", repoPath,
+			"file", ref.File,
+			"configured_path", ref.RawPath,
+			"running_path", info.Executable,
+		)
+	}
 }

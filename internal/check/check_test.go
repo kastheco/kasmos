@@ -99,3 +99,63 @@ func TestSummary_MissingSkillMDCountsAsNotOK(t *testing.T) {
 	assert.Equal(t, 1, ok)
 	assert.Equal(t, 2, total)
 }
+
+func TestAudit_PopulatesBinaryPath(t *testing.T) {
+	home := t.TempDir()
+	projectDir := t.TempDir()
+	registry := harness.NewRegistry()
+	result := Audit(home, projectDir, registry)
+
+	assert.NotNil(t, result.BinaryPath, "BinaryPath should always be populated")
+}
+
+func TestSummary_BinaryPathMismatchCountsAsUnhealthy(t *testing.T) {
+	result := &AuditResult{
+		BinaryPath: &BinaryPathResult{
+			RunningExecutable: "/usr/local/bin/kas",
+			RunningCanonical:  "/usr/local/bin/kas",
+			References: []BinaryPathReference{
+				{
+					File:       ".mcp.json",
+					Label:      "mcpServers.kasmos",
+					RawPath:    "/old/kas",
+					Normalized: "/old/kas",
+					Healthy:    false,
+				},
+			},
+		},
+	}
+	ok, total := result.Summary()
+	// 1 running (ok) + 1 mismatch (not ok)
+	assert.Equal(t, 1, ok)
+	assert.Equal(t, 2, total)
+}
+
+func TestSummary_MissingServiceFilesNotCountedAgainstHealth(t *testing.T) {
+	result := &AuditResult{
+		BinaryPath: &BinaryPathResult{
+			RunningExecutable: "/usr/local/bin/kas",
+			RunningCanonical:  "/usr/local/bin/kas",
+			References: []BinaryPathReference{
+				{
+					File:         "kasmos.service",
+					Label:        "ExecStart",
+					Note:         "not installed",
+					NotInstalled: true,
+				},
+			},
+		},
+	}
+	ok, total := result.Summary()
+	// 1 running ok, not-installed refs excluded
+	assert.Equal(t, 1, ok)
+	assert.Equal(t, 1, total)
+}
+
+func TestSummary_NilBinaryPathNotPanics(t *testing.T) {
+	result := &AuditResult{}
+	ok, total := result.Summary()
+	// Should not panic; binary path adds 0 to both counts
+	assert.Equal(t, 0, ok)
+	assert.Equal(t, 0, total)
+}

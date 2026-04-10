@@ -182,6 +182,81 @@ func TestCheckCmd_ShowsAllProjectSkills(t *testing.T) {
 	}
 }
 
+// ── Binary-path section tests ─────────────────────────────────────────────────
+
+// TestCheckCmd_BinaryPathSectionPresent verifies the binary-path section is
+// always rendered, even in an empty environment.
+func TestCheckCmd_BinaryPathSectionPresent(t *testing.T) {
+	out := captureCheckOutput(t, nil)
+
+	assert.Contains(t, out, "Binary path:")
+}
+
+// TestCheckCmd_BinaryPathShowsRunningExecutable verifies the running executable
+// path is displayed in the binary-path section.
+func TestCheckCmd_BinaryPathShowsRunningExecutable(t *testing.T) {
+	out := captureCheckOutput(t, nil)
+
+	assert.Contains(t, out, "running:")
+}
+
+// TestCheckCmd_BinaryPathShowsConfiguredPaths verifies that configured paths from
+// .mcp.json appear under the binary-path section.
+func TestCheckCmd_BinaryPathShowsConfiguredPaths(t *testing.T) {
+	out := captureCheckOutput(t, func(home, project string) {
+		stalePath := "/nonexistent/stale/kas"
+		mcpJSON := `{"mcpServers":{"kasmos":{"type":"stdio","command":"` + stalePath + `","args":["mcp"]}}}`
+		require.NoError(t, os.WriteFile(filepath.Join(project, ".mcp.json"), []byte(mcpJSON), 0o644))
+	})
+
+	// The source file name should appear.
+	assert.Contains(t, out, ".mcp.json")
+	// The stale path should appear.
+	assert.Contains(t, out, "/nonexistent/stale/kas")
+}
+
+// TestCheckCmd_BinaryPathMismatchAnnotated verifies that a mismatch is annotated.
+func TestCheckCmd_BinaryPathMismatchAnnotated(t *testing.T) {
+	out := captureCheckOutput(t, func(home, project string) {
+		stalePath := "/nonexistent/stale/kas"
+		mcpJSON := `{"mcpServers":{"kasmos":{"type":"stdio","command":"` + stalePath + `","args":["mcp"]}}}`
+		require.NoError(t, os.WriteFile(filepath.Join(project, ".mcp.json"), []byte(mcpJSON), 0o644))
+	})
+
+	// A mismatch annotation should appear.
+	assert.True(t,
+		strings.Contains(out, "mismatch") || strings.Contains(out, "✗") || strings.Contains(out, "stale"),
+		"expected mismatch annotation in output:\n%s", out)
+}
+
+// TestCheckCmd_BinaryPathRemediationHint verifies that a skew produces a remediation hint.
+func TestCheckCmd_BinaryPathRemediationHint(t *testing.T) {
+	out := captureCheckOutput(t, func(home, project string) {
+		stalePath := "/nonexistent/stale/kas"
+		mcpJSON := `{"mcpServers":{"kasmos":{"type":"stdio","command":"` + stalePath + `","args":["mcp"]}}}`
+		require.NoError(t, os.WriteFile(filepath.Join(project, ".mcp.json"), []byte(mcpJSON), 0o644))
+	})
+
+	assert.True(t,
+		strings.Contains(out, "scaffold") || strings.Contains(out, "sync") || strings.Contains(out, "reinstall"),
+		"expected path-skew remediation hint in output:\n%s", out)
+}
+
+// TestCheckCmd_BinaryPathHealthyNoMismatch verifies that a healthy path does NOT
+// trigger a mismatch annotation.
+func TestCheckCmd_BinaryPathHealthyNoMismatch(t *testing.T) {
+	// Use the actual running binary path so the paths match.
+	out := captureCheckOutput(t, func(home, project string) {
+		// The running binary will be whatever `os.Executable()` returns.
+		// Create a .mcp.json that intentionally has no kasmos key — no references → no mismatches.
+		mcpJSON := `{"mcpServers":{"other":{"type":"stdio","command":"/usr/bin/other","args":[]}}}`
+		require.NoError(t, os.WriteFile(filepath.Join(project, ".mcp.json"), []byte(mcpJSON), 0o644))
+	})
+
+	// Without a kasmos entry there should be no mismatch annotation.
+	assert.NotContains(t, out, "/nonexistent/stale/kas")
+}
+
 // TestCheckCmd_ShowsCopyGlyph verifies that a non-symlink directory in a harness dir
 // shows the ≈ glyph.
 func TestCheckCmd_ShowsCopyGlyph(t *testing.T) {

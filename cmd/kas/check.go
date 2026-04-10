@@ -55,6 +55,9 @@ func runCheck(cmd *cobra.Command, args []string) error {
 	if result.InProject {
 		renderProject(cmd, result.Project, verbose)
 	}
+	if result.BinaryPath != nil {
+		renderBinaryPath(cmd, result.BinaryPath)
+	}
 
 	ok, total := result.Summary()
 	pct := 0
@@ -120,7 +123,63 @@ func collectRemediationHints(result *check.AuditResult) []string {
 		}
 	}
 
+	// Binary path skew hints — one deduplicated hint for any mismatch.
+	if result.BinaryPath != nil {
+		hasMismatch := false
+		for _, ref := range result.BinaryPath.References {
+			if !ref.NotInstalled && !ref.Healthy {
+				hasMismatch = true
+				break
+			}
+		}
+		if hasMismatch {
+			add("re-run `kas scaffold sync` to update config files with the current binary path, or reinstall service units")
+		}
+	}
+
 	return hints
+}
+
+// renderBinaryPath prints a dedicated binary-path section before the health summary.
+func renderBinaryPath(cmd *cobra.Command, bp *check.BinaryPathResult) {
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "\nBinary path:\n")
+
+	if bp.RunningErr != "" {
+		fmt.Fprintf(out, "  running: (unresolved: %s)\n", bp.RunningErr)
+	} else {
+		fmt.Fprintf(out, "  running: %s\n", bp.RunningExecutable)
+		if bp.RunningCanonical != bp.RunningExecutable && bp.RunningCanonical != "" {
+			fmt.Fprintf(out, "  canonical: %s\n", bp.RunningCanonical)
+		}
+	}
+
+	if len(bp.References) > 0 {
+		fmt.Fprintf(out, "  configured:\n")
+		for _, ref := range bp.References {
+			glyph := "✓"
+			annotation := ""
+			if ref.NotInstalled {
+				glyph = "–"
+				annotation = " (not installed)"
+			} else if !ref.Healthy {
+				glyph = "✗"
+				if ref.Note != "" {
+					annotation = " (" + ref.Note + ")"
+				} else if ref.Normalized != "" {
+					annotation = " (mismatch)"
+				} else {
+					annotation = " (stale)"
+				}
+			}
+			fmt.Fprintf(out, "    %s %-30s %s%s\n",
+				glyph,
+				ref.File+":"+ref.Label,
+				ref.RawPath,
+				annotation,
+			)
+		}
+	}
 }
 
 func renderGlobal(cmd *cobra.Command, results []check.HarnessResult, verbose bool) {
