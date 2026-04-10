@@ -1,3 +1,8 @@
+# Template: __KAS_BIN__ must be replaced with the absolute path to the installed
+# kas binary before enabling this unit. Use `just kasmosd-install` (which runs
+# `command -v kas` and substitutes the placeholder automatically) or substitute
+# manually: sed "s|__KAS_BIN__|$(command -v kas)|g" contrib/kasmos.service > ~/.config/systemd/user/kasmos.service
+
 [Unit]
 Description=kasmos orchestration daemon
 Documentation=https://github.com/kastheco/kasmos
@@ -5,8 +10,8 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%h/go/bin/kas daemon start --foreground
-ExecStop=%h/go/bin/kas daemon stop
+ExecStart=__KAS_BIN__ daemon start --foreground
+ExecStop=__KAS_BIN__ daemon stop
 Restart=on-failure
 RestartSec=5
 Environment=HOME=%h

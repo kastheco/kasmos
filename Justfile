@@ -45,8 +45,18 @@ kasmosd-install: install
         echo "installed: $PLIST_DST"
         ;;
       Linux)
+        KAS_BIN=$(command -v kas || true)
+        if [ -z "$KAS_BIN" ]; then
+          echo "error: kas not found in PATH; run 'just install' first" >&2
+          exit 1
+        fi
         mkdir -p ~/.config/systemd/user
-        cp contrib/kasmos.service ~/.config/systemd/user/
+        SERVICE_SRC="contrib/kasmos.service"
+        SERVICE_DST="$HOME/.config/systemd/user/kasmos.service"
+        content=$(<"$SERVICE_SRC")
+        content="${content//__KAS_BIN__/$KAS_BIN}"
+        printf '%s\n' "$content" > "$SERVICE_DST"
+        echo "installed: $SERVICE_DST"
         systemctl --user daemon-reload
         ;;
       *) echo "error: unsupported platform '$(uname -s)'" >&2; exit 1 ;;
@@ -87,8 +97,18 @@ db-service-install: install
         echo "installed: $PLIST_DST"
         ;;
       Linux)
+        KAS_BIN=$(command -v kas || true)
+        if [ -z "$KAS_BIN" ]; then
+          echo "error: kas not found in PATH; run 'just install' first" >&2
+          exit 1
+        fi
         mkdir -p ~/.config/systemd/user
-        cp contrib/kasmosdb.service ~/.config/systemd/user/
+        SERVICE_SRC="contrib/kasmosdb.service"
+        SERVICE_DST="$HOME/.config/systemd/user/kasmosdb.service"
+        content=$(<"$SERVICE_SRC")
+        content="${content//__KAS_BIN__/$KAS_BIN}"
+        printf '%s\n' "$content" > "$SERVICE_DST"
+        echo "installed: $SERVICE_DST"
         systemctl --user daemon-reload
         ;;
       *) echo "error: unsupported platform '$(uname -s)'" >&2; exit 1 ;;

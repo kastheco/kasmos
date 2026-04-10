@@ -13,7 +13,7 @@ kasmos ships service unit files in `contrib/` for both Linux (systemd) and macOS
 
 ## linux (systemd)
 
-Both units run under your user account (`systemctl --user`) and depend on the `kas` binary being on `$PATH` at `~/go/bin/kas`.
+Both units run under your user account (`systemctl --user`) and require an absolute path to the `kas` binary. The `contrib/*.service` files are templates — the `__KAS_BIN__` placeholder must be substituted before enabling a unit.
 
 ### preferred workflow (just)
 
@@ -28,7 +28,7 @@ just kasmosd-enable
 just db-service-enable
 ```
 
-Each `just` recipe copies the appropriate `.service` file from `contrib/` to `~/.config/systemd/user/`, runs `systemctl --user daemon-reload`, and enables + starts the unit.
+Each `just` recipe resolves the `kas` binary via `command -v kas`, renders the `.service` template with the absolute path, writes the result to `~/.config/systemd/user/`, runs `systemctl --user daemon-reload`, and enables + starts the unit.
 
 ### manual installation
 
@@ -38,12 +38,16 @@ If you do not have `just` installed:
 mkdir -p ~/.config/systemd/user
 
 # orchestration daemon
-cp contrib/kasmos.service ~/.config/systemd/user/
+sed "s|__KAS_BIN__|$(command -v kas)|g" \
+  contrib/kasmos.service \
+  > ~/.config/systemd/user/kasmos.service
 systemctl --user daemon-reload
 systemctl --user enable --now kasmos
 
 # task store
-cp contrib/kasmosdb.service ~/.config/systemd/user/
+sed "s|__KAS_BIN__|$(command -v kas)|g" \
+  contrib/kasmosdb.service \
+  > ~/.config/systemd/user/kasmosdb.service
 systemctl --user daemon-reload
 systemctl --user enable --now kasmosdb
 ```
@@ -76,7 +80,7 @@ systemctl --user disable kasmosdb
 
 ### service file contents
 
-`contrib/kasmos.service`:
+`contrib/kasmos.service` (template — `__KAS_BIN__` is substituted by `just kasmosd-install`):
 
 ```ini
 [Unit]
@@ -85,8 +89,8 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%h/go/bin/kas daemon start --foreground
-ExecStop=%h/go/bin/kas daemon stop
+ExecStart=__KAS_BIN__ daemon start --foreground
+ExecStop=__KAS_BIN__ daemon stop
 Restart=on-failure
 RestartSec=5
 Environment=HOME=%h
@@ -98,7 +102,14 @@ SyslogIdentifier=kasmos
 WantedBy=default.target
 ```
 
-`contrib/kasmosdb.service`:
+Installed unit example (with `kas` at `/home/you/go/bin/kas`):
+
+```ini
+ExecStart=/home/you/go/bin/kas daemon start --foreground
+ExecStop=/home/you/go/bin/kas daemon stop
+```
+
+`contrib/kasmosdb.service` (template — `__KAS_BIN__` is substituted by `just db-service-install`):
 
 ```ini
 [Unit]
@@ -107,7 +118,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%h/go/bin/kas serve
+ExecStart=__KAS_BIN__ serve
 Restart=on-failure
 RestartSec=5
 Environment=HOME=%h
@@ -116,7 +127,7 @@ Environment=HOME=%h
 WantedBy=default.target
 ```
 
-`%h` expands to your home directory. Both units use `Restart=on-failure` so they recover from crashes without manual intervention.
+Both units use `Restart=on-failure` so they recover from crashes without manual intervention.
 
 ---
 

@@ -4,7 +4,7 @@ kasmos ships service unit templates in `contrib/` and a set of Just recipes for 
 
 ## prerequisites
 
-- `kas` binary installed in `~/go/bin/` (via `just install` or `go install github.com/kastheco/kasmos/cmd/kas@latest`)
+- `kas` binary installed and on `$PATH` (via `just install` or `go install github.com/kastheco/kasmos/cmd/kas@latest`)
 - **linux only** — systemd user session available (`loginctl enable-linger` on headless servers)
 - **macOS only** — no extra setup needed; launchd is always available
 
@@ -29,7 +29,7 @@ just services-enable
 
 1. Calls `just install` — builds and installs the `kas` binary, creates the optional `kms` alias.
 2. Installs the service definition for the current platform:
-   - **linux** — copies `contrib/kasmos.service` to `~/.config/systemd/user/` and reloads the daemon.
+   - **linux** — resolves the `kas` binary via `command -v kas`, renders `contrib/kasmos.service` by substituting `__KAS_BIN__` with the absolute path, writes the result to `~/.config/systemd/user/kasmos.service`, and reloads the daemon.
    - **macOS** — renders `contrib/com.kasmos.daemon.plist` with the current `$HOME` and binary path, copies it to `~/Library/LaunchAgents/`, and loads it with `launchctl`.
 3. Enables and starts the service.
 
@@ -65,7 +65,7 @@ just doctord
 
 ### linux — systemd
 
-`contrib/kasmos.service`:
+`contrib/kasmos.service` is a template. `__KAS_BIN__` is replaced with the absolute binary path during `just kasmosd-install`. The installed unit looks like:
 
 ```ini
 [Unit]
@@ -75,8 +75,8 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%h/go/bin/kas daemon start --foreground
-ExecStop=%h/go/bin/kas daemon stop
+ExecStart=/home/you/go/bin/kas daemon start --foreground
+ExecStop=/home/you/go/bin/kas daemon stop
 Restart=on-failure
 RestartSec=5
 Environment=HOME=%h
@@ -88,13 +88,13 @@ SyslogIdentifier=kasmos
 WantedBy=default.target
 ```
 
-`%h` expands to the user's home directory. Logs go to the journal:
+Logs go to the journal:
 
 ```sh
 journalctl --user -u kasmos -f
 ```
 
-`contrib/kasmosdb.service` follows the same pattern for `kas serve`.
+`contrib/kasmosdb.service` follows the same template pattern for `kas serve`.
 
 ### macOS — launchd
 

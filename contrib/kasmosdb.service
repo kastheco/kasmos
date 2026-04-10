@@ -1,3 +1,8 @@
+# Template: __KAS_BIN__ must be replaced with the absolute path to the installed
+# kas binary before enabling this unit. Use `just db-service-install` (which runs
+# `command -v kas` and substitutes the placeholder automatically) or substitute
+# manually: sed "s|__KAS_BIN__|$(command -v kas)|g" contrib/kasmosdb.service > ~/.config/systemd/user/kasmosdb.service
+
 [Unit]
 Description=kasmos plan store server
 Documentation=https://github.com/kastheco/kasmos
@@ -5,8 +10,8 @@ After=network.target kasmos.service
 
 [Service]
 Type=simple
-# example: ExecStart=%h/go/bin/kas serve --repo %h/dev/kasmos
-ExecStart=%h/go/bin/kas serve
+# example: ExecStart=__KAS_BIN__ serve --repo /home/you/dev/kasmos
+ExecStart=__KAS_BIN__ serve
 Restart=on-failure
 RestartSec=5
 Environment=HOME=%h
