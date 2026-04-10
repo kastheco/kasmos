@@ -1,10 +1,11 @@
-import { useMemo, type ComponentProps } from "react";
-import { useLocation, useParams } from "react-router";
+import { type ComponentProps } from "react";
+import { useParams } from "react-router";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { TaskEntry, SubtaskEntry } from "../types";
-import { getTask, getTaskContent, getSubtasks, resolveProjectName } from "../api";
+import { getTask, getTaskContent, getSubtasks } from "../api";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
+import { useProject } from "../hooks/useProject";
 import StatusBadge from "../components/StatusBadge";
 import MetadataPanel from "../components/MetadataPanel";
 import SubtaskProgress from "../components/SubtaskProgress";
@@ -55,13 +56,13 @@ export default function TaskDetailPage() {
   const { filename: rawFilename } = useParams<{ filename: string }>();
   const filename = rawFilename ? decodeURIComponent(rawFilename) : undefined;
 
-  const { search } = useLocation();
-  const project = useMemo(() => resolveProjectName(search), [search]);
+  const { project } = useProject();
 
   const { data, loading, error, lastUpdatedAt, isRefreshing } =
-    useAutoRefresh<TaskDetailData>(
+    useAutoRefresh<TaskDetailData | null>(
       async () => {
         if (!filename) throw new Error("no task filename provided");
+        if (!project) return null;
         const [task, content, subtasks] = await Promise.all([
           getTask(project, filename),
           getTaskContent(project, filename),

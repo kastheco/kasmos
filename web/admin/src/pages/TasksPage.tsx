@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Link, useLocation } from "react-router";
+import { Link } from "react-router";
 import StatusBadge from "../components/StatusBadge";
 import LastUpdated from "../components/LastUpdated";
 import Skeleton from "../components/Skeleton";
-import { listTasks, resolveProjectName } from "../api";
+import { listTasks } from "../api";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
+import { useProject } from "../hooks/useProject";
 import type { Status, TaskEntry } from "../types";
 import styles from "./TasksPage.module.css";
 
@@ -29,18 +30,19 @@ function formatDate(value?: string): string {
   if (!value) return "—";
   const d = new Date(value);
   if (isNaN(d.getTime())) return "—";
+  if (d.getFullYear() <= 1) return "—";
   return d.toISOString().slice(0, 10);
 }
 
 export default function TasksPage() {
-  const location = useLocation();
-  const project = resolveProjectName(location.search);
+  const { project, projectSearch } = useProject();
 
   const [statusFilter, setStatusFilter] = useState<TaskFilter>("all");
 
   const { data, loading, error, lastUpdatedAt, isRefreshing } =
     useAutoRefresh<TaskEntry[]>(
       async () => {
+        if (!project) return [];
         const data = await listTasks(project);
         return [...data].sort(
           (a, b) =>
@@ -115,7 +117,10 @@ export default function TasksPage() {
                       </td>
                       <td>
                         <Link
-                          to={`/tasks/${encodeURIComponent(task.filename)}`}
+                          to={{
+                            pathname: `/tasks/${encodeURIComponent(task.filename)}`,
+                            search: projectSearch,
+                          }}
                           className={styles.taskLink}
                         >
                           {task.filename}

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -156,6 +157,45 @@ func openServeSQLiteBackends(dbPath string) (*sql.DB, taskstore.Store, taskstore
 	return sharedDB, store, gw, logger, nil
 }
 
+// newProjectListHandler returns an HTTP handler that responds with a sorted,
+// deduplicated JSON array of project names. In repo-scoped mode (validProjects
+// non-empty), it returns exactly the registered project names so that stale
+// DB-only entries are excluded and newly registered repos with no task rows
+// still appear. In bare-DB mode it queries the shared SQLite database.
+func newProjectListHandler(sharedDB *sql.DB, validProjects map[string]struct{}) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// Repo-scoped mode: return exactly the registered project names.
+		if len(validProjects) > 0 {
+			projects := make([]string, 0, len(validProjects))
+			for p := range validProjects {
+				projects = append(projects, p)
+			}
+			sort.Strings(projects)
+			_ = json.NewEncoder(w).Encode(projects)
+			return
+		}
+
+		// Bare-DB mode: query all distinct projects from the database.
+		if sharedDB == nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "projects db unavailable"})
+			return
+		}
+		projects, err := taskstore.ListDistinctProjectsFromDB(sharedDB)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		if projects == nil {
+			projects = []string{}
+		}
+		_ = json.NewEncoder(w).Encode(projects)
+	}
+}
+
 // NewServeCmd returns the `kas serve` cobra command.
 // It starts an HTTP server backed by a SQLite task store, and optionally
 // an MCP server on a second port sharing the same store and signal gateway.
@@ -218,6 +258,9 @@ func NewServeCmd() *cobra.Command {
 
 			rootMux := http.NewServeMux()
 			rootMux.Handle("/v1/ping", taskAPI)
+			// Project listing endpoint — scoped to repoRegs.valid when repos
+			// are configured so it stays consistent with projectValidationMiddleware.
+			rootMux.Handle("GET /v1/projects", newProjectListHandler(sharedDB, repoRegs.valid))
 			// Route audit-events exactly, then fall through to the task API for everything else.
 			// Go 1.22+ mux gives the more-specific method+path pattern precedence over the
 			// plain prefix, so GET audit-events is handled by auditAPI and all other

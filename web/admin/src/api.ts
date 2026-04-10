@@ -71,6 +71,10 @@ export function resolveProjectName(
   return "kasmos";
 }
 
+export async function listProjects(): Promise<string[]> {
+  return (await requestJSON<string[] | null>("/v1/projects")) ?? [];
+}
+
 export async function listTasks(project: string): Promise<TaskEntry[]> {
   return (await requestJSON<TaskEntry[] | null>(
     `/v1/projects/${encodeURIComponent(project)}/tasks`,

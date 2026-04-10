@@ -1,7 +1,11 @@
 import { NavLink, Outlet } from "react-router";
 import styles from "./Layout.module.css";
+import { useProject } from "./hooks/useProject";
+import ProjectSwitcher from "./components/ProjectSwitcher";
 
 export default function Layout() {
+  const { projectSearch } = useProject();
+
   return (
     <div className={styles.container}>
       <nav className={styles.sidebar}>
@@ -12,7 +16,7 @@ export default function Layout() {
         <ul className={styles.navList}>
           <li>
             <NavLink
-              to="/"
+              to={{ pathname: "/", search: projectSearch }}
               end
               className={({ isActive }) =>
                 `${styles.navLink} ${isActive ? styles.active : ""}`
@@ -23,7 +27,7 @@ export default function Layout() {
           </li>
           <li>
             <NavLink
-              to="/tasks"
+              to={{ pathname: "/tasks", search: projectSearch }}
               className={({ isActive }) =>
                 `${styles.navLink} ${isActive ? styles.active : ""}`
               }
@@ -33,7 +37,7 @@ export default function Layout() {
           </li>
           <li>
             <NavLink
-              to="/audit"
+              to={{ pathname: "/audit", search: projectSearch }}
               className={({ isActive }) =>
                 `${styles.navLink} ${isActive ? styles.active : ""}`
               }
@@ -42,6 +46,9 @@ export default function Layout() {
             </NavLink>
           </li>
         </ul>
+        <div className={styles.switcherSection}>
+          <ProjectSwitcher />
+        </div>
       </nav>
       <main className={styles.main}>
         <Outlet />

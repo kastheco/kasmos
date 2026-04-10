@@ -23,6 +23,7 @@ export function useAutoRefresh<T>(
   const mountedRef = useRef(true);
   const hasDataRef = useRef(false);
   const inFlightRef = useRef(false);
+  const generationRef = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -36,6 +37,7 @@ export function useAutoRefresh<T>(
     if (inFlightRef.current) return; // skip if previous refresh still running
     inFlightRef.current = true;
 
+    const gen = generationRef.current;
     const hadData = hasDataRef.current;
     if (hadData) {
       setIsRefreshing(true);
@@ -45,13 +47,13 @@ export function useAutoRefresh<T>(
 
     try {
       const result = await load();
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || gen !== generationRef.current) return;
       setData(result);
       setError(null);
       setLastUpdatedAt(new Date());
       hasDataRef.current = true;
     } catch (err) {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || gen !== generationRef.current) return;
       const msg = err instanceof Error ? err.message : "failed to load";
       if (hadData) {
         // keep previous data and lastUpdatedAt, only surface the error
@@ -61,17 +63,23 @@ export function useAutoRefresh<T>(
         setData(null);
       }
     } finally {
-      inFlightRef.current = false;
-      if (mountedRef.current) {
-        setLoading(false);
-        setIsRefreshing(false);
+      if (gen === generationRef.current) {
+        inFlightRef.current = false;
+        if (mountedRef.current) {
+          setLoading(false);
+          setIsRefreshing(false);
+        }
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
-  // Initial load and re-load when deps change
+  // Initial load and re-load when deps change.  Bump the generation so any
+  // in-flight request from the previous deps is discarded on completion, and
+  // reset the in-flight guard so the new fetch proceeds immediately.
   useEffect(() => {
+    generationRef.current++;
+    inFlightRef.current = false;
     hasDataRef.current = false;
     setLoading(true);
     setError(null);

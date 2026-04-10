@@ -1,7 +1,7 @@
 import { useMemo } from "react";
-import { useLocation } from "react-router";
-import { listTasks, listAuditEvents, resolveProjectName } from "../api";
+import { listTasks, listAuditEvents } from "../api";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
+import { useProject } from "../hooks/useProject";
 import LastUpdated from "../components/LastUpdated";
 import Skeleton from "../components/Skeleton";
 import type { AuditEvent, Status, TaskEntry } from "../types";
@@ -62,12 +62,12 @@ function formatRelativeTime(timestamp: string): string {
 }
 
 export default function DashboardPage() {
-  const { search } = useLocation();
-  const project = useMemo(() => resolveProjectName(search), [search]);
+  const { project } = useProject();
 
   const { data, loading, error, lastUpdatedAt, isRefreshing } =
     useAutoRefresh<DashboardData>(
       async () => {
+        if (!project) return { tasks: [], events: [] };
         const [tasks, allEvents] = await Promise.all([
           listTasks(project),
           listAuditEvents(project),

@@ -1,0 +1,53 @@
+name: Admin Dist Freshness
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/admin/src/**'
+      - 'web/admin/package.json'
+      - 'web/admin/package-lock.json'
+      - 'web/admin/vite.config.ts'
+      - 'web/admin/tsconfig*.json'
+      - '.github/workflows/admin-dist-check.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'web/admin/src/**'
+      - 'web/admin/package.json'
+      - 'web/admin/package-lock.json'
+      - 'web/admin/vite.config.ts'
+      - 'web/admin/tsconfig*.json'
+      - '.github/workflows/admin-dist-check.yml'
+
+jobs:
+  check:
+    name: Verify committed dist matches source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/admin/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: web/admin
+
+      - name: Build
+        run: npm run build
+        working-directory: web/admin
+
+      - name: Check dist is up to date
+        run: |
+          if ! git diff --exit-code web/admin/dist/; then
+            echo ""
+            echo "ERROR: web/admin/dist/ is stale — the committed build artifacts"
+            echo "do not match the current source. Run 'cd web/admin && npm run build'"
+            echo "and commit the updated dist/ files."
+            exit 1
+          fi
