@@ -248,6 +248,15 @@ type home struct {
 	// pendingConfirmAction stores the tea.Cmd to run asynchronously when confirmed
 	pendingConfirmAction tea.Cmd
 
+	// contextMenuTaskFile tracks the plan file backing the current task context menu.
+	// Set when opening a task context menu; cleared on every stateContextMenu exit path.
+	// The metadata tick compares it against the live FSM state to detect drift.
+	contextMenuTaskFile string
+	// contextMenuTaskStatus and contextMenuTaskPhase capture the lifecycle state at
+	// menu-open time so the metadata tick can detect FSM changes while the menu is open.
+	contextMenuTaskStatus taskstate.Status
+	contextMenuTaskPhase  string
+
 	// nav handles unified navigation state
 	// focusSlot tracks which pane has keyboard focus in the Tab ring:
 	// 0=nav, 1=tabs (center pane)
@@ -1542,31 +1551,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				taskfsm.ConsumeTaskSignal(ts)
 			}
 
-			// Retry deferred PlannerFinished dialogs — show the first queued plan
-			// whose dialog was skipped because an overlay or focus mode was active.
-			if len(m.deferredPlannerDialogs) > 0 && m.state != stateFocusAgent && !m.isUserInOverlay() {
-				planFile := m.deferredPlannerDialogs[0]
-				m.deferredPlannerDialogs = m.deferredPlannerDialogs[1:]
-				if !m.plannerPrompted[planFile] {
-					for _, inst := range m.nav.GetInstances() {
-						if inst.TaskFile == planFile && inst.AgentType == session.AgentTypePlanner {
-							if cmd := m.focusInstanceForOverlay(inst); cmd != nil {
-								signalCmds = append(signalCmds, cmd)
-							}
-							m.pendingPlannerInstanceTitle = inst.Title
-							break
-						}
-					}
-					m.pendingPlannerTaskFile = planFile
-					m.confirmAction(
-						fmt.Sprintf("task '%s' is ready. start implementation?", taskstate.DisplayName(planFile)),
-						func() tea.Msg {
-							return plannerCompleteMsg{planFile: planFile}
-						},
-					)
-				}
-			}
-
 			// Process wave signals — trigger implementation for specific waves.
 			for _, ws := range msg.WaveSignals {
 				taskfsm.ConsumeWaveSignal(ws)
@@ -1964,56 +1948,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-			// Drain deferred all-complete prompts that were blocked by an overlay or
-			// by focus mode. First purge entries the user already dismissed or has
-			// already accepted, since earlier ticks may have accumulated duplicates.
-			if len(m.pendingAllComplete) > 0 && (len(m.allCompleteDismissed) > 0 || len(m.allCompleteAdvancing) > 0) {
-				filtered := m.pendingAllComplete[:0]
-				for _, pf := range m.pendingAllComplete {
-					if !m.allCompleteDismissed[pf] && !m.allCompleteAdvancing[pf] {
-						filtered = append(filtered, pf)
-					}
-				}
-				m.pendingAllComplete = filtered
-			}
-			if m.state != stateFocusAgent && !m.isUserInOverlay() && len(m.pendingAllComplete) > 0 {
-				planFile := m.pendingAllComplete[0]
-				m.pendingAllComplete = m.pendingAllComplete[1:]
-				if cmd := m.focusPlanInstanceForOverlay(planFile); cmd != nil {
-					asyncCmds = append(asyncCmds, cmd)
-				}
-				m.showAllCompletePrompt(planFile)
-			}
-
-			// Drain deferred coder-push dialogs when focus mode is no longer active.
-			if m.state != stateFocusAgent && !m.isUserInOverlay() && len(m.deferredCoderPushDialogs) > 0 {
-				planFile := m.deferredCoderPushDialogs[0]
-				m.deferredCoderPushDialogs = m.deferredCoderPushDialogs[1:]
-				if cmd := m.showCoderPushDialog(planFile); cmd != nil {
-					asyncCmds = append(asyncCmds, cmd)
-				}
-			}
-
-			// Drain deferred wave-complete dialogs when focus mode is no longer active.
-			if m.state != stateFocusAgent && !m.isUserInOverlay() && len(m.deferredWaveDialogs) > 0 {
-				planFile := m.deferredWaveDialogs[0]
-				m.deferredWaveDialogs = m.deferredWaveDialogs[1:]
-				if orch, ok := m.waveOrchestrators[planFile]; ok {
-					for _, cmd := range m.showWaveDialog(planFile, orch) {
-						asyncCmds = append(asyncCmds, cmd)
-					}
-				}
-			}
-
-			// Drain deferred permission prompts when focus mode is no longer active.
-			if m.state != stateFocusAgent && !m.isUserInOverlay() && len(m.deferredPermissionPrompts) > 0 {
-				deferred := m.deferredPermissionPrompts[0]
-				m.deferredPermissionPrompts = m.deferredPermissionPrompts[1:]
-				if cmd := m.showPermissionPrompt(deferred); cmd != nil {
-					asyncCmds = append(asyncCmds, cmd)
-				}
-			}
-
 			// Wave completion monitoring: check task completion and trigger wave transitions.
 			// We process both orchestration.WaveStateRunning (check task statuses) and orchestration.WaveStateWaveComplete
 			// (re-show confirm dialog after user cancelled, resetting the latch via ResetConfirm).
@@ -2189,8 +2123,30 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.updateSidebarTasks()
 		m.updateInfoPane()
+
+		// Dismiss stale task-backed context menus when the FSM state has changed
+		// since the menu was opened. drainDeferredDialogs is always called below
+		// so a replacement overlay can appear on the same tick.
+		if m.contextMenuTaskFile != "" && m.state == stateContextMenu {
+			if entry, ok := m.taskState.Entry(m.contextMenuTaskFile); !ok {
+				m.overlays.Dismiss()
+				m.state = stateDefault
+				m.clearContextMenuTracking()
+				m.toastManager.Error("task removed; menu dismissed")
+			} else {
+				status, phase := lifecycleSnapshot(entry)
+				if status != m.contextMenuTaskStatus || phase != m.contextMenuTaskPhase {
+					m.overlays.Dismiss()
+					m.state = stateDefault
+					m.clearContextMenuTracking()
+					m.toastManager.Error(fmt.Sprintf("task changed to %s; menu dismissed", lifecycleSnapshotLabel(entry)))
+				}
+			}
+		}
+
 		completionCmd := m.checkPlanCompletion()
 		asyncCmds = append(asyncCmds, signalCmds...)
+		asyncCmds = append(asyncCmds, m.drainDeferredDialogs()...)
 		asyncCmds = append(asyncCmds, tickUpdateMetadataCmd, completionCmd)
 		// Restart toast tick loop if any toasts were created during this tick
 		// (e.g. by transitionToReview or spawnFixerWithFeedback).
@@ -2209,6 +2165,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.updateHandleWindowSizeEvent(msg)
 		return m, nil
+	case lifecycleActionRejectedMsg:
+		// Stale context menu race — show as a plain toast, not an audit-log error.
+		m.toastManager.Error(msg.message)
+		return m, m.toastTickCmd()
 	case error:
 		// Handle errors from confirmation actions
 		return m, m.handleError(msg)
@@ -2821,6 +2781,11 @@ type taskStageConfirmedMsg struct {
 // taskRefreshMsg triggers a plan state reload and sidebar refresh in Update.
 type taskRefreshMsg struct{}
 
+// lifecycleActionRejectedMsg is sent when a lifecycle action is rejected because
+// the task's FSM state changed after the context menu was opened. This is expected
+// UI churn (stale menu race), not an audit-log error.
+type lifecycleActionRejectedMsg struct{ message string }
+
 // waveAdvanceMsg is sent when the user confirms advancing to the next wave.
 type waveAdvanceMsg struct {
 	planFile string
@@ -3224,4 +3189,100 @@ func detectClickUpCmd(repoPath string) tea.Cmd {
 		}
 		return clickUpDetectedMsg{Config: cfg}
 	}
+}
+
+// lifecycleSnapshot returns the (status, phase) pair that uniquely identifies
+// the current FSM position of a task entry. Used to detect drift while a
+// context menu is open.
+func lifecycleSnapshot(entry taskstate.TaskEntry) (taskstate.Status, string) {
+	return entry.Status, entry.ExecutionState.Phase
+}
+
+// lifecycleSnapshotLabel formats the FSM snapshot as a human-readable label.
+// Phase-aware: emits labels such as "ready (planned)" or "implementing (architecting)"
+// so dismissal toasts explain which state the task moved to.
+func lifecycleSnapshotLabel(entry taskstate.TaskEntry) string {
+	status := string(entry.Status)
+	phase := strings.TrimSpace(entry.ExecutionState.Phase)
+	if phase != "" {
+		return fmt.Sprintf("%s (%s)", status, phase)
+	}
+	return status
+}
+
+// clearContextMenuTracking zeroes the fields that track the task backing an open
+// context menu. Must be called on every stateContextMenu exit path.
+func (m *home) clearContextMenuTracking() {
+	m.contextMenuTaskFile = ""
+	m.contextMenuTaskStatus = ""
+	m.contextMenuTaskPhase = ""
+}
+
+// drainDeferredDialogs drains one item from each deferred-dialog queue in order:
+// planner, all-complete, coder-push, wave, permission. It is a no-op when the
+// user is in focus mode or has any overlay open. Returns the async cmds produced.
+func (m *home) drainDeferredDialogs() []tea.Cmd {
+	if m.state == stateFocusAgent || m.isUserInOverlay() {
+		return nil
+	}
+	var cmds []tea.Cmd
+
+	// 1. Planner dialogs
+	if len(m.deferredPlannerDialogs) > 0 {
+		planFile := m.deferredPlannerDialogs[0]
+		m.deferredPlannerDialogs = m.deferredPlannerDialogs[1:]
+		if !m.plannerPrompted[planFile] {
+			if cmd := m.showPlannerDialog(planFile); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+	}
+
+	// 2. All-complete prompts — purge already-dismissed/advancing entries first.
+	if len(m.pendingAllComplete) > 0 && (len(m.allCompleteDismissed) > 0 || len(m.allCompleteAdvancing) > 0) {
+		filtered := m.pendingAllComplete[:0]
+		for _, pf := range m.pendingAllComplete {
+			if !m.allCompleteDismissed[pf] && !m.allCompleteAdvancing[pf] {
+				filtered = append(filtered, pf)
+			}
+		}
+		m.pendingAllComplete = filtered
+	}
+	if len(m.pendingAllComplete) > 0 {
+		planFile := m.pendingAllComplete[0]
+		m.pendingAllComplete = m.pendingAllComplete[1:]
+		if cmd := m.focusPlanInstanceForOverlay(planFile); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		m.showAllCompletePrompt(planFile)
+	}
+
+	// 3. Coder push dialogs
+	if len(m.deferredCoderPushDialogs) > 0 {
+		planFile := m.deferredCoderPushDialogs[0]
+		m.deferredCoderPushDialogs = m.deferredCoderPushDialogs[1:]
+		if cmd := m.showCoderPushDialog(planFile); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+
+	// 4. Wave dialogs
+	if len(m.deferredWaveDialogs) > 0 {
+		planFile := m.deferredWaveDialogs[0]
+		m.deferredWaveDialogs = m.deferredWaveDialogs[1:]
+		if orch, ok := m.waveOrchestrators[planFile]; ok {
+			cmds = append(cmds, m.showWaveDialog(planFile, orch)...)
+		}
+	}
+
+	// 5. Permission prompts
+	if len(m.deferredPermissionPrompts) > 0 {
+		deferred := m.deferredPermissionPrompts[0]
+		m.deferredPermissionPrompts = m.deferredPermissionPrompts[1:]
+		if cmd := m.showPermissionPrompt(deferred); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+
+	return cmds
 }
