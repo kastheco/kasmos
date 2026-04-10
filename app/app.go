@@ -3195,7 +3195,7 @@ func detectClickUpCmd(repoPath string) tea.Cmd {
 // the current FSM position of a task entry. Used to detect drift while a
 // context menu is open.
 func lifecycleSnapshot(entry taskstate.TaskEntry) (taskstate.Status, string) {
-	return entry.Status, entry.ExecutionState.Phase
+	return entry.Status, strings.TrimSpace(entry.ExecutionState.Phase)
 }
 
 // lifecycleSnapshotLabel formats the FSM snapshot as a human-readable label.

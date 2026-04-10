@@ -993,9 +993,8 @@ func taskActionStillAllowed(entry taskstate.TaskEntry, action string) bool {
 }
 
 // instanceSignalStillAllowed returns true when the given signal action is still
-// offered by instanceSignalItems for the fresh entry.  Both the action string
-// and the corresponding FSM event are accepted so callers remain explicit.
-func instanceSignalStillAllowed(inst *session.Instance, entry taskstate.TaskEntry, action string, event taskfsm.Event) bool {
+// offered by instanceSignalItems for the fresh entry.
+func instanceSignalStillAllowed(inst *session.Instance, entry taskstate.TaskEntry, action string) bool {
 	return actionAvailable(instanceSignalItems(inst, entry, true), action)
 }
 
@@ -1355,7 +1354,7 @@ func (m *home) emitSelectedInstanceSignal(event taskfsm.Event, successToast stri
 			return nil
 		}
 		if action, ok := eventToSignalAction[event]; ok {
-			if !hasEntry || !instanceSignalStillAllowed(selected, entry, action, event) {
+			if !hasEntry || !instanceSignalStillAllowed(selected, entry, action) {
 				return lifecycleActionRejected("task state changed; signal cancelled")
 			}
 		}
