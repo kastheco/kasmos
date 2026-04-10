@@ -2772,3 +2772,270 @@ func TestTaskContextMenu_DraftReadyStatus_OnlyShowsPlanningStart(t *testing.T) {
 		assert.NotEqual(t, "start", item.Label, "no 'start' subgroup expected when all lifecycle items are promoted")
 	}
 }
+
+// TestOpenTaskContextMenu_RefreshesFromStoreBeforeLifecycleItems verifies that
+// openTaskContextMenu reads the latest task state from the backing store rather
+// than the stale in-memory snapshot. A task cached as draft-ready (no phase)
+// that the daemon has advanced to planned-ready (phase="planned") must produce
+// a menu with start_implement at the root — not the draft-ready start_plan only.
+func TestOpenTaskContextMenu_RefreshesFromStoreBeforeLifecycleItems(t *testing.T) {
+	const planFile = "refresh-task"
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	// Seed the store with a draft-ready task (no phase).
+	store := newTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusReady,
+	}))
+	ps, err := newTestPlanStateWithStore(t, store, plansDir)
+	require.NoError(t, err)
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	nav := ui.NewNavigationPanel(&sp)
+	nav.SetTopicsAndPlans(nil, []ui.PlanDisplay{{Filename: planFile, Status: string(taskstate.StatusReady)}}, nil)
+	require.True(t, nav.SelectByID(ui.SidebarPlanPrefix+planFile))
+
+	h := &home{
+		ctx:              context.Background(),
+		state:            stateDefault,
+		taskState:        ps,
+		taskStore:        store,
+		taskStoreProject: "test",
+		taskStateDir:     plansDir,
+		nav:              nav,
+		menu:             ui.NewMenu(),
+		tabbedWindow:     ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		overlays:         overlay.NewManager(),
+		activeRepoPath:   dir,
+	}
+
+	// Advance the store to planned-ready without touching the in-memory ps.
+	require.NoError(t, store.Update("test", planFile, taskstore.TaskEntry{
+		Filename:       planFile,
+		Status:         taskstore.StatusReady,
+		ExecutionState: taskstore.ExecutionState{Phase: "planned"},
+	}))
+
+	// openTaskContextMenu must call refreshTaskEntry → loadTaskState → fresh store read.
+	model, _ := h.openTaskContextMenu()
+	updated := model.(*home)
+	cm, ok := updated.overlays.Current().(*overlay.ContextMenu)
+	require.True(t, ok, "current overlay must be a ContextMenu")
+
+	// Planned-ready promotes start_implement to root; draft-ready would only show start_plan.
+	rootActions := make([]string, 0, len(cm.Items()))
+	for _, item := range cm.Items() {
+		rootActions = append(rootActions, item.Action)
+	}
+	assert.Contains(t, rootActions, "start_implement",
+		"openTaskContextMenu must use fresh store state: start_implement expected at root for planned-ready task")
+}
+
+// TestOpenContextMenu_TaskOwnerSignalsUseFreshTaskState verifies that the
+// instance context menu for a top-level task agent uses the task entry from
+// refreshTaskEntry when computing lifecycle signal actions. A reviewer instance
+// opened against a task whose state was updated to reviewing (in the store)
+// must display mark_review_approved even though the original in-memory snapshot
+// had the task as planning.
+func TestOpenContextMenu_TaskOwnerSignalsUseFreshTaskState(t *testing.T) {
+	const planFile = "owner-task"
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	// Shared store: task starts as planning.
+	store := newTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusPlanning,
+	}))
+	ps, err := newTestPlanStateWithStore(t, store, plansDir)
+	require.NoError(t, err)
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:     "owner-task-reviewer",
+		Path:      t.TempDir(),
+		Program:   "opencode",
+		TaskFile:  planFile,
+		AgentType: session.AgentTypeReviewer,
+	})
+	require.NoError(t, err)
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	nav := ui.NewNavigationPanel(&sp)
+
+	h := &home{
+		ctx:              context.Background(),
+		state:            stateDefault,
+		taskState:        ps,
+		taskStore:        store,
+		taskStoreProject: "test",
+		taskStateDir:     plansDir,
+		nav:              nav,
+		menu:             ui.NewMenu(),
+		tabbedWindow:     ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		overlays:         overlay.NewManager(),
+		activeRepoPath:   dir,
+	}
+
+	// Build the sidebar first so plan-header rows exist before the instance is
+	// added. This ensures SelectInstance picks a stable index that survives the
+	// subsequent updateSidebarTasks call inside refreshTaskEntry.
+	h.updateSidebarTasks()
+	_ = nav.AddInstance(inst)
+	nav.SelectInstance(inst)
+
+	// Advance the store to reviewing; in-memory ps still says planning.
+	require.NoError(t, store.Update("test", planFile, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusReviewing,
+	}))
+
+	// openContextMenu calls refreshTaskEntry → loadTaskState → reads reviewing
+	// from the store → passes that fresh entry to instanceSignalItems.
+	model, _ := h.openContextMenu()
+	updated := model.(*home)
+	cm, ok := updated.overlays.Current().(*overlay.ContextMenu)
+	require.True(t, ok, "current overlay must be a ContextMenu")
+
+	allActions := make([]string, 0)
+	for _, item := range cm.AllItems() {
+		allActions = append(allActions, item.Action)
+	}
+	assert.Contains(t, allActions, "mark_review_approved",
+		"reviewer context menu must include mark_review_approved when fresh store state is reviewing")
+}
+
+// TestMetadataResultMsg_DismissesTrackedContextMenuOnStatusChange verifies that
+// a task context menu is automatically dismissed when the metadata tick delivers
+// a PlanState snapshot showing the task FSM has moved to a different status.
+func TestMetadataResultMsg_DismissesTrackedContextMenuOnStatusChange(t *testing.T) {
+	const planFile = "tracked-status-task"
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	store := newTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusReady,
+	}))
+	ps, err := newTestPlanStateWithStore(t, store, plansDir)
+	require.NoError(t, err)
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:              context.Background(),
+		state:            stateContextMenu,
+		taskState:        ps,
+		taskStore:        store,
+		taskStoreProject: "test",
+		taskStateDir:     plansDir,
+		nav:              ui.NewNavigationPanel(&sp),
+		menu:             ui.NewMenu(),
+		tabbedWindow:     ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:     overlay.NewToastManager(&sp),
+		overlays:         overlay.NewManager(),
+		activeRepoPath:   dir,
+		// tracking fields seeded as if the menu were opened for a ready task
+		contextMenuTaskFile:   planFile,
+		contextMenuTaskStatus: taskstate.StatusReady,
+		contextMenuTaskPhase:  "",
+	}
+	// Activate a real context menu so overlays.IsActive() returns true.
+	h.overlays.Show(overlay.NewContextMenu([]overlay.ContextMenuItem{
+		{Label: "start planning", Action: "start_plan"},
+	}))
+
+	// Build fresh PlanState where the task has advanced to implementing.
+	require.NoError(t, store.Update("test", planFile, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseSingleAgentImplementing),
+			ActiveAgentType: session.AgentTypeCoder,
+		},
+	}))
+	freshPs, err := newTestPlanStateWithStore(t, store, plansDir)
+	require.NoError(t, err)
+
+	model, _ := h.Update(metadataResultMsg{PlanState: freshPs})
+	updated := model.(*home)
+
+	assert.False(t, updated.overlays.IsActive(),
+		"overlay must be dismissed when task status changes while menu is open")
+	assert.Equal(t, stateDefault, updated.state,
+		"state must revert to stateDefault after stale menu dismissal")
+	assert.Contains(t, updated.toastManager.View(), "menu dismissed",
+		"dismissal toast must include 'menu dismissed'")
+}
+
+// TestMetadataResultMsg_DismissesTrackedContextMenuOnPhaseChange verifies that
+// a task context menu is dismissed when the metadata tick detects a phase change
+// even when the lifecycle status itself does not change. Uses ready+""
+// (draft-ready) vs ready+"planned" (planned-ready) to exercise a same-status
+// but different-phase transition.
+func TestMetadataResultMsg_DismissesTrackedContextMenuOnPhaseChange(t *testing.T) {
+	const planFile = "tracked-phase-task"
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	store := newTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusReady,
+		// No ExecutionState.Phase → draft-ready
+	}))
+	ps, err := newTestPlanStateWithStore(t, store, plansDir)
+	require.NoError(t, err)
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:              context.Background(),
+		state:            stateContextMenu,
+		taskState:        ps,
+		taskStore:        store,
+		taskStoreProject: "test",
+		taskStateDir:     plansDir,
+		nav:              ui.NewNavigationPanel(&sp),
+		menu:             ui.NewMenu(),
+		tabbedWindow:     ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:     overlay.NewToastManager(&sp),
+		overlays:         overlay.NewManager(),
+		activeRepoPath:   dir,
+		// tracking fields for draft-ready (ready + empty phase)
+		contextMenuTaskFile:   planFile,
+		contextMenuTaskStatus: taskstate.StatusReady,
+		contextMenuTaskPhase:  "",
+	}
+	h.overlays.Show(overlay.NewContextMenu([]overlay.ContextMenuItem{
+		{Label: "start planning", Action: "start_plan"},
+	}))
+
+	// Advance store to planned-ready (same status, phase now "planned").
+	require.NoError(t, store.Update("test", planFile, taskstore.TaskEntry{
+		Filename:       planFile,
+		Status:         taskstore.StatusReady,
+		ExecutionState: taskstore.ExecutionState{Phase: "planned"},
+	}))
+	freshPs, err := newTestPlanStateWithStore(t, store, plansDir)
+	require.NoError(t, err)
+
+	model, _ := h.Update(metadataResultMsg{PlanState: freshPs})
+	updated := model.(*home)
+
+	assert.False(t, updated.overlays.IsActive(),
+		"overlay must be dismissed when task phase changes (draft-ready → planned-ready) while menu is open")
+	assert.Equal(t, stateDefault, updated.state,
+		"state must revert to stateDefault after stale menu dismissal")
+	assert.Contains(t, updated.toastManager.View(), "menu dismissed",
+		"dismissal toast must include 'menu dismissed' on phase-only change")
+}
