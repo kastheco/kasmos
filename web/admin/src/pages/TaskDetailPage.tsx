@@ -59,11 +59,10 @@ export default function TaskDetailPage() {
   const { project } = useProject();
 
   const { data, loading, error, lastUpdatedAt, isRefreshing } =
-    useAutoRefresh<TaskDetailData>(
+    useAutoRefresh<TaskDetailData | null>(
       async () => {
         if (!filename) throw new Error("no task filename provided");
-        if (!project)
-          return { task: {} as TaskEntry, content: "", subtasks: [] };
+        if (!project) return null;
         const [task, content, subtasks] = await Promise.all([
           getTask(project, filename),
           getTaskContent(project, filename),

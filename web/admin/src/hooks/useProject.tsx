@@ -59,14 +59,20 @@ export function ProjectProvider({
     project = projects[0];
   }
 
-  const projectSearch = `?project=${encodeURIComponent(project)}`;
+  const projectSearch = project
+    ? `?project=${encodeURIComponent(project)}`
+    : "";
 
   const setProject = (next: string) => {
     localStorage.setItem(STORAGE_KEY, next);
     setSearchParams(
       (prev) => {
         const p = new URLSearchParams(prev);
-        p.set("project", next);
+        if (next) {
+          p.set("project", next);
+        } else {
+          p.delete("project");
+        }
         return p;
       },
       { replace: false },

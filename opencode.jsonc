@@ -108,7 +108,7 @@
         "read": "allow",
         "write": "allow"
       },
-      "reasoningEffort": "high",
+      "reasoningEffort": "medium",
       "temperature": 0.1,
       "textVerbosity": "low"
     },
