@@ -231,9 +231,11 @@ func (m *home) handleActiveOverlayMouse(msg tea.MouseClickMsg) (tea.Model, tea.C
 	case stateContextMenu:
 		m.state = stateDefault
 		if result.Action != "" {
+			m.clearContextMenuTracking()
 			return m.executeContextAction(result.Action)
 		}
 		// If dismissed without an action and there was a pending log event, clear it.
+		m.clearContextMenuTracking()
 		m.handleAuditCursorContextMenuDismissed()
 		return m, nil
 
@@ -617,6 +619,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 	if m.state == stateContextMenu {
 		if !m.overlays.IsActive() {
 			m.state = stateDefault
+			m.clearContextMenuTracking()
 			m.handleAuditCursorContextMenuDismissed()
 			return m, nil
 		}
@@ -624,9 +627,11 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		if result.Dismissed {
 			m.state = stateDefault
 			if result.Action != "" {
+				m.clearContextMenuTracking()
 				return m.executeContextAction(result.Action)
 			}
 			// Dismissed without action — clear any pending log event.
+			m.clearContextMenuTracking()
 			m.handleAuditCursorContextMenuDismissed()
 			return m, nil
 		}
