@@ -1766,14 +1766,15 @@ func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 }
 
 func masterSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
-	spec := orchestration.BuildMasterAgentSpec(entry.Filename, e.Project)
+	spec := orchestration.BuildMasterAgentSpec(entry.Filename, e.Project, entry.ReviewCycle)
 	return loop.SpawnOpts{
-		PlanFile: entry.Filename,
-		RepoPath: e.Path,
-		Project:  e.Project,
-		Branch:   entry.Branch,
-		Program:  programForAgent(e.Path, session.AgentTypeMaster),
-		Prompt:   spec.Prompt,
+		PlanFile:    entry.Filename,
+		RepoPath:    e.Path,
+		Project:     e.Project,
+		Branch:      entry.Branch,
+		Program:     programForAgent(e.Path, session.AgentTypeMaster),
+		Prompt:      spec.Prompt,
+		ReviewCycle: entry.ReviewCycle + 1,
 	}
 }
 

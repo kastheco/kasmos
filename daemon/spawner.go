@@ -500,7 +500,7 @@ func (s *TmuxSpawner) SpawnElaborator(ctx context.Context, opts loop.SpawnOpts) 
 func (s *TmuxSpawner) SpawnMaster(ctx context.Context, opts loop.SpawnOpts) error {
 	s.logger.Info("spawn master", "plan", opts.PlanFile)
 	key := instanceKey(opts.RepoPath, opts.PlanFile, session.AgentTypeMaster)
-	title := orchestration.BuildLifecycleAgentTitle(opts.PlanFile, session.AgentTypeMaster, 0)
+	title := orchestration.BuildLifecycleAgentTitle(opts.PlanFile, session.AgentTypeMaster, opts.ReviewCycle)
 	if !s.reserveInstanceSlot(key, title) {
 		s.logger.Info("suppress duplicate tracked agent", "plan", opts.PlanFile, "type", session.AgentTypeMaster, "title", title)
 		return nil

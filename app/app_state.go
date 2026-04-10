@@ -1965,7 +1965,11 @@ func (m *home) spawnMaster(planFile string) tea.Cmd {
 		}
 	}
 	planName := taskstate.DisplayName(planFile)
-	spec := orchestration.BuildMasterAgentSpec(planFile, m.taskStoreProject)
+	reviewCycle := 0
+	if m.taskState != nil {
+		reviewCycle, _ = m.taskState.ReviewCycle(planFile)
+	}
+	spec := orchestration.BuildMasterAgentSpec(planFile, m.taskStoreProject, reviewCycle)
 	title := spec.Title
 	if m.hasLiveOrPendingInstance(planFile, session.AgentTypeMaster, title) {
 		return nil

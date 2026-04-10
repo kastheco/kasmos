@@ -543,10 +543,10 @@ func TestTmuxSpawner_SpawnMaster_DeduplicatesTrackedInstance(t *testing.T) {
 	const planFile = "plan.md"
 
 	// Pre-populate an already-tracked master instance in Loading state.
-	// Title must match what BuildLifecycleAgentTitle("plan.md","master",0) produces so
+	// Title must match what BuildLifecycleAgentTitle("plan.md","master",1) produces so
 	// reserveInstanceSlot treats this as a dedup, not a replacement.
 	key := instanceKey(repoPath, planFile, session.AgentTypeMaster)
-	liveInst := &session.Instance{Title: "readiness-review-1"}
+	liveInst := &session.Instance{Title: "plan.md-verify-1"}
 	liveInst.SetStatus(session.Loading)
 	s.mu.Lock()
 	s.instances[key] = liveInst
@@ -562,10 +562,11 @@ func TestTmuxSpawner_SpawnMaster_DeduplicatesTrackedInstance(t *testing.T) {
 	}
 
 	err := s.SpawnMaster(context.Background(), loop.SpawnOpts{
-		PlanFile: planFile,
-		RepoPath: repoPath,
-		Branch:   "plan/plan",
-		Program:  "opencode",
+		PlanFile:    planFile,
+		RepoPath:    repoPath,
+		Branch:      "plan/plan",
+		Program:     "opencode",
+		ReviewCycle: 1,
 	})
 	assert.NoError(t, err)
 	assert.False(t, startCalled, "SpawnMaster must no-op when master is already tracked")

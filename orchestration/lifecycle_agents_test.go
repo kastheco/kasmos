@@ -44,8 +44,8 @@ func TestBuildArchitectAgentSpec(t *testing.T) {
 }
 
 func TestBuildMasterAgentSpec(t *testing.T) {
-	spec := BuildMasterAgentSpec("feature", "myproject")
-	assert.Equal(t, "readiness-review-1", spec.Title)
+	spec := BuildMasterAgentSpec("feature", "myproject", 0)
+	assert.Equal(t, "feature-verify-1", spec.Title)
 	assert.Contains(t, spec.Prompt, "kasmos-master")
 	assert.Contains(t, spec.Prompt, `project: "myproject"`)
 	assert.Contains(t, spec.Prompt, "verify_approved")
@@ -59,7 +59,8 @@ func TestBuildMasterAgentSpec(t *testing.T) {
 }
 
 func TestBuildLifecycleAgentTitle_Master(t *testing.T) {
-	assert.Equal(t, "readiness-review-1", BuildLifecycleAgentTitle("feature", session.AgentTypeMaster, 0))
+	assert.Equal(t, "feature-verify-1", BuildLifecycleAgentTitle("feature", session.AgentTypeMaster, 1))
+	assert.Equal(t, "feature-verify-3", BuildLifecycleAgentTitle("feature", session.AgentTypeMaster, 3))
 }
 
 func TestBuildWaveTaskTitle(t *testing.T) {
@@ -245,7 +246,7 @@ func TestBuildRecoveryCandidates_StatusVerifying_RecoversMaster(t *testing.T) {
 
 	candidates := BuildRecoveryCandidates(entry, "")
 	require.Len(t, candidates, 1)
-	assert.Equal(t, "readiness-review-1", candidates[0].Title)
+	assert.Equal(t, "feature-verify-1", candidates[0].Title)
 	assert.Equal(t, session.AgentTypeMaster, candidates[0].AgentType)
 	assert.Equal(t, "feature", candidates[0].TaskFile)
 }
@@ -260,7 +261,7 @@ func TestMatchRecoveryCandidateByTitle_StatusVerifying_MatchesMasterTitle(t *tes
 		},
 	}
 
-	candidate, ok := MatchRecoveryCandidateByTitle(entry, "", "readiness-review-1")
+	candidate, ok := MatchRecoveryCandidateByTitle(entry, "", "feature-verify-1")
 	require.True(t, ok)
 	assert.Equal(t, "feature", candidate.TaskFile)
 	assert.Equal(t, session.AgentTypeMaster, candidate.AgentType)

@@ -54,8 +54,8 @@ func TestPromptTemplates_UseMCPFirstSignals(t *testing.T) {
 			name: "master skill uses verify-specific signal types via MCP and CLI fallback",
 			path: "templates/skills/kasmos-master/SKILL.md",
 			contains: []string{
-				`signal_type: "verify-approved"`,
-				`signal_type: "verify-failed"`,
+				`signal_type: "verify_approved"`,
+				`signal_type: "verify_failed"`,
 				"kas signal emit verify_approved",
 				"kas signal emit verify_failed",
 				"verifying",
