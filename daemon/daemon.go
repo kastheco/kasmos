@@ -25,6 +25,7 @@ import (
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/orchestration"
+	"github.com/kastheco/kasmos/internal/binpath"
 	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
 	gitpkg "github.com/kastheco/kasmos/session/git"
@@ -1961,12 +1962,12 @@ func RunDaemon(cfg *config.Config) error {
 // the parent terminal closing. Use `kas daemon start --foreground` directly
 // when running under systemd.
 func LaunchDaemon() error {
-	execPath, err := os.Executable()
+	bpInfo, err := binpath.Resolve()
 	if err != nil {
 		return fmt.Errorf("daemon: could not resolve executable path: %w", err)
 	}
 
-	cmd := exec.Command(execPath, "daemon", "start", "--foreground")
+	cmd := exec.Command(bpInfo.Executable, "daemon", "start", "--foreground")
 	cmd.Stdin = nil
 	cmd.Stdout = nil
 	cmd.Stderr = nil

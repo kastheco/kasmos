@@ -14,6 +14,7 @@ import (
 
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/internal/binpath"
 	"github.com/kastheco/kasmos/internal/platform"
 	"github.com/spf13/cobra"
 )
@@ -74,10 +75,11 @@ func newDaemonStartCmd() *cobra.Command {
 		Short: "start the kasmos daemon",
 		Long:  "start the kasmos multi-repo orchestration daemon. by default it daemonizes; use --foreground for " + manager + ".",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			execPath, err := os.Executable()
+			bpInfo, err := binpath.Resolve()
 			if err != nil {
 				return fmt.Errorf("resolve executable: %w", err)
 			}
+			execPath := bpInfo.Executable
 
 			if foreground {
 				// Foreground mode: re-exec self with the hidden --run-daemon-foreground
