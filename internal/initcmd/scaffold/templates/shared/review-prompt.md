@@ -273,10 +273,10 @@ Omit empty tiers. Every item must have a `file:line` reference.
 
 ## Readiness review handoff
 
-When `auto_readiness_review` is enabled in the daemon config, kasmos will automatically
-spawn the master readiness agent after processing your `review-approved` signal. The task
-transitions into the `readiness_reviewing` execution phase and the master agent performs a
-final holistic check before the plan completes.
+When `auto_readiness_review` is enabled in the daemon config, kasmos transitions the task
+to the `verifying` FSM state after processing your `review-approved` signal and spawns the
+master readiness agent, which performs a final holistic check before the plan completes.
 
 You do not need to do anything differently — emit your normal approval signal and stop.
-If readiness review is disabled, `review-approved` transitions the task directly to `done`.
+If `auto_readiness_review` is disabled, `review-approved` causes the processor to
+immediately chain `verify-approved`, transitioning the task directly to `done`.

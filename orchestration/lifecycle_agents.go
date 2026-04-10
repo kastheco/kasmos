@@ -52,7 +52,7 @@ func BuildLifecycleAgentTitle(planFile, agentType string, reviewCycle int) strin
 		if reviewCycle < 1 {
 			reviewCycle = 1
 		}
-		return fmt.Sprintf("readiness-review-%d", reviewCycle)
+		return fmt.Sprintf("%s-verify-%d", planName, reviewCycle)
 	}
 	return fmt.Sprintf("%s-%s", planName, agentType)
 }
@@ -97,10 +97,12 @@ func BuildArchitectAgentSpec(planFile, project string) LifecycleAgentSpec {
 
 // BuildMasterAgentSpec returns the shared prompt/title metadata for the master
 // agent holistic readiness review. The session title follows the canonical
-// "<plan>-master" pattern so recovery/orphan adoption works automatically.
-func BuildMasterAgentSpec(planFile, project string) LifecycleAgentSpec {
+// "<plan>-verify-<cycle>" pattern so multiple verifiers can run concurrently
+// for different tasks. reviewCycle is the stored review cycle count; the title
+// uses cycle+1 to match reviewer/fixer numbering.
+func BuildMasterAgentSpec(planFile, project string, reviewCycle int) LifecycleAgentSpec {
 	return LifecycleAgentSpec{
-		Title:  BuildLifecycleAgentTitle(planFile, session.AgentTypeMaster, 0),
+		Title:  BuildLifecycleAgentTitle(planFile, session.AgentTypeMaster, reviewCycle+1),
 		Prompt: BuildMasterReviewPrompt(planFile, project),
 	}
 }
@@ -113,6 +115,18 @@ func BuildWaveTaskTitle(planFile string, waveNumber, taskNumber int) string {
 // BuildRecoveryCandidates returns the exact session titles that are valid to
 // recover for the task's persisted lifecycle phase.
 func BuildRecoveryCandidates(task taskstore.TaskEntry, planContent string) []RecoveryCandidate {
+	// Master agent recovery: task enters StatusVerifying when ReviewApproved fires.
+	// The execution state has no phase — only ActiveAgentType is set to master.
+	if task.Status == taskstore.StatusVerifying {
+		spec := BuildMasterAgentSpec(task.Filename, "", task.ReviewCycle)
+		return []RecoveryCandidate{{
+			TaskFile:  task.Filename,
+			Title:     spec.Title,
+			AgentType: session.AgentTypeMaster,
+			Branch:    task.Branch,
+		}}
+	}
+
 	phase := taskfsm.ExecutionPhase(strings.TrimSpace(task.ExecutionState.Phase))
 	switch phase {
 	case taskfsm.ExecutionPhaseArchitecting:
@@ -137,14 +151,6 @@ func BuildRecoveryCandidates(task taskstore.TaskEntry, planContent string) []Rec
 			AgentType:   session.AgentTypeReviewer,
 			Branch:      task.Branch,
 			ReviewCycle: spec.ReviewCycle,
-		}}
-	case taskfsm.ExecutionPhaseReadinessReview:
-		spec := BuildMasterAgentSpec(task.Filename, "")
-		return []RecoveryCandidate{{
-			TaskFile:  task.Filename,
-			Title:     spec.Title,
-			AgentType: session.AgentTypeMaster,
-			Branch:    task.Branch,
 		}}
 	case taskfsm.ExecutionPhaseFixing:
 		spec := BuildFixerAgentSpec(task.Filename, "", task.ReviewCycle, task.LatestReviewFeedback)
@@ -212,7 +218,7 @@ func MatchRecoveryCandidateByTitle(task taskstore.TaskEntry, planContent, title 
 	}
 
 	phase := taskfsm.NormalizeExecutionPhase(task.ExecutionState.Phase)
-	if task.Status != taskstore.StatusImplementing && task.Status != taskstore.StatusReviewing {
+	if task.Status != taskstore.StatusImplementing && task.Status != taskstore.StatusReviewing && task.Status != taskstore.StatusVerifying {
 		return RecoveryCandidate{}, false
 	}
 	if phase == taskfsm.ExecutionPhaseArchitecting {
@@ -231,6 +237,9 @@ func MatchRecoveryCandidateByTitle(task taskstore.TaskEntry, planContent, title 
 	}
 	if cycle, ok := parseRecoveryCycleTitle(title, planName, "fix"); ok {
 		return RecoveryCandidate{TaskFile: task.Filename, Title: title, AgentType: session.AgentTypeFixer, Branch: task.Branch, ReviewCycle: cycle}, true
+	}
+	if cycle, ok := parseRecoveryCycleTitle(title, planName, "verify"); ok {
+		return RecoveryCandidate{TaskFile: task.Filename, Title: title, AgentType: session.AgentTypeMaster, Branch: task.Branch, ReviewCycle: cycle}, true
 	}
 	if wave, taskNum, ok := parseWaveRecoveryTitle(title, planName); ok {
 		if index, count, found := waveTaskPosition(planContent, wave, taskNum); found {

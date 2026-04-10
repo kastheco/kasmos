@@ -10,6 +10,7 @@ Every task in kasmos moves through a finite state machine (FSM). The FSM validat
 | `planning` | a planner agent is writing the plan content |
 | `implementing` | coder agents are working on the task |
 | `reviewing` | a reviewer agent is checking the implementation |
+| `verifying` | a master agent is running the holistic readiness gate before `done` (only entered when `auto_readiness_review = true`) |
 | `done` | the task is complete and merged (or ready to merge) |
 | `cancelled` | explicitly stopped; can be reopened |
 
@@ -26,7 +27,6 @@ While `status` is the coarse lifecycle stage, tasks in the `implementing` and ad
 | `single_agent_implementing` | running as a single coder (no wave decomposition) |
 | `fixing` | fixer/remediation agent is addressing review feedback |
 | `reviewing` | reviewer agent is active |
-| `readiness_reviewing` | master agent is running the holistic readiness gate after reviewer approval (enabled by default; disable with `auto_readiness_review = false`) |
 
 ### how phases are set
 
@@ -50,16 +50,16 @@ Events trigger transitions. Some events are **user-only** (can only be fired fro
 | `implement_start` | no | start coder agents |
 | `implement_finished` | no | all coders signalled completion |
 | `request_review` | **yes** | manually trigger a reviewer |
-| `review_approved` | no | reviewer approved the implementation; intercepted when `auto_readiness_review = true` |
+| `review_approved` | no | reviewer approved the implementation; routes `reviewing → verifying` when `auto_readiness_review = true`, otherwise `reviewing → done` |
 | `review_changes_requested` | no | reviewer requested changes |
-| `readiness_approved` | no | master agent approved during readiness review (→ `done`) |
-| `readiness_changes_requested` | no | master agent requested changes during readiness review (→ `implementing`) |
+| `verify_approved` | no | master agent approved during verifying (→ `done`) |
+| `verify_failed` | no | master agent requested changes during verifying (→ `implementing`) |
 | `start_over` | **yes** | reset to planning from done |
 | `reimplement` | **yes** | resume implementation from done without resetting branch |
 | `cancel` | **yes** | cancel the task from any active status |
 | `reopen` | **yes** | reopen a cancelled task back to planning |
 
-> **Readiness review signals:** `readiness_approved` and `readiness_changes_requested` are emitted by the master agent during the optional readiness gate phase. They are only accepted while the task's execution phase is `readiness_reviewing`. Aliases: `readiness-approved`, `readiness-changes`, `readiness-changes-requested`, `master_approved`.
+> **Verifying signals:** `verify_approved` and `verify_failed` are the canonical signal names emitted by the master agent. Deprecated aliases are accepted at ingress and canonicalized: `readiness_approved` → `verify_approved`; `readiness_changes_requested` / `readiness-changes` / `readiness-changes-requested` / `master_approved` → `verify_failed`.
 
 ## transition table
 
@@ -79,13 +79,15 @@ implementing
   └─ cancel              → cancelled
 
 reviewing
-  ├─ review_approved     → done  [or → readiness_reviewing phase when auto_readiness_review=true]
+  ├─ review_approved     → verifying  (when auto_readiness_review=true)
+  │                      → done       (when auto_readiness_review=false)
   ├─ review_changes_requested → implementing
   └─ cancel              → cancelled
 
-  (readiness_reviewing sub-phase — reviewing status, master agent active)
-  ├─ readiness_approved          → done
-  └─ readiness_changes_requested → implementing
+verifying
+  ├─ verify_approved     → done
+  ├─ verify_failed       → implementing
+  └─ cancel              → cancelled
 
 done
   ├─ start_over          → planning
@@ -106,6 +108,7 @@ When the FSM writes a new status, it also records a timestamp for that phase in 
 | `planning` | `planning_at` |
 | `implementing` | `implementing_at` |
 | `reviewing` | `reviewing_at` |
+| `verifying` | `verifying_at` |
 | `done` | `done_at` |
 
 ## triggering transitions

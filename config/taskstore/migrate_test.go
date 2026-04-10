@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -429,6 +430,75 @@ func TestSQLiteStore_MigratesExecutionStateColumnsFromOldSchema(t *testing.T) {
 		ActiveAgentType: "coder",
 		ActiveWave:      2,
 	}, updated.ExecutionState)
+}
+
+func TestSQLiteStore_MigratesVerifyingAtColumn(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "taskstore.db")
+
+	// Create a legacy DB that has reviewing_at but not verifying_at.
+	legacyDB, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+
+	_, err = legacyDB.Exec(`
+		CREATE TABLE tasks (
+			id INTEGER PRIMARY KEY,
+			project TEXT NOT NULL,
+			filename TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'ready',
+			description TEXT NOT NULL DEFAULT '',
+			branch TEXT NOT NULL DEFAULT '',
+			topic TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL DEFAULT '',
+			implemented TEXT NOT NULL DEFAULT '',
+			planning_at TEXT NOT NULL DEFAULT '',
+			implementing_at TEXT NOT NULL DEFAULT '',
+			reviewing_at TEXT NOT NULL DEFAULT '',
+			done_at TEXT NOT NULL DEFAULT '',
+			execution_phase TEXT NOT NULL DEFAULT '',
+			active_agent_type TEXT NOT NULL DEFAULT '',
+			active_wave INTEGER NOT NULL DEFAULT 0,
+			goal TEXT NOT NULL DEFAULT '',
+			content TEXT NOT NULL DEFAULT '',
+			clickup_task_id TEXT NOT NULL DEFAULT '',
+			review_cycle INTEGER NOT NULL DEFAULT 0,
+			latest_review_feedback TEXT NOT NULL DEFAULT '',
+			pr_url TEXT NOT NULL DEFAULT '',
+			pr_review_decision TEXT NOT NULL DEFAULT '',
+			pr_check_status TEXT NOT NULL DEFAULT '',
+			UNIQUE(project, filename)
+		);
+		CREATE TABLE topics (
+			id INTEGER PRIMARY KEY,
+			project TEXT NOT NULL,
+			name TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT '',
+			UNIQUE(project, name)
+		);
+	`)
+	require.NoError(t, err)
+	_, err = legacyDB.Exec(`INSERT INTO tasks (project, filename, status) VALUES ('proj', 'old-task', 'reviewing')`)
+	require.NoError(t, err)
+	require.NoError(t, legacyDB.Close())
+
+	// Open via NewSQLiteStore — migration must add verifying_at.
+	store, err := NewSQLiteStore(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { store.Close() })
+
+	// Column must exist.
+	require.True(t, hasTaskColumn(t, store.db, "verifying_at"), "verifying_at column must be added by migration")
+
+	// Existing rows default to empty verifying_at.
+	entry, err := store.Get("proj", "old-task")
+	require.NoError(t, err)
+	assert.True(t, entry.VerifyingAt.IsZero(), "verifying_at must default to zero time for pre-migration rows")
+
+	// SetPhaseTimestamp must work for verifying after migration.
+	require.NoError(t, store.SetPhaseTimestamp("proj", "old-task", "verifying", time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)))
+	updated, err := store.Get("proj", "old-task")
+	require.NoError(t, err)
+	assert.False(t, updated.VerifyingAt.IsZero())
 }
 
 // ---------------------------------------------------------------------------

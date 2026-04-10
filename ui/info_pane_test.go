@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"time"
 
 	"testing"
@@ -527,4 +528,51 @@ func TestInfoPane_ReadinessReviewPhaseLabel(t *testing.T) {
 	assert.Equal(t, "readiness review", infoPhaseLabel("readiness_reviewing", 0, 0))
 	// activeWave and activeRound are ignored for readiness review
 	assert.Equal(t, "readiness review", infoPhaseLabel("readiness_reviewing", 3, 2))
+}
+
+// TestInfoPane_VerifyingAtTimeline verifies that VerifyingAt appears between
+// reviewing and done in the lifecycle timeline when set.
+func TestInfoPane_VerifyingAtTimeline(t *testing.T) {
+	pane := NewInfoPane()
+	pane.SetSize(70, 40)
+
+	reviewingTs := time.Date(2025, 3, 10, 10, 0, 0, 0, time.UTC)
+	verifyingTs := time.Date(2025, 3, 11, 9, 0, 0, 0, time.UTC)
+
+	pane.SetData(InfoData{
+		IsPlanHeaderSelected: true,
+		PlanName:             "auth-feature",
+		PlanStatus:           "verifying",
+		ReviewingAt:          reviewingTs,
+		VerifyingAt:          verifyingTs,
+	})
+
+	output := pane.String()
+	plain := stripANSI(output)
+	assert.Contains(t, plain, "verifying", "verifying phase must appear in lifecycle timeline")
+	assert.Contains(t, plain, "reviewing", "reviewing phase must appear in lifecycle timeline")
+
+	// The timeline uses "●" for reached phases. Both reviewing and verifying are reached.
+	// Find the last occurrence of "reviewing" (timeline row) and last "verifying" (timeline row).
+	// Since verifying is listed after reviewing in phases, its last occurrence must be after reviewing's last occurrence.
+	lastReviewing := strings.LastIndex(plain, "reviewing")
+	lastVerifying := strings.LastIndex(plain, "verifying")
+	assert.Greater(t, lastVerifying, lastReviewing,
+		"verifying timeline row must appear after reviewing timeline row")
+}
+
+// TestInfoPane_VerifyingStatus_SuppressesRoundCounter verifies that the round
+// counter is suppressed when the plan is in verifying status.
+func TestInfoPane_VerifyingStatus_SuppressesRoundCounter(t *testing.T) {
+	pane := NewInfoPane()
+	pane.SetSize(70, 40)
+	pane.SetData(InfoData{
+		IsPlanHeaderSelected: true,
+		PlanName:             "auth-feature",
+		PlanStatus:           "verifying",
+		ActiveRound:          2,
+	})
+
+	output := pane.String()
+	assert.NotContains(t, output, "round", "round counter must be suppressed for verifying status")
 }

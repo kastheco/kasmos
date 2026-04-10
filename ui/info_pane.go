@@ -54,6 +54,7 @@ type InfoData struct {
 	PlanningAt      time.Time
 	ImplementingAt  time.Time
 	ReviewingAt     time.Time
+	VerifyingAt     time.Time
 	DoneAt          time.Time
 
 	// Plan summary fields (rendered when plan header row is selected)
@@ -363,9 +364,11 @@ func (p *InfoPane) renderLifecycleSection() string {
 	if p.data.ActiveWave > 0 {
 		rows = append(rows, p.renderRow("active wave", fmt.Sprintf("%d", p.data.ActiveWave)))
 	}
-	// Suppress round counter for readiness review — cycles belong to the
-	// reviewer/fixer loop, not the master-owned readiness sub-phase.
-	if p.data.ActiveRound > 0 && strings.TrimSpace(p.data.ExecutionPhase) != "readiness_reviewing" {
+	// Suppress round counter for readiness review and verifying status — review
+	// cycles belong to the reviewer/fixer loop, not the master-owned sub-phase.
+	isVerifyingPhase := strings.TrimSpace(p.data.ExecutionPhase) == "readiness_reviewing" ||
+		strings.TrimSpace(p.data.PlanStatus) == "verifying"
+	if p.data.ActiveRound > 0 && !isVerifyingPhase {
 		rows = append(rows, p.renderRow("round", fmt.Sprintf("%d", p.data.ActiveRound)))
 	}
 	phases := []struct {
@@ -376,6 +379,7 @@ func (p *InfoPane) renderLifecycleSection() string {
 		{"planning", p.data.PlanningAt, !p.data.PlanningAt.IsZero()},
 		{"implementing", p.data.ImplementingAt, !p.data.ImplementingAt.IsZero()},
 		{"reviewing", p.data.ReviewingAt, !p.data.ReviewingAt.IsZero()},
+		{"verifying", p.data.VerifyingAt, !p.data.VerifyingAt.IsZero()},
 		{"done", p.data.DoneAt, !p.data.DoneAt.IsZero()},
 	}
 	for _, phase := range phases {

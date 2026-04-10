@@ -56,42 +56,40 @@ func TestScanGateway_BadPayloadReturnsError(t *testing.T) {
 	assert.Len(t, failed, 1)
 }
 
-func TestConvertSignalEntry_ReadinessSignals(t *testing.T) {
+func TestConvertSignalEntry_VerifySignals(t *testing.T) {
 	t.Parallel()
 
-	t.Run("readiness_approved maps to ReviewApproved with origin master", func(t *testing.T) {
+	t.Run("verify_approved maps to VerifyApproved", func(t *testing.T) {
 		var result ScanResult
 		entry := &taskstore.SignalEntry{
 			PlanFile:   "feature-plan",
-			SignalType: "readiness_approved",
+			SignalType: "verify_approved",
 			Payload:    `{"body":"ship it"}`,
 		}
 		require.NoError(t, ConvertSignalEntry(entry, &result))
 		require.Len(t, result.FSMSignals, 1)
 		sig := result.FSMSignals[0]
-		assert.Equal(t, taskfsm.ReviewApproved, sig.Event)
+		assert.Equal(t, taskfsm.VerifyApproved, sig.Event)
 		assert.Equal(t, "feature-plan", sig.TaskFile)
 		assert.Equal(t, "ship it", sig.Body)
-		assert.Equal(t, "master", sig.Origin)
 	})
 
-	t.Run("readiness_changes_requested maps to ReviewChangesRequested with origin master", func(t *testing.T) {
+	t.Run("verify_failed maps to VerifyFailed", func(t *testing.T) {
 		var result ScanResult
 		entry := &taskstore.SignalEntry{
 			PlanFile:   "feature-plan",
-			SignalType: "readiness_changes_requested",
+			SignalType: "verify_failed",
 			Payload:    `{"body":"fix edge cases"}`,
 		}
 		require.NoError(t, ConvertSignalEntry(entry, &result))
 		require.Len(t, result.FSMSignals, 1)
 		sig := result.FSMSignals[0]
-		assert.Equal(t, taskfsm.ReviewChangesRequested, sig.Event)
+		assert.Equal(t, taskfsm.VerifyFailed, sig.Event)
 		assert.Equal(t, "feature-plan", sig.TaskFile)
 		assert.Equal(t, "fix edge cases", sig.Body)
-		assert.Equal(t, "master", sig.Origin)
 	})
 
-	t.Run("readiness_approved empty payload", func(t *testing.T) {
+	t.Run("readiness_approved deprecated alias maps to VerifyApproved", func(t *testing.T) {
 		var result ScanResult
 		entry := &taskstore.SignalEntry{
 			PlanFile:   "feature-plan",
@@ -100,21 +98,21 @@ func TestConvertSignalEntry_ReadinessSignals(t *testing.T) {
 		}
 		require.NoError(t, ConvertSignalEntry(entry, &result))
 		require.Len(t, result.FSMSignals, 1)
-		assert.Equal(t, "master", result.FSMSignals[0].Origin)
+		assert.Equal(t, taskfsm.VerifyApproved, result.FSMSignals[0].Event)
 		assert.Empty(t, result.FSMSignals[0].Body)
 	})
 }
 
-func TestScanGateway_ReadinessSignals(t *testing.T) {
+func TestScanGateway_VerifySignals(t *testing.T) {
 	gw := newTestGateway(t)
 	require.NoError(t, gw.Create("proj", taskstore.SignalEntry{
 		PlanFile:   "my-plan",
-		SignalType: "readiness_approved",
+		SignalType: "verify_approved",
 		Payload:    `{"body":"lgtm"}`,
 	}))
 	require.NoError(t, gw.Create("proj", taskstore.SignalEntry{
 		PlanFile:   "other-plan",
-		SignalType: "readiness_changes_requested",
+		SignalType: "verify_failed",
 		Payload:    `{"body":"needs changes"}`,
 	}))
 
@@ -124,14 +122,12 @@ func TestScanGateway_ReadinessSignals(t *testing.T) {
 	require.Len(t, result.FSMSignals, 2)
 
 	approved := result.FSMSignals[0]
-	assert.Equal(t, taskfsm.ReviewApproved, approved.Event)
+	assert.Equal(t, taskfsm.VerifyApproved, approved.Event)
 	assert.Equal(t, "lgtm", approved.Body)
-	assert.Equal(t, "master", approved.Origin)
 
 	changes := result.FSMSignals[1]
-	assert.Equal(t, taskfsm.ReviewChangesRequested, changes.Event)
+	assert.Equal(t, taskfsm.VerifyFailed, changes.Event)
 	assert.Equal(t, "needs changes", changes.Body)
-	assert.Equal(t, "master", changes.Origin)
 }
 
 func TestConvertSignalEntry_AcceptsArchitectSignalAliasesAtGatewayBoundary(t *testing.T) {

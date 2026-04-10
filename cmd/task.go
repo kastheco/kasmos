@@ -143,6 +143,8 @@ func executeTaskTransition(project, planFile, event string, store taskstore.Stor
 		"implement_start":    taskfsm.ImplementStart,
 		"implement_finished": taskfsm.ImplementFinished,
 		"review_approved":    taskfsm.ReviewApproved,
+		"verify_approved":    taskfsm.VerifyApproved,
+		"verify_failed":      taskfsm.VerifyFailed,
 		"review_changes":     taskfsm.ReviewChangesRequested,
 		"request_review":     taskfsm.RequestReview,
 		"start_over":         taskfsm.StartOver,
@@ -183,7 +185,7 @@ type taskRecoverAction struct {
 func canonicalTaskRecoverAction(raw string) (taskRecoverAction, error) {
 	normalized := strings.ReplaceAll(strings.TrimSpace(raw), "_", "-")
 	if normalized == "" {
-		return taskRecoverAction{}, fmt.Errorf("recovery action is required; valid actions: planner-finished, architect-finished, implement-finished, review-approved, review-changes, readiness-approved, readiness-changes, advance-review-cycle")
+		return taskRecoverAction{}, fmt.Errorf("recovery action is required; valid actions: planner-finished, architect-finished, implement-finished, review-approved, review-changes, verify-approved, verify-failed, advance-review-cycle")
 	}
 
 	signalAction := func(name, signalType string) (taskRecoverAction, error) {
@@ -205,14 +207,19 @@ func canonicalTaskRecoverAction(raw string) (taskRecoverAction, error) {
 		return signalAction("review-approved", normalized)
 	case "review-changes", "review-changes-requested":
 		return signalAction("review-changes", normalized)
+	case "verify-approved":
+		return signalAction("verify-approved", "verify_approved")
+	case "verify-failed":
+		return signalAction("verify-failed", "verify_failed")
+	// Deprecated aliases: readiness-approved → verify-approved, readiness-changes → verify-failed.
 	case "readiness-approved":
-		return signalAction("readiness-approved", normalized)
+		return signalAction("readiness-approved", "readiness_approved")
 	case "readiness-changes", "readiness-changes-requested":
-		return signalAction("readiness-changes", normalized)
+		return signalAction("readiness-changes", "readiness_changes")
 	case "advance-review-cycle":
 		return taskRecoverAction{name: "advance-review-cycle"}, nil
 	default:
-		return taskRecoverAction{}, fmt.Errorf("unknown recovery action %q; valid actions: planner-finished, architect-finished, implement-finished, review-approved, review-changes, readiness-approved, readiness-changes, advance-review-cycle", raw)
+		return taskRecoverAction{}, fmt.Errorf("unknown recovery action %q; valid actions: planner-finished, architect-finished, implement-finished, review-approved, review-changes, verify-approved, verify-failed, advance-review-cycle", raw)
 	}
 }
 
@@ -571,7 +578,19 @@ func executeTaskMerge(repoRoot, project, planFile string, store taskstore.Store)
 	// Walk FSM to done.
 	fsm := newFSMByProject(project, store)
 	current := taskfsm.Status(entry.Status)
-	if current != taskfsm.StatusReviewing {
+	switch current {
+	case taskfsm.StatusDone:
+		// Already done — no FSM transitions needed after the git merge.
+		return nil
+	case taskfsm.StatusVerifying:
+		return fsm.Transition(planFile, taskfsm.VerifyApproved)
+	case taskfsm.StatusReviewing:
+		if err := fsm.Transition(planFile, taskfsm.ReviewApproved); err != nil {
+			return err
+		}
+		return fsm.Transition(planFile, taskfsm.VerifyApproved)
+	default:
+		// implementing or earlier: walk to reviewing first.
 		if current == taskfsm.StatusImplementing {
 			if err := fsm.Transition(planFile, taskfsm.ImplementFinished); err != nil {
 				return err
@@ -586,8 +605,11 @@ func executeTaskMerge(repoRoot, project, planFile string, store taskstore.Store)
 				return ferr
 			}
 		}
+		if err := fsm.Transition(planFile, taskfsm.ReviewApproved); err != nil {
+			return err
+		}
+		return fsm.Transition(planFile, taskfsm.VerifyApproved)
 	}
-	return fsm.Transition(planFile, taskfsm.ReviewApproved)
 }
 
 // executeTaskStartOver removes the plan worktree, deletes and recreates the
@@ -754,7 +776,7 @@ func NewTaskCmd() *cobra.Command {
 			})
 		},
 	}
-	listCmd.Flags().StringVar(&statusFilter, "status", "", "filter by status (ready, planning, implementing, reviewing, done, cancelled)")
+	listCmd.Flags().StringVar(&statusFilter, "status", "", "filter by status (ready, planning, implementing, reviewing, verifying, done, cancelled)")
 	planCmd.AddCommand(listCmd)
 
 	var branchFlag, topicFlag, descriptionFlag string
@@ -839,7 +861,11 @@ Supported actions:
   - implement-finished
   - review-approved
   - review-changes
-  - advance-review-cycle`,
+  - verify-approved    (approve verification and mark done)
+  - verify-failed      (send back to implementation; use --feedback to attach notes)
+  - advance-review-cycle
+
+Deprecated aliases: readiness-approved (→ verify-approved), readiness-changes (→ verify-failed)`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, project, err := resolveRepoInfo()

@@ -284,6 +284,10 @@ func normalizeTaskEvent(raw string) (taskfsm.Event, error) {
 		return taskfsm.ReviewApproved, nil
 	case "review_changes", string(taskfsm.ReviewChangesRequested):
 		return taskfsm.ReviewChangesRequested, nil
+	case string(taskfsm.VerifyApproved):
+		return taskfsm.VerifyApproved, nil
+	case string(taskfsm.VerifyFailed):
+		return taskfsm.VerifyFailed, nil
 	case string(taskfsm.RequestReview):
 		return taskfsm.RequestReview, nil
 	case string(taskfsm.StartOver):
@@ -305,11 +309,13 @@ func forceLifecycleForEvent(event taskfsm.Event) (taskstate.Status, taskstore.Ex
 		return taskstate.StatusPlanning, taskstore.ExecutionState{}, nil
 	case taskfsm.PlannerFinished:
 		return taskstate.StatusReady, taskfsm.TransitionExecutionState(event, taskfsm.StatusReady), nil
-	case taskfsm.ImplementStart, taskfsm.Reimplement, taskfsm.ReviewChangesRequested:
+	case taskfsm.ImplementStart, taskfsm.Reimplement, taskfsm.ReviewChangesRequested, taskfsm.VerifyFailed:
 		return taskstate.StatusImplementing, taskstore.ExecutionState{}, nil
 	case taskfsm.ImplementFinished, taskfsm.RequestReview:
 		return taskstate.StatusReviewing, taskstore.ExecutionState{}, nil
 	case taskfsm.ReviewApproved:
+		return taskstate.StatusVerifying, taskstore.ExecutionState{}, nil
+	case taskfsm.VerifyApproved:
 		return taskstate.StatusDone, taskstore.ExecutionState{}, nil
 	case taskfsm.Cancel:
 		return taskstate.StatusCancelled, taskstore.ExecutionState{}, nil
@@ -326,6 +332,8 @@ func setPhaseTimestampForStatus(store taskstore.Store, project, filename string,
 		return store.SetPhaseTimestamp(project, filename, "implementing", time.Now().UTC())
 	case taskstate.StatusReviewing:
 		return store.SetPhaseTimestamp(project, filename, "reviewing", time.Now().UTC())
+	case taskstate.StatusVerifying:
+		return store.SetPhaseTimestamp(project, filename, "verifying", time.Now().UTC())
 	case taskstate.StatusDone:
 		return store.SetPhaseTimestamp(project, filename, "done", time.Now().UTC())
 	default:

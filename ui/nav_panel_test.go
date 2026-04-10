@@ -1314,3 +1314,46 @@ func TestString_ReadinessReviewPlanAppearsInActiveSection(t *testing.T) {
 	require.NotEmpty(t, output)
 	assert.Contains(t, output, "readiness review", "readiness review phase must be visible in sidebar")
 }
+
+// ---------- verifying status ----------
+
+func TestNavPlanRowLabel_VerifyingStatus(t *testing.T) {
+	p := PlanDisplay{
+		Filename: "feature-auth",
+		Status:   "verifying",
+		Phase:    "", // no execution phase; rendered from status
+	}
+	label := navPlanRowLabel(p)
+	assert.Equal(t, "feature-auth · verifying", label,
+		"sidebar row label must be '<name> · verifying' when status is verifying and phase is empty")
+}
+
+func TestNavPlanSortKey_VerifyingIsActive(t *testing.T) {
+	p := PlanDisplay{
+		Filename: "auth-feature",
+		Status:   "verifying",
+		Phase:    "",
+	}
+	key := navPlanSortKey(p, nil, TopicStatus{})
+	assert.Equal(t, 1, key, "verifying status must sort as active (key 1)")
+}
+
+func TestString_VerifyingPlanAppearsInActiveSection(t *testing.T) {
+	n := newTestPanel()
+	n.SetSize(60, 40)
+	n.SetData(
+		[]PlanDisplay{
+			{
+				Filename:  "auth-feature",
+				Status:    "verifying",
+				Phase:     "",
+				AgentType: "master",
+			},
+		},
+		nil, nil, nil, nil,
+	)
+
+	output := n.String()
+	require.NotEmpty(t, output)
+	assert.Contains(t, output, "verifying", "verifying status must be visible in sidebar")
+}

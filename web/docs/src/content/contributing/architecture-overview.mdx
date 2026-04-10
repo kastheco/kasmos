@@ -6,8 +6,8 @@ kasmos is a Go application with several surfaces that work together: an interact
 
 | path | what lives here |
 |------|----------------|
-| `main.go` | app entrypoint, Cobra root wiring, TUI startup, `setup` / `reset` / `debug` / `version` |
-| `check.go` | `kas check` — audits skill sync across agent harnesses |
+| `cmd/kas/` | app entrypoint, Cobra root wiring, TUI startup, `setup` / `reset` / `debug` / `version` |
+| `cmd/kas/check.go` | `kas check` — audits skill sync across agent harnesses |
 | `cmd/` | CLI subcommands: `task`, `daemon`, `monitor`, `signal`, `tmux`, `instance`, `audit`, `serve` |
 | `app/` | main Bubble Tea model, TUI state machine, orchestration glue |
 | `ui/` | rendering components: nav, status bar, info pane, overlays |
@@ -109,6 +109,6 @@ The marketing site and docs site both use `output: "export"` with `basePath: "/k
 
 ## the `kas` command
 
-Although `go build` produces a binary named `kasmos`, `just install` creates `kas` and `kms` symlinks in `$GOPATH/bin`. The CLI surface is always referred to as `kas` in documentation and code.
+The binary artifact is named `kas` — `go build -o kas ./cmd/kas`, `go install github.com/kastheco/kasmos/cmd/kas@latest`, and `just install` all produce or install a `kas` binary directly. `just install` also creates an optional `kms` short alias in `$GOPATH/bin`. The CLI surface is always referred to as `kas` in documentation and code.
 
 Current top-level subcommands: `setup`, `check`, `task`, `serve`, `instance`, `audit`, `tmux`, `signal`, `daemon`, `monitor`, `reset`, `debug`, `version`.

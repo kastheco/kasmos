@@ -41,39 +41,36 @@ The reviewer agent emits one of two signals when it finishes:
 
 | signal | transition | result |
 |--------|-----------|--------|
-| `review_approved` | `reviewing` → `done` | plan is marked done; PR/merge become available |
-| `review_changes_requested` | `reviewing` → `implementing` | feedback is stored; a fixer agent is spawned |
+| `review_approved` | `reviewing → verifying` (or `→ done` when `auto_readiness_review = false`) | master agent spawned (or plan marked done directly) |
+| `review_changes_requested` | `reviewing → implementing` | feedback is stored; a fixer agent is spawned |
 
 ### approval path
 
-When the reviewer approves, the plan normally moves to `done`. If `auto_readiness_review = true` in `daemon.toml` (or the project `config.toml`), the processor **intercepts** the `review_approved` signal and instead:
+When the reviewer approves:
 
-1. sets the execution phase to `readiness_reviewing`
-2. spawns the **master agent** on the same worktree
-3. shows a toast: `review approved → readiness check started for <plan>`
+- **`auto_readiness_review = true` (default):** the task transitions to the `verifying` status and kasmos spawns the **master agent** on the same worktree. A toast is shown: `review approved → verification started for <plan>`.
+- **`auto_readiness_review = false`:** `review_approved` flows directly to `done` — no master agent is spawned.
 
-The master agent performs a holistic check against the plan spec. When it finishes, it emits one of the readiness signals:
+The master agent performs a holistic check against the plan spec. When it finishes, it emits one of the verifying signals:
 
 | signal | transition | result |
 |--------|-----------|--------|
-| `readiness_approved` | `reviewing` (`readiness_reviewing` phase) → `done` | plan is marked done; PR/merge become available |
-| `readiness_changes_requested` | `reviewing` (`readiness_reviewing` phase) → `implementing` | feedback is stored; a fixer agent is spawned |
+| `verify_approved` | `verifying → done` | plan is marked done; PR/merge become available |
+| `verify_failed` | `verifying → implementing` | feedback is stored; a fixer agent is spawned |
 
 **Emit these with the MCP tool** (preferred):
 ```json
-{"signal_type": "readiness-approved", "plan_file": "<plan>", "project": "<project>"}
+{"signal_type": "verify_approved", "plan_file": "<plan>", "project": "<project>"}
 ```
 or with the CLI:
 ```bash
-kas signal emit readiness_approved <plan>
-kas signal emit readiness_changes_requested <plan>
+kas signal emit verify_approved <plan>
+kas signal emit verify_failed <plan>
 ```
 
-When readiness review is **disabled** (the default), `review_approved` flows directly to `done` as before.
+> **Deprecated aliases:** `readiness_approved` and `readiness_changes_requested` (and their hyphenated variants) are still accepted and canonicalized to `verify_approved` / `verify_failed` at ingress. Use the canonical names in new automation.
 
-**The FSM status table is unchanged** — no new FSM status was added. `reviewing → done` still flows through `review_approved`; the `readiness_reviewing` execution phase is a sub-state within `reviewing` managed by the orchestration engine.
-
-After readiness approval (or when readiness review is disabled), the processor checks whether the task is eligible for automatic PR creation: if the task has a branch and no PR URL is already recorded, it emits a `CreatePRAction`. The daemon picks this up and calls the GitHub PR creation flow — no config knob is needed; the behavior is automatic when the eligibility criteria are met.
+After verification (or when `auto_readiness_review = false` skips it), the processor checks whether the task is eligible for automatic PR creation: if the task has a branch and no PR URL is already recorded, it emits a `CreatePRAction`. The daemon picks this up and calls the GitHub PR creation flow — no config knob is needed; the behavior is automatic when the eligibility criteria are met.
 
 If you want to create a PR manually (or the automatic path was skipped for any reason):
 - press `P` with the plan or instance selected

@@ -2544,6 +2544,11 @@ func TestTaskLifecycleItems(t *testing.T) {
 			actions: []string{"mark_plan_done", "start_fixer", "start_review"},
 		},
 		{
+			name:    "verifying",
+			entry:   makeEntry(taskstate.StatusVerifying, ""),
+			actions: []string{"mark_verify_approved", "mark_verify_failed", "start_fixer"},
+		},
+		{
 			name:    "done",
 			entry:   makeEntry(taskstate.StatusDone, ""),
 			actions: []string{"request_review", "resume_implement"},

@@ -18,27 +18,25 @@ Plans move through a fixed set of states. Only the transitions listed below are 
 | `planning` | `implementing` | planner emits signal `planner-finished-<planfile>` |
 | `implementing` | `reviewing` | coder emits signal `implement-finished-<planfile>` |
 | `reviewing` | `implementing` | reviewer emits signal `review-changes-<planfile>` |
-| `reviewing` | `done` | reviewer emits signal `review-approved-<planfile>` |
+| `reviewing` | `verifying` | reviewer emits signal `review-approved-<planfile>` |
+| `verifying` | `done` | master emits signal `verify-approved-<planfile>` |
+| `verifying` | `implementing` | master emits signal `verify-failed-<planfile>` |
 | `done` | — | terminal state, no further transitions |
 
 State is persisted in the **task store** — a SQLite database (`~/.config/kasmos/taskstore.db` locally) or a remote HTTP API server. Agents never write to the store directly — kasmos owns state transitions. Agents emit signals (managed mode) or use task tools (manual mode). To retrieve plan content, agents use MCP `task_show` (`filename: "<plan-file>"`, `project: "$KASMOS_PROJECT"`).
 
-### Readiness Review Execution Phase
+### Verifying State
 
-When `auto_readiness_review` is enabled, kasmos intercepts the `review_approved` signal and transitions the task into the `readiness_reviewing` **execution phase** before marking it done. This is a sub-phase within the `reviewing` FSM state — the FSM state itself does not change.
-
-| FSM State | Execution Phase | Description |
-|-----------|----------------|-------------|
-| `reviewing` | `readiness_reviewing` | master agent performs holistic readiness gate |
-
-The master agent signals its decision using readiness-specific signal types:
+`verifying` is a first-class FSM state between `reviewing` and `done`. When the reviewer emits `review-approved`, kasmos transitions the task to `verifying`. The master readiness agent then runs and issues one of two verdicts:
 
 | Signal type (MCP) | CLI equivalent | Effect |
 |-------------------|---------------|--------|
-| `readiness-approved` | `kas signal emit readiness_approved <planfile>` | completes the task (transitions to `done`) |
-| `readiness-changes-requested` | `kas signal emit readiness_changes_requested <planfile>` | sends the task back to `implementing` for fixes |
+| `verify-approved` | `kas signal emit verify_approved <planfile>` | completes the task (transitions to `done`) |
+| `verify-failed` | `kas signal emit verify_failed <planfile>` | sends the task back to `implementing` for fixes |
 
-If readiness review is disabled, `review_approved` transitions the task directly to `done` without the `readiness_reviewing` phase.
+The `auto_readiness_review` config key controls whether the master agent is spawned. When `auto_readiness_review` is disabled, kasmos immediately chains `verify-approved` after `review-approved` without spawning the master agent — the task transitions directly to `done`.
+
+**Compatibility aliases**: `readiness-approved` and `readiness-changes-requested` are accepted as deprecated aliases for `verify-approved` and `verify-failed` respectively. New code must use the canonical `verify-*` names.
 
 ## Signal Mechanics
 

@@ -106,6 +106,8 @@ func (f *testFSM) TransitionByName(planFile, eventName string) error {
 		"implement_start":    taskfsm.ImplementStart,
 		"implement_finished": taskfsm.ImplementFinished,
 		"review_approved":    taskfsm.ReviewApproved,
+		"verify_approved":    taskfsm.VerifyApproved,
+		"verify_failed":      taskfsm.VerifyFailed,
 		"review_changes":     taskfsm.ReviewChangesRequested,
 		"start_over":         taskfsm.StartOver,
 		"cancel":             taskfsm.Cancel,

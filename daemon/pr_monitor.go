@@ -127,7 +127,7 @@ func (m *PRMonitor) pollOnce(ctx context.Context) {
 // pollRepo polls one repository for open PRs with unprocessed reviews.
 func (m *PRMonitor) pollRepo(ctx context.Context, repo RepoEntry) {
 	entries, err := repo.Store.ListByStatus(repo.Project,
-		taskstore.StatusDone, taskstore.StatusReviewing)
+		taskstore.StatusDone, taskstore.StatusReviewing, taskstore.StatusVerifying)
 	if err != nil {
 		m.logger.Warn("pr_monitor: list tasks failed", "repo", repo.Path, "err", err)
 		return

@@ -6,7 +6,7 @@ this document describes the operator-facing lifecycle model used by the tui and 
 
 every task exposes two related pieces of lifecycle state:
 
-- `status`: coarse progress used for scheduling and filtering (`ready`, `planning`, `implementing`, `reviewing`, `done`, `cancelled`)
+- `status`: coarse progress used for scheduling and filtering (`ready`, `planning`, `implementing`, `reviewing`, `verifying`, `done`, `cancelled`)
 - `execution_phase`: persisted fine-grained execution detail used for operator visibility
 
 the main operator phrases are:
@@ -17,7 +17,7 @@ the main operator phrases are:
 - `waiting for confirmation`
 - `fixing round N`
 - `reviewing round N`
-- `readiness review`
+- `verifying`
 
 examples:
 
@@ -27,7 +27,7 @@ examples:
 - `implementing` + `waiting for confirmation`: the active wave finished and kasmos is waiting for the next explicit handoff
 - `implementing` + `fixing round 3`: the fixer is applying round-3 review feedback
 - `reviewing` + `reviewing round 3`: the reviewer is running round 3
-- `reviewing` + `readiness review`: reviewer approved; the master agent is running the holistic readiness gate before the task transitions to `done`
+- `verifying`: reviewer approved; the master agent is running the holistic readiness gate before the task transitions to `done`
 
 ## where it shows up
 
@@ -61,13 +61,19 @@ supported actions:
 - `review-approved`
 - `review-changes --feedback ...`
 - `advance-review-cycle --feedback ...`
-- `readiness-approved`
-- `readiness-changes --feedback ...`
+- `verify-approved`
+- `verify-failed --feedback ...`
 
-`readiness-approved` and `readiness-changes` apply only while the task is in the `readiness_reviewing` execution phase (master agent active). they correspond to `readiness_approved` / `readiness_changes_requested` gateway signals.
+`verify-approved` and `verify-failed` apply only while the task is in the `verifying` status (master agent active). they correspond to `verify_approved` / `verify_failed` gateway signals.
 
 ## compatibility note for architect completion
 
 the canonical operator-facing action name is `architect-finished`.
 
 for compatibility with existing automation, the persisted gateway / signal wire name remains `elaborator_finished`. use the operator-facing name in docs, tui actions, and cli commands; treat `elaborator_finished` as a wire-level compatibility detail only.
+
+## compatibility note for verifying signals
+
+the canonical signal names for the master agent verdict are `verify_approved` and `verify_failed`.
+
+deprecated aliases (`readiness_approved`, `readiness_changes_requested`, `readiness-approved`, `readiness-changes`, `readiness-changes-requested`, `master_approved`) are still accepted and canonicalized at ingress. use the canonical names in new automation and operator scripts.

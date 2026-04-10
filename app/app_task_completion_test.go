@@ -1454,6 +1454,9 @@ func TestIsLocked_FinishedLockedWhenDone(t *testing.T) {
 	// Still unlocked for reviewing (the valid trigger).
 	assert.False(t, isLocked(taskstate.StatusReviewing, "finished"),
 		"finished stage must be unlocked when plan is reviewing")
+	// Also unlocked for verifying — master agent may still need to apply verify_approved.
+	assert.False(t, isLocked(taskstate.StatusVerifying, "finished"),
+		"finished stage must be unlocked when plan is verifying")
 }
 
 // TestReviewApproved_PausesReviewerInsteadOfKilling verifies that when a

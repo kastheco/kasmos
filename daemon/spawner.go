@@ -303,6 +303,12 @@ func (s *TmuxSpawner) DiscoverOrphanSessions() []tmuxpkg.SessionInfo {
 // spawner's tracking maps.
 func (s *TmuxSpawner) RestoreTrackedInstance(repoPath, project, planFile, agentType string, data session.InstanceData) error {
 	key := instanceKeyForTask(repoPath, planFile, agentType, data.WaveNumber, data.TaskNumber)
+	s.mu.Lock()
+	if _, ok := s.instances[key]; ok {
+		s.mu.Unlock()
+		return errInstanceAlreadyTracked
+	}
+	s.mu.Unlock()
 	if !s.reserveInstanceSlot(key, data.Title) {
 		return errInstanceAlreadyTracked
 	}
@@ -360,7 +366,9 @@ func (s *TmuxSpawner) reserveInstanceSlot(key, title string) bool {
 	defer s.mu.Unlock()
 	if key != "" {
 		if inst, ok := s.instances[key]; ok {
-			if inst != nil && inst.Started() && !inst.TmuxAlive() {
+			stale := inst != nil && (inst.Started() && !inst.TmuxAlive())
+			neverStarted := inst != nil && !inst.Started() && inst.Status != session.Loading
+			if stale || neverStarted {
 				s.logger.Info("evict stale tracked agent", "key", key, "title", inst.Title)
 				delete(s.instances, key)
 				delete(s.planFileByKey, key)
@@ -492,7 +500,7 @@ func (s *TmuxSpawner) SpawnElaborator(ctx context.Context, opts loop.SpawnOpts) 
 func (s *TmuxSpawner) SpawnMaster(ctx context.Context, opts loop.SpawnOpts) error {
 	s.logger.Info("spawn master", "plan", opts.PlanFile)
 	key := instanceKey(opts.RepoPath, opts.PlanFile, session.AgentTypeMaster)
-	title := orchestration.BuildLifecycleAgentTitle(opts.PlanFile, session.AgentTypeMaster, 0)
+	title := orchestration.BuildLifecycleAgentTitle(opts.PlanFile, session.AgentTypeMaster, opts.ReviewCycle)
 	if !s.reserveInstanceSlot(key, title) {
 		s.logger.Info("suppress duplicate tracked agent", "plan", opts.PlanFile, "type", session.AgentTypeMaster, "title", title)
 		return nil

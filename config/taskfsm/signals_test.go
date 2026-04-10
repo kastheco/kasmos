@@ -92,19 +92,6 @@ func TestSignalKey_Dedup(t *testing.T) {
 	assert.NotEqual(t, a.Key(), c.Key(), "different events should produce different keys")
 }
 
-func TestSignal_OriginField(t *testing.T) {
-	// Filesystem sentinel scans leave Origin empty.
-	fsSig := Signal{Event: ReviewApproved, TaskFile: "plan"}
-	assert.Empty(t, fsSig.Origin, "filesystem signals should have empty origin")
-
-	// Gateway-converted readiness signals should carry Origin "master".
-	masterSig := Signal{Event: ReviewApproved, TaskFile: "plan", Origin: "master"}
-	assert.Equal(t, "master", masterSig.Origin)
-
-	// Key() is unaffected by Origin so dedup still works across origins.
-	assert.Equal(t, fsSig.Key(), masterSig.Key(), "Key() must not include Origin")
-}
-
 func TestConsumeSignal_DeletesFile(t *testing.T) {
 	dir := t.TempDir()
 	signalsDir := filepath.Join(dir, ".signals")

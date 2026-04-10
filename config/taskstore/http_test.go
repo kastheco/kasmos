@@ -315,3 +315,54 @@ func TestHTTPStore_PRReviews_MarkNotFound(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }
+
+func TestHTTPStore_VerifyingAtRoundTrip(t *testing.T) {
+	backend := newTestStore(t)
+	srv := httptest.NewServer(taskstore.NewHandler(backend))
+	defer srv.Close()
+	client := taskstore.NewHTTPStore(srv.URL, "kasmos")
+
+	ts := time.Date(2026, 3, 15, 10, 0, 0, 0, time.UTC)
+	entry := taskstore.TaskEntry{
+		Filename:    "verify-task",
+		Status:      taskstore.StatusVerifying,
+		VerifyingAt: ts,
+	}
+	require.NoError(t, client.Create("kasmos", entry))
+
+	got, err := client.Get("kasmos", "verify-task")
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusVerifying, got.Status)
+	assert.Equal(t, ts, got.VerifyingAt, "verifying_at must survive HTTP Create+Get round-trip")
+
+	// Update and re-fetch.
+	ts2 := ts.Add(time.Hour)
+	got.VerifyingAt = ts2
+	require.NoError(t, client.Update("kasmos", "verify-task", got))
+
+	got2, err := client.Get("kasmos", "verify-task")
+	require.NoError(t, err)
+	assert.Equal(t, ts2, got2.VerifyingAt, "verifying_at must survive HTTP Update round-trip")
+
+	// Verify it appears in List.
+	list, err := client.List("kasmos")
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, ts2, list[0].VerifyingAt, "verifying_at must appear in HTTP List results")
+}
+
+func TestHTTPStore_PhaseTimestamp_Verifying(t *testing.T) {
+	backend := newTestStore(t)
+	srv := httptest.NewServer(taskstore.NewHandler(backend))
+	defer srv.Close()
+	client := taskstore.NewHTTPStore(srv.URL, "kasmos")
+
+	require.NoError(t, client.Create("kasmos", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReady}))
+
+	ts := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	require.NoError(t, client.SetPhaseTimestamp("kasmos", "plan", "verifying", ts))
+
+	got, err := backend.Get("kasmos", "plan")
+	require.NoError(t, err)
+	assert.Equal(t, ts, got.VerifyingAt, "SetPhaseTimestamp('verifying') must persist verifying_at")
+}
