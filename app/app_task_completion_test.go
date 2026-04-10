@@ -1679,3 +1679,76 @@ func TestReviewApproved_NoReviewerNoPanic(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, taskstate.StatusDone, entry.Status)
 }
+
+// TestMetadataResultMsg_DeferredDialogReleasedOnMenuDismissal verifies that
+// queued deferred dialogs (e.g. planner-ready prompts) are drained on the same
+// metadata tick that dismisses a stale context menu. This prevents a one-tick
+// delay between menu dismissal and the follow-up prompt appearing.
+func TestMetadataResultMsg_DeferredDialogReleasedOnMenuDismissal(t *testing.T) {
+	const planFile = "planner-ready-task"
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	store := newTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusReady,
+	}))
+	ps, err := newTestPlanStateWithStore(t, store, plansDir)
+	require.NoError(t, err)
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:              context.Background(),
+		state:            stateContextMenu,
+		appConfig:        config.DefaultConfig(),
+		taskState:        ps,
+		taskStore:        store,
+		taskStoreProject: "test",
+		taskStateDir:     plansDir,
+		nav:              ui.NewNavigationPanel(&sp),
+		menu:             ui.NewMenu(),
+		tabbedWindow:     ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:     overlay.NewToastManager(&sp),
+		overlays:         overlay.NewManager(),
+		activeRepoPath:   dir,
+		// tracking fields: menu was opened for a ready task
+		contextMenuTaskFile:   planFile,
+		contextMenuTaskStatus: taskstate.StatusReady,
+		contextMenuTaskPhase:  "",
+		// pre-queue a planner-ready dialog so drainDeferredDialogs has work to do
+		deferredPlannerDialogs:  []string{planFile},
+		plannerPrompted:         make(map[string]bool),
+		deferredPlannerToastIDs: make(map[string]string),
+	}
+	h.overlays.Show(overlay.NewContextMenu([]overlay.ContextMenuItem{
+		{Label: "start planning", Action: "start_plan"},
+	}))
+
+	// Deliver fresh state where the task has advanced to implementing; this
+	// triggers the stale-menu dismissal.
+	require.NoError(t, store.Update("test", planFile, taskstore.TaskEntry{
+		Filename:       planFile,
+		Status:         taskstore.StatusImplementing,
+		ExecutionState: taskstore.ExecutionState{Phase: "planned"},
+	}))
+	freshPs, err := newTestPlanStateWithStore(t, store, plansDir)
+	require.NoError(t, err)
+
+	model, _ := h.Update(metadataResultMsg{PlanState: freshPs})
+	updated := model.(*home)
+
+	// The stale menu must be dismissed on this tick.
+	assert.Contains(t, updated.toastManager.View(), "menu dismissed",
+		"stale menu must be dismissed")
+
+	// drainDeferredDialogs fires on the same tick (after dismissal sets
+	// state=stateDefault so isUserInOverlay returns false). showPlannerDialog
+	// calls confirmAction which sets state=stateConfirm and shows an overlay.
+	assert.Equal(t, stateConfirm, updated.state,
+		"planner dialog must surface on the same tick as menu dismissal")
+	assert.True(t, updated.overlays.IsActive(),
+		"confirmation overlay from planner dialog must be active on the same tick")
+}
