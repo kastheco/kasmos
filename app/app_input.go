@@ -564,10 +564,20 @@ func (m *home) finishPermissionOverlay(result overlay.Result) (tea.Model, tea.Cm
 			m.pendingPermissionInstance = nil
 			m.pendingPermissionPattern = ""
 			m.pendingPermissionDesc = ""
-			return m, func() tea.Msg {
+			var cmds []tea.Cmd
+			cmds = append(cmds, func() tea.Msg {
 				capturedInst.SendPermissionResponse(capturedChoice)
 				return nil
+			})
+			// Restore original nav selection once the last queued prompt is answered.
+			if m.preOverlayInstance != nil && len(m.deferredPermissionPrompts) == 0 {
+				saved := m.preOverlayInstance
+				m.preOverlayInstance = nil
+				if m.nav.SelectInstance(saved) {
+					cmds = append(cmds, m.instanceChanged())
+				}
 			}
+			return m, tea.Batch(cmds...)
 		}
 	}
 
@@ -582,6 +592,14 @@ func (m *home) finishPermissionOverlay(result overlay.Result) (tea.Model, tea.Cm
 	m.pendingPermissionPattern = ""
 	m.pendingPermissionDesc = ""
 	m.state = stateDefault
+	// Restore original nav selection once the last queued prompt is dismissed.
+	if m.preOverlayInstance != nil && len(m.deferredPermissionPrompts) == 0 {
+		saved := m.preOverlayInstance
+		m.preOverlayInstance = nil
+		if m.nav.SelectInstance(saved) {
+			return m, m.instanceChanged()
+		}
+	}
 	return m, nil
 }
 

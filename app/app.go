@@ -475,6 +475,12 @@ type home struct {
 	// deferredPermissionToastIDs tracks sticky permission notifications keyed by
 	// instance title while focus mode remains active.
 	deferredPermissionToastIDs map[string]string
+	// preOverlayInstance is the nav selection captured just before a permission
+	// overlay auto-focused a different instance. Restored when the last queued
+	// permission prompt is dismissed so the user's original selection is preserved.
+	// First-write-wins: set only when nil so a burst of queued prompts preserves
+	// the original selection, not the interim selection from the previous prompt.
+	preOverlayInstance *session.Instance
 }
 
 type deferredPermissionPrompt struct {
@@ -1794,6 +1800,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.permissionHandled[inst] = guardKey
 					m.queuePermissionPrompt(inst, pp.Pattern, pp.Description)
 				} else {
+					// Save the current nav selection before focusing away (first-write-wins).
+					if m.preOverlayInstance == nil {
+						m.preOverlayInstance = m.nav.GetSelectedInstance()
+					}
 					// Focus the instance so the user can see the agent output behind the overlay.
 					if cmd := m.focusInstanceForOverlay(inst); cmd != nil {
 						asyncCmds = append(asyncCmds, cmd)
