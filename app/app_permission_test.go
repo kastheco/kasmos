@@ -699,8 +699,9 @@ func TestFinishPermission_RestoresFocus_QueuedPrompts(t *testing.T) {
 }
 
 // TestFinishPermission_NoRestore_WhenSameInstance verifies that when the permission
-// prompt fires on the already-selected instance, the restoration path completes
-// without disruption — the selection stays on that instance.
+// prompt fires on the already-selected instance, no preOverlayInstance is captured
+// and no restoration occurs — the selection stays on that instance without
+// triggering unnecessary instanceChanged() side effects.
 func TestFinishPermission_NoRestore_WhenSameInstance(t *testing.T) {
 	m := newTestHomeWithCache(t)
 
@@ -720,16 +721,16 @@ func TestFinishPermission_NoRestore_WhenSameInstance(t *testing.T) {
 	})
 
 	require.Equal(t, statePermission, m.state)
-	// preOverlayInstance is set to inst1 (same instance that triggered the prompt).
-	require.Equal(t, inst1, m.preOverlayInstance)
+	// Same-instance prompt: preOverlayInstance must NOT be set.
+	require.Nil(t, m.preOverlayInstance, "preOverlayInstance should not be captured for same-instance prompt")
 
 	// Answer the overlay.
 	_, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	// Selection unchanged; no crash.
+	// Selection unchanged; no crash, no restoration path triggered.
 	assert.Equal(t, stateDefault, m.state)
 	assert.Equal(t, inst1, m.nav.GetSelectedInstance(), "selection should remain on inst1")
-	assert.Nil(t, m.preOverlayInstance, "preOverlayInstance should be cleared")
+	assert.Nil(t, m.preOverlayInstance, "preOverlayInstance should remain nil")
 }
 
 // TestFinishPermission_NoRestore_WhenSavedInstanceRemoved verifies that if the saved
@@ -823,5 +824,167 @@ func TestFinishPermission_RestoresFocus_DeferredPrompt(t *testing.T) {
 
 	assert.Equal(t, stateDefault, m.state)
 	assert.Equal(t, inst1, m.nav.GetSelectedInstance(), "original selection restored after deferred prompt answered")
+	assert.Nil(t, m.preOverlayInstance, "preOverlayInstance cleared")
+}
+
+// TestUpdate_DeferredPromptClearedBeforeDisplay verifies that when a deferred
+// permission prompt is resolved externally (PermissionPrompt becomes nil) before
+// it is shown, the stale entry is removed from the deferred queue. This ensures
+// that the last real prompt still restores the original selection and that
+// drainDeferredDialogs does not surface a bogus overlay.
+func TestUpdate_DeferredPromptClearedBeforeDisplay(t *testing.T) {
+	m := newTestHomeWithCache(t)
+
+	inst1 := &session.Instance{Title: "agent-1", Program: "opencode"}
+	inst1.MarkStartedForTest()
+	m.nav.AddInstance(inst1)()
+
+	inst2 := &session.Instance{Title: "agent-2", Program: "opencode"}
+	inst2.MarkStartedForTest()
+	m.nav.AddInstance(inst2)()
+
+	inst3 := &session.Instance{Title: "agent-3", Program: "opencode"}
+	inst3.MarkStartedForTest()
+	m.nav.AddInstance(inst3)()
+
+	// inst1 is the original selection.
+	m.nav.SelectInstance(inst1)
+	require.Equal(t, inst1, m.nav.GetSelectedInstance(), "precondition: agent-1 selected")
+
+	// Enter focus mode so prompts are deferred.
+	m.state = stateFocusAgent
+	m.tabbedWindow.SetFocusMode(true)
+	m.menu.SetFocusMode(true)
+
+	// Two permission prompts arrive while in focus mode.
+	pp2 := &session.PermissionPrompt{Pattern: "/opt/*", Description: "Access /opt"}
+	pp3 := &session.PermissionPrompt{Pattern: "/usr/*", Description: "Access /usr"}
+
+	_, _ = m.Update(metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "agent-1"},
+			{Title: "agent-2", PermissionPrompt: pp2},
+			{Title: "agent-3", PermissionPrompt: pp3},
+		},
+	})
+
+	require.Equal(t, stateFocusAgent, m.state, "focus mode must not be interrupted")
+	require.Len(t, m.deferredPermissionPrompts, 2, "both prompts should be deferred")
+
+	// inst2's permission clears externally before the user leaves focus mode.
+	_, _ = m.Update(metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "agent-1"},
+			{Title: "agent-2", PermissionPrompt: nil},
+			{Title: "agent-3", PermissionPrompt: pp3},
+		},
+	})
+
+	require.Len(t, m.deferredPermissionPrompts, 1, "stale inst2 entry must be removed from deferred queue")
+	assert.Equal(t, inst3, m.deferredPermissionPrompts[0].instance, "remaining entry should be for inst3")
+
+	// Exit focus mode.
+	m.exitFocusMode()
+	require.Equal(t, stateDefault, m.state)
+
+	// Drain the remaining deferred prompt (inst3).
+	deferred := m.deferredPermissionPrompts[0]
+	m.deferredPermissionPrompts = m.deferredPermissionPrompts[1:]
+	_ = m.showPermissionPrompt(deferred)
+
+	require.Equal(t, statePermission, m.state)
+	require.Equal(t, inst1, m.preOverlayInstance, "original instance saved")
+	require.Equal(t, inst3, m.nav.GetSelectedInstance(), "nav focused inst3 for overlay")
+
+	// Answer the prompt.
+	_, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	assert.Equal(t, stateDefault, m.state)
+	assert.Equal(t, inst1, m.nav.GetSelectedInstance(), "original selection restored after last real prompt")
+	assert.Nil(t, m.preOverlayInstance, "preOverlayInstance cleared")
+}
+
+// TestUpdate_DeferredPromptClearedBeforeDisplay_NewPromptRestoresFocus is a
+// regression test for the clearDeferredPermissionPrompt path. It exercises the
+// scenario where every deferred entry is cleared externally (the queue drains to
+// empty), focus mode ends with nothing to show, and then a brand-new prompt from
+// a third instance arrives. The original selection must still be restored after
+// that new prompt is answered. Without clearDeferredPermissionPrompt, the stale
+// deferred entry would have been drained first, showing a bogus overlay that
+// would corrupt the preOverlayInstance pointer and break focus restoration.
+func TestUpdate_DeferredPromptClearedBeforeDisplay_NewPromptRestoresFocus(t *testing.T) {
+	m := newTestHomeWithCache(t)
+
+	inst1 := &session.Instance{Title: "agent-1", Program: "opencode"}
+	inst1.MarkStartedForTest()
+	m.nav.AddInstance(inst1)()
+
+	inst2 := &session.Instance{Title: "agent-2", Program: "opencode"}
+	inst2.MarkStartedForTest()
+	m.nav.AddInstance(inst2)()
+
+	inst3 := &session.Instance{Title: "agent-3", Program: "opencode"}
+	inst3.MarkStartedForTest()
+	m.nav.AddInstance(inst3)()
+
+	// inst1 is the original selection.
+	m.nav.SelectInstance(inst1)
+	require.Equal(t, inst1, m.nav.GetSelectedInstance(), "precondition: agent-1 selected")
+
+	// Enter focus mode so prompts are deferred.
+	m.state = stateFocusAgent
+	m.tabbedWindow.SetFocusMode(true)
+	m.menu.SetFocusMode(true)
+
+	// inst2 gets a permission prompt while in focus mode — added to deferred queue.
+	pp2 := &session.PermissionPrompt{Pattern: "/opt/*", Description: "Access /opt"}
+	_, _ = m.Update(metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "agent-1"},
+			{Title: "agent-2", PermissionPrompt: pp2},
+			{Title: "agent-3"},
+		},
+	})
+
+	require.Equal(t, stateFocusAgent, m.state, "focus mode must not be interrupted")
+	require.Len(t, m.deferredPermissionPrompts, 1, "inst2 prompt should be deferred")
+
+	// inst2's permission clears externally before the user exits focus mode.
+	// This exercises clearDeferredPermissionPrompt via the metadata-clear path.
+	_, _ = m.Update(metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "agent-1"},
+			{Title: "agent-2", PermissionPrompt: nil},
+			{Title: "agent-3"},
+		},
+	})
+
+	require.Empty(t, m.deferredPermissionPrompts, "stale inst2 entry must be removed — queue now empty")
+
+	// Exit focus mode — no deferred prompts to drain.
+	m.exitFocusMode()
+	require.Equal(t, stateDefault, m.state)
+	assert.Nil(t, m.preOverlayInstance, "no preOverlayInstance — nothing was shown")
+	assert.Equal(t, inst1, m.nav.GetSelectedInstance(), "inst1 still selected after exiting focus mode")
+
+	// A new permission prompt arrives from inst3 (not deferred — we're in default state).
+	pp3 := &session.PermissionPrompt{Pattern: "/usr/*", Description: "Access /usr"}
+	_, _ = m.Update(metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "agent-1"},
+			{Title: "agent-2"},
+			{Title: "agent-3", PermissionPrompt: pp3},
+		},
+	})
+
+	require.Equal(t, statePermission, m.state, "permission overlay shown for inst3")
+	require.Equal(t, inst1, m.preOverlayInstance, "original selection saved before showing overlay")
+	require.Equal(t, inst3, m.nav.GetSelectedInstance(), "nav switched to inst3 for overlay")
+
+	// Answer the prompt.
+	_, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	assert.Equal(t, stateDefault, m.state)
+	assert.Equal(t, inst1, m.nav.GetSelectedInstance(), "original inst1 selection restored after answering inst3")
 	assert.Nil(t, m.preOverlayInstance, "preOverlayInstance cleared")
 }

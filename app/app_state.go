@@ -1135,23 +1135,21 @@ func (m *home) showPermissionPrompt(deferred deferredPermissionPrompt) tea.Cmd {
 	m.resolveDeferredToast(m.deferredPermissionToastIDs, inst.Title, overlay.ToastInfo,
 		fmt.Sprintf("permission prompt ready for %s", inst.Title))
 	// Save the current nav selection before focusing away (first-write-wins).
-	if m.preOverlayInstance == nil {
-		m.preOverlayInstance = m.nav.GetSelectedInstance()
-	}
-	if cmd := m.focusInstanceForOverlay(inst); cmd != nil {
-		m.pendingPermissionPattern = deferred.pattern
-		m.pendingPermissionDesc = deferred.desc
-		m.overlays.Show(overlay.NewPermissionOverlay(inst.Title, deferred.desc, deferred.pattern))
-		m.pendingPermissionInstance = inst
-		m.state = statePermission
-		return cmd
+	// Skip capture+focus when the prompt is on the already-selected instance —
+	// no restoration needed and avoids unnecessary instanceChanged() side effects.
+	var focusCmd tea.Cmd
+	if m.nav.GetSelectedInstance() != inst {
+		if m.preOverlayInstance == nil {
+			m.preOverlayInstance = m.nav.GetSelectedInstance()
+		}
+		focusCmd = m.focusInstanceForOverlay(inst)
 	}
 	m.pendingPermissionPattern = deferred.pattern
 	m.pendingPermissionDesc = deferred.desc
 	m.overlays.Show(overlay.NewPermissionOverlay(inst.Title, deferred.desc, deferred.pattern))
 	m.pendingPermissionInstance = inst
 	m.state = statePermission
-	return nil
+	return focusCmd
 }
 
 // snapshotPaneOnCompletion writes the instance's pane content to a log file

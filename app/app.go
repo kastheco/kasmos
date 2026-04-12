@@ -1801,12 +1801,16 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.queuePermissionPrompt(inst, pp.Pattern, pp.Description)
 				} else {
 					// Save the current nav selection before focusing away (first-write-wins).
-					if m.preOverlayInstance == nil {
-						m.preOverlayInstance = m.nav.GetSelectedInstance()
-					}
-					// Focus the instance so the user can see the agent output behind the overlay.
-					if cmd := m.focusInstanceForOverlay(inst); cmd != nil {
-						asyncCmds = append(asyncCmds, cmd)
+					// Skip capture+focus when the prompt is on the already-selected instance —
+					// no restoration needed and avoids unnecessary instanceChanged() side effects.
+					if m.nav.GetSelectedInstance() != inst {
+						if m.preOverlayInstance == nil {
+							m.preOverlayInstance = m.nav.GetSelectedInstance()
+						}
+						// Focus the instance so the user can see the agent output behind the overlay.
+						if cmd := m.focusInstanceForOverlay(inst); cmd != nil {
+							asyncCmds = append(asyncCmds, cmd)
+						}
 					}
 					// Show modal (statePermission blocks re-entry on subsequent ticks).
 					perm := overlay.NewPermissionOverlay(inst.Title, pp.Description, pp.Pattern)
@@ -1824,6 +1828,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Prompt cleared — remove the in-flight guard so a future permission
 				// prompt for this instance can trigger auto-approve again.
 				delete(m.permissionHandled, inst)
+				// Also remove any deferred queue entry for this instance — the
+				// permission was resolved externally (e.g. agent auto-dismissed it)
+				// so draining a stale entry would show a bogus overlay or block
+				// focus restoration.
+				m.clearDeferredPermissionPrompt(inst)
 			}
 
 			// Mirror the daemon's PermissionBlocked tracking so the TUI wave
