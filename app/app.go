@@ -475,12 +475,16 @@ type home struct {
 	// deferredPermissionToastIDs tracks sticky permission notifications keyed by
 	// instance title while focus mode remains active.
 	deferredPermissionToastIDs map[string]string
-	// preOverlayInstance is the nav selection captured just before a permission
-	// overlay auto-focused a different instance. Restored when the last queued
-	// permission prompt is dismissed so the user's original selection is preserved.
-	// First-write-wins: set only when nil so a burst of queued prompts preserves
-	// the original selection, not the interim selection from the previous prompt.
-	preOverlayInstance *session.Instance
+	// preOverlayNavID is the nav row id captured just before a permission
+	// overlay auto-focused a different instance. It works for any nav row
+	// kind — instance, plan header, history row, etc. — so non-instance
+	// selections are restored on dismissal. Restored when the last queued
+	// permission prompt is dismissed so the user's original selection is
+	// preserved. First-write-wins via preOverlayCaptured: set only while
+	// captured is false so a burst of queued prompts preserves the original
+	// selection, not the interim selection from the previous prompt.
+	preOverlayNavID    string
+	preOverlayCaptured bool
 }
 
 type deferredPermissionPrompt struct {
@@ -1800,12 +1804,16 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.permissionHandled[inst] = guardKey
 					m.queuePermissionPrompt(inst, pp.Pattern, pp.Description)
 				} else {
-					// Save the current nav selection before focusing away (first-write-wins).
+					// Save the current nav row id before focusing away (first-write-wins).
+					// Capturing the row id — rather than the selected instance pointer —
+					// means plan/history selections (where GetSelectedInstance() is nil)
+					// still restore correctly when the overlay is dismissed.
 					// Skip capture+focus when the prompt is on the already-selected instance —
 					// no restoration needed and avoids unnecessary instanceChanged() side effects.
 					if m.nav.GetSelectedInstance() != inst {
-						if m.preOverlayInstance == nil {
-							m.preOverlayInstance = m.nav.GetSelectedInstance()
+						if !m.preOverlayCaptured {
+							m.preOverlayNavID = m.nav.GetSelectedID()
+							m.preOverlayCaptured = true
 						}
 						// Focus the instance so the user can see the agent output behind the overlay.
 						if cmd := m.focusInstanceForOverlay(inst); cmd != nil {

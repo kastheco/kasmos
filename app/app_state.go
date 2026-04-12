@@ -1134,13 +1134,17 @@ func (m *home) showPermissionPrompt(deferred deferredPermissionPrompt) tea.Cmd {
 	}
 	m.resolveDeferredToast(m.deferredPermissionToastIDs, inst.Title, overlay.ToastInfo,
 		fmt.Sprintf("permission prompt ready for %s", inst.Title))
-	// Save the current nav selection before focusing away (first-write-wins).
+	// Save the current nav row id before focusing away (first-write-wins).
+	// Capturing the row id — rather than the selected instance pointer —
+	// means plan/history selections (where GetSelectedInstance() is nil)
+	// still restore correctly when the overlay is dismissed.
 	// Skip capture+focus when the prompt is on the already-selected instance —
 	// no restoration needed and avoids unnecessary instanceChanged() side effects.
 	var focusCmd tea.Cmd
 	if m.nav.GetSelectedInstance() != inst {
-		if m.preOverlayInstance == nil {
-			m.preOverlayInstance = m.nav.GetSelectedInstance()
+		if !m.preOverlayCaptured {
+			m.preOverlayNavID = m.nav.GetSelectedID()
+			m.preOverlayCaptured = true
 		}
 		focusCmd = m.focusInstanceForOverlay(inst)
 	}
