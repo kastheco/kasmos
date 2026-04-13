@@ -2156,6 +2156,44 @@ func TestStartFixer_AppearsInImplementingTaskContextMenu(t *testing.T) {
 	require.True(t, found, "implementing task context menu must include 'start fixer' action")
 }
 
+func TestStartVerify_AppearsInTaskContextMenu(t *testing.T) {
+	cases := []struct {
+		name   string
+		status taskstate.Status
+	}{
+		{name: "implementing", status: taskstate.StatusImplementing},
+		{name: "reviewing", status: taskstate.StatusReviewing},
+		{name: "verifying", status: taskstate.StatusVerifying},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newTestHome()
+			planFile := tc.name + "-plan"
+			h.setupPlanState(t, planFile, tc.status, "")
+
+			h.focusSlot = slotNav
+			h.nav.SelectByID(ui.SidebarPlanPrefix + planFile)
+
+			model, _ := h.openTaskContextMenu()
+			updated := model.(*home)
+
+			require.Equal(t, stateContextMenu, updated.state)
+			cm, ok := updated.overlays.Current().(*overlay.ContextMenu)
+			require.True(t, ok, "current overlay must be a ContextMenu")
+
+			found := false
+			for _, item := range cm.AllItems() {
+				if item.Action == "start_verify" {
+					found = true
+					break
+				}
+			}
+			require.True(t, found, "%s task context menu must include 'start verify' action", tc.name)
+		})
+	}
+}
+
 // TestExitFocusMode_KeepsPreviewTerminal verifies that exitFocusMode does NOT close
 // previewTerminal — it stays alive for preview rendering.
 func TestExitFocusMode_KeepsPreviewTerminal(t *testing.T) {
