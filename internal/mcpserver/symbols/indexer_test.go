@@ -299,6 +299,71 @@ func TestIndexerStartWatcherReindexesIndividualFiles(t *testing.T) {
 	close(watcher.changes)
 }
 
+func TestIndexerPrimeFile_UpdatesStoreAndRemembersPath(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "prime.go")
+	require.NoError(t, os.WriteFile(path, []byte("package prime\n"), 0o644))
+
+	restoreLookPath := stubIndexerLookPath(t, func(string) (string, error) {
+		return "/usr/bin/ctags", nil
+	})
+	defer restoreLookPath()
+
+	restoreCommand := stubIndexerCommandOutput(t, func(_ context.Context, name string, args ...string) ([]byte, error) {
+		if name == "/usr/bin/ctags" {
+			return []byte(fmt.Sprintf(`{"_type":"tag","name":"PrimeFunc","path":%q,"line":3,"kind":"function"}`+"\n", path)), nil
+		}
+		return nil, fmt.Errorf("unexpected command %q", name)
+	})
+	defer restoreCommand()
+
+	var (
+		mu      sync.Mutex
+		updated map[string][]Symbol
+	)
+	updated = make(map[string][]Symbol)
+
+	store := NewStore()
+	indexer := NewIndexer(root, nil, nil, func(p string, syms []Symbol) {
+		mu.Lock()
+		defer mu.Unlock()
+		updated[p] = append([]Symbol(nil), syms...)
+		store.Update(p, syms)
+	}, nil)
+
+	syms, err := indexer.PrimeFile(context.Background(), path)
+	require.NoError(t, err)
+	assert.Equal(t, []Symbol{{Name: "PrimeFunc", Kind: "function", Line: 3}}, syms)
+
+	// Store should be populated.
+	assert.Equal(t, syms, store.Lookup(path))
+
+	// Path should be remembered in known set.
+	indexer.mu.Lock()
+	_, known := indexer.known[filepath.Clean(path)]
+	indexer.mu.Unlock()
+	assert.True(t, known, "path should be in indexer.known after PrimeFile")
+}
+
+func TestIndexerPrimeFile_UnavailableReturnsNil(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "noop.go")
+	require.NoError(t, os.WriteFile(path, []byte("package noop\n"), 0o644))
+
+	restoreLookPath := stubIndexerLookPath(t, func(string) (string, error) {
+		return "", &exec.Error{Name: "ctags", Err: exec.ErrNotFound}
+	})
+	defer restoreLookPath()
+
+	restoreLogger := stubIndexerLogger(t, func(string, ...any) {})
+	defer restoreLogger()
+
+	indexer := NewIndexer(root, nil, nil, nil, nil)
+	syms, err := indexer.PrimeFile(context.Background(), path)
+	require.NoError(t, err)
+	assert.Nil(t, syms)
+}
+
 func stubIndexerLookPath(t *testing.T, fn func(string) (string, error)) func() {
 	t.Helper()
 

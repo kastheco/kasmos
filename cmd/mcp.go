@@ -109,7 +109,9 @@ func newConfiguredMCPServerSingleRoot(mcpSrv *mcpserver.Server, sharedDB *sql.DB
 	symbolStore := symbols.NewStore()
 	indexerCtx, cancelIndexer := context.WithCancel(context.Background())
 	indexer := symbols.NewIndexer(repoRoot, runner, watcher, symbolStore.Update, symbolStore.Remove)
-	indexer.Start(indexerCtx)
+	// Indexer is started lazily on the first symbols tool call rather than
+	// eagerly here, to avoid spinning up the watcher and initial git ls-files
+	// scan for stdio sessions that never request symbols.
 	validator := fstools.NewSandbox(allowedDirs).Validate
 
 	mcpSrv.AddCloser(closeFunc(func() error {
@@ -150,7 +152,10 @@ func newConfiguredMCPServerSingleRoot(mcpSrv *mcpserver.Server, sharedDB *sql.DB
 
 	fstools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, fstools.RegisterOptions{Runner: runner, FileCache: fileCache, Symbols: symbolStore})
 	gittools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, runner)
-	symbols.RegisterTool(mcpSrv.MCPServer(), validator, symbolStore, indexer.Available)
+	symbols.RegisterTool(mcpSrv.MCPServer(), validator, symbolStore, indexer.Available,
+		func(_ context.Context) { indexer.Start(indexerCtx) },
+		indexer.PrimeFile,
+	)
 	tasktools.RegisterTools(mcpSrv.MCPServer(), fixedProject, dbProjects, mcpSrv.Store())
 	signaltools.RegisterTools(mcpSrv.MCPServer(), fixedProject, dbProjects, mcpSrv.Gateway())
 	instancetools.RegisterTools(
@@ -235,7 +240,7 @@ func newConfiguredMCPServerMultiRoot(mcpSrv *mcpserver.Server, repoRoots []strin
 	// picks the correct project from the "project" parameter.
 	fstools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, fstools.RegisterOptions{Runner: runner, FileCache: nil, Symbols: symbolStore})
 	gittools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, runner)
-	symbols.RegisterTool(mcpSrv.MCPServer(), validator, symbolStore, ctagsAvailable)
+	symbols.RegisterTool(mcpSrv.MCPServer(), validator, symbolStore, ctagsAvailable, nil, nil)
 	tasktools.RegisterTools(mcpSrv.MCPServer(), "", projects, mcpSrv.Store())
 	signaltools.RegisterTools(mcpSrv.MCPServer(), "", projects, mcpSrv.Gateway())
 	instancetools.RegisterTools(

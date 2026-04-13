@@ -2,12 +2,16 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/kastheco/kasmos/internal/check"
 	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
+	"github.com/kastheco/kasmos/internal/platform"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -20,9 +24,14 @@ func bundledCheckSkillNames(t *testing.T) []string {
 }
 
 // captureCheckOutput runs newCheckCmd() with a temp home/project layout and
-// captures stdout. Returns the output string and whether the command returned nil.
+// captures stdout. Returns the combined stdout buffer; the command's error is
+// not reported because every caller only asserts on rendered output.
 func captureCheckOutput(t *testing.T, setupFn func(home, project string)) string {
 	t.Helper()
+	// Stub the probe to "reachable" by default so check tests don't hit the
+	// network. Tests that exercise the unreachable path replace the seam first.
+	prev := SetProbeSharedMCPForTest(func(context.Context) error { return nil })
+	t.Cleanup(func() { SetProbeSharedMCPForTest(prev) })
 
 	home := t.TempDir()
 	project := t.TempDir()
@@ -286,6 +295,161 @@ func TestCheckCmd_ShowsSkillMDWarning(t *testing.T) {
 	})
 
 	assert.Contains(t, out, "no SKILL.md")
+}
+
+// TestCheckCmd_SharedHTTPRenderedHealthy verifies that a shared-http .mcp.json entry
+// shows (shared http) annotation and does NOT trigger a mismatch or stale annotation.
+func TestCheckCmd_SharedHTTPRenderedHealthy(t *testing.T) {
+	// Mock ps so no real MCP processes can pollute the output.
+	orig := check.SetPSOutputFnForTest(func() (string, error) { return "", nil })
+	t.Cleanup(func() { check.SetPSOutputFnForTest(orig) })
+
+	out := captureCheckOutput(t, func(home, project string) {
+		mcpJSON := `{"mcpServers":{"kasmos":{"type":"http","url":"http://127.0.0.1:7434/mcp"}}}`
+		require.NoError(t, os.WriteFile(filepath.Join(project, ".mcp.json"), []byte(mcpJSON), 0o644))
+	})
+
+	assert.Contains(t, out, "shared http", "shared http transport label should appear")
+	assert.NotContains(t, out, "stale", "stale annotation must not appear for shared http")
+	assert.NotContains(t, out, "mismatch", "mismatch annotation must not appear for shared http")
+}
+
+// TestCheckCmd_SharedHTTPNoRemediationHint verifies that a healthy shared-http entry
+// does not trigger the kas scaffold sync remediation hint.
+func TestCheckCmd_SharedHTTPNoRemediationHint(t *testing.T) {
+	// Mock ps so no real MCP processes can pollute the output.
+	orig := check.SetPSOutputFnForTest(func() (string, error) { return "", nil })
+	t.Cleanup(func() { check.SetPSOutputFnForTest(orig) })
+
+	out := captureCheckOutput(t, func(home, project string) {
+		mcpJSON := `{"mcpServers":{"kasmos":{"type":"http","url":"http://127.0.0.1:7434/mcp"}}}`
+		require.NoError(t, os.WriteFile(filepath.Join(project, ".mcp.json"), []byte(mcpJSON), 0o644))
+	})
+
+	// No binary skew → no scaffold sync hint.
+	assert.NotContains(t, out, "kas scaffold sync",
+		"scaffold sync hint must not fire for a shared-http entry")
+}
+
+// TestCheckCmd_UnexpectedHTTPURLNotHealthy verifies that an arbitrary http url
+// in .mcp.json is not rendered as shared http and does not pass as healthy.
+func TestCheckCmd_UnexpectedHTTPURLNotHealthy(t *testing.T) {
+	orig := check.SetPSOutputFnForTest(func() (string, error) { return "", nil })
+	t.Cleanup(func() { check.SetPSOutputFnForTest(orig) })
+
+	out := captureCheckOutput(t, func(home, project string) {
+		mcpJSON := `{"mcpServers":{"kasmos":{"type":"http","url":"http://evil.example.com/mcp"}}}`
+		require.NoError(t, os.WriteFile(filepath.Join(project, ".mcp.json"), []byte(mcpJSON), 0o644))
+	})
+
+	assert.Contains(t, out, "http://evil.example.com/mcp",
+		"rendered output should still show the configured url")
+	assert.NotContains(t, out, "shared http",
+		"unexpected url must not be labeled as shared http")
+	assert.Contains(t, out, "unexpected http url",
+		"the unhealthy note should explain the mismatch")
+}
+
+// TestCheckCmd_UnexpectedRemoteURLNotHealthy verifies the same tightening for
+// opencode.jsonc remote entries with an arbitrary url.
+func TestCheckCmd_UnexpectedRemoteURLNotHealthy(t *testing.T) {
+	orig := check.SetPSOutputFnForTest(func() (string, error) { return "", nil })
+	t.Cleanup(func() { check.SetPSOutputFnForTest(orig) })
+
+	out := captureCheckOutput(t, func(home, project string) {
+		oc := `{"mcp":{"kasmos":{"type":"remote","url":"http://evil.example.com/mcp"}}}`
+		require.NoError(t, os.WriteFile(filepath.Join(project, "opencode.jsonc"), []byte(oc), 0o644))
+	})
+
+	assert.Contains(t, out, "http://evil.example.com/mcp")
+	assert.NotContains(t, out, "shared http",
+		"unexpected remote url must not be labeled as shared http")
+	assert.Contains(t, out, "unexpected remote url")
+}
+
+// TestCheckCmd_MCPProcessesSection verifies that long-lived stdio mcp processes trigger
+// a warning section and a kill hint.
+func TestCheckCmd_MCPProcessesSection(t *testing.T) {
+	// Inject a fake long-lived kas mcp process via the package-level seam.
+	orig := check.SetPSOutputFnForTest(func() (string, error) {
+		return "  4242  120  38124 /home/kas/go/bin/kas mcp\n", nil
+	})
+	t.Cleanup(func() { check.SetPSOutputFnForTest(orig) })
+
+	out := captureCheckOutput(t, nil)
+
+	assert.Contains(t, out, "stdio mcp processes", "warning section should appear")
+	assert.Contains(t, out, "4242", "PID should appear")
+	assert.Contains(t, out, "kill", "kill hint should appear in remediation")
+}
+
+// TestCheckCmd_SharedMCPEndpointReachable verifies the endpoint section reports
+// a healthy shared HTTP MCP endpoint when the probe succeeds.
+func TestCheckCmd_SharedMCPEndpointReachable(t *testing.T) {
+	out := captureCheckOutput(t, nil)
+
+	assert.Contains(t, out, "shared mcp endpoint")
+	assert.Contains(t, out, "reachable")
+	assert.NotContains(t, out, "start the shared mcp endpoint",
+		"no remediation hint when endpoint is reachable")
+}
+
+// TestCheckCmd_SharedMCPEndpointUnreachable verifies that a failing probe drives
+// the check command to non-zero exit, renders the unreachable banner, and adds
+// the start-command remediation hint.
+func TestCheckCmd_SharedMCPEndpointUnreachable(t *testing.T) {
+	// This test cannot use captureCheckOutput: that helper hard-codes a
+	// success probe stub, and we need the probe to return an error to
+	// exercise the unreachable path. Build the command and env inline
+	// instead so the error stub we install here is the one the command runs.
+	home := t.TempDir()
+	project := t.TempDir()
+
+	prev := SetProbeSharedMCPForTest(func(context.Context) error {
+		return fmt.Errorf("connection refused")
+	})
+	t.Cleanup(func() { SetProbeSharedMCPForTest(prev) })
+
+	origHome := os.Getenv("HOME")
+	t.Setenv("HOME", home)
+	defer os.Setenv("HOME", origHome)
+
+	origWd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(project))
+	defer os.Chdir(origWd)
+
+	cmd := newCheckCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	execErr := cmd.Execute()
+	require.Error(t, execErr, "unreachable endpoint must drive non-zero exit")
+
+	out := buf.String()
+	assert.Contains(t, out, "shared mcp endpoint")
+	assert.Contains(t, out, "unreachable")
+	assert.Contains(t, out, "connection refused")
+	assert.Contains(t, out, "start the shared mcp endpoint",
+		"remediation hint must include the service start command")
+	// Regression: the hint must point at RestartServicesCommand (which starts
+	// the shared mcp host), not DaemonStartCommand (daemon-only). Pin on the
+	// exact platform string so a revert fails the test.
+	assert.Contains(t, out, platform.RestartServicesCommand(),
+		"remediation must use RestartServicesCommand, not DaemonStartCommand")
+}
+
+// TestCheckCmd_NoMCPProcessesSection verifies no warning section when ps returns nothing.
+func TestCheckCmd_NoMCPProcessesSection(t *testing.T) {
+	orig := check.SetPSOutputFnForTest(func() (string, error) {
+		return "", nil
+	})
+	t.Cleanup(func() { check.SetPSOutputFnForTest(orig) })
+
+	out := captureCheckOutput(t, nil)
+
+	assert.NotContains(t, out, "stdio mcp processes", "no warning when no long-lived processes")
 }
 
 // TestCheckCmd_ShowsRemediation verifies that remediation hints are shown for missing/copy status skills.

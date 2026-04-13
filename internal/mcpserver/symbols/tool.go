@@ -19,7 +19,23 @@ type toolResult struct {
 }
 
 // RegisterTool registers the symbols tool when srv is non-nil.
-func RegisterTool(srv *server.MCPServer, validate PathValidator, store *Store, ctagsAvailable func() bool) {
+//
+// ensureStarted, when non-nil, is called on every tool invocation to kick off
+// background indexing exactly once (the hook must be idempotent).
+//
+// loadOnMiss, when non-nil, is called synchronously when the store has no
+// symbols for the requested path so that the first call returns real data
+// rather than an empty slice. Implementations MUST update store with the
+// returned symbols; the handler does not do it for them. Skipping this means
+// every follow-up call re-runs the synchronous loader.
+func RegisterTool(
+	srv *server.MCPServer,
+	validate PathValidator,
+	store *Store,
+	ctagsAvailable func() bool,
+	ensureStarted func(context.Context),
+	loadOnMiss func(context.Context, string) ([]Symbol, error),
+) {
 	if srv == nil {
 		return
 	}
@@ -31,13 +47,11 @@ func RegisterTool(srv *server.MCPServer, validate PathValidator, store *Store, c
 			mcp.Description("Absolute or relative file path to inspect."),
 		),
 	)
-	srv.AddTool(tool, makeSymbolsHandler(validate, store, ctagsAvailable))
+	srv.AddTool(tool, makeSymbolsHandler(validate, store, ctagsAvailable, ensureStarted, loadOnMiss))
 }
 
-func makeSymbolsHandler(validate PathValidator, store *Store, ctagsAvailable func() bool) server.ToolHandlerFunc {
+func makeSymbolsHandler(validate PathValidator, store *Store, ctagsAvailable func() bool, ensureStarted func(context.Context), loadOnMiss func(context.Context, string) ([]Symbol, error)) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		_ = ctx
-
 		rawPath, err := req.RequireString("path")
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("symbols: %v", err)), nil
@@ -67,13 +81,27 @@ func makeSymbolsHandler(validate PathValidator, store *Store, ctagsAvailable fun
 			})
 		}
 
+		// Kick off background indexing (idempotent).
+		if ensureStarted != nil {
+			ensureStarted(ctx)
+		}
+
 		result := toolResult{Symbols: []Symbol{}, Total: 0}
 		if store != nil {
-			result.Symbols = store.Lookup(validatedPath)
-			if result.Symbols == nil {
-				result.Symbols = []Symbol{}
+			// Distinguish "not cached" from "cached empty" so files that
+			// legitimately have no symbols do not re-trigger loadOnMiss on
+			// every invocation.
+			symbols, present := store.LookupPresent(validatedPath)
+			if !present && loadOnMiss != nil {
+				if syms, missErr := loadOnMiss(ctx, validatedPath); missErr == nil {
+					symbols = syms
+				}
 			}
-			result.Total = len(result.Symbols)
+			if symbols == nil {
+				symbols = []Symbol{}
+			}
+			result.Symbols = symbols
+			result.Total = len(symbols)
 		}
 
 		return symbolsJSONResult(result)

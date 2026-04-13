@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -12,11 +13,54 @@ import (
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/mcpclient"
 	"github.com/kastheco/kasmos/internal/opencodesession"
+	"github.com/kastheco/kasmos/internal/platform"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session/git"
 	"github.com/kastheco/kasmos/session/tmux"
 )
+
+// kasmosManagedPrograms lists executable basenames that depend on the shared
+// kasmos MCP HTTP endpoint. Absolute-path variants are handled by extracting
+// the basename before lookup.
+var kasmosManagedPrograms = map[string]bool{
+	"claude":   true,
+	"opencode": true,
+	"codex":    true,
+}
+
+// probeMCPFunc is the probe seam. Tests may replace it to avoid real network
+// calls while still exercising the gate logic in the launch methods.
+var probeMCPFunc = func() error {
+	return mcpclient.ProbeHTTP(context.Background(), mcpclient.SharedEndpointURL)
+}
+
+// usesManagedKasmosMCP reports whether program depends on the shared kasmos
+// MCP HTTP endpoint. It strips command-line flags and extracts the executable
+// basename so both "claude" and "/usr/local/bin/claude --flag" are recognised.
+func usesManagedKasmosMCP(program string) bool {
+	fields := strings.Fields(program)
+	if len(fields) == 0 {
+		return false
+	}
+	base := filepath.Base(fields[0])
+	return kasmosManagedPrograms[base]
+}
+
+// ensureSharedKasmosMCP gates launch on the shared MCP endpoint being
+// reachable. Returns nil immediately for programs that do not use the endpoint.
+// Errors include an actionable service start command for the current platform.
+func (i *Instance) ensureSharedKasmosMCP() error {
+	if !usesManagedKasmosMCP(i.Program) {
+		return nil
+	}
+	if err := probeMCPFunc(); err != nil {
+		return fmt.Errorf("kasmos mcp endpoint not reachable — run `%s` to start the shared mcp host: %w",
+			platform.RestartServicesCommand(), err)
+	}
+	return nil
+}
 
 // prepareExecutionSession returns the existing execution session if already wired, otherwise
 // allocates a fresh one from the instance configuration.
@@ -204,6 +248,14 @@ func (i *Instance) Start(firstTimeSetup bool) error {
 	if i.Title == "" {
 		return fmt.Errorf("instance title cannot be empty")
 	}
+	// Probe only when spawning a fresh harness. Restore-only attach (firstTimeSetup=false,
+	// used by FromInstanceData) reconnects to an already-running process and must not
+	// fail when the shared endpoint is temporarily down.
+	if firstTimeSetup {
+		if err := i.ensureSharedKasmosMCP(); err != nil {
+			return err
+		}
+	}
 
 	if firstTimeSetup {
 		i.LoadingTotal = 8
@@ -284,6 +336,9 @@ func (i *Instance) StartOnMainBranch() error {
 	if i.Title == "" {
 		return fmt.Errorf("instance title cannot be empty")
 	}
+	if err := i.ensureSharedKasmosMCP(); err != nil {
+		return err
+	}
 
 	i.LoadingTotal = 5
 	i.LoadingStage = 0
@@ -325,6 +380,9 @@ func (i *Instance) StartOnMainBranch() error {
 func (i *Instance) StartOnBranch(branch string) error {
 	if i.Title == "" {
 		return fmt.Errorf("instance title cannot be empty")
+	}
+	if err := i.ensureSharedKasmosMCP(); err != nil {
+		return err
 	}
 
 	i.LoadingTotal = 8
@@ -385,6 +443,9 @@ func (i *Instance) StartOnBranch(branch string) error {
 func (i *Instance) StartInSharedWorktree(worktree *git.GitWorktree, branch string) error {
 	if i.Title == "" {
 		return fmt.Errorf("instance title cannot be empty")
+	}
+	if err := i.ensureSharedKasmosMCP(); err != nil {
+		return err
 	}
 
 	i.LoadingTotal = 6
@@ -549,6 +610,9 @@ func (i *Instance) Restart() error {
 	if i.Status == Paused {
 		return fmt.Errorf("cannot restart paused instance; resume it first")
 	}
+	if err := i.ensureSharedKasmosMCP(); err != nil {
+		return err
+	}
 
 	// Best-effort: session may already be dead.
 	if i.executionSession != nil {
@@ -623,7 +687,10 @@ func (i *Instance) Resume() error {
 	if i.executionSession.DoesSessionExist() {
 		if restoreErr := i.executionSession.Restore(); restoreErr != nil {
 			log.ErrorLog.Print(restoreErr)
-			// Fall back to a fresh session start.
+			// Fall back to a fresh session start — probe the shared endpoint first.
+			if probeErr := i.ensureSharedKasmosMCP(); probeErr != nil {
+				return probeErr
+			}
 			if startErr := i.executionSession.Start(workDir); startErr != nil {
 				log.ErrorLog.Print(startErr)
 				if i.gitWorktree != nil && !i.sharedWorktree {
@@ -636,6 +703,9 @@ func (i *Instance) Resume() error {
 			}
 		}
 	} else {
+		if err := i.ensureSharedKasmosMCP(); err != nil {
+			return err
+		}
 		if err := i.executionSession.Start(workDir); err != nil {
 			log.ErrorLog.Print(err)
 			if i.gitWorktree != nil && !i.sharedWorktree {

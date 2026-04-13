@@ -3,18 +3,29 @@ package mcpclient
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 )
+
+// sessionHeader is the Streamable HTTP session identifier per the MCP spec.
+// The server issues it on `initialize` and validates it on every subsequent
+// request; dropping it yields `http 404: Invalid session ID`.
+const sessionHeader = "Mcp-Session-Id"
 
 // HTTPTransport speaks JSON-RPC over HTTP POST (Streamable HTTP MCP transport).
 type HTTPTransport struct {
 	url   string
 	token string
 	http  *http.Client
+	ctx   context.Context // optional; when non-nil, attached to outgoing requests
+
+	mu        sync.Mutex
+	sessionID string
 }
 
 // NewHTTPTransport creates an HTTP transport with a bearer token.
@@ -34,7 +45,11 @@ func (t *HTTPTransport) Send(req JSONRPCRequest) (JSONRPCResponse, error) {
 		return JSONRPCResponse{}, fmt.Errorf("marshal: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", t.url, bytes.NewReader(body))
+	ctx := t.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", t.url, bytes.NewReader(body))
 	if err != nil {
 		return JSONRPCResponse{}, fmt.Errorf("new request: %w", err)
 	}
@@ -43,12 +58,24 @@ func (t *HTTPTransport) Send(req JSONRPCRequest) (JSONRPCResponse, error) {
 	if t.token != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+t.token)
 	}
+	t.mu.Lock()
+	sid := t.sessionID
+	t.mu.Unlock()
+	if sid != "" {
+		httpReq.Header.Set(sessionHeader, sid)
+	}
 
 	httpResp, err := t.http.Do(httpReq)
 	if err != nil {
 		return JSONRPCResponse{}, fmt.Errorf("http post: %w", err)
 	}
 	defer httpResp.Body.Close()
+
+	if newSID := httpResp.Header.Get(sessionHeader); newSID != "" {
+		t.mu.Lock()
+		t.sessionID = newSID
+		t.mu.Unlock()
+	}
 
 	// 202 Accepted is returned for JSON-RPC notifications (no response expected).
 	if httpResp.StatusCode == http.StatusAccepted {

@@ -11,6 +11,7 @@ import (
 	"github.com/kastheco/kasmos/cmd/cmd_test"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/platform"
 	"github.com/kastheco/kasmos/session/tmux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -49,6 +50,7 @@ func newMockTmuxSession(name, program string, ptyFac tmux.PtyFactory, cmdExec cm
 }
 
 func TestStartTransfersQueuedPromptForOpenCode(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error { return nil },
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
@@ -98,6 +100,7 @@ func TestStartKeepsQueuedPromptForAider(t *testing.T) {
 }
 
 func TestRestart_KillsTmuxAndRestartsSession(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc:    func(cmd *exec.Cmd) error { return nil },
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return []byte(""), nil },
@@ -118,6 +121,7 @@ func TestRestart_KillsTmuxAndRestartsSession(t *testing.T) {
 }
 
 func TestRestart_WorksWhenTmuxAlreadyDead(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc:    func(cmd *exec.Cmd) error { return nil },
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return []byte(""), nil },
@@ -138,6 +142,26 @@ func TestRestart_WorksWhenTmuxAlreadyDead(t *testing.T) {
 	assert.Equal(t, Running, inst.Status)
 }
 
+func TestRestart_ProbesSharedMCP(t *testing.T) {
+	swapProbeMCP(t, func() error { return fmt.Errorf("endpoint down") })
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc:    func(cmd *exec.Cmd) error { return nil },
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return []byte(""), nil },
+	}
+
+	inst := &Instance{
+		Title:   "test-restart-probe",
+		Path:    t.TempDir(),
+		Program: "claude",
+		started: true,
+	}
+	inst.executionSession = newMockTmuxSession(inst.Title, inst.Program, &testPtyFactory{}, cmdExec)
+
+	err := inst.Restart()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mcp endpoint not reachable")
+}
+
 func TestRestart_NotStarted_ReturnsError(t *testing.T) {
 	inst := &Instance{Title: "never-started", started: false}
 	err := inst.Restart()
@@ -156,6 +180,7 @@ func TestRestart_PausedInstance_ReturnsError(t *testing.T) {
 }
 
 func TestStartOnBranch_SetsFields(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
 	repoPath := setupGitRepo(t)
 
 	inst, err := NewInstance(InstanceOptions{
@@ -187,6 +212,7 @@ func TestStartOnBranch_SetsFields(t *testing.T) {
 }
 
 func TestKill_PreservesBranch(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
 	repoPath := setupGitRepo(t)
 	inst, err := NewInstance(InstanceOptions{
 		Title:   "test-safe-kill",
@@ -217,6 +243,7 @@ func TestKill_PreservesBranch(t *testing.T) {
 }
 
 func TestKill_DirtyWorktreeReturnsError(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
 	repoPath := setupGitRepo(t)
 	inst, err := NewInstance(InstanceOptions{
 		Title:   "test-dirty-kill",
@@ -438,6 +465,7 @@ func TestIsStuck(t *testing.T) {
 }
 
 func TestPause_DirtyWorktreeReturnsError(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
 	repoPath := setupGitRepo(t)
 	inst, err := NewInstance(InstanceOptions{
 		Title:   "test-dirty-pause",
@@ -602,6 +630,7 @@ func TestResume_SharedWorktree_ReusesExistingPath(t *testing.T) {
 }
 
 func TestResume_OwnedWorktree_RecreatesWorktree(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
 	repoPath := setupGitRepo(t)
 
 	cmdExec := cmd_test.MockCmdExec{
@@ -654,4 +683,219 @@ func TestResume_NotPaused_ReturnsError(t *testing.T) {
 	err := inst.Resume()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "paused")
+}
+
+// swapProbeMCP replaces probeMCPFunc for the duration of the test and restores
+// it on cleanup.
+func swapProbeMCP(t *testing.T, fn func() error) {
+	t.Helper()
+	orig := probeMCPFunc
+	probeMCPFunc = fn
+	t.Cleanup(func() { probeMCPFunc = orig })
+}
+
+func TestUsesManagedKasmosMCP(t *testing.T) {
+	tests := []struct {
+		program string
+		want    bool
+	}{
+		{"claude", true},
+		{"/usr/local/bin/claude", true},
+		{"opencode", true},
+		{"/usr/bin/opencode", true},
+		{"codex", true},
+		{"/opt/bin/codex", true},
+		{"aider", false},
+		{"aider --model ollama_chat/gemma3:1b", false},
+		{"", false},
+		{"   ", false},
+		{"\t\n", false},
+		{"/usr/bin/sh", false},
+		{"gemini", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.program, func(t *testing.T) {
+			assert.Equal(t, tt.want, usesManagedKasmosMCP(tt.program))
+		})
+	}
+}
+
+func TestEnsureSharedKasmosMCP_FailedProbeBlocksStartOnMainBranch(t *testing.T) {
+	swapProbeMCP(t, func() error { return fmt.Errorf("endpoint down") })
+
+	inst := &Instance{
+		Title:   "test-probe-fail-main",
+		Path:    t.TempDir(),
+		Program: "claude",
+	}
+
+	err := inst.StartOnMainBranch()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mcp endpoint not reachable")
+}
+
+func TestEnsureSharedKasmosMCP_FailedProbeBlocksStart(t *testing.T) {
+	repoPath := setupGitRepo(t)
+	swapProbeMCP(t, func() error { return fmt.Errorf("endpoint down") })
+
+	inst, err := NewInstance(InstanceOptions{
+		Title:   "test-probe-fail-start",
+		Path:    repoPath,
+		Program: "opencode",
+	})
+	require.NoError(t, err)
+
+	err = inst.Start(true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mcp endpoint not reachable")
+}
+
+// Start(false) is the restore-only attachment path used by FromInstanceData when
+// reattaching a live session. A down shared endpoint must not block restore —
+// the harness process is already running and we only reconnect to its tmux/pty.
+func TestEnsureSharedKasmosMCP_RestoreSkipsProbe(t *testing.T) {
+	probeCalls := 0
+	swapProbeMCP(t, func() error {
+		probeCalls++
+		return fmt.Errorf("endpoint down")
+	})
+
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc:    func(cmd *exec.Cmd) error { return nil },
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return []byte(""), nil },
+	}
+
+	inst := &Instance{
+		Title:            "test-probe-restore",
+		Path:             t.TempDir(),
+		Program:          "claude",
+		executionSession: newMockTmuxSession("test-probe-restore", "claude", &testPtyFactory{}, cmdExec),
+	}
+
+	require.NoError(t, inst.Start(false))
+	assert.Equal(t, 0, probeCalls, "restore path must not probe the shared endpoint")
+}
+
+func TestEnsureSharedKasmosMCP_FailedProbeBlocksStartOnBranch(t *testing.T) {
+	repoPath := setupGitRepo(t)
+	swapProbeMCP(t, func() error { return fmt.Errorf("endpoint down") })
+
+	inst, err := NewInstance(InstanceOptions{
+		Title:   "test-probe-fail-branch",
+		Path:    repoPath,
+		Program: "codex",
+	})
+	require.NoError(t, err)
+
+	err = inst.StartOnBranch("feature/probe-test")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mcp endpoint not reachable")
+}
+
+func TestEnsureSharedKasmosMCP_NonManagedSkipsProbe(t *testing.T) {
+	probeCallCount := 0
+	swapProbeMCP(t, func() error {
+		probeCallCount++
+		return fmt.Errorf("should not be called")
+	})
+
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc:    func(cmd *exec.Cmd) error { return nil },
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return []byte(""), nil },
+	}
+
+	inst := &Instance{
+		Title:            "test-probe-skip",
+		Path:             t.TempDir(),
+		Program:          "aider",
+		executionSession: newMockTmuxSession("test-probe-skip", "aider", &testPtyFactory{}, cmdExec),
+	}
+
+	err := inst.StartOnMainBranch()
+	require.NoError(t, err)
+	assert.Equal(t, 0, probeCallCount, "probe should not be called for non-managed programs")
+}
+
+func TestEnsureSharedKasmosMCP_SuccessfulProbeAllowsStart(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
+
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc:    func(cmd *exec.Cmd) error { return nil },
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return []byte(""), nil },
+	}
+
+	inst := &Instance{
+		Title:            "test-probe-ok",
+		Path:             t.TempDir(),
+		Program:          "claude",
+		executionSession: newMockTmuxSession("test-probe-ok", "claude", &testPtyFactory{}, cmdExec),
+	}
+
+	err := inst.StartOnMainBranch()
+	require.NoError(t, err)
+	assert.Equal(t, Running, inst.Status)
+}
+
+func TestEnsureSharedKasmosMCP_FailedProbeBlocksStartInSharedWorktree(t *testing.T) {
+	swapProbeMCP(t, func() error { return fmt.Errorf("endpoint down") })
+
+	inst := &Instance{
+		Title:   "test-probe-shared",
+		Path:    t.TempDir(),
+		Program: "opencode",
+	}
+
+	err := inst.StartInSharedWorktree(nil, "plan/shared")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mcp endpoint not reachable")
+}
+
+// Resume's fresh-start fallback (triggered when no prior tmux session exists)
+// must probe the shared endpoint before spawning a new managed harness.
+func TestEnsureSharedKasmosMCP_FailedProbeBlocksResumeFreshStart(t *testing.T) {
+	swapProbeMCP(t, func() error { return fmt.Errorf("endpoint down") })
+
+	// Mock a tmux session that reports as non-existent so Resume takes the
+	// fresh-start branch rather than the restore branch.
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			// has-session returns exit code 1 when the session is absent.
+			return &exec.ExitError{}
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return []byte(""), nil },
+	}
+
+	inst := &Instance{
+		Title:            "test-probe-resume",
+		Path:             t.TempDir(),
+		Program:          "claude",
+		Status:           Paused,
+		started:          true,
+		executionSession: newMockTmuxSession("test-probe-resume", "claude", &testPtyFactory{}, cmdExec),
+	}
+
+	err := inst.Resume()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mcp endpoint not reachable")
+}
+
+// TestEnsureSharedKasmosMCP_ErrorUsesRestartServicesCommand pins the remediation
+// command embedded in the failed-probe error to platform.RestartServicesCommand().
+// DaemonStartCommand only starts the kasmos daemon and does not start kasmosdb /
+// kas serve, which is what hosts the shared MCP endpoint this probe targets.
+func TestEnsureSharedKasmosMCP_ErrorUsesRestartServicesCommand(t *testing.T) {
+	swapProbeMCP(t, func() error { return fmt.Errorf("dial tcp: connection refused") })
+
+	inst := &Instance{
+		Title:   "test-probe-error-text",
+		Path:    t.TempDir(),
+		Program: "claude",
+	}
+
+	err := inst.StartOnMainBranch()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), platform.RestartServicesCommand(),
+		"error must include RestartServicesCommand (kasmosdb + kasmos), not DaemonStartCommand")
+	assert.Contains(t, err.Error(), "shared mcp host",
+		"error phrasing must reference the shared mcp host, not just the daemon")
 }

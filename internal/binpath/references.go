@@ -8,7 +8,25 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/kastheco/kasmos/internal/mcpclient"
 )
+
+// TransportKind describes how a kasmos MCP entry is wired.
+type TransportKind string
+
+const (
+	// TransportStdio means the entry launches a local stdio subprocess.
+	TransportStdio TransportKind = "stdio"
+	// TransportSharedHTTP means the entry points at the shared HTTP MCP endpoint.
+	TransportSharedHTTP TransportKind = "shared-http"
+)
+
+// ExpectedSharedHTTPURL is the well-known URL of the shared kasmos HTTP MCP
+// endpoint. An http/remote entry only qualifies as TransportSharedHTTP when
+// its url matches this value exactly. Sourced from mcpclient so binpath and
+// probe code can never drift apart.
+const ExpectedSharedHTTPURL = mcpclient.SharedEndpointURL
 
 // Reference describes a single discovered kas binary path in a config or service file.
 type Reference struct {
@@ -17,12 +35,16 @@ type Reference struct {
 	// Label identifies which field inside the file was parsed (e.g. "mcpServers.kasmos", "ExecStart").
 	Label string
 	// RawPath is the path as written in the file, before any expansion.
+	// For shared-http entries this is the URL rather than a binary path.
 	RawPath string
 	// Normalized is the canonical absolute path after symlink resolution.
 	// Empty when RawPath is a bare name, placeholder, or transport URL.
 	Normalized string
 	// Note carries a human-readable explanation when the path is unhealthy or not installed.
 	Note string
+	// Transport identifies how this entry communicates with kasmos.
+	// Empty for service-file references that don't use a transport.
+	Transport TransportKind
 }
 
 // InspectProjectFiles inspects kas MCP config files inside repoDir and returns
@@ -110,7 +132,14 @@ func inspectMCPJSON(path string) (Reference, bool) {
 
 	if entry.Type == "http" || (entry.Command == "" && entry.URL != "") {
 		ref.RawPath = entry.URL
-		ref.Note = "stale transport: http entry should be stdio"
+		if entry.URL == ExpectedSharedHTTPURL {
+			ref.Transport = TransportSharedHTTP
+		} else {
+			// Arbitrary http url — do not label as shared http and do not
+			// count as healthy. Transport stays empty so the renderer falls
+			// through to the unhealthy path.
+			ref.Note = "unexpected http url: expected " + ExpectedSharedHTTPURL
+		}
 		return ref, true
 	}
 
@@ -162,7 +191,14 @@ func inspectOpencodeConfig(path string) (Reference, bool) {
 
 	if entry.Type == "remote" || (len(entry.Command) == 0 && entry.URL != "") {
 		ref.RawPath = entry.URL
-		ref.Note = "stale transport: remote entry should be local stdio"
+		if entry.URL == ExpectedSharedHTTPURL {
+			ref.Transport = TransportSharedHTTP
+		} else {
+			// Arbitrary remote url — do not label as shared http and do not
+			// count as healthy. Transport stays empty so the renderer falls
+			// through to the unhealthy path.
+			ref.Note = "unexpected remote url: expected " + ExpectedSharedHTTPURL
+		}
 		return ref, true
 	}
 

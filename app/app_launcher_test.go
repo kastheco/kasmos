@@ -250,7 +250,7 @@ func TestBuildKeybindBrowserItems_DoubleTapHints(t *testing.T) {
 		label   string
 		wantSub string // substring expected in the Hint field
 	}{
-		{"kill", "k+k"},
+		{"kill / kill+remove", "k+k"},
 		{"abort", "K+K"},
 		{"toggle sidebar", "s+s"},
 		{"exit focus", "␣+␣"},
