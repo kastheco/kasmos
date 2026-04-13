@@ -9,6 +9,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/ui"
 	"github.com/kastheco/kasmos/ui/overlay"
@@ -57,6 +58,21 @@ func newTestHomeWithCache(t *testing.T) *home {
 		permissionStore:   permStore,
 		permissionHandled: make(map[*session.Instance]string),
 	}
+}
+
+// requirePreOverlaySaved asserts that a pre-overlay nav row has been captured
+// and matches the expected nav row id.
+func requirePreOverlaySaved(t *testing.T, m *home, wantID string) {
+	t.Helper()
+	require.True(t, m.preOverlayCaptured, "preOverlayCaptured must be set")
+	require.Equal(t, wantID, m.preOverlayNavID, "preOverlayNavID must match captured row id")
+}
+
+// assertPreOverlayCleared asserts both pre-overlay fields are back to zero.
+func assertPreOverlayCleared(t *testing.T, m *home) {
+	t.Helper()
+	assert.False(t, m.preOverlayCaptured, "preOverlayCaptured must be cleared")
+	assert.Empty(t, m.preOverlayNavID, "preOverlayNavID must be cleared")
 }
 
 // collectAutoApproveMsgs runs a tea.Cmd recursively and collects all permissionAutoApproveMsg values.
@@ -553,4 +569,569 @@ func TestUpdate_PermissionPrompt_FocusesInstanceBeforeOverlay(t *testing.T) {
 	// The nav selection should have switched to agent-2.
 	assert.Equal(t, inst2, m.nav.GetSelectedInstance(),
 		"permission overlay should auto-focus the instance that triggered it")
+}
+
+// --- Focus-restoration tests ---
+
+// TestFinishPermission_RestoresFocus_AfterAllowOnce verifies that when a permission
+// prompt fires on a non-selected instance (switching nav focus to it), dismissing
+// the overlay by choosing "allow once" restores the original selection.
+func TestFinishPermission_RestoresFocus_AfterAllowOnce(t *testing.T) {
+	m := newTestHomeWithCache(t)
+
+	inst1 := &session.Instance{Title: "agent-1", Program: "opencode"}
+	inst1.MarkStartedForTest()
+	m.nav.AddInstance(inst1)()
+
+	inst2 := &session.Instance{Title: "agent-2", Program: "opencode"}
+	inst2.MarkStartedForTest()
+	m.nav.AddInstance(inst2)()
+
+	// inst1 is the original selection.
+	m.nav.SelectInstance(inst1)
+	require.Equal(t, inst1, m.nav.GetSelectedInstance(), "precondition: agent-1 selected")
+	wantID := m.nav.GetSelectedID()
+
+	// Permission fires on inst2 — the detection path saves inst1 and focuses inst2.
+	pp := &session.PermissionPrompt{Pattern: "/opt/*", Description: "Access /opt"}
+	_, _ = m.Update(metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "agent-1"},
+			{Title: "agent-2", PermissionPrompt: pp},
+		},
+	})
+
+	require.Equal(t, statePermission, m.state)
+	requirePreOverlaySaved(t, m, wantID)
+	require.Equal(t, inst2, m.nav.GetSelectedInstance(), "overlay focused inst2")
+
+	// Navigate to "allow once" (default is "allow always"; press ← once).
+	_, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	// Confirm.
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil {
+		cmd() // drain SendPermissionResponse
+	}
+
+	assert.Equal(t, stateDefault, m.state)
+	assert.Equal(t, inst1, m.nav.GetSelectedInstance(), "original instance should be restored")
+	assertPreOverlayCleared(t, m)
+}
+
+// TestFinishPermission_RestoresFocus_AfterEscape verifies that dismissing a permission
+// overlay via Escape also restores the original nav selection.
+func TestFinishPermission_RestoresFocus_AfterEscape(t *testing.T) {
+	m := newTestHomeWithCache(t)
+
+	inst1 := &session.Instance{Title: "agent-1", Program: "opencode"}
+	inst1.MarkStartedForTest()
+	m.nav.AddInstance(inst1)()
+
+	inst2 := &session.Instance{Title: "agent-2", Program: "opencode"}
+	inst2.MarkStartedForTest()
+	m.nav.AddInstance(inst2)()
+
+	m.nav.SelectInstance(inst1)
+	require.Equal(t, inst1, m.nav.GetSelectedInstance(), "precondition: agent-1 selected")
+	wantID := m.nav.GetSelectedID()
+
+	// Trigger permission on inst2.
+	pp := &session.PermissionPrompt{Pattern: "/opt/*", Description: "Access /opt"}
+	_, _ = m.Update(metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "agent-1"},
+			{Title: "agent-2", PermissionPrompt: pp},
+		},
+	})
+
+	require.Equal(t, statePermission, m.state)
+	requirePreOverlaySaved(t, m, wantID)
+
+	// Dismiss with Escape (no response sent).
+	_, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+
+	assert.Equal(t, stateDefault, m.state)
+	assert.Equal(t, inst1, m.nav.GetSelectedInstance(), "original instance should be restored after escape")
+	assertPreOverlayCleared(t, m)
+}
+
+// TestFinishPermission_RestoresFocus_QueuedPrompts verifies that when two permission
+// prompts are queued (e.g., after leaving focus mode), responding to each in turn
+// preserves the very first nav selection — not the intermediate one — and only
+// restores once the last prompt is dismissed.
+func TestFinishPermission_RestoresFocus_QueuedPrompts(t *testing.T) {
+	m := newTestHomeWithCache(t)
+
+	inst1 := &session.Instance{Title: "agent-1", Program: "opencode"}
+	inst1.MarkStartedForTest()
+	m.nav.AddInstance(inst1)()
+
+	inst2 := &session.Instance{Title: "agent-2", Program: "opencode"}
+	inst2.MarkStartedForTest()
+	m.nav.AddInstance(inst2)()
+
+	inst3 := &session.Instance{Title: "agent-3", Program: "opencode"}
+	inst3.MarkStartedForTest()
+	m.nav.AddInstance(inst3)()
+
+	// inst1 is the original selection.
+	m.nav.SelectInstance(inst1)
+	require.Equal(t, inst1, m.nav.GetSelectedInstance(), "precondition: agent-1 selected")
+	wantID := m.nav.GetSelectedID()
+
+	// Simulate two deferred prompts arriving while in focus mode (one for each of inst2/inst3).
+	// showPermissionPrompt's first-write-wins save captures inst1's row id on
+	// the first call and must preserve it across subsequent prompts.
+	m.deferredPermissionPrompts = []deferredPermissionPrompt{
+		{instance: inst3, pattern: "/usr/*", desc: "Access /usr"},
+	}
+
+	// Show the first deferred prompt (inst2) via showPermissionPrompt, which also
+	// applies the first-write-wins save.
+	deferred2 := deferredPermissionPrompt{instance: inst2, pattern: "/opt/*", desc: "Access /opt"}
+	_ = m.showPermissionPrompt(deferred2)
+
+	requirePreOverlaySaved(t, m, wantID)
+	require.Equal(t, statePermission, m.state)
+	require.Len(t, m.deferredPermissionPrompts, 1, "inst3 still deferred")
+
+	// Answer inst2 overlay — deferred queue still has inst3, so no restoration yet.
+	_, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	requirePreOverlaySaved(t, m, wantID)
+	require.Equal(t, stateDefault, m.state)
+
+	// Drain and show inst3's deferred prompt — first-write-wins must NOT overwrite the saved id.
+	deferred3 := m.deferredPermissionPrompts[0]
+	m.deferredPermissionPrompts = m.deferredPermissionPrompts[1:]
+	_ = m.showPermissionPrompt(deferred3)
+
+	requirePreOverlaySaved(t, m, wantID)
+	require.Equal(t, statePermission, m.state)
+	require.Empty(t, m.deferredPermissionPrompts, "queue now empty")
+
+	// Answer inst3 — queue empty, must restore inst1.
+	_, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	assert.Equal(t, inst1, m.nav.GetSelectedInstance(), "original instance restored after all prompts answered")
+	assertPreOverlayCleared(t, m)
+}
+
+// TestFinishPermission_NoRestore_WhenSameInstance verifies that when the permission
+// prompt fires on the already-selected instance, no pre-overlay row is captured
+// and no restoration occurs — the selection stays on that instance without
+// triggering unnecessary instanceChanged() side effects.
+func TestFinishPermission_NoRestore_WhenSameInstance(t *testing.T) {
+	m := newTestHomeWithCache(t)
+
+	inst1 := &session.Instance{Title: "agent-1", Program: "opencode"}
+	inst1.MarkStartedForTest()
+	m.nav.AddInstance(inst1)()
+
+	// inst1 is both the original selection and the one with the permission prompt.
+	m.nav.SelectInstance(inst1)
+	require.Equal(t, inst1, m.nav.GetSelectedInstance(), "precondition: agent-1 selected")
+
+	pp := &session.PermissionPrompt{Pattern: "/opt/*", Description: "Access /opt"}
+	_, _ = m.Update(metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "agent-1", PermissionPrompt: pp},
+		},
+	})
+
+	require.Equal(t, statePermission, m.state)
+	// Same-instance prompt: pre-overlay row must NOT be captured.
+	require.False(t, m.preOverlayCaptured, "preOverlayCaptured should not be set for same-instance prompt")
+	require.Empty(t, m.preOverlayNavID, "preOverlayNavID should remain empty")
+
+	// Answer the overlay.
+	_, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	// Selection unchanged; no crash, no restoration path triggered.
+	assert.Equal(t, stateDefault, m.state)
+	assert.Equal(t, inst1, m.nav.GetSelectedInstance(), "selection should remain on inst1")
+	assertPreOverlayCleared(t, m)
+}
+
+// TestFinishPermission_NoRestore_WhenSavedRowRemoved verifies that if the saved
+// original row disappears from the nav before the overlay is dismissed, the
+// restoration attempt fails gracefully (no panic, no stale preOverlay fields).
+func TestFinishPermission_NoRestore_WhenSavedRowRemoved(t *testing.T) {
+	m := newTestHomeWithCache(t)
+
+	inst1 := &session.Instance{Title: "agent-1", Program: "opencode"}
+	inst1.MarkStartedForTest()
+	m.nav.AddInstance(inst1)()
+
+	inst2 := &session.Instance{Title: "agent-2", Program: "opencode"}
+	inst2.MarkStartedForTest()
+	m.nav.AddInstance(inst2)()
+
+	// Manually set up the overlay state with inst1's row captured as the original.
+	m.nav.SelectInstance(inst1)
+	m.preOverlayNavID = m.nav.GetSelectedID()
+	m.preOverlayCaptured = true
+	m.nav.SelectInstance(inst2)
+	m.state = statePermission
+	m.overlays.Show(overlay.NewPermissionOverlay(inst2.Title, "Access /opt", "/opt/*"))
+	m.pendingPermissionInstance = inst2
+	m.pendingPermissionPattern = "/opt/*"
+	m.pendingPermissionDesc = "Access /opt"
+
+	// Remove inst1 from the nav before the overlay is dismissed.
+	m.nav.RemoveByTitle("agent-1")
+	require.NotContains(t, m.nav.GetInstances(), inst1, "precondition: inst1 removed from nav")
+
+	// Dismiss the overlay — SelectByID(<inst1 row>) will return false; must not panic.
+	require.NotPanics(t, func() {
+		_, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	})
+
+	assert.Equal(t, stateDefault, m.state)
+	assertPreOverlayCleared(t, m)
+}
+
+// TestFinishPermission_RestoresFocus_DeferredPrompt verifies the end-to-end deferred
+// flow: permission prompt arrives while the user is in focus mode, the user exits
+// focus mode, the prompt is shown, and on response the original selection is restored.
+func TestFinishPermission_RestoresFocus_DeferredPrompt(t *testing.T) {
+	m := newTestHomeWithCache(t)
+
+	inst1 := &session.Instance{Title: "agent-1", Program: "opencode"}
+	inst1.MarkStartedForTest()
+	m.nav.AddInstance(inst1)()
+
+	inst2 := &session.Instance{Title: "agent-2", Program: "opencode"}
+	inst2.MarkStartedForTest()
+	m.nav.AddInstance(inst2)()
+
+	// Enter focus mode with inst1 selected.
+	m.nav.SelectInstance(inst1)
+	m.state = stateFocusAgent
+	m.tabbedWindow.SetFocusMode(true)
+	m.menu.SetFocusMode(true)
+	require.Equal(t, inst1, m.nav.GetSelectedInstance(), "precondition: agent-1 selected in focus mode")
+	wantID := m.nav.GetSelectedID()
+
+	// A permission prompt arrives while in focus mode — it should be deferred.
+	pp := &session.PermissionPrompt{Pattern: "/opt/*", Description: "Access /opt"}
+	_, _ = m.Update(metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "agent-1"},
+			{Title: "agent-2", PermissionPrompt: pp},
+		},
+	})
+
+	require.Equal(t, stateFocusAgent, m.state, "focus mode must not be interrupted")
+	require.Len(t, m.deferredPermissionPrompts, 1, "prompt should be deferred")
+	require.False(t, m.preOverlayCaptured, "preOverlay not yet captured (prompt still deferred)")
+
+	// User exits focus mode.
+	m.exitFocusMode()
+	require.Equal(t, stateDefault, m.state)
+
+	// Simulate drainDeferredDialogs showing the deferred prompt.
+	deferred := m.deferredPermissionPrompts[0]
+	m.deferredPermissionPrompts = m.deferredPermissionPrompts[1:]
+	_ = m.showPermissionPrompt(deferred)
+
+	require.Equal(t, statePermission, m.state)
+	requirePreOverlaySaved(t, m, wantID)
+	require.Equal(t, inst2, m.nav.GetSelectedInstance(), "nav should focus inst2 for overlay context")
+
+	// Respond to the prompt.
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil {
+		cmd()
+	}
+
+	assert.Equal(t, stateDefault, m.state)
+	assert.Equal(t, inst1, m.nav.GetSelectedInstance(), "original selection restored after deferred prompt answered")
+	assertPreOverlayCleared(t, m)
+}
+
+// TestUpdate_DeferredPromptClearedBeforeDisplay verifies that when a deferred
+// permission prompt is resolved externally (PermissionPrompt becomes nil) before
+// it is shown, the stale entry is removed from the deferred queue. This ensures
+// that the last real prompt still restores the original selection and that
+// drainDeferredDialogs does not surface a bogus overlay.
+func TestUpdate_DeferredPromptClearedBeforeDisplay(t *testing.T) {
+	m := newTestHomeWithCache(t)
+
+	inst1 := &session.Instance{Title: "agent-1", Program: "opencode"}
+	inst1.MarkStartedForTest()
+	m.nav.AddInstance(inst1)()
+
+	inst2 := &session.Instance{Title: "agent-2", Program: "opencode"}
+	inst2.MarkStartedForTest()
+	m.nav.AddInstance(inst2)()
+
+	inst3 := &session.Instance{Title: "agent-3", Program: "opencode"}
+	inst3.MarkStartedForTest()
+	m.nav.AddInstance(inst3)()
+
+	// inst1 is the original selection.
+	m.nav.SelectInstance(inst1)
+	require.Equal(t, inst1, m.nav.GetSelectedInstance(), "precondition: agent-1 selected")
+	wantID := m.nav.GetSelectedID()
+
+	// Enter focus mode so prompts are deferred.
+	m.state = stateFocusAgent
+	m.tabbedWindow.SetFocusMode(true)
+	m.menu.SetFocusMode(true)
+
+	// Two permission prompts arrive while in focus mode.
+	pp2 := &session.PermissionPrompt{Pattern: "/opt/*", Description: "Access /opt"}
+	pp3 := &session.PermissionPrompt{Pattern: "/usr/*", Description: "Access /usr"}
+
+	_, _ = m.Update(metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "agent-1"},
+			{Title: "agent-2", PermissionPrompt: pp2},
+			{Title: "agent-3", PermissionPrompt: pp3},
+		},
+	})
+
+	require.Equal(t, stateFocusAgent, m.state, "focus mode must not be interrupted")
+	require.Len(t, m.deferredPermissionPrompts, 2, "both prompts should be deferred")
+
+	// inst2's permission clears externally before the user leaves focus mode.
+	_, _ = m.Update(metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "agent-1"},
+			{Title: "agent-2", PermissionPrompt: nil},
+			{Title: "agent-3", PermissionPrompt: pp3},
+		},
+	})
+
+	require.Len(t, m.deferredPermissionPrompts, 1, "stale inst2 entry must be removed from deferred queue")
+	assert.Equal(t, inst3, m.deferredPermissionPrompts[0].instance, "remaining entry should be for inst3")
+
+	// Exit focus mode.
+	m.exitFocusMode()
+	require.Equal(t, stateDefault, m.state)
+
+	// Drain the remaining deferred prompt (inst3).
+	deferred := m.deferredPermissionPrompts[0]
+	m.deferredPermissionPrompts = m.deferredPermissionPrompts[1:]
+	_ = m.showPermissionPrompt(deferred)
+
+	require.Equal(t, statePermission, m.state)
+	requirePreOverlaySaved(t, m, wantID)
+	require.Equal(t, inst3, m.nav.GetSelectedInstance(), "nav focused inst3 for overlay")
+
+	// Answer the prompt.
+	_, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	assert.Equal(t, stateDefault, m.state)
+	assert.Equal(t, inst1, m.nav.GetSelectedInstance(), "original selection restored after last real prompt")
+	assertPreOverlayCleared(t, m)
+}
+
+// TestUpdate_DeferredPromptClearedBeforeDisplay_NewPromptRestoresFocus is a
+// regression test for the clearDeferredPermissionPrompt path. It exercises the
+// scenario where every deferred entry is cleared externally (the queue drains to
+// empty), focus mode ends with nothing to show, and then a brand-new prompt from
+// a third instance arrives. The original selection must still be restored after
+// that new prompt is answered. Without clearDeferredPermissionPrompt, the stale
+// deferred entry would have been drained first, showing a bogus overlay that
+// would corrupt the preOverlay fields and break focus restoration.
+func TestUpdate_DeferredPromptClearedBeforeDisplay_NewPromptRestoresFocus(t *testing.T) {
+	m := newTestHomeWithCache(t)
+
+	inst1 := &session.Instance{Title: "agent-1", Program: "opencode"}
+	inst1.MarkStartedForTest()
+	m.nav.AddInstance(inst1)()
+
+	inst2 := &session.Instance{Title: "agent-2", Program: "opencode"}
+	inst2.MarkStartedForTest()
+	m.nav.AddInstance(inst2)()
+
+	inst3 := &session.Instance{Title: "agent-3", Program: "opencode"}
+	inst3.MarkStartedForTest()
+	m.nav.AddInstance(inst3)()
+
+	// inst1 is the original selection.
+	m.nav.SelectInstance(inst1)
+	require.Equal(t, inst1, m.nav.GetSelectedInstance(), "precondition: agent-1 selected")
+	wantID := m.nav.GetSelectedID()
+
+	// Enter focus mode so prompts are deferred.
+	m.state = stateFocusAgent
+	m.tabbedWindow.SetFocusMode(true)
+	m.menu.SetFocusMode(true)
+
+	// inst2 gets a permission prompt while in focus mode — added to deferred queue.
+	pp2 := &session.PermissionPrompt{Pattern: "/opt/*", Description: "Access /opt"}
+	_, _ = m.Update(metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "agent-1"},
+			{Title: "agent-2", PermissionPrompt: pp2},
+			{Title: "agent-3"},
+		},
+	})
+
+	require.Equal(t, stateFocusAgent, m.state, "focus mode must not be interrupted")
+	require.Len(t, m.deferredPermissionPrompts, 1, "inst2 prompt should be deferred")
+
+	// inst2's permission clears externally before the user exits focus mode.
+	// This exercises clearDeferredPermissionPrompt via the metadata-clear path.
+	_, _ = m.Update(metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "agent-1"},
+			{Title: "agent-2", PermissionPrompt: nil},
+			{Title: "agent-3"},
+		},
+	})
+
+	require.Empty(t, m.deferredPermissionPrompts, "stale inst2 entry must be removed — queue now empty")
+
+	// Exit focus mode — no deferred prompts to drain.
+	m.exitFocusMode()
+	require.Equal(t, stateDefault, m.state)
+	assertPreOverlayCleared(t, m)
+	assert.Equal(t, inst1, m.nav.GetSelectedInstance(), "inst1 still selected after exiting focus mode")
+
+	// A new permission prompt arrives from inst3 (not deferred — we're in default state).
+	pp3 := &session.PermissionPrompt{Pattern: "/usr/*", Description: "Access /usr"}
+	_, _ = m.Update(metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "agent-1"},
+			{Title: "agent-2"},
+			{Title: "agent-3", PermissionPrompt: pp3},
+		},
+	})
+
+	require.Equal(t, statePermission, m.state, "permission overlay shown for inst3")
+	requirePreOverlaySaved(t, m, wantID)
+	require.Equal(t, inst3, m.nav.GetSelectedInstance(), "nav switched to inst3 for overlay")
+
+	// Answer the prompt.
+	_, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	assert.Equal(t, stateDefault, m.state)
+	assert.Equal(t, inst1, m.nav.GetSelectedInstance(), "original inst1 selection restored after answering inst3")
+	assertPreOverlayCleared(t, m)
+}
+
+// TestFinishPermission_RestoresFocus_NonInstanceRow_Immediate verifies that when
+// the user is on a non-instance nav row (a plan header with no attached agent)
+// and a permission prompt arrives via the immediate detection path, dismissing
+// the overlay restores selection to that plan header row — not to the prompted
+// instance. This exercises the GetSelectedID / SelectByID path which handles
+// non-instance rows where GetSelectedInstance() returns nil.
+func TestFinishPermission_RestoresFocus_NonInstanceRow_Immediate(t *testing.T) {
+	m := newTestHomeWithCache(t)
+
+	// Seed a persistent plan-state entry so the plan header survives the
+	// updateSidebarTasks() rebuild that runs at the end of the metadata tick.
+	planFile := "plan-alpha"
+	m.setupPlanState(t, planFile, taskstate.StatusReady, "")
+
+	// Add the instance whose permission prompt will fire. It has no TaskFile,
+	// so it renders under the solo "agents" header.
+	inst2 := &session.Instance{Title: "agent-2", Program: "opencode"}
+	inst2.MarkStartedForTest()
+	m.nav.AddInstance(inst2)()
+
+	// Select the plan header — GetSelectedInstance() is nil, but the row id is set.
+	require.True(t, m.nav.SelectByID(ui.SidebarPlanPrefix+planFile), "plan header must be selectable")
+	require.Nil(t, m.nav.GetSelectedInstance(), "precondition: plan header selected, no instance")
+	wantID := m.nav.GetSelectedID()
+	require.NotEmpty(t, wantID, "plan header must expose a stable row id")
+
+	// Permission fires on inst2 — the detection path must capture the plan row
+	// id via GetSelectedID (not the nil instance pointer) and focus inst2.
+	pp := &session.PermissionPrompt{Pattern: "/opt/*", Description: "Access /opt"}
+	_, _ = m.Update(metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "agent-2", PermissionPrompt: pp},
+		},
+	})
+
+	require.Equal(t, statePermission, m.state)
+	requirePreOverlaySaved(t, m, wantID)
+	require.Equal(t, inst2, m.nav.GetSelectedInstance(), "overlay focused inst2")
+
+	// Answer the overlay (allow once).
+	_, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil {
+		cmd()
+	}
+
+	// Plan header row must be restored — not the prompted instance row.
+	assert.Equal(t, stateDefault, m.state)
+	assert.Equal(t, wantID, m.nav.GetSelectedID(), "plan header row id should be restored")
+	assert.Nil(t, m.nav.GetSelectedInstance(), "selected row should still be the plan header (no instance)")
+	assertPreOverlayCleared(t, m)
+}
+
+// TestFinishPermission_RestoresFocus_NonInstanceRow_Deferred verifies the same
+// guarantee for the deferred path: a permission prompt that arrives while the
+// user is in focus mode on a non-instance nav row must, once drained and
+// answered, restore the original plan-header selection.
+func TestFinishPermission_RestoresFocus_NonInstanceRow_Deferred(t *testing.T) {
+	m := newTestHomeWithCache(t)
+
+	// Seed a persistent plan-state entry so the plan header survives the
+	// updateSidebarTasks() rebuild that runs at the end of the metadata tick.
+	planFile := "plan-beta"
+	m.setupPlanState(t, planFile, taskstate.StatusReady, "")
+
+	// Add the instance whose deferred permission prompt will fire.
+	inst2 := &session.Instance{Title: "agent-2", Program: "opencode"}
+	inst2.MarkStartedForTest()
+	m.nav.AddInstance(inst2)()
+
+	// Select the plan header first — pre-overlay row is a non-instance row.
+	require.True(t, m.nav.SelectByID(ui.SidebarPlanPrefix+planFile), "plan header must be selectable")
+	require.Nil(t, m.nav.GetSelectedInstance(), "precondition: plan header selected")
+	wantID := m.nav.GetSelectedID()
+	require.NotEmpty(t, wantID)
+
+	// Enter focus mode — any permission prompts must be deferred.
+	m.state = stateFocusAgent
+	m.tabbedWindow.SetFocusMode(true)
+	m.menu.SetFocusMode(true)
+
+	// A permission prompt arrives while in focus mode — it should be deferred.
+	pp := &session.PermissionPrompt{Pattern: "/opt/*", Description: "Access /opt"}
+	_, _ = m.Update(metadataResultMsg{
+		Results: []instanceMetadata{
+			{Title: "agent-2", PermissionPrompt: pp},
+		},
+	})
+
+	require.Equal(t, stateFocusAgent, m.state, "focus mode must not be interrupted")
+	require.Len(t, m.deferredPermissionPrompts, 1, "prompt should be deferred")
+	require.False(t, m.preOverlayCaptured, "preOverlay not yet captured (prompt still deferred)")
+
+	// User exits focus mode — the plan header is still selected because focus
+	// mode did not change the nav row.
+	m.exitFocusMode()
+	require.Equal(t, stateDefault, m.state)
+	require.Equal(t, wantID, m.nav.GetSelectedID(), "plan header still selected after exiting focus mode")
+
+	// Drain and show the deferred prompt via showPermissionPrompt, which must
+	// capture the plan header row id — not nil — before focusing inst2.
+	deferred := m.deferredPermissionPrompts[0]
+	m.deferredPermissionPrompts = m.deferredPermissionPrompts[1:]
+	_ = m.showPermissionPrompt(deferred)
+
+	require.Equal(t, statePermission, m.state)
+	requirePreOverlaySaved(t, m, wantID)
+	require.Equal(t, inst2, m.nav.GetSelectedInstance(), "nav focused inst2 for overlay context")
+
+	// Respond to the prompt.
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil {
+		cmd()
+	}
+
+	// Plan header row must be restored — not the prompted instance row.
+	assert.Equal(t, stateDefault, m.state)
+	assert.Equal(t, wantID, m.nav.GetSelectedID(), "plan header row id restored after deferred prompt answered")
+	assert.Nil(t, m.nav.GetSelectedInstance(), "selected row should still be the plan header")
+	assertPreOverlayCleared(t, m)
 }

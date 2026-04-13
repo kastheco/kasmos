@@ -564,10 +564,23 @@ func (m *home) finishPermissionOverlay(result overlay.Result) (tea.Model, tea.Cm
 			m.pendingPermissionInstance = nil
 			m.pendingPermissionPattern = ""
 			m.pendingPermissionDesc = ""
-			return m, func() tea.Msg {
+			var cmds []tea.Cmd
+			cmds = append(cmds, func() tea.Msg {
 				capturedInst.SendPermissionResponse(capturedChoice)
 				return nil
+			})
+			// Restore original nav row once the last queued prompt is answered.
+			// Using SelectByID preserves non-instance selections (plan headers,
+			// history rows) — not just instance rows.
+			if m.preOverlayCaptured && len(m.deferredPermissionPrompts) == 0 {
+				savedID := m.preOverlayNavID
+				m.preOverlayNavID = ""
+				m.preOverlayCaptured = false
+				if savedID != "" && m.nav.SelectByID(savedID) {
+					cmds = append(cmds, m.instanceChanged())
+				}
 			}
+			return m, tea.Batch(cmds...)
 		}
 	}
 
@@ -582,6 +595,17 @@ func (m *home) finishPermissionOverlay(result overlay.Result) (tea.Model, tea.Cm
 	m.pendingPermissionPattern = ""
 	m.pendingPermissionDesc = ""
 	m.state = stateDefault
+	// Restore original nav row once the last queued prompt is dismissed.
+	// Using SelectByID preserves non-instance selections (plan headers,
+	// history rows) — not just instance rows.
+	if m.preOverlayCaptured && len(m.deferredPermissionPrompts) == 0 {
+		savedID := m.preOverlayNavID
+		m.preOverlayNavID = ""
+		m.preOverlayCaptured = false
+		if savedID != "" && m.nav.SelectByID(savedID) {
+			return m, m.instanceChanged()
+		}
+	}
 	return m, nil
 }
 
