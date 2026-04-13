@@ -1238,6 +1238,21 @@ func (m *home) removeFromAllInstances(title string) {
 	m.allInstances = filtered
 }
 
+// dismissInstanceFromList removes inst from the sidebar, allInstances, and
+// persistence in a single step. Both the delete/backspace path and the k+k+k
+// triple-tap path use this helper so list-mutation semantics stay single-sourced.
+func (m *home) dismissInstanceFromList(inst *session.Instance) tea.Cmd {
+	if inst == nil || strings.TrimSpace(inst.Title) == "" {
+		return nil
+	}
+	m.markInstanceTitleDismissed(inst.Title)
+	m.nav.RemoveByTitle(inst.Title)
+	m.removeFromAllInstances(inst.Title)
+	_ = m.saveAllInstances()
+	m.updateNavPanelStatus()
+	return tea.Batch(tea.RequestWindowSize, m.instanceChanged())
+}
+
 func (m *home) hasLiveOrPendingInstance(planFile, agentType, title string) bool {
 	matches := func(inst *session.Instance) bool {
 		if inst == nil || inst.TaskFile != planFile || inst.AgentType != agentType {
