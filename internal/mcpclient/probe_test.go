@@ -13,17 +13,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mcpHandshakeServer returns a test server that handles the three MCP handshake
-// requests: initialize, notifications/initialized (202), and tools/list.
+// mcpHandshakeServer returns a test server that models the Streamable HTTP MCP
+// contract: initialize mints an Mcp-Session-Id header, and every follow-up
+// request is rejected with 404 "Invalid session ID" unless that header is
+// echoed back. This mirrors what mcp-go's real server does (see
+// internal/mcpserver/server_test.go:107-147 and cmd/mcp_test.go:63-68).
 func mcpHandshakeServer() *httptest.Server {
+	const sessionID = "probe-test-session-id"
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req mcpclient.JSONRPCRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		if req.Method != "initialize" && r.Header.Get("Mcp-Session-Id") != sessionID {
+			http.Error(w, "Invalid session ID", http.StatusNotFound)
+			return
+		}
 		switch req.Method {
 		case "initialize":
+			w.Header().Set("Mcp-Session-Id", sessionID)
 			resp := mcpclient.JSONRPCResponse{
 				JSONRPC: "2.0",
 				ID:      req.ID,

@@ -437,6 +437,40 @@ func TestScaffoldAll_MixedHarnesses(t *testing.T) {
 	}
 }
 
+// TestScaffoldAll_CodexOnlyWritesMCPJSON verifies that a codex-only scaffold still
+// writes the shared project-root .mcp.json. Codex agents rely on that file for MCP
+// wiring, and the legacy path only emitted it from the claude branch.
+func TestScaffoldAll_CodexOnlyWritesMCPJSON(t *testing.T) {
+	dir := t.TempDir()
+	agents := []harness.AgentConfig{
+		{Role: "coder", Harness: "codex", Model: "gpt-5.3-codex", Enabled: true},
+	}
+
+	_, err := ScaffoldAll(dir, agents, allTools, false)
+	require.NoError(t, err)
+
+	assert.FileExists(t, filepath.Join(dir, ".codex", "AGENTS.md"))
+	assert.NoDirExists(t, filepath.Join(dir, ".claude"),
+		"claude harness must not be scaffolded for a codex-only repo")
+
+	mcpPath := filepath.Join(dir, ".mcp.json")
+	assert.FileExists(t, mcpPath,
+		"codex-only scaffold must still write the shared project-root .mcp.json")
+
+	data, err := os.ReadFile(mcpPath)
+	require.NoError(t, err)
+	var cfg map[string]any
+	require.NoError(t, json.Unmarshal(data, &cfg))
+	servers, ok := cfg["mcpServers"].(map[string]any)
+	require.True(t, ok, "mcpServers key must be present")
+	kasmos, ok := servers["kasmos"].(map[string]any)
+	require.True(t, ok, "kasmos entry must be present")
+	assert.Equal(t, "http", kasmos["type"])
+	assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
+	assert.NotContains(t, kasmos, "command", "stdio command key must not be present")
+	assert.NotContains(t, kasmos, "args", "stdio args key must not be present")
+}
+
 func TestScaffoldRejectsPathTraversalRole(t *testing.T) {
 	dir := t.TempDir()
 	agents := []harness.AgentConfig{
@@ -1500,6 +1534,79 @@ func TestSyncScaffold_SkipsOpencodeConfigForNonOpencodeRepo(t *testing.T) {
 	require.NoError(t, err)
 	assert.NoFileExists(t, filepath.Join(dir, "opencode.jsonc"),
 		"opencode.jsonc must not be created for claude-only repos")
+}
+
+// TestSyncScaffold_CodexOnlyWritesMCPJSON verifies that SyncScaffold writes the
+// shared project-root .mcp.json for a codex-only scaffold, and that an existing
+// legacy stdio entry is refreshed to the shared HTTP endpoint.
+func TestSyncScaffold_CodexOnlyWritesMCPJSON(t *testing.T) {
+	t.Run("creates fresh .mcp.json for codex-only", func(t *testing.T) {
+		dir := t.TempDir()
+		agents := []harness.AgentConfig{
+			{Role: "coder", Harness: "codex", Model: "gpt-5.3-codex", Enabled: true},
+		}
+		_, err := SyncScaffold(dir, agents)
+		require.NoError(t, err)
+
+		assert.NoDirExists(t, filepath.Join(dir, ".claude"),
+			"claude harness must not be scaffolded when syncing a codex-only repo")
+
+		mcpPath := filepath.Join(dir, ".mcp.json")
+		require.FileExists(t, mcpPath)
+		data, err := os.ReadFile(mcpPath)
+		require.NoError(t, err)
+		var cfg map[string]any
+		require.NoError(t, json.Unmarshal(data, &cfg))
+		kasmos, ok := cfg["mcpServers"].(map[string]any)["kasmos"].(map[string]any)
+		require.True(t, ok, "kasmos entry must be present")
+		assert.Equal(t, "http", kasmos["type"])
+		assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
+		assert.NotContains(t, kasmos, "command")
+		assert.NotContains(t, kasmos, "args")
+	})
+
+	t.Run("refreshes legacy stdio entry on codex-only sync", func(t *testing.T) {
+		dir := t.TempDir()
+		legacy := `{
+  "mcpServers": {
+    "kasmos": {
+      "type": "stdio",
+      "command": "/some/old/path/kas",
+      "args": ["mcp"]
+    },
+    "other": {
+      "type": "stdio",
+      "command": "/keep/me"
+    }
+  }
+}
+`
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".mcp.json"), []byte(legacy), 0o644))
+
+		agents := []harness.AgentConfig{
+			{Role: "coder", Harness: "codex", Model: "gpt-5.3-codex", Enabled: true},
+		}
+		_, err := SyncScaffold(dir, agents)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(filepath.Join(dir, ".mcp.json"))
+		require.NoError(t, err)
+		var cfg map[string]any
+		require.NoError(t, json.Unmarshal(data, &cfg))
+		servers, ok := cfg["mcpServers"].(map[string]any)
+		require.True(t, ok)
+
+		kasmos, ok := servers["kasmos"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "http", kasmos["type"])
+		assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
+		assert.NotContains(t, kasmos, "command", "legacy stdio command must be removed")
+		assert.NotContains(t, kasmos, "args", "legacy stdio args must be removed")
+
+		other, ok := servers["other"].(map[string]any)
+		require.True(t, ok, "unrelated MCP servers must be preserved")
+		assert.Equal(t, "/keep/me", other["command"])
+	})
 }
 
 // TestSyncScaffold_PatchesExistingOpencodeConfigEvenWithoutOpencodeHarness verifies

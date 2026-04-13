@@ -1003,6 +1003,20 @@ func ScaffoldAll(dir string, agents []harness.AgentConfig, selectedTools []strin
 		}
 	}
 
+	// codex agents rely on the shared project-root .mcp.json for MCP wiring.
+	// WriteClaudeProject already writes it when claude is configured; for
+	// codex-only repos we need a dedicated call so the shared HTTP endpoint
+	// is still wired up.
+	if _, hasCodex := byHarness["codex"]; hasCodex {
+		if _, hasClaude := byHarness["claude"]; !hasClaude {
+			mcpResult, err := WriteClaudeMCPConfig(dir, force)
+			if err != nil {
+				return results, fmt.Errorf("scaffold codex mcp: %w", err)
+			}
+			results = append(results, mcpResult)
+		}
+	}
+
 	return results, nil
 }
 
@@ -1044,6 +1058,16 @@ func SyncScaffold(dir string, agents []harness.AgentConfig) ([]WriteResult, erro
 			harnessResults, err = WriteCodexProject(dir, harnessAgents, nil, true)
 			if err != nil {
 				return results, fmt.Errorf("sync %s: %w", harnessName, err)
+			}
+			// codex-only repos rely on the shared project-root .mcp.json
+			// for MCP wiring; when claude is also configured, its branch
+			// below handles the same ensure call.
+			if _, hasClaude := byHarness["claude"]; !hasClaude {
+				mcpResult, ensureErr := EnsureClaudeMCPEntry(dir)
+				if ensureErr != nil {
+					return results, fmt.Errorf("sync codex .mcp.json: %w", ensureErr)
+				}
+				harnessResults = append(harnessResults, mcpResult)
 			}
 		default:
 			perRoleResults, err := writePerRoleProject(dir, harnessName, harnessAgents, nil, true)
