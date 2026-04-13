@@ -200,7 +200,7 @@
   "mcp": {
     "kasmos": {
       "command": [
-        "kas",
+        "/home/kas/go/bin/kas",
         "mcp"
       ],
       "enabled": true,
