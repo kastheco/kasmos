@@ -14,6 +14,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/auditlog"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
@@ -2448,4 +2449,500 @@ func TestInstanceSignalItems_ReviewerAgent_WhenVerifying_NoSignals(t *testing.T)
 		"reviewer must NOT offer mark_review_approved when task is verifying")
 	assert.NotContains(t, actions, "mark_review_changes_requested",
 		"reviewer must NOT offer mark_review_changes_requested when task is verifying")
+}
+
+// TestExecuteContextAction_StartVerify_TransitionsAndSpawnsMaster verifies that
+// executing start_verify from implementing or reviewing:
+//   - transitions the task to verifying in the store
+//   - registers a master instance synchronously (before the cmd fires)
+//   - emits at least one EventPlanTransition audit entry mentioning "verifying"
+func TestExecuteContextAction_StartVerify_TransitionsAndSpawnsMaster(t *testing.T) {
+	cases := []struct {
+		name          string
+		initialStatus taskstore.Status
+		branch        string
+		planFile      string
+	}{
+		{
+			name:          "from implementing",
+			initialStatus: taskstore.StatusImplementing,
+			branch:        "plan/start-verify-impl",
+			planFile:      "start-verify-impl",
+		},
+		{
+			name:          "from reviewing",
+			initialStatus: taskstore.StatusReviewing,
+			branch:        "plan/start-verify-review",
+			planFile:      "start-verify-review",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			plansDir := filepath.Join(dir, "docs", "plans")
+			require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+			store := taskstore.NewTestSQLiteStore(t)
+			require.NoError(t, store.Create("test", taskstore.TaskEntry{
+				Filename: tc.planFile,
+				Status:   tc.initialStatus,
+				Branch:   tc.branch,
+			}))
+
+			ps, err := taskstate.Load(store, "test", plansDir)
+			require.NoError(t, err)
+			fsm := taskfsm.New(store, "test", plansDir)
+
+			logger, err := auditlog.NewSQLiteLogger(":memory:")
+			require.NoError(t, err)
+			defer logger.Close()
+
+			sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+			h := &home{
+				ctx:          context.Background(),
+				state:        stateDefault,
+				appConfig:    config.DefaultConfig(),
+				nav:          ui.NewNavigationPanel(&sp),
+				menu:         ui.NewMenu(),
+				tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+				toastManager: overlay.NewToastManager(&sp),
+				overlays:     overlay.NewManager(),
+				daemonStatusChecker: func(string) daemonStatusMsg {
+					return daemonStatusMsg{ready: true}
+				},
+				taskState:          ps,
+				taskStore:          store,
+				taskStoreProject:   "test",
+				taskStateDir:       plansDir,
+				fsm:                fsm,
+				activeRepoPath:     dir,
+				program:            "opencode",
+				auditLogger:        logger,
+				instanceFinalizers: make(map[*session.Instance]func()),
+			}
+			h.updateSidebarTasks()
+			require.True(t, h.nav.SelectByID(ui.SidebarPlanPrefix+tc.planFile))
+
+			_, cmd := h.executeContextAction("start_verify")
+			require.NotNil(t, cmd, "start_verify from %s must return a non-nil Cmd", tc.name)
+
+			// spawnMaster adds the instance synchronously before returning the Cmd.
+			instances := h.nav.GetInstances()
+			var masterCount int
+			for _, inst := range instances {
+				if inst.AgentType == session.AgentTypeMaster && inst.TaskFile == tc.planFile {
+					masterCount++
+				}
+			}
+			assert.Equal(t, 1, masterCount,
+				"start_verify from %s must register exactly one master instance", tc.name)
+
+			// Reload from store: the task must now be verifying.
+			reloaded, err := taskstate.Load(store, "test", plansDir)
+			require.NoError(t, err)
+			freshEntry, ok := reloaded.Entry(tc.planFile)
+			require.True(t, ok)
+			assert.Equal(t, taskstate.StatusVerifying, freshEntry.Status,
+				"start_verify from %s must advance the task to verifying in the store", tc.name)
+
+			// At least one plan-transition audit event mentioning "verifying" must exist.
+			events, err := logger.Query(auditlog.QueryFilter{
+				Project: "test",
+				Kinds:   []auditlog.EventKind{auditlog.EventPlanTransition},
+				Limit:   20,
+			})
+			require.NoError(t, err)
+			var foundVerifyingAudit bool
+			for _, ev := range events {
+				if strings.Contains(ev.Message, "verifying") {
+					foundVerifyingAudit = true
+					break
+				}
+			}
+			assert.True(t, foundVerifyingAudit,
+				"start_verify from %s must emit a plan-transition audit entry mentioning 'verifying'", tc.name)
+		})
+	}
+}
+
+// TestExecuteContextAction_StartVerify_FromVerifyingSpawnsMasterWithoutTransitionAudit
+// verifies that executing start_verify when the task is already verifying:
+//   - does not write any EventPlanTransition audit entries
+//   - still registers a master instance when no live verifier exists
+//   - leaves the store state as verifying
+func TestExecuteContextAction_StartVerify_FromVerifyingSpawnsMasterWithoutTransitionAudit(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	store := taskstore.NewTestSQLiteStore(t)
+	const planFile = "start-verify-verifying"
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusReviewing,
+		Branch:   "plan/start-verify-verifying",
+	}))
+
+	// Advance to verifying before building the home (simulates daemon doing it
+	// while the TUI was open — the home will load an already-verifying state).
+	seedFSM := taskfsm.New(store, "test", plansDir)
+	require.NoError(t, seedFSM.Transition(planFile, taskfsm.ReviewApproved))
+
+	ps, err := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
+	entry, ok := ps.Entry(planFile)
+	require.True(t, ok)
+	require.Equal(t, taskstate.StatusVerifying, entry.Status, "precondition: task must be verifying")
+
+	fsm := taskfsm.New(store, "test", plansDir)
+
+	logger, err := auditlog.NewSQLiteLogger(":memory:")
+	require.NoError(t, err)
+	defer logger.Close()
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:          context.Background(),
+		state:        stateDefault,
+		appConfig:    config.DefaultConfig(),
+		nav:          ui.NewNavigationPanel(&sp),
+		menu:         ui.NewMenu(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager: overlay.NewToastManager(&sp),
+		overlays:     overlay.NewManager(),
+		daemonStatusChecker: func(string) daemonStatusMsg {
+			return daemonStatusMsg{ready: true}
+		},
+		taskState:          ps,
+		taskStore:          store,
+		taskStoreProject:   "test",
+		taskStateDir:       plansDir,
+		fsm:                fsm,
+		activeRepoPath:     dir,
+		program:            "opencode",
+		auditLogger:        logger,
+		instanceFinalizers: make(map[*session.Instance]func()),
+	}
+	h.updateSidebarTasks()
+	require.True(t, h.nav.SelectByID(ui.SidebarPlanPrefix+planFile))
+
+	_, cmd := h.executeContextAction("start_verify")
+	require.NotNil(t, cmd, "start_verify from verifying must return a non-nil Cmd")
+
+	// One master instance must be registered (no live verifier existed).
+	instances := h.nav.GetInstances()
+	var masterCount int
+	for _, inst := range instances {
+		if inst.AgentType == session.AgentTypeMaster && inst.TaskFile == planFile {
+			masterCount++
+		}
+	}
+	assert.Equal(t, 1, masterCount, "start_verify from verifying must register one master instance")
+
+	// Store state must remain verifying — no extra FSM transition.
+	reloaded, err := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
+	freshEntry, ok := reloaded.Entry(planFile)
+	require.True(t, ok)
+	assert.Equal(t, taskstate.StatusVerifying, freshEntry.Status,
+		"start_verify from verifying must not change the store state")
+
+	// No plan-transition audit event must have been emitted by the action.
+	events, err := logger.Query(auditlog.QueryFilter{
+		Project: "test",
+		Kinds:   []auditlog.EventKind{auditlog.EventPlanTransition},
+		Limit:   10,
+	})
+	require.NoError(t, err)
+	assert.Empty(t, events,
+		"start_verify from verifying must not emit any plan-transition audit entries")
+}
+
+// TestExecuteContextAction_StartVerifyRejectsStaleState verifies that start_verify
+// returns a lifecycleActionRejectedMsg and does not spawn a master agent when the
+// task has advanced to Done between menu-open and execution.
+func TestExecuteContextAction_StartVerifyRejectsStaleState(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	// Create task in store before loading ps so the Plans map is populated.
+	store := taskstore.NewTestSQLiteStore(t)
+	const planFile = "stale-verify"
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+		Branch:   "plan/stale-verify",
+	}))
+
+	ps, err := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
+	fsm := taskfsm.New(store, "test", plansDir)
+
+	// Simulate the daemon advancing the task to Done while the context menu was
+	// open — ps still holds the stale implementing snapshot.
+	require.NoError(t, fsm.Transition(planFile, taskfsm.ImplementFinished))
+	require.NoError(t, fsm.Transition(planFile, taskfsm.ReviewApproved))
+	require.NoError(t, fsm.Transition(planFile, taskfsm.VerifyApproved))
+
+	// Verify precondition via a fresh load.
+	ps2, err2 := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err2)
+	preEntry, preOK := ps2.Entry(planFile)
+	require.True(t, preOK)
+	require.Equal(t, taskstate.StatusDone, preEntry.Status,
+		"precondition: task must be Done before the stale action")
+
+	// Build the home with the stale ps (implementing), DB is already Done.
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:          context.Background(),
+		state:        stateDefault,
+		appConfig:    config.DefaultConfig(),
+		nav:          ui.NewNavigationPanel(&sp),
+		menu:         ui.NewMenu(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager: overlay.NewToastManager(&sp),
+		overlays:     overlay.NewManager(),
+		daemonStatusChecker: func(string) daemonStatusMsg {
+			return daemonStatusMsg{ready: true}
+		},
+		taskState:          ps,
+		taskStore:          store,
+		taskStoreProject:   "test",
+		taskStateDir:       plansDir,
+		fsm:                fsm,
+		activeRepoPath:     dir,
+		program:            "opencode",
+		instanceFinalizers: make(map[*session.Instance]func()),
+	}
+	h.updateSidebarTasks()
+	require.True(t, h.nav.SelectByID(ui.SidebarPlanPrefix+planFile))
+
+	instancesBefore := len(h.nav.GetInstances())
+
+	_, cmd := h.executeContextAction("start_verify")
+	require.NotNil(t, cmd, "stale start_verify must return a rejection Cmd")
+	msg := cmd()
+
+	// The rejection must arrive as a lifecycleActionRejectedMsg.
+	rejected, ok := msg.(lifecycleActionRejectedMsg)
+	require.True(t, ok, "expected lifecycleActionRejectedMsg, got %T: %v", msg, msg)
+	assert.Contains(t, rejected.message, "task state changed",
+		"rejection message must indicate that the task state changed")
+
+	assert.Equal(t, instancesBefore, len(h.nav.GetInstances()),
+		"stale start_verify must not spawn any master instances")
+
+	// Reload from store: the task must still be Done.
+	reloaded, err := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
+	freshEntry, exists := reloaded.Entry(planFile)
+	require.True(t, exists)
+	assert.Equal(t, taskstate.StatusDone, freshEntry.Status,
+		"stale start_verify must not mutate FSM state from Done")
+}
+
+// TestExecuteContextAction_StartVerify_ClearsLatestReviewFeedback verifies that
+// moving a task from reviewing to verifying via the manual start_verify action
+// clears any persisted reviewer feedback (both in-memory and on the taskstate
+// entry), mirroring the cleanup performed by the signal-driven
+// loop.ReviewApprovedAction path. Stale feedback left on a verifying/done task
+// is surfaced by cmd/status.go and reused by start_fixer, so leaking it across
+// manual verify would leave reviewer findings attached to work that has already
+// been approved.
+func TestExecuteContextAction_StartVerify_ClearsLatestReviewFeedback(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	store := taskstore.NewTestSQLiteStore(t)
+	const planFile = "start-verify-clears-feedback"
+	const feedback = "reviewer flagged missing null check"
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusReviewing,
+		Branch:   "plan/start-verify-clears-feedback",
+	}))
+
+	ps, err := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.SetLatestReviewFeedback(planFile, feedback))
+	preEntry, ok := ps.Entry(planFile)
+	require.True(t, ok)
+	require.Equal(t, feedback, preEntry.LatestReviewFeedback,
+		"precondition: feedback must be persisted before manual verify")
+
+	fsm := taskfsm.New(store, "test", plansDir)
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:          context.Background(),
+		state:        stateDefault,
+		appConfig:    config.DefaultConfig(),
+		nav:          ui.NewNavigationPanel(&sp),
+		menu:         ui.NewMenu(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager: overlay.NewToastManager(&sp),
+		overlays:     overlay.NewManager(),
+		daemonStatusChecker: func(string) daemonStatusMsg {
+			return daemonStatusMsg{ready: true}
+		},
+		taskState:             ps,
+		taskStore:             store,
+		taskStoreProject:      "test",
+		taskStateDir:          plansDir,
+		fsm:                   fsm,
+		activeRepoPath:        dir,
+		program:               "opencode",
+		pendingReviewFeedback: map[string]string{planFile: feedback},
+		instanceFinalizers:    make(map[*session.Instance]func()),
+	}
+	h.updateSidebarTasks()
+	require.True(t, h.nav.SelectByID(ui.SidebarPlanPrefix+planFile))
+
+	_, cmd := h.executeContextAction("start_verify")
+	require.NotNil(t, cmd, "start_verify must return a non-nil Cmd")
+
+	// Persisted feedback must have been cleared on the live taskstate.
+	liveEntry, ok := h.taskState.Entry(planFile)
+	require.True(t, ok)
+	assert.Empty(t, liveEntry.LatestReviewFeedback,
+		"start_verify must clear persisted reviewer feedback on the live taskstate")
+
+	// Reload from the store to confirm the clear was persisted, not just
+	// mutated in memory.
+	reloaded, err := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
+	freshEntry, ok := reloaded.Entry(planFile)
+	require.True(t, ok)
+	assert.Equal(t, taskstate.StatusVerifying, freshEntry.Status,
+		"start_verify must advance the task to verifying")
+	assert.Empty(t, freshEntry.LatestReviewFeedback,
+		"start_verify must clear persisted reviewer feedback in the store")
+
+	// Pending in-memory feedback (used by start_fixer) must also be cleared.
+	_, pendingStillThere := h.pendingReviewFeedback[planFile]
+	assert.False(t, pendingStillThere,
+		"start_verify must clear pendingReviewFeedback so start_fixer cannot reuse stale feedback")
+}
+
+// TestExecuteContextAction_StartVerify_PreemptsLiveCoderAndFixer verifies that
+// triggering start_verify on an implementing task with live coder/fixer
+// sessions removes those sessions before spawning the master agent. The
+// regression: spawnMaster only cleans up prior master/reviewer instances, so
+// without explicit preemption a coder or fixer would keep writing to the same
+// shared worktree while the readiness pass runs.
+func TestExecuteContextAction_StartVerify_PreemptsLiveCoderAndFixer(t *testing.T) {
+	cases := []struct {
+		name      string
+		agentType string
+	}{
+		{name: "live coder", agentType: session.AgentTypeCoder},
+		{name: "live fixer", agentType: session.AgentTypeFixer},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			plansDir := filepath.Join(dir, "docs", "plans")
+			require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+			store := taskstore.NewTestSQLiteStore(t)
+			const planFile = "start-verify-preempt"
+			require.NoError(t, store.Create("test", taskstore.TaskEntry{
+				Filename: planFile,
+				Status:   taskstore.StatusImplementing,
+				Branch:   "plan/start-verify-preempt",
+			}))
+
+			ps, err := taskstate.Load(store, "test", plansDir)
+			require.NoError(t, err)
+			fsm := taskfsm.New(store, "test", plansDir)
+
+			sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+			h := &home{
+				ctx:          context.Background(),
+				state:        stateDefault,
+				appConfig:    config.DefaultConfig(),
+				nav:          ui.NewNavigationPanel(&sp),
+				menu:         ui.NewMenu(),
+				tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+				toastManager: overlay.NewToastManager(&sp),
+				overlays:     overlay.NewManager(),
+				daemonStatusChecker: func(string) daemonStatusMsg {
+					return daemonStatusMsg{ready: true}
+				},
+				taskState:          ps,
+				taskStore:          store,
+				taskStoreProject:   "test",
+				taskStateDir:       plansDir,
+				fsm:                fsm,
+				activeRepoPath:     dir,
+				program:            "opencode",
+				instanceFinalizers: make(map[*session.Instance]func()),
+			}
+
+			// Seed a running implementation agent for this plan before the
+			// user triggers start_verify. killExistingPlanAgent only inspects
+			// TaskFile + AgentType, so a bare struct is sufficient.
+			liveAgent := &session.Instance{
+				Title:     "start-verify-preempt-" + tc.agentType,
+				Path:      dir,
+				Program:   "opencode",
+				TaskFile:  planFile,
+				AgentType: tc.agentType,
+			}
+			h.nav.AddInstance(liveAgent)
+
+			h.updateSidebarTasks()
+			require.True(t, h.nav.SelectByID(ui.SidebarPlanPrefix+planFile))
+
+			// Precondition: the live agent is tracked before the action runs.
+			instancesBefore := h.nav.GetInstances()
+			var preCount int
+			for _, inst := range instancesBefore {
+				if inst.TaskFile == planFile && inst.AgentType == tc.agentType {
+					preCount++
+				}
+			}
+			require.Equal(t, 1, preCount,
+				"precondition: one %s must be live before start_verify", tc.agentType)
+
+			_, cmd := h.executeContextAction("start_verify")
+			require.NotNil(t, cmd, "start_verify must return a non-nil Cmd")
+
+			// The live implementation agent must be gone; a master must be
+			// registered synchronously (spawnMaster adds it before returning).
+			instancesAfter := h.nav.GetInstances()
+			var liveCount, masterCount int
+			for _, inst := range instancesAfter {
+				if inst.TaskFile != planFile {
+					continue
+				}
+				switch inst.AgentType {
+				case tc.agentType:
+					liveCount++
+				case session.AgentTypeMaster:
+					masterCount++
+				}
+			}
+			assert.Equal(t, 0, liveCount,
+				"start_verify must preempt the live %s so it cannot race the master in the shared worktree", tc.agentType)
+			assert.Equal(t, 1, masterCount,
+				"start_verify must register exactly one master instance after preemption")
+
+			// The store must now reflect verifying — the manual walk from
+			// implementing to verifying succeeded.
+			reloaded, err := taskstate.Load(store, "test", plansDir)
+			require.NoError(t, err)
+			freshEntry, ok := reloaded.Entry(planFile)
+			require.True(t, ok)
+			assert.Equal(t, taskstate.StatusVerifying, freshEntry.Status,
+				"start_verify from implementing must walk the task to verifying")
+		})
+	}
 }

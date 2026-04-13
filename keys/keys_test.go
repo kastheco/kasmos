@@ -105,7 +105,20 @@ func TestDestructiveBindingsHaveDoubleTapHint(t *testing.T) {
 	killKey := GlobalkeyBindings[KeyKill].Help().Key
 	abortKey := GlobalkeyBindings[KeyAbort].Help().Key
 	assert.Contains(t, killKey, "k+k", "KeyKill help key should mention k+k double-tap")
+	assert.Contains(t, killKey, "k+k+k", "KeyKill help key should mention k+k+k triple-tap")
 	assert.Contains(t, abortKey, "K+K", "KeyAbort help key should mention K+K double-tap")
+}
+
+// TestTripleTapMapEntries asserts the triple-tap escalation entries.
+func TestTripleTapMapEntries(t *testing.T) {
+	assert.Equal(t, KeyKillAndRemove, TripleTapMap["k"], "k must triple-tap to KeyKillAndRemove")
+	assert.NotContains(t, TripleTapMap, "K", "K must not be in TripleTapMap (uppercase only in DoubleTapMap)")
+
+	// Every key in TripleTapMap must also be present in DoubleTapMap.
+	for k := range TripleTapMap {
+		_, ok := DoubleTapMap[k]
+		assert.True(t, ok, "TripleTapMap key %q must also exist in DoubleTapMap", k)
+	}
 }
 
 // TestDoubleTapMapEntries asserts the four conflict-free double-tap entries.
