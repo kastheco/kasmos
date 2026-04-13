@@ -88,17 +88,20 @@ func makeSymbolsHandler(validate PathValidator, store *Store, ctagsAvailable fun
 
 		result := toolResult{Symbols: []Symbol{}, Total: 0}
 		if store != nil {
-			result.Symbols = store.Lookup(validatedPath)
-			// On a cold cache miss, synchronously populate the requested file.
-			if len(result.Symbols) == 0 && loadOnMiss != nil {
-				if syms, missErr := loadOnMiss(ctx, validatedPath); missErr == nil && len(syms) > 0 {
-					result.Symbols = syms
+			// Distinguish "not cached" from "cached empty" so files that
+			// legitimately have no symbols do not re-trigger loadOnMiss on
+			// every invocation.
+			symbols, present := store.LookupPresent(validatedPath)
+			if !present && loadOnMiss != nil {
+				if syms, missErr := loadOnMiss(ctx, validatedPath); missErr == nil {
+					symbols = syms
 				}
 			}
-			if result.Symbols == nil {
-				result.Symbols = []Symbol{}
+			if symbols == nil {
+				symbols = []Symbol{}
 			}
-			result.Total = len(result.Symbols)
+			result.Symbols = symbols
+			result.Total = len(symbols)
 		}
 
 		return symbolsJSONResult(result)

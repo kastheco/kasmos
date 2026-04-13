@@ -36,6 +36,31 @@ func (s *Store) Lookup(path string) []Symbol {
 	return copyOfSymbols
 }
 
+// LookupPresent reports whether path is present in the store. It returns a
+// copy of the stored slice (possibly empty) and true when the key exists, or
+// nil and false when the store has never indexed this path. Callers use this
+// to distinguish a cached-empty entry (file legitimately has no symbols) from
+// a true cache miss.
+func (s *Store) LookupPresent(path string) ([]Symbol, bool) {
+	if s == nil {
+		return nil, false
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	symbols, ok := s.files[filepath.Clean(path)]
+	if !ok {
+		return nil, false
+	}
+	if len(symbols) == 0 {
+		return nil, true
+	}
+	copyOfSymbols := make([]Symbol, len(symbols))
+	copy(copyOfSymbols, symbols)
+	return copyOfSymbols, true
+}
+
 // LookupAt returns the smallest symbol enclosing line within path.
 func (s *Store) LookupAt(path string, line int) *Symbol {
 	if s == nil || line < 1 {

@@ -53,3 +53,28 @@ func TestStoreRemoveClearsSymbols(t *testing.T) {
 	assert.Nil(t, store.Lookup(path))
 	assert.Nil(t, store.LookupAt(path, 10))
 }
+
+func TestStoreLookupPresentDistinguishesCachedEmptyFromMiss(t *testing.T) {
+	store := NewStore()
+	missing := filepath.Join(t.TempDir(), "missing.go")
+	empty := filepath.Join(t.TempDir(), "empty.go")
+	populated := filepath.Join(t.TempDir(), "populated.go")
+
+	_, ok := store.LookupPresent(missing)
+	assert.False(t, ok, "unknown path must report not present")
+
+	store.Update(empty, []Symbol{})
+	syms, ok := store.LookupPresent(empty)
+	assert.True(t, ok, "indexed-but-empty path must report present")
+	assert.Empty(t, syms)
+
+	store.Update(populated, []Symbol{{Name: "Foo", Kind: "function", Line: 1}})
+	syms, ok = store.LookupPresent(populated)
+	assert.True(t, ok)
+	require.Len(t, syms, 1)
+	assert.Equal(t, "Foo", syms[0].Name)
+
+	store.Remove(populated)
+	_, ok = store.LookupPresent(populated)
+	assert.False(t, ok, "removed path must report not present again")
+}

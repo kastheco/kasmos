@@ -398,8 +398,10 @@ func TestCheckCmd_SharedMCPEndpointReachable(t *testing.T) {
 // the check command to non-zero exit, renders the unreachable banner, and adds
 // the start-command remediation hint.
 func TestCheckCmd_SharedMCPEndpointUnreachable(t *testing.T) {
-	// Override the probe with an error before captureCheckOutput installs its
-	// success stub — captureCheckOutput installs first, so we swap afterwards.
+	// This test cannot use captureCheckOutput: that helper hard-codes a
+	// success probe stub, and we need the probe to return an error to
+	// exercise the unreachable path. Build the command and env inline
+	// instead so the error stub we install here is the one the command runs.
 	home := t.TempDir()
 	project := t.TempDir()
 

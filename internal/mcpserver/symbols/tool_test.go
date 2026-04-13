@@ -168,3 +168,34 @@ func TestMakeSymbolsHandler_LoadOnMissNotCalledWhenStoreHasSymbols(t *testing.T)
 	require.NoError(t, json.Unmarshal([]byte(result.Content[0].(mcp.TextContent).Text), &payload))
 	assert.Equal(t, cachedSymbols, payload.Symbols)
 }
+
+// TestMakeSymbolsHandler_LoadOnMissNotCalledForCachedEmpty pins that a file
+// which has been indexed and found to have zero symbols does NOT re-trigger
+// loadOnMiss on every invocation. Before LookupPresent, Store.Lookup returned
+// nil for empty slices indistinguishably from a cold miss, so repeat calls
+// paid the full prime cost on each hit.
+func TestMakeSymbolsHandler_LoadOnMissNotCalledForCachedEmpty(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "empty.go")
+	require.NoError(t, os.WriteFile(path, []byte("package empty\n"), 0o644))
+
+	store := NewStore()
+	store.Update(path, []Symbol{}) // indexed, but no symbols found
+
+	var loadOnMissCalls atomic.Int32
+	loadOnMiss := func(_ context.Context, _ string) ([]Symbol, error) {
+		loadOnMissCalls.Add(1)
+		return nil, nil
+	}
+
+	handler := makeSymbolsHandler(func(raw string) (string, error) { return raw, nil }, store, func() bool { return true }, nil, loadOnMiss)
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"path": path}}}
+
+	for range 3 {
+		_, err := handler(context.Background(), req)
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, int32(0), loadOnMissCalls.Load(),
+		"cached-empty entries must be served from the store, not re-primed on every call")
+}
