@@ -2537,17 +2537,17 @@ func TestTaskLifecycleItems(t *testing.T) {
 		{
 			name:    "implementing",
 			entry:   makeEntry(taskstate.StatusImplementing, ""),
-			actions: []string{"start_review", "start_fixer", "start_implement", "start_implement_direct", "start_solo"},
+			actions: []string{"start_review", "start_fixer", "start_verify", "start_implement", "start_implement_direct", "start_solo"},
 		},
 		{
 			name:    "reviewing",
 			entry:   makeEntry(taskstate.StatusReviewing, ""),
-			actions: []string{"mark_plan_done", "start_fixer", "start_review"},
+			actions: []string{"mark_plan_done", "start_fixer", "start_verify", "start_review"},
 		},
 		{
 			name:    "verifying",
 			entry:   makeEntry(taskstate.StatusVerifying, ""),
-			actions: []string{"mark_verify_approved", "mark_verify_failed", "start_fixer"},
+			actions: []string{"mark_verify_approved", "mark_verify_failed", "start_verify", "start_fixer"},
 		},
 		{
 			name:    "done",

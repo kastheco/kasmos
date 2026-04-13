@@ -269,6 +269,20 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		}
 		return m.triggerTaskStage(planFile, "review")
 
+	case "start_verify":
+		planFile := m.nav.GetSelectedPlanFile()
+		if planFile == "" {
+			return m, nil
+		}
+		entry, ok := m.refreshTaskEntry(planFile)
+		if !ok {
+			return m, lifecycleActionRejected("task not found; start verify cancelled")
+		}
+		if !taskActionStillAllowed(entry, "start_verify") {
+			return m, lifecycleActionRejected("task state changed; start verify no longer available")
+		}
+		return m.triggerTaskStage(planFile, "verify")
+
 	case "start_fixer":
 		planFile := m.nav.GetSelectedPlanFile()
 		if planFile == "" {
@@ -940,6 +954,7 @@ func taskLifecycleItems(entry taskstate.TaskEntry) []overlay.ContextMenuItem {
 		return []overlay.ContextMenuItem{
 			{Label: "start review", Action: "start_review"},
 			{Label: "start fixer", Action: "start_fixer"},
+			{Label: "start verify", Action: "start_verify"},
 			{Label: "start implement", Action: "start_implement"},
 			{Label: "implement directly", Action: "start_implement_direct"},
 			{Label: "start solo agent", Action: "start_solo"},
@@ -948,12 +963,14 @@ func taskLifecycleItems(entry taskstate.TaskEntry) []overlay.ContextMenuItem {
 		return []overlay.ContextMenuItem{
 			{Label: "mark finished", Action: "mark_plan_done"},
 			{Label: "start fixer", Action: "start_fixer"},
+			{Label: "start verify", Action: "start_verify"},
 			{Label: "start review", Action: "start_review"},
 		}
 	case taskstate.StatusVerifying:
 		return []overlay.ContextMenuItem{
 			{Label: "mark verify approved", Action: "mark_verify_approved"},
 			{Label: "mark verify failed", Action: "mark_verify_failed"},
+			{Label: "start verify", Action: "start_verify"},
 			{Label: "start fixer", Action: "start_fixer"},
 		}
 	case taskstate.StatusDone:
@@ -1507,7 +1524,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 		return m, m.handleError(fmt.Errorf("no task state loaded"))
 	}
 	switch stage {
-	case "plan", "solo", "implement", "implement_direct", "review":
+	case "plan", "solo", "implement", "implement_direct", "review", "verify":
 		if !m.requireDaemonForAgents() {
 			return m, nil
 		}
@@ -1709,6 +1726,23 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 		m.loadTaskState()
 		m.updateSidebarTasks()
 		return m, m.spawnReviewer(planFile)
+	case "verify":
+		if entry.Status != taskstate.StatusReviewing && entry.Status != taskstate.StatusVerifying {
+			if err := m.fsmSetReviewing(planFile); err != nil {
+				return m, m.handleError(err)
+			}
+		}
+		if entry.Status != taskstate.StatusVerifying {
+			if err := m.fsm.Transition(planFile, taskfsm.ReviewApproved); err != nil {
+				return m, m.handleError(err)
+			}
+			m.audit(auditlog.EventPlanTransition,
+				string(entry.Status)+" → verifying (manual start verify)",
+				auditlog.WithPlan(planFile))
+		}
+		m.loadTaskState()
+		m.updateSidebarTasks()
+		return m, m.spawnMaster(planFile)
 	}
 
 	// Non-agent stages (finished): mark plan done via FSM.
@@ -1806,7 +1840,7 @@ func (m *home) handleTmuxBrowserAction(browser *overlay.TmuxBrowserOverlay, acti
 // guards against truly nonsensical transitions (e.g. marking "finished" when already done).
 func isLocked(status taskstate.Status, stage string) bool {
 	switch stage {
-	case "plan", "implement", "implement_direct", "solo", "review":
+	case "plan", "implement", "implement_direct", "solo", "review", "verify":
 		// Forward progression is always allowed — the FSM helpers
 		// (fsmSetImplementing, fsmSetReviewing) walk through intermediate states.
 		return false
