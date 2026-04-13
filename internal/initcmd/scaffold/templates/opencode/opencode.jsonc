@@ -2,8 +2,8 @@
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "kasmos": {
-      "type": "local",
-      "command": ["{{KAS_PATH}}", "mcp"],
+      "type": "remote",
+      "url": "{{MCP_URL}}",
       "enabled": true
     }
   },

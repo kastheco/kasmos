@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kastheco/kasmos/internal/binpath"
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -73,11 +72,10 @@ func TestScaffoldClaudeProject(t *testing.T) {
 	require.True(t, ok, "mcpServers key must be present")
 	kasmos, ok := servers["kasmos"].(map[string]any)
 	require.True(t, ok, "kasmos entry must be present")
-	assert.Equal(t, "stdio", kasmos["type"])
-	assert.Equal(t, binpath.ResolveOrFallback().Executable, kasmos["command"])
-	args, ok := kasmos["args"].([]any)
-	require.True(t, ok, "args must be an array")
-	assert.Equal(t, []any{"mcp"}, args)
+	assert.Equal(t, "http", kasmos["type"])
+	assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
+	assert.NotContains(t, kasmos, "command", "stdio command key must not be present")
+	assert.NotContains(t, kasmos, "args", "stdio args key must not be present")
 
 	settingsPath := filepath.Join(dir, ".claude", "settings.json")
 	assert.FileExists(t, settingsPath)
@@ -263,7 +261,9 @@ func TestWriteClaudeMCPConfig(t *testing.T) {
 		var cfg map[string]any
 		require.NoError(t, json.Unmarshal(data, &cfg))
 		servers := cfg["mcpServers"].(map[string]any)
-		assert.Contains(t, servers, "kasmos")
+		kasmos := servers["kasmos"].(map[string]any)
+		assert.Equal(t, "http", kasmos["type"])
+		assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
 	})
 }
 
@@ -299,41 +299,11 @@ func TestEnsureClaudeMCPEntry(t *testing.T) {
 		assert.Contains(t, servers, "other-server", "existing server must be preserved")
 	})
 
-	t.Run("migrates http to stdio when kasmos uses http", func(t *testing.T) {
+	t.Run("is idempotent when kasmos already uses shared http endpoint", func(t *testing.T) {
 		dir := t.TempDir()
 		initial := `{"mcpServers":{"kasmos":{"type":"http","url":"http://127.0.0.1:7434/mcp"}}}`
 		dest := filepath.Join(dir, ".mcp.json")
 		require.NoError(t, os.WriteFile(dest, []byte(initial), 0o644))
-
-		result, err := EnsureClaudeMCPEntry(dir)
-		require.NoError(t, err)
-		assert.Equal(t, WriteResult{Path: ".mcp.json", Created: true}, result)
-
-		data, err := os.ReadFile(dest)
-		require.NoError(t, err)
-		var cfg map[string]any
-		require.NoError(t, json.Unmarshal(data, &cfg))
-		servers := cfg["mcpServers"].(map[string]any)
-		kasmos := servers["kasmos"].(map[string]any)
-		assert.Equal(t, "stdio", kasmos["type"])
-		assert.Equal(t, binpath.ResolveOrFallback().Executable, kasmos["command"])
-	})
-
-	t.Run("is idempotent when kasmos already uses resolved path", func(t *testing.T) {
-		dir := t.TempDir()
-		kasPath := binpath.ResolveOrFallback().Executable
-		initial, err := json.Marshal(map[string]any{
-			"mcpServers": map[string]any{
-				"kasmos": map[string]any{
-					"type":    "stdio",
-					"command": kasPath,
-					"args":    []any{"mcp"},
-				},
-			},
-		})
-		require.NoError(t, err)
-		dest := filepath.Join(dir, ".mcp.json")
-		require.NoError(t, os.WriteFile(dest, initial, 0o644))
 		info1, _ := os.Stat(dest)
 
 		result, err := EnsureClaudeMCPEntry(dir)
@@ -344,9 +314,9 @@ func TestEnsureClaudeMCPEntry(t *testing.T) {
 		assert.Equal(t, info1.ModTime(), info2.ModTime(), "file must not be rewritten when already correct")
 	})
 
-	t.Run("rewrites bare kas command to resolved path", func(t *testing.T) {
+	t.Run("migrates stdio to shared http endpoint", func(t *testing.T) {
 		dir := t.TempDir()
-		initial := `{"mcpServers":{"kasmos":{"type":"stdio","command":"kas","args":["mcp"]}}}`
+		initial := `{"mcpServers":{"kasmos":{"type":"stdio","command":"/usr/local/bin/kas","args":["mcp"]}}}`
 		dest := filepath.Join(dir, ".mcp.json")
 		require.NoError(t, os.WriteFile(dest, []byte(initial), 0o644))
 
@@ -360,11 +330,10 @@ func TestEnsureClaudeMCPEntry(t *testing.T) {
 		require.NoError(t, json.Unmarshal(data, &cfg))
 		servers := cfg["mcpServers"].(map[string]any)
 		kasmos := servers["kasmos"].(map[string]any)
-		assert.Equal(t, "stdio", kasmos["type"])
-		assert.Equal(t, binpath.ResolveOrFallback().Executable, kasmos["command"])
-		args, ok := kasmos["args"].([]any)
-		require.True(t, ok)
-		assert.Equal(t, []any{"mcp"}, args)
+		assert.Equal(t, "http", kasmos["type"])
+		assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
+		assert.NotContains(t, kasmos, "command", "stdio command key must be removed")
+		assert.NotContains(t, kasmos, "args", "stdio args key must be removed")
 	})
 }
 
@@ -920,13 +889,13 @@ func TestPatchWorktreeConfig_AddsKasmosMCPToExistingConfig(t *testing.T) {
 
 	kasmos, ok := mcp["kasmos"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "local", kasmos["type"])
-	assert.Equal(t, []any{binpath.ResolveOrFallback().Executable, "mcp"}, kasmos["command"])
-	assert.NotContains(t, kasmos, "url", "url key must not be present in local transport entry")
+	assert.Equal(t, "remote", kasmos["type"])
+	assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
+	assert.NotContains(t, kasmos, "command", "command key must not be present in remote transport entry")
 	assert.Equal(t, true, kasmos["enabled"])
 }
 
-func TestPatchWorktreeConfig_MigratesRemoteEntryToLocal(t *testing.T) {
+func TestPatchWorktreeConfig_MigratesLocalEntryToRemote(t *testing.T) {
 	dir := t.TempDir()
 	opencodeConfig := `{
 	  "agent": {
@@ -941,8 +910,8 @@ func TestPatchWorktreeConfig_MigratesRemoteEntryToLocal(t *testing.T) {
 	      "enabled": true
 	    },
 	    "kasmos": {
-	      "type": "remote",
-	      "url": "http://127.0.0.1:7434/mcp",
+	      "type": "local",
+	      "command": ["/usr/local/bin/kas", "mcp"],
 	      "enabled": true
 	    }
 	  }
@@ -977,13 +946,47 @@ func TestPatchWorktreeConfig_MigratesRemoteEntryToLocal(t *testing.T) {
 	assert.Equal(t, "remote", clickup["type"])
 	assert.Equal(t, "https://mcp.clickup.com/mcp", clickup["url"])
 
-	// kasmos must be migrated to local stdio
+	// kasmos must be migrated to shared remote http transport
 	kasmos, ok := mcp["kasmos"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "local", kasmos["type"])
-	assert.Equal(t, []any{binpath.ResolveOrFallback().Executable, "mcp"}, kasmos["command"])
-	assert.NotContains(t, kasmos, "url", "url key must be removed when migrating to local transport")
+	assert.Equal(t, "remote", kasmos["type"])
+	assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
+	assert.NotContains(t, kasmos, "command", "command key must be removed when migrating to remote transport")
 	assert.Equal(t, true, kasmos["enabled"])
+}
+
+func TestPatchWorktreeConfig_MigratesLocalEntry_RemovesCommandKey(t *testing.T) {
+	// Regression: a stale OpenCode local entry must have command removed after migration.
+	dir := t.TempDir()
+	opencodeConfig := `{
+	  "mcp": {
+	    "kasmos": {
+	      "type": "local",
+	      "command": ["/home/user/.local/bin/kas", "mcp"],
+	      "enabled": true
+	    }
+	  }
+	}`
+	configPath := filepath.Join(dir, "opencode.jsonc")
+	require.NoError(t, os.WriteFile(configPath, []byte(opencodeConfig), 0o644))
+
+	agents := []harness.AgentConfig{{Role: "coder", Harness: "opencode", Model: "anthropic/claude-sonnet-4-6"}}
+
+	err := PatchWorktreeConfig(dir, agents)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+	assertValidJSON(t, string(data))
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(data, &parsed))
+	mcp := parsed["mcp"].(map[string]any)
+	kasmos := mcp["kasmos"].(map[string]any)
+
+	assert.Equal(t, "remote", kasmos["type"])
+	assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
+	assert.NotContains(t, kasmos, "command", "stale command key must be removed after migration")
 }
 
 // TestWriteOpenCodeProject_IncludesNonOpencodeAgents verifies that agent roles
@@ -1305,12 +1308,11 @@ func TestPatchWorktreeConfig_UsesHarnessForModelNormalization(t *testing.T) {
 
 func TestPatchWorktreeConfig_Idempotent_NoRewriteWhenUnchanged(t *testing.T) {
 	dir := t.TempDir()
-	kasPath := binpath.ResolveOrFallback().Executable
 	opencodeConfigBytes, err := json.Marshal(map[string]any{
 		"mcp": map[string]any{
 			"kasmos": map[string]any{
-				"type":    "local",
-				"command": []any{kasPath, "mcp"},
+				"type":    "remote",
+				"url":     "http://127.0.0.1:7434/mcp",
 				"enabled": true,
 			},
 		},

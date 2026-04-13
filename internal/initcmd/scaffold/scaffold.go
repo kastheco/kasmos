@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kastheco/kasmos/internal/binpath"
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
 )
 
@@ -112,19 +111,23 @@ var kasmosMCPToolPermissions = []string{
 	"mcp__kasmos__symbols",
 }
 
+// sharedKasmosMCPURL is the well-known address of the shared kasmos HTTP MCP
+// endpoint started by `kas serve`. All scaffolded harness configs point here
+// instead of spawning a per-session stdio subprocess.
+const sharedKasmosMCPURL = "http://127.0.0.1:7434/mcp"
+
 // claudeMCPJSON returns the default .mcp.json content registering the kasmos
-// MCP server via stdio using the given kas executable path.
-func claudeMCPJSON(kasPath string) string {
+// MCP server via the shared HTTP endpoint.
+func claudeMCPJSON() string {
 	return fmt.Sprintf(`{
   "mcpServers": {
     "kasmos": {
-      "type": "stdio",
-      "command": %q,
-      "args": ["mcp"]
+      "type": "http",
+      "url": %q
     }
   }
 }
-`, kasPath)
+`, sharedKasmosMCPURL)
 }
 
 // EnsureClaudeProjectSettings patches .claude/settings.json so Claude auto-enables
@@ -215,9 +218,8 @@ func EnsureClaudeProjectSettings(dir string) (WriteResult, error) {
 // WriteClaudeMCPConfig writes .mcp.json at the project root registering the kasmos MCP server.
 // Respects force: if force is false and the file already exists it is skipped.
 func WriteClaudeMCPConfig(dir string, force bool) (WriteResult, error) {
-	kasPath := binpath.ResolveOrFallback().Executable
 	dest := filepath.Join(dir, ".mcp.json")
-	written, err := writeFile(dest, []byte(claudeMCPJSON(kasPath)), force)
+	written, err := writeFile(dest, []byte(claudeMCPJSON()), force)
 	if err != nil {
 		return WriteResult{}, fmt.Errorf("write .mcp.json: %w", err)
 	}
@@ -228,28 +230,19 @@ func WriteClaudeMCPConfig(dir string, force bool) (WriteResult, error) {
 	return WriteResult{Path: rel, Created: written}, nil
 }
 
-// claudeMCPEntryUpToDate returns true when entry already has the correct stdio
-// transport pointing at kasPath with args ["mcp"].
-func claudeMCPEntryUpToDate(entry map[string]any, kasPath string) bool {
-	if entry["type"] != "stdio" {
+// claudeMCPEntryUpToDate returns true when entry already has the correct HTTP
+// transport pointing at sharedKasmosMCPURL.
+func claudeMCPEntryUpToDate(entry map[string]any) bool {
+	if entry["type"] != "http" {
 		return false
 	}
-	if entry["command"] != kasPath {
-		return false
-	}
-	args, _ := entry["args"].([]any)
-	if len(args) != 1 {
-		return false
-	}
-	s, ok := args[0].(string)
-	return ok && s == "mcp"
+	return entry["url"] == sharedKasmosMCPURL
 }
 
 // EnsureClaudeMCPEntry patches .mcp.json at the project root to guarantee the kasmos MCP server
-// entry is present and uses the resolved kas executable path. Existing non-kasmos servers are
-// preserved. Legacy HTTP entries and bare "kas" command entries are rewritten in place.
+// entry is present and uses the shared HTTP endpoint. Existing non-kasmos servers are preserved.
+// Legacy stdio entries are rewritten in place.
 func EnsureClaudeMCPEntry(dir string) (WriteResult, error) {
-	kasPath := binpath.ResolveOrFallback().Executable
 	dest := filepath.Join(dir, ".mcp.json")
 	result := WriteResult{Path: ".mcp.json", Created: false}
 
@@ -271,13 +264,12 @@ func EnsureClaudeMCPEntry(dir string) (WriteResult, error) {
 	}
 
 	want := map[string]any{
-		"type":    "stdio",
-		"command": kasPath,
-		"args":    []any{"mcp"},
+		"type": "http",
+		"url":  sharedKasmosMCPURL,
 	}
 
 	if existing, exists := servers["kasmos"]; exists {
-		if entry, ok := existing.(map[string]any); ok && claudeMCPEntryUpToDate(entry, kasPath) {
+		if entry, ok := existing.(map[string]any); ok && claudeMCPEntryUpToDate(entry) {
 			return result, nil // already correct — nothing to do
 		}
 	}
@@ -341,10 +333,8 @@ func renderOpenCodeConfig(dir string, agents []harness.AgentConfig) (string, err
 		return "", fmt.Errorf("get home dir: %w", err)
 	}
 
-	kasPath := binpath.ResolveOrFallback().Executable
-
 	rendered := string(content)
-	rendered = strings.ReplaceAll(rendered, "{{KAS_PATH}}", kasPath)
+	rendered = strings.ReplaceAll(rendered, "{{MCP_URL}}", sharedKasmosMCPURL)
 	rendered = strings.ReplaceAll(rendered, "{{HOME_DIR}}", homeDir)
 	rendered = strings.ReplaceAll(rendered, "{{PROJECT_DIR}}", dir)
 
@@ -440,9 +430,9 @@ func findLineComment(line string) int {
 	return -1
 }
 
-// ensureOpenCodeKasmosMCPEntry ensures mcp.kasmos uses the local stdio transport.
-// It creates the entry when absent and rewrites stale remote entries to the
-// rendered local form, removing the obsolete url key. Unrelated MCP servers
+// ensureOpenCodeKasmosMCPEntry ensures mcp.kasmos uses the shared HTTP transport.
+// It creates the entry when absent and rewrites stale local entries to the
+// rendered remote form, removing the obsolete command key. Unrelated MCP servers
 // (e.g. clickup) and non-conflicting extra keys on mcp.kasmos are preserved.
 // Returns true if currentMCP was modified.
 func ensureOpenCodeKasmosMCPEntry(currentMCP map[string]any, renderedKasmos map[string]any) bool {
@@ -464,22 +454,22 @@ func ensureOpenCodeKasmosMCPEntry(currentMCP map[string]any, renderedKasmos map[
 		return false
 	}
 	// Migrate: preserve non-conflicting extra keys but apply all rendered keys
-	// and remove the url key that belongs exclusively to the remote transport.
+	// and remove the command key that belongs exclusively to the local transport.
 	updated := cloneMap(existingMap)
 	for k, v := range renderedKasmos {
 		updated[k] = v
 	}
-	delete(updated, "url")
+	delete(updated, "command")
 	currentMCP["kasmos"] = updated
 	return true
 }
 
 // kasmosEntryIsUpToDate returns true when existing already contains every key
-// from rendered with matching values and does not carry a stale url key.
+// from rendered with matching values and does not carry a stale command key.
 // Values are compared via JSON serialisation to handle []any slices correctly.
 func kasmosEntryIsUpToDate(existing, rendered map[string]any) bool {
-	// A url key indicates the stale remote transport — always needs migration.
-	if _, hasURL := existing["url"]; hasURL {
+	// A command key indicates the stale local transport — always needs migration.
+	if _, hasCmd := existing["command"]; hasCmd {
 		return false
 	}
 	for k, rv := range rendered {

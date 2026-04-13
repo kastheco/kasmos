@@ -6,13 +6,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/kastheco/kasmos/internal/binpath"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestDefaultRepoResetWriteMCP(t *testing.T) {
-	t.Run("creates stdio entry pointing at resolved kas path", func(t *testing.T) {
+	t.Run("creates http entry pointing at shared endpoint", func(t *testing.T) {
 		dir := t.TempDir()
 
 		err := defaultRepoResetWriteMCP(dir)
@@ -33,18 +32,15 @@ func TestDefaultRepoResetWriteMCP(t *testing.T) {
 		kasmos, ok := servers["kasmos"].(map[string]any)
 		require.True(t, ok, "kasmos entry must be present")
 
-		assert.Equal(t, "stdio", kasmos["type"], "transport must be stdio, not http")
-		assert.Equal(t, binpath.ResolveOrFallback().Executable, kasmos["command"])
+		assert.Equal(t, "http", kasmos["type"], "transport must be http")
+		assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
 
-		args, ok := kasmos["args"].([]any)
-		require.True(t, ok, "args must be an array")
-		assert.Equal(t, []any{"mcp"}, args)
-
-		// Ensure no legacy http url key is present.
-		assert.NotContains(t, kasmos, "url", "legacy http url key must not be present")
+		// Ensure no legacy stdio keys are present.
+		assert.NotContains(t, kasmos, "command", "stdio command key must not be present")
+		assert.NotContains(t, kasmos, "args", "stdio args key must not be present")
 	})
 
-	t.Run("does not write legacy http transport", func(t *testing.T) {
+	t.Run("does not write legacy stdio transport", func(t *testing.T) {
 		dir := t.TempDir()
 
 		err := defaultRepoResetWriteMCP(dir)
@@ -53,8 +49,8 @@ func TestDefaultRepoResetWriteMCP(t *testing.T) {
 		data, err := os.ReadFile(filepath.Join(dir, ".mcp.json"))
 		require.NoError(t, err)
 
-		assert.NotContains(t, string(data), `"http"`, "must not write http transport")
-		assert.NotContains(t, string(data), "7434", "must not reference legacy HTTP port")
+		assert.NotContains(t, string(data), `"stdio"`, "must not write stdio transport")
+		assert.Contains(t, string(data), "7434", "must reference shared HTTP port")
 	})
 
 	t.Run("preserves unrelated mcp servers", func(t *testing.T) {
