@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +26,10 @@ func bundledCheckSkillNames(t *testing.T) []string {
 // captures stdout. Returns the output string and whether the command returned nil.
 func captureCheckOutput(t *testing.T, setupFn func(home, project string)) string {
 	t.Helper()
+	// Stub the probe to "reachable" by default so check tests don't hit the
+	// network. Tests that exercise the unreachable path replace the seam first.
+	prev := SetProbeSharedMCPForTest(func(context.Context) error { return nil })
+	t.Cleanup(func() { SetProbeSharedMCPForTest(prev) })
 
 	home := t.TempDir()
 	project := t.TempDir()
@@ -337,6 +343,56 @@ func TestCheckCmd_MCPProcessesSection(t *testing.T) {
 	assert.Contains(t, out, "stdio mcp processes", "warning section should appear")
 	assert.Contains(t, out, "4242", "PID should appear")
 	assert.Contains(t, out, "kill", "kill hint should appear in remediation")
+}
+
+// TestCheckCmd_SharedMCPEndpointReachable verifies the endpoint section reports
+// a healthy shared HTTP MCP endpoint when the probe succeeds.
+func TestCheckCmd_SharedMCPEndpointReachable(t *testing.T) {
+	out := captureCheckOutput(t, nil)
+
+	assert.Contains(t, out, "shared mcp endpoint")
+	assert.Contains(t, out, "reachable")
+	assert.NotContains(t, out, "start the shared mcp endpoint",
+		"no remediation hint when endpoint is reachable")
+}
+
+// TestCheckCmd_SharedMCPEndpointUnreachable verifies that a failing probe drives
+// the check command to non-zero exit, renders the unreachable banner, and adds
+// the start-command remediation hint.
+func TestCheckCmd_SharedMCPEndpointUnreachable(t *testing.T) {
+	// Override the probe with an error before captureCheckOutput installs its
+	// success stub — captureCheckOutput installs first, so we swap afterwards.
+	home := t.TempDir()
+	project := t.TempDir()
+
+	prev := SetProbeSharedMCPForTest(func(context.Context) error {
+		return fmt.Errorf("connection refused")
+	})
+	t.Cleanup(func() { SetProbeSharedMCPForTest(prev) })
+
+	origHome := os.Getenv("HOME")
+	t.Setenv("HOME", home)
+	defer os.Setenv("HOME", origHome)
+
+	origWd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(project))
+	defer os.Chdir(origWd)
+
+	cmd := newCheckCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	execErr := cmd.Execute()
+	require.Error(t, execErr, "unreachable endpoint must drive non-zero exit")
+
+	out := buf.String()
+	assert.Contains(t, out, "shared mcp endpoint")
+	assert.Contains(t, out, "unreachable")
+	assert.Contains(t, out, "connection refused")
+	assert.Contains(t, out, "start the shared mcp endpoint",
+		"remediation hint must include the service start command")
 }
 
 // TestCheckCmd_NoMCPProcessesSection verifies no warning section when ps returns nothing.

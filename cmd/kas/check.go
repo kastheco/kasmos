@@ -1,17 +1,35 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/kastheco/kasmos/internal/binpath"
 	"github.com/kastheco/kasmos/internal/check"
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
+	"github.com/kastheco/kasmos/internal/mcpclient"
+	"github.com/kastheco/kasmos/internal/platform"
 	"github.com/spf13/cobra"
 )
+
+// probeSharedMCPFunc is the seam for probing the shared HTTP MCP endpoint. Tests
+// replace it to avoid real network calls.
+var probeSharedMCPFunc = func(ctx context.Context) error {
+	return mcpclient.ProbeHTTP(ctx, mcpclient.SharedEndpointURL)
+}
+
+// SetProbeSharedMCPForTest swaps the probe seam and returns the previous value
+// so callers can restore it in t.Cleanup. For tests only.
+func SetProbeSharedMCPForTest(fn func(context.Context) error) func(context.Context) error {
+	prev := probeSharedMCPFunc
+	probeSharedMCPFunc = fn
+	return prev
+}
 
 // errUnhealthy is returned when health < 100% to signal exit code 1 without printing a message.
 var errUnhealthy = errors.New("unhealthy")
@@ -60,6 +78,13 @@ func runCheck(cmd *cobra.Command, args []string) error {
 		renderBinaryPath(cmd, result.BinaryPath)
 	}
 
+	// Probe the shared HTTP MCP endpoint. A reachable endpoint is required for
+	// managed harness launches; a failure here is always unhealthy.
+	probeCtx, probeCancel := context.WithTimeout(cmd.Context(), 5*time.Second)
+	defer probeCancel()
+	mcpProbeErr := probeSharedMCPFunc(probeCtx)
+	renderMCPEndpoint(cmd, mcpProbeErr)
+
 	// Detect long-lived stdio mcp subprocesses (threshold: 60 s).
 	mcpProcs, _ := check.ListLongLivedMCPProcesses(60)
 	if len(mcpProcs) > 0 {
@@ -67,6 +92,11 @@ func runCheck(cmd *cobra.Command, args []string) error {
 	}
 
 	ok, total := result.Summary()
+	// Shared MCP endpoint reachability counts as one item.
+	total++
+	if mcpProbeErr == nil {
+		ok++
+	}
 	// Long-lived stdio mcp processes each count as one unhealthy item.
 	total += len(mcpProcs)
 
@@ -78,7 +108,7 @@ func runCheck(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(cmd.OutOrStdout(), "\nHealth: %d/%d OK (%d%%)\n", ok, total, pct)
 
 	// Print deduplicated remediation hints.
-	hints := collectRemediationHints(result, mcpProcs)
+	hints := collectRemediationHints(result, mcpProcs, mcpProbeErr)
 	if len(hints) > 0 {
 		fmt.Fprintln(cmd.OutOrStdout())
 		fmt.Fprintln(cmd.OutOrStdout(), "Remediation:")
@@ -95,7 +125,7 @@ func runCheck(cmd *cobra.Command, args []string) error {
 
 // collectRemediationHints scans the audit result and MCP process list and returns
 // deduplicated hint strings.
-func collectRemediationHints(result *check.AuditResult, mcpProcs []check.MCPProcess) []string {
+func collectRemediationHints(result *check.AuditResult, mcpProcs []check.MCPProcess, mcpProbeErr error) []string {
 	seen := map[string]bool{}
 	var hints []string
 
@@ -157,7 +187,24 @@ func collectRemediationHints(result *check.AuditResult, mcpProcs []check.MCPProc
 		add("kill " + strings.Join(pids, " "))
 	}
 
+	// Shared MCP endpoint unreachable hint.
+	if mcpProbeErr != nil {
+		add("start the shared mcp endpoint: " + platform.DaemonStartCommand())
+	}
+
 	return hints
+}
+
+// renderMCPEndpoint prints a dedicated section reporting shared HTTP MCP
+// endpoint reachability.
+func renderMCPEndpoint(cmd *cobra.Command, probeErr error) {
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "\nshared mcp endpoint:\n")
+	if probeErr == nil {
+		fmt.Fprintf(out, "  ✓ %s reachable\n", mcpclient.SharedEndpointURL)
+		return
+	}
+	fmt.Fprintf(out, "  ✗ %s unreachable (%s)\n", mcpclient.SharedEndpointURL, probeErr)
 }
 
 // renderBinaryPath prints a dedicated binary-path section before the health summary.
