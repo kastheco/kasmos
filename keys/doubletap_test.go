@@ -160,3 +160,97 @@ func TestDoubleTapTracker_Reset(t *testing.T) {
 	// Now a legitimate double tap should fire.
 	assert.True(t, tracker.Detect("k"))
 }
+
+func TestDoubleTapTracker_Triple(t *testing.T) {
+	epoch := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	threshold := 400 * time.Millisecond
+
+	t.Run("k,k,DetectTriple(k) yields false,true,true", func(t *testing.T) {
+		tracker := NewDoubleTapTracker(threshold)
+		offsets := []time.Duration{0, 100 * time.Millisecond, 200 * time.Millisecond}
+		call := 0
+		tracker.now = func() time.Time { return epoch.Add(offsets[call]) }
+
+		call = 0
+		assert.False(t, tracker.Detect("k"), "first tap")
+		call = 1
+		assert.True(t, tracker.Detect("k"), "second tap fires double")
+		call = 2
+		assert.True(t, tracker.DetectTriple("k"), "third tap fires triple")
+	})
+
+	t.Run("wrong third key does not escalate", func(t *testing.T) {
+		tracker := NewDoubleTapTracker(threshold)
+		offsets := []time.Duration{0, 100 * time.Millisecond, 200 * time.Millisecond}
+		call := 0
+		tracker.now = func() time.Time { return epoch.Add(offsets[call]) }
+
+		call = 0
+		assert.False(t, tracker.Detect("k"))
+		call = 1
+		assert.True(t, tracker.Detect("k"))
+		call = 2
+		assert.False(t, tracker.DetectTriple("j"), "different key must not fire triple")
+	})
+
+	t.Run("third k after threshold does not escalate; next Detect starts fresh", func(t *testing.T) {
+		tracker := NewDoubleTapTracker(threshold)
+		// tap1=0, tap2=100ms (fires double), tap3=600ms (beyond threshold from tap2)
+		// tap4=700ms (100ms after tap3 — should be a fresh first tap)
+		offsets := []time.Duration{
+			0,
+			100 * time.Millisecond,
+			100*time.Millisecond + threshold + time.Millisecond, // just past threshold
+			100*time.Millisecond + threshold + 101*time.Millisecond,
+		}
+		call := 0
+		tracker.now = func() time.Time { return epoch.Add(offsets[call]) }
+
+		call = 0
+		assert.False(t, tracker.Detect("k"))
+		call = 1
+		assert.True(t, tracker.Detect("k"))
+		call = 2
+		assert.False(t, tracker.DetectTriple("k"), "triple after threshold must be false")
+		// Next Detect should start a fresh sequence (returns false as first tap)
+		call = 3
+		assert.False(t, tracker.Detect("k"), "k after expired triple window is a fresh first tap")
+	})
+
+	t.Run("Reset after successful double clears fired window", func(t *testing.T) {
+		tracker := NewDoubleTapTracker(threshold)
+		offsets := []time.Duration{0, 100 * time.Millisecond, 200 * time.Millisecond}
+		call := 0
+		tracker.now = func() time.Time { return epoch.Add(offsets[call]) }
+
+		call = 0
+		assert.False(t, tracker.Detect("k"))
+		call = 1
+		assert.True(t, tracker.Detect("k"))
+		tracker.Reset()
+		call = 2
+		assert.False(t, tracker.DetectTriple("k"), "DetectTriple after Reset must be false")
+	})
+
+	t.Run("fourth k after successful triple is a fresh first tap", func(t *testing.T) {
+		tracker := NewDoubleTapTracker(threshold)
+		offsets := []time.Duration{
+			0,
+			100 * time.Millisecond,
+			200 * time.Millisecond,
+			300 * time.Millisecond,
+		}
+		call := 0
+		tracker.now = func() time.Time { return epoch.Add(offsets[call]) }
+
+		call = 0
+		assert.False(t, tracker.Detect("k"))
+		call = 1
+		assert.True(t, tracker.Detect("k"))
+		call = 2
+		assert.True(t, tracker.DetectTriple("k"))
+		// After triple fires, the next Detect should be a fresh first tap.
+		call = 3
+		assert.False(t, tracker.Detect("k"), "fourth k is a fresh first tap, not another double")
+	})
+}
