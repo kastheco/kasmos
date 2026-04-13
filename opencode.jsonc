@@ -108,7 +108,7 @@
         "read": "allow",
         "write": "allow"
       },
-      "reasoningEffort": "medium",
+      "reasoningEffort": "high",
       "temperature": 0.1,
       "textVerbosity": "low"
     },
@@ -200,7 +200,7 @@
   "mcp": {
     "kasmos": {
       "command": [
-        "kas",
+        "/home/kas/go/bin/kas",
         "mcp"
       ],
       "enabled": true,
