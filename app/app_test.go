@@ -2156,6 +2156,44 @@ func TestStartFixer_AppearsInImplementingTaskContextMenu(t *testing.T) {
 	require.True(t, found, "implementing task context menu must include 'start fixer' action")
 }
 
+func TestStartVerify_AppearsInTaskContextMenu(t *testing.T) {
+	cases := []struct {
+		name   string
+		status taskstate.Status
+	}{
+		{name: "implementing", status: taskstate.StatusImplementing},
+		{name: "reviewing", status: taskstate.StatusReviewing},
+		{name: "verifying", status: taskstate.StatusVerifying},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newTestHome()
+			planFile := tc.name + "-plan"
+			h.setupPlanState(t, planFile, tc.status, "")
+
+			h.focusSlot = slotNav
+			h.nav.SelectByID(ui.SidebarPlanPrefix + planFile)
+
+			model, _ := h.openTaskContextMenu()
+			updated := model.(*home)
+
+			require.Equal(t, stateContextMenu, updated.state)
+			cm, ok := updated.overlays.Current().(*overlay.ContextMenu)
+			require.True(t, ok, "current overlay must be a ContextMenu")
+
+			found := false
+			for _, item := range cm.AllItems() {
+				if item.Action == "start_verify" {
+					found = true
+					break
+				}
+			}
+			require.True(t, found, "%s task context menu must include 'start verify' action", tc.name)
+		})
+	}
+}
+
 // TestExitFocusMode_KeepsPreviewTerminal verifies that exitFocusMode does NOT close
 // previewTerminal — it stays alive for preview rendering.
 func TestExitFocusMode_KeepsPreviewTerminal(t *testing.T) {
@@ -2537,17 +2575,17 @@ func TestTaskLifecycleItems(t *testing.T) {
 		{
 			name:    "implementing",
 			entry:   makeEntry(taskstate.StatusImplementing, ""),
-			actions: []string{"start_review", "start_fixer", "start_implement", "start_implement_direct", "start_solo"},
+			actions: []string{"start_review", "start_fixer", "start_verify", "start_implement", "start_implement_direct", "start_solo"},
 		},
 		{
 			name:    "reviewing",
 			entry:   makeEntry(taskstate.StatusReviewing, ""),
-			actions: []string{"mark_plan_done", "start_fixer", "start_review"},
+			actions: []string{"mark_plan_done", "start_fixer", "start_verify", "start_review"},
 		},
 		{
 			name:    "verifying",
 			entry:   makeEntry(taskstate.StatusVerifying, ""),
-			actions: []string{"mark_verify_approved", "mark_verify_failed", "start_fixer"},
+			actions: []string{"mark_verify_approved", "mark_verify_failed", "start_verify", "start_fixer"},
 		},
 		{
 			name:    "done",
