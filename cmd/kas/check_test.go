@@ -11,6 +11,7 @@ import (
 
 	"github.com/kastheco/kasmos/internal/check"
 	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
+	"github.com/kastheco/kasmos/internal/platform"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -329,6 +330,42 @@ func TestCheckCmd_SharedHTTPNoRemediationHint(t *testing.T) {
 		"scaffold sync hint must not fire for a shared-http entry")
 }
 
+// TestCheckCmd_UnexpectedHTTPURLNotHealthy verifies that an arbitrary http url
+// in .mcp.json is not rendered as shared http and does not pass as healthy.
+func TestCheckCmd_UnexpectedHTTPURLNotHealthy(t *testing.T) {
+	orig := check.SetPSOutputFnForTest(func() (string, error) { return "", nil })
+	t.Cleanup(func() { check.SetPSOutputFnForTest(orig) })
+
+	out := captureCheckOutput(t, func(home, project string) {
+		mcpJSON := `{"mcpServers":{"kasmos":{"type":"http","url":"http://evil.example.com/mcp"}}}`
+		require.NoError(t, os.WriteFile(filepath.Join(project, ".mcp.json"), []byte(mcpJSON), 0o644))
+	})
+
+	assert.Contains(t, out, "http://evil.example.com/mcp",
+		"rendered output should still show the configured url")
+	assert.NotContains(t, out, "shared http",
+		"unexpected url must not be labeled as shared http")
+	assert.Contains(t, out, "unexpected http url",
+		"the unhealthy note should explain the mismatch")
+}
+
+// TestCheckCmd_UnexpectedRemoteURLNotHealthy verifies the same tightening for
+// opencode.jsonc remote entries with an arbitrary url.
+func TestCheckCmd_UnexpectedRemoteURLNotHealthy(t *testing.T) {
+	orig := check.SetPSOutputFnForTest(func() (string, error) { return "", nil })
+	t.Cleanup(func() { check.SetPSOutputFnForTest(orig) })
+
+	out := captureCheckOutput(t, func(home, project string) {
+		oc := `{"mcp":{"kasmos":{"type":"remote","url":"http://evil.example.com/mcp"}}}`
+		require.NoError(t, os.WriteFile(filepath.Join(project, "opencode.jsonc"), []byte(oc), 0o644))
+	})
+
+	assert.Contains(t, out, "http://evil.example.com/mcp")
+	assert.NotContains(t, out, "shared http",
+		"unexpected remote url must not be labeled as shared http")
+	assert.Contains(t, out, "unexpected remote url")
+}
+
 // TestCheckCmd_MCPProcessesSection verifies that long-lived stdio mcp processes trigger
 // a warning section and a kill hint.
 func TestCheckCmd_MCPProcessesSection(t *testing.T) {
@@ -393,6 +430,11 @@ func TestCheckCmd_SharedMCPEndpointUnreachable(t *testing.T) {
 	assert.Contains(t, out, "connection refused")
 	assert.Contains(t, out, "start the shared mcp endpoint",
 		"remediation hint must include the service start command")
+	// Regression: the hint must point at RestartServicesCommand (which starts
+	// the shared mcp host), not DaemonStartCommand (daemon-only). Pin on the
+	// exact platform string so a revert fails the test.
+	assert.Contains(t, out, platform.RestartServicesCommand(),
+		"remediation must use RestartServicesCommand, not DaemonStartCommand")
 }
 
 // TestCheckCmd_NoMCPProcessesSection verifies no warning section when ps returns nothing.

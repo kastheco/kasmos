@@ -20,6 +20,12 @@ const (
 	TransportSharedHTTP TransportKind = "shared-http"
 )
 
+// ExpectedSharedHTTPURL is the well-known URL of the shared kasmos HTTP MCP
+// endpoint. An http/remote entry only qualifies as TransportSharedHTTP when
+// its url matches this value exactly. Must stay in sync with
+// internal/mcpclient.SharedEndpointURL.
+const ExpectedSharedHTTPURL = "http://127.0.0.1:7434/mcp"
+
 // Reference describes a single discovered kas binary path in a config or service file.
 type Reference struct {
 	// File is the short name of the source file (e.g. ".mcp.json", "kasmos.service").
@@ -124,7 +130,14 @@ func inspectMCPJSON(path string) (Reference, bool) {
 
 	if entry.Type == "http" || (entry.Command == "" && entry.URL != "") {
 		ref.RawPath = entry.URL
-		ref.Transport = TransportSharedHTTP
+		if entry.URL == ExpectedSharedHTTPURL {
+			ref.Transport = TransportSharedHTTP
+		} else {
+			// Arbitrary http url — do not label as shared http and do not
+			// count as healthy. Transport stays empty so the renderer falls
+			// through to the unhealthy path.
+			ref.Note = "unexpected http url: expected " + ExpectedSharedHTTPURL
+		}
 		return ref, true
 	}
 
@@ -176,7 +189,14 @@ func inspectOpencodeConfig(path string) (Reference, bool) {
 
 	if entry.Type == "remote" || (len(entry.Command) == 0 && entry.URL != "") {
 		ref.RawPath = entry.URL
-		ref.Transport = TransportSharedHTTP
+		if entry.URL == ExpectedSharedHTTPURL {
+			ref.Transport = TransportSharedHTTP
+		} else {
+			// Arbitrary remote url — do not label as shared http and do not
+			// count as healthy. Transport stays empty so the renderer falls
+			// through to the unhealthy path.
+			ref.Note = "unexpected remote url: expected " + ExpectedSharedHTTPURL
+		}
 		return ref, true
 	}
 

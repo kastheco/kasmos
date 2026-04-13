@@ -193,6 +193,42 @@ func TestBinaryPathResult_SharedHTTPCountsAsHealthy(t *testing.T) {
 	assert.Equal(t, 2, total)
 }
 
+func TestTranslateReferences_UnexpectedHTTPURLUnhealthy(t *testing.T) {
+	// Even if a caller mislabels Transport, an arbitrary http url must not be
+	// counted as healthy. The check layer validates RawPath defensively.
+	running := "/usr/local/bin/kas"
+	in := []binpath.Reference{
+		{
+			File:      ".mcp.json",
+			Label:     "mcpServers.kasmos",
+			RawPath:   "http://evil.example.com/mcp",
+			Transport: binpath.TransportSharedHTTP,
+			Note:      "unexpected http url: expected " + binpath.ExpectedSharedHTTPURL,
+		},
+	}
+	out := translateReferences(in, running)
+	assert.Len(t, out, 1)
+	assert.False(t, out[0].Healthy, "arbitrary http url must never be healthy")
+	assert.False(t, out[0].NotInstalled)
+}
+
+func TestTranslateReferences_EmptyTransportUnexpectedURLUnhealthy(t *testing.T) {
+	// When the parser leaves Transport empty for a non-shared http url, the
+	// check layer must still treat it as unhealthy.
+	running := "/usr/local/bin/kas"
+	in := []binpath.Reference{
+		{
+			File:    ".mcp.json",
+			Label:   "mcpServers.kasmos",
+			RawPath: "http://evil.example.com/mcp",
+			Note:    "unexpected http url: expected " + binpath.ExpectedSharedHTTPURL,
+		},
+	}
+	out := translateReferences(in, running)
+	assert.Len(t, out, 1)
+	assert.False(t, out[0].Healthy)
+}
+
 func TestTranslateReferences_SymlinkSameCanonical(t *testing.T) {
 	// Symlinked path that resolves to the same canonical binary → healthy
 	canonical := "/usr/local/bin/kas"

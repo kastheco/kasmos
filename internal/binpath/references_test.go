@@ -129,6 +129,48 @@ func TestInspectProjectFiles_McpJSON_SharedHTTP(t *testing.T) {
 	assert.Empty(t, refs[0].Note, "shared http entry should not carry a stale-transport note")
 }
 
+func TestInspectProjectFiles_McpJSON_UnexpectedHTTPURL(t *testing.T) {
+	dir := t.TempDir()
+	mcpJSON := `{
+  "mcpServers": {
+    "kasmos": {
+      "type": "http",
+      "url": "http://evil.example.com/mcp"
+    }
+  }
+}`
+	writeFile(t, filepath.Join(dir, ".mcp.json"), mcpJSON)
+
+	refs := InspectProjectFiles(dir)
+
+	require.Len(t, refs, 1)
+	assert.Empty(t, refs[0].Transport, "arbitrary http url must not be tagged as shared http transport")
+	assert.Equal(t, "http://evil.example.com/mcp", refs[0].RawPath)
+	assert.Contains(t, refs[0].Note, "unexpected http url")
+	assert.Contains(t, refs[0].Note, ExpectedSharedHTTPURL)
+}
+
+func TestInspectProjectFiles_Opencode_UnexpectedRemoteURL(t *testing.T) {
+	dir := t.TempDir()
+	oc := `{
+  "mcp": {
+    "kasmos": {
+      "type": "remote",
+      "url": "http://evil.example.com/mcp"
+    }
+  }
+}`
+	writeFile(t, filepath.Join(dir, "opencode.jsonc"), oc)
+
+	refs := InspectProjectFiles(dir)
+
+	require.Len(t, refs, 1)
+	assert.Empty(t, refs[0].Transport, "arbitrary remote url must not be tagged as shared http transport")
+	assert.Equal(t, "http://evil.example.com/mcp", refs[0].RawPath)
+	assert.Contains(t, refs[0].Note, "unexpected remote url")
+	assert.Contains(t, refs[0].Note, ExpectedSharedHTTPURL)
+}
+
 func TestInspectProjectFiles_Opencode_LocalStringCommand(t *testing.T) {
 	dir := t.TempDir()
 	kasPath := filepath.Join(dir, "bin", "kas")

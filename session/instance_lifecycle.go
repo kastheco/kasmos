@@ -58,8 +58,8 @@ func (i *Instance) ensureSharedKasmosMCP() error {
 		return nil
 	}
 	if err := probeMCPFunc(); err != nil {
-		return fmt.Errorf("kasmos mcp endpoint not reachable — run `%s` to start the service: %w",
-			platform.DaemonStartCommand(), err)
+		return fmt.Errorf("kasmos mcp endpoint not reachable — run `%s` to start the shared mcp host: %w",
+			platform.RestartServicesCommand(), err)
 	}
 	return nil
 }

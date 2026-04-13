@@ -187,9 +187,10 @@ func collectRemediationHints(result *check.AuditResult, mcpProcs []check.MCPProc
 		add("kill " + strings.Join(pids, " "))
 	}
 
-	// Shared MCP endpoint unreachable hint.
+	// Shared MCP endpoint unreachable hint. RestartServicesCommand points at the
+	// shared mcp host unit (kasmosdb / kas serve), not just the daemon.
 	if mcpProbeErr != nil {
-		add("start the shared mcp endpoint: " + platform.DaemonStartCommand())
+		add("start the shared mcp endpoint: " + platform.RestartServicesCommand())
 	}
 
 	return hints

@@ -73,8 +73,10 @@ func translateReferences(refs []binpath.Reference, runningCanonical string) []Bi
 		if strings.Contains(r.Note, "not installed") {
 			br.NotInstalled = true
 			// Not-installed optional files are informational only — not healthy, not counted.
-		} else if r.Transport == binpath.TransportSharedHTTP {
-			// Shared HTTP entries are inherently healthy — they point at the running endpoint.
+		} else if r.Transport == binpath.TransportSharedHTTP && r.RawPath == binpath.ExpectedSharedHTTPURL {
+			// Shared HTTP is healthy only when the url matches the well-known
+			// shared endpoint. Defensive url check stops arbitrary http urls
+			// from passing even if Transport is pre-populated by a caller.
 			br.Healthy = true
 		} else if r.Normalized != "" && runningCanonical != "" {
 			br.Healthy = r.Normalized == runningCanonical

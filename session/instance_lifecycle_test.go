@@ -11,6 +11,7 @@ import (
 	"github.com/kastheco/kasmos/cmd/cmd_test"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/platform"
 	"github.com/kastheco/kasmos/session/tmux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -874,4 +875,25 @@ func TestEnsureSharedKasmosMCP_FailedProbeBlocksResumeFreshStart(t *testing.T) {
 	err := inst.Resume()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "mcp endpoint not reachable")
+}
+
+// TestEnsureSharedKasmosMCP_ErrorUsesRestartServicesCommand pins the remediation
+// command embedded in the failed-probe error to platform.RestartServicesCommand().
+// DaemonStartCommand only starts the kasmos daemon and does not start kasmosdb /
+// kas serve, which is what hosts the shared MCP endpoint this probe targets.
+func TestEnsureSharedKasmosMCP_ErrorUsesRestartServicesCommand(t *testing.T) {
+	swapProbeMCP(t, func() error { return fmt.Errorf("dial tcp: connection refused") })
+
+	inst := &Instance{
+		Title:   "test-probe-error-text",
+		Path:    t.TempDir(),
+		Program: "claude",
+	}
+
+	err := inst.StartOnMainBranch()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), platform.RestartServicesCommand(),
+		"error must include RestartServicesCommand (kasmosdb + kasmos), not DaemonStartCommand")
+	assert.Contains(t, err.Error(), "shared mcp host",
+		"error phrasing must reference the shared mcp host, not just the daemon")
 }
