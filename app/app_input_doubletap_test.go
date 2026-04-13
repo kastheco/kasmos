@@ -447,6 +447,143 @@ func TestHandleKeyPressTripleTap_KKaK_DoesNotEscalate(t *testing.T) {
 	assert.False(t, m.isInstanceTitleDismissed(inst.Title), "instance must not be dismissed")
 }
 
+// TestHandleKeyPressTripleTap_KKupK_DoesNotEscalate verifies that a
+// non-printable interruptor (up arrow, where canonicalDoubleTapKey returns "")
+// clears the conflict-free triple-tap window so the sequence k,k,up,k does not
+// trigger KeyKillAndRemove. Without the non-printable reset in
+// handleKeyPress, the tracker's firedKey/firedAt from k+k survives an unrelated
+// arrow key and the third k would escalate to kill-and-remove.
+func TestHandleKeyPressTripleTap_KKupK_DoesNotEscalate(t *testing.T) {
+	h := newTestHome()
+	h.state = stateDefault
+	inst, err := newTestInstance("agent-kkupk")
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	_ = h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+	h.allInstances = append(h.allInstances, inst)
+	title := inst.Title
+
+	// k, k — double-tap fires soft-kill; tracker records firedKey=k.
+	h.keySent = true
+	result, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	m := result.(*home)
+	m.keySent = true
+	result, _ = m.handleKeyPress(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	m = result.(*home)
+
+	// up — non-printable interruptor (Text=""); canonicalDoubleTapKey returns
+	// "" so this key must trigger the non-printable reset path.
+	m.keySent = true
+	result, _ = m.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyUp})
+	m = result.(*home)
+
+	// k — must NOT escalate to KeyKillAndRemove because the triple window
+	// was cleared by the `up` key. This third k is a fresh first tap.
+	m.keySent = true
+	result, _ = m.handleKeyPress(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	m = result.(*home)
+
+	assert.Equal(t, 1, m.nav.TotalInstances(),
+		"instance must still be present after k,k,up,k (non-printable interruptor must clear triple window)")
+	assert.False(t, m.isInstanceTitleDismissed(title),
+		"instance must not be dismissed after k,k,up,k")
+}
+
+// TestHandleKeyPressTripleTap_KKsK_DoesNotEscalate verifies that a debounced
+// interruptor (s) clears the conflict-free triple-tap window so the sequence
+// k,k,s,k does not trigger KeyKillAndRemove. The distinguishing marker of the
+// bug is whether the original instance's title is marked dismissed — a flush
+// of the pending `s` may still call quickLaunchAgent, but that must not
+// dismiss the original instance.
+func TestHandleKeyPressTripleTap_KKsK_DoesNotEscalate(t *testing.T) {
+	_, restore := captureTimeout(t)
+	defer restore()
+
+	h := newTestHome()
+	h.state = stateDefault
+	inst, err := newTestInstance("agent-kksk")
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	_ = h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+	h.allInstances = append(h.allInstances, inst)
+	title := inst.Title
+
+	// k, k — soft-kill fires (async cmd; instance stays in nav).
+	h.keySent = true
+	result, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	m := result.(*home)
+	m.keySent = true
+	result, _ = m.handleKeyPress(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	m = result.(*home)
+
+	// s — debounced first tap; must reset the triple-tap window.
+	m.keySent = true
+	result, _ = m.handleKeyPress(tea.KeyPressMsg{Code: 's', Text: "s"})
+	m = result.(*home)
+
+	// Record nav size before the final k so we can verify the flushed `s`
+	// actually added a new loading instance via quickLaunchAgent.
+	navBefore := m.nav.NumInstances()
+
+	// k — must NOT escalate to KeyKillAndRemove, i.e. must not dismiss.
+	// It MUST flush the pending `s` to KeyQuickLaunch and preserve the
+	// resulting async startCmd; otherwise the quickLaunch loading instance
+	// quickLaunchAgent just added to nav would never start.
+	m.keySent = true
+	result, cmd := m.handleKeyPress(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	m = result.(*home)
+
+	assert.False(t, m.isInstanceTitleDismissed(title),
+		"original instance must not be dismissed after k,k,s,k (debounced interruptor must clear triple window)")
+	assert.NotNil(t, cmd,
+		"flushed quickLaunch startCmd must be preserved — dropping it orphans the loading instance")
+	assert.Equal(t, navBefore+1, m.nav.NumInstances(),
+		"flushed `s` must have added a new quickLaunch loading instance to nav")
+	assert.Equal(t, stateDefault, m.state, "state must remain stateDefault (no overlay bleed)")
+	assert.False(t, m.overlays.IsActive(), "no overlay bleed from the flushed key path")
+}
+
+// TestHandleKeyPressTripleTap_KKspaceK_DoesNotEscalate verifies that a debounced
+// interruptor (space) clears the conflict-free triple-tap window so the sequence
+// k,k,space,k does not trigger KeyKillAndRemove.
+func TestHandleKeyPressTripleTap_KKspaceK_DoesNotEscalate(t *testing.T) {
+	_, restore := captureTimeout(t)
+	defer restore()
+
+	h := newTestHome()
+	h.state = stateDefault
+	inst, err := newTestInstance("agent-kkspacek")
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	_ = h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+	h.allInstances = append(h.allInstances, inst)
+	title := inst.Title
+
+	// k, k — soft-kill fires.
+	h.keySent = true
+	result, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	m := result.(*home)
+	m.keySent = true
+	result, _ = m.handleKeyPress(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	m = result.(*home)
+
+	// space — debounced first tap; must reset the triple-tap window.
+	m.keySent = true
+	result, _ = m.handleKeyPress(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	m = result.(*home)
+
+	// k — must NOT escalate to KeyKillAndRemove.
+	m.keySent = true
+	result, _ = m.handleKeyPress(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	m = result.(*home)
+
+	assert.False(t, m.isInstanceTitleDismissed(title),
+		"original instance must not be dismissed after k,k,space,k (debounced interruptor must clear triple window)")
+}
+
 // TestHandleKeyPressTripleTap_NoSelectedInstance_NoOp verifies that three k taps
 // with no selected instance neither panic nor mutate state.
 func TestHandleKeyPressTripleTap_NoSelectedInstance_NoOp(t *testing.T) {
@@ -494,6 +631,76 @@ func TestHandleKeyPressTripleTap_CapitalK_DoesNotTriggerKillAndRemove(t *testing
 	m = result.(*home)
 	assert.Equal(t, 1, m.nav.TotalInstances(), "instance must remain after K+K+K (no triple-tap for K)")
 	assert.False(t, m.isInstanceTitleDismissed(inst.Title), "instance must not be dismissed by K+K+K")
+}
+
+// -- Debounced-flush printable interruption tests ------------------------------------
+
+// TestHandleKeyPressDoubleTap_SK_FlushPreservesQuickLaunchCmd is a direct
+// regression for the flush-drop bug: pressing `s` then a different printable
+// key (`k`) must flush the pending KeyQuickLaunch action AND preserve its
+// async startCmd. quickLaunchAgent mutates nav state synchronously (adds a
+// Loading instance and selects it) and returns an async startCmd that
+// actually boots the session. Dropping that cmd leaves an orphan Loading
+// instance in nav that never transitions out of Loading.
+func TestHandleKeyPressDoubleTap_SK_FlushPreservesQuickLaunchCmd(t *testing.T) {
+	_, restore := captureTimeout(t)
+	defer restore()
+
+	h := newTestHome()
+	h.state = stateDefault
+
+	// First s: pending set, no instance yet.
+	h.keySent = true
+	result, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 's', Text: "s"})
+	m := result.(*home)
+	require.Equal(t, "s", m.pendingDoubleTapKey, "pending must be 's' after first tap")
+	require.Equal(t, 0, m.nav.NumInstances(), "no instance added yet — timeout has not fired")
+
+	// Different printable follow-up: must flush pending `s` → KeyQuickLaunch
+	// and continue processing `k` as a fresh first conflict-free tap. The
+	// returned cmd MUST include the flushed quickLaunch startCmd.
+	m.keySent = true
+	result, cmd := m.handleKeyPress(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	m = result.(*home)
+
+	assert.NotNil(t, cmd,
+		"flushed quickLaunch startCmd must be preserved after s→k — dropping it orphans the loading instance")
+	assert.Equal(t, "", m.pendingDoubleTapKey, "pending must be cleared after flush")
+	assert.Equal(t, 1, m.nav.NumInstances(),
+		"quickLaunchAgent must have added exactly one loading instance to nav")
+	assert.Equal(t, stateDefault, m.state, "state must remain stateDefault (no overlay/state bleed)")
+	assert.False(t, m.overlays.IsActive(), "no overlay should be active after s→k")
+}
+
+// TestHandleKeyPressDoubleTap_SpaceK_NoStateBleed verifies that pressing
+// `space` then a different printable key (`k`) with no selected instance
+// cleanly flushes the pending KeySpace action without leaking state (no
+// overlay, stateDefault preserved, pending cleared). KeySpace with no nav
+// selection is a no-op, so the flushCmd is nil here — this test's job is to
+// prove the flush path itself does not bleed state.
+func TestHandleKeyPressDoubleTap_SpaceK_NoStateBleed(t *testing.T) {
+	_, restore := captureTimeout(t)
+	defer restore()
+
+	h := newTestHome()
+	h.state = stateDefault
+
+	// First space: pending "space" set.
+	h.keySent = true
+	result, _ := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	m := result.(*home)
+	require.Equal(t, "space", m.pendingDoubleTapKey, "pending must be 'space' after first tap")
+
+	// k: flushes pending space → KeySpace (no-op here), then processes `k`
+	// as a fresh first conflict-free tap. Must not leave any stale state.
+	m.keySent = true
+	result, _ = m.handleKeyPress(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	m = result.(*home)
+
+	assert.Equal(t, "", m.pendingDoubleTapKey, "pending must be cleared after flush")
+	assert.Equal(t, stateDefault, m.state, "state must remain stateDefault (no overlay/state bleed)")
+	assert.False(t, m.overlays.IsActive(), "no overlay should be active after space→k")
+	assert.Equal(t, 0, m.nav.NumInstances(), "no instance should be created by space→k")
 }
 
 // -- Helper: canonicalDoubleTapKey ---------------------------------------------------

@@ -1757,8 +1757,32 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 			return m, tea.Batch(flushCmd, newCmd)
 		}
 		// For printable keys, flush and continue into the double-tap logic below
-		// so the new key is processed in the same Update call.
-		_ = flushCmd // TODO: batch this if the paths below return a cmd
+		// so the new key is processed in the same Update call. Any cmd the
+		// remainder of the function returns must be batched with flushCmd —
+		// otherwise async cmds like quickLaunchAgent's startCmd get dropped
+		// and the loading instance they enqueue never starts.
+		if flushCmd != nil {
+			defer func() {
+				if cmd == nil {
+					cmd = flushCmd
+					return
+				}
+				cmd = tea.Batch(flushCmd, cmd)
+			}()
+		}
+	}
+
+	if dtKey == "" {
+		// Non-printable keys (arrows, enter, tab, function keys, and any
+		// ctrl/alt chord) must clear any in-flight conflict-free triple-tap
+		// window so sequences like k,k,up,k cannot escalate to
+		// KeyKillAndRemove. canonicalDoubleTapKey returns "" for anything
+		// that is not a printable single-rune key or literal space, so this
+		// covers every non-participant that falls through to
+		// GlobalKeyStringsMap below. Mirrors the resets inside the
+		// dtKey != "" block for unrelated printable keys and debounced
+		// interruptors.
+		m.ensureDoubleTap().Reset()
 	}
 
 	if dtKey != "" {
@@ -1780,6 +1804,11 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		// Debounced keys (s, space): first tap defers via timeout; second tap within
 		// the window cancels the timeout and fires the double-tap action.
 		if action, ok := keys.DebouncedDoubleTapMap[dtKey]; ok {
+			// A debounced interruptor must clear any in-flight conflict-free
+			// triple-tap window so k+k+s+k and k+k+space+k cannot escalate to
+			// KeyKillAndRemove. This mirrors the reset below for unrelated
+			// printable keys.
+			tracker.Reset()
 			if m.pendingDoubleTapKey == dtKey {
 				// Second tap — cancel pending and dispatch double-tap action immediately.
 				m.pendingDoubleTapKey = ""
