@@ -16,8 +16,6 @@ import (
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session/git"
 	"github.com/kastheco/kasmos/session/tmux"
-
-	"github.com/atotto/clipboard"
 )
 
 // prepareExecutionSession returns the existing execution session if already wired, otherwise
@@ -510,9 +508,6 @@ func (i *Instance) Pause() error {
 	}
 
 	i.SetStatus(Paused)
-	if i.gitWorktree != nil {
-		_ = clipboard.WriteAll(i.gitWorktree.GetBranchName())
-	}
 	return nil
 }
 
