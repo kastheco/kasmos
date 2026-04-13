@@ -281,7 +281,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		if !taskActionStillAllowed(entry, "start_verify") {
 			return m, lifecycleActionRejected("task state changed; start verify no longer available")
 		}
-		return m.triggerTaskStage(planFile, "verify")
+		return m.executeTaskStage(planFile, "verify")
 
 	case "start_fixer":
 		planFile := m.nav.GetSelectedPlanFile()
