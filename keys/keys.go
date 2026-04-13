@@ -133,7 +133,7 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	),
 	KeyKill: key.NewBinding(
 		key.WithKeys("ctrl+k"),
-		key.WithHelp("ctrl+k / k+k / k+k+k", "kill"),
+		key.WithHelp("ctrl+k / k+k / k+k+k", "kill / kill+remove"),
 	),
 	KeyAbort: key.NewBinding(
 		key.WithKeys("ctrl+shift+k"),
