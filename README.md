@@ -4,7 +4,7 @@
 
 # [![CI](https://github.com/kastheco/kasmos/actions/workflows/build.yml/badge.svg)](https://github.com/kastheco/kasmos/actions/workflows/build.yml) [![GitHub Release](https://img.shields.io/github/v/release/kastheco/kasmos)](https://github.com/kastheco/kasmos/releases/latest) [![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](LICENSE.md) [![docs](https://img.shields.io/badge/docs-kasmos.kasthe.co-blue)](https://kasmos.kasthe.co)
 
-> mcp-first multi-agent orchestration for git repos: task store, stdio mcp server, daemon, worktrees, and tui in one tool.
+> mcp-first multi-agent orchestration for git repos: task store, shared http mcp endpoint, daemon, worktrees, and tui in one tool.
 
 [**docs →** kasmos.kasthe.co](https://kasmos.kasthe.co)
 
@@ -17,7 +17,7 @@
 ## features
 
 - **global task store** — tasks live at `~/.config/kasmos/taskstore.db`, shared across all managed repos via the daemon
-- **stdio mcp server** — `kas mcp` exposes filesystem, git, task, signal, and instance tools over stdio; agents connect via `.mcp.json`
+- **shared http mcp endpoint** — `kas serve` (or the `kasmosdb` systemd/launchd service) hosts a single MCP server at `http://127.0.0.1:7434/mcp`; all scaffolded harness configs point agents here — no per-agent stdio subprocess needed
 - **wave-based orchestration** — planning → architect → implement → review → readiness review lifecycle with per-wave agent concurrency
 - **multi-harness support** — works with claude, opencode, codex, and other mcp-aware agents
 - **tui + daemon** — interactive tui for task management plus a headless daemon for automated orchestration
@@ -59,11 +59,14 @@ the compiled binary is `kas`. `kasmos` remains the project name, module path (`g
 from inside a git repo:
 
 ```bash
-kas setup        # scaffold harness configs (.mcp.json, agent prompts)
+kas serve        # start the shared http mcp endpoint (or let kasmosdb do it automatically)
+kas setup        # scaffold harness configs (.mcp.json, agent prompts) pointing at the shared endpoint
 kas              # open the tui
 ```
 
-`kas setup` writes `.mcp.json` so mcp-aware agents (claude, opencode, codex) automatically connect to the kasmos stdio mcp server.
+`kas setup` (and `kas reset`) write `.mcp.json` so mcp-aware agents (claude, opencode, codex) connect to the shared http mcp endpoint (`http://127.0.0.1:7434/mcp`). the endpoint must be running before starting managed agent sessions. `kas check` will warn if the shared endpoint is unreachable or if stale `kas mcp` stdio processes are still running.
+
+> **note:** `kas mcp` (stdio mode) is still available as a fallback for manual or harness-specific use, but it is not the default transport and should not appear in scaffolded configs.
 
 see the [getting started guide](https://kasmos.kasthe.co/docs/getting-started) for a full walkthrough including harness setup and your first task.
 
@@ -71,7 +74,9 @@ see the [getting started guide](https://kasmos.kasthe.co/docs/getting-started) f
 
 ## mcp server
 
-`kas mcp` starts a stdio mcp server that agents connect to via `.mcp.json`. `kas serve` is an optional http surface for the admin web ui and rest api.
+kasmos exposes its tools via a **shared http mcp endpoint** hosted by `kas serve` (or the `kasmosdb` background service) at `http://127.0.0.1:7434/mcp`. all scaffolded harness configs (written by `kas setup` / `kas reset`) point agents at this single endpoint — no per-agent stdio subprocess is spawned, eliminating the memory overhead of one `kas mcp` process per agent session.
+
+`kas mcp` (stdio) is still available for manual or custom harness use, but it is the fallback transport, not the default. managed agent sessions require the shared http endpoint to be running; if it is down, `kas check` will report the missing endpoint as an error and list any lingering `kas mcp` stdio processes as a warning.
 
 tool groups exposed:
 
@@ -84,7 +89,7 @@ tool groups exposed:
 | instances | `instance_list`, `instance_pause`, `instance_resume`, `instance_send` |
 | daemon | `daemon_status` |
 
-filesystem and git tools are sandboxed to the repo root. `kas setup` writes the `.mcp.json` that registers the server; see the [mcp server docs](https://kasmos.kasthe.co/docs/mcp-server) for details.
+filesystem and git tools are sandboxed to the repo root. see the [mcp server docs](https://kasmos.kasthe.co/docs/mcp-server) for details.
 
 ---
 
