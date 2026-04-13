@@ -1699,13 +1699,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 	if msg.Code == tea.KeyDelete || msg.Code == tea.KeyBackspace {
 		selected := m.nav.GetSelectedInstance()
 		if selected != nil && (selected.Exited || (selected.Status != session.Running && selected.Status != session.Loading)) {
-			title := selected.Title
-			m.markInstanceTitleDismissed(title)
-			m.nav.Remove()
-			m.removeFromAllInstances(title)
-			_ = m.saveAllInstances()
-			m.updateNavPanelStatus()
-			return m, tea.Batch(tea.RequestWindowSize, m.instanceChanged())
+			return m, m.dismissInstanceFromList(selected)
 		}
 		return m, nil
 	}
@@ -1769,9 +1763,14 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 
 	if dtKey != "" {
 		// Conflict-free keys (k, K, u, d): no single-press binding — swallow 1st tap,
-		// dispatch mapped action on the 2nd tap within the threshold.
+		// dispatch mapped action on the 2nd tap within the threshold, and escalate to
+		// the triple-tap action on the 3rd tap when a TripleTapMap entry exists.
+		tracker := m.ensureDoubleTap()
+		if action, ok := keys.TripleTapMap[dtKey]; ok && tracker.DetectTriple(dtKey) {
+			return m.handleResolvedKey(action)
+		}
 		if action, ok := keys.DoubleTapMap[dtKey]; ok {
-			if m.ensureDoubleTap().Detect(dtKey) {
+			if tracker.Detect(dtKey) {
 				return m.handleResolvedKey(action)
 			}
 			// First tap: swallow (no single-press action for these keys).
@@ -1926,12 +1925,19 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 			auditlog.WithAgent(selected.AgentType),
 			auditlog.WithPlan(selected.TaskFile),
 		)
-		inst := selected
-		return m, func() tea.Msg {
-			inst.StopTmux()
-			inst.SetStatus(session.Ready)
-			return instanceChangedMsg{}
+		return m, softKillInstanceCmd(selected)
+	case keys.KeyKillAndRemove:
+		// Soft kill and remove: terminate tmux session and dismiss instance from list.
+		selected := m.nav.GetSelectedInstance()
+		if selected == nil || !selected.Started() || selected.Paused() || selected.Exited {
+			return m, nil
 		}
+		m.audit(auditlog.EventAgentKilled, "killed and removed instance",
+			auditlog.WithInstance(selected.Title),
+			auditlog.WithAgent(selected.AgentType),
+			auditlog.WithPlan(selected.TaskFile),
+		)
+		return m, tea.Batch(softKillInstanceCmd(selected), m.dismissInstanceFromList(selected))
 	case keys.KeyAbort:
 		// Full abort: kill tmux, remove worktree, remove from list + persistence.
 		selected := m.nav.GetSelectedInstance()
@@ -2342,5 +2348,16 @@ func (m *home) keydownCallback(name keys.KeyName) tea.Cmd {
 		}
 
 		return keyupMsg{}
+	}
+}
+
+// softKillInstanceCmd returns a tea.Cmd that terminates inst's tmux session and
+// resets its status to Ready. Used by both KeyKill and KeyKillAndRemove so the
+// async kill behaviour stays single-sourced.
+func softKillInstanceCmd(inst *session.Instance) tea.Cmd {
+	return func() tea.Msg {
+		inst.StopTmux()
+		inst.SetStatus(session.Ready)
+		return instanceChangedMsg{}
 	}
 }

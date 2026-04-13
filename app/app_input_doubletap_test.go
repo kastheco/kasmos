@@ -374,6 +374,128 @@ func TestHandleKeyPressDoubleTap_StaleTimeout_NonDefaultStateClearsPending(t *te
 	assert.Zero(t, m.pendingDoubleTapAction, "pending action must be cleared")
 }
 
+// -- Triple-tap tests (k+k+k) --------------------------------------------------------
+
+// TestHandleKeyPressTripleTap_KKK_KillsAndRemoves verifies that k+k+k dispatches
+// KeyKillAndRemove, removing the selected instance from the nav and allInstances.
+func TestHandleKeyPressTripleTap_KKK_KillsAndRemoves(t *testing.T) {
+	h := newTestHome()
+	h.state = stateDefault
+	inst, err := newTestInstance("agent-kkk")
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	_ = h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+	h.allInstances = append(h.allInstances, inst)
+	title := inst.Title
+
+	// First k: swallowed.
+	h.keySent = true
+	result, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	m := result.(*home)
+	assert.Nil(t, cmd, "first k must be swallowed")
+
+	// Second k: double-tap fires KeyKill (non-nil cmd).
+	m.keySent = true
+	result, cmd = m.handleKeyPress(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	m = result.(*home)
+	assert.NotNil(t, cmd, "second k must dispatch async kill cmd")
+
+	// Third k: triple-tap fires KeyKillAndRemove.
+	m.keySent = true
+	result, cmd = m.handleKeyPress(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	m = result.(*home)
+	assert.NotNil(t, cmd, "third k must dispatch kill-and-remove cmd")
+	assert.Equal(t, 0, m.nav.TotalInstances(), "nav must have no instances after k+k+k")
+	assert.Empty(t, m.allInstances, "allInstances must be empty after k+k+k")
+	assert.True(t, m.isInstanceTitleDismissed(title), "instance must be marked dismissed")
+	assert.Equal(t, stateDefault, m.state, "state must remain stateDefault")
+}
+
+// TestHandleKeyPressTripleTap_KKaK_DoesNotEscalate verifies that an intervening
+// unrelated key resets the tracker so the sequence k,k,a,k does not trigger
+// KeyKillAndRemove.
+func TestHandleKeyPressTripleTap_KKaK_DoesNotEscalate(t *testing.T) {
+	h := newTestHome()
+	h.state = stateDefault
+	inst, err := newTestInstance("agent-kkak")
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	_ = h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+	h.allInstances = append(h.allInstances, inst)
+
+	// k, k — double-tap.
+	h.keySent = true
+	result, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	m := result.(*home)
+	m.keySent = true
+	result, _ = m.handleKeyPress(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	m = result.(*home)
+
+	// a — resets tracker.
+	m.keySent = true
+	result, _ = m.handleKeyPress(tea.KeyPressMsg{Code: 'a', Text: "a"})
+	m = result.(*home)
+
+	// k again — fresh first tap, no kill-and-remove.
+	m.keySent = true
+	result, _ = m.handleKeyPress(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	m = result.(*home)
+
+	assert.Equal(t, 1, m.nav.TotalInstances(), "instance must still be present after k,k,a,k")
+	assert.False(t, m.isInstanceTitleDismissed(inst.Title), "instance must not be dismissed")
+}
+
+// TestHandleKeyPressTripleTap_NoSelectedInstance_NoOp verifies that three k taps
+// with no selected instance neither panic nor mutate state.
+func TestHandleKeyPressTripleTap_NoSelectedInstance_NoOp(t *testing.T) {
+	h := newTestHome()
+	h.state = stateDefault
+	// No instances added — nav is empty.
+
+	for i := 0; i < 3; i++ {
+		h.keySent = true
+		result, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'k', Text: "k"})
+		h = result.(*home)
+	}
+
+	assert.Equal(t, stateDefault, h.state, "state must remain stateDefault with no instance")
+	assert.Equal(t, 0, h.nav.TotalInstances(), "nav must remain empty")
+}
+
+// TestHandleKeyPressTripleTap_CapitalK_DoesNotTriggerKillAndRemove verifies that
+// the uppercase K path goes through abort-confirmation (stateConfirm), not
+// KeyKillAndRemove, even when a third K is pressed after K+K.
+func TestHandleKeyPressTripleTap_CapitalK_DoesNotTriggerKillAndRemove(t *testing.T) {
+	h := newTestHome()
+	h.state = stateDefault
+	inst, err := newTestInstance("agent-KKK")
+	require.NoError(t, err)
+	_ = h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+
+	// First K: swallowed.
+	h.keySent = true
+	result, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'K', Text: "K"})
+	m := result.(*home)
+	assert.Equal(t, stateDefault, m.state, "first K swallowed")
+
+	// Second K: abort confirmation overlay.
+	m.keySent = true
+	result, _ = m.handleKeyPress(tea.KeyPressMsg{Code: 'K', Text: "K"})
+	m = result.(*home)
+	assert.Equal(t, stateConfirm, m.state, "K+K must enter stateConfirm for abort")
+
+	// Third K: handled by the stateConfirm branch, NOT by triple-tap logic.
+	// The instance must still be present and not dismissed.
+	m.keySent = true
+	result, _ = m.handleKeyPress(tea.KeyPressMsg{Code: 'K', Text: "K"})
+	m = result.(*home)
+	assert.Equal(t, 1, m.nav.TotalInstances(), "instance must remain after K+K+K (no triple-tap for K)")
+	assert.False(t, m.isInstanceTitleDismissed(inst.Title), "instance must not be dismissed by K+K+K")
+}
+
 // -- Helper: canonicalDoubleTapKey ---------------------------------------------------
 
 func TestCanonicalDoubleTapKey(t *testing.T) {
