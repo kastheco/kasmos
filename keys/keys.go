@@ -12,8 +12,9 @@ const (
 	KeyPageUp
 	KeyPageDown
 	KeyEnter
-	KeyKill  // ctrl+k — soft kill: terminates tmux session, keeps instance in list
-	KeyAbort // ctrl+shift+k — full abort: kills tmux, removes worktree, removes from list
+	KeyKill          // ctrl+k — soft kill: terminates tmux session, keeps instance in list
+	KeyKillAndRemove // k+k+k — soft kill and immediately remove instance from sidebar list
+	KeyAbort         // ctrl+shift+k — full abort: kills tmux, removes worktree, removes from list
 	KeyQuit
 	KeyReview
 	KeyPush
@@ -132,7 +133,7 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	),
 	KeyKill: key.NewBinding(
 		key.WithKeys("ctrl+k"),
-		key.WithHelp("ctrl+k / k+k", "kill"),
+		key.WithHelp("ctrl+k / k+k / k+k+k", "kill"),
 	),
 	KeyAbort: key.NewBinding(
 		key.WithKeys("ctrl+shift+k"),
@@ -280,6 +281,15 @@ var DoubleTapMap = map[string]KeyName{
 	"K": KeyAbort,
 	"u": KeyHalfPageUp,
 	"d": KeyHalfPageDown,
+}
+
+// TripleTapMap maps the canonical single-character key to the action it
+// triggers on a triple-tap. Every entry here MUST also exist in DoubleTapMap;
+// a triple-tap is an escalation of the double-tap action.
+//
+// Keys: k → kill and remove.
+var TripleTapMap = map[string]KeyName{
+	"k": KeyKillAndRemove,
 }
 
 // DebouncedDoubleTapMap maps canonical keys that already have a single-press
