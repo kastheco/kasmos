@@ -42,11 +42,11 @@ var probeMCPFunc = func() error {
 // MCP HTTP endpoint. It strips command-line flags and extracts the executable
 // basename so both "claude" and "/usr/local/bin/claude --flag" are recognised.
 func usesManagedKasmosMCP(program string) bool {
-	if program == "" {
+	fields := strings.Fields(program)
+	if len(fields) == 0 {
 		return false
 	}
-	exe := strings.Fields(program)[0]
-	base := filepath.Base(exe)
+	base := filepath.Base(fields[0])
 	return kasmosManagedPrograms[base]
 }
 

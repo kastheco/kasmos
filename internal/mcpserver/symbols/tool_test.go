@@ -110,6 +110,37 @@ func TestMakeSymbolsHandler_LoadOnMissPopulatesColdStore(t *testing.T) {
 	assert.Equal(t, 1, payload.Total)
 }
 
+// TestMakeSymbolsHandler_LoadOnMissContractRequiresStoreUpdate pins the
+// documented contract: loadOnMiss must update the store, otherwise follow-up
+// calls for the same path would keep hitting the loader instead of serving
+// from cache. The loader here updates the store, matching what PrimeFile does
+// in production (internal/mcpserver/symbols/indexer.go:135).
+func TestMakeSymbolsHandler_LoadOnMissContractRequiresStoreUpdate(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "contract.go")
+	require.NoError(t, os.WriteFile(path, []byte("package contract\n"), 0o644))
+
+	store := NewStore()
+	primed := []Symbol{{Name: "Contract", Kind: "function", Line: 1}}
+	var loaderCalls atomic.Int32
+	loadOnMiss := func(_ context.Context, p string) ([]Symbol, error) {
+		loaderCalls.Add(1)
+		store.Update(p, primed)
+		return primed, nil
+	}
+
+	handler := makeSymbolsHandler(func(raw string) (string, error) { return raw, nil }, store, func() bool { return true }, nil, loadOnMiss)
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"path": path}}}
+
+	_, err := handler(context.Background(), req)
+	require.NoError(t, err)
+	_, err = handler(context.Background(), req)
+	require.NoError(t, err)
+
+	assert.Equal(t, int32(1), loaderCalls.Load(),
+		"second call must hit the warmed store, not the loader — loadOnMiss contract says the loader updates the store")
+}
+
 func TestMakeSymbolsHandler_LoadOnMissNotCalledWhenStoreHasSymbols(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "warm.go")

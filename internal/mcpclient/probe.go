@@ -17,10 +17,11 @@ const SharedEndpointURL = "http://127.0.0.1:7434/mcp"
 var probeClient = &http.Client{Timeout: 5 * time.Second}
 
 // ProbeHTTP verifies that the kasmos MCP HTTP endpoint at url is reachable by
-// performing the full MCP handshake: initialize then tools/list. The client is
-// closed on every return path.
+// performing the full MCP handshake: initialize then tools/list. The provided
+// context bounds every outgoing request so callers' timeouts are honoured.
+// The client is closed on every return path.
 func ProbeHTTP(ctx context.Context, url string) error {
-	tr := &HTTPTransport{url: url, http: probeClient}
+	tr := &HTTPTransport{url: url, http: probeClient, ctx: ctx}
 	c, err := NewClient(tr)
 	if err != nil {
 		return fmt.Errorf("create mcp client: %w", err)

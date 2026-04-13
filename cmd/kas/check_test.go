@@ -24,7 +24,8 @@ func bundledCheckSkillNames(t *testing.T) []string {
 }
 
 // captureCheckOutput runs newCheckCmd() with a temp home/project layout and
-// captures stdout. Returns the output string and whether the command returned nil.
+// captures stdout. Returns the combined stdout buffer; the command's error is
+// not reported because every caller only asserts on rendered output.
 func captureCheckOutput(t *testing.T, setupFn func(home, project string)) string {
 	t.Helper()
 	// Stub the probe to "reachable" by default so check tests don't hit the

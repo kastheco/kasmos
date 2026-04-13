@@ -708,6 +708,8 @@ func TestUsesManagedKasmosMCP(t *testing.T) {
 		{"aider", false},
 		{"aider --model ollama_chat/gemma3:1b", false},
 		{"", false},
+		{"   ", false},
+		{"\t\n", false},
 		{"/usr/bin/sh", false},
 		{"gemini", false},
 	}

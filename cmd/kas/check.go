@@ -227,13 +227,11 @@ func renderBinaryPath(cmd *cobra.Command, bp *check.BinaryPathResult) {
 		for _, ref := range bp.References {
 			glyph := "✓"
 			annotation := ""
-			if ref.NotInstalled {
+			switch {
+			case ref.NotInstalled:
 				glyph = "–"
 				annotation = " (not installed)"
-			} else if ref.Transport == binpath.TransportSharedHTTP {
-				// Shared HTTP is always healthy — show the transport label.
-				annotation = " (shared http)"
-			} else if !ref.Healthy {
+			case !ref.Healthy:
 				glyph = "✗"
 				if ref.Note != "" {
 					annotation = " (" + ref.Note + ")"
@@ -242,6 +240,9 @@ func renderBinaryPath(cmd *cobra.Command, bp *check.BinaryPathResult) {
 				} else {
 					annotation = " (stale)"
 				}
+			case ref.Transport == binpath.TransportSharedHTTP:
+				// Healthy shared-http entry — show the transport label.
+				annotation = " (shared http)"
 			}
 			fmt.Fprintf(out, "    %s %-30s %s%s\n",
 				glyph,

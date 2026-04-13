@@ -65,9 +65,30 @@ func TestProbeHTTP_Success(t *testing.T) {
 }
 
 func TestProbeHTTP_ServerDown(t *testing.T) {
-	// Port 19999 is expected to be unbound in the test environment.
-	err := mcpclient.ProbeHTTP(context.Background(), "http://127.0.0.1:19999")
+	// Start a throwaway server, capture its URL, then close it so we have a
+	// deterministically unbound URL without assuming any specific port.
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	url := srv.URL
+	srv.Close()
+
+	err := mcpclient.ProbeHTTP(context.Background(), url)
 	require.Error(t, err)
+}
+
+func TestProbeHTTP_ContextCancelled(t *testing.T) {
+	// Server blocks until the request context is cancelled. This only
+	// terminates if ProbeHTTP actually plumbs ctx through the transport.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before the call so the request fails fast
+
+	err := mcpclient.ProbeHTTP(ctx, srv.URL)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "context canceled")
 }
 
 func TestProbeHTTP_InitializeFails(t *testing.T) {

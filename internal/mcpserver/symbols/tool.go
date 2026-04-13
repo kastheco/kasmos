@@ -25,7 +25,9 @@ type toolResult struct {
 //
 // loadOnMiss, when non-nil, is called synchronously when the store has no
 // symbols for the requested path so that the first call returns real data
-// rather than an empty slice.
+// rather than an empty slice. Implementations MUST update store with the
+// returned symbols; the handler does not do it for them. Skipping this means
+// every follow-up call re-runs the synchronous loader.
 func RegisterTool(
 	srv *server.MCPServer,
 	validate PathValidator,

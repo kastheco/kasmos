@@ -3,6 +3,7 @@ package mcpclient
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ type HTTPTransport struct {
 	url   string
 	token string
 	http  *http.Client
+	ctx   context.Context // optional; when non-nil, attached to outgoing requests
 
 	mu        sync.Mutex
 	sessionID string
@@ -43,7 +45,11 @@ func (t *HTTPTransport) Send(req JSONRPCRequest) (JSONRPCResponse, error) {
 		return JSONRPCResponse{}, fmt.Errorf("marshal: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", t.url, bytes.NewReader(body))
+	ctx := t.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", t.url, bytes.NewReader(body))
 	if err != nil {
 		return JSONRPCResponse{}, fmt.Errorf("new request: %w", err)
 	}

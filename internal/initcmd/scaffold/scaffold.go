@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
+	"github.com/kastheco/kasmos/internal/mcpclient"
 )
 
 //go:embed templates
@@ -112,9 +113,9 @@ var kasmosMCPToolPermissions = []string{
 }
 
 // sharedKasmosMCPURL is the well-known address of the shared kasmos HTTP MCP
-// endpoint started by `kas serve`. All scaffolded harness configs point here
-// instead of spawning a per-session stdio subprocess.
-const sharedKasmosMCPURL = "http://127.0.0.1:7434/mcp"
+// endpoint started by `kas serve`. Sourced from mcpclient so the scaffold and
+// probe code can never drift apart.
+const sharedKasmosMCPURL = mcpclient.SharedEndpointURL
 
 // claudeMCPJSON returns the default .mcp.json content registering the kasmos
 // MCP server via the shared HTTP endpoint.

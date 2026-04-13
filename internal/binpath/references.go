@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/kastheco/kasmos/internal/mcpclient"
 )
 
 // TransportKind describes how a kasmos MCP entry is wired.
@@ -22,9 +24,9 @@ const (
 
 // ExpectedSharedHTTPURL is the well-known URL of the shared kasmos HTTP MCP
 // endpoint. An http/remote entry only qualifies as TransportSharedHTTP when
-// its url matches this value exactly. Must stay in sync with
-// internal/mcpclient.SharedEndpointURL.
-const ExpectedSharedHTTPURL = "http://127.0.0.1:7434/mcp"
+// its url matches this value exactly. Sourced from mcpclient so binpath and
+// probe code can never drift apart.
+const ExpectedSharedHTTPURL = mcpclient.SharedEndpointURL
 
 // Reference describes a single discovered kas binary path in a config or service file.
 type Reference struct {
