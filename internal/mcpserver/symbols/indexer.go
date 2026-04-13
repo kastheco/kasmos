@@ -129,6 +129,32 @@ func (i *Indexer) Start(ctx context.Context) {
 	})
 }
 
+// PrimeFile indexes a single file synchronously, updates the store via the
+// existing callbacks, and records the path as known. This ensures the first
+// symbols call after a lazy start does not return an empty result.
+func (i *Indexer) PrimeFile(ctx context.Context, path string) ([]Symbol, error) {
+	if i == nil || !i.Available() {
+		return nil, nil
+	}
+
+	absPath, err := i.normalizePath(path)
+	if err != nil {
+		return nil, err
+	}
+
+	syms, err := i.IndexFile(ctx, absPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if syms != nil {
+		i.rememberPath(absPath)
+		i.update(absPath, syms)
+	}
+
+	return syms, nil
+}
+
 // IndexFile indexes a single file with universal-ctags.
 func (i *Indexer) IndexFile(ctx context.Context, path string) ([]Symbol, error) {
 	if i == nil || !i.Available() {
