@@ -2744,3 +2744,205 @@ func TestExecuteContextAction_StartVerifyRejectsStaleState(t *testing.T) {
 	assert.Equal(t, taskstate.StatusDone, freshEntry.Status,
 		"stale start_verify must not mutate FSM state from Done")
 }
+
+// TestExecuteContextAction_StartVerify_ClearsLatestReviewFeedback verifies that
+// moving a task from reviewing to verifying via the manual start_verify action
+// clears any persisted reviewer feedback (both in-memory and on the taskstate
+// entry), mirroring the cleanup performed by the signal-driven
+// loop.ReviewApprovedAction path. Stale feedback left on a verifying/done task
+// is surfaced by cmd/status.go and reused by start_fixer, so leaking it across
+// manual verify would leave reviewer findings attached to work that has already
+// been approved.
+func TestExecuteContextAction_StartVerify_ClearsLatestReviewFeedback(t *testing.T) {
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+	store := taskstore.NewTestSQLiteStore(t)
+	const planFile = "start-verify-clears-feedback"
+	const feedback = "reviewer flagged missing null check"
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusReviewing,
+		Branch:   "plan/start-verify-clears-feedback",
+	}))
+
+	ps, err := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.SetLatestReviewFeedback(planFile, feedback))
+	preEntry, ok := ps.Entry(planFile)
+	require.True(t, ok)
+	require.Equal(t, feedback, preEntry.LatestReviewFeedback,
+		"precondition: feedback must be persisted before manual verify")
+
+	fsm := taskfsm.New(store, "test", plansDir)
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:          context.Background(),
+		state:        stateDefault,
+		appConfig:    config.DefaultConfig(),
+		nav:          ui.NewNavigationPanel(&sp),
+		menu:         ui.NewMenu(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager: overlay.NewToastManager(&sp),
+		overlays:     overlay.NewManager(),
+		daemonStatusChecker: func(string) daemonStatusMsg {
+			return daemonStatusMsg{ready: true}
+		},
+		taskState:             ps,
+		taskStore:             store,
+		taskStoreProject:      "test",
+		taskStateDir:          plansDir,
+		fsm:                   fsm,
+		activeRepoPath:        dir,
+		program:               "opencode",
+		pendingReviewFeedback: map[string]string{planFile: feedback},
+		instanceFinalizers:    make(map[*session.Instance]func()),
+	}
+	h.updateSidebarTasks()
+	require.True(t, h.nav.SelectByID(ui.SidebarPlanPrefix+planFile))
+
+	_, cmd := h.executeContextAction("start_verify")
+	require.NotNil(t, cmd, "start_verify must return a non-nil Cmd")
+
+	// Persisted feedback must have been cleared on the live taskstate.
+	liveEntry, ok := h.taskState.Entry(planFile)
+	require.True(t, ok)
+	assert.Empty(t, liveEntry.LatestReviewFeedback,
+		"start_verify must clear persisted reviewer feedback on the live taskstate")
+
+	// Reload from the store to confirm the clear was persisted, not just
+	// mutated in memory.
+	reloaded, err := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
+	freshEntry, ok := reloaded.Entry(planFile)
+	require.True(t, ok)
+	assert.Equal(t, taskstate.StatusVerifying, freshEntry.Status,
+		"start_verify must advance the task to verifying")
+	assert.Empty(t, freshEntry.LatestReviewFeedback,
+		"start_verify must clear persisted reviewer feedback in the store")
+
+	// Pending in-memory feedback (used by start_fixer) must also be cleared.
+	_, pendingStillThere := h.pendingReviewFeedback[planFile]
+	assert.False(t, pendingStillThere,
+		"start_verify must clear pendingReviewFeedback so start_fixer cannot reuse stale feedback")
+}
+
+// TestExecuteContextAction_StartVerify_PreemptsLiveCoderAndFixer verifies that
+// triggering start_verify on an implementing task with live coder/fixer
+// sessions removes those sessions before spawning the master agent. The
+// regression: spawnMaster only cleans up prior master/reviewer instances, so
+// without explicit preemption a coder or fixer would keep writing to the same
+// shared worktree while the readiness pass runs.
+func TestExecuteContextAction_StartVerify_PreemptsLiveCoderAndFixer(t *testing.T) {
+	cases := []struct {
+		name      string
+		agentType string
+	}{
+		{name: "live coder", agentType: session.AgentTypeCoder},
+		{name: "live fixer", agentType: session.AgentTypeFixer},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			plansDir := filepath.Join(dir, "docs", "plans")
+			require.NoError(t, os.MkdirAll(plansDir, 0o755))
+
+			store := taskstore.NewTestSQLiteStore(t)
+			const planFile = "start-verify-preempt"
+			require.NoError(t, store.Create("test", taskstore.TaskEntry{
+				Filename: planFile,
+				Status:   taskstore.StatusImplementing,
+				Branch:   "plan/start-verify-preempt",
+			}))
+
+			ps, err := taskstate.Load(store, "test", plansDir)
+			require.NoError(t, err)
+			fsm := taskfsm.New(store, "test", plansDir)
+
+			sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+			h := &home{
+				ctx:          context.Background(),
+				state:        stateDefault,
+				appConfig:    config.DefaultConfig(),
+				nav:          ui.NewNavigationPanel(&sp),
+				menu:         ui.NewMenu(),
+				tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+				toastManager: overlay.NewToastManager(&sp),
+				overlays:     overlay.NewManager(),
+				daemonStatusChecker: func(string) daemonStatusMsg {
+					return daemonStatusMsg{ready: true}
+				},
+				taskState:          ps,
+				taskStore:          store,
+				taskStoreProject:   "test",
+				taskStateDir:       plansDir,
+				fsm:                fsm,
+				activeRepoPath:     dir,
+				program:            "opencode",
+				instanceFinalizers: make(map[*session.Instance]func()),
+			}
+
+			// Seed a running implementation agent for this plan before the
+			// user triggers start_verify. killExistingPlanAgent only inspects
+			// TaskFile + AgentType, so a bare struct is sufficient.
+			liveAgent := &session.Instance{
+				Title:     "start-verify-preempt-" + tc.agentType,
+				Path:      dir,
+				Program:   "opencode",
+				TaskFile:  planFile,
+				AgentType: tc.agentType,
+			}
+			h.nav.AddInstance(liveAgent)
+
+			h.updateSidebarTasks()
+			require.True(t, h.nav.SelectByID(ui.SidebarPlanPrefix+planFile))
+
+			// Precondition: the live agent is tracked before the action runs.
+			instancesBefore := h.nav.GetInstances()
+			var preCount int
+			for _, inst := range instancesBefore {
+				if inst.TaskFile == planFile && inst.AgentType == tc.agentType {
+					preCount++
+				}
+			}
+			require.Equal(t, 1, preCount,
+				"precondition: one %s must be live before start_verify", tc.agentType)
+
+			_, cmd := h.executeContextAction("start_verify")
+			require.NotNil(t, cmd, "start_verify must return a non-nil Cmd")
+
+			// The live implementation agent must be gone; a master must be
+			// registered synchronously (spawnMaster adds it before returning).
+			instancesAfter := h.nav.GetInstances()
+			var liveCount, masterCount int
+			for _, inst := range instancesAfter {
+				if inst.TaskFile != planFile {
+					continue
+				}
+				switch inst.AgentType {
+				case tc.agentType:
+					liveCount++
+				case session.AgentTypeMaster:
+					masterCount++
+				}
+			}
+			assert.Equal(t, 0, liveCount,
+				"start_verify must preempt the live %s so it cannot race the master in the shared worktree", tc.agentType)
+			assert.Equal(t, 1, masterCount,
+				"start_verify must register exactly one master instance after preemption")
+
+			// The store must now reflect verifying — the manual walk from
+			// implementing to verifying succeeded.
+			reloaded, err := taskstate.Load(store, "test", plansDir)
+			require.NoError(t, err)
+			freshEntry, ok := reloaded.Entry(planFile)
+			require.True(t, ok)
+			assert.Equal(t, taskstate.StatusVerifying, freshEntry.Status,
+				"start_verify from implementing must walk the task to verifying")
+		})
+	}
+}

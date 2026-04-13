@@ -1727,6 +1727,13 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 		m.updateSidebarTasks()
 		return m, m.spawnReviewer(planFile)
 	case "verify":
+		// Preempt any live coder/fixer for this plan before spawning the master.
+		// spawnMaster only cleans up prior master/reviewer instances, and
+		// fixer/coder sessions share the same task worktree — leaving them
+		// running alongside the readiness pass would race on the working tree.
+		m.killExistingPlanAgent(planFile, session.AgentTypeCoder)
+		m.killExistingPlanAgent(planFile, session.AgentTypeFixer)
+		m.clearWaveOrchestratorState(planFile)
 		if entry.Status != taskstate.StatusReviewing && entry.Status != taskstate.StatusVerifying {
 			if err := m.fsmSetReviewing(planFile); err != nil {
 				return m, m.handleError(err)
@@ -1740,6 +1747,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 				string(entry.Status)+" → verifying (manual start verify)",
 				auditlog.WithPlan(planFile))
 		}
+		m.clearLatestReviewFeedback(planFile)
 		m.loadTaskState()
 		m.updateSidebarTasks()
 		return m, m.spawnMaster(planFile)
