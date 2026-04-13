@@ -250,8 +250,13 @@ func (i *Instance) Start(firstTimeSetup bool) error {
 	if i.Title == "" {
 		return fmt.Errorf("instance title cannot be empty")
 	}
-	if err := i.ensureSharedKasmosMCP(); err != nil {
-		return err
+	// Probe only when spawning a fresh harness. Restore-only attach (firstTimeSetup=false,
+	// used by FromInstanceData) reconnects to an already-running process and must not
+	// fail when the shared endpoint is temporarily down.
+	if firstTimeSetup {
+		if err := i.ensureSharedKasmosMCP(); err != nil {
+			return err
+		}
 	}
 
 	if firstTimeSetup {
@@ -441,6 +446,9 @@ func (i *Instance) StartInSharedWorktree(worktree *git.GitWorktree, branch strin
 	if i.Title == "" {
 		return fmt.Errorf("instance title cannot be empty")
 	}
+	if err := i.ensureSharedKasmosMCP(); err != nil {
+		return err
+	}
 
 	i.LoadingTotal = 6
 	i.setLoadingProgress(1, "Connecting to shared worktree...")
@@ -607,6 +615,9 @@ func (i *Instance) Restart() error {
 	if i.Status == Paused {
 		return fmt.Errorf("cannot restart paused instance; resume it first")
 	}
+	if err := i.ensureSharedKasmosMCP(); err != nil {
+		return err
+	}
 
 	// Best-effort: session may already be dead.
 	if i.executionSession != nil {
@@ -681,7 +692,10 @@ func (i *Instance) Resume() error {
 	if i.executionSession.DoesSessionExist() {
 		if restoreErr := i.executionSession.Restore(); restoreErr != nil {
 			log.ErrorLog.Print(restoreErr)
-			// Fall back to a fresh session start.
+			// Fall back to a fresh session start — probe the shared endpoint first.
+			if probeErr := i.ensureSharedKasmosMCP(); probeErr != nil {
+				return probeErr
+			}
 			if startErr := i.executionSession.Start(workDir); startErr != nil {
 				log.ErrorLog.Print(startErr)
 				if i.gitWorktree != nil && !i.sharedWorktree {
@@ -694,6 +708,9 @@ func (i *Instance) Resume() error {
 			}
 		}
 	} else {
+		if err := i.ensureSharedKasmosMCP(); err != nil {
+			return err
+		}
 		if err := i.executionSession.Start(workDir); err != nil {
 			log.ErrorLog.Print(err)
 			if i.gitWorktree != nil && !i.sharedWorktree {
