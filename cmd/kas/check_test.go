@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kastheco/kasmos/internal/check"
 	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -286,6 +287,68 @@ func TestCheckCmd_ShowsSkillMDWarning(t *testing.T) {
 	})
 
 	assert.Contains(t, out, "no SKILL.md")
+}
+
+// TestCheckCmd_SharedHTTPRenderedHealthy verifies that a shared-http .mcp.json entry
+// shows (shared http) annotation and does NOT trigger a mismatch or stale annotation.
+func TestCheckCmd_SharedHTTPRenderedHealthy(t *testing.T) {
+	// Mock ps so no real MCP processes can pollute the output.
+	orig := check.SetPSOutputFnForTest(func() (string, error) { return "", nil })
+	t.Cleanup(func() { check.SetPSOutputFnForTest(orig) })
+
+	out := captureCheckOutput(t, func(home, project string) {
+		mcpJSON := `{"mcpServers":{"kasmos":{"type":"http","url":"http://127.0.0.1:7434/mcp"}}}`
+		require.NoError(t, os.WriteFile(filepath.Join(project, ".mcp.json"), []byte(mcpJSON), 0o644))
+	})
+
+	assert.Contains(t, out, "shared http", "shared http transport label should appear")
+	assert.NotContains(t, out, "stale", "stale annotation must not appear for shared http")
+	assert.NotContains(t, out, "mismatch", "mismatch annotation must not appear for shared http")
+}
+
+// TestCheckCmd_SharedHTTPNoRemediationHint verifies that a healthy shared-http entry
+// does not trigger the kas scaffold sync remediation hint.
+func TestCheckCmd_SharedHTTPNoRemediationHint(t *testing.T) {
+	// Mock ps so no real MCP processes can pollute the output.
+	orig := check.SetPSOutputFnForTest(func() (string, error) { return "", nil })
+	t.Cleanup(func() { check.SetPSOutputFnForTest(orig) })
+
+	out := captureCheckOutput(t, func(home, project string) {
+		mcpJSON := `{"mcpServers":{"kasmos":{"type":"http","url":"http://127.0.0.1:7434/mcp"}}}`
+		require.NoError(t, os.WriteFile(filepath.Join(project, ".mcp.json"), []byte(mcpJSON), 0o644))
+	})
+
+	// No binary skew → no scaffold sync hint.
+	assert.NotContains(t, out, "kas scaffold sync",
+		"scaffold sync hint must not fire for a shared-http entry")
+}
+
+// TestCheckCmd_MCPProcessesSection verifies that long-lived stdio mcp processes trigger
+// a warning section and a kill hint.
+func TestCheckCmd_MCPProcessesSection(t *testing.T) {
+	// Inject a fake long-lived kas mcp process via the package-level seam.
+	orig := check.SetPSOutputFnForTest(func() (string, error) {
+		return "  4242  120  38124 /home/kas/go/bin/kas mcp\n", nil
+	})
+	t.Cleanup(func() { check.SetPSOutputFnForTest(orig) })
+
+	out := captureCheckOutput(t, nil)
+
+	assert.Contains(t, out, "stdio mcp processes", "warning section should appear")
+	assert.Contains(t, out, "4242", "PID should appear")
+	assert.Contains(t, out, "kill", "kill hint should appear in remediation")
+}
+
+// TestCheckCmd_NoMCPProcessesSection verifies no warning section when ps returns nothing.
+func TestCheckCmd_NoMCPProcessesSection(t *testing.T) {
+	orig := check.SetPSOutputFnForTest(func() (string, error) {
+		return "", nil
+	})
+	t.Cleanup(func() { check.SetPSOutputFnForTest(orig) })
+
+	out := captureCheckOutput(t, nil)
+
+	assert.NotContains(t, out, "stdio mcp processes", "no warning when no long-lived processes")
 }
 
 // TestCheckCmd_ShowsRemediation verifies that remediation hints are shown for missing/copy status skills.

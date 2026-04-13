@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/kastheco/kasmos/internal/binpath"
 	"github.com/kastheco/kasmos/internal/check"
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
 	"github.com/spf13/cobra"
@@ -59,7 +60,16 @@ func runCheck(cmd *cobra.Command, args []string) error {
 		renderBinaryPath(cmd, result.BinaryPath)
 	}
 
+	// Detect long-lived stdio mcp subprocesses (threshold: 60 s).
+	mcpProcs, _ := check.ListLongLivedMCPProcesses(60)
+	if len(mcpProcs) > 0 {
+		renderMCPProcesses(cmd, mcpProcs)
+	}
+
 	ok, total := result.Summary()
+	// Long-lived stdio mcp processes each count as one unhealthy item.
+	total += len(mcpProcs)
+
 	pct := 0
 	if total > 0 {
 		pct = ok * 100 / total
@@ -68,7 +78,7 @@ func runCheck(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(cmd.OutOrStdout(), "\nHealth: %d/%d OK (%d%%)\n", ok, total, pct)
 
 	// Print deduplicated remediation hints.
-	hints := collectRemediationHints(result)
+	hints := collectRemediationHints(result, mcpProcs)
 	if len(hints) > 0 {
 		fmt.Fprintln(cmd.OutOrStdout())
 		fmt.Fprintln(cmd.OutOrStdout(), "Remediation:")
@@ -83,8 +93,9 @@ func runCheck(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// collectRemediationHints scans the audit result and returns deduplicated hint strings.
-func collectRemediationHints(result *check.AuditResult) []string {
+// collectRemediationHints scans the audit result and MCP process list and returns
+// deduplicated hint strings.
+func collectRemediationHints(result *check.AuditResult, mcpProcs []check.MCPProcess) []string {
 	seen := map[string]bool{}
 	var hints []string
 
@@ -123,7 +134,7 @@ func collectRemediationHints(result *check.AuditResult) []string {
 		}
 	}
 
-	// Binary path skew hints — one deduplicated hint for any mismatch.
+	// Binary path skew hints — shared http entries are healthy and don't trigger this.
 	if result.BinaryPath != nil {
 		hasMismatch := false
 		for _, ref := range result.BinaryPath.References {
@@ -135,6 +146,15 @@ func collectRemediationHints(result *check.AuditResult) []string {
 		if hasMismatch {
 			add("re-run `kas scaffold sync` to update config files with the current binary path, or reinstall service units")
 		}
+	}
+
+	// Long-lived stdio mcp process hint.
+	if len(mcpProcs) > 0 {
+		pids := make([]string, len(mcpProcs))
+		for i, p := range mcpProcs {
+			pids[i] = fmt.Sprintf("%d", p.PID)
+		}
+		add("kill " + strings.Join(pids, " "))
 	}
 
 	return hints
@@ -162,6 +182,9 @@ func renderBinaryPath(cmd *cobra.Command, bp *check.BinaryPathResult) {
 			if ref.NotInstalled {
 				glyph = "–"
 				annotation = " (not installed)"
+			} else if ref.Transport == binpath.TransportSharedHTTP {
+				// Shared HTTP is always healthy — show the transport label.
+				annotation = " (shared http)"
 			} else if !ref.Healthy {
 				glyph = "✗"
 				if ref.Note != "" {
@@ -179,6 +202,16 @@ func renderBinaryPath(cmd *cobra.Command, bp *check.BinaryPathResult) {
 				annotation,
 			)
 		}
+	}
+}
+
+// renderMCPProcesses prints a warning block listing long-lived stdio kas mcp subprocesses.
+func renderMCPProcesses(cmd *cobra.Command, procs []check.MCPProcess) {
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "\nstdio mcp processes:\n")
+	for _, p := range procs {
+		fmt.Fprintf(out, "  ✗ pid %-6d age %-6ds rss %-8d KB  %s\n",
+			p.PID, p.AgeSeconds, p.RSSKB, p.Command)
 	}
 }
 

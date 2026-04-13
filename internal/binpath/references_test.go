@@ -109,7 +109,7 @@ func TestInspectProjectFiles_McpJSON_NoKasmos(t *testing.T) {
 	assert.Empty(t, refs, "no kasmos entry → no references")
 }
 
-func TestInspectProjectFiles_McpJSON_HTTPLegacy(t *testing.T) {
+func TestInspectProjectFiles_McpJSON_SharedHTTP(t *testing.T) {
 	dir := t.TempDir()
 	mcpJSON := `{
   "mcpServers": {
@@ -124,7 +124,9 @@ func TestInspectProjectFiles_McpJSON_HTTPLegacy(t *testing.T) {
 	refs := InspectProjectFiles(dir)
 
 	require.Len(t, refs, 1)
-	assert.Contains(t, refs[0].Note, "stale transport")
+	assert.Equal(t, TransportSharedHTTP, refs[0].Transport)
+	assert.Equal(t, "http://127.0.0.1:7434/mcp", refs[0].RawPath)
+	assert.Empty(t, refs[0].Note, "shared http entry should not carry a stale-transport note")
 }
 
 func TestInspectProjectFiles_Opencode_LocalStringCommand(t *testing.T) {
@@ -183,7 +185,9 @@ func TestInspectProjectFiles_Opencode_RemoteType(t *testing.T) {
 	refs := InspectProjectFiles(dir)
 
 	require.Len(t, refs, 1)
-	assert.Contains(t, refs[0].Note, "stale transport")
+	assert.Equal(t, TransportSharedHTTP, refs[0].Transport)
+	assert.Equal(t, "http://127.0.0.1:7434/mcp", refs[0].RawPath)
+	assert.Empty(t, refs[0].Note, "shared http entry should not carry a stale-transport note")
 }
 
 func TestInspectProjectFiles_Opencode_JSONC_Comments(t *testing.T) {
