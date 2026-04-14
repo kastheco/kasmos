@@ -220,8 +220,8 @@ export async function updateTaskGoal(
   project: string,
   filename: string,
   goal: string,
-): Promise<TaskEntry> {
-  return requestJSON<TaskEntry>(`${taskBase(project, filename)}/goal`, {
+): Promise<void> {
+  await request(`${taskBase(project, filename)}/goal`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ goal }),
