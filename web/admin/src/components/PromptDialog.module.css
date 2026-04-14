@@ -86,13 +86,20 @@
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
+.cancelBtn:disabled,
+.input:disabled,
+.textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .cancelBtn {
   background: transparent;
   border-color: var(--card-border);
   color: var(--foreground-secondary);
 }
 
-.cancelBtn:hover {
+.cancelBtn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.05);
   color: var(--foreground);
 }

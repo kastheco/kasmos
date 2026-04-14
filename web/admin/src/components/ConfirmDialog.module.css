@@ -52,13 +52,19 @@
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
+.cancelBtn:disabled,
+.confirmBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .cancelBtn {
   background: transparent;
   border-color: var(--card-border);
   color: var(--foreground-secondary);
 }
 
-.cancelBtn:hover {
+.cancelBtn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.05);
   color: var(--foreground);
 }
@@ -69,7 +75,7 @@
   color: var(--rp-foam);
 }
 
-.confirmBtn:hover {
+.confirmBtn:hover:not(:disabled) {
   background: rgba(156, 207, 216, 0.2);
 }
 
@@ -84,7 +90,7 @@
   color: var(--rp-love);
 }
 
-.confirmBtn.destructive:hover {
+.confirmBtn.destructive:hover:not(:disabled) {
   background: rgba(235, 111, 146, 0.2);
 }
 

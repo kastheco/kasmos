@@ -11,6 +11,7 @@ export interface PromptDialogProps {
   multiline?: boolean;
   submitLabel?: string;
   allowEmpty?: boolean;
+  busy?: boolean;
   onSubmit: (value: string) => void;
   onCancel: () => void;
 }
@@ -24,6 +25,7 @@ export default function PromptDialog({
   multiline = false,
   submitLabel = "save",
   allowEmpty = false,
+  busy = false,
   onSubmit,
   onCancel,
 }: PromptDialogProps) {
@@ -48,14 +50,14 @@ export default function PromptDialog({
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !busy) {
         e.preventDefault();
         onCancel();
       }
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [open, onCancel]);
+  }, [busy, open, onCancel]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,7 +69,7 @@ export default function PromptDialog({
   if (!open) return null;
 
   return createPortal(
-    <div className={styles.backdrop} onClick={onCancel}>
+    <div className={styles.backdrop} onClick={busy ? undefined : onCancel}>
       <div
         className={styles.dialog}
         role="dialog"
@@ -93,6 +95,7 @@ export default function PromptDialog({
               onChange={(e) => setValue(e.target.value)}
               placeholder={placeholder}
               rows={5}
+              disabled={busy}
             />
           ) : (
             <input
@@ -105,16 +108,17 @@ export default function PromptDialog({
               value={value}
               onChange={(e) => setValue(e.target.value)}
               placeholder={placeholder}
+              disabled={busy}
             />
           )}
           <div className={styles.actions}>
-            <button type="button" className={styles.cancelBtn} onClick={onCancel}>
+            <button type="button" className={styles.cancelBtn} onClick={onCancel} disabled={busy}>
               cancel
             </button>
             <button
               type="submit"
               className={styles.submitBtn}
-              disabled={!allowEmpty && !value.trim()}
+              disabled={busy || (!allowEmpty && !value.trim())}
             >
               {submitLabel}
             </button>

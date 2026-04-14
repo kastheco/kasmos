@@ -67,6 +67,7 @@ export default function TaskActionsMenu({
   const [focusedIdx, setFocusedIdx] = useState(-1);
   const [dialog, setDialog] = useState<DialogState>({ kind: "none" });
   const [busy, setBusy] = useState(false);
+  const mutationLockRef = useRef(false);
 
   // Compute popover position relative to trigger
   const reposition = useCallback(() => {
@@ -163,6 +164,8 @@ export default function TaskActionsMenu({
   // ---- mutation helpers -------------------------------------------------------
 
   async function handleTransition(event: string, label: string) {
+    if (mutationLockRef.current) return;
+    mutationLockRef.current = true;
     setBusy(true);
     try {
       await applyTaskTransition(project, task.filename, event);
@@ -173,11 +176,14 @@ export default function TaskActionsMenu({
     } catch (err) {
       toast.show(`transition failed: ${String(err)}`, { kind: "error" });
     } finally {
+      mutationLockRef.current = false;
       setBusy(false);
     }
   }
 
   async function handleOverride(target: string, label: string) {
+    if (mutationLockRef.current) return;
+    mutationLockRef.current = true;
     setBusy(true);
     try {
       await overrideTaskStatus(project, task.filename, target);
@@ -188,11 +194,14 @@ export default function TaskActionsMenu({
     } catch (err) {
       toast.show(`override failed: ${String(err)}`, { kind: "error" });
     } finally {
+      mutationLockRef.current = false;
       setBusy(false);
     }
   }
 
   async function handleRename(newFilename: string) {
+    if (mutationLockRef.current) return;
+    mutationLockRef.current = true;
     setBusy(true);
     try {
       const updated = await renameTask(project, task.filename, newFilename);
@@ -204,11 +213,14 @@ export default function TaskActionsMenu({
     } catch (err) {
       toast.show(`rename failed: ${String(err)}`, { kind: "error" });
     } finally {
+      mutationLockRef.current = false;
       setBusy(false);
     }
   }
 
   async function handleTopic(topic: string) {
+    if (mutationLockRef.current) return;
+    mutationLockRef.current = true;
     setBusy(true);
     try {
       await updateTaskTopic(project, task.filename, topic);
@@ -219,11 +231,14 @@ export default function TaskActionsMenu({
     } catch (err) {
       toast.show(`topic update failed: ${String(err)}`, { kind: "error" });
     } finally {
+      mutationLockRef.current = false;
       setBusy(false);
     }
   }
 
   async function handleGoal(goal: string) {
+    if (mutationLockRef.current) return;
+    mutationLockRef.current = true;
     setBusy(true);
     try {
       await updateTaskGoal(project, task.filename, goal);
@@ -234,11 +249,14 @@ export default function TaskActionsMenu({
     } catch (err) {
       toast.show(`goal update failed: ${String(err)}`, { kind: "error" });
     } finally {
+      mutationLockRef.current = false;
       setBusy(false);
     }
   }
 
   async function handleDelete() {
+    if (mutationLockRef.current) return;
+    mutationLockRef.current = true;
     setBusy(true);
     try {
       await deleteTask(project, task.filename);
@@ -249,6 +267,7 @@ export default function TaskActionsMenu({
     } catch (err) {
       toast.show(`delete failed: ${String(err)}`, { kind: "error" });
     } finally {
+      mutationLockRef.current = false;
       setBusy(false);
     }
   }
@@ -388,6 +407,7 @@ export default function TaskActionsMenu({
                           tabIndex={focusedIdx === idx ? 0 : -1}
                           onClick={item.action}
                           onMouseEnter={() => setFocusedIdx(idx)}
+                          disabled={busy}
                         >
                           {item.label}
                         </button>
@@ -411,6 +431,7 @@ export default function TaskActionsMenu({
                           tabIndex={focusedIdx === idx ? 0 : -1}
                           onClick={item.action}
                           onMouseEnter={() => setFocusedIdx(idx)}
+                          disabled={busy}
                         >
                           {item.label}
                         </button>
@@ -433,6 +454,7 @@ export default function TaskActionsMenu({
                         tabIndex={focusedIdx === idx ? 0 : -1}
                         onClick={item.action}
                         onMouseEnter={() => setFocusedIdx(idx)}
+                        disabled={busy}
                       >
                         {item.label}
                       </button>
@@ -450,6 +472,7 @@ export default function TaskActionsMenu({
                       tabIndex={focusedIdx === itemIndex("delete") ? 0 : -1}
                       onClick={deleteItem.action}
                       onMouseEnter={() => setFocusedIdx(itemIndex("delete"))}
+                      disabled={busy}
                     >
                       {deleteItem.label}
                     </button>
@@ -469,6 +492,7 @@ export default function TaskActionsMenu({
           message={`are you sure you want to apply the '${dialog.label}' transition to this task?`}
           confirmLabel={dialog.label}
           destructive
+          busy={busy}
           onConfirm={() => void handleTransition(dialog.event, dialog.label)}
           onCancel={() => setDialog({ kind: "none" })}
         />
@@ -482,6 +506,7 @@ export default function TaskActionsMenu({
           message={`this will forcibly set the task status to '${dialog.label}'. continue?`}
           confirmLabel="override"
           destructive
+          busy={busy}
           onConfirm={() => void handleOverride(dialog.target, dialog.label)}
           onCancel={() => setDialog({ kind: "none" })}
         />
@@ -495,6 +520,7 @@ export default function TaskActionsMenu({
           message={`permanently delete '${task.filename}'? this cannot be undone.`}
           confirmLabel="delete"
           destructive
+          busy={busy}
           onConfirm={() => void handleDelete()}
           onCancel={() => setDialog({ kind: "none" })}
         />
@@ -509,6 +535,7 @@ export default function TaskActionsMenu({
           initialValue={task.filename}
           placeholder="task-filename.md"
           submitLabel="rename"
+          busy={busy}
           onSubmit={(v) => void handleRename(v)}
           onCancel={() => setDialog({ kind: "none" })}
         />
@@ -524,6 +551,7 @@ export default function TaskActionsMenu({
           placeholder="topic name"
           submitLabel="save"
           allowEmpty
+          busy={busy}
           onSubmit={(v) => void handleTopic(v)}
           onCancel={() => setDialog({ kind: "none" })}
         />
@@ -540,6 +568,7 @@ export default function TaskActionsMenu({
           multiline
           submitLabel="save"
           allowEmpty
+          busy={busy}
           onSubmit={(v) => void handleGoal(v)}
           onCancel={() => setDialog({ kind: "none" })}
         />

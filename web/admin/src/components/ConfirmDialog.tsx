@@ -9,6 +9,7 @@ export interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
+  busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -20,6 +21,7 @@ export default function ConfirmDialog({
   confirmLabel = "confirm",
   cancelLabel = "cancel",
   destructive = false,
+  busy = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -34,19 +36,19 @@ export default function ConfirmDialog({
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !busy) {
         e.preventDefault();
         onCancel();
       }
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [open, onCancel]);
+  }, [busy, open, onCancel]);
 
   if (!open) return null;
 
   return createPortal(
-    <div className={styles.backdrop} onClick={onCancel}>
+    <div className={styles.backdrop} onClick={busy ? undefined : onCancel}>
       <div
         className={styles.dialog}
         role="alertdialog"
@@ -62,13 +64,14 @@ export default function ConfirmDialog({
           {message}
         </p>
         <div className={styles.actions}>
-          <button className={styles.cancelBtn} onClick={onCancel}>
+          <button className={styles.cancelBtn} onClick={onCancel} disabled={busy}>
             {cancelLabel}
           </button>
           <button
             ref={confirmRef}
             className={`${styles.confirmBtn} ${destructive ? styles.destructive : ""}`}
             onClick={onConfirm}
+            disabled={busy}
           >
             {confirmLabel}
           </button>
