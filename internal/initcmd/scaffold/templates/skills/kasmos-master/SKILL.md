@@ -114,10 +114,10 @@ Not everything requires kicking back to the fixer. Use judgment:
 - Obvious unused-import cleanup (unused import, wrong order)
 - Trivial one-liner corrections (off-by-one in a constant, wrong format verb, wrong literal in a test fixture that is clearly a copy-paste mistake)
 - `typos --write-changes` results
-- Trivial `gofmt -w` / `go vet`-fix output that touches only formatting or import order
+- Trivial `gofmt -w` output that touches only formatting or import order
 - **Hard ceiling: ≤ 10 lines of net change across all files in the entire self-fix attempt.**
 
-When self-fixing, commit with `fix: <description> (master self-fix)` before signaling. The `(master self-fix)` suffix is mandatory and is the audit signal that distinguishes master commits from reviewer self-fix commits and from fixer commits. One commit per logical fix; do not bundle unrelated trivial fixes into one commit.
+When self-fixing, run the post-fix verification gate (below) FIRST against your unstaged edits, then commit with `fix: <description> (master self-fix)`, then signal. The `(master self-fix)` suffix is mandatory and is the audit signal that distinguishes master commits from reviewer self-fix commits and from fixer commits. One commit per logical fix; do not bundle unrelated trivial fixes into one commit.
 
 ### Kick to fixer (emit `verify_failed`)
 
@@ -131,7 +131,7 @@ When self-fixing, commit with `fix: <description> (master self-fix)` before sign
 
 ### Post-fix verification gate
 
-Before emitting `verify_approved` after a self-fix, run ALL of the following in order — all must be clean:
+Run BEFORE creating the self-fix commit. Apply your edits to the worktree, then run ALL of the following in order — all must be clean:
 
 1. `gofmt -l .` — must produce no output
 2. `go vet ./...` — must produce no output
@@ -139,7 +139,9 @@ Before emitting `verify_approved` after a self-fix, run ALL of the following in 
 4. `go test ./...` (or scoped to changed packages if the full suite is intractable, matching the reviewer's existing escape hatch)
 5. `typos` against the changed file set
 
-If any gate step fails: `git restore` the self-fix changes, drop the self-fix attempt entirely, and emit `verify_failed` with the ORIGINAL finding (not the gate failure) so the fixer handles it.
+If every step passes, create the `fix: <description> (master self-fix)` commit and emit `verify_approved`.
+
+If any gate step fails: `git restore --staged --worktree .` (drops both index and worktree changes), drop the self-fix attempt entirely, and emit `verify_failed` with the ORIGINAL finding (not the gate failure) so the fixer handles it.
 
 ### Phase 5 — Decision
 
@@ -159,7 +161,7 @@ Your final response in managed mode must match one of:
 After a successful self-fix, the `verify_approved` payload may include an optional `## self-fixed` block. Example:
 
 ```
-verify-approved.
+verify_approved.
 
 acceptance criteria: all satisfied.
 verification: go build ./..., go test ./... — pass.
@@ -213,7 +215,7 @@ For the same plan and branch:
 
 ## Escalation to Fixer
 
-If issues are actionable and bounded, output `verify-failed` with this format:
+If issues are actionable and bounded, output `verify_failed` with this format:
 
 1. `fixer` should patch `path/to/file.go:line` to ...
 2. add or update ...

@@ -250,10 +250,10 @@ func BuildMasterReviewPrompt(planFile, project string) string {
 			"3. If you find issues, classify them per the kasmos-master skill's Self-Fix Protocol. "+
 			"Trivial allow-list findings (typos, missing exported doc comments, unused imports, format-verb mistakes, "+
 			"`typos`/`gofmt` fixes, trivial `go vet` findings — total ≤ 10 lines) MUST be fixed directly in the worktree, "+
-			"committed as `fix: <description> (master self-fix)`, verified with `gofmt -l .`, `go vet ./...`, "+
-			"`go build ./...`, `go test ./...`, and `typos`, and then approved. "+
+			"verified with `gofmt -l .`, `go vet ./...`, `go build ./...`, `go test ./...`, and `typos`, "+
+			"then committed as `fix: <description> (master self-fix)` and approved only after the gate passes. "+
 			"Do NOT emit `verify_failed` for findings the protocol marks as self-fixable. "+
-			"If a self-fix attempt fails any gate step, `git restore` the changes and emit `verify_failed` with the original finding.\n"+
+			"If a self-fix attempt fails any gate step, run `git restore --staged --worktree .` to drop the changes and emit `verify_failed` with the original finding.\n"+
 			"4. Review the implementation holistically against the plan and signal your decision:\n"+
 			"   - Approved: prefer MCP `signal_create` (signal_type: \"verify_approved\", plan_file: %[1]q, project: %[2]q); fall back to `kas signal emit verify_approved %[1]s`\n"+
 			"   - Changes requested: prefer MCP `signal_create` (signal_type: \"verify_failed\", plan_file: %[1]q, project: %[2]q); fall back to `kas signal emit verify_failed %[1]s`\n"+
