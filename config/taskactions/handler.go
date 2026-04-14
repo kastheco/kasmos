@@ -177,8 +177,8 @@ var errEmptyContent = errConflict("plan content missing; save the plan before ma
 type parseError struct{ cause error }
 
 func errUnparsableContent(cause error) error { return parseError{cause} }
-func (e parseError) Error() string            { return "plan is not implementation-ready: " + e.cause.Error() }
-func (e parseError) Unwrap() error            { return e.cause }
+func (e parseError) Error() string           { return "plan is not implementation-ready: " + e.cause.Error() }
+func (e parseError) Unwrap() error           { return e.cause }
 
 // ---- route handlers ---------------------------------------------------------
 
