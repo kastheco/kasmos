@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useRef,
   useState,
   type JSX,
@@ -36,8 +37,14 @@ export function ToastProvider({
 }): JSX.Element {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const counter = useRef(0);
+  const timeoutIDs = useRef<Map<number, number>>(new Map());
 
   const dismiss = useCallback((id: number) => {
+    const timeoutID = timeoutIDs.current.get(id);
+    if (timeoutID !== undefined) {
+      clearTimeout(timeoutID);
+      timeoutIDs.current.delete(id);
+    }
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
@@ -47,8 +54,18 @@ export function ToastProvider({
     const ttl = options.ttl ?? DEFAULT_TTL;
 
     setToasts((prev) => [...prev, { id, message, kind }]);
-    setTimeout(() => dismiss(id), ttl);
+    const timeoutID = window.setTimeout(() => dismiss(id), ttl);
+    timeoutIDs.current.set(id, timeoutID);
   }, [dismiss]);
+
+  useEffect(() => {
+    return () => {
+      for (const timeoutID of timeoutIDs.current.values()) {
+        clearTimeout(timeoutID);
+      }
+      timeoutIDs.current.clear();
+    };
+  }, []);
 
   return (
     <ToastContext.Provider value={{ show }}>

@@ -372,6 +372,38 @@ func TestNewServeAPIRootMux_ContentRouteWinsOverTaskAPI(t *testing.T) {
 		"goal extracted by IngestContent must appear in response")
 }
 
+func TestNewServeAPIRootMux_GoalRouteWinsOverTaskAPI(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "goal_route.db")
+	sharedDB, store, _, logger, err := openServeSQLiteBackends(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { sharedDB.Close() })
+
+	const project = "myproj"
+	const filename = "my-task"
+
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: filename,
+		Status:   taskstore.StatusReady,
+	}))
+
+	taskAPI := taskstore.NewHandler(store)
+	auditAPI := auditlog.NewHandler(logger)
+	actionsAPI := taskactions.NewHandler(store)
+
+	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI)
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/v1/projects/"+project+"/tasks/"+filename+"/goal",
+		strings.NewReader(`{"goal":"ship it"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, "response body: %s", rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "ship it",
+		"goal route should be handled by taskactions and return the updated task entry")
+}
+
 // TestNewServeAPIRootMux_ActionRouteProjectValidation proves that in
 // repo-scoped mode the projectValidationMiddleware rejects unknown projects
 // for action routes (e.g. /available-actions) just as it does for taskAPI.

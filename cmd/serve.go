@@ -210,6 +210,7 @@ func newServeAPIRootMux(sharedDB *sql.DB, repoRegs serveRepoRegistration, taskAP
 	rootMux.Handle("PUT /v1/projects/{project}/tasks/{filename}/status", actionsAPI)
 	rootMux.Handle("POST /v1/projects/{project}/tasks/{filename}/rename", actionsAPI)
 	rootMux.Handle("PUT /v1/projects/{project}/tasks/{filename}/topic", actionsAPI)
+	rootMux.Handle("PUT /v1/projects/{project}/tasks/{filename}/goal", actionsAPI)
 	rootMux.Handle("PUT /v1/projects/{project}/tasks/{filename}/content", actionsAPI)
 
 	// Exact audit route, then generic taskstore prefix.

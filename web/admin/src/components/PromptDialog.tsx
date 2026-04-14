@@ -28,7 +28,7 @@ export default function PromptDialog({
   onCancel,
 }: PromptDialogProps) {
   const [value, setValue] = useState(initialValue);
-  const inputRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
   // Sync value when dialog opens with a new initialValue
   useEffect(() => {
@@ -84,7 +84,9 @@ export default function PromptDialog({
           </label>
           {multiline ? (
             <textarea
-              ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+              ref={(node) => {
+                inputRef.current = node;
+              }}
               id="prompt-input"
               className={styles.textarea}
               value={value}
@@ -94,7 +96,9 @@ export default function PromptDialog({
             />
           ) : (
             <input
-              ref={inputRef as React.RefObject<HTMLInputElement>}
+              ref={(node) => {
+                inputRef.current = node;
+              }}
               id="prompt-input"
               type="text"
               className={styles.input}

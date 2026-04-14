@@ -339,6 +339,24 @@ func TestSQLiteStore_RenameCascadesChildren(t *testing.T) {
 	assert.Empty(t, oldPending)
 }
 
+func TestSQLiteStore_RenameNotFoundRollsBackTransaction(t *testing.T) {
+	store := newTestStore(t)
+
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename: "existing-task",
+		Status:   taskstore.StatusReady,
+	}))
+
+	err := store.Rename("proj", "missing-task", "renamed-task")
+	require.EqualError(t, err, "plan not found: proj/missing-task")
+
+	got, err := store.Get("proj", "existing-task")
+	require.NoError(t, err)
+	assert.Equal(t, "existing-task", got.Filename)
+
+	require.NoError(t, store.Rename("proj", "existing-task", "renamed-task"))
+}
+
 func TestSQLiteStore_Delete(t *testing.T) {
 	store := newTestStore(t)
 

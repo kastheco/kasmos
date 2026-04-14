@@ -475,8 +475,9 @@ func (s *SQLiteStore) Rename(project, oldFilename, newFilename string) error {
 	if err != nil {
 		return fmt.Errorf("begin rename transaction: %w", err)
 	}
+	committed := false
 	defer func() {
-		if err != nil {
+		if !committed {
 			_ = tx.Rollback()
 		}
 	}()
@@ -520,6 +521,7 @@ func (s *SQLiteStore) Rename(project, oldFilename, newFilename string) error {
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("commit rename: %w", err)
 	}
+	committed = true
 	return nil
 }
 

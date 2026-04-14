@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -142,75 +143,6 @@ export default function TaskActionsMenu({
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  // Build flat list of menu items for keyboard navigation
-  const menuItems = useCallback(() => {
-    if (!actions) return [];
-    const items: Array<{ key: string; label: string; action: () => void }> = [];
-
-    for (const t of actions.transitions) {
-      items.push({
-        key: `transition-${t.event}`,
-        label: t.label,
-        action: () => {
-          if (DESTRUCTIVE_TRANSITIONS.has(t.event)) {
-            setDialog({ kind: "confirmTransition", event: t.event, label: t.label });
-          } else {
-            void handleTransition(t.event, t.label);
-          }
-        },
-      });
-    }
-
-    for (const o of actions.overrides) {
-      items.push({
-        key: `override-${o.target}`,
-        label: `override → ${o.label}`,
-        action: () => {
-          setDialog({ kind: "confirmOverride", target: o.target, label: o.label });
-        },
-      });
-    }
-
-    items.push(
-      { key: "rename", label: "rename task", action: () => setDialog({ kind: "rename" }) },
-      { key: "topic", label: "set topic", action: () => setDialog({ kind: "topic" }) },
-      { key: "goal", label: "set goal", action: () => setDialog({ kind: "goal" }) },
-      { key: "delete", label: "delete task", action: () => setDialog({ kind: "confirmDelete" }) },
-    );
-
-    return items;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actions]);
-
-  // Keyboard nav inside the popover
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      const items = menuItems();
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setOpen(false);
-        triggerRef.current?.focus();
-        return;
-      }
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setFocusedIdx((i) => Math.min(i + 1, items.length - 1));
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setFocusedIdx((i) => Math.max(i - 1, 0));
-        return;
-      }
-      if (e.key === "Enter" && focusedIdx >= 0) {
-        e.preventDefault();
-        items[focusedIdx]?.action();
-        return;
-      }
-    },
-    [menuItems, focusedIdx],
-  );
-
   // Focus the popover itself when it opens so keyboard events (Escape, arrows)
   // are captured even before actions finish loading and the first item can be
   // focused.
@@ -321,9 +253,76 @@ export default function TaskActionsMenu({
     }
   }
 
+  const menuItems = useMemo(() => {
+    if (!actions) return [] as Array<{ key: string; label: string; action: () => void }>;
+
+    const items: Array<{ key: string; label: string; action: () => void }> = [];
+
+    for (const t of actions.transitions) {
+      items.push({
+        key: `transition-${t.event}`,
+        label: t.label,
+        action: () => {
+          if (DESTRUCTIVE_TRANSITIONS.has(t.event)) {
+            setDialog({ kind: "confirmTransition", event: t.event, label: t.label });
+          } else {
+            void handleTransition(t.event, t.label);
+          }
+        },
+      });
+    }
+
+    for (const o of actions.overrides) {
+      items.push({
+        key: `override-${o.target}`,
+        label: `override → ${o.label}`,
+        action: () => {
+          setDialog({ kind: "confirmOverride", target: o.target, label: o.label });
+        },
+      });
+    }
+
+    items.push(
+      { key: "rename", label: "rename task", action: () => setDialog({ kind: "rename" }) },
+      { key: "topic", label: "set topic", action: () => setDialog({ kind: "topic" }) },
+      { key: "goal", label: "set goal", action: () => setDialog({ kind: "goal" }) },
+      { key: "delete", label: "delete task", action: () => setDialog({ kind: "confirmDelete" }) },
+    );
+
+    return items;
+  }, [actions, handleTransition]);
+
+  // Keyboard nav inside the popover
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setOpen(false);
+        triggerRef.current?.focus();
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setFocusedIdx((i) => Math.min(i + 1, menuItems.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setFocusedIdx((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === "Enter" && focusedIdx >= 0) {
+        e.preventDefault();
+        menuItems[focusedIdx]?.action();
+        return;
+      }
+    },
+    [menuItems, focusedIdx],
+  );
+
   // ---- render -----------------------------------------------------------------
 
-  const items = open ? menuItems() : [];
+  const items = open ? menuItems : [];
 
   const transitionItems = items.filter((i) => i.key.startsWith("transition-"));
   const overrideItems = items.filter((i) => i.key.startsWith("override-"));

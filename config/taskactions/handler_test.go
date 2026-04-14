@@ -527,6 +527,28 @@ func TestTopic_NotFound_404(t *testing.T) {
 	resp.Body.Close()
 }
 
+// ---- goal tests -------------------------------------------------------------
+
+func TestGoal_SetGoal(t *testing.T) {
+	srv, store := newTestServer(t)
+	createTask(t, store, "proj", "task-goal")
+
+	resp := doJSON(t, srv, http.MethodPut, "/v1/projects/proj/tasks/task-goal/goal",
+		map[string]string{"goal": "ship it"})
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	entry := decodeEntry(t, resp)
+	assert.Equal(t, "ship it", entry.Goal)
+}
+
+func TestGoal_NotFound_404(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	resp := doJSON(t, srv, http.MethodPut, "/v1/projects/proj/tasks/missing/goal",
+		map[string]string{"goal": "ship it"})
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	resp.Body.Close()
+}
+
 // ---- content tests ----------------------------------------------------------
 
 func TestContent_IngestUpdatesGoalAndSubtasks(t *testing.T) {

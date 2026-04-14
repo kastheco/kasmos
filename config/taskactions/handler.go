@@ -34,6 +34,10 @@ type topicRequest struct {
 	Topic string `json:"topic"`
 }
 
+type goalRequest struct {
+	Goal string `json:"goal"`
+}
+
 type transitionAction struct {
 	Event string `json:"event"`
 	Label string `json:"label"`
@@ -91,6 +95,7 @@ func NewHandler(store taskstore.Store) http.Handler {
 	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}/status", h.handleStatus)
 	mux.HandleFunc("POST /v1/projects/{project}/tasks/{filename}/rename", h.handleRename)
 	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}/topic", h.handleTopic)
+	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}/goal", h.handleGoal)
 	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}/content", h.handleContent)
 
 	return mux
@@ -382,6 +387,33 @@ func (h *handler) handleTopic(w http.ResponseWriter, r *http.Request) {
 
 	// Empty string is valid — it clears the topic.
 	if err := ps.SetTopic(filename, req.Topic); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	updated, err := h.store.Get(project, filename)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (h *handler) handleGoal(w http.ResponseWriter, r *http.Request) {
+	project := r.PathValue("project")
+	filename := normalizeFilename(r.PathValue("filename"))
+
+	var req goalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	if err := h.store.SetPlanGoal(project, filename, req.Goal); err != nil {
+		if isNotFound(err) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

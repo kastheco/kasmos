@@ -155,16 +155,18 @@ export default function TaskDetailPage() {
         <section className={styles.main}>
           {editMode ? (
             <Suspense fallback={<Skeleton variant="block" />}>
-              <PlanEditor
-                initialValue={content}
-                onSave={async (value) => {
-                  await updateTaskContent(project, filename, value);
-                  await refresh();
-                  setEditMode(false);
-                  toast.show("plan content saved");
-                }}
-                onCancel={() => setEditMode(false)}
-              />
+              <div className={styles.editorArea}>
+                <PlanEditor
+                  initialValue={content}
+                  onSave={async (value) => {
+                    await updateTaskContent(project, filename, value);
+                    await refresh();
+                    setEditMode(false);
+                    toast.show("plan content saved");
+                  }}
+                  onCancel={() => setEditMode(false)}
+                />
+              </div>
             </Suspense>
           ) : (
             <div className={styles.markdown}>
