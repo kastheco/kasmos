@@ -85,6 +85,10 @@
   border-left-color: #c4a7e7;
 }
 
+.verifying {
+  border-left-color: #ebbcba;
+}
+
 .done {
   border-left-color: #3e8fb0;
 }

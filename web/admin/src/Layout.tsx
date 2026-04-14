@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from "react-router";
 import styles from "./Layout.module.css";
 import { useProject } from "./hooks/useProject";
+import { ToastProvider } from "./hooks/useToast";
 import ProjectSwitcher from "./components/ProjectSwitcher";
 import logoFull from "./assets/logo-full.png";
 
@@ -8,6 +9,7 @@ export default function Layout() {
   const { projectSearch } = useProject();
 
   return (
+    <ToastProvider>
     <div className={styles.container}>
       <nav className={styles.sidebar}>
         <div className={styles.logo}>
@@ -54,5 +56,6 @@ export default function Layout() {
         <Outlet />
       </main>
     </div>
+    </ToastProvider>
   );
 }

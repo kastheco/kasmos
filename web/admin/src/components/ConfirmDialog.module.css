@@ -1,0 +1,99 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  background: rgba(35, 33, 54, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(2px);
+}
+
+.dialog {
+  background: var(--rp-surface);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 24px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.message {
+  font-size: 13px;
+  color: var(--foreground-secondary);
+  line-height: 1.5;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.cancelBtn,
+.confirmBtn {
+  padding: 7px 16px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.cancelBtn:disabled,
+.confirmBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.cancelBtn {
+  background: transparent;
+  border-color: var(--card-border);
+  color: var(--foreground-secondary);
+}
+
+.cancelBtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--foreground);
+}
+
+.confirmBtn {
+  background: rgba(156, 207, 216, 0.12);
+  border-color: rgba(156, 207, 216, 0.35);
+  color: var(--rp-foam);
+}
+
+.confirmBtn:hover:not(:disabled) {
+  background: rgba(156, 207, 216, 0.2);
+}
+
+.confirmBtn:focus-visible {
+  outline: 2px solid var(--rp-foam);
+  outline-offset: 2px;
+}
+
+.confirmBtn.destructive {
+  background: rgba(235, 111, 146, 0.12);
+  border-color: rgba(235, 111, 146, 0.35);
+  color: var(--rp-love);
+}
+
+.confirmBtn.destructive:hover:not(:disabled) {
+  background: rgba(235, 111, 146, 0.2);
+}
+
+.confirmBtn.destructive:focus-visible {
+  outline-color: var(--rp-love);
+}

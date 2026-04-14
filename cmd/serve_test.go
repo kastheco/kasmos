@@ -5,8 +5,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/kastheco/kasmos/config/auditlog"
+	"github.com/kastheco/kasmos/config/taskactions"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/stretchr/testify/assert"
@@ -325,4 +328,118 @@ func TestNewProjectListHandler_RepoScopedIncludesRepoWithNoDBRows(t *testing.T) 
 	require.Equal(t, http.StatusOK, rec.Code)
 	// Both registered repos appear even though the DB has no rows for them.
 	assert.JSONEq(t, `["another-repo","fresh-repo"]`, rec.Body.String())
+}
+
+// TestNewServeAPIRootMux_ContentRouteWinsOverTaskAPI proves that a
+// PUT /content request is handled by the taskactions handler (which calls
+// IngestContent and updates goal/subtasks) rather than by the generic
+// taskstore handler (which would only update raw content bytes).
+func TestNewServeAPIRootMux_ContentRouteWinsOverTaskAPI(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "content_route.db")
+	sharedDB, store, _, logger, err := openServeSQLiteBackends(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { sharedDB.Close() })
+
+	const project = "myproj"
+	const filename = "my-task"
+
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: filename,
+		Status:   taskstore.StatusReady,
+	}))
+
+	taskAPI := taskstore.NewHandler(store)
+	auditAPI := auditlog.NewHandler(logger)
+	actionsAPI := taskactions.NewHandler(store)
+
+	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI)
+
+	// Markdown content with a clear goal heading so IngestContent populates Goal.
+	const mdContent = "# Goal\n\nimplement the feature\n"
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/v1/projects/"+project+"/tasks/"+filename+"/content",
+		strings.NewReader(mdContent))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, "response body: %s", rec.Body.String())
+
+	// Verify the response JSON contains the goal extracted by taskparser — this
+	// only happens when taskactions.handleContent (IngestContent path) ran,
+	// not the raw taskstore SetContent endpoint.
+	assert.Contains(t, rec.Body.String(), "implement the feature",
+		"goal extracted by IngestContent must appear in response")
+}
+
+func TestNewServeAPIRootMux_GoalRouteWinsOverTaskAPI(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "goal_route.db")
+	sharedDB, store, _, logger, err := openServeSQLiteBackends(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { sharedDB.Close() })
+
+	const project = "myproj"
+	const filename = "my-task"
+
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: filename,
+		Status:   taskstore.StatusReady,
+	}))
+
+	taskAPI := taskstore.NewHandler(store)
+	auditAPI := auditlog.NewHandler(logger)
+	actionsAPI := taskactions.NewHandler(store)
+
+	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI)
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/v1/projects/"+project+"/tasks/"+filename+"/goal",
+		strings.NewReader(`{"goal":"ship it"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, "response body: %s", rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "ship it",
+		"goal route should be handled by taskactions and return the updated task entry")
+}
+
+// TestNewServeAPIRootMux_ActionRouteProjectValidation proves that in
+// repo-scoped mode the projectValidationMiddleware rejects unknown projects
+// for action routes (e.g. /available-actions) just as it does for taskAPI.
+func TestNewServeAPIRootMux_ActionRouteProjectValidation(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "action_validation.db")
+	sharedDB, store, _, logger, err := openServeSQLiteBackends(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { sharedDB.Close() })
+
+	validProjects := map[string]struct{}{"known-proj": {}}
+	repoRegs := serveRepoRegistration{valid: validProjects}
+
+	taskAPI := projectValidationMiddleware(repoRegs.valid, taskstore.NewHandler(store))
+	auditAPI := projectValidationMiddleware(repoRegs.valid, auditlog.NewHandler(logger))
+	actionsAPI := projectValidationMiddleware(repoRegs.valid, taskactions.NewHandler(store))
+
+	mux := newServeAPIRootMux(sharedDB, repoRegs, taskAPI, auditAPI, actionsAPI)
+
+	t.Run("unknown project returns 404 on available-actions", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet,
+			"/v1/projects/unknown/tasks/some-task/available-actions", nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusNotFound, rec.Code)
+		assert.JSONEq(t, `{"error":"project not found: unknown"}`, rec.Body.String())
+	})
+
+	t.Run("unknown project returns 404 on transition", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost,
+			"/v1/projects/unknown/tasks/some-task/transition",
+			strings.NewReader(`{"event":"plan_start"}`))
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusNotFound, rec.Code)
+		assert.JSONEq(t, `{"error":"project not found: unknown"}`, rec.Body.String())
+	})
 }

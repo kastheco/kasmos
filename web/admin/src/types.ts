@@ -3,8 +3,15 @@ export type Status =
   | "planning"
   | "implementing"
   | "reviewing"
+  | "verifying"
   | "done"
   | "cancelled";
+
+export interface ExecutionState {
+  execution_phase: string;
+  active_agent_type?: string;
+  active_wave?: number;
+}
 
 export type SubtaskStatus =
   | "pending"
@@ -27,6 +34,7 @@ export interface TaskEntry {
   planning_at?: string;
   implementing_at?: string;
   reviewing_at?: string;
+  verifying_at?: string;
   done_at?: string;
   goal?: string;
   content?: string;
@@ -35,6 +43,8 @@ export interface TaskEntry {
   pr_url?: string;
   pr_review_decision?: string;
   pr_check_status?: string;
+  execution_state?: ExecutionState;
+  latest_review_feedback?: string;
 }
 
 export interface SubtaskEntry {

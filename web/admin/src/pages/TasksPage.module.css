@@ -194,3 +194,18 @@
   font-size: 12px;
   white-space: nowrap;
 }
+
+/* Narrow right-aligned column for row-level action menus */
+.actionsHeader {
+  width: 40px;
+  min-width: 40px;
+  padding: 0;
+}
+
+.actionsCell {
+  width: 40px;
+  min-width: 40px;
+  padding: 4px 8px;
+  text-align: right;
+  white-space: nowrap;
+}

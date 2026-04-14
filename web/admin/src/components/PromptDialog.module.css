@@ -1,0 +1,125 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  background: rgba(35, 33, 54, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(2px);
+}
+
+.dialog {
+  background: var(--rp-surface);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 24px;
+  width: 100%;
+  max-width: 460px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-bottom: 16px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--foreground-secondary);
+  text-transform: lowercase;
+}
+
+.input,
+.textarea {
+  width: 100%;
+  background: var(--rp-overlay);
+  border: 1px solid var(--card-border);
+  border-radius: 7px;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  outline: none;
+  transition: border-color 0.15s;
+  resize: vertical;
+}
+
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--foreground-tertiary);
+}
+
+.input:focus,
+.textarea:focus {
+  border-color: rgba(196, 167, 231, 0.5);
+}
+
+.textarea {
+  min-height: 100px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.cancelBtn,
+.submitBtn {
+  padding: 7px 16px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.cancelBtn:disabled,
+.input:disabled,
+.textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.cancelBtn {
+  background: transparent;
+  border-color: var(--card-border);
+  color: var(--foreground-secondary);
+}
+
+.cancelBtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--foreground);
+}
+
+.submitBtn {
+  background: rgba(196, 167, 231, 0.12);
+  border-color: rgba(196, 167, 231, 0.35);
+  color: var(--rp-iris);
+}
+
+.submitBtn:hover:not(:disabled) {
+  background: rgba(196, 167, 231, 0.2);
+}
+
+.submitBtn:focus-visible {
+  outline: 2px solid var(--rp-iris);
+  outline-offset: 2px;
+}
+
+.submitBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

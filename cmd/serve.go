@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/config/auditlog"
+	"github.com/kastheco/kasmos/config/taskactions"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/mcpserver"
 	webassets "github.com/kastheco/kasmos/web"
@@ -193,6 +194,32 @@ func newProjectListHandler(sharedDB *sql.DB, validProjects map[string]struct{}) 
 	}
 }
 
+// newServeAPIRootMux builds the API route mux from pre-constructed handlers.
+// Task-action routes are registered before the generic taskstore prefix so that
+// the more-specific method+path patterns (e.g. PUT /content) win over the plain
+// prefix delegated to taskAPI. auditAPI keeps its own exact route for
+// GET /audit-events; everything else falls through to taskAPI.
+func newServeAPIRootMux(sharedDB *sql.DB, repoRegs serveRepoRegistration, taskAPI, auditAPI, actionsAPI http.Handler) *http.ServeMux {
+	rootMux := http.NewServeMux()
+	rootMux.Handle("/v1/ping", taskAPI)
+	rootMux.Handle("GET /v1/projects", newProjectListHandler(sharedDB, repoRegs.valid))
+
+	// Task-action routes registered first — more-specific than the taskAPI prefix.
+	rootMux.Handle("GET /v1/projects/{project}/tasks/{filename}/available-actions", actionsAPI)
+	rootMux.Handle("POST /v1/projects/{project}/tasks/{filename}/transition", actionsAPI)
+	rootMux.Handle("PUT /v1/projects/{project}/tasks/{filename}/status", actionsAPI)
+	rootMux.Handle("POST /v1/projects/{project}/tasks/{filename}/rename", actionsAPI)
+	rootMux.Handle("PUT /v1/projects/{project}/tasks/{filename}/topic", actionsAPI)
+	rootMux.Handle("PUT /v1/projects/{project}/tasks/{filename}/goal", actionsAPI)
+	rootMux.Handle("PUT /v1/projects/{project}/tasks/{filename}/content", actionsAPI)
+
+	// Exact audit route, then generic taskstore prefix.
+	rootMux.Handle("GET /v1/projects/{project}/audit-events", auditAPI)
+	rootMux.Handle("/v1/projects/", taskAPI)
+
+	return rootMux
+}
+
 // NewServeCmd returns the `kas serve` cobra command.
 // It starts an HTTP server backed by a SQLite task store, and optionally
 // an MCP server on a second port sharing the same store and signal gateway.
@@ -248,22 +275,14 @@ func NewServeCmd() *cobra.Command {
 
 			taskAPI := taskstore.NewHandler(store)
 			auditAPI := auditlog.NewHandler(logger)
+			actionsAPI := taskactions.NewHandler(store)
 			if len(repoPaths) > 0 {
 				taskAPI = projectValidationMiddleware(repoRegs.valid, taskAPI)
 				auditAPI = projectValidationMiddleware(repoRegs.valid, auditAPI)
+				actionsAPI = projectValidationMiddleware(repoRegs.valid, actionsAPI)
 			}
 
-			rootMux := http.NewServeMux()
-			rootMux.Handle("/v1/ping", taskAPI)
-			// Project listing endpoint — scoped to repoRegs.valid when repos
-			// are configured so it stays consistent with projectValidationMiddleware.
-			rootMux.Handle("GET /v1/projects", newProjectListHandler(sharedDB, repoRegs.valid))
-			// Route audit-events exactly, then fall through to the task API for everything else.
-			// Go 1.22+ mux gives the more-specific method+path pattern precedence over the
-			// plain prefix, so GET audit-events is handled by auditAPI and all other
-			// /v1/projects/* requests continue to taskAPI.
-			rootMux.Handle("GET /v1/projects/{project}/audit-events", auditAPI)
-			rootMux.Handle("/v1/projects/", taskAPI)
+			rootMux := newServeAPIRootMux(sharedDB, repoRegs, taskAPI, auditAPI, actionsAPI)
 
 			// Resolve the admin filesystem: --admin-dir flag overrides embedded assets.
 			// Require the directory to contain index.html so users aren't accidentally

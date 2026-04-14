@@ -240,6 +240,52 @@
   pointer-events: none;
 }
 
+/* ── Header controls (actions menu + edit toggle) ── */
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.editBtn {
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-mono);
+  background: transparent;
+  border: 1px solid var(--card-border);
+  color: var(--foreground-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.editBtn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--foreground);
+}
+
+.editBtnActive {
+  background: rgba(235, 111, 146, 0.12);
+  border-color: rgba(235, 111, 146, 0.4);
+  color: #eb6f92;
+}
+
+.editBtnActive:hover {
+  background: rgba(235, 111, 146, 0.2);
+}
+
+/* ── Editor area ── */
+
+.editorArea {
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--card-border);
+  min-height: 400px;
+}
+
 /* ── Responsive: collapse below 900px ── */
 
 @media (max-width: 900px) {

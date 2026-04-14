@@ -28,7 +28,7 @@ func TestExecuteTaskTransition_LifecycleMatrix(t *testing.T) {
 		{name: "verify approved", initial: taskstore.StatusVerifying, event: "verify_approved", wantStatus: "done"},
 		{name: "verify failed", initial: taskstore.StatusVerifying, event: "verify_failed", wantStatus: "implementing"},
 		{name: "review changes alias", initial: taskstore.StatusReviewing, event: "review_changes", wantStatus: "implementing"},
-		{name: "review changes requested is still unknown", initial: taskstore.StatusReviewing, event: "review_changes_requested", wantErrText: "unknown event"},
+		{name: "review changes requested canonical alias", initial: taskstore.StatusReviewing, event: "review_changes_requested", wantStatus: "implementing"},
 	}
 
 	for _, tt := range tests {
