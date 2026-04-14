@@ -77,12 +77,12 @@ func (r *CachedRunner) Output(ctx context.Context, name string, args ...string) 
 		return r.inner.Output(ctx, name, args...)
 	}
 
-	if cmd.family == "git" {
-		return r.outputGit(ctx, cmd, name, args)
-	}
-
 	if r.store == nil || r.store.disabled {
 		return r.inner.Output(ctx, name, args...)
+	}
+
+	if cmd.family == "git" {
+		return r.outputGit(ctx, cmd, name, args)
 	}
 
 	if cached, ok := r.store.Get(cmd.key); ok {

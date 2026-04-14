@@ -151,6 +151,93 @@ func TestCachedRunner_WatcherInvalidationForFileScopedGrep(t *testing.T) {
 	assert.Equal(t, 2, inner.CallCount())
 }
 
+func TestCachedRunner_DisabledStoreBypassesGitCache(t *testing.T) {
+	t.Setenv("KAS_MCP_NOCACHE", "1")
+	t.Setenv("KAS_MCP_CACHE_MB", "")
+
+	store, err := NewStore(1)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+	require.True(t, store.disabled, "KAS_MCP_NOCACHE=1 should disable the store")
+
+	inner := &stubRunner{responses: []runnerResponse{{out: []byte("first")}, {out: []byte("second")}}}
+	runner := NewCachedRunner(inner, store, nil)
+	t.Cleanup(func() { require.NoError(t, runner.Close()) })
+
+	repo := t.TempDir()
+	args := []string{"-C", repo, "status", "--short", "--branch"}
+
+	first, err := runner.Output(context.Background(), "git", args...)
+	require.NoError(t, err)
+	require.Equal(t, []byte("first"), first)
+
+	second, err := runner.Output(context.Background(), "git", args...)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("second"), second)
+	assert.Equal(t, 2, inner.CallCount(), "disabled store must bypass the git in-memory cache")
+}
+
+func TestCachedRunner_NilStoreBypassesGitCache(t *testing.T) {
+	t.Setenv("KAS_MCP_NOCACHE", "")
+	t.Setenv("KAS_MCP_CACHE_MB", "")
+
+	inner := &stubRunner{responses: []runnerResponse{{out: []byte("first")}, {out: []byte("second")}}}
+	runner := NewCachedRunner(inner, nil, nil)
+	t.Cleanup(func() { require.NoError(t, runner.Close()) })
+
+	repo := t.TempDir()
+	args := []string{"-C", repo, "status", "--short", "--branch"}
+
+	first, err := runner.Output(context.Background(), "git", args...)
+	require.NoError(t, err)
+	require.Equal(t, []byte("first"), first)
+
+	second, err := runner.Output(context.Background(), "git", args...)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("second"), second)
+	assert.Equal(t, 2, inner.CallCount(), "nil store must bypass the git in-memory cache")
+}
+
+func TestCachedRunner_WatcherInvalidatesGitCache(t *testing.T) {
+	t.Setenv("KAS_MCP_NOCACHE", "")
+	t.Setenv("KAS_MCP_CACHE_MB", "")
+
+	root := t.TempDir()
+	path := filepath.Join(root, "file.txt")
+	require.NoError(t, os.WriteFile(path, []byte("one\n"), 0o644))
+
+	watcher := NewWatcher(root)
+	t.Cleanup(func() { require.NoError(t, watcher.Stop()) })
+
+	store, err := NewStore(1)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+
+	inner := &stubRunner{responses: []runnerResponse{{out: []byte("first")}, {out: []byte("second")}}}
+	runner := NewCachedRunner(inner, store, watcher)
+	t.Cleanup(func() { require.NoError(t, runner.Close()) })
+
+	args := []string{"-C", root, "status", "--short", "--branch"}
+
+	first, err := runner.Output(context.Background(), "git", args...)
+	require.NoError(t, err)
+	require.Equal(t, []byte("first"), first)
+	require.Equal(t, 1, inner.CallCount())
+
+	second, err := runner.Output(context.Background(), "git", args...)
+	require.NoError(t, err)
+	require.Equal(t, []byte("first"), second)
+	require.Equal(t, 1, inner.CallCount())
+
+	require.NoError(t, os.WriteFile(path, []byte("two\n"), 0o644))
+
+	require.Eventually(t, func() bool {
+		out, err := runner.Output(context.Background(), "git", args...)
+		return err == nil && string(out) == "second" && inner.CallCount() == 2
+	}, 2*time.Second, 25*time.Millisecond)
+	assert.Equal(t, 2, inner.CallCount())
+}
+
 func TestCachedRunner_GitEntriesExpireAfterTTL(t *testing.T) {
 	t.Setenv("KAS_MCP_NOCACHE", "")
 	t.Setenv("KAS_MCP_CACHE_MB", "")

@@ -500,6 +500,59 @@ func TestSignalCreateHandler_MultiRepoRequiresProjectArg(t *testing.T) {
 	assert.Contains(t, textResult(t, result), "project argument is required")
 }
 
+func TestSignalCreateHandler_MultiRepoRejectsUnknownProject(t *testing.T) {
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+
+	// Two projects registered but request names an unknown one.
+	rc := routing.NewRegisterConfig("", []string{"alpha-repo", "other-project"})
+	handler := makeSignalCreateHandler(rc, gw)
+
+	result, err := handler(context.Background(), mockReq(map[string]any{
+		"signal_type": "elaborator_finished",
+		"plan_file":   "some-plan",
+		"project":     "nonexistent",
+	}))
+	require.NoError(t, err)
+	assert.True(t, result.IsError)
+	assert.Contains(t, textResult(t, result), "project not found: nonexistent")
+
+	// Neither registered project should have received the signal.
+	alphaSignals, err := gw.List("alpha-repo", taskstore.SignalPending)
+	require.NoError(t, err)
+	assert.Empty(t, alphaSignals)
+	otherSignals, err := gw.List("other-project", taskstore.SignalPending)
+	require.NoError(t, err)
+	assert.Empty(t, otherSignals)
+}
+
+func TestSignalCreateHandler_SingleProjectInMultiModeAcceptsWithoutArg(t *testing.T) {
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+
+	projectA := "solo-repo"
+
+	// Single project in projects list — project arg should be optional and the
+	// signal must still be stored under projectA.
+	rc := routing.NewRegisterConfig("", []string{projectA})
+	handler := makeSignalCreateHandler(rc, gw)
+
+	result, err := handler(context.Background(), mockReq(map[string]any{
+		"signal_type": "elaborator_finished",
+		"plan_file":   "solo-plan",
+	}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+
+	signals, err := gw.List(projectA, taskstore.SignalPending)
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "elaborator_finished", signals[0].SignalType)
+	assert.Equal(t, "solo-plan", signals[0].PlanFile)
+}
+
 func TestSignalCreateHandler_UsesGlobalSQLiteWhenGatewayNil(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	project := "test-project"
