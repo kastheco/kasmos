@@ -25,7 +25,6 @@ import (
 var MCPVersion = "0.1.0"
 
 type serveRepoRegistration struct {
-	configs  []taskstore.RepoConfig
 	valid    map[string]struct{}
 	projects []string
 	roots    []string
@@ -33,7 +32,6 @@ type serveRepoRegistration struct {
 
 func buildServeRepoRegistration(repoPaths []string) (serveRepoRegistration, error) {
 	reg := serveRepoRegistration{
-		configs:  make([]taskstore.RepoConfig, 0, len(repoPaths)),
 		valid:    make(map[string]struct{}, len(repoPaths)),
 		projects: make([]string, 0, len(repoPaths)),
 		roots:    make([]string, 0, len(repoPaths)),
@@ -60,7 +58,6 @@ func buildServeRepoRegistration(repoPaths []string) (serveRepoRegistration, erro
 		reg.valid[project] = struct{}{}
 		reg.projects = append(reg.projects, project)
 		reg.roots = append(reg.roots, root)
-		reg.configs = append(reg.configs, taskstore.RepoConfig{Path: root})
 	}
 
 	return reg, nil

@@ -436,20 +436,15 @@ func TestSignalCreateHandler_PayloadContracts(t *testing.T) {
 }
 
 func TestSignalCreateHandler_MultiRepoRoutesToCorrectProject(t *testing.T) {
-	dirA := filepath.Join(t.TempDir(), "alpha-repo")
-	dirB := filepath.Join(t.TempDir(), "beta-repo")
-	require.NoError(t, os.MkdirAll(filepath.Join(dirA, ".kasmos"), 0o755))
-	require.NoError(t, os.MkdirAll(filepath.Join(dirB, ".kasmos"), 0o755))
+	projectA := "alpha-repo"
+	projectB := "beta-repo"
 
-	projectA := filepath.Base(dirA)
-	projectB := filepath.Base(dirB)
-
-	multi, err := taskstore.NewMultiSignalGateway([]taskstore.RepoConfig{{Path: dirA}, {Path: dirB}})
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = multi.Close() })
+	t.Cleanup(func() { _ = gw.Close() })
 
 	rc := routing.NewRegisterConfig("", []string{projectA, projectB})
-	handler := makeSignalCreateHandler(rc, multi)
+	handler := makeSignalCreateHandler(rc, gw)
 
 	// Signal routed to alpha
 	result, err := handler(context.Background(), mockReq(map[string]any{
@@ -460,7 +455,7 @@ func TestSignalCreateHandler_MultiRepoRoutesToCorrectProject(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
 
-	alphaSignals, err := multi.List(projectA, taskstore.SignalPending)
+	alphaSignals, err := gw.List(projectA, taskstore.SignalPending)
 	require.NoError(t, err)
 	require.Len(t, alphaSignals, 1)
 	assert.Equal(t, "elaborator_finished", alphaSignals[0].SignalType)
@@ -475,33 +470,25 @@ func TestSignalCreateHandler_MultiRepoRoutesToCorrectProject(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
 
-	betaSignals, err := multi.List(projectB, taskstore.SignalPending)
+	betaSignals, err := gw.List(projectB, taskstore.SignalPending)
 	require.NoError(t, err)
 	require.Len(t, betaSignals, 1)
 	assert.Equal(t, "planner_finished", betaSignals[0].SignalType)
 	assert.Equal(t, "beta-plan", betaSignals[0].PlanFile)
 
 	// Alpha should still have only its own signal
-	alphaSignals, err = multi.List(projectA, taskstore.SignalPending)
+	alphaSignals, err = gw.List(projectA, taskstore.SignalPending)
 	require.NoError(t, err)
 	assert.Len(t, alphaSignals, 1)
 }
 
 func TestSignalCreateHandler_MultiRepoRequiresProjectArg(t *testing.T) {
-	dirA := filepath.Join(t.TempDir(), "alpha-repo")
-	dirB := filepath.Join(t.TempDir(), "beta-repo")
-	require.NoError(t, os.MkdirAll(filepath.Join(dirA, ".kasmos"), 0o755))
-	require.NoError(t, os.MkdirAll(filepath.Join(dirB, ".kasmos"), 0o755))
-
-	projectA := filepath.Base(dirA)
-	projectB := filepath.Base(dirB)
-
-	multi, err := taskstore.NewMultiSignalGateway([]taskstore.RepoConfig{{Path: dirA}, {Path: dirB}})
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = multi.Close() })
+	t.Cleanup(func() { _ = gw.Close() })
 
-	rc := routing.NewRegisterConfig("", []string{projectA, projectB})
-	handler := makeSignalCreateHandler(rc, multi)
+	rc := routing.NewRegisterConfig("", []string{"alpha-repo", "beta-repo"})
+	handler := makeSignalCreateHandler(rc, gw)
 
 	// Missing project arg in multi-repo mode must error
 	result, err := handler(context.Background(), mockReq(map[string]any{
