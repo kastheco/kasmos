@@ -465,15 +465,30 @@ func (s *SQLiteStore) Update(project, filename string, entry TaskEntry) error {
 	return nil
 }
 
-// Rename changes the filename of an existing task entry.
+// Rename changes the filename of an existing task entry. The parent row in
+// tasks plus any derived child rows in subtasks and pr_reviews are updated in
+// a single transaction with foreign keys deferred, so renames remain safe for
+// tasks that already have ingested content or PR review activity.
 // Returns an error if the old filename is not found or the new filename already exists.
 func (s *SQLiteStore) Rename(project, oldFilename, newFilename string) error {
-	const q = `
-		UPDATE tasks
-		SET filename = ?
-		WHERE project = ? AND filename = ?
-	`
-	result, err := s.db.Exec(q, newFilename, project, oldFilename)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin rename transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err = tx.Exec("PRAGMA defer_foreign_keys = ON"); err != nil {
+		return fmt.Errorf("defer foreign keys for rename: %w", err)
+	}
+
+	result, err := tx.Exec(
+		`UPDATE tasks SET filename = ? WHERE project = ? AND filename = ?`,
+		newFilename, project, oldFilename,
+	)
 	if err != nil {
 		if isUniqueConstraintError(err) {
 			return fmt.Errorf("plan already exists: %s/%s", project, newFilename)
@@ -486,6 +501,24 @@ func (s *SQLiteStore) Rename(project, oldFilename, newFilename string) error {
 	}
 	if n == 0 {
 		return fmt.Errorf("plan not found: %s/%s", project, oldFilename)
+	}
+
+	if _, err = tx.Exec(
+		`UPDATE subtasks SET plan_filename = ? WHERE project = ? AND plan_filename = ?`,
+		newFilename, project, oldFilename,
+	); err != nil {
+		return fmt.Errorf("rename subtasks: %w", err)
+	}
+
+	if _, err = tx.Exec(
+		`UPDATE pr_reviews SET plan_filename = ? WHERE project = ? AND plan_filename = ?`,
+		newFilename, project, oldFilename,
+	); err != nil {
+		return fmt.Errorf("rename pr_reviews: %w", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("commit rename: %w", err)
 	}
 	return nil
 }

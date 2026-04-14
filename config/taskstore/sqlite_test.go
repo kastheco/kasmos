@@ -290,6 +290,55 @@ func TestSQLiteStore_Rename(t *testing.T) {
 	assert.Equal(t, taskstore.StatusReady, got.Status)
 }
 
+// TestSQLiteStore_RenameCascadesChildren ensures that renaming a task which
+// already has derived rows in subtasks and pr_reviews carries those child rows
+// along to the new filename instead of failing a foreign key check or leaving
+// orphan rows behind. The pr_reviews / subtasks foreign keys use
+// ON DELETE CASCADE only, so the rename implementation must move the children
+// explicitly inside a single deferred-FK transaction.
+func TestSQLiteStore_RenameCascadesChildren(t *testing.T) {
+	store := newTestStore(t)
+
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename: "before-rename",
+		Status:   taskstore.StatusReady,
+	}))
+	require.NoError(t, store.SetContent("proj", "before-rename", "# content"))
+	require.NoError(t, store.SetSubtasks("proj", "before-rename", []taskstore.SubtaskEntry{
+		{TaskNumber: 1, Title: "alpha", Status: taskstore.SubtaskStatusPending},
+		{TaskNumber: 2, Title: "beta", Status: taskstore.SubtaskStatusPending},
+	}))
+	require.NoError(t, store.RecordPRReview("proj", "before-rename", 42, "COMMENTED", "a review", "reviewer"))
+
+	require.NoError(t, store.Rename("proj", "before-rename", "after-rename"))
+
+	_, err := store.Get("proj", "before-rename")
+	assert.Error(t, err)
+
+	got, err := store.Get("proj", "after-rename")
+	require.NoError(t, err)
+	assert.Equal(t, "after-rename", got.Filename)
+
+	subtasks, err := store.GetSubtasks("proj", "after-rename")
+	require.NoError(t, err)
+	require.Len(t, subtasks, 2)
+	assert.Equal(t, "alpha", subtasks[0].Title)
+	assert.Equal(t, "beta", subtasks[1].Title)
+
+	oldSubtasks, err := store.GetSubtasks("proj", "before-rename")
+	require.NoError(t, err)
+	assert.Empty(t, oldSubtasks)
+
+	pending, err := store.ListPendingReviews("proj", "after-rename")
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, 42, pending[0].ReviewID)
+
+	oldPending, err := store.ListPendingReviews("proj", "before-rename")
+	require.NoError(t, err)
+	assert.Empty(t, oldPending)
+}
+
 func TestSQLiteStore_Delete(t *testing.T) {
 	store := newTestStore(t)
 

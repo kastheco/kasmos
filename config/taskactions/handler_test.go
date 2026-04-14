@@ -445,6 +445,49 @@ func TestRename_NotFound_404(t *testing.T) {
 	resp.Body.Close()
 }
 
+// TestRename_PreservesIngestedChildren renames a task that has already been
+// through a /content ingest (which creates subtask rows) and has recorded PR
+// review activity. The rename must succeed and the derived children must
+// follow the parent to the new filename.
+func TestRename_PreservesIngestedChildren(t *testing.T) {
+	srv, store := newTestServer(t)
+	createTask(t, store, "proj", "ingested-task")
+
+	req, err := http.NewRequest(http.MethodPut,
+		srv.URL+"/v1/projects/proj/tasks/ingested-task/content",
+		strings.NewReader(validPlanContent))
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	resp.Body.Close()
+
+	require.NoError(t, store.RecordPRReview("proj", "ingested-task", 7, "COMMENTED", "looks ok", "reviewer"))
+
+	subtasksBefore, err := store.GetSubtasks("proj", "ingested-task")
+	require.NoError(t, err)
+	require.NotEmpty(t, subtasksBefore)
+
+	renameResp := doJSON(t, srv, http.MethodPost, "/v1/projects/proj/tasks/ingested-task/rename",
+		map[string]string{"new_filename": "renamed task"})
+	require.Equal(t, http.StatusOK, renameResp.StatusCode)
+	entry := decodeEntry(t, renameResp)
+	assert.Equal(t, "renamed-task", entry.Filename)
+
+	subtasksAfter, err := store.GetSubtasks("proj", "renamed-task")
+	require.NoError(t, err)
+	assert.Equal(t, len(subtasksBefore), len(subtasksAfter))
+
+	oldSubtasks, err := store.GetSubtasks("proj", "ingested-task")
+	require.NoError(t, err)
+	assert.Empty(t, oldSubtasks)
+
+	pending, err := store.ListPendingReviews("proj", "renamed-task")
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, 7, pending[0].ReviewID)
+}
+
 // ---- topic tests ------------------------------------------------------------
 
 func TestTopic_SetTopic(t *testing.T) {
