@@ -102,6 +102,13 @@ export default function MetadataPanel({ task }: MetadataPanelProps) {
           </>
         )}
 
+        {task.verifying_at && (
+          <>
+            <dt className={styles.term}>verifying at</dt>
+            <dd className={styles.detail}>{formatTimestamp(task.verifying_at)}</dd>
+          </>
+        )}
+
         {task.done_at && (
           <>
             <dt className={styles.term}>done at</dt>

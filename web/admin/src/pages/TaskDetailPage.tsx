@@ -1,17 +1,21 @@
-import { type ComponentProps } from "react";
-import { useParams } from "react-router";
+import { lazy, Suspense, useState, type ComponentProps } from "react";
+import { useParams, useNavigate } from "react-router";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { TaskEntry, SubtaskEntry } from "../types";
-import { getTask, getTaskContent, getSubtasks } from "../api";
+import { getTask, getTaskContent, getSubtasks, updateTaskContent } from "../api";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
 import { useProject } from "../hooks/useProject";
+import { useToast } from "../hooks/useToast";
 import StatusBadge from "../components/StatusBadge";
 import MetadataPanel from "../components/MetadataPanel";
 import SubtaskProgress from "../components/SubtaskProgress";
 import LastUpdated from "../components/LastUpdated";
 import Skeleton from "../components/Skeleton";
+import TaskActionsMenu from "../components/TaskActionsMenu";
 import styles from "./TaskDetailPage.module.css";
+
+const PlanEditor = lazy(() => import("../components/PlanEditor"));
 
 type TaskDetailData = {
   task: TaskEntry;
@@ -56,9 +60,13 @@ export default function TaskDetailPage() {
   const { filename: rawFilename } = useParams<{ filename: string }>();
   const filename = rawFilename ? decodeURIComponent(rawFilename) : undefined;
 
-  const { project } = useProject();
+  const { project, projectSearch } = useProject();
+  const navigate = useNavigate();
+  const toast = useToast();
 
-  const { data, loading, error, lastUpdatedAt, isRefreshing } =
+  const [editMode, setEditMode] = useState(false);
+
+  const { data, loading, error, lastUpdatedAt, isRefreshing, refresh } =
     useAutoRefresh<TaskDetailData | null>(
       async () => {
         if (!filename) throw new Error("no task filename provided");
@@ -71,6 +79,7 @@ export default function TaskDetailPage() {
         return { task, content, subtasks };
       },
       [project, filename],
+      editMode ? 0 : 10000,
     );
 
   if (!filename) {
@@ -121,18 +130,52 @@ export default function TaskDetailPage() {
           )}
           <LastUpdated timestamp={lastUpdatedAt} isRefreshing={isRefreshing} />
         </div>
+        <div className={styles.controls}>
+          <TaskActionsMenu
+            project={project}
+            task={task}
+            variant="button"
+            onChanged={() => void refresh()}
+            onRenamed={(newFilename) =>
+              navigate(`/tasks/${encodeURIComponent(newFilename)}${projectSearch}`)
+            }
+            onDeleted={() => navigate(`/tasks${projectSearch}`)}
+          />
+          <button
+            className={`${styles.editBtn} ${editMode ? styles.editBtnActive : ""}`}
+            onClick={() => setEditMode((m) => !m)}
+            type="button"
+          >
+            {editMode ? "cancel edit" : "edit"}
+          </button>
+        </div>
       </header>
 
       <div className={styles.layout}>
         <section className={styles.main}>
-          <div className={styles.markdown}>
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={mdComponents}
-            >
-              {content}
-            </ReactMarkdown>
-          </div>
+          {editMode ? (
+            <Suspense fallback={<Skeleton variant="block" />}>
+              <PlanEditor
+                initialValue={content}
+                onSave={async (value) => {
+                  await updateTaskContent(project, filename, value);
+                  await refresh();
+                  setEditMode(false);
+                  toast.show("plan content saved");
+                }}
+                onCancel={() => setEditMode(false)}
+              />
+            </Suspense>
+          ) : (
+            <div className={styles.markdown}>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={mdComponents}
+              >
+                {content}
+              </ReactMarkdown>
+            </div>
+          )}
         </section>
 
         <aside className={styles.sidebar}>
