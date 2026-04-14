@@ -158,7 +158,7 @@ func (h *handler) checkTransitionPrecondition(project, filename string, event ta
 			return errEmptyContent
 		}
 		if _, err := taskparser.Parse(content); err != nil {
-			return errUnparseableContent(err)
+			return errUnparsableContent(err)
 		}
 	}
 
@@ -176,9 +176,9 @@ var errEmptyContent = errConflict("plan content missing; save the plan before ma
 
 type parseError struct{ cause error }
 
-func errUnparseableContent(cause error) error    { return parseError{cause} }
-func (e parseError) Error() string               { return "plan is not implementation-ready: " + e.cause.Error() }
-func (e parseError) Unwrap() error               { return e.cause }
+func errUnparsableContent(cause error) error { return parseError{cause} }
+func (e parseError) Error() string            { return "plan is not implementation-ready: " + e.cause.Error() }
+func (e parseError) Unwrap() error            { return e.cause }
 
 // ---- route handlers ---------------------------------------------------------
 
