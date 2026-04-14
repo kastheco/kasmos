@@ -253,11 +253,11 @@ export default function TaskActionsMenu({
   async function handleRename(newFilename: string) {
     setBusy(true);
     try {
-      await renameTask(project, task.filename, newFilename);
+      const updated = await renameTask(project, task.filename, newFilename);
       toast.show("task renamed");
       setOpen(false);
       setDialog({ kind: "none" });
-      onRenamed?.(newFilename);
+      onRenamed?.(updated.filename);
       await onChanged?.();
     } catch (err) {
       toast.show(`rename failed: ${String(err)}`, { kind: "error" });
@@ -513,6 +513,7 @@ export default function TaskActionsMenu({
           initialValue={task.topic ?? ""}
           placeholder="topic name"
           submitLabel="save"
+          allowEmpty
           onSubmit={(v) => void handleTopic(v)}
           onCancel={() => setDialog({ kind: "none" })}
         />
@@ -528,6 +529,7 @@ export default function TaskActionsMenu({
           placeholder="describe the goal…"
           multiline
           submitLabel="save"
+          allowEmpty
           onSubmit={(v) => void handleGoal(v)}
           onCancel={() => setDialog({ kind: "none" })}
         />

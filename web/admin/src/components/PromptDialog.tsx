@@ -10,6 +10,7 @@ export interface PromptDialogProps {
   placeholder?: string;
   multiline?: boolean;
   submitLabel?: string;
+  allowEmpty?: boolean;
   onSubmit: (value: string) => void;
   onCancel: () => void;
 }
@@ -22,6 +23,7 @@ export default function PromptDialog({
   placeholder,
   multiline = false,
   submitLabel = "save",
+  allowEmpty = false,
   onSubmit,
   onCancel,
 }: PromptDialogProps) {
@@ -57,7 +59,7 @@ export default function PromptDialog({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (value.trim()) {
+    if (allowEmpty || value.trim()) {
       onSubmit(value);
     }
   };
@@ -108,7 +110,7 @@ export default function PromptDialog({
             <button
               type="submit"
               className={styles.submitBtn}
-              disabled={!value.trim()}
+              disabled={!allowEmpty && !value.trim()}
             >
               {submitLabel}
             </button>
