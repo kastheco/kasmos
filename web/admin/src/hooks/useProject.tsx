@@ -4,7 +4,7 @@ import {
   useEffect,
   type JSX,
 } from "react";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { listProjects, resolveProjectName } from "../api";
 import { useAutoRefresh } from "./useAutoRefresh";
 
@@ -26,6 +26,7 @@ export function ProjectProvider({
   children: React.ReactNode;
 }): JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { data: fetchedProjects, loading } = useAutoRefresh<string[]>(
     () => listProjects(),
     [],
@@ -65,18 +66,13 @@ export function ProjectProvider({
 
   const setProject = (next: string) => {
     localStorage.setItem(STORAGE_KEY, next);
-    setSearchParams(
-      (prev) => {
-        const p = new URLSearchParams(prev);
-        if (next) {
-          p.set("project", next);
-        } else {
-          p.delete("project");
-        }
-        return p;
-      },
-      { replace: false },
-    );
+    // Always route back to the dashboard on a user-initiated project
+    // switch: deep-linked views (e.g. /tasks/<file>) don't exist in the new
+    // project and would 404.
+    navigate({
+      pathname: "/",
+      search: next ? `?project=${encodeURIComponent(next)}` : "",
+    });
   };
 
   // Write the resolved project back into the URL when it differs (replace so
@@ -100,17 +96,17 @@ export function ProjectProvider({
   }, [project, loading]);
 
   // Guard: if the list refreshed and the current selection disappeared, switch
-  // to the first available project.
+  // to the first available project and route home so any deep-linked view for
+  // the vanished project doesn't 404.
   useEffect(() => {
     if (projects.length === 0) return;
     if (!projects.includes(project)) {
       const next = projects[0];
       localStorage.setItem(STORAGE_KEY, next);
-      setSearchParams(
-        (prev) => {
-          const p = new URLSearchParams(prev);
-          p.set("project", next);
-          return p;
+      navigate(
+        {
+          pathname: "/",
+          search: `?project=${encodeURIComponent(next)}`,
         },
         { replace: true },
       );
