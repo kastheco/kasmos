@@ -235,6 +235,9 @@ func BuildWaveAnnotationPrompt(planFile, project string) string {
 // readiness review. The agent runs during the verifying FSM state and gathers
 // its own evidence (merge-base diff, verification results) in the session rather
 // than receiving pre-computed diffs, mirroring the reviewer/fixer prompt style.
+// The agent is expected to self-fix trivial findings per the kasmos-master
+// Self-Fix Protocol before signaling verify_failed; only verify_approved and
+// verify_failed are valid outcomes.
 func BuildMasterReviewPrompt(planFile, project string) string {
 	return fmt.Sprintf(
 		"You are the master readiness review agent. You run during the `verifying` FSM state.\n\n"+
@@ -244,7 +247,14 @@ func BuildMasterReviewPrompt(planFile, project string) string {
 			"2. Gather evidence:\n"+
 			"   - Merge-base diff: `MERGE_BASE=$(git merge-base HEAD main) && git diff $MERGE_BASE HEAD`\n"+
 			"   - Run verification: `go build ./... && go test ./...` (or the plan's verify_checks)\n"+
-			"3. Review the implementation holistically against the plan and signal your decision:\n"+
+			"3. If you find issues, classify them per the kasmos-master skill's Self-Fix Protocol. "+
+			"Trivial allow-list findings (typos, missing exported doc comments, unused imports, format-verb mistakes, "+
+			"`typos`/`gofmt` fixes, trivial `go vet` findings — total ≤ 10 lines) MUST be fixed directly in the worktree, "+
+			"verified with `gofmt -l .`, `go vet ./...`, `go build ./...`, `go test ./...`, and `typos`, "+
+			"then committed as `fix: <description> (master self-fix)` and approved only after the gate passes. "+
+			"Do NOT emit `verify_failed` for findings the protocol marks as self-fixable. "+
+			"If a self-fix attempt fails any gate step, run `git restore --staged --worktree .` to drop the changes and emit `verify_failed` with the original finding.\n"+
+			"4. Review the implementation holistically against the plan and signal your decision:\n"+
 			"   - Approved: prefer MCP `signal_create` (signal_type: \"verify_approved\", plan_file: %[1]q, project: %[2]q); fall back to `kas signal emit verify_approved %[1]s`\n"+
 			"   - Changes requested: prefer MCP `signal_create` (signal_type: \"verify_failed\", plan_file: %[1]q, project: %[2]q); fall back to `kas signal emit verify_failed %[1]s`\n"+
 			"   - Include your review summary in the signal payload body field.\n\n"+

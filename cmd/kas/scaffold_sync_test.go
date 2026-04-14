@@ -300,6 +300,10 @@ func TestScaffoldSync_RefreshesSignalPromptCopies(t *testing.T) {
 			path:       filepath.Join(dir, ".agents", "skills", "kasmos-reviewer", "SKILL.md"),
 			sourcePath: filepath.Join("..", "..", "internal", "initcmd", "scaffold", "templates", "skills", "kasmos-reviewer", "SKILL.md"),
 		},
+		{
+			path:       filepath.Join(dir, ".agents", "skills", "kasmos-master", "SKILL.md"),
+			sourcePath: filepath.Join("..", "..", "internal", "initcmd", "scaffold", "templates", "skills", "kasmos-master", "SKILL.md"),
+		},
 	}
 
 	for _, target := range targets {
@@ -315,6 +319,7 @@ func TestScaffoldSync_RefreshesSignalPromptCopies(t *testing.T) {
 	assert.Contains(t, output, ".opencode/agents/planner.md")
 	assert.Contains(t, output, ".agents/skills/kasmos-architect/SKILL.md")
 	assert.Contains(t, output, ".agents/skills/kasmos-reviewer/SKILL.md")
+	assert.Contains(t, output, ".agents/skills/kasmos-master/SKILL.md")
 
 	for _, target := range targets {
 		expected, err := os.ReadFile(target.sourcePath)
