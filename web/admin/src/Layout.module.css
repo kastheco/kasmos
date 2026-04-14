@@ -15,10 +15,16 @@
 }
 
 .logo {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--accent-amber);
-  letter-spacing: 0.01em;
+  display: flex;
+  align-items: center;
+  padding: 4px 4px 4px 0;
+}
+
+.logoImg {
+  display: block;
+  width: 100%;
+  max-width: 160px;
+  height: auto;
 }
 
 .navList {

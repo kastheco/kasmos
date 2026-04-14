@@ -2,6 +2,7 @@ import { NavLink, Outlet } from "react-router";
 import styles from "./Layout.module.css";
 import { useProject } from "./hooks/useProject";
 import ProjectSwitcher from "./components/ProjectSwitcher";
+import logoFull from "./assets/logo-full.png";
 
 export default function Layout() {
   const { projectSearch } = useProject();
@@ -10,7 +11,7 @@ export default function Layout() {
     <div className={styles.container}>
       <nav className={styles.sidebar}>
         <div className={styles.logo}>
-          <span>kasmos</span>
+          <img src={logoFull} alt="kasmos" className={styles.logoImg} />
         </div>
         <div className={styles.switcherSection}>
           <ProjectSwitcher />
