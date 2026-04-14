@@ -100,20 +100,7 @@ func seedPlanStatus(t *testing.T, ps *taskstate.TaskState, planFile string, stat
 
 // TransitionByName applies an event by its string name (for table-driven tests).
 func (f *testFSM) TransitionByName(planFile, eventName string) error {
-	eventMap := map[string]taskfsm.Event{
-		"plan_start":         taskfsm.PlanStart,
-		"planner_finished":   taskfsm.PlannerFinished,
-		"implement_start":    taskfsm.ImplementStart,
-		"implement_finished": taskfsm.ImplementFinished,
-		"review_approved":    taskfsm.ReviewApproved,
-		"verify_approved":    taskfsm.VerifyApproved,
-		"verify_failed":      taskfsm.VerifyFailed,
-		"review_changes":     taskfsm.ReviewChangesRequested,
-		"start_over":         taskfsm.StartOver,
-		"cancel":             taskfsm.Cancel,
-		"reopen":             taskfsm.Reopen,
-	}
-	ev, ok := eventMap[eventName]
+	ev, ok := taskfsm.EventByName(eventName)
 	if !ok {
 		return fmt.Errorf("unknown event name: %q", eventName)
 	}

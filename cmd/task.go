@@ -137,28 +137,9 @@ func executeTaskSetStatus(project, planFile, status string, force bool, store ta
 
 // executeTaskTransition applies a named FSM event to a plan and returns the new status.
 func executeTaskTransition(project, planFile, event string, store taskstore.Store) (string, error) {
-	eventMap := map[string]taskfsm.Event{
-		"plan_start":         taskfsm.PlanStart,
-		"planner_finished":   taskfsm.PlannerFinished,
-		"implement_start":    taskfsm.ImplementStart,
-		"implement_finished": taskfsm.ImplementFinished,
-		"review_approved":    taskfsm.ReviewApproved,
-		"verify_approved":    taskfsm.VerifyApproved,
-		"verify_failed":      taskfsm.VerifyFailed,
-		"review_changes":     taskfsm.ReviewChangesRequested,
-		"request_review":     taskfsm.RequestReview,
-		"start_over":         taskfsm.StartOver,
-		"reimplement":        taskfsm.Reimplement,
-		"cancel":             taskfsm.Cancel,
-		"reopen":             taskfsm.Reopen,
-	}
-	fsmEvent, ok := eventMap[event]
+	fsmEvent, ok := taskfsm.EventByName(event)
 	if !ok {
-		names := make([]string, 0, len(eventMap))
-		for k := range eventMap {
-			names = append(names, k)
-		}
-		return "", fmt.Errorf("unknown event %q; valid events: %s", event, strings.Join(names, ", "))
+		return "", fmt.Errorf("unknown event %q; valid events: %s", event, strings.Join(taskfsm.EventNames(), ", "))
 	}
 	ps, err := loadTaskStateByProject(project, store)
 	if err != nil {

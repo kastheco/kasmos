@@ -270,37 +270,11 @@ func makeTaskDeleteHandler(rc routing.RegisterConfig, store taskstore.Store) ser
 }
 
 func normalizeTaskEvent(raw string) (taskfsm.Event, error) {
-	canonical := strings.ReplaceAll(strings.TrimSpace(raw), "-", "_")
-	switch canonical {
-	case string(taskfsm.PlanStart):
-		return taskfsm.PlanStart, nil
-	case string(taskfsm.PlannerFinished):
-		return taskfsm.PlannerFinished, nil
-	case string(taskfsm.ImplementStart):
-		return taskfsm.ImplementStart, nil
-	case string(taskfsm.ImplementFinished):
-		return taskfsm.ImplementFinished, nil
-	case string(taskfsm.ReviewApproved):
-		return taskfsm.ReviewApproved, nil
-	case "review_changes", string(taskfsm.ReviewChangesRequested):
-		return taskfsm.ReviewChangesRequested, nil
-	case string(taskfsm.VerifyApproved):
-		return taskfsm.VerifyApproved, nil
-	case string(taskfsm.VerifyFailed):
-		return taskfsm.VerifyFailed, nil
-	case string(taskfsm.RequestReview):
-		return taskfsm.RequestReview, nil
-	case string(taskfsm.StartOver):
-		return taskfsm.StartOver, nil
-	case string(taskfsm.Reimplement):
-		return taskfsm.Reimplement, nil
-	case string(taskfsm.Cancel):
-		return taskfsm.Cancel, nil
-	case string(taskfsm.Reopen):
-		return taskfsm.Reopen, nil
-	default:
+	ev, ok := taskfsm.EventByName(raw)
+	if !ok {
 		return "", fmt.Errorf("unknown event %q", raw)
 	}
+	return ev, nil
 }
 
 func forceLifecycleForEvent(event taskfsm.Event) (taskstate.Status, taskstore.ExecutionState, error) {
