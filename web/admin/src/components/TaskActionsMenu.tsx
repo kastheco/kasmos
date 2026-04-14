@@ -89,6 +89,8 @@ export default function TaskActionsMenu({
     try {
       const data = await getAvailableActions(project, task.filename);
       setActions(data);
+      // Move focus to the first menu item so arrow keys + enter work without a mouse.
+      setFocusedIdx(0);
     } catch (err) {
       toast.show(`failed to load actions: ${String(err)}`, { kind: "error" });
       setOpen(false);
@@ -208,6 +210,14 @@ export default function TaskActionsMenu({
     },
     [menuItems, focusedIdx],
   );
+
+  // Focus the popover itself when it opens so keyboard events (Escape, arrows)
+  // are captured even before actions finish loading and the first item can be
+  // focused.
+  useEffect(() => {
+    if (!open) return;
+    popoverRef.current?.focus();
+  }, [open]);
 
   // Focus the right item when focusedIdx changes
   useEffect(() => {
@@ -352,6 +362,7 @@ export default function TaskActionsMenu({
             style={{ top: pos.top, left: pos.left }}
             role="menu"
             aria-label="task actions"
+            tabIndex={-1}
             onKeyDown={handleKeyDown}
           >
             {loading && (
