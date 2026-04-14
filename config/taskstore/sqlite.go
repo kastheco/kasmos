@@ -166,18 +166,8 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 		return nil, err
 	}
 
-	// Migrate data from legacy planstore.db if it exists in the same directory
-	// and the new tasks table is empty. This handles the rename-plan-to-task
-	// transition where the DB filename changed from planstore.db to taskstore.db.
-	if dbPath != ":memory:" {
-		if err := migrateFromPlanstoreDB(db, dbPath); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("migrate from planstore.db: %w", err)
-		}
-	}
-
-	// Strip .md suffix AFTER legacy imports so imported filenames are also
-	// normalized. This is idempotent — safe to run on already-clean DBs.
+	// Strip .md suffix so imported filenames are normalized.
+	// This is idempotent — safe to run on already-clean DBs.
 	if err := migrateStripMdSuffix(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate strip .md suffix: %w", err)
@@ -200,8 +190,6 @@ func NewSQLiteStoreFromDB(db *sql.DB) (*SQLiteStore, error) {
 
 // runStoreMigrations runs all schema migrations on the given *sql.DB.
 // It does NOT set PRAGMAs or open the connection — the caller must do that.
-// Legacy planstore.db migration requires the file path and is handled
-// separately by NewSQLiteStore.
 func runStoreMigrations(db *sql.DB) error {
 	// Migrate: rename plans → tasks (if old table exists).
 	migrateRenameTable(db, "plans", "tasks")
@@ -266,10 +254,8 @@ func runStoreMigrations(db *sql.DB) error {
 	if _, err := db.Exec(prReviewsTableMigration); err != nil {
 		return fmt.Errorf("create pr_reviews table: %w", err)
 	}
-	// NOTE: migrateStripMdSuffix is called separately by NewSQLiteStore after
-	// migrateFromPlanstoreDB so that imported filenames are also normalized.
-	// NewSQLiteStoreFromDB also calls it since the shared DB may not have run
-	// the path-based constructor.
+	// Strip .md suffix so stored filenames are normalized. Called here so that
+	// NewSQLiteStoreFromDB also benefits when operating on a shared connection.
 	if err := migrateStripMdSuffix(db); err != nil {
 		return fmt.Errorf("migrate strip .md suffix: %w", err)
 	}
