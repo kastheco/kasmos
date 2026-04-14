@@ -249,7 +249,7 @@ func BuildMasterReviewPrompt(planFile, project string) string {
 			"   - Run verification: `go build ./... && go test ./...` (or the plan's verify_checks)\n"+
 			"3. If you find issues, classify them per the kasmos-master skill's Self-Fix Protocol. "+
 			"Trivial allow-list findings (typos, missing exported doc comments, unused imports, format-verb mistakes, "+
-			"`typos`/`gofmt`/`go vet` auto-fixes — total ≤ 10 lines) MUST be fixed directly in the worktree, "+
+			"`typos`/`gofmt` fixes, trivial `go vet` findings — total ≤ 10 lines) MUST be fixed directly in the worktree, "+
 			"committed as `fix: <description> (master self-fix)`, verified with `gofmt -l .`, `go vet ./...`, "+
 			"`go build ./...`, `go test ./...`, and `typos`, and then approved. "+
 			"Do NOT emit `verify_failed` for findings the protocol marks as self-fixable. "+
