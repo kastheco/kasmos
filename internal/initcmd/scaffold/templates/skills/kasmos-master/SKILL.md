@@ -23,6 +23,7 @@ Use this pass as a high-cost `openai/gpt-5.4` review sweep: be exhaustive but ef
 - do not narrate obvious pass-throughs (e.g., "file read," "command executed")
 - avoid duplicate observations across files
 - when data is already in evidence, cite it directly and move on
+- self-fix is cheaper than a full re-review cycle; prefer it whenever the allow-list and ceiling permit.
 
 ## CLI Tools Hard Gate
 
@@ -102,21 +103,73 @@ Specifically check these cross-cutting concerns before signaling:
 - [ ] No duplicate or conflicting phase labels across orchestration code and UI labels
 - [ ] Test coverage for new gateway signals present in signal_test.go or equivalent
 
+## Self-Fix Protocol
+
+Not everything requires kicking back to the fixer. Use judgment:
+
+### Fix it yourself (commit directly)
+
+- Typos in strings, comments, doc comments
+- Missing or incorrect doc comment on an exported symbol
+- Obvious unused-import cleanup (unused import, wrong order)
+- Trivial one-liner corrections (off-by-one in a constant, wrong format verb, wrong literal in a test fixture that is clearly a copy-paste mistake)
+- `typos --write-changes` results
+- Trivial `gofmt -w` / `go vet`-fix output that touches only formatting or import order
+- **Hard ceiling: ≤ 10 lines of net change across all files in the entire self-fix attempt.**
+
+When self-fixing, commit with `fix: <description> (master self-fix)` before signaling. The `(master self-fix)` suffix is mandatory and is the audit signal that distinguishes master commits from reviewer self-fix commits and from fixer commits. One commit per logical fix; do not bundle unrelated trivial fixes into one commit.
+
+### Kick to fixer (emit `verify_failed`)
+
+- Any logic change, conditional change, or return-value change
+- Missing test coverage that would require designing a new test
+- Architectural concerns (wrong package, wrong abstraction, broken layering)
+- Concurrency or race issues
+- Debugging work where the root cause is unclear
+- **Anything that would push the change past the 10-line ceiling**
+- Anything that touches behavior covered by an existing test in a way that would change the test's expected output
+
+### Post-fix verification gate
+
+Before emitting `verify_approved` after a self-fix, run ALL of the following in order — all must be clean:
+
+1. `gofmt -l .` — must produce no output
+2. `go vet ./...` — must produce no output
+3. `go build ./...`
+4. `go test ./...` (or scoped to changed packages if the full suite is intractable, matching the reviewer's existing escape hatch)
+5. `typos` against the changed file set
+
+If any gate step fails: `git restore` the self-fix changes, drop the self-fix attempt entirely, and emit `verify_failed` with the ORIGINAL finding (not the gate failure) so the fixer handles it.
+
 ### Phase 5 — Decision
 
 Issue exactly one outcome:
 
-- `verify-approved`: short justification + explicit confirmation that acceptance criteria and verification evidence are satisfied.
-- `verify-failed`: include numbered, targeted fixer tasks with exact files or failing criteria.
+- if zero findings: emit `verify_approved`.
+- if findings exist AND every finding is on the allow-list AND total net change ≤ 10 lines: attempt self-fix per Self-Fix Protocol, run the verification gate, and on success emit `verify_approved` with a `## self-fixed` payload block; on gate failure, revert and emit `verify_failed`.
+- if any finding is on the deny-list OR total net change would exceed 10 lines: emit `verify_failed` with numbered fixer tasks (existing behavior).
 
 ## Output contract
 
 Your final response in managed mode must match one of:
 
-- `verify-approved` with a one to three sentence verdict and evidence references.
-- `verify-failed` with a numbered list of concrete fixer actions, each with exact file paths and acceptance gaps.
+- `verify_approved` with a one to three sentence verdict and evidence references.
+- `verify_failed` with a numbered list of concrete fixer actions, each with exact file paths and acceptance gaps.
 
-Do not produce any other final status wording. Do not emit `review_approved` or `review_changes_requested` — use `verify-approved` or `verify-failed` above.
+After a successful self-fix, the `verify_approved` payload may include an optional `## self-fixed` block. Example:
+
+```
+verify-approved.
+
+acceptance criteria: all satisfied.
+verification: go build ./..., go test ./... — pass.
+
+## self-fixed
+- typo in `path/to/file.go:77` — fixed directly (committed `fix: correct typo in error string (master self-fix)`)
+- missing doc comment on exported `Foo` in `path/to/other.go:12` — fixed directly
+```
+
+Do not produce any other final status wording. Do not emit `review_approved` or `review_changes_requested` — use `verify_approved` or `verify_failed` above.
 
 ## High-Context Review Checklist
 

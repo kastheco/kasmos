@@ -182,6 +182,11 @@ func TestBuildMasterReviewPrompt(t *testing.T) {
 	// Evidence gathering
 	assert.Contains(t, prompt, "Merge-base diff")
 	assert.Contains(t, prompt, "MERGE_BASE")
+	// Self-Fix Protocol integration
+	assert.Contains(t, prompt, "Self-Fix Protocol")
+	assert.Contains(t, prompt, "(master self-fix)")
+	assert.Contains(t, prompt, "git restore")
+	assert.Contains(t, prompt, "verify_failed")
 	// No readiness-specific signal types (now uses verify-*)
 	assert.NotContains(t, prompt, "readiness-approved")
 	assert.NotContains(t, prompt, "readiness-changes-requested")
