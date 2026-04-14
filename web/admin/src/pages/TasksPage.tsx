@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import StatusBadge from "../components/StatusBadge";
 import LastUpdated from "../components/LastUpdated";
 import Skeleton from "../components/Skeleton";
+import TaskActionsMenu from "../components/TaskActionsMenu";
 import { listTasks } from "../api";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
 import { useProject } from "../hooks/useProject";
@@ -16,6 +17,7 @@ const FILTERS: TaskFilter[] = [
   "planning",
   "implementing",
   "reviewing",
+  "verifying",
   "done",
   "cancelled",
 ];
@@ -28,8 +30,9 @@ const STATUS_ORDER: Record<Status, number> = {
   planning: 1,
   implementing: 2,
   reviewing: 3,
-  done: 4,
-  cancelled: 5,
+  verifying: 4,
+  done: 5,
+  cancelled: 6,
 };
 
 const DEFAULT_DIR: Record<SortKey, SortDir> = {
@@ -86,7 +89,7 @@ export default function TasksPage() {
   const [sortKey, setSortKey] = useState<SortKey>("created");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-  const { data, loading, error, lastUpdatedAt, isRefreshing } =
+  const { data, loading, error, lastUpdatedAt, isRefreshing, refresh } =
     useAutoRefresh<TaskEntry[]>(
       async () => {
         if (!project) return [];
@@ -206,13 +209,14 @@ export default function TasksPage() {
                   sortDir={sortDir}
                   onToggle={toggleSort}
                 />
+                <th className={styles.actionsHeader}></th>
               </tr>
             </thead>
             <tbody>
               {loading
                 ? Array.from({ length: 5 }, (_, i) => (
                     <tr key={i}>
-                      <td colSpan={6}>
+                      <td colSpan={7}>
                         <Skeleton variant="row" />
                       </td>
                     </tr>
@@ -241,6 +245,16 @@ export default function TasksPage() {
                         {task.branch || "—"}
                       </td>
                       <td>{formatDate(task.created_at)}</td>
+                      <td className={styles.actionsCell}>
+                        {project && (
+                          <TaskActionsMenu
+                            project={project}
+                            task={task}
+                            variant="kebab"
+                            onChanged={refresh}
+                          />
+                        )}
+                      </td>
                     </tr>
                   ))}
             </tbody>
