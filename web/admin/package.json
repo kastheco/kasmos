@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "test": "node --experimental-strip-types --no-warnings src/api.test.ts",
+    "build": "tsc -b && npm run test && vite build",
     "preview": "vite preview"
   },
   "dependencies": {

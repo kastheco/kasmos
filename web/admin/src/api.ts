@@ -1,4 +1,26 @@
-import type { TaskEntry, SubtaskEntry, TopicEntry, AuditEvent } from "./types";
+import type { Status, TaskEntry, SubtaskEntry, TopicEntry, AuditEvent } from "./types";
+
+// Legacy persisted statuses that predate canonical normalization at ingest.
+// Mirrors config/taskfsm/fsm.go:MapLegacyStatus so the SPA reader boundary
+// stays consistent with the web task-actions handler's precheck path, which
+// accepts "in_progress" / "completed" rows and converts them before applying
+// FSM transitions. Without this, tasks imported before ingest-time
+// normalization render as "unknown" in StatusBadge and drop out of
+// status-based filters/counts.
+const LEGACY_STATUS_MAP: Record<string, Status> = {
+  in_progress: "implementing",
+  completed: "done",
+};
+
+export function normalizeTaskStatus(raw: string): Status {
+  return (LEGACY_STATUS_MAP[raw] ?? raw) as Status;
+}
+
+export function normalizeTaskEntry(entry: TaskEntry): TaskEntry {
+  const canonical = normalizeTaskStatus(entry.status);
+  if (canonical === entry.status) return entry;
+  return { ...entry, status: canonical };
+}
 
 async function request(path: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(path, init);
@@ -78,18 +100,21 @@ export async function listProjects(): Promise<string[]> {
 }
 
 export async function listTasks(project: string): Promise<TaskEntry[]> {
-  return (await requestJSON<TaskEntry[] | null>(
-    `/v1/projects/${encodeURIComponent(project)}/tasks`,
-  )) ?? [];
+  const raw =
+    (await requestJSON<TaskEntry[] | null>(
+      `/v1/projects/${encodeURIComponent(project)}/tasks`,
+    )) ?? [];
+  return raw.map(normalizeTaskEntry);
 }
 
 export async function getTask(
   project: string,
   filename: string,
 ): Promise<TaskEntry> {
-  return requestJSON<TaskEntry>(
+  const raw = await requestJSON<TaskEntry>(
     `/v1/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(filename)}`,
   );
+  return normalizeTaskEntry(raw);
 }
 
 export async function getTaskContent(
@@ -173,11 +198,15 @@ export async function applyTaskTransition(
   filename: string,
   event: string,
 ): Promise<TaskEntry> {
-  return requestJSON<TaskEntry>(`${taskBase(project, filename)}/transition`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ event }),
-  });
+  const raw = await requestJSON<TaskEntry>(
+    `${taskBase(project, filename)}/transition`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event }),
+    },
+  );
+  return normalizeTaskEntry(raw);
 }
 
 export async function overrideTaskStatus(
@@ -185,11 +214,15 @@ export async function overrideTaskStatus(
   filename: string,
   target: string,
 ): Promise<TaskEntry> {
-  return requestJSON<TaskEntry>(`${taskBase(project, filename)}/status`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ target }),
-  });
+  const raw = await requestJSON<TaskEntry>(
+    `${taskBase(project, filename)}/status`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target }),
+    },
+  );
+  return normalizeTaskEntry(raw);
 }
 
 export async function renameTask(
@@ -197,11 +230,15 @@ export async function renameTask(
   filename: string,
   newFilename: string,
 ): Promise<TaskEntry> {
-  return requestJSON<TaskEntry>(`${taskBase(project, filename)}/rename`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ new_filename: newFilename }),
-  });
+  const raw = await requestJSON<TaskEntry>(
+    `${taskBase(project, filename)}/rename`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ new_filename: newFilename }),
+    },
+  );
+  return normalizeTaskEntry(raw);
 }
 
 export async function updateTaskTopic(
@@ -209,11 +246,15 @@ export async function updateTaskTopic(
   filename: string,
   topic: string,
 ): Promise<TaskEntry> {
-  return requestJSON<TaskEntry>(`${taskBase(project, filename)}/topic`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ topic }),
-  });
+  const raw = await requestJSON<TaskEntry>(
+    `${taskBase(project, filename)}/topic`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic }),
+    },
+  );
+  return normalizeTaskEntry(raw);
 }
 
 export async function updateTaskGoal(
