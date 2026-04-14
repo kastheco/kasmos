@@ -252,6 +252,9 @@ export default function TasksPage() {
                             task={task}
                             variant="kebab"
                             onChanged={refresh}
+                            onDeleted={() => {
+                              void refresh();
+                            }}
                           />
                         )}
                       </td>
