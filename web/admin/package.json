@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "node --experimental-strip-types --no-warnings src/api.test.ts",
+    "test": "tsx src/api.test.ts",
     "build": "tsc -b && npm run test && vite build",
     "preview": "vite preview"
   },
@@ -21,6 +21,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.21.0",
     "typescript": "~5.7.2",
     "vite": "^6.0.0"
   }
