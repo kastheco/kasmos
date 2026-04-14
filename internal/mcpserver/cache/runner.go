@@ -86,7 +86,7 @@ func (r *CachedRunner) Output(ctx context.Context, name string, args ...string) 
 	}
 
 	if cached, ok := r.store.Get(cmd.key); ok {
-		return append([]byte(nil), cached...), nil
+		return cached, nil
 	}
 
 	out, err := r.inner.Output(ctx, name, args...)
