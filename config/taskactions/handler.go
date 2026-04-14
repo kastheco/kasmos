@@ -130,8 +130,10 @@ func isNotFound(err error) bool {
 //   - For taskfsm.PlannerFinished, loads content and requires a non-empty,
 //     parseable plan — matching app/app_actions.go:validatePlannerCompletion.
 func (h *handler) checkTransitionPrecondition(project, filename string, event taskfsm.Event, entry taskstore.TaskEntry) error {
-	// Validate FSM legality.
-	currentStatus := taskfsm.Status(entry.Status)
+	// Validate FSM legality. Normalize legacy persisted statuses ("in_progress",
+	// "completed") to their canonical FSM forms so prechecks match the core FSM
+	// compatibility behaviour exercised in config/taskfsm/fsm.go:Transition.
+	currentStatus := taskfsm.MapLegacyStatus(taskstate.Status(entry.Status))
 	if _, err := taskfsm.ApplyTransition(currentStatus, event); err != nil {
 		return err
 	}

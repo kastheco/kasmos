@@ -181,7 +181,7 @@ func (m *TaskStateMachine) Transition(planFile string, event Event) error {
 	if !ok {
 		return fmt.Errorf("plan not found: %s", planFile)
 	}
-	currentStatus := mapLegacyStatus(entry.Status)
+	currentStatus := MapLegacyStatus(entry.Status)
 	newStatus, err := ApplyTransition(currentStatus, event)
 	if err != nil {
 		return err
@@ -222,13 +222,16 @@ func phaseNameForStatus(s Status) (string, bool) {
 	}
 }
 
-// mapLegacyStatus converts statuses imported through the explicit legacy
+// MapLegacyStatus converts statuses imported through the explicit legacy
 // migration paths into canonical FSM statuses.
 //
 // Keep these aliases only as a last-resort reader boundary for already-persisted
 // task-store rows created before legacy imports were normalized at ingest. New
 // legacy imports map these aliases to canonical statuses before writing.
-func mapLegacyStatus(s taskstate.Status) Status {
+//
+// Exported so callers outside taskfsm (for example the web task-actions handler)
+// can normalize persisted legacy values before invoking ApplyTransition.
+func MapLegacyStatus(s taskstate.Status) Status {
 	switch s {
 	case "in_progress":
 		return StatusImplementing

@@ -189,6 +189,98 @@ func TestTransition_PlannerFinished_ValidContent_Accepted(t *testing.T) {
 	assert.Equal(t, taskstore.StatusReady, entry.Status)
 }
 
+// Legacy persisted statuses ("in_progress", "completed") must be normalized by
+// the handler before prechecking FSM transitions. Without normalization the
+// web task-actions path would return 409 for valid lifecycle events on rows
+// created before legacy imports were canonicalized at ingest — see
+// config/taskfsm/fsm.go:MapLegacyStatus and config/taskfsm/fsm_test.go:TestMapLegacyStatus.
+
+func TestTransition_LegacyInProgress_AcceptsImplementFinished(t *testing.T) {
+	srv, store := newTestServer(t)
+	createTask(t, store, "proj", "legacy-impl")
+	// Simulate a pre-normalization row persisted with the legacy status.
+	require.NoError(t, store.Update("proj", "legacy-impl", taskstore.TaskEntry{
+		Filename: "legacy-impl",
+		Status:   taskstore.Status("in_progress"),
+	}))
+
+	resp := doJSON(t, srv, http.MethodPost, "/v1/projects/proj/tasks/legacy-impl/transition",
+		map[string]string{"event": "implement_finished"})
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	entry := decodeEntry(t, resp)
+	assert.Equal(t, taskstore.StatusReviewing, entry.Status)
+}
+
+func TestTransition_LegacyCompleted_AcceptsReimplement(t *testing.T) {
+	srv, store := newTestServer(t)
+	createTask(t, store, "proj", "legacy-done")
+	require.NoError(t, store.Update("proj", "legacy-done", taskstore.TaskEntry{
+		Filename: "legacy-done",
+		Status:   taskstore.Status("completed"),
+	}))
+
+	resp := doJSON(t, srv, http.MethodPost, "/v1/projects/proj/tasks/legacy-done/transition",
+		map[string]string{"event": "reimplement"})
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	entry := decodeEntry(t, resp)
+	assert.Equal(t, taskstore.StatusImplementing, entry.Status)
+}
+
+func TestAvailableActions_LegacyInProgress_ExposesImplementFinished(t *testing.T) {
+	srv, store := newTestServer(t)
+	createTask(t, store, "proj", "legacy-impl-actions")
+	require.NoError(t, store.Update("proj", "legacy-impl-actions", taskstore.TaskEntry{
+		Filename: "legacy-impl-actions",
+		Status:   taskstore.Status("in_progress"),
+	}))
+
+	resp := doJSON(t, srv, http.MethodGet, "/v1/projects/proj/tasks/legacy-impl-actions/available-actions", nil)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body struct {
+		Transitions []struct{ Event string }
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	resp.Body.Close()
+
+	found := false
+	for _, tr := range body.Transitions {
+		if tr.Event == "implement_finished" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "implement_finished should be available for legacy in_progress tasks")
+}
+
+func TestAvailableActions_LegacyCompleted_ExposesDoneTransitions(t *testing.T) {
+	srv, store := newTestServer(t)
+	createTask(t, store, "proj", "legacy-done-actions")
+	require.NoError(t, store.Update("proj", "legacy-done-actions", taskstore.TaskEntry{
+		Filename: "legacy-done-actions",
+		Status:   taskstore.Status("completed"),
+	}))
+
+	resp := doJSON(t, srv, http.MethodGet, "/v1/projects/proj/tasks/legacy-done-actions/available-actions", nil)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body struct {
+		Transitions []struct{ Event string }
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	resp.Body.Close()
+
+	events := make(map[string]bool)
+	for _, tr := range body.Transitions {
+		events[tr.Event] = true
+	}
+	// All four transitions valid from StatusDone must be exposed.
+	assert.True(t, events["start_over"], "start_over should be available for legacy completed tasks")
+	assert.True(t, events["reimplement"], "reimplement should be available for legacy completed tasks")
+	assert.True(t, events["request_review"], "request_review should be available for legacy completed tasks")
+	assert.True(t, events["cancel"], "cancel should be available for legacy completed tasks")
+}
+
 func TestTransition_UnknownEvent_400(t *testing.T) {
 	srv, store := newTestServer(t)
 	createTask(t, store, "proj", "my-task")
