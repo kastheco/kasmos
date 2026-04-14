@@ -1,0 +1,129 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+}
+
+.editorWrap {
+  flex: 1;
+  min-height: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--card-border);
+}
+
+/* ── rose-pine-dark overrides for @uiw/react-md-editor ── */
+.container :global(.w-md-editor) {
+  background: var(--rp-surface) !important;
+  color: var(--rp-text) !important;
+  border: none !important;
+  font-family: var(--font-mono) !important;
+}
+
+.container :global(.w-md-editor-toolbar) {
+  background: var(--rp-overlay) !important;
+  border-bottom: 1px solid var(--card-border) !important;
+}
+
+.container :global(.w-md-editor-toolbar li > button) {
+  color: var(--rp-subtle) !important;
+}
+
+.container :global(.w-md-editor-toolbar li > button:hover) {
+  color: var(--rp-text) !important;
+  background: var(--rp-hl-med) !important;
+}
+
+.container :global(.w-md-editor-content) {
+  background: var(--rp-surface) !important;
+}
+
+.container :global(.w-md-editor-text-pre),
+.container :global(.w-md-editor-text-input),
+.container :global(.w-md-editor-text) {
+  color: var(--rp-text) !important;
+  caret-color: var(--rp-foam) !important;
+}
+
+/* CodeMirror layer */
+.container :global(.cm-editor) {
+  background: var(--rp-surface) !important;
+}
+
+.container :global(.cm-editor .cm-content) {
+  color: var(--rp-text) !important;
+  caret-color: var(--rp-foam) !important;
+}
+
+.container :global(.cm-editor .cm-line) {
+  color: var(--rp-text) !important;
+}
+
+.container :global(.cm-editor .cm-activeLine) {
+  background: rgba(224, 222, 244, 0.04) !important;
+}
+
+.container :global(.cm-editor .cm-cursor) {
+  border-left-color: var(--rp-foam) !important;
+}
+
+.container :global(.cm-editor .cm-selectionBackground) {
+  background: var(--rp-hl-med) !important;
+}
+
+/* ── actions bar ── */
+.error {
+  font-size: 12px;
+  color: var(--rp-love);
+  padding: 4px 2px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cancelBtn,
+.saveBtn {
+  padding: 7px 16px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.cancelBtn {
+  background: transparent;
+  border-color: var(--card-border);
+  color: var(--foreground-secondary);
+}
+
+.cancelBtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--foreground);
+}
+
+.saveBtn {
+  background: rgba(156, 207, 216, 0.12);
+  border-color: rgba(156, 207, 216, 0.35);
+  color: var(--rp-foam);
+}
+
+.saveBtn:hover:not(:disabled) {
+  background: rgba(156, 207, 216, 0.2);
+}
+
+.saveBtn:focus-visible {
+  outline: 2px solid var(--rp-foam);
+  outline-offset: 2px;
+}
+
+.cancelBtn:disabled,
+.saveBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
