@@ -1,0 +1,153 @@
+/* ── Trigger button ───────────────────────────────────────────────── */
+
+.trigger {
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* "actions" button variant */
+.buttonVariant {
+  padding: 4px 10px;
+  background: rgba(156, 207, 216, 0.08);
+  border-color: rgba(156, 207, 216, 0.25);
+  color: var(--rp-foam);
+}
+
+.buttonVariant:hover:not(:disabled) {
+  background: rgba(156, 207, 216, 0.16);
+  border-color: rgba(156, 207, 216, 0.45);
+}
+
+/* "⋮" kebab variant */
+.kebab {
+  padding: 2px 8px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--foreground-secondary);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.kebab:hover:not(:disabled) {
+  background: rgba(224, 222, 244, 0.06);
+  border-color: var(--card-border);
+  color: var(--foreground);
+}
+
+/* ── Popover ──────────────────────────────────────────────────────── */
+
+.popover {
+  position: fixed;
+  z-index: 8500;
+  width: 220px;
+  background: var(--rp-surface);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  padding: 4px 0;
+  overflow: hidden;
+  outline: none;
+  animation: fadeIn 0.1s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Loading state ───────────────────────────────────────────────── */
+
+.loading {
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--foreground-tertiary);
+}
+
+/* ── Sections ────────────────────────────────────────────────────── */
+
+.section {
+  padding: 4px 0;
+}
+
+.section + .section {
+  border-top: 1px solid var(--card-border);
+}
+
+.sectionLabel {
+  display: block;
+  padding: 4px 14px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--foreground-tertiary);
+  user-select: none;
+}
+
+/* Destructive section separator is slightly more prominent */
+.sectionDestructive {
+  padding-top: 4px;
+}
+
+/* ── Menu items ──────────────────────────────────────────────────── */
+
+.item {
+  display: block;
+  width: 100%;
+  padding: 7px 14px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--foreground);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  outline: none;
+}
+
+.item:hover,
+.item:focus-visible {
+  background: rgba(224, 222, 244, 0.06);
+  color: var(--foreground);
+}
+
+/* Override items — use iris tint */
+.itemOverride {
+  color: var(--rp-iris);
+}
+
+.itemOverride:hover,
+.itemOverride:focus-visible {
+  background: rgba(196, 167, 231, 0.08);
+  color: var(--rp-iris);
+}
+
+/* Destructive items — use love/red tint */
+.itemDestructive {
+  color: var(--rp-love);
+}
+
+.itemDestructive:hover,
+.itemDestructive:focus-visible {
+  background: rgba(235, 111, 146, 0.08);
+  color: var(--rp-love);
+}
