@@ -103,7 +103,7 @@
 }
 
 .table th {
-  padding: 10px 16px;
+  padding: 0;
   text-align: left;
   font-size: 11px;
   font-weight: 600;
@@ -112,6 +112,42 @@
   color: var(--foreground-tertiary);
   border-bottom: 1px solid var(--card-border);
   white-space: nowrap;
+}
+
+.sortBtn {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  width: 100%;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  transition: color 0.15s ease;
+}
+
+.sortBtn:hover {
+  color: var(--foreground-secondary);
+}
+
+.sortBtn:focus-visible {
+  outline: 2px solid var(--accent-amber);
+  outline-offset: -2px;
+}
+
+.sortActive {
+  color: var(--accent-amber);
+}
+
+.sortArrow {
+  font-size: 9px;
+  line-height: 1;
+  opacity: 0.85;
+  min-width: 9px;
 }
 
 .table td {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import StatusBadge from "../components/StatusBadge";
 import LastUpdated from "../components/LastUpdated";
@@ -20,6 +20,51 @@ const FILTERS: TaskFilter[] = [
   "cancelled",
 ];
 
+type SortKey = "status" | "filename" | "goal" | "topic" | "branch" | "created";
+type SortDir = "asc" | "desc";
+
+const STATUS_ORDER: Record<Status, number> = {
+  ready: 0,
+  planning: 1,
+  implementing: 2,
+  reviewing: 3,
+  done: 4,
+  cancelled: 5,
+};
+
+const DEFAULT_DIR: Record<SortKey, SortDir> = {
+  status: "asc",
+  filename: "asc",
+  goal: "asc",
+  topic: "asc",
+  branch: "asc",
+  created: "desc",
+};
+
+function sortValue(t: TaskEntry, key: SortKey): string | number | null {
+  switch (key) {
+    case "status":
+      return STATUS_ORDER[t.status] ?? 999;
+    case "filename":
+      return t.filename ?? "";
+    case "goal":
+      return t.goal ?? "";
+    case "topic":
+      return t.topic ?? "";
+    case "branch":
+      return t.branch ?? "";
+    case "created": {
+      if (!t.created_at) return null;
+      const ts = new Date(t.created_at).getTime();
+      return isNaN(ts) ? null : ts;
+    }
+  }
+}
+
+function isEmpty(v: string | number | null): boolean {
+  return v === null || v === "";
+}
+
 function truncate(text: string, max = 80): string {
   if (!text) return "";
   if (text.length <= max) return text;
@@ -38,26 +83,52 @@ export default function TasksPage() {
   const { project, projectSearch } = useProject();
 
   const [statusFilter, setStatusFilter] = useState<TaskFilter>("all");
+  const [sortKey, setSortKey] = useState<SortKey>("created");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const { data, loading, error, lastUpdatedAt, isRefreshing } =
     useAutoRefresh<TaskEntry[]>(
       async () => {
         if (!project) return [];
-        const data = await listTasks(project);
-        return [...data].sort(
-          (a, b) =>
-            new Date(b.created_at ?? 0).getTime() -
-            new Date(a.created_at ?? 0).getTime(),
-        );
+        return await listTasks(project);
       },
       [project],
     );
 
+  function toggleSort(key: SortKey) {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(DEFAULT_DIR[key]);
+    }
+  }
+
   const allTasks = data ?? [];
-  const tasks =
+  const filtered =
     statusFilter === "all"
       ? allTasks
       : allTasks.filter((t) => t.status === statusFilter);
+
+  const tasks = useMemo(() => {
+    const copy = [...filtered];
+    copy.sort((a, b) => {
+      const av = sortValue(a, sortKey);
+      const bv = sortValue(b, sortKey);
+      // empties always sort to the bottom, regardless of direction
+      if (isEmpty(av) && isEmpty(bv)) return 0;
+      if (isEmpty(av)) return 1;
+      if (isEmpty(bv)) return -1;
+      let cmp: number;
+      if (typeof av === "number" && typeof bv === "number") {
+        cmp = av - bv;
+      } else {
+        cmp = String(av).localeCompare(String(bv));
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return copy;
+  }, [filtered, sortKey, sortDir]);
 
   const countLabel =
     statusFilter === "all"
@@ -93,12 +164,48 @@ export default function TasksPage() {
           <table className={styles.table}>
             <thead>
               <tr>
-                <th>status</th>
-                <th>filename</th>
-                <th>goal</th>
-                <th>topic</th>
-                <th>branch</th>
-                <th>created</th>
+                <SortHeader
+                  k="status"
+                  label="status"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onToggle={toggleSort}
+                />
+                <SortHeader
+                  k="filename"
+                  label="filename"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onToggle={toggleSort}
+                />
+                <SortHeader
+                  k="goal"
+                  label="goal"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onToggle={toggleSort}
+                />
+                <SortHeader
+                  k="topic"
+                  label="topic"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onToggle={toggleSort}
+                />
+                <SortHeader
+                  k="branch"
+                  label="branch"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onToggle={toggleSort}
+                />
+                <SortHeader
+                  k="created"
+                  label="created"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onToggle={toggleSort}
+                />
               </tr>
             </thead>
             <tbody>
@@ -141,5 +248,35 @@ export default function TasksPage() {
         </div>
       )}
     </div>
+  );
+}
+
+interface SortHeaderProps {
+  k: SortKey;
+  label: string;
+  sortKey: SortKey;
+  sortDir: SortDir;
+  onToggle: (k: SortKey) => void;
+}
+
+function SortHeader({ k, label, sortKey, sortDir, onToggle }: SortHeaderProps) {
+  const active = sortKey === k;
+  const arrow = active ? (sortDir === "asc" ? "▲" : "▼") : "";
+  return (
+    <th>
+      <button
+        type="button"
+        className={`${styles.sortBtn} ${active ? styles.sortActive : ""}`}
+        onClick={() => onToggle(k)}
+        aria-sort={
+          active ? (sortDir === "asc" ? "ascending" : "descending") : "none"
+        }
+      >
+        <span>{label}</span>
+        <span className={styles.sortArrow} aria-hidden="true">
+          {arrow}
+        </span>
+      </button>
+    </th>
   );
 }
