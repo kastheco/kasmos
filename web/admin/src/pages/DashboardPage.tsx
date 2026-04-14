@@ -14,6 +14,7 @@ const STATUS_ORDER: Status[] = [
   "planning",
   "implementing",
   "reviewing",
+  "verifying",
   "done",
   "cancelled",
 ];
@@ -23,6 +24,7 @@ const STATUS_BORDER_CLASSES: Record<Status, string> = {
   planning: styles.planning,
   implementing: styles.implementing,
   reviewing: styles.reviewing,
+  verifying: styles.verifying,
   done: styles.done,
   cancelled: styles.cancelled,
 };
@@ -33,6 +35,7 @@ function countByStatus(tasks: TaskEntry[]): Record<Status, number> {
     planning: 0,
     implementing: 0,
     reviewing: 0,
+    verifying: 0,
     done: 0,
     cancelled: 0,
   };
@@ -94,7 +97,7 @@ export default function DashboardPage() {
         <>
           <h2 className={styles.sectionTitle}>task status</h2>
           <div className={styles.cardsGrid}>
-            {Array.from({ length: 6 }, (_, i) => (
+            {Array.from({ length: 7 }, (_, i) => (
               <Skeleton key={i} variant="card" />
             ))}
           </div>
