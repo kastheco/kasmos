@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +26,9 @@ type CachedRunner struct {
 
 	now func() time.Time
 
+	gitMu    sync.Mutex
+	gitCache map[string]gitCacheRecord
+
 	stopOnce sync.Once
 	stopCh   chan struct{}
 	doneCh   chan struct{}
@@ -38,20 +40,21 @@ type cacheableCommand struct {
 	key    string
 }
 
-type gitCacheEntry struct {
-	ExpiresAtUnixNano int64  `json:"expires_at_unix_nano"`
-	Output            []byte `json:"output"`
+type gitCacheRecord struct {
+	output    []byte
+	expiresAt time.Time
 }
 
 // NewCachedRunner returns a cache-aware Runner decorator.
 func NewCachedRunner(inner Runner, store *Store, watcher *Watcher) *CachedRunner {
 	r := &CachedRunner{
-		inner:   inner,
-		store:   store,
-		watcher: watcher,
-		now:     time.Now,
-		stopCh:  make(chan struct{}),
-		doneCh:  make(chan struct{}),
+		inner:    inner,
+		store:    store,
+		watcher:  watcher,
+		now:      time.Now,
+		gitCache: make(map[string]gitCacheRecord),
+		stopCh:   make(chan struct{}),
+		doneCh:   make(chan struct{}),
 	}
 
 	if store == nil || store.disabled || watcher == nil || watcher.disabled {
@@ -68,19 +71,22 @@ func (r *CachedRunner) Output(ctx context.Context, name string, args ...string) 
 	if r == nil || r.inner == nil {
 		return nil, nil
 	}
-	if r.store == nil || r.store.disabled {
-		return r.inner.Output(ctx, name, args...)
-	}
 
 	cmd, ok := classifyCommand(name, args)
 	if !ok {
 		return r.inner.Output(ctx, name, args...)
 	}
 
+	if r.store == nil || r.store.disabled {
+		return r.inner.Output(ctx, name, args...)
+	}
+
+	if cmd.family == "git" {
+		return r.outputGit(ctx, cmd, name, args)
+	}
+
 	if cached, ok := r.store.Get(cmd.key); ok {
-		if out, ok := r.decodeCachedOutput(cmd, cached); ok {
-			return out, nil
-		}
+		return cached, nil
 	}
 
 	out, err := r.inner.Output(ctx, name, args...)
@@ -91,10 +97,8 @@ func (r *CachedRunner) Output(ctx context.Context, name string, args ...string) 
 		// (bytes, nil) and the handler parses the bytes normally — for empty
 		// bytes (exit 1) this produces zero matches, which is equivalent to the
 		// handler's exit-code-1 path.
-		if cmd.family != "git" && isRgFdCacheableError(err) {
-			if ctx.Err() == nil {
-				r.storeOutput(cmd, out)
-			}
+		if isRgFdCacheableError(err) && ctx.Err() == nil {
+			r.store.Set(cmd.key, out, int64(len(out)))
 		}
 		return out, err
 	}
@@ -102,7 +106,35 @@ func (r *CachedRunner) Output(ctx context.Context, name string, args ...string) 
 		return out, nil
 	}
 
-	r.storeOutput(cmd, out)
+	r.store.Set(cmd.key, out, int64(len(out)))
+	return out, nil
+}
+
+// outputGit handles caching for git commands via the in-memory expiring map.
+func (r *CachedRunner) outputGit(ctx context.Context, cmd cacheableCommand, name string, args []string) ([]byte, error) {
+	r.gitMu.Lock()
+	if entry, ok := r.gitCache[cmd.key]; ok && r.now().Before(entry.expiresAt) {
+		out := append([]byte(nil), entry.output...)
+		r.gitMu.Unlock()
+		return out, nil
+	}
+	r.gitMu.Unlock()
+
+	out, err := r.inner.Output(ctx, name, args...)
+	if err != nil {
+		return out, err
+	}
+	if ctx.Err() != nil {
+		return out, nil
+	}
+
+	r.gitMu.Lock()
+	r.gitCache[cmd.key] = gitCacheRecord{
+		output:    append([]byte(nil), out...),
+		expiresAt: r.now().Add(gitCacheTTL),
+	}
+	r.gitMu.Unlock()
+
 	return out, nil
 }
 
@@ -138,10 +170,6 @@ func (r *CachedRunner) watchLoop() {
 }
 
 func (r *CachedRunner) invalidateForChangeSet(change ChangeSet) {
-	if r.store == nil {
-		return
-	}
-
 	paths := make(map[string]struct{}, len(change.Created)+len(change.Modified)+len(change.Deleted))
 	for _, path := range change.Created {
 		paths[filepath.Clean(path)] = struct{}{}
@@ -156,7 +184,14 @@ func (r *CachedRunner) invalidateForChangeSet(change ChangeSet) {
 		return
 	}
 
-	r.store.InvalidatePrefix("git:")
+	// Clear entire git in-memory cache on any filesystem change.
+	r.gitMu.Lock()
+	r.gitCache = make(map[string]gitCacheRecord)
+	r.gitMu.Unlock()
+
+	if r.store == nil {
+		return
+	}
 
 	root := watcherRoot(r.watcher)
 	for path := range paths {
@@ -167,44 +202,6 @@ func (r *CachedRunner) invalidateForChangeSet(change ChangeSet) {
 			r.store.InvalidatePrefix("fd:" + dir + ":")
 		}
 	}
-}
-
-func (r *CachedRunner) decodeCachedOutput(cmd cacheableCommand, payload []byte) ([]byte, bool) {
-	if cmd.family != "git" {
-		return append([]byte(nil), payload...), true
-	}
-
-	var entry gitCacheEntry
-	if err := json.Unmarshal(payload, &entry); err != nil {
-		r.store.Invalidate(cmd.key)
-		return nil, false
-	}
-	if entry.ExpiresAtUnixNano <= 0 || !r.now().Before(time.Unix(0, entry.ExpiresAtUnixNano)) {
-		r.store.Invalidate(cmd.key)
-		return nil, false
-	}
-
-	return append([]byte(nil), entry.Output...), true
-}
-
-func (r *CachedRunner) storeOutput(cmd cacheableCommand, out []byte) {
-	if r.store == nil {
-		return
-	}
-
-	payload := out
-	if cmd.family == "git" {
-		encoded, err := json.Marshal(gitCacheEntry{
-			ExpiresAtUnixNano: r.now().Add(gitCacheTTL).UnixNano(),
-			Output:            out,
-		})
-		if err != nil {
-			return
-		}
-		payload = encoded
-	}
-
-	r.store.Set(cmd.key, payload, int64(len(payload)))
 }
 
 func classifyCommand(name string, args []string) (cacheableCommand, bool) {

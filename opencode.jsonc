@@ -199,12 +199,9 @@
   },
   "mcp": {
     "kasmos": {
-      "command": [
-        "kas",
-        "mcp"
-      ],
       "enabled": true,
-      "type": "local"
+      "type": "remote",
+      "url": "http://127.0.0.1:7434/mcp"
     }
   }
 }

@@ -578,23 +578,6 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 	}
 	h.fsm = taskfsm.New(h.taskStore, project, h.taskStateDir)
 
-	// One-time migration: import plan-state.json into the task store if it exists.
-	// Only runs when plan-state.json is present; subsequent boots skip this.
-	planStateJSON := filepath.Join(h.taskStateDir, "plan-state.json")
-	if h.taskStore != nil {
-		if _, statErr := os.Stat(planStateJSON); statErr == nil {
-			migrated, migrateErr := taskstore.MigrateFromJSON(h.taskStore, project, h.taskStateDir)
-			if migrateErr != nil {
-				log.WarningLog.Printf("plan-state.json migration failed: %v", migrateErr)
-			} else {
-				log.InfoLog.Printf("migrated %d plans from plan-state.json to DB", migrated)
-				if renameErr := os.Rename(planStateJSON, planStateJSON+".migrated"); renameErr != nil {
-					log.WarningLog.Printf("failed to rename plan-state.json after migration: %v", renameErr)
-				}
-			}
-		}
-	}
-
 	h.nav = ui.NewNavigationPanel(&h.spinner)
 	h.toastManager = overlay.NewToastManager(&h.spinner)
 	h.overlays = overlay.NewManager()

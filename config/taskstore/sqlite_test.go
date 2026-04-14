@@ -63,9 +63,8 @@ func TestSQLiteStoreFromDB_CloseIsNoOp(t *testing.T) {
 	assert.Equal(t, "still-alive", got.Filename)
 }
 
-func TestSQLiteStoreFromDB_NoMigrateFromPlanstoreDB(t *testing.T) {
-	// NewSQLiteStoreFromDB must not attempt the planstore.db path-based import.
-	// Verified by succeeding on a temp dir that has no planstore.db sibling.
+func TestSQLiteStoreFromDB_SchemaComplete(t *testing.T) {
+	// NewSQLiteStoreFromDB must run schema migrations and expose a fully functional store.
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "taskstore.db")
 

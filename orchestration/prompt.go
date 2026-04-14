@@ -226,7 +226,7 @@ func BuildWaveAnnotationPrompt(planFile, project string) string {
 			"1. Store the updated plan via MCP `task_update_content` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
 			"2. Signal completion: prefer MCP `signal_create` (signal_type: \"planner-finished\", plan_file: \"%[1]s\", project: \"%[2]s\")\n"+
 			"   - If MCP is unavailable, use `kas signal emit planner_finished %[1]s`; if CLI signaling is also unavailable, fallback: `touch .kasmos/signals/planner-finished-%[1]s`\n"+
-			"Do not edit plan-state.json directly.",
+			"Do not modify task state directly.",
 		planFile, project,
 	)
 }

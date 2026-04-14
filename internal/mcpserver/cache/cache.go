@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"github.com/dgraph-io/ristretto/v2"
 	"github.com/dgraph-io/ristretto/v2/z"
@@ -28,12 +27,6 @@ type Store struct {
 	keys   map[string]struct{}
 	keyIDs map[string]cacheKey
 	idKeys map[cacheKey]string
-	costs  map[cacheKey]int64
-
-	hits      atomic.Int64
-	misses    atomic.Int64
-	evictions atomic.Int64
-	bytesUsed atomic.Int64
 
 	closeOnce sync.Once
 }
@@ -50,7 +43,6 @@ func NewStore(maxMB int) (*Store, error) {
 		keys:   make(map[string]struct{}),
 		keyIDs: make(map[string]cacheKey),
 		idKeys: make(map[cacheKey]string),
-		costs:  make(map[cacheKey]int64),
 	}
 
 	if os.Getenv("KAS_MCP_NOCACHE") == "1" {
@@ -66,7 +58,6 @@ func NewStore(maxMB int) (*Store, error) {
 		NumCounters: deriveNumCounters(maxCost),
 		MaxCost:     maxCost,
 		BufferItems: 64,
-		Metrics:     true,
 		OnEvict: func(item *ristretto.Item[[]byte]) {
 			store.recordEvictionByID(cacheKey{key: item.Key, conflict: item.Conflict})
 		},
@@ -87,10 +78,8 @@ func (s *Store) Get(key string) ([]byte, bool) {
 
 	value, ok := s.cache.Get(key)
 	if !ok {
-		s.misses.Add(1)
 		return nil, false
 	}
-	s.hits.Add(1)
 	return cloneBytes(value), true
 }
 
@@ -111,7 +100,7 @@ func (s *Store) Set(key string, value []byte, cost int64) {
 		return
 	}
 
-	s.recordSet(key, id, cost)
+	s.recordSet(key, id)
 }
 
 // Invalidate removes a single cache key.
@@ -120,12 +109,7 @@ func (s *Store) Invalidate(key string) {
 		return
 	}
 
-	cost, removed := s.removeTrackedKey(key)
-	if removed {
-		s.evictions.Add(1)
-		s.addBytes(-cost)
-	}
-
+	s.removeTrackedKey(key)
 	s.cache.Del(key)
 }
 
@@ -136,18 +120,11 @@ func (s *Store) InvalidatePrefix(prefix string) {
 	}
 
 	keys := make([]string, 0)
-	var totalCost int64
-	var removed int64
 	s.mu.Lock()
 	for key := range s.keys {
 		if strings.HasPrefix(key, prefix) {
 			keys = append(keys, key)
 			if id, ok := s.keyIDs[key]; ok {
-				if cost, exists := s.costs[id]; exists {
-					totalCost += cost
-					removed++
-					delete(s.costs, id)
-				}
 				delete(s.keyIDs, key)
 				delete(s.idKeys, id)
 			}
@@ -155,11 +132,6 @@ func (s *Store) InvalidatePrefix(prefix string) {
 		}
 	}
 	s.mu.Unlock()
-
-	if removed > 0 {
-		s.evictions.Add(removed)
-		s.addBytes(-totalCost)
-	}
 
 	for _, key := range keys {
 		s.cache.Del(key)
@@ -172,23 +144,11 @@ func (s *Store) Flush() {
 		return
 	}
 
-	var totalCost int64
-	var removed int64
 	s.mu.Lock()
-	for _, cost := range s.costs {
-		totalCost += cost
-		removed++
-	}
 	s.keys = make(map[string]struct{})
 	s.keyIDs = make(map[string]cacheKey)
 	s.idKeys = make(map[cacheKey]string)
-	s.costs = make(map[cacheKey]int64)
 	s.mu.Unlock()
-
-	if removed > 0 {
-		s.evictions.Add(removed)
-		s.addBytes(-totalCost)
-	}
 
 	s.cache.Clear()
 }
@@ -242,32 +202,24 @@ func hashCacheKey(key string) cacheKey {
 	return cacheKey{key: primary, conflict: conflict}
 }
 
-func (s *Store) recordSet(key string, id cacheKey, cost int64) {
+func (s *Store) recordSet(key string, id cacheKey) {
 	if s == nil {
 		return
 	}
 
-	var previous int64
 	s.mu.Lock()
-	if priorID, ok := s.keyIDs[key]; ok {
-		previous = s.costs[priorID]
-		if priorID != id {
-			delete(s.costs, priorID)
-			delete(s.idKeys, priorID)
-		}
+	if priorID, ok := s.keyIDs[key]; ok && priorID != id {
+		delete(s.idKeys, priorID)
 	}
 	s.keys[key] = struct{}{}
 	s.keyIDs[key] = id
 	s.idKeys[id] = key
-	s.costs[id] = cost
 	s.mu.Unlock()
-
-	s.addBytes(cost - previous)
 }
 
-func (s *Store) removeTrackedKey(key string) (int64, bool) {
+func (s *Store) removeTrackedKey(key string) {
 	if s == nil {
-		return 0, false
+		return
 	}
 
 	s.mu.Lock()
@@ -276,15 +228,12 @@ func (s *Store) removeTrackedKey(key string) (int64, bool) {
 	id, ok := s.keyIDs[key]
 	if !ok {
 		delete(s.keys, key)
-		return 0, false
+		return
 	}
 
-	cost := s.costs[id]
 	delete(s.keys, key)
 	delete(s.keyIDs, key)
 	delete(s.idKeys, id)
-	delete(s.costs, id)
-	return cost, true
 }
 
 func (s *Store) recordEvictionByID(id cacheKey) {
@@ -292,43 +241,11 @@ func (s *Store) recordEvictionByID(id cacheKey) {
 		return
 	}
 
-	var (
-		cost int64
-		ok   bool
-	)
-
 	s.mu.Lock()
-	if cost, ok = s.costs[id]; ok {
-		if key, exists := s.idKeys[id]; exists {
-			delete(s.keys, key)
-			delete(s.keyIDs, key)
-		}
-		delete(s.idKeys, id)
-		delete(s.costs, id)
+	if key, exists := s.idKeys[id]; exists {
+		delete(s.keys, key)
+		delete(s.keyIDs, key)
 	}
+	delete(s.idKeys, id)
 	s.mu.Unlock()
-
-	if !ok {
-		return
-	}
-
-	s.evictions.Add(1)
-	s.addBytes(-cost)
-}
-
-func (s *Store) addBytes(delta int64) {
-	if s == nil || delta == 0 {
-		return
-	}
-
-	for {
-		current := s.bytesUsed.Load()
-		next := current + delta
-		if next < 0 {
-			next = 0
-		}
-		if s.bytesUsed.CompareAndSwap(current, next) {
-			return
-		}
-	}
 }
