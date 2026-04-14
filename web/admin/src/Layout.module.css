@@ -15,19 +15,10 @@
 }
 
 .logo {
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
   color: var(--accent-amber);
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.logoSub {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--foreground-secondary);
-  text-transform: lowercase;
+  letter-spacing: 0.01em;
 }
 
 .navList {
@@ -63,7 +54,7 @@
 }
 
 .switcherSection {
-  margin-top: auto;
+  margin-top: 0;
 }
 
 @media (max-width: 768px) {
@@ -81,10 +72,6 @@
     align-items: center;
     gap: 16px;
     flex-wrap: wrap;
-  }
-
-  .logoSub {
-    display: none;
   }
 
   .navList {

@@ -10,85 +10,85 @@
 }
 
 .ready {
-  background: rgba(126, 200, 216, 0.1);
-  border-color: rgba(126, 200, 216, 0.3);
-  color: #7EC8D8;
+  background: rgba(156, 207, 216, 0.1);
+  border-color: rgba(156, 207, 216, 0.3);
+  color: #9ccfd8;
 }
 
 .planning {
-  background: rgba(240, 168, 104, 0.1);
-  border-color: rgba(240, 168, 104, 0.3);
-  color: #F0A868;
+  background: rgba(246, 193, 119, 0.1);
+  border-color: rgba(246, 193, 119, 0.3);
+  color: #f6c177;
 }
 
 .implementing {
-  background: rgba(100, 200, 100, 0.1);
-  border-color: rgba(100, 200, 100, 0.3);
-  color: #88cc88;
+  background: rgba(62, 143, 176, 0.1);
+  border-color: rgba(62, 143, 176, 0.3);
+  color: #3e8fb0;
 }
 
 .reviewing {
-  background: rgba(180, 120, 220, 0.1);
-  border-color: rgba(180, 120, 220, 0.3);
-  color: #b478dc;
+  background: rgba(196, 167, 231, 0.1);
+  border-color: rgba(196, 167, 231, 0.3);
+  color: #c4a7e7;
 }
 
 .done {
-  background: rgba(80, 180, 80, 0.1);
-  border-color: rgba(80, 180, 80, 0.3);
-  color: #50b450;
+  background: rgba(62, 143, 176, 0.1);
+  border-color: rgba(62, 143, 176, 0.3);
+  color: #3e8fb0;
 }
 
 .cancelled {
-  background: rgba(150, 150, 150, 0.1);
-  border-color: rgba(150, 150, 150, 0.3);
-  color: #888888;
+  background: rgba(144, 140, 170, 0.1);
+  border-color: rgba(144, 140, 170, 0.3);
+  color: #908caa;
 }
 
 .pending {
-  background: rgba(126, 200, 216, 0.08);
-  border-color: rgba(126, 200, 216, 0.2);
-  color: #7EC8D8;
+  background: rgba(156, 207, 216, 0.08);
+  border-color: rgba(156, 207, 216, 0.2);
+  color: #9ccfd8;
 }
 
 .running {
-  background: rgba(240, 168, 104, 0.1);
-  border-color: rgba(240, 168, 104, 0.3);
-  color: #F0A868;
+  background: rgba(246, 193, 119, 0.1);
+  border-color: rgba(246, 193, 119, 0.3);
+  color: #f6c177;
 }
 
 .complete {
-  background: rgba(80, 180, 80, 0.1);
-  border-color: rgba(80, 180, 80, 0.3);
-  color: #50b450;
+  background: rgba(62, 143, 176, 0.1);
+  border-color: rgba(62, 143, 176, 0.3);
+  color: #3e8fb0;
 }
 
 .failed {
-  background: rgba(220, 80, 80, 0.1);
-  border-color: rgba(220, 80, 80, 0.3);
-  color: #dc5050;
+  background: rgba(235, 111, 146, 0.1);
+  border-color: rgba(235, 111, 146, 0.3);
+  color: #eb6f92;
 }
 
 .closed {
-  background: rgba(150, 150, 150, 0.1);
-  border-color: rgba(150, 150, 150, 0.3);
-  color: #888888;
+  background: rgba(144, 140, 170, 0.1);
+  border-color: rgba(144, 140, 170, 0.3);
+  color: #908caa;
 }
 
 .blocked {
-  background: rgba(220, 80, 80, 0.08);
-  border-color: rgba(220, 80, 80, 0.2);
-  color: #dc5050;
+  background: rgba(235, 111, 146, 0.08);
+  border-color: rgba(235, 111, 146, 0.2);
+  color: #eb6f92;
 }
 
 .inReview {
-  background: rgba(180, 120, 220, 0.08);
-  border-color: rgba(180, 120, 220, 0.2);
-  color: #b478dc;
+  background: rgba(196, 167, 231, 0.08);
+  border-color: rgba(196, 167, 231, 0.2);
+  color: #c4a7e7;
 }
 
 .unknown {
-  background: rgba(150, 150, 150, 0.1);
-  border-color: rgba(150, 150, 150, 0.3);
-  color: #888888;
+  background: rgba(144, 140, 170, 0.1);
+  border-color: rgba(144, 140, 170, 0.3);
+  color: #908caa;
 }

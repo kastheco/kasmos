@@ -49,7 +49,7 @@
 }
 
 .filterSelect option {
-  background: #1a1b26;
+  background: #2a273f;
 }
 
 .filterInput {
@@ -66,12 +66,12 @@
 }
 
 .errorMsg {
-  color: #ff6b6b;
+  color: #eb6f92;
   font-size: 13px;
   margin-bottom: 12px;
   padding: 8px 12px;
-  background: rgba(255, 107, 107, 0.08);
-  border: 1px solid rgba(255, 107, 107, 0.2);
+  background: rgba(235, 111, 146, 0.08);
+  border: 1px solid rgba(235, 111, 146, 0.2);
   border-radius: 6px;
 }
 
@@ -195,18 +195,18 @@
 }
 
 .levelInfo {
-  background: rgba(126, 200, 216, 0.12);
+  background: rgba(156, 207, 216, 0.12);
   color: var(--accent-teal);
 }
 
 .levelWarn {
-  background: rgba(240, 168, 104, 0.12);
+  background: rgba(246, 193, 119, 0.12);
   color: var(--accent-amber);
 }
 
 .levelError {
-  background: rgba(255, 107, 107, 0.12);
-  color: #ff6b6b;
+  background: rgba(235, 111, 146, 0.12);
+  color: #eb6f92;
 }
 
 /* ─── Kind badges ─────────────────────────────────────────── */
@@ -223,18 +223,18 @@
 }
 
 .toneLifecycle {
-  background: rgba(126, 200, 216, 0.1);
+  background: rgba(156, 207, 216, 0.1);
   color: var(--accent-teal);
 }
 
 .tonePlan {
-  background: rgba(240, 168, 104, 0.1);
+  background: rgba(246, 193, 119, 0.1);
   color: var(--accent-amber);
 }
 
 .toneWave {
-  background: rgba(180, 150, 255, 0.1);
-  color: #b496ff;
+  background: rgba(196, 167, 231, 0.1);
+  color: #c4a7e7;
 }
 
 .toneOps {
@@ -243,8 +243,8 @@
 }
 
 .toneError {
-  background: rgba(255, 107, 107, 0.1);
-  color: #ff6b6b;
+  background: rgba(235, 111, 146, 0.1);
+  color: #eb6f92;
 }
 
 /* ─── Message column ──────────────────────────────────────── */

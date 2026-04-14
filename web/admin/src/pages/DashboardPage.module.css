@@ -14,7 +14,7 @@
 .pageTitle {
   font-size: 24px;
   font-weight: 700;
-  color: #ededed;
+  color: #e0def4;
   margin: 0;
 }
 
@@ -23,7 +23,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #888888;
+  color: #908caa;
   margin: 0 0 16px;
 }
 
@@ -55,7 +55,7 @@
   font-size: 12px;
   font-weight: 600;
   text-transform: lowercase;
-  color: #888888;
+  color: #908caa;
   margin: 0 0 10px;
   letter-spacing: 0.02em;
 }
@@ -63,34 +63,34 @@
 .statusCardCount {
   font-size: 34px;
   font-weight: 700;
-  color: #ededed;
+  color: #e0def4;
   line-height: 1;
 }
 
 /* Status-specific left border colors — match StatusBadge */
 
 .ready {
-  border-left-color: #7ec8d8;
+  border-left-color: #9ccfd8;
 }
 
 .planning {
-  border-left-color: #f0a868;
+  border-left-color: #f6c177;
 }
 
 .implementing {
-  border-left-color: #88cc88;
+  border-left-color: #3e8fb0;
 }
 
 .reviewing {
-  border-left-color: #b478dc;
+  border-left-color: #c4a7e7;
 }
 
 .done {
-  border-left-color: #50b450;
+  border-left-color: #3e8fb0;
 }
 
 .cancelled {
-  border-left-color: #888888;
+  border-left-color: #908caa;
 }
 
 /* Recent activity section */
@@ -125,19 +125,19 @@
 .activityKind {
   font-size: 11px;
   font-weight: 600;
-  color: #f0a868;
+  color: #f6c177;
   white-space: nowrap;
   padding: 2px 7px;
   border-radius: 6px;
-  background: rgba(240, 168, 104, 0.1);
-  border: 1px solid rgba(240, 168, 104, 0.2);
+  background: rgba(246, 193, 119, 0.1);
+  border: 1px solid rgba(246, 193, 119, 0.2);
   flex-shrink: 0;
   align-self: center;
 }
 
 .activityMessage {
   font-size: 13px;
-  color: #aaaaaa;
+  color: #908caa;
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -147,7 +147,7 @@
 
 .activityTime {
   font-size: 11px;
-  color: #555555;
+  color: #6e6a86;
   white-space: nowrap;
   flex-shrink: 0;
   align-self: center;
@@ -159,7 +159,7 @@
   border-radius: 10px;
   padding: 24px;
   text-align: center;
-  color: #555555;
+  color: #6e6a86;
   font-size: 13px;
   backdrop-filter: blur(12px);
 }
@@ -167,11 +167,11 @@
 /* Error panel */
 
 .error {
-  background: rgba(220, 80, 80, 0.08);
-  border: 1px solid rgba(220, 80, 80, 0.25);
+  background: rgba(235, 111, 146, 0.08);
+  border: 1px solid rgba(235, 111, 146, 0.25);
   border-radius: 10px;
   padding: 16px 20px;
-  color: #dc5050;
+  color: #eb6f92;
   font-size: 13px;
   margin-bottom: 24px;
 }
@@ -179,7 +179,7 @@
 /* Loading state */
 
 .loadingText {
-  color: #555555;
+  color: #6e6a86;
   font-size: 14px;
   padding: 16px 0;
   margin: 0;

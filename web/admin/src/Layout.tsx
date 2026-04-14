@@ -10,8 +10,10 @@ export default function Layout() {
     <div className={styles.container}>
       <nav className={styles.sidebar}>
         <div className={styles.logo}>
-          <span>kas</span>
-          <span className={styles.logoSub}>admin</span>
+          <span>kasmos</span>
+        </div>
+        <div className={styles.switcherSection}>
+          <ProjectSwitcher />
         </div>
         <ul className={styles.navList}>
           <li>
@@ -46,9 +48,6 @@ export default function Layout() {
             </NavLink>
           </li>
         </ul>
-        <div className={styles.switcherSection}>
-          <ProjectSwitcher />
-        </div>
       </nav>
       <main className={styles.main}>
         <Outlet />

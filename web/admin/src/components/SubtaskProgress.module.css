@@ -102,57 +102,57 @@
 
 /* Status colours — dot and badge share the same modifier class */
 .statusComplete {
-  background: rgba(80, 180, 80, 0.12);
-  border: 1px solid rgba(80, 180, 80, 0.3);
-  color: #50b450;
+  background: rgba(62, 143, 176, 0.12);
+  border: 1px solid rgba(62, 143, 176, 0.3);
+  color: #3e8fb0;
 }
 
 .statusDone {
-  background: rgba(80, 180, 80, 0.1);
-  border: 1px solid rgba(80, 180, 80, 0.25);
-  color: #50b450;
+  background: rgba(62, 143, 176, 0.1);
+  border: 1px solid rgba(62, 143, 176, 0.25);
+  color: #3e8fb0;
 }
 
 .statusClosed {
-  background: rgba(150, 150, 150, 0.1);
-  border: 1px solid rgba(150, 150, 150, 0.25);
-  color: #888888;
+  background: rgba(144, 140, 170, 0.1);
+  border: 1px solid rgba(144, 140, 170, 0.25);
+  color: #908caa;
 }
 
 .statusRunning {
-  background: rgba(240, 168, 104, 0.12);
-  border: 1px solid rgba(240, 168, 104, 0.3);
-  color: #F0A868;
+  background: rgba(246, 193, 119, 0.12);
+  border: 1px solid rgba(246, 193, 119, 0.3);
+  color: #f6c177;
 }
 
 .statusFailed {
-  background: rgba(220, 80, 80, 0.12);
-  border: 1px solid rgba(220, 80, 80, 0.3);
-  color: #dc5050;
+  background: rgba(235, 111, 146, 0.12);
+  border: 1px solid rgba(235, 111, 146, 0.3);
+  color: #eb6f92;
 }
 
 .statusBlocked {
-  background: rgba(220, 80, 80, 0.08);
-  border: 1px solid rgba(220, 80, 80, 0.2);
-  color: #dc5050;
+  background: rgba(235, 111, 146, 0.08);
+  border: 1px solid rgba(235, 111, 146, 0.2);
+  color: #eb6f92;
 }
 
 .statusInReview {
-  background: rgba(180, 120, 220, 0.1);
-  border: 1px solid rgba(180, 120, 220, 0.25);
-  color: #b478dc;
+  background: rgba(196, 167, 231, 0.1);
+  border: 1px solid rgba(196, 167, 231, 0.25);
+  color: #c4a7e7;
 }
 
 .statusPending {
-  background: rgba(126, 200, 216, 0.08);
-  border: 1px solid rgba(126, 200, 216, 0.18);
-  color: #7EC8D8;
+  background: rgba(156, 207, 216, 0.08);
+  border: 1px solid rgba(156, 207, 216, 0.18);
+  color: #9ccfd8;
 }
 
 .statusUnknown {
-  background: rgba(150, 150, 150, 0.1);
-  border: 1px solid rgba(150, 150, 150, 0.25);
-  color: #888888;
+  background: rgba(144, 140, 170, 0.1);
+  border: 1px solid rgba(144, 140, 170, 0.25);
+  color: #908caa;
 }
 
 /* The dot element should use only the background colour — override border/color */

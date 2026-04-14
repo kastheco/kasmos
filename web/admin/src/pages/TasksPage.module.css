@@ -44,23 +44,23 @@
 }
 
 .filterActive {
-  background: rgba(240, 168, 104, 0.1);
-  border-color: rgba(240, 168, 104, 0.4);
+  background: rgba(246, 193, 119, 0.1);
+  border-color: rgba(246, 193, 119, 0.4);
   color: var(--accent-amber);
 }
 
 .filterActive:hover {
-  background: rgba(240, 168, 104, 0.15);
-  border-color: rgba(240, 168, 104, 0.6);
+  background: rgba(246, 193, 119, 0.15);
+  border-color: rgba(246, 193, 119, 0.6);
   color: var(--accent-amber);
 }
 
 .error {
   padding: 12px 16px;
   border-radius: 6px;
-  background: rgba(220, 80, 80, 0.1);
-  border: 1px solid rgba(220, 80, 80, 0.3);
-  color: #dc5050;
+  background: rgba(235, 111, 146, 0.1);
+  border: 1px solid rgba(235, 111, 146, 0.3);
+  color: #eb6f92;
   margin-bottom: 16px;
   font-size: 13px;
 }
@@ -97,7 +97,7 @@
 .table thead tr {
   position: sticky;
   top: 0;
-  background: rgba(10, 11, 20, 0.95);
+  background: rgba(35, 33, 54, 0.95);
   backdrop-filter: blur(4px);
   z-index: 1;
 }

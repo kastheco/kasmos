@@ -1,15 +1,32 @@
 :root {
-  --background: #0a0b14;
-  --foreground: #ededed;
-  --foreground-secondary: #888888;
-  --foreground-tertiary: #555555;
-  --accent-amber: #F0A868;
-  --accent-teal: #7EC8D8;
-  --card-bg: rgba(255, 255, 255, 0.03);
-  --card-border: rgba(255, 255, 255, 0.06);
-  --card-border-hover: rgba(240, 168, 104, 0.3);
-  --glow-amber: rgba(240, 168, 104, 0.15);
-  --glow-teal: rgba(126, 200, 216, 0.15);
+  /* rose pine moon */
+  --rp-base: #232136;
+  --rp-surface: #2a273f;
+  --rp-overlay: #393552;
+  --rp-muted: #6e6a86;
+  --rp-subtle: #908caa;
+  --rp-text: #e0def4;
+  --rp-love: #eb6f92;
+  --rp-gold: #f6c177;
+  --rp-rose: #ea9a97;
+  --rp-pine: #3e8fb0;
+  --rp-foam: #9ccfd8;
+  --rp-iris: #c4a7e7;
+  --rp-hl-low: #2a283e;
+  --rp-hl-med: #44415a;
+  --rp-hl-high: #56526e;
+
+  --background: var(--rp-base);
+  --foreground: var(--rp-text);
+  --foreground-secondary: var(--rp-subtle);
+  --foreground-tertiary: var(--rp-muted);
+  --accent-amber: var(--rp-gold);
+  --accent-teal: var(--rp-foam);
+  --card-bg: rgba(224, 222, 244, 0.03);
+  --card-border: rgba(224, 222, 244, 0.08);
+  --card-border-hover: rgba(196, 167, 231, 0.35);
+  --glow-amber: rgba(246, 193, 119, 0.18);
+  --glow-teal: rgba(156, 207, 216, 0.18);
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
 }
@@ -50,8 +67,8 @@ pre, code {
 }
 
 ::selection {
-  background: rgba(240, 168, 104, 0.3);
-  color: #fff;
+  background: rgba(196, 167, 231, 0.35);
+  color: var(--rp-text);
 }
 
 #root {
