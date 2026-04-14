@@ -8,8 +8,7 @@ TUI-based multi-agent orchestration IDE. Manages concurrent AI agent sessions (c
 |-----------|---------|
 | `app/` | TUI application logic (bubbletea model, input handling, state) |
 | `cmd/` | CLI entry points (cobra commands: `kas`, `kas task`, `kas instance`, `kas tmux`) |
-| `config/` | Configuration management (`GetConfigDir` repo-root anchoring, repo-rooted `.kasmos/config.toml`, task store wiring, one-time legacy JSON import path, agent profiles) |
-| `contracts/` | Shared interfaces and types |
+| `config/` | Configuration management (`GetConfigDir` repo-root anchoring, repo-rooted `.kasmos/config.toml`, task store wiring, agent profiles) |
 | `daemon/` | Background daemon for auto-accept mode |
 | `internal/` | Internal packages (check, clickup, initcmd, mcpclient, opencodesession, sentry) |
 | `keys/` | Keybinding definitions |
