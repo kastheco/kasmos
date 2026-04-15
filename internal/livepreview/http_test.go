@@ -531,6 +531,42 @@ func TestHTTPHandler_ListInstances_IncludesExecutionMode(t *testing.T) {
 	assert.Empty(t, entries[2].ExecutionMode)
 }
 
+// TestHTTPHandler_ListInstances_DaemonHeadlessExecutionMode verifies that
+// execution_mode flows through the daemon-backed path as well as the
+// state.json path. The web admin depends on this to disable composer and
+// polling before hitting tmux-only routes for headless plan agents; if the
+// daemon list adapter dropped the field, the merged list API would silently
+// surface headless instances as tmux.
+func TestHTTPHandler_ListInstances_DaemonHeadlessExecutionMode(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root) // empty state.json so the entry comes from the daemon only
+	daemon := &fakeDaemonLister{
+		records: []Record{
+			{
+				Title:         "headless-plan",
+				Status:        StatusRunning,
+				Program:       "opencode",
+				AgentType:     "coder",
+				TaskFile:      "feature",
+				ExecutionMode: "headless",
+			},
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, daemon)
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var entries []ListEntry
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&entries))
+	require.Len(t, entries, 1)
+	assert.Equal(t, "headless-plan", entries[0].Title)
+	assert.Equal(t, "headless", entries[0].ExecutionMode,
+		"daemon-backed records must expose execution_mode so the SPA can skip tmux-only routes")
+}
+
 // ---------------------------------------------------------------------------
 // NewHTTPHandler — send
 // ---------------------------------------------------------------------------
