@@ -14,7 +14,6 @@ import (
 	"github.com/kastheco/kasmos/config"
 )
 
-
 // Status mirrors session.Status (int iota) without importing session.
 // Values must stay in sync with session package constants:
 //
