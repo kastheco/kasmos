@@ -25,6 +25,25 @@ import styles from "./TaskActionsMenu.module.css";
 // Transitions that require a confirmation dialog before firing
 const DESTRUCTIVE_TRANSITIONS = new Set(["cancel", "start_over", "reimplement"]);
 
+// Transitions that cause the backend to emit a gateway signal, which triggers
+// the daemon to spawn a worker. See:
+//   - config/taskfsm/events.go         — published request tokens
+//   - config/taskfsm/gateway_signal.go:GatewaySignalTypeForEvent — canonical
+//     signal-bearing lifecycle events
+const SIGNAL_EMITTING_TRANSITIONS = new Set([
+  "planner_finished",
+  "implement_finished",
+  "review_approved",
+  "review_changes",
+  "review_changes_requested",
+  "verify_approved",
+  "verify_failed",
+]);
+
+function transitionSpawnsWorker(event: string): boolean {
+  return SIGNAL_EMITTING_TRANSITIONS.has(event.replace(/-/g, "_"));
+}
+
 export interface TaskActionsMenuProps {
   project: string;
   task: TaskEntry;
@@ -169,7 +188,11 @@ export default function TaskActionsMenu({
     setBusy(true);
     try {
       await applyTaskTransition(project, task.filename, event);
-      toast.show(`transition '${label}' applied`);
+      toast.show(
+        transitionSpawnsWorker(event)
+          ? `transition '${label}' applied - spawning worker`
+          : `transition '${label}' applied`,
+      );
       setOpen(false);
       setDialog({ kind: "none" });
       await onChanged?.();
