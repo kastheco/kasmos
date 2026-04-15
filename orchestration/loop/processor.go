@@ -186,9 +186,25 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			}
 		}
 
+		alreadyApplied := false
 		if err := p.fsm.Transition(sig.TaskFile, sig.Event); err != nil {
-			// Invalid or already-consumed transition — skip silently.
-			continue
+			// Check if the FSM transition was already applied externally (e.g. by
+			// the HTTP admin handler before emitting the gateway signal). For
+			// planner_finished specifically, the target state is "ready"; if the
+			// task is already there we still need to emit the downstream actions
+			// (PlannerCompleteAction, AutoImplementAction) so the daemon spawns
+			// the architect. For all other events the skip-silently behaviour is
+			// correct because the daemon is the sole FSM driver.
+			if sig.Event == taskfsm.PlannerFinished {
+				if entry, ok := p.taskEntry(sig.TaskFile); ok {
+					if taskfsm.Status(entry.Status) == taskfsm.StatusReady {
+						alreadyApplied = true
+					}
+				}
+			}
+			if !alreadyApplied {
+				continue
+			}
 		}
 
 		switch sig.Event {
