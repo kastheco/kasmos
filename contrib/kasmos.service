@@ -11,7 +11,11 @@ After=network.target
 [Service]
 Type=simple
 ExecStart=__KAS_BIN__ daemon start --foreground
-ExecStop=__KAS_BIN__ daemon stop
+# No ExecStop: `kas daemon stop` reads a PID file that the --foreground path
+# never writes. The foreground parent forwards SIGTERM to the child daemon,
+# which runs its graceful shutdown within ~5s. Let systemd drive stop directly.
+KillSignal=SIGTERM
+TimeoutStopSec=15
 Restart=on-failure
 RestartSec=5
 Environment=HOME=%h

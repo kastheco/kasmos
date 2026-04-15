@@ -12,6 +12,8 @@ After=network.target kasmos.service
 Type=simple
 # example: ExecStart=__KAS_BIN__ serve --repo /home/you/dev/kasmos
 ExecStart=__KAS_BIN__ serve
+KillSignal=SIGTERM
+TimeoutStopSec=15
 Restart=on-failure
 RestartSec=5
 Environment=HOME=%h

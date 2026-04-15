@@ -572,17 +572,21 @@ func (d *Daemon) Run(ctx context.Context) error {
 			d.spawner.DrainAll(drainCtx)
 			drainCancel()
 
-			if shutErr := srv.Shutdown(context.Background()); shutErr != nil {
+			// Close the broadcaster first so any active SSE handlers on
+			// /v1/events see their subscription channel close and return,
+			// otherwise srv.Shutdown would block on them indefinitely.
+			d.broadcaster.Close()
+
+			shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if shutErr := srv.Shutdown(shutCtx); shutErr != nil {
 				d.logger.Warn("control socket shutdown error", "err", shutErr)
 			}
+			shutCancel()
 			wg.Wait()
 			if d.pidLock != nil {
 				_ = d.pidLock.Release()
 				d.pidLock = nil
 			}
-			// Close broadcaster after HTTP server shuts down so no new SSE
-			// connections are started after we signal EOF.
-			d.broadcaster.Close()
 			// Release the shared global taskstore connection pool.
 			d.repos.Close()
 			return nil

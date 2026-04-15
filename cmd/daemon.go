@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"syscall"
 	"time"
@@ -95,9 +96,35 @@ func newDaemonStartCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("start daemon foreground: %w", err)
 				}
-				state, err := proc.Wait()
-				if err != nil {
-					return fmt.Errorf("daemon foreground exited: %w", err)
+
+				// Forward SIGTERM/SIGINT from systemd (or a controlling tty) to
+				// the child so it can run its graceful-shutdown path. Without
+				// this, the parent dies immediately on SIGTERM and the child is
+				// left to be cgroup-killed after TimeoutStopSec — which looks
+				// like a restart hang.
+				sigCh := make(chan os.Signal, 1)
+				signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
+				waitCh := make(chan *os.ProcessState, 1)
+				go func() {
+					state, werr := proc.Wait()
+					if werr != nil {
+						waitCh <- nil
+						return
+					}
+					waitCh <- state
+				}()
+				var state *os.ProcessState
+				select {
+				case sig := <-sigCh:
+					if sendErr := proc.Signal(sig); sendErr != nil {
+						return fmt.Errorf("forward signal to daemon: %w", sendErr)
+					}
+					state = <-waitCh
+				case state = <-waitCh:
+				}
+				signal.Stop(sigCh)
+				if state == nil {
+					return fmt.Errorf("daemon foreground: wait failed")
 				}
 				if !state.Success() {
 					return fmt.Errorf("daemon foreground exited with code %d", state.ExitCode())
