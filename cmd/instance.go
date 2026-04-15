@@ -136,6 +136,14 @@ func resumeProject(rec instanceRecord) string {
 	return ""
 }
 
+func resumeProgramBase(program string) string {
+	fields := strings.Fields(strings.TrimSpace(program))
+	if len(fields) == 0 {
+		return ""
+	}
+	return filepath.Base(fields[0])
+}
+
 // buildResumeCommand reconstructs the tmux program command string for a resumed
 // instance.  It mirrors the env-var and flag injection performed by TmuxSession.Start()
 // so that the resumed agent is indistinguishable from a freshly started one.
@@ -143,20 +151,28 @@ func buildResumeCommand(rec instanceRecord, worktreePath string) string {
 	program := rec.Program
 
 	// Append --permission-mode bypassPermissions for Claude if originally enabled.
-	if rec.SkipPermissions && strings.HasSuffix(program, "claude") {
+	if rec.SkipPermissions && resumeProgramBase(program) == "claude" {
 		program += " --permission-mode bypassPermissions"
 	}
 
+	// Append --dangerously-bypass-approvals-and-sandbox for codex when SkipPermissions
+	// is enabled, mirroring session/tmux/tmux_session.go:Start.
+	if rec.SkipPermissions && resumeProgramBase(program) == "codex" {
+		program += " --dangerously-bypass-approvals-and-sandbox"
+	}
+
 	// Append --agent flag for typed roles (planner, coder, reviewer, fixer).
-	if rec.AgentType != "" && !strings.Contains(program, "--agent") {
-		program += " --agent " + rec.AgentType
+	// codex does not accept --agent, so skip it for codex programs.
+	if rec.AgentType != "" && !strings.Contains(program, "--agent") && resumeProgramBase(rec.Program) != "codex" {
+		agentType := "'" + strings.ReplaceAll(rec.AgentType, "'", "'\\''") + "'"
+		program += " --agent " + agentType
 	}
 
 	// Append opencode log redirection so debug logs are preserved.
 	// Use rec.Program (the unmodified base) for the suffix check, matching
 	// TmuxSession.Start() which uses t.program — the local `program` variable
 	// may already have --agent appended, changing the suffix.
-	if strings.HasSuffix(rec.Program, "opencode") {
+	if resumeProgramBase(rec.Program) == "opencode" {
 		logDir := filepath.Join(worktreePath, ".kasmos", "logs")
 		if err := os.MkdirAll(logDir, 0o755); err == nil {
 			logFile := filepath.Join(logDir, kasTmuxName(rec.Title)+".log")

@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	cmd2 "github.com/kastheco/kasmos/cmd"
 	"github.com/kastheco/kasmos/cmd/cmd_test"
@@ -442,6 +443,185 @@ func TestParseClientCount(t *testing.T) {
 		t.Run(tc.input, func(t *testing.T) {
 			assert.Equal(t, tc.expected, parseClientCount(tc.input))
 		})
+	}
+}
+
+func TestStart_Codex_NoAgentFlag(t *testing.T) {
+	ptyFactory := NewMockPtyFactory(t)
+	created := false
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			if strings.Contains(cmd.String(), "has-session") && !created {
+				created = true
+				return fmt.Errorf("no session")
+			}
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			return []byte("output"), nil
+		},
+	}
+
+	origGrace := codexGracePeriod
+	codexGracePeriod = 1 * time.Millisecond
+	t.Cleanup(func() { codexGracePeriod = origGrace })
+
+	workdir := t.TempDir()
+	s := NewTmuxSessionWithDeps("test-codex-noagent", "codex", false, ptyFactory, cmdExec)
+	s.SetAgentType("coder")
+	err := s.Start(workdir)
+	require.NoError(t, err)
+	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	assert.NotContains(t, cmdStr, "--agent", "codex must never receive --agent flag")
+}
+
+func TestStart_Codex_BypassFlagPresentWithSkipPermissions(t *testing.T) {
+	ptyFactory := NewMockPtyFactory(t)
+	created := false
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			if strings.Contains(cmd.String(), "has-session") && !created {
+				created = true
+				return fmt.Errorf("no session")
+			}
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			return []byte("output"), nil
+		},
+	}
+
+	origGrace := codexGracePeriod
+	codexGracePeriod = 1 * time.Millisecond
+	t.Cleanup(func() { codexGracePeriod = origGrace })
+
+	workdir := t.TempDir()
+	s := NewTmuxSessionWithDeps("test-codex-bypass", "codex", true, ptyFactory, cmdExec)
+	err := s.Start(workdir)
+	require.NoError(t, err)
+	assert.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), codexBypassFlag)
+}
+
+func TestStart_Codex_BypassFlagAbsentWithoutSkipPermissions(t *testing.T) {
+	ptyFactory := NewMockPtyFactory(t)
+	created := false
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			if strings.Contains(cmd.String(), "has-session") && !created {
+				created = true
+				return fmt.Errorf("no session")
+			}
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			return []byte("output"), nil
+		},
+	}
+
+	origGrace := codexGracePeriod
+	codexGracePeriod = 1 * time.Millisecond
+	t.Cleanup(func() { codexGracePeriod = origGrace })
+
+	workdir := t.TempDir()
+	s := NewTmuxSessionWithDeps("test-codex-nobypass", "codex", false, ptyFactory, cmdExec)
+	err := s.Start(workdir)
+	require.NoError(t, err)
+	assert.NotContains(t, cmd2.ToString(ptyFactory.cmds[0]), codexBypassFlag)
+}
+
+func TestStart_Codex_ShortPromptPositional(t *testing.T) {
+	ptyFactory := NewMockPtyFactory(t)
+	created := false
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			if strings.Contains(cmd.String(), "has-session") && !created {
+				created = true
+				return fmt.Errorf("no session")
+			}
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			return []byte("output"), nil
+		},
+	}
+
+	origGrace := codexGracePeriod
+	codexGracePeriod = 1 * time.Millisecond
+	t.Cleanup(func() { codexGracePeriod = origGrace })
+
+	workdir := t.TempDir()
+	s := NewTmuxSessionWithDeps("test-codex-prompt", "codex", false, ptyFactory, cmdExec)
+	s.SetInitialPrompt("Fix the bug in auth.go")
+	err := s.Start(workdir)
+	require.NoError(t, err)
+	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	// Prompt should appear as positional arg, not --prompt flag
+	assert.Contains(t, cmdStr, "'Fix the bug in auth.go'")
+	assert.NotContains(t, cmdStr, "--prompt")
+}
+
+func TestStart_Codex_LongPromptUsesCatSubstitution(t *testing.T) {
+	ptyFactory := NewMockPtyFactory(t)
+	created := false
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			if strings.Contains(cmd.String(), "has-session") && !created {
+				created = true
+				return fmt.Errorf("no session")
+			}
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			return []byte("output"), nil
+		},
+	}
+
+	origGrace := codexGracePeriod
+	codexGracePeriod = 1 * time.Millisecond
+	t.Cleanup(func() { codexGracePeriod = origGrace })
+
+	workdir := t.TempDir()
+	s := NewTmuxSessionWithDeps("test-codex-longprompt", "codex", false, ptyFactory, cmdExec)
+	longPrompt := strings.Repeat("x", MaxInlinePromptLen+1)
+	s.SetInitialPrompt(longPrompt)
+	err := s.Start(workdir)
+	require.NoError(t, err)
+	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	assert.Contains(t, cmdStr, "$(cat ")
+	assert.Contains(t, cmdStr, ".kasmos/prompt-")
+	assert.NotContains(t, cmdStr, longPrompt, "long prompt must not be inlined")
+}
+
+func TestStart_Codex_ReadyWaitUsesAdapterPath(t *testing.T) {
+	ptyFactory := NewMockPtyFactory(t)
+	created := false
+	var ranCmds []string
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			ranCmds = append(ranCmds, cmd2.ToString(cmd))
+			if strings.Contains(cmd.String(), "has-session") && !created {
+				created = true
+				return fmt.Errorf("no session")
+			}
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			// capture-pane returns generic output — codex has no stable ready string
+			return []byte("some codex output"), nil
+		},
+	}
+
+	origGrace := codexGracePeriod
+	codexGracePeriod = 1 * time.Millisecond
+	t.Cleanup(func() { codexGracePeriod = origGrace })
+
+	workdir := t.TempDir()
+	s := NewTmuxSessionWithDeps("test-codex-ready", "codex", false, ptyFactory, cmdExec)
+	err := s.Start(workdir)
+	require.NoError(t, err)
+	// The aider/gemini "D Enter" tap must never fire for codex.
+	for _, c := range ranCmds {
+		assert.NotContains(t, c, "send-keys", "codex startup must not send any keys")
 	}
 }
 

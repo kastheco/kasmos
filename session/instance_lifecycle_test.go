@@ -75,6 +75,31 @@ func TestStartTransfersQueuedPromptForOpenCode(t *testing.T) {
 	assert.Empty(t, inst.QueuedPrompt)
 }
 
+func TestStartTransfersQueuedPromptForCodex(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error { return nil },
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			return []byte("Ask anything"), nil
+		},
+	}
+
+	inst := &Instance{
+		Title:            "test-codex-transfer",
+		Path:             t.TempDir(),
+		Program:          "codex",
+		QueuedPrompt:     "Implement feature X.",
+		executionSession: newMockTmuxSession("test-codex-transfer", "codex", &testPtyFactory{}, cmdExec),
+	}
+	inst.SetTmuxSession(tmux.NewTmuxSessionWithDeps("test-codex-transfer", "codex", false, &testPtyFactory{}, cmdExec))
+
+	err := inst.StartOnMainBranch()
+	require.NoError(t, err)
+
+	// QueuedPrompt should be cleared (transferred to initialPrompt).
+	assert.Empty(t, inst.QueuedPrompt)
+}
+
 func TestStartKeepsQueuedPromptForAider(t *testing.T) {
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error { return nil },

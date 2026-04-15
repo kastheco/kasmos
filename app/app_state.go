@@ -3019,7 +3019,6 @@ func (m *home) quickLaunchTitleSyncCmd(inst *session.Instance) tea.Cmd {
 				delay = quickLaunchTitleSyncMaxDelay
 			}
 		}
-		return nil
 	}
 }
 

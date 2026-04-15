@@ -28,7 +28,7 @@
           "/tmp/**": "allow"
         }
       },
-      "reasoningEffort": "xhigh",
+      "reasoningEffort": "high",
       "temperature": 0.2,
       "textVerbosity": "medium"
     },
