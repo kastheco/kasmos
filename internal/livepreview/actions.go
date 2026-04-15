@@ -23,10 +23,11 @@ var ErrActionInstanceNotFound = errors.New("instance not found")
 var ErrActionInvalidState = errors.New("invalid instance state for action")
 
 // CommandRunner abstracts external command execution for standalone instance
-// actions. Only Run (fire-and-forget) is needed — standalone actions do not
-// capture command output.
+// actions. Run is fire-and-forget; Output captures stdout for the dirty-state
+// worktree check that gates destructive pause/kill cleanup.
 type CommandRunner interface {
 	Run(ctx context.Context, name string, args ...string) error
+	Output(ctx context.Context, name string, args ...string) ([]byte, error)
 }
 
 // ExecCommandRunner is the real CommandRunner backed by os/exec.
@@ -37,20 +38,34 @@ func (r *ExecCommandRunner) Run(ctx context.Context, name string, args ...string
 	return exec.CommandContext(ctx, name, args...).Run()
 }
 
+// Output implements CommandRunner using os/exec, returning the command's
+// standard output.
+func (r *ExecCommandRunner) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, name, args...).Output()
+}
+
 // ApplyAction loads the full state.json at repoRoot, finds the instance by
 // title, validates and executes action, then persists the updated state back to
 // disk. The top-level state envelope (including help_screens_seen and any
 // future unknown fields) is preserved verbatim.
 //
-// Actions:
-//   - pause:   validate state, best-effort kill tmux session, best-effort
+// Actions (tmux execution mode only — headless rows are rejected in
+// ValidateAction because the web path cannot safely manage a headless child
+// process it does not own):
+//   - pause:   gate on worktree dirty check, best-effort kill tmux session,
 //     remove/prune owned worktree, persist StatusPaused.
 //   - resume:  recreate worktree and tmux session from stored metadata, persist
 //     StatusRunning. Returns an error when worktree metadata is absent.
 //   - restart: reject paused rows (ErrActionInvalidState), best-effort stop old
 //     session, start fresh session with same metadata, persist StatusRunning.
-//   - kill:    best-effort stop tmux session, best-effort worktree cleanup,
-//     remove the record from the instances slice entirely.
+//   - kill:    gate on worktree dirty check, best-effort stop tmux session,
+//     remove owned worktree, remove the record from the instances slice entirely.
+//
+// pause and kill refuse to proceed when the owned worktree contains
+// uncommitted changes, matching the safety gate in session.Instance.Pause() /
+// session.Instance.Kill() (session/instance_lifecycle.go). They no longer pass
+// --force to `git worktree remove` because the dirty check already rejected
+// destructive cases.
 func ApplyAction(ctx context.Context, repoRoot, title, action string, runner CommandRunner) error {
 	path := StateFilePath(repoRoot)
 
@@ -94,12 +109,17 @@ func ApplyAction(ctx context.Context, repoRoot, title, action string, runner Com
 
 	switch action {
 	case "pause":
+		// Refuse if the owned worktree has uncommitted changes — we must not
+		// destroy work on the operator's behalf.
+		if err := checkWorktreeClean(ctx, runner, rec, "pause"); err != nil {
+			return err
+		}
 		// Best-effort: kill the tmux session.
 		_ = runner.Run(ctx, "tmux", "kill-session", "-t", SessionName(rec.Title))
-		// Best-effort: remove and prune the owned worktree.
+		// Remove and prune the owned worktree (dirty check above guards this).
 		if rec.Worktree.RepoPath != "" && rec.Worktree.WorktreePath != "" {
 			_ = runner.Run(ctx, "git", "-C", rec.Worktree.RepoPath,
-				"worktree", "remove", "--force", rec.Worktree.WorktreePath)
+				"worktree", "remove", rec.Worktree.WorktreePath)
 			_ = runner.Run(ctx, "git", "-C", rec.Worktree.RepoPath, "worktree", "prune")
 		}
 		records[idx].Status = StatusPaused
@@ -140,10 +160,13 @@ func ApplyAction(ctx context.Context, repoRoot, title, action string, runner Com
 		records[idx].Status = StatusRunning
 
 	case "kill":
+		if err := checkWorktreeClean(ctx, runner, rec, "kill"); err != nil {
+			return err
+		}
 		_ = runner.Run(ctx, "tmux", "kill-session", "-t", SessionName(rec.Title))
 		if rec.Worktree.RepoPath != "" && rec.Worktree.WorktreePath != "" {
 			_ = runner.Run(ctx, "git", "-C", rec.Worktree.RepoPath,
-				"worktree", "remove", "--force", rec.Worktree.WorktreePath)
+				"worktree", "remove", rec.Worktree.WorktreePath)
 			_ = runner.Run(ctx, "git", "-C", rec.Worktree.RepoPath, "worktree", "prune")
 		}
 		records = append(records[:idx], records[idx+1:]...)
@@ -162,6 +185,34 @@ func ApplyAction(ctx context.Context, repoRoot, title, action string, runner Com
 	}
 	if err := os.WriteFile(path, updated, 0o644); err != nil {
 		return fmt.Errorf("write state: %w", err)
+	}
+	return nil
+}
+
+// checkWorktreeClean returns an error when the record owns a worktree that
+// contains uncommitted changes. It is the safety gate that lets pause/kill
+// drop the `--force` flag on `git worktree remove` without destroying work.
+// Records with no owned worktree (RepoPath/WorktreePath unset) skip the
+// check. If the status command itself fails (for example the worktree
+// directory is missing), we refuse the action rather than silently proceed.
+func checkWorktreeClean(ctx context.Context, runner CommandRunner, rec Record, action string) error {
+	if rec.Worktree.RepoPath == "" || rec.Worktree.WorktreePath == "" {
+		return nil
+	}
+	// Defence in depth: the web path must never touch a headless agent's
+	// worktree. ValidateAction already rejects headless rows for the four
+	// lifecycle actions, but keep this assertion local so future callers of
+	// checkWorktreeClean stay safe by default.
+	if config.NormalizeExecutionMode(rec.ExecutionMode) == config.ExecutionModeHeadless {
+		return fmt.Errorf("%w: cannot %s a headless instance", ErrActionInvalidState, action)
+	}
+	out, err := runner.Output(ctx, "git", "-C", rec.Worktree.WorktreePath, "status", "--porcelain")
+	if err != nil {
+		return fmt.Errorf("check worktree %q for %s: %w", rec.Worktree.WorktreePath, action, err)
+	}
+	if len(bytes.TrimSpace(out)) > 0 {
+		return fmt.Errorf("worktree %q has uncommitted changes; commit or stash before %sing",
+			rec.Worktree.WorktreePath, action)
 	}
 	return nil
 }
