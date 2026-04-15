@@ -93,20 +93,6 @@ Use this checklist and cite file:line for every non-trivial finding.
 - Performance-sensitive paths: identify hotspots and validate no unbounded loops, duplicate expensive joins, unnecessary subprocess/IO in hot paths.
 - Integration seams between subsystems: task orchestrator, signal handling, plan store access, config loading, and daemon/event paths.
 
-### Phase 3.5 — Materiality triage
-
-After gathering all findings from Phase 3 and Phase 4, classify every finding into exactly one of three buckets before deciding the outcome. Do not skip this step.
-
-**`blocker`** — A finding that directly violates an acceptance criterion, introduces a correctness defect, creates a security exposure, breaks a public contract, or leaves the build/test suite failing. Only blocker findings may directly justify `verify_failed`.
-
-**`quality`** — A finding that degrades code health, clarity, or maintainability but does not break correctness or acceptance criteria. Quality findings must be either:
-  1. Self-fixed inside the ceiling (see Self-Fix Protocol below), or
-  2. Recorded as deferred quality debt inside a `## deferred-quality` block in the `verify_approved` payload.
-
-Quality findings alone do not justify `verify_failed`.
-
-**`note`** — Observational finding: a pattern worth flagging for awareness but with no required action. Notes never block ship and must not influence the outcome. Record them in a `## notes` block if space permits, or omit them.
-
 ### Phase 4 — Integration hazards checklist
 
 Specifically check these cross-cutting concerns before signaling:
@@ -119,37 +105,31 @@ Specifically check these cross-cutting concerns before signaling:
 
 ## Self-Fix Protocol
 
-Not everything requires kicking back to the fixer. Prefer self-fixing quality findings whenever the allow-list and ceiling permit — a self-fix costs far less than a full re-review cycle.
+Not everything requires kicking back to the fixer. Use judgment:
 
-### Fix it yourself (commit directly) — allow-list
+### Fix it yourself (commit directly)
 
-- Typos in strings, comments, or doc comments
+- Typos in strings, comments, doc comments
 - Missing or incorrect doc comment on an exported symbol
 - Obvious unused-import cleanup (unused import, wrong order)
-- Small logic corrections within a single function that do not alter the function's signature or callers
-- Missing `errors.Is` / `errors.As` wraps where the fix is local and obvious
-- Tightened conditionals or added guard clauses that preserve existing behavior
-- In-function refactors that preserve all signatures and callers
-- Focused test additions that cover existing behavior already implied by the implementation
-- Trivial `go vet` cleanups (e.g., `printf`-format mismatches, unreachable code)
+- Trivial one-liner corrections (off-by-one in a constant, wrong format verb, wrong literal in a test fixture that is clearly a copy-paste mistake)
 - `typos --write-changes` results
 - Trivial `gofmt -w` output that touches only formatting or import order
-- **Hard ceiling: ≤ 80 net lines across all files in the entire self-fix attempt (configurable via `readiness_self_fix_max_lines`; default 80).**
+- **Hard ceiling: ≤ 10 lines of net change across all files in the entire self-fix attempt.**
 
-When self-fixing, run the reviewer-parity post-fix gate (below) FIRST against your unstaged edits, then commit with `fix: <description> (master self-fix)`, then signal. The `(master self-fix)` suffix is mandatory and is the audit signal that distinguishes master commits from reviewer self-fix commits and from fixer commits. One commit per logical fix; do not bundle unrelated fixes into one commit.
+When self-fixing, run the post-fix verification gate (below) FIRST against your unstaged edits, then commit with `fix: <description> (master self-fix)`, then signal. The `(master self-fix)` suffix is mandatory and is the audit signal that distinguishes master commits from reviewer self-fix commits and from fixer commits. One commit per logical fix; do not bundle unrelated trivial fixes into one commit.
 
-### Kick to fixer (emit `verify_failed`) — deny-list
+### Kick to fixer (emit `verify_failed`)
 
-Reserve kickback for work that is genuinely complex, architectural, or unverifiable:
+- Any logic change, conditional change, or return-value change
+- Missing test coverage that would require designing a new test
+- Architectural concerns (wrong package, wrong abstraction, broken layering)
+- Concurrency or race issues
+- Debugging work where the root cause is unclear
+- **Anything that would push the change past the 10-line ceiling**
+- Anything that touches behavior covered by an existing test in a way that would change the test's expected output
 
-- Multi-package refactors or any change that ripples across package boundaries
-- Architectural redesign (wrong abstraction, broken layering, wrong package placement)
-- Concurrency or race condition redesign
-- Debugging work where the root cause is unclear or unconfirmed
-- Work that exceeds the ceiling (`readiness_self_fix_max_lines`; default 80 net lines)
-- Work the agent cannot confidently verify with a passing test run
-
-### Reviewer-parity post-fix gate
+### Post-fix verification gate
 
 Run BEFORE creating the self-fix commit. Apply your edits to the worktree, then run ALL of the following in order — all must be clean:
 
@@ -165,20 +145,20 @@ If any gate step fails: `git restore --staged --worktree .` (drops both index an
 
 ### Phase 5 — Decision
 
-Apply Phase 3.5 triage results, then issue exactly one outcome:
+Issue exactly one outcome:
 
-- **Zero findings, or only `note` findings:** emit `verify_approved`.
-- **Only `quality` findings (no blockers):** attempt self-fix for each finding inside the ceiling. If all self-fixes pass the reviewer-parity gate, emit `verify_approved` with `## self-fixed` and `## deferred-quality` payload blocks (deferred block covers any quality findings not self-fixed). If any gate step fails, revert that fix (`git restore --staged --worktree .`) and record the finding in `## deferred-quality` — do not emit `verify_failed` unless a deferred finding is actually a blocker in disguise.
-- **Any `blocker` finding exists:** if the blocker is on the allow-list and within the ceiling, attempt self-fix with the reviewer-parity gate. On gate success, emit `verify_approved`. On gate failure, revert and emit `verify_failed` with the original blocker finding. If the blocker is on the deny-list or would exceed the ceiling, emit `verify_failed` with numbered fixer tasks.
+- if zero findings: emit `verify_approved`.
+- if findings exist AND every finding is on the allow-list AND total net change ≤ 10 lines: attempt self-fix per Self-Fix Protocol, run the verification gate, and on success emit `verify_approved` with a `## self-fixed` payload block; on gate failure, revert and emit `verify_failed`.
+- if any finding is on the deny-list OR total net change would exceed 10 lines: emit `verify_failed` with numbered fixer tasks (existing behavior).
 
 ## Output contract
 
 Your final response in managed mode must match one of:
 
 - `verify_approved` with a one to three sentence verdict and evidence references.
-- `verify_failed` with a numbered list of concrete fixer actions, each with exact file paths and acceptance gaps. Kickback is reserved for genuine blockers that exceed the allow-list or ceiling — not for quality findings that can be deferred.
+- `verify_failed` with a numbered list of concrete fixer actions, each with exact file paths and acceptance gaps.
 
-After a successful self-fix, the `verify_approved` payload may include `## self-fixed` and `## deferred-quality` blocks. Example:
+After a successful self-fix, the `verify_approved` payload may include an optional `## self-fixed` block. Example:
 
 ```
 verify_approved.
@@ -189,13 +169,6 @@ verification: go build ./..., go test ./... — pass.
 ## self-fixed
 - typo in `path/to/file.go:77` — fixed directly (committed `fix: correct typo in error string (master self-fix)`)
 - missing doc comment on exported `Foo` in `path/to/other.go:12` — fixed directly
-- missing errors.Is wrap in `path/to/handler.go:44` — fixed directly (committed `fix: wrap sentinel error with errors.Is (master self-fix)`)
-
-## deferred-quality
-- `path/to/legacy.go:103`: function is 120 lines with no sub-function extraction — style debt, does not affect correctness; flagged for next cleanup pass.
-
-## notes
-- `path/to/util.go:55`: unused constant `maxRetries` — harmless, pre-existing.
 ```
 
 Do not produce any other final status wording. Do not emit `review_approved` or `review_changes_requested` — use `verify_approved` or `verify_failed` above.
@@ -211,8 +184,6 @@ Do not produce any other final status wording. Do not emit `review_approved` or 
 - [ ] Performance-sensitive code has no newly introduced avoidable complexity.
 - [ ] Verification evidence includes at least one build and one test command result.
 - [ ] Integration hazards checklist (Phase 4) fully resolved.
-- [ ] All findings triaged into `blocker` / `quality` / `note` buckets (Phase 3.5).
-- [ ] Quality findings are either self-fixed or recorded as deferred quality debt.
 
 ## Reporting Rules and Signal Conventions
 
@@ -244,13 +215,13 @@ For the same plan and branch:
 
 ## Escalation to Fixer
 
-If issues are actionable and bounded blockers that exceed the allow-list or ceiling, output `verify_failed` with this format:
+If issues are actionable and bounded, output `verify_failed` with this format:
 
 1. `fixer` should patch `path/to/file.go:line` to ...
 2. add or update ...
 3. rerun ...
 
-Keep each item concrete and scoped. Do not include quality findings or notes in `verify_failed` items — those belong in `## deferred-quality` inside `verify_approved`. Do not include broad architectural rework requests unless the plan explicitly calls for them.
+Keep each item concrete and scoped. Do not include broad architectural rework requests.
 
 ## Managed Mode Completion
 
