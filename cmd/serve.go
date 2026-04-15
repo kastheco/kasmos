@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,6 +20,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/livepreview"
 	"github.com/kastheco/kasmos/internal/mcpserver"
+	kaslog "github.com/kastheco/kasmos/log"
 	webassets "github.com/kastheco/kasmos/web"
 	"github.com/spf13/cobra"
 )
@@ -222,12 +224,38 @@ func newServeAPIRootMux(sharedDB *sql.DB, repoRegs serveRepoRegistration, taskAP
 	// Live-preview instance routes, before the generic taskstore prefix.
 	rootMux.Handle("GET /v1/projects/{project}/instances", previewAPI)
 	rootMux.Handle("GET /v1/projects/{project}/instances/{title}/capture", previewAPI)
+	rootMux.Handle("POST /v1/projects/{project}/instances/{title}/send", previewAPI)
 
 	// Exact audit route, then generic taskstore prefix.
 	rootMux.Handle("GET /v1/projects/{project}/audit-events", auditAPI)
 	rootMux.Handle("/v1/projects/", taskAPI)
 
 	return rootMux
+}
+
+const nonLoopbackWarningText = "kas serve: admin API has no built-in auth; front it with tailscale, ssh tunnel, or a reverse proxy. built-in bearer-token auth is tracked in the serve-bearer-auth plan."
+
+// nonLoopbackAdminWarning returns the warning message and true when the given
+// addr is bound to a non-loopback interface (e.g. 0.0.0.0, ::, or a public IP).
+// It returns ("", false) for loopback addresses (127.0.0.1, ::1, localhost).
+func nonLoopbackAdminWarning(addr string) (string, bool) {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		// Can't parse — treat as warnable to be safe.
+		return nonLoopbackWarningText, true
+	}
+	// Empty host or wildcard binds are non-loopback.
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		return nonLoopbackWarningText, true
+	}
+	if host == "localhost" {
+		return "", false
+	}
+	ip := net.ParseIP(host)
+	if ip != nil && ip.IsLoopback() {
+		return "", false
+	}
+	return nonLoopbackWarningText, true
 }
 
 // NewServeCmd returns the `kas serve` cobra command.
@@ -354,6 +382,14 @@ func NewServeCmd() *cobra.Command {
 			srv := &http.Server{
 				Addr:    addr,
 				Handler: rootMux,
+			}
+
+			if msg, warn := nonLoopbackAdminWarning(addr); warn {
+				if kaslog.WarningLog != nil {
+					kaslog.WarningLog.Printf("%s", msg)
+				} else {
+					fmt.Printf("WARNING: %s\n", msg)
+				}
 			}
 
 			if len(repoPaths) > 0 {

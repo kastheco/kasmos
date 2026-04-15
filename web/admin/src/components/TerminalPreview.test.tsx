@@ -91,4 +91,16 @@ const trimMarkup = renderToStaticMarkup(
 assertNotContains(trimMarkup, "L0", "component trims leading lines");
 assertContains(trimMarkup, "L49", "component retains last line after trim");
 
+// Unbounded: maxLines={0} keeps all lines (used by "full" depth preset).
+const fullMarkup = renderToStaticMarkup(
+  <TerminalPreview content={manyLines} maxLines={0} />,
+);
+assertContains(fullMarkup, "L0", "maxLines=0: first line is retained");
+assertContains(fullMarkup, "L49", "maxLines=0: last line is retained");
+
+// buildPreviewHTML: maxLines=0 keeps all lines.
+const fullHtml = buildPreviewHTML(manyLines, 0);
+assertContains(fullHtml, "L0", "buildPreviewHTML maxLines=0: first line retained");
+assertContains(fullHtml, "L49", "buildPreviewHTML maxLines=0: last line retained");
+
 console.log("TerminalPreview.test.tsx ok");

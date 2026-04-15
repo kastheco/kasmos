@@ -709,3 +709,24 @@ type captureTestRunner struct {
 func (r *captureTestRunner) Output(_ context.Context, _ string, _ ...string) ([]byte, error) {
 	return []byte(r.output), nil
 }
+
+// TestNewServeAPIRootMux_SendRouteRegistered verifies that
+// POST /v1/projects/{project}/instances/{title}/send is routed to previewAPI.
+func TestNewServeAPIRootMux_SendRouteRegistered(t *testing.T) {
+	called := false
+	previewAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux := testServePreviewMux(t, previewAPI)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/myproj/instances/agent1/send",
+		strings.NewReader(`{"prompt":"hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	assert.True(t, called, "previewAPI must be called for POST /instances/{title}/send")
+	assert.Equal(t, http.StatusOK, rec.Code)
+}

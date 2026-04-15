@@ -14,6 +14,7 @@ export default defineConfig({
       "src/api.test.ts",
       "src/hooks/useAutoRefresh.test.ts",
       "src/pages/agentCardModel.test.ts",
+      "src/pages/instanceInteractivity.test.ts",
       "src/lib/taskCreation.test.ts",
       "src/components/TerminalPreview.test.tsx",
     ],

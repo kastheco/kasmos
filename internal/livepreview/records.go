@@ -180,8 +180,8 @@ func SessionName(title string) string {
 //   - kill:    allowed in any status
 //   - pause:   not allowed when already paused
 //   - resume:  only allowed when paused
-//   - send:    not allowed when paused
-//   - capture: not allowed when paused
+//   - send:    only allowed in running/ready tmux-mode instances (not loading, paused, or headless)
+//   - capture: not allowed when paused or in headless mode
 func ValidateAction(rec Record, action string) error {
 	switch action {
 	case "kill":
@@ -197,13 +197,19 @@ func ValidateAction(rec Record, action string) error {
 		}
 		return nil
 	case "send":
-		if rec.Status == StatusPaused {
-			return fmt.Errorf("cannot send prompt to a paused instance")
+		if config.NormalizeExecutionMode(rec.ExecutionMode) == config.ExecutionModeHeadless {
+			return fmt.Errorf("cannot send prompt to a headless instance")
+		}
+		if rec.Status != StatusRunning && rec.Status != StatusReady {
+			return fmt.Errorf("cannot send prompt to a %s instance", StatusLabel(rec.Status))
 		}
 		return nil
 	case "capture":
 		if rec.Status == StatusPaused {
 			return fmt.Errorf("cannot capture pane from a paused instance")
+		}
+		if config.NormalizeExecutionMode(rec.ExecutionMode) == config.ExecutionModeHeadless {
+			return fmt.Errorf("cannot capture pane from a headless instance")
 		}
 		return nil
 	default:

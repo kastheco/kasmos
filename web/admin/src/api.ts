@@ -1,4 +1,4 @@
-import type { Status, TaskEntry, SubtaskEntry, TopicEntry, AuditEvent, InstanceEntry } from "./types";
+import type { Status, TaskEntry, SubtaskEntry, TopicEntry, AuditEvent, InstanceEntry, ScrollbackDepth } from "./types";
 
 // Legacy persisted statuses that predate canonical normalization at ingest.
 // Mirrors config/taskfsm/fsm.go:MapLegacyStatus so the SPA reader boundary
@@ -363,12 +363,43 @@ export async function createTopic(
 export async function getInstanceCapture(
   project: string,
   title: string,
-  opts?: { start?: string; end?: string },
+  opts?: { start?: string; end?: string; depth?: ScrollbackDepth },
 ): Promise<string> {
   const params = new URLSearchParams();
-  if (opts?.start != null) params.set("start", opts.start);
-  if (opts?.end != null) params.set("end", opts.end);
+  if (opts?.depth != null) {
+    // depth wins over explicit start/end
+    switch (opts.depth) {
+      case "120":
+        params.set("start", "-120");
+        break;
+      case "1000":
+        params.set("start", "-1000");
+        break;
+      case "full":
+        params.set("start", "-");
+        params.set("end", "-");
+        break;
+    }
+  } else {
+    if (opts?.start != null) params.set("start", opts.start);
+    if (opts?.end != null) params.set("end", opts.end);
+  }
   const qs = params.toString();
   const url = `/v1/projects/${encodeURIComponent(project)}/instances/${encodeURIComponent(title)}/capture${qs ? `?${qs}` : ""}`;
   return requestText(url);
+}
+
+export async function sendInstancePrompt(
+  project: string,
+  title: string,
+  prompt: string,
+): Promise<void> {
+  await request(
+    `/v1/projects/${encodeURIComponent(project)}/instances/${encodeURIComponent(title)}/send`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    },
+  );
 }

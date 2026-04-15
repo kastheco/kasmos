@@ -15,6 +15,7 @@ import {
   normalizeTaskStatus,
   listInstances,
   getInstanceCapture,
+  sendInstancePrompt,
   RequestError,
   TaskExistsError,
   createTask,
@@ -206,6 +207,111 @@ if (!caughtError) {
   throw new Error("getInstanceCapture should throw on HTTP error");
 }
 assertEqual(caughtError.message, "not found", "getInstanceCapture surfaces error body");
+
+// getInstanceCapture: depth="120" maps to start=-120.
+mockFetch(true, 200, "depth 120");
+await getInstanceCapture("proj", "inst", { depth: "120" });
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/proj/instances/inst/capture?start=-120",
+  "depth 120 maps to start=-120",
+);
+
+// getInstanceCapture: depth="1000" maps to start=-1000.
+mockFetch(true, 200, "depth 1000");
+await getInstanceCapture("proj", "inst", { depth: "1000" });
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/proj/instances/inst/capture?start=-1000",
+  "depth 1000 maps to start=-1000",
+);
+
+// getInstanceCapture: depth="full" maps to start=- and end=-.
+mockFetch(true, 200, "depth full");
+await getInstanceCapture("proj", "inst", { depth: "full" });
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/proj/instances/inst/capture?start=-&end=-",
+  "depth full maps to start=- and end=-",
+);
+
+// getInstanceCapture: depth wins over explicit start and end.
+mockFetch(true, 200, "depth precedence");
+await getInstanceCapture("proj", "inst", { depth: "120", start: "5", end: "10" });
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/proj/instances/inst/capture?start=-120",
+  "depth wins over explicit start and end",
+);
+
+// sendInstancePrompt: happy path — sends POST with JSON body.
+let _lastFetchedInit: RequestInit | undefined;
+(globalThis as Record<string, unknown>).fetch = async (
+  input: string | URL | Request,
+  init?: RequestInit,
+): Promise<Response> => {
+  _lastFetchedUrl = String(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+  _lastFetchedInit = init;
+  const m = _mockResponse!;
+  _mockResponse = null;
+  const body = m.body;
+  return {
+    ok: m.ok,
+    status: m.status,
+    json: async () => JSON.parse(body) as unknown,
+    text: async () => body,
+    clone: () => ({
+      json: async () => JSON.parse(body) as unknown,
+      text: async () => body,
+    }),
+  } as unknown as Response;
+};
+
+mockFetch(true, 200, "");
+await sendInstancePrompt("proj", "inst", "hello agent");
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/proj/instances/inst/send",
+  "sendInstancePrompt posts to /send",
+);
+assertEqual(
+  (_lastFetchedInit as RequestInit).method,
+  "POST",
+  "sendInstancePrompt uses POST",
+);
+assertEqual(
+  JSON.parse((_lastFetchedInit as RequestInit).body as string).prompt,
+  "hello agent",
+  "sendInstancePrompt sends prompt in body",
+);
+
+// sendInstancePrompt: server error surfaces message.
+mockFetch(false, 500, JSON.stringify({ error: "agent not running" }));
+let sendError: Error | null = null;
+try {
+  await sendInstancePrompt("proj", "inst", "ping");
+} catch (e) {
+  sendError = e as Error;
+}
+if (!sendError) throw new Error("sendInstancePrompt should throw on server error");
+assertEqual(sendError.message, "agent not running", "sendInstancePrompt surfaces server error");
+
+// sendInstancePrompt: network failure (fetch rejects) propagates.
+// Save and restore the stub so later tests (RequestError / HTTP 500 below)
+// still run against the mockFetch-backed fetch rather than this throwing one.
+const savedFetch = (globalThis as Record<string, unknown>).fetch;
+(globalThis as Record<string, unknown>).fetch = async () => {
+  throw new Error("network down");
+};
+let netError: Error | null = null;
+try {
+  await sendInstancePrompt("proj", "inst", "ping");
+} catch (e) {
+  netError = e as Error;
+}
+(globalThis as Record<string, unknown>).fetch = savedFetch;
+if (!netError) throw new Error("sendInstancePrompt should propagate network failure");
+assertEqual(netError.message, "network down", "sendInstancePrompt propagates network error");
 
 console.log("api.test.ts instance tests ok");
 
