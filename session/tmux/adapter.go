@@ -52,6 +52,8 @@ func AdapterFor(program string) ProgramAdapter {
 		return claudeAdapter{}
 	case strings.Contains(binary, "opencode"):
 		return opencodeAdapter{}
+	case strings.Contains(binary, "codex"):
+		return codexAdapter{}
 	default:
 		return nil
 	}
