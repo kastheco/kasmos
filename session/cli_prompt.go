@@ -3,11 +3,12 @@ package session
 import "strings"
 
 // cliPromptPrograms lists programs that accept an initial user prompt via a
-// CLI flag (opencode --prompt) or positional argument (claude).
+// CLI flag (opencode --prompt) or as a positional argument (claude, codex).
 //
-// NOTE: Values correspond to session/tmux.ProgramOpenCode and
-// session/tmux.ProgramClaude. Keep in sync if those constants change;
-// importing tmux from here would create a circular dependency.
+// NOTE: Values correspond to session/tmux.ProgramOpenCode,
+// session/tmux.ProgramClaude, and session/tmux.ProgramCodex. Keep in sync if
+// those constants change; importing tmux from here would create a circular
+// dependency.
 var cliPromptPrograms = []string{"opencode", "claude", "codex"}
 
 // programSupportsCliPrompt reports whether program accepts a startup prompt

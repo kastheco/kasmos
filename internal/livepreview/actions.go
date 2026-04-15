@@ -235,7 +235,13 @@ func standaloneResumeProgram(rec Record, worktreePath string) string {
 	if rec.SkipPermissions && strings.HasSuffix(program, "claude") {
 		program += " --permission-mode bypassPermissions"
 	}
-	if rec.AgentType != "" && !strings.Contains(program, "--agent") {
+	// Append --dangerously-bypass-approvals-and-sandbox for codex when SkipPermissions
+	// is enabled, mirroring session/tmux/tmux_session.go:Start.
+	if rec.SkipPermissions && strings.HasSuffix(program, "codex") {
+		program += " --dangerously-bypass-approvals-and-sandbox"
+	}
+	// codex does not accept --agent, so skip it for codex programs.
+	if rec.AgentType != "" && !strings.Contains(program, "--agent") && !strings.HasSuffix(rec.Program, "codex") {
 		program += " --agent " + rec.AgentType
 	}
 	if strings.HasSuffix(rec.Program, "opencode") {

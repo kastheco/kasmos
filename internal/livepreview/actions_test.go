@@ -282,3 +282,34 @@ func TestApplyAction_PreservesHelpScreensSeen(t *testing.T) {
 	require.NoError(t, json.Unmarshal(updated, &readBack))
 	assert.Equal(t, json.RawMessage("42"), readBack["help_screens_seen"])
 }
+
+// TestStandaloneResumeProgram_CodexSkipPermissions verifies that resumed codex
+// instances on the standalone web path receive --dangerously-bypass-approvals-and-sandbox
+// when SkipPermissions is true, and that the unsupported --agent flag is never
+// injected. Mirrors session/tmux/tmux_session.go:Start.
+func TestStandaloneResumeProgram_CodexSkipPermissions(t *testing.T) {
+	rec := Record{
+		Title:           "my-codex",
+		Program:         "codex",
+		AgentType:       "coder",
+		SkipPermissions: true,
+	}
+	got := standaloneResumeProgram(rec, "/worktrees/my-codex")
+	assert.Contains(t, got, "--dangerously-bypass-approvals-and-sandbox")
+	assert.NotContains(t, got, "--agent")
+	assert.NotContains(t, got, "--permission-mode bypassPermissions")
+}
+
+// TestStandaloneResumeProgram_CodexNoSkipPermissions verifies that resumed codex
+// instances omit the bypass flag when SkipPermissions is false, and still
+// suppress --agent (codex does not recognise it).
+func TestStandaloneResumeProgram_CodexNoSkipPermissions(t *testing.T) {
+	rec := Record{
+		Title:     "my-codex",
+		Program:   "codex",
+		AgentType: "planner",
+	}
+	got := standaloneResumeProgram(rec, "/worktrees/my-codex")
+	assert.NotContains(t, got, "--dangerously-bypass-approvals-and-sandbox")
+	assert.NotContains(t, got, "--agent")
+}

@@ -233,6 +233,37 @@ func TestInstanceResume_Success(t *testing.T) {
 	assert.Equal(t, agentPath, records[0].Worktree.WorktreePath)
 }
 
+// TestBuildResumeProgram_CodexSkipPermissions verifies that resumed codex
+// instances receive --dangerously-bypass-approvals-and-sandbox when
+// SkipPermissions is true, and that the unsupported --agent flag is never
+// injected. Mirrors session/tmux/tmux_session.go:Start.
+func TestBuildResumeProgram_CodexSkipPermissions(t *testing.T) {
+	rec := instanceRecord{
+		Title:           "my-codex",
+		Program:         "codex",
+		AgentType:       "coder",
+		SkipPermissions: true,
+	}
+	got := buildResumeProgram(rec, "/worktrees/my-codex")
+	assert.Contains(t, got, "--dangerously-bypass-approvals-and-sandbox")
+	assert.NotContains(t, got, "--agent")
+	assert.NotContains(t, got, "--permission-mode bypassPermissions")
+}
+
+// TestBuildResumeProgram_CodexNoSkipPermissions verifies that resumed codex
+// instances omit the bypass flag when SkipPermissions is false, and still
+// suppress --agent (codex does not recognise it).
+func TestBuildResumeProgram_CodexNoSkipPermissions(t *testing.T) {
+	rec := instanceRecord{
+		Title:     "my-codex",
+		Program:   "codex",
+		AgentType: "planner",
+	}
+	got := buildResumeProgram(rec, "/worktrees/my-codex")
+	assert.NotContains(t, got, "--dangerously-bypass-approvals-and-sandbox")
+	assert.NotContains(t, got, "--agent")
+}
+
 // TestInstanceResume_NoWorktreeMetadata verifies that resume fails with the
 // exact phrase "no stored worktree metadata" when RepoPath or BranchName is absent.
 func TestInstanceResume_NoWorktreeMetadata(t *testing.T) {

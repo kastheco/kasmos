@@ -179,7 +179,7 @@ func (t *TmuxSession) SetAgentType(agentType string) {
 }
 
 // SetInitialPrompt sets the initial prompt to bake into the CLI command at launch.
-// Supported programs: opencode (--prompt), claude (positional arg).
+// Supported programs: opencode (--prompt), claude and codex (positional arg).
 // For unsupported programs the prompt is ignored; callers should keep
 // QueuedPrompt set so the send-keys fallback fires.
 func (t *TmuxSession) SetInitialPrompt(prompt string) {

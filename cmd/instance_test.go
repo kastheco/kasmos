@@ -542,6 +542,37 @@ func TestBuildResumeCommand_OpencodeWithAgent(t *testing.T) {
 	assert.Contains(t, got, "KASMOS_MANAGED=1")
 }
 
+// TestBuildResumeCommand_CodexSkipPermissions verifies that resumed codex instances
+// receive --dangerously-bypass-approvals-and-sandbox when SkipPermissions is true,
+// and that the unsupported --agent flag is never injected. Mirrors the fresh
+// startup path in session/tmux/tmux_session.go:Start.
+func TestBuildResumeCommand_CodexSkipPermissions(t *testing.T) {
+	rec := instanceRecord{
+		Title:           "my-codex",
+		Program:         "codex",
+		AgentType:       "coder",
+		SkipPermissions: true,
+	}
+	got := buildResumeCommand(rec, "/worktrees/my-codex")
+	assert.Contains(t, got, "--dangerously-bypass-approvals-and-sandbox")
+	assert.NotContains(t, got, "--agent")
+	assert.NotContains(t, got, "--permission-mode bypassPermissions")
+}
+
+// TestBuildResumeCommand_CodexNoSkipPermissions verifies that resumed codex
+// instances omit the bypass flag when SkipPermissions is false, and still
+// suppress --agent (codex does not recognise it).
+func TestBuildResumeCommand_CodexNoSkipPermissions(t *testing.T) {
+	rec := instanceRecord{
+		Title:     "my-codex",
+		Program:   "codex",
+		AgentType: "planner",
+	}
+	got := buildResumeCommand(rec, "/worktrees/my-codex")
+	assert.NotContains(t, got, "--dangerously-bypass-approvals-and-sandbox")
+	assert.NotContains(t, got, "--agent")
+}
+
 // TestBuildResumeCommand_TaskEnvVars verifies task identity env vars are prepended.
 func TestBuildResumeCommand_TaskEnvVars(t *testing.T) {
 	rec := instanceRecord{

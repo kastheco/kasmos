@@ -40,8 +40,15 @@ func buildResumeProgram(rec instanceRecord, worktreePath string) string {
 		program += " --permission-mode bypassPermissions"
 	}
 
+	// Append --dangerously-bypass-approvals-and-sandbox for codex when SkipPermissions
+	// is enabled, mirroring session/tmux/tmux_session.go:Start.
+	if rec.SkipPermissions && strings.HasSuffix(program, "codex") {
+		program += " --dangerously-bypass-approvals-and-sandbox"
+	}
+
 	// Append --agent flag for typed roles (planner, coder, reviewer, fixer).
-	if rec.AgentType != "" && !strings.Contains(program, "--agent") {
+	// codex does not accept --agent, so skip it for codex programs.
+	if rec.AgentType != "" && !strings.Contains(program, "--agent") && !strings.HasSuffix(rec.Program, "codex") {
 		program += " --agent " + rec.AgentType
 	}
 
