@@ -685,9 +685,9 @@ func TestTransition_SignalBearing_EmitsGateway(t *testing.T) {
 // which do not map to any gateway signal type leave the gateway empty.
 func TestTransition_NonEmitting_LeavesGatewayEmpty(t *testing.T) {
 	tests := []struct {
-		name            string
-		event           string
-		setupStatus     taskstore.Status
+		name              string
+		event             string
+		setupStatus       taskstore.Status
 		useExecutionPhase bool
 	}{
 		{
