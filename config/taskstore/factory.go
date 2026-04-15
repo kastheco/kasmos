@@ -96,36 +96,60 @@ func OpenBackingSQLiteSignalGateway() (SignalGateway, error) {
 	return NewSQLiteSignalGateway(dbPath)
 }
 
-// OpenSharedDB opens a single *sql.DB with WAL mode, busy_timeout, and foreign
-// keys enabled. Callers pass the returned handle to NewSQLiteStoreFromDB,
-// NewSQLiteSignalGatewayFromDB, and auditlog.NewSQLiteLoggerFromDB so that all
-// subsystems share one connection pool and avoid SQLITE_BUSY contention.
-// The caller owns the returned *sql.DB and must close it after all subsystems
-// are done.
+// OpenSharedDB opens a single *sql.DB with WAL mode, busy_timeout, foreign
+// keys, synchronous=normal, and txlock=immediate applied to every pooled
+// connection via modernc.org/sqlite's DSN _pragma mechanism. Callers pass the
+// returned handle to NewSQLiteStoreFromDB, NewSQLiteSignalGatewayFromDB, and
+// auditlog.NewSQLiteLoggerFromDB so that all subsystems share one connection
+// pool. The caller owns the returned *sql.DB and must close it after all
+// subsystems are done.
+//
+// The previous implementation ran PRAGMAs via db.Exec after open, which only
+// applied them to the FIRST connection Go happened to use — every subsequent
+// connection in the pool defaulted to busy_timeout=0 and failed immediately
+// on any write contention, producing SQLITE_BUSY errors under normal load.
+// DSN pragmas run as part of the per-connection init callback, so every
+// connection (including ones created after pool growth) picks them up.
 func OpenSharedDB(dbPath string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", buildSQLiteDSN(dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("open shared sqlite db: %w", err)
 	}
-
-	if dbPath != ":memory:" {
-		if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("set WAL mode: %w", err)
-		}
-	}
-
-	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
+	// sql.Open is lazy — Ping forces the driver to actually create the
+	// connection (and the DB file) now, so callers get the same behaviour they
+	// had with the old Exec-based PRAGMA setup. It also surfaces DSN typos.
+	if err := db.Ping(); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("set busy timeout: %w", err)
+		return nil, fmt.Errorf("ping shared sqlite db: %w", err)
 	}
-
-	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("enable foreign keys: %w", err)
-	}
-
 	return db, nil
+}
+
+// BuildSQLiteDSN returns a modernc.org/sqlite DSN with the standard kasmos
+// PRAGMAs applied per-connection. Exported so sibling packages (auditlog,
+// config/permission_store) use the exact same pragma set without duplicating
+// the list. Internal callers can also use this directly when building their
+// own *sql.DB pools.
+func BuildSQLiteDSN(dbPath string) string {
+	return buildSQLiteDSN(dbPath)
+}
+
+// buildSQLiteDSN returns a modernc.org/sqlite DSN with the standard kasmos
+// PRAGMAs applied per-connection. Internal entry point for taskstore callers.
+func buildSQLiteDSN(dbPath string) string {
+	if dbPath == ":memory:" {
+		// :memory: databases don't support WAL and are per-connection anyway.
+		// Keep busy_timeout so tests that share a pool still behave sanely.
+		return dbPath + "?_pragma=busy_timeout(30000)&_pragma=foreign_keys(on)"
+	}
+	// _txlock=immediate ensures write transactions grab the exclusive lock up
+	// front, which pairs correctly with busy_timeout. Without it, a DEFERRED
+	// tx can escalate from shared to exclusive mid-transaction and fail fast.
+	return "file:" + dbPath + "?_pragma=journal_mode(wal)" +
+		"&_pragma=busy_timeout(30000)" +
+		"&_pragma=foreign_keys(on)" +
+		"&_pragma=synchronous(normal)" +
+		"&_txlock=immediate"
 }
 
 // OpenBackingSharedDB is a convenience wrapper that calls OpenSharedDB with

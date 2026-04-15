@@ -36,32 +36,11 @@ type SQLiteSignalGateway struct {
 
 // NewSQLiteSignalGateway opens (or creates) a SQLite database at dbPath and
 // initialises the signals schema. Use ":memory:" for an in-memory database.
+// DSN PRAGMAs are applied to every pooled connection via buildSQLiteDSN.
 func NewSQLiteSignalGateway(dbPath string) (*SQLiteSignalGateway, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", buildSQLiteDSN(dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite db: %w", err)
-	}
-
-	// Enable WAL mode for better concurrent read performance.
-	if dbPath != ":memory:" {
-		if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("set WAL mode: %w", err)
-		}
-	}
-
-	// Set busy timeout so concurrent writers wait instead of failing with
-	// SQLITE_BUSY immediately. 5 seconds is generous for the short writes
-	// kasmos performs.
-	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("set busy timeout: %w", err)
-	}
-
-	// Enable foreign keys.
-	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("enable foreign keys: %w", err)
 	}
 
 	if _, err := db.Exec(signalsSchema); err != nil {

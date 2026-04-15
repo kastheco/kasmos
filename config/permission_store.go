@@ -52,17 +52,9 @@ type SQLitePermissionStore struct {
 // NewSQLitePermissionStore opens (or creates) a SQLite database at dbPath and
 // runs schema migrations. Use ":memory:" for an in-memory database (useful in tests).
 func NewSQLitePermissionStore(dbPath string) (*SQLitePermissionStore, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", permissionStoreDSN(dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite db: %w", err)
-	}
-
-	// Enable WAL mode for better concurrent read performance (not applicable for :memory:).
-	if dbPath != ":memory:" {
-		if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("set WAL mode: %w", err)
-		}
 	}
 
 	if _, err := db.Exec(permissionSchema); err != nil {
@@ -71,6 +63,21 @@ func NewSQLitePermissionStore(dbPath string) (*SQLitePermissionStore, error) {
 	}
 
 	return &SQLitePermissionStore{db: db, ownsDB: true}, nil
+}
+
+// permissionStoreDSN returns a modernc.org/sqlite DSN with the standard kasmos
+// PRAGMA set applied per-connection. Kept in sync with taskstore.BuildSQLiteDSN
+// — cross-package imports would create a cycle, so the pragma list is
+// duplicated in both packages intentionally.
+func permissionStoreDSN(dbPath string) string {
+	if dbPath == ":memory:" {
+		return dbPath + "?_pragma=busy_timeout(30000)&_pragma=foreign_keys(on)"
+	}
+	return "file:" + dbPath + "?_pragma=journal_mode(wal)" +
+		"&_pragma=busy_timeout(30000)" +
+		"&_pragma=foreign_keys(on)" +
+		"&_pragma=synchronous(normal)" +
+		"&_txlock=immediate"
 }
 
 // NewSQLitePermissionStoreFromDB creates a SQLitePermissionStore using an

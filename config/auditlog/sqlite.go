@@ -9,6 +9,21 @@ import (
 	_ "modernc.org/sqlite" // register sqlite driver
 )
 
+// sqliteDSN returns a modernc.org/sqlite DSN with the standard kasmos PRAGMA
+// set applied per-connection. Kept in sync with taskstore.BuildSQLiteDSN — a
+// cross-package import would create an auditlog ↔ taskstore cycle, so the
+// pragma list is duplicated intentionally in both packages.
+func sqliteDSN(dbPath string) string {
+	if dbPath == ":memory:" {
+		return dbPath + "?_pragma=busy_timeout(30000)&_pragma=foreign_keys(on)"
+	}
+	return "file:" + dbPath + "?_pragma=journal_mode(wal)" +
+		"&_pragma=busy_timeout(30000)" +
+		"&_pragma=foreign_keys(on)" +
+		"&_pragma=synchronous(normal)" +
+		"&_txlock=immediate"
+}
+
 const auditSchema = `
 CREATE TABLE IF NOT EXISTS audit_events (
 	id             INTEGER PRIMARY KEY,
@@ -41,7 +56,7 @@ type SQLiteLogger struct {
 // audit_events schema, and returns a ready-to-use logger.
 // Use ":memory:" for an in-memory database (useful in tests).
 func NewSQLiteLogger(dbPath string) (*SQLiteLogger, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", sqliteDSN(dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite db for audit log: %w", err)
 	}
