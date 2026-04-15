@@ -133,6 +133,14 @@ func transitionSignalType(event taskfsm.Event) (string, bool) {
 	return signalType, err == nil
 }
 
+// httpPreAppliedPayload is the gateway signal payload the HTTP transition
+// handler emits after it has already applied the FSM transition itself. The
+// daemon's processor keys its already-applied fast-path on the "fsm_applied"
+// flag so it knows to run downstream side effects (spawn reviewer, spawn
+// master, spawn fixer, create PR, etc.) instead of dropping the signal as
+// stale. See orchestration/loop/processor.go ProcessFSMSignals.
+const httpPreAppliedPayload = `{"fsm_applied":true}`
+
 // ---- precondition helper ----------------------------------------------------
 
 // checkTransitionPrecondition validates FSM legality plus phase-aware business
@@ -293,7 +301,7 @@ func (h *handler) handleTransition(w http.ResponseWriter, r *http.Request) {
 			))
 			return
 		}
-		if err := taskfsm.EmitGatewaySignal(h.gateway, project, signalType, filename, ""); err != nil {
+		if err := taskfsm.EmitGatewaySignal(h.gateway, project, signalType, filename, httpPreAppliedPayload); err != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Sprintf(
 				"transition applied (status=%s) but gateway emit failed: %s; task status was not rolled back",
 				updated.Status, err.Error(),

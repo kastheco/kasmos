@@ -11,7 +11,14 @@ type Signal struct {
 	Event    Event
 	TaskFile string
 	Body     string // file contents (e.g. review feedback)
-	filePath string // full path for deletion
+	// PreApplied is true when the signal's originator already applied the FSM
+	// transition before emitting the gateway row (for example, the HTTP admin
+	// handler calls TaskStateMachine.Transition itself and then emits the
+	// canonical signal). The gateway scanner decodes this from the payload's
+	// "fsm_applied" flag; filesystem-bridged and MCP-created signals leave it
+	// unset because in those paths the daemon is the sole FSM driver.
+	PreApplied bool
+	filePath   string // full path for deletion
 }
 
 // Key returns a dedup key for this signal (event + plan file).

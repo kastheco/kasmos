@@ -570,3 +570,252 @@ func TestProcessor_SetReadinessReviewConfig(t *testing.T) {
 	p.SetReadinessReviewConfig(false)
 	assert.False(t, p.config.AutoReadinessReview)
 }
+
+// TestProcessor_ProcessFSMSignals_PreAppliedHTTPSignals covers the case where
+// the HTTP admin handler applied the FSM transition before emitting a gateway
+// signal. Each signal-bearing event must still produce its downstream actions
+// even though p.fsm.Transition returns "invalid transition" (the task is
+// already in the post-event state). See reviewer feedback on
+// orchestration/loop/processor.go alreadyApplied path.
+func TestProcessor_ProcessFSMSignals_PreAppliedHTTPSignals(t *testing.T) {
+	t.Run("implement_finished pre-applied spawns reviewer", func(t *testing.T) {
+		store := taskstore.NewTestStore(t)
+		require.NoError(t, store.Create("test", taskstore.TaskEntry{
+			Filename: "my-plan.md",
+			Status:   taskstore.StatusReviewing, // already advanced by HTTP handler
+			Branch:   "plan/my-plan",
+		}))
+
+		p := NewProcessor(ProcessorConfig{Store: store, Project: "test"})
+		actions := p.ProcessFSMSignals([]taskfsm.Signal{{
+			Event:      taskfsm.ImplementFinished,
+			TaskFile:   "my-plan.md",
+			PreApplied: true,
+		}})
+
+		require.Len(t, actions, 1, "HTTP-applied implement_finished must still spawn the reviewer")
+		_, ok := actions[0].(SpawnReviewerAction)
+		assert.True(t, ok, "expected SpawnReviewerAction, got %T", actions[0])
+	})
+
+	t.Run("review_approved pre-applied emits reviewer side-effects and chains verify_approved", func(t *testing.T) {
+		store := taskstore.NewTestStore(t)
+		require.NoError(t, store.Create("test", taskstore.TaskEntry{
+			Filename: "my-plan.md",
+			Status:   taskstore.StatusVerifying, // already advanced by HTTP handler
+			Branch:   "plan/my-plan",
+		}))
+
+		p := NewProcessor(ProcessorConfig{Store: store, Project: "test"})
+		actions := p.ProcessFSMSignals([]taskfsm.Signal{{
+			Event:      taskfsm.ReviewApproved,
+			TaskFile:   "my-plan.md",
+			Body:       "LGTM",
+			PreApplied: true,
+		}})
+
+		var foundApproved, foundVerify, foundPR bool
+		for _, a := range actions {
+			switch v := a.(type) {
+			case ReviewApprovedAction:
+				assert.Equal(t, "my-plan.md", v.PlanFile)
+				assert.Equal(t, "LGTM", v.ReviewBody)
+				foundApproved = true
+			case VerifyApprovedAction:
+				foundVerify = true
+			case CreatePRAction:
+				foundPR = true
+			}
+		}
+		assert.True(t, foundApproved, "expected ReviewApprovedAction for pre-applied review_approved")
+		assert.True(t, foundVerify, "expected VerifyApprovedAction after chained verify_approved transition from verifying")
+		assert.True(t, foundPR, "expected CreatePRAction since branch is set and no PR URL exists yet")
+
+		// Chained FSM transition must have advanced the task from verifying to done.
+		updated, err := store.Get("test", "my-plan.md")
+		require.NoError(t, err)
+		assert.Equal(t, taskstore.StatusDone, updated.Status, "chained verify_approved must move task to done")
+	})
+
+	t.Run("review_approved pre-applied routes through readiness gate", func(t *testing.T) {
+		store := taskstore.NewTestStore(t)
+		require.NoError(t, store.Create("test", taskstore.TaskEntry{
+			Filename: "my-plan.md",
+			Status:   taskstore.StatusVerifying, // HTTP-applied reviewing → verifying
+			Branch:   "plan/my-plan",
+		}))
+
+		p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReadinessReview: true})
+		actions := p.ProcessFSMSignals([]taskfsm.Signal{{
+			Event:      taskfsm.ReviewApproved,
+			TaskFile:   "my-plan.md",
+			Body:       "LGTM",
+			PreApplied: true,
+		}})
+
+		require.Len(t, actions, 2)
+		_, firstOK := actions[0].(ReviewApprovedAction)
+		assert.True(t, firstOK, "expected ReviewApprovedAction first")
+		_, secondOK := actions[1].(SpawnMasterAction)
+		assert.True(t, secondOK, "expected SpawnMasterAction second under readiness gate")
+	})
+
+	t.Run("review_changes_requested pre-applied spawns fixer", func(t *testing.T) {
+		store := taskstore.NewTestStore(t)
+		require.NoError(t, store.Create("test", taskstore.TaskEntry{
+			Filename: "my-plan.md",
+			Status:   taskstore.StatusImplementing, // HTTP-applied reviewing → implementing
+			Branch:   "plan/my-plan",
+		}))
+
+		p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true})
+		actions := p.ProcessFSMSignals([]taskfsm.Signal{{
+			Event:      taskfsm.ReviewChangesRequested,
+			TaskFile:   "my-plan.md",
+			Body:       "fix the nits",
+			PreApplied: true,
+		}})
+
+		var foundChanges, foundFixer, foundIncrement bool
+		for _, a := range actions {
+			switch v := a.(type) {
+			case ReviewChangesAction:
+				assert.Equal(t, "fix the nits", v.Feedback)
+				foundChanges = true
+			case SpawnFixerAction:
+				assert.Equal(t, "fix the nits", v.Feedback)
+				foundFixer = true
+			case IncrementReviewCycleAction:
+				foundIncrement = true
+			}
+		}
+		assert.True(t, foundChanges, "expected ReviewChangesAction")
+		assert.True(t, foundFixer, "expected SpawnFixerAction")
+		assert.True(t, foundIncrement, "expected IncrementReviewCycleAction")
+	})
+
+	t.Run("verify_approved pre-applied emits verify-approved action and PR", func(t *testing.T) {
+		store := taskstore.NewTestStore(t)
+		require.NoError(t, store.Create("test", taskstore.TaskEntry{
+			Filename: "my-plan.md",
+			Status:   taskstore.StatusDone, // HTTP-applied verifying → done
+			Branch:   "plan/my-plan",
+		}))
+
+		p := NewProcessor(ProcessorConfig{Store: store, Project: "test"})
+		actions := p.ProcessFSMSignals([]taskfsm.Signal{{
+			Event:      taskfsm.VerifyApproved,
+			TaskFile:   "my-plan.md",
+			Body:       "ready",
+			PreApplied: true,
+		}})
+
+		var foundApproved, foundPR bool
+		for _, a := range actions {
+			if _, ok := a.(VerifyApprovedAction); ok {
+				foundApproved = true
+			}
+			if _, ok := a.(CreatePRAction); ok {
+				foundPR = true
+			}
+		}
+		assert.True(t, foundApproved, "expected VerifyApprovedAction")
+		assert.True(t, foundPR, "expected CreatePRAction when branch is set and no PR URL exists")
+	})
+
+	t.Run("verify_failed pre-applied spawns fixer", func(t *testing.T) {
+		store := taskstore.NewTestStore(t)
+		require.NoError(t, store.Create("test", taskstore.TaskEntry{
+			Filename: "my-plan.md",
+			Status:   taskstore.StatusImplementing, // HTTP-applied verifying → implementing
+			Branch:   "plan/my-plan",
+		}))
+
+		p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true})
+		actions := p.ProcessFSMSignals([]taskfsm.Signal{{
+			Event:      taskfsm.VerifyFailed,
+			TaskFile:   "my-plan.md",
+			Body:       "issues found",
+			PreApplied: true,
+		}})
+
+		var foundVerifyFailed, foundFixer, foundIncrement bool
+		for _, a := range actions {
+			switch v := a.(type) {
+			case VerifyFailedAction:
+				assert.Equal(t, "issues found", v.Feedback)
+				foundVerifyFailed = true
+			case SpawnFixerAction:
+				assert.Equal(t, "issues found", v.Feedback)
+				foundFixer = true
+			case IncrementReviewCycleAction:
+				foundIncrement = true
+			}
+		}
+		assert.True(t, foundVerifyFailed, "expected VerifyFailedAction")
+		assert.True(t, foundFixer, "expected SpawnFixerAction")
+		assert.True(t, foundIncrement, "expected IncrementReviewCycleAction")
+	})
+
+	t.Run("planner_finished pre-applied spawns architect under auto-advance", func(t *testing.T) {
+		store := taskstore.NewTestStore(t)
+		require.NoError(t, store.Create("test", taskstore.TaskEntry{
+			Filename: "my-plan.md",
+			Status:   taskstore.StatusReady, // HTTP-applied planning → ready
+		}))
+
+		p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoAdvance: true})
+		actions := p.ProcessFSMSignals([]taskfsm.Signal{{
+			Event:      taskfsm.PlannerFinished,
+			TaskFile:   "my-plan.md",
+			PreApplied: true,
+		}})
+
+		require.Len(t, actions, 2)
+		_, firstOK := actions[0].(PlannerCompleteAction)
+		assert.True(t, firstOK, "expected PlannerCompleteAction first")
+		_, secondOK := actions[1].(AutoImplementAction)
+		assert.True(t, secondOK, "expected AutoImplementAction second under AutoAdvance")
+	})
+}
+
+// TestProcessor_ProcessFSMSignals_UnmarkedStaleSignalsAreDropped confirms that
+// signals which land when the task happens to be in the post-event state but
+// do NOT carry the fsm_applied marker (filesystem bridge, MCP signal_create)
+// are still dropped. This preserves the existing drop behavior for stale /
+// out-of-order signals — the PreApplied gate is the single switch that
+// distinguishes HTTP-originated from other signal sources.
+func TestProcessor_ProcessFSMSignals_UnmarkedStaleSignalsAreDropped(t *testing.T) {
+	cases := []struct {
+		name   string
+		event  taskfsm.Event
+		status taskstore.Status
+	}{
+		{"stale planner_finished in ready", taskfsm.PlannerFinished, taskstore.StatusReady},
+		{"stale implement_finished in reviewing", taskfsm.ImplementFinished, taskstore.StatusReviewing},
+		{"stale review_approved in verifying", taskfsm.ReviewApproved, taskstore.StatusVerifying},
+		{"stale review_changes_requested in implementing", taskfsm.ReviewChangesRequested, taskstore.StatusImplementing},
+		{"stale verify_approved in done", taskfsm.VerifyApproved, taskstore.StatusDone},
+		{"stale verify_failed in implementing", taskfsm.VerifyFailed, taskstore.StatusImplementing},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := taskstore.NewTestStore(t)
+			require.NoError(t, store.Create("test", taskstore.TaskEntry{
+				Filename: "my-plan.md",
+				Status:   tc.status,
+				Branch:   "plan/my-plan",
+			}))
+
+			p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true, AutoAdvance: true})
+			actions := p.ProcessFSMSignals([]taskfsm.Signal{{
+				Event:    tc.event,
+				TaskFile: "my-plan.md",
+				// PreApplied intentionally left false
+			}})
+
+			assert.Empty(t, actions, "unmarked stale signal must be dropped even when task is in the post-event target state")
+		})
+	}
+}

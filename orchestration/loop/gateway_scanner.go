@@ -12,6 +12,12 @@ import (
 // payload helper types for DB-backed signal rows.
 type bodyPayload struct {
 	Body string `json:"body"`
+	// FsmApplied marks signals whose originator already applied the FSM
+	// transition before emitting the row (for example, the HTTP admin handler).
+	// The processor gates its "already applied" fast-path on this flag so
+	// stale MCP / filesystem signals that happen to land while the task is in
+	// the post-event target state do not trigger duplicate side effects.
+	FsmApplied bool `json:"fsm_applied,omitempty"`
 }
 
 type taskPayload struct {
@@ -77,69 +83,75 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 
 	switch internalType {
 	case "planner_finished":
-		body, err := decodeBody(entry.Payload)
+		body, preApplied, err := decodeBody(entry.Payload)
 		if err != nil {
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:    taskfsm.PlannerFinished,
-			TaskFile: entry.PlanFile,
-			Body:     body,
+			Event:      taskfsm.PlannerFinished,
+			TaskFile:   entry.PlanFile,
+			Body:       body,
+			PreApplied: preApplied,
 		})
 
 	case "implement_finished":
-		body, err := decodeBody(entry.Payload)
+		body, preApplied, err := decodeBody(entry.Payload)
 		if err != nil {
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:    taskfsm.ImplementFinished,
-			TaskFile: entry.PlanFile,
-			Body:     body,
+			Event:      taskfsm.ImplementFinished,
+			TaskFile:   entry.PlanFile,
+			Body:       body,
+			PreApplied: preApplied,
 		})
 
 	case "review_approved":
-		body, err := decodeBody(entry.Payload)
+		body, preApplied, err := decodeBody(entry.Payload)
 		if err != nil {
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:    taskfsm.ReviewApproved,
-			TaskFile: entry.PlanFile,
-			Body:     body,
+			Event:      taskfsm.ReviewApproved,
+			TaskFile:   entry.PlanFile,
+			Body:       body,
+			PreApplied: preApplied,
 		})
 
 	case "review_changes_requested":
-		body, err := decodeBody(entry.Payload)
+		body, preApplied, err := decodeBody(entry.Payload)
 		if err != nil {
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:    taskfsm.ReviewChangesRequested,
-			TaskFile: entry.PlanFile,
-			Body:     body,
+			Event:      taskfsm.ReviewChangesRequested,
+			TaskFile:   entry.PlanFile,
+			Body:       body,
+			PreApplied: preApplied,
 		})
 
 	case string(taskfsm.VerifyApproved):
-		body, err := decodeBody(entry.Payload)
+		body, preApplied, err := decodeBody(entry.Payload)
 		if err != nil {
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:    taskfsm.VerifyApproved,
-			TaskFile: entry.PlanFile,
-			Body:     body,
+			Event:      taskfsm.VerifyApproved,
+			TaskFile:   entry.PlanFile,
+			Body:       body,
+			PreApplied: preApplied,
 		})
 
 	case string(taskfsm.VerifyFailed):
-		body, err := decodeBody(entry.Payload)
+		body, preApplied, err := decodeBody(entry.Payload)
 		if err != nil {
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:    taskfsm.VerifyFailed,
-			TaskFile: entry.PlanFile,
-			Body:     body,
+			Event:      taskfsm.VerifyFailed,
+			TaskFile:   entry.PlanFile,
+			Body:       body,
+			PreApplied: preApplied,
 		})
 
 	case "implement_task_finished":
@@ -175,15 +187,16 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 	return nil
 }
 
-// decodeBody extracts the optional "body" field from a JSON payload string.
-// An empty payload string is treated as valid and returns an empty body.
-func decodeBody(payload string) (string, error) {
+// decodeBody extracts the optional "body" and "fsm_applied" fields from a JSON
+// payload string. An empty payload string is treated as valid and returns an
+// empty body with fsm_applied=false.
+func decodeBody(payload string) (body string, fsmApplied bool, err error) {
 	if payload == "" {
-		return "", nil
+		return "", false, nil
 	}
 	var p bodyPayload
 	if err := json.Unmarshal([]byte(payload), &p); err != nil {
-		return "", fmt.Errorf("decode body payload: %w", err)
+		return "", false, fmt.Errorf("decode body payload: %w", err)
 	}
-	return p.Body, nil
+	return p.Body, p.FsmApplied, nil
 }

@@ -26,6 +26,29 @@ func executionPhaseForEntry(entry taskstore.TaskEntry) taskfsm.ExecutionPhase {
 	return taskfsm.ExecutionPhase(strings.TrimSpace(entry.ExecutionState.Phase))
 }
 
+// preAppliedTargetStatus returns the FSM target status for a signal-bearing
+// event whose originator (e.g. the HTTP admin handler) may have applied the
+// transition before emitting the gateway row. Only signal-bearing lifecycle
+// events are covered; every entry mirrors the transition table at
+// config/taskfsm/fsm.go:96-129 and must stay in sync with it.
+func preAppliedTargetStatus(event taskfsm.Event) (taskfsm.Status, bool) {
+	switch event {
+	case taskfsm.PlannerFinished:
+		return taskfsm.StatusReady, true
+	case taskfsm.ImplementFinished:
+		return taskfsm.StatusReviewing, true
+	case taskfsm.ReviewApproved:
+		return taskfsm.StatusVerifying, true
+	case taskfsm.ReviewChangesRequested:
+		return taskfsm.StatusImplementing, true
+	case taskfsm.VerifyApproved:
+		return taskfsm.StatusDone, true
+	case taskfsm.VerifyFailed:
+		return taskfsm.StatusImplementing, true
+	}
+	return "", false
+}
+
 func (p *Processor) setExecutionState(planFile string, state taskstore.ExecutionState) error {
 	if p.config.Store == nil {
 		return fmt.Errorf("nil task store")
@@ -188,17 +211,24 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 
 		alreadyApplied := false
 		if err := p.fsm.Transition(sig.TaskFile, sig.Event); err != nil {
-			// Check if the FSM transition was already applied externally (e.g. by
-			// the HTTP admin handler before emitting the gateway signal). For
-			// planner_finished specifically, the target state is "ready"; if the
-			// task is already there we still need to emit the downstream actions
-			// (PlannerCompleteAction, AutoImplementAction) so the daemon spawns
-			// the architect. For all other events the skip-silently behaviour is
-			// correct because the daemon is the sole FSM driver.
-			if sig.Event == taskfsm.PlannerFinished {
-				if entry, ok := p.taskEntry(sig.TaskFile); ok {
-					if taskfsm.Status(entry.Status) == taskfsm.StatusReady {
-						alreadyApplied = true
+			// The signal's originator (e.g. the HTTP admin handler) may have
+			// applied the FSM transition itself before emitting the gateway row
+			// and marked the payload with fsm_applied=true. If so, the daemon
+			// must still emit the downstream actions — spawn reviewer, spawn
+			// master, spawn fixer, create PR, etc. — because the HTTP handler
+			// only writes state; it never drives the daemon side effects.
+			//
+			// The PreApplied gate matters: it keeps the existing drop behaviour
+			// for stale / out-of-order signals from the filesystem bridge and
+			// MCP signal_create where the daemon remains the sole FSM driver,
+			// even when the task happens to land in a state that matches the
+			// signal's target (see TestProcessor_ProcessFSMSignals_InvalidReviewChangesRequested_HasNoActions).
+			if sig.PreApplied {
+				if target, ok := preAppliedTargetStatus(sig.Event); ok {
+					if entry, entryOK := p.taskEntry(sig.TaskFile); entryOK {
+						if taskfsm.Status(entry.Status) == target {
+							alreadyApplied = true
+						}
 					}
 				}
 			}
