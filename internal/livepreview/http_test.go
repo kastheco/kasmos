@@ -697,6 +697,25 @@ func TestHTTPHandler_Send_SessionGone(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "tmux session not found")
 }
 
+func TestHTTPHandler_Send_BodyTooLarge(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "my-agent", Status: StatusRunning, ExecutionMode: "tmux"})
+
+	// Build a prompt that, once JSON-encoded, comfortably exceeds the cap.
+	big := strings.Repeat("x", maxSendBodyBytes+1024)
+	payload := `{"prompt":"` + big + `"}`
+
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/my-agent/send",
+		strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+	assert.Contains(t, rec.Body.String(), "prompt too large")
+}
+
 func TestHTTPHandler_Send_GenericTmuxFailure(t *testing.T) {
 	root := t.TempDir()
 	writeStateJSON(t, root, Record{Title: "my-agent", Status: StatusRunning, ExecutionMode: "tmux"})

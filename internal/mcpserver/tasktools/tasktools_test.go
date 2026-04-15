@@ -273,7 +273,7 @@ func TestTaskTransitionHandler_SupportsReviewChangesAlias(t *testing.T) {
 	project := "test-project"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "my-plan", Status: taskstore.StatusReviewing, CreatedAt: time.Now()}))
 
-	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store)
+	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store, nil)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "my-plan", "event": "review_changes"}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -288,7 +288,7 @@ func TestTaskTransitionHandler_ForceReviewApprovedLandsInVerifying(t *testing.T)
 	project := "test-project"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "my-plan", Status: taskstore.StatusReady, CreatedAt: time.Now()}))
 
-	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store)
+	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store, nil)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "my-plan", "event": "review_approved", "force": true}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -308,7 +308,7 @@ func TestTaskTransitionHandler_ForceVerifyApprovedTransitionsToDone(t *testing.T
 	project := "test-project"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "my-plan", Status: taskstore.StatusVerifying, CreatedAt: time.Now()}))
 
-	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store)
+	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store, nil)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "my-plan", "event": "verify_approved", "force": true}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -328,7 +328,7 @@ func TestTaskTransitionHandler_ForceVerifyFailedTransitionsToImplementing(t *tes
 	project := "test-project"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "my-plan", Status: taskstore.StatusVerifying, CreatedAt: time.Now()}))
 
-	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store)
+	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store, nil)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "my-plan", "event": "verify_failed", "force": true}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -348,7 +348,7 @@ func TestTaskTransitionHandler_ForcePlannerFinishedKeepsReadyCompatibility(t *te
 	project := "test-project"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "my-plan", Status: taskstore.StatusPlanning, CreatedAt: time.Now()}))
 
-	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store)
+	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store, nil)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "my-plan", "event": "planner_finished", "force": true}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)

@@ -279,6 +279,16 @@ func (i *Instance) Start(firstTimeSetup bool) error {
 	}
 	i.setProgressFunc(func(stage int, desc string) {
 		i.setLoadingProgress(stageBase+stage, desc)
+		// Stage 3 ("Configuring session...") fires after the tmux session has
+		// been created and the initial tmux options applied. The pane is live
+		// at this point — flip Status to Running immediately so the admin UI
+		// and the TUI can see the agent as "running" even while the backend
+		// is still polling up to 30s for a per-harness ready signal (claude's
+		// trust prompt, opencode's "Ask anything", etc.). Without this, every
+		// daemon-spawned agent looks stuck on "loading" for half a minute.
+		if stage >= 3 {
+			i.SetStatus(Running)
+		}
 	})
 	i.transferPromptToCli()
 
@@ -352,6 +362,10 @@ func (i *Instance) StartOnMainBranch() error {
 	i.configureSessionTitle()
 	i.setProgressFunc(func(stage int, desc string) {
 		i.setLoadingProgress(1+stage, desc)
+		// See Instance.Start for why stage 3 flips status to Running eagerly.
+		if stage >= 3 {
+			i.SetStatus(Running)
+		}
 	})
 	i.transferPromptToCli()
 
@@ -371,6 +385,9 @@ func (i *Instance) StartOnMainBranch() error {
 		return startErr
 	}
 
+	// Safety net: if tmux never reached stage 3 (e.g. a non-tmux execution
+	// backend that doesn't report progress), make sure Status ends up at
+	// Running on successful start.
 	i.SetStatus(Running)
 	return nil
 }
@@ -397,6 +414,10 @@ func (i *Instance) StartOnBranch(branch string) error {
 	i.configureSessionTitle()
 	i.setProgressFunc(func(stage int, desc string) {
 		i.setLoadingProgress(3+stage, desc)
+		// See Instance.Start for why stage 3 flips status to Running eagerly.
+		if stage >= 3 {
+			i.SetStatus(Running)
+		}
 	})
 	i.transferPromptToCli()
 
@@ -461,6 +482,10 @@ func (i *Instance) StartInSharedWorktree(worktree *git.GitWorktree, branch strin
 	i.configureSessionTitle()
 	i.setProgressFunc(func(stage int, desc string) {
 		i.setLoadingProgress(1+stage, desc)
+		// See Instance.Start for why stage 3 flips status to Running eagerly.
+		if stage >= 3 {
+			i.SetStatus(Running)
+		}
 	})
 	i.transferPromptToCli()
 

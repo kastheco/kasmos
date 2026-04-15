@@ -315,7 +315,7 @@ func setPhaseTimestampForStatus(store taskstore.Store, project, filename string,
 	}
 }
 
-func makeTaskTransitionHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
+func makeTaskTransitionHandler(rc routing.RegisterConfig, store taskstore.Store, gateway taskstore.SignalGateway) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
 		if err != nil {
@@ -363,6 +363,22 @@ func makeTaskTransitionHandler(rc routing.RegisterConfig, store taskstore.Store)
 			if err := fsm.Transition(filename, event); err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("task_transition: %v", err)), nil
 			}
+			// Mirror the HTTP taskactions handler: after a successful FSM
+			// transition, emit a canonical gateway signal (if the event maps
+			// to one) so the daemon's tick picks it up and runs the downstream
+			// side effects — spawn planner for plan_start, spawn architect for
+			// planner_finished, spawn reviewer for implement_finished, etc.
+			//
+			// Without this, MCP-triggered transitions only flip status and
+			// the daemon never acts on them, leaving the user with a
+			// "planning" task but no planner session.
+			if gateway != nil {
+				if signalType, mapErr := taskfsm.GatewaySignalTypeForEvent(event); mapErr == nil {
+					if emitErr := taskfsm.EmitGatewaySignal(gateway, project, signalType, filename, ""); emitErr != nil {
+						return mcp.NewToolResultError(fmt.Sprintf("task_transition: emit %s signal: %v", signalType, emitErr)), nil
+					}
+				}
+			}
 		}
 
 		entry, err := resolvedStore.Get(project, filename)
@@ -382,7 +398,7 @@ func makeTaskTransitionHandler(rc routing.RegisterConfig, store taskstore.Store)
 // When projects is non-empty, multi-project routing is enabled and each tool
 // accepts an optional "project" argument. When projects has zero or one entry,
 // project is used as the fixed binding and the "project" argument is optional.
-func RegisterTools(srv *server.MCPServer, project string, projects []string, store taskstore.Store) {
+func RegisterTools(srv *server.MCPServer, project string, projects []string, store taskstore.Store, gateway taskstore.SignalGateway) {
 	if srv == nil {
 		return
 	}
@@ -430,5 +446,5 @@ func RegisterTools(srv *server.MCPServer, project string, projects []string, sto
 		mcp.WithString("event", mcp.Required(), mcp.Description("task FSM event name")),
 		mcp.WithBoolean("force", mcp.Description("when true, force-set the target status for the event")),
 		mcp.WithString("project", mcp.Description("target project name (required in multi-repo mode)")),
-	), makeTaskTransitionHandler(rc, store))
+	), makeTaskTransitionHandler(rc, store, gateway))
 }

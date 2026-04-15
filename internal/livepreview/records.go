@@ -197,14 +197,11 @@ func ValidateAction(rec Record, action string) error {
 		}
 		return nil
 	case "send":
-		if rec.Status == StatusPaused {
-			return fmt.Errorf("cannot send prompt to a paused instance")
-		}
-		if rec.Status == StatusLoading {
-			return fmt.Errorf("cannot send prompt to a loading instance")
-		}
 		if config.NormalizeExecutionMode(rec.ExecutionMode) == config.ExecutionModeHeadless {
 			return fmt.Errorf("cannot send prompt to a headless instance")
+		}
+		if rec.Status != StatusRunning && rec.Status != StatusReady {
+			return fmt.Errorf("cannot send prompt to a %s instance", StatusLabel(rec.Status))
 		}
 		return nil
 	case "capture":

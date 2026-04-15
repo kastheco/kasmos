@@ -24,6 +24,11 @@ type ProjectRootResolver func(project string) (string, error)
 // available because kas serve was started without --repo flags.
 var ErrPreviewUnavailable = errors.New("live preview requires kas serve --repo")
 
+// maxSendBodyBytes caps the JSON body of POST /send to protect the tmux
+// send-keys path from oversized prompts. 64 KiB comfortably covers realistic
+// usage while keeping memory bounded under abuse.
+const maxSendBodyBytes = 64 * 1024
+
 // ErrDaemonUnavailable signals to the list/capture handlers that the daemon
 // socket is not reachable. Returning this error from a DaemonInstanceLister
 // causes the handler to fall back to state.json-only results instead of
@@ -265,10 +270,20 @@ func NewHTTPHandlerWithDaemon(resolve ProjectRootResolver, runner PaneRunner, da
 			return
 		}
 
+		// Cap the JSON body to guard against oversized prompts triggering
+		// expensive tmux send-keys work. 64 KiB is ample for any realistic
+		// prompt and keeps memory bounded under abuse.
+		r.Body = http.MaxBytesReader(w, r.Body, maxSendBodyBytes)
+
 		var body struct {
 			Prompt string `json:"prompt"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			var maxErr *http.MaxBytesError
+			if errors.As(err, &maxErr) {
+				writeJSONError(w, http.StatusRequestEntityTooLarge, "prompt too large")
+				return
+			}
 			writeJSONError(w, http.StatusBadRequest, "invalid request body")
 			return
 		}

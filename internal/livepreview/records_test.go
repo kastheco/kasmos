@@ -143,3 +143,12 @@ func TestValidateAction_SendRejectsHeadless(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "headless")
 }
+
+// TestValidateAction_SendRejectsUnknownStatus verifies that send is rejected
+// for any status outside the running/ready allowlist, protecting against
+// corrupted or forward-compatible status values.
+func TestValidateAction_SendRejectsUnknownStatus(t *testing.T) {
+	rec := Record{Title: "x", Status: Status(99), ExecutionMode: "tmux"}
+	err := ValidateAction(rec, "send")
+	require.Error(t, err)
+}
