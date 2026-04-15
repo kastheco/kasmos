@@ -40,21 +40,26 @@ type Worktree struct {
 // Record is a read-only mirror of session.InstanceData containing all fields
 // required for lossless round-trip serialisation. Every field present in
 // InstanceData must appear here; omitting a field causes silent data loss when
-// the state file is rewritten by pause/resume.
+// the state file is rewritten by pause/resume. ExecutionMode is held as a
+// plain string so livepreview stays session-import free.
 type Record struct {
-	Title     string    `json:"title"`
-	Path      string    `json:"path,omitempty"`
-	Branch    string    `json:"branch"`
-	Status    Status    `json:"status"`
-	Height    int       `json:"height"`
-	Width     int       `json:"width"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Program   string    `json:"program"`
-	AutoYes   bool      `json:"auto_yes"`
+	Title        string    `json:"title"`
+	DisplayTitle string    `json:"display_title,omitempty"`
+	Path         string    `json:"path,omitempty"`
+	Branch       string    `json:"branch"`
+	Status       Status    `json:"status"`
+	Height       int       `json:"height"`
+	Width        int       `json:"width"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	Program      string    `json:"program"`
+	AutoYes      bool      `json:"auto_yes"`
 
 	// SkipPermissions, when true, passes --permission-mode bypassPermissions to Claude.
 	SkipPermissions bool `json:"skip_permissions"`
+
+	// ExecutionMode mirrors session.ExecutionMode ("tmux" or "headless").
+	ExecutionMode string `json:"execution_mode,omitempty"`
 
 	// Optional plan/orchestration fields — must stay in sync with InstanceData.
 	TaskFile               string `json:"task_file,omitempty"`
@@ -62,11 +67,14 @@ type Record struct {
 	TaskNumber             int    `json:"task_number,omitempty"`
 	WaveNumber             int    `json:"wave_number,omitempty"`
 	PeerCount              int    `json:"peer_count,omitempty"`
+	WaveTaskIndex          int    `json:"wave_task_index,omitempty"`
+	WaveTaskCount          int    `json:"wave_task_count,omitempty"`
 	IsReviewer             bool   `json:"is_reviewer,omitempty"`
 	ImplementationComplete bool   `json:"implementation_complete,omitempty"`
 	SoloAgent              bool   `json:"solo_agent,omitempty"`
 	QueuedPrompt           string `json:"queued_prompt,omitempty"`
 	ReviewCycle            int    `json:"review_cycle,omitempty"`
+	ClaudeNoFlicker        bool   `json:"claude_no_flicker,omitempty"`
 
 	Worktree Worktree `json:"worktree"`
 }
