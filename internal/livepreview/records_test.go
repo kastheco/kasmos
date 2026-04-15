@@ -99,3 +99,56 @@ func TestValidateAction_PausedCapture(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot capture pane from a paused instance")
 }
+
+// TestValidateAction_CaptureRejectsHeadless verifies that capture is rejected
+// when the instance uses headless execution mode.
+func TestValidateAction_CaptureRejectsHeadless(t *testing.T) {
+	rec := Record{Title: "x", Status: StatusRunning, ExecutionMode: "headless"}
+	err := ValidateAction(rec, "capture")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "headless")
+}
+
+// TestValidateAction_SendAcceptsReady verifies that send is allowed when the
+// instance is in ready status with tmux mode.
+func TestValidateAction_SendAcceptsReady(t *testing.T) {
+	rec := Record{Title: "x", Status: StatusReady, ExecutionMode: "tmux"}
+	err := ValidateAction(rec, "send")
+	require.NoError(t, err)
+}
+
+// TestValidateAction_SendRejectsLoading verifies that send is rejected for a
+// loading instance.
+func TestValidateAction_SendRejectsLoading(t *testing.T) {
+	rec := Record{Title: "x", Status: StatusLoading}
+	err := ValidateAction(rec, "send")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "loading")
+}
+
+// TestValidateAction_SendRejectsPaused verifies that send is rejected for a
+// paused instance.
+func TestValidateAction_SendRejectsPaused(t *testing.T) {
+	rec := Record{Title: "x", Status: StatusPaused}
+	err := ValidateAction(rec, "send")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "paused")
+}
+
+// TestValidateAction_SendRejectsHeadless verifies that send is rejected when
+// the instance uses headless execution mode.
+func TestValidateAction_SendRejectsHeadless(t *testing.T) {
+	rec := Record{Title: "x", Status: StatusRunning, ExecutionMode: "headless"}
+	err := ValidateAction(rec, "send")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "headless")
+}
+
+// TestValidateAction_SendRejectsUnknownStatus verifies that send is rejected
+// for any status outside the running/ready allowlist, protecting against
+// corrupted or forward-compatible status values.
+func TestValidateAction_SendRejectsUnknownStatus(t *testing.T) {
+	rec := Record{Title: "x", Status: Status(99), ExecutionMode: "tmux"}
+	err := ValidateAction(rec, "send")
+	require.Error(t, err)
+}
