@@ -99,3 +99,45 @@ func TestValidateAction_PausedCapture(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot capture pane from a paused instance")
 }
+
+// TestValidActions_ByStatus verifies that ValidActions returns the correct
+// lifecycle actions for each status. Ready instances must not include pause
+// because pausing a ready instance is not a valid state transition.
+func TestValidActions_ByStatus(t *testing.T) {
+	cases := []struct {
+		name   string
+		status Status
+		want   []string
+	}{
+		{"running", StatusRunning, []string{"pause", "restart", "kill"}},
+		{"loading", StatusLoading, []string{"pause", "restart", "kill"}},
+		{"ready", StatusReady, []string{"restart", "kill"}},
+		{"paused", StatusPaused, []string{"resume", "kill"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ValidActions(Record{Status: tc.status})
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// TestValidateAction_PauseRejectsReady verifies that pause is rejected on a
+// ready instance, mirroring the ValidActions rules.
+func TestValidateAction_PauseRejectsReady(t *testing.T) {
+	rec := Record{Title: "x", Status: StatusReady}
+	err := ValidateAction(rec, "pause")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot pause")
+	assert.Contains(t, err.Error(), "ready")
+}
+
+// TestValidateAction_PauseRejectsPaused verifies that pause still rejects an
+// already-paused instance with the updated error message.
+func TestValidateAction_PauseRejectsPaused(t *testing.T) {
+	rec := Record{Title: "x", Status: StatusPaused}
+	err := ValidateAction(rec, "pause")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot pause")
+	assert.Contains(t, err.Error(), "paused")
+}

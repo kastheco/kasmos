@@ -178,7 +178,7 @@ func SessionName(title string) string {
 // requested action and returns an error when it is not.
 //
 //   - kill:    allowed in any status
-//   - pause:   not allowed when already paused
+//   - pause:   not allowed when paused or ready
 //   - resume:  only allowed when paused
 //   - send:    not allowed when paused
 //   - capture: not allowed when paused
@@ -187,8 +187,8 @@ func ValidateAction(rec Record, action string) error {
 	case "kill":
 		return nil
 	case "pause":
-		if rec.Status == StatusPaused {
-			return fmt.Errorf("instance is already paused")
+		if rec.Status == StatusPaused || rec.Status == StatusReady {
+			return fmt.Errorf("cannot pause instance in status %s", StatusLabel(rec.Status))
 		}
 		return nil
 	case "resume":
@@ -218,12 +218,15 @@ func ValidateAction(rec Record, action string) error {
 
 // ValidActions returns the lifecycle actions that are valid for rec given its
 // current status. The order is stable and matches what the admin UI expects:
-// pause/restart before kill for active instances; resume before kill for paused.
+// pause/restart before kill for active instances; resume before kill for paused;
+// restart/kill for ready (pause is not a valid transition out of ready).
 func ValidActions(rec Record) []string {
 	switch rec.Status {
 	case StatusPaused:
 		return []string{"resume", "kill"}
-	default: // StatusRunning, StatusLoading, StatusReady
+	case StatusReady:
+		return []string{"restart", "kill"}
+	default: // StatusRunning, StatusLoading
 		return []string{"pause", "restart", "kill"}
 	}
 }

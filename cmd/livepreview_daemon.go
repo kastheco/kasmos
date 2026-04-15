@@ -59,9 +59,8 @@ func newDaemonInstanceLister() *daemonInstanceLister {
 // ListInstancesForProject implements livepreview.DaemonInstanceLister by
 // calling GET /v1/repos/{project}/instances on the daemon and converting
 // daemon.api.InstanceStatus records into livepreview.Record values. Inactive
-// entries are filtered out — the web UI should only surface live instances,
-// and state.json already carries the authoritative record for anything
-// paused-via-TUI.
+// (paused) entries are included — daemonStatusToRecord maps !s.Active rows to
+// StatusPaused so the web UI keeps daemon-owned agents visible while paused.
 func (l *daemonInstanceLister) ListInstancesForProject(project string) ([]livepreview.Record, error) {
 	resp, err := l.http.Get("http://daemon/v1/repos/" + project + "/instances")
 	if err != nil {
