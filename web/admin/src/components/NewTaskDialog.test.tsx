@@ -572,6 +572,216 @@ describe("createTask payload", () => {
     expect(vi.mocked(api.createTopic)).not.toHaveBeenCalled();
   });
 
+  it("canonicalizes topic typed before topics finished loading", async () => {
+    // Regression: the dialog must not trust a stale `isNew` flag when the
+    // topics list was still empty at input time. Previously, typing
+    // "Frontend" against an empty topics prop marked the selection as
+    // isNew=true, and the backend's case-sensitive topic key would then
+    // create a second "Frontend" row alongside the existing "frontend".
+    const { rerender } = render(
+      <NewTaskDialog
+        open={true}
+        project="kasmos"
+        topics={[]}
+        topicsLoading={true}
+        onClose={vi.fn()}
+        onCreated={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    fireEvent.change(getDescriptionTextarea(), {
+      target: { value: "add dark mode" },
+    });
+
+    // Type "Frontend" while topics are still loading. At this moment the
+    // combobox has nothing to canonicalize against and emits isNew=true.
+    const combobox = screen.getByRole("combobox");
+    fireEvent.focus(combobox);
+    fireEvent.change(combobox, { target: { value: "Frontend" } });
+
+    // Submission is blocked while topics are loading.
+    expect(getSubmitButton().disabled).toBe(true);
+
+    // Topics finish loading and include the existing lowercase entry.
+    rerender(
+      <NewTaskDialog
+        open={true}
+        project="kasmos"
+        topics={DEFAULT_TOPICS}
+        topicsLoading={false}
+        onClose={vi.fn()}
+        onCreated={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    // Submission is now allowed; fire it.
+    expect(getSubmitButton().disabled).toBe(false);
+    fireEvent.click(getSubmitButton());
+
+    await waitFor(() => {
+      expect(vi.mocked(api.createTask)).toHaveBeenCalledWith(
+        "kasmos",
+        expect.objectContaining({ topic: "frontend" }),
+      );
+    });
+    // createTopic must NOT be called: "Frontend" canonicalizes to the
+    // already-existing "frontend" entry now that topics have loaded.
+    expect(vi.mocked(api.createTopic)).not.toHaveBeenCalled();
+  });
+
+  it("blocks submission while topicsLoading is true", () => {
+    render(
+      <NewTaskDialog
+        open={true}
+        project="kasmos"
+        topics={[]}
+        topicsLoading={true}
+        onClose={vi.fn()}
+        onCreated={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    fireEvent.change(getDescriptionTextarea(), {
+      target: { value: "add dark mode" },
+    });
+    // Even with a valid description and derived filename, the submit button
+    // stays disabled until topics finish loading.
+    expect(getSubmitButton().disabled).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // Regression: topics-fetch failure path. An empty `topics` prop after a
+  // failed fetch is indistinguishable from "no topics exist", which would let
+  // the user type "Frontend" against an existing lowercase "frontend" and
+  // silently fork topic identity on the case-sensitive backend
+  // (config/taskstore/server.go). The dialog must treat topicsError as
+  // authoritative: block submit, surface the error, and offer a retry.
+  // -------------------------------------------------------------------------
+  describe("topics-fetch failure", () => {
+    it("disables submit when topicsError is set, even with a valid description", () => {
+      render(
+        <NewTaskDialog
+          open={true}
+          project="kasmos"
+          topics={[]}
+          topicsLoading={false}
+          topicsError="network down"
+          onClose={vi.fn()}
+          onCreated={vi.fn().mockResolvedValue(undefined)}
+        />,
+      );
+      fireEvent.change(getDescriptionTextarea(), {
+        target: { value: "add dark mode" },
+      });
+      expect(getSubmitButton().disabled).toBe(true);
+    });
+
+    it("surfaces an inline alert with the underlying error message", () => {
+      render(
+        <NewTaskDialog
+          open={true}
+          project="kasmos"
+          topics={[]}
+          topicsLoading={false}
+          topicsError="network down"
+          onClose={vi.fn()}
+          onCreated={vi.fn().mockResolvedValue(undefined)}
+        />,
+      );
+      const banner = screen.getByTestId("topics-error");
+      expect(banner.textContent).toContain("failed to load topics");
+      expect(banner.textContent).toContain("network down");
+      expect(banner.getAttribute("role")).toBe("alert");
+    });
+
+    it("does not call createTask when a programmatic submit fires with topicsError set", async () => {
+      const onCreated = vi.fn().mockResolvedValue(undefined);
+      render(
+        <NewTaskDialog
+          open={true}
+          project="kasmos"
+          topics={[]}
+          topicsLoading={false}
+          topicsError="network down"
+          onClose={vi.fn()}
+          onCreated={onCreated}
+        />,
+      );
+      fireEvent.change(getDescriptionTextarea(), {
+        target: { value: "add dark mode" },
+      });
+      // Button is disabled; fire the form directly to test the handleSubmit guard.
+      const form = screen.getByRole("dialog").querySelector("form")!;
+      fireEvent.submit(form);
+
+      await waitFor(() => {
+        const alerts = screen.getAllByRole("alert");
+        expect(
+          alerts.some((el) =>
+            el.textContent?.includes("failed to load topics"),
+          ),
+        ).toBe(true);
+      });
+
+      expect(vi.mocked(api.createTopic)).not.toHaveBeenCalled();
+      expect(vi.mocked(api.createTask)).not.toHaveBeenCalled();
+      expect(onCreated).not.toHaveBeenCalled();
+    });
+
+    it("invokes onRetryTopics when the retry button is clicked", () => {
+      const onRetryTopics = vi.fn();
+      render(
+        <NewTaskDialog
+          open={true}
+          project="kasmos"
+          topics={[]}
+          topicsLoading={false}
+          topicsError="network down"
+          onRetryTopics={onRetryTopics}
+          onClose={vi.fn()}
+          onCreated={vi.fn().mockResolvedValue(undefined)}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+      expect(onRetryTopics).toHaveBeenCalledTimes(1);
+    });
+
+    it("re-enables submit after topicsError clears on a retry", () => {
+      const onRetryTopics = vi.fn();
+      const { rerender } = render(
+        <NewTaskDialog
+          open={true}
+          project="kasmos"
+          topics={[]}
+          topicsLoading={false}
+          topicsError="network down"
+          onRetryTopics={onRetryTopics}
+          onClose={vi.fn()}
+          onCreated={vi.fn().mockResolvedValue(undefined)}
+        />,
+      );
+      fireEvent.change(getDescriptionTextarea(), {
+        target: { value: "add dark mode" },
+      });
+      expect(getSubmitButton().disabled).toBe(true);
+
+      // Simulate a successful retry: topicsError clears and topics populate.
+      rerender(
+        <NewTaskDialog
+          open={true}
+          project="kasmos"
+          topics={DEFAULT_TOPICS}
+          topicsLoading={false}
+          topicsError={null}
+          onRetryTopics={onRetryTopics}
+          onClose={vi.fn()}
+          onCreated={vi.fn().mockResolvedValue(undefined)}
+        />,
+      );
+      expect(screen.queryByTestId("topics-error")).toBeNull();
+      expect(getSubmitButton().disabled).toBe(false);
+    });
+  });
+
   it("passes correct filename and branch to createTask", async () => {
     renderDialog();
     fireEvent.change(getDescriptionTextarea(), {

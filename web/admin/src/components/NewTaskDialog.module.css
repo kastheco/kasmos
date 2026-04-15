@@ -121,6 +121,44 @@
   margin-top: 4px;
 }
 
+.topicsError {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--rp-love, #eb6f92);
+  background: rgba(235, 111, 146, 0.08);
+  border: 1px solid rgba(235, 111, 146, 0.25);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-top: 4px;
+}
+
+.topicsError span {
+  flex: 1;
+}
+
+.retryBtn {
+  padding: 4px 10px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid rgba(235, 111, 146, 0.4);
+  color: var(--rp-love, #eb6f92);
+  transition: background 0.15s;
+}
+
+.retryBtn:hover:not(:disabled) {
+  background: rgba(235, 111, 146, 0.15);
+}
+
+.retryBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .actions {
   display: flex;
   justify-content: flex-end;

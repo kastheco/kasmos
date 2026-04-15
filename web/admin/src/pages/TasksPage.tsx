@@ -106,20 +106,41 @@ export default function TasksPage() {
       [project],
     );
 
-  const { data: topicsData, refresh: refreshTopics } =
-    useAutoRefresh<TopicEntry[]>(
-      async () => {
-        if (!project) return [];
-        return await listTopics(project);
-      },
-      [project],
-    );
+  const {
+    data: topicsData,
+    loading: topicsLoading,
+    error: topicsError,
+    refresh: refreshTopics,
+  } = useAutoRefresh<TopicEntry[]>(
+    async () => {
+      if (!project) return [];
+      return await listTopics(project);
+    },
+    [project],
+  );
+
+  // Topics are authoritative once the hook has returned non-null data at least
+  // once. useAutoRefresh only leaves data=null while the first fetch is still
+  // pending or failed outright; a successful load populates data and keeps it
+  // even through subsequent background-refresh errors. Gating on data !== null
+  // is therefore the cheapest correct "topics query is authoritative" check.
+  const topicsReady = topicsData !== null;
+  const topicsInitialFailure = !topicsReady && !topicsLoading && topicsError != null;
+  const canOpenDialog = project !== "" && topicsReady;
 
   // Close the dialog when the project changes so a partially-complete create
   // flow cannot leak across projects.
   useEffect(() => {
     setDialogOpen(false);
   }, [project]);
+
+  // If topics become non-authoritative for any reason (project switch while the
+  // dialog is open, etc.), collapse the dialog instead of letting it run with a
+  // stale or empty view. The backend stores topics with a case-sensitive key,
+  // so submitting against a non-authoritative view risks forking identities.
+  useEffect(() => {
+    if (!topicsReady) setDialogOpen(false);
+  }, [topicsReady]);
 
   function toggleSort(key: SortKey) {
     if (key === sortKey) {
@@ -210,11 +231,39 @@ export default function TasksPage() {
           ref={newTaskButtonRef}
           className={styles.newTaskBtn}
           onClick={() => setDialogOpen(true)}
-          disabled={project === ""}
+          disabled={!canOpenDialog}
+          title={
+            project === ""
+              ? undefined
+              : !topicsReady && topicsLoading
+                ? "loading topics\u2026"
+                : topicsInitialFailure
+                  ? `failed to load topics: ${topicsError}`
+                  : undefined
+          }
         >
           new task
         </button>
       </div>
+
+      {topicsInitialFailure && (
+        <div
+          className={styles.topicsLoadError}
+          role="alert"
+          data-testid="topics-load-error"
+        >
+          <span>failed to load topics: {topicsError}</span>
+          <button
+            type="button"
+            className={styles.topicsRetryBtn}
+            onClick={() => {
+              void refreshTopics();
+            }}
+          >
+            retry
+          </button>
+        </div>
+      )}
 
       {error && <div className={styles.error}>{error}</div>}
 
@@ -325,10 +374,20 @@ export default function TasksPage() {
         </div>
       )}
 
+      {/*
+       * Gate `open` on topicsReady so the dialog never receives a
+       * `topicsData ?? []` fallback that looks identical to "no topics exist".
+       * When topics are not authoritative, canOpenDialog is false and the
+       * button is disabled; this render is defence-in-depth in case the
+       * button state ever drifts from topicsReady.
+       */}
       <NewTaskDialog
-        open={dialogOpen}
+        open={dialogOpen && topicsReady}
         project={project}
         topics={topicsData ?? []}
+        topicsLoading={topicsLoading}
+        topicsError={topicsError}
+        onRetryTopics={refreshTopics}
         onClose={handleCloseDialog}
         onCreated={handleCreated}
       />

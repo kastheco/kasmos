@@ -33,6 +33,9 @@ interface NewTaskDialogProps {
   open: boolean;
   project: string;
   topics: TopicEntry[];
+  topicsLoading?: boolean;
+  topicsError?: string | null;
+  onRetryTopics?(): void | Promise<void>;
   onClose(): void;
   onCreated(result: NewTaskDialogResult): Promise<void> | void;
 }
@@ -41,6 +44,9 @@ export default function NewTaskDialog({
   open,
   project,
   topics,
+  topicsLoading = false,
+  topicsError = null,
+  onRetryTopics,
   onClose,
   onCreated,
 }: NewTaskDialogProps) {
@@ -124,12 +130,46 @@ export default function NewTaskDialog({
       return;
     }
 
+    // Refuse to submit while the topics list is not authoritative. An empty
+    // topics prop during loading or after a failed fetch looks identical to
+    // "no topics exist", and the case-sensitive backend
+    // (config/taskstore/server.go) would then auto-create a second topic row
+    // when the user types a case-variant like "Frontend" against an existing
+    // lowercase "frontend". These guards mirror the canSubmit flag so a
+    // programmatic form submit cannot bypass the disabled button.
+    if (topicsLoading) {
+      setGeneralError("topics are still loading");
+      return;
+    }
+    if (topicsError) {
+      setGeneralError(`failed to load topics: ${topicsError}`);
+      return;
+    }
+
     setBusy(true);
     try {
-      // 2. Create topic if the user declared a new one.
-      if (topicIsNew && topicValue.trim() !== "") {
+      // Re-canonicalize the topic against the current topics prop before
+      // acting on the stored `topicIsNew` flag. The combobox marks a typed
+      // value as "new" whenever the topics list does not contain a match at
+      // that moment — but if the user typed a case-variant like "Frontend"
+      // before the topics hook finished loading, the flag is stale and the
+      // matching lowercase "frontend" topic only arrives later. Trusting
+      // that flag would call createTopic("Frontend") and, because the
+      // backend topic key is case-sensitive, fork a second topic identity.
+      const trimmedTopic = topicValue.trim();
+      const canonicalTopic = trimmedTopic
+        ? topics.find(
+            (t) => t.name.toLowerCase() === trimmedTopic.toLowerCase(),
+          )
+        : undefined;
+      const finalTopicName = canonicalTopic?.name ?? trimmedTopic;
+      const mustCreateTopic =
+        topicIsNew && !canonicalTopic && finalTopicName !== "";
+
+      // 2. Create topic only if the user declared a genuinely new one.
+      if (mustCreateTopic) {
         try {
-          await createTopic(project, topicValue.trim());
+          await createTopic(project, finalTopicName);
         } catch (err) {
           setGeneralError(err instanceof Error ? err.message : String(err));
           return;
@@ -142,7 +182,7 @@ export default function NewTaskDialog({
         task = await createTask(project, {
           filename: effectiveFilename,
           description,
-          topic: topicValue.trim() || undefined,
+          topic: finalTopicName || undefined,
           branch: branchFromFilename(effectiveFilename),
           created_at: new Date().toISOString(),
         });
@@ -213,7 +253,11 @@ export default function NewTaskDialog({
   if (!open) return null;
 
   const canSubmit =
-    description.trim() !== "" && effectiveFilename.trim() !== "" && !busy;
+    description.trim() !== "" &&
+    effectiveFilename.trim() !== "" &&
+    !busy &&
+    !topicsLoading &&
+    !topicsError;
 
   return createPortal(
     <div
@@ -260,9 +304,30 @@ export default function NewTaskDialog({
               setTopicValue(value);
               setTopicIsNew(isNew);
             }}
-            disabled={busy}
+            disabled={busy || !!topicsError}
             id="new-task-topic"
           />
+          {topicsError && (
+            <div
+              className={styles.topicsError}
+              role="alert"
+              data-testid="topics-error"
+            >
+              <span>failed to load topics: {topicsError}</span>
+              {onRetryTopics && (
+                <button
+                  type="button"
+                  className={styles.retryBtn}
+                  onClick={() => {
+                    void onRetryTopics();
+                  }}
+                  disabled={busy}
+                >
+                  retry
+                </button>
+              )}
+            </div>
+          )}
 
           <label className={styles.label} htmlFor="new-task-filename">
             filename
