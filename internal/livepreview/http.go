@@ -1,0 +1,222 @@
+package livepreview
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/kastheco/kasmos/config"
+)
+
+// ProjectRootResolver maps a project name to its repo root path.
+// It returns ErrPreviewUnavailable when kas serve was started without --repo.
+type ProjectRootResolver func(project string) (string, error)
+
+// ErrPreviewUnavailable is returned by the resolver when live preview is not
+// available because kas serve was started without --repo flags.
+var ErrPreviewUnavailable = errors.New("live preview requires kas serve --repo")
+
+// ExecPaneRunner is a PaneRunner backed by os/exec.
+type ExecPaneRunner struct{}
+
+// Output implements PaneRunner by running name with args under ctx and
+// returning its combined standard output.
+func (r *ExecPaneRunner) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, name, args...).Output()
+}
+
+// StateFilePath returns the absolute path to the instance state file within
+// repoRoot: <repoRoot>/.kasmos/state.json.
+func StateFilePath(repoRoot string) string {
+	return filepath.Join(repoRoot, ".kasmos", config.StateFileName)
+}
+
+// LoadRecordsFromRepoRoot reads and parses the instance records from
+// <repoRoot>/.kasmos/state.json.
+//
+// When the file does not exist it returns an empty slice without creating the
+// file (read-only). On JSON parse errors it returns a wrapped error that
+// callers can surface as an HTTP 500/502.
+func LoadRecordsFromRepoRoot(repoRoot string) ([]Record, error) {
+	path := StateFilePath(repoRoot)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []Record{}, nil
+		}
+		return nil, fmt.Errorf("read state file %s: %w", path, err)
+	}
+	var state struct {
+		Instances json.RawMessage `json:"instances"`
+	}
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, fmt.Errorf("parse state file %s: %w", path, err)
+	}
+	if state.Instances == nil {
+		return []Record{}, nil
+	}
+	var records []Record
+	if err := json.Unmarshal(state.Instances, &records); err != nil {
+		return nil, fmt.Errorf("parse instances in %s: %w", path, err)
+	}
+	return records, nil
+}
+
+// ListEntry is the JSON shape returned by GET /v1/projects/{project}/instances.
+type ListEntry struct {
+	Title      string `json:"title"`
+	Status     string `json:"status"`
+	Branch     string `json:"branch"`
+	Program    string `json:"program"`
+	TaskFile   string `json:"task_file,omitempty"`
+	AgentType  string `json:"agent_type,omitempty"`
+	WaveNumber int    `json:"wave_number,omitempty"`
+	TaskNumber int    `json:"task_number,omitempty"`
+	CreatedAt  string `json:"created_at,omitempty"`
+	UpdatedAt  string `json:"updated_at,omitempty"`
+}
+
+// NewHTTPHandler returns an http.Handler that serves the live-preview API.
+//
+// Routes registered on an internal mux:
+//
+//	GET /v1/projects/{project}/instances
+//	GET /v1/projects/{project}/instances/{title}/capture
+func NewHTTPHandler(resolve ProjectRootResolver, runner PaneRunner) http.Handler {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("GET /v1/projects/{project}/instances", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		root, err := resolve(project)
+		if err != nil {
+			writeResolverError(w, err)
+			return
+		}
+
+		records, err := LoadRecordsFromRepoRoot(root)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		entries := make([]ListEntry, len(records))
+		for i, rec := range records {
+			entries[i] = recordToListEntry(rec)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(entries)
+	})
+
+	mux.HandleFunc("GET /v1/projects/{project}/instances/{title}/capture", func(w http.ResponseWriter, r *http.Request) {
+		title := r.PathValue("title")
+		if strings.TrimSpace(title) == "" {
+			writeJSONError(w, http.StatusBadRequest, "missing title")
+			return
+		}
+
+		project := r.PathValue("project")
+		root, err := resolve(project)
+		if err != nil {
+			writeResolverError(w, err)
+			return
+		}
+
+		records, err := LoadRecordsFromRepoRoot(root)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		rec, err := FindRecord(records, title)
+		if err != nil {
+			writeJSONError(w, http.StatusNotFound, err.Error())
+			return
+		}
+
+		if err := ValidateAction(rec, "capture"); err != nil {
+			writeJSONError(w, http.StatusConflict, err.Error())
+			return
+		}
+
+		out, err := CapturePane(r.Context(), runner, rec,
+			r.URL.Query().Get("start"),
+			r.URL.Query().Get("end"),
+		)
+		if err != nil {
+			writeCaptureError(w, err)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte(out))
+	})
+
+	return mux
+}
+
+// writeResolverError maps project resolver errors to HTTP status codes.
+func writeResolverError(w http.ResponseWriter, err error) {
+	if errors.Is(err, ErrPreviewUnavailable) {
+		writeJSONError(w, http.StatusNotImplemented, ErrPreviewUnavailable.Error())
+		return
+	}
+	writeJSONError(w, http.StatusInternalServerError, err.Error())
+}
+
+// writeCaptureError maps CapturePane errors to HTTP status codes.
+//
+//   - ErrSessionGone → 410
+//   - *CommandError  → 502 with trimmed stderr (or err.Error() as fallback)
+//   - other          → 502 with err.Error()
+func writeCaptureError(w http.ResponseWriter, err error) {
+	if errors.Is(err, ErrSessionGone) {
+		writeJSONError(w, http.StatusGone, ErrSessionGone.Error())
+		return
+	}
+	var cmdErr *CommandError
+	if errors.As(err, &cmdErr) {
+		msg := cmdErr.Err.Error()
+		if s := strings.TrimSpace(cmdErr.Stderr); s != "" {
+			msg = s
+		}
+		writeJSONError(w, http.StatusBadGateway, msg)
+		return
+	}
+	writeJSONError(w, http.StatusBadGateway, err.Error())
+}
+
+// writeJSONError writes a {"error": msg} JSON response with the given status code.
+func writeJSONError(w http.ResponseWriter, code int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// recordToListEntry converts a Record to a ListEntry, formatting non-zero
+// timestamps as RFC3339.
+func recordToListEntry(rec Record) ListEntry {
+	e := ListEntry{
+		Title:      rec.Title,
+		Status:     StatusLabel(rec.Status),
+		Branch:     rec.Branch,
+		Program:    rec.Program,
+		TaskFile:   rec.TaskFile,
+		AgentType:  rec.AgentType,
+		WaveNumber: rec.WaveNumber,
+		TaskNumber: rec.TaskNumber,
+	}
+	if !rec.CreatedAt.IsZero() {
+		e.CreatedAt = rec.CreatedAt.Format(time.RFC3339)
+	}
+	if !rec.UpdatedAt.IsZero() {
+		e.UpdatedAt = rec.UpdatedAt.Format(time.RFC3339)
+	}
+	return e
+}

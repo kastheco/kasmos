@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,6 +15,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskactions"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/internal/livepreview"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -352,7 +356,7 @@ func TestNewServeAPIRootMux_ContentRouteWinsOverTaskAPI(t *testing.T) {
 	auditAPI := auditlog.NewHandler(logger)
 	actionsAPI := taskactions.NewHandler(store, gw)
 
-	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI)
+	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI, http.NotFoundHandler())
 
 	// Markdown content with a clear goal heading so IngestContent populates Goal.
 	const mdContent = "# Goal\n\nimplement the feature\n"
@@ -390,7 +394,7 @@ func TestNewServeAPIRootMux_GoalRouteWinsOverTaskAPI(t *testing.T) {
 	auditAPI := auditlog.NewHandler(logger)
 	actionsAPI := taskactions.NewHandler(store, gw)
 
-	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI)
+	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI, http.NotFoundHandler())
 
 	req := httptest.NewRequest(http.MethodPut,
 		"/v1/projects/"+project+"/tasks/"+filename+"/goal",
@@ -420,7 +424,7 @@ func TestNewServeAPIRootMux_ActionRouteProjectValidation(t *testing.T) {
 	auditAPI := projectValidationMiddleware(repoRegs.valid, auditlog.NewHandler(logger))
 	actionsAPI := projectValidationMiddleware(repoRegs.valid, taskactions.NewHandler(store, gw))
 
-	mux := newServeAPIRootMux(sharedDB, repoRegs, taskAPI, auditAPI, actionsAPI)
+	mux := newServeAPIRootMux(sharedDB, repoRegs, taskAPI, auditAPI, actionsAPI, http.NotFoundHandler())
 
 	t.Run("unknown project returns 404 on available-actions", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet,
@@ -473,7 +477,7 @@ func TestNewServeAPIRootMux_TransitionEmitsGatewaySignal(t *testing.T) {
 	auditAPI := auditlog.NewHandler(logger)
 	actionsAPI := taskactions.NewHandler(store, gw)
 
-	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI)
+	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI, http.NotFoundHandler())
 
 	req := httptest.NewRequest(http.MethodPost,
 		"/v1/projects/"+project+"/tasks/"+filename+"/transition",
@@ -489,4 +493,160 @@ func TestNewServeAPIRootMux_TransitionEmitsGatewaySignal(t *testing.T) {
 	require.Len(t, signals, 1, "expected exactly one pending signal after planner_finished")
 	assert.Equal(t, filename, signals[0].PlanFile)
 	assert.Equal(t, "planner_finished", signals[0].SignalType)
+}
+
+// ---------------------------------------------------------------------------
+// Preview route registration tests
+// ---------------------------------------------------------------------------
+
+// testServePreviewMux is a helper that builds a root mux with the given
+// previewAPI wired in, using an in-memory DB for the required taskstore.
+func testServePreviewMux(t *testing.T, previewAPI http.Handler) *http.ServeMux {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "preview_test.db")
+	sharedDB, store, gw, logger, err := openServeSQLiteBackends(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { sharedDB.Close() })
+
+	taskAPI := taskstore.NewHandler(store)
+	auditAPI := auditlog.NewHandler(logger)
+	actionsAPI := taskactions.NewHandler(store, gw)
+	return newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI, previewAPI)
+}
+
+// TestNewServeAPIRootMux_PreviewInstancesRouteRegistered verifies that
+// GET /v1/projects/{project}/instances is routed to previewAPI.
+func TestNewServeAPIRootMux_PreviewInstancesRouteRegistered(t *testing.T) {
+	called := false
+	previewAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux := testServePreviewMux(t, previewAPI)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/myproj/instances", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	assert.True(t, called, "previewAPI must be called for GET /instances")
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// TestNewServeAPIRootMux_PreviewCaptureRouteRegistered verifies that
+// GET /v1/projects/{project}/instances/{title}/capture is routed to previewAPI.
+func TestNewServeAPIRootMux_PreviewCaptureRouteRegistered(t *testing.T) {
+	called := false
+	previewAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux := testServePreviewMux(t, previewAPI)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/myproj/instances/agent1/capture", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	assert.True(t, called, "previewAPI must be called for GET /instances/{title}/capture")
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// TestNewServeAPIRootMux_PreviewProjectValidation404 verifies that in
+// repo-scoped mode unknown projects return 404 for the instances list route.
+func TestNewServeAPIRootMux_PreviewProjectValidation404(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "preview_validation.db")
+	sharedDB, store, gw, logger, err := openServeSQLiteBackends(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { sharedDB.Close() })
+
+	repoRoot := t.TempDir()
+	validProjects := map[string]struct{}{"known-proj": {}}
+	repoRegs := serveRepoRegistration{
+		valid:          validProjects,
+		rootsByProject: map[string]string{"known-proj": repoRoot},
+	}
+
+	resolve := func(project string) (string, error) {
+		root, ok := repoRegs.rootsByProject[project]
+		if !ok {
+			return "", fmt.Errorf("project not found: %s", project)
+		}
+		return root, nil
+	}
+	previewHandler := livepreview.NewHTTPHandler(resolve, &livepreview.ExecPaneRunner{})
+	previewAPI := projectValidationMiddleware(repoRegs.valid, previewHandler)
+
+	taskAPI := projectValidationMiddleware(repoRegs.valid, taskstore.NewHandler(store))
+	auditAPI := projectValidationMiddleware(repoRegs.valid, auditlog.NewHandler(logger))
+	actionsAPI := projectValidationMiddleware(repoRegs.valid, taskactions.NewHandler(store, gw))
+
+	mux := newServeAPIRootMux(sharedDB, repoRegs, taskAPI, auditAPI, actionsAPI, previewAPI)
+
+	t.Run("unknown project returns 404 on instances list", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/v1/projects/unknown-proj/instances", nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusNotFound, rec.Code)
+		assert.JSONEq(t, `{"error":"project not found: unknown-proj"}`, rec.Body.String())
+	})
+
+	t.Run("known project reaches preview handler", func(t *testing.T) {
+		// known-proj has no state file → returns empty JSON array.
+		req := httptest.NewRequest(http.MethodGet, "/v1/projects/known-proj/instances", nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		assert.JSONEq(t, "[]", rec.Body.String())
+	})
+}
+
+// TestNewServeAPIRootMux_CaptureContentTypePlain verifies that the capture
+// endpoint returns Content-Type: text/plain; charset=utf-8.
+func TestNewServeAPIRootMux_CaptureContentTypePlain(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// Write a running instance to the state file.
+	kasDir := filepath.Join(repoRoot, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasDir, 0o755))
+	type stateFile struct {
+		Instances json.RawMessage `json:"instances"`
+	}
+	type instanceRec struct {
+		Title   string `json:"title"`
+		Status  int    `json:"status"`
+		Program string `json:"program"`
+		Branch  string `json:"branch"`
+	}
+	raw, err := json.Marshal([]instanceRec{{Title: "agent1", Status: 0, Program: "claude", Branch: "main"}})
+	require.NoError(t, err)
+	data, err := json.Marshal(stateFile{Instances: json.RawMessage(raw)})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(kasDir, "state.json"), data, 0o644))
+
+	// Build a preview handler with a mock runner that returns pane output.
+	mockRunner := &captureTestRunner{output: "hello from tmux\n"}
+	resolve := func(string) (string, error) { return repoRoot, nil }
+	previewAPI := livepreview.NewHTTPHandler(resolve, mockRunner)
+
+	mux := testServePreviewMux(t, previewAPI)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/myproj/instances/agent1/capture", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	assert.Equal(t, "text/plain; charset=utf-8", rec.Header().Get("Content-Type"))
+	assert.Equal(t, "hello from tmux\n", rec.Body.String())
+}
+
+// captureTestRunner is a minimal livepreview.PaneRunner for use in cmd tests.
+type captureTestRunner struct {
+	output string
+}
+
+func (r *captureTestRunner) Output(_ context.Context, _ string, _ ...string) ([]byte, error) {
+	return []byte(r.output), nil
 }
