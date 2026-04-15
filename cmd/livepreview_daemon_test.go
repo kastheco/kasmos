@@ -33,10 +33,15 @@ func (t *redirectTransport) RoundTrip(req *http.Request) (*http.Response, error)
 }
 
 func TestDaemonInstanceLister_PausedRowsNotFiltered(t *testing.T) {
-	// The daemon reports one active and one paused instance.
+	// The daemon reports one running, one paused, and one ready instance so
+	// this test covers both the non-filtering path and the full
+	// daemonStatusToRecord status mapping. Ready must be preserved end-to-end
+	// so the web UI can restrict valid_actions to {restart, kill} — collapsing
+	// it into StatusRunning would violate the plan action matrix.
 	statuses := []api.InstanceStatus{
 		{Title: "active-agent", Active: true, Program: "opencode"},
 		{Title: "paused-agent", Active: false, Program: "claude"},
+		{Title: "ready-agent", Active: true, Ready: true, Program: "opencode"},
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -54,17 +59,18 @@ func TestDaemonInstanceLister_PausedRowsNotFiltered(t *testing.T) {
 
 	records, err := lister.ListInstancesForProject("myproject")
 	require.NoError(t, err)
-	// Both active and paused rows must appear.
-	require.Len(t, records, 2, "paused daemon rows must not be filtered out")
-	titles := []string{records[0].Title, records[1].Title}
-	assert.Contains(t, titles, "active-agent")
-	assert.Contains(t, titles, "paused-agent")
-	// Paused status must be mapped correctly.
+	require.Len(t, records, 3, "paused and ready daemon rows must not be filtered out")
+
+	byTitle := make(map[string]livepreview.Record, len(records))
 	for _, r := range records {
-		if r.Title == "paused-agent" {
-			assert.Equal(t, livepreview.StatusPaused, r.Status)
-		}
+		byTitle[r.Title] = r
 	}
+	require.Contains(t, byTitle, "active-agent")
+	require.Contains(t, byTitle, "paused-agent")
+	require.Contains(t, byTitle, "ready-agent")
+	assert.Equal(t, livepreview.StatusRunning, byTitle["active-agent"].Status)
+	assert.Equal(t, livepreview.StatusPaused, byTitle["paused-agent"].Status)
+	assert.Equal(t, livepreview.StatusReady, byTitle["ready-agent"].Status)
 }
 
 func TestDaemonInstanceLister_PostInstanceAction_EncodesPath(t *testing.T) {

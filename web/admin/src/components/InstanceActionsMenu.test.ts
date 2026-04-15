@@ -3,13 +3,27 @@
 // Runs via `tsx` (same pattern as api.test.ts) — no test framework required.
 
 import type { InstanceEntry, InstanceAction } from "../types.ts";
-import { getMenuItems } from "./InstanceActionsMenu.tsx";
+import {
+  getMenuItems,
+  reduceMenuKey,
+  shouldFireAction,
+  type InstanceMenuItem,
+} from "./InstanceActionsMenu.tsx";
+import { routeInstanceAction } from "../pages/InstancesPage.tsx";
 
 function assertEqual<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
     throw new Error(
       `${msg}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
     );
+  }
+}
+
+function assertDeepEqual<T>(actual: T, expected: T, msg: string): void {
+  const a = JSON.stringify(actual);
+  const b = JSON.stringify(expected);
+  if (a !== b) {
+    throw new Error(`${msg}: expected ${b}, got ${a}`);
   }
 }
 
@@ -101,5 +115,150 @@ assertEqual(allItems.find((i) => i.action === "restart")!.destructive, false, "r
 for (const item of allItems) {
   assertEqual(item.label, item.label.toLowerCase(), `${item.action} label is lowercase`);
 }
+
+// ---- reduceMenuKey: keyboard navigation reducer -----------------------------
+
+// Escape always closes, regardless of focused index or item count.
+assertDeepEqual(
+  reduceMenuKey("Escape", 0, 4),
+  { type: "close" },
+  "Escape closes the menu from first item",
+);
+assertDeepEqual(
+  reduceMenuKey("Escape", 3, 4),
+  { type: "close" },
+  "Escape closes the menu from last item",
+);
+assertDeepEqual(
+  reduceMenuKey("Escape", -1, 4),
+  { type: "close" },
+  "Escape closes the menu even when nothing is focused",
+);
+
+// ArrowDown moves focus forward, stops at the last item.
+assertDeepEqual(
+  reduceMenuKey("ArrowDown", 0, 4),
+  { type: "move", nextIdx: 1 },
+  "ArrowDown moves 0 → 1",
+);
+assertDeepEqual(
+  reduceMenuKey("ArrowDown", 2, 4),
+  { type: "move", nextIdx: 3 },
+  "ArrowDown moves 2 → 3 (last)",
+);
+assertDeepEqual(
+  reduceMenuKey("ArrowDown", 3, 4),
+  { type: "move", nextIdx: 3 },
+  "ArrowDown at last item stays clamped (no wrap)",
+);
+
+// ArrowUp moves focus backward, stops at the first item.
+assertDeepEqual(
+  reduceMenuKey("ArrowUp", 3, 4),
+  { type: "move", nextIdx: 2 },
+  "ArrowUp moves 3 → 2",
+);
+assertDeepEqual(
+  reduceMenuKey("ArrowUp", 1, 4),
+  { type: "move", nextIdx: 0 },
+  "ArrowUp moves 1 → 0 (first)",
+);
+assertDeepEqual(
+  reduceMenuKey("ArrowUp", 0, 4),
+  { type: "move", nextIdx: 0 },
+  "ArrowUp at first item stays clamped (no wrap)",
+);
+
+// Unrelated keys are no-ops so the popover handler does not preventDefault
+// or consume them.
+assertDeepEqual(
+  reduceMenuKey("Tab", 0, 4),
+  { type: "none" },
+  "Tab is a no-op (browser handles focus chain)",
+);
+assertDeepEqual(
+  reduceMenuKey("a", 0, 4),
+  { type: "none" },
+  "Letter keys are no-ops (menu has no typeahead)",
+);
+assertDeepEqual(
+  reduceMenuKey("Enter", 0, 4),
+  { type: "none" },
+  "Enter is handled at the item level, not the popover (no-op here)",
+);
+
+// Empty menu: arrow keys are no-ops because there is nothing to focus.
+assertDeepEqual(
+  reduceMenuKey("ArrowDown", -1, 0),
+  { type: "none" },
+  "ArrowDown on empty menu is a no-op",
+);
+assertDeepEqual(
+  reduceMenuKey("ArrowUp", -1, 0),
+  { type: "none" },
+  "ArrowUp on empty menu is a no-op",
+);
+
+// ---- shouldFireAction: activation gate --------------------------------------
+
+const enabledItem: InstanceMenuItem = {
+  action: "pause",
+  label: "pause",
+  enabled: true,
+  destructive: false,
+};
+const disabledItem: InstanceMenuItem = {
+  action: "pause",
+  label: "pause",
+  enabled: false,
+  destructive: false,
+};
+
+assertEqual(
+  shouldFireAction(enabledItem, false),
+  true,
+  "enabled + not busy fires",
+);
+assertEqual(
+  shouldFireAction(enabledItem, true),
+  false,
+  "busy blocks an enabled item (prevents double-fire)",
+);
+assertEqual(
+  shouldFireAction(disabledItem, false),
+  false,
+  "disabled item never fires, even when not busy",
+);
+assertEqual(
+  shouldFireAction(disabledItem, true),
+  false,
+  "disabled + busy never fires",
+);
+
+// ---- routeInstanceAction: kill confirm routing -----------------------------
+
+// Kill must go through the confirm dialog path.
+assertDeepEqual(
+  routeInstanceAction("kill" as InstanceAction),
+  { type: "confirm-kill" },
+  "kill routes to confirm dialog",
+);
+
+// Every non-kill action must execute immediately with the action preserved.
+assertDeepEqual(
+  routeInstanceAction("pause" as InstanceAction),
+  { type: "immediate", action: "pause" },
+  "pause routes to immediate execution",
+);
+assertDeepEqual(
+  routeInstanceAction("resume" as InstanceAction),
+  { type: "immediate", action: "resume" },
+  "resume routes to immediate execution",
+);
+assertDeepEqual(
+  routeInstanceAction("restart" as InstanceAction),
+  { type: "immediate", action: "restart" },
+  "restart routes to immediate execution",
+);
 
 console.log("InstanceActionsMenu.test.ts ok");

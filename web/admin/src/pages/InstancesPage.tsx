@@ -22,6 +22,18 @@ const ACTION_PAST_TENSE: Record<InstanceAction, string> = {
   kill: "killed",
 };
 
+/** Decides how a menu action should be routed. Pure so it can be tested
+ *  without mounting the page — kill goes through a confirm dialog, everything
+ *  else executes immediately. */
+export type ActionRoute =
+  | { type: "confirm-kill" }
+  | { type: "immediate"; action: "pause" | "resume" | "restart" };
+
+export function routeInstanceAction(action: InstanceAction): ActionRoute {
+  if (action === "kill") return { type: "confirm-kill" };
+  return { type: "immediate", action };
+}
+
 function formatTime(iso?: string): string {
   if (!iso) return "";
   try {
@@ -182,17 +194,17 @@ export default function InstancesPage() {
   const handleAction = useCallback(
     async (title: string, action: InstanceAction) => {
       if (!project) return;
-      if (action === "kill") {
-        // Kill requires confirmation — defer to the dialog.
+      const route = routeInstanceAction(action);
+      if (route.type === "confirm-kill") {
         setKillConfirmTitle(title);
         return;
       }
       setActionTitle(title);
       try {
-        if (action === "pause") await pauseInstance(project, title);
-        else if (action === "resume") await resumeInstance(project, title);
-        else if (action === "restart") await restartInstance(project, title);
-        toast.show(`'${title}' ${ACTION_PAST_TENSE[action]}`);
+        if (route.action === "pause") await pauseInstance(project, title);
+        else if (route.action === "resume") await resumeInstance(project, title);
+        else if (route.action === "restart") await restartInstance(project, title);
+        toast.show(`'${title}' ${ACTION_PAST_TENSE[route.action]}`);
         await instances.refresh();
         // Refresh the capture panel immediately when the action targeted the
         // currently-selected row so the preview reflects the new state sooner

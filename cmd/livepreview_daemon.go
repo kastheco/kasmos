@@ -101,10 +101,16 @@ func (l *daemonInstanceLister) ListInstancesForProject(project string) ([]livepr
 // snapshot does not carry them.
 func daemonStatusToRecord(s api.InstanceStatus) livepreview.Record {
 	status := livepreview.StatusRunning
-	if s.Loading {
+	switch {
+	case s.Loading:
 		status = livepreview.StatusLoading
-	} else if !s.Active {
+	case !s.Active:
 		status = livepreview.StatusPaused
+	case s.Ready:
+		// Ready is checked after Loading/!Active so idle-but-available daemon
+		// rows surface as StatusReady. The web UI then limits valid_actions
+		// to {restart, kill} instead of the running set.
+		status = livepreview.StatusReady
 	}
 	return livepreview.Record{
 		Title:       s.Title,

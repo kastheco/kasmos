@@ -234,6 +234,17 @@ func TestDaemonStateAdapter_InstanceActionErrorMapping(t *testing.T) {
 		assert.ErrorIs(t, err, api.ErrInvalidTransition)
 	})
 
+	t.Run("pause on ready instance returns ErrInvalidTransition", func(t *testing.T) {
+		// Ready rows only expose restart/kill in the web action matrix, so a
+		// crafted POST that reaches the adapter must still fail at the
+		// spawner guard rather than detach an idle-but-available agent.
+		adapter, spawner := newAdapter()
+		trackInstance(spawner, "agent-1", true, session.Ready)
+		err := adapter.PauseInstance(project, "agent-1")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, api.ErrInvalidTransition)
+	})
+
 	t.Run("resume on running instance returns ErrInvalidTransition", func(t *testing.T) {
 		adapter, spawner := newAdapter()
 		trackInstance(spawner, "agent-1", true, session.Running)

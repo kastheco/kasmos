@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import type { InstanceEntry, InstanceAction } from "../types";
 import styles from "./InstanceActionsMenu.module.css";
 
-// ---- exported helper (testable without DOM) ---------------------------------
+// ---- exported helpers (testable without DOM) --------------------------------
 
 export interface InstanceMenuItem {
   action: InstanceAction;
@@ -22,6 +22,38 @@ export function getMenuItems(instance: InstanceEntry): InstanceMenuItem[] {
     { action: "restart", label: "restart", enabled: allowed.has("restart"), destructive: false },
     { action: "kill", label: "kill", enabled: allowed.has("kill"), destructive: true },
   ];
+}
+
+/** Keyboard transition outcomes for the popover key handler. Declarative so
+ *  it can be unit-tested without a DOM. */
+export type MenuKeyOutcome =
+  | { type: "close" }
+  | { type: "move"; nextIdx: number }
+  | { type: "none" };
+
+/** Pure reducer for the popover-level keyboard handler. Covers the
+ *  Esc/ArrowUp/ArrowDown transitions and is the single source of truth for
+ *  focus-bounds math (clamps at 0 and itemCount-1). */
+export function reduceMenuKey(
+  key: string,
+  currentIdx: number,
+  itemCount: number,
+): MenuKeyOutcome {
+  if (key === "Escape") return { type: "close" };
+  if (itemCount <= 0) return { type: "none" };
+  if (key === "ArrowDown") {
+    return { type: "move", nextIdx: Math.min(currentIdx + 1, itemCount - 1) };
+  }
+  if (key === "ArrowUp") {
+    return { type: "move", nextIdx: Math.max(currentIdx - 1, 0) };
+  }
+  return { type: "none" };
+}
+
+/** Pure gate for Enter/click activation: a menu item should fire onAction
+ *  only when it's enabled and the component is not busy. */
+export function shouldFireAction(item: InstanceMenuItem, busy: boolean): boolean {
+  return item.enabled && !busy;
 }
 
 // ---- component ---------------------------------------------------------------
@@ -118,24 +150,18 @@ export default function InstanceActionsMenu({
   }, [open, focusedIdx]);
 
   const handlePopoverKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
+    const outcome = reduceMenuKey(e.key, focusedIdx, items.length);
+    if (outcome.type === "none") return;
+    e.preventDefault();
+    if (outcome.type === "close") {
       closeMenu();
       return;
     }
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setFocusedIdx((idx) => Math.min(idx + 1, items.length - 1));
-      return;
-    }
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setFocusedIdx((idx) => Math.max(idx - 1, 0));
-    }
+    setFocusedIdx(outcome.nextIdx);
   };
 
   const handleItemActivate = (item: InstanceMenuItem) => {
-    if (!item.enabled || busy) return;
+    if (!shouldFireAction(item, busy)) return;
     setOpen(false);
     setFocusedIdx(-1);
     onAction(item.action);

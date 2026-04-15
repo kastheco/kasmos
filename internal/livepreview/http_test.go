@@ -556,6 +556,29 @@ func TestHTTPHandler_Action_DaemonUnavailable_NotInDisk_Returns502(t *testing.T)
 	assert.Equal(t, http.StatusBadGateway, rec.Code)
 }
 
+// TestHTTPHandler_Action_DaemonUnavailable_OnDisk_FallsThroughToStandalone
+// verifies the plan-promised fallback: when the daemon socket is down but the
+// instance exists in state.json, the action handler falls through to the
+// standalone ApplyAction path and succeeds (http.go:286-305).
+func TestHTTPHandler_Action_DaemonUnavailable_OnDisk_FallsThroughToStandalone(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "solo-agent", Status: StatusRunning})
+
+	daemonLister := &fakeDaemonLister{err: ErrDaemonUnavailable}
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, daemonLister, nil)
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/solo-agent/kill", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	// Daemon unreachable but the instance is on disk: fall through to the
+	// standalone path and succeed. kill is best-effort on tmux/worktree ops.
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	records, err := LoadRecordsFromRepoRoot(root)
+	require.NoError(t, err)
+	assert.Empty(t, records, "standalone kill must remove the record from state.json")
+}
+
 func TestHTTPHandler_ListInstances_HasValidActions(t *testing.T) {
 	root := t.TempDir()
 	writeStateJSON(t, root,
@@ -575,6 +598,34 @@ func TestHTTPHandler_ListInstances_HasValidActions(t *testing.T) {
 
 	assert.Equal(t, []string{"pause", "restart", "kill"}, entries[0].ValidActions)
 	assert.Equal(t, []string{"resume", "kill"}, entries[1].ValidActions)
+}
+
+// TestHTTPHandler_ListInstances_DaemonReadyRow_HasReadyValidActions verifies
+// that a ready daemon-owned row flows through the daemon list path with the
+// {restart, kill} action matrix instead of being collapsed into StatusRunning
+// (which would incorrectly expose pause in the menu).
+func TestHTTPHandler_ListInstances_DaemonReadyRow_HasReadyValidActions(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root) // empty disk; only the daemon has this row
+	daemon := &fakeDaemonLister{
+		records: []Record{
+			{Title: "ready-planner", Status: StatusReady, Program: "opencode", AgentType: "planner"},
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, daemon, nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var entries []ListEntry
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&entries))
+	require.Len(t, entries, 1)
+	assert.Equal(t, "ready-planner", entries[0].Title)
+	assert.Equal(t, "ready", entries[0].Status)
+	assert.Equal(t, []string{"restart", "kill"}, entries[0].ValidActions,
+		"ready daemon rows must expose only restart/kill; pause is not a valid transition out of ready")
 }
 
 func TestHTTPHandler_Action_StandaloneInstance_Kill(t *testing.T) {

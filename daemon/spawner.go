@@ -370,7 +370,8 @@ func (s *TmuxSpawner) trackedInstanceByTitle(repoPath, title string) (key string
 // It delegates to session.Instance.Pause() so existing worktree-skipping behaviour
 // is preserved for daemon-managed shared task worktrees. Invalid-state transitions
 // are wrapped as errSpawnerInvalidTransition so the daemon API layer can map them
-// to HTTP 409 Conflict.
+// to HTTP 409 Conflict. Ready instances are rejected here because the web UI
+// action matrix only exposes restart/kill for ready rows.
 func (s *TmuxSpawner) PauseInstance(repoPath, title string) error {
 	_, inst, ok := s.trackedInstanceByTitle(repoPath, title)
 	if !ok {
@@ -381,6 +382,9 @@ func (s *TmuxSpawner) PauseInstance(repoPath, title string) error {
 	}
 	if inst.Status == session.Paused {
 		return fmt.Errorf("%w: %s/%s is already paused", errSpawnerInvalidTransition, repoPath, title)
+	}
+	if inst.Status == session.Ready {
+		return fmt.Errorf("%w: %s/%s is ready; only restart or kill are valid", errSpawnerInvalidTransition, repoPath, title)
 	}
 	return inst.Pause()
 }

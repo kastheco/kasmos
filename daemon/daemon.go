@@ -208,6 +208,7 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 				continue
 			}
 			active := !inst.Paused() && !inst.Exited && (inst.Started() || inst.Status == session.Loading)
+			ready := active && inst.Status == session.Ready
 			out = append(out, api.InstanceStatus{
 				ID:            inst.Title,
 				Project:       project,
@@ -215,6 +216,7 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 				Role:          inst.AgentType,
 				Active:        active,
 				Loading:       inst.Status == session.Loading,
+				Ready:         ready,
 				Title:         inst.Title,
 				Branch:        inst.Branch,
 				Program:       inst.Program,

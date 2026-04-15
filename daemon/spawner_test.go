@@ -447,6 +447,25 @@ func TestTmuxSpawner_PauseInstance_AlreadyPaused_InvalidTransition(t *testing.T)
 	assert.ErrorIs(t, err, errSpawnerInvalidTransition)
 }
 
+// TestTmuxSpawner_PauseInstance_Ready_InvalidTransition locks down the rule
+// that ready daemon rows only expose restart/kill. Pause on a ready row must
+// short-circuit with errSpawnerInvalidTransition before touching the session
+// so the daemon API layer returns HTTP 409 instead of detaching an
+// idle-but-available agent.
+func TestTmuxSpawner_PauseInstance_Ready_InvalidTransition(t *testing.T) {
+	s := NewTmuxSpawner()
+	key := instanceKey("/tmp/repo", "plan.md", session.AgentTypeReviewer)
+	inst := &session.Instance{Title: "agent-1", Path: "/tmp/repo", Status: session.Ready}
+	inst.MarkStartedForTest()
+	s.instances[key] = inst
+
+	err := s.PauseInstance("/tmp/repo", "agent-1")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errSpawnerInvalidTransition)
+	// Guard must short-circuit before inst.Pause() runs, so status stays ready.
+	assert.Equal(t, session.Ready, inst.Status)
+}
+
 func TestTmuxSpawner_ResumeInstance_NotStarted_InvalidTransition(t *testing.T) {
 	s := NewTmuxSpawner()
 	key := instanceKey("/tmp/repo", "plan.md", session.AgentTypeReviewer)

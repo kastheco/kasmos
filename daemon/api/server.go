@@ -51,6 +51,12 @@ type StatusResponse struct {
 }
 
 // InstanceStatus describes a running agent instance.
+//
+// Ready distinguishes idle-but-available instances (the agent finished its
+// turn and is waiting for input) from actively-running ones. Ready=true
+// implies Active=true; both fields may be set on the same row. The web UI
+// uses Ready to restrict valid actions to {restart, kill} so ready daemon
+// rows are not rendered as generic "running".
 type InstanceStatus struct {
 	ID            string `json:"id"`
 	Project       string `json:"project"`
@@ -58,6 +64,7 @@ type InstanceStatus struct {
 	Role          string `json:"role"`
 	Active        bool   `json:"active"`
 	Loading       bool   `json:"loading,omitempty"`
+	Ready         bool   `json:"ready,omitempty"`
 	Title         string `json:"title,omitempty"`
 	Branch        string `json:"branch,omitempty"`
 	Program       string `json:"program,omitempty"`
