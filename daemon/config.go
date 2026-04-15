@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,6 +49,14 @@ type DaemonConfig struct {
 	// Disabled by default; must be explicitly opted in.
 	AutoReadinessReview bool `toml:"auto_readiness_review"`
 
+	// ReadinessSelfFixMaxLines is the maximum number of net lines the master agent
+	// may change in a self-fix attempt. Defaults to 80.
+	ReadinessSelfFixMaxLines int `toml:"readiness_self_fix_max_lines"`
+
+	// ReadinessMaxVerifyCycles is the maximum number of verify-round attempts before
+	// the loop is force-promoted to approved. Defaults to 2.
+	ReadinessMaxVerifyCycles int `toml:"readiness_max_verify_cycles"`
+
 	// SocketPath is the Unix domain socket path for the control API.
 	// Defaults to ~/.config/kasmos/daemon.sock when empty.
 	SocketPath string `toml:"socket_path"`
@@ -66,25 +75,29 @@ type tomlPRMonitorConfig struct {
 // tomlDaemonConfig is the raw TOML representation, using seconds for duration
 // fields so the config file stays human-readable.
 type tomlDaemonConfig struct {
-	PollIntervalSec     float64             `toml:"poll_interval_sec"`
-	Repos               []string            `toml:"repos"`
-	AutoAdvance         *bool               `toml:"auto_advance"`
-	AutoAdvanceWaves    *bool               `toml:"auto_advance_waves"`
-	AutoReviewFix       *bool               `toml:"auto_review_fix"`
-	MaxReviewFixCycles  int                 `toml:"max_review_fix_cycles"`
-	AutoReadinessReview *bool               `toml:"auto_readiness_review"`
-	SocketPath          string              `toml:"socket_path"`
-	PRMonitor           tomlPRMonitorConfig `toml:"pr_monitor"`
+	PollIntervalSec          float64             `toml:"poll_interval_sec"`
+	Repos                    []string            `toml:"repos"`
+	AutoAdvance              *bool               `toml:"auto_advance"`
+	AutoAdvanceWaves         *bool               `toml:"auto_advance_waves"`
+	AutoReviewFix            *bool               `toml:"auto_review_fix"`
+	MaxReviewFixCycles       int                 `toml:"max_review_fix_cycles"`
+	AutoReadinessReview      *bool               `toml:"auto_readiness_review"`
+	ReadinessSelfFixMaxLines *int                `toml:"readiness_self_fix_max_lines"`
+	ReadinessMaxVerifyCycles *int                `toml:"readiness_max_verify_cycles"`
+	SocketPath               string              `toml:"socket_path"`
+	PRMonitor                tomlPRMonitorConfig `toml:"pr_monitor"`
 }
 
 // defaultDaemonConfig returns a DaemonConfig populated with sensible defaults.
 func defaultDaemonConfig() *DaemonConfig {
 	return &DaemonConfig{
-		PollInterval:        2 * time.Second,
-		AutoAdvance:         true,
-		AutoAdvanceWaves:    true,
-		AutoReviewFix:       true,
-		AutoReadinessReview: true,
+		PollInterval:             2 * time.Second,
+		AutoAdvance:              true,
+		AutoAdvanceWaves:         true,
+		AutoReviewFix:            true,
+		AutoReadinessReview:      true,
+		ReadinessSelfFixMaxLines: 80,
+		ReadinessMaxVerifyCycles: 2,
 		PRMonitor: PRMonitorConfig{
 			Enabled:      false,
 			PollInterval: 60 * time.Second,
@@ -138,6 +151,22 @@ func LoadDaemonConfig(path string) (*DaemonConfig, error) {
 	cfg.MaxReviewFixCycles = tc.MaxReviewFixCycles
 	if tc.AutoReadinessReview != nil {
 		cfg.AutoReadinessReview = *tc.AutoReadinessReview
+	}
+	if tc.ReadinessSelfFixMaxLines != nil {
+		if *tc.ReadinessSelfFixMaxLines <= 0 {
+			slog.Warn("daemon config: readiness_self_fix_max_lines is invalid (<= 0); using default 80", "value", *tc.ReadinessSelfFixMaxLines)
+			cfg.ReadinessSelfFixMaxLines = 80
+		} else {
+			cfg.ReadinessSelfFixMaxLines = *tc.ReadinessSelfFixMaxLines
+		}
+	}
+	if tc.ReadinessMaxVerifyCycles != nil {
+		if *tc.ReadinessMaxVerifyCycles <= 0 {
+			slog.Warn("daemon config: readiness_max_verify_cycles is invalid (<= 0); using default 2", "value", *tc.ReadinessMaxVerifyCycles)
+			cfg.ReadinessMaxVerifyCycles = 2
+		} else {
+			cfg.ReadinessMaxVerifyCycles = *tc.ReadinessMaxVerifyCycles
+		}
 	}
 	cfg.SocketPath = tc.SocketPath
 

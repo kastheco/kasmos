@@ -328,6 +328,8 @@ func NewDaemon(cfg *DaemonConfig) (*Daemon, error) {
 	repos.autoReviewFix = cfg.AutoReviewFix
 	repos.autoReadinessReview = cfg.AutoReadinessReview
 	repos.maxReviewFixCycles = cfg.MaxReviewFixCycles
+	repos.readinessSelfFixMaxLines = cfg.ReadinessSelfFixMaxLines
+	repos.readinessMaxVerifyCycles = cfg.ReadinessMaxVerifyCycles
 
 	d := &Daemon{
 		cfg:         cfg,
@@ -1879,7 +1881,7 @@ func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 }
 
 func masterSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
-	spec := orchestration.BuildMasterAgentSpec(entry.Filename, e.Project, entry.ReviewCycle)
+	spec := orchestration.BuildMasterAgentSpecWithConfig(entry.Filename, e.Project, entry.ReviewCycle, e.ReadinessSelfFixMaxLines, e.ReadinessMaxVerifyCycles)
 	return loop.SpawnOpts{
 		PlanFile:    entry.Filename,
 		RepoPath:    e.Path,

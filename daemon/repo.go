@@ -32,6 +32,10 @@ type RepoEntry struct {
 	// Processor is the signal processor for this repo. It persists across ticks
 	// so that wave orchestrator state is maintained between poll cycles.
 	Processor *loop.Processor
+	// ReadinessSelfFixMaxLines is the effective per-repo self-fix line ceiling.
+	ReadinessSelfFixMaxLines int
+	// ReadinessMaxVerifyCycles is the effective per-repo verify-round cap.
+	ReadinessMaxVerifyCycles int
 }
 
 // RepoManager tracks registered repositories for the daemon.
@@ -42,12 +46,14 @@ type RepoEntry struct {
 // column. The store is lazy-opened on the first Add() call and closed via
 // Close() or when the last repo entry is removed.
 type RepoManager struct {
-	mu                  sync.RWMutex
-	repos               []RepoEntry
-	autoAdvance         bool
-	autoReviewFix       bool
-	autoReadinessReview bool
-	maxReviewFixCycles  int
+	mu                       sync.RWMutex
+	repos                    []RepoEntry
+	autoAdvance              bool
+	autoReviewFix            bool
+	autoReadinessReview      bool
+	maxReviewFixCycles       int
+	readinessSelfFixMaxLines int
+	readinessMaxVerifyCycles int
 	// globalDB is the single shared *sql.DB, lazy-opened on the first Add().
 	// Both globalStore and globalGateway are derived from it.
 	globalDB *sql.DB
@@ -163,37 +169,32 @@ func (m *RepoManager) Add(path string) error {
 		hooks = taskfsm.BuildHookRegistry(cfgs)
 	}
 
-	// Prefer project-local auto_advance if explicitly set in config.toml,
-	// falling back to the daemon-level default.
-	autoAdvance := m.autoAdvance
-	projTomlPath := filepath.Join(path, ".kasmos", config.TOMLConfigFileName)
-	if _, err := os.Stat(projTomlPath); err == nil {
-		if result, err := config.LoadTOMLConfigFrom(projTomlPath); err == nil && result.AutoAdvance != nil {
-			autoAdvance = *result.AutoAdvance
-		} else if err != nil {
-			slog.Warn("daemon: failed to read auto_advance from project config, using daemon default", "repo", path, "error", err)
-		}
-	}
+	// Load per-repo TOML overrides once and derive effective config values.
+	autoAdvance, autoReadinessReview, selfFixMaxLines, maxVerifyCycles := m.resolveRepoConfig(path)
 
 	// Create a per-repo processor that persists across poll ticks so that wave
 	// orchestrator state is maintained between cycles.
 	proc := loop.NewProcessor(loop.ProcessorConfig{
-		AutoAdvance:         autoAdvance,
-		AutoReviewFix:       m.autoReviewFix,
-		AutoReadinessReview: m.autoReadinessReview,
-		Store:               m.globalStore,
-		Project:             project,
-		MaxReviewFixCycles:  m.maxReviewFixCycles,
-		Hooks:               hooks,
+		AutoAdvance:              autoAdvance,
+		AutoReviewFix:            m.autoReviewFix,
+		AutoReadinessReview:      autoReadinessReview,
+		Store:                    m.globalStore,
+		Project:                  project,
+		MaxReviewFixCycles:       m.maxReviewFixCycles,
+		ReadinessSelfFixMaxLines: selfFixMaxLines,
+		ReadinessMaxVerifyCycles: maxVerifyCycles,
+		Hooks:                    hooks,
 	})
 
 	m.repos = append(m.repos, RepoEntry{
-		Path:          path,
-		Project:       project,
-		Store:         m.globalStore,
-		SignalGateway: m.globalGateway,
-		SignalsDir:    signalsDir,
-		Processor:     proc,
+		Path:                     path,
+		Project:                  project,
+		Store:                    m.globalStore,
+		SignalGateway:            m.globalGateway,
+		SignalsDir:               signalsDir,
+		Processor:                proc,
+		ReadinessSelfFixMaxLines: selfFixMaxLines,
+		ReadinessMaxVerifyCycles: maxVerifyCycles,
 	})
 	return nil
 }
@@ -285,4 +286,43 @@ func (m *RepoManager) Get(path string) (RepoEntry, error) {
 		}
 	}
 	return RepoEntry{}, fmt.Errorf("repo not registered: %s", path)
+}
+
+// resolveRepoConfig reads per-repo TOML overrides and returns the effective
+// values for autoAdvance, autoReadinessReview, readinessSelfFixMaxLines, and
+// readinessMaxVerifyCycles for the given repo path. It falls back to the
+// daemon-level defaults (stored on m) when no project-local override is found.
+func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoReadinessReview bool, selfFixMaxLines int, maxVerifyCycles int) {
+	autoAdvance = m.autoAdvance
+	autoReadinessReview = m.autoReadinessReview
+	selfFixMaxLines = m.readinessSelfFixMaxLines
+	maxVerifyCycles = m.readinessMaxVerifyCycles
+
+	projTomlPath := filepath.Join(path, ".kasmos", config.TOMLConfigFileName)
+	if _, err := os.Stat(projTomlPath); err != nil {
+		// File absent or unreadable — use daemon-level defaults.
+		return
+	}
+	result, err := config.LoadTOMLConfigFrom(projTomlPath)
+	if err != nil {
+		slog.Warn("daemon: failed to read project config, using daemon defaults", "repo", path, "error", err)
+		return
+	}
+	if result.AutoAdvance != nil {
+		autoAdvance = *result.AutoAdvance
+	}
+	if result.AutoReadinessReview != nil {
+		autoReadinessReview = *result.AutoReadinessReview
+	}
+	if result.ReadinessSelfFixMaxLines != nil {
+		if *result.ReadinessSelfFixMaxLines > 0 {
+			selfFixMaxLines = *result.ReadinessSelfFixMaxLines
+		}
+	}
+	if result.ReadinessMaxVerifyCycles != nil {
+		if *result.ReadinessMaxVerifyCycles > 0 {
+			maxVerifyCycles = *result.ReadinessMaxVerifyCycles
+		}
+	}
+	return
 }

@@ -82,6 +82,12 @@ type ProcessorConfig struct {
 	// before emitting ReviewCycleLimitAction instead of SpawnCoderAction.
 	// Zero or negative means unlimited.
 	MaxReviewFixCycles int
+	// ReadinessSelfFixMaxLines is the maximum number of net lines the master agent
+	// may change in a self-fix attempt. Defaults to 80 when zero.
+	ReadinessSelfFixMaxLines int
+	// ReadinessMaxVerifyCycles is the maximum number of verify-round attempts before
+	// the loop is force-promoted to approved. Defaults to 2 when zero.
+	ReadinessMaxVerifyCycles int
 	// Hooks is an optional registry of FSM transition hooks. When non-nil and
 	// non-empty it is attached to the FSM so hooks fire after every successful
 	// state write.
@@ -302,6 +308,31 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			})
 			if !p.config.AutoReviewFix {
 				break
+			}
+			// When the readiness gate is active, ReadinessMaxVerifyCycles caps the
+			// verify-round loop independently from MaxReviewFixCycles. On breach,
+			// force-promote to verify_approved so the task is not permanently blocked.
+			if p.config.AutoReadinessReview && p.config.ReadinessMaxVerifyCycles > 0 && p.config.Store != nil {
+				if entry, err := p.config.Store.Get(p.config.Project, sig.TaskFile); err == nil {
+					if entry.ReviewCycle+1 > p.config.ReadinessMaxVerifyCycles {
+						// Force-promote: transition verifying→done so VerifyApprovedAction fires.
+						if err := p.fsm.Transition(sig.TaskFile, taskfsm.VerifyApproved); err == nil {
+							actions = append(actions, VerifyApprovedAction{
+								PlanFile:   sig.TaskFile,
+								ReviewBody: sig.Body,
+							})
+							if entry2, err2 := p.config.Store.Get(p.config.Project, sig.TaskFile); err2 == nil {
+								if shouldCreatePR(entry2) {
+									actions = append(actions, CreatePRAction{
+										PlanFile:   sig.TaskFile,
+										ReviewBody: sig.Body,
+									})
+								}
+							}
+						}
+						break
+					}
+				}
 			}
 			if p.config.MaxReviewFixCycles > 0 && p.config.Store != nil {
 				if entry, err := p.config.Store.Get(p.config.Project, sig.TaskFile); err == nil {
