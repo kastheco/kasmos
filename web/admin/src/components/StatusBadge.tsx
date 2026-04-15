@@ -17,6 +17,8 @@ const STATUS_LABELS: Record<string, string> = {
   closed: "closed",
   blocked: "blocked",
   in_review: "in review",
+  loading: "loading",
+  paused: "paused",
 };
 
 const STATUS_CLASSES: Record<string, string> = {
@@ -34,6 +36,8 @@ const STATUS_CLASSES: Record<string, string> = {
   closed: styles.closed,
   blocked: styles.blocked,
   in_review: styles.inReview,
+  loading: styles.loading,
+  paused: styles.paused,
 };
 
 export default function StatusBadge({ status }: StatusBadgeProps) {

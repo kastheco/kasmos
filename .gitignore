@@ -18,6 +18,8 @@ kq
 **/.kasmos/config.toml
 **/.kasmos/cache/
 dist/
+!web/admin/dist/
+!web/admin/dist/**
 *.bak
 # Plan markdown files — content lives in the task store DB, not on disk
 docs/plans/

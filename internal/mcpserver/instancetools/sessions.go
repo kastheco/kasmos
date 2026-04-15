@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kastheco/kasmos/internal/livepreview"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -29,14 +30,14 @@ type sessionListEntry struct {
 
 func makeListSessionsHandler(loadState StateLoader, runner CmdRunner) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		records, err := loadRecords(loadState)
+		records, err := livepreview.LoadRecords(loadState)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("list_sessions: load instances: %v", err)), nil
 		}
 
-		known := make(map[string]instanceRecord, len(records))
+		known := make(map[string]livepreview.Record, len(records))
 		for _, rec := range records {
-			known[kasTmuxName(rec.Title)] = rec
+			known[livepreview.SessionName(rec.Title)] = rec
 		}
 
 		output, err := runner.Output(ctx, "tmux", "ls", "-F",

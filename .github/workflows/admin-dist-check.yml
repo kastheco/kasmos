@@ -44,7 +44,9 @@ jobs:
 
       - name: Check dist is up to date
         run: |
-          if ! git diff --exit-code web/admin/dist/; then
+          status=$(git status --porcelain --untracked-files=all -- web/admin/dist/)
+          if [ -n "$status" ]; then
+            printf '%s\n' "$status"
             echo ""
             echo "ERROR: web/admin/dist/ is stale — the committed build artifacts"
             echo "do not match the current source. Run 'cd web/admin && npm run build'"

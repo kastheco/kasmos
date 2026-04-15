@@ -9,6 +9,27 @@ export type AutoRefreshState<T> = {
   refresh: () => Promise<void>;
 };
 
+// Exported for unit testing. Resets all internal hook state when input deps
+// change so the next render shows null data instead of stale content captured
+// against the previous deps. Without clearing data here, consumers like the
+// admin instances page would briefly render a previous instance's pane under
+// the newly selected row before the next poll resolves.
+export function resetAutoRefreshStateForDepsChange<T>(
+  setData: (v: T | null) => void,
+  setLoading: (v: boolean) => void,
+  setError: (v: string | null) => void,
+  generationRef: { current: number },
+  inFlightRef: { current: boolean },
+  hasDataRef: { current: boolean },
+): void {
+  generationRef.current++;
+  inFlightRef.current = false;
+  hasDataRef.current = false;
+  setData(null);
+  setLoading(true);
+  setError(null);
+}
+
 export function useAutoRefresh<T>(
   load: () => Promise<T>,
   deps: React.DependencyList,
@@ -74,15 +95,18 @@ export function useAutoRefresh<T>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
-  // Initial load and re-load when deps change.  Bump the generation so any
-  // in-flight request from the previous deps is discarded on completion, and
-  // reset the in-flight guard so the new fetch proceeds immediately.
+  // Initial load and re-load when deps change. Clears any data held against
+  // the previous deps so the next render cannot show stale content under the
+  // new selection, then bumps generation and triggers a fresh fetch.
   useEffect(() => {
-    generationRef.current++;
-    inFlightRef.current = false;
-    hasDataRef.current = false;
-    setLoading(true);
-    setError(null);
+    resetAutoRefreshStateForDepsChange<T>(
+      setData,
+      setLoading,
+      setError,
+      generationRef,
+      inFlightRef,
+      hasDataRef,
+    );
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refresh]);

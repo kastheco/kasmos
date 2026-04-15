@@ -93,6 +93,18 @@
   color: #c4a7e7;
 }
 
+.loading {
+  background: rgba(156, 207, 216, 0.08);
+  border-color: rgba(156, 207, 216, 0.2);
+  color: #9ccfd8;
+}
+
+.paused {
+  background: rgba(144, 140, 170, 0.1);
+  border-color: rgba(144, 140, 170, 0.3);
+  color: #908caa;
+}
+
 .unknown {
   background: rgba(144, 140, 170, 0.1);
   border-color: rgba(144, 140, 170, 0.3);

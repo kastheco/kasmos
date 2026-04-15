@@ -50,6 +50,16 @@ export default function Layout() {
               audit
             </NavLink>
           </li>
+          <li>
+            <NavLink
+              to={{ pathname: "/instances", search: projectSearch }}
+              className={({ isActive }) =>
+                `${styles.navLink} ${isActive ? styles.active : ""}`
+              }
+            >
+              instances
+            </NavLink>
+          </li>
         </ul>
       </nav>
       <main className={styles.main}>

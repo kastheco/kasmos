@@ -58,6 +58,21 @@ export interface TopicEntry {
   created_at: string;
 }
 
+export type InstanceStatus = "running" | "ready" | "loading" | "paused";
+
+export interface InstanceEntry {
+  title: string;
+  status: InstanceStatus;
+  branch: string;
+  program: string;
+  task_file?: string;
+  agent_type?: string;
+  wave_number?: number;
+  task_number?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface AuditEvent {
   id: number;
   kind: string;

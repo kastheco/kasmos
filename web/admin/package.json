@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "tsx src/api.test.ts",
+    "test": "tsx src/api.test.ts && tsx src/hooks/useAutoRefresh.test.ts && node --import ./src/css-mock-loader.mjs --import tsx/esm src/components/TerminalPreview.test.tsx",
     "build": "tsc -b && npm run test && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
     "@uiw/react-md-editor": "^4.1.0",
+    "ansi_up": "^6.0.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
