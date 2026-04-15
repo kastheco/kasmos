@@ -221,8 +221,7 @@ func checkWorktreeClean(ctx context.Context, runner CommandRunner, rec Record, a
 }
 
 // shellSingleQuote wraps s in POSIX single quotes, escaping any embedded
-// single quotes by closing, inserting an escaped quote, and reopening.
-// Matches the `'\''` pattern used elsewhere in this file.
+// single quotes with the standard close-escape-reopen pattern.
 func shellSingleQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
