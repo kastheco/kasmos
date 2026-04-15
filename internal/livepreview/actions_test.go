@@ -313,3 +313,15 @@ func TestStandaloneResumeProgram_CodexNoSkipPermissions(t *testing.T) {
 	assert.NotContains(t, got, "--dangerously-bypass-approvals-and-sandbox")
 	assert.NotContains(t, got, "--agent")
 }
+
+func TestStandaloneResumeProgram_CodexProgramPathWithFlags(t *testing.T) {
+	rec := Record{
+		Title:           "my-codex",
+		Program:         "/opt/bin/codex -m gpt-5-codex",
+		AgentType:       "coder",
+		SkipPermissions: true,
+	}
+	got := standaloneResumeProgram(rec, "/worktrees/my-codex")
+	assert.Contains(t, got, "--dangerously-bypass-approvals-and-sandbox")
+	assert.NotContains(t, got, "--agent")
+}

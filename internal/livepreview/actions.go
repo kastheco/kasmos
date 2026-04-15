@@ -232,19 +232,19 @@ func shellSingleQuote(s string) string {
 func standaloneResumeProgram(rec Record, worktreePath string) string {
 	program := rec.Program
 
-	if rec.SkipPermissions && strings.HasSuffix(program, "claude") {
+	if rec.SkipPermissions && resumeProgramBase(program) == "claude" {
 		program += " --permission-mode bypassPermissions"
 	}
 	// Append --dangerously-bypass-approvals-and-sandbox for codex when SkipPermissions
 	// is enabled, mirroring session/tmux/tmux_session.go:Start.
-	if rec.SkipPermissions && strings.HasSuffix(program, "codex") {
+	if rec.SkipPermissions && resumeProgramBase(program) == "codex" {
 		program += " --dangerously-bypass-approvals-and-sandbox"
 	}
 	// codex does not accept --agent, so skip it for codex programs.
-	if rec.AgentType != "" && !strings.Contains(program, "--agent") && !strings.HasSuffix(rec.Program, "codex") {
+	if rec.AgentType != "" && !strings.Contains(program, "--agent") && resumeProgramBase(rec.Program) != "codex" {
 		program += " --agent " + rec.AgentType
 	}
-	if strings.HasSuffix(rec.Program, "opencode") {
+	if resumeProgramBase(rec.Program) == "opencode" {
 		logDir := filepath.Join(worktreePath, ".kasmos", "logs")
 		if err := os.MkdirAll(logDir, 0o755); err == nil {
 			logFile := filepath.Join(logDir, SessionName(rec.Title)+".log")
@@ -273,4 +273,12 @@ func standaloneProject(rec Record) string {
 		return filepath.Base(filepath.Clean(rec.Path))
 	}
 	return ""
+}
+
+func resumeProgramBase(program string) string {
+	fields := strings.Fields(strings.TrimSpace(program))
+	if len(fields) == 0 {
+		return ""
+	}
+	return filepath.Base(fields[0])
 }

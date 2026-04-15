@@ -264,6 +264,18 @@ func TestBuildResumeProgram_CodexNoSkipPermissions(t *testing.T) {
 	assert.NotContains(t, got, "--agent")
 }
 
+func TestBuildResumeProgram_CodexProgramPathWithFlags(t *testing.T) {
+	rec := instanceRecord{
+		Title:           "my-codex",
+		Program:         "/opt/bin/codex -m gpt-5-codex",
+		AgentType:       "coder",
+		SkipPermissions: true,
+	}
+	got := buildResumeProgram(rec, "/worktrees/my-codex")
+	assert.Contains(t, got, "--dangerously-bypass-approvals-and-sandbox")
+	assert.NotContains(t, got, "--agent")
+}
+
 // TestInstanceResume_NoWorktreeMetadata verifies that resume fails with the
 // exact phrase "no stored worktree metadata" when RepoPath or BranchName is absent.
 func TestInstanceResume_NoWorktreeMetadata(t *testing.T) {

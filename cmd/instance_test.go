@@ -573,6 +573,18 @@ func TestBuildResumeCommand_CodexNoSkipPermissions(t *testing.T) {
 	assert.NotContains(t, got, "--agent")
 }
 
+func TestBuildResumeCommand_CodexProgramPathWithFlags(t *testing.T) {
+	rec := instanceRecord{
+		Title:           "my-codex",
+		Program:         "/opt/bin/codex -m gpt-5-codex",
+		AgentType:       "coder",
+		SkipPermissions: true,
+	}
+	got := buildResumeCommand(rec, "/worktrees/my-codex")
+	assert.Contains(t, got, "--dangerously-bypass-approvals-and-sandbox")
+	assert.NotContains(t, got, "--agent")
+}
+
 // TestBuildResumeCommand_TaskEnvVars verifies task identity env vars are prepended.
 func TestBuildResumeCommand_TaskEnvVars(t *testing.T) {
 	rec := instanceRecord{
