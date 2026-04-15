@@ -24,6 +24,11 @@ export default function InstancesPage() {
   const { project } = useProject();
   const [selectedTitle, setSelectedTitle] = useState<string | null>(null);
 
+  // Reset selection when the active project changes to avoid stale capture polls.
+  useEffect(() => {
+    setSelectedTitle(null);
+  }, [project]);
+
   const instances = useAutoRefresh<InstanceEntry[]>(
     () => (project ? listInstances(project) : Promise.resolve([])),
     [project],
@@ -86,8 +91,17 @@ export default function InstancesPage() {
             {instances.data.map((inst) => (
               <li
                 key={inst.title}
+                role="button"
+                tabIndex={0}
+                aria-pressed={inst.title === selectedTitle}
                 className={`${styles.row} ${inst.title === selectedTitle ? styles.selected : ""}`}
                 onClick={() => setSelectedTitle(inst.title)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setSelectedTitle(inst.title);
+                  }
+                }}
               >
                 <div className={styles.rowHeader}>
                   <span className={styles.title}>{inst.title}</span>

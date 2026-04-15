@@ -45,7 +45,7 @@ type Worktree struct {
 type Record struct {
 	Title        string    `json:"title"`
 	DisplayTitle string    `json:"display_title,omitempty"`
-	Path         string    `json:"path,omitempty"`
+	Path         string    `json:"path"`
 	Branch       string    `json:"branch"`
 	Status       Status    `json:"status"`
 	Height       int       `json:"height"`

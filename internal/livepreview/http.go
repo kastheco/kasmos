@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -102,7 +103,8 @@ func NewHTTPHandler(resolve ProjectRootResolver, runner PaneRunner) http.Handler
 
 		records, err := LoadRecordsFromRepoRoot(root)
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			slog.Error("failed to load instance records", "project", project, "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "failed to load instance records")
 			return
 		}
 
@@ -130,7 +132,8 @@ func NewHTTPHandler(resolve ProjectRootResolver, runner PaneRunner) http.Handler
 
 		records, err := LoadRecordsFromRepoRoot(root)
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			slog.Error("failed to load instance records", "project", project, "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "failed to load instance records")
 			return
 		}
 

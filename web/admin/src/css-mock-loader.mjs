@@ -3,6 +3,5 @@
 // Usage: node --import ./src/css-mock-loader.mjs --import tsx/esm <script>
 
 import { register } from "node:module";
-import { pathToFileURL } from "node:url";
 
 register(new URL("./css-mock-hooks.mjs", import.meta.url));
