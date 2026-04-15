@@ -120,4 +120,3 @@ func daemonSocketPath() string {
 	}
 	return filepath.Join(os.TempDir(), fmt.Sprintf("kasmos-%d", os.Getuid()), "kas.sock")
 }
-
