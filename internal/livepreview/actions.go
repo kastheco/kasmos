@@ -242,7 +242,7 @@ func standaloneResumeProgram(rec Record, worktreePath string) string {
 	}
 	// codex does not accept --agent, so skip it for codex programs.
 	if rec.AgentType != "" && !strings.Contains(program, "--agent") && resumeProgramBase(rec.Program) != "codex" {
-		program += " --agent " + rec.AgentType
+		program += " --agent " + shellSingleQuote(rec.AgentType)
 	}
 	if resumeProgramBase(rec.Program) == "opencode" {
 		logDir := filepath.Join(worktreePath, ".kasmos", "logs")

@@ -164,7 +164,8 @@ func buildResumeCommand(rec instanceRecord, worktreePath string) string {
 	// Append --agent flag for typed roles (planner, coder, reviewer, fixer).
 	// codex does not accept --agent, so skip it for codex programs.
 	if rec.AgentType != "" && !strings.Contains(program, "--agent") && resumeProgramBase(rec.Program) != "codex" {
-		program += " --agent " + rec.AgentType
+		agentType := "'" + strings.ReplaceAll(rec.AgentType, "'", "'\\''") + "'"
+		program += " --agent " + agentType
 	}
 
 	// Append opencode log redirection so debug logs are preserved.
