@@ -8,12 +8,13 @@ export default defineConfig({
     setupFiles: "./src/test/setup.ts",
     css: true,
     passWithNoTests: true,
-    // Exclude the pure-script tsx tests — those run via npm run test:unit, not vitest.
+    // Exclude the pure-script *.test.ts(x) files — those run via npm run test:unit, not vitest.
     exclude: [
       "**/node_modules/**",
       "src/api.test.ts",
       "src/hooks/useAutoRefresh.test.ts",
       "src/pages/agentCardModel.test.ts",
+      "src/lib/taskCreation.test.ts",
       "src/components/TerminalPreview.test.tsx",
     ],
   },

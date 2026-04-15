@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test:unit": "tsx src/api.test.ts && tsx src/hooks/useAutoRefresh.test.ts && tsx src/pages/agentCardModel.test.ts && node --import ./src/css-mock-loader.mjs --import tsx/esm src/components/TerminalPreview.test.tsx",
+    "test:unit": "tsx src/api.test.ts && tsx src/hooks/useAutoRefresh.test.ts && tsx src/pages/agentCardModel.test.ts && tsx src/lib/taskCreation.test.ts && node --import ./src/css-mock-loader.mjs --import tsx/esm src/components/TerminalPreview.test.tsx",
     "test:dom": "vitest run",
     "test": "npm run test:unit && npm run test:dom",
     "build": "tsc -b && npm run test && vite build",
