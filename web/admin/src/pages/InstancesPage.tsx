@@ -1,12 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { listInstances, getInstanceCapture, pauseInstance, resumeInstance, restartInstance, killInstance } from "../api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { listInstances, getInstanceCapture, pauseInstance, resumeInstance, restartInstance, killInstance, sendInstancePrompt } from "../api";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
 import { useProject } from "../hooks/useProject";
 import { useToast } from "../hooks/useToast";
 import TerminalPreview from "../components/TerminalPreview";
 import ConfirmDialog from "../components/ConfirmDialog";
 import InstanceActionsMenu from "../components/InstanceActionsMenu";
-import type { InstanceEntry, InstanceAction } from "../types";
+import type { InstanceEntry, InstanceAction, ScrollbackDepth } from "../types";
+import {
+  composerStateForInstance,
+  shouldSubmitComposerKey,
+  isAtBottom,
+  previewLineLimit,
+  captureErrorLabel,
+} from "./instanceInteractivity";
 import styles from "./InstancesPage.module.css";
 import {
   groupAgentsByStatus,
@@ -32,6 +39,27 @@ export type ActionRoute =
 export function routeInstanceAction(action: InstanceAction): ActionRoute {
   if (action === "kill") return { type: "confirm-kill" };
   return { type: "immediate", action };
+}
+
+const DEPTH_STORAGE_KEY = "kasmos.instances.scrollbackDepth";
+const DEPTH_OPTIONS: ScrollbackDepth[] = ["120", "1000", "full"];
+
+function loadDepth(): ScrollbackDepth {
+  try {
+    const stored = localStorage.getItem(DEPTH_STORAGE_KEY);
+    if (stored === "120" || stored === "1000" || stored === "full") return stored;
+  } catch {
+    // ignore
+  }
+  return "120";
+}
+
+function saveDepth(depth: ScrollbackDepth): void {
+  try {
+    localStorage.setItem(DEPTH_STORAGE_KEY, depth);
+  } catch {
+    // ignore
+  }
 }
 
 function formatTime(iso?: string): string {
@@ -126,24 +154,42 @@ export default function InstancesPage() {
   const [actionTitle, setActionTitle] = useState<string | null>(null);
   const [killConfirmTitle, setKillConfirmTitle] = useState<string | null>(null);
 
-  // Reset selection when the active project changes to avoid stale capture polls.
+  // -- capture state (page-local, not useAutoRefresh) --
+  const [captureContent, setCaptureContent] = useState<string>("");
+  const [captureError, setCaptureError] = useState<string | null>(null);
+  const [captureLoading, setCaptureLoading] = useState(false);
+
+  // -- follow mode & depth --
+  const [isFollowing, setIsFollowing] = useState(true);
+  const [depth, setDepth] = useState<ScrollbackDepth>(loadDepth);
+
+  // -- composer --
+  const [composerText, setComposerText] = useState("");
+  const [composerError, setComposerError] = useState<string | null>(null);
+  const [composerSending, setComposerSending] = useState(false);
+
+  // -- refs --
+  const previewRef = useRef<HTMLPreElement>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFollowingRef = useRef(isFollowing);
+  isFollowingRef.current = isFollowing;
+  const depthRef = useRef(depth);
+  depthRef.current = depth;
+
+  // Reset selection and capture state when project changes.
   useEffect(() => {
     setSelectedTitle(null);
+    setCaptureContent("");
+    setCaptureError(null);
+    setCaptureLoading(false);
+    setIsFollowing(true);
   }, [project]);
 
+  // Instance list — keep useAutoRefresh for the 2s list polling.
   const instances = useAutoRefresh<InstanceEntry[]>(
     () => (project ? listInstances(project) : Promise.resolve([])),
     [project],
     2000,
-  );
-
-  const capture = useAutoRefresh<string>(
-    () =>
-      project && selectedTitle
-        ? getInstanceCapture(project, selectedTitle, { start: "-120" })
-        : Promise.resolve(""),
-    [project, selectedTitle],
-    1000,
   );
 
   const groups = useMemo(
@@ -180,14 +226,146 @@ export default function InstancesPage() {
     }
   }, [instances.data, selectedTitle, flatCards]);
 
+  const selectedInstance =
+    instances.data?.find((i) => i.title === selectedTitle) ?? null;
   const selectedCard =
     flatCards.find((c) => c.title === selectedTitle) ?? null;
 
-  const captureContent = (() => {
-    if (!selectedTitle) return "";
-    if (capture.error) return "";
-    return capture.data ?? "";
-  })();
+  // Determine if we should poll (tmux instance + following).
+  const isTmuxInstance =
+    selectedInstance !== null &&
+    selectedInstance.execution_mode !== "headless";
+
+  // Capture poll logic.
+  const doPoll = useCallback(async () => {
+    if (!project || !selectedTitle) return;
+    if (!isFollowingRef.current) return;
+
+    try {
+      const text = await getInstanceCapture(project, selectedTitle, {
+        depth: depthRef.current,
+      });
+      setCaptureContent(text);
+      setCaptureError(null);
+      setCaptureLoading(false);
+
+      // Snap to bottom if following.
+      if (isFollowingRef.current && previewRef.current) {
+        const el = previewRef.current;
+        el.scrollTop = el.scrollHeight;
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setCaptureError(msg);
+      setCaptureLoading(false);
+    }
+  }, [project, selectedTitle]);
+
+  // Schedule continuous polling when following. At "full" depth we do a
+  // single fetch instead of polling — otherwise every second the client
+  // would re-download the entire tmux history-limit buffer, which scales
+  // bandwidth with scrollback size and can freeze the browser.
+  useEffect(() => {
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+
+    if (!isTmuxInstance || !isFollowing || !project || !selectedTitle) return;
+
+    let cancelled = false;
+
+    // One-shot fetch for "full" depth.
+    if (depth === "full") {
+      setCaptureLoading(true);
+      void doPoll();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const schedule = () => {
+      pollTimerRef.current = setTimeout(async () => {
+        if (cancelled) return;
+        await doPoll();
+        if (!cancelled) schedule();
+      }, 1000);
+    };
+
+    // Kick off first poll immediately.
+    setCaptureLoading(true);
+    void doPoll().then(() => {
+      if (!cancelled) schedule();
+    });
+
+    return () => {
+      cancelled = true;
+      if (pollTimerRef.current) {
+        clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    };
+  }, [isTmuxInstance, isFollowing, project, selectedTitle, depth, doPoll]);
+
+  // Reset capture state when selected instance changes.
+  useEffect(() => {
+    setCaptureContent("");
+    setCaptureError(null);
+    setCaptureLoading(false);
+    setIsFollowing(true);
+    setComposerText("");
+    setComposerError(null);
+  }, [selectedTitle]);
+
+  // Depth change: persist and trigger a re-poll on the next cycle.
+  const handleDepthChange = (d: ScrollbackDepth) => {
+    saveDepth(d);
+    setDepth(d);
+    // If already following, trigger an immediate poll on the new depth
+    // by briefly toggling isFollowing so the effect re-fires.
+    // Simpler: just call doPoll directly since depthRef is up to date.
+    if (isFollowing && isTmuxInstance) {
+      depthRef.current = d;
+      void doPoll();
+    }
+  };
+
+  // Scroll handler: detect if user scrolled away from bottom.
+  const handlePreviewScroll = () => {
+    const el = previewRef.current;
+    if (!el) return;
+    const atBottom = isAtBottom(el.scrollTop, el.clientHeight, el.scrollHeight);
+    if (!atBottom && isFollowingRef.current) {
+      setIsFollowing(false);
+    }
+  };
+
+  // Jump-to-live: snap back to bottom and resume follow mode.
+  const handleJumpToLive = () => {
+    if (previewRef.current) {
+      previewRef.current.scrollTop = previewRef.current.scrollHeight;
+    }
+    setIsFollowing(true);
+  };
+
+  // Composer submit.
+  const handleSend = useCallback(async () => {
+    if (!project || !selectedTitle || !composerText.trim()) return;
+    setComposerSending(true);
+    setComposerError(null);
+    try {
+      await sendInstancePrompt(project, selectedTitle, composerText);
+      setComposerText("");
+    } catch (e) {
+      setComposerError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setComposerSending(false);
+    }
+  }, [project, selectedTitle, composerText]);
+
+  const composerState = composerStateForInstance(selectedInstance);
+  const maxLines = previewLineLimit(depth);
+  const captureErrLabel = captureErrorLabel(captureError);
 
   // ---- action handler --------------------------------------------------------
 
@@ -210,7 +388,7 @@ export default function InstancesPage() {
         // currently-selected row so the preview reflects the new state sooner
         // than the next 1s poll.
         if (selectedTitle === title) {
-          await capture.refresh();
+          await doPoll();
         }
       } catch (err) {
         toast.show(String(err), { kind: "error" });
@@ -218,7 +396,7 @@ export default function InstancesPage() {
         setActionTitle(null);
       }
     },
-    [project, instances, capture, selectedTitle, toast],
+    [project, instances, doPoll, selectedTitle, toast],
   );
 
   // Kill: confirmed path — keep killConfirmTitle set while the request is
@@ -289,27 +467,94 @@ export default function InstancesPage() {
             ))}
           </div>
 
-          {/* right: terminal preview */}
+          {/* right: terminal preview + composer */}
           <div className={styles.preview}>
             {selectedCard ? (
               <>
                 <div className={styles.previewHeader}>
                   <span className={styles.previewTitle}>{selectedCard.displayName}</span>
-                  {capture.error ? (
-                    <span className={styles.captureError}>preview unavailable</span>
-                  ) : null}
+
+                  <div className={styles.previewControls}>
+                    <div className={styles.depthPresets}>
+                      {DEPTH_OPTIONS.map((d) => (
+                        <button
+                          key={d}
+                          className={`${styles.depthBtn} ${d === depth ? styles.depthBtnActive : ""}`}
+                          onClick={() => handleDepthChange(d)}
+                        >
+                          {d}
+                        </button>
+                      ))}
+                    </div>
+
+                    {captureErrLabel ? (
+                      <span className={styles.captureError}>preview unavailable</span>
+                    ) : null}
+                  </div>
                 </div>
-                {capture.error ? (
+
+                {/* headless notice */}
+                {selectedInstance?.execution_mode === "headless" ? (
                   <p className={styles.captureEmpty}>
-                    pane output is not available right now
+                    headless instance has no tmux pane
                   </p>
+                ) : captureErrLabel ? (
+                  <p className={styles.captureEmpty}>{captureErrLabel}</p>
                 ) : (
-                  <TerminalPreview
-                    content={captureContent}
-                    maxLines={80}
-                    emptyLabel="waiting for output…"
-                  />
+                  <div className={styles.previewWrapper}>
+                    <TerminalPreview
+                      ref={previewRef}
+                      content={captureContent}
+                      maxLines={maxLines}
+                      emptyLabel={captureLoading ? "loading…" : "waiting for output…"}
+                      onScroll={handlePreviewScroll}
+                    />
+                    {!isFollowing && (
+                      <button
+                        className={styles.jumpToLive}
+                        onClick={handleJumpToLive}
+                      >
+                        jump to live
+                      </button>
+                    )}
+                  </div>
                 )}
+
+                {/* composer */}
+                <div className={styles.composer}>
+                  <textarea
+                    className={styles.composerInput}
+                    placeholder={
+                      composerState.disabled
+                        ? (composerState.reason ?? "unavailable")
+                        : "send a message to this agent…"
+                    }
+                    value={composerText}
+                    disabled={composerState.disabled || composerSending}
+                    onChange={(e) => setComposerText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (shouldSubmitComposerKey(e)) {
+                        e.preventDefault();
+                        void handleSend();
+                      }
+                    }}
+                    rows={3}
+                  />
+                  {composerError && (
+                    <p className={styles.composerError}>{composerError}</p>
+                  )}
+                  <button
+                    className={styles.composerSendBtn}
+                    disabled={
+                      composerState.disabled ||
+                      composerSending ||
+                      !composerText.trim()
+                    }
+                    onClick={() => void handleSend()}
+                  >
+                    {composerSending ? "sending…" : "send"}
+                  </button>
+                </div>
               </>
             ) : (
               <p className={styles.empty}>select an agent to view its output</p>

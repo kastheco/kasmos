@@ -24,6 +24,11 @@ type ProjectRootResolver func(project string) (string, error)
 // available because kas serve was started without --repo flags.
 var ErrPreviewUnavailable = errors.New("live preview requires kas serve --repo")
 
+// maxSendBodyBytes caps the JSON body of POST /send to protect the tmux
+// send-keys path from oversized prompts. 64 KiB comfortably covers realistic
+// usage while keeping memory bounded under abuse.
+const maxSendBodyBytes = 64 * 1024
+
 // ErrDaemonUnavailable signals to the list/capture handlers that the daemon
 // socket is not reachable. Returning this error from a DaemonInstanceLister
 // causes the handler to fall back to state.json-only results instead of
@@ -115,18 +120,21 @@ func LoadRecordsFromRepoRoot(repoRoot string) ([]Record, error) {
 }
 
 // ListEntry is the JSON shape returned by GET /v1/projects/{project}/instances.
+// ExecutionMode is included so the SPA can disable the composer and polling
+// before hitting tmux-only routes on headless instances.
 type ListEntry struct {
-	Title        string   `json:"title"`
-	Status       string   `json:"status"`
-	Branch       string   `json:"branch"`
-	Program      string   `json:"program"`
-	TaskFile     string   `json:"task_file,omitempty"`
-	AgentType    string   `json:"agent_type,omitempty"`
-	WaveNumber   int      `json:"wave_number,omitempty"`
-	TaskNumber   int      `json:"task_number,omitempty"`
-	CreatedAt    string   `json:"created_at,omitempty"`
-	UpdatedAt    string   `json:"updated_at,omitempty"`
-	ValidActions []string `json:"valid_actions,omitempty"`
+	Title         string   `json:"title"`
+	Status        string   `json:"status"`
+	Branch        string   `json:"branch"`
+	Program       string   `json:"program"`
+	TaskFile      string   `json:"task_file,omitempty"`
+	AgentType     string   `json:"agent_type,omitempty"`
+	WaveNumber    int      `json:"wave_number,omitempty"`
+	TaskNumber    int      `json:"task_number,omitempty"`
+	CreatedAt     string   `json:"created_at,omitempty"`
+	UpdatedAt     string   `json:"updated_at,omitempty"`
+	ExecutionMode string   `json:"execution_mode,omitempty"`
+	ValidActions  []string `json:"valid_actions,omitempty"`
 }
 
 // NewHTTPHandler returns an http.Handler that serves the live-preview API
@@ -143,8 +151,9 @@ func NewHTTPHandler(resolve ProjectRootResolver, runner PaneRunner) http.Handler
 //
 // Routes registered on an internal mux:
 //
-//	GET /v1/projects/{project}/instances
-//	GET /v1/projects/{project}/instances/{title}/capture
+//	GET  /v1/projects/{project}/instances
+//	GET  /v1/projects/{project}/instances/{title}/capture
+//	POST /v1/projects/{project}/instances/{title}/send
 //
 // daemonLister may be nil, in which case only state.json is consulted (this
 // is the bare-DB / test fixture case). When non-nil, daemon records take
@@ -152,6 +161,10 @@ func NewHTTPHandler(resolve ProjectRootResolver, runner PaneRunner) http.Handler
 // spawner for plan-associated agents. If the daemon returns
 // ErrDaemonUnavailable the handler silently falls back to state.json only —
 // the admin UI stays functional during daemon restarts.
+//
+// The send route requires a tmux-mode instance in running or ready status.
+// It returns 409 for loading, paused, or headless instances; 410 when the
+// tmux session is gone; 502 for other tmux failures.
 func NewHTTPHandlerWithDaemon(resolve ProjectRootResolver, runner PaneRunner, daemonLister DaemonInstanceLister, daemonActions DaemonInstanceActioner) http.Handler {
 	mux := http.NewServeMux()
 
@@ -236,7 +249,7 @@ func NewHTTPHandlerWithDaemon(resolve ProjectRootResolver, runner PaneRunner, da
 			r.URL.Query().Get("end"),
 		)
 		if err != nil {
-			writeCaptureError(w, err)
+			writePaneError(w, err)
 			return
 		}
 
@@ -309,6 +322,74 @@ func NewHTTPHandlerWithDaemon(resolve ProjectRootResolver, runner PaneRunner, da
 		})
 	}
 
+	// POST /v1/projects/{project}/instances/{title}/send
+	// Sends a prompt to the agent's tmux pane. The instance must be in running
+	// or ready status and must not be headless. Returns 204 on success.
+	mux.HandleFunc("POST /v1/projects/{project}/instances/{title}/send", func(w http.ResponseWriter, r *http.Request) {
+		title := r.PathValue("title")
+		if strings.TrimSpace(title) == "" {
+			writeJSONError(w, http.StatusBadRequest, "missing title")
+			return
+		}
+
+		project := r.PathValue("project")
+		root, err := resolve(project)
+		if err != nil {
+			writeResolverError(w, err)
+			return
+		}
+
+		records, err := loadMergedRecords(project, root)
+		if err != nil {
+			slog.Error("failed to load instance records", "project", project, "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "failed to load instance records")
+			return
+		}
+
+		rec, err := FindRecord(records, title)
+		if err != nil {
+			writeJSONError(w, http.StatusNotFound, err.Error())
+			return
+		}
+
+		if err := ValidateAction(rec, "send"); err != nil {
+			writeJSONError(w, http.StatusConflict, err.Error())
+			return
+		}
+
+		// Cap the JSON body to guard against oversized prompts triggering
+		// expensive tmux send-keys work. 64 KiB is ample for any realistic
+		// prompt and keeps memory bounded under abuse.
+		r.Body = http.MaxBytesReader(w, r.Body, maxSendBodyBytes)
+
+		var body struct {
+			Prompt string `json:"prompt"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			var maxErr *http.MaxBytesError
+			if errors.As(err, &maxErr) {
+				writeJSONError(w, http.StatusRequestEntityTooLarge, "prompt too large")
+				return
+			}
+			writeJSONError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		// Trim only for validation; pass raw prompt to preserve intentional
+		// trailing newlines and whitespace within the content.
+		if strings.TrimSpace(body.Prompt) == "" {
+			writeJSONError(w, http.StatusBadRequest, "missing prompt")
+			return
+		}
+
+		if err := SendPrompt(r.Context(), runner, rec, body.Prompt); err != nil {
+			writePaneError(w, err)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	})
+
 	return mux
 }
 
@@ -349,12 +430,13 @@ func writeResolverError(w http.ResponseWriter, err error) {
 	writeJSONError(w, http.StatusInternalServerError, err.Error())
 }
 
-// writeCaptureError maps CapturePane errors to HTTP status codes.
+// writePaneError maps tmux pane errors (from CapturePane or SendPrompt) to HTTP
+// status codes.
 //
 //   - ErrSessionGone → 410
 //   - *CommandError  → 502 with trimmed stderr (or err.Error() as fallback)
 //   - other          → 502 with err.Error()
-func writeCaptureError(w http.ResponseWriter, err error) {
+func writePaneError(w http.ResponseWriter, err error) {
 	if errors.Is(err, ErrSessionGone) {
 		writeJSONError(w, http.StatusGone, ErrSessionGone.Error())
 		return
@@ -382,15 +464,16 @@ func writeJSONError(w http.ResponseWriter, code int, msg string) {
 // timestamps as RFC3339.
 func recordToListEntry(rec Record) ListEntry {
 	e := ListEntry{
-		Title:        rec.Title,
-		Status:       StatusLabel(rec.Status),
-		Branch:       rec.Branch,
-		Program:      rec.Program,
-		TaskFile:     rec.TaskFile,
-		AgentType:    rec.AgentType,
-		WaveNumber:   rec.WaveNumber,
-		TaskNumber:   rec.TaskNumber,
-		ValidActions: ValidActions(rec),
+		Title:         rec.Title,
+		Status:        StatusLabel(rec.Status),
+		Branch:        rec.Branch,
+		Program:       rec.Program,
+		TaskFile:      rec.TaskFile,
+		AgentType:     rec.AgentType,
+		WaveNumber:    rec.WaveNumber,
+		TaskNumber:    rec.TaskNumber,
+		ExecutionMode: rec.ExecutionMode,
+		ValidActions:  ValidActions(rec),
 	}
 	if !rec.CreatedAt.IsZero() {
 		e.CreatedAt = rec.CreatedAt.Format(time.RFC3339)

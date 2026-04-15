@@ -1,6 +1,7 @@
 package livepreview
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/kastheco/kasmos/config"
 )
 
 // ErrActionInstanceNotFound is returned by ApplyAction when no instance with the

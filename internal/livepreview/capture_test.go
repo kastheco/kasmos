@@ -105,3 +105,41 @@ func TestCapturePane_CommandErrorWrapping(t *testing.T) {
 	require.True(t, errors.As(err, &cmdErr), "expected *CommandError, got %T", err)
 	assert.Contains(t, cmdErr.Stderr, "something else")
 }
+
+// TestRunPaneCommand_Success verifies the shared helper forwards output on success.
+func TestRunPaneCommand_Success(t *testing.T) {
+	runner := &mockPaneRunner{
+		outputFn: func(_ context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("ok"), nil
+		},
+	}
+	out, err := runPaneCommand(context.Background(), runner, "capture-pane", "-p")
+	require.NoError(t, err)
+	assert.Equal(t, []byte("ok"), out)
+}
+
+// TestRunPaneCommand_SessionGone verifies ErrSessionGone mapping in the shared helper.
+func TestRunPaneCommand_SessionGone(t *testing.T) {
+	runner := &mockPaneRunner{
+		outputFn: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+			return nil, &exec.ExitError{Stderr: []byte("can't find session: kas_x")}
+		},
+	}
+	_, err := runPaneCommand(context.Background(), runner, "send-keys")
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrSessionGone))
+}
+
+// TestRunPaneCommand_CommandError verifies *CommandError wrapping in the shared helper.
+func TestRunPaneCommand_CommandError(t *testing.T) {
+	runner := &mockPaneRunner{
+		outputFn: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+			return nil, &exec.ExitError{Stderr: []byte("some tmux error")}
+		},
+	}
+	_, err := runPaneCommand(context.Background(), runner, "send-keys")
+	require.Error(t, err)
+	var cmdErr *CommandError
+	assert.True(t, errors.As(err, &cmdErr))
+	assert.Contains(t, cmdErr.Stderr, "some tmux error")
+}

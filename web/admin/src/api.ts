@@ -1,4 +1,4 @@
-import type { Status, TaskEntry, SubtaskEntry, TopicEntry, AuditEvent, InstanceEntry, InstanceAction } from "./types";
+import type { Status, TaskEntry, SubtaskEntry, TopicEntry, AuditEvent, InstanceEntry, InstanceAction, ScrollbackDepth } from "./types";
 
 // Legacy persisted statuses that predate canonical normalization at ingest.
 // Mirrors config/taskfsm/fsm.go:MapLegacyStatus so the SPA reader boundary
@@ -22,6 +22,20 @@ export function normalizeTaskEntry(entry: TaskEntry): TaskEntry {
   return { ...entry, status: canonical };
 }
 
+export class RequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "RequestError";
+  }
+}
+
+export class TaskExistsError extends RequestError {
+  constructor(message: string) {
+    super(message, 409);
+    this.name = "TaskExistsError";
+  }
+}
+
 async function request(path: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(path, init);
   if (!response.ok) {
@@ -34,7 +48,7 @@ async function request(path: string, init?: RequestInit): Promise<Response> {
     } catch {
       // ignore parse errors — body may not be JSON
     }
-    throw new Error(message);
+    throw new RequestError(message, response.status);
   }
   return response;
 }
@@ -298,14 +312,78 @@ export async function listInstances(project: string): Promise<InstanceEntry[]> {
   );
 }
 
+export async function createTask(
+  project: string,
+  entry: {
+    filename: string;
+    description: string;
+    topic?: string;
+    branch: string;
+    created_at: string;
+  },
+): Promise<TaskEntry> {
+  let raw: TaskEntry;
+  try {
+    raw = await requestJSON<TaskEntry>(
+      `/v1/projects/${encodeURIComponent(project)}/tasks`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...entry, status: "ready" }),
+      },
+    );
+  } catch (err) {
+    if (err instanceof RequestError && err.status === 409) {
+      throw new TaskExistsError(err.message);
+    }
+    throw err;
+  }
+  return normalizeTaskEntry(raw);
+}
+
+export async function createTopic(
+  project: string,
+  name: string,
+): Promise<void> {
+  try {
+    await request(`/v1/projects/${encodeURIComponent(project)}/topics`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, created_at: new Date().toISOString() }),
+    });
+  } catch (err) {
+    if (err instanceof RequestError && err.status === 409) {
+      // duplicate topic creation is treated as success
+      return;
+    }
+    throw err;
+  }
+}
+
 export async function getInstanceCapture(
   project: string,
   title: string,
-  opts?: { start?: string; end?: string },
+  opts?: { start?: string; end?: string; depth?: ScrollbackDepth },
 ): Promise<string> {
   const params = new URLSearchParams();
-  if (opts?.start != null) params.set("start", opts.start);
-  if (opts?.end != null) params.set("end", opts.end);
+  if (opts?.depth != null) {
+    // depth wins over explicit start/end
+    switch (opts.depth) {
+      case "120":
+        params.set("start", "-120");
+        break;
+      case "1000":
+        params.set("start", "-1000");
+        break;
+      case "full":
+        params.set("start", "-");
+        params.set("end", "-");
+        break;
+    }
+  } else {
+    if (opts?.start != null) params.set("start", opts.start);
+    if (opts?.end != null) params.set("end", opts.end);
+  }
   const qs = params.toString();
   const url = `/v1/projects/${encodeURIComponent(project)}/instances/${encodeURIComponent(title)}/capture${qs ? `?${qs}` : ""}`;
   return requestText(url);
@@ -338,4 +416,19 @@ export async function restartInstance(project: string, title: string): Promise<v
 
 export async function killInstance(project: string, title: string): Promise<void> {
   return postInstanceAction(project, title, "kill");
+}
+
+export async function sendInstancePrompt(
+  project: string,
+  title: string,
+  prompt: string,
+): Promise<void> {
+  await request(
+    `/v1/projects/${encodeURIComponent(project)}/instances/${encodeURIComponent(title)}/send`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    },
+  );
 }

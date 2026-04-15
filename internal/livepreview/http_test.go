@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -600,6 +601,70 @@ func TestHTTPHandler_ListInstances_HasValidActions(t *testing.T) {
 	assert.Equal(t, []string{"resume", "kill"}, entries[1].ValidActions)
 }
 
+// ---------------------------------------------------------------------------
+// NewHTTPHandler — execution_mode in list response
+// ---------------------------------------------------------------------------
+
+func TestHTTPHandler_ListInstances_IncludesExecutionMode(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root,
+		Record{Title: "tmux-agent", Status: StatusRunning, ExecutionMode: "tmux"},
+		Record{Title: "headless-agent", Status: StatusRunning, ExecutionMode: "headless"},
+		Record{Title: "default-agent", Status: StatusRunning},
+	)
+
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var entries []ListEntry
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&entries))
+	require.Len(t, entries, 3)
+
+	assert.Equal(t, "tmux", entries[0].ExecutionMode)
+	assert.Equal(t, "headless", entries[1].ExecutionMode)
+	// default (empty) is omitted
+	assert.Empty(t, entries[2].ExecutionMode)
+}
+
+// TestHTTPHandler_ListInstances_DaemonHeadlessExecutionMode verifies that
+// execution_mode flows through the daemon-backed path as well as the
+// state.json path. The web admin depends on this to disable composer and
+// polling before hitting tmux-only routes for headless plan agents; if the
+// daemon list adapter dropped the field, the merged list API would silently
+// surface headless instances as tmux.
+func TestHTTPHandler_ListInstances_DaemonHeadlessExecutionMode(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root) // empty state.json so the entry comes from the daemon only
+	daemon := &fakeDaemonLister{
+		records: []Record{
+			{
+				Title:         "headless-plan",
+				Status:        StatusRunning,
+				Program:       "opencode",
+				AgentType:     "coder",
+				TaskFile:      "feature",
+				ExecutionMode: "headless",
+			},
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, daemon, nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var entries []ListEntry
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&entries))
+	require.Len(t, entries, 1)
+	assert.Equal(t, "headless-plan", entries[0].Title)
+	assert.Equal(t, "headless", entries[0].ExecutionMode,
+		"daemon-backed records must expose execution_mode so the SPA can skip tmux-only routes")
+}
+
 // TestHTTPHandler_ListInstances_DaemonReadyRow_HasReadyValidActions verifies
 // that a ready daemon-owned row flows through the daemon list path with the
 // {restart, kill} action matrix instead of being collapsed into StatusRunning
@@ -657,4 +722,180 @@ func TestHTTPHandler_Action_StandaloneInstance_NotFound(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// ---------------------------------------------------------------------------
+// NewHTTPHandler — send
+// ---------------------------------------------------------------------------
+
+func TestHTTPHandler_Send_HappyPath(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "my-agent", Status: StatusRunning, ExecutionMode: "tmux"})
+
+	h := NewHTTPHandler(resolverFor(root), paneOutputRunner(""))
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/my-agent/send",
+		strings.NewReader(`{"prompt":"hello world"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	assert.Empty(t, rec.Body.String())
+}
+
+func TestHTTPHandler_Send_EmptyPrompt(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "my-agent", Status: StatusRunning, ExecutionMode: "tmux"})
+
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/my-agent/send",
+		strings.NewReader(`{"prompt":"   "}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.JSONEq(t, `{"error":"missing prompt"}`, rec.Body.String())
+}
+
+func TestHTTPHandler_Send_MalformedJSON(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "my-agent", Status: StatusRunning, ExecutionMode: "tmux"})
+
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/my-agent/send",
+		strings.NewReader(`not-json`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "error")
+}
+
+func TestHTTPHandler_Send_InstanceNotFound(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "other-agent", Status: StatusRunning})
+
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/missing/send",
+		strings.NewReader(`{"prompt":"hello"}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Contains(t, rec.Body.String(), "instance not found")
+}
+
+func TestHTTPHandler_Send_LoadingInstance(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "loading-agent", Status: StatusLoading, ExecutionMode: "tmux"})
+
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/loading-agent/send",
+		strings.NewReader(`{"prompt":"hello"}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "loading")
+}
+
+func TestHTTPHandler_Send_PausedInstance(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "paused-agent", Status: StatusPaused, ExecutionMode: "tmux"})
+
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/paused-agent/send",
+		strings.NewReader(`{"prompt":"hello"}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "paused")
+}
+
+func TestHTTPHandler_Send_HeadlessInstance(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "headless-agent", Status: StatusRunning, ExecutionMode: "headless"})
+
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/headless-agent/send",
+		strings.NewReader(`{"prompt":"hello"}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "headless")
+}
+
+func TestHTTPHandler_Send_ResolverUnavailable(t *testing.T) {
+	h := NewHTTPHandler(unavailableResolver(), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/any/instances/agent/send",
+		strings.NewReader(`{"prompt":"hello"}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotImplemented, rec.Code)
+	assert.JSONEq(t, `{"error":"live preview requires kas serve --repo"}`, rec.Body.String())
+}
+
+func TestHTTPHandler_Send_SessionGone(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "gone-agent", Status: StatusRunning, ExecutionMode: "tmux"})
+
+	h := NewHTTPHandler(resolverFor(root), sessionGoneRunner())
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/gone-agent/send",
+		strings.NewReader(`{"prompt":"hello"}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusGone, rec.Code)
+	assert.Contains(t, rec.Body.String(), "tmux session not found")
+}
+
+func TestHTTPHandler_Send_BodyTooLarge(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "my-agent", Status: StatusRunning, ExecutionMode: "tmux"})
+
+	// Build a prompt that, once JSON-encoded, comfortably exceeds the cap.
+	big := strings.Repeat("x", maxSendBodyBytes+1024)
+	payload := `{"prompt":"` + big + `"}`
+
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/my-agent/send",
+		strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+	assert.Contains(t, rec.Body.String(), "prompt too large")
+}
+
+func TestHTTPHandler_Send_GenericTmuxFailure(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "my-agent", Status: StatusRunning, ExecutionMode: "tmux"})
+
+	h := NewHTTPHandler(resolverFor(root), commandErrorRunner("unexpected tmux error"))
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/my-agent/send",
+		strings.NewReader(`{"prompt":"hello"}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	assert.Contains(t, rec.Body.String(), "unexpected tmux error")
+}
+
+func TestHTTPHandler_Capture_HeadlessInstance(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "headless-agent", Status: StatusRunning, ExecutionMode: "headless"})
+
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances/headless-agent/capture", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "headless")
 }

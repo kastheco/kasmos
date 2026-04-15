@@ -225,6 +225,7 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 				ReviewCycle:   inst.ReviewCycle,
 				WaveTaskIndex: inst.WaveTaskIndex,
 				WaveTaskCount: inst.WaveTaskCount,
+				ExecutionMode: string(session.NormalizeExecutionMode(inst.ExecutionMode)),
 			})
 		}
 		return out

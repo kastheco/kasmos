@@ -1,0 +1,227 @@
+/* NewTaskDialog styles — extends the PromptDialog aesthetic */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  background: rgba(35, 33, 54, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(2px);
+}
+
+.dialog {
+  background: var(--rp-surface);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 24px;
+  width: 100%;
+  max-width: 500px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-bottom: 16px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--foreground-secondary);
+  text-transform: lowercase;
+  margin-top: 4px;
+}
+
+.textarea,
+.input {
+  width: 100%;
+  background: var(--rp-overlay);
+  border: 1px solid var(--card-border);
+  border-radius: 7px;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 90px;
+}
+
+.textarea::placeholder,
+.input::placeholder {
+  color: var(--foreground-tertiary);
+}
+
+.textarea:focus,
+.input:focus {
+  border-color: rgba(196, 167, 231, 0.5);
+}
+
+.textarea:disabled,
+.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.inputError {
+  border-color: rgba(235, 111, 146, 0.6) !important;
+}
+
+.fieldError {
+  font-size: 11px;
+  color: var(--rp-love, #eb6f92);
+  margin-top: -2px;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--foreground-secondary);
+  cursor: pointer;
+  user-select: none;
+  margin-top: 4px;
+}
+
+.checkboxLabel input[type="checkbox"] {
+  accent-color: var(--rp-iris, #c4a7e7);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.checkboxLabel input[type="checkbox"]:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.generalError {
+  font-size: 12px;
+  color: var(--rp-love, #eb6f92);
+  background: rgba(235, 111, 146, 0.08);
+  border: 1px solid rgba(235, 111, 146, 0.25);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-top: 4px;
+}
+
+.topicsError {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--rp-love, #eb6f92);
+  background: rgba(235, 111, 146, 0.08);
+  border: 1px solid rgba(235, 111, 146, 0.25);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-top: 4px;
+}
+
+.topicsError span {
+  flex: 1;
+}
+
+.retryBtn {
+  padding: 4px 10px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid rgba(235, 111, 146, 0.4);
+  color: var(--rp-love, #eb6f92);
+  transition: background 0.15s;
+}
+
+.retryBtn:hover:not(:disabled) {
+  background: rgba(235, 111, 146, 0.15);
+}
+
+.retryBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.cancelBtn,
+.submitBtn {
+  padding: 7px 16px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.cancelBtn {
+  background: transparent;
+  border-color: var(--card-border);
+  color: var(--foreground-secondary);
+}
+
+.cancelBtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--foreground);
+}
+
+.cancelBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.submitBtn {
+  background: rgba(196, 167, 231, 0.12);
+  border-color: rgba(196, 167, 231, 0.35);
+  color: var(--rp-iris);
+}
+
+.submitBtn:hover:not(:disabled) {
+  background: rgba(196, 167, 231, 0.2);
+}
+
+.submitBtn:focus-visible {
+  outline: 2px solid var(--rp-iris);
+  outline-offset: 2px;
+}
+
+.submitBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* visually-hidden helper for aria descriptions */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

@@ -177,31 +177,52 @@ func SessionName(title string) string {
 // ValidateAction checks whether the instance is in a state compatible with the
 // requested action and returns an error when it is not.
 //
-//   - kill:    allowed in any status
-//   - pause:   not allowed when paused or ready
-//   - resume:  only allowed when paused
-//   - send:    not allowed when paused
-//   - capture: not allowed when paused
+//   - kill:    allowed in any tmux-mode status; rejected for headless
+//   - pause:   not allowed when paused or ready; rejected for headless
+//   - resume:  only allowed when paused; rejected for headless
+//   - restart: not allowed when paused; rejected for headless
+//   - send:    only allowed in running/ready tmux-mode instances (not loading, paused, or headless)
+//   - capture: not allowed when paused or in headless mode
+//
+// Headless instances are rejected for pause/resume/restart/kill because the
+// web-action path cannot safely stop, restart, or resume a headless child
+// process it does not own — that lifecycle belongs to the daemon or TUI.
 func ValidateAction(rec Record, action string) error {
+	headless := config.NormalizeExecutionMode(rec.ExecutionMode) == config.ExecutionModeHeadless
 	switch action {
 	case "kill":
+		if headless {
+			return fmt.Errorf("cannot kill a headless instance")
+		}
 		return nil
 	case "pause":
+		if headless {
+			return fmt.Errorf("cannot pause a headless instance")
+		}
 		if rec.Status == StatusPaused || rec.Status == StatusReady {
 			return fmt.Errorf("cannot pause instance in status %s", StatusLabel(rec.Status))
 		}
 		return nil
 	case "resume":
+		if headless {
+			return fmt.Errorf("cannot resume a headless instance")
+		}
 		if rec.Status != StatusPaused {
 			return fmt.Errorf("can only resume paused instances (current status: %s)", StatusLabel(rec.Status))
 		}
 		return nil
 	case "send":
-		if rec.Status == StatusPaused {
-			return fmt.Errorf("cannot send prompt to a paused instance")
+		if headless {
+			return fmt.Errorf("cannot send prompt to a headless instance")
+		}
+		if rec.Status != StatusRunning && rec.Status != StatusReady {
+			return fmt.Errorf("cannot send prompt to a %s instance", StatusLabel(rec.Status))
 		}
 		return nil
 	case "restart":
+		if headless {
+			return fmt.Errorf("cannot restart a headless instance")
+		}
 		if rec.Status == StatusPaused {
 			return fmt.Errorf("cannot restart a paused instance (resume it first)")
 		}
@@ -209,6 +230,9 @@ func ValidateAction(rec Record, action string) error {
 	case "capture":
 		if rec.Status == StatusPaused {
 			return fmt.Errorf("cannot capture pane from a paused instance")
+		}
+		if config.NormalizeExecutionMode(rec.ExecutionMode) == config.ExecutionModeHeadless {
+			return fmt.Errorf("cannot capture pane from a headless instance")
 		}
 		return nil
 	default:

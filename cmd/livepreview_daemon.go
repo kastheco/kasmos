@@ -113,15 +113,16 @@ func daemonStatusToRecord(s api.InstanceStatus) livepreview.Record {
 		status = livepreview.StatusReady
 	}
 	return livepreview.Record{
-		Title:       s.Title,
-		Status:      status,
-		Branch:      s.Branch,
-		Program:     s.Program,
-		TaskFile:    s.Plan,
-		AgentType:   s.Role,
-		WaveNumber:  s.WaveNumber,
-		TaskNumber:  s.TaskNumber,
-		ReviewCycle: s.ReviewCycle,
+		Title:         s.Title,
+		Status:        status,
+		Branch:        s.Branch,
+		Program:       s.Program,
+		TaskFile:      s.Plan,
+		AgentType:     s.Role,
+		WaveNumber:    s.WaveNumber,
+		TaskNumber:    s.TaskNumber,
+		ReviewCycle:   s.ReviewCycle,
+		ExecutionMode: s.ExecutionMode,
 	}
 }
 

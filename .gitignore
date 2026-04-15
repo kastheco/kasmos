@@ -1,6 +1,7 @@
 .idea
 .aider*
 .env*
+node_modules/
 klique
 kasmos
 **.DS_Store

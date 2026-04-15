@@ -10,7 +10,21 @@
 // dropped out of TasksPage/DashboardPage counts entirely.
 
 import type { Status, TaskEntry, InstanceEntry } from "./types.ts";
-import { normalizeTaskEntry, normalizeTaskStatus, listInstances, getInstanceCapture, pauseInstance, resumeInstance, restartInstance, killInstance } from "./api.ts";
+import {
+  normalizeTaskEntry,
+  normalizeTaskStatus,
+  listInstances,
+  getInstanceCapture,
+  pauseInstance,
+  resumeInstance,
+  restartInstance,
+  killInstance,
+  sendInstancePrompt,
+  RequestError,
+  TaskExistsError,
+  createTask,
+  createTopic,
+} from "./api.ts";
 
 function assertEqual<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
@@ -200,9 +214,139 @@ if (!caughtError) {
 }
 assertEqual(caughtError.message, "not found", "getInstanceCapture surfaces error body");
 
+// getInstanceCapture: depth="120" maps to start=-120.
+mockFetch(true, 200, "depth 120");
+await getInstanceCapture("proj", "inst", { depth: "120" });
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/proj/instances/inst/capture?start=-120",
+  "depth 120 maps to start=-120",
+);
+
+// getInstanceCapture: depth="1000" maps to start=-1000.
+mockFetch(true, 200, "depth 1000");
+await getInstanceCapture("proj", "inst", { depth: "1000" });
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/proj/instances/inst/capture?start=-1000",
+  "depth 1000 maps to start=-1000",
+);
+
+// getInstanceCapture: depth="full" maps to start=- and end=-.
+mockFetch(true, 200, "depth full");
+await getInstanceCapture("proj", "inst", { depth: "full" });
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/proj/instances/inst/capture?start=-&end=-",
+  "depth full maps to start=- and end=-",
+);
+
+// getInstanceCapture: depth wins over explicit start and end.
+mockFetch(true, 200, "depth precedence");
+await getInstanceCapture("proj", "inst", { depth: "120", start: "5", end: "10" });
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/proj/instances/inst/capture?start=-120",
+  "depth wins over explicit start and end",
+);
+
+// sendInstancePrompt: happy path — sends POST with JSON body.
+let _lastFetchedInit: RequestInit | undefined;
+(globalThis as Record<string, unknown>).fetch = async (
+  input: string | URL | Request,
+  init?: RequestInit,
+): Promise<Response> => {
+  _lastFetchedUrl = String(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+  _lastFetchedInit = init;
+  const m = _mockResponse!;
+  _mockResponse = null;
+  const body = m.body;
+  return {
+    ok: m.ok,
+    status: m.status,
+    json: async () => JSON.parse(body) as unknown,
+    text: async () => body,
+    clone: () => ({
+      json: async () => JSON.parse(body) as unknown,
+      text: async () => body,
+    }),
+  } as unknown as Response;
+};
+
+mockFetch(true, 200, "");
+await sendInstancePrompt("proj", "inst", "hello agent");
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/proj/instances/inst/send",
+  "sendInstancePrompt posts to /send",
+);
+assertEqual(
+  (_lastFetchedInit as RequestInit).method,
+  "POST",
+  "sendInstancePrompt uses POST",
+);
+assertEqual(
+  JSON.parse((_lastFetchedInit as RequestInit).body as string).prompt,
+  "hello agent",
+  "sendInstancePrompt sends prompt in body",
+);
+
+// sendInstancePrompt: server error surfaces message.
+mockFetch(false, 500, JSON.stringify({ error: "agent not running" }));
+let sendError: Error | null = null;
+try {
+  await sendInstancePrompt("proj", "inst", "ping");
+} catch (e) {
+  sendError = e as Error;
+}
+if (!sendError) throw new Error("sendInstancePrompt should throw on server error");
+assertEqual(sendError.message, "agent not running", "sendInstancePrompt surfaces server error");
+
+// sendInstancePrompt: network failure (fetch rejects) propagates.
+// Save and restore the stub so later tests (RequestError / HTTP 500 below)
+// still run against the mockFetch-backed fetch rather than this throwing one.
+const savedFetch = (globalThis as Record<string, unknown>).fetch;
+(globalThis as Record<string, unknown>).fetch = async () => {
+  throw new Error("network down");
+};
+let netError: Error | null = null;
+try {
+  await sendInstancePrompt("proj", "inst", "ping");
+} catch (e) {
+  netError = e as Error;
+}
+(globalThis as Record<string, unknown>).fetch = savedFetch;
+if (!netError) throw new Error("sendInstancePrompt should propagate network failure");
+assertEqual(netError.message, "network down", "sendInstancePrompt propagates network error");
+
 console.log("api.test.ts instance tests ok");
 
 // ---- instance action helpers (pauseInstance / resumeInstance / restartInstance / killInstance) ---
+
+// Reinstall the _lastFetchedMethod-tracking fetch stub. The sendInstancePrompt
+// section above installs a custom stub that only tracks _lastFetchedInit but
+// not _lastFetchedMethod. Restoring proper tracking here lets the action helper
+// assertions below use _lastFetchedMethod directly.
+(globalThis as Record<string, unknown>).fetch = async (
+  input: string | URL | Request,
+  init?: RequestInit,
+): Promise<Response> => {
+  _lastFetchedUrl = String(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+  _lastFetchedMethod = init?.method ?? "GET";
+  const m = _mockResponse!;
+  _mockResponse = null;
+  const body = m.body;
+  return {
+    ok: m.ok,
+    status: m.status,
+    json: async () => JSON.parse(body) as unknown,
+    text: async () => body,
+    clone: () => ({
+      json: async () => JSON.parse(body) as unknown,
+      text: async () => body,
+    }),
+  } as unknown as Response;
+};
 
 // pauseInstance: URL-encodes project and title, uses POST method.
 mockFetch(true, 204, "");
@@ -262,3 +406,172 @@ assertEqual(
 );
 
 console.log("api.test.ts action helper tests ok");
+
+// ---- RequestError -----------------------------------------------------------
+
+// RequestError carries status code
+const reqErr = new RequestError("bad request", 400);
+assertEqual(reqErr.status, 400, "RequestError.status");
+assertEqual(reqErr.message, "bad request", "RequestError.message");
+assertEqual(reqErr.name, "RequestError", "RequestError.name");
+if (!(reqErr instanceof Error)) {
+  throw new Error("RequestError should be an instance of Error");
+}
+
+// TaskExistsError is a RequestError with status 409
+const existsErr = new TaskExistsError("already exists");
+assertEqual(existsErr.status, 409, "TaskExistsError.status");
+assertEqual(existsErr.name, "TaskExistsError", "TaskExistsError.name");
+if (!(existsErr instanceof RequestError)) {
+  throw new Error("TaskExistsError should be an instance of RequestError");
+}
+if (!(existsErr instanceof Error)) {
+  throw new Error("TaskExistsError should be an instance of Error");
+}
+
+// HTTP error throws RequestError with status
+mockFetch(false, 500, JSON.stringify({ error: "internal server error" }));
+let requestErrCaught: unknown = null;
+try {
+  await listInstances("proj");
+} catch (e) {
+  requestErrCaught = e;
+}
+if (!(requestErrCaught instanceof RequestError)) {
+  throw new Error("HTTP 500 should throw RequestError");
+}
+assertEqual((requestErrCaught as RequestError).status, 500, "HTTP 500 error has status 500");
+
+// ---- createTask -------------------------------------------------------------
+
+// createTask: success case returns normalized TaskEntry
+const taskPayload: TaskEntry = {
+  filename: "new-task",
+  status: "ready",
+  branch: "plan/new-task",
+};
+mockFetch(true, 201, JSON.stringify(taskPayload));
+let _lastFetchInit: RequestInit | undefined;
+const origFetch = (globalThis as Record<string, unknown>).fetch as (
+  input: unknown,
+  init?: RequestInit,
+) => Promise<Response>;
+(globalThis as Record<string, unknown>).fetch = async (
+  input: unknown,
+  init?: RequestInit,
+): Promise<Response> => {
+  _lastFetchInit = init;
+  return origFetch(input, init);
+};
+const gotTask = await createTask("my-project", {
+  filename: "new-task",
+  description: "test task",
+  branch: "plan/new-task",
+  created_at: "2026-01-01T00:00:00Z",
+});
+assertEqual(gotTask.filename, "new-task", "createTask returns filename");
+assertEqual(gotTask.status, "ready", "createTask returns status");
+// Verify status: "ready" is in the posted body
+const postedBody = JSON.parse(_lastFetchInit!.body as string) as { status: string };
+assertEqual(postedBody.status, "ready", "createTask posts status: ready");
+
+// createTask: 409 maps to TaskExistsError
+mockFetch(false, 409, JSON.stringify({ error: "task already exists" }));
+let createTaskErr: unknown = null;
+try {
+  await createTask("proj", {
+    filename: "dup",
+    description: "dup",
+    branch: "plan/dup",
+    created_at: "2026-01-01T00:00:00Z",
+  });
+} catch (e) {
+  createTaskErr = e;
+}
+if (!(createTaskErr instanceof TaskExistsError)) {
+  throw new Error("createTask 409 should throw TaskExistsError");
+}
+
+// createTask: 400 stays as RequestError (not TaskExistsError)
+mockFetch(false, 400, JSON.stringify({ error: "bad request" }));
+let createTask400Err: unknown = null;
+try {
+  await createTask("proj", {
+    filename: "bad",
+    description: "bad",
+    branch: "plan/bad",
+    created_at: "2026-01-01T00:00:00Z",
+  });
+} catch (e) {
+  createTask400Err = e;
+}
+if (!(createTask400Err instanceof RequestError)) {
+  throw new Error("createTask 400 should throw RequestError");
+}
+if (createTask400Err instanceof TaskExistsError) {
+  throw new Error("createTask 400 must NOT be TaskExistsError");
+}
+assertEqual((createTask400Err as RequestError).status, 400, "createTask 400 error status");
+
+// createTask: 500 stays as RequestError
+mockFetch(false, 500, JSON.stringify({ error: "server error" }));
+let createTask500Err: unknown = null;
+try {
+  await createTask("proj", {
+    filename: "err",
+    description: "err",
+    branch: "plan/err",
+    created_at: "2026-01-01T00:00:00Z",
+  });
+} catch (e) {
+  createTask500Err = e;
+}
+if (!(createTask500Err instanceof RequestError)) {
+  throw new Error("createTask 500 should throw RequestError");
+}
+assertEqual((createTask500Err as RequestError).status, 500, "createTask 500 error status");
+
+// ---- createTopic ------------------------------------------------------------
+
+// createTopic: success case
+mockFetch(true, 201, "{}");
+let createTopicErr: unknown = null;
+try {
+  await createTopic("my-project", "backend");
+} catch (e) {
+  createTopicErr = e;
+}
+if (createTopicErr !== null) {
+  throw new Error(`createTopic success should not throw, got: ${String(createTopicErr)}`);
+}
+
+// createTopic: 409 is swallowed (duplicate = success)
+mockFetch(false, 409, JSON.stringify({ error: "topic already exists" }));
+let createTopicDupErr: unknown = null;
+try {
+  await createTopic("proj", "existing-topic");
+} catch (e) {
+  createTopicDupErr = e;
+}
+if (createTopicDupErr !== null) {
+  throw new Error("createTopic 409 should not throw");
+}
+
+// createTopic: non-409 errors are rethrown
+mockFetch(false, 500, JSON.stringify({ error: "server error" }));
+let createTopicServerErr: unknown = null;
+try {
+  await createTopic("proj", "broken-topic");
+} catch (e) {
+  createTopicServerErr = e;
+}
+if (!(createTopicServerErr instanceof RequestError)) {
+  throw new Error("createTopic 500 should throw RequestError");
+}
+assertEqual(
+  (createTopicServerErr as RequestError).status,
+  500,
+  "createTopic 500 error status",
+);
+
+console.log("api.test.ts new helpers ok");
