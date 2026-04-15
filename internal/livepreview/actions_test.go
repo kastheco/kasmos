@@ -201,6 +201,8 @@ func TestApplyAction_Pause_RejectsDirtyWorktree(t *testing.T) {
 	err := ApplyAction(context.Background(), root, "dirty-agent", "pause", runner)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "uncommitted changes")
+	assert.ErrorIs(t, err, ErrActionInvalidState,
+		"dirty worktree must wrap ErrActionInvalidState so the HTTP layer maps it to 409")
 
 	// State must not be mutated: status still running, worktree path preserved.
 	records, rerr := LoadRecordsFromRepoRoot(root)

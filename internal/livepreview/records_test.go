@@ -122,6 +122,28 @@ func TestValidActions_ByStatus(t *testing.T) {
 	}
 }
 
+// TestValidActions_HeadlessOnlyAllowsKill verifies that headless instances
+// advertise only "kill" because pause/resume/restart have no tmux pane to
+// operate on. This keeps the UI menu consistent with ValidateAction, which
+// rejects those actions for headless rows.
+func TestValidActions_HeadlessOnlyAllowsKill(t *testing.T) {
+	cases := []struct {
+		name   string
+		status Status
+	}{
+		{"running", StatusRunning},
+		{"loading", StatusLoading},
+		{"ready", StatusReady},
+		{"paused", StatusPaused},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ValidActions(Record{Status: tc.status, ExecutionMode: "headless"})
+			assert.Equal(t, []string{"kill"}, got)
+		})
+	}
+}
+
 // TestValidateAction_PauseRejectsReady verifies that pause is rejected on a
 // ready instance, mirroring the ValidActions rules.
 func TestValidateAction_PauseRejectsReady(t *testing.T) {

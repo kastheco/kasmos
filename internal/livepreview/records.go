@@ -244,7 +244,14 @@ func ValidateAction(rec Record, action string) error {
 // current status. The order is stable and matches what the admin UI expects:
 // pause/restart before kill for active instances; resume before kill for paused;
 // restart/kill for ready (pause is not a valid transition out of ready).
+//
+// Headless instances have no tmux pane to pause, resume, or restart, so the
+// only lifecycle action available to them is kill. This keeps the contract
+// that the admin UI menu mirrors exactly what ValidateAction permits.
 func ValidActions(rec Record) []string {
+	if config.NormalizeExecutionMode(rec.ExecutionMode) == config.ExecutionModeHeadless {
+		return []string{"kill"}
+	}
 	switch rec.Status {
 	case StatusPaused:
 		return []string{"resume", "kill"}

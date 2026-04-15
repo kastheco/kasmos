@@ -94,8 +94,11 @@ export default function InstanceActionsMenu({
   const openMenu = useCallback(() => {
     reposition();
     setOpen(true);
-    setFocusedIdx(0);
-  }, [reposition]);
+    // Start focus on the first enabled item. If every item is disabled we
+    // fall back to -1 so the popover itself keeps focus for Escape handling.
+    const firstEnabledIdx = items.findIndex((it) => it.enabled);
+    setFocusedIdx(firstEnabledIdx);
+  }, [reposition, items]);
 
   const closeMenu = useCallback(() => {
     setOpen(false);
@@ -178,7 +181,11 @@ export default function InstanceActionsMenu({
         disabled={busy}
         onClick={(e) => {
           e.stopPropagation();
-          openMenu();
+          if (open) {
+            closeMenu();
+          } else {
+            openMenu();
+          }
         }}
         onKeyDown={(e) => {
           // Always stop propagation so row keydown handler (Enter/Space for
@@ -186,7 +193,11 @@ export default function InstanceActionsMenu({
           e.stopPropagation();
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            openMenu();
+            if (open) {
+              closeMenu();
+            } else {
+              openMenu();
+            }
           }
         }}
       >

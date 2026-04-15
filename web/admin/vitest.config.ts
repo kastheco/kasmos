@@ -16,6 +16,7 @@ export default defineConfig({
       "src/pages/agentCardModel.test.ts",
       "src/pages/instanceInteractivity.test.ts",
       "src/lib/taskCreation.test.ts",
+      "src/components/InstanceActionsMenu.test.ts",
       "src/components/TerminalPreview.test.tsx",
     ],
   },

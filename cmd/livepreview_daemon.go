@@ -62,7 +62,7 @@ func newDaemonInstanceLister() *daemonInstanceLister {
 // (paused) entries are included — daemonStatusToRecord maps !s.Active rows to
 // StatusPaused so the web UI keeps daemon-owned agents visible while paused.
 func (l *daemonInstanceLister) ListInstancesForProject(project string) ([]livepreview.Record, error) {
-	resp, err := l.http.Get("http://daemon/v1/repos/" + project + "/instances")
+	resp, err := l.http.Get("http://daemon/v1/repos/" + url.PathEscape(project) + "/instances")
 	if err != nil {
 		if isDaemonSocketUnreachable(err) {
 			return nil, livepreview.ErrDaemonUnavailable
@@ -131,7 +131,7 @@ func daemonStatusToRecord(s api.InstanceStatus) livepreview.Record {
 // error responses are translated to *livepreview.DaemonActionClientError so the
 // serve-side handler can preserve the original status code.
 func (l *daemonInstanceLister) PostInstanceAction(project, title, action string) error {
-	u := "http://daemon/v1/repos/" + project + "/instances/" + url.PathEscape(title) + "/" + action
+	u := "http://daemon/v1/repos/" + url.PathEscape(project) + "/instances/" + url.PathEscape(title) + "/" + action
 	resp, err := l.http.Post(u, "application/json", http.NoBody)
 	if err != nil {
 		if isDaemonSocketUnreachable(err) {

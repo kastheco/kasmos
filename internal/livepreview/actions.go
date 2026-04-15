@@ -211,10 +211,20 @@ func checkWorktreeClean(ctx context.Context, runner CommandRunner, rec Record, a
 		return fmt.Errorf("check worktree %q for %s: %w", rec.Worktree.WorktreePath, action, err)
 	}
 	if len(bytes.TrimSpace(out)) > 0 {
-		return fmt.Errorf("worktree %q has uncommitted changes; commit or stash before %sing",
-			rec.Worktree.WorktreePath, action)
+		// Map to ErrActionInvalidState so the HTTP layer returns 409 Conflict.
+		// A dirty worktree is an expected precondition failure the user should
+		// see as a normal rejection, not an internal server error.
+		return fmt.Errorf("%w: worktree %q has uncommitted changes; commit or stash before %sing",
+			ErrActionInvalidState, rec.Worktree.WorktreePath, action)
 	}
 	return nil
+}
+
+// shellSingleQuote wraps s in POSIX single quotes, escaping any embedded
+// single quotes by closing, inserting an escaped quote, and reopening.
+// Matches the `'\''` pattern used elsewhere in this file.
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 // standaloneResumeProgram reconstructs the full tmux command string for a
@@ -233,14 +243,14 @@ func standaloneResumeProgram(rec Record, worktreePath string) string {
 		logDir := filepath.Join(worktreePath, ".kasmos", "logs")
 		if err := os.MkdirAll(logDir, 0o755); err == nil {
 			logFile := filepath.Join(logDir, SessionName(rec.Title)+".log")
-			program += " --print-logs 2>>'" + logFile + "'"
+			program += " --print-logs 2>>" + shellSingleQuote(logFile)
 		}
 	}
 
 	program = "KASMOS_MANAGED=1 " + program
 
 	if project := standaloneProject(rec); project != "" {
-		program = "KASMOS_PROJECT='" + strings.ReplaceAll(project, "'", "'\\''") + "' " + program
+		program = "KASMOS_PROJECT=" + shellSingleQuote(project) + " " + program
 	}
 	if rec.TaskNumber > 0 {
 		program = fmt.Sprintf("KASMOS_TASK=%d KASMOS_WAVE=%d KASMOS_PEERS=%d %s",
