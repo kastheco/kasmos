@@ -1,11 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { listInstances, getInstanceCapture } from "../api";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
 import { useProject } from "../hooks/useProject";
-import StatusBadge from "../components/StatusBadge";
 import TerminalPreview from "../components/TerminalPreview";
 import type { InstanceEntry } from "../types";
 import styles from "./InstancesPage.module.css";
+import {
+  groupAgentsByStatus,
+  toAgentCardModel,
+  type AgentCardModel,
+  type AgentPill,
+} from "./agentCardModel";
 
 function formatTime(iso?: string): string {
   if (!iso) return "";
@@ -18,6 +23,70 @@ function formatTime(iso?: string): string {
   } catch {
     return iso;
   }
+}
+
+function toneClass(pill: AgentPill): string {
+  switch (pill.tone) {
+    case "wave":
+      return styles.pillWave;
+    case "task":
+      return styles.pillTask;
+    case "cycle":
+      return styles.pillCycle;
+    case "role":
+      return styles.pillRole;
+    default:
+      return styles.pillDefault;
+  }
+}
+
+interface AgentCardProps {
+  card: AgentCardModel;
+  selected: boolean;
+  onSelect: () => void;
+}
+
+function AgentCard({ card, selected, onSelect }: AgentCardProps) {
+  return (
+    <li
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      className={`${styles.row} ${selected ? styles.selected : ""}`}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+    >
+      <div className={styles.rowHeader}>
+        <span className={styles.title}>{card.displayName}</span>
+      </div>
+      {card.pills.length > 0 && (
+        <div className={styles.pillRow}>
+          {card.pills.map((p, i) => (
+            <span key={i} className={`${styles.pill} ${toneClass(p)}`}>
+              {p.label}
+            </span>
+          ))}
+        </div>
+      )}
+      {card.branch && (
+        <div className={styles.meta}>
+          <span className={styles.metaLabel}>branch</span>
+          <span className={styles.metaValue}>{card.branch}</span>
+        </div>
+      )}
+      {card.updatedAt && (
+        <div className={styles.meta}>
+          <span className={styles.metaLabel}>updated</span>
+          <span className={styles.metaValue}>{formatTime(card.updatedAt)}</span>
+        </div>
+      )}
+    </li>
+  );
 }
 
 export default function InstancesPage() {
@@ -44,23 +113,36 @@ export default function InstancesPage() {
     1000,
   );
 
-  // Auto-select the first instance on first successful load.
+  const groups = useMemo(
+    () => groupAgentsByStatus((instances.data ?? []).map(toAgentCardModel)),
+    [instances.data],
+  );
+
+  // Flat list of displayed cards in visual order — used for auto-selection
+  // and for looking up the card that matches selectedTitle.
+  const flatCards = useMemo(
+    () => groups.flatMap((g) => g.cards),
+    [groups],
+  );
+
+  // Auto-select the first instance on first successful load; reassign when
+  // the selected instance disappears from the list.
   useEffect(() => {
     if (!instances.data) return;
-    if (selectedTitle === null && instances.data.length > 0) {
-      setSelectedTitle(instances.data[0].title);
+    if (selectedTitle === null && flatCards.length > 0) {
+      setSelectedTitle(flatCards[0].title);
       return;
     }
-    // If the selected instance disappeared, pick the first remaining one.
     if (
       selectedTitle !== null &&
-      !instances.data.find((i) => i.title === selectedTitle)
+      !flatCards.find((c) => c.title === selectedTitle)
     ) {
-      setSelectedTitle(instances.data.length > 0 ? instances.data[0].title : null);
+      setSelectedTitle(flatCards.length > 0 ? flatCards[0].title : null);
     }
-  }, [instances.data, selectedTitle]);
+  }, [instances.data, selectedTitle, flatCards]);
 
-  const selectedInstance = instances.data?.find((i) => i.title === selectedTitle) ?? null;
+  const selectedCard =
+    flatCards.find((c) => c.title === selectedTitle) ?? null;
 
   const captureContent = (() => {
     if (!selectedTitle) return "";
@@ -86,71 +168,35 @@ export default function InstancesPage() {
 
       {instances.data && instances.data.length > 0 && (
         <div className={styles.split}>
-          {/* left: instance list */}
-          <ul className={styles.list}>
-            {instances.data.map((inst) => (
-              <li
-                key={inst.title}
-                role="button"
-                tabIndex={0}
-                aria-pressed={inst.title === selectedTitle}
-                className={`${styles.row} ${inst.title === selectedTitle ? styles.selected : ""}`}
-                onClick={() => setSelectedTitle(inst.title)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setSelectedTitle(inst.title);
-                  }
-                }}
-              >
-                <div className={styles.rowHeader}>
-                  <span className={styles.title}>{inst.title}</span>
-                  <StatusBadge status={inst.status} />
-                </div>
-                {inst.task_file && (
-                  <div className={styles.meta}>
-                    <span className={styles.metaLabel}>task</span>
-                    <span className={styles.metaValue}>{inst.task_file}</span>
-                  </div>
-                )}
-                {(inst.wave_number != null || inst.task_number != null) && (
-                  <div className={styles.meta}>
-                    {inst.wave_number != null && (
-                      <>
-                        <span className={styles.metaLabel}>wave</span>
-                        <span className={styles.metaValue}>{inst.wave_number}</span>
-                      </>
-                    )}
-                    {inst.task_number != null && (
-                      <>
-                        <span className={styles.metaLabel}>task#</span>
-                        <span className={styles.metaValue}>{inst.task_number}</span>
-                      </>
-                    )}
-                  </div>
-                )}
-                {inst.branch && (
-                  <div className={styles.meta}>
-                    <span className={styles.metaLabel}>branch</span>
-                    <span className={styles.metaValue}>{inst.branch}</span>
-                  </div>
-                )}
-                {inst.updated_at && (
-                  <div className={styles.meta}>
-                    <span className={styles.metaLabel}>updated</span>
-                    <span className={styles.metaValue}>{formatTime(inst.updated_at)}</span>
-                  </div>
-                )}
-              </li>
+          {/* left: grouped agent list */}
+          <div className={styles.listColumn}>
+            {groups.map((group) => (
+              <section key={group.status} className={styles.group}>
+                <h2 className={styles.groupHeader}>
+                  <span className={`${styles.groupDot} ${styles[`dot_${group.status}`]}`} />
+                  <span>{group.label}</span>
+                  <span className={styles.groupCount}>{group.cards.length}</span>
+                </h2>
+                <ul className={styles.list}>
+                  {group.cards.map((card) => (
+                    <AgentCard
+                      key={card.title}
+                      card={card}
+                      selected={card.title === selectedTitle}
+                      onSelect={() => setSelectedTitle(card.title)}
+                    />
+                  ))}
+                </ul>
+              </section>
             ))}
-          </ul>
+          </div>
 
           {/* right: terminal preview */}
           <div className={styles.preview}>
-            {selectedInstance ? (
+            {selectedCard ? (
               <>
                 <div className={styles.previewHeader}>
-                  <span className={styles.previewTitle}>{selectedInstance.title}</span>
+                  <span className={styles.previewTitle}>{selectedCard.displayName}</span>
                   {capture.error ? (
                     <span className={styles.captureError}>preview unavailable</span>
                   ) : null}
