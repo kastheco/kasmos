@@ -3,6 +3,7 @@ package taskactions_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,12 +19,15 @@ import (
 
 // helpers --------------------------------------------------------------------
 
-func newTestServer(t *testing.T) (*httptest.Server, taskstore.Store) {
+func newTestServer(t *testing.T) (*httptest.Server, taskstore.Store, taskstore.SignalGateway) {
 	t.Helper()
 	store := taskstore.NewTestSQLiteStore(t)
-	srv := httptest.NewServer(taskactions.NewHandler(store))
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { gw.Close() })
+	srv := httptest.NewServer(taskactions.NewHandler(store, gw))
 	t.Cleanup(srv.Close)
-	return srv, store
+	return srv, store, gw
 }
 
 func createTask(t *testing.T, store taskstore.Store, project, filename string) {
@@ -84,7 +88,7 @@ implement the thing
 // ---- transition tests -------------------------------------------------------
 
 func TestTransition_HappyPath(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "my-task")
 	// Set content and mark as planned so implement_start succeeds.
 	require.NoError(t, store.SetContent("proj", "my-task", validPlanContent))
@@ -98,7 +102,7 @@ func TestTransition_HappyPath(t *testing.T) {
 }
 
 func TestTransition_ReviewChanges_PrimaryToken(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "task-x")
 	// Drive the task to reviewing status.
 	require.NoError(t, store.Update("proj", "task-x", taskstore.TaskEntry{
@@ -114,7 +118,7 @@ func TestTransition_ReviewChanges_PrimaryToken(t *testing.T) {
 }
 
 func TestTransition_ReviewChangesRequested_Alias(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "task-y")
 	require.NoError(t, store.Update("proj", "task-y", taskstore.TaskEntry{
 		Filename: "task-y",
@@ -129,7 +133,7 @@ func TestTransition_ReviewChangesRequested_Alias(t *testing.T) {
 }
 
 func TestTransition_DraftReady_ImplementStart_Rejected(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	// Draft-ready: status=ready, no execution phase set.
 	createTask(t, store, "proj", "draft-task")
 
@@ -141,7 +145,7 @@ func TestTransition_DraftReady_ImplementStart_Rejected(t *testing.T) {
 }
 
 func TestTransition_PlannerFinished_EmptyContent_Rejected(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "plan-task")
 	require.NoError(t, store.Update("proj", "plan-task", taskstore.TaskEntry{
 		Filename: "plan-task",
@@ -157,7 +161,7 @@ func TestTransition_PlannerFinished_EmptyContent_Rejected(t *testing.T) {
 }
 
 func TestTransition_PlannerFinished_UnparsableContent_Rejected(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "bad-plan")
 	require.NoError(t, store.Update("proj", "bad-plan", taskstore.TaskEntry{
 		Filename: "bad-plan",
@@ -174,7 +178,7 @@ func TestTransition_PlannerFinished_UnparsableContent_Rejected(t *testing.T) {
 }
 
 func TestTransition_PlannerFinished_ValidContent_Accepted(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "good-plan")
 	require.NoError(t, store.Update("proj", "good-plan", taskstore.TaskEntry{
 		Filename: "good-plan",
@@ -196,7 +200,7 @@ func TestTransition_PlannerFinished_ValidContent_Accepted(t *testing.T) {
 // config/taskfsm/fsm.go:MapLegacyStatus and config/taskfsm/fsm_test.go:TestMapLegacyStatus.
 
 func TestTransition_LegacyInProgress_AcceptsImplementFinished(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "legacy-impl")
 	// Simulate a pre-normalization row persisted with the legacy status.
 	require.NoError(t, store.Update("proj", "legacy-impl", taskstore.TaskEntry{
@@ -212,7 +216,7 @@ func TestTransition_LegacyInProgress_AcceptsImplementFinished(t *testing.T) {
 }
 
 func TestTransition_LegacyCompleted_AcceptsReimplement(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "legacy-done")
 	require.NoError(t, store.Update("proj", "legacy-done", taskstore.TaskEntry{
 		Filename: "legacy-done",
@@ -227,7 +231,7 @@ func TestTransition_LegacyCompleted_AcceptsReimplement(t *testing.T) {
 }
 
 func TestAvailableActions_LegacyInProgress_ExposesImplementFinished(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "legacy-impl-actions")
 	require.NoError(t, store.Update("proj", "legacy-impl-actions", taskstore.TaskEntry{
 		Filename: "legacy-impl-actions",
@@ -254,7 +258,7 @@ func TestAvailableActions_LegacyInProgress_ExposesImplementFinished(t *testing.T
 }
 
 func TestAvailableActions_LegacyCompleted_ExposesDoneTransitions(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "legacy-done-actions")
 	require.NoError(t, store.Update("proj", "legacy-done-actions", taskstore.TaskEntry{
 		Filename: "legacy-done-actions",
@@ -282,7 +286,7 @@ func TestAvailableActions_LegacyCompleted_ExposesDoneTransitions(t *testing.T) {
 }
 
 func TestTransition_UnknownEvent_400(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "my-task")
 
 	resp := doJSON(t, srv, http.MethodPost, "/v1/projects/proj/tasks/my-task/transition",
@@ -292,7 +296,7 @@ func TestTransition_UnknownEvent_400(t *testing.T) {
 }
 
 func TestTransition_NotFound_404(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _, _ := newTestServer(t)
 
 	resp := doJSON(t, srv, http.MethodPost, "/v1/projects/proj/tasks/missing/transition",
 		map[string]string{"event": "plan_start"})
@@ -303,7 +307,7 @@ func TestTransition_NotFound_404(t *testing.T) {
 // ---- available-actions tests ------------------------------------------------
 
 func TestAvailableActions_DraftReady_ExcludesImplementStart(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	// Draft-ready: status=ready, no execution phase.
 	createTask(t, store, "proj", "draft-task")
 
@@ -322,7 +326,7 @@ func TestAvailableActions_DraftReady_ExcludesImplementStart(t *testing.T) {
 }
 
 func TestAvailableActions_PlannerFinished_ExcludedWhenNoContent(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "plan-task")
 	require.NoError(t, store.Update("proj", "plan-task", taskstore.TaskEntry{
 		Filename: "plan-task",
@@ -345,7 +349,7 @@ func TestAvailableActions_PlannerFinished_ExcludedWhenNoContent(t *testing.T) {
 }
 
 func TestAvailableActions_PlannerFinished_IncludedWithValidContent(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "plan-task")
 	require.NoError(t, store.Update("proj", "plan-task", taskstore.TaskEntry{
 		Filename: "plan-task",
@@ -373,7 +377,7 @@ func TestAvailableActions_PlannerFinished_IncludedWithValidContent(t *testing.T)
 }
 
 func TestAvailableActions_NotFound_404(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _, _ := newTestServer(t)
 
 	resp := doJSON(t, srv, http.MethodGet, "/v1/projects/proj/tasks/missing/available-actions", nil)
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
@@ -383,7 +387,7 @@ func TestAvailableActions_NotFound_404(t *testing.T) {
 // ---- status override tests --------------------------------------------------
 
 func TestStatus_ManualOverride_HappyPath(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "task-a")
 
 	resp := doJSON(t, srv, http.MethodPut, "/v1/projects/proj/tasks/task-a/status",
@@ -394,7 +398,7 @@ func TestStatus_ManualOverride_HappyPath(t *testing.T) {
 }
 
 func TestStatus_ManualOverride_Invalid_400(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "task-b")
 
 	resp := doJSON(t, srv, http.MethodPut, "/v1/projects/proj/tasks/task-b/status",
@@ -404,7 +408,7 @@ func TestStatus_ManualOverride_Invalid_400(t *testing.T) {
 }
 
 func TestStatus_NotFound_404(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _, _ := newTestServer(t)
 
 	resp := doJSON(t, srv, http.MethodPut, "/v1/projects/proj/tasks/missing/status",
 		map[string]string{"target": "implementing"})
@@ -415,7 +419,7 @@ func TestStatus_NotFound_404(t *testing.T) {
 // ---- rename tests -----------------------------------------------------------
 
 func TestRename_SlugifiesHumanInput(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "old-name")
 
 	resp := doJSON(t, srv, http.MethodPost, "/v1/projects/proj/tasks/old-name/rename",
@@ -426,7 +430,7 @@ func TestRename_SlugifiesHumanInput(t *testing.T) {
 }
 
 func TestRename_StripsTrailingMdExtension(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "task-one")
 
 	resp := doJSON(t, srv, http.MethodPost, "/v1/projects/proj/tasks/task-one/rename",
@@ -437,7 +441,7 @@ func TestRename_StripsTrailingMdExtension(t *testing.T) {
 }
 
 func TestRename_NotFound_404(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _, _ := newTestServer(t)
 
 	resp := doJSON(t, srv, http.MethodPost, "/v1/projects/proj/tasks/missing/rename",
 		map[string]string{"new_filename": "new-name"})
@@ -450,7 +454,7 @@ func TestRename_NotFound_404(t *testing.T) {
 // review activity. The rename must succeed and the derived children must
 // follow the parent to the new filename.
 func TestRename_PreservesIngestedChildren(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "ingested-task")
 
 	req, err := http.NewRequest(http.MethodPut,
@@ -491,7 +495,7 @@ func TestRename_PreservesIngestedChildren(t *testing.T) {
 // ---- topic tests ------------------------------------------------------------
 
 func TestTopic_SetTopic(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "task-t")
 
 	resp := doJSON(t, srv, http.MethodPut, "/v1/projects/proj/tasks/task-t/topic",
@@ -502,7 +506,7 @@ func TestTopic_SetTopic(t *testing.T) {
 }
 
 func TestTopic_ClearTopic(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "task-u")
 	// Set a topic first.
 	require.NoError(t, store.Update("proj", "task-u", taskstore.TaskEntry{
@@ -519,7 +523,7 @@ func TestTopic_ClearTopic(t *testing.T) {
 }
 
 func TestTopic_NotFound_404(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _, _ := newTestServer(t)
 
 	resp := doJSON(t, srv, http.MethodPut, "/v1/projects/proj/tasks/missing/topic",
 		map[string]string{"topic": "something"})
@@ -530,7 +534,7 @@ func TestTopic_NotFound_404(t *testing.T) {
 // ---- goal tests -------------------------------------------------------------
 
 func TestGoal_SetGoal(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "task-goal")
 
 	resp := doJSON(t, srv, http.MethodPut, "/v1/projects/proj/tasks/task-goal/goal",
@@ -541,7 +545,7 @@ func TestGoal_SetGoal(t *testing.T) {
 }
 
 func TestGoal_NotFound_404(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _, _ := newTestServer(t)
 
 	resp := doJSON(t, srv, http.MethodPut, "/v1/projects/proj/tasks/missing/goal",
 		map[string]string{"goal": "ship it"})
@@ -552,7 +556,7 @@ func TestGoal_NotFound_404(t *testing.T) {
 // ---- content tests ----------------------------------------------------------
 
 func TestContent_IngestUpdatesGoalAndSubtasks(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store, _ := newTestServer(t)
 	createTask(t, store, "proj", "content-task")
 
 	req, err := http.NewRequest(http.MethodPut,
@@ -575,7 +579,7 @@ func TestContent_IngestUpdatesGoalAndSubtasks(t *testing.T) {
 }
 
 func TestContent_NotFound_404(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _, _ := newTestServer(t)
 
 	req, err := http.NewRequest(http.MethodPut,
 		srv.URL+"/v1/projects/proj/tasks/missing/content",
@@ -586,4 +590,232 @@ func TestContent_NotFound_404(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	resp.Body.Close()
+}
+
+// ---- gateway signal emission tests ------------------------------------------
+
+// TestTransition_SignalBearing_EmitsGateway verifies that lifecycle events which
+// map to a canonical gateway signal type create exactly one pending signal row.
+func TestTransition_SignalBearing_EmitsGateway(t *testing.T) {
+	tests := []struct {
+		name           string
+		event          string
+		setupStatus    taskstore.Status
+		needContent    bool
+		wantSignalType string
+	}{
+		{
+			name:           "planner_finished from planning",
+			event:          "planner_finished",
+			setupStatus:    taskstore.StatusPlanning,
+			needContent:    true,
+			wantSignalType: "planner_finished",
+		},
+		{
+			name:           "implement_finished from implementing",
+			event:          "implement_finished",
+			setupStatus:    taskstore.StatusImplementing,
+			wantSignalType: "implement_finished",
+		},
+		{
+			name:           "review_approved from reviewing",
+			event:          "review_approved",
+			setupStatus:    taskstore.StatusReviewing,
+			wantSignalType: "review_approved",
+		},
+		{
+			name:           "review_changes primary token",
+			event:          "review_changes",
+			setupStatus:    taskstore.StatusReviewing,
+			wantSignalType: "review_changes_requested",
+		},
+		{
+			name:           "review_changes_requested alias",
+			event:          "review_changes_requested",
+			setupStatus:    taskstore.StatusReviewing,
+			wantSignalType: "review_changes_requested",
+		},
+		{
+			name:           "verify_approved from verifying",
+			event:          "verify_approved",
+			setupStatus:    taskstore.StatusVerifying,
+			wantSignalType: "verify_approved",
+		},
+		{
+			name:           "verify_failed from verifying",
+			event:          "verify_failed",
+			setupStatus:    taskstore.StatusVerifying,
+			wantSignalType: "verify_failed",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, store, gw := newTestServer(t)
+			const filename = "signal-task"
+			createTask(t, store, "proj", filename)
+
+			if tc.setupStatus != taskstore.StatusReady {
+				require.NoError(t, store.Update("proj", filename, taskstore.TaskEntry{
+					Filename: filename,
+					Status:   tc.setupStatus,
+				}))
+			}
+			if tc.needContent {
+				require.NoError(t, store.SetContent("proj", filename, validPlanContent))
+			}
+
+			resp := doJSON(t, srv, http.MethodPost,
+				"/v1/projects/proj/tasks/"+filename+"/transition",
+				map[string]string{"event": tc.event})
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			require.Equal(t, http.StatusOK, resp.StatusCode, "response body: %s", string(body))
+
+			signals, err := gw.List("proj", taskstore.SignalPending)
+			require.NoError(t, err)
+			require.Len(t, signals, 1, "expected exactly one pending signal")
+			assert.Equal(t, tc.wantSignalType, signals[0].SignalType)
+			assert.Equal(t, filename, signals[0].PlanFile)
+		})
+	}
+}
+
+// TestTransition_NonEmitting_LeavesGatewayEmpty verifies that lifecycle events
+// which do not map to any gateway signal type leave the gateway empty.
+func TestTransition_NonEmitting_LeavesGatewayEmpty(t *testing.T) {
+	tests := []struct {
+		name            string
+		event           string
+		setupStatus     taskstore.Status
+		useExecutionPhase bool
+	}{
+		{
+			name:        "plan_start from ready",
+			event:       "plan_start",
+			setupStatus: taskstore.StatusReady,
+		},
+		{
+			name:              "implement_start from planned-ready",
+			event:             "implement_start",
+			setupStatus:       taskstore.StatusReady,
+			useExecutionPhase: true,
+		},
+		{
+			name:        "request_review from done",
+			event:       "request_review",
+			setupStatus: taskstore.StatusDone,
+		},
+		{
+			name:        "start_over from done",
+			event:       "start_over",
+			setupStatus: taskstore.StatusDone,
+		},
+		{
+			name:        "reimplement from done",
+			event:       "reimplement",
+			setupStatus: taskstore.StatusDone,
+		},
+		{
+			name:        "cancel from implementing",
+			event:       "cancel",
+			setupStatus: taskstore.StatusImplementing,
+		},
+		{
+			name:        "reopen from cancelled",
+			event:       "reopen",
+			setupStatus: taskstore.StatusCancelled,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, store, gw := newTestServer(t)
+			const filename = "non-emit-task"
+			createTask(t, store, "proj", filename)
+
+			switch {
+			case tc.useExecutionPhase:
+				// Mark as planned so implement_start is not blocked by draft-ready guard.
+				require.NoError(t, store.Update("proj", filename, taskstore.TaskEntry{
+					Filename:       filename,
+					Status:         taskstore.StatusReady,
+					ExecutionState: taskstore.ExecutionState{Phase: "planned"},
+				}))
+			case tc.setupStatus != taskstore.StatusReady:
+				require.NoError(t, store.Update("proj", filename, taskstore.TaskEntry{
+					Filename: filename,
+					Status:   tc.setupStatus,
+				}))
+			}
+
+			resp := doJSON(t, srv, http.MethodPost,
+				"/v1/projects/proj/tasks/"+filename+"/transition",
+				map[string]string{"event": tc.event})
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			resp.Body.Close()
+
+			signals, err := gw.List("proj", taskstore.SignalPending)
+			require.NoError(t, err)
+			assert.Empty(t, signals, "non-emitting transition must leave gateway empty")
+		})
+	}
+}
+
+// TestTransition_EmitFailure_Returns500_StatusAdvanced verifies that a gateway
+// Create() failure causes HTTP 500 but does not roll back the FSM transition.
+func TestTransition_EmitFailure_Returns500_StatusAdvanced(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	realGW, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { realGW.Close() })
+
+	fgw := &failingGateway{real: realGW}
+	srv := httptest.NewServer(taskactions.NewHandler(store, fgw))
+	t.Cleanup(srv.Close)
+
+	const filename = "emit-fail-task"
+	createTask(t, store, "proj", filename)
+	require.NoError(t, store.Update("proj", filename, taskstore.TaskEntry{
+		Filename: filename,
+		Status:   taskstore.StatusPlanning,
+	}))
+	require.NoError(t, store.SetContent("proj", filename, validPlanContent))
+
+	resp := doJSON(t, srv, http.MethodPost,
+		"/v1/projects/proj/tasks/"+filename+"/transition",
+		map[string]string{"event": "planner_finished"})
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+	errMsg := decodeError(t, resp)
+	assert.Contains(t, errMsg, "gateway emit failed")
+	assert.Contains(t, errMsg, "task status was not rolled back")
+
+	// The FSM transition must have persisted even though the emit failed.
+	updated, err := store.Get("proj", filename)
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusReady, updated.Status, "task status should have advanced despite emit failure")
+}
+
+// failingGateway wraps a real SignalGateway but always returns an error from Create.
+type failingGateway struct {
+	real taskstore.SignalGateway
+}
+
+func (f *failingGateway) Create(_ string, _ taskstore.SignalEntry) error {
+	return fmt.Errorf("simulated gateway failure")
+}
+func (f *failingGateway) List(project string, statuses ...taskstore.SignalStatus) ([]taskstore.SignalEntry, error) {
+	return f.real.List(project, statuses...)
+}
+func (f *failingGateway) Claim(project, claimedBy string) (*taskstore.SignalEntry, error) {
+	return f.real.Claim(project, claimedBy)
+}
+func (f *failingGateway) MarkProcessed(id int64, status taskstore.SignalStatus, result string) error {
+	return f.real.MarkProcessed(id, status, result)
+}
+func (f *failingGateway) ResetStuck(olderThan time.Duration) (int, error) {
+	return f.real.ResetStuck(olderThan)
+}
+func (f *failingGateway) Close() error {
+	return f.real.Close()
 }
