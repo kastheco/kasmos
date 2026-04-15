@@ -8,8 +8,10 @@ import (
 
 // MaxInlinePromptLen is the threshold above which prompts should not be
 // inlined as shell arguments. Long prompts can exceed tmux/exec argument
-// limits and silently fail session creation. Callers should fall back to
-// send-keys delivery for prompts exceeding this length.
+// limits and silently fail session creation. Adapter BuildPromptArg
+// implementations spill prompts exceeding this length to a temp file under
+// <workDir>/.kasmos/ via writePromptFile and reference them with the program's
+// file syntax (claude @file, opencode/codex $(cat ...)).
 const MaxInlinePromptLen = 8192
 
 // promptDir is the subdirectory within the workdir where prompt files are stored.
@@ -47,4 +49,3 @@ func (t *TmuxSession) writePromptFile(workDir string) string {
 	t.promptFile = f.Name()
 	return t.promptFile
 }
-
