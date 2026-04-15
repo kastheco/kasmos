@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
-import { listInstances, getInstanceCapture } from "../api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { listInstances, getInstanceCapture, pauseInstance, resumeInstance, restartInstance, killInstance } from "../api";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
 import { useProject } from "../hooks/useProject";
+import { useToast } from "../hooks/useToast";
 import TerminalPreview from "../components/TerminalPreview";
-import type { InstanceEntry } from "../types";
+import ConfirmDialog from "../components/ConfirmDialog";
+import InstanceActionsMenu from "../components/InstanceActionsMenu";
+import type { InstanceEntry, InstanceAction } from "../types";
 import styles from "./InstancesPage.module.css";
 import {
   groupAgentsByStatus,
@@ -11,6 +14,13 @@ import {
   type AgentCardModel,
   type AgentPill,
 } from "./agentCardModel";
+
+const ACTION_PAST_TENSE: Record<InstanceAction, string> = {
+  pause: "paused",
+  resume: "resumed",
+  restart: "restarted",
+  kill: "killed",
+};
 
 function formatTime(iso?: string): string {
   if (!iso) return "";
@@ -42,11 +52,14 @@ function toneClass(pill: AgentPill): string {
 
 interface AgentCardProps {
   card: AgentCardModel;
+  instance: InstanceEntry;
   selected: boolean;
+  actionBusy: boolean;
   onSelect: () => void;
+  onAction: (action: InstanceAction) => void;
 }
 
-function AgentCard({ card, selected, onSelect }: AgentCardProps) {
+function AgentCard({ card, instance, selected, actionBusy, onSelect, onAction }: AgentCardProps) {
   return (
     <li
       role="button"
@@ -63,6 +76,11 @@ function AgentCard({ card, selected, onSelect }: AgentCardProps) {
     >
       <div className={styles.rowHeader}>
         <span className={styles.title}>{card.displayName}</span>
+        <InstanceActionsMenu
+          instance={instance}
+          busy={actionBusy}
+          onAction={onAction}
+        />
       </div>
       {card.pills.length > 0 && (
         <div className={styles.pillRow}>
@@ -91,7 +109,10 @@ function AgentCard({ card, selected, onSelect }: AgentCardProps) {
 
 export default function InstancesPage() {
   const { project } = useProject();
+  const toast = useToast();
   const [selectedTitle, setSelectedTitle] = useState<string | null>(null);
+  const [actionTitle, setActionTitle] = useState<string | null>(null);
+  const [killConfirmTitle, setKillConfirmTitle] = useState<string | null>(null);
 
   // Reset selection when the active project changes to avoid stale capture polls.
   useEffect(() => {
@@ -115,6 +136,12 @@ export default function InstancesPage() {
 
   const groups = useMemo(
     () => groupAgentsByStatus((instances.data ?? []).map(toAgentCardModel)),
+    [instances.data],
+  );
+
+  // O(1) lookup from card title → original InstanceEntry.
+  const instanceMap = useMemo(
+    () => new Map((instances.data ?? []).map((e) => [e.title, e])),
     [instances.data],
   );
 
@@ -150,6 +177,58 @@ export default function InstancesPage() {
     return capture.data ?? "";
   })();
 
+  // ---- action handler --------------------------------------------------------
+
+  const handleAction = useCallback(
+    async (title: string, action: InstanceAction) => {
+      if (!project) return;
+      if (action === "kill") {
+        // Kill requires confirmation — defer to the dialog.
+        setKillConfirmTitle(title);
+        return;
+      }
+      setActionTitle(title);
+      try {
+        if (action === "pause") await pauseInstance(project, title);
+        else if (action === "resume") await resumeInstance(project, title);
+        else if (action === "restart") await restartInstance(project, title);
+        toast.show(`'${title}' ${ACTION_PAST_TENSE[action]}`);
+        await instances.refresh();
+        // Refresh the capture panel immediately when the action targeted the
+        // currently-selected row so the preview reflects the new state sooner
+        // than the next 1s poll.
+        if (selectedTitle === title) {
+          await capture.refresh();
+        }
+      } catch (err) {
+        toast.show(String(err), { kind: "error" });
+      } finally {
+        setActionTitle(null);
+      }
+    },
+    [project, instances, capture, selectedTitle, toast],
+  );
+
+  // Kill: confirmed path — keep killConfirmTitle set while the request is
+  // in flight so the dialog stays visible in its busy state.
+  const handleKillConfirm = useCallback(async () => {
+    if (!killConfirmTitle || !project) return;
+    const title = killConfirmTitle;
+    setActionTitle(title);
+    try {
+      await killInstance(project, title);
+      toast.show(`'${title}' ${ACTION_PAST_TENSE.kill}`);
+      setKillConfirmTitle(null);
+      await instances.refresh();
+      // Selection reconciliation effect handles the now-missing row.
+    } catch (err) {
+      toast.show(String(err), { kind: "error" });
+      setKillConfirmTitle(null);
+    } finally {
+      setActionTitle(null);
+    }
+  }, [killConfirmTitle, project, instances, toast]);
+
   return (
     <div className={styles.page}>
       <h1 className={styles.heading}>agents</h1>
@@ -178,14 +257,21 @@ export default function InstancesPage() {
                   <span className={styles.groupCount}>{group.cards.length}</span>
                 </h2>
                 <ul className={styles.list}>
-                  {group.cards.map((card) => (
-                    <AgentCard
-                      key={card.title}
-                      card={card}
-                      selected={card.title === selectedTitle}
-                      onSelect={() => setSelectedTitle(card.title)}
-                    />
-                  ))}
+                  {group.cards.map((card) => {
+                    const instance = instanceMap.get(card.title);
+                    if (!instance) return null;
+                    return (
+                      <AgentCard
+                        key={card.title}
+                        card={card}
+                        instance={instance}
+                        selected={card.title === selectedTitle}
+                        actionBusy={actionTitle === card.title}
+                        onSelect={() => setSelectedTitle(card.title)}
+                        onAction={(action) => void handleAction(card.title, action)}
+                      />
+                    );
+                  })}
                 </ul>
               </section>
             ))}
@@ -219,6 +305,18 @@ export default function InstancesPage() {
           </div>
         </div>
       )}
+
+      {/* Kill confirmation dialog */}
+      <ConfirmDialog
+        open={killConfirmTitle !== null}
+        title="kill instance"
+        message={`kill '${killConfirmTitle ?? ""}'? this will terminate the agent session.`}
+        confirmLabel="kill"
+        destructive
+        busy={actionTitle === killConfirmTitle && killConfirmTitle !== null}
+        onConfirm={() => void handleKillConfirm()}
+        onCancel={() => setKillConfirmTitle(null)}
+      />
     </div>
   );
 }

@@ -10,7 +10,7 @@
 // dropped out of TasksPage/DashboardPage counts entirely.
 
 import type { Status, TaskEntry, InstanceEntry } from "./types.ts";
-import { normalizeTaskEntry, normalizeTaskStatus, listInstances, getInstanceCapture } from "./api.ts";
+import { normalizeTaskEntry, normalizeTaskStatus, listInstances, getInstanceCapture, pauseInstance, resumeInstance, restartInstance, killInstance } from "./api.ts";
 
 function assertEqual<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
@@ -114,8 +114,9 @@ function mockFetch(ok: boolean, status: number, body: string): void {
   _mockResponse = { ok, status, body };
 }
 
-// Capture what URL was fetched last.
+// Capture what URL and method were used last.
 let _lastFetchedUrl: string = "";
+let _lastFetchedMethod: string = "GET";
 
 // Stub global fetch for these tests.
 (globalThis as Record<string, unknown>).fetch = async (
@@ -123,6 +124,7 @@ let _lastFetchedUrl: string = "";
   _init?: RequestInit,
 ): Promise<Response> => {
   _lastFetchedUrl = String(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+  _lastFetchedMethod = _init?.method ?? "GET";
   const m = _mockResponse!;
   _mockResponse = null;
   const body = m.body;
@@ -199,3 +201,64 @@ if (!caughtError) {
 assertEqual(caughtError.message, "not found", "getInstanceCapture surfaces error body");
 
 console.log("api.test.ts instance tests ok");
+
+// ---- instance action helpers (pauseInstance / resumeInstance / restartInstance / killInstance) ---
+
+// pauseInstance: URL-encodes project and title, uses POST method.
+mockFetch(true, 204, "");
+await pauseInstance("my project", "inst/name");
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/my%20project/instances/inst%2Fname/pause",
+  "pauseInstance encodes project and title in URL",
+);
+assertEqual(_lastFetchedMethod, "POST", "pauseInstance uses POST method");
+
+// resumeInstance: URL-encodes both segments.
+mockFetch(true, 204, "");
+await resumeInstance("proj", "my agent");
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/proj/instances/my%20agent/resume",
+  "resumeInstance encodes title in URL",
+);
+assertEqual(_lastFetchedMethod, "POST", "resumeInstance uses POST method");
+
+// restartInstance: URL-encodes both segments.
+mockFetch(true, 204, "");
+await restartInstance("proj", "agent-1");
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/proj/instances/agent-1/restart",
+  "restartInstance forms correct URL",
+);
+assertEqual(_lastFetchedMethod, "POST", "restartInstance uses POST method");
+
+// killInstance: URL-encodes both segments.
+mockFetch(true, 204, "");
+await killInstance("my project", "planner-1");
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/my%20project/instances/planner-1/kill",
+  "killInstance encodes project in URL",
+);
+assertEqual(_lastFetchedMethod, "POST", "killInstance uses POST method");
+
+// action helpers surface backend error string unchanged on non-2xx.
+mockFetch(false, 409, JSON.stringify({ error: "instance not running" }));
+let actionError: Error | null = null;
+try {
+  await pauseInstance("proj", "agent-1");
+} catch (e) {
+  actionError = e as Error;
+}
+if (!actionError) {
+  throw new Error("pauseInstance should throw on HTTP error");
+}
+assertEqual(
+  actionError.message,
+  "instance not running",
+  "pauseInstance surfaces backend error string unchanged",
+);
+
+console.log("api.test.ts action helper tests ok");

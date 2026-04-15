@@ -60,6 +60,8 @@ export interface TopicEntry {
 
 export type InstanceStatus = "running" | "ready" | "loading" | "paused";
 
+export type InstanceAction = "pause" | "resume" | "restart" | "kill";
+
 export interface InstanceEntry {
   title: string;
   status: InstanceStatus;
@@ -71,6 +73,7 @@ export interface InstanceEntry {
   task_number?: number;
   created_at?: string;
   updated_at?: string;
+  valid_actions?: InstanceAction[];
 }
 
 export interface AuditEvent {
