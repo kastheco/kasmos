@@ -113,6 +113,13 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.previewControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .previewTitle {
@@ -130,6 +137,121 @@
   color: var(--foreground-tertiary);
   font-size: 13px;
   padding: 24px 0;
+}
+
+/* depth preset buttons */
+.depthPresets {
+  display: flex;
+  gap: 4px;
+}
+
+.depthBtn {
+  background: transparent;
+  border: 1px solid var(--card-border);
+  border-radius: 4px;
+  color: var(--foreground-tertiary);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 8px;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.depthBtn:hover {
+  border-color: var(--card-border-hover);
+  color: var(--foreground-secondary);
+}
+
+.depthBtnActive {
+  border-color: rgba(246, 193, 119, 0.5);
+  color: var(--foreground);
+}
+
+/* preview wrapper for follow-mode overlay */
+.previewWrapper {
+  position: relative;
+}
+
+/* jump-to-live pill */
+.jumpToLive {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(246, 193, 119, 0.15);
+  border: 1px solid rgba(246, 193, 119, 0.4);
+  border-radius: 12px;
+  color: var(--foreground-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 4px 14px;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.jumpToLive:hover {
+  background: rgba(246, 193, 119, 0.25);
+  color: var(--foreground);
+}
+
+/* composer */
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.composerInput {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+
+.composerInput:focus {
+  border-color: var(--card-border-hover);
+  outline: none;
+}
+
+.composerInput:disabled {
+  color: var(--foreground-tertiary);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.composerError {
+  color: #eb6f92;
+  font-size: 12px;
+  margin: 0;
+}
+
+.composerSendBtn {
+  align-self: flex-end;
+  background: transparent;
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  color: var(--foreground-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 5px 16px;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.composerSendBtn:hover:not(:disabled) {
+  border-color: var(--card-border-hover);
+  color: var(--foreground);
+}
+
+.composerSendBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
 }
 
 @media (max-width: 900px) {
