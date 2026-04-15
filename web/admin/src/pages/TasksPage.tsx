@@ -380,13 +380,21 @@ export default function TasksPage() {
        * When topics are not authoritative, canOpenDialog is false and the
        * button is disabled; this render is defence-in-depth in case the
        * button state ever drifts from topicsReady.
+       *
+       * Forward topicsError only as a non-blocking *refresh* warning, and
+       * only once topics are already authoritative. A failed initial load
+       * is handled above (disabled button + page-level retry banner); the
+       * dialog never opens in that state, so it has no business seeing the
+       * initial error. This split is what lets a transient background
+       * refresh failure coexist with an open dialog without blocking
+       * creation against the cached authoritative topics snapshot.
        */}
       <NewTaskDialog
         open={dialogOpen && topicsReady}
         project={project}
         topics={topicsData ?? []}
         topicsLoading={topicsLoading}
-        topicsError={topicsError}
+        topicsRefreshError={topicsReady ? topicsError : null}
         onRetryTopics={refreshTopics}
         onClose={handleCloseDialog}
         onCreated={handleCreated}

@@ -34,7 +34,13 @@ interface NewTaskDialogProps {
   project: string;
   topics: TopicEntry[];
   topicsLoading?: boolean;
-  topicsError?: string | null;
+  // Non-blocking. Set when a background refresh of the topics query fails
+  // *after* an initial successful load — the `topics` prop still holds the
+  // cached authoritative snapshot, so creation must remain enabled. The
+  // dialog surfaces the failure as a warning with a retry affordance and
+  // does NOT gate submit on it. TasksPage is responsible for blocking the
+  // dialog from opening when the very first topics load fails.
+  topicsRefreshError?: string | null;
   onRetryTopics?(): void | Promise<void>;
   onClose(): void;
   onCreated(result: NewTaskDialogResult): Promise<void> | void;
@@ -45,7 +51,7 @@ export default function NewTaskDialog({
   project,
   topics,
   topicsLoading = false,
-  topicsError = null,
+  topicsRefreshError = null,
   onRetryTopics,
   onClose,
   onCreated,
@@ -130,19 +136,16 @@ export default function NewTaskDialog({
       return;
     }
 
-    // Refuse to submit while the topics list is not authoritative. An empty
-    // topics prop during loading or after a failed fetch looks identical to
-    // "no topics exist", and the case-sensitive backend
-    // (config/taskstore/server.go) would then auto-create a second topic row
-    // when the user types a case-variant like "Frontend" against an existing
-    // lowercase "frontend". These guards mirror the canSubmit flag so a
-    // programmatic form submit cannot bypass the disabled button.
+    // Refuse to submit while the topics list is still loading. An empty
+    // topics prop during the initial load looks identical to "no topics
+    // exist", and the case-sensitive backend (config/taskstore/server.go)
+    // would then auto-create a second topic row when the user types a
+    // case-variant like "Frontend" against an existing lowercase "frontend".
+    // A later background-refresh failure (topicsRefreshError) is NOT a
+    // blocker: TasksPage only opens the dialog once topics are authoritative,
+    // so the cached `topics` snapshot is safe to canonicalize against.
     if (topicsLoading) {
       setGeneralError("topics are still loading");
-      return;
-    }
-    if (topicsError) {
-      setGeneralError(`failed to load topics: ${topicsError}`);
       return;
     }
 
@@ -256,8 +259,7 @@ export default function NewTaskDialog({
     description.trim() !== "" &&
     effectiveFilename.trim() !== "" &&
     !busy &&
-    !topicsLoading &&
-    !topicsError;
+    !topicsLoading;
 
   return createPortal(
     <div
@@ -304,16 +306,16 @@ export default function NewTaskDialog({
               setTopicValue(value);
               setTopicIsNew(isNew);
             }}
-            disabled={busy || !!topicsError}
+            disabled={busy}
             id="new-task-topic"
           />
-          {topicsError && (
+          {topicsRefreshError && (
             <div
               className={styles.topicsError}
-              role="alert"
-              data-testid="topics-error"
+              role="status"
+              data-testid="topics-refresh-error"
             >
-              <span>failed to load topics: {topicsError}</span>
+              <span>topics refresh failed: {topicsRefreshError}</span>
               {onRetryTopics && (
                 <button
                   type="button"

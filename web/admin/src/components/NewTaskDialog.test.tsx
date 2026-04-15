@@ -649,22 +649,23 @@ describe("createTask payload", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Regression: topics-fetch failure path. An empty `topics` prop after a
-  // failed fetch is indistinguishable from "no topics exist", which would let
-  // the user type "Frontend" against an existing lowercase "frontend" and
-  // silently fork topic identity on the case-sensitive backend
-  // (config/taskstore/server.go). The dialog must treat topicsError as
-  // authoritative: block submit, surface the error, and offer a retry.
+  // Regression: topics-refresh failure path. Once TasksPage has loaded topics
+  // once, the cached snapshot is authoritative and creation must stay enabled
+  // through later background-refresh failures — those only get surfaced as a
+  // non-blocking warning with a retry affordance. Blocking on a transient
+  // refresh error would leave the user stuck with a disabled dialog even
+  // though the cached topics list is perfectly usable. See the contract on
+  // NewTaskDialogProps.topicsRefreshError.
   // -------------------------------------------------------------------------
-  describe("topics-fetch failure", () => {
-    it("disables submit when topicsError is set, even with a valid description", () => {
+  describe("topics-refresh failure (stale-but-authoritative)", () => {
+    it("keeps submit enabled when topicsRefreshError is set but topics are cached", () => {
       render(
         <NewTaskDialog
           open={true}
           project="kasmos"
-          topics={[]}
+          topics={DEFAULT_TOPICS}
           topicsLoading={false}
-          topicsError="network down"
+          topicsRefreshError="network down"
           onClose={vi.fn()}
           onCreated={vi.fn().mockResolvedValue(undefined)}
         />,
@@ -672,36 +673,40 @@ describe("createTask payload", () => {
       fireEvent.change(getDescriptionTextarea(), {
         target: { value: "add dark mode" },
       });
-      expect(getSubmitButton().disabled).toBe(true);
+      // Cached topics are authoritative, so the user can still create a task
+      // against them even while a background refresh is failing.
+      expect(getSubmitButton().disabled).toBe(false);
     });
 
-    it("surfaces an inline alert with the underlying error message", () => {
+    it("surfaces a non-blocking refresh warning with the underlying error message", () => {
       render(
         <NewTaskDialog
           open={true}
           project="kasmos"
-          topics={[]}
+          topics={DEFAULT_TOPICS}
           topicsLoading={false}
-          topicsError="network down"
+          topicsRefreshError="network down"
           onClose={vi.fn()}
           onCreated={vi.fn().mockResolvedValue(undefined)}
         />,
       );
-      const banner = screen.getByTestId("topics-error");
-      expect(banner.textContent).toContain("failed to load topics");
+      const banner = screen.getByTestId("topics-refresh-error");
+      expect(banner.textContent).toContain("topics refresh failed");
       expect(banner.textContent).toContain("network down");
-      expect(banner.getAttribute("role")).toBe("alert");
+      // role=status (polite live region), not role=alert — this is an
+      // informational warning, not a blocker.
+      expect(banner.getAttribute("role")).toBe("status");
     });
 
-    it("does not call createTask when a programmatic submit fires with topicsError set", async () => {
+    it("successfully creates a task using the cached topics when refresh has failed", async () => {
       const onCreated = vi.fn().mockResolvedValue(undefined);
       render(
         <NewTaskDialog
           open={true}
           project="kasmos"
-          topics={[]}
+          topics={DEFAULT_TOPICS}
           topicsLoading={false}
-          topicsError="network down"
+          topicsRefreshError="network down"
           onClose={vi.fn()}
           onCreated={onCreated}
         />,
@@ -709,22 +714,70 @@ describe("createTask payload", () => {
       fireEvent.change(getDescriptionTextarea(), {
         target: { value: "add dark mode" },
       });
-      // Button is disabled; fire the form directly to test the handleSubmit guard.
-      const form = screen.getByRole("dialog").querySelector("form")!;
-      fireEvent.submit(form);
+
+      // Pick an existing cached topic — this is the core guarantee: a
+      // refresh failure must not stop the user from using the authoritative
+      // topics snapshot that the page already proved non-null.
+      const combobox = screen.getByRole("combobox");
+      fireEvent.focus(combobox);
+      fireEvent.change(combobox, { target: { value: "frontend" } });
+
+      expect(getSubmitButton().disabled).toBe(false);
+      fireEvent.click(getSubmitButton());
 
       await waitFor(() => {
-        const alerts = screen.getAllByRole("alert");
-        expect(
-          alerts.some((el) =>
-            el.textContent?.includes("failed to load topics"),
-          ),
-        ).toBe(true);
+        expect(vi.mocked(api.createTask)).toHaveBeenCalledWith(
+          "kasmos",
+          expect.objectContaining({
+            filename: "add-dark-mode",
+            topic: "frontend",
+          }),
+        );
+      });
+      // The cached topic already exists — no createTopic call.
+      expect(vi.mocked(api.createTopic)).not.toHaveBeenCalled();
+      // onCreated runs with no warning: creation completed cleanly against
+      // the cached authoritative topics snapshot.
+      expect(onCreated).toHaveBeenCalledTimes(1);
+      const call = onCreated.mock.calls[0]![0] as NewTaskDialogResult;
+      expect(call.plannerRequested).toBe(false);
+      expect(call.warning).toBeUndefined();
+    });
+
+    it("canonicalizes a case-variant typed entry against cached topics even while refresh is failing", async () => {
+      // The original blocking-on-error bug was rooted in topic forking on a
+      // case-sensitive backend. This test proves that unblocking submit on
+      // refresh errors does NOT re-introduce that fork: "Frontend" typed by
+      // the user still canonicalizes to the cached "frontend" entry.
+      const onCreated = vi.fn().mockResolvedValue(undefined);
+      render(
+        <NewTaskDialog
+          open={true}
+          project="kasmos"
+          topics={DEFAULT_TOPICS}
+          topicsLoading={false}
+          topicsRefreshError="network down"
+          onClose={vi.fn()}
+          onCreated={onCreated}
+        />,
+      );
+      fireEvent.change(getDescriptionTextarea(), {
+        target: { value: "add dark mode" },
       });
 
+      const combobox = screen.getByRole("combobox");
+      fireEvent.focus(combobox);
+      fireEvent.change(combobox, { target: { value: "Frontend" } });
+
+      fireEvent.click(getSubmitButton());
+
+      await waitFor(() => {
+        expect(vi.mocked(api.createTask)).toHaveBeenCalledWith(
+          "kasmos",
+          expect.objectContaining({ topic: "frontend" }),
+        );
+      });
       expect(vi.mocked(api.createTopic)).not.toHaveBeenCalled();
-      expect(vi.mocked(api.createTask)).not.toHaveBeenCalled();
-      expect(onCreated).not.toHaveBeenCalled();
     });
 
     it("invokes onRetryTopics when the retry button is clicked", () => {
@@ -733,9 +786,9 @@ describe("createTask payload", () => {
         <NewTaskDialog
           open={true}
           project="kasmos"
-          topics={[]}
+          topics={DEFAULT_TOPICS}
           topicsLoading={false}
-          topicsError="network down"
+          topicsRefreshError="network down"
           onRetryTopics={onRetryTopics}
           onClose={vi.fn()}
           onCreated={vi.fn().mockResolvedValue(undefined)}
@@ -745,15 +798,15 @@ describe("createTask payload", () => {
       expect(onRetryTopics).toHaveBeenCalledTimes(1);
     });
 
-    it("re-enables submit after topicsError clears on a retry", () => {
+    it("removes the refresh warning once topicsRefreshError clears on a successful retry", () => {
       const onRetryTopics = vi.fn();
       const { rerender } = render(
         <NewTaskDialog
           open={true}
           project="kasmos"
-          topics={[]}
+          topics={DEFAULT_TOPICS}
           topicsLoading={false}
-          topicsError="network down"
+          topicsRefreshError="network down"
           onRetryTopics={onRetryTopics}
           onClose={vi.fn()}
           onCreated={vi.fn().mockResolvedValue(undefined)}
@@ -762,22 +815,24 @@ describe("createTask payload", () => {
       fireEvent.change(getDescriptionTextarea(), {
         target: { value: "add dark mode" },
       });
-      expect(getSubmitButton().disabled).toBe(true);
+      // Submit is already enabled (cached topics authoritative).
+      expect(getSubmitButton().disabled).toBe(false);
+      expect(screen.getByTestId("topics-refresh-error")).toBeTruthy();
 
-      // Simulate a successful retry: topicsError clears and topics populate.
+      // Successful retry clears the refresh error.
       rerender(
         <NewTaskDialog
           open={true}
           project="kasmos"
           topics={DEFAULT_TOPICS}
           topicsLoading={false}
-          topicsError={null}
+          topicsRefreshError={null}
           onRetryTopics={onRetryTopics}
           onClose={vi.fn()}
           onCreated={vi.fn().mockResolvedValue(undefined)}
         />,
       );
-      expect(screen.queryByTestId("topics-error")).toBeNull();
+      expect(screen.queryByTestId("topics-refresh-error")).toBeNull();
       expect(getSubmitButton().disabled).toBe(false);
     });
   });

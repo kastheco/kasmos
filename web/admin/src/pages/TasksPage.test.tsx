@@ -24,25 +24,36 @@ vi.mock("../hooks/useToast", () => ({
 }));
 
 // useAutoRefresh — two calls per render (tasks, topics); alternate on call count.
-// The mock mirrors the real hook's contract: on an initial failure the data
-// stays null. That lets tests drive the TasksPage "topics authoritative" gate
-// via topicsErrorOverride (error + null data) or topicsLoadingOverride
-// (pending + null data) without having to rewrite the hook.
+// The mock mirrors the real hook's contract:
+//   - on an *initial* failure, data stays null and error is set
+//     (topicsErrorOverride, topicsLoadingOverride)
+//   - on a *refresh* failure after an initial success, data retains its
+//     cached value and error is set concurrently
+//     (topicsRefreshErrorOverride)
+// That split lets tests drive the TasksPage "topics authoritative" gate
+// (topicsData !== null) independently of whether a background refresh is
+// currently failing.
 const mockRefreshTasks = vi.fn().mockResolvedValue(undefined);
 const mockRefreshTopics = vi.fn().mockResolvedValue(undefined);
 let autoRefreshCallCount = 0;
 let topicsErrorOverride: string | null = null;
 let topicsLoadingOverride = false;
+let topicsRefreshErrorOverride: string | null = null;
 vi.mock("../hooks/useAutoRefresh", () => ({
   useAutoRefresh: () => {
     autoRefreshCallCount++;
     const isTopics = autoRefreshCallCount % 2 === 0;
     const topicsInitialFailure =
       isTopics && (topicsErrorOverride !== null || topicsLoadingOverride);
+    const effectiveTopicsError = isTopics
+      ? topicsErrorOverride ?? topicsRefreshErrorOverride
+      : null;
     return {
+      // Authoritative: data=[] once any successful fetch has resolved. The
+      // refresh-error path keeps data non-null to mirror useAutoRefresh.ts:76-85.
       data: topicsInitialFailure ? null : [],
       loading: isTopics ? topicsLoadingOverride : false,
-      error: isTopics ? topicsErrorOverride : null,
+      error: effectiveTopicsError,
       lastUpdatedAt: null,
       isRefreshing: false,
       refresh: isTopics ? mockRefreshTopics : mockRefreshTasks,
@@ -65,14 +76,14 @@ let capturedOnClose: (() => void) | null = null;
 let capturedOnCreated: ((result: NewTaskDialogResult) => Promise<void> | void) | null =
   null;
 let capturedOpen = false;
-let capturedTopicsError: string | null | undefined = undefined;
+let capturedTopicsRefreshError: string | null | undefined = undefined;
 let capturedOnRetryTopics: (() => void | Promise<void>) | undefined = undefined;
 vi.mock("../components/NewTaskDialog", () => ({
   default: (props: {
     open: boolean;
     project: string;
     topics: unknown[];
-    topicsError?: string | null;
+    topicsRefreshError?: string | null;
     onRetryTopics?(): void | Promise<void>;
     onClose(): void;
     onCreated(result: NewTaskDialogResult): Promise<void> | void;
@@ -80,7 +91,7 @@ vi.mock("../components/NewTaskDialog", () => ({
     capturedOpen = props.open;
     capturedOnClose = props.onClose;
     capturedOnCreated = props.onCreated;
-    capturedTopicsError = props.topicsError;
+    capturedTopicsRefreshError = props.topicsRefreshError;
     capturedOnRetryTopics = props.onRetryTopics;
     return props.open ? (
       <div data-testid="new-task-dialog">dialog</div>
@@ -122,10 +133,11 @@ describe("TasksPage", () => {
     capturedOnClose = null;
     capturedOnCreated = null;
     capturedOpen = false;
-    capturedTopicsError = undefined;
+    capturedTopicsRefreshError = undefined;
     capturedOnRetryTopics = undefined;
     topicsErrorOverride = null;
     topicsLoadingOverride = false;
+    topicsRefreshErrorOverride = null;
     mockUseProject.mockReturnValue({
       project: "my-project",
       projectSearch: "?project=my-project",
@@ -326,10 +338,50 @@ describe("TasksPage", () => {
     expect(screen.queryByTestId("new-task-dialog")).toBeNull();
   });
 
-  it("passes topicsError=null to the dialog when topics load succeeds", () => {
+  it("passes topicsRefreshError=null to the dialog when topics load succeeds", () => {
     render(<TasksPage />);
     fireEvent.click(screen.getByRole("button", { name: "new task" }));
-    expect(capturedTopicsError).toBeNull();
+    expect(capturedTopicsRefreshError).toBeNull();
+  });
+
+  // Regression for the stale-but-authoritative path. Once topics have been
+  // loaded once, useAutoRefresh.ts:76-85 preserves the cached payload even if
+  // a later background refresh errors out. Before the fix, TasksPage always
+  // forwarded any topicsError to NewTaskDialog, which hard-disabled submit —
+  // so a transient network blip silently blocked task creation even though
+  // the cached authoritative topics list was perfectly usable.
+  it("keeps the dialog openable and forwards topicsRefreshError when a later refresh fails", async () => {
+    // Arrange: initial topics load succeeded (data=[], no error). Open the
+    // dialog, then simulate a background refresh failure by setting the
+    // refresh-error override and re-rendering.
+    const { rerender } = render(<TasksPage />);
+    const btn = screen.getByRole("button", {
+      name: "new task",
+    }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+    fireEvent.click(btn);
+    expect(screen.getByTestId("new-task-dialog")).toBeTruthy();
+    expect(capturedTopicsRefreshError).toBeNull();
+
+    // Act: a subsequent background refresh fails while the dialog is open.
+    topicsRefreshErrorOverride = "network blip";
+    await act(async () => {
+      rerender(<TasksPage />);
+    });
+
+    // Assert: button stays enabled (topics still authoritative), the dialog
+    // stays open, and the error is forwarded as a non-blocking refresh
+    // warning rather than an initial-load failure.
+    const btn2 = screen.getByRole("button", {
+      name: "new task",
+    }) as HTMLButtonElement;
+    expect(btn2.disabled).toBe(false);
+    expect(capturedOpen).toBe(true);
+    expect(screen.getByTestId("new-task-dialog")).toBeTruthy();
+    expect(capturedTopicsRefreshError).toBe("network blip");
+    // The page-level initial-failure banner must NOT appear: the failure is
+    // a refresh error, not an initial load error.
+    expect(screen.queryByTestId("topics-load-error")).toBeNull();
   });
 
   it("closes the dialog when project changes", async () => {
