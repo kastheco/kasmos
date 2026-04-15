@@ -147,6 +147,16 @@ describe("filename auto-fill", () => {
     expect(getSubmitButton().disabled).toBe(true);
   });
 
+  it("submit button stays disabled when filename is filled but description is blank", () => {
+    renderDialog();
+    // User types a filename manually without a description. Parity with the
+    // TUI guard in app/app_input.go: a blank description is invalid because
+    // the task stub cannot be rendered without one.
+    fireEvent.change(getFilenameInput(), { target: { value: "my-slug" } });
+    expect(getFilenameInput().value).toBe("my-slug");
+    expect(getSubmitButton().disabled).toBe(true);
+  });
+
   it("updates filename as description changes", () => {
     renderDialog();
     fireEvent.change(getDescriptionTextarea(), {
@@ -190,6 +200,37 @@ describe("filenameTouched", () => {
     // Type something with uppercase and spaces (sanitizeFilenameInput converts them)
     fireEvent.change(getFilenameInput(), { target: { value: "Auth Refactor" } });
     expect(getFilenameInput().value).toBe("auth-refactor");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Empty description guard (parity with TUI app/app_input.go:1258-1264)
+// ---------------------------------------------------------------------------
+
+describe("empty description guard", () => {
+  it("does not call createTask and surfaces an inline error when submit fires with a blank description", async () => {
+    const { onCreated } = renderDialog();
+    // Seed the filename manually so we can test the programmatic
+    // handleSubmit guard independently of the disabled-button UI.
+    fireEvent.change(getFilenameInput(), { target: { value: "my-slug" } });
+
+    // The button is disabled, so dispatch a direct form submit event.
+    const form = screen.getByRole("dialog").querySelector("form")!;
+    fireEvent.submit(form);
+
+    await waitFor(() => {
+      const alerts = screen.getAllByRole("alert");
+      expect(
+        alerts.some((el) =>
+          el.textContent?.includes("description cannot be empty"),
+        ),
+      ).toBe(true);
+    });
+
+    expect(vi.mocked(api.createTask)).not.toHaveBeenCalled();
+    expect(onCreated).not.toHaveBeenCalled();
+    // Dialog stays open so the user can fix the input.
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 });
 
@@ -503,6 +544,32 @@ describe("createTask payload", () => {
         expect.objectContaining({ topic: "frontend" }),
       );
     });
+  });
+
+  it("submits the canonical topic name when the user types a case-variant", async () => {
+    renderDialog();
+    fireEvent.change(getDescriptionTextarea(), {
+      target: { value: "add dark mode" },
+    });
+
+    // Type "Frontend" against the existing "frontend" topic. The dialog must
+    // submit the canonical lowercase key, otherwise the backend auto-creates
+    // a second topic row and forks identity.
+    const combobox = screen.getByRole("combobox");
+    fireEvent.focus(combobox);
+    fireEvent.change(combobox, { target: { value: "Frontend" } });
+
+    fireEvent.click(getSubmitButton());
+
+    await waitFor(() => {
+      expect(vi.mocked(api.createTask)).toHaveBeenCalledWith(
+        "kasmos",
+        expect.objectContaining({ topic: "frontend" }),
+      );
+    });
+    // And createTopic must NOT have been called, because this is an existing
+    // topic by canonical name.
+    expect(vi.mocked(api.createTopic)).not.toHaveBeenCalled();
   });
 
   it("passes correct filename and branch to createTask", async () => {

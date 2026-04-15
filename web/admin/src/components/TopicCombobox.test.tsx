@@ -159,6 +159,55 @@ describe("Escape key", () => {
     fireEvent.keyDown(input, { key: "Escape" });
     expect((input as HTMLInputElement).value).toBe("doc");
   });
+
+  it("does not bubble Escape to document listeners when the listbox is open", () => {
+    const documentHandler = vi.fn();
+    document.addEventListener("keydown", documentHandler);
+    try {
+      const { input } = renderCombobox();
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: "doc" } });
+      expect(screen.queryAllByRole("option").length).toBeGreaterThan(0);
+      documentHandler.mockClear();
+
+      fireEvent.keyDown(input, { key: "Escape" });
+
+      // Listbox closed AND no document-level Escape fired — this is what
+      // keeps a containing dialog open when the user only meant to dismiss
+      // the combobox popover.
+      expect(screen.queryAllByRole("option")).toHaveLength(0);
+      const sawEscape = documentHandler.mock.calls.some(
+        ([evt]) => (evt as KeyboardEvent).key === "Escape",
+      );
+      expect(sawEscape).toBe(false);
+    } finally {
+      document.removeEventListener("keydown", documentHandler);
+    }
+  });
+
+  it("lets Escape bubble to document listeners when the listbox is already closed", () => {
+    const documentHandler = vi.fn();
+    document.addEventListener("keydown", documentHandler);
+    try {
+      const { input } = renderCombobox();
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: "doc" } });
+      // First Escape closes the listbox and is swallowed
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(screen.queryAllByRole("option")).toHaveLength(0);
+      documentHandler.mockClear();
+
+      // Second Escape should bubble so the containing dialog can close.
+      fireEvent.keyDown(input, { key: "Escape" });
+
+      const sawEscape = documentHandler.mock.calls.some(
+        ([evt]) => (evt as KeyboardEvent).key === "Escape",
+      );
+      expect(sawEscape).toBe(true);
+    } finally {
+      document.removeEventListener("keydown", documentHandler);
+    }
+  });
 });
 
 // ---- outside click ----------------------------------------------------------
@@ -212,5 +261,18 @@ describe("onChange while typing", () => {
     fireEvent.change(input, { target: { value: "mobile" } });
     const lastCall = onChange.mock.calls[onChange.mock.calls.length - 1][0] as TopicSelection;
     expect(lastCall.isNew).toBe(true);
+  });
+
+  it("canonicalizes case-insensitive exact matches to the stored topic name", () => {
+    const onChange = vi.fn();
+    const { input } = renderCombobox(DEFAULT_TOPICS, "", onChange);
+    fireEvent.focus(input);
+    // Existing topic is "frontend"; typing "Frontend" must emit "frontend"
+    // so the dialog submits the canonical key rather than forking topic
+    // identity in the backend.
+    fireEvent.change(input, { target: { value: "Frontend" } });
+    const lastCall = onChange.mock.calls[onChange.mock.calls.length - 1][0] as TopicSelection;
+    expect(lastCall.isNew).toBe(false);
+    expect(lastCall.value).toBe("frontend");
   });
 });

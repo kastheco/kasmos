@@ -99,10 +99,17 @@ export default function TopicCombobox({
       onChange({ value: "", isNew: false });
       return;
     }
-    const exact = topics.some(
+    // Canonicalize case-insensitive exact matches: typing "Frontend" against
+    // an existing "frontend" must emit "frontend", otherwise the backend will
+    // auto-create a second topic key.
+    const match = topics.find(
       (t) => t.name.toLowerCase() === trimmed.toLowerCase(),
     );
-    onChange({ value: rawTyped, isNew: !exact });
+    if (match) {
+      onChange({ value: match.name, isNew: false });
+      return;
+    }
+    onChange({ value: rawTyped, isNew: true });
   }
 
   function commitRow(idx: number) {
@@ -159,9 +166,16 @@ export default function TopicCombobox({
         break;
 
       case "Escape":
-        e.preventDefault();
-        setOpen(false);
-        setHighlightIdx(-1);
+        // Only swallow Escape when the listbox is actually open. Otherwise
+        // let it bubble so a containing dialog's Escape handler can close
+        // the dialog. stopPropagation prevents the document-level dialog
+        // listener in NewTaskDialog from also firing for this Escape.
+        if (open) {
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen(false);
+          setHighlightIdx(-1);
+        }
         break;
 
       default:

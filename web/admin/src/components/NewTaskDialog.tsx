@@ -116,6 +116,14 @@ export default function NewTaskDialog({
     setFilenameError(null);
     setGeneralError(null);
 
+    // Mirror the TUI guard in app/app_input.go: an empty description cannot
+    // create a task because renderTaskStub would otherwise produce malformed
+    // content. Defensive — the submit button is also disabled in this state.
+    if (description.trim() === "") {
+      setGeneralError("description cannot be empty");
+      return;
+    }
+
     setBusy(true);
     try {
       // 2. Create topic if the user declared a new one.
@@ -204,7 +212,8 @@ export default function NewTaskDialog({
 
   if (!open) return null;
 
-  const canSubmit = effectiveFilename.trim() !== "" && !busy;
+  const canSubmit =
+    description.trim() !== "" && effectiveFilename.trim() !== "" && !busy;
 
   return createPortal(
     <div
