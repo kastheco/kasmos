@@ -10,7 +10,16 @@
 // dropped out of TasksPage/DashboardPage counts entirely.
 
 import type { Status, TaskEntry, InstanceEntry } from "./types.ts";
-import { normalizeTaskEntry, normalizeTaskStatus, listInstances, getInstanceCapture } from "./api.ts";
+import {
+  normalizeTaskEntry,
+  normalizeTaskStatus,
+  listInstances,
+  getInstanceCapture,
+  RequestError,
+  TaskExistsError,
+  createTask,
+  createTopic,
+} from "./api.ts";
 
 function assertEqual<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
@@ -199,3 +208,172 @@ if (!caughtError) {
 assertEqual(caughtError.message, "not found", "getInstanceCapture surfaces error body");
 
 console.log("api.test.ts instance tests ok");
+
+// ---- RequestError -----------------------------------------------------------
+
+// RequestError carries status code
+const reqErr = new RequestError("bad request", 400);
+assertEqual(reqErr.status, 400, "RequestError.status");
+assertEqual(reqErr.message, "bad request", "RequestError.message");
+assertEqual(reqErr.name, "RequestError", "RequestError.name");
+if (!(reqErr instanceof Error)) {
+  throw new Error("RequestError should be an instance of Error");
+}
+
+// TaskExistsError is a RequestError with status 409
+const existsErr = new TaskExistsError("already exists");
+assertEqual(existsErr.status, 409, "TaskExistsError.status");
+assertEqual(existsErr.name, "TaskExistsError", "TaskExistsError.name");
+if (!(existsErr instanceof RequestError)) {
+  throw new Error("TaskExistsError should be an instance of RequestError");
+}
+if (!(existsErr instanceof Error)) {
+  throw new Error("TaskExistsError should be an instance of Error");
+}
+
+// HTTP error throws RequestError with status
+mockFetch(false, 500, JSON.stringify({ error: "internal server error" }));
+let requestErrCaught: unknown = null;
+try {
+  await listInstances("proj");
+} catch (e) {
+  requestErrCaught = e;
+}
+if (!(requestErrCaught instanceof RequestError)) {
+  throw new Error("HTTP 500 should throw RequestError");
+}
+assertEqual((requestErrCaught as RequestError).status, 500, "HTTP 500 error has status 500");
+
+// ---- createTask -------------------------------------------------------------
+
+// createTask: success case returns normalized TaskEntry
+const taskPayload: TaskEntry = {
+  filename: "new-task",
+  status: "ready",
+  branch: "plan/new-task",
+};
+mockFetch(true, 201, JSON.stringify(taskPayload));
+let _lastFetchInit: RequestInit | undefined;
+const origFetch = (globalThis as Record<string, unknown>).fetch as (
+  input: unknown,
+  init?: RequestInit,
+) => Promise<Response>;
+(globalThis as Record<string, unknown>).fetch = async (
+  input: unknown,
+  init?: RequestInit,
+): Promise<Response> => {
+  _lastFetchInit = init;
+  return origFetch(input, init);
+};
+const gotTask = await createTask("my-project", {
+  filename: "new-task",
+  description: "test task",
+  branch: "plan/new-task",
+  created_at: "2026-01-01T00:00:00Z",
+});
+assertEqual(gotTask.filename, "new-task", "createTask returns filename");
+assertEqual(gotTask.status, "ready", "createTask returns status");
+// Verify status: "ready" is in the posted body
+const postedBody = JSON.parse(_lastFetchInit!.body as string) as { status: string };
+assertEqual(postedBody.status, "ready", "createTask posts status: ready");
+
+// createTask: 409 maps to TaskExistsError
+mockFetch(false, 409, JSON.stringify({ error: "task already exists" }));
+let createTaskErr: unknown = null;
+try {
+  await createTask("proj", {
+    filename: "dup",
+    description: "dup",
+    branch: "plan/dup",
+    created_at: "2026-01-01T00:00:00Z",
+  });
+} catch (e) {
+  createTaskErr = e;
+}
+if (!(createTaskErr instanceof TaskExistsError)) {
+  throw new Error("createTask 409 should throw TaskExistsError");
+}
+
+// createTask: 400 stays as RequestError (not TaskExistsError)
+mockFetch(false, 400, JSON.stringify({ error: "bad request" }));
+let createTask400Err: unknown = null;
+try {
+  await createTask("proj", {
+    filename: "bad",
+    description: "bad",
+    branch: "plan/bad",
+    created_at: "2026-01-01T00:00:00Z",
+  });
+} catch (e) {
+  createTask400Err = e;
+}
+if (!(createTask400Err instanceof RequestError)) {
+  throw new Error("createTask 400 should throw RequestError");
+}
+if (createTask400Err instanceof TaskExistsError) {
+  throw new Error("createTask 400 must NOT be TaskExistsError");
+}
+assertEqual((createTask400Err as RequestError).status, 400, "createTask 400 error status");
+
+// createTask: 500 stays as RequestError
+mockFetch(false, 500, JSON.stringify({ error: "server error" }));
+let createTask500Err: unknown = null;
+try {
+  await createTask("proj", {
+    filename: "err",
+    description: "err",
+    branch: "plan/err",
+    created_at: "2026-01-01T00:00:00Z",
+  });
+} catch (e) {
+  createTask500Err = e;
+}
+if (!(createTask500Err instanceof RequestError)) {
+  throw new Error("createTask 500 should throw RequestError");
+}
+assertEqual((createTask500Err as RequestError).status, 500, "createTask 500 error status");
+
+// ---- createTopic ------------------------------------------------------------
+
+// createTopic: success case
+mockFetch(true, 201, "{}");
+let createTopicErr: unknown = null;
+try {
+  await createTopic("my-project", "backend");
+} catch (e) {
+  createTopicErr = e;
+}
+if (createTopicErr !== null) {
+  throw new Error(`createTopic success should not throw, got: ${String(createTopicErr)}`);
+}
+
+// createTopic: 409 is swallowed (duplicate = success)
+mockFetch(false, 409, JSON.stringify({ error: "topic already exists" }));
+let createTopicDupErr: unknown = null;
+try {
+  await createTopic("proj", "existing-topic");
+} catch (e) {
+  createTopicDupErr = e;
+}
+if (createTopicDupErr !== null) {
+  throw new Error("createTopic 409 should not throw");
+}
+
+// createTopic: non-409 errors are rethrown
+mockFetch(false, 500, JSON.stringify({ error: "server error" }));
+let createTopicServerErr: unknown = null;
+try {
+  await createTopic("proj", "broken-topic");
+} catch (e) {
+  createTopicServerErr = e;
+}
+if (!(createTopicServerErr instanceof RequestError)) {
+  throw new Error("createTopic 500 should throw RequestError");
+}
+assertEqual(
+  (createTopicServerErr as RequestError).status,
+  500,
+  "createTopic 500 error status",
+);
+
+console.log("api.test.ts new helpers ok");
