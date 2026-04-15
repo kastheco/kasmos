@@ -83,10 +83,12 @@ type ProcessorConfig struct {
 	// Zero or negative means unlimited.
 	MaxReviewFixCycles int
 	// ReadinessSelfFixMaxLines is the maximum number of net lines the master agent
-	// may change in a self-fix attempt. Defaults to 80 when zero.
+	// may change in a self-fix attempt. Processor construction does not apply an
+	// implicit default; callers must provide a positive value when they want a limit.
 	ReadinessSelfFixMaxLines int
 	// ReadinessMaxVerifyCycles is the maximum number of verify-round attempts before
-	// the loop is force-promoted to approved. Defaults to 2 when zero.
+	// the loop is force-promoted to approved. Zero or negative disables forced
+	// promotion.
 	ReadinessMaxVerifyCycles int
 	// Hooks is an optional registry of FSM transition hooks. When non-nil and
 	// non-empty it is attached to the FSM so hooks fire after every successful
