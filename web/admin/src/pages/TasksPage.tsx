@@ -1,13 +1,17 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import StatusBadge from "../components/StatusBadge";
 import LastUpdated from "../components/LastUpdated";
 import Skeleton from "../components/Skeleton";
 import TaskActionsMenu from "../components/TaskActionsMenu";
-import { listTasks } from "../api";
+import NewTaskDialog, {
+  type NewTaskDialogResult,
+} from "../components/NewTaskDialog";
+import { listTasks, listTopics } from "../api";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
 import { useProject } from "../hooks/useProject";
-import type { Status, TaskEntry } from "../types";
+import { useToast } from "../hooks/useToast";
+import type { Status, TaskEntry, TopicEntry } from "../types";
 import styles from "./TasksPage.module.css";
 
 type TaskFilter = "all" | Status;
@@ -84,12 +88,16 @@ function formatDate(value?: string): string {
 
 export default function TasksPage() {
   const { project, projectSearch } = useProject();
+  const { show: showToast } = useToast();
 
   const [statusFilter, setStatusFilter] = useState<TaskFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("created");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [dialogOpen, setDialogOpen] = useState(false);
 
-  const { data, loading, error, lastUpdatedAt, isRefreshing, refresh } =
+  const newTaskButtonRef = useRef<HTMLButtonElement>(null);
+
+  const { data, loading, error, lastUpdatedAt, isRefreshing, refresh: refreshTasks } =
     useAutoRefresh<TaskEntry[]>(
       async () => {
         if (!project) return [];
@@ -98,12 +106,56 @@ export default function TasksPage() {
       [project],
     );
 
+  const { data: topicsData, refresh: refreshTopics } =
+    useAutoRefresh<TopicEntry[]>(
+      async () => {
+        if (!project) return [];
+        return await listTopics(project);
+      },
+      [project],
+    );
+
+  // Close the dialog when the project changes so a partially-complete create
+  // flow cannot leak across projects.
+  useEffect(() => {
+    setDialogOpen(false);
+  }, [project]);
+
   function toggleSort(key: SortKey) {
     if (key === sortKey) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(key);
       setSortDir(DEFAULT_DIR[key]);
+    }
+  }
+
+  function handleCloseDialog() {
+    setDialogOpen(false);
+    requestAnimationFrame(() => newTaskButtonRef.current?.focus());
+  }
+
+  async function handleCreated(result: NewTaskDialogResult) {
+    await Promise.all([refreshTasks(), refreshTopics()]);
+    setDialogOpen(false);
+
+    const filename = result.task.filename;
+    const { plannerRequested, warning } = result;
+
+    if (warning?.stage === "content") {
+      showToast(
+        `task '${filename}' created; content save failed: ${warning.error.message}`,
+        { kind: "error" },
+      );
+    } else if (warning?.stage === "plan_start") {
+      showToast(
+        `task '${filename}' created; planner queue failed: ${warning.error.message}`,
+        { kind: "error" },
+      );
+    } else if (plannerRequested) {
+      showToast(`task '${filename}' created, planner queued`);
+    } else {
+      showToast(`task '${filename}' created (ready)`);
     }
   }
 
@@ -154,6 +206,14 @@ export default function TasksPage() {
             </button>
           ))}
         </div>
+        <button
+          ref={newTaskButtonRef}
+          className={styles.newTaskBtn}
+          onClick={() => setDialogOpen(true)}
+          disabled={project === ""}
+        >
+          new task
+        </button>
       </div>
 
       {error && <div className={styles.error}>{error}</div>}
@@ -251,9 +311,9 @@ export default function TasksPage() {
                             project={project}
                             task={task}
                             variant="kebab"
-                            onChanged={refresh}
+                            onChanged={refreshTasks}
                             onDeleted={() => {
-                              void refresh();
+                              void refreshTasks();
                             }}
                           />
                         )}
@@ -264,6 +324,14 @@ export default function TasksPage() {
           </table>
         </div>
       )}
+
+      <NewTaskDialog
+        open={dialogOpen}
+        project={project}
+        topics={topicsData ?? []}
+        onClose={handleCloseDialog}
+        onCreated={handleCreated}
+      />
     </div>
   );
 }

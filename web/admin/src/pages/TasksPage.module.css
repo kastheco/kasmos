@@ -195,6 +195,33 @@
   white-space: nowrap;
 }
 
+.newTaskBtn {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid rgba(156, 207, 216, 0.4);
+  background: rgba(156, 207, 216, 0.08);
+  color: var(--accent-teal, #9ccfd8);
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+  margin-left: 8px;
+}
+
+.newTaskBtn:hover:not(:disabled) {
+  background: rgba(156, 207, 216, 0.15);
+  border-color: rgba(156, 207, 216, 0.6);
+  color: var(--foreground);
+}
+
+.newTaskBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* Narrow right-aligned column for row-level action menus */
 .actionsHeader {
   width: 40px;
