@@ -98,28 +98,28 @@ type TOMLConfig struct {
 
 // TOMLConfigResult holds the parsed config in terms of internal types.
 type TOMLConfigResult struct {
-	Profiles                    map[string]AgentProfile
-	PhaseRoles                  map[string]string
-	AnimateBanner               bool
-	AccentColor                 string
-	AutoAdvanceWaves            *bool
-	AutoAdvance                 *bool
-	AutoReviewFix               *bool
-	MaxReviewFixCycles          *int
-	AutoReadinessReview         *bool
-	ReadinessSelfFixMaxLines    *int
-	ReadinessMaxVerifyCycles    *int
-	TelemetryEnabled            *bool
-	DatabaseURL                 string
-	BlueprintSkipThreshold      *int
-	DoubleTapThresholdMS        *int
-	DefaultProgram              string
-	AutoYes                     bool
-	DaemonPollInterval          int
-	BranchPrefix                string
-	NotificationsEnabled        *bool
-	ClaudeNoFlicker             *bool
-	Hooks                       []TOMLHook
+	Profiles                 map[string]AgentProfile
+	PhaseRoles               map[string]string
+	AnimateBanner            bool
+	AccentColor              string
+	AutoAdvanceWaves         *bool
+	AutoAdvance              *bool
+	AutoReviewFix            *bool
+	MaxReviewFixCycles       *int
+	AutoReadinessReview      *bool
+	ReadinessSelfFixMaxLines *int
+	ReadinessMaxVerifyCycles *int
+	TelemetryEnabled         *bool
+	DatabaseURL              string
+	BlueprintSkipThreshold   *int
+	DoubleTapThresholdMS     *int
+	DefaultProgram           string
+	AutoYes                  bool
+	DaemonPollInterval       int
+	BranchPrefix             string
+	NotificationsEnabled     *bool
+	ClaudeNoFlicker          *bool
+	Hooks                    []TOMLHook
 }
 
 // LoadTOMLConfigFrom reads and parses a TOML config file,
@@ -131,28 +131,28 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 	}
 
 	result := &TOMLConfigResult{
-		Profiles:               make(map[string]AgentProfile),
-		PhaseRoles:             tc.Phases,
-		AnimateBanner:          tc.UI.AnimateBanner,
-		AccentColor:            tc.UI.AccentColor,
-		AutoAdvanceWaves:            tc.UI.AutoAdvanceWaves,
-		AutoAdvance:                 tc.UI.AutoAdvance,
-		AutoReviewFix:               tc.UI.AutoReviewFix,
-		MaxReviewFixCycles:          tc.UI.MaxReviewFixCycles,
-		AutoReadinessReview:         tc.UI.AutoReadinessReview,
-		ReadinessSelfFixMaxLines:    tc.UI.ReadinessSelfFixMaxLines,
-		ReadinessMaxVerifyCycles:    tc.UI.ReadinessMaxVerifyCycles,
-		TelemetryEnabled:       tc.Telemetry.Enabled,
-		DatabaseURL:            tc.DatabaseURL,
-		BlueprintSkipThreshold: tc.Orchestration.BlueprintSkipThreshold,
-		DoubleTapThresholdMS:   tc.Keybinds.DoubleTapThresholdMS,
-		DefaultProgram:         tc.DefaultProgram,
-		AutoYes:                tc.AutoYes,
-		DaemonPollInterval:     tc.DaemonPollInterval,
-		BranchPrefix:           tc.BranchPrefix,
-		NotificationsEnabled:   tc.NotificationsEnabled,
-		ClaudeNoFlicker:        tc.ClaudeNoFlicker,
-		Hooks:                  tc.Hooks,
+		Profiles:                 make(map[string]AgentProfile),
+		PhaseRoles:               tc.Phases,
+		AnimateBanner:            tc.UI.AnimateBanner,
+		AccentColor:              tc.UI.AccentColor,
+		AutoAdvanceWaves:         tc.UI.AutoAdvanceWaves,
+		AutoAdvance:              tc.UI.AutoAdvance,
+		AutoReviewFix:            tc.UI.AutoReviewFix,
+		MaxReviewFixCycles:       tc.UI.MaxReviewFixCycles,
+		AutoReadinessReview:      tc.UI.AutoReadinessReview,
+		ReadinessSelfFixMaxLines: tc.UI.ReadinessSelfFixMaxLines,
+		ReadinessMaxVerifyCycles: tc.UI.ReadinessMaxVerifyCycles,
+		TelemetryEnabled:         tc.Telemetry.Enabled,
+		DatabaseURL:              tc.DatabaseURL,
+		BlueprintSkipThreshold:   tc.Orchestration.BlueprintSkipThreshold,
+		DoubleTapThresholdMS:     tc.Keybinds.DoubleTapThresholdMS,
+		DefaultProgram:           tc.DefaultProgram,
+		AutoYes:                  tc.AutoYes,
+		DaemonPollInterval:       tc.DaemonPollInterval,
+		BranchPrefix:             tc.BranchPrefix,
+		NotificationsEnabled:     tc.NotificationsEnabled,
+		ClaudeNoFlicker:          tc.ClaudeNoFlicker,
+		Hooks:                    tc.Hooks,
 	}
 
 	for name, agent := range tc.Agents {

@@ -190,6 +190,29 @@ func (p *Processor) ClearWaveOrchestrator(planFile string) {
 	delete(p.activeWaveOrchs, planFile)
 }
 
+// shouldForcePromoteVerify returns true when the next VerifyFailed signal for
+// planFile should be promoted to VerifyApproved instead, because the readiness
+// verify-loop has reached its configured cap. The decision must be made before
+// applying the FSM transition: once verifying→implementing has fired,
+// VerifyApproved is no longer a legal transition from the current state.
+//
+// The attempt-count semantics: ReviewCycle is the number of completed
+// fixer iterations. On the next verify_failed the attempt count is
+// ReviewCycle+1, and we promote when that reaches (>=) ReadinessMaxVerifyCycles.
+func (p *Processor) shouldForcePromoteVerify(planFile string) bool {
+	if !p.config.AutoReviewFix || !p.config.AutoReadinessReview {
+		return false
+	}
+	if p.config.ReadinessMaxVerifyCycles <= 0 || p.config.Store == nil {
+		return false
+	}
+	entry, err := p.config.Store.Get(p.config.Project, planFile)
+	if err != nil {
+		return false
+	}
+	return entry.ReviewCycle+1 >= p.config.ReadinessMaxVerifyCycles
+}
+
 // ProcessFSMSignals converts FSM sentinel signals into Action values.
 // It validates each signal against the plan state machine, suppresses
 // ImplementFinished when a wave orchestrator is active, and emits typed
@@ -217,8 +240,21 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			}
 		}
 
+		// Readiness verify-loop cap: when a VerifyFailed signal arrives on the
+		// terminal attempt, promote it to VerifyApproved *before* applying the
+		// FSM transition. Otherwise the task would transition verifying→
+		// implementing first and the downstream VerifyApproved transition
+		// (which is only valid from verifying) would be rejected, leaving the
+		// task permanently stuck in fixer loops.
+		eventToApply := sig.Event
+		forcePromotedVerify := false
+		if sig.Event == taskfsm.VerifyFailed && p.shouldForcePromoteVerify(sig.TaskFile) {
+			eventToApply = taskfsm.VerifyApproved
+			forcePromotedVerify = true
+		}
+
 		alreadyApplied := false
-		if err := p.fsm.Transition(sig.TaskFile, sig.Event); err != nil {
+		if err := p.fsm.Transition(sig.TaskFile, eventToApply); err != nil {
 			// The signal's originator (e.g. the HTTP admin handler) may have
 			// applied the FSM transition itself before emitting the gateway row
 			// and marked the payload with fsm_applied=true. If so, the daemon
@@ -245,7 +281,7 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			}
 		}
 
-		switch sig.Event {
+		switch eventToApply {
 		case taskfsm.ImplementFinished:
 			actions = append(actions, SpawnReviewerAction{PlanFile: sig.TaskFile})
 
@@ -284,10 +320,12 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			}
 
 		case taskfsm.VerifyApproved:
-			// VerifyApproved transitions verifying → done (emitted by master agent).
+			// VerifyApproved transitions verifying → done (emitted by master agent),
+			// or synthesized locally when the readiness verify-loop cap is reached.
 			actions = append(actions, VerifyApprovedAction{
-				PlanFile:   sig.TaskFile,
-				ReviewBody: sig.Body,
+				PlanFile:      sig.TaskFile,
+				ReviewBody:    sig.Body,
+				ForcePromoted: forcePromotedVerify,
 			})
 			if p.config.Store != nil {
 				if entry, err := p.config.Store.Get(p.config.Project, sig.TaskFile); err == nil {
@@ -308,31 +346,6 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			})
 			if !p.config.AutoReviewFix {
 				break
-			}
-			// When the readiness gate is active, ReadinessMaxVerifyCycles caps the
-			// verify-round loop independently from MaxReviewFixCycles. On breach,
-			// force-promote to verify_approved so the task is not permanently blocked.
-			if p.config.AutoReadinessReview && p.config.ReadinessMaxVerifyCycles > 0 && p.config.Store != nil {
-				if entry, err := p.config.Store.Get(p.config.Project, sig.TaskFile); err == nil {
-					if entry.ReviewCycle+1 > p.config.ReadinessMaxVerifyCycles {
-						// Force-promote: transition verifying→done so VerifyApprovedAction fires.
-						if err := p.fsm.Transition(sig.TaskFile, taskfsm.VerifyApproved); err == nil {
-							actions = append(actions, VerifyApprovedAction{
-								PlanFile:   sig.TaskFile,
-								ReviewBody: sig.Body,
-							})
-							if entry2, err2 := p.config.Store.Get(p.config.Project, sig.TaskFile); err2 == nil {
-								if shouldCreatePR(entry2) {
-									actions = append(actions, CreatePRAction{
-										PlanFile:   sig.TaskFile,
-										ReviewBody: sig.Body,
-									})
-								}
-							}
-						}
-						break
-					}
-				}
 			}
 			if p.config.MaxReviewFixCycles > 0 && p.config.Store != nil {
 				if entry, err := p.config.Store.Get(p.config.Project, sig.TaskFile); err == nil {

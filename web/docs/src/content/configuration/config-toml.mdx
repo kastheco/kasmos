@@ -67,7 +67,7 @@ effort         = "high"
 | `max_review_fix_cycles` | int? | `0` (unlimited) | cap the review-fix loop iterations; `0` means no cap |
 | `auto_readiness_review` | bool? | `true` | when `true`, reviewer approval transitions the task to `verifying` status and spawns the master agent for a holistic readiness check before `done`. When `false`, `review_approved` flows directly to `done` and no master agent is spawned. |
 | `readiness_self_fix_max_lines` | int? | `80` | maximum number of net lines the master agent may change in a single self-fix attempt; findings that would require more are escalated via `verify_failed` instead |
-| `readiness_max_verify_cycles` | int? | `2` | maximum number of verify-round attempts before the loop is force-promoted to `verify_approved`; `0` means unlimited (not recommended) |
+| `readiness_max_verify_cycles` | int? | `2` | maximum number of verify-round attempts before the loop is force-promoted to `verify_approved`. Must be a positive integer — values `≤ 0` are rejected at load time and fall back to the default. To disable the readiness gate entirely, set `auto_readiness_review = false` instead. |
 
 ```toml
 [ui]
