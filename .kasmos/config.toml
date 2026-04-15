@@ -12,51 +12,52 @@ daemon_poll_interval = 0
   spec_review = "reviewer"
 
 [agents]
-[agents.architect]
-enabled = true
-program = "opencode"
-model = "openai/gpt-5.4"
-temperature = 0.2
-effort = "xhigh"
-[agents.chat]
-enabled = true
-program = "opencode"
-model = "openai/gpt-5.4"
-temperature = 0.3
-effort = "medium"
-[agents.coder]
-enabled = true
-program = "claude"
-model = "claude-sonnet-4-6"
-temperature = 0.1
-flags = ["--permission-mode bypassPermissions"]
-effort = "medium"
-[agents.fixer]
-enabled = true
-program = "claude"
-model = "claude-opus-4-6"
-temperature = 0.1
-effort = "high"
-flags = ["--permission-mode bypassPermissions"]
-[agents.master]
-enabled = true
-program = "opencode"
-model = "openai/gpt-5.4"
-temperature = 0.2
-effort = "high"
-[agents.planner]
-enabled = true
-program = "claude"
-model = "claude-opus-4-6"
-temperature = 0.3
-effort = "high"
-[agents.reviewer]
-enabled = true
-program = "claude"
-model = "claude-sonnet-4-6"
-flags = ["--permission-mode bypassPermissions"]
-temperature = 0.2
-effort = "medium"
+  [agents.architect]
+    enabled = true
+    program = "codex"
+    model = "gpt-5.4"
+    temperature = 0.2
+    effort = "xhigh"
+  [agents.chat]
+    enabled = true
+    program = "opencode"
+    model = "openai/gpt-5.4"
+    temperature = 0.3
+    effort = "medium"
+  [agents.coder]
+    enabled = true
+    program = "claude"
+    model = "claude-sonnet-4-6"
+    temperature = 0.1
+    effort = "medium"
+    flags = ["--permission-mode bypassPermissions"]
+  [agents.fixer]
+    enabled = true
+    program = "claude"
+    model = "claude-opus-4-6"
+    temperature = 0.1
+    effort = "high"
+    flags = ["--permission-mode bypassPermissions"]
+  [agents.master]
+    enabled = true
+    program = "opencode"
+    model = "openai/gpt-5.4"
+    temperature = 0.2
+    effort = "high"
+  [agents.planner]
+    enabled = true
+    program = "claude"
+    model = "claude-opus-4-6"
+    temperature = 0.3
+    effort = "high"
+    flags = ["--permission-mode bypassPermissions"]
+  [agents.reviewer]
+    enabled = true
+    program = "claude"
+    model = "claude-sonnet-4-6"
+    temperature = 0.2
+    effort = "medium"
+    flags = ["--permission-mode bypassPermissions"]
 
 [ui]
   animate_banner = false
@@ -68,3 +69,5 @@ effort = "medium"
 [telemetry]
 
 [orchestration]
+
+[keybinds]
