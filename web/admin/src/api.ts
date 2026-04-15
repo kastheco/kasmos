@@ -1,4 +1,4 @@
-import type { Status, TaskEntry, SubtaskEntry, TopicEntry, AuditEvent } from "./types";
+import type { Status, TaskEntry, SubtaskEntry, TopicEntry, AuditEvent, InstanceEntry } from "./types";
 
 // Legacy persisted statuses that predate canonical normalization at ingest.
 // Mirrors config/taskfsm/fsm.go:MapLegacyStatus so the SPA reader boundary
@@ -286,4 +286,27 @@ export async function deleteTask(
   filename: string,
 ): Promise<void> {
   await request(taskBase(project, filename), { method: "DELETE" });
+}
+
+// ---- instance API helpers ---------------------------------------------------
+
+export async function listInstances(project: string): Promise<InstanceEntry[]> {
+  return (
+    (await requestJSON<InstanceEntry[] | null>(
+      `/v1/projects/${encodeURIComponent(project)}/instances`,
+    )) ?? []
+  );
+}
+
+export async function getInstanceCapture(
+  project: string,
+  title: string,
+  opts?: { start?: string; end?: string },
+): Promise<string> {
+  const params = new URLSearchParams();
+  if (opts?.start != null) params.set("start", opts.start);
+  if (opts?.end != null) params.set("end", opts.end);
+  const qs = params.toString();
+  const url = `/v1/projects/${encodeURIComponent(project)}/instances/${encodeURIComponent(title)}/capture${qs ? `?${qs}` : ""}`;
+  return requestText(url);
 }
