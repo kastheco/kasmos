@@ -22,6 +22,20 @@ export function normalizeTaskEntry(entry: TaskEntry): TaskEntry {
   return { ...entry, status: canonical };
 }
 
+export class RequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "RequestError";
+  }
+}
+
+export class TaskExistsError extends RequestError {
+  constructor(message: string) {
+    super(message, 409);
+    this.name = "TaskExistsError";
+  }
+}
+
 async function request(path: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(path, init);
   if (!response.ok) {
@@ -34,7 +48,7 @@ async function request(path: string, init?: RequestInit): Promise<Response> {
     } catch {
       // ignore parse errors — body may not be JSON
     }
-    throw new Error(message);
+    throw new RequestError(message, response.status);
   }
   return response;
 }
@@ -296,6 +310,54 @@ export async function listInstances(project: string): Promise<InstanceEntry[]> {
       `/v1/projects/${encodeURIComponent(project)}/instances`,
     )) ?? []
   );
+}
+
+export async function createTask(
+  project: string,
+  entry: {
+    filename: string;
+    description: string;
+    topic?: string;
+    branch: string;
+    created_at: string;
+  },
+): Promise<TaskEntry> {
+  let raw: TaskEntry;
+  try {
+    raw = await requestJSON<TaskEntry>(
+      `/v1/projects/${encodeURIComponent(project)}/tasks`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...entry, status: "ready" }),
+      },
+    );
+  } catch (err) {
+    if (err instanceof RequestError && err.status === 409) {
+      throw new TaskExistsError(err.message);
+    }
+    throw err;
+  }
+  return normalizeTaskEntry(raw);
+}
+
+export async function createTopic(
+  project: string,
+  name: string,
+): Promise<void> {
+  try {
+    await request(`/v1/projects/${encodeURIComponent(project)}/topics`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, created_at: new Date().toISOString() }),
+    });
+  } catch (err) {
+    if (err instanceof RequestError && err.status === 409) {
+      // duplicate topic creation is treated as success
+      return;
+    }
+    throw err;
+  }
 }
 
 export async function getInstanceCapture(

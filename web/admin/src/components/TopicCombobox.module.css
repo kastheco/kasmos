@@ -1,0 +1,78 @@
+.container {
+  position: relative;
+  width: 100%;
+}
+
+.input {
+  width: 100%;
+  background: var(--rp-overlay);
+  border: 1px solid var(--card-border);
+  border-radius: 7px;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.input::placeholder {
+  color: var(--foreground-tertiary);
+}
+
+.input:focus {
+  border-color: rgba(196, 167, 231, 0.5);
+}
+
+.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.listbox {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: var(--rp-surface);
+  border: 1px solid var(--card-border);
+  border-radius: 7px;
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  max-height: 220px;
+  overflow-y: auto;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.option {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--foreground);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+
+.option:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.highlighted {
+  background: rgba(196, 167, 231, 0.12);
+  color: var(--rp-iris, #c4a7e7);
+}
+
+.createRow {
+  color: var(--foreground-secondary);
+  font-style: italic;
+  border-top: 1px solid var(--card-border);
+  margin-top: 2px;
+  padding-top: 10px;
+}
+
+.createRow.highlighted {
+  color: var(--rp-iris, #c4a7e7);
+}
