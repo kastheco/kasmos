@@ -317,11 +317,27 @@ func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoRead
 	if result.ReadinessSelfFixMaxLines != nil {
 		if *result.ReadinessSelfFixMaxLines > 0 {
 			selfFixMaxLines = *result.ReadinessSelfFixMaxLines
+		} else {
+			slog.Warn(
+				"daemon: invalid project readiness_self_fix_max_lines override, using daemon default",
+				"repo", path,
+				"config", projTomlPath,
+				"value", *result.ReadinessSelfFixMaxLines,
+				"default", selfFixMaxLines,
+			)
 		}
 	}
 	if result.ReadinessMaxVerifyCycles != nil {
 		if *result.ReadinessMaxVerifyCycles > 0 {
 			maxVerifyCycles = *result.ReadinessMaxVerifyCycles
+		} else {
+			slog.Warn(
+				"daemon: invalid project readiness_max_verify_cycles override, using daemon default",
+				"repo", path,
+				"config", projTomlPath,
+				"value", *result.ReadinessMaxVerifyCycles,
+				"default", maxVerifyCycles,
+			)
 		}
 	}
 	return
