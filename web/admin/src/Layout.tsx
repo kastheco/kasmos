@@ -37,17 +37,7 @@ export default function Layout() {
                 `${styles.navLink} ${isActive ? styles.active : ""}`
               }
             >
-              tasks
-            </NavLink>
-          </li>
-          <li>
-            <NavLink
-              to={{ pathname: "/audit", search: projectSearch }}
-              className={({ isActive }) =>
-                `${styles.navLink} ${isActive ? styles.active : ""}`
-              }
-            >
-              audit
+              plans
             </NavLink>
           </li>
           <li>
@@ -57,7 +47,17 @@ export default function Layout() {
                 `${styles.navLink} ${isActive ? styles.active : ""}`
               }
             >
-              instances
+              agents
+            </NavLink>
+          </li>
+          <li>
+            <NavLink
+              to={{ pathname: "/audit", search: projectSearch }}
+              className={({ isActive }) =>
+                `${styles.navLink} ${isActive ? styles.active : ""}`
+              }
+            >
+              audit log
             </NavLink>
           </li>
         </ul>

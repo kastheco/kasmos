@@ -70,7 +70,7 @@ export default function InstancesPage() {
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.heading}>instances</h1>
+      <h1 className={styles.heading}>agents</h1>
 
       {instances.loading && !instances.data && (
         <p className={styles.empty}>loading…</p>
@@ -81,7 +81,7 @@ export default function InstancesPage() {
       )}
 
       {instances.data && instances.data.length === 0 && (
-        <p className={styles.empty}>no instances found for this project</p>
+        <p className={styles.empty}>no agents running for this project</p>
       )}
 
       {instances.data && instances.data.length > 0 && (
@@ -168,7 +168,7 @@ export default function InstancesPage() {
                 )}
               </>
             ) : (
-              <p className={styles.empty}>select an instance to view its output</p>
+              <p className={styles.empty}>select an agent to view its output</p>
             )}
           </div>
         </div>
