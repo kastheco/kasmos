@@ -1,0 +1,143 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.heading {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.empty {
+  color: var(--foreground-tertiary);
+  font-size: 14px;
+}
+
+.errorMsg {
+  color: #eb6f92;
+  font-size: 14px;
+}
+
+/* master / detail split */
+.split {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 16px;
+  align-items: start;
+  min-height: 0;
+}
+
+/* instance list */
+.list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  max-height: calc(100vh - 160px);
+}
+
+.row {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.row:hover {
+  border-color: var(--card-border-hover);
+  background: rgba(224, 222, 244, 0.04);
+}
+
+.row.selected {
+  border-color: rgba(246, 193, 119, 0.4);
+  background: var(--glow-amber);
+}
+
+.rowHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.meta {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.metaLabel {
+  font-size: 11px;
+  color: var(--foreground-tertiary);
+  flex-shrink: 0;
+}
+
+.metaValue {
+  font-size: 11px;
+  color: var(--foreground-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* preview panel */
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.previewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.previewTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground-secondary);
+}
+
+.captureError {
+  font-size: 11px;
+  color: #eb6f92;
+}
+
+.captureEmpty {
+  color: var(--foreground-tertiary);
+  font-size: 13px;
+  padding: 24px 0;
+}
+
+@media (max-width: 900px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+
+  .list {
+    max-height: 240px;
+  }
+}
