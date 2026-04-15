@@ -156,7 +156,7 @@ func newConfiguredMCPServerSingleRoot(mcpSrv *mcpserver.Server, sharedDB *sql.DB
 		func(_ context.Context) { indexer.Start(indexerCtx) },
 		indexer.PrimeFile,
 	)
-	tasktools.RegisterTools(mcpSrv.MCPServer(), fixedProject, dbProjects, mcpSrv.Store())
+	tasktools.RegisterTools(mcpSrv.MCPServer(), fixedProject, dbProjects, mcpSrv.Store(), mcpSrv.Gateway())
 	signaltools.RegisterTools(mcpSrv.MCPServer(), fixedProject, dbProjects, mcpSrv.Gateway())
 	instancetools.RegisterTools(
 		mcpSrv.MCPServer(),
@@ -241,7 +241,7 @@ func newConfiguredMCPServerMultiRoot(mcpSrv *mcpserver.Server, repoRoots []strin
 	fstools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, fstools.RegisterOptions{Runner: runner, FileCache: nil, Symbols: symbolStore})
 	gittools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, runner)
 	symbols.RegisterTool(mcpSrv.MCPServer(), validator, symbolStore, ctagsAvailable, nil, nil)
-	tasktools.RegisterTools(mcpSrv.MCPServer(), "", projects, mcpSrv.Store())
+	tasktools.RegisterTools(mcpSrv.MCPServer(), "", projects, mcpSrv.Store(), mcpSrv.Gateway())
 	signaltools.RegisterTools(mcpSrv.MCPServer(), "", projects, mcpSrv.Gateway())
 	instancetools.RegisterTools(
 		mcpSrv.MCPServer(),
