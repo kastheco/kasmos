@@ -368,49 +368,77 @@ func (s *TmuxSpawner) trackedInstanceByTitle(repoPath, title string) (key string
 
 // PauseInstance pauses the tracked instance with the given title under repoPath.
 // It delegates to session.Instance.Pause() so existing worktree-skipping behaviour
-// is preserved for daemon-managed shared task worktrees.
+// is preserved for daemon-managed shared task worktrees. Invalid-state transitions
+// are wrapped as errSpawnerInvalidTransition so the daemon API layer can map them
+// to HTTP 409 Conflict.
 func (s *TmuxSpawner) PauseInstance(repoPath, title string) error {
 	_, inst, ok := s.trackedInstanceByTitle(repoPath, title)
 	if !ok {
 		return fmt.Errorf("%w: %s/%s", errSpawnerInstanceNotFound, repoPath, title)
 	}
+	if !inst.Started() {
+		return fmt.Errorf("%w: %s/%s is not started", errSpawnerInvalidTransition, repoPath, title)
+	}
+	if inst.Status == session.Paused {
+		return fmt.Errorf("%w: %s/%s is already paused", errSpawnerInvalidTransition, repoPath, title)
+	}
 	return inst.Pause()
 }
 
 // ResumeInstance resumes the tracked instance with the given title under repoPath.
+// Invalid-state transitions are wrapped as errSpawnerInvalidTransition so the daemon
+// API layer can map them to HTTP 409 Conflict.
 func (s *TmuxSpawner) ResumeInstance(repoPath, title string) error {
 	_, inst, ok := s.trackedInstanceByTitle(repoPath, title)
 	if !ok {
 		return fmt.Errorf("%w: %s/%s", errSpawnerInstanceNotFound, repoPath, title)
 	}
+	if !inst.Started() {
+		return fmt.Errorf("%w: %s/%s is not started", errSpawnerInvalidTransition, repoPath, title)
+	}
+	if inst.Status != session.Paused {
+		return fmt.Errorf("%w: %s/%s is not paused", errSpawnerInvalidTransition, repoPath, title)
+	}
 	return inst.Resume()
 }
 
 // RestartInstance restarts the tracked instance with the given title under repoPath.
+// Invalid-state transitions are wrapped as errSpawnerInvalidTransition so the daemon
+// API layer can map them to HTTP 409 Conflict.
 func (s *TmuxSpawner) RestartInstance(repoPath, title string) error {
 	_, inst, ok := s.trackedInstanceByTitle(repoPath, title)
 	if !ok {
 		return fmt.Errorf("%w: %s/%s", errSpawnerInstanceNotFound, repoPath, title)
 	}
+	if !inst.Started() {
+		return fmt.Errorf("%w: %s/%s is not started", errSpawnerInvalidTransition, repoPath, title)
+	}
+	if inst.Status == session.Paused {
+		return fmt.Errorf("%w: %s/%s is paused; resume first", errSpawnerInvalidTransition, repoPath, title)
+	}
 	return inst.Restart()
 }
 
 // KillInstance stops the tracked instance with the given title under repoPath and
-// removes it from the tracking maps. It is a no-op when no matching instance is
-// found (unlike PauseInstance/ResumeInstance/RestartInstance which return an error).
+// removes it from the tracking maps. Returns errSpawnerInstanceNotFound when no
+// matching instance is tracked so the daemon API layer can map the response to
+// HTTP 404. Tracking is only cleared after session.Instance.Kill() succeeds so a
+// failed kill leaves the instance in place and allows the caller to retry.
 func (s *TmuxSpawner) KillInstance(repoPath, title string) error {
 	key, inst, ok := s.trackedInstanceByTitle(repoPath, title)
 	if !ok {
-		return nil
+		return fmt.Errorf("%w: %s/%s", errSpawnerInstanceNotFound, repoPath, title)
 	}
-	err := s.kill(inst)
+	if err := s.kill(inst); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	delete(s.instances, key)
 	delete(s.planFileByKey, key)
 	delete(s.agentTypeByKey, key)
 	delete(s.projectByKey, key)
 	s.mu.Unlock()
-	return err
+	return nil
 }
 
 // instanceKey returns the map key for the given repo path, plan file, and agent

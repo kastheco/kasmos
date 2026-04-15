@@ -183,25 +183,41 @@ func TestHandler_InstanceAction_HappyPath(t *testing.T) {
 }
 
 func TestHandler_InstanceAction_NotFound(t *testing.T) {
-	state := &instanceActionStub{err: fmt.Errorf("%w: missing", ErrInstanceNotFound)}
-	h := NewHandler(state)
+	// Every action (pause/resume/restart/kill) must return 404 when the backing
+	// StateProvider reports the instance is not tracked. Locks down the
+	// acceptance criterion that missing-title calls — including kill — map to
+	// 404 instead of the previous 200 no-op.
+	for _, action := range []string{"pause", "resume", "restart", "kill"} {
+		t.Run(action, func(t *testing.T) {
+			state := &instanceActionStub{err: fmt.Errorf("%w: missing", ErrInstanceNotFound)}
+			h := NewHandler(state)
 
-	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/missing/pause", nil)
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
+			req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/missing/"+action, nil)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusNotFound, w.Code)
+			assert.Equal(t, http.StatusNotFound, w.Code, "body: %s", w.Body.String())
+		})
+	}
 }
 
 func TestHandler_InstanceAction_Conflict(t *testing.T) {
-	state := &instanceActionStub{err: fmt.Errorf("%w: already paused", ErrInvalidTransition)}
-	h := NewHandler(state)
+	// Pause/resume/restart must return 409 when the adapter wraps the error as
+	// ErrInvalidTransition. Kill has no "invalid transition" case at the HTTP
+	// layer (precondition failures such as dirty worktrees stay as 500), so it
+	// is deliberately omitted here.
+	for _, action := range []string{"pause", "resume", "restart"} {
+		t.Run(action, func(t *testing.T) {
+			state := &instanceActionStub{err: fmt.Errorf("%w: bad state", ErrInvalidTransition)}
+			h := NewHandler(state)
 
-	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/my-agent/pause", nil)
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
+			req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/my-agent/"+action, nil)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusConflict, w.Code)
+			assert.Equal(t, http.StatusConflict, w.Code, "body: %s", w.Body.String())
+		})
+	}
 }
 
 func TestHandler_StartPlan(t *testing.T) {

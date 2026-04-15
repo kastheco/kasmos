@@ -162,6 +162,95 @@ func TestDaemonStateAdapter_ListTasksMapsEntries(t *testing.T) {
 	}}, tasks)
 }
 
+// TestDaemonStateAdapter_InstanceActionErrorMapping verifies that the adapter
+// wraps spawner sentinel errors as api.ErrInstanceNotFound and api.ErrInvalidTransition,
+// which is the end-to-end contract the daemon HTTP handler relies on to return
+// 404 for missing titles and 409 for invalid pause/resume/restart transitions.
+func TestDaemonStateAdapter_InstanceActionErrorMapping(t *testing.T) {
+	const (
+		project = "proj"
+		repo    = "/tmp/proj"
+	)
+
+	newAdapter := func() (*daemonStateAdapter, *TmuxSpawner) {
+		spawner := NewTmuxSpawner()
+		d := &Daemon{
+			repos:       NewRepoManager(),
+			spawner:     spawner,
+			logger:      slog.Default(),
+			broadcaster: api.NewEventBroadcaster(),
+		}
+		d.repos.repos = []RepoEntry{{Path: repo, Project: project}}
+		return &daemonStateAdapter{d: d}, spawner
+	}
+
+	trackInstance := func(s *TmuxSpawner, title string, started bool, status session.Status) {
+		key := instanceKey(repo, "plan.md", session.AgentTypeReviewer)
+		inst := &session.Instance{Title: title, Path: repo, Status: status}
+		if started {
+			inst.MarkStartedForTest()
+		}
+		s.mu.Lock()
+		s.instances[key] = inst
+		s.planFileByKey[key] = "plan.md"
+		s.agentTypeByKey[key] = session.AgentTypeReviewer
+		s.projectByKey[key] = project
+		s.mu.Unlock()
+	}
+
+	t.Run("pause missing title returns ErrInstanceNotFound", func(t *testing.T) {
+		adapter, _ := newAdapter()
+		err := adapter.PauseInstance(project, "missing")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, api.ErrInstanceNotFound)
+	})
+
+	t.Run("resume missing title returns ErrInstanceNotFound", func(t *testing.T) {
+		adapter, _ := newAdapter()
+		err := adapter.ResumeInstance(project, "missing")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, api.ErrInstanceNotFound)
+	})
+
+	t.Run("restart missing title returns ErrInstanceNotFound", func(t *testing.T) {
+		adapter, _ := newAdapter()
+		err := adapter.RestartInstance(project, "missing")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, api.ErrInstanceNotFound)
+	})
+
+	t.Run("kill missing title returns ErrInstanceNotFound", func(t *testing.T) {
+		adapter, _ := newAdapter()
+		err := adapter.KillInstance(project, "missing")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, api.ErrInstanceNotFound)
+	})
+
+	t.Run("pause on paused instance returns ErrInvalidTransition", func(t *testing.T) {
+		adapter, spawner := newAdapter()
+		trackInstance(spawner, "agent-1", true, session.Paused)
+		err := adapter.PauseInstance(project, "agent-1")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, api.ErrInvalidTransition)
+	})
+
+	t.Run("resume on running instance returns ErrInvalidTransition", func(t *testing.T) {
+		adapter, spawner := newAdapter()
+		trackInstance(spawner, "agent-1", true, session.Running)
+		err := adapter.ResumeInstance(project, "agent-1")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, api.ErrInvalidTransition)
+	})
+
+	t.Run("restart on paused instance returns ErrInvalidTransition", func(t *testing.T) {
+		adapter, spawner := newAdapter()
+		trackInstance(spawner, "agent-1", true, session.Paused)
+		err := adapter.RestartInstance(project, "agent-1")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, api.ErrInvalidTransition)
+	})
+}
+
 func TestDaemon_GracefulShutdown_DrainsAgents(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &DaemonConfig{
