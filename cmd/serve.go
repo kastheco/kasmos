@@ -287,11 +287,17 @@ func NewServeCmd() *cobra.Command {
 			auditAPI := auditlog.NewHandler(logger)
 			actionsAPI := taskactions.NewHandler(store, gw)
 
-			// Build the live-preview handler. In repo-scoped mode the resolver
-			// maps project names to repo roots; in bare-DB mode it always
-			// returns ErrPreviewUnavailable (501).
+			// Build the live-preview handler.
+			//
+			//   --repo (explicit): static resolver built from the flag values;
+			//                      project validation middleware enforces the allow-list.
+			//   --db (bare-DB):    preview unavailable (no filesystem repo root known).
+			//   default (daemon):  dynamic resolver queries the daemon per-request so
+			//                      repos registered after kas serve starts are visible
+			//                      without a restart.
 			var previewAPI http.Handler
-			if len(repoPaths) > 0 {
+			switch {
+			case cmd.Flags().Changed("repo"):
 				resolve := func(project string) (string, error) {
 					root, ok := repoRegs.rootsByProject[project]
 					if !ok {
@@ -301,10 +307,12 @@ func NewServeCmd() *cobra.Command {
 				}
 				previewHandler := livepreview.NewHTTPHandler(resolve, &livepreview.ExecPaneRunner{})
 				previewAPI = projectValidationMiddleware(repoRegs.valid, previewHandler)
-			} else {
+			case cmd.Flags().Changed("db"):
 				previewAPI = livepreview.NewHTTPHandler(func(string) (string, error) {
 					return "", livepreview.ErrPreviewUnavailable
 				}, &livepreview.ExecPaneRunner{})
+			default:
+				previewAPI = livepreview.NewHTTPHandler(newDynamicProjectRootResolver(), &livepreview.ExecPaneRunner{})
 			}
 			if len(repoPaths) > 0 {
 				taskAPI = projectValidationMiddleware(repoRegs.valid, taskAPI)

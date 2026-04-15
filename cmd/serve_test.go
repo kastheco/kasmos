@@ -187,6 +187,65 @@ func TestResolveServeRepoPaths_ReturnsExplicitRepos(t *testing.T) {
 	assert.Equal(t, explicit, got)
 }
 
+func TestNewDynamicProjectRootResolver_ReturnsRootForKnownProject(t *testing.T) {
+	dir := t.TempDir() // e.g. /tmp/TestXXX/myrepo
+
+	old := listDaemonRepoStatuses
+	listDaemonRepoStatuses = func() ([]api.RepoStatus, error) {
+		return []api.RepoStatus{{Path: dir, Project: filepath.Base(dir)}}, nil
+	}
+	t.Cleanup(func() { listDaemonRepoStatuses = old })
+
+	resolve := newDynamicProjectRootResolver()
+	got, err := resolve(filepath.Base(dir))
+	require.NoError(t, err)
+	assert.Equal(t, dir, got)
+}
+
+func TestNewDynamicProjectRootResolver_ReturnsNotFoundForUnknownProject(t *testing.T) {
+	dir := t.TempDir()
+
+	old := listDaemonRepoStatuses
+	listDaemonRepoStatuses = func() ([]api.RepoStatus, error) {
+		return []api.RepoStatus{{Path: dir, Project: filepath.Base(dir)}}, nil
+	}
+	t.Cleanup(func() { listDaemonRepoStatuses = old })
+
+	resolve := newDynamicProjectRootResolver()
+	_, err := resolve("no-such-project")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "project not found: no-such-project")
+}
+
+func TestNewDynamicProjectRootResolver_ReturnsErrPreviewUnavailableWhenDaemonDown(t *testing.T) {
+	old := listDaemonRepoStatuses
+	listDaemonRepoStatuses = func() ([]api.RepoStatus, error) {
+		return nil, fmt.Errorf("connection refused")
+	}
+	t.Cleanup(func() { listDaemonRepoStatuses = old })
+
+	resolve := newDynamicProjectRootResolver()
+	_, err := resolve("anyproject")
+	require.ErrorIs(t, err, livepreview.ErrPreviewUnavailable)
+}
+
+func TestNewDynamicProjectRootResolver_QueriesDaemonOnEachCall(t *testing.T) {
+	dir := t.TempDir()
+	callCount := 0
+
+	old := listDaemonRepoStatuses
+	listDaemonRepoStatuses = func() ([]api.RepoStatus, error) {
+		callCount++
+		return []api.RepoStatus{{Path: dir, Project: filepath.Base(dir)}}, nil
+	}
+	t.Cleanup(func() { listDaemonRepoStatuses = old })
+
+	resolve := newDynamicProjectRootResolver()
+	_, _ = resolve(filepath.Base(dir))
+	_, _ = resolve(filepath.Base(dir))
+	assert.Equal(t, 2, callCount, "resolver must query daemon on every call, not cache")
+}
+
 func TestServeOpenSQLiteBackends_SharedDB(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test_serve.db")
 

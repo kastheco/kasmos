@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/internal/livepreview"
 )
 
 var listDaemonRepoStatuses = func() ([]api.RepoStatus, error) {
@@ -71,4 +73,28 @@ func resolveTaskProject(repoPath string) string {
 		return project
 	}
 	return filepath.Base(repoPath)
+}
+
+// newDynamicProjectRootResolver returns a livepreview.ProjectRootResolver that
+// queries the daemon for the current repo list on every call. This is used in
+// daemon-auto mode (neither --repo nor --db) so that repos registered after
+// kas serve starts are automatically visible in the live-preview endpoints —
+// no restart required.
+func newDynamicProjectRootResolver() livepreview.ProjectRootResolver {
+	return func(project string) (string, error) {
+		repos, err := listDaemonRepoStatuses()
+		if err != nil || len(repos) == 0 {
+			return "", livepreview.ErrPreviewUnavailable
+		}
+		for _, r := range repos {
+			if r.Path == "" {
+				continue
+			}
+			root := canonicalRepoPath(r.Path)
+			if filepath.Base(root) == project {
+				return root, nil
+			}
+		}
+		return "", fmt.Errorf("project not found: %s", project)
+	}
 }
