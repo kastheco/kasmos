@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/BurntSushi/toml"
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
 	"github.com/kastheco/kasmos/internal/mcpclient"
 )
@@ -284,6 +285,393 @@ func EnsureClaudeMCPEntry(dir string) (WriteResult, error) {
 	updated = append(updated, '\n')
 	if err := os.WriteFile(dest, updated, 0o644); err != nil {
 		return result, err
+	}
+	result.Created = true
+	return result, nil
+}
+
+// codexMCPBlock returns the desired TOML text for the kasmos entry in
+// .codex/config.toml. Codex CLI's native format is [mcp_servers.NAME]; HTTP
+// transport is supported natively via the url key.
+func codexMCPBlock() string {
+	return fmt.Sprintf("[mcp_servers.kasmos]\nurl = %q\n", sharedKasmosMCPURL)
+}
+
+// codexMCPEntryUpToDate reports whether a parsed .codex/config.toml already
+// has a kasmos entry pointing at the shared HTTP endpoint with no stale stdio
+// keys left over from older scaffolds.
+func codexMCPEntryUpToDate(parsed map[string]any) bool {
+	servers, ok := parsed["mcp_servers"].(map[string]any)
+	if !ok {
+		return false
+	}
+	entry, ok := servers["kasmos"].(map[string]any)
+	if !ok {
+		return false
+	}
+	if url, _ := entry["url"].(string); url != sharedKasmosMCPURL {
+		return false
+	}
+	if _, hasCmd := entry["command"]; hasCmd {
+		return false
+	}
+	if _, hasArgs := entry["args"]; hasArgs {
+		return false
+	}
+	return true
+}
+
+// stripTOMLLineComment removes a trailing "# ..." comment from a TOML line.
+// Only used for table-header detection, so the naive split-on-"#" is safe
+// (header lines do not contain string literals).
+func stripTOMLLineComment(line string) string {
+	if idx := strings.Index(line, "#"); idx >= 0 {
+		line = line[:idx]
+	}
+	return strings.TrimSpace(line)
+}
+
+func isCodexKasmosHeader(line string) bool {
+	trimmed := stripTOMLLineComment(line)
+	return trimmed == "[mcp_servers.kasmos]" || trimmed == `[mcp_servers."kasmos"]`
+}
+
+func isTOMLTableHeader(line string) bool {
+	trimmed := stripTOMLLineComment(line)
+	if !strings.HasPrefix(trimmed, "[") {
+		return false
+	}
+	return strings.HasSuffix(trimmed, "]")
+}
+
+// findCodexKasmosBlock returns [start, end) line indices spanning the kasmos
+// block — from its header line up to (but not including) the next table
+// header or EOF. Returns (-1, -1) when not present.
+func findCodexKasmosBlock(lines []string) (int, int) {
+	start := -1
+	for i, line := range lines {
+		if isCodexKasmosHeader(line) {
+			start = i
+			break
+		}
+	}
+	if start == -1 {
+		return -1, -1
+	}
+	end := len(lines)
+	for i := start + 1; i < len(lines); i++ {
+		if isTOMLTableHeader(lines[i]) {
+			end = i
+			break
+		}
+	}
+	return start, end
+}
+
+// patchCodexTOML returns updated TOML text with the kasmos mcp_servers block
+// replaced (or appended) to the desired content. Comments, ordering, and
+// unrelated sections are preserved verbatim.
+func patchCodexTOML(existing string) string {
+	desired := codexMCPBlock()
+	if existing == "" {
+		return desired
+	}
+	lines := strings.Split(existing, "\n")
+	start, end := findCodexKasmosBlock(lines)
+	if start == -1 {
+		trimmed := strings.TrimRight(existing, "\n")
+		if trimmed == "" {
+			return desired
+		}
+		return trimmed + "\n\n" + desired
+	}
+	desiredLines := strings.Split(strings.TrimRight(desired, "\n"), "\n")
+	var out []string
+	out = append(out, lines[:start]...)
+	out = append(out, desiredLines...)
+	out = append(out, lines[end:]...)
+	return strings.Join(out, "\n")
+}
+
+// EnsureCodexMCPEntry patches .codex/config.toml so it contains a
+// [mcp_servers.kasmos] block pointed at the shared HTTP endpoint. Existing
+// non-kasmos sections, comments, and ordering are preserved. Codex CLI reads
+// project-local .codex/config.toml for trusted projects, so no CODEX_HOME
+// gymnastics are needed.
+func EnsureCodexMCPEntry(dir string) (WriteResult, error) {
+	dest := filepath.Join(dir, ".codex", "config.toml")
+	rel := filepath.Join(".codex", "config.toml")
+	result := WriteResult{Path: rel, Created: false}
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return result, fmt.Errorf("create .codex: %w", err)
+	}
+
+	var existing string
+	if data, err := os.ReadFile(dest); err == nil {
+		existing = string(data)
+	} else if !os.IsNotExist(err) {
+		return result, fmt.Errorf("read .codex/config.toml: %w", err)
+	}
+
+	if existing != "" {
+		var parsed map[string]any
+		if _, err := toml.Decode(existing, &parsed); err == nil && codexMCPEntryUpToDate(parsed) {
+			return result, nil
+		}
+	}
+
+	updated := patchCodexTOML(existing)
+	if !strings.HasSuffix(updated, "\n") {
+		updated += "\n"
+	}
+	if err := os.WriteFile(dest, []byte(updated), 0o644); err != nil {
+		return result, fmt.Errorf("write .codex/config.toml: %w", err)
+	}
+	result.Created = true
+	return result, nil
+}
+
+// codexEnforceHookRelPath is where the kasmos enforcement script lives inside
+// a scaffolded project. It is referenced both as the on-disk destination and
+// as the command string embedded in .codex/hooks.json, so codex CLI invokes
+// the correct file when launched from the project root.
+const codexEnforceHookRelPath = ".codex/hooks/enforce-cli-tools.sh"
+
+// WriteCodexEnforcementHook writes the shared CLI-tools enforcement script to
+// <dir>/.codex/hooks/enforce-cli-tools.sh with exec permissions. The script
+// body is sourced from harness.CLIToolsEnforcementScript so claude and codex
+// cannot drift apart on banned commands.
+func WriteCodexEnforcementHook(dir string, force bool) (WriteResult, error) {
+	dest := filepath.Join(dir, codexEnforceHookRelPath)
+	rel := codexEnforceHookRelPath
+	result := WriteResult{Path: rel, Created: false}
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return result, fmt.Errorf("create .codex/hooks: %w", err)
+	}
+
+	body := []byte(harness.CLIToolsEnforcementScript)
+
+	existing, err := os.ReadFile(dest)
+	if err == nil && bytes.Equal(existing, body) {
+		// Ensure exec bit even when content matches — a prior run may have
+		// written 0644 before we tightened the mode.
+		if info, statErr := os.Stat(dest); statErr == nil && info.Mode().Perm()&0o111 != 0 {
+			return result, nil
+		}
+	} else if err != nil && !os.IsNotExist(err) {
+		return result, fmt.Errorf("read %s: %w", rel, err)
+	} else if err == nil && !force && len(existing) > 0 {
+		// File exists with different content and force=false: overwrite anyway.
+		// Enforcement script is fully managed by kasmos — drift is a bug, not
+		// user customization.
+	}
+
+	if err := os.WriteFile(dest, body, 0o755); err != nil {
+		return result, fmt.Errorf("write %s: %w", rel, err)
+	}
+	if err := os.Chmod(dest, 0o755); err != nil {
+		return result, fmt.Errorf("chmod %s: %w", rel, err)
+	}
+	result.Created = true
+	return result, nil
+}
+
+// codexHasEnforcementHook reports whether the PreToolUse array already
+// contains a kasmos-installed enforcement entry, detected by the relative
+// script path. Mirrors hasClaudeEnforcementHook for the codex file layout.
+func codexHasEnforcementHook(preToolUse []any) bool {
+	for _, entry := range preToolUse {
+		group, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		hooks, ok := group["hooks"].([]any)
+		if !ok {
+			continue
+		}
+		for _, hook := range hooks {
+			hookMap, ok := hook.(map[string]any)
+			if !ok {
+				continue
+			}
+			command, _ := hookMap["command"].(string)
+			if strings.Contains(command, "enforce-cli-tools.sh") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// EnsureCodexHooksJSON patches .codex/hooks.json so it contains a PreToolUse
+// entry invoking the kasmos enforcement script against Bash tool calls.
+// Unrelated hook events, user-added matchers, and user-added hook entries
+// inside the Bash matcher group are preserved.
+func EnsureCodexHooksJSON(dir string) (WriteResult, error) {
+	dest := filepath.Join(dir, ".codex", "hooks.json")
+	rel := filepath.Join(".codex", "hooks.json")
+	result := WriteResult{Path: rel, Created: false}
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return result, fmt.Errorf("create .codex: %w", err)
+	}
+
+	var settings map[string]any
+	if data, err := os.ReadFile(dest); err == nil {
+		if jsonErr := json.Unmarshal(data, &settings); jsonErr != nil {
+			settings = nil
+		}
+	} else if !os.IsNotExist(err) {
+		return result, fmt.Errorf("read %s: %w", rel, err)
+	}
+	if settings == nil {
+		settings = map[string]any{}
+	}
+
+	hooksVal, ok := settings["hooks"]
+	if !ok {
+		hooksVal = map[string]any{}
+	}
+	hooks, ok := hooksVal.(map[string]any)
+	if !ok {
+		return result, fmt.Errorf("%s hooks has unexpected type %T", rel, hooksVal)
+	}
+
+	preToolUseVal, ok := hooks["PreToolUse"]
+	if !ok {
+		preToolUseVal = []any{}
+	}
+	preToolUse, ok := preToolUseVal.([]any)
+	if !ok {
+		return result, fmt.Errorf("%s hooks.PreToolUse has unexpected type %T", rel, preToolUseVal)
+	}
+
+	if codexHasEnforcementHook(preToolUse) {
+		return result, nil
+	}
+
+	preToolUse = append(preToolUse, map[string]any{
+		"matcher": "Bash",
+		"hooks": []any{
+			map[string]any{
+				"type":    "command",
+				"command": codexEnforceHookRelPath,
+			},
+		},
+	})
+	hooks["PreToolUse"] = preToolUse
+	settings["hooks"] = hooks
+
+	merged, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return result, fmt.Errorf("marshal %s: %w", rel, err)
+	}
+	merged = append(merged, '\n')
+	if err := os.WriteFile(dest, merged, 0o644); err != nil {
+		return result, fmt.Errorf("write %s: %w", rel, err)
+	}
+	result.Created = true
+	return result, nil
+}
+
+// codexHooksFeatureFlagSet reports whether the parsed .codex/config.toml
+// already has [features] codex_hooks = true, which is the switch that tells
+// codex CLI to read .codex/hooks.json at all.
+func codexHooksFeatureFlagSet(parsed map[string]any) bool {
+	features, ok := parsed["features"].(map[string]any)
+	if !ok {
+		return false
+	}
+	enabled, _ := features["codex_hooks"].(bool)
+	return enabled
+}
+
+// patchCodexFeaturesFlag ensures [features] codex_hooks = true is present in
+// the given TOML text. If the [features] table already exists, the codex_hooks
+// key is inserted or rewritten in place so sibling flags and comments inside
+// the table survive. If the table does not exist, it is appended.
+func patchCodexFeaturesFlag(existing string) string {
+	const line = "codex_hooks = true"
+	if existing == "" {
+		return "[features]\n" + line + "\n"
+	}
+
+	lines := strings.Split(existing, "\n")
+	start := -1
+	for i, l := range lines {
+		if stripTOMLLineComment(l) == "[features]" {
+			start = i
+			break
+		}
+	}
+	if start == -1 {
+		trimmed := strings.TrimRight(existing, "\n")
+		if trimmed == "" {
+			return "[features]\n" + line + "\n"
+		}
+		return trimmed + "\n\n[features]\n" + line + "\n"
+	}
+
+	end := len(lines)
+	for i := start + 1; i < len(lines); i++ {
+		if isTOMLTableHeader(lines[i]) {
+			end = i
+			break
+		}
+	}
+
+	keyRE := regexp.MustCompile(`^\s*codex_hooks\s*=`)
+	for i := start + 1; i < end; i++ {
+		if keyRE.MatchString(lines[i]) {
+			lines[i] = line
+			return strings.Join(lines, "\n")
+		}
+	}
+
+	insertAt := end
+	for insertAt > start+1 && strings.TrimSpace(lines[insertAt-1]) == "" {
+		insertAt--
+	}
+	out := append([]string{}, lines[:insertAt]...)
+	out = append(out, line)
+	out = append(out, lines[insertAt:]...)
+	return strings.Join(out, "\n")
+}
+
+// EnsureCodexFeaturesFlag patches .codex/config.toml so that codex_hooks is
+// enabled under [features]. This is a prerequisite for codex CLI to load
+// .codex/hooks.json at all — without it, the hooks file is silently ignored.
+func EnsureCodexFeaturesFlag(dir string) (WriteResult, error) {
+	dest := filepath.Join(dir, ".codex", "config.toml")
+	rel := filepath.Join(".codex", "config.toml")
+	result := WriteResult{Path: rel, Created: false}
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return result, fmt.Errorf("create .codex: %w", err)
+	}
+
+	var existing string
+	if data, err := os.ReadFile(dest); err == nil {
+		existing = string(data)
+	} else if !os.IsNotExist(err) {
+		return result, fmt.Errorf("read %s: %w", rel, err)
+	}
+
+	if existing != "" {
+		var parsed map[string]any
+		if _, err := toml.Decode(existing, &parsed); err == nil && codexHooksFeatureFlagSet(parsed) {
+			return result, nil
+		}
+	}
+
+	updated := patchCodexFeaturesFlag(existing)
+	if !strings.HasSuffix(updated, "\n") {
+		updated += "\n"
+	}
+	if err := os.WriteFile(dest, []byte(updated), 0o644); err != nil {
+		return result, fmt.Errorf("write %s: %w", rel, err)
 	}
 	result.Created = true
 	return result, nil
@@ -818,7 +1206,37 @@ func WriteCodexProject(dir string, agents []harness.AgentConfig, selectedTools [
 	if relErr != nil {
 		rel = dest
 	}
-	return []WriteResult{{Path: rel, Created: written}}, nil
+	results := []WriteResult{{Path: rel, Created: written}}
+
+	mcpResult, err := EnsureCodexMCPEntry(dir)
+	if err != nil {
+		return results, err
+	}
+	results = append(results, mcpResult)
+
+	// Hooks: install the shared enforcement script, patch .codex/hooks.json
+	// so PreToolUse/Bash invokes it, and flip the codex_hooks feature flag in
+	// .codex/config.toml (codex CLI ignores hooks.json unless the flag is on).
+	// Order matters: the feature flag must land after the MCP block so both
+	// writes see a consistent file.
+	hookResult, err := WriteCodexEnforcementHook(dir, force)
+	if err != nil {
+		return results, err
+	}
+	results = append(results, hookResult)
+
+	hooksJSONResult, err := EnsureCodexHooksJSON(dir)
+	if err != nil {
+		return results, err
+	}
+	results = append(results, hooksJSONResult)
+
+	featuresResult, err := EnsureCodexFeaturesFlag(dir)
+	if err != nil {
+		return results, err
+	}
+	results = append(results, featuresResult)
+	return results, nil
 }
 
 // WriteProjectSkills writes embedded skill trees to <dir>/.agents/skills/.
@@ -1004,20 +1422,6 @@ func ScaffoldAll(dir string, agents []harness.AgentConfig, selectedTools []strin
 		}
 	}
 
-	// codex agents rely on the shared project-root .mcp.json for MCP wiring.
-	// WriteClaudeProject already writes it when claude is configured; for
-	// codex-only repos we need a dedicated call so the shared HTTP endpoint
-	// is still wired up.
-	if _, hasCodex := byHarness["codex"]; hasCodex {
-		if _, hasClaude := byHarness["claude"]; !hasClaude {
-			mcpResult, err := WriteClaudeMCPConfig(dir, force)
-			if err != nil {
-				return results, fmt.Errorf("scaffold codex mcp: %w", err)
-			}
-			results = append(results, mcpResult)
-		}
-	}
-
 	return results, nil
 }
 
@@ -1059,16 +1463,6 @@ func SyncScaffold(dir string, agents []harness.AgentConfig) ([]WriteResult, erro
 			harnessResults, err = WriteCodexProject(dir, harnessAgents, nil, true)
 			if err != nil {
 				return results, fmt.Errorf("sync %s: %w", harnessName, err)
-			}
-			// codex-only repos rely on the shared project-root .mcp.json
-			// for MCP wiring; when claude is also configured, its branch
-			// below handles the same ensure call.
-			if _, hasClaude := byHarness["claude"]; !hasClaude {
-				mcpResult, ensureErr := EnsureClaudeMCPEntry(dir)
-				if ensureErr != nil {
-					return results, fmt.Errorf("sync codex .mcp.json: %w", ensureErr)
-				}
-				harnessResults = append(harnessResults, mcpResult)
 			}
 		default:
 			perRoleResults, err := writePerRoleProject(dir, harnessName, harnessAgents, nil, true)

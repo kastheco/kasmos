@@ -1,0 +1,5 @@
+[mcp_servers.kasmos]
+url = "http://127.0.0.1:7434/mcp"
+
+[features]
+codex_hooks = true

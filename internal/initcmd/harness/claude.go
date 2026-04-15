@@ -9,7 +9,10 @@ import (
 	"strings"
 )
 
-const claudeEnforceCLIToolsScript = `#!/bin/bash
+// CLIToolsEnforcementScript is a PreToolUse hook body shared by harnesses that
+// expose Bash tool execution. Claude installs it at ~/.claude/hooks and codex
+// installs it at <repo>/.codex/hooks — the script itself is harness-agnostic.
+const CLIToolsEnforcementScript = `#!/bin/bash
 # PreToolUse hook: block legacy CLI tools, enforce modern replacements.
 # Installed by kasmos setup. Source of truth: cli-tools skill.
 # Reads Bash tool_input.command from stdin JSON and rejects banned commands.
@@ -107,7 +110,7 @@ func (c *Claude) InstallEnforcement() error {
 	}
 
 	hookPath := filepath.Join(hooksDir, "enforce-cli-tools.sh")
-	if err := os.WriteFile(hookPath, []byte(claudeEnforceCLIToolsScript), 0o755); err != nil {
+	if err := os.WriteFile(hookPath, []byte(CLIToolsEnforcementScript), 0o755); err != nil {
 		return fmt.Errorf("write claude enforcement hook: %w", err)
 	}
 

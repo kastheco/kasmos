@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/BurntSushi/toml"
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -437,10 +438,11 @@ func TestScaffoldAll_MixedHarnesses(t *testing.T) {
 	}
 }
 
-// TestScaffoldAll_CodexOnlyWritesMCPJSON verifies that a codex-only scaffold still
-// writes the shared project-root .mcp.json. Codex agents rely on that file for MCP
-// wiring, and the legacy path only emitted it from the claude branch.
-func TestScaffoldAll_CodexOnlyWritesMCPJSON(t *testing.T) {
+// TestScaffoldAll_CodexWritesCodexMCPConfig verifies that a codex scaffold
+// writes a project-local .codex/config.toml with the kasmos MCP server
+// registered via the shared HTTP endpoint. Codex CLI reads this file natively
+// for trusted projects — it does not understand Claude's .mcp.json format.
+func TestScaffoldAll_CodexWritesCodexMCPConfig(t *testing.T) {
 	dir := t.TempDir()
 	agents := []harness.AgentConfig{
 		{Role: "coder", Harness: "codex", Model: "gpt-5.3-codex", Enabled: true},
@@ -452,20 +454,21 @@ func TestScaffoldAll_CodexOnlyWritesMCPJSON(t *testing.T) {
 	assert.FileExists(t, filepath.Join(dir, ".codex", "AGENTS.md"))
 	assert.NoDirExists(t, filepath.Join(dir, ".claude"),
 		"claude harness must not be scaffolded for a codex-only repo")
+	assert.NoFileExists(t, filepath.Join(dir, ".mcp.json"),
+		"codex-only scaffold must not emit .mcp.json — that is Claude Code's format")
 
-	mcpPath := filepath.Join(dir, ".mcp.json")
-	assert.FileExists(t, mcpPath,
-		"codex-only scaffold must still write the shared project-root .mcp.json")
-
-	data, err := os.ReadFile(mcpPath)
+	cfgPath := filepath.Join(dir, ".codex", "config.toml")
+	require.FileExists(t, cfgPath)
+	data, err := os.ReadFile(cfgPath)
 	require.NoError(t, err)
-	var cfg map[string]any
-	require.NoError(t, json.Unmarshal(data, &cfg))
-	servers, ok := cfg["mcpServers"].(map[string]any)
-	require.True(t, ok, "mcpServers key must be present")
+	var parsed map[string]any
+	_, decodeErr := toml.Decode(string(data), &parsed)
+	require.NoError(t, decodeErr, ".codex/config.toml must be valid TOML:\n%s", data)
+
+	servers, ok := parsed["mcp_servers"].(map[string]any)
+	require.True(t, ok, "mcp_servers table must be present")
 	kasmos, ok := servers["kasmos"].(map[string]any)
 	require.True(t, ok, "kasmos entry must be present")
-	assert.Equal(t, "http", kasmos["type"])
 	assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
 	assert.NotContains(t, kasmos, "command", "stdio command key must not be present")
 	assert.NotContains(t, kasmos, "args", "stdio args key must not be present")
@@ -1537,10 +1540,12 @@ func TestSyncScaffold_SkipsOpencodeConfigForNonOpencodeRepo(t *testing.T) {
 }
 
 // TestSyncScaffold_CodexOnlyWritesMCPJSON verifies that SyncScaffold writes the
-// shared project-root .mcp.json for a codex-only scaffold, and that an existing
-// legacy stdio entry is refreshed to the shared HTTP endpoint.
-func TestSyncScaffold_CodexOnlyWritesMCPJSON(t *testing.T) {
-	t.Run("creates fresh .mcp.json for codex-only", func(t *testing.T) {
+// TestSyncScaffold_CodexWritesCodexMCPConfig covers the sync path for codex-only
+// repos: a fresh .codex/config.toml is emitted, and existing non-kasmos sections
+// (e.g. model_providers, other mcp_servers entries) are preserved when the
+// kasmos block is inserted.
+func TestSyncScaffold_CodexWritesCodexMCPConfig(t *testing.T) {
+	t.Run("creates fresh .codex/config.toml for codex-only", func(t *testing.T) {
 		dir := t.TempDir()
 		agents := []harness.AgentConfig{
 			{Role: "coder", Harness: "codex", Model: "gpt-5.3-codex", Enabled: true},
@@ -1550,38 +1555,34 @@ func TestSyncScaffold_CodexOnlyWritesMCPJSON(t *testing.T) {
 
 		assert.NoDirExists(t, filepath.Join(dir, ".claude"),
 			"claude harness must not be scaffolded when syncing a codex-only repo")
+		assert.NoFileExists(t, filepath.Join(dir, ".mcp.json"),
+			"codex-only sync must not emit .mcp.json — that is Claude Code's format")
 
-		mcpPath := filepath.Join(dir, ".mcp.json")
-		require.FileExists(t, mcpPath)
-		data, err := os.ReadFile(mcpPath)
+		cfgPath := filepath.Join(dir, ".codex", "config.toml")
+		require.FileExists(t, cfgPath)
+		data, err := os.ReadFile(cfgPath)
 		require.NoError(t, err)
-		var cfg map[string]any
-		require.NoError(t, json.Unmarshal(data, &cfg))
-		kasmos, ok := cfg["mcpServers"].(map[string]any)["kasmos"].(map[string]any)
+		var parsed map[string]any
+		_, decodeErr := toml.Decode(string(data), &parsed)
+		require.NoError(t, decodeErr)
+		kasmos, ok := parsed["mcp_servers"].(map[string]any)["kasmos"].(map[string]any)
 		require.True(t, ok, "kasmos entry must be present")
-		assert.Equal(t, "http", kasmos["type"])
 		assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
 		assert.NotContains(t, kasmos, "command")
 		assert.NotContains(t, kasmos, "args")
 	})
 
-	t.Run("refreshes legacy stdio entry on codex-only sync", func(t *testing.T) {
+	t.Run("preserves unrelated mcp_servers entries and user comments", func(t *testing.T) {
 		dir := t.TempDir()
-		legacy := `{
-  "mcpServers": {
-    "kasmos": {
-      "type": "stdio",
-      "command": "/some/old/path/kas",
-      "args": ["mcp"]
-    },
-    "other": {
-      "type": "stdio",
-      "command": "/keep/me"
-    }
-  }
-}
+		existing := `# user's custom codex config — do not touch my notes
+model = "gpt-5.3-codex"
+
+[mcp_servers.other]
+command = "/keep/me"
+args = ["serve"]
 `
-		require.NoError(t, os.WriteFile(filepath.Join(dir, ".mcp.json"), []byte(legacy), 0o644))
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".codex"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".codex", "config.toml"), []byte(existing), 0o644))
 
 		agents := []harness.AgentConfig{
 			{Role: "coder", Harness: "codex", Model: "gpt-5.3-codex", Enabled: true},
@@ -1589,24 +1590,386 @@ func TestSyncScaffold_CodexOnlyWritesMCPJSON(t *testing.T) {
 		_, err := SyncScaffold(dir, agents)
 		require.NoError(t, err)
 
-		data, err := os.ReadFile(filepath.Join(dir, ".mcp.json"))
+		data, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
 		require.NoError(t, err)
-		var cfg map[string]any
-		require.NoError(t, json.Unmarshal(data, &cfg))
-		servers, ok := cfg["mcpServers"].(map[string]any)
-		require.True(t, ok)
+		content := string(data)
 
+		assert.Contains(t, content, "# user's custom codex config — do not touch my notes",
+			"user comments must be preserved")
+		assert.Contains(t, content, `model = "gpt-5.3-codex"`,
+			"top-level keys must be preserved")
+
+		var parsed map[string]any
+		_, decodeErr := toml.Decode(content, &parsed)
+		require.NoError(t, decodeErr)
+		servers, ok := parsed["mcp_servers"].(map[string]any)
+		require.True(t, ok)
 		kasmos, ok := servers["kasmos"].(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, "http", kasmos["type"])
+		require.True(t, ok, "kasmos entry must be inserted")
 		assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
-		assert.NotContains(t, kasmos, "command", "legacy stdio command must be removed")
-		assert.NotContains(t, kasmos, "args", "legacy stdio args must be removed")
-
 		other, ok := servers["other"].(map[string]any)
 		require.True(t, ok, "unrelated MCP servers must be preserved")
 		assert.Equal(t, "/keep/me", other["command"])
 	})
+}
+
+// TestEnsureCodexMCPEntry exercises the .codex/config.toml merge logic in
+// isolation: fresh create, idempotent re-run, refresh-in-place for stale
+// stdio entries, preservation of unrelated sections.
+func TestEnsureCodexMCPEntry(t *testing.T) {
+	t.Run("creates fresh config when file is absent", func(t *testing.T) {
+		dir := t.TempDir()
+
+		result, err := EnsureCodexMCPEntry(dir)
+		require.NoError(t, err)
+		assert.True(t, result.Created)
+		assert.Equal(t, filepath.Join(".codex", "config.toml"), result.Path)
+
+		data, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+		require.NoError(t, err)
+		var parsed map[string]any
+		_, decodeErr := toml.Decode(string(data), &parsed)
+		require.NoError(t, decodeErr)
+		kasmos, ok := parsed["mcp_servers"].(map[string]any)["kasmos"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
+	})
+
+	t.Run("is idempotent when entry is already correct", func(t *testing.T) {
+		dir := t.TempDir()
+
+		_, err := EnsureCodexMCPEntry(dir)
+		require.NoError(t, err)
+		before, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+		require.NoError(t, err)
+
+		result, err := EnsureCodexMCPEntry(dir)
+		require.NoError(t, err)
+		assert.False(t, result.Created, "second call must be a no-op")
+
+		after, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+		require.NoError(t, err)
+		assert.Equal(t, before, after, "file bytes must not change on idempotent ensure")
+	})
+
+	t.Run("refreshes stale stdio entry and preserves other sections", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".codex"), 0o755))
+		existing := `# top-level notes
+model = "gpt-5.3-codex"
+
+[mcp_servers.kasmos]
+command = "/some/old/kas"
+args = ["mcp"]
+
+[mcp_servers.other]
+command = "/keep/me"
+`
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".codex", "config.toml"), []byte(existing), 0o644))
+
+		result, err := EnsureCodexMCPEntry(dir)
+		require.NoError(t, err)
+		assert.True(t, result.Created)
+
+		data, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+		require.NoError(t, err)
+		content := string(data)
+
+		assert.Contains(t, content, "# top-level notes", "user comments outside the kasmos block must survive")
+		assert.Contains(t, content, `model = "gpt-5.3-codex"`)
+
+		var parsed map[string]any
+		_, decodeErr := toml.Decode(content, &parsed)
+		require.NoError(t, decodeErr)
+		servers := parsed["mcp_servers"].(map[string]any)
+
+		kasmos := servers["kasmos"].(map[string]any)
+		assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
+		assert.NotContains(t, kasmos, "command", "stale stdio command must be stripped")
+		assert.NotContains(t, kasmos, "args", "stale stdio args must be stripped")
+
+		other, ok := servers["other"].(map[string]any)
+		require.True(t, ok, "sibling mcp_servers entries must be preserved")
+		assert.Equal(t, "/keep/me", other["command"])
+	})
+
+	t.Run("appends kasmos block when file exists without one", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".codex"), 0o755))
+		existing := `model = "gpt-5.3-codex"
+
+[mcp_servers.other]
+command = "/keep/me"
+`
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".codex", "config.toml"), []byte(existing), 0o644))
+
+		_, err := EnsureCodexMCPEntry(dir)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+		require.NoError(t, err)
+		var parsed map[string]any
+		_, decodeErr := toml.Decode(string(data), &parsed)
+		require.NoError(t, decodeErr)
+		servers := parsed["mcp_servers"].(map[string]any)
+		assert.Contains(t, servers, "kasmos")
+		assert.Contains(t, servers, "other")
+	})
+}
+
+// TestWriteCodexEnforcementHook_WritesExecutableScript covers the hook script
+// installer: the file is written at the expected relative path, has exec
+// permissions, and contains the shared enforcement body (not just an empty
+// stub).
+func TestWriteCodexEnforcementHook_WritesExecutableScript(t *testing.T) {
+	dir := t.TempDir()
+
+	result, err := WriteCodexEnforcementHook(dir, false)
+	require.NoError(t, err)
+	assert.True(t, result.Created)
+	assert.Equal(t, ".codex/hooks/enforce-cli-tools.sh", result.Path)
+
+	hookPath := filepath.Join(dir, ".codex", "hooks", "enforce-cli-tools.sh")
+	info, err := os.Stat(hookPath)
+	require.NoError(t, err)
+	assert.NotZero(t, info.Mode().Perm()&0o111, "script must be executable")
+
+	body, err := os.ReadFile(hookPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "#!/bin/bash")
+	assert.Contains(t, string(body), "BLOCKED: 'grep' is banned",
+		"script body must come from the shared enforcement source of truth")
+}
+
+// TestEnsureCodexHooksJSON exercises the hooks.json merge logic: fresh create,
+// idempotent re-run, and preservation of user-added events and matcher groups.
+func TestEnsureCodexHooksJSON(t *testing.T) {
+	t.Run("creates fresh hooks.json with PreToolUse Bash entry", func(t *testing.T) {
+		dir := t.TempDir()
+
+		result, err := EnsureCodexHooksJSON(dir)
+		require.NoError(t, err)
+		assert.True(t, result.Created)
+
+		data, err := os.ReadFile(filepath.Join(dir, ".codex", "hooks.json"))
+		require.NoError(t, err)
+		var settings map[string]any
+		require.NoError(t, json.Unmarshal(data, &settings))
+
+		preToolUse, ok := settings["hooks"].(map[string]any)["PreToolUse"].([]any)
+		require.True(t, ok, "hooks.PreToolUse must be an array")
+		require.Len(t, preToolUse, 1)
+		group := preToolUse[0].(map[string]any)
+		assert.Equal(t, "Bash", group["matcher"])
+		hook := group["hooks"].([]any)[0].(map[string]any)
+		assert.Equal(t, "command", hook["type"])
+		assert.Equal(t, ".codex/hooks/enforce-cli-tools.sh", hook["command"])
+	})
+
+	t.Run("is idempotent when entry already present", func(t *testing.T) {
+		dir := t.TempDir()
+		_, err := EnsureCodexHooksJSON(dir)
+		require.NoError(t, err)
+		before, err := os.ReadFile(filepath.Join(dir, ".codex", "hooks.json"))
+		require.NoError(t, err)
+
+		result, err := EnsureCodexHooksJSON(dir)
+		require.NoError(t, err)
+		assert.False(t, result.Created)
+
+		after, err := os.ReadFile(filepath.Join(dir, ".codex", "hooks.json"))
+		require.NoError(t, err)
+		assert.Equal(t, string(before), string(after))
+	})
+
+	t.Run("preserves user-added events and matchers", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".codex"), 0o755))
+		existing := `{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "notify.sh" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "user-lint.sh" }
+        ]
+      }
+    ]
+  }
+}
+`
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".codex", "hooks.json"), []byte(existing), 0o644))
+
+		_, err := EnsureCodexHooksJSON(dir)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(filepath.Join(dir, ".codex", "hooks.json"))
+		require.NoError(t, err)
+		var settings map[string]any
+		require.NoError(t, json.Unmarshal(data, &settings))
+
+		hooks := settings["hooks"].(map[string]any)
+		assert.Contains(t, hooks, "Stop", "user-added Stop hook must survive")
+
+		preToolUse := hooks["PreToolUse"].([]any)
+		assert.Len(t, preToolUse, 2, "user Bash matcher group must coexist with kasmos's")
+
+		var sawUser, sawKasmos bool
+		for _, g := range preToolUse {
+			group := g.(map[string]any)
+			for _, h := range group["hooks"].([]any) {
+				cmd := h.(map[string]any)["command"].(string)
+				if cmd == "user-lint.sh" {
+					sawUser = true
+				}
+				if cmd == ".codex/hooks/enforce-cli-tools.sh" {
+					sawKasmos = true
+				}
+			}
+		}
+		assert.True(t, sawUser, "user-lint.sh must still be registered")
+		assert.True(t, sawKasmos, "kasmos enforcement hook must be registered")
+	})
+}
+
+// TestEnsureCodexFeaturesFlag covers the [features] codex_hooks switch that
+// codex CLI requires before it will even read hooks.json.
+func TestEnsureCodexFeaturesFlag(t *testing.T) {
+	t.Run("creates fresh file with features table", func(t *testing.T) {
+		dir := t.TempDir()
+
+		result, err := EnsureCodexFeaturesFlag(dir)
+		require.NoError(t, err)
+		assert.True(t, result.Created)
+
+		data, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+		require.NoError(t, err)
+		var parsed map[string]any
+		_, decodeErr := toml.Decode(string(data), &parsed)
+		require.NoError(t, decodeErr)
+		features := parsed["features"].(map[string]any)
+		assert.Equal(t, true, features["codex_hooks"])
+	})
+
+	t.Run("is idempotent when flag already true", func(t *testing.T) {
+		dir := t.TempDir()
+		_, err := EnsureCodexFeaturesFlag(dir)
+		require.NoError(t, err)
+		before, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+		require.NoError(t, err)
+
+		result, err := EnsureCodexFeaturesFlag(dir)
+		require.NoError(t, err)
+		assert.False(t, result.Created)
+
+		after, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+		require.NoError(t, err)
+		assert.Equal(t, before, after)
+	})
+
+	t.Run("adds codex_hooks to existing features table without clobbering siblings", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".codex"), 0o755))
+		existing := `[features]
+# user-enabled experimental flag
+some_other_flag = true
+
+[mcp_servers.other]
+command = "/keep/me"
+`
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".codex", "config.toml"), []byte(existing), 0o644))
+
+		_, err := EnsureCodexFeaturesFlag(dir)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+		require.NoError(t, err)
+		content := string(data)
+
+		assert.Contains(t, content, "# user-enabled experimental flag",
+			"user comments inside [features] must survive")
+		assert.Contains(t, content, "some_other_flag = true",
+			"sibling feature flags must survive")
+
+		var parsed map[string]any
+		_, decodeErr := toml.Decode(content, &parsed)
+		require.NoError(t, decodeErr)
+		features := parsed["features"].(map[string]any)
+		assert.Equal(t, true, features["codex_hooks"])
+		assert.Equal(t, true, features["some_other_flag"])
+
+		other := parsed["mcp_servers"].(map[string]any)["other"].(map[string]any)
+		assert.Equal(t, "/keep/me", other["command"], "unrelated tables must survive")
+	})
+
+	t.Run("appends features table when file has other content but no features", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".codex"), 0o755))
+		existing := `model = "gpt-5.3-codex"
+
+[mcp_servers.kasmos]
+url = "http://127.0.0.1:7434/mcp"
+`
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".codex", "config.toml"), []byte(existing), 0o644))
+
+		_, err := EnsureCodexFeaturesFlag(dir)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+		require.NoError(t, err)
+		var parsed map[string]any
+		_, decodeErr := toml.Decode(string(data), &parsed)
+		require.NoError(t, decodeErr)
+		assert.Equal(t, "gpt-5.3-codex", parsed["model"])
+		assert.Equal(t, true, parsed["features"].(map[string]any)["codex_hooks"])
+		assert.Equal(t, "http://127.0.0.1:7434/mcp",
+			parsed["mcp_servers"].(map[string]any)["kasmos"].(map[string]any)["url"])
+	})
+}
+
+// TestWriteCodexProject_WiresHooks verifies that the higher-level scaffold
+// entrypoint installs the hook script, hooks.json, and feature flag together.
+// Regression guard for the codex /mcp listing plus CLI enforcement.
+func TestWriteCodexProject_WiresHooks(t *testing.T) {
+	dir := t.TempDir()
+	agents := []harness.AgentConfig{
+		{Role: "coder", Harness: "codex", Model: "gpt-5.3-codex", Enabled: true},
+	}
+
+	_, err := WriteCodexProject(dir, agents, allTools, false)
+	require.NoError(t, err)
+
+	hookPath := filepath.Join(dir, ".codex", "hooks", "enforce-cli-tools.sh")
+	assert.FileExists(t, hookPath)
+	info, err := os.Stat(hookPath)
+	require.NoError(t, err)
+	assert.NotZero(t, info.Mode().Perm()&0o111)
+
+	hooksJSON, err := os.ReadFile(filepath.Join(dir, ".codex", "hooks.json"))
+	require.NoError(t, err)
+	var settings map[string]any
+	require.NoError(t, json.Unmarshal(hooksJSON, &settings))
+	preToolUse := settings["hooks"].(map[string]any)["PreToolUse"].([]any)
+	require.Len(t, preToolUse, 1)
+	cmd := preToolUse[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)["command"]
+	assert.Equal(t, ".codex/hooks/enforce-cli-tools.sh", cmd)
+
+	cfgData, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+	require.NoError(t, err)
+	var cfg map[string]any
+	_, decodeErr := toml.Decode(string(cfgData), &cfg)
+	require.NoError(t, decodeErr)
+	assert.Equal(t, true, cfg["features"].(map[string]any)["codex_hooks"],
+		"codex_hooks feature flag must be set or hooks.json is ignored")
+	assert.Equal(t, "http://127.0.0.1:7434/mcp",
+		cfg["mcp_servers"].(map[string]any)["kasmos"].(map[string]any)["url"])
 }
 
 // TestSyncScaffold_PatchesExistingOpencodeConfigEvenWithoutOpencodeHarness verifies

@@ -60,11 +60,11 @@ from inside a git repo:
 
 ```bash
 kas serve        # start the shared http mcp endpoint (or let kasmosdb do it automatically)
-kas setup        # scaffold harness configs (.mcp.json, agent prompts) pointing at the shared endpoint
+kas setup        # scaffold harness configs (.mcp.json, .codex/config.toml, agent prompts) pointing at the shared endpoint
 kas              # open the tui
 ```
 
-`kas setup` (and `kas reset`) write `.mcp.json` so mcp-aware agents (claude, opencode, codex) connect to the shared http mcp endpoint (`http://127.0.0.1:7434/mcp`). the endpoint must be running before starting managed agent sessions. `kas check` will warn if the shared endpoint is unreachable or if stale `kas mcp` stdio processes are still running.
+`kas setup` (and `kas reset`) write per-harness MCP config so mcp-aware agents connect to the shared http mcp endpoint (`http://127.0.0.1:7434/mcp`): claude and opencode use `.mcp.json`, codex uses a project-local `.codex/config.toml` with an `[mcp_servers.kasmos]` block (codex CLI reads this natively for trusted projects). the endpoint must be running before starting managed agent sessions. `kas check` will warn if the shared endpoint is unreachable or if stale `kas mcp` stdio processes are still running.
 
 > **note:** `kas mcp` (stdio mode) is still available as a fallback for manual or harness-specific use, but it is not the default transport and should not appear in scaffolded configs.
 
