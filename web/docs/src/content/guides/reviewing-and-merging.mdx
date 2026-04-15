@@ -77,7 +77,7 @@ kas signal emit verify_failed <plan>
 
 #### verify-loop cap and force-promotion
 
-The verify loop is bounded by `readiness_max_verify_cycles` (default: `2`). When the master agent emits `verify_failed` and the attempt count equals or exceeds the cap, the daemon **force-promotes** the task to `verify_approved` rather than spawning another fixer. The promoted signal carries a `loop_cap_exceeded` annotation in its payload so the audit log records the original findings alongside the promotion reason. A warning toast is shown in the TUI.
+The verify loop is bounded by `readiness_max_verify_cycles` (default: `2`). When the master agent emits `verify_failed` and the attempt count equals or exceeds the cap, the daemon **force-promotes** the task to `verify_approved` rather than spawning another fixer. The promotion is reflected by the resulting `verify_approved` transition and a warning toast in the TUI; kasmos does not currently add a distinct `loop_cap_exceeded` marker to the recorded payload.
 
 The info pane labels the final attempt as **readiness review (terminal attempt)** so you can anticipate the promotion before it fires.
 
