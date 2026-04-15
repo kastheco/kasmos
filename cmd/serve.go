@@ -226,6 +226,12 @@ func newServeAPIRootMux(sharedDB *sql.DB, repoRegs serveRepoRegistration, taskAP
 	rootMux.Handle("GET /v1/projects/{project}/instances/{title}/capture", previewAPI)
 	rootMux.Handle("POST /v1/projects/{project}/instances/{title}/send", previewAPI)
 
+	// Instance lifecycle action routes — forward to previewAPI which handles dispatch.
+	rootMux.Handle("POST /v1/projects/{project}/instances/{title}/pause", previewAPI)
+	rootMux.Handle("POST /v1/projects/{project}/instances/{title}/resume", previewAPI)
+	rootMux.Handle("POST /v1/projects/{project}/instances/{title}/restart", previewAPI)
+	rootMux.Handle("POST /v1/projects/{project}/instances/{title}/kill", previewAPI)
+
 	// Exact audit route, then generic taskstore prefix.
 	rootMux.Handle("GET /v1/projects/{project}/audit-events", auditAPI)
 	rootMux.Handle("/v1/projects/", taskAPI)
@@ -340,14 +346,14 @@ func NewServeCmd() *cobra.Command {
 					}
 					return root, nil
 				}
-				previewHandler := livepreview.NewHTTPHandlerWithDaemon(resolve, &livepreview.ExecPaneRunner{}, daemonLister)
+				previewHandler := livepreview.NewHTTPHandlerWithDaemon(resolve, &livepreview.ExecPaneRunner{}, daemonLister, daemonLister)
 				previewAPI = projectValidationMiddleware(repoRegs.valid, previewHandler)
 			case cmd.Flags().Changed("db"):
 				previewAPI = livepreview.NewHTTPHandlerWithDaemon(func(string) (string, error) {
 					return "", livepreview.ErrPreviewUnavailable
-				}, &livepreview.ExecPaneRunner{}, daemonLister)
+				}, &livepreview.ExecPaneRunner{}, daemonLister, daemonLister)
 			default:
-				previewAPI = livepreview.NewHTTPHandlerWithDaemon(newDynamicProjectRootResolver(), &livepreview.ExecPaneRunner{}, daemonLister)
+				previewAPI = livepreview.NewHTTPHandlerWithDaemon(newDynamicProjectRootResolver(), &livepreview.ExecPaneRunner{}, daemonLister, daemonLister)
 			}
 			if len(repoPaths) > 0 {
 				taskAPI = projectValidationMiddleware(repoRegs.valid, taskAPI)

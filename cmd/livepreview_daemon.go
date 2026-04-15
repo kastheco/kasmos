@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"syscall"
 	"time"
@@ -58,11 +59,10 @@ func newDaemonInstanceLister() *daemonInstanceLister {
 // ListInstancesForProject implements livepreview.DaemonInstanceLister by
 // calling GET /v1/repos/{project}/instances on the daemon and converting
 // daemon.api.InstanceStatus records into livepreview.Record values. Inactive
-// entries are filtered out — the web UI should only surface live instances,
-// and state.json already carries the authoritative record for anything
-// paused-via-TUI.
+// (paused) entries are included — daemonStatusToRecord maps !s.Active rows to
+// StatusPaused so the web UI keeps daemon-owned agents visible while paused.
 func (l *daemonInstanceLister) ListInstancesForProject(project string) ([]livepreview.Record, error) {
-	resp, err := l.http.Get("http://daemon/v1/repos/" + project + "/instances")
+	resp, err := l.http.Get("http://daemon/v1/repos/" + url.PathEscape(project) + "/instances")
 	if err != nil {
 		if isDaemonSocketUnreachable(err) {
 			return nil, livepreview.ErrDaemonUnavailable
@@ -90,9 +90,6 @@ func (l *daemonInstanceLister) ListInstancesForProject(project string) ([]livepr
 
 	out := make([]livepreview.Record, 0, len(statuses))
 	for _, s := range statuses {
-		if !s.Active {
-			continue
-		}
 		out = append(out, daemonStatusToRecord(s))
 	}
 	return out, nil
@@ -104,10 +101,16 @@ func (l *daemonInstanceLister) ListInstancesForProject(project string) ([]livepr
 // snapshot does not carry them.
 func daemonStatusToRecord(s api.InstanceStatus) livepreview.Record {
 	status := livepreview.StatusRunning
-	if s.Loading {
+	switch {
+	case s.Loading:
 		status = livepreview.StatusLoading
-	} else if !s.Active {
+	case !s.Active:
 		status = livepreview.StatusPaused
+	case s.Ready:
+		// Ready is checked after Loading/!Active so idle-but-available daemon
+		// rows surface as StatusReady. The web UI then limits valid_actions
+		// to {restart, kill} instead of the running set.
+		status = livepreview.StatusReady
 	}
 	return livepreview.Record{
 		Title:         s.Title,
@@ -121,6 +124,36 @@ func daemonStatusToRecord(s api.InstanceStatus) livepreview.Record {
 		ReviewCycle:   s.ReviewCycle,
 		ExecutionMode: s.ExecutionMode,
 	}
+}
+
+// PostInstanceAction implements livepreview.DaemonInstanceActioner by POSTing to
+// POST /v1/repos/{project}/instances/{title}/{action} on the daemon. Daemon HTTP
+// error responses are translated to *livepreview.DaemonActionClientError so the
+// serve-side handler can preserve the original status code.
+func (l *daemonInstanceLister) PostInstanceAction(project, title, action string) error {
+	u := "http://daemon/v1/repos/" + url.PathEscape(project) + "/instances/" + url.PathEscape(title) + "/" + action
+	resp, err := l.http.Post(u, "application/json", http.NoBody)
+	if err != nil {
+		if isDaemonSocketUnreachable(err) {
+			return livepreview.ErrDaemonUnavailable
+		}
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		return nil
+	}
+
+	var body struct {
+		Error string `json:"error"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	msg := body.Error
+	if msg == "" {
+		msg = resp.Status
+	}
+	return &livepreview.DaemonActionClientError{StatusCode: resp.StatusCode, Msg: msg}
 }
 
 // isDaemonSocketUnreachable returns true when err indicates the daemon Unix

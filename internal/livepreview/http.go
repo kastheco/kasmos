@@ -35,6 +35,27 @@ const maxSendBodyBytes = 64 * 1024
 // surfacing an error to the client.
 var ErrDaemonUnavailable = errors.New("daemon instance source unavailable")
 
+// DaemonActionClientError carries the HTTP status code and message returned by
+// the daemon's instance-action endpoint. PostInstanceAction implementations
+// return this type so the serve-side action handler can forward the original
+// status code cleanly without re-interpreting the error.
+type DaemonActionClientError struct {
+	StatusCode int
+	Msg        string
+}
+
+// Error implements the error interface.
+func (e *DaemonActionClientError) Error() string { return e.Msg }
+
+// DaemonInstanceActioner is the abstraction the live-preview HTTP handler uses
+// to forward instance lifecycle actions to daemon-owned instances.
+type DaemonInstanceActioner interface {
+	// PostInstanceAction sends action to the daemon for the given project/title.
+	// Returns ErrDaemonUnavailable when the socket is unreachable; returns
+	// *DaemonActionClientError to preserve the daemon's original HTTP status code.
+	PostInstanceAction(project, title, action string) error
+}
+
 // DaemonInstanceLister is the abstraction the live-preview HTTP handler uses
 // to merge daemon-tracked (in-memory) instances with the on-disk state.json
 // records. Implementations typically wrap the daemon's Unix-socket API client
@@ -102,24 +123,25 @@ func LoadRecordsFromRepoRoot(repoRoot string) ([]Record, error) {
 // ExecutionMode is included so the SPA can disable the composer and polling
 // before hitting tmux-only routes on headless instances.
 type ListEntry struct {
-	Title         string `json:"title"`
-	Status        string `json:"status"`
-	Branch        string `json:"branch"`
-	Program       string `json:"program"`
-	TaskFile      string `json:"task_file,omitempty"`
-	AgentType     string `json:"agent_type,omitempty"`
-	WaveNumber    int    `json:"wave_number,omitempty"`
-	TaskNumber    int    `json:"task_number,omitempty"`
-	CreatedAt     string `json:"created_at,omitempty"`
-	UpdatedAt     string `json:"updated_at,omitempty"`
-	ExecutionMode string `json:"execution_mode,omitempty"`
+	Title         string   `json:"title"`
+	Status        string   `json:"status"`
+	Branch        string   `json:"branch"`
+	Program       string   `json:"program"`
+	TaskFile      string   `json:"task_file,omitempty"`
+	AgentType     string   `json:"agent_type,omitempty"`
+	WaveNumber    int      `json:"wave_number,omitempty"`
+	TaskNumber    int      `json:"task_number,omitempty"`
+	CreatedAt     string   `json:"created_at,omitempty"`
+	UpdatedAt     string   `json:"updated_at,omitempty"`
+	ExecutionMode string   `json:"execution_mode,omitempty"`
+	ValidActions  []string `json:"valid_actions,omitempty"`
 }
 
 // NewHTTPHandler returns an http.Handler that serves the live-preview API
 // with state.json as the only instance source. Equivalent to calling
-// NewHTTPHandlerWithDaemon(resolve, runner, nil).
+// NewHTTPHandlerWithDaemon(resolve, runner, nil, nil).
 func NewHTTPHandler(resolve ProjectRootResolver, runner PaneRunner) http.Handler {
-	return NewHTTPHandlerWithDaemon(resolve, runner, nil)
+	return NewHTTPHandlerWithDaemon(resolve, runner, nil, nil)
 }
 
 // NewHTTPHandlerWithDaemon returns an http.Handler that serves the live-preview
@@ -143,7 +165,7 @@ func NewHTTPHandler(resolve ProjectRootResolver, runner PaneRunner) http.Handler
 // The send route requires a tmux-mode instance in running or ready status.
 // It returns 409 for loading, paused, or headless instances; 410 when the
 // tmux session is gone; 502 for other tmux failures.
-func NewHTTPHandlerWithDaemon(resolve ProjectRootResolver, runner PaneRunner, daemonLister DaemonInstanceLister) http.Handler {
+func NewHTTPHandlerWithDaemon(resolve ProjectRootResolver, runner PaneRunner, daemonLister DaemonInstanceLister, daemonActions DaemonInstanceActioner) http.Handler {
 	mux := http.NewServeMux()
 
 	loadMergedRecords := func(project, root string) ([]Record, error) {
@@ -234,6 +256,71 @@ func NewHTTPHandlerWithDaemon(resolve ProjectRootResolver, runner PaneRunner, da
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write([]byte(out))
 	})
+
+	for _, act := range []string{"pause", "resume", "restart", "kill"} {
+		act := act
+		mux.HandleFunc("POST /v1/projects/{project}/instances/{title}/"+act, func(w http.ResponseWriter, r *http.Request) {
+			project := r.PathValue("project")
+			title := r.PathValue("title")
+
+			root, err := resolve(project)
+			if err != nil {
+				writeResolverError(w, err)
+				return
+			}
+
+			diskRecords, err := LoadRecordsFromRepoRoot(root)
+			if err != nil {
+				slog.Error("failed to load instance records for action", "project", project, "err", err)
+				writeJSONError(w, http.StatusInternalServerError, "failed to load instance records")
+				return
+			}
+
+			if daemonLister != nil {
+				daemonRecords, daemonErr := daemonLister.ListInstancesForProject(project)
+				switch {
+				case daemonErr == nil:
+					// Daemon available — check whether this instance is daemon-owned.
+					for _, rec := range daemonRecords {
+						if rec.Title == title {
+							if daemonActions == nil {
+								writeJSONError(w, http.StatusInternalServerError, "daemon actions not configured")
+								return
+							}
+							if actErr := daemonActions.PostInstanceAction(project, title, act); actErr != nil {
+								mapDaemonActionError(w, actErr)
+								return
+							}
+							writeJSONAction(w)
+							return
+						}
+					}
+					// Instance not in daemon → fall through to standalone path.
+				case errors.Is(daemonErr, ErrDaemonUnavailable):
+					// Daemon unreachable: check disk records.
+					if _, findErr := FindRecord(diskRecords, title); findErr != nil {
+						// Not on disk either; we cannot safely act on something that
+						// may be daemon-owned but is currently unreachable.
+						writeJSONError(w, http.StatusBadGateway,
+							"daemon unavailable and instance not found on disk")
+						return
+					}
+					// Found on disk → fall through to standalone path (best-effort).
+				default:
+					slog.Warn("daemon instance lookup failed for action",
+						"project", project, "title", title, "err", daemonErr)
+					// Fall through to standalone path.
+				}
+			}
+
+			// Standalone path: apply action via state.json.
+			if err := ApplyAction(r.Context(), root, title, act, &ExecCommandRunner{}); err != nil {
+				mapApplyActionError(w, err)
+				return
+			}
+			writeJSONAction(w)
+		})
+	}
 
 	// POST /v1/projects/{project}/instances/{title}/send
 	// Sends a prompt to the agent's tmux pane. The instance must be in running
@@ -386,6 +473,7 @@ func recordToListEntry(rec Record) ListEntry {
 		WaveNumber:    rec.WaveNumber,
 		TaskNumber:    rec.TaskNumber,
 		ExecutionMode: rec.ExecutionMode,
+		ValidActions:  ValidActions(rec),
 	}
 	if !rec.CreatedAt.IsZero() {
 		e.CreatedAt = rec.CreatedAt.Format(time.RFC3339)
@@ -394,4 +482,46 @@ func recordToListEntry(rec Record) ListEntry {
 		e.UpdatedAt = rec.UpdatedAt.Format(time.RFC3339)
 	}
 	return e
+}
+
+// writeJSONAction writes the success response for a completed instance action.
+func writeJSONAction(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// mapDaemonActionError translates a PostInstanceAction error to an HTTP response,
+// preserving the daemon's original status code when available.
+func mapDaemonActionError(w http.ResponseWriter, err error) {
+	var clientErr *DaemonActionClientError
+	if errors.As(err, &clientErr) {
+		switch clientErr.StatusCode {
+		case http.StatusNotFound:
+			writeJSONError(w, http.StatusNotFound, clientErr.Msg)
+		case http.StatusConflict:
+			writeJSONError(w, http.StatusConflict, clientErr.Msg)
+		default:
+			writeJSONError(w, http.StatusBadGateway, clientErr.Msg)
+		}
+		return
+	}
+	if errors.Is(err, ErrDaemonUnavailable) {
+		writeJSONError(w, http.StatusBadGateway, "daemon unavailable")
+		return
+	}
+	writeJSONError(w, http.StatusBadGateway, err.Error())
+}
+
+// mapApplyActionError translates an ApplyAction error to an HTTP response.
+func mapApplyActionError(w http.ResponseWriter, err error) {
+	if errors.Is(err, ErrActionInstanceNotFound) {
+		writeJSONError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if errors.Is(err, ErrActionInvalidState) {
+		writeJSONError(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSONError(w, http.StatusInternalServerError, err.Error())
 }

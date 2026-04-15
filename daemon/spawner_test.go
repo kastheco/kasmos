@@ -367,6 +367,169 @@ func TestTmuxSpawner_SpawnFixer_MissingBranch(t *testing.T) {
 	assert.Contains(t, err.Error(), "Branch")
 }
 
+func TestTmuxSpawner_PauseInstance_NotFound(t *testing.T) {
+	s := NewTmuxSpawner()
+	err := s.PauseInstance("/tmp/repo", "nonexistent")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errSpawnerInstanceNotFound)
+}
+
+func TestTmuxSpawner_KillInstance_NotFound(t *testing.T) {
+	s := NewTmuxSpawner()
+	// KillInstance on non-existent instance must return errSpawnerInstanceNotFound
+	// so the daemon API layer can map the response to HTTP 404 instead of 200.
+	err := s.KillInstance("/tmp/repo", "nonexistent")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errSpawnerInstanceNotFound)
+}
+
+func TestTmuxSpawner_KillInstance_RemovesTracking(t *testing.T) {
+	s := NewTmuxSpawner()
+	killed := false
+	s.kill = func(_ *session.Instance) error { killed = true; return nil }
+
+	key := instanceKey("/tmp/repo", "plan.md", session.AgentTypeReviewer)
+	inst := &session.Instance{Title: "my-agent", Path: "/tmp/repo"}
+	s.instances[key] = inst
+	s.planFileByKey[key] = "plan.md"
+	s.agentTypeByKey[key] = session.AgentTypeReviewer
+	s.projectByKey[key] = "proj"
+
+	err := s.KillInstance("/tmp/repo", "my-agent")
+	require.NoError(t, err)
+	assert.True(t, killed)
+	assert.Empty(t, s.instances)
+}
+
+func TestTmuxSpawner_KillInstance_PreservesTrackingOnFailure(t *testing.T) {
+	s := NewTmuxSpawner()
+	killErr := errors.New("boom: session close failed")
+	s.kill = func(_ *session.Instance) error { return killErr }
+
+	key := instanceKey("/tmp/repo", "plan.md", session.AgentTypeReviewer)
+	inst := &session.Instance{Title: "my-agent", Path: "/tmp/repo"}
+	s.instances[key] = inst
+	s.planFileByKey[key] = "plan.md"
+	s.agentTypeByKey[key] = session.AgentTypeReviewer
+	s.projectByKey[key] = "proj"
+
+	err := s.KillInstance("/tmp/repo", "my-agent")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, killErr)
+	// Tracking must survive a failed kill so the caller can retry without
+	// leaving the session running but untracked.
+	assert.Contains(t, s.instances, key)
+	assert.Equal(t, "plan.md", s.planFileByKey[key])
+	assert.Equal(t, session.AgentTypeReviewer, s.agentTypeByKey[key])
+	assert.Equal(t, "proj", s.projectByKey[key])
+}
+
+func TestTmuxSpawner_PauseInstance_NotStarted_InvalidTransition(t *testing.T) {
+	s := NewTmuxSpawner()
+	key := instanceKey("/tmp/repo", "plan.md", session.AgentTypeReviewer)
+	inst := &session.Instance{Title: "agent-1", Path: "/tmp/repo"}
+	s.instances[key] = inst
+
+	err := s.PauseInstance("/tmp/repo", "agent-1")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errSpawnerInvalidTransition)
+}
+
+func TestTmuxSpawner_PauseInstance_AlreadyPaused_InvalidTransition(t *testing.T) {
+	s := NewTmuxSpawner()
+	key := instanceKey("/tmp/repo", "plan.md", session.AgentTypeReviewer)
+	inst := &session.Instance{Title: "agent-1", Path: "/tmp/repo", Status: session.Paused}
+	inst.MarkStartedForTest()
+	s.instances[key] = inst
+
+	err := s.PauseInstance("/tmp/repo", "agent-1")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errSpawnerInvalidTransition)
+}
+
+// TestTmuxSpawner_PauseInstance_Ready_InvalidTransition locks down the rule
+// that ready daemon rows only expose restart/kill. Pause on a ready row must
+// short-circuit with errSpawnerInvalidTransition before touching the session
+// so the daemon API layer returns HTTP 409 instead of detaching an
+// idle-but-available agent.
+func TestTmuxSpawner_PauseInstance_Ready_InvalidTransition(t *testing.T) {
+	s := NewTmuxSpawner()
+	key := instanceKey("/tmp/repo", "plan.md", session.AgentTypeReviewer)
+	inst := &session.Instance{Title: "agent-1", Path: "/tmp/repo", Status: session.Ready}
+	inst.MarkStartedForTest()
+	s.instances[key] = inst
+
+	err := s.PauseInstance("/tmp/repo", "agent-1")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errSpawnerInvalidTransition)
+	// Guard must short-circuit before inst.Pause() runs, so status stays ready.
+	assert.Equal(t, session.Ready, inst.Status)
+}
+
+func TestTmuxSpawner_ResumeInstance_NotStarted_InvalidTransition(t *testing.T) {
+	s := NewTmuxSpawner()
+	key := instanceKey("/tmp/repo", "plan.md", session.AgentTypeReviewer)
+	inst := &session.Instance{Title: "agent-1", Path: "/tmp/repo", Status: session.Paused}
+	s.instances[key] = inst
+
+	err := s.ResumeInstance("/tmp/repo", "agent-1")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errSpawnerInvalidTransition)
+}
+
+func TestTmuxSpawner_ResumeInstance_NotPaused_InvalidTransition(t *testing.T) {
+	s := NewTmuxSpawner()
+	key := instanceKey("/tmp/repo", "plan.md", session.AgentTypeReviewer)
+	inst := &session.Instance{Title: "agent-1", Path: "/tmp/repo", Status: session.Running}
+	inst.MarkStartedForTest()
+	s.instances[key] = inst
+
+	err := s.ResumeInstance("/tmp/repo", "agent-1")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errSpawnerInvalidTransition)
+}
+
+func TestTmuxSpawner_RestartInstance_NotStarted_InvalidTransition(t *testing.T) {
+	s := NewTmuxSpawner()
+	key := instanceKey("/tmp/repo", "plan.md", session.AgentTypeReviewer)
+	inst := &session.Instance{Title: "agent-1", Path: "/tmp/repo"}
+	s.instances[key] = inst
+
+	err := s.RestartInstance("/tmp/repo", "agent-1")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errSpawnerInvalidTransition)
+}
+
+func TestTmuxSpawner_RestartInstance_Paused_InvalidTransition(t *testing.T) {
+	s := NewTmuxSpawner()
+	key := instanceKey("/tmp/repo", "plan.md", session.AgentTypeReviewer)
+	inst := &session.Instance{Title: "agent-1", Path: "/tmp/repo", Status: session.Paused}
+	inst.MarkStartedForTest()
+	s.instances[key] = inst
+
+	err := s.RestartInstance("/tmp/repo", "agent-1")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errSpawnerInvalidTransition)
+}
+
+func TestTmuxSpawner_TrackedInstanceByTitle_Found(t *testing.T) {
+	s := NewTmuxSpawner()
+	key := instanceKey("/tmp/repo", "plan.md", session.AgentTypeCoder)
+	inst := &session.Instance{Title: "coder-1", Path: "/tmp/repo"}
+	s.instances[key] = inst
+
+	gotKey, gotInst, ok := s.trackedInstanceByTitle("/tmp/repo", "coder-1")
+	require.True(t, ok)
+	assert.Equal(t, key, gotKey)
+	assert.Equal(t, inst, gotInst)
+}
+
+func TestTmuxSpawner_TrackedInstanceByTitle_NotFound(t *testing.T) {
+	s := NewTmuxSpawner()
+	_, _, ok := s.trackedInstanceByTitle("/tmp/repo", "missing")
+	assert.False(t, ok)
+}
+
 func TestTmuxSpawner_SpawnFixer_MissingRepoPath(t *testing.T) {
 	s := NewTmuxSpawner()
 	err := s.SpawnFixer(context.Background(), loop.SpawnOpts{

@@ -1,0 +1,94 @@
+/* ── Trigger (three-dot) button ──────────────────────────────────────── */
+
+.trigger {
+  cursor: pointer;
+  padding: 2px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1;
+  color: var(--foreground-tertiary);
+  flex-shrink: 0;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.trigger:hover:not(:disabled) {
+  background: rgba(224, 222, 244, 0.06);
+  border-color: var(--card-border);
+  color: var(--foreground-secondary);
+}
+
+.trigger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Popover ─────────────────────────────────────────────────────────── */
+
+.popover {
+  position: fixed;
+  z-index: 8500;
+  width: 160px;
+  background: var(--rp-surface);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  padding: 4px 0;
+  overflow: hidden;
+  outline: none;
+  animation: fadeIn 0.1s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Menu items ──────────────────────────────────────────────────────── */
+
+.item {
+  display: block;
+  width: 100%;
+  padding: 7px 14px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--foreground);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  outline: none;
+}
+
+.item:hover:not(:disabled),
+.item:focus-visible:not(:disabled) {
+  background: rgba(224, 222, 244, 0.06);
+  color: var(--foreground);
+}
+
+/* Destructive — kill */
+.itemDestructive {
+  color: var(--rp-love);
+}
+
+.itemDestructive:hover:not(:disabled),
+.itemDestructive:focus-visible:not(:disabled) {
+  background: rgba(235, 111, 146, 0.08);
+  color: var(--rp-love);
+}
+
+/* Disabled */
+.itemDisabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}

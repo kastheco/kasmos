@@ -23,6 +23,14 @@ var ErrTaskStoreUnavailable = errors.New("task store unavailable")
 // registered with the daemon.
 var ErrProjectNotFound = errors.New("project not found")
 
+// ErrInstanceNotFound is returned when no instance with the given title is
+// registered with the daemon for the specified project.
+var ErrInstanceNotFound = errors.New("instance not found")
+
+// ErrInvalidTransition is returned when an action is not valid for the
+// instance's current state (e.g. pausing an already-paused instance).
+var ErrInvalidTransition = errors.New("invalid state transition")
+
 // ---------------------------------------------------------------------------
 // Wire types
 // ---------------------------------------------------------------------------
@@ -43,6 +51,12 @@ type StatusResponse struct {
 }
 
 // InstanceStatus describes a running agent instance.
+//
+// Ready distinguishes idle-but-available instances (the agent finished its
+// turn and is waiting for input) from actively-running ones. Ready=true
+// implies Active=true; both fields may be set on the same row. The web UI
+// uses Ready to restrict valid actions to {restart, kill} so ready daemon
+// rows are not rendered as generic "running".
 type InstanceStatus struct {
 	ID            string `json:"id"`
 	Project       string `json:"project"`
@@ -50,6 +64,7 @@ type InstanceStatus struct {
 	Role          string `json:"role"`
 	Active        bool   `json:"active"`
 	Loading       bool   `json:"loading,omitempty"`
+	Ready         bool   `json:"ready,omitempty"`
 	Title         string `json:"title,omitempty"`
 	Branch        string `json:"branch,omitempty"`
 	Program       string `json:"program,omitempty"`
@@ -91,6 +106,10 @@ type StateProvider interface {
 	ListInstances(project string) []InstanceStatus
 	StartPlan(project, filename, prompt, program string) error
 	EventStream() <-chan Event
+	PauseInstance(project, title string) error
+	ResumeInstance(project, title string) error
+	RestartInstance(project, title string) error
+	KillInstance(project, title string) error
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +199,19 @@ func (s *DaemonState) EventStream() <-chan Event {
 	return make(chan Event)
 }
 
+func (s *DaemonState) PauseInstance(_, _ string) error {
+	return fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
+}
+func (s *DaemonState) ResumeInstance(_, _ string) error {
+	return fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
+}
+func (s *DaemonState) RestartInstance(_, _ string) error {
+	return fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
+}
+func (s *DaemonState) KillInstance(_, _ string) error {
+	return fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
+}
+
 // ---------------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------------
@@ -232,6 +264,18 @@ func (h *Handler) registerRoutes() {
 	h.mux.HandleFunc("GET /v1/repos/{project}/plans", h.handleListPlans)
 	h.mux.HandleFunc("GET /v1/repos/{project}/tasks", h.handleListTasks)
 	h.mux.HandleFunc("GET /v1/repos/{project}/instances", h.handleListInstances)
+	h.mux.HandleFunc("POST /v1/repos/{project}/instances/{title}/pause", func(w http.ResponseWriter, r *http.Request) {
+		h.handleInstanceAction(w, r, "pause")
+	})
+	h.mux.HandleFunc("POST /v1/repos/{project}/instances/{title}/resume", func(w http.ResponseWriter, r *http.Request) {
+		h.handleInstanceAction(w, r, "resume")
+	})
+	h.mux.HandleFunc("POST /v1/repos/{project}/instances/{title}/restart", func(w http.ResponseWriter, r *http.Request) {
+		h.handleInstanceAction(w, r, "restart")
+	})
+	h.mux.HandleFunc("POST /v1/repos/{project}/instances/{title}/kill", func(w http.ResponseWriter, r *http.Request) {
+		h.handleInstanceAction(w, r, "kill")
+	})
 	h.mux.HandleFunc("POST /v1/repos/{project}/plans/{filename}/plan", h.handleStartPlan)
 	h.mux.HandleFunc("POST /v1/repos/{project}/plans/{filename}/implement", h.handleImplementPlan)
 
@@ -332,6 +376,41 @@ func (h *Handler) handleListInstances(w http.ResponseWriter, r *http.Request) {
 		instances = []InstanceStatus{}
 	}
 	writeJSON(w, http.StatusOK, instances)
+}
+
+// handleInstanceAction is a shared handler for the four per-instance POST action
+// routes (pause/resume/restart/kill). It maps sentinel errors from the
+// StateProvider to the correct HTTP status codes.
+func (h *Handler) handleInstanceAction(w http.ResponseWriter, r *http.Request, action string) {
+	project := r.PathValue("project")
+	title := r.PathValue("title")
+
+	var err error
+	switch action {
+	case "pause":
+		err = h.state.PauseInstance(project, title)
+	case "resume":
+		err = h.state.ResumeInstance(project, title)
+	case "restart":
+		err = h.state.RestartInstance(project, title)
+	case "kill":
+		err = h.state.KillInstance(project, title)
+	default:
+		writeError(w, http.StatusBadRequest, "unknown action: "+action)
+		return
+	}
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInstanceNotFound):
+			writeError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, ErrInvalidTransition):
+			writeError(w, http.StatusConflict, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // handleImplementPlan serves POST /v1/repos/{project}/plans/{filename}/implement.

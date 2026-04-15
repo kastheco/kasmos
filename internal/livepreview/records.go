@@ -177,31 +177,54 @@ func SessionName(title string) string {
 // ValidateAction checks whether the instance is in a state compatible with the
 // requested action and returns an error when it is not.
 //
-//   - kill:    allowed in any status
-//   - pause:   not allowed when already paused
-//   - resume:  only allowed when paused
+//   - kill:    allowed in any tmux-mode status; rejected for headless
+//   - pause:   not allowed when paused or ready; rejected for headless
+//   - resume:  only allowed when paused; rejected for headless
+//   - restart: not allowed when paused; rejected for headless
 //   - send:    only allowed in running/ready tmux-mode instances (not loading, paused, or headless)
 //   - capture: not allowed when paused or in headless mode
+//
+// Headless instances are rejected for pause/resume/restart/kill because the
+// web-action path cannot safely stop, restart, or resume a headless child
+// process it does not own — that lifecycle belongs to the daemon or TUI.
 func ValidateAction(rec Record, action string) error {
+	headless := config.NormalizeExecutionMode(rec.ExecutionMode) == config.ExecutionModeHeadless
 	switch action {
 	case "kill":
+		if headless {
+			return fmt.Errorf("cannot kill a headless instance")
+		}
 		return nil
 	case "pause":
-		if rec.Status == StatusPaused {
-			return fmt.Errorf("instance is already paused")
+		if headless {
+			return fmt.Errorf("cannot pause a headless instance")
+		}
+		if rec.Status == StatusPaused || rec.Status == StatusReady {
+			return fmt.Errorf("cannot pause instance in status %s", StatusLabel(rec.Status))
 		}
 		return nil
 	case "resume":
+		if headless {
+			return fmt.Errorf("cannot resume a headless instance")
+		}
 		if rec.Status != StatusPaused {
 			return fmt.Errorf("can only resume paused instances (current status: %s)", StatusLabel(rec.Status))
 		}
 		return nil
 	case "send":
-		if config.NormalizeExecutionMode(rec.ExecutionMode) == config.ExecutionModeHeadless {
+		if headless {
 			return fmt.Errorf("cannot send prompt to a headless instance")
 		}
 		if rec.Status != StatusRunning && rec.Status != StatusReady {
 			return fmt.Errorf("cannot send prompt to a %s instance", StatusLabel(rec.Status))
+		}
+		return nil
+	case "restart":
+		if headless {
+			return fmt.Errorf("cannot restart a headless instance")
+		}
+		if rec.Status == StatusPaused {
+			return fmt.Errorf("cannot restart a paused instance (resume it first)")
 		}
 		return nil
 	case "capture":
@@ -214,5 +237,27 @@ func ValidateAction(rec Record, action string) error {
 		return nil
 	default:
 		return fmt.Errorf("unknown action: %q", action)
+	}
+}
+
+// ValidActions returns the lifecycle actions that are valid for rec given its
+// current status. The order is stable and matches what the admin UI expects:
+// pause/restart before kill for active instances; resume before kill for paused;
+// restart/kill for ready (pause is not a valid transition out of ready).
+//
+// Headless instances have no tmux pane to pause, resume, or restart, so the
+// only lifecycle action available to them is kill. This keeps the contract
+// that the admin UI menu mirrors exactly what ValidateAction permits.
+func ValidActions(rec Record) []string {
+	if config.NormalizeExecutionMode(rec.ExecutionMode) == config.ExecutionModeHeadless {
+		return []string{"kill"}
+	}
+	switch rec.Status {
+	case StatusPaused:
+		return []string{"resume", "kill"}
+	case StatusReady:
+		return []string{"restart", "kill"}
+	default: // StatusRunning, StatusLoading
+		return []string{"pause", "restart", "kill"}
 	}
 }

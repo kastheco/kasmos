@@ -1,4 +1,4 @@
-import type { Status, TaskEntry, SubtaskEntry, TopicEntry, AuditEvent, InstanceEntry, ScrollbackDepth } from "./types";
+import type { Status, TaskEntry, SubtaskEntry, TopicEntry, AuditEvent, InstanceEntry, InstanceAction, ScrollbackDepth } from "./types";
 
 // Legacy persisted statuses that predate canonical normalization at ingest.
 // Mirrors config/taskfsm/fsm.go:MapLegacyStatus so the SPA reader boundary
@@ -387,6 +387,35 @@ export async function getInstanceCapture(
   const qs = params.toString();
   const url = `/v1/projects/${encodeURIComponent(project)}/instances/${encodeURIComponent(title)}/capture${qs ? `?${qs}` : ""}`;
   return requestText(url);
+}
+
+// ---- instance action helpers -------------------------------------------------
+
+async function postInstanceAction(
+  project: string,
+  title: string,
+  action: InstanceAction,
+): Promise<void> {
+  await request(
+    `/v1/projects/${encodeURIComponent(project)}/instances/${encodeURIComponent(title)}/${action}`,
+    { method: "POST" },
+  );
+}
+
+export async function pauseInstance(project: string, title: string): Promise<void> {
+  return postInstanceAction(project, title, "pause");
+}
+
+export async function resumeInstance(project: string, title: string): Promise<void> {
+  return postInstanceAction(project, title, "resume");
+}
+
+export async function restartInstance(project: string, title: string): Promise<void> {
+  return postInstanceAction(project, title, "restart");
+}
+
+export async function killInstance(project: string, title: string): Promise<void> {
+  return postInstanceAction(project, title, "kill");
 }
 
 export async function sendInstancePrompt(

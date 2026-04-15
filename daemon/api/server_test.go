@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -121,6 +122,102 @@ func TestHandler_ListTasks(t *testing.T) {
 	require.NoError(t, json.NewDecoder(bytes.NewReader(nilW.Body.Bytes())).Decode(&emptyTasks))
 	assert.NotNil(t, emptyTasks)
 	assert.Len(t, emptyTasks, 0)
+}
+
+type instanceActionStub struct {
+	DaemonState
+	project string
+	title   string
+	action  string
+	err     error
+}
+
+func (s *instanceActionStub) ListInstances(_ string) []InstanceStatus { return nil }
+func (s *instanceActionStub) EventStream() <-chan Event               { return make(chan Event) }
+func (s *instanceActionStub) StartPlan(_, _, _, _ string) error       { return nil }
+func (s *instanceActionStub) ListPlans(_ string) ([]taskstore.TaskEntry, error) {
+	return nil, nil
+}
+func (s *instanceActionStub) ListTasks(_ string) ([]TaskStatus, error) { return nil, nil }
+func (s *instanceActionStub) PauseInstance(project, title string) error {
+	s.project = project
+	s.title = title
+	s.action = "pause"
+	return s.err
+}
+func (s *instanceActionStub) ResumeInstance(project, title string) error {
+	s.project = project
+	s.title = title
+	s.action = "resume"
+	return s.err
+}
+func (s *instanceActionStub) RestartInstance(project, title string) error {
+	s.project = project
+	s.title = title
+	s.action = "restart"
+	return s.err
+}
+func (s *instanceActionStub) KillInstance(project, title string) error {
+	s.project = project
+	s.title = title
+	s.action = "kill"
+	return s.err
+}
+
+func TestHandler_InstanceAction_HappyPath(t *testing.T) {
+	for _, action := range []string{"pause", "resume", "restart", "kill"} {
+		t.Run(action, func(t *testing.T) {
+			state := &instanceActionStub{}
+			h := NewHandler(state)
+
+			req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/my-agent/"+action, nil)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+			assert.Equal(t, "myproj", state.project)
+			assert.Equal(t, "my-agent", state.title)
+			assert.Equal(t, action, state.action)
+		})
+	}
+}
+
+func TestHandler_InstanceAction_NotFound(t *testing.T) {
+	// Every action (pause/resume/restart/kill) must return 404 when the backing
+	// StateProvider reports the instance is not tracked. Locks down the
+	// acceptance criterion that missing-title calls — including kill — map to
+	// 404 instead of the previous 200 no-op.
+	for _, action := range []string{"pause", "resume", "restart", "kill"} {
+		t.Run(action, func(t *testing.T) {
+			state := &instanceActionStub{err: fmt.Errorf("%w: missing", ErrInstanceNotFound)}
+			h := NewHandler(state)
+
+			req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/missing/"+action, nil)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusNotFound, w.Code, "body: %s", w.Body.String())
+		})
+	}
+}
+
+func TestHandler_InstanceAction_Conflict(t *testing.T) {
+	// Pause/resume/restart must return 409 when the adapter wraps the error as
+	// ErrInvalidTransition. Kill has no "invalid transition" case at the HTTP
+	// layer (precondition failures such as dirty worktrees stay as 500), so it
+	// is deliberately omitted here.
+	for _, action := range []string{"pause", "resume", "restart"} {
+		t.Run(action, func(t *testing.T) {
+			state := &instanceActionStub{err: fmt.Errorf("%w: bad state", ErrInvalidTransition)}
+			h := NewHandler(state)
+
+			req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/my-agent/"+action, nil)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusConflict, w.Code, "body: %s", w.Body.String())
+		})
+	}
 }
 
 func TestHandler_StartPlan(t *testing.T) {

@@ -60,6 +60,7 @@ export interface TopicEntry {
 
 export type InstanceStatus = "running" | "ready" | "loading" | "paused";
 
+export type InstanceAction = "pause" | "resume" | "restart" | "kill";
 export type ScrollbackDepth = "120" | "1000" | "full";
 export type ExecutionMode = "tmux" | "headless";
 
@@ -75,6 +76,7 @@ export interface InstanceEntry {
   created_at?: string;
   updated_at?: string;
   execution_mode?: ExecutionMode;
+  valid_actions?: InstanceAction[];
 }
 
 export interface AuditEvent {

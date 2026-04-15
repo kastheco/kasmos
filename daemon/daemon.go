@@ -208,6 +208,7 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 				continue
 			}
 			active := !inst.Paused() && !inst.Exited && (inst.Started() || inst.Status == session.Loading)
+			ready := active && inst.Status == session.Ready
 			out = append(out, api.InstanceStatus{
 				ID:            inst.Title,
 				Project:       project,
@@ -215,6 +216,7 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 				Role:          inst.AgentType,
 				Active:        active,
 				Loading:       inst.Status == session.Loading,
+				Ready:         ready,
 				Title:         inst.Title,
 				Branch:        inst.Branch,
 				Program:       inst.Program,
@@ -240,6 +242,68 @@ func (a *daemonStateAdapter) EventStream() <-chan api.Event {
 		return a.d.broadcaster.Subscribe()
 	}
 	return make(chan api.Event)
+}
+
+// repoPathByProject returns the file-system path for the registered repo with the
+// given project name. Returns ("", false) when no matching project is registered.
+func (a *daemonStateAdapter) repoPathByProject(project string) (string, bool) {
+	for _, e := range a.d.repos.List() {
+		if e.Project == project {
+			return e.Path, true
+		}
+	}
+	return "", false
+}
+
+// mapSpawnerInstanceErr translates internal spawner sentinel errors to the
+// api-layer sentinels that daemon/api/server.go maps to HTTP status codes.
+func (a *daemonStateAdapter) mapSpawnerInstanceErr(err error, project, title string) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, errSpawnerInstanceNotFound) {
+		return fmt.Errorf("%w: %s/%s", api.ErrInstanceNotFound, project, title)
+	}
+	if errors.Is(err, errSpawnerInvalidTransition) {
+		return fmt.Errorf("%w: %s/%s", api.ErrInvalidTransition, project, title)
+	}
+	return err
+}
+
+// PauseInstance implements StateProvider.
+func (a *daemonStateAdapter) PauseInstance(project, title string) error {
+	repoPath, ok := a.repoPathByProject(project)
+	if !ok {
+		return fmt.Errorf("%w: project %s", api.ErrProjectNotFound, project)
+	}
+	return a.mapSpawnerInstanceErr(a.d.spawner.PauseInstance(repoPath, title), project, title)
+}
+
+// ResumeInstance implements StateProvider.
+func (a *daemonStateAdapter) ResumeInstance(project, title string) error {
+	repoPath, ok := a.repoPathByProject(project)
+	if !ok {
+		return fmt.Errorf("%w: project %s", api.ErrProjectNotFound, project)
+	}
+	return a.mapSpawnerInstanceErr(a.d.spawner.ResumeInstance(repoPath, title), project, title)
+}
+
+// RestartInstance implements StateProvider.
+func (a *daemonStateAdapter) RestartInstance(project, title string) error {
+	repoPath, ok := a.repoPathByProject(project)
+	if !ok {
+		return fmt.Errorf("%w: project %s", api.ErrProjectNotFound, project)
+	}
+	return a.mapSpawnerInstanceErr(a.d.spawner.RestartInstance(repoPath, title), project, title)
+}
+
+// KillInstance implements StateProvider.
+func (a *daemonStateAdapter) KillInstance(project, title string) error {
+	repoPath, ok := a.repoPathByProject(project)
+	if !ok {
+		return fmt.Errorf("%w: project %s", api.ErrProjectNotFound, project)
+	}
+	return a.mapSpawnerInstanceErr(a.d.spawner.KillInstance(repoPath, title), project, title)
 }
 
 // NewDaemon creates a new Daemon from the given configuration. The daemon is
