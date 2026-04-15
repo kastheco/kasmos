@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"syscall"
 	"time"
@@ -90,9 +91,6 @@ func (l *daemonInstanceLister) ListInstancesForProject(project string) ([]livepr
 
 	out := make([]livepreview.Record, 0, len(statuses))
 	for _, s := range statuses {
-		if !s.Active {
-			continue
-		}
 		out = append(out, daemonStatusToRecord(s))
 	}
 	return out, nil
@@ -120,6 +118,36 @@ func daemonStatusToRecord(s api.InstanceStatus) livepreview.Record {
 		TaskNumber:  s.TaskNumber,
 		ReviewCycle: s.ReviewCycle,
 	}
+}
+
+// PostInstanceAction implements livepreview.DaemonInstanceActioner by POSTing to
+// POST /v1/repos/{project}/instances/{title}/{action} on the daemon. Daemon HTTP
+// error responses are translated to *livepreview.DaemonActionClientError so the
+// serve-side handler can preserve the original status code.
+func (l *daemonInstanceLister) PostInstanceAction(project, title, action string) error {
+	u := "http://daemon/v1/repos/" + project + "/instances/" + url.PathEscape(title) + "/" + action
+	resp, err := l.http.Post(u, "application/json", http.NoBody)
+	if err != nil {
+		if isDaemonSocketUnreachable(err) {
+			return livepreview.ErrDaemonUnavailable
+		}
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		return nil
+	}
+
+	var body struct {
+		Error string `json:"error"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	msg := body.Error
+	if msg == "" {
+		msg = resp.Status
+	}
+	return &livepreview.DaemonActionClientError{StatusCode: resp.StatusCode, Msg: msg}
 }
 
 // isDaemonSocketUnreachable returns true when err indicates the daemon Unix

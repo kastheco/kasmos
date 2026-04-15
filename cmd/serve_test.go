@@ -277,6 +277,37 @@ func TestServeMCPServer_MultipleReposNoError(t *testing.T) {
 	assert.NotNil(t, srv)
 }
 
+func TestNewServeAPIRootMux_InstanceActionRoutesRegistered(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "mux_test.db")
+	sharedDB, store, gw, logger, err := openServeSQLiteBackends(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { sharedDB.Close() })
+
+	taskAPI := taskstore.NewHandler(store)
+	auditAPI := auditlog.NewHandler(logger)
+	actionsAPI := taskactions.NewHandler(store, gw)
+
+	// A fake previewAPI that records which action routes hit it.
+	var gotPaths []string
+	fakePreview := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPaths = append(gotPaths, r.Method+" "+r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI, fakePreview)
+
+	for _, action := range []string{"pause", "resume", "restart", "kill"} {
+		gotPaths = nil
+		path := "/v1/projects/proj/instances/agent/" + action
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code, "action %s returned %d", action, rec.Code)
+		require.Len(t, gotPaths, 1, "action %s did not reach previewAPI", action)
+		assert.Equal(t, "POST "+path, gotPaths[0])
+	}
+}
+
 func TestServeMCPServer_ZeroRepoDB_RoutesFromDB(t *testing.T) {
 	// Parity test: newServeMCPServer with zero repos and a sharedDB must
 	// share the same DB-backed routing behaviour as the kas mcp path.

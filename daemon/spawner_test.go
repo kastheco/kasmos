@@ -367,6 +367,56 @@ func TestTmuxSpawner_SpawnFixer_MissingBranch(t *testing.T) {
 	assert.Contains(t, err.Error(), "Branch")
 }
 
+func TestTmuxSpawner_PauseInstance_NotFound(t *testing.T) {
+	s := NewTmuxSpawner()
+	err := s.PauseInstance("/tmp/repo", "nonexistent")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errSpawnerInstanceNotFound)
+}
+
+func TestTmuxSpawner_KillInstance_NoOp(t *testing.T) {
+	s := NewTmuxSpawner()
+	// KillInstance on non-existent instance is a no-op.
+	err := s.KillInstance("/tmp/repo", "nonexistent")
+	assert.NoError(t, err)
+}
+
+func TestTmuxSpawner_KillInstance_RemovesTracking(t *testing.T) {
+	s := NewTmuxSpawner()
+	killed := false
+	s.kill = func(_ *session.Instance) error { killed = true; return nil }
+
+	key := instanceKey("/tmp/repo", "plan.md", session.AgentTypeReviewer)
+	inst := &session.Instance{Title: "my-agent", Path: "/tmp/repo"}
+	s.instances[key] = inst
+	s.planFileByKey[key] = "plan.md"
+	s.agentTypeByKey[key] = session.AgentTypeReviewer
+	s.projectByKey[key] = "proj"
+
+	err := s.KillInstance("/tmp/repo", "my-agent")
+	require.NoError(t, err)
+	assert.True(t, killed)
+	assert.Empty(t, s.instances)
+}
+
+func TestTmuxSpawner_TrackedInstanceByTitle_Found(t *testing.T) {
+	s := NewTmuxSpawner()
+	key := instanceKey("/tmp/repo", "plan.md", session.AgentTypeCoder)
+	inst := &session.Instance{Title: "coder-1", Path: "/tmp/repo"}
+	s.instances[key] = inst
+
+	gotKey, gotInst, ok := s.trackedInstanceByTitle("/tmp/repo", "coder-1")
+	require.True(t, ok)
+	assert.Equal(t, key, gotKey)
+	assert.Equal(t, inst, gotInst)
+}
+
+func TestTmuxSpawner_TrackedInstanceByTitle_NotFound(t *testing.T) {
+	s := NewTmuxSpawner()
+	_, _, ok := s.trackedInstanceByTitle("/tmp/repo", "missing")
+	assert.False(t, ok)
+}
+
 func TestTmuxSpawner_SpawnFixer_MissingRepoPath(t *testing.T) {
 	s := NewTmuxSpawner()
 	err := s.SpawnFixer(context.Background(), loop.SpawnOpts{

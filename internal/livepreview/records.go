@@ -201,6 +201,11 @@ func ValidateAction(rec Record, action string) error {
 			return fmt.Errorf("cannot send prompt to a paused instance")
 		}
 		return nil
+	case "restart":
+		if rec.Status == StatusPaused {
+			return fmt.Errorf("cannot restart a paused instance (resume it first)")
+		}
+		return nil
 	case "capture":
 		if rec.Status == StatusPaused {
 			return fmt.Errorf("cannot capture pane from a paused instance")
@@ -208,5 +213,17 @@ func ValidateAction(rec Record, action string) error {
 		return nil
 	default:
 		return fmt.Errorf("unknown action: %q", action)
+	}
+}
+
+// ValidActions returns the lifecycle actions that are valid for rec given its
+// current status. The order is stable and matches what the admin UI expects:
+// pause/restart before kill for active instances; resume before kill for paused.
+func ValidActions(rec Record) []string {
+	switch rec.Status {
+	case StatusPaused:
+		return []string{"resume", "kill"}
+	default: // StatusRunning, StatusLoading, StatusReady
+		return []string{"pause", "restart", "kill"}
 	}
 }

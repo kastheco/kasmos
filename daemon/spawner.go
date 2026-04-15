@@ -79,6 +79,14 @@ type TmuxSpawner struct {
 
 var errInstanceAlreadyTracked = errors.New("instance already tracked")
 
+// errSpawnerInstanceNotFound is returned by per-instance action methods when no
+// tracked instance matches the given repo/title pair.
+var errSpawnerInstanceNotFound = errors.New("instance not found in spawner")
+
+// errSpawnerInvalidTransition is returned by per-instance action methods when
+// the requested action is not valid for the instance's current state.
+var errSpawnerInvalidTransition = errors.New("invalid instance state transition")
+
 // NewTmuxSpawner returns a TmuxSpawner. An optional TmuxSpawnerConfig may be
 // provided; if omitted or zero-valued, sensible defaults are used.
 func NewTmuxSpawner(cfgs ...TmuxSpawnerConfig) *TmuxSpawner {
@@ -341,6 +349,68 @@ func (s *TmuxSpawner) InstancesForRepo(repoPath string) []*session.Instance {
 		out = append(out, inst)
 	}
 	return out
+}
+
+// trackedInstanceByTitle returns the tracking key and instance pointer for the
+// first tracked instance whose repo path and title match. Returns ok=false when
+// no matching instance is found. The caller must not hold s.mu on entry.
+func (s *TmuxSpawner) trackedInstanceByTitle(repoPath, title string) (key string, inst *session.Instance, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k, i := range s.instances {
+		if i == nil || i.Path != repoPath || i.Title != title {
+			continue
+		}
+		return k, i, true
+	}
+	return "", nil, false
+}
+
+// PauseInstance pauses the tracked instance with the given title under repoPath.
+// It delegates to session.Instance.Pause() so existing worktree-skipping behaviour
+// is preserved for daemon-managed shared task worktrees.
+func (s *TmuxSpawner) PauseInstance(repoPath, title string) error {
+	_, inst, ok := s.trackedInstanceByTitle(repoPath, title)
+	if !ok {
+		return fmt.Errorf("%w: %s/%s", errSpawnerInstanceNotFound, repoPath, title)
+	}
+	return inst.Pause()
+}
+
+// ResumeInstance resumes the tracked instance with the given title under repoPath.
+func (s *TmuxSpawner) ResumeInstance(repoPath, title string) error {
+	_, inst, ok := s.trackedInstanceByTitle(repoPath, title)
+	if !ok {
+		return fmt.Errorf("%w: %s/%s", errSpawnerInstanceNotFound, repoPath, title)
+	}
+	return inst.Resume()
+}
+
+// RestartInstance restarts the tracked instance with the given title under repoPath.
+func (s *TmuxSpawner) RestartInstance(repoPath, title string) error {
+	_, inst, ok := s.trackedInstanceByTitle(repoPath, title)
+	if !ok {
+		return fmt.Errorf("%w: %s/%s", errSpawnerInstanceNotFound, repoPath, title)
+	}
+	return inst.Restart()
+}
+
+// KillInstance stops the tracked instance with the given title under repoPath and
+// removes it from the tracking maps. It is a no-op when no matching instance is
+// found (unlike PauseInstance/ResumeInstance/RestartInstance which return an error).
+func (s *TmuxSpawner) KillInstance(repoPath, title string) error {
+	key, inst, ok := s.trackedInstanceByTitle(repoPath, title)
+	if !ok {
+		return nil
+	}
+	err := s.kill(inst)
+	s.mu.Lock()
+	delete(s.instances, key)
+	delete(s.planFileByKey, key)
+	delete(s.agentTypeByKey, key)
+	delete(s.projectByKey, key)
+	s.mu.Unlock()
+	return err
 }
 
 // instanceKey returns the map key for the given repo path, plan file, and agent

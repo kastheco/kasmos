@@ -205,7 +205,7 @@ func TestHTTPHandler_ListInstances_MergesDaemonRecords(t *testing.T) {
 		},
 	}
 
-	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, daemon)
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, daemon, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -237,7 +237,7 @@ func TestHTTPHandler_ListInstances_DaemonWinsOnTitleCollision(t *testing.T) {
 		},
 	}
 
-	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, daemon)
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, daemon, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -261,7 +261,7 @@ func TestHTTPHandler_ListInstances_FallsBackWhenDaemonUnavailable(t *testing.T) 
 	)
 	daemon := &fakeDaemonLister{err: ErrDaemonUnavailable}
 
-	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, daemon)
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, daemon, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -289,7 +289,7 @@ func TestHTTPHandler_CaptureInstance_FindsDaemonOnlyRecord(t *testing.T) {
 	}
 	runner := paneOutputRunner("planner output\n")
 
-	h := NewHTTPHandlerWithDaemon(resolverFor(root), runner, daemon)
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), runner, daemon, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances/feature-plan/capture", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -500,4 +500,110 @@ func TestHTTPHandler_Capture_PreviewUnavailable(t *testing.T) {
 
 	require.Equal(t, http.StatusNotImplemented, rec.Code)
 	assert.JSONEq(t, `{"error":"live preview requires kas serve --repo"}`, rec.Body.String())
+}
+
+// ---------------------------------------------------------------------------
+// Instance action routes
+// ---------------------------------------------------------------------------
+
+// fakeDaemonActioner records PostInstanceAction calls for test verification.
+type fakeDaemonActioner struct {
+	project string
+	title   string
+	action  string
+	err     error
+}
+
+func (f *fakeDaemonActioner) PostInstanceAction(project, title, action string) error {
+	f.project = project
+	f.title = title
+	f.action = action
+	return f.err
+}
+
+func TestHTTPHandler_Action_DaemonOwned_ForwardsToDaemon(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root) // empty state.json
+
+	daemonLister := &fakeDaemonLister{
+		records: []Record{
+			{Title: "daemon-agent", Status: StatusRunning},
+		},
+	}
+	actioner := &fakeDaemonActioner{}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, daemonLister, actioner)
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/daemon-agent/pause", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "proj", actioner.project)
+	assert.Equal(t, "daemon-agent", actioner.title)
+	assert.Equal(t, "pause", actioner.action)
+}
+
+func TestHTTPHandler_Action_DaemonUnavailable_NotInDisk_Returns502(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root) // empty
+
+	daemonLister := &fakeDaemonLister{err: ErrDaemonUnavailable}
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, daemonLister, nil)
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/missing/kill", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadGateway, rec.Code)
+}
+
+func TestHTTPHandler_ListInstances_HasValidActions(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root,
+		Record{Title: "running-agent", Status: StatusRunning},
+		Record{Title: "paused-agent", Status: StatusPaused},
+	)
+
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var entries []ListEntry
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&entries))
+	require.Len(t, entries, 2)
+
+	assert.Equal(t, []string{"pause", "restart", "kill"}, entries[0].ValidActions)
+	assert.Equal(t, []string{"resume", "kill"}, entries[1].ValidActions)
+}
+
+func TestHTTPHandler_Action_StandaloneInstance_Kill(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "solo-agent", Status: StatusRunning})
+
+	// No daemon lister — pure standalone path.
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/solo-agent/kill", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	// 200 OK — kill is always valid, best-effort tmux stop.
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	// Record should be removed from state.json.
+	records, err := LoadRecordsFromRepoRoot(root)
+	require.NoError(t, err)
+	assert.Empty(t, records)
+}
+
+func TestHTTPHandler_Action_StandaloneInstance_NotFound(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root) // empty
+
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/missing/kill", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
