@@ -1,0 +1,4 @@
+[default.extend-words]
+# "caf-au-lait" is correct expected output in slugifyTaskName tests that strip
+# non-ASCII from "café au lait". typos incorrectly flags "caf" as "calf".
+caf = "caf"
