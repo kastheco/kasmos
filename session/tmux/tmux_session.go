@@ -25,6 +25,16 @@ const ProgramClaude = "claude"
 const ProgramAider = "aider"
 const ProgramGemini = "gemini"
 const ProgramOpenCode = "opencode"
+const ProgramCodex = "codex"
+
+// codexBypassFlag disables the codex sandbox and approval prompts so kasmos
+// can drive codex non-interactively. Verified against `codex --help`.
+const codexBypassFlag = "--dangerously-bypass-approvals-and-sandbox"
+
+// codexGracePeriod is the minimum time to wait before treating a codex session
+// as ready when no stable startup banner is available. Exposed as a var so
+// tests can shorten it without real-time delays.
+var codexGracePeriod = 2 * time.Second
 
 // ansiRe strips ANSI escape sequences (SGR, cursor movement, etc.) so that
 // content hashing is not affected by cursor blink, color resets, or other
@@ -261,6 +271,23 @@ func isOpenCodeProgram(program string) bool {
 	return programBase(program) == ProgramOpenCode
 }
 
+// isCodexProgram returns true if the program string refers to the Codex CLI.
+func isCodexProgram(program string) bool {
+	return programBase(program) == ProgramCodex
+}
+
+// programSupportsAgentFlag returns true if the program accepts a --agent <type>
+// flag injected by kasmos. Only Claude and OpenCode are allowlisted; codex and
+// legacy programs do not support this flag.
+func programSupportsAgentFlag(program string) bool {
+	switch programBase(program) {
+	case ProgramClaude, ProgramOpenCode:
+		return true
+	default:
+		return false
+	}
+}
+
 func resolveShellProgram(program string) string {
 	trimmed := strings.TrimSpace(program)
 	if trimmed == "" {
@@ -297,24 +324,39 @@ func (t *TmuxSession) Start(workDir string) error {
 		return t.Restore()
 	}
 
-	// Append --permission-mode bypassPermissions for Claude programs if enabled.
-	// This is the modern replacement for --permission-mode bypassPermissions.
 	program := resolveShellProgram(t.program)
+
+	// Resolve the harness-specific adapter once; nil for legacy programs (aider/gemini).
+	adapter := AdapterFor(t.program)
+
+	// Append permission-bypass flags.
 	if t.skipPermissions && isClaudeProgram(t.program) {
 		program = program + " --permission-mode bypassPermissions"
 	}
-	if t.agentType != "" && !strings.Contains(program, "--agent") {
+	if t.skipPermissions && isCodexProgram(t.program) {
+		program = program + " " + codexBypassFlag
+	}
+
+	// Inject --agent only for programs that recognise the flag (Claude, OpenCode).
+	if t.agentType != "" && programSupportsAgentFlag(t.program) {
 		program = program + " --agent " + t.agentType
 	}
-	if t.initialPrompt != "" {
-		switch {
-		case isOpenCodeProgram(t.program):
-			program = program + " --prompt " + t.promptArgOpenCode(workDir)
-		case isClaudeProgram(t.program):
-			program = program + " " + t.promptArgClaude(workDir)
+
+	// Bake the initial prompt into the CLI command using adapter-provided syntax.
+	// OpenCode: --prompt <arg>. Claude and Codex: positional argument.
+	// Aider/gemini: no CLI prompt support — callers keep QueuedPrompt set so
+	// the send-keys fallback fires from the app tick handler.
+	if t.initialPrompt != "" && adapter != nil && adapter.SupportsCliPrompt() {
+		writeFileFunc := func(_ string) string {
+			return t.writePromptFile(workDir)
 		}
-		// aider/gemini: no CLI prompt support — callers keep QueuedPrompt
-		// set so the send-keys fallback fires from the app tick handler.
+		promptArg := adapter.BuildPromptArg(t.initialPrompt, workDir, writeFileFunc)
+		if isOpenCodeProgram(t.program) {
+			program = program + " --prompt " + promptArg
+		} else {
+			// claude, codex: prompt is a positional argument.
+			program = program + " " + promptArg
+		}
 	}
 	if isOpenCodeProgram(t.program) {
 		if configPath := opencodesession.ProjectConfigPath(workDir); configPath != "" {
@@ -450,22 +492,24 @@ func (t *TmuxSession) Start(workDir string) error {
 		return fmt.Errorf("error restoring tmux session: %w", err)
 	}
 
-	if isClaudeProgram(t.program) || isAiderProgram(t.program) || isGeminiProgram(t.program) || isOpenCodeProgram(t.program) {
+	// Wait for the program to reach its ready state. Adapter-backed programs
+	// (claude, opencode, codex) use the adapter's ReadyString / MaxWaitTime.
+	// Legacy aider/gemini use a hardcoded fallback path.
+	if adapter != nil || isAiderProgram(t.program) || isGeminiProgram(t.program) {
 		t.reportProgress(4, "Waiting for program to start...")
 
 		var searchString string
-		var tapFunc func() error // nil means no key tap needed (e.g. opencode)
+		var tapFunc func() error // nil means no key tap needed
 		maxWaitTime := 30 * time.Second
 
-		switch {
-		case isClaudeProgram(t.program):
-			searchString = "Do you trust the files in this folder?"
-			tapFunc = t.TapEnter
-		case isOpenCodeProgram(t.program):
-			// opencode shows its input placeholder once the TUI is ready; no tap needed.
-			searchString = "Ask anything"
-			tapFunc = nil
-		default: // aider / gemini
+		if adapter != nil {
+			searchString = adapter.ReadyString()
+			maxWaitTime = adapter.MaxWaitTime()
+			if adapter.NeedsTrustTap() {
+				tapFunc = t.TapEnter
+			}
+		} else {
+			// aider / gemini: hardcoded startup banner + D-Enter tap.
 			searchString = "Open documentation url for more info"
 			tapFunc = t.TapDAndEnter
 			maxWaitTime = 45 * time.Second
@@ -493,13 +537,21 @@ func (t *TmuxSession) Start(workDir string) error {
 			}
 
 			content, err := t.CapturePaneContent()
-			if err == nil && strings.Contains(content, searchString) {
-				if tapFunc != nil {
-					if err := tapFunc(); err != nil {
-						log.ErrorLog.Printf("could not tap enter on trust screen: %v", err)
+			if err == nil {
+				if searchString == "" {
+					// No stable printable startup banner (e.g. codex): wait a short
+					// grace period, verify the session is still alive, then continue.
+					if time.Since(startTime) >= codexGracePeriod && t.DoesSessionExist() {
+						break
 					}
+				} else if strings.Contains(content, searchString) {
+					if tapFunc != nil {
+						if err := tapFunc(); err != nil {
+							log.ErrorLog.Printf("could not tap enter on trust screen: %v", err)
+						}
+					}
+					break
 				}
-				break
 			}
 
 			// Exponential backoff with cap at 1 second.
