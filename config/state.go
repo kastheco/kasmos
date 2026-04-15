@@ -5,9 +5,35 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
+	"testing"
 
 	"github.com/kastheco/kasmos/log"
 )
+
+// testSaveStateAllowed is flipped on by tests that legitimately need to
+// exercise disk-backed SaveState (e.g. integration tests that want to verify
+// round-trip persistence). Default is 0 (disallowed).
+//
+// This guard exists because SaveState resolves to
+// <repo-root>/.kasmos/state.json via GetConfigDir, which means ANY test that
+// constructs a real *config.State and triggers SaveInstances clobbers the
+// user's live instance list when go test runs from inside a kasmos checkout.
+// A single leaking test wipes running agents from the admin UI and the TUI
+// lose visibility of them. See cmd/cmd_testmain_test.go for the regression
+// guard at the cmd-package level.
+var testSaveStateAllowed atomic.Bool
+
+// AllowSaveStateInTest opts the current test process into real SaveState
+// writes. Used by integration tests that genuinely need disk persistence.
+// Most unit tests should NOT call this — use an in-memory StateManager
+// (e.g. cmd/instance_test.go's inMemoryStateManager) instead.
+//
+// The t argument is required so the function can only be called from test
+// code; it is not used at runtime.
+func AllowSaveStateInTest(_ *testing.T) {
+	testSaveStateAllowed.Store(true)
+}
 
 const (
 	// StateFileName is the name of the JSON state file within the config dir.
@@ -88,7 +114,14 @@ func LoadState() *State {
 }
 
 // SaveState serialises s as indented JSON and writes it to the config directory.
+// Under `go test` it refuses to write unless a test has explicitly opted in
+// via AllowSaveStateInTest, preventing leaking tests from clobbering the
+// user's live <repo>/.kasmos/state.json.
 func SaveState(s *State) error {
+	if testing.Testing() && !testSaveStateAllowed.Load() {
+		return fmt.Errorf("config.SaveState refused during test: use an in-memory StateManager, " +
+			"or call config.AllowSaveStateInTest(t) if the test genuinely needs disk persistence")
+	}
 	dir, err := GetConfigDir()
 	if err != nil {
 		return fmt.Errorf("failed to get config directory: %w", err)

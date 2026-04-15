@@ -24,6 +24,29 @@ type ProjectRootResolver func(project string) (string, error)
 // available because kas serve was started without --repo flags.
 var ErrPreviewUnavailable = errors.New("live preview requires kas serve --repo")
 
+// ErrDaemonUnavailable signals to the list/capture handlers that the daemon
+// socket is not reachable. Returning this error from a DaemonInstanceLister
+// causes the handler to fall back to state.json-only results instead of
+// surfacing an error to the client.
+var ErrDaemonUnavailable = errors.New("daemon instance source unavailable")
+
+// DaemonInstanceLister is the abstraction the live-preview HTTP handler uses
+// to merge daemon-tracked (in-memory) instances with the on-disk state.json
+// records. Implementations typically wrap the daemon's Unix-socket API client
+// and convert daemon.api.InstanceStatus into livepreview.Record values.
+//
+// Without this source, the handler only sees TUI-spawned standalone instances
+// (which get written to state.json) and plan-associated daemon-spawned
+// instances (planner / reviewer / fixer / architect / master / wave task)
+// are invisible in the admin UI.
+type DaemonInstanceLister interface {
+	// ListInstancesForProject returns the live instance records tracked by the
+	// daemon for the given project. When the daemon is not reachable the
+	// implementation should return ErrDaemonUnavailable and the handler will
+	// fall back to state.json only.
+	ListInstancesForProject(project string) ([]Record, error)
+}
+
 // ExecPaneRunner is a PaneRunner backed by os/exec.
 type ExecPaneRunner struct{}
 
@@ -84,14 +107,52 @@ type ListEntry struct {
 	UpdatedAt  string `json:"updated_at,omitempty"`
 }
 
-// NewHTTPHandler returns an http.Handler that serves the live-preview API.
+// NewHTTPHandler returns an http.Handler that serves the live-preview API
+// with state.json as the only instance source. Equivalent to calling
+// NewHTTPHandlerWithDaemon(resolve, runner, nil).
+func NewHTTPHandler(resolve ProjectRootResolver, runner PaneRunner) http.Handler {
+	return NewHTTPHandlerWithDaemon(resolve, runner, nil)
+}
+
+// NewHTTPHandlerWithDaemon returns an http.Handler that serves the live-preview
+// API, merging the daemon's in-memory instance list with the on-disk state.json
+// records so plan-associated (daemon-spawned) instances are visible alongside
+// TUI-spawned standalone instances.
 //
 // Routes registered on an internal mux:
 //
 //	GET /v1/projects/{project}/instances
 //	GET /v1/projects/{project}/instances/{title}/capture
-func NewHTTPHandler(resolve ProjectRootResolver, runner PaneRunner) http.Handler {
+//
+// daemonLister may be nil, in which case only state.json is consulted (this
+// is the bare-DB / test fixture case). When non-nil, daemon records take
+// precedence on title collision because the daemon is the authoritative
+// spawner for plan-associated agents. If the daemon returns
+// ErrDaemonUnavailable the handler silently falls back to state.json only —
+// the admin UI stays functional during daemon restarts.
+func NewHTTPHandlerWithDaemon(resolve ProjectRootResolver, runner PaneRunner, daemonLister DaemonInstanceLister) http.Handler {
 	mux := http.NewServeMux()
+
+	loadMergedRecords := func(project, root string) ([]Record, error) {
+		diskRecords, diskErr := LoadRecordsFromRepoRoot(root)
+		if diskErr != nil {
+			return nil, diskErr
+		}
+		if daemonLister == nil {
+			return diskRecords, nil
+		}
+		daemonRecords, daemonErr := daemonLister.ListInstancesForProject(project)
+		if daemonErr != nil {
+			if !errors.Is(daemonErr, ErrDaemonUnavailable) {
+				// Log unexpected errors but still serve state.json records so
+				// the UI stays functional.
+				slog.Warn("daemon instance lookup failed, falling back to state.json",
+					"project", project, "err", daemonErr)
+			}
+			return diskRecords, nil
+		}
+		return mergeInstanceRecords(diskRecords, daemonRecords), nil
+	}
 
 	mux.HandleFunc("GET /v1/projects/{project}/instances", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
@@ -101,7 +162,7 @@ func NewHTTPHandler(resolve ProjectRootResolver, runner PaneRunner) http.Handler
 			return
 		}
 
-		records, err := LoadRecordsFromRepoRoot(root)
+		records, err := loadMergedRecords(project, root)
 		if err != nil {
 			slog.Error("failed to load instance records", "project", project, "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "failed to load instance records")
@@ -130,7 +191,7 @@ func NewHTTPHandler(resolve ProjectRootResolver, runner PaneRunner) http.Handler
 			return
 		}
 
-		records, err := LoadRecordsFromRepoRoot(root)
+		records, err := loadMergedRecords(project, root)
 		if err != nil {
 			slog.Error("failed to load instance records", "project", project, "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "failed to load instance records")
@@ -162,6 +223,34 @@ func NewHTTPHandler(resolve ProjectRootResolver, runner PaneRunner) http.Handler
 	})
 
 	return mux
+}
+
+// mergeInstanceRecords returns the union of state.json records (authoritative
+// for TUI-spawned instances like solo/standalone agents) and daemon records
+// (authoritative for plan-associated agents: planner, reviewer, fixer,
+// architect, master, wave tasks). On title collision the daemon record wins
+// because the daemon owns the lifecycle of anything it spawned.
+//
+// Output order: daemon records first (so the admin UI surfaces fresh planner
+// sessions at the top), followed by state.json-only records.
+func mergeInstanceRecords(diskRecords, daemonRecords []Record) []Record {
+	out := make([]Record, 0, len(diskRecords)+len(daemonRecords))
+	seen := make(map[string]struct{}, len(daemonRecords))
+	for _, rec := range daemonRecords {
+		if _, ok := seen[rec.Title]; ok {
+			continue
+		}
+		seen[rec.Title] = struct{}{}
+		out = append(out, rec)
+	}
+	for _, rec := range diskRecords {
+		if _, ok := seen[rec.Title]; ok {
+			continue
+		}
+		seen[rec.Title] = struct{}{}
+		out = append(out, rec)
+	}
+	return out
 }
 
 // writeResolverError maps project resolver errors to HTTP status codes.

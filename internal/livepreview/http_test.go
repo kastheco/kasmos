@@ -175,6 +175,155 @@ func TestHTTPHandler_ListInstances_HappyPath(t *testing.T) {
 	assert.Equal(t, "paused", entries[1].Status)
 }
 
+// fakeDaemonLister is a test DaemonInstanceLister backed by a fixed record
+// slice and an optional canned error (e.g. ErrDaemonUnavailable to simulate a
+// daemon restart).
+type fakeDaemonLister struct {
+	records []Record
+	err     error
+	calls   int
+}
+
+func (f *fakeDaemonLister) ListInstancesForProject(_ string) ([]Record, error) {
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.records, nil
+}
+
+func TestHTTPHandler_ListInstances_MergesDaemonRecords(t *testing.T) {
+	// state.json has one TUI-spawned standalone instance; the daemon reports
+	// one plan-associated planner. The admin list must show both.
+	root := t.TempDir()
+	writeStateJSON(t, root,
+		Record{Title: "solo-agent", Status: StatusRunning, Program: "claude"},
+	)
+	daemon := &fakeDaemonLister{
+		records: []Record{
+			{Title: "feature-plan", Status: StatusLoading, Program: "opencode", AgentType: "planner", TaskFile: "feature"},
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, daemon)
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var entries []ListEntry
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&entries))
+	require.Len(t, entries, 2, "daemon + state.json records must both appear")
+
+	// Daemon records come first.
+	assert.Equal(t, "feature-plan", entries[0].Title)
+	assert.Equal(t, "loading", entries[0].Status)
+	assert.Equal(t, "planner", entries[0].AgentType)
+
+	assert.Equal(t, "solo-agent", entries[1].Title)
+	assert.Equal(t, "running", entries[1].Status)
+}
+
+func TestHTTPHandler_ListInstances_DaemonWinsOnTitleCollision(t *testing.T) {
+	// Both sources reference the same title (e.g. state.json has a stale
+	// snapshot). Daemon must win because it is the authoritative spawner.
+	root := t.TempDir()
+	writeStateJSON(t, root,
+		Record{Title: "shared", Status: StatusPaused, Program: "stale"},
+	)
+	daemon := &fakeDaemonLister{
+		records: []Record{
+			{Title: "shared", Status: StatusRunning, Program: "fresh", AgentType: "reviewer"},
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, daemon)
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var entries []ListEntry
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&entries))
+	require.Len(t, entries, 1, "title collision must dedupe")
+	assert.Equal(t, "running", entries[0].Status, "daemon record must win")
+	assert.Equal(t, "fresh", entries[0].Program)
+	assert.Equal(t, "reviewer", entries[0].AgentType)
+}
+
+func TestHTTPHandler_ListInstances_FallsBackWhenDaemonUnavailable(t *testing.T) {
+	// Simulates a daemon restart: state.json is still readable, daemon
+	// returns ErrDaemonUnavailable. Handler must serve state.json records
+	// and return 200 so the admin UI stays functional.
+	root := t.TempDir()
+	writeStateJSON(t, root,
+		Record{Title: "solo-agent", Status: StatusRunning, Program: "claude"},
+	)
+	daemon := &fakeDaemonLister{err: ErrDaemonUnavailable}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, daemon)
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var entries []ListEntry
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&entries))
+	require.Len(t, entries, 1)
+	assert.Equal(t, "solo-agent", entries[0].Title)
+	assert.Equal(t, 1, daemon.calls, "daemon lister must still be called on each request")
+}
+
+func TestHTTPHandler_CaptureInstance_FindsDaemonOnlyRecord(t *testing.T) {
+	// Title only known to the daemon; state.json doesn't have it. Capture
+	// must still resolve the record and run tmux capture-pane against its
+	// session name.
+	root := t.TempDir()
+	// empty state.json
+	writeStateJSON(t, root)
+
+	daemon := &fakeDaemonLister{
+		records: []Record{
+			{Title: "feature-plan", Status: StatusRunning, Program: "opencode"},
+		},
+	}
+	runner := paneOutputRunner("planner output\n")
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), runner, daemon)
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances/feature-plan/capture", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	assert.Equal(t, "planner output\n", rec.Body.String())
+}
+
+func TestMergeInstanceRecords_EmptyDaemon(t *testing.T) {
+	disk := []Record{{Title: "a"}, {Title: "b"}}
+	got := mergeInstanceRecords(disk, nil)
+	require.Len(t, got, 2)
+	assert.Equal(t, "a", got[0].Title)
+	assert.Equal(t, "b", got[1].Title)
+}
+
+func TestMergeInstanceRecords_EmptyDisk(t *testing.T) {
+	daemon := []Record{{Title: "x"}, {Title: "y"}}
+	got := mergeInstanceRecords(nil, daemon)
+	require.Len(t, got, 2)
+	assert.Equal(t, "x", got[0].Title)
+}
+
+func TestMergeInstanceRecords_PreservesOrderAndDedupes(t *testing.T) {
+	disk := []Record{{Title: "keep-disk"}, {Title: "both", Program: "old"}, {Title: "also-disk"}}
+	daemon := []Record{{Title: "daemon-first"}, {Title: "both", Program: "new"}}
+	got := mergeInstanceRecords(disk, daemon)
+	require.Len(t, got, 4)
+	assert.Equal(t, []string{"daemon-first", "both", "keep-disk", "also-disk"}, []string{
+		got[0].Title, got[1].Title, got[2].Title, got[3].Title,
+	})
+	assert.Equal(t, "new", got[1].Program, "collision must prefer daemon")
+}
+
 func TestHTTPHandler_ListInstances_NeverNull(t *testing.T) {
 	// When no state file exists the response body must be [] not null.
 	root := t.TempDir()

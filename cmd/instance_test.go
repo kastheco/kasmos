@@ -23,25 +23,61 @@ type instanceTestData struct {
 	AgentType string `json:"agent_type,omitempty"`
 }
 
-// newTestStateFromRaw returns a State pre-populated with the given instance records.
-func newTestStateFromRaw(t *testing.T, instances []instanceTestData) *config.State {
+// inMemoryStateManager is an in-memory config.StateManager for tests. Prior
+// to this helper the tests returned a real *config.State whose SaveInstances
+// method calls config.SaveState — which resolves to <repo-root>/.kasmos/state.json
+// via GetConfigDir and CLOBBERS the user's live instance list whenever tests
+// run from inside a kasmos checkout. Using an interface-satisfying in-memory
+// type keeps test writes fully hermetic.
+type inMemoryStateManager struct {
+	instances       json.RawMessage
+	helpScreensSeen uint32
+}
+
+func (s *inMemoryStateManager) SaveInstances(raw json.RawMessage) error {
+	s.instances = raw
+	return nil
+}
+
+func (s *inMemoryStateManager) GetInstances() json.RawMessage {
+	if s.instances == nil {
+		return json.RawMessage("[]")
+	}
+	return s.instances
+}
+
+func (s *inMemoryStateManager) DeleteAllInstances() error {
+	s.instances = json.RawMessage("[]")
+	return nil
+}
+
+func (s *inMemoryStateManager) GetHelpScreensSeen() uint32 {
+	return s.helpScreensSeen
+}
+
+func (s *inMemoryStateManager) SetHelpScreensSeen(v uint32) error {
+	s.helpScreensSeen = v
+	return nil
+}
+
+// newTestStateFromRaw returns an in-memory StateManager pre-populated with the
+// given instance records. Writes do NOT touch disk.
+func newTestStateFromRaw(t *testing.T, instances []instanceTestData) config.StateManager {
 	t.Helper()
 	raw, err := json.Marshal(instances)
 	require.NoError(t, err)
-	s := config.DefaultState()
-	s.InstancesData = raw
-	return s
+	return &inMemoryStateManager{instances: raw}
 }
 
-// newTestStateFromRecords returns a State pre-populated with full instanceRecord values.
-// Use this helper when the test needs to exercise round-trip field preservation.
-func newTestStateFromRecords(t *testing.T, records []instanceRecord) *config.State {
+// newTestStateFromRecords returns an in-memory StateManager pre-populated with
+// full instanceRecord values. Writes do NOT touch disk — use this helper when
+// the test exercises round-trip field preservation or any path that calls
+// state.SaveInstances, so the real <repo>/.kasmos/state.json is never clobbered.
+func newTestStateFromRecords(t *testing.T, records []instanceRecord) config.StateManager {
 	t.Helper()
 	raw, err := json.Marshal(records)
 	require.NoError(t, err)
-	s := config.DefaultState()
-	s.InstancesData = raw
-	return s
+	return &inMemoryStateManager{instances: raw}
 }
 
 func TestInstanceList_Text(t *testing.T) {
@@ -343,8 +379,7 @@ func TestUpdateInstanceInState_NotFound(t *testing.T) {
 // session.InstanceData.UnmarshalJSON.
 func TestInstanceRecord_PlanFileMigration(t *testing.T) {
 	raw := `[{"title":"legacy","status":0,"program":"claude","plan_file":"old-plan"}]`
-	s := config.DefaultState()
-	s.InstancesData = []byte(raw)
+	s := &inMemoryStateManager{instances: json.RawMessage(raw)}
 
 	records, err := loadInstanceRecords(s)
 	require.NoError(t, err)
@@ -575,8 +610,7 @@ func TestExecuteInstanceStatus_OutputOrder(t *testing.T) {
 // TestExecuteInstanceStatus_ParseError verifies that invalid JSON in state
 // returns an error containing "parse instances".
 func TestExecuteInstanceStatus_ParseError(t *testing.T) {
-	s := config.DefaultState()
-	s.InstancesData = []byte(`not-valid-json`)
+	s := &inMemoryStateManager{instances: []byte(`not-valid-json`)}
 	_, err := executeInstanceStatus(s)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "parse instances")

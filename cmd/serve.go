@@ -295,6 +295,13 @@ func NewServeCmd() *cobra.Command {
 			//   default (daemon):  dynamic resolver queries the daemon per-request so
 			//                      repos registered after kas serve starts are visible
 			//                      without a restart.
+			//
+			// Daemon-spawned (plan-associated) instances live in the daemon's
+			// TmuxSpawner map and are never persisted to state.json. The preview
+			// handler is given a daemonInstanceLister so it can union those
+			// live records with whatever is on disk — otherwise the admin UI
+			// only shows TUI-spawned standalone instances.
+			daemonLister := newDaemonInstanceLister()
 			var previewAPI http.Handler
 			switch {
 			case cmd.Flags().Changed("repo"):
@@ -305,14 +312,14 @@ func NewServeCmd() *cobra.Command {
 					}
 					return root, nil
 				}
-				previewHandler := livepreview.NewHTTPHandler(resolve, &livepreview.ExecPaneRunner{})
+				previewHandler := livepreview.NewHTTPHandlerWithDaemon(resolve, &livepreview.ExecPaneRunner{}, daemonLister)
 				previewAPI = projectValidationMiddleware(repoRegs.valid, previewHandler)
 			case cmd.Flags().Changed("db"):
-				previewAPI = livepreview.NewHTTPHandler(func(string) (string, error) {
+				previewAPI = livepreview.NewHTTPHandlerWithDaemon(func(string) (string, error) {
 					return "", livepreview.ErrPreviewUnavailable
-				}, &livepreview.ExecPaneRunner{})
+				}, &livepreview.ExecPaneRunner{}, daemonLister)
 			default:
-				previewAPI = livepreview.NewHTTPHandler(newDynamicProjectRootResolver(), &livepreview.ExecPaneRunner{})
+				previewAPI = livepreview.NewHTTPHandlerWithDaemon(newDynamicProjectRootResolver(), &livepreview.ExecPaneRunner{}, daemonLister)
 			}
 			if len(repoPaths) > 0 {
 				taskAPI = projectValidationMiddleware(repoRegs.valid, taskAPI)
