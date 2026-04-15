@@ -35,6 +35,17 @@ type SpawnCoderAction struct {
 func (SpawnCoderAction) Kind() string  { return "spawn_coder" }
 func (SpawnCoderAction) sealedAction() {}
 
+// SpawnPlannerAction instructs the caller to launch a planner agent for the
+// given plan file. Emitted when a plan_start gateway signal is processed; the
+// daemon executes it by building a planner prompt from the task store entry
+// and spawning a planner session on the main branch (no worktree).
+type SpawnPlannerAction struct {
+	PlanFile string
+}
+
+func (SpawnPlannerAction) Kind() string  { return "spawn_planner" }
+func (SpawnPlannerAction) sealedAction() {}
+
 // ReviewChangesAction signals a validated review-changes transition and carries
 // the reviewer feedback so callers can perform side effects only after the FSM
 // accepted the signal.

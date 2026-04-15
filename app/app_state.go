@@ -2898,19 +2898,10 @@ func (m *home) taskBranch(planFile string) string {
 }
 
 // buildPlanningPrompt returns the initial prompt for a planner agent session.
-// The prompt explicitly requires ## Wave N headers because kasmos uses them
-// for wave orchestration — without them, implementation cannot start.
+// It delegates to orchestration.BuildPlannerPrompt so the TUI and daemon
+// (via SpawnPlannerAction) share the exact same planner prompt.
 func buildPlanningPrompt(planFile, planName, description, project string) string {
-	return fmt.Sprintf(
-		"Plan %s. Goal: %s. "+
-			"Use the `kasmos-planner` skill. "+
-			"The plan MUST include ## Wave N sections (at minimum ## Wave 1) "+
-			"grouping all tasks — kasmos requires Wave headers to orchestrate implementation. "+
-			"After writing the plan, store it with MCP `task_update_content` (filename: \"%[3]s\", project: \"%[4]s\") "+
-			"and then signal completion with MCP `signal_create` (signal_type: \"planner-finished\", plan_file: \"%[3]s\", project: \"%[4]s\"). "+
-			"If MCP is unavailable, fall back to `kas task update-content %[3]s` (pipe content) and `kas signal emit planner_finished %[3]s`.",
-		planName, description, planFile, project,
-	)
+	return orchestration.BuildPlannerPrompt(planFile, planName, description, project)
 }
 
 // buildImplementPrompt returns the prompt for a coder agent session.

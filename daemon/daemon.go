@@ -1167,6 +1167,43 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			AgentType: "coder",
 		})
 		return nil
+	case loop.SpawnPlannerAction:
+		// Kill any existing planner for this plan before spawning a new one —
+		// matches the StartPlan path the TUI uses so a retry from the admin UI
+		// never races with a stale planner.
+		killAgent := d.killAgent
+		if killAgent == nil {
+			killAgent = d.spawner.KillAgent
+		}
+		if err := killAgent(e.Path, a.PlanFile, session.AgentTypePlanner); err != nil {
+			d.logger.Error("kill existing planner failed", "plan", a.PlanFile, "err", err)
+			return err
+		}
+		entry := entryFor(a.PlanFile)
+		spec := orchestration.BuildPlannerAgentSpec(a.PlanFile, e.Project, entry.Description)
+		opts := loop.SpawnOpts{
+			PlanFile: a.PlanFile,
+			RepoPath: e.Path,
+			Project:  e.Project,
+			Program:  programForAgent(e.Path, session.AgentTypePlanner),
+			Prompt:   spec.Prompt,
+		}
+		spawnPlanner := d.spawnPlanner
+		if spawnPlanner == nil {
+			spawnPlanner = d.spawner.SpawnPlanner
+		}
+		if err := spawnPlanner(ctx, opts); err != nil {
+			d.logger.Error("spawn planner failed", "plan", a.PlanFile, "err", err)
+			return err
+		}
+		d.broadcaster.Emit(api.Event{
+			Kind:      api.EventKindAgentSpawned,
+			Message:   "planner spawned for " + a.PlanFile,
+			Repo:      e.Path,
+			PlanFile:  a.PlanFile,
+			AgentType: session.AgentTypePlanner,
+		})
+		return nil
 	case loop.SpawnElaboratorAction:
 		if err := setRepoExecutionState(e, a.PlanFile, taskstore.ExecutionState{
 			Phase:           string(taskfsm.ExecutionPhaseArchitecting),

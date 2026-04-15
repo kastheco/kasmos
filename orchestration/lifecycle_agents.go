@@ -95,6 +95,19 @@ func BuildArchitectAgentSpec(planFile, project string) LifecycleAgentSpec {
 	}
 }
 
+// BuildPlannerAgentSpec returns the shared prompt/title metadata for a
+// planner spawn. The canonical title is "<plan>-plan" matching the existing
+// recovery-candidate shape in BuildRecoveryCandidates and the TUI's
+// spawnPlannerWithDaemon path. description is the task's free-form goal
+// (from TaskEntry.Description) and is interpolated into the planner prompt.
+func BuildPlannerAgentSpec(planFile, project, description string) LifecycleAgentSpec {
+	planName := taskstate.DisplayName(planFile)
+	return LifecycleAgentSpec{
+		Title:  fmt.Sprintf("%s-plan", planName),
+		Prompt: BuildPlannerPrompt(planFile, planName, description, project),
+	}
+}
+
 // BuildMasterAgentSpec returns the shared prompt/title metadata for the master
 // agent holistic readiness review. The session title follows the canonical
 // "<plan>-verify-<cycle>" pattern so multiple verifiers can run concurrently

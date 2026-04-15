@@ -33,6 +33,8 @@ func executionPhaseForEntry(entry taskstore.TaskEntry) taskfsm.ExecutionPhase {
 // config/taskfsm/fsm.go:96-129 and must stay in sync with it.
 func preAppliedTargetStatus(event taskfsm.Event) (taskfsm.Status, bool) {
 	switch event {
+	case taskfsm.PlanStart:
+		return taskfsm.StatusPlanning, true
 	case taskfsm.PlannerFinished:
 		return taskfsm.StatusReady, true
 	case taskfsm.ImplementFinished:
@@ -350,6 +352,9 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			if p.config.AutoAdvance {
 				actions = append(actions, AutoImplementAction{PlanFile: sig.TaskFile})
 			}
+
+		case taskfsm.PlanStart:
+			actions = append(actions, SpawnPlannerAction{PlanFile: sig.TaskFile})
 		}
 	}
 	return actions

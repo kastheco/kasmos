@@ -35,6 +35,17 @@ func TestBuildLifecycleAgentTitle(t *testing.T) {
 	assert.Equal(t, "feature-coder", BuildLifecycleAgentTitle("feature", session.AgentTypeCoder, 0))
 }
 
+func TestBuildPlannerAgentSpec(t *testing.T) {
+	spec := BuildPlannerAgentSpec("feature", "myproject", "build something great")
+	assert.Equal(t, "feature-plan", spec.Title)
+	assert.Contains(t, spec.Prompt, "Plan feature.")
+	assert.Contains(t, spec.Prompt, "Goal: build something great")
+	assert.Contains(t, spec.Prompt, "kasmos-planner")
+	assert.Contains(t, spec.Prompt, "## Wave N")
+	assert.Contains(t, spec.Prompt, `signal_type: "planner-finished"`)
+	assert.Contains(t, spec.Prompt, `project: "myproject"`)
+}
+
 func TestBuildArchitectAgentSpec(t *testing.T) {
 	spec := BuildArchitectAgentSpec("feature", "myproject")
 	assert.Equal(t, "feature-architect", spec.Title)

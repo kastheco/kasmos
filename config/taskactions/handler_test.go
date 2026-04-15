@@ -605,6 +605,12 @@ func TestTransition_SignalBearing_EmitsGateway(t *testing.T) {
 		wantSignalType string
 	}{
 		{
+			name:           "plan_start from ready",
+			event:          "plan_start",
+			setupStatus:    taskstore.StatusReady,
+			wantSignalType: "plan_start",
+		},
+		{
 			name:           "planner_finished from planning",
 			event:          "planner_finished",
 			setupStatus:    taskstore.StatusPlanning,
@@ -690,11 +696,6 @@ func TestTransition_NonEmitting_LeavesGatewayEmpty(t *testing.T) {
 		setupStatus       taskstore.Status
 		useExecutionPhase bool
 	}{
-		{
-			name:        "plan_start from ready",
-			event:       "plan_start",
-			setupStatus: taskstore.StatusReady,
-		},
 		{
 			name:              "implement_start from planned-ready",
 			event:             "implement_start",

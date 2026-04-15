@@ -14,6 +14,7 @@ import (
 const ArchitectFinished Event = "architect_finished"
 
 var validGatewaySignalTypes = map[string]struct{}{
+	"plan_start":               {},
 	"planner_finished":         {},
 	"implement_finished":       {},
 	"review_approved":          {},
@@ -26,7 +27,7 @@ var validGatewaySignalTypes = map[string]struct{}{
 }
 
 func gatewaySignalTypeError(raw string) error {
-	return fmt.Errorf("unknown signal type %q; valid types: planner_finished, implement_finished, review_approved, review_changes_requested, verify_approved, verify_failed, implement_task_finished, implement_wave, architect_finished (wire alias: elaborator_finished)", raw)
+	return fmt.Errorf("unknown signal type %q; valid types: plan_start, planner_finished, implement_finished, review_approved, review_changes_requested, verify_approved, verify_failed, implement_task_finished, implement_wave, architect_finished (wire alias: elaborator_finished)", raw)
 }
 
 // CanonicalGatewaySignalType normalizes accepted signal-type aliases to the
@@ -38,7 +39,7 @@ func gatewaySignalTypeError(raw string) error {
 func CanonicalGatewaySignalType(raw string) (string, error) {
 	normalized := strings.ReplaceAll(strings.TrimSpace(raw), "-", "_")
 	switch normalized {
-	case string(PlannerFinished), string(ImplementFinished), string(ReviewApproved), string(ReviewChangesRequested), "implement_task_finished", "implement_wave":
+	case string(PlanStart), string(PlannerFinished), string(ImplementFinished), string(ReviewApproved), string(ReviewChangesRequested), "implement_task_finished", "implement_wave":
 		return normalized, nil
 	case "review_changes":
 		return string(ReviewChangesRequested), nil
@@ -61,7 +62,7 @@ func CanonicalGatewaySignalType(raw string) (string, error) {
 // lifecycle event that can be emitted via the signal gateway.
 func GatewaySignalTypeForEvent(event Event) (string, error) {
 	switch event {
-	case PlannerFinished, ImplementFinished, ReviewApproved, ReviewChangesRequested:
+	case PlanStart, PlannerFinished, ImplementFinished, ReviewApproved, ReviewChangesRequested:
 		return string(event), nil
 	case VerifyApproved, VerifyFailed:
 		return string(event), nil
@@ -81,7 +82,7 @@ func NormalizeGatewaySignalPayload(signalType, payload string) (string, error) {
 	}
 
 	switch canonicalType {
-	case "planner_finished", "implement_finished", "review_approved", "review_changes_requested",
+	case "plan_start", "planner_finished", "implement_finished", "review_approved", "review_changes_requested",
 		"verify_approved", "verify_failed":
 		if payload == "" {
 			return "", nil

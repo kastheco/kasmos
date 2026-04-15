@@ -130,6 +130,23 @@ Complete the last implementation task and transition into review.
 			recorder("kill:planner")
 			return nil
 		},
+		killAgent: func(repoPath, taskFile, agentType string) error {
+			// Pre-kill hook invoked by SpawnPlannerAction before spawning a
+			// new planner. Must be a no-op when no existing planner is present.
+			assert.Equal(t, repo.Path, repoPath)
+			assert.Equal(t, planFile, taskFile)
+			assert.Equal(t, session.AgentTypePlanner, agentType)
+			recorder("kill:planner:pre-spawn")
+			return nil
+		},
+		spawnPlanner: func(_ context.Context, opts loop.SpawnOpts) error {
+			assert.Equal(t, planFile, opts.PlanFile)
+			assert.Equal(t, repo.Path, opts.RepoPath)
+			assert.Equal(t, project, opts.Project)
+			assert.NotEmpty(t, opts.Prompt, "planner spawn must carry a non-empty prompt")
+			recorder("spawn:planner")
+			return nil
+		},
 		spawnElaborator: func(_ context.Context, opts loop.SpawnOpts) error {
 			assert.Equal(t, planFile, opts.PlanFile)
 			assert.Equal(t, repo.Path, opts.RepoPath)
@@ -176,8 +193,11 @@ Complete the last implementation task and transition into review.
 	t.Cleanup(func() { d.broadcaster.Close() })
 
 	planStartActions := proc.ProcessFSMSignals([]taskfsm.Signal{{TaskFile: planFile, Event: taskfsm.PlanStart}})
-	assert.Empty(t, planStartActions)
+	require.Len(t, planStartActions, 1, "plan_start must emit SpawnPlannerAction")
+	_, isSpawnPlanner := planStartActions[0].(loop.SpawnPlannerAction)
+	assert.True(t, isSpawnPlanner, "plan_start action must be SpawnPlannerAction, got %T", planStartActions[0])
 	assertState(taskstore.StatusPlanning, taskstore.ExecutionState{})
+	execActions(planStartActions)
 
 	plannerFinishedActions := proc.ProcessFSMSignals([]taskfsm.Signal{{TaskFile: planFile, Event: taskfsm.PlannerFinished}})
 	require.Len(t, plannerFinishedActions, 2)
@@ -293,8 +313,10 @@ Complete the last implementation task and transition into review.
 	assert.Equal(t, prURL, finalEntry.PRURL)
 	assert.Equal(t, taskstore.ExecutionState{}, phases["create:pr"])
 
-	require.Len(t, events, 9)
-	assert.Equal(t, []string{"kill:planner", "spawn:architect"}, events[:2])
-	assert.ElementsMatch(t, []string{"spawn:wave-1:task-1", "spawn:wave-1:task-2"}, events[2:4])
-	assert.Equal(t, []string{"kill:wave-1", "spawn:wave-2:task-3", "kill:wave-2", "spawn:reviewer", "create:pr"}, events[4:])
+	require.Len(t, events, 11)
+	// plan_start now dispatches SpawnPlannerAction which first kills any stale
+	// planner (kill:planner:pre-spawn) then spawns the planner (spawn:planner).
+	assert.Equal(t, []string{"kill:planner:pre-spawn", "spawn:planner", "kill:planner", "spawn:architect"}, events[:4])
+	assert.ElementsMatch(t, []string{"spawn:wave-1:task-1", "spawn:wave-1:task-2"}, events[4:6])
+	assert.Equal(t, []string{"kill:wave-1", "spawn:wave-2:task-3", "kill:wave-2", "spawn:reviewer", "create:pr"}, events[6:])
 }

@@ -164,6 +164,49 @@ func TestProcessor_ProcessFSMSignals_ReviewChangesRequested_AutoReviewFixDisable
 	assert.Equal(t, "fix this", rc.Feedback)
 }
 
+func TestProcessor_ProcessFSMSignals_PlanStart_EmitsSpawnPlannerAction(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusReady,
+	}))
+
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test"})
+	actions := p.ProcessFSMSignals([]taskfsm.Signal{
+		{Event: taskfsm.PlanStart, TaskFile: "my-plan.md"},
+	})
+
+	require.Len(t, actions, 1, "plan_start must emit a single SpawnPlannerAction")
+	spawn, ok := actions[0].(SpawnPlannerAction)
+	require.True(t, ok, "expected SpawnPlannerAction, got %T", actions[0])
+	assert.Equal(t, "my-plan.md", spawn.PlanFile)
+
+	// FSM must have transitioned ready → planning.
+	entry, err := store.Get("test", "my-plan.md")
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusPlanning, entry.Status)
+}
+
+func TestProcessor_ProcessFSMSignals_PlanStart_PreAppliedRunsWhenAlreadyPlanning(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusPlanning,
+	}))
+
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test"})
+	// HTTP-originated signal where the FSM transition was already applied by
+	// the taskactions handler — processor must still emit SpawnPlannerAction
+	// so the daemon runs the side effect.
+	actions := p.ProcessFSMSignals([]taskfsm.Signal{
+		{Event: taskfsm.PlanStart, TaskFile: "my-plan.md", PreApplied: true},
+	})
+
+	require.Len(t, actions, 1)
+	_, ok := actions[0].(SpawnPlannerAction)
+	assert.True(t, ok, "pre-applied plan_start must still emit SpawnPlannerAction, got %T", actions[0])
+}
+
 func TestProcessor_ProcessFSMSignals_PlannerFinished(t *testing.T) {
 	store := taskstore.NewTestStore(t)
 	store.Create("test", taskstore.TaskEntry{

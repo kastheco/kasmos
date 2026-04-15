@@ -14,6 +14,8 @@ func TestCanonicalGatewaySignalType_CoversCanonicalAndAliases(t *testing.T) {
 		raw  string
 		want string
 	}{
+		{name: "plan_start canonical underscore", raw: "plan_start", want: "plan_start"},
+		{name: "plan_start hyphen alias", raw: "plan-start", want: "plan_start"},
 		{name: "planner canonical underscore", raw: "planner_finished", want: "planner_finished"},
 		{name: "planner hyphen alias", raw: "planner-finished", want: "planner_finished"},
 		{name: "implement canonical underscore", raw: "implement_finished", want: "implement_finished"},
@@ -65,6 +67,7 @@ func TestGatewaySignalTypeForEvent(t *testing.T) {
 		event Event
 		want  string
 	}{
+		{name: "plan start", event: PlanStart, want: "plan_start"},
 		{name: "planner finished", event: PlannerFinished, want: "planner_finished"},
 		{name: "review changes requested", event: ReviewChangesRequested, want: "review_changes_requested"},
 		{name: "verify approved", event: VerifyApproved, want: "verify_approved"},

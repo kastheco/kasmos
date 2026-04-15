@@ -31,6 +31,7 @@ const DESTRUCTIVE_TRANSITIONS = new Set(["cancel", "start_over", "reimplement"])
 //   - config/taskfsm/gateway_signal.go:GatewaySignalTypeForEvent — canonical
 //     signal-bearing lifecycle events
 const SIGNAL_EMITTING_TRANSITIONS = new Set([
+  "plan_start",
   "planner_finished",
   "implement_finished",
   "review_approved",
