@@ -190,7 +190,7 @@ export default function TaskActionsMenu({
       await applyTaskTransition(project, task.filename, event);
       toast.show(
         transitionSpawnsWorker(event)
-          ? `transition '${label}' applied - spawning worker`
+          ? `transition '${label}' applied - daemon signal queued`
           : `transition '${label}' applied`,
       );
       setOpen(false);

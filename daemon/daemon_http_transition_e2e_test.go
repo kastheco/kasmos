@@ -28,8 +28,11 @@ func TestDaemon_TickRepo_HTTPPlannerFinishedSignalSpawnsArchitect(t *testing.T) 
 	t.Parallel()
 
 	// ── shared in-memory SQLite DB so store and gateway see the same data ──
+	// SetMaxOpenConns(1) ensures all callers share the single :memory: database
+	// rather than each getting an independent empty DB from the pool.
 	db, err := taskstore.OpenSharedDB(":memory:")
 	require.NoError(t, err)
+	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 
 	store, err := taskstore.NewSQLiteStoreFromDB(db)
@@ -190,6 +193,7 @@ func newHTTPTransitionE2EFixture(t *testing.T, initialStatus taskstore.Status) *
 
 	db, err := taskstore.OpenSharedDB(":memory:")
 	require.NoError(t, err)
+	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 
 	store, err := taskstore.NewSQLiteStoreFromDB(db)
