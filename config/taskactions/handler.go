@@ -6,6 +6,7 @@ package taskactions
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -80,14 +81,15 @@ var transitionCatalog = []catalogEntry{
 // ---- handler ----------------------------------------------------------------
 
 type handler struct {
-	store taskstore.Store
+	store   taskstore.Store
+	gateway taskstore.SignalGateway
 }
 
 // NewHandler returns an http.Handler that exposes lifecycle and task-edit
 // endpoints over the standard /v1/projects/{project}/tasks/{filename}/...
 // URL space, using Go 1.22+ method+path routing.
-func NewHandler(store taskstore.Store) http.Handler {
-	h := &handler{store: store}
+func NewHandler(store taskstore.Store, gateway taskstore.SignalGateway) http.Handler {
+	h := &handler{store: store, gateway: gateway}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /v1/projects/{project}/tasks/{filename}/available-actions", h.handleAvailableActions)
@@ -123,6 +125,21 @@ func isNotFound(err error) bool {
 	}
 	return strings.Contains(err.Error(), "not found")
 }
+
+// transitionSignalType returns the canonical gateway signal type for a
+// lifecycle event, and whether that event should emit a signal at all.
+func transitionSignalType(event taskfsm.Event) (string, bool) {
+	signalType, err := taskfsm.GatewaySignalTypeForEvent(event)
+	return signalType, err == nil
+}
+
+// httpPreAppliedPayload is the gateway signal payload the HTTP transition
+// handler emits after it has already applied the FSM transition itself. The
+// daemon's processor keys its already-applied fast-path on the "fsm_applied"
+// flag so it knows to run downstream side effects (spawn reviewer, spawn
+// master, spawn fixer, create PR, etc.) instead of dropping the signal as
+// stale. See orchestration/loop/processor.go ProcessFSMSignals.
+const httpPreAppliedPayload = `{"fsm_applied":true}`
 
 // ---- precondition helper ----------------------------------------------------
 
@@ -272,8 +289,25 @@ func (h *handler) handleTransition(w http.ResponseWriter, r *http.Request) {
 
 	updated, err := h.store.Get(project, filename)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, http.StatusInternalServerError, "transition applied but failed to load updated task: "+err.Error())
 		return
+	}
+
+	if signalType, ok := transitionSignalType(event); ok {
+		if h.gateway == nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf(
+				"transition applied (status=%s) but gateway emit failed: gateway is nil; task status was not rolled back",
+				updated.Status,
+			))
+			return
+		}
+		if err := taskfsm.EmitGatewaySignal(h.gateway, project, signalType, filename, httpPreAppliedPayload); err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf(
+				"transition applied (status=%s) but gateway emit failed: %s; task status was not rolled back",
+				updated.Status, err.Error(),
+			))
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, updated)
 }

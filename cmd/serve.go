@@ -275,7 +275,7 @@ func NewServeCmd() *cobra.Command {
 
 			taskAPI := taskstore.NewHandler(store)
 			auditAPI := auditlog.NewHandler(logger)
-			actionsAPI := taskactions.NewHandler(store)
+			actionsAPI := taskactions.NewHandler(store, gw)
 			if len(repoPaths) > 0 {
 				taskAPI = projectValidationMiddleware(repoRegs.valid, taskAPI)
 				auditAPI = projectValidationMiddleware(repoRegs.valid, auditAPI)

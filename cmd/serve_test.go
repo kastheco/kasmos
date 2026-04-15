@@ -336,7 +336,7 @@ func TestNewProjectListHandler_RepoScopedIncludesRepoWithNoDBRows(t *testing.T) 
 // taskstore handler (which would only update raw content bytes).
 func TestNewServeAPIRootMux_ContentRouteWinsOverTaskAPI(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "content_route.db")
-	sharedDB, store, _, logger, err := openServeSQLiteBackends(dbPath)
+	sharedDB, store, gw, logger, err := openServeSQLiteBackends(dbPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { sharedDB.Close() })
 
@@ -350,7 +350,7 @@ func TestNewServeAPIRootMux_ContentRouteWinsOverTaskAPI(t *testing.T) {
 
 	taskAPI := taskstore.NewHandler(store)
 	auditAPI := auditlog.NewHandler(logger)
-	actionsAPI := taskactions.NewHandler(store)
+	actionsAPI := taskactions.NewHandler(store, gw)
 
 	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI)
 
@@ -374,7 +374,7 @@ func TestNewServeAPIRootMux_ContentRouteWinsOverTaskAPI(t *testing.T) {
 
 func TestNewServeAPIRootMux_GoalRouteWinsOverTaskAPI(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "goal_route.db")
-	sharedDB, store, _, logger, err := openServeSQLiteBackends(dbPath)
+	sharedDB, store, gw, logger, err := openServeSQLiteBackends(dbPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { sharedDB.Close() })
 
@@ -388,7 +388,7 @@ func TestNewServeAPIRootMux_GoalRouteWinsOverTaskAPI(t *testing.T) {
 
 	taskAPI := taskstore.NewHandler(store)
 	auditAPI := auditlog.NewHandler(logger)
-	actionsAPI := taskactions.NewHandler(store)
+	actionsAPI := taskactions.NewHandler(store, gw)
 
 	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI)
 
@@ -409,7 +409,7 @@ func TestNewServeAPIRootMux_GoalRouteWinsOverTaskAPI(t *testing.T) {
 // for action routes (e.g. /available-actions) just as it does for taskAPI.
 func TestNewServeAPIRootMux_ActionRouteProjectValidation(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "action_validation.db")
-	sharedDB, store, _, logger, err := openServeSQLiteBackends(dbPath)
+	sharedDB, store, gw, logger, err := openServeSQLiteBackends(dbPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { sharedDB.Close() })
 
@@ -418,7 +418,7 @@ func TestNewServeAPIRootMux_ActionRouteProjectValidation(t *testing.T) {
 
 	taskAPI := projectValidationMiddleware(repoRegs.valid, taskstore.NewHandler(store))
 	auditAPI := projectValidationMiddleware(repoRegs.valid, auditlog.NewHandler(logger))
-	actionsAPI := projectValidationMiddleware(repoRegs.valid, taskactions.NewHandler(store))
+	actionsAPI := projectValidationMiddleware(repoRegs.valid, taskactions.NewHandler(store, gw))
 
 	mux := newServeAPIRootMux(sharedDB, repoRegs, taskAPI, auditAPI, actionsAPI)
 
@@ -442,4 +442,51 @@ func TestNewServeAPIRootMux_ActionRouteProjectValidation(t *testing.T) {
 		require.Equal(t, http.StatusNotFound, rec.Code)
 		assert.JSONEq(t, `{"error":"project not found: unknown"}`, rec.Body.String())
 	})
+}
+
+// TestNewServeAPIRootMux_TransitionEmitsGatewaySignal is a wiring regression
+// that proves the shared gateway instance is threaded through the serve stack:
+// a planner_finished transition via the root mux must create a pending signal.
+func TestNewServeAPIRootMux_TransitionEmitsGatewaySignal(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "transition_emit.db")
+	sharedDB, store, gw, logger, err := openServeSQLiteBackends(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { sharedDB.Close() })
+
+	const project = "myproj"
+	const filename = "plan-task"
+
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: filename,
+		Status:   taskstore.StatusReady,
+	}))
+	require.NoError(t, store.Update(project, filename, taskstore.TaskEntry{
+		Filename: filename,
+		Status:   taskstore.StatusPlanning,
+	}))
+
+	// Minimal valid plan content: goal + wave + task headings.
+	const validPlan = "**Goal:** build something great\n\n## Wave 1\n\n### Task 1: do the thing\n\nimplement the thing\n"
+	require.NoError(t, store.SetContent(project, filename, validPlan))
+
+	taskAPI := taskstore.NewHandler(store)
+	auditAPI := auditlog.NewHandler(logger)
+	actionsAPI := taskactions.NewHandler(store, gw)
+
+	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI)
+
+	req := httptest.NewRequest(http.MethodPost,
+		"/v1/projects/"+project+"/tasks/"+filename+"/transition",
+		strings.NewReader(`{"event":"planner_finished"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, "response body: %s", rec.Body.String())
+
+	signals, err := gw.List(project, taskstore.SignalPending)
+	require.NoError(t, err)
+	require.Len(t, signals, 1, "expected exactly one pending signal after planner_finished")
+	assert.Equal(t, filename, signals[0].PlanFile)
+	assert.Equal(t, "planner_finished", signals[0].SignalType)
 }
