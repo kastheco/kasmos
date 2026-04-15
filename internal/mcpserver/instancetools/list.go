@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/kastheco/kasmos/internal/livepreview"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -36,7 +37,7 @@ type instanceListResult struct {
 // It accepts an optional "status" argument to filter by status label.
 func makeInstanceListHandler(loadState StateLoader) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		records, err := loadRecords(loadState)
+		records, err := livepreview.LoadRecords(loadState)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("instance_list: load instances: %v", err)), nil
 		}
@@ -46,7 +47,7 @@ func makeInstanceListHandler(loadState StateLoader) server.ToolHandlerFunc {
 		if statusFilter != "" {
 			filtered := records[:0]
 			for _, r := range records {
-				if statusLabel(r.Status) == statusFilter {
+				if livepreview.StatusLabel(r.Status) == statusFilter {
 					filtered = append(filtered, r)
 				}
 			}
@@ -61,7 +62,7 @@ func makeInstanceListHandler(loadState StateLoader) server.ToolHandlerFunc {
 			}
 			entries = append(entries, instanceListEntry{
 				Title:     r.Title,
-				Status:    statusLabel(r.Status),
+				Status:    livepreview.StatusLabel(r.Status),
 				Branch:    r.Branch,
 				Program:   r.Program,
 				TaskFile:  r.TaskFile,

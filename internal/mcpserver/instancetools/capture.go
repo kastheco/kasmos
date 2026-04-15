@@ -3,8 +3,8 @@ package instancetools
 import (
 	"context"
 	"fmt"
-	"strings"
 
+	"github.com/kastheco/kasmos/internal/livepreview"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -22,35 +22,29 @@ func makeCapturePaneHandler(loadState StateLoader, runner CmdRunner) server.Tool
 			return mcp.NewToolResultError(fmt.Sprintf("missing required argument 'title': %v", err)), nil
 		}
 
-		records, err := loadRecords(loadState)
+		records, err := livepreview.LoadRecords(loadState)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("capture_pane: load instances: %v", err)), nil
 		}
 
-		rec, err := findRecord(records, title)
+		rec, err := livepreview.FindRecord(records, title)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("capture_pane: %v", err)), nil
 		}
 
-		if err := validateAction(rec, "capture"); err != nil {
+		if err := livepreview.ValidateAction(rec, "capture"); err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("capture_pane: %v", err)), nil
 		}
 
-		sessionName := kasTmuxName(rec.Title)
-		args := []string{"capture-pane", "-p", "-e", "-J", "-t", sessionName}
-		if start := strings.TrimSpace(req.GetString("start", "")); start != "" {
-			args = append(args, "-S", start)
-		}
-		if end := strings.TrimSpace(req.GetString("end", "")); end != "" {
-			args = append(args, "-E", end)
-		}
-
-		output, err := runner.Output(ctx, "tmux", args...)
+		output, err := livepreview.CapturePane(ctx, runner, rec,
+			req.GetString("start", ""),
+			req.GetString("end", ""),
+		)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("capture_pane: capture pane: %v", err)), nil
 		}
 
-		return mcp.NewToolResultText(string(output)), nil
+		return mcp.NewToolResultText(output), nil
 	}
 }
 
