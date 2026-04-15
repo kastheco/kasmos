@@ -16,8 +16,8 @@ Alias: `kas sig`
 | `implement_finished` | optional JSON or text | all coder agents finished implementation |
 | `review_approved` | optional JSON or text | reviewer approved the implementation; triggers `reviewing → verifying` when `auto_readiness_review = true`, otherwise `reviewing → done` |
 | `review_changes_requested` | optional JSON or text | reviewer requested changes |
-| `verify_approved` | optional JSON or text | master agent approved during verifying (→ `done`); only valid while task is in `verifying` status |
-| `verify_failed` | optional JSON or text | master agent requested changes during verifying (→ `implementing`); only valid while task is in `verifying` status |
+| `verify_approved` | optional JSON or text | master agent approved during verifying (→ `done`); also emitted by the daemon as a loop-cap promotion when `readiness_max_verify_cycles` is reached — the payload then contains a `loop_cap_exceeded` annotation with the original findings; only valid while task is in `verifying` status |
+| `verify_failed` | optional JSON or text | master agent requested changes during verifying (→ `implementing`); when the verify-round count reaches `readiness_max_verify_cycles` the daemon intercepts this and force-promotes to `verify_approved` instead; only valid while task is in `verifying` status |
 | `implement_task_finished` | `{"wave_number": N, "task_number": N}` | a single coder task in a wave finished |
 | `implement_wave` | `{"wave_number": N}` | a full wave finished |
 | `elaborator_finished` | _(none)_ | architect agent finished enriching the plan |

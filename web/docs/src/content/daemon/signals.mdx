@@ -67,8 +67,8 @@ pending
 | `review_approved` | reviewer | FSM transition `reviewing → verifying` (spawn master agent) when `auto_readiness_review = true`; otherwise `reviewing → done` |
 | `review_changes_requested` | reviewer | FSM transition → `implementing`, spawn fixer |
 | `planner_finished` | planner | FSM transition → `ready` |
-| `verify_approved` | master agent | FSM transition `verifying → done` |
-| `verify_failed` | master agent | FSM transition `verifying → implementing`, spawn fixer |
+| `verify_approved` | master agent or daemon (loop-cap promotion) | FSM transition `verifying → done`; when emitted by the daemon as a loop-cap promotion the payload contains a `loop_cap_exceeded` annotation with the original master findings |
+| `verify_failed` | master agent | FSM transition `verifying → implementing`, spawn fixer; if `readiness_max_verify_cycles` is reached the daemon intercepts this signal and force-promotes to `verify_approved` instead |
 
 > **Architect completion:** the canonical internal event is `architect_finished`, but the persisted gateway signal wire name is `elaborator_finished` (a legacy alias preserved for compatibility). `kas signal emit architect_finished` is accepted and normalized to `elaborator_finished` transparently.
 

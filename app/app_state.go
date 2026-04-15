@@ -1584,6 +1584,13 @@ func (m *home) updateInfoPaneForPlanHeader() {
 	if m.appConfig != nil && m.appConfig.MaxReviewFixCycles > 0 {
 		data.MaxReviewFixCycles = m.appConfig.MaxReviewFixCycles
 	}
+	// Verify-round counter for the terminal-attempt label in the info pane.
+	if entry.Status == taskstate.StatusVerifying && m.appConfig != nil {
+		if cycle, err := m.taskState.ReviewCycle(planFile); err == nil {
+			data.VerifyRound = cycle + 1
+		}
+		data.ReadinessMaxVerifyCycles = m.appConfig.ReadinessMaxVerifyCycles
+	}
 
 	m.tabbedWindow.SetInfoData(data)
 }
@@ -1657,6 +1664,13 @@ func (m *home) updateInfoPane() {
 					if cycle, err := m.taskState.ReviewCycle(selected.TaskFile); err == nil {
 						data.ReviewCycle = cycle + 1
 					}
+				}
+				// Verify-round counter for the terminal-attempt label in the info pane.
+				if entry.Status == taskstate.StatusVerifying && m.appConfig != nil {
+					if cycle, err := m.taskState.ReviewCycle(selected.TaskFile); err == nil {
+						data.VerifyRound = cycle + 1
+					}
+					data.ReadinessMaxVerifyCycles = m.appConfig.ReadinessMaxVerifyCycles
 				}
 			}
 		}

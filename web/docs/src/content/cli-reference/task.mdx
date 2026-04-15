@@ -313,6 +313,8 @@ kas task recover my-feature --action verify-failed --feedback "spec section 3 is
 
 `verify-approved` and `verify-failed` are the manual recovery path for the master agent gate. Use them when the master agent session ended before it could emit a signal. The `kas status` command shows these hints automatically when a task is stuck in the `verifying` status.
 
+Note: under normal operation with `readiness_max_verify_cycles` set, repeated `verify_failed` signals cause the daemon to automatically force-promote to `verify_approved` after the cap is reached — you do not need to intervene manually in that case.
+
 ---
 
 ### link-clickup
