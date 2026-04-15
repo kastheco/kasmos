@@ -10,7 +10,7 @@ Every task in kasmos moves through a finite state machine (FSM). The FSM validat
 | `planning` | a planner agent is writing the plan content |
 | `implementing` | coder agents are working on the task |
 | `reviewing` | a reviewer agent is checking the implementation |
-| `verifying` | a master agent is running the holistic readiness gate before `done` (only entered when `auto_readiness_review = true`); the verify loop is capped by `readiness_max_verify_cycles` — a terminal `verify_failed` is automatically promoted to `verify_approved` and the task transitions `verifying → done` |
+| `verifying` | a master agent is running the holistic readiness gate before `done` (only entered when `auto_readiness_review = true`); the verify loop is capped by `readiness_max_verify_cycles` — when the cap is reached, the processor consumes the next `verify_failed` signal but applies the `verifying → done` transition directly instead of looping back to `implementing` |
 | `done` | the task is complete and merged (or ready to merge) |
 | `cancelled` | explicitly stopped; can be reopened |
 
@@ -52,8 +52,8 @@ Events trigger transitions. Some events are **user-only** (can only be fired fro
 | `request_review` | **yes** | manually trigger a reviewer |
 | `review_approved` | no | reviewer approved the implementation; routes `reviewing → verifying` when `auto_readiness_review = true`, otherwise `reviewing → done` |
 | `review_changes_requested` | no | reviewer requested changes |
-| `verify_approved` | no | master agent approved during verifying (→ `done`); the daemon also synthesizes this transition when `readiness_max_verify_cycles` is reached — no distinct payload annotation is added, but the processor flags the internal action as force-promoted so callers (e.g. the TUI) can surface a warning |
-| `verify_failed` | no | master agent requested changes during verifying (→ `implementing`); when the verify-round count reaches `readiness_max_verify_cycles` the daemon intercepts this and force-promotes to `verify_approved` instead |
+| `verify_approved` | no | master agent approved during verifying (→ `done`). The daemon never writes a `verify_approved` signal row itself — see `verify_failed` for loop-cap handling |
+| `verify_failed` | no | master agent requested changes during verifying (→ `implementing`). When the verify-round count reaches `readiness_max_verify_cycles` the processor still consumes this `verify_failed` signal but applies the `verifying → done` transition directly instead; no new signal is emitted, and the processor tags the emitted `VerifyApprovedAction` as `ForcePromoted` so the TUI can surface a warning |
 | `start_over` | **yes** | reset to planning from done |
 | `reimplement` | **yes** | resume implementation from done without resetting branch |
 | `cancel` | **yes** | cancel the task from any active status |
