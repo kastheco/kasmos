@@ -41,13 +41,13 @@ func (r *ExecCommandRunner) Run(ctx context.Context, name string, args ...string
 //
 // Actions:
 //   - pause:   validate state, best-effort kill tmux session, best-effort
-//              remove/prune owned worktree, persist StatusPaused.
+//     remove/prune owned worktree, persist StatusPaused.
 //   - resume:  recreate worktree and tmux session from stored metadata, persist
-//              StatusRunning. Returns an error when worktree metadata is absent.
+//     StatusRunning. Returns an error when worktree metadata is absent.
 //   - restart: reject paused rows (ErrActionInvalidState), best-effort stop old
-//              session, start fresh session with same metadata, persist StatusRunning.
+//     session, start fresh session with same metadata, persist StatusRunning.
 //   - kill:    best-effort stop tmux session, best-effort worktree cleanup,
-//              remove the record from the instances slice entirely.
+//     remove the record from the instances slice entirely.
 func ApplyAction(ctx context.Context, repoRoot, title, action string, runner CommandRunner) error {
 	path := StateFilePath(repoRoot)
 
