@@ -172,9 +172,15 @@ func (SpawnMasterAction) sealedAction() {}
 // and the task is done. CreatePRAction is emitted immediately after when
 // eligible. Callers that need to react to reviewer approval unconditionally
 // should handle ReviewApprovedAction instead.
+//
+// ForcePromoted is true when the processor promoted a VerifyFailed signal to
+// VerifyApproved because the readiness verify-loop cap was reached. Callers
+// can use this to surface a distinct warning (e.g., a TUI toast) so the
+// operator knows the task was allowed through despite unresolved findings.
 type VerifyApprovedAction struct {
-	PlanFile   string
-	ReviewBody string
+	PlanFile      string
+	ReviewBody    string
+	ForcePromoted bool
 }
 
 func (VerifyApprovedAction) Kind() string  { return "verify_approved" }

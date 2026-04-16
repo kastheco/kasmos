@@ -51,7 +51,12 @@ When the reviewer approves:
 - **`auto_readiness_review = true` (default):** the task transitions to the `verifying` status and kasmos spawns the **master agent** on the same worktree. A toast is shown: `review approved → verification started for <plan>`.
 - **`auto_readiness_review = false`:** `review_approved` flows directly to `done` — no master agent is spawned.
 
-The master agent performs a holistic check against the plan spec. When it finishes, it emits one of the verifying signals:
+The master agent applies a **materiality triage** before signaling:
+
+- **Trivial findings** (typos, format fixes, missing doc comments, unused imports — total ≤ `readiness_self_fix_max_lines` net lines): the master self-fixes directly in the worktree, verifies with `gofmt`, `go vet`, `go build`, `go test`, and `typos`, commits as `fix: <description> (master self-fix)`, and emits `verify_approved`.
+- **Material issues** (logic errors, missing spec coverage, substantial rework): the master emits `verify_failed` with a structured review summary in the payload.
+
+When it finishes, it emits one of the verifying signals:
 
 | signal | transition | result |
 |--------|-----------|--------|
@@ -69,6 +74,12 @@ kas signal emit verify_failed <plan>
 ```
 
 > **Deprecated aliases:** `readiness_approved` and `readiness_changes_requested` (and their hyphenated variants) are still accepted and canonicalized to `verify_approved` / `verify_failed` at ingress. Use the canonical names in new automation.
+
+#### verify-loop cap and force-promotion
+
+The verify loop is bounded by `readiness_max_verify_cycles` (default: `2`). When the master agent emits `verify_failed` and the attempt count equals or exceeds the cap, the daemon **force-promotes** the task to `verify_approved` rather than spawning another fixer. The promotion is reflected by the resulting `verify_approved` transition and a warning toast in the TUI; kasmos does not currently add a distinct `loop_cap_exceeded` marker to the recorded payload.
+
+The info pane labels the final attempt as **readiness review (terminal attempt)** so you can anticipate the promotion before it fires.
 
 After verification (or when `auto_readiness_review = false` skips it), the processor checks whether the task is eligible for automatic PR creation: if the task has a branch and no PR URL is already recorded, it emits a `CreatePRAction`. The daemon picks this up and calls the GitHub PR creation flow — no config knob is needed; the behavior is automatic when the eligibility criteria are met.
 

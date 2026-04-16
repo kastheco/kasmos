@@ -257,6 +257,20 @@ func BuildWaveAnnotationPrompt(planFile, project string) string {
 // Self-Fix Protocol before signaling verify_failed; only verify_approved and
 // verify_failed are valid outcomes.
 func BuildMasterReviewPrompt(planFile, project string) string {
+	return BuildMasterReviewPromptWithConfig(planFile, project, 80, 2)
+}
+
+// BuildMasterReviewPromptWithConfig generates the master agent prompt with
+// configurable self-fix line ceiling (selfFixMaxLines) and verify-round cap
+// (maxVerifyCycles). Values <= 0 are replaced with the defaults (80 and 2
+// respectively).
+func BuildMasterReviewPromptWithConfig(planFile, project string, selfFixMaxLines, maxVerifyCycles int) string {
+	if selfFixMaxLines <= 0 {
+		selfFixMaxLines = 80
+	}
+	if maxVerifyCycles <= 0 {
+		maxVerifyCycles = 2
+	}
 	return fmt.Sprintf(
 		"You are the master readiness review agent. You run during the `verifying` FSM state.\n\n"+
 			"Load the `kasmos-master` skill before starting.\n\n"+
@@ -267,7 +281,7 @@ func BuildMasterReviewPrompt(planFile, project string) string {
 			"   - Run verification: `go build ./... && go test ./...` (or the plan's verify_checks)\n"+
 			"3. If you find issues, classify them per the kasmos-master skill's Self-Fix Protocol. "+
 			"Trivial allow-list findings (typos, missing exported doc comments, unused imports, format-verb mistakes, "+
-			"`typos`/`gofmt` fixes, trivial `go vet` findings — total ≤ 10 lines) MUST be fixed directly in the worktree, "+
+			"`typos`/`gofmt` fixes, trivial `go vet` findings — total ≤ %[3]d net lines) MUST be fixed directly in the worktree, "+
 			"verified with `gofmt -l .`, `go vet ./...`, `go build ./...`, `go test ./...`, and `typos`, "+
 			"then committed as `fix: <description> (master self-fix)` and approved only after the gate passes. "+
 			"Do NOT emit `verify_failed` for findings the protocol marks as self-fixable. "+
@@ -276,7 +290,8 @@ func BuildMasterReviewPrompt(planFile, project string) string {
 			"   - Approved: prefer MCP `signal_create` (signal_type: \"verify_approved\", plan_file: %[1]q, project: %[2]q); fall back to `kas signal emit verify_approved %[1]s`\n"+
 			"   - Changes requested: prefer MCP `signal_create` (signal_type: \"verify_failed\", plan_file: %[1]q, project: %[2]q); fall back to `kas signal emit verify_failed %[1]s`\n"+
 			"   - Include your review summary in the signal payload body field.\n\n"+
+			"Note: this verify loop is capped at %[4]d round(s). If the cap is reached, the daemon force-promotes to approved.\n\n"+
 			"Do not emit `review_approved` or `review_changes_requested` — use `verify_approved` or `verify_failed` above.",
-		planFile, project,
+		planFile, project, selfFixMaxLines, maxVerifyCycles,
 	)
 }

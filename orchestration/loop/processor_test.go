@@ -602,6 +602,161 @@ func TestProcessor_VerifyFailedEmitsVerifyFailedAction(t *testing.T) {
 	assert.True(t, foundIncrement, "expected IncrementReviewCycleAction")
 }
 
+// TestProcessor_VerifyFailed_ReadinessLoopCapForcePromotes verifies that when
+// the readiness verify-loop cap is reached, a VerifyFailed signal is promoted
+// to VerifyApproved before the FSM transition — so the task moves verifying→
+// done instead of verifying→implementing, and no fixer is spawned.
+func TestProcessor_VerifyFailed_ReadinessLoopCapForcePromotes(t *testing.T) {
+	cases := []struct {
+		name        string
+		cap         int
+		reviewCycle int
+		wantPromote bool
+	}{
+		{"first attempt below cap", 2, 0, false},
+		{"cap reached on first attempt", 1, 0, true},
+		{"cap reached on second attempt", 2, 1, true},
+		{"cap exceeded on third attempt", 2, 2, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := taskstore.NewTestStore(t)
+			store.Create("test", taskstore.TaskEntry{
+				Filename: "my-plan.md",
+				Status:   taskstore.StatusVerifying,
+				Branch:   "plan/my-plan",
+				ExecutionState: taskstore.ExecutionState{
+					ActiveAgentType: session.AgentTypeMaster,
+				},
+				ReviewCycle: tc.reviewCycle,
+			})
+
+			p := NewProcessor(ProcessorConfig{
+				Store:                    store,
+				Project:                  "test",
+				AutoReviewFix:            true,
+				AutoReadinessReview:      true,
+				ReadinessMaxVerifyCycles: tc.cap,
+			})
+			actions := p.ProcessFSMSignals([]taskfsm.Signal{
+				{Event: taskfsm.VerifyFailed, TaskFile: "my-plan.md", Body: "issues found"},
+			})
+
+			var (
+				foundApproved, foundFailed, foundFixer, foundIncrement bool
+				approved                                               VerifyApprovedAction
+			)
+			for _, a := range actions {
+				switch act := a.(type) {
+				case VerifyApprovedAction:
+					foundApproved = true
+					approved = act
+				case VerifyFailedAction:
+					foundFailed = true
+				case SpawnFixerAction:
+					foundFixer = true
+				case IncrementReviewCycleAction:
+					foundIncrement = true
+				}
+			}
+
+			if tc.wantPromote {
+				assert.True(t, foundApproved, "expected VerifyApprovedAction on cap promotion")
+				assert.True(t, approved.ForcePromoted, "promoted action must set ForcePromoted=true")
+				assert.False(t, foundFailed, "must not emit VerifyFailedAction on promotion")
+				assert.False(t, foundFixer, "must not spawn fixer on promotion")
+				assert.False(t, foundIncrement, "must not increment review cycle on promotion")
+
+				entry, err := store.Get("test", "my-plan.md")
+				require.NoError(t, err)
+				assert.Equal(t, taskstore.StatusDone, entry.Status, "task must transition to done")
+			} else {
+				assert.False(t, foundApproved, "must not promote below cap")
+				assert.True(t, foundFailed, "expected VerifyFailedAction below cap")
+				assert.True(t, foundFixer, "expected SpawnFixerAction below cap")
+				assert.True(t, foundIncrement, "expected IncrementReviewCycleAction below cap")
+
+				entry, err := store.Get("test", "my-plan.md")
+				require.NoError(t, err)
+				assert.Equal(t, taskstore.StatusImplementing, entry.Status, "task must transition to implementing")
+			}
+		})
+	}
+}
+
+// TestProcessor_VerifyFailed_LoopCapDisabledWhenReadinessOff verifies that
+// ReadinessMaxVerifyCycles has no effect when AutoReadinessReview is off —
+// the task should follow the normal VerifyFailed → fixer path regardless of
+// the configured cap.
+func TestProcessor_VerifyFailed_LoopCapDisabledWhenReadinessOff(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	store.Create("test", taskstore.TaskEntry{
+		Filename:    "my-plan.md",
+		Status:      taskstore.StatusVerifying,
+		Branch:      "plan/my-plan",
+		ReviewCycle: 5, // well past any reasonable cap
+	})
+
+	p := NewProcessor(ProcessorConfig{
+		Store:                    store,
+		Project:                  "test",
+		AutoReviewFix:            true,
+		AutoReadinessReview:      false, // readiness gate disabled
+		ReadinessMaxVerifyCycles: 2,
+	})
+	actions := p.ProcessFSMSignals([]taskfsm.Signal{
+		{Event: taskfsm.VerifyFailed, TaskFile: "my-plan.md", Body: "issues found"},
+	})
+
+	var foundApproved, foundFailed bool
+	for _, a := range actions {
+		if _, ok := a.(VerifyApprovedAction); ok {
+			foundApproved = true
+		}
+		if _, ok := a.(VerifyFailedAction); ok {
+			foundFailed = true
+		}
+	}
+	assert.False(t, foundApproved, "readiness cap must be ignored when AutoReadinessReview is off")
+	assert.True(t, foundFailed, "expected VerifyFailedAction when readiness cap is disabled")
+}
+
+// TestProcessor_VerifyFailed_LoopCapZeroDisabled verifies that
+// ReadinessMaxVerifyCycles = 0 disables the cap entirely.
+func TestProcessor_VerifyFailed_LoopCapZeroDisabled(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	store.Create("test", taskstore.TaskEntry{
+		Filename:    "my-plan.md",
+		Status:      taskstore.StatusVerifying,
+		Branch:      "plan/my-plan",
+		ReviewCycle: 10,
+	})
+
+	p := NewProcessor(ProcessorConfig{
+		Store:                    store,
+		Project:                  "test",
+		AutoReviewFix:            true,
+		AutoReadinessReview:      true,
+		ReadinessMaxVerifyCycles: 0,
+	})
+	actions := p.ProcessFSMSignals([]taskfsm.Signal{
+		{Event: taskfsm.VerifyFailed, TaskFile: "my-plan.md", Body: "issues found"},
+	})
+
+	var foundApproved, foundFailed bool
+	for _, a := range actions {
+		if _, ok := a.(VerifyApprovedAction); ok {
+			foundApproved = true
+		}
+		if _, ok := a.(VerifyFailedAction); ok {
+			foundFailed = true
+		}
+	}
+	assert.False(t, foundApproved, "cap=0 must disable force-promotion")
+	assert.True(t, foundFailed, "expected VerifyFailedAction when cap is 0")
+}
+
 func TestProcessor_SetReadinessReviewConfig(t *testing.T) {
 	store := taskstore.NewTestStore(t)
 	p := NewProcessor(ProcessorConfig{Store: store, Project: "test"})
@@ -798,6 +953,50 @@ func TestProcessor_ProcessFSMSignals_PreAppliedHTTPSignals(t *testing.T) {
 		assert.True(t, foundVerifyFailed, "expected VerifyFailedAction")
 		assert.True(t, foundFixer, "expected SpawnFixerAction")
 		assert.True(t, foundIncrement, "expected IncrementReviewCycleAction")
+	})
+
+	t.Run("verify_failed pre-applied at cap must not force-promote", func(t *testing.T) {
+		// Regression: when a verify_failed signal is PreApplied (the HTTP handler
+		// already moved verifying → implementing), force-promotion must be
+		// skipped. Otherwise the processor would emit VerifyApprovedAction side
+		// effects on a task that is persisted in StatusImplementing.
+		store := taskstore.NewTestStore(t)
+		require.NoError(t, store.Create("test", taskstore.TaskEntry{
+			Filename:    "my-plan.md",
+			Status:      taskstore.StatusImplementing, // HTTP-applied verifying → implementing
+			Branch:      "plan/my-plan",
+			ReviewCycle: 5, // well past the cap
+		}))
+
+		p := NewProcessor(ProcessorConfig{
+			Store:                    store,
+			Project:                  "test",
+			AutoReviewFix:            true,
+			AutoReadinessReview:      true,
+			ReadinessMaxVerifyCycles: 2,
+		})
+		actions := p.ProcessFSMSignals([]taskfsm.Signal{{
+			Event:      taskfsm.VerifyFailed,
+			TaskFile:   "my-plan.md",
+			Body:       "issues found",
+			PreApplied: true,
+		}})
+
+		var foundApproved, foundFailed bool
+		for _, a := range actions {
+			if _, ok := a.(VerifyApprovedAction); ok {
+				foundApproved = true
+			}
+			if _, ok := a.(VerifyFailedAction); ok {
+				foundFailed = true
+			}
+		}
+		assert.False(t, foundApproved, "must not promote when signal is PreApplied")
+		assert.True(t, foundFailed, "expected VerifyFailedAction for PreApplied verify_failed")
+
+		entry, err := store.Get("test", "my-plan.md")
+		require.NoError(t, err)
+		assert.Equal(t, taskstore.StatusImplementing, entry.Status, "task must remain in implementing")
 	})
 
 	t.Run("planner_finished pre-applied spawns architect under auto-advance", func(t *testing.T) {

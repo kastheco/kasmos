@@ -43,6 +43,13 @@ func TestPromptTemplates_UseMCPFirstSignals(t *testing.T) {
 				"Readiness review handoff",
 				"verifying",
 				"auto_readiness_review",
+				// master triage buckets
+				"blocker",
+				"quality",
+				// self-fix ceiling knob
+				"readiness_self_fix_max_lines",
+				// shared static gate
+				"post-fix",
 			},
 			notContains: []string{
 				".kasmos/signals/review-approved-",

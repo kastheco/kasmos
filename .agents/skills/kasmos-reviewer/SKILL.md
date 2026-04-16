@@ -341,6 +341,13 @@ Keep findings to short bullet points with concrete remediation requests. Avoid g
 
 When `auto_readiness_review` is enabled in the daemon config, kasmos transitions the task to the `verifying` FSM state after processing your `review-approved` signal and then spawns the master agent. You do not need to do anything extra — emit your normal approval signal and stop.
 
+The master triages every finding into one of three severity buckets:
+- **blocker** — must be fixed before approval
+- **quality** — substantive issue worth fixing but not blocking
+- **note** — informational only; the master will not iterate on these
+
+The master may self-fix issues up to the configured `readiness_self_fix_max_lines` ceiling (default `80` lines changed). Both the reviewer and the master run the same static post-fix gate (`gofmt`, `go vet`, `go test`), so reviewer-visible nitpicks do not need to be pre-filtered for the master.
+
 If `auto_readiness_review` is disabled, `review-approved` causes the processor to immediately chain `verify-approved`, transitioning the task directly to `done` without spawning the master agent.
 
 ### Mode-Specific Behavior

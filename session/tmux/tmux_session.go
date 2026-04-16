@@ -24,10 +24,6 @@ const ProgramClaude = "claude"
 
 var agentFlagPattern = regexp.MustCompile(`(^|[[:space:]])--agent([[:space:]]|$)`)
 
-func shellEscapeSingleQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
-}
-
 const ProgramAider = "aider"
 const ProgramGemini = "gemini"
 const ProgramOpenCode = "opencode"
@@ -345,7 +341,7 @@ func (t *TmuxSession) Start(workDir string) error {
 
 	// Inject --agent only for programs that recognise the flag (Claude, OpenCode).
 	if t.agentType != "" && programSupportsAgentFlag(t.program) && !agentFlagPattern.MatchString(program) {
-		program = program + " --agent " + shellEscapeSingleQuote(t.agentType)
+		program = program + " --agent " + t.agentType
 	}
 
 	// Bake the initial prompt into the CLI command using adapter-provided syntax.

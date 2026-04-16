@@ -576,3 +576,79 @@ func TestInfoPane_VerifyingStatus_SuppressesRoundCounter(t *testing.T) {
 	output := pane.String()
 	assert.NotContains(t, output, "round", "round counter must be suppressed for verifying status")
 }
+
+// TestInfoPhaseLabel_TerminalAttempt exercises the infoPhaseLabel helper for
+// the terminal-attempt variant of the readiness_reviewing phase.
+func TestInfoPhaseLabel_TerminalAttempt(t *testing.T) {
+	// Without the optional flag the label is unchanged.
+	assert.Equal(t, "readiness review", infoPhaseLabel("readiness_reviewing", 0, 0))
+	assert.Equal(t, "readiness review", infoPhaseLabel("readiness_reviewing", 3, 2, false))
+
+	// With terminalAttempt = true the label gains the suffix.
+	assert.Equal(t, "readiness review (terminal attempt)", infoPhaseLabel("readiness_reviewing", 0, 0, true))
+	// activeWave and activeRound are irrelevant for readiness_reviewing.
+	assert.Equal(t, "readiness review (terminal attempt)", infoPhaseLabel("readiness_reviewing", 3, 2, true))
+
+	// Other phases are not affected by the flag.
+	assert.Equal(t, "reviewing", infoPhaseLabel("reviewing", 0, 0, true))
+	assert.Equal(t, "reviewing round 2", infoPhaseLabel("reviewing", 0, 2, true))
+}
+
+// TestInfoPane_TerminalVerifyAttempt_Label verifies that the pane renders
+// "readiness review (terminal attempt)" when VerifyRound >= ReadinessMaxVerifyCycles.
+func TestInfoPane_TerminalVerifyAttempt_Label(t *testing.T) {
+	pane := NewInfoPane()
+	pane.SetSize(70, 40)
+	pane.SetData(InfoData{
+		IsPlanHeaderSelected:     true,
+		PlanName:                 "auth-feature",
+		PlanStatus:               "verifying",
+		ExecutionPhase:           "readiness_reviewing",
+		ActiveAgentType:          "master",
+		VerifyRound:              2,
+		ReadinessMaxVerifyCycles: 2,
+	})
+
+	output := pane.String()
+	assert.Contains(t, output, "readiness review (terminal attempt)",
+		"pane must show terminal-attempt label when VerifyRound >= cap")
+	// Round counter must still be suppressed.
+	assert.NotContains(t, output, "round", "round counter must be suppressed in readiness_reviewing phase")
+}
+
+// TestInfoPane_NonTerminalVerifyAttempt_Label verifies the label is plain
+// "readiness review" when VerifyRound is below the cap or cap is 0.
+func TestInfoPane_NonTerminalVerifyAttempt_Label(t *testing.T) {
+	pane := NewInfoPane()
+	pane.SetSize(70, 40)
+
+	// Round 1 of cap 2 — not terminal yet.
+	pane.SetData(InfoData{
+		IsPlanHeaderSelected:     true,
+		PlanName:                 "auth-feature",
+		PlanStatus:               "verifying",
+		ExecutionPhase:           "readiness_reviewing",
+		ActiveAgentType:          "master",
+		VerifyRound:              1,
+		ReadinessMaxVerifyCycles: 2,
+	})
+	output := pane.String()
+	assert.Contains(t, output, "readiness review",
+		"pane must show readiness review label")
+	assert.NotContains(t, output, "terminal attempt",
+		"non-terminal round must not show terminal-attempt suffix")
+
+	// Cap 0 (unlimited) — never terminal.
+	pane.SetData(InfoData{
+		IsPlanHeaderSelected:     true,
+		PlanName:                 "auth-feature",
+		PlanStatus:               "verifying",
+		ExecutionPhase:           "readiness_reviewing",
+		ActiveAgentType:          "master",
+		VerifyRound:              5,
+		ReadinessMaxVerifyCycles: 0,
+	})
+	output = pane.String()
+	assert.Contains(t, output, "readiness review")
+	assert.NotContains(t, output, "terminal attempt")
+}

@@ -200,6 +200,14 @@ type Config struct {
 	// AutoReadinessReview enables the post-reviewer master-agent readiness gate.
 	// Enabled by default; set to false to skip the readiness review phase.
 	AutoReadinessReview bool `json:"auto_readiness_review,omitempty"`
+	// ReadinessSelfFixMaxLines is the maximum number of net lines the master agent
+	// may change in a self-fix attempt. Defaults to 80. Values <= 0 are invalid and
+	// fall back to the default.
+	ReadinessSelfFixMaxLines int `json:"readiness_self_fix_max_lines,omitempty"`
+	// ReadinessMaxVerifyCycles is the maximum number of verify-round attempts before
+	// the loop is force-promoted to approved. Defaults to 2. Values <= 0 are invalid
+	// and fall back to the default.
+	ReadinessMaxVerifyCycles int `json:"readiness_max_verify_cycles,omitempty"`
 	// TelemetryEnabled controls Sentry crash reporting; defaults to true when nil.
 	TelemetryEnabled *bool `json:"telemetry_enabled,omitempty"`
 	// DatabaseURL is the remote kasmos store URL; uses local file when empty.
@@ -269,13 +277,15 @@ func DefaultConfig() *Config {
 	trueVal := true
 	dtThreshold := defaultDoubleTapThresholdMS
 	cfg := &Config{
-		AutoYes:              false,
-		AutoAdvanceWaves:     true,
-		AutoAdvance:          true,
-		AutoReviewFix:        true,
-		AutoReadinessReview:  true,
-		NotificationsEnabled: &trueVal,
-		DoubleTapThresholdMS: &dtThreshold,
+		AutoYes:                  false,
+		AutoAdvanceWaves:         true,
+		AutoAdvance:              true,
+		AutoReviewFix:            true,
+		AutoReadinessReview:      true,
+		ReadinessSelfFixMaxLines: 80,
+		ReadinessMaxVerifyCycles: 2,
+		NotificationsEnabled:     &trueVal,
+		DoubleTapThresholdMS:     &dtThreshold,
 	}
 	applyConfigDefaults(cfg)
 	return cfg
@@ -421,6 +431,26 @@ func configFromTOML(result *TOMLConfigResult) *Config {
 		if result.AutoReadinessReview != nil {
 			cfg.AutoReadinessReview = *result.AutoReadinessReview
 		}
+		if result.ReadinessSelfFixMaxLines != nil {
+			if *result.ReadinessSelfFixMaxLines <= 0 {
+				if log.WarningLog != nil {
+					log.WarningLog.Printf("config: readiness_self_fix_max_lines value %d is invalid (<= 0); using default 80", *result.ReadinessSelfFixMaxLines)
+				}
+				cfg.ReadinessSelfFixMaxLines = 80
+			} else {
+				cfg.ReadinessSelfFixMaxLines = *result.ReadinessSelfFixMaxLines
+			}
+		}
+		if result.ReadinessMaxVerifyCycles != nil {
+			if *result.ReadinessMaxVerifyCycles <= 0 {
+				if log.WarningLog != nil {
+					log.WarningLog.Printf("config: readiness_max_verify_cycles value %d is invalid (<= 0); using default 2", *result.ReadinessMaxVerifyCycles)
+				}
+				cfg.ReadinessMaxVerifyCycles = 2
+			} else {
+				cfg.ReadinessMaxVerifyCycles = *result.ReadinessMaxVerifyCycles
+			}
+		}
 		if result.ClaudeNoFlicker != nil {
 			cfg.ClaudeNoFlicker = *result.ClaudeNoFlicker
 		}
@@ -483,6 +513,14 @@ func configToTOML(cfg *Config) *TOMLConfig {
 	out.UI.MaxReviewFixCycles = &maxReviewFixCycles
 	autoReadinessReview := cfg.AutoReadinessReview
 	out.UI.AutoReadinessReview = &autoReadinessReview
+	if cfg.ReadinessSelfFixMaxLines > 0 {
+		v := cfg.ReadinessSelfFixMaxLines
+		out.UI.ReadinessSelfFixMaxLines = &v
+	}
+	if cfg.ReadinessMaxVerifyCycles > 0 {
+		v := cfg.ReadinessMaxVerifyCycles
+		out.UI.ReadinessMaxVerifyCycles = &v
+	}
 	return out
 }
 

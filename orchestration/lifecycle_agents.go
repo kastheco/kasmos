@@ -113,10 +113,18 @@ func BuildPlannerAgentSpec(planFile, project, description string) LifecycleAgent
 // "<plan>-verify-<cycle>" pattern so multiple verifiers can run concurrently
 // for different tasks. reviewCycle is the stored review cycle count; the title
 // uses cycle+1 to match reviewer/fixer numbering.
+// Defaults of 80 net lines and 2 verify cycles are used for the self-fix ceiling
+// and loop cap. Use BuildMasterAgentSpecWithConfig to supply custom values.
 func BuildMasterAgentSpec(planFile, project string, reviewCycle int) LifecycleAgentSpec {
+	return BuildMasterAgentSpecWithConfig(planFile, project, reviewCycle, 80, 2)
+}
+
+// BuildMasterAgentSpecWithConfig is like BuildMasterAgentSpec but accepts
+// configurable self-fix line ceiling and verify-round cap values.
+func BuildMasterAgentSpecWithConfig(planFile, project string, reviewCycle, selfFixMaxLines, maxVerifyCycles int) LifecycleAgentSpec {
 	return LifecycleAgentSpec{
 		Title:  BuildLifecycleAgentTitle(planFile, session.AgentTypeMaster, reviewCycle+1),
-		Prompt: BuildMasterReviewPrompt(planFile, project),
+		Prompt: BuildMasterReviewPromptWithConfig(planFile, project, selfFixMaxLines, maxVerifyCycles),
 	}
 }
 

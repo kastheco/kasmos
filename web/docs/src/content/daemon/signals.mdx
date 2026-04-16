@@ -67,8 +67,8 @@ pending
 | `review_approved` | reviewer | FSM transition `reviewing → verifying` (spawn master agent) when `auto_readiness_review = true`; otherwise `reviewing → done` |
 | `review_changes_requested` | reviewer | FSM transition → `implementing`, spawn fixer |
 | `planner_finished` | planner | FSM transition → `ready` |
-| `verify_approved` | master agent | FSM transition `verifying → done` |
-| `verify_failed` | master agent | FSM transition `verifying → implementing`, spawn fixer |
+| `verify_approved` | master agent | FSM transition `verifying → done`. **No loop-cap signal is ever written to the gateway.** |
+| `verify_failed` | master agent | FSM transition `verifying → implementing`, spawn fixer. When `readiness_max_verify_cycles` is reached, the processor consumes the `verify_failed` signal but applies the `verifying → done` transition instead — no new `verify_approved` signal row is created, and the original `verify_failed` row is still marked processed. Callers distinguish the in-memory force-promotion via the `ForcePromoted` flag on the emitted `VerifyApprovedAction`. |
 
 > **Architect completion:** the canonical internal event is `architect_finished`, but the persisted gateway signal wire name is `elaborator_finished` (a legacy alias preserved for compatibility). `kas signal emit architect_finished` is accepted and normalized to `elaborator_finished` transparently.
 

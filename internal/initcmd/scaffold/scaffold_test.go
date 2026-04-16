@@ -1436,6 +1436,17 @@ func TestLoadReviewPrompt_MentionsReadinessReviewHandoff(t *testing.T) {
 	assert.Contains(t, prompt, "verifying")
 	assert.Contains(t, prompt, "auto_readiness_review")
 	assert.NotContains(t, prompt, "readiness_reviewing")
+
+	// triage buckets
+	assert.Contains(t, prompt, "blocker")
+	assert.Contains(t, prompt, "quality")
+	assert.Contains(t, prompt, "note")
+
+	// self-fix ceiling knob
+	assert.Contains(t, prompt, "readiness_self_fix_max_lines")
+
+	// shared static gate language
+	assert.Contains(t, prompt, "post-fix")
 }
 
 func ptrFloat(f float64) *float64 { return &f }

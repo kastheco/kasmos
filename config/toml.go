@@ -36,13 +36,15 @@ func (a TOMLAgent) toProfile() AgentProfile {
 
 // TOMLUIConfig holds UI-specific settings from the [ui] TOML table.
 type TOMLUIConfig struct {
-	AnimateBanner       bool   `toml:"animate_banner"`
-	AccentColor         string `toml:"accent_color,omitempty"`
-	AutoAdvanceWaves    *bool  `toml:"auto_advance_waves"`
-	AutoAdvance         *bool  `toml:"auto_advance"`
-	AutoReviewFix       *bool  `toml:"auto_review_fix"`
-	MaxReviewFixCycles  *int   `toml:"max_review_fix_cycles"`
-	AutoReadinessReview *bool  `toml:"auto_readiness_review"`
+	AnimateBanner            bool   `toml:"animate_banner"`
+	AccentColor              string `toml:"accent_color,omitempty"`
+	AutoAdvanceWaves         *bool  `toml:"auto_advance_waves"`
+	AutoAdvance              *bool  `toml:"auto_advance"`
+	AutoReviewFix            *bool  `toml:"auto_review_fix"`
+	MaxReviewFixCycles       *int   `toml:"max_review_fix_cycles"`
+	AutoReadinessReview      *bool  `toml:"auto_readiness_review"`
+	ReadinessSelfFixMaxLines *int   `toml:"readiness_self_fix_max_lines"`
+	ReadinessMaxVerifyCycles *int   `toml:"readiness_max_verify_cycles"`
 }
 
 // TOMLTelemetryConfig holds telemetry settings from the [telemetry] TOML table.
@@ -96,26 +98,28 @@ type TOMLConfig struct {
 
 // TOMLConfigResult holds the parsed config in terms of internal types.
 type TOMLConfigResult struct {
-	Profiles               map[string]AgentProfile
-	PhaseRoles             map[string]string
-	AnimateBanner          bool
-	AccentColor            string
-	AutoAdvanceWaves       *bool
-	AutoAdvance            *bool
-	AutoReviewFix          *bool
-	MaxReviewFixCycles     *int
-	AutoReadinessReview    *bool
-	TelemetryEnabled       *bool
-	DatabaseURL            string
-	BlueprintSkipThreshold *int
-	DoubleTapThresholdMS   *int
-	DefaultProgram         string
-	AutoYes                bool
-	DaemonPollInterval     int
-	BranchPrefix           string
-	NotificationsEnabled   *bool
-	ClaudeNoFlicker        *bool
-	Hooks                  []TOMLHook
+	Profiles                 map[string]AgentProfile
+	PhaseRoles               map[string]string
+	AnimateBanner            bool
+	AccentColor              string
+	AutoAdvanceWaves         *bool
+	AutoAdvance              *bool
+	AutoReviewFix            *bool
+	MaxReviewFixCycles       *int
+	AutoReadinessReview      *bool
+	ReadinessSelfFixMaxLines *int
+	ReadinessMaxVerifyCycles *int
+	TelemetryEnabled         *bool
+	DatabaseURL              string
+	BlueprintSkipThreshold   *int
+	DoubleTapThresholdMS     *int
+	DefaultProgram           string
+	AutoYes                  bool
+	DaemonPollInterval       int
+	BranchPrefix             string
+	NotificationsEnabled     *bool
+	ClaudeNoFlicker          *bool
+	Hooks                    []TOMLHook
 }
 
 // LoadTOMLConfigFrom reads and parses a TOML config file,
@@ -127,26 +131,28 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 	}
 
 	result := &TOMLConfigResult{
-		Profiles:               make(map[string]AgentProfile),
-		PhaseRoles:             tc.Phases,
-		AnimateBanner:          tc.UI.AnimateBanner,
-		AccentColor:            tc.UI.AccentColor,
-		AutoAdvanceWaves:       tc.UI.AutoAdvanceWaves,
-		AutoAdvance:            tc.UI.AutoAdvance,
-		AutoReviewFix:          tc.UI.AutoReviewFix,
-		MaxReviewFixCycles:     tc.UI.MaxReviewFixCycles,
-		AutoReadinessReview:    tc.UI.AutoReadinessReview,
-		TelemetryEnabled:       tc.Telemetry.Enabled,
-		DatabaseURL:            tc.DatabaseURL,
-		BlueprintSkipThreshold: tc.Orchestration.BlueprintSkipThreshold,
-		DoubleTapThresholdMS:   tc.Keybinds.DoubleTapThresholdMS,
-		DefaultProgram:         tc.DefaultProgram,
-		AutoYes:                tc.AutoYes,
-		DaemonPollInterval:     tc.DaemonPollInterval,
-		BranchPrefix:           tc.BranchPrefix,
-		NotificationsEnabled:   tc.NotificationsEnabled,
-		ClaudeNoFlicker:        tc.ClaudeNoFlicker,
-		Hooks:                  tc.Hooks,
+		Profiles:                 make(map[string]AgentProfile),
+		PhaseRoles:               tc.Phases,
+		AnimateBanner:            tc.UI.AnimateBanner,
+		AccentColor:              tc.UI.AccentColor,
+		AutoAdvanceWaves:         tc.UI.AutoAdvanceWaves,
+		AutoAdvance:              tc.UI.AutoAdvance,
+		AutoReviewFix:            tc.UI.AutoReviewFix,
+		MaxReviewFixCycles:       tc.UI.MaxReviewFixCycles,
+		AutoReadinessReview:      tc.UI.AutoReadinessReview,
+		ReadinessSelfFixMaxLines: tc.UI.ReadinessSelfFixMaxLines,
+		ReadinessMaxVerifyCycles: tc.UI.ReadinessMaxVerifyCycles,
+		TelemetryEnabled:         tc.Telemetry.Enabled,
+		DatabaseURL:              tc.DatabaseURL,
+		BlueprintSkipThreshold:   tc.Orchestration.BlueprintSkipThreshold,
+		DoubleTapThresholdMS:     tc.Keybinds.DoubleTapThresholdMS,
+		DefaultProgram:           tc.DefaultProgram,
+		AutoYes:                  tc.AutoYes,
+		DaemonPollInterval:       tc.DaemonPollInterval,
+		BranchPrefix:             tc.BranchPrefix,
+		NotificationsEnabled:     tc.NotificationsEnabled,
+		ClaudeNoFlicker:          tc.ClaudeNoFlicker,
+		Hooks:                    tc.Hooks,
 	}
 
 	for name, agent := range tc.Agents {
