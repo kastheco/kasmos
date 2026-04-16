@@ -1,0 +1,127 @@
+---
+title: "task store"
+---
+
+# task store
+
+the task store is the authoritative database for all kasmos task state. it tracks task status, content, subtasks, phase timestamps, pr state, review cycles, and signals. kasmos supports two backends:
+
+1. **global sqlite** (default) — a single machine-wide database shared by all repos.
+2. **remote http store** — a kasmos server instance, used for team or ci environments.
+
+## global sqlite
+
+**default path:** `~/.config/kasmos/taskstore.db`
+
+the task store is a **machine-global, cross-project database** — not repo-local. tasks from different repositories are separated by project name (derived from the repo root directory name), so one file serves all your projects. all git worktrees of the same repository share the same project namespace.
+
+the `kasmosdb` user service typically runs `kas serve`, which owns the shared sqlite-backed task store, the admin ui, and the shared http mcp endpoint. agents should connect through that shared mcp endpoint by default rather than spawning per-agent `kas mcp` stdio servers.
+
+```sh
+# inspect the resolved DB path
+kas debug
+
+# check the kasmosdb service
+systemctl --user status kasmosdb
+```
+
+### sqlite characteristics
+
+- **no per-repo configuration required** — kasmos creates the global file on first use.
+- **migrations run automatically** when the store opens.
+- **concurrent access** from multiple agents is safe because kasmos uses WAL mode and per-operation transactions.
+- **worktree-safe** — all worktrees of the same repository share one project namespace in the global store.
+
+## remote http store
+
+to share task state across machines or use a central server in ci, set `database_url` in `config.toml`:
+
+```toml
+database_url = "http://host:7433"
+```
+
+when `database_url` is non-empty, kasmos routes all task store operations to the http api instead of the local sqlite file. start the server with:
+
+```sh
+kas serve --port 7433 --db /path/to/shared/taskstore.db
+```
+
+the http client is initialized lazily — the URL is validated syntactically at startup, but no network connection is made until the first store operation.
+
+## rest api
+
+the http store exposes the following endpoints (implemented in `config/taskstore/server.go`):
+
+### health
+
+| method | path | description |
+|--------|------|-------------|
+| `GET` | `/v1/ping` | check store availability |
+
+### tasks
+
+| method | path | description |
+|--------|------|-------------|
+| `GET` | `/v1/projects/{project}/tasks` | list all tasks; filter with `?status=` or `?topic=` |
+| `POST` | `/v1/projects/{project}/tasks` | create a task |
+| `GET` | `/v1/projects/{project}/tasks/{filename}` | get a single task |
+| `PUT` | `/v1/projects/{project}/tasks/{filename}` | update task metadata |
+
+### task content and subtasks
+
+| method | path | description |
+|--------|------|-------------|
+| `GET` | `/v1/projects/{project}/tasks/{filename}/content` | get task markdown content |
+| `PUT` | `/v1/projects/{project}/tasks/{filename}/content` | replace task markdown content |
+| `GET` | `/v1/projects/{project}/tasks/{filename}/subtasks` | list subtasks |
+| `PUT` | `/v1/projects/{project}/tasks/{filename}/subtasks` | replace subtask list |
+| `PUT` | `/v1/projects/{project}/tasks/{filename}/subtasks/{taskNumber}/status` | update a single subtask status |
+
+### task metadata
+
+| method | path | description |
+|--------|------|-------------|
+| `PUT` | `/v1/projects/{project}/tasks/{filename}/phase-timestamp` | record a phase transition timestamp |
+| `PUT` | `/v1/projects/{project}/tasks/{filename}/goal` | set the plan goal text |
+| `PUT` | `/v1/projects/{project}/tasks/{filename}/clickup-task-id` | associate a ClickUp task ID |
+| `POST` | `/v1/projects/{project}/tasks/{filename}/rename` | rename (reslug) a task |
+| `POST` | `/v1/projects/{project}/tasks/{filename}/increment-review-cycle` | increment the review cycle counter |
+
+### pr state
+
+| method | path | description |
+|--------|------|-------------|
+| `PUT` | `/v1/projects/{project}/tasks/{filename}/pr-url` | store the pr url |
+| `PUT` | `/v1/projects/{project}/tasks/{filename}/pr-state` | update pr review decision and check status |
+| `POST` | `/v1/projects/{project}/tasks/{filename}/pr-reviews` | record a pr review (idempotent by review id) |
+| `GET` | `/v1/projects/{project}/tasks/{filename}/pr-reviews/pending` | list reviews awaiting fixer dispatch |
+| `GET` | `/v1/projects/{project}/tasks/{filename}/pr-reviews/{reviewID}/processed` | check if a review has been processed |
+| `POST` | `/v1/projects/{project}/tasks/{filename}/pr-reviews/{reviewID}/reacted` | mark a reaction as posted |
+| `POST` | `/v1/projects/{project}/tasks/{filename}/pr-reviews/{reviewID}/fixer-dispatched` | mark fixer agent as dispatched |
+
+### topics
+
+| method | path | description |
+|--------|------|-------------|
+| `GET` | `/v1/projects/{project}/topics` | list all topics |
+| `POST` | `/v1/projects/{project}/topics` | create a topic |
+
+## project name
+
+the `{project}` path segment is the project identifier — typically the repository directory name (e.g. `kasmos` for `/home/alice/projects/kasmos`). kasmos derives this from the resolved repo root and passes it to all store operations. when using the http store, all projects on the server are namespaced by this identifier.
+
+## filename normalization
+
+task filenames in the store are always stored without a `.md` suffix. the cli (`kas task register`, `kas task update-content`) and mcp task tools normalize `.md` automatically. a sqlite migration runs on startup to strip any `.md` suffixes from existing rows.
+
+## signals
+
+the task store includes a `signals` table for daemon coordination. signals transition through `pending`, `processing`, `done`, and `failed` states. agents should use mcp `signal_create` to create signals; `kas signal emit` is the operator and cli fallback. see [signals](../cli-reference/signal.mdx) for details.
+
+## backing up
+
+the local sqlite file can be backed up with any standard file copy while kasmos is not running. to create a safe online backup:
+
+```sh
+sqlite3 ~/.config/kasmos/taskstore.db ".backup backup.db"
+```
