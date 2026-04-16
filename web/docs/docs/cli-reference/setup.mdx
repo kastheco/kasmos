@@ -43,12 +43,12 @@ After the wizard completes:
 
 2. **Enforcement hooks** — cli-tools enforcement hooks are installed into each selected harness so agents are constrained to use preferred tools (`rg`, `fd`, `sd`, etc.) instead of raw shell commands.
 
-3. **TOML config write** — the selected configuration is written to `~/.kasmos/config.toml` (or `<repo-root>/.kasmos/config.toml`). The path is printed after writing.
+3. **TOML config write** — the selected configuration is written to `<repo-root>/.kasmos/config.toml`. The path is printed after writing.
 
 4. **Project scaffold** — project-level agent files are written into the current directory:
    - `.agents/skills/` — project-scoped skills
-   - `.Claude/agents/` — Claude-specific per-role agent files
-   - `.claude/agents/` — Claude Code agent files (CLAUDE.md, etc.)
+   - `.claude/` — Claude Code harness config (agents, settings, skills)
+   - `.opencode/` — opencode harness config (agents, skills)
    - `AGENTS.md`, `CLAUDE.md`, `.codex/AGENTS.md` — harness-wide instructions
 
    Files that already exist are skipped unless `--force` is given.

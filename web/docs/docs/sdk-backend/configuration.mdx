@@ -77,7 +77,7 @@ func ResolveExecutionMode(requested ExecutionMode, program string) ExecutionMode
 }
 ```
 
-**consequence:** if you set `execution_mode = "sdk"` for `opencode`, `gemini`, `amp`, or a custom program, kasmos will silently run it in tmux instead. the docs and `kas debug config` output will still show `"sdk"` from the profile (the normalized config value), but the runtime session is a tmux session. use `kas debug` to confirm the resolved mode before relying on sdk behavior.
+**consequence:** if you set `execution_mode = "sdk"` for `opencode`, `gemini`, `amp`, or a custom program, kasmos will silently run it in tmux instead. `kas debug` output will still show `"sdk"` from the profile (the normalized config value), but the runtime session is a tmux session.
 
 ## full agent block example
 
@@ -103,8 +103,8 @@ the `[phases]` table maps lifecycle phases to agent roles. the execution mode is
 
 ```toml
 [phases]
-implementing = "coder"
-reviewing    = "reviewer"
+implementing   = "coder"
+quality_review = "reviewer"
 ```
 
 when kasmos starts an implementing session, it reads `agents.coder.execution_mode`, normalizes it, and then calls `ResolveExecutionMode` with the program to determine the actual backend. the resolution path is:
@@ -138,7 +138,7 @@ the fallback always uses `ExecutionModeTmux` — there is no way to make the def
 ## inspecting resolved configuration
 
 ```bash
-kas debug config
+kas debug
 ```
 
-prints the fully resolved `Config` struct as JSON, including the normalized `execution_mode` for each agent profile. use this to confirm that `"headless"` aliases were resolved to `"sdk"` and that unsupported programs received `"tmux"`.
+prints the config path and the fully resolved `Config` struct as JSON, including the normalized `execution_mode` for each agent profile. use this to confirm that `"headless"` aliases were resolved to `"sdk"` and that unsupported programs received `"tmux"`.

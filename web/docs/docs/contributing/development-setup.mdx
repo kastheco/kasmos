@@ -68,13 +68,13 @@ npm run build     # static export to web/out/
 
 ## web: docs site
 
-The documentation site at `web/docs/` is a standalone Nextra project:
+The documentation site at `web/docs/` is a Docusaurus project:
 
 ```bash
 cd web/docs
 npm ci
-npm run dev       # starts at http://localhost:3001 (or next available port)
-npm run build     # static export to web/docs/out/
+npm run start     # starts at http://localhost:3000 (or next available port)
+npm run build     # outputs to web/docs/build/
 ```
 
 ## web: admin SPA
@@ -120,7 +120,7 @@ just doctord
 
 ## scaffold sync
 
-kasmos scaffolds agent harness configuration into `.agents/`, `.claude/`, and `.Claude/` from templates in `internal/initcmd/scaffold/templates/`. If you edit those template files, keep the live copies in sync and verify with:
+kasmos scaffolds agent harness configuration into `.agents/`, `.claude/`, and `.opencode/` from templates in `internal/initcmd/scaffold/templates/`. If you edit those template files, keep the live copies in sync and verify with:
 
 ```bash
 kas check -v

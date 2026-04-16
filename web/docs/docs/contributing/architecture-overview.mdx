@@ -29,9 +29,9 @@ kasmos is a go application with several surfaces that work together: an interact
 | `daemon/` | multi-repo background orchestrator, unix-socket control api |
 | `internal/initcmd/` | `kas setup` wizard and scaffold templates |
 | `web/` | Next.js App Router marketing site |
-| `web/docs/` | Nextra docs site (this site) |
+| `web/docs/` | Docusaurus docs site (this site) |
 | `web/admin/` | vite-based spa for the task store browser ui |
-| `.agents/`, `.claude/`, `.Claude/` | scaffolded agent harness configs and skills |
+| `.agents/`, `.claude/`, `.opencode/` | scaffolded agent harness configs and skills |
 | `contrib/` | systemd service files for daemon and task-store deployment |
 
 ## request flow
@@ -95,9 +95,9 @@ the default store is the shared global database at `~/.config/kasmos/taskstore.d
 
 `kas setup` scaffolds agent harness configuration from templates in `internal/initcmd/scaffold/templates/` into three locations:
 
-- `.agents/` — generic agent config
-- `.claude/` — claude-code harness config
-- `.Claude/` — Claude skills
+- `.agents/` — generic agent config and shared skills
+- `.claude/` — Claude Code harness config (agents, settings, skills)
+- `.opencode/` — opencode harness config (agents, skills)
 
 if you edit the templates, you must also update the live copies (or vice-versa), then run `kas check -v` to confirm they are in sync.
 
@@ -106,7 +106,7 @@ if you edit the templates, you must also update the live copies (or vice-versa),
 | surface | framework | output | path |
 |---------|-----------|--------|------|
 | marketing site | Next.js App Router | `web/out/` | `/kasmos` |
-| docs site | Docusaurus 3 | `web/docs/build/` | `/kasmos/docs` |
+| docs site | Docusaurus | `web/docs/build/` | `/kasmos/docs` |
 | admin spa | vite | `web/admin/dist/` | served by `kas serve` |
 
 the marketing site and docs site both use `output: "export"` with `basePath: "/kasmos"` for static github pages deployment. the admin spa is a separate vite app that is not exported to pages — it runs as a dev tool or embedded in the daemon server.

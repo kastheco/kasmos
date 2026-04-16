@@ -18,7 +18,7 @@ Thank you for considering contributing to kasmos! This guide covers everything y
 - All Go code must pass `go vet ./...` and `gofmt -l .` before CI will accept it.
 - New behaviour needs tests. Prefer table-driven tests with `testify` assertions.
 - Do not rely on real tmux, git processes, or network in tests — use fakes or `t.TempDir()` instead.
-- If you touch scaffold-managed files under `.agents/`, `.claude/`, or `.Claude/`, keep them in sync with their source in `internal/initcmd/scaffold/templates/`. Run `kas check -v` to verify.
+- If you touch scaffold-managed files under `.agents/`, `.claude/`, or `.opencode/`, keep them in sync with their source in `internal/initcmd/scaffold/templates/`. Run `kas check -v` to verify.
 
 ## code of conduct
 
