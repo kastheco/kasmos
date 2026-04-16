@@ -472,6 +472,7 @@ func TestScaffoldAll_CodexWritesCodexMCPConfig(t *testing.T) {
 	kasmos, ok := servers["kasmos"].(map[string]any)
 	require.True(t, ok, "kasmos entry must be present")
 	assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
+	assert.Equal(t, "approve", kasmos["default_tools_approval_mode"], "server-level approval mode must be set")
 	assert.NotContains(t, kasmos, "command", "stdio command key must not be present")
 	assert.NotContains(t, kasmos, "args", "stdio args key must not be present")
 }
@@ -1581,6 +1582,7 @@ func TestSyncScaffold_CodexWritesCodexMCPConfig(t *testing.T) {
 		kasmos, ok := parsed["mcp_servers"].(map[string]any)["kasmos"].(map[string]any)
 		require.True(t, ok, "kasmos entry must be present")
 		assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
+		assert.Equal(t, "approve", kasmos["default_tools_approval_mode"], "server-level approval mode must be set")
 		assert.NotContains(t, kasmos, "command")
 		assert.NotContains(t, kasmos, "args")
 	})
@@ -1728,6 +1730,112 @@ command = "/keep/me"
 		assert.Contains(t, servers, "kasmos")
 		assert.Contains(t, servers, "other")
 	})
+
+	t.Run("removes nested tool subtables and preserves unrelated sections", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".codex"), 0o755))
+		// Fixture: kasmos block with per-tool override subtables (stale scaffold)
+		// plus unrelated sections that must survive untouched.
+		existing := `# project config
+
+[mcp_servers.kasmos]
+url = "http://127.0.0.1:7434/mcp"
+
+[mcp_servers.kasmos.tools.read_file]
+approval_mode = "prompt"
+
+[mcp_servers.kasmos.tools.grep]
+approval_mode = "prompt"
+
+[mcp_servers.other]
+command = "/keep/me"
+
+[features]
+codex_hooks = true
+`
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".codex", "config.toml"), []byte(existing), 0o644))
+
+		result, err := EnsureCodexMCPEntry(dir)
+		require.NoError(t, err)
+		assert.True(t, result.Created, "stale config must be rewritten")
+
+		data, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+		require.NoError(t, err)
+		content := string(data)
+
+		// Nested tool tables must be gone.
+		assert.NotContains(t, content, "mcp_servers.kasmos.tools",
+			"per-tool subtables must be removed")
+
+		// Unrelated sections must survive.
+		assert.Contains(t, content, "# project config", "top-level comment must be preserved")
+		assert.Contains(t, content, "[mcp_servers.other]", "unrelated mcp server must survive")
+		assert.Contains(t, content, "[features]", "features table must survive")
+		assert.Contains(t, content, "codex_hooks = true", "features flag must survive")
+
+		var parsed map[string]any
+		_, decodeErr := toml.Decode(content, &parsed)
+		require.NoError(t, decodeErr, "rewritten config must be valid TOML")
+
+		kasmos := parsed["mcp_servers"].(map[string]any)["kasmos"].(map[string]any)
+		assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
+		assert.Equal(t, "approve", kasmos["default_tools_approval_mode"],
+			"server-level approval mode must be written")
+		assert.NotContains(t, kasmos, "tools", "per-tool subtable must not appear in parsed entry")
+
+		other := parsed["mcp_servers"].(map[string]any)["other"].(map[string]any)
+		assert.Equal(t, "/keep/me", other["command"])
+	})
+}
+
+// TestFindCodexKasmosBlock_DescendantTablesConsumed proves that findCodexKasmosBlock
+// absorbs descendant kasmos table headers (e.g. [mcp_servers.kasmos.tools.read_file])
+// as part of the same replace span rather than terminating the block there.
+func TestFindCodexKasmosBlock_DescendantTablesConsumed(t *testing.T) {
+	input := `[mcp_servers.kasmos]
+url = "http://127.0.0.1:7434/mcp"
+
+[mcp_servers.kasmos.tools.read_file]
+approval_mode = "prompt"
+
+[mcp_servers.kasmos.tools.grep]
+approval_mode = "prompt"
+
+[mcp_servers.other]
+command = "/keep/me"
+`
+	lines := strings.Split(input, "\n")
+	start, end := findCodexKasmosBlock(lines)
+	require.NotEqual(t, -1, start, "kasmos block must be found")
+
+	// The span must include all descendant tool lines and stop at [mcp_servers.other].
+	span := strings.Join(lines[start:end], "\n")
+	assert.Contains(t, span, "mcp_servers.kasmos.tools.read_file",
+		"descendant table must be inside the replace span")
+	assert.Contains(t, span, "mcp_servers.kasmos.tools.grep",
+		"descendant table must be inside the replace span")
+	assert.NotContains(t, span, "mcp_servers.other",
+		"unrelated sibling must be outside the replace span")
+
+	// Verify patchCodexTOML removes the nested tables end-to-end.
+	patched := patchCodexTOML(input)
+	assert.NotContains(t, patched, "mcp_servers.kasmos.tools",
+		"patchCodexTOML must remove nested tool tables")
+	assert.Contains(t, patched, "default_tools_approval_mode",
+		"patchCodexTOML must write the server-level approval mode")
+	assert.Contains(t, patched, "[mcp_servers.other]",
+		"patchCodexTOML must preserve unrelated sibling server")
+
+	// Also test quoted variant of the kasmos header.
+	inputQuoted := strings.ReplaceAll(input, "[mcp_servers.kasmos]", `[mcp_servers."kasmos"]`)
+	inputQuoted = strings.ReplaceAll(inputQuoted, "[mcp_servers.kasmos.tools.", `[mcp_servers."kasmos".tools.`)
+	linesQuoted := strings.Split(inputQuoted, "\n")
+	startQ, endQ := findCodexKasmosBlock(linesQuoted)
+	require.NotEqual(t, -1, startQ, "quoted kasmos block must be found")
+	spanQ := strings.Join(linesQuoted[startQ:endQ], "\n")
+	assert.Contains(t, spanQ, `"kasmos".tools.read_file`,
+		"quoted descendant table must be inside the replace span")
+	_ = endQ
 }
 
 func TestEnsureCodexTrustedProjectEntry(t *testing.T) {
