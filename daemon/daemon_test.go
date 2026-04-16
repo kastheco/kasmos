@@ -509,14 +509,16 @@ func TestDaemon_MonitorRunningInstances_EmitsStuckDetectedOncePerExit(t *testing
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:         "feature-architect",
 		Path:          repo,
-		Program:       "true",
-		ExecutionMode: session.ExecutionModeHeadless,
+		Program:       "claude",
+		ExecutionMode: session.ExecutionModeSDK,
 		TaskFile:      planFile,
 		AgentType:     session.AgentTypeElaborator,
 	})
 	require.NoError(t, err)
-	require.NoError(t, inst.StartOnMainBranch())
-	require.Eventually(t, func() bool { return !inst.TmuxAlive() }, time.Second, 10*time.Millisecond)
+	// Simulate an already-exited agent without spawning real tmux/sdk
+	// subprocesses — CI hosts do not have tmux installed.
+	inst.MarkStartedDeadForTest()
+	require.False(t, inst.TmuxAlive())
 
 	d := &Daemon{
 		spawner:     NewTmuxSpawner(),
@@ -604,16 +606,16 @@ Do the first thing.
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:         "feature-W1-T1",
 		Path:          repo,
-		Program:       "true",
-		ExecutionMode: session.ExecutionModeHeadless,
+		Program:       "claude",
+		ExecutionMode: session.ExecutionModeSDK,
 		TaskFile:      planFile,
 		AgentType:     session.AgentTypeCoder,
 		WaveNumber:    1,
 		TaskNumber:    1,
 	})
 	require.NoError(t, err)
-	require.NoError(t, inst.StartOnMainBranch())
-	require.Eventually(t, func() bool { return !inst.TmuxAlive() }, time.Second, 10*time.Millisecond)
+	inst.MarkStartedDeadForTest()
+	require.False(t, inst.TmuxAlive())
 	inst.HasWorked = true
 
 	reviewerSpawned := 0
@@ -687,14 +689,14 @@ func TestDaemon_MonitorRunningInstances_SetsCompletionPromptSinceWhenPromptDetec
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:         "feature-architect",
 		Path:          repo,
-		Program:       "true",
-		ExecutionMode: session.ExecutionModeHeadless,
+		Program:       "claude",
+		ExecutionMode: session.ExecutionModeSDK,
 		TaskFile:      planFile,
 		AgentType:     session.AgentTypeElaborator,
 	})
 	require.NoError(t, err)
-	require.NoError(t, inst.StartOnMainBranch())
-	require.Eventually(t, func() bool { return !inst.TmuxAlive() }, time.Second, 10*time.Millisecond)
+	inst.MarkStartedDeadForTest()
+	require.False(t, inst.TmuxAlive())
 
 	// Pre-set prompt state so UpdateCompletionPromptState has something to record.
 	inst.PromptDetected = true

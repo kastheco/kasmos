@@ -379,10 +379,10 @@ func TestShouldAutoAdvanceLifecycleImplementer(t *testing.T) {
 			want:      false,
 		},
 		{
-			name:      "headless exit advances",
+			name:      "sdk exit advances",
 			status:    string(taskfsm.StatusImplementing),
 			state:     taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: AgentTypeCoder},
-			inst:      &Instance{TaskFile: "feature", AgentType: AgentTypeCoder, ExecutionMode: ExecutionModeHeadless, Exited: true},
+			inst:      &Instance{TaskFile: "feature", AgentType: AgentTypeCoder, ExecutionMode: ExecutionModeSDK, Exited: true},
 			tmuxAlive: true,
 			want:      true,
 		},
@@ -559,31 +559,31 @@ func TestInstance_DefaultExecutionModeIsTmux(t *testing.T) {
 	assert.Equal(t, ExecutionModeTmux, restored.ExecutionMode, "empty ExecutionMode should restore as tmux")
 }
 
-// TestInstance_AttachReturnsErrorForHeadlessExecution verifies that Attach() returns
-// an error for headless instances, and that unstarted instances return the standard
-// "not started" error regardless of execution mode.
-func TestInstance_AttachReturnsErrorForHeadlessExecution(t *testing.T) {
+// TestInstance_AttachReturnsErrorForSDKExecution verifies that Attach() returns
+// an error for SDK instances (non-interactive), and that unstarted instances return
+// the standard "not started" error regardless of execution mode.
+func TestInstance_AttachReturnsErrorForSDKExecution(t *testing.T) {
 	// An unstarted instance should always return the "not started" error.
 	unstarted := &Instance{
-		Title:         "headless-unstarted",
-		ExecutionMode: ExecutionModeHeadless,
+		Title:         "sdk-unstarted",
+		ExecutionMode: ExecutionModeSDK,
 		started:       false,
 	}
 	_, err := unstarted.Attach()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot attach instance that has not been started")
 
-	// A started headless instance should return ErrInteractiveOnly (or an error
-	// wrapping it) from the headless execution session's Attach implementation.
-	headlessInst := &Instance{
-		Title:            "headless-started",
-		ExecutionMode:    ExecutionModeHeadless,
+	// A started SDK instance should return ErrInteractiveOnly (or an error
+	// wrapping it) from the SDK execution session's Attach implementation.
+	sdkInst := &Instance{
+		Title:            "sdk-started",
+		ExecutionMode:    ExecutionModeSDK,
 		started:          true,
-		executionSession: NewExecutionSession(ExecutionModeHeadless, "headless-started", "sh", false),
+		executionSession: NewExecutionSession(ExecutionModeSDK, "sdk-started", "claude", false),
 	}
-	_, err = headlessInst.Attach()
-	require.Error(t, err, "Attach on headless instance should return an error")
-	// The error originates from the headless session, which reports interactive-only.
+	_, err = sdkInst.Attach()
+	require.Error(t, err, "Attach on sdk instance should return an error")
+	// The error originates from the sdk session, which reports interactive-only.
 	assert.Contains(t, err.Error(), "interactive")
 }
 

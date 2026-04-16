@@ -122,24 +122,39 @@ func TestValidActions_ByStatus(t *testing.T) {
 	}
 }
 
-// TestValidActions_HeadlessOnlyAllowsKill verifies that headless instances
-// advertise only "kill" because pause/resume/restart have no tmux pane to
-// operate on. This keeps the UI menu consistent with ValidateAction, which
-// rejects those actions for headless rows.
-func TestValidActions_HeadlessOnlyAllowsKill(t *testing.T) {
+// TestValidActions_StandaloneNonTmuxAdvertisesNoActions verifies that
+// standalone non-tmux instances (headless/sdk without daemon backing) expose no
+// lifecycle actions. ValidateAction rejects kill/pause/resume/restart/send for
+// such rows because there is no tmux pane or daemon to dispatch to; ValidActions
+// must return an empty slice so the admin UI does not advertise actions that
+// would always fail.
+func TestValidActions_StandaloneNonTmuxAdvertisesNoActions(t *testing.T) {
 	cases := []struct {
 		name   string
 		status Status
+		em     string
 	}{
-		{"running", StatusRunning},
-		{"loading", StatusLoading},
-		{"ready", StatusReady},
-		{"paused", StatusPaused},
+		{"headless running", StatusRunning, "headless"},
+		{"headless loading", StatusLoading, "headless"},
+		{"headless ready", StatusReady, "headless"},
+		{"headless paused", StatusPaused, "headless"},
+		{"sdk running", StatusRunning, "sdk"},
+		{"sdk loading", StatusLoading, "sdk"},
+		{"sdk ready", StatusReady, "sdk"},
+		{"sdk paused", StatusPaused, "sdk"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ValidActions(Record{Status: tc.status, ExecutionMode: "headless"})
-			assert.Equal(t, []string{"kill"}, got)
+			rec := Record{Status: tc.status, ExecutionMode: tc.em}
+			got := ValidActions(rec)
+			assert.Empty(t, got)
+			// Parity check: every action ValidActions would have advertised for
+			// a tmux row must be rejected by ValidateAction for this standalone
+			// record, proving the two functions stay in sync.
+			for _, action := range []string{"kill", "pause", "resume", "restart", "send", "capture"} {
+				require.Error(t, ValidateAction(rec, action),
+					"ValidateAction(%q) must reject standalone non-tmux records", action)
+			}
 		})
 	}
 }
@@ -165,12 +180,12 @@ func TestValidateAction_PauseRejectsPaused(t *testing.T) {
 }
 
 // TestValidateAction_CaptureRejectsHeadless verifies that capture is rejected
-// when the instance uses headless execution mode.
+// when the instance uses headless execution mode (standalone SDK).
 func TestValidateAction_CaptureRejectsHeadless(t *testing.T) {
 	rec := Record{Title: "x", Status: StatusRunning, ExecutionMode: "headless"}
 	err := ValidateAction(rec, "capture")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "headless")
+	assert.Contains(t, err.Error(), "standalone sdk")
 }
 
 // TestValidateAction_SendAcceptsReady verifies that send is allowed when the
@@ -200,12 +215,12 @@ func TestValidateAction_SendRejectsPaused(t *testing.T) {
 }
 
 // TestValidateAction_SendRejectsHeadless verifies that send is rejected when
-// the instance uses headless execution mode.
+// the instance uses headless execution mode (standalone SDK).
 func TestValidateAction_SendRejectsHeadless(t *testing.T) {
 	rec := Record{Title: "x", Status: StatusRunning, ExecutionMode: "headless"}
 	err := ValidateAction(rec, "send")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "headless")
+	assert.Contains(t, err.Error(), "standalone sdk")
 }
 
 // TestValidateAction_SendRejectsUnknownStatus verifies that send is rejected
@@ -215,4 +230,52 @@ func TestValidateAction_SendRejectsUnknownStatus(t *testing.T) {
 	rec := Record{Title: "x", Status: Status(99), ExecutionMode: "tmux"}
 	err := ValidateAction(rec, "send")
 	require.Error(t, err)
+}
+
+// TestValidateAction_SendAcceptsDaemonSDK verifies that send is allowed for a
+// daemon-managed SDK instance in running status. The daemon provides the send
+// path so no tmux pane is required.
+func TestValidateAction_SendAcceptsDaemonSDK(t *testing.T) {
+	rec := Record{Title: "x", Status: StatusRunning, ExecutionMode: "sdk", ManagedByDaemon: true}
+	err := ValidateAction(rec, "send")
+	require.NoError(t, err)
+}
+
+// TestValidateAction_CaptureAcceptsDaemonSDK verifies that capture is allowed
+// for a daemon-managed SDK instance in running status.
+func TestValidateAction_CaptureAcceptsDaemonSDK(t *testing.T) {
+	rec := Record{Title: "x", Status: StatusRunning, ExecutionMode: "sdk", ManagedByDaemon: true}
+	err := ValidateAction(rec, "capture")
+	require.NoError(t, err)
+}
+
+// TestValidateAction_SendRejectsStandaloneSDK verifies that send is rejected
+// for a standalone (non-daemon) SDK instance — the web path has no tmux pane
+// and no daemon to delegate to.
+func TestValidateAction_SendRejectsStandaloneSDK(t *testing.T) {
+	rec := Record{Title: "x", Status: StatusRunning, ExecutionMode: "sdk", ManagedByDaemon: false}
+	err := ValidateAction(rec, "send")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "standalone sdk")
+}
+
+// TestValidActions_DaemonManagedSDKGetsFullLifecycleActions verifies that
+// daemon-managed SDK instances expose the full lifecycle action matrix (not just
+// kill) because the daemon owns the process and supports all transitions.
+func TestValidActions_DaemonManagedSDKGetsFullLifecycleActions(t *testing.T) {
+	cases := []struct {
+		status Status
+		want   []string
+	}{
+		{StatusRunning, []string{"pause", "restart", "kill"}},
+		{StatusLoading, []string{"pause", "restart", "kill"}},
+		{StatusReady, []string{"restart", "kill"}},
+		{StatusPaused, []string{"resume", "kill"}},
+	}
+	for _, tc := range cases {
+		t.Run(StatusLabel(tc.status), func(t *testing.T) {
+			rec := Record{Status: tc.status, ExecutionMode: "sdk", ManagedByDaemon: true}
+			assert.Equal(t, tc.want, ValidActions(rec))
+		})
+	}
 }

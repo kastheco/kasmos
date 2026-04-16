@@ -32,9 +32,9 @@ func (i *Instance) HasUpdated() (updated bool, hasPrompt bool) {
 
 // NewEmbeddedTerminalForInstance creates an embedded terminal emulator connected
 // to this instance's tmux PTY for zero-latency interactive focus mode.
-// Returns ErrInteractiveOnly for headless instances.
+// Returns ErrInteractiveOnly for SDK instances (no live terminal to attach to).
 func (i *Instance) NewEmbeddedTerminalForInstance(cols, rows int) (*EmbeddedTerminal, error) {
-	if i.ExecutionMode == ExecutionModeHeadless {
+	if NormalizeExecutionMode(i.ExecutionMode) == ExecutionModeSDK {
 		return nil, ErrInteractiveOnly
 	}
 	if !i.started || i.executionSession == nil {
@@ -90,6 +90,8 @@ func (i *Instance) GetGitWorktree() (*git.GitWorktree, error) {
 
 // SendPrompt sends a text prompt followed by an enter keypress to the agent pane.
 // Returns an error if the instance is not started or the execution session is nil.
+// The 100ms sleep between SendKeys and TapEnter is skipped for SDK sessions
+// because the SDK backend buffers the prompt internally and does not need it.
 func (i *Instance) SendPrompt(prompt string) error {
 	if !i.started {
 		return fmt.Errorf("instance not started")
@@ -100,8 +102,11 @@ func (i *Instance) SendPrompt(prompt string) error {
 	if err := i.executionSession.SendKeys(prompt); err != nil {
 		return fmt.Errorf("error sending keys to session: %w", err)
 	}
-	// Brief pause to prevent the carriage return from being misinterpreted.
-	time.Sleep(100 * time.Millisecond)
+	// Brief pause to prevent the carriage return from being misinterpreted by tmux.
+	// Skip for SDK mode — the backend buffers the prompt and the sleep is unnecessary.
+	if NormalizeExecutionMode(i.ExecutionMode) == ExecutionModeTmux {
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err := i.executionSession.TapEnter(); err != nil {
 		return fmt.Errorf("error tapping enter: %w", err)
 	}
@@ -117,6 +122,28 @@ func (i *Instance) PreviewFullHistory() (string, error) {
 	return i.executionSession.CapturePaneContentWithOptions("-", "-")
 }
 
+// PreviewRange captures a line-range slice of the pane output.
+// start and end follow tmux -S/-E semantics ("-" = beginning/end, integers are
+// 0-based line offsets, negative values count from the end).
+// Returns an empty string if the instance is not started or is paused.
+func (i *Instance) PreviewRange(start, end string) (string, error) {
+	if !i.started || i.Status == Paused {
+		return "", nil
+	}
+	return i.executionSession.CapturePaneContentWithOptions(start, end)
+}
+
+// Interrupt sends a ctrl-C interrupt to the agent.
+// For SDK sessions this calls the transport's Interrupt; for tmux sessions it
+// routes through SendKeys("\x03").
+// Returns an error if the instance is not started.
+func (i *Instance) Interrupt() error {
+	if !i.started {
+		return fmt.Errorf("instance not started")
+	}
+	return i.executionSession.SendKeys("\x03")
+}
+
 // SetTmuxSession replaces the tmux session handle. Intended for use in tests only.
 // The TmuxSession is wrapped in the internal tmuxExecutionSession adapter so that
 // the Instance can be used through the ExecutionSession interface.
@@ -129,6 +156,53 @@ func (i *Instance) SetTmuxSession(session *tmux.TmuxSession) {
 func (i *Instance) MarkStartedForTest() {
 	i.started = true
 }
+
+// MarkStartedDeadForTest marks the instance as started with a no-op execution
+// session that reports the underlying process as dead (DoesSessionExist →
+// false).  This lets tests simulate an already-exited agent without starting a
+// real tmux session or subprocess — required on CI hosts where tmux is not
+// available.  Metadata collection calls (HasUpdatedWithContent, GetPanePID)
+// return zero values so MonitorRunningInstances treats the instance as
+// quiescent-but-exited.
+func (i *Instance) MarkStartedDeadForTest() {
+	i.started = true
+	i.executionSession = deadExecutionSession{}
+}
+
+// deadExecutionSession is a no-op ExecutionSession used by
+// MarkStartedDeadForTest.  It reports the session as non-existent and returns
+// zero values for all metadata queries.
+type deadExecutionSession struct{}
+
+func (deadExecutionSession) Start(string) error     { return nil }
+func (deadExecutionSession) Restore() error         { return nil }
+func (deadExecutionSession) Close() error           { return nil }
+func (deadExecutionSession) DoesSessionExist() bool { return false }
+func (deadExecutionSession) SendKeys(string) error  { return nil }
+func (deadExecutionSession) TapEnter() error        { return nil }
+func (deadExecutionSession) SendPermissionResponse(tmux.PermissionChoice) error {
+	return nil
+}
+func (deadExecutionSession) CapturePaneContent() (string, error) { return "", nil }
+func (deadExecutionSession) CapturePaneContentWithOptions(string, string) (string, error) {
+	return "", nil
+}
+func (deadExecutionSession) HasUpdated() (bool, bool) { return false, false }
+func (deadExecutionSession) HasUpdatedWithContent() (bool, bool, string, bool) {
+	return false, false, "", false
+}
+func (deadExecutionSession) GetPanePID() (int, error)                     { return 0, fmt.Errorf("no pane") }
+func (deadExecutionSession) Attach() (chan struct{}, error)               { return nil, nil }
+func (deadExecutionSession) DetachSafely() error                          { return nil }
+func (deadExecutionSession) SetDetachedSize(int, int) error               { return nil }
+func (deadExecutionSession) GetSanitizedName() string                     { return "" }
+func (deadExecutionSession) SetAgentType(string)                          {}
+func (deadExecutionSession) SetInitialPrompt(string)                      {}
+func (deadExecutionSession) SetNoFlicker(bool)                            {}
+func (deadExecutionSession) SetTaskEnv(int, int, int)                     {}
+func (deadExecutionSession) SetProject(string)                            {}
+func (deadExecutionSession) SetSessionTitle(string)                       {}
+func (deadExecutionSession) SetTitleFunc(func(string, time.Time, string)) {}
 
 // SendKeys sends raw key sequences to the pane.
 // Returns an error if the instance is not started or is paused.

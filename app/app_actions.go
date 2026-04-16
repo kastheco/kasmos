@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/auditlog"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
@@ -50,8 +49,8 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		if selected == nil || !selected.Started() || selected.Paused() || !selected.TmuxAlive() {
 			return m, nil
 		}
-		if config.NormalizeExecutionMode(string(selected.ExecutionMode)) == config.ExecutionModeHeadless {
-			m.toastManager.Info(fmt.Sprintf("%s is running in headless mode; attach is disabled", selected.Title))
+		if session.NormalizeExecutionMode(selected.ExecutionMode) == session.ExecutionModeSDK {
+			m.toastManager.Info(fmt.Sprintf("%s is running in sdk mode; attach is disabled", selected.Title))
 			return m, nil
 		}
 		return m, tea.Exec(tmux.NewAttachExecCommand(selected), func(err error) tea.Msg {
@@ -119,10 +118,6 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 	case "send_prompt_instance":
 		selected := m.nav.GetSelectedInstance()
 		if selected == nil || !selected.Started() || selected.Paused() {
-			return m, nil
-		}
-		if config.NormalizeExecutionMode(string(selected.ExecutionMode)) == config.ExecutionModeHeadless {
-			m.toastManager.Info(fmt.Sprintf("%s is running in headless mode; use the preview tab to review output", selected.Title))
 			return m, nil
 		}
 		return m, m.enterFocusMode()

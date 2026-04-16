@@ -72,9 +72,15 @@ func (i *Instance) prepareExecutionSession() ExecutionSession {
 }
 
 // transferPromptToCli moves QueuedPrompt into the execution session's initialPrompt
-// when the program supports CLI prompt injection. Programs that do not support it
-// leave QueuedPrompt intact so a send-keys fallback can deliver it later.
+// for tmux-backed instances that support CLI prompt injection. SDK sessions receive
+// their queued prompts through Instance.SendPrompt instead of CLI injection.
+// Programs that do not support CLI prompts leave QueuedPrompt intact so a
+// send-keys fallback can deliver it later.
 func (i *Instance) transferPromptToCli() {
+	if NormalizeExecutionMode(i.ExecutionMode) == ExecutionModeSDK {
+		// SDK sessions deliver prompts through the transport — do not inject via CLI.
+		return
+	}
 	if i.QueuedPrompt != "" && programSupportsCliPrompt(i.Program) {
 		i.executionSession.SetInitialPrompt(i.QueuedPrompt)
 		i.QueuedPrompt = ""
@@ -190,7 +196,7 @@ func ShouldAutoAdvanceLifecycleImplementer(status string, state taskstore.Execut
 	if !tmuxAlive {
 		return true
 	}
-	if NormalizeExecutionMode(inst.ExecutionMode) == ExecutionModeHeadless && inst.Exited {
+	if NormalizeExecutionMode(inst.ExecutionMode) == ExecutionModeSDK && inst.Exited {
 		return true
 	}
 	now := time.Now()
@@ -230,7 +236,7 @@ func IsStuck(entry taskstore.TaskEntry, inst *Instance, tmuxAlive bool) bool {
 		return true
 	}
 
-	return NormalizeExecutionMode(inst.ExecutionMode) == ExecutionModeHeadless && inst.Exited
+	return NormalizeExecutionMode(inst.ExecutionMode) == ExecutionModeSDK && inst.Exited
 }
 
 // setProgressFunc injects a progress hook into the execution session if it

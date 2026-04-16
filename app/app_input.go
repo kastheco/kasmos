@@ -16,11 +16,32 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	zone "github.com/lrstanley/bubblezone/v2"
 	"github.com/mattn/go-runewidth"
 )
+
+// firstRuneIsPrintable reports whether the first rune of s is a printable
+// character per unicode.IsPrint. It decodes the rune via utf8 so multi-byte
+// UTF-8 input (e.g. non-ASCII keystrokes) is classified correctly; indexing
+// a string with [0] would inspect only the leading byte and misclassify
+// valid printable runes as non-printable.
+//
+// DecodeRuneInString returns (RuneError, 1) only for invalid UTF-8; a
+// correctly encoded U+FFFD replacement rune returns (RuneError, 3), so the
+// size guard distinguishes a decoding failure from a legitimate U+FFFD.
+func firstRuneIsPrintable(s string) bool {
+	if s == "" {
+		return false
+	}
+	r, size := utf8.DecodeRuneInString(s)
+	if r == utf8.RuneError && size <= 1 {
+		return false
+	}
+	return unicode.IsPrint(r)
+}
 
 func (m *home) applyPendingSetStatus(picked string) (tea.Model, tea.Cmd) {
 	status, state, err := taskstate.ResolveManualOverride(picked)
@@ -1010,22 +1031,11 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		return m, nil
 	}
 
-	// Handle focus mode — forward keys directly to the agent's PTY
+	// Handle focus mode — forward keys directly to the agent's PTY (tmux) or
+	// compose prompts via overlay (sdk).
 	if m.state == stateFocusAgent {
-		// Ctrl+Space exits focus mode
+		// Ctrl+Space exits focus mode for both backends.
 		if msg.Code == tea.KeySpace && msg.Mod.Contains(tea.ModCtrl) {
-			m.exitFocusMode()
-			return m, tea.RequestWindowSize
-		}
-
-		if msg.Code == tea.KeyEnter && msg.Mod.Contains(tea.ModCtrl) && msg.Mod.Contains(tea.ModShift) {
-			if m.previewTerminal == nil {
-				m.exitFocusMode()
-				return m, tea.RequestWindowSize
-			}
-			if err := m.previewTerminal.SendKey([]byte{0x0D}); err != nil {
-				return m, m.handleError(err)
-			}
 			m.exitFocusMode()
 			return m, tea.RequestWindowSize
 		}
@@ -1043,9 +1053,55 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 			return m, tea.Batch(cmd, focusCmd)
 		}
 
+		selected := m.nav.GetSelectedInstance()
+
+		// SDK sessions have no PTY — handle key events without forwarding bytes.
+		if selected != nil && session.NormalizeExecutionMode(selected.ExecutionMode) == session.ExecutionModeSDK {
+			switch {
+			case msg.Code == tea.KeyEscape:
+				// Interrupt if actively running; exit focus mode if already idle.
+				if selected.Status == session.Running {
+					if err := selected.Interrupt(); err != nil {
+						return m, m.handleError(err)
+					}
+					return m, nil
+				}
+				m.exitFocusMode()
+				return m, tea.RequestWindowSize
+
+			case msg.Code == tea.KeyEnter || firstRuneIsPrintable(msg.Text):
+				// Open the send-prompt overlay seeded with the typed character so
+				// letter keys type into the active input, matching overlay/search behaviour.
+				seed := ""
+				if msg.Code != tea.KeyEnter && len(msg.Text) > 0 {
+					seed = msg.Text
+				}
+				m.exitFocusMode()
+				m.state = stateSendPrompt
+				tio := overlay.NewTextInputOverlay("send prompt", seed)
+				tio.SetSize(60, 3)
+				m.overlays.Show(tio)
+				return m, nil
+			}
+			// All other keys are no-ops for SDK sessions in focus mode.
+			return m, nil
+		}
+
+		// tmux path: Ctrl+Shift+Enter sends CR then exits focus mode.
+		if msg.Code == tea.KeyEnter && msg.Mod.Contains(tea.ModCtrl) && msg.Mod.Contains(tea.ModShift) {
+			if m.previewTerminal == nil {
+				m.exitFocusMode()
+				return m, tea.RequestWindowSize
+			}
+			if err := m.previewTerminal.SendKey([]byte{0x0D}); err != nil {
+				return m, m.handleError(err)
+			}
+			m.exitFocusMode()
+			return m, tea.RequestWindowSize
+		}
+
 		// Preview tab focus: forward to embedded terminal
 		if m.previewTerminal == nil {
-			selected := m.nav.GetSelectedInstance()
 			if selected != nil && selected.Started() && selected.Status != session.Paused && selected.Status != session.Loading && !selected.Exited {
 				m.previewRequested = true
 				return m, tea.Batch(tea.RequestWindowSize, m.syncPreviewTerminal())
@@ -1930,10 +1986,6 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 		if selected == nil || !selected.Started() || selected.Paused() {
 			return m, nil
 		}
-		if config.NormalizeExecutionMode(string(selected.ExecutionMode)) == config.ExecutionModeHeadless {
-			m.toastManager.Info(fmt.Sprintf("%s is running in headless mode; use the preview tab to review output", selected.Title))
-			return m, nil
-		}
 		return m, m.enterFocusMode()
 	case keys.KeySendYes:
 		selected := m.nav.GetSelectedInstance()
@@ -2068,8 +2120,8 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 				m.toastManager.Error(fmt.Sprintf("session for '%s' is not running", selected.Title))
 				return m, m.toastTickCmd()
 			}
-			if config.NormalizeExecutionMode(string(selected.ExecutionMode)) == config.ExecutionModeHeadless {
-				m.toastManager.Info(fmt.Sprintf("%s is running in headless mode; attach is disabled", selected.Title))
+			if session.NormalizeExecutionMode(selected.ExecutionMode) == session.ExecutionModeSDK {
+				m.toastManager.Info(fmt.Sprintf("%s is running in sdk mode; attach is disabled", selected.Title))
 				return m, nil
 			}
 			// Queue the selected instance, then show the attach help overlay.
@@ -2083,8 +2135,8 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 			if m.state != stateHelp && m.pendingAttachInstance != nil {
 				pending := m.pendingAttachInstance
 				m.pendingAttachInstance = nil
-				if config.NormalizeExecutionMode(string(pending.ExecutionMode)) == config.ExecutionModeHeadless {
-					m.toastManager.Info(fmt.Sprintf("%s is running in headless mode; attach is disabled", pending.Title))
+				if session.NormalizeExecutionMode(pending.ExecutionMode) == session.ExecutionModeSDK {
+					m.toastManager.Info(fmt.Sprintf("%s is running in sdk mode; attach is disabled", pending.Title))
 					return m, nil
 				}
 				return m, tea.Exec(tmux.NewAttachExecCommand(pending), func(err error) tea.Msg {

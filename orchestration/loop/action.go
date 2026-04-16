@@ -245,6 +245,9 @@ type SpawnOpts struct {
 	// ReviewCycle is the 1-indexed review/fix round used for reviewer/fixer
 	// titles and prompts. Zero means "not a review-cycle agent".
 	ReviewCycle int
+	// ExecutionMode selects the process host backend ("tmux" or "sdk").
+	// Empty defaults to tmux at the session layer.
+	ExecutionMode string
 }
 
 // AgentSpawner abstracts tmux session management so the daemon and TUI can

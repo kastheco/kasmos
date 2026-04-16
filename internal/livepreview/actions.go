@@ -10,8 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"github.com/kastheco/kasmos/config"
 )
 
 // ErrActionInstanceNotFound is returned by ApplyAction when no instance with the
@@ -199,12 +197,12 @@ func checkWorktreeClean(ctx context.Context, runner CommandRunner, rec Record, a
 	if rec.Worktree.RepoPath == "" || rec.Worktree.WorktreePath == "" {
 		return nil
 	}
-	// Defence in depth: the web path must never touch a headless agent's
-	// worktree. ValidateAction already rejects headless rows for the four
+	// Defence in depth: the web path must never touch a standalone SDK agent's
+	// worktree. ValidateAction already rejects standalone SDK rows for the four
 	// lifecycle actions, but keep this assertion local so future callers of
 	// checkWorktreeClean stay safe by default.
-	if config.NormalizeExecutionMode(rec.ExecutionMode) == config.ExecutionModeHeadless {
-		return fmt.Errorf("%w: cannot %s a headless instance", ErrActionInvalidState, action)
+	if isStandaloneNonTmux(rec) {
+		return fmt.Errorf("%w: cannot %s a standalone sdk instance", ErrActionInvalidState, action)
 	}
 	out, err := runner.Output(ctx, "git", "-C", rec.Worktree.WorktreePath, "status", "--porcelain")
 	if err != nil {

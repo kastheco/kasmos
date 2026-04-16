@@ -56,6 +56,30 @@ type DaemonInstanceActioner interface {
 	PostInstanceAction(project, title, action string) error
 }
 
+// DaemonCapturer is implemented by the daemon adapter to capture pane content
+// from daemon-tracked instances (SDK or tmux) without going through tmux
+// directly. It is obtained via type assertion on DaemonInstanceLister so
+// existing call sites that do not need capture do not require a signature change.
+type DaemonCapturer interface {
+	// CaptureInstance returns the current output of the named instance. start
+	// and end are optional line-range parameters following the same semantics as
+	// the tmux capture-pane -S/-E flags (empty string means omit the parameter).
+	// Returns ErrDaemonUnavailable when the socket is unreachable; returns
+	// *DaemonActionClientError to preserve the daemon's HTTP status code.
+	CaptureInstance(project, title, start, end string) (string, error)
+}
+
+// DaemonSender is implemented by the daemon adapter to send prompts to
+// daemon-tracked instances without going through tmux directly. It is obtained
+// via type assertion on DaemonInstanceLister so existing call sites that do not
+// need send do not require a signature change.
+type DaemonSender interface {
+	// SendInstancePrompt delivers prompt to the named instance via the daemon.
+	// Returns ErrDaemonUnavailable when the socket is unreachable; returns
+	// *DaemonActionClientError to preserve the daemon's HTTP status code.
+	SendInstancePrompt(project, title, prompt string) error
+}
+
 // DaemonInstanceLister is the abstraction the live-preview HTTP handler uses
 // to merge daemon-tracked (in-memory) instances with the on-disk state.json
 // records. Implementations typically wrap the daemon's Unix-socket API client
@@ -168,6 +192,16 @@ func NewHTTPHandler(resolve ProjectRootResolver, runner PaneRunner) http.Handler
 func NewHTTPHandlerWithDaemon(resolve ProjectRootResolver, runner PaneRunner, daemonLister DaemonInstanceLister, daemonActions DaemonInstanceActioner) http.Handler {
 	mux := http.NewServeMux()
 
+	// Extract optional daemon capturer/sender via type assertion. Real adapters
+	// (daemonInstanceLister in cmd/) implement all four interfaces; lightweight
+	// test stubs typically only implement the subset they need.
+	var daemonCapturer DaemonCapturer
+	var daemonSender DaemonSender
+	if daemonLister != nil {
+		daemonCapturer, _ = daemonLister.(DaemonCapturer)
+		daemonSender, _ = daemonLister.(DaemonSender)
+	}
+
 	loadMergedRecords := func(project, root string) ([]Record, error) {
 		diskRecords, diskErr := LoadRecordsFromRepoRoot(root)
 		if diskErr != nil {
@@ -241,6 +275,27 @@ func NewHTTPHandlerWithDaemon(resolve ProjectRootResolver, runner PaneRunner, da
 
 		if err := ValidateAction(rec, "capture"); err != nil {
 			writeJSONError(w, http.StatusConflict, err.Error())
+			return
+		}
+
+		// Daemon-backed rows (ManagedByDaemon=true) route capture through the
+		// daemon API which supports SDK instances natively. Only standalone
+		// state.json rows with a real tmux pane go through CapturePane.
+		if rec.ManagedByDaemon {
+			if daemonCapturer == nil {
+				writeJSONError(w, http.StatusInternalServerError, "daemon capture not configured")
+				return
+			}
+			content, cerr := daemonCapturer.CaptureInstance(project, title,
+				r.URL.Query().Get("start"),
+				r.URL.Query().Get("end"),
+			)
+			if cerr != nil {
+				mapDaemonActionError(w, cerr)
+				return
+			}
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			_, _ = w.Write([]byte(content))
 			return
 		}
 
@@ -382,6 +437,21 @@ func NewHTTPHandlerWithDaemon(resolve ProjectRootResolver, runner PaneRunner, da
 			return
 		}
 
+		// Daemon-backed rows route send through the daemon API (supports SDK
+		// instances). Standalone tmux rows use SendPrompt directly.
+		if rec.ManagedByDaemon {
+			if daemonSender == nil {
+				writeJSONError(w, http.StatusInternalServerError, "daemon send not configured")
+				return
+			}
+			if serr := daemonSender.SendInstancePrompt(project, title, body.Prompt); serr != nil {
+				mapDaemonActionError(w, serr)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
 		if err := SendPrompt(r.Context(), runner, rec, body.Prompt); err != nil {
 			writePaneError(w, err)
 			return
@@ -409,6 +479,11 @@ func mergeInstanceRecords(diskRecords, daemonRecords []Record) []Record {
 			continue
 		}
 		seen[rec.Title] = struct{}{}
+		// Always mark daemon-sourced records so the capture/send handlers can
+		// route them through the daemon API instead of tmux. This is belt-and-
+		// suspenders: the real adapter sets it in daemonStatusToRecord, but test
+		// fakes and future adapters may omit it.
+		rec.ManagedByDaemon = true
 		out = append(out, rec)
 	}
 	for _, rec := range diskRecords {

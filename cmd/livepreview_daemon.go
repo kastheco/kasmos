@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -113,16 +115,17 @@ func daemonStatusToRecord(s api.InstanceStatus) livepreview.Record {
 		status = livepreview.StatusReady
 	}
 	return livepreview.Record{
-		Title:         s.Title,
-		Status:        status,
-		Branch:        s.Branch,
-		Program:       s.Program,
-		TaskFile:      s.Plan,
-		AgentType:     s.Role,
-		WaveNumber:    s.WaveNumber,
-		TaskNumber:    s.TaskNumber,
-		ReviewCycle:   s.ReviewCycle,
-		ExecutionMode: s.ExecutionMode,
+		Title:           s.Title,
+		Status:          status,
+		Branch:          s.Branch,
+		Program:         s.Program,
+		TaskFile:        s.Plan,
+		AgentType:       s.Role,
+		WaveNumber:      s.WaveNumber,
+		TaskNumber:      s.TaskNumber,
+		ReviewCycle:     s.ReviewCycle,
+		ExecutionMode:   s.ExecutionMode,
+		ManagedByDaemon: true,
 	}
 }
 
@@ -150,6 +153,83 @@ func (l *daemonInstanceLister) PostInstanceAction(project, title, action string)
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&body)
 	msg := body.Error
+	if msg == "" {
+		msg = resp.Status
+	}
+	return &livepreview.DaemonActionClientError{StatusCode: resp.StatusCode, Msg: msg}
+}
+
+// CaptureInstance implements livepreview.DaemonCapturer by calling
+// GET /v1/repos/{project}/instances/{title}/capture on the daemon. The
+// response body is plain text (the pane output). Non-200 responses are
+// translated to *livepreview.DaemonActionClientError so the HTTP handler can
+// forward the daemon's original status code to the browser.
+func (l *daemonInstanceLister) CaptureInstance(project, title, start, end string) (string, error) {
+	u := "http://daemon/v1/repos/" + url.PathEscape(project) + "/instances/" + url.PathEscape(title) + "/capture"
+	if start != "" || end != "" {
+		params := url.Values{}
+		if start != "" {
+			params.Set("start", start)
+		}
+		if end != "" {
+			params.Set("end", end)
+		}
+		u += "?" + params.Encode()
+	}
+	resp, err := l.http.Get(u)
+	if err != nil {
+		if isDaemonSocketUnreachable(err) {
+			return "", livepreview.ErrDaemonUnavailable
+		}
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		body, rerr := io.ReadAll(resp.Body)
+		if rerr != nil {
+			return "", fmt.Errorf("daemon capture: read body: %w", rerr)
+		}
+		return string(body), nil
+	}
+
+	var errBody struct {
+		Error string `json:"error"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&errBody)
+	msg := errBody.Error
+	if msg == "" {
+		msg = resp.Status
+	}
+	return "", &livepreview.DaemonActionClientError{StatusCode: resp.StatusCode, Msg: msg}
+}
+
+// SendInstancePrompt implements livepreview.DaemonSender by POSTing to
+// POST /v1/repos/{project}/instances/{title}/send on the daemon. The prompt is
+// encoded as {"prompt":"..."} JSON. Non-204/200 responses are translated to
+// *livepreview.DaemonActionClientError so the HTTP handler can forward the
+// daemon's original status code to the browser.
+func (l *daemonInstanceLister) SendInstancePrompt(project, title, prompt string) error {
+	u := "http://daemon/v1/repos/" + url.PathEscape(project) + "/instances/" + url.PathEscape(title) + "/send"
+	payload, _ := json.Marshal(map[string]string{"prompt": prompt})
+	resp, err := l.http.Post(u, "application/json", bytes.NewReader(payload))
+	if err != nil {
+		if isDaemonSocketUnreachable(err) {
+			return livepreview.ErrDaemonUnavailable
+		}
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusOK {
+		return nil
+	}
+
+	var errBody struct {
+		Error string `json:"error"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&errBody)
+	msg := errBody.Error
 	if msg == "" {
 		msg = resp.Status
 	}

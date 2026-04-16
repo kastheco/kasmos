@@ -277,26 +277,27 @@ func TestHTTPHandler_ListInstances_FallsBackWhenDaemonUnavailable(t *testing.T) 
 
 func TestHTTPHandler_CaptureInstance_FindsDaemonOnlyRecord(t *testing.T) {
 	// Title only known to the daemon; state.json doesn't have it. Capture
-	// must still resolve the record and run tmux capture-pane against its
-	// session name.
+	// must be routed through the daemon adapter (not tmux) because the record
+	// is daemon-managed (ManagedByDaemon=true after mergeInstanceRecords).
 	root := t.TempDir()
 	// empty state.json
 	writeStateJSON(t, root)
 
-	daemon := &fakeDaemonLister{
-		records: []Record{
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
 			{Title: "feature-plan", Status: StatusRunning, Program: "opencode"},
 		},
+		captureOutput: "planner output\n",
 	}
-	runner := paneOutputRunner("planner output\n")
 
-	h := NewHTTPHandlerWithDaemon(resolverFor(root), runner, daemon, nil)
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
 	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances/feature-plan/capture", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
 	assert.Equal(t, "planner output\n", rec.Body.String())
+	assert.Equal(t, "feature-plan", adapter.capturedTitle)
 }
 
 func TestMergeInstanceRecords_EmptyDaemon(t *testing.T) {
@@ -826,7 +827,7 @@ func TestHTTPHandler_Send_HeadlessInstance(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusConflict, rec.Code)
-	assert.Contains(t, rec.Body.String(), "headless")
+	assert.Contains(t, rec.Body.String(), "standalone sdk")
 }
 
 func TestHTTPHandler_Send_ResolverUnavailable(t *testing.T) {
@@ -897,5 +898,167 @@ func TestHTTPHandler_Capture_HeadlessInstance(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusConflict, rec.Code)
-	assert.Contains(t, rec.Body.String(), "headless")
+	assert.Contains(t, rec.Body.String(), "standalone sdk")
+}
+
+// ---------------------------------------------------------------------------
+// Daemon-backed capture and send
+// ---------------------------------------------------------------------------
+
+// fakeDaemonAdapter implements DaemonInstanceLister, DaemonInstanceActioner,
+// DaemonCapturer, and DaemonSender for testing the daemon-backed capture/send
+// routes in NewHTTPHandlerWithDaemon.
+type fakeDaemonAdapter struct {
+	listRecords   []Record
+	listErr       error
+	captureOutput string
+	captureErr    error
+	sendErr       error
+
+	capturedProject, capturedTitle, capturedStart, capturedEnd string
+	sentProject, sentTitle, sentPrompt                         string
+}
+
+func (f *fakeDaemonAdapter) ListInstancesForProject(_ string) ([]Record, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	return f.listRecords, nil
+}
+
+func (f *fakeDaemonAdapter) PostInstanceAction(_, _, _ string) error { return nil }
+
+func (f *fakeDaemonAdapter) CaptureInstance(project, title, start, end string) (string, error) {
+	f.capturedProject = project
+	f.capturedTitle = title
+	f.capturedStart = start
+	f.capturedEnd = end
+	return f.captureOutput, f.captureErr
+}
+
+func (f *fakeDaemonAdapter) SendInstancePrompt(project, title, prompt string) error {
+	f.sentProject = project
+	f.sentTitle = title
+	f.sentPrompt = prompt
+	return f.sendErr
+}
+
+// TestHTTPHandler_Capture_DaemonBacked_HappyPath verifies that a capture
+// request for a daemon-managed SDK instance is routed through the daemon
+// CaptureInstance API rather than tmux, and that start/end query params are
+// forwarded correctly.
+func TestHTTPHandler_Capture_DaemonBacked_HappyPath(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root) // empty disk; only daemon has this row
+
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
+			{Title: "sdk-agent", Status: StatusRunning, ExecutionMode: "sdk"},
+		},
+		captureOutput: "sdk output\n",
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances/sdk-agent/capture?start=-100&end=0", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "text/plain; charset=utf-8", rec.Header().Get("Content-Type"))
+	assert.Equal(t, "sdk output\n", rec.Body.String())
+	assert.Equal(t, "proj", adapter.capturedProject)
+	assert.Equal(t, "sdk-agent", adapter.capturedTitle)
+	assert.Equal(t, "-100", adapter.capturedStart)
+	assert.Equal(t, "0", adapter.capturedEnd)
+}
+
+// TestHTTPHandler_Capture_DaemonBacked_DaemonError verifies that a daemon
+// error response (e.g. not found) is translated to the correct HTTP status.
+func TestHTTPHandler_Capture_DaemonBacked_DaemonError(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root)
+
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
+			{Title: "sdk-agent", Status: StatusRunning, ExecutionMode: "sdk"},
+		},
+		captureErr: &DaemonActionClientError{StatusCode: http.StatusNotFound, Msg: "instance not found"},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances/sdk-agent/capture", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Contains(t, rec.Body.String(), "instance not found")
+}
+
+// TestHTTPHandler_Send_DaemonBacked_HappyPath verifies that a send request
+// for a daemon-managed SDK instance is routed through the daemon
+// SendInstancePrompt API rather than tmux.
+func TestHTTPHandler_Send_DaemonBacked_HappyPath(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root)
+
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
+			{Title: "sdk-agent", Status: StatusRunning, ExecutionMode: "sdk"},
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/sdk-agent/send",
+		strings.NewReader(`{"prompt":"hello sdk"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	assert.Equal(t, "proj", adapter.sentProject)
+	assert.Equal(t, "sdk-agent", adapter.sentTitle)
+	assert.Equal(t, "hello sdk", adapter.sentPrompt)
+}
+
+// TestHTTPHandler_Send_DaemonBacked_DaemonError verifies that a daemon error
+// from SendInstancePrompt propagates back to the client with the correct status.
+func TestHTTPHandler_Send_DaemonBacked_DaemonError(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root)
+
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
+			{Title: "sdk-agent", Status: StatusRunning, ExecutionMode: "sdk"},
+		},
+		sendErr: &DaemonActionClientError{StatusCode: http.StatusConflict, Msg: "instance is loading"},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/sdk-agent/send",
+		strings.NewReader(`{"prompt":"hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "instance is loading")
+}
+
+// TestHTTPHandler_Send_StandaloneSDK_Rejected verifies that a send request
+// for a standalone (non-daemon) SDK instance is rejected with 409 because
+// the web path has no tmux pane and no daemon to delegate to.
+func TestHTTPHandler_Send_StandaloneSDK_Rejected(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "sdk-standalone", Status: StatusRunning, ExecutionMode: "sdk"})
+
+	// No daemon — pure standalone path.
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/sdk-standalone/send",
+		strings.NewReader(`{"prompt":"hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "standalone sdk")
 }

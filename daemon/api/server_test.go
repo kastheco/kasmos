@@ -220,6 +220,104 @@ func TestHandler_InstanceAction_Conflict(t *testing.T) {
 	}
 }
 
+// instanceCaptureStub is a StateProvider stub for testing capture/send routes.
+type instanceCaptureStub struct {
+	DaemonState
+	captureProject, captureTitle, captureStart, captureEnd string
+	captureOutput                                          string
+	captureErr                                             error
+	sendProject, sendTitle, sendPrompt                     string
+	sendErr                                                error
+}
+
+func (s *instanceCaptureStub) ListInstances(_ string) []InstanceStatus { return nil }
+func (s *instanceCaptureStub) EventStream() <-chan Event               { return make(chan Event) }
+func (s *instanceCaptureStub) StartPlan(_, _, _, _ string) error       { return nil }
+func (s *instanceCaptureStub) ListPlans(_ string) ([]taskstore.TaskEntry, error) {
+	return nil, nil
+}
+func (s *instanceCaptureStub) ListTasks(_ string) ([]TaskStatus, error) { return nil, nil }
+func (s *instanceCaptureStub) PauseInstance(_, _ string) error {
+	return fmt.Errorf("%w", ErrInstanceNotFound)
+}
+func (s *instanceCaptureStub) ResumeInstance(_, _ string) error {
+	return fmt.Errorf("%w", ErrInstanceNotFound)
+}
+func (s *instanceCaptureStub) RestartInstance(_, _ string) error {
+	return fmt.Errorf("%w", ErrInstanceNotFound)
+}
+func (s *instanceCaptureStub) KillInstance(_, _ string) error {
+	return fmt.Errorf("%w", ErrInstanceNotFound)
+}
+func (s *instanceCaptureStub) CaptureInstance(project, title, start, end string) (string, error) {
+	s.captureProject = project
+	s.captureTitle = title
+	s.captureStart = start
+	s.captureEnd = end
+	return s.captureOutput, s.captureErr
+}
+func (s *instanceCaptureStub) SendInstancePrompt(project, title, prompt string) error {
+	s.sendProject = project
+	s.sendTitle = title
+	s.sendPrompt = prompt
+	return s.sendErr
+}
+
+func TestHandler_InstanceCapture_HappyPath(t *testing.T) {
+	state := &instanceCaptureStub{captureOutput: "pane text\n"}
+	h := NewHandler(state)
+
+	req := httptest.NewRequest("GET", "/v1/repos/myproj/instances/my-agent/capture?start=-50&end=0", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+	assert.Equal(t, "text/plain; charset=utf-8", w.Header().Get("Content-Type"))
+	assert.Equal(t, "pane text\n", w.Body.String())
+	assert.Equal(t, "myproj", state.captureProject)
+	assert.Equal(t, "my-agent", state.captureTitle)
+	assert.Equal(t, "-50", state.captureStart)
+	assert.Equal(t, "0", state.captureEnd)
+}
+
+func TestHandler_InstanceCapture_NotFound(t *testing.T) {
+	state := &instanceCaptureStub{captureErr: fmt.Errorf("%w: missing", ErrInstanceNotFound)}
+	h := NewHandler(state)
+
+	req := httptest.NewRequest("GET", "/v1/repos/myproj/instances/missing/capture", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code, "body: %s", w.Body.String())
+}
+
+func TestHandler_InstanceSend_HappyPath(t *testing.T) {
+	state := &instanceCaptureStub{}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"prompt":"hello from test"}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/my-agent/send", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code, "body: %s", w.Body.String())
+	assert.Equal(t, "myproj", state.sendProject)
+	assert.Equal(t, "my-agent", state.sendTitle)
+	assert.Equal(t, "hello from test", state.sendPrompt)
+}
+
+func TestHandler_InstanceSend_NotFound(t *testing.T) {
+	state := &instanceCaptureStub{sendErr: fmt.Errorf("%w: missing", ErrInstanceNotFound)}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"prompt":"hi"}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/missing/send", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code, "body: %s", w.Body.String())
+}
+
 func TestHandler_StartPlan(t *testing.T) {
 	state := &startPlanStub{}
 	h := NewHandler(state)

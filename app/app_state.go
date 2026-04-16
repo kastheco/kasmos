@@ -629,7 +629,8 @@ func (m *home) shouldAttachPreviewTerminal(selected *session.Instance) bool {
 		selected.Started() &&
 		selected.Status != session.Paused &&
 		selected.Status != session.Loading &&
-		!selected.Exited
+		!selected.Exited &&
+		session.NormalizeExecutionMode(selected.ExecutionMode) == session.ExecutionModeTmux
 }
 
 func (m *home) spawnPreviewTerminal(selected *session.Instance) tea.Cmd {
@@ -2143,14 +2144,7 @@ func (m *home) programForAgent(agentType string) string {
 }
 
 func (m *home) executionModeForAgent(agentType string) session.ExecutionMode {
-	mode := session.ExecutionMode(config.NormalizeExecutionMode(m.profileForAgent(agentType).ExecutionMode))
-	// Headless execution is only wired for coder sessions right now.
-	// Other agent roles remain tmux-attached for visibility and interactive
-	// control, while still allowing them to pick up any future shared config.
-	if agentType != session.AgentTypeCoder {
-		return session.ExecutionModeTmux
-	}
-	return mode
+	return session.ExecutionMode(config.NormalizeExecutionMode(m.profileForAgent(agentType).ExecutionMode))
 }
 
 // claudeNoFlicker returns the configured CLAUDE_CODE_NO_FLICKER value.

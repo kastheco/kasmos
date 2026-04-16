@@ -261,7 +261,7 @@ func TestFromInstanceData_DeadSessionRestoreDoesNotNotifyAgain(t *testing.T) {
 		Branch:        "feature/test",
 		Status:        Running,
 		Program:       "opencode",
-		ExecutionMode: ExecutionModeHeadless,
+		ExecutionMode: ExecutionModeSDK,
 		TaskFile:      "my-plan",
 		AgentType:     AgentTypePlanner,
 		Worktree: GitWorktreeData{
@@ -283,15 +283,19 @@ func TestFromInstanceData_DeadSessionRestoreDoesNotNotifyAgain(t *testing.T) {
 }
 
 // TestInstanceData_RoundTripExecutionMode verifies that ExecutionMode survives a
-// full InstanceData round-trip, and that the empty string normalises to tmux.
+// full InstanceData round-trip. ResolveExecutionMode is used so the actual process
+// host is always stored (e.g. legacy "headless" normalises to "sdk" for claude).
 func TestInstanceData_RoundTripExecutionMode(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    ExecutionMode
 		expected ExecutionMode
 	}{
-		{"headless preserved", ExecutionModeHeadless, ExecutionModeHeadless},
+		// "headless" is a legacy config string that normalises to "sdk"; claude supports SDK.
+		{"headless maps to sdk for claude", ExecutionMode("headless"), ExecutionModeSDK},
+		{"sdk preserved for claude", ExecutionModeSDK, ExecutionModeSDK},
 		{"tmux preserved", ExecutionModeTmux, ExecutionModeTmux},
+		// Empty/unknown defaults to tmux (session layer conservative default).
 		{"empty defaults to tmux", "", ExecutionModeTmux},
 		{"unknown defaults to tmux", ExecutionMode("unknown"), ExecutionModeTmux},
 	}

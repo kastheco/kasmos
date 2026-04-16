@@ -161,14 +161,18 @@ func TestTmuxSpawner_ReserveInstanceSlot_EvictsDeadTrackedAgent(t *testing.T) {
 	stale, err := session.NewInstance(session.InstanceOptions{
 		Title:         "my-plan-plan",
 		Path:          repoPath,
-		Program:       "true",
-		ExecutionMode: session.ExecutionModeHeadless,
+		Program:       "claude",
+		ExecutionMode: session.ExecutionModeSDK,
 		TaskFile:      planFile,
 		AgentType:     agentType,
 	})
 	require.NoError(t, err)
-	require.NoError(t, stale.StartOnMainBranch())
-	require.Eventually(t, func() bool { return !stale.TmuxAlive() }, time.Second, 10*time.Millisecond)
+	// Simulate an already-exited agent without spawning real tmux/sdk subprocesses —
+	// CI hosts do not have tmux installed, so StartOnMainBranch+Eventually-dies
+	// is unreliable.  MarkStartedDeadForTest wires in a no-op execution session
+	// whose DoesSessionExist() returns false.
+	stale.MarkStartedDeadForTest()
+	require.False(t, stale.TmuxAlive())
 
 	s.mu.Lock()
 	s.instances[key] = stale
