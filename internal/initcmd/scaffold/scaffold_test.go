@@ -2143,6 +2143,46 @@ func TestRemoveCodexEnforcementHook(t *testing.T) {
 		assert.True(t, flag, "codex_hooks feature flag must be left untouched by RemoveCodexEnforcementHook")
 	})
 
+	t.Run("shared group keeps user hook and removes only kasmos entry", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".codex"), 0o755))
+		existing := `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "user-lint.sh" },
+          { "type": "command", "command": ".codex/hooks/enforce-cli-tools.sh" }
+        ]
+      }
+    ]
+  }
+}
+`
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".codex", "hooks.json"), []byte(existing), 0o644))
+
+		_, err := RemoveCodexEnforcementHook(dir)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(filepath.Join(dir, ".codex", "hooks.json"))
+		require.NoError(t, err)
+		var settings map[string]any
+		require.NoError(t, json.Unmarshal(data, &settings))
+
+		hooks := settings["hooks"].(map[string]any)
+		preToolUse, ok := hooks["PreToolUse"].([]any)
+		require.True(t, ok, "PreToolUse must still exist when user hooks remain")
+		require.Len(t, preToolUse, 1, "shared group must survive with remaining hooks")
+
+		group := preToolUse[0].(map[string]any)
+		hooksList := group["hooks"].([]any)
+		require.Len(t, hooksList, 1, "only kasmos entry should be removed from group")
+		cmd := hooksList[0].(map[string]any)["command"].(string)
+		assert.Equal(t, "user-lint.sh", cmd)
+		assert.NotContains(t, string(data), "enforce-cli-tools.sh")
+	})
+
 	t.Run("missing files are treated as success", func(t *testing.T) {
 		dir := t.TempDir()
 		results, err := RemoveCodexEnforcementHook(dir)

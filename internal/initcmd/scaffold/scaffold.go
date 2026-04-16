@@ -749,7 +749,8 @@ func RemoveCodexEnforcementHook(dir string) ([]WriteResult, error) {
 		return results, nil
 	}
 
-	// Filter out the group(s) that contain the kasmos enforcement command.
+	// Remove only the kasmos enforcement hook entry from each group,
+	// preserving any user-added hooks that share the same group.
 	var filtered []any
 	for _, entry := range preToolUse {
 		group, ok := entry.(map[string]any)
@@ -762,20 +763,24 @@ func RemoveCodexEnforcementHook(dir string) ([]WriteResult, error) {
 			filtered = append(filtered, entry)
 			continue
 		}
-		hasKasmos := false
+		var kept []any
 		for _, h := range hooksList {
 			hm, ok := h.(map[string]any)
 			if !ok {
+				kept = append(kept, h)
 				continue
 			}
 			cmd, _ := hm["command"].(string)
 			if strings.Contains(cmd, "enforce-cli-tools.sh") {
-				hasKasmos = true
-				break
+				continue
 			}
+			kept = append(kept, h)
 		}
-		if !hasKasmos {
+		if len(kept) == len(hooksList) {
 			filtered = append(filtered, entry)
+		} else if len(kept) > 0 {
+			group["hooks"] = kept
+			filtered = append(filtered, group)
 		}
 	}
 
