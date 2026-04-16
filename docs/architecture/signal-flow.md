@@ -162,7 +162,7 @@ path.
 
 ---
 
-## Key files
+## real files
 
 | File | Role |
 |------|------|

@@ -126,6 +126,23 @@ On macOS, launchd plists (`com.kasmos.taskstore.plist` and
 
 ---
 
+## real files
+
+| file | role |
+|------|------|
+| `cmd/serve.go` | `NewServeCmd()` — wires MCP, task-store REST, admin SPA routes |
+| `daemon/daemon.go` | `Daemon` struct — orchestration loop, signal polling, instance spawning |
+| `daemon/api/server.go` | `NewHandlerWithBroadcaster()`, `registerRoutes()`, `ListenUnix()` — control API |
+| `daemon/api/events.go` | `EventBroadcaster`, `Subscribe()` — SSE event fanout |
+| `daemon/config.go` | `DaemonConfig` — `AutoReviewFix`, `AutoReadinessReview`, socket path overrides |
+| `config/taskstore/unix_client.go` | `ResolvedDaemonSocketPath()` — socket path resolution |
+| `internal/mcpserver/server.go` | `newServeMCPServer()` — Streamable HTTP MCP at `/mcp` |
+| `internal/platform/service.go` | `kasmosdb` / `kasmos` service names and restart commands |
+| `web/admin_assets.go` | `webassets.AdminFS()` — embedded `web/admin/dist` assets |
+| `session/execution.go` | `NormalizeExecutionMode()`, `ExecutionModeTmux`, `ExecutionModeHeadless` |
+
+---
+
 ## see also
 
 | page | what it adds |

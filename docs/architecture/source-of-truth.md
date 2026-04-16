@@ -131,6 +131,19 @@ This means:
 
 ---
 
+## real files
+
+| file | role |
+|------|------|
+| `config/taskstore/factory.go` | `OpenAuthoritativeStore`, `OpenAuthoritativeSignalGateway`, `ResolvedDBPath` |
+| `config/taskstore/sqlite.go` | SQLite backing store (`tasks`, `topics`, `subtasks`, `pr_reviews` tables) |
+| `config/taskstore/signal_sqlite.go` | SQLite signal gateway (`signals` table, `Create`, `Claim`, `MarkProcessed`, `ResetStuck`) |
+| `config/taskstore/http.go` | `HTTPStore` — remote task-store proxy (task CRUD only; no signal gateway) |
+| `config/taskstore/unix_client.go` | `ResolvedDaemonSocketPath` — daemon socket path resolution |
+| `config/config.go` | `LoadConfig`, `GetConfigDir` — project-local `.kasmos/` anchoring |
+
+---
+
 ## see also
 
 | page | what it adds |
