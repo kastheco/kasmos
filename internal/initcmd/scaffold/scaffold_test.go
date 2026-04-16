@@ -2366,3 +2366,93 @@ func TestSyncScaffold_ContentAwareSync(t *testing.T) {
 	}
 	assert.Equal(t, []string{mutated}, updatedPaths, "only the mutated file should be reported as updated")
 }
+
+// seedStaleCodexEnforcement creates a pre-existing .codex/ directory containing
+// the kasmos enforcement script and a hooks.json with the kasmos PreToolUse entry,
+// simulating a project that was previously scaffolded with enforcement enabled.
+func seedStaleCodexEnforcement(t *testing.T, dir string) {
+	t.Helper()
+	hooksDir := filepath.Join(dir, ".codex", "hooks")
+	require.NoError(t, os.MkdirAll(hooksDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(hooksDir, "enforce-cli-tools.sh"),
+		[]byte("#!/bin/sh\nexit 0\n"), 0o755))
+	hooksJSON := `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": ".codex/hooks/enforce-cli-tools.sh" }
+        ]
+      }
+    ]
+  }
+}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".codex", "hooks.json"), []byte(hooksJSON), 0o644))
+}
+
+// writeCodexEnforcementDisabledConfig writes a .kasmos/config.toml that disables codex enforcement.
+func writeCodexEnforcementDisabledConfig(t *testing.T, dir string) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".kasmos"), 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, ".kasmos", "config.toml"),
+		[]byte("[enforcement]\ncodex = false\n"),
+		0o644,
+	))
+}
+
+// TestScaffoldAll_RemovesStaleCodexEnforcement_WhenDisabledAndNoCodexAgents verifies
+// the cleanup-only path: when [enforcement] codex = false and no codex agents are
+// passed to ScaffoldAll, any pre-existing .codex/hooks/enforce-cli-tools.sh and
+// kasmos PreToolUse entry must be removed even though WriteCodexProject never runs.
+// Regression guard for the gating bug Copilot flagged on PR #123.
+func TestScaffoldAll_RemovesStaleCodexEnforcement_WhenDisabledAndNoCodexAgents(t *testing.T) {
+	dir := t.TempDir()
+	writeCodexEnforcementDisabledConfig(t, dir)
+	seedStaleCodexEnforcement(t, dir)
+
+	// No codex agents — only a claude agent so ScaffoldAll has something to do.
+	agents := []harness.AgentConfig{
+		{Role: "coder", Harness: "claude", Model: "claude-sonnet-4-6", Enabled: true},
+	}
+	_, err := ScaffoldAll(dir, agents, allTools, false)
+	require.NoError(t, err)
+
+	assert.NoFileExists(t, filepath.Join(dir, ".codex", "hooks", "enforce-cli-tools.sh"),
+		"stale enforcement script must be removed when codex enforcement is disabled")
+
+	hooksData, err := os.ReadFile(filepath.Join(dir, ".codex", "hooks.json"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(hooksData), "enforce-cli-tools.sh",
+		"stale kasmos PreToolUse entry must be removed when codex enforcement is disabled")
+
+	// .codex/AGENTS.md must NOT be created — no codex agents were scaffolded.
+	assert.NoFileExists(t, filepath.Join(dir, ".codex", "AGENTS.md"),
+		"cleanup-only path must not create new codex scaffold files")
+}
+
+// TestSyncScaffold_RemovesStaleCodexEnforcement_WhenDisabledAndNoCodexAgents mirrors
+// the ScaffoldAll regression for SyncScaffold's cleanup-only path.
+func TestSyncScaffold_RemovesStaleCodexEnforcement_WhenDisabledAndNoCodexAgents(t *testing.T) {
+	dir := t.TempDir()
+	writeCodexEnforcementDisabledConfig(t, dir)
+	seedStaleCodexEnforcement(t, dir)
+
+	agents := []harness.AgentConfig{
+		{Role: "coder", Harness: "claude", Model: "claude-sonnet-4-6", Enabled: true},
+	}
+	_, err := SyncScaffold(dir, agents)
+	require.NoError(t, err)
+
+	assert.NoFileExists(t, filepath.Join(dir, ".codex", "hooks", "enforce-cli-tools.sh"),
+		"stale enforcement script must be removed when codex enforcement is disabled")
+
+	hooksData, err := os.ReadFile(filepath.Join(dir, ".codex", "hooks.json"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(hooksData), "enforce-cli-tools.sh",
+		"stale kasmos PreToolUse entry must be removed when codex enforcement is disabled")
+
+	assert.NoFileExists(t, filepath.Join(dir, ".codex", "AGENTS.md"),
+		"cleanup-only path must not create new codex scaffold files")
+}

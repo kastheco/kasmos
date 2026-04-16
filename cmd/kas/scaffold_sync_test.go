@@ -398,3 +398,79 @@ func TestScaffoldSync_EnforcementDisabled_UninstallsClaudeHook(t *testing.T) {
 	assert.Contains(t, output, "REMOVED (enforcement disabled)", "expected disabled message in output")
 	assert.NoFileExists(t, hookFile, "enforcement hook script should have been removed")
 }
+
+// TestScaffoldSync_EnforcementDisabled_RemovesStaleCodexArtifacts verifies that
+// `kas scaffold sync` honours [enforcement] codex = false even when no codex
+// agents are enabled by removing stale .codex/hooks/enforce-cli-tools.sh and
+// the kasmos PreToolUse entry left behind from a previous setup. Regression
+// guard for the gating bug Copilot flagged on PR #123.
+func TestScaffoldSync_EnforcementDisabled_RemovesStaleCodexArtifacts(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	// Put a fake "claude" binary in PATH so harness.Detect() succeeds for the
+	// enabled claude profile. Codex is intentionally absent — no codex agents
+	// will be passed into the scaffold pipeline.
+	binDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, "claude"), []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	t.Setenv("PATH", binDir)
+
+	mainRepo := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(mainRepo, ".git"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(mainRepo, ".kasmos"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(mainRepo, ".kasmos", "config.toml"), []byte(`
+[agents]
+  [agents.coder]
+    enabled = true
+    program = "claude"
+    model = "claude-sonnet-4-6"
+
+[enforcement]
+  codex = false
+`), 0o644))
+
+	// Pre-seed stale codex enforcement artifacts as if a previous setup had
+	// installed them with enforcement enabled.
+	codexHooksDir := filepath.Join(mainRepo, ".codex", "hooks")
+	require.NoError(t, os.MkdirAll(codexHooksDir, 0o755))
+	staleScript := filepath.Join(codexHooksDir, "enforce-cli-tools.sh")
+	require.NoError(t, os.WriteFile(staleScript, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	staleHooksJSON := `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": ".codex/hooks/enforce-cli-tools.sh" }
+        ]
+      }
+    ]
+  }
+}`
+	staleHooksJSONPath := filepath.Join(mainRepo, ".codex", "hooks.json")
+	require.NoError(t, os.WriteFile(staleHooksJSONPath, []byte(staleHooksJSON), 0o644))
+
+	oldCwd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(mainRepo))
+	t.Cleanup(func() { require.NoError(t, os.Chdir(oldCwd)) })
+
+	var buf bytes.Buffer
+	cmd := newScaffoldSyncCmd()
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	require.NoError(t, cmd.RunE(cmd, nil))
+
+	assert.NoFileExists(t, staleScript,
+		"stale codex enforcement script should be removed when codex = false and no codex agents are configured")
+
+	hooksData, err := os.ReadFile(staleHooksJSONPath)
+	require.NoError(t, err)
+	assert.NotContains(t, string(hooksData), "enforce-cli-tools.sh",
+		"stale kasmos PreToolUse entry should be stripped from .codex/hooks.json")
+
+	// .codex/AGENTS.md must NOT be created — no codex agents were configured.
+	assert.NoFileExists(t, filepath.Join(mainRepo, ".codex", "AGENTS.md"),
+		"cleanup-only path must not create new codex scaffold files")
+}

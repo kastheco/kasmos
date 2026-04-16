@@ -188,8 +188,7 @@ func (c *Claude) UninstallEnforcement() error {
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Nothing to clean up in settings.json; still try to remove the script.
-			removeHookScript(hookPath)
-			return nil
+			return removeHookScript(hookPath)
 		}
 		return fmt.Errorf("read claude settings: %w", err)
 	}
@@ -233,16 +232,20 @@ func (c *Claude) UninstallEnforcement() error {
 		return fmt.Errorf("write claude settings: %w", err)
 	}
 
-	removeHookScript(hookPath)
-	return nil
+	return removeHookScript(hookPath)
 }
 
-// removeHookScript deletes the managed enforcement script; missing file is not an error.
-func removeHookScript(path string) {
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		// Best-effort: log nothing, the caller treats the install side as authoritative.
-		_ = err
+// removeHookScript deletes the managed enforcement script. A missing file is
+// treated as success; any other error (e.g. permission denied) is propagated so
+// callers do not report a successful uninstall while leaving the script in place.
+func removeHookScript(path string) error {
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("remove claude hook script: %w", err)
 	}
+	return nil
 }
 
 // removeClaudeEnforcementHooks returns a copy of preToolUse with all matcher

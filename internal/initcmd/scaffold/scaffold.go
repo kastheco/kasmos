@@ -252,7 +252,7 @@ func EnsureClaudeMCPEntry(dir string) (WriteResult, error) {
 	var current map[string]any
 	if data, err := os.ReadFile(dest); err == nil {
 		if jsonErr := json.Unmarshal(data, &current); jsonErr != nil {
-			// Unparseable — start fresh so we don't leave a broken file.
+			// Unparsable — start fresh so we don't leave a broken file.
 			current = nil
 		}
 	}
@@ -688,6 +688,8 @@ func loadEnforcementConfigForDir(dir string) (*config.TOMLConfigResult, error) {
 	localPath := filepath.Join(dir, ".kasmos", config.TOMLConfigFileName)
 	if _, err := os.Stat(localPath); err == nil {
 		return config.LoadTOMLConfigFrom(localPath)
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("stat local config: %w", err)
 	}
 
 	// Fall back to main repo root.
@@ -1539,7 +1541,10 @@ func ScaffoldAll(dir string, agents []harness.AgentConfig, selectedTools []strin
 	}
 
 	// Resolve enforcement config once so every harness honours the same setting.
-	enfCfg, _ := loadEnforcementConfigForDir(dir)
+	enfCfg, err := loadEnforcementConfigForDir(dir)
+	if err != nil {
+		return results, fmt.Errorf("load enforcement config: %w", err)
+	}
 	codexEnfEnabled := enfCfg == nil || enfCfg.IsEnforcementEnabled("codex")
 
 	type scaffoldFn func(string, []harness.AgentConfig, []string, bool) ([]WriteResult, error)
@@ -1568,6 +1573,43 @@ func ScaffoldAll(dir string, agents []harness.AgentConfig, selectedTools []strin
 		}
 	}
 
+	// When codex enforcement is disabled and no codex agents were scaffolded,
+	// WriteCodexProject never runs, so any pre-existing .codex/hooks/enforce-cli-tools.sh
+	// or kasmos PreToolUse entry from an earlier setup would survive an explicit opt-out.
+	// Run a cleanup-only pass against existing .codex/ to honour the disable flag.
+	if !codexEnfEnabled {
+		if _, hasCodexAgents := byHarness["codex"]; !hasCodexAgents {
+			cleanupResults, err := cleanupCodexEnforcement(dir)
+			if err != nil {
+				return results, err
+			}
+			results = append(results, cleanupResults...)
+		}
+	}
+
+	return results, nil
+}
+
+// cleanupCodexEnforcement removes any kasmos-managed codex enforcement artifacts
+// when <dir>/.codex exists. It is a no-op when .codex is absent. Returns any
+// WriteResult entries produced by RemoveCodexEnforcementHook so callers can
+// surface them in their normal output.
+func cleanupCodexEnforcement(dir string) ([]WriteResult, error) {
+	codexDir := filepath.Join(dir, ".codex")
+	info, err := os.Stat(codexDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("stat codex dir: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, nil
+	}
+	results, err := RemoveCodexEnforcementHook(dir)
+	if err != nil {
+		return results, fmt.Errorf("remove codex enforcement hook: %w", err)
+	}
 	return results, nil
 }
 
@@ -1591,7 +1633,10 @@ func SyncScaffold(dir string, agents []harness.AgentConfig) ([]WriteResult, erro
 	}
 
 	// Resolve enforcement config once so every harness honours the same setting.
-	syncEnfCfg, _ := loadEnforcementConfigForDir(dir)
+	syncEnfCfg, err := loadEnforcementConfigForDir(dir)
+	if err != nil {
+		return results, fmt.Errorf("load enforcement config: %w", err)
+	}
 	syncCodexEnfEnabled := syncEnfCfg == nil || syncEnfCfg.IsEnforcementEnabled("codex")
 
 	byHarness := map[string][]harness.AgentConfig{}
@@ -1646,6 +1691,20 @@ func SyncScaffold(dir string, agents []harness.AgentConfig) ([]WriteResult, erro
 
 		if err := SymlinkHarnessSkills(dir, harnessName); err != nil {
 			return results, fmt.Errorf("symlink %s skills: %w", harnessName, err)
+		}
+	}
+
+	// Cleanup-only path: when codex enforcement is disabled and no codex agents
+	// are being synced, WriteCodexProject does not run, so any pre-existing
+	// .codex/hooks/enforce-cli-tools.sh and kasmos PreToolUse entries from a
+	// previous setup would survive. Mirror the ScaffoldAll behaviour here.
+	if !syncCodexEnfEnabled {
+		if _, hasCodexAgents := byHarness["codex"]; !hasCodexAgents {
+			cleanupResults, err := cleanupCodexEnforcement(dir)
+			if err != nil {
+				return results, err
+			}
+			results = append(results, cleanupResults...)
 		}
 	}
 
