@@ -293,14 +293,17 @@ func EnsureClaudeMCPEntry(dir string) (WriteResult, error) {
 
 // codexMCPBlock returns the desired TOML text for the kasmos entry in
 // .codex/config.toml. Codex CLI's native format is [mcp_servers.NAME]; HTTP
-// transport is supported natively via the url key.
+// transport is supported natively via the url key. The server-level
+// default_tools_approval_mode = "approve" eliminates per-call approval prompts
+// for all kasmos MCP tools without requiring an explicit per-tool allow-list.
 func codexMCPBlock() string {
-	return fmt.Sprintf("[mcp_servers.kasmos]\nurl = %q\n", sharedKasmosMCPURL)
+	return fmt.Sprintf("[mcp_servers.kasmos]\nurl = %q\ndefault_tools_approval_mode = \"approve\"\n", sharedKasmosMCPURL)
 }
 
 // codexMCPEntryUpToDate reports whether a parsed .codex/config.toml already
-// has a kasmos entry pointing at the shared HTTP endpoint with no stale stdio
-// keys left over from older scaffolds.
+// has a kasmos entry pointing at the shared HTTP endpoint with the server-level
+// approval mode set and no stale stdio keys or per-tool override subtables left
+// over from older scaffolds.
 func codexMCPEntryUpToDate(parsed map[string]any) bool {
 	servers, ok := parsed["mcp_servers"].(map[string]any)
 	if !ok {
@@ -313,10 +316,18 @@ func codexMCPEntryUpToDate(parsed map[string]any) bool {
 	if url, _ := entry["url"].(string); url != sharedKasmosMCPURL {
 		return false
 	}
+	if approvalMode, _ := entry["default_tools_approval_mode"].(string); approvalMode != "approve" {
+		return false
+	}
 	if _, hasCmd := entry["command"]; hasCmd {
 		return false
 	}
 	if _, hasArgs := entry["args"]; hasArgs {
+		return false
+	}
+	// Stale per-tool subtables silently override the server-level default —
+	// treat their presence as a signal that the block needs rewriting.
+	if _, hasTools := entry["tools"]; hasTools {
 		return false
 	}
 	return true
@@ -337,6 +348,20 @@ func isCodexKasmosHeader(line string) bool {
 	return trimmed == "[mcp_servers.kasmos]" || trimmed == `[mcp_servers."kasmos"]`
 }
 
+// isCodexKasmosDescendantHeader returns true for table headers that are
+// children of the kasmos block, e.g. [mcp_servers.kasmos.tools.read_file].
+// These must be absorbed into the replace span so stale per-tool overrides
+// are removed when the block is rewritten.
+func isCodexKasmosDescendantHeader(line string) bool {
+	trimmed := stripTOMLLineComment(line)
+	return strings.HasPrefix(trimmed, "[mcp_servers.kasmos.") ||
+		strings.HasPrefix(trimmed, `[mcp_servers."kasmos".`)
+}
+
+func isCodexKasmosManagedHeader(line string) bool {
+	return isCodexKasmosHeader(line) || isCodexKasmosDescendantHeader(line)
+}
+
 func isTOMLTableHeader(line string) bool {
 	trimmed := stripTOMLLineComment(line)
 	if !strings.HasPrefix(trimmed, "[") {
@@ -345,52 +370,45 @@ func isTOMLTableHeader(line string) bool {
 	return strings.HasSuffix(trimmed, "]")
 }
 
-// findCodexKasmosBlock returns [start, end) line indices spanning the kasmos
-// block — from its header line up to (but not including) the next table
-// header or EOF. Returns (-1, -1) when not present.
-func findCodexKasmosBlock(lines []string) (int, int) {
-	start := -1
-	for i, line := range lines {
-		if isCodexKasmosHeader(line) {
-			start = i
-			break
-		}
-	}
-	if start == -1 {
-		return -1, -1
-	}
-	end := len(lines)
-	for i := start + 1; i < len(lines); i++ {
-		if isTOMLTableHeader(lines[i]) {
-			end = i
-			break
-		}
-	}
-	return start, end
-}
-
 // patchCodexTOML returns updated TOML text with the kasmos mcp_servers block
-// replaced (or appended) to the desired content. Comments, ordering, and
-// unrelated sections are preserved verbatim.
+// replaced (or appended) to the desired content. Any stale descendant kasmos
+// table blocks are removed wherever they appear in the file. Comments,
+// ordering, and unrelated sections are preserved verbatim.
 func patchCodexTOML(existing string) string {
 	desired := codexMCPBlock()
 	if existing == "" {
 		return desired
 	}
 	lines := strings.Split(existing, "\n")
-	start, end := findCodexKasmosBlock(lines)
-	if start == -1 {
+	desiredLines := strings.Split(strings.TrimRight(desired, "\n"), "\n")
+	var out []string
+	inserted := false
+	foundKasmosBlock := false
+	for i := 0; i < len(lines); {
+		if !isCodexKasmosManagedHeader(lines[i]) {
+			out = append(out, lines[i])
+			i++
+			continue
+		}
+
+		foundKasmosBlock = true
+		if !inserted {
+			out = append(out, desiredLines...)
+			inserted = true
+		}
+
+		i++
+		for i < len(lines) && !isTOMLTableHeader(lines[i]) {
+			i++
+		}
+	}
+	if !foundKasmosBlock {
 		trimmed := strings.TrimRight(existing, "\n")
 		if trimmed == "" {
 			return desired
 		}
 		return trimmed + "\n\n" + desired
 	}
-	desiredLines := strings.Split(strings.TrimRight(desired, "\n"), "\n")
-	var out []string
-	out = append(out, lines[:start]...)
-	out = append(out, desiredLines...)
-	out = append(out, lines[end:]...)
 	return strings.Join(out, "\n")
 }
 
