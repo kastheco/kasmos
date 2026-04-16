@@ -28,12 +28,16 @@ import (
 // UTF-8 input (e.g. non-ASCII keystrokes) is classified correctly; indexing
 // a string with [0] would inspect only the leading byte and misclassify
 // valid printable runes as non-printable.
+//
+// DecodeRuneInString returns (RuneError, 1) only for invalid UTF-8; a
+// correctly encoded U+FFFD replacement rune returns (RuneError, 3), so the
+// size guard distinguishes a decoding failure from a legitimate U+FFFD.
 func firstRuneIsPrintable(s string) bool {
 	if s == "" {
 		return false
 	}
-	r, _ := utf8.DecodeRuneInString(s)
-	if r == utf8.RuneError {
+	r, size := utf8.DecodeRuneInString(s)
+	if r == utf8.RuneError && size <= 1 {
 		return false
 	}
 	return unicode.IsPrint(r)
