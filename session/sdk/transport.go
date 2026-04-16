@@ -49,8 +49,9 @@ type LaunchConfig struct {
 }
 
 // Transport is the bidirectional control interface over an SDK-driven agent
-// process. Implementations speak JSON-RPC 2.0 over stdio with the agent's
-// app-server.
+// process. Implementations speak the agent's app-server protocol over stdio
+// (for example Claude's JSON-RPC 2.0 surface or Codex's JSONL/JSON-RPC-lite
+// App Server protocol).
 //
 // Import note: tmux.PermissionChoice is safe to use here because session/tmux
 // is a sibling package with no dependency on session/sdk.

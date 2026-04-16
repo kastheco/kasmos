@@ -16,14 +16,15 @@ import (
 )
 
 type fakeCodexProcess struct {
-	t         *testing.T
-	server    *fakeCodexServer
-	startCfg  LaunchConfig
-	stdinW    *io.PipeWriter
-	stdoutR   *io.PipeReader
-	stdoutW   *io.PipeWriter
-	started   bool
-	closeOnce sync.Once
+	t                  *testing.T
+	server             *fakeCodexServer
+	startCfg           LaunchConfig
+	stdinW             *io.PipeWriter
+	stdoutR            *io.PipeReader
+	stdoutW            *io.PipeWriter
+	started            bool
+	closeStdoutOnStart bool
+	closeOnce          sync.Once
 }
 
 func newFakeCodexProcess(t *testing.T) *fakeCodexProcess {
@@ -35,11 +36,17 @@ func (p *fakeCodexProcess) Start(cfg LaunchConfig) (io.WriteCloser, io.ReadClose
 	p.startCfg = cfg
 	clientStdinR, clientStdinW := io.Pipe()
 	serverStdoutR, serverStdoutW := io.Pipe()
-	p.server = newFakeCodexServer(p.t, clientStdinR, serverStdoutW)
 	p.stdinW = clientStdinW
 	p.stdoutR = serverStdoutR
 	p.stdoutW = serverStdoutW
 	p.started = true
+
+	if !p.closeStdoutOnStart {
+		p.server = newFakeCodexServer(p.t, clientStdinR, serverStdoutW)
+	} else {
+		_ = serverStdoutW.Close()
+	}
+
 	return clientStdinW, serverStdoutR, nil
 }
 
@@ -47,7 +54,7 @@ func (p *fakeCodexProcess) PID() int {
 	if !p.started {
 		return 0
 	}
-	return 12345
+	return 4242
 }
 
 func (p *fakeCodexProcess) Close() error {
@@ -65,25 +72,32 @@ func (p *fakeCodexProcess) Close() error {
 	return nil
 }
 
-// fakeCodexServer simulates the Codex app-server over a pair of in-memory
-// pipes. It reads JSON-RPC requests from its "stdin" and can push
-// notifications to the client via pushNotification.
 type fakeCodexServer struct {
-	t        *testing.T
-	stdin    io.Reader // requests arrive here
-	stdout   io.Writer // notifications are written here
-	mu       sync.Mutex
-	requests []jsonRPCMsg
+	t *testing.T
+
+	stdin  io.Reader
+	stdout io.Writer
+
+	mu                  sync.Mutex
+	requests            []jsonRPCMsg
+	clientNotifications []jsonRPCMsg
+	responses           []jsonRPCMsg
+	nextTurnID          int
+	threadID            string
 }
 
 func newFakeCodexServer(t *testing.T, stdin io.Reader, stdout io.Writer) *fakeCodexServer {
 	t.Helper()
-	s := &fakeCodexServer{t: t, stdin: stdin, stdout: stdout}
+	s := &fakeCodexServer{
+		t:        t,
+		stdin:    stdin,
+		stdout:   stdout,
+		threadID: "thread-1",
+	}
 	go s.readLoop()
 	return s
 }
 
-// readLoop drains incoming requests so the client's write calls don't block.
 func (s *fakeCodexServer) readLoop() {
 	dec := json.NewDecoder(s.stdin)
 	for {
@@ -91,92 +105,154 @@ func (s *fakeCodexServer) readLoop() {
 		if err := dec.Decode(&msg); err != nil {
 			return
 		}
+
 		s.mu.Lock()
-		s.requests = append(s.requests, msg)
+		switch {
+		case msg.Method != "" && msg.ID != nil:
+			s.requests = append(s.requests, msg)
+		case msg.Method != "":
+			s.clientNotifications = append(s.clientNotifications, msg)
+		case msg.ID != nil:
+			s.responses = append(s.responses, msg)
+		}
 		s.mu.Unlock()
 
-		// Acknowledge request-response calls with an empty result so the
-		// client's Call unblocks.
-		if msg.ID != nil {
-			resp := fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"result":{}}`+"\n", *msg.ID)
-			_, _ = io.WriteString(s.stdout, resp)
+		if msg.Method != "" && msg.ID != nil {
+			s.replyToRequest(msg)
 		}
 	}
 }
 
-// pushNotification writes a server-sent notification to the client's stdout.
-func (s *fakeCodexServer) pushNotification(method string, params any) {
+func (s *fakeCodexServer) replyToRequest(msg jsonRPCMsg) {
 	s.t.Helper()
-	data, err := json.Marshal(params)
-	if err != nil {
-		s.t.Fatalf("pushNotification: marshal params: %v", err)
+
+	var result any = map[string]any{}
+	switch msg.Method {
+	case codexMethodInitialize:
+		result = map[string]any{"userAgent": "kasmos-test"}
+	case codexMethodThreadStart:
+		result = map[string]any{
+			"thread": map[string]any{"id": s.threadID},
+		}
+	case codexMethodTurnStart:
+		s.mu.Lock()
+		s.nextTurnID++
+		turnID := fmt.Sprintf("turn-%d", s.nextTurnID)
+		s.mu.Unlock()
+		result = map[string]any{
+			"turn": map[string]any{"id": turnID},
+		}
+	case codexMethodTurnInterrupt:
+		result = map[string]any{}
+	default:
+		result = map[string]any{}
 	}
-	line := fmt.Sprintf(`{"jsonrpc":"2.0","method":%q,"params":%s}`+"\n", method, data)
-	_, _ = io.WriteString(s.stdout, line)
+
+	resp := map[string]any{
+		"jsonrpc": "2.0",
+		"id":      *msg.ID,
+		"result":  result,
+	}
+	data, err := json.Marshal(resp)
+	require.NoError(s.t, err)
+	_, _ = io.WriteString(s.stdout, string(data)+"\n")
 }
 
-// lastRequest returns the most recently received request, or panics if none.
+func (s *fakeCodexServer) pushNotification(method string, params any) {
+	s.t.Helper()
+	msg := map[string]any{
+		"jsonrpc": "2.0",
+		"method":  method,
+		"params":  params,
+	}
+	data, err := json.Marshal(msg)
+	require.NoError(s.t, err)
+	_, _ = io.WriteString(s.stdout, string(data)+"\n")
+}
+
+func (s *fakeCodexServer) pushRequest(id int64, method string, params any) {
+	s.t.Helper()
+	msg := map[string]any{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"method":  method,
+		"params":  params,
+	}
+	data, err := json.Marshal(msg)
+	require.NoError(s.t, err)
+	_, _ = io.WriteString(s.stdout, string(data)+"\n")
+}
+
+func (s *fakeCodexServer) waitForRequests(t *testing.T, n int) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return len(s.requests) >= n
+	}, time.Second, 10*time.Millisecond)
+}
+
+func (s *fakeCodexServer) waitForResponses(t *testing.T, n int) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return len(s.responses) >= n
+	}, time.Second, 10*time.Millisecond)
+}
+
+func (s *fakeCodexServer) requestMethods() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, 0, len(s.requests))
+	for _, req := range s.requests {
+		out = append(out, req.Method)
+	}
+	return out
+}
+
 func (s *fakeCodexServer) lastRequest() jsonRPCMsg {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.requests) == 0 {
-		s.t.Fatal("no requests received by fake server")
-	}
+	require.NotZero(s.t, len(s.requests))
 	return s.requests[len(s.requests)-1]
 }
 
-// collectRequest returns the most recently received request method.
-func (s *fakeCodexServer) lastMethod() string {
-	return s.lastRequest().Method
+func (s *fakeCodexServer) lastResponse() jsonRPCMsg {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	require.NotZero(s.t, len(s.responses))
+	return s.responses[len(s.responses)-1]
 }
 
-// newCodexTransportWithFakeServer creates a CodexTransport wired to a
-// fakeCodexServer via in-memory pipes and calls Start on it.
-// Returns the transport and the fake server.
-func newCodexTransportWithFakeServer(t *testing.T) (*CodexTransport, *fakeCodexServer, io.Closer) {
+func (s *fakeCodexServer) hasClientNotification(method string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, msg := range s.clientNotifications {
+		if msg.Method == method {
+			return true
+		}
+	}
+	return false
+}
+
+func newStartedCodexTransport(t *testing.T) (*CodexTransport, *fakeCodexServer) {
 	t.Helper()
-
-	// client-side stdin/stdout ↔ server-side stdin/stdout
-	clientStdinR, clientStdinW := io.Pipe()   // transport writes → server reads
-	serverStdoutR, serverStdoutW := io.Pipe() // server writes → transport reads
-
-	srv := newFakeCodexServer(t, clientStdinR, serverStdoutW)
-
+	proc := newFakeCodexProcess(t)
 	ct := &CodexTransport{
-		process: NewProcess(),
+		process: proc,
 		events:  make(chan Event, 128),
 		closed:  make(chan struct{}),
 	}
-	ct.client = NewClient(clientStdinW, serverStdoutR)
-	go ct.dispatchNotifications()
-
-	closer := &multiCloser{closers: []io.Closer{
-		clientStdinW,
-		serverStdoutW,
-	}}
-
-	t.Cleanup(func() {
-		_ = ct.Close()
-		_ = closer.Close()
-	})
-
-	return ct, srv, closer
+	require.NoError(t, ct.Start(context.Background(), LaunchConfig{
+		Program: "codex --model gpt-5.4",
+		WorkDir: t.TempDir(),
+	}))
+	t.Cleanup(func() { _ = ct.Close() })
+	require.NotNil(t, proc.server)
+	return ct, proc.server
 }
 
-// multiCloser closes multiple io.Closers in order.
-type multiCloser struct {
-	closers []io.Closer
-}
-
-func (m *multiCloser) Close() error {
-	for _, c := range m.closers {
-		_ = c.Close()
-	}
-	return nil
-}
-
-// collectEvents drains all events from ch until it is closed or the deadline
-// elapses.
 func collectEvents(t *testing.T, ch <-chan Event, timeout time.Duration) []Event {
 	t.Helper()
 	var events []Event
@@ -194,8 +270,6 @@ func collectEvents(t *testing.T, ch <-chan Event, timeout time.Duration) []Event
 	}
 }
 
-// waitForEvent blocks until an event of the given kind arrives on ch or the
-// deadline elapses.
 func waitForEvent(t *testing.T, ch <-chan Event, kind EventKind, timeout time.Duration) Event {
 	t.Helper()
 	deadline := time.After(timeout)
@@ -214,10 +288,6 @@ func waitForEvent(t *testing.T, ch <-chan Event, kind EventKind, timeout time.Du
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Construction
-// ---------------------------------------------------------------------------
-
 func TestCodexTransport_NewCodexTransport_ImplementsTransport(t *testing.T) {
 	var _ Transport = NewCodexTransport()
 }
@@ -226,10 +296,6 @@ func TestCodexTransport_PID_ZeroBeforeStart(t *testing.T) {
 	tr := NewCodexTransport().(*CodexTransport)
 	assert.Equal(t, 0, tr.PID())
 }
-
-// ---------------------------------------------------------------------------
-// Start validation
-// ---------------------------------------------------------------------------
 
 func TestCodexTransport_Start_EmptyProgramReturnsError(t *testing.T) {
 	tr := NewCodexTransport()
@@ -245,309 +311,307 @@ func TestCodexTransport_Start_WhitespaceProgramReturnsError(t *testing.T) {
 	assert.Contains(t, strings.ToLower(err.Error()), "empty program")
 }
 
-func TestCodexTransport_Start_DeliversInitialPrompt(t *testing.T) {
+func TestCodexTransport_Start_UsesV2HandshakeAndInitialPrompt(t *testing.T) {
 	proc := newFakeCodexProcess(t)
 	ct := &CodexTransport{
 		process: proc,
 		events:  make(chan Event, 128),
 		closed:  make(chan struct{}),
 	}
-	t.Cleanup(func() {
-		_ = ct.Close()
+	t.Cleanup(func() { _ = ct.Close() })
+
+	err := ct.Start(context.Background(), LaunchConfig{
+		Program:         "codex --model gpt-5.4",
+		WorkDir:         t.TempDir(),
+		SkipPermissions: true,
+		InitialPrompt:   "expand the plan",
 	})
-
-	cfg := LaunchConfig{
-		Program:       "codex --model gpt-5.4",
-		InitialPrompt: "expand the plan",
-	}
-	err := ct.Start(context.Background(), cfg)
 	require.NoError(t, err)
+	require.NotNil(t, proc.server)
 
-	require.Eventually(t, func() bool {
-		proc.server.mu.Lock()
-		defer proc.server.mu.Unlock()
-		return len(proc.server.requests) > 0
-	}, time.Second, 10*time.Millisecond)
+	proc.server.waitForRequests(t, 3)
+	assert.Contains(t, proc.startCfg.Program, "app-server")
+	assert.Equal(t, []string{
+		codexMethodInitialize,
+		codexMethodThreadStart,
+		codexMethodTurnStart,
+	}, proc.server.requestMethods())
+	assert.True(t, proc.server.hasClientNotification(codexMethodInitialized))
 
-	assert.Contains(t, proc.startCfg.Program, "app-server", "codex app-server subcommand must be appended at launch")
 	req := proc.server.lastRequest()
-	assert.Equal(t, codexMethodTurnInput, req.Method)
-
-	var params codexTurnInputParams
+	var params codexTurnStartParams
 	require.NoError(t, json.Unmarshal(req.Params, &params))
-	assert.Equal(t, "expand the plan", params.Text)
+	assert.Equal(t, "thread-1", params.ThreadID)
+	require.Len(t, params.Input, 1)
+	assert.Equal(t, "text", params.Input[0].Type)
+	assert.Equal(t, "expand the plan", params.Input[0].Text)
 }
 
-// ---------------------------------------------------------------------------
-// SendPrompt
-// ---------------------------------------------------------------------------
+func TestCodexTransport_Start_ProcessExitDuringInitializeReturnsError(t *testing.T) {
+	proc := newFakeCodexProcess(t)
+	proc.closeStdoutOnStart = true
+	ct := &CodexTransport{
+		process: proc,
+		events:  make(chan Event, 128),
+		closed:  make(chan struct{}),
+	}
 
-func TestCodexTransport_SendPrompt_SendsCorrectMethod(t *testing.T) {
-	ct, srv, _ := newCodexTransportWithFakeServer(t)
+	err := ct.Start(context.Background(), LaunchConfig{
+		Program: "codex",
+		WorkDir: t.TempDir(),
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "initialize")
+}
+
+func TestCodexTransport_SendPrompt_UsesTurnStart(t *testing.T) {
+	ct, srv := newStartedCodexTransport(t)
 
 	err := ct.SendPrompt(context.Background(), "hello world")
 	require.NoError(t, err)
 
-	// Give the server a moment to receive the request.
-	time.Sleep(10 * time.Millisecond)
-	assert.Equal(t, codexMethodTurnInput, srv.lastMethod())
-}
-
-func TestCodexTransport_SendPrompt_EmptyIgnored(t *testing.T) {
-	ct, srv, _ := newCodexTransportWithFakeServer(t)
-
-	err := ct.SendPrompt(context.Background(), "")
-	require.NoError(t, err)
-
-	err = ct.SendPrompt(context.Background(), "   ")
-	require.NoError(t, err)
-
-	// No requests should have been sent.
-	time.Sleep(10 * time.Millisecond)
-	srv.mu.Lock()
-	count := len(srv.requests)
-	srv.mu.Unlock()
-	assert.Equal(t, 0, count, "empty/whitespace prompts must not produce requests")
-}
-
-func TestCodexTransport_SendPrompt_TextInPayload(t *testing.T) {
-	ct, srv, _ := newCodexTransportWithFakeServer(t)
-
-	const wantText = "write a hello world program"
-	err := ct.SendPrompt(context.Background(), wantText)
-	require.NoError(t, err)
-
-	time.Sleep(10 * time.Millisecond)
+	srv.waitForRequests(t, 3)
 	req := srv.lastRequest()
-	var params codexTurnInputParams
+	assert.Equal(t, codexMethodTurnStart, req.Method)
+
+	var params codexTurnStartParams
 	require.NoError(t, json.Unmarshal(req.Params, &params))
-	assert.Equal(t, wantText, params.Text)
+	assert.Equal(t, "thread-1", params.ThreadID)
+	require.Len(t, params.Input, 1)
+	assert.Equal(t, "hello world", params.Input[0].Text)
 }
 
-// ---------------------------------------------------------------------------
-// Interrupt
-// ---------------------------------------------------------------------------
+func TestCodexTransport_Interrupt_UsesThreadAndTurnID(t *testing.T) {
+	ct, srv := newStartedCodexTransport(t)
 
-func TestCodexTransport_Interrupt_SendsCorrectMethod(t *testing.T) {
-	ct, srv, _ := newCodexTransportWithFakeServer(t)
+	require.NoError(t, ct.SendPrompt(context.Background(), "hello"))
+	require.NoError(t, ct.Interrupt(context.Background()))
 
-	err := ct.Interrupt(context.Background())
-	require.NoError(t, err)
-
-	time.Sleep(10 * time.Millisecond)
-	assert.Equal(t, codexMethodTurnInterrupt, srv.lastMethod())
-}
-
-func TestCodexTransport_Interrupt_NoopAfterClose(t *testing.T) {
-	ct, _, _ := newCodexTransportWithFakeServer(t)
-	_ = ct.Close()
-
-	// Must not panic; error is ignored by contract.
-	err := ct.Interrupt(context.Background())
-	assert.NoError(t, err, "Interrupt after Close must not panic or error")
-}
-
-// ---------------------------------------------------------------------------
-// RespondPermission
-// ---------------------------------------------------------------------------
-
-func TestCodexTransport_RespondPermission_AllowOnce(t *testing.T) {
-	ct, srv, _ := newCodexTransportWithFakeServer(t)
-
-	err := ct.RespondPermission(context.Background(), tmux.PermissionAllowOnce)
-	require.NoError(t, err)
-
-	time.Sleep(10 * time.Millisecond)
+	srv.waitForRequests(t, 4)
 	req := srv.lastRequest()
-	assert.Equal(t, codexMethodPermissionRespond, req.Method)
-	var params codexPermissionRespondParams
+	assert.Equal(t, codexMethodTurnInterrupt, req.Method)
+
+	var params codexTurnInterruptParams
 	require.NoError(t, json.Unmarshal(req.Params, &params))
-	assert.Equal(t, "allow_once", params.Response)
+	assert.Equal(t, "thread-1", params.ThreadID)
+	assert.Equal(t, "turn-1", params.TurnID)
 }
 
-func TestCodexTransport_RespondPermission_AllowAlways(t *testing.T) {
-	ct, srv, _ := newCodexTransportWithFakeServer(t)
+func TestCodexTransport_RespondPermission_CommandApproval(t *testing.T) {
+	ct, srv := newStartedCodexTransport(t)
+
+	srv.pushRequest(11, codexRequestCommandApproval, codexCommandApprovalRequest{
+		ThreadID: "thread-1",
+		TurnID:   "turn-1",
+		ItemID:   "item-1",
+		Command:  ptr("go test ./..."),
+	})
+	ev := waitForEvent(t, ct.Events(), EventPermission, time.Second)
+	assert.Contains(t, ev.PermissionDescription, "go test ./...")
 
 	err := ct.RespondPermission(context.Background(), tmux.PermissionAllowAlways)
 	require.NoError(t, err)
 
-	time.Sleep(10 * time.Millisecond)
-	var params codexPermissionRespondParams
-	require.NoError(t, json.Unmarshal(srv.lastRequest().Params, &params))
-	assert.Equal(t, "allow_always", params.Response)
+	srv.waitForResponses(t, 1)
+	resp := srv.lastResponse()
+	require.NotNil(t, resp.ID)
+	assert.Equal(t, int64(11), *resp.ID)
+	assert.Contains(t, string(resp.Result), `"acceptForSession"`)
 }
 
-func TestCodexTransport_RespondPermission_Reject(t *testing.T) {
-	ct, srv, _ := newCodexTransportWithFakeServer(t)
+func TestCodexTransport_RespondPermission_PermissionsApproval(t *testing.T) {
+	ct, srv := newStartedCodexTransport(t)
 
-	err := ct.RespondPermission(context.Background(), tmux.PermissionReject)
+	srv.pushRequest(12, codexRequestPermissionsApproval, codexPermissionsApprovalRequest{
+		ThreadID:    "thread-1",
+		TurnID:      "turn-1",
+		ItemID:      "item-2",
+		Permissions: json.RawMessage(`{"network":{"mode":"enabled"}}`),
+	})
+	_ = waitForEvent(t, ct.Events(), EventPermission, time.Second)
+
+	err := ct.RespondPermission(context.Background(), tmux.PermissionAllowAlways)
 	require.NoError(t, err)
 
-	time.Sleep(10 * time.Millisecond)
-	var params codexPermissionRespondParams
-	require.NoError(t, json.Unmarshal(srv.lastRequest().Params, &params))
-	assert.Equal(t, "deny", params.Response)
+	srv.waitForResponses(t, 1)
+	resp := srv.lastResponse()
+	require.NotNil(t, resp.ID)
+	assert.Equal(t, int64(12), *resp.ID)
+	assert.Contains(t, string(resp.Result), `"scope":"session"`)
+	assert.Contains(t, string(resp.Result), `"network"`)
 }
-
-func TestCodexTransport_RespondPermission_NoopAfterClose(t *testing.T) {
-	ct, _, _ := newCodexTransportWithFakeServer(t)
-	_ = ct.Close()
-
-	// Must not panic.
-	err := ct.RespondPermission(context.Background(), tmux.PermissionAllowOnce)
-	assert.NoError(t, err, "RespondPermission after Close must not panic or error")
-}
-
-// ---------------------------------------------------------------------------
-// Notification → Event translation
-// ---------------------------------------------------------------------------
 
 func TestCodexTransport_TurnStarted_Event(t *testing.T) {
-	ct, srv, _ := newCodexTransportWithFakeServer(t)
+	ct, srv := newStartedCodexTransport(t)
 
-	srv.pushNotification(codexNotifyTurnStarted, codexNotifyTurnStartedParams{TurnID: "t1"})
+	srv.pushNotification(codexNotifyTurnStarted, codexTurnStartedParams{
+		ThreadID: "thread-1",
+		Turn:     codexTurn{ID: "turn-7"},
+	})
 
 	ev := waitForEvent(t, ct.Events(), EventTurnStarted, time.Second)
-	assert.Equal(t, "t1", ev.TurnID)
-	assert.False(t, ev.HasPrompt, "turn started should not set HasPrompt")
+	assert.Equal(t, "turn-7", ev.TurnID)
 }
 
 func TestCodexTransport_MessageDelta_Event(t *testing.T) {
-	ct, srv, _ := newCodexTransportWithFakeServer(t)
+	ct, srv := newStartedCodexTransport(t)
 
-	srv.pushNotification(codexNotifyMessageDelta, codexNotifyMessageDeltaParams{
-		TurnID: "t1", Text: "hello",
+	srv.pushNotification(codexNotifyAgentMessageDelta, codexAgentMessageDeltaParams{
+		ThreadID: "thread-1",
+		TurnID:   "turn-7",
+		ItemID:   "item-7",
+		Delta:    "hello",
 	})
 
 	ev := waitForEvent(t, ct.Events(), EventTextDelta, time.Second)
-	assert.Equal(t, "t1", ev.TurnID)
+	assert.Equal(t, "turn-7", ev.TurnID)
 	assert.Equal(t, "hello", ev.Text)
 }
 
-func TestCodexTransport_ToolCall_Event(t *testing.T) {
-	ct, srv, _ := newCodexTransportWithFakeServer(t)
+func TestCodexTransport_CommandExecution_ItemEvents(t *testing.T) {
+	ct, srv := newStartedCodexTransport(t)
 
-	srv.pushNotification(codexNotifyToolCall, codexNotifyToolCallParams{
-		TurnID: "t1", ToolName: "shell", Input: `{"cmd":"ls"}`,
+	srv.pushNotification(codexNotifyItemStarted, codexItemNotification{
+		ThreadID: "thread-1",
+		TurnID:   "turn-9",
+		Item: codexThreadItem{
+			ID:      "item-9",
+			Type:    "commandExecution",
+			Command: "ls -la",
+		},
 	})
+	call := waitForEvent(t, ct.Events(), EventToolCall, time.Second)
+	assert.Equal(t, "commandExecution", call.ToolName)
+	assert.Equal(t, "ls -la", call.ToolInput)
 
-	ev := waitForEvent(t, ct.Events(), EventToolCall, time.Second)
-	assert.Equal(t, "shell", ev.ToolName)
-	assert.Equal(t, `{"cmd":"ls"}`, ev.ToolInput)
+	output := "ok"
+	exitCode := 0
+	srv.pushNotification(codexNotifyItemCompleted, codexItemNotification{
+		ThreadID: "thread-1",
+		TurnID:   "turn-9",
+		Item: codexThreadItem{
+			ID:               "item-9",
+			Type:             "commandExecution",
+			Command:          "ls -la",
+			AggregatedOutput: &output,
+			ExitCode:         &exitCode,
+		},
+	})
+	result := waitForEvent(t, ct.Events(), EventToolResult, time.Second)
+	assert.Equal(t, "commandExecution", result.ToolName)
+	assert.Contains(t, result.ToolResult, "exit_code=0")
+	assert.Contains(t, result.ToolResult, "ok")
 }
 
-func TestCodexTransport_ToolResult_Event(t *testing.T) {
-	ct, srv, _ := newCodexTransportWithFakeServer(t)
+func TestCodexTransport_TurnCompleted_HasPrompt(t *testing.T) {
+	ct, srv := newStartedCodexTransport(t)
 
-	srv.pushNotification(codexNotifyToolResult, codexNotifyToolResultParams{
-		TurnID: "t1", ToolName: "shell", Result: `{"out":"file.go"}`,
+	srv.pushNotification(codexNotifyTurnCompleted, codexTurnCompletedParams{
+		ThreadID: "thread-1",
+		Turn:     codexTurn{ID: "turn-3"},
 	})
-
-	ev := waitForEvent(t, ct.Events(), EventToolResult, time.Second)
-	assert.Equal(t, "shell", ev.ToolName)
-	assert.Equal(t, `{"out":"file.go"}`, ev.ToolResult)
-}
-
-func TestCodexTransport_Permission_Event(t *testing.T) {
-	ct, srv, _ := newCodexTransportWithFakeServer(t)
-
-	srv.pushNotification(codexNotifyPermission, codexNotifyPermissionParams{
-		TurnID: "t1", Description: "write /etc/hosts", Pattern: "/etc/*",
-	})
-
-	ev := waitForEvent(t, ct.Events(), EventPermission, time.Second)
-	assert.Equal(t, "write /etc/hosts", ev.PermissionDescription)
-	assert.Equal(t, "/etc/*", ev.PermissionPattern)
-}
-
-func TestCodexTransport_TurnComplete_HasPrompt(t *testing.T) {
-	ct, srv, _ := newCodexTransportWithFakeServer(t)
-
-	srv.pushNotification(codexNotifyTurnComplete, codexNotifyTurnCompleteParams{TurnID: "t1"})
 
 	ev := waitForEvent(t, ct.Events(), EventTurnCompleted, time.Second)
-	assert.True(t, ev.HasPrompt, "turn/complete must set HasPrompt=true so session layer detects readiness")
+	assert.True(t, ev.HasPrompt)
 	assert.True(t, ev.Final)
 }
 
-func TestCodexTransport_TurnInterrupted_HasPrompt(t *testing.T) {
-	ct, srv, _ := newCodexTransportWithFakeServer(t)
+func TestCodexTransport_ErrorNotification_EmitsSystemEvent(t *testing.T) {
+	ct, srv := newStartedCodexTransport(t)
 
-	srv.pushNotification(codexNotifyTurnInterrupted, codexNotifyTurnInterruptedParams{TurnID: "t1"})
-
-	ev := waitForEvent(t, ct.Events(), EventTurnInterrupted, time.Second)
-	assert.True(t, ev.HasPrompt, "turn/interrupted must set HasPrompt=true")
-	assert.True(t, ev.Final)
-}
-
-// ---------------------------------------------------------------------------
-// Edge cases
-// ---------------------------------------------------------------------------
-
-func TestCodexTransport_UnknownNotification_EmitsSystemEvent(t *testing.T) {
-	ct, srv, _ := newCodexTransportWithFakeServer(t)
-
-	// Push a notification the transport does not recognise.
-	srv.pushNotification("unknown/method", map[string]any{"x": 1})
+	srv.pushNotification(codexNotifyError, codexErrorNotification{
+		ThreadID:  "thread-1",
+		TurnID:    "turn-3",
+		Error:     codexTurnError{Message: "boom"},
+		WillRetry: false,
+	})
 
 	ev := waitForEvent(t, ct.Events(), EventSystem, time.Second)
-	assert.Contains(t, ev.Text, "unknown/method")
+	assert.Contains(t, ev.Text, "boom")
+	assert.True(t, ev.HasPrompt)
+}
+
+func TestCodexTransport_UnsupportedServerRequest_EmitsSystemEvent(t *testing.T) {
+	ct, srv := newStartedCodexTransport(t)
+
+	srv.pushRequest(99, "item/tool/call", map[string]any{"tool": "custom"})
+
+	ev := waitForEvent(t, ct.Events(), EventSystem, time.Second)
+	assert.Contains(t, ev.Text, "item/tool/call")
+	srv.waitForResponses(t, 1)
 }
 
 func TestCodexTransport_EventsChannelClosedAfterProcessExit(t *testing.T) {
-	ct, _, closer := newCodexTransportWithFakeServer(t)
+	proc := newFakeCodexProcess(t)
+	ct := &CodexTransport{
+		process: proc,
+		events:  make(chan Event, 128),
+		closed:  make(chan struct{}),
+	}
+	require.NoError(t, ct.Start(context.Background(), LaunchConfig{
+		Program: "codex",
+		WorkDir: t.TempDir(),
+	}))
+	t.Cleanup(func() { _ = ct.Close() })
 
-	// Close the server-stdout pipe to simulate process exit.
-	_ = closer.Close()
+	_ = proc.Close()
 
-	// The events channel must be closed, not block forever.
 	select {
 	case _, ok := <-ct.Events():
 		if ok {
-			// Drain any buffered events until closed.
 			for range ct.Events() {
 			}
 		}
-		// Channel eventually closed — pass.
 	case <-time.After(2 * time.Second):
 		t.Fatal("event channel not closed after process exit")
 	}
 }
 
 func TestCodexTransport_Close_Idempotent(t *testing.T) {
-	ct, _, _ := newCodexTransportWithFakeServer(t)
-
-	// Multiple Close calls must not panic.
+	ct, _ := newStartedCodexTransport(t)
 	assert.NoError(t, ct.Close())
 	assert.NoError(t, ct.Close())
 	assert.NoError(t, ct.Close())
 }
 
 func TestCodexTransport_MultipleNotifications_AllDelivered(t *testing.T) {
-	ct, srv, _ := newCodexTransportWithFakeServer(t)
+	ct, srv := newStartedCodexTransport(t)
 
-	srv.pushNotification(codexNotifyTurnStarted, codexNotifyTurnStartedParams{TurnID: "t2"})
-	srv.pushNotification(codexNotifyMessageDelta, codexNotifyMessageDeltaParams{TurnID: "t2", Text: "chunk1"})
-	srv.pushNotification(codexNotifyMessageDelta, codexNotifyMessageDeltaParams{TurnID: "t2", Text: "chunk2"})
-	srv.pushNotification(codexNotifyTurnComplete, codexNotifyTurnCompleteParams{TurnID: "t2"})
+	srv.pushNotification(codexNotifyTurnStarted, codexTurnStartedParams{
+		ThreadID: "thread-1",
+		Turn:     codexTurn{ID: "turn-5"},
+	})
+	srv.pushNotification(codexNotifyAgentMessageDelta, codexAgentMessageDeltaParams{
+		ThreadID: "thread-1",
+		TurnID:   "turn-5",
+		ItemID:   "item-5",
+		Delta:    "chunk1",
+	})
+	srv.pushNotification(codexNotifyAgentMessageDelta, codexAgentMessageDeltaParams{
+		ThreadID: "thread-1",
+		TurnID:   "turn-5",
+		ItemID:   "item-5",
+		Delta:    "chunk2",
+	})
+	srv.pushNotification(codexNotifyTurnCompleted, codexTurnCompletedParams{
+		ThreadID: "thread-1",
+		Turn:     codexTurn{ID: "turn-5"},
+	})
 
 	events := collectEvents(t, ct.Events(), 200*time.Millisecond)
-
 	kinds := make([]EventKind, 0, len(events))
+	var deltas []string
 	for _, ev := range events {
 		kinds = append(kinds, ev.Kind)
+		if ev.Kind == EventTextDelta {
+			deltas = append(deltas, ev.Text)
+		}
 	}
 
 	assert.Contains(t, kinds, EventTurnStarted)
 	assert.Contains(t, kinds, EventTextDelta)
 	assert.Contains(t, kinds, EventTurnCompleted)
-
-	// The two text-delta events must both be present.
-	var deltas []string
-	for _, ev := range events {
-		if ev.Kind == EventTextDelta {
-			deltas = append(deltas, ev.Text)
-		}
-	}
 	assert.ElementsMatch(t, []string{"chunk1", "chunk2"}, deltas)
 }
+
+func ptr(s string) *string { return &s }

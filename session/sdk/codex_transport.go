@@ -2,21 +2,18 @@
 //
 // # Protocol surface
 //
-// CodexTransport speaks a JSON-RPC 2.0 dialect over the Codex app-server's
-// stdio connection. The generic Transport interface deliberately limits the
-// surface to three operations: prompt delivery, turn interruption, and
-// permission approval/rejection. Codex-only advanced controls such as
-// turn/steer (mid-turn prompt injection) and multi-agent delegation are out
-// of scope for this pass.
+// CodexTransport speaks the current Codex App Server protocol over stdio.
+// The documented client flow is:
 //
-// # TODO – deferred Codex-only controls
+//  1. initialize
+//  2. initialized
+//  3. thread/start
+//  4. turn/start for each prompt
 //
-//   - turn/steer: inject a steering prompt while a turn is in progress.
-//   - session/fork: branch the conversation at an earlier message index.
-//   - session/reset: discard conversation history and start fresh.
-//
-// These methods require extensions to the Transport interface or a
-// Codex-specific sub-interface; they are left for a future wave.
+// The generic Transport interface deliberately limits the client surface to
+// prompt delivery, turn interruption, and permission approval/rejection.
+// Codex-only controls such as turn/steer, thread/fork, and review mode are
+// intentionally left out for a future wave.
 package sdk
 
 import (
@@ -24,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -31,119 +29,179 @@ import (
 	"github.com/kastheco/kasmos/session/tmux"
 )
 
-// Codex app-server JSON-RPC method names.
-// All names are intentionally kept in this file and must not leak into
-// session/sdk/session.go or any caller layer.
 const (
-	// Client → server requests.
-	codexMethodTurnInput         = "turn/input"
-	codexMethodTurnInterrupt     = "turn/interrupt"
-	codexMethodPermissionRespond = "permission/respond"
+	// Client -> server startup and turn lifecycle.
+	codexMethodInitialize    = "initialize"
+	codexMethodInitialized   = "initialized"
+	codexMethodThreadStart   = "thread/start"
+	codexMethodTurnStart     = "turn/start"
+	codexMethodTurnInterrupt = "turn/interrupt"
 
-	// Server → client notifications.
-	codexNotifyTurnStarted     = "turn/started"
-	codexNotifyMessageDelta    = "message/delta"
-	codexNotifyToolCall        = "tool/call"
-	codexNotifyToolResult      = "tool/result"
-	codexNotifyPermission      = "permission/request"
-	codexNotifyTurnComplete    = "turn/complete"
-	codexNotifyTurnInterrupted = "turn/interrupted"
+	// Server -> client notifications.
+	codexNotifyError             = "error"
+	codexNotifyThreadStarted     = "thread/started"
+	codexNotifyTurnStarted       = "turn/started"
+	codexNotifyTurnCompleted     = "turn/completed"
+	codexNotifyItemStarted       = "item/started"
+	codexNotifyItemCompleted     = "item/completed"
+	codexNotifyAgentMessageDelta = "item/agentMessage/delta"
+
+	// Server -> client requests.
+	codexRequestCommandApproval     = "item/commandExecution/requestApproval"
+	codexRequestPermissionsApproval = "item/permissions/requestApproval"
+
+	codexHandshakeTimeout = 10 * time.Second
 )
 
-// codexTurnInputParams carries the user message for a new Codex turn.
-type codexTurnInputParams struct {
-	Text string `json:"text"`
-}
-
-// codexTurnInterruptParams is intentionally empty; the server needs no
-// additional context to abort the current turn.
-type codexTurnInterruptParams struct{}
-
-// codexPermissionRespondParams forwards the operator's choice to Codex's
-// numbered permission menu.
-type codexPermissionRespondParams struct {
-	// Response encodes the operator's decision:
-	//   "allow_once"   → PermissionAllowOnce
-	//   "allow_always" → PermissionAllowAlways
-	//   "deny"         → PermissionReject
-	Response string `json:"response"`
-}
-
-// codexNotifyTurnStartedParams carries the server-assigned turn identifier.
-type codexNotifyTurnStartedParams struct {
-	TurnID string `json:"turn_id"`
-}
-
-// codexNotifyMessageDeltaParams carries an incremental text chunk.
-type codexNotifyMessageDeltaParams struct {
-	TurnID string `json:"turn_id"`
-	Text   string `json:"text"`
-}
-
-// codexNotifyToolCallParams carries a single tool invocation.
-type codexNotifyToolCallParams struct {
-	TurnID   string `json:"turn_id"`
-	ToolName string `json:"tool_name"`
-	Input    string `json:"input"` // JSON-encoded tool arguments
-}
-
-// codexNotifyToolResultParams carries the result of a tool invocation.
-type codexNotifyToolResultParams struct {
-	TurnID   string `json:"turn_id"`
-	ToolName string `json:"tool_name"`
-	Result   string `json:"result"` // JSON-encoded result
-}
-
-// codexNotifyPermissionParams carries the description of an action that
-// requires operator approval before Codex can proceed.
-type codexNotifyPermissionParams struct {
-	TurnID      string `json:"turn_id"`
-	Description string `json:"description"`
-	Pattern     string `json:"pattern,omitempty"`
-}
-
-// codexNotifyTurnCompleteParams signals that the current turn finished
-// normally and Codex is idle (ready for the next prompt).
-type codexNotifyTurnCompleteParams struct {
-	TurnID string `json:"turn_id"`
-}
-
-// codexNotifyTurnInterruptedParams signals that the current turn was
-// interrupted (by the operator or internally by Codex) and Codex is idle.
-type codexNotifyTurnInterruptedParams struct {
-	TurnID string `json:"turn_id"`
-}
-
-// CodexTransport implements Transport for the OpenAI Codex CLI running in
-// app-server mode. It drives the subprocess directly via the in-repo
-// JSON-RPC client; no third-party Go SDK dependency is required.
-//
-// Lifecycle:
-//  1. NewCodexTransport() → allocates with no process running.
-//  2. Start(ctx, cfg)     → resolves executable, spawns subprocess, starts
-//     the notification dispatch goroutine.
-//  3. SendPrompt / Interrupt / RespondPermission → drive the running session.
-//  4. Close()             → terminates the subprocess and drains resources.
 type codexProcess interface {
 	Start(cfg LaunchConfig) (io.WriteCloser, io.ReadCloser, error)
 	PID() int
 	Close() error
 }
 
+type codexClientInfo struct {
+	Name    string `json:"name"`
+	Title   string `json:"title,omitempty"`
+	Version string `json:"version"`
+}
+
+type codexInitializeParams struct {
+	ClientInfo codexClientInfo `json:"clientInfo"`
+}
+
+type codexInitializeResult struct {
+	UserAgent string `json:"userAgent,omitempty"`
+}
+
+type codexThreadStartParams struct {
+	Cwd            string `json:"cwd,omitempty"`
+	ApprovalPolicy any    `json:"approvalPolicy,omitempty"`
+	Sandbox        any    `json:"sandbox,omitempty"`
+}
+
+type codexThreadStartResult struct {
+	Thread codexThread `json:"thread"`
+}
+
+type codexThread struct {
+	ID string `json:"id"`
+}
+
+type codexUserInput struct {
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+}
+
+type codexTurnStartParams struct {
+	ThreadID string           `json:"threadId"`
+	Input    []codexUserInput `json:"input"`
+}
+
+type codexTurnStartResult struct {
+	Turn codexTurn `json:"turn"`
+}
+
+type codexTurn struct {
+	ID string `json:"id"`
+}
+
+type codexTurnStartedParams struct {
+	ThreadID string    `json:"threadId"`
+	Turn     codexTurn `json:"turn"`
+}
+
+type codexTurnCompletedParams struct {
+	ThreadID string    `json:"threadId"`
+	Turn     codexTurn `json:"turn"`
+}
+
+type codexAgentMessageDeltaParams struct {
+	Delta    string `json:"delta"`
+	ItemID   string `json:"itemId"`
+	ThreadID string `json:"threadId"`
+	TurnID   string `json:"turnId"`
+}
+
+type codexTurnInterruptParams struct {
+	ThreadID string `json:"threadId"`
+	TurnID   string `json:"turnId"`
+}
+
+type codexErrorNotification struct {
+	Error     codexTurnError `json:"error"`
+	ThreadID  string         `json:"threadId"`
+	TurnID    string         `json:"turnId"`
+	WillRetry bool           `json:"willRetry"`
+}
+
+type codexTurnError struct {
+	Message string `json:"message"`
+}
+
+type codexItemNotification struct {
+	Item     codexThreadItem `json:"item"`
+	ThreadID string          `json:"threadId"`
+	TurnID   string          `json:"turnId"`
+}
+
+type codexThreadItem struct {
+	ID               string          `json:"id"`
+	Type             string          `json:"type"`
+	Tool             string          `json:"tool,omitempty"`
+	Arguments        json.RawMessage `json:"arguments,omitempty"`
+	Result           json.RawMessage `json:"result,omitempty"`
+	Command          string          `json:"command,omitempty"`
+	AggregatedOutput *string         `json:"aggregatedOutput,omitempty"`
+	ExitCode         *int            `json:"exitCode,omitempty"`
+	ContentItems     json.RawMessage `json:"contentItems,omitempty"`
+	Changes          json.RawMessage `json:"changes,omitempty"`
+}
+
+type codexCommandApprovalRequest struct {
+	ApprovalID *string `json:"approvalId,omitempty"`
+	Command    *string `json:"command,omitempty"`
+	Cwd        *string `json:"cwd,omitempty"`
+	ItemID     string  `json:"itemId"`
+	Reason     *string `json:"reason,omitempty"`
+	ThreadID   string  `json:"threadId"`
+	TurnID     string  `json:"turnId"`
+}
+
+type codexPermissionsApprovalRequest struct {
+	ItemID      string          `json:"itemId"`
+	Permissions json.RawMessage `json:"permissions"`
+	Reason      *string         `json:"reason,omitempty"`
+	ThreadID    string          `json:"threadId"`
+	TurnID      string          `json:"turnId"`
+}
+
+type codexPendingApprovalKind string
+
+const (
+	codexApprovalCommand     codexPendingApprovalKind = "command"
+	codexApprovalPermissions codexPendingApprovalKind = "permissions"
+)
+
+type codexPendingApproval struct {
+	ID          int64
+	Kind        codexPendingApprovalKind
+	Permissions json.RawMessage
+}
+
+// CodexTransport implements Transport for the OpenAI Codex CLI running in
+// app-server mode.
 type CodexTransport struct {
 	process codexProcess
 	client  *Client
 	events  chan Event
 
-	// closed is closed when Close is called; used to signal the dispatcher
-	// goroutine to stop.
 	closed    chan struct{}
 	closeOnce sync.Once
 
-	// mu guards currentTurnID and pendingPermission.
-	mu                sync.Mutex
-	currentTurnID     string
-	pendingPermission bool
+	mu              sync.Mutex
+	threadID        string
+	currentTurnID   string
+	pendingApproval *codexPendingApproval
 }
 
 // NewCodexTransport returns an unstarted CodexTransport that satisfies the
@@ -156,27 +214,14 @@ func NewCodexTransport() Transport {
 	}
 }
 
-// Start launches the Codex app-server subprocess described by cfg and begins
-// reading notifications from its stdout.
-//
-// If cfg.Program does not already contain the "app-server" subcommand (or the
-// legacy "--server" flag), Start appends "app-server" so the Codex CLI starts
-// in app-server (JSON-RPC over stdio) mode. The legacy "--server" flag was
-// removed in codex-cli 0.120; the subcommand is the current invocation.
-//
-// When cfg.InitialPrompt is non-empty, Start delivers it immediately after the
-// JSON-RPC client is ready. This matches the Claude SDK path and avoids leaving
-// SDK-managed instances idle with a queued prompt that will never be sent until
-// a later Ready tick.
-//
-// Returns an error if cfg.Program is empty (or whitespace only) or if the
-// subprocess cannot be started.
+// Start launches the Codex app-server subprocess, performs the documented
+// initialize/initialized/thread-start handshake, and optionally starts the
+// first turn with cfg.InitialPrompt.
 func (t *CodexTransport) Start(ctx context.Context, cfg LaunchConfig) error {
 	if strings.TrimSpace(cfg.Program) == "" {
 		return fmt.Errorf("codex transport: empty program")
 	}
 
-	// Ensure the Codex CLI runs in app-server mode.
 	if !strings.Contains(cfg.Program, "app-server") && !strings.Contains(cfg.Program, "--server") {
 		cfg.Program = strings.TrimSpace(cfg.Program) + " app-server"
 	}
@@ -185,25 +230,66 @@ func (t *CodexTransport) Start(ctx context.Context, cfg LaunchConfig) error {
 	if err != nil {
 		return fmt.Errorf("codex transport: start process: %w", err)
 	}
-
 	t.client = NewClient(stdin, stdout)
-	go t.dispatchNotifications()
+
+	if err := t.startHandshake(ctx, cfg); err != nil {
+		_ = t.client.Close()
+		_ = t.process.Close()
+		return err
+	}
+
+	go t.dispatchMessages()
 
 	if cfg.InitialPrompt != "" {
 		if err := t.SendPrompt(ctx, cfg.InitialPrompt); err != nil {
-			t.emit(Event{
-				Kind:      EventSystem,
-				Text:      fmt.Sprintf("codex: initial prompt delivery failed: %v", err),
-				Timestamp: time.Now(),
-			})
+			_ = t.Close()
+			return fmt.Errorf("codex transport: initial prompt: %w", err)
 		}
 	}
 	return nil
 }
 
-// SendPrompt delivers a new user prompt to the running Codex turn.
-// Empty or whitespace-only prompts are silently ignored so the caller does not
-// accidentally start a blank turn.
+func (t *CodexTransport) startHandshake(ctx context.Context, cfg LaunchConfig) error {
+	initCtx, cancel := context.WithTimeout(ctx, codexHandshakeTimeout)
+	defer cancel()
+
+	var initResult codexInitializeResult
+	if err := t.client.Call(initCtx, codexMethodInitialize, codexInitializeParams{
+		ClientInfo: codexClientInfo{
+			Name:    "kasmos",
+			Title:   "kasmos",
+			Version: codexClientVersion(),
+		},
+	}, &initResult); err != nil {
+		return fmt.Errorf("codex transport: initialize: %w", err)
+	}
+	if err := t.client.Notify(initCtx, codexMethodInitialized, nil); err != nil {
+		return fmt.Errorf("codex transport: initialized: %w", err)
+	}
+
+	threadParams := codexThreadStartParams{
+		Cwd: cfg.WorkDir,
+	}
+	if cfg.SkipPermissions {
+		threadParams.ApprovalPolicy = "never"
+		threadParams.Sandbox = "danger-full-access"
+	}
+
+	var threadResult codexThreadStartResult
+	if err := t.client.Call(initCtx, codexMethodThreadStart, threadParams, &threadResult); err != nil {
+		return fmt.Errorf("codex transport: thread/start: %w", err)
+	}
+	if strings.TrimSpace(threadResult.Thread.ID) == "" {
+		return fmt.Errorf("codex transport: thread/start returned empty thread id")
+	}
+
+	t.mu.Lock()
+	t.threadID = threadResult.Thread.ID
+	t.mu.Unlock()
+	return nil
+}
+
+// SendPrompt starts a new Codex turn for the given prompt.
 func (t *CodexTransport) SendPrompt(ctx context.Context, prompt string) error {
 	if strings.TrimSpace(prompt) == "" {
 		return nil
@@ -211,64 +297,91 @@ func (t *CodexTransport) SendPrompt(ctx context.Context, prompt string) error {
 	if err := t.guardClient(); err != nil {
 		return err
 	}
-	params := codexTurnInputParams{Text: prompt}
-	return t.client.Call(ctx, codexMethodTurnInput, params, nil)
+
+	t.mu.Lock()
+	threadID := t.threadID
+	t.mu.Unlock()
+	if strings.TrimSpace(threadID) == "" {
+		return fmt.Errorf("codex transport: no thread id")
+	}
+
+	var turnResult codexTurnStartResult
+	err := t.client.Call(ctx, codexMethodTurnStart, codexTurnStartParams{
+		ThreadID: threadID,
+		Input: []codexUserInput{{
+			Type: "text",
+			Text: prompt,
+		}},
+	}, &turnResult)
+	if err != nil {
+		return fmt.Errorf("codex transport: turn/start: %w", err)
+	}
+	if strings.TrimSpace(turnResult.Turn.ID) != "" {
+		t.mu.Lock()
+		t.currentTurnID = turnResult.Turn.ID
+		t.mu.Unlock()
+	}
+	return nil
 }
 
 // Interrupt requests Codex to abort the current turn.
-// Safe to call when no turn is in progress or after the transport has closed;
-// in those cases the call is a no-op.
 func (t *CodexTransport) Interrupt(ctx context.Context) error {
 	if err := t.guardClient(); err != nil {
-		// Transport already closed — treat as no-op rather than panic.
 		return nil
 	}
-	return t.client.Call(ctx, codexMethodTurnInterrupt, codexTurnInterruptParams{}, nil)
+
+	t.mu.Lock()
+	threadID := t.threadID
+	turnID := t.currentTurnID
+	t.mu.Unlock()
+	if threadID == "" || turnID == "" {
+		return nil
+	}
+
+	return t.client.Call(ctx, codexMethodTurnInterrupt, codexTurnInterruptParams{
+		ThreadID: threadID,
+		TurnID:   turnID,
+	}, nil)
 }
 
-// RespondPermission forwards the operator's decision for the most recent
-// permission prompt to Codex.
-//
-// Safe to call when the transport has already closed; returns nil without
-// panicking.
+// RespondPermission replies to the most recent pending approval request.
 func (t *CodexTransport) RespondPermission(ctx context.Context, choice tmux.PermissionChoice) error {
 	if err := t.guardClient(); err != nil {
 		return nil
 	}
 
 	t.mu.Lock()
-	t.pendingPermission = false
+	pending := t.pendingApproval
+	t.pendingApproval = nil
 	t.mu.Unlock()
-
-	var response string
-	switch choice {
-	case tmux.PermissionAllowAlways:
-		response = "allow_always"
-	case tmux.PermissionReject:
-		response = "deny"
-	default: // PermissionAllowOnce
-		response = "allow_once"
+	if pending == nil {
+		return nil
 	}
 
-	params := codexPermissionRespondParams{Response: response}
-	return t.client.Call(ctx, codexMethodPermissionRespond, params, nil)
+	switch pending.Kind {
+	case codexApprovalCommand:
+		return t.client.Reply(ctx, pending.ID, map[string]any{
+			"decision": codexCommandApprovalDecision(choice),
+		})
+	case codexApprovalPermissions:
+		return t.client.Reply(ctx, pending.ID, codexPermissionsApprovalResponse(choice, pending.Permissions))
+	default:
+		return t.client.ReplyError(ctx, pending.ID, -32601, "unsupported approval type")
+	}
 }
 
 // Events returns the read-only channel of structured events produced by the
-// transport. The channel is closed when the transport is closed or the Codex
-// process exits.
+// transport.
 func (t *CodexTransport) Events() <-chan Event {
 	return t.events
 }
 
 // PID returns the OS process ID of the running Codex process.
-// Returns 0 before a successful Start call.
 func (t *CodexTransport) PID() int {
 	return t.process.PID()
 }
 
 // Close terminates the Codex subprocess and releases all resources.
-// Safe to call before Start and after the process has already exited.
 func (t *CodexTransport) Close() error {
 	var err error
 	t.closeOnce.Do(func() {
@@ -281,8 +394,6 @@ func (t *CodexTransport) Close() error {
 	return err
 }
 
-// guardClient returns an error if the client has not been initialised yet
-// (Start was not called) or after the transport has been closed.
 func (t *CodexTransport) guardClient() error {
 	if t.client == nil {
 		return fmt.Errorf("codex transport: not started")
@@ -295,31 +406,21 @@ func (t *CodexTransport) guardClient() error {
 	}
 }
 
-// dispatchNotifications is the single background goroutine that reads
-// server-sent notifications from the JSON-RPC client and converts them into
-// typed Events delivered on t.events.
-//
-// It exits when the notifications channel is closed (which happens when the
-// Codex process exits or the client is closed) or when t.closed is signalled.
-// In both cases t.events is closed before the goroutine returns so the session
-// layer can detect end-of-stream.
-func (t *CodexTransport) dispatchNotifications() {
+func (t *CodexTransport) dispatchMessages() {
 	defer close(t.events)
 
 	notifications := t.client.Notifications()
+	requests := t.client.Requests()
 	for {
 		select {
 		case <-t.closed:
 			return
 		case n, ok := <-notifications:
 			if !ok {
-				// The Codex process exited; close the event stream.
 				return
 			}
 			ev, err := t.translateNotification(n)
 			if err != nil {
-				// Unrecognised notification — emit a system event so the
-				// operator can see it in the structured log.
 				t.emit(Event{
 					Kind:      EventSystem,
 					Text:      fmt.Sprintf("codex: unknown notification %q: %v", n.Method, err),
@@ -327,138 +428,335 @@ func (t *CodexTransport) dispatchNotifications() {
 				})
 				continue
 			}
-			if ev == nil {
-				// translateNotification returns nil for notifications that
-				// should be silently dropped.
-				continue
+			if ev != nil {
+				t.emit(*ev)
 			}
-			t.emit(*ev)
+		case req, ok := <-requests:
+			if !ok {
+				return
+			}
+			if err := t.handleServerRequest(req); err != nil {
+				t.emit(Event{
+					Kind:      EventSystem,
+					Text:      fmt.Sprintf("codex: server request %q failed: %v", req.Method, err),
+					Timestamp: time.Now(),
+				})
+			}
 		}
 	}
 }
 
-// emit sends an event on t.events without blocking. If the buffer is full the
-// event is dropped to avoid stalling the dispatcher goroutine.
 func (t *CodexTransport) emit(ev Event) {
 	select {
 	case t.events <- ev:
 	default:
-		// Buffer full — drop rather than deadlock.
 	}
 }
 
-// translateNotification converts a raw JSON-RPC Notification from the Codex
-// app-server into a typed Event.
-//
-// Returns:
-//   - (*Event, nil)  – a valid event ready for delivery.
-//   - (nil, nil)     – the notification is recognised but intentionally dropped.
-//   - (nil, error)   – the notification could not be parsed.
 func (t *CodexTransport) translateNotification(n Notification) (*Event, error) {
 	now := time.Now()
 
 	switch n.Method {
+	case codexNotifyThreadStarted:
+		return nil, nil
+
 	case codexNotifyTurnStarted:
-		var p codexNotifyTurnStartedParams
+		var p codexTurnStartedParams
 		if err := json.Unmarshal(n.Params, &p); err != nil {
-			return nil, fmt.Errorf("unmarshal turn_started params: %w", err)
+			return nil, fmt.Errorf("unmarshal turn/started params: %w", err)
 		}
 		t.mu.Lock()
-		t.currentTurnID = p.TurnID
+		t.currentTurnID = p.Turn.ID
 		t.mu.Unlock()
 		return &Event{
 			Kind:      EventTurnStarted,
-			TurnID:    p.TurnID,
+			TurnID:    p.Turn.ID,
 			Timestamp: now,
 		}, nil
 
-	case codexNotifyMessageDelta:
-		var p codexNotifyMessageDeltaParams
+	case codexNotifyAgentMessageDelta:
+		var p codexAgentMessageDeltaParams
 		if err := json.Unmarshal(n.Params, &p); err != nil {
-			return nil, fmt.Errorf("unmarshal message_delta params: %w", err)
+			return nil, fmt.Errorf("unmarshal item/agentMessage/delta params: %w", err)
 		}
 		return &Event{
 			Kind:      EventTextDelta,
 			TurnID:    p.TurnID,
-			Text:      p.Text,
+			Text:      p.Delta,
 			Timestamp: now,
 		}, nil
 
-	case codexNotifyToolCall:
-		var p codexNotifyToolCallParams
+	case codexNotifyItemStarted:
+		var p codexItemNotification
 		if err := json.Unmarshal(n.Params, &p); err != nil {
-			return nil, fmt.Errorf("unmarshal tool_call params: %w", err)
+			return nil, fmt.Errorf("unmarshal item/started params: %w", err)
 		}
-		return &Event{
-			Kind:      EventToolCall,
-			TurnID:    p.TurnID,
-			ToolName:  p.ToolName,
-			ToolInput: p.Input,
-			Timestamp: now,
-		}, nil
+		return translateCodexItemEvent(p, false, now), nil
 
-	case codexNotifyToolResult:
-		var p codexNotifyToolResultParams
+	case codexNotifyItemCompleted:
+		var p codexItemNotification
 		if err := json.Unmarshal(n.Params, &p); err != nil {
-			return nil, fmt.Errorf("unmarshal tool_result params: %w", err)
+			return nil, fmt.Errorf("unmarshal item/completed params: %w", err)
 		}
-		return &Event{
-			Kind:       EventToolResult,
-			TurnID:     p.TurnID,
-			ToolName:   p.ToolName,
-			ToolResult: p.Result,
-			Timestamp:  now,
-		}, nil
+		return translateCodexItemEvent(p, true, now), nil
 
-	case codexNotifyPermission:
-		var p codexNotifyPermissionParams
+	case codexNotifyTurnCompleted:
+		var p codexTurnCompletedParams
 		if err := json.Unmarshal(n.Params, &p); err != nil {
-			return nil, fmt.Errorf("unmarshal permission_request params: %w", err)
+			return nil, fmt.Errorf("unmarshal turn/completed params: %w", err)
 		}
 		t.mu.Lock()
-		t.pendingPermission = true
+		if t.currentTurnID == p.Turn.ID {
+			t.currentTurnID = ""
+		}
 		t.mu.Unlock()
 		return &Event{
-			Kind:                  EventPermission,
-			TurnID:                p.TurnID,
-			PermissionDescription: p.Description,
-			PermissionPattern:     p.Pattern,
-			Timestamp:             now,
-		}, nil
-
-	case codexNotifyTurnComplete:
-		var p codexNotifyTurnCompleteParams
-		if err := json.Unmarshal(n.Params, &p); err != nil {
-			return nil, fmt.Errorf("unmarshal turn_complete params: %w", err)
-		}
-		// HasPrompt=true signals to the session layer that Codex is idle and
-		// ready for the next user message — fixing the tmux limitation in
-		// session/tmux/codex_adapter.go where DetectPrompt always returns false
-		// because no reliable idle affordance has been confirmed from live pane
-		// capture.
-		return &Event{
 			Kind:      EventTurnCompleted,
-			TurnID:    p.TurnID,
+			TurnID:    p.Turn.ID,
 			HasPrompt: true,
 			Final:     true,
 			Timestamp: now,
 		}, nil
 
-	case codexNotifyTurnInterrupted:
-		var p codexNotifyTurnInterruptedParams
+	case codexNotifyError:
+		var p codexErrorNotification
 		if err := json.Unmarshal(n.Params, &p); err != nil {
-			return nil, fmt.Errorf("unmarshal turn_interrupted params: %w", err)
+			return nil, fmt.Errorf("unmarshal error params: %w", err)
 		}
-		// HasPrompt=true: Codex is idle after interruption, accepting new input.
+		t.mu.Lock()
+		if p.TurnID != "" && t.currentTurnID == p.TurnID && !p.WillRetry {
+			t.currentTurnID = ""
+		}
+		t.mu.Unlock()
 		return &Event{
-			Kind:      EventTurnInterrupted,
+			Kind:      EventSystem,
 			TurnID:    p.TurnID,
-			HasPrompt: true,
-			Final:     true,
+			Text:      "codex error: " + strings.TrimSpace(p.Error.Message),
+			HasPrompt: !p.WillRetry,
+			Final:     !p.WillRetry,
 			Timestamp: now,
 		}, nil
 
 	default:
 		return nil, fmt.Errorf("unrecognised method %q", n.Method)
 	}
+}
+
+func (t *CodexTransport) handleServerRequest(req ServerRequest) error {
+	now := time.Now()
+
+	switch req.Method {
+	case codexRequestCommandApproval:
+		var p codexCommandApprovalRequest
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return fmt.Errorf("unmarshal %s: %w", req.Method, err)
+		}
+		t.mu.Lock()
+		t.pendingApproval = &codexPendingApproval{ID: req.ID, Kind: codexApprovalCommand}
+		t.mu.Unlock()
+		t.emit(Event{
+			Kind:                  EventPermission,
+			TurnID:                p.TurnID,
+			PermissionDescription: codexCommandApprovalDescription(p),
+			Timestamp:             now,
+		})
+		return nil
+
+	case codexRequestPermissionsApproval:
+		var p codexPermissionsApprovalRequest
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return fmt.Errorf("unmarshal %s: %w", req.Method, err)
+		}
+		t.mu.Lock()
+		t.pendingApproval = &codexPendingApproval{
+			ID:          req.ID,
+			Kind:        codexApprovalPermissions,
+			Permissions: p.Permissions,
+		}
+		t.mu.Unlock()
+		t.emit(Event{
+			Kind:                  EventPermission,
+			TurnID:                p.TurnID,
+			PermissionDescription: codexPermissionsApprovalDescription(p),
+			Timestamp:             now,
+		})
+		return nil
+
+	default:
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := t.client.ReplyError(ctx, req.ID, -32601, "unsupported by kasmos"); err != nil {
+			return fmt.Errorf("reject unsupported %s: %w", req.Method, err)
+		}
+		return fmt.Errorf("unsupported server request %q", req.Method)
+	}
+}
+
+func translateCodexItemEvent(p codexItemNotification, completed bool, now time.Time) *Event {
+	switch p.Item.Type {
+	case "commandExecution":
+		if !completed {
+			return &Event{
+				Kind:      EventToolCall,
+				TurnID:    p.TurnID,
+				ToolName:  "commandExecution",
+				ToolInput: p.Item.Command,
+				Timestamp: now,
+			}
+		}
+		return &Event{
+			Kind:       EventToolResult,
+			TurnID:     p.TurnID,
+			ToolName:   "commandExecution",
+			ToolResult: codexCommandExecutionResult(p.Item),
+			Timestamp:  now,
+		}
+
+	case "mcpToolCall", "dynamicToolCall", "collabAgentToolCall":
+		if !completed {
+			return &Event{
+				Kind:      EventToolCall,
+				TurnID:    p.TurnID,
+				ToolName:  codexToolName(p.Item),
+				ToolInput: codexRawString(p.Item.Arguments),
+				Timestamp: now,
+			}
+		}
+		return &Event{
+			Kind:       EventToolResult,
+			TurnID:     p.TurnID,
+			ToolName:   codexToolName(p.Item),
+			ToolResult: codexToolResult(p.Item),
+			Timestamp:  now,
+		}
+
+	case "fileChange":
+		if !completed {
+			return &Event{
+				Kind:      EventToolCall,
+				TurnID:    p.TurnID,
+				ToolName:  "fileChange",
+				ToolInput: codexRawString(p.Item.Changes),
+				Timestamp: now,
+			}
+		}
+		return &Event{
+			Kind:       EventToolResult,
+			TurnID:     p.TurnID,
+			ToolName:   "fileChange",
+			ToolResult: codexRawString(p.Item.Changes),
+			Timestamp:  now,
+		}
+
+	default:
+		return nil
+	}
+}
+
+func codexCommandExecutionDescription(item codexThreadItem) string {
+	if strings.TrimSpace(item.Command) != "" {
+		return item.Command
+	}
+	if item.ExitCode != nil {
+		return fmt.Sprintf("exit_code=%d", *item.ExitCode)
+	}
+	return ""
+}
+
+func codexCommandExecutionResult(item codexThreadItem) string {
+	if item.AggregatedOutput != nil && strings.TrimSpace(*item.AggregatedOutput) != "" {
+		if item.ExitCode != nil {
+			return fmt.Sprintf("exit_code=%d output=%s", *item.ExitCode, strings.TrimSpace(*item.AggregatedOutput))
+		}
+		return strings.TrimSpace(*item.AggregatedOutput)
+	}
+	return codexCommandExecutionDescription(item)
+}
+
+func codexToolName(item codexThreadItem) string {
+	if strings.TrimSpace(item.Tool) != "" {
+		return item.Tool
+	}
+	return item.Type
+}
+
+func codexToolResult(item codexThreadItem) string {
+	switch {
+	case len(item.Result) > 0:
+		return codexRawString(item.Result)
+	case len(item.ContentItems) > 0:
+		return codexRawString(item.ContentItems)
+	default:
+		return ""
+	}
+}
+
+func codexRawString(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+func codexCommandApprovalDescription(p codexCommandApprovalRequest) string {
+	parts := []string{}
+	if p.Reason != nil && strings.TrimSpace(*p.Reason) != "" {
+		parts = append(parts, strings.TrimSpace(*p.Reason))
+	}
+	if p.Command != nil && strings.TrimSpace(*p.Command) != "" {
+		parts = append(parts, strings.TrimSpace(*p.Command))
+	}
+	if p.Cwd != nil && strings.TrimSpace(*p.Cwd) != "" {
+		parts = append(parts, "cwd="+strings.TrimSpace(*p.Cwd))
+	}
+	if len(parts) == 0 {
+		return "codex requested command approval"
+	}
+	return strings.Join(parts, " | ")
+}
+
+func codexPermissionsApprovalDescription(p codexPermissionsApprovalRequest) string {
+	if p.Reason != nil && strings.TrimSpace(*p.Reason) != "" {
+		return strings.TrimSpace(*p.Reason)
+	}
+	if len(p.Permissions) > 0 {
+		return "codex requested permissions: " + codexRawString(p.Permissions)
+	}
+	return "codex requested additional permissions"
+}
+
+func codexCommandApprovalDecision(choice tmux.PermissionChoice) any {
+	switch choice {
+	case tmux.PermissionAllowAlways:
+		return "acceptForSession"
+	case tmux.PermissionReject:
+		return "decline"
+	default:
+		return "accept"
+	}
+}
+
+func codexPermissionsApprovalResponse(choice tmux.PermissionChoice, requested json.RawMessage) map[string]any {
+	perms := map[string]any{}
+	if choice != tmux.PermissionReject && len(requested) > 0 {
+		_ = json.Unmarshal(requested, &perms)
+	}
+
+	scope := "turn"
+	if choice == tmux.PermissionAllowAlways {
+		scope = "session"
+	}
+	return map[string]any{
+		"permissions": perms,
+		"scope":       scope,
+	}
+}
+
+func codexClientVersion() string {
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		if strings.TrimSpace(bi.Main.Version) != "" && bi.Main.Version != "(devel)" {
+			return bi.Main.Version
+		}
+	}
+	return "dev"
 }

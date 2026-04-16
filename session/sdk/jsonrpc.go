@@ -17,6 +17,14 @@ type Notification struct {
 	Params json.RawMessage
 }
 
+// ServerRequest is a server-initiated JSON-RPC request that expects a client
+// response. Codex App Server v2 uses this shape for approval callbacks.
+type ServerRequest struct {
+	ID     int64
+	Method string
+	Params json.RawMessage
+}
+
 // jsonRPCMsg is a raw wire-level JSON-RPC 2.0 message. It can represent a
 // response (has id, no method) or a server notification (has method, no id).
 type jsonRPCMsg struct {
@@ -56,6 +64,7 @@ type Client struct {
 	pending map[int64]chan jsonRPCMsg
 
 	notifications chan Notification
+	requests      chan ServerRequest
 	closeOnce     sync.Once
 	done          chan struct{} // closed by Close to unblock in-flight Calls
 }
@@ -69,6 +78,7 @@ func NewClient(stdin io.WriteCloser, stdout io.Reader) *Client {
 		reader:        bufio.NewReader(stdout),
 		pending:       make(map[int64]chan jsonRPCMsg),
 		notifications: make(chan Notification, 64),
+		requests:      make(chan ServerRequest, 32),
 		done:          make(chan struct{}),
 	}
 	go c.readLoop()
@@ -129,6 +139,33 @@ func (c *Client) Notifications() <-chan Notification {
 	return c.notifications
 }
 
+// Requests returns the channel on which server-initiated JSON-RPC requests are
+// delivered. Callers should drain this continuously; requests are dropped
+// rather than blocking the reader goroutine when the channel is full.
+func (c *Client) Requests() <-chan ServerRequest {
+	return c.requests
+}
+
+// Reply sends a successful response to a previously received server request.
+func (c *Client) Reply(ctx context.Context, id int64, result any) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+	return c.writeResponse(id, result, nil)
+}
+
+// ReplyError sends an error response to a previously received server request.
+func (c *Client) ReplyError(ctx context.Context, id int64, code int, message string) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+	return c.writeResponse(id, nil, &jsonRPCError{Code: code, Message: message})
+}
+
 // Close shuts down the client by closing the done channel (to unblock in-flight
 // Calls) and then closing the underlying writer. Safe to call multiple times.
 func (c *Client) Close() error {
@@ -138,6 +175,30 @@ func (c *Client) Close() error {
 		err = c.writer.Close()
 	})
 	return err
+}
+
+// writeResponse serialises and sends a single JSON-RPC response message.
+func (c *Client) writeResponse(id int64, result any, rpcErr *jsonRPCError) error {
+	type response struct {
+		JSONRPC string        `json:"jsonrpc"`
+		ID      int64         `json:"id"`
+		Result  any           `json:"result,omitempty"`
+		Error   *jsonRPCError `json:"error,omitempty"`
+	}
+	resp := response{JSONRPC: "2.0", ID: id, Result: result, Error: rpcErr}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return fmt.Errorf("jsonrpc: marshal response %d: %w", id, err)
+	}
+	data = append(data, '\n')
+
+	c.wmu.Lock()
+	_, err = c.writer.Write(data)
+	c.wmu.Unlock()
+	if err != nil {
+		return fmt.Errorf("jsonrpc: write response %d: %w", id, err)
+	}
+	return nil
 }
 
 // writeMsg serialises and sends a single JSON-RPC 2.0 message.
@@ -176,6 +237,7 @@ func (c *Client) writeMsg(id int64, method string, params any) error {
 // and the notifications channel is closed so consumers can detect shutdown.
 func (c *Client) readLoop() {
 	defer close(c.notifications)
+	defer close(c.requests)
 	defer c.Close() // unblock pending Calls and close writer on subprocess exit
 	for {
 		line, err := c.reader.ReadBytes('\n')
@@ -193,12 +255,25 @@ func (c *Client) readLoop() {
 		}
 
 		if msg.Method != "" {
-			// Server-sent notification: fan out without blocking the reader.
-			n := Notification{Method: msg.Method, Params: msg.Params}
-			select {
-			case c.notifications <- n:
-			default:
-				// Channel full — drop rather than stall the reader goroutine.
+			if msg.ID != nil {
+				req := ServerRequest{
+					ID:     *msg.ID,
+					Method: msg.Method,
+					Params: msg.Params,
+				}
+				select {
+				case c.requests <- req:
+				default:
+					// Channel full — drop rather than stall the reader goroutine.
+				}
+			} else {
+				// Server-sent notification: fan out without blocking the reader.
+				n := Notification{Method: msg.Method, Params: msg.Params}
+				select {
+				case c.notifications <- n:
+				default:
+					// Channel full — drop rather than stall the reader goroutine.
+				}
 			}
 			continue
 		}

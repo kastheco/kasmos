@@ -143,6 +143,26 @@ func TestClient_Notifications(t *testing.T) {
 	assert.Equal(t, "event/tick", received[1].Method)
 }
 
+func TestClient_ServerRequests(t *testing.T) {
+	clientStdin, clientStdout, _, processStdout := pipe(t)
+	c := NewClient(clientStdin, clientStdout)
+	defer c.Close()
+
+	go func() {
+		_, _ = processStdout.Write([]byte(`{"jsonrpc":"2.0","id":7,"method":"item/commandExecution/requestApproval","params":{"turnId":"t1"}}` + "\n"))
+		processStdout.Close()
+	}()
+
+	var received []ServerRequest
+	for req := range c.Requests() {
+		received = append(received, req)
+	}
+	require.Len(t, received, 1)
+	assert.Equal(t, int64(7), received[0].ID)
+	assert.Equal(t, "item/commandExecution/requestApproval", received[0].Method)
+	assert.Contains(t, string(received[0].Params), `"turnId":"t1"`)
+}
+
 func TestClient_Notify(t *testing.T) {
 	clientStdin, clientStdout, processStdin, _ := pipe(t)
 	c := NewClient(clientStdin, clientStdout)
@@ -166,6 +186,34 @@ func TestClient_Notify(t *testing.T) {
 		assert.Nil(t, msg.ID, "notification must have no id")
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for notification")
+	}
+}
+
+func TestClient_Reply(t *testing.T) {
+	clientStdin, clientStdout, processStdin, _ := pipe(t)
+	c := NewClient(clientStdin, clientStdout)
+	defer c.Close()
+
+	ch := make(chan jsonRPCMsg, 1)
+	go func() {
+		buf := make([]byte, 4096)
+		n, _ := processStdin.Read(buf)
+		var msg jsonRPCMsg
+		_ = json.Unmarshal(buf[:n], &msg)
+		ch <- msg
+	}()
+
+	err := c.Reply(context.Background(), 9, map[string]any{"ok": true})
+	require.NoError(t, err)
+
+	select {
+	case msg := <-ch:
+		require.NotNil(t, msg.ID)
+		assert.Equal(t, int64(9), *msg.ID)
+		assert.Equal(t, "", msg.Method)
+		assert.Contains(t, string(msg.Result), `"ok":true`)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for reply")
 	}
 }
 

@@ -398,6 +398,30 @@ func TestTmuxSpawner_SpawnElaborator_SetsSkipPermissions(t *testing.T) {
 	assert.True(t, captured.SkipPermissions, "daemon-spawned architect must skip permissions")
 }
 
+func TestTmuxSpawner_SpawnElaborator_StartFailureDiscardsTrackedInstance(t *testing.T) {
+	s := NewTmuxSpawner()
+	repoPath := t.TempDir()
+	const planFile = "feature.md"
+
+	s.startOnMain = func(_ *session.Instance) error {
+		return fmt.Errorf("codex exited during startup")
+	}
+
+	err := s.SpawnElaborator(context.Background(), loop.SpawnOpts{
+		PlanFile: planFile,
+		RepoPath: repoPath,
+		Project:  "proj",
+		Program:  "codex",
+	})
+	require.Error(t, err)
+
+	key := instanceKey(repoPath, planFile, session.AgentTypeElaborator)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, tracked := s.instances[key]
+	assert.False(t, tracked, "failed startup must not leave a tracked placeholder or dead instance behind")
+}
+
 func TestTmuxSpawner_SpawnElaborator_MissingRepoPath(t *testing.T) {
 	s := NewTmuxSpawner()
 	err := s.SpawnElaborator(context.Background(), loop.SpawnOpts{
