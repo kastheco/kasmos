@@ -272,13 +272,14 @@ func ValidateAction(rec Record, action string) error {
 // restart/kill for ready (pause is not a valid transition out of ready).
 //
 // Standalone non-tmux instances (sdk/headless mode without daemon backing) have
-// no tmux pane to pause, resume, or restart; the only lifecycle action the UI
-// may offer is kill (routed to the daemon if one is reachable). Daemon-managed
-// non-tmux instances are not restricted here because the daemon owns the process
-// and supports the full lifecycle action set.
+// no tmux pane and no daemon to delegate to, so none of the lifecycle actions
+// (including kill) can be dispatched — an empty slice is returned so the admin
+// UI doesn't advertise actions that ValidateAction would reject. Daemon-managed
+// non-tmux instances are not restricted here because the daemon owns the
+// process and supports the full lifecycle action set.
 func ValidActions(rec Record) []string {
 	if isStandaloneNonTmux(rec) {
-		return []string{"kill"}
+		return nil
 	}
 	switch rec.Status {
 	case StatusPaused:

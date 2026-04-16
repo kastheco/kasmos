@@ -263,6 +263,11 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 			p.previewState = previewState{text: instance.CachedContent}
 			p.isRawTerminal = false
 		} else {
+			// Fall back to a placeholder and drop any inherited scroll state so
+			// the viewport stops consuming scroll keys against stale content
+			// from a previously selected tmux instance.
+			p.isScrolling = false
+			p.viewport.SetContent("")
 			p.setFallbackState("waiting for agent output...")
 		}
 		return nil

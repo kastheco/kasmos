@@ -122,24 +122,39 @@ func TestValidActions_ByStatus(t *testing.T) {
 	}
 }
 
-// TestValidActions_HeadlessOnlyAllowsKill verifies that headless instances
-// advertise only "kill" because pause/resume/restart have no tmux pane to
-// operate on. This keeps the UI menu consistent with ValidateAction, which
-// rejects those actions for headless rows.
-func TestValidActions_HeadlessOnlyAllowsKill(t *testing.T) {
+// TestValidActions_StandaloneNonTmuxAdvertisesNoActions verifies that
+// standalone non-tmux instances (headless/sdk without daemon backing) expose no
+// lifecycle actions. ValidateAction rejects kill/pause/resume/restart/send for
+// such rows because there is no tmux pane or daemon to dispatch to; ValidActions
+// must return an empty slice so the admin UI does not advertise actions that
+// would always fail.
+func TestValidActions_StandaloneNonTmuxAdvertisesNoActions(t *testing.T) {
 	cases := []struct {
 		name   string
 		status Status
+		em     string
 	}{
-		{"running", StatusRunning},
-		{"loading", StatusLoading},
-		{"ready", StatusReady},
-		{"paused", StatusPaused},
+		{"headless running", StatusRunning, "headless"},
+		{"headless loading", StatusLoading, "headless"},
+		{"headless ready", StatusReady, "headless"},
+		{"headless paused", StatusPaused, "headless"},
+		{"sdk running", StatusRunning, "sdk"},
+		{"sdk loading", StatusLoading, "sdk"},
+		{"sdk ready", StatusReady, "sdk"},
+		{"sdk paused", StatusPaused, "sdk"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ValidActions(Record{Status: tc.status, ExecutionMode: "headless"})
-			assert.Equal(t, []string{"kill"}, got)
+			rec := Record{Status: tc.status, ExecutionMode: tc.em}
+			got := ValidActions(rec)
+			assert.Empty(t, got)
+			// Parity check: every action ValidActions would have advertised for
+			// a tmux row must be rejected by ValidateAction for this standalone
+			// record, proving the two functions stay in sync.
+			for _, action := range []string{"kill", "pause", "resume", "restart", "send", "capture"} {
+				require.Error(t, ValidateAction(rec, action),
+					"ValidateAction(%q) must reject standalone non-tmux records", action)
+			}
 		})
 	}
 }

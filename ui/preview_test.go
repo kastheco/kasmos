@@ -537,3 +537,29 @@ func TestPreviewPane_SDKUpdateContent_ClearsStaleContentWhenCacheEmpty(t *testin
 		})
 	}
 }
+
+// TestPreviewPane_SDKUpdateContent_ClearsScrollModeWhenCacheEmpty verifies
+// that switching into an SDK instance with no cached capture clears any
+// inherited scroll-mode state, so the viewport does not continue consuming
+// scroll keys against stale content from the previously selected instance.
+func TestPreviewPane_SDKUpdateContent_ClearsScrollModeWhenCacheEmpty(t *testing.T) {
+	previewPane := NewPreviewPane()
+	previewPane.SetSize(80, 24)
+
+	// Simulate a prior tmux instance that had engaged scroll mode.
+	previewPane.isScrolling = true
+	previewPane.viewport.SetContent("scrolled-tmux-content")
+	require.True(t, previewPane.isScrolling)
+
+	inst := &session.Instance{
+		Status:           session.Running,
+		ExecutionMode:    session.ExecutionModeSDK,
+		CachedContentSet: false,
+	}
+	require.NoError(t, previewPane.UpdateContent(inst))
+
+	require.False(t, previewPane.isScrolling,
+		"entering the SDK empty-cache fallback path must drop inherited scroll-mode state")
+	require.True(t, previewPane.previewState.fallback,
+		"empty SDK capture must render the fallback banner, not stale scroll content")
+}
