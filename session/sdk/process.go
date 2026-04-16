@@ -161,5 +161,6 @@ func buildEnv(cfg LaunchConfig) []string {
 			fmt.Sprintf("KASMOS_PEERS=%d", cfg.PeerCount),
 		)
 	}
+	env = append(env, cfg.ExtraEnv...)
 	return env
 }

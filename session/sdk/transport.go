@@ -40,6 +40,12 @@ type LaunchConfig struct {
 	PeerCount  int
 	// NoFlicker controls whether CLAUDE_CODE_NO_FLICKER is set to 1 for Claude.
 	NoFlicker bool
+	// ExtraEnv holds additional environment variables to inject into the child
+	// process environment on top of the standard kasmos vars. Each entry must be
+	// in KEY=VALUE form. Transport implementations use this to add program-specific
+	// variables (e.g. CLAUDE_CODE_NO_FLICKER) without modifying the generic
+	// buildEnv helper in process.go.
+	ExtraEnv []string
 }
 
 // Transport is the bidirectional control interface over an SDK-driven agent
