@@ -196,9 +196,100 @@ func TestAdapterFor_OpenCode(t *testing.T) {
 	}
 }
 
+func TestAdapterFor_Codex(t *testing.T) {
+	tests := []string{
+		"codex",
+		"/usr/local/bin/codex",
+		`codex -c reasoning.effort="high"`,
+	}
+
+	for _, program := range tests {
+		t.Run(program, func(t *testing.T) {
+			a := AdapterFor(program)
+			assert.NotNil(t, a)
+			_, ok := a.(codexAdapter)
+			assert.True(t, ok, "expected codexAdapter, got %T", a)
+		})
+	}
+}
+
 func TestAdapterFor_Unknown(t *testing.T) {
 	a := AdapterFor("vim")
 	assert.Nil(t, a)
+}
+
+func TestAdapterFor_AiderAndGeminiUnchanged(t *testing.T) {
+	assert.Nil(t, AdapterFor("aider"))
+	assert.Nil(t, AdapterFor("gemini"))
+}
+
+func TestCodexAdapter_ReadyString(t *testing.T) {
+	a := codexAdapter{}
+	assert.Equal(t, "", a.ReadyString(), "codex has no confirmed stable startup banner yet")
+}
+
+func TestCodexAdapter_NeedsTrustTap(t *testing.T) {
+	a := codexAdapter{}
+	assert.False(t, a.NeedsTrustTap())
+}
+
+func TestCodexAdapter_DetectPrompt(t *testing.T) {
+	a := codexAdapter{}
+	// Conservative: no reliable idle marker confirmed yet — always false.
+	assert.False(t, a.DetectPrompt(""))
+	assert.False(t, a.DetectPrompt("some output\n> "))
+	assert.False(t, a.DetectPrompt("Codex is ready"))
+}
+
+func TestCodexAdapter_BuildPromptArg_Short(t *testing.T) {
+	a := codexAdapter{}
+	var written string
+	writeFile := func(p string) string {
+		written = p
+		return "/tmp/.kasmos/prompt-123.md"
+	}
+
+	result := a.BuildPromptArg("hello world", "/workdir", writeFile)
+	assert.Equal(t, "'hello world'", result)
+	assert.Empty(t, written, "writeFile should not be called for short prompts")
+}
+
+func TestCodexAdapter_BuildPromptArg_Long(t *testing.T) {
+	a := codexAdapter{}
+	long := strings.Repeat("x", MaxInlinePromptLen+1)
+	absPath := "/workdir/.kasmos/prompt-abc.md"
+
+	var capturedPrompt string
+	writeFile := func(p string) string {
+		capturedPrompt = p
+		return absPath
+	}
+
+	result := a.BuildPromptArg(long, "/workdir", writeFile)
+	assert.Equal(t, long, capturedPrompt)
+	assert.Equal(t, "\"$(cat '"+absPath+"')\"", result)
+}
+
+func TestCodexAdapter_BuildPromptArg_LongWriteFileFails(t *testing.T) {
+	a := codexAdapter{}
+	long := strings.Repeat("x", MaxInlinePromptLen+1)
+
+	writeFile := func(p string) string { return "" }
+	result := a.BuildPromptArg(long, "/workdir", writeFile)
+	// Falls back to inline single-quote escaping.
+	assert.Equal(t, shellEscapeSingleQuote(long), result)
+}
+
+func TestCodexAdapter_SendPermissionResponse(t *testing.T) {
+	a := codexAdapter{}
+	session, _ := newPermissionCommandCaptureSession("codex")
+	err := a.SendPermissionResponse(session, PermissionAllowOnce)
+	require.ErrorIs(t, err, ErrCodexPermissionUnsupported)
+}
+
+func TestCodexAdapter_SupportsCliPrompt(t *testing.T) {
+	a := codexAdapter{}
+	assert.True(t, a.SupportsCliPrompt())
 }
 
 func TestClaudeAdapter_SendPermissionResponse(t *testing.T) {

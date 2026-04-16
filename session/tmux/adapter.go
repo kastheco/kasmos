@@ -10,7 +10,8 @@ import (
 
 // ProgramAdapter encapsulates program-specific behavior for readiness detection,
 // prompt detection, trust-screen handling, and CLI prompt syntax.
-// Implementations exist for claude and opencode; aider/gemini support is dropped.
+// Implementations exist for claude, opencode, and codex. Aider and gemini fall
+// through to a legacy ready-wait path in tmux_session.Start and have no adapter.
 type ProgramAdapter interface {
 	// ReadyString returns the substring to look for in pane content that signals
 	// the program has fully started and is ready for input.
@@ -52,6 +53,8 @@ func AdapterFor(program string) ProgramAdapter {
 		return claudeAdapter{}
 	case strings.Contains(binary, "opencode"):
 		return opencodeAdapter{}
+	case strings.Contains(binary, "codex"):
+		return codexAdapter{}
 	default:
 		return nil
 	}
