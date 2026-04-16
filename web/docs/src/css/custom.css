@@ -8,8 +8,8 @@
   --kas-bg: #232136;
   --kas-accent-iris: #c4a7e7;
   --kas-accent-foam: #9ccfd8;
-  --kas-glow-iris: rgba(196, 167, 231, 0.12);
-  --kas-glow-foam: rgba(156, 207, 216, 0.12);
+  --kas-glow-iris: rgba(196, 167, 231, 0.18);
+  --kas-glow-rose: rgba(234, 154, 151, 0.15);
 
   /* Docusaurus light-mode color overrides */
   --ifm-color-primary: #6b4fa0;
@@ -44,11 +44,19 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Ambient gradient in dark mode */
+/* Ambient gradient in dark mode — rose + iris glows mirror the landing
+   page palette (web/src/app/globals.css). `background-attachment: fixed`
+   anchors the gradient to the viewport so it stays put on scroll instead
+   of stretching across the full body height (which caused it to cut off
+   abruptly when scrolled past content). Sized to 100vw/100vh so the
+   ellipse anchors stay correct regardless of page length. */
 [data-theme="dark"] body {
   background-image:
-    radial-gradient(ellipse at 15% 20%, var(--kas-glow-iris) 0%, transparent 55%),
-    radial-gradient(ellipse at 85% 80%, var(--kas-glow-foam) 0%, transparent 55%);
+    radial-gradient(ellipse at 15% 20%, var(--kas-glow-rose) 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 80%, var(--kas-glow-iris) 0%, transparent 55%);
+  background-attachment: fixed;
+  background-size: 100vw 100vh;
+  background-repeat: no-repeat;
 }
 
 /* Code blocks dark mode */
