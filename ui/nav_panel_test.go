@@ -376,6 +376,25 @@ func TestSortOrder_TopicGroupedIdlePlansIgnoreSortKey(t *testing.T) {
 	assert.Equal(t, "zeta", n.rows[2].TaskFile)
 }
 
+func TestSortOrder_SameTitleOrderedByPhase(t *testing.T) {
+	n := newTestPanel()
+	// Four plans whose display names collide after ToLower.
+	// Acceptance rule: reviewing < implementing < planning < idle.
+	plans := []PlanDisplay{
+		{Filename: "Same-Plan", Phase: "planned"},               // planning → 2
+		{Filename: "same-plan", Phase: "wave_running"},          // implementing → 1
+		{Filename: "SAME-PLAN", Phase: "reviewing"},             // reviewing → 0
+		{Filename: "Same-plan", Phase: ""},                      // idle → 3
+	}
+	n.SetData(plans, nil, nil, nil, nil)
+
+	require.True(t, len(n.rows) >= 4, "expected at least 4 plan rows, got %d", len(n.rows))
+	assert.Equal(t, "SAME-PLAN", n.rows[0].TaskFile, "reviewing phase should sort first")
+	assert.Equal(t, "same-plan", n.rows[1].TaskFile, "implementing phase should sort second")
+	assert.Equal(t, "Same-Plan", n.rows[2].TaskFile, "planned phase should sort third")
+	assert.Equal(t, "Same-plan", n.rows[3].TaskFile, "idle phase should sort last")
+}
+
 func TestSortOrder_InstancesWithinPlan(t *testing.T) {
 	n := newTestPanel()
 	plans := []PlanDisplay{{Filename: "plan"}}
