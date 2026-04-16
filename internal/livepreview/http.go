@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/daemon/api"
 )
 
 // ProjectRootResolver maps a project name to its repo root path.
@@ -500,6 +501,10 @@ func mergeInstanceRecords(diskRecords, daemonRecords []Record) []Record {
 func writeResolverError(w http.ResponseWriter, err error) {
 	if errors.Is(err, ErrPreviewUnavailable) {
 		writeJSONError(w, http.StatusNotImplemented, ErrPreviewUnavailable.Error())
+		return
+	}
+	if errors.Is(err, api.ErrProjectNotFound) {
+		writeJSONError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	writeJSONError(w, http.StatusInternalServerError, err.Error())

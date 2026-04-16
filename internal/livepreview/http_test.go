@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1061,4 +1063,22 @@ func TestHTTPHandler_Send_StandaloneSDK_Rejected(t *testing.T) {
 
 	require.Equal(t, http.StatusConflict, rec.Code)
 	assert.Contains(t, rec.Body.String(), "standalone sdk")
+}
+
+// TestWriteResolverError_ProjectNotFound_Returns404 is a regression test that
+// ensures the dynamic resolver returning api.ErrProjectNotFound is mapped to
+// 404 (not 500) by writeResolverError. Without this mapping, dynamic preview
+// resolvers that return typed not-found errors would surface as server errors.
+func TestWriteResolverError_ProjectNotFound_Returns404(t *testing.T) {
+	resolver := func(project string) (string, error) {
+		return "", fmt.Errorf("%w: %s", api.ErrProjectNotFound, project)
+	}
+	h := NewHTTPHandler(resolver, &mockPaneRunner{})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/no-such/instances", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Contains(t, rec.Header().Get("Content-Type"), "application/json")
 }
