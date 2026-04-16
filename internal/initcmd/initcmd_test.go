@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/internal/initcmd/harness"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -104,6 +105,93 @@ func TestInitCreatesConfigWithMasterPhase(t *testing.T) {
 	assert.Equal(t, "master", result.PhaseRoles["master_review"])
 	assert.Equal(t, "opencode", result.Profiles["master"].Program)
 	assert.Equal(t, "openai/gpt-5.4", result.Profiles["master"].Model)
+}
+
+func TestPreserveExistingEnforcement(t *testing.T) {
+	t.Run("no-op when existing is nil", func(t *testing.T) {
+		tc := &config.TOMLConfig{}
+		preserveExistingEnforcement(tc, nil)
+		assert.Nil(t, tc.Enforcement)
+	})
+
+	t.Run("no-op when existing enforcement is empty", func(t *testing.T) {
+		tc := &config.TOMLConfig{}
+		existing := &config.TOMLConfigResult{Enforcement: map[string]bool{}}
+		preserveExistingEnforcement(tc, existing)
+		assert.Nil(t, tc.Enforcement)
+	})
+
+	t.Run("copies missing keys from existing into tc", func(t *testing.T) {
+		tc := &config.TOMLConfig{}
+		existing := &config.TOMLConfigResult{
+			Enforcement: map[string]bool{"codex": false, "claude": true},
+		}
+		preserveExistingEnforcement(tc, existing)
+		require.NotNil(t, tc.Enforcement)
+		assert.Equal(t, false, tc.Enforcement["codex"])
+		assert.Equal(t, true, tc.Enforcement["claude"])
+	})
+
+	t.Run("does not overwrite keys already set in tc", func(t *testing.T) {
+		tc := &config.TOMLConfig{
+			Enforcement: map[string]bool{"claude": false},
+		}
+		existing := &config.TOMLConfigResult{
+			Enforcement: map[string]bool{"claude": true, "codex": false},
+		}
+		preserveExistingEnforcement(tc, existing)
+		// claude was already false in tc — must not be overwritten
+		assert.Equal(t, false, tc.Enforcement["claude"])
+		// codex was absent in tc — copied from existing
+		assert.Equal(t, false, tc.Enforcement["codex"])
+	})
+}
+
+func TestEnforcementHarnessNames(t *testing.T) {
+	registry := harness.NewRegistry()
+
+	t.Run("returns selected harnesses in stable order", func(t *testing.T) {
+		names := enforcementHarnessNames([]string{"claude", "opencode"}, nil, registry)
+		assert.Equal(t, []string{"claude", "opencode"}, names)
+	})
+
+	t.Run("includes explicit enforcement keys not in selected", func(t *testing.T) {
+		enforcement := map[string]bool{"codex": false}
+		names := enforcementHarnessNames([]string{"claude"}, enforcement, registry)
+		assert.Contains(t, names, "claude")
+		assert.Contains(t, names, "codex")
+	})
+
+	t.Run("deduplicates when selected and enforcement overlap", func(t *testing.T) {
+		enforcement := map[string]bool{"claude": false}
+		names := enforcementHarnessNames([]string{"claude", "opencode"}, enforcement, registry)
+		claudeCount := 0
+		for _, n := range names {
+			if n == "claude" {
+				claudeCount++
+			}
+		}
+		assert.Equal(t, 1, claudeCount, "claude must appear exactly once")
+	})
+
+	t.Run("excludes unknown harness names", func(t *testing.T) {
+		enforcement := map[string]bool{"unknown-harness": false}
+		names := enforcementHarnessNames([]string{"claude"}, enforcement, registry)
+		for _, n := range names {
+			assert.NotEqual(t, "unknown-harness", n)
+		}
+	})
+
+	t.Run("returns stable sorted order", func(t *testing.T) {
+		enforcement := map[string]bool{"codex": false, "opencode": true}
+		names := enforcementHarnessNames([]string{"claude"}, enforcement, registry)
+		// Result must be sorted
+		sorted := make([]string, len(names))
+		copy(sorted, names)
+		for i := 1; i < len(sorted); i++ {
+			assert.LessOrEqual(t, sorted[i-1], sorted[i])
+		}
+	})
 }
 
 func TestInitCreatesConfigWithReadinessReviewPhase(t *testing.T) {

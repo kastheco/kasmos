@@ -44,6 +44,10 @@ func (c *Codex) BuildFlags(agent AgentConfig) []string {
 
 func (c *Codex) InstallEnforcement() error { return nil }
 
+// UninstallEnforcement is a no-op for codex: enforcement is project-scaffolded
+// (written into <repo>/.codex/hooks), not globally installed by kas setup.
+func (c *Codex) UninstallEnforcement() error { return nil }
+
 func (c *Codex) SupportsTemperature() bool { return true }
 func (c *Codex) SupportsEffort() bool      { return true }
 

@@ -175,6 +175,123 @@ func (c *Claude) InstallEnforcement() error {
 	return nil
 }
 
+func (c *Claude) UninstallEnforcement() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("get home dir: %w", err)
+	}
+
+	hookPath := filepath.Join(home, ".claude", "hooks", "enforce-cli-tools.sh")
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+
+	settingsRaw, err := os.ReadFile(settingsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Nothing to clean up in settings.json; still try to remove the script.
+			removeHookScript(hookPath)
+			return nil
+		}
+		return fmt.Errorf("read claude settings: %w", err)
+	}
+
+	var settings map[string]any
+	if err := json.Unmarshal(settingsRaw, &settings); err != nil {
+		return fmt.Errorf("parse claude settings: %w", err)
+	}
+
+	hooksVal, ok := settings["hooks"]
+	if ok {
+		hooks, ok := hooksVal.(map[string]any)
+		if !ok {
+			return fmt.Errorf("claude settings hooks has unexpected type %T", hooksVal)
+		}
+
+		preToolUseVal, ok := hooks["PreToolUse"]
+		if ok {
+			preToolUse, ok := preToolUseVal.([]any)
+			if !ok {
+				return fmt.Errorf("claude settings hooks.PreToolUse has unexpected type %T", preToolUseVal)
+			}
+
+			filtered := removeClaudeEnforcementHooks(preToolUse)
+			if len(filtered) == 0 {
+				delete(hooks, "PreToolUse")
+			} else {
+				hooks["PreToolUse"] = filtered
+			}
+		}
+
+		settings["hooks"] = hooks
+	}
+
+	merged, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal claude settings: %w", err)
+	}
+
+	if err := os.WriteFile(settingsPath, merged, 0o644); err != nil {
+		return fmt.Errorf("write claude settings: %w", err)
+	}
+
+	removeHookScript(hookPath)
+	return nil
+}
+
+// removeHookScript deletes the managed enforcement script; missing file is not an error.
+func removeHookScript(path string) {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		// Best-effort: log nothing, the caller treats the install side as authoritative.
+		_ = err
+	}
+}
+
+// removeClaudeEnforcementHooks returns a copy of preToolUse with all matcher
+// groups that reference enforce-cli-tools.sh removed. Groups whose hooks slice
+// becomes empty after filtering are dropped entirely.
+func removeClaudeEnforcementHooks(preToolUse []any) []any {
+	var out []any
+	for _, entry := range preToolUse {
+		group, ok := entry.(map[string]any)
+		if !ok {
+			out = append(out, entry)
+			continue
+		}
+
+		hooks, ok := group["hooks"].([]any)
+		if !ok {
+			out = append(out, entry)
+			continue
+		}
+
+		var kept []any
+		for _, hook := range hooks {
+			hookMap, ok := hook.(map[string]any)
+			if !ok {
+				kept = append(kept, hook)
+				continue
+			}
+			command, _ := hookMap["command"].(string)
+			if !strings.Contains(command, "enforce-cli-tools.sh") {
+				kept = append(kept, hook)
+			}
+		}
+
+		if len(kept) == 0 {
+			// Drop the entire matcher group.
+			continue
+		}
+
+		// Return a shallow copy with filtered hooks.
+		newGroup := make(map[string]any, len(group))
+		for k, v := range group {
+			newGroup[k] = v
+		}
+		newGroup["hooks"] = kept
+		out = append(out, newGroup)
+	}
+	return out
+}
+
 func hasClaudeEnforcementHook(preToolUse []any) bool {
 	for _, entry := range preToolUse {
 		group, ok := entry.(map[string]any)
