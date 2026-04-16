@@ -287,9 +287,11 @@ func (w *TabbedWindow) IsShowingInfo() bool { return w.showInfo }
 // ── Preview pane delegation ───────────────────────────────────────────────────
 
 // UpdatePreview refreshes the preview pane content from the given instance.
-// No-op when focus mode is active (the embedded terminal owns the pane).
+// During focus mode, updates are skipped for tmux-backed instances because the
+// embedded PTY terminal owns the pane. SDK instances always receive updates
+// since cached content is their only rendering path.
 func (w *TabbedWindow) UpdatePreview(instance *session.Instance) error {
-	if w.focusMode {
+	if w.focusMode && (instance == nil || session.NormalizeExecutionMode(instance.ExecutionMode) == session.ExecutionModeTmux) {
 		return nil
 	}
 	return w.preview.UpdateContent(instance)

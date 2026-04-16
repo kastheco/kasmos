@@ -629,7 +629,8 @@ func (m *home) shouldAttachPreviewTerminal(selected *session.Instance) bool {
 		selected.Started() &&
 		selected.Status != session.Paused &&
 		selected.Status != session.Loading &&
-		!selected.Exited
+		!selected.Exited &&
+		session.NormalizeExecutionMode(selected.ExecutionMode) == session.ExecutionModeTmux
 }
 
 func (m *home) spawnPreviewTerminal(selected *session.Instance) tea.Cmd {

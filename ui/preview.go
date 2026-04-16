@@ -250,7 +250,19 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		}
 		footer := lipgloss.NewStyle().Foreground(ColorMuted).Render("ESC to exit scroll mode")
 		p.viewport.SetContent(lipgloss.JoinVertical(lipgloss.Left, content, footer))
+		return nil
 	}
+
+	// SDK sessions have no PTY; show cached content when available so the pane
+	// renders structured output without flickering back to the banner between ticks.
+	if session.NormalizeExecutionMode(instance.ExecutionMode) == session.ExecutionModeSDK {
+		if instance.CachedContentSet && instance.CachedContent != "" {
+			p.previewState = previewState{text: instance.CachedContent}
+			p.isRawTerminal = false
+		}
+		return nil
+	}
+
 	// Normal mode: live content arrives via SetRawContent from the VT emulator.
 	return nil
 }
