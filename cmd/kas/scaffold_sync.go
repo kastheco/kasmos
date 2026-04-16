@@ -34,11 +34,12 @@ settings — does not re-run the interactive wizard or modify config.`,
 		RunE:         runScaffoldSync,
 	}
 	cmd.Flags().Bool("worktrees", false, "also sync every existing worktree under the repo's .worktrees directory")
+	cmd.Flags().Bool("trust", false, "Add the current project to ~/.codex/config.toml as a trusted project")
 	return cmd
 }
 
 func newScaffoldWorktreeCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:          "worktree [path]",
 		Short:        "Re-sync scaffold files into one existing worktree",
 		Long:         "Repairs harness scaffold files inside an existing worktree using the current repo's configured agent profiles.",
@@ -46,6 +47,8 @@ func newScaffoldWorktreeCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE:         runScaffoldWorktree,
 	}
+	cmd.Flags().Bool("trust", false, "Add the worktree to ~/.codex/config.toml as a trusted project")
+	return cmd
 }
 
 // profilesToAgentConfigs converts a map of AgentProfile (keyed by role name)
@@ -130,6 +133,7 @@ func profilesToAgentConfigs(profiles map[string]config.AgentProfile) []harness.A
 func runScaffoldSync(cmd *cobra.Command, args []string) error {
 	out := cmd.OutOrStdout()
 	includeWorktrees, _ := cmd.Flags().GetBool("worktrees")
+	trustProject, _ := cmd.Flags().GetBool("trust")
 
 	agents, err := loadConfiguredAgentConfigs()
 	if err != nil {
@@ -199,6 +203,24 @@ func runScaffoldSync(cmd *cobra.Command, args []string) error {
 			} else {
 				fmt.Fprintln(out, "OK")
 			}
+		}
+	}
+
+	if trustProject && agentsContainHarness(agents, "codex") {
+		home, homeErr := os.UserHomeDir()
+		if homeErr != nil {
+			fmt.Fprintf(out, "\nWARNING: could not get home dir: %v — skipping codex trust\n", homeErr)
+		} else {
+			fmt.Fprintln(out, "\nTrusting project for codex...")
+			result, err := scaffold.EnsureCodexTrustedProjectEntry(home, projectDir)
+			if err != nil {
+				return fmt.Errorf("codex trust: %w", err)
+			}
+			status := "OK"
+			if !result.Created {
+				status = "SKIP (exists)"
+			}
+			fmt.Fprintf(out, "  %-40s %s\n", result.Path, status)
 		}
 	}
 
@@ -292,6 +314,15 @@ func resolveCheckoutRoot(dir string) (string, error) {
 	}
 }
 
+func agentsContainHarness(agents []harness.AgentConfig, want string) bool {
+	for _, a := range agents {
+		if a.Harness == want {
+			return true
+		}
+	}
+	return false
+}
+
 func loadConfiguredAgentConfigs() ([]harness.AgentConfig, error) {
 	tomlCfg, err := config.LoadTOMLConfig()
 	if err != nil {
@@ -332,7 +363,30 @@ func runScaffoldWorktree(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("worktree root missing .git entry: %s", worktreeDir)
 	}
 
-	return syncScaffoldTarget(out, "Syncing worktree scaffold", worktreeDir, agents)
+	if err := syncScaffoldTarget(out, "Syncing worktree scaffold", worktreeDir, agents); err != nil {
+		return err
+	}
+
+	trustProject, _ := cmd.Flags().GetBool("trust")
+	if trustProject && agentsContainHarness(agents, "codex") {
+		home, homeErr := os.UserHomeDir()
+		if homeErr != nil {
+			fmt.Fprintf(out, "\nWARNING: could not get home dir: %v — skipping codex trust\n", homeErr)
+			return nil
+		}
+		fmt.Fprintln(out, "\nTrusting worktree for codex...")
+		result, err := scaffold.EnsureCodexTrustedProjectEntry(home, worktreeDir)
+		if err != nil {
+			return fmt.Errorf("codex trust: %w", err)
+		}
+		status := "OK"
+		if !result.Created {
+			status = "SKIP (exists)"
+		}
+		fmt.Fprintf(out, "  %-40s %s\n", result.Path, status)
+	}
+
+	return nil
 }
 
 func init() {
