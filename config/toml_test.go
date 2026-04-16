@@ -149,7 +149,7 @@ func TestSaveTOMLConfig(t *testing.T) {
 				"coder": {
 					Enabled:       true,
 					Program:       "opencode",
-					ExecutionMode: ExecutionModeHeadless,
+					ExecutionMode: "headless", // legacy alias, normalises to "sdk" on load
 					Model:         "anthropic/claude-sonnet-4-6",
 					Temperature:   &temp,
 					Effort:        "high",
@@ -194,7 +194,7 @@ func TestResolveProfile_ExecutionMode(t *testing.T) {
 		cfg := &Config{
 			PhaseRoles: map[string]string{"implementing": "coder"},
 			Profiles: map[string]AgentProfile{
-				"coder": {Program: "opencode", Enabled: true, ExecutionMode: ExecutionModeHeadless},
+				"coder": {Program: "opencode", Enabled: true, ExecutionMode: "headless"}, // legacy alias
 			},
 		}
 

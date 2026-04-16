@@ -521,7 +521,12 @@ func TestWaitForDaemonPlannerInstance_UsesDaemonLoadingPlaceholder(t *testing.T)
 	assert.False(t, inst.Started())
 }
 
-func TestSpawnWaveTasks_HeadlessCoderUsesHeadlessExecution(t *testing.T) {
+// TestSpawnWaveTasks_SDKProfileFallsBackToTmuxForUnsupportedProgram verifies that
+// a coder profile with execution_mode="sdk" (or the legacy "headless" alias) results
+// in an instance with ExecutionModeTmux when the program does not support SDK transport.
+// The final resolved mode is always the actual process host so UI and livepreview state
+// are consistent.
+func TestSpawnWaveTasks_SDKProfileFallsBackToTmuxForUnsupportedProgram(t *testing.T) {
 	dir := t.TempDir()
 	for _, cmd := range [][]string{
 		{"git", "init", dir},
@@ -535,7 +540,7 @@ func TestSpawnWaveTasks_HeadlessCoderUsesHeadlessExecution(t *testing.T) {
 		}
 	}
 
-	planDoc := "# test\n\n## Wave 1\n\n### Task 1: implement headless execution\n\nDo it.\n"
+	planDoc := "# test\n\n## Wave 1\n\n### Task 1: implement sdk execution\n\nDo it.\n"
 	parsed, err := taskparser.Parse(planDoc)
 	require.NoError(t, err)
 	require.Len(t, parsed.Waves, 1)
@@ -578,7 +583,7 @@ func TestSpawnWaveTasks_HeadlessCoderUsesHeadlessExecution(t *testing.T) {
 				"coder": {
 					Program:       "opencode",
 					Enabled:       true,
-					ExecutionMode: config.ExecutionModeHeadless,
+					ExecutionMode: config.ExecutionModeSDK,
 				},
 			},
 		},
@@ -589,7 +594,8 @@ func TestSpawnWaveTasks_HeadlessCoderUsesHeadlessExecution(t *testing.T) {
 
 	instances := list.GetInstances()
 	require.Len(t, instances, 1)
-	assert.Equal(t, session.ExecutionModeHeadless, instances[0].ExecutionMode)
+	// opencode does not support SDK transport; the resolved mode falls back to tmux.
+	assert.Equal(t, session.ExecutionModeTmux, instances[0].ExecutionMode)
 }
 
 // TestSpawnWaveTasks_PatchesSharedWorktreeOpencodeConfig verifies that spawnWaveTasks

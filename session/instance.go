@@ -47,7 +47,7 @@ type Instance struct {
 	Status Status
 	// Program is the agent command to execute within the session.
 	Program string
-	// ExecutionMode determines how the agent process is hosted (tmux or headless).
+	// ExecutionMode determines how the agent process is hosted (tmux or sdk).
 	ExecutionMode ExecutionMode
 	// Height is the terminal height in rows.
 	Height int
@@ -146,7 +146,7 @@ type Instance struct {
 
 	// started is true once Start() has been called successfully.
 	started bool
-	// executionSession manages the underlying process host (tmux or headless) for this instance.
+	// executionSession manages the underlying process host (tmux or sdk) for this instance.
 	executionSession ExecutionSession
 	// gitWorktree manages the git worktree associated with this instance.
 	gitWorktree *git.GitWorktree
@@ -323,7 +323,7 @@ type InstanceOptions struct {
 	Path string
 	// Program is the agent command to run (e.g. "claude", "opencode").
 	Program string
-	// ExecutionMode selects the process host backend (tmux or headless).
+	// ExecutionMode selects the process host backend (tmux or sdk).
 	// Empty string defaults to ExecutionModeTmux.
 	ExecutionMode ExecutionMode
 	// AutoYes enables automatic confirmation of agent prompts.

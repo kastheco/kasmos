@@ -2145,7 +2145,7 @@ func (m *home) programForAgent(agentType string) string {
 
 func (m *home) executionModeForAgent(agentType string) session.ExecutionMode {
 	mode := session.ExecutionMode(config.NormalizeExecutionMode(m.profileForAgent(agentType).ExecutionMode))
-	// Headless execution is only wired for coder sessions right now.
+	// SDK execution is only wired for coder sessions right now.
 	// Other agent roles remain tmux-attached for visibility and interactive
 	// control, while still allowing them to pick up any future shared config.
 	if agentType != session.AgentTypeCoder {

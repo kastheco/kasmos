@@ -261,7 +261,7 @@ func TestFromInstanceData_DeadSessionRestoreDoesNotNotifyAgain(t *testing.T) {
 		Branch:        "feature/test",
 		Status:        Running,
 		Program:       "opencode",
-		ExecutionMode: ExecutionModeHeadless,
+		ExecutionMode: ExecutionModeSDK,
 		TaskFile:      "my-plan",
 		AgentType:     AgentTypePlanner,
 		Worktree: GitWorktreeData{
@@ -291,8 +291,8 @@ func TestInstanceData_RoundTripExecutionMode(t *testing.T) {
 		input    ExecutionMode
 		expected ExecutionMode
 	}{
-		// "headless" is a legacy alias for "sdk"; claude supports SDK.
-		{"headless maps to sdk for claude", ExecutionModeHeadless, ExecutionModeSDK},
+		// "headless" is a legacy config string that normalises to "sdk"; claude supports SDK.
+		{"headless maps to sdk for claude", ExecutionMode("headless"), ExecutionModeSDK},
 		{"sdk preserved for claude", ExecutionModeSDK, ExecutionModeSDK},
 		{"tmux preserved", ExecutionModeTmux, ExecutionModeTmux},
 		// Empty/unknown defaults to tmux (session layer conservative default).

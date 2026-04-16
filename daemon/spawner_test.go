@@ -162,7 +162,7 @@ func TestTmuxSpawner_ReserveInstanceSlot_EvictsDeadTrackedAgent(t *testing.T) {
 		Title:         "my-plan-plan",
 		Path:          repoPath,
 		Program:       "true",
-		ExecutionMode: session.ExecutionModeHeadless,
+		ExecutionMode: session.ExecutionModeSDK,
 		TaskFile:      planFile,
 		AgentType:     agentType,
 	})

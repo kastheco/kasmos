@@ -510,7 +510,7 @@ func TestDaemon_MonitorRunningInstances_EmitsStuckDetectedOncePerExit(t *testing
 		Title:         "feature-architect",
 		Path:          repo,
 		Program:       "true",
-		ExecutionMode: session.ExecutionModeHeadless,
+		ExecutionMode: session.ExecutionModeSDK,
 		TaskFile:      planFile,
 		AgentType:     session.AgentTypeElaborator,
 	})
@@ -605,7 +605,7 @@ Do the first thing.
 		Title:         "feature-W1-T1",
 		Path:          repo,
 		Program:       "true",
-		ExecutionMode: session.ExecutionModeHeadless,
+		ExecutionMode: session.ExecutionModeSDK,
 		TaskFile:      planFile,
 		AgentType:     session.AgentTypeCoder,
 		WaveNumber:    1,
@@ -688,7 +688,7 @@ func TestDaemon_MonitorRunningInstances_SetsCompletionPromptSinceWhenPromptDetec
 		Title:         "feature-architect",
 		Path:          repo,
 		Program:       "true",
-		ExecutionMode: session.ExecutionModeHeadless,
+		ExecutionMode: session.ExecutionModeSDK,
 		TaskFile:      planFile,
 		AgentType:     session.AgentTypeElaborator,
 	})

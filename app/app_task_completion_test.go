@@ -33,12 +33,12 @@ func TestShouldPromptPushAfterImplementerExit(t *testing.T) {
 	}
 }
 
-func TestShouldPromptPushAfterImplementerExit_HeadlessCoderExited(t *testing.T) {
+func TestShouldPromptPushAfterImplementerExit_SDKCoderExited(t *testing.T) {
 	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder}}
 	inst := &session.Instance{
 		TaskFile:      "p.md",
 		AgentType:     session.AgentTypeCoder,
-		ExecutionMode: config.ExecutionModeHeadless,
+		ExecutionMode: config.ExecutionModeSDK,
 		Exited:        true,
 	}
 

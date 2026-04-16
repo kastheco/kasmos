@@ -65,7 +65,7 @@ func TestRecord_RoundTripsFullInstanceData(t *testing.T) {
 		AutoYes:                true,
 		SkipPermissions:        true,
 		Program:                "claude",
-		ExecutionMode:          session.ExecutionModeHeadless,
+		ExecutionMode:          session.ExecutionModeSDK,
 		TaskFile:               "plan.md",
 		AgentType:              "coder",
 		TaskNumber:             1,

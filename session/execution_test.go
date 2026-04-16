@@ -16,7 +16,7 @@ func TestNormalizeExecutionMode(t *testing.T) {
 		{name: "empty defaults to tmux", in: "", expected: ExecutionModeTmux},
 		{name: "tmux stays tmux", in: ExecutionModeTmux, expected: ExecutionModeTmux},
 		{name: "sdk stays sdk", in: ExecutionModeSDK, expected: ExecutionModeSDK},
-		{name: "headless maps to sdk", in: ExecutionModeHeadless, expected: ExecutionModeSDK},
+		{name: "headless maps to sdk", in: ExecutionMode("headless"), expected: ExecutionModeSDK},
 		{name: "whitespace headless maps to sdk", in: "  headless  ", expected: ExecutionModeSDK},
 		{name: "whitespace sdk maps to sdk", in: "  sdk  ", expected: ExecutionModeSDK},
 		{name: "unknown defaults to tmux", in: ExecutionMode("bogus"), expected: ExecutionModeTmux},
@@ -40,12 +40,14 @@ func TestResolveExecutionMode_SDKUnsupportedProgram_FallsBackToTmux(t *testing.T
 }
 
 func TestResolveExecutionMode_HeadlessLegacy_SupportedProgram(t *testing.T) {
-	mode := ResolveExecutionMode(ExecutionModeHeadless, "claude")
+	// "headless" is the legacy config string; verify it still resolves to SDK for supported programs.
+	mode := ResolveExecutionMode(ExecutionMode("headless"), "claude")
 	assert.Equal(t, ExecutionModeSDK, mode)
 }
 
 func TestResolveExecutionMode_HeadlessLegacy_UnsupportedProgram(t *testing.T) {
-	mode := ResolveExecutionMode(ExecutionModeHeadless, "opencode")
+	// "headless" normalises to SDK, but SDK falls back to tmux for unsupported programs.
+	mode := ResolveExecutionMode(ExecutionMode("headless"), "opencode")
 	assert.Equal(t, ExecutionModeTmux, mode)
 }
 
@@ -77,7 +79,7 @@ func TestNewExecutionSession(t *testing.T) {
 		{name: "empty mode creates tmux session", mode: "", wantType: &tmuxExecutionSession{}},
 		{name: "unknown mode creates tmux session", mode: ExecutionMode("bogus"), wantType: &tmuxExecutionSession{}},
 		{name: "sdk mode creates sdk session", mode: ExecutionModeSDK, wantType: &sdk.Session{}},
-		{name: "headless mode (legacy) creates sdk session", mode: ExecutionModeHeadless, wantType: &sdk.Session{}},
+		{name: "headless mode (legacy) creates sdk session", mode: ExecutionMode("headless"), wantType: &sdk.Session{}},
 	}
 
 	for _, tc := range tests {
