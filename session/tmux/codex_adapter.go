@@ -2,14 +2,14 @@ package tmux
 
 import (
 	"errors"
+	"fmt"
+	"os/exec"
 	"time"
 )
 
-// ErrCodexPermissionUnsupported is returned by codexAdapter.SendPermissionResponse
-// because codex does not expose an interactive permission-prompt UI that kasmos can
-// drive via key sequences. TmuxSession.Start launches codex with the bypass flag
-// (codexBypassFlag) when SkipPermissions is enabled so this path is not reached
-// in normal operation.
+// ErrCodexPermissionUnsupported was the original sentinel returned before codex
+// permission-prompt handling was implemented. Retained for backward compatibility
+// with any callers that check for it.
 var ErrCodexPermissionUnsupported = errors.New("codex: permission prompt handling is not implemented")
 
 // codexAdapter implements ProgramAdapter for the OpenAI Codex CLI.
@@ -75,10 +75,34 @@ func (a codexAdapter) SupportsCliPrompt() bool {
 	return true
 }
 
-// SendPermissionResponse returns ErrCodexPermissionUnsupported because codex
-// does not expose an interactive permission prompt that kasmos can drive via
-// key sequences. When SkipPermissions is set, TmuxSession.Start passes
-// codexBypassFlag at launch time so permissions never surface in-pane.
+// SendPermissionResponse sends the appropriate number key + Enter to codex's
+// numbered permission menu:
+//
+//	1. Allow                  → PermissionAllowOnce
+//	3. Always allow           → PermissionAllowAlways
+//	4. Cancel / Escape        → PermissionReject
+//
+// When SkipPermissions is set, TmuxSession.Start passes codexBypassFlag at
+// launch time so permissions never surface in-pane, but this path handles the
+// fallback for manual or non-bypass runs.
 func (a codexAdapter) SendPermissionResponse(session *TmuxSession, choice PermissionChoice) error {
-	return ErrCodexPermissionUnsupported
+	if choice == PermissionReject {
+		cmd := exec.Command("tmux", "send-keys", "-t", session.sanitizedName, "Escape")
+		if err := session.cmdExec.Run(cmd); err != nil {
+			return fmt.Errorf("SendPermissionResponse: send Escape: %w", err)
+		}
+		return nil
+	}
+
+	key := "1" // AllowOnce → option 1
+	if choice == PermissionAllowAlways {
+		key = "3" // Always allow → option 3
+	}
+	if err := session.SendKeys(key); err != nil {
+		return fmt.Errorf("SendPermissionResponse: send %q: %w", key, err)
+	}
+	if err := session.TapEnter(); err != nil {
+		return fmt.Errorf("SendPermissionResponse: confirm selection: %w", err)
+	}
+	return nil
 }

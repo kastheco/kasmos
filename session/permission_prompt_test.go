@@ -243,3 +243,62 @@ No
 		})
 	}
 }
+
+func TestParsePermissionPrompt_Codex(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    *PermissionPrompt
+	}{
+		{
+			name: "codex MCP tool permission prompt",
+			content: `• I'm loading the architect workflow.
+
+• Calling
+  └ kasmos.read_file({"path":"/home/kas/dev/kasmos/.agents/skills/kasmos-architect/SKILL.md"})
+
+
+  Field 1/1
+  Allow the kasmos MCP server to run tool "read_file"?
+
+  path: /home/kas/dev/kasmos/.agents/skills/kasmos-architect/SKIL...
+
+  › 1. Allow                   Run the tool and continue.
+    2. Allow for this session  Run the tool and remember this choice for this
+                               session.
+    3. Always allow            Run the tool and remember this choice for
+                               future tool calls.
+    4. Cancel                  Cancel this tool call
+  enter to submit | esc to cancel`,
+			want: &PermissionPrompt{
+				Description: `Allow the kasmos MCP server to run tool "read_file"?`,
+			},
+		},
+		{
+			name: "codex no prompt — normal output",
+			content: `• I'm reading the codebase
+• Done with analysis
+`,
+			want: nil,
+		},
+		{
+			name: "codex missing cancel option — not a permission prompt",
+			content: `  › 1. Allow                   Run the tool and continue.
+    2. Allow for this session
+  enter to submit | esc to cancel`,
+			want: nil,
+		},
+		{
+			name:    "codex empty content",
+			content: "",
+			want:    nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParsePermissionPrompt(tt.content, "codex")
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
