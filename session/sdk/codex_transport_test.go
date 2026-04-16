@@ -162,7 +162,6 @@ func waitForEvent(t *testing.T, ch <-chan Event, kind EventKind, timeout time.Du
 			t.Fatalf("timed out waiting for %q event", kind)
 		}
 	}
-	panic("unreachable")
 }
 
 // ---------------------------------------------------------------------------
