@@ -141,4 +141,4 @@ the fallback always uses `ExecutionModeTmux` — there is no way to make the def
 kas debug
 ```
 
-prints the config path and the fully resolved `Config` struct as JSON, including the normalized `execution_mode` for each agent profile. use this to confirm that `"headless"` aliases were resolved to `"sdk"` and that unsupported programs received `"tmux"`.
+prints the config path and the fully resolved `Config` struct as JSON, including the normalized `execution_mode` for each agent profile. use this to confirm that `"headless"` aliases were resolved to `"sdk"`. the runtime tmux fallback for unsupported programs is not reflected here — as noted above, `kas debug` shows the profile's configured value (`"sdk"`), not the actual backend used at session start.
