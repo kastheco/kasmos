@@ -350,10 +350,10 @@ func (n *NavigationPanel) rebuildRows() {
 	}
 	sortInsts(solo)
 
-	// Sort plans alphabetically descending within each section.
+	// Sort plans alphabetically ascending.
 	sorted := append([]PlanDisplay(nil), n.plans...)
 	sort.SliceStable(sorted, func(i, j int) bool {
-		return strings.ToLower(taskstate.DisplayName(sorted[i].Filename)) > strings.ToLower(taskstate.DisplayName(sorted[j].Filename))
+		return strings.ToLower(taskstate.DisplayName(sorted[i].Filename)) < strings.ToLower(taskstate.DisplayName(sorted[j].Filename))
 	})
 
 	capacity := len(sorted) + len(n.instances) + len(n.deadPlans) + len(n.historyPlans) + len(n.cancelled) + 8
@@ -419,16 +419,6 @@ func (n *NavigationPanel) rebuildRows() {
 		}
 	}
 
-	// Split plans into active (running/implementing/reviewing/notified) and idle.
-	var activePlans, idlePlans []PlanDisplay
-	for _, p := range sorted {
-		if navPlanSortKey(p, byPlan[p.Filename], n.planStatuses[p.Filename]) < 2 {
-			activePlans = append(activePlans, p)
-		} else {
-			idlePlans = append(idlePlans, p)
-		}
-	}
-
 	// Sort topics alphabetically for consistent grouping.
 	sortedTopics := append([]TopicDisplay(nil), n.topics...)
 	sort.SliceStable(sortedTopics, func(i, j int) bool {
@@ -460,7 +450,7 @@ func (n *NavigationPanel) rebuildRows() {
 				continue
 			}
 			sort.SliceStable(planGroup, func(i, j int) bool {
-				return strings.ToLower(taskstate.DisplayName(planGroup[i].Filename)) > strings.ToLower(taskstate.DisplayName(planGroup[j].Filename))
+				return strings.ToLower(taskstate.DisplayName(planGroup[i].Filename)) < strings.ToLower(taskstate.DisplayName(planGroup[j].Filename))
 			})
 			topicID := SidebarTopicPrefix + t.Name
 			collapsed := n.collapsed[topicID]
@@ -481,10 +471,11 @@ func (n *NavigationPanel) rebuildRows() {
 
 	emitted := make(map[string]bool)
 
-	// Active plans: flat list — no topic nesting in the active section.
-	emitPlanGroup(activePlans, 0, emitted)
+	// All plans: topic-grouped first, then ungrouped flat.
+	emitTopicGrouped(sorted, emitted)
+	emitPlanGroup(sorted, 0, emitted)
 
-	// Solo agents (between active plans and idle plans).
+	// Solo agents.
 	if len(solo) > 0 {
 		rows = append(rows, navRow{Kind: navRowSoloHeader, ID: "__solo__", Label: "agents"})
 		for _, inst := range solo {
@@ -496,10 +487,6 @@ func (n *NavigationPanel) rebuildRows() {
 			})
 		}
 	}
-
-	// Idle plans: topic-grouped, then ungrouped.
-	emitTopicGrouped(idlePlans, emitted)
-	emitPlanGroup(idlePlans, 0, emitted)
 
 	// History section (collapsed toggle, expands to list).
 	historyPlans := make([]PlanDisplay, 0, len(n.historyPlans)+len(n.cancelled))
@@ -582,34 +569,24 @@ func navInstanceSortKey(inst *session.Instance) int {
 	return 3
 }
 
-// navPlanSortKey returns the sort priority for a plan.
-// 0 = has notification, 1 = actively running/awaiting action, 2 = planned, 3 = idle.
+// navPlanSortKey returns the sort priority for a plan based on lifecycle phase only.
+// 0 = reviewing phases, 1 = implementing phases, 2 = planned, 3 = idle/ready.
+// Notification and running-instance state no longer affect sort order — those flags
+// still drive expand/collapse and status icons.
 func navPlanSortKey(p PlanDisplay, insts []*session.Instance, st TopicStatus) int {
-	hasNotif := st.HasNotification
-	hasRunning := st.HasRunning
-	for _, inst := range insts {
-		if inst.Notified {
-			hasNotif = true
-		}
-		if inst.Status == session.Running || inst.Status == session.Loading {
-			hasRunning = true
-		}
-	}
 	switch {
-	case hasNotif:
-		return 0
-	case hasRunning:
-		return 1
-	case strings.TrimSpace(p.Phase) == "architecting",
-		strings.TrimSpace(p.Phase) == "wave_running",
-		strings.TrimSpace(p.Phase) == "wave_waiting",
-		strings.TrimSpace(p.Phase) == "fixing",
-		strings.TrimSpace(p.Phase) == "reviewing",
+	case strings.TrimSpace(p.Phase) == "reviewing",
 		strings.TrimSpace(p.Phase) == "readiness_reviewing",
-		p.Status == "planning",
-		p.Status == "implementing",
 		p.Status == "reviewing",
 		p.Status == "verifying":
+		return 0
+	case strings.TrimSpace(p.Phase) == "wave_running",
+		strings.TrimSpace(p.Phase) == "wave_waiting",
+		strings.TrimSpace(p.Phase) == "fixing",
+		strings.TrimSpace(p.Phase) == "architecting",
+		strings.TrimSpace(p.Phase) == "single_agent_implementing",
+		p.Status == "implementing",
+		p.Status == "planning":
 		return 1
 	case strings.TrimSpace(p.Phase) == "planned":
 		return 2
@@ -1314,14 +1291,6 @@ func navPlanStatusIcon(row navRow) string {
 	}
 }
 
-// navSectionLabel maps a plan sort key to a section label string.
-func navSectionLabel(key int) string {
-	if key < 2 {
-		return "active"
-	}
-	return "plans"
-}
-
 // navDividerLine renders a full-width divider: "──── label ────".
 func navDividerLine(label string, w int) string {
 	inner := " " + label + " "
@@ -1538,7 +1507,7 @@ func (n *NavigationPanel) String() string {
 	}
 	items := make([]visItem, 0, len(n.rows)+4)
 	selectedDisplayIdx := 0
-	lastSection := ""
+	plansDividerEmitted := false
 	inDeadSection := false
 
 	for i, row := range n.rows {
@@ -1558,20 +1527,10 @@ func (n *NavigationPanel) String() string {
 			inDeadSection = false
 		}
 
-		// Inject "active" / "plans" dividers at section transitions.
-		if (row.Kind == navRowPlanHeader || row.Kind == navRowTopicHeader) && !inDeadSection {
-			var sk int
-			if row.Kind == navRowTopicHeader {
-				// Topic groups always appear in the idle/plans section.
-				sk = 3
-			} else {
-				sk = row.PlanSortKey
-			}
-			section := navSectionLabel(sk)
-			if section != lastSection {
-				items = append(items, visItem{line: navDividerLine(section, itemWidth), rowIdx: -1})
-				lastSection = section
-			}
+		// Inject a single "plans" divider before the first plan or topic header.
+		if (row.Kind == navRowPlanHeader || row.Kind == navRowTopicHeader) && !inDeadSection && !plansDividerEmitted {
+			items = append(items, visItem{line: navDividerLine("plans", itemWidth), rowIdx: -1})
+			plansDividerEmitted = true
 		}
 
 		if i == n.selectedIdx {

@@ -104,16 +104,16 @@ func TestRebuildRows_PlansWithInstances(t *testing.T) {
 	n.SetData(plans, instances, nil, nil, statuses)
 
 	// Both plans have running instances so they should be expanded.
-	// Alphabetical descending: plan-b > plan-a, so plan-b comes first.
+	// Alphabetical ascending: plan-a < plan-b, so plan-a comes first.
 	require.Len(t, n.rows, 4)
 	assert.Equal(t, navRowPlanHeader, n.rows[0].Kind)
-	assert.Equal(t, "plan-b", n.rows[0].TaskFile)
+	assert.Equal(t, "plan-a", n.rows[0].TaskFile)
 	assert.Equal(t, navRowInstance, n.rows[1].Kind)
-	assert.Equal(t, "b-impl", n.rows[1].Label)
+	assert.Equal(t, "a-impl", n.rows[1].Label)
 	assert.Equal(t, navRowPlanHeader, n.rows[2].Kind)
-	assert.Equal(t, "plan-a", n.rows[2].TaskFile)
+	assert.Equal(t, "plan-b", n.rows[2].TaskFile)
 	assert.Equal(t, navRowInstance, n.rows[3].Kind)
-	assert.Equal(t, "a-impl", n.rows[3].Label)
+	assert.Equal(t, "b-impl", n.rows[3].Label)
 }
 
 func TestRebuildRows_SoloInstances(t *testing.T) {
@@ -351,11 +351,10 @@ func TestSortOrder_AlphabeticalRegardlessOfNotificationState(t *testing.T) {
 	}
 	n.SetData(plans, instances, nil, nil, statuses)
 
-	// Active plans keep alphabetical ordering within the section even when one plan
-	// is notified and the other is only running.
+	// Plans keep alphabetical ascending ordering regardless of notification state.
 	require.True(t, len(n.rows) >= 4)
-	assert.Equal(t, "beta", n.rows[0].TaskFile)
-	assert.Equal(t, "alpha", n.rows[2].TaskFile)
+	assert.Equal(t, "alpha", n.rows[0].TaskFile)
+	assert.Equal(t, "beta", n.rows[2].TaskFile)
 }
 
 func TestSortOrder_TopicGroupedIdlePlansIgnoreSortKey(t *testing.T) {
@@ -369,12 +368,12 @@ func TestSortOrder_TopicGroupedIdlePlansIgnoreSortKey(t *testing.T) {
 	}}
 	n.SetTopicsAndPlans(topics, nil, nil)
 
-	// Topic-grouped idle plans also keep alphabetical ordering within the topic even
-	// when one plan has a lower navPlanSortKey because it is already planned.
+	// Topic-grouped plans keep alphabetical ascending ordering within the topic
+	// regardless of navPlanSortKey differences.
 	require.Len(t, n.rows, 3)
 	assert.Equal(t, navRowTopicHeader, n.rows[0].Kind)
-	assert.Equal(t, "zeta", n.rows[1].TaskFile)
-	assert.Equal(t, "alpha", n.rows[2].TaskFile)
+	assert.Equal(t, "alpha", n.rows[1].TaskFile)
+	assert.Equal(t, "zeta", n.rows[2].TaskFile)
 }
 
 func TestSortOrder_InstancesWithinPlan(t *testing.T) {
@@ -648,33 +647,37 @@ func TestSelectByID(t *testing.T) {
 
 func TestSelectNextOrPrevExcludingTask_PrefersNextOutsideTaskGroup(t *testing.T) {
 	n := newTestPanel()
-	plans := []PlanDisplay{{Filename: "b"}, {Filename: "a"}}
-	instances := []*session.Instance{makeInst("b-impl", "b", session.Running)}
-	statuses := map[string]TopicStatus{"b": {HasRunning: true}}
+	// A→Z ascending: plan-a (expanded with instance), plan-b (no instances)
+	plans := []PlanDisplay{{Filename: "a"}, {Filename: "b"}}
+	instances := []*session.Instance{makeInst("a-impl", "a", session.Running)}
+	statuses := map[string]TopicStatus{"a": {HasRunning: true}}
 	n.SetData(plans, instances, nil, nil, statuses)
 
 	require.Len(t, n.rows, 3)
-	assert.Equal(t, "b", n.rows[0].TaskFile)
-	assert.Equal(t, "b", n.rows[1].TaskFile)
-	assert.Equal(t, "a", n.rows[2].TaskFile)
+	assert.Equal(t, "a", n.rows[0].TaskFile) // plan-a header
+	assert.Equal(t, "a", n.rows[1].TaskFile) // a-impl instance
+	assert.Equal(t, "b", n.rows[2].TaskFile) // plan-b header
 
+	// Start on plan-a; exclude "a" → skip a-impl (same task), land on plan-b.
 	n.selectedIdx = 0
-	ok := n.SelectNextOrPrevExcludingTask("b")
+	ok := n.SelectNextOrPrevExcludingTask("a")
 	assert.True(t, ok)
 	assert.Equal(t, 2, n.selectedIdx)
-	assert.Equal(t, "a", n.GetSelectedPlanFile())
+	assert.Equal(t, "b", n.GetSelectedPlanFile())
 }
 
 func TestSelectNextOrPrevExcludingTask_FallsBackToPrevious(t *testing.T) {
 	n := newTestPanel()
+	// A→Z ascending: plan-a (idx 0), plan-b (idx 1).
 	plans := []PlanDisplay{{Filename: "b"}, {Filename: "a"}}
 	n.SetData(plans, nil, nil, nil, nil)
 
+	// Start on plan-b (last row); no next → falls back to plan-a.
 	n.selectedIdx = 1
-	ok := n.SelectNextOrPrevExcludingTask("a")
+	ok := n.SelectNextOrPrevExcludingTask("b")
 	assert.True(t, ok)
 	assert.Equal(t, 0, n.selectedIdx)
-	assert.Equal(t, "b", n.GetSelectedPlanFile())
+	assert.Equal(t, "a", n.GetSelectedPlanFile())
 }
 
 func TestNavigation_PageDownAndPageUp(t *testing.T) {
@@ -1039,7 +1042,7 @@ func TestString_SectionHeaders(t *testing.T) {
 	assert.Contains(t, output, "plans")
 }
 
-func TestString_ActiveDividerRenderedOnceForMixedActiveSortKeys(t *testing.T) {
+func TestString_PlansDividerRenderedOnce(t *testing.T) {
 	n := newTestPanel()
 	n.SetSize(60, 40)
 	plans := []PlanDisplay{
@@ -1058,7 +1061,7 @@ func TestString_ActiveDividerRenderedOnceForMixedActiveSortKeys(t *testing.T) {
 	n.SetData(plans, instances, nil, nil, statuses)
 
 	plain := stripANSI(n.String())
-	assert.Equal(t, 1, strings.Count(plain, "active"), "mixed active sort keys should render a single active divider")
+	assert.Equal(t, 1, strings.Count(plain, "plans"), "all plans should render under a single 'plans' divider")
 	assert.Contains(t, plain, "beta")
 	assert.Contains(t, plain, "alpha")
 }
@@ -1156,7 +1159,7 @@ func TestString_PlanPhaseLabelsVisible(t *testing.T) {
 	assert.Contains(t, output, "fixing-plan · fixing round 3")
 }
 
-func TestString_PlanningStatusPlanAppearsInActiveSection(t *testing.T) {
+func TestString_PlanningStatusPlanAppearsInPlansList(t *testing.T) {
 	n := newTestPanel()
 	n.SetSize(60, 40)
 	// Plan in "planning" lifecycle status with NO running instances — simulates the
@@ -1167,9 +1170,8 @@ func TestString_PlanningStatusPlanAppearsInActiveSection(t *testing.T) {
 	}
 	n.SetData(plans, nil, nil, nil, nil)
 	output := n.String()
-	// The "planning" lifecycle plan must appear under an "active" section divider,
-	// not dropped to the idle "plans" section.
-	assert.Contains(t, output, "active", "planning status plan should appear in active section")
+	// All plans appear under the unified "plans" divider regardless of status.
+	assert.Contains(t, output, "plans", "planning status plan should appear in the plans section")
 }
 
 // ---------- splitDeadFromHistory reactivation ----------
@@ -1286,7 +1288,7 @@ func TestNavPlanSortKey_ReadinessReviewingIsActive(t *testing.T) {
 		Phase:    "readiness_reviewing",
 	}
 	key := navPlanSortKey(p, nil, TopicStatus{})
-	assert.Equal(t, 1, key, "readiness_reviewing must sort as active (key 1)")
+	assert.Equal(t, 0, key, "readiness_reviewing must sort as reviewing (key 0)")
 }
 
 func TestNavPlanPhaseLabel_ReadinessReview(t *testing.T) {
@@ -1335,7 +1337,7 @@ func TestNavPlanSortKey_VerifyingIsActive(t *testing.T) {
 		Phase:    "",
 	}
 	key := navPlanSortKey(p, nil, TopicStatus{})
-	assert.Equal(t, 1, key, "verifying status must sort as active (key 1)")
+	assert.Equal(t, 0, key, "verifying status must sort as reviewing (key 0)")
 }
 
 func TestString_VerifyingPlanAppearsInActiveSection(t *testing.T) {
