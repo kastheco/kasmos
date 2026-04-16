@@ -58,6 +58,6 @@ Fields are resolved as follows:
 
 1. **Parsed `config.toml`** (project-local) — authoritative for most fields.
 2. **Defaults** applied by `config.applyConfigDefaults()` for any zero-value fields.
-3. `daemon.toml` fields override project config for daemon-specific behavior when the daemon is running headlessly.
+3. `daemon.toml` fields override project config for daemon-specific behavior when the daemon is running without interactive TUI supervision.
 
 There is no environment-variable override layer — use `kas debug` to confirm what kasmos sees.

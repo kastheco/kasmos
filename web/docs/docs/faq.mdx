@@ -53,16 +53,18 @@ no. kasmos prevents launching a second `implementing` task within the same topic
 
 if you need parallelism, use separate topics or structure the work as separate waves.
 
-## what's the difference between headless and tmux execution?
+## what's the difference between sdk and tmux execution?
 
 | mode | how it runs | interactive? |
 |------|-------------|--------------|
 | **tmux** | agent runs inside a tmux pane | yes — you can attach, type, and send keys |
-| **headless** | agent runs as a direct child process without tmux | no — `Attach`, `SendKeys`, and permission responses return `ErrInteractiveOnly` |
+| **sdk** | agent is driven via its app-server JSON-RPC protocol (claude or codex only) | partial — `SendKeys`/`TapEnter` deliver prompts via the transport; `Attach` and `SetDetachedSize` return `ErrInteractiveOnly` |
 
-headless mode captures output to an in-memory buffer and appends it to a log file under `<workDir>/.kasmos/logs/`. it's well suited for automated wave-based coder agents that don't need interactive input.
+sdk mode accumulates structured events (text deltas, tool calls, permissions) through a `Renderer` and appends agent stderr to a log file under `<workDir>/.kasmos/logs/`. it's well suited for automated wave-based coder agents with claude or codex.
 
-**important:** headless coders do not remove the need for tmux overall. planner sessions, reviewer sessions, and any workflow where you need to read agent output in real time or send interactive keystrokes still rely on tmux today. headless is an optimization for the coder leg of automated waves, not a replacement for the full tmux stack.
+**important:** sdk mode is only available for claude and codex. for opencode, gemini, amp, or custom programs, kasmos silently falls back to tmux regardless of the configured mode. tmux remains the only option for harnesses without sdk transports and for interactive sessions where you need to attach to the agent pane directly.
+
+the legacy value `"headless"` is accepted as an alias for `"sdk"` in `execution_mode` — old configs continue to work.
 
 ## what happens if the daemon isn't running when an agent emits a signal?
 
@@ -106,4 +108,4 @@ repo-local state (`.kasmos/config.toml`, signal files, cache) remains anchored t
 
 ## can i use kasmos with agents other than claude code?
 
-yes. the `--program` flag (or `default_program` in config.toml) selects the fallback agent binary. kasmos auto-detects `opencode` first, then falls back to `claude`. each agent profile in `[agents.<role>]` can specify its own `program` and choose tmux or headless execution independently. kasmos has been used with claude code, codex, gemini, opencode, and amp.
+yes. the `--program` flag (or `default_program` in config.toml) selects the fallback agent binary. kasmos auto-detects `opencode` first, then falls back to `claude`. each agent profile in `[agents.<role>]` can specify its own `program` and choose between tmux and sdk execution. note: sdk mode is only available for claude and codex — all other programs (gemini, opencode, amp, and custom binaries) always run in tmux. kasmos has been used with claude code, codex, gemini, opencode, and amp.

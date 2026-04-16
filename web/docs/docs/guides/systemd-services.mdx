@@ -339,7 +339,7 @@ next steps:
 
 when an agent emits mcp `signal_create` (or, as a fallback, `kas signal emit ...`), the signal is written as a pending row in the task store database. the orchestration daemon is what actually claims that row and advances the plan's lifecycle state (e.g. from `implementing` → `reviewing`).
 
-if you emit signals without a running daemon, signals accumulate as `pending` rows but plans do not advance. start the daemon — either via the service manager or `kas daemon start --foreground` — before running headless agent workflows that rely on signal-driven orchestration.
+if you emit signals without a running daemon, signals accumulate as `pending` rows but plans do not advance. start the daemon — either via the service manager or `kas daemon start --foreground` — before running unattended agent workflows that rely on signal-driven orchestration.
 
 ## related
 

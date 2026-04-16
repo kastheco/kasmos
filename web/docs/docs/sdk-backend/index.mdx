@@ -1,0 +1,89 @@
+---
+title: "sdk backend"
+---
+
+# sdk backend
+
+the sdk backend runs agent programs as managed child processes driven by their native app-server JSON-RPC protocol — no tmux session, no terminal multiplexer, no manual attachment required.
+
+## what is the sdk backend?
+
+in kasmos, every agent instance is backed by an `ExecutionSession`. the default backend is `ExecutionModeTmux`; the sdk alternative is `ExecutionModeSDK`. both implement the same `session.ExecutionSession` interface, so the rest of the system — the TUI, the wave orchestrator, the instance lifecycle — is unaware of which backend is in use.
+
+the sdk backend is selected by `session.NewExecutionSession` when the resolved execution mode is `"sdk"`:
+
+```go
+// session/execution.go
+func NewExecutionSession(mode ExecutionMode, name, program string, skipPermissions bool) ExecutionSession {
+    switch NormalizeExecutionMode(mode) {
+    case ExecutionModeSDK:
+        return sdk.New(name, program, skipPermissions)
+    default:
+        return newTmuxExecutionSession(name, program, skipPermissions)
+    }
+}
+```
+
+the concrete type is `*sdk.Session` from `session/sdk/session.go`. it wraps a `Transport` (one per supported program) and a `Renderer` that converts the agent's structured event stream into readable text.
+
+## supported programs
+
+the sdk backend requires a `Transport` implementation that speaks the agent's app-server protocol. only two programs have transports today:
+
+| program | transport | protocol |
+|---------|-----------|---------|
+| `claude` | `ClaudeTransport` | JSON-RPC 2.0 over stdio with `--app-server` |
+| `codex` | `CodexTransport` | Codex App Server protocol over stdio |
+
+`sdk.SupportsProgram(program)` reports whether a given program string maps to a supported transport. `session.ResolveExecutionMode` calls it automatically:
+
+```go
+// session/execution.go
+func ResolveExecutionMode(requested ExecutionMode, program string) ExecutionMode {
+    normalised := NormalizeExecutionMode(requested)
+    if normalised == ExecutionModeSDK && !sdk.SupportsProgram(program) {
+        return ExecutionModeTmux
+    }
+    return normalised
+}
+```
+
+**if you set `execution_mode = "sdk"` for a program that has no transport (e.g. `opencode`, `gemini`, `amp`, or a custom binary), kasmos silently falls back to tmux mode.** the instance will run correctly in tmux; the sdk mode is simply not applied.
+
+## why it exists
+
+the sdk backend was built for **automated wave execution** — running multiple coder agents concurrently without requiring a tmux server or any human at a terminal.
+
+key advantages over tmux:
+
+- **typed bidirectional control** — kasmos drives the agent via its app-server protocol (query, interrupt, approvals, structured stream) instead of tmux terminal scraping.
+- **permission flow support** — `SendPermissionResponse` forwards a structured choice to the agent without needing a live PTY.
+- **structured output** — the `Renderer` accumulates typed events (text deltas, tool calls, tool results, permission prompts) into a line buffer, exposing the same `CapturePaneContent` / `CapturePaneContentWithOptions` surface as tmux.
+- **no tmux dependency** — works anywhere `exec.Cmd` works, including CI environments.
+
+## interactive operations
+
+sdk sessions do not support terminal attachment. three methods return `ErrInteractiveOnly`:
+
+- `Attach()` — sdk sessions are in-process and cannot be attached to a terminal
+- `DetachSafely()` — nothing to detach from
+- `SetDetachedSize(width, height int)` — no PTY to resize
+
+`SendKeys` and `TapEnter` **are** supported by sdk sessions — they buffer and submit text via the transport's `SendPrompt` method. see [how it works](./how-it-works.mdx) for details.
+
+## when to choose sdk
+
+| scenario | recommended mode |
+|----------|-----------------|
+| automated claude or codex coder in a wave | `sdk` |
+| any other harness (opencode, gemini, amp, custom) | `tmux` (sdk silently falls back anyway) |
+| local development with live terminal attachment | `tmux` |
+| interactive `kas monitor` debugging | `tmux` |
+| agent that needs PTY-based prompt detection | `tmux` |
+
+## next steps
+
+- [how it works](./how-it-works.mdx) — transport lifecycle, session internals, env vars, renderer
+- [configuration](./configuration.mdx) — setting `execution_mode = "sdk"` in `config.toml`
+- [logs and output](./logs-and-output.mdx) — structured event rendering and the capture range api
+- [sdk vs tmux](./comparison.mdx) — full interface comparison

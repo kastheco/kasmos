@@ -92,7 +92,7 @@ The daemon claims pending signals from the database and advances plan lifecycle 
 
 ## emit a signal manually
 
-Trigger a plan lifecycle event from the shell (e.g. after a headless agent finishes):
+Trigger a plan lifecycle event from the shell (e.g. after an sdk or tmux agent finishes):
 
 ```bash
 kas signal emit implement_task_finished <task-file> --payload '{"wave_number":1,"task_number":3}'

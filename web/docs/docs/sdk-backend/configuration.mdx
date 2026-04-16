@@ -1,0 +1,144 @@
+---
+title: "configuring the sdk backend"
+---
+
+# configuring the sdk backend
+
+the sdk backend is configured per agent role in `.kasmos/config.toml` using the `execution_mode` field.
+
+## the execution_mode field
+
+each `[agents.<role>]` block in `config.toml` accepts an optional `execution_mode` key:
+
+```toml
+[agents.coder]
+enabled         = true
+program         = "claude"
+flags           = ["--permission-mode bypassPermissions"]
+execution_mode  = "sdk"
+```
+
+accepted values:
+
+| value | behavior |
+|-------|---------|
+| `"sdk"` | drives the agent via its app-server JSON-RPC protocol |
+| `"headless"` | legacy alias for `"sdk"` — accepted but `"sdk"` is preferred |
+| `"tmux"` | (default) runs the agent inside a tmux session |
+| `""` (empty) | falls back to `"tmux"` |
+| any other string | falls back to `"tmux"` |
+
+the fallback behavior is implemented by `config.NormalizeExecutionMode` at the config layer:
+
+```go
+// config/profile.go
+func NormalizeExecutionMode(mode string) string {
+    switch strings.TrimSpace(mode) {
+    case ExecutionModeTmux:
+        return ExecutionModeTmux
+    case ExecutionModeSDK, "headless":
+        return ExecutionModeSDK
+    default:
+        return ExecutionModeTmux
+    }
+}
+```
+
+and by `session.NormalizeExecutionMode` at the session layer:
+
+```go
+// session/execution.go
+func NormalizeExecutionMode(mode ExecutionMode) ExecutionMode {
+    switch ExecutionMode(strings.TrimSpace(string(mode))) {
+    case ExecutionModeSDK, "headless":
+        return ExecutionModeSDK
+    case ExecutionModeTmux:
+        return ExecutionModeTmux
+    default:
+        return ExecutionModeTmux
+    }
+}
+```
+
+unknown values — including typos like `"SDK"` or `"Headless"` — silently fall back to `"tmux"`. the comparison is case-sensitive.
+
+## program compatibility
+
+setting `execution_mode = "sdk"` only takes effect if the program has an sdk transport. currently only `claude` and `codex` are supported. for any other program, `session.ResolveExecutionMode` silently downgrades the mode to tmux:
+
+```go
+// session/execution.go
+func ResolveExecutionMode(requested ExecutionMode, program string) ExecutionMode {
+    normalised := NormalizeExecutionMode(requested)
+    if normalised == ExecutionModeSDK && !sdk.SupportsProgram(program) {
+        return ExecutionModeTmux
+    }
+    return normalised
+}
+```
+
+**consequence:** if you set `execution_mode = "sdk"` for `opencode`, `gemini`, `amp`, or a custom program, kasmos will silently run it in tmux instead. the docs and `kas debug config` output will still show `"sdk"` from the profile (the normalized config value), but the runtime session is a tmux session. use `kas debug` to confirm the resolved mode before relying on sdk behavior.
+
+## full agent block example
+
+```toml
+[agents.coder]
+enabled         = true
+program         = "claude"
+model           = "claude-opus-4-5"
+flags           = ["--permission-mode bypassPermissions"]
+execution_mode  = "sdk"
+
+[agents.reviewer]
+enabled         = true
+program         = "claude"
+execution_mode  = "tmux"
+```
+
+this configuration runs the coder agent via the claude app-server protocol while keeping the reviewer in tmux for interactive attach capability.
+
+## per-phase role mapping
+
+the `[phases]` table maps lifecycle phases to agent roles. the execution mode is resolved by looking up the role's profile:
+
+```toml
+[phases]
+implementing = "coder"
+reviewing    = "reviewer"
+```
+
+when kasmos starts an implementing session, it reads `agents.coder.execution_mode`, normalizes it, and then calls `ResolveExecutionMode` with the program to determine the actual backend. the resolution path is:
+
+1. `phases.implementing` → `"coder"`
+2. `agents.coder.execution_mode` → `"sdk"`
+3. `config.NormalizeExecutionMode("sdk")` → `"sdk"`
+4. `session.ResolveExecutionMode(ExecutionModeSDK, "claude")` → `ExecutionModeSDK` (claude is supported)
+5. `session.NewExecutionSession(ExecutionModeSDK, ...)` → `sdk.New(...)`
+
+if the program were `opencode` instead, step 4 would return `ExecutionModeTmux` and step 5 would create a tmux session.
+
+## the default_program fallback
+
+if a phase has no role mapping, or the role's profile is disabled or has an empty program, kasmos falls back to `default_program` with tmux mode:
+
+```go
+// config/profile.go
+func (c *Config) ResolveProfile(phase string, defaultProgram string) AgentProfile {
+    // ...
+    if profile.Program == "" || !profile.Enabled {
+        return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeTmux}
+    }
+    profile.ExecutionMode = NormalizeExecutionMode(profile.ExecutionMode)
+    return profile
+}
+```
+
+the fallback always uses `ExecutionModeTmux` — there is no way to make the default fallback use sdk mode without an explicit `[agents.*]` block.
+
+## inspecting resolved configuration
+
+```bash
+kas debug config
+```
+
+prints the fully resolved `Config` struct as JSON, including the normalized `execution_mode` for each agent profile. use this to confirm that `"headless"` aliases were resolved to `"sdk"` and that unsupported programs received `"tmux"`.

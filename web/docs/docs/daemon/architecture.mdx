@@ -39,7 +39,7 @@ flowchart TD
 
     subgraph agents["agent execution hosts"]
         Tmux["tmux pane\n(ExecutionModeTmux)"]
-        Headless["headless exec.Cmd\n(ExecutionModeHeadless)"]
+        SDK["sdk app-server\n(ExecutionModeSDK)"]
     end
 
     %% operator → kasmosdb
@@ -64,7 +64,7 @@ flowchart TD
 
     %% daemon → agent hosts
     Orchestrator -->|"spawn / control"| Tmux
-    Orchestrator -->|"spawn / control"| Headless
+    Orchestrator -->|"spawn / control"| SDK
 ```
 
 ## core types

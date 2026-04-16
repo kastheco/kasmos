@@ -15,10 +15,10 @@ kasmos is a go application with several surfaces that work together: an interact
 | `cmd/` | cli subcommands: `task`, `daemon`, `monitor`, `signal`, `tmux`, `instance`, `audit`, `serve` |
 | `app/` | main bubble tea model, tui state machine, orchestration glue |
 | `ui/` | rendering components: nav, status bar, info pane, overlays |
-| `session/` | instance lifecycle, execution backends (tmux / headless), notifications, git worktrees |
+| `session/` | instance lifecycle, execution backends (tmux / sdk), notifications, git worktrees |
 | `session/git/` | worktree checkout, resume, orphan adoption |
 | `session/tmux/` | tmux session/window/pane management |
-| `session/headless/` | non-interactive agent execution |
+| `session/sdk/` | sdk app-server execution backend (claude + codex transports, renderer) |
 | `orchestration/` | prompt builders, wave/task orchestration |
 | `orchestration/loop/` | signal gateway scanner, wave driver loop |
 | `config/` | TOML/JSON config loading, task parser, FSM, state, store |
@@ -47,8 +47,8 @@ tui / cli action
       │  status transition recorded in sqlite
       ▼
   agent session
-  (session/ + session/tmux/ or session/headless/)
-      │  spawns agent in tmux pane or headless process
+  (session/ + session/tmux/ or session/sdk/)
+      │  spawns agent in tmux pane or sdk app-server process
       ▼
   agent emits signal
   (mcp `signal_create` ... — db gateway, preferred)
@@ -106,7 +106,7 @@ if you edit the templates, you must also update the live copies (or vice-versa),
 | surface | framework | output | path |
 |---------|-----------|--------|------|
 | marketing site | Next.js App Router | `web/out/` | `/kasmos` |
-| docs site | Nextra 4 | `web/docs/out/` | `/kasmos/docs` |
+| docs site | Docusaurus 3 | `web/docs/build/` | `/kasmos/docs` |
 | admin spa | vite | `web/admin/dist/` | served by `kas serve` |
 
 the marketing site and docs site both use `output: "export"` with `basePath: "/kasmos"` for static github pages deployment. the admin spa is a separate vite app that is not exported to pages — it runs as a dev tool or embedded in the daemon server.

@@ -45,8 +45,10 @@ If you use a harness that the wizard doesn't detect, you can still wire it up ma
 [agents.coder]
 enabled = true
 program = "aider --model gpt-4o"
-execution_mode = "headless"
+execution_mode = "tmux"
 ```
+
+Custom programs run in tmux mode — the sdk backend is only available for claude and codex.
 
 See [setup wizard](./setup-wizard.mdx) for the full config schema.
 

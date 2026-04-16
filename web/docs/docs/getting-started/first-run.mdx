@@ -104,7 +104,7 @@ the interface is divided into three main areas:
 when you spawn an agent (`s`), kasmos creates an isolated git worktree and starts the agent in one of two execution modes:
 
 - **tmux** — session is attachable (`↵`/`o`); use interactive mode (`i`) to type directly into the agent pane. best for exploratory work.
-- **headless** — session runs in the background; output is streamed to the preview pane and logs. best for automated wave work.
+- **sdk** — agent is driven via its app-server JSON-RPC protocol; output is streamed to the preview pane and logs. available for claude and codex only; other programs fall back to tmux silently. best for automated wave work.
 
 the execution mode is set per agent role in `config.toml` via the `execution_mode` field. see [setup wizard](./setup-wizard.mdx) for configuration details.
 

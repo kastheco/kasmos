@@ -98,9 +98,11 @@ Any executable that accepts a prompt via stdin or arguments can be used. Pass ex
 [agents.coder]
 program       = "/usr/local/bin/my-ai-tool"
 flags         = ["--context-files", "AGENTS.md"]
-execution_mode = "headless"
+execution_mode = "tmux"
 enabled       = true
 ```
+
+Custom programs always run in tmux mode — the sdk backend is only available for claude and codex.
 
 ## execution modes
 
@@ -109,21 +111,27 @@ Every harness can run in one of two execution modes:
 | mode | description |
 |------|-------------|
 | `tmux` | agent runs in a tmux session; you can attach fullscreen with `↵` and detach with `ctrl+space` |
-| `headless` | agent runs as a background process; output streams to the preview tab and audit log |
+| `sdk` | agent is driven via its app-server JSON-RPC protocol; output streams to the preview tab and audit log |
+
+`sdk` mode is only available for **claude** and **codex**. setting `execution_mode = "sdk"` for any other program (opencode, gemini, amp, or custom binaries) causes kasmos to silently fall back to tmux at runtime — those programs do not have sdk transports.
 
 Set the mode per agent profile in `config.toml`:
 
 ```toml
 [agents.coder]
-program        = "opencode"
-execution_mode = "tmux"
+program        = "claude"
+execution_mode = "sdk"    # uses claude --app-server JSON-RPC protocol
 
 [agents.reviewer]
 program        = "claude"
-execution_mode = "headless"
+execution_mode = "tmux"   # attachable; stays in tmux for interactive review
+
+[agents.planner]
+program        = "opencode"
+execution_mode = "tmux"   # opencode has no sdk transport; tmux is the only option
 ```
 
-Headless is preferred for automated wave work where human supervision is not needed. Tmux is better for interactive sessions where you want to watch the agent work or type commands directly.
+sdk mode is preferred for automated wave work with claude or codex where human supervision is not needed. tmux is required for interactive sessions, for harnesses without sdk transports, and any time you want to attach to the agent pane directly.
 
 ## enforcement hooks
 

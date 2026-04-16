@@ -37,7 +37,7 @@ type AgentProfile struct {
     Model         string   // model identifier, e.g. "anthropic/claude-opus-4-6"
     Temperature   *float64 // optional temperature (0.0–1.0)
     Effort        string   // "low", "medium", "high" (passed as --effort)
-    ExecutionMode string   // "tmux" or "headless"
+    ExecutionMode string   // "tmux" or "sdk" ("headless" accepted as legacy alias for "sdk")
     Enabled       bool     // whether this role is active
 }
 ```
@@ -55,11 +55,11 @@ func (p AgentProfile) BuildCommand() string {
 | mode | behavior |
 |------|----------|
 | `tmux` | agent runs in a tmux pane; you can attach with `↵`/`o` |
-| `headless` | agent runs as a background process; view output in the preview tab and logs |
+| `sdk` | agent is driven via its app-server JSON-RPC protocol; output rendered in the preview tab and logs |
 
-Headless mode is preferred for automated wave work (many concurrent tasks). Tmux mode is better when you want to observe or interact with a single agent.
+sdk mode is only effective for claude and codex. for any other program, `session.ResolveExecutionMode` silently falls back to tmux. sdk mode is preferred for automated wave work (many concurrent tasks) when the agent supports it. tmux mode is better when you want to observe or interact with a single agent.
 
-`config.NormalizeExecutionMode()` normalizes any unknown value to `tmux`.
+`config.NormalizeExecutionMode()` normalizes any unknown value to `tmux`. the legacy value `"headless"` is accepted as an alias for `"sdk"`.
 
 ## phase-to-role mapping
 
@@ -79,7 +79,7 @@ readiness_review = "master"   # drives the verifying status; master_review is ac
 program = "claude"
 model = "anthropic/claude-sonnet-4-6"
 effort = "low"
-execution_mode = "headless"
+execution_mode = "sdk"
 enabled = true
 
 [agents.planner]
@@ -107,7 +107,7 @@ One harness is configured per role profile. Multiple roles can use the same harn
 ## spawning agents
 
 kasmos spawns agents in two ways:
-- **daemon-managed**: the daemon starts the agent as a subprocess (headless) or inside a tmux window
+- **daemon-managed**: the daemon starts the agent via the sdk backend or inside a tmux window
 - **TUI-launched**: the TUI sends a `StartPlan` request to the daemon socket, which then spawns the agent
 
 The spawned process inherits `KASMOS_TASK`, `KASMOS_WAVE`, and `KASMOS_PEERS` environment variables that inject orchestration context into the agent session.

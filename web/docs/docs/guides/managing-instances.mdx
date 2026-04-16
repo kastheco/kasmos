@@ -4,7 +4,7 @@ title: "managing instances"
 
 # managing instances
 
-an **instance** is a running (or paused) ai agent session. it has a title, an isolated git branch, an execution mode (tmux or headless), and a lifecycle status. the sidebar lists all instances grouped by their associated plan.
+an **instance** is a running (or paused) ai agent session. it has a title, an isolated git branch, an execution mode (tmux or sdk), and a lifecycle status. the sidebar lists all instances grouped by their associated plan.
 
 ## starting an instance
 
@@ -28,7 +28,7 @@ tui  ──► enter  ──►  tmux session (fullscreen)
 
 a one-time help overlay reminds you of the detach keys when you first attach. press any key to dismiss it and proceed to the session.
 
-headless instances are **not attachable** — they run as background processes. their output streams to the preview tab in the center pane. use `tab` to switch to the agent tab and watch it live.
+sdk instances are **not attachable** — they run as in-process backends without a PTY. their output streams to the preview tab in the center pane. use `tab` to switch to the agent tab and watch it live.
 
 ## interactive mode
 
@@ -66,11 +66,11 @@ git checkout <branch-name>   # inspect the worktree locally
 
 **resume** (`r`) restarts a paused tmux session. the agent reconnects to the existing worktree and continues from its last state.
 
-## headless instance output
+## sdk instance output
 
-headless instances run as background processes managed by the daemon. they appear in the sidebar with the same controls as tmux instances except:
+sdk instances are managed in-process by the daemon (no tmux session). they appear in the sidebar with the same controls as tmux instances except:
 
-- attach (`↵`) is disabled — a toast informs you that the instance is in headless mode
+- attach (`↵`) is disabled — a toast informs you that the instance is in sdk mode
 - interactive mode (`i`) is disabled for the same reason
 - all output is visible in the **preview tab** and the **audit log**
 
@@ -135,6 +135,6 @@ the browser preview panel includes a composer for writable instances. you can se
 
 ## related concepts
 
-- [agents and roles](../concepts/agents-and-roles.mdx) — execution modes, headless vs tmux
+- [agents and roles](../concepts/agents-and-roles.mdx) — execution modes, sdk vs tmux
 - [worktrees](../concepts/worktrees.mdx) — how isolated branches are managed
 - [tui overview](./tui-overview.mdx) — full keymap reference

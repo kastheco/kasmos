@@ -16,12 +16,13 @@ An **agent profile** (`config.AgentProfile` in `config/profile.go`) defines how 
 | `model` | string | — | model identifier passed to the agent (e.g. `claude-sonnet-4-5`) |
 | `temperature` | float? | — | sampling temperature, if the agent supports it |
 | `effort` | string | — | effort level (e.g. `low`, `medium`, `high`), if the agent supports it |
-| `execution_mode` | string | `"tmux"` | how the agent process is launched: `"tmux"` or `"headless"` |
+| `execution_mode` | string | `"tmux"` | how the agent process is launched: `"tmux"` or `"sdk"` |
 
 ### `execution_mode`
 
 - **`tmux`** (default): kasmos creates a new tmux window, runs the agent inside it, and monitors the window for completion. This mode lets you watch the agent in real time.
-- **`headless`**: kasmos spawns the agent as a background process (no tmux window). Use this for unattended or CI-style execution.
+- **`sdk`**: kasmos drives the agent via its app-server JSON-RPC protocol (claude and codex only). For any other program, kasmos silently falls back to tmux at runtime. Use this for unattended wave execution with claude or codex.
+- **`headless`**: legacy alias for `"sdk"` — accepted but `"sdk"` is preferred in new configs.
 
 The mode is normalized by `config.NormalizeExecutionMode()`: any unrecognized value (including empty string) falls back to `"tmux"`.
 
@@ -67,30 +68,30 @@ flags          = ["--permission-mode bypassPermissions"]
 
 Launches `claude --permission-mode bypassPermissions` in a new tmux window. The `-p <prompt>` and `--model` flags are injected by kasmos before appending `flags`.
 
-### opencode (headless, high-effort planner)
+### opencode (tmux, high-effort planner)
 
 ```toml
 [agents.planner]
 enabled        = true
 program        = "opencode"
-execution_mode = "headless"
+execution_mode = "tmux"
 effort         = "high"
 ```
 
-Runs `opencode` as a background process with `effort = "high"`. opencode interprets the `effort` field to choose model tiers and thinking budgets.
+Runs `opencode` in a tmux window with `effort = "high"`. opencode interprets the `effort` field to choose model tiers and thinking budgets. Note: `execution_mode = "sdk"` has no effect for opencode — there is no sdk transport for it; kasmos would fall back to tmux silently.
 
-### codex (headless with custom model)
+### codex (sdk with custom model)
 
 ```toml
 [agents.reviewer]
 enabled        = true
 program        = "codex"
 model          = "o3"
-execution_mode = "headless"
+execution_mode = "sdk"
 flags          = ["--approval-mode", "full-auto"]
 ```
 
-Runs `codex --approval-mode full-auto` headlessly with `model = "o3"`.
+Drives `codex --approval-mode full-auto` via the Codex App Server protocol with `model = "o3"`.
 
 ### mixed setup (different agents per role)
 
@@ -104,14 +105,14 @@ reviewing    = "reviewer"
 [agents.planner]
 enabled        = true
 program        = "opencode"
-execution_mode = "headless"
+execution_mode = "tmux"
 effort         = "high"
 
 [agents.architect]
 enabled        = true
 program        = "claude"
 model          = "claude-sonnet-4-5"
-execution_mode = "headless"
+execution_mode = "sdk"
 
 [agents.coder]
 enabled        = true
@@ -124,7 +125,7 @@ flags          = ["--permission-mode bypassPermissions"]
 enabled        = true
 program        = "claude"
 model          = "claude-opus-4-5"
-execution_mode = "headless"
+execution_mode = "sdk"
 ```
 
 ## disabling a role

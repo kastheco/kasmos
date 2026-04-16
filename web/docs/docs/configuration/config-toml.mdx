@@ -56,7 +56,7 @@ flags          = ["--permission-mode bypassPermissions"]
 [agents.planner]
 enabled        = true
 program        = "opencode"
-execution_mode = "headless"
+execution_mode = "tmux"
 effort         = "high"
 ```
 
@@ -171,14 +171,14 @@ readiness_review = "master"
 [agents.planner]
 enabled        = true
 program        = "opencode"
-execution_mode = "headless"
+execution_mode = "tmux"
 effort         = "high"
 
 [agents.architect]
 enabled        = true
 program        = "claude"
 model          = "claude-sonnet-4-5"
-execution_mode = "headless"
+execution_mode = "sdk"
 
 [agents.coder]
 enabled        = true
@@ -191,13 +191,13 @@ flags          = ["--permission-mode bypassPermissions"]
 enabled        = true
 program        = "claude"
 model          = "claude-opus-4-5"
-execution_mode = "headless"
+execution_mode = "sdk"
 
 [agents.master]
 enabled        = true
 program        = "claude"
 model          = "claude-opus-4-5"
-execution_mode = "headless"
+execution_mode = "sdk"
 
 [agents.fixer]
 enabled        = true

@@ -47,7 +47,7 @@ For each selected harness, configure the agent roles:
 - **model** — the model string passed to the CLI (e.g. `claude-opus-4-5`, `o3`)
 - **temperature** — sampling temperature, if the harness supports it
 - **effort** — reasoning effort level, if the harness supports it (e.g. `high`, `medium`, `low`)
-- **execution mode** — `tmux` (attachable) or `headless` (automated)
+- **execution mode** — `tmux` (attachable) or `sdk` (app-server protocol; claude and codex only)
 - **enabled** — whether this agent is active
 
 ### step 3 — done / review
@@ -111,7 +111,7 @@ program        = "opencode"      # CLI command or full program string
 model          = "o3"            # model name passed to the CLI
 temperature    = 0.2             # omit to use harness default
 effort         = "high"          # omit if harness does not support effort levels
-execution_mode = "headless"      # "tmux" or "headless"
+execution_mode = "tmux"           # "tmux" or "sdk" ("headless" accepted as legacy alias for "sdk")
 
 [agents.planner]
 enabled        = true
@@ -123,7 +123,7 @@ execution_mode = "tmux"
 enabled        = true
 program        = "claude"
 model          = "claude-sonnet-4-5"
-execution_mode = "headless"
+execution_mode = "sdk"
 ```
 
 Additional top-level fields:
