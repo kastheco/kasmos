@@ -78,9 +78,9 @@ func (a codexAdapter) SupportsCliPrompt() bool {
 // SendPermissionResponse sends the appropriate number key + Enter to codex's
 // numbered permission menu:
 //
-//	1. Allow                  → PermissionAllowOnce
-//	3. Always allow           → PermissionAllowAlways
-//	4. Cancel / Escape        → PermissionReject
+//  1. Allow                  → PermissionAllowOnce
+//  3. Always allow           → PermissionAllowAlways
+//  4. Cancel / Escape        → PermissionReject
 //
 // When SkipPermissions is set, TmuxSession.Start passes codexBypassFlag at
 // launch time so permissions never surface in-pane, but this path handles the
