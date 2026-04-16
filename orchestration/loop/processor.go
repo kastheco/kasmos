@@ -248,9 +248,14 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 		// implementing first and the downstream VerifyApproved transition
 		// (which is only valid from verifying) would be rejected, leaving the
 		// task permanently stuck in fixer loops.
+		//
+		// Skip force-promotion when the signal is PreApplied: the FSM transition
+		// has already been applied by the signal's originator (e.g. the HTTP
+		// admin handler) for the original event, so rewriting the event here
+		// would emit side effects inconsistent with the actual persisted state.
 		eventToApply := sig.Event
 		forcePromotedVerify := false
-		if sig.Event == taskfsm.VerifyFailed && p.shouldForcePromoteVerify(sig.TaskFile) {
+		if sig.Event == taskfsm.VerifyFailed && !sig.PreApplied && p.shouldForcePromoteVerify(sig.TaskFile) {
 			eventToApply = taskfsm.VerifyApproved
 			forcePromotedVerify = true
 		}

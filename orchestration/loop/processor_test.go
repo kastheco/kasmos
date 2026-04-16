@@ -955,6 +955,50 @@ func TestProcessor_ProcessFSMSignals_PreAppliedHTTPSignals(t *testing.T) {
 		assert.True(t, foundIncrement, "expected IncrementReviewCycleAction")
 	})
 
+	t.Run("verify_failed pre-applied at cap must not force-promote", func(t *testing.T) {
+		// Regression: when a verify_failed signal is PreApplied (the HTTP handler
+		// already moved verifying → implementing), force-promotion must be
+		// skipped. Otherwise the processor would emit VerifyApprovedAction side
+		// effects on a task that is persisted in StatusImplementing.
+		store := taskstore.NewTestStore(t)
+		require.NoError(t, store.Create("test", taskstore.TaskEntry{
+			Filename:    "my-plan.md",
+			Status:      taskstore.StatusImplementing, // HTTP-applied verifying → implementing
+			Branch:      "plan/my-plan",
+			ReviewCycle: 5, // well past the cap
+		}))
+
+		p := NewProcessor(ProcessorConfig{
+			Store:                    store,
+			Project:                  "test",
+			AutoReviewFix:            true,
+			AutoReadinessReview:      true,
+			ReadinessMaxVerifyCycles: 2,
+		})
+		actions := p.ProcessFSMSignals([]taskfsm.Signal{{
+			Event:      taskfsm.VerifyFailed,
+			TaskFile:   "my-plan.md",
+			Body:       "issues found",
+			PreApplied: true,
+		}})
+
+		var foundApproved, foundFailed bool
+		for _, a := range actions {
+			if _, ok := a.(VerifyApprovedAction); ok {
+				foundApproved = true
+			}
+			if _, ok := a.(VerifyFailedAction); ok {
+				foundFailed = true
+			}
+		}
+		assert.False(t, foundApproved, "must not promote when signal is PreApplied")
+		assert.True(t, foundFailed, "expected VerifyFailedAction for PreApplied verify_failed")
+
+		entry, err := store.Get("test", "my-plan.md")
+		require.NoError(t, err)
+		assert.Equal(t, taskstore.StatusImplementing, entry.Status, "task must remain in implementing")
+	})
+
 	t.Run("planner_finished pre-applied spawns architect under auto-advance", func(t *testing.T) {
 		store := taskstore.NewTestStore(t)
 		require.NoError(t, store.Create("test", taskstore.TaskEntry{
