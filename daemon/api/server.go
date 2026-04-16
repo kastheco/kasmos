@@ -110,6 +110,14 @@ type StateProvider interface {
 	ResumeInstance(project, title string) error
 	RestartInstance(project, title string) error
 	KillInstance(project, title string) error
+	// CaptureInstance returns the current output of the tracked instance. When
+	// start and end are non-empty they follow the tmux capture-pane -S/-E line
+	// range semantics; empty strings capture the full visible pane.
+	CaptureInstance(project, title, start, end string) (string, error)
+	// SendInstancePrompt delivers prompt to the tracked instance. For SDK
+	// sessions the prompt is forwarded through the transport; for tmux sessions
+	// it is sent via SendKeys+TapEnter on the pane.
+	SendInstancePrompt(project, title, prompt string) error
 }
 
 // ---------------------------------------------------------------------------
@@ -211,6 +219,12 @@ func (s *DaemonState) RestartInstance(_, _ string) error {
 func (s *DaemonState) KillInstance(_, _ string) error {
 	return fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
 }
+func (s *DaemonState) CaptureInstance(_, _, _, _ string) (string, error) {
+	return "", fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
+}
+func (s *DaemonState) SendInstancePrompt(_, _, _ string) error {
+	return fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
+}
 
 // ---------------------------------------------------------------------------
 // Handler
@@ -276,6 +290,8 @@ func (h *Handler) registerRoutes() {
 	h.mux.HandleFunc("POST /v1/repos/{project}/instances/{title}/kill", func(w http.ResponseWriter, r *http.Request) {
 		h.handleInstanceAction(w, r, "kill")
 	})
+	h.mux.HandleFunc("GET /v1/repos/{project}/instances/{title}/capture", h.handleInstanceCapture)
+	h.mux.HandleFunc("POST /v1/repos/{project}/instances/{title}/send", h.handleInstanceSend)
 	h.mux.HandleFunc("POST /v1/repos/{project}/plans/{filename}/plan", h.handleStartPlan)
 	h.mux.HandleFunc("POST /v1/repos/{project}/plans/{filename}/implement", h.handleImplementPlan)
 
@@ -413,7 +429,57 @@ func (h *Handler) handleInstanceAction(w http.ResponseWriter, r *http.Request, a
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// handleImplementPlan serves POST /v1/repos/{project}/plans/{filename}/implement.
+// handleInstanceCapture serves GET /v1/repos/{project}/instances/{title}/capture.
+// It delegates to the StateProvider which resolves the tracked instance and
+// calls Preview() / PreviewRange(start,end) on it.
+func (h *Handler) handleInstanceCapture(w http.ResponseWriter, r *http.Request) {
+	project := r.PathValue("project")
+	title := r.PathValue("title")
+	start := r.URL.Query().Get("start")
+	end := r.URL.Query().Get("end")
+
+	content, err := h.state.CaptureInstance(project, title, start, end)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInstanceNotFound):
+			writeError(w, http.StatusNotFound, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte(content))
+}
+
+// handleInstanceSend serves POST /v1/repos/{project}/instances/{title}/send.
+// It decodes the {"prompt":"..."} JSON body and delegates to the StateProvider
+// which resolves the tracked instance and calls SendPrompt on it.
+func (h *Handler) handleInstanceSend(w http.ResponseWriter, r *http.Request) {
+	project := r.PathValue("project")
+	title := r.PathValue("title")
+
+	var body struct {
+		Prompt string `json:"prompt"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	if err := h.state.SendInstancePrompt(project, title, body.Prompt); err != nil {
+		switch {
+		case errors.Is(err, ErrInstanceNotFound):
+			writeError(w, http.StatusNotFound, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleImplementPlan serves POST /v1/repos/{project}/plans/{filename}/implement (comment preserved for accurate label).
 func (h *Handler) handleStartPlan(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("project")
 	filename := r.PathValue("filename")

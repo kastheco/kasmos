@@ -306,6 +306,41 @@ func (a *daemonStateAdapter) KillInstance(project, title string) error {
 	return a.mapSpawnerInstanceErr(a.d.spawner.KillInstance(repoPath, title), project, title)
 }
 
+// CaptureInstance implements StateProvider by resolving the tracked instance
+// and calling PreviewRange(start,end) or Preview() on it. When start or end is
+// non-empty the range overload is used; otherwise the full visible pane is
+// returned. This supports both SDK sessions (in-memory log) and tmux sessions
+// (tmux capture-pane) without the caller needing to know the execution mode.
+func (a *daemonStateAdapter) CaptureInstance(project, title, start, end string) (string, error) {
+	repoPath, ok := a.repoPathByProject(project)
+	if !ok {
+		return "", fmt.Errorf("%w: project %s", api.ErrProjectNotFound, project)
+	}
+	_, inst, ok := a.d.spawner.trackedInstanceByTitle(repoPath, title)
+	if !ok {
+		return "", fmt.Errorf("%w: %s/%s", api.ErrInstanceNotFound, project, title)
+	}
+	if start != "" || end != "" {
+		return inst.PreviewRange(start, end)
+	}
+	return inst.Preview()
+}
+
+// SendInstancePrompt implements StateProvider by resolving the tracked instance
+// and calling SendPrompt(prompt) on it. For SDK sessions the prompt is
+// forwarded via the transport; for tmux sessions it uses SendKeys+TapEnter.
+func (a *daemonStateAdapter) SendInstancePrompt(project, title, prompt string) error {
+	repoPath, ok := a.repoPathByProject(project)
+	if !ok {
+		return fmt.Errorf("%w: project %s", api.ErrProjectNotFound, project)
+	}
+	_, inst, ok := a.d.spawner.trackedInstanceByTitle(repoPath, title)
+	if !ok {
+		return fmt.Errorf("%w: %s/%s", api.ErrInstanceNotFound, project, title)
+	}
+	return inst.SendPrompt(prompt)
+}
+
 // NewDaemon creates a new Daemon from the given configuration. The daemon is
 // not started until Run is called.
 func NewDaemon(cfg *DaemonConfig) (*Daemon, error) {

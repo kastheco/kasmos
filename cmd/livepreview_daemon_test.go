@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -116,6 +117,108 @@ func TestDaemonInstanceLister_PostInstanceAction_DaemonSocketFailure(t *testing.
 	err := lister.PostInstanceAction("myproj", "agent", "pause")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, livepreview.ErrDaemonUnavailable)
+}
+
+// TestDaemonStatusToRecord_SetsManagedByDaemon verifies that every record
+// produced by daemonStatusToRecord has ManagedByDaemon=true. This flag is the
+// signal that capture and send should be routed through the daemon API rather
+// than the tmux path.
+func TestDaemonStatusToRecord_SetsManagedByDaemon(t *testing.T) {
+	status := api.InstanceStatus{Title: "my-agent", Active: true, Program: "claude"}
+	rec := daemonStatusToRecord(status)
+	assert.True(t, rec.ManagedByDaemon,
+		"daemonStatusToRecord must set ManagedByDaemon=true so the HTTP handler routes capture/send through the daemon")
+}
+
+// TestDaemonInstanceLister_CaptureInstance_HappyPath verifies that CaptureInstance
+// issues a GET to the daemon capture route and returns the plain-text response body.
+func TestDaemonInstanceLister_CaptureInstance_HappyPath(t *testing.T) {
+	var gotRequestURI string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRequestURI = r.RequestURI
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte("pane output\n"))
+	}))
+	defer srv.Close()
+
+	lister := &daemonInstanceLister{
+		socketPath: "fake",
+		http:       &http.Client{Transport: &redirectTransport{target: srv.URL}},
+	}
+
+	content, err := lister.CaptureInstance("myproj", "my agent", "-100", "0")
+	require.NoError(t, err)
+	assert.Equal(t, "pane output\n", content)
+	assert.Equal(t, "/v1/repos/myproj/instances/my%20agent/capture?end=0&start=-100", gotRequestURI)
+}
+
+// TestDaemonInstanceLister_CaptureInstance_NotFound verifies that a 404 from
+// the daemon is translated to a DaemonActionClientError with the correct code.
+func TestDaemonInstanceLister_CaptureInstance_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":"instance not found"}`))
+	}))
+	defer srv.Close()
+
+	lister := &daemonInstanceLister{
+		socketPath: "fake",
+		http:       &http.Client{Transport: &redirectTransport{target: srv.URL}},
+	}
+
+	_, err := lister.CaptureInstance("myproj", "missing", "", "")
+	require.Error(t, err)
+	var clientErr *livepreview.DaemonActionClientError
+	require.ErrorAs(t, err, &clientErr)
+	assert.Equal(t, http.StatusNotFound, clientErr.StatusCode)
+	assert.Contains(t, clientErr.Msg, "instance not found")
+}
+
+// TestDaemonInstanceLister_SendInstancePrompt_HappyPath verifies that
+// SendInstancePrompt issues a POST with the correct JSON body and returns nil
+// on a 204 response.
+func TestDaemonInstanceLister_SendInstancePrompt_HappyPath(t *testing.T) {
+	var gotRequestURI string
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRequestURI = r.RequestURI
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	lister := &daemonInstanceLister{
+		socketPath: "fake",
+		http:       &http.Client{Transport: &redirectTransport{target: srv.URL}},
+	}
+
+	err := lister.SendInstancePrompt("myproj", "my agent", "hello world")
+	require.NoError(t, err)
+	assert.Equal(t, "/v1/repos/myproj/instances/my%20agent/send", gotRequestURI)
+	assert.JSONEq(t, `{"prompt":"hello world"}`, string(gotBody))
+}
+
+// TestDaemonInstanceLister_SendInstancePrompt_DaemonError verifies that a
+// non-204 response is wrapped as DaemonActionClientError.
+func TestDaemonInstanceLister_SendInstancePrompt_DaemonError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"error":"instance is loading"}`))
+	}))
+	defer srv.Close()
+
+	lister := &daemonInstanceLister{
+		socketPath: "fake",
+		http:       &http.Client{Transport: &redirectTransport{target: srv.URL}},
+	}
+
+	err := lister.SendInstancePrompt("myproj", "agent", "hi")
+	require.Error(t, err)
+	var clientErr *livepreview.DaemonActionClientError
+	require.ErrorAs(t, err, &clientErr)
+	assert.Equal(t, http.StatusConflict, clientErr.StatusCode)
 }
 
 // TestDaemonStatusToRecord_PreservesExecutionMode verifies that the

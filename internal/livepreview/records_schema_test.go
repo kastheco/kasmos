@@ -29,13 +29,21 @@ func TestRecord_RoundTripsFullInstanceData(t *testing.T) {
 	// mirrors it in livepreview.Record, this assertion fails immediately with
 	// a counter mismatch instead of silently dropping the new field at
 	// runtime.
+	//
+	// Record is permitted to have more fields than InstanceData for
+	// livepreview-internal fields that are NOT persisted to state.json (e.g.
+	// ManagedByDaemon, which carries daemon-routing context at runtime and is
+	// always omitempty so it never appears in persisted JSON).
 	instanceDataType := reflect.TypeFor[session.InstanceData]()
 	recordType := reflect.TypeFor[livepreview.Record]()
+	// Count livepreview-only fields that intentionally have no InstanceData
+	// counterpart and are excluded from the parity requirement.
+	const livenpreviewOnlyFields = 1 // ManagedByDaemon
 	require.Equalf(t,
 		instanceDataType.NumField(),
-		recordType.NumField(),
-		"livepreview.Record field count (%d) must equal session.InstanceData (%d) — any new InstanceData field must be mirrored in Record",
-		recordType.NumField(),
+		recordType.NumField()-livenpreviewOnlyFields,
+		"livepreview.Record field count minus livepreview-only fields (%d) must equal session.InstanceData (%d) — any new InstanceData field must be mirrored in Record",
+		recordType.NumField()-livenpreviewOnlyFields,
 		instanceDataType.NumField(),
 	)
 

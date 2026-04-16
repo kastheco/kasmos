@@ -216,3 +216,51 @@ func TestValidateAction_SendRejectsUnknownStatus(t *testing.T) {
 	err := ValidateAction(rec, "send")
 	require.Error(t, err)
 }
+
+// TestValidateAction_SendAcceptsDaemonSDK verifies that send is allowed for a
+// daemon-managed SDK instance in running status. The daemon provides the send
+// path so no tmux pane is required.
+func TestValidateAction_SendAcceptsDaemonSDK(t *testing.T) {
+	rec := Record{Title: "x", Status: StatusRunning, ExecutionMode: "sdk", ManagedByDaemon: true}
+	err := ValidateAction(rec, "send")
+	require.NoError(t, err)
+}
+
+// TestValidateAction_CaptureAcceptsDaemonSDK verifies that capture is allowed
+// for a daemon-managed SDK instance in running status.
+func TestValidateAction_CaptureAcceptsDaemonSDK(t *testing.T) {
+	rec := Record{Title: "x", Status: StatusRunning, ExecutionMode: "sdk", ManagedByDaemon: true}
+	err := ValidateAction(rec, "capture")
+	require.NoError(t, err)
+}
+
+// TestValidateAction_SendRejectsStandaloneSDK verifies that send is rejected
+// for a standalone (non-daemon) SDK instance — the web path has no tmux pane
+// and no daemon to delegate to.
+func TestValidateAction_SendRejectsStandaloneSDK(t *testing.T) {
+	rec := Record{Title: "x", Status: StatusRunning, ExecutionMode: "sdk", ManagedByDaemon: false}
+	err := ValidateAction(rec, "send")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "headless")
+}
+
+// TestValidActions_DaemonManagedSDKGetsFullLifecycleActions verifies that
+// daemon-managed SDK instances expose the full lifecycle action matrix (not just
+// kill) because the daemon owns the process and supports all transitions.
+func TestValidActions_DaemonManagedSDKGetsFullLifecycleActions(t *testing.T) {
+	cases := []struct {
+		status Status
+		want   []string
+	}{
+		{StatusRunning, []string{"pause", "restart", "kill"}},
+		{StatusLoading, []string{"pause", "restart", "kill"}},
+		{StatusReady, []string{"restart", "kill"}},
+		{StatusPaused, []string{"resume", "kill"}},
+	}
+	for _, tc := range cases {
+		t.Run(StatusLabel(tc.status), func(t *testing.T) {
+			rec := Record{Status: tc.status, ExecutionMode: "sdk", ManagedByDaemon: true}
+			assert.Equal(t, tc.want, ValidActions(rec))
+		})
+	}
+}
