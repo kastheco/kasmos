@@ -1,0 +1,111 @@
+---
+title: "frequently asked questions"
+---
+
+# frequently asked questions
+
+## what's the difference between kasmos and kas?
+
+`kas` is both the CLI command and the binary artifact name. `kasmos` is the project and module namespace (`github.com/kastheco/kasmos`) — it appears in Homebrew formula names, Go module paths, and service unit names, but the compiled binary you run is `kas`. After `just install`, an optional `kms` short alias is also created.
+
+## is kasmos open source?
+
+not today. kasmos is licensed under the **Business Source License 1.1 (BSL 1.1)**:
+
+- **licensor:** kastheco
+- **licensed work:** kasmos (copyright 2025–2026 kastheco)
+- **additional use grant:** non-production use is permitted; production use requires a commercial license from the licensor
+- **change date:** 2030-03-10
+- **change license:** Apache License, Version 2.0
+
+the BSL is explicitly not an open-source license. however, on 2030-03-10 (or four years after a specific version is first publicly distributed, whichever comes first) each version automatically relicenses to Apache 2.0. you can use kasmos freely for non-production work today — personal projects, local experiments, CI that doesn't drive production systems. for production use, contact kastheco for a commercial license.
+
+see `LICENSE.md` in the repository root for the full license text.
+
+## what does "plan" mean? i see it alongside "task"
+
+**task** is the primary term: the CLI uses `kas task list`, `kas task create`, `kas task transition`, etc. Some internal identifiers (variable names, older comments) still say `plan` — they refer to the same concept. Follow the CLI when in doubt.
+
+a task is a unit of implementation work tracked through the lifecycle `ready → planning → planned → implementing → reviewing → [verifying →] done`. when `auto_readiness_review = true` (the default), reviewer approval transitions the task to the `verifying` status where a master agent runs a holistic readiness check before the task moves to `done`.
+
+## what are the task lifecycle states?
+
+tasks move through a finite state machine. the FSM has six statuses, plus a composite "planned" state visible in the TUI:
+
+| status | description |
+|--------|-------------|
+| `ready` | registered and waiting to be started |
+| `planning` | a planner agent is writing the implementation plan |
+| `planned` | plan is written; task is `ready` with execution phase `planned` — waiting for implementation to start |
+| `implementing` | a coder agent is working on the task |
+| `reviewing` | a reviewer agent is checking the implementation |
+| `verifying` | a master agent is running the holistic readiness gate (only entered when `auto_readiness_review = true`) |
+| `done` | approved and complete |
+| `cancelled` | explicitly cancelled |
+
+`planned` is not a separate FSM status — it's a `ready` task whose execution phase has been set to `"planned"` by the planner. the TUI and daemon use this to distinguish fresh tasks from tasks that have a plan and are ready for implementation.
+
+transitions are driven by CLI events (`kas task transition <task> <event>`) or by agent signals. you can recover a stuck task with `kas task set-status <task> <status> --force`.
+
+## can i run multiple coder agents on the same topic at the same time?
+
+no. kasmos prevents launching a second `implementing` task within the same topic. only one task per topic may have `implementing` status at a time. this is a scheduling constraint — topics are serialization boundaries to avoid conflicting changes on the same area of the codebase.
+
+if you need parallelism, use separate topics or structure the work as separate waves.
+
+## what's the difference between sdk and tmux execution?
+
+| mode | how it runs | interactive? |
+|------|-------------|--------------|
+| **tmux** | agent runs inside a tmux pane | yes — you can attach, type, and send keys |
+| **sdk** | agent is driven via its app-server JSON-RPC protocol (claude or codex only) | partial — `SendKeys`/`TapEnter` deliver prompts via the transport; `Attach` and `SetDetachedSize` return `ErrInteractiveOnly` |
+
+sdk mode accumulates structured events (text deltas, tool calls, permissions) through a `Renderer` and appends agent stderr to a log file under `<workDir>/.kasmos/logs/`. it's well suited for automated wave-based coder agents with claude or codex.
+
+**important:** sdk mode is only available for claude and codex. for opencode, gemini, amp, or custom programs, kasmos silently falls back to tmux regardless of the configured mode. tmux remains the only option for harnesses without sdk transports and for interactive sessions where you need to attach to the agent pane directly.
+
+the legacy value `"headless"` is accepted as an alias for `"sdk"` in `execution_mode` — old configs continue to work.
+
+## what happens if the daemon isn't running when an agent emits a signal?
+
+signals are durable. kasmos has two signal paths:
+
+- **gateway-backed (primary):** agents emit signals via MCP `signal_create` or `kas signal emit`, which writes a record to the SQLite-backed signals table. the daemon claims pending signals atomically and drives FSM transitions.
+- **filesystem sentinels (legacy):** `.kasmos/signals/` files, processed by `kas signal process`. exists for compatibility but is not the primary path.
+
+if the daemon is not running:
+- gateway signals accumulate in the store in `pending` state
+- no FSM transitions happen automatically
+- signals are processed once the daemon restarts
+
+for normal installs, the daemon runs as a systemd user service. restart it with:
+
+```bash
+systemctl --user restart kasmos
+```
+
+`kas daemon start --foreground` is also available for development, CI, or debugging without systemd.
+
+## why does `kas` refuse to start from outside a git repository?
+
+kasmos anchors repo-local state (config, logs, signal files, and git worktrees for agent sessions) to the git repository root. `kas` checks for a git repo on startup and returns an error if it's not found:
+
+```
+error: kas must be run from within a git repository
+```
+
+run `kas` from any directory inside your project's git working tree.
+
+## how does kas find the task store when running inside a worktree?
+
+the task store is a **global** SQLite database at `~/.config/kasmos/taskstore.db`, shared across all projects and worktrees on the machine. `config.GetConfigDir()` resolves the main repo root even from inside a git worktree, but the task store itself lives in your home config directory rather than the repo. this means all worktrees and all concurrent agents always coordinate through the same database.
+
+repo-local state (`.kasmos/config.toml`, signal files, cache) remains anchored to the main repo root and is separate from the global store.
+
+## how do i verify my scaffold is in sync?
+
+`kas reset` refreshes scaffolded harness files (agent prompts, skills, `.mcp.json`) to match the current templates, creating a backup first. `kas setup` performs the initial scaffold and is safe to re-run. there is no separate audit command — use `kas reset` when skill or prompt files seem stale after an upgrade.
+
+## can i use kasmos with agents other than claude code?
+
+yes. the `--program` flag (or `default_program` in config.toml) selects the fallback agent binary. kasmos auto-detects `opencode` first, then falls back to `claude`. each agent profile in `[agents.<role>]` can specify its own `program` and choose between tmux and sdk execution. note: sdk mode is only available for claude and codex — all other programs (gemini, opencode, amp, and custom binaries) always run in tmux. kasmos has been used with claude code, codex, gemini, opencode, and amp.

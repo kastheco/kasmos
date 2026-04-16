@@ -1,0 +1,73 @@
+---
+title: "installation"
+---
+
+# installation
+
+kasmos is distributed as a single binary. pick the method that suits your workflow.
+
+## homebrew (macOS / Linux)
+
+```bash
+brew install kastheco/tap/kasmos
+```
+
+This installs the `kas` executable. The formula name is `kasmos` (the project namespace), but the binary you use is `kas`.
+
+## go install
+
+```bash
+go install github.com/kastheco/kasmos/cmd/kas@latest
+```
+
+Installs `kas` directly to `$(go env GOPATH)/bin`. Requires Go 1.24 or later.
+
+To also create the optional `kms` short alias:
+
+```bash
+go install github.com/kastheco/kasmos/cmd/kas@latest
+ln -sf "$(go env GOPATH)/bin/kas" "$(go env GOPATH)/bin/kms"
+```
+
+`just install` does both steps automatically when building from source.
+
+## install script
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kastheco/kasmos/main/install.sh | bash
+```
+
+Installs the `kas` binary to `~/.local/bin`.
+
+Make sure `~/.local/bin` is in your `PATH`.
+
+## github releases
+
+Pre-built binaries for macOS (arm64/amd64) and Linux (arm64/amd64) are available on the [releases page](https://github.com/kastheco/kasmos/releases/latest).
+
+Download the archive for your platform, extract it, and place the `kas` binary somewhere on your `PATH`.
+
+## build from source
+
+```bash
+git clone https://github.com/kastheco/kasmos.git
+cd kasmos
+just install   # build + install kas to GOPATH/bin + create optional kms alias
+```
+
+Or using `make`:
+
+```bash
+make build     # produces ./kas
+```
+
+## verify installation
+
+```bash
+kas version
+kas --help
+```
+
+## next steps
+
+Once installed, check the [prerequisites](./prerequisites.mdx) then follow the [first run](./first-run.mdx) guide.

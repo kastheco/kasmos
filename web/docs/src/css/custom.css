@@ -1,0 +1,136 @@
+/* ============================
+   kasmos docs — Docusaurus custom theme
+   Rosé Pine Moon palette — matches web/src/app/globals.css.
+   ============================ */
+
+/* --- Palette tokens --- */
+:root {
+  --kas-bg: #232136;
+  --kas-accent-iris: #c4a7e7;
+  --kas-accent-foam: #9ccfd8;
+  --kas-glow-iris: rgba(196, 167, 231, 0.12);
+  --kas-glow-foam: rgba(156, 207, 216, 0.12);
+
+  /* Docusaurus light-mode color overrides */
+  --ifm-color-primary: #6b4fa0;
+  --ifm-color-primary-dark: #5e4490;
+  --ifm-color-primary-darker: #573f87;
+  --ifm-color-primary-darkest: #47346f;
+  --ifm-color-primary-light: #7a5cb0;
+  --ifm-color-primary-lighter: #8166b8;
+  --ifm-color-primary-lightest: #9a83c8;
+  --ifm-code-font-size: 87.5%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+/* --- Dark mode overrides --- */
+[data-theme="dark"] {
+  --ifm-color-primary: #c4a7e7;
+  --ifm-color-primary-dark: #b593e0;
+  --ifm-color-primary-darker: #ad89dc;
+  --ifm-color-primary-darkest: #9466d1;
+  --ifm-color-primary-light: #d3bbee;
+  --ifm-color-primary-lighter: #dbc5f1;
+  --ifm-color-primary-lightest: #f0e4f9;
+  --ifm-background-color: var(--kas-bg);
+  --ifm-navbar-background-color: #1f1d2e;
+  --ifm-footer-background-color: #1f1d2e;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
+
+/* --- Smooth text rendering --- */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Ambient gradient in dark mode */
+[data-theme="dark"] body {
+  background-image:
+    radial-gradient(ellipse at 15% 20%, var(--kas-glow-iris) 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 80%, var(--kas-glow-foam) 0%, transparent 55%);
+}
+
+/* Code blocks dark mode */
+[data-theme="dark"] pre {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] code:not(pre code) {
+  background-color: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  padding: 0.15em 0.4em;
+  font-size: 0.875em;
+}
+
+/* Code blocks light mode */
+[data-theme="light"] pre {
+  background-color: rgba(0, 0, 0, 0.04) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] code:not(pre code) {
+  background-color: rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 4px;
+  padding: 0.15em 0.4em;
+  font-size: 0.875em;
+}
+
+/* ============================================================
+   LOWERCASE UI CHROME
+   Scoped to navbar, sidebar, breadcrumbs, TOC, and footer only.
+   Does NOT affect document body content.
+   ============================================================ */
+
+/* Navbar items */
+.navbar__item,
+.navbar__link,
+.navbar__brand {
+  text-transform: lowercase;
+}
+
+/* Sidebar labels */
+.menu__link,
+.menu__list-item-collapsible,
+.sidebar-heading {
+  text-transform: lowercase;
+}
+
+/* Breadcrumbs */
+.breadcrumbs__item,
+.breadcrumbs__link {
+  text-transform: lowercase;
+}
+
+/* Table of contents */
+.table-of-contents__link,
+.table-of-contents li {
+  text-transform: lowercase;
+}
+
+/* Footer */
+.footer,
+.footer__item,
+.footer__link-item,
+.footer__title {
+  text-transform: lowercase;
+}
+
+/* ============================================================
+   SHARED
+   ============================================================ */
+
+/* Focus outline */
+:focus-visible {
+  outline: 2px solid var(--kas-accent-iris);
+  outline-offset: 2px;
+}
+
+/* Selection highlight */
+::selection {
+  background: rgba(196, 167, 231, 0.35);
+  color: #fff;
+}

@@ -2,9 +2,9 @@
 
 This directory contains three separate web surfaces:
 
-- `src/app` — the public marketing site at `kasmos.kasthe.co`
-- `docs/` — the documentation site
-- `admin/` — the admin spa that `kas serve` exposes at `/admin/`
+- `src/app` — the public marketing site (Next.js) at `kasmos.kasthe.co`
+- `docs/` — the documentation site (Docusaurus 3, versioned docs, local search)
+- `admin/` — the admin spa (Vite) that `kas serve` exposes at `/admin/`
 
 ## local development
 

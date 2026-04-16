@@ -52,10 +52,7 @@ jobs:
       - name: Merge docs into marketing site output
         run: |
           mkdir -p web/out/docs
-          # The docs build outputs to web/docs/out/ (basePath only affects
-          # link prefixes, not export directory structure). Copy everything
-          # into the /docs/ path where the marketing site serves it.
-          cp -R web/docs/out/. web/out/docs/
+          cp -R web/docs/build/. web/out/docs/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

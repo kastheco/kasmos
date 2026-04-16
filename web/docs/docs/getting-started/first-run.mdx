@@ -1,0 +1,120 @@
+---
+title: "first run"
+---
+
+# first run
+
+## git repository requirement
+
+`kas` must be run from within a git repository. on startup, the main entry point checks for a git root and exits with an error if none is found:
+
+```
+kas must be run from within a git repository
+```
+
+this applies both to the interactive tui (`kas`) and most subcommands. the project-local config directory is anchored to the repository root, but task state is still coordinated through the global shared task store.
+
+## project config directory
+
+kasmos separates repo-local runtime directories from the global task store.
+
+**repo-local** — created automatically under `<repo-root>` on first run or after `kas setup`:
+
+| path | purpose |
+|------|---------|
+| `.kasmos/config.toml` | agent and phase configuration |
+| `.kasmos/signals/` | compatibility signal sentinel directory |
+| `.kasmos/cache/` | runtime cache |
+| `.worktrees/` | git worktrees created for each agent instance |
+
+**global task store** — shared across all projects on this machine:
+
+| path | purpose |
+|------|---------|
+| `~/.config/kasmos/taskstore.db` | sqlite task store (plans, signals, task state) |
+
+the resolved db path can be overridden via `database_url` in `.kasmos/config.toml` to point at a remote store. use `kas debug` to print the resolved config and db paths for the current repository.
+
+## launching the tui
+
+from inside your git repository, run:
+
+```bash
+kas
+```
+
+on first launch you will see the general help overlay. press any key to dismiss it.
+
+## tui layout
+
+the interface is divided into three main areas:
+
+- **sidebar** — topics and plan groups, toggled with `ctrl+s`
+- **instance list** — active agent sessions for the selected plan
+- **preview pane** — live agent output; tabs switch between the agent view, info, diff, and git history
+
+## keybindings reference
+
+### sessions
+
+| key | action |
+|-----|--------|
+| `↵` / `o` | attach to tmux session fullscreen |
+| `s` | spawn agent |
+| `i` | interactive mode (type in pane) |
+| `ctrl+space` | exit fullscreen or interactive mode |
+| `ctrl+enter` | submit + exit interactive mode |
+| `k` | kill tmux session (keeps instance) |
+| `K` | stop session (branch preserved) |
+| `r` | resume paused session |
+| `c` | checkout branch (pause + copy branch name) |
+| `P` | create pull request |
+| `T` | browse orphaned tmux sessions |
+| `1` / `2` | filter: all / active only |
+| `3` | cycle sort mode |
+
+### plans
+
+| key | action |
+|-----|--------|
+| `n` | new plan |
+| `space` | toggle plan, topic, or history |
+| `↵` / `o` | select (context menu or run stage) |
+| `v` / `p` | preview selected plan |
+| `b` | open plan browser |
+
+### navigation
+
+| key | action |
+|-----|--------|
+| `t` | focus instance list |
+| `tab` / `shift+tab` | cycle tabs (info ↔ agent) |
+| `!` | interactive + shell mode |
+| `#` / `g` | info tab |
+| `↑` / `↓` | navigate within focused pane |
+| `←` / `→` | move between panes |
+| `ctrl+s` | toggle sidebar visibility |
+| `L` | toggle audit log pane |
+| `/` | search plans and instances |
+| `?` | show help overlay |
+| `q` | quit |
+
+## execution modes
+
+when you spawn an agent (`s`), kasmos creates an isolated git worktree and starts the agent in one of two execution modes:
+
+- **tmux** — session is attachable (`↵`/`o`); use interactive mode (`i`) to type directly into the agent pane. best for exploratory work.
+- **sdk** — agent is driven via its app-server JSON-RPC protocol; output is streamed to the preview pane and logs. available for claude and codex only; other programs fall back to tmux silently. best for automated wave work.
+
+the execution mode is set per agent role in `config.toml` via the `execution_mode` field. see [setup wizard](./setup-wizard.mdx) for configuration details.
+
+## first task
+
+once the tui is running:
+
+1. press `n` to create a new plan
+2. enter a name and description
+3. press `↵` to open the plan context menu
+4. select an action to start the planning or implementing phase
+
+if you haven't run `kas setup` yet, do that first — see [setup wizard](./setup-wizard.mdx).
