@@ -131,8 +131,10 @@ This means:
 
 ---
 
-## Related pages
+## see also
 
-- [README index](README.md)
-- [FACTS.md](FACTS.md) — canonical path/function reference extracted from live code
-- [lifecycle-operator-guide.md](../lifecycle-operator-guide.md) — operator-level task lifecycle walkthrough
+| page | what it adds |
+|------|-------------|
+| [FACTS.md](FACTS.md) | canonical path/function reference extracted from live code with exact line citations |
+| [daemon-topology.md](daemon-topology.md) | how the two runtime processes are wired to the shared SQLite DB |
+| [signal-flow.md](signal-flow.md) | the gateway signal table lifecycle: `pending → processing → done` |

@@ -233,3 +233,26 @@ the sub-phase text changes.
 Source: `config/taskfsm/` execution phase constants; sub-phase persistence in
 `orchestration/loop/processor.go:ProcessElaborationSignals` and
 `ProcessWaveSignals`.
+
+---
+
+## real files
+
+| file | role |
+|------|------|
+| `orchestration/engine.go` | `WaveOrchestrator`, wave states, `ShouldBlueprintSkip`, `DetectFileConflicts` |
+| `orchestration/lifecycle_agents.go` | agent spec builders: `BuildArchitectAgentSpec`, `BuildTaskPrompt`, `BuildReviewerAgentSpec` |
+| `orchestration/loop/processor.go` | `ProcessElaborationSignals`, `ProcessTaskSignals`, `ProcessWaveSignals` |
+| `orchestration/cache.go` | `SaveArchitectMeta`, `LoadArchitectMeta` |
+| `orchestration/meta.go` | `ArchitectMeta`, `WaveMeta`, `TaskMeta` schema |
+| `orchestration/prompt.go` | `BuildElaborationPrompt`, `BuildTaskPrompt`, `BuildBlueprintSkipPrompt` |
+
+---
+
+## see also
+
+| page | what it adds |
+|------|-------------|
+| [signal-flow.md](signal-flow.md) | how `implement_task_finished` and `elaborator_finished` signals are created and claimed |
+| [task-fsm.md](task-fsm.md) | how `implementing → reviewing → verifying → done` plays out after wave completion |
+| [review-cycle.md](review-cycle.md) | reviewer and master agent sequence once coder wave finishes |

@@ -25,13 +25,27 @@ all diagrams in this section follow the same notation:
 
 | page | what it shows |
 |------|--------------|
-| [system-context.md](system-context.md) | top-level view: which processes exist and how operators reach them |
-| [daemon-topology.md](daemon-topology.md) | daemon internals: http mux routes, signal gateway, task-store wiring |
-| [signal-flow.md](signal-flow.md) | lifecycle of a signal from agent → gateway → daemon loop → task FSM |
-| [task-fsm.md](task-fsm.md) | task state machine: states, events, and guard conditions |
-| [source-of-truth.md](source-of-truth.md) | where each piece of state lives (task store, config, worktree, tmux) |
-| [wave-execution.md](wave-execution.md) | orchestration loop: wave phases, agent spawning, barrier logic |
-| [review-cycle.md](review-cycle.md) | review and merge flow: reviewer agents, PR creation, readiness check |
+| [system-context.md](system-context.md) | the two runtime services (`kas serve` + kasmos daemon), the five operator surfaces, and how they interconnect |
+| [daemon-topology.md](daemon-topology.md) | daemon process internals: unix-socket control API routes, orchestration loop, and shared SQLite wiring |
+| [signal-flow.md](signal-flow.md) | four ingress paths that create a pending gateway row and the daemon's claim-process-mark cycle that consumes it |
+| [task-fsm.md](task-fsm.md) | the nine-state task FSM: every valid `(status, event) → next-status` transition plus execution sub-phases |
+| [source-of-truth.md](source-of-truth.md) | authoritative ownership map for every piece of mutable state: which file or DB table holds it and who writes it |
+| [wave-execution.md](wave-execution.md) | architect pass → parallel coder waves → user confirmation → review/verify pipeline, with blueprint-skip short-circuit |
+| [review-cycle.md](review-cycle.md) | reviewer-agent and master-agent sequence, fix loops, force-promotion, and config toggles that control the cycle |
+
+---
+
+## reading order
+
+new to the codebase? a useful path through the docs:
+
+1. **[system-context.md](system-context.md)** — understand the two services and five surfaces
+2. **[daemon-topology.md](daemon-topology.md)** — see how the daemon is structured internally
+3. **[signal-flow.md](signal-flow.md)** — trace how an agent action reaches the daemon
+4. **[task-fsm.md](task-fsm.md)** — understand what happens to a task when a signal fires
+5. **[wave-execution.md](wave-execution.md)** — follow a plan from planner-finished to code complete
+6. **[review-cycle.md](review-cycle.md)** — follow code-complete to done
+7. **[source-of-truth.md](source-of-truth.md)** — look up where any specific datum lives
 
 ---
 

@@ -89,7 +89,7 @@ flowchart TD
 | container | process | listen |
 |-----------|---------|--------|
 | `kas serve` | managed by `kasmosdb` systemd unit | TCP (default `0.0.0.0:7433`, MCP `:7434`) |
-| daemon | `kasmos` systemd unit | unix socket (`~/.kasmos/daemon.sock`) |
+| daemon | `kasmos` systemd unit | unix socket (`$XDG_RUNTIME_DIR/kasmos/kas.sock`) |
 | task store | in-process SQLite | — |
 | signal gateway | in-process SQLite | — |
 | tmux session | `tmux new-session` | pty (visible in TUI) |
@@ -132,3 +132,13 @@ Open these to follow up on specific pieces:
 | Task actions (transition / content) | `config/taskactions/` |
 | Session execution modes | `session/execution.go` — `NormalizeExecutionMode()` |
 | Signal gateway | `config/taskstore/` (same package as task store) |
+
+---
+
+## see also
+
+| page | what it adds |
+|------|-------------|
+| [daemon-topology.md](daemon-topology.md) | process internals: mux routes, unix socket, SSE events |
+| [signal-flow.md](signal-flow.md) | how agent signals cross service boundaries into the daemon loop |
+| [source-of-truth.md](source-of-truth.md) | where each piece of state lives and which process owns it |

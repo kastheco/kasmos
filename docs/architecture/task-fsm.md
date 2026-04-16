@@ -124,3 +124,24 @@ TUI equivalents (context menu → manage): `mark planning finished`, `mark archi
 | `TransitionExecutionState(event, next)` | `config/taskfsm/fsm.go` | return execution metadata for the transition |
 | `(h *handler) checkTransitionPrecondition(...)` | `config/taskactions/handler.go` | FSM legality + phase-aware business rules before HTTP transition |
 | `TaskStateMachine.Transition(planFile, event)` | `config/taskfsm/fsm.go` | sole writer of task status; reads store, validates, writes, fires hooks |
+
+---
+
+## real files
+
+| file | role |
+|------|------|
+| `config/taskfsm/fsm.go` | status/event constants, `transitionTable`, `ApplyTransition`, `TransitionExecutionState` |
+| `config/taskfsm/gateway_signal.go` | `CanonicalGatewaySignalType`, `EmitGatewaySignal`, `validGatewaySignalTypes` |
+| `config/taskactions/handler.go` | HTTP `/transition` endpoint, `transitionCatalog`, `checkTransitionPrecondition` |
+| `docs/lifecycle-operator-guide.md` | operator-level recovery action reference |
+
+---
+
+## see also
+
+| page | what it adds |
+|------|-------------|
+| [signal-flow.md](signal-flow.md) | how signals are created and claimed to drive FSM transitions |
+| [review-cycle.md](review-cycle.md) | the reviewing → verifying → done sub-path in detail |
+| [FACTS.md](FACTS.md) | canonical transition table, event constants, and execution phase constants with exact line citations |

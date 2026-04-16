@@ -176,3 +176,13 @@ path.
 | `orchestration/loop/gateway_scanner.go` | `ConvertSignalEntry`, `ScanGateway` |
 | `orchestration/loop/processor.go` | `Processor.Tick`, `ProcessFSMSignals`, `ProcessTaskSignals`, `ProcessWaveSignals` |
 | `daemon/daemon.go` | Claim loop, `executeAction`, `reapStuckSignals` |
+
+---
+
+## see also
+
+| page | what it adds |
+|------|-------------|
+| [task-fsm.md](task-fsm.md) | what happens after a signal fires: FSM states, events, transition table |
+| [daemon-topology.md](daemon-topology.md) | daemon process layout and the Unix socket control API |
+| [wave-execution.md](wave-execution.md) | how `implement_task_finished` and `implement_wave` drive wave orchestration |

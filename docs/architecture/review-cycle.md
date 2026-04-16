@@ -122,3 +122,24 @@ use `kas task recover <task-file>` to manually drive the cycle:
 | `verify-failed --feedback …` | task is in `verifying` |
 
 see [`docs/lifecycle-operator-guide.md`](../lifecycle-operator-guide.md) for the full list of recovery actions and TUI equivalents.
+
+---
+
+## real files
+
+| file | role |
+|------|------|
+| `orchestration/lifecycle_agents.go` | `BuildReviewerAgentSpec`, `BuildFixerAgentSpec`, `BuildMasterAgentSpec`, round-number logic |
+| `orchestration/loop/processor.go` | `ProcessFSMSignals`, `shouldForcePromoteVerify`, review/verify action dispatch |
+| `daemon/config.go` | `DaemonConfig`: `AutoReviewFix`, `AutoReadinessReview`, `MaxReviewFixCycles`, `ReadinessMaxVerifyCycles` |
+| `config/taskfsm/fsm.go` | FSM edges: `reviewing → verifying`, `verifying → done`, `verifying → implementing` |
+
+---
+
+## see also
+
+| page | what it adds |
+|------|-------------|
+| [task-fsm.md](task-fsm.md) | the complete state machine powering the reviewing / verifying transitions |
+| [wave-execution.md](wave-execution.md) | what happens before the reviewer is spawned (wave orchestration) |
+| [signal-flow.md](signal-flow.md) | how `review_approved` and `verify_approved` signals travel from agent to daemon |

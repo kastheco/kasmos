@@ -29,11 +29,11 @@ flowchart TD
 
     subgraph kasmos["kasmos daemon (unix socket)"]
         direction TB
-        CtrlAPI["control API\nGET /v1/status · /v1/repos · /v1/events (SSE)\nPOST /v1/repos · /v1/reload\nPOST /v1/repos/{project}/plans/{file}/plan"]
+        CtrlAPI["control API\nGET /v1/status · /v1/repos · /v1/events (SSE)\nPOST /v1/repos · /v1/reload\nPOST /v1/repos/{project}/plans/{filename}/plan"]
         Orchestrator["orchestration loop\n(signal polling · wave execution)"]
     end
 
-    subgraph store["shared SQLite DB\n(.kasmos/taskstore.db)"]
+    subgraph store["shared SQLite DB\n(~/.config/kasmos/taskstore.db)"]
         Tasks["tasks"]
         Signals["signals / signal gateway"]
         AuditLog["audit log"]
@@ -126,11 +126,10 @@ On macOS, launchd plists (`com.kasmos.taskstore.plist` and
 
 ---
 
-## related diagrams
+## see also
 
-| diagram | what it shows |
-|---------|--------------|
-| [signal-flow.md](signal-flow.md) | how signals travel from agent → gateway → daemon loop |
-| [task-fsm.md](task-fsm.md) | task state machine and valid transitions |
-| [session-lifecycle.md](session-lifecycle.md) | per-instance start / stop / attach lifecycle |
-| [mcp-request-path.md](mcp-request-path.md) | MCP tool call routing through `kas serve` |
+| page | what it adds |
+|------|-------------|
+| [signal-flow.md](signal-flow.md) | how signals travel from agent → gateway → daemon loop → FSM |
+| [task-fsm.md](task-fsm.md) | task state machine: valid statuses, events, and transitions |
+| [source-of-truth.md](source-of-truth.md) | where each piece of state lives and the factory layer behind it |
