@@ -448,11 +448,12 @@ func (d *Daemon) startPlanAsync(entry RepoEntry, planFile, prompt, program strin
 		return
 	}
 	if err := spawnPlanner(context.Background(), loop.SpawnOpts{
-		PlanFile: planFile,
-		RepoPath: entry.Path,
-		Project:  entry.Project,
-		Prompt:   prompt,
-		Program:  program,
+		PlanFile:      planFile,
+		RepoPath:      entry.Path,
+		Project:       entry.Project,
+		Prompt:        prompt,
+		Program:       program,
+		ExecutionMode: executionModeForAgent(entry.Path, session.AgentTypePlanner),
 	}); err != nil {
 		d.logger.Error("spawn planner failed", "project", entry.Project, "plan", planFile, "err", err)
 		return
@@ -1288,11 +1289,12 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		entry := entryFor(a.PlanFile)
 		spec := orchestration.BuildPlannerAgentSpec(a.PlanFile, e.Project, entry.Description)
 		opts := loop.SpawnOpts{
-			PlanFile: a.PlanFile,
-			RepoPath: e.Path,
-			Project:  e.Project,
-			Program:  programForAgent(e.Path, session.AgentTypePlanner),
-			Prompt:   spec.Prompt,
+			PlanFile:      a.PlanFile,
+			RepoPath:      e.Path,
+			Project:       e.Project,
+			Program:       programForAgent(e.Path, session.AgentTypePlanner),
+			Prompt:        spec.Prompt,
+			ExecutionMode: executionModeForAgent(e.Path, session.AgentTypePlanner),
 		}
 		spawnPlanner := d.spawnPlanner
 		if spawnPlanner == nil {
@@ -1319,11 +1321,12 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		}
 		spec := orchestration.BuildArchitectAgentSpec(a.PlanFile, e.Project)
 		opts := loop.SpawnOpts{
-			PlanFile: a.PlanFile,
-			RepoPath: e.Path,
-			Project:  e.Project,
-			Program:  programForAgent(e.Path, session.AgentTypeElaborator),
-			Prompt:   spec.Prompt,
+			PlanFile:      a.PlanFile,
+			RepoPath:      e.Path,
+			Project:       e.Project,
+			Program:       programForAgent(e.Path, session.AgentTypeElaborator),
+			Prompt:        spec.Prompt,
+			ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeElaborator),
 		}
 		spawnElaborator := d.spawnElaborator
 		if spawnElaborator == nil {
@@ -1623,12 +1626,13 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 		waveTaskIndex := i + 1
 		prompt := orch.BuildTaskPrompt(task, peerCount)
 		opts := loop.SpawnOpts{
-			PlanFile: planFile,
-			RepoPath: e.Path,
-			Project:  e.Project,
-			Branch:   entry.Branch,
-			Program:  programForAgent(e.Path, session.AgentTypeCoder),
-			Wave:     waveNum,
+			PlanFile:      planFile,
+			RepoPath:      e.Path,
+			Project:       e.Project,
+			Branch:        entry.Branch,
+			Program:       programForAgent(e.Path, session.AgentTypeCoder),
+			Wave:          waveNum,
+			ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeCoder),
 		}
 		wg.Add(1)
 		go func() {
@@ -1787,6 +1791,43 @@ func sharedWorktreePaths(repoPath string) []string {
 	return paths
 }
 
+// executionModeForAgent resolves the configured execution mode for a given
+// agent type by reading the repo's config.toml profiles.  Returns an empty
+// string when no config exists, letting the spawner/session layer apply its
+// own default (tmux).
+func executionModeForAgent(repoPath, agentType string) string {
+	configPath := filepath.Join(repoPath, ".kasmos", config.TOMLConfigFileName)
+	result, err := config.LoadTOMLConfigFrom(configPath)
+	if err != nil {
+		return ""
+	}
+	cfg := &config.Config{
+		PhaseRoles: result.PhaseRoles,
+		Profiles:   result.Profiles,
+	}
+
+	var phase string
+	switch agentType {
+	case session.AgentTypeCoder:
+		phase = "implementing"
+	case session.AgentTypePlanner:
+		phase = "planning"
+	case session.AgentTypeReviewer:
+		phase = "quality_review"
+	case session.AgentTypeFixer:
+		phase = "fixer"
+	case session.AgentTypeElaborator:
+		phase = "elaborating"
+	case session.AgentTypeMaster:
+		phase = "readiness_review"
+	default:
+		return ""
+	}
+
+	profile := cfg.ResolveProfile(phase, result.DefaultProgram)
+	return config.NormalizeExecutionMode(profile.ExecutionMode)
+}
+
 // programForAgent resolves the configured program command for a given agent
 // type by reading the repo's config.toml profiles. Returns an empty string
 // when no config exists or the profile is unconfigured, letting the spawner
@@ -1872,26 +1913,28 @@ func buildProgramCommand(profile config.AgentProfile, registry *harness.Registry
 
 func coderSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOpts {
 	return loop.SpawnOpts{
-		PlanFile: planFile,
-		RepoPath: e.Path,
-		Project:  e.Project,
-		Branch:   branch,
-		Program:  programForAgent(e.Path, session.AgentTypeCoder),
-		Prompt:   feedback,
-		Feedback: feedback,
+		PlanFile:      planFile,
+		RepoPath:      e.Path,
+		Project:       e.Project,
+		Branch:        branch,
+		Program:       programForAgent(e.Path, session.AgentTypeCoder),
+		Prompt:        feedback,
+		Feedback:      feedback,
+		ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeCoder),
 	}
 }
 
 func reviewerSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
 	spec := orchestration.BuildReviewerAgentSpec(entry.Filename, e.Project, entry.ReviewCycle, entry.LatestReviewFeedback)
 	return loop.SpawnOpts{
-		PlanFile:    entry.Filename,
-		RepoPath:    e.Path,
-		Project:     e.Project,
-		Branch:      entry.Branch,
-		Program:     programForAgent(e.Path, session.AgentTypeReviewer),
-		ReviewCycle: spec.ReviewCycle,
-		Prompt:      spec.Prompt,
+		PlanFile:      entry.Filename,
+		RepoPath:      e.Path,
+		Project:       e.Project,
+		Branch:        entry.Branch,
+		Program:       programForAgent(e.Path, session.AgentTypeReviewer),
+		ReviewCycle:   spec.ReviewCycle,
+		Prompt:        spec.Prompt,
+		ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeReviewer),
 	}
 }
 
@@ -1904,27 +1947,29 @@ func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 	}
 	spec := orchestration.BuildFixerAgentSpec(planFile, e.Project, reviewCycle, feedback)
 	return loop.SpawnOpts{
-		PlanFile:    planFile,
-		RepoPath:    e.Path,
-		Project:     e.Project,
-		Branch:      branch,
-		Program:     programForAgent(e.Path, session.AgentTypeFixer),
-		ReviewCycle: spec.ReviewCycle,
-		Prompt:      spec.Prompt,
-		Feedback:    feedback,
+		PlanFile:      planFile,
+		RepoPath:      e.Path,
+		Project:       e.Project,
+		Branch:        branch,
+		Program:       programForAgent(e.Path, session.AgentTypeFixer),
+		ReviewCycle:   spec.ReviewCycle,
+		Prompt:        spec.Prompt,
+		Feedback:      feedback,
+		ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeFixer),
 	}
 }
 
 func masterSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
 	spec := orchestration.BuildMasterAgentSpecWithConfig(entry.Filename, e.Project, entry.ReviewCycle, e.ReadinessSelfFixMaxLines, e.ReadinessMaxVerifyCycles)
 	return loop.SpawnOpts{
-		PlanFile:    entry.Filename,
-		RepoPath:    e.Path,
-		Project:     e.Project,
-		Branch:      entry.Branch,
-		Program:     programForAgent(e.Path, session.AgentTypeMaster),
-		Prompt:      spec.Prompt,
-		ReviewCycle: entry.ReviewCycle + 1,
+		PlanFile:      entry.Filename,
+		RepoPath:      e.Path,
+		Project:       e.Project,
+		Branch:        entry.Branch,
+		Program:       programForAgent(e.Path, session.AgentTypeMaster),
+		Prompt:        spec.Prompt,
+		ReviewCycle:   entry.ReviewCycle + 1,
+		ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeMaster),
 	}
 }
 

@@ -14,9 +14,8 @@ type AgentProfile struct {
 }
 
 const (
-	ExecutionModeTmux     = "tmux"
-	ExecutionModeSDK      = "sdk"
-	ExecutionModeHeadless = "headless" // legacy alias, normalised to "sdk"
+	ExecutionModeTmux = "tmux"
+	ExecutionModeSDK  = "sdk"
 )
 
 // NormalizeExecutionMode canonicalises a profile execution mode string.

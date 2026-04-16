@@ -827,7 +827,7 @@ func TestHTTPHandler_Send_HeadlessInstance(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusConflict, rec.Code)
-	assert.Contains(t, rec.Body.String(), "headless")
+	assert.Contains(t, rec.Body.String(), "standalone sdk")
 }
 
 func TestHTTPHandler_Send_ResolverUnavailable(t *testing.T) {
@@ -898,7 +898,7 @@ func TestHTTPHandler_Capture_HeadlessInstance(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusConflict, rec.Code)
-	assert.Contains(t, rec.Body.String(), "headless")
+	assert.Contains(t, rec.Body.String(), "standalone sdk")
 }
 
 // ---------------------------------------------------------------------------
@@ -1060,5 +1060,5 @@ func TestHTTPHandler_Send_StandaloneSDK_Rejected(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusConflict, rec.Code)
-	assert.Contains(t, rec.Body.String(), "headless")
+	assert.Contains(t, rec.Body.String(), "standalone sdk")
 }

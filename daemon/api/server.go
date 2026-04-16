@@ -73,8 +73,8 @@ type InstanceStatus struct {
 	ReviewCycle   int    `json:"review_cycle,omitempty"`
 	WaveTaskIndex int    `json:"wave_task_index,omitempty"`
 	WaveTaskCount int    `json:"wave_task_count,omitempty"`
-	// ExecutionMode mirrors session.ExecutionMode ("tmux" or "headless") so
-	// the web admin can disable tmux-only controls for headless instances
+	// ExecutionMode mirrors session.ExecutionMode ("tmux" or "sdk") so
+	// the web admin can disable tmux-only controls for sdk instances
 	// that never had a pane in the first place.
 	ExecutionMode string `json:"execution_mode,omitempty"`
 }

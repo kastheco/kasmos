@@ -190,11 +190,11 @@ func SessionName(title string) string {
 // actions are unavailable through the web path.
 //
 // Empty ExecutionMode is treated as tmux-like (legacy standalone sessions that
-// predate the explicit mode field default to tmux). Only the literal "headless"
-// and "sdk" strings indicate a non-tmux session.
+// predate the explicit mode field default to tmux). Only the explicit "sdk" or
+// legacy "headless" strings indicate a non-tmux session.
 func isStandaloneNonTmux(rec Record) bool {
 	em := rec.ExecutionMode
-	return (em == config.ExecutionModeHeadless || em == config.ExecutionModeSDK) && !rec.ManagedByDaemon
+	return (em == "headless" || em == config.ExecutionModeSDK) && !rec.ManagedByDaemon
 }
 
 // ValidateAction checks whether the instance is in a state compatible with the
@@ -209,21 +209,21 @@ func isStandaloneNonTmux(rec Record) bool {
 //   - capture: not allowed when paused or for standalone non-tmux instances;
 //     daemon-managed SDK instances may capture via the daemon API
 //
-// Standalone non-tmux instances (sdk/headless mode without daemon backing) are
-// rejected for lifecycle and I/O actions because the web path has no tmux pane
-// and no daemon to delegate to. Daemon-managed instances bypass this restriction
+// Standalone non-tmux instances (sdk mode without daemon backing) are rejected
+// for lifecycle and I/O actions because the web path has no tmux pane and no
+// daemon to delegate to. Daemon-managed instances bypass this restriction
 // because the daemon owns the process and exposes dedicated capture/send routes.
 func ValidateAction(rec Record, action string) error {
 	standalone := isStandaloneNonTmux(rec)
 	switch action {
 	case "kill":
 		if standalone {
-			return fmt.Errorf("cannot kill a headless instance")
+			return fmt.Errorf("cannot kill a standalone sdk instance")
 		}
 		return nil
 	case "pause":
 		if standalone {
-			return fmt.Errorf("cannot pause a headless instance")
+			return fmt.Errorf("cannot pause a standalone sdk instance")
 		}
 		if rec.Status == StatusPaused || rec.Status == StatusReady {
 			return fmt.Errorf("cannot pause instance in status %s", StatusLabel(rec.Status))
@@ -231,7 +231,7 @@ func ValidateAction(rec Record, action string) error {
 		return nil
 	case "resume":
 		if standalone {
-			return fmt.Errorf("cannot resume a headless instance")
+			return fmt.Errorf("cannot resume a standalone sdk instance")
 		}
 		if rec.Status != StatusPaused {
 			return fmt.Errorf("can only resume paused instances (current status: %s)", StatusLabel(rec.Status))
@@ -239,7 +239,7 @@ func ValidateAction(rec Record, action string) error {
 		return nil
 	case "send":
 		if standalone {
-			return fmt.Errorf("cannot send prompt to a headless instance")
+			return fmt.Errorf("cannot send prompt to a standalone sdk instance")
 		}
 		if rec.Status != StatusRunning && rec.Status != StatusReady {
 			return fmt.Errorf("cannot send prompt to a %s instance", StatusLabel(rec.Status))
@@ -247,7 +247,7 @@ func ValidateAction(rec Record, action string) error {
 		return nil
 	case "restart":
 		if standalone {
-			return fmt.Errorf("cannot restart a headless instance")
+			return fmt.Errorf("cannot restart a standalone sdk instance")
 		}
 		if rec.Status == StatusPaused {
 			return fmt.Errorf("cannot restart a paused instance (resume it first)")
@@ -258,7 +258,7 @@ func ValidateAction(rec Record, action string) error {
 			return fmt.Errorf("cannot capture pane from a paused instance")
 		}
 		if standalone {
-			return fmt.Errorf("cannot capture pane from a headless instance")
+			return fmt.Errorf("cannot capture pane from a standalone sdk instance")
 		}
 		return nil
 	default:

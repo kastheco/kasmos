@@ -172,10 +172,11 @@ func (c *Client) writeMsg(id int64, method string, params any) error {
 // dispatching responses to their pending Call channels and notifications to
 // the buffered notifications channel. It exits on EOF or read error.
 //
-// The notifications channel is closed when readLoop returns so consumers can
-// use a range loop.
+// On exit the done channel is closed (via Close) so in-flight Calls unblock,
+// and the notifications channel is closed so consumers can detect shutdown.
 func (c *Client) readLoop() {
 	defer close(c.notifications)
+	defer c.Close() // unblock pending Calls and close writer on subprocess exit
 	for {
 		line, err := c.reader.ReadBytes('\n')
 		if err != nil {

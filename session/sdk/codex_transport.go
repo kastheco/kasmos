@@ -152,15 +152,19 @@ func NewCodexTransport() Transport {
 // Start launches the Codex app-server subprocess described by cfg and begins
 // reading notifications from its stdout.
 //
-// The cfg.Program string is expected to include the app-server flag (e.g.
-// "codex --server"); Start does not append it automatically so callers retain
-// full control over the Codex invocation.
+// If cfg.Program does not already contain the "--server" flag, Start appends
+// it so the Codex CLI starts in app-server (JSON-RPC over stdio) mode.
 //
 // Returns an error if cfg.Program is empty (or whitespace only) or if the
 // subprocess cannot be started.
 func (t *CodexTransport) Start(ctx context.Context, cfg LaunchConfig) error {
 	if strings.TrimSpace(cfg.Program) == "" {
 		return fmt.Errorf("codex transport: empty program")
+	}
+
+	// Ensure the Codex CLI runs in app-server mode.
+	if !strings.Contains(cfg.Program, "--server") {
+		cfg.Program = strings.TrimSpace(cfg.Program) + " --server"
 	}
 
 	stdin, stdout, err := t.process.Start(cfg)

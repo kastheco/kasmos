@@ -165,12 +165,12 @@ func TestValidateAction_PauseRejectsPaused(t *testing.T) {
 }
 
 // TestValidateAction_CaptureRejectsHeadless verifies that capture is rejected
-// when the instance uses headless execution mode.
+// when the instance uses headless execution mode (standalone SDK).
 func TestValidateAction_CaptureRejectsHeadless(t *testing.T) {
 	rec := Record{Title: "x", Status: StatusRunning, ExecutionMode: "headless"}
 	err := ValidateAction(rec, "capture")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "headless")
+	assert.Contains(t, err.Error(), "standalone sdk")
 }
 
 // TestValidateAction_SendAcceptsReady verifies that send is allowed when the
@@ -200,12 +200,12 @@ func TestValidateAction_SendRejectsPaused(t *testing.T) {
 }
 
 // TestValidateAction_SendRejectsHeadless verifies that send is rejected when
-// the instance uses headless execution mode.
+// the instance uses headless execution mode (standalone SDK).
 func TestValidateAction_SendRejectsHeadless(t *testing.T) {
 	rec := Record{Title: "x", Status: StatusRunning, ExecutionMode: "headless"}
 	err := ValidateAction(rec, "send")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "headless")
+	assert.Contains(t, err.Error(), "standalone sdk")
 }
 
 // TestValidateAction_SendRejectsUnknownStatus verifies that send is rejected
@@ -241,7 +241,7 @@ func TestValidateAction_SendRejectsStandaloneSDK(t *testing.T) {
 	rec := Record{Title: "x", Status: StatusRunning, ExecutionMode: "sdk", ManagedByDaemon: false}
 	err := ValidateAction(rec, "send")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "headless")
+	assert.Contains(t, err.Error(), "standalone sdk")
 }
 
 // TestValidActions_DaemonManagedSDKGetsFullLifecycleActions verifies that

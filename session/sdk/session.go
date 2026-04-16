@@ -200,11 +200,13 @@ func (s *Session) SendKeys(keys string) error {
 	if keys == "\x03" {
 		s.mu.Lock()
 		tr := s.transport
-		ctx := s.ctx
+		pctx := s.ctx
 		s.mu.Unlock()
 		if tr == nil {
 			return nil
 		}
+		ctx, cancel := context.WithTimeout(pctx, 10*time.Second)
+		defer cancel()
 		return tr.Interrupt(ctx)
 	}
 	s.mu.Lock()
@@ -214,31 +216,37 @@ func (s *Session) SendKeys(keys string) error {
 }
 
 // TapEnter submits the buffered prompt to the transport via SendPrompt.
+// A 10-second timeout prevents wedging if the subprocess has exited.
 func (s *Session) TapEnter() error {
 	s.mu.Lock()
 	prompt := s.promptBuf
 	s.promptBuf = ""
 	s.hasPrompt = false
 	tr := s.transport
-	ctx := s.ctx
+	pctx := s.ctx
 	s.mu.Unlock()
 
 	if tr == nil {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(pctx, 10*time.Second)
+	defer cancel()
 	return tr.SendPrompt(ctx, prompt)
 }
 
 // SendPermissionResponse forwards a permission dialog choice to the transport.
 // Returns ErrInteractiveOnly before Start is called (no transport available).
+// A 10-second timeout prevents wedging if the subprocess has exited.
 func (s *Session) SendPermissionResponse(choice tmux.PermissionChoice) error {
 	s.mu.Lock()
 	tr := s.transport
-	ctx := s.ctx
+	pctx := s.ctx
 	s.mu.Unlock()
 	if tr == nil {
 		return ErrInteractiveOnly
 	}
+	ctx, cancel := context.WithTimeout(pctx, 10*time.Second)
+	defer cancel()
 	return tr.RespondPermission(ctx, choice)
 }
 

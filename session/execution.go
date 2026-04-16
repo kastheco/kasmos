@@ -18,9 +18,6 @@ const (
 	// ExecutionModeSDK drives the agent via its app-server JSON-RPC protocol.
 	// This is the primary mode for managed profiles.
 	ExecutionModeSDK ExecutionMode = "sdk"
-	// ExecutionModeHeadless is a legacy alias for ExecutionModeSDK.
-	// Kept for backward compatibility with persisted instance data.
-	ExecutionModeHeadless ExecutionMode = "headless"
 )
 
 // ErrInteractiveOnly is returned by SDK/headless sessions when an interactive
@@ -83,7 +80,7 @@ type progressReporter interface {
 //   - "" or anything unknown → ExecutionModeTmux (conservative default for ad-hoc sessions)
 func NormalizeExecutionMode(mode ExecutionMode) ExecutionMode {
 	switch ExecutionMode(strings.TrimSpace(string(mode))) {
-	case ExecutionModeSDK, ExecutionModeHeadless:
+	case ExecutionModeSDK, "headless":
 		return ExecutionModeSDK
 	case ExecutionModeTmux:
 		return ExecutionModeTmux
