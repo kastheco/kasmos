@@ -115,5 +115,6 @@ see the [cli reference](https://kasmos.kasthe.co/docs/cli-reference) for the ful
 ## links
 
 - **documentation:** [kasmos.kasthe.co](https://kasmos.kasthe.co)
+- **architecture:** [docs/architecture/README.md](docs/architecture/README.md) — runtime topology: signals, state, and data-flow diagrams
 - **contributing:** [CONTRIBUTING.md](CONTRIBUTING.md)
 - **license:** [BSL 1.1](LICENSE.md) — converts to [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) on the change date

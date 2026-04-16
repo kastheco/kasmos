@@ -2,6 +2,38 @@
 
 Waves are the parallel execution unit in kasmos. A multi-wave plan runs wave 1 to completion, then wave 2, and so on. All tasks within a single wave run concurrently as separate agent instances on isolated git worktrees.
 
+## wave execution flow
+
+the following diagram shows the high-level wave execution lifecycle — from plan content through architect elaboration, parallel coder waves, and into the review/verify pipeline:
+
+```mermaid
+flowchart LR
+    A([plan content\nwritten to store]) --> B{architect\npass needed?}
+
+    B -- "blueprint-skip\n(≤ threshold tasks)" --> SK[single coder agent\nimplements all tasks]
+    SK --> R
+
+    B -- "normal path" --> C[spawn architect agent\nSetElaborating]
+    C --> D[architect reads codebase\nenriches task bodies\nwrites updated plan to store\nwrites .kasmos/cache/plan-architect.json]
+    D --> E[elaborator-finished signal\nreceived by daemon]
+
+    E --> F[UpdatePlan called\norchestrator → Idle\nwave 1 starts\nStartNextWave → WaveStateRunning]
+
+    F --> G[N coder agents spawned in parallel\none per task in wave\nshared worktree branch]
+
+    G --> H{all tasks in wave\ncomplete or failed?}
+    H -- "more tasks running" --> H
+    H -- "wave complete\nWaveStateWaveComplete" --> I{more waves?}
+
+    I -- yes --> J[user confirmation prompt\nNeedsConfirm]
+    J -- confirmed --> F
+
+    I -- "no\nWaveStateAllComplete" --> R
+
+    R[reviewer agent spawned\nimplementing → reviewing]
+    R --> V[verify path:\nmaster agent\nverifying → done]
+```
+
 ## wave orchestration states
 
 The `orchestration.WaveOrchestrator` in `orchestration/engine.go` tracks five states:
