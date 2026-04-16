@@ -331,11 +331,13 @@ func (t *TmuxSession) Start(workDir string) error {
 	// Resolve the harness-specific adapter once; nil for legacy programs (aider/gemini).
 	adapter := AdapterFor(t.program)
 
-	// Append permission-bypass flags.
-	if t.skipPermissions && isClaudeProgram(t.program) {
+	// Append permission-bypass flags. Skip if the profile-level flags already
+	// include the equivalent — otherwise daemon-spawned claude/codex get the
+	// flag twice when the user also pins it in .kasmos/config.toml.
+	if t.skipPermissions && isClaudeProgram(t.program) && !strings.Contains(program, "--permission-mode bypassPermissions") {
 		program = program + " --permission-mode bypassPermissions"
 	}
-	if t.skipPermissions && isCodexProgram(t.program) {
+	if t.skipPermissions && isCodexProgram(t.program) && !strings.Contains(program, codexBypassFlag) {
 		program = program + " " + codexBypassFlag
 	}
 

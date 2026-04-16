@@ -330,6 +330,7 @@ func TestTmuxSpawner_SpawnWaveTask_TracksBeforeStartCompletes(t *testing.T) {
 	assert.Same(t, blockedInst, tracked[0])
 	assert.Equal(t, session.Loading, tracked[0].Status)
 	assert.False(t, tracked[0].Started())
+	assert.True(t, tracked[0].SkipPermissions, "daemon-spawned wave task must skip permissions")
 
 	d := &Daemon{repos: NewRepoManager(), spawner: s}
 	d.repos.repos = []RepoEntry{{Path: repoPath, Project: "proj"}}
@@ -344,6 +345,53 @@ func TestTmuxSpawner_SpawnWaveTask_TracksBeforeStartCompletes(t *testing.T) {
 
 	close(release)
 	require.NoError(t, <-errCh)
+}
+
+// Daemon-spawned agents are unattended by definition, so their instances must
+// carry SkipPermissions=true. This lets tmux_session.go inject the harness-
+// specific bypass flag (e.g. codex's --dangerously-bypass-approvals-and-sandbox)
+// even when the profile doesn't pin it explicitly in .kasmos/config.toml.
+func TestTmuxSpawner_SpawnPlanner_SetsSkipPermissions(t *testing.T) {
+	s := NewTmuxSpawner()
+	var captured *session.Instance
+	s.startOnMain = func(inst *session.Instance) error {
+		captured = inst
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+
+	err := s.SpawnPlanner(context.Background(), loop.SpawnOpts{
+		PlanFile: "feature.md",
+		RepoPath: t.TempDir(),
+		Project:  "proj",
+		Program:  "true",
+		Prompt:   "plan this",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, captured)
+	assert.True(t, captured.SkipPermissions, "daemon-spawned planner must skip permissions")
+}
+
+func TestTmuxSpawner_SpawnElaborator_SetsSkipPermissions(t *testing.T) {
+	s := NewTmuxSpawner()
+	var captured *session.Instance
+	s.startOnMain = func(inst *session.Instance) error {
+		captured = inst
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+
+	err := s.SpawnElaborator(context.Background(), loop.SpawnOpts{
+		PlanFile: "feature.md",
+		RepoPath: t.TempDir(),
+		Project:  "proj",
+		Program:  "true",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, captured)
+	assert.True(t, captured.SkipPermissions, "daemon-spawned architect must skip permissions")
 }
 
 func TestTmuxSpawner_SpawnElaborator_MissingRepoPath(t *testing.T) {

@@ -529,6 +529,65 @@ func TestStart_Codex_BypassFlagAbsentWithoutSkipPermissions(t *testing.T) {
 	assert.NotContains(t, cmd2.ToString(ptyFactory.cmds[0]), codexBypassFlag)
 }
 
+func TestStart_Codex_BypassFlagNotDuplicatedWhenAlreadyInProgram(t *testing.T) {
+	ptyFactory := NewMockPtyFactory(t)
+	created := false
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			if strings.Contains(cmd.String(), "has-session") && !created {
+				created = true
+				return fmt.Errorf("no session")
+			}
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			return []byte("output"), nil
+		},
+	}
+
+	origGrace := codexGracePeriod
+	codexGracePeriod = 1 * time.Millisecond
+	t.Cleanup(func() { codexGracePeriod = origGrace })
+
+	workdir := t.TempDir()
+	// Profile-level flags already pin the bypass flag on the program string —
+	// the daemon spawn path will also set skipPermissions=true, so we must not
+	// append it twice.
+	program := "codex " + codexBypassFlag
+	s := NewTmuxSessionWithDeps("test-codex-nodup", program, true, ptyFactory, cmdExec)
+	err := s.Start(workdir)
+	require.NoError(t, err)
+	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	assert.Equal(t, 1, strings.Count(cmdStr, codexBypassFlag),
+		"bypass flag must appear exactly once even when already in program string")
+}
+
+func TestStart_Claude_BypassFlagNotDuplicatedWhenAlreadyInProgram(t *testing.T) {
+	ptyFactory := NewMockPtyFactory(t)
+	created := false
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			if strings.Contains(cmd.String(), "has-session") && !created {
+				created = true
+				return fmt.Errorf("no session")
+			}
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			return []byte("trust"), nil
+		},
+	}
+
+	workdir := t.TempDir()
+	program := "claude --permission-mode bypassPermissions"
+	s := NewTmuxSessionWithDeps("test-claude-nodup", program, true, ptyFactory, cmdExec)
+	err := s.Start(workdir)
+	require.NoError(t, err)
+	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	assert.Equal(t, 1, strings.Count(cmdStr, "--permission-mode bypassPermissions"),
+		"bypass flag must appear exactly once even when already in program string")
+}
+
 func TestStart_Codex_ShortPromptPositional(t *testing.T) {
 	ptyFactory := NewMockPtyFactory(t)
 	created := false

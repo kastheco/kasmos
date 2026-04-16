@@ -647,11 +647,12 @@ func (s *TmuxSpawner) spawnOnMainBranch(_ context.Context, opts loop.SpawnOpts, 
 	}
 
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:     title,
-		Path:      opts.RepoPath,
-		Program:   program,
-		AgentType: agentType,
-		TaskFile:  opts.PlanFile,
+		Title:           title,
+		Path:            opts.RepoPath,
+		Program:         program,
+		AgentType:       agentType,
+		TaskFile:        opts.PlanFile,
+		SkipPermissions: true,
 	})
 	if err != nil {
 		s.releaseReservation(key)
@@ -801,16 +802,17 @@ func (s *TmuxSpawner) SpawnWaveTask(_ context.Context, opts loop.SpawnOpts, task
 		program = "opencode"
 	}
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:         title,
-		Path:          opts.RepoPath,
-		Program:       program,
-		AgentType:     session.AgentTypeCoder,
-		TaskFile:      opts.PlanFile,
-		TaskNumber:    task.Number,
-		WaveNumber:    opts.Wave,
-		PeerCount:     peerCount,
-		WaveTaskIndex: waveTaskIndex,
-		WaveTaskCount: peerCount,
+		Title:           title,
+		Path:            opts.RepoPath,
+		Program:         program,
+		AgentType:       session.AgentTypeCoder,
+		TaskFile:        opts.PlanFile,
+		TaskNumber:      task.Number,
+		WaveNumber:      opts.Wave,
+		PeerCount:       peerCount,
+		WaveTaskIndex:   waveTaskIndex,
+		WaveTaskCount:   peerCount,
+		SkipPermissions: true,
 	})
 	if err != nil {
 		s.releaseReservation(key)
@@ -874,12 +876,13 @@ func (s *TmuxSpawner) spawnInSharedWorktreeReserved(_ context.Context, opts loop
 	}
 
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:       title,
-		Path:        opts.RepoPath,
-		Program:     program,
-		AgentType:   agentType,
-		TaskFile:    opts.PlanFile,
-		ReviewCycle: opts.ReviewCycle,
+		Title:           title,
+		Path:            opts.RepoPath,
+		Program:         program,
+		AgentType:       agentType,
+		TaskFile:        opts.PlanFile,
+		ReviewCycle:     opts.ReviewCycle,
+		SkipPermissions: true,
 	})
 	if err != nil {
 		s.releaseReservation(key)
