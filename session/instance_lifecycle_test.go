@@ -49,6 +49,69 @@ func newMockTmuxSession(name, program string, ptyFac tmux.PtyFactory, cmdExec cm
 	}
 }
 
+type scriptedExecutionSession struct {
+	sanitizedName string
+	startFn       func(workDir string) error
+	started       bool
+	initialPrompt string
+}
+
+func (s *scriptedExecutionSession) Start(workDir string) error {
+	if s.startFn != nil {
+		if err := s.startFn(workDir); err != nil {
+			return err
+		}
+	}
+	s.started = true
+	return nil
+}
+
+func (s *scriptedExecutionSession) Restore() error { return nil }
+func (s *scriptedExecutionSession) Close() error {
+	s.started = false
+	return nil
+}
+func (s *scriptedExecutionSession) DoesSessionExist() bool { return s.started }
+func (s *scriptedExecutionSession) SendKeys(string) error  { return nil }
+func (s *scriptedExecutionSession) TapEnter() error        { return nil }
+func (s *scriptedExecutionSession) SendPermissionResponse(tmux.PermissionChoice) error {
+	return nil
+}
+func (s *scriptedExecutionSession) CapturePaneContent() (string, error) { return "", nil }
+func (s *scriptedExecutionSession) CapturePaneContentWithOptions(string, string) (string, error) {
+	return "", nil
+}
+func (s *scriptedExecutionSession) HasUpdated() (bool, bool) { return false, false }
+func (s *scriptedExecutionSession) HasUpdatedWithContent() (bool, bool, string, bool) {
+	return false, false, "", false
+}
+func (s *scriptedExecutionSession) GetPanePID() (int, error) { return 0, nil }
+func (s *scriptedExecutionSession) Attach() (chan struct{}, error) {
+	return nil, ErrInteractiveOnly
+}
+func (s *scriptedExecutionSession) DetachSafely() error { return ErrInteractiveOnly }
+func (s *scriptedExecutionSession) SetDetachedSize(width, height int) error {
+	return ErrInteractiveOnly
+}
+func (s *scriptedExecutionSession) GetSanitizedName() string       { return s.sanitizedName }
+func (s *scriptedExecutionSession) SetAgentType(string)            {}
+func (s *scriptedExecutionSession) SetInitialPrompt(prompt string) { s.initialPrompt = prompt }
+func (s *scriptedExecutionSession) SetNoFlicker(bool)              {}
+func (s *scriptedExecutionSession) SetTaskEnv(int, int, int)       {}
+func (s *scriptedExecutionSession) SetProject(string)              {}
+func (s *scriptedExecutionSession) SetSessionTitle(string)         {}
+func (s *scriptedExecutionSession) SetTitleFunc(func(workDir string, beforeStart time.Time, title string)) {
+}
+
+func swapNewExecutionSession(t *testing.T, fn func(mode ExecutionMode, name, program string, skipPermissions bool) ExecutionSession) {
+	t.Helper()
+	orig := newExecutionSession
+	newExecutionSession = fn
+	t.Cleanup(func() {
+		newExecutionSession = orig
+	})
+}
+
 func TestStartTransfersQueuedPromptForOpenCode(t *testing.T) {
 	swapProbeMCP(t, func() error { return nil })
 	cmdExec := cmd_test.MockCmdExec{
@@ -873,6 +936,121 @@ func TestEnsureSharedKasmosMCP_FailedProbeBlocksStartInSharedWorktree(t *testing
 	err := inst.StartInSharedWorktree(nil, "plan/shared")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "mcp endpoint not reachable")
+}
+
+func TestStartOnMainBranch_FallsBackFromUnsupportedSDKBootstrapFlagsToTmux(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
+
+	tests := []struct {
+		name      string
+		program   string
+		logLine   string
+		agentType string
+	}{
+		{
+			name:      "claude app-server unsupported",
+			program:   "claude",
+			logLine:   "error: unknown option '--app-server'\n",
+			agentType: AgentTypePlanner,
+		},
+		{
+			name:      "codex server unsupported",
+			program:   "codex",
+			logLine:   "error: unexpected argument '--server' found\n",
+			agentType: AgentTypeElaborator,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repoPath := t.TempDir()
+			title := "fallback-session"
+
+			first := &scriptedExecutionSession{
+				sanitizedName: "fallback-session",
+				startFn: func(workDir string) error {
+					logPath := sdkLogPath(workDir, title)
+					require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0o755))
+					require.NoError(t, os.WriteFile(logPath, []byte(tt.logLine), 0o644))
+					return fmt.Errorf("start SDK transport: handshake: jsonrpc: client closed")
+				},
+			}
+			second := &scriptedExecutionSession{sanitizedName: "fallback-session"}
+
+			created := 0
+			swapNewExecutionSession(t, func(mode ExecutionMode, name, program string, skipPermissions bool) ExecutionSession {
+				created++
+				switch created {
+				case 1:
+					assert.Equal(t, ExecutionModeSDK, mode)
+					return first
+				case 2:
+					assert.Equal(t, ExecutionModeTmux, mode)
+					return second
+				default:
+					t.Fatalf("unexpected execution session creation #%d", created)
+					return nil
+				}
+			})
+
+			inst := &Instance{
+				Title:         title,
+				Path:          repoPath,
+				Program:       tt.program,
+				ExecutionMode: ExecutionModeSDK,
+				AgentType:     tt.agentType,
+				QueuedPrompt:  "do the work",
+			}
+
+			err := inst.StartOnMainBranch()
+			require.NoError(t, err)
+			assert.Equal(t, ExecutionModeTmux, inst.ExecutionMode)
+			assert.Equal(t, 2, created, "sdk failure should retry once in tmux")
+			assert.True(t, second.started, "tmux fallback session should start successfully")
+			assert.Equal(t, "do the work", second.initialPrompt, "queued prompt should transfer on tmux retry")
+			assert.Empty(t, inst.QueuedPrompt)
+			assert.True(t, inst.started)
+			assert.Equal(t, Running, inst.Status)
+		})
+	}
+}
+
+func TestStartOnMainBranch_DoesNotFallbackOnStaleSDKBootstrapLog(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
+
+	repoPath := t.TempDir()
+	title := "stale-fallback-session"
+	logPath := sdkLogPath(repoPath, title)
+	require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0o755))
+	require.NoError(t, os.WriteFile(logPath, []byte("error: unexpected argument '--server' found\n"), 0o644))
+
+	first := &scriptedExecutionSession{
+		sanitizedName: "stale-fallback-session",
+		startFn: func(workDir string) error {
+			return fmt.Errorf("start SDK transport: handshake: jsonrpc: client closed")
+		},
+	}
+
+	created := 0
+	swapNewExecutionSession(t, func(mode ExecutionMode, name, program string, skipPermissions bool) ExecutionSession {
+		created++
+		assert.Equal(t, ExecutionModeSDK, mode)
+		return first
+	})
+
+	inst := &Instance{
+		Title:         title,
+		Path:          repoPath,
+		Program:       "codex",
+		ExecutionMode: ExecutionModeSDK,
+		AgentType:     AgentTypeElaborator,
+	}
+
+	err := inst.StartOnMainBranch()
+	require.Error(t, err)
+	assert.Equal(t, 1, created, "stale log content alone must not trigger tmux fallback")
+	assert.Equal(t, ExecutionModeSDK, inst.ExecutionMode)
+	assert.False(t, inst.started)
 }
 
 // Resume's fresh-start fallback (triggered when no prior tmux session exists)

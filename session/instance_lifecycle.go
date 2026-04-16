@@ -17,6 +17,7 @@ import (
 	"github.com/kastheco/kasmos/internal/opencodesession"
 	"github.com/kastheco/kasmos/internal/platform"
 	"github.com/kastheco/kasmos/log"
+	"github.com/kastheco/kasmos/session/common"
 	"github.com/kastheco/kasmos/session/git"
 	"github.com/kastheco/kasmos/session/tmux"
 )
@@ -68,7 +69,7 @@ func (i *Instance) prepareExecutionSession() ExecutionSession {
 	if i.executionSession != nil {
 		return i.executionSession
 	}
-	return NewExecutionSession(i.ExecutionMode, i.Title, i.Program, i.SkipPermissions)
+	return newExecutionSession(i.ExecutionMode, i.Title, i.Program, i.SkipPermissions)
 }
 
 // transferPromptToCli moves QueuedPrompt into the execution session's initialPrompt
@@ -168,6 +169,63 @@ func dirtyWorktreeContext(worktreePath string) string {
 		return fmt.Sprintf(" (%s (+%d more))", strings.Join(preview, ", "), len(lines)-len(preview))
 	}
 	return fmt.Sprintf(" (%s)", strings.Join(preview, ", "))
+}
+
+func sdkLogPath(workDir, title string) string {
+	return filepath.Join(workDir, ".kasmos", "logs", common.SanitizeSessionName(title)+".log")
+}
+
+func sdkLogSize(workDir, title string) int64 {
+	info, err := os.Stat(sdkLogPath(workDir, title))
+	if err != nil {
+		return 0
+	}
+	return info.Size()
+}
+
+func sdkBootstrapFlagUnsupported(output string) bool {
+	lower := strings.ToLower(output)
+	hasBootstrapFlag := strings.Contains(lower, "--app-server") || strings.Contains(lower, "--server")
+	rejected := strings.Contains(lower, "unknown option") ||
+		strings.Contains(lower, "unexpected argument") ||
+		strings.Contains(lower, "unrecognized option")
+	return hasBootstrapFlag && rejected
+}
+
+func (i *Instance) shouldFallbackSDKStart(workDir string, logOffset int64) bool {
+	if NormalizeExecutionMode(i.ExecutionMode) != ExecutionModeSDK {
+		return false
+	}
+
+	data, err := os.ReadFile(sdkLogPath(workDir, i.Title))
+	if err != nil {
+		return false
+	}
+	if logOffset < 0 {
+		logOffset = 0
+	}
+	if logOffset > int64(len(data)) {
+		logOffset = int64(len(data))
+	}
+	return sdkBootstrapFlagUnsupported(string(data[logOffset:]))
+}
+
+func (i *Instance) startExecutionSessionWithFallback(workDir string, prepare func()) error {
+	logOffset := sdkLogSize(workDir, i.Title)
+	if err := i.executionSession.Start(workDir); err != nil {
+		if !i.shouldFallbackSDKStart(workDir, logOffset) {
+			return err
+		}
+		log.WarningLog.Printf("sdk bootstrap unsupported for %q (%s); falling back to tmux", i.Title, i.Program)
+		_ = i.executionSession.Close()
+		i.ExecutionMode = ExecutionModeTmux
+		i.executionSession = nil
+		prepare()
+		if retryErr := i.executionSession.Start(workDir); retryErr != nil {
+			return fmt.Errorf("%v (tmux fallback failed: %w)", err, retryErr)
+		}
+	}
+	return nil
 }
 
 // ShouldAutoAdvanceLifecycleImplementer reports whether the instance matches
@@ -272,31 +330,32 @@ func (i *Instance) Start(firstTimeSetup bool) error {
 	i.LoadingMessage = "Initializing..."
 
 	i.setLoadingProgress(1, "Preparing session...")
-	i.executionSession = i.prepareExecutionSession()
-	i.executionSession.SetAgentType(i.AgentType)
-	i.executionSession.SetNoFlicker(i.ClaudeNoFlicker)
-	i.setExecutionTaskEnv()
-	i.configureSessionTitle()
-
-	// Offset internal progress stages so they map to the overall loading bar.
 	stageBase := 3
 	if !firstTimeSetup {
 		stageBase = 1
 	}
-	i.setProgressFunc(func(stage int, desc string) {
-		i.setLoadingProgress(stageBase+stage, desc)
-		// Stage 3 ("Configuring session...") fires after the tmux session has
-		// been created and the initial tmux options applied. The pane is live
-		// at this point — flip Status to Running immediately so the admin UI
-		// and the TUI can see the agent as "running" even while the backend
-		// is still polling up to 30s for a per-harness ready signal (claude's
-		// trust prompt, opencode's "Ask anything", etc.). Without this, every
-		// daemon-spawned agent looks stuck on "loading" for half a minute.
-		if stage >= 3 {
-			i.SetStatus(Running)
-		}
-	})
-	i.transferPromptToCli()
+	prepareSession := func() {
+		i.executionSession = i.prepareExecutionSession()
+		i.executionSession.SetAgentType(i.AgentType)
+		i.executionSession.SetNoFlicker(i.ClaudeNoFlicker)
+		i.setExecutionTaskEnv()
+		i.configureSessionTitle()
+		i.setProgressFunc(func(stage int, desc string) {
+			i.setLoadingProgress(stageBase+stage, desc)
+			// Stage 3 ("Configuring session...") fires after the tmux session has
+			// been created and the initial tmux options applied. The pane is live
+			// at this point — flip Status to Running immediately so the admin UI
+			// and the TUI can see the agent as "running" even while the backend
+			// is still polling up to 30s for a per-harness ready signal (claude's
+			// trust prompt, opencode's "Ask anything", etc.). Without this, every
+			// daemon-spawned agent looks stuck on "loading" for half a minute.
+			if stage >= 3 {
+				i.SetStatus(Running)
+			}
+		})
+		i.transferPromptToCli()
+	}
+	prepareSession()
 
 	if firstTimeSetup {
 		i.setLoadingProgress(2, "Creating git worktree...")
@@ -327,7 +386,7 @@ func (i *Instance) Start(firstTimeSetup bool) error {
 			return startErr
 		}
 		i.setLoadingProgress(4, "Starting session...")
-		if err := i.executionSession.Start(i.gitWorktree.GetWorktreePath()); err != nil {
+		if err := i.startExecutionSessionWithFallback(i.gitWorktree.GetWorktreePath(), prepareSession); err != nil {
 			if cleanupErr := i.gitWorktree.Cleanup(); cleanupErr != nil {
 				err = fmt.Errorf("%v (cleanup: %v)", err, cleanupErr)
 			}
@@ -361,19 +420,22 @@ func (i *Instance) StartOnMainBranch() error {
 	i.LoadingMessage = "Initializing..."
 
 	i.setLoadingProgress(1, "Preparing session...")
-	i.executionSession = i.prepareExecutionSession()
-	i.executionSession.SetAgentType(i.AgentType)
-	i.executionSession.SetNoFlicker(i.ClaudeNoFlicker)
-	i.setExecutionTaskEnv()
-	i.configureSessionTitle()
-	i.setProgressFunc(func(stage int, desc string) {
-		i.setLoadingProgress(1+stage, desc)
-		// See Instance.Start for why stage 3 flips status to Running eagerly.
-		if stage >= 3 {
-			i.SetStatus(Running)
-		}
-	})
-	i.transferPromptToCli()
+	prepareSession := func() {
+		i.executionSession = i.prepareExecutionSession()
+		i.executionSession.SetAgentType(i.AgentType)
+		i.executionSession.SetNoFlicker(i.ClaudeNoFlicker)
+		i.setExecutionTaskEnv()
+		i.configureSessionTitle()
+		i.setProgressFunc(func(stage int, desc string) {
+			i.setLoadingProgress(1+stage, desc)
+			// See Instance.Start for why stage 3 flips status to Running eagerly.
+			if stage >= 3 {
+				i.SetStatus(Running)
+			}
+		})
+		i.transferPromptToCli()
+	}
+	prepareSession()
 
 	var startErr error
 	defer func() {
@@ -386,7 +448,7 @@ func (i *Instance) StartOnMainBranch() error {
 		}
 	}()
 
-	if err := i.executionSession.Start(i.Path); err != nil {
+	if err := i.startExecutionSessionWithFallback(i.Path, prepareSession); err != nil {
 		startErr = fmt.Errorf("failed to start session on main branch: %w", err)
 		return startErr
 	}
@@ -413,19 +475,22 @@ func (i *Instance) StartOnBranch(branch string) error {
 	i.LoadingMessage = "Initializing..."
 
 	i.setLoadingProgress(1, "Preparing session...")
-	i.executionSession = i.prepareExecutionSession()
-	i.executionSession.SetAgentType(i.AgentType)
-	i.executionSession.SetNoFlicker(i.ClaudeNoFlicker)
-	i.setExecutionTaskEnv()
-	i.configureSessionTitle()
-	i.setProgressFunc(func(stage int, desc string) {
-		i.setLoadingProgress(3+stage, desc)
-		// See Instance.Start for why stage 3 flips status to Running eagerly.
-		if stage >= 3 {
-			i.SetStatus(Running)
-		}
-	})
-	i.transferPromptToCli()
+	prepareSession := func() {
+		i.executionSession = i.prepareExecutionSession()
+		i.executionSession.SetAgentType(i.AgentType)
+		i.executionSession.SetNoFlicker(i.ClaudeNoFlicker)
+		i.setExecutionTaskEnv()
+		i.configureSessionTitle()
+		i.setProgressFunc(func(stage int, desc string) {
+			i.setLoadingProgress(3+stage, desc)
+			// See Instance.Start for why stage 3 flips status to Running eagerly.
+			if stage >= 3 {
+				i.SetStatus(Running)
+			}
+		})
+		i.transferPromptToCli()
+	}
+	prepareSession()
 
 	i.setLoadingProgress(2, "Creating git worktree...")
 	worktree, branchName, err := git.NewGitWorktreeOnBranch(i.Path, i.Title, branch)
@@ -453,7 +518,7 @@ func (i *Instance) StartOnBranch(branch string) error {
 	}
 
 	i.setLoadingProgress(4, "Starting session...")
-	if err := i.executionSession.Start(i.gitWorktree.GetWorktreePath()); err != nil {
+	if err := i.startExecutionSessionWithFallback(i.gitWorktree.GetWorktreePath(), prepareSession); err != nil {
 		if cleanupErr := i.gitWorktree.Cleanup(); cleanupErr != nil {
 			err = fmt.Errorf("%v (cleanup: %v)", err, cleanupErr)
 		}
@@ -482,21 +547,24 @@ func (i *Instance) StartInSharedWorktree(worktree *git.GitWorktree, branch strin
 	i.Branch = branch
 	i.sharedWorktree = true
 
-	i.executionSession = i.prepareExecutionSession()
-	i.executionSession.SetAgentType(i.AgentType)
-	i.setExecutionTaskEnv()
-	i.configureSessionTitle()
-	i.setProgressFunc(func(stage int, desc string) {
-		i.setLoadingProgress(1+stage, desc)
-		// See Instance.Start for why stage 3 flips status to Running eagerly.
-		if stage >= 3 {
-			i.SetStatus(Running)
-		}
-	})
-	i.transferPromptToCli()
+	prepareSession := func() {
+		i.executionSession = i.prepareExecutionSession()
+		i.executionSession.SetAgentType(i.AgentType)
+		i.setExecutionTaskEnv()
+		i.configureSessionTitle()
+		i.setProgressFunc(func(stage int, desc string) {
+			i.setLoadingProgress(1+stage, desc)
+			// See Instance.Start for why stage 3 flips status to Running eagerly.
+			if stage >= 3 {
+				i.SetStatus(Running)
+			}
+		})
+		i.transferPromptToCli()
+	}
+	prepareSession()
 
 	i.setLoadingProgress(2, "Starting session...")
-	if err := i.executionSession.Start(worktree.GetWorktreePath()); err != nil {
+	if err := i.startExecutionSessionWithFallback(worktree.GetWorktreePath(), prepareSession); err != nil {
 		return fmt.Errorf("failed to start session in shared worktree: %w", err)
 	}
 
@@ -628,7 +696,7 @@ func (i *Instance) resetExecutionSession() ExecutionSession {
 	if ts, ok := i.executionSession.(*tmuxExecutionSession); ok {
 		return &tmuxExecutionSession{s: ts.s.NewReset(i.Title, i.Program, i.SkipPermissions)}
 	}
-	return NewExecutionSession(i.ExecutionMode, i.Title, i.Program, i.SkipPermissions)
+	return newExecutionSession(i.ExecutionMode, i.Title, i.Program, i.SkipPermissions)
 }
 
 // Restart closes the current execution session (best-effort) and launches a fresh one
@@ -651,17 +719,20 @@ func (i *Instance) Restart() error {
 	}
 
 	// Allocate a new session object, carrying over injected test dependencies.
-	i.executionSession = i.resetExecutionSession()
-	i.executionSession.SetAgentType(i.AgentType)
-	i.setExecutionTaskEnv()
-	i.configureSessionTitle()
+	prepareSession := func() {
+		i.executionSession = i.resetExecutionSession()
+		i.executionSession.SetAgentType(i.AgentType)
+		i.setExecutionTaskEnv()
+		i.configureSessionTitle()
+	}
+	prepareSession()
 
 	workDir := i.Path
 	if i.gitWorktree != nil {
 		workDir = i.gitWorktree.GetWorktreePath()
 	}
 
-	if err := i.executionSession.Start(workDir); err != nil {
+	if err := i.startExecutionSessionWithFallback(workDir, prepareSession); err != nil {
 		return fmt.Errorf("failed to restart session: %w", err)
 	}
 
@@ -722,7 +793,14 @@ func (i *Instance) Resume() error {
 			if probeErr := i.ensureSharedKasmosMCP(); probeErr != nil {
 				return probeErr
 			}
-			if startErr := i.executionSession.Start(workDir); startErr != nil {
+			prepareSession := func() {
+				i.executionSession = newExecutionSession(i.ExecutionMode, i.Title, i.Program, i.SkipPermissions)
+				i.executionSession.SetAgentType(i.AgentType)
+				i.setExecutionTaskEnv()
+				i.configureSessionTitle()
+			}
+			prepareSession()
+			if startErr := i.startExecutionSessionWithFallback(workDir, prepareSession); startErr != nil {
 				log.ErrorLog.Print(startErr)
 				if i.gitWorktree != nil && !i.sharedWorktree {
 					if cleanupErr := i.gitWorktree.Cleanup(); cleanupErr != nil {
@@ -737,7 +815,14 @@ func (i *Instance) Resume() error {
 		if err := i.ensureSharedKasmosMCP(); err != nil {
 			return err
 		}
-		if err := i.executionSession.Start(workDir); err != nil {
+		prepareSession := func() {
+			i.executionSession = newExecutionSession(i.ExecutionMode, i.Title, i.Program, i.SkipPermissions)
+			i.executionSession.SetAgentType(i.AgentType)
+			i.setExecutionTaskEnv()
+			i.configureSessionTitle()
+		}
+		prepareSession()
+		if err := i.startExecutionSessionWithFallback(workDir, prepareSession); err != nil {
 			log.ErrorLog.Print(err)
 			if i.gitWorktree != nil && !i.sharedWorktree {
 				if cleanupErr := i.gitWorktree.Cleanup(); cleanupErr != nil {

@@ -113,6 +113,9 @@ func NewExecutionSession(mode ExecutionMode, name, program string, skipPermissio
 	}
 }
 
+// newExecutionSession is a test seam around NewExecutionSession.
+var newExecutionSession = NewExecutionSession
+
 // --- tmux adapter -------------------------------------------------------
 
 // tmuxExecutionSession wraps *tmux.TmuxSession and implements ExecutionSession.
