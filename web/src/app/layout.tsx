@@ -22,18 +22,18 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://kasmos.kasthe.co"),
-  title: "kasmos - agent-driven IDE for AI pair programming",
+  title: "kasmos - mcp-first multi-agent orchestration",
   description:
-    "a TUI-based agent-driven IDE that manages multiple AI agents (Claude Code, Codex, Aider, Gemini) in isolated workspaces, so you can work on multiple tasks simultaneously.",
+    "mcp-first multi-agent orchestration with a tui, admin spa, shared http mcp endpoint, daemon services, and a global task store.",
   keywords: [
-    "kasmos", "tui", "ai", "ide", "agent", "terminal", "tmux",
-    "claude code", "codex", "aider", "pair programming",
+    "kasmos", "tui", "admin ui", "mcp", "task store", "daemon",
+    "agent", "terminal", "tmux", "claude code", "codex", "aider",
   ],
   authors: [{ name: "kastheco" }],
   openGraph: {
     title: "kasmos",
     description:
-      "a TUI-based agent-driven IDE for managing multiple AI agents in isolated workspaces",
+      "mcp-first multi-agent orchestration with a tui, admin spa, shared http mcp endpoint, daemon services, and a global task store",
     url: "https://kasmos.kasthe.co",
     type: "website",
     images: [{ url: "/og-image.png" }],
@@ -42,7 +42,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "kasmos",
     description:
-      "a TUI-based agent-driven IDE for managing multiple AI agents in isolated workspaces",
+      "mcp-first multi-agent orchestration with a tui, admin spa, shared http mcp endpoint, daemon services, and a global task store",
     images: ["/og-image.png"],
   },
   icons: {

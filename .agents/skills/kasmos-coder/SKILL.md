@@ -100,7 +100,7 @@ You execute the full plan sequentially, wave by wave:
 2. Create a todo list with one item per task (all `pending`), then begin.
 3. Execute one wave at a time: implement each task (TDD), commit, then proceed to next task.
 4. After each wave completes, self-review before starting the next wave.
-5. When all waves complete, write the implement-finished sentinel (see **Signaling**).
+5. When all waves complete, move the task to `reviewing` via MCP `task_transition` (see **Signaling**).
 
 ---
 

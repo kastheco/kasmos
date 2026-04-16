@@ -15,13 +15,13 @@ Use `scc` for codebase metrics when scoping work.
 Load the `kasmos-planner` skill.
 
 ## Task State (CRITICAL)
-Task state is stored in the **task store** (SQLite database or HTTP API), not in files on disk.
-Never modify task state directly — use `kas task` CLI commands or sentinel files.
-**You MUST register every plan** via `kas task register <plan>.md` immediately after writing it.
-Unregistered plans are invisible in the kasmos sidebar.
-Valid statuses: `ready` → `planning` → `implementing` → `reviewing` → `done`. Use `kas task` CLI for transitions.
+Task state is stored in the **global task store** (`~/.config/kasmos/taskstore.db` by default, or a remote http api), not in files on disk.
+Prefer mcp task tools for task-state work: `task_create`, `task_show`, `task_update_content`, `task_list`, and `task_transition`.
+Use `kas task ...` only when mcp is genuinely unavailable or a workflow has no mcp equivalent. Do not write sentinel files in normal operation.
+If you need to create a brand-new standalone task, prefer mcp `task_create` with `content`; `kas task register <plan>.md` is the cli fallback for legacy/manual environments.
+Valid statuses: `ready` → `planning` → `implementing` → `reviewing` → `verifying` → `done` (plus `cancelled`).
 
-## CLI Tools
+## cli tools
 
 Read the `cli-tools` skill (SKILL.md) at session start. Read individual
 resource files in `resources/` when using that specific tool.

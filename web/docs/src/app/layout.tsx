@@ -17,11 +17,14 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://kasmos.kasthe.co"),
   title: "kasmos docs",
   description:
-    "Documentation for kasmos — a TUI-based orchestration platform for managing AI agents, wave-based tasks, headless execution, daemon workflows, and the kas CLI.",
+    "documentation for kasmos — the tui, admin spa, shared http mcp endpoint, daemon services, and global task store behind multi-agent orchestration.",
   keywords: [
     "kasmos",
     "kas",
     "tui",
+    "admin ui",
+    "mcp",
+    "task store",
     "docs",
     "agent",
     "orchestration",
@@ -36,7 +39,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "kasmos docs",
     description:
-      "Documentation for kasmos — TUI orchestration, headless execution, wave-based workflows, and CLI reference",
+      "documentation for kasmos — tui, admin spa, shared http mcp endpoint, daemon services, and global task store",
     url: "https://kasmos.kasthe.co/docs",
     type: "website",
     images: [{ url: "/docs/og-image.png" }],
@@ -45,7 +48,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "kasmos docs",
     description:
-      "Documentation for kasmos — TUI orchestration, headless execution, wave-based workflows, and CLI reference",
+      "documentation for kasmos — tui, admin spa, shared http mcp endpoint, daemon services, and global task store",
     images: ["/docs/og-image.png"],
   },
 };

@@ -25,24 +25,23 @@ Only register implementation plans — never register design docs (*-design.md) 
 ## Plan Storage (CRITICAL — must follow every time)
 
 Task state is stored in the **task store** (SQLite database or HTTP API), not in files on disk.
-Never modify task state directly — use MCP tools or `kas task` CLI commands; sentinel files are fallback-only.
+Never modify task state directly — use MCP task tools by default. `kas task ...` is fallback-only when MCP is unavailable, and sentinel files are last-resort compatibility only.
 
 Kasmos creates the task entry before it spawns you. Your job is to replace that
 entry's placeholder content with the finished plan.
 
 Storage steps (do both, never skip step 2):
 1. Write the full plan content, including required `## Wave N` sections.
-2. Store the plan: prefer MCP `task_update_content` (filename: "<plan-file>", project: "$KASMOS_PROJECT"); fall back to `kas task update-content <plan-file>` (pipe content).
+2. Store the plan with MCP `task_update_content` (filename: "<plan-file>", project: "$KASMOS_PROJECT"). Use `kas task update-content <plan-file>` only if MCP is unavailable.
 
 **If `KASMOS_MANAGED=1` (running inside kasmos):**
-- First store the plan with MCP `task_update_content` (filename: "<plan-file>", project: "$KASMOS_PROJECT"); fall back to `kas task update-content <plan-file>`.
-- Then signal completion: prefer MCP `signal_create` (signal_type: "planner-finished", plan_file: "<plan-file>", project: "$KASMOS_PROJECT"); fall back to `kas signal emit planner_finished <plan-file>`.
+- First store the plan with MCP `task_update_content` (filename: "<plan-file>", project: "$KASMOS_PROJECT"). Use `kas task update-content <plan-file>` only if MCP is unavailable.
+- Then signal completion with MCP `signal_create` (signal_type: "planner-finished", plan_file: "<plan-file>", project: "$KASMOS_PROJECT"). Use `kas signal emit planner_finished <plan-file>` only if MCP is unavailable.
 - **Do not modify task state directly.**
 
 **If `KASMOS_MANAGED` is unset (raw terminal):**
-- Update the existing task with MCP `task_update_content` (filename: "<plan-file>", project: "$KASMOS_PROJECT"); fall back to `kas task update-content <plan-file>`.
-- If you are creating a brand-new standalone plan outside kasmos, register it once with
-  `kas task register <plan-file>.md` before updating it.
+- Update the existing task with MCP `task_update_content` (filename: "<plan-file>", project: "$KASMOS_PROJECT"). Use `kas task update-content <plan-file>` only if MCP is unavailable.
+- If you are creating a brand-new standalone plan outside kasmos, prefer MCP `task_create` with the `content` and `project` fields in one call. Use `kas task register <plan-file>.md` only in CLI-only environments.
 
 **Never modify task statuses directly.** Status transitions (`planning` → `ready` →
 `implementing` → `reviewing` → `done`) are managed by kasmos or the relevant workflow skill.

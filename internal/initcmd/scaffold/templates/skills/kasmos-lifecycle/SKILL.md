@@ -5,7 +5,7 @@ description: Use when you need orientation on kasmos plan lifecycle, signal mech
 
 # kasmos lifecycle
 
-Meta-skill. Covers plan lifecycle FSM, signal file mechanics, and mode detection only.
+Meta-skill. Covers plan lifecycle FSM, signal gateway mechanics, legacy sentinel compatibility, and mode detection only.
 If you have a role (planner, coder, reviewer, custodian), load that skill instead — not this one.
 
 ## Plan Lifecycle
@@ -40,7 +40,7 @@ The `auto_readiness_review` config key controls whether the master agent is spaw
 
 ## Signal Mechanics
 
-Signals are gateway-backed. Agents emit signals via the DB-backed signal gateway — `.kasmos/signals/` sentinel files still exist for compatibility but are not the primary path.
+Signals are gateway-backed. Agents should emit them through MCP by default; `.kasmos/signals/` sentinel files still exist for compatibility but are not the primary path.
 
 **Primary path — MCP `signal_create`:**
 
@@ -75,7 +75,7 @@ Check `KASMOS_MANAGED` to determine how transitions are handled.
 
 | Mode | `KASMOS_MANAGED` value | Transition mechanism |
 |------|------------------------|---------------------|
-| managed | `1` (or any non-empty) | write sentinel → kasmos handles the rest |
+| managed | `1` (or any non-empty) | emit MCP `signal_create` (fallback: CLI, last resort: sentinel) |
 | manual | unset or empty | use MCP task tools (for example `task_show`, `task_transition`) |
 
 Check whether `KASMOS_MANAGED` is set; managed sessions emit signals, manual sessions use task tools.

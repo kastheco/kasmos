@@ -24,15 +24,15 @@ const features = [
   },
   {
     icon: "\u{1F527}",
-    title: "MCP server architecture",
+    title: "mcp server architecture",
     description:
-      "kasmos exposes an MCP server for task CRUD, signals, instance management, and codebase tools. agents interact through MCP, not filesystem hacks.",
+      "kasmos exposes a shared http mcp endpoint for task crud, signals, instance management, and codebase tools. agents use mcp by default, not ad hoc cli wrappers or filesystem hacks.",
   },
   {
     icon: "\u{1F5C2}",
     title: "multi-repo support",
     description:
-      "manage tasks across multiple repositories from a single daemon. each repo gets its own config and task store.",
+      "manage tasks across multiple repositories from a single daemon while sharing one global task store. repo config stays local; task state stays centralized.",
   },
   {
     icon: "\u{1F4BE}",
@@ -51,7 +51,7 @@ const features = [
 const typewriterTexts = [
   "parallel agents, isolated worktrees",
   "wave-based execution with signals",
-  "MCP-powered orchestration",
+  "mcp-powered orchestration",
   "concurrent agents, zero conflicts",
 ];
 
@@ -110,7 +110,7 @@ export default function PageContent() {
           <ScrollReveal>
             <h2 className={styles.sectionTitle}>why <span className={styles.gradientInline}>kasmos</span>?</h2>
             <p className={styles.sectionSubtitle}>
-              wave-based execution, isolated worktrees, and MCP-native tooling — everything you need to run concurrent AI agents at scale.
+              wave-based execution, isolated worktrees, and mcp-native tooling — everything you need to run concurrent ai agents at scale.
             </p>
           </ScrollReveal>
           <div className={styles.featuresGrid}>
@@ -250,7 +250,7 @@ export default function PageContent() {
             </p>
             <InstallTabs />
             <p className={styles.installPrereqs}>
-              prerequisites: tmux, gh, and at least one supported AI CLI —{" "}
+              prerequisites: tmux, gh, and at least one supported ai cli —{" "}
               <a href="/docs/getting-started/prerequisites/">see full list</a>
             </p>
           </ScrollReveal>

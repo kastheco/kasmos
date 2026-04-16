@@ -193,17 +193,17 @@ When in doubt, follow the current CLI and package names.
 Observed in `.codex/AGENTS.md`, `cmd/task.go`, and `config/taskstate/taskstate.go`:
 
 - Do not edit task state directly.
-- Use `kas task ...` commands to create/register/show/update/transition work.
+- Agents should prefer MCP task tools (`task_list`, `task_show`, `task_create`, `task_update_content`, `task_transition`) for reads and lifecycle changes. Use `kas task ...` only when MCP is unavailable or when a workflow genuinely has no MCP equivalent.
 - `taskstate.Load` expects a store-backed world; task/task-topic metadata comes from the task store.
-- Lifecycle statuses observed in code are `ready`, `planning`, `implementing`, `reviewing`, `done`, and `cancelled`.
+- Lifecycle statuses observed in code are `ready`, `planning`, `implementing`, `reviewing`, `verifying`, `done`, and `cancelled`.
 
-### Config/task store paths are anchored to the main repo root
+### Config is repo-rooted; task store is global by default
 
 Observed in `config/config.go` and `config/taskstore/factory.go`:
 
 - Project-local config lives under `<repo-root>/.kasmos/`.
 - `GetConfigDir()` resolves the main repository root even when running inside a git worktree.
-- The default local DB path is `<repo-root>/.kasmos/taskstore.db`.
+- The default shared DB path is `~/.config/kasmos/taskstore.db` (`./.kasmos/taskstore.db` only when the home directory is unavailable).
 
 ### Plan/task filenames are normalized
 

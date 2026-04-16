@@ -2,34 +2,26 @@
 
 ## Coder
 Implementation agent. Writes code, fixes bugs, runs tests.
-Follow TDD: write failing test first, implement, verify green.
-Prefer the bundled project skills that still exist in this repo (`cli-tools`, `kasmos-coder`, `kasmos-cli`, `kasmos-lifecycle`, `tui-design`).
 
 ## Reviewer
 Review agent. Checks quality, security, spec compliance.
 Use `difft` for structural diffs (not line-based `git diff`).
 Use `sg` (ast-grep) to verify patterns across the codebase.
-Prefer current bundled skills such as `cli-tools`, `kasmos-reviewer`, `kasmos-lifecycle`, and `tui-design` when the task matches them.
+Load the `kasmos-reviewer` skill.
 
 ## Planner
 Planning agent. Writes specs, plans, decomposes work into packages.
 Use `scc` for codebase metrics when scoping work.
-Prefer current bundled skills such as `cli-tools`, `kasmos-planner`, `kasmos-architect`, and `tui-design`.
+Load the `kasmos-planner` skill.
 
-## Task Store (CRITICAL)
-Task state lives in the task store — a project-local SQLite database (`<repo-root>/.kasmos/taskstore.db`) or a remote HTTP API.
-Use `kas task` CLI commands for all lifecycle operations:
-- `kas task list` — list tasks and statuses
-- `kas task show <task-file>` — read task content
-- `kas task create <name>` — create a new task
-- `kas task register <task-file>` — register a task file from disk
-- `kas task update-content <task-file>` — update task content
-- `kas task transition <task-file> <event>` — FSM state transition
-- `kas task set-status <task-file> <status> --force` — force override
-Never modify task state directly. Unregistered tasks are invisible in the kasmos sidebar.
-Valid statuses: `ready` → `planning` → `implementing` → `reviewing` → `done` (plus terminal `cancelled`).
+## Task State (CRITICAL)
+Task state is stored in the **global task store** (`~/.config/kasmos/taskstore.db` by default, or a remote http api), not in files on disk.
+Prefer mcp task tools for task-state work: `task_create`, `task_show`, `task_update_content`, `task_list`, and `task_transition`.
+Use `kas task ...` only when mcp is genuinely unavailable or a workflow has no mcp equivalent. Do not write sentinel files in normal operation.
+If you need to create a brand-new standalone task, prefer mcp `task_create` with `content`; `kas task register <plan>.md` is the cli fallback for legacy/manual environments.
+Valid statuses: `ready` → `planning` → `implementing` → `reviewing` → `verifying` → `done` (plus `cancelled`).
 
-## CLI Tools
+## cli tools
 
-Read the bundled `cli-tools` skill (SKILL.md) at session start. Read individual
+Read the `cli-tools` skill (SKILL.md) at session start. Read individual
 resource files in `resources/` when using that specific tool.

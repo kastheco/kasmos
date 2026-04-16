@@ -21,10 +21,14 @@ loose ends. You do NOT plan features, write implementation code, or review PRs.
 
 ## Operations
 
-Use `kas task` CLI for all task state mutations:
-- `kas task list [--status <status>]` — show plans and filter by status
+Use MCP task tools by default for task-state work:
+- `task_list` — inspect plans and filter by status
+- `task_show` — read the current task content from the store
+- `task_transition` — apply normal FSM events
+- `task_create` / `task_update_content` — repair or recreate store-backed task entries when needed
+
+Use `kas task` only for workflows that genuinely have no MCP equivalent or when MCP is unavailable:
 - `kas task set-status <plan> <status> --force` — force-override a task's status
-- `kas task transition <plan> <event>` — apply a valid FSM event
 - `kas task implement <plan> [--wave N]` — trigger wave implementation
 
 Use raw git/gh for branch and worktree operations:

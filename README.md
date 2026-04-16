@@ -4,7 +4,7 @@
 
 # [![CI](https://github.com/kastheco/kasmos/actions/workflows/build.yml/badge.svg)](https://github.com/kastheco/kasmos/actions/workflows/build.yml) [![GitHub Release](https://img.shields.io/github/v/release/kastheco/kasmos)](https://github.com/kastheco/kasmos/releases/latest) [![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](LICENSE.md) [![docs](https://img.shields.io/badge/docs-kasmos.kasthe.co-blue)](https://kasmos.kasthe.co)
 
-> mcp-first multi-agent orchestration for git repos: task store, shared http mcp endpoint, daemon, worktrees, and tui in one tool.
+> mcp-first multi-agent orchestration for git repos: global task store, shared http mcp endpoint, daemon, admin spa, and tui in one tool.
 
 [**docs →** kasmos.kasthe.co](https://kasmos.kasthe.co)
 
@@ -17,10 +17,10 @@
 ## features
 
 - **global task store** — tasks live at `~/.config/kasmos/taskstore.db`, shared across all managed repos via the daemon
-- **shared http mcp endpoint** — `kas serve` (or the `kasmosdb` systemd/launchd service) hosts a single MCP server at `http://127.0.0.1:7434/mcp`; all scaffolded harness configs point agents here — no per-agent stdio subprocess needed
+- **shared http mcp endpoint** — `kas serve` (or the `kasmosdb` systemd/launchd service) hosts a single mcp server at `http://127.0.0.1:7434/mcp`; all scaffolded harness configs point agents here — no per-agent stdio subprocess needed
 - **wave-based orchestration** — planning → architect → implement → review → readiness review lifecycle with per-wave agent concurrency
 - **multi-harness support** — works with claude, opencode, codex, and other mcp-aware agents
-- **tui + daemon** — interactive tui for task management plus a headless daemon for automated orchestration
+- **tui + admin spa + daemon** — terminal and browser control surfaces backed by the same service pair
 - **git worktree isolation** — each task runs in its own branch and worktree; merges are handled at review time
 - **cross-platform services** — systemd (linux) and launchd (macos) for always-on operation; see [service management docs](https://kasmos.kasthe.co/docs/service-management)
 
@@ -59,12 +59,14 @@ the compiled binary is `kas`. `kasmos` remains the project name, module path (`g
 from inside a git repo:
 
 ```bash
-kas serve        # start the shared http mcp endpoint (or let kasmosdb do it automatically)
+kas serve        # local/dev: start rest api + admin ui + shared http mcp endpoint
 kas setup        # scaffold harness configs (.mcp.json, .codex/config.toml, agent prompts) pointing at the shared endpoint
 kas              # open the tui
 ```
 
-`kas setup` (and `kas reset`) write per-harness MCP config so mcp-aware agents connect to the shared http mcp endpoint (`http://127.0.0.1:7434/mcp`): claude and opencode use `.mcp.json`, codex uses a project-local `.codex/config.toml` with an `[mcp_servers.kasmos]` block (codex CLI reads this natively for trusted projects). the endpoint must be running before starting managed agent sessions. `kas check` will warn if the shared endpoint is unreachable or if stale `kas mcp` stdio processes are still running.
+open `http://127.0.0.1:7433/admin/` for the admin spa. for always-on operation, run the `kasmosdb` + `kasmos` user services instead of foreground `kas serve` / `kas daemon` commands.
+
+`kas setup` (and `kas reset`) write per-harness mcp config so mcp-aware agents connect to the shared http mcp endpoint (`http://127.0.0.1:7434/mcp`): claude and opencode use `.mcp.json`, codex uses a project-local `.codex/config.toml` with an `[mcp_servers.kasmos]` block (codex cli reads this natively for trusted projects). the endpoint must be running before starting managed agent sessions. `kas check` will warn if the shared endpoint is unreachable or if stale `kas mcp` stdio processes are still running.
 
 > **note:** `kas mcp` (stdio mode) is still available as a fallback for manual or harness-specific use, but it is not the default transport and should not appear in scaffolded configs.
 
@@ -77,6 +79,8 @@ see the [getting started guide](https://kasmos.kasthe.co/docs/getting-started) f
 kasmos exposes its tools via a **shared http mcp endpoint** hosted by `kas serve` (or the `kasmosdb` background service) at `http://127.0.0.1:7434/mcp`. all scaffolded harness configs (written by `kas setup` / `kas reset`) point agents at this single endpoint — no per-agent stdio subprocess is spawned, eliminating the memory overhead of one `kas mcp` process per agent session.
 
 `kas mcp` (stdio) is still available for manual or custom harness use, but it is the fallback transport, not the default. managed agent sessions require the shared http endpoint to be running; if it is down, `kas check` will report the missing endpoint as an error and list any lingering `kas mcp` stdio processes as a warning.
+
+scaffolded agents are expected to use the shared http mcp endpoint for task, signal, and instance operations. `kas task` / `kas signal` are operator and fallback tools, not the default agent path.
 
 tool groups exposed:
 
