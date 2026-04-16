@@ -203,7 +203,7 @@ func runScaffoldSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Install or uninstall enforcement hooks for each detected harness based on config.
-	fmt.Fprintln(out, "\nInstalling enforcement hooks...")
+	fmt.Fprintln(out, "\nConfiguring enforcement hooks...")
 	for _, name := range registry.All() {
 		h := registry.Get(name)
 		if _, found := h.Detect(); !found {

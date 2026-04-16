@@ -779,7 +779,11 @@ func RemoveCodexEnforcementHook(dir string) ([]WriteResult, error) {
 		}
 	}
 
-	hooks["PreToolUse"] = filtered
+	if len(filtered) == 0 {
+		delete(hooks, "PreToolUse")
+	} else {
+		hooks["PreToolUse"] = filtered
+	}
 	settings["hooks"] = hooks
 
 	merged, err := json.MarshalIndent(settings, "", "  ")
