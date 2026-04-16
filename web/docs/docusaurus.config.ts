@@ -9,7 +9,7 @@ const config: Config = {
   baseUrl: "/docs/",
   trailingSlash: true,
   favicon: "img/favicon.ico",
-  onBrokenLinks: "warn",
+  onBrokenLinks: "throw",
   onBrokenMarkdownLinks: "warn",
   i18n: {
     defaultLocale: "en",
