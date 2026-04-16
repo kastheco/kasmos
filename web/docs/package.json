@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
-    "postbuild": "pagefind --site out/docs --output-path out/docs/_pagefind",
+    "postbuild": "pagefind --site out --output-path out/_pagefind",
     "start": "next start",
     "lint": "next lint"
   },
