@@ -483,6 +483,101 @@ readiness_review = "master"
 	})
 }
 
+func TestEnforcement(t *testing.T) {
+	t.Run("absent [enforcement] section leaves Enforcement nil and all harnesses enabled", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.toml")
+		require.NoError(t, os.WriteFile(path, []byte("[ui]\nanimate_banner = false\n"), 0o644))
+
+		result, err := LoadTOMLConfigFrom(path)
+		require.NoError(t, err)
+		assert.Nil(t, result.Enforcement)
+		assert.True(t, result.IsEnforcementEnabled("claude"))
+		assert.True(t, result.IsEnforcementEnabled("codex"))
+	})
+
+	t.Run("explicit false disables enforcement for the named harness", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.toml")
+		content := `
+[enforcement]
+codex = false
+`
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+
+		result, err := LoadTOMLConfigFrom(path)
+		require.NoError(t, err)
+		require.NotNil(t, result.Enforcement)
+		assert.False(t, result.IsEnforcementEnabled("codex"))
+		assert.True(t, result.IsEnforcementEnabled("claude")) // absent key → enabled
+	})
+
+	t.Run("explicit true enables enforcement for the named harness", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.toml")
+		content := `
+[enforcement]
+claude = true
+`
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+
+		result, err := LoadTOMLConfigFrom(path)
+		require.NoError(t, err)
+		require.NotNil(t, result.Enforcement)
+		assert.True(t, result.IsEnforcementEnabled("claude"))
+	})
+
+	t.Run("round-trips [enforcement] through SaveTOMLConfigTo and LoadTOMLConfigFrom", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.toml")
+
+		tc := &TOMLConfig{
+			Enforcement: map[string]bool{
+				"codex":  false,
+				"claude": true,
+			},
+		}
+		require.NoError(t, SaveTOMLConfigTo(tc, path))
+
+		loaded, err := LoadTOMLConfigFrom(path)
+		require.NoError(t, err)
+		require.NotNil(t, loaded.Enforcement)
+		assert.False(t, loaded.IsEnforcementEnabled("codex"))
+		assert.True(t, loaded.IsEnforcementEnabled("claude"))
+	})
+
+	t.Run("absent [enforcement] section omitted on save (nil map)", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.toml")
+
+		tc := &TOMLConfig{}
+		require.NoError(t, SaveTOMLConfigTo(tc, path))
+
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.NotContains(t, string(data), "enforcement")
+	})
+}
+
+func TestIsEnforcementEnabled(t *testing.T) {
+	tests := []struct {
+		name     string
+		settings map[string]bool
+		harness  string
+		want     bool
+	}{
+		{"nil map → enabled", nil, "claude", true},
+		{"absent key → enabled", map[string]bool{"codex": false}, "claude", true},
+		{"explicit false → disabled", map[string]bool{"codex": false}, "codex", false},
+		{"explicit true → enabled", map[string]bool{"claude": true}, "claude", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, IsEnforcementEnabled(tt.settings, tt.harness))
+		})
+	}
+}
+
 func TestLoadHooksForRepo(t *testing.T) {
 	t.Run("returns nil when config.toml absent", func(t *testing.T) {
 		repoDir := t.TempDir()
