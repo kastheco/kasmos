@@ -358,6 +358,10 @@ func isCodexKasmosDescendantHeader(line string) bool {
 		strings.HasPrefix(trimmed, `[mcp_servers."kasmos".`)
 }
 
+func isCodexKasmosManagedHeader(line string) bool {
+	return isCodexKasmosHeader(line) || isCodexKasmosDescendantHeader(line)
+}
+
 func isTOMLTableHeader(line string) bool {
 	trimmed := stripTOMLLineComment(line)
 	if !strings.HasPrefix(trimmed, "[") {
@@ -366,55 +370,45 @@ func isTOMLTableHeader(line string) bool {
 	return strings.HasSuffix(trimmed, "]")
 }
 
-// findCodexKasmosBlock returns [start, end) line indices spanning the kasmos
-// block — from its header line up to (but not including) the next unrelated
-// table header or EOF. Descendant kasmos headers (e.g.
-// [mcp_servers.kasmos.tools.read_file]) are treated as part of the same block
-// and are included in the span so they are removed when the block is rewritten.
-// Returns (-1, -1) when not present.
-func findCodexKasmosBlock(lines []string) (int, int) {
-	start := -1
-	for i, line := range lines {
-		if isCodexKasmosHeader(line) {
-			start = i
-			break
-		}
-	}
-	if start == -1 {
-		return -1, -1
-	}
-	end := len(lines)
-	for i := start + 1; i < len(lines); i++ {
-		if isTOMLTableHeader(lines[i]) && !isCodexKasmosDescendantHeader(lines[i]) {
-			end = i
-			break
-		}
-	}
-	return start, end
-}
-
 // patchCodexTOML returns updated TOML text with the kasmos mcp_servers block
-// replaced (or appended) to the desired content. Comments, ordering, and
-// unrelated sections are preserved verbatim.
+// replaced (or appended) to the desired content. Any stale descendant kasmos
+// table blocks are removed wherever they appear in the file. Comments,
+// ordering, and unrelated sections are preserved verbatim.
 func patchCodexTOML(existing string) string {
 	desired := codexMCPBlock()
 	if existing == "" {
 		return desired
 	}
 	lines := strings.Split(existing, "\n")
-	start, end := findCodexKasmosBlock(lines)
-	if start == -1 {
+	desiredLines := strings.Split(strings.TrimRight(desired, "\n"), "\n")
+	var out []string
+	inserted := false
+	foundKasmosBlock := false
+	for i := 0; i < len(lines); {
+		if !isCodexKasmosManagedHeader(lines[i]) {
+			out = append(out, lines[i])
+			i++
+			continue
+		}
+
+		foundKasmosBlock = true
+		if !inserted {
+			out = append(out, desiredLines...)
+			inserted = true
+		}
+
+		i++
+		for i < len(lines) && !isTOMLTableHeader(lines[i]) {
+			i++
+		}
+	}
+	if !foundKasmosBlock {
 		trimmed := strings.TrimRight(existing, "\n")
 		if trimmed == "" {
 			return desired
 		}
 		return trimmed + "\n\n" + desired
 	}
-	desiredLines := strings.Split(strings.TrimRight(desired, "\n"), "\n")
-	var out []string
-	out = append(out, lines[:start]...)
-	out = append(out, desiredLines...)
-	out = append(out, lines[end:]...)
 	return strings.Join(out, "\n")
 }
 
