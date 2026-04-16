@@ -1,30 +1,30 @@
 # creating plans
 
-A **plan** (also called a task) is the unit of work in kasmos. It starts as a short description, gets expanded into a structured markdown document by a planner agent, and then drives one or more coder agents through wave-based implementation.
+a **plan** (also called a task) is the unit of work in kasmos. it starts as a short description, gets expanded into a structured markdown document by a planner agent, and then drives one or more coder agents through wave-based implementation.
 
 ## step 1 — describe the work
 
-Press `n` in the TUI to open the new plan input. Type a free-form description of what you want built:
+press `n` in the tui to open the new plan input. type a free-form description of what you want built:
 
 ```
 add jwt authentication with refresh tokens and a /me endpoint
 ```
 
-Press `enter` (or `ctrl+enter` in multiline mode) to submit. kasmos registers the plan in the task store with status `ready` and a normalized filename derived from your description.
+press `enter` (or `ctrl+enter` in multiline mode) to submit. kasmos registers the plan in the task store with status `ready` and a normalized filename derived from your description.
 
-The plan content is **not** written to a checked-in markdown file. Everything lives in the global task store at `~/.config/kasmos/taskstore.db`. Use `kas task list` to see all registered plans and their current status.
+the plan content is **not** written to a checked-in markdown file. everything lives in the global task store at `~/.config/kasmos/taskstore.db`. use `kas task list` to see all registered plans and their current status.
 
 ## step 2 — start the planner
 
-With the plan selected, press `↵` to open the context menu and choose **start planning**. kasmos transitions the plan to `planning` status and spawns a planner agent on the main branch.
+with the plan selected, press `↵` to open the context menu and choose **start planning**. kasmos transitions the plan to `planning` status and spawns a planner agent on the main branch.
 
-The planner agent:
+the planner agent:
 1. reads the task description from the store
 2. writes a structured implementation plan (with `## Wave N` headers and `### Task N: title` sections)
-3. stores the content back via `kas task update-content`
-4. emits a `planner_finished` signal to notify the orchestration loop
+3. stores the content back via mcp `task_update_content`
+4. emits a `planner_finished` signal via mcp `signal_create` to notify the orchestration loop
 
-The orchestration loop picks up the signal and transitions the plan to `ready`, making the implementation stages available.
+the orchestration loop picks up the signal and transitions the plan to `ready`, making the implementation stages available.
 
 ## lifecycle from new to ready
 
@@ -42,13 +42,13 @@ The orchestration loop picks up the signal and transitions the plan to `ready`, 
                                     ready  ◄─── ready to implement
 ```
 
-See [lifecycle](/concepts/lifecycle) for the full FSM and all available transitions.
+see [lifecycle](/concepts/lifecycle) for the full fsm and all available transitions.
 
 ## inspecting plan content
 
-While the planner runs, its output is visible in the center pane preview. Once it finishes, press `v` or `p` to open the plan viewer and read the full document.
+while the planner runs, its output is visible in the center pane preview. once it finishes, press `v` or `p` to open the plan viewer and read the full document.
 
-From the CLI:
+from the cli:
 
 ```bash
 kas task show <task-file>
@@ -57,9 +57,9 @@ kas task list
 
 ## modifying a plan
 
-If the planner's output needs adjustment, open the context menu and choose **start planning** again. This respawns the planner with a "modify" prompt that includes the current plan content as context.
+if the planner's output needs adjustment, open the context menu and choose **start planning** again. this respawns the planner with a "modify" prompt that includes the current plan content as context.
 
-To write plan content directly:
+to write plan content directly from the cli:
 
 ```bash
 kas task update-content <task-file>  # reads from stdin
@@ -68,17 +68,17 @@ echo "your new plan" | kas task update-content my-feature
 
 ## topics
 
-Assign related plans to a **topic** to group them in the sidebar and prevent concurrent coder runs on the same codebase region. Open the context menu and choose **set topic**, or type a new topic name in the picker.
+assign related plans to a **topic** to group them in the sidebar and prevent concurrent coder runs on the same codebase region. open the context menu and choose **set topic**, or type a new topic name in the picker.
 
-See [topics](/concepts/topics) for how topics enforce scheduling constraints.
+see [topics](/concepts/topics) for how topics enforce scheduling constraints.
 
-## registering a plan from the CLI
+## registering a plan from the cli
 
-If you write your own plan markdown file, register it manually:
+if you write your own plan markdown file outside kasmos, prefer mcp `task_create` with inline `content`. in cli-only environments, you can still register it manually:
 
 ```bash
 kas task register my-feature.md
 kas task update-content my-feature < my-feature.md
 ```
 
-The store normalizes the filename: a trailing `.md` suffix is stripped, so `my-feature.md` and `my-feature` refer to the same task.
+the store normalizes the filename: a trailing `.md` suffix is stripped, so `my-feature.md` and `my-feature` refer to the same task.

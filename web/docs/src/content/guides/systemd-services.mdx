@@ -1,19 +1,19 @@
 # service management
 
-kasmos ships service unit files in `contrib/` for both Linux (systemd) and macOS (launchd). They keep the orchestration daemon and the remote task store running persistently across reboots without requiring a dedicated shell session.
+kasmos ships service unit files in `contrib/` for both linux (systemd) and macos (launchd). they keep the orchestration daemon and the remote task store running persistently across reboots without requiring a dedicated shell session.
 
 ## service units
 
 | unit | binary | purpose |
 |------|--------|---------|
 | `kasmos` | `kas daemon start --foreground` | orchestration daemon — claims signals and advances plan lifecycle |
-| `kasmosdb` | `kas serve` | remote task store HTTP server on port `7433` |
+| `kasmosdb` | `kas serve` | remote task store http server on port `7433` |
 
 ---
 
 ## linux (systemd)
 
-Both units run under your user account (`systemctl --user`) and require an absolute path to the `kas` binary. The `contrib/*.service` files are templates — the `__KAS_BIN__` placeholder must be substituted before enabling a unit.
+both units run under your user account (`systemctl --user`) and require an absolute path to the `kas` binary. the `contrib/*.service` files are templates — the `__KAS_BIN__` placeholder must be substituted before enabling a unit.
 
 ### preferred workflow (just)
 
@@ -28,11 +28,11 @@ just kasmosd-enable
 just db-service-enable
 ```
 
-Each `just` recipe resolves the `kas` binary via `command -v kas`, renders the `.service` template with the absolute path, writes the result to `~/.config/systemd/user/`, runs `systemctl --user daemon-reload`, and enables + starts the unit.
+each `just` recipe resolves the `kas` binary via `command -v kas`, renders the `.service` template with the absolute path, writes the result to `~/.config/systemd/user/`, runs `systemctl --user daemon-reload`, and enables + starts the unit.
 
 ### manual installation
 
-If you do not have `just` installed:
+if you do not have `just` installed:
 
 ```bash
 mkdir -p ~/.config/systemd/user
@@ -102,7 +102,7 @@ SyslogIdentifier=kasmos
 WantedBy=default.target
 ```
 
-Installed unit example (with `kas` at `/home/you/go/bin/kas`):
+installed unit example (with `kas` at `/home/you/go/bin/kas`):
 
 ```ini
 ExecStart=/home/you/go/bin/kas daemon start --foreground
@@ -127,13 +127,13 @@ Environment=HOME=%h
 WantedBy=default.target
 ```
 
-Both units use `Restart=on-failure` so they recover from crashes without manual intervention.
+both units use `Restart=on-failure` so they recover from crashes without manual intervention.
 
 ---
 
 ## macos (launchd)
 
-On macOS, kasmos uses launchd plists in `contrib/`. Plists are loaded per-user via `launchctl` and live in `~/Library/LaunchAgents/`.
+on macos, kasmos uses launchd plists in `contrib/`. plists are loaded per-user via `launchctl` and live in `~/Library/LaunchAgents/`.
 
 ### preferred workflow (just)
 
@@ -148,7 +148,7 @@ just kasmosd-enable
 just db-service-enable
 ```
 
-Each `just` recipe renders the plist template with your `$HOME` and the path to the `kas` binary, copies it to `~/Library/LaunchAgents/`, and calls `launchctl load -w` to load it immediately.
+each `just` recipe renders the plist template with your `$HOME` and the path to the `kas` binary, copies it to `~/Library/LaunchAgents/`, and calls `launchctl load -w` to load it immediately.
 
 ### manual installation
 
@@ -174,7 +174,7 @@ launchctl load -w ~/Library/LaunchAgents/com.kasmos.taskstore.plist
 launchctl list | grep kasmos
 ```
 
-Look for `com.kasmos.daemon` and `com.kasmos.taskstore`. A PID in the first column means the service is running.
+look for `com.kasmos.daemon` and `com.kasmos.taskstore`. a pid in the first column means the service is running.
 
 ### reading logs
 
@@ -269,31 +269,31 @@ rm ~/Library/LaunchAgents/com.kasmos.taskstore.plist
 </plist>
 ```
 
-`KeepAlive=true` is the launchd equivalent of `Restart=on-failure` — launchd will restart the process if it exits.
+launchd's `KeepAlive=true` setting is the equivalent of `Restart=on-failure` — launchd will restart the process if it exits.
 
 ---
 
 ## running the daemon directly (without a service manager)
 
-For debugging or one-shot runs, start the daemon in the foreground:
+for debugging or one-shot runs, start the daemon in the foreground:
 
 ```bash
 kas daemon start --foreground
 ```
 
-Or use just:
+or use just:
 
 ```bash
 just kasmosd-start
 ```
 
-Check running daemon status:
+check running daemon status:
 
 ```bash
 kas daemon status
 ```
 
-Stop the daemon:
+stop the daemon:
 
 ```bash
 kas daemon stop
@@ -303,13 +303,13 @@ just kasmosd-stop
 
 ## diagnosing installation
 
-Use the built-in doctor command to verify the daemon and task store are installed and responding:
+use the built-in doctor command to verify the daemon and task store are installed and responding:
 
 ```bash
 just doctord
 ```
 
-Output example (linux):
+output example (linux):
 
 ```
 == kasmos daemon doctor ==
@@ -333,12 +333,12 @@ next steps:
 
 ## why the daemon matters for signals
 
-When an agent emits a `kas signal emit ...` command, the signal is written as a pending row in the task store database. The orchestration daemon is what actually claims that row and advances the plan's lifecycle state (e.g. from `implementing` → `reviewing`).
+when an agent emits mcp `signal_create` (or, as a fallback, `kas signal emit ...`), the signal is written as a pending row in the task store database. the orchestration daemon is what actually claims that row and advances the plan's lifecycle state (e.g. from `implementing` → `reviewing`).
 
-If you emit signals without a running daemon, signals accumulate as `pending` rows but plans do not advance. Start the daemon — either via the service manager or `kas daemon start --foreground` — before running headless agent workflows that rely on signal-driven orchestration.
+if you emit signals without a running daemon, signals accumulate as `pending` rows but plans do not advance. start the daemon — either via the service manager or `kas daemon start --foreground` — before running headless agent workflows that rely on signal-driven orchestration.
 
 ## related
 
-- [remote task store](./remote-task-store) — `kas serve` configuration and REST API
+- [remote task store](./remote-task-store) — `kas serve` configuration and rest api
 - [daemon](/daemon) — orchestration daemon internals
 - [cli reference](/cli-reference) — `kas daemon` and `kas serve` flags

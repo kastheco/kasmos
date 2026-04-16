@@ -1,13 +1,13 @@
 # signals
 
-Signals are the messaging layer between agent processes and the daemon. An agent (planner, coder, reviewer, etc.) emits a signal when it completes a lifecycle phase; the daemon picks it up and drives the next FSM transition.
+signals are the messaging layer between agent processes and the daemon. an agent (planner, coder, reviewer, etc.) emits a signal when it completes a lifecycle phase; the daemon picks it up and drives the next fsm transition.
 
-The **primary signal path is the DB-backed gateway** — signals are rows in the `signals` SQLite table in the shared global store at `~/.config/kasmos/taskstore.db`. This path is atomic, auditable, and safely concurrent. A secondary **filesystem path** exists for compatibility and is automatically bridged into the DB on every daemon tick.
+the **primary signal path is the db-backed gateway** — signals are rows in the `signals` sqlite table in the shared global store at `~/.config/kasmos/taskstore.db`. this path is atomic, auditable, and safely concurrent. a secondary **filesystem path** exists for compatibility and is automatically bridged into the db on every daemon tick.
 
-> **Prefer `kas signal emit` over writing sentinel files directly.** The CLI routes signals through the DB gateway, giving you audit history, stuck-signal recovery, and proper error messages.
+> **prefer mcp `signal_create` for agents and `kas signal emit` for operators over writing sentinel files directly.** both routes go through the db gateway, giving you audit history, stuck-signal recovery, and proper error messages.
 
 ```sh
-# emit a signal (DB gateway path — preferred)
+# emit a signal (db gateway path — cli/operator fallback)
 kas signal emit implement_finished my-plan
 kas signal emit implement_task_finished my-plan --payload '{"wave_number":2,"task_number":3}'
 ```
@@ -21,7 +21,7 @@ sequenceDiagram
     autonumber
     participant Agent as Agent / tool
     participant MCP as MCP server (signaltools.go)
-    participant CLI as kas CLI (cmd/signal.go)
+    participant CLI as kas cli (cmd/signal.go)
     participant Bridge as FS bridge (loop/bridge.go)
     participant AdminUI as Admin UI (taskactions/handler.go)
     participant FSM as taskfsm (gateway_signal.go)
@@ -34,8 +34,8 @@ sequenceDiagram
     MCP->>FSM: EmitGatewaySignal(gw, project, type, planFile, payload)
     FSM->>GW: Create(project, SignalEntry{status:"pending"})
 
-    %% --- Path 2: CLI ---
-    Agent->>CLI: kas signal emit <type> <plan-file>
+    %% --- path 2: cli ---
+    Agent->>CLI: kas signal emit <type> <plan-file> (fallback/operator path)
     CLI->>FSM: EmitGatewaySignal(gw, project, type, planFile, payload)
     FSM->>GW: Create(project, SignalEntry{status:"pending"})
 
@@ -45,7 +45,7 @@ sequenceDiagram
     Bridge->>GW: Create(project, SignalEntry{status:"pending"})
     Bridge->>Bridge: ConsumeSignal(sig) — removes sentinel file
 
-    %% --- Path 4: admin HTTP transition (fsm_applied fast-path) ---
+    %% --- path 4: admin http transition (fsm_applied fast-path) ---
     AdminUI->>AdminUI: checkTransitionPrecondition(event, entry)
     AdminUI->>FSM: taskfsm.New(store).Transition(filename, event)
     Note over AdminUI: FSM transition already applied to task store
@@ -93,7 +93,7 @@ sequenceDiagram
         alt actions produced
             loop for each action
                 Daemon->>Exec: executeAction(ctx, repoEntry, action)
-                Exec->>Store: spawn agent / transition FSM / create PR / …
+                Exec->>Store: spawn agent / transition fsm / create pr / …
             end
             Daemon->>GW: MarkProcessed(id, "done", "")
         else no actions (noop)
@@ -102,9 +102,9 @@ sequenceDiagram
     end
 ```
 
-## DB-backed gateway (primary path)
+## db-backed gateway (primary path)
 
-The DB-backed signal gateway is implemented in `config/taskstore/signal_sqlite.go`. Signals are rows in the `signals` SQLite table in the shared global store at `~/.config/kasmos/taskstore.db`.
+the db-backed signal gateway is implemented in `config/taskstore/signal_sqlite.go`. signals are rows in the `signals` sqlite table in the shared global store at `~/.config/kasmos/taskstore.db`.
 
 ### schema
 
@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS signals (
 );
 ```
 
-An index on `(project, status, created_at, id)` ensures efficient ordered claim queries.
+an index on `(project, status, created_at, id)` ensures efficient ordered claim queries.
 
 ### signal statuses
 
@@ -144,7 +144,7 @@ pending
                                     └─ error   ──► failed
 ```
 
-`Claim` is a serializable transaction: it updates the row to `processing` in a single `UPDATE … WHERE id = (SELECT … LIMIT 1)` and then re-fetches the claimed row. Concurrent daemon instances or restarted processes cannot claim the same signal twice.
+the `Claim` operation is a serializable transaction: it updates the row to `processing` in a single `UPDATE … WHERE id = (SELECT … LIMIT 1)` and then re-fetches the claimed row. concurrent daemon instances or restarted processes cannot claim the same signal twice.
 
 ### signal types
 
@@ -152,41 +152,41 @@ pending
 |-------------|------------|---------|
 | `implement_finished` | coder / fixer | FSM transition → `reviewing`, spawn reviewer |
 | `implement_task_finished` | wave task agent | wave task complete, possible wave advance |
-| `implement_wave` | daemon / TUI | start next wave |
+| `implement_wave` | daemon / tui | start next wave |
 | `elaborator_finished` | architect | update plan content, begin wave 1 |
 | `review_approved` | reviewer | FSM transition `reviewing → verifying` (spawn master agent) when `auto_readiness_review = true`; otherwise `reviewing → done` |
 | `review_changes_requested` | reviewer | FSM transition → `implementing`, spawn fixer |
 | `planner_finished` | planner | FSM transition → `ready` |
 | `verify_approved` | master agent | FSM transition `verifying → done`. **No loop-cap signal is ever written to the gateway.** |
-| `verify_failed` | master agent | FSM transition `verifying → implementing`, spawn fixer. When `readiness_max_verify_cycles` is reached, the processor consumes the `verify_failed` signal but applies the `verifying → done` transition instead — no new `verify_approved` signal row is created, and the original `verify_failed` row is still marked processed. Callers distinguish the in-memory force-promotion via the `ForcePromoted` flag on the emitted `VerifyApprovedAction`. |
+| `verify_failed` | master agent | FSM transition `verifying → implementing`, spawn fixer. when `readiness_max_verify_cycles` is reached, the processor consumes the `verify_failed` signal but applies the `verifying → done` transition instead — no new `verify_approved` signal row is created, and the original `verify_failed` row is still marked processed. callers distinguish the in-memory force-promotion via the `ForcePromoted` flag on the emitted `VerifyApprovedAction`. |
 
-> **Architect completion:** the canonical internal event is `architect_finished`, but the persisted gateway signal wire name is `elaborator_finished` (a legacy alias preserved for compatibility). `kas signal emit architect_finished` is accepted and normalized to `elaborator_finished` transparently.
+> **architect completion:** the canonical internal event is `architect_finished`, but the persisted gateway signal wire name is `elaborator_finished` (a legacy alias preserved for compatibility). `kas signal emit architect_finished` is accepted and normalized to `elaborator_finished` transparently.
 
-> **Deprecated aliases:** `readiness_approved` → `verify_approved`; `readiness_changes_requested` / `readiness-changes` / `readiness-changes-requested` / `master_approved` → `verify_failed`. These aliases are accepted at ingress and canonicalized — use `verify_approved` / `verify_failed` in new automation.
+> **deprecated aliases:** `readiness_approved` → `verify_approved`; `readiness_changes_requested` / `readiness-changes` / `readiness-changes-requested` / `master_approved` → `verify_failed`. these aliases are accepted at ingress and canonicalized — use `verify_approved` / `verify_failed` in new automation.
 
-### writing a DB signal
+### writing a db signal
 
 ```sh
 kas signal emit implement_task_finished my-plan --payload '{"wave_number":2,"task_number":3}'
 ```
 
-This calls `gateway.Create(project, entry)` which inserts a row with `status = 'pending'`.
+this calls `gateway.Create(project, entry)` which inserts a row with `status = 'pending'`. in agent workflows, use mcp `signal_create` for the same gateway-backed result without shelling out to the cli.
 
 ### stuck signal reaper
 
-The daemon runs a reaper goroutine every 30 seconds. It calls `gateway.ResetStuck(60s)` to find signals that have been in `processing` for more than 60 seconds and reset them to `pending`. This handles daemon crashes between claim and mark-processed.
+the daemon runs a reaper goroutine every 30 seconds. it calls `gateway.ResetStuck(60s)` to find signals that have been in `processing` for more than 60 seconds and reset them to `pending`. this handles daemon crashes between claim and mark-processed.
 
 ## bridging the two paths
 
-On each tick, `loop.BridgeFilesystemSignals` scans the repo's filesystem signals directory (and all shared worktrees under `.worktrees/`) and inserts any signal files it finds as `pending` rows in the DB. The filesystem files are then consumed (deleted) by the bridge so they are not re-inserted on the next tick.
+on each tick, `loop.BridgeFilesystemSignals` scans the repo's filesystem signals directory (and all shared worktrees under `.worktrees/`) and inserts any signal files it finds as `pending` rows in the db. the filesystem files are then consumed (deleted) by the bridge so they are not re-inserted on the next tick.
 
-This means agents can write to the filesystem path without knowing whether a gateway is present — the daemon transparently upgrades them to the DB-backed flow when a gateway is available.
+this means agents can write to the filesystem path without knowing whether a gateway is present — the daemon transparently upgrades them to the db-backed flow when a gateway is available.
 
 ## filesystem path (compatibility / legacy)
 
-The filesystem path is preserved for backward compatibility and for low-level debugging. Agents that cannot reach the daemon directly may still write signal files; the bridge ensures they enter the DB-backed flow on the next tick.
+the filesystem path is preserved for backward compatibility and for low-level debugging. agents that cannot reach the daemon directly may still write signal files; the bridge ensures they enter the db-backed flow on the next tick.
 
-The filesystem path is implemented in `config/taskfsm/signalfs.go`. Signals are plain files written atomically to the repo's signals directory.
+the filesystem path is implemented in `config/taskfsm/signalfs.go`. signals are plain files written atomically to the repo's signals directory.
 
 ### directory layout
 
@@ -199,13 +199,13 @@ The filesystem path is implemented in `config/taskfsm/signalfs.go`. Signals are 
 └── <signal-file>      # pending signals ready for pickup
 ```
 
-- **`staging/`** — agents write here first, then atomically rename to the parent dir via `AtomicWrite`. This prevents the daemon from picking up a partially written file.
-- **`processing/`** — the daemon moves a file here via `BeginProcessing` before dispatching. If the daemon crashes between pick-up and completion, the file stays in `processing/`.
-- **`failed/`** — `FailProcessing` moves rejected signals here and writes a `.reason` file. Inspect these to debug signal routing failures.
+- **`staging/`** — agents write here first, then atomically rename to the parent dir via `AtomicWrite`. this prevents the daemon from picking up a partially written file.
+- **`processing/`** — the daemon moves a file here via `BeginProcessing` before dispatching. if the daemon crashes between pick-up and completion, the file stays in `processing/`.
+- **`failed/`** — `FailProcessing` moves rejected signals here and writes a `.reason` file. inspect these to debug signal routing failures.
 
 ### startup recovery
 
-On daemon startup, before the first poll tick, `taskfsm.RecoverInFlight(signalsDir)` scans `processing/` and moves any leftover files back to the signals root so they can be re-dispatched. If a newer signal with the same name already exists in the root (written after the crash), the stale in-flight copy is discarded to avoid overwriting newer state.
+on daemon startup, before the first poll tick, `taskfsm.RecoverInFlight(signalsDir)` scans `processing/` and moves any leftover files back to the signals root so they can be re-dispatched. if a newer signal with the same name already exists in the root (written after the crash), the stale in-flight copy is discarded to avoid overwriting newer state.
 
 ## inspecting signals
 
@@ -213,8 +213,8 @@ On daemon startup, before the first poll tick, `taskfsm.RecoverInFlight(signalsD
 # list pending filesystem sentinel files in .kasmos/signals/ (compatibility path only)
 kas signal list
 
-# emit a DB-backed signal (primary path — daemon processes these automatically)
+# emit a db-backed signal (primary path — daemon processes these automatically)
 kas signal emit implement_finished my-plan
 ```
 
-Failed filesystem signals accumulate in `.kasmos/signals/failed/`. Examine the companion `.reason` files to understand why a signal was rejected, fix the root cause, and re-emit.
+failed filesystem signals accumulate in `.kasmos/signals/failed/`. examine the companion `.reason` files to understand why a signal was rejected, fix the root cause, and re-emit.

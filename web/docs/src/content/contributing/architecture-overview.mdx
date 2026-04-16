@@ -1,15 +1,15 @@
 # architecture overview
 
-kasmos is a Go application with several surfaces that work together: an interactive terminal UI, a Cobra CLI, a background daemon, a SQLite/HTTP task store, and a web front-end.
+kasmos is a go application with several surfaces that work together: an interactive terminal ui, a cobra cli, a background daemon, a sqlite/http task store, and a web front-end.
 
 ## high-level directory map
 
 | path | what lives here |
 |------|----------------|
-| `cmd/kas/` | app entrypoint, Cobra root wiring, TUI startup, `setup` / `reset` / `debug` / `version` |
+| `cmd/kas/` | app entrypoint, cobra root wiring, tui startup, `setup` / `reset` / `debug` / `version` |
 | `cmd/kas/check.go` | `kas check` — audits skill sync across agent harnesses |
-| `cmd/` | CLI subcommands: `task`, `daemon`, `monitor`, `signal`, `tmux`, `instance`, `audit`, `serve` |
-| `app/` | main Bubble Tea model, TUI state machine, orchestration glue |
+| `cmd/` | cli subcommands: `task`, `daemon`, `monitor`, `signal`, `tmux`, `instance`, `audit`, `serve` |
+| `app/` | main bubble tea model, tui state machine, orchestration glue |
 | `ui/` | rendering components: nav, status bar, info pane, overlays |
 | `session/` | instance lifecycle, execution backends (tmux / headless), notifications, git worktrees |
 | `session/git/` | worktree checkout, resume, orphan adoption |
@@ -21,33 +21,33 @@ kasmos is a Go application with several surfaces that work together: an interact
 | `config/taskparser/` | markdown plan parser |
 | `config/taskfsm/` | task lifecycle finite state machine |
 | `config/taskstate/` | in-process task state wrapper |
-| `config/taskstore/` | SQLite + HTTP task store and signal gateway |
-| `daemon/` | multi-repo background orchestrator, Unix-socket control API |
+| `config/taskstore/` | sqlite + http task store and signal gateway |
+| `daemon/` | multi-repo background orchestrator, unix-socket control api |
 | `internal/initcmd/` | `kas setup` wizard and scaffold templates |
 | `web/` | Next.js App Router marketing site |
 | `web/docs/` | Nextra docs site (this site) |
-| `web/admin/` | Vite-based SPA for the task store browser UI |
+| `web/admin/` | vite-based spa for the task store browser ui |
 | `.agents/`, `.claude/`, `.Claude/` | scaffolded agent harness configs and skills |
 | `contrib/` | systemd service files for daemon and task-store deployment |
 
 ## request flow
 
-Here is how a typical action flows through the system from the user's perspective:
+here is how a typical action flows through the system from the user's perspective:
 
 ```
-TUI / CLI action
+tui / cli action
       │
       ▼
   task store / FSM
   (config/taskstore, config/taskfsm)
-      │  status transition recorded in SQLite
+      │  status transition recorded in sqlite
       ▼
   agent session
   (session/ + session/tmux/ or session/headless/)
       │  spawns agent in tmux pane or headless process
       ▼
   agent emits signal
-  (kas signal emit ... — DB gateway, preferred)
+  (mcp `signal_create` ... — db gateway, preferred)
   │  compatibility: filesystem sentinel in .kasmos/signals/ bridged on next tick
       │
       ▼
@@ -65,27 +65,27 @@ TUI / CLI action
 
 ### key notes on the flow
 
-- **Signals** use a DB-backed gateway as the primary path — `kas signal emit` writes rows to the global `~/.config/kasmos/taskstore.db`. The daemon bridges repo-local `.kasmos/signals/` sentinel files into the DB on each tick; this filesystem path is compatibility plumbing, not the recommended workflow for new agents.
-- **Worktrees**: each agent works in an isolated `git worktree` under `<repo-root>/.worktrees/`. The main repo root is always resolved by `config.ResolveRepoRoot()` even when running inside a worktree.
-- **Config is anchored to the main repo root**: `.kasmos/` always lives at the top-level repo, never inside a worktree.
-- **Topic collision gate**: only one task per topic can be `implementing` at a time. The store enforces this before spawning a coder session.
+- **signals** use a db-backed gateway as the primary path — agents should use mcp `signal_create`, while `kas signal emit` is the operator and cli fallback. both write rows to the global `~/.config/kasmos/taskstore.db`. the daemon bridges repo-local `.kasmos/signals/` sentinel files into the db on each tick; this filesystem path is compatibility plumbing, not the recommended workflow for new agents.
+- **worktrees**: each agent works in an isolated `git worktree` under `<repo-root>/.worktrees/`. the main repo root is always resolved by `config.ResolveRepoRoot()` even when running inside a worktree.
+- **config is anchored to the main repo root**: `.kasmos/` always lives at the top-level repo, never inside a worktree.
+- **topic collision gate**: only one task per topic can be `implementing` at a time. the store enforces this before spawning a coder session.
 
 ## subsystem details
 
-### TUI (Bubble Tea / Lip Gloss)
+### tui (bubble tea / lip gloss)
 
-The interactive app is built with [Bubble Tea v2](https://github.com/charmbracelet/bubbletea) and [Lip Gloss v2](https://github.com/charmbracelet/lipgloss). The `app/` package holds the root model and state machine; `ui/` holds individual rendering components (nav, status bar, tabs, overlays).
+the interactive app is built with [bubble tea v2](https://github.com/charmbracelet/bubbletea) and [lip gloss v2](https://github.com/charmbracelet/lipgloss). the `app/` package holds the root model and state machine; `ui/` holds individual rendering components (nav, status bar, tabs, overlays).
 
-Key conventions:
-- All blocking I/O happens inside `tea.Cmd` goroutines and results are returned as `tea.Msg` — never block in `Update`.
-- Overlays use arrow-key navigation (`↑`/`↓`), not `j`/`k`.
-- User-visible labels are lowercase.
+key conventions:
+- all blocking I/O happens inside `tea.Cmd` goroutines and results are returned as `tea.Msg` — never block in `Update`.
+- overlays use arrow-key navigation (`↑`/`↓`), not `j`/`k`.
+- user-visible labels are lowercase.
 
 ### task store
 
-The task store (`config/taskstore/`) is backed by SQLite via `modernc.org/sqlite` and also exposes an HTTP API (`kas serve`). It stores task content, lifecycle status, signals, and metadata. The admin SPA (`web/admin/`) talks to this HTTP API.
+the task store (`config/taskstore/`) is backed by sqlite via `modernc.org/sqlite` and also exposes an http api (`kas serve`). it stores task content, lifecycle status, signals, and metadata. the admin spa (`web/admin/`) talks to this http api.
 
-The default store is the shared global database at `~/.config/kasmos/taskstore.db`. File paths inside the store have `.md` suffixes stripped (there is a migration for older records).
+the default store is the shared global database at `~/.config/kasmos/taskstore.db`. file paths inside the store have `.md` suffixes stripped (there is a migration for older records).
 
 ### scaffold-managed files
 
@@ -95,7 +95,7 @@ The default store is the shared global database at `~/.config/kasmos/taskstore.d
 - `.claude/` — claude-code harness config
 - `.Claude/` — Claude skills
 
-If you edit the templates, you must also update the live copies (or vice-versa), then run `kas check -v` to confirm they are in sync.
+if you edit the templates, you must also update the live copies (or vice-versa), then run `kas check -v` to confirm they are in sync.
 
 ### web surfaces
 
@@ -103,15 +103,15 @@ If you edit the templates, you must also update the live copies (or vice-versa),
 |---------|-----------|--------|------|
 | marketing site | Next.js App Router | `web/out/` | `/kasmos` |
 | docs site | Nextra 4 | `web/docs/out/` | `/kasmos/docs` |
-| admin SPA | Vite | `web/admin/dist/` | served by `kas serve` |
+| admin spa | vite | `web/admin/dist/` | served by `kas serve` |
 
-The marketing site and docs site both use `output: "export"` with `basePath: "/kasmos"` for static GitHub Pages deployment. The admin SPA is a separate Vite app that is not exported to Pages — it runs as a dev tool or embedded in the daemon server.
+the marketing site and docs site both use `output: "export"` with `basePath: "/kasmos"` for static github pages deployment. the admin spa is a separate vite app that is not exported to pages — it runs as a dev tool or embedded in the daemon server.
 
 ## the `kas` command
 
-The binary artifact is named `kas` — `go build -o kas ./cmd/kas`, `go install github.com/kastheco/kasmos/cmd/kas@latest`, and `just install` all produce or install a `kas` binary directly. `just install` also creates an optional `kms` short alias in `$GOPATH/bin`. The CLI surface is always referred to as `kas` in documentation and code.
+the binary artifact is named `kas` — `go build -o kas ./cmd/kas`, `go install github.com/kastheco/kasmos/cmd/kas@latest`, and `just install` all produce or install a `kas` binary directly. `just install` also creates an optional `kms` short alias in `$GOPATH/bin`. the cli surface is always referred to as `kas` in documentation and code.
 
-Current top-level subcommands: `setup`, `check`, `task`, `serve`, `instance`, `audit`, `tmux`, `signal`, `daemon`, `monitor`, `reset`, `debug`, `version`.
+current top-level subcommands: `setup`, `check`, `task`, `serve`, `instance`, `audit`, `tmux`, `signal`, `daemon`, `monitor`, `reset`, `debug`, `version`.
 
 ## architecture diagrams
 
@@ -119,7 +119,7 @@ the full architecture documentation lives in `docs/architecture/` and contains d
 
 - **system-context** — actors, surfaces, and runtime containers
 - **source-of-truth** — where each piece of state lives and which process owns it
-- **daemon-topology** — process internals, unix socket, SSE events
+- **daemon-topology** — process internals, unix socket, sse events
 - **signal-flow** — how agent signals cross service boundaries into the daemon loop
 - **task-fsm** — the complete task lifecycle state machine
 - **wave-execution** — how plans become parallel coder agents
@@ -131,13 +131,13 @@ the following diagram shows the top-level system context — who talks to kasmos
 flowchart TD
     operator["👤 operator\n(human at a terminal)"]
     agent["🤖 agent harness\n(claude / codex / gemini / amp)"]
-    reviewer["🌐 remote reviewer\n(GitHub CI, PR author)"]
+    reviewer["🌐 remote reviewer\n(github ci, pr author)"]
 
-    tui["TUI\n(bubbletea app)"]
-    cli["kas CLI\n(cobra commands)"]
-    serve["kas serve\n(HTTP :7433 + MCP :7434)"]
-    adminui["admin UI\n(browser SPA at /admin/)"]
-    mcp["MCP HTTP endpoint\n(/mcp — streamable HTTP)"]
+    tui["tui\n(bubbletea app)"]
+    cli["kas cli\n(cobra commands)"]
+    serve["kas serve\n(http :7433 + mcp :7434)"]
+    adminui["admin ui\n(browser spa at /admin/)"]
+    mcp["mcp http endpoint\n(/mcp — streamable http)"]
     daemonapi["daemon control API\n(unix socket)"]
 
     operator -->|"keyboard / tmux"| tui

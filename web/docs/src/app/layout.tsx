@@ -85,6 +85,10 @@ export default async function RootLayout({
         <Layout
           navbar={navbar}
           pageMap={await getPageMap()}
+          sidebar={{
+            defaultMenuCollapseLevel: 1,
+            autoCollapse: true,
+          }}
           docsRepositoryBase="https://github.com/kastheco/kasmos/blob/main/web/docs/src/content"
           footer={footer}
         >

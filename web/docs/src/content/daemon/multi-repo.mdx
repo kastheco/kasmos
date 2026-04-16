@@ -1,12 +1,12 @@
 # multi-repo
 
-The kasmos daemon can manage any number of repositories simultaneously. Each repo runs its own poll loop. The **task store and signal gateway are shared globally** (`~/.config/kasmos/taskstore.db`) — project namespacing inside the DB prevents collisions between repos. The signal directory (`<repo>/.kasmos/signals/`) and the wave orchestrator (`loop.Processor`) remain per-repo.
+the kasmos daemon can manage any number of repositories simultaneously. each repo runs its own poll loop. the **task store and signal gateway are shared globally** (`~/.config/kasmos/taskstore.db`) — project namespacing inside the db prevents collisions between repos. the signal directory (`<repo>/.kasmos/signals/`) and the wave orchestrator (`loop.Processor`) remain per-repo.
 
 ## registration
 
 ### at startup
 
-Repos listed in `~/.config/kasmos/daemon.toml` are registered before the daemon enters its poll loop:
+repos listed in `~/.config/kasmos/daemon.toml` are registered before the daemon enters its poll loop:
 
 ```toml
 repos = [
@@ -18,59 +18,59 @@ repos = [
 
 ### at runtime
 
-Use `kas daemon add` while the daemon is running:
+use `kas daemon add` while the daemon is running:
 
 ```sh
 kas daemon add /home/user/new-project
 ```
 
-This sends `POST /v1/repos` to the control socket. The repo is registered immediately and included in the next tick.
+this sends `POST /v1/repos` to the control socket. the repo is registered immediately and included in the next tick.
 
-To remove a repo:
+to remove a repo:
 
 ```sh
 kas daemon remove /home/user/old-project
 ```
 
-This sends `DELETE /v1/repos/<project>` and closes the repo's task store.
+this sends `DELETE /v1/repos/<project>` and closes the repo's task store.
 
 ## project naming
 
-The project name is always `filepath.Base(path)` — the last component of the absolute path.
+the project name is always `filepath.Base(path)` — the last component of the absolute path.
 
 ```
 /home/user/kasmos  →  project: "kasmos"
 /work/my-lib       →  project: "my-lib"
 ```
 
-**Duplicate basename rejection** — if you try to add `/work/foo` when `/archive/foo` is already registered, the daemon rejects it:
+**duplicate basename rejection** — if you try to add `/work/foo` when `/archive/foo` is already registered, the daemon rejects it:
 
 ```
 repo with basename "foo" already registered (path: /archive/foo);
 rename one of the directories or use distinct names
 ```
 
-This constraint exists because the project name is the primary key for signal routing, task store queries, and the control API. Two repos with the same basename would cause signal misrouting.
+this constraint exists because the project name is the primary key for signal routing, task store queries, and the control api. two repos with the same basename would cause signal misrouting.
 
 ## per-repo resources
 
-When a repo is registered, `RepoManager.Add` opens (or reuses) the shared global DB and records the following per-repo state:
+when a repo is registered, `RepoManager.Add` opens (or reuses) the shared global db and records the following per-repo state:
 
 | resource | location | shared? | purpose |
 |----------|----------|---------|---------|
-| task store | `~/.config/kasmos/taskstore.db` | **global** (namespaced by `project`) | SQLite task/subtask/signal storage |
+| task store | `~/.config/kasmos/taskstore.db` | **global** (namespaced by `project`) | sqlite task/subtask/signal storage |
 | signal gateway | same global DB file | **global** (namespaced by `project`) | atomic signal claim/mark-processed |
 | signals directory | `<repo>/.kasmos/signals/` | per-repo | filesystem sentinel files, bridged into the gateway each tick |
 
-`RepoManager.Add` lazy-opens the global DB once; subsequent `Add` calls for other repos reuse the same open `Store` and `SignalGateway` handles. Project namespacing inside the DB ensures that task and signal rows from `backend` and `frontend` never collide, even though they share the same SQLite file.
+the `RepoManager.Add` call lazy-opens the global db once; subsequent `Add` calls for other repos reuse the same open `Store` and `SignalGateway` handles. project namespacing inside the db ensures that task and signal rows from `backend` and `frontend` never collide, even though they share the same sqlite file.
 
-Opening the global DB can fail (e.g. `~/.config/kasmos/` does not exist or the DB is locked). This is **non-fatal** — the repo is registered with `Store: nil` and `SignalGateway: nil`. The daemon logs a warning and skips the repo on each tick rather than crashing.
+opening the global db can fail (e.g. `~/.config/kasmos/` does not exist or the db is locked). this is **non-fatal** — the repo is registered with `Store: nil` and `SignalGateway: nil`. the daemon logs a warning and skips the repo on each tick rather than crashing.
 
-A repo with a nil store becomes fully functional as soon as the DB is accessible and the repo is removed and re-added (or the daemon is restarted).
+a repo with a nil store becomes fully functional as soon as the db is accessible and the repo is removed and re-added (or the daemon is restarted).
 
 ## per-repo processor
 
-Each repo also gets a dedicated `loop.Processor` instance:
+each repo also gets a dedicated `loop.Processor` instance:
 
 ```go
 proc := loop.NewProcessor(loop.ProcessorConfig{
@@ -82,11 +82,11 @@ proc := loop.NewProcessor(loop.ProcessorConfig{
 })
 ```
 
-The processor is **created once** and reused across all tick cycles. This is important because `loop.Processor` holds in-memory `WaveOrchestrator` state for active wave plans — if the processor were recreated on each tick, in-progress wave progress would be lost.
+the processor is **created once** and reused across all tick cycles. this is important because `loop.Processor` holds in-memory `WaveOrchestrator` state for active wave plans — if the processor were recreated on each tick, in-progress wave progress would be lost.
 
 ## shared worktrees
 
-On each tick, `loop.BridgeFilesystemSignals` scans not only `<repo>/.kasmos/signals/` but also all directories under `<repo>/.worktrees/`:
+on each tick, `loop.BridgeFilesystemSignals` scans not only `<repo>/.kasmos/signals/` but also all directories under `<repo>/.worktrees/`:
 
 ```
 <repo>/.worktrees/
@@ -96,11 +96,11 @@ On each tick, `loop.BridgeFilesystemSignals` scans not only `<repo>/.kasmos/sign
     └── .kasmos/signals/    ← also scanned
 ```
 
-Any filesystem sentinel files found are inserted as `pending` rows in the shared signal gateway. This is **compatibility plumbing** — it lets older agents or tooling that writes sentinel files continue to work without changes. New workflows should emit signals directly via `kas signal emit`, which writes to the gateway without touching the filesystem.
+any filesystem sentinel files found are inserted as `pending` rows in the shared signal gateway. this is **compatibility plumbing** — it lets older agents or tooling that writes sentinel files continue to work without changes. new agent workflows should emit signals directly via mcp `signal_create`; `kas signal emit` remains the operator and cli fallback that writes to the same gateway without touching the filesystem.
 
 ## hooks
 
-When a repo is registered, `config.LoadHooksForRepo(path)` reads its `.kasmos/config.toml` for any `[[hooks]]` entries:
+when a repo is registered, `config.LoadHooksForRepo(path)` reads its `.kasmos/config.toml` for any `[[hooks]]` entries:
 
 ```toml
 [[hooks]]
@@ -109,7 +109,7 @@ url     = "https://example.com/notify"
 events  = ["review_approved", "implement_finished"]
 ```
 
-Hooks fire after FSM transitions and are scoped to the repo where they are configured. Each repo has its own `taskfsm.HookRegistry` — hooks from one repo never fire for another.
+hooks fire after fsm transitions and are scoped to the repo where they are configured. each repo has its own `taskfsm.HookRegistry` — hooks from one repo never fire for another.
 
 ## viewing registered repos
 
@@ -117,7 +117,7 @@ Hooks fire after FSM transitions and are scoped to the repo where they are confi
 kas daemon status
 ```
 
-This prints all registered repos, their project names, and the count of currently active plans per project:
+this prints all registered repos, their project names, and the count of currently active plans per project:
 
 ```
 daemon running (uptime: 3h14m22s)
@@ -139,4 +139,4 @@ auto_review_fix = true
 max_review_fix_cycles = 2
 ```
 
-Both projects (`backend`, `frontend`) share the global task store at `~/.config/kasmos/taskstore.db`. Each gets its own `SignalsDir` (`<project>/.kasmos/signals/`) and its own `loop.Processor`. Project namespacing inside the shared DB ensures that plans, waves, and signals from one project never interfere with the other.
+both projects (`backend`, `frontend`) share the global task store at `~/.config/kasmos/taskstore.db`. each gets its own `SignalsDir` (`<project>/.kasmos/signals/`) and its own `loop.Processor`. project namespacing inside the shared db ensures that plans, waves, and signals from one project never interfere with the other.

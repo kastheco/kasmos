@@ -1,6 +1,6 @@
 # lifecycle
 
-Every task in kasmos moves through a finite state machine (FSM). The FSM validates all transitions, writes new status to the task store, and records phase timestamps.
+every task in kasmos moves through a finite state machine (fsm). the fsm validates all transitions, writes new status to the task store, and records phase timestamps.
 
 ## statuses
 
@@ -16,7 +16,7 @@ Every task in kasmos moves through a finite state machine (FSM). The FSM validat
 
 ## execution phases
 
-While `status` is the coarse lifecycle stage, tasks in the `implementing` and adjacent states carry a finer-grained `ExecutionPhase` that records where the orchestration engine is within that stage.
+while `status` is the coarse lifecycle stage, tasks in the `implementing` and adjacent states carry a finer-grained `ExecutionPhase` that records where the orchestration engine is within that stage.
 
 | phase | meaning |
 |-------|---------|
@@ -30,18 +30,18 @@ While `status` is the coarse lifecycle stage, tasks in the `implementing` and ad
 
 ### how phases are set
 
-The `planner_finished` event writes `ExecutionState{Phase: "planned"}`. All other events leave the phase empty; the orchestration engine writes it directly as agent sessions advance.
+the `planner_finished` event writes `ExecutionState{Phase: "planned"}`. all other events leave the phase empty; the orchestration engine writes it directly as agent sessions advance.
 
 ### draft-ready vs planned-ready
 
-A `ready` task can be in one of two substates:
+a `ready` task can be in one of two substates:
 
-- **draft-ready** — `status: ready`, `execution_phase: ""` (empty). The task has been registered but the planner has not yet finished. `implement_start` is **rejected** for draft-ready tasks — both `kas task implement` and the TUI's "implement" action return an error (`"task is ready but not yet planned"`).
-- **planned-ready** — `status: ready`, `execution_phase: "planned"`. The planner finished successfully and the task is safe to hand off to coder agents.
+- **draft-ready** — `status: ready`, `execution_phase: ""` (empty). the task has been registered but the planner has not yet finished. `implement_start` is **rejected** for draft-ready tasks — both `kas task implement` and the tui's "implement" action return an error (`"task is ready but not yet planned"`).
+- **planned-ready** — `status: ready`, `execution_phase: "planned"`. the planner finished successfully and the task is safe to hand off to coder agents.
 
 ## events
 
-Events trigger transitions. Some events are **user-only** (can only be fired from the TUI or CLI) and cannot be emitted as agent signals.
+events trigger transitions. some events are **user-only** (can only be fired from the tui or cli) and cannot be emitted as agent signals.
 
 | event | user-only | description |
 |-------|-----------|-------------|
@@ -52,14 +52,14 @@ Events trigger transitions. Some events are **user-only** (can only be fired fro
 | `request_review` | **yes** | manually trigger a reviewer |
 | `review_approved` | no | reviewer approved the implementation; routes `reviewing → verifying` when `auto_readiness_review = true`, otherwise `reviewing → done` |
 | `review_changes_requested` | no | reviewer requested changes |
-| `verify_approved` | no | master agent approved during verifying (→ `done`). The daemon never writes a `verify_approved` signal row itself — see `verify_failed` for loop-cap handling |
-| `verify_failed` | no | master agent requested changes during verifying (→ `implementing`). When the verify-round count reaches `readiness_max_verify_cycles` the processor still consumes this `verify_failed` signal but applies the `verifying → done` transition directly instead; no new signal is emitted, and the processor tags the emitted `VerifyApprovedAction` as `ForcePromoted` so the TUI can surface a warning |
+| `verify_approved` | no | master agent approved during verifying (→ `done`). the daemon never writes a `verify_approved` signal row itself — see `verify_failed` for loop-cap handling |
+| `verify_failed` | no | master agent requested changes during verifying (→ `implementing`). when the verify-round count reaches `readiness_max_verify_cycles` the processor still consumes this `verify_failed` signal but applies the `verifying → done` transition directly instead; no new signal is emitted, and the processor tags the emitted `VerifyApprovedAction` as `ForcePromoted` so the tui can surface a warning |
 | `start_over` | **yes** | reset to planning from done |
 | `reimplement` | **yes** | resume implementation from done without resetting branch |
 | `cancel` | **yes** | cancel the task from any active status |
 | `reopen` | **yes** | reopen a cancelled task back to planning |
 
-> **Verifying signals:** `verify_approved` and `verify_failed` are the canonical signal names emitted by the master agent. Deprecated aliases are accepted at ingress and canonicalized: `readiness_approved` → `verify_approved`; `readiness_changes_requested` / `readiness-changes` / `readiness-changes-requested` / `master_approved` → `verify_failed`.
+> **verifying signals:** `verify_approved` and `verify_failed` are the canonical signal names emitted by the master agent. deprecated aliases are accepted at ingress and canonicalized: `readiness_approved` → `verify_approved`; `readiness_changes_requested` / `readiness-changes` / `readiness-changes-requested` / `master_approved` → `verify_failed`.
 
 ## state diagram
 
@@ -139,7 +139,7 @@ cancelled
 
 ## phase timestamps
 
-When the FSM writes a new status, it also records a timestamp for that phase in the task store. These power the timeline view in the TUI's info pane:
+when the fsm writes a new status, it also records a timestamp for that phase in the task store. these power the timeline view in the tui's info pane:
 
 | status reached | timestamp field |
 |----------------|-----------------|
@@ -151,17 +151,17 @@ When the FSM writes a new status, it also records a timestamp for that phase in 
 
 ## triggering transitions
 
-### from the TUI
+### from the tui
 
-Select a task and press `↵` (enter) to open the context menu. Available actions depend on the current status (e.g. "start planner", "implement", "review", "cancel").
+select a task and press `↵` (enter) to open the context menu. available actions depend on the current status (e.g. "start planner", "implement", "review", "cancel").
 
-### from the CLI
+### from the cli
 
 ```bash
 kas task transition <task-file> <event>
 ```
 
-Examples:
+examples:
 
 ```bash
 kas task transition my-feature plan_start
@@ -172,14 +172,14 @@ kas task transition my-feature reopen
 
 ### from agents (signals)
 
-Agents emit **agent signals** via `kas signal emit`. The signal is written to the SQLite-backed signals table and picked up by the daemon, which drives FSM transitions. A compatibility path also exists: signals written as files under `.kasmos/signals/` can be processed by `kas signal process`. On daemon startup, kasmos only recovers any files left in `.kasmos/signals/processing/` back to the root; file-based signals are then bridged/processed on subsequent daemon ticks. Either way, the orchestration loop claims pending signals atomically before calling `Transition()` on the FSM.
+agents should emit **agent signals** via mcp `signal_create`. the signal is written to the sqlite-backed signals table and picked up by the daemon, which drives fsm transitions. `kas signal emit` is the operator and cli fallback. a compatibility path also exists: signals written as files under `.kasmos/signals/` can be processed by `kas signal process`. on daemon startup, kasmos only recovers any files left in `.kasmos/signals/processing/` back to the root; file-based signals are then bridged/processed on subsequent daemon ticks. either way, the orchestration loop claims pending signals atomically before calling `Transition()` on the fsm.
 
 ## forcing a status
 
-For recovery when signals fail or the FSM gets stuck:
+for recovery when signals fail or the fsm gets stuck:
 
 ```bash
 kas task set-status <task-file> <status> --force
 ```
 
-This bypasses transition validation and writes directly to the store.
+this bypasses transition validation and writes directly to the store.

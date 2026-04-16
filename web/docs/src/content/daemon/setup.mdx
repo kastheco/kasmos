@@ -1,6 +1,6 @@
 # setup
 
-kasmos ships service unit templates in `contrib/` and a set of Just recipes for managing them. The `Justfile` recipes auto-detect whether you are on linux (systemd) or macOS (launchd) and apply the right tooling automatically. This page covers both.
+kasmos ships service unit templates in `contrib/` and a set of just recipes for managing them. the `justfile` recipes auto-detect whether you are on linux (systemd) or macos (launchd) and apply the right tooling automatically. this page covers both.
 
 ## prerequisites
 
@@ -10,7 +10,7 @@ kasmos ships service unit templates in `contrib/` and a set of Just recipes for 
 
 ## just recipes
 
-All daemon management is available through the `Justfile` at the repo root. The recipes detect `$(uname -s)` at runtime so the same commands work on both platforms.
+all daemon management is available through the `justfile` at the repo root. the recipes detect `$(uname -s)` at runtime so the same commands work on both platforms.
 
 ### install and enable
 
@@ -27,13 +27,13 @@ just services-enable
 
 `kasmosd-enable` runs in three stages:
 
-1. Calls `just install` — builds and installs the `kas` binary, creates the optional `kms` alias.
-2. Installs the service definition for the current platform:
+1. calls `just install` — builds and installs the `kas` binary, creates the optional `kms` alias.
+2. installs the service definition for the current platform:
    - **linux** — resolves the `kas` binary via `command -v kas`, renders `contrib/kasmos.service` by substituting `__KAS_BIN__` with the absolute path, writes the result to `~/.config/systemd/user/kasmos.service`, and reloads the daemon.
    - **macOS** — renders `contrib/com.kasmos.daemon.plist` with the current `$HOME` and binary path, copies it to `~/Library/LaunchAgents/`, and loads it with `launchctl`.
-3. Enables and starts the service.
+3. enables and starts the service.
 
-`db-service-enable` does the same for the plan store service (`kas serve`), which exposes the task store for remote inspection and the TUI on port 7433 (configurable with `--port`).
+`db-service-enable` does the same for the task-store service (`kas serve`), which exposes the task-store rest api and admin ui on port 7433 (configurable with `--port`) plus the shared mcp endpoint on port 7434 by default.
 
 ### direct daemon start/stop
 
@@ -41,7 +41,7 @@ just services-enable
 # start the daemon in the foreground (useful for debugging)
 just kasmosd-start    # runs: kas daemon start
 
-# stop the daemon by PID
+# stop the daemon by pid
 just kasmosd-stop     # runs: kas daemon stop
 
 # check daemon status
@@ -65,7 +65,7 @@ just doctord
 
 ### linux — systemd
 
-`contrib/kasmos.service` is a template. `__KAS_BIN__` is replaced with the absolute binary path during `just kasmosd-install`. The installed unit looks like:
+`contrib/kasmos.service` is a template. `__KAS_BIN__` is replaced with the absolute binary path during `just kasmosd-install`. the installed unit looks like:
 
 ```ini
 [Unit]
@@ -88,7 +88,7 @@ SyslogIdentifier=kasmos
 WantedBy=default.target
 ```
 
-Logs go to the journal:
+logs go to the journal:
 
 ```sh
 journalctl --user -u kasmos -f
@@ -96,7 +96,7 @@ journalctl --user -u kasmos -f
 
 `contrib/kasmosdb.service` follows the same template pattern for `kas serve`.
 
-### macOS — launchd
+### macos — launchd
 
 `contrib/com.kasmos.daemon.plist` (rendered by `just kasmosd-enable` with the active `$HOME`):
 
@@ -127,13 +127,13 @@ journalctl --user -u kasmos -f
 </plist>
 ```
 
-Logs are written to `~/Library/Logs/kasmos/daemon.log`:
+logs are written to `~/Library/Logs/kasmos/daemon.log`:
 
 ```sh
 tail -f ~/Library/Logs/kasmos/daemon.log
 ```
 
-Manage the service manually:
+manage the service manually:
 
 ```sh
 # load and start
@@ -148,9 +148,9 @@ launchctl list | grep kasmos
 
 ## daemon config file
 
-The daemon reads `~/.config/kasmos/daemon.toml` on startup. Create it manually or let the daemon create an empty one on first run. See the [CLI reference](/cli-reference/daemon#configuration-file) for the full field list.
+the daemon reads `~/.config/kasmos/daemon.toml` on startup. create it manually or let the daemon create an empty one on first run. see the [cli reference](/cli-reference/daemon#configuration-file) for the full field list.
 
-Minimal example to auto-watch two repos and enable PR monitoring:
+minimal example to auto-watch two repos and enable pr monitoring:
 
 ```toml
 repos = ["/home/user/project-a", "/home/user/project-b"]
@@ -180,17 +180,17 @@ tail -f ~/Library/Logs/kasmos/daemon.log
 just doctord
 ```
 
-The socket lives at:
+the socket lives at:
 
 - `$XDG_RUNTIME_DIR/kasmos/kas.sock` (when `XDG_RUNTIME_DIR` is set — typical on systemd desktop sessions)
 - `os.TempDir()/kasmos-<uid>/kas.sock` (fallback; on macOS this is typically `$TMPDIR`, e.g. `/var/folders/.../kasmos-<uid>/kas.sock`, not `/tmp`)
 
 ## manual foreground run
 
-Useful when iterating on daemon config or debugging signal flow:
+useful when iterating on daemon config or debugging signal flow:
 
 ```sh
 kas daemon start --foreground --config /tmp/test-daemon.toml
 ```
 
-Ctrl-C sends SIGTERM and triggers the 35-second graceful drain.
+ctrl-c sends SIGTERM and triggers the 35-second graceful drain.

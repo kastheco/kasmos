@@ -2,13 +2,13 @@
 
 ## git repository requirement
 
-`kas` must be run from within a git repository. On startup, the main entry point checks for a git root and exits with an error if none is found:
+`kas` must be run from within a git repository. on startup, the main entry point checks for a git root and exits with an error if none is found:
 
 ```
 kas must be run from within a git repository
 ```
 
-This applies both to the interactive TUI (`kas`) and most subcommands. The project-local config directory is anchored to the repository root, so every project gets its own isolated kasmos state.
+this applies both to the interactive tui (`kas`) and most subcommands. the project-local config directory is anchored to the repository root, but task state is still coordinated through the global shared task store.
 
 ## project config directory
 
@@ -27,23 +27,23 @@ kasmos separates repo-local runtime directories from the global task store.
 
 | path | purpose |
 |------|---------|
-| `~/.config/kasmos/taskstore.db` | SQLite task store (plans, signals, task state) |
+| `~/.config/kasmos/taskstore.db` | sqlite task store (plans, signals, task state) |
 
-The resolved DB path can be overridden via `database_url` in `.kasmos/config.toml` to point at a remote store. Use `kas debug` to print the resolved config and DB paths for the current repository.
+the resolved db path can be overridden via `database_url` in `.kasmos/config.toml` to point at a remote store. use `kas debug` to print the resolved config and db paths for the current repository.
 
-## launching the TUI
+## launching the tui
 
-From inside your git repository, run:
+from inside your git repository, run:
 
 ```bash
 kas
 ```
 
-On first launch you will see the general help overlay. Press any key to dismiss it.
+on first launch you will see the general help overlay. press any key to dismiss it.
 
-## TUI layout
+## tui layout
 
-The interface is divided into three main areas:
+the interface is divided into three main areas:
 
 - **sidebar** — topics and plan groups, toggled with `ctrl+s`
 - **instance list** — active agent sessions for the selected plan
@@ -97,20 +97,20 @@ The interface is divided into three main areas:
 
 ## execution modes
 
-When you spawn an agent (`s`), kasmos creates an isolated git worktree and starts the agent in one of two execution modes:
+when you spawn an agent (`s`), kasmos creates an isolated git worktree and starts the agent in one of two execution modes:
 
-- **tmux** — session is attachable (`↵`/`o`); use interactive mode (`i`) to type directly into the agent pane. Best for exploratory work.
-- **headless** — session runs in the background; output is streamed to the preview pane and logs. Best for automated wave work.
+- **tmux** — session is attachable (`↵`/`o`); use interactive mode (`i`) to type directly into the agent pane. best for exploratory work.
+- **headless** — session runs in the background; output is streamed to the preview pane and logs. best for automated wave work.
 
-The execution mode is set per agent role in `config.toml` via the `execution_mode` field. See [setup wizard](./setup-wizard) for configuration details.
+the execution mode is set per agent role in `config.toml` via the `execution_mode` field. see [setup wizard](./setup-wizard) for configuration details.
 
 ## first task
 
-Once the TUI is running:
+once the tui is running:
 
-1. Press `n` to create a new plan
-2. Enter a name and description
-3. Press `↵` to open the plan context menu
-4. Select an action to start the planning or implementing phase
+1. press `n` to create a new plan
+2. enter a name and description
+3. press `↵` to open the plan context menu
+4. select an action to start the planning or implementing phase
 
-If you haven't run `kas setup` yet, do that first — see [setup wizard](./setup-wizard).
+if you haven't run `kas setup` yet, do that first — see [setup wizard](./setup-wizard).
