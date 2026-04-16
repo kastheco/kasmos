@@ -1,7 +1,108 @@
 import type { SidebarsConfig } from "@docusaurus/plugin-content-docs";
 
 const sidebars: SidebarsConfig = {
-  docsSidebar: ["index"],
+  docsSidebar: [
+    "index",
+    {
+      type: "category",
+      label: "getting started",
+      link: { type: "doc", id: "getting-started/index" },
+      items: [
+        "getting-started/prerequisites",
+        "getting-started/installation",
+        "getting-started/first-run",
+        "getting-started/setup-wizard",
+      ],
+    },
+    {
+      type: "category",
+      label: "concepts",
+      link: { type: "doc", id: "concepts/index" },
+      items: [
+        "concepts/plans-and-tasks",
+        "concepts/waves",
+        "concepts/topics",
+        "concepts/lifecycle",
+        "concepts/agents-and-roles",
+        "concepts/worktrees",
+      ],
+    },
+    {
+      type: "category",
+      label: "guides",
+      link: { type: "doc", id: "guides/index" },
+      items: [
+        "guides/tui-overview",
+        "guides/creating-plans",
+        "guides/running-implementations",
+        "guides/reviewing-and-merging",
+        "guides/managing-instances",
+        "guides/recipes",
+        "guides/remote-task-store",
+        "guides/systemd-services",
+        "guides/skills",
+        "guides/agent-harnesses",
+      ],
+    },
+    {
+      type: "category",
+      label: "cli reference",
+      link: { type: "doc", id: "cli-reference/index" },
+      items: [
+        "cli-reference/task",
+        "cli-reference/setup",
+        "cli-reference/daemon",
+        "cli-reference/serve",
+        "cli-reference/signal",
+        "cli-reference/other-commands",
+      ],
+    },
+    {
+      type: "category",
+      label: "configuration",
+      link: { type: "doc", id: "configuration/index" },
+      items: [
+        "configuration/config-toml",
+        "configuration/daemon-toml",
+        "configuration/agent-profiles",
+        "configuration/task-store",
+      ],
+    },
+    {
+      type: "category",
+      label: "contributing",
+      link: { type: "doc", id: "contributing/index" },
+      items: [
+        "contributing/development-setup",
+        "contributing/testing",
+        "contributing/architecture-overview",
+      ],
+    },
+    "faq",
+    {
+      type: "category",
+      label: "daemon",
+      link: { type: "doc", id: "daemon/index" },
+      items: [
+        "daemon/architecture",
+        "daemon/setup",
+        "daemon/signals",
+        "daemon/multi-repo",
+        "daemon/pr-monitor",
+      ],
+    },
+    {
+      type: "category",
+      label: "headless",
+      link: { type: "doc", id: "headless/index" },
+      items: [
+        "headless/how-it-works",
+        "headless/configuration",
+        "headless/logs-and-output",
+        "headless/comparison",
+      ],
+    },
+  ],
 };
 
 export default sidebars;
