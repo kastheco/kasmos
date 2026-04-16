@@ -381,10 +381,10 @@ func TestSortOrder_SameTitleOrderedByPhase(t *testing.T) {
 	// Four plans whose display names collide after ToLower.
 	// Acceptance rule: reviewing < implementing < planning < idle.
 	plans := []PlanDisplay{
-		{Filename: "Same-Plan", Phase: "planned"},               // planning → 2
-		{Filename: "same-plan", Phase: "wave_running"},          // implementing → 1
-		{Filename: "SAME-PLAN", Phase: "reviewing"},             // reviewing → 0
-		{Filename: "Same-plan", Phase: ""},                      // idle → 3
+		{Filename: "Same-Plan", Phase: "planned"},      // planning → 2
+		{Filename: "same-plan", Phase: "wave_running"}, // implementing → 1
+		{Filename: "SAME-PLAN", Phase: "reviewing"},    // reviewing → 0
+		{Filename: "Same-plan", Phase: ""},             // idle → 3
 	}
 	n.SetData(plans, nil, nil, nil, nil)
 
