@@ -32,9 +32,9 @@ func (i *Instance) HasUpdated() (updated bool, hasPrompt bool) {
 
 // NewEmbeddedTerminalForInstance creates an embedded terminal emulator connected
 // to this instance's tmux PTY for zero-latency interactive focus mode.
-// Returns ErrInteractiveOnly for headless instances.
+// Returns ErrInteractiveOnly for SDK instances (no live terminal to attach to).
 func (i *Instance) NewEmbeddedTerminalForInstance(cols, rows int) (*EmbeddedTerminal, error) {
-	if i.ExecutionMode == ExecutionModeHeadless {
+	if NormalizeExecutionMode(i.ExecutionMode) == ExecutionModeSDK {
 		return nil, ErrInteractiveOnly
 	}
 	if !i.started || i.executionSession == nil {
@@ -90,6 +90,8 @@ func (i *Instance) GetGitWorktree() (*git.GitWorktree, error) {
 
 // SendPrompt sends a text prompt followed by an enter keypress to the agent pane.
 // Returns an error if the instance is not started or the execution session is nil.
+// The 100ms sleep between SendKeys and TapEnter is skipped for SDK sessions
+// because the SDK backend buffers the prompt internally and does not need it.
 func (i *Instance) SendPrompt(prompt string) error {
 	if !i.started {
 		return fmt.Errorf("instance not started")
@@ -100,8 +102,11 @@ func (i *Instance) SendPrompt(prompt string) error {
 	if err := i.executionSession.SendKeys(prompt); err != nil {
 		return fmt.Errorf("error sending keys to session: %w", err)
 	}
-	// Brief pause to prevent the carriage return from being misinterpreted.
-	time.Sleep(100 * time.Millisecond)
+	// Brief pause to prevent the carriage return from being misinterpreted by tmux.
+	// Skip for SDK mode — the backend buffers the prompt and the sleep is unnecessary.
+	if NormalizeExecutionMode(i.ExecutionMode) == ExecutionModeTmux {
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err := i.executionSession.TapEnter(); err != nil {
 		return fmt.Errorf("error tapping enter: %w", err)
 	}
@@ -115,6 +120,28 @@ func (i *Instance) PreviewFullHistory() (string, error) {
 		return "", nil
 	}
 	return i.executionSession.CapturePaneContentWithOptions("-", "-")
+}
+
+// PreviewRange captures a line-range slice of the pane output.
+// start and end follow tmux -S/-E semantics ("-" = beginning/end, integers are
+// 0-based line offsets, negative values count from the end).
+// Returns an empty string if the instance is not started or is paused.
+func (i *Instance) PreviewRange(start, end string) (string, error) {
+	if !i.started || i.Status == Paused {
+		return "", nil
+	}
+	return i.executionSession.CapturePaneContentWithOptions(start, end)
+}
+
+// Interrupt sends a ctrl-C interrupt to the agent.
+// For SDK sessions this calls the transport's Interrupt; for tmux sessions it
+// routes through SendKeys("\x03").
+// Returns an error if the instance is not started.
+func (i *Instance) Interrupt() error {
+	if !i.started {
+		return fmt.Errorf("instance not started")
+	}
+	return i.executionSession.SendKeys("\x03")
 }
 
 // SetTmuxSession replaces the tmux session handle. Intended for use in tests only.

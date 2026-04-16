@@ -15,17 +15,26 @@ type AgentProfile struct {
 
 const (
 	ExecutionModeTmux     = "tmux"
-	ExecutionModeHeadless = "headless"
+	ExecutionModeSDK      = "sdk"
+	ExecutionModeHeadless = "headless" // legacy alias, normalised to "sdk"
 )
 
+// NormalizeExecutionMode canonicalises a profile execution mode string.
+// Managed profiles default to SDK when no mode is specified.
+//
+//   - ""        → "sdk"  (managed profiles default to SDK)
+//   - "sdk"     → "sdk"
+//   - "headless"→ "sdk"  (legacy alias)
+//   - "tmux"    → "tmux" (explicit opt-out to tmux)
+//   - anything else → "sdk"
 func NormalizeExecutionMode(mode string) string {
 	switch strings.TrimSpace(mode) {
-	case "", ExecutionModeTmux:
+	case ExecutionModeTmux:
 		return ExecutionModeTmux
-	case ExecutionModeHeadless:
-		return ExecutionModeHeadless
 	default:
-		return ExecutionModeTmux
+		// "" (unset), "sdk", "headless", or unknown all resolve to SDK for
+		// managed profiles.
+		return ExecutionModeSDK
 	}
 }
 
@@ -38,7 +47,7 @@ func NormalizeExecutionMode(mode string) string {
 // are present in PhaseRoles, the directly-requested name takes precedence.
 func (c *Config) ResolveProfile(phase string, defaultProgram string) AgentProfile {
 	if c.PhaseRoles == nil || c.Profiles == nil {
-		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeTmux}
+		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeSDK}
 	}
 	roleName, ok := c.PhaseRoles[phase]
 	if !ok {
@@ -50,15 +59,15 @@ func (c *Config) ResolveProfile(phase string, defaultProgram string) AgentProfil
 			roleName, ok = c.PhaseRoles["readiness_review"]
 		}
 		if !ok {
-			return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeTmux}
+			return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeSDK}
 		}
 	}
 	profile, ok := c.Profiles[roleName]
 	if !ok {
-		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeTmux}
+		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeSDK}
 	}
 	if profile.Program == "" || !profile.Enabled {
-		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeTmux}
+		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeSDK}
 	}
 	profile.ExecutionMode = NormalizeExecutionMode(profile.ExecutionMode)
 	return profile

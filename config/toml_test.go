@@ -64,7 +64,8 @@ flags = []
 		assert.NotNil(t, coder.Temperature)
 		assert.InDelta(t, 0.7, *coder.Temperature, 0.001)
 		assert.Equal(t, "high", coder.Effort)
-		assert.Equal(t, ExecutionModeHeadless, coder.ExecutionMode)
+		// "headless" in config is a legacy alias normalised to "sdk".
+		assert.Equal(t, ExecutionModeSDK, coder.ExecutionMode)
 		assert.True(t, coder.Enabled)
 
 		// Verify disabled agent
@@ -98,7 +99,8 @@ flags = []
 
 		coder, ok := tc.Profiles["coder"]
 		require.True(t, ok)
-		assert.Equal(t, ExecutionModeTmux, coder.ExecutionMode)
+		// Invalid execution_mode in a profile normalises to "sdk" (managed profile default).
+		assert.Equal(t, ExecutionModeSDK, coder.ExecutionMode)
 	})
 
 	t.Run("returns error on missing file", func(t *testing.T) {
@@ -166,7 +168,8 @@ func TestSaveTOMLConfig(t *testing.T) {
 		assert.Equal(t, original.Phases, loaded.PhaseRoles)
 		coder := loaded.Profiles["coder"]
 		assert.Equal(t, "opencode", coder.Program)
-		assert.Equal(t, ExecutionModeHeadless, coder.ExecutionMode)
+		// "headless" in the original config.toml is normalised to "sdk" on load.
+		assert.Equal(t, ExecutionModeSDK, coder.ExecutionMode)
 		assert.Equal(t, "anthropic/claude-sonnet-4-6", coder.Model)
 		assert.InDelta(t, 0.5, *coder.Temperature, 0.001)
 		assert.Equal(t, "#112233", loaded.AccentColor)
@@ -174,7 +177,7 @@ func TestSaveTOMLConfig(t *testing.T) {
 }
 
 func TestResolveProfile_ExecutionMode(t *testing.T) {
-	t.Run("defaults to tmux when unset", func(t *testing.T) {
+	t.Run("defaults to sdk when unset", func(t *testing.T) {
 		cfg := &Config{
 			PhaseRoles: map[string]string{"implementing": "coder"},
 			Profiles: map[string]AgentProfile{
@@ -183,10 +186,11 @@ func TestResolveProfile_ExecutionMode(t *testing.T) {
 		}
 
 		profile := cfg.ResolveProfile("implementing", "claude")
-		assert.Equal(t, ExecutionModeTmux, profile.ExecutionMode)
+		// Managed profiles default to "sdk" (NormalizeExecutionMode("") = "sdk").
+		assert.Equal(t, ExecutionModeSDK, profile.ExecutionMode)
 	})
 
-	t.Run("preserves configured headless mode", func(t *testing.T) {
+	t.Run("headless mode normalises to sdk", func(t *testing.T) {
 		cfg := &Config{
 			PhaseRoles: map[string]string{"implementing": "coder"},
 			Profiles: map[string]AgentProfile{
@@ -195,10 +199,35 @@ func TestResolveProfile_ExecutionMode(t *testing.T) {
 		}
 
 		profile := cfg.ResolveProfile("implementing", "claude")
-		assert.Equal(t, ExecutionModeHeadless, profile.ExecutionMode)
+		// "headless" is a legacy alias that normalises to "sdk".
+		assert.Equal(t, ExecutionModeSDK, profile.ExecutionMode)
 	})
 
-	t.Run("falls back to tmux for invalid mode", func(t *testing.T) {
+	t.Run("sdk mode preserved", func(t *testing.T) {
+		cfg := &Config{
+			PhaseRoles: map[string]string{"implementing": "coder"},
+			Profiles: map[string]AgentProfile{
+				"coder": {Program: "opencode", Enabled: true, ExecutionMode: ExecutionModeSDK},
+			},
+		}
+
+		profile := cfg.ResolveProfile("implementing", "claude")
+		assert.Equal(t, ExecutionModeSDK, profile.ExecutionMode)
+	})
+
+	t.Run("tmux mode preserved", func(t *testing.T) {
+		cfg := &Config{
+			PhaseRoles: map[string]string{"implementing": "coder"},
+			Profiles: map[string]AgentProfile{
+				"coder": {Program: "opencode", Enabled: true, ExecutionMode: ExecutionModeTmux},
+			},
+		}
+
+		profile := cfg.ResolveProfile("implementing", "claude")
+		assert.Equal(t, ExecutionModeTmux, profile.ExecutionMode)
+	})
+
+	t.Run("invalid mode normalises to sdk", func(t *testing.T) {
 		cfg := &Config{
 			PhaseRoles: map[string]string{"implementing": "coder"},
 			Profiles: map[string]AgentProfile{
@@ -207,7 +236,8 @@ func TestResolveProfile_ExecutionMode(t *testing.T) {
 		}
 
 		profile := cfg.ResolveProfile("implementing", "claude")
-		assert.Equal(t, ExecutionModeTmux, profile.ExecutionMode)
+		// Unknown modes fall back to "sdk" for managed profiles.
+		assert.Equal(t, ExecutionModeSDK, profile.ExecutionMode)
 	})
 }
 

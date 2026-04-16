@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kastheco/kasmos/session/headless"
+	"github.com/kastheco/kasmos/session/sdk"
 	"github.com/kastheco/kasmos/session/tmux"
 )
 
@@ -13,13 +13,17 @@ import (
 type ExecutionMode string
 
 const (
-	// ExecutionModeTmux uses tmux as the process host (default).
+	// ExecutionModeTmux uses tmux as the process host (default for ad-hoc sessions).
 	ExecutionModeTmux ExecutionMode = "tmux"
-	// ExecutionModeHeadless runs the agent directly as an exec.Cmd without tmux.
+	// ExecutionModeSDK drives the agent via its app-server JSON-RPC protocol.
+	// This is the primary mode for managed profiles.
+	ExecutionModeSDK ExecutionMode = "sdk"
+	// ExecutionModeHeadless is a legacy alias for ExecutionModeSDK.
+	// Kept for backward compatibility with persisted instance data.
 	ExecutionModeHeadless ExecutionMode = "headless"
 )
 
-// ErrInteractiveOnly is returned by headless sessions when an interactive
+// ErrInteractiveOnly is returned by SDK/headless sessions when an interactive
 // operation (e.g. Attach, SendKeys) is requested.
 var ErrInteractiveOnly = errors.New("interactive operation requires tmux execution")
 
@@ -71,21 +75,42 @@ type progressReporter interface {
 	SetProgressFunc(fn func(int, string))
 }
 
-// NormalizeExecutionMode returns ExecutionModeHeadless when mode is
-// ExecutionModeHeadless (after trimming whitespace), and ExecutionModeTmux for
-// all other values including "".
+// NormalizeExecutionMode canonicalises mode for the session layer.
+//
+//   - "sdk" → ExecutionModeSDK
+//   - "headless" (legacy alias) → ExecutionModeSDK
+//   - "tmux" → ExecutionModeTmux
+//   - "" or anything unknown → ExecutionModeTmux (conservative default for ad-hoc sessions)
 func NormalizeExecutionMode(mode ExecutionMode) ExecutionMode {
-	if ExecutionMode(strings.TrimSpace(string(mode))) == ExecutionModeHeadless {
-		return ExecutionModeHeadless
+	switch ExecutionMode(strings.TrimSpace(string(mode))) {
+	case ExecutionModeSDK, ExecutionModeHeadless:
+		return ExecutionModeSDK
+	case ExecutionModeTmux:
+		return ExecutionModeTmux
+	default:
+		return ExecutionModeTmux
 	}
-	return ExecutionModeTmux
+}
+
+// ResolveExecutionMode determines the actual execution mode for the given
+// requested mode and program.  When mode is SDK but the program is not
+// supported by any SDK transport, the mode falls back to tmux so the UI and
+// livepreview layers always reflect the real process host.
+func ResolveExecutionMode(requested ExecutionMode, program string) ExecutionMode {
+	normalised := NormalizeExecutionMode(requested)
+	if normalised == ExecutionModeSDK && !sdk.SupportsProgram(program) {
+		return ExecutionModeTmux
+	}
+	return normalised
 }
 
 // NewExecutionSession constructs the appropriate ExecutionSession for the given mode.
+// Callers should pass an already-resolved mode (via ResolveExecutionMode) to
+// avoid constructing an SDK session for an unsupported program.
 func NewExecutionSession(mode ExecutionMode, name, program string, skipPermissions bool) ExecutionSession {
 	switch NormalizeExecutionMode(mode) {
-	case ExecutionModeHeadless:
-		return headless.New(name, program, skipPermissions)
+	case ExecutionModeSDK:
+		return sdk.New(name, program, skipPermissions)
 	default:
 		return newTmuxExecutionSession(name, program, skipPermissions)
 	}

@@ -129,11 +129,10 @@ func (s *Storage) LoadInstances() ([]*Instance, error) {
 
 		// Wave-task instances are not resumable without a live session.
 		// Drop stale records so restart recovery does not resurrect ghost tasks.
-		// For tmux mode, check for a live tmux session.
-		// For headless mode, check process liveness via the headless session object
-		// (which will report false for any freshly constructed session with no running cmd).
+		// Use ResolveExecutionMode so that unsupported-SDK programs fall back to
+		// tmux before the liveness check (they were persisted as tmux anyway).
 		if rec.TaskNumber > 0 {
-			checkSess := NewExecutionSession(NormalizeExecutionMode(rec.ExecutionMode), rec.Title, rec.Program, rec.SkipPermissions)
+			checkSess := NewExecutionSession(ResolveExecutionMode(rec.ExecutionMode, rec.Program), rec.Title, rec.Program, rec.SkipPermissions)
 			if !checkSess.DoesSessionExist() {
 				log.WarningLog.Printf(
 					"skipping stale wave instance %q: session not found",

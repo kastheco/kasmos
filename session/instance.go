@@ -197,12 +197,14 @@ func (i *Instance) ToInstanceData() InstanceData {
 }
 
 // FromInstanceData reconstructs an Instance from its serialised form.
-// Empty or unknown ExecutionMode is normalised to tmux before constructing the session.
+// The execution mode is resolved (via ResolveExecutionMode) so that the
+// Instance.ExecutionMode always reflects the actual process host — if the
+// requested mode is SDK but the program is unsupported, tmux is used instead.
 // For paused instances the execution session is prepared but not started.
 // For live instances the session is reattached; dead sessions are marked Exited.
 func FromInstanceData(data InstanceData) (*Instance, error) {
-	// Normalise empty/unknown mode to tmux for backward compatibility.
-	mode := NormalizeExecutionMode(data.ExecutionMode)
+	// Resolve: normalise + SDK-unsupported-program fallback.
+	mode := ResolveExecutionMode(data.ExecutionMode, data.Program)
 
 	agentType := data.AgentType
 	if agentType == "" && data.IsReviewer {
@@ -364,7 +366,7 @@ func NewInstance(opts InstanceOptions) (*Instance, error) {
 		Status:          Ready,
 		Path:            absPath,
 		Program:         opts.Program,
-		ExecutionMode:   NormalizeExecutionMode(opts.ExecutionMode),
+		ExecutionMode:   ResolveExecutionMode(opts.ExecutionMode, opts.Program),
 		Height:          0,
 		Width:           0,
 		CreatedAt:       now,
