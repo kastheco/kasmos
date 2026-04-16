@@ -594,10 +594,18 @@ func defaultRepoResetSync(repo string, out io.Writer) error {
 				continue
 			}
 			fmt.Fprintf(out, "  %-12s ", name)
-			if err := h.InstallEnforcement(); err != nil {
-				fmt.Fprintf(out, "FAILED: %v\n", err)
+			if config.IsEnforcementEnabled(tomlCfg.Enforcement, name) {
+				if err := h.InstallEnforcement(); err != nil {
+					fmt.Fprintf(out, "FAILED: %v\n", err)
+				} else {
+					fmt.Fprintln(out, "OK")
+				}
 			} else {
-				fmt.Fprintln(out, "OK")
+				if err := h.UninstallEnforcement(); err != nil {
+					fmt.Fprintf(out, "FAILED: %v\n", err)
+				} else {
+					fmt.Fprintln(out, "REMOVED (enforcement disabled)")
+				}
 			}
 		}
 		return nil
