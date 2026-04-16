@@ -17,6 +17,7 @@ flowchart TD
 
     tui["TUI\n(bubbletea app)"]
     cli["kas CLI\n(cobra commands)"]
+    serve["kas serve\n(HTTP :7433 + MCP :7434)"]
     adminui["admin UI\n(browser SPA at /admin/)"]
     mcp["MCP HTTP endpoint\n(/mcp — streamable HTTP)"]
     daemonapi["daemon control API\n(unix socket)"]
@@ -28,7 +29,7 @@ flowchart TD
     reviewer -->|"GitHub webhooks / manual kas commands"| cli
     cli -->|"control commands"| daemonapi
     tui -->|"instance management"| daemonapi
-    adminui -->|"REST /v1/..."| cli
+    adminui -->|"REST /v1/..."| serve
 ```
 
 **legend**
@@ -89,7 +90,7 @@ flowchart TD
 | container | process | listen |
 |-----------|---------|--------|
 | `kas serve` | managed by `kasmosdb` systemd unit | TCP (default `0.0.0.0:7433`, MCP `:7434`) |
-| daemon | `kasmos` systemd unit | unix socket (`$XDG_RUNTIME_DIR/kasmos/kas.sock`) |
+| daemon | `kasmos` systemd unit | unix socket (see `ResolvedDaemonSocketPath()` in `config/taskstore/unix_client.go`) |
 | task store | in-process SQLite | — |
 | signal gateway | in-process SQLite | — |
 | tmux session | `tmux new-session` | pty (visible in TUI) |

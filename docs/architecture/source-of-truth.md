@@ -9,10 +9,10 @@
 
 ```mermaid
 flowchart TD
-    subgraph CONFIG["Repo-local config &amp; filesystem compat inputs"]
+    subgraph CONFIG["Repo-local config and filesystem compat inputs"]
         direction TB
-        TOML["&lt;repo&gt;/.kasmos/config.toml\n(authoritative live config)"]
-        SIGDIR["&lt;repo&gt;/.kasmos/signals/\n(legacy filesystem compat — not primary)"]
+        TOML["repo/.kasmos/config.toml\n(authoritative live config)"]
+        SIGDIR["repo/.kasmos/signals/\n(legacy filesystem compat — not primary)"]
         TOML -->|"DatabaseURL field\n(optional)"| FACTORY
     end
 
@@ -34,7 +34,7 @@ flowchart TD
     subgraph DAEMON["Daemon in-memory state\ndaemon/ — managed by systemd --user kasmos"]
         direction TB
         DMEM["Registered repos\nRunning instances\nSSE subscribers\n(live; rebuilt from SQLite on restart)"]
-        SOCK["Unix socket\n~/.config/kasmos/kas.sock\n(or XDG_RUNTIME_DIR/kasmos/kas.sock)"]
+        SOCK["Unix socket\nResolvedDaemonSocketPath:\ndaemon.toml socket_path\nor XDG_RUNTIME_DIR/kasmos/kas.sock\nor /tmp/kasmos-uid/kas.sock"]
         DMEM <-->|"read/write"| SOCK
     end
 
@@ -82,7 +82,7 @@ flowchart TD
 | `topics` | `kas task create`, MCP task creation | TUI topic filter, `kas task list` |
 | `subtasks` | orchestration loop after plan parsing | TUI plan detail pane, web admin |
 | `pr_reviews` | daemon PR-poll loop | daemon fixer dispatch |
-| daemon in-memory state | daemon internals, Unix-socket API calls | TUI via Unix socket, web admin via Unix socket |
+| daemon in-memory state | daemon internals, Unix-socket API calls | TUI via Unix socket, `kas monitor` via Unix socket |
 | `<repo>/.kasmos/config.toml` | user (`kas config set`), manual edits | all subsystems at startup via `config.LoadConfig()` |
 
 ---
@@ -94,8 +94,7 @@ flowchart TD
 | `~/.config/kasmos/taskstore.db` | global SQLite file; shared by task store, signal gateway, and audit log |
 | `<repo>/.kasmos/config.toml` | project config; `DatabaseURL` field selects remote task-store mode |
 | `<repo>/.kasmos/signals/` | filesystem sentinel directory; legacy compat only — not the primary signal write path |
-| `~/.config/kasmos/kas.sock` | daemon Unix socket (default; see `ResolvedDaemonSocketPath()`) |
-| `XDG_RUNTIME_DIR/kasmos/kas.sock` | daemon Unix socket when `XDG_RUNTIME_DIR` is set |
+| daemon Unix socket | `ResolvedDaemonSocketPath()`: (1) `socket_path` from `~/.config/kasmos/daemon.toml`, (2) `$XDG_RUNTIME_DIR/kasmos/kas.sock`, (3) `/tmp/kasmos-<uid>/kas.sock` |
 
 ---
 

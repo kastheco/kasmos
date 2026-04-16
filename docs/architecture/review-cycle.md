@@ -48,7 +48,7 @@ sequenceDiagram
         P->>TS: reviewing → implementing
         P->>TS: ReviewCycle++
         P->>CF: spawn <plan>-fix-<N> (fixer, with feedback)
-        Note over CF,P: fixer finishes → implement_finished →<br/>spawn <plan>-review-<N+1> (loop)
+        Note over CF,P: fixer finishes, implement_finished, spawn plan-review-N+1 (loop)
     else review_approved  [AutoReadinessReview = true]
         R->>P: review_approved
         P->>TS: reviewing → verifying

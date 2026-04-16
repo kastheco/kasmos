@@ -21,7 +21,7 @@ flowchart LR
     SK --> R
 
     B -- "normal path" --> C[spawn architect agent\nSetElaborating]
-    C --> D[architect reads codebase\nenriches task bodies\nwrites updated plan to store\nwrites .kasmos/cache/&lt;plan&gt;-architect.json]
+    C --> D[architect reads codebase\nenriches task bodies\nwrites updated plan to store\nwrites .kasmos/cache/plan-architect.json]
     D --> E[elaborator-finished signal\nreceived by daemon]
 
     E --> F[UpdatePlan called\norchestrator → Idle\nwave 1 starts\nStartNextWave → WaveStateRunning]
@@ -69,35 +69,35 @@ sequenceDiagram
     participant Ver as Master/Verifier
 
     User->>D: implement_start signal
-    Note over D: FSM → implementing<br/>ExecutionPhase = architecting<br/>SetElaborating() called
+    Note over D: FSM to implementing, ExecutionPhase = architecting, SetElaborating() called
 
-    D->>A: spawn architect agent<br/>(BuildElaborationPrompt)
-    Note over A: reads codebase<br/>enriches task bodies<br/>assigns preferred_model per task
+    D->>A: spawn architect agent (BuildElaborationPrompt)
+    Note over A: reads codebase, enriches task bodies, assigns preferred_model per task
     A->>D: writes enriched plan to store
-    A->>D: writes .kasmos/cache/&lt;plan&gt;-architect.json<br/>(SaveArchitectMeta)
+    A->>D: writes .kasmos/cache/plan-architect.json (SaveArchitectMeta)
     A->>D: elaborator-finished signal
 
-    Note over D: ProcessElaborationSignals:<br/>UpdatePlan → WaveStateIdle<br/>StartNextWave → WaveStateRunning<br/>ExecutionPhase = wave_running (wave 1)
+    Note over D: ProcessElaborationSignals: UpdatePlan to WaveStateIdle, StartNextWave to WaveStateRunning, ExecutionPhase = wave_running (wave 1)
 
     par Wave 1 — parallel coder agents (shared worktree)
-        D->>C1: spawn W1-T1 (BuildTaskPrompt)<br/>preferred_model from architect meta
+        D->>C1: spawn W1-T1 (BuildTaskPrompt, preferred_model from architect meta)
         D->>C2: spawn W1-T2
         D->>C3: spawn W1-T3
     end
 
-    Note over C1,C3: agents commit only their own files<br/>never git add -A<br/>architect meta guarantees no file overlap
+    Note over C1,C3: agents commit only their own files, never git add -A, architect meta guarantees no file overlap
 
     C1->>D: implement-task-finished signal (wave=1, task=1)
     C2->>D: implement-task-finished signal (wave=1, task=2)
     C3->>D: implement-task-finished signal (wave=1, task=3)
 
-    Note over D: MarkTaskComplete × 3<br/>checkWaveComplete → WaveStateWaveComplete
+    Note over D: MarkTaskComplete x 3, checkWaveComplete to WaveStateWaveComplete
 
-    D->>User: wave-complete confirmation prompt<br/>(NeedsConfirm)
+    D->>User: wave-complete confirmation prompt (NeedsConfirm)
 
     User->>D: confirm → advance to wave 2
 
-    Note over D: StartNextWave → WaveStateRunning<br/>ExecutionPhase = wave_running (wave 2)
+    Note over D: StartNextWave to WaveStateRunning, ExecutionPhase = wave_running (wave 2)
 
     par Wave 2 — parallel coder agents
         D->>C4: spawn W2-T4
@@ -107,12 +107,12 @@ sequenceDiagram
     C4->>D: implement-task-finished signal (wave=2, task=4)
     C5->>D: implement-task-finished signal (wave=2, task=5)
 
-    Note over D: WaveStateAllComplete<br/>ImplementFinished suppression lifted<br/>FSM: implementing → reviewing
+    Note over D: WaveStateAllComplete, ImplementFinished suppression lifted, FSM: implementing to reviewing
 
     D->>Rev: spawn reviewer agent
     Rev->>D: review_approved signal
 
-    Note over D: FSM: reviewing → verifying<br/>ExecutionPhase = (none / master running)
+    Note over D: FSM: reviewing to verifying, ExecutionPhase = master running
 
     D->>Ver: spawn master agent
     Ver->>D: verify_approved signal
@@ -241,7 +241,7 @@ Source: `config/taskfsm/` execution phase constants; sub-phase persistence in
 | file | role |
 |------|------|
 | `orchestration/engine.go` | `WaveOrchestrator`, wave states, `ShouldBlueprintSkip`, `DetectFileConflicts` |
-| `orchestration/lifecycle_agents.go` | agent spec builders: `BuildArchitectAgentSpec`, `BuildTaskPrompt`, `BuildReviewerAgentSpec` |
+| `orchestration/lifecycle_agents.go` | agent spec builders: `BuildArchitectAgentSpec`, `BuildReviewerAgentSpec`, `BuildFixerAgentSpec`, `BuildMasterAgentSpec` |
 | `orchestration/loop/processor.go` | `ProcessElaborationSignals`, `ProcessTaskSignals`, `ProcessWaveSignals` |
 | `orchestration/cache.go` | `SaveArchitectMeta`, `LoadArchitectMeta` |
 | `orchestration/meta.go` | `ArchitectMeta`, `WaveMeta`, `TaskMeta` schema |

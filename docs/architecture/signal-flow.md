@@ -18,12 +18,12 @@ bridge case) and finish when a `pending` row exists in the SQLite signals table.
 sequenceDiagram
     autonumber
     participant Agent as Agent / tool
-    participant MCP as MCP server<br/>(signaltools.go)
-    participant CLI as kas CLI<br/>(cmd/signal.go)
-    participant Bridge as FS bridge<br/>(loop/bridge.go)
-    participant AdminUI as Admin UI<br/>(taskactions/handler.go)
-    participant FSM as taskfsm<br/>(gateway_signal.go)
-    participant GW as SignalGateway<br/>(taskstore/signal.go)
+    participant MCP as MCP server (signaltools.go)
+    participant CLI as kas CLI (cmd/signal.go)
+    participant Bridge as FS bridge (loop/bridge.go)
+    participant AdminUI as Admin UI (taskactions/handler.go)
+    participant FSM as taskfsm (gateway_signal.go)
+    participant GW as SignalGateway (taskstore/signal.go)
 
     %% --- Path 1: MCP tool ---
     Agent->>MCP: signal_create(signal_type, plan_file, payload)
@@ -39,7 +39,7 @@ sequenceDiagram
 
     %% --- Path 3: filesystem sentinel bridge ---
     Bridge->>Bridge: ScanAllSignals(repoRoot, worktreePaths)
-    Note over Bridge: scans .kasmos/signals/ + worktree paths<br/>for FSM / task / wave / elaboration sentinels
+    Note over Bridge: scans .kasmos/signals/ + worktree paths for FSM / task / wave / elaboration sentinels
     Bridge->>GW: Create(project, SignalEntry{status:"pending"})
     Bridge->>Bridge: ConsumeSignal(sig) — removes sentinel file
 
@@ -47,7 +47,7 @@ sequenceDiagram
     AdminUI->>AdminUI: checkTransitionPrecondition(event, entry)
     AdminUI->>FSM: taskfsm.New(store).Transition(filename, event)
     Note over AdminUI: FSM transition already applied to task store
-    AdminUI->>FSM: EmitGatewaySignal(gw, project, type, planFile,<br/>{"fsm_applied":true})
+    AdminUI->>FSM: EmitGatewaySignal(gw, project, type, planFile, fsm_applied:true)
     FSM->>GW: Create(project, SignalEntry{payload:{"fsm_applied":true}})
 ```
 
@@ -83,11 +83,11 @@ filesystem sentinels first, then claims and processes pending rows one at a time
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Daemon as Daemon tick<br/>(daemon/daemon.go)
-    participant Bridge as BridgeFilesystemSignals<br/>(loop/bridge.go)
+    participant Daemon as Daemon tick (daemon/daemon.go)
+    participant Bridge as BridgeFilesystemSignals (loop/bridge.go)
     participant GW as SignalGateway
-    participant Convert as ConvertSignalEntry<br/>(loop/gateway_scanner.go)
-    participant Proc as Processor.Tick<br/>(loop/processor.go)
+    participant Convert as ConvertSignalEntry (loop/gateway_scanner.go)
+    participant Proc as Processor.Tick (loop/processor.go)
     participant FSM as ProcessFSMSignals
     participant Task as ProcessTaskSignals
     participant Wave as ProcessWaveSignals
@@ -107,7 +107,7 @@ sequenceDiagram
 
         Daemon->>Proc: Processor.Tick(scan)
         Proc->>FSM: ProcessFSMSignals(scan.FSMSignals)
-        Note over FSM: if sig.PreApplied && task already in target state<br/>→ skip FSM, emit downstream actions only
+        Note over FSM: if sig.PreApplied and task already in target state, skip FSM, emit downstream actions only
         FSM-->>Proc: []Action
         Proc->>Task: ProcessTaskSignals(scan.TaskSignals)
         Task-->>Proc: []Action (TaskCompleteAction)
