@@ -1675,6 +1675,12 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Loading placeholders are created when the daemon reports an instance as
 		// loading; if the daemon later reports it inactive (spawn failed) or the
 		// placeholder has been stuck for >30s, remove it so the UI doesn't freeze.
+		// The inactive branch is gated by a short grace period because the daemon
+		// flips active asynchronously after registering the title — without the
+		// grace, slow-to-start agents (e.g. planner with a heavyweight model and
+		// skill load) get evicted within ~1s of spawn, before they ever go active.
+		const loadingPlaceholderInactiveGrace = 5 * time.Second
+		const loadingPlaceholderMaxAge = 30 * time.Second
 		if msg.DaemonManagedRepo {
 			activeDaemonTitles := make(map[string]struct{}, len(msg.DaemonInstances))
 			for _, inst := range msg.DaemonInstances {
@@ -1692,10 +1698,12 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				_, daemonKnows := daemonTitleSet[existing.Title]
 				_, daemonActive := activeDaemonTitles[existing.Title]
-				stale := !existing.CreatedAt.IsZero() && time.Since(existing.CreatedAt) > 30*time.Second
-				if daemonKnows && (!daemonActive || stale) {
+				age := time.Since(existing.CreatedAt)
+				notReadyYet := !daemonActive && !existing.CreatedAt.IsZero() && age > loadingPlaceholderInactiveGrace
+				stale := !existing.CreatedAt.IsZero() && age > loadingPlaceholderMaxAge
+				if daemonKnows && (notReadyYet || stale) {
 					log.WarningLog.Printf("expiring stale loading placeholder %q (daemon_known=%v daemon_active=%v age=%v)",
-						existing.Title, daemonKnows, daemonActive, time.Since(existing.CreatedAt).Round(time.Second))
+						existing.Title, daemonKnows, daemonActive, age.Round(time.Second))
 					m.nav.RemoveByTitle(existing.Title)
 					m.removeFromAllInstances(existing.Title)
 					m.toastManager.Error(fmt.Sprintf("'%s' failed to start — check .kasmos/logs/ for details", existing.Title))
