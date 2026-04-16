@@ -22,8 +22,12 @@ import {
   sendInstancePrompt,
   RequestError,
   TaskExistsError,
+  RepoNotRegisteredError,
   createTask,
   createTopic,
+  getProjectConfig,
+  saveProjectConfig,
+  runProjectScaffoldSync,
 } from "./api.ts";
 
 function assertEqual<T>(actual: T, expected: T, msg: string): void {
@@ -575,3 +579,206 @@ assertEqual(
 );
 
 console.log("api.test.ts new helpers ok");
+
+// ---- RequestError.code ------------------------------------------------------
+
+// RequestError without code has code=undefined
+const reqErrNoCode = new RequestError("bad request", 400);
+if (reqErrNoCode.code !== undefined) {
+  throw new Error("RequestError without code should have code=undefined");
+}
+
+// RequestError with code carries it
+const reqErrWithCode = new RequestError("service unavailable", 503, "repo_not_registered");
+assertEqual(reqErrWithCode.code, "repo_not_registered", "RequestError.code");
+
+// RequestError.code is extracted from JSON body on HTTP error
+mockFetch(false, 503, JSON.stringify({ error: "db only mode", code: "repo_not_registered" }));
+let codeErr: unknown = null;
+try {
+  await listInstances("proj");
+} catch (e) {
+  codeErr = e;
+}
+if (!(codeErr instanceof RequestError)) {
+  throw new Error("HTTP 503 should throw RequestError");
+}
+assertEqual(
+  (codeErr as RequestError).code,
+  "repo_not_registered",
+  "RequestError.code extracted from JSON body",
+);
+
+// RepoNotRegisteredError is a RequestError with status 503 and code repo_not_registered
+const repoErr = new RepoNotRegisteredError("db only mode");
+assertEqual(repoErr.status, 503, "RepoNotRegisteredError.status");
+assertEqual(repoErr.code, "repo_not_registered", "RepoNotRegisteredError.code");
+assertEqual(repoErr.name, "RepoNotRegisteredError", "RepoNotRegisteredError.name");
+if (!(repoErr instanceof RequestError)) {
+  throw new Error("RepoNotRegisteredError should be an instance of RequestError");
+}
+
+console.log("api.test.ts RequestError.code tests ok");
+
+// ---- getProjectConfig -------------------------------------------------------
+
+// getProjectConfig: 200 returns text body
+mockFetch(true, 200, "[settings]\nkey = \"value\"");
+const gotConfig = await getProjectConfig("my-project");
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/my-project/config",
+  "getProjectConfig fetches correct URL",
+);
+assertEqual(
+  gotConfig,
+  "[settings]\nkey = \"value\"",
+  "getProjectConfig returns text body",
+);
+
+// getProjectConfig: 404 maps to empty string
+mockFetch(false, 404, JSON.stringify({ error: "not found" }));
+const emptyConfig = await getProjectConfig("my-project");
+assertEqual(emptyConfig, "", "getProjectConfig 404 maps to empty string");
+
+// getProjectConfig: 503 + repo_not_registered maps to RepoNotRegisteredError
+mockFetch(false, 503, JSON.stringify({ error: "db only mode", code: "repo_not_registered" }));
+let repoNotRegErr: unknown = null;
+try {
+  await getProjectConfig("my-project");
+} catch (e) {
+  repoNotRegErr = e;
+}
+if (!(repoNotRegErr instanceof RepoNotRegisteredError)) {
+  throw new Error("getProjectConfig 503/repo_not_registered should throw RepoNotRegisteredError");
+}
+assertEqual(
+  (repoNotRegErr as RepoNotRegisteredError).message,
+  "db only mode",
+  "RepoNotRegisteredError preserves message",
+);
+
+// getProjectConfig: 503 without code rethrows as RequestError (not RepoNotRegisteredError)
+mockFetch(false, 503, JSON.stringify({ error: "service unavailable" }));
+let other503Err: unknown = null;
+try {
+  await getProjectConfig("my-project");
+} catch (e) {
+  other503Err = e;
+}
+if (!(other503Err instanceof RequestError)) {
+  throw new Error("getProjectConfig 503 without code should throw RequestError");
+}
+if (other503Err instanceof RepoNotRegisteredError) {
+  throw new Error("getProjectConfig 503 without code must NOT be RepoNotRegisteredError");
+}
+
+// getProjectConfig: 500 rethrows as RequestError
+mockFetch(false, 500, JSON.stringify({ error: "internal error" }));
+let configServerErr: unknown = null;
+try {
+  await getProjectConfig("my-project");
+} catch (e) {
+  configServerErr = e;
+}
+if (!(configServerErr instanceof RequestError)) {
+  throw new Error("getProjectConfig 500 should throw RequestError");
+}
+
+console.log("api.test.ts getProjectConfig tests ok");
+
+// ---- saveProjectConfig ------------------------------------------------------
+
+// Reinstall a tracking stub so _lastFetchedInit is updated by every call.
+(globalThis as Record<string, unknown>).fetch = async (
+  input: string | URL | Request,
+  init?: RequestInit,
+): Promise<Response> => {
+  _lastFetchedUrl = String(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+  _lastFetchedMethod = init?.method ?? "GET";
+  _lastFetchedInit = init;
+  const m = _mockResponse!;
+  _mockResponse = null;
+  const body = m.body;
+  return {
+    ok: m.ok,
+    status: m.status,
+    json: async () => JSON.parse(body) as unknown,
+    text: async () => body,
+    clone: () => ({
+      json: async () => JSON.parse(body) as unknown,
+      text: async () => body,
+    }),
+  } as unknown as Response;
+};
+
+// saveProjectConfig: uses PUT with text/plain content-type
+mockFetch(true, 204, "");
+await saveProjectConfig("my-project", "[settings]\nkey = \"value\"");
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/my-project/config",
+  "saveProjectConfig fetches correct URL",
+);
+assertEqual(_lastFetchedMethod, "PUT", "saveProjectConfig uses PUT method");
+assertEqual(
+  ((_lastFetchedInit as RequestInit).headers as Record<string, string>)["Content-Type"],
+  "text/plain",
+  "saveProjectConfig sends Content-Type: text/plain",
+);
+assertEqual(
+  (_lastFetchedInit as RequestInit).body,
+  "[settings]\nkey = \"value\"",
+  "saveProjectConfig sends TOML body",
+);
+
+// saveProjectConfig: throws on error
+mockFetch(false, 422, JSON.stringify({ error: "invalid toml" }));
+let saveConfigErr: unknown = null;
+try {
+  await saveProjectConfig("my-project", "bad = [[[");
+} catch (e) {
+  saveConfigErr = e;
+}
+if (!(saveConfigErr instanceof RequestError)) {
+  throw new Error("saveProjectConfig error should throw RequestError");
+}
+assertEqual(
+  (saveConfigErr as RequestError).message,
+  "invalid toml",
+  "saveProjectConfig surfaces server error message",
+);
+
+console.log("api.test.ts saveProjectConfig tests ok");
+
+// ---- runProjectScaffoldSync -------------------------------------------------
+
+// runProjectScaffoldSync: posts JSON and returns parsed body on success
+mockFetch(true, 200, JSON.stringify({ ok: true, output: "synced" }));
+const syncResult = await runProjectScaffoldSync("my-project", { worktrees: false, trust: false });
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/my-project/scaffold-sync",
+  "runProjectScaffoldSync fetches correct URL",
+);
+assertEqual(_lastFetchedMethod, "POST", "runProjectScaffoldSync uses POST method");
+assertEqual(syncResult.ok, true, "runProjectScaffoldSync returns ok");
+assertEqual(syncResult.output, "synced", "runProjectScaffoldSync returns output");
+
+// runProjectScaffoldSync: always returns body, does not throw on ok:false
+mockFetch(false, 200, JSON.stringify({ ok: false, output: "some output", error: "sync failed" }));
+const failedSync = await runProjectScaffoldSync("my-project", { worktrees: true, trust: true });
+assertEqual(failedSync.ok, false, "runProjectScaffoldSync ok:false does not throw");
+assertEqual(failedSync.error, "sync failed", "runProjectScaffoldSync returns error field");
+assertEqual(
+  (_lastFetchedInit as RequestInit).body,
+  JSON.stringify({ worktrees: true, trust: true }),
+  "runProjectScaffoldSync sends correct request body",
+);
+
+// runProjectScaffoldSync: returns parsed body even on non-2xx HTTP status
+mockFetch(false, 500, JSON.stringify({ ok: false, output: "", error: "server crash" }));
+const serverCrashSync = await runProjectScaffoldSync("my-project", { worktrees: false, trust: false });
+assertEqual(serverCrashSync.ok, false, "runProjectScaffoldSync 500 returns parsed body without throwing");
+
+console.log("api.test.ts runProjectScaffoldSync tests ok");

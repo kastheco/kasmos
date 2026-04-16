@@ -23,7 +23,7 @@ export function normalizeTaskEntry(entry: TaskEntry): TaskEntry {
 }
 
 export class RequestError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly code?: string) {
     super(message);
     this.name = "RequestError";
   }
@@ -36,19 +36,37 @@ export class TaskExistsError extends RequestError {
   }
 }
 
+export class RepoNotRegisteredError extends RequestError {
+  constructor(message: string) {
+    super(message, 503, "repo_not_registered");
+    this.name = "RepoNotRegisteredError";
+  }
+}
+
+export interface ScaffoldSyncRequest {
+  worktrees: boolean;
+  trust: boolean;
+}
+
+export interface ScaffoldSyncResponse {
+  ok: boolean;
+  output: string;
+  error?: string;
+}
+
 async function request(path: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(path, init);
   if (!response.ok) {
     let message = `HTTP error ${response.status}`;
+    let code: string | undefined;
     try {
-      const body = (await response.clone().json()) as { error?: string };
-      if (body.error) {
-        message = body.error;
-      }
+      const body = (await response.clone().json()) as { error?: string; code?: string };
+      if (body.error) message = body.error;
+      code = body.code;
     } catch {
       // ignore parse errors — body may not be JSON
     }
-    throw new RequestError(message, response.status);
+    throw new RequestError(message, response.status, code);
   }
   return response;
 }
@@ -431,4 +449,50 @@ export async function sendInstancePrompt(
       body: JSON.stringify({ prompt }),
     },
   );
+}
+
+// ---- project config API helpers ----------------------------------------------
+
+export async function getProjectConfig(project: string): Promise<string> {
+  try {
+    return await requestText(`/v1/projects/${encodeURIComponent(project)}/config`);
+  } catch (err) {
+    if (err instanceof RequestError && err.status === 404) return "";
+    if (
+      err instanceof RequestError &&
+      err.status === 503 &&
+      err.code === "repo_not_registered"
+    ) {
+      throw new RepoNotRegisteredError(err.message);
+    }
+    throw err;
+  }
+}
+
+export async function saveProjectConfig(
+  project: string,
+  toml: string,
+): Promise<void> {
+  await request(`/v1/projects/${encodeURIComponent(project)}/config`, {
+    method: "PUT",
+    headers: { "Content-Type": "text/plain" },
+    body: toml,
+  });
+}
+
+export async function runProjectScaffoldSync(
+  project: string,
+  req: ScaffoldSyncRequest,
+): Promise<ScaffoldSyncResponse> {
+  // Always return the parsed body — the server encodes runner failures as
+  // ok:false, so we do not throw on non-2xx status codes here.
+  const response = await fetch(
+    `/v1/projects/${encodeURIComponent(project)}/scaffold-sync`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+    },
+  );
+  return response.json() as Promise<ScaffoldSyncResponse>;
 }
