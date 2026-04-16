@@ -225,6 +225,10 @@ type Config struct {
 	// same key for them to count as a double-tap (ctrl+ alternative).
 	// When nil or <= 0, the default of 300ms applies. See DoubleTapThreshold().
 	DoubleTapThresholdMS *int `json:"double_tap_threshold_ms,omitempty"`
+	// Enforcement maps harness names to a boolean that controls whether CLI-tools hook
+	// enforcement is active for that harness. A nil map (the default) means enforcement
+	// is enabled for all harnesses. An explicit false entry opts a harness out.
+	Enforcement map[string]bool `json:"enforcement,omitempty"`
 }
 
 // BlueprintSkipThreshold returns the configured threshold for single-agent mode.
@@ -454,6 +458,7 @@ func configFromTOML(result *TOMLConfigResult) *Config {
 		if result.ClaudeNoFlicker != nil {
 			cfg.ClaudeNoFlicker = *result.ClaudeNoFlicker
 		}
+		cfg.Enforcement = result.Enforcement
 	}
 	applyConfigDefaults(cfg)
 	return cfg
@@ -493,6 +498,7 @@ func configToTOML(cfg *Config) *TOMLConfig {
 		Telemetry:            TOMLTelemetryConfig{Enabled: cfg.TelemetryEnabled},
 		Orchestration:        TOMLOrchestrationConfig{BlueprintSkipThreshold: cfg.BlueprintSkipThresholdValue},
 		Keybinds:             TOMLKeybindsConfig{DoubleTapThresholdMS: cfg.DoubleTapThresholdMS},
+		Enforcement:          cfg.Enforcement,
 		DatabaseURL:          cfg.DatabaseURL,
 		DefaultProgram:       cfg.DefaultProgram,
 		AutoYes:              cfg.AutoYes,

@@ -94,6 +94,19 @@ func (o *OpenCode) BuildFlags(agent AgentConfig) []string {
 	return agent.ExtraFlags
 }
 
+func (o *OpenCode) UninstallEnforcement() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("get home dir: %w", err)
+	}
+
+	pluginPath := filepath.Join(home, ".config", "opencode", "plugins", "enforce-cli-tools.js")
+	if err := os.Remove(pluginPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove enforcement plugin: %w", err)
+	}
+	return nil
+}
+
 func (o *OpenCode) InstallEnforcement() error {
 	home, err := os.UserHomeDir()
 	if err != nil {

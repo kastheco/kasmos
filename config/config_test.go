@@ -559,6 +559,68 @@ func TestResolveProfile_ReadinessReviewAlias(t *testing.T) {
 	})
 }
 
+func TestEnforcementRoundTrip(t *testing.T) {
+	t.Run("nil Enforcement survives configFromTOML and configToTOML", func(t *testing.T) {
+		result := &TOMLConfigResult{
+			Profiles:   map[string]AgentProfile{},
+			PhaseRoles: map[string]string{},
+		}
+		cfg := configFromTOML(result)
+		assert.Nil(t, cfg.Enforcement)
+
+		tc := configToTOML(cfg)
+		assert.Nil(t, tc.Enforcement)
+	})
+
+	t.Run("explicit false entry survives configFromTOML and configToTOML", func(t *testing.T) {
+		result := &TOMLConfigResult{
+			Profiles:    map[string]AgentProfile{},
+			PhaseRoles:  map[string]string{},
+			Enforcement: map[string]bool{"codex": false},
+		}
+		cfg := configFromTOML(result)
+		require.NotNil(t, cfg.Enforcement)
+		assert.False(t, cfg.Enforcement["codex"])
+		assert.False(t, IsEnforcementEnabled(cfg.Enforcement, "codex"))
+
+		tc := configToTOML(cfg)
+		require.NotNil(t, tc.Enforcement)
+		assert.False(t, tc.Enforcement["codex"])
+	})
+
+	t.Run("explicit true entry survives configFromTOML and configToTOML", func(t *testing.T) {
+		result := &TOMLConfigResult{
+			Profiles:    map[string]AgentProfile{},
+			PhaseRoles:  map[string]string{},
+			Enforcement: map[string]bool{"claude": true},
+		}
+		cfg := configFromTOML(result)
+		require.NotNil(t, cfg.Enforcement)
+		assert.True(t, cfg.Enforcement["claude"])
+
+		tc := configToTOML(cfg)
+		require.NotNil(t, tc.Enforcement)
+		assert.True(t, tc.Enforcement["claude"])
+	})
+
+	t.Run("mixed entries survive round-trip", func(t *testing.T) {
+		result := &TOMLConfigResult{
+			Profiles:    map[string]AgentProfile{},
+			PhaseRoles:  map[string]string{},
+			Enforcement: map[string]bool{"codex": false, "claude": true},
+		}
+		cfg := configFromTOML(result)
+		require.NotNil(t, cfg.Enforcement)
+		assert.False(t, cfg.Enforcement["codex"])
+		assert.True(t, cfg.Enforcement["claude"])
+
+		tc := configToTOML(cfg)
+		require.NotNil(t, tc.Enforcement)
+		assert.False(t, tc.Enforcement["codex"])
+		assert.True(t, tc.Enforcement["claude"])
+	})
+}
+
 func intPtr(i int) *int { return &i }
 
 func boolPtr(b bool) *bool { return &b }

@@ -136,6 +136,11 @@ func runScaffoldSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	tomlCfg, err := config.LoadTOMLConfig()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)
@@ -197,8 +202,8 @@ func runScaffoldSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Install enforcement hooks for each detected harness.
-	fmt.Fprintln(out, "\nInstalling enforcement hooks...")
+	// Install or uninstall enforcement hooks for each detected harness based on config.
+	fmt.Fprintln(out, "\nConfiguring enforcement hooks...")
 	for _, name := range registry.All() {
 		h := registry.Get(name)
 		if _, found := h.Detect(); !found {
@@ -206,10 +211,18 @@ func runScaffoldSync(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		fmt.Fprintf(out, "  %-12s ", name)
-		if err := h.InstallEnforcement(); err != nil {
-			fmt.Fprintf(out, "FAILED: %v\n", err)
+		if config.IsEnforcementEnabled(tomlCfg.Enforcement, name) {
+			if err := h.InstallEnforcement(); err != nil {
+				fmt.Fprintf(out, "FAILED: %v\n", err)
+			} else {
+				fmt.Fprintln(out, "OK")
+			}
 		} else {
-			fmt.Fprintln(out, "OK")
+			if err := h.UninstallEnforcement(); err != nil {
+				fmt.Fprintf(out, "FAILED: %v\n", err)
+			} else {
+				fmt.Fprintln(out, "REMOVED (enforcement disabled)")
+			}
 		}
 	}
 

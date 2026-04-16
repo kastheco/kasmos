@@ -3,6 +3,7 @@ package initcmd
 import (
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
@@ -30,13 +31,29 @@ func Run(opts Options) error {
 		}
 	}
 
-	// Run interactive wizard
+	// Stage 1: Run interactive wizard
 	state, err := wizard.Run(registry, existing)
 	if err != nil {
 		return fmt.Errorf("wizard: %w", err)
 	}
 
-	// Stage 4a: Sync personal skills to all harness global dirs
+	// Stage 2: Build TOML config from wizard state
+	tc := state.ToTOMLConfig()
+
+	// Stage 3: Merge/preserve any existing [enforcement] entries without
+	// adding new wizard state fields. The wizard does not collect enforcement
+	// preferences, so manual edits must survive a re-run of kas setup.
+	preserveExistingEnforcement(tc, existing)
+
+	// Stage 4: Save TOML config (before scaffold reads it)
+	fmt.Println("\nWriting config...")
+	if err := config.SaveTOMLConfig(tc); err != nil {
+		return fmt.Errorf("save config: %w", err)
+	}
+	tomlPath, _ := config.GetTOMLConfigPath()
+	fmt.Printf("  %s\n", tomlPath)
+
+	// Stage 5: Sync personal skills to all harness global dirs
 	fmt.Println("\nSyncing personal skills...")
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -52,32 +69,33 @@ func Run(opts Options) error {
 		}
 	}
 
-	// Stage 4a-3: Install CLI-tools enforcement hooks
-	fmt.Println("\nInstalling enforcement hooks...")
-	for _, name := range state.SelectedHarness {
+	// Stage 6: Install or uninstall global enforcement hooks per harness.
+	// The target set is the union of wizard-selected harnesses and any harness
+	// explicitly named in [enforcement] so that uninstall works even when the
+	// wizard did not re-select a previously configured harness.
+	fmt.Println("\nConfiguring enforcement hooks...")
+	for _, name := range enforcementHarnessNames(state.SelectedHarness, tc.Enforcement, registry) {
 		h := registry.Get(name)
 		if h == nil {
 			continue
 		}
 		fmt.Printf("  %-12s ", name)
-		if err := h.InstallEnforcement(); err != nil {
-			fmt.Printf("FAILED: %v\n", err)
-			// Non-fatal: continue with other harnesses
+		if config.IsEnforcementEnabled(tc.Enforcement, name) {
+			if err := h.InstallEnforcement(); err != nil {
+				fmt.Printf("FAILED (install): %v\n", err)
+			} else {
+				fmt.Println("OK")
+			}
 		} else {
-			fmt.Println("OK")
+			if err := h.UninstallEnforcement(); err != nil {
+				fmt.Printf("FAILED (uninstall): %v\n", err)
+			} else {
+				fmt.Println("disabled")
+			}
 		}
 	}
 
-	// Stage 4b: Write TOML config
-	fmt.Println("\nWriting config...")
-	tc := state.ToTOMLConfig()
-	if err := config.SaveTOMLConfig(tc); err != nil {
-		return fmt.Errorf("save config: %w", err)
-	}
-	tomlPath, _ := config.GetTOMLConfigPath()
-	fmt.Printf("  %s\n", tomlPath)
-
-	// Stage 4c: Scaffold project files
+	// Stage 7: Scaffold project files
 	projectDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)
@@ -99,4 +117,51 @@ func Run(opts Options) error {
 
 	fmt.Println("\nDone! Run 'kas' to start.")
 	return nil
+}
+
+// preserveExistingEnforcement merges the enforcement map from an existing config
+// into tc without overwriting any enforcement keys already present in tc.
+// This ensures manual [enforcement] edits survive a re-run of kas setup.
+func preserveExistingEnforcement(tc *config.TOMLConfig, existing *config.TOMLConfigResult) {
+	if existing == nil || len(existing.Enforcement) == 0 {
+		return
+	}
+	if tc.Enforcement == nil {
+		tc.Enforcement = make(map[string]bool)
+	}
+	for k, v := range existing.Enforcement {
+		if _, alreadySet := tc.Enforcement[k]; !alreadySet {
+			tc.Enforcement[k] = v
+		}
+	}
+}
+
+// enforcementHarnessNames returns the set of harness names that kas setup
+// must act on for enforcement. It is the union of:
+//   - wizard-selected harness names (install/uninstall based on enforcement map)
+//   - explicit keys present in the enforcement map (so uninstall works for
+//     harnesses that have enforcement = false even if the wizard did not
+//     re-select them)
+//
+// Only names known to the registry are included; result is in stable order.
+func enforcementHarnessNames(selected []string, enforcement map[string]bool, registry *harness.Registry) []string {
+	seen := make(map[string]bool)
+	var names []string
+
+	add := func(name string) {
+		if !seen[name] && registry.Get(name) != nil {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+
+	for _, name := range selected {
+		add(name)
+	}
+	for name := range enforcement {
+		add(name)
+	}
+
+	sort.Strings(names)
+	return names
 }

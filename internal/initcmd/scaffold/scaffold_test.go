@@ -358,7 +358,7 @@ func TestScaffoldCodexProject(t *testing.T) {
 		{Role: "coder", Harness: "codex", Model: "gpt-5.3-codex", Enabled: true},
 	}
 
-	_, err := WriteCodexProject(dir, agents, allTools, false)
+	_, err := WriteCodexProject(dir, agents, allTools, false, true)
 	require.NoError(t, err)
 
 	assert.FileExists(t, filepath.Join(dir, ".codex", "AGENTS.md"))
@@ -548,7 +548,7 @@ func TestToolsReferenceInjected(t *testing.T) {
 			{Role: "coder", Harness: "codex", Model: "gpt-5.3-codex", Enabled: true},
 		}
 
-		_, err := WriteCodexProject(dir, agents, allTools, false)
+		_, err := WriteCodexProject(dir, agents, allTools, false, true)
 		require.NoError(t, err)
 
 		content, err := os.ReadFile(filepath.Join(dir, ".codex", "AGENTS.md"))
@@ -1954,7 +1954,7 @@ func TestWriteCodexProject_WiresHooks(t *testing.T) {
 		{Role: "coder", Harness: "codex", Model: "gpt-5.3-codex", Enabled: true},
 	}
 
-	_, err := WriteCodexProject(dir, agents, allTools, false)
+	_, err := WriteCodexProject(dir, agents, allTools, false, true)
 	require.NoError(t, err)
 
 	hookPath := filepath.Join(dir, ".codex", "hooks", "enforce-cli-tools.sh")
@@ -1981,6 +1981,257 @@ func TestWriteCodexProject_WiresHooks(t *testing.T) {
 		"codex_hooks feature flag must be set or hooks.json is ignored")
 	assert.Equal(t, "http://127.0.0.1:7434/mcp",
 		cfg["mcp_servers"].(map[string]any)["kasmos"].(map[string]any)["url"])
+}
+
+// TestWriteCodexProject_EnforcementDisabled verifies that when enforcementEnabled=false
+// the enforcement script, hooks.json PreToolUse entry, and codex_hooks feature flag
+// are not written but AGENTS.md and the MCP entry still land on disk.
+func TestWriteCodexProject_EnforcementDisabled(t *testing.T) {
+	dir := t.TempDir()
+	agents := []harness.AgentConfig{
+		{Role: "coder", Harness: "codex", Model: "gpt-5.3-codex", Enabled: true},
+	}
+
+	_, err := WriteCodexProject(dir, agents, allTools, false, false)
+	require.NoError(t, err)
+
+	// AGENTS.md and config.toml (MCP entry) must still be written.
+	assert.FileExists(t, filepath.Join(dir, ".codex", "AGENTS.md"))
+	cfgData, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(cfgData), "kasmos", "MCP entry must be present even when enforcement is disabled")
+
+	// Enforcement script must NOT be written.
+	assert.NoFileExists(t, filepath.Join(dir, ".codex", "hooks", "enforce-cli-tools.sh"),
+		"enforcement script must not be written when enforcement is disabled")
+
+	// hooks.json must NOT exist (or must not contain the kasmos PreToolUse entry).
+	hooksPath := filepath.Join(dir, ".codex", "hooks.json")
+	if _, statErr := os.Stat(hooksPath); statErr == nil {
+		hooksData, err := os.ReadFile(hooksPath)
+		require.NoError(t, err)
+		assert.NotContains(t, string(hooksData), "enforce-cli-tools.sh",
+			"hooks.json must not reference the enforcement script when enforcement is disabled")
+	}
+
+	// codex_hooks feature flag must NOT be set.
+	var cfg map[string]any
+	_, decodeErr := toml.Decode(string(cfgData), &cfg)
+	require.NoError(t, decodeErr)
+	features, _ := cfg["features"].(map[string]any)
+	flag, _ := features["codex_hooks"].(bool)
+	assert.False(t, flag, "codex_hooks feature flag must not be set when enforcement is disabled")
+}
+
+// TestRemoveCodexEnforcementHook verifies that disabling enforcement on a
+// previously scaffolded project removes the hook script and the kasmos
+// PreToolUse entry while leaving all other hooks.json content intact and
+// leaving an existing codex_hooks feature flag untouched.
+func TestRemoveCodexEnforcementHook(t *testing.T) {
+	t.Run("removes script and kasmos hooks.json entry", func(t *testing.T) {
+		dir := t.TempDir()
+		agents := []harness.AgentConfig{
+			{Role: "coder", Harness: "codex", Model: "gpt-5.3-codex", Enabled: true},
+		}
+		// First install with enforcement enabled.
+		_, err := WriteCodexProject(dir, agents, allTools, false, true)
+		require.NoError(t, err)
+
+		// Confirm the artifacts exist.
+		require.FileExists(t, filepath.Join(dir, ".codex", "hooks", "enforce-cli-tools.sh"))
+
+		// Now remove.
+		results, err := RemoveCodexEnforcementHook(dir)
+		require.NoError(t, err)
+		assert.NotEmpty(t, results, "should report at least one change")
+		for _, r := range results {
+			assert.True(t, r.Created, "each changed path should report Created=true: %s", r.Path)
+		}
+
+		// Script must be gone.
+		assert.NoFileExists(t, filepath.Join(dir, ".codex", "hooks", "enforce-cli-tools.sh"))
+
+		// hooks.json must no longer reference the enforcement script.
+		hooksData, err := os.ReadFile(filepath.Join(dir, ".codex", "hooks.json"))
+		require.NoError(t, err)
+		assert.NotContains(t, string(hooksData), "enforce-cli-tools.sh")
+	})
+
+	t.Run("preserves user Stop hooks and unrelated Bash matchers", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".codex"), 0o755))
+		existing := `{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "notify.sh" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "user-lint.sh" }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": ".codex/hooks/enforce-cli-tools.sh" }
+        ]
+      }
+    ]
+  }
+}
+`
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".codex", "hooks.json"), []byte(existing), 0o644))
+
+		_, err := RemoveCodexEnforcementHook(dir)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(filepath.Join(dir, ".codex", "hooks.json"))
+		require.NoError(t, err)
+		var settings map[string]any
+		require.NoError(t, json.Unmarshal(data, &settings))
+
+		hooks := settings["hooks"].(map[string]any)
+		assert.Contains(t, hooks, "Stop", "user Stop hook must survive")
+
+		preToolUse, ok := hooks["PreToolUse"].([]any)
+		require.True(t, ok)
+		assert.Len(t, preToolUse, 1, "only kasmos group must be removed; user group must remain")
+
+		cmd := preToolUse[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)["command"].(string)
+		assert.Equal(t, "user-lint.sh", cmd, "user-lint.sh must still be present")
+	})
+
+	t.Run("leaves existing codex_hooks feature flag untouched", func(t *testing.T) {
+		dir := t.TempDir()
+		// Pre-populate config.toml with the feature flag set.
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".codex"), 0o755))
+		cfgContent := "[features]\ncodex_hooks = true\n"
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".codex", "config.toml"), []byte(cfgContent), 0o644))
+
+		// Plant a hooks.json with the kasmos entry.
+		hooksContent := `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": ".codex/hooks/enforce-cli-tools.sh" }
+        ]
+      }
+    ]
+  }
+}
+`
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".codex", "hooks.json"), []byte(hooksContent), 0o644))
+
+		_, err := RemoveCodexEnforcementHook(dir)
+		require.NoError(t, err)
+
+		// Feature flag in config.toml must be untouched.
+		cfgData, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+		require.NoError(t, err)
+		var cfg map[string]any
+		_, decodeErr := toml.Decode(string(cfgData), &cfg)
+		require.NoError(t, decodeErr)
+		flag, _ := cfg["features"].(map[string]any)["codex_hooks"].(bool)
+		assert.True(t, flag, "codex_hooks feature flag must be left untouched by RemoveCodexEnforcementHook")
+	})
+
+	t.Run("shared group keeps user hook and removes only kasmos entry", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".codex"), 0o755))
+		existing := `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "user-lint.sh" },
+          { "type": "command", "command": ".codex/hooks/enforce-cli-tools.sh" }
+        ]
+      }
+    ]
+  }
+}
+`
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".codex", "hooks.json"), []byte(existing), 0o644))
+
+		_, err := RemoveCodexEnforcementHook(dir)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(filepath.Join(dir, ".codex", "hooks.json"))
+		require.NoError(t, err)
+		var settings map[string]any
+		require.NoError(t, json.Unmarshal(data, &settings))
+
+		hooks := settings["hooks"].(map[string]any)
+		preToolUse, ok := hooks["PreToolUse"].([]any)
+		require.True(t, ok, "PreToolUse must still exist when user hooks remain")
+		require.Len(t, preToolUse, 1, "shared group must survive with remaining hooks")
+
+		group := preToolUse[0].(map[string]any)
+		hooksList := group["hooks"].([]any)
+		require.Len(t, hooksList, 1, "only kasmos entry should be removed from group")
+		cmd := hooksList[0].(map[string]any)["command"].(string)
+		assert.Equal(t, "user-lint.sh", cmd)
+		assert.NotContains(t, string(data), "enforce-cli-tools.sh")
+	})
+
+	t.Run("missing files are treated as success", func(t *testing.T) {
+		dir := t.TempDir()
+		results, err := RemoveCodexEnforcementHook(dir)
+		require.NoError(t, err)
+		assert.Empty(t, results, "no changes when nothing to remove")
+	})
+}
+
+// TestLoadEnforcementConfigForDir_Worktree verifies that a worktree directory
+// correctly resolves the enforcement config from the main repository root.
+func TestLoadEnforcementConfigForDir_Worktree(t *testing.T) {
+	// Build a minimal git worktree layout:
+	//   <mainRepo>/              — main repo root
+	//     .git/                  — real .git directory
+	//     .kasmos/config.toml   — config with enforcement disabled for codex
+	//   <worktreeDir>/           — simulated worktree
+	//     .git                   — file pointing at worktree git dir
+	//     <gitDir>/              — worktree-specific git dir
+	//       commondir            — points back to mainRepo/.git
+
+	mainRepo := t.TempDir()
+	worktreeDir := t.TempDir()
+
+	// Create main repo .git directory.
+	mainGitDir := filepath.Join(mainRepo, ".git")
+	require.NoError(t, os.MkdirAll(mainGitDir, 0o755))
+
+	// Create worktree-specific git dir.
+	worktreeGitDir := filepath.Join(worktreeDir, ".git_wt")
+	require.NoError(t, os.MkdirAll(worktreeGitDir, 0o755))
+
+	// .git file in worktree points at worktreeGitDir.
+	gitFileContent := "gitdir: " + worktreeGitDir
+	require.NoError(t, os.WriteFile(filepath.Join(worktreeDir, ".git"), []byte(gitFileContent), 0o644))
+
+	// commondir in worktreeGitDir points at main repo's .git.
+	require.NoError(t, os.WriteFile(filepath.Join(worktreeGitDir, "commondir"), []byte(mainGitDir), 0o644))
+
+	// Write config.toml in main repo with enforcement disabled for codex.
+	kasmosDir := filepath.Join(mainRepo, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+	cfgContent := "[enforcement]\ncodex = false\n"
+	require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(cfgContent), 0o644))
+
+	cfg, err := loadEnforcementConfigForDir(worktreeDir)
+	require.NoError(t, err)
+	require.NotNil(t, cfg, "should find config from main repo root")
+	assert.False(t, cfg.IsEnforcementEnabled("codex"),
+		"worktree scaffold should read enforcement=false from main repo config")
 }
 
 // TestSyncScaffold_PatchesExistingOpencodeConfigEvenWithoutOpencodeHarness verifies
@@ -2114,4 +2365,94 @@ func TestSyncScaffold_ContentAwareSync(t *testing.T) {
 		}
 	}
 	assert.Equal(t, []string{mutated}, updatedPaths, "only the mutated file should be reported as updated")
+}
+
+// seedStaleCodexEnforcement creates a pre-existing .codex/ directory containing
+// the kasmos enforcement script and a hooks.json with the kasmos PreToolUse entry,
+// simulating a project that was previously scaffolded with enforcement enabled.
+func seedStaleCodexEnforcement(t *testing.T, dir string) {
+	t.Helper()
+	hooksDir := filepath.Join(dir, ".codex", "hooks")
+	require.NoError(t, os.MkdirAll(hooksDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(hooksDir, "enforce-cli-tools.sh"),
+		[]byte("#!/bin/sh\nexit 0\n"), 0o755))
+	hooksJSON := `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": ".codex/hooks/enforce-cli-tools.sh" }
+        ]
+      }
+    ]
+  }
+}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".codex", "hooks.json"), []byte(hooksJSON), 0o644))
+}
+
+// writeCodexEnforcementDisabledConfig writes a .kasmos/config.toml that disables codex enforcement.
+func writeCodexEnforcementDisabledConfig(t *testing.T, dir string) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".kasmos"), 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, ".kasmos", "config.toml"),
+		[]byte("[enforcement]\ncodex = false\n"),
+		0o644,
+	))
+}
+
+// TestScaffoldAll_RemovesStaleCodexEnforcement_WhenDisabledAndNoCodexAgents verifies
+// the cleanup-only path: when [enforcement] codex = false and no codex agents are
+// passed to ScaffoldAll, any pre-existing .codex/hooks/enforce-cli-tools.sh and
+// kasmos PreToolUse entry must be removed even though WriteCodexProject never runs.
+// Regression guard for the gating bug Copilot flagged on PR #123.
+func TestScaffoldAll_RemovesStaleCodexEnforcement_WhenDisabledAndNoCodexAgents(t *testing.T) {
+	dir := t.TempDir()
+	writeCodexEnforcementDisabledConfig(t, dir)
+	seedStaleCodexEnforcement(t, dir)
+
+	// No codex agents — only a claude agent so ScaffoldAll has something to do.
+	agents := []harness.AgentConfig{
+		{Role: "coder", Harness: "claude", Model: "claude-sonnet-4-6", Enabled: true},
+	}
+	_, err := ScaffoldAll(dir, agents, allTools, false)
+	require.NoError(t, err)
+
+	assert.NoFileExists(t, filepath.Join(dir, ".codex", "hooks", "enforce-cli-tools.sh"),
+		"stale enforcement script must be removed when codex enforcement is disabled")
+
+	hooksData, err := os.ReadFile(filepath.Join(dir, ".codex", "hooks.json"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(hooksData), "enforce-cli-tools.sh",
+		"stale kasmos PreToolUse entry must be removed when codex enforcement is disabled")
+
+	// .codex/AGENTS.md must NOT be created — no codex agents were scaffolded.
+	assert.NoFileExists(t, filepath.Join(dir, ".codex", "AGENTS.md"),
+		"cleanup-only path must not create new codex scaffold files")
+}
+
+// TestSyncScaffold_RemovesStaleCodexEnforcement_WhenDisabledAndNoCodexAgents mirrors
+// the ScaffoldAll regression for SyncScaffold's cleanup-only path.
+func TestSyncScaffold_RemovesStaleCodexEnforcement_WhenDisabledAndNoCodexAgents(t *testing.T) {
+	dir := t.TempDir()
+	writeCodexEnforcementDisabledConfig(t, dir)
+	seedStaleCodexEnforcement(t, dir)
+
+	agents := []harness.AgentConfig{
+		{Role: "coder", Harness: "claude", Model: "claude-sonnet-4-6", Enabled: true},
+	}
+	_, err := SyncScaffold(dir, agents)
+	require.NoError(t, err)
+
+	assert.NoFileExists(t, filepath.Join(dir, ".codex", "hooks", "enforce-cli-tools.sh"),
+		"stale enforcement script must be removed when codex enforcement is disabled")
+
+	hooksData, err := os.ReadFile(filepath.Join(dir, ".codex", "hooks.json"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(hooksData), "enforce-cli-tools.sh",
+		"stale kasmos PreToolUse entry must be removed when codex enforcement is disabled")
+
+	assert.NoFileExists(t, filepath.Join(dir, ".codex", "AGENTS.md"),
+		"cleanup-only path must not create new codex scaffold files")
 }

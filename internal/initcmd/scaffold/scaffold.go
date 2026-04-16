@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
 	"github.com/kastheco/kasmos/internal/mcpclient"
 )
@@ -251,7 +252,7 @@ func EnsureClaudeMCPEntry(dir string) (WriteResult, error) {
 	var current map[string]any
 	if data, err := os.ReadFile(dest); err == nil {
 		if jsonErr := json.Unmarshal(data, &current); jsonErr != nil {
-			// Unparseable — start fresh so we don't leave a broken file.
+			// Unparsable — start fresh so we don't leave a broken file.
 			current = nil
 		}
 	}
@@ -675,6 +676,133 @@ func EnsureCodexFeaturesFlag(dir string) (WriteResult, error) {
 	}
 	result.Created = true
 	return result, nil
+}
+
+// loadEnforcementConfigForDir resolves the kasmos TOML config that applies to
+// dir. It checks <dir>/.kasmos/config.toml first (covers project roots), then
+// falls back to the main repo root discovered via config.ResolveRepoRoot (covers
+// git worktrees whose config lives in the parent repo). Returns nil, nil when no
+// config file exists anywhere in the chain so callers can default to "enabled".
+func loadEnforcementConfigForDir(dir string) (*config.TOMLConfigResult, error) {
+	// Check dir-local config first.
+	localPath := filepath.Join(dir, ".kasmos", config.TOMLConfigFileName)
+	if _, err := os.Stat(localPath); err == nil {
+		return config.LoadTOMLConfigFrom(localPath)
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("stat local config: %w", err)
+	}
+
+	// Fall back to main repo root.
+	repoRoot, err := config.ResolveRepoRoot(dir)
+	if err != nil {
+		// Not a git repo or resolution failed — no config available.
+		return nil, nil
+	}
+	repoPath := filepath.Join(repoRoot, ".kasmos", config.TOMLConfigFileName)
+	if _, err := os.Stat(repoPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("stat repo config: %w", err)
+	}
+	return config.LoadTOMLConfigFrom(repoPath)
+}
+
+// RemoveCodexEnforcementHook removes the managed enforcement script and strips
+// only the kasmos PreToolUse hook entry from .codex/hooks.json. User-added Stop
+// hooks, user Bash hook groups, and any unrelated .codex/config.toml content
+// (including an existing codex_hooks feature flag) are left untouched. Missing
+// files are treated as success. Returns WriteResult{Created:true} for each path
+// that was actually modified.
+func RemoveCodexEnforcementHook(dir string) ([]WriteResult, error) {
+	var results []WriteResult
+
+	// Remove the enforcement script if it exists.
+	scriptDest := filepath.Join(dir, codexEnforceHookRelPath)
+	if _, err := os.Stat(scriptDest); err == nil {
+		if err := os.Remove(scriptDest); err != nil {
+			return results, fmt.Errorf("remove %s: %w", codexEnforceHookRelPath, err)
+		}
+		results = append(results, WriteResult{Path: codexEnforceHookRelPath, Created: true})
+	}
+
+	// Strip only the kasmos entry from .codex/hooks.json.
+	hooksDest := filepath.Join(dir, ".codex", "hooks.json")
+	data, err := os.ReadFile(hooksDest)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return results, nil
+		}
+		return results, fmt.Errorf("read .codex/hooks.json: %w", err)
+	}
+
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return results, fmt.Errorf("parse .codex/hooks.json: %w", err)
+	}
+
+	hooks, ok := settings["hooks"].(map[string]any)
+	if !ok {
+		return results, nil
+	}
+
+	preToolUse, ok := hooks["PreToolUse"].([]any)
+	if !ok || !codexHasEnforcementHook(preToolUse) {
+		return results, nil
+	}
+
+	// Remove only the kasmos enforcement hook entry from each group,
+	// preserving any user-added hooks that share the same group.
+	var filtered []any
+	for _, entry := range preToolUse {
+		group, ok := entry.(map[string]any)
+		if !ok {
+			filtered = append(filtered, entry)
+			continue
+		}
+		hooksList, ok := group["hooks"].([]any)
+		if !ok {
+			filtered = append(filtered, entry)
+			continue
+		}
+		var kept []any
+		for _, h := range hooksList {
+			hm, ok := h.(map[string]any)
+			if !ok {
+				kept = append(kept, h)
+				continue
+			}
+			cmd, _ := hm["command"].(string)
+			if strings.Contains(cmd, "enforce-cli-tools.sh") {
+				continue
+			}
+			kept = append(kept, h)
+		}
+		if len(kept) == len(hooksList) {
+			filtered = append(filtered, entry)
+		} else if len(kept) > 0 {
+			group["hooks"] = kept
+			filtered = append(filtered, group)
+		}
+	}
+
+	if len(filtered) == 0 {
+		delete(hooks, "PreToolUse")
+	} else {
+		hooks["PreToolUse"] = filtered
+	}
+	settings["hooks"] = hooks
+
+	merged, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return results, fmt.Errorf("marshal .codex/hooks.json: %w", err)
+	}
+	merged = append(merged, '\n')
+	if err := os.WriteFile(hooksDest, merged, 0o644); err != nil {
+		return results, fmt.Errorf("write .codex/hooks.json: %w", err)
+	}
+	results = append(results, WriteResult{Path: filepath.Join(".codex", "hooks.json"), Created: true})
+	return results, nil
 }
 
 // WriteClaudeProject scaffolds .claude/ project files.
@@ -1176,7 +1304,12 @@ func writeStaticAgents(dir, harnessName string, force bool) ([]WriteResult, erro
 }
 
 // WriteCodexProject scaffolds .codex/ project files.
-func WriteCodexProject(dir string, agents []harness.AgentConfig, selectedTools []string, force bool) ([]WriteResult, error) {
+// When enforcementEnabled is true (the default for new installs), the shared
+// CLI-tools enforcement script, .codex/hooks.json PreToolUse entry, and the
+// codex_hooks feature flag are written. When false, those three steps are
+// skipped and RemoveCodexEnforcementHook is called instead to clean up any
+// previously installed hook artifacts.
+func WriteCodexProject(dir string, agents []harness.AgentConfig, selectedTools []string, force bool, enforcementEnabled bool) ([]WriteResult, error) {
 	for _, agent := range agents {
 		if agent.Harness != "codex" {
 			continue
@@ -1214,28 +1347,37 @@ func WriteCodexProject(dir string, agents []harness.AgentConfig, selectedTools [
 	}
 	results = append(results, mcpResult)
 
-	// Hooks: install the shared enforcement script, patch .codex/hooks.json
-	// so PreToolUse/Bash invokes it, and flip the codex_hooks feature flag in
-	// .codex/config.toml (codex CLI ignores hooks.json unless the flag is on).
-	// Order matters: the feature flag must land after the MCP block so both
-	// writes see a consistent file.
-	hookResult, err := WriteCodexEnforcementHook(dir, force)
-	if err != nil {
-		return results, err
-	}
-	results = append(results, hookResult)
+	if enforcementEnabled {
+		// Hooks: install the shared enforcement script, patch .codex/hooks.json
+		// so PreToolUse/Bash invokes it, and flip the codex_hooks feature flag in
+		// .codex/config.toml (codex CLI ignores hooks.json unless the flag is on).
+		// Order matters: the feature flag must land after the MCP block so both
+		// writes see a consistent file.
+		hookResult, err := WriteCodexEnforcementHook(dir, force)
+		if err != nil {
+			return results, err
+		}
+		results = append(results, hookResult)
 
-	hooksJSONResult, err := EnsureCodexHooksJSON(dir)
-	if err != nil {
-		return results, err
-	}
-	results = append(results, hooksJSONResult)
+		hooksJSONResult, err := EnsureCodexHooksJSON(dir)
+		if err != nil {
+			return results, err
+		}
+		results = append(results, hooksJSONResult)
 
-	featuresResult, err := EnsureCodexFeaturesFlag(dir)
-	if err != nil {
-		return results, err
+		featuresResult, err := EnsureCodexFeaturesFlag(dir)
+		if err != nil {
+			return results, err
+		}
+		results = append(results, featuresResult)
+	} else {
+		// Enforcement disabled: remove any previously installed hook artifacts.
+		cleanResults, err := RemoveCodexEnforcementHook(dir)
+		if err != nil {
+			return results, err
+		}
+		results = append(results, cleanResults...)
 	}
-	results = append(results, featuresResult)
 	return results, nil
 }
 
@@ -1398,11 +1540,20 @@ func ScaffoldAll(dir string, agents []harness.AgentConfig, selectedTools []strin
 		byHarness[a.Harness] = append(byHarness[a.Harness], a)
 	}
 
+	// Resolve enforcement config once so every harness honours the same setting.
+	enfCfg, err := loadEnforcementConfigForDir(dir)
+	if err != nil {
+		return results, fmt.Errorf("load enforcement config: %w", err)
+	}
+	codexEnfEnabled := enfCfg == nil || enfCfg.IsEnforcementEnabled("codex")
+
 	type scaffoldFn func(string, []harness.AgentConfig, []string, bool) ([]WriteResult, error)
 	scaffolders := map[string]scaffoldFn{
 		"claude":   WriteClaudeProject,
 		"opencode": WriteOpenCodeProject,
-		"codex":    WriteCodexProject,
+		"codex": func(d string, a []harness.AgentConfig, t []string, f bool) ([]WriteResult, error) {
+			return WriteCodexProject(d, a, t, f, codexEnfEnabled)
+		},
 	}
 
 	// Iterate in stable order so results are deterministic across runs.
@@ -1422,6 +1573,43 @@ func ScaffoldAll(dir string, agents []harness.AgentConfig, selectedTools []strin
 		}
 	}
 
+	// When codex enforcement is disabled and no codex agents were scaffolded,
+	// WriteCodexProject never runs, so any pre-existing .codex/hooks/enforce-cli-tools.sh
+	// or kasmos PreToolUse entry from an earlier setup would survive an explicit opt-out.
+	// Run a cleanup-only pass against existing .codex/ to honour the disable flag.
+	if !codexEnfEnabled {
+		if _, hasCodexAgents := byHarness["codex"]; !hasCodexAgents {
+			cleanupResults, err := cleanupCodexEnforcement(dir)
+			if err != nil {
+				return results, err
+			}
+			results = append(results, cleanupResults...)
+		}
+	}
+
+	return results, nil
+}
+
+// cleanupCodexEnforcement removes any kasmos-managed codex enforcement artifacts
+// when <dir>/.codex exists. It is a no-op when .codex is absent. Returns any
+// WriteResult entries produced by RemoveCodexEnforcementHook so callers can
+// surface them in their normal output.
+func cleanupCodexEnforcement(dir string) ([]WriteResult, error) {
+	codexDir := filepath.Join(dir, ".codex")
+	info, err := os.Stat(codexDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("stat codex dir: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, nil
+	}
+	results, err := RemoveCodexEnforcementHook(dir)
+	if err != nil {
+		return results, fmt.Errorf("remove codex enforcement hook: %w", err)
+	}
 	return results, nil
 }
 
@@ -1444,6 +1632,13 @@ func SyncScaffold(dir string, agents []harness.AgentConfig) ([]WriteResult, erro
 		results = append(results, skillResults...)
 	}
 
+	// Resolve enforcement config once so every harness honours the same setting.
+	syncEnfCfg, err := loadEnforcementConfigForDir(dir)
+	if err != nil {
+		return results, fmt.Errorf("load enforcement config: %w", err)
+	}
+	syncCodexEnfEnabled := syncEnfCfg == nil || syncEnfCfg.IsEnforcementEnabled("codex")
+
 	byHarness := map[string][]harness.AgentConfig{}
 	for _, a := range agents {
 		byHarness[a.Harness] = append(byHarness[a.Harness], a)
@@ -1460,7 +1655,7 @@ func SyncScaffold(dir string, agents []harness.AgentConfig) ([]WriteResult, erro
 
 		switch harnessName {
 		case "codex":
-			harnessResults, err = WriteCodexProject(dir, harnessAgents, nil, true)
+			harnessResults, err = WriteCodexProject(dir, harnessAgents, nil, true, syncCodexEnfEnabled)
 			if err != nil {
 				return results, fmt.Errorf("sync %s: %w", harnessName, err)
 			}
@@ -1496,6 +1691,20 @@ func SyncScaffold(dir string, agents []harness.AgentConfig) ([]WriteResult, erro
 
 		if err := SymlinkHarnessSkills(dir, harnessName); err != nil {
 			return results, fmt.Errorf("symlink %s skills: %w", harnessName, err)
+		}
+	}
+
+	// Cleanup-only path: when codex enforcement is disabled and no codex agents
+	// are being synced, WriteCodexProject does not run, so any pre-existing
+	// .codex/hooks/enforce-cli-tools.sh and kasmos PreToolUse entries from a
+	// previous setup would survive. Mirror the ScaffoldAll behaviour here.
+	if !syncCodexEnfEnabled {
+		if _, hasCodexAgents := byHarness["codex"]; !hasCodexAgents {
+			cleanupResults, err := cleanupCodexEnforcement(dir)
+			if err != nil {
+				return results, err
+			}
+			results = append(results, cleanupResults...)
 		}
 	}
 

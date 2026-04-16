@@ -200,6 +200,120 @@ func TestOpenCodeAdapter_InstallEnforcement(t *testing.T) {
 	require.NoError(t, o.InstallEnforcement())
 }
 
+func TestClaudeAdapter_UninstallEnforcement(t *testing.T) {
+	t.Run("no-op when nothing installed", func(t *testing.T) {
+		tmpHome := t.TempDir()
+		t.Setenv("HOME", tmpHome)
+
+		c := &Claude{}
+		assert.NoError(t, c.UninstallEnforcement())
+	})
+
+	t.Run("removes hook entry and script after install", func(t *testing.T) {
+		tmpHome := t.TempDir()
+		t.Setenv("HOME", tmpHome)
+
+		c := &Claude{}
+		require.NoError(t, c.InstallEnforcement())
+
+		hookPath := filepath.Join(tmpHome, ".claude", "hooks", "enforce-cli-tools.sh")
+		assert.FileExists(t, hookPath)
+
+		require.NoError(t, c.UninstallEnforcement())
+
+		// Script file removed
+		assert.NoFileExists(t, hookPath)
+
+		// settings.json should no longer reference enforce-cli-tools.sh
+		settingsPath := filepath.Join(tmpHome, ".claude", "settings.json")
+		data, err := os.ReadFile(settingsPath)
+		require.NoError(t, err)
+		assert.NotContains(t, string(data), "enforce-cli-tools.sh")
+	})
+
+	t.Run("idempotent: uninstall twice does not error", func(t *testing.T) {
+		tmpHome := t.TempDir()
+		t.Setenv("HOME", tmpHome)
+
+		c := &Claude{}
+		require.NoError(t, c.InstallEnforcement())
+		require.NoError(t, c.UninstallEnforcement())
+		require.NoError(t, c.UninstallEnforcement())
+	})
+
+	t.Run("preserves unrelated hooks when removing enforcement", func(t *testing.T) {
+		tmpHome := t.TempDir()
+		t.Setenv("HOME", tmpHome)
+
+		claudeDir := filepath.Join(tmpHome, ".claude")
+		require.NoError(t, os.MkdirAll(claudeDir, 0o755))
+		existing := `{
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [{ "type": "command", "command": "notify.sh" }]
+      }
+    ]
+  }
+}`
+		require.NoError(t, os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte(existing), 0o644))
+
+		c := &Claude{}
+		require.NoError(t, c.InstallEnforcement())
+		require.NoError(t, c.UninstallEnforcement())
+
+		data, err := os.ReadFile(filepath.Join(claudeDir, "settings.json"))
+		require.NoError(t, err)
+		// Notification hook preserved
+		assert.Contains(t, string(data), "notify.sh")
+		assert.Contains(t, string(data), "Notification")
+		// Enforcement hook gone
+		assert.NotContains(t, string(data), "enforce-cli-tools.sh")
+	})
+}
+
+func TestCodexAdapter_UninstallEnforcement(t *testing.T) {
+	c := &Codex{}
+	assert.NoError(t, c.UninstallEnforcement())
+	// Second call also no-ops cleanly
+	assert.NoError(t, c.UninstallEnforcement())
+}
+
+func TestOpenCodeAdapter_UninstallEnforcement(t *testing.T) {
+	t.Run("no-op when nothing installed", func(t *testing.T) {
+		tmpHome := t.TempDir()
+		t.Setenv("HOME", tmpHome)
+
+		o := &OpenCode{}
+		assert.NoError(t, o.UninstallEnforcement())
+	})
+
+	t.Run("removes plugin file after install", func(t *testing.T) {
+		tmpHome := t.TempDir()
+		t.Setenv("HOME", tmpHome)
+
+		o := &OpenCode{}
+		require.NoError(t, o.InstallEnforcement())
+
+		pluginPath := filepath.Join(tmpHome, ".config", "opencode", "plugins", "enforce-cli-tools.js")
+		assert.FileExists(t, pluginPath)
+
+		require.NoError(t, o.UninstallEnforcement())
+		assert.NoFileExists(t, pluginPath)
+	})
+
+	t.Run("idempotent: uninstall twice does not error", func(t *testing.T) {
+		tmpHome := t.TempDir()
+		t.Setenv("HOME", tmpHome)
+
+		o := &OpenCode{}
+		require.NoError(t, o.InstallEnforcement())
+		require.NoError(t, o.UninstallEnforcement())
+		require.NoError(t, o.UninstallEnforcement())
+	})
+}
+
 func TestOpenCodeAdapter(t *testing.T) {
 	o := &OpenCode{}
 

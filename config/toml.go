@@ -86,6 +86,7 @@ type TOMLConfig struct {
 	Telemetry            TOMLTelemetryConfig     `toml:"telemetry"`
 	Orchestration        TOMLOrchestrationConfig `toml:"orchestration"`
 	Keybinds             TOMLKeybindsConfig      `toml:"keybinds"`
+	Enforcement          map[string]bool         `toml:"enforcement,omitempty"`
 	DatabaseURL          string                  `toml:"database_url,omitempty"`
 	DefaultProgram       string                  `toml:"default_program,omitempty"`
 	AutoYes              bool                    `toml:"auto_yes,omitempty"`
@@ -120,6 +121,27 @@ type TOMLConfigResult struct {
 	NotificationsEnabled     *bool
 	ClaudeNoFlicker          *bool
 	Hooks                    []TOMLHook
+	Enforcement              map[string]bool
+}
+
+// IsEnforcementEnabled reports whether hook enforcement is active for the given harness.
+// Returns true when settings is nil or the harness key is absent (opt-out semantics: absent means enabled).
+// An explicit false entry in the map disables enforcement for that harness.
+func IsEnforcementEnabled(settings map[string]bool, harness string) bool {
+	if settings == nil {
+		return true
+	}
+	v, ok := settings[harness]
+	if !ok {
+		return true
+	}
+	return v
+}
+
+// IsEnforcementEnabled reports whether hook enforcement is active for the given harness
+// according to this result's Enforcement map. See the package-level IsEnforcementEnabled.
+func (r *TOMLConfigResult) IsEnforcementEnabled(harness string) bool {
+	return IsEnforcementEnabled(r.Enforcement, harness)
 }
 
 // LoadTOMLConfigFrom reads and parses a TOML config file,
@@ -153,6 +175,7 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 		NotificationsEnabled:     tc.NotificationsEnabled,
 		ClaudeNoFlicker:          tc.ClaudeNoFlicker,
 		Hooks:                    tc.Hooks,
+		Enforcement:              tc.Enforcement,
 	}
 
 	for name, agent := range tc.Agents {

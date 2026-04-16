@@ -18,6 +18,11 @@ type Harness interface {
 	ListModels() ([]string, error)
 	BuildFlags(agent AgentConfig) []string
 	InstallEnforcement() error
+	// UninstallEnforcement removes globally-installed enforcement hooks for this
+	// harness. Implementations must be idempotent: missing files are treated as
+	// success. Codex enforcement is project-scaffolded, not globally installed,
+	// so its implementation is a documented no-op.
+	UninstallEnforcement() error
 	SupportsTemperature() bool
 	SupportsEffort() bool
 	ListEffortLevels(model string) []string
