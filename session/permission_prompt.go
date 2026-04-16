@@ -30,10 +30,78 @@ func ParsePermissionPrompt(content string, program string) *PermissionPrompt {
 			return nil
 		}
 		return &PermissionPrompt{Description: match.Description, Pattern: match.Pattern}
+	case strings.Contains(lowerProgram, "codex"):
+		return parseCodexPermissionPrompt(lines)
 	default:
 		return nil
 	}
 
+}
+
+// parseCodexPermissionPrompt detects the codex CLI's numbered permission menu.
+// The prompt has a distinctive structure:
+//
+//	Field 1/1
+//	Allow the <server> to run tool "<tool>"?
+//	<context lines>
+//	› 1. Allow                   Run the tool and continue.
+//	  2. Allow for this session  ...
+//	  3. Always allow            ...
+//	  4. Cancel                  ...
+//	enter to submit | esc to cancel
+func parseCodexPermissionPrompt(lines []string) *PermissionPrompt {
+	// Scan from the bottom for the "enter to submit" footer — this is the
+	// most distinctive structural marker of codex's interactive prompts.
+	footerIdx := -1
+	for i := len(lines) - 1; i >= 0; i-- {
+		t := strings.TrimSpace(lines[i])
+		if strings.Contains(t, "enter to submit") {
+			footerIdx = i
+			break
+		}
+	}
+	if footerIdx < 0 {
+		return nil
+	}
+
+	// Require at least "1. Allow" and "4. Cancel" above the footer.
+	hasAllow := false
+	hasCancel := false
+	for i := footerIdx - 1; i >= 0 && i >= footerIdx-8; i-- {
+		t := strings.TrimSpace(lines[i])
+		// Strip the selection marker (› or similar unicode arrows).
+		t = strings.TrimLeft(t, "›» ")
+		t = strings.TrimSpace(t)
+		if strings.HasPrefix(t, "1.") && strings.Contains(t, "Allow") {
+			hasAllow = true
+		}
+		if strings.HasPrefix(t, "4.") && strings.Contains(t, "Cancel") {
+			hasCancel = true
+		}
+	}
+	if !hasAllow || !hasCancel {
+		return nil
+	}
+
+	prompt := &PermissionPrompt{}
+
+	// Description: walk backwards from the numbered options looking for the
+	// question line (ends with "?") or "Field N/M" header.
+	for i := footerIdx - 1; i >= 0; i-- {
+		t := strings.TrimSpace(lines[i])
+		if t == "" {
+			continue
+		}
+		if strings.HasSuffix(t, "?") {
+			prompt.Description = t
+			break
+		}
+		if strings.HasPrefix(t, "Field ") {
+			break
+		}
+	}
+
+	return prompt
 }
 
 func parseOpenCodePermissionPrompt(lines []string) *PermissionPrompt {

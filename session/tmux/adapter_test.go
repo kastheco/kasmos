@@ -281,10 +281,45 @@ func TestCodexAdapter_BuildPromptArg_LongWriteFileFails(t *testing.T) {
 }
 
 func TestCodexAdapter_SendPermissionResponse(t *testing.T) {
-	a := codexAdapter{}
-	session, _ := newPermissionCommandCaptureSession("codex")
-	err := a.SendPermissionResponse(session, PermissionAllowOnce)
-	require.ErrorIs(t, err, ErrCodexPermissionUnsupported)
+	tests := []struct {
+		name     string
+		choice   PermissionChoice
+		expected []string
+	}{
+		{
+			name:   "allow once sends 1 + enter",
+			choice: PermissionAllowOnce,
+			expected: []string{
+				"tmux send-keys -l -t kas_adapter-test 1",
+				"tmux send-keys -t kas_adapter-test Enter",
+			},
+		},
+		{
+			name:   "allow always sends 3 + enter",
+			choice: PermissionAllowAlways,
+			expected: []string{
+				"tmux send-keys -l -t kas_adapter-test 3",
+				"tmux send-keys -t kas_adapter-test Enter",
+			},
+		},
+		{
+			name:   "reject sends escape",
+			choice: PermissionReject,
+			expected: []string{
+				"tmux send-keys -t kas_adapter-test Escape",
+			},
+		},
+	}
+
+	adapter := codexAdapter{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session, ranCmds := newPermissionCommandCaptureSession("codex")
+			err := adapter.SendPermissionResponse(session, tt.choice)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, *ranCmds)
+		})
+	}
 }
 
 func TestCodexAdapter_SupportsCliPrompt(t *testing.T) {
