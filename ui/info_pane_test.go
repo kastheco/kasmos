@@ -290,7 +290,6 @@ func TestRenderCompact_ShowsPlanMetadata(t *testing.T) {
 	compact := p.RenderCompact(80)
 	assert.NotEmpty(t, compact)
 	assert.True(t, lipgloss.Width(compact) > 0)
-	assert.Contains(t, compact, "view plan [p]")
 	assert.Contains(t, compact, "planned")
 }
 
@@ -314,21 +313,6 @@ func TestRenderCompact_ShowsInstanceTitle(t *testing.T) {
 
 	compact := p.RenderCompact(80)
 	assert.NotEmpty(t, compact)
-}
-
-func TestRenderCompact_ShowsViewPlanHintForInstance(t *testing.T) {
-	p := NewInfoPane()
-	p.SetSize(80, 24)
-	p.SetData(InfoData{
-		HasInstance: true,
-		HasPlan:     true,
-		Title:       "my-plan-coder-1",
-		Status:      "running",
-		PlanName:    "my-plan",
-	})
-
-	compact := p.RenderCompact(80)
-	assert.Contains(t, compact, "view plan [p]")
 }
 
 // TestInfoPane_WaveLocalTaskCounters verifies that compact output uses wave-local

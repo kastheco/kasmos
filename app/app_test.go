@@ -1259,7 +1259,7 @@ func TestFocusRing(t *testing.T) {
 
 	t.Run("I toggles compact info header visibility, sidebar keeps focus", func(t *testing.T) {
 		h := newTestHome()
-		// showInfo starts as true (from NewTabbedWindow).
+		// showInfo starts as false (from NewTabbedWindow).
 		wasShowing := h.tabbedWindow.IsShowingInfo()
 
 		homeModel := handle(t, h, tea.KeyPressMsg{Code: 'I', Text: "I"})

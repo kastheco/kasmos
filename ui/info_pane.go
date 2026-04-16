@@ -642,12 +642,11 @@ func (p *InfoPane) renderWaveSection() string {
 
 // RenderCompact returns a 1-2 line summary suitable for display above the tab
 // bar. Returns empty string when no meaningful data is present.
-func (p *InfoPane) RenderCompact(width int, minimal ...bool) string {
+func (p *InfoPane) RenderCompact(width int) string {
 	if width <= 0 {
 		return ""
 	}
 	d := p.data
-	min := len(minimal) > 0 && minimal[0]
 	var lines []string
 
 	// Choose plan summary first, else instance summary.
@@ -671,80 +670,20 @@ func (p *InfoPane) RenderCompact(width int, minimal ...bool) string {
 			}
 			lines = append(lines, line1)
 
-			if !min {
-				// Build line 2 from branch + wave/task counters.
-				var parts []string
-				branch := d.PlanBranch
-				if branch == "" {
-					branch = d.Branch
-				}
-				if branch != "" {
-					parts = append(parts, lipgloss.NewStyle().Foreground(ColorMuted).Render(branch))
-				}
-				if agent := infoAgentLabel(d.ActiveAgentType); agent != "" {
-					parts = append(parts, agent)
-				}
-				// Show "active wave N" only when the selected instance has no concrete
-				// wave counter of its own (which would make the label redundant).
-				hasInstanceWave := d.WaveNumber > 0
-				if d.ActiveWave > 0 && !hasInstanceWave {
-					parts = append(parts, fmt.Sprintf("active wave %d", d.ActiveWave))
-				}
-				if d.ActiveRound > 0 {
-					parts = append(parts, fmt.Sprintf("round %d", d.ActiveRound))
-				}
-				if d.WaveNumber > 0 {
-					waveTotal := infoDisplayedWaveTotal(d.WaveNumber, d.TotalWaves)
-					if waveTotal > 0 {
-						parts = append(parts, fmt.Sprintf("wave %d/%d", d.WaveNumber, waveTotal))
-					} else {
-						parts = append(parts, fmt.Sprintf("wave %d", d.WaveNumber))
-					}
-				}
-				if cur, tot, ok := infoDisplayedTaskCounter(d.TaskNumber, d.TotalTasks, d.WaveTaskIndex, d.WaveTaskCount); ok {
-					if tot > 0 {
-						parts = append(parts, fmt.Sprintf("task %d/%d", cur, tot))
-					} else {
-						parts = append(parts, fmt.Sprintf("task %d", cur))
-					}
-				}
-				if len(parts) > 0 {
-					lines = append(lines, strings.Join(parts, "  "))
-				}
-			}
-		}
-		if !min && (d.HasPlan || d.IsPlanHeaderSelected) {
-			lines = append(lines, renderViewPlanButton("view plan [p]"))
-		}
-	} else if d.HasInstance && d.Title != "" {
-		nameStyle := lipgloss.NewStyle().Foreground(ColorFoam).Bold(true)
-		statusStyle := lipgloss.NewStyle().Foreground(statusColor(d.Status))
-		line1 := nameStyle.Render(d.Title)
-		terminalAttempt := d.ReadinessMaxVerifyCycles > 0 && d.VerifyRound >= d.ReadinessMaxVerifyCycles
-		phase := infoPhaseLabel(d.ExecutionPhase, d.ActiveWave, d.ActiveRound, terminalAttempt)
-		phaseStyle := lipgloss.NewStyle().Foreground(ColorGold)
-		var states []string
-		if d.Status != "" {
-			states = append(states, statusStyle.Render(d.Status))
-		}
-		if phase != "" {
-			states = append(states, phaseStyle.Render(phase))
-		}
-		if len(states) > 0 {
-			line1 += "  " + strings.Join(states, " · ")
-		}
-		lines = append(lines, line1)
-
-		if !min {
 			// Build line 2 from branch + wave/task counters.
 			var parts []string
-			if d.Branch != "" {
-				parts = append(parts, lipgloss.NewStyle().Foreground(ColorMuted).Render(d.Branch))
+			branch := d.PlanBranch
+			if branch == "" {
+				branch = d.Branch
+			}
+			if branch != "" {
+				parts = append(parts, lipgloss.NewStyle().Foreground(ColorMuted).Render(branch))
 			}
 			if agent := infoAgentLabel(d.ActiveAgentType); agent != "" {
 				parts = append(parts, agent)
 			}
-			// Suppress "active wave N" when a concrete wave counter is already shown.
+			// Show "active wave N" only when the selected instance has no concrete
+			// wave counter of its own (which would make the label redundant).
 			hasInstanceWave := d.WaveNumber > 0
 			if d.ActiveWave > 0 && !hasInstanceWave {
 				parts = append(parts, fmt.Sprintf("active wave %d", d.ActiveWave))
@@ -770,9 +709,59 @@ func (p *InfoPane) RenderCompact(width int, minimal ...bool) string {
 			if len(parts) > 0 {
 				lines = append(lines, strings.Join(parts, "  "))
 			}
-			if d.HasPlan {
-				lines = append(lines, renderViewPlanButton("view plan [p]"))
+		}
+	} else if d.HasInstance && d.Title != "" {
+		nameStyle := lipgloss.NewStyle().Foreground(ColorFoam).Bold(true)
+		statusStyle := lipgloss.NewStyle().Foreground(statusColor(d.Status))
+		line1 := nameStyle.Render(d.Title)
+		terminalAttempt := d.ReadinessMaxVerifyCycles > 0 && d.VerifyRound >= d.ReadinessMaxVerifyCycles
+		phase := infoPhaseLabel(d.ExecutionPhase, d.ActiveWave, d.ActiveRound, terminalAttempt)
+		phaseStyle := lipgloss.NewStyle().Foreground(ColorGold)
+		var states []string
+		if d.Status != "" {
+			states = append(states, statusStyle.Render(d.Status))
+		}
+		if phase != "" {
+			states = append(states, phaseStyle.Render(phase))
+		}
+		if len(states) > 0 {
+			line1 += "  " + strings.Join(states, " · ")
+		}
+		lines = append(lines, line1)
+
+		// Build line 2 from branch + wave/task counters.
+		var parts []string
+		if d.Branch != "" {
+			parts = append(parts, lipgloss.NewStyle().Foreground(ColorMuted).Render(d.Branch))
+		}
+		if agent := infoAgentLabel(d.ActiveAgentType); agent != "" {
+			parts = append(parts, agent)
+		}
+		// Suppress "active wave N" when a concrete wave counter is already shown.
+		hasInstanceWave := d.WaveNumber > 0
+		if d.ActiveWave > 0 && !hasInstanceWave {
+			parts = append(parts, fmt.Sprintf("active wave %d", d.ActiveWave))
+		}
+		if d.ActiveRound > 0 {
+			parts = append(parts, fmt.Sprintf("round %d", d.ActiveRound))
+		}
+		if d.WaveNumber > 0 {
+			waveTotal := infoDisplayedWaveTotal(d.WaveNumber, d.TotalWaves)
+			if waveTotal > 0 {
+				parts = append(parts, fmt.Sprintf("wave %d/%d", d.WaveNumber, waveTotal))
+			} else {
+				parts = append(parts, fmt.Sprintf("wave %d", d.WaveNumber))
 			}
+		}
+		if cur, tot, ok := infoDisplayedTaskCounter(d.TaskNumber, d.TotalTasks, d.WaveTaskIndex, d.WaveTaskCount); ok {
+			if tot > 0 {
+				parts = append(parts, fmt.Sprintf("task %d/%d", cur, tot))
+			} else {
+				parts = append(parts, fmt.Sprintf("task %d", cur))
+			}
+		}
+		if len(parts) > 0 {
+			lines = append(lines, strings.Join(parts, "  "))
 		}
 	}
 

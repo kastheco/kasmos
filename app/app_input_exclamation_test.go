@@ -49,7 +49,7 @@ func TestHandleKeyPress_ExclamationNoOpWithoutRunningInstance(t *testing.T) {
 
 func TestHandleKeyPress_ShiftITogglesInfoHeader(t *testing.T) {
 	h := newTestHome()
-	// showInfo starts as true (from NewTabbedWindow).
+	// showInfo starts as false (from NewTabbedWindow).
 	wasShowing := h.tabbedWindow.IsShowingInfo()
 	h.keySent = true
 

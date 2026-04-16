@@ -104,7 +104,7 @@ func NewTabbedWindow(preview *PreviewPane, info *InfoPane) *TabbedWindow {
 		info:        info,
 		focusedTab:  -1,
 		showWelcome: true,
-		showInfo:    true,
+		showInfo:    false,
 	}
 }
 
@@ -133,14 +133,13 @@ func (w *TabbedWindow) SetInstance(instance *session.Instance) { w.instance = in
 func AdjustPreviewWidth(width int) int { return width - 2 }
 
 // compactInfo renders the compact info header and returns its content and
-// rendered height. Returns ("", 0) when width is non-positive or there is no
-// content to show. When showInfo is false, renders only the first colored row
-// (name + status), hiding the detail row and view-plan button.
+// rendered height. Returns ("", 0) when width is non-positive, showInfo is
+// false, or there is no content to show.
 func (w *TabbedWindow) compactInfo(width int) (string, int) {
-	if width <= 0 {
+	if width <= 0 || !w.showInfo {
 		return "", 0
 	}
-	compact := w.info.RenderCompact(width, !w.showInfo)
+	compact := w.info.RenderCompact(width)
 	if compact == "" {
 		return "", 0
 	}
