@@ -163,6 +163,41 @@ func TestStartTransfersQueuedPromptForCodex(t *testing.T) {
 	assert.Empty(t, inst.QueuedPrompt)
 }
 
+func TestStartTransfersQueuedPromptForSDKSessions(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
+
+	tests := []struct {
+		name    string
+		program string
+	}{
+		{name: "claude sdk", program: "claude"},
+		{name: "codex sdk", program: "codex"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sdkSession := &scriptedExecutionSession{sanitizedName: "sdk-start"}
+			swapNewExecutionSession(t, func(mode ExecutionMode, name, program string, skipPermissions bool) ExecutionSession {
+				assert.Equal(t, ExecutionModeSDK, mode)
+				return sdkSession
+			})
+
+			inst := &Instance{
+				Title:         "sdk-start",
+				Path:          t.TempDir(),
+				Program:       tt.program,
+				ExecutionMode: ExecutionModeSDK,
+				QueuedPrompt:  "do startup work",
+			}
+
+			err := inst.StartOnMainBranch()
+			require.NoError(t, err)
+			assert.Equal(t, "do startup work", sdkSession.initialPrompt)
+			assert.Empty(t, inst.QueuedPrompt)
+		})
+	}
+}
+
 func TestStartKeepsQueuedPromptForAider(t *testing.T) {
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error { return nil },

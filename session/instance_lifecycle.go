@@ -73,16 +73,24 @@ func (i *Instance) prepareExecutionSession() ExecutionSession {
 }
 
 // transferPromptToCli moves QueuedPrompt into the execution session's initialPrompt
-// for tmux-backed instances that support CLI prompt injection. SDK sessions receive
-// their queued prompts through Instance.SendPrompt instead of CLI injection.
-// Programs that do not support CLI prompts leave QueuedPrompt intact so a
-// send-keys fallback can deliver it later.
+// when the backend can deliver a startup prompt itself.
+//
+// SDK sessions deliver their initial prompt through the transport immediately
+// after startup; tmux-backed sessions bake it into the CLI command line for
+// programs that support prompt injection. Programs that do not support startup
+// prompt delivery leave QueuedPrompt intact so a later send-keys fallback can
+// deliver it after the session becomes ready.
 func (i *Instance) transferPromptToCli() {
-	if NormalizeExecutionMode(i.ExecutionMode) == ExecutionModeSDK {
-		// SDK sessions deliver prompts through the transport — do not inject via CLI.
+	if i.QueuedPrompt == "" {
 		return
 	}
-	if i.QueuedPrompt != "" && programSupportsCliPrompt(i.Program) {
+	if NormalizeExecutionMode(i.ExecutionMode) == ExecutionModeSDK {
+		// Keep QueuedPrompt until startup succeeds so SDK bootstrap fallback can
+		// retry in tmux without losing the first task prompt.
+		i.executionSession.SetInitialPrompt(i.QueuedPrompt)
+		return
+	}
+	if programSupportsCliPrompt(i.Program) {
 		i.executionSession.SetInitialPrompt(i.QueuedPrompt)
 		i.QueuedPrompt = ""
 	}
@@ -224,6 +232,9 @@ func (i *Instance) startExecutionSessionWithFallback(workDir string, prepare fun
 		if retryErr := i.executionSession.Start(workDir); retryErr != nil {
 			return fmt.Errorf("%v (tmux fallback failed: %w)", err, retryErr)
 		}
+	}
+	if NormalizeExecutionMode(i.ExecutionMode) == ExecutionModeSDK {
+		i.QueuedPrompt = ""
 	}
 	return nil
 }
