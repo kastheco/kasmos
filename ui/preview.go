@@ -255,10 +255,15 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 
 	// SDK sessions have no PTY; show cached content when available so the pane
 	// renders structured output without flickering back to the banner between ticks.
+	// When no cached capture is available yet, fall back to a placeholder so
+	// newly selected SDK instances don't display the previously selected
+	// instance's preview content.
 	if session.NormalizeExecutionMode(instance.ExecutionMode) == session.ExecutionModeSDK {
 		if instance.CachedContentSet && instance.CachedContent != "" {
 			p.previewState = previewState{text: instance.CachedContent}
 			p.isRawTerminal = false
+		} else {
+			p.setFallbackState("waiting for agent output...")
 		}
 		return nil
 	}

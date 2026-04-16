@@ -35,6 +35,9 @@ var whiteSpaceRegex = regexp.MustCompile(`\s+`)
 //	""                      → ""
 func ProgramBase(program string) string {
 	trimmed := strings.TrimSpace(program)
+	if trimmed == "" {
+		return ""
+	}
 	exe := trimmed
 	if i := strings.IndexAny(trimmed, " \t"); i >= 0 {
 		exe = trimmed[:i]

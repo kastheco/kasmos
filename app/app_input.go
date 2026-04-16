@@ -16,11 +16,28 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	zone "github.com/lrstanley/bubblezone/v2"
 	"github.com/mattn/go-runewidth"
 )
+
+// firstRuneIsPrintable reports whether the first rune of s is a printable
+// character per unicode.IsPrint. It decodes the rune via utf8 so multi-byte
+// UTF-8 input (e.g. non-ASCII keystrokes) is classified correctly; indexing
+// a string with [0] would inspect only the leading byte and misclassify
+// valid printable runes as non-printable.
+func firstRuneIsPrintable(s string) bool {
+	if s == "" {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(s)
+	if r == utf8.RuneError {
+		return false
+	}
+	return unicode.IsPrint(r)
+}
 
 func (m *home) applyPendingSetStatus(picked string) (tea.Model, tea.Cmd) {
 	status, state, err := taskstate.ResolveManualOverride(picked)
@@ -1048,7 +1065,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				m.exitFocusMode()
 				return m, tea.RequestWindowSize
 
-			case msg.Code == tea.KeyEnter || (len(msg.Text) > 0 && unicode.IsPrint(rune(msg.Text[0]))):
+			case msg.Code == tea.KeyEnter || firstRuneIsPrintable(msg.Text):
 				// Open the send-prompt overlay seeded with the typed character so
 				// letter keys type into the active input, matching overlay/search behaviour.
 				seed := ""

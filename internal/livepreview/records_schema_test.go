@@ -38,12 +38,12 @@ func TestRecord_RoundTripsFullInstanceData(t *testing.T) {
 	recordType := reflect.TypeFor[livepreview.Record]()
 	// Count livepreview-only fields that intentionally have no InstanceData
 	// counterpart and are excluded from the parity requirement.
-	const livenpreviewOnlyFields = 1 // ManagedByDaemon
+	const livepreviewOnlyFields = 1 // ManagedByDaemon
 	require.Equalf(t,
 		instanceDataType.NumField(),
-		recordType.NumField()-livenpreviewOnlyFields,
+		recordType.NumField()-livepreviewOnlyFields,
 		"livepreview.Record field count minus livepreview-only fields (%d) must equal session.InstanceData (%d) — any new InstanceData field must be mirrored in Record",
-		recordType.NumField()-livenpreviewOnlyFields,
+		recordType.NumField()-livepreviewOnlyFields,
 		instanceDataType.NumField(),
 	)
 

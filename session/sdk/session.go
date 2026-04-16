@@ -168,11 +168,16 @@ func (s *Session) Start(workDir string) error {
 // marking such rows as exited/ready.
 func (s *Session) Restore() error { return nil }
 
-// Close shuts down the transport and marks the session dead.
+// Close shuts down the transport and marks the session dead.  alive flips to
+// false immediately so DoesSessionExist reflects the caller's intent without
+// waiting for the event-consumer goroutine to observe the events channel
+// closing.  The transport reference is retained so consumeEvents can finish
+// draining the events channel without a nil-pointer dereference.
 func (s *Session) Close() error {
 	s.mu.Lock()
 	tr := s.transport
 	cancel := s.cancel
+	s.alive = false
 	s.mu.Unlock()
 
 	if cancel != nil {

@@ -18,8 +18,8 @@ func TestProgramBase(t *testing.T) {
 		{"codex", "codex"},
 		{"opencode --headless", "opencode"},
 		{"/usr/local/bin/codex", "codex"},
-		{"", "."},    // filepath.Base("") == "."
-		{"   ", "."}, // filepath.Base("") == "."
+		{"", ""},
+		{"   ", ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.input, func(t *testing.T) {

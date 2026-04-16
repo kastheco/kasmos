@@ -157,6 +157,53 @@ func (i *Instance) MarkStartedForTest() {
 	i.started = true
 }
 
+// MarkStartedDeadForTest marks the instance as started with a no-op execution
+// session that reports the underlying process as dead (DoesSessionExist →
+// false).  This lets tests simulate an already-exited agent without starting a
+// real tmux session or subprocess — required on CI hosts where tmux is not
+// available.  Metadata collection calls (HasUpdatedWithContent, GetPanePID)
+// return zero values so MonitorRunningInstances treats the instance as
+// quiescent-but-exited.
+func (i *Instance) MarkStartedDeadForTest() {
+	i.started = true
+	i.executionSession = deadExecutionSession{}
+}
+
+// deadExecutionSession is a no-op ExecutionSession used by
+// MarkStartedDeadForTest.  It reports the session as non-existent and returns
+// zero values for all metadata queries.
+type deadExecutionSession struct{}
+
+func (deadExecutionSession) Start(string) error     { return nil }
+func (deadExecutionSession) Restore() error         { return nil }
+func (deadExecutionSession) Close() error           { return nil }
+func (deadExecutionSession) DoesSessionExist() bool { return false }
+func (deadExecutionSession) SendKeys(string) error  { return nil }
+func (deadExecutionSession) TapEnter() error        { return nil }
+func (deadExecutionSession) SendPermissionResponse(tmux.PermissionChoice) error {
+	return nil
+}
+func (deadExecutionSession) CapturePaneContent() (string, error) { return "", nil }
+func (deadExecutionSession) CapturePaneContentWithOptions(string, string) (string, error) {
+	return "", nil
+}
+func (deadExecutionSession) HasUpdated() (bool, bool) { return false, false }
+func (deadExecutionSession) HasUpdatedWithContent() (bool, bool, string, bool) {
+	return false, false, "", false
+}
+func (deadExecutionSession) GetPanePID() (int, error)                     { return 0, fmt.Errorf("no pane") }
+func (deadExecutionSession) Attach() (chan struct{}, error)               { return nil, nil }
+func (deadExecutionSession) DetachSafely() error                          { return nil }
+func (deadExecutionSession) SetDetachedSize(int, int) error               { return nil }
+func (deadExecutionSession) GetSanitizedName() string                     { return "" }
+func (deadExecutionSession) SetAgentType(string)                          {}
+func (deadExecutionSession) SetInitialPrompt(string)                      {}
+func (deadExecutionSession) SetNoFlicker(bool)                            {}
+func (deadExecutionSession) SetTaskEnv(int, int, int)                     {}
+func (deadExecutionSession) SetProject(string)                            {}
+func (deadExecutionSession) SetSessionTitle(string)                       {}
+func (deadExecutionSession) SetTitleFunc(func(string, time.Time, string)) {}
+
 // SendKeys sends raw key sequences to the pane.
 // Returns an error if the instance is not started or is paused.
 func (i *Instance) SendKeys(keys string) error {

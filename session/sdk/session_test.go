@@ -134,8 +134,8 @@ func TestSDKSession_DoesSessionExist_AfterClose(t *testing.T) {
 	s := New("name", "claude", false)
 	require.NoError(t, s.Start(t.TempDir()))
 	require.NoError(t, s.Close())
-	// Give the goroutine time to react to the closed events channel.
-	time.Sleep(10 * time.Millisecond)
+	// Close must flip alive immediately — DoesSessionExist() should not
+	// depend on the event-consumer goroutine observing the closed channel.
 	assert.False(t, s.DoesSessionExist())
 }
 

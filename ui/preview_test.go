@@ -472,3 +472,68 @@ func testDocumentLines(n int) string {
 	}
 	return b.String()
 }
+
+// TestPreviewPane_SDKUpdateContent_RendersCachedContent verifies that when an
+// SDK instance has cached capture content, UpdateContent shows it in the pane.
+func TestPreviewPane_SDKUpdateContent_RendersCachedContent(t *testing.T) {
+	previewPane := NewPreviewPane()
+	previewPane.SetSize(80, 24)
+
+	inst := &session.Instance{
+		Status:           session.Running,
+		ExecutionMode:    session.ExecutionModeSDK,
+		CachedContent:    "sdk agent line",
+		CachedContentSet: true,
+	}
+	require.NoError(t, previewPane.UpdateContent(inst))
+	require.False(t, previewPane.previewState.fallback)
+	require.Equal(t, "sdk agent line", previewPane.previewState.text)
+}
+
+// TestPreviewPane_SDKUpdateContent_ClearsStaleContentWhenCacheEmpty is a
+// regression test for the bug where selecting a newly spawned SDK instance
+// whose capture is empty left the previously selected instance's preview on
+// screen.  UpdateContent must clear/replace the previewState so the pane
+// always reflects the selected instance, not a stale predecessor.
+func TestPreviewPane_SDKUpdateContent_ClearsStaleContentWhenCacheEmpty(t *testing.T) {
+	previewPane := NewPreviewPane()
+	previewPane.SetSize(80, 24)
+
+	// Seed the pane with visible preview content from a different (prior)
+	// instance — simulating a switch from a tmux or populated-SDK row.
+	previewPane.SetRawContent("previous instance content")
+	require.Equal(t, "previous instance content", previewPane.previewState.text)
+
+	cases := []struct {
+		name     string
+		instance *session.Instance
+	}{
+		{
+			name: "empty string",
+			instance: &session.Instance{
+				Status:           session.Running,
+				ExecutionMode:    session.ExecutionModeSDK,
+				CachedContent:    "",
+				CachedContentSet: true,
+			},
+		},
+		{
+			name: "cache never set",
+			instance: &session.Instance{
+				Status:           session.Running,
+				ExecutionMode:    session.ExecutionModeSDK,
+				CachedContentSet: false,
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			previewPane.SetRawContent("previous instance content")
+			require.NoError(t, previewPane.UpdateContent(tc.instance))
+			require.True(t, previewPane.previewState.fallback,
+				"empty SDK capture must put the pane in fallback state, not retain prior content")
+			require.NotContains(t, previewPane.previewState.text, "previous instance content",
+				"empty SDK capture must not leave stale content from the previously selected instance")
+		})
+	}
+}
