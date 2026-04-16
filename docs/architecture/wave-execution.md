@@ -21,8 +21,8 @@ flowchart LR
     SK --> R
 
     B -- "normal path" --> C[spawn architect agent\nSetElaborating]
-    C --> D[architect reads codebase\nenriches task bodies\nwrites updated plan to store\nwrites .kasmos/cache/plan-architect.json]
-    D --> E[elaborator-finished signal\nreceived by daemon]
+    C --> D[architect reads codebase\nenriches task bodies\nwrites updated plan to store\nwrites .kasmos/cache/&lt;planSlug&gt;-architect.json]
+    D --> E[elaborator_finished signal\nreceived by daemon]
 
     E --> F[UpdatePlan called\norchestrator → Idle\nwave 1 starts\nStartNextWave → WaveStateRunning]
 
@@ -74,8 +74,8 @@ sequenceDiagram
     D->>A: spawn architect agent (BuildElaborationPrompt)
     Note over A: reads codebase, enriches task bodies, assigns preferred_model per task
     A->>D: writes enriched plan to store
-    A->>D: writes .kasmos/cache/plan-architect.json (SaveArchitectMeta)
-    A->>D: elaborator-finished signal
+    A->>D: writes .kasmos/cache/&lt;planSlug&gt;-architect.json (SaveArchitectMeta)
+    A->>D: elaborator_finished signal
 
     Note over D: ProcessElaborationSignals: UpdatePlan to WaveStateIdle, StartNextWave to WaveStateRunning, ExecutionPhase = wave_running (wave 1)
 
@@ -85,11 +85,11 @@ sequenceDiagram
         D->>C3: spawn W1-T3
     end
 
-    Note over C1,C3: agents commit only their own files, never git add -A, architect meta guarantees no file overlap
+    Note over C1,C3: agents commit only their own files, never git add -A, architect meta intended to prevent overlap; conflicts can be detected and surfaced (DetectFileConflicts)
 
-    C1->>D: implement-task-finished signal (wave=1, task=1)
-    C2->>D: implement-task-finished signal (wave=1, task=2)
-    C3->>D: implement-task-finished signal (wave=1, task=3)
+    C1->>D: implement_task_finished signal (wave=1, task=1)
+    C2->>D: implement_task_finished signal (wave=1, task=2)
+    C3->>D: implement_task_finished signal (wave=1, task=3)
 
     Note over D: MarkTaskComplete x 3, checkWaveComplete to WaveStateWaveComplete
 
@@ -104,8 +104,8 @@ sequenceDiagram
         D->>C5: spawn W2-T5
     end
 
-    C4->>D: implement-task-finished signal (wave=2, task=4)
-    C5->>D: implement-task-finished signal (wave=2, task=5)
+    C4->>D: implement_task_finished signal (wave=2, task=4)
+    C5->>D: implement_task_finished signal (wave=2, task=5)
 
     Note over D: WaveStateAllComplete, ImplementFinished suppression lifted, FSM: implementing to reviewing
 

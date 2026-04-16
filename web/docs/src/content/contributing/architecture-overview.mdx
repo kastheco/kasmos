@@ -112,3 +112,42 @@ The marketing site and docs site both use `output: "export"` with `basePath: "/k
 The binary artifact is named `kas` — `go build -o kas ./cmd/kas`, `go install github.com/kastheco/kasmos/cmd/kas@latest`, and `just install` all produce or install a `kas` binary directly. `just install` also creates an optional `kms` short alias in `$GOPATH/bin`. The CLI surface is always referred to as `kas` in documentation and code.
 
 Current top-level subcommands: `setup`, `check`, `task`, `serve`, `instance`, `audit`, `tmux`, `signal`, `daemon`, `monitor`, `reset`, `debug`, `version`.
+
+## architecture diagrams
+
+the full architecture documentation lives in `docs/architecture/` and contains detailed mermaid diagrams covering every major subsystem. key starting points:
+
+- **system-context** — actors, surfaces, and runtime containers
+- **source-of-truth** — where each piece of state lives and which process owns it
+- **daemon-topology** — process internals, unix socket, SSE events
+- **signal-flow** — how agent signals cross service boundaries into the daemon loop
+- **task-fsm** — the complete task lifecycle state machine
+- **wave-execution** — how plans become parallel coder agents
+- **review-cycle** — reviewer, fixer, and master agent sequence
+
+the following diagram shows the top-level system context — who talks to kasmos, and through which surface:
+
+```mermaid
+flowchart TD
+    operator["👤 operator\n(human at a terminal)"]
+    agent["🤖 agent harness\n(claude / codex / gemini / amp)"]
+    reviewer["🌐 remote reviewer\n(GitHub CI, PR author)"]
+
+    tui["TUI\n(bubbletea app)"]
+    cli["kas CLI\n(cobra commands)"]
+    serve["kas serve\n(HTTP :7433 + MCP :7434)"]
+    adminui["admin UI\n(browser SPA at /admin/)"]
+    mcp["MCP HTTP endpoint\n(/mcp — streamable HTTP)"]
+    daemonapi["daemon control API\n(unix socket)"]
+
+    operator -->|"keyboard / tmux"| tui
+    operator -->|"kas task / kas serve / kas monitor"| cli
+    operator -->|"browser"| adminui
+    agent -->|"MCP tool calls"| mcp
+    reviewer -->|"GitHub webhooks / manual kas commands"| cli
+    cli -->|"control commands"| daemonapi
+    tui -->|"instance management"| daemonapi
+    adminui -->|"REST /v1/..."| serve
+```
+
+see the individual docs pages for deeper dives: [lifecycle](/concepts/lifecycle) covers the task FSM, [waves](/concepts/waves) covers wave orchestration, [signals](/daemon/signals) covers the signal gateway, and [daemon architecture](/daemon/architecture) covers the daemon internals.

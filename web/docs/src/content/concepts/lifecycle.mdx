@@ -61,6 +61,44 @@ Events trigger transitions. Some events are **user-only** (can only be fired fro
 
 > **Verifying signals:** `verify_approved` and `verify_failed` are the canonical signal names emitted by the master agent. Deprecated aliases are accepted at ingress and canonicalized: `readiness_approved` → `verify_approved`; `readiness_changes_requested` / `readiness-changes` / `readiness-changes-requested` / `master_approved` → `verify_failed`.
 
+## state diagram
+
+the following diagram shows all valid task status transitions:
+
+```mermaid
+stateDiagram-v2
+    [*] --> ready
+
+    ready --> planning       : plan_start
+    ready --> implementing   : implement_start
+    ready --> cancelled      : cancel
+
+    planning --> planning    : plan_start (restart after crash)
+    planning --> ready       : planner_finished
+    planning --> cancelled   : cancel
+
+    implementing --> reviewing   : implement_finished
+    implementing --> cancelled   : cancel
+
+    reviewing --> verifying      : review_approved
+    reviewing --> implementing   : review_changes_requested
+    reviewing --> cancelled      : cancel
+
+    verifying --> done           : verify_approved
+    verifying --> implementing   : verify_failed
+    verifying --> cancelled      : cancel
+
+    done --> planning        : start_over
+    done --> implementing    : reimplement
+    done --> reviewing       : request_review
+    done --> cancelled       : cancel
+
+    cancelled --> planning   : reopen
+
+    done --> [*]
+    cancelled --> [*]
+```
+
 ## transition table
 
 ```

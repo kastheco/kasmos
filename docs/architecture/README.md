@@ -28,7 +28,7 @@ all diagrams in this section follow the same notation:
 | [system-context.md](system-context.md) | the two runtime services (`kas serve` + kasmos daemon), the five operator surfaces, and how they interconnect |
 | [daemon-topology.md](daemon-topology.md) | daemon process internals: unix-socket control API routes, orchestration loop, and shared SQLite wiring |
 | [signal-flow.md](signal-flow.md) | four ingress paths that create a pending gateway row and the daemon's claim-process-mark cycle that consumes it |
-| [task-fsm.md](task-fsm.md) | the nine-state task FSM: every valid `(status, event) → next-status` transition plus execution sub-phases |
+| [task-fsm.md](task-fsm.md) | the seven-status task FSM: every valid `(status, event) → next-status` transition plus execution sub-phases |
 | [source-of-truth.md](source-of-truth.md) | authoritative ownership map for every piece of mutable state: which file or DB table holds it and who writes it |
 | [wave-execution.md](wave-execution.md) | architect pass → parallel coder waves → user confirmation → review/verify pipeline, with blueprint-skip short-circuit |
 | [review-cycle.md](review-cycle.md) | reviewer-agent and master-agent sequence, fix loops, force-promotion, and config toggles that control the cycle |

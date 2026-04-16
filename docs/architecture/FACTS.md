@@ -377,7 +377,19 @@ All routes are method+path patterns (Go 1.22+ `ServeMux`).
 | `GET`  | `/v1/projects/{project}/tasks/{filename}/pr-reviews` | list PR reviews |
 | `POST` | `/v1/projects/{project}/tasks/{filename}/pr-reviews` | record PR review |
 
-Source: `config/taskstore/server.go:21-568`.
+Sources by route group:
+- ping: `config/taskstore/server.go:25`
+- task list / create: `config/taskstore/server.go:34, 66`
+- task get / update / delete: `config/taskstore/server.go:86, 117, 102`
+- execution-state: `config/taskstore/server.go:150`
+- content get / set: `config/taskstore/server.go:194, 212`
+- subtasks get / set: `config/taskstore/server.go:232, 259`
+- phase-timestamp: `config/taskstore/server.go:318`
+- goal: `config/taskstore/server.go:344`
+- pr-url / pr-state: `config/taskstore/server.go:406, 428`
+- rename: `config/taskstore/server.go:451`
+- pr-reviews: `config/taskstore/server.go:478, 503, 515, 529, 550`
+- topics: `config/taskstore/server.go:571, 585`
 
 Filename slugs have `.md` stripped by `normalizeFilename`
 (`config/taskstore/server.go:15`).
@@ -403,7 +415,14 @@ over taskAPI for these paths):
 | `PUT`  | `/v1/projects/{project}/tasks/{filename}/goal` | set goal |
 | `PUT`  | `/v1/projects/{project}/tasks/{filename}/content` | update content (rich semantics) |
 
-Source: `config/taskactions/handler.go:95-103`.
+Sources per route:
+- available-actions: `config/taskactions/handler.go:95`
+- transition: `config/taskactions/handler.go:96`
+- status: `config/taskactions/handler.go:97`
+- rename: `config/taskactions/handler.go:98`
+- topic: `config/taskactions/handler.go:99`
+- goal: `config/taskactions/handler.go:100`
+- content: `config/taskactions/handler.go:101`
 
 ### 7.1 Transition handler behaviour
 
@@ -440,7 +459,7 @@ Source: `config/taskactions/handler.go:95-103`.
 
 ### 8.1 StateProvider interface
 
-`config/daemon/api/server.go:99-113`. The `Daemon` struct satisfies this
+`daemon/api/server.go:99-113`. The `Daemon` struct satisfies this
 interface; `DaemonState` provides a lightweight in-memory test implementation.
 
 ```go
@@ -470,27 +489,27 @@ Handler factories (`daemon/api/server.go:228-248`):
 
 `registerRoutes` at `daemon/api/server.go:255-283`:
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET`  | `/v1/ping` | liveness |
-| `GET`  | `/v1/status` | daemon overview (`StatusResponse`) |
-| `POST` | `/v1/reload` | reload configuration |
-| `GET`  | `/v1/repos` | list registered repos |
-| `POST` | `/v1/repos` | add repo |
-| `DELETE` | `/v1/repos/{project}` | remove repo |
-| `GET`  | `/v1/repos/{project}/plans` | list tasks in project |
-| `GET`  | `/v1/repos/{project}/tasks` | list tasks with `TaskStatus` shape |
-| `GET`  | `/v1/repos/{project}/instances` | list running instances |
-| `POST` | `/v1/repos/{project}/instances/{title}/pause` | pause instance |
-| `POST` | `/v1/repos/{project}/instances/{title}/resume` | resume instance |
-| `POST` | `/v1/repos/{project}/instances/{title}/restart` | restart instance |
-| `POST` | `/v1/repos/{project}/instances/{title}/kill` | kill instance |
-| `POST` | `/v1/repos/{project}/plans/{filename}/plan` | start planning |
-| `POST` | `/v1/repos/{project}/plans/{filename}/implement` | start implementation |
-| `GET`  | `/v1/events` | SSE stream |
+| Method | Path | Description | Source line |
+|--------|------|-------------|-------------|
+| `GET`  | `/v1/ping` | liveness | `:256` |
+| `GET`  | `/v1/status` | daemon overview (`StatusResponse`) | `:257` |
+| `POST` | `/v1/reload` | reload configuration | `:258` |
+| `GET`  | `/v1/repos` | list registered repos | `:260` |
+| `POST` | `/v1/repos` | add repo | `:261` |
+| `DELETE` | `/v1/repos/{project}` | remove repo | `:262` |
+| `GET`  | `/v1/repos/{project}/plans` | list tasks in project | `:264` |
+| `GET`  | `/v1/repos/{project}/tasks` | list tasks with `TaskStatus` shape | `:265` |
+| `GET`  | `/v1/repos/{project}/instances` | list running instances | `:266` |
+| `POST` | `/v1/repos/{project}/instances/{title}/pause` | pause instance | `:267` |
+| `POST` | `/v1/repos/{project}/instances/{title}/resume` | resume instance | `:270` |
+| `POST` | `/v1/repos/{project}/instances/{title}/restart` | restart instance | `:273` |
+| `POST` | `/v1/repos/{project}/instances/{title}/kill` | kill instance | `:276` |
+| `POST` | `/v1/repos/{project}/plans/{filename}/plan` | start planning | `:279` |
+| `POST` | `/v1/repos/{project}/plans/{filename}/implement` | start implementation | `:280` |
+| `GET`  | `/v1/events` | SSE stream | `:282` |
 
-Served over a Unix domain socket, not TCP. `ListenUnix` at
-`daemon/api/server.go:497`.
+All line references are in `daemon/api/server.go`. Served over a Unix domain
+socket, not TCP. `ListenUnix` at `daemon/api/server.go:497`.
 
 ### 8.3 Daemon socket path
 

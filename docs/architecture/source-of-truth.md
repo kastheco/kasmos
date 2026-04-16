@@ -83,7 +83,7 @@ flowchart TD
 | `subtasks` | orchestration loop after plan parsing | TUI plan detail pane, web admin |
 | `pr_reviews` | daemon PR-poll loop | daemon fixer dispatch |
 | daemon in-memory state | daemon internals, Unix-socket API calls | TUI via Unix socket, `kas monitor` via Unix socket |
-| `<repo>/.kasmos/config.toml` | user (`kas config set`), manual edits | all subsystems at startup via `config.LoadConfig()` |
+| `<repo>/.kasmos/config.toml` | user (`kas setup`, `kas scaffold sync`, manual edits) | all subsystems at startup via `config.LoadConfig()` |
 
 ---
 

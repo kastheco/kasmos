@@ -105,7 +105,7 @@ lifecycle, and manages the unix-socket control API. It deliberately has no knowl
 of HTTP presentation concerns.
 
 `kas serve` owns the task-store REST API and the static asset layer. The admin SPA
-is embedded at build time via `web.AdminFS()` (an `embed.FS` rooted at
+is embedded at build time via `webassets.AdminFS()` (an `embed.FS` rooted at
 `web/admin/dist`) and served alongside the `/v1/` REST routes on the same TCP port.
 This colocation means the SPA can call the task-store and task-actions APIs with
 relative URLs — no CORS, no second origin to configure. Keeping these concerns in one

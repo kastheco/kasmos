@@ -2,6 +2,57 @@
 
 After implementation finishes, kasmos transitions the plan to `reviewing` and spawns a reviewer agent to check the implementation before it is merged.
 
+## review cycle diagram
+
+the following diagram traces the full review cycle — from coder/fixer completion through reviewer verdict, optional master-agent verification, and the fix loop when changes are requested:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant CF as Coder / Fixer
+    participant R  as Reviewer
+    participant P  as Processor
+    participant TS as Task Store
+    participant M  as Master (verifier)
+
+    CF->>P: implement_finished
+    P->>TS: implementing → reviewing
+    P->>TS: ExecutionPhase = reviewing
+    P->>R: spawn <plan>-review-<N>
+
+    alt review_changes_requested  [AutoReviewFix = true]
+        R->>P: review_changes_requested (feedback)
+        P->>TS: reviewing → implementing
+        P->>TS: ReviewCycle++
+        P->>CF: spawn <plan>-fix-<N> (fixer, with feedback)
+        Note over CF,P: fixer finishes, implement_finished, spawn plan-review-N+1 (loop)
+    else review_approved  [AutoReadinessReview = true]
+        R->>P: review_approved
+        P->>TS: reviewing → verifying
+        P->>P: emit ReviewApprovedAction (audit, toast, pause reviewer)
+        P->>M: spawn <plan>-verify-<N>
+
+        alt verify_approved
+            M->>P: verify_approved
+            P->>TS: verifying → done
+            P->>P: emit VerifyApprovedAction + CreatePRAction
+        else verify_failed  [AutoReviewFix = true]
+            M->>P: verify_failed (feedback)
+            P->>TS: verifying → implementing
+            P->>P: emit VerifyFailedAction
+            P->>TS: ReviewCycle++
+            P->>CF: spawn <plan>-fix-<N> (fixer, with feedback)
+            Note over CF,P: fixer finishes → re-enters reviewer loop
+        end
+    else review_approved  [AutoReadinessReview = false]
+        R->>P: review_approved
+        P->>TS: reviewing → verifying
+        P->>TS: verifying → done  (processor self-chains verify_approved)
+        P->>P: emit VerifyApprovedAction + CreatePRAction
+        Note over M: no master agent spawned
+    end
+```
+
 ## the review transition
 
 When all coder agents signal completion, the orchestration loop fires the `implement_finished` event:
@@ -149,6 +200,6 @@ kas task set-status <task-file> done --force
 
 ## related concepts
 
-- [lifecycle](/docs/concepts/lifecycle) — full FSM transition table
-- [agents and roles](/docs/concepts/agents-and-roles) — reviewer and fixer profiles
-- [cli reference: kas task](/docs/cli-reference/task) — task subcommands
+- [lifecycle](/concepts/lifecycle) — full FSM transition table
+- [agents and roles](/concepts/agents-and-roles) — reviewer and fixer profiles
+- [cli reference: kas task](/cli-reference/task) — task subcommands

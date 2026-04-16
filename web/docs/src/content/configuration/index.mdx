@@ -16,7 +16,7 @@ The path is resolved by `config.GetConfigDir()`, which calls `config.ResolveRepo
 
 On first boot (`kas setup` or first interactive launch), kasmos uses `config.toml` if it already exists. Otherwise, if a legacy `config.json` is present, kasmos migrates its settings into `config.toml` automatically and renames the JSON file to `config.json.migrated`. If neither file exists, kasmos creates a default `config.toml`.
 
-See [config.toml reference](/docs/configuration/config-toml) for all fields.
+See [config.toml reference](/configuration/config-toml) for all fields.
 
 ### user-level: `~/.config/kasmos/daemon.toml`
 
@@ -28,7 +28,7 @@ The background daemon reads a second TOML file for user-level, cross-repo config
 
 The path is resolved by `daemon.LoadDaemonConfig()`. If the file is absent, daemon defaults apply (2 s poll interval, PR monitor disabled, etc.). This file is **not** written automatically — create it only when you want to tune daemon behavior.
 
-See [daemon.toml reference](/docs/configuration/daemon-toml) for all fields.
+See [daemon.toml reference](/configuration/daemon-toml) for all fields.
 
 ## first-run bootstrap
 

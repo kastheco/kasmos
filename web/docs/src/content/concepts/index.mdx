@@ -8,7 +8,7 @@ A **task** is the unit of work kasmos manages. It is a markdown document with a 
 
 Tasks are registered via `kas task register <file>`, updated via `kas task update-content`, and progressed through lifecycle stages via `kas task transition`. The markdown file on disk is the source of content; the task store is the authoritative source of status.
 
-See [plans and tasks](/docs/concepts/plans-and-tasks) for the full document format.
+See [plans and tasks](/concepts/plans-and-tasks) for the full document format.
 
 ## waves
 
@@ -25,7 +25,7 @@ A wave is a group of tasks that can run in parallel. A multi-wave plan looks lik
 
 The wave orchestrator drives execution: wave 1 must complete before wave 2 begins. Within a wave, all tasks launch concurrently as separate agent instances.
 
-See [waves](/docs/concepts/waves) for elaboration, blueprint-skip, and state transitions.
+See [waves](/concepts/waves) for elaboration, blueprint-skip, and state transitions.
 
 ## topics
 
@@ -33,7 +33,7 @@ A **topic** groups related tasks. kasmos enforces a collision gate: only one tas
 
 This prevents conflicting agents from landing simultaneous changes on the same codebase area.
 
-See [topics](/docs/concepts/topics) for the exact collision logic.
+See [topics](/concepts/topics) for the exact collision logic.
 
 ## agents and roles
 
@@ -51,7 +51,7 @@ An **agent** is a running AI assistant (claude, opencode, codex, etc.) executing
 
 Each role is backed by an agent profile in `.kasmos/config.toml` that specifies the program, model, flags, effort, and execution mode.
 
-See [agents and roles](/docs/concepts/agents-and-roles) for profile fields and execution modes.
+See [agents and roles](/concepts/agents-and-roles) for profile fields and execution modes.
 
 ## lifecycle
 
@@ -63,10 +63,10 @@ ready → planning → ready → implementing → reviewing → [verifying →] 
 
 Cancelled and reopened tasks are also handled.
 
-See [lifecycle](/docs/concepts/lifecycle) for all statuses, events, and valid transitions.
+See [lifecycle](/concepts/lifecycle) for all statuses, events, and valid transitions.
 
 ## worktrees
 
 Each agent instance works in an isolated **git worktree** under `<repo-root>/.worktrees/`. The main repo root is resolved automatically, handling both regular repos and nested worktrees. kasmos configuration is always anchored to the main repo root, never the worktree.
 
-See [worktrees](/docs/concepts/worktrees) for checkout, resume, and orphan adoption.
+See [worktrees](/concepts/worktrees) for checkout, resume, and orphan adoption.

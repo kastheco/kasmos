@@ -42,7 +42,7 @@ stateDiagram-v2
     cancelled --> [*]
 ```
 
-> **note:** `review_approved` moves the task to `verifying`, not directly to `done`. the master agent runs a holistic readiness gate in `verifying`. when the master signals `verify_approved`, the task advances to `done`. in the legacy filesystem-signal path (`cmd/signal.go`), auto-readiness-review is disabled and the processor chains `verify_approved` immediately after `review_approved` inside `executeSignalProcess` — the gateway-backed path does not do this.
+> **note:** `review_approved` moves the task to `verifying`, not directly to `done`. the master agent runs a holistic readiness gate in `verifying`. when the master signals `verify_approved`, the task advances to `done`. when `AutoReadinessReview` is disabled in config, the daemon processor chains `verify_approved` immediately after `review_approved` inside `executeSignalProcess` (`orchestration/loop/processor.go:304-327`), bypassing the master-agent gate. this applies to both the legacy filesystem-signal path and the gateway-backed path.
 
 ---
 

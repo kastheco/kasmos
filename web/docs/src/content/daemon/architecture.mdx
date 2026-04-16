@@ -2,6 +2,67 @@
 
 The daemon is composed of a small set of types with well-defined responsibilities. Understanding them makes it easier to debug signal flow, extend the daemon, or read the source.
 
+## process topology
+
+the following diagram shows how the two services (`kasmosdb` and `kasmos`), operator clients, the shared SQLite store, and agent execution hosts are connected:
+
+```mermaid
+flowchart TD
+    subgraph operators["operator clients"]
+        TUI["TUI\n(bubbletea)"]
+        CLI["kas CLI"]
+        Browser["browser\n(admin SPA)"]
+    end
+
+    subgraph kasmosdb["kasmosdb · kas serve (HTTP :7433 + MCP :7434)"]
+        direction TB
+        REST["/v1/projects/… REST API\n(taskstore + taskactions)"]
+        MCP["/mcp\n(MCP streamable HTTP)"]
+        AdminSPA["/admin/\n(embedded web/admin/dist)"]
+    end
+
+    subgraph kasmos["kasmos daemon (unix socket)"]
+        direction TB
+        CtrlAPI["control API\nGET /v1/status · /v1/repos · /v1/events (SSE)\nPOST /v1/repos · /v1/reload\nPOST /v1/repos/{project}/plans/{filename}/plan"]
+        Orchestrator["orchestration loop\n(signal polling · wave execution)"]
+    end
+
+    subgraph store["shared SQLite DB\n(~/.config/kasmos/taskstore.db)"]
+        Tasks["tasks"]
+        Signals["signals / signal gateway"]
+        AuditLog["audit log"]
+    end
+
+    subgraph agents["agent execution hosts"]
+        Tmux["tmux pane\n(ExecutionModeTmux)"]
+        Headless["headless exec.Cmd\n(ExecutionModeHeadless)"]
+    end
+
+    %% operator → kasmosdb
+    TUI     -->|"HTTP REST"| REST
+    CLI     -->|"HTTP REST"| REST
+    Browser -->|"HTTP"| AdminSPA
+    Browser -->|"HTTP REST"| REST
+
+    %% operator → kasmos daemon
+    TUI  -->|"HTTP over unix socket"| CtrlAPI
+    CLI  -->|"HTTP over unix socket"| CtrlAPI
+
+    %% MCP clients (agents, external tools)
+    CLI  -->|"MCP streamable HTTP"| MCP
+
+    %% kasmosdb ↔ SQLite
+    REST  <-->|"read / write"| store
+    MCP   <-->|"read / write"| store
+
+    %% kasmos daemon ↔ SQLite
+    Orchestrator <-->|"read signals\nwrite task state"| store
+
+    %% daemon → agent hosts
+    Orchestrator -->|"spawn / control"| Tmux
+    Orchestrator -->|"spawn / control"| Headless
+```
+
 ## core types
 
 ### `Daemon`

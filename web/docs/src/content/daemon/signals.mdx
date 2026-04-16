@@ -12,6 +12,96 @@ kas signal emit implement_finished my-plan
 kas signal emit implement_task_finished my-plan --payload '{"wave_number":2,"task_number":3}'
 ```
 
+## signal flow diagrams
+
+the following diagram shows the four independent ingress paths that create a pending signal row in the gateway:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Agent as Agent / tool
+    participant MCP as MCP server (signaltools.go)
+    participant CLI as kas CLI (cmd/signal.go)
+    participant Bridge as FS bridge (loop/bridge.go)
+    participant AdminUI as Admin UI (taskactions/handler.go)
+    participant FSM as taskfsm (gateway_signal.go)
+    participant GW as SignalGateway (taskstore/signal.go)
+
+    %% --- Path 1: MCP tool ---
+    Agent->>MCP: signal_create(signal_type, plan_file, payload)
+    MCP->>FSM: CanonicalGatewaySignalType(rawType)
+    FSM-->>MCP: canonical type
+    MCP->>FSM: EmitGatewaySignal(gw, project, type, planFile, payload)
+    FSM->>GW: Create(project, SignalEntry{status:"pending"})
+
+    %% --- Path 2: CLI ---
+    Agent->>CLI: kas signal emit <type> <plan-file>
+    CLI->>FSM: EmitGatewaySignal(gw, project, type, planFile, payload)
+    FSM->>GW: Create(project, SignalEntry{status:"pending"})
+
+    %% --- Path 3: filesystem sentinel bridge ---
+    Bridge->>Bridge: ScanAllSignals(repoRoot, worktreePaths)
+    Note over Bridge: scans .kasmos/signals/ + worktree paths for FSM / task / wave / elaboration sentinels
+    Bridge->>GW: Create(project, SignalEntry{status:"pending"})
+    Bridge->>Bridge: ConsumeSignal(sig) — removes sentinel file
+
+    %% --- Path 4: admin HTTP transition (fsm_applied fast-path) ---
+    AdminUI->>AdminUI: checkTransitionPrecondition(event, entry)
+    AdminUI->>FSM: taskfsm.New(store).Transition(filename, event)
+    Note over AdminUI: FSM transition already applied to task store
+    AdminUI->>FSM: EmitGatewaySignal(gw, project, type, planFile, fsm_applied:true)
+    FSM->>GW: Create(project, SignalEntry{payload:{"fsm_applied":true}})
+```
+
+the following diagram shows the daemon consumption path — how pending signals are claimed and processed on each tick:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Daemon as Daemon tick (daemon/daemon.go)
+    participant Bridge as BridgeFilesystemSignals (loop/bridge.go)
+    participant GW as SignalGateway
+    participant Convert as ConvertSignalEntry (loop/gateway_scanner.go)
+    participant Proc as Processor.Tick (loop/processor.go)
+    participant FSM as ProcessFSMSignals
+    participant Task as ProcessTaskSignals
+    participant Wave as ProcessWaveSignals
+    participant Exec as executeAction
+    participant Store as TaskStore / Agent spawner
+
+    Daemon->>Bridge: BridgeFilesystemSignals(gw, project, repoRoot, worktreePaths)
+    Bridge-->>GW: Create rows for any sentinel files found, then removes them
+
+    loop for each pending signal
+        Daemon->>GW: Claim(project, workerID) → SignalEntry
+        GW-->>Daemon: entry (status → "processing")
+
+        Daemon->>Convert: ConvertSignalEntry(entry, &scan)
+        Note over Convert: elaborator_finished → architect_finished
+        Convert-->>Daemon: populated ScanResult
+
+        Daemon->>Proc: Processor.Tick(scan)
+        Proc->>FSM: ProcessFSMSignals(scan.FSMSignals)
+        Note over FSM: if sig.PreApplied and task already in target state, skip FSM, emit downstream actions only
+        FSM-->>Proc: []Action
+        Proc->>Task: ProcessTaskSignals(scan.TaskSignals)
+        Task-->>Proc: []Action (TaskCompleteAction)
+        Proc->>Wave: ProcessWaveSignals(scan.WaveSignals)
+        Wave-->>Proc: []Action (AdvanceWaveAction)
+        Proc-->>Daemon: combined []Action
+
+        alt actions produced
+            loop for each action
+                Daemon->>Exec: executeAction(ctx, repoEntry, action)
+                Exec->>Store: spawn agent / transition FSM / create PR / …
+            end
+            Daemon->>GW: MarkProcessed(id, "done", "")
+        else no actions (noop)
+            Daemon->>GW: MarkProcessed(id, "done"/"failed", reason)
+        end
+    end
+```
+
 ## DB-backed gateway (primary path)
 
 The DB-backed signal gateway is implemented in `config/taskstore/signal_sqlite.go`. Signals are rows in the `signals` SQLite table in the shared global store at `~/.config/kasmos/taskstore.db`.

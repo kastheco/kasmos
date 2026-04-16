@@ -44,9 +44,13 @@ flowchart TD
         Headless["headless exec.Cmd\n(ExecutionModeHeadless)"]
     end
 
-    %% operator → kasmosdb
-    TUI     -->|"HTTP REST"| REST
-    CLI     -->|"HTTP REST"| REST
+    %% operator → SQLite (default: direct access)
+    TUI     -->|"direct SQLite"| store
+    CLI     -->|"direct SQLite"| store
+
+    %% operator → kasmosdb (optional remote mode)
+    TUI     -.->|"HTTP REST (remote mode)"| REST
+    CLI     -.->|"HTTP REST (remote mode)"| REST
     Browser -->|"HTTP"| AdminSPA
     Browser -->|"HTTP REST"| REST
 
