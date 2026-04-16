@@ -15,6 +15,56 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type fakeCodexProcess struct {
+	t         *testing.T
+	server    *fakeCodexServer
+	startCfg  LaunchConfig
+	stdinW    *io.PipeWriter
+	stdoutR   *io.PipeReader
+	stdoutW   *io.PipeWriter
+	started   bool
+	closeOnce sync.Once
+}
+
+func newFakeCodexProcess(t *testing.T) *fakeCodexProcess {
+	t.Helper()
+	return &fakeCodexProcess{t: t}
+}
+
+func (p *fakeCodexProcess) Start(cfg LaunchConfig) (io.WriteCloser, io.ReadCloser, error) {
+	p.startCfg = cfg
+	clientStdinR, clientStdinW := io.Pipe()
+	serverStdoutR, serverStdoutW := io.Pipe()
+	p.server = newFakeCodexServer(p.t, clientStdinR, serverStdoutW)
+	p.stdinW = clientStdinW
+	p.stdoutR = serverStdoutR
+	p.stdoutW = serverStdoutW
+	p.started = true
+	return clientStdinW, serverStdoutR, nil
+}
+
+func (p *fakeCodexProcess) PID() int {
+	if !p.started {
+		return 0
+	}
+	return 12345
+}
+
+func (p *fakeCodexProcess) Close() error {
+	p.closeOnce.Do(func() {
+		if p.stdinW != nil {
+			_ = p.stdinW.Close()
+		}
+		if p.stdoutW != nil {
+			_ = p.stdoutW.Close()
+		}
+		if p.stdoutR != nil {
+			_ = p.stdoutR.Close()
+		}
+	})
+	return nil
+}
+
 // fakeCodexServer simulates the Codex app-server over a pair of in-memory
 // pipes. It reads JSON-RPC requests from its "stdin" and can push
 // notifications to the client via pushNotification.
@@ -193,6 +243,39 @@ func TestCodexTransport_Start_WhitespaceProgramReturnsError(t *testing.T) {
 	err := tr.Start(context.Background(), LaunchConfig{Program: "   \t  "})
 	require.Error(t, err)
 	assert.Contains(t, strings.ToLower(err.Error()), "empty program")
+}
+
+func TestCodexTransport_Start_DeliversInitialPrompt(t *testing.T) {
+	proc := newFakeCodexProcess(t)
+	ct := &CodexTransport{
+		process: proc,
+		events:  make(chan Event, 128),
+		closed:  make(chan struct{}),
+	}
+	t.Cleanup(func() {
+		_ = ct.Close()
+	})
+
+	cfg := LaunchConfig{
+		Program:       "codex --model gpt-5.4",
+		InitialPrompt: "expand the plan",
+	}
+	err := ct.Start(context.Background(), cfg)
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		proc.server.mu.Lock()
+		defer proc.server.mu.Unlock()
+		return len(proc.server.requests) > 0
+	}, time.Second, 10*time.Millisecond)
+
+	assert.Contains(t, proc.startCfg.Program, "app-server", "codex app-server subcommand must be appended at launch")
+	req := proc.server.lastRequest()
+	assert.Equal(t, codexMethodTurnInput, req.Method)
+
+	var params codexTurnInputParams
+	require.NoError(t, json.Unmarshal(req.Params, &params))
+	assert.Equal(t, "expand the plan", params.Text)
 }
 
 // ---------------------------------------------------------------------------

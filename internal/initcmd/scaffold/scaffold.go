@@ -394,6 +394,131 @@ func patchCodexTOML(existing string) string {
 	return strings.Join(out, "\n")
 }
 
+func codexTrustedProjectHeader(projectDir string) string {
+	return fmt.Sprintf("[projects.%s]", strconv.Quote(filepath.Clean(projectDir)))
+}
+
+func codexTrustedProjectEntryUpToDate(parsed map[string]any, projectDir string) bool {
+	projects, ok := parsed["projects"].(map[string]any)
+	if !ok {
+		return false
+	}
+	entry, ok := projects[filepath.Clean(projectDir)].(map[string]any)
+	if !ok {
+		return false
+	}
+	trustLevel, _ := entry["trust_level"].(string)
+	return trustLevel == "trusted"
+}
+
+func isCodexTrustedProjectHeader(line, projectDir string) bool {
+	return stripTOMLLineComment(line) == codexTrustedProjectHeader(projectDir)
+}
+
+func findCodexTrustedProjectBlock(lines []string, projectDir string) (int, int) {
+	start := -1
+	for i, line := range lines {
+		if isCodexTrustedProjectHeader(line, projectDir) {
+			start = i
+			break
+		}
+	}
+	if start == -1 {
+		return -1, -1
+	}
+	end := len(lines)
+	for i := start + 1; i < len(lines); i++ {
+		if isTOMLTableHeader(lines[i]) {
+			end = i
+			break
+		}
+	}
+	return start, end
+}
+
+func patchCodexTrustedProjectTOML(existing, projectDir string) string {
+	projectDir = filepath.Clean(projectDir)
+	header := codexTrustedProjectHeader(projectDir)
+	trustLine := `trust_level = "trusted"`
+	if existing == "" {
+		return header + "\n" + trustLine + "\n"
+	}
+
+	lines := strings.Split(existing, "\n")
+	start, end := findCodexTrustedProjectBlock(lines, projectDir)
+	if start == -1 {
+		trimmed := strings.TrimRight(existing, "\n")
+		if trimmed == "" {
+			return header + "\n" + trustLine + "\n"
+		}
+		return trimmed + "\n\n" + header + "\n" + trustLine + "\n"
+	}
+
+	block := append([]string{}, lines[start+1:end]...)
+	replaced := false
+	for i, line := range block {
+		trimmed := stripTOMLLineComment(line)
+		if strings.HasPrefix(trimmed, "trust_level") {
+			block[i] = trustLine
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		block = append(block, trustLine)
+	}
+
+	var out []string
+	out = append(out, lines[:start+1]...)
+	out = append(out, block...)
+	out = append(out, lines[end:]...)
+	return strings.Join(out, "\n")
+}
+
+// EnsureCodexTrustedProjectEntry patches ~/.codex/config.toml so the selected
+// project is trusted by Codex CLI. Trust is machine-local state, so this helper
+// is intended for kas setup's explicit opt-in flow rather than repo scaffold sync.
+func EnsureCodexTrustedProjectEntry(homeDir, projectDir string) (WriteResult, error) {
+	projectDir = filepath.Clean(projectDir)
+	dest := filepath.Join(homeDir, ".codex", "config.toml")
+	result := WriteResult{Path: dest, Created: false}
+
+	if strings.TrimSpace(homeDir) == "" {
+		return result, fmt.Errorf("codex trust: home directory is required")
+	}
+	if strings.TrimSpace(projectDir) == "" {
+		return result, fmt.Errorf("codex trust: project directory is required")
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return result, fmt.Errorf("create ~/.codex: %w", err)
+	}
+
+	var existing string
+	if data, err := os.ReadFile(dest); err == nil {
+		existing = string(data)
+	} else if !os.IsNotExist(err) {
+		return result, fmt.Errorf("read ~/.codex/config.toml: %w", err)
+	}
+
+	if existing != "" {
+		var parsed map[string]any
+		if _, err := toml.Decode(existing, &parsed); err == nil && codexTrustedProjectEntryUpToDate(parsed, projectDir) {
+			return result, nil
+		}
+	}
+
+	updated := patchCodexTrustedProjectTOML(existing, projectDir)
+	if !strings.HasSuffix(updated, "\n") {
+		updated += "\n"
+	}
+	if err := os.WriteFile(dest, []byte(updated), 0o644); err != nil {
+		return result, fmt.Errorf("write ~/.codex/config.toml: %w", err)
+	}
+	result.Created = true
+	return result, nil
+}
+
 // EnsureCodexMCPEntry patches .codex/config.toml so it contains a
 // [mcp_servers.kasmos] block pointed at the shared HTTP endpoint. Existing
 // non-kasmos sections, comments, and ordering are preserved. Codex CLI reads

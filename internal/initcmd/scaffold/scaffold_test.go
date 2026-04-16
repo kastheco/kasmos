@@ -2,8 +2,10 @@ package scaffold
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -1725,6 +1727,87 @@ command = "/keep/me"
 		servers := parsed["mcp_servers"].(map[string]any)
 		assert.Contains(t, servers, "kasmos")
 		assert.Contains(t, servers, "other")
+	})
+}
+
+func TestEnsureCodexTrustedProjectEntry(t *testing.T) {
+	t.Run("creates fresh trust entry when config is absent", func(t *testing.T) {
+		home := t.TempDir()
+		project := filepath.Join(home, "work", "repo")
+
+		result, err := EnsureCodexTrustedProjectEntry(home, project)
+		require.NoError(t, err)
+		assert.True(t, result.Created)
+		assert.Equal(t, filepath.Join(home, ".codex", "config.toml"), result.Path)
+
+		data, err := os.ReadFile(filepath.Join(home, ".codex", "config.toml"))
+		require.NoError(t, err)
+		var parsed map[string]any
+		_, decodeErr := toml.Decode(string(data), &parsed)
+		require.NoError(t, decodeErr)
+		projects, ok := parsed["projects"].(map[string]any)
+		require.True(t, ok)
+		entry, ok := projects[project].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "trusted", entry["trust_level"])
+	})
+
+	t.Run("is idempotent when trust entry is already correct", func(t *testing.T) {
+		home := t.TempDir()
+		project := filepath.Join(home, "work", "repo")
+
+		_, err := EnsureCodexTrustedProjectEntry(home, project)
+		require.NoError(t, err)
+		before, err := os.ReadFile(filepath.Join(home, ".codex", "config.toml"))
+		require.NoError(t, err)
+
+		result, err := EnsureCodexTrustedProjectEntry(home, project)
+		require.NoError(t, err)
+		assert.False(t, result.Created, "second call must be a no-op")
+
+		after, err := os.ReadFile(filepath.Join(home, ".codex", "config.toml"))
+		require.NoError(t, err)
+		assert.Equal(t, before, after)
+	})
+
+	t.Run("updates trust level in place and preserves sibling config", func(t *testing.T) {
+		home := t.TempDir()
+		project := filepath.Join(home, "work", "repo")
+		otherProject := filepath.Join(home, "work", "other")
+		cfgPath := filepath.Join(home, ".codex", "config.toml")
+		require.NoError(t, os.MkdirAll(filepath.Dir(cfgPath), 0o755))
+		existing := fmt.Sprintf(`# keep this note
+model = "gpt-5.4"
+
+[projects.%s]
+trust_level = "untrusted"
+sandbox_mode = "workspace-write"
+
+[projects.%s]
+trust_level = "trusted"
+`, strconv.Quote(project), strconv.Quote(otherProject))
+		require.NoError(t, os.WriteFile(cfgPath, []byte(existing), 0o644))
+
+		result, err := EnsureCodexTrustedProjectEntry(home, project)
+		require.NoError(t, err)
+		assert.True(t, result.Created)
+
+		data, err := os.ReadFile(cfgPath)
+		require.NoError(t, err)
+		content := string(data)
+		assert.Contains(t, content, "# keep this note")
+		assert.Contains(t, content, `model = "gpt-5.4"`)
+		assert.Contains(t, content, `sandbox_mode = "workspace-write"`)
+
+		var parsed map[string]any
+		_, decodeErr := toml.Decode(content, &parsed)
+		require.NoError(t, decodeErr)
+		projects := parsed["projects"].(map[string]any)
+		entry := projects[project].(map[string]any)
+		assert.Equal(t, "trusted", entry["trust_level"])
+		assert.Equal(t, "workspace-write", entry["sandbox_mode"])
+		other := projects[otherProject].(map[string]any)
+		assert.Equal(t, "trusted", other["trust_level"])
 	})
 }
 

@@ -15,6 +15,7 @@ import (
 type Options struct {
 	Force bool // overwrite existing project scaffold files
 	Clean bool // ignore existing config, start with factory defaults
+	Trust bool // add the current project to ~/.codex/config.toml as trusted
 }
 
 // Run executes the kas setup workflow.
@@ -115,6 +116,23 @@ func Run(opts Options) error {
 		fmt.Printf("  %-40s %s\n", r.Path, status)
 	}
 
+	if opts.Trust && selectedHarnessContains(state.SelectedHarness, "codex") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("codex trust: get home directory: %w", err)
+		}
+		fmt.Println("\nTrusting project for codex...")
+		result, err := scaffold.EnsureCodexTrustedProjectEntry(home, projectDir)
+		if err != nil {
+			return fmt.Errorf("codex trust: %w", err)
+		}
+		status := "OK"
+		if !result.Created {
+			status = "SKIP (exists)"
+		}
+		fmt.Printf("  %-40s %s\n", result.Path, status)
+	}
+
 	fmt.Println("\nDone! Run 'kas' to start.")
 	return nil
 }
@@ -164,4 +182,13 @@ func enforcementHarnessNames(selected []string, enforcement map[string]bool, reg
 
 	sort.Strings(names)
 	return names
+}
+
+func selectedHarnessContains(selected []string, want string) bool {
+	for _, name := range selected {
+		if name == want {
+			return true
+		}
+	}
+	return false
 }

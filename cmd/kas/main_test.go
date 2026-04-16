@@ -14,3 +14,15 @@ func TestRootCommand_UsesSetupSubcommand(t *testing.T) {
 	require.NotNil(t, setupCmd)
 	require.Equal(t, "setup", setupCmd.Name())
 }
+
+func TestRootCommand_SetupSupportsTrustFlag(t *testing.T) {
+	t.Helper()
+
+	setupCmd, _, err := rootCmd.Find([]string{"setup"})
+	require.NoError(t, err)
+	require.NotNil(t, setupCmd)
+
+	flag := setupCmd.Flags().Lookup("trust")
+	require.NotNil(t, flag)
+	require.Equal(t, "false", flag.DefValue)
+}

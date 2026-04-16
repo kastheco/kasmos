@@ -231,6 +231,7 @@ func init() {
 
 	var forceFlag bool
 	var cleanFlag bool
+	var trustFlag bool
 
 	kasSetupCmd := &cobra.Command{
 		Use:     "setup",
@@ -245,12 +246,14 @@ func init() {
 			return initcmd.Run(initcmd.Options{
 				Force: forceFlag,
 				Clean: cleanFlag,
+				Trust: trustFlag,
 			})
 		},
 	}
 
 	kasSetupCmd.Flags().BoolVar(&forceFlag, "force", false, "Overwrite existing project scaffold files")
 	kasSetupCmd.Flags().BoolVar(&cleanFlag, "clean", false, "Ignore existing config, start with factory defaults")
+	kasSetupCmd.Flags().BoolVar(&trustFlag, "trust", false, "Add the current project to ~/.codex/config.toml as a trusted project")
 
 	resetCmd := cmd2.NewResetCmd()
 	resetCmd.AddCommand(newLegacyResetInstancesCmd())

@@ -23,6 +23,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -123,8 +124,14 @@ type codexNotifyTurnInterruptedParams struct {
 //     the notification dispatch goroutine.
 //  3. SendPrompt / Interrupt / RespondPermission → drive the running session.
 //  4. Close()             → terminates the subprocess and drains resources.
+type codexProcess interface {
+	Start(cfg LaunchConfig) (io.WriteCloser, io.ReadCloser, error)
+	PID() int
+	Close() error
+}
+
 type CodexTransport struct {
-	process *Process
+	process codexProcess
 	client  *Client
 	events  chan Event
 
@@ -152,8 +159,15 @@ func NewCodexTransport() Transport {
 // Start launches the Codex app-server subprocess described by cfg and begins
 // reading notifications from its stdout.
 //
-// If cfg.Program does not already contain the "--server" flag, Start appends
-// it so the Codex CLI starts in app-server (JSON-RPC over stdio) mode.
+// If cfg.Program does not already contain the "app-server" subcommand (or the
+// legacy "--server" flag), Start appends "app-server" so the Codex CLI starts
+// in app-server (JSON-RPC over stdio) mode. The legacy "--server" flag was
+// removed in codex-cli 0.120; the subcommand is the current invocation.
+//
+// When cfg.InitialPrompt is non-empty, Start delivers it immediately after the
+// JSON-RPC client is ready. This matches the Claude SDK path and avoids leaving
+// SDK-managed instances idle with a queued prompt that will never be sent until
+// a later Ready tick.
 //
 // Returns an error if cfg.Program is empty (or whitespace only) or if the
 // subprocess cannot be started.
@@ -163,8 +177,8 @@ func (t *CodexTransport) Start(ctx context.Context, cfg LaunchConfig) error {
 	}
 
 	// Ensure the Codex CLI runs in app-server mode.
-	if !strings.Contains(cfg.Program, "--server") {
-		cfg.Program = strings.TrimSpace(cfg.Program) + " --server"
+	if !strings.Contains(cfg.Program, "app-server") && !strings.Contains(cfg.Program, "--server") {
+		cfg.Program = strings.TrimSpace(cfg.Program) + " app-server"
 	}
 
 	stdin, stdout, err := t.process.Start(cfg)
@@ -174,6 +188,16 @@ func (t *CodexTransport) Start(ctx context.Context, cfg LaunchConfig) error {
 
 	t.client = NewClient(stdin, stdout)
 	go t.dispatchNotifications()
+
+	if cfg.InitialPrompt != "" {
+		if err := t.SendPrompt(ctx, cfg.InitialPrompt); err != nil {
+			t.emit(Event{
+				Kind:      EventSystem,
+				Text:      fmt.Sprintf("codex: initial prompt delivery failed: %v", err),
+				Timestamp: time.Now(),
+			})
+		}
+	}
 	return nil
 }
 

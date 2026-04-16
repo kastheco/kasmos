@@ -29,7 +29,7 @@ type LaunchConfig struct {
 	// AgentType is an optional identifier appended via --agent <type> for
 	// programs that support it (e.g. claude, opencode).
 	AgentType string
-	// InitialPrompt is baked into the CLI invocation when non-empty.
+	// InitialPrompt is delivered by the transport after startup when supported.
 	InitialPrompt string
 	// Project is the repository base name injected as KASMOS_PROJECT.
 	Project string
