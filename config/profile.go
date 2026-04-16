@@ -18,22 +18,40 @@ const (
 	ExecutionModeSDK  = "sdk"
 )
 
+func (c *Config) resolveRoleForPhase(phase string) (string, bool) {
+	if c == nil || c.PhaseRoles == nil {
+		return "", false
+	}
+	roleName, ok := c.PhaseRoles[phase]
+	if ok {
+		return roleName, true
+	}
+
+	// Apply readiness_review <-> master_review compatibility alias.
+	switch phase {
+	case "readiness_review":
+		roleName, ok = c.PhaseRoles["master_review"]
+	case "master_review":
+		roleName, ok = c.PhaseRoles["readiness_review"]
+	}
+	return roleName, ok
+}
+
 // NormalizeExecutionMode canonicalises a profile execution mode string.
-// Managed profiles default to SDK when no mode is specified.
 //
-//   - ""        → "sdk"  (managed profiles default to SDK)
+//   - ""        → "tmux" (default)
+//   - "tmux"    → "tmux"
 //   - "sdk"     → "sdk"
 //   - "headless"→ "sdk"  (legacy alias)
-//   - "tmux"    → "tmux" (explicit opt-out to tmux)
-//   - anything else → "sdk"
+//   - anything else → "tmux"
 func NormalizeExecutionMode(mode string) string {
 	switch strings.TrimSpace(mode) {
 	case ExecutionModeTmux:
 		return ExecutionModeTmux
-	default:
-		// "" (unset), "sdk", "headless", or unknown all resolve to SDK for
-		// managed profiles.
+	case ExecutionModeSDK, "headless":
 		return ExecutionModeSDK
+	default:
+		return ExecutionModeTmux
 	}
 }
 
@@ -46,27 +64,18 @@ func NormalizeExecutionMode(mode string) string {
 // are present in PhaseRoles, the directly-requested name takes precedence.
 func (c *Config) ResolveProfile(phase string, defaultProgram string) AgentProfile {
 	if c.PhaseRoles == nil || c.Profiles == nil {
-		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeSDK}
+		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeTmux}
 	}
-	roleName, ok := c.PhaseRoles[phase]
+	roleName, ok := c.resolveRoleForPhase(phase)
 	if !ok {
-		// Apply readiness_review <-> master_review compatibility alias.
-		switch phase {
-		case "readiness_review":
-			roleName, ok = c.PhaseRoles["master_review"]
-		case "master_review":
-			roleName, ok = c.PhaseRoles["readiness_review"]
-		}
-		if !ok {
-			return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeSDK}
-		}
+		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeTmux}
 	}
 	profile, ok := c.Profiles[roleName]
 	if !ok {
-		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeSDK}
+		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeTmux}
 	}
 	if profile.Program == "" || !profile.Enabled {
-		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeSDK}
+		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeTmux}
 	}
 	profile.ExecutionMode = NormalizeExecutionMode(profile.ExecutionMode)
 	return profile

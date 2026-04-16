@@ -617,6 +617,26 @@ func TestSpawnAgent_SubmitCreatesInstanceWithChosenProgram(t *testing.T) {
 	assert.Equal(t, session.AgentTypeMaster, last.AgentType)
 }
 
+func TestExecutionModeForAgent_DefaultsToTmuxButHonorsExplicitSDK(t *testing.T) {
+	h := newTestHome()
+	h.appConfig = &config.Config{
+		PhaseRoles: map[string]string{
+			"elaborating":  "architect",
+			"implementing": "coder",
+			"planning":     "planner",
+		},
+		Profiles: map[string]config.AgentProfile{
+			"architect": {Program: "codex", Enabled: true, ExecutionMode: config.ExecutionModeSDK},
+			"coder":     {Program: "claude", Enabled: true},
+			"planner":   {Program: "claude", Enabled: true},
+		},
+	}
+
+	assert.Equal(t, session.ExecutionModeTmux, h.executionModeForAgent(session.AgentTypeCoder))
+	assert.Equal(t, session.ExecutionModeTmux, h.executionModeForAgent(session.AgentTypePlanner))
+	assert.Equal(t, session.ExecutionModeSDK, h.executionModeForAgent(session.AgentTypeElaborator))
+}
+
 func collectQuickLaunchMsgs(cmd tea.Cmd) (started []instanceStartedMsg) {
 	if cmd == nil {
 		return nil
@@ -680,6 +700,7 @@ func TestQuickLaunch_KeyCreatesInstance(t *testing.T) {
 	assert.Equal(t, "myrepo-agent-1", instances[0].Title)
 	assert.Equal(t, session.AgentTypeFixer, instances[0].AgentType)
 	assert.Equal(t, h.programForAgent(session.AgentTypeFixer), instances[0].Program)
+	assert.Equal(t, session.ExecutionModeTmux, instances[0].ExecutionMode)
 	assert.Empty(t, updated.allInstances)
 
 	startedMsgs := collectQuickLaunchMsgs(cmd)

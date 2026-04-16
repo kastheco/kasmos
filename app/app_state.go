@@ -3051,10 +3051,12 @@ func (m *home) quickLaunchAgent() (tea.Model, tea.Cmd) {
 
 	title := m.nextPlaceholderName()
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:           title,
-		Path:            m.activeRepoPath,
-		Program:         m.programForAgent(session.AgentTypeFixer),
-		ExecutionMode:   m.executionModeForAgent(session.AgentTypeFixer),
+		Title:   title,
+		Path:    m.activeRepoPath,
+		Program: m.programForAgent(session.AgentTypeFixer),
+		// Quick launch stays tmux-backed so the ad-hoc session remains interactive
+		// even when managed fixer runs opt into SDK transport.
+		ExecutionMode:   session.ExecutionModeTmux,
 		AgentType:       session.AgentTypeFixer,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
 	})

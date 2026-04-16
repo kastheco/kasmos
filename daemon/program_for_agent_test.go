@@ -238,3 +238,37 @@ func TestProgramForAgent(t *testing.T) {
 		assert.Equal(t, "", got)
 	})
 }
+
+func TestExecutionModeForAgent(t *testing.T) {
+	repoDir := t.TempDir()
+	kasmosDir := filepath.Join(repoDir, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+
+	configContent := `
+[phases]
+  elaborating = "architect"
+  implementing = "coder"
+  planning = "planner"
+
+[agents]
+  [agents.architect]
+    enabled = true
+    program = "codex"
+    execution_mode = "sdk"
+  [agents.coder]
+    enabled = true
+    program = "claude"
+  [agents.planner]
+    enabled = true
+    program = "claude"
+`
+	require.NoError(t, os.WriteFile(
+		filepath.Join(kasmosDir, "config.toml"),
+		[]byte(configContent),
+		0o644,
+	))
+
+	assert.Equal(t, config.ExecutionModeTmux, executionModeForAgent(repoDir, session.AgentTypeCoder))
+	assert.Equal(t, config.ExecutionModeTmux, executionModeForAgent(repoDir, session.AgentTypePlanner))
+	assert.Equal(t, config.ExecutionModeSDK, executionModeForAgent(repoDir, session.AgentTypeElaborator))
+}
