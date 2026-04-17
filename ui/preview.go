@@ -333,44 +333,57 @@ func (p *PreviewPane) String() string {
 		return lipgloss.JoinHorizontal(lipgloss.Top, viewContent, scrollbar)
 	}
 
-	// Normal mode: split text, truncate/pad, render.
+	// Normal mode: wrap raw lines to pane width, then tail-slice the wrapped
+	// rows so (a) wide content stays fully readable across multiple visible
+	// rows instead of being clipped off the right edge, and (b) the pane
+	// follows newest output instead of showing startup text forever.
 	availableHeight := p.height
 	if !p.isRawTerminal {
 		availableHeight-- // reserve one row for the overflow indicator
 	}
 
-	lines := strings.Split(p.previewState.text, "\n")
+	rows := wrapPreviewRows(p.previewState.text, p.width)
 	overflowed := false
 	if availableHeight > 0 {
-		// Tail-slice so the pane follows the most recent output. Previously we
-		// took the FIRST availableHeight lines, which meant sdk agents whose
-		// renderer buffer kept growing would show their startup banner forever
-		// while the live output silently accumulated below the viewport.
-		if len(lines) > availableHeight {
-			lines = lines[len(lines)-availableHeight:]
+		if len(rows) > availableHeight {
+			rows = rows[len(rows)-availableHeight:]
 			overflowed = true
 		} else {
-			padding := availableHeight - len(lines)
-			lines = append(lines, make([]string, padding)...)
-		}
-	}
-
-	// Clip each line to p.width so a single long (wrapped) line can't push
-	// the pane past its allotted height. ansi.Truncate preserves styling
-	// while counting visible cells, so styled tool-output stays readable.
-	if p.width > 0 {
-		for i, line := range lines {
-			lines[i] = ansi.Truncate(line, p.width, "")
+			padding := availableHeight - len(rows)
+			rows = append(rows, make([]string, padding)...)
 		}
 	}
 
 	if overflowed && !p.isRawTerminal && availableHeight > 0 {
-		// Replace the topmost visible line with an ellipsis marker so the
+		// Replace the topmost visible row with an ellipsis marker so the
 		// user knows there is buffered scrollback above the pane.
-		lines[0] = ansi.Truncate("...", p.width, "")
+		rows[0] = "..."
 	}
 
-	return previewPaneStyle.Width(p.width).Render(strings.Join(lines, "\n"))
+	return previewPaneStyle.Width(p.width).Render(strings.Join(rows, "\n"))
+}
+
+// wrapPreviewRows splits text into logical lines, then hard-wraps each line
+// to width using ANSI-aware wrapping. Empty input and non-positive widths
+// are handled by returning the raw split. The returned slice represents
+// visible terminal rows — each entry is guaranteed to render in a single
+// row at the given width, so downstream tail-slicing by count matches what
+// the user actually sees.
+func wrapPreviewRows(text string, width int) []string {
+	lines := strings.Split(text, "\n")
+	if width <= 0 {
+		return lines
+	}
+	rows := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if ansi.StringWidth(line) <= width {
+			rows = append(rows, line)
+			continue
+		}
+		wrapped := ansi.Hardwrap(line, width, false)
+		rows = append(rows, strings.Split(wrapped, "\n")...)
+	}
+	return rows
 }
 
 // buildFallbackText constructs the text for fallback (no active session) rendering.
