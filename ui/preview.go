@@ -399,34 +399,7 @@ const narrowPaneThreshold = 40
 // When width is under narrowPaneThreshold, turns are separated by a single
 // newline instead of a blank line.
 func renderSDKPresentation(turns []*sdk.PresentationTurn, width int) string {
-	narrow := width > 0 && width < narrowPaneThreshold
-	sep := "\n\n"
-	if narrow {
-		sep = "\n"
-	}
-
-	var parts []string
-	for _, turn := range turns {
-		rows := renderSDKTurn(turn, width)
-		if len(rows) > 0 {
-			parts = append(parts, strings.Join(rows, "\n"))
-		}
-	}
-
-	var sb strings.Builder
-	for i, part := range parts {
-		if i > 0 {
-			sb.WriteString(sep)
-		}
-		sb.WriteString(part)
-	}
-
-	footerRows := renderComposerFooter(width)
-	if sb.Len() > 0 {
-		sb.WriteString(sep)
-	}
-	sb.WriteString(strings.Join(footerRows, "\n"))
-	return sb.String()
+	return sdk.RenderPresentation(turns, width)
 }
 
 // renderSDKTurn renders one turn block as a slice of styled lines following

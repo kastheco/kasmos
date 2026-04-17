@@ -51,3 +51,26 @@ func TestInstance_CapturePresentation_NilSession(t *testing.T) {
 	result := inst.CapturePresentation()
 	assert.Nil(t, result)
 }
+
+func TestInstance_Preview_WithSDKPresentation(t *testing.T) {
+	inst := &Instance{started: true, ExecutionMode: ExecutionModeSDK}
+	turns := []*sdk.PresentationTurn{
+		{
+			ID:     "t1",
+			Number: 1,
+			Rows: []sdk.PresentationRow{
+				{Kind: sdk.RowTool, Text: "• read_file main.go"},
+				{Kind: sdk.RowResult, Text: "→ 42 lines"},
+				{Kind: sdk.RowResponse},
+				{Kind: sdk.RowProse, Text: "assistant text"},
+			},
+		},
+	}
+	inst.SetExecutionSessionForTest(&mockPresentationSession{turns: turns})
+
+	preview, err := inst.Preview()
+	require.NoError(t, err)
+	assert.Contains(t, preview, "response")
+	assert.Contains(t, preview, "assistant text")
+	assert.Contains(t, preview, "> send a message to the agent")
+}

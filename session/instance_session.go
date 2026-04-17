@@ -19,6 +19,15 @@ func (i *Instance) Preview() (string, error) {
 	if !i.started || i.Status == Paused {
 		return "", nil
 	}
+	if NormalizeExecutionMode(i.ExecutionMode) == ExecutionModeSDK {
+		if turns := i.CapturePresentation(); len(turns) > 0 {
+			width := i.Width
+			if width <= 0 {
+				width = 80
+			}
+			return sdk.RenderPresentation(turns, width), nil
+		}
+	}
 	return i.executionSession.CapturePaneContent()
 }
 
