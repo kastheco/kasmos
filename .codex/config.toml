@@ -1,10 +1,6 @@
-sandbox_mode = "workspace-write"
-
-[sandbox_workspace_write]
-network_access = true
-
 [mcp_servers.kasmos]
 url = "http://127.0.0.1:7434/mcp"
-default_tools_approval_mode = "auto"
+default_tools_approval_mode = "approve"
+
 [features]
 codex_hooks = true

@@ -109,13 +109,20 @@ func (r *Renderer) AddEvent(e Event) {
 		if e.Text != "" {
 			r.appendLine("[system: " + e.Text + "]")
 		}
-		// Structured path — append system row to the open turn when text is present.
-		if e.Text != "" && r.currentTurn != nil {
-			r.currentTurn.Rows = append(r.currentTurn.Rows, PresentationRow{
+		// Structured path — preserve system rows even when no turn is currently
+		// open so the structured preview cannot drop startup/transport errors that
+		// still appear in the flat capture.
+		if e.Text != "" {
+			row := PresentationRow{
 				Kind:      RowSystem,
 				Text:      "[system: " + e.Text + "]",
 				Timestamp: e.Timestamp,
-			})
+			}
+			if r.currentTurn != nil {
+				r.currentTurn.Rows = append(r.currentTurn.Rows, row)
+			} else {
+				r.appendStandaloneTurn(e.TurnID, e.Timestamp, row)
+			}
 		}
 		// A final system event closes the current turn without interrupting it.
 		// This handles the codex error path where a final system event ends a
@@ -131,7 +138,16 @@ func (r *Renderer) AddEvent(e Event) {
 
 	case EventTurnStarted:
 		// Flat path — no visible marker needed.
-		// Structured path — close any open turn as interrupted, then open a new one.
+		// Structured path — if a permission/system row already created an implicit
+		// turn for this TurnID, keep using that turn rather than showing it as
+		// interrupted and starting a duplicate numbered turn.
+		if r.currentTurn != nil && (r.currentTurn.ID == e.TurnID || r.currentTurn.ID == "") {
+			if r.currentTurn.ID == "" {
+				r.currentTurn.ID = e.TurnID
+			}
+			return
+		}
+		// Otherwise close any open turn as interrupted, then open a new one.
 		if r.currentTurn != nil {
 			r.currentTurn.Interrupted = true
 			ts := e.Timestamp
@@ -290,6 +306,16 @@ func (r *Renderer) clearCurrentTurn() {
 	r.currentTurn = nil
 	r.currentTurnHasResponse = false
 	r.currentTurnOpenProse = -1
+}
+
+func (r *Renderer) appendStandaloneTurn(turnID string, ts time.Time, row PresentationRow) {
+	turn := r.startTurn(turnID, ts)
+	if row.Timestamp.IsZero() {
+		row.Timestamp = turn.StartedAt
+	}
+	turn.Rows = append(turn.Rows, row)
+	turn.CompletedAt = row.Timestamp
+	r.clearCurrentTurn()
 }
 
 // deepCopyTurns returns a fully independent copy of src. The returned pointers

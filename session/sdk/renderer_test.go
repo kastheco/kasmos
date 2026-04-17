@@ -394,6 +394,26 @@ func TestRenderer_CapturePresentation_Permission_BeforeTurnStarted_ImplicitTurn(
 	assert.Equal(t, 1, permRows)
 }
 
+func TestRenderer_CapturePresentation_PermissionBeforeTurnStarted_KeepsSingleTurn(t *testing.T) {
+	r := NewRenderer()
+	r.AddEvent(Event{Kind: EventPermission, TurnID: "t1", PermissionDescription: "allow"})
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1"})
+	r.AddEvent(Event{Kind: EventTextDelta, TurnID: "t1", Text: "hello"})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+	assert.Equal(t, "t1", turns[0].ID)
+	assert.False(t, turns[0].Interrupted)
+
+	var statusRows int
+	for _, row := range turns[0].Rows {
+		if row.Kind == RowStatus {
+			statusRows++
+		}
+	}
+	assert.Equal(t, 0, statusRows)
+}
+
 func TestRenderer_CapturePresentation_System_AddsRow(t *testing.T) {
 	r := NewRenderer()
 	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1"})
@@ -408,6 +428,24 @@ func TestRenderer_CapturePresentation_System_AddsRow(t *testing.T) {
 	}
 	require.Len(t, sysRows, 1)
 	assert.Contains(t, sysRows[0].Text, "agent started")
+}
+
+func TestRenderer_CapturePresentation_SystemOutsideTurn_Preserved(t *testing.T) {
+	r := NewRenderer()
+	r.AddEvent(Event{Kind: EventSystem, Text: "transport failed"})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+	assert.False(t, turns[0].Running())
+
+	var sysRows []PresentationRow
+	for _, row := range turns[0].Rows {
+		if row.Kind == RowSystem {
+			sysRows = append(sysRows, row)
+		}
+	}
+	require.Len(t, sysRows, 1)
+	assert.Equal(t, "[system: transport failed]", sysRows[0].Text)
 }
 
 func TestRenderer_CapturePresentation_System_EmptyText_NoRow(t *testing.T) {
