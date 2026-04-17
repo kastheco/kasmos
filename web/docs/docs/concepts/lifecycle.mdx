@@ -60,6 +60,7 @@ events trigger transitions. some events are **user-only** (can only be fired fro
 | `verify_failed` | no | master agent requested changes during verifying (→ `implementing`). when the verify-round count reaches `readiness_max_verify_cycles` the processor still consumes this `verify_failed` signal but applies the `verifying → done` transition directly instead; no new signal is emitted, and the processor tags the emitted `VerifyApprovedAction` as `ForcePromoted` so the tui can surface a warning |
 | `start_over` | **yes** | reset to planning from done |
 | `reimplement` | **yes** | resume implementation from done without resetting branch |
+| `mark_done` | **yes** | skip straight to `done` from `ready` when the work has been absorbed elsewhere or is obsolete |
 | `cancel` | **yes** | cancel the task from any active status |
 | `reopen` | **yes** | reopen a cancelled task back to planning |
 
@@ -75,6 +76,7 @@ stateDiagram-v2
 
     ready --> planning       : plan_start
     ready --> implementing   : implement_start
+    ready --> done           : mark_done
     ready --> cancelled      : cancel
 
     planning --> planning    : plan_start (restart after crash)
@@ -109,6 +111,7 @@ stateDiagram-v2
 ready
   ├─ plan_start          → planning
   ├─ implement_start     → implementing
+  ├─ mark_done           → done        (user-only; work absorbed elsewhere or obsolete)
   └─ cancel              → cancelled
 
 planning

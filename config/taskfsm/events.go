@@ -22,6 +22,7 @@ var primaryEventNames = map[string]Event{
 	"reimplement":        Reimplement,
 	"cancel":             Cancel,
 	"reopen":             Reopen,
+	"mark_done":          MarkDone,
 }
 
 // eventAliases maps additional accepted tokens to their Event constants.
