@@ -13,8 +13,11 @@ import type { Status, TaskEntry, InstanceEntry } from "./types.ts";
 import {
   normalizeTaskEntry,
   normalizeTaskStatus,
+  normalizeExecutionMode,
   listInstances,
   getInstanceCapture,
+  getInstancePresentation,
+  sendInstancePermission,
   pauseInstance,
   resumeInstance,
   restartInstance,
@@ -575,3 +578,226 @@ assertEqual(
 );
 
 console.log("api.test.ts new helpers ok");
+
+// ---- normalizeExecutionMode -------------------------------------------------
+
+assertEqual(normalizeExecutionMode("tmux"), "tmux", "tmux passes through");
+assertEqual(normalizeExecutionMode("sdk"), "sdk", "sdk passes through");
+assertEqual(normalizeExecutionMode("headless"), "sdk", "headless normalizes to sdk");
+assertEqual(normalizeExecutionMode(undefined), undefined, "undefined returns undefined");
+assertEqual(normalizeExecutionMode("unknown"), undefined, "unknown returns undefined");
+assertEqual(normalizeExecutionMode(""), undefined, "empty string returns undefined");
+
+console.log("api.test.ts normalizeExecutionMode ok");
+
+// ---- listInstances normalizes execution_mode --------------------------------
+
+// headless instance in list response is normalized to sdk
+const headlessInstanceList = [
+  {
+    title: "agent-1",
+    status: "running",
+    branch: "feat/x",
+    program: "claude",
+    execution_mode: "headless",
+  },
+  {
+    title: "agent-2",
+    status: "ready",
+    branch: "feat/y",
+    program: "codex",
+    execution_mode: "tmux",
+  },
+  {
+    title: "agent-3",
+    status: "running",
+    branch: "feat/z",
+    program: "amp",
+  },
+];
+mockFetch(true, 200, JSON.stringify(headlessInstanceList));
+const normalizedInstances = await listInstances("proj");
+assertEqual(
+  normalizedInstances[0].execution_mode,
+  "sdk",
+  "listInstances normalizes headless to sdk",
+);
+assertEqual(
+  normalizedInstances[1].execution_mode,
+  "tmux",
+  "listInstances keeps tmux unchanged",
+);
+assertEqual(
+  normalizedInstances[2].execution_mode,
+  undefined,
+  "listInstances maps missing mode to undefined",
+);
+
+console.log("api.test.ts listInstances normalization ok");
+
+// ---- getInstancePresentation ------------------------------------------------
+
+// Happy path: supported=true with turns and dates.
+const presentationPayload = {
+  supported: true,
+  captured_at: "2026-04-17T10:00:00Z",
+  turns: [
+    {
+      id: "turn-1",
+      number: 1,
+      started_at: "2026-04-17T10:00:01Z",
+      completed_at: "2026-04-17T10:00:05Z",
+      interrupted: false,
+      tool_count: 2,
+      rows: [
+        {
+          kind: "prose",
+          text: "hello",
+          timestamp: "2026-04-17T10:00:02Z",
+          tool_name: "",
+          is_error: false,
+        },
+        {
+          kind: "tool",
+          text: "run bash",
+          timestamp: null,
+          tool_name: "bash",
+          is_error: false,
+        },
+      ],
+    },
+  ],
+};
+mockFetch(true, 200, JSON.stringify(presentationPayload));
+const gotPresentation = await getInstancePresentation("proj", "agent-1");
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/proj/instances/agent-1/presentation",
+  "getInstancePresentation calls correct URL",
+);
+assertEqual(gotPresentation.supported, true, "getInstancePresentation: supported");
+if (!(gotPresentation.captured_at instanceof Date)) {
+  throw new Error("getInstancePresentation: captured_at must be a Date");
+}
+assertEqual(
+  gotPresentation.captured_at.toISOString(),
+  "2026-04-17T10:00:00.000Z",
+  "getInstancePresentation: captured_at parsed",
+);
+if (!gotPresentation.turns || gotPresentation.turns.length !== 1) {
+  throw new Error("getInstancePresentation: expected 1 turn");
+}
+const turn = gotPresentation.turns[0];
+if (!(turn.started_at instanceof Date)) {
+  throw new Error("getInstancePresentation: turn.started_at must be a Date");
+}
+assertEqual(turn.id, "turn-1", "turn id");
+assertEqual(turn.number, 1, "turn number");
+assertEqual(turn.tool_count, 2, "turn tool_count");
+assertEqual(turn.rows.length, 2, "turn row count");
+assertEqual(turn.rows[0].kind, "prose", "row[0] kind");
+if (!(turn.rows[0].timestamp instanceof Date)) {
+  throw new Error("row[0] timestamp must be a Date");
+}
+assertEqual(turn.rows[1].tool_name, "bash", "row[1] tool_name");
+assertEqual(turn.rows[1].timestamp, null, "row[1] null timestamp");
+
+// supported=false: turns is null — must not throw.
+const unsupportedPayload = {
+  supported: false,
+  captured_at: "2026-04-17T10:00:00Z",
+  turns: null,
+};
+mockFetch(true, 200, JSON.stringify(unsupportedPayload));
+const unsupportedPresentation = await getInstancePresentation("proj", "agent-2");
+assertEqual(unsupportedPresentation.supported, false, "unsupported: supported=false");
+assertEqual(unsupportedPresentation.turns, null, "unsupported: turns=null");
+
+// 404 propagates as RequestError.
+mockFetch(false, 404, JSON.stringify({ error: "instance not found" }));
+let presentationErr: unknown = null;
+try {
+  await getInstancePresentation("proj", "missing");
+} catch (e) {
+  presentationErr = e;
+}
+if (!(presentationErr instanceof RequestError)) {
+  throw new Error("getInstancePresentation 404 should throw RequestError");
+}
+assertEqual((presentationErr as RequestError).status, 404, "getInstancePresentation 404 status");
+
+console.log("api.test.ts getInstancePresentation ok");
+
+// ---- sendInstancePermission -------------------------------------------------
+
+// Reinstall the full-tracking stub so _lastFetchedInit is captured.
+(globalThis as Record<string, unknown>).fetch = async (
+  input: string | URL | Request,
+  init?: RequestInit,
+): Promise<Response> => {
+  _lastFetchedUrl = String(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+  _lastFetchedMethod = init?.method ?? "GET";
+  _lastFetchedInit = init;
+  const m = _mockResponse!;
+  _mockResponse = null;
+  const body = m.body;
+  return {
+    ok: m.ok,
+    status: m.status,
+    json: async () => JSON.parse(body) as unknown,
+    text: async () => body,
+    clone: () => ({
+      json: async () => JSON.parse(body) as unknown,
+      text: async () => body,
+    }),
+  } as unknown as Response;
+};
+
+mockFetch(true, 200, "");
+await sendInstancePermission("proj", "agent-1", "allow_once");
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/proj/instances/agent-1/permission",
+  "sendInstancePermission: correct URL",
+);
+assertEqual(
+  (_lastFetchedInit as RequestInit).method,
+  "POST",
+  "sendInstancePermission: POST method",
+);
+assertEqual(
+  JSON.parse((_lastFetchedInit as RequestInit).body as string).decision,
+  0,
+  "sendInstancePermission: allow_once maps to 0",
+);
+
+mockFetch(true, 200, "");
+await sendInstancePermission("proj", "agent-1", "allow_always");
+assertEqual(
+  JSON.parse((_lastFetchedInit as RequestInit).body as string).decision,
+  1,
+  "sendInstancePermission: allow_always maps to 1",
+);
+
+mockFetch(true, 200, "");
+await sendInstancePermission("proj", "agent-1", "reject");
+assertEqual(
+  JSON.parse((_lastFetchedInit as RequestInit).body as string).decision,
+  2,
+  "sendInstancePermission: reject maps to 2",
+);
+
+// 409 propagates as RequestError.
+mockFetch(false, 409, JSON.stringify({ error: "conflict" }));
+let permErr: unknown = null;
+try {
+  await sendInstancePermission("proj", "agent-1", "allow_once");
+} catch (e) {
+  permErr = e;
+}
+if (!(permErr instanceof RequestError)) {
+  throw new Error("sendInstancePermission 409 should throw RequestError");
+}
+assertEqual((permErr as RequestError).status, 409, "sendInstancePermission 409 status");
+
+console.log("api.test.ts sendInstancePermission ok");
