@@ -1340,6 +1340,127 @@ func TestWaveMonitor_FocusesTaskInstance_WhenWaveCompleteShown(t *testing.T) {
 		"wave-advance overlay should auto-focus a task instance for the plan")
 }
 
+// TestWaveMonitor_DismissedInstance_WithPersistedCompleteDoesNotFail regresses
+// the "k+k+k on a completed wave row pops a failed-wave dialog" bug. When a
+// rebuilt orchestrator still has a previously-completed task in taskRunning and
+// the user dismisses that row from the nav, the wave monitor must honor the
+// store's SubtaskStatusComplete and mark the task complete — not flip it into
+// the failed-wave overlay just because the instance is gone from nav.
+func TestWaveMonitor_DismissedInstance_WithPersistedCompleteDoesNotFail(t *testing.T) {
+	const planFile = "dismiss-completed"
+	const content = `# Plan
+
+**Goal:** cover dismiss-with-persisted-complete regression.
+
+## Wave 1
+
+### Task 1: first
+do the first task
+
+## Wave 2
+
+### Task 2: second
+do the second task
+`
+
+	plan, err := taskparser.Parse(content)
+	require.NoError(t, err)
+	orch := orchestration.NewWaveOrchestrator(planFile, plan)
+	orch.StartNextWave() // taskStates[1] = taskRunning
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.Create(planFile, "dismiss completed test", "plan/dismiss-completed", "", time.Now()))
+	require.NoError(t, ps.IngestContent(planFile, content))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+	// Daemon (or a prior session) already marked the subtask complete in the store.
+	require.NoError(t, ps.UpdateSubtaskStatus(planFile, 1, taskstore.SubtaskStatusComplete))
+
+	// Nav is empty — simulating the user having dismissed the wave 1 row via k+k+k.
+	h := waveFlowHome(t, ps, plansDir, map[string]*orchestration.WaveOrchestrator{planFile: orch})
+
+	msg := metadataResultMsg{
+		Results:   nil,
+		PlanState: ps,
+	}
+	model, _ := h.Update(msg)
+	updated := model.(*home)
+
+	assert.Equal(t, orchestration.WaveStateWaveComplete, orch.State(),
+		"wave should resolve once the sole task is accounted for")
+	assert.Equal(t, 1, orch.CompletedTaskCount(),
+		"dismissed row with persisted complete status must count as completed")
+	assert.Equal(t, 0, orch.FailedTaskCount(),
+		"must not mark as failed when the store says it is complete")
+
+	if updated.overlays.IsActive() {
+		wd, ok := updated.overlays.Current().(*overlay.WaveDecisionOverlay)
+		require.True(t, ok, "current overlay must be a WaveDecisionOverlay")
+		assert.Equal(t, 0, wd.Input().Failed,
+			"overlay must show the success variant, not the failed-wave variant")
+	}
+}
+
+// TestWaveMonitor_PausedInstance_WithHasWorkedCountsAsComplete regresses the
+// companion scenario where a wave row that finished work got paused (e.g. via
+// wave-advance). A paused row with HasWorked=true is a successful completion,
+// not a failure — otherwise a stuck orchestrator would flip long-completed
+// wave rows into the failed-wave overlay.
+func TestWaveMonitor_PausedInstance_WithHasWorkedCountsAsComplete(t *testing.T) {
+	const planFile = "paused-has-worked"
+
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{
+			{Number: 1, Tasks: []taskparser.Task{{Number: 1, Title: "Task 1", Body: "do it"}}},
+			{Number: 2, Tasks: []taskparser.Task{{Number: 2, Title: "Task 2", Body: "follow up"}}},
+		},
+	}
+	orch := orchestration.NewWaveOrchestrator(planFile, plan)
+	orch.StartNextWave()
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.Register(planFile, "paused has-worked test", "plan/paused-has-worked", time.Now()))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+
+	planName := taskstate.DisplayName(planFile)
+	taskTitle := fmt.Sprintf("%s-W1-T1", planName)
+	inst := &session.Instance{
+		Title:      taskTitle,
+		Program:    "opencode",
+		TaskFile:   planFile,
+		TaskNumber: 1,
+		WaveNumber: 1,
+	}
+	inst.MarkStartedForTest()
+	inst.HasWorked = true
+	inst.PromptDetected = true
+	inst.SetStatus(session.Paused)
+
+	h := waveFlowHome(t, ps, plansDir, map[string]*orchestration.WaveOrchestrator{planFile: orch})
+	_ = h.nav.AddInstance(inst)
+
+	msg := metadataResultMsg{
+		Results:   []instanceMetadata{{Title: taskTitle, TmuxAlive: true}},
+		PlanState: ps,
+	}
+	model, _ := h.Update(msg)
+	_ = model.(*home)
+
+	assert.Equal(t, 1, orch.CompletedTaskCount(),
+		"paused row that already did real work must count as completed")
+	assert.Equal(t, 0, orch.FailedTaskCount(),
+		"paused-with-HasWorked is a success, not a failure")
+	assert.True(t, inst.ImplementationComplete,
+		"completed-via-pause path must flip the sidebar completion glyph")
+}
+
 // TestWaveMonitor_FocusesTaskInstance_WhenFailedWaveShown verifies that the
 // failed-wave decision dialog auto-focuses a task instance for the plan.
 func TestWaveMonitor_FocusesTaskInstance_WhenFailedWaveShown(t *testing.T) {

@@ -2037,11 +2037,26 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							if stillSpawning {
 								continue // wait for async start to complete
 							}
+							// Instance was dismissed (e.g. via k+k+k) or never re-hydrated
+							// after a restart. If the store says the subtask is already
+							// done, honor that — otherwise the rebuilt orchestrator would
+							// flip a previously-completed wave into the failed-wave dialog.
+							if m.isSubtaskPersistedComplete(planFile, task.Number) {
+								orch.MarkTaskComplete(task.Number)
+								continue
+							}
 							orch.MarkTaskFailed(task.Number)
 							continue
 						}
 						if inst.Paused() {
-							// Paused task instances are treated as failures.
+							// A paused row that did real work (or is persisted complete
+							// in the store) is a completed task, not a failure — wave
+							// advance pauses finished tasks by design.
+							if inst.HasWorked || m.isSubtaskPersistedComplete(planFile, task.Number) {
+								orch.MarkTaskComplete(task.Number)
+								inst.ImplementationComplete = true
+								continue
+							}
 							orch.MarkTaskFailed(task.Number)
 							continue
 						}
@@ -2504,6 +2519,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.instance != nil && msg.instance.Started() {
 			i := msg.instance
 			return m, func() tea.Msg {
+				if handled, err := m.daemonRoutePermissionResponse(i, tmux.PermissionAllowAlways); handled {
+					return err
+				}
 				i.SendPermissionResponse(tmux.PermissionAllowAlways)
 				return nil
 			}
