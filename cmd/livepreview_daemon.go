@@ -236,6 +236,73 @@ func (l *daemonInstanceLister) SendInstancePrompt(project, title, prompt string)
 	return &livepreview.DaemonActionClientError{StatusCode: resp.StatusCode, Msg: msg}
 }
 
+// CapturePresentation implements livepreview.DaemonPresenter by calling
+// GET /v1/repos/{project}/instances/{title}/presentation on the daemon.
+// The response is JSON-decoded into an api.PresentationResponse. Non-200
+// responses are translated to *livepreview.DaemonActionClientError so the
+// HTTP handler can forward the daemon's original status code to the browser.
+func (l *daemonInstanceLister) CapturePresentation(project, title string) (api.PresentationResponse, error) {
+	u := "http://daemon/v1/repos/" + url.PathEscape(project) + "/instances/" + url.PathEscape(title) + "/presentation"
+	resp, err := l.http.Get(u)
+	if err != nil {
+		if isDaemonSocketUnreachable(err) {
+			return api.PresentationResponse{}, livepreview.ErrDaemonUnavailable
+		}
+		return api.PresentationResponse{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		var pres api.PresentationResponse
+		if derr := json.NewDecoder(resp.Body).Decode(&pres); derr != nil {
+			return api.PresentationResponse{}, fmt.Errorf("daemon presentation: decode: %w", derr)
+		}
+		return pres, nil
+	}
+
+	var errBody struct {
+		Error string `json:"error"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&errBody)
+	msg := errBody.Error
+	if msg == "" {
+		msg = resp.Status
+	}
+	return api.PresentationResponse{}, &livepreview.DaemonActionClientError{StatusCode: resp.StatusCode, Msg: msg}
+}
+
+// SendInstancePermissionResponse implements livepreview.DaemonPermissionResponder
+// by POSTing to POST /v1/repos/{project}/instances/{title}/permission on the
+// daemon. The choice is encoded as {"choice": N} JSON. Non-204/200 responses
+// are translated to *livepreview.DaemonActionClientError so the HTTP handler
+// can forward the daemon's original status code to the browser.
+func (l *daemonInstanceLister) SendInstancePermissionResponse(project, title string, choice api.PermissionChoice) error {
+	u := "http://daemon/v1/repos/" + url.PathEscape(project) + "/instances/" + url.PathEscape(title) + "/permission"
+	payload, _ := json.Marshal(map[string]int{"choice": int(choice)})
+	resp, err := l.http.Post(u, "application/json", bytes.NewReader(payload))
+	if err != nil {
+		if isDaemonSocketUnreachable(err) {
+			return livepreview.ErrDaemonUnavailable
+		}
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusOK {
+		return nil
+	}
+
+	var errBody struct {
+		Error string `json:"error"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&errBody)
+	msg := errBody.Error
+	if msg == "" {
+		msg = resp.Status
+	}
+	return &livepreview.DaemonActionClientError{StatusCode: resp.StatusCode, Msg: msg}
+}
+
 // isDaemonSocketUnreachable returns true when err indicates the daemon Unix
 // socket cannot be reached (daemon down, socket file missing, permission
 // denied, connection refused). Those conditions map to

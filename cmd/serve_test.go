@@ -761,3 +761,43 @@ func TestNewServeAPIRootMux_SendRouteRegistered(t *testing.T) {
 	assert.True(t, called, "previewAPI must be called for POST /instances/{title}/send")
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
+
+// TestNewServeAPIRootMux_PresentationRouteRegistered verifies that
+// GET /v1/projects/{project}/instances/{title}/presentation is routed to previewAPI.
+func TestNewServeAPIRootMux_PresentationRouteRegistered(t *testing.T) {
+	called := false
+	previewAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux := testServePreviewMux(t, previewAPI)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/myproj/instances/agent1/presentation", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	assert.True(t, called, "previewAPI must be called for GET /instances/{title}/presentation")
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// TestNewServeAPIRootMux_PermissionRouteRegistered verifies that
+// POST /v1/projects/{project}/instances/{title}/permission is routed to previewAPI.
+func TestNewServeAPIRootMux_PermissionRouteRegistered(t *testing.T) {
+	called := false
+	previewAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux := testServePreviewMux(t, previewAPI)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/myproj/instances/agent1/permission",
+		strings.NewReader(`{"choice":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	assert.True(t, called, "previewAPI must be called for POST /instances/{title}/permission")
+	assert.Equal(t, http.StatusOK, rec.Code)
+}

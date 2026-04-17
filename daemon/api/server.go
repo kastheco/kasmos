@@ -89,6 +89,21 @@ type PresentationResponse struct {
 	CapturedAt time.Time       `json:"captured_at"`
 }
 
+// PermissionChoice represents the user's response to a permission prompt.
+// Values mirror session/tmux.PermissionChoice so the wire encoding is stable.
+type PermissionChoice int
+
+const (
+	PermissionAllowOnce   PermissionChoice = 0
+	PermissionAllowAlways PermissionChoice = 1
+	PermissionReject      PermissionChoice = 2
+)
+
+// permissionRequest is the request body for POST .../permission.
+type permissionRequest struct {
+	Choice PermissionChoice `json:"choice"`
+}
+
 // addRepoRequest is the request body for POST /v1/repos.
 type addRepoRequest struct {
 	Path string `json:"path"`
