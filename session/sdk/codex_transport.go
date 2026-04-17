@@ -239,6 +239,15 @@ type CodexTransport struct {
 	closed    chan struct{}
 	closeOnce sync.Once
 
+	// autoApprove mirrors LaunchConfig.SkipPermissions for the lifetime of
+	// this transport. When true, we reply "accept" to every approval
+	// server-request from codex without surfacing a pane modal, matching
+	// the user's declared intent when SkipPermissions was set. Codex
+	// sometimes fires these even with approvalPolicy="never" — e.g. when
+	// its sandbox blocks an OS-level call (AF_UNIX pipes, network) and it
+	// wants the operator to re-run unsandboxed.
+	autoApprove bool
+
 	mu              sync.Mutex
 	threadID        string
 	currentTurnID   string
@@ -272,6 +281,8 @@ func (t *CodexTransport) Start(ctx context.Context, cfg LaunchConfig) error {
 		return fmt.Errorf("codex transport: start process: %w", err)
 	}
 	t.client = NewClient(stdin, stdout)
+
+	t.autoApprove = cfg.SkipPermissions
 
 	if err := t.startHandshake(ctx, cfg); err != nil {
 		_ = t.client.Close()
@@ -638,6 +649,17 @@ func (t *CodexTransport) handleServerRequest(req ServerRequest) error {
 		if err := json.Unmarshal(req.Params, &p); err != nil {
 			return fmt.Errorf("unmarshal %s: %w", req.Method, err)
 		}
+		if t.autoApprove {
+			// Daemon-spawned agents run with SkipPermissions=true — the
+			// operator has declared up front that these should run
+			// unattended. Reply "accept" directly instead of stalling the
+			// turn on a modal the user has no reason to see. Codex fires
+			// these even with approvalPolicy="never" when its sandbox
+			// blocks an OS-level call (tsx ipc pipe, http, etc.).
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			return t.client.Reply(ctx, req.ID, map[string]any{"decision": "accept"})
+		}
 		desc := codexCommandApprovalDescription(p)
 		t.mu.Lock()
 		t.pendingApproval = &codexPendingApproval{
@@ -658,6 +680,11 @@ func (t *CodexTransport) handleServerRequest(req ServerRequest) error {
 		var p codexPermissionsApprovalRequest
 		if err := json.Unmarshal(req.Params, &p); err != nil {
 			return fmt.Errorf("unmarshal %s: %w", req.Method, err)
+		}
+		if t.autoApprove {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			return t.client.Reply(ctx, req.ID, codexPermissionsApprovalResponse(tmux.PermissionAllowAlways, p.Permissions))
 		}
 		desc := codexPermissionsApprovalDescription(p)
 		t.mu.Lock()
