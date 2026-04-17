@@ -50,6 +50,7 @@ const (
 	Reimplement            Event = "reimplement"
 	Cancel                 Event = "cancel"
 	Reopen                 Event = "reopen"
+	MarkDone               Event = "mark_done"
 )
 
 // NormalizeExecutionPhase trims persisted execution-phase strings and returns
@@ -84,7 +85,7 @@ func IsSingleAgentImplementingPhase(phase ExecutionPhase) bool {
 // never by agent sentinel files.
 func (e Event) IsUserOnly() bool {
 	switch e {
-	case StartOver, Reimplement, RequestReview, Cancel, Reopen:
+	case StartOver, Reimplement, RequestReview, Cancel, Reopen, MarkDone:
 		return true
 	}
 	return false
@@ -96,6 +97,7 @@ var transitionTable = map[Status]map[Event]Status{
 	StatusReady: {
 		PlanStart:      StatusPlanning,
 		ImplementStart: StatusImplementing,
+		MarkDone:       StatusDone,
 		Cancel:         StatusCancelled,
 	},
 	StatusPlanning: {
