@@ -65,22 +65,22 @@ const (
 // PresentationRow is a single typed content row within a PresentationTurn.
 // All fields are value types — safe to copy and share across goroutines.
 type PresentationRow struct {
-	Kind      PresentationRowKind
-	Text      string
-	Timestamp time.Time
-	ToolName  string
-	IsError   bool
+	Kind      PresentationRowKind `json:"kind"`
+	Text      string              `json:"text"`
+	Timestamp time.Time           `json:"timestamp"`
+	ToolName  string              `json:"tool_name"`
+	IsError   bool                `json:"is_error"`
 }
 
 // PresentationTurn groups all content rows produced within one agent response turn.
 type PresentationTurn struct {
-	ID          string
-	Number      int
-	StartedAt   time.Time
-	CompletedAt time.Time
-	Interrupted bool
-	ToolCount   int
-	Rows        []PresentationRow
+	ID          string            `json:"id"`
+	Number      int               `json:"number"`
+	StartedAt   time.Time         `json:"started_at"`
+	CompletedAt time.Time         `json:"completed_at"`
+	Interrupted bool              `json:"interrupted"`
+	ToolCount   int               `json:"tool_count"`
+	Rows        []PresentationRow `json:"rows"`
 }
 
 // Running reports whether the turn is still in progress (not yet completed or interrupted).

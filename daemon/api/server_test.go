@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/kastheco/kasmos/config/taskstore"
 
@@ -332,4 +333,94 @@ func TestHandler_StartPlan(t *testing.T) {
 	assert.Equal(t, "api-response-logging", state.filename)
 	assert.Equal(t, "plan prompt", state.prompt)
 	assert.Equal(t, "opencode --model x", state.program)
+}
+
+// ---------------------------------------------------------------------------
+// Presentation endpoint tests
+// ---------------------------------------------------------------------------
+
+// presentationStub is a StateProvider stub for the presentation route.
+type presentationStub struct {
+	DaemonState
+	rawTurns  json.RawMessage
+	supported bool
+	err       error
+}
+
+func (s *presentationStub) ListInstances(_ string) []InstanceStatus { return nil }
+func (s *presentationStub) EventStream() <-chan Event               { return make(chan Event) }
+func (s *presentationStub) StartPlan(_, _, _, _ string) error       { return nil }
+func (s *presentationStub) ListPlans(_ string) ([]taskstore.TaskEntry, error) {
+	return nil, nil
+}
+func (s *presentationStub) ListTasks(_ string) ([]TaskStatus, error) { return nil, nil }
+func (s *presentationStub) CapturePresentation(_, _ string) (json.RawMessage, bool, error) {
+	return s.rawTurns, s.supported, s.err
+}
+
+func TestHandler_InstancePresentation_SDK(t *testing.T) {
+	// Pre-encode two turns with the exact wire-format field names.
+	_ = time.UTC // ensure time import is used
+	rawTurns := json.RawMessage(`[
+		{"id":"t1","number":1,"started_at":"0001-01-01T00:00:00Z","completed_at":"0001-01-01T00:00:00Z","interrupted":false,"tool_count":0,"rows":[{"kind":"prose","text":"hello","timestamp":"0001-01-01T00:00:00Z","tool_name":"","is_error":false}]},
+		{"id":"t2","number":2,"started_at":"0001-01-01T00:00:00Z","completed_at":"0001-01-01T00:00:00Z","interrupted":false,"tool_count":1,"rows":[{"kind":"tool","text":"bash(ls)","timestamp":"0001-01-01T00:00:00Z","tool_name":"bash","is_error":false}]}
+	]`)
+	state := &presentationStub{rawTurns: rawTurns, supported: true}
+	h := NewHandler(state)
+
+	req := httptest.NewRequest("GET", "/v1/repos/myproj/instances/my-agent/presentation", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+
+	var outer map[string]json.RawMessage
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&outer))
+
+	var supported bool
+	require.NoError(t, json.Unmarshal(outer["supported"], &supported))
+	assert.True(t, supported)
+
+	var turns []map[string]any
+	require.NoError(t, json.Unmarshal(outer["turns"], &turns))
+	require.Len(t, turns, 2)
+	assert.Equal(t, "t1", turns[0]["id"])
+	assert.Equal(t, "t2", turns[1]["id"])
+
+	assert.NotEmpty(t, outer["captured_at"])
+}
+
+func TestHandler_InstancePresentation_Tmux(t *testing.T) {
+	// tmux-backed instance: supported=false, turns=nil.
+	// After JSON round-trip, Turns decodes as json.RawMessage("null") — assert
+	// the raw token rather than nil equality.
+	state := &presentationStub{rawTurns: nil, supported: false}
+	h := NewHandler(state)
+
+	req := httptest.NewRequest("GET", "/v1/repos/myproj/instances/tmux-agent/presentation", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+
+	var outer map[string]json.RawMessage
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&outer))
+
+	var supported bool
+	require.NoError(t, json.Unmarshal(outer["supported"], &supported))
+	assert.False(t, supported)
+
+	// "turns" must be JSON null (not an array) for tmux instances.
+	assert.Equal(t, "null", string(outer["turns"]))
+}
+
+func TestHandler_InstancePresentation_NotFound(t *testing.T) {
+	state := &presentationStub{err: fmt.Errorf("%w: missing", ErrInstanceNotFound)}
+	h := NewHandler(state)
+
+	req := httptest.NewRequest("GET", "/v1/repos/myproj/instances/missing/presentation", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code, "body: %s", w.Body.String())
 }
