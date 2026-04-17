@@ -1,0 +1,90 @@
+/* AgentPreview — structured turn-timeline container */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  max-height: calc(100vh - 280px);
+  min-height: 120px;
+  padding: 8px 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* --- empty / waiting / unsupported states --- */
+
+.empty {
+  color: var(--rp-muted);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  padding: 24px 0;
+}
+
+.loading {
+  color: var(--rp-subtle);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  padding: 24px 0;
+}
+
+/* --- turn block --- */
+
+.turnBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 0 6px;
+  border-top: 1px solid var(--rp-overlay);
+}
+
+.turnBlock:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.turnHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-feature-settings: "tnum" 1;
+  color: var(--rp-subtle);
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+
+.turnNumber {
+  font-weight: 600;
+  font-feature-settings: "tnum" 1;
+}
+
+.turnMeta {
+  color: var(--rp-muted);
+  font-size: 10px;
+}
+
+/* running pill */
+.runningPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(156, 207, 216, 0.08);
+  border: 1px solid rgba(156, 207, 216, 0.25);
+  border-radius: 999px;
+  color: var(--rp-foam);
+  font-size: 10px;
+  padding: 1px 7px;
+  font-family: var(--font-mono);
+  animation: runningPulse 2.4s ease-in-out infinite;
+}
+
+@keyframes runningPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
+
+.turnRows {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
