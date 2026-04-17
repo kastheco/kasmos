@@ -142,13 +142,21 @@ func daemonInstanceData(repoPath string, status api.InstanceStatus) session.Inst
 	if status.Loading {
 		instStatus = session.Loading
 	}
+	// Honour the execution mode the daemon reports. Hardcoding tmux here
+	// made the TUI wrap sdk-backed agents (codex/claude SDK) in a tmux
+	// executionSession shim whose DoesSessionExist() asks `tmux
+	// has-session` for a session that was never created — it's an SDK
+	// subprocess, not a tmux pane. The sync loop then marked the restored
+	// instance exited every tick and the agent never showed up in the
+	// sidebar despite the daemon tracking it fine.
+	mode := session.NormalizeExecutionMode(session.ExecutionMode(status.ExecutionMode))
 	data := session.InstanceData{
 		Title:         status.Title,
 		Path:          repoPath,
 		Branch:        status.Branch,
 		Status:        instStatus,
 		Program:       program,
-		ExecutionMode: session.ExecutionModeTmux,
+		ExecutionMode: mode,
 		AutoYes:       true,
 		TaskFile:      status.Plan,
 		AgentType:     status.Role,
@@ -179,6 +187,51 @@ func daemonLoadingTotal(status api.InstanceStatus) int {
 	default:
 		return 6
 	}
+}
+
+// newDaemonSDKInstance constructs a sidebar-only placeholder for an
+// SDK-backed agent that is running inside the daemon. The returned
+// Instance has no executionSession wired up (SDK sessions can't be
+// mirrored across process boundaries); callers rely on the daemon for
+// preview, send-prompt, and kill operations. Status mirrors what the
+// daemon reports so the TUI doesn't flicker between running/ready.
+func newDaemonSDKInstance(repoPath string, status api.InstanceStatus) (*session.Instance, error) {
+	program := status.Program
+	if program == "" {
+		program = "opencode"
+	}
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         status.Title,
+		Path:          repoPath,
+		Program:       program,
+		ExecutionMode: session.ExecutionModeSDK,
+		AutoYes:       true,
+		TaskFile:      status.Plan,
+		AgentType:     status.Role,
+		TaskNumber:    status.TaskNumber,
+		WaveNumber:    status.WaveNumber,
+		ReviewCycle:   status.ReviewCycle,
+		WaveTaskIndex: status.WaveTaskIndex,
+		WaveTaskCount: status.WaveTaskCount,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if status.Branch != "" {
+		inst.BindSharedTaskWorktree(repoPath, status.Branch)
+	}
+	switch {
+	case status.Ready:
+		inst.SetStatus(session.Ready)
+	case status.Loading:
+		inst.SetStatus(session.Loading)
+		inst.LoadingTotal = daemonLoadingTotal(status)
+		inst.LoadingStage = 1
+		inst.LoadingMessage = "waiting for session..."
+	default:
+		inst.SetStatus(session.Running)
+	}
+	return inst, nil
 }
 
 func newDaemonLoadingInstance(repoPath string, status api.InstanceStatus) (*session.Instance, error) {
@@ -214,6 +267,21 @@ func newDaemonLoadingInstance(repoPath string, status api.InstanceStatus) (*sess
 }
 
 func restoreDaemonInstance(repoPath string, status api.InstanceStatus) (*session.Instance, error) {
+	// SDK-backed agents (codex/claude SDK) live as subprocesses inside the
+	// daemon; the TUI cannot meaningfully replicate their ExecutionSession
+	// because the JSON-RPC transport lives in the daemon process. Trying
+	// restoreInstanceFromData anyway produces a fresh SDK Session with
+	// alive=false, DoesSessionExist reports false, and FromInstanceData
+	// marks the restored instance Exited → sidebar drops it every tick.
+	// Mirror the daemon's state with a display-only placeholder instead so
+	// the sidebar shows the agent while the daemon keeps driving it.
+	if status.Active && session.NormalizeExecutionMode(session.ExecutionMode(status.ExecutionMode)) == session.ExecutionModeSDK {
+		placeholder, placeholderErr := newDaemonSDKInstance(repoPath, status)
+		if placeholderErr == nil {
+			return placeholder, nil
+		}
+		return nil, fmt.Errorf("restore daemon sdk instance %q: %w", status.Title, placeholderErr)
+	}
 	inst, err := restoreInstanceFromData(daemonInstanceData(repoPath, status))
 	if err == nil && inst != nil && !inst.Exited {
 		return inst, nil
