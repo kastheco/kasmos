@@ -192,10 +192,20 @@ func (r *Renderer) AddEvent(e Event) {
 // CapturePresentation returns a deep copy of the structured turn model.
 // The returned slice and all nested rows are safe for callers to mutate.
 // Returns nil when no events have produced any turns yet.
+//
+// A timing-only RowThinking row is injected into any running turn that has
+// been waiting longer than thinkingThreshold without producing real content.
+// Because the injection happens on the copy, it disappears automatically once
+// the turn accumulates tool, prose, permission, or system rows.
 func (r *Renderer) CapturePresentation() []*PresentationTurn {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return deepCopyTurns(r.turns)
+	now := time.Now()
+	copied := deepCopyTurns(r.turns)
+	for _, t := range copied {
+		maybeInjectThinking(t, now)
+	}
+	return copied
 }
 
 // ensureTurn returns the current open turn, creating an implicit one with the

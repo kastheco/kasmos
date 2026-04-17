@@ -368,12 +368,26 @@ func (p *PreviewPane) String() string {
 	return previewPaneStyle.Width(p.width).Render(strings.Join(rows, "\n"))
 }
 
+// narrowPaneThreshold is the column count below which the SDK pane switches to
+// a compact layout: minimal turn headers, a single-rule response divider, and
+// single-newline separators between turns.
+const narrowPaneThreshold = 40
+
 // renderSDKPresentation converts a slice of PresentationTurns into a single
 // ANSI-styled string ready to store in previewState.text. The timeline uses
 // the variant-c turn-block hierarchy described in docs/agent-sdk-pane-mockups.md:
 // tool/setup noise is visually secondary (muted/subtle) and assistant prose is
 // primary (text colour). A quiet composer footer is appended after the timeline.
+//
+// When width is under narrowPaneThreshold, turns are separated by a single
+// newline instead of a blank line.
 func renderSDKPresentation(turns []*sdk.PresentationTurn, width int) string {
+	narrow := width > 0 && width < narrowPaneThreshold
+	sep := "\n\n"
+	if narrow {
+		sep = "\n"
+	}
+
 	var parts []string
 	for _, turn := range turns {
 		rows := renderSDKTurn(turn, width)
@@ -385,14 +399,14 @@ func renderSDKPresentation(turns []*sdk.PresentationTurn, width int) string {
 	var sb strings.Builder
 	for i, part := range parts {
 		if i > 0 {
-			sb.WriteString("\n\n")
+			sb.WriteString(sep)
 		}
 		sb.WriteString(part)
 	}
 
 	footerRows := renderComposerFooter(width)
 	if sb.Len() > 0 {
-		sb.WriteString("\n\n")
+		sb.WriteString(sep)
 	}
 	sb.WriteString(strings.Join(footerRows, "\n"))
 	return sb.String()
@@ -401,16 +415,26 @@ func renderSDKPresentation(turns []*sdk.PresentationTurn, width int) string {
 // renderSDKTurn renders one turn block as a slice of styled lines following
 // variant-c colour assignments (see docs/agent-sdk-pane-mockups.md):
 //   - header and tool rows: ColorSubtle (secondary)
-//   - ok-result, system, and status rows: ColorMuted (quieter than tools)
+//   - ok-result, system, and thinking rows: ColorMuted (quieter than tools)
 //   - error-result rows: ColorLove
-//   - permission rows: ColorRose
+//   - permission rows: ColorRose (salmon)
 //   - prose rows: ColorText (primary)
 //   - RowResponse sentinel: emits the "─── response ───" divider
+//   - RowStatus (interrupted) rows: ColorGold (warning amber)
+//
+// In narrow mode (width < narrowPaneThreshold):
+//   - the header is reduced to just "turn N" (no elapsed, tool count, running label)
+//   - the response divider collapses to a single muted rule row
 func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
+	narrow := width > 0 && width < narrowPaneThreshold
 	var rows []string
 
 	headerStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
-	rows = append(rows, headerStyle.Render(turn.HeaderText(time.Now())))
+	if narrow {
+		rows = append(rows, headerStyle.Render(fmt.Sprintf("turn %d", turn.Number)))
+	} else {
+		rows = append(rows, headerStyle.Render(turn.HeaderText(time.Now())))
+	}
 
 	toolStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
 	resultOKStyle := lipgloss.NewStyle().Foreground(ColorMuted)
@@ -418,7 +442,9 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 	systemStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	permStyle := lipgloss.NewStyle().Foreground(ColorRose)
 	proseStyle := lipgloss.NewStyle().Foreground(ColorText)
-	statusStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	statusStyle := lipgloss.NewStyle().Foreground(ColorGold)
+	thinkingStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
+	narrowRuleStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 
 	for _, row := range turn.Rows {
 		switch row.Kind {
@@ -435,12 +461,18 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 		case sdk.RowPermission:
 			rows = append(rows, permStyle.Render(row.Text))
 		case sdk.RowResponse:
-			rows = append(rows, renderResponseDivider(width))
+			if narrow {
+				rule := strings.Repeat("─", max(0, width))
+				rows = append(rows, narrowRuleStyle.Render(rule))
+			} else {
+				rows = append(rows, renderResponseDivider(width))
+			}
 		case sdk.RowProse:
 			rows = append(rows, proseStyle.Render(row.Text))
 		case sdk.RowStatus:
 			rows = append(rows, statusStyle.Render(row.Text))
-			// RowThinking is reserved for wave 3; skip for now.
+		case sdk.RowThinking:
+			rows = append(rows, thinkingStyle.Render(row.Text))
 		}
 	}
 	return rows

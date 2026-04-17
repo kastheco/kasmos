@@ -771,6 +771,161 @@ func TestPreviewPane_SDKPresentation_ComposerFooterPresent(t *testing.T) {
 		"renderSDKPresentation must include keyboard hint line")
 }
 
+// TestPreviewPane_SDKPresentation_RunningTurnHeaderIndicator verifies that an
+// open (running) turn's header includes the "• running" indicator.
+func TestPreviewPane_SDKPresentation_RunningTurnHeaderIndicator(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 40)
+
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: now.Add(-5 * time.Second),
+		// No CompletedAt, not Interrupted → Running() == true.
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	rendered := pane.previewState.text
+	require.Contains(t, rendered, "• running",
+		"running turn must display '• running' indicator in pane header")
+}
+
+// TestPreviewPane_SDKPresentation_InterruptedStatusColorGold verifies that
+// RowStatus rows (added by TurnInterrupted events) are rendered in ColorGold,
+// not ColorMuted.
+func TestPreviewPane_SDKPresentation_InterruptedStatusColorGold(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 40)
+
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now.Add(-5 * time.Second),
+		Interrupted: true,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowStatus, Text: "[interrupted]", Timestamp: now},
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	rendered := pane.previewState.text
+	require.Contains(t, rendered,
+		lipgloss.NewStyle().Foreground(ColorGold).Render("[interrupted]"),
+		"interrupted RowStatus row must be rendered in ColorGold")
+	require.NotContains(t, rendered,
+		lipgloss.NewStyle().Foreground(ColorMuted).Render("[interrupted]"),
+		"interrupted RowStatus must not be rendered in ColorMuted")
+}
+
+// TestPreviewPane_SDKPresentation_NarrowPane_MinimalHeader verifies that when
+// the pane width is below narrowPaneThreshold (40), the turn header is reduced
+// to just "turn N" — no elapsed time, tool count, or running label.
+func TestPreviewPane_SDKPresentation_NarrowPane_MinimalHeader(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(30, 40) // width=30 < narrowPaneThreshold=40
+
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:        "t1",
+		Number:    3,
+		StartedAt: now.Add(-10 * time.Second),
+		ToolCount: 5,
+		// No CompletedAt → Running.
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	rendered := pane.previewState.text
+	// Minimal label must appear.
+	require.Contains(t, rendered, "turn 3")
+	// Verbose details must be suppressed.
+	require.NotContains(t, rendered, "10s", "elapsed must be suppressed in narrow mode")
+	require.NotContains(t, rendered, "5 tool", "tool count must be suppressed in narrow mode")
+	require.NotContains(t, rendered, "• running", "running label must be suppressed in narrow mode")
+}
+
+// TestPreviewPane_SDKPresentation_NarrowPane_NoDoubleSpacer verifies that
+// narrow pane mode (width < narrowPaneThreshold) uses single-newline separators
+// between turns, not the double-newline used in normal mode.
+func TestPreviewPane_SDKPresentation_NarrowPane_NoDoubleSpacer(t *testing.T) {
+	now := time.Now()
+	turns := []*sdk.PresentationTurn{
+		{
+			ID: "t1", Number: 1, StartedAt: now, CompletedAt: now,
+			Rows: []sdk.PresentationRow{{Kind: sdk.RowProse, Text: "first", Timestamp: now}},
+		},
+		{
+			ID: "t2", Number: 2, StartedAt: now, CompletedAt: now,
+			Rows: []sdk.PresentationRow{{Kind: sdk.RowProse, Text: "second", Timestamp: now}},
+		},
+	}
+	rendered := renderSDKPresentation(turns, 30) // narrow width
+	require.NotContains(t, rendered, "\n\n",
+		"narrow mode must not insert double-newline separators between turns")
+}
+
+// TestPreviewPane_SDKPresentation_NormalPane_DoubleSpacerPreserved verifies
+// that normal width (>= narrowPaneThreshold) keeps double-newline turn separation.
+func TestPreviewPane_SDKPresentation_NormalPane_DoubleSpacerPreserved(t *testing.T) {
+	now := time.Now()
+	turns := []*sdk.PresentationTurn{
+		{
+			ID: "t1", Number: 1, StartedAt: now, CompletedAt: now,
+			Rows: []sdk.PresentationRow{{Kind: sdk.RowProse, Text: "alpha", Timestamp: now}},
+		},
+		{
+			ID: "t2", Number: 2, StartedAt: now, CompletedAt: now,
+			Rows: []sdk.PresentationRow{{Kind: sdk.RowProse, Text: "beta", Timestamp: now}},
+		},
+	}
+	rendered := renderSDKPresentation(turns, 80) // normal width
+	// Double newline must separate the two turns.
+	idxAlpha := strings.Index(rendered, "alpha")
+	idxBeta := strings.Index(rendered, "beta")
+	require.True(t, idxAlpha >= 0 && idxBeta > idxAlpha)
+	between := rendered[idxAlpha:idxBeta]
+	require.Contains(t, between, "\n\n",
+		"normal mode must separate turns with double newline")
+}
+
+// TestPreviewPane_SDKPresentation_FlatScrollbackPreservesContract verifies that
+// an SDK instance's structured presentation does not bleed into the flat cache,
+// ensuring that CachedContent and structured turns remain independent paths.
+func TestPreviewPane_SDKPresentation_FlatScrollbackPreservesContract(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 24)
+
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: now,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowProse, Text: "structured text", Timestamp: now},
+		},
+	}
+
+	// Instance has both structured turns and flat cached content.
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	inst.CachedContent = "flat cached content"
+	inst.CachedContentSet = true
+
+	// Normal mode must prefer the structured presentation path.
+	require.NoError(t, pane.UpdateContent(inst))
+	require.False(t, pane.previewState.fallback)
+	require.Contains(t, pane.previewState.text, "structured text",
+		"normal mode must use structured presentation when turns are present")
+	require.NotContains(t, pane.previewState.text, "flat cached content",
+		"structured presentation must not include flat cache text")
+}
+
 // TestPreviewPane_SDKPresentation_MultipleTurnsSeparatedByBlankLines verifies
 // that consecutive turns are separated by blank lines in the rendered output.
 func TestPreviewPane_SDKPresentation_MultipleTurnsSeparatedByBlankLines(t *testing.T) {

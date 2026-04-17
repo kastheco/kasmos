@@ -5,6 +5,40 @@ import (
 	"time"
 )
 
+// thinkingThreshold is the minimum elapsed time before a timing-only "thinking"
+// row is injected into a running turn that has produced no real content yet.
+const thinkingThreshold = 2 * time.Second
+
+// maybeInjectThinking appends a timing-only RowThinking row to the turn copy
+// when the turn is still running, has not yet produced any tool, result, prose,
+// permission, or system rows, and has been running for longer than
+// thinkingThreshold. Because this is called on a deep copy in CapturePresentation,
+// the row disappears automatically once real content arrives.
+func maybeInjectThinking(turn *PresentationTurn, now time.Time) {
+	if !turn.Running() {
+		return
+	}
+	if turn.StartedAt.IsZero() {
+		return
+	}
+	elapsed := now.Sub(turn.StartedAt)
+	if elapsed < thinkingThreshold {
+		return
+	}
+	// Do not inject when the turn already has substantive content.
+	for _, row := range turn.Rows {
+		switch row.Kind {
+		case RowTool, RowResult, RowProse, RowPermission, RowSystem:
+			return
+		}
+	}
+	turn.Rows = append(turn.Rows, PresentationRow{
+		Kind:      RowThinking,
+		Text:      fmt.Sprintf("thinking %.1fs", elapsed.Seconds()),
+		Timestamp: now,
+	})
+}
+
 // PresentationRowKind classifies a single row within a PresentationTurn.
 type PresentationRowKind string
 
@@ -55,7 +89,8 @@ func (t PresentationTurn) Running() bool {
 
 // HeaderText returns a human-readable one-line summary of the turn suitable for
 // use as a visual header. The elapsed time is derived from now for running turns
-// and from the recorded CompletedAt for finished ones.
+// and from the recorded CompletedAt for finished ones. Running turns append
+// "• running" at the end. Tool count is included when > 0.
 func (t PresentationTurn) HeaderText(now time.Time) string {
 	var elapsed time.Duration
 	if t.Running() {
@@ -66,10 +101,19 @@ func (t PresentationTurn) HeaderText(now time.Time) string {
 		elapsed = t.CompletedAt.Sub(t.StartedAt)
 	}
 
+	label := fmt.Sprintf("turn %d", t.Number)
 	if elapsed > 0 {
-		return fmt.Sprintf("turn %d · %s", t.Number, formatElapsed(elapsed))
+		label += " · " + formatElapsed(elapsed)
 	}
-	return fmt.Sprintf("turn %d", t.Number)
+	if t.ToolCount == 1 {
+		label += " · 1 tool"
+	} else if t.ToolCount > 1 {
+		label += fmt.Sprintf(" · %d tools", t.ToolCount)
+	}
+	if t.Running() {
+		label += " • running"
+	}
+	return label
 }
 
 // formatElapsed formats a duration as a compact human-readable string.
