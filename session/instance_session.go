@@ -242,8 +242,19 @@ func (i *Instance) CollectMetadata() InstanceMetadata {
 	// Single capture call shared by hash check, activity parsing, and preview.
 	m.Updated, m.HasPrompt, m.Content, m.ContentCaptured = i.executionSession.HasUpdatedWithContent()
 
-	// Permission prompt detection — only meaningful when content was actually captured.
-	if m.ContentCaptured && m.Content != "" {
+	// Permission prompt detection. SDK transports (claude/codex SDK) carry
+	// structured permission state on the session itself — query that first so
+	// the TUI overlay can fire on SDK sessions, whose renderer output lacks
+	// the tmux-era "enter to submit" footer and numbered menu that
+	// ParsePermissionPrompt relies on. When no direct state is available we
+	// fall back to text-scraping the captured pane content, which is the
+	// tmux-session path.
+	if provider, ok := i.executionSession.(pendingPermissionProvider); ok {
+		if desc, pattern, pending := provider.PendingPermission(); pending {
+			m.PermissionPrompt = &PermissionPrompt{Description: desc, Pattern: pattern}
+		}
+	}
+	if m.PermissionPrompt == nil && m.ContentCaptured && m.Content != "" {
 		m.PermissionPrompt = ParsePermissionPrompt(m.Content, i.Program)
 	}
 

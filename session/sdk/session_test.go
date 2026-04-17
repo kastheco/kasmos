@@ -67,6 +67,10 @@ func (m *mockTransport) RespondPermission(_ context.Context, choice tmux.Permiss
 	return m.respondPermErr
 }
 
+func (m *mockTransport) PendingPermission() (description, pattern string, ok bool) {
+	return "", "", false
+}
+
 func (m *mockTransport) Events() <-chan Event {
 	return m.events
 }

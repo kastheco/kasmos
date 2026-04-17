@@ -72,6 +72,15 @@ type progressReporter interface {
 	SetProgressFunc(fn func(int, string))
 }
 
+// pendingPermissionProvider is optionally implemented by execution sessions
+// that carry structured permission-request state (SDK transports). The
+// instance layer type-asserts to this interface inside CollectMetadata so
+// tmux-backed sessions — which keep using text-scraping — don't need a
+// stub method. Returns ok=false when no permission is pending.
+type pendingPermissionProvider interface {
+	PendingPermission() (description, pattern string, ok bool)
+}
+
 // NormalizeExecutionMode canonicalises mode for the session layer.
 //
 //   - "sdk" → ExecutionModeSDK

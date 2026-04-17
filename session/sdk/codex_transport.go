@@ -208,6 +208,11 @@ type codexPendingApproval struct {
 	ID          int64
 	Kind        codexPendingApprovalKind
 	Permissions json.RawMessage
+	// Description and Pattern mirror the rendered EventPermission payload so
+	// PendingPermission() can answer without re-walking the approval params.
+	// Populated at request time; cleared when RespondPermission fires.
+	Description string
+	Pattern     string
 }
 
 // CodexTransport implements Transport for the OpenAI Codex CLI running in
@@ -364,6 +369,17 @@ func (t *CodexTransport) Interrupt(ctx context.Context) error {
 		ThreadID: threadID,
 		TurnID:   turnID,
 	}, nil)
+}
+
+// PendingPermission returns the description + pattern of the pending
+// approval, if any. Returns ok=false when no approval is in flight.
+func (t *CodexTransport) PendingPermission() (description, pattern string, ok bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.pendingApproval == nil {
+		return "", "", false
+	}
+	return t.pendingApproval.Description, t.pendingApproval.Pattern, true
 }
 
 // RespondPermission replies to the most recent pending approval request.
@@ -578,13 +594,18 @@ func (t *CodexTransport) handleServerRequest(req ServerRequest) error {
 		if err := json.Unmarshal(req.Params, &p); err != nil {
 			return fmt.Errorf("unmarshal %s: %w", req.Method, err)
 		}
+		desc := codexCommandApprovalDescription(p)
 		t.mu.Lock()
-		t.pendingApproval = &codexPendingApproval{ID: req.ID, Kind: codexApprovalCommand}
+		t.pendingApproval = &codexPendingApproval{
+			ID:          req.ID,
+			Kind:        codexApprovalCommand,
+			Description: desc,
+		}
 		t.mu.Unlock()
 		t.emit(Event{
 			Kind:                  EventPermission,
 			TurnID:                p.TurnID,
-			PermissionDescription: codexCommandApprovalDescription(p),
+			PermissionDescription: desc,
 			Timestamp:             now,
 		})
 		return nil
@@ -594,17 +615,19 @@ func (t *CodexTransport) handleServerRequest(req ServerRequest) error {
 		if err := json.Unmarshal(req.Params, &p); err != nil {
 			return fmt.Errorf("unmarshal %s: %w", req.Method, err)
 		}
+		desc := codexPermissionsApprovalDescription(p)
 		t.mu.Lock()
 		t.pendingApproval = &codexPendingApproval{
 			ID:          req.ID,
 			Kind:        codexApprovalPermissions,
 			Permissions: p.Permissions,
+			Description: desc,
 		}
 		t.mu.Unlock()
 		t.emit(Event{
 			Kind:                  EventPermission,
 			TurnID:                p.TurnID,
-			PermissionDescription: codexPermissionsApprovalDescription(p),
+			PermissionDescription: desc,
 			Timestamp:             now,
 		})
 		return nil

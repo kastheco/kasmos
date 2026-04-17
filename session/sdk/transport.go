@@ -77,6 +77,14 @@ type Transport interface {
 	// Returns 0 before a successful Start call.
 	PID() int
 
+	// PendingPermission reports the description and pattern of the approval
+	// request currently awaiting a response, if any. Returns ok=false when no
+	// request is pending. The TUI uses this (via the session / instance
+	// wrappers) to surface a permission overlay without text-scraping the
+	// renderer buffer, which does not carry lifecycle state about whether a
+	// prompt is still open.
+	PendingPermission() (description, pattern string, ok bool)
+
 	// Close shuts down the agent process and releases all resources.
 	// Safe to call before Start and after the process has already exited.
 	Close() error
