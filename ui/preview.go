@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/kastheco/kasmos/session"
 )
 
@@ -335,20 +336,38 @@ func (p *PreviewPane) String() string {
 	// Normal mode: split text, truncate/pad, render.
 	availableHeight := p.height
 	if !p.isRawTerminal {
-		availableHeight-- // reserve one row for the ellipsis overflow indicator
+		availableHeight-- // reserve one row for the overflow indicator
 	}
 
 	lines := strings.Split(p.previewState.text, "\n")
+	overflowed := false
 	if availableHeight > 0 {
+		// Tail-slice so the pane follows the most recent output. Previously we
+		// took the FIRST availableHeight lines, which meant sdk agents whose
+		// renderer buffer kept growing would show their startup banner forever
+		// while the live output silently accumulated below the viewport.
 		if len(lines) > availableHeight {
-			lines = lines[:availableHeight]
-			if !p.isRawTerminal {
-				lines = append(lines, "...")
-			}
+			lines = lines[len(lines)-availableHeight:]
+			overflowed = true
 		} else {
 			padding := availableHeight - len(lines)
 			lines = append(lines, make([]string, padding)...)
 		}
+	}
+
+	// Clip each line to p.width so a single long (wrapped) line can't push
+	// the pane past its allotted height. ansi.Truncate preserves styling
+	// while counting visible cells, so styled tool-output stays readable.
+	if p.width > 0 {
+		for i, line := range lines {
+			lines[i] = ansi.Truncate(line, p.width, "")
+		}
+	}
+
+	if overflowed && !p.isRawTerminal && availableHeight > 0 {
+		// Replace the topmost visible line with an ellipsis marker so the
+		// user knows there is buffered scrollback above the pane.
+		lines[0] = ansi.Truncate("...", p.width, "")
 	}
 
 	return previewPaneStyle.Width(p.width).Render(strings.Join(lines, "\n"))
