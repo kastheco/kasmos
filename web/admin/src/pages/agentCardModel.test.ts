@@ -3,10 +3,10 @@
 
 import {
   deslugify,
-  groupAgentsByStatus,
+  groupAgentsByTaskStatus,
   toAgentCardModel,
 } from "./agentCardModel.ts";
-import type { InstanceEntry } from "../types.ts";
+import type { InstanceEntry, Status } from "../types.ts";
 
 function assertEqual<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
@@ -221,49 +221,132 @@ assertEqual(deslugify(undefined), "", "deslugify undefined");
   );
 }
 
-// --- groupAgentsByStatus: ordering + empty group filtering -----------------
+// --- groupAgentsByTaskStatus: groups by plan lifecycle, not live status ----
+
+{
+  // Two plans, one actively implementing, one already reviewing — plus a
+  // solo agent with no task_file. Each plan has two wave/task agents so we
+  // can also verify the wave/task tiebreaker ordering inside a group.
+  const cards = [
+    // Agents for plan "alpha" which is currently reviewing.
+    {
+      title: "alpha-W2-T1",
+      displayName: "alpha",
+      status: "ready" as const,
+      taskFile: "alpha",
+      waveNumber: 2,
+      taskNumber: 1,
+      pills: [],
+    },
+    {
+      title: "alpha-W1-T1",
+      displayName: "alpha",
+      status: "running" as const,
+      taskFile: "alpha",
+      waveNumber: 1,
+      taskNumber: 1,
+      pills: [],
+    },
+    // Agents for plan "beta" which is currently implementing.
+    {
+      title: "beta-W1-T2",
+      displayName: "beta",
+      status: "running" as const,
+      taskFile: "beta",
+      waveNumber: 1,
+      taskNumber: 2,
+      pills: [],
+    },
+    {
+      title: "beta-W1-T1",
+      displayName: "beta",
+      status: "paused" as const,
+      taskFile: "beta",
+      waveNumber: 1,
+      taskNumber: 1,
+      pills: [],
+    },
+    // Solo agent (no task_file) — falls into the trailing "agents" group.
+    {
+      title: "adhoc",
+      displayName: "adhoc",
+      status: "running" as const,
+      pills: [],
+    },
+  ];
+  const taskStatus: ReadonlyMap<string, Status> = new Map<string, Status>([
+    ["alpha", "reviewing"],
+    ["beta", "implementing"],
+  ]);
+  const groups = groupAgentsByTaskStatus(cards, taskStatus);
+
+  // Reviewing comes before implementing (per TASK_STATUS_GROUPS order); solo
+  // trails at the bottom. Empty lifecycle buckets are dropped.
+  assertDeepEqual(
+    groups.map((g) => [g.key, g.cards.length]),
+    [
+      ["reviewing", 2],
+      ["implementing", 2],
+      ["solo", 1],
+    ],
+    "groups by plan lifecycle status, not live instance status",
+  );
+
+  // Within a bucket: sorted by (task_file, wave, task) — NOT by insertion
+  // order and NOT by instance substatus.
+  assertEqual(groups[0].cards[0].title, "alpha-W1-T1", "reviewing[0] = wave 1 task 1");
+  assertEqual(groups[0].cards[1].title, "alpha-W2-T1", "reviewing[1] = wave 2 task 1");
+  assertEqual(groups[1].cards[0].title, "beta-W1-T1", "implementing[0] = wave 1 task 1");
+  assertEqual(groups[1].cards[1].title, "beta-W1-T2", "implementing[1] = wave 1 task 2");
+  assertEqual(groups[2].cards[0].title, "adhoc", "solo group contains ad-hoc agent");
+}
+
+// --- groupAgentsByTaskStatus: stability across live status flips ----------
+
+{
+  // Same card in two different "polls" — substatus flips running ↔ ready.
+  // The bucket (task status) must stay the same across both passes.
+  const makeCard = (substatus: "running" | "ready") => [
+    {
+      title: "plan-W1-T1",
+      displayName: "plan",
+      status: substatus,
+      taskFile: "plan",
+      waveNumber: 1,
+      taskNumber: 1,
+      pills: [],
+    },
+  ];
+  const taskStatus: ReadonlyMap<string, Status> = new Map<string, Status>([
+    ["plan", "implementing"],
+  ]);
+
+  const before = groupAgentsByTaskStatus(makeCard("running"), taskStatus);
+  const after = groupAgentsByTaskStatus(makeCard("ready"), taskStatus);
+
+  assertDeepEqual(
+    before.map((g) => g.key),
+    after.map((g) => g.key),
+    "instance substatus change must not reshuffle group layout",
+  );
+  assertEqual(before[0].key, "implementing", "bucket is plan lifecycle, not live status");
+}
+
+// --- groupAgentsByTaskStatus: unknown task_file falls back to ready --------
 
 {
   const cards = [
     {
-      title: "a",
-      displayName: "a",
-      status: "ready" as const,
-      pills: [],
-    },
-    {
-      title: "b",
-      displayName: "b",
+      title: "orphan",
+      displayName: "orphan",
       status: "running" as const,
-      pills: [],
-    },
-    {
-      title: "c",
-      displayName: "c",
-      status: "running" as const,
-      pills: [],
-    },
-    {
-      title: "d",
-      displayName: "d",
-      status: "loading" as const,
+      taskFile: "missing-plan",
       pills: [],
     },
   ];
-  const groups = groupAgentsByStatus(cards);
-  // Order must be running → loading → ready → paused, and paused must be
-  // dropped because it has no cards.
-  assertDeepEqual(
-    groups.map((g) => [g.status, g.cards.length]),
-    [
-      ["running", 2],
-      ["loading", 1],
-      ["ready", 1],
-    ],
-    "status grouping order and empty filter",
-  );
-  assertEqual(groups[0].cards[0].title, "b", "running preserves insertion order");
-  assertEqual(groups[0].cards[1].title, "c", "running preserves insertion order");
+  const groups = groupAgentsByTaskStatus(cards, new Map());
+  assertEqual(groups.length, 1, "orphan still renders");
+  assertEqual(groups[0].key, "ready", "unknown task_file falls back to ready bucket");
 }
 
 console.log("agentCardModel.test.ts ok");

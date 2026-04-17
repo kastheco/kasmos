@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { listInstances, getInstanceCapture, pauseInstance, resumeInstance, restartInstance, killInstance, sendInstancePrompt } from "../api";
+import { listInstances, listTasks, getInstanceCapture, pauseInstance, resumeInstance, restartInstance, killInstance, sendInstancePrompt } from "../api";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
 import { useProject } from "../hooks/useProject";
 import { useToast } from "../hooks/useToast";
 import TerminalPreview from "../components/TerminalPreview";
 import ConfirmDialog from "../components/ConfirmDialog";
 import InstanceActionsMenu from "../components/InstanceActionsMenu";
-import type { InstanceEntry, InstanceAction, ScrollbackDepth } from "../types";
+import type { InstanceEntry, InstanceAction, ScrollbackDepth, Status, TaskEntry } from "../types";
 import {
   composerStateForInstance,
   shouldSubmitComposerKey,
@@ -16,7 +16,7 @@ import {
 } from "./instanceInteractivity";
 import styles from "./InstancesPage.module.css";
 import {
-  groupAgentsByStatus,
+  groupAgentsByTaskStatus,
   toAgentCardModel,
   type AgentCardModel,
   type AgentPill,
@@ -192,9 +192,28 @@ export default function InstancesPage() {
     2000,
   );
 
+  // Tasks list — refreshed less aggressively than instances since plan
+  // lifecycle status changes on human timescales, not poll timescales.
+  // Used only to map task_file → task status for stable grouping.
+  const tasks = useAutoRefresh<TaskEntry[]>(
+    () => (project ? listTasks(project) : Promise.resolve([])),
+    [project],
+    10000,
+  );
+
+  const taskStatusByFile = useMemo(() => {
+    const m = new Map<string, Status>();
+    for (const t of tasks.data ?? []) m.set(t.filename, t.status);
+    return m;
+  }, [tasks.data]);
+
   const groups = useMemo(
-    () => groupAgentsByStatus((instances.data ?? []).map(toAgentCardModel)),
-    [instances.data],
+    () =>
+      groupAgentsByTaskStatus(
+        (instances.data ?? []).map(toAgentCardModel),
+        taskStatusByFile,
+      ),
+    [instances.data, taskStatusByFile],
   );
 
   // O(1) lookup from card title → original InstanceEntry.
@@ -440,9 +459,9 @@ export default function InstancesPage() {
           {/* left: grouped agent list */}
           <div className={styles.listColumn}>
             {groups.map((group) => (
-              <section key={group.status} className={styles.group}>
+              <section key={group.key} className={styles.group}>
                 <h2 className={styles.groupHeader}>
-                  <span className={`${styles.groupDot} ${styles[`dot_${group.status}`]}`} />
+                  <span className={`${styles.groupDot} ${styles[`dot_${group.key}`] ?? ""}`} />
                   <span>{group.label}</span>
                   <span className={styles.groupCount}>{group.cards.length}</span>
                 </h2>
