@@ -793,7 +793,11 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 			}
 			if result.Submitted {
 				promptText := result.Value
-				if err := selected.SendPrompt(promptText); err != nil {
+				if handled, err := m.daemonRouteSend(selected, promptText); handled {
+					if err != nil {
+						return m, m.handleError(err)
+					}
+				} else if err := selected.SendPrompt(promptText); err != nil {
 					// TODO: we probably end up in a bad state here.
 					return m, m.handleError(err)
 				}
@@ -1131,7 +1135,13 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				value := result.Value
 				selected := m.nav.GetSelectedInstance()
 				if selected != nil && value != "" {
-					if err := selected.SendPrompt(value); err != nil {
+					if handled, err := m.daemonRouteSend(selected, value); handled {
+						if err != nil {
+							m.state = stateDefault
+							m.menu.SetState(ui.StateDefault)
+							return m, m.handleError(err)
+						}
+					} else if err := selected.SendPrompt(value); err != nil {
 						m.state = stateDefault
 						m.menu.SetState(ui.StateDefault)
 						return m, m.handleError(err)
@@ -1998,7 +2008,14 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 	case keys.KeyKill:
 		// Soft kill: terminate tmux session only, keep instance in list.
 		selected := m.nav.GetSelectedInstance()
-		if selected == nil || !selected.Started() || selected.Paused() || selected.Exited {
+		if selected == nil || selected.Paused() || selected.Exited {
+			return m, nil
+		}
+		// Daemon-tracked SDK placeholders have Started()==false locally
+		// even when the real subprocess is alive in the daemon. Allow the
+		// kill through and route it to the daemon; the !Started() guard
+		// only blocks tmux instances that genuinely never started.
+		if !selected.Started() && !m.isDaemonSDKPlaceholder(selected) {
 			return m, nil
 		}
 		m.audit(auditlog.EventAgentKilled, "killed instance",
@@ -2006,11 +2023,14 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 			auditlog.WithAgent(selected.AgentType),
 			auditlog.WithPlan(selected.TaskFile),
 		)
-		return m, softKillInstanceCmd(selected)
+		return m, softKillInstanceCmd(m, selected)
 	case keys.KeyKillAndRemove:
 		// Soft kill and remove: terminate tmux session and dismiss instance from list.
 		selected := m.nav.GetSelectedInstance()
-		if selected == nil || !selected.Started() || selected.Paused() || selected.Exited {
+		if selected == nil || selected.Paused() || selected.Exited {
+			return m, nil
+		}
+		if !selected.Started() && !m.isDaemonSDKPlaceholder(selected) {
 			return m, nil
 		}
 		m.audit(auditlog.EventAgentKilled, "killed and removed instance",
@@ -2018,7 +2038,7 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 			auditlog.WithAgent(selected.AgentType),
 			auditlog.WithPlan(selected.TaskFile),
 		)
-		return m, tea.Batch(softKillInstanceCmd(selected), m.dismissInstanceFromList(selected))
+		return m, tea.Batch(softKillInstanceCmd(m, selected), m.dismissInstanceFromList(selected))
 	case keys.KeyAbort:
 		// Full abort: kill tmux, remove worktree, remove from list + persistence.
 		selected := m.nav.GetSelectedInstance()
@@ -2435,8 +2455,20 @@ func (m *home) keydownCallback(name keys.KeyName) tea.Cmd {
 // softKillInstanceCmd returns a tea.Cmd that terminates inst's tmux session and
 // resets its status to Ready. Used by both KeyKill and KeyKillAndRemove so the
 // async kill behaviour stays single-sourced.
-func softKillInstanceCmd(inst *session.Instance) tea.Cmd {
+//
+// For daemon-managed SDK placeholders the local inst.StopTmux is a no-op
+// (no tmux to stop, subprocess lives inside the daemon). Route the kill
+// through the daemon control socket instead so the real codex subprocess
+// actually dies.
+func softKillInstanceCmd(m *home, inst *session.Instance) tea.Cmd {
 	return func() tea.Msg {
+		if handled, err := m.daemonRouteKill(inst); handled {
+			if err != nil {
+				log.WarningLog.Printf("softKill: daemon kill %q: %v", inst.Title, err)
+			}
+			inst.SetStatus(session.Ready)
+			return instanceChangedMsg{}
+		}
 		inst.StopTmux()
 		inst.SetStatus(session.Ready)
 		return instanceChangedMsg{}

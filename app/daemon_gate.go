@@ -305,6 +305,53 @@ func restoreDaemonInstance(repoPath string, status api.InstanceStatus) (*session
 	return nil, fmt.Errorf("daemon instance %q unavailable", status.Title)
 }
 
+// isDaemonSDKPlaceholder reports whether inst is a display-only entry
+// constructed by newDaemonSDKInstance. Those instances have no local
+// executionSession — all lifecycle ops (send/kill/pause/restart, preview
+// capture) need to reach the daemon via the control socket instead of
+// running locally on the empty placeholder. Detection heuristic: SDK
+// execution mode + inst.Started() == false (the placeholder never calls
+// inst.Start since there's no real transport to attach to).
+func (m *home) isDaemonSDKPlaceholder(inst *session.Instance) bool {
+	if inst == nil {
+		return false
+	}
+	if session.NormalizeExecutionMode(inst.ExecutionMode) != session.ExecutionModeSDK {
+		return false
+	}
+	return !inst.Started()
+}
+
+// daemonRouteSend routes a compose-prompt submit through the daemon API
+// when inst is an SDK placeholder. Returns (handled, err): handled=true
+// means the caller should stop (we did the work); handled=false means
+// fall through to the local inst.SendPrompt path.
+func (m *home) daemonRouteSend(inst *session.Instance, prompt string) (bool, error) {
+	if !m.isDaemonSDKPlaceholder(inst) {
+		return false, nil
+	}
+	project := m.taskStoreProject
+	if project == "" {
+		return true, fmt.Errorf("daemon route: no project for %q", inst.Title)
+	}
+	client := daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath())
+	return true, client.SendInstancePrompt(project, inst.Title, prompt)
+}
+
+// daemonRouteKill routes a kill action through the daemon API for SDK
+// placeholder instances. Same (handled, err) contract as daemonRouteSend.
+func (m *home) daemonRouteKill(inst *session.Instance) (bool, error) {
+	if !m.isDaemonSDKPlaceholder(inst) {
+		return false, nil
+	}
+	project := m.taskStoreProject
+	if project == "" {
+		return true, fmt.Errorf("daemon route: no project for %q", inst.Title)
+	}
+	client := daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath())
+	return true, client.KillInstance(project, inst.Title)
+}
+
 func (m *home) daemonStartupCheckCmd() tea.Cmd {
 	if m.daemonStatusChecker == nil {
 		return nil

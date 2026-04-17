@@ -1019,9 +1019,37 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, func() tea.Msg {
 			daemonManagedRepo := repoManagedByDaemon(repoPath)
+			var daemonClient *daemonpkg.SocketClient
+			if daemonManagedRepo && project != "" {
+				daemonClient = daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath())
+			}
 			results := make([]instanceMetadata, 0, len(snapshots))
 			for _, inst := range snapshots {
-				if !inst.Started() || inst.Paused() {
+				if inst.Paused() {
+					continue
+				}
+				// Daemon-managed SDK placeholders have no local
+				// executionSession, so inst.CollectMetadata() short-
+				// circuits on !inst.Started(). Instead, pull the pane
+				// content from the daemon's own renderer buffer via the
+				// control-socket API so the TUI preview reflects what the
+				// agent is actually doing.
+				if daemonClient != nil && !inst.Started() && session.NormalizeExecutionMode(inst.ExecutionMode) == session.ExecutionModeSDK {
+					content, err := daemonClient.CaptureInstance(project, inst.Title, "", "")
+					if err != nil {
+						results = append(results, instanceMetadata{Title: inst.Title})
+						continue
+					}
+					results = append(results, instanceMetadata{
+						Title:           inst.Title,
+						Content:         content,
+						ContentCaptured: content != "",
+						Updated:         content != inst.CachedContent,
+						TmuxAlive:       true,
+					})
+					continue
+				}
+				if !inst.Started() {
 					continue
 				}
 				md := inst.CollectMetadata()

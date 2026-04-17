@@ -102,6 +102,59 @@ func (c *SocketClient) RemoveRepo(project string) error {
 	return nil
 }
 
+// CaptureInstance fetches the current pane content of a daemon-tracked
+// instance. start/end follow tmux capture-pane -S/-E semantics and may be
+// empty strings to capture the full visible pane.
+func (c *SocketClient) CaptureInstance(project, title, start, end string) (string, error) {
+	q := ""
+	if start != "" || end != "" {
+		q = "?start=" + start + "&end=" + end
+	}
+	res, err := c.http.Get(c.url("/v1/repos/" + project + "/instances/" + title + "/capture" + q))
+	if err != nil {
+		return "", fmt.Errorf("client: GET capture %s/%s: %w", project, title, err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 300 {
+		return "", fmt.Errorf("client: GET capture %s/%s: status %d", project, title, res.StatusCode)
+	}
+	buf := new(bytes.Buffer)
+	if _, err := buf.ReadFrom(res.Body); err != nil {
+		return "", fmt.Errorf("client: read capture body: %w", err)
+	}
+	return buf.String(), nil
+}
+
+// SendInstancePrompt delivers a new user turn to a daemon-tracked instance.
+// For SDK sessions the daemon forwards through the transport; for tmux
+// sessions it sends keys + enter to the pane.
+func (c *SocketClient) SendInstancePrompt(project, title, prompt string) error {
+	body := struct {
+		Prompt string `json:"prompt"`
+	}{Prompt: prompt}
+	return c.post("/v1/repos/"+project+"/instances/"+title+"/send", body, nil)
+}
+
+// PauseInstance, ResumeInstance, RestartInstance, KillInstance route to
+// the corresponding POST /v1/repos/{project}/instances/{title}/<action>
+// endpoint. The daemon dispatches to the spawner which owns the
+// subprocess / tmux session lifecycle.
+func (c *SocketClient) PauseInstance(project, title string) error {
+	return c.post("/v1/repos/"+project+"/instances/"+title+"/pause", struct{}{}, nil)
+}
+
+func (c *SocketClient) ResumeInstance(project, title string) error {
+	return c.post("/v1/repos/"+project+"/instances/"+title+"/resume", struct{}{}, nil)
+}
+
+func (c *SocketClient) RestartInstance(project, title string) error {
+	return c.post("/v1/repos/"+project+"/instances/"+title+"/restart", struct{}{}, nil)
+}
+
+func (c *SocketClient) KillInstance(project, title string) error {
+	return c.post("/v1/repos/"+project+"/instances/"+title+"/kill", struct{}{}, nil)
+}
+
 // StartPlan requests that the daemon spawn a planner for the given plan.
 func (c *SocketClient) StartPlan(project, filename, prompt, program string) error {
 	body := struct {
