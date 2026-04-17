@@ -481,13 +481,26 @@ func (n *NavigationPanel) rebuildRows() {
 		}
 	}
 
+	// Partition plans into active (reviewing / implementing / planning phases —
+	// navPlanSortKey < 2) and idle so non-ready plans render in a dedicated
+	// "active" section above the solo agents and the idle "plans" section.
+	// Within each partition the stable title-first order from `sorted` is kept,
+	// so plans do not jump around as running/notified state changes.
+	var activePlans, idlePlans []PlanDisplay
+	for _, p := range sorted {
+		if navPlanSortKey(p, byPlan[p.Filename], n.planStatuses[p.Filename]) < 2 {
+			activePlans = append(activePlans, p)
+		} else {
+			idlePlans = append(idlePlans, p)
+		}
+	}
+
 	emitted := make(map[string]bool)
 
-	// All plans: topic-grouped first, then ungrouped flat.
-	emitTopicGrouped(sorted, emitted)
-	emitPlanGroup(sorted, 0, emitted)
+	// Active plans: flat list — no topic nesting in the active section.
+	emitPlanGroup(activePlans, 0, emitted)
 
-	// Solo agents.
+	// Solo agents (between active plans and idle plans).
 	if len(solo) > 0 {
 		rows = append(rows, navRow{Kind: navRowSoloHeader, ID: "__solo__", Label: "agents"})
 		for _, inst := range solo {
@@ -499,6 +512,10 @@ func (n *NavigationPanel) rebuildRows() {
 			})
 		}
 	}
+
+	// Idle plans: topic-grouped first, then ungrouped flat.
+	emitTopicGrouped(idlePlans, emitted)
+	emitPlanGroup(idlePlans, 0, emitted)
 
 	// History section (collapsed toggle, expands to list).
 	historyPlans := make([]PlanDisplay, 0, len(n.historyPlans)+len(n.cancelled))
@@ -1303,6 +1320,16 @@ func navPlanStatusIcon(row navRow) string {
 	}
 }
 
+// navSectionLabel maps a plan sort key to a section label string.
+// Keys 0 (reviewing) and 1 (implementing / planning) render under "active";
+// all other keys fall under the default "plans" (idle) section.
+func navSectionLabel(key int) string {
+	if key < 2 {
+		return "active"
+	}
+	return "plans"
+}
+
 // navDividerLine renders a full-width divider: "──── label ────".
 func navDividerLine(label string, w int) string {
 	inner := " " + label + " "
@@ -1519,7 +1546,7 @@ func (n *NavigationPanel) String() string {
 	}
 	items := make([]visItem, 0, len(n.rows)+4)
 	selectedDisplayIdx := 0
-	plansDividerEmitted := false
+	lastSection := ""
 	inDeadSection := false
 
 	for i, row := range n.rows {
@@ -1539,10 +1566,19 @@ func (n *NavigationPanel) String() string {
 			inDeadSection = false
 		}
 
-		// Inject a single "plans" divider before the first plan or topic header.
-		if (row.Kind == navRowPlanHeader || row.Kind == navRowTopicHeader) && !inDeadSection && !plansDividerEmitted {
-			items = append(items, visItem{line: navDividerLine("plans", itemWidth), rowIdx: -1})
-			plansDividerEmitted = true
+		// Inject "active" / "plans" dividers at section transitions.
+		if (row.Kind == navRowPlanHeader || row.Kind == navRowTopicHeader) && !inDeadSection {
+			// Topic groups only live in the idle/plans section — the active
+			// section renders plans as a flat list.
+			sk := row.PlanSortKey
+			if row.Kind == navRowTopicHeader {
+				sk = 3
+			}
+			section := navSectionLabel(sk)
+			if section != lastSection {
+				items = append(items, visItem{line: navDividerLine(section, itemWidth), rowIdx: -1})
+				lastSection = section
+			}
 		}
 
 		if i == n.selectedIdx {
