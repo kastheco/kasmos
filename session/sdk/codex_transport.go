@@ -50,7 +50,14 @@ const (
 	codexRequestCommandApproval     = "item/commandExecution/requestApproval"
 	codexRequestPermissionsApproval = "item/permissions/requestApproval"
 
-	codexHandshakeTimeout = 10 * time.Second
+	// codexHandshakeTimeout covers initialize + initialized + thread/start.
+	// thread/start synchronously sets up codex's HTTP MCP clients for any
+	// server configured in .codex/config.toml, and measurements on codex-cli
+	// 0.121 show this takes 15-18s against a local kasmos MCP endpoint
+	// (codex's own MCP init blocks thread/start, not kasmos — the kasmos
+	// server itself goes starting→ready in <50ms). 45s leaves >2x headroom
+	// over the observed ceiling without hiding a truly wedged handshake.
+	codexHandshakeTimeout = 45 * time.Second
 )
 
 type codexProcess interface {
