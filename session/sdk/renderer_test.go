@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -49,10 +50,20 @@ func TestRenderer_ToolCall_ProducesFormattedLine(t *testing.T) {
 	assert.Contains(t, content, "bash")
 }
 
-func TestRenderer_ToolResult_SuccessfulIsHidden(t *testing.T) {
+func TestRenderer_ToolResult_ShortTextShowsSummary(t *testing.T) {
 	r := NewRenderer()
 	r.AddEvent(Event{Kind: EventToolResult, ToolName: "bash", ToolResult: "ok"})
-	assert.Equal(t, "", r.Capture(), "successful tool output should not clutter the pane")
+	content := r.Capture()
+	assert.Contains(t, content, "ok", "short successful tool output should render as compact summary")
+}
+
+func TestRenderer_ToolResult_LongTextCompressedToLineCount(t *testing.T) {
+	r := NewRenderer()
+	long := strings.Repeat("line\n", 50)
+	r.AddEvent(Event{Kind: EventToolResult, ToolName: "bash", ToolResult: long})
+	content := r.Capture()
+	assert.Contains(t, content, "lines", "long tool output should compress to line count")
+	assert.NotContains(t, content, "line\nline\nline\nline\nline", "raw bulk must not flood pane")
 }
 
 func TestRenderer_ToolResult_ErrorPayloadSurfaces(t *testing.T) {

@@ -39,13 +39,14 @@ func (r *Renderer) AddEvent(e Event) {
 	case EventToolCall:
 		r.appendLine(formatToolCallLine(e.ToolName, e.ToolInput))
 	case EventToolResult:
-		// Results are hidden by default — most are long payloads (file
-		// contents, command output) that drown the agent's prose, matching
-		// how codex-cli's interactive UI summarises successful calls. Only
-		// surface a marker when the result explicitly carries an error
-		// signal so the user sees something went wrong.
-		if summary := formatToolResultError(e.ToolResult); summary != "" {
-			r.appendLine(summary)
+		// Render a short, single-line result summary. Long payloads (file
+		// dumps, command output) are compressed to "→ N lines" rather than
+		// flooding the pane, matching codex-cli's UX — but we still want
+		// SOMETHING visible so a genuine MCP/tool failure doesn't silently
+		// look like success. Explicit error signals (success=false, error
+		// key, non-zero exit_code) render as "✗ …" with the message.
+		if line := formatToolResultLine(e.ToolResult); line != "" {
+			r.appendLine(line)
 		}
 	case EventPermission:
 		r.appendLine(fmt.Sprintf("[permission: %s]", e.PermissionDescription))
@@ -216,39 +217,51 @@ func summariseToolArgs(raw string) string {
 	return truncateOneLine(strings.Join(keys, ","), 60)
 }
 
-// formatToolResultError returns a compact marker when the result payload
-// carries an error signal (explicit success=false, an "error" key, or a
-// non-zero exit_code). All other results are suppressed to keep the pane
-// focused on agent prose. Matches the codex-cli UX of only surfacing
-// tool failures inline while quietly dropping successful outputs.
-func formatToolResultError(raw string) string {
+// formatToolResultLine renders a short, single-line summary of a tool
+// result. Error-shaped payloads (success=false, "error" field, non-zero
+// exit_code) get a "✗ <message>" marker. Successful JSON arrays are
+// compressed to "→ N items" / "→ N lines" so we don't flood the pane.
+// Short plain-text output passes through truncated; long text becomes
+// "→ first-line…" so the operator can still see SOMETHING came back.
+func formatToolResultLine(raw string) string {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" || trimmed == "null" {
 		return ""
 	}
-	// Look for the common failure signals in a JSON payload. If the result
-	// isn't structured json we don't try to guess — better a quiet drop
-	// than a false-positive error label on ordinary output.
+
+	// Try structured JSON first.
 	var obj map[string]any
-	if err := json.Unmarshal([]byte(trimmed), &obj); err != nil {
-		return ""
-	}
-	if success, ok := obj["success"].(bool); ok && !success {
-		msg := truncateOneLine(strings.TrimSpace(fmt.Sprint(obj["error"])), 120)
-		if msg == "" || msg == "<nil>" {
-			msg = "tool returned success=false"
+	if err := json.Unmarshal([]byte(trimmed), &obj); err == nil {
+		if success, ok := obj["success"].(bool); ok && !success {
+			msg := truncateOneLine(strings.TrimSpace(fmt.Sprint(obj["error"])), 120)
+			if msg == "" || msg == "<nil>" {
+				msg = "tool returned success=false"
+			}
+			return "✗ " + msg
 		}
-		return "✗ " + msg
-	}
-	if errVal, ok := obj["error"]; ok {
-		if msg, _ := errVal.(string); strings.TrimSpace(msg) != "" {
-			return "✗ " + truncateOneLine(msg, 120)
+		if errVal, ok := obj["error"]; ok {
+			if msg, _ := errVal.(string); strings.TrimSpace(msg) != "" {
+				return "✗ " + truncateOneLine(msg, 120)
+			}
+		}
+		if exit, ok := obj["exit_code"].(float64); ok && exit != 0 {
+			return fmt.Sprintf("✗ exit=%d", int(exit))
 		}
 	}
-	if exit, ok := obj["exit_code"].(float64); ok && exit != 0 {
-		return fmt.Sprintf("✗ exit=%d", int(exit))
+
+	// Array payload — count items.
+	var arr []any
+	if err := json.Unmarshal([]byte(trimmed), &arr); err == nil {
+		return fmt.Sprintf("→ %d items", len(arr))
 	}
-	return ""
+
+	// Plain text — compact to first line (or a short slice). Long output
+	// gets a line-count summary instead of the full content.
+	lines := strings.Split(trimmed, "\n")
+	if len(lines) > 3 {
+		return fmt.Sprintf("→ %d lines", len(lines))
+	}
+	return "→ " + truncateOneLine(trimmed, 120)
 }
 
 // truncateOneLine collapses internal whitespace and caps the string at n
