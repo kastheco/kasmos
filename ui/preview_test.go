@@ -760,6 +760,49 @@ func TestPreviewPane_SDKPresentation_ShowsPlaceholderWhenNoOutput(t *testing.T) 
 		"no turns and no cache must set fallback state")
 }
 
+// TestPreviewPane_SDKPresentation_ClearsInheritedScrollModeOnInstanceSwitch
+// verifies that switching from a previously scrolled instance to an SDK
+// instance with structured turns exits scroll mode so the new timeline renders
+// instead of stale viewport content.
+func TestPreviewPane_SDKPresentation_ClearsInheritedScrollModeOnInstanceSwitch(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 24)
+
+	prev := &session.Instance{
+		Title:            "previous-instance",
+		Status:           session.Running,
+		ExecutionMode:    session.ExecutionModeSDK,
+		CachedContent:    "old content",
+		CachedContentSet: true,
+	}
+	require.NoError(t, pane.UpdateContent(prev))
+
+	pane.isScrolling = true
+	pane.viewport.SetContent("stale scrolled content")
+
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: now,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowResponse, Timestamp: now},
+			{Kind: sdk.RowProse, Text: "fresh structured output", Timestamp: now},
+		},
+	}
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+
+	require.NoError(t, pane.UpdateContent(inst))
+	require.False(t, pane.isScrolling,
+		"switching to a different instance must drop inherited scroll mode")
+
+	rendered := stripPreviewANSI(pane.String())
+	require.Contains(t, rendered, "fresh structured output",
+		"pane must render the new structured timeline after the instance switch")
+	require.NotContains(t, rendered, "stale scrolled content",
+		"pane must not keep rendering stale viewport content from the previous instance")
+}
+
 // TestPreviewPane_SDKPresentation_ComposerFooterPresent checks that the composer
 // footer appears even when the turn list is empty (though in practice the
 // structured path only fires when len(turns) > 0, test the helper directly).

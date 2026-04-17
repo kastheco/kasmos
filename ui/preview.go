@@ -38,6 +38,9 @@ type PreviewPane struct {
 	previewState previewState
 	isScrolling  bool
 	viewport     viewport.Model
+	// lastInstanceKey tracks the most recently rendered instance so inherited
+	// scroll mode can be cleared when the user switches to a different session.
+	lastInstanceKey string
 
 	// bannerFrame is the current animation tick index for the idle banner.
 	bannerFrame int
@@ -185,6 +188,20 @@ func (p *PreviewPane) TickBanner() {
 func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 	if p.isDocument {
 		return nil
+	}
+	instanceKey := ""
+	if instance != nil {
+		if instance.Title != "" {
+			instanceKey = instance.Title
+		} else {
+			instanceKey = fmt.Sprintf("%p", instance)
+		}
+	}
+	if instanceKey != p.lastInstanceKey {
+		p.isScrolling = false
+		p.viewport.SetContent("")
+		p.viewport.GotoTop()
+		p.lastInstanceKey = instanceKey
 	}
 
 	switch {
