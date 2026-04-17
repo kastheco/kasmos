@@ -37,7 +37,9 @@ func (r *Renderer) AddEvent(e Event) {
 	case EventToolCall:
 		r.appendLine(fmt.Sprintf("[tool: %s %s]", e.ToolName, e.ToolInput))
 	case EventToolResult:
-		r.appendLine(fmt.Sprintf("[result: %s]", e.ToolResult))
+		if strings.TrimSpace(e.ToolResult) != "" {
+			r.appendLine(fmt.Sprintf("[result: %s]", e.ToolResult))
+		}
 	case EventPermission:
 		r.appendLine(fmt.Sprintf("[permission: %s]", e.PermissionDescription))
 	case EventSystem:

@@ -46,9 +46,24 @@ const (
 	codexNotifyItemCompleted     = "item/completed"
 	codexNotifyAgentMessageDelta = "item/agentMessage/delta"
 
+	// Known-benign notifications emitted by codex-cli 0.121 that have no
+	// observable effect on our rendering. We swallow them silently rather
+	// than surfacing "[system: codex: unknown notification ...]" lines into
+	// the agent pane on every tick.
+	codexNotifyMcpStartupStatus   = "mcpServer/startupStatus/updated"
+	codexNotifyThreadStatus       = "thread/status/changed"
+	codexNotifyAccountRateLimits  = "account/rateLimits/updated"
+	codexNotifyThreadTokenUsage   = "thread/tokenUsage/updated"
+	codexNotifyServerRequestDone  = "serverRequest/resolved"
+
 	// Server -> client requests.
 	codexRequestCommandApproval     = "item/commandExecution/requestApproval"
 	codexRequestPermissionsApproval = "item/permissions/requestApproval"
+
+	// Known server requests we cannot service. We reply with JSON-RPC
+	// method-not-found and suppress the pane-visible error line that
+	// would otherwise fire every time codex asked.
+	codexRequestElicitation = "mcpServer/elicitation/request"
 
 	// codexHandshakeTimeout covers initialize + initialized + thread/start.
 	// thread/start synchronously sets up codex's HTTP MCP clients for any
@@ -464,7 +479,12 @@ func (t *CodexTransport) translateNotification(n Notification) (*Event, error) {
 	now := time.Now()
 
 	switch n.Method {
-	case codexNotifyThreadStarted:
+	case codexNotifyThreadStarted,
+		codexNotifyMcpStartupStatus,
+		codexNotifyThreadStatus,
+		codexNotifyAccountRateLimits,
+		codexNotifyThreadTokenUsage,
+		codexNotifyServerRequestDone:
 		return nil, nil
 
 	case codexNotifyTurnStarted:
@@ -589,6 +609,14 @@ func (t *CodexTransport) handleServerRequest(req ServerRequest) error {
 		})
 		return nil
 
+	case codexRequestElicitation:
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := t.client.ReplyError(ctx, req.ID, -32601, "elicitation not supported"); err != nil {
+			return fmt.Errorf("reject %s: %w", req.Method, err)
+		}
+		return nil
+
 	default:
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -688,14 +716,25 @@ func codexToolName(item codexThreadItem) string {
 }
 
 func codexToolResult(item codexThreadItem) string {
-	switch {
-	case len(item.Result) > 0:
+	// Codex 0.121 emits `result: null` on mcpToolCall items whose payload is
+	// carried in `contentItems` instead (e.g. MCP tools that return text
+	// content blocks). Treat the literal JSON null as "no result" so we fall
+	// through to contentItems rather than rendering "[result: null]".
+	if codexRawHasContent(item.Result) {
 		return codexRawString(item.Result)
-	case len(item.ContentItems) > 0:
-		return codexRawString(item.ContentItems)
-	default:
-		return ""
 	}
+	if codexRawHasContent(item.ContentItems) {
+		return codexRawString(item.ContentItems)
+	}
+	return ""
+}
+
+// codexRawHasContent reports whether raw holds a JSON value other than the
+// null literal or whitespace. Used to decide whether a RawMessage should be
+// treated as "present" for rendering priority.
+func codexRawHasContent(raw json.RawMessage) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	return trimmed != "" && trimmed != "null"
 }
 
 func codexRawString(raw json.RawMessage) string {
