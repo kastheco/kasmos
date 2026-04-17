@@ -29,6 +29,9 @@ type Renderer struct {
 	turns          []*PresentationTurn // structured turn model
 	currentTurn    *PresentationTurn   // the open (in-progress) turn, nil when no turn is active
 	nextTurnNumber int                 // monotonically increasing turn counter
+
+	currentTurnHasResponse bool
+	currentTurnOpenProse   int
 }
 
 // NewRenderer constructs an empty Renderer.
@@ -49,7 +52,7 @@ func (r *Renderer) AddEvent(e Event) {
 		// Flat path — unchanged.
 		r.appendText(e.Text)
 		// Structured path — create implicit turn if needed and append prose rows.
-		turn := r.ensureTurn("", e.Timestamp)
+		turn := r.ensureTurn(e.TurnID, e.Timestamp)
 		r.appendTurnText(turn, e.Text, e.Timestamp)
 
 	case EventToolCall:
@@ -123,7 +126,7 @@ func (r *Renderer) AddEvent(e Event) {
 				ts = time.Now()
 			}
 			r.currentTurn.CompletedAt = ts
-			r.currentTurn = nil
+			r.clearCurrentTurn()
 		}
 
 	case EventTurnStarted:
@@ -140,20 +143,9 @@ func (r *Renderer) AddEvent(e Event) {
 				Text:      "[interrupted]",
 				Timestamp: ts,
 			})
-			r.currentTurn = nil
+			r.clearCurrentTurn()
 		}
-		r.nextTurnNumber++
-		ts := e.Timestamp
-		if ts.IsZero() {
-			ts = time.Now()
-		}
-		turn := &PresentationTurn{
-			ID:        e.TurnID,
-			Number:    r.nextTurnNumber,
-			StartedAt: ts,
-		}
-		r.turns = append(r.turns, turn)
-		r.currentTurn = turn
+		r.startTurn(e.TurnID, e.Timestamp)
 
 	case EventTurnCompleted:
 		// Flat path — flush any pending partial line.
@@ -165,7 +157,7 @@ func (r *Renderer) AddEvent(e Event) {
 				ts = time.Now()
 			}
 			r.currentTurn.CompletedAt = ts
-			r.currentTurn = nil
+			r.clearCurrentTurn()
 		}
 
 	case EventTurnInterrupted:
@@ -184,7 +176,7 @@ func (r *Renderer) AddEvent(e Event) {
 				Text:      "[interrupted]",
 				Timestamp: ts,
 			})
-			r.currentTurn = nil
+			r.clearCurrentTurn()
 		}
 	}
 }
@@ -214,6 +206,70 @@ func (r *Renderer) ensureTurn(turnID string, ts time.Time) *PresentationTurn {
 	if r.currentTurn != nil {
 		return r.currentTurn
 	}
+	return r.startTurn(turnID, ts)
+}
+
+// appendTurnText mirrors the newline/fragment behaviour of appendText but
+// operates on the structured turn's Rows slice. The first prose chunk in a
+// turn inserts a RowResponse sentinel before the prose rows so renderers can
+// identify where assistant prose begins without inspecting row text.
+// Must be called with r.mu held.
+func (r *Renderer) appendTurnText(turn *PresentationTurn, text string, ts time.Time) {
+	if text == "" {
+		return
+	}
+
+	if !r.currentTurnHasResponse {
+		turn.Rows = append(turn.Rows, PresentationRow{
+			Kind:      RowResponse,
+			Timestamp: ts,
+		})
+		r.currentTurnHasResponse = true
+	}
+
+	parts := strings.Split(text, "\n")
+
+	if len(parts) == 1 {
+		// No newline — extend the current partial prose row.
+		if r.currentTurnOpenProse >= 0 {
+			turn.Rows[r.currentTurnOpenProse].Text += parts[0]
+		} else {
+			turn.Rows = append(turn.Rows, PresentationRow{
+				Kind: RowProse, Text: parts[0], Timestamp: ts,
+			})
+			r.currentTurnOpenProse = len(turn.Rows) - 1
+		}
+		return
+	}
+
+	// First chunk completes the current partial prose row.
+	if r.currentTurnOpenProse >= 0 {
+		turn.Rows[r.currentTurnOpenProse].Text += parts[0]
+	} else {
+		turn.Rows = append(turn.Rows, PresentationRow{
+			Kind: RowProse, Text: parts[0], Timestamp: ts,
+		})
+	}
+	r.currentTurnOpenProse = -1
+
+	// Middle chunks are complete prose rows.
+	for _, p := range parts[1 : len(parts)-1] {
+		turn.Rows = append(turn.Rows, PresentationRow{
+			Kind: RowProse, Text: p, Timestamp: ts,
+		})
+	}
+
+	// Last chunk starts a new partial prose row unless the delta ended with a
+	// newline, in which case there is no open prose fragment to extend.
+	if tail := parts[len(parts)-1]; tail != "" {
+		turn.Rows = append(turn.Rows, PresentationRow{
+			Kind: RowProse, Text: tail, Timestamp: ts,
+		})
+		r.currentTurnOpenProse = len(turn.Rows) - 1
+	}
+}
+
+func (r *Renderer) startTurn(turnID string, ts time.Time) *PresentationTurn {
 	if ts.IsZero() {
 		ts = time.Now()
 	}
@@ -225,71 +281,15 @@ func (r *Renderer) ensureTurn(turnID string, ts time.Time) *PresentationTurn {
 	}
 	r.turns = append(r.turns, turn)
 	r.currentTurn = turn
+	r.currentTurnHasResponse = false
+	r.currentTurnOpenProse = -1
 	return turn
 }
 
-// appendTurnText mirrors the newline/fragment behaviour of appendText but
-// operates on the structured turn's Rows slice. The first prose chunk in a
-// turn inserts a RowResponse sentinel before the prose rows so renderers can
-// identify where assistant prose begins without inspecting row text.
-// Must be called with r.mu held.
-func (r *Renderer) appendTurnText(turn *PresentationTurn, text string, ts time.Time) {
-	// Insert RowResponse sentinel on first prose chunk in this turn.
-	hasResponse := false
-	for _, row := range turn.Rows {
-		if row.Kind == RowResponse {
-			hasResponse = true
-			break
-		}
-	}
-	if !hasResponse {
-		turn.Rows = append(turn.Rows, PresentationRow{
-			Kind:      RowResponse,
-			Timestamp: ts,
-		})
-	}
-
-	parts := strings.Split(text, "\n")
-
-	// Find the index of the last RowProse row (if any) to extend in place.
-	lastProseIdx := -1
-	for i := len(turn.Rows) - 1; i >= 0; i-- {
-		if turn.Rows[i].Kind == RowProse {
-			lastProseIdx = i
-			break
-		}
-	}
-
-	if len(parts) == 1 {
-		// No newline — extend the current partial prose row.
-		if lastProseIdx >= 0 {
-			turn.Rows[lastProseIdx].Text += parts[0]
-		} else {
-			turn.Rows = append(turn.Rows, PresentationRow{
-				Kind: RowProse, Text: parts[0], Timestamp: ts,
-			})
-		}
-		return
-	}
-
-	// First chunk completes the current partial prose row.
-	if lastProseIdx >= 0 {
-		turn.Rows[lastProseIdx].Text += parts[0]
-	} else {
-		turn.Rows = append(turn.Rows, PresentationRow{
-			Kind: RowProse, Text: parts[0], Timestamp: ts,
-		})
-	}
-	// Middle chunks are complete prose rows.
-	for _, p := range parts[1 : len(parts)-1] {
-		turn.Rows = append(turn.Rows, PresentationRow{
-			Kind: RowProse, Text: p, Timestamp: ts,
-		})
-	}
-	// Last chunk starts a new partial prose row.
-	turn.Rows = append(turn.Rows, PresentationRow{
-		Kind: RowProse, Text: parts[len(parts)-1], Timestamp: ts,
-	})
+func (r *Renderer) clearCurrentTurn() {
+	r.currentTurn = nil
+	r.currentTurnHasResponse = false
+	r.currentTurnOpenProse = -1
 }
 
 // deepCopyTurns returns a fully independent copy of src. The returned pointers

@@ -43,7 +43,8 @@ func maybeInjectThinking(turn *PresentationTurn, now time.Time) {
 type PresentationRowKind string
 
 const (
-	// RowThinking is reserved for extended-thinking blocks (wave 3).
+	// RowThinking is a timing-only placeholder row for long-running turns that
+	// have not yet produced substantive content.
 	RowThinking PresentationRowKind = "thinking"
 	// RowTool represents a tool invocation.
 	RowTool PresentationRowKind = "tool"

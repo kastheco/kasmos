@@ -235,6 +235,15 @@ func TestRenderer_CapturePresentation_TextDelta_ImplicitTurn(t *testing.T) {
 	assert.Contains(t, kinds, RowProse)
 }
 
+func TestRenderer_CapturePresentation_TextDelta_ImplicitTurnUsesTurnID(t *testing.T) {
+	r := NewRenderer()
+	r.AddEvent(Event{Kind: EventTextDelta, TurnID: "t1", Text: "hello"})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+	assert.Equal(t, "t1", turns[0].ID)
+}
+
 func TestRenderer_CapturePresentation_TextDelta_ProseText(t *testing.T) {
 	r := NewRenderer()
 	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1"})
@@ -249,6 +258,26 @@ func TestRenderer_CapturePresentation_TextDelta_ProseText(t *testing.T) {
 	}
 	require.Len(t, prose, 1)
 	assert.Equal(t, "hello", prose[0])
+}
+
+func TestRenderer_CapturePresentation_TextDelta_TrailingNewlineDoesNotAddEmptyRow(t *testing.T) {
+	r := NewRenderer()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1"})
+	r.AddEvent(Event{Kind: EventTextDelta, TurnID: "t1", Text: "line1\n"})
+	r.AddEvent(Event{Kind: EventTextDelta, TurnID: "t1", Text: "line2"})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+
+	var prose []string
+	for _, row := range turns[0].Rows {
+		if row.Kind == RowProse {
+			prose = append(prose, row.Text)
+		}
+	}
+
+	require.Len(t, prose, 2)
+	assert.Equal(t, []string{"line1", "line2"}, prose)
 }
 
 func TestRenderer_CapturePresentation_TextDelta_NewlineSplitsProseRows(t *testing.T) {
