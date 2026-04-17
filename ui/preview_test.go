@@ -5,6 +5,7 @@ import (
 	"github.com/kastheco/kasmos/cmd/cmd_test"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session"
+	"github.com/kastheco/kasmos/session/sdk"
 	"github.com/kastheco/kasmos/session/tmux"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -562,4 +564,248 @@ func TestPreviewPane_SDKUpdateContent_ClearsScrollModeWhenCacheEmpty(t *testing.
 		"entering the SDK empty-cache fallback path must drop inherited scroll-mode state")
 	require.True(t, previewPane.previewState.fallback,
 		"empty SDK capture must render the fallback banner, not stale scroll content")
+}
+
+// fakeSDKSession is a no-op ExecutionSession that also implements
+// presentationProvider. Used to inject structured turn data into an Instance
+// without starting a real process.
+type fakeSDKSession struct {
+	turns []*sdk.PresentationTurn
+}
+
+func (f *fakeSDKSession) Start(string) error                                 { return nil }
+func (f *fakeSDKSession) Restore() error                                     { return nil }
+func (f *fakeSDKSession) Close() error                                       { return nil }
+func (f *fakeSDKSession) DoesSessionExist() bool                             { return true }
+func (f *fakeSDKSession) SendKeys(string) error                              { return nil }
+func (f *fakeSDKSession) TapEnter() error                                    { return nil }
+func (f *fakeSDKSession) SendPermissionResponse(tmux.PermissionChoice) error { return nil }
+func (f *fakeSDKSession) CapturePaneContent() (string, error)                { return "", nil }
+func (f *fakeSDKSession) CapturePaneContentWithOptions(string, string) (string, error) {
+	return "", nil
+}
+func (f *fakeSDKSession) HasUpdated() (bool, bool) { return false, false }
+func (f *fakeSDKSession) HasUpdatedWithContent() (bool, bool, string, bool) {
+	return false, false, "", false
+}
+func (f *fakeSDKSession) GetPanePID() (int, error)                     { return 0, fmt.Errorf("no pane") }
+func (f *fakeSDKSession) Attach() (chan struct{}, error)               { return nil, nil }
+func (f *fakeSDKSession) DetachSafely() error                          { return nil }
+func (f *fakeSDKSession) SetDetachedSize(int, int) error               { return nil }
+func (f *fakeSDKSession) GetSanitizedName() string                     { return "" }
+func (f *fakeSDKSession) SetAgentType(string)                          {}
+func (f *fakeSDKSession) SetInitialPrompt(string)                      {}
+func (f *fakeSDKSession) SetNoFlicker(bool)                            {}
+func (f *fakeSDKSession) SetTaskEnv(int, int, int)                     {}
+func (f *fakeSDKSession) SetProject(string)                            {}
+func (f *fakeSDKSession) SetSessionTitle(string)                       {}
+func (f *fakeSDKSession) SetTitleFunc(func(string, time.Time, string)) {}
+
+// CapturePresentation implements the optional presentationProvider interface.
+func (f *fakeSDKSession) CapturePresentation() []*sdk.PresentationTurn {
+	return f.turns
+}
+
+// newSDKInstanceWithTurns creates a minimal SDK-mode instance injected with the
+// given presentation turns via SetExecutionSessionForTest.
+func newSDKInstanceWithTurns(t *testing.T, turns []*sdk.PresentationTurn) *session.Instance {
+	t.Helper()
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:   "test-sdk-instance",
+		Path:    t.TempDir(),
+		Program: "bash",
+	})
+	require.NoError(t, err)
+	inst.ExecutionMode = session.ExecutionModeSDK
+	inst.SetExecutionSessionForTest(&fakeSDKSession{turns: turns})
+	inst.MarkStartedForTest()
+	return inst
+}
+
+// TestPreviewPane_SDKPresentation_RendersTurnHierarchy verifies that UpdateContent
+// prefers the structured presentation model over the flat cache and renders turns
+// with the variant-c colour hierarchy from docs/agent-sdk-pane-mockups.md.
+func TestPreviewPane_SDKPresentation_RendersTurnHierarchy(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 40)
+
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: now,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowTool, Text: "• read_file main.go", Timestamp: now},
+			{Kind: sdk.RowResult, Text: "→ 42 lines", Timestamp: now},
+			{Kind: sdk.RowResponse, Timestamp: now},
+			{Kind: sdk.RowProse, Text: "assistant text", Timestamp: now},
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	require.False(t, pane.previewState.fallback, "pane must not be in fallback with presentation turns")
+
+	rendered := pane.previewState.text
+
+	// Tool rows use ColorSubtle.
+	require.Contains(t, rendered, lipgloss.NewStyle().Foreground(ColorSubtle).Render("• read_file main.go"),
+		"tool row must be rendered in ColorSubtle")
+
+	// Successful result rows use ColorMuted (quieter than tools).
+	require.Contains(t, rendered, lipgloss.NewStyle().Foreground(ColorMuted).Render("→ 42 lines"),
+		"ok-result row must be rendered in ColorMuted")
+
+	// Prose rows use ColorText.
+	require.Contains(t, rendered, lipgloss.NewStyle().Foreground(ColorText).Render("assistant text"),
+		"prose row must be rendered in ColorText")
+
+	// RowResponse sentinel must emit the "response" divider label.
+	require.Contains(t, rendered, "response",
+		"RowResponse must emit the response divider")
+
+	// Composer footer must be present.
+	require.Contains(t, rendered, "> send a message to the agent",
+		"composer footer must appear after the turn timeline")
+}
+
+// TestPreviewPane_SDKPresentation_ErrorResultColor verifies that result rows with
+// IsError=true are rendered in ColorLove (distinct from ok results in ColorMuted).
+func TestPreviewPane_SDKPresentation_ErrorResultColor(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 40)
+
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: now,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowResult, Text: "✗ tool failed", Timestamp: now, IsError: true},
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	rendered := pane.previewState.text
+	require.Contains(t, rendered, lipgloss.NewStyle().Foreground(ColorLove).Render("✗ tool failed"),
+		"error result must be rendered in ColorLove")
+	require.NotContains(t, rendered, lipgloss.NewStyle().Foreground(ColorMuted).Render("✗ tool failed"),
+		"error result must not be rendered in ColorMuted")
+}
+
+// TestPreviewPane_SDKPresentation_PermissionColor checks that permission rows use ColorRose.
+func TestPreviewPane_SDKPresentation_PermissionColor(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 40)
+
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: now,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowPermission, Text: "[permission: write /etc/hosts]", Timestamp: now},
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	rendered := pane.previewState.text
+	require.Contains(t, rendered,
+		lipgloss.NewStyle().Foreground(ColorRose).Render("[permission: write /etc/hosts]"),
+		"permission row must be rendered in ColorRose")
+}
+
+// TestPreviewPane_SDKPresentation_FallsBackToCachedContent verifies that when the
+// presentation model returns no turns but cached flat content is available, the
+// pane uses the flat cache (preserving the existing fallback contract).
+func TestPreviewPane_SDKPresentation_FallsBackToCachedContent(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 24)
+
+	// Instance has no presentation turns but has cached content.
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:   "test-sdk-no-turns",
+		Path:    t.TempDir(),
+		Program: "bash",
+	})
+	require.NoError(t, err)
+	inst.ExecutionMode = session.ExecutionModeSDK
+	// Inject a session with empty turns (nil slice) so CapturePresentation() returns nil.
+	inst.SetExecutionSessionForTest(&fakeSDKSession{turns: nil})
+	inst.MarkStartedForTest()
+	inst.CachedContent = "flat cached output"
+	inst.CachedContentSet = true
+
+	require.NoError(t, pane.UpdateContent(inst))
+	require.False(t, pane.previewState.fallback)
+	require.Equal(t, "flat cached output", pane.previewState.text,
+		"pane must fall back to flat cached content when no turns are present")
+}
+
+// TestPreviewPane_SDKPresentation_ShowsPlaceholderWhenNoOutput verifies that
+// an SDK instance with no turns and no cache shows the waiting placeholder.
+func TestPreviewPane_SDKPresentation_ShowsPlaceholderWhenNoOutput(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 24)
+
+	inst := newSDKInstanceWithTurns(t, nil)
+	require.NoError(t, pane.UpdateContent(inst))
+
+	require.True(t, pane.previewState.fallback,
+		"no turns and no cache must set fallback state")
+}
+
+// TestPreviewPane_SDKPresentation_ComposerFooterPresent checks that the composer
+// footer appears even when the turn list is empty (though in practice the
+// structured path only fires when len(turns) > 0, test the helper directly).
+func TestPreviewPane_SDKPresentation_ComposerFooterPresent(t *testing.T) {
+	output := renderSDKPresentation(nil, 80)
+	require.Contains(t, output, "> send a message to the agent",
+		"renderSDKPresentation must include composer footer prompt")
+	require.Contains(t, output, "enter send",
+		"renderSDKPresentation must include keyboard hint line")
+}
+
+// TestPreviewPane_SDKPresentation_MultipleTurnsSeparatedByBlankLines verifies
+// that consecutive turns are separated by blank lines in the rendered output.
+func TestPreviewPane_SDKPresentation_MultipleTurnsSeparatedByBlankLines(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 60)
+
+	now := time.Now()
+	turns := []*sdk.PresentationTurn{
+		{
+			ID: "t1", Number: 1, StartedAt: now,
+			Rows: []sdk.PresentationRow{
+				{Kind: sdk.RowProse, Text: "first turn prose", Timestamp: now},
+			},
+		},
+		{
+			ID: "t2", Number: 2, StartedAt: now,
+			Rows: []sdk.PresentationRow{
+				{Kind: sdk.RowProse, Text: "second turn prose", Timestamp: now},
+			},
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, turns)
+	require.NoError(t, pane.UpdateContent(inst))
+
+	rendered := pane.previewState.text
+	// Both turns must appear in the output.
+	require.Contains(t, rendered, "first turn prose")
+	require.Contains(t, rendered, "second turn prose")
+
+	// They must be separated by at least one blank line (\n\n).
+	idxFirst := strings.Index(rendered, "first turn prose")
+	idxSecond := strings.Index(rendered, "second turn prose")
+	require.True(t, idxFirst >= 0 && idxSecond > idxFirst)
+	between := rendered[idxFirst:idxSecond]
+	require.Contains(t, between, "\n\n",
+		"turns must be separated by a blank line")
 }
