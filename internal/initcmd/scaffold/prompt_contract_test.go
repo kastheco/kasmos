@@ -83,6 +83,119 @@ func TestCoderPromptMinimal(t *testing.T) {
 	}
 }
 
+// textContract pairs a file path with the substrings it must contain.
+type textContract struct {
+	path     string
+	required []string
+}
+
+func TestAgentPromptsProtectScaffoldManagedFiles(t *testing.T) {
+	nonFixerRequired := []string{
+		"## Scaffold-Managed Files",
+		".claude/settings.json",
+		"opencode.jsonc",
+		"in this conversation",
+		"YAML frontmatter",
+		"not authorization",
+	}
+
+	fixerRequired := []string{
+		"Scaffolding System",
+		".claude/settings.json",
+		"opencode.jsonc",
+		"in this conversation",
+		"not authorization",
+		"standing permission",
+	}
+
+	contracts := []textContract{
+		// live claude non-fixer prompts
+		{repoRoot(".claude", "agents", "coder.md"), nonFixerRequired},
+		{repoRoot(".claude", "agents", "planner.md"), nonFixerRequired},
+		{repoRoot(".claude", "agents", "reviewer.md"), nonFixerRequired},
+		{repoRoot(".claude", "agents", "chat.md"), nonFixerRequired},
+		// live claude fixer prompt
+		{repoRoot(".claude", "agents", "fixer.md"), fixerRequired},
+		// live opencode non-fixer prompts
+		{repoRoot(".opencode", "agents", "coder.md"), nonFixerRequired},
+		{repoRoot(".opencode", "agents", "planner.md"), nonFixerRequired},
+		{repoRoot(".opencode", "agents", "reviewer.md"), nonFixerRequired},
+		{repoRoot(".opencode", "agents", "master.md"), nonFixerRequired},
+		{repoRoot(".opencode", "agents", "chat.md"), nonFixerRequired},
+		// live opencode fixer prompt
+		{repoRoot(".opencode", "agents", "fixer.md"), fixerRequired},
+		// template claude non-fixer prompts
+		{filepath.Join("templates", "claude", "agents", "coder.md"), nonFixerRequired},
+		{filepath.Join("templates", "claude", "agents", "planner.md"), nonFixerRequired},
+		{filepath.Join("templates", "claude", "agents", "reviewer.md"), nonFixerRequired},
+		{filepath.Join("templates", "claude", "agents", "master.md"), nonFixerRequired},
+		{filepath.Join("templates", "claude", "agents", "chat.md"), nonFixerRequired},
+		// template claude fixer prompt
+		{filepath.Join("templates", "claude", "agents", "fixer.md"), fixerRequired},
+		// template opencode non-fixer prompts
+		{filepath.Join("templates", "opencode", "agents", "coder.md"), nonFixerRequired},
+		{filepath.Join("templates", "opencode", "agents", "planner.md"), nonFixerRequired},
+		{filepath.Join("templates", "opencode", "agents", "reviewer.md"), nonFixerRequired},
+		{filepath.Join("templates", "opencode", "agents", "master.md"), nonFixerRequired},
+		{filepath.Join("templates", "opencode", "agents", "chat.md"), nonFixerRequired},
+		// template opencode fixer prompt
+		{filepath.Join("templates", "opencode", "agents", "fixer.md"), fixerRequired},
+	}
+
+	for _, tc := range contracts {
+		t.Run(tc.path, func(t *testing.T) {
+			data, err := os.ReadFile(tc.path)
+			if err != nil {
+				t.Fatalf("read %s: %v", tc.path, err)
+			}
+			text := string(data)
+			for _, needle := range tc.required {
+				if !strings.Contains(text, needle) {
+					t.Errorf("%s missing required text: %q", tc.path, needle)
+				}
+			}
+		})
+	}
+}
+
+func TestManagedSkillsProtectScaffoldManagedFiles(t *testing.T) {
+	coderRequired := []string{
+		"scaffold-managed",
+		".claude/settings.json",
+		"opencode.jsonc",
+		"in-session user instruction",
+	}
+
+	fixerRequired := []string{
+		"standing permission",
+		".claude/settings.json",
+		"opencode.jsonc",
+		"not authorization",
+	}
+
+	contracts := []textContract{
+		{repoRoot(".agents", "skills", "kasmos-coder", "SKILL.md"), coderRequired},
+		{filepath.Join("templates", "skills", "kasmos-coder", "SKILL.md"), coderRequired},
+		{repoRoot(".agents", "skills", "kasmos-fixer", "SKILL.md"), fixerRequired},
+		{filepath.Join("templates", "skills", "kasmos-fixer", "SKILL.md"), fixerRequired},
+	}
+
+	for _, tc := range contracts {
+		t.Run(tc.path, func(t *testing.T) {
+			data, err := os.ReadFile(tc.path)
+			if err != nil {
+				t.Fatalf("read %s: %v", tc.path, err)
+			}
+			text := string(data)
+			for _, needle := range tc.required {
+				if !strings.Contains(text, needle) {
+					t.Errorf("%s missing required text: %q", tc.path, needle)
+				}
+			}
+		})
+	}
+}
+
 func TestPlannerPromptBranchPolicy(t *testing.T) {
 	data, err := os.ReadFile(repoRoot(".opencode", "agents", "planner.md"))
 	if err != nil {
