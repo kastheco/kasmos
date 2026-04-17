@@ -133,7 +133,9 @@ func TestRebuildRows_SoloInstances(t *testing.T) {
 
 func TestRebuildRows_MixedPlanAndSolo(t *testing.T) {
 	n := newTestPanel()
-	plans := []PlanDisplay{{Filename: "plan"}}
+	// Plan in an active phase so it renders in the "active" section, which
+	// sits above the solo-agents section per the active / idle partition.
+	plans := []PlanDisplay{{Filename: "plan", Status: "implementing"}}
 	instances := []*session.Instance{
 		makeInst("plan-impl", "plan", session.Running),
 		makeInst("adhoc", "", session.Running),
@@ -615,7 +617,8 @@ func TestIsSelectedPlanHeader(t *testing.T) {
 
 func TestSoloHeaderSkippedDuringNavigation(t *testing.T) {
 	n := newTestPanel()
-	plans := []PlanDisplay{{Filename: "plan"}}
+	// Plan in an active phase so it renders in the "active" section above solo.
+	plans := []PlanDisplay{{Filename: "plan", Status: "implementing"}}
 	instances := []*session.Instance{
 		makeInst("plan-impl", "plan", session.Running),
 		makeInst("adhoc", "", session.Running),
@@ -1045,9 +1048,11 @@ func TestFindPlanInstance_NoneStarted(t *testing.T) {
 func TestString_SectionHeaders(t *testing.T) {
 	n := newTestPanel()
 	n.SetSize(60, 40)
+	// Mix one plan in an active phase with an idle-status plan so both the
+	// "active" and "plans" dividers render.
 	plans := []PlanDisplay{
-		{Filename: "active-plan"},
-		{Filename: "idle-plan"},
+		{Filename: "active-plan", Status: "implementing"},
+		{Filename: "idle-plan", Status: "ready"},
 	}
 	instances := []*session.Instance{
 		makeInst("worker", "active-plan", session.Running),
@@ -1056,9 +1061,15 @@ func TestString_SectionHeaders(t *testing.T) {
 		"active-plan": {HasRunning: true},
 	}
 	n.SetData(plans, instances, nil, nil, statuses)
-	output := n.String()
-	// All plans appear under a single "plans" divider regardless of status.
-	assert.Contains(t, output, "plans")
+	plain := stripANSI(n.String())
+	assert.Contains(t, plain, "active", "implementing plan must render under the 'active' divider")
+	assert.Contains(t, plain, "plans", "ready plan must render under the 'plans' divider")
+	// Active divider must appear before the "plans" divider.
+	activeIdx := strings.Index(plain, "active")
+	plansIdx := strings.Index(plain, "plans")
+	require.NotEqual(t, -1, activeIdx)
+	require.NotEqual(t, -1, plansIdx)
+	assert.Less(t, activeIdx, plansIdx, "'active' section must render above 'plans' section")
 }
 
 func TestString_PlansDividerRenderedOnce(t *testing.T) {
