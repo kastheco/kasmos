@@ -293,11 +293,17 @@ func EnsureClaudeMCPEntry(dir string) (WriteResult, error) {
 
 // codexMCPBlock returns the desired TOML text for the kasmos entry in
 // .codex/config.toml. Codex CLI's native format is [mcp_servers.NAME]; HTTP
-// transport is supported natively via the url key. The server-level
-// default_tools_approval_mode = "approve" eliminates per-call approval prompts
-// for all kasmos MCP tools without requiring an explicit per-tool allow-list.
+// transport is supported natively via the url key.
+//
+// default_tools_approval_mode uses the "auto" variant of codex's
+// AppToolApproval enum ("auto"|"prompt"|"approve"). "auto" lets every
+// kasmos MCP tool call run without pestering the operator; "approve"
+// would force codex to fire an approval request for every call, which
+// kasmos's transport silently rejects — agents then saw the rejection
+// as "user rejected MCP tool call" and fell back to shell CLIs. We trust
+// our own in-process MCP server, so auto-approve is safe.
 func codexMCPBlock() string {
-	return fmt.Sprintf("[mcp_servers.kasmos]\nurl = %q\ndefault_tools_approval_mode = \"approve\"\n", sharedKasmosMCPURL)
+	return fmt.Sprintf("[mcp_servers.kasmos]\nurl = %q\ndefault_tools_approval_mode = \"auto\"\n", sharedKasmosMCPURL)
 }
 
 // codexMCPEntryUpToDate reports whether a parsed .codex/config.toml already
@@ -316,7 +322,7 @@ func codexMCPEntryUpToDate(parsed map[string]any) bool {
 	if url, _ := entry["url"].(string); url != sharedKasmosMCPURL {
 		return false
 	}
-	if approvalMode, _ := entry["default_tools_approval_mode"].(string); approvalMode != "approve" {
+	if approvalMode, _ := entry["default_tools_approval_mode"].(string); approvalMode != "auto" {
 		return false
 	}
 	if _, hasCmd := entry["command"]; hasCmd {

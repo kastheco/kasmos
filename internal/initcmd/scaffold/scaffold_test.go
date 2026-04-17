@@ -472,7 +472,7 @@ func TestScaffoldAll_CodexWritesCodexMCPConfig(t *testing.T) {
 	kasmos, ok := servers["kasmos"].(map[string]any)
 	require.True(t, ok, "kasmos entry must be present")
 	assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
-	assert.Equal(t, "approve", kasmos["default_tools_approval_mode"], "server-level approval mode must be set")
+	assert.Equal(t, "auto", kasmos["default_tools_approval_mode"], "server-level approval mode must be set")
 	assert.NotContains(t, kasmos, "command", "stdio command key must not be present")
 	assert.NotContains(t, kasmos, "args", "stdio args key must not be present")
 }
@@ -1582,7 +1582,7 @@ func TestSyncScaffold_CodexWritesCodexMCPConfig(t *testing.T) {
 		kasmos, ok := parsed["mcp_servers"].(map[string]any)["kasmos"].(map[string]any)
 		require.True(t, ok, "kasmos entry must be present")
 		assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
-		assert.Equal(t, "approve", kasmos["default_tools_approval_mode"], "server-level approval mode must be set")
+		assert.Equal(t, "auto", kasmos["default_tools_approval_mode"], "server-level approval mode must be set")
 		assert.NotContains(t, kasmos, "command")
 		assert.NotContains(t, kasmos, "args")
 	})
@@ -1779,7 +1779,7 @@ approval_mode = "prompt"
 
 		kasmos := parsed["mcp_servers"].(map[string]any)["kasmos"].(map[string]any)
 		assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
-		assert.Equal(t, "approve", kasmos["default_tools_approval_mode"],
+		assert.Equal(t, "auto", kasmos["default_tools_approval_mode"],
 			"server-level approval mode must be written")
 		assert.NotContains(t, kasmos, "tools", "per-tool subtable must not appear in parsed entry")
 
