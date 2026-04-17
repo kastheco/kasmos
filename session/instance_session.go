@@ -9,6 +9,7 @@ import (
 
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session/git"
+	"github.com/kastheco/kasmos/session/sdk"
 	"github.com/kastheco/kasmos/session/tmux"
 )
 
@@ -151,6 +152,27 @@ func (i *Instance) Interrupt() error {
 		return fmt.Errorf("instance not started")
 	}
 	return i.executionSession.SendKeys("\x03")
+}
+
+// CapturePresentation returns the structured turn-grouped presentation model
+// for SDK-backed instances. Returns nil for tmux-backed instances or when the
+// instance has not been started. The type assertion follows the same optional-
+// capability pattern as pendingPermissionProvider / CollectMetadata.
+func (i *Instance) CapturePresentation() []*sdk.PresentationTurn {
+	if !i.started || i.executionSession == nil {
+		return nil
+	}
+	if pp, ok := i.executionSession.(presentationProvider); ok {
+		return pp.CapturePresentation()
+	}
+	return nil
+}
+
+// SetExecutionSessionForTest replaces the execution session without starting the
+// instance. Intended for use in tests that need to inject a custom session
+// (e.g. a mock presentationProvider) without spawning real processes.
+func (i *Instance) SetExecutionSessionForTest(exec ExecutionSession) {
+	i.executionSession = exec
 }
 
 // SetTmuxSession replaces the tmux session handle. Intended for use in tests only.

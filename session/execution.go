@@ -81,6 +81,15 @@ type pendingPermissionProvider interface {
 	PendingPermission() (description, pattern string, ok bool)
 }
 
+// presentationProvider is optionally implemented by execution sessions that
+// expose a structured turn-grouped presentation model (SDK transports). The
+// instance layer type-asserts to this interface so tmux-backed sessions —
+// which expose only flat text — don't need a stub method. Follows the same
+// pattern as pendingPermissionProvider.
+type presentationProvider interface {
+	CapturePresentation() []*sdk.PresentationTurn
+}
+
 // NormalizeExecutionMode canonicalises mode for the session layer.
 //
 //   - "sdk" → ExecutionModeSDK
