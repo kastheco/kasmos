@@ -110,20 +110,18 @@ func (t *TmuxSession) Attach() (chan struct{}, error) {
 }
 
 // Detach disconnects from the tmux session:
-//  1. Restores outer tmux mouse mode if it was disabled.
-//  2. Cancels context (signals goroutines to stop).
-//  3. Closes the PTY (unblocks the io.Copy goroutine).
-//  4. Waits for goroutines with a 500 ms timeout.
-//  5. Calls Restore() to create a background monitoring PTY.
-//  6. Closes the attach channel (signals callers that detach is complete).
+//  1. Cancels context and closes the PTY to unblock the attach goroutines.
+//  2. Waits for goroutines with a 500 ms timeout.
+//  3. Restores tmux mouse state (may write escape sequences to the terminal).
+//  4. Drains any stale bytes from stdin — late-arriving terminal query
+//     responses (notably DA1 replies like "\e[?62;22;52c") would otherwise
+//     sit in the tty input buffer and leak to whatever process reads stdin
+//     after kasmos relinquishes the terminal.
+//  5. Restores stdin from raw mode.
+//  6. Calls Restore() to create a background monitoring PTY.
+//  7. Closes the attach channel (signals callers that detach is complete).
 func (t *TmuxSession) Detach() {
-	t.exitRawInputMode()
-	t.restoreOuterMouse()
-	// Restore mouse off on the inner session so the kasmos preview viewport
-	// handles scroll events instead of tmux entering copy-mode.
-	_ = exec.Command("tmux", "set-option", "-t", t.sanitizedName, "mouse", "off").Run()
-
-	// Cancel context to signal goroutines.
+	// Cancel context to signal the stdin goroutine to exit on its next loop.
 	if t.cancel != nil {
 		t.cancel()
 		t.cancel = nil
@@ -152,6 +150,19 @@ func (t *TmuxSession) Detach() {
 		t.wg = nil
 	}
 
+	// Restore tmux mouse state before draining — tmux may write mouse-enable
+	// sequences that cascade into terminal query responses we want to catch.
+	t.restoreOuterMouse()
+	// Disable mouse on the inner session so the kasmos preview viewport
+	// handles scroll events instead of tmux entering copy-mode.
+	_ = exec.Command("tmux", "set-option", "-t", t.sanitizedName, "mouse", "off").Run()
+
+	// Drain pending stdin bytes while still in raw mode so reads are
+	// byte-oriented and do not block on line buffering.
+	drainStdin(100 * time.Millisecond)
+
+	t.exitRawInputMode()
+
 	// Recreate a background PTY for status monitoring (HasUpdated ticks).
 	if err := t.Restore(); err != nil {
 		log.ErrorLog.Printf("Detach: error restoring background PTY: %v", err)
@@ -161,6 +172,35 @@ func (t *TmuxSession) Detach() {
 	if t.attachCh != nil {
 		close(t.attachCh)
 		t.attachCh = nil
+	}
+}
+
+// drainStdin reads and discards any bytes currently buffered on stdin, up to
+// the given total budget. Overridable for tests.
+var drainStdin = func(budget time.Duration) {
+	fd := stdinFD()
+	if !terminalIsTTY(fd) {
+		return
+	}
+	defer func() { _ = os.Stdin.SetReadDeadline(time.Time{}) }()
+
+	deadline := time.Now().Add(budget)
+	buf := make([]byte, 256)
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return
+		}
+		perRead := min(20*time.Millisecond, remaining)
+		if err := os.Stdin.SetReadDeadline(time.Now().Add(perRead)); err != nil {
+			return
+		}
+		n, err := os.Stdin.Read(buf)
+		if n == 0 && err != nil {
+			// No bytes within the window — input buffer is empty.
+			return
+		}
+		// Discard what we read and keep draining.
 	}
 }
 
