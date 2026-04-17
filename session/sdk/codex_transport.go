@@ -706,6 +706,27 @@ func (t *CodexTransport) handleServerRequest(req ServerRequest) error {
 	case codexRequestElicitation:
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+		// Codex forwards mcpServer/elicitation/request to the client for
+		// every kasmos MCP tool invocation even when the server-level
+		// default_tools_approval_mode is "auto". Previously we replied
+		// -32601 "elicitation not supported", which codex surfaces to the
+		// agent as `"user rejected MCP tool call"` — every kasmos tool
+		// then appeared rejected and the agent bailed to CLI fallbacks.
+		// When the session was launched with SkipPermissions=true (the
+		// daemon-spawned path), auto-accept with an empty content object
+		// so the tool call proceeds. Elicitation responses require an
+		// action field; accept with {} content is the minimum the schema
+		// allows. When SkipPermissions is false, keep the old reject-path
+		// so manual runs still get a visible signal.
+		if t.autoApprove {
+			if err := t.client.Reply(ctx, req.ID, map[string]any{
+				"action":  "accept",
+				"content": map[string]any{},
+			}); err != nil {
+				return fmt.Errorf("accept %s: %w", req.Method, err)
+			}
+			return nil
+		}
 		if err := t.client.ReplyError(ctx, req.ID, -32601, "elicitation not supported"); err != nil {
 			return fmt.Errorf("reject %s: %w", req.Method, err)
 		}
