@@ -408,3 +408,35 @@ func TestSDKSession_BuilderSetters_NoPanic(t *testing.T) {
 	s.SetSessionTitle("title")
 	s.SetTitleFunc(func(workDir string, beforeStart time.Time, title string) {})
 }
+
+func TestSDKSession_CapturePresentation_Empty(t *testing.T) {
+	mock := newMockTransport()
+	restore := injectTransport(mock)
+	defer restore()
+
+	s := New("name", "claude", false)
+	require.NoError(t, s.Start(t.TempDir()))
+	turns := s.CapturePresentation()
+	assert.Nil(t, turns)
+}
+
+func TestSDKSession_CapturePresentation_AfterTurnStarted(t *testing.T) {
+	mock := newMockTransport()
+	restore := injectTransport(mock)
+	defer restore()
+
+	s := New("name", "claude", false)
+	require.NoError(t, s.Start(t.TempDir()))
+
+	mock.events <- Event{Kind: EventTurnStarted, TurnID: "t1"}
+	mock.events <- Event{Kind: EventTextDelta, Text: "hello"}
+
+	var turns []*PresentationTurn
+	require.Eventually(t, func() bool {
+		turns = s.CapturePresentation()
+		return len(turns) == 1 && turns[0].ID == "t1"
+	}, time.Second, 10*time.Millisecond)
+
+	assert.Equal(t, 1, turns[0].Number)
+	assert.Equal(t, "t1", turns[0].ID)
+}

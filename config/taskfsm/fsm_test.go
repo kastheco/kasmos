@@ -25,7 +25,7 @@ func TestTransition_ValidTransitions(t *testing.T) {
 		to    Status
 	}{
 		{StatusReady, PlanStart, StatusPlanning},
-		{StatusReady, MarkDone, StatusDone}, // user-initiated skip when work is obsolete or absorbed elsewhere
+		{StatusReady, MarkDone, StatusDone},         // user-initiated skip when work is obsolete or absorbed elsewhere
 		{StatusPlanning, PlanStart, StatusPlanning}, // restart after crash/interrupt
 		{StatusPlanning, PlannerFinished, StatusReady},
 		{StatusReady, ImplementStart, StatusImplementing},

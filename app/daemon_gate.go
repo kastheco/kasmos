@@ -16,6 +16,7 @@ import (
 	"github.com/kastheco/kasmos/internal/platform"
 	"github.com/kastheco/kasmos/session"
 	gitpkg "github.com/kastheco/kasmos/session/git"
+	"github.com/kastheco/kasmos/session/tmux"
 	"github.com/kastheco/kasmos/ui/overlay"
 
 	tea "charm.land/bubbletea/v2"
@@ -350,6 +351,19 @@ func (m *home) daemonRouteKill(inst *session.Instance) (bool, error) {
 	}
 	client := daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath())
 	return true, client.KillInstance(project, inst.Title)
+}
+
+// daemonRoutePermissionResponse handles permission replies for daemon-managed
+// SDK placeholder instances. The daemon currently spawns managed SDK agents
+// with permissions bypassed, so there is no daemon control-socket endpoint for
+// forwarding interactive permission replies. Treat placeholder instances as
+// handled here to keep merge-ref builds compatible with app paths that now call
+// into this helper before falling back to the local execution session.
+func (m *home) daemonRoutePermissionResponse(inst *session.Instance, _ tmux.PermissionChoice) (bool, error) {
+	if !m.isDaemonSDKPlaceholder(inst) {
+		return false, nil
+	}
+	return true, nil
 }
 
 func (m *home) daemonStartupCheckCmd() tea.Cmd {

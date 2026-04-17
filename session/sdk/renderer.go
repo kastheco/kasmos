@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Renderer accumulates structured events and renders them as line-based text.
@@ -16,10 +17,21 @@ import (
 // buffer. The Capture and CaptureRange methods render the buffer on demand.
 // CaptureRange supports the same "-"/"numeric" start/end semantics as tmux
 // capture-pane -S/-E so existing callers need no changes.
+//
+// In parallel, AddEvent maintains a turn-grouped presentation model accessible
+// via CapturePresentation. The flat and structured paths share formatting
+// helpers but are otherwise independent.
 type Renderer struct {
 	mu      sync.Mutex
-	lines   []string // completed lines
-	partial string   // fragment of the current (incomplete) last line
+	lines   []string // completed lines (flat path)
+	partial string   // fragment of the current (incomplete) last line (flat path)
+
+	turns          []*PresentationTurn // structured turn model
+	currentTurn    *PresentationTurn   // the open (in-progress) turn, nil when no turn is active
+	nextTurnNumber int                 // monotonically increasing turn counter
+
+	currentTurnHasResponse bool
+	currentTurnOpenProse   int
 }
 
 // NewRenderer constructs an empty Renderer.
@@ -28,6 +40,8 @@ func NewRenderer() *Renderer {
 }
 
 // AddEvent incorporates a structured event into the renderer buffer.
+// The flat line buffer (Capture/CaptureRange) and the structured turn model
+// (CapturePresentation) are both updated in a single locked call.
 // Safe to call concurrently.
 func (r *Renderer) AddEvent(e Event) {
 	r.mu.Lock()
@@ -35,9 +49,26 @@ func (r *Renderer) AddEvent(e Event) {
 
 	switch e.Kind {
 	case EventTextDelta:
+		// Flat path — unchanged.
 		r.appendText(e.Text)
+		// Structured path — create implicit turn if needed and append prose rows.
+		turn := r.ensureTurn(e.TurnID, e.Timestamp)
+		r.appendTurnText(turn, e.Text, e.Timestamp)
+
 	case EventToolCall:
-		r.appendLine(formatToolCallLine(e.ToolName, e.ToolInput))
+		line := formatToolCallLine(e.ToolName, e.ToolInput)
+		// Flat path.
+		r.appendLine(line)
+		// Structured path.
+		turn := r.ensureTurn(e.TurnID, e.Timestamp)
+		turn.Rows = append(turn.Rows, PresentationRow{
+			Kind:      RowTool,
+			Text:      line,
+			Timestamp: e.Timestamp,
+			ToolName:  e.ToolName,
+		})
+		turn.ToolCount++
+
 	case EventToolResult:
 		// Render a short, single-line result summary. Long payloads (file
 		// dumps, command output) are compressed to "→ N lines" rather than
@@ -46,23 +77,261 @@ func (r *Renderer) AddEvent(e Event) {
 		// look like success. Explicit error signals (success=false, error
 		// key, non-zero exit_code) render as "✗ …" with the message.
 		if line := formatToolResultLine(e.ToolResult); line != "" {
+			// Flat path.
 			r.appendLine(line)
+			// Structured path.
+			turn := r.ensureTurn(e.TurnID, e.Timestamp)
+			turn.Rows = append(turn.Rows, PresentationRow{
+				Kind:      RowResult,
+				Text:      line,
+				Timestamp: e.Timestamp,
+				ToolName:  e.ToolName,
+				IsError:   strings.HasPrefix(line, "✗ "),
+			})
 		}
+
 	case EventPermission:
-		r.appendLine(fmt.Sprintf("[permission: %s]", e.PermissionDescription))
+		line := fmt.Sprintf("[permission: %s]", e.PermissionDescription)
+		// Flat path.
+		r.appendLine(line)
+		// Structured path — permission belongs to the interrupted turn; create
+		// an implicit turn if no turn has started yet (transport emitted
+		// permission before turn_started).
+		turn := r.ensureTurn(e.TurnID, e.Timestamp)
+		turn.Rows = append(turn.Rows, PresentationRow{
+			Kind:      RowPermission,
+			Text:      line,
+			Timestamp: e.Timestamp,
+		})
+
 	case EventSystem:
+		// Flat path — unchanged.
 		if e.Text != "" {
 			r.appendLine("[system: " + e.Text + "]")
 		}
-	case EventTurnCompleted, EventTurnInterrupted:
-		// Flush any pending partial line before the marker.
-		r.flushPartial()
-		if e.Kind == EventTurnInterrupted {
-			r.lines = append(r.lines, "[interrupted]")
+		// Structured path — preserve system rows even when no turn is currently
+		// open so the structured preview cannot drop startup/transport errors that
+		// still appear in the flat capture.
+		if e.Text != "" {
+			row := PresentationRow{
+				Kind:      RowSystem,
+				Text:      "[system: " + e.Text + "]",
+				Timestamp: e.Timestamp,
+			}
+			if r.currentTurn != nil {
+				r.currentTurn.Rows = append(r.currentTurn.Rows, row)
+			} else {
+				r.appendStandaloneTurn(e.TurnID, e.Timestamp, row)
+			}
 		}
+		// A final system event closes the current turn without interrupting it.
+		// This handles the codex error path where a final system event ends a
+		// turn without a separate turn_interrupted notification.
+		if e.Final && r.currentTurn != nil {
+			ts := e.Timestamp
+			if ts.IsZero() {
+				ts = time.Now()
+			}
+			r.currentTurn.CompletedAt = ts
+			r.clearCurrentTurn()
+		}
+
 	case EventTurnStarted:
-		// No visible marker needed.
+		// Flat path — no visible marker needed.
+		// Structured path — if a permission/system row already created an implicit
+		// turn for this TurnID, keep using that turn rather than showing it as
+		// interrupted and starting a duplicate numbered turn.
+		if r.currentTurn != nil && (r.currentTurn.ID == e.TurnID || r.currentTurn.ID == "") {
+			if r.currentTurn.ID == "" {
+				r.currentTurn.ID = e.TurnID
+			}
+			return
+		}
+		// Otherwise close any open turn as interrupted, then open a new one.
+		if r.currentTurn != nil {
+			r.currentTurn.Interrupted = true
+			ts := e.Timestamp
+			if ts.IsZero() {
+				ts = time.Now()
+			}
+			r.currentTurn.Rows = append(r.currentTurn.Rows, PresentationRow{
+				Kind:      RowStatus,
+				Text:      "[interrupted]",
+				Timestamp: ts,
+			})
+			r.clearCurrentTurn()
+		}
+		r.startTurn(e.TurnID, e.Timestamp)
+
+	case EventTurnCompleted:
+		// Flat path — flush any pending partial line.
+		r.flushPartial()
+		// Structured path — close the turn normally (no RowStatus row).
+		if r.currentTurn != nil {
+			ts := e.Timestamp
+			if ts.IsZero() {
+				ts = time.Now()
+			}
+			r.currentTurn.CompletedAt = ts
+			r.clearCurrentTurn()
+		}
+
+	case EventTurnInterrupted:
+		// Flat path — flush partial and add marker.
+		r.flushPartial()
+		r.lines = append(r.lines, "[interrupted]")
+		// Structured path — mark turn interrupted and add RowStatus row.
+		if r.currentTurn != nil {
+			r.currentTurn.Interrupted = true
+			ts := e.Timestamp
+			if ts.IsZero() {
+				ts = time.Now()
+			}
+			r.currentTurn.Rows = append(r.currentTurn.Rows, PresentationRow{
+				Kind:      RowStatus,
+				Text:      "[interrupted]",
+				Timestamp: ts,
+			})
+			r.clearCurrentTurn()
+		}
 	}
+}
+
+// CapturePresentation returns a deep copy of the structured turn model.
+// The returned slice and all nested rows are safe for callers to mutate.
+// Returns nil when no events have produced any turns yet.
+//
+// A timing-only RowThinking row is injected into any running turn that has
+// been waiting longer than thinkingThreshold without producing real content.
+// Because the injection happens on the copy, it disappears automatically once
+// the turn accumulates tool, prose, permission, or system rows.
+func (r *Renderer) CapturePresentation() []*PresentationTurn {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := time.Now()
+	copied := deepCopyTurns(r.turns)
+	for _, t := range copied {
+		maybeInjectThinking(t, now)
+	}
+	return copied
+}
+
+// ensureTurn returns the current open turn, creating an implicit one with the
+// given turnID when no turn is active. Must be called with r.mu held.
+func (r *Renderer) ensureTurn(turnID string, ts time.Time) *PresentationTurn {
+	if r.currentTurn != nil {
+		return r.currentTurn
+	}
+	return r.startTurn(turnID, ts)
+}
+
+// appendTurnText mirrors the newline/fragment behaviour of appendText but
+// operates on the structured turn's Rows slice. The first prose chunk in a
+// turn inserts a RowResponse sentinel before the prose rows so renderers can
+// identify where assistant prose begins without inspecting row text.
+// Must be called with r.mu held.
+func (r *Renderer) appendTurnText(turn *PresentationTurn, text string, ts time.Time) {
+	if text == "" {
+		return
+	}
+
+	if !r.currentTurnHasResponse {
+		turn.Rows = append(turn.Rows, PresentationRow{
+			Kind:      RowResponse,
+			Timestamp: ts,
+		})
+		r.currentTurnHasResponse = true
+	}
+
+	parts := strings.Split(text, "\n")
+
+	if len(parts) == 1 {
+		// No newline — extend the current partial prose row.
+		if r.currentTurnOpenProse >= 0 {
+			turn.Rows[r.currentTurnOpenProse].Text += parts[0]
+		} else {
+			turn.Rows = append(turn.Rows, PresentationRow{
+				Kind: RowProse, Text: parts[0], Timestamp: ts,
+			})
+			r.currentTurnOpenProse = len(turn.Rows) - 1
+		}
+		return
+	}
+
+	// First chunk completes the current partial prose row.
+	if r.currentTurnOpenProse >= 0 {
+		turn.Rows[r.currentTurnOpenProse].Text += parts[0]
+	} else {
+		turn.Rows = append(turn.Rows, PresentationRow{
+			Kind: RowProse, Text: parts[0], Timestamp: ts,
+		})
+	}
+	r.currentTurnOpenProse = -1
+
+	// Middle chunks are complete prose rows.
+	for _, p := range parts[1 : len(parts)-1] {
+		turn.Rows = append(turn.Rows, PresentationRow{
+			Kind: RowProse, Text: p, Timestamp: ts,
+		})
+	}
+
+	// Last chunk starts a new partial prose row unless the delta ended with a
+	// newline, in which case there is no open prose fragment to extend.
+	if tail := parts[len(parts)-1]; tail != "" {
+		turn.Rows = append(turn.Rows, PresentationRow{
+			Kind: RowProse, Text: tail, Timestamp: ts,
+		})
+		r.currentTurnOpenProse = len(turn.Rows) - 1
+	}
+}
+
+func (r *Renderer) startTurn(turnID string, ts time.Time) *PresentationTurn {
+	if ts.IsZero() {
+		ts = time.Now()
+	}
+	r.nextTurnNumber++
+	turn := &PresentationTurn{
+		ID:        turnID,
+		Number:    r.nextTurnNumber,
+		StartedAt: ts,
+	}
+	r.turns = append(r.turns, turn)
+	r.currentTurn = turn
+	r.currentTurnHasResponse = false
+	r.currentTurnOpenProse = -1
+	return turn
+}
+
+func (r *Renderer) clearCurrentTurn() {
+	r.currentTurn = nil
+	r.currentTurnHasResponse = false
+	r.currentTurnOpenProse = -1
+}
+
+func (r *Renderer) appendStandaloneTurn(turnID string, ts time.Time, row PresentationRow) {
+	turn := r.startTurn(turnID, ts)
+	if row.Timestamp.IsZero() {
+		row.Timestamp = turn.StartedAt
+	}
+	turn.Rows = append(turn.Rows, row)
+	turn.CompletedAt = row.Timestamp
+	r.clearCurrentTurn()
+}
+
+// deepCopyTurns returns a fully independent copy of src. The returned pointers
+// and all Rows slices are freshly allocated so callers can safely mutate them.
+func deepCopyTurns(src []*PresentationTurn) []*PresentationTurn {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]*PresentationTurn, len(src))
+	for i, t := range src {
+		cp := *t // value copy of PresentationTurn
+		cp.Rows = make([]PresentationRow, len(t.Rows))
+		copy(cp.Rows, t.Rows) // PresentationRow has no pointer fields
+		out[i] = &cp
+	}
+	return out
 }
 
 // appendText appends a raw text fragment (which may contain newlines) to the

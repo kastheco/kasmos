@@ -275,6 +275,13 @@ func (s *Session) CapturePaneContent() (string, error) {
 	return s.renderer.Capture(), nil
 }
 
+// CapturePresentation returns a deep copy of the structured turn model built
+// from the events received so far.  Returns nil when no turns have been created.
+// The returned slice and all nested rows are safe for callers to mutate.
+func (s *Session) CapturePresentation() []*PresentationTurn {
+	return s.renderer.CapturePresentation()
+}
+
 // CapturePaneContentWithOptions returns a line-range slice of the accumulated
 // output.  start/end follow tmux -S/-E semantics ("-" = beginning/end of
 // history, integers are 0-based line offsets, negative values count from the
