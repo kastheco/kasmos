@@ -35,6 +35,7 @@ const (
 	codexMethodInitialized   = "initialized"
 	codexMethodThreadStart   = "thread/start"
 	codexMethodTurnStart     = "turn/start"
+	codexMethodTurnSteer     = "turn/steer"
 	codexMethodTurnInterrupt = "turn/interrupt"
 
 	// Server -> client notifications.
@@ -120,6 +121,16 @@ type codexUserInput struct {
 type codexTurnStartParams struct {
 	ThreadID string           `json:"threadId"`
 	Input    []codexUserInput `json:"input"`
+}
+
+// codexTurnSteerParams injects input into an already-running turn rather
+// than starting a new one. expectedTurnId must match the active turn id
+// or codex fails the request, so the caller is responsible for reading
+// currentTurnID under the transport mutex before making the call.
+type codexTurnSteerParams struct {
+	ThreadID       string           `json:"threadId"`
+	ExpectedTurnID string           `json:"expectedTurnId"`
+	Input          []codexUserInput `json:"input"`
 }
 
 type codexTurnStartResult struct {
@@ -330,18 +341,45 @@ func (t *CodexTransport) SendPrompt(ctx context.Context, prompt string) error {
 
 	t.mu.Lock()
 	threadID := t.threadID
+	activeTurnID := t.currentTurnID
 	t.mu.Unlock()
 	if strings.TrimSpace(threadID) == "" {
 		return fmt.Errorf("codex transport: no thread id")
 	}
 
+	input := []codexUserInput{{Type: "text", Text: prompt}}
+
+	// Steer the running turn when one exists; only start a fresh turn
+	// when the agent is idle. Without this, user-typed prompts during an
+	// active turn called turn/start, which codex rejects or silently
+	// ignores because the thread already has an in-flight turn — i.e.
+	// "interactive input doesn't appear to do anything".
+	if strings.TrimSpace(activeTurnID) != "" {
+		err := t.client.Call(ctx, codexMethodTurnSteer, codexTurnSteerParams{
+			ThreadID:       threadID,
+			ExpectedTurnID: activeTurnID,
+			Input:          input,
+		}, nil)
+		if err == nil {
+			return nil
+		}
+		// Fall through to turn/start if steer failed. A likely cause is
+		// expectedTurnId drift (the original turn completed between the
+		// mutex read and the call) — in that case starting a new turn is
+		// the right fallback rather than silently dropping the prompt.
+		// Emit the transient failure as a system event so the user can
+		// see in the pane that a steer was retried as a fresh turn.
+		t.emit(Event{
+			Kind:      EventSystem,
+			Text:      fmt.Sprintf("turn/steer failed (%v), starting new turn", err),
+			Timestamp: time.Now(),
+		})
+	}
+
 	var turnResult codexTurnStartResult
 	err := t.client.Call(ctx, codexMethodTurnStart, codexTurnStartParams{
 		ThreadID: threadID,
-		Input: []codexUserInput{{
-			Type: "text",
-			Text: prompt,
-		}},
+		Input:    input,
 	}, &turnResult)
 	if err != nil {
 		return fmt.Errorf("codex transport: turn/start: %w", err)
