@@ -1,7 +1,9 @@
 package sdk
 
 import (
+	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,10 +37,15 @@ func (r *Renderer) AddEvent(e Event) {
 	case EventTextDelta:
 		r.appendText(e.Text)
 	case EventToolCall:
-		r.appendLine(fmt.Sprintf("[tool: %s %s]", e.ToolName, e.ToolInput))
+		r.appendLine(formatToolCallLine(e.ToolName, e.ToolInput))
 	case EventToolResult:
-		if strings.TrimSpace(e.ToolResult) != "" {
-			r.appendLine(fmt.Sprintf("[result: %s]", e.ToolResult))
+		// Results are hidden by default — most are long payloads (file
+		// contents, command output) that drown the agent's prose, matching
+		// how codex-cli's interactive UI summarises successful calls. Only
+		// surface a marker when the result explicitly carries an error
+		// signal so the user sees something went wrong.
+		if summary := formatToolResultError(e.ToolResult); summary != "" {
+			r.appendLine(summary)
 		}
 	case EventPermission:
 		r.appendLine(fmt.Sprintf("[permission: %s]", e.PermissionDescription))
@@ -147,6 +154,116 @@ func (r *Renderer) ContentHash() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return strings.Join(r.allLines(), "\n")
+}
+
+// formatToolCallLine renders a tool invocation as a single compact line
+// with a bullet prefix and a short, human-readable argument summary. Keeps
+// the agent prose readable when tools fire in rapid succession. The raw
+// ToolInput is json (or a codex dynamic-tool arg blob) — we pick out the
+// most informative field from a short allowlist (path/pattern/command/
+// query/title/url) and fall back to a truncated raw dump when none match.
+func formatToolCallLine(name, rawInput string) string {
+	summary := summariseToolArgs(rawInput)
+	if summary == "" {
+		return fmt.Sprintf("• %s", name)
+	}
+	return fmt.Sprintf("• %s %s", name, summary)
+}
+
+func summariseToolArgs(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || trimmed == "null" || trimmed == "{}" {
+		return ""
+	}
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &obj); err != nil {
+		// Not JSON — just truncate the raw string.
+		return truncateOneLine(trimmed, 80)
+	}
+	// Priority order: most informative single-field summaries first. Paths
+	// get basename'd because absolute paths waste the whole line on the
+	// prefix and hide the meaningful tail.
+	if v, ok := obj["path"].(string); ok && v != "" {
+		return filepath.Base(v)
+	}
+	if v, ok := obj["filename"].(string); ok && v != "" {
+		return filepath.Base(v)
+	}
+	if v, ok := obj["command"].(string); ok && v != "" {
+		return truncateOneLine(v, 80)
+	}
+	if v, ok := obj["pattern"].(string); ok && v != "" {
+		return truncateOneLine(v, 60)
+	}
+	if v, ok := obj["query"].(string); ok && v != "" {
+		return truncateOneLine(v, 60)
+	}
+	if v, ok := obj["url"].(string); ok && v != "" {
+		return truncateOneLine(v, 80)
+	}
+	if v, ok := obj["title"].(string); ok && v != "" {
+		return truncateOneLine(v, 60)
+	}
+	// Last resort: list argument keys so the reader at least knows the
+	// shape without getting a wall of json.
+	keys := make([]string, 0, len(obj))
+	for k := range obj {
+		keys = append(keys, k)
+	}
+	if len(keys) == 0 {
+		return ""
+	}
+	return truncateOneLine(strings.Join(keys, ","), 60)
+}
+
+// formatToolResultError returns a compact marker when the result payload
+// carries an error signal (explicit success=false, an "error" key, or a
+// non-zero exit_code). All other results are suppressed to keep the pane
+// focused on agent prose. Matches the codex-cli UX of only surfacing
+// tool failures inline while quietly dropping successful outputs.
+func formatToolResultError(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || trimmed == "null" {
+		return ""
+	}
+	// Look for the common failure signals in a JSON payload. If the result
+	// isn't structured json we don't try to guess — better a quiet drop
+	// than a false-positive error label on ordinary output.
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &obj); err != nil {
+		return ""
+	}
+	if success, ok := obj["success"].(bool); ok && !success {
+		msg := truncateOneLine(strings.TrimSpace(fmt.Sprint(obj["error"])), 120)
+		if msg == "" || msg == "<nil>" {
+			msg = "tool returned success=false"
+		}
+		return "✗ " + msg
+	}
+	if errVal, ok := obj["error"]; ok {
+		if msg, _ := errVal.(string); strings.TrimSpace(msg) != "" {
+			return "✗ " + truncateOneLine(msg, 120)
+		}
+	}
+	if exit, ok := obj["exit_code"].(float64); ok && exit != 0 {
+		return fmt.Sprintf("✗ exit=%d", int(exit))
+	}
+	return ""
+}
+
+// truncateOneLine collapses internal whitespace and caps the string at n
+// visible runes, appending an ellipsis when clipped. Used so multi-line
+// tool arguments render as a single-line summary.
+func truncateOneLine(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if n <= 0 {
+		return s
+	}
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n]) + "…"
 }
 
 // resolveLineIndex converts a tmux-style start/end string to a 0-based line

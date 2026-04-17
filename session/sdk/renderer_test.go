@@ -49,11 +49,24 @@ func TestRenderer_ToolCall_ProducesFormattedLine(t *testing.T) {
 	assert.Contains(t, content, "bash")
 }
 
-func TestRenderer_ToolResult_ProducesLine(t *testing.T) {
+func TestRenderer_ToolResult_SuccessfulIsHidden(t *testing.T) {
 	r := NewRenderer()
 	r.AddEvent(Event{Kind: EventToolResult, ToolName: "bash", ToolResult: "ok"})
+	assert.Equal(t, "", r.Capture(), "successful tool output should not clutter the pane")
+}
+
+func TestRenderer_ToolResult_ErrorPayloadSurfaces(t *testing.T) {
+	r := NewRenderer()
+	r.AddEvent(Event{Kind: EventToolResult, ToolName: "bash", ToolResult: `{"success":false,"error":"permission denied"}`})
 	content := r.Capture()
-	assert.NotEmpty(t, content)
+	assert.Contains(t, content, "permission denied", "failed tool calls must stay visible")
+}
+
+func TestRenderer_ToolResult_NonZeroExitSurfaces(t *testing.T) {
+	r := NewRenderer()
+	r.AddEvent(Event{Kind: EventToolResult, ToolName: "bash", ToolResult: `{"exit_code":2}`})
+	content := r.Capture()
+	assert.Contains(t, content, "exit=2")
 }
 
 func TestRenderer_Permission_ProducesLine(t *testing.T) {
