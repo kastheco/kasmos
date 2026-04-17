@@ -443,7 +443,7 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 	permStyle := lipgloss.NewStyle().Foreground(ColorRose)
 	proseStyle := lipgloss.NewStyle().Foreground(ColorText)
 	statusStyle := lipgloss.NewStyle().Foreground(ColorGold)
-	thinkingStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
+	thinkingStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	narrowRuleStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 
 	for _, row := range turn.Rows {
