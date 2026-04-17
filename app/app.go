@@ -1079,7 +1079,15 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if !status.Active {
 							continue
 						}
-						if existing, exists := knownInstances[title]; exists && existing != nil && existing.Started() && !existing.Exited && !existing.Paused() {
+						// Skip the restore only when the locally-tracked instance is
+						// ACTUALLY live — Started()+!Exited+!Paused alone only reflects
+						// the in-memory bookkeeping, which can lie after a daemon
+						// restart (the subprocess the TUI thought was running died with
+						// the daemon; the tmux-wrapper stayed Started=true in memory).
+						// Also verify executionSession.DoesSessionExist so a corpse
+						// in-memory doesn't shadow a freshly-spawned daemon instance
+						// under the same title.
+						if existing, exists := knownInstances[title]; exists && existing != nil && existing.Started() && !existing.Exited && !existing.Paused() && existing.TmuxAlive() {
 							continue
 						}
 						inst, err := restoreDaemonInstance(repoPath, status)
@@ -1644,7 +1652,13 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			for _, existing := range m.nav.GetInstances() {
 				if existing.Title == inst.Title {
-					if existing.Started() && !existing.Exited && !existing.Paused() {
+					// Same title, locally-tracked instance is Started and not
+					// Paused/Exited — BUT also verify the underlying session is
+					// actually alive. A stale in-memory Started=true can survive
+					// a daemon restart (SDK subprocess died with the daemon, or
+					// tmux session was reaped externally) and silently shadow a
+					// freshly-spawned replacement under the same title.
+					if existing.Started() && !existing.Exited && !existing.Paused() && existing.TmuxAlive() {
 						exists = true
 						break
 					}

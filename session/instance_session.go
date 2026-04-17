@@ -67,10 +67,19 @@ func (i *Instance) Attach() (chan struct{}, error) {
 
 // SetPreviewSize resizes the detached pane to the given dimensions.
 // Returns an error if the instance is not started or is paused.
+//
+// SDK-backed sessions have no pty to resize, so SetDetachedSize on them
+// returns ErrInteractiveOnly. Window-resize callers iterate every
+// instance and we don't want a dozen "interactive operation requires
+// tmux execution" lines per resize event in the log — swallow that one
+// expected error so the log stays readable.
 func (i *Instance) SetPreviewSize(width, height int) error {
 	if !i.started || i.Status == Paused {
 		return fmt.Errorf("cannot set preview size for instance that has not been started or " +
 			"is paused")
+	}
+	if NormalizeExecutionMode(i.ExecutionMode) == ExecutionModeSDK {
+		return nil
 	}
 	return i.executionSession.SetDetachedSize(width, height)
 }
