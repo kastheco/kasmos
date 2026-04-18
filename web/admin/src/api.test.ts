@@ -766,7 +766,7 @@ assertEqual(
   "sendInstancePermission: POST method",
 );
 assertEqual(
-  JSON.parse((_lastFetchedInit as RequestInit).body as string).decision,
+  JSON.parse((_lastFetchedInit as RequestInit).body as string).choice,
   0,
   "sendInstancePermission: allow_once maps to 0",
 );
@@ -774,7 +774,7 @@ assertEqual(
 mockFetch(true, 200, "");
 await sendInstancePermission("proj", "agent-1", "allow_always");
 assertEqual(
-  JSON.parse((_lastFetchedInit as RequestInit).body as string).decision,
+  JSON.parse((_lastFetchedInit as RequestInit).body as string).choice,
   1,
   "sendInstancePermission: allow_always maps to 1",
 );
@@ -782,7 +782,7 @@ assertEqual(
 mockFetch(true, 200, "");
 await sendInstancePermission("proj", "agent-1", "reject");
 assertEqual(
-  JSON.parse((_lastFetchedInit as RequestInit).body as string).decision,
+  JSON.parse((_lastFetchedInit as RequestInit).body as string).choice,
   2,
   "sendInstancePermission: reject maps to 2",
 );

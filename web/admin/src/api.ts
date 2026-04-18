@@ -527,7 +527,7 @@ export async function sendInstancePermission(
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision: PERMISSION_CHOICE_TO_WIRE[choice] }),
+      body: JSON.stringify({ choice: PERMISSION_CHOICE_TO_WIRE[choice] }),
     },
   );
 }

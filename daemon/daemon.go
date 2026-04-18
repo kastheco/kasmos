@@ -30,6 +30,7 @@ import (
 	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
 	gitpkg "github.com/kastheco/kasmos/session/git"
+	"github.com/kastheco/kasmos/session/tmux"
 )
 
 // ---------------------------------------------------------------------------
@@ -340,6 +341,21 @@ func (a *daemonStateAdapter) SendInstancePrompt(project, title, prompt string) e
 		return fmt.Errorf("%w: %s/%s", api.ErrInstanceNotFound, project, title)
 	}
 	return inst.SendPrompt(prompt)
+}
+
+// SendInstancePermission implements StateProvider by resolving the tracked
+// instance and forwarding the permission choice to it.
+func (a *daemonStateAdapter) SendInstancePermission(project, title string, choice api.PermissionChoice) error {
+	repoPath, ok := a.repoPathByProject(project)
+	if !ok {
+		return fmt.Errorf("%w: project %s", api.ErrProjectNotFound, project)
+	}
+	_, inst, ok := a.d.spawner.trackedInstanceByTitle(repoPath, title)
+	if !ok {
+		return fmt.Errorf("%w: %s/%s", api.ErrInstanceNotFound, project, title)
+	}
+	inst.SendPermissionResponse(tmux.PermissionChoice(choice))
+	return nil
 }
 
 // CapturePresentation implements StateProvider. It returns the structured turn
