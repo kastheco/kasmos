@@ -842,6 +842,9 @@ func (s *TmuxSpawner) SpawnWaveTask(_ context.Context, opts loop.SpawnOpts, task
 		s.discardTrackedInstance(key, inst)
 		return fmt.Errorf("TmuxSpawner.wave-task: start in shared worktree: %w", err)
 	}
+	if prompt != "" {
+		inst.AwaitingWork = true
+	}
 	return nil
 }
 
@@ -907,6 +910,9 @@ func (s *TmuxSpawner) spawnInSharedWorktreeReserved(_ context.Context, opts loop
 	if err := s.startInShared(inst, shared, opts.Branch); err != nil {
 		s.discardTrackedInstance(key, inst)
 		return fmt.Errorf("TmuxSpawner.%s: start in shared worktree: %w", agentType, err)
+	}
+	if opts.Prompt != "" {
+		inst.AwaitingWork = true
 	}
 	return nil
 }

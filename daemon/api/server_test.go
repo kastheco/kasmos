@@ -228,6 +228,9 @@ type instanceCaptureStub struct {
 	captureErr                                             error
 	sendProject, sendTitle, sendPrompt                     string
 	sendErr                                                error
+	permissionProject, permissionTitle                     string
+	permissionChoice                                       PermissionChoice
+	permissionErr                                          error
 }
 
 func (s *instanceCaptureStub) ListInstances(_ string) []InstanceStatus { return nil }
@@ -261,6 +264,12 @@ func (s *instanceCaptureStub) SendInstancePrompt(project, title, prompt string) 
 	s.sendTitle = title
 	s.sendPrompt = prompt
 	return s.sendErr
+}
+func (s *instanceCaptureStub) SendInstancePermissionResponse(project, title string, choice PermissionChoice) error {
+	s.permissionProject = project
+	s.permissionTitle = title
+	s.permissionChoice = choice
+	return s.permissionErr
 }
 
 func TestHandler_InstanceCapture_HappyPath(t *testing.T) {
@@ -312,6 +321,33 @@ func TestHandler_InstanceSend_NotFound(t *testing.T) {
 
 	body := bytes.NewBufferString(`{"prompt":"hi"}`)
 	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/missing/send", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code, "body: %s", w.Body.String())
+}
+
+func TestHandler_InstancePermission_HappyPath(t *testing.T) {
+	state := &instanceCaptureStub{}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"choice":1}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/my-agent/permission", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code, "body: %s", w.Body.String())
+	assert.Equal(t, "myproj", state.permissionProject)
+	assert.Equal(t, "my-agent", state.permissionTitle)
+	assert.Equal(t, PermissionAllowAlways, state.permissionChoice)
+}
+
+func TestHandler_InstancePermission_NotFound(t *testing.T) {
+	state := &instanceCaptureStub{permissionErr: fmt.Errorf("%w: missing", ErrInstanceNotFound)}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"choice":0}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/missing/permission", body)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 

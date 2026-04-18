@@ -587,6 +587,9 @@ func (m *home) finishPermissionOverlay(result overlay.Result) (tea.Model, tea.Cm
 			m.pendingPermissionDesc = ""
 			var cmds []tea.Cmd
 			cmds = append(cmds, func() tea.Msg {
+				if handled, err := m.daemonRoutePermissionResponse(capturedInst, capturedChoice); handled {
+					return err
+				}
 				capturedInst.SendPermissionResponse(capturedChoice)
 				return nil
 			})

@@ -79,6 +79,17 @@ type InstanceStatus struct {
 	ExecutionMode string `json:"execution_mode,omitempty"`
 }
 
+// PermissionChoice is the daemon API's wire-level representation of a
+// permission response. The numeric ordering mirrors the TUI overlay and tmux
+// adapter enums so callers can forward selections without remapping.
+type PermissionChoice int
+
+const (
+	PermissionAllowOnce PermissionChoice = iota
+	PermissionAllowAlways
+	PermissionReject
+)
+
 // addRepoRequest is the request body for POST /v1/repos.
 type addRepoRequest struct {
 	Path string `json:"path"`
@@ -118,6 +129,9 @@ type StateProvider interface {
 	// sessions the prompt is forwarded through the transport; for tmux sessions
 	// it is sent via SendKeys+TapEnter on the pane.
 	SendInstancePrompt(project, title, prompt string) error
+	// SendInstancePermissionResponse forwards a permission-overlay selection to
+	// the tracked instance identified by project/title.
+	SendInstancePermissionResponse(project, title string, choice PermissionChoice) error
 }
 
 // ---------------------------------------------------------------------------
@@ -225,6 +239,9 @@ func (s *DaemonState) CaptureInstance(_, _, _, _ string) (string, error) {
 func (s *DaemonState) SendInstancePrompt(_, _, _ string) error {
 	return fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
 }
+func (s *DaemonState) SendInstancePermissionResponse(_, _ string, _ PermissionChoice) error {
+	return fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
+}
 
 // ---------------------------------------------------------------------------
 // Handler
@@ -292,6 +309,7 @@ func (h *Handler) registerRoutes() {
 	})
 	h.mux.HandleFunc("GET /v1/repos/{project}/instances/{title}/capture", h.handleInstanceCapture)
 	h.mux.HandleFunc("POST /v1/repos/{project}/instances/{title}/send", h.handleInstanceSend)
+	h.mux.HandleFunc("POST /v1/repos/{project}/instances/{title}/permission", h.handleInstancePermission)
 	h.mux.HandleFunc("POST /v1/repos/{project}/plans/{filename}/plan", h.handleStartPlan)
 	h.mux.HandleFunc("POST /v1/repos/{project}/plans/{filename}/implement", h.handleImplementPlan)
 
@@ -468,6 +486,33 @@ func (h *Handler) handleInstanceSend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.state.SendInstancePrompt(project, title, body.Prompt); err != nil {
+		switch {
+		case errors.Is(err, ErrInstanceNotFound):
+			writeError(w, http.StatusNotFound, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleInstancePermission serves POST /v1/repos/{project}/instances/{title}/permission.
+// It decodes the {"choice":N} JSON body and delegates to the StateProvider
+// which resolves the tracked instance and forwards the permission response.
+func (h *Handler) handleInstancePermission(w http.ResponseWriter, r *http.Request) {
+	project := r.PathValue("project")
+	title := r.PathValue("title")
+
+	var body struct {
+		Choice PermissionChoice `json:"choice"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	if err := h.state.SendInstancePermissionResponse(project, title, body.Choice); err != nil {
 		switch {
 		case errors.Is(err, ErrInstanceNotFound):
 			writeError(w, http.StatusNotFound, err.Error())
