@@ -79,8 +79,8 @@ Collect these before making a decision:
 - run verification commands now and keep output as evidence, even if tests were already run by prior agents.
 - at minimum, run:
   - `go build ./...`
-  - scoped test: use the **verbose targeted recipe** from the `cli-tools` skill (`## Running tests without polluting context`) with `-run Test<Name>` and your package path
-  - full suite: use the **full-suite compact recipe** from the same `cli-tools` section (or reference an available CI result)
+  - `go test ./pkg/... -run Test<Name> -v` (or package-relevant test command used in task scope)
+  - a full `go test ./...` or CI result reference if available
 
 ### Phase 3 — Cross-cutting readiness audit
 
@@ -156,7 +156,7 @@ Run BEFORE creating the self-fix commit. Apply your edits to the worktree, then 
 1. `gofmt -l .` — must produce no output
 2. `go vet ./...` — must produce no output
 3. `go build ./...`
-4. Full test suite via the **compact recipe** from the `cli-tools` skill (`## Running tests without polluting context`) — or scoped to changed packages using the same wrapper with a narrowed package path if the full suite is intractable
+4. `go test ./...` (or scoped to changed packages if the full suite is intractable, matching the reviewer's existing escape hatch)
 5. `typos` against the changed file set
 
 If every step passes, create the `fix: <description> (master self-fix)` commit and emit `verify_approved`.
@@ -239,8 +239,8 @@ For the same plan and branch:
 - `MERGE_BASE=$(git merge-base main HEAD)`
 - `GIT_EXTERNAL_DIFF=difft git diff $MERGE_BASE..HEAD --name-only`
 - `go build ./...`
-- scoped test: **verbose targeted recipe** from `cli-tools` (`## Running tests without polluting context`) with `-run Test<Name>` and the relevant package path
-- full suite: **compact recipe** from the same `cli-tools` section instead of bare `go test ./...`
+- `go test ./pkg/... -run Test<Name> -v` (replace `<Name>` with the target test if defined)
+- `go test ./...` for full verification if feasible
 
 ## Escalation to Fixer
 

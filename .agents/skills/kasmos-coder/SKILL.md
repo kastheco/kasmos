@@ -242,9 +242,8 @@ Skipping any step is not verification — it's guessing.
 ```bash
 # Go
 go build ./...
-# full suite  — compact recipe (cli-tools § "Running tests without polluting context")
-#               go test line: go test ./... -count=1
-# scoped run  — same compact recipe with: go test ./path/to/package/... -count=1
+go test ./...
+go test ./path/to/package/...   # scoped — preferred in shared worktree
 
 # Node
 npm test

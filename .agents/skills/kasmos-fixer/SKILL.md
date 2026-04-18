@@ -109,8 +109,7 @@ Before attempting any fix:
 # Quick evidence gathering
 git log --oneline -20
 git diff HEAD~1
-# verbose recipe (cli-tools § "Running tests without polluting context")
-#   go test line: go test ./failing/package/... -v -count=1 -run TestSpecificFailure
+go test ./failing/package/... -v -count=1 -run TestSpecificFailure 2>&1 | head -60
 ```
 
 ### Phase 2 — Pattern Analysis
@@ -136,9 +135,8 @@ Form **one specific hypothesis**: "I think X is the root cause because Y."
 3. Verify the test now passes and no other tests regressed
 
 ```bash
-# verbose recipe (cli-tools § "Running tests without polluting context")
-#   go test line: go test ./affected/package/... -v -count=1
-# full suite regression check — compact recipe, go test line: go test ./... -count=1
+go test ./affected/package/... -v -count=1
+go test ./... -count=1  # full suite regression check
 ```
 
 ### Escalation Rule
@@ -182,17 +180,7 @@ If the request is not explicitly triage/cleanup, stop after validating the repor
 ### Step 3 — Test Coverage Gaps
 
 ```bash
-tmp=$(mktemp)
-test_status=0
-go test ./... -count=1 -coverprofile=coverage.out >"$tmp" 2>&1 || test_status=$?
-rg -v '^(ok\b|\?\s.*\[no test files\]|PASS$)' "$tmp" || true
-rm -f "$tmp"
-if [ "$test_status" -eq 0 ]; then
-  echo 'tests passed'
-else
-  echo "tests failed (exit $test_status)"
-  (exit "$test_status")
-fi
+go test ./... -count=1 -coverprofile=coverage.out
 go tool cover -func=coverage.out
 ```
 
@@ -233,12 +221,10 @@ Skipping any step is not verification — it's guessing.
 go build ./...
 
 # Targeted test (preferred — scoped to changed package)
-# verbose recipe (cli-tools § "Running tests without polluting context")
-#   go test line: go test ./path/to/package/... -v -count=1
+go test ./path/to/package/... -v -count=1
 
 # Full suite
-# compact recipe (cli-tools § "Running tests without polluting context")
-#   go test line: go test ./... -count=1
+go test ./... -count=1
 
 # Spell check before committing
 typos
