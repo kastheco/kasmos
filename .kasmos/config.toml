@@ -16,6 +16,7 @@ daemon_poll_interval = 0
     enabled = true
     program = "codex"
     model = "gpt-5.4"
+    execution_mode = "sdk"
     temperature = 0.2
     effort = "xhigh"
   [agents.chat]
@@ -40,16 +41,16 @@ daemon_poll_interval = 0
     flags = ["--permission-mode bypassPermissions"]
   [agents.master]
     enabled = true
-    program = "opencode"
-    model = "openai/gpt-5.4"
+    program = "codex"
+    model = "gpt-5.4"
     temperature = 0.2
-    effort = "high"
+    effort = "xhigh"
   [agents.planner]
     enabled = true
     program = "claude"
-    model = "claude-opus-4-6"
+    model = "claude-opus-4-7"
     temperature = 0.3
-    effort = "high"
+    effort = "xhigh"
     flags = ["--permission-mode bypassPermissions"]
   [agents.reviewer]
     enabled = true

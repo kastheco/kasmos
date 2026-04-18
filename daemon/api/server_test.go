@@ -369,7 +369,6 @@ func (s *presentationStub) CapturePresentation(_, _ string) (json.RawMessage, bo
 
 func TestHandler_InstancePresentation_SDK(t *testing.T) {
 	// Pre-encode two turns with the exact wire-format field names.
-	_ = time.UTC // ensure time import is used
 	rawTurns := json.RawMessage(`[
 		{"id":"t1","number":1,"started_at":"0001-01-01T00:00:00Z","completed_at":"0001-01-01T00:00:00Z","interrupted":false,"tool_count":0,"rows":[{"kind":"prose","text":"hello","timestamp":"0001-01-01T00:00:00Z","tool_name":"","is_error":false}]},
 		{"id":"t2","number":2,"started_at":"0001-01-01T00:00:00Z","completed_at":"0001-01-01T00:00:00Z","interrupted":false,"tool_count":1,"rows":[{"kind":"tool","text":"bash(ls)","timestamp":"0001-01-01T00:00:00Z","tool_name":"bash","is_error":false}]}
@@ -396,7 +395,9 @@ func TestHandler_InstancePresentation_SDK(t *testing.T) {
 	assert.Equal(t, "t1", turns[0]["id"])
 	assert.Equal(t, "t2", turns[1]["id"])
 
-	assert.NotEmpty(t, outer["captured_at"])
+	var capturedAt time.Time
+	require.NoError(t, json.Unmarshal(outer["captured_at"], &capturedAt))
+	assert.False(t, capturedAt.IsZero(), "captured_at must parse as a real timestamp")
 }
 
 func TestHandler_InstancePresentation_Tmux(t *testing.T) {

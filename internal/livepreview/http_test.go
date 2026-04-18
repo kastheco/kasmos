@@ -1351,6 +1351,19 @@ func TestHTTPHandler_Permission_InstanceNotFound(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
 
+func TestHTTPHandler_Presentation_MissingTitle(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root)
+
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances/%20%20/presentation", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "missing title")
+}
+
 // TestHTTPHandler_Permission_MalformedBody verifies that a malformed JSON body
 // returns 400.
 func TestHTTPHandler_Permission_MalformedBody(t *testing.T) {
@@ -1371,6 +1384,28 @@ func TestHTTPHandler_Permission_MalformedBody(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestHTTPHandler_Permission_MissingTitle(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root)
+
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
+			{Title: "sdk-agent", Status: StatusRunning, ExecutionMode: "sdk"},
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/%20%20/permission",
+		strings.NewReader(`{"choice":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "missing title")
+	assert.Equal(t, "", adapter.sentProject, "missing title must be rejected before hitting the daemon adapter")
 }
 
 // TestHTTPHandler_Permission_InvalidChoice verifies that unknown permission
@@ -1394,4 +1429,27 @@ func TestHTTPHandler_Permission_InvalidChoice(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Equal(t, "", adapter.sentProject, "invalid choices must be rejected before hitting the daemon adapter")
+}
+
+func TestHTTPHandler_Permission_OversizedBody(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root)
+
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
+			{Title: "sdk-agent", Status: StatusRunning, ExecutionMode: "sdk"},
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
+	body := `{"choice":0,"padding":"` + strings.Repeat("x", maxPermissionBodyBytes) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/sdk-agent/permission",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+	assert.Contains(t, rec.Body.String(), "permission body too large")
+	assert.Equal(t, "", adapter.sentProject, "oversized bodies must be rejected before hitting the daemon adapter")
 }

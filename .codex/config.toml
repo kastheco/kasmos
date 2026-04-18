@@ -7,7 +7,5 @@ network_access = true
 url = "http://127.0.0.1:7434/mcp"
 default_tools_approval_mode = "auto"
 
-[mcp_servers.kasmos.tools.signal_create]
-approval_mode = "approve"
 [features]
 codex_hooks = true

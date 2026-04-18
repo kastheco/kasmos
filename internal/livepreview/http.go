@@ -30,6 +30,11 @@ var ErrPreviewUnavailable = errors.New("live preview requires kas serve --repo")
 // usage while keeping memory bounded under abuse.
 const maxSendBodyBytes = 64 * 1024
 
+// maxPermissionBodyBytes caps the JSON body of POST /permission. Permission
+// payloads are tiny, so a 4 KiB limit is ample and keeps memory bounded under
+// abuse just like the send path.
+const maxPermissionBodyBytes = 4 * 1024
+
 // ErrDaemonUnavailable signals to the list/capture handlers that the daemon
 // socket is not reachable. Returning this error from a DaemonInstanceLister
 // causes the handler to fall back to state.json-only results instead of
@@ -497,6 +502,10 @@ func NewHTTPHandlerWithDaemon(resolve ProjectRootResolver, runner PaneRunner, da
 	//     available for daemon-managed instances.
 	mux.HandleFunc("GET /v1/projects/{project}/instances/{title}/presentation", func(w http.ResponseWriter, r *http.Request) {
 		title := r.PathValue("title")
+		if strings.TrimSpace(title) == "" {
+			writeJSONError(w, http.StatusBadRequest, "missing title")
+			return
+		}
 		project := r.PathValue("project")
 
 		root, err := resolve(project)
@@ -557,12 +566,23 @@ func NewHTTPHandlerWithDaemon(resolve ProjectRootResolver, runner PaneRunner, da
 	// daemon owning the process.
 	mux.HandleFunc("POST /v1/projects/{project}/instances/{title}/permission", func(w http.ResponseWriter, r *http.Request) {
 		title := r.PathValue("title")
+		if strings.TrimSpace(title) == "" {
+			writeJSONError(w, http.StatusBadRequest, "missing title")
+			return
+		}
 		project := r.PathValue("project")
+
+		r.Body = http.MaxBytesReader(w, r.Body, maxPermissionBodyBytes)
 
 		var body struct {
 			Choice api.PermissionChoice `json:"choice"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			var maxErr *http.MaxBytesError
+			if errors.As(err, &maxErr) {
+				writeJSONError(w, http.StatusRequestEntityTooLarge, "permission body too large")
+				return
+			}
 			writeJSONError(w, http.StatusBadRequest, "invalid request body")
 			return
 		}
