@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	stdlog "log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +19,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/internal/livepreview"
+	kaslog "github.com/kastheco/kasmos/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -86,6 +90,134 @@ func TestServeCmd_RepoAndDBMutuallyExclusive(t *testing.T) {
 	err := cmd.Execute()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "mutually exclusive")
+}
+
+func TestWrapServeMCPRequestLogging_EnabledLogsRPCMethodAndPreservesBody(t *testing.T) {
+	t.Setenv("KASMOS_MCP_REQUEST_LOG", "1")
+
+	var logBuf bytes.Buffer
+	prevLogger := kaslog.InfoLog
+	kaslog.InfoLog = stdlog.New(&logBuf, "", 0)
+	t.Cleanup(func() { kaslog.InfoLog = prevLogger })
+
+	var seenBody string
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		seenBody = string(body)
+		w.WriteHeader(http.StatusAccepted)
+	})
+
+	h := wrapServeMCPRequestLogging(next)
+	reqBody := `{"jsonrpc":"2.0","id":7,"method":"tools/list"}`
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Mcp-Session-Id", "session-123")
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	assert.JSONEq(t, reqBody, seenBody)
+	assert.Contains(t, logBuf.String(), "mcp http request")
+	assert.Contains(t, logBuf.String(), "rpc_method=tools/list")
+	assert.Contains(t, logBuf.String(), "session=session-123")
+	assert.Contains(t, logBuf.String(), "http_method=POST")
+}
+
+func TestWrapServeMCPRequestLogging_DisabledLeavesHandlerTransparent(t *testing.T) {
+	t.Setenv("KASMOS_MCP_REQUEST_LOG", "0")
+
+	var logBuf bytes.Buffer
+	prevLogger := kaslog.InfoLog
+	kaslog.InfoLog = stdlog.New(&logBuf, "", 0)
+	t.Cleanup(func() { kaslog.InfoLog = prevLogger })
+
+	var seenBody string
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		seenBody = string(body)
+		_, _ = w.Write([]byte("ok"))
+	})
+
+	h := wrapServeMCPRequestLogging(next)
+	reqBody := `{"jsonrpc":"2.0","id":8,"method":"initialize"}`
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.JSONEq(t, reqBody, seenBody)
+	assert.Empty(t, logBuf.String())
+}
+
+func TestWrapServeMCPRequestLogging_EnabledFallsBackWhenKaslogUninitialized(t *testing.T) {
+	t.Setenv("KASMOS_MCP_REQUEST_LOG", "1")
+
+	prevLogger := kaslog.InfoLog
+	kaslog.InfoLog = nil
+	t.Cleanup(func() { kaslog.InfoLog = prevLogger })
+
+	var fallbackBuf bytes.Buffer
+	prevFallback := serveMCPFallbackLogger
+	serveMCPFallbackLogger = stdlog.New(&fallbackBuf, "", 0)
+	t.Cleanup(func() { serveMCPFallbackLogger = prevFallback })
+
+	h := wrapServeMCPRequestLogging(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":9,"method":"initialize"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	assert.Contains(t, fallbackBuf.String(), "mcp http request")
+	assert.Contains(t, fallbackBuf.String(), "rpc_method=initialize")
+}
+
+func TestNewServeMCPHTTPHandler_OnlyServesExactMCPPath(t *testing.T) {
+	t.Setenv("KASMOS_MCP_REQUEST_LOG", "0")
+
+	var calls []string
+	h := newServeMCPHTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.URL.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	t.Run("exact /mcp delegates", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{}`))
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusNoContent, rec.Code)
+		require.Equal(t, []string{"/mcp"}, calls)
+	})
+
+	t.Run("well-known root path returns 404", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server/mcp", nil)
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusNotFound, rec.Code)
+		require.Equal(t, []string{"/mcp"}, calls)
+	})
+
+	t.Run("nested /mcp path returns 404", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/mcp/.well-known/oauth-authorization-server", nil)
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusNotFound, rec.Code)
+		require.Equal(t, []string{"/mcp"}, calls)
+	})
 }
 
 func TestServeCmd_ProjectValidationMiddleware404(t *testing.T) {

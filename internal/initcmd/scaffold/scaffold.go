@@ -306,15 +306,23 @@ func codexMCPBlock() string {
 	return fmt.Sprintf("[mcp_servers.kasmos]\nurl = %q\ndefault_tools_approval_mode = \"auto\"\n", sharedKasmosMCPURL)
 }
 
+func codexSandboxModeLine() string {
+	return `sandbox_mode = "workspace-write"`
+}
+
+func codexSandboxWorkspaceWriteBlock() string {
+	return "[sandbox_workspace_write]\nnetwork_access = true\n"
+}
+
 func codexSandboxConfigUpToDate(parsed map[string]any) bool {
-	if mode, _ := parsed["sandbox_mode"].(string); mode != "workspace-write" {
+	if sandboxMode, _ := parsed["sandbox_mode"].(string); sandboxMode != "workspace-write" {
 		return false
 	}
-	sandbox, ok := parsed["sandbox_workspace_write"].(map[string]any)
+	sandboxTable, ok := parsed["sandbox_workspace_write"].(map[string]any)
 	if !ok {
 		return false
 	}
-	networkAccess, ok := sandbox["network_access"].(bool)
+	networkAccess, ok := sandboxTable["network_access"].(bool)
 	return ok && networkAccess
 }
 
@@ -383,6 +391,20 @@ func isCodexKasmosManagedHeader(line string) bool {
 	return isCodexKasmosHeader(line) || isCodexKasmosDescendantHeader(line)
 }
 
+func isCodexSandboxWorkspaceWriteHeader(line string) bool {
+	trimmed := stripTOMLLineComment(line)
+	return trimmed == "[sandbox_workspace_write]" || strings.HasPrefix(trimmed, "[sandbox_workspace_write.")
+}
+
+func isCodexSandboxModeLine(line string) bool {
+	trimmed := stripTOMLLineComment(line)
+	if !strings.HasPrefix(trimmed, "sandbox_mode") {
+		return false
+	}
+	remainder := strings.TrimSpace(strings.TrimPrefix(trimmed, "sandbox_mode"))
+	return strings.HasPrefix(remainder, "=")
+}
+
 func isTOMLTableHeader(line string) bool {
 	trimmed := stripTOMLLineComment(line)
 	if !strings.HasPrefix(trimmed, "[") {
@@ -391,95 +413,54 @@ func isTOMLTableHeader(line string) bool {
 	return strings.HasSuffix(trimmed, "]")
 }
 
-func patchCodexSandboxMode(existing string) string {
-	const line = `sandbox_mode = "workspace-write"`
-	if existing == "" {
-		return line + "\n"
-	}
-
-	lines := strings.Split(existing, "\n")
-	keyRE := regexp.MustCompile(`^\s*sandbox_mode\s*=`)
-	for i, current := range lines {
-		if keyRE.MatchString(current) {
-			lines[i] = line
-			return strings.Join(lines, "\n")
-		}
-	}
-
-	insertAt := 0
-	for insertAt < len(lines) {
-		trimmed := strings.TrimSpace(lines[insertAt])
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			insertAt++
-			continue
-		}
-		if isTOMLTableHeader(lines[insertAt]) {
-			break
-		}
-		insertAt++
-	}
-
-	out := append([]string{}, lines[:insertAt]...)
-	if insertAt > 0 && strings.TrimSpace(out[len(out)-1]) != "" {
+func appendCodexSandboxConfig(out []string) []string {
+	if len(out) > 0 && strings.TrimSpace(out[len(out)-1]) != "" {
 		out = append(out, "")
 	}
-	out = append(out, line)
-	if insertAt < len(lines) && strings.TrimSpace(lines[insertAt]) != "" {
-		out = append(out, "")
-	}
-	out = append(out, lines[insertAt:]...)
-	return strings.Join(out, "\n")
+	out = append(out, codexSandboxModeLine(), "")
+	out = append(out, strings.Split(strings.TrimRight(codexSandboxWorkspaceWriteBlock(), "\n"), "\n")...)
+	out = append(out, "")
+	return out
 }
 
-func patchCodexSandboxTable(existing string) string {
-	const (
-		header = "[sandbox_workspace_write]"
-		line   = "network_access = true"
-	)
+func trimTrailingBlankLines(lines []string) []string {
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
+}
+
+func patchCodexSandboxTOML(existing string) string {
 	if existing == "" {
-		return header + "\n" + line + "\n"
+		return codexSandboxModeLine() + "\n\n" + codexSandboxWorkspaceWriteBlock()
 	}
 
 	lines := strings.Split(existing, "\n")
-	start := -1
-	for i, current := range lines {
-		if stripTOMLLineComment(current) == header {
-			start = i
-			break
+	out := make([]string, 0, len(lines)+6)
+	inserted := false
+	for i := 0; i < len(lines); {
+		if isCodexSandboxModeLine(lines[i]) {
+			i++
+			continue
 		}
-	}
-	if start == -1 {
-		trimmed := strings.TrimRight(existing, "\n")
-		if trimmed == "" {
-			return header + "\n" + line + "\n"
+		if isCodexSandboxWorkspaceWriteHeader(lines[i]) {
+			i++
+			for i < len(lines) && !isTOMLTableHeader(lines[i]) {
+				i++
+			}
+			continue
 		}
-		return trimmed + "\n\n" + header + "\n" + line + "\n"
-	}
-
-	end := len(lines)
-	for i := start + 1; i < len(lines); i++ {
-		if isTOMLTableHeader(lines[i]) {
-			end = i
-			break
+		if !inserted && isTOMLTableHeader(lines[i]) {
+			out = appendCodexSandboxConfig(trimTrailingBlankLines(out))
+			inserted = true
 		}
+		out = append(out, lines[i])
+		i++
 	}
-
-	keyRE := regexp.MustCompile(`^\s*network_access\s*=`)
-	for i := start + 1; i < end; i++ {
-		if keyRE.MatchString(lines[i]) {
-			lines[i] = line
-			return strings.Join(lines, "\n")
-		}
+	if !inserted {
+		out = appendCodexSandboxConfig(trimTrailingBlankLines(out))
 	}
-
-	insertAt := end
-	for insertAt > start+1 && strings.TrimSpace(lines[insertAt-1]) == "" {
-		insertAt--
-	}
-	out := append([]string{}, lines[:insertAt]...)
-	out = append(out, line)
-	out = append(out, lines[insertAt:]...)
-	return strings.Join(out, "\n")
+	return strings.Join(trimTrailingBlankLines(out), "\n")
 }
 
 // patchCodexTOML returns updated TOML text with the kasmos mcp_servers block
@@ -487,12 +468,8 @@ func patchCodexSandboxTable(existing string) string {
 // table blocks are removed wherever they appear in the file. Comments,
 // ordering, and unrelated sections are preserved verbatim.
 func patchCodexTOML(existing string) string {
-	existing = patchCodexSandboxMode(existing)
-	existing = patchCodexSandboxTable(existing)
+	existing = patchCodexSandboxTOML(existing)
 	desired := codexMCPBlock()
-	if existing == "" {
-		return desired
-	}
 	lines := strings.Split(existing, "\n")
 	desiredLines := strings.Split(strings.TrimRight(desired, "\n"), "\n")
 	var out []string
