@@ -476,6 +476,13 @@ type RawPresentationResponse = {
   captured_at: string;
 };
 
+const GO_ZERO_TIME = "0001-01-01T00:00:00Z";
+
+function parseOptionalDate(raw: string | null | undefined): Date | null {
+  if (!raw || raw === GO_ZERO_TIME) return null;
+  return new Date(raw);
+}
+
 function normalizePresentationResponse(raw: RawPresentationResponse): PresentationResponse {
   return {
     supported: raw.supported,
@@ -484,14 +491,14 @@ function normalizePresentationResponse(raw: RawPresentationResponse): Presentati
       raw.turns?.map((t) => ({
         id: t.id,
         number: t.number,
-        started_at: t.started_at ? new Date(t.started_at) : null,
-        completed_at: t.completed_at ? new Date(t.completed_at) : null,
+        started_at: parseOptionalDate(t.started_at),
+        completed_at: parseOptionalDate(t.completed_at),
         interrupted: t.interrupted,
         tool_count: t.tool_count,
         rows: (t.rows ?? []).map((r) => ({
           kind: r.kind,
           text: r.text,
-          timestamp: r.timestamp ? new Date(r.timestamp) : null,
+          timestamp: parseOptionalDate(r.timestamp),
           tool_name: r.tool_name,
           is_error: r.is_error,
         })),

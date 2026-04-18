@@ -702,6 +702,47 @@ if (!(turn.rows[0].timestamp instanceof Date)) {
 assertEqual(turn.rows[1].tool_name, "bash", "row[1] tool_name");
 assertEqual(turn.rows[1].timestamp, null, "row[1] null timestamp");
 
+// Running turn: Go zero-value timestamps should normalize to null so the UI
+// keeps unfinished turns in the running state.
+const runningPresentationPayload = {
+  supported: true,
+  captured_at: "2026-04-17T10:00:00Z",
+  turns: [
+    {
+      id: "turn-running",
+      number: 2,
+      started_at: "2026-04-17T10:00:06Z",
+      completed_at: "0001-01-01T00:00:00Z",
+      interrupted: false,
+      tool_count: 0,
+      rows: [
+        {
+          kind: "thinking",
+          text: "thinking 3.0s",
+          timestamp: "0001-01-01T00:00:00Z",
+          tool_name: "",
+          is_error: false,
+        },
+      ],
+    },
+  ],
+};
+mockFetch(true, 200, JSON.stringify(runningPresentationPayload));
+const runningPresentation = await getInstancePresentation("proj", "agent-running");
+if (!runningPresentation.turns || runningPresentation.turns.length !== 1) {
+  throw new Error("running presentation: expected 1 turn");
+}
+assertEqual(
+  runningPresentation.turns[0].completed_at,
+  null,
+  "running presentation: zero completed_at normalizes to null",
+);
+assertEqual(
+  runningPresentation.turns[0].rows[0].timestamp,
+  null,
+  "running presentation: zero row timestamp normalizes to null",
+);
+
 // supported=false: turns is null — must not throw.
 const unsupportedPayload = {
   supported: false,
