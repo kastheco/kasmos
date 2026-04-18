@@ -97,11 +97,15 @@ export default function AgentPreview({
     }
   }, [presentation.data, isFollowing]);
 
-  // Scroll handler: detect when user scrolls away from bottom.
+  // Scroll handler: keep follow mode in sync with whether the user is at bottom.
   const handleScroll = () => {
     const el = containerRef.current;
     if (!el) return;
     const atBottom = isAtBottom(el.scrollTop, el.clientHeight, el.scrollHeight);
+    if (atBottom && !isFollowingRef.current) {
+      setIsFollowing(true);
+      return;
+    }
     if (!atBottom && isFollowingRef.current) {
       setIsFollowing(false);
     }
