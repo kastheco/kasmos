@@ -83,7 +83,7 @@ risk:
 | permission: allow network access for https://api.render.com                      [y] [n] [always]|
 |--------------------------------------------------------------------------------------------------|
 | > continue with the grouped-turn version                                                         |
-|   enter send   ctrl+j newline   esc unfocus                                   idle prompt        |
+|   enter send   shift+enter newline   esc unfocus                              idle prompt        |
 +--------------------------------------------------------------------------------------------------+
 ```
 
@@ -139,7 +139,7 @@ risk:
 | message                                                                                          |
 | continue with the grouped-turn version                                                           |
 |                                                                                                  |
-| enter send   ctrl+j newline   / for commands                                   prompt ready      |
+| enter send   shift+enter newline   / for commands                              prompt ready      |
 +--------------------------------------------------------------------------------------------------+
 ```
 
@@ -203,7 +203,7 @@ risk:
 |   permission  network access for https://api.render.com                          [y] [n] [all] |
 |--------------------------------------------------------------------------------------------------|
 | > continue with the grouped-turn version                                                        |
-|   enter send   ctrl+j newline   esc unfocus                                   idle prompt       |
+|   enter send   shift+enter newline   esc unfocus                              idle prompt       |
 +--------------------------------------------------------------------------------------------------+
 ```
 

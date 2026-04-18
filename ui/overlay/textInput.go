@@ -9,15 +9,16 @@ import (
 
 // TextInputOverlay represents a text input overlay with state management.
 type TextInputOverlay struct {
-	textarea      textarea.Model
-	Title         string
-	FocusIndex    int // 0 for text input, 1 for enter button
-	Submitted     bool
-	Canceled      bool
-	OnSubmit      func()
-	width, height int
-	multiline     bool
-	styles        Styles
+	textarea          textarea.Model
+	Title             string
+	FocusIndex        int // 0 for text input, 1 for enter button
+	Submitted         bool
+	Canceled          bool
+	OnSubmit          func()
+	width, height     int
+	multiline         bool
+	shiftEnterNewline bool
+	styles            Styles
 }
 
 // NewTextInputOverlay creates a new text input overlay with the given title and initial value.
@@ -52,6 +53,12 @@ func (t *TextInputOverlay) SetMultiline(enabled bool) {
 	t.multiline = enabled
 }
 
+// SetShiftEnterNewline enables Shift+Enter inserting a newline while plain
+// Enter still submits the overlay.
+func (t *TextInputOverlay) SetShiftEnterNewline(enabled bool) {
+	t.shiftEnterNewline = enabled
+}
+
 // SetPlaceholder sets the textarea placeholder text.
 func (t *TextInputOverlay) SetPlaceholder(text string) {
 	t.textarea.Placeholder = text
@@ -74,6 +81,11 @@ func (t *TextInputOverlay) Height() int { return t.height }
 // HandleKey processes a key event and returns the result.
 // Implements the Overlay interface.
 func (t *TextInputOverlay) HandleKey(msg tea.KeyPressMsg) Result {
+	if t.FocusIndex == 0 && t.shiftEnterNewline && msg.Code == tea.KeyEnter && msg.Mod.Contains(tea.ModShift) {
+		t.textarea.InsertString("\n")
+		return Result{}
+	}
+
 	switch msg.String() {
 	case "tab", "shift+tab":
 		t.FocusIndex = (t.FocusIndex + 1) % 2
@@ -148,6 +160,8 @@ func (t *TextInputOverlay) View() string {
 	content += enterButton
 	if t.multiline {
 		content += "  " + t.styles.Muted.Render("tab → enter submit · esc cancel")
+	} else if t.shiftEnterNewline {
+		content += "  " + t.styles.Muted.Render("shift+enter newline · esc cancel")
 	}
 
 	return style.Render(content)

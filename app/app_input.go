@@ -1086,6 +1086,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				m.exitFocusMode()
 				m.state = stateSendPrompt
 				tio := overlay.NewTextInputOverlay("send prompt", seed)
+				tio.SetShiftEnterNewline(true)
 				tio.SetSize(60, 3)
 				m.overlays.Show(tio)
 				return m, nil

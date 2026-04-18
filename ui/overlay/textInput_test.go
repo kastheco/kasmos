@@ -35,6 +35,17 @@ func TestTextInputOverlay_MultilineEnterOnButtonSubmits(t *testing.T) {
 	assert.True(t, result.Submitted)
 }
 
+func TestTextInputOverlay_ShiftEnterInsertsNewlineWhenEnabled(t *testing.T) {
+	ti := NewTextInputOverlay("title", "hello")
+	ti.SetShiftEnterNewline(true)
+
+	result := ti.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift})
+
+	assert.False(t, result.Dismissed)
+	assert.False(t, result.Submitted)
+	assert.Equal(t, "hello\n", ti.textarea.Value())
+}
+
 func TestTextInputOverlay_MultilineEscCancels(t *testing.T) {
 	ti := NewTextInputOverlay("title", "")
 	ti.SetMultiline(true)
@@ -90,4 +101,12 @@ func TestTextInputOverlay_HandlePaste_IgnoredWhenButtonFocused(t *testing.T) {
 
 func TestTextInputOverlay_ImplementsPasteHandler(t *testing.T) {
 	var _ PasteHandler = NewTextInputOverlay("title", "")
+}
+
+func TestTextInputOverlay_View_ShowsShiftEnterHintWhenEnabled(t *testing.T) {
+	ti := NewTextInputOverlay("title", "")
+	ti.SetShiftEnterNewline(true)
+	ti.SetSize(60, 3)
+
+	assert.Contains(t, ti.View(), "shift+enter newline")
 }

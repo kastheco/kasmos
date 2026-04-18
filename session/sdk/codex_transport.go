@@ -59,6 +59,9 @@ const (
 	codexNotifyTurnPlanUpdated        = "turn/plan/updated"
 	codexNotifyTurnDiffUpdated        = "turn/diff/updated"
 	codexNotifyCommandExecOutputDelta = "item/commandExecution/outputDelta"
+	codexNotifyFileChangeOutputDelta  = "item/fileChange/outputDelta"
+	codexNotifyHookStarted            = "hook/started"
+	codexNotifyHookCompleted          = "hook/completed"
 
 	// Server -> client requests.
 	codexRequestCommandApproval     = "item/commandExecution/requestApproval"
@@ -555,7 +558,10 @@ func (t *CodexTransport) translateNotification(n Notification) (*Event, error) {
 		codexNotifyServerRequestDone,
 		codexNotifyTurnPlanUpdated,
 		codexNotifyTurnDiffUpdated,
-		codexNotifyCommandExecOutputDelta:
+		codexNotifyCommandExecOutputDelta,
+		codexNotifyFileChangeOutputDelta,
+		codexNotifyHookStarted,
+		codexNotifyHookCompleted:
 		return nil, nil
 
 	case codexNotifyTurnStarted:
