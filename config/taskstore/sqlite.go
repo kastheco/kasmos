@@ -258,6 +258,24 @@ func migrateAddContentColumn(db *sql.DB) error {
 // already-existing bare-slug entry, so the migration is safe to run on
 // databases that were partially updated.
 func migrateStripMdSuffix(db *sql.DB) error {
+	// Short-circuit when there is nothing to migrate so we don't open a write
+	// transaction on an already-clean DB. Opening a write tx fails with SQLite
+	// error 8 (SQLITE_READONLY) when the caller is running under a filesystem
+	// sandbox that only permits reads (observed with `kas task show` invoked
+	// from inside the codex SDK sandbox). Counting via a read-only SELECT is
+	// safe in that environment because WAL reads don't require write access.
+	var pending int
+	if err := db.QueryRow(
+		"SELECT " +
+			"(SELECT COUNT(*) FROM tasks WHERE filename LIKE '%.md') + " +
+			"(SELECT COUNT(*) FROM subtasks WHERE plan_filename LIKE '%.md')",
+	).Scan(&pending); err != nil {
+		return fmt.Errorf("count .md-suffixed rows: %w", err)
+	}
+	if pending == 0 {
+		return nil
+	}
+
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin strip .md suffix transaction: %w", err)

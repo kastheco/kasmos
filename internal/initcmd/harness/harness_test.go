@@ -1,7 +1,10 @@
 package harness
 
 import (
+	"bytes"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,6 +12,41 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func runCLIToolsEnforcementScript(t *testing.T, command string) (int, string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "enforce-cli-tools.sh")
+	require.NoError(t, os.WriteFile(scriptPath, []byte(CLIToolsEnforcementScript), 0o755))
+
+	jqPath := filepath.Join(dir, "jq")
+	const fakeJQ = `#!/bin/sh
+input=$(cat)
+prefix='{"tool_input":{"command":"'
+suffix='"}}'
+input=${input#"$prefix"}
+input=${input%"$suffix"}
+printf '%s' "$input"
+`
+	require.NoError(t, os.WriteFile(jqPath, []byte(fakeJQ), 0o755))
+
+	cmd := exec.Command("bash", scriptPath)
+	cmd.Env = append(os.Environ(), "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	cmd.Stdin = strings.NewReader(fmt.Sprintf(`{"tool_input":{"command":"%s"}}`, command))
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err == nil {
+		return 0, stderr.String()
+	}
+
+	var exitErr *exec.ExitError
+	require.ErrorAs(t, err, &exitErr)
+	return exitErr.ExitCode(), stderr.String()
+}
 
 func TestNewRegistry(t *testing.T) {
 	r := NewRegistry()
@@ -149,6 +187,32 @@ func TestClaudeAdapter_InstallEnforcement(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, strings.Count(string(data2), "enforce-cli-tools.sh"),
 		"must not duplicate hook entry on re-run")
+}
+
+func TestCLIToolsEnforcementScript_SSHRemoteCommands(t *testing.T) {
+	t.Run("blocks local grep", func(t *testing.T) {
+		code, stderr := runCLIToolsEnforcementScript(t, "grep foo")
+		assert.Equal(t, 2, code)
+		assert.Contains(t, stderr, "BLOCKED: 'grep' is banned")
+	})
+
+	t.Run("allows remote grep inside ssh command", func(t *testing.T) {
+		code, stderr := runCLIToolsEnforcementScript(t, "ssh host 'printf foo | grep foo'")
+		assert.Equal(t, 0, code)
+		assert.Empty(t, stderr)
+	})
+
+	t.Run("still blocks local grep after ssh pipeline", func(t *testing.T) {
+		code, stderr := runCLIToolsEnforcementScript(t, "ssh host 'printf foo | grep foo' | grep foo")
+		assert.Equal(t, 2, code)
+		assert.Contains(t, stderr, "BLOCKED: 'grep' is banned")
+	})
+
+	t.Run("keeps blocking local shell expansion before ssh", func(t *testing.T) {
+		code, stderr := runCLIToolsEnforcementScript(t, "ssh host $(grep foo)")
+		assert.Equal(t, 2, code)
+		assert.Contains(t, stderr, "BLOCKED: 'grep' is banned")
+	})
 }
 
 func TestClaudeAdapter_InstallEnforcement_PreservesExisting(t *testing.T) {

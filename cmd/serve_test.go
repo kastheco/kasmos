@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	stdlog "log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,6 +20,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/internal/livepreview"
+	kaslog "github.com/kastheco/kasmos/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -87,6 +91,134 @@ func TestServeCmd_RepoAndDBMutuallyExclusive(t *testing.T) {
 	err := cmd.Execute()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "mutually exclusive")
+}
+
+func TestWrapServeMCPRequestLogging_EnabledLogsRPCMethodAndPreservesBody(t *testing.T) {
+	t.Setenv("KASMOS_MCP_REQUEST_LOG", "1")
+
+	var logBuf bytes.Buffer
+	prevLogger := kaslog.InfoLog
+	kaslog.InfoLog = stdlog.New(&logBuf, "", 0)
+	t.Cleanup(func() { kaslog.InfoLog = prevLogger })
+
+	var seenBody string
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		seenBody = string(body)
+		w.WriteHeader(http.StatusAccepted)
+	})
+
+	h := wrapServeMCPRequestLogging(next)
+	reqBody := `{"jsonrpc":"2.0","id":7,"method":"tools/list"}`
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Mcp-Session-Id", "session-123")
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	assert.JSONEq(t, reqBody, seenBody)
+	assert.Contains(t, logBuf.String(), "mcp http request")
+	assert.Contains(t, logBuf.String(), "rpc_method=tools/list")
+	assert.Contains(t, logBuf.String(), "session=session-123")
+	assert.Contains(t, logBuf.String(), "http_method=POST")
+}
+
+func TestWrapServeMCPRequestLogging_DisabledLeavesHandlerTransparent(t *testing.T) {
+	t.Setenv("KASMOS_MCP_REQUEST_LOG", "0")
+
+	var logBuf bytes.Buffer
+	prevLogger := kaslog.InfoLog
+	kaslog.InfoLog = stdlog.New(&logBuf, "", 0)
+	t.Cleanup(func() { kaslog.InfoLog = prevLogger })
+
+	var seenBody string
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		seenBody = string(body)
+		_, _ = w.Write([]byte("ok"))
+	})
+
+	h := wrapServeMCPRequestLogging(next)
+	reqBody := `{"jsonrpc":"2.0","id":8,"method":"initialize"}`
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.JSONEq(t, reqBody, seenBody)
+	assert.Empty(t, logBuf.String())
+}
+
+func TestWrapServeMCPRequestLogging_EnabledFallsBackWhenKaslogUninitialized(t *testing.T) {
+	t.Setenv("KASMOS_MCP_REQUEST_LOG", "1")
+
+	prevLogger := kaslog.InfoLog
+	kaslog.InfoLog = nil
+	t.Cleanup(func() { kaslog.InfoLog = prevLogger })
+
+	var fallbackBuf bytes.Buffer
+	prevFallback := serveMCPFallbackLogger
+	serveMCPFallbackLogger = stdlog.New(&fallbackBuf, "", 0)
+	t.Cleanup(func() { serveMCPFallbackLogger = prevFallback })
+
+	h := wrapServeMCPRequestLogging(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":9,"method":"initialize"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	assert.Contains(t, fallbackBuf.String(), "mcp http request")
+	assert.Contains(t, fallbackBuf.String(), "rpc_method=initialize")
+}
+
+func TestNewServeMCPHTTPHandler_OnlyServesExactMCPPath(t *testing.T) {
+	t.Setenv("KASMOS_MCP_REQUEST_LOG", "0")
+
+	var calls []string
+	h := newServeMCPHTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.URL.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	t.Run("exact /mcp delegates", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{}`))
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusNoContent, rec.Code)
+		require.Equal(t, []string{"/mcp"}, calls)
+	})
+
+	t.Run("well-known root path returns 404", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server/mcp", nil)
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusNotFound, rec.Code)
+		require.Equal(t, []string{"/mcp"}, calls)
+	})
+
+	t.Run("nested /mcp path returns 404", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/mcp/.well-known/oauth-authorization-server", nil)
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusNotFound, rec.Code)
+		require.Equal(t, []string{"/mcp"}, calls)
+	})
 }
 
 func TestServeCmd_ProjectValidationMiddleware404(t *testing.T) {
@@ -763,11 +895,50 @@ func TestNewServeAPIRootMux_SendRouteRegistered(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
+// TestNewServeAPIRootMux_PresentationRouteRegistered verifies that
+// GET /v1/projects/{project}/instances/{title}/presentation is routed to previewAPI.
+func TestNewServeAPIRootMux_PresentationRouteRegistered(t *testing.T) {
+	called := false
+	previewAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux := testServePreviewMux(t, previewAPI)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/myproj/instances/agent1/presentation", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	assert.True(t, called, "previewAPI must be called for GET /instances/{title}/presentation")
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// TestNewServeAPIRootMux_PermissionRouteRegistered verifies that
+// POST /v1/projects/{project}/instances/{title}/permission is routed to previewAPI.
+func TestNewServeAPIRootMux_PermissionRouteRegistered(t *testing.T) {
+	called := false
+	previewAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux := testServePreviewMux(t, previewAPI)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/myproj/instances/agent1/permission",
+		strings.NewReader(`{"choice":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	assert.True(t, called, "previewAPI must be called for POST /instances/{title}/permission")
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
 // ---------------------------------------------------------------------------
 // Config route registration tests
 // ---------------------------------------------------------------------------
 
-// testServeConfigMux builds a root mux with the given configAPI wired in.
 func testServeConfigMux(t *testing.T, configAPI http.Handler) *http.ServeMux {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "config_mux_test.db")
@@ -781,8 +952,6 @@ func testServeConfigMux(t *testing.T, configAPI http.Handler) *http.ServeMux {
 	return newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI, http.NotFoundHandler(), configAPI)
 }
 
-// TestNewServeAPIRootMux_ConfigGetRouteRegistered verifies that
-// GET /v1/projects/{project}/config is routed to configAPI.
 func TestNewServeAPIRootMux_ConfigGetRouteRegistered(t *testing.T) {
 	called := false
 	configAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -800,8 +969,6 @@ func TestNewServeAPIRootMux_ConfigGetRouteRegistered(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
-// TestNewServeAPIRootMux_ConfigPutRouteRegistered verifies that
-// PUT /v1/projects/{project}/config is routed to configAPI.
 func TestNewServeAPIRootMux_ConfigPutRouteRegistered(t *testing.T) {
 	called := false
 	configAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -820,8 +987,6 @@ func TestNewServeAPIRootMux_ConfigPutRouteRegistered(t *testing.T) {
 	assert.Equal(t, http.StatusNoContent, rec.Code)
 }
 
-// TestNewServeAPIRootMux_ScaffoldSyncRouteRegistered verifies that
-// POST /v1/projects/{project}/scaffold-sync is routed to configAPI.
 func TestNewServeAPIRootMux_ScaffoldSyncRouteRegistered(t *testing.T) {
 	called := false
 	configAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -840,8 +1005,6 @@ func TestNewServeAPIRootMux_ScaffoldSyncRouteRegistered(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
-// TestNewServeAPIRootMux_ConfigRouteDoesNotClobberTaskRoutes verifies that
-// config routes do not intercept task, instance, or audit-events routes.
 func TestNewServeAPIRootMux_ConfigRouteDoesNotClobberTaskRoutes(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "no_clobber.db")
 	sharedDB, store, gw, logger, err := openServeSQLiteBackends(dbPath)
@@ -859,9 +1022,8 @@ func TestNewServeAPIRootMux_ConfigRouteDoesNotClobberTaskRoutes(t *testing.T) {
 	auditAPI := auditlog.NewHandler(logger)
 	actionsAPI := taskactions.NewHandler(store, gw)
 
-	// configAPI that would interfere if incorrectly registered.
 	configAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusTeapot) // sentinel: should never be hit
+		w.WriteHeader(http.StatusTeapot)
 	})
 
 	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI, http.NotFoundHandler(), configAPI)
@@ -878,7 +1040,6 @@ func TestNewServeAPIRootMux_ConfigRouteDoesNotClobberTaskRoutes(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/v1/projects/"+project+"/instances", nil)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
-		// previewAPI is http.NotFoundHandler() → 404, not 418.
 		assert.NotEqual(t, http.StatusTeapot, rec.Code)
 	})
 
@@ -890,8 +1051,6 @@ func TestNewServeAPIRootMux_ConfigRouteDoesNotClobberTaskRoutes(t *testing.T) {
 	})
 }
 
-// TestNewServeAPIRootMux_ConfigAPIEndToEnd proves that the real configAPI
-// handler is correctly wired: a GET /config returns the config.toml content.
 func TestNewServeAPIRootMux_ConfigAPIEndToEnd(t *testing.T) {
 	repoRoot := t.TempDir()
 	kasDir := filepath.Join(repoRoot, ".kasmos")

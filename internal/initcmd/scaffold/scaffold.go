@@ -293,11 +293,37 @@ func EnsureClaudeMCPEntry(dir string) (WriteResult, error) {
 
 // codexMCPBlock returns the desired TOML text for the kasmos entry in
 // .codex/config.toml. Codex CLI's native format is [mcp_servers.NAME]; HTTP
-// transport is supported natively via the url key. The server-level
-// default_tools_approval_mode = "approve" eliminates per-call approval prompts
-// for all kasmos MCP tools without requiring an explicit per-tool allow-list.
+// transport is supported natively via the url key.
+//
+// default_tools_approval_mode uses the "auto" variant of codex's
+// AppToolApproval enum ("auto"|"prompt"|"approve"). "auto" lets every
+// kasmos MCP tool call run without pestering the operator; "approve"
+// would force codex to fire an approval request for every call, which
+// kasmos's transport silently rejects — agents then saw the rejection
+// as "user rejected MCP tool call" and fell back to shell CLIs. We trust
+// our own in-process MCP server, so auto-approve is safe.
 func codexMCPBlock() string {
-	return fmt.Sprintf("[mcp_servers.kasmos]\nurl = %q\ndefault_tools_approval_mode = \"approve\"\n", sharedKasmosMCPURL)
+	return fmt.Sprintf("[mcp_servers.kasmos]\nurl = %q\ndefault_tools_approval_mode = \"auto\"\n", sharedKasmosMCPURL)
+}
+
+func codexSandboxModeLine() string {
+	return `sandbox_mode = "workspace-write"`
+}
+
+func codexSandboxWorkspaceWriteBlock() string {
+	return "[sandbox_workspace_write]\nnetwork_access = true\n"
+}
+
+func codexSandboxConfigUpToDate(parsed map[string]any) bool {
+	if sandboxMode, _ := parsed["sandbox_mode"].(string); sandboxMode != "workspace-write" {
+		return false
+	}
+	sandboxTable, ok := parsed["sandbox_workspace_write"].(map[string]any)
+	if !ok {
+		return false
+	}
+	networkAccess, ok := sandboxTable["network_access"].(bool)
+	return ok && networkAccess
 }
 
 // codexMCPEntryUpToDate reports whether a parsed .codex/config.toml already
@@ -305,6 +331,9 @@ func codexMCPBlock() string {
 // approval mode set and no stale stdio keys or per-tool override subtables left
 // over from older scaffolds.
 func codexMCPEntryUpToDate(parsed map[string]any) bool {
+	if !codexSandboxConfigUpToDate(parsed) {
+		return false
+	}
 	servers, ok := parsed["mcp_servers"].(map[string]any)
 	if !ok {
 		return false
@@ -316,7 +345,7 @@ func codexMCPEntryUpToDate(parsed map[string]any) bool {
 	if url, _ := entry["url"].(string); url != sharedKasmosMCPURL {
 		return false
 	}
-	if approvalMode, _ := entry["default_tools_approval_mode"].(string); approvalMode != "approve" {
+	if approvalMode, _ := entry["default_tools_approval_mode"].(string); approvalMode != "auto" {
 		return false
 	}
 	if _, hasCmd := entry["command"]; hasCmd {
@@ -362,6 +391,20 @@ func isCodexKasmosManagedHeader(line string) bool {
 	return isCodexKasmosHeader(line) || isCodexKasmosDescendantHeader(line)
 }
 
+func isCodexSandboxWorkspaceWriteHeader(line string) bool {
+	trimmed := stripTOMLLineComment(line)
+	return trimmed == "[sandbox_workspace_write]" || strings.HasPrefix(trimmed, "[sandbox_workspace_write.")
+}
+
+func isCodexSandboxModeLine(line string) bool {
+	trimmed := stripTOMLLineComment(line)
+	if !strings.HasPrefix(trimmed, "sandbox_mode") {
+		return false
+	}
+	remainder := strings.TrimSpace(strings.TrimPrefix(trimmed, "sandbox_mode"))
+	return strings.HasPrefix(remainder, "=")
+}
+
 func isTOMLTableHeader(line string) bool {
 	trimmed := stripTOMLLineComment(line)
 	if !strings.HasPrefix(trimmed, "[") {
@@ -370,15 +413,63 @@ func isTOMLTableHeader(line string) bool {
 	return strings.HasSuffix(trimmed, "]")
 }
 
+func appendCodexSandboxConfig(out []string) []string {
+	if len(out) > 0 && strings.TrimSpace(out[len(out)-1]) != "" {
+		out = append(out, "")
+	}
+	out = append(out, codexSandboxModeLine(), "")
+	out = append(out, strings.Split(strings.TrimRight(codexSandboxWorkspaceWriteBlock(), "\n"), "\n")...)
+	out = append(out, "")
+	return out
+}
+
+func trimTrailingBlankLines(lines []string) []string {
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
+}
+
+func patchCodexSandboxTOML(existing string) string {
+	if existing == "" {
+		return codexSandboxModeLine() + "\n\n" + codexSandboxWorkspaceWriteBlock()
+	}
+
+	lines := strings.Split(existing, "\n")
+	out := make([]string, 0, len(lines)+6)
+	inserted := false
+	for i := 0; i < len(lines); {
+		if isCodexSandboxModeLine(lines[i]) {
+			i++
+			continue
+		}
+		if isCodexSandboxWorkspaceWriteHeader(lines[i]) {
+			i++
+			for i < len(lines) && !isTOMLTableHeader(lines[i]) {
+				i++
+			}
+			continue
+		}
+		if !inserted && isTOMLTableHeader(lines[i]) {
+			out = appendCodexSandboxConfig(trimTrailingBlankLines(out))
+			inserted = true
+		}
+		out = append(out, lines[i])
+		i++
+	}
+	if !inserted {
+		out = appendCodexSandboxConfig(trimTrailingBlankLines(out))
+	}
+	return strings.Join(trimTrailingBlankLines(out), "\n")
+}
+
 // patchCodexTOML returns updated TOML text with the kasmos mcp_servers block
 // replaced (or appended) to the desired content. Any stale descendant kasmos
 // table blocks are removed wherever they appear in the file. Comments,
 // ordering, and unrelated sections are preserved verbatim.
 func patchCodexTOML(existing string) string {
+	existing = patchCodexSandboxTOML(existing)
 	desired := codexMCPBlock()
-	if existing == "" {
-		return desired
-	}
 	lines := strings.Split(existing, "\n")
 	desiredLines := strings.Split(strings.TrimRight(desired, "\n"), "\n")
 	var out []string

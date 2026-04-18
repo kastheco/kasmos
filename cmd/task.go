@@ -895,14 +895,19 @@ Deprecated aliases: readiness-approved (→ verify-approved), readiness-changes 
 	implementCmd.Flags().IntVar(&waveNum, "wave", 1, "wave number to trigger (default: 1)")
 	planCmd.AddCommand(implementCmd)
 
+	var showProject string
 	showCmd := &cobra.Command{
 		Use:   "show <plan-file>",
 		Short: "print plan content from the task store",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, project, err := resolveRepoInfo()
+			_, repoProject, err := resolveRepoInfo()
 			if err != nil {
 				return err
+			}
+			project := repoProject
+			if showProject != "" {
+				project = showProject
 			}
 			return withAuthoritativeStore(project, func(store taskstore.Store) error {
 				content, err := executeTaskShow(project, args[0], store)
@@ -914,6 +919,7 @@ Deprecated aliases: readiness-approved (→ verify-approved), readiness-changes 
 			})
 		},
 	}
+	showCmd.Flags().StringVar(&showProject, "project", "", "project name (default: derived from current directory)")
 	planCmd.AddCommand(showCmd)
 
 	var deleteYes bool

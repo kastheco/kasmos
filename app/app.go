@@ -1019,9 +1019,37 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, func() tea.Msg {
 			daemonManagedRepo := repoManagedByDaemon(repoPath)
+			var daemonClient *daemonpkg.SocketClient
+			if daemonManagedRepo && project != "" {
+				daemonClient = daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath())
+			}
 			results := make([]instanceMetadata, 0, len(snapshots))
 			for _, inst := range snapshots {
-				if !inst.Started() || inst.Paused() {
+				if inst.Paused() {
+					continue
+				}
+				// Daemon-managed SDK placeholders have no local
+				// executionSession, so inst.CollectMetadata() short-
+				// circuits on !inst.Started(). Instead, pull the pane
+				// content from the daemon's own renderer buffer via the
+				// control-socket API so the TUI preview reflects what the
+				// agent is actually doing.
+				if daemonClient != nil && !inst.Started() && session.NormalizeExecutionMode(inst.ExecutionMode) == session.ExecutionModeSDK {
+					content, err := daemonClient.CaptureInstance(project, inst.Title, "", "")
+					if err != nil {
+						results = append(results, instanceMetadata{Title: inst.Title})
+						continue
+					}
+					results = append(results, instanceMetadata{
+						Title:           inst.Title,
+						Content:         content,
+						ContentCaptured: content != "",
+						Updated:         content != inst.CachedContent,
+						TmuxAlive:       true,
+					})
+					continue
+				}
+				if !inst.Started() {
 					continue
 				}
 				md := inst.CollectMetadata()
@@ -1079,7 +1107,15 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if !status.Active {
 							continue
 						}
-						if existing, exists := knownInstances[title]; exists && existing != nil && existing.Started() && !existing.Exited && !existing.Paused() {
+						// Skip the restore only when the locally-tracked instance is
+						// ACTUALLY live — Started()+!Exited+!Paused alone only reflects
+						// the in-memory bookkeeping, which can lie after a daemon
+						// restart (the subprocess the TUI thought was running died with
+						// the daemon; the tmux-wrapper stayed Started=true in memory).
+						// Also verify executionSession.DoesSessionExist so a corpse
+						// in-memory doesn't shadow a freshly-spawned daemon instance
+						// under the same title.
+						if existing, exists := knownInstances[title]; exists && existing != nil && existing.Started() && !existing.Exited && !existing.Paused() && existing.TmuxAlive() {
 							continue
 						}
 						inst, err := restoreDaemonInstance(repoPath, status)
@@ -1644,7 +1680,13 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			for _, existing := range m.nav.GetInstances() {
 				if existing.Title == inst.Title {
-					if existing.Started() && !existing.Exited && !existing.Paused() {
+					// Same title, locally-tracked instance is Started and not
+					// Paused/Exited — BUT also verify the underlying session is
+					// actually alive. A stale in-memory Started=true can survive
+					// a daemon restart (SDK subprocess died with the daemon, or
+					// tmux session was reaped externally) and silently shadow a
+					// freshly-spawned replacement under the same title.
+					if existing.Started() && !existing.Exited && !existing.Paused() && existing.TmuxAlive() {
 						exists = true
 						break
 					}
@@ -1675,6 +1717,12 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Loading placeholders are created when the daemon reports an instance as
 		// loading; if the daemon later reports it inactive (spawn failed) or the
 		// placeholder has been stuck for >30s, remove it so the UI doesn't freeze.
+		// The inactive branch is gated by a short grace period because the daemon
+		// flips active asynchronously after registering the title — without the
+		// grace, slow-to-start agents (e.g. planner with a heavyweight model and
+		// skill load) get evicted within ~1s of spawn, before they ever go active.
+		const loadingPlaceholderInactiveGrace = 5 * time.Second
+		const loadingPlaceholderMaxAge = 30 * time.Second
 		if msg.DaemonManagedRepo {
 			activeDaemonTitles := make(map[string]struct{}, len(msg.DaemonInstances))
 			for _, inst := range msg.DaemonInstances {
@@ -1692,10 +1740,12 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				_, daemonKnows := daemonTitleSet[existing.Title]
 				_, daemonActive := activeDaemonTitles[existing.Title]
-				stale := !existing.CreatedAt.IsZero() && time.Since(existing.CreatedAt) > 30*time.Second
-				if daemonKnows && (!daemonActive || stale) {
+				age := time.Since(existing.CreatedAt)
+				notReadyYet := !daemonActive && !existing.CreatedAt.IsZero() && age > loadingPlaceholderInactiveGrace
+				stale := !existing.CreatedAt.IsZero() && age > loadingPlaceholderMaxAge
+				if daemonKnows && (notReadyYet || stale) {
 					log.WarningLog.Printf("expiring stale loading placeholder %q (daemon_known=%v daemon_active=%v age=%v)",
-						existing.Title, daemonKnows, daemonActive, time.Since(existing.CreatedAt).Round(time.Second))
+						existing.Title, daemonKnows, daemonActive, age.Round(time.Second))
 					m.nav.RemoveByTitle(existing.Title)
 					m.removeFromAllInstances(existing.Title)
 					m.toastManager.Error(fmt.Sprintf("'%s' failed to start — check .kasmos/logs/ for details", existing.Title))
@@ -1941,10 +1991,16 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// and allows cleanup. Covers solo agents, reviewers, and any
 			// other instance whose tmux session disappears while the TUI runs.
 			for _, inst := range m.nav.GetInstances() {
+				alive, collected := tmuxAliveMap[inst.Title]
+				// Clear Exited when a transient TmuxAlive=false (e.g. tmux server
+				// still warming up post-reboot) got latched in a prior tick but
+				// the session is now responsive. Mirrors daemon.monitorRunningInstances.
+				if collected && alive && inst.Exited {
+					inst.Exited = false
+				}
 				if inst.Exited || inst.Paused() {
 					continue
 				}
-				alive, collected := tmuxAliveMap[inst.Title]
 				if collected && !alive {
 					inst.Exited = true
 					if inst.Status == session.Running {
@@ -1987,11 +2043,26 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							if stillSpawning {
 								continue // wait for async start to complete
 							}
+							// Instance was dismissed (e.g. via k+k+k) or never re-hydrated
+							// after a restart. If the store says the subtask is already
+							// done, honor that — otherwise the rebuilt orchestrator would
+							// flip a previously-completed wave into the failed-wave dialog.
+							if m.isSubtaskPersistedComplete(planFile, task.Number) {
+								orch.MarkTaskComplete(task.Number)
+								continue
+							}
 							orch.MarkTaskFailed(task.Number)
 							continue
 						}
 						if inst.Paused() {
-							// Paused task instances are treated as failures.
+							// A paused row that did real work (or is persisted complete
+							// in the store) is a completed task, not a failure — wave
+							// advance pauses finished tasks by design.
+							if inst.HasWorked || m.isSubtaskPersistedComplete(planFile, task.Number) {
+								orch.MarkTaskComplete(task.Number)
+								inst.ImplementationComplete = true
+								continue
+							}
 							orch.MarkTaskFailed(task.Number)
 							continue
 						}
@@ -2454,6 +2525,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.instance != nil && msg.instance.Started() {
 			i := msg.instance
 			return m, func() tea.Msg {
+				if handled, err := m.daemonRoutePermissionResponse(i, tmux.PermissionAllowAlways); handled {
+					return err
+				}
 				i.SendPermissionResponse(tmux.PermissionAllowAlways)
 				return nil
 			}

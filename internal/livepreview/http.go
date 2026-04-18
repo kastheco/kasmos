@@ -30,6 +30,11 @@ var ErrPreviewUnavailable = errors.New("live preview requires kas serve --repo")
 // usage while keeping memory bounded under abuse.
 const maxSendBodyBytes = 64 * 1024
 
+// maxPermissionBodyBytes caps the JSON body of POST /permission. Permission
+// payloads are tiny, so a 4 KiB limit is ample and keeps memory bounded under
+// abuse just like the send path.
+const maxPermissionBodyBytes = 4 * 1024
+
 // ErrDaemonUnavailable signals to the list/capture handlers that the daemon
 // socket is not reachable. Returning this error from a DaemonInstanceLister
 // causes the handler to fall back to state.json-only results instead of
@@ -79,6 +84,28 @@ type DaemonSender interface {
 	// Returns ErrDaemonUnavailable when the socket is unreachable; returns
 	// *DaemonActionClientError to preserve the daemon's HTTP status code.
 	SendInstancePrompt(project, title, prompt string) error
+}
+
+// DaemonPresenter is implemented by the daemon adapter to retrieve the
+// structured turn-grouped presentation model for daemon-tracked instances. It
+// is obtained via type assertion on DaemonInstanceLister.
+type DaemonPresenter interface {
+	// CapturePresentation returns the structured presentation response for the
+	// named instance via the daemon. Returns ErrDaemonUnavailable when the
+	// socket is unreachable; returns *DaemonActionClientError to preserve the
+	// daemon's HTTP status code.
+	CapturePresentation(project, title string) (api.PresentationResponse, error)
+}
+
+// DaemonPermissionResponder is implemented by the daemon adapter to forward a
+// user's permission choice to a daemon-tracked instance. It is obtained via
+// type assertion on DaemonInstanceLister.
+type DaemonPermissionResponder interface {
+	// SendInstancePermissionResponse delivers the user's permission choice to
+	// the named instance via the daemon. Returns ErrDaemonUnavailable when the
+	// socket is unreachable; returns *DaemonActionClientError to preserve the
+	// daemon's HTTP status code.
+	SendInstancePermissionResponse(project, title string, choice api.PermissionChoice) error
 }
 
 // DaemonInstanceLister is the abstraction the live-preview HTTP handler uses
@@ -193,14 +220,18 @@ func NewHTTPHandler(resolve ProjectRootResolver, runner PaneRunner) http.Handler
 func NewHTTPHandlerWithDaemon(resolve ProjectRootResolver, runner PaneRunner, daemonLister DaemonInstanceLister, daemonActions DaemonInstanceActioner) http.Handler {
 	mux := http.NewServeMux()
 
-	// Extract optional daemon capturer/sender via type assertion. Real adapters
-	// (daemonInstanceLister in cmd/) implement all four interfaces; lightweight
+	// Extract optional daemon capabilities via type assertion. Real adapters
+	// (daemonInstanceLister in cmd/) implement all interfaces; lightweight
 	// test stubs typically only implement the subset they need.
 	var daemonCapturer DaemonCapturer
 	var daemonSender DaemonSender
+	var daemonPresenter DaemonPresenter
+	var daemonPermissionResponder DaemonPermissionResponder
 	if daemonLister != nil {
 		daemonCapturer, _ = daemonLister.(DaemonCapturer)
 		daemonSender, _ = daemonLister.(DaemonSender)
+		daemonPresenter, _ = daemonLister.(DaemonPresenter)
+		daemonPermissionResponder, _ = daemonLister.(DaemonPermissionResponder)
 	}
 
 	loadMergedRecords := func(project, root string) ([]Record, error) {
@@ -458,6 +489,141 @@ func NewHTTPHandlerWithDaemon(resolve ProjectRootResolver, runner PaneRunner, da
 			return
 		}
 
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	// GET /v1/projects/{project}/instances/{title}/presentation
+	// Returns the structured turn-grouped presentation model for an instance.
+	//
+	//   - Daemon-managed rows: forward to the daemon via daemonPresenter.
+	//   - Standalone tmux rows: return 200 with supported=false so the browser
+	//     gets a uniform envelope instead of a 404 or error.
+	//   - Standalone SDK/headless rows: return 409 — structured preview is only
+	//     available for daemon-managed instances.
+	mux.HandleFunc("GET /v1/projects/{project}/instances/{title}/presentation", func(w http.ResponseWriter, r *http.Request) {
+		title := r.PathValue("title")
+		if strings.TrimSpace(title) == "" {
+			writeJSONError(w, http.StatusBadRequest, "missing title")
+			return
+		}
+		project := r.PathValue("project")
+
+		root, err := resolve(project)
+		if err != nil {
+			writeResolverError(w, err)
+			return
+		}
+
+		records, err := loadMergedRecords(project, root)
+		if err != nil {
+			slog.Error("failed to load instance records", "project", project, "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "failed to load instance records")
+			return
+		}
+
+		rec, err := FindRecord(records, title)
+		if err != nil {
+			writeJSONError(w, http.StatusNotFound, err.Error())
+			return
+		}
+
+		if rec.ManagedByDaemon {
+			if daemonPresenter == nil {
+				writeJSONError(w, http.StatusInternalServerError, "daemon presenter not configured")
+				return
+			}
+			resp, perr := daemonPresenter.CapturePresentation(project, rec.Title)
+			if perr != nil {
+				mapDaemonActionError(w, perr)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
+
+		// Standalone non-tmux (SDK/headless) rows have no daemon and no tmux
+		// pane — structured preview is unavailable.
+		if isStandaloneNonTmux(rec) {
+			writeJSONError(w, http.StatusConflict, "structured preview unavailable for standalone sdk instances")
+			return
+		}
+
+		// Standalone tmux row: synthesize an unsupported envelope so the browser
+		// gets a consistent response shape rather than a 404.
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(api.PresentationResponse{
+			Supported:  false,
+			Turns:      nil,
+			CapturedAt: time.Now().UTC(),
+		})
+	})
+
+	// POST /v1/projects/{project}/instances/{title}/permission
+	// Forwards a user's permission choice to a daemon-managed instance.
+	// Returns 204 on success. Only valid for daemon-managed rows; standalone
+	// instances return 409 because there is no web permission path without a
+	// daemon owning the process.
+	mux.HandleFunc("POST /v1/projects/{project}/instances/{title}/permission", func(w http.ResponseWriter, r *http.Request) {
+		title := r.PathValue("title")
+		if strings.TrimSpace(title) == "" {
+			writeJSONError(w, http.StatusBadRequest, "missing title")
+			return
+		}
+		project := r.PathValue("project")
+
+		r.Body = http.MaxBytesReader(w, r.Body, maxPermissionBodyBytes)
+
+		var body struct {
+			Choice api.PermissionChoice `json:"choice"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			var maxErr *http.MaxBytesError
+			if errors.As(err, &maxErr) {
+				writeJSONError(w, http.StatusRequestEntityTooLarge, "permission body too large")
+				return
+			}
+			writeJSONError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		if !body.Choice.Valid() {
+			writeJSONError(w, http.StatusBadRequest, "invalid permission choice")
+			return
+		}
+
+		root, err := resolve(project)
+		if err != nil {
+			writeResolverError(w, err)
+			return
+		}
+
+		records, err := loadMergedRecords(project, root)
+		if err != nil {
+			slog.Error("failed to load instance records", "project", project, "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "failed to load instance records")
+			return
+		}
+
+		rec, err := FindRecord(records, title)
+		if err != nil {
+			writeJSONError(w, http.StatusNotFound, err.Error())
+			return
+		}
+
+		if !rec.ManagedByDaemon {
+			writeJSONError(w, http.StatusConflict, "permission responses are only available for daemon-managed instances; standalone instances have no web permission path")
+			return
+		}
+
+		if daemonPermissionResponder == nil {
+			writeJSONError(w, http.StatusInternalServerError, "daemon permission responder not configured")
+			return
+		}
+
+		if perr := daemonPermissionResponder.SendInstancePermissionResponse(project, rec.Title, body.Choice); perr != nil {
+			mapDaemonActionError(w, perr)
+			return
+		}
 		w.WriteHeader(http.StatusNoContent)
 	})
 

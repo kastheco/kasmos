@@ -166,6 +166,12 @@ type ClaudeTransport struct {
 	// request. It is the empty string when no permission is pending. Multiple
 	// consecutive requests replace the previous value without queuing.
 	pendingPermID string
+	// pendingPermDesc / pendingPermPattern mirror the EventPermission payload
+	// so PendingPermission() can surface the prompt to the TUI without having
+	// to re-parse renderer output. Cleared together with pendingPermID when a
+	// response is sent.
+	pendingPermDesc    string
+	pendingPermPattern string
 	// turnActive is true while the agent is processing a response turn.
 	turnActive bool
 }
@@ -284,6 +290,18 @@ func (t *ClaudeTransport) Interrupt(ctx context.Context) error {
 	return t.client.Call(ctx, claudeMethodInterrupt, claudeInterruptParams{}, nil)
 }
 
+// PendingPermission returns the description + pattern of the Claude
+// permission request currently awaiting a response. Returns ok=false when
+// no request is pending.
+func (t *ClaudeTransport) PendingPermission() (description, pattern string, ok bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.pendingPermID == "" {
+		return "", "", false
+	}
+	return t.pendingPermDesc, t.pendingPermPattern, true
+}
+
 // RespondPermission forwards the operator's decision for the most recent
 // permission request to Claude.
 //
@@ -298,6 +316,8 @@ func (t *ClaudeTransport) RespondPermission(ctx context.Context, choice tmux.Per
 		return nil
 	}
 	t.pendingPermID = ""
+	t.pendingPermDesc = ""
+	t.pendingPermPattern = ""
 	t.mu.Unlock()
 
 	if err := t.guardClient(); err != nil {
@@ -482,6 +502,8 @@ func (t *ClaudeTransport) translateNotification(n Notification) (*Event, error) 
 		// Replace (not queue) the pending permission request with the newest one.
 		t.mu.Lock()
 		t.pendingPermID = p.PermissionID
+		t.pendingPermDesc = p.Description
+		t.pendingPermPattern = p.Pattern
 		t.mu.Unlock()
 		return &Event{
 			Kind:                  EventPermission,

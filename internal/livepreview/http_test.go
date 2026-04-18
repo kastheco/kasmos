@@ -908,14 +908,20 @@ func TestHTTPHandler_Capture_HeadlessInstance(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // fakeDaemonAdapter implements DaemonInstanceLister, DaemonInstanceActioner,
-// DaemonCapturer, and DaemonSender for testing the daemon-backed capture/send
-// routes in NewHTTPHandlerWithDaemon.
+// DaemonCapturer, DaemonSender, DaemonPresenter, and DaemonPermissionResponder
+// for testing the daemon-backed routes in NewHTTPHandlerWithDaemon.
 type fakeDaemonAdapter struct {
 	listRecords   []Record
 	listErr       error
 	captureOutput string
 	captureErr    error
 	sendErr       error
+
+	presentationResp api.PresentationResponse
+	presentationErr  error
+
+	permissionErr        error
+	sentPermissionChoice api.PermissionChoice
 
 	capturedProject, capturedTitle, capturedStart, capturedEnd string
 	sentProject, sentTitle, sentPrompt                         string
@@ -1046,6 +1052,25 @@ func TestHTTPHandler_Send_DaemonBacked_DaemonError(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "instance is loading")
 }
 
+// ---------------------------------------------------------------------------
+// Presentation and Permission handlers
+// ---------------------------------------------------------------------------
+
+// Extend fakeDaemonAdapter with DaemonPresenter and DaemonPermissionResponder.
+
+func (f *fakeDaemonAdapter) CapturePresentation(project, title string) (api.PresentationResponse, error) {
+	f.capturedProject = project
+	f.capturedTitle = title
+	return f.presentationResp, f.presentationErr
+}
+
+func (f *fakeDaemonAdapter) SendInstancePermissionResponse(project, title string, choice api.PermissionChoice) error {
+	f.sentProject = project
+	f.sentTitle = title
+	f.sentPermissionChoice = choice
+	return f.permissionErr
+}
+
 // TestHTTPHandler_Send_StandaloneSDK_Rejected verifies that a send request
 // for a standalone (non-daemon) SDK instance is rejected with 409 because
 // the web path has no tmux pane and no daemon to delegate to.
@@ -1065,10 +1090,6 @@ func TestHTTPHandler_Send_StandaloneSDK_Rejected(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "standalone sdk")
 }
 
-// TestWriteResolverError_ProjectNotFound_Returns404 is a regression test that
-// ensures the dynamic resolver returning api.ErrProjectNotFound is mapped to
-// 404 (not 500) by writeResolverError. Without this mapping, dynamic preview
-// resolvers that return typed not-found errors would surface as server errors.
 func TestWriteResolverError_ProjectNotFound_Returns404(t *testing.T) {
 	resolver := func(project string) (string, error) {
 		return "", fmt.Errorf("%w: %s", api.ErrProjectNotFound, project)
@@ -1081,4 +1102,369 @@ func TestWriteResolverError_ProjectNotFound_Returns404(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	assert.Contains(t, rec.Header().Get("Content-Type"), "application/json")
+}
+
+// ---------------------------------------------------------------------------
+// Presentation handler tests
+// ---------------------------------------------------------------------------
+
+// TestHTTPHandler_Presentation_DaemonBacked_HappyPath verifies that a
+// presentation request for a daemon-managed SDK instance is forwarded through
+// the daemon adapter and the response is returned as-is.
+func TestHTTPHandler_Presentation_DaemonBacked_HappyPath(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root) // empty disk; only the daemon has this row
+
+	turns := json.RawMessage(`[{"role":"user","content":"hello"}]`)
+	capturedAt := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
+			{Title: "sdk-agent", Status: StatusRunning, ExecutionMode: "sdk"},
+		},
+		presentationResp: api.PresentationResponse{
+			Supported:  true,
+			Turns:      turns,
+			CapturedAt: capturedAt,
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances/sdk-agent/presentation", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+
+	var resp api.PresentationResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	assert.True(t, resp.Supported)
+	assert.Equal(t, "proj", adapter.capturedProject)
+	assert.Equal(t, "sdk-agent", adapter.capturedTitle)
+}
+
+// TestHTTPHandler_Presentation_DaemonBacked_DaemonError verifies that errors
+// from the daemon presentation path propagate with the correct HTTP status.
+func TestHTTPHandler_Presentation_DaemonBacked_DaemonError(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root)
+
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
+			{Title: "sdk-agent", Status: StatusRunning, ExecutionMode: "sdk"},
+		},
+		presentationErr: &DaemonActionClientError{StatusCode: http.StatusNotFound, Msg: "instance not found"},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances/sdk-agent/presentation", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Contains(t, rec.Body.String(), "instance not found")
+}
+
+// TestHTTPHandler_Presentation_StandaloneTmux_Unsupported verifies that a
+// standalone tmux instance returns 200 with supported=false instead of 404,
+// so the browser gets a uniform envelope whether or not structured preview is
+// available.
+func TestHTTPHandler_Presentation_StandaloneTmux_Unsupported(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "tmux-agent", Status: StatusRunning, ExecutionMode: "tmux"})
+
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances/tmux-agent/presentation", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp api.PresentationResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	assert.False(t, resp.Supported)
+	// Turns is nil or JSON null — either is acceptable for "no turns yet".
+	assert.True(t, resp.Turns == nil || string(resp.Turns) == "null")
+}
+
+// TestHTTPHandler_Presentation_StandaloneTmux_EmptyMode also returns
+// supported=false for records with no explicit ExecutionMode (legacy tmux).
+func TestHTTPHandler_Presentation_StandaloneTmux_EmptyMode(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "legacy-agent", Status: StatusRunning})
+
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances/legacy-agent/presentation", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp api.PresentationResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	assert.False(t, resp.Supported)
+}
+
+// TestHTTPHandler_Presentation_StandaloneSDK_Rejected verifies that a
+// standalone (non-daemon) SDK instance returns 409, because the web path has
+// no daemon to delegate structured preview to.
+func TestHTTPHandler_Presentation_StandaloneSDK_Rejected(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "sdk-standalone", Status: StatusRunning, ExecutionMode: "sdk"})
+
+	// No daemon lister → pure standalone path.
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances/sdk-standalone/presentation", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "standalone sdk")
+}
+
+// TestHTTPHandler_Presentation_URLEncoded verifies that a title with spaces is
+// correctly matched when the path value is URL-decoded by the mux.
+func TestHTTPHandler_Presentation_URLEncoded(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root) // empty disk; daemon has the row
+
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
+			{Title: "my agent", Status: StatusRunning, ExecutionMode: "sdk"},
+		},
+		presentationResp: api.PresentationResponse{Supported: true, Turns: json.RawMessage(`[]`)},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances/my%20agent/presentation", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "my agent", adapter.capturedTitle)
+}
+
+// TestHTTPHandler_Presentation_InstanceNotFound verifies that a 404 is
+// returned when no record matches the title.
+func TestHTTPHandler_Presentation_InstanceNotFound(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "other", Status: StatusRunning})
+
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances/missing/presentation", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// ---------------------------------------------------------------------------
+// Permission handler tests
+// ---------------------------------------------------------------------------
+
+// TestHTTPHandler_Permission_DaemonBacked_HappyPath verifies that a permission
+// POST for a daemon-managed instance is forwarded and returns 204.
+func TestHTTPHandler_Permission_DaemonBacked_HappyPath(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root) // empty disk; daemon has the row
+
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
+			{Title: "sdk-agent", Status: StatusRunning, ExecutionMode: "sdk"},
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/sdk-agent/permission",
+		strings.NewReader(`{"choice":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	assert.Equal(t, "proj", adapter.sentProject)
+	assert.Equal(t, "sdk-agent", adapter.sentTitle)
+	assert.Equal(t, api.PermissionChoice(1), adapter.sentPermissionChoice)
+}
+
+// TestHTTPHandler_Permission_DaemonBacked_DaemonError verifies that daemon
+// errors from SendInstancePermissionResponse propagate with the correct status.
+func TestHTTPHandler_Permission_DaemonBacked_DaemonError(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root)
+
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
+			{Title: "sdk-agent", Status: StatusRunning, ExecutionMode: "sdk"},
+		},
+		permissionErr: &DaemonActionClientError{StatusCode: http.StatusConflict, Msg: "instance is paused"},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/sdk-agent/permission",
+		strings.NewReader(`{"choice":2}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "instance is paused")
+}
+
+// TestHTTPHandler_Permission_StandaloneRow_Rejected verifies that standalone
+// (non-daemon) rows return 409 — there is no web permission path without a daemon.
+func TestHTTPHandler_Permission_StandaloneRow_Rejected(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "tmux-agent", Status: StatusRunning, ExecutionMode: "tmux"})
+
+	// No daemon lister → standalone.
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/tmux-agent/permission",
+		strings.NewReader(`{"choice":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "standalone")
+}
+
+// TestHTTPHandler_Permission_URLEncoded verifies that a title with spaces is
+// correctly matched when the path value is URL-decoded by the mux.
+func TestHTTPHandler_Permission_URLEncoded(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root) // empty disk; daemon has the row
+
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
+			{Title: "my agent", Status: StatusRunning, ExecutionMode: "sdk"},
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/my%20agent/permission",
+		strings.NewReader(`{"choice":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	assert.Equal(t, "my agent", adapter.sentTitle)
+}
+
+// TestHTTPHandler_Permission_InstanceNotFound verifies that a 404 is returned
+// when no record matches the title.
+func TestHTTPHandler_Permission_InstanceNotFound(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root, Record{Title: "other", Status: StatusRunning})
+
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/missing/permission",
+		strings.NewReader(`{"choice":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestHTTPHandler_Presentation_MissingTitle(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root)
+
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances/%20%20/presentation", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "missing title")
+}
+
+// TestHTTPHandler_Permission_MalformedBody verifies that a malformed JSON body
+// returns 400.
+func TestHTTPHandler_Permission_MalformedBody(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root) // empty disk
+
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
+			{Title: "sdk-agent", Status: StatusRunning, ExecutionMode: "sdk"},
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/sdk-agent/permission",
+		strings.NewReader(`not-json`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestHTTPHandler_Permission_MissingTitle(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root)
+
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
+			{Title: "sdk-agent", Status: StatusRunning, ExecutionMode: "sdk"},
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/%20%20/permission",
+		strings.NewReader(`{"choice":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "missing title")
+	assert.Equal(t, "", adapter.sentProject, "missing title must be rejected before hitting the daemon adapter")
+}
+
+// TestHTTPHandler_Permission_InvalidChoice verifies that unknown permission
+// values are rejected before the daemon adapter is called.
+func TestHTTPHandler_Permission_InvalidChoice(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root)
+
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
+			{Title: "sdk-agent", Status: StatusRunning, ExecutionMode: "sdk"},
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/sdk-agent/permission",
+		strings.NewReader(`{"choice":99}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Equal(t, "", adapter.sentProject, "invalid choices must be rejected before hitting the daemon adapter")
+}
+
+func TestHTTPHandler_Permission_OversizedBody(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root)
+
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
+			{Title: "sdk-agent", Status: StatusRunning, ExecutionMode: "sdk"},
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
+	body := `{"choice":0,"padding":"` + strings.Repeat("x", maxPermissionBodyBytes) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/sdk-agent/permission",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+	assert.Contains(t, rec.Body.String(), "permission body too large")
+	assert.Equal(t, "", adapter.sentProject, "oversized bodies must be rejected before hitting the daemon adapter")
 }

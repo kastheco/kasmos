@@ -8,7 +8,7 @@
 // regex is kept as a back-compat fallback for entries produced by older
 // daemons that didn't populate those fields.
 
-import type { InstanceEntry, InstanceStatus } from "../types";
+import type { InstanceEntry, InstanceStatus, Status } from "../types";
 
 export interface AgentPill {
   label: string;
@@ -20,8 +20,17 @@ export interface AgentCardModel {
   title: string;
   /** Deslugified, human-friendly plan / solo name. */
   displayName: string;
-  /** Status pill — drives the top-level badge and grouping. */
+  /** Live instance substatus — still drives the per-card badge. Intentionally
+   *  NOT used for grouping anymore: a running↔ready flicker would reshuffle
+   *  the list on every poll. */
   status: InstanceStatus;
+  /** Plan / task filename this agent is working on, if any. Solo agents
+   *  leave this undefined. Used for grouping + sorting. */
+  taskFile?: string;
+  /** Wave number (1-based), if this is a wave task agent. */
+  waveNumber?: number;
+  /** Task number (1-based), if this is a wave task agent. */
+  taskNumber?: number;
   /** Short, space-separated pills (role, wave, task, cycle). */
   pills: AgentPill[];
   /** Optional branch line shown as a dim meta row. */
@@ -32,22 +41,34 @@ export interface AgentCardModel {
   program?: string;
 }
 
-/** Status groups — display order left-to-right / top-to-bottom. */
-export const STATUS_GROUPS: InstanceStatus[] = [
-  "running",
-  "loading",
+/** Task-status groups — display order top-to-bottom. Matches the plan
+ *  lifecycle so running work appears above ready/done work. */
+export const TASK_STATUS_GROUPS: Status[] = [
+  "reviewing",
+  "verifying",
+  "implementing",
+  "planning",
   "ready",
-  "paused",
+  "done",
+  "cancelled",
 ];
 
-/** Section headers shown above each status group. Uses the app's lowercase
+/** Sentinel key for agents with no attached task (solo / ad-hoc agents). */
+export const SOLO_GROUP_KEY = "solo";
+
+/** Section headers shown above each group. Uses the app's lowercase
  *  aesthetic (kasmos CLAUDE.md rule). */
-export const STATUS_GROUP_LABELS: Record<InstanceStatus, string> = {
-  running: "running",
-  loading: "loading",
+export const TASK_STATUS_GROUP_LABELS: Record<Status, string> = {
+  reviewing: "reviewing",
+  verifying: "verifying",
+  implementing: "implementing",
+  planning: "planning",
   ready: "ready",
-  paused: "paused",
+  done: "done",
+  cancelled: "cancelled",
 };
+
+export const SOLO_GROUP_LABEL = "agents";
 
 /** Deslugify a kebab/underscore/dot-separated identifier into a lowercase
  *  space-separated label. Empty input returns "". */
@@ -181,6 +202,15 @@ export function toAgentCardModel(inst: InstanceEntry): AgentCardModel {
     title: inst.title,
     displayName,
     status: inst.status,
+    taskFile: inst.task_file || undefined,
+    waveNumber:
+      typeof inst.wave_number === "number" && inst.wave_number > 0
+        ? inst.wave_number
+        : undefined,
+    taskNumber:
+      typeof inst.task_number === "number" && inst.task_number > 0
+        ? inst.task_number
+        : undefined,
     pills,
     branch: inst.branch || undefined,
     updatedAt: inst.updated_at,
@@ -188,29 +218,73 @@ export function toAgentCardModel(inst: InstanceEntry): AgentCardModel {
   };
 }
 
-/** Group agent cards by status in STATUS_GROUPS order. Empty groups are
- *  dropped so the UI doesn't show "ready (0)" when there's nothing to
- *  render. */
-export function groupAgentsByStatus(
+export interface AgentGroup {
+  /** Machine key — either a plan Status or SOLO_GROUP_KEY. */
+  key: Status | typeof SOLO_GROUP_KEY;
+  /** Human label rendered in the section header. */
+  label: string;
+  cards: AgentCardModel[];
+}
+
+/** Stable compare used within a task-status bucket. Agents for the same plan
+ *  stay together (alphabetical by task_file), then wave number ascending,
+ *  then task number ascending. Ties fall back to title so the order is
+ *  fully deterministic and does not depend on fetch order. */
+function compareAgentsWithinGroup(a: AgentCardModel, b: AgentCardModel): number {
+  const fa = a.taskFile ?? "";
+  const fb = b.taskFile ?? "";
+  if (fa !== fb) return fa.localeCompare(fb);
+  const wa = a.waveNumber ?? Number.MAX_SAFE_INTEGER;
+  const wb = b.waveNumber ?? Number.MAX_SAFE_INTEGER;
+  if (wa !== wb) return wa - wb;
+  const ta = a.taskNumber ?? Number.MAX_SAFE_INTEGER;
+  const tb = b.taskNumber ?? Number.MAX_SAFE_INTEGER;
+  if (ta !== tb) return ta - tb;
+  return a.title.localeCompare(b.title);
+}
+
+/** Group agent cards by the plan lifecycle status of their attached task —
+ *  NOT by the live instance substatus (running / ready / …) which flips on
+ *  every poll tick and was causing visible reshuffling. Agents without a
+ *  task_file (solo / ad-hoc) are collected into a trailing "agents" group.
+ *  Within each group, cards are sorted stably by (task_file, wave, task #).
+ *
+ *  `taskStatusByFile` maps task filename → plan status. Instances whose task
+ *  is not present in the map (task was deleted, or tasks haven't loaded yet)
+ *  fall back to "ready" so they remain visible and group deterministically.
+ */
+export function groupAgentsByTaskStatus(
   agents: AgentCardModel[],
-): { status: InstanceStatus; label: string; cards: AgentCardModel[] }[] {
-  const buckets: Record<InstanceStatus, AgentCardModel[]> = {
-    running: [],
-    loading: [],
-    ready: [],
-    paused: [],
-  };
+  taskStatusByFile: ReadonlyMap<string, Status>,
+): AgentGroup[] {
+  const taskBuckets = new Map<Status, AgentCardModel[]>();
+  for (const s of TASK_STATUS_GROUPS) taskBuckets.set(s, []);
+  const soloBucket: AgentCardModel[] = [];
+
   for (const a of agents) {
-    if (buckets[a.status]) {
-      buckets[a.status].push(a);
-    } else {
-      // Unknown status — drop into running so it stays visible.
-      buckets.running.push(a);
+    if (!a.taskFile) {
+      soloBucket.push(a);
+      continue;
     }
+    const taskStatus = taskStatusByFile.get(a.taskFile) ?? "ready";
+    const bucket = taskBuckets.get(taskStatus) ?? taskBuckets.get("ready")!;
+    bucket.push(a);
   }
-  return STATUS_GROUPS.map((status) => ({
-    status,
-    label: STATUS_GROUP_LABELS[status],
-    cards: buckets[status],
-  })).filter((g) => g.cards.length > 0);
+
+  const groups: AgentGroup[] = [];
+  for (const status of TASK_STATUS_GROUPS) {
+    const cards = taskBuckets.get(status)!;
+    if (cards.length === 0) continue;
+    cards.sort(compareAgentsWithinGroup);
+    groups.push({
+      key: status,
+      label: TASK_STATUS_GROUP_LABELS[status],
+      cards,
+    });
+  }
+  if (soloBucket.length > 0) {
+    soloBucket.sort(compareAgentsWithinGroup);
+    groups.push({ key: SOLO_GROUP_KEY, label: SOLO_GROUP_LABEL, cards: soloBucket });
+  }
+  return groups;
 }

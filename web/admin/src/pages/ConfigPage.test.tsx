@@ -263,6 +263,18 @@ describe("ConfigPage", () => {
     });
   });
 
+  it("scaffold sync rejected promise: renders the error message", async () => {
+    mockRunProjectScaffoldSync.mockRejectedValueOnce(new Error("network down"));
+    render(<ConfigPage />);
+    await waitFor(() => expect(mockGetProjectConfig).toHaveBeenCalledOnce());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "run sync" }));
+    });
+    await waitFor(() => {
+      expect(screen.getByText("network down")).toBeTruthy();
+    });
+  });
+
   // ---- trust confirm flow --------------------------------------------------
 
   it("trust checked: opens confirm dialog before sending request", async () => {

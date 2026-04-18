@@ -14,6 +14,7 @@ stateDiagram-v2
 
     ready --> planning       : plan_start
     ready --> implementing   : implement_start
+    ready --> done           : mark_done
     ready --> cancelled      : cancel
 
     planning --> planning    : plan_start (restart after crash)
@@ -54,6 +55,7 @@ exact transitions from `transitionTable` in `config/taskfsm/fsm.go`:
 |-----------------|--------------------------|----------------|
 | `ready`         | `plan_start`             | `planning`     |
 | `ready`         | `implement_start`        | `implementing` |
+| `ready`         | `mark_done`              | `done`         |
 | `ready`         | `cancel`                 | `cancelled`    |
 | `planning`      | `plan_start`             | `planning`     |
 | `planning`      | `planner_finished`       | `ready`        |

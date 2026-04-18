@@ -108,7 +108,7 @@ func (h *handler) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			writeJSONError(w, http.StatusNotFound, "config.toml not found")
+			writeJSONErrorWithCode(w, http.StatusNotFound, "config.toml not found", "config_not_found")
 			return
 		}
 		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("read config: %v", err))
@@ -157,16 +157,34 @@ func (h *handler) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpPath := filepath.Join(kasDir, "config.toml.tmp")
-	if err := os.WriteFile(tmpPath, body, 0o644); err != nil {
+	tmpFile, err := os.CreateTemp(kasDir, "config.toml.*.tmp")
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("create temp config: %v", err))
+		return
+	}
+	tmpPath := tmpFile.Name()
+	defer func() {
 		_ = os.Remove(tmpPath)
+	}()
+
+	if _, err := tmpFile.Write(body); err != nil {
+		_ = tmpFile.Close()
 		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("write config: %v", err))
+		return
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("close temp config: %v", err))
+		return
+	}
+
+	if err := os.Chmod(tmpPath, 0o644); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("set temp config permissions: %v", err))
 		return
 	}
 
 	finalPath := filepath.Join(kasDir, "config.toml")
 	if err := os.Rename(tmpPath, finalPath); err != nil {
-		_ = os.Remove(tmpPath)
 		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("rename config: %v", err))
 		return
 	}

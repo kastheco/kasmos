@@ -472,7 +472,7 @@ func TestScaffoldAll_CodexWritesCodexMCPConfig(t *testing.T) {
 	kasmos, ok := servers["kasmos"].(map[string]any)
 	require.True(t, ok, "kasmos entry must be present")
 	assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
-	assert.Equal(t, "approve", kasmos["default_tools_approval_mode"], "server-level approval mode must be set")
+	assert.Equal(t, "auto", kasmos["default_tools_approval_mode"], "server-level approval mode must be set")
 	assert.NotContains(t, kasmos, "command", "stdio command key must not be present")
 	assert.NotContains(t, kasmos, "args", "stdio args key must not be present")
 }
@@ -1581,8 +1581,14 @@ func TestSyncScaffold_CodexWritesCodexMCPConfig(t *testing.T) {
 		require.NoError(t, decodeErr)
 		kasmos, ok := parsed["mcp_servers"].(map[string]any)["kasmos"].(map[string]any)
 		require.True(t, ok, "kasmos entry must be present")
+		assert.Equal(t, "workspace-write", parsed["sandbox_mode"],
+			"fresh codex scaffold must opt into workspace-write sandbox mode")
+		sandboxCfg, ok := parsed["sandbox_workspace_write"].(map[string]any)
+		require.True(t, ok, "sandbox_workspace_write table must be present")
+		assert.Equal(t, true, sandboxCfg["network_access"],
+			"workspace-write sandbox must allow network access for the shared MCP endpoint")
 		assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
-		assert.Equal(t, "approve", kasmos["default_tools_approval_mode"], "server-level approval mode must be set")
+		assert.Equal(t, "auto", kasmos["default_tools_approval_mode"], "server-level approval mode must be set")
 		assert.NotContains(t, kasmos, "command")
 		assert.NotContains(t, kasmos, "args")
 	})
@@ -1647,6 +1653,10 @@ func TestEnsureCodexMCPEntry(t *testing.T) {
 		require.NoError(t, decodeErr)
 		kasmos, ok := parsed["mcp_servers"].(map[string]any)["kasmos"].(map[string]any)
 		require.True(t, ok)
+		assert.Equal(t, "workspace-write", parsed["sandbox_mode"])
+		sandboxCfg, ok := parsed["sandbox_workspace_write"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, true, sandboxCfg["network_access"])
 		assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
 	})
 
@@ -1665,6 +1675,49 @@ func TestEnsureCodexMCPEntry(t *testing.T) {
 		after, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
 		require.NoError(t, err)
 		assert.Equal(t, before, after, "file bytes must not change on idempotent ensure")
+	})
+
+	t.Run("refreshes otherwise-correct kasmos entry when sandbox config is missing", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".codex"), 0o755))
+		existing := `# keep this note
+model = "gpt-5.3-codex"
+
+[mcp_servers.kasmos]
+url = "http://127.0.0.1:7434/mcp"
+default_tools_approval_mode = "auto"
+
+[mcp_servers.other]
+command = "/keep/me"
+`
+		cfgPath := filepath.Join(dir, ".codex", "config.toml")
+		require.NoError(t, os.WriteFile(cfgPath, []byte(existing), 0o644))
+
+		result, err := EnsureCodexMCPEntry(dir)
+		require.NoError(t, err)
+		assert.True(t, result.Created, "missing sandbox config must trigger a rewrite")
+
+		data, err := os.ReadFile(cfgPath)
+		require.NoError(t, err)
+		content := string(data)
+		assert.Contains(t, content, "# keep this note")
+		assert.Contains(t, content, `model = "gpt-5.3-codex"`)
+
+		var parsed map[string]any
+		_, decodeErr := toml.Decode(content, &parsed)
+		require.NoError(t, decodeErr)
+		assert.Equal(t, "workspace-write", parsed["sandbox_mode"])
+		sandboxCfg, ok := parsed["sandbox_workspace_write"].(map[string]any)
+		require.True(t, ok, "sandbox_workspace_write table must be inserted")
+		assert.Equal(t, true, sandboxCfg["network_access"])
+
+		servers := parsed["mcp_servers"].(map[string]any)
+		kasmos := servers["kasmos"].(map[string]any)
+		assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
+		assert.Equal(t, "auto", kasmos["default_tools_approval_mode"])
+
+		other := servers["other"].(map[string]any)
+		assert.Equal(t, "/keep/me", other["command"])
 	})
 
 	t.Run("refreshes stale stdio entry and preserves other sections", func(t *testing.T) {
@@ -1779,7 +1832,7 @@ approval_mode = "prompt"
 
 		kasmos := parsed["mcp_servers"].(map[string]any)["kasmos"].(map[string]any)
 		assert.Equal(t, "http://127.0.0.1:7434/mcp", kasmos["url"])
-		assert.Equal(t, "approve", kasmos["default_tools_approval_mode"],
+		assert.Equal(t, "auto", kasmos["default_tools_approval_mode"],
 			"server-level approval mode must be written")
 		assert.NotContains(t, kasmos, "tools", "per-tool subtable must not appear in parsed entry")
 
@@ -1930,6 +1983,12 @@ func TestWriteCodexEnforcementHook_WritesExecutableScript(t *testing.T) {
 	assert.Contains(t, string(body), "#!/bin/bash")
 	assert.Contains(t, string(body), "BLOCKED: 'grep' is banned",
 		"script body must come from the shared enforcement source of truth")
+}
+
+func TestCLIToolsEnforcementTemplate_MatchesSharedScript(t *testing.T) {
+	body, err := templates.ReadFile("templates/claude/enforce-cli-tools.sh")
+	require.NoError(t, err)
+	assert.Equal(t, harness.CLIToolsEnforcementScript, string(body))
 }
 
 // TestEnsureCodexHooksJSON exercises the hooks.json merge logic: fresh create,

@@ -35,6 +35,7 @@ const (
 	codexMethodInitialized   = "initialized"
 	codexMethodThreadStart   = "thread/start"
 	codexMethodTurnStart     = "turn/start"
+	codexMethodTurnSteer     = "turn/steer"
 	codexMethodTurnInterrupt = "turn/interrupt"
 
 	// Server -> client notifications.
@@ -46,11 +47,39 @@ const (
 	codexNotifyItemCompleted     = "item/completed"
 	codexNotifyAgentMessageDelta = "item/agentMessage/delta"
 
+	// Known-benign notifications emitted by codex-cli 0.121 that have no
+	// observable effect on our rendering. We swallow them silently rather
+	// than surfacing "[system: codex: unknown notification ...]" lines into
+	// the agent pane on every tick.
+	codexNotifyMcpStartupStatus       = "mcpServer/startupStatus/updated"
+	codexNotifyThreadStatus           = "thread/status/changed"
+	codexNotifyAccountRateLimits      = "account/rateLimits/updated"
+	codexNotifyThreadTokenUsage       = "thread/tokenUsage/updated"
+	codexNotifyServerRequestDone      = "serverRequest/resolved"
+	codexNotifyTurnPlanUpdated        = "turn/plan/updated"
+	codexNotifyTurnDiffUpdated        = "turn/diff/updated"
+	codexNotifyCommandExecOutputDelta = "item/commandExecution/outputDelta"
+	codexNotifyFileChangeOutputDelta  = "item/fileChange/outputDelta"
+	codexNotifyHookStarted            = "hook/started"
+	codexNotifyHookCompleted          = "hook/completed"
+
 	// Server -> client requests.
 	codexRequestCommandApproval     = "item/commandExecution/requestApproval"
 	codexRequestPermissionsApproval = "item/permissions/requestApproval"
 
-	codexHandshakeTimeout = 10 * time.Second
+	// Known server requests we cannot service. We reply with JSON-RPC
+	// method-not-found and suppress the pane-visible error line that
+	// would otherwise fire every time codex asked.
+	codexRequestElicitation = "mcpServer/elicitation/request"
+
+	// codexHandshakeTimeout covers initialize + initialized + thread/start.
+	// thread/start synchronously sets up codex's HTTP MCP clients for any
+	// server configured in .codex/config.toml, and measurements on codex-cli
+	// 0.121 show this takes 15-18s against a local kasmos MCP endpoint
+	// (codex's own MCP init blocks thread/start, not kasmos — the kasmos
+	// server itself goes starting→ready in <50ms). 45s leaves >2x headroom
+	// over the observed ceiling without hiding a truly wedged handshake.
+	codexHandshakeTimeout = 45 * time.Second
 )
 
 type codexProcess interface {
@@ -95,6 +124,16 @@ type codexUserInput struct {
 type codexTurnStartParams struct {
 	ThreadID string           `json:"threadId"`
 	Input    []codexUserInput `json:"input"`
+}
+
+// codexTurnSteerParams injects input into an already-running turn rather
+// than starting a new one. expectedTurnId must match the active turn id
+// or codex fails the request, so the caller is responsible for reading
+// currentTurnID under the transport mutex before making the call.
+type codexTurnSteerParams struct {
+	ThreadID       string           `json:"threadId"`
+	ExpectedTurnID string           `json:"expectedTurnId"`
+	Input          []codexUserInput `json:"input"`
 }
 
 type codexTurnStartResult struct {
@@ -186,6 +225,11 @@ type codexPendingApproval struct {
 	ID          int64
 	Kind        codexPendingApprovalKind
 	Permissions json.RawMessage
+	// Description and Pattern mirror the rendered EventPermission payload so
+	// PendingPermission() can answer without re-walking the approval params.
+	// Populated at request time; cleared when RespondPermission fires.
+	Description string
+	Pattern     string
 }
 
 // CodexTransport implements Transport for the OpenAI Codex CLI running in
@@ -197,6 +241,15 @@ type CodexTransport struct {
 
 	closed    chan struct{}
 	closeOnce sync.Once
+
+	// autoApprove mirrors LaunchConfig.SkipPermissions for the lifetime of
+	// this transport. When true, we reply "accept" to every approval
+	// server-request from codex without surfacing a pane modal, matching
+	// the user's declared intent when SkipPermissions was set. Codex
+	// sometimes fires these even with approvalPolicy="never" — e.g. when
+	// its sandbox blocks an OS-level call (AF_UNIX pipes, network) and it
+	// wants the operator to re-run unsandboxed.
+	autoApprove bool
 
 	mu              sync.Mutex
 	threadID        string
@@ -231,6 +284,8 @@ func (t *CodexTransport) Start(ctx context.Context, cfg LaunchConfig) error {
 		return fmt.Errorf("codex transport: start process: %w", err)
 	}
 	t.client = NewClient(stdin, stdout)
+
+	t.autoApprove = cfg.SkipPermissions
 
 	if err := t.startHandshake(ctx, cfg); err != nil {
 		_ = t.client.Close()
@@ -300,18 +355,45 @@ func (t *CodexTransport) SendPrompt(ctx context.Context, prompt string) error {
 
 	t.mu.Lock()
 	threadID := t.threadID
+	activeTurnID := t.currentTurnID
 	t.mu.Unlock()
 	if strings.TrimSpace(threadID) == "" {
 		return fmt.Errorf("codex transport: no thread id")
 	}
 
+	input := []codexUserInput{{Type: "text", Text: prompt}}
+
+	// Steer the running turn when one exists; only start a fresh turn
+	// when the agent is idle. Without this, user-typed prompts during an
+	// active turn called turn/start, which codex rejects or silently
+	// ignores because the thread already has an in-flight turn — i.e.
+	// "interactive input doesn't appear to do anything".
+	if strings.TrimSpace(activeTurnID) != "" {
+		err := t.client.Call(ctx, codexMethodTurnSteer, codexTurnSteerParams{
+			ThreadID:       threadID,
+			ExpectedTurnID: activeTurnID,
+			Input:          input,
+		}, nil)
+		if err == nil {
+			return nil
+		}
+		// Fall through to turn/start if steer failed. A likely cause is
+		// expectedTurnId drift (the original turn completed between the
+		// mutex read and the call) — in that case starting a new turn is
+		// the right fallback rather than silently dropping the prompt.
+		// Emit the transient failure as a system event so the user can
+		// see in the pane that a steer was retried as a fresh turn.
+		t.emit(Event{
+			Kind:      EventSystem,
+			Text:      fmt.Sprintf("turn/steer failed (%v), starting new turn", err),
+			Timestamp: time.Now(),
+		})
+	}
+
 	var turnResult codexTurnStartResult
 	err := t.client.Call(ctx, codexMethodTurnStart, codexTurnStartParams{
 		ThreadID: threadID,
-		Input: []codexUserInput{{
-			Type: "text",
-			Text: prompt,
-		}},
+		Input:    input,
 	}, &turnResult)
 	if err != nil {
 		return fmt.Errorf("codex transport: turn/start: %w", err)
@@ -342,6 +424,17 @@ func (t *CodexTransport) Interrupt(ctx context.Context) error {
 		ThreadID: threadID,
 		TurnID:   turnID,
 	}, nil)
+}
+
+// PendingPermission returns the description + pattern of the pending
+// approval, if any. Returns ok=false when no approval is in flight.
+func (t *CodexTransport) PendingPermission() (description, pattern string, ok bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.pendingApproval == nil {
+		return "", "", false
+	}
+	return t.pendingApproval.Description, t.pendingApproval.Pattern, true
 }
 
 // RespondPermission replies to the most recent pending approval request.
@@ -457,7 +550,18 @@ func (t *CodexTransport) translateNotification(n Notification) (*Event, error) {
 	now := time.Now()
 
 	switch n.Method {
-	case codexNotifyThreadStarted:
+	case codexNotifyThreadStarted,
+		codexNotifyMcpStartupStatus,
+		codexNotifyThreadStatus,
+		codexNotifyAccountRateLimits,
+		codexNotifyThreadTokenUsage,
+		codexNotifyServerRequestDone,
+		codexNotifyTurnPlanUpdated,
+		codexNotifyTurnDiffUpdated,
+		codexNotifyCommandExecOutputDelta,
+		codexNotifyFileChangeOutputDelta,
+		codexNotifyHookStarted,
+		codexNotifyHookCompleted:
 		return nil, nil
 
 	case codexNotifyTurnStarted:
@@ -551,13 +655,29 @@ func (t *CodexTransport) handleServerRequest(req ServerRequest) error {
 		if err := json.Unmarshal(req.Params, &p); err != nil {
 			return fmt.Errorf("unmarshal %s: %w", req.Method, err)
 		}
+		if t.autoApprove {
+			// Daemon-spawned agents run with SkipPermissions=true — the
+			// operator has declared up front that these should run
+			// unattended. Reply "accept" directly instead of stalling the
+			// turn on a modal the user has no reason to see. Codex fires
+			// these even with approvalPolicy="never" when its sandbox
+			// blocks an OS-level call (tsx ipc pipe, http, etc.).
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			return t.client.Reply(ctx, req.ID, map[string]any{"decision": "accept"})
+		}
+		desc := codexCommandApprovalDescription(p)
 		t.mu.Lock()
-		t.pendingApproval = &codexPendingApproval{ID: req.ID, Kind: codexApprovalCommand}
+		t.pendingApproval = &codexPendingApproval{
+			ID:          req.ID,
+			Kind:        codexApprovalCommand,
+			Description: desc,
+		}
 		t.mu.Unlock()
 		t.emit(Event{
 			Kind:                  EventPermission,
 			TurnID:                p.TurnID,
-			PermissionDescription: codexCommandApprovalDescription(p),
+			PermissionDescription: desc,
 			Timestamp:             now,
 		})
 		return nil
@@ -567,19 +687,64 @@ func (t *CodexTransport) handleServerRequest(req ServerRequest) error {
 		if err := json.Unmarshal(req.Params, &p); err != nil {
 			return fmt.Errorf("unmarshal %s: %w", req.Method, err)
 		}
+		if t.autoApprove {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			return t.client.Reply(ctx, req.ID, codexPermissionsApprovalResponse(tmux.PermissionAllowAlways, p.Permissions))
+		}
+		desc := codexPermissionsApprovalDescription(p)
 		t.mu.Lock()
 		t.pendingApproval = &codexPendingApproval{
 			ID:          req.ID,
 			Kind:        codexApprovalPermissions,
 			Permissions: p.Permissions,
+			Description: desc,
 		}
 		t.mu.Unlock()
 		t.emit(Event{
 			Kind:                  EventPermission,
 			TurnID:                p.TurnID,
-			PermissionDescription: codexPermissionsApprovalDescription(p),
+			PermissionDescription: desc,
 			Timestamp:             now,
 		})
+		return nil
+
+	case codexRequestElicitation:
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		preview := string(req.Params)
+		if len(preview) > 200 {
+			preview = preview[:200] + "…"
+		}
+		t.emit(Event{
+			Kind:      EventSystem,
+			Text:      fmt.Sprintf("elicitation req autoApprove=%v params=%s", t.autoApprove, preview),
+			Timestamp: time.Now(),
+		})
+		// Codex forwards mcpServer/elicitation/request to the client for
+		// every kasmos MCP tool invocation even when the server-level
+		// default_tools_approval_mode is "auto". Previously we replied
+		// -32601 "elicitation not supported", which codex surfaces to the
+		// agent as `"user rejected MCP tool call"` — every kasmos tool
+		// then appeared rejected and the agent bailed to CLI fallbacks.
+		// When the session was launched with SkipPermissions=true (the
+		// daemon-spawned path), auto-accept with an empty content object
+		// so the tool call proceeds. Elicitation responses require an
+		// action field; accept with {} content is the minimum the schema
+		// allows. When SkipPermissions is false, keep the old reject-path
+		// so manual runs still get a visible signal.
+		if t.autoApprove {
+			if err := t.client.Reply(ctx, req.ID, map[string]any{
+				"action":  "accept",
+				"content": map[string]any{},
+			}); err != nil {
+				return fmt.Errorf("accept %s: %w", req.Method, err)
+			}
+			return nil
+		}
+		if err := t.client.ReplyError(ctx, req.ID, -32601, "elicitation not supported"); err != nil {
+			return fmt.Errorf("reject %s: %w", req.Method, err)
+		}
 		return nil
 
 	default:
@@ -681,14 +846,25 @@ func codexToolName(item codexThreadItem) string {
 }
 
 func codexToolResult(item codexThreadItem) string {
-	switch {
-	case len(item.Result) > 0:
+	// Codex 0.121 emits `result: null` on mcpToolCall items whose payload is
+	// carried in `contentItems` instead (e.g. MCP tools that return text
+	// content blocks). Treat the literal JSON null as "no result" so we fall
+	// through to contentItems rather than rendering "[result: null]".
+	if codexRawHasContent(item.Result) {
 		return codexRawString(item.Result)
-	case len(item.ContentItems) > 0:
-		return codexRawString(item.ContentItems)
-	default:
-		return ""
 	}
+	if codexRawHasContent(item.ContentItems) {
+		return codexRawString(item.ContentItems)
+	}
+	return ""
+}
+
+// codexRawHasContent reports whether raw holds a JSON value other than the
+// null literal or whitespace. Used to decide whether a RawMessage should be
+// treated as "present" for rendering priority.
+func codexRawHasContent(raw json.RawMessage) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	return trimmed != "" && trimmed != "null"
 }
 
 func codexRawString(raw json.RawMessage) string {

@@ -25,6 +25,7 @@ func TestTransition_ValidTransitions(t *testing.T) {
 		to    Status
 	}{
 		{StatusReady, PlanStart, StatusPlanning},
+		{StatusReady, MarkDone, StatusDone},         // user-initiated skip when work is obsolete or absorbed elsewhere
 		{StatusPlanning, PlanStart, StatusPlanning}, // restart after crash/interrupt
 		{StatusPlanning, PlannerFinished, StatusReady},
 		{StatusReady, ImplementStart, StatusImplementing},
@@ -64,6 +65,10 @@ func TestTransition_InvalidTransitions(t *testing.T) {
 		{StatusDone, PlanStart},           // terminal
 		{StatusDone, ImplementFinished},   // terminal
 		{StatusCancelled, ImplementStart}, // must reopen first
+		{StatusPlanning, MarkDone},        // mark_done is ready-only
+		{StatusImplementing, MarkDone},
+		{StatusReviewing, MarkDone},
+		{StatusVerifying, MarkDone},
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.from)+"_"+string(tc.event), func(t *testing.T) {
@@ -77,6 +82,7 @@ func TestIsUserOnly(t *testing.T) {
 	assert.True(t, StartOver.IsUserOnly())
 	assert.True(t, Cancel.IsUserOnly())
 	assert.True(t, Reopen.IsUserOnly())
+	assert.True(t, MarkDone.IsUserOnly())
 	assert.False(t, PlannerFinished.IsUserOnly())
 	assert.False(t, ReviewApproved.IsUserOnly())
 }

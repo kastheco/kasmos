@@ -76,6 +76,12 @@ export default function ConfigPage() {
     try {
       const result = await runProjectScaffoldSync(project, { worktrees, trust });
       setSyncResult(result);
+    } catch (err) {
+      setSyncResult({
+        ok: false,
+        output: "",
+        error: err instanceof Error ? err.message : String(err),
+      });
     } finally {
       setSyncRunning(false);
     }

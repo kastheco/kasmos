@@ -9,6 +9,7 @@ import (
 
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session/git"
+	"github.com/kastheco/kasmos/session/sdk"
 	"github.com/kastheco/kasmos/session/tmux"
 )
 
@@ -17,6 +18,15 @@ import (
 func (i *Instance) Preview() (string, error) {
 	if !i.started || i.Status == Paused {
 		return "", nil
+	}
+	if NormalizeExecutionMode(i.ExecutionMode) == ExecutionModeSDK {
+		if turns := i.CapturePresentation(); len(turns) > 0 {
+			width := i.Width
+			if width <= 0 {
+				width = 80
+			}
+			return sdk.RenderPresentation(turns, width), nil
+		}
 	}
 	return i.executionSession.CapturePaneContent()
 }
@@ -67,10 +77,19 @@ func (i *Instance) Attach() (chan struct{}, error) {
 
 // SetPreviewSize resizes the detached pane to the given dimensions.
 // Returns an error if the instance is not started or is paused.
+//
+// SDK-backed sessions have no pty to resize, so SetDetachedSize on them
+// returns ErrInteractiveOnly. Window-resize callers iterate every
+// instance and we don't want a dozen "interactive operation requires
+// tmux execution" lines per resize event in the log — swallow that one
+// expected error so the log stays readable.
 func (i *Instance) SetPreviewSize(width, height int) error {
 	if !i.started || i.Status == Paused {
 		return fmt.Errorf("cannot set preview size for instance that has not been started or " +
 			"is paused")
+	}
+	if NormalizeExecutionMode(i.ExecutionMode) == ExecutionModeSDK {
+		return nil
 	}
 	return i.executionSession.SetDetachedSize(width, height)
 }
@@ -142,6 +161,27 @@ func (i *Instance) Interrupt() error {
 		return fmt.Errorf("instance not started")
 	}
 	return i.executionSession.SendKeys("\x03")
+}
+
+// CapturePresentation returns the structured turn-grouped presentation model
+// for SDK-backed instances. Returns nil for tmux-backed instances or when the
+// instance has not been started. The type assertion follows the same optional-
+// capability pattern as pendingPermissionProvider / CollectMetadata.
+func (i *Instance) CapturePresentation() []*sdk.PresentationTurn {
+	if !i.started || i.executionSession == nil {
+		return nil
+	}
+	if pp, ok := i.executionSession.(presentationProvider); ok {
+		return pp.CapturePresentation()
+	}
+	return nil
+}
+
+// SetExecutionSessionForTest replaces the execution session without starting the
+// instance. Intended for use in tests that need to inject a custom session
+// (e.g. a mock presentationProvider) without spawning real processes.
+func (i *Instance) SetExecutionSessionForTest(exec ExecutionSession) {
+	i.executionSession = exec
 }
 
 // SetTmuxSession replaces the tmux session handle. Intended for use in tests only.
@@ -242,8 +282,19 @@ func (i *Instance) CollectMetadata() InstanceMetadata {
 	// Single capture call shared by hash check, activity parsing, and preview.
 	m.Updated, m.HasPrompt, m.Content, m.ContentCaptured = i.executionSession.HasUpdatedWithContent()
 
-	// Permission prompt detection — only meaningful when content was actually captured.
-	if m.ContentCaptured && m.Content != "" {
+	// Permission prompt detection. SDK transports (claude/codex SDK) carry
+	// structured permission state on the session itself — query that first so
+	// the TUI overlay can fire on SDK sessions, whose renderer output lacks
+	// the tmux-era "enter to submit" footer and numbered menu that
+	// ParsePermissionPrompt relies on. When no direct state is available we
+	// fall back to text-scraping the captured pane content, which is the
+	// tmux-session path.
+	if provider, ok := i.executionSession.(pendingPermissionProvider); ok {
+		if desc, pattern, pending := provider.PendingPermission(); pending {
+			m.PermissionPrompt = &PermissionPrompt{Description: desc, Pattern: pattern}
+		}
+	}
+	if m.PermissionPrompt == nil && m.ContentCaptured && m.Content != "" {
 		m.PermissionPrompt = ParsePermissionPrompt(m.Content, i.Program)
 	}
 

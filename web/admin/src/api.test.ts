@@ -13,8 +13,11 @@ import type { Status, TaskEntry, InstanceEntry } from "./types.ts";
 import {
   normalizeTaskEntry,
   normalizeTaskStatus,
+  normalizeExecutionMode,
   listInstances,
   getInstanceCapture,
+  getInstancePresentation,
+  sendInstancePermission,
   pauseInstance,
   resumeInstance,
   restartInstance,
@@ -580,116 +583,199 @@ assertEqual(
 
 console.log("api.test.ts new helpers ok");
 
-// ---- RequestError.code ------------------------------------------------------
+// ---- normalizeExecutionMode -------------------------------------------------
 
-// RequestError without code has code=undefined
-const reqErrNoCode = new RequestError("bad request", 400);
-if (reqErrNoCode.code !== undefined) {
-  throw new Error("RequestError without code should have code=undefined");
-}
+assertEqual(normalizeExecutionMode("tmux"), "tmux", "tmux passes through");
+assertEqual(normalizeExecutionMode("sdk"), "sdk", "sdk passes through");
+assertEqual(normalizeExecutionMode("headless"), "sdk", "headless normalizes to sdk");
+assertEqual(normalizeExecutionMode(undefined), undefined, "undefined returns undefined");
+assertEqual(normalizeExecutionMode("unknown"), undefined, "unknown returns undefined");
+assertEqual(normalizeExecutionMode(""), undefined, "empty string returns undefined");
 
-// RequestError with code carries it
-const reqErrWithCode = new RequestError("service unavailable", 503, "repo_not_registered");
-assertEqual(reqErrWithCode.code, "repo_not_registered", "RequestError.code");
+console.log("api.test.ts normalizeExecutionMode ok");
 
-// RequestError.code is extracted from JSON body on HTTP error
-mockFetch(false, 503, JSON.stringify({ error: "db only mode", code: "repo_not_registered" }));
-let codeErr: unknown = null;
-try {
-  await listInstances("proj");
-} catch (e) {
-  codeErr = e;
-}
-if (!(codeErr instanceof RequestError)) {
-  throw new Error("HTTP 503 should throw RequestError");
-}
+// ---- listInstances normalizes execution_mode --------------------------------
+
+// headless instance in list response is normalized to sdk
+const headlessInstanceList = [
+  {
+    title: "agent-1",
+    status: "running",
+    branch: "feat/x",
+    program: "claude",
+    execution_mode: "headless",
+  },
+  {
+    title: "agent-2",
+    status: "ready",
+    branch: "feat/y",
+    program: "codex",
+    execution_mode: "tmux",
+  },
+  {
+    title: "agent-3",
+    status: "running",
+    branch: "feat/z",
+    program: "amp",
+  },
+];
+mockFetch(true, 200, JSON.stringify(headlessInstanceList));
+const normalizedInstances = await listInstances("proj");
 assertEqual(
-  (codeErr as RequestError).code,
-  "repo_not_registered",
-  "RequestError.code extracted from JSON body",
+  normalizedInstances[0].execution_mode,
+  "sdk",
+  "listInstances normalizes headless to sdk",
+);
+assertEqual(
+  normalizedInstances[1].execution_mode,
+  "tmux",
+  "listInstances keeps tmux unchanged",
+);
+assertEqual(
+  normalizedInstances[2].execution_mode,
+  undefined,
+  "listInstances maps missing mode to undefined",
 );
 
-// RepoNotRegisteredError is a RequestError with status 503 and code repo_not_registered
-const repoErr = new RepoNotRegisteredError("db only mode");
-assertEqual(repoErr.status, 503, "RepoNotRegisteredError.status");
-assertEqual(repoErr.code, "repo_not_registered", "RepoNotRegisteredError.code");
-assertEqual(repoErr.name, "RepoNotRegisteredError", "RepoNotRegisteredError.name");
-if (!(repoErr instanceof RequestError)) {
-  throw new Error("RepoNotRegisteredError should be an instance of RequestError");
-}
+console.log("api.test.ts listInstances normalization ok");
 
-console.log("api.test.ts RequestError.code tests ok");
+// ---- getInstancePresentation ------------------------------------------------
 
-// ---- getProjectConfig -------------------------------------------------------
-
-// getProjectConfig: 200 returns text body
-mockFetch(true, 200, "[settings]\nkey = \"value\"");
-const gotConfig = await getProjectConfig("my-project");
+// Happy path: supported=true with turns and dates.
+const presentationPayload = {
+  supported: true,
+  captured_at: "2026-04-17T10:00:00Z",
+  turns: [
+    {
+      id: "turn-1",
+      number: 1,
+      started_at: "2026-04-17T10:00:01Z",
+      completed_at: "2026-04-17T10:00:05Z",
+      interrupted: false,
+      tool_count: 2,
+      rows: [
+        {
+          kind: "prose",
+          text: "hello",
+          timestamp: "2026-04-17T10:00:02Z",
+          tool_name: "",
+          is_error: false,
+        },
+        {
+          kind: "tool",
+          text: "run bash",
+          timestamp: null,
+          tool_name: "bash",
+          is_error: false,
+        },
+      ],
+    },
+  ],
+};
+mockFetch(true, 200, JSON.stringify(presentationPayload));
+const gotPresentation = await getInstancePresentation("proj", "agent-1");
 assertEqual(
   _lastFetchedUrl,
-  "/v1/projects/my-project/config",
-  "getProjectConfig fetches correct URL",
+  "/v1/projects/proj/instances/agent-1/presentation",
+  "getInstancePresentation calls correct URL",
 );
-assertEqual(
-  gotConfig,
-  "[settings]\nkey = \"value\"",
-  "getProjectConfig returns text body",
-);
-
-// getProjectConfig: 404 maps to empty string
-mockFetch(false, 404, JSON.stringify({ error: "not found" }));
-const emptyConfig = await getProjectConfig("my-project");
-assertEqual(emptyConfig, "", "getProjectConfig 404 maps to empty string");
-
-// getProjectConfig: 503 + repo_not_registered maps to RepoNotRegisteredError
-mockFetch(false, 503, JSON.stringify({ error: "db only mode", code: "repo_not_registered" }));
-let repoNotRegErr: unknown = null;
-try {
-  await getProjectConfig("my-project");
-} catch (e) {
-  repoNotRegErr = e;
-}
-if (!(repoNotRegErr instanceof RepoNotRegisteredError)) {
-  throw new Error("getProjectConfig 503/repo_not_registered should throw RepoNotRegisteredError");
+assertEqual(gotPresentation.supported, true, "getInstancePresentation: supported");
+if (!(gotPresentation.captured_at instanceof Date)) {
+  throw new Error("getInstancePresentation: captured_at must be a Date");
 }
 assertEqual(
-  (repoNotRegErr as RepoNotRegisteredError).message,
-  "db only mode",
-  "RepoNotRegisteredError preserves message",
+  gotPresentation.captured_at.toISOString(),
+  "2026-04-17T10:00:00.000Z",
+  "getInstancePresentation: captured_at parsed",
+);
+if (!gotPresentation.turns || gotPresentation.turns.length !== 1) {
+  throw new Error("getInstancePresentation: expected 1 turn");
+}
+const turn = gotPresentation.turns[0];
+if (!(turn.started_at instanceof Date)) {
+  throw new Error("getInstancePresentation: turn.started_at must be a Date");
+}
+assertEqual(turn.id, "turn-1", "turn id");
+assertEqual(turn.number, 1, "turn number");
+assertEqual(turn.tool_count, 2, "turn tool_count");
+assertEqual(turn.rows.length, 2, "turn row count");
+assertEqual(turn.rows[0].kind, "prose", "row[0] kind");
+if (!(turn.rows[0].timestamp instanceof Date)) {
+  throw new Error("row[0] timestamp must be a Date");
+}
+assertEqual(turn.rows[1].tool_name, "bash", "row[1] tool_name");
+assertEqual(turn.rows[1].timestamp, null, "row[1] null timestamp");
+
+// Running turn: Go zero-value timestamps should normalize to null so the UI
+// keeps unfinished turns in the running state.
+const runningPresentationPayload = {
+  supported: true,
+  captured_at: "2026-04-17T10:00:00Z",
+  turns: [
+    {
+      id: "turn-running",
+      number: 2,
+      started_at: "2026-04-17T10:00:06Z",
+      completed_at: "0001-01-01T00:00:00Z",
+      interrupted: false,
+      tool_count: 0,
+      rows: [
+        {
+          kind: "thinking",
+          text: "thinking 3.0s",
+          timestamp: "0001-01-01T00:00:00Z",
+          tool_name: "",
+          is_error: false,
+        },
+      ],
+    },
+  ],
+};
+mockFetch(true, 200, JSON.stringify(runningPresentationPayload));
+const runningPresentation = await getInstancePresentation("proj", "agent-running");
+if (!runningPresentation.turns || runningPresentation.turns.length !== 1) {
+  throw new Error("running presentation: expected 1 turn");
+}
+assertEqual(
+  runningPresentation.turns[0].completed_at,
+  null,
+  "running presentation: zero completed_at normalizes to null",
+);
+assertEqual(
+  runningPresentation.turns[0].rows[0].timestamp,
+  null,
+  "running presentation: zero row timestamp normalizes to null",
 );
 
-// getProjectConfig: 503 without code rethrows as RequestError (not RepoNotRegisteredError)
-mockFetch(false, 503, JSON.stringify({ error: "service unavailable" }));
-let other503Err: unknown = null;
+// supported=false: turns is null — must not throw.
+const unsupportedPayload = {
+  supported: false,
+  captured_at: "2026-04-17T10:00:00Z",
+  turns: null,
+};
+mockFetch(true, 200, JSON.stringify(unsupportedPayload));
+const unsupportedPresentation = await getInstancePresentation("proj", "agent-2");
+assertEqual(unsupportedPresentation.supported, false, "unsupported: supported=false");
+assertEqual(unsupportedPresentation.turns, null, "unsupported: turns=null");
+
+// 404 propagates as RequestError.
+mockFetch(false, 404, JSON.stringify({ error: "instance not found" }));
+let presentationErr: unknown = null;
 try {
-  await getProjectConfig("my-project");
+  await getInstancePresentation("proj", "missing");
 } catch (e) {
-  other503Err = e;
+  presentationErr = e;
 }
-if (!(other503Err instanceof RequestError)) {
-  throw new Error("getProjectConfig 503 without code should throw RequestError");
+if (!(presentationErr instanceof RequestError)) {
+  throw new Error("getInstancePresentation 404 should throw RequestError");
 }
-if (other503Err instanceof RepoNotRegisteredError) {
-  throw new Error("getProjectConfig 503 without code must NOT be RepoNotRegisteredError");
-}
+assertEqual((presentationErr as RequestError).status, 404, "getInstancePresentation 404 status");
 
-// getProjectConfig: 500 rethrows as RequestError
-mockFetch(false, 500, JSON.stringify({ error: "internal error" }));
-let configServerErr: unknown = null;
-try {
-  await getProjectConfig("my-project");
-} catch (e) {
-  configServerErr = e;
-}
-if (!(configServerErr instanceof RequestError)) {
-  throw new Error("getProjectConfig 500 should throw RequestError");
-}
+console.log("api.test.ts getInstancePresentation ok");
 
-console.log("api.test.ts getProjectConfig tests ok");
+// ---- sendInstancePermission -------------------------------------------------
 
-// ---- saveProjectConfig ------------------------------------------------------
-
-// Reinstall a tracking stub so _lastFetchedInit is updated by every call.
+// Reinstall the full-tracking stub so _lastFetchedInit is captured.
 (globalThis as Record<string, unknown>).fetch = async (
   input: string | URL | Request,
   init?: RequestInit,
@@ -712,7 +798,171 @@ console.log("api.test.ts getProjectConfig tests ok");
   } as unknown as Response;
 };
 
-// saveProjectConfig: uses PUT with text/plain content-type
+mockFetch(true, 200, "");
+await sendInstancePermission("proj", "agent-1", "allow_once");
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/proj/instances/agent-1/permission",
+  "sendInstancePermission: correct URL",
+);
+assertEqual(
+  (_lastFetchedInit as RequestInit).method,
+  "POST",
+  "sendInstancePermission: POST method",
+);
+assertEqual(
+  JSON.parse((_lastFetchedInit as RequestInit).body as string).choice,
+  0,
+  "sendInstancePermission: allow_once maps to 0",
+);
+
+mockFetch(true, 200, "");
+await sendInstancePermission("proj", "agent-1", "allow_always");
+assertEqual(
+  JSON.parse((_lastFetchedInit as RequestInit).body as string).choice,
+  1,
+  "sendInstancePermission: allow_always maps to 1",
+);
+
+mockFetch(true, 200, "");
+await sendInstancePermission("proj", "agent-1", "reject");
+assertEqual(
+  JSON.parse((_lastFetchedInit as RequestInit).body as string).choice,
+  2,
+  "sendInstancePermission: reject maps to 2",
+);
+
+// 409 propagates as RequestError.
+mockFetch(false, 409, JSON.stringify({ error: "conflict" }));
+let permErr: unknown = null;
+try {
+  await sendInstancePermission("proj", "agent-1", "allow_once");
+} catch (e) {
+  permErr = e;
+}
+if (!(permErr instanceof RequestError)) {
+  throw new Error("sendInstancePermission 409 should throw RequestError");
+}
+assertEqual((permErr as RequestError).status, 409, "sendInstancePermission 409 status");
+
+console.log("api.test.ts sendInstancePermission ok");
+
+// ---- RequestError.code ------------------------------------------------------
+
+const reqErrNoCode = new RequestError("bad request", 400);
+if (reqErrNoCode.code !== undefined) {
+  throw new Error("RequestError without code should have code=undefined");
+}
+
+const reqErrWithCode = new RequestError("service unavailable", 503, "repo_not_registered");
+assertEqual(reqErrWithCode.code, "repo_not_registered", "RequestError.code");
+
+mockFetch(false, 503, JSON.stringify({ error: "db only mode", code: "repo_not_registered" }));
+let codeErr: unknown = null;
+try {
+  await listInstances("proj");
+} catch (e) {
+  codeErr = e;
+}
+if (!(codeErr instanceof RequestError)) {
+  throw new Error("HTTP 503 should throw RequestError");
+}
+assertEqual(
+  (codeErr as RequestError).code,
+  "repo_not_registered",
+  "RequestError.code extracted from JSON body",
+);
+
+const repoErr = new RepoNotRegisteredError("db only mode");
+assertEqual(repoErr.status, 503, "RepoNotRegisteredError.status");
+assertEqual(repoErr.code, "repo_not_registered", "RepoNotRegisteredError.code");
+assertEqual(repoErr.name, "RepoNotRegisteredError", "RepoNotRegisteredError.name");
+if (!(repoErr instanceof RequestError)) {
+  throw new Error("RepoNotRegisteredError should be an instance of RequestError");
+}
+
+console.log("api.test.ts RequestError.code tests ok");
+
+// ---- getProjectConfig -------------------------------------------------------
+
+mockFetch(true, 200, "[settings]\nkey = \"value\"");
+const gotConfig = await getProjectConfig("my-project");
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/my-project/config",
+  "getProjectConfig fetches correct URL",
+);
+assertEqual(
+  gotConfig,
+  "[settings]\nkey = \"value\"",
+  "getProjectConfig returns text body",
+);
+
+mockFetch(false, 404, JSON.stringify({ error: "config.toml not found", code: "config_not_found" }));
+const emptyConfig = await getProjectConfig("my-project");
+assertEqual(emptyConfig, "", "getProjectConfig config_not_found maps to empty string");
+
+mockFetch(false, 404, JSON.stringify({ error: "project not found" }));
+let project404Err: unknown = null;
+try {
+  await getProjectConfig("my-project");
+} catch (e) {
+  project404Err = e;
+}
+if (!(project404Err instanceof RequestError)) {
+  throw new Error("getProjectConfig unknown 404 should throw RequestError");
+}
+assertEqual(
+  (project404Err as RequestError).status,
+  404,
+  "getProjectConfig unknown 404 status",
+);
+
+mockFetch(false, 503, JSON.stringify({ error: "db only mode", code: "repo_not_registered" }));
+let repoNotRegErr: unknown = null;
+try {
+  await getProjectConfig("my-project");
+} catch (e) {
+  repoNotRegErr = e;
+}
+if (!(repoNotRegErr instanceof RepoNotRegisteredError)) {
+  throw new Error("getProjectConfig 503/repo_not_registered should throw RepoNotRegisteredError");
+}
+assertEqual(
+  (repoNotRegErr as RepoNotRegisteredError).message,
+  "db only mode",
+  "RepoNotRegisteredError preserves message",
+);
+
+mockFetch(false, 503, JSON.stringify({ error: "service unavailable" }));
+let other503Err: unknown = null;
+try {
+  await getProjectConfig("my-project");
+} catch (e) {
+  other503Err = e;
+}
+if (!(other503Err instanceof RequestError)) {
+  throw new Error("getProjectConfig 503 without code should throw RequestError");
+}
+if (other503Err instanceof RepoNotRegisteredError) {
+  throw new Error("getProjectConfig 503 without code must NOT be RepoNotRegisteredError");
+}
+
+mockFetch(false, 500, JSON.stringify({ error: "internal error" }));
+let configServerErr: unknown = null;
+try {
+  await getProjectConfig("my-project");
+} catch (e) {
+  configServerErr = e;
+}
+if (!(configServerErr instanceof RequestError)) {
+  throw new Error("getProjectConfig 500 should throw RequestError");
+}
+
+console.log("api.test.ts getProjectConfig tests ok");
+
+// ---- saveProjectConfig ------------------------------------------------------
+
 mockFetch(true, 204, "");
 await saveProjectConfig("my-project", "[settings]\nkey = \"value\"");
 assertEqual(
@@ -732,7 +982,6 @@ assertEqual(
   "saveProjectConfig sends TOML body",
 );
 
-// saveProjectConfig: throws on error
 mockFetch(false, 422, JSON.stringify({ error: "invalid toml" }));
 let saveConfigErr: unknown = null;
 try {
@@ -753,7 +1002,6 @@ console.log("api.test.ts saveProjectConfig tests ok");
 
 // ---- runProjectScaffoldSync -------------------------------------------------
 
-// runProjectScaffoldSync: posts JSON and returns parsed body on success
 mockFetch(true, 200, JSON.stringify({ ok: true, output: "synced" }));
 const syncResult = await runProjectScaffoldSync("my-project", { worktrees: false, trust: false });
 assertEqual(
@@ -765,7 +1013,6 @@ assertEqual(_lastFetchedMethod, "POST", "runProjectScaffoldSync uses POST method
 assertEqual(syncResult.ok, true, "runProjectScaffoldSync returns ok");
 assertEqual(syncResult.output, "synced", "runProjectScaffoldSync returns output");
 
-// runProjectScaffoldSync: always returns body, does not throw on ok:false
 mockFetch(false, 200, JSON.stringify({ ok: false, output: "some output", error: "sync failed" }));
 const failedSync = await runProjectScaffoldSync("my-project", { worktrees: true, trust: true });
 assertEqual(failedSync.ok, false, "runProjectScaffoldSync ok:false does not throw");
@@ -776,7 +1023,6 @@ assertEqual(
   "runProjectScaffoldSync sends correct request body",
 );
 
-// runProjectScaffoldSync: returns parsed body even on non-2xx HTTP status
 mockFetch(false, 500, JSON.stringify({ ok: false, output: "", error: "server crash" }));
 const serverCrashSync = await runProjectScaffoldSync("my-project", { worktrees: false, trust: false });
 assertEqual(serverCrashSync.ok, false, "runProjectScaffoldSync 500 returns parsed body without throwing");

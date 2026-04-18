@@ -3,12 +3,15 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/kastheco/kasmos/session"
+	"github.com/kastheco/kasmos/session/sdk"
 )
 
 var (
@@ -35,6 +38,9 @@ type PreviewPane struct {
 	previewState previewState
 	isScrolling  bool
 	viewport     viewport.Model
+	// lastInstanceKey tracks the most recently rendered instance so inherited
+	// scroll mode can be cleared when the user switches to a different session.
+	lastInstanceKey string
 
 	// bannerFrame is the current animation tick index for the idle banner.
 	bannerFrame int
@@ -183,6 +189,20 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 	if p.isDocument {
 		return nil
 	}
+	instanceKey := ""
+	if instance != nil {
+		if instance.Title != "" {
+			instanceKey = instance.Title
+		} else {
+			instanceKey = fmt.Sprintf("%p", instance)
+		}
+	}
+	if instanceKey != p.lastInstanceKey {
+		p.isScrolling = false
+		p.viewport.SetContent("")
+		p.viewport.GotoTop()
+		p.lastInstanceKey = instanceKey
+	}
 
 	switch {
 	case instance == nil:
@@ -244,7 +264,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 
 	// If in scroll mode but haven't loaded content yet, capture full history now.
 	if p.isScrolling && p.viewport.Height() > 0 && len(p.viewport.View()) == 0 {
-		content, err := instance.PreviewFullHistory()
+		content, err := p.scrollbackContent(instance)
 		if err != nil {
 			return err
 		}
@@ -253,23 +273,26 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		return nil
 	}
 
-	// SDK sessions have no PTY; show cached content when available so the pane
-	// renders structured output without flickering back to the banner between ticks.
-	// When no cached capture is available yet, fall back to a placeholder so
-	// newly selected SDK instances don't display the previously selected
-	// instance's preview content.
+	// SDK sessions have no PTY. Prefer the structured turn-grouped presentation
+	// model (variant-c hierarchy; see docs/agent-sdk-pane-mockups.md). Fall back
+	// to flat cached text, then to a placeholder when no output has arrived yet.
 	if session.NormalizeExecutionMode(instance.ExecutionMode) == session.ExecutionModeSDK {
+		if turns := instance.CapturePresentation(); len(turns) > 0 {
+			p.previewState = previewState{text: renderSDKPresentation(turns, p.width)}
+			p.isRawTerminal = false
+			return nil
+		}
 		if instance.CachedContentSet && instance.CachedContent != "" {
 			p.previewState = previewState{text: instance.CachedContent}
 			p.isRawTerminal = false
-		} else {
-			// Fall back to a placeholder and drop any inherited scroll state so
-			// the viewport stops consuming scroll keys against stale content
-			// from a previously selected tmux instance.
-			p.isScrolling = false
-			p.viewport.SetContent("")
-			p.setFallbackState("waiting for agent output...")
+			return nil
 		}
+		// No output yet — drop any inherited scroll state so the viewport stops
+		// consuming scroll keys against stale content from a previously selected
+		// tmux instance, and show a placeholder.
+		p.isScrolling = false
+		p.viewport.SetContent("")
+		p.setFallbackState("waiting for agent output...")
 		return nil
 	}
 
@@ -332,26 +355,177 @@ func (p *PreviewPane) String() string {
 		return lipgloss.JoinHorizontal(lipgloss.Top, viewContent, scrollbar)
 	}
 
-	// Normal mode: split text, truncate/pad, render.
+	// Normal mode: wrap raw lines to pane width, then tail-slice the wrapped
+	// rows so (a) wide content stays fully readable across multiple visible
+	// rows instead of being clipped off the right edge, and (b) the pane
+	// follows newest output instead of showing startup text forever.
 	availableHeight := p.height
 	if !p.isRawTerminal {
-		availableHeight-- // reserve one row for the ellipsis overflow indicator
+		availableHeight-- // reserve one row for the overflow indicator
 	}
 
-	lines := strings.Split(p.previewState.text, "\n")
+	rows := wrapPreviewRows(p.previewState.text, p.width)
+	overflowed := false
 	if availableHeight > 0 {
-		if len(lines) > availableHeight {
-			lines = lines[:availableHeight]
-			if !p.isRawTerminal {
-				lines = append(lines, "...")
-			}
+		if len(rows) > availableHeight {
+			rows = rows[len(rows)-availableHeight:]
+			overflowed = true
 		} else {
-			padding := availableHeight - len(lines)
-			lines = append(lines, make([]string, padding)...)
+			padding := availableHeight - len(rows)
+			rows = append(rows, make([]string, padding)...)
 		}
 	}
 
-	return previewPaneStyle.Width(p.width).Render(strings.Join(lines, "\n"))
+	if overflowed && !p.isRawTerminal && availableHeight > 0 {
+		// Replace the topmost visible row with an ellipsis marker so the
+		// user knows there is buffered scrollback above the pane.
+		rows[0] = "..."
+	}
+
+	return previewPaneStyle.Width(p.width).Render(strings.Join(rows, "\n"))
+}
+
+// narrowPaneThreshold is the column count below which the SDK pane switches to
+// a compact layout: minimal turn headers, a single-rule response divider, and
+// single-newline separators between turns.
+const narrowPaneThreshold = 40
+
+// renderSDKPresentation converts a slice of PresentationTurns into a single
+// ANSI-styled string ready to store in previewState.text. The timeline uses
+// the variant-c turn-block hierarchy described in docs/agent-sdk-pane-mockups.md:
+// tool/setup noise is visually secondary (muted/subtle) and assistant prose is
+// primary (text colour). A quiet composer footer is appended after the timeline.
+//
+// When width is under narrowPaneThreshold, turns are separated by a single
+// newline instead of a blank line.
+func renderSDKPresentation(turns []*sdk.PresentationTurn, width int) string {
+	return sdk.RenderPresentation(turns, width)
+}
+
+// renderSDKTurn renders one turn block as a slice of styled lines following
+// variant-c colour assignments (see docs/agent-sdk-pane-mockups.md):
+//   - header and tool rows: ColorSubtle (secondary)
+//   - ok-result, system, and thinking rows: ColorMuted (quieter than tools)
+//   - error-result rows: ColorLove
+//   - permission rows: ColorRose (salmon)
+//   - prose rows: ColorText (primary)
+//   - RowResponse sentinel: emits the "─── response ───" divider
+//   - RowStatus (interrupted) rows: ColorGold (warning amber)
+//
+// In narrow mode (width < narrowPaneThreshold):
+//   - the header is reduced to just "turn N" (no elapsed, tool count, running label)
+//   - the response divider collapses to a single muted rule row
+func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
+	narrow := width > 0 && width < narrowPaneThreshold
+	var rows []string
+
+	headerStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
+	if narrow {
+		rows = append(rows, headerStyle.Render(fmt.Sprintf("turn %d", turn.Number)))
+	} else {
+		rows = append(rows, headerStyle.Render(turn.HeaderText(time.Now())))
+	}
+
+	toolStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
+	resultOKStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	resultErrStyle := lipgloss.NewStyle().Foreground(ColorLove)
+	systemStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	permStyle := lipgloss.NewStyle().Foreground(ColorRose)
+	proseStyle := lipgloss.NewStyle().Foreground(ColorText)
+	statusStyle := lipgloss.NewStyle().Foreground(ColorGold)
+	thinkingStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	narrowRuleStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+
+	for _, row := range turn.Rows {
+		switch row.Kind {
+		case sdk.RowTool:
+			rows = append(rows, toolStyle.Render(row.Text))
+		case sdk.RowResult:
+			if row.IsError {
+				rows = append(rows, resultErrStyle.Render(row.Text))
+			} else {
+				rows = append(rows, resultOKStyle.Render(row.Text))
+			}
+		case sdk.RowSystem:
+			rows = append(rows, systemStyle.Render(row.Text))
+		case sdk.RowPermission:
+			rows = append(rows, permStyle.Render(row.Text))
+		case sdk.RowResponse:
+			if narrow {
+				rule := strings.Repeat("─", max(0, width))
+				rows = append(rows, narrowRuleStyle.Render(rule))
+			} else {
+				rows = append(rows, renderResponseDivider(width))
+			}
+		case sdk.RowProse:
+			rows = append(rows, proseStyle.Render(row.Text))
+		case sdk.RowStatus:
+			rows = append(rows, statusStyle.Render(row.Text))
+		case sdk.RowThinking:
+			rows = append(rows, thinkingStyle.Render(row.Text))
+		}
+	}
+	return rows
+}
+
+// renderResponseDivider returns a muted horizontal rule with the literal label
+// "response" — the visual separator between tool/setup noise and assistant prose.
+// See variant-c in docs/agent-sdk-pane-mockups.md.
+func renderResponseDivider(width int) string {
+	const label = " response "
+	labelLen := len([]rune(label))
+	ruleStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	labelStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
+
+	if width <= labelLen+4 {
+		return labelStyle.Render(label)
+	}
+
+	remaining := width - labelLen
+	left := remaining / 2
+	right := remaining - left
+	return ruleStyle.Render(strings.Repeat("─", left)) +
+		labelStyle.Render(label) +
+		ruleStyle.Render(strings.Repeat("─", right))
+}
+
+// renderComposerFooter returns a quiet display-only footer appended below the
+// turn timeline. The send overlay is not plumbed into the pane in this plan.
+func renderComposerFooter(width int) []string {
+	ruleStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	textStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	hintStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
+
+	rule := ""
+	if width > 0 {
+		rule = ruleStyle.Render(strings.Repeat("─", width))
+	}
+	prompt := textStyle.Render("> send a message to the agent …")
+	hints := hintStyle.Render("enter send   shift+enter newline   esc unfocus")
+	return []string{rule, prompt, hints}
+}
+
+// wrapPreviewRows splits text into logical lines, then hard-wraps each line
+// to width using ANSI-aware wrapping. Empty input and non-positive widths
+// are handled by returning the raw split. The returned slice represents
+// visible terminal rows — each entry is guaranteed to render in a single
+// row at the given width, so downstream tail-slicing by count matches what
+// the user actually sees.
+func wrapPreviewRows(text string, width int) []string {
+	lines := strings.Split(text, "\n")
+	if width <= 0 {
+		return lines
+	}
+	rows := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if ansi.StringWidth(line) <= width {
+			rows = append(rows, line)
+			continue
+		}
+		wrapped := ansi.Hardwrap(line, width, false)
+		rows = append(rows, strings.Split(wrapped, "\n")...)
+	}
+	return rows
 }
 
 // buildFallbackText constructs the text for fallback (no active session) rendering.
@@ -456,10 +630,29 @@ func (p *PreviewPane) buildFallbackText() string {
 	}
 }
 
-// enterScrollMode captures the full terminal history and sets up the viewport
+func (p *PreviewPane) scrollbackContent(instance *session.Instance) (string, error) {
+	if instance == nil {
+		return "", nil
+	}
+	if session.NormalizeExecutionMode(instance.ExecutionMode) == session.ExecutionModeSDK {
+		if turns := instance.CapturePresentation(); len(turns) > 0 {
+			width := p.viewport.Width()
+			if width <= 0 {
+				width = p.width
+			}
+			return renderSDKPresentation(turns, width), nil
+		}
+		if instance.CachedContentSet && instance.CachedContent != "" {
+			return instance.CachedContent, nil
+		}
+	}
+	return instance.PreviewFullHistory()
+}
+
+// enterScrollMode captures the full preview history and sets up the viewport
 // for scroll mode. Shared by all scroll entry points.
 func (p *PreviewPane) enterScrollMode(instance *session.Instance) error {
-	content, err := instance.PreviewFullHistory()
+	content, err := p.scrollbackContent(instance)
 	if err != nil {
 		return err
 	}

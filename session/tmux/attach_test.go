@@ -2,7 +2,9 @@ package tmux
 
 import (
 	"os/exec"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/kastheco/kasmos/cmd/cmd_test"
 	"github.com/stretchr/testify/assert"
@@ -47,6 +49,60 @@ func TestUpdateWindowSize_NilPTY(t *testing.T) {
 	assert.Nil(t, s.ptmx)
 	err := s.updateWindowSize(80, 24)
 	assert.NoError(t, err)
+}
+
+// TestDetach_DrainsStdinBeforeRestoringTTY verifies that Detach drains stdin
+// while stdin is still in raw mode, preventing late-arriving terminal query
+// responses (e.g. DA1 replies like "\e[?62;22;52c") from leaking to whatever
+// process reads stdin after kasmos relinquishes the terminal.
+func TestDetach_DrainsStdinBeforeRestoringTTY(t *testing.T) {
+	oldStdinFD := stdinFD
+	oldIsTTY := terminalIsTTY
+	oldMakeRaw := terminalMakeRaw
+	oldRestore := terminalRestore
+	oldDrain := drainStdin
+	defer func() {
+		stdinFD = oldStdinFD
+		terminalIsTTY = oldIsTTY
+		terminalMakeRaw = oldMakeRaw
+		terminalRestore = oldRestore
+		drainStdin = oldDrain
+	}()
+
+	stdinFD = func() int { return 7 }
+	terminalIsTTY = func(int) bool { return true }
+	state := &term.State{}
+	terminalMakeRaw = func(int) (*term.State, error) { return state, nil }
+
+	var mu sync.Mutex
+	var events []string
+	terminalRestore = func(int, *term.State) error {
+		mu.Lock()
+		defer mu.Unlock()
+		events = append(events, "restoreTTY")
+		return nil
+	}
+	drainStdin = func(budget time.Duration) {
+		mu.Lock()
+		defer mu.Unlock()
+		events = append(events, "drainStdin")
+	}
+
+	s := NewTmuxSessionWithDeps("test-detach-drain", "opencode", false,
+		NewMockPtyFactory(t), cmd_test.NewMockExecutor())
+	require.NoError(t, s.enterRawInputMode())
+	// Pretend Attach populated the cancel/wg/attachCh state so Detach walks
+	// the full teardown path instead of early-returning.
+	s.attachCh = make(chan struct{})
+	s.cancel = func() {}
+	s.wg = &sync.WaitGroup{}
+
+	s.Detach()
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, []string{"drainStdin", "restoreTTY"}, events,
+		"stdin must be drained while still in raw mode, before terminalRestore runs")
 }
 
 func TestRawInputMode_RestoresTTYState(t *testing.T) {

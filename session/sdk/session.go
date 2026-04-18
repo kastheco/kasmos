@@ -255,9 +255,31 @@ func (s *Session) SendPermissionResponse(choice tmux.PermissionChoice) error {
 	return tr.RespondPermission(ctx, choice)
 }
 
+// PendingPermission reports whether the underlying transport has an
+// unanswered permission request, and its description + pattern. The TUI
+// uses this to fire a permission overlay on SDK sessions, since SDK output
+// doesn't contain the structural cues (menu + "enter to submit" footer)
+// that the text-scraping permission parser relies on for tmux sessions.
+func (s *Session) PendingPermission() (description, pattern string, ok bool) {
+	s.mu.Lock()
+	tr := s.transport
+	s.mu.Unlock()
+	if tr == nil {
+		return "", "", false
+	}
+	return tr.PendingPermission()
+}
+
 // CapturePaneContent returns the current accumulated output as a string.
 func (s *Session) CapturePaneContent() (string, error) {
 	return s.renderer.Capture(), nil
+}
+
+// CapturePresentation returns a deep copy of the structured turn model built
+// from the events received so far.  Returns nil when no turns have been created.
+// The returned slice and all nested rows are safe for callers to mutate.
+func (s *Session) CapturePresentation() []*PresentationTurn {
+	return s.renderer.CapturePresentation()
 }
 
 // CapturePaneContentWithOptions returns a line-range slice of the accumulated

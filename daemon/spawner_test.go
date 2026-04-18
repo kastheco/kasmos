@@ -349,6 +349,7 @@ func TestTmuxSpawner_SpawnWaveTask_TracksBeforeStartCompletes(t *testing.T) {
 
 	close(release)
 	require.NoError(t, <-errCh)
+	assert.True(t, blockedInst.AwaitingWork, "wave task with a queued startup prompt must wait for real work before completion checks")
 }
 
 // Daemon-spawned agents are unattended by definition, so their instances must

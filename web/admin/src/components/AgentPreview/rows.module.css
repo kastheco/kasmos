@@ -1,0 +1,90 @@
+/* Row rendering — colors match presentation_render.go semantics */
+
+.row {
+  display: flex;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  gap: 10px;
+  padding: 1px 0;
+  min-width: 0;
+}
+
+.rowKind {
+  flex-shrink: 0;
+  width: 88px;
+  text-align: right;
+  font-feature-settings: "tnum" 1;
+  opacity: 0.75;
+  color: inherit;
+  white-space: nowrap;
+}
+
+.rowText {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* kind-specific colors */
+.kindThinking {
+  color: var(--rp-muted);
+}
+
+.kindTool {
+  color: var(--rp-subtle);
+}
+
+.kindResult {
+  color: var(--rp-muted);
+}
+
+.kindResultError {
+  color: var(--rp-love);
+}
+
+.kindSystem {
+  color: var(--rp-muted);
+}
+
+.kindPermission {
+  color: var(--rp-rose);
+}
+
+.kindProse {
+  color: var(--rp-text);
+  white-space: pre-wrap;
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+
+.kindStatus {
+  color: var(--rp-gold);
+}
+
+/* response divider */
+.responseDivider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 4px;
+  min-width: 0;
+}
+
+.responseDividerLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-feature-settings: "tnum" 1;
+  color: var(--rp-subtle);
+  flex-shrink: 0;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+
+.responseDividerRule {
+  flex: 1;
+  border: none;
+  border-top: 1px solid var(--rp-overlay);
+  margin: 0;
+}

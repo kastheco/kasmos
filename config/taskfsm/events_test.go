@@ -31,6 +31,8 @@ func TestEventByName(t *testing.T) {
 		{name: "reimplement", input: "reimplement", wantEvent: Reimplement, wantOK: true},
 		{name: "cancel", input: "cancel", wantEvent: Cancel, wantOK: true},
 		{name: "reopen", input: "reopen", wantEvent: Reopen, wantOK: true},
+		{name: "mark_done", input: "mark_done", wantEvent: MarkDone, wantOK: true},
+		{name: "mark-done hyphen", input: "mark-done", wantEvent: MarkDone, wantOK: true},
 
 		// Canonical alias for ReviewChangesRequested
 		{name: "review_changes_requested alias", input: "review_changes_requested", wantEvent: ReviewChangesRequested, wantOK: true},
@@ -73,6 +75,7 @@ func TestEventNames(t *testing.T) {
 	require.Contains(t, names, "plan_start")
 	require.Contains(t, names, "review_changes")
 	require.Contains(t, names, "cancel")
+	require.Contains(t, names, "mark_done")
 
 	// Must NOT include the alias
 	assert.NotContains(t, names, "review_changes_requested",

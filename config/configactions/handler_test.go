@@ -62,6 +62,10 @@ func TestHandleGetConfig_MissingFile_Returns404(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Contains(t, rec.Header().Get("Content-Type"), "application/json")
+	var body map[string]string
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&body))
+	assert.Equal(t, "config_not_found", body["code"])
 }
 
 func TestHandleGetConfig_RepoNotRegistered_Returns503WithCode(t *testing.T) {

@@ -133,6 +133,11 @@ func TestClaudeAdapter_DetectPrompt(t *testing.T) {
 			content: strings.Join([]string{"No, and tell Claude what to do differently", "Running go test ./..."}, "\n"),
 			want:    false,
 		},
+		{
+			name:    "new composer prompt glyph",
+			content: strings.Join([]string{"Task complete.", "❯"}, "\n"),
+			want:    true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -145,6 +150,42 @@ func TestClaudeAdapter_DetectPrompt(t *testing.T) {
 func TestClaudeAdapter_ReadyTap(t *testing.T) {
 	a := claudeAdapter{}
 	assert.True(t, a.NeedsTrustTap())
+}
+
+func TestClaudeHasStarted(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{
+			name: "trust screen waits for tap",
+			content: strings.Join([]string{
+				"Claude Code v2.1.112",
+				"Do you trust the files in this folder?",
+			}, "\n"),
+			want: false,
+		},
+		{
+			name: "active claude ui counts as started",
+			content: strings.Join([]string{
+				"Claude Code v2.1.112",
+				"/remote-control is active",
+				"❯",
+			}, "\n"),
+			want: true,
+		},
+		{
+			name: "empty pane not started",
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, claudeHasStarted(tt.content))
+		})
+	}
 }
 
 func TestOpenCodeAdapter_ReadyString(t *testing.T) {

@@ -62,7 +62,43 @@ export type InstanceStatus = "running" | "ready" | "loading" | "paused";
 
 export type InstanceAction = "pause" | "resume" | "restart" | "kill";
 export type ScrollbackDepth = "120" | "1000" | "full";
-export type ExecutionMode = "tmux" | "headless";
+export type ExecutionMode = "tmux" | "sdk";
+
+export type PresentationRowKind =
+  | "thinking"
+  | "tool"
+  | "result"
+  | "system"
+  | "permission"
+  | "response"
+  | "prose"
+  | "status";
+
+export interface PresentationRow {
+  kind: PresentationRowKind;
+  text: string;
+  timestamp: Date | null;
+  tool_name: string;
+  is_error: boolean;
+}
+
+export interface PresentationTurn {
+  id: string;
+  number: number;
+  started_at: Date | null;
+  completed_at: Date | null;
+  interrupted: boolean;
+  tool_count: number;
+  rows: PresentationRow[];
+}
+
+export interface PresentationResponse {
+  supported: boolean;
+  turns: PresentationTurn[] | null;
+  captured_at: Date;
+}
+
+export type PermissionDecision = "allow_once" | "allow_always" | "reject";
 
 export interface InstanceEntry {
   title: string;

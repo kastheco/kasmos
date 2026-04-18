@@ -8,8 +8,8 @@
   --kas-bg: #232136;
   --kas-accent-iris: #c4a7e7;
   --kas-accent-foam: #9ccfd8;
-  --kas-glow-iris: rgba(196, 167, 231, 0.12);
-  --kas-glow-foam: rgba(156, 207, 216, 0.12);
+  --kas-glow-iris: rgba(196, 167, 231, 0.22);
+  --kas-glow-iris-soft: rgba(196, 167, 231, 0.12);
 
   /* Docusaurus light-mode color overrides */
   --ifm-color-primary: #6b4fa0;
@@ -44,11 +44,29 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Ambient gradient in dark mode */
-[data-theme="dark"] body {
+/* Ambient iris gradient in dark mode. Painted on <html> (the viewport
+   bg) rather than <body> because Docusaurus's content wrappers have
+   opaque --ifm-background-color layers that cover any body bg-image in
+   the main content column (visible in earlier attempts as a flat dark
+   main pane with gradient only leaking through the sidebar/gutters).
+   `background-attachment: fixed` + `background-size: 100vw 100vh` pins
+   the two ellipse anchors to the viewport so the gradient stays stable
+   across scroll. Body is forced transparent so html's gradient shows
+   through without body's own bg-color shield blocking it. */
+[data-theme="dark"] html {
+  background-color: var(--kas-bg);
   background-image:
-    radial-gradient(ellipse at 15% 20%, var(--kas-glow-iris) 0%, transparent 55%),
-    radial-gradient(ellipse at 85% 80%, var(--kas-glow-foam) 0%, transparent 55%);
+    radial-gradient(ellipse at 15% 15%, var(--kas-glow-iris) 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 85%, var(--kas-glow-iris-soft) 0%, transparent 60%);
+  background-attachment: fixed;
+  background-size: 100vw 100vh;
+  background-repeat: no-repeat;
+}
+
+[data-theme="dark"] body,
+[data-theme="dark"] .main-wrapper,
+[data-theme="dark"] main {
+  background: transparent;
 }
 
 /* Code blocks dark mode */
