@@ -113,7 +113,7 @@
       "textVerbosity": "low"
     },
     "master": {
-      "model": "openai/gpt-5.4",
+      "model": "gpt-5.4",
       "permission": {
         "bash": "allow",
         "edit": {
@@ -137,7 +137,7 @@
           "/tmp/**": "allow"
         }
       },
-      "reasoningEffort": "high",
+      "reasoningEffort": "xhigh",
       "temperature": 0.2,
       "textVerbosity": "low"
     },
@@ -145,7 +145,7 @@
       "disable": true
     },
     "planner": {
-      "model": "anthropic/claude-opus-4-6",
+      "model": "anthropic/claude-opus-4-7",
       "permission": {
         "bash": "allow",
         "edit": "allow",
@@ -163,7 +163,7 @@
         "read": "allow",
         "write": "allow"
       },
-      "reasoningEffort": "high",
+      "reasoningEffort": "xhigh",
       "temperature": 0.3,
       "textVerbosity": "medium"
     },

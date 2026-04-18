@@ -165,7 +165,6 @@ When `KASMOS_PEERS > 0`, sibling agents are modifying this worktree concurrently
 - `git checkout -- <file>` on files you didn't modify — you will revert a sibling's edits
 - Run project-wide formatters (`go fmt ./...`, `prettier --write .`) — scope to your files only
 - Run project-wide linters across files you didn't touch
-- Edit, stage, or commit scaffold-managed prompts, skills, template sources, or harness config (`.claude/agents/*.md`, `.opencode/agents/*.md`, `.agents/skills/**`, `.claude/settings.json`, `opencode.jsonc`, legacy `.opencode/opencode.jsonc`, `internal/initcmd/scaffold/templates/**`) — including YAML frontmatter — without an explicit, in-session user instruction. Current task instructions and observed scaffold drift do not count.
 
 **Always:**
 - `git add <specific-files>` — only the files you changed
