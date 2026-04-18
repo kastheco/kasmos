@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/config/auditlog"
+	"github.com/kastheco/kasmos/config/configactions"
 	"github.com/kastheco/kasmos/config/taskactions"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/livepreview"
@@ -293,9 +294,10 @@ func newProjectListHandler(sharedDB *sql.DB, validProjects map[string]struct{}) 
 // the more-specific method+path patterns (e.g. PUT /content) win over the plain
 // prefix delegated to taskAPI. auditAPI keeps its own exact route for
 // GET /audit-events; everything else falls through to taskAPI.
-// previewAPI serves live-preview instance routes and is registered before the
-// generic taskstore prefix to take precedence.
-func newServeAPIRootMux(sharedDB *sql.DB, repoRegs serveRepoRegistration, taskAPI, auditAPI, actionsAPI, previewAPI http.Handler) *http.ServeMux {
+// previewAPI serves live-preview instance routes and configAPI serves project
+// config and scaffold-sync routes; both are registered before the generic
+// taskstore prefix to take precedence.
+func newServeAPIRootMux(sharedDB *sql.DB, repoRegs serveRepoRegistration, taskAPI, auditAPI, actionsAPI, previewAPI, configAPI http.Handler) *http.ServeMux {
 	rootMux := http.NewServeMux()
 	rootMux.Handle("/v1/ping", taskAPI)
 	rootMux.Handle("GET /v1/projects", newProjectListHandler(sharedDB, repoRegs.valid))
@@ -321,6 +323,11 @@ func newServeAPIRootMux(sharedDB *sql.DB, repoRegs serveRepoRegistration, taskAP
 	rootMux.Handle("POST /v1/projects/{project}/instances/{title}/resume", previewAPI)
 	rootMux.Handle("POST /v1/projects/{project}/instances/{title}/restart", previewAPI)
 	rootMux.Handle("POST /v1/projects/{project}/instances/{title}/kill", previewAPI)
+
+	// Config endpoints — before the generic taskstore prefix.
+	rootMux.Handle("GET /v1/projects/{project}/config", configAPI)
+	rootMux.Handle("PUT /v1/projects/{project}/config", configAPI)
+	rootMux.Handle("POST /v1/projects/{project}/scaffold-sync", configAPI)
 
 	// Exact audit route, then generic taskstore prefix.
 	rootMux.Handle("GET /v1/projects/{project}/audit-events", auditAPI)
@@ -427,23 +434,40 @@ func NewServeCmd() *cobra.Command {
 			// only shows TUI-spawned standalone instances.
 			daemonLister := newDaemonInstanceLister()
 			var previewAPI http.Handler
+			var configAPI http.Handler
 			switch {
 			case cmd.Flags().Changed("repo"):
-				resolve := func(project string) (string, error) {
+				previewResolve := func(project string) (string, error) {
 					root, ok := repoRegs.rootsByProject[project]
 					if !ok {
 						return "", fmt.Errorf("project not found: %s", project)
 					}
 					return root, nil
 				}
-				previewHandler := livepreview.NewHTTPHandlerWithDaemon(resolve, &livepreview.ExecPaneRunner{}, daemonLister, daemonLister)
+				previewHandler := livepreview.NewHTTPHandlerWithDaemon(previewResolve, &livepreview.ExecPaneRunner{}, daemonLister, daemonLister)
 				previewAPI = projectValidationMiddleware(repoRegs.valid, previewHandler)
+
+				configResolve := func(project string) (string, error) {
+					root, ok := repoRegs.rootsByProject[project]
+					if !ok {
+						return "", fmt.Errorf("project not found: %s", project)
+					}
+					return root, nil
+				}
+				configHandler := configactions.NewHandler(configResolve)
+				configAPI = projectValidationMiddleware(repoRegs.valid, configHandler)
 			case cmd.Flags().Changed("db"):
 				previewAPI = livepreview.NewHTTPHandlerWithDaemon(func(string) (string, error) {
 					return "", livepreview.ErrPreviewUnavailable
 				}, &livepreview.ExecPaneRunner{}, daemonLister, daemonLister)
+				configAPI = configactions.NewHandler(func(string) (string, error) {
+					return "", configactions.ErrRepoNotRegistered
+				})
 			default:
 				previewAPI = livepreview.NewHTTPHandlerWithDaemon(newDynamicProjectRootResolver(), &livepreview.ExecPaneRunner{}, daemonLister, daemonLister)
+				configAPI = configactions.NewHandler(
+					configactions.ProjectRootResolver(newDynamicProjectRootResolverWithUnavailable(configactions.ErrRepoNotRegistered)),
+				)
 			}
 			if len(repoPaths) > 0 {
 				taskAPI = projectValidationMiddleware(repoRegs.valid, taskAPI)
@@ -451,7 +475,7 @@ func NewServeCmd() *cobra.Command {
 				actionsAPI = projectValidationMiddleware(repoRegs.valid, actionsAPI)
 			}
 
-			rootMux := newServeAPIRootMux(sharedDB, repoRegs, taskAPI, auditAPI, actionsAPI, previewAPI)
+			rootMux := newServeAPIRootMux(sharedDB, repoRegs, taskAPI, auditAPI, actionsAPI, previewAPI, configAPI)
 
 			// Resolve the admin filesystem: --admin-dir flag overrides embedded assets.
 			// Require the directory to contain index.html so users aren't accidentally

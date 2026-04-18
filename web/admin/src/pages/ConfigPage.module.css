@@ -1,0 +1,199 @@
+.page {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 900px;
+}
+
+/* ── Header ── */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+}
+
+/* ── State panels ── */
+
+.loading {
+  color: var(--foreground-tertiary);
+  font-size: 14px;
+  padding: 32px 0;
+}
+
+.emptyCard {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 24px;
+  color: var(--foreground-secondary);
+  font-size: 14px;
+  font-family: var(--font-mono);
+  line-height: 1.6;
+}
+
+/* ── Card ── */
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cardTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 0;
+}
+
+/* ── Inline error banner ── */
+
+.errorBanner {
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: rgba(235, 111, 146, 0.1);
+  border: 1px solid rgba(235, 111, 146, 0.3);
+  color: #eb6f92;
+  font-size: 13px;
+}
+
+/* ── Monospace textarea editor ── */
+
+.editor {
+  width: 100%;
+  min-height: 320px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  padding: 14px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--foreground);
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+  line-height: 1.6;
+}
+
+.editor:focus {
+  border-color: rgba(156, 207, 216, 0.4);
+}
+
+/* ── Persistent notice ── */
+
+.notice {
+  font-size: 12px;
+  color: var(--foreground-tertiary);
+  margin: 0;
+}
+
+/* ── Button row ── */
+
+.buttonRow {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  padding: 5px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--card-border);
+  color: var(--foreground-secondary);
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--foreground);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btnPrimary {
+  border-color: rgba(156, 207, 216, 0.4);
+  background: rgba(156, 207, 216, 0.08);
+  color: var(--accent-teal, #9ccfd8);
+}
+
+.btnPrimary:hover:not(:disabled) {
+  background: rgba(156, 207, 216, 0.15);
+  border-color: rgba(156, 207, 216, 0.6);
+  color: var(--foreground);
+}
+
+/* ── Scaffold sync checkboxes ── */
+
+.checkboxRow {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.checkboxRow label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--foreground-secondary);
+  cursor: pointer;
+}
+
+/* ── Scaffold sync output pane ── */
+
+.syncOutput {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.syncError {
+  padding: 8px 12px;
+  border-radius: 5px;
+  background: rgba(235, 111, 146, 0.1);
+  border: 1px solid rgba(235, 111, 146, 0.3);
+  color: #eb6f92;
+  font-size: 12px;
+}
+
+.syncPre {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  padding: 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--foreground-secondary);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.syncPreError {
+  composes: syncPre;
+  border-color: rgba(235, 111, 146, 0.3);
+}

@@ -10,6 +10,7 @@ import (
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
 	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
+	"github.com/kastheco/kasmos/internal/initcmd/scaffoldsync"
 	"github.com/spf13/cobra"
 )
 
@@ -51,99 +52,11 @@ func newScaffoldWorktreeCmd() *cobra.Command {
 	return cmd
 }
 
-// profilesToAgentConfigs converts a map of AgentProfile (keyed by role name)
-// to a deterministic slice of harness.AgentConfig, including only enabled profiles.
-//
-// The "chat" role is special: the wizard stores it with a single harness but fans
-// it out to every selected harness when building agent configs (so chat.md is
-// written into every harness directory). We replicate that behaviour here by
-// collecting all distinct harness names from ALL non-chat profiles (enabled or
-// disabled) and emitting one chat entry per harness — mirroring the wizard which
-// fans chat to every selected harness regardless of role enablement. If no other
-// harnesses are present, we fall back to chat's own stored Program.
-func profilesToAgentConfigs(profiles map[string]config.AgentProfile) []harness.AgentConfig {
-	if len(profiles) == 0 {
-		return nil
-	}
-
-	// Collect the distinct harness programs used by all non-chat profiles,
-	// regardless of enabled state. wizard.State.ToAgentConfigs fans chat to
-	// every *selected* harness independent of whether other roles on that harness
-	// are currently enabled, so we mirror that behaviour here.
-	harnessSet := map[string]struct{}{}
-	for role, p := range profiles {
-		if role == "chat" {
-			continue
-		}
-		if p.Program != "" {
-			harnessSet[p.Program] = struct{}{}
-		}
-	}
-
-	roles := make([]string, 0, len(profiles))
-	for role := range profiles {
-		roles = append(roles, role)
-	}
-	sort.Strings(roles)
-
-	configs := make([]harness.AgentConfig, 0, len(roles))
-	for _, role := range roles {
-		p := profiles[role]
-		if !p.Enabled {
-			continue
-		}
-		if role == "chat" {
-			// Fan chat out to every harness present in the project, mirroring
-			// wizard.State.ToAgentConfigs so chat.md lands in every harness dir.
-			chatHarnesses := make([]string, 0, len(harnessSet))
-			for h := range harnessSet {
-				chatHarnesses = append(chatHarnesses, h)
-			}
-			sort.Strings(chatHarnesses)
-			if len(chatHarnesses) == 0 && p.Program != "" {
-				// Fallback: no other enabled agents; use chat's own program.
-				chatHarnesses = []string{p.Program}
-			}
-			for _, h := range chatHarnesses {
-				configs = append(configs, harness.AgentConfig{
-					Role:        role,
-					Harness:     h,
-					Model:       p.Model,
-					Temperature: p.Temperature,
-					Effort:      p.Effort,
-					Enabled:     p.Enabled,
-					ExtraFlags:  p.Flags,
-				})
-			}
-			continue
-		}
-		configs = append(configs, harness.AgentConfig{
-			Role:        role,
-			Harness:     p.Program,
-			Model:       p.Model,
-			Temperature: p.Temperature,
-			Effort:      p.Effort,
-			Enabled:     p.Enabled,
-			ExtraFlags:  p.Flags,
-		})
-	}
-	return configs
-}
-
+// runScaffoldSync is a thin cobra wrapper: it resolves the checkout root,
+// gathers flags, and delegates to scaffoldsync.Run.
 func runScaffoldSync(cmd *cobra.Command, args []string) error {
-	out := cmd.OutOrStdout()
 	includeWorktrees, _ := cmd.Flags().GetBool("worktrees")
 	trustProject, _ := cmd.Flags().GetBool("trust")
-
-	agents, err := loadConfiguredAgentConfigs()
-	if err != nil {
-		return err
-	}
-
-	tomlCfg, err := config.LoadTOMLConfig()
-	if err != nil {
-		return fmt.Errorf("load config: %w", err)
-	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -160,97 +73,16 @@ func runScaffoldSync(cmd *cobra.Command, args []string) error {
 		projectDir = root
 	}
 
-	if err := syncScaffoldTarget(out, "Syncing scaffold", projectDir, agents); err != nil {
-		return err
-	}
-
-	if includeWorktrees {
-		repoRoot, err := config.ResolveRepoRoot(projectDir)
-		if err != nil {
-			return fmt.Errorf("resolve repo root for worktrees: %w", err)
-		}
-		worktrees, err := listExistingWorktrees(repoRoot)
-		if err != nil {
-			return fmt.Errorf("list worktrees: %w", err)
-		}
-		for _, worktreeDir := range worktrees {
-			if filepath.Clean(worktreeDir) == filepath.Clean(projectDir) {
-				continue
-			}
-			if err := syncScaffoldTarget(out, "Syncing worktree scaffold", worktreeDir, agents); err != nil {
-				return err
-			}
-		}
-	}
-
-	// Sync global skills to harness directories.
-	registry := harness.NewRegistry()
-
-	home, homeErr := os.UserHomeDir()
-	if homeErr != nil {
-		fmt.Fprintf(out, "\nWARNING: could not get home dir: %v — skipping global skill sync\n", homeErr)
-	} else {
-		fmt.Fprintln(out, "\nSyncing personal skills...")
-		for _, name := range registry.All() {
-			h := registry.Get(name)
-			if _, found := h.Detect(); !found {
-				fmt.Fprintf(out, "  %-12s SKIP (not installed)\n", name)
-				continue
-			}
-			fmt.Fprintf(out, "  %-12s ", name)
-			if err := harness.SyncGlobalSkills(home, name); err != nil {
-				fmt.Fprintf(out, "FAILED: %v\n", err)
-			} else {
-				fmt.Fprintln(out, "OK")
-			}
-		}
-	}
-
-	if trustProject && agentsContainHarness(agents, "codex") {
-		home, homeErr := os.UserHomeDir()
-		if homeErr != nil {
-			fmt.Fprintf(out, "\nWARNING: could not get home dir: %v — skipping codex trust\n", homeErr)
-		} else {
-			fmt.Fprintln(out, "\nTrusting project for codex...")
-			result, err := scaffold.EnsureCodexTrustedProjectEntry(home, projectDir)
-			if err != nil {
-				return fmt.Errorf("codex trust: %w", err)
-			}
-			status := "OK"
-			if !result.Created {
-				status = "SKIP (exists)"
-			}
-			fmt.Fprintf(out, "  %-40s %s\n", result.Path, status)
-		}
-	}
-
-	// Install or uninstall enforcement hooks for each detected harness based on config.
-	fmt.Fprintln(out, "\nConfiguring enforcement hooks...")
-	for _, name := range registry.All() {
-		h := registry.Get(name)
-		if _, found := h.Detect(); !found {
-			fmt.Fprintf(out, "  %-12s SKIP (not installed)\n", name)
-			continue
-		}
-		fmt.Fprintf(out, "  %-12s ", name)
-		if config.IsEnforcementEnabled(tomlCfg.Enforcement, name) {
-			if err := h.InstallEnforcement(); err != nil {
-				fmt.Fprintf(out, "FAILED: %v\n", err)
-			} else {
-				fmt.Fprintln(out, "OK")
-			}
-		} else {
-			if err := h.UninstallEnforcement(); err != nil {
-				fmt.Fprintf(out, "FAILED: %v\n", err)
-			} else {
-				fmt.Fprintln(out, "REMOVED (enforcement disabled)")
-			}
-		}
-	}
-
-	return nil
+	return scaffoldsync.Run(scaffoldsync.Options{
+		RepoRoot:         projectDir,
+		IncludeWorktrees: includeWorktrees,
+		Trust:            trustProject,
+		Out:              cmd.OutOrStdout(),
+	})
 }
 
+// syncScaffoldTarget calls scaffold.SyncScaffold and prints a labelled summary.
+// Kept here for use by runScaffoldWorktree and cmd-level tests.
 func syncScaffoldTarget(out io.Writer, label, dir string, agents []harness.AgentConfig) error {
 	fmt.Fprintf(out, "%s: %s\n", label, dir)
 	results, err := scaffold.SyncScaffold(dir, agents)
@@ -272,29 +104,17 @@ func syncScaffoldTarget(out io.Writer, label, dir string, agents []harness.Agent
 	return nil
 }
 
-func listExistingWorktrees(repoRoot string) ([]string, error) {
-	worktreesDir := filepath.Join(repoRoot, ".worktrees")
-	entries, err := os.ReadDir(worktreesDir)
+// loadCWDAgentConfigs loads the agent configurations from the project-local
+// config.toml resolved from the current working directory. Delegates to
+// scaffoldsync.ProjectAgentConfigs after obtaining the repo root via GetConfigDir.
+func loadCWDAgentConfigs() ([]harness.AgentConfig, error) {
+	configDir, err := config.GetConfigDir()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read worktrees dir: %w", err)
+		return nil, err
 	}
-
-	worktrees := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		path := filepath.Join(worktreesDir, entry.Name())
-		if _, err := os.Stat(filepath.Join(path, ".git")); err != nil {
-			continue
-		}
-		worktrees = append(worktrees, path)
-	}
-	sort.Strings(worktrees)
-	return worktrees, nil
+	// GetConfigDir returns <repoRoot>/.kasmos; its parent is the repo root.
+	repoRoot := filepath.Dir(configDir)
+	return scaffoldsync.ProjectAgentConfigs(repoRoot)
 }
 
 // resolveCheckoutRoot walks up from dir until it finds a directory containing a
@@ -323,25 +143,34 @@ func agentsContainHarness(agents []harness.AgentConfig, want string) bool {
 	return false
 }
 
-func loadConfiguredAgentConfigs() ([]harness.AgentConfig, error) {
-	tomlCfg, err := config.LoadTOMLConfig()
+func listExistingWorktrees(repoRoot string) ([]string, error) {
+	worktreesDir := filepath.Join(repoRoot, ".worktrees")
+	entries, err := os.ReadDir(worktreesDir)
 	if err != nil {
-		return nil, fmt.Errorf("load config: %w", err)
-	}
-	if tomlCfg == nil {
-		return nil, fmt.Errorf("no config found — run 'kas setup' first to create .kasmos/config.toml")
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read worktrees dir: %w", err)
 	}
 
-	agents := profilesToAgentConfigs(tomlCfg.Profiles)
-	if len(agents) == 0 {
-		return nil, fmt.Errorf("config has no enabled agents — run 'kas setup' to configure agents")
+	worktrees := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(worktreesDir, entry.Name())
+		if _, err := os.Stat(filepath.Join(path, ".git")); err != nil {
+			continue
+		}
+		worktrees = append(worktrees, path)
 	}
-	return agents, nil
+	sort.Strings(worktrees)
+	return worktrees, nil
 }
 
 func runScaffoldWorktree(cmd *cobra.Command, args []string) error {
 	out := cmd.OutOrStdout()
-	agents, err := loadConfiguredAgentConfigs()
+	agents, err := loadCWDAgentConfigs()
 	if err != nil {
 		return err
 	}

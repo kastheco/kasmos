@@ -75,16 +75,17 @@ func resolveTaskProject(repoPath string) string {
 	return filepath.Base(repoPath)
 }
 
-// newDynamicProjectRootResolver returns a livepreview.ProjectRootResolver that
-// queries the daemon for the current repo list on every call. This is used in
-// daemon-auto mode (neither --repo nor --db) so that repos registered after
-// kas serve starts are automatically visible in the live-preview endpoints —
-// no restart required.
-func newDynamicProjectRootResolver() livepreview.ProjectRootResolver {
+// newDynamicProjectRootResolverWithUnavailable returns a
+// livepreview.ProjectRootResolver that queries the daemon for the current repo
+// list on every call. When the daemon is unreachable or returns no repos,
+// unavailable is returned so callers can distinguish the "no filesystem root
+// known" case from "project not found". Unknown projects are wrapped with
+// api.ErrProjectNotFound so HTTP handlers can map them to 404.
+func newDynamicProjectRootResolverWithUnavailable(unavailable error) livepreview.ProjectRootResolver {
 	return func(project string) (string, error) {
 		repos, err := listDaemonRepoStatuses()
 		if err != nil || len(repos) == 0 {
-			return "", livepreview.ErrPreviewUnavailable
+			return "", unavailable
 		}
 		for _, r := range repos {
 			if r.Path == "" {
@@ -95,6 +96,15 @@ func newDynamicProjectRootResolver() livepreview.ProjectRootResolver {
 				return root, nil
 			}
 		}
-		return "", fmt.Errorf("project not found: %s", project)
+		return "", fmt.Errorf("%w: %s", api.ErrProjectNotFound, project)
 	}
+}
+
+// newDynamicProjectRootResolver returns a livepreview.ProjectRootResolver for
+// live-preview endpoints in daemon-auto mode (neither --repo nor --db). It
+// passes livepreview.ErrPreviewUnavailable so the preview handler returns the
+// canonical 501 "live preview requires kas serve --repo" response when the
+// daemon is unreachable.
+func newDynamicProjectRootResolver() livepreview.ProjectRootResolver {
+	return newDynamicProjectRootResolverWithUnavailable(livepreview.ErrPreviewUnavailable)
 }

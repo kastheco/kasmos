@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/kastheco/kasmos/config/auditlog"
+	"github.com/kastheco/kasmos/config/configactions"
 	"github.com/kastheco/kasmos/config/taskactions"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
@@ -426,7 +427,7 @@ func TestNewServeAPIRootMux_InstanceActionRoutesRegistered(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI, fakePreview)
+	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI, fakePreview, http.NotFoundHandler())
 
 	for _, action := range []string{"pause", "resume", "restart", "kill"} {
 		gotPaths = nil
@@ -578,7 +579,7 @@ func TestNewServeAPIRootMux_ContentRouteWinsOverTaskAPI(t *testing.T) {
 	auditAPI := auditlog.NewHandler(logger)
 	actionsAPI := taskactions.NewHandler(store, gw)
 
-	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI, http.NotFoundHandler())
+	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI, http.NotFoundHandler(), http.NotFoundHandler())
 
 	// Markdown content with a clear goal heading so IngestContent populates Goal.
 	const mdContent = "# Goal\n\nimplement the feature\n"
@@ -616,7 +617,7 @@ func TestNewServeAPIRootMux_GoalRouteWinsOverTaskAPI(t *testing.T) {
 	auditAPI := auditlog.NewHandler(logger)
 	actionsAPI := taskactions.NewHandler(store, gw)
 
-	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI, http.NotFoundHandler())
+	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI, http.NotFoundHandler(), http.NotFoundHandler())
 
 	req := httptest.NewRequest(http.MethodPut,
 		"/v1/projects/"+project+"/tasks/"+filename+"/goal",
@@ -646,7 +647,7 @@ func TestNewServeAPIRootMux_ActionRouteProjectValidation(t *testing.T) {
 	auditAPI := projectValidationMiddleware(repoRegs.valid, auditlog.NewHandler(logger))
 	actionsAPI := projectValidationMiddleware(repoRegs.valid, taskactions.NewHandler(store, gw))
 
-	mux := newServeAPIRootMux(sharedDB, repoRegs, taskAPI, auditAPI, actionsAPI, http.NotFoundHandler())
+	mux := newServeAPIRootMux(sharedDB, repoRegs, taskAPI, auditAPI, actionsAPI, http.NotFoundHandler(), http.NotFoundHandler())
 
 	t.Run("unknown project returns 404 on available-actions", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet,
@@ -699,7 +700,7 @@ func TestNewServeAPIRootMux_TransitionEmitsGatewaySignal(t *testing.T) {
 	auditAPI := auditlog.NewHandler(logger)
 	actionsAPI := taskactions.NewHandler(store, gw)
 
-	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI, http.NotFoundHandler())
+	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI, http.NotFoundHandler(), http.NotFoundHandler())
 
 	req := httptest.NewRequest(http.MethodPost,
 		"/v1/projects/"+project+"/tasks/"+filename+"/transition",
@@ -733,7 +734,7 @@ func testServePreviewMux(t *testing.T, previewAPI http.Handler) *http.ServeMux {
 	taskAPI := taskstore.NewHandler(store)
 	auditAPI := auditlog.NewHandler(logger)
 	actionsAPI := taskactions.NewHandler(store, gw)
-	return newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI, previewAPI)
+	return newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI, previewAPI, http.NotFoundHandler())
 }
 
 // TestNewServeAPIRootMux_PreviewInstancesRouteRegistered verifies that
@@ -803,7 +804,7 @@ func TestNewServeAPIRootMux_PreviewProjectValidation404(t *testing.T) {
 	auditAPI := projectValidationMiddleware(repoRegs.valid, auditlog.NewHandler(logger))
 	actionsAPI := projectValidationMiddleware(repoRegs.valid, taskactions.NewHandler(store, gw))
 
-	mux := newServeAPIRootMux(sharedDB, repoRegs, taskAPI, auditAPI, actionsAPI, previewAPI)
+	mux := newServeAPIRootMux(sharedDB, repoRegs, taskAPI, auditAPI, actionsAPI, previewAPI, http.NotFoundHandler())
 
 	t.Run("unknown project returns 404 on instances list", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/v1/projects/unknown-proj/instances", nil)
@@ -932,4 +933,141 @@ func TestNewServeAPIRootMux_PermissionRouteRegistered(t *testing.T) {
 
 	assert.True(t, called, "previewAPI must be called for POST /instances/{title}/permission")
 	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// ---------------------------------------------------------------------------
+// Config route registration tests
+// ---------------------------------------------------------------------------
+
+func testServeConfigMux(t *testing.T, configAPI http.Handler) *http.ServeMux {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "config_mux_test.db")
+	sharedDB, store, gw, logger, err := openServeSQLiteBackends(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { sharedDB.Close() })
+
+	taskAPI := taskstore.NewHandler(store)
+	auditAPI := auditlog.NewHandler(logger)
+	actionsAPI := taskactions.NewHandler(store, gw)
+	return newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI, http.NotFoundHandler(), configAPI)
+}
+
+func TestNewServeAPIRootMux_ConfigGetRouteRegistered(t *testing.T) {
+	called := false
+	configAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux := testServeConfigMux(t, configAPI)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/myproj/config", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	assert.True(t, called, "configAPI must be called for GET /config")
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestNewServeAPIRootMux_ConfigPutRouteRegistered(t *testing.T) {
+	called := false
+	configAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux := testServeConfigMux(t, configAPI)
+
+	req := httptest.NewRequest(http.MethodPut, "/v1/projects/myproj/config",
+		strings.NewReader("[x]\ny = 1\n"))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	assert.True(t, called, "configAPI must be called for PUT /config")
+	assert.Equal(t, http.StatusNoContent, rec.Code)
+}
+
+func TestNewServeAPIRootMux_ScaffoldSyncRouteRegistered(t *testing.T) {
+	called := false
+	configAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux := testServeConfigMux(t, configAPI)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/myproj/scaffold-sync",
+		strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	assert.True(t, called, "configAPI must be called for POST /scaffold-sync")
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestNewServeAPIRootMux_ConfigRouteDoesNotClobberTaskRoutes(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "no_clobber.db")
+	sharedDB, store, gw, logger, err := openServeSQLiteBackends(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { sharedDB.Close() })
+
+	const project = "myproj"
+	const filename = "my-task"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: filename,
+		Status:   taskstore.StatusReady,
+	}))
+
+	taskAPI := taskstore.NewHandler(store)
+	auditAPI := auditlog.NewHandler(logger)
+	actionsAPI := taskactions.NewHandler(store, gw)
+
+	configAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	})
+
+	mux := newServeAPIRootMux(sharedDB, serveRepoRegistration{}, taskAPI, auditAPI, actionsAPI, http.NotFoundHandler(), configAPI)
+
+	t.Run("GET /tasks still works", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/v1/projects/"+project+"/tasks/"+filename, nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		assert.NotEqual(t, http.StatusTeapot, rec.Code)
+	})
+
+	t.Run("GET /instances does not hit configAPI", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/v1/projects/"+project+"/instances", nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		assert.NotEqual(t, http.StatusTeapot, rec.Code)
+	})
+
+	t.Run("GET /audit-events does not hit configAPI", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/v1/projects/"+project+"/audit-events", nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		assert.NotEqual(t, http.StatusTeapot, rec.Code)
+	})
+}
+
+func TestNewServeAPIRootMux_ConfigAPIEndToEnd(t *testing.T) {
+	repoRoot := t.TempDir()
+	kasDir := filepath.Join(repoRoot, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasDir, 0o755))
+	const configContent = "[agents]\ncoder = true\n"
+	require.NoError(t, os.WriteFile(filepath.Join(kasDir, "config.toml"), []byte(configContent), 0o644))
+
+	resolve := func(string) (string, error) { return repoRoot, nil }
+	configAPI := configactions.NewHandler(resolve)
+
+	mux := testServeConfigMux(t, configAPI)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/myproj/config", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "text/plain; charset=utf-8", rec.Header().Get("Content-Type"))
+	assert.Equal(t, configContent, rec.Body.String())
 }
