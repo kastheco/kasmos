@@ -68,22 +68,25 @@ const (
 // Zero timestamps marshal as JSON null so browser clients do not need to
 // special-case Go's zero time sentinel.
 type PresentationRow struct {
-	Kind      PresentationRowKind `json:"kind"`
-	Text      string              `json:"text"`
-	Timestamp time.Time           `json:"timestamp"`
-	ToolName  string              `json:"tool_name"`
-	IsError   bool                `json:"is_error"`
+	Kind PresentationRowKind
+	Text string
+	// Zero timestamps still encode as JSON null via MarshalJSON below.
+	Timestamp time.Time
+	ToolName  string
+	IsError   bool
 }
 
 // PresentationTurn groups all content rows produced within one agent response turn.
 type PresentationTurn struct {
-	ID          string            `json:"id"`
-	Number      int               `json:"number"`
-	StartedAt   time.Time         `json:"started_at"`
-	CompletedAt time.Time         `json:"completed_at"`
-	Interrupted bool              `json:"interrupted"`
-	ToolCount   int               `json:"tool_count"`
-	Rows        []PresentationRow `json:"rows"`
+	ID     string
+	Number int
+	// Zero timestamps still encode as JSON null via MarshalJSON below.
+	StartedAt time.Time
+	// Zero timestamps still encode as JSON null via MarshalJSON below.
+	CompletedAt time.Time
+	Interrupted bool
+	ToolCount   int
+	Rows        []PresentationRow
 }
 
 type presentationRowJSON struct {

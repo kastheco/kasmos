@@ -108,7 +108,7 @@ instances return `supported: false`.
 | method | path | description |
 |--------|------|-------------|
 | `GET` | `/v1/projects/{project}/instances/{title}/presentation` | retrieve the current structured turn snapshot for a daemon-managed SDK instance; returns `{ supported, turns, captured_at }` |
-| `POST` | `/v1/projects/{project}/instances/{title}/permission` | submit a permission choice for a pending prompt; body: `{ "choice": <0\|1\|2> }` where `0` = allow once, `1` = allow always, `2` = reject |
+| `POST` | `/v1/projects/{project}/instances/{title}/permission` | submit the user's permission choice for a pending prompt; body: `{ "choice": <0\|1\|2> }` where `0` = allow once, `1` = allow always, `2` = reject |
 
 **permission choice values:**
 
