@@ -144,21 +144,20 @@ Run these checks whenever the diff touches signals, config keys, FSM state, or e
 Run the full test suite **and** the same lint checks CI runs before approving.
 Do not approve on a failing test run. Do not push without confirming lint.
 
+Use the **full-suite compact recipe** from the `cli-tools` skill
+(section `## Running tests without polluting context`) to run `go test ./...` and show only
+failures — raw `go test` output floods context with passing noise.
+
+Then run lint separately:
+
 ```bash
-go test ./...
 gofmt -l .
 go vet ./...
 ```
 
-If tests are slow, at minimum run tests for changed packages:
-
-```bash
-# Identify changed packages
-git diff $MERGE_BASE..HEAD --name-only
-
-# Run them
-go test ./path/to/changed/... ./other/changed/...
-```
+If tests are slow, at minimum run tests for changed packages: swap in the scoped package
+path (e.g. `go test ./path/to/changed/...`) in place of `./...` in the compact recipe —
+the wrapper around it stays identical.
 
 Use `git diff $MERGE_BASE..HEAD --name-only` to enumerate changed files. If you need Go-only or package-filtered follow-up, use MCP `grep` / `find_files` rather than shell pipes.
 
@@ -218,9 +217,11 @@ gets the same checks. Do not rely on CI to catch what you can catch locally.
 ```bash
 gofmt -l .          # formatting — must produce no output
 go vet ./...        # static analysis
-go test ./...       # full suite
 typos               # spelling in changed files
 ```
+
+For the full test suite, use the **compact recipe** from the `cli-tools` skill
+(`## Running tests without polluting context`) instead of bare `go test ./...`.
 
 If any of these fail, fix before pushing. Period.
 
@@ -244,7 +245,7 @@ Do not review files in isolation. Trace data flow across package boundaries.
 
 Before emitting `review-approved`:
 
-1. `go test ./...` passes with zero failures
+1. Full test suite passes with zero failures (use the **compact recipe** from the `cli-tools` skill, `## Running tests without polluting context`)
 2. `gofmt -l .` produces no output
 3. `go vet ./...` produces no output
 4. `typos` finds no spelling errors in changed files
@@ -254,9 +255,6 @@ Before emitting `review-approved`:
 8. `gh pr checks` (or equivalent) confirms CI is green — do not approve while checks are pending or failing
 
 ```bash
-# Confirm test pass
-go test ./... 2>&1
-
 # Confirm no typos in changed files
 git diff $MERGE_BASE..HEAD --name-only | xargs typos
 ```
