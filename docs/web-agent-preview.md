@@ -22,7 +22,7 @@ GET /v1/repos/{project}/instances/{title}/presentation
 2. `cmd/livepreview_daemon.go` bridges the daemon response through the `kas serve` stack,
    translating the internal model to the wire format consumed by the SPA.
 3. the SPA calls `getInstancePresentation(project, title)` and
-   `sendInstancePermission(project, title, decision)` from `web/admin/src/api.ts`.
+   `sendInstancePermission(project, title, choice)` from `web/admin/src/api.ts`.
 
 ## execution-mode and standalone-SDK distinction
 
@@ -31,15 +31,16 @@ GET /v1/repos/{project}/instances/{title}/presentation
 | execution_mode | daemon-managed | component |
 |---------------|----------------|-----------|
 | `sdk`         | yes            | `AgentPreview` (structured timeline) |
-| `sdk`         | no             | `TerminalPreview` (tmux fallback) |
+| `sdk`         | no             | preview unavailable message |
 | `tmux`        | —              | `TerminalPreview` |
 
 the `headless` legacy value is normalised to `sdk` at the API boundary so older rows do
 not fall through to an unknown state (see `normalizeExecutionMode` in `web/admin/src/api.ts`).
 
 daemon-managed vs standalone is detected using the instance-list metadata — specifically
-the presence of a daemon session associated with the instance title. tmux continues to use
-`TerminalPreview` unchanged.
+the presence of daemon-provided `valid_actions` on an `sdk` row. standalone SDK rows do
+not fall back to `TerminalPreview`; they render the preview-unavailable placeholder while
+tmux continues to use `TerminalPreview` unchanged.
 
 ## filter storage key
 
@@ -99,9 +100,9 @@ each turn block has two header controls:
 the `PermissionCard` component replaces the plain permission text row with an inline
 action card:
 
-- **allow**: sends `decision: 0` (`allow_once`) to the daemon permission endpoint.
-- **always**: sends `decision: 1` (`allow_always`).
-- **deny**: sends `decision: 2` (`reject`).
+- **allow**: sends `choice: 0` (`allow_once`) to the daemon permission endpoint.
+- **always**: sends `choice: 1` (`allow_always`).
+- **deny**: sends `choice: 2` (`reject`).
 
 while a choice is in-flight all three buttons are disabled. on success the card is
 dismissed locally (the next poll reconciles the authoritative state). on error the buttons

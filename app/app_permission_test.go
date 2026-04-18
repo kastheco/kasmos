@@ -11,6 +11,7 @@ import (
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/session"
+	"github.com/kastheco/kasmos/session/tmux"
 	"github.com/kastheco/kasmos/ui"
 	"github.com/kastheco/kasmos/ui/overlay"
 	"github.com/stretchr/testify/assert"
@@ -332,6 +333,78 @@ func TestHandleKeyPress_PermissionEnter_SendsResponse(t *testing.T) {
 
 	assert.Equal(t, stateDefault, m.state, "enter should return to stateDefault")
 	assert.NotNil(t, cmd, "enter should return a permission response cmd")
+}
+
+func TestHandleKeyPress_PermissionEnter_DaemonPlaceholderRoutesResponse(t *testing.T) {
+	m := newTestHomeWithCache(t)
+	m.taskStoreProject = "myproj"
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "sdk-agent",
+		Path:          t.TempDir(),
+		Program:       "codex",
+		ExecutionMode: session.ExecutionModeSDK,
+	})
+	require.NoError(t, err)
+	m.nav.AddInstance(inst)()
+
+	m.state = statePermission
+	m.overlays.Show(overlay.NewPermissionOverlay(inst.Title, "Access /opt", "/opt/*"))
+	m.pendingPermissionInstance = inst
+	m.pendingPermissionPattern = "/opt/*"
+	m.pendingPermissionDesc = "Access /opt"
+
+	var (
+		gotProject string
+		gotTitle   string
+		gotChoice  tmux.PermissionChoice
+	)
+	origClient := newDaemonActionClient
+	newDaemonActionClient = func() daemonActionClient {
+		return &stubDaemonActionClient{
+			sendPermissionResponseFunc: func(project, title string, choice tmux.PermissionChoice) error {
+				gotProject = project
+				gotTitle = title
+				gotChoice = choice
+				return nil
+			},
+		}
+	}
+	t.Cleanup(func() { newDaemonActionClient = origClient })
+
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	require.NotNil(t, cmd)
+	assert.Equal(t, stateDefault, m.state)
+	require.Nil(t, cmd())
+	assert.Equal(t, "myproj", gotProject)
+	assert.Equal(t, "sdk-agent", gotTitle)
+	assert.Equal(t, tmux.PermissionAllowAlways, gotChoice)
+}
+
+type stubDaemonActionClient struct {
+	sendPromptFunc             func(project, title, prompt string) error
+	killFunc                   func(project, title string) error
+	sendPermissionResponseFunc func(project, title string, choice tmux.PermissionChoice) error
+}
+
+func (s *stubDaemonActionClient) SendInstancePrompt(project, title, prompt string) error {
+	if s.sendPromptFunc != nil {
+		return s.sendPromptFunc(project, title, prompt)
+	}
+	return nil
+}
+
+func (s *stubDaemonActionClient) KillInstance(project, title string) error {
+	if s.killFunc != nil {
+		return s.killFunc(project, title)
+	}
+	return nil
+}
+
+func (s *stubDaemonActionClient) SendInstancePermissionResponse(project, title string, choice tmux.PermissionChoice) error {
+	if s.sendPermissionResponseFunc != nil {
+		return s.sendPermissionResponseFunc(project, title, choice)
+	}
+	return nil
 }
 
 // TestHandleKeyPress_PermissionEsc_DismissesWithoutSending verifies that Esc closes

@@ -566,6 +566,10 @@ func NewHTTPHandlerWithDaemon(resolve ProjectRootResolver, runner PaneRunner, da
 			writeJSONError(w, http.StatusBadRequest, "invalid request body")
 			return
 		}
+		if !body.Choice.Valid() {
+			writeJSONError(w, http.StatusBadRequest, "invalid permission choice")
+			return
+		}
 
 		root, err := resolve(project)
 		if err != nil {

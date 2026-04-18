@@ -587,6 +587,9 @@ func (m *home) finishPermissionOverlay(result overlay.Result) (tea.Model, tea.Cm
 			m.pendingPermissionDesc = ""
 			var cmds []tea.Cmd
 			cmds = append(cmds, func() tea.Msg {
+				if handled, err := m.daemonRoutePermissionResponse(capturedInst, capturedChoice); handled {
+					return err
+				}
 				capturedInst.SendPermissionResponse(capturedChoice)
 				return nil
 			})
@@ -1083,6 +1086,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				m.exitFocusMode()
 				m.state = stateSendPrompt
 				tio := overlay.NewTextInputOverlay("send prompt", seed)
+				tio.SetShiftEnterNewline(true)
 				tio.SetSize(60, 3)
 				m.overlays.Show(tio)
 				return m, nil

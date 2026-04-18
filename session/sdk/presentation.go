@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -64,6 +65,8 @@ const (
 
 // PresentationRow is a single typed content row within a PresentationTurn.
 // All fields are value types — safe to copy and share across goroutines.
+// Zero timestamps marshal as JSON null so browser clients do not need to
+// special-case Go's zero time sentinel.
 type PresentationRow struct {
 	Kind      PresentationRowKind `json:"kind"`
 	Text      string              `json:"text"`
@@ -81,6 +84,95 @@ type PresentationTurn struct {
 	Interrupted bool              `json:"interrupted"`
 	ToolCount   int               `json:"tool_count"`
 	Rows        []PresentationRow `json:"rows"`
+}
+
+type presentationRowJSON struct {
+	Kind      PresentationRowKind `json:"kind"`
+	Text      string              `json:"text"`
+	Timestamp *time.Time          `json:"timestamp"`
+	ToolName  string              `json:"tool_name"`
+	IsError   bool                `json:"is_error"`
+}
+
+type presentationTurnJSON struct {
+	ID          string            `json:"id"`
+	Number      int               `json:"number"`
+	StartedAt   *time.Time        `json:"started_at"`
+	CompletedAt *time.Time        `json:"completed_at"`
+	Interrupted bool              `json:"interrupted"`
+	ToolCount   int               `json:"tool_count"`
+	Rows        []PresentationRow `json:"rows"`
+}
+
+func optionalJSONTime(ts time.Time) *time.Time {
+	if ts.IsZero() {
+		return nil
+	}
+	copy := ts
+	return &copy
+}
+
+// MarshalJSON encodes zero timestamps as null in the wire format.
+func (r PresentationRow) MarshalJSON() ([]byte, error) {
+	return json.Marshal(presentationRowJSON{
+		Kind:      r.Kind,
+		Text:      r.Text,
+		Timestamp: optionalJSONTime(r.Timestamp),
+		ToolName:  r.ToolName,
+		IsError:   r.IsError,
+	})
+}
+
+// UnmarshalJSON decodes null timestamps back to the zero time value.
+func (r *PresentationRow) UnmarshalJSON(data []byte) error {
+	var aux presentationRowJSON
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	r.Kind = aux.Kind
+	r.Text = aux.Text
+	r.ToolName = aux.ToolName
+	r.IsError = aux.IsError
+	r.Timestamp = time.Time{}
+	if aux.Timestamp != nil {
+		r.Timestamp = *aux.Timestamp
+	}
+	return nil
+}
+
+// MarshalJSON encodes zero turn timestamps as null in the wire format.
+func (t PresentationTurn) MarshalJSON() ([]byte, error) {
+	return json.Marshal(presentationTurnJSON{
+		ID:          t.ID,
+		Number:      t.Number,
+		StartedAt:   optionalJSONTime(t.StartedAt),
+		CompletedAt: optionalJSONTime(t.CompletedAt),
+		Interrupted: t.Interrupted,
+		ToolCount:   t.ToolCount,
+		Rows:        t.Rows,
+	})
+}
+
+// UnmarshalJSON decodes null turn timestamps back to zero values.
+func (t *PresentationTurn) UnmarshalJSON(data []byte) error {
+	var aux presentationTurnJSON
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	t.ID = aux.ID
+	t.Number = aux.Number
+	t.Interrupted = aux.Interrupted
+	t.ToolCount = aux.ToolCount
+	t.Rows = aux.Rows
+	t.StartedAt = time.Time{}
+	t.CompletedAt = time.Time{}
+	if aux.StartedAt != nil {
+		t.StartedAt = *aux.StartedAt
+	}
+	if aux.CompletedAt != nil {
+		t.CompletedAt = *aux.CompletedAt
+	}
+	return nil
 }
 
 // Running reports whether the turn is still in progress (not yet completed or interrupted).

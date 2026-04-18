@@ -264,6 +264,64 @@ func TestShouldProcessWaveTaskCompletion(t *testing.T) {
 	}
 }
 
+func TestShouldMarkWaveTaskWorked(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		inst            session.Instance
+		md              session.InstanceMetadata
+		wasAwaitingWork bool
+		want            bool
+	}{
+		{
+			name: "first non-prompt update after queued startup prompt is ignored",
+			inst: session.Instance{TaskFile: "feature.md", TaskNumber: 1},
+			md: session.InstanceMetadata{
+				ContentCaptured: true,
+				Updated:         true,
+			},
+			wasAwaitingWork: true,
+			want:            false,
+		},
+		{
+			name: "later non-prompt update counts as real work",
+			inst: session.Instance{TaskFile: "feature.md", TaskNumber: 1},
+			md: session.InstanceMetadata{
+				ContentCaptured: true,
+				Updated:         true,
+			},
+			wasAwaitingWork: false,
+			want:            true,
+		},
+		{
+			name: "prompt echo does not count as work",
+			inst: session.Instance{TaskFile: "feature.md", TaskNumber: 1},
+			md: session.InstanceMetadata{
+				ContentCaptured: true,
+				Updated:         true,
+				HasPrompt:       true,
+			},
+			want: false,
+		},
+		{
+			name: "queued prompt not yet consumed does not count as work",
+			inst: session.Instance{TaskFile: "feature.md", TaskNumber: 1, QueuedPrompt: "implement it"},
+			md: session.InstanceMetadata{
+				ContentCaptured: true,
+				Updated:         true,
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, shouldMarkWaveTaskWorked(&tt.inst, tt.md, tt.wasAwaitingWork))
+		})
+	}
+}
+
 func TestDaemon_RecoverSessions_DuplicateSuppressionForCurrentLifecycleAgent(t *testing.T) {
 	t.Parallel()
 

@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
+	stdlog "log"
 	"net"
 	"net/http"
 	"os"
@@ -127,6 +130,91 @@ func resolveServeRepoPaths(cmd *cobra.Command, repoPaths []string) ([]string, er
 
 func newServeMCPServer(store taskstore.Store, gw taskstore.SignalGateway, sharedDB *sql.DB, repoPaths []string) (*mcpserver.Server, error) {
 	return newConfiguredMCPServer(store, gw, sharedDB, repoPaths)
+}
+
+const serveMCPRequestLogEnv = "KASMOS_MCP_REQUEST_LOG"
+
+var serveMCPFallbackLogger = stdlog.New(os.Stderr, "", stdlog.LstdFlags)
+
+func wrapServeMCPRequestLogging(next http.Handler) http.Handler {
+	if !serveMCPRequestLoggingEnabled() {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rpcMethod, bodyBytes := sniffServeMCPRPCMethod(r)
+		sessionID := r.Header.Get("Mcp-Session-Id")
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		serveMCPRequestLogf(
+			"mcp http request http_method=%s path=%s rpc_method=%s session=%s bytes=%d duration=%s",
+			r.Method,
+			r.URL.Path,
+			emptyServeMCPLogField(rpcMethod),
+			emptyServeMCPLogField(sessionID),
+			bodyBytes,
+			time.Since(start).Round(time.Millisecond),
+		)
+	})
+}
+
+func newServeMCPHTTPHandler(next http.Handler) http.Handler {
+	if next == nil {
+		return http.NotFoundHandler()
+	}
+	return wrapServeMCPRequestLogging(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/mcp" {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	}))
+}
+
+func serveMCPRequestLoggingEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(serveMCPRequestLogEnv))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func sniffServeMCPRPCMethod(r *http.Request) (string, int) {
+	if r == nil || r.Body == nil || r.Method != http.MethodPost {
+		return "", 0
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return "read_error", 0
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	if len(body) == 0 {
+		return "", 0
+	}
+	var envelope struct {
+		Method string `json:"method"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return "decode_error", len(body)
+	}
+	return envelope.Method, len(body)
+}
+
+func emptyServeMCPLogField(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "-"
+	}
+	return value
+}
+
+func serveMCPRequestLogf(format string, args ...any) {
+	if kaslog.InfoLog != nil {
+		kaslog.InfoLog.Printf(format, args...)
+		return
+	}
+	if serveMCPFallbackLogger != nil {
+		serveMCPFallbackLogger.Printf(format, args...)
+	}
 }
 
 // openServeSQLiteBackends opens a single shared *sql.DB at dbPath and derives
@@ -426,7 +514,7 @@ func NewServeCmd() *cobra.Command {
 					return err
 				}
 				mcpAddr := fmt.Sprintf("%s:%d", bind, mcpPort)
-				mcpHTTP = &http.Server{Addr: mcpAddr, Handler: mcpSrv.Handler()}
+				mcpHTTP = &http.Server{Addr: mcpAddr, Handler: newServeMCPHTTPHandler(mcpSrv.Handler())}
 				fmt.Printf("mcp server listening on http://%s/mcp\n", mcpAddr)
 				go func() {
 					if err := mcpHTTP.ListenAndServe(); err != nil && err != http.ErrServerClosed {

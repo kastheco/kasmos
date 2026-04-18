@@ -59,6 +59,7 @@ type Daemon struct {
 	spawnMaster     func(context.Context, loop.SpawnOpts) error
 	spawnWaveTask   func(context.Context, loop.SpawnOpts, taskparser.Task, string, int, int) error
 	killWaveAgents  func(repoPath, planFile string, wave int) error
+	reapSDKOrphan   func(project, instanceTitle, program string) error
 	createPR        func(RepoEntry, string, string) error
 	mu              sync.RWMutex
 	startedAt       time.Time
@@ -343,9 +344,10 @@ func (a *daemonStateAdapter) SendInstancePrompt(project, title, prompt string) e
 	return inst.SendPrompt(prompt)
 }
 
-// SendInstancePermission implements StateProvider by resolving the tracked
-// instance and forwarding the permission choice to it.
-func (a *daemonStateAdapter) SendInstancePermission(project, title string, choice api.PermissionChoice) error {
+// SendInstancePermissionResponse implements StateProvider by resolving the
+// tracked instance and forwarding the permission choice to its execution
+// backend.
+func (a *daemonStateAdapter) SendInstancePermissionResponse(project, title string, choice api.PermissionChoice) error {
 	repoPath, ok := a.repoPathByProject(project)
 	if !ok {
 		return fmt.Errorf("%w: project %s", api.ErrProjectNotFound, project)
@@ -1071,6 +1073,19 @@ func shouldProcessWaveTaskCompletion(entry taskstore.TaskEntry, inst *session.In
 	return taskfsm.TaskSignal{TaskFile: inst.TaskFile, WaveNumber: waveNumber, TaskNumber: inst.TaskNumber}, true
 }
 
+func shouldMarkWaveTaskWorked(inst *session.Instance, md session.InstanceMetadata, wasAwaitingWork bool) bool {
+	if inst == nil || inst.TaskNumber < 1 {
+		return false
+	}
+	if inst.HasWorked || inst.QueuedPrompt != "" || wasAwaitingWork {
+		return false
+	}
+	if !md.ContentCaptured || !md.Updated || md.HasPrompt {
+		return false
+	}
+	return true
+}
+
 func (d *Daemon) processCompletedWaveTask(ctx context.Context, e RepoEntry, inst *session.Instance, tmuxAlive bool) (bool, error) {
 	if e.Store == nil || e.Processor == nil || inst == nil || inst.TaskFile == "" {
 		return false, nil
@@ -1116,6 +1131,7 @@ func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
 		}
 
 		md := inst.CollectMetadata()
+		wasAwaitingWork := inst.AwaitingWork
 		if md.TmuxAlive && inst.Exited {
 			inst.Exited = false
 		}
@@ -1131,7 +1147,7 @@ func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
 				}
 			} else if md.Updated {
 				inst.SetStatus(session.Running)
-				if inst.TaskNumber > 0 && !inst.HasWorked && inst.QueuedPrompt == "" {
+				if shouldMarkWaveTaskWorked(inst, md, wasAwaitingWork) {
 					inst.HasWorked = true
 				}
 			} else {
@@ -2037,11 +2053,9 @@ func masterSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
 // Returns the number of sessions matched to known tasks and logged as recovered.
 func (d *Daemon) RecoverSessions() (int, error) {
 	orphans := d.spawner.DiscoverOrphanSessions()
-	if len(orphans) == 0 {
-		return 0, nil
+	if len(orphans) > 0 {
+		d.logger.Info("discovered orphaned sessions", "count", len(orphans))
 	}
-
-	d.logger.Info("discovered orphaned sessions", "count", len(orphans))
 
 	// Build a set of orphan session titles (without the kas_ prefix) for lookup.
 	orphanTitles := make(map[string]struct{}, len(orphans))
@@ -2118,6 +2132,10 @@ func (d *Daemon) RecoverSessions() (int, error) {
 				recovered++
 			}
 		}
+	}
+
+	if err := d.reconcileMissingManagedSDKAgents(context.Background(), entries); err != nil {
+		return recovered, err
 	}
 
 	return recovered, nil

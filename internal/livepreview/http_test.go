@@ -1372,3 +1372,26 @@ func TestHTTPHandler_Permission_MalformedBody(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
+
+// TestHTTPHandler_Permission_InvalidChoice verifies that unknown permission
+// values are rejected before the daemon adapter is called.
+func TestHTTPHandler_Permission_InvalidChoice(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root)
+
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
+			{Title: "sdk-agent", Status: StatusRunning, ExecutionMode: "sdk"},
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/instances/sdk-agent/permission",
+		strings.NewReader(`{"choice":99}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Equal(t, "", adapter.sentProject, "invalid choices must be rejected before hitting the daemon adapter")
+}

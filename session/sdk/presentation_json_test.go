@@ -89,12 +89,24 @@ func TestPresentationTurn_JSONContract_Running(t *testing.T) {
 		StartedAt: ts,
 		// CompletedAt is zero — turn is still running.
 		Rows: []PresentationRow{
-			{Kind: RowThinking, Text: "thinking 3.0s", Timestamp: ts},
+			{Kind: RowThinking, Text: "thinking 3.0s"},
 		},
 	}
 
 	data, err := json.Marshal(turn)
 	require.NoError(t, err)
+
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(data, &raw))
+	assert.Contains(t, raw, "completed_at")
+	assert.Nil(t, raw["completed_at"], "running turns must marshal zero completed_at as null")
+
+	rows, ok := raw["rows"].([]any)
+	require.True(t, ok)
+	require.Len(t, rows, 1)
+	row0, ok := rows[0].(map[string]any)
+	require.True(t, ok)
+	assert.Nil(t, row0["timestamp"], "zero row timestamps must marshal as null")
 
 	var decoded PresentationTurn
 	require.NoError(t, json.Unmarshal(data, &decoded))

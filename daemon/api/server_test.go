@@ -229,6 +229,9 @@ type instanceCaptureStub struct {
 	captureErr                                             error
 	sendProject, sendTitle, sendPrompt                     string
 	sendErr                                                error
+	permissionProject, permissionTitle                     string
+	permissionChoice                                       PermissionChoice
+	permissionErr                                          error
 }
 
 func (s *instanceCaptureStub) ListInstances(_ string) []InstanceStatus { return nil }
@@ -262,6 +265,12 @@ func (s *instanceCaptureStub) SendInstancePrompt(project, title, prompt string) 
 	s.sendTitle = title
 	s.sendPrompt = prompt
 	return s.sendErr
+}
+func (s *instanceCaptureStub) SendInstancePermissionResponse(project, title string, choice PermissionChoice) error {
+	s.permissionProject = project
+	s.permissionTitle = title
+	s.permissionChoice = choice
+	return s.permissionErr
 }
 
 func TestHandler_InstanceCapture_HappyPath(t *testing.T) {
@@ -444,7 +453,7 @@ func (s *permissionStub) ListPlans(_ string) ([]taskstore.TaskEntry, error) {
 	return nil, nil
 }
 func (s *permissionStub) ListTasks(_ string) ([]TaskStatus, error) { return nil, nil }
-func (s *permissionStub) SendInstancePermission(project, title string, choice PermissionChoice) error {
+func (s *permissionStub) SendInstancePermissionResponse(project, title string, choice PermissionChoice) error {
 	s.project = project
 	s.title = title
 	s.choice = choice
@@ -499,4 +508,17 @@ func TestHandler_InstancePermission_BadBody(t *testing.T) {
 	h.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code, "body: %s", w.Body.String())
+}
+
+func TestHandler_InstancePermission_InvalidChoice(t *testing.T) {
+	state := &permissionStub{}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"choice":99}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/my-agent/permission", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "body: %s", w.Body.String())
+	assert.Equal(t, "", state.project, "invalid choices must be rejected before reaching the state layer")
 }

@@ -710,3 +710,49 @@ func TestStart_WithInitialPrompt_Claude(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), "'Implement the auth module.'")
 }
+
+func TestStart_WithInitialPrompt_Claude_NoTrustPromptReturnsOnStartupUI(t *testing.T) {
+	ptyFactory := NewMockPtyFactory(t)
+	created := false
+	var ranCmds []string
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			ranCmds = append(ranCmds, cmd2.ToString(cmd))
+			if strings.Contains(cmd.String(), "has-session") && !created {
+				created = true
+				return fmt.Errorf("no session")
+			}
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			if strings.Contains(cmd.String(), "capture-pane") {
+				return []byte(strings.Join([]string{
+					"Claude Code v2.1.112",
+					"/remote-control is active",
+					"❯",
+				}, "\n")), nil
+			}
+			return []byte("output"), nil
+		},
+	}
+
+	workdir := t.TempDir()
+	s := NewTmuxSessionWithDeps("test-claude-started", "claude", false, ptyFactory, cmdExec)
+	s.SetInitialPrompt("Summarize the task and wait.")
+
+	done := make(chan error, 1)
+	go func() {
+		done <- s.Start(workdir)
+	}()
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("claude start should not wait for the 30s trust-screen timeout when the session ui is already running")
+	}
+
+	for _, cmd := range ranCmds {
+		assert.NotContains(t, cmd, "send-keys", "claude startup ui without trust screen must not inject keystrokes")
+	}
+}

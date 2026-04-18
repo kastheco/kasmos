@@ -531,6 +531,16 @@ func TestCodexTransport_ErrorNotification_EmitsSystemEvent(t *testing.T) {
 	assert.True(t, ev.HasPrompt)
 }
 
+func TestCodexTransport_BenignNotifications_AreSilentlyIgnored(t *testing.T) {
+	ct, srv := newStartedCodexTransport(t)
+
+	srv.pushNotification(codexNotifyHookStarted, map[string]any{"hook": "started"})
+	srv.pushNotification(codexNotifyHookCompleted, map[string]any{"hook": "completed"})
+	srv.pushNotification(codexNotifyFileChangeOutputDelta, map[string]any{"itemId": "item-1"})
+
+	assert.Empty(t, collectEvents(t, ct.Events(), 150*time.Millisecond))
+}
+
 func TestCodexTransport_UnsupportedServerRequest_EmitsSystemEvent(t *testing.T) {
 	ct, srv := newStartedCodexTransport(t)
 

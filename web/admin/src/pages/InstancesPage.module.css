@@ -375,12 +375,6 @@
   opacity: 0.4;
 }
 
-/* agent preview — structured preview path */
-.agentPreviewWrapper {
-  flex: 1;
-  min-height: 0;
-}
-
 @media (max-width: 900px) {
   .split {
     grid-template-columns: 1fr;

@@ -104,6 +104,17 @@ type permissionRequest struct {
 	Choice PermissionChoice `json:"choice"`
 }
 
+// Valid reports whether c is one of the supported wire-level permission
+// choices accepted by the daemon HTTP API.
+func (c PermissionChoice) Valid() bool {
+	switch c {
+	case PermissionAllowOnce, PermissionAllowAlways, PermissionReject:
+		return true
+	default:
+		return false
+	}
+}
+
 // addRepoRequest is the request body for POST /v1/repos.
 type addRepoRequest struct {
 	Path string `json:"path"`
@@ -150,10 +161,9 @@ type StateProvider interface {
 	// yet". Pre-serializing here avoids importing session/sdk from daemon/api
 	// which would create an import cycle via session/tmux → cmd → daemon/api.
 	CapturePresentation(project, title string) (json.RawMessage, bool, error)
-	// SendInstancePermission forwards a permission dialog choice to the tracked
-	// instance. The choice maps to the numbered permission response the agent
-	// harness expects (0=allow-once, 1=allow-always, 2=reject).
-	SendInstancePermission(project, title string, choice PermissionChoice) error
+	// SendInstancePermissionResponse forwards a permission-overlay selection to
+	// the tracked instance identified by project/title.
+	SendInstancePermissionResponse(project, title string, choice PermissionChoice) error
 }
 
 // ---------------------------------------------------------------------------
@@ -264,7 +274,7 @@ func (s *DaemonState) SendInstancePrompt(_, _, _ string) error {
 func (s *DaemonState) CapturePresentation(_, _ string) (json.RawMessage, bool, error) {
 	return nil, false, fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
 }
-func (s *DaemonState) SendInstancePermission(_, _ string, _ PermissionChoice) error {
+func (s *DaemonState) SendInstancePermissionResponse(_, _ string, _ PermissionChoice) error {
 	return fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
 }
 
@@ -524,8 +534,8 @@ func (h *Handler) handleInstanceSend(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleInstancePermission serves POST /v1/repos/{project}/instances/{title}/permission.
-// It decodes the {"choice":N} JSON body and forwards the permission response to the
-// tracked instance via the StateProvider.
+// It decodes the {"choice":N} JSON body and delegates to the StateProvider
+// which resolves the tracked instance and forwards the permission response.
 func (h *Handler) handleInstancePermission(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("project")
 	title := r.PathValue("title")
@@ -535,8 +545,12 @@ func (h *Handler) handleInstancePermission(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	if !body.Choice.Valid() {
+		writeError(w, http.StatusBadRequest, "invalid permission choice")
+		return
+	}
 
-	if err := h.state.SendInstancePermission(project, title, body.Choice); err != nil {
+	if err := h.state.SendInstancePermissionResponse(project, title, body.Choice); err != nil {
 		switch {
 		case errors.Is(err, ErrInstanceNotFound):
 			writeError(w, http.StatusNotFound, err.Error())
