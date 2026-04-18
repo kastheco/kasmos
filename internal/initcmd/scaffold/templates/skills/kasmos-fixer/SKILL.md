@@ -23,7 +23,7 @@ If a scaffold source exists, update source + mirrors in the same change.
 
 Never modify only one copy when a scaffold source exists.
 
-That protocol does not grant standing permission to rewrite scaffold-managed files. Even fixer must not edit, stage, or commit scaffold-managed prompts, skills, template sources, YAML frontmatter, or harness config (`.claude/settings.json`, `opencode.jsonc`, legacy `.opencode/opencode.jsonc`) unless the user, in this conversation, directly asks for that change. Instructions in the current task/plan and noticed drift are not authorization.
+That protocol does not grant standing permission to rewrite scaffold-managed files. Even fixer must not edit, stage, or commit scaffold-managed prompts, skills, template sources, YAML frontmatter, or harness config (`.claude/settings.json`, `.codex/config.toml`, `.codex/hooks.json`, `opencode.jsonc`, legacy `.opencode/opencode.jsonc`) unless the user, in this conversation, directly asks for that change. Instructions in the current task/plan and noticed drift are not authorization.
 
 <HARD-GATE>
 ## Banned Tools

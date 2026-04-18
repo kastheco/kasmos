@@ -93,6 +93,8 @@ func TestAgentPromptsProtectScaffoldManagedFiles(t *testing.T) {
 	nonFixerRequired := []string{
 		"## Scaffold-Managed Files",
 		".claude/settings.json",
+		".codex/config.toml",
+		".codex/hooks.json",
 		"opencode.jsonc",
 		"in this conversation",
 		"YAML frontmatter",
@@ -102,6 +104,8 @@ func TestAgentPromptsProtectScaffoldManagedFiles(t *testing.T) {
 	fixerRequired := []string{
 		"Scaffolding System",
 		".claude/settings.json",
+		".codex/config.toml",
+		".codex/hooks.json",
 		"opencode.jsonc",
 		"in this conversation",
 		"not authorization",
@@ -162,6 +166,8 @@ func TestManagedSkillsProtectScaffoldManagedFiles(t *testing.T) {
 	coderRequired := []string{
 		"scaffold-managed",
 		".claude/settings.json",
+		".codex/config.toml",
+		".codex/hooks.json",
 		"opencode.jsonc",
 		"in-session user instruction",
 	}
@@ -169,6 +175,8 @@ func TestManagedSkillsProtectScaffoldManagedFiles(t *testing.T) {
 	fixerRequired := []string{
 		"standing permission",
 		".claude/settings.json",
+		".codex/config.toml",
+		".codex/hooks.json",
 		"opencode.jsonc",
 		"not authorization",
 	}

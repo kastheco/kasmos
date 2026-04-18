@@ -68,7 +68,7 @@ Never edit, stage, or commit changes to:
 - `.claude/agents/*.md` and `.opencode/agents/*.md`
 - `.agents/skills/**`, `.claude/skills/**`, and `.opencode/skills/**`
 - `internal/initcmd/scaffold/templates/**`
-- `.claude/settings.json`, `opencode.jsonc`, and legacy `.opencode/opencode.jsonc`
+- `.claude/settings.json`, `.codex/config.toml`, `.codex/hooks.json`, `opencode.jsonc`, and legacy `.opencode/opencode.jsonc`
 - YAML frontmatter (`---` blocks) in agent or skill markdown, including `model:`, `description:`, `mode:`, and `name:`
 
 If these files are already dirty, leave those diffs alone unless the user explicitly asked for them in this session. Observed scaffold drift is not authorization.
