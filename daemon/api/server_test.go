@@ -424,3 +424,79 @@ func TestHandler_InstancePresentation_NotFound(t *testing.T) {
 
 	assert.Equal(t, http.StatusNotFound, w.Code, "body: %s", w.Body.String())
 }
+
+// ---------------------------------------------------------------------------
+// Permission endpoint tests
+// ---------------------------------------------------------------------------
+
+type permissionStub struct {
+	DaemonState
+	project string
+	title   string
+	choice  PermissionChoice
+	err     error
+}
+
+func (s *permissionStub) ListInstances(_ string) []InstanceStatus { return nil }
+func (s *permissionStub) EventStream() <-chan Event               { return make(chan Event) }
+func (s *permissionStub) StartPlan(_, _, _, _ string) error       { return nil }
+func (s *permissionStub) ListPlans(_ string) ([]taskstore.TaskEntry, error) {
+	return nil, nil
+}
+func (s *permissionStub) ListTasks(_ string) ([]TaskStatus, error) { return nil, nil }
+func (s *permissionStub) SendInstancePermission(project, title string, choice PermissionChoice) error {
+	s.project = project
+	s.title = title
+	s.choice = choice
+	return s.err
+}
+
+func TestHandler_InstancePermission_HappyPath(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		choice PermissionChoice
+	}{
+		{"allow_once", PermissionAllowOnce},
+		{"allow_always", PermissionAllowAlways},
+		{"reject", PermissionReject},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state := &permissionStub{}
+			h := NewHandler(state)
+
+			body := bytes.NewBufferString(fmt.Sprintf(`{"choice":%d}`, tc.choice))
+			req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/my-agent/permission", body)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusNoContent, w.Code, "body: %s", w.Body.String())
+			assert.Equal(t, "myproj", state.project)
+			assert.Equal(t, "my-agent", state.title)
+			assert.Equal(t, tc.choice, state.choice)
+		})
+	}
+}
+
+func TestHandler_InstancePermission_NotFound(t *testing.T) {
+	state := &permissionStub{err: fmt.Errorf("%w: missing", ErrInstanceNotFound)}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"choice":0}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/missing/permission", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code, "body: %s", w.Body.String())
+}
+
+func TestHandler_InstancePermission_BadBody(t *testing.T) {
+	state := &permissionStub{}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`not json`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/my-agent/permission", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "body: %s", w.Body.String())
+}
