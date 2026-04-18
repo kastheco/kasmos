@@ -1,8 +1,23 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Mock } from "vitest";
 import AgentPreview from "./AgentPreview";
 import type { PresentationResponse, PresentationTurn, PresentationRow } from "../../types";
+import { FILTER_STORAGE_KEY } from "./FilterToolbar";
+
+// ---------------------------------------------------------------------------
+// localStorage stub — jsdom does not expose a fully working localStorage in
+// this test setup, so we provide an in-memory replacement.
+// ---------------------------------------------------------------------------
+
+const localStorageStore: Record<string, string> = {};
+const localStorageMock = {
+  getItem: (key: string) => localStorageStore[key] ?? null,
+  setItem: (key: string, value: string) => { localStorageStore[key] = value; },
+  removeItem: (key: string) => { delete localStorageStore[key]; },
+  clear: () => { Object.keys(localStorageStore).forEach((k) => delete localStorageStore[k]); },
+};
+vi.stubGlobal("localStorage", localStorageMock);
 
 // ---------------------------------------------------------------------------
 // Mock the API module so no real fetch calls are made.
@@ -10,6 +25,7 @@ import type { PresentationResponse, PresentationTurn, PresentationRow } from "..
 
 vi.mock("../../api", () => ({
   getInstancePresentation: vi.fn(),
+  sendInstancePermission: vi.fn(),
 }));
 
 import * as api from "../../api";
@@ -60,6 +76,11 @@ function makePresentation(
 describe("AgentPreview", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorageMock.removeItem(FILTER_STORAGE_KEY);
+  });
+
+  afterEach(() => {
+    localStorageMock.removeItem(FILTER_STORAGE_KEY);
   });
 
   it("renders completed turn with tool, result, response, and prose rows", async () => {
@@ -258,5 +279,302 @@ describe("AgentPreview", () => {
 
     // Loading placeholder should no longer be present once data arrives.
     expect(screen.queryByText(/loading/i)).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // Filter toolbar
+  // -------------------------------------------------------------------------
+
+  it("renders the filter toolbar with three toggles", async () => {
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ supported: true, turns: [] }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("hide thinking")).toBeTruthy();
+      expect(screen.getByText("hide tools")).toBeTruthy();
+      expect(screen.getByText("hide system")).toBeTruthy();
+    });
+  });
+
+  it("persists filter state to localStorage when a toggle is clicked", async () => {
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ supported: true, turns: [] }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("hide tools")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText("hide tools"));
+
+    const stored = JSON.parse(localStorage.getItem(FILTER_STORAGE_KEY) ?? "{}");
+    expect(stored.hideTools).toBe(true);
+  });
+
+  it("restores filter state from localStorage on mount", async () => {
+    localStorage.setItem(
+      FILTER_STORAGE_KEY,
+      JSON.stringify({ hideTools: true, hideThinking: false, hideSystem: false }),
+    );
+
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ supported: true, turns: [] }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      const btn = screen.getByText("hide tools");
+      // aria-pressed reflects the active state
+      expect(btn.getAttribute("aria-pressed")).toBe("true");
+    });
+  });
+
+  it("hides tool rows when hideTools filter is active", async () => {
+    localStorage.setItem(
+      FILTER_STORAGE_KEY,
+      JSON.stringify({ hideTools: true, hideThinking: false, hideSystem: false }),
+    );
+
+    const turn = makeTurn({
+      tool_count: 1,
+      rows: [
+        makeRow({ kind: "tool", text: "tool-call-output", tool_name: "Bash" }),
+        makeRow({ kind: "prose", text: "prose output" }),
+      ],
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("prose output")).toBeTruthy();
+    });
+
+    // Tool row must be hidden
+    expect(screen.queryByText("tool-call-output")).toBeNull();
+  });
+
+  it("never hides permission rows even when hideTools is active", async () => {
+    localStorage.setItem(
+      FILTER_STORAGE_KEY,
+      JSON.stringify({ hideTools: true, hideThinking: true, hideSystem: true }),
+    );
+
+    const turn = makeTurn({
+      rows: [
+        makeRow({ kind: "permission", text: "allow file access?" }),
+      ],
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    // sendInstancePermission must be in the mock so PermissionCard renders
+    (api.sendInstancePermission as Mock).mockResolvedValue(undefined);
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("allow file access?")).toBeTruthy();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Collapse
+  // -------------------------------------------------------------------------
+
+  it("collapse button hides tool rows but keeps prose and response visible", async () => {
+    const turn = makeTurn({
+      tool_count: 1,
+      rows: [
+        makeRow({ kind: "tool", text: "tool-text", tool_name: "Bash" }),
+        makeRow({ kind: "response", text: "" }),
+        makeRow({ kind: "prose", text: "prose-text" }),
+      ],
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("tool-text")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /collapse turn/i }));
+
+    await waitFor(() => {
+      // Tool row hidden
+      expect(screen.queryByText("tool-text")).toBeNull();
+      // Prose and response divider still visible
+      expect(screen.getByText("prose-text")).toBeTruthy();
+      expect(screen.getByText("response")).toBeTruthy();
+    });
+  });
+
+  it("collapse keeps permission rows visible", async () => {
+    const turn = makeTurn({
+      rows: [
+        makeRow({ kind: "thinking", text: "thinking-text" }),
+        makeRow({ kind: "permission", text: "allow?" }),
+      ],
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    (api.sendInstancePermission as Mock).mockResolvedValue(undefined);
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("thinking-text")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /collapse turn/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("thinking-text")).toBeNull();
+      expect(screen.getByText("allow?")).toBeTruthy();
+    });
+  });
+
+  it("expand button restores hidden rows", async () => {
+    const turn = makeTurn({
+      tool_count: 1,
+      rows: [
+        makeRow({ kind: "tool", text: "tool-text", tool_name: "Bash" }),
+        makeRow({ kind: "prose", text: "prose-text" }),
+      ],
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("tool-text")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /collapse turn/i }));
+    await waitFor(() => {
+      expect(screen.queryByText("tool-text")).toBeNull();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /expand turn/i }));
+    await waitFor(() => {
+      expect(screen.getByText("tool-text")).toBeTruthy();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Copy fallback
+  // -------------------------------------------------------------------------
+
+  it("shows copy fallback textarea when clipboard is unavailable", async () => {
+    // Remove clipboard API to simulate unavailable context
+    const originalClipboard = Object.getOwnPropertyDescriptor(
+      navigator,
+      "clipboard",
+    );
+    Object.defineProperty(navigator, "clipboard", {
+      value: undefined,
+      configurable: true,
+    });
+
+    const turn = makeTurn({
+      rows: [makeRow({ kind: "prose", text: "some output" })],
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("some output")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /copy turn/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/copy manually/i)).toBeTruthy();
+    });
+
+    // Restore clipboard
+    if (originalClipboard) {
+      Object.defineProperty(navigator, "clipboard", originalClipboard);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Markdown rendering
+  // -------------------------------------------------------------------------
+
+  it("renders prose rows with markdown bold", async () => {
+    const turn = makeTurn({
+      rows: [makeRow({ kind: "prose", text: "This is **bold** text." })],
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      const strong = document.querySelector("strong");
+      expect(strong).toBeTruthy();
+      expect(strong?.textContent).toBe("bold");
+    });
+  });
+
+  it("does not render raw HTML in prose rows", async () => {
+    const turn = makeTurn({
+      rows: [
+        makeRow({ kind: "prose", text: "<script>alert('xss')</script> safe" }),
+      ],
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/safe/)).toBeTruthy();
+    });
+    expect(document.querySelector("script")).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // Permission card integration
+  // -------------------------------------------------------------------------
+
+  it("renders interactive permission card for first unresolved permission row", async () => {
+    const turn = makeTurn({
+      rows: [makeRow({ kind: "permission", text: "allow write?" })],
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+    (api.sendInstancePermission as Mock).mockResolvedValue(undefined);
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "allow" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "deny" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "always" })).toBeTruthy();
+    });
   });
 });

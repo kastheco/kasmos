@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { getInstancePresentation } from "../../api";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import { isAtBottom } from "../../pages/instanceInteractivity";
+import { FilterToolbar, loadFilters, saveFilters } from "./FilterToolbar";
+import type { AgentPreviewFilters } from "./FilterToolbar";
 import { TurnTimeline } from "./TurnTimeline";
 import styles from "./AgentPreview.module.css";
 
@@ -21,6 +23,10 @@ interface AgentPreviewProps {
  * Owns its own 1-second polling via useAutoRefresh and its own scroll container.
  * Uses `isAtBottom` from instanceInteractivity to track follow mode.
  *
+ * Layout: outer wrapper (flex-column) → FilterToolbar (fixed height) + inner
+ * scroll container. This keeps the filter strip always visible while the
+ * timeline scrolls independently.
+ *
  * Do not add terminal depth controls here — they are tmux-only.
  */
 export default function AgentPreview({
@@ -38,6 +44,17 @@ export default function AgentPreview({
   const [isFollowing, setIsFollowing] = useState(true);
   const isFollowingRef = useRef(isFollowing);
   isFollowingRef.current = isFollowing;
+
+  // ---------------------------------------------------------------------------
+  // Filter state — persisted to localStorage["kasmos.agentPreview.filters"]
+  // ---------------------------------------------------------------------------
+
+  const [filters, setFilters] = useState<AgentPreviewFilters>(loadFilters);
+
+  function handleFiltersChange(next: AgentPreviewFilters) {
+    setFilters(next);
+    saveFilters(next);
+  }
 
   // 1-second poll via useAutoRefresh.
   const presentation = useAutoRefresh(
@@ -91,57 +108,79 @@ export default function AgentPreview({
   };
 
   // ---------------------------------------------------------------------------
-  // Render
+  // Render helpers
   // ---------------------------------------------------------------------------
 
-  // Initial load — no data yet.
-  if (presentation.loading && !presentation.data) {
-    return (
-      <div ref={containerRef} className={styles.container} onScroll={handleScroll}>
-        <p className={styles.loading}>loading…</p>
-      </div>
-    );
-  }
-
-  // Error with no prior data.
-  if (presentation.error && !presentation.data) {
-    return (
-      <div ref={containerRef} className={styles.container} onScroll={handleScroll}>
-        <p className={styles.empty}>{presentation.error}</p>
-      </div>
-    );
-  }
-
   const data = presentation.data;
+  const turns = data?.turns ?? null;
 
-  // Unsupported — server returned supported=false.
+  const toolbar = (
+    <FilterToolbar filters={filters} onChange={handleFiltersChange} />
+  );
+
+  // ---------------------------------------------------------------------------
+  // Early-return states — wrapper always shown so layout is stable.
+  // ---------------------------------------------------------------------------
+
+  if (presentation.loading && !data) {
+    return (
+      <div className={styles.wrapper}>
+        {toolbar}
+        <div ref={containerRef} className={styles.container} onScroll={handleScroll}>
+          <p className={styles.loading}>loading…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (presentation.error && !data) {
+    return (
+      <div className={styles.wrapper}>
+        {toolbar}
+        <div ref={containerRef} className={styles.container} onScroll={handleScroll}>
+          <p className={styles.empty}>{presentation.error}</p>
+        </div>
+      </div>
+    );
+  }
+
   if (data && !data.supported) {
     return (
-      <div ref={containerRef} className={styles.container} onScroll={handleScroll}>
-        <p className={styles.empty}>
-          structured preview is not supported for this instance
-        </p>
+      <div className={styles.wrapper}>
+        {toolbar}
+        <div ref={containerRef} className={styles.container} onScroll={handleScroll}>
+          <p className={styles.empty}>
+            structured preview is not supported for this instance
+          </p>
+        </div>
       </div>
     );
   }
 
-  // Supported but no turns yet.
-  const turns = data?.turns ?? null;
   if (!turns || turns.length === 0) {
     return (
-      <div ref={containerRef} className={styles.container} onScroll={handleScroll}>
-        <p className={styles.empty}>waiting for agent output…</p>
+      <div className={styles.wrapper}>
+        {toolbar}
+        <div ref={containerRef} className={styles.container} onScroll={handleScroll}>
+          <p className={styles.empty}>waiting for agent output…</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div ref={containerRef} className={styles.container} onScroll={handleScroll}>
-      <TurnTimeline
-        turns={turns}
-        capturedAt={data!.captured_at}
-        snapshotReceivedAt={snapshotReceivedAt.current}
-      />
+    <div className={styles.wrapper}>
+      {toolbar}
+      <div ref={containerRef} className={styles.container} onScroll={handleScroll}>
+        <TurnTimeline
+          turns={turns}
+          capturedAt={data!.captured_at}
+          snapshotReceivedAt={snapshotReceivedAt.current}
+          project={project}
+          title={title}
+          filters={filters}
+        />
+      </div>
     </div>
   );
 }

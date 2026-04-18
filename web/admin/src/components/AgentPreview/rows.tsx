@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { PresentationRow } from "../../types";
 import { ResponseDivider } from "./ResponseDivider";
+import { ProseMarkdown } from "./ProseMarkdown";
 import styles from "./rows.module.css";
 
 // ---------------------------------------------------------------------------
@@ -53,19 +54,25 @@ function TextRow({ row }: RowProps) {
 function ProseRow({ row }: RowProps) {
   return (
     <div className={`${styles.row} ${styles.kindProse}`} data-kind="prose">
-      <span className={styles.rowText}>{row.text}</span>
+      <div className={styles.rowText}>
+        <ProseMarkdown text={row.text} />
+      </div>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
 // Public switch: row.kind → renderer
+//
+// NOTE: `permission` rows are handled by TurnBlock (which wraps them in
+// PermissionCard with project/title/interactive context).  If renderRow is
+// called with a permission row it falls through to TextRow as a safe fallback.
 // ---------------------------------------------------------------------------
 
 /**
  * Maps a single `PresentationRow` to its React node.
  * `response` rows always become `ResponseDivider` — never generic text.
- * `prose` rows use `white-space: pre-wrap`.
+ * `prose` rows render as react-markdown (remark-gfm, no raw HTML passthrough).
  * All other rows are monospace text rows with a dimmed kind prefix.
  */
 export function renderRow(row: PresentationRow, index: number): ReactNode {

@@ -1,4 +1,7 @@
+import { useState } from "react";
 import type { PresentationTurn } from "../../types";
+import type { AgentPreviewFilters } from "./FilterToolbar";
+import { PermissionCard } from "./PermissionCard";
 import { renderRow } from "./rows";
 import styles from "./AgentPreview.module.css";
 
@@ -15,6 +18,33 @@ function formatElapsedMs(ms: number): string {
   return rs > 0 ? `${m}m ${rs}s` : `${m}m`;
 }
 
+/** Rows that are hidden by collapse (but not by filters). */
+const COLLAPSE_HIDDEN_KINDS = new Set(["thinking", "tool", "result", "system"]);
+
+/** Rows hidden by the hideTools filter. */
+const TOOLS_FILTER_KINDS = new Set(["tool", "result"]);
+
+/**
+ * Produce a plain-text copy summary for a turn.
+ * Permission rows are omitted; response rows become a "---" separator.
+ */
+function buildCopyText(turn: PresentationTurn, elapsedLabel: string | null): string {
+  const lines: string[] = [`turn ${turn.number}`];
+  if (elapsedLabel) lines.push(`elapsed: ${elapsedLabel}`);
+  for (const row of turn.rows) {
+    if (row.kind === "response") {
+      lines.push("---");
+    } else if (row.kind === "permission") {
+      // omit permission from copy
+    } else if (row.kind === "tool") {
+      lines.push(`[${row.tool_name || "tool"}] ${row.text}`);
+    } else {
+      lines.push(row.text);
+    }
+  }
+  return lines.join("\n");
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -25,17 +55,49 @@ interface TurnBlockProps {
   capturedAt: Date;
   /** Browser timestamp when the snapshot was received (ms since epoch). */
   snapshotReceivedAt: number;
+  /** Project name, forwarded to PermissionCard for the permission POST. */
+  project: string;
+  /** Instance title, forwarded to PermissionCard for the permission POST. */
+  title: string;
+  /** Global filter state from FilterToolbar. */
+  filters: AgentPreviewFilters;
+  /**
+   * Number of permission rows in turns that precede this one in the snapshot.
+   * The first unresolved permission card globally (offset 0) is interactive.
+   */
+  permissionOffset: number;
 }
 
 /**
- * Renders a single presentation turn: turn header + typed rows.
- * Running turns (completed_at === null && !interrupted) show the • running pill.
- * Interrupted turns rely on the status row from the server — no extra badge.
+ * Renders a single presentation turn with:
+ * - turn header (#N, elapsed, tool count, running pill)
+ * - collapse toggle (session-local, does not persist)
+ * - copy button (writes plain-text summary to clipboard; shows fallback on error)
+ * - anchor link (#turn-N, updates location.hash)
+ * - global filter application (hideTools / hideThinking / hideSystem)
+ * - PermissionCard for permission rows (only first unresolved is interactive)
+ *
+ * Collapse hides thinking/tool/result/system rows.
+ * Global filters never hide permission rows.
  */
-export function TurnBlock({ turn, capturedAt, snapshotReceivedAt }: TurnBlockProps) {
+export function TurnBlock({
+  turn,
+  capturedAt,
+  snapshotReceivedAt,
+  project,
+  title,
+  filters,
+  permissionOffset,
+}: TurnBlockProps) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [copyFallback, setCopyFallback] = useState<string | null>(null);
+
   const isRunning = turn.completed_at === null && !turn.interrupted;
 
-  // Elapsed time for display.
+  // ---------------------------------------------------------------------------
+  // Elapsed time
+  // ---------------------------------------------------------------------------
+
   let elapsedLabel: string | null = null;
   if (turn.started_at) {
     const baseMs = isRunning
@@ -53,8 +115,77 @@ export function TurnBlock({ turn, capturedAt, snapshotReceivedAt }: TurnBlockPro
       ? `${turn.tool_count} tool${turn.tool_count !== 1 ? "s" : ""}`
       : null;
 
+  // ---------------------------------------------------------------------------
+  // Copy handler
+  // ---------------------------------------------------------------------------
+
+  async function handleCopy() {
+    const text = buildCopyText(turn, elapsedLabel);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyFallback(null);
+    } catch {
+      // Clipboard API unavailable (e.g. non-secure context) — show inline fallback.
+      setCopyFallback(text);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Anchor handler
+  // ---------------------------------------------------------------------------
+
+  function handleAnchor(e: React.MouseEvent<HTMLAnchorElement>) {
+    e.preventDefault();
+    const hash = `turn-${turn.number}`;
+    location.hash = hash;
+    document.getElementById(hash)?.scrollIntoView({ behavior: "smooth" });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Row visibility
+  // ---------------------------------------------------------------------------
+
+  /** Whether a row should be rendered at all. Permission rows are always visible. */
+  function isRowVisible(kind: string): boolean {
+    if (kind === "permission") return true; // never hidden
+    if (collapsed && COLLAPSE_HIDDEN_KINDS.has(kind)) return false;
+    if (!collapsed) {
+      if (filters.hideThinking && kind === "thinking") return false;
+      if (filters.hideTools && TOOLS_FILTER_KINDS.has(kind)) return false;
+      if (filters.hideSystem && kind === "system") return false;
+    }
+    return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
+  // Track permission row count within this turn to compute interactive state.
+  let localPermCount = 0;
+
+  const renderedRows = turn.rows.map((row, i) => {
+    if (!isRowVisible(row.kind)) return null;
+
+    if (row.kind === "permission") {
+      const globalIndex = permissionOffset + localPermCount;
+      localPermCount++;
+      return (
+        <PermissionCard
+          key={i}
+          text={row.text}
+          project={project}
+          title={title}
+          interactive={globalIndex === 0}
+        />
+      );
+    }
+
+    return renderRow(row, i);
+  });
+
   return (
-    <div className={styles.turnBlock}>
+    <div id={`turn-${turn.number}`} className={styles.turnBlock}>
       <div className={styles.turnHeader}>
         <span className={styles.turnNumber}>#{turn.number}</span>
         {elapsedLabel && (
@@ -66,12 +197,58 @@ export function TurnBlock({ turn, capturedAt, snapshotReceivedAt }: TurnBlockPro
         {isRunning && (
           <span className={styles.runningPill}>• running</span>
         )}
+
+        {/* header controls */}
+        <span className={styles.turnHeaderControls}>
+          <a
+            className={styles.turnAnchor}
+            href={`#turn-${turn.number}`}
+            onClick={handleAnchor}
+            aria-label={`anchor to turn ${turn.number}`}
+          >
+            #{turn.number}
+          </a>
+          <button
+            className={styles.turnHeaderBtn}
+            onClick={handleCopy}
+            aria-label="copy turn"
+          >
+            copy
+          </button>
+          <button
+            className={styles.turnHeaderBtn}
+            onClick={() => {
+              setCollapsed((c) => !c);
+              setCopyFallback(null);
+            }}
+            aria-label={collapsed ? "expand turn" : "collapse turn"}
+          >
+            {collapsed ? "expand" : "collapse"}
+          </button>
+        </span>
       </div>
 
-      {turn.rows.length > 0 && (
-        <div className={styles.turnRows}>
-          {turn.rows.map((row, i) => renderRow(row, i))}
+      {copyFallback !== null && (
+        <div className={styles.copyFallback}>
+          <span className={styles.copyFallbackLabel}>copy manually:</span>
+          <textarea
+            className={styles.copyFallbackArea}
+            readOnly
+            value={copyFallback}
+            rows={Math.min(copyFallback.split("\n").length + 1, 8)}
+            onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+          />
+          <button
+            className={styles.turnHeaderBtn}
+            onClick={() => setCopyFallback(null)}
+          >
+            dismiss
+          </button>
         </div>
+      )}
+
+      {turn.rows.length > 0 && (
+        <div className={styles.turnRows}>{renderedRows}</div>
       )}
     </div>
   );

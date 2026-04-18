@@ -98,6 +98,53 @@ All task endpoints use the project-scoped URL prefix `/v1/projects/{project}/tas
 |--------|------|-------------|
 | `GET` | `/v1/projects/{project}/audit-events` | query audit log entries |
 
+### instances
+
+Live-preview and permission endpoints for daemon-managed SDK instances. These routes
+bridge the daemon control API to the browser-facing `kas serve` stack. Only
+daemon-managed SDK instances support the structured `presentation` response; tmux
+instances return `supported: false`.
+
+| method | path | description |
+|--------|------|-------------|
+| `GET` | `/v1/projects/{project}/instances/{title}/presentation` | retrieve the current structured turn snapshot for a daemon-managed SDK instance; returns `{ supported, turns, captured_at }` |
+| `POST` | `/v1/projects/{project}/instances/{title}/permission` | submit a permission decision for a pending prompt; body: `{ "decision": <0\|1\|2> }` where `0` = allow once, `1` = allow always, `2` = reject |
+
+**permission decision values:**
+
+| value | meaning |
+|-------|---------|
+| `0` | allow once (`allow_once`) |
+| `1` | allow always (`allow_always`) |
+| `2` | reject (`reject`) |
+
+the `presentation` response shape:
+
+```json
+{
+  "supported": true,
+  "captured_at": "2026-01-01T10:00:00Z",
+  "turns": [
+    {
+      "id": "turn-1",
+      "number": 1,
+      "started_at": "2026-01-01T10:00:00Z",
+      "completed_at": "2026-01-01T10:00:05Z",
+      "interrupted": false,
+      "tool_count": 2,
+      "rows": [
+        { "kind": "tool", "text": "reading file", "tool_name": "Read", "timestamp": null, "is_error": false },
+        { "kind": "result", "text": "contents", "tool_name": "", "timestamp": null, "is_error": false },
+        { "kind": "response", "text": "", "tool_name": "", "timestamp": null, "is_error": false },
+        { "kind": "prose", "text": "I found the file.", "tool_name": "", "timestamp": null, "is_error": false }
+      ]
+    }
+  ]
+}
+```
+
+row `kind` values: `thinking`, `tool`, `result`, `system`, `permission`, `response`, `prose`, `status`.
+
 ## admin ui
 
 A built-in web admin UI is served at `/admin/`. To use an externally built admin SPA, pass `--admin-dir` pointing to the `dist/` directory (must contain `index.html`).
