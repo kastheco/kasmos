@@ -6,6 +6,34 @@
 import type { InstanceEntry, ScrollbackDepth } from "../types";
 
 // ---------------------------------------------------------------------------
+// Preview routing helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true when the instance is a daemon-managed SDK row that exposes the
+ * structured presentation endpoint. Requires both canonical "sdk" mode and at
+ * least one valid_action — the safest browser-visible proxy for "daemon-managed"
+ * without widening the list API.
+ */
+export function supportsStructuredPreview(instance: InstanceEntry | null): boolean {
+  if (!instance) return false;
+  return (
+    instance.execution_mode === "sdk" &&
+    (instance.valid_actions?.length ?? 0) > 0
+  );
+}
+
+/**
+ * Returns true when the instance should be rendered with the terminal
+ * (tmux pane capture) preview path. Anything that is not explicitly "sdk" falls
+ * back here, including instances with no execution_mode set.
+ */
+export function usesTerminalPreview(instance: InstanceEntry | null): boolean {
+  if (!instance) return false;
+  return instance.execution_mode !== "sdk";
+}
+
+// ---------------------------------------------------------------------------
 // Composer state
 // ---------------------------------------------------------------------------
 
@@ -17,6 +45,13 @@ export interface ComposerState {
 /**
  * Returns whether the composer is enabled for a given instance and, if not,
  * a lowercase reason string to display in the UI.
+ *
+ * Priority order:
+ *  1. loading / paused always disable (regardless of mode)
+ *  2. daemon-managed SDK rows (valid_actions present) in running/ready are enabled
+ *     because /send is forwarded through the daemon
+ *  3. standalone SDK rows (no valid_actions) are disabled — no tmux pane
+ *  4. tmux running/ready are enabled
  */
 export function composerStateForInstance(
   instance: InstanceEntry | null,
@@ -24,16 +59,16 @@ export function composerStateForInstance(
   if (!instance) {
     return { disabled: true, reason: "no instance selected" };
   }
-  if (instance.execution_mode === "headless") {
-    return { disabled: true, reason: "headless instance has no tmux pane" };
-  }
   if (instance.status === "loading") {
     return { disabled: true, reason: "instance is loading" };
   }
   if (instance.status === "paused") {
     return { disabled: true, reason: "instance is paused" };
   }
-  // running and ready tmux instances are enabled
+  // Standalone SDK rows have no daemon-forwarded /send path.
+  if (instance.execution_mode === "sdk" && !supportsStructuredPreview(instance)) {
+    return { disabled: true, reason: "standalone sdk instance" };
+  }
   if (instance.status === "running" || instance.status === "ready") {
     return { disabled: false, reason: null };
   }

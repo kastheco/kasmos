@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/session/tmux"
 )
 
 // SocketClient is a client for the daemon control socket API. It communicates
@@ -133,6 +134,15 @@ func (c *SocketClient) SendInstancePrompt(project, title, prompt string) error {
 		Prompt string `json:"prompt"`
 	}{Prompt: prompt}
 	return c.post("/v1/repos/"+project+"/instances/"+title+"/send", body, nil)
+}
+
+// SendInstancePermissionResponse forwards a permission choice to a daemon-
+// tracked instance.
+func (c *SocketClient) SendInstancePermissionResponse(project, title string, choice tmux.PermissionChoice) error {
+	body := struct {
+		Choice api.PermissionChoice `json:"choice"`
+	}{Choice: api.PermissionChoice(choice)}
+	return c.post("/v1/repos/"+project+"/instances/"+title+"/permission", body, nil)
 }
 
 // PauseInstance, ResumeInstance, RestartInstance, KillInstance route to

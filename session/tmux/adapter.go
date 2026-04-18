@@ -160,12 +160,35 @@ func claudeHasComposerPrompt(lines []string) bool {
 		start = 0
 	}
 	for _, line := range lines[start:] {
-		if line == ">" || line == "›" {
+		if line == ">" || line == "›" || line == "❯" {
 			return true
 		}
 	}
 
 	return false
+}
+
+func claudeHasStarted(plainContent string) bool {
+	if strings.Contains(plainContent, claudeAdapter{}.ReadyString()) {
+		return false
+	}
+
+	lines := claudeRecentNonEmptyLines(plainContent, claudePromptTailLines)
+	if len(lines) == 0 {
+		return false
+	}
+
+	if strings.Contains(plainContent, "Claude Code") {
+		return true
+	}
+	if strings.Contains(plainContent, "/remote-control is active") {
+		return true
+	}
+	if strings.Contains(plainContent, "bypass permissions on") {
+		return true
+	}
+
+	return claudeHasActivityMarker(lines) || claudeHasReviewPrompt(lines) || claudeHasComposerPrompt(lines)
 }
 
 func (a claudeAdapter) MaxWaitTime() time.Duration {

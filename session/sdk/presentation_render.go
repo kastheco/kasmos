@@ -138,6 +138,6 @@ func renderPresentationComposerFooter(width int) []string {
 		rule = ruleStyle.Render(strings.Repeat("─", width))
 	}
 	prompt := textStyle.Render("> send a message to the agent …")
-	hints := hintStyle.Render("enter send   ctrl+j newline   esc unfocus")
+	hints := hintStyle.Render("enter send   shift+enter newline   esc unfocus")
 	return []string{rule, prompt, hints}
 }

@@ -264,7 +264,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 
 	// If in scroll mode but haven't loaded content yet, capture full history now.
 	if p.isScrolling && p.viewport.Height() > 0 && len(p.viewport.View()) == 0 {
-		content, err := instance.PreviewFullHistory()
+		content, err := p.scrollbackContent(instance)
 		if err != nil {
 			return err
 		}
@@ -501,7 +501,7 @@ func renderComposerFooter(width int) []string {
 		rule = ruleStyle.Render(strings.Repeat("─", width))
 	}
 	prompt := textStyle.Render("> send a message to the agent …")
-	hints := hintStyle.Render("enter send   ctrl+j newline   esc unfocus")
+	hints := hintStyle.Render("enter send   shift+enter newline   esc unfocus")
 	return []string{rule, prompt, hints}
 }
 
@@ -630,10 +630,29 @@ func (p *PreviewPane) buildFallbackText() string {
 	}
 }
 
-// enterScrollMode captures the full terminal history and sets up the viewport
+func (p *PreviewPane) scrollbackContent(instance *session.Instance) (string, error) {
+	if instance == nil {
+		return "", nil
+	}
+	if session.NormalizeExecutionMode(instance.ExecutionMode) == session.ExecutionModeSDK {
+		if turns := instance.CapturePresentation(); len(turns) > 0 {
+			width := p.viewport.Width()
+			if width <= 0 {
+				width = p.width
+			}
+			return renderSDKPresentation(turns, width), nil
+		}
+		if instance.CachedContentSet && instance.CachedContent != "" {
+			return instance.CachedContent, nil
+		}
+	}
+	return instance.PreviewFullHistory()
+}
+
+// enterScrollMode captures the full preview history and sets up the viewport
 // for scroll mode. Shared by all scroll entry points.
 func (p *PreviewPane) enterScrollMode(instance *session.Instance) error {
-	content, err := instance.PreviewFullHistory()
+	content, err := p.scrollbackContent(instance)
 	if err != nil {
 		return err
 	}

@@ -542,18 +542,23 @@ func (t *TmuxSession) Start(workDir string) error {
 
 			content, err := t.CapturePaneContent()
 			if err == nil {
+				plain := ansiRe.ReplaceAllString(content, "")
 				if searchString == "" {
 					// No stable printable startup banner (e.g. codex): wait a short
 					// grace period, verify the session is still alive, then continue.
 					if time.Since(startTime) >= codexGracePeriod && t.DoesSessionExist() {
 						break
 					}
-				} else if strings.Contains(content, searchString) {
+				} else if strings.Contains(plain, searchString) {
 					if tapFunc != nil {
 						if err := tapFunc(); err != nil {
 							log.ErrorLog.Printf("could not tap enter on trust screen: %v", err)
 						}
 					}
+					break
+				} else if adapter != nil && adapter.DetectPrompt(plain) {
+					break
+				} else if isClaudeProgram(t.program) && claudeHasStarted(plain) {
 					break
 				}
 			}

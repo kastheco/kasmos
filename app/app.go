@@ -1991,10 +1991,16 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// and allows cleanup. Covers solo agents, reviewers, and any
 			// other instance whose tmux session disappears while the TUI runs.
 			for _, inst := range m.nav.GetInstances() {
+				alive, collected := tmuxAliveMap[inst.Title]
+				// Clear Exited when a transient TmuxAlive=false (e.g. tmux server
+				// still warming up post-reboot) got latched in a prior tick but
+				// the session is now responsive. Mirrors daemon.monitorRunningInstances.
+				if collected && alive && inst.Exited {
+					inst.Exited = false
+				}
 				if inst.Exited || inst.Paused() {
 					continue
 				}
-				alive, collected := tmuxAliveMap[inst.Title]
 				if collected && !alive {
 					inst.Exited = true
 					if inst.Status == session.Running {

@@ -37,6 +37,16 @@ var listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
 	return daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath()).ListInstances(project)
 }
 
+type daemonActionClient interface {
+	SendInstancePrompt(project, title, prompt string) error
+	KillInstance(project, title string) error
+	SendInstancePermissionResponse(project, title string, choice tmux.PermissionChoice) error
+}
+
+var newDaemonActionClient = func() daemonActionClient {
+	return daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath())
+}
+
 // daemonStartCommand is a seam that tests can replace to verify the call site
 // delegates to the platform package without depending on the host OS.
 var daemonStartCommand = platform.DaemonStartCommand
@@ -335,7 +345,7 @@ func (m *home) daemonRouteSend(inst *session.Instance, prompt string) (bool, err
 	if project == "" {
 		return true, fmt.Errorf("daemon route: no project for %q", inst.Title)
 	}
-	client := daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath())
+	client := newDaemonActionClient()
 	return true, client.SendInstancePrompt(project, inst.Title, prompt)
 }
 
@@ -349,21 +359,23 @@ func (m *home) daemonRouteKill(inst *session.Instance) (bool, error) {
 	if project == "" {
 		return true, fmt.Errorf("daemon route: no project for %q", inst.Title)
 	}
-	client := daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath())
+	client := newDaemonActionClient()
 	return true, client.KillInstance(project, inst.Title)
 }
 
-// daemonRoutePermissionResponse handles permission replies for daemon-managed
-// SDK placeholder instances. The daemon currently spawns managed SDK agents
-// with permissions bypassed, so there is no daemon control-socket endpoint for
-// forwarding interactive permission replies. Treat placeholder instances as
-// handled here to keep merge-ref builds compatible with app paths that now call
-// into this helper before falling back to the local execution session.
-func (m *home) daemonRoutePermissionResponse(inst *session.Instance, _ tmux.PermissionChoice) (bool, error) {
+// daemonRoutePermissionResponse routes a permission-overlay response through
+// the daemon API for SDK placeholder instances. Same (handled, err) contract as
+// daemonRouteSend.
+func (m *home) daemonRoutePermissionResponse(inst *session.Instance, choice tmux.PermissionChoice) (bool, error) {
 	if !m.isDaemonSDKPlaceholder(inst) {
 		return false, nil
 	}
-	return true, nil
+	project := m.taskStoreProject
+	if project == "" {
+		return true, fmt.Errorf("daemon route: no project for %q", inst.Title)
+	}
+	client := newDaemonActionClient()
+	return true, client.SendInstancePermissionResponse(project, inst.Title, choice)
 }
 
 func (m *home) daemonStartupCheckCmd() tea.Cmd {

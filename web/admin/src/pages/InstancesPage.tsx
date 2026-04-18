@@ -4,6 +4,7 @@ import { useAutoRefresh } from "../hooks/useAutoRefresh";
 import { useProject } from "../hooks/useProject";
 import { useToast } from "../hooks/useToast";
 import TerminalPreview from "../components/TerminalPreview";
+import AgentPreview from "../components/AgentPreview";
 import ConfirmDialog from "../components/ConfirmDialog";
 import InstanceActionsMenu from "../components/InstanceActionsMenu";
 import type { InstanceEntry, InstanceAction, ScrollbackDepth, Status, TaskEntry } from "../types";
@@ -13,6 +14,8 @@ import {
   isAtBottom,
   previewLineLimit,
   captureErrorLabel,
+  supportsStructuredPreview,
+  usesTerminalPreview,
 } from "./instanceInteractivity";
 import styles from "./InstancesPage.module.css";
 import {
@@ -250,10 +253,8 @@ export default function InstancesPage() {
   const selectedCard =
     flatCards.find((c) => c.title === selectedTitle) ?? null;
 
-  // Determine if we should poll (tmux instance + following).
-  const isTmuxInstance =
-    selectedInstance !== null &&
-    selectedInstance.execution_mode !== "headless";
+  // Determine preview path: terminal (tmux) vs structured (AgentPreview).
+  const isTerminalInstance = usesTerminalPreview(selectedInstance);
 
   // Capture poll logic.
   const doPoll = useCallback(async () => {
@@ -290,7 +291,7 @@ export default function InstancesPage() {
       pollTimerRef.current = null;
     }
 
-    if (!isTmuxInstance || !isFollowing || !project || !selectedTitle) return;
+    if (!isTerminalInstance || !isFollowing || !project || !selectedTitle) return;
 
     let cancelled = false;
 
@@ -324,7 +325,7 @@ export default function InstancesPage() {
         pollTimerRef.current = null;
       }
     };
-  }, [isTmuxInstance, isFollowing, project, selectedTitle, depth, doPoll]);
+  }, [isTerminalInstance, isFollowing, project, selectedTitle, depth, doPoll]);
 
   // Reset capture state when selected instance changes.
   useEffect(() => {
@@ -343,7 +344,7 @@ export default function InstancesPage() {
     // If already following, trigger an immediate poll on the new depth
     // by briefly toggling isFollowing so the effect re-fires.
     // Simpler: just call doPoll directly since depthRef is up to date.
-    if (isFollowing && isTmuxInstance) {
+    if (isFollowing && isTerminalInstance) {
       depthRef.current = d;
       void doPoll();
     }
@@ -405,8 +406,9 @@ export default function InstancesPage() {
         await instances.refresh();
         // Refresh the capture panel immediately when the action targeted the
         // currently-selected row so the preview reflects the new state sooner
-        // than the next 1s poll.
-        if (selectedTitle === title) {
+        // than the next 1s poll. Only applies to the terminal path — structured
+        // preview rows poll via AgentPreview's own useAutoRefresh.
+        if (selectedTitle === title && isTerminalInstance) {
           await doPoll();
         }
       } catch (err) {
@@ -486,60 +488,74 @@ export default function InstancesPage() {
             ))}
           </div>
 
-          {/* right: terminal preview + composer */}
+          {/* right: preview + composer */}
           <div className={styles.preview}>
             {selectedCard ? (
               <>
                 <div className={styles.previewHeader}>
                   <span className={styles.previewTitle}>{selectedCard.displayName}</span>
 
-                  <div className={styles.previewControls}>
-                    <div className={styles.depthPresets}>
-                      {DEPTH_OPTIONS.map((d) => (
-                        <button
-                          key={d}
-                          className={`${styles.depthBtn} ${d === depth ? styles.depthBtnActive : ""}`}
-                          onClick={() => handleDepthChange(d)}
-                        >
-                          {d}
-                        </button>
-                      ))}
-                    </div>
+                  {/* depth presets and capture-error indicator: terminal path only */}
+                  {isTerminalInstance && (
+                    <div className={styles.previewControls}>
+                      <div className={styles.depthPresets}>
+                        {DEPTH_OPTIONS.map((d) => (
+                          <button
+                            key={d}
+                            className={`${styles.depthBtn} ${d === depth ? styles.depthBtnActive : ""}`}
+                            onClick={() => handleDepthChange(d)}
+                          >
+                            {d}
+                          </button>
+                        ))}
+                      </div>
 
-                    {captureErrLabel ? (
-                      <span className={styles.captureError}>preview unavailable</span>
-                    ) : null}
-                  </div>
+                      {captureErrLabel ? (
+                        <span className={styles.captureError}>preview unavailable</span>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
 
-                {/* headless notice */}
-                {selectedInstance?.execution_mode === "headless" ? (
-                  <p className={styles.captureEmpty}>
-                    headless instance has no tmux pane
-                  </p>
-                ) : captureErrLabel ? (
-                  <p className={styles.captureEmpty}>{captureErrLabel}</p>
+                {/* structured preview (daemon-managed SDK instances) */}
+                {supportsStructuredPreview(selectedInstance) ? (
+                  <AgentPreview
+                    project={project!}
+                    title={selectedTitle!}
+                    onFollowStateChange={setIsFollowing}
+                    onError={setCaptureError}
+                  />
+                ) : isTerminalInstance ? (
+                  /* terminal (tmux) path */
+                  captureErrLabel ? (
+                    <p className={styles.captureEmpty}>{captureErrLabel}</p>
+                  ) : (
+                    <div className={styles.previewWrapper}>
+                      <TerminalPreview
+                        ref={previewRef}
+                        content={captureContent}
+                        maxLines={maxLines}
+                        emptyLabel={captureLoading ? "loading…" : "waiting for output…"}
+                        onScroll={handlePreviewScroll}
+                      />
+                      {!isFollowing && (
+                        <button
+                          className={styles.jumpToLive}
+                          onClick={handleJumpToLive}
+                        >
+                          jump to live
+                        </button>
+                      )}
+                    </div>
+                  )
                 ) : (
-                  <div className={styles.previewWrapper}>
-                    <TerminalPreview
-                      ref={previewRef}
-                      content={captureContent}
-                      maxLines={maxLines}
-                      emptyLabel={captureLoading ? "loading…" : "waiting for output…"}
-                      onScroll={handlePreviewScroll}
-                    />
-                    {!isFollowing && (
-                      <button
-                        className={styles.jumpToLive}
-                        onClick={handleJumpToLive}
-                      >
-                        jump to live
-                      </button>
-                    )}
-                  </div>
+                  /* standalone SDK or unknown mode — no preview available */
+                  <p className={styles.captureEmpty}>
+                    preview not available for this instance
+                  </p>
                 )}
 
-                {/* composer */}
+                {/* shared composer — works for both terminal and structured paths */}
                 <div className={styles.composer}>
                   <textarea
                     className={styles.composerInput}

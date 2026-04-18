@@ -1,0 +1,78 @@
+/* PermissionCard — inline permission prompt with allow / deny / always buttons */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0;
+  font-family: var(--font-sans);
+  font-size: 12px;
+}
+
+.text {
+  color: var(--rp-rose);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  padding: 2px 10px;
+  font-size: 11px;
+  font-family: var(--font-sans);
+  background: transparent;
+  border: 1px solid var(--rp-overlay);
+  border-radius: 3px;
+  color: var(--rp-subtle);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--rp-foam);
+  color: var(--rp-text);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btnAlways {
+  color: var(--rp-foam);
+  border-color: rgba(156, 207, 216, 0.3);
+}
+
+.btnAlways:hover:not(:disabled) {
+  border-color: var(--rp-foam);
+  color: var(--rp-foam);
+}
+
+.btnDeny {
+  color: var(--rp-love);
+  border-color: rgba(235, 111, 146, 0.3);
+}
+
+.btnDeny:hover:not(:disabled) {
+  border-color: var(--rp-love);
+  color: var(--rp-love);
+}
+
+.readOnly {
+  color: var(--rp-muted);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-style: italic;
+}
+
+.error {
+  color: var(--rp-love);
+  font-size: 11px;
+  font-family: var(--font-sans);
+}

@@ -8,6 +8,8 @@ import {
   isAtBottom,
   previewLineLimit,
   captureErrorLabel,
+  supportsStructuredPreview,
+  usesTerminalPreview,
 } from "./instanceInteractivity.ts";
 
 function assertEqual<T>(actual: T, expected: T, msg: string): void {
@@ -51,11 +53,34 @@ const base: InstanceEntry = {
   assertEqual(s.reason, null, "running instance: no reason");
 }
 
-// headless instance is disabled
+// standalone SDK instance (no valid_actions) is disabled
 {
-  const s = composerStateForInstance({ ...base, execution_mode: "headless" });
-  assertTrue(s.disabled, "headless instance: composer disabled");
-  assertEqual(s.reason, "headless instance has no tmux pane", "headless instance: reason");
+  const s = composerStateForInstance({ ...base, execution_mode: "sdk" });
+  assertTrue(s.disabled, "standalone sdk instance: composer disabled");
+  assertEqual(s.reason, "standalone sdk instance", "standalone sdk instance: reason");
+}
+
+// daemon-managed SDK instance (valid_actions present) running is enabled
+{
+  const s = composerStateForInstance({
+    ...base,
+    execution_mode: "sdk",
+    valid_actions: ["pause", "resume"],
+  });
+  assertFalse(s.disabled, "daemon-managed sdk running: composer enabled");
+  assertEqual(s.reason, null, "daemon-managed sdk running: no reason");
+}
+
+// daemon-managed SDK instance ready is enabled
+{
+  const s = composerStateForInstance({
+    ...base,
+    status: "ready",
+    execution_mode: "sdk",
+    valid_actions: ["pause"],
+  });
+  assertFalse(s.disabled, "daemon-managed sdk ready: composer enabled");
+  assertEqual(s.reason, null, "daemon-managed sdk ready: no reason");
 }
 
 // loading instance is disabled
@@ -175,5 +200,71 @@ assertEqual(captureErrorLabel(""), null, "empty string → null");
     "generic error: fallback label",
   );
 }
+
+// ---------------------------------------------------------------------------
+// supportsStructuredPreview
+// ---------------------------------------------------------------------------
+
+// null → false
+assertFalse(supportsStructuredPreview(null), "supportsStructuredPreview(null) = false");
+
+// daemon-managed SDK: sdk + valid_actions → true
+assertTrue(
+  supportsStructuredPreview({
+    ...base,
+    execution_mode: "sdk",
+    valid_actions: ["pause", "resume"],
+  }),
+  "daemon-managed sdk with valid_actions: supportsStructuredPreview true",
+);
+
+// standalone SDK: sdk but no valid_actions → false
+assertFalse(
+  supportsStructuredPreview({ ...base, execution_mode: "sdk" }),
+  "standalone sdk (no valid_actions): supportsStructuredPreview false",
+);
+
+// standalone SDK: sdk with empty valid_actions → false
+assertFalse(
+  supportsStructuredPreview({ ...base, execution_mode: "sdk", valid_actions: [] }),
+  "sdk with empty valid_actions: supportsStructuredPreview false",
+);
+
+// tmux row → false (tmux never uses structured preview)
+assertFalse(
+  supportsStructuredPreview({ ...base, execution_mode: "tmux" }),
+  "tmux instance: supportsStructuredPreview false",
+);
+
+// no execution_mode → false
+assertFalse(
+  supportsStructuredPreview({ ...base }),
+  "no execution_mode: supportsStructuredPreview false",
+);
+
+// ---------------------------------------------------------------------------
+// usesTerminalPreview
+// ---------------------------------------------------------------------------
+
+// null → false
+assertFalse(usesTerminalPreview(null), "usesTerminalPreview(null) = false");
+
+// tmux → true
+assertTrue(
+  usesTerminalPreview({ ...base, execution_mode: "tmux" }),
+  "tmux instance: usesTerminalPreview true",
+);
+
+// no execution_mode → true (conservative fallback)
+assertTrue(
+  usesTerminalPreview({ ...base }),
+  "no execution_mode: usesTerminalPreview true (fallback)",
+);
+
+// sdk → false
+assertFalse(
+  usesTerminalPreview({ ...base, execution_mode: "sdk" }),
+  "sdk instance: usesTerminalPreview false",
+);
 
 console.log("instanceInteractivity.test.ts ok");

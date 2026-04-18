@@ -810,8 +810,31 @@ func TestPreviewPane_SDKPresentation_ComposerFooterPresent(t *testing.T) {
 	output := renderSDKPresentation(nil, 80)
 	require.Contains(t, output, "> send a message to the agent",
 		"renderSDKPresentation must include composer footer prompt")
-	require.Contains(t, output, "enter send",
+	require.Contains(t, output, "shift+enter newline",
 		"renderSDKPresentation must include keyboard hint line")
+}
+
+func TestPreviewPane_SDKScrollMode_UsesStructuredPresentationWhenFlatHistoryEmpty(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 12)
+
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: now,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowTool, Text: "• read_file plan.md", Timestamp: now},
+			{Kind: sdk.RowResponse, Timestamp: now},
+			{Kind: sdk.RowProse, Text: "structured history survives scroll mode", Timestamp: now},
+		},
+	}
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+
+	require.NoError(t, pane.UpdateContent(inst))
+	require.NoError(t, pane.ScrollUp(inst))
+	require.True(t, pane.isScrolling)
+	require.Contains(t, pane.viewport.View(), "structured history survives scroll mode")
 }
 
 // TestPreviewPane_SDKPresentation_RunningTurnHeaderIndicator verifies that an

@@ -151,6 +151,12 @@ func (p *Process) Close() error {
 func buildEnv(cfg LaunchConfig) []string {
 	env := os.Environ()
 	env = append(env, "KASMOS_MANAGED=1")
+	if cfg.Name != "" {
+		env = append(env, "KASMOS_INSTANCE_TITLE="+cfg.Name)
+	}
+	if cfg.AgentType != "" {
+		env = append(env, "KASMOS_AGENT_TYPE="+cfg.AgentType)
+	}
 	if cfg.Project != "" {
 		env = append(env, "KASMOS_PROJECT="+cfg.Project)
 	}
