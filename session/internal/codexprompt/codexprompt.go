@@ -35,10 +35,12 @@ type Prompt struct {
 // Two shapes are recognised:
 //
 //  1. MCP shape — 4-option numbered menu ending with "enter to submit":
-//     1. Allow / 2. Allow for this session / 3. Always allow / 4. Cancel
+//
+//  1. Allow / 2. Allow for this session / 3. Always allow / 4. Cancel
 //
 //  2. Sandbox shape — 3-option numbered menu (no 4. option):
-//     1. Allow / 2. Allow always / 3. <any reject-variant text>
+//
+//  1. Allow / 2. Allow always / 3. <any reject-variant text>
 func Find(plainContent string) *Prompt {
 	lines := strings.Split(plainContent, "\n")
 

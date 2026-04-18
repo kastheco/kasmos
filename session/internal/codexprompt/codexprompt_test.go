@@ -9,11 +9,11 @@ import (
 
 func TestFind(t *testing.T) {
 	tests := []struct {
-		name        string
-		content     string
-		wantNil     bool
-		wantDesc    string
-		wantShape   Shape
+		name      string
+		content   string
+		wantNil   bool
+		wantDesc  string
+		wantShape Shape
 	}{
 		{
 			name: "4-option MCP prompt",
