@@ -254,3 +254,124 @@ func TestDaemonStatusToRecord_PreservesExecutionMode(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// CapturePresentation
+// ---------------------------------------------------------------------------
+
+// TestDaemonInstanceLister_CapturePresentation_HappyPath verifies that
+// CapturePresentation issues GET .../presentation and JSON-decodes the response.
+func TestDaemonInstanceLister_CapturePresentation_HappyPath(t *testing.T) {
+	var gotRequestURI string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRequestURI = r.RequestURI
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(api.PresentationResponse{
+			Supported: true,
+			Turns:     json.RawMessage(`[{"role":"user"}]`),
+		})
+	}))
+	defer srv.Close()
+
+	lister := &daemonInstanceLister{
+		socketPath: "fake",
+		http:       &http.Client{Transport: &redirectTransport{target: srv.URL}},
+	}
+
+	resp, err := lister.CapturePresentation("myproj", "my agent")
+	require.NoError(t, err)
+	assert.True(t, resp.Supported)
+	assert.Equal(t, "/v1/repos/myproj/instances/my%20agent/presentation", gotRequestURI)
+}
+
+// TestDaemonInstanceLister_CapturePresentation_NotFound verifies that a 404
+// from the daemon is translated to a DaemonActionClientError with code 404.
+func TestDaemonInstanceLister_CapturePresentation_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":"instance not found"}`))
+	}))
+	defer srv.Close()
+
+	lister := &daemonInstanceLister{
+		socketPath: "fake",
+		http:       &http.Client{Transport: &redirectTransport{target: srv.URL}},
+	}
+
+	_, err := lister.CapturePresentation("myproj", "missing")
+	require.Error(t, err)
+	var clientErr *livepreview.DaemonActionClientError
+	require.ErrorAs(t, err, &clientErr)
+	assert.Equal(t, http.StatusNotFound, clientErr.StatusCode)
+	assert.Contains(t, clientErr.Msg, "instance not found")
+}
+
+// TestDaemonInstanceLister_CapturePresentation_DaemonSocketFailure verifies
+// that a socket failure returns ErrDaemonUnavailable.
+func TestDaemonInstanceLister_CapturePresentation_DaemonSocketFailure(t *testing.T) {
+	lister := newDaemonInstanceListerForSocket("/tmp/kasmos-test-nonexistent-socket-pres-12345.sock")
+	_, err := lister.CapturePresentation("myproj", "agent")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, livepreview.ErrDaemonUnavailable)
+}
+
+// ---------------------------------------------------------------------------
+// SendInstancePermissionResponse
+// ---------------------------------------------------------------------------
+
+// TestDaemonInstanceLister_SendInstancePermissionResponse_HappyPath verifies
+// that SendInstancePermissionResponse POSTs to the correct URL with the choice
+// encoded as JSON and returns nil on 204.
+func TestDaemonInstanceLister_SendInstancePermissionResponse_HappyPath(t *testing.T) {
+	var gotRequestURI string
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRequestURI = r.RequestURI
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	lister := &daemonInstanceLister{
+		socketPath: "fake",
+		http:       &http.Client{Transport: &redirectTransport{target: srv.URL}},
+	}
+
+	err := lister.SendInstancePermissionResponse("myproj", "my agent", api.PermissionAllowAlways)
+	require.NoError(t, err)
+	assert.Equal(t, "/v1/repos/myproj/instances/my%20agent/permission", gotRequestURI)
+	assert.JSONEq(t, `{"choice":1}`, string(gotBody))
+}
+
+// TestDaemonInstanceLister_SendInstancePermissionResponse_DaemonError verifies
+// that a non-204 response is wrapped as DaemonActionClientError.
+func TestDaemonInstanceLister_SendInstancePermissionResponse_DaemonError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"error":"instance is paused"}`))
+	}))
+	defer srv.Close()
+
+	lister := &daemonInstanceLister{
+		socketPath: "fake",
+		http:       &http.Client{Transport: &redirectTransport{target: srv.URL}},
+	}
+
+	err := lister.SendInstancePermissionResponse("myproj", "agent", api.PermissionReject)
+	require.Error(t, err)
+	var clientErr *livepreview.DaemonActionClientError
+	require.ErrorAs(t, err, &clientErr)
+	assert.Equal(t, http.StatusConflict, clientErr.StatusCode)
+	assert.Contains(t, clientErr.Msg, "instance is paused")
+}
+
+// TestDaemonInstanceLister_SendInstancePermissionResponse_SocketFailure
+// verifies that a socket failure returns ErrDaemonUnavailable.
+func TestDaemonInstanceLister_SendInstancePermissionResponse_SocketFailure(t *testing.T) {
+	lister := newDaemonInstanceListerForSocket("/tmp/kasmos-test-nonexistent-socket-perm-12345.sock")
+	err := lister.SendInstancePermissionResponse("myproj", "agent", api.PermissionAllowOnce)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, livepreview.ErrDaemonUnavailable)
+}

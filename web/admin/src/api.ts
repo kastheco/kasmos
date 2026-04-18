@@ -1,4 +1,4 @@
-import type { Status, TaskEntry, SubtaskEntry, TopicEntry, AuditEvent, InstanceEntry, InstanceAction, ScrollbackDepth } from "./types";
+import type { Status, TaskEntry, SubtaskEntry, TopicEntry, AuditEvent, InstanceEntry, InstanceAction, ScrollbackDepth, ExecutionMode, PresentationResponse, PresentationRowKind, PermissionDecision } from "./types";
 
 // Legacy persisted statuses that predate canonical normalization at ingest.
 // Mirrors config/taskfsm/fsm.go:MapLegacyStatus so the SPA reader boundary
@@ -302,14 +302,30 @@ export async function deleteTask(
   await request(taskBase(project, filename), { method: "DELETE" });
 }
 
+// ---- execution mode normalization -------------------------------------------
+
+/**
+ * Maps legacy "headless" execution mode to the canonical "sdk" value.
+ * Unknown values are returned as undefined so callers treat them conservatively
+ * as non-structured.
+ */
+export function normalizeExecutionMode(raw?: string): ExecutionMode | undefined {
+  if (raw === "tmux" || raw === "sdk") return raw;
+  if (raw === "headless") return "sdk";
+  return undefined;
+}
+
 // ---- instance API helpers ---------------------------------------------------
 
 export async function listInstances(project: string): Promise<InstanceEntry[]> {
-  return (
+  const rows =
     (await requestJSON<InstanceEntry[] | null>(
       `/v1/projects/${encodeURIComponent(project)}/instances`,
-    )) ?? []
-  );
+    )) ?? [];
+  return rows.map((row) => ({
+    ...row,
+    execution_mode: normalizeExecutionMode(row.execution_mode),
+  }));
 }
 
 export async function createTask(
@@ -429,6 +445,96 @@ export async function sendInstancePrompt(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt }),
+    },
+  );
+}
+
+// ---- presentation API -------------------------------------------------------
+
+// Raw JSON shapes from the daemon — dates arrive as strings.
+type RawPresentationRow = {
+  kind: PresentationRowKind;
+  text: string;
+  timestamp: string | null;
+  tool_name: string;
+  is_error: boolean;
+};
+
+type RawPresentationTurn = {
+  id: string;
+  number: number;
+  started_at: string | null;
+  completed_at: string | null;
+  interrupted: boolean;
+  tool_count: number;
+  rows: RawPresentationRow[] | null;
+};
+
+type RawPresentationResponse = {
+  supported: boolean;
+  turns: RawPresentationTurn[] | null;
+  captured_at: string;
+};
+
+const GO_ZERO_TIME = "0001-01-01T00:00:00Z";
+
+function parseOptionalDate(raw: string | null | undefined): Date | null {
+  if (!raw || raw === GO_ZERO_TIME) return null;
+  return new Date(raw);
+}
+
+function normalizePresentationResponse(raw: RawPresentationResponse): PresentationResponse {
+  return {
+    supported: raw.supported,
+    captured_at: new Date(raw.captured_at),
+    turns:
+      raw.turns?.map((t) => ({
+        id: t.id,
+        number: t.number,
+        started_at: parseOptionalDate(t.started_at),
+        completed_at: parseOptionalDate(t.completed_at),
+        interrupted: t.interrupted,
+        tool_count: t.tool_count,
+        rows: (t.rows ?? []).map((r) => ({
+          kind: r.kind,
+          text: r.text,
+          timestamp: parseOptionalDate(r.timestamp),
+          tool_name: r.tool_name,
+          is_error: r.is_error,
+        })),
+      })) ?? null,
+  };
+}
+
+export async function getInstancePresentation(
+  project: string,
+  title: string,
+): Promise<PresentationResponse> {
+  const raw = await requestJSON<RawPresentationResponse>(
+    `/v1/projects/${encodeURIComponent(project)}/instances/${encodeURIComponent(title)}/presentation`,
+  );
+  return normalizePresentationResponse(raw);
+}
+
+// Numeric wire values for the daemon permission endpoint.
+// Using a constant object ensures no numeric literals are scattered in UI code.
+const PERMISSION_CHOICE_TO_WIRE = {
+  allow_once: 0,
+  allow_always: 1,
+  reject: 2,
+} as const;
+
+export async function sendInstancePermission(
+  project: string,
+  title: string,
+  choice: PermissionDecision,
+): Promise<void> {
+  await request(
+    `/v1/projects/${encodeURIComponent(project)}/instances/${encodeURIComponent(title)}/permission`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ choice: PERMISSION_CHOICE_TO_WIRE[choice] }),
     },
   );
 }

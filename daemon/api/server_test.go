@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/kastheco/kasmos/config/taskstore"
 
@@ -327,33 +328,6 @@ func TestHandler_InstanceSend_NotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code, "body: %s", w.Body.String())
 }
 
-func TestHandler_InstancePermission_HappyPath(t *testing.T) {
-	state := &instanceCaptureStub{}
-	h := NewHandler(state)
-
-	body := bytes.NewBufferString(`{"choice":1}`)
-	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/my-agent/permission", body)
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusNoContent, w.Code, "body: %s", w.Body.String())
-	assert.Equal(t, "myproj", state.permissionProject)
-	assert.Equal(t, "my-agent", state.permissionTitle)
-	assert.Equal(t, PermissionAllowAlways, state.permissionChoice)
-}
-
-func TestHandler_InstancePermission_NotFound(t *testing.T) {
-	state := &instanceCaptureStub{permissionErr: fmt.Errorf("%w: missing", ErrInstanceNotFound)}
-	h := NewHandler(state)
-
-	body := bytes.NewBufferString(`{"choice":0}`)
-	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/missing/permission", body)
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusNotFound, w.Code, "body: %s", w.Body.String())
-}
-
 func TestHandler_StartPlan(t *testing.T) {
 	state := &startPlanStub{}
 	h := NewHandler(state)
@@ -368,4 +342,184 @@ func TestHandler_StartPlan(t *testing.T) {
 	assert.Equal(t, "api-response-logging", state.filename)
 	assert.Equal(t, "plan prompt", state.prompt)
 	assert.Equal(t, "opencode --model x", state.program)
+}
+
+// ---------------------------------------------------------------------------
+// Presentation endpoint tests
+// ---------------------------------------------------------------------------
+
+// presentationStub is a StateProvider stub for the presentation route.
+type presentationStub struct {
+	DaemonState
+	rawTurns  json.RawMessage
+	supported bool
+	err       error
+}
+
+func (s *presentationStub) ListInstances(_ string) []InstanceStatus { return nil }
+func (s *presentationStub) EventStream() <-chan Event               { return make(chan Event) }
+func (s *presentationStub) StartPlan(_, _, _, _ string) error       { return nil }
+func (s *presentationStub) ListPlans(_ string) ([]taskstore.TaskEntry, error) {
+	return nil, nil
+}
+func (s *presentationStub) ListTasks(_ string) ([]TaskStatus, error) { return nil, nil }
+func (s *presentationStub) CapturePresentation(_, _ string) (json.RawMessage, bool, error) {
+	return s.rawTurns, s.supported, s.err
+}
+
+func TestHandler_InstancePresentation_SDK(t *testing.T) {
+	// Pre-encode two turns with the exact wire-format field names.
+	rawTurns := json.RawMessage(`[
+		{"id":"t1","number":1,"started_at":"0001-01-01T00:00:00Z","completed_at":"0001-01-01T00:00:00Z","interrupted":false,"tool_count":0,"rows":[{"kind":"prose","text":"hello","timestamp":"0001-01-01T00:00:00Z","tool_name":"","is_error":false}]},
+		{"id":"t2","number":2,"started_at":"0001-01-01T00:00:00Z","completed_at":"0001-01-01T00:00:00Z","interrupted":false,"tool_count":1,"rows":[{"kind":"tool","text":"bash(ls)","timestamp":"0001-01-01T00:00:00Z","tool_name":"bash","is_error":false}]}
+	]`)
+	state := &presentationStub{rawTurns: rawTurns, supported: true}
+	h := NewHandler(state)
+
+	req := httptest.NewRequest("GET", "/v1/repos/myproj/instances/my-agent/presentation", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+
+	var outer map[string]json.RawMessage
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&outer))
+
+	var supported bool
+	require.NoError(t, json.Unmarshal(outer["supported"], &supported))
+	assert.True(t, supported)
+
+	var turns []map[string]any
+	require.NoError(t, json.Unmarshal(outer["turns"], &turns))
+	require.Len(t, turns, 2)
+	assert.Equal(t, "t1", turns[0]["id"])
+	assert.Equal(t, "t2", turns[1]["id"])
+
+	var capturedAt time.Time
+	require.NoError(t, json.Unmarshal(outer["captured_at"], &capturedAt))
+	assert.False(t, capturedAt.IsZero(), "captured_at must parse as a real timestamp")
+}
+
+func TestHandler_InstancePresentation_Tmux(t *testing.T) {
+	// tmux-backed instance: supported=false, turns=nil.
+	// After JSON round-trip, Turns decodes as json.RawMessage("null") — assert
+	// the raw token rather than nil equality.
+	state := &presentationStub{rawTurns: nil, supported: false}
+	h := NewHandler(state)
+
+	req := httptest.NewRequest("GET", "/v1/repos/myproj/instances/tmux-agent/presentation", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+
+	var outer map[string]json.RawMessage
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&outer))
+
+	var supported bool
+	require.NoError(t, json.Unmarshal(outer["supported"], &supported))
+	assert.False(t, supported)
+
+	// "turns" must be JSON null (not an array) for tmux instances.
+	assert.Equal(t, "null", string(outer["turns"]))
+}
+
+func TestHandler_InstancePresentation_NotFound(t *testing.T) {
+	state := &presentationStub{err: fmt.Errorf("%w: missing", ErrInstanceNotFound)}
+	h := NewHandler(state)
+
+	req := httptest.NewRequest("GET", "/v1/repos/myproj/instances/missing/presentation", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code, "body: %s", w.Body.String())
+}
+
+// ---------------------------------------------------------------------------
+// Permission endpoint tests
+// ---------------------------------------------------------------------------
+
+type permissionStub struct {
+	DaemonState
+	project string
+	title   string
+	choice  PermissionChoice
+	err     error
+}
+
+func (s *permissionStub) ListInstances(_ string) []InstanceStatus { return nil }
+func (s *permissionStub) EventStream() <-chan Event               { return make(chan Event) }
+func (s *permissionStub) StartPlan(_, _, _, _ string) error       { return nil }
+func (s *permissionStub) ListPlans(_ string) ([]taskstore.TaskEntry, error) {
+	return nil, nil
+}
+func (s *permissionStub) ListTasks(_ string) ([]TaskStatus, error) { return nil, nil }
+func (s *permissionStub) SendInstancePermissionResponse(project, title string, choice PermissionChoice) error {
+	s.project = project
+	s.title = title
+	s.choice = choice
+	return s.err
+}
+
+func TestHandler_InstancePermission_HappyPath(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		choice PermissionChoice
+	}{
+		{"allow_once", PermissionAllowOnce},
+		{"allow_always", PermissionAllowAlways},
+		{"reject", PermissionReject},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state := &permissionStub{}
+			h := NewHandler(state)
+
+			body := bytes.NewBufferString(fmt.Sprintf(`{"choice":%d}`, tc.choice))
+			req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/my-agent/permission", body)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusNoContent, w.Code, "body: %s", w.Body.String())
+			assert.Equal(t, "myproj", state.project)
+			assert.Equal(t, "my-agent", state.title)
+			assert.Equal(t, tc.choice, state.choice)
+		})
+	}
+}
+
+func TestHandler_InstancePermission_NotFound(t *testing.T) {
+	state := &permissionStub{err: fmt.Errorf("%w: missing", ErrInstanceNotFound)}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"choice":0}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/missing/permission", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code, "body: %s", w.Body.String())
+}
+
+func TestHandler_InstancePermission_BadBody(t *testing.T) {
+	state := &permissionStub{}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`not json`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/my-agent/permission", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "body: %s", w.Body.String())
+}
+
+func TestHandler_InstancePermission_InvalidChoice(t *testing.T) {
+	state := &permissionStub{}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"choice":99}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/my-agent/permission", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "body: %s", w.Body.String())
+	assert.Equal(t, "", state.project, "invalid choices must be rejected before reaching the state layer")
 }

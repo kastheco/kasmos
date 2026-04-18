@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -357,6 +358,38 @@ func (a *daemonStateAdapter) SendInstancePermissionResponse(project, title strin
 	}
 	inst.SendPermissionResponse(tmux.PermissionChoice(choice))
 	return nil
+}
+
+// CapturePresentation implements StateProvider. It returns the structured turn
+// model for SDK-backed instances (supported=true) and (nil, false, nil) for
+// tmux-backed instances. The execution mode, not turn count, is the source of
+// truth for the supported flag.
+//
+// Turns are pre-marshaled to json.RawMessage here (rather than in daemon/api)
+// to avoid an import cycle: session/sdk → session/tmux → cmd → daemon/api.
+func (a *daemonStateAdapter) CapturePresentation(project, title string) (json.RawMessage, bool, error) {
+	repoPath, ok := a.repoPathByProject(project)
+	if !ok {
+		return nil, false, fmt.Errorf("%w: project %s", api.ErrProjectNotFound, project)
+	}
+	_, inst, ok := a.d.spawner.trackedInstanceByTitle(repoPath, title)
+	if !ok {
+		return nil, false, fmt.Errorf("%w: %s/%s", api.ErrInstanceNotFound, project, title)
+	}
+	if session.NormalizeExecutionMode(inst.ExecutionMode) != session.ExecutionModeSDK {
+		return nil, false, nil
+	}
+	turns := inst.CapturePresentation()
+	if turns == nil {
+		// No turns yet but SDK-backed — return JSON null so the browser can
+		// distinguish "no data" from "unsupported".
+		return json.RawMessage("null"), true, nil
+	}
+	raw, err := json.Marshal(turns)
+	if err != nil {
+		return nil, true, fmt.Errorf("marshal presentation turns: %w", err)
+	}
+	return raw, true, nil
 }
 
 // NewDaemon creates a new Daemon from the given configuration. The daemon is

@@ -313,6 +313,8 @@ func newServeAPIRootMux(sharedDB *sql.DB, repoRegs serveRepoRegistration, taskAP
 	rootMux.Handle("GET /v1/projects/{project}/instances", previewAPI)
 	rootMux.Handle("GET /v1/projects/{project}/instances/{title}/capture", previewAPI)
 	rootMux.Handle("POST /v1/projects/{project}/instances/{title}/send", previewAPI)
+	rootMux.Handle("GET /v1/projects/{project}/instances/{title}/presentation", previewAPI)
+	rootMux.Handle("POST /v1/projects/{project}/instances/{title}/permission", previewAPI)
 
 	// Instance lifecycle action routes — forward to previewAPI which handles dispatch.
 	rootMux.Handle("POST /v1/projects/{project}/instances/{title}/pause", previewAPI)

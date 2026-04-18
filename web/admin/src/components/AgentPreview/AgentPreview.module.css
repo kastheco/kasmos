@@ -1,0 +1,168 @@
+/* AgentPreview — structured turn-timeline container */
+
+/* --- outer wrapper (FilterToolbar + scroll area) --- */
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 280px);
+  min-height: 120px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 8px 0;
+}
+
+/* --- empty / waiting / unsupported states --- */
+
+.empty {
+  color: var(--rp-muted);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  padding: 24px 0;
+}
+
+.loading {
+  color: var(--rp-subtle);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  padding: 24px 0;
+}
+
+/* --- turn block --- */
+
+.turnBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 0 6px;
+  border-top: 1px solid var(--rp-overlay);
+}
+
+.turnBlock:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.turnHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-feature-settings: "tnum" 1;
+  color: var(--rp-subtle);
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+
+.turnNumber {
+  font-weight: 600;
+  font-feature-settings: "tnum" 1;
+}
+
+.turnMeta {
+  color: var(--rp-muted);
+  font-size: 10px;
+}
+
+/* running pill */
+.runningPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(156, 207, 216, 0.08);
+  border: 1px solid rgba(156, 207, 216, 0.25);
+  border-radius: 999px;
+  color: var(--rp-foam);
+  font-size: 10px;
+  padding: 1px 7px;
+  font-family: var(--font-mono);
+  animation: runningPulse 2.4s ease-in-out infinite;
+}
+
+@keyframes runningPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
+
+/* --- turn header controls (copy / collapse / anchor) --- */
+
+.turnHeaderControls {
+  margin-left: auto;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.turnHeaderBtn {
+  padding: 0 4px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  background: transparent;
+  border: none;
+  color: var(--rp-muted);
+  cursor: pointer;
+  transition: color 0.12s;
+  text-transform: lowercase;
+}
+
+.turnHeaderBtn:hover {
+  color: var(--rp-subtle);
+}
+
+.turnAnchor {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--rp-muted);
+  text-decoration: none;
+  transition: color 0.12s;
+}
+
+.turnAnchor:hover {
+  color: var(--rp-foam);
+}
+
+/* --- copy fallback textarea --- */
+
+.copyFallback {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 6px;
+  padding: 6px;
+  background: var(--rp-surface);
+  border: 1px solid var(--rp-overlay);
+  border-radius: 3px;
+}
+
+.copyFallbackLabel {
+  font-size: 10px;
+  color: var(--rp-muted);
+  font-family: var(--font-mono);
+}
+
+.copyFallbackArea {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  background: var(--rp-base);
+  color: var(--rp-text);
+  border: 1px solid var(--rp-overlay);
+  border-radius: 2px;
+  padding: 4px;
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.turnRows {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}

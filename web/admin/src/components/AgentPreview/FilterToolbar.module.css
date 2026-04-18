@@ -1,0 +1,43 @@
+/* FilterToolbar — thin sticky filter strip above the timeline */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0 6px;
+  flex-shrink: 0;
+  background: var(--rp-base);
+  border-bottom: 1px solid var(--rp-overlay);
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.toggle {
+  padding: 1px 8px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: var(--rp-muted);
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+
+.toggle:hover {
+  color: var(--rp-subtle);
+  border-color: var(--rp-overlay);
+}
+
+.active {
+  color: var(--rp-foam);
+  border-color: rgba(156, 207, 216, 0.35);
+  background: rgba(156, 207, 216, 0.06);
+}
+
+.active:hover {
+  color: var(--rp-foam);
+  border-color: rgba(156, 207, 216, 0.55);
+}

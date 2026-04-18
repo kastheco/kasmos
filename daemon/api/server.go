@@ -79,16 +79,41 @@ type InstanceStatus struct {
 	ExecutionMode string `json:"execution_mode,omitempty"`
 }
 
-// PermissionChoice is the daemon API's wire-level representation of a
-// permission response. The numeric ordering mirrors the TUI overlay and tmux
-// adapter enums so callers can forward selections without remapping.
+// PresentationResponse is the response body for GET .../presentation.
+// Turns is pre-serialized JSON from the daemon adapter so that daemon/api does
+// not need to import session/sdk (which would create an import cycle via
+// session/tmux → cmd → daemon/api).
+type PresentationResponse struct {
+	Supported  bool            `json:"supported"`
+	Turns      json.RawMessage `json:"turns"`
+	CapturedAt time.Time       `json:"captured_at"`
+}
+
+// PermissionChoice represents the user's response to a permission prompt.
+// Values mirror session/tmux.PermissionChoice so the wire encoding is stable.
 type PermissionChoice int
 
 const (
-	PermissionAllowOnce PermissionChoice = iota
-	PermissionAllowAlways
-	PermissionReject
+	PermissionAllowOnce   PermissionChoice = 0
+	PermissionAllowAlways PermissionChoice = 1
+	PermissionReject      PermissionChoice = 2
 )
+
+// permissionRequest is the request body for POST .../permission.
+type permissionRequest struct {
+	Choice PermissionChoice `json:"choice"`
+}
+
+// Valid reports whether c is one of the supported wire-level permission
+// choices accepted by the daemon HTTP API.
+func (c PermissionChoice) Valid() bool {
+	switch c {
+	case PermissionAllowOnce, PermissionAllowAlways, PermissionReject:
+		return true
+	default:
+		return false
+	}
+}
 
 // addRepoRequest is the request body for POST /v1/repos.
 type addRepoRequest struct {
@@ -129,6 +154,13 @@ type StateProvider interface {
 	// sessions the prompt is forwarded through the transport; for tmux sessions
 	// it is sent via SendKeys+TapEnter on the pane.
 	SendInstancePrompt(project, title, prompt string) error
+	// CapturePresentation returns the structured turn-grouped presentation model
+	// for an instance as pre-serialized JSON. The bool indicates whether
+	// structured presentation is supported (true for SDK-backed instances, false
+	// for tmux-backed ones). A nil RawMessage with supported=true means "no turns
+	// yet". Pre-serializing here avoids importing session/sdk from daemon/api
+	// which would create an import cycle via session/tmux → cmd → daemon/api.
+	CapturePresentation(project, title string) (json.RawMessage, bool, error)
 	// SendInstancePermissionResponse forwards a permission-overlay selection to
 	// the tracked instance identified by project/title.
 	SendInstancePermissionResponse(project, title string, choice PermissionChoice) error
@@ -239,6 +271,9 @@ func (s *DaemonState) CaptureInstance(_, _, _, _ string) (string, error) {
 func (s *DaemonState) SendInstancePrompt(_, _, _ string) error {
 	return fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
 }
+func (s *DaemonState) CapturePresentation(_, _ string) (json.RawMessage, bool, error) {
+	return nil, false, fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
+}
 func (s *DaemonState) SendInstancePermissionResponse(_, _ string, _ PermissionChoice) error {
 	return fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
 }
@@ -308,6 +343,7 @@ func (h *Handler) registerRoutes() {
 		h.handleInstanceAction(w, r, "kill")
 	})
 	h.mux.HandleFunc("GET /v1/repos/{project}/instances/{title}/capture", h.handleInstanceCapture)
+	h.mux.HandleFunc("GET /v1/repos/{project}/instances/{title}/presentation", h.handleInstancePresentation)
 	h.mux.HandleFunc("POST /v1/repos/{project}/instances/{title}/send", h.handleInstanceSend)
 	h.mux.HandleFunc("POST /v1/repos/{project}/instances/{title}/permission", h.handleInstancePermission)
 	h.mux.HandleFunc("POST /v1/repos/{project}/plans/{filename}/plan", h.handleStartPlan)
@@ -504,11 +540,13 @@ func (h *Handler) handleInstancePermission(w http.ResponseWriter, r *http.Reques
 	project := r.PathValue("project")
 	title := r.PathValue("title")
 
-	var body struct {
-		Choice PermissionChoice `json:"choice"`
-	}
+	var body permissionRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if !body.Choice.Valid() {
+		writeError(w, http.StatusBadRequest, "invalid permission choice")
 		return
 	}
 
@@ -522,6 +560,31 @@ func (h *Handler) handleInstancePermission(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleInstancePresentation serves GET /v1/repos/{project}/instances/{title}/presentation.
+// It returns a PresentationResponse with structured turn data for SDK-backed instances
+// and supported=false for tmux-backed instances. Unknown instances return 404.
+func (h *Handler) handleInstancePresentation(w http.ResponseWriter, r *http.Request) {
+	project := r.PathValue("project")
+	title := r.PathValue("title")
+	capturedAt := time.Now().UTC()
+
+	turns, supported, err := h.state.CapturePresentation(project, title)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInstanceNotFound):
+			writeError(w, http.StatusNotFound, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, PresentationResponse{
+		Supported:  supported,
+		Turns:      turns,
+		CapturedAt: capturedAt,
+	})
 }
 
 // handleImplementPlan serves POST /v1/repos/{project}/plans/{filename}/implement (comment preserved for accurate label).
