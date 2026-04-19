@@ -375,6 +375,8 @@ func TestSpawnAdHocAgent_DefaultCreatesWorktree(t *testing.T) {
 	assert.Equal(t, "claude", last.Program)
 	assert.Equal(t, session.Loading, last.Status)
 	assert.NotNil(t, cmd, "should return async start command")
+	// Default config (nil appConfig) must produce tmux.
+	assert.Equal(t, session.ExecutionModeTmux, last.ExecutionMode)
 }
 
 func TestExecuteLauncherAction_NewInstanceUsesClaudeMasterAgent(t *testing.T) {
@@ -388,6 +390,8 @@ func TestExecuteLauncherAction_NewInstanceUsesClaudeMasterAgent(t *testing.T) {
 	require.NotNil(t, updated.newInstance)
 	assert.Equal(t, session.AgentTypeMaster, updated.newInstance.AgentType)
 	assert.Equal(t, "claude", updated.newInstance.Program)
+	// Default config (nil appConfig) must produce tmux so the instance is interactive.
+	assert.Equal(t, session.ExecutionModeTmux, updated.newInstance.ExecutionMode)
 }
 
 func TestSpawnAdHocAgent_BranchOverride(t *testing.T) {
@@ -637,6 +641,86 @@ func TestExecutionModeForAgent_DefaultsToTmuxButHonorsExplicitSDK(t *testing.T) 
 	assert.Equal(t, session.ExecutionModeSDK, h.executionModeForAgent(session.AgentTypeElaborator))
 }
 
+func TestStandaloneExecutionMode(t *testing.T) {
+	tests := []struct {
+		name       string
+		agentType  string
+		program    string
+		phaseRoles map[string]string
+		profiles   map[string]config.AgentProfile
+		want       session.ExecutionMode
+	}{
+		{
+			name:      "master + claude + sdk profile => sdk",
+			agentType: session.AgentTypeMaster,
+			program:   "claude",
+			phaseRoles: map[string]string{
+				"readiness_review": "master",
+			},
+			profiles: map[string]config.AgentProfile{
+				"master": {Program: "claude", Enabled: true, ExecutionMode: config.ExecutionModeSDK},
+			},
+			want: session.ExecutionModeSDK,
+		},
+		{
+			name:      "master + claude + tmux profile => tmux",
+			agentType: session.AgentTypeMaster,
+			program:   "claude",
+			phaseRoles: map[string]string{
+				"readiness_review": "master",
+			},
+			profiles: map[string]config.AgentProfile{
+				"master": {Program: "claude", Enabled: true, ExecutionMode: config.ExecutionModeTmux},
+			},
+			want: session.ExecutionModeTmux,
+		},
+		{
+			name:      "master + opencode + sdk profile => tmux (opencode not sdk-capable)",
+			agentType: session.AgentTypeMaster,
+			program:   "opencode",
+			phaseRoles: map[string]string{
+				"readiness_review": "master",
+			},
+			profiles: map[string]config.AgentProfile{
+				"master": {Program: "opencode", Enabled: true, ExecutionMode: config.ExecutionModeSDK},
+			},
+			want: session.ExecutionModeTmux,
+		},
+		{
+			name:      "fixer + codex + sdk profile => sdk",
+			agentType: session.AgentTypeFixer,
+			program:   "codex",
+			phaseRoles: map[string]string{
+				"fixer": "fixer",
+			},
+			profiles: map[string]config.AgentProfile{
+				"fixer": {Program: "codex", Enabled: true, ExecutionMode: config.ExecutionModeSDK},
+			},
+			want: session.ExecutionModeSDK,
+		},
+		{
+			name:      "empty agent type + claude + sdk-capable chat profile => sdk",
+			agentType: "",
+			program:   "claude",
+			profiles: map[string]config.AgentProfile{
+				"chat": {Program: "claude", Enabled: true, ExecutionMode: config.ExecutionModeSDK},
+			},
+			want: session.ExecutionModeSDK,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newTestHome()
+			h.appConfig = &config.Config{
+				PhaseRoles: tc.phaseRoles,
+				Profiles:   tc.profiles,
+			}
+			got := h.standaloneExecutionMode(tc.agentType, tc.program)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func collectQuickLaunchMsgs(cmd tea.Cmd) (started []instanceStartedMsg) {
 	if cmd == nil {
 		return nil
@@ -716,6 +800,49 @@ func TestQuickLaunch_KeyCreatesInstance(t *testing.T) {
 	require.Len(t, updated.allInstances, 1)
 	assert.Same(t, instances[0], updated.allInstances[0])
 	assert.Equal(t, "myrepo-agent-1", updated.allInstances[0].Title)
+}
+
+func TestQuickLaunch_SDKProfileProducesSDKMode(t *testing.T) {
+	// When the fixer profile is configured with SDK mode and the program supports
+	// the SDK transport (claude), the quick-launch instance must use SDK mode.
+	oldQuickLaunchStartOnMain := quickLaunchStartOnMain
+	quickLaunchStartOnMain = func(inst *session.Instance) error {
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+	t.Cleanup(func() { quickLaunchStartOnMain = oldQuickLaunchStartOnMain })
+
+	var capturedTimeoutMsg doubleTapTimeoutMsg
+	oldSchedule := scheduleDoubleTapTimeout
+	scheduleDoubleTapTimeout = func(_ time.Duration, key string, seq int) tea.Cmd {
+		capturedTimeoutMsg = doubleTapTimeoutMsg{key: key, seq: seq}
+		return func() tea.Msg { return capturedTimeoutMsg }
+	}
+	t.Cleanup(func() { scheduleDoubleTapTimeout = oldSchedule })
+
+	h := newTestHome()
+	h.activeRepoPath = filepath.Join(t.TempDir(), "myrepo")
+	h.appConfig = &config.Config{
+		PhaseRoles: map[string]string{"fixer": "fixer"},
+		Profiles: map[string]config.AgentProfile{
+			"fixer": {Program: "claude", Enabled: true, ExecutionMode: config.ExecutionModeSDK},
+		},
+	}
+	h.keySent = true
+
+	// First s: pending double-tap.
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 's', Text: "s"})
+	updated := model.(*home)
+
+	// Fire the timeout: dispatches KeyQuickLaunch → instance created.
+	model, _ = updated.Update(capturedTimeoutMsg)
+	updated = model.(*home)
+
+	instances := updated.nav.GetInstances()
+	require.Len(t, instances, 1)
+	assert.Equal(t, session.ExecutionModeSDK, instances[0].ExecutionMode,
+		"sdk fixer profile with claude program must produce sdk execution mode")
 }
 
 func TestQuickLaunch_TitleSyncUpdatesDisplayTitle(t *testing.T) {

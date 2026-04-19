@@ -1926,10 +1926,12 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 			return m, m.handleError(
 				fmt.Errorf("you can't create more than %d instances (%d tmux sessions active)", GlobalInstanceLimit, m.tmuxSessionCount))
 		}
+		promptProgram := m.programForAgent("")
 		instance, err := session.NewInstance(session.InstanceOptions{
-			Title:   "",
-			Path:    m.activeRepoPath,
-			Program: m.programForAgent(""),
+			Title:         "",
+			Path:          m.activeRepoPath,
+			Program:       promptProgram,
+			ExecutionMode: m.standaloneExecutionMode("", promptProgram),
 		})
 		if err != nil {
 			return m, m.handleError(err)

@@ -2036,7 +2036,8 @@ func (m *home) executeLauncherAction(action string) (tea.Model, tea.Cmd) {
 				fmt.Errorf("you can't create more than %d instances (%d tmux sessions active)",
 					GlobalInstanceLimit, m.tmuxSessionCount))
 		}
-		instance, err := m.newNamedAgentInstance("", m.activeRepoPath, "claude")
+		instance, err := m.newNamedAgentInstance("", m.activeRepoPath, "claude",
+			m.standaloneExecutionMode(session.AgentTypeMaster, "claude"))
 		if err != nil {
 			return m, m.handleError(err)
 		}

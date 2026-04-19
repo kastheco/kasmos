@@ -2147,6 +2147,18 @@ func (m *home) executionModeForAgent(agentType string) session.ExecutionMode {
 	return session.ExecutionMode(config.NormalizeExecutionMode(m.profileForAgent(agentType).ExecutionMode))
 }
 
+// standaloneExecutionMode resolves the execution mode for a standalone ad-hoc
+// agent spawn (KeyPrompt, new_instance, quickLaunchAgent, spawnAdHocAgent).
+// It reads the profile for agentType, normalises the requested mode via
+// config.NormalizeExecutionMode, and demotes sdk to tmux when the concrete
+// program does not support the SDK transport.
+func (m *home) standaloneExecutionMode(agentType, program string) session.ExecutionMode {
+	profile := m.profileForAgent(agentType)
+	normalised := config.NormalizeExecutionMode(profile.ExecutionMode)
+	requested := session.ExecutionMode(normalised)
+	return session.ResolveExecutionMode(requested, program)
+}
+
 // claudeNoFlicker returns the configured CLAUDE_CODE_NO_FLICKER value.
 // Defaults to false when the config is nil.
 func (m *home) claudeNoFlicker() bool {
@@ -3050,13 +3062,12 @@ func (m *home) quickLaunchAgent() (tea.Model, tea.Cmd) {
 	}
 
 	title := m.nextPlaceholderName()
+	fixerProgram := m.programForAgent(session.AgentTypeFixer)
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:   title,
-		Path:    m.activeRepoPath,
-		Program: m.programForAgent(session.AgentTypeFixer),
-		// Quick launch stays tmux-backed so the ad-hoc session remains interactive
-		// even when managed fixer runs opt into SDK transport.
-		ExecutionMode:   session.ExecutionModeTmux,
+		Title:           title,
+		Path:            m.activeRepoPath,
+		Program:         fixerProgram,
+		ExecutionMode:   m.standaloneExecutionMode(session.AgentTypeFixer, fixerProgram),
 		AgentType:       session.AgentTypeFixer,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
 	})
@@ -3145,7 +3156,10 @@ func (m *home) showSpawnAgentForm(program string) {
 //
 // These sessions launch the given program as a master agent. If program is empty,
 // "claude" is used as a safe default so existing callers remain unaffected.
-func (m *home) newNamedAgentInstance(title, path, program string) (*session.Instance, error) {
+// requestedMode is the pre-resolved execution mode from standaloneExecutionMode;
+// NewInstance will call ResolveExecutionMode again on the final program, which is
+// idempotent.
+func (m *home) newNamedAgentInstance(title, path, program string, requestedMode session.ExecutionMode) (*session.Instance, error) {
 	if strings.TrimSpace(path) == "" {
 		path = m.activeRepoPath
 	}
@@ -3157,6 +3171,7 @@ func (m *home) newNamedAgentInstance(title, path, program string) (*session.Inst
 		Title:           title,
 		Path:            path,
 		Program:         p,
+		ExecutionMode:   requestedMode,
 		AgentType:       session.AgentTypeMaster,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
 	})
@@ -3174,7 +3189,7 @@ func (m *home) spawnAdHocAgent(name, branch, workPath, program string) (tea.Mode
 		path = workPath
 	}
 
-	inst, err := m.newNamedAgentInstance(name, path, program)
+	inst, err := m.newNamedAgentInstance(name, path, program, m.standaloneExecutionMode(session.AgentTypeMaster, program))
 	if err != nil {
 		return m, m.handleError(err)
 	}
