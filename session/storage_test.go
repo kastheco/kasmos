@@ -205,3 +205,47 @@ func TestLoadInstances_PreservesPausedNonWaveInstanceWithoutTmuxSession(t *testi
 	assert.Equal(t, records[0].Title, instances[0].Title)
 	assert.True(t, instances[0].Paused())
 }
+
+// TestInstanceData_SDKSpeedTier_RoundTrip verifies that the sdk_speed_tier JSON
+// field is preserved through a marshal/unmarshal cycle and omitted when empty.
+func TestInstanceData_SDKSpeedTier_RoundTrip(t *testing.T) {
+	t.Run("fast tier persists and restores", func(t *testing.T) {
+		data := InstanceData{
+			Title:         "fast-codex",
+			Path:          "/tmp/repo",
+			Branch:        "plan/fast-codex",
+			Status:        Paused,
+			Program:       "codex",
+			ExecutionMode: ExecutionModeSDK,
+			SDKSpeedTier:  "fast",
+			Worktree: GitWorktreeData{
+				RepoPath:     "/tmp/repo",
+				WorktreePath: "/tmp/repo/.worktrees/fast-codex",
+				SessionName:  "fast-codex",
+				BranchName:   "plan/fast-codex",
+			},
+		}
+
+		raw, err := json.Marshal(data)
+		require.NoError(t, err)
+
+		// Verify the field is present in JSON.
+		assert.Contains(t, string(raw), `"sdk_speed_tier":"fast"`)
+
+		var restored InstanceData
+		require.NoError(t, json.Unmarshal(raw, &restored))
+		assert.Equal(t, "fast", restored.SDKSpeedTier)
+	})
+
+	t.Run("empty tier is omitted from JSON", func(t *testing.T) {
+		data := InstanceData{
+			Title:   "default-codex",
+			Path:    "/tmp/repo",
+			Program: "codex",
+		}
+
+		raw, err := json.Marshal(data)
+		require.NoError(t, err)
+		assert.NotContains(t, string(raw), "sdk_speed_tier")
+	})
+}

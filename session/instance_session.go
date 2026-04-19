@@ -243,6 +243,7 @@ func (deadExecutionSession) SetTaskEnv(int, int, int)                     {}
 func (deadExecutionSession) SetProject(string)                            {}
 func (deadExecutionSession) SetSessionTitle(string)                       {}
 func (deadExecutionSession) SetTitleFunc(func(string, time.Time, string)) {}
+func (deadExecutionSession) SetSDKSpeedTier(string)                       {}
 
 // SendKeys sends raw key sequences to the pane.
 // Returns an error if the instance is not started or is paused.

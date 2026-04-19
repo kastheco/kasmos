@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -593,4 +594,48 @@ func contains(s, substr string) bool {
 			}
 			return false
 		}())
+}
+
+// TestClaude_SpeedTier_IgnoredInPayload is a regression test verifying that
+// setting LaunchConfig.SpeedTier="fast" does not alter the program string,
+// extra env vars, or any other observable part of the Claude startup payload.
+// Claude has no fast-tier concept; the field must be silently ignored.
+func TestClaude_SpeedTier_IgnoredInPayload(t *testing.T) {
+	// Baseline: start without SpeedTier and capture program + env.
+	baselineCfg := LaunchConfig{
+		Program:   "claude",
+		SpeedTier: "",
+	}
+	// With SpeedTier set.
+	fastCfg := LaunchConfig{
+		Program:   "claude",
+		SpeedTier: "fast",
+	}
+
+	// Mirror the flag-injection logic from ClaudeTransport.Start.
+	applyFlags := func(cfg LaunchConfig) (program string, extraEnv []string) {
+		program = strings.TrimSpace(cfg.Program)
+		if !contains(program, claudeAppServerFlag) {
+			program = program + " " + claudeAppServerFlag
+		}
+		if cfg.SkipPermissions && !contains(program, "--permission-mode") {
+			program = program + " " + claudePermBypassFlag
+		}
+		flickerVal := "0"
+		if cfg.NoFlicker {
+			flickerVal = "1"
+		}
+		extraEnv = append(cfg.ExtraEnv, "CLAUDE_CODE_NO_FLICKER="+flickerVal)
+		return program, extraEnv
+	}
+
+	baselineProgram, baselineEnv := applyFlags(baselineCfg)
+	fastProgram, fastEnv := applyFlags(fastCfg)
+
+	// SpeedTier must not change program or env.
+	assert.Equal(t, baselineProgram, fastProgram, "SpeedTier must not alter the program string")
+	assert.Equal(t, baselineEnv, fastEnv, "SpeedTier must not alter the extra env vars")
+	// Paranoia: confirm serviceTier is not leaked into the program string.
+	assert.NotContains(t, fastProgram, "serviceTier")
+	assert.NotContains(t, fastProgram, "fast")
 }

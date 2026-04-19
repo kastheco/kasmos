@@ -59,6 +59,7 @@ type ExecutionSessionIface interface {
 	SetProject(project string)
 	SetSessionTitle(title string)
 	SetTitleFunc(fn func(workDir string, beforeStart time.Time, title string))
+	SetSDKSpeedTier(tier string)
 }
 
 // Session is the SDK execution backend.  It satisfies the parent package's
@@ -72,6 +73,7 @@ type Session struct {
 	agentType       string
 	initialPrompt   string
 	noFlicker       bool
+	speedTier       string
 	project         string
 	sessionTitle    string
 	titleFunc       func(workDir string, beforeStart time.Time, title string)
@@ -107,6 +109,7 @@ func New(name, program string, skipPermissions bool) *Session {
 func (s *Session) SetAgentType(agentType string)  { s.agentType = agentType }
 func (s *Session) SetInitialPrompt(prompt string) { s.initialPrompt = prompt }
 func (s *Session) SetNoFlicker(enabled bool)      { s.noFlicker = enabled }
+func (s *Session) SetSDKSpeedTier(tier string)    { s.speedTier = tier }
 func (s *Session) SetProject(project string)      { s.project = project }
 func (s *Session) SetSessionTitle(title string)   { s.sessionTitle = title }
 func (s *Session) SetTitleFunc(fn func(workDir string, beforeStart time.Time, title string)) {
@@ -144,6 +147,7 @@ func (s *Session) Start(workDir string) error {
 		WaveNumber:      s.waveNumber,
 		PeerCount:       s.peerCount,
 		NoFlicker:       s.noFlicker,
+		SpeedTier:       s.speedTier,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

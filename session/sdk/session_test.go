@@ -440,3 +440,36 @@ func TestSDKSession_CapturePresentation_AfterTurnStarted(t *testing.T) {
 	assert.Equal(t, 1, turns[0].Number)
 	assert.Equal(t, "t1", turns[0].ID)
 }
+
+func TestSDKSession_SetSDKSpeedTier_PropagatesViaLaunchConfig(t *testing.T) {
+	var capturedCfg LaunchConfig
+	orig := transportFactory
+	transportFactory = func(_ string) (Transport, bool) {
+		mt := newMockTransport()
+		// Wrap to capture the LaunchConfig passed to Start.
+		return &captureCfgTransport{Transport: mt, onStart: func(cfg LaunchConfig) { capturedCfg = cfg }}, true
+	}
+	defer func() { transportFactory = orig }()
+
+	s := New("name", "codex", false)
+	s.SetSDKSpeedTier("fast")
+	require.NoError(t, s.Start(t.TempDir()))
+
+	assert.Equal(t, "fast", capturedCfg.SpeedTier)
+}
+
+func TestSDKSession_ImplementsIface(t *testing.T) {
+	var _ ExecutionSessionIface = New("name", "claude", false)
+}
+
+// captureCfgTransport wraps a Transport and calls onStart with the LaunchConfig
+// passed to Start.  Used to inspect what parameters the Session passes through.
+type captureCfgTransport struct {
+	Transport
+	onStart func(LaunchConfig)
+}
+
+func (c *captureCfgTransport) Start(ctx context.Context, cfg LaunchConfig) error {
+	c.onStart(cfg)
+	return c.Transport.Start(ctx, cfg)
+}

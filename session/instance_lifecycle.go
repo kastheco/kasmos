@@ -349,6 +349,7 @@ func (i *Instance) Start(firstTimeSetup bool) error {
 		i.executionSession = i.prepareExecutionSession()
 		i.executionSession.SetAgentType(i.AgentType)
 		i.executionSession.SetNoFlicker(i.ClaudeNoFlicker)
+		i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
 		i.setExecutionTaskEnv()
 		i.configureSessionTitle()
 		i.setProgressFunc(func(stage int, desc string) {
@@ -435,6 +436,7 @@ func (i *Instance) StartOnMainBranch() error {
 		i.executionSession = i.prepareExecutionSession()
 		i.executionSession.SetAgentType(i.AgentType)
 		i.executionSession.SetNoFlicker(i.ClaudeNoFlicker)
+		i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
 		i.setExecutionTaskEnv()
 		i.configureSessionTitle()
 		i.setProgressFunc(func(stage int, desc string) {
@@ -490,6 +492,7 @@ func (i *Instance) StartOnBranch(branch string) error {
 		i.executionSession = i.prepareExecutionSession()
 		i.executionSession.SetAgentType(i.AgentType)
 		i.executionSession.SetNoFlicker(i.ClaudeNoFlicker)
+		i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
 		i.setExecutionTaskEnv()
 		i.configureSessionTitle()
 		i.setProgressFunc(func(stage int, desc string) {
@@ -561,6 +564,7 @@ func (i *Instance) StartInSharedWorktree(worktree *git.GitWorktree, branch strin
 	prepareSession := func() {
 		i.executionSession = i.prepareExecutionSession()
 		i.executionSession.SetAgentType(i.AgentType)
+		i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
 		i.setExecutionTaskEnv()
 		i.configureSessionTitle()
 		i.setProgressFunc(func(stage int, desc string) {
@@ -733,6 +737,7 @@ func (i *Instance) Restart() error {
 	prepareSession := func() {
 		i.executionSession = i.resetExecutionSession()
 		i.executionSession.SetAgentType(i.AgentType)
+		i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
 		i.setExecutionTaskEnv()
 		i.configureSessionTitle()
 	}
@@ -807,6 +812,7 @@ func (i *Instance) Resume() error {
 			prepareSession := func() {
 				i.executionSession = newExecutionSession(i.ExecutionMode, i.Title, i.Program, i.SkipPermissions)
 				i.executionSession.SetAgentType(i.AgentType)
+				i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
 				i.setExecutionTaskEnv()
 				i.configureSessionTitle()
 			}
@@ -829,6 +835,7 @@ func (i *Instance) Resume() error {
 		prepareSession := func() {
 			i.executionSession = newExecutionSession(i.ExecutionMode, i.Title, i.Program, i.SkipPermissions)
 			i.executionSession.SetAgentType(i.AgentType)
+			i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
 			i.setExecutionTaskEnv()
 			i.configureSessionTitle()
 		}
