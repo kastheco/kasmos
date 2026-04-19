@@ -98,6 +98,16 @@ func (m *home) handleMenuHighlighting(msg tea.KeyPressMsg) (cmd tea.Cmd, returnE
 		m.keydownCallback(name)), true
 }
 
+func (m *home) openSendPromptOverlay(seed string) tea.Cmd {
+	m.exitFocusMode()
+	m.state = stateSendPrompt
+	tio := overlay.NewTextInputOverlay("send prompt", seed)
+	tio.SetShiftEnterNewline(true)
+	tio.SetSize(60, 3)
+	m.overlays.Show(tio)
+	return tea.RequestWindowSize
+}
+
 // handleMouseWheel processes mouse wheel events for scrolling.
 func (m *home) handleMouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 	if handled, err := m.forwardMouseWheelToPreviewTerminal(msg); handled {
@@ -1083,13 +1093,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				if msg.Code != tea.KeyEnter && len(msg.Text) > 0 {
 					seed = msg.Text
 				}
-				m.exitFocusMode()
-				m.state = stateSendPrompt
-				tio := overlay.NewTextInputOverlay("send prompt", seed)
-				tio.SetShiftEnterNewline(true)
-				tio.SetSize(60, 3)
-				m.overlays.Show(tio)
-				return m, nil
+				return m, m.openSendPromptOverlay(seed)
 			}
 			// All other keys are no-ops for SDK sessions in focus mode.
 			return m, nil
@@ -1984,11 +1988,30 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 		return m.switchToTab(name)
 	case keys.KeyTabAgent:
 		return m.exclamationAutoFocus()
-	case keys.KeySendPrompt, keys.KeyExitFocus:
+	case keys.KeySendPrompt:
 		// Ensure the preview terminal is ready when entering focus mode.
 		m.previewRequested = true
 		selected := m.nav.GetSelectedInstance()
 		// When a plan header is selected (no instance), find the best instance for that plan.
+		if selected == nil {
+			if pf := m.nav.GetSelectedPlanFile(); pf != "" {
+				if best := m.nav.FindPlanInstance(pf); best != nil {
+					m.nav.SelectInstance(best)
+					selected = best
+				}
+			}
+		}
+		if selected == nil || !selected.Started() || selected.Paused() {
+			return m, nil
+		}
+		if session.NormalizeExecutionMode(selected.ExecutionMode) == session.ExecutionModeSDK {
+			return m, m.openSendPromptOverlay("")
+		}
+		return m, m.enterFocusMode()
+	case keys.KeyExitFocus:
+		// Ensure the preview terminal is ready when entering focus mode.
+		m.previewRequested = true
+		selected := m.nav.GetSelectedInstance()
 		if selected == nil {
 			if pf := m.nav.GetSelectedPlanFile(); pf != "" {
 				if best := m.nav.FindPlanInstance(pf); best != nil {

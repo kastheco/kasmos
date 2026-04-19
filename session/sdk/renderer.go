@@ -61,6 +61,7 @@ func (r *Renderer) AddEvent(e Event) {
 		r.appendLine(line)
 		// Structured path.
 		turn := r.ensureTurn(e.TurnID, e.Timestamp)
+		r.closeStructuredProseBlock()
 		turn.Rows = append(turn.Rows, PresentationRow{
 			Kind:      RowTool,
 			Text:      line,
@@ -81,6 +82,7 @@ func (r *Renderer) AddEvent(e Event) {
 			r.appendLine(line)
 			// Structured path.
 			turn := r.ensureTurn(e.TurnID, e.Timestamp)
+			r.closeStructuredProseBlock()
 			turn.Rows = append(turn.Rows, PresentationRow{
 				Kind:      RowResult,
 				Text:      line,
@@ -98,6 +100,7 @@ func (r *Renderer) AddEvent(e Event) {
 		// an implicit turn if no turn has started yet (transport emitted
 		// permission before turn_started).
 		turn := r.ensureTurn(e.TurnID, e.Timestamp)
+		r.closeStructuredProseBlock()
 		turn.Rows = append(turn.Rows, PresentationRow{
 			Kind:      RowPermission,
 			Text:      line,
@@ -119,6 +122,7 @@ func (r *Renderer) AddEvent(e Event) {
 				Timestamp: e.Timestamp,
 			}
 			if r.currentTurn != nil {
+				r.closeStructuredProseBlock()
 				r.currentTurn.Rows = append(r.currentTurn.Rows, row)
 			} else {
 				r.appendStandaloneTurn(e.TurnID, e.Timestamp, row)
@@ -306,6 +310,16 @@ func (r *Renderer) clearCurrentTurn() {
 	r.currentTurn = nil
 	r.currentTurnHasResponse = false
 	r.currentTurnOpenProse = -1
+}
+
+// closeStructuredProseBlock marks the current prose fragment as closed so the
+// next text delta starts a fresh response section instead of extending prose
+// that was already followed by tool/system/permission rows.
+func (r *Renderer) closeStructuredProseBlock() {
+	r.currentTurnOpenProse = -1
+	if r.currentTurnHasResponse {
+		r.currentTurnHasResponse = false
+	}
 }
 
 func (r *Renderer) appendStandaloneTurn(turnID string, ts time.Time, row PresentationRow) {

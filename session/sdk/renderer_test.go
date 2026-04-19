@@ -553,6 +553,32 @@ func TestRenderer_CapturePresentation_CompletedTurnProseRetained(t *testing.T) {
 	assert.NotEmpty(t, prose, "completed turn must retain prose rows")
 }
 
+func TestRenderer_CapturePresentation_ProseAfterToolStartsNewResponseBlock(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{Kind: EventTextDelta, TurnID: "t1", Text: "using architect first", Timestamp: ts})
+	r.AddEvent(Event{Kind: EventToolCall, TurnID: "t1", ToolName: "read_file", ToolInput: `{"path":"CLAUDE.md"}`, Timestamp: ts})
+	r.AddEvent(Event{Kind: EventToolResult, TurnID: "t1", ToolName: "read_file", ToolResult: `{"content":"ok"}`, Timestamp: ts})
+	r.AddEvent(Event{Kind: EventTextDelta, TurnID: "t1", Text: "next i'm reading overlay code", Timestamp: ts})
+	r.AddEvent(Event{Kind: EventTurnCompleted, TurnID: "t1", Timestamp: ts})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+	require.Equal(t, []PresentationRowKind{
+		RowResponse,
+		RowProse,
+		RowTool,
+		RowResult,
+		RowResponse,
+		RowProse,
+	}, rowKinds(turns[0].Rows))
+
+	assert.Equal(t, "using architect first", turns[0].Rows[1].Text)
+	assert.Equal(t, "next i'm reading overlay code", turns[0].Rows[5].Text)
+}
+
 // --- HeaderText tests ---
 
 func TestRenderer_HeaderText_Running_AppendsBulletRunning(t *testing.T) {

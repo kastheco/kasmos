@@ -108,6 +108,34 @@ describe("AgentPreview", () => {
     });
   });
 
+  it("renders a new response divider when prose resumes after tool rows", async () => {
+    const turn = makeTurn({
+      tool_count: 1,
+      rows: [
+        makeRow({ kind: "response", text: "" }),
+        makeRow({ kind: "prose", text: "using architect first" }),
+        makeRow({ kind: "tool", text: "reading file", tool_name: "Read" }),
+        makeRow({ kind: "result", text: "file contents here" }),
+        makeRow({ kind: "response", text: "" }),
+        makeRow({ kind: "prose", text: "next i'm reading overlay code" }),
+      ],
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("using architect first")).toBeTruthy();
+      expect(screen.getByText("reading file")).toBeTruthy();
+      expect(screen.getByText("next i'm reading overlay code")).toBeTruthy();
+    });
+
+    const responseDividers = screen.getAllByText("response");
+    expect(responseDividers).toHaveLength(2);
+  });
+
   it("renders running turn with • running pill", async () => {
     const turn = makeTurn({
       completed_at: null,
