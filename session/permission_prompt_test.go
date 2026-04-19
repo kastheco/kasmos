@@ -272,7 +272,32 @@ func TestParsePermissionPrompt_Codex(t *testing.T) {
   enter to submit | esc to cancel`,
 			want: &PermissionPrompt{
 				Description: `Allow the kasmos MCP server to run tool "read_file"?`,
+				Shape:       PermissionPromptShapeCodexMCP,
 			},
+		},
+		{
+			name: "codex sandbox permission prompt",
+			content: `  Field 1/1
+  Allow sandboxed network access to example.com?
+
+  › 1. Allow
+    2. Allow always
+    3. Reject
+  enter to submit | esc to cancel`,
+			want: &PermissionPrompt{
+				Description: "Allow sandboxed network access to example.com?",
+				Shape:       PermissionPromptShapeCodexSandbox,
+			},
+		},
+		{
+			name: "codex partial 3-option prompt — only options 1 and 2 — not a permission prompt",
+			content: `  Field 1/1
+  Allow sandboxed disk write to /tmp/out?
+
+  › 1. Allow
+    2. Allow always
+  enter to submit | esc to cancel`,
+			want: nil,
 		},
 		{
 			name: "codex no prompt — normal output",

@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"os/exec"
 	"time"
+
+	"github.com/charmbracelet/x/ansi"
+	"github.com/kastheco/kasmos/log"
+	"github.com/kastheco/kasmos/session/internal/codexprompt"
 )
 
 // ErrCodexPermissionUnsupported was the original sentinel returned before codex
@@ -75,18 +79,33 @@ func (a codexAdapter) SupportsCliPrompt() bool {
 	return true
 }
 
-// SendPermissionResponse sends the appropriate number key + Enter to codex's
-// numbered permission menu:
+// SendPermissionResponse captures the live pane, classifies the prompt shape
+// with codexprompt.Find, and sends the appropriate key sequence to codex's
+// numbered permission menu.
 //
-//  1. Allow                  → PermissionAllowOnce
-//  3. Always allow           → PermissionAllowAlways
-//  4. Cancel / Escape        → PermissionReject
+// MCP shape (4-option menu):
 //
-// When SkipPermissions is set, TmuxSession.Start passes codexBypassFlag at
-// launch time so permissions never surface in-pane, but this path handles the
-// fallback for manual or non-bypass runs.
+//	PermissionAllowOnce   → "1" + Enter
+//	PermissionAllowAlways → "3" + Enter
+//	PermissionReject      → Escape
+//
+// Sandbox shape (3-option menu):
+//
+//	PermissionAllowOnce   → "1" + Enter
+//	PermissionAllowAlways → "2" + Enter
+//	PermissionReject      → "3" + Enter
+//
+// If the pane no longer matches either shape (stale or gone), a warning is
+// logged and Escape is sent as a safe fallback.
 func (a codexAdapter) SendPermissionResponse(session *TmuxSession, choice PermissionChoice) error {
-	if choice == PermissionReject {
+	content, err := session.CapturePaneContent()
+	if err != nil {
+		return fmt.Errorf("SendPermissionResponse: capture pane: %w", err)
+	}
+
+	prompt := codexprompt.Find(ansi.Strip(content))
+
+	sendEscape := func() error {
 		cmd := exec.Command("tmux", "send-keys", "-t", session.sanitizedName, "Escape")
 		if err := session.cmdExec.Run(cmd); err != nil {
 			return fmt.Errorf("SendPermissionResponse: send Escape: %w", err)
@@ -94,15 +113,59 @@ func (a codexAdapter) SendPermissionResponse(session *TmuxSession, choice Permis
 		return nil
 	}
 
-	key := "1" // AllowOnce → option 1
-	if choice == PermissionAllowAlways {
-		key = "3" // Always allow → option 3
+	sendSelection := func(key string) error {
+		if err := session.SendKeys(key); err != nil {
+			return fmt.Errorf("SendPermissionResponse: send %q: %w", key, err)
+		}
+		if err := session.TapEnter(); err != nil {
+			return fmt.Errorf("SendPermissionResponse: confirm selection: %w", err)
+		}
+		return nil
 	}
-	if err := session.SendKeys(key); err != nil {
-		return fmt.Errorf("SendPermissionResponse: send %q: %w", key, err)
+
+	sendInvalidChoiceFallback := func(shape codexprompt.Shape) error {
+		if log.WarningLog != nil {
+			log.WarningLog.Printf("SendPermissionResponse: invalid permission choice %d for codex %s prompt; sending Escape as fallback", choice, shape)
+		}
+		return sendEscape()
 	}
-	if err := session.TapEnter(); err != nil {
-		return fmt.Errorf("SendPermissionResponse: confirm selection: %w", err)
+
+	if prompt == nil {
+		if log.WarningLog != nil {
+			log.WarningLog.Printf("SendPermissionResponse: pane no longer shows a codex permission prompt; sending Escape as fallback")
+		}
+		return sendEscape()
 	}
-	return nil
+
+	switch prompt.Shape {
+	case codexprompt.ShapeMCP:
+		switch choice {
+		case PermissionAllowOnce:
+			return sendSelection("1")
+		case PermissionAllowAlways:
+			return sendSelection("3")
+		case PermissionReject:
+			return sendEscape()
+		default:
+			return sendInvalidChoiceFallback(prompt.Shape)
+		}
+
+	case codexprompt.ShapeSandbox:
+		switch choice {
+		case PermissionAllowOnce:
+			return sendSelection("1")
+		case PermissionAllowAlways:
+			return sendSelection("2")
+		case PermissionReject:
+			return sendSelection("3")
+		default:
+			return sendInvalidChoiceFallback(prompt.Shape)
+		}
+
+	default:
+		if log.WarningLog != nil {
+			log.WarningLog.Printf("SendPermissionResponse: unrecognised codex prompt shape %q; sending Escape as fallback", prompt.Shape)
+		}
+		return sendEscape()
+	}
 }
