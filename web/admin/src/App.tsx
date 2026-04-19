@@ -5,6 +5,7 @@ import TasksPage from "./pages/TasksPage";
 import TaskDetailPage from "./pages/TaskDetailPage";
 import AuditPage from "./pages/AuditPage";
 import InstancesPage from "./pages/InstancesPage";
+import ConfigPage from "./pages/ConfigPage";
 import { ProjectProvider } from "./hooks/useProject";
 
 export default function App() {
@@ -18,6 +19,7 @@ export default function App() {
             <Route path="/tasks/:filename" element={<TaskDetailPage />} />
             <Route path="/audit" element={<AuditPage />} />
             <Route path="/instances" element={<InstancesPage />} />
+            <Route path="/config" element={<ConfigPage />} />
           </Route>
         </Routes>
       </ProjectProvider>

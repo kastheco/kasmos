@@ -669,6 +669,10 @@ func writeResolverError(w http.ResponseWriter, err error) {
 		writeJSONError(w, http.StatusNotImplemented, ErrPreviewUnavailable.Error())
 		return
 	}
+	if errors.Is(err, api.ErrProjectNotFound) {
+		writeJSONError(w, http.StatusNotFound, err.Error())
+		return
+	}
 	writeJSONError(w, http.StatusInternalServerError, err.Error())
 }
 

@@ -7,5 +7,29 @@ network_access = true
 url = "http://127.0.0.1:7434/mcp"
 default_tools_approval_mode = "auto"
 
+[mcp_servers.kasmos.tools.read_file]
+approval_mode = "approve"
+
+[mcp_servers.kasmos.tools.task_show]
+approval_mode = "approve"
+
+[mcp_servers.kasmos.tools.git_status]
+approval_mode = "approve"
+
+[mcp_servers.kasmos.tools.grep]
+approval_mode = "approve"
+
+[mcp_servers.kasmos.tools.signal_create]
+approval_mode = "approve"
+
+[mcp_servers.kasmos.tools.git_diff]
+approval_mode = "approve"
+
+[mcp_servers.kasmos.tools.list_dir]
+approval_mode = "approve"
+
+[mcp_servers.kasmos.tools.git_log]
+approval_mode = "approve"
+
 [features]
 codex_hooks = true
