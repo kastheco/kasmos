@@ -10,16 +10,17 @@ import (
 
 // FormOverlay is a multi-field form overlay backed by huh.Form.
 type FormOverlay struct {
-	form      *huh.Form
-	nameVal   string
-	descVal   string
-	branchVal string
-	pathVal   string
-	title     string
-	submitted bool
-	canceled  bool
-	width     int
-	fieldKeys []string
+	form        *huh.Form
+	nameVal     string
+	descVal     string
+	branchVal   string
+	pathVal     string
+	title       string
+	footerHint  string
+	submitted   bool
+	canceled    bool
+	width       int
+	fieldKeys   []string
 }
 
 // NewFormOverlay creates a form overlay with name and description inputs.
@@ -210,9 +211,19 @@ func (f *FormOverlay) View() string {
 
 	content := st.Title.Render(f.title) + "\n"
 	content += f.form.View() + "\n"
+	if f.footerHint != "" {
+		content += st.Muted.Render(f.footerHint) + "\n"
+	}
 	content += st.Hint.Render("tab/↑↓ navigate · enter create")
 
 	return st.ModalBorder.Width(w).Render(content)
+}
+
+// SetFooterHint sets an optional secondary hint line rendered below the form and above
+// the navigation hint. Pass an empty string to clear the hint. Text is rendered with the
+// muted overlay style so it reads as a secondary note, not a second title.
+func (f *FormOverlay) SetFooterHint(text string) {
+	f.footerHint = text
 }
 
 // SetSize implements Overlay. Updates the available width for the overlay.

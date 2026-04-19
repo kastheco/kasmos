@@ -235,3 +235,24 @@ func TestFormOverlay_HandlePaste_StripsNewlines(t *testing.T) {
 func TestFormOverlay_ImplementsPasteHandler(t *testing.T) {
 	var _ PasteHandler = NewFormOverlay("title", 60)
 }
+
+func TestFormOverlay_SetFooterHint_AppearsInView(t *testing.T) {
+	f := NewFormOverlay("new plan", 60)
+	f.SetFooterHint("sdk mode: in-process transport")
+	view := f.View()
+	assert.Contains(t, view, "sdk mode: in-process transport")
+}
+
+func TestFormOverlay_SetFooterHint_AbsentWhenEmpty(t *testing.T) {
+	f := NewFormOverlay("new plan", 60)
+	// no SetFooterHint call — hint must not appear
+	view := f.View()
+	assert.NotContains(t, view, "sdk mode")
+}
+
+func TestSpawnFormOverlay_SetFooterHint_AppearsInView(t *testing.T) {
+	f := NewSpawnFormOverlay("spawn agent", 60)
+	f.SetFooterHint("sdk selected — worktree not required")
+	view := f.View()
+	assert.Contains(t, view, "sdk selected — worktree not required")
+}

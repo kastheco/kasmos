@@ -41,6 +41,21 @@ func (p *PickerOverlay) SetAllowCustom(allow bool) {
 	p.allowCustom = allow
 }
 
+// SetSelectedValue moves the selection to the first item in the current filtered list
+// that matches value exactly (case-sensitive). If value is empty or not present in the
+// current filtered list, the selection is left unchanged.
+func (p *PickerOverlay) SetSelectedValue(value string) {
+	if value == "" {
+		return
+	}
+	for i, item := range p.filtered {
+		if item == value {
+			p.selectedIdx = i
+			return
+		}
+	}
+}
+
 const customPrefix = "+ Create: "
 
 func (p *PickerOverlay) applyFilter() {

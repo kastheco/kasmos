@@ -103,3 +103,36 @@ func TestPickerOverlay_HandleMouse_PrefixMatchUsesClickedRow(t *testing.T) {
 
 	assert.Equal(t, Result{Dismissed: true, Submitted: true, Value: "alpha"}, result)
 }
+
+func TestPickerOverlay_SetSelectedValue_Sdk(t *testing.T) {
+	p := NewPickerOverlay("mode", []string{"tmux", "sdk"})
+	p.SetSelectedValue("sdk")
+	result := p.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	assert.True(t, result.Submitted)
+	assert.Equal(t, "sdk", result.Value)
+}
+
+func TestPickerOverlay_SetSelectedValue_MissingValueNoOp(t *testing.T) {
+	p := NewPickerOverlay("mode", []string{"tmux", "sdk"})
+	// selection starts at 0 ("tmux"); setting a missing value should not change it
+	p.SetSelectedValue("unknown")
+	result := p.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	assert.Equal(t, "tmux", result.Value)
+}
+
+func TestPickerOverlay_SetSelectedValue_EmptyNoOp(t *testing.T) {
+	p := NewPickerOverlay("mode", []string{"tmux", "sdk"})
+	p.HandleKey(tea.KeyPressMsg{Code: tea.KeyDown}) // move to "sdk"
+	p.SetSelectedValue("")                           // empty → no change
+	result := p.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	assert.Equal(t, "sdk", result.Value)
+}
+
+func TestPickerOverlay_SetSelectedValue_NavigationStillWorks(t *testing.T) {
+	p := NewPickerOverlay("mode", []string{"tmux", "sdk", "other"})
+	p.SetSelectedValue("sdk") // preselect index 1
+	// navigate down one more
+	p.HandleKey(tea.KeyPressMsg{Code: tea.KeyDown})
+	result := p.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	assert.Equal(t, "other", result.Value)
+}
