@@ -51,6 +51,13 @@ func WithDetail(detail string) EventOption {
 	return func(e *Event) { e.Detail = detail }
 }
 
+// WithExecutionMode serialises {"execution_mode": mode} into the Detail field.
+// Use this on spawn events to record whether the agent was launched via the
+// tmux or sdk transport. The web audit page pretty-prints JSON Detail values.
+func WithExecutionMode(mode string) EventOption {
+	return func(e *Event) { e.Detail = `{"execution_mode":"` + mode + `"}` }
+}
+
 // WithLevel sets the Level field on the event (info, warn, error).
 func WithLevel(level string) EventOption {
 	return func(e *Event) { e.Level = level }

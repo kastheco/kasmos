@@ -365,7 +365,7 @@ func TestView_UsesCellMotionMouseMode(t *testing.T) {
 
 func TestSpawnAdHocAgent_DefaultCreatesWorktree(t *testing.T) {
 	h := newTestHome()
-	model, cmd := h.spawnAdHocAgent("my-agent", "", "", "")
+	model, cmd := h.spawnAdHocAgent("my-agent", "", "", "", session.ExecutionModeTmux)
 	updated := model.(*home)
 	instances := updated.nav.GetInstances()
 	require.NotEmpty(t, instances)
@@ -396,7 +396,7 @@ func TestExecuteLauncherAction_NewInstanceUsesClaudeMasterAgent(t *testing.T) {
 
 func TestSpawnAdHocAgent_BranchOverride(t *testing.T) {
 	h := newTestHome()
-	model, cmd := h.spawnAdHocAgent("my-agent", "feature/login", "", "")
+	model, cmd := h.spawnAdHocAgent("my-agent", "feature/login", "", "", session.ExecutionModeTmux)
 	updated := model.(*home)
 	instances := updated.nav.GetInstances()
 	require.NotEmpty(t, instances)
@@ -407,7 +407,7 @@ func TestSpawnAdHocAgent_BranchOverride(t *testing.T) {
 
 func TestSpawnAdHocAgent_PathOverride(t *testing.T) {
 	h := newTestHome()
-	model, cmd := h.spawnAdHocAgent("my-agent", "", "/tmp/custom-path", "")
+	model, cmd := h.spawnAdHocAgent("my-agent", "", "/tmp/custom-path", "", session.ExecutionModeTmux)
 	updated := model.(*home)
 	instances := updated.nav.GetInstances()
 	require.NotEmpty(t, instances)
@@ -416,15 +416,19 @@ func TestSpawnAdHocAgent_PathOverride(t *testing.T) {
 	assert.NotNil(t, cmd)
 }
 
-func TestSpawnAgent_KeyOpensFormOverlay(t *testing.T) {
+func TestSpawnAgent_KeyOpensExecutionModePicker(t *testing.T) {
+	// Single SDK-capable program (claude): S must open the execution-mode
+	// picker, not the spawn form directly.
 	h := newTestHome()
+	h.appConfig = &config.Config{DefaultProgram: "claude"}
 	h.keySent = true
 	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
 	updated := model.(*home)
-	require.Equal(t, stateSpawnAgent, updated.state)
-	require.True(t, updated.overlays.IsActive(), "form overlay must be set")
-	_, ok := updated.overlays.Current().(*overlay.FormOverlay)
-	require.True(t, ok, "active overlay must be a FormOverlay")
+	require.Equal(t, stateSpawnExecutionModePicker, updated.state)
+	require.True(t, updated.overlays.IsActive(), "execution-mode picker must be active")
+	_, ok := updated.overlays.Current().(*overlay.PickerOverlay)
+	require.True(t, ok, "active overlay must be a PickerOverlay")
+	assert.Equal(t, "claude", updated.pendingSpawnProgram)
 }
 
 func TestSpawnAgent_EscCancels(t *testing.T) {
@@ -531,9 +535,25 @@ func TestSpawnAgent_MultiplePrograms_OpensPicker(t *testing.T) {
 	require.True(t, ok, "active overlay must be a PickerOverlay")
 }
 
-func TestSpawnAgent_OneProgram_OpensFormDirectly(t *testing.T) {
+func TestSpawnAgent_OneSDKProgram_OpensExecutionModePicker(t *testing.T) {
+	// codex is SDK-capable: a single-program spawn must open the execution-mode
+	// picker rather than going directly to the spawn form.
 	h := newTestHome()
 	h.appConfig = &config.Config{DefaultProgram: "codex"}
+	h.keySent = true
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	updated := model.(*home)
+	require.Equal(t, stateSpawnExecutionModePicker, updated.state)
+	require.True(t, updated.overlays.IsActive(), "execution-mode picker must be active")
+	_, ok := updated.overlays.Current().(*overlay.PickerOverlay)
+	require.True(t, ok, "active overlay must be a PickerOverlay")
+	assert.Equal(t, "codex", updated.pendingSpawnProgram)
+}
+
+func TestSpawnAgent_OneUnsupportedProgram_OpensFormDirectly(t *testing.T) {
+	// amp is not SDK-capable: a single-program spawn must open the form directly.
+	h := newTestHome()
+	h.appConfig = &config.Config{DefaultProgram: "amp"}
 	h.keySent = true
 	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
 	updated := model.(*home)
@@ -541,7 +561,7 @@ func TestSpawnAgent_OneProgram_OpensFormDirectly(t *testing.T) {
 	require.True(t, updated.overlays.IsActive(), "form overlay must be active")
 	_, ok := updated.overlays.Current().(*overlay.FormOverlay)
 	require.True(t, ok, "active overlay must be a FormOverlay")
-	assert.Equal(t, "codex", updated.pendingSpawnProgram)
+	assert.Equal(t, "amp", updated.pendingSpawnProgram)
 }
 
 func TestSpawnAgent_LauncherAction_MultiplePrograms_OpensPicker(t *testing.T) {
@@ -593,6 +613,7 @@ func TestSpawnHarnessPicker_EscReturnsToDefault(t *testing.T) {
 func TestSpawnAgent_SubmitCreatesInstanceWithChosenProgram(t *testing.T) {
 	h := newTestHome()
 	h.pendingSpawnProgram = "opencode"
+	h.pendingSpawnExecutionMode = session.ExecutionModeTmux
 	h.state = stateSpawnAgent
 	h.overlays.Show(overlay.NewSpawnFormOverlay("spawn agent", 60))
 
@@ -611,6 +632,7 @@ func TestSpawnAgent_SubmitCreatesInstanceWithChosenProgram(t *testing.T) {
 	updated := model.(*home)
 	assert.Equal(t, stateDefault, updated.state)
 	assert.Empty(t, updated.pendingSpawnProgram)
+	assert.Empty(t, updated.pendingSpawnExecutionMode)
 	assert.NotNil(t, cmd)
 
 	instances := updated.nav.GetInstances()
@@ -619,6 +641,121 @@ func TestSpawnAgent_SubmitCreatesInstanceWithChosenProgram(t *testing.T) {
 	assert.Equal(t, "my-opencode-agent", last.Title)
 	assert.Equal(t, "opencode", last.Program)
 	assert.Equal(t, session.AgentTypeMaster, last.AgentType)
+	assert.Equal(t, session.ExecutionModeTmux, last.ExecutionMode)
+}
+
+func TestSpawnExecutionModePicker_EscReturnsToDefault(t *testing.T) {
+	h := newTestHome()
+	h.appConfig = &config.Config{DefaultProgram: "claude"}
+	h.state = stateSpawnExecutionModePicker
+	h.pendingSpawnProgram = "claude"
+	h.pendingSpawnExecutionMode = session.ExecutionModeTmux
+	h.overlays.Show(overlay.NewPickerOverlay("execution mode", []string{"tmux", "sdk"}))
+
+	h.keySent = true
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEscape})
+	updated := model.(*home)
+	assert.Equal(t, stateDefault, updated.state)
+	assert.Empty(t, updated.pendingSpawnProgram)
+	assert.Empty(t, updated.pendingSpawnExecutionMode)
+	assert.False(t, updated.overlays.IsActive())
+}
+
+func TestSpawnAgent_SDKProgram_SDK_Submit_HasSDKMode(t *testing.T) {
+	// S -> claude -> sdk -> submit => spawned instance has ExecutionModeSDK
+	h := newTestHome()
+	h.pendingSpawnProgram = "claude"
+	h.pendingSpawnExecutionMode = session.ExecutionModeSDK
+	h.state = stateSpawnAgent
+	fo := overlay.NewSpawnFormOverlay("spawn agent", 60)
+	fo.SetFooterHint("standalone sdk agents cannot be controlled from the web ui")
+	h.overlays.Show(fo)
+
+	press := func(msg tea.KeyPressMsg) {
+		h.keySent = true
+		handleModel, _ := h.handleKeyPress(msg)
+		h = handleModel.(*home)
+	}
+	for _, r := range "sdk-agent" {
+		press(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+
+	h.keySent = true
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := model.(*home)
+	assert.Equal(t, stateDefault, updated.state)
+	assert.Empty(t, updated.pendingSpawnProgram)
+	assert.Empty(t, updated.pendingSpawnExecutionMode)
+	assert.NotNil(t, cmd)
+
+	instances := updated.nav.GetInstances()
+	require.NotEmpty(t, instances)
+	last := instances[len(instances)-1]
+	assert.Equal(t, "sdk-agent", last.Title)
+	assert.Equal(t, "claude", last.Program)
+	assert.Equal(t, session.ExecutionModeSDK, last.ExecutionMode)
+}
+
+func TestSpawnAgent_SDKProgram_Tmux_Submit_HasTmuxMode(t *testing.T) {
+	// S -> codex -> tmux -> submit => spawned instance has ExecutionModeTmux
+	h := newTestHome()
+	h.pendingSpawnProgram = "codex"
+	h.pendingSpawnExecutionMode = session.ExecutionModeTmux
+	h.state = stateSpawnAgent
+	h.overlays.Show(overlay.NewSpawnFormOverlay("spawn agent", 60))
+
+	press := func(msg tea.KeyPressMsg) {
+		h.keySent = true
+		handleModel, _ := h.handleKeyPress(msg)
+		h = handleModel.(*home)
+	}
+	for _, r := range "tmux-agent" {
+		press(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+
+	h.keySent = true
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := model.(*home)
+	assert.Equal(t, stateDefault, updated.state)
+	assert.NotNil(t, cmd)
+
+	instances := updated.nav.GetInstances()
+	require.NotEmpty(t, instances)
+	last := instances[len(instances)-1]
+	assert.Equal(t, "tmux-agent", last.Title)
+	assert.Equal(t, "codex", last.Program)
+	assert.Equal(t, session.ExecutionModeTmux, last.ExecutionMode)
+}
+
+func TestSpawnAgent_UnsupportedProgram_Submit_HasTmuxModeNoPicker(t *testing.T) {
+	// S -> opencode -> submit => ExecutionModeTmux with no picker involved
+	h := newTestHome()
+	h.appConfig = &config.Config{DefaultProgram: "opencode"}
+	h.pendingSpawnProgram = "opencode"
+	h.pendingSpawnExecutionMode = session.ExecutionModeTmux
+	h.state = stateSpawnAgent
+	h.overlays.Show(overlay.NewSpawnFormOverlay("spawn agent", 60))
+
+	press := func(msg tea.KeyPressMsg) {
+		h.keySent = true
+		handleModel, _ := h.handleKeyPress(msg)
+		h = handleModel.(*home)
+	}
+	for _, r := range "opencode-agent" {
+		press(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+
+	h.keySent = true
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := model.(*home)
+	assert.Equal(t, stateDefault, updated.state)
+
+	instances := updated.nav.GetInstances()
+	require.NotEmpty(t, instances)
+	last := instances[len(instances)-1]
+	assert.Equal(t, "opencode-agent", last.Title)
+	assert.Equal(t, "opencode", last.Program)
+	assert.Equal(t, session.ExecutionModeTmux, last.ExecutionMode)
 }
 
 func TestExecutionModeForAgent_DefaultsToTmuxButHonorsExplicitSDK(t *testing.T) {
