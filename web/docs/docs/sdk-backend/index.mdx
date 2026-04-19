@@ -71,11 +71,56 @@ sdk sessions do not support terminal attachment. three methods return `ErrIntera
 
 `SendKeys` and `TapEnter` **are** supported by sdk sessions — they buffer and submit text via the transport's `SendPrompt` method. see [how it works](./how-it-works.mdx) for details.
 
+## standalone sdk agents
+
+in addition to automated wave execution, the sdk backend is available when you spawn a standalone (ad-hoc) agent from the TUI. the three spawn entry points each resolve the execution mode in slightly different ways.
+
+### `N` — new with prompt
+
+`N` ("new with prompt") creates an instance whose execution mode is resolved from the **default/chat/ad-hoc profile** — whichever `[agents.*]` block is mapped to the empty-string agent type. if that profile sets `execution_mode = "sdk"` and the resolved program is `claude` or `codex`, the session uses the sdk backend. for any other program the mode silently falls back to tmux.
+
+the resolution happens in `standaloneExecutionMode` (`app/app_state.go`):
+
+```go
+func (m *home) standaloneExecutionMode(agentType, program string) session.ExecutionMode {
+    profile := m.profileForAgent(agentType)
+    normalised := config.NormalizeExecutionMode(profile.ExecutionMode)
+    requested := session.ExecutionMode(normalised)
+    return session.ResolveExecutionMode(requested, program)
+}
+```
+
+### `s` — quick launch
+
+`s` calls `quickLaunchAgent`, which always uses the **fixer profile**:
+
+```go
+m.standaloneExecutionMode(session.AgentTypeFixer, fixerProgram)
+```
+
+set `execution_mode = "sdk"` in your `[agents.fixer]` block to make quick-launch sessions use the sdk backend when the configured program supports it.
+
+### `S` — spawn ad-hoc agent
+
+`S` opens a multi-step spawn flow: first a harness picker (if multiple programs are configured), then an execution-mode picker (`tmux` / `sdk`) for sdk-capable harnesses, then a name/branch/path form. the execution mode is resolved from the **master profile** via:
+
+```go
+m.standaloneExecutionMode(session.AgentTypeMaster, program)
+```
+
+for sdk-capable harnesses (`claude`, `codex`) the resolved mode follows the master profile's `execution_mode` setting. for unsupported harnesses (opencode, gemini, amp, custom binaries) `session.ResolveExecutionMode` always returns tmux regardless of what the profile says — see `sdk.SupportsProgram` in `session/sdk/registry.go`.
+
+### standalone vs daemon-managed sdk
+
+standalone sdk agents run **in-process inside the TUI**. they are not registered with the daemon, so the web admin UI has no way to reach them. see [managing instances](../guides/managing-instances.mdx#sdk-instance-output) for the full list of web-ui limitations.
+
 ## when to choose sdk
 
 | scenario | recommended mode |
 |----------|-----------------|
 | automated claude or codex coder in a wave | `sdk` |
+| standalone quick-launch (`s`) with fixer profile sdk | `sdk` |
+| ad-hoc spawn (`S` / `N`) with master/default profile sdk | `sdk` |
 | any other harness (opencode, gemini, amp, custom) | `tmux` (sdk silently falls back anyway) |
 | local development with live terminal attachment | `tmux` |
 | interactive `kas monitor` debugging | `tmux` |

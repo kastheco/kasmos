@@ -73,7 +73,7 @@ func (m *home) handleMenuHighlighting(msg tea.KeyPressMsg) (cmd tea.Cmd, returnE
 		m.keySent = false
 		return nil, false
 	}
-	if m.state == statePrompt || m.state == stateHelp || m.state == stateConfirm || m.state == stateNewPlan || m.state == stateNewPlanDeriving || m.state == stateNewPlanTopic || m.state == stateSpawnHarnessPicker || m.state == stateSpawnAgent || m.state == stateSearch || m.state == stateContextMenu || m.state == statePRTitle || m.state == statePRBody || m.state == stateRenameInstance || m.state == stateRenameTask || m.state == stateSendPrompt || m.state == stateFocusAgent || m.state == stateChangeTopic || m.state == stateSetStatus || m.state == stateClickUpSearch || m.state == stateClickUpPicker || m.state == stateClickUpFetching || m.state == stateClickUpWorkspacePicker || m.state == statePermission || m.state == stateTmuxBrowser || m.state == stateChatAboutTask || m.state == stateAuditCursor || m.state == stateLauncher || m.state == stateKeybindBrowser || m.state == stateWaveDecision {
+	if m.state == statePrompt || m.state == stateHelp || m.state == stateConfirm || m.state == stateNewPlan || m.state == stateNewPlanDeriving || m.state == stateNewPlanTopic || m.state == stateSpawnHarnessPicker || m.state == stateSpawnExecutionModePicker || m.state == stateSpawnAgent || m.state == stateSearch || m.state == stateContextMenu || m.state == statePRTitle || m.state == statePRBody || m.state == stateRenameInstance || m.state == stateRenameTask || m.state == stateSendPrompt || m.state == stateFocusAgent || m.state == stateChangeTopic || m.state == stateSetStatus || m.state == stateClickUpSearch || m.state == stateClickUpPicker || m.state == stateClickUpFetching || m.state == stateClickUpWorkspacePicker || m.state == statePermission || m.state == stateTmuxBrowser || m.state == stateChatAboutTask || m.state == stateAuditCursor || m.state == stateLauncher || m.state == stateKeybindBrowser || m.state == stateWaveDecision {
 		return nil, false
 	}
 	// If it's in the global keymap, we should try to highlight it.
@@ -452,16 +452,24 @@ func (m *home) handleActiveOverlayMouse(msg tea.MouseClickMsg) (tea.Model, tea.C
 
 	case stateSpawnHarnessPicker:
 		if result.Submitted && result.Value != "" {
-			m.showSpawnAgentForm(result.Value)
-			return m, nil
+			return m.continueSpawnAgentFlow(result.Value)
 		}
-		m.pendingSpawnProgram = ""
+		m.resetPendingSpawnFlow()
+		m.state = stateDefault
+		m.menu.SetState(ui.StateDefault)
+		return m, tea.RequestWindowSize
+
+	case stateSpawnExecutionModePicker:
+		if result.Submitted && result.Value != "" {
+			return m.continueSpawnAgentFlowWithMode(m.pendingSpawnProgram, session.ExecutionMode(result.Value))
+		}
+		m.resetPendingSpawnFlow()
 		m.state = stateDefault
 		m.menu.SetState(ui.StateDefault)
 		return m, tea.RequestWindowSize
 
 	case stateSpawnAgent:
-		m.pendingSpawnProgram = ""
+		m.resetPendingSpawnFlow()
 		m.state = stateDefault
 		m.menu.SetState(ui.StateDefault)
 		return m, tea.RequestWindowSize
@@ -1415,7 +1423,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 	// Handle harness picker state (first step of spawn flow when multiple programs available)
 	if m.state == stateSpawnHarnessPicker {
 		if !m.overlays.IsActive() {
-			m.pendingSpawnProgram = ""
+			m.resetPendingSpawnFlow()
 			m.state = stateDefault
 			m.menu.SetState(ui.StateDefault)
 			return m, nil
@@ -1423,10 +1431,30 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		result := m.overlays.HandleKey(msg)
 		if result.Dismissed {
 			if result.Submitted && result.Value != "" {
-				m.showSpawnAgentForm(result.Value)
-				return m, nil
+				return m.continueSpawnAgentFlow(result.Value)
 			}
-			m.pendingSpawnProgram = ""
+			m.resetPendingSpawnFlow()
+			m.state = stateDefault
+			m.menu.SetState(ui.StateDefault)
+			return m, tea.RequestWindowSize
+		}
+		return m, nil
+	}
+
+	// Handle execution-mode picker state (second step of spawn flow for SDK-capable harnesses)
+	if m.state == stateSpawnExecutionModePicker {
+		if !m.overlays.IsActive() {
+			m.resetPendingSpawnFlow()
+			m.state = stateDefault
+			m.menu.SetState(ui.StateDefault)
+			return m, nil
+		}
+		result := m.overlays.HandleKey(msg)
+		if result.Dismissed {
+			if result.Submitted && result.Value != "" {
+				return m.continueSpawnAgentFlowWithMode(m.pendingSpawnProgram, session.ExecutionMode(result.Value))
+			}
+			m.resetPendingSpawnFlow()
 			m.state = stateDefault
 			m.menu.SetState(ui.StateDefault)
 			return m, tea.RequestWindowSize
@@ -1437,7 +1465,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 	// Handle spawn agent form state
 	if m.state == stateSpawnAgent {
 		if !m.overlays.IsActive() {
-			m.pendingSpawnProgram = ""
+			m.resetPendingSpawnFlow()
 			m.state = stateDefault
 			return m, nil
 		}
@@ -1451,17 +1479,18 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				workPath := fo.WorkPath()
 
 				if name == "" {
-					m.pendingSpawnProgram = ""
+					m.resetPendingSpawnFlow()
 					m.state = stateDefault
 					m.menu.SetState(ui.StateDefault)
 					return m, m.handleError(fmt.Errorf("name cannot be empty"))
 				}
 
 				selectedProgram := m.pendingSpawnProgram
-				m.pendingSpawnProgram = ""
-				return m.spawnAdHocAgent(name, branch, workPath, selectedProgram)
+				selectedMode := m.pendingSpawnExecutionMode
+				m.resetPendingSpawnFlow()
+				return m.spawnAdHocAgent(name, branch, workPath, selectedProgram, selectedMode)
 			}
-			m.pendingSpawnProgram = ""
+			m.resetPendingSpawnFlow()
 			m.state = stateDefault
 			m.menu.SetState(ui.StateDefault)
 			return m, tea.RequestWindowSize
@@ -1926,14 +1955,16 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 	case keys.KeyHelp:
 		return m.openKeybindBrowser()
 	case keys.KeyPrompt:
-		if m.tmuxSessionCount >= GlobalInstanceLimit {
-			return m, m.handleError(
-				fmt.Errorf("you can't create more than %d instances (%d tmux sessions active)", GlobalInstanceLimit, m.tmuxSessionCount))
+		promptProgram := m.programForAgent("")
+		requestedMode := m.standaloneExecutionMode("", promptProgram)
+		if err := m.standaloneExecutionModeLimitError(requestedMode); err != nil {
+			return m, m.handleError(err)
 		}
 		instance, err := session.NewInstance(session.InstanceOptions{
-			Title:   "",
-			Path:    m.activeRepoPath,
-			Program: m.programForAgent(""),
+			Title:         "",
+			Path:          m.activeRepoPath,
+			Program:       promptProgram,
+			ExecutionMode: requestedMode,
 		})
 		if err != nil {
 			return m, m.handleError(err)

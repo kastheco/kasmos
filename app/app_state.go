@@ -31,6 +31,7 @@ import (
 	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
 	gitpkg "github.com/kastheco/kasmos/session/git"
+	"github.com/kastheco/kasmos/session/sdk"
 	"github.com/kastheco/kasmos/session/tmux"
 	"github.com/kastheco/kasmos/ui"
 	"github.com/kastheco/kasmos/ui/overlay"
@@ -2147,6 +2148,30 @@ func (m *home) executionModeForAgent(agentType string) session.ExecutionMode {
 	return session.ExecutionMode(config.NormalizeExecutionMode(m.profileForAgent(agentType).ExecutionMode))
 }
 
+// standaloneExecutionMode resolves the execution mode for a standalone ad-hoc
+// agent spawn (KeyPrompt, new_instance, quickLaunchAgent, spawnAdHocAgent).
+// It reads the profile for agentType, normalises the requested mode via
+// config.NormalizeExecutionMode, and demotes sdk to tmux when the concrete
+// program does not support the SDK transport.
+func (m *home) standaloneExecutionMode(agentType, program string) session.ExecutionMode {
+	profile := m.profileForAgent(agentType)
+	normalised := config.NormalizeExecutionMode(profile.ExecutionMode)
+	requested := session.ExecutionMode(normalised)
+	return session.ResolveExecutionMode(requested, program)
+}
+
+// standaloneExecutionModeLimitError enforces the standalone tmux-session cap.
+// SDK standalones do not create tmux sessions and are exempt from this limit.
+func (m *home) standaloneExecutionModeLimitError(mode session.ExecutionMode) error {
+	if session.NormalizeExecutionMode(mode) != session.ExecutionModeTmux {
+		return nil
+	}
+	if m.tmuxSessionCount < GlobalInstanceLimit {
+		return nil
+	}
+	return fmt.Errorf("you can't create more than %d instances (%d tmux sessions active)", GlobalInstanceLimit, m.tmuxSessionCount)
+}
+
 // claudeNoFlicker returns the configured CLAUDE_CODE_NO_FLICKER value.
 // Defaults to false when the config is nil.
 func (m *home) claudeNoFlicker() bool {
@@ -3044,19 +3069,18 @@ func (m *home) quickLaunchAgent() (tea.Model, tea.Cmd) {
 	if !m.requireDaemonForAgents() {
 		return m, nil
 	}
-	if m.tmuxSessionCount >= GlobalInstanceLimit {
-		return m, m.handleError(
-			fmt.Errorf("you can't create more than %d instances (%d tmux sessions active)", GlobalInstanceLimit, m.tmuxSessionCount))
+	fixerProgram := m.programForAgent(session.AgentTypeFixer)
+	requestedMode := m.standaloneExecutionMode(session.AgentTypeFixer, fixerProgram)
+	if err := m.standaloneExecutionModeLimitError(requestedMode); err != nil {
+		return m, m.handleError(err)
 	}
 
 	title := m.nextPlaceholderName()
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:   title,
-		Path:    m.activeRepoPath,
-		Program: m.programForAgent(session.AgentTypeFixer),
-		// Quick launch stays tmux-backed so the ad-hoc session remains interactive
-		// even when managed fixer runs opt into SDK transport.
-		ExecutionMode:   session.ExecutionModeTmux,
+		Title:           title,
+		Path:            m.activeRepoPath,
+		Program:         fixerProgram,
+		ExecutionMode:   requestedMode,
 		AgentType:       session.AgentTypeFixer,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
 	})
@@ -3114,19 +3138,57 @@ func (m *home) availableSpawnPrograms() []string {
 	return programs
 }
 
-// beginSpawnAgentFlow is the shared entry point for both the S-key binding and the
-// "spawn_agent" launcher action. It checks the tmux session limit then either shows
-// the harness picker (multiple programs available) or goes directly to the spawn form
-// (exactly one program available).
-func (m *home) beginSpawnAgentFlow() (tea.Model, tea.Cmd) {
-	if m.tmuxSessionCount >= GlobalInstanceLimit {
-		return m, m.handleError(
-			fmt.Errorf("you can't create more than %d instances (%d tmux sessions active)", GlobalInstanceLimit, m.tmuxSessionCount))
+// resetPendingSpawnFlow clears all pending spawn state so an abandoned picker
+// or form never leaks an sdk selection into the next spawn.
+func (m *home) resetPendingSpawnFlow() {
+	m.pendingSpawnProgram = ""
+	m.pendingSpawnExecutionMode = ""
+}
+
+// showSpawnExecutionModePicker sets the pending spawn program and opens the
+// execution-mode picker, preselecting the default resolved mode for the program.
+func (m *home) showSpawnExecutionModePicker(program string) {
+	m.pendingSpawnProgram = program
+	m.pendingSpawnExecutionMode = m.standaloneExecutionMode(session.AgentTypeMaster, program)
+	picker := overlay.NewPickerOverlay("execution mode", []string{"tmux", "sdk"})
+	picker.SetSelectedValue(string(m.pendingSpawnExecutionMode))
+	m.overlays.Show(picker)
+	m.state = stateSpawnExecutionModePicker
+}
+
+// continueSpawnAgentFlow is called after a harness program has been selected
+// (or when only one program is available). When the program supports the SDK
+// transport it shows the execution-mode picker; otherwise it sets tmux mode and
+// proceeds directly to the spawn name form.
+func (m *home) continueSpawnAgentFlow(program string) (tea.Model, tea.Cmd) {
+	if sdk.SupportsProgram(program) {
+		m.showSpawnExecutionModePicker(program)
+		return m, nil
 	}
+	return m.continueSpawnAgentFlowWithMode(program, session.ExecutionModeTmux)
+}
+
+// continueSpawnAgentFlowWithMode validates the selected execution mode against
+// the tmux-session limit, then proceeds to the spawn form.
+func (m *home) continueSpawnAgentFlowWithMode(program string, mode session.ExecutionMode) (tea.Model, tea.Cmd) {
+	if err := m.standaloneExecutionModeLimitError(mode); err != nil {
+		m.resetPendingSpawnFlow()
+		m.state = stateDefault
+		m.menu.SetState(ui.StateDefault)
+		return m, m.handleError(err)
+	}
+	m.pendingSpawnExecutionMode = mode
+	m.showSpawnAgentForm(program)
+	return m, nil
+}
+
+// beginSpawnAgentFlow is the shared entry point for both the S-key binding and the
+// "spawn_agent" launcher action. It either shows the harness picker (multiple
+// programs available) or continues to the next step (exactly one program available).
+func (m *home) beginSpawnAgentFlow() (tea.Model, tea.Cmd) {
 	programs := m.availableSpawnPrograms()
 	if len(programs) == 1 {
-		m.showSpawnAgentForm(programs[0])
-		return m, nil
+		return m.continueSpawnAgentFlow(programs[0])
 	}
 	m.overlays.Show(overlay.NewPickerOverlay("select harness", programs))
 	m.state = stateSpawnHarnessPicker
@@ -3134,10 +3196,15 @@ func (m *home) beginSpawnAgentFlow() (tea.Model, tea.Cmd) {
 }
 
 // showSpawnAgentForm stores the selected harness program and opens the spawn name form.
+// When the pending execution mode is SDK, a footer hint is shown.
 func (m *home) showSpawnAgentForm(program string) {
 	m.pendingSpawnProgram = program
 	m.state = stateSpawnAgent
-	m.overlays.Show(overlay.NewSpawnFormOverlay("spawn agent", 60))
+	fo := overlay.NewSpawnFormOverlay("spawn agent", 60)
+	if m.pendingSpawnExecutionMode == session.ExecutionModeSDK {
+		fo.SetFooterHint("standalone sdk agents cannot be controlled from the web ui")
+	}
+	m.overlays.Show(fo)
 }
 
 // newNamedAgentInstance builds the interactive ad-hoc session used by the
@@ -3145,7 +3212,10 @@ func (m *home) showSpawnAgentForm(program string) {
 //
 // These sessions launch the given program as a master agent. If program is empty,
 // "claude" is used as a safe default so existing callers remain unaffected.
-func (m *home) newNamedAgentInstance(title, path, program string) (*session.Instance, error) {
+// requestedMode is the pre-resolved execution mode from standaloneExecutionMode;
+// NewInstance will call ResolveExecutionMode again on the final program, which is
+// idempotent.
+func (m *home) newNamedAgentInstance(title, path, program string, requestedMode session.ExecutionMode) (*session.Instance, error) {
 	if strings.TrimSpace(path) == "" {
 		path = m.activeRepoPath
 	}
@@ -3153,10 +3223,14 @@ func (m *home) newNamedAgentInstance(title, path, program string) (*session.Inst
 	if p == "" {
 		p = "claude"
 	}
+	if err := m.standaloneExecutionModeLimitError(session.ResolveExecutionMode(requestedMode, p)); err != nil {
+		return nil, err
+	}
 	return session.NewInstance(session.InstanceOptions{
 		Title:           title,
 		Path:            path,
 		Program:         p,
+		ExecutionMode:   requestedMode,
 		AgentType:       session.AgentTypeMaster,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
 	})
@@ -3165,7 +3239,10 @@ func (m *home) newNamedAgentInstance(title, path, program string) (*session.Inst
 // spawnAdHocAgent creates and starts an ad-hoc agent session (no plan, no lifecycle).
 // branch and workPath are optional overrides - empty strings use defaults.
 // program selects which harness binary to launch; empty falls back to "claude".
-func (m *home) spawnAdHocAgent(name, branch, workPath, program string) (tea.Model, tea.Cmd) {
+// requestedMode is the execution mode selected by the user (or resolved via
+// standaloneExecutionMode); the actual inst.ExecutionMode may differ if the
+// program does not support the requested transport.
+func (m *home) spawnAdHocAgent(name, branch, workPath, program string, requestedMode session.ExecutionMode) (tea.Model, tea.Cmd) {
 	if !m.requireDaemonForAgents() {
 		return m, nil
 	}
@@ -3174,7 +3251,7 @@ func (m *home) spawnAdHocAgent(name, branch, workPath, program string) (tea.Mode
 		path = workPath
 	}
 
-	inst, err := m.newNamedAgentInstance(name, path, program)
+	inst, err := m.newNamedAgentInstance(name, path, program, requestedMode)
 	if err != nil {
 		return m, m.handleError(err)
 	}
@@ -3210,6 +3287,7 @@ func (m *home) spawnAdHocAgent(name, branch, workPath, program string) (tea.Mode
 	m.audit(auditlog.EventAgentSpawned, fmt.Sprintf("spawned %s agent: %s", session.AgentTypeMaster, name),
 		auditlog.WithInstance(name),
 		auditlog.WithAgent(session.AgentTypeMaster),
+		auditlog.WithExecutionMode(string(inst.ExecutionMode)),
 	)
 
 	m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))

@@ -193,7 +193,7 @@ if [ "$test_status" -eq 0 ]; then
   echo 'tests passed'
 else
   echo "tests failed (exit $test_status)"
-  (exit "$test_status")
+  exit "$test_status"
 fi
 go tool cover -func=coverage.out
 ```

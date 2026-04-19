@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -232,7 +233,7 @@ func TestAuditHomeEmit_AgentSpawned(t *testing.T) {
 	h.taskStoreProject = "myproject"
 
 	// spawnAdHocAgent should emit EventAgentSpawned
-	h.spawnAdHocAgent("my-fixer", "", "", "")
+	h.spawnAdHocAgent("my-fixer", "", "", "", session.ExecutionModeTmux)
 
 	events, err := logger.Query(auditlog.QueryFilter{
 		Project: "myproject",
@@ -243,6 +244,13 @@ func TestAuditHomeEmit_AgentSpawned(t *testing.T) {
 	require.Len(t, events, 1, "spawnAdHocAgent must emit EventAgentSpawned")
 	assert.Equal(t, session.AgentTypeMaster, events[0].AgentType)
 	assert.Equal(t, "my-fixer", events[0].InstanceTitle)
+
+	// Detail must contain the execution_mode JSON key
+	var detail struct {
+		ExecutionMode string `json:"execution_mode"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(events[0].Detail), &detail))
+	assert.Equal(t, string(session.ExecutionModeTmux), detail.ExecutionMode)
 }
 
 // TestAuditHomeEmit_AgentKilled verifies that executeContextAction("kill_instance")

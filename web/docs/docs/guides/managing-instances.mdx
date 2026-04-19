@@ -68,13 +68,23 @@ git checkout <branch-name>   # inspect the worktree locally
 
 ## sdk instance output
 
-sdk instances are managed in-process by the daemon (no tmux session). they appear in the sidebar with the same controls as tmux instances except:
+not all sdk instances are equal. kasmos distinguishes two classes:
+
+**daemon-managed sdk agents** are wave execution agents started by the orchestrator and registered with the kasmos daemon. the daemon owns their process and exposes dedicated capture, send, and lifecycle routes. the web admin ui can pause, resume, restart, kill, send input to, and capture output from these instances — they show up in `/admin/instances` with the full three-dot action menu. the `ManagedByDaemon` field on the `livepreview.Record` (`internal/livepreview/records.go`) distinguishes them from standalone records.
+
+**standalone sdk agents** are sessions started directly from the TUI with `N`, `s`, or `S` when the resolved execution mode is `sdk`. they run in-process inside the TUI and are written to the on-disk `state.json` as ordinary instance records — they are _not_ registered with the daemon.
+
+both classes appear in the sidebar with the same controls as tmux instances except:
 
 - attach (`↵`) is disabled — a toast informs you that the instance is in sdk mode
 - interactive mode (`i`) is disabled for the same reason
 - all output is visible in the **preview tab** and the **audit log**
 
 use the info tab (`#`) to see the instance's current status, wave number, and task number.
+
+**web admin ui limitation — standalone sdk agents only.** `livepreview.ValidateAction` (`internal/livepreview/records.go`) rejects every lifecycle and i/o action for standalone (non-daemon-managed) sdk instances: send, capture, pause, resume, restart, and kill all return an error. as a result, `/admin/instances` shows these instances in the list but the three-dot overflow menu is empty — no actions are available. the browser preview panel's composer is also disabled. this is a known limitation: the web path has no tmux pane and no daemon to delegate to.
+
+if you need web-ui control over an sdk agent, start it through a plan so the daemon manages its lifecycle.
 
 ## orphaned tmux session browser
 

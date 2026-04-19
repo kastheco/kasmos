@@ -25,3 +25,14 @@ Valid statuses: `ready` → `planning` → `implementing` → `reviewing` → `v
 
 Read the `cli-tools` skill (SKILL.md) at session start. Read individual
 resource files in `resources/` when using that specific tool.
+
+## GitHub PR reviews
+
+When addressing GitHub PR review comments, completion requires all of the following:
+
+- implement and verify the requested fixes locally
+- commit the changes
+- push the branch
+- reply inline on GitHub to each addressed review thread with a concise resolution note
+
+Do not report PR review work as finished before the branch is pushed and the inline replies are posted.
