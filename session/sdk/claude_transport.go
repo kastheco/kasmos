@@ -205,6 +205,11 @@ func (t *ClaudeTransport) Start(ctx context.Context, cfg LaunchConfig) error {
 		return fmt.Errorf("claude transport: empty program")
 	}
 
+	// cfg.SpeedTier is intentionally ignored here: Claude has no equivalent
+	// fast-tier setting in kasmos today. The field is a Codex-only concept
+	// forwarded via serviceTier on thread/start; Claude sessions always run
+	// at their default rate-limit tier.
+
 	// Build the effective program string with Claude-specific flags.
 	program := strings.TrimSpace(cfg.Program)
 	if !strings.Contains(program, claudeAppServerFlag) {

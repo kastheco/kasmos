@@ -30,6 +30,7 @@ import (
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
+	"github.com/kastheco/kasmos/session/common"
 	gitpkg "github.com/kastheco/kasmos/session/git"
 	"github.com/kastheco/kasmos/session/sdk"
 	"github.com/kastheco/kasmos/session/tmux"
@@ -1622,6 +1623,8 @@ func (m *home) updateInfoPane() {
 		WaveNumber:    selected.WaveNumber,
 		WaveTaskIndex: selected.WaveTaskIndex,
 		WaveTaskCount: selected.WaveTaskCount,
+		ExecutionMode: string(selected.ExecutionMode),
+		SDKSpeedTier:  selected.SDKSpeedTier,
 	}
 
 	if !selected.CreatedAt.IsZero() {
@@ -3143,6 +3146,7 @@ func (m *home) availableSpawnPrograms() []string {
 func (m *home) resetPendingSpawnFlow() {
 	m.pendingSpawnProgram = ""
 	m.pendingSpawnExecutionMode = ""
+	m.pendingSpawnSpeedTier = ""
 }
 
 // showSpawnExecutionModePicker sets the pending spawn program and opens the
@@ -3150,7 +3154,13 @@ func (m *home) resetPendingSpawnFlow() {
 func (m *home) showSpawnExecutionModePicker(program string) {
 	m.pendingSpawnProgram = program
 	m.pendingSpawnExecutionMode = m.standaloneExecutionMode(session.AgentTypeMaster, program)
-	picker := overlay.NewPickerOverlay("execution mode", []string{"tmux", "sdk"})
+	var options []string
+	if common.DetectProgramKind(program) == common.ProgramCodex {
+		options = []string{"tmux", "sdk", "sdk-fast"}
+	} else {
+		options = []string{"tmux", "sdk"}
+	}
+	picker := overlay.NewPickerOverlay("execution mode", options)
 	picker.SetSelectedValue(string(m.pendingSpawnExecutionMode))
 	m.overlays.Show(picker)
 	m.state = stateSpawnExecutionModePicker
@@ -3165,12 +3175,12 @@ func (m *home) continueSpawnAgentFlow(program string) (tea.Model, tea.Cmd) {
 		m.showSpawnExecutionModePicker(program)
 		return m, nil
 	}
-	return m.continueSpawnAgentFlowWithMode(program, session.ExecutionModeTmux)
+	return m.continueSpawnAgentFlowWithMode(program, session.ExecutionModeTmux, "")
 }
 
 // continueSpawnAgentFlowWithMode validates the selected execution mode against
 // the tmux-session limit, then proceeds to the spawn form.
-func (m *home) continueSpawnAgentFlowWithMode(program string, mode session.ExecutionMode) (tea.Model, tea.Cmd) {
+func (m *home) continueSpawnAgentFlowWithMode(program string, mode session.ExecutionMode, speedTier string) (tea.Model, tea.Cmd) {
 	if err := m.standaloneExecutionModeLimitError(mode); err != nil {
 		m.resetPendingSpawnFlow()
 		m.state = stateDefault
@@ -3178,6 +3188,7 @@ func (m *home) continueSpawnAgentFlowWithMode(program string, mode session.Execu
 		return m, m.handleError(err)
 	}
 	m.pendingSpawnExecutionMode = mode
+	m.pendingSpawnSpeedTier = speedTier
 	m.showSpawnAgentForm(program)
 	return m, nil
 }
@@ -3196,13 +3207,21 @@ func (m *home) beginSpawnAgentFlow() (tea.Model, tea.Cmd) {
 }
 
 // showSpawnAgentForm stores the selected harness program and opens the spawn name form.
-// When the pending execution mode is SDK, a footer hint is shown.
+// When the pending execution mode is SDK, footer hints are shown (including speed tier
+// when set). Multiple hints are joined with a newline.
 func (m *home) showSpawnAgentForm(program string) {
 	m.pendingSpawnProgram = program
 	m.state = stateSpawnAgent
 	fo := overlay.NewSpawnFormOverlay("spawn agent", 60)
+	var hints []string
 	if m.pendingSpawnExecutionMode == session.ExecutionModeSDK {
-		fo.SetFooterHint("standalone sdk agents cannot be controlled from the web ui")
+		hints = append(hints, "standalone sdk agents cannot be controlled from the web ui")
+	}
+	if m.pendingSpawnSpeedTier == "fast" {
+		hints = append(hints, "fast tier consumes 2x usage")
+	}
+	if len(hints) > 0 {
+		fo.SetFooterHint(strings.Join(hints, "\n"))
 	}
 	m.overlays.Show(fo)
 }
@@ -3215,7 +3234,7 @@ func (m *home) showSpawnAgentForm(program string) {
 // requestedMode is the pre-resolved execution mode from standaloneExecutionMode;
 // NewInstance will call ResolveExecutionMode again on the final program, which is
 // idempotent.
-func (m *home) newNamedAgentInstance(title, path, program string, requestedMode session.ExecutionMode) (*session.Instance, error) {
+func (m *home) newNamedAgentInstance(title, path, program string, requestedMode session.ExecutionMode, speedTier string) (*session.Instance, error) {
 	if strings.TrimSpace(path) == "" {
 		path = m.activeRepoPath
 	}
@@ -3231,6 +3250,7 @@ func (m *home) newNamedAgentInstance(title, path, program string, requestedMode 
 		Path:            path,
 		Program:         p,
 		ExecutionMode:   requestedMode,
+		SDKSpeedTier:    speedTier,
 		AgentType:       session.AgentTypeMaster,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
 	})
@@ -3242,7 +3262,7 @@ func (m *home) newNamedAgentInstance(title, path, program string, requestedMode 
 // requestedMode is the execution mode selected by the user (or resolved via
 // standaloneExecutionMode); the actual inst.ExecutionMode may differ if the
 // program does not support the requested transport.
-func (m *home) spawnAdHocAgent(name, branch, workPath, program string, requestedMode session.ExecutionMode) (tea.Model, tea.Cmd) {
+func (m *home) spawnAdHocAgent(name, branch, workPath, program string, requestedMode session.ExecutionMode, speedTier string) (tea.Model, tea.Cmd) {
 	if !m.requireDaemonForAgents() {
 		return m, nil
 	}
@@ -3251,7 +3271,7 @@ func (m *home) spawnAdHocAgent(name, branch, workPath, program string, requested
 		path = workPath
 	}
 
-	inst, err := m.newNamedAgentInstance(name, path, program, requestedMode)
+	inst, err := m.newNamedAgentInstance(name, path, program, requestedMode, speedTier)
 	if err != nil {
 		return m, m.handleError(err)
 	}
@@ -3288,6 +3308,7 @@ func (m *home) spawnAdHocAgent(name, branch, workPath, program string, requested
 		auditlog.WithInstance(name),
 		auditlog.WithAgent(session.AgentTypeMaster),
 		auditlog.WithExecutionMode(string(inst.ExecutionMode)),
+		auditlog.WithSpeedTier(inst.SDKSpeedTier),
 	)
 
 	m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))

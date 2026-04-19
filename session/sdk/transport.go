@@ -40,6 +40,10 @@ type LaunchConfig struct {
 	PeerCount  int
 	// NoFlicker controls whether CLAUDE_CODE_NO_FLICKER is set to 1 for Claude.
 	NoFlicker bool
+	// SpeedTier is the session-scoped Codex speed tier ("" or "fast").
+	// When set to "fast", the Codex transport forwards it as serviceTier on
+	// thread/start to request the 2× rate-limit budget. Claude ignores this field.
+	SpeedTier string
 	// ExtraEnv holds additional environment variables to inject into the child
 	// process environment on top of the standard kasmos vars. Each entry must be
 	// in KEY=VALUE form. Transport implementations use this to add program-specific

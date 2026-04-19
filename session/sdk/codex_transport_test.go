@@ -625,3 +625,63 @@ func TestCodexTransport_MultipleNotifications_AllDelivered(t *testing.T) {
 }
 
 func ptr(s string) *string { return &s }
+
+// TestCodexTransport_Start_FastServiceTier verifies that when SpeedTier is "fast",
+// the thread/start request includes serviceTier="fast".
+func TestCodexTransport_Start_FastServiceTier(t *testing.T) {
+	proc := newFakeCodexProcess(t)
+	ct := &CodexTransport{
+		process: proc,
+		events:  make(chan Event, 128),
+		closed:  make(chan struct{}),
+	}
+	t.Cleanup(func() { _ = ct.Close() })
+
+	err := ct.Start(context.Background(), LaunchConfig{
+		Program:   "codex --model gpt-5.4",
+		WorkDir:   t.TempDir(),
+		SpeedTier: "fast",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, proc.server)
+
+	proc.server.waitForRequests(t, 2) // initialize + thread/start
+
+	// Find the thread/start request and verify serviceTier.
+	proc.server.mu.Lock()
+	var threadStartMsg jsonRPCMsg
+	for _, req := range proc.server.requests {
+		if req.Method == codexMethodThreadStart {
+			threadStartMsg = req
+			break
+		}
+	}
+	proc.server.mu.Unlock()
+
+	require.Equal(t, codexMethodThreadStart, threadStartMsg.Method)
+	var params codexThreadStartParams
+	require.NoError(t, json.Unmarshal(threadStartMsg.Params, &params))
+	assert.Equal(t, "fast", params.ServiceTier)
+}
+
+// TestCodexTransport_Start_DefaultServiceTierOmitted verifies that when SpeedTier is
+// empty, the thread/start request omits the serviceTier field entirely.
+func TestCodexTransport_Start_DefaultServiceTierOmitted(t *testing.T) {
+	_, server := newStartedCodexTransport(t)
+
+	server.waitForRequests(t, 2) // initialize + thread/start
+
+	server.mu.Lock()
+	var threadStartMsg jsonRPCMsg
+	for _, req := range server.requests {
+		if req.Method == codexMethodThreadStart {
+			threadStartMsg = req
+			break
+		}
+	}
+	server.mu.Unlock()
+
+	require.Equal(t, codexMethodThreadStart, threadStartMsg.Method)
+	// serviceTier must be absent when SpeedTier is default.
+	assert.NotContains(t, string(threadStartMsg.Params), "serviceTier")
+}

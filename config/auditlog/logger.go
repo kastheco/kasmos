@@ -82,6 +82,38 @@ func WithExecutionMode(mode string) EventOption {
 	}
 }
 
+// WithSpeedTier records the spawn speed tier in Event.Detail. When tier is
+// empty the option is a no-op. Otherwise it merges speed_tier into the
+// existing Event.Detail JSON object using the same preservation rules as
+// WithExecutionMode.
+func WithSpeedTier(tier string) EventOption {
+	return func(e *Event) {
+		if tier == "" {
+			return
+		}
+		detail := map[string]any{}
+		if e.Detail != "" {
+			var existing any
+			if err := json.Unmarshal([]byte(e.Detail), &existing); err == nil {
+				if obj, ok := existing.(map[string]any); ok {
+					detail = obj
+				} else {
+					detail["detail"] = existing
+				}
+			} else {
+				detail["detail"] = e.Detail
+			}
+		}
+		detail["speed_tier"] = tier
+
+		encoded, err := json.Marshal(detail)
+		if err != nil {
+			return
+		}
+		e.Detail = string(encoded)
+	}
+}
+
 // WithLevel sets the Level field on the event (info, warn, error).
 func WithLevel(level string) EventOption {
 	return func(e *Event) { e.Level = level }

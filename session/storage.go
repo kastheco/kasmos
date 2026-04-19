@@ -40,6 +40,7 @@ type InstanceData struct {
 	QueuedPrompt           string `json:"queued_prompt,omitempty"`
 	ReviewCycle            int    `json:"review_cycle,omitempty"`
 	ClaudeNoFlicker        bool   `json:"claude_no_flicker,omitempty"`
+	SDKSpeedTier           string `json:"sdk_speed_tier,omitempty"`
 
 	Worktree GitWorktreeData `json:"worktree"`
 }

@@ -410,3 +410,85 @@ func TestFromInstanceData_PausedMainBranchLeavesWorktreeNil(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, inst2.gitWorktree)
 }
+
+// TestNewInstance_SDKSpeedTier_GatedOnCodexSDK verifies that speed tiers are only
+// stored when ExecutionMode is SDK and the program is Codex.
+func TestNewInstance_SDKSpeedTier_GatedOnCodexSDK(t *testing.T) {
+	tests := []struct {
+		name          string
+		program       string
+		mode          ExecutionMode
+		tier          string
+		wantSpeedTier string
+	}{
+		{
+			name:          "fast codex sdk stores fast",
+			program:       "codex",
+			mode:          ExecutionModeSDK,
+			tier:          "fast",
+			wantSpeedTier: "fast",
+		},
+		{
+			name:          "fast claude sdk is ignored (claude has no tier)",
+			program:       "claude",
+			mode:          ExecutionModeSDK,
+			tier:          "fast",
+			wantSpeedTier: "",
+		},
+		{
+			name:          "fast codex tmux is ignored (not sdk)",
+			program:       "codex",
+			mode:          ExecutionModeTmux,
+			tier:          "fast",
+			wantSpeedTier: "",
+		},
+		{
+			name:          "unknown tier normalises to empty",
+			program:       "codex",
+			mode:          ExecutionModeSDK,
+			tier:          "priority",
+			wantSpeedTier: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			inst, err := NewInstance(InstanceOptions{
+				Title:         "test-speed-tier",
+				Path:          ".",
+				Program:       tc.program,
+				ExecutionMode: tc.mode,
+				SDKSpeedTier:  tc.tier,
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantSpeedTier, inst.SDKSpeedTier)
+		})
+	}
+}
+
+// TestInstanceData_SDKSpeedTier_FromInstanceDataRoundTrip verifies that a fast-tier
+// codex instance survives the InstanceData → Instance → InstanceData cycle.
+func TestInstanceData_SDKSpeedTier_FromInstanceDataRoundTrip(t *testing.T) {
+	data := InstanceData{
+		Title:         "fast-codex-rt",
+		Path:          "/tmp/repo",
+		Branch:        "plan/fast-rt",
+		Status:        Paused,
+		Program:       "codex",
+		ExecutionMode: ExecutionModeSDK,
+		SDKSpeedTier:  "fast",
+		Worktree: GitWorktreeData{
+			RepoPath:     "/tmp/repo",
+			WorktreePath: "/tmp/repo/.worktrees/fast-codex-rt",
+			SessionName:  "fast-codex-rt",
+			BranchName:   "plan/fast-rt",
+		},
+	}
+
+	inst, err := FromInstanceData(data)
+	require.NoError(t, err)
+	assert.Equal(t, "fast", inst.SDKSpeedTier)
+
+	roundTrip := inst.ToInstanceData()
+	assert.Equal(t, "fast", roundTrip.SDKSpeedTier)
+}

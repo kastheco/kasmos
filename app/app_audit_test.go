@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"charm.land/bubbles/v2/spinner"
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/auditlog"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/session"
@@ -233,7 +234,7 @@ func TestAuditHomeEmit_AgentSpawned(t *testing.T) {
 	h.taskStoreProject = "myproject"
 
 	// spawnAdHocAgent should emit EventAgentSpawned
-	h.spawnAdHocAgent("my-fixer", "", "", "", session.ExecutionModeTmux)
+	h.spawnAdHocAgent("my-fixer", "", "", "", session.ExecutionModeTmux, "")
 
 	events, err := logger.Query(auditlog.QueryFilter{
 		Project: "myproject",
@@ -251,6 +252,39 @@ func TestAuditHomeEmit_AgentSpawned(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal([]byte(events[0].Detail), &detail))
 	assert.Equal(t, string(session.ExecutionModeTmux), detail.ExecutionMode)
+}
+
+// TestAuditHomeEmit_AgentSpawned_FastTier verifies that spawnAdHocAgent with a
+// fast speed tier emits an event with both execution_mode and speed_tier in the
+// Detail JSON.
+func TestAuditHomeEmit_AgentSpawned_FastTier(t *testing.T) {
+	logger, err := auditlog.NewSQLiteLogger(":memory:")
+	require.NoError(t, err)
+	defer logger.Close()
+
+	h := newTestHome()
+	h.auditLogger = logger
+	h.taskStoreProject = "myproject"
+	h.appConfig = &config.Config{DefaultProgram: "codex"}
+
+	// Spawn a fast-tier SDK codex agent
+	h.spawnAdHocAgent("fast-codex", "", "", "codex", session.ExecutionModeSDK, "fast")
+
+	events, err := logger.Query(auditlog.QueryFilter{
+		Project: "myproject",
+		Kinds:   []auditlog.EventKind{auditlog.EventAgentSpawned},
+		Limit:   10,
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+
+	var detail struct {
+		ExecutionMode string `json:"execution_mode"`
+		SpeedTier     string `json:"speed_tier"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(events[0].Detail), &detail))
+	assert.Equal(t, "sdk", detail.ExecutionMode)
+	assert.Equal(t, "fast", detail.SpeedTier)
 }
 
 // TestAuditHomeEmit_AgentKilled verifies that executeContextAction("kill_instance")

@@ -1130,7 +1130,7 @@ func TestSpawnAdHocAgent_BlocksWhenDaemonUnavailable(t *testing.T) {
 		},
 	}
 
-	model, cmd := h.spawnAdHocAgent("my-agent", "", "", "", session.ExecutionModeTmux)
+	model, cmd := h.spawnAdHocAgent("my-agent", "", "", "", session.ExecutionModeTmux, "")
 	updated := model.(*home)
 
 	require.Nil(t, cmd)

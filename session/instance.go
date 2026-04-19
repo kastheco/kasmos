@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kastheco/kasmos/session/common"
 	"github.com/kastheco/kasmos/session/git"
 )
 
@@ -119,6 +120,11 @@ type Instance struct {
 	// Defaults to false (CLAUDE_CODE_NO_FLICKER=0) so prompt detection works in spawned agents.
 	ClaudeNoFlicker bool
 
+	// SDKSpeedTier is the session-scoped speed tier for SDK sessions ("" or "fast").
+	// Only meaningful when ExecutionMode is SDK and the program is Codex.
+	// The Codex transport forwards this as serviceTier on thread/start.
+	SDKSpeedTier string
+
 	// HasWorked is true once the agent produces at least one content update after receiving its task.
 	// Prevents permission prompts or early returns from prematurely completing a wave.
 	HasWorked bool
@@ -181,6 +187,7 @@ func (i *Instance) ToInstanceData() InstanceData {
 		QueuedPrompt:           i.QueuedPrompt,
 		ReviewCycle:            i.ReviewCycle,
 		ClaudeNoFlicker:        i.ClaudeNoFlicker,
+		SDKSpeedTier:           i.SDKSpeedTier,
 	}
 
 	if i.gitWorktree != nil {
@@ -231,6 +238,12 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		)
 	}
 
+	// Normalize stored speed tier — only preserve for codex sdk sessions.
+	sdkSpeedTier := ""
+	if mode == ExecutionModeSDK && common.DetectProgramKind(data.Program) == common.ProgramCodex {
+		sdkSpeedTier = NormalizeSDKSpeedTier(data.SDKSpeedTier)
+	}
+
 	instance := &Instance{
 		Title:                  data.Title,
 		DisplayTitle:           data.DisplayTitle,
@@ -257,6 +270,7 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		QueuedPrompt:           data.QueuedPrompt,
 		ReviewCycle:            data.ReviewCycle,
 		ClaudeNoFlicker:        data.ClaudeNoFlicker,
+		SDKSpeedTier:           sdkSpeedTier,
 		sharedWorktree:         sharedWorktree,
 		gitWorktree:            restoredWorktree,
 	}
@@ -266,6 +280,7 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		instance.started = true
 		es := NewExecutionSession(mode, instance.Title, instance.Program, instance.SkipPermissions)
 		es.SetAgentType(instance.AgentType)
+		es.SetSDKSpeedTier(instance.SDKSpeedTier)
 		instance.executionSession = es
 		return instance, nil
 	}
@@ -273,6 +288,7 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 	// Build the execution session handle and check liveness before attempting a full restore.
 	es := NewExecutionSession(mode, instance.Title, instance.Program, instance.SkipPermissions)
 	es.SetAgentType(instance.AgentType)
+	es.SetSDKSpeedTier(instance.SDKSpeedTier)
 	instance.executionSession = es
 
 	if !es.DoesSessionExist() {
@@ -349,6 +365,9 @@ type InstanceOptions struct {
 	// ClaudeNoFlicker controls whether CLAUDE_CODE_NO_FLICKER=1 is set for the agent process.
 	// Defaults to false (CLAUDE_CODE_NO_FLICKER=0) so prompt detection works in spawned agents.
 	ClaudeNoFlicker bool
+	// SDKSpeedTier is the session-scoped speed tier ("" or "fast").
+	// Only applied when ExecutionMode resolves to SDK and the program is Codex.
+	SDKSpeedTier string
 }
 
 // NewInstance constructs a new unstarted Instance from the given options.
@@ -361,12 +380,21 @@ func NewInstance(opts InstanceOptions) (*Instance, error) {
 		return nil, fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
+	resolvedMode := ResolveExecutionMode(opts.ExecutionMode, opts.Program)
+
+	// The fast tier is only available for Codex SDK sessions.
+	// If the resolved mode is not SDK or the program is not Codex, ignore the tier.
+	sdkSpeedTier := ""
+	if resolvedMode == ExecutionModeSDK && common.DetectProgramKind(opts.Program) == common.ProgramCodex {
+		sdkSpeedTier = NormalizeSDKSpeedTier(opts.SDKSpeedTier)
+	}
+
 	return &Instance{
 		Title:           opts.Title,
 		Status:          Ready,
 		Path:            absPath,
 		Program:         opts.Program,
-		ExecutionMode:   ResolveExecutionMode(opts.ExecutionMode, opts.Program),
+		ExecutionMode:   resolvedMode,
 		Height:          0,
 		Width:           0,
 		CreatedAt:       now,
@@ -383,6 +411,7 @@ func NewInstance(opts InstanceOptions) (*Instance, error) {
 		WaveTaskCount:   opts.WaveTaskCount,
 		ReviewCycle:     opts.ReviewCycle,
 		ClaudeNoFlicker: opts.ClaudeNoFlicker,
+		SDKSpeedTier:    sdkSpeedTier,
 	}, nil
 }
 

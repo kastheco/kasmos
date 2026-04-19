@@ -600,6 +600,7 @@ func (f *fakeSDKSession) SetTaskEnv(int, int, int)                     {}
 func (f *fakeSDKSession) SetProject(string)                            {}
 func (f *fakeSDKSession) SetSessionTitle(string)                       {}
 func (f *fakeSDKSession) SetTitleFunc(func(string, time.Time, string)) {}
+func (f *fakeSDKSession) SetSDKSpeedTier(string)                       {}
 
 // CapturePresentation implements the optional presentationProvider interface.
 func (f *fakeSDKSession) CapturePresentation() []*sdk.PresentationTurn {

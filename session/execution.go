@@ -63,6 +63,9 @@ type ExecutionSession interface {
 	SetProject(project string)
 	SetSessionTitle(title string)
 	SetTitleFunc(fn func(workDir string, beforeStart time.Time, title string))
+	// SetSDKSpeedTier sets the session-scoped speed tier ("" or "fast").
+	// Non-SDK backends (tmux) ignore this; SDK backends forward it to the transport.
+	SetSDKSpeedTier(tier string)
 }
 
 // progressReporter is optionally implemented by session types that support
@@ -88,6 +91,17 @@ type pendingPermissionProvider interface {
 // pattern as pendingPermissionProvider.
 type presentationProvider interface {
 	CapturePresentation() []*sdk.PresentationTurn
+}
+
+// NormalizeSDKSpeedTier canonicalises a speed-tier value.
+// Only "fast" (case-insensitive, trimmed) is a recognised non-default tier.
+// Any other value — including the empty string, whitespace-only strings, or
+// unknown tier names — normalises to "" (the default tier).
+func NormalizeSDKSpeedTier(value string) string {
+	if strings.ToLower(strings.TrimSpace(value)) == "fast" {
+		return "fast"
+	}
+	return ""
 }
 
 // NormalizeExecutionMode canonicalises mode for the session layer.
@@ -199,3 +213,7 @@ func (w *tmuxExecutionSession) SetTitleFunc(fn func(workDir string, beforeStart 
 func (w *tmuxExecutionSession) SetProgressFunc(fn func(int, string)) {
 	w.s.ProgressFunc = fn
 }
+
+// SetSDKSpeedTier is a no-op for tmux-backed sessions.
+// Speed tiers apply only to SDK transports (e.g. Codex).
+func (w *tmuxExecutionSession) SetSDKSpeedTier(_ string) {}

@@ -54,6 +54,7 @@ type scriptedExecutionSession struct {
 	startFn       func(workDir string) error
 	started       bool
 	initialPrompt string
+	speedTier     string
 }
 
 func (s *scriptedExecutionSession) Start(workDir string) error {
@@ -102,6 +103,7 @@ func (s *scriptedExecutionSession) SetProject(string)              {}
 func (s *scriptedExecutionSession) SetSessionTitle(string)         {}
 func (s *scriptedExecutionSession) SetTitleFunc(func(workDir string, beforeStart time.Time, title string)) {
 }
+func (s *scriptedExecutionSession) SetSDKSpeedTier(tier string) { s.speedTier = tier }
 
 func swapNewExecutionSession(t *testing.T, fn func(mode ExecutionMode, name, program string, skipPermissions bool) ExecutionSession) {
 	t.Helper()
@@ -1136,4 +1138,62 @@ func TestEnsureSharedKasmosMCP_ErrorUsesRestartServicesCommand(t *testing.T) {
 		"error must include RestartServicesCommand (kasmosdb + kasmos), not DaemonStartCommand")
 	assert.Contains(t, err.Error(), "shared mcp host",
 		"error phrasing must reference the shared mcp host, not just the daemon")
+}
+
+// TestStart_SDKSpeedTier_SetOnExecutionSession verifies that when an Instance
+// with a non-empty SDKSpeedTier starts, the speed tier is forwarded to the
+// execution session through the test seam.
+func TestStart_SDKSpeedTier_SetOnExecutionSession(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
+
+	var capturedTier string
+	sdkSession := &scriptedExecutionSession{sanitizedName: "sdk-fast"}
+	swapNewExecutionSession(t, func(mode ExecutionMode, name, program string, skipPermissions bool) ExecutionSession {
+		return sdkSession
+	})
+
+	inst := &Instance{
+		Title:         "sdk-fast",
+		Path:          t.TempDir(),
+		Program:       "codex",
+		ExecutionMode: ExecutionModeSDK,
+		SDKSpeedTier:  "fast",
+	}
+
+	err := inst.StartOnMainBranch()
+	require.NoError(t, err)
+	capturedTier = sdkSession.speedTier
+	assert.Equal(t, "fast", capturedTier)
+}
+
+// TestResume_SDKSpeedTier_SetOnFreshExecutionSession verifies that both
+// fresh-session paths inside Resume propagate the speed tier to the new
+// execution session.
+func TestResume_SDKSpeedTier_SetOnFreshExecutionSession(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
+
+	var capturedTier string
+	sdkSession := &scriptedExecutionSession{sanitizedName: "sdk-resume", started: false}
+	swapNewExecutionSession(t, func(mode ExecutionMode, name, program string, skipPermissions bool) ExecutionSession {
+		return sdkSession
+	})
+
+	// Build a paused instance whose execution session is not alive.
+	// Resume's DoesSessionExist() == false branch allocates a fresh session.
+	pausedSession := &scriptedExecutionSession{sanitizedName: "sdk-resume", started: false}
+	inst := &Instance{
+		Title:            "sdk-resume",
+		Path:             t.TempDir(),
+		Program:          "codex",
+		ExecutionMode:    ExecutionModeSDK,
+		SDKSpeedTier:     "fast",
+		Status:           Paused,
+		started:          true,
+		executionSession: pausedSession,
+	}
+
+	err := inst.Resume()
+	require.NoError(t, err)
+	capturedTier = sdkSession.speedTier
+	assert.Equal(t, "fast", capturedTier)
 }

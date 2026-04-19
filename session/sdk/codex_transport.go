@@ -106,6 +106,7 @@ type codexThreadStartParams struct {
 	Cwd            string `json:"cwd,omitempty"`
 	ApprovalPolicy any    `json:"approvalPolicy,omitempty"`
 	Sandbox        any    `json:"sandbox,omitempty"`
+	ServiceTier    string `json:"serviceTier,omitempty"`
 }
 
 type codexThreadStartResult struct {
@@ -328,6 +329,9 @@ func (t *CodexTransport) startHandshake(ctx context.Context, cfg LaunchConfig) e
 	if cfg.SkipPermissions {
 		threadParams.ApprovalPolicy = "never"
 		threadParams.Sandbox = "danger-full-access"
+	}
+	if cfg.SpeedTier != "" {
+		threadParams.ServiceTier = cfg.SpeedTier
 	}
 
 	var threadResult codexThreadStartResult

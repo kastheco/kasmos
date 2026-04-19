@@ -7,6 +7,27 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestNormalizeSDKSpeedTier(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "empty defaults to default tier", in: "", want: ""},
+		{name: "fast stays fast", in: "fast", want: "fast"},
+		{name: "FAST uppercased maps to fast", in: "FAST", want: "fast"},
+		{name: "padded fast maps to fast", in: "  fast  ", want: "fast"},
+		{name: "slow is unknown, defaults to empty", in: "slow", want: ""},
+		{name: "priority is unknown, defaults to empty", in: "priority", want: ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, NormalizeSDKSpeedTier(tc.in))
+		})
+	}
+}
+
 func TestNormalizeExecutionMode(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -2032,7 +2032,7 @@ func (m *home) executeLauncherAction(action string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "new_instance":
 		requestedMode := m.standaloneExecutionMode(session.AgentTypeMaster, "claude")
-		instance, err := m.newNamedAgentInstance("", m.activeRepoPath, "claude", requestedMode)
+		instance, err := m.newNamedAgentInstance("", m.activeRepoPath, "claude", requestedMode, "")
 		if err != nil {
 			return m, m.handleError(err)
 		}
