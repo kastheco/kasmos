@@ -80,9 +80,13 @@ both classes appear in the sidebar with the same controls as tmux instances exce
 - interactive mode (`i`) is disabled for the same reason
 - all output is visible in the **preview tab** and the **audit log**
 
-use the info tab (`#`) to see the instance's current status, wave number, and task number.
+use the info tab (`#`) to see the instance's current status, wave number, and task number. for instances spawned as `sdk-fast`, the info pane also shows a **speed tier: fast** row beneath the execution mode row.
 
-**web admin ui limitation — standalone sdk agents only.** `livepreview.ValidateAction` (`internal/livepreview/records.go`) rejects every lifecycle and i/o action for standalone (non-daemon-managed) sdk instances: send, capture, pause, resume, restart, and kill all return an error. as a result, `/admin/instances` shows these instances in the list but the three-dot overflow menu is empty — no actions are available. the browser preview panel's composer is also disabled. this is a known limitation: the web path has no tmux pane and no daemon to delegate to.
+**sdk-fast sessions.** when you choose `sdk-fast` in the `S` spawn picker (codex only), the session runs as an ordinary sdk session with `SDKSpeedTier = "fast"`. it shares all the same standalone sdk limitations listed above — attach and interactive mode are disabled, and the web admin ui has no actions available. the fast tier is forwarded once at session start (`serviceTier: "fast"` on `thread/start`); it is not re-negotiated during the session.
+
+**typing `/fast` inside a running codex sdk pane.** keystrokes typed in interactive mode are forwarded verbatim to the codex process. if you send `/fast` manually, codex may switch its internal rate-limit lane, but kasmos does not intercept that command: the stored `SDKSpeedTier` field on the instance record is not updated, and previously written audit-log events are not revised. the info pane will continue to display whatever tier was set at spawn time (`sdk-fast` or blank).
+
+**web admin ui limitation — standalone sdk agents only.** `livepreview.ValidateAction` (`internal/livepreview/records.go`) rejects every lifecycle and i/o action for standalone (non-daemon-managed) sdk instances: send, capture, pause, resume, restart, and kill all return an error. as a result, `/admin/instances` shows these instances in the list but the three-dot overflow menu is empty — no actions are available. the browser preview panel's composer is also disabled. this applies equally to `sdk` and `sdk-fast` standalone sessions — the fast tier does not unlock any additional web-ui capabilities. this is a known limitation: the web path has no tmux pane and no daemon to delegate to.
 
 if you need web-ui control over an sdk agent, start it through a plan so the daemon manages its lifecycle.
 

@@ -97,6 +97,12 @@ execution_mode  = "tmux"
 
 this configuration runs the coder agent via the claude app-server protocol while keeping the reviewer in tmux for interactive attach capability.
 
+## sdk-fast is not a config value
+
+`execution_mode` accepts exactly two stable values: `"tmux"` and `"sdk"` (plus the legacy alias `"headless"`). there is no `"sdk-fast"` config value.
+
+the fast speed tier for codex is a **per-spawn, per-session option** selected at spawn time through the `S` execution-mode picker. it is stored as `SDKSpeedTier = "fast"` on the instance record and forwarded by the codex transport as `serviceTier: "fast"` on `thread/start`. it does not appear in `config.toml` and cannot be set as a profile default. to get a fast-tier codex session you must choose `sdk-fast` in the `S` picker each time you spawn.
+
 ## standalone spawn modes
 
 three TUI entry points (`N`, `s`, `S`) also respect `execution_mode` when spawning standalone (ad-hoc) agents.

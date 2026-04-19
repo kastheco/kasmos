@@ -102,13 +102,23 @@ set `execution_mode = "sdk"` in your `[agents.fixer]` block to make quick-launch
 
 ### `S` — spawn ad-hoc agent
 
-`S` opens a multi-step spawn flow: first a harness picker (if multiple programs are configured), then an execution-mode picker (`tmux` / `sdk`) for sdk-capable harnesses, then a name/branch/path form. the execution mode is resolved from the **master profile** via:
+`S` opens a multi-step spawn flow: first a harness picker (if multiple programs are configured), then an execution-mode picker for sdk-capable harnesses, then a name/branch/path form. the execution mode is resolved from the **master profile** via:
 
 ```go
 m.standaloneExecutionMode(session.AgentTypeMaster, program)
 ```
 
-for sdk-capable harnesses (`claude`, `codex`) the resolved mode follows the master profile's `execution_mode` setting. for unsupported harnesses (opencode, gemini, amp, custom binaries) `session.ResolveExecutionMode` always returns tmux regardless of what the profile says — see `sdk.SupportsProgram` in `session/sdk/registry.go`.
+**execution-mode picker rows by harness:**
+
+| harness | picker rows |
+|---------|-------------|
+| `codex` | `tmux` · `sdk` · `sdk-fast` |
+| `claude` | `tmux` · `sdk` |
+| any other | picker is skipped — always tmux |
+
+`sdk-fast` is a codex-only option. it maps to `ExecutionMode = sdk` plus `SDKSpeedTier = "fast"` — the same fast lane as typing `/fast` inside a codex TUI pane. codex forwards `serviceTier: "fast"` on `thread/start`, which consumes **2× your usage budget** in exchange for faster turn latency. claude has no equivalent tier and shows only `tmux` and `sdk`.
+
+for unsupported harnesses (opencode, gemini, amp, custom binaries) `session.ResolveExecutionMode` always returns tmux regardless of what the profile says — see `sdk.SupportsProgram` in `session/sdk/registry.go`.
 
 ### standalone vs daemon-managed sdk
 
@@ -121,6 +131,7 @@ standalone sdk agents run **in-process inside the TUI**. they are not registered
 | automated claude or codex coder in a wave | `sdk` |
 | standalone quick-launch (`s`) with fixer profile sdk | `sdk` |
 | ad-hoc spawn (`S` / `N`) with master/default profile sdk | `sdk` |
+| ad-hoc codex spawn where faster turns outweigh 2× cost | `sdk-fast` (codex only, via `S` picker) |
 | any other harness (opencode, gemini, amp, custom) | `tmux` (sdk silently falls back anyway) |
 | local development with live terminal attachment | `tmux` |
 | interactive `kas monitor` debugging | `tmux` |
