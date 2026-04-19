@@ -97,6 +97,30 @@ execution_mode  = "tmux"
 
 this configuration runs the coder agent via the claude app-server protocol while keeping the reviewer in tmux for interactive attach capability.
 
+## standalone spawn modes
+
+three TUI entry points (`N`, `s`, `S`) also respect `execution_mode` when spawning standalone (ad-hoc) agents.
+
+- **`s` quick launch** reads the **fixer** profile. add `execution_mode = "sdk"` there to make `s` sessions use the sdk backend:
+
+  ```toml
+  [agents.fixer]
+  enabled        = true
+  program        = "claude"
+  execution_mode = "sdk"
+  ```
+
+- **`S` spawn agent** and **`N` new with prompt** read the **master** (and default/chat) profiles respectively. the execution mode resolved from those profiles is used as the default for the spawned session:
+
+  ```toml
+  [agents.master]
+  enabled        = true
+  program        = "claude"
+  execution_mode = "sdk"
+  ```
+
+**unsupported programs always use tmux.** if `fixer` or `master` programs are set to `opencode`, `gemini`, `amp`, or any custom binary, `session.ResolveExecutionMode` downgrades to tmux regardless of the `execution_mode` setting — `sdk.SupportsProgram` in `session/sdk/registry.go` determines which programs have a transport.
+
 ## per-phase role mapping
 
 the `[phases]` table maps lifecycle phases to agent roles. the execution mode is resolved by looking up the role's profile:
