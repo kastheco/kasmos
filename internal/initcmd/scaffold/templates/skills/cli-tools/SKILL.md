@@ -185,6 +185,48 @@ scc --include-ext go,ts              # specific languages only
 
 **In-depth reference:** [resources/scc.md](resources/scc.md)
 
+## Running tests without polluting context
+
+Running `go test` normally floods context with passing noise. Use a temp-file wrapper that captures all output, strips the passing lines, and preserves the exit code — without relying on `PIPESTATUS` or bash-only shell features.
+
+### full-suite / compact recipe
+
+```bash
+tmp=$(mktemp)
+test_status=0
+go test ./... >"$tmp" 2>&1 || test_status=$?
+rg -v '^(ok\b|\?\s.*\[no test files\]|PASS$)' "$tmp" || true
+rm -f "$tmp"
+if [ "$test_status" -eq 0 ]; then
+  echo 'tests passed'
+else
+  echo "tests failed (exit $test_status)"
+  (exit "$test_status")
+fi
+```
+
+### verbose targeted recipe
+
+```bash
+tmp=$(mktemp)
+test_status=0
+go test -v -run TestX ./pkg/path/... >"$tmp" 2>&1 || test_status=$?
+rg -v '^(=== (RUN|PAUSE|CONT|NAME)|--- (PASS|SKIP)|PASS$|ok\b|\?\s.*\[no test files\])' "$tmp" || true
+rm -f "$tmp"
+if [ "$test_status" -eq 0 ]; then
+  echo 'tests passed'
+else
+  echo "tests failed (exit $test_status)"
+  (exit "$test_status")
+fi
+```
+
+### implementation rules
+
+- **swap only the `go test ...` line** when adding flags such as `-count=1`, `-coverprofile=coverage.out`, or scoped package paths — the wrapper around it stays identical
+- **`rg -v ... || true` is intentional**: when every test passes, all output lines are filtered out and `rg` exits non-zero (no matches); `|| true` prevents that from being mistaken for a failure
+- **do not reintroduce `PIPESTATUS`, `status`, or inverse-filter context examples** — `test_status` is the only variable name for captured exit codes; `PIPESTATUS` is bash-only and breaks under `zsh`
+
 ## Violations
 
 These violations are not suggestions. If you do any of these, you are violating the skill.

@@ -153,10 +153,22 @@ For each task listed in the plan (`kas task show {{PLAN_FILE}}`):
 
 ### 2c. Behavior validation
 
-Run the test suite and capture the outcome:
+Run the test suite using the failures-only compact recipe below and capture the outcome.
+This wrapper preserves the exit code and strips passing noise without relying on `PIPESTATUS`
+or bash-only shell features — it works under both `zsh` and `bash`:
 
 ```bash
-go test ./...
+tmp=$(mktemp)
+test_status=0
+go test ./... >"$tmp" 2>&1 || test_status=$?
+rg -v '^(ok\b|\?\s.*\[no test files\]|PASS$)' "$tmp" || true
+rm -f "$tmp"
+if [ "$test_status" -eq 0 ]; then
+  echo 'tests passed'
+else
+  echo "tests failed (exit $test_status)"
+  (exit "$test_status")
+fi
 ```
 
 If tests fail, record which tests and what the error output says.

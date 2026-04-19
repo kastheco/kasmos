@@ -252,7 +252,7 @@ Observed in `cmd/signal.go`, `config/taskstore/signal*.go`, `orchestration/loop/
 
 1. Read `CLAUDE.md` and `.codex/AGENTS.md` first.
 2. Use the direct Go commands or the `make`/`just` wrappers above.
-3. For Go changes, run targeted tests first, then `go test ./...`, and keep `gofmt`/`go vet`/CI lint expectations in mind.
+3. For Go changes, run targeted tests first using the **compact recipe** from the `cli-tools` skill (`## Running tests without polluting context`) instead of bare `go test ./...`, then run `gofmt`/`go vet` and keep CI lint expectations in mind.
 4. For web changes, use `cd web && npm run build` and `cd web && npm run lint`.
 5. If your change touches task lifecycle behavior, inspect all three layers:
    - CLI (`cmd/task.go`, `cmd/signal.go`)
@@ -276,7 +276,7 @@ Act like a kasmos agent in this repository: stay in role, avoid scope creep, inv
 ## Validation
 
 - Run `gofmt -w` on touched Go files.
-- Run `go test ./...` for Go changes.
+- For Go changes, use the **compact recipe** from the `cli-tools` skill (`## Running tests without polluting context`) for full-repo verification instead of bare `go test ./...`.
 - Run `go build ./...` when build paths, startup flow, command wiring, packaging, or release flow changes.
 - For `web/**` changes, use Node 20 and run `cd web && npm ci && npm run build`.
 - For release work, ensure the `version` constant in `cmd/kas/main.go` matches any `v*` tag.

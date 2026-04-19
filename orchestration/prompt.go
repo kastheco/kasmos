@@ -7,6 +7,14 @@ import (
 	"github.com/kastheco/kasmos/config/taskparser"
 )
 
+// compactFailuresOnlyGoTestCmd runs the full test suite and strips passing lines so only
+// failures reach the agent's context. Shell-portable: works in both bash and zsh.
+const compactFailuresOnlyGoTestCmd = `tmp=$(mktemp); test_status=0; go test ./... >"$tmp" 2>&1 || test_status=$?; rg -v '^(ok\b|\?\s.*\[no test files\]|PASS$)' "$tmp" || true; rm -f "$tmp"; if [ "$test_status" -eq 0 ]; then echo 'tests passed'; else echo "tests failed (exit $test_status)"; (exit "$test_status"); fi`
+
+// verboseFailuresOnlyGoTestCmd runs a scoped verbose test and strips all passing-line noise
+// (RUN/PAUSE/CONT/PASS/SKIP) so only failure details reach the agent's context. Shell-portable.
+const verboseFailuresOnlyGoTestCmd = `tmp=$(mktemp); test_status=0; go test ./pkg/... -run Test<Name> -v >"$tmp" 2>&1 || test_status=$?; rg -v '^(=== (RUN|PAUSE|CONT|NAME)|--- (PASS|SKIP)|PASS$|ok\b|\?\s.*\[no test files\])' "$tmp" || true; rm -f "$tmp"; if [ "$test_status" -eq 0 ]; then echo 'tests passed'; else echo "tests failed (exit $test_status)"; (exit "$test_status"); fi`
+
 // BuildTaskPrompt constructs the prompt for a single task instance.
 func BuildTaskPrompt(planFile string, plan *taskparser.Plan, task taskparser.Task, waveNumber, totalWaves, peerCount int, project string, meta *TaskMeta) string {
 	var sb strings.Builder
@@ -18,7 +26,7 @@ func BuildTaskPrompt(planFile string, plan *taskparser.Plan, task taskparser.Tas
 	sb.WriteString("- Implement ONLY this task. Do not modify files outside your scope.\n")
 	sb.WriteString("- Do NOT load agent skills — rules are inlined here.\n")
 	sb.WriteString("- Use `rg` (not grep), `sd` (not sed), `fd` (not find), `comby`/`ast-grep` for structural changes.\n")
-	sb.WriteString("- Run scoped tests before committing: `go test ./pkg/... -run Test<Name> -v`\n")
+	sb.WriteString("- Run scoped tests before committing: `" + verboseFailuresOnlyGoTestCmd + "`\n")
 	sb.WriteString("- Verify build: `go build ./...`\n")
 	sb.WriteString("- Commit: `git add <specific-files> && git commit -m \"feat(task-N): description\"`\n")
 	sb.WriteString(fmt.Sprintf("- When done: signal completion with MCP `signal_create` (signal_type: \"implement-task-finished\", plan_file: \"%s\", project: \"%s\", payload: \"{\\\"wave_number\\\":%d,\\\"task_number\\\":%d}\"). Then stop.\n\n",
@@ -96,7 +104,7 @@ func BuildBlueprintSkipPrompt(planFile string, plan *taskparser.Plan, project st
 	sb.WriteString("- Implement ALL tasks in this plan sequentially.\n")
 	sb.WriteString("- Do NOT load agent skills — rules are inlined here.\n")
 	sb.WriteString("- Use `rg` (not grep), `sd` (not sed), `fd` (not find), `comby`/`ast-grep` for structural changes.\n")
-	sb.WriteString("- Run scoped tests before committing: `go test ./pkg/... -run Test<Name> -v`\n")
+	sb.WriteString("- Run scoped tests before committing: `" + verboseFailuresOnlyGoTestCmd + "`\n")
 	sb.WriteString("- Verify build: `go build ./...`\n")
 	sb.WriteString("- Commit: `git add <specific-files> && git commit -m \"feat(task-N): description\"`\n")
 	sb.WriteString(fmt.Sprintf("- When done with ALL tasks: signal completion with MCP `signal_create` (signal_type: \"implement-finished\", plan_file: %q, project: %q). Then stop.\n\n", planFile, project))
@@ -278,11 +286,11 @@ func BuildMasterReviewPromptWithConfig(planFile, project string, selfFixMaxLines
 			"1. Retrieve the plan: prefer MCP `task_show` (filename: %[1]q, project: %[2]q); fall back to `kas task show %[1]s`\n"+
 			"2. Gather evidence:\n"+
 			"   - Merge-base diff: `MERGE_BASE=$(git merge-base HEAD main) && git diff $MERGE_BASE HEAD`\n"+
-			"   - Run verification: `go build ./... && go test ./...` (or the plan's verify_checks)\n"+
+			"   - Run verification: `go build ./... && "+compactFailuresOnlyGoTestCmd+"` (or the plan's verify_checks)\n"+
 			"3. If you find issues, classify them per the kasmos-master skill's Self-Fix Protocol. "+
 			"Trivial allow-list findings (typos, missing exported doc comments, unused imports, format-verb mistakes, "+
 			"`typos`/`gofmt` fixes, trivial `go vet` findings — total ≤ %[3]d net lines) MUST be fixed directly in the worktree, "+
-			"verified with `gofmt -l .`, `go vet ./...`, `go build ./...`, `go test ./...`, and `typos`, "+
+			"verified with `gofmt -l .`, `go vet ./...`, `go build ./...`, `"+compactFailuresOnlyGoTestCmd+"`, and `typos`, "+
 			"then committed as `fix: <description> (master self-fix)` and approved only after the gate passes. "+
 			"Do NOT emit `verify_failed` for findings the protocol marks as self-fixable. "+
 			"If a self-fix attempt fails any gate step, run `git restore --staged --worktree .` to drop the changes and emit `verify_failed` with the original finding.\n"+

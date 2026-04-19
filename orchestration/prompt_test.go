@@ -28,6 +28,10 @@ func TestBuildTaskPrompt(t *testing.T) {
 	// Rules section must be inlined (no skill-load instruction)
 	assert.NotContains(t, prompt, "Load the `kasmos-coder` skill")
 	assert.Contains(t, prompt, "## Rules")
+	// Filtered test recipe must be inlined (not bare go test)
+	assert.Contains(t, prompt, "mktemp")
+	assert.Contains(t, prompt, "rg -v")
+	assert.Contains(t, prompt, "tests passed")
 
 	// Task identity
 	assert.Contains(t, prompt, "Task 2")
@@ -68,6 +72,10 @@ func TestBuildTaskPrompt_InlineCoderRules(t *testing.T) {
 	assert.Contains(t, prompt, "signal_create")
 	assert.Contains(t, prompt, `"implement-task-finished"`)
 	assert.Contains(t, prompt, `\"wave_number\":1,\"task_number\":1`)
+	// Filtered test recipe must be inlined
+	assert.Contains(t, prompt, "mktemp")
+	assert.Contains(t, prompt, "rg -v")
+	assert.Contains(t, prompt, "tests passed")
 }
 
 func TestBuildTaskPrompt_PreservesMdPlanTokenWhenProvided(t *testing.T) {
@@ -182,6 +190,8 @@ func TestBuildMasterReviewPrompt(t *testing.T) {
 	// Evidence gathering
 	assert.Contains(t, prompt, "Merge-base diff")
 	assert.Contains(t, prompt, "MERGE_BASE")
+	// Compact failures-only command is embedded (wraps go test ./... with failure filtering)
+	assert.Contains(t, prompt, compactFailuresOnlyGoTestCmd)
 	// Self-Fix Protocol integration
 	assert.Contains(t, prompt, "Self-Fix Protocol")
 	assert.Contains(t, prompt, "(master self-fix)")
