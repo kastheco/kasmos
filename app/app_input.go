@@ -442,8 +442,7 @@ func (m *home) handleActiveOverlayMouse(msg tea.MouseClickMsg) (tea.Model, tea.C
 
 	case stateSpawnHarnessPicker:
 		if result.Submitted && result.Value != "" {
-			m.continueSpawnAgentFlow(result.Value)
-			return m, nil
+			return m.continueSpawnAgentFlow(result.Value)
 		}
 		m.resetPendingSpawnFlow()
 		m.state = stateDefault
@@ -452,9 +451,7 @@ func (m *home) handleActiveOverlayMouse(msg tea.MouseClickMsg) (tea.Model, tea.C
 
 	case stateSpawnExecutionModePicker:
 		if result.Submitted && result.Value != "" {
-			m.pendingSpawnExecutionMode = session.ExecutionMode(result.Value)
-			m.showSpawnAgentForm(m.pendingSpawnProgram)
-			return m, nil
+			return m.continueSpawnAgentFlowWithMode(m.pendingSpawnProgram, session.ExecutionMode(result.Value))
 		}
 		m.resetPendingSpawnFlow()
 		m.state = stateDefault
@@ -1430,8 +1427,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		result := m.overlays.HandleKey(msg)
 		if result.Dismissed {
 			if result.Submitted && result.Value != "" {
-				m.continueSpawnAgentFlow(result.Value)
-				return m, nil
+				return m.continueSpawnAgentFlow(result.Value)
 			}
 			m.resetPendingSpawnFlow()
 			m.state = stateDefault
@@ -1452,9 +1448,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		result := m.overlays.HandleKey(msg)
 		if result.Dismissed {
 			if result.Submitted && result.Value != "" {
-				m.pendingSpawnExecutionMode = session.ExecutionMode(result.Value)
-				m.showSpawnAgentForm(m.pendingSpawnProgram)
-				return m, nil
+				return m.continueSpawnAgentFlowWithMode(m.pendingSpawnProgram, session.ExecutionMode(result.Value))
 			}
 			m.resetPendingSpawnFlow()
 			m.state = stateDefault
@@ -1957,16 +1951,16 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 	case keys.KeyHelp:
 		return m.openKeybindBrowser()
 	case keys.KeyPrompt:
-		if m.tmuxSessionCount >= GlobalInstanceLimit {
-			return m, m.handleError(
-				fmt.Errorf("you can't create more than %d instances (%d tmux sessions active)", GlobalInstanceLimit, m.tmuxSessionCount))
-		}
 		promptProgram := m.programForAgent("")
+		requestedMode := m.standaloneExecutionMode("", promptProgram)
+		if err := m.standaloneExecutionModeLimitError(requestedMode); err != nil {
+			return m, m.handleError(err)
+		}
 		instance, err := session.NewInstance(session.InstanceOptions{
 			Title:         "",
 			Path:          m.activeRepoPath,
 			Program:       promptProgram,
-			ExecutionMode: m.standaloneExecutionMode("", promptProgram),
+			ExecutionMode: requestedMode,
 		})
 		if err != nil {
 			return m, m.handleError(err)

@@ -394,6 +394,25 @@ func TestExecuteLauncherAction_NewInstanceUsesClaudeMasterAgent(t *testing.T) {
 	assert.Equal(t, session.ExecutionModeTmux, updated.newInstance.ExecutionMode)
 }
 
+func TestExecuteLauncherAction_NewInstanceSDKIgnoresTmuxLimit(t *testing.T) {
+	h := newTestHome()
+	h.tmuxSessionCount = GlobalInstanceLimit
+	h.appConfig = &config.Config{
+		PhaseRoles: map[string]string{"readiness_review": "master"},
+		Profiles: map[string]config.AgentProfile{
+			"master": {Program: "claude", Enabled: true, ExecutionMode: config.ExecutionModeSDK},
+		},
+	}
+
+	model, cmd := h.executeLauncherAction("new_instance")
+	updated := model.(*home)
+
+	require.Nil(t, cmd)
+	require.Equal(t, stateNew, updated.state)
+	require.NotNil(t, updated.newInstance)
+	assert.Equal(t, session.ExecutionModeSDK, updated.newInstance.ExecutionMode)
+}
+
 func TestSpawnAdHocAgent_BranchOverride(t *testing.T) {
 	h := newTestHome()
 	model, cmd := h.spawnAdHocAgent("my-agent", "feature/login", "", "", session.ExecutionModeTmux)
@@ -429,6 +448,35 @@ func TestSpawnAgent_KeyOpensExecutionModePicker(t *testing.T) {
 	_, ok := updated.overlays.Current().(*overlay.PickerOverlay)
 	require.True(t, ok, "active overlay must be a PickerOverlay")
 	assert.Equal(t, "claude", updated.pendingSpawnProgram)
+}
+
+func TestSpawnAgent_SDKFlowAtTmuxLimitStillOpensForm(t *testing.T) {
+	h := newTestHome()
+	h.tmuxSessionCount = GlobalInstanceLimit
+	h.appConfig = &config.Config{
+		DefaultProgram: "claude",
+		PhaseRoles:     map[string]string{"readiness_review": "master"},
+		Profiles: map[string]config.AgentProfile{
+			"master": {Program: "claude", Enabled: true, ExecutionMode: config.ExecutionModeSDK},
+		},
+	}
+
+	h.keySent = true
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	updated := model.(*home)
+	require.Equal(t, stateSpawnExecutionModePicker, updated.state)
+
+	h = updated
+	h.keySent = true
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated = model.(*home)
+
+	require.Nil(t, cmd)
+	require.Equal(t, stateSpawnAgent, updated.state)
+	require.True(t, updated.overlays.IsActive())
+	_, ok := updated.overlays.Current().(*overlay.FormOverlay)
+	require.True(t, ok)
+	assert.Equal(t, session.ExecutionModeSDK, updated.pendingSpawnExecutionMode)
 }
 
 func TestSpawnAgent_EscCancels(t *testing.T) {
@@ -982,6 +1030,45 @@ func TestQuickLaunch_SDKProfileProducesSDKMode(t *testing.T) {
 		"sdk fixer profile with claude program must produce sdk execution mode")
 }
 
+func TestQuickLaunch_SDKModeIgnoresTmuxLimit(t *testing.T) {
+	oldQuickLaunchStartOnMain := quickLaunchStartOnMain
+	quickLaunchStartOnMain = func(inst *session.Instance) error {
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+	t.Cleanup(func() { quickLaunchStartOnMain = oldQuickLaunchStartOnMain })
+
+	var capturedTimeoutMsg doubleTapTimeoutMsg
+	oldSchedule := scheduleDoubleTapTimeout
+	scheduleDoubleTapTimeout = func(_ time.Duration, key string, seq int) tea.Cmd {
+		capturedTimeoutMsg = doubleTapTimeoutMsg{key: key, seq: seq}
+		return func() tea.Msg { return capturedTimeoutMsg }
+	}
+	t.Cleanup(func() { scheduleDoubleTapTimeout = oldSchedule })
+
+	h := newTestHome()
+	h.activeRepoPath = filepath.Join(t.TempDir(), "myrepo")
+	h.tmuxSessionCount = GlobalInstanceLimit
+	h.appConfig = &config.Config{
+		PhaseRoles: map[string]string{"fixer": "fixer"},
+		Profiles: map[string]config.AgentProfile{
+			"fixer": {Program: "claude", Enabled: true, ExecutionMode: config.ExecutionModeSDK},
+		},
+	}
+	h.keySent = true
+
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 's', Text: "s"})
+	updated := model.(*home)
+
+	model, _ = updated.Update(capturedTimeoutMsg)
+	updated = model.(*home)
+
+	instances := updated.nav.GetInstances()
+	require.Len(t, instances, 1)
+	assert.Equal(t, session.ExecutionModeSDK, instances[0].ExecutionMode)
+}
+
 func TestQuickLaunch_TitleSyncUpdatesDisplayTitle(t *testing.T) {
 	h := newTestHome()
 	h.nav.SetSize(80, 20)
@@ -1051,6 +1138,26 @@ func TestQuickLaunch_InstanceLimitEnforced(t *testing.T) {
 	_, ok := cmd().(overlay.ToastTickMsg)
 	require.True(t, ok)
 	assert.True(t, updated.toastManager.HasActiveToasts())
+}
+
+func TestKeyPrompt_SDKModeIgnoresTmuxLimit(t *testing.T) {
+	h := newTestHome()
+	h.tmuxSessionCount = GlobalInstanceLimit
+	h.appConfig = &config.Config{
+		Profiles: map[string]config.AgentProfile{
+			"chat": {Program: "claude", Enabled: true, ExecutionMode: config.ExecutionModeSDK},
+		},
+	}
+	h.keySent = true
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'N', Text: "N"})
+	updated := model.(*home)
+
+	require.Nil(t, cmd)
+	require.Equal(t, stateNew, updated.state)
+	require.NotNil(t, updated.newInstance)
+	assert.Equal(t, "claude", updated.newInstance.Program)
+	assert.Equal(t, session.ExecutionModeSDK, updated.newInstance.ExecutionMode)
 }
 
 func TestQuickLaunch_PlaceholderNameAvoidsCollisions(t *testing.T) {

@@ -1,6 +1,9 @@
 package auditlog
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // QueryFilter specifies criteria for querying audit events.
 type QueryFilter struct {
@@ -51,11 +54,32 @@ func WithDetail(detail string) EventOption {
 	return func(e *Event) { e.Detail = detail }
 }
 
-// WithExecutionMode serialises {"execution_mode": mode} into the Detail field.
-// Use this on spawn events to record whether the agent was launched via the
-// tmux or sdk transport. The web audit page pretty-prints JSON Detail values.
+// WithExecutionMode records the spawn execution mode in Event.Detail. When
+// Detail already contains a JSON object, the execution_mode key is merged into
+// it. Non-object or non-JSON Detail values are preserved under a detail key.
 func WithExecutionMode(mode string) EventOption {
-	return func(e *Event) { e.Detail = `{"execution_mode":"` + mode + `"}` }
+	return func(e *Event) {
+		detail := map[string]any{}
+		if e.Detail != "" {
+			var existing any
+			if err := json.Unmarshal([]byte(e.Detail), &existing); err == nil {
+				if obj, ok := existing.(map[string]any); ok {
+					detail = obj
+				} else {
+					detail["detail"] = existing
+				}
+			} else {
+				detail["detail"] = e.Detail
+			}
+		}
+		detail["execution_mode"] = mode
+
+		encoded, err := json.Marshal(detail)
+		if err != nil {
+			return
+		}
+		e.Detail = string(encoded)
+	}
 }
 
 // WithLevel sets the Level field on the event (info, warn, error).

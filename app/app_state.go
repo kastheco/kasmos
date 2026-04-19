@@ -2160,6 +2160,18 @@ func (m *home) standaloneExecutionMode(agentType, program string) session.Execut
 	return session.ResolveExecutionMode(requested, program)
 }
 
+// standaloneExecutionModeLimitError enforces the standalone tmux-session cap.
+// SDK standalones do not create tmux sessions and are exempt from this limit.
+func (m *home) standaloneExecutionModeLimitError(mode session.ExecutionMode) error {
+	if session.NormalizeExecutionMode(mode) != session.ExecutionModeTmux {
+		return nil
+	}
+	if m.tmuxSessionCount < GlobalInstanceLimit {
+		return nil
+	}
+	return fmt.Errorf("you can't create more than %d instances (%d tmux sessions active)", GlobalInstanceLimit, m.tmuxSessionCount)
+}
+
 // claudeNoFlicker returns the configured CLAUDE_CODE_NO_FLICKER value.
 // Defaults to false when the config is nil.
 func (m *home) claudeNoFlicker() bool {
@@ -3057,18 +3069,18 @@ func (m *home) quickLaunchAgent() (tea.Model, tea.Cmd) {
 	if !m.requireDaemonForAgents() {
 		return m, nil
 	}
-	if m.tmuxSessionCount >= GlobalInstanceLimit {
-		return m, m.handleError(
-			fmt.Errorf("you can't create more than %d instances (%d tmux sessions active)", GlobalInstanceLimit, m.tmuxSessionCount))
+	fixerProgram := m.programForAgent(session.AgentTypeFixer)
+	requestedMode := m.standaloneExecutionMode(session.AgentTypeFixer, fixerProgram)
+	if err := m.standaloneExecutionModeLimitError(requestedMode); err != nil {
+		return m, m.handleError(err)
 	}
 
 	title := m.nextPlaceholderName()
-	fixerProgram := m.programForAgent(session.AgentTypeFixer)
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:           title,
 		Path:            m.activeRepoPath,
 		Program:         fixerProgram,
-		ExecutionMode:   m.standaloneExecutionMode(session.AgentTypeFixer, fixerProgram),
+		ExecutionMode:   requestedMode,
 		AgentType:       session.AgentTypeFixer,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
 	})
@@ -3148,28 +3160,35 @@ func (m *home) showSpawnExecutionModePicker(program string) {
 // (or when only one program is available). When the program supports the SDK
 // transport it shows the execution-mode picker; otherwise it sets tmux mode and
 // proceeds directly to the spawn name form.
-func (m *home) continueSpawnAgentFlow(program string) {
+func (m *home) continueSpawnAgentFlow(program string) (tea.Model, tea.Cmd) {
 	if sdk.SupportsProgram(program) {
 		m.showSpawnExecutionModePicker(program)
-		return
+		return m, nil
 	}
-	m.pendingSpawnExecutionMode = session.ExecutionModeTmux
+	return m.continueSpawnAgentFlowWithMode(program, session.ExecutionModeTmux)
+}
+
+// continueSpawnAgentFlowWithMode validates the selected execution mode against
+// the tmux-session limit, then proceeds to the spawn form.
+func (m *home) continueSpawnAgentFlowWithMode(program string, mode session.ExecutionMode) (tea.Model, tea.Cmd) {
+	if err := m.standaloneExecutionModeLimitError(mode); err != nil {
+		m.resetPendingSpawnFlow()
+		m.state = stateDefault
+		m.menu.SetState(ui.StateDefault)
+		return m, m.handleError(err)
+	}
+	m.pendingSpawnExecutionMode = mode
 	m.showSpawnAgentForm(program)
+	return m, nil
 }
 
 // beginSpawnAgentFlow is the shared entry point for both the S-key binding and the
-// "spawn_agent" launcher action. It checks the tmux session limit then either shows
-// the harness picker (multiple programs available) or continues to the next step
-// (exactly one program available).
+// "spawn_agent" launcher action. It either shows the harness picker (multiple
+// programs available) or continues to the next step (exactly one program available).
 func (m *home) beginSpawnAgentFlow() (tea.Model, tea.Cmd) {
-	if m.tmuxSessionCount >= GlobalInstanceLimit {
-		return m, m.handleError(
-			fmt.Errorf("you can't create more than %d instances (%d tmux sessions active)", GlobalInstanceLimit, m.tmuxSessionCount))
-	}
 	programs := m.availableSpawnPrograms()
 	if len(programs) == 1 {
-		m.continueSpawnAgentFlow(programs[0])
-		return m, nil
+		return m.continueSpawnAgentFlow(programs[0])
 	}
 	m.overlays.Show(overlay.NewPickerOverlay("select harness", programs))
 	m.state = stateSpawnHarnessPicker
@@ -3203,6 +3222,9 @@ func (m *home) newNamedAgentInstance(title, path, program string, requestedMode 
 	p := strings.TrimSpace(program)
 	if p == "" {
 		p = "claude"
+	}
+	if err := m.standaloneExecutionModeLimitError(session.ResolveExecutionMode(requestedMode, p)); err != nil {
+		return nil, err
 	}
 	return session.NewInstance(session.InstanceOptions{
 		Title:           title,
