@@ -272,6 +272,8 @@ Act like a kasmos agent in this repository: stay in role, avoid scope creep, inv
 - Use table-driven tests with `testify` where appropriate. Do not rely on real tmux, git, or network behavior in tests.
 - When `KASMOS_TASK` or `KASMOS_PEERS` is set, assume shared-worktree constraints and avoid sweeping or destructive changes.
 - Prefer modern repo tooling and guidance: `rg`, `fd`, `sd`, `difft`, `typos`, and `scc`.
+- When addressing GitHub PR review feedback, do not stop at local edits. After the fixes are verified, reply to each addressed review thread inline on GitHub with a concise resolution note.
+- For GitHub PR review feedback, work is not finished until the intended fixes are committed and pushed to the branch under review. Local-only changes do not count as complete.
 
 ## Validation
 
