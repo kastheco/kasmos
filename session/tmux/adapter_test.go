@@ -13,8 +13,8 @@ import (
 
 // newPermissionCommandCaptureSession builds a TmuxSession for adapter tests.
 // paneContent is returned verbatim from capture-pane; captureErr, if non-nil,
-// is returned instead of paneContent. ranCmds accumulates all tmux send-keys
-// and capture-pane command lines for assertion.
+// is returned instead of paneContent. ranCmds accumulates tmux send-keys
+// command lines for assertion.
 func newPermissionCommandCaptureSession(program, paneContent string, captureErr error) (*TmuxSession, *[]string) {
 	ranCmds := []string{}
 	ex := cmd_test.MockCmdExec{
@@ -373,6 +373,14 @@ func TestCodexAdapter_SendPermissionResponse(t *testing.T) {
 		}, *ranCmds)
 	})
 
+	t.Run("MCP shape - invalid choice sends escape", func(t *testing.T) {
+		session, ranCmds := newPermissionCommandCaptureSession("codex", mcpPaneContent, nil)
+		require.NoError(t, adapter.SendPermissionResponse(session, PermissionChoice(99)))
+		assert.Equal(t, []string{
+			"tmux send-keys -t kas_adapter-test Escape",
+		}, *ranCmds)
+	})
+
 	t.Run("sandbox shape - allow once sends 1 + enter", func(t *testing.T) {
 		session, ranCmds := newPermissionCommandCaptureSession("codex", sandboxPaneContent, nil)
 		require.NoError(t, adapter.SendPermissionResponse(session, PermissionAllowOnce))
@@ -397,6 +405,14 @@ func TestCodexAdapter_SendPermissionResponse(t *testing.T) {
 		assert.Equal(t, []string{
 			"tmux send-keys -l -t kas_adapter-test 3",
 			"tmux send-keys -t kas_adapter-test Enter",
+		}, *ranCmds)
+	})
+
+	t.Run("sandbox shape - invalid choice sends escape", func(t *testing.T) {
+		session, ranCmds := newPermissionCommandCaptureSession("codex", sandboxPaneContent, nil)
+		require.NoError(t, adapter.SendPermissionResponse(session, PermissionChoice(99)))
+		assert.Equal(t, []string{
+			"tmux send-keys -t kas_adapter-test Escape",
 		}, *ranCmds)
 	})
 

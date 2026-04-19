@@ -113,6 +113,23 @@ func (a codexAdapter) SendPermissionResponse(session *TmuxSession, choice Permis
 		return nil
 	}
 
+	sendSelection := func(key string) error {
+		if err := session.SendKeys(key); err != nil {
+			return fmt.Errorf("SendPermissionResponse: send %q: %w", key, err)
+		}
+		if err := session.TapEnter(); err != nil {
+			return fmt.Errorf("SendPermissionResponse: confirm selection: %w", err)
+		}
+		return nil
+	}
+
+	sendInvalidChoiceFallback := func(shape codexprompt.Shape) error {
+		if log.WarningLog != nil {
+			log.WarningLog.Printf("SendPermissionResponse: invalid permission choice %d for codex %s prompt; sending Escape as fallback", choice, shape)
+		}
+		return sendEscape()
+	}
+
 	if prompt == nil {
 		if log.WarningLog != nil {
 			log.WarningLog.Printf("SendPermissionResponse: pane no longer shows a codex permission prompt; sending Escape as fallback")
@@ -122,46 +139,28 @@ func (a codexAdapter) SendPermissionResponse(session *TmuxSession, choice Permis
 
 	switch prompt.Shape {
 	case codexprompt.ShapeMCP:
-		if choice == PermissionReject {
+		switch choice {
+		case PermissionAllowOnce:
+			return sendSelection("1")
+		case PermissionAllowAlways:
+			return sendSelection("3")
+		case PermissionReject:
 			return sendEscape()
+		default:
+			return sendInvalidChoiceFallback(prompt.Shape)
 		}
-		key := "1" // AllowOnce → option 1
-		if choice == PermissionAllowAlways {
-			key = "3" // Always allow → option 3
-		}
-		if err := session.SendKeys(key); err != nil {
-			return fmt.Errorf("SendPermissionResponse: send %q: %w", key, err)
-		}
-		if err := session.TapEnter(); err != nil {
-			return fmt.Errorf("SendPermissionResponse: confirm selection: %w", err)
-		}
-		return nil
 
 	case codexprompt.ShapeSandbox:
 		switch choice {
 		case PermissionAllowOnce:
-			if err := session.SendKeys("1"); err != nil {
-				return fmt.Errorf("SendPermissionResponse: send %q: %w", "1", err)
-			}
-			if err := session.TapEnter(); err != nil {
-				return fmt.Errorf("SendPermissionResponse: confirm selection: %w", err)
-			}
+			return sendSelection("1")
 		case PermissionAllowAlways:
-			if err := session.SendKeys("2"); err != nil {
-				return fmt.Errorf("SendPermissionResponse: send %q: %w", "2", err)
-			}
-			if err := session.TapEnter(); err != nil {
-				return fmt.Errorf("SendPermissionResponse: confirm selection: %w", err)
-			}
+			return sendSelection("2")
 		case PermissionReject:
-			if err := session.SendKeys("3"); err != nil {
-				return fmt.Errorf("SendPermissionResponse: send %q: %w", "3", err)
-			}
-			if err := session.TapEnter(); err != nil {
-				return fmt.Errorf("SendPermissionResponse: confirm selection: %w", err)
-			}
+			return sendSelection("3")
+		default:
+			return sendInvalidChoiceFallback(prompt.Shape)
 		}
-		return nil
 
 	default:
 		if log.WarningLog != nil {
