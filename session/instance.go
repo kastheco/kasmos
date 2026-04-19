@@ -238,8 +238,11 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		)
 	}
 
-	// Normalize stored speed tier — invalid/stale values silently become "".
-	sdkSpeedTier := NormalizeSDKSpeedTier(data.SDKSpeedTier)
+	// Normalize stored speed tier — only preserve for codex sdk sessions.
+	sdkSpeedTier := ""
+	if mode == ExecutionModeSDK && common.DetectProgramKind(data.Program) == common.ProgramCodex {
+		sdkSpeedTier = NormalizeSDKSpeedTier(data.SDKSpeedTier)
+	}
 
 	instance := &Instance{
 		Title:                  data.Title,

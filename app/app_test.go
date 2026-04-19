@@ -864,6 +864,8 @@ func TestSpawnAgent_SDKFastSubmit_CreatesInstanceWithFastTier(t *testing.T) {
 	require.Equal(t, stateSpawnAgent, h.state, "spawn form must open after sdk-fast selection")
 	assert.Equal(t, session.ExecutionModeSDK, h.pendingSpawnExecutionMode)
 	assert.Equal(t, "fast", h.pendingSpawnSpeedTier)
+	spawnView := h.overlays.Current().View()
+	assert.Contains(t, spawnView, "fast tier consumes 2x usage")
 
 	// Type agent name and submit form
 	press := func(msg tea.KeyPressMsg) {

@@ -3218,7 +3218,7 @@ func (m *home) showSpawnAgentForm(program string) {
 		hints = append(hints, "standalone sdk agents cannot be controlled from the web ui")
 	}
 	if m.pendingSpawnSpeedTier == "fast" {
-		hints = append(hints, "fast tier: 2x rate-limit budget")
+		hints = append(hints, "fast tier consumes 2x usage")
 	}
 	if len(hints) > 0 {
 		fo.SetFooterHint(strings.Join(hints, "\n"))

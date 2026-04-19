@@ -79,6 +79,7 @@ func TestRecord_RoundTripsFullInstanceData(t *testing.T) {
 		QueuedPrompt:           "continue work",
 		ReviewCycle:            7,
 		ClaudeNoFlicker:        true,
+		SDKSpeedTier:           "fast",
 		Worktree: session.GitWorktreeData{
 			RepoPath:      "/repo",
 			WorktreePath:  "/worktrees/schema-agent",
