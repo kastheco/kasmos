@@ -461,7 +461,20 @@ func (m *home) handleActiveOverlayMouse(msg tea.MouseClickMsg) (tea.Model, tea.C
 
 	case stateSpawnExecutionModePicker:
 		if result.Submitted && result.Value != "" {
-			return m.continueSpawnAgentFlowWithMode(m.pendingSpawnProgram, session.ExecutionMode(result.Value))
+			var mode session.ExecutionMode
+			var speedTier string
+			switch result.Value {
+			case "sdk-fast":
+				mode = session.ExecutionModeSDK
+				speedTier = "fast"
+			case "sdk", "tmux":
+				mode = session.ExecutionMode(result.Value)
+				speedTier = ""
+			default:
+				mode = session.ExecutionModeTmux
+				speedTier = ""
+			}
+			return m.continueSpawnAgentFlowWithMode(m.pendingSpawnProgram, mode, speedTier)
 		}
 		m.resetPendingSpawnFlow()
 		m.state = stateDefault
@@ -1452,7 +1465,20 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		result := m.overlays.HandleKey(msg)
 		if result.Dismissed {
 			if result.Submitted && result.Value != "" {
-				return m.continueSpawnAgentFlowWithMode(m.pendingSpawnProgram, session.ExecutionMode(result.Value))
+				var mode session.ExecutionMode
+				var speedTier string
+				switch result.Value {
+				case "sdk-fast":
+					mode = session.ExecutionModeSDK
+					speedTier = "fast"
+				case "sdk", "tmux":
+					mode = session.ExecutionMode(result.Value)
+					speedTier = ""
+				default:
+					mode = session.ExecutionModeTmux
+					speedTier = ""
+				}
+				return m.continueSpawnAgentFlowWithMode(m.pendingSpawnProgram, mode, speedTier)
 			}
 			m.resetPendingSpawnFlow()
 			m.state = stateDefault
@@ -1487,8 +1513,9 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 
 				selectedProgram := m.pendingSpawnProgram
 				selectedMode := m.pendingSpawnExecutionMode
+				selectedTier := m.pendingSpawnSpeedTier
 				m.resetPendingSpawnFlow()
-				return m.spawnAdHocAgent(name, branch, workPath, selectedProgram, selectedMode)
+				return m.spawnAdHocAgent(name, branch, workPath, selectedProgram, selectedMode, selectedTier)
 			}
 			m.resetPendingSpawnFlow()
 			m.state = stateDefault

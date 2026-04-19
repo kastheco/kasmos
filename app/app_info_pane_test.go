@@ -430,3 +430,50 @@ func (f *failingSubtaskStore) ListPendingReviews(project, filename string) ([]ta
 }
 func (f *failingSubtaskStore) Ping() error  { return f.inner.Ping() }
 func (f *failingSubtaskStore) Close() error { return f.inner.Close() }
+
+// TestUpdateInfoPane_SDKFastInstance verifies that updateInfoPane sets ExecutionMode
+// and SDKSpeedTier on InfoData from a fast-tier sdk instance.
+func TestUpdateInfoPane_SDKFastInstance(t *testing.T) {
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:            context.Background(),
+		state:          stateDefault,
+		appConfig:      config.DefaultConfig(),
+		nav:            ui.NewNavigationPanel(&sp),
+		menu:           ui.NewMenu(),
+		auditPane:      ui.NewAuditPane(),
+		tabbedWindow:   ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:   overlay.NewToastManager(&sp),
+		overlays:       overlay.NewManager(),
+		activeRepoPath: t.TempDir(),
+	}
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "fast-codex",
+		Path:          t.TempDir(),
+		Program:       "codex",
+		ExecutionMode: session.ExecutionModeSDK,
+		SDKSpeedTier:  "fast",
+		AgentType:     session.AgentTypeMaster,
+	})
+	require.NoError(t, err)
+
+	h.nav.SetData(nil, []*session.Instance{inst}, nil, nil, nil)
+	ok := h.nav.SelectInstance(inst)
+	require.True(t, ok)
+
+	h.updateInfoPane()
+
+	data := h.tabbedWindow.GetInfoData()
+	assert.Equal(t, "sdk", data.ExecutionMode, "ExecutionMode must be set from instance")
+	assert.Equal(t, "fast", data.SDKSpeedTier, "SDKSpeedTier must be set from instance")
+
+	// Also verify the rendered output shows both rows
+	pane := ui.NewInfoPane()
+	pane.SetSize(70, 30)
+	pane.SetData(data)
+	output := pane.String()
+	assert.Contains(t, output, "execution mode")
+	assert.Contains(t, output, "speed tier")
+	assert.Contains(t, output, "fast")
+}

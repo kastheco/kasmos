@@ -68,6 +68,10 @@ type InfoData struct {
 	TotalSubtasks     int
 	AllWaveSubtasks   []WaveSubtaskGroup
 
+	// Execution transport and speed tier (populated for ad-hoc spawns)
+	ExecutionMode string
+	SDKSpeedTier  string
+
 	// Resource utilisation
 	CPUPercent float64
 	MemMB      float64
@@ -552,6 +556,12 @@ func (p *InfoPane) renderInstanceSection() string {
 			}
 		}
 		rows = append(rows, p.renderRow("task", taskText))
+	}
+	if p.data.ExecutionMode != "" {
+		rows = append(rows, p.renderRow("execution mode", p.data.ExecutionMode))
+	}
+	if p.data.ExecutionMode == "sdk" && p.data.SDKSpeedTier != "" {
+		rows = append(rows, p.renderRow("speed tier", p.data.SDKSpeedTier))
 	}
 	if p.data.CPUPercent > 0 || p.data.MemMB > 0 {
 		rows = append(rows, p.renderRow("cpu", fmt.Sprintf("%.0f%%", math.Round(p.data.CPUPercent))))

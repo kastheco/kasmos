@@ -365,7 +365,7 @@ func TestView_UsesCellMotionMouseMode(t *testing.T) {
 
 func TestSpawnAdHocAgent_DefaultCreatesWorktree(t *testing.T) {
 	h := newTestHome()
-	model, cmd := h.spawnAdHocAgent("my-agent", "", "", "", session.ExecutionModeTmux)
+	model, cmd := h.spawnAdHocAgent("my-agent", "", "", "", session.ExecutionModeTmux, "")
 	updated := model.(*home)
 	instances := updated.nav.GetInstances()
 	require.NotEmpty(t, instances)
@@ -415,7 +415,7 @@ func TestExecuteLauncherAction_NewInstanceSDKIgnoresTmuxLimit(t *testing.T) {
 
 func TestSpawnAdHocAgent_BranchOverride(t *testing.T) {
 	h := newTestHome()
-	model, cmd := h.spawnAdHocAgent("my-agent", "feature/login", "", "", session.ExecutionModeTmux)
+	model, cmd := h.spawnAdHocAgent("my-agent", "feature/login", "", "", session.ExecutionModeTmux, "")
 	updated := model.(*home)
 	instances := updated.nav.GetInstances()
 	require.NotEmpty(t, instances)
@@ -426,7 +426,7 @@ func TestSpawnAdHocAgent_BranchOverride(t *testing.T) {
 
 func TestSpawnAdHocAgent_PathOverride(t *testing.T) {
 	h := newTestHome()
-	model, cmd := h.spawnAdHocAgent("my-agent", "", "/tmp/custom-path", "", session.ExecutionModeTmux)
+	model, cmd := h.spawnAdHocAgent("my-agent", "", "/tmp/custom-path", "", session.ExecutionModeTmux, "")
 	updated := model.(*home)
 	instances := updated.nav.GetInstances()
 	require.NotEmpty(t, instances)
@@ -804,6 +804,124 @@ func TestSpawnAgent_UnsupportedProgram_Submit_HasTmuxModeNoPicker(t *testing.T) 
 	assert.Equal(t, "opencode-agent", last.Title)
 	assert.Equal(t, "opencode", last.Program)
 	assert.Equal(t, session.ExecutionModeTmux, last.ExecutionMode)
+}
+
+// TestSpawnAgent_CodexPickerShowsSDKFast verifies that the execution-mode picker
+// exposes sdk-fast for codex programs.
+func TestSpawnAgent_CodexPickerShowsSDKFast(t *testing.T) {
+	h := newTestHome()
+	h.appConfig = &config.Config{DefaultProgram: "codex"}
+	h.keySent = true
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	updated := model.(*home)
+	require.Equal(t, stateSpawnExecutionModePicker, updated.state)
+	picker, ok := updated.overlays.Current().(*overlay.PickerOverlay)
+	require.True(t, ok)
+	view := picker.View()
+	assert.Contains(t, view, "sdk-fast", "codex picker must include sdk-fast")
+}
+
+// TestSpawnAgent_ClaudePickerNoSDKFast verifies that the execution-mode picker
+// does NOT include sdk-fast for claude programs.
+func TestSpawnAgent_ClaudePickerNoSDKFast(t *testing.T) {
+	h := newTestHome()
+	h.appConfig = &config.Config{DefaultProgram: "claude"}
+	h.keySent = true
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	updated := model.(*home)
+	require.Equal(t, stateSpawnExecutionModePicker, updated.state)
+	picker, ok := updated.overlays.Current().(*overlay.PickerOverlay)
+	require.True(t, ok)
+	view := picker.View()
+	assert.NotContains(t, view, "sdk-fast", "claude picker must not include sdk-fast")
+}
+
+// TestSpawnAgent_SDKFastSubmit_CreatesInstanceWithFastTier verifies that selecting
+// sdk-fast in the picker and completing the form creates an instance with
+// ExecutionModeSDK and SDKSpeedTier=="fast".
+func TestSpawnAgent_SDKFastSubmit_CreatesInstanceWithFastTier(t *testing.T) {
+	h := newTestHome()
+	h.appConfig = &config.Config{DefaultProgram: "codex"}
+	h.keySent = true
+
+	// Open execution-mode picker (S key)
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	h = model.(*home)
+	require.Equal(t, stateSpawnExecutionModePicker, h.state)
+
+	// Navigate to sdk-fast (two arrow-downs from top: tmux -> sdk -> sdk-fast)
+	h.keySent = true
+	model, _ = h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyDown})
+	h = model.(*home)
+	h.keySent = true
+	model, _ = h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyDown})
+	h = model.(*home)
+
+	// Submit sdk-fast
+	h.keySent = true
+	model, _ = h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
+	h = model.(*home)
+	require.Equal(t, stateSpawnAgent, h.state, "spawn form must open after sdk-fast selection")
+	assert.Equal(t, session.ExecutionModeSDK, h.pendingSpawnExecutionMode)
+	assert.Equal(t, "fast", h.pendingSpawnSpeedTier)
+
+	// Type agent name and submit form
+	press := func(msg tea.KeyPressMsg) {
+		h.keySent = true
+		m, _ := h.handleKeyPress(msg)
+		h = m.(*home)
+	}
+	for _, r := range "fast-codex" {
+		press(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	press(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	assert.Equal(t, stateDefault, h.state)
+	assert.Empty(t, h.pendingSpawnSpeedTier, "pendingSpawnSpeedTier must be cleared after spawn")
+
+	instances := h.nav.GetInstances()
+	require.NotEmpty(t, instances)
+	last := instances[len(instances)-1]
+	assert.Equal(t, "fast-codex", last.Title)
+	assert.Equal(t, session.ExecutionModeSDK, last.ExecutionMode)
+	assert.Equal(t, "fast", last.SDKSpeedTier)
+}
+
+// TestSpawnAgent_EscFromExecutionModePicker_ClearsSpeedTier verifies that
+// escaping the picker clears both pendingSpawnExecutionMode and pendingSpawnSpeedTier.
+func TestSpawnAgent_EscFromExecutionModePicker_ClearsSpeedTier(t *testing.T) {
+	h := newTestHome()
+	h.appConfig = &config.Config{DefaultProgram: "codex"}
+	h.state = stateSpawnExecutionModePicker
+	h.pendingSpawnProgram = "codex"
+	h.pendingSpawnExecutionMode = session.ExecutionModeSDK
+	h.pendingSpawnSpeedTier = "fast"
+	h.overlays.Show(overlay.NewPickerOverlay("execution mode", []string{"tmux", "sdk", "sdk-fast"}))
+
+	h.keySent = true
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEscape})
+	updated := model.(*home)
+	assert.Equal(t, stateDefault, updated.state)
+	assert.Empty(t, updated.pendingSpawnProgram)
+	assert.Empty(t, updated.pendingSpawnExecutionMode)
+	assert.Empty(t, updated.pendingSpawnSpeedTier, "speed tier must be cleared on cancel")
+}
+
+// TestSpawnAgent_EscFromSpawnForm_ClearsSpeedTier verifies that escaping the
+// spawn form also clears pendingSpawnSpeedTier.
+func TestSpawnAgent_EscFromSpawnForm_ClearsSpeedTier(t *testing.T) {
+	h := newTestHome()
+	h.state = stateSpawnAgent
+	h.pendingSpawnProgram = "codex"
+	h.pendingSpawnExecutionMode = session.ExecutionModeSDK
+	h.pendingSpawnSpeedTier = "fast"
+	h.overlays.Show(overlay.NewSpawnFormOverlay("spawn agent", 60))
+
+	h.keySent = true
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEscape})
+	updated := model.(*home)
+	assert.Equal(t, stateDefault, updated.state)
+	assert.Empty(t, updated.pendingSpawnSpeedTier, "speed tier must be cleared on cancel")
 }
 
 func TestExecutionModeForAgent_DefaultsToTmuxButHonorsExplicitSDK(t *testing.T) {

@@ -51,3 +51,29 @@ func TestWithExecutionMode_PreservesPlainTextDetail(t *testing.T) {
 	assert.Equal(t, "manual override", detail["detail"])
 	assert.Equal(t, "tmux", detail["execution_mode"])
 }
+
+func TestWithSpeedTier_EmptyIsNoOp(t *testing.T) {
+	e := auditlog.Event{}
+	auditlog.WithSpeedTier("")(&e)
+	assert.Empty(t, e.Detail)
+}
+
+func TestWithSpeedTier_SetsSpeedTierInDetail(t *testing.T) {
+	e := auditlog.Event{}
+	auditlog.WithSpeedTier("fast")(&e)
+
+	var detail map[string]any
+	require.NoError(t, json.Unmarshal([]byte(e.Detail), &detail))
+	assert.Equal(t, "fast", detail["speed_tier"])
+}
+
+func TestWithSpeedTier_MergesWithExistingExecutionMode(t *testing.T) {
+	e := auditlog.Event{}
+	auditlog.WithExecutionMode("sdk")(&e)
+	auditlog.WithSpeedTier("fast")(&e)
+
+	var detail map[string]any
+	require.NoError(t, json.Unmarshal([]byte(e.Detail), &detail))
+	assert.Equal(t, "sdk", detail["execution_mode"])
+	assert.Equal(t, "fast", detail["speed_tier"])
+}

@@ -636,3 +636,61 @@ func TestInfoPane_NonTerminalVerifyAttempt_Label(t *testing.T) {
 	assert.Contains(t, output, "readiness review")
 	assert.NotContains(t, output, "terminal attempt")
 }
+
+// TestInfoPane_SDKFastInstance verifies that execution mode and speed tier are
+// rendered for an sdk-fast instance, and that speed tier is suppressed when
+// the execution mode is not sdk.
+func TestInfoPane_SDKFastInstance(t *testing.T) {
+	pane := NewInfoPane()
+	pane.SetSize(70, 30)
+	pane.SetData(InfoData{
+		HasInstance:   true,
+		Title:         "my-codex-agent",
+		Program:       "codex",
+		Status:        "running",
+		ExecutionMode: "sdk",
+		SDKSpeedTier:  "fast",
+	})
+
+	output := pane.String()
+	assert.Contains(t, output, "execution mode", "execution mode label must appear")
+	assert.Contains(t, output, "sdk", "execution mode value must appear")
+	assert.Contains(t, output, "speed tier", "speed tier label must appear for sdk-fast")
+	assert.Contains(t, output, "fast", "speed tier value must appear")
+}
+
+// TestInfoPane_SDKInstance_NoSpeedTierRow verifies that when ExecutionMode is sdk
+// but SDKSpeedTier is empty, the speed tier row is not rendered.
+func TestInfoPane_SDKInstance_NoSpeedTierRow(t *testing.T) {
+	pane := NewInfoPane()
+	pane.SetSize(70, 30)
+	pane.SetData(InfoData{
+		HasInstance:   true,
+		Title:         "my-sdk-agent",
+		Program:       "claude",
+		Status:        "running",
+		ExecutionMode: "sdk",
+		SDKSpeedTier:  "",
+	})
+
+	output := pane.String()
+	assert.Contains(t, output, "execution mode")
+	assert.NotContains(t, output, "speed tier", "speed tier must not appear when SDKSpeedTier is empty")
+}
+
+// TestInfoPane_TmuxInstance_NoSpeedTierRow verifies that tmux instances do not show speed tier.
+func TestInfoPane_TmuxInstance_NoSpeedTierRow(t *testing.T) {
+	pane := NewInfoPane()
+	pane.SetSize(70, 30)
+	pane.SetData(InfoData{
+		HasInstance:   true,
+		Title:         "my-tmux-agent",
+		Program:       "claude",
+		Status:        "running",
+		ExecutionMode: "tmux",
+		SDKSpeedTier:  "",
+	})
+
+	output := pane.String()
+	assert.NotContains(t, output, "speed tier", "speed tier must not appear for tmux instances")
+}

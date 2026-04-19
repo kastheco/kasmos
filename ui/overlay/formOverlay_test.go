@@ -256,3 +256,13 @@ func TestSpawnFormOverlay_SetFooterHint_AppearsInView(t *testing.T) {
 	view := f.View()
 	assert.Contains(t, view, "sdk selected — worktree not required")
 }
+
+// TestSpawnFormOverlay_MultiLineFooterHint_BothLinesRender verifies that a
+// newline-joined footer hint renders both lines in the overlay view.
+func TestSpawnFormOverlay_MultiLineFooterHint_BothLinesRender(t *testing.T) {
+	f := NewSpawnFormOverlay("spawn agent", 60)
+	f.SetFooterHint("sdk mode: no web ui\nfast tier: 2x budget")
+	view := f.View()
+	assert.Contains(t, view, "sdk mode: no web ui")
+	assert.Contains(t, view, "fast tier: 2x budget")
+}
