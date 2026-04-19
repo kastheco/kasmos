@@ -28,7 +28,7 @@
           "/tmp/**": "allow"
         }
       },
-      "reasoningEffort": "high",
+      "reasoningEffort": "xhigh",
       "temperature": 0.2,
       "textVerbosity": "medium"
     },
@@ -163,7 +163,7 @@
         "read": "allow",
         "write": "allow"
       },
-      "reasoningEffort": "high",
+      "reasoningEffort": "xhigh",
       "temperature": 0.3,
       "textVerbosity": "medium"
     },

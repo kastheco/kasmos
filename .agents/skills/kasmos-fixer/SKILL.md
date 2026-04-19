@@ -191,11 +191,11 @@ rg -v '^(ok\b|\?\s.*\[no test files\]|PASS$)' "$tmp" || true
 rm -f "$tmp"
 if [ "$test_status" -eq 0 ]; then
   echo 'tests passed'
-  go tool cover -func=coverage.out
 else
   echo "tests failed (exit $test_status)"
   (exit "$test_status")
 fi
+go tool cover -func=coverage.out
 ```
 
 Inspect the coverage summary for `0.0%` entries, or save the summary and search it with MCP `grep`.
