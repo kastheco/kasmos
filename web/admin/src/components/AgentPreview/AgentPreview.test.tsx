@@ -295,6 +295,7 @@ describe("AgentPreview", () => {
     await waitFor(() => {
       expect(screen.getByText("hide thinking")).toBeTruthy();
       expect(screen.getByText("hide tools")).toBeTruthy();
+      expect(screen.getByText("hide tool results")).toBeTruthy();
       expect(screen.getByText("hide system")).toBeTruthy();
     });
   });
@@ -314,12 +315,13 @@ describe("AgentPreview", () => {
 
     const stored = JSON.parse(localStorage.getItem(FILTER_STORAGE_KEY) ?? "{}");
     expect(stored.hideTools).toBe(true);
+    expect(stored.hideToolResults).toBe(false);
   });
 
   it("restores filter state from localStorage on mount", async () => {
     localStorage.setItem(
       FILTER_STORAGE_KEY,
-      JSON.stringify({ hideTools: true, hideThinking: false, hideSystem: false }),
+      JSON.stringify({ hideTools: true, hideToolResults: false, hideThinking: false, hideSystem: false }),
     );
 
     (api.getInstancePresentation as Mock).mockResolvedValue(
@@ -338,7 +340,7 @@ describe("AgentPreview", () => {
   it("hides tool rows when hideTools filter is active", async () => {
     localStorage.setItem(
       FILTER_STORAGE_KEY,
-      JSON.stringify({ hideTools: true, hideThinking: false, hideSystem: false }),
+      JSON.stringify({ hideTools: true, hideToolResults: false, hideThinking: false, hideSystem: false }),
     );
 
     const turn = makeTurn({
@@ -365,7 +367,7 @@ describe("AgentPreview", () => {
   it("never hides permission rows even when hideTools is active", async () => {
     localStorage.setItem(
       FILTER_STORAGE_KEY,
-      JSON.stringify({ hideTools: true, hideThinking: true, hideSystem: true }),
+      JSON.stringify({ hideTools: true, hideToolResults: true, hideThinking: true, hideSystem: true }),
     );
 
     const turn = makeTurn({
@@ -385,6 +387,33 @@ describe("AgentPreview", () => {
     await waitFor(() => {
       expect(screen.getByText("allow file access?")).toBeTruthy();
     });
+  });
+
+  it("hides result rows when hideToolResults filter is active", async () => {
+    localStorage.setItem(
+      FILTER_STORAGE_KEY,
+      JSON.stringify({ hideTools: false, hideToolResults: true, hideThinking: false, hideSystem: false }),
+    );
+
+    const turn = makeTurn({
+      rows: [
+        makeRow({ kind: "tool", text: "tool call", tool_name: "Bash" }),
+        makeRow({ kind: "result", text: "tool result" }),
+        makeRow({ kind: "prose", text: "assistant prose" }),
+      ],
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("tool call")).toBeTruthy();
+      expect(screen.getByText("assistant prose")).toBeTruthy();
+    });
+
+    expect(screen.queryByText("tool result")).toBeNull();
   });
 
   // -------------------------------------------------------------------------

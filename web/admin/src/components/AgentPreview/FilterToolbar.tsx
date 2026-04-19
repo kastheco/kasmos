@@ -6,6 +6,7 @@ import styles from "./FilterToolbar.module.css";
 
 export interface AgentPreviewFilters {
   hideTools: boolean;
+  hideToolResults: boolean;
   hideThinking: boolean;
   hideSystem: boolean;
 }
@@ -19,6 +20,7 @@ export function loadFilters(): AgentPreviewFilters {
       const parsed = JSON.parse(raw) as Partial<AgentPreviewFilters>;
       return {
         hideTools: parsed.hideTools ?? false,
+        hideToolResults: parsed.hideToolResults ?? false,
         hideThinking: parsed.hideThinking ?? false,
         hideSystem: parsed.hideSystem ?? false,
       };
@@ -26,7 +28,7 @@ export function loadFilters(): AgentPreviewFilters {
   } catch {
     // ignore parse errors
   }
-  return { hideTools: false, hideThinking: false, hideSystem: false };
+  return { hideTools: false, hideToolResults: false, hideThinking: false, hideSystem: false };
 }
 
 export function saveFilters(filters: AgentPreviewFilters): void {
@@ -47,7 +49,7 @@ interface FilterToolbarProps {
 }
 
 /**
- * Thin strip with three filter toggles: hide thinking / hide tools / hide system.
+ * Thin strip with filter toggles for thinking, tools, tool results, and system rows.
  * State is owned by the parent and persisted to localStorage.
  * Permission rows are never affected by these filters.
  */
@@ -71,6 +73,13 @@ export function FilterToolbar({ filters, onChange }: FilterToolbarProps) {
         aria-pressed={filters.hideTools}
       >
         hide tools
+      </button>
+      <button
+        className={`${styles.toggle} ${filters.hideToolResults ? styles.active : ""}`}
+        onClick={() => toggle("hideToolResults")}
+        aria-pressed={filters.hideToolResults}
+      >
+        hide tool results
       </button>
       <button
         className={`${styles.toggle} ${filters.hideSystem ? styles.active : ""}`}

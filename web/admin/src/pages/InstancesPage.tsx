@@ -522,6 +522,7 @@ export default function InstancesPage() {
                   <AgentPreview
                     project={project!}
                     title={selectedTitle!}
+                    program={selectedInstance?.program}
                     onFollowStateChange={setIsFollowing}
                     onError={setCaptureError}
                   />

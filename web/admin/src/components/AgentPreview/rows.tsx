@@ -61,6 +61,15 @@ function ProseRow({ row }: RowProps) {
   );
 }
 
+function ThinkingRow({ row }: RowProps) {
+  return (
+    <div className={styles.thinkingRow} data-kind="thinking">
+      <span className={styles.thinkingLabel}>thinking</span>
+      <span className={styles.thinkingText}>{row.text}</span>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Public switch: row.kind → renderer
 //
@@ -79,6 +88,8 @@ export function renderRow(row: PresentationRow, index: number): ReactNode {
   switch (row.kind) {
     case "response":
       return <ResponseDivider key={index} />;
+    case "thinking":
+      return <ThinkingRow key={index} row={row} />;
     case "prose":
       return <ProseRow key={index} row={row} />;
     default:

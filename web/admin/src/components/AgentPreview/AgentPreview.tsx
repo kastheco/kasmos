@@ -14,6 +14,7 @@ import styles from "./AgentPreview.module.css";
 interface AgentPreviewProps {
   project: string;
   title: string;
+  program?: string;
   onFollowStateChange?: (following: boolean) => void;
   onError?: (message: string | null) => void;
 }
@@ -32,6 +33,7 @@ interface AgentPreviewProps {
 export default function AgentPreview({
   project,
   title,
+  program,
   onFollowStateChange,
   onError,
 }: AgentPreviewProps) {
@@ -178,6 +180,7 @@ export default function AgentPreview({
       <div ref={containerRef} className={styles.container} onScroll={handleScroll}>
         <TurnTimeline
           turns={turns}
+          program={program}
           capturedAt={data!.captured_at}
           snapshotReceivedAt={snapshotReceivedAt.current}
           project={project}

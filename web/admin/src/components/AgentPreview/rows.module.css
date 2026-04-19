@@ -32,6 +32,32 @@
   color: var(--rp-muted);
 }
 
+.thinkingRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0;
+  padding: 6px 8px;
+  border: 1px solid rgba(110, 106, 134, 0.28);
+  border-radius: 6px;
+  background: rgba(49, 46, 74, 0.55);
+  color: var(--rp-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.thinkingLabel {
+  flex-shrink: 0;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  color: var(--rp-subtle);
+}
+
+.thinkingText {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .kindTool {
   color: var(--rp-subtle);
 }

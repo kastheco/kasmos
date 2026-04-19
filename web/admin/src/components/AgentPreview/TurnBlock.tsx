@@ -21,9 +21,6 @@ function formatElapsedMs(ms: number): string {
 /** Rows that are hidden by collapse (but not by filters). */
 const COLLAPSE_HIDDEN_KINDS = new Set(["thinking", "tool", "result", "system"]);
 
-/** Rows hidden by the hideTools filter. */
-const TOOLS_FILTER_KINDS = new Set(["tool", "result"]);
-
 /**
  * Produce a plain-text copy summary for a turn.
  * Permission rows are omitted; response rows become a "---" separator.
@@ -151,7 +148,8 @@ export function TurnBlock({
     if (collapsed && COLLAPSE_HIDDEN_KINDS.has(kind)) return false;
     if (!collapsed) {
       if (filters.hideThinking && kind === "thinking") return false;
-      if (filters.hideTools && TOOLS_FILTER_KINDS.has(kind)) return false;
+      if (filters.hideTools && kind === "tool") return false;
+      if (filters.hideToolResults && kind === "result") return false;
       if (filters.hideSystem && kind === "system") return false;
     }
     return true;

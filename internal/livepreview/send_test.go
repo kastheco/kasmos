@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os/exec"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,6 +33,17 @@ func tmuxCall(args ...string) []string {
 }
 
 func TestSendPrompt_SingleLine(t *testing.T) {
+	origSleep := sendPromptSleep
+	origDelay := sendPromptEnterDelay
+	t.Cleanup(func() {
+		sendPromptSleep = origSleep
+		sendPromptEnterDelay = origDelay
+	})
+
+	var slept []time.Duration
+	sendPromptEnterDelay = 100 * time.Millisecond
+	sendPromptSleep = func(d time.Duration) { slept = append(slept, d) }
+
 	rr := &recordingRunner{}
 	err := SendPrompt(context.Background(), rr, runningRec("my-agent"), "hello world")
 	require.NoError(t, err)
@@ -39,9 +51,21 @@ func TestSendPrompt_SingleLine(t *testing.T) {
 	require.Len(t, rr.calls, 2)
 	assert.Equal(t, tmuxCall("send-keys", "-l", "-t", "kas_my-agent", "hello world"), rr.calls[0])
 	assert.Equal(t, tmuxCall("send-keys", "-t", "kas_my-agent", "Enter"), rr.calls[1])
+	require.Equal(t, []time.Duration{100 * time.Millisecond}, slept)
 }
 
 func TestSendPrompt_MultiLine_Ordering(t *testing.T) {
+	origSleep := sendPromptSleep
+	origDelay := sendPromptEnterDelay
+	t.Cleanup(func() {
+		sendPromptSleep = origSleep
+		sendPromptEnterDelay = origDelay
+	})
+
+	var slept []time.Duration
+	sendPromptEnterDelay = 25 * time.Millisecond
+	sendPromptSleep = func(d time.Duration) { slept = append(slept, d) }
+
 	rr := &recordingRunner{}
 	err := SendPrompt(context.Background(), rr, runningRec("my-agent"), "line1\nline2")
 	require.NoError(t, err)
@@ -52,9 +76,21 @@ func TestSendPrompt_MultiLine_Ordering(t *testing.T) {
 	assert.Equal(t, tmuxCall("send-keys", "-t", "kas_my-agent", "Enter"), rr.calls[1])
 	assert.Equal(t, tmuxCall("send-keys", "-l", "-t", "kas_my-agent", "line2"), rr.calls[2])
 	assert.Equal(t, tmuxCall("send-keys", "-t", "kas_my-agent", "Enter"), rr.calls[3])
+	require.Equal(t, []time.Duration{25 * time.Millisecond, 25 * time.Millisecond}, slept)
 }
 
 func TestSendPrompt_EmptyMiddleLine(t *testing.T) {
+	origSleep := sendPromptSleep
+	origDelay := sendPromptEnterDelay
+	t.Cleanup(func() {
+		sendPromptSleep = origSleep
+		sendPromptEnterDelay = origDelay
+	})
+
+	var slept []time.Duration
+	sendPromptEnterDelay = 10 * time.Millisecond
+	sendPromptSleep = func(d time.Duration) { slept = append(slept, d) }
+
 	rr := &recordingRunner{}
 	// "line1\n\nline3" splits to ["line1", "", "line3"]
 	err := SendPrompt(context.Background(), rr, runningRec("my-agent"), "line1\n\nline3")
@@ -70,6 +106,7 @@ func TestSendPrompt_EmptyMiddleLine(t *testing.T) {
 	assert.Equal(t, tmuxCall("send-keys", "-t", "kas_my-agent", "Enter"), rr.calls[2])
 	assert.Equal(t, tmuxCall("send-keys", "-l", "-t", "kas_my-agent", "line3"), rr.calls[3])
 	assert.Equal(t, tmuxCall("send-keys", "-t", "kas_my-agent", "Enter"), rr.calls[4])
+	require.Equal(t, []time.Duration{10 * time.Millisecond, 10 * time.Millisecond}, slept)
 }
 
 func TestSendPrompt_CRLFNormalization(t *testing.T) {

@@ -3,7 +3,17 @@ package livepreview
 import (
 	"context"
 	"strings"
+	"time"
 )
+
+// sendPromptEnterDelay mirrors session.Instance.SendPrompt's tmux delay. Some
+// line editors can treat an immediate Enter as plain typed input rather than a
+// submitted prompt when send-keys runs back-to-back.
+var sendPromptEnterDelay = 100 * time.Millisecond
+
+// sendPromptSleep is overridden in tests so the delay can be asserted without
+// slowing the suite down.
+var sendPromptSleep = time.Sleep
 
 // SendPrompt sends a text prompt to the running instance's tmux pane.
 //
@@ -30,6 +40,9 @@ func SendPrompt(ctx context.Context, runner PaneRunner, rec Record, prompt strin
 			// Send the line content literally (no tmux key-name interpretation).
 			if _, err := runPaneCommand(ctx, runner, "send-keys", "-l", "-t", session, line); err != nil {
 				return err
+			}
+			if sendPromptEnterDelay > 0 {
+				sendPromptSleep(sendPromptEnterDelay)
 			}
 		}
 		// Tap Enter after every line (empty or not).
