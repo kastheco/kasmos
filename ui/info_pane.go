@@ -68,7 +68,7 @@ type InfoData struct {
 	TotalSubtasks     int
 	AllWaveSubtasks   []WaveSubtaskGroup
 
-	// Execution transport and speed tier (populated for ad-hoc spawns)
+	// Execution transport and speed tier for the selected instance, when present.
 	ExecutionMode string
 	SDKSpeedTier  string
 
