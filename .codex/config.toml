@@ -22,5 +22,14 @@ approval_mode = "approve"
 [mcp_servers.kasmos.tools.signal_create]
 approval_mode = "approve"
 
+[mcp_servers.kasmos.tools.git_diff]
+approval_mode = "approve"
+
+[mcp_servers.kasmos.tools.list_dir]
+approval_mode = "approve"
+
+[mcp_servers.kasmos.tools.git_log]
+approval_mode = "approve"
+
 [features]
 codex_hooks = true
