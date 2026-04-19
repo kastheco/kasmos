@@ -102,7 +102,7 @@ set `execution_mode = "sdk"` in your `[agents.fixer]` block to make quick-launch
 
 ### `S` — spawn ad-hoc agent
 
-`S` opens a multi-step spawn flow: first a harness picker (if multiple programs are configured), then a name/branch/path form. the execution mode is resolved from the **master profile** via:
+`S` opens a multi-step spawn flow: first a harness picker (if multiple programs are configured), then an execution-mode picker (`tmux` / `sdk`) for sdk-capable harnesses, then a name/branch/path form. the execution mode is resolved from the **master profile** via:
 
 ```go
 m.standaloneExecutionMode(session.AgentTypeMaster, program)

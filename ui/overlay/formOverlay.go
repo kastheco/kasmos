@@ -10,17 +10,17 @@ import (
 
 // FormOverlay is a multi-field form overlay backed by huh.Form.
 type FormOverlay struct {
-	form        *huh.Form
-	nameVal     string
-	descVal     string
-	branchVal   string
-	pathVal     string
-	title       string
-	footerHint  string
-	submitted   bool
-	canceled    bool
-	width       int
-	fieldKeys   []string
+	form       *huh.Form
+	nameVal    string
+	descVal    string
+	branchVal  string
+	pathVal    string
+	title      string
+	footerHint string
+	submitted  bool
+	canceled   bool
+	width      int
+	fieldKeys  []string
 }
 
 // NewFormOverlay creates a form overlay with name and description inputs.

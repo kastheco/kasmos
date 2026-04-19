@@ -123,7 +123,7 @@ func TestPickerOverlay_SetSelectedValue_MissingValueNoOp(t *testing.T) {
 func TestPickerOverlay_SetSelectedValue_EmptyNoOp(t *testing.T) {
 	p := NewPickerOverlay("mode", []string{"tmux", "sdk"})
 	p.HandleKey(tea.KeyPressMsg{Code: tea.KeyDown}) // move to "sdk"
-	p.SetSelectedValue("")                           // empty → no change
+	p.SetSelectedValue("")                          // empty → no change
 	result := p.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	assert.Equal(t, "sdk", result.Value)
 }
