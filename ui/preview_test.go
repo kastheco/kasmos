@@ -532,10 +532,12 @@ func TestPreviewPane_SDKUpdateContent_ClearsStaleContentWhenCacheEmpty(t *testin
 		t.Run(tc.name, func(t *testing.T) {
 			previewPane.SetRawContent("previous instance content")
 			require.NoError(t, previewPane.UpdateContent(tc.instance))
-			require.True(t, previewPane.previewState.fallback,
-				"empty SDK capture must put the pane in fallback state, not retain prior content")
+			require.False(t, previewPane.previewState.fallback,
+				"empty SDK capture should render the empty SDK view, not the fallback banner")
 			require.NotContains(t, previewPane.previewState.text, "previous instance content",
 				"empty SDK capture must not leave stale content from the previously selected instance")
+			require.Contains(t, previewPane.previewState.text, "> send a message to the agent",
+				"empty SDK capture should show the interactive footer")
 		})
 	}
 }
@@ -562,8 +564,10 @@ func TestPreviewPane_SDKUpdateContent_ClearsScrollModeWhenCacheEmpty(t *testing.
 
 	require.False(t, previewPane.isScrolling,
 		"entering the SDK empty-cache fallback path must drop inherited scroll-mode state")
-	require.True(t, previewPane.previewState.fallback,
-		"empty SDK capture must render the fallback banner, not stale scroll content")
+	require.False(t, previewPane.previewState.fallback,
+		"empty SDK capture should render the empty SDK view, not the fallback banner")
+	require.Contains(t, previewPane.previewState.text, "> send a message to the agent",
+		"empty SDK capture should show the interactive footer after clearing stale scroll state")
 }
 
 // fakeSDKSession is a no-op ExecutionSession that also implements
@@ -748,17 +752,20 @@ func TestPreviewPane_SDKPresentation_FallsBackToCachedContent(t *testing.T) {
 		"pane must fall back to flat cached content when no turns are present")
 }
 
-// TestPreviewPane_SDKPresentation_ShowsPlaceholderWhenNoOutput verifies that
-// an SDK instance with no turns and no cache shows the waiting placeholder.
-func TestPreviewPane_SDKPresentation_ShowsPlaceholderWhenNoOutput(t *testing.T) {
+// TestPreviewPane_SDKPresentation_ShowsComposerWhenNoOutput verifies that an
+// SDK instance with no turns and no cache still renders the empty interactive
+// footer instead of falling back to the generic banner.
+func TestPreviewPane_SDKPresentation_ShowsComposerWhenNoOutput(t *testing.T) {
 	pane := NewPreviewPane()
 	pane.SetSize(80, 24)
 
 	inst := newSDKInstanceWithTurns(t, nil)
 	require.NoError(t, pane.UpdateContent(inst))
 
-	require.True(t, pane.previewState.fallback,
-		"no turns and no cache must set fallback state")
+	require.False(t, pane.previewState.fallback,
+		"no turns and no cache should render the empty SDK view")
+	require.Contains(t, pane.previewState.text, "> send a message to the agent",
+		"empty SDK preview should still show the composer footer")
 }
 
 func TestPreviewPane_SDKPresentation_UsesCachedPresentationForPlaceholder(t *testing.T) {

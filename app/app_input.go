@@ -2060,10 +2060,9 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 			}
 		}
 		if selected == nil || !selected.Started() || selected.Paused() {
-			return m, nil
-		}
-		if session.NormalizeExecutionMode(selected.ExecutionMode) == session.ExecutionModeSDK {
-			return m, m.openSendPromptOverlay("")
+			if selected == nil || selected.Paused() {
+				return m, nil
+			}
 		}
 		return m, m.enterFocusMode()
 	case keys.KeyExitFocus:

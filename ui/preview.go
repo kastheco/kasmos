@@ -289,10 +289,12 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		}
 		// No output yet — drop any inherited scroll state so the viewport stops
 		// consuming scroll keys against stale content from a previously selected
-		// tmux instance, and show a placeholder.
+		// tmux instance, and render the empty SDK composer/footer instead of the
+		// generic banner so ad-hoc SDK sessions can enter focus mode immediately.
 		p.isScrolling = false
 		p.viewport.SetContent("")
-		p.setFallbackState("waiting for agent output...")
+		p.previewState = previewState{text: renderSDKPresentation(nil, p.width)}
+		p.isRawTerminal = false
 		return nil
 	}
 

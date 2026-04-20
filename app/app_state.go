@@ -769,7 +769,10 @@ func (m *home) enterFocusMode() tea.Cmd {
 	m.tabbedWindow.ClearDocumentMode()
 	m.previewRequested = true
 	selected := m.nav.GetSelectedInstance()
-	if selected == nil || !selected.Started() || selected.Status == session.Paused {
+	if selected == nil || selected.Status == session.Paused {
+		return nil
+	}
+	if !selected.Started() && session.NormalizeExecutionMode(selected.ExecutionMode) != session.ExecutionModeSDK {
 		return nil
 	}
 

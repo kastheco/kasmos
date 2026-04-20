@@ -5,12 +5,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/kastheco/kasmos/session"
-	"github.com/kastheco/kasmos/ui/overlay"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestHandleKeyPress_SendPrompt_SDKOpensOverlayImmediately(t *testing.T) {
+func TestHandleKeyPress_SendPrompt_SDKEntersFocusMode(t *testing.T) {
 	h := newTestHome()
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:         "sdk-architect",
@@ -28,12 +27,9 @@ func TestHandleKeyPress_SendPrompt_SDKOpensOverlayImmediately(t *testing.T) {
 	updated := model.(*home)
 
 	assert.NotNil(t, cmd)
-	assert.Equal(t, stateSendPrompt, updated.state)
-	assert.False(t, updated.tabbedWindow.IsFocusMode())
-	require.True(t, updated.overlays.IsActive())
-	tio, ok := updated.overlays.Current().(*overlay.TextInputOverlay)
-	require.True(t, ok, "sdk send prompt should open a text input overlay")
-	assert.Equal(t, "send prompt", tio.Title)
+	assert.Equal(t, stateFocusAgent, updated.state)
+	assert.True(t, updated.tabbedWindow.IsFocusMode())
+	assert.False(t, updated.overlays.IsActive())
 }
 
 func TestHandleKeyPress_SendPrompt_TmuxStillEntersFocusMode(t *testing.T) {
@@ -58,4 +54,23 @@ func TestHandleKeyPress_SendPrompt_TmuxStillEntersFocusMode(t *testing.T) {
 	assert.True(t, updated.tabbedWindow.IsFocusMode())
 	assert.NotNil(t, cmd)
 	assert.False(t, updated.overlays.IsActive())
+}
+
+func TestEnterFocusMode_AllowsSDKPlaceholder(t *testing.T) {
+	h := newTestHome()
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "sdk-placeholder",
+		Path:          t.TempDir(),
+		Program:       "codex",
+		ExecutionMode: session.ExecutionModeSDK,
+	})
+	require.NoError(t, err)
+	inst.SetStatus(session.Ready)
+	h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+
+	cmd := h.enterFocusMode()
+	assert.NotNil(t, cmd)
+	assert.Equal(t, stateFocusAgent, h.state)
+	assert.True(t, h.tabbedWindow.IsFocusMode())
 }
