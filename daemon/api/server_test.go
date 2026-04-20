@@ -523,3 +523,124 @@ func TestHandler_InstancePermission_InvalidChoice(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code, "body: %s", w.Body.String())
 	assert.Equal(t, "", state.project, "invalid choices must be rejected before reaching the state layer")
 }
+
+// ---------------------------------------------------------------------------
+// SpawnSolo endpoint tests
+// ---------------------------------------------------------------------------
+
+type spawnSoloStub struct {
+	DaemonState
+	project string
+	req     SpawnSoloRequest
+	err     error
+}
+
+func (s *spawnSoloStub) ListInstances(_ string) []InstanceStatus { return nil }
+func (s *spawnSoloStub) EventStream() <-chan Event               { return make(chan Event) }
+func (s *spawnSoloStub) StartPlan(_, _, _, _ string) error       { return nil }
+func (s *spawnSoloStub) ListPlans(_ string) ([]taskstore.TaskEntry, error) {
+	return nil, nil
+}
+func (s *spawnSoloStub) ListTasks(_ string) ([]TaskStatus, error) { return nil, nil }
+func (s *spawnSoloStub) SpawnSolo(project string, req SpawnSoloRequest) error {
+	s.project = project
+	s.req = req
+	return s.err
+}
+
+func TestHandler_SpawnSolo_HappyPath(t *testing.T) {
+	state := &spawnSoloStub{}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"title":"my-agent","program":"claude","prompt":"do something","solo_agent":true,"sdk_speed_tier":"fast"}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/solo", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusAccepted, w.Code, "body: %s", w.Body.String())
+	assert.Equal(t, "myproj", state.project)
+	assert.Equal(t, "my-agent", state.req.Title)
+	assert.Equal(t, "claude", state.req.Program)
+	assert.Equal(t, "do something", state.req.Prompt)
+	assert.True(t, state.req.SoloAgent)
+	assert.Equal(t, "fast", state.req.SDKSpeedTier)
+
+	var resp SpawnSoloResponse
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, "my-agent", resp.Title)
+}
+
+func TestHandler_SpawnSolo_EmptyTitle(t *testing.T) {
+	state := &spawnSoloStub{}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"title":"","program":"claude"}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/solo", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "body: %s", w.Body.String())
+	assert.Equal(t, "", state.project, "empty title must be rejected before reaching state layer")
+}
+
+func TestHandler_SpawnSolo_EmptyProgram(t *testing.T) {
+	state := &spawnSoloStub{}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"title":"my-agent","program":""}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/solo", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "body: %s", w.Body.String())
+	assert.Equal(t, "", state.project, "empty program must be rejected before reaching state layer")
+}
+
+func TestHandler_SpawnSolo_ProjectNotFound(t *testing.T) {
+	state := &spawnSoloStub{err: fmt.Errorf("%w: myproj", ErrProjectNotFound)}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"title":"my-agent","program":"claude"}`)
+	req := httptest.NewRequest("POST", "/v1/repos/missing/instances/solo", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code, "body: %s", w.Body.String())
+}
+
+func TestHandler_SpawnSolo_Conflict(t *testing.T) {
+	state := &spawnSoloStub{err: fmt.Errorf("%w: my-agent", ErrStandaloneConflict)}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"title":"my-agent","program":"claude"}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/solo", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusConflict, w.Code, "body: %s", w.Body.String())
+}
+
+func TestHandler_SpawnSolo_InvalidRequest(t *testing.T) {
+	// Non-SDK program returns 400 via ErrInvalidRequest from the state layer.
+	state := &spawnSoloStub{err: fmt.Errorf("%w: program not SDK", ErrInvalidRequest)}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"title":"my-agent","program":"nvim"}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/solo", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "body: %s", w.Body.String())
+}
+
+func TestHandler_SpawnSolo_BadBody(t *testing.T) {
+	state := &spawnSoloStub{}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`not json`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/solo", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "body: %s", w.Body.String())
+}

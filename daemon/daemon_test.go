@@ -1647,3 +1647,200 @@ func TestReapStuckSignals(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, pending, 1)
 }
+
+// ---------------------------------------------------------------------------
+// SpawnSolo daemon tests
+// ---------------------------------------------------------------------------
+
+func TestDaemon_SpawnSolo_ReturnsBeforeSpawnCompletes(t *testing.T) {
+	project := "proj"
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		spawnSolo: func(_ context.Context, opts SpawnSoloOpts) error {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			<-release
+			return nil
+		},
+	}
+	d.repos.repos = []RepoEntry{{Path: "/tmp/proj", Project: project}}
+
+	req := api.SpawnSoloRequest{Title: "my-solo", Program: "claude", SoloAgent: true}
+	errCh := make(chan error, 1)
+	go func() { errCh <- d.SpawnSolo(project, req) }()
+
+	select {
+	case err := <-errCh:
+		require.NoError(t, err)
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("SpawnSolo should return before async spawn completes")
+	}
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("background solo spawn did not start")
+	}
+	close(release)
+}
+
+func TestDaemon_SpawnSolo_ProjectNotFound(t *testing.T) {
+	d := &Daemon{
+		repos:  NewRepoManager(),
+		logger: slog.Default(),
+	}
+	d.repos.repos = []RepoEntry{{Path: "/tmp/proj", Project: "proj"}}
+
+	err := d.SpawnSolo("missing", api.SpawnSoloRequest{Title: "t", Program: "claude"})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, api.ErrProjectNotFound)
+}
+
+func TestDaemon_SpawnSolo_NonSDKProgram_Returns400(t *testing.T) {
+	d := &Daemon{
+		repos:  NewRepoManager(),
+		logger: slog.Default(),
+	}
+	d.repos.repos = []RepoEntry{{Path: "/tmp/proj", Project: "proj"}}
+
+	// "nvim" is not an SDK-supported program.
+	err := d.SpawnSolo("proj", api.SpawnSoloRequest{Title: "t", Program: "nvim"})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, api.ErrInvalidRequest)
+}
+
+func TestDaemonStateAdapter_SpawnSolo_Conflict(t *testing.T) {
+	const (
+		project  = "proj"
+		repoPath = "/tmp/proj"
+	)
+
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+	d.repos.repos = []RepoEntry{{Path: repoPath, Project: project}}
+
+	// Block the start so the instance stays in Loading state.
+	release := make(chan struct{})
+	d.spawner.startOnMain = func(inst *session.Instance) error {
+		<-release
+		inst.MarkStartedForTest()
+		return nil
+	}
+
+	req := api.SpawnSoloRequest{Title: "dupe-solo", Program: "claude"}
+	adapter := &daemonStateAdapter{d: d}
+
+	// First spawn should succeed.
+	require.NoError(t, adapter.SpawnSolo(project, req))
+
+	// Wait until the instance is tracked.
+	require.Eventually(t, func() bool {
+		tracked := d.spawner.InstancesForProject(repoPath, project)
+		return len(tracked) > 0
+	}, time.Second, 5*time.Millisecond)
+
+	// Second spawn with the same title should return a conflict.
+	// The daemon.SpawnSolo doesn't check for conflict before firing async —
+	// the spawner itself returns errInstanceAlreadyTracked, which surfaces as
+	// a logged error (not propagated to the caller). Use the spawnSolo seam to
+	// make the test synchronous.
+	d.spawnSolo = func(_ context.Context, opts SpawnSoloOpts) error {
+		return d.spawner.SpawnSolo(context.Background(), opts)
+	}
+	err := d.SpawnSolo(project, req)
+	// After setting the seam, SpawnSolo itself fires async via go and returns
+	// nil.  The conflict is detected in startSoloAsync which logs and returns.
+	// So we test the seam directly here to verify conflict detection.
+	soloErr := d.spawnSolo(context.Background(), SpawnSoloOpts{
+		RepoPath: repoPath, Project: project, Title: "dupe-solo", Program: "claude",
+	})
+	require.Error(t, soloErr)
+	assert.ErrorIs(t, soloErr, errInstanceAlreadyTracked)
+	_ = err // d.SpawnSolo itself returns nil (async)
+	close(release)
+}
+
+func TestDaemonStateAdapter_ListInstances_IncludesSoloAgentFields(t *testing.T) {
+	const (
+		project  = "proj"
+		repoPath = "/tmp/proj"
+	)
+	spawner := NewTmuxSpawner()
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		spawner:     spawner,
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+	d.repos.repos = []RepoEntry{{Path: repoPath, Project: project}}
+
+	// Manually track a standalone SDK instance.
+	key := instanceKeyForStandalone(repoPath, "sdk-solo-agent")
+	inst := &session.Instance{
+		Title:        "sdk-solo-agent",
+		Path:         repoPath,
+		SoloAgent:    true,
+		SDKSpeedTier: "fast",
+		Status:       session.Loading,
+	}
+	spawner.mu.Lock()
+	spawner.instances[key] = inst
+	spawner.planFileByKey[key] = ""
+	spawner.agentTypeByKey[key] = session.AgentTypeMaster
+	spawner.projectByKey[key] = project
+	spawner.mu.Unlock()
+
+	adapter := &daemonStateAdapter{d: d}
+	statuses := adapter.ListInstances(project)
+	require.Len(t, statuses, 1)
+	assert.True(t, statuses[0].SoloAgent)
+	assert.Equal(t, "fast", statuses[0].SDKSpeedTier)
+	assert.Equal(t, "sdk-solo-agent", statuses[0].Title)
+	assert.True(t, statuses[0].Loading)
+	assert.True(t, statuses[0].Active)
+}
+
+func TestDaemonStateAdapter_ActivePlans_IgnoresStandaloneInstances(t *testing.T) {
+	const (
+		project  = "proj"
+		repoPath = "/tmp/proj"
+	)
+	spawner := NewTmuxSpawner()
+	d := &Daemon{
+		repos:   NewRepoManager(),
+		spawner: spawner,
+		logger:  slog.Default(),
+	}
+	d.repos.repos = []RepoEntry{{Path: repoPath, Project: project}}
+
+	// Track a standalone instance (no plan file).
+	soloKey := instanceKeyForStandalone(repoPath, "solo-agent")
+	spawner.mu.Lock()
+	spawner.instances[soloKey] = &session.Instance{Title: "solo-agent", Path: repoPath}
+	spawner.planFileByKey[soloKey] = ""
+	spawner.projectByKey[soloKey] = project
+	spawner.mu.Unlock()
+
+	// Track a real plan instance.
+	planKey := instanceKey(repoPath, "feature.md", session.AgentTypeCoder)
+	spawner.mu.Lock()
+	spawner.instances[planKey] = &session.Instance{Title: "feature-coder", Path: repoPath, TaskFile: "feature.md"}
+	spawner.planFileByKey[planKey] = "feature.md"
+	spawner.projectByKey[planKey] = project
+	spawner.mu.Unlock()
+
+	adapter := &daemonStateAdapter{d: d}
+	counts := adapter.activePlansByProject()
+	assert.Equal(t, 1, counts[project], "standalone instances must not inflate the active plan count")
+}

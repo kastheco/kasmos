@@ -14,6 +14,25 @@ import (
 	"github.com/kastheco/kasmos/session/tmux"
 )
 
+// ClientStatusError is returned by SocketClient methods when the daemon
+// responds with a non-2xx status code. It captures the HTTP method, path, and
+// status code so callers can inspect them without string-parsing error messages.
+type ClientStatusError struct {
+	Method     string
+	Path       string
+	StatusCode int
+	Message    string
+}
+
+// Error implements the error interface.
+func (e *ClientStatusError) Error() string {
+	msg := e.Message
+	if msg == "" {
+		msg = fmt.Sprintf("status %d", e.StatusCode)
+	}
+	return fmt.Sprintf("client: %s %s: status %d: %s", e.Method, e.Path, e.StatusCode, msg)
+}
+
 // SocketClient is a client for the daemon control socket API. It communicates
 // with the daemon over a Unix domain socket using JSON-over-HTTP.
 type SocketClient struct {
@@ -196,6 +215,13 @@ func (c *SocketClient) StartPlan(project, filename, prompt, program string) erro
 	return c.post("/v1/repos/"+project+"/plans/"+filename+"/plan", body, nil)
 }
 
+// SpawnSolo requests that the daemon create a standalone SDK agent instance
+// for the given project. It returns a *ClientStatusError on non-2xx responses
+// so callers can inspect status codes (e.g. 409 Conflict for duplicate titles).
+func (c *SocketClient) SpawnSolo(project string, req api.SpawnSoloRequest) error {
+	return c.post("/v1/repos/"+project+"/instances/solo", req, nil)
+}
+
 // url returns the full HTTP URL for the given path, routed through the Unix socket.
 // The host component is a placeholder since actual routing goes through the socket.
 func (c *SocketClient) url(path string) string {
@@ -207,6 +233,8 @@ func (c *SocketClient) url(path string) string {
 }
 
 // get performs a GET request and decodes the JSON response into v.
+// On non-2xx responses it attempts to decode a {"error":"..."} body and wraps
+// the result as a *ClientStatusError so callers can inspect status codes cleanly.
 func (c *SocketClient) get(path string, v any) error {
 	res, err := c.http.Get(c.url(path))
 	if err != nil {
@@ -214,12 +242,14 @@ func (c *SocketClient) get(path string, v any) error {
 	}
 	defer res.Body.Close()
 	if res.StatusCode >= 300 {
-		return fmt.Errorf("client: GET %s: status %d", path, res.StatusCode)
+		return decodeErrorBody(http.MethodGet, path, res)
 	}
 	return json.NewDecoder(res.Body).Decode(v)
 }
 
 // post performs a POST request with a JSON body and optionally decodes the response.
+// On non-2xx responses it attempts to decode a {"error":"..."} body and wraps
+// the result as a *ClientStatusError so callers can inspect status codes cleanly.
 func (c *SocketClient) post(path string, body any, v any) error {
 	raw, err := json.Marshal(body)
 	if err != nil {
@@ -231,10 +261,30 @@ func (c *SocketClient) post(path string, body any, v any) error {
 	}
 	defer res.Body.Close()
 	if res.StatusCode >= 300 {
-		return fmt.Errorf("client: POST %s: status %d", path, res.StatusCode)
+		return decodeErrorBody(http.MethodPost, path, res)
 	}
 	if v != nil {
 		return json.NewDecoder(res.Body).Decode(v)
 	}
 	return nil
+}
+
+// decodeErrorBody reads the response body and tries to unmarshal a
+// {"error":"..."} JSON payload. It always returns a *ClientStatusError.
+func decodeErrorBody(method, path string, res *http.Response) *ClientStatusError {
+	cse := &ClientStatusError{
+		Method:     method,
+		Path:       path,
+		StatusCode: res.StatusCode,
+	}
+	var errBody struct {
+		Error string `json:"error"`
+	}
+	// Best-effort decode: if the body is not JSON or lacks the "error" key the
+	// message field is left empty and the Error() string falls back to the
+	// status code.
+	if err := json.NewDecoder(res.Body).Decode(&errBody); err == nil && errBody.Error != "" {
+		cse.Message = errBody.Error
+	}
+	return cse
 }
