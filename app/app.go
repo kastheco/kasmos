@@ -2675,6 +2675,15 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.overlays.HandlePaste(msg.Content)
 			return m, nil
 		}
+		if m.state == stateFocusAgent {
+			if selected := m.nav.GetSelectedInstance(); selected != nil && session.NormalizeExecutionMode(selected.ExecutionMode) == session.ExecutionModeSDK {
+				m.tabbedWindow.AppendSDKComposerText(msg.Content)
+				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+					return m, m.handleError(err)
+				}
+				return m, tea.RequestWindowSize
+			}
+		}
 		// Forward pasted text to the embedded PTY in focus mode.
 		if m.state == stateFocusAgent && m.previewTerminal != nil {
 			if content := msg.Content; content != "" {

@@ -795,6 +795,20 @@ func TestPreviewPane_SDKPresentation_UsesCachedPresentationForPlaceholder(t *tes
 	require.Contains(t, pane.previewState.text, "placeholder structured output")
 }
 
+func TestPreviewPane_SDKPresentation_FocusedComposerShowsTypedText(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 24)
+
+	inst := newSDKInstanceWithTurns(t, nil)
+	require.NoError(t, pane.UpdateContent(inst))
+	pane.SetSDKFocusMode(true)
+	pane.AppendSDKComposerText("hello")
+	require.NoError(t, pane.UpdateContent(inst))
+
+	require.Contains(t, pane.previewState.text, "> hello█")
+	require.Contains(t, pane.previewState.text, "shift+enter newline")
+}
+
 // TestPreviewPane_SDKPresentation_ClearsInheritedScrollModeOnInstanceSwitch
 // verifies that switching from a previously scrolled instance to an SDK
 // instance with structured turns exits scroll mode so the new timeline renders

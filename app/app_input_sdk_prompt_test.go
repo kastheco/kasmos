@@ -74,3 +74,27 @@ func TestEnterFocusMode_AllowsSDKPlaceholder(t *testing.T) {
 	assert.Equal(t, stateFocusAgent, h.state)
 	assert.True(t, h.tabbedWindow.IsFocusMode())
 }
+
+func TestHandleKeyPress_SDKFocusMode_TypesInlineWithoutOverlay(t *testing.T) {
+	h := newTestHome()
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "sdk-inline",
+		Path:          t.TempDir(),
+		Program:       "codex",
+		ExecutionMode: session.ExecutionModeSDK,
+	})
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+	h.state = stateFocusAgent
+	h.tabbedWindow.SetFocusMode(true)
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'a', Text: "a"})
+	updated := model.(*home)
+
+	assert.Equal(t, stateFocusAgent, updated.state)
+	assert.False(t, updated.overlays.IsActive())
+	assert.Equal(t, "a", updated.tabbedWindow.SDKComposerText())
+	assert.NotNil(t, cmd)
+}

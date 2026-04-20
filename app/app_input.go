@@ -98,6 +98,23 @@ func (m *home) handleMenuHighlighting(msg tea.KeyPressMsg) (cmd tea.Cmd, returnE
 		m.keydownCallback(name)), true
 }
 
+func (m *home) submitPromptToInstance(selected *session.Instance, value string) error {
+	if handled, err := m.daemonRouteSend(selected, value); handled {
+		if err != nil {
+			return err
+		}
+	} else if err := selected.SendPrompt(value); err != nil {
+		return err
+	}
+	selected.SetStatus(session.Running)
+	auditMsg := value
+	if len(auditMsg) > 200 {
+		auditMsg = auditMsg[:200]
+	}
+	m.audit(auditlog.EventPromptSent, auditMsg, auditlog.WithInstance(selected.Title))
+	return nil
+}
+
 func (m *home) openSendPromptOverlay(seed string) tea.Cmd {
 	m.exitFocusMode()
 	m.state = stateSendPrompt
@@ -1107,14 +1124,46 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				m.exitFocusMode()
 				return m, tea.RequestWindowSize
 
-			case msg.Code == tea.KeyEnter || firstRuneIsPrintable(msg.Text):
-				// Open the send-prompt overlay seeded with the typed character so
-				// letter keys type into the active input, matching overlay/search behaviour.
-				seed := ""
-				if msg.Code != tea.KeyEnter && len(msg.Text) > 0 {
-					seed = msg.Text
+			case msg.Code == tea.KeyEnter && msg.Mod.Contains(tea.ModShift):
+				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+					return m, m.handleError(err)
 				}
-				return m, m.openSendPromptOverlay(seed)
+				m.tabbedWindow.InsertSDKComposerNewline()
+				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+					return m, m.handleError(err)
+				}
+				return m, tea.RequestWindowSize
+			case msg.Code == tea.KeyBackspace || msg.Code == tea.KeyDelete:
+				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+					return m, m.handleError(err)
+				}
+				m.tabbedWindow.DeleteSDKComposerBackward()
+				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+					return m, m.handleError(err)
+				}
+				return m, tea.RequestWindowSize
+			case msg.Code == tea.KeyEnter:
+				value := strings.TrimSpace(m.tabbedWindow.SDKComposerText())
+				if value == "" {
+					return m, nil
+				}
+				if err := m.submitPromptToInstance(selected, value); err != nil {
+					return m, m.handleError(err)
+				}
+				m.tabbedWindow.ClearSDKComposerText()
+				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+					return m, m.handleError(err)
+				}
+				return m, tea.RequestWindowSize
+			case firstRuneIsPrintable(msg.Text):
+				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+					return m, m.handleError(err)
+				}
+				m.tabbedWindow.AppendSDKComposerText(msg.Text)
+				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+					return m, m.handleError(err)
+				}
+				return m, tea.RequestWindowSize
 			}
 			// All other keys are no-ops for SDK sessions in focus mode.
 			return m, nil
@@ -1164,26 +1213,11 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				value := result.Value
 				selected := m.nav.GetSelectedInstance()
 				if selected != nil && value != "" {
-					if handled, err := m.daemonRouteSend(selected, value); handled {
-						if err != nil {
-							m.state = stateDefault
-							m.menu.SetState(ui.StateDefault)
-							return m, m.handleError(err)
-						}
-					} else if err := selected.SendPrompt(value); err != nil {
+					if err := m.submitPromptToInstance(selected, value); err != nil {
 						m.state = stateDefault
 						m.menu.SetState(ui.StateDefault)
 						return m, m.handleError(err)
 					}
-					selected.SetStatus(session.Running)
-					// Emit audit event for prompt sent (truncate to 200 chars).
-					auditMsg := value
-					if len(auditMsg) > 200 {
-						auditMsg = auditMsg[:200]
-					}
-					m.audit(auditlog.EventPromptSent, auditMsg,
-						auditlog.WithInstance(selected.Title),
-					)
 				}
 			}
 			m.state = stateDefault

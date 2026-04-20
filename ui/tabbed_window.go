@@ -112,7 +112,10 @@ func NewTabbedWindow(preview *PreviewPane, info *InfoPane) *TabbedWindow {
 
 // SetFocusMode enables or disables insert / focus mode. When enabled the
 // embedded terminal owns the pane and most updates become no-ops.
-func (w *TabbedWindow) SetFocusMode(enabled bool) { w.focusMode = enabled }
+func (w *TabbedWindow) SetFocusMode(enabled bool) {
+	w.focusMode = enabled
+	w.preview.SetSDKFocusMode(enabled)
+}
 
 // IsFocusMode reports whether the window is in focus/insert mode.
 func (w *TabbedWindow) IsFocusMode() bool { return w.focusMode }
@@ -300,6 +303,26 @@ func (w *TabbedWindow) UpdatePreview(instance *session.Instance) error {
 // Used by the embedded terminal in focus mode to bypass tmux capture-pane.
 func (w *TabbedWindow) SetPreviewContent(content string) {
 	w.preview.SetRawContent(content)
+}
+
+func (w *TabbedWindow) AppendSDKComposerText(text string) {
+	w.preview.AppendSDKComposerText(text)
+}
+
+func (w *TabbedWindow) InsertSDKComposerNewline() {
+	w.preview.InsertSDKComposerNewline()
+}
+
+func (w *TabbedWindow) DeleteSDKComposerBackward() {
+	w.preview.DeleteSDKComposerBackward()
+}
+
+func (w *TabbedWindow) SDKComposerText() string {
+	return w.preview.SDKComposerText()
+}
+
+func (w *TabbedWindow) ClearSDKComposerText() {
+	w.preview.ClearSDKComposerText()
 }
 
 // SetConnectingState shows the animated banner with a "connecting…" message.

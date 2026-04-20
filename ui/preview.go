@@ -55,6 +55,10 @@ type PreviewPane struct {
 	isRawTerminal bool
 	// springAnim drives the banner load-in animation on first render.
 	springAnim *SpringAnim
+	// sdkFocusMode is true when the TUI is focusing an SDK session directly.
+	sdkFocusMode bool
+	// sdkComposerText is the inline input buffer shown in the SDK footer while focused.
+	sdkComposerText string
 }
 
 // NewPreviewPane constructs a PreviewPane with initial fallback state.
@@ -201,6 +205,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		p.isScrolling = false
 		p.viewport.SetContent("")
 		p.viewport.GotoTop()
+		p.sdkComposerText = ""
 		p.lastInstanceKey = instanceKey
 	}
 
@@ -278,7 +283,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 	// to flat cached text, then to a placeholder when no output has arrived yet.
 	if session.NormalizeExecutionMode(instance.ExecutionMode) == session.ExecutionModeSDK {
 		if turns := instance.CapturePresentation(); len(turns) > 0 {
-			p.previewState = previewState{text: renderSDKPresentation(turns, p.width)}
+			p.previewState = previewState{text: renderSDKPresentationWithComposer(turns, p.width, p.sdkComposerText, p.sdkFocusMode)}
 			p.isRawTerminal = false
 			return nil
 		}
@@ -293,7 +298,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		// generic banner so ad-hoc SDK sessions can enter focus mode immediately.
 		p.isScrolling = false
 		p.viewport.SetContent("")
-		p.previewState = previewState{text: renderSDKPresentation(nil, p.width)}
+		p.previewState = previewState{text: renderSDKPresentationWithComposer(nil, p.width, p.sdkComposerText, p.sdkFocusMode)}
 		p.isRawTerminal = false
 		return nil
 	}
@@ -401,7 +406,41 @@ const narrowPaneThreshold = 40
 // When width is under narrowPaneThreshold, turns are separated by a single
 // newline instead of a blank line.
 func renderSDKPresentation(turns []*sdk.PresentationTurn, width int) string {
-	return sdk.RenderPresentation(turns, width)
+	return renderSDKPresentationWithComposer(turns, width, "", false)
+}
+
+func renderSDKPresentationWithComposer(turns []*sdk.PresentationTurn, width int, composer string, focused bool) string {
+	if width <= 0 {
+		width = 80
+	}
+	narrow := width < narrowPaneThreshold
+	sep := "\n\n"
+	if narrow {
+		sep = "\n"
+	}
+
+	var parts []string
+	for _, turn := range turns {
+		rows := renderSDKTurn(turn, width)
+		if len(rows) > 0 {
+			parts = append(parts, strings.Join(rows, "\n"))
+		}
+	}
+
+	var sb strings.Builder
+	for i, part := range parts {
+		if i > 0 {
+			sb.WriteString(sep)
+		}
+		sb.WriteString(part)
+	}
+
+	footerRows := renderComposerFooter(width, composer, focused)
+	if sb.Len() > 0 {
+		sb.WriteString(sep)
+	}
+	sb.WriteString(strings.Join(footerRows, "\n"))
+	return sb.String()
 }
 
 // renderSDKTurn renders one turn block as a slice of styled lines following
@@ -493,7 +532,7 @@ func renderResponseDivider(width int) string {
 
 // renderComposerFooter returns a quiet display-only footer appended below the
 // turn timeline. The send overlay is not plumbed into the pane in this plan.
-func renderComposerFooter(width int) []string {
+func renderComposerFooter(width int, composer string, focused bool) []string {
 	ruleStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	textStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	hintStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
@@ -502,10 +541,48 @@ func renderComposerFooter(width int) []string {
 	if width > 0 {
 		rule = ruleStyle.Render(strings.Repeat("─", width))
 	}
-	prompt := textStyle.Render("> send a message to the agent …")
+	promptText := "> send a message to the agent …"
+	if composer != "" || focused {
+		cursor := ""
+		if focused {
+			cursor = "█"
+		}
+		promptText = "> " + composer + cursor
+	}
+	prompt := textStyle.Render(promptText)
 	hints := hintStyle.Render("enter send   shift+enter newline   esc unfocus")
 	return []string{rule, prompt, hints}
 }
+
+func (p *PreviewPane) SetSDKFocusMode(enabled bool) {
+	p.sdkFocusMode = enabled
+	if !enabled {
+		p.sdkComposerText = ""
+	}
+}
+
+func (p *PreviewPane) AppendSDKComposerText(text string) {
+	if text == "" {
+		return
+	}
+	p.sdkComposerText += text
+}
+
+func (p *PreviewPane) InsertSDKComposerNewline() {
+	p.sdkComposerText += "\n"
+}
+
+func (p *PreviewPane) DeleteSDKComposerBackward() {
+	runes := []rune(p.sdkComposerText)
+	if len(runes) == 0 {
+		return
+	}
+	p.sdkComposerText = string(runes[:len(runes)-1])
+}
+
+func (p *PreviewPane) SDKComposerText() string { return p.sdkComposerText }
+
+func (p *PreviewPane) ClearSDKComposerText() { p.sdkComposerText = "" }
 
 // wrapPreviewRows splits text into logical lines, then hard-wraps each line
 // to width using ANSI-aware wrapping. Empty input and non-positive widths
