@@ -608,4 +608,235 @@ describe("AgentPreview", () => {
       expect(screen.getByRole("button", { name: "always" })).toBeTruthy();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // tool_diff row rendering
+  // -------------------------------------------------------------------------
+
+  it("renders tool_diff row with file path and diff lines", async () => {
+    const turn = makeTurn({
+      tool_count: 1,
+      rows: [
+        makeRow({
+          kind: "tool_diff",
+          text: "",
+          tool_name: "Edit",
+          tool_diff: {
+            path: "renderer.go",
+            lines: [
+              { kind: "context", old_number: 1, new_number: 1, old_text: "ctx line", new_text: "ctx line" },
+              { kind: "removed", old_number: 2, old_text: "old line" },
+              { kind: "added", new_number: 2, new_text: "new line" },
+            ],
+            truncated: false,
+          },
+        }),
+      ],
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    const { container } = render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("renderer.go")).toBeTruthy();
+      expect(screen.getByText("ctx line")).toBeTruthy();
+      expect(screen.getByText("old line")).toBeTruthy();
+      expect(screen.getByText("new line")).toBeTruthy();
+    });
+
+    expect(container.querySelectorAll("[data-kind='tool_diff']")).toHaveLength(1);
+  });
+
+  it("renders tool_diff truncation marker when truncated=true", async () => {
+    const turn = makeTurn({
+      rows: [
+        makeRow({
+          kind: "tool_diff",
+          text: "",
+          tool_diff: {
+            path: "file.ts",
+            lines: [{ kind: "added", new_number: 1, new_text: "hello" }],
+            truncated: true,
+            hidden_line_count: 42,
+          },
+        }),
+      ],
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/42 lines hidden/)).toBeTruthy();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // tool_preview row rendering
+  // -------------------------------------------------------------------------
+
+  it("renders tool_preview row with lines and truncation marker", async () => {
+    const turn = makeTurn({
+      rows: [
+        makeRow({
+          kind: "tool_preview",
+          text: "",
+          tool_preview: {
+            lines: ["line alpha", "line beta"],
+            truncated: true,
+            hidden_line_count: 10,
+          },
+        }),
+      ],
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    const { container } = render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/line alpha/)).toBeTruthy();
+      expect(screen.getByText(/10 lines hidden/)).toBeTruthy();
+    });
+
+    expect(container.querySelectorAll("[data-kind='tool_preview']")).toHaveLength(1);
+  });
+
+  // -------------------------------------------------------------------------
+  // Running activity label
+  // -------------------------------------------------------------------------
+
+  it("appends activity label to running badge when present", async () => {
+    const turn = makeTurn({
+      completed_at: null,
+      interrupted: false,
+      rows: [],
+      activity: { kind: "tool", label: "editing renderer.go", started_at: new Date("2026-01-01T10:00:02Z") },
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("• running · editing renderer.go")).toBeTruthy();
+    });
+  });
+
+  it("shows plain running badge when activity has no label", async () => {
+    const turn = makeTurn({
+      completed_at: null,
+      interrupted: false,
+      rows: [],
+      // no activity
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("• running")).toBeTruthy();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Collapse hides tool_diff and tool_preview rows
+  // -------------------------------------------------------------------------
+
+  it("collapse hides tool_diff and tool_preview rows", async () => {
+    const turn = makeTurn({
+      tool_count: 1,
+      rows: [
+        makeRow({ kind: "tool", text: "editing file", tool_name: "Edit" }),
+        makeRow({
+          kind: "tool_diff",
+          text: "",
+          tool_diff: { path: "some.go", lines: [{ kind: "added", new_number: 1, new_text: "added content" }] },
+        }),
+        makeRow({
+          kind: "tool_preview",
+          text: "",
+          tool_preview: { lines: ["preview content"] },
+        }),
+        makeRow({ kind: "prose", text: "done with edit" }),
+      ],
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    const { container } = render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("added content")).toBeTruthy();
+      expect(screen.getByText("preview content")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /collapse turn/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("added content")).toBeNull();
+      expect(screen.queryByText("preview content")).toBeNull();
+      // prose stays visible after collapse
+      expect(screen.getByText("done with edit")).toBeTruthy();
+    });
+
+    expect(container.querySelectorAll("[data-kind='tool_diff']")).toHaveLength(0);
+    expect(container.querySelectorAll("[data-kind='tool_preview']")).toHaveLength(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // hideTools filter hides tool_diff and tool_preview rows
+  // -------------------------------------------------------------------------
+
+  it("hideTools filter hides tool_diff and tool_preview rows", async () => {
+    const turn = makeTurn({
+      tool_count: 1,
+      rows: [
+        makeRow({ kind: "tool", text: "editing file", tool_name: "Edit" }),
+        makeRow({
+          kind: "tool_diff",
+          text: "",
+          tool_diff: { path: "some.go", lines: [{ kind: "added", new_number: 1, new_text: "filtered diff" }] },
+        }),
+        makeRow({
+          kind: "tool_preview",
+          text: "",
+          tool_preview: { lines: ["filtered preview"] },
+        }),
+        makeRow({ kind: "prose", text: "prose stays" }),
+      ],
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    const { container } = render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("filtered diff")).toBeTruthy();
+    });
+
+    // Enable hideTools filter
+    const hideToolsBtn = screen.getByRole("button", { name: /hide tools/i });
+    fireEvent.click(hideToolsBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByText("filtered diff")).toBeNull();
+      expect(screen.queryByText("filtered preview")).toBeNull();
+      // prose and dividers remain visible
+      expect(screen.getByText("prose stays")).toBeTruthy();
+    });
+
+    expect(container.querySelectorAll("[data-kind='tool_diff']")).toHaveLength(0);
+    expect(container.querySelectorAll("[data-kind='tool_preview']")).toHaveLength(0);
+  });
 });
