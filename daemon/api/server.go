@@ -192,6 +192,9 @@ type StateProvider interface {
 	// sessions the prompt is forwarded through the transport; for tmux sessions
 	// it is sent via SendKeys+TapEnter on the pane.
 	SendInstancePrompt(project, title, prompt string) error
+	// SendInstancePromptWithLocalImages delivers a prompt plus local image paths
+	// to the tracked instance.
+	SendInstancePromptWithLocalImages(project, title, prompt string, imagePaths []string) error
 	// CapturePresentation returns the structured turn-grouped presentation model
 	// for an instance as pre-serialized JSON. The bool indicates whether
 	// structured presentation is supported (true for SDK-backed instances, false
@@ -312,6 +315,9 @@ func (s *DaemonState) CaptureInstance(_, _, _, _ string) (string, error) {
 	return "", fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
 }
 func (s *DaemonState) SendInstancePrompt(_, _, _ string) error {
+	return fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
+}
+func (s *DaemonState) SendInstancePromptWithLocalImages(_, _, _ string, _ []string) error {
 	return fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
 }
 func (s *DaemonState) CapturePresentation(_, _ string) (json.RawMessage, bool, error) {
@@ -564,14 +570,21 @@ func (h *Handler) handleInstanceSend(w http.ResponseWriter, r *http.Request) {
 	title := r.PathValue("title")
 
 	var body struct {
-		Prompt string `json:"prompt"`
+		Prompt     string   `json:"prompt"`
+		ImagePaths []string `json:"image_paths,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 
-	if err := h.state.SendInstancePrompt(project, title, body.Prompt); err != nil {
+	send := h.state.SendInstancePrompt
+	if len(body.ImagePaths) > 0 {
+		send = func(project, title, prompt string) error {
+			return h.state.SendInstancePromptWithLocalImages(project, title, prompt, body.ImagePaths)
+		}
+	}
+	if err := send(project, title, body.Prompt); err != nil {
 		switch {
 		case errors.Is(err, ErrInstanceNotFound):
 			writeError(w, http.StatusNotFound, err.Error())

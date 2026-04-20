@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/kastheco/kasmos/config"
@@ -11,9 +12,11 @@ import (
 	"github.com/kastheco/kasmos/keys"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session"
+	"github.com/kastheco/kasmos/session/common"
 	"github.com/kastheco/kasmos/session/tmux"
 	"github.com/kastheco/kasmos/ui"
 	"github.com/kastheco/kasmos/ui/overlay"
+	"os"
 	"strings"
 	"time"
 	"unicode"
@@ -115,6 +118,103 @@ func (m *home) submitPromptToInstance(selected *session.Instance, value string) 
 			err:      err,
 		}
 	}
+}
+
+func promptAuditLabel(value string, imageCount int) string {
+	trimmed := strings.TrimSpace(value)
+	switch {
+	case imageCount <= 0:
+		return value
+	case trimmed == "":
+		if imageCount == 1 {
+			return "[image]"
+		}
+		return fmt.Sprintf("[%d images]", imageCount)
+	case imageCount == 1:
+		return value + " [image]"
+	default:
+		return fmt.Sprintf("%s [%d images]", value, imageCount)
+	}
+}
+
+func removeLocalFiles(paths []string) {
+	for _, path := range paths {
+		if strings.TrimSpace(path) == "" {
+			continue
+		}
+		_ = os.Remove(path)
+	}
+}
+
+func (m *home) submitPromptToInstanceWithLocalImages(selected *session.Instance, value string, imagePaths []string) tea.Cmd {
+	filtered := make([]string, 0, len(imagePaths))
+	for _, imagePath := range imagePaths {
+		if trimmed := strings.TrimSpace(imagePath); trimmed != "" {
+			filtered = append(filtered, trimmed)
+		}
+	}
+	if len(filtered) == 0 {
+		return m.submitPromptToInstance(selected, value)
+	}
+
+	auditMsg := promptAuditLabel(value, len(filtered))
+	if len(auditMsg) > 200 {
+		auditMsg = auditMsg[:200]
+	}
+	if m.isDaemonSDKPlaceholder(selected) {
+		return m.daemonRouteSendImagesCmd(selected, value, filtered, auditMsg)
+	}
+	return func() tea.Msg {
+		defer removeLocalFiles(filtered)
+		err := selected.SendPromptWithLocalImages(value, filtered)
+		return promptSubmittedMsg{
+			instance: selected,
+			auditMsg: auditMsg,
+			err:      err,
+		}
+	}
+}
+
+func (m *home) appendSDKComposerText(selected *session.Instance, text string) (tea.Model, tea.Cmd) {
+	if text == "" {
+		return m, nil
+	}
+	if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+		return m, m.handleError(err)
+	}
+	m.tabbedWindow.AppendSDKComposerText(text)
+	if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+		return m, m.handleError(err)
+	}
+	return m, tea.RequestWindowSize
+}
+
+func (m *home) appendSDKComposerImage(selected *session.Instance, path string) (tea.Model, tea.Cmd) {
+	if strings.TrimSpace(path) == "" {
+		return m, nil
+	}
+	if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+		return m, m.handleError(err)
+	}
+	m.tabbedWindow.AppendSDKComposerImage(path)
+	if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+		return m, m.handleError(err)
+	}
+	return m, tea.RequestWindowSize
+}
+
+func (m *home) handleSDKComposerPaste(selected *session.Instance, content string) (tea.Model, tea.Cmd) {
+	if content != "" {
+		return m.appendSDKComposerText(selected, content)
+	}
+	if common.DetectProgramKind(selected.Program) != common.ProgramCodex {
+		return m, m.handleError(fmt.Errorf("clipboard image paste is only supported for codex sdk sessions"))
+	}
+	imagePath, err := captureClipboardImage(context.Background())
+	if err != nil {
+		return m, m.handleError(err)
+	}
+	return m.appendSDKComposerImage(selected, imagePath)
 }
 
 func (m *home) openSendPromptOverlay(seed string) tea.Cmd {
@@ -1162,24 +1262,23 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				return m, tea.RequestWindowSize
 			case msg.Code == tea.KeyEnter:
 				value := strings.TrimSpace(m.tabbedWindow.SDKComposerText())
-				if value == "" {
+				images := m.tabbedWindow.SDKComposerImages()
+				if value == "" && len(images) == 0 {
 					return m, nil
 				}
-				sendCmd := m.submitPromptToInstance(selected, value)
+				sendCmd := m.submitPromptToInstanceWithLocalImages(selected, value, images)
 				m.tabbedWindow.ClearSDKComposerText()
 				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
 					return m, m.handleError(err)
 				}
 				return m, tea.Batch(tea.RequestWindowSize, sendCmd)
+			case msg.String() == "ctrl+v":
+				if text, err := readClipboardText(); err == nil && text != "" {
+					return m.appendSDKComposerText(selected, text)
+				}
+				return m.handleSDKComposerPaste(selected, "")
 			case firstRuneIsPrintable(msg.Text):
-				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
-					return m, m.handleError(err)
-				}
-				m.tabbedWindow.AppendSDKComposerText(msg.Text)
-				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
-					return m, m.handleError(err)
-				}
-				return m, tea.RequestWindowSize
+				return m.appendSDKComposerText(selected, msg.Text)
 			}
 			// All other keys are no-ops for SDK sessions in focus mode.
 			return m, nil

@@ -385,6 +385,20 @@ func (a *daemonStateAdapter) SendInstancePrompt(project, title, prompt string) e
 	return inst.SendPrompt(prompt)
 }
 
+// SendInstancePromptWithLocalImages implements StateProvider by resolving the
+// tracked instance and forwarding the prompt plus local image paths.
+func (a *daemonStateAdapter) SendInstancePromptWithLocalImages(project, title, prompt string, imagePaths []string) error {
+	repoPath, ok := a.repoPathByProject(project)
+	if !ok {
+		return fmt.Errorf("%w: project %s", api.ErrProjectNotFound, project)
+	}
+	_, inst, ok := a.d.spawner.trackedInstanceByTitle(repoPath, title)
+	if !ok {
+		return fmt.Errorf("%w: %s/%s", api.ErrInstanceNotFound, project, title)
+	}
+	return inst.SendPromptWithLocalImages(prompt, imagePaths)
+}
+
 // SendInstancePermissionResponse implements StateProvider by resolving the
 // tracked instance and forwarding the permission choice to its execution
 // backend.

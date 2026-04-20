@@ -13,6 +13,10 @@ import (
 	"github.com/kastheco/kasmos/session/tmux"
 )
 
+type localImagePromptSession interface {
+	SendPromptWithLocalImages(prompt string, imagePaths []string) error
+}
+
 // Preview returns the current pane content as a string.
 // Returns an empty string if the instance has not been started or is paused.
 func (i *Instance) Preview() (string, error) {
@@ -130,6 +134,26 @@ func (i *Instance) SendPrompt(prompt string) error {
 		return fmt.Errorf("error tapping enter: %w", err)
 	}
 	return nil
+}
+
+// SendPromptWithLocalImages sends a prompt with one or more local image attachments.
+// SDK-backed sessions can attach images directly; tmux-backed sessions fall back to
+// text-only prompt delivery when no images are supplied.
+func (i *Instance) SendPromptWithLocalImages(prompt string, imagePaths []string) error {
+	if !i.started {
+		return fmt.Errorf("instance not started")
+	}
+	if i.executionSession == nil {
+		return fmt.Errorf("execution session not initialized")
+	}
+	if len(imagePaths) == 0 {
+		return i.SendPrompt(prompt)
+	}
+	sender, ok := i.executionSession.(localImagePromptSession)
+	if !ok {
+		return fmt.Errorf("image prompts are not supported for %s", strings.TrimSpace(i.Program))
+	}
+	return sender.SendPromptWithLocalImages(prompt, imagePaths)
 }
 
 // PreviewFullHistory captures the complete pane output including the full scrollback buffer.

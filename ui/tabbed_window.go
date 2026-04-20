@@ -309,6 +309,10 @@ func (w *TabbedWindow) AppendSDKComposerText(text string) {
 	w.preview.AppendSDKComposerText(text)
 }
 
+func (w *TabbedWindow) AppendSDKComposerImage(path string) {
+	w.preview.AppendSDKComposerImage(path)
+}
+
 func (w *TabbedWindow) InsertSDKComposerNewline() {
 	w.preview.InsertSDKComposerNewline()
 }
@@ -319,6 +323,10 @@ func (w *TabbedWindow) DeleteSDKComposerBackward() {
 
 func (w *TabbedWindow) SDKComposerText() string {
 	return w.preview.SDKComposerText()
+}
+
+func (w *TabbedWindow) SDKComposerImages() []string {
+	return w.preview.SDKComposerImages()
 }
 
 func (w *TabbedWindow) ClearSDKComposerText() {

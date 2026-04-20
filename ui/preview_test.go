@@ -811,6 +811,23 @@ func TestPreviewPane_SDKPresentation_FocusedComposerShowsTypedText(t *testing.T)
 	require.Contains(t, pane.previewState.text,
 		lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff")).Render("> hello█"))
 	require.Contains(t, pane.previewState.text, "shift+enter newline")
+	require.Contains(t, stripPreviewANSI(pane.previewState.text), "> hello█\n\nenter send",
+		"typed prompt must be visually separated from footer details")
+}
+
+func TestPreviewPane_SDKPresentation_FocusedComposerShowsImageAttachmentCount(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 24)
+
+	inst := newSDKInstanceWithTurns(t, nil)
+	require.NoError(t, pane.UpdateContent(inst))
+	pane.SetSDKFocusMode(true)
+	pane.AppendSDKComposerImage("/tmp/clipboard.png")
+	require.NoError(t, pane.UpdateContent(inst))
+
+	plain := stripPreviewANSI(pane.previewState.text)
+	require.Contains(t, plain, "1 image attached")
+	require.Contains(t, plain, "\n\n1 image attached\n")
 }
 
 func TestPreviewPane_SDKPresentation_UserHistoryUsesFoam(t *testing.T) {
@@ -1021,8 +1038,12 @@ func TestPreviewPane_SDKPresentation_NarrowPane_NoDoubleSpacer(t *testing.T) {
 		},
 	}
 	rendered := renderSDKPresentation(turns, 30) // narrow width
-	require.NotContains(t, rendered, "\n\n",
-		"narrow mode must not insert double-newline separators between turns")
+	idxFirst := strings.Index(rendered, "first")
+	idxSecond := strings.Index(rendered, "second")
+	require.True(t, idxFirst >= 0 && idxSecond > idxFirst)
+	between := rendered[idxFirst:idxSecond]
+	require.NotContains(t, between, "\n\n",
+		"narrow mode must use single-newline separators between turns")
 }
 
 // TestPreviewPane_SDKPresentation_NormalPane_DoubleSpacerPreserved verifies

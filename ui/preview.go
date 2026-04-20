@@ -59,6 +59,8 @@ type PreviewPane struct {
 	sdkFocusMode bool
 	// sdkComposerText is the inline input buffer shown in the SDK footer while focused.
 	sdkComposerText string
+	// sdkComposerImages are local image attachments queued for the next SDK prompt.
+	sdkComposerImages []string
 }
 
 // NewPreviewPane constructs a PreviewPane with initial fallback state.
@@ -206,6 +208,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		p.viewport.SetContent("")
 		p.viewport.GotoTop()
 		p.sdkComposerText = ""
+		p.sdkComposerImages = nil
 		p.lastInstanceKey = instanceKey
 	}
 
@@ -283,7 +286,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 	// to flat cached text, then to a placeholder when no output has arrived yet.
 	if session.NormalizeExecutionMode(instance.ExecutionMode) == session.ExecutionModeSDK {
 		if turns := instance.CapturePresentation(); len(turns) > 0 {
-			p.previewState = previewState{text: renderSDKPresentationWithComposer(turns, p.width, p.sdkComposerText, p.sdkFocusMode, instance.Program, instance.SDKSpeedTier)}
+			p.previewState = previewState{text: renderSDKPresentationWithComposer(turns, p.width, p.sdkComposerText, p.sdkComposerImages, p.sdkFocusMode, instance.Program, instance.SDKSpeedTier)}
 			p.isRawTerminal = false
 			return nil
 		}
@@ -298,7 +301,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		// generic banner so ad-hoc SDK sessions can enter focus mode immediately.
 		p.isScrolling = false
 		p.viewport.SetContent("")
-		p.previewState = previewState{text: renderSDKPresentationWithComposer(nil, p.width, p.sdkComposerText, p.sdkFocusMode, instance.Program, instance.SDKSpeedTier)}
+		p.previewState = previewState{text: renderSDKPresentationWithComposer(nil, p.width, p.sdkComposerText, p.sdkComposerImages, p.sdkFocusMode, instance.Program, instance.SDKSpeedTier)}
 		p.isRawTerminal = false
 		return nil
 	}
@@ -406,10 +409,10 @@ const narrowPaneThreshold = 40
 // When width is under narrowPaneThreshold, turns are separated by a single
 // newline instead of a blank line.
 func renderSDKPresentation(turns []*sdk.PresentationTurn, width int) string {
-	return renderSDKPresentationWithComposer(turns, width, "", false, "", "")
+	return renderSDKPresentationWithComposer(turns, width, "", nil, false, "", "")
 }
 
-func renderSDKPresentationWithComposer(turns []*sdk.PresentationTurn, width int, composer string, focused bool, program string, speedTier string) string {
+func renderSDKPresentationWithComposer(turns []*sdk.PresentationTurn, width int, composer string, images []string, focused bool, program string, speedTier string) string {
 	if width <= 0 {
 		width = 80
 	}
@@ -435,7 +438,7 @@ func renderSDKPresentationWithComposer(turns []*sdk.PresentationTurn, width int,
 		sb.WriteString(part)
 	}
 
-	footerRows := renderComposerFooter(width, composer, focused, program, speedTier)
+	footerRows := renderComposerFooter(width, composer, images, focused, program, speedTier)
 	if sb.Len() > 0 {
 		sb.WriteString(sep)
 	}
@@ -526,7 +529,7 @@ func renderResponseDivider(width int) string {
 
 // renderComposerFooter returns a quiet display-only footer appended below the
 // turn timeline. The send overlay is not plumbed into the pane in this plan.
-func renderComposerFooter(width int, composer string, focused bool, program string, speedTier string) []string {
+func renderComposerFooter(width int, composer string, images []string, focused bool, program string, speedTier string) []string {
 	ruleStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	placeholderStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	composerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff"))
@@ -549,7 +552,10 @@ func renderComposerFooter(width int, composer string, focused bool, program stri
 		prompt = composerStyle.Render(promptText)
 	}
 	hints := "enter send   shift+enter newline   esc unfocus"
-	rows := []string{rule, prompt}
+	rows := []string{rule, prompt, ""}
+	if attachmentLabel := sdkFooterAttachmentLabel(len(images)); attachmentLabel != "" {
+		rows = append(rows, hintStyle.Render(attachmentLabel))
+	}
 	statusLabel := sdkFooterModelAndEffort(program)
 	if tierLabel := sdkFooterSpeedTier(speedTier); tierLabel != "" {
 		if statusLabel != "" {
@@ -564,6 +570,17 @@ func renderComposerFooter(width int, composer string, focused bool, program stri
 		rows = append(rows, hintStyle.Render(hints))
 	}
 	return rows
+}
+
+func sdkFooterAttachmentLabel(count int) string {
+	switch {
+	case count <= 0:
+		return ""
+	case count == 1:
+		return "1 image attached"
+	default:
+		return fmt.Sprintf("%d images attached", count)
+	}
 }
 
 func sdkFooterSpeedTier(speedTier string) string {
@@ -641,6 +658,7 @@ func (p *PreviewPane) SetSDKFocusMode(enabled bool) {
 	p.sdkFocusMode = enabled
 	if !enabled {
 		p.sdkComposerText = ""
+		p.sdkComposerImages = nil
 	}
 }
 
@@ -655,6 +673,13 @@ func (p *PreviewPane) InsertSDKComposerNewline() {
 	p.sdkComposerText += "\n"
 }
 
+func (p *PreviewPane) AppendSDKComposerImage(path string) {
+	if strings.TrimSpace(path) == "" {
+		return
+	}
+	p.sdkComposerImages = append(p.sdkComposerImages, path)
+}
+
 func (p *PreviewPane) DeleteSDKComposerBackward() {
 	runes := []rune(p.sdkComposerText)
 	if len(runes) == 0 {
@@ -665,7 +690,19 @@ func (p *PreviewPane) DeleteSDKComposerBackward() {
 
 func (p *PreviewPane) SDKComposerText() string { return p.sdkComposerText }
 
-func (p *PreviewPane) ClearSDKComposerText() { p.sdkComposerText = "" }
+func (p *PreviewPane) SDKComposerImages() []string {
+	if len(p.sdkComposerImages) == 0 {
+		return nil
+	}
+	out := make([]string, len(p.sdkComposerImages))
+	copy(out, p.sdkComposerImages)
+	return out
+}
+
+func (p *PreviewPane) ClearSDKComposerText() {
+	p.sdkComposerText = ""
+	p.sdkComposerImages = nil
+}
 
 // wrapPreviewRows splits text into logical lines, then hard-wraps each line
 // to width using ANSI-aware wrapping. Empty input and non-positive widths

@@ -381,6 +381,25 @@ func TestCodexTransport_SendPrompt_UsesTurnStart(t *testing.T) {
 	assert.Equal(t, "hello world", params.Input[0].Text)
 }
 
+func TestCodexTransport_SendPromptWithLocalImages_UsesLocalImageInputs(t *testing.T) {
+	ct, srv := newStartedCodexTransport(t)
+
+	err := ct.SendPromptWithLocalImages(context.Background(), "describe this", []string{"/tmp/screenshot.png"})
+	require.NoError(t, err)
+
+	srv.waitForRequests(t, 3)
+	req := srv.lastRequest()
+	assert.Equal(t, codexMethodTurnStart, req.Method)
+
+	var params codexTurnStartParams
+	require.NoError(t, json.Unmarshal(req.Params, &params))
+	require.Len(t, params.Input, 2)
+	assert.Equal(t, "text", params.Input[0].Type)
+	assert.Equal(t, "describe this", params.Input[0].Text)
+	assert.Equal(t, "localImage", params.Input[1].Type)
+	assert.Equal(t, "/tmp/screenshot.png", params.Input[1].Path)
+}
+
 func TestCodexTransport_Interrupt_UsesThreadAndTurnID(t *testing.T) {
 	ct, srv := newStartedCodexTransport(t)
 

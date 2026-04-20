@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -73,4 +74,33 @@ func TestPasteMsg_EmptyContentForwardsCtrlVToEmbeddedTerminal(t *testing.T) {
 	sent := term.SentKeys()
 	require.Len(t, sent, 1)
 	require.Equal(t, []byte{0x16}, sent[0])
+}
+
+func TestPasteMsg_EmptyContentAttachesClipboardImageForSDKFocusMode(t *testing.T) {
+	origCapture := captureClipboardImage
+	captureClipboardImage = func(_ context.Context) (string, error) {
+		return "/tmp/clipboard.png", nil
+	}
+	t.Cleanup(func() { captureClipboardImage = origCapture })
+
+	h := newTestHome()
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "sdk-agent",
+		Path:          t.TempDir(),
+		Program:       "codex",
+		ExecutionMode: session.ExecutionModeSDK,
+	})
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+	h.state = stateFocusAgent
+	h.tabbedWindow.SetFocusMode(true)
+
+	model, cmd := h.Update(tea.PasteMsg{Content: ""})
+	updated := model.(*home)
+
+	require.NotNil(t, cmd)
+	require.Equal(t, stateFocusAgent, updated.state)
+	require.Equal(t, []string{"/tmp/clipboard.png"}, updated.tabbedWindow.SDKComposerImages())
 }

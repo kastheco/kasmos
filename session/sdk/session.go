@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -91,6 +92,10 @@ type Session struct {
 	promptBuf   string // text buffered via SendKeys
 	hasPrompt   bool   // true when agent signals it is ready for input
 	lastContent string // previous content snapshot for HasUpdated
+}
+
+type localImagePromptTransport interface {
+	SendPromptWithLocalImages(ctx context.Context, prompt string, imagePaths []string) error
 }
 
 // New constructs an unstarted SDK Session.
@@ -249,6 +254,64 @@ func (s *Session) TapEnter() error {
 		Timestamp: time.Now(),
 	})
 	return nil
+}
+
+// SendPromptWithLocalImages submits a prompt with one or more local image attachments.
+// The prompt text may be empty when the turn consists only of image input.
+func (s *Session) SendPromptWithLocalImages(prompt string, imagePaths []string) error {
+	filtered := make([]string, 0, len(imagePaths))
+	for _, imagePath := range imagePaths {
+		if trimmed := strings.TrimSpace(imagePath); trimmed != "" {
+			filtered = append(filtered, trimmed)
+		}
+	}
+	if strings.TrimSpace(prompt) == "" && len(filtered) == 0 {
+		return nil
+	}
+
+	s.mu.Lock()
+	s.promptBuf = ""
+	s.hasPrompt = false
+	tr := s.transport
+	pctx := s.ctx
+	s.mu.Unlock()
+
+	if tr == nil {
+		return nil
+	}
+	sender, ok := tr.(localImagePromptTransport)
+	if !ok {
+		return fmt.Errorf("sdk transport does not support local image prompts")
+	}
+
+	ctx, cancel := context.WithTimeout(pctx, 10*time.Second)
+	defer cancel()
+	if err := sender.SendPromptWithLocalImages(ctx, prompt, filtered); err != nil {
+		return err
+	}
+	s.renderer.AddEvent(Event{
+		Kind:      EventUserPrompt,
+		Text:      formatUserPromptText(prompt, len(filtered)),
+		Timestamp: time.Now(),
+	})
+	return nil
+}
+
+func formatUserPromptText(prompt string, imageCount int) string {
+	trimmed := strings.TrimSpace(prompt)
+	switch {
+	case imageCount <= 0:
+		return prompt
+	case trimmed == "":
+		if imageCount == 1 {
+			return "[image]"
+		}
+		return fmt.Sprintf("[%d images]", imageCount)
+	case imageCount == 1:
+		return prompt + " [image]"
+	default:
+		return fmt.Sprintf("%s [%d images]", prompt, imageCount)
+	}
 }
 
 // SendPermissionResponse forwards a permission dialog choice to the transport.

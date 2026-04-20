@@ -19,6 +19,18 @@ func (m *mockPresentationSession) CapturePresentation() []*sdk.PresentationTurn 
 	return m.turns
 }
 
+type mockLocalImagePromptSession struct {
+	deadExecutionSession
+	lastPrompt string
+	lastImages []string
+}
+
+func (m *mockLocalImagePromptSession) SendPromptWithLocalImages(prompt string, imagePaths []string) error {
+	m.lastPrompt = prompt
+	m.lastImages = append([]string(nil), imagePaths...)
+	return nil
+}
+
 func TestInstance_CapturePresentation_WithSDKSession(t *testing.T) {
 	inst := &Instance{started: true}
 	turns := []*sdk.PresentationTurn{
@@ -96,4 +108,15 @@ func TestInstance_Preview_WithSDKPresentation(t *testing.T) {
 	assert.NotContains(t, preview, "response")
 	assert.Contains(t, preview, "assistant text")
 	assert.Contains(t, preview, "> send a message to the agent")
+}
+
+func TestInstance_SendPromptWithLocalImages_DelegatesToExecutionSession(t *testing.T) {
+	inst := &Instance{started: true, Program: "codex"}
+	mock := &mockLocalImagePromptSession{}
+	inst.SetExecutionSessionForTest(mock)
+
+	err := inst.SendPromptWithLocalImages("describe this", []string{"/tmp/screenshot.png"})
+	require.NoError(t, err)
+	assert.Equal(t, "describe this", mock.lastPrompt)
+	assert.Equal(t, []string{"/tmp/screenshot.png"}, mock.lastImages)
 }

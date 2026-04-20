@@ -3197,39 +3197,95 @@ func (m *home) quickLaunchAgent() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(tea.RequestWindowSize, startCmd)
 }
 
-// availableSpawnPrograms returns the deduplicated, sorted list of harness programs
-// that can be used when spawning an ad-hoc agent. It collects programs from enabled
-// config profiles, the DefaultProgram, and falls back to m.program when nothing else
-// is configured.
-func (m *home) availableSpawnPrograms() []string {
-	seen := make(map[string]struct{})
+var builtInSpawnHarnessLabels = []string{"claude", "codex", "opencode"}
+
+func normalizeSpawnProgramLabel(program string) string {
+	switch common.DetectProgramKind(program) {
+	case common.ProgramClaude:
+		return "claude"
+	case common.ProgramCodex:
+		return "codex"
+	case common.ProgramOpenCode:
+		return "opencode"
+	default:
+		return common.ProgramBase(program)
+	}
+}
+
+func (m *home) configuredSpawnProgramsByLabel() map[string]string {
+	programs := make(map[string]string)
 	if m.appConfig != nil {
+		if dp := strings.TrimSpace(m.appConfig.DefaultProgram); dp != "" {
+			if label := normalizeSpawnProgramLabel(dp); label != "" {
+				programs[label] = dp
+			}
+		}
 		for _, profile := range m.appConfig.Profiles {
 			if !profile.Enabled {
 				continue
 			}
-			p := strings.TrimSpace(profile.Program)
-			if p != "" {
-				seen[p] = struct{}{}
+			if program := strings.TrimSpace(profile.Program); program != "" {
+				if label := normalizeSpawnProgramLabel(program); label != "" {
+					if _, exists := programs[label]; !exists {
+						programs[label] = program
+					}
+				}
 			}
 		}
-		if dp := strings.TrimSpace(m.appConfig.DefaultProgram); dp != "" {
-			seen[dp] = struct{}{}
+	}
+	if len(programs) == 0 {
+		program := strings.TrimSpace(m.program)
+		if program == "" {
+			program = "claude"
+		}
+		if label := normalizeSpawnProgramLabel(program); label != "" {
+			programs[label] = program
 		}
 	}
-	if len(seen) == 0 {
-		p := strings.TrimSpace(m.program)
-		if p == "" {
-			p = "claude"
-		}
-		seen[p] = struct{}{}
-	}
-	programs := make([]string, 0, len(seen))
-	for p := range seen {
-		programs = append(programs, p)
-	}
-	sort.Strings(programs)
 	return programs
+}
+
+// availableSpawnPrograms returns the clean picker labels for ad-hoc spawn targets.
+// The three built-in harnesses are always shown, and any additional configured
+// non-built-in program labels are appended after them.
+func (m *home) availableSpawnPrograms() []string {
+	configured := m.configuredSpawnProgramsByLabel()
+	seen := make(map[string]struct{}, len(configured)+len(builtInSpawnHarnessLabels))
+	programs := make([]string, 0, len(configured)+len(builtInSpawnHarnessLabels))
+	for _, label := range builtInSpawnHarnessLabels {
+		seen[label] = struct{}{}
+		programs = append(programs, label)
+	}
+	var extras []string
+	for label := range configured {
+		if _, exists := seen[label]; exists {
+			continue
+		}
+		extras = append(extras, label)
+	}
+	sort.Strings(extras)
+	programs = append(programs, extras...)
+	return programs
+}
+
+func (m *home) defaultSpawnProgramLabel() string {
+	if m.appConfig != nil {
+		if label := normalizeSpawnProgramLabel(m.appConfig.DefaultProgram); label != "" {
+			return label
+		}
+	}
+	if label := normalizeSpawnProgramLabel(m.program); label != "" {
+		return label
+	}
+	return "claude"
+}
+
+func (m *home) resolveSpawnProgram(label string) string {
+	configured := m.configuredSpawnProgramsByLabel()
+	if program, ok := configured[label]; ok {
+		return program
+	}
+	return label
 }
 
 // resetPendingSpawnFlow clears all pending spawn state so an abandoned picker
@@ -3261,7 +3317,8 @@ func (m *home) showSpawnExecutionModePicker(program string) {
 // (or when only one program is available). When the program supports the SDK
 // transport it shows the execution-mode picker; otherwise it sets tmux mode and
 // proceeds directly to the spawn name form.
-func (m *home) continueSpawnAgentFlow(program string) (tea.Model, tea.Cmd) {
+func (m *home) continueSpawnAgentFlow(selection string) (tea.Model, tea.Cmd) {
+	program := m.resolveSpawnProgram(selection)
 	if sdk.SupportsProgram(program) {
 		m.showSpawnExecutionModePicker(program)
 		return m, nil
@@ -3289,10 +3346,9 @@ func (m *home) continueSpawnAgentFlowWithMode(program string, mode session.Execu
 // programs available) or continues to the next step (exactly one program available).
 func (m *home) beginSpawnAgentFlow() (tea.Model, tea.Cmd) {
 	programs := m.availableSpawnPrograms()
-	if len(programs) == 1 {
-		return m.continueSpawnAgentFlow(programs[0])
-	}
-	m.overlays.Show(overlay.NewPickerOverlay("select harness", programs))
+	picker := overlay.NewPickerOverlay("select harness", programs)
+	picker.SetSelectedValue(m.defaultSpawnProgramLabel())
+	m.overlays.Show(picker)
 	m.state = stateSpawnHarnessPicker
 	return m, nil
 }

@@ -177,6 +177,19 @@ func (c *SocketClient) SendInstancePrompt(project, title, prompt string) error {
 	return c.post("/v1/repos/"+project+"/instances/"+title+"/send", body, nil)
 }
 
+// SendInstancePromptWithLocalImages delivers a new user turn with local image
+// attachments to a daemon-tracked instance.
+func (c *SocketClient) SendInstancePromptWithLocalImages(project, title, prompt string, imagePaths []string) error {
+	body := struct {
+		Prompt     string   `json:"prompt"`
+		ImagePaths []string `json:"image_paths,omitempty"`
+	}{
+		Prompt:     prompt,
+		ImagePaths: imagePaths,
+	}
+	return c.post("/v1/repos/"+project+"/instances/"+title+"/send", body, nil)
+}
+
 // SendInstancePermissionResponse forwards a permission choice to a daemon-
 // tracked instance.
 func (c *SocketClient) SendInstancePermissionResponse(project, title string, choice tmux.PermissionChoice) error {

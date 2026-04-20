@@ -228,6 +228,7 @@ type instanceCaptureStub struct {
 	captureOutput                                          string
 	captureErr                                             error
 	sendProject, sendTitle, sendPrompt                     string
+	sendImagePaths                                         []string
 	sendErr                                                error
 	permissionProject, permissionTitle                     string
 	permissionChoice                                       PermissionChoice
@@ -264,6 +265,13 @@ func (s *instanceCaptureStub) SendInstancePrompt(project, title, prompt string) 
 	s.sendProject = project
 	s.sendTitle = title
 	s.sendPrompt = prompt
+	return s.sendErr
+}
+func (s *instanceCaptureStub) SendInstancePromptWithLocalImages(project, title, prompt string, imagePaths []string) error {
+	s.sendProject = project
+	s.sendTitle = title
+	s.sendPrompt = prompt
+	s.sendImagePaths = append([]string(nil), imagePaths...)
 	return s.sendErr
 }
 func (s *instanceCaptureStub) SendInstancePermissionResponse(project, title string, choice PermissionChoice) error {
@@ -314,6 +322,22 @@ func TestHandler_InstanceSend_HappyPath(t *testing.T) {
 	assert.Equal(t, "myproj", state.sendProject)
 	assert.Equal(t, "my-agent", state.sendTitle)
 	assert.Equal(t, "hello from test", state.sendPrompt)
+}
+
+func TestHandler_InstanceSend_WithLocalImages(t *testing.T) {
+	state := &instanceCaptureStub{}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"prompt":"describe this","image_paths":["/tmp/clipboard.png"]}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/my-agent/send", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code, "body: %s", w.Body.String())
+	assert.Equal(t, "myproj", state.sendProject)
+	assert.Equal(t, "my-agent", state.sendTitle)
+	assert.Equal(t, "describe this", state.sendPrompt)
+	assert.Equal(t, []string{"/tmp/clipboard.png"}, state.sendImagePaths)
 }
 
 func TestHandler_InstanceSend_NotFound(t *testing.T) {

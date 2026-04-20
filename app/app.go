@@ -2687,11 +2687,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.state == stateFocusAgent {
 			if selected := m.nav.GetSelectedInstance(); selected != nil && session.NormalizeExecutionMode(selected.ExecutionMode) == session.ExecutionModeSDK {
-				m.tabbedWindow.AppendSDKComposerText(msg.Content)
-				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
-					return m, m.handleError(err)
-				}
-				return m, tea.RequestWindowSize
+				return m.handleSDKComposerPaste(selected, msg.Content)
 			}
 		}
 		// Forward pasted text to the embedded PTY in focus mode.

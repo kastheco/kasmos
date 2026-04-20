@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/kastheco/kasmos/config"
@@ -40,6 +41,7 @@ var listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
 
 type daemonActionClient interface {
 	SendInstancePrompt(project, title, prompt string) error
+	SendInstancePromptWithLocalImages(project, title, prompt string, imagePaths []string) error
 	KillInstance(project, title string) error
 	SendInstancePermissionResponse(project, title string, choice tmux.PermissionChoice) error
 }
@@ -374,6 +376,50 @@ func (m *home) daemonRouteSendCmd(inst *session.Instance, prompt, auditMsg strin
 		deadline := time.Now().Add(plannerInstanceWaitTimeout)
 		for {
 			err := client.SendInstancePrompt(project, inst.Title, prompt)
+			if err == nil {
+				return promptSubmittedMsg{instance: inst, auditMsg: auditMsg}
+			}
+			var statusErr *daemonpkg.ClientStatusError
+			if errors.As(err, &statusErr) &&
+				inst.Status == session.Loading &&
+				(statusErr.StatusCode == http.StatusNotFound || statusErr.StatusCode == http.StatusConflict) &&
+				time.Now().Before(deadline) {
+				time.Sleep(plannerInstancePollInterval)
+				continue
+			}
+			return promptSubmittedMsg{
+				instance: inst,
+				auditMsg: auditMsg,
+				err:      err,
+			}
+		}
+	}
+}
+
+func (m *home) daemonRouteSendImagesCmd(inst *session.Instance, prompt string, imagePaths []string, auditMsg string) tea.Cmd {
+	if !m.isDaemonSDKPlaceholder(inst) {
+		return nil
+	}
+	project := m.taskStoreProject
+	filtered := make([]string, 0, len(imagePaths))
+	for _, imagePath := range imagePaths {
+		if trimmed := strings.TrimSpace(imagePath); trimmed != "" {
+			filtered = append(filtered, trimmed)
+		}
+	}
+	return func() tea.Msg {
+		defer removeLocalFiles(filtered)
+		if project == "" {
+			return promptSubmittedMsg{
+				instance: inst,
+				auditMsg: auditMsg,
+				err:      fmt.Errorf("daemon route: no project for %q", inst.Title),
+			}
+		}
+		client := newDaemonActionClient()
+		deadline := time.Now().Add(plannerInstanceWaitTimeout)
+		for {
+			err := client.SendInstancePromptWithLocalImages(project, inst.Title, prompt, filtered)
 			if err == nil {
 				return promptSubmittedMsg{instance: inst, auditMsg: auditMsg}
 			}

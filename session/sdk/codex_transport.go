@@ -131,6 +131,8 @@ type codexThread struct {
 type codexUserInput struct {
 	Type string `json:"type"`
 	Text string `json:"text,omitempty"`
+	URL  string `json:"url,omitempty"`
+	Path string `json:"path,omitempty"`
 }
 
 type codexTurnStartParams struct {
@@ -361,7 +363,17 @@ func (t *CodexTransport) startHandshake(ctx context.Context, cfg LaunchConfig) e
 
 // SendPrompt starts a new Codex turn for the given prompt.
 func (t *CodexTransport) SendPrompt(ctx context.Context, prompt string) error {
-	if strings.TrimSpace(prompt) == "" {
+	return t.sendInput(ctx, prompt, nil)
+}
+
+// SendPromptWithLocalImages starts a new Codex turn with optional local image attachments.
+func (t *CodexTransport) SendPromptWithLocalImages(ctx context.Context, prompt string, imagePaths []string) error {
+	return t.sendInput(ctx, prompt, imagePaths)
+}
+
+func (t *CodexTransport) sendInput(ctx context.Context, prompt string, imagePaths []string) error {
+	input := buildCodexUserInput(prompt, imagePaths)
+	if len(input) == 0 {
 		return nil
 	}
 	if err := t.guardClient(); err != nil {
@@ -375,8 +387,6 @@ func (t *CodexTransport) SendPrompt(ctx context.Context, prompt string) error {
 	if strings.TrimSpace(threadID) == "" {
 		return fmt.Errorf("codex transport: no thread id")
 	}
-
-	input := []codexUserInput{{Type: "text", Text: prompt}}
 
 	// Steer the running turn when one exists; only start a fresh turn
 	// when the agent is idle. Without this, user-typed prompts during an
@@ -419,6 +429,19 @@ func (t *CodexTransport) SendPrompt(ctx context.Context, prompt string) error {
 		t.mu.Unlock()
 	}
 	return nil
+}
+
+func buildCodexUserInput(prompt string, imagePaths []string) []codexUserInput {
+	input := make([]codexUserInput, 0, 1+len(imagePaths))
+	if trimmed := strings.TrimSpace(prompt); trimmed != "" {
+		input = append(input, codexUserInput{Type: "text", Text: prompt})
+	}
+	for _, imagePath := range imagePaths {
+		if trimmed := strings.TrimSpace(imagePath); trimmed != "" {
+			input = append(input, codexUserInput{Type: "localImage", Path: trimmed})
+		}
+	}
+	return input
 }
 
 // Interrupt requests Codex to abort the current turn.

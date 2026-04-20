@@ -435,19 +435,17 @@ func TestSpawnAdHocAgent_PathOverride(t *testing.T) {
 	assert.NotNil(t, cmd)
 }
 
-func TestSpawnAgent_KeyOpensExecutionModePicker(t *testing.T) {
-	// Single SDK-capable program (claude): S must open the execution-mode
-	// picker, not the spawn form directly.
+func TestSpawnAgent_KeyOpensHarnessPicker(t *testing.T) {
 	h := newTestHome()
 	h.appConfig = &config.Config{DefaultProgram: "claude"}
 	h.keySent = true
 	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
 	updated := model.(*home)
-	require.Equal(t, stateSpawnExecutionModePicker, updated.state)
-	require.True(t, updated.overlays.IsActive(), "execution-mode picker must be active")
-	_, ok := updated.overlays.Current().(*overlay.PickerOverlay)
+	require.Equal(t, stateSpawnHarnessPicker, updated.state)
+	require.True(t, updated.overlays.IsActive(), "harness picker must be active")
+	picker, ok := updated.overlays.Current().(*overlay.PickerOverlay)
 	require.True(t, ok, "active overlay must be a PickerOverlay")
-	assert.Equal(t, "claude", updated.pendingSpawnProgram)
+	assert.Contains(t, picker.View(), "▸ claude")
 }
 
 func TestSpawnAgent_SDKFlowAtTmuxLimitStillOpensForm(t *testing.T) {
@@ -464,11 +462,19 @@ func TestSpawnAgent_SDKFlowAtTmuxLimitStillOpensForm(t *testing.T) {
 	h.keySent = true
 	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
 	updated := model.(*home)
-	require.Equal(t, stateSpawnExecutionModePicker, updated.state)
+	require.Equal(t, stateSpawnHarnessPicker, updated.state)
 
 	h = updated
 	h.keySent = true
 	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated = model.(*home)
+
+	require.Nil(t, cmd)
+	require.Equal(t, stateSpawnExecutionModePicker, updated.state)
+
+	h = updated
+	h.keySent = true
+	model, cmd = h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated = model.(*home)
 
 	require.Nil(t, cmd)
@@ -542,7 +548,7 @@ func TestAvailableSpawnPrograms_IncludesDefaultProgram(t *testing.T) {
 	h := newTestHome()
 	h.appConfig = &config.Config{DefaultProgram: "amp"}
 	programs := h.availableSpawnPrograms()
-	assert.Equal(t, []string{"amp"}, programs)
+	assert.Equal(t, []string{"claude", "codex", "opencode", "amp"}, programs)
 }
 
 func TestAvailableSpawnPrograms_IgnoresDisabledAndBlankProfiles(t *testing.T) {
@@ -555,7 +561,7 @@ func TestAvailableSpawnPrograms_IgnoresDisabledAndBlankProfiles(t *testing.T) {
 		},
 	}
 	programs := h.availableSpawnPrograms()
-	assert.Equal(t, []string{"claude"}, programs)
+	assert.Equal(t, []string{"claude", "codex", "opencode"}, programs)
 }
 
 func TestAvailableSpawnPrograms_FallsBackToProgramField(t *testing.T) {
@@ -563,7 +569,19 @@ func TestAvailableSpawnPrograms_FallsBackToProgramField(t *testing.T) {
 	h.appConfig = nil
 	h.program = "codex"
 	programs := h.availableSpawnPrograms()
-	assert.Equal(t, []string{"codex"}, programs)
+	assert.Equal(t, []string{"claude", "codex", "opencode"}, programs)
+}
+
+func TestAvailableSpawnPrograms_UsesCleanLabelsForConfiguredPaths(t *testing.T) {
+	h := newTestHome()
+	h.appConfig = &config.Config{
+		DefaultProgram: "/home/kas/.nvm/versions/node/v22.0.0/bin/codex --model gpt-5.4",
+		Profiles: map[string]config.AgentProfile{
+			"reviewer": {Program: "/usr/local/bin/claude --model sonnet", Enabled: true},
+		},
+	}
+	programs := h.availableSpawnPrograms()
+	assert.Equal(t, []string{"claude", "codex", "opencode"}, programs)
 }
 
 func TestSpawnAgent_MultiplePrograms_OpensPicker(t *testing.T) {
@@ -583,32 +601,46 @@ func TestSpawnAgent_MultiplePrograms_OpensPicker(t *testing.T) {
 	require.True(t, ok, "active overlay must be a PickerOverlay")
 }
 
-func TestSpawnAgent_OneSDKProgram_OpensExecutionModePicker(t *testing.T) {
-	// codex is SDK-capable: a single-program spawn must open the execution-mode
-	// picker rather than going directly to the spawn form.
+func TestSpawnAgent_DefaultHarnessSelection_UsesCleanCodexLabel(t *testing.T) {
 	h := newTestHome()
-	h.appConfig = &config.Config{DefaultProgram: "codex"}
+	h.appConfig = &config.Config{DefaultProgram: "/home/kas/.nvm/versions/node/v22.0.0/bin/codex --model gpt-5.4"}
 	h.keySent = true
 	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
 	updated := model.(*home)
-	require.Equal(t, stateSpawnExecutionModePicker, updated.state)
-	require.True(t, updated.overlays.IsActive(), "execution-mode picker must be active")
-	_, ok := updated.overlays.Current().(*overlay.PickerOverlay)
+	require.Equal(t, stateSpawnHarnessPicker, updated.state)
+	picker, ok := updated.overlays.Current().(*overlay.PickerOverlay)
 	require.True(t, ok, "active overlay must be a PickerOverlay")
-	assert.Equal(t, "codex", updated.pendingSpawnProgram)
+	view := picker.View()
+	assert.Contains(t, view, "▸ codex")
+	assert.NotContains(t, view, "/home/kas/.nvm")
+
+	h = updated
+	h.keySent = true
+	model, _ = h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated = model.(*home)
+	require.Equal(t, stateSpawnExecutionModePicker, updated.state)
+	assert.Equal(t, "/home/kas/.nvm/versions/node/v22.0.0/bin/codex --model gpt-5.4", updated.pendingSpawnProgram)
 	assert.Equal(t, session.ExecutionModeTmux, updated.pendingSpawnExecutionMode)
 }
 
-func TestSpawnAgent_OneUnsupportedProgram_OpensFormDirectly(t *testing.T) {
-	// amp is not SDK-capable: a single-program spawn must open the form directly.
+func TestSpawnAgent_DefaultCustomProgram_SelectionOpensForm(t *testing.T) {
 	h := newTestHome()
 	h.appConfig = &config.Config{DefaultProgram: "amp"}
 	h.keySent = true
 	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
 	updated := model.(*home)
+	require.Equal(t, stateSpawnHarnessPicker, updated.state)
+	picker, ok := updated.overlays.Current().(*overlay.PickerOverlay)
+	require.True(t, ok, "active overlay must be a PickerOverlay")
+	assert.Contains(t, picker.View(), "▸ amp")
+
+	h = updated
+	h.keySent = true
+	model, _ = h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated = model.(*home)
 	require.Equal(t, stateSpawnAgent, updated.state)
 	require.True(t, updated.overlays.IsActive(), "form overlay must be active")
-	_, ok := updated.overlays.Current().(*overlay.FormOverlay)
+	_, ok = updated.overlays.Current().(*overlay.FormOverlay)
 	require.True(t, ok, "active overlay must be a FormOverlay")
 	assert.Equal(t, "amp", updated.pendingSpawnProgram)
 }
@@ -628,15 +660,14 @@ func TestSpawnAgent_LauncherAction_MultiplePrograms_OpensPicker(t *testing.T) {
 	require.True(t, ok, "launcher spawn_agent with multiple programs must show PickerOverlay")
 }
 
-func TestSpawnAgent_LauncherAction_OneProgram_OpensForm(t *testing.T) {
+func TestSpawnAgent_LauncherAction_AlwaysOpensPicker(t *testing.T) {
 	h := newTestHome()
 	h.appConfig = &config.Config{DefaultProgram: "amp"}
 	model, _ := h.executeLauncherAction("spawn_agent")
 	updated := model.(*home)
-	require.Equal(t, stateSpawnAgent, updated.state)
-	_, ok := updated.overlays.Current().(*overlay.FormOverlay)
-	require.True(t, ok, "launcher spawn_agent with one program must show FormOverlay")
-	assert.Equal(t, "amp", updated.pendingSpawnProgram)
+	require.Equal(t, stateSpawnHarnessPicker, updated.state)
+	_, ok := updated.overlays.Current().(*overlay.PickerOverlay)
+	require.True(t, ok, "launcher spawn_agent must show PickerOverlay")
 }
 
 func TestSpawnHarnessPicker_EscReturnsToDefault(t *testing.T) {
@@ -814,6 +845,10 @@ func TestSpawnAgent_CodexPickerShowsSDKFast(t *testing.T) {
 	h.appConfig = &config.Config{DefaultProgram: "codex"}
 	h.keySent = true
 	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	h = model.(*home)
+	require.Equal(t, stateSpawnHarnessPicker, h.state)
+	h.keySent = true
+	model, _ = h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated := model.(*home)
 	require.Equal(t, stateSpawnExecutionModePicker, updated.state)
 	picker, ok := updated.overlays.Current().(*overlay.PickerOverlay)
@@ -829,6 +864,10 @@ func TestSpawnAgent_ClaudePickerNoSDKFast(t *testing.T) {
 	h.appConfig = &config.Config{DefaultProgram: "claude"}
 	h.keySent = true
 	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	h = model.(*home)
+	require.Equal(t, stateSpawnHarnessPicker, h.state)
+	h.keySent = true
+	model, _ = h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated := model.(*home)
 	require.Equal(t, stateSpawnExecutionModePicker, updated.state)
 	picker, ok := updated.overlays.Current().(*overlay.PickerOverlay)
@@ -845,8 +884,12 @@ func TestSpawnAgent_SDKFastSubmit_CreatesInstanceWithFastTier(t *testing.T) {
 	h.appConfig = &config.Config{DefaultProgram: "codex"}
 	h.keySent = true
 
-	// Open execution-mode picker (S key)
+	// Open harness picker, then accept the default codex selection.
 	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	h = model.(*home)
+	require.Equal(t, stateSpawnHarnessPicker, h.state)
+	h.keySent = true
+	model, _ = h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
 	h = model.(*home)
 	require.Equal(t, stateSpawnExecutionModePicker, h.state)
 
