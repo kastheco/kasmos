@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
+	sdk "github.com/kastheco/kasmos/session/sdk"
 	"github.com/kastheco/kasmos/session/tmux"
 
 	"github.com/stretchr/testify/assert"
@@ -171,6 +173,75 @@ func TestSocketClient_post_DecodesErrorBody(t *testing.T) {
 	assert.Equal(t, "/v1/repos/proj/instances/solo", cse.Path)
 	assert.Equal(t, http.StatusConflict, cse.StatusCode)
 	assert.Contains(t, cse.Message, "standalone title already tracked")
+}
+
+// TestSocketClient_CapturePresentation_DecodesNestedFields verifies that
+// CapturePresentation correctly decodes tool_diff, tool_preview, and activity
+// fields from the wire response into sdk.PresentationTurn. This prevents
+// regressions where the structured payload fields added by the sdk-diff-view
+// plan are silently dropped during JSON decode.
+func TestSocketClient_CapturePresentation_DecodesNestedFields(t *testing.T) {
+	captured := time.Now().UTC().Format(time.RFC3339)
+	rawPayload := `{
+		"supported":true,
+		"captured_at":"` + captured + `",
+		"turns":[{
+			"id":"t1","number":1,"started_at":null,"completed_at":null,
+			"interrupted":false,"tool_count":2,
+			"activity":{"kind":"tool","label":"Edit foo.go","started_at":null},
+			"rows":[
+				{"kind":"tool_diff","text":"","timestamp":null,"tool_name":"Edit","is_error":false,
+				 "tool_diff":{"path":"foo.go","lines":[
+					{"kind":"removed","old_number":1,"old_text":"old"},
+					{"kind":"added","new_number":1,"new_text":"new"}
+				 ],"truncated":false,"hidden_line_count":0}},
+				{"kind":"tool_preview","text":"","timestamp":null,"tool_name":"Bash","is_error":false,
+				 "tool_preview":{"lines":["result line"],"truncated":false,"hidden_line_count":0}}
+			]
+		}]
+	}`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1/repos/proj/instances/my-agent/presentation", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write([]byte(rawPayload))
+		require.NoError(t, err)
+	}))
+	defer srv.Close()
+
+	client := &SocketClient{http: srv.Client(), baseURL: srv.URL}
+	turns, supported, err := client.CapturePresentation("proj", "my-agent")
+	require.NoError(t, err)
+	assert.True(t, supported)
+	require.Len(t, turns, 1)
+
+	turn := turns[0]
+
+	// activity field must be decoded.
+	require.NotNil(t, turn.Activity, "activity must be decoded from wire response")
+	assert.Equal(t, "tool", turn.Activity.Kind)
+	assert.Equal(t, "Edit foo.go", turn.Activity.Label)
+
+	require.Len(t, turn.Rows, 2)
+
+	// RowToolDiff row: tool_diff payload must be present.
+	diffRow := turn.Rows[0]
+	assert.Equal(t, sdk.RowToolDiff, diffRow.Kind)
+	require.NotNil(t, diffRow.ToolDiff, "tool_diff must be decoded")
+	assert.Equal(t, "foo.go", diffRow.ToolDiff.Path)
+	require.Len(t, diffRow.ToolDiff.Lines, 2)
+	assert.Equal(t, sdk.DiffLineRemoved, diffRow.ToolDiff.Lines[0].Kind)
+	assert.Equal(t, "old", diffRow.ToolDiff.Lines[0].OldText)
+	assert.Equal(t, sdk.DiffLineAdded, diffRow.ToolDiff.Lines[1].Kind)
+	assert.Equal(t, "new", diffRow.ToolDiff.Lines[1].NewText)
+
+	// RowToolPreview row: tool_preview payload must be present.
+	previewRow := turn.Rows[1]
+	assert.Equal(t, sdk.RowToolPreview, previewRow.Kind)
+	require.NotNil(t, previewRow.ToolPreview, "tool_preview must be decoded")
+	require.Len(t, previewRow.ToolPreview.Lines, 1)
+	assert.Equal(t, "result line", previewRow.ToolPreview.Lines[0])
+	assert.False(t, previewRow.ToolPreview.Truncated)
 }
 
 func TestSocketClient_SpawnSolo_HappyPath(t *testing.T) {
