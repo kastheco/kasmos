@@ -51,8 +51,24 @@ func RenderPresentation(turns []*PresentationTurn, width int) string {
 	}
 
 	footerRows := renderPresentationComposerFooter(width)
+
+	// Append a single activity row immediately above the composer footer when
+	// the last turn is still running and has derived activity information.
+	var activityLine string
+	if len(turns) > 0 {
+		last := turns[len(turns)-1]
+		if last.Running() && last.Activity != nil {
+			activityStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
+			activityLine = activityStyle.Render(FormatActivityLabel(last.Activity, time.Now(), narrow))
+		}
+	}
+
 	if sb.Len() > 0 {
 		sb.WriteString(sep)
+	}
+	if activityLine != "" {
+		sb.WriteString(activityLine)
+		sb.WriteString("\n")
 	}
 	sb.WriteString(strings.Join(footerRows, "\n"))
 	return sb.String()
@@ -79,6 +95,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 	statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
 	thinkingStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
 	narrowRuleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
+	gutterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
 
 	for _, row := range turn.Rows {
 		switch row.Kind {
@@ -86,6 +103,33 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 			rows = append(rows, userStyle.Render("you: "+row.Text))
 		case RowTool:
 			rows = append(rows, toolStyle.Render(row.Text))
+		case RowToolDiff:
+			if row.ToolDiff != nil {
+				diffRows := BuildToolDiffBlock(row.ToolDiff, width)
+				for i, dl := range row.ToolDiff.Lines {
+					if i >= len(diffRows) {
+						break
+					}
+					switch dl.Kind {
+					case DiffLineAdded:
+						rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose)).Render(diffRows[i]))
+					case DiffLineRemoved:
+						rows = append(rows, resultErrStyle.Render(diffRows[i]))
+					default:
+						rows = append(rows, gutterStyle.Render(diffRows[i]))
+					}
+				}
+				// Truncation indicator row, if present.
+				if len(diffRows) > len(row.ToolDiff.Lines) {
+					rows = append(rows, gutterStyle.Render(diffRows[len(row.ToolDiff.Lines)]))
+				}
+			}
+		case RowToolPreview:
+			if row.ToolPreview != nil {
+				for _, pr := range BuildToolPreviewBlock(row.ToolPreview, width) {
+					rows = append(rows, gutterStyle.Render(pr))
+				}
+			}
 		case RowResult:
 			if row.IsError {
 				rows = append(rows, resultErrStyle.Render(row.Text))
