@@ -47,6 +47,19 @@ func firstRuneIsPrintable(s string) bool {
 	return unicode.IsPrint(r)
 }
 
+func isPasteShortcut(msg tea.KeyPressMsg) bool {
+	if !msg.Mod.Contains(tea.ModCtrl) || msg.Mod.Contains(tea.ModAlt) {
+		return false
+	}
+
+	code := msg.Code
+	if key := msg.Key(); key.BaseCode != 0 {
+		code = key.BaseCode
+	}
+
+	return unicode.ToLower(code) == 'v'
+}
+
 func (m *home) applyPendingSetStatus(picked string) (tea.Model, tea.Cmd) {
 	status, state, err := taskstate.ResolveManualOverride(picked)
 	if err != nil {
@@ -1272,7 +1285,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 					return m, m.handleError(err)
 				}
 				return m, tea.Batch(tea.RequestWindowSize, sendCmd)
-			case msg.String() == "ctrl+v":
+			case isPasteShortcut(msg):
 				if text, err := readClipboardText(); err == nil && text != "" {
 					return m.appendSDKComposerText(selected, text)
 				}
@@ -1304,6 +1317,19 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				return m, tea.Batch(tea.RequestWindowSize, m.syncPreviewTerminal())
 			}
 			m.exitFocusMode()
+			return m, nil
+		}
+		if isPasteShortcut(msg) {
+			if text, err := readClipboardText(); err == nil && text != "" {
+				data := []byte("\x1b[200~" + text + "\x1b[201~")
+				if err := m.previewTerminal.SendKey(data); err != nil {
+					return m, m.handleError(err)
+				}
+				return m, nil
+			}
+			if err := m.previewTerminal.SendKey([]byte{0x16}); err != nil {
+				return m, m.handleError(err)
+			}
 			return m, nil
 		}
 		data := keyToBytes(msg)
