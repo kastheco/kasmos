@@ -122,7 +122,19 @@ for unsupported harnesses (opencode, gemini, amp, custom binaries) `session.Reso
 
 ### standalone vs daemon-managed sdk
 
-standalone sdk agents run **in-process inside the TUI**. they are not registered with the daemon, so the web admin UI has no way to reach them. see [managing instances](../guides/managing-instances.mdx#sdk-instance-output) for the full list of web-ui limitations.
+when the kasmos daemon is running and owns the repository, SDK spawns initiated from the TUI
+(`N`, `s`, or `S`) are **daemon-managed**: the TUI posts the spawn request to the daemon via
+`POST /v1/repos/{project}/instances/solo` and then waits for the title to appear in
+`ListInstances`. the daemon creates the real `session.Instance`, tracks it under a standalone
+key, and exposes it through the existing `/instances`, `/send`, `/capture`, `/permission`,
+and `/presentation` routes — so the web admin UI gets the full action menu and structured
+preview for these agents automatically.
+
+truly **standalone** (legacy) SDK agents are `state.json` records that were written directly
+rather than being routed through the daemon — for example, instances created in a session
+before the daemon-managed solo spawn path existed, or in development/test environments where
+no daemon is running. these legacy rows are not registered with the daemon, so the web admin
+UI has no way to reach them. see [managing instances](../guides/managing-instances.mdx#sdk-instance-output) for the full list of web-ui limitations that still apply to such rows.
 
 ## when to choose sdk
 

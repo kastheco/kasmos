@@ -696,6 +696,90 @@ func TestHTTPHandler_ListInstances_DaemonReadyRow_HasReadyValidActions(t *testin
 		"ready daemon rows must expose only restart/kill; pause is not a valid transition out of ready")
 }
 
+// TestHTTPHandler_ListInstances_DaemonSDKSoloAgent_HasValidActions is a
+// regression guard that proves the existing preview stack already works for
+// daemon-managed standalone SDK rows once the daemon owns the row. Specifically:
+// the list endpoint must return execution_mode:"sdk" and a non-empty valid_actions
+// array for such a row. Before the daemon-owned solo spawn path the row would
+// either be absent (daemon didn't own it) or ManagedByDaemon would be false
+// (which would suppress valid_actions via isStandaloneNonTmux).
+func TestHTTPHandler_ListInstances_DaemonSDKSoloAgent_HasValidActions(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root) // empty disk; only daemon has this row
+
+	daemon := &fakeDaemonLister{
+		records: []Record{
+			{
+				Title:           "my-solo-sdk",
+				Status:          StatusRunning,
+				Program:         "claude",
+				ExecutionMode:   "sdk",
+				SoloAgent:       true,
+				SDKSpeedTier:    "fast",
+				ManagedByDaemon: true,
+			},
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, daemon, nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var entries []ListEntry
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&entries))
+	require.Len(t, entries, 1)
+	assert.Equal(t, "sdk", entries[0].ExecutionMode,
+		"daemon-managed standalone SDK row must surface execution_mode:sdk")
+	assert.NotEmpty(t, entries[0].ValidActions,
+		"daemon-managed standalone SDK row must have non-empty valid_actions — it is not standalone")
+}
+
+// TestHTTPHandler_Presentation_DaemonSDKSoloAgent_NoTaskFile_Forwarded is a
+// regression guard that proves the presentation route forwards daemon responses
+// unchanged for a daemon-managed standalone SDK row with TaskFile == "".
+// Standalone SDK rows spawned ad-hoc (not via a plan) have an empty TaskFile;
+// this test verifies the handler does not gate on TaskFile when delegating to
+// the daemon presenter.
+func TestHTTPHandler_Presentation_DaemonSDKSoloAgent_NoTaskFile_Forwarded(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root) // empty disk; daemon has the row
+
+	turns := json.RawMessage(`[{"role":"user","content":"hello from solo"}]`)
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
+			{
+				Title:           "my-solo-sdk",
+				Status:          StatusRunning,
+				Program:         "claude",
+				ExecutionMode:   "sdk",
+				SoloAgent:       true,
+				ManagedByDaemon: true,
+				// TaskFile intentionally empty — standalone/ad-hoc spawn
+			},
+		},
+		presentationResp: api.PresentationResponse{
+			Supported: true,
+			Turns:     turns,
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances/my-solo-sdk/presentation", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+
+	var resp api.PresentationResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	assert.True(t, resp.Supported,
+		"daemon response must be forwarded unchanged for daemon-managed solo SDK rows with empty TaskFile")
+	assert.Equal(t, "my-solo-sdk", adapter.capturedTitle)
+}
+
 func TestHTTPHandler_Action_StandaloneInstance_Kill(t *testing.T) {
 	root := t.TempDir()
 	writeStateJSON(t, root, Record{Title: "solo-agent", Status: StatusRunning})

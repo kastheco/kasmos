@@ -221,6 +221,29 @@ func TestDaemonInstanceLister_SendInstancePrompt_DaemonError(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, clientErr.StatusCode)
 }
 
+// TestDaemonStatusToRecord_SDKSoloAgentMappedToRecord verifies that a daemon
+// status row with ExecutionMode:"sdk", SoloAgent:true, and SDKSpeedTier:"fast"
+// is converted to a livepreview.Record with those fields intact. This ensures
+// that daemon-spawned standalone SDK instances (e.g. via POST /v1/repos/…/instances/solo)
+// preserve their speed-tier and solo-agent metadata when they are merged into
+// the admin instance list.
+func TestDaemonStatusToRecord_SDKSoloAgentMappedToRecord(t *testing.T) {
+	status := api.InstanceStatus{
+		Title:         "my-solo-sdk",
+		Active:        true,
+		Program:       "claude",
+		ExecutionMode: "sdk",
+		SoloAgent:     true,
+		SDKSpeedTier:  "fast",
+	}
+	rec := daemonStatusToRecord(status)
+	assert.Equal(t, "sdk", rec.ExecutionMode, "execution_mode must be preserved")
+	assert.True(t, rec.SoloAgent, "solo_agent must be carried through from daemon status")
+	assert.Equal(t, "fast", rec.SDKSpeedTier, "sdk_speed_tier must be carried through from daemon status")
+	assert.True(t, rec.ManagedByDaemon, "ManagedByDaemon must be true for all daemon-sourced records")
+	assert.Equal(t, livepreview.StatusRunning, rec.Status)
+}
+
 // TestDaemonStatusToRecord_PreservesExecutionMode verifies that the
 // daemon/list adapter path carries execution_mode through the daemon
 // api.InstanceStatus -> livepreview.Record conversion. Without this, the

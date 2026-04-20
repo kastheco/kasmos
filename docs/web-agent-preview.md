@@ -24,7 +24,7 @@ GET /v1/repos/{project}/instances/{title}/presentation
 3. the SPA calls `getInstancePresentation(project, title)` and
    `sendInstancePermission(project, title, choice)` from `web/admin/src/api.ts`.
 
-## execution-mode and standalone-SDK distinction
+## execution-mode and daemon-managed distinction
 
 `InstanceEntry.execution_mode` drives which preview component renders:
 
@@ -38,9 +38,18 @@ the `headless` legacy value is normalised to `sdk` at the API boundary so older 
 not fall through to an unknown state (see `normalizeExecutionMode` in `web/admin/src/api.ts`).
 
 daemon-managed vs standalone is detected using the instance-list metadata — specifically
-the presence of daemon-provided `valid_actions` on an `sdk` row. standalone SDK rows do
-not fall back to `TerminalPreview`; they render the preview-unavailable placeholder while
-tmux continues to use `TerminalPreview` unchanged.
+the presence of daemon-provided `valid_actions` on an `sdk` row. **daemon-managed** means
+the daemon owns the row, which covers two cases:
+
+1. **plan-driven SDK agents** — wave execution agents started by the orchestrator.
+2. **TUI-spawned SDK agents** when the daemon owns the repo (i.e. started via
+   `POST /v1/repos/{project}/instances/solo`; the TUI sends this request and waits
+   for the title to appear in `ListInstances`).
+
+truly standalone SDK rows — legacy `state.json` records or manual/test rows not routed
+through the daemon — still have no web actions because the web path has no daemon to
+delegate to. they render the preview-unavailable placeholder while tmux instances continue
+to use `TerminalPreview` unchanged.
 
 ## filter storage key
 
