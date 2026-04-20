@@ -13,6 +13,7 @@ const (
 	presentationColorMuted  = "#6e6a86"
 	presentationColorSubtle = "#908caa"
 	presentationColorText   = "#e0def4"
+	presentationColorFoam   = "#9ccfd8"
 	presentationColorLove   = "#eb6f92"
 	presentationColorGold   = "#f6c177"
 	presentationColorRose   = "#ea9a97"
@@ -53,13 +54,18 @@ func RenderPresentation(turns []*PresentationTurn, width int) string {
 	footerRows := renderPresentationComposerFooter(width)
 
 	// Append a single activity row immediately above the composer footer when
-	// the last turn is still running and has derived activity information.
+	// the most recent non-nil turn is still running and has derived activity
+	// information.
 	var activityLine string
-	if len(turns) > 0 {
-		last := turns[len(turns)-1]
-		if last.Running() && last.Activity != nil {
+	for i := len(turns) - 1; i >= 0; i-- {
+		turn := turns[i]
+		if turn == nil {
+			continue
+		}
+		if turn.Running() && turn.Activity != nil {
 			activityStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
-			activityLine = activityStyle.Render(FormatActivityLabel(last.Activity, time.Now(), narrow))
+			activityLine = activityStyle.Render(FormatActivityLabel(turn.Activity, time.Now(), narrow))
+			break
 		}
 	}
 
@@ -75,6 +81,9 @@ func RenderPresentation(turns []*PresentationTurn, width int) string {
 }
 
 func renderPresentationTurn(turn *PresentationTurn, width int) []string {
+	if turn == nil {
+		return nil
+	}
 	narrow := width < presentationNarrowPaneThreshold
 	var rows []string
 
@@ -86,7 +95,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 	}
 
 	toolStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
-	userStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#9ccfd8"))
+	userStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
 	resultOKStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
 	resultErrStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
 	systemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
@@ -112,7 +121,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 					}
 					switch dl.Kind {
 					case DiffLineAdded:
-						rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose)).Render(diffRows[i]))
+						rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam)).Render(diffRows[i]))
 					case DiffLineRemoved:
 						rows = append(rows, resultErrStyle.Render(diffRows[i]))
 					default:

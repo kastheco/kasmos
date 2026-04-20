@@ -278,6 +278,49 @@ func TestClonePresentationTurns_DeepCopy_ToolPreview(t *testing.T) {
 	assert.Equal(t, "line1", src[0].Rows[0].ToolPreview.Lines[0])
 }
 
+// TestClonePresentationTurns_DeepCopy_EmptyPayloadSlices verifies that non-nil
+// empty payload slices are cloned independently rather than aliased.
+func TestClonePresentationTurns_DeepCopy_EmptyPayloadSlices(t *testing.T) {
+	src := []*PresentationTurn{
+		{
+			ID:     "t1",
+			Number: 1,
+			Rows: []PresentationRow{
+				{
+					Kind:     RowToolDiff,
+					ToolName: "Edit",
+					ToolDiff: &ToolDiffPayload{
+						Lines: make([]ToolDiffLine, 0, 1),
+					},
+				},
+				{
+					Kind:     RowToolPreview,
+					ToolName: "read_file",
+					ToolPreview: &ToolPreviewPayload{
+						Lines: make([]string, 0, 1),
+					},
+				},
+			},
+		},
+	}
+
+	cloned := ClonePresentationTurns(src)
+	require.Len(t, cloned, 1)
+	require.NotNil(t, cloned[0].Rows[0].ToolDiff.Lines)
+	require.NotNil(t, cloned[0].Rows[1].ToolPreview.Lines)
+
+	cloned[0].Rows[0].ToolDiff.Lines = append(cloned[0].Rows[0].ToolDiff.Lines, ToolDiffLine{Kind: DiffLineAdded})
+	cloned[0].Rows[1].ToolPreview.Lines = append(cloned[0].Rows[1].ToolPreview.Lines, "clone")
+
+	src[0].Rows[0].ToolDiff.Lines = append(src[0].Rows[0].ToolDiff.Lines, ToolDiffLine{Kind: DiffLineRemoved})
+	src[0].Rows[1].ToolPreview.Lines = append(src[0].Rows[1].ToolPreview.Lines, "source")
+
+	require.Len(t, cloned[0].Rows[0].ToolDiff.Lines, 1)
+	require.Len(t, cloned[0].Rows[1].ToolPreview.Lines, 1)
+	assert.Equal(t, DiffLineAdded, cloned[0].Rows[0].ToolDiff.Lines[0].Kind)
+	assert.Equal(t, "clone", cloned[0].Rows[1].ToolPreview.Lines[0])
+}
+
 // TestClonePresentationTurns_DeepCopy_Activity verifies that mutating the
 // clone's Activity does not affect the original.
 func TestClonePresentationTurns_DeepCopy_Activity(t *testing.T) {

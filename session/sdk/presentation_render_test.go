@@ -174,6 +174,43 @@ func TestRenderPresentation_ActivityRow_RunningTurn(t *testing.T) {
 	require.Contains(t, plain, "editing renderer.go", "activity row must include tool label")
 }
 
+func TestRenderPresentation_ActivityRow_ZeroStartedAt(t *testing.T) {
+	turn := &PresentationTurn{
+		ID:     "t1",
+		Number: 1,
+		Activity: &TurnActivity{
+			Kind:  "tool",
+			Label: "editing renderer.go",
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+	plain := stripANSI(result)
+
+	require.Contains(t, plain, "editing renderer.go")
+	require.Contains(t, plain, "00:00", "zero started_at must render as zero elapsed time")
+}
+
+func TestRenderPresentation_ActivityRow_SkipsNilTrailingTurn(t *testing.T) {
+	now := time.Now()
+	startedAt := now.Add(-10 * time.Second)
+	turn := &PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: startedAt,
+		Activity: &TurnActivity{
+			Kind:      "tool",
+			Label:     "editing renderer.go",
+			StartedAt: startedAt,
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn, nil}, 80)
+	plain := stripANSI(result)
+
+	require.Contains(t, plain, "editing renderer.go", "activity row must use the last non-nil running turn")
+}
+
 // TestRenderPresentation_ActivityRow_CompletedTurn verifies that a completed
 // turn does not emit an activity row regardless of Activity being set.
 func TestRenderPresentation_ActivityRow_CompletedTurn(t *testing.T) {

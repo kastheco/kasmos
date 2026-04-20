@@ -1401,6 +1401,32 @@ func TestPreviewPane_SDKPresentation_NarrowActivityLabel(t *testing.T) {
 		"narrow sticky must suppress long label text")
 }
 
+func TestPreviewPane_SDKPresentation_IgnoresNilTrailingTurn(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 24)
+
+	now := time.Now()
+	startedAt := now.Add(-8 * time.Second)
+	turn := &sdk.PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: startedAt,
+		Activity: &sdk.TurnActivity{
+			Kind:      "tool",
+			Label:     "editing renderer.go",
+			StartedAt: startedAt,
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn, nil})
+	require.NoError(t, pane.UpdateContent(inst))
+	require.NotNil(t, pane.sdkView)
+	require.NotEmpty(t, pane.sdkView.sticky, "sticky strip must use the last non-nil running turn")
+
+	plain := stripPreviewANSI(pane.String())
+	require.Contains(t, plain, "editing renderer.go")
+}
+
 // TestPreviewPane_SDKScrollMode_StickyStripPinnedOutsideViewport verifies that
 // entering scroll mode for an SDK session with a running activity sets up the
 // pinned strip and restricts the viewport height by one row.

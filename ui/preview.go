@@ -503,6 +503,9 @@ func buildSDKPresentationView(turns []*sdk.PresentationTurn, width int, composer
 
 	var parts []string
 	for _, turn := range turns {
+		if turn == nil {
+			continue
+		}
 		rows := renderSDKTurn(turn, width)
 		if len(rows) > 0 {
 			parts = append(parts, strings.Join(rows, "\n"))
@@ -519,12 +522,16 @@ func buildSDKPresentationView(turns []*sdk.PresentationTurn, width int, composer
 
 	// Derive sticky strip from the last running turn with activity.
 	sticky := ""
-	if len(turns) > 0 {
-		last := turns[len(turns)-1]
-		if last.Running() && last.Activity != nil {
-			label := sdk.FormatActivityLabel(last.Activity, now, narrow)
+	for i := len(turns) - 1; i >= 0; i-- {
+		turn := turns[i]
+		if turn == nil {
+			continue
+		}
+		if turn.Running() && turn.Activity != nil {
+			label := sdk.FormatActivityLabel(turn.Activity, now, narrow)
 			activityStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 			sticky = activityStyle.Render(label)
+			break
 		}
 	}
 
@@ -592,6 +599,9 @@ func (p *PreviewPane) renderSDKStructuredView() string {
 //   - the header is reduced to just "turn N" (no elapsed, tool count, running label)
 //   - the response divider collapses to a single muted rule row
 func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
+	if turn == nil {
+		return nil
+	}
 	narrow := width > 0 && width < narrowPaneThreshold
 	var rows []string
 

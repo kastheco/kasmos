@@ -105,9 +105,12 @@ func FormatActivityLabel(activity *TurnActivity, now time.Time, narrow bool) str
 		return ""
 	}
 
-	elapsed := now.Sub(activity.StartedAt)
-	if elapsed < 0 {
-		elapsed = 0
+	elapsed := time.Duration(0)
+	if !activity.StartedAt.IsZero() {
+		elapsed = now.Sub(activity.StartedAt)
+		if elapsed < 0 {
+			elapsed = 0
+		}
 	}
 	elapsedStr := formatElapsedClock(elapsed)
 

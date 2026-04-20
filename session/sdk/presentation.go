@@ -337,28 +337,12 @@ func ClonePresentationTurns(src []*PresentationTurn) []*PresentationTurn {
 			rowCp := row
 			if row.ToolDiff != nil {
 				td := *row.ToolDiff
-				if len(td.Lines) > 0 {
-					td.Lines = make([]ToolDiffLine, len(row.ToolDiff.Lines))
-					for k, line := range row.ToolDiff.Lines {
-						lineCp := line
-						if line.OldNumber != nil {
-							n := *line.OldNumber
-							lineCp.OldNumber = &n
-						}
-						if line.NewNumber != nil {
-							n := *line.NewNumber
-							lineCp.NewNumber = &n
-						}
-						td.Lines[k] = lineCp
-					}
-				}
+				td.Lines = cloneToolDiffLines(row.ToolDiff.Lines)
 				rowCp.ToolDiff = &td
 			}
 			if row.ToolPreview != nil {
 				tp := *row.ToolPreview
-				if len(tp.Lines) > 0 {
-					tp.Lines = append([]string(nil), tp.Lines...)
-				}
+				tp.Lines = cloneStringSlice(row.ToolPreview.Lines)
 				rowCp.ToolPreview = &tp
 			}
 			cp.Rows[j] = rowCp
@@ -369,6 +353,35 @@ func ClonePresentationTurns(src []*PresentationTurn) []*PresentationTurn {
 		}
 		out[i] = &cp
 	}
+	return out
+}
+
+func cloneToolDiffLines(src []ToolDiffLine) []ToolDiffLine {
+	if src == nil {
+		return nil
+	}
+	out := make([]ToolDiffLine, len(src))
+	for i, line := range src {
+		lineCp := line
+		if line.OldNumber != nil {
+			n := *line.OldNumber
+			lineCp.OldNumber = &n
+		}
+		if line.NewNumber != nil {
+			n := *line.NewNumber
+			lineCp.NewNumber = &n
+		}
+		out[i] = lineCp
+	}
+	return out
+}
+
+func cloneStringSlice(src []string) []string {
+	if src == nil {
+		return nil
+	}
+	out := make([]string, len(src))
+	copy(out, src)
 	return out
 }
 
