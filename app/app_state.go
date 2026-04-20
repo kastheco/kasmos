@@ -1795,7 +1795,7 @@ func (m *home) updateSidebarTasks() {
 			entry := m.taskState.Plans[p.Filename]
 			activeRound := 0
 			switch taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase) {
-			case taskfsm.ExecutionPhaseFixing, taskfsm.ExecutionPhaseReviewing:
+			case taskfsm.ExecutionPhaseFixing, taskfsm.ExecutionPhaseReviewing, "readiness_reviewing":
 				activeRound = entry.ReviewCycle + 1
 			}
 			planDisplays = append(planDisplays, ui.PlanDisplay{
@@ -1822,7 +1822,7 @@ func (m *home) updateSidebarTasks() {
 		entry := m.taskState.Plans[p.Filename]
 		activeRound := 0
 		switch taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase) {
-		case taskfsm.ExecutionPhaseFixing, taskfsm.ExecutionPhaseReviewing:
+		case taskfsm.ExecutionPhaseFixing, taskfsm.ExecutionPhaseReviewing, "readiness_reviewing":
 			activeRound = entry.ReviewCycle + 1
 		}
 		ungrouped = append(ungrouped, ui.PlanDisplay{

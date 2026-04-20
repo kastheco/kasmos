@@ -650,6 +650,9 @@ func navPlanPhaseLabel(phase string, activeWave, activeRound int) string {
 		}
 		return "reviewing"
 	case "readiness_reviewing":
+		if activeRound > 0 {
+			return fmt.Sprintf("readiness review %d", activeRound)
+		}
 		return "readiness review"
 	default:
 		return ""
