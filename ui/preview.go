@@ -548,9 +548,9 @@ func renderComposerFooter(width int, composer string, focused bool, speedTier st
 	if speedTier != "" {
 		label := speedTier
 		if speedTier == "fast" {
-			label = "fast (priority)"
+			label = "fast (2x)"
 		}
-		rows = append(rows, hintStyle.Render("speed tier: "+label+" (2x usage)"))
+		rows = append(rows, hintStyle.Render(label))
 	}
 	rows = append(rows, hints)
 	return rows

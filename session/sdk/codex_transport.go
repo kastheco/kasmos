@@ -111,8 +111,10 @@ type codexThreadStartParams struct {
 
 func codexServiceTier(speedTier string) string {
 	switch strings.TrimSpace(strings.ToLower(speedTier)) {
-	case "fast", "priority":
-		return "priority"
+	case "fast":
+		return "fast"
+	case "flex":
+		return "flex"
 	default:
 		return ""
 	}

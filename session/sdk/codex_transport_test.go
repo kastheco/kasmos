@@ -627,7 +627,7 @@ func TestCodexTransport_MultipleNotifications_AllDelivered(t *testing.T) {
 func ptr(s string) *string { return &s }
 
 // TestCodexTransport_Start_FastServiceTier verifies that kasmos' "fast" tier
-// maps to the documented priority processing service tier on thread/start.
+// is forwarded as the Codex app-server's accepted serviceTier value.
 func TestCodexTransport_Start_FastServiceTier(t *testing.T) {
 	proc := newFakeCodexProcess(t)
 	ct := &CodexTransport{
@@ -661,7 +661,7 @@ func TestCodexTransport_Start_FastServiceTier(t *testing.T) {
 	require.Equal(t, codexMethodThreadStart, threadStartMsg.Method)
 	var params codexThreadStartParams
 	require.NoError(t, json.Unmarshal(threadStartMsg.Params, &params))
-	assert.Equal(t, "priority", params.ServiceTier)
+	assert.Equal(t, "fast", params.ServiceTier)
 }
 
 // TestCodexTransport_Start_DefaultServiceTierOmitted verifies that when SpeedTier is

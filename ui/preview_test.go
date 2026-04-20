@@ -819,7 +819,7 @@ func TestPreviewPane_SDKPresentation_ShowsSpeedTierLabel(t *testing.T) {
 	inst.SDKSpeedTier = "fast"
 	require.NoError(t, pane.UpdateContent(inst))
 
-	require.Contains(t, pane.previewState.text, "speed tier: fast (priority) (2x usage)")
+	require.Contains(t, pane.previewState.text, "fast (2x)")
 }
 
 // TestPreviewPane_SDKPresentation_ClearsInheritedScrollModeOnInstanceSwitch
