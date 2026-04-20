@@ -187,13 +187,13 @@ type PresentationTurn struct {
 }
 
 type presentationRowJSON struct {
-	Kind        PresentationRowKind  `json:"kind"`
-	Text        string               `json:"text"`
-	Timestamp   *time.Time           `json:"timestamp"`
-	ToolName    string               `json:"tool_name"`
-	IsError     bool                 `json:"is_error"`
-	ToolDiff    *ToolDiffPayload     `json:"tool_diff,omitempty"`
-	ToolPreview *ToolPreviewPayload  `json:"tool_preview,omitempty"`
+	Kind        PresentationRowKind `json:"kind"`
+	Text        string              `json:"text"`
+	Timestamp   *time.Time          `json:"timestamp"`
+	ToolName    string              `json:"tool_name"`
+	IsError     bool                `json:"is_error"`
+	ToolDiff    *ToolDiffPayload    `json:"tool_diff,omitempty"`
+	ToolPreview *ToolPreviewPayload `json:"tool_preview,omitempty"`
 }
 
 type presentationTurnJSON struct {
