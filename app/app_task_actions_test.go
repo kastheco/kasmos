@@ -3072,7 +3072,7 @@ func TestSpawnTaskAgent_SoloSDKRoutesThroughDaemonWhenManaged(t *testing.T) {
 		instanceFinalizers: make(map[*session.Instance]func()),
 	}
 
-	_, cmd := h.spawnTaskAgent(planFile, "solo", "")
+	_, cmd := h.spawnTaskAgent(planFile, "solo", "solo prompt")
 	require.NotNil(t, cmd)
 
 	msg := cmd()
@@ -3091,6 +3091,7 @@ func TestSpawnTaskAgent_SoloSDKRoutesThroughDaemonWhenManaged(t *testing.T) {
 	require.NotNil(t, started.instance)
 	assert.NoError(t, started.err)
 	assert.True(t, capturedReq.SoloAgent, "SoloAgent must be set on the daemon request")
+	assert.Equal(t, "solo prompt", capturedReq.Prompt, "solo prompt must be forwarded to daemon request")
 	assert.Equal(t, planFile, capturedReq.TaskFile, "TaskFile must be forwarded to daemon request")
 	assert.True(t, started.instance.SoloAgent, "local placeholder must keep SoloAgent=true")
 }

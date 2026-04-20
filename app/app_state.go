@@ -3303,15 +3303,15 @@ func (m *home) beginSpawnAgentFlow() (tea.Model, tea.Cmd) {
 func (m *home) showSpawnAgentForm(program string) {
 	m.pendingSpawnProgram = program
 	m.state = stateSpawnAgent
-	fo := overlay.NewSpawnFormOverlay("spawn agent", 60)
+	formOverlay := overlay.NewSpawnFormOverlay("spawn agent", 60)
 	var hints []string
 	if m.pendingSpawnSpeedTier == "fast" {
 		hints = append(hints, "fast tier consumes 2x usage")
 	}
 	if len(hints) > 0 {
-		fo.SetFooterHint(strings.Join(hints, "\n"))
+		formOverlay.SetFooterHint(strings.Join(hints, "\n"))
 	}
-	m.overlays.Show(fo)
+	m.overlays.Show(formOverlay)
 }
 
 // newNamedAgentInstance builds the interactive ad-hoc session used by the
@@ -3519,6 +3519,7 @@ func (m *home) spawnTaskAgent(planFile, action, prompt string) (tea.Model, tea.C
 				req := api.SpawnSoloRequest{
 					Title:     capturedInst.Title,
 					Program:   capturedInst.Program,
+					Prompt:    capturedInst.QueuedPrompt,
 					TaskFile:  capturedPlanFile,
 					AgentType: capturedAgentType,
 					SoloAgent: true,

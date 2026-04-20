@@ -23,10 +23,10 @@ func TestPresentationTurn_JSONContract(t *testing.T) {
 		CompletedAt: completed,
 		Interrupted: false,
 		ToolCount:   2,
-			Rows: []PresentationRow{
-				{Kind: RowUser, Text: "show me the logs", Timestamp: ts},
-				{Kind: RowTool, Text: "bash(ls)", Timestamp: ts, ToolName: "bash", IsError: false},
-				{Kind: RowResult, Text: "file.go", Timestamp: ts, ToolName: "bash", IsError: false},
+		Rows: []PresentationRow{
+			{Kind: RowUser, Text: "show me the logs", Timestamp: ts},
+			{Kind: RowTool, Text: "bash(ls)", Timestamp: ts, ToolName: "bash", IsError: false},
+			{Kind: RowResult, Text: "file.go", Timestamp: ts, ToolName: "bash", IsError: false},
 			{Kind: RowResponse, Text: "", Timestamp: ts},
 			{Kind: RowProse, Text: "Here is the output.", Timestamp: ts},
 			{Kind: RowPermission, Text: "allow write?", Timestamp: ts},

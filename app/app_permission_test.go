@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"net/http"
 	"regexp"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskstate"
+	daemonpkg "github.com/kastheco/kasmos/daemon"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/session/tmux"
 	"github.com/kastheco/kasmos/ui"
@@ -405,6 +407,44 @@ func (s *stubDaemonActionClient) SendInstancePermissionResponse(project, title s
 		return s.sendPermissionResponseFunc(project, title, choice)
 	}
 	return nil
+}
+
+func TestDaemonRouteSend_LoadingPlaceholderRetriesStatusRace(t *testing.T) {
+	origClient := newDaemonActionClient
+	t.Cleanup(func() { newDaemonActionClient = origClient })
+
+	attempts := 0
+	newDaemonActionClient = func() daemonActionClient {
+		return &stubDaemonActionClient{
+			sendPromptFunc: func(project, title, prompt string) error {
+				attempts++
+				if attempts == 1 {
+					return &daemonpkg.ClientStatusError{
+						Method:     http.MethodPost,
+						Path:       "/v1/repos/myproj/instances/sdk-agent/send",
+						StatusCode: http.StatusNotFound,
+						Message:    "not found",
+					}
+				}
+				return nil
+			},
+		}
+	}
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "sdk-agent",
+		Path:          t.TempDir(),
+		Program:       "claude",
+		ExecutionMode: session.ExecutionModeSDK,
+	})
+	require.NoError(t, err)
+	inst.SetStatus(session.Loading)
+
+	m := &home{taskStoreProject: "myproj"}
+	handled, err := m.daemonRouteSend(inst, "hello")
+	require.True(t, handled)
+	require.NoError(t, err)
+	assert.Equal(t, 2, attempts, "daemonRouteSend should retry once the daemon registers the loading placeholder")
 }
 
 // TestHandleKeyPress_PermissionEsc_DismissesWithoutSending verifies that Esc closes

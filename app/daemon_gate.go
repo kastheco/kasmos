@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -350,7 +351,22 @@ func (m *home) daemonRouteSend(inst *session.Instance, prompt string) (bool, err
 		return true, fmt.Errorf("daemon route: no project for %q", inst.Title)
 	}
 	client := newDaemonActionClient()
-	return true, client.SendInstancePrompt(project, inst.Title, prompt)
+	deadline := time.Now().Add(plannerInstanceWaitTimeout)
+	for {
+		err := client.SendInstancePrompt(project, inst.Title, prompt)
+		if err == nil {
+			return true, nil
+		}
+		var statusErr *daemonpkg.ClientStatusError
+		if errors.As(err, &statusErr) &&
+			inst.Status == session.Loading &&
+			(statusErr.StatusCode == http.StatusNotFound || statusErr.StatusCode == http.StatusConflict) &&
+			time.Now().Before(deadline) {
+			time.Sleep(plannerInstancePollInterval)
+			continue
+		}
+		return true, err
+	}
 }
 
 // daemonRouteKill routes a kill action through the daemon API for SDK
