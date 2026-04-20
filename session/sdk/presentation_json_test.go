@@ -240,10 +240,13 @@ func TestClonePresentationTurns_DeepCopy_ToolDiff(t *testing.T) {
 	// Mutate the clone.
 	cloned[0].Rows[0].ToolDiff.Path = "mutated.go"
 	cloned[0].Rows[0].ToolDiff.Lines[0].NewText = "mutated"
+	*cloned[0].Rows[0].ToolDiff.Lines[0].NewNumber = 99
 
 	// Original must be unchanged.
 	assert.Equal(t, "a.go", src[0].Rows[0].ToolDiff.Path)
 	assert.Equal(t, "added", src[0].Rows[0].ToolDiff.Lines[0].NewText)
+	require.NotNil(t, src[0].Rows[0].ToolDiff.Lines[0].NewNumber)
+	assert.Equal(t, 1, *src[0].Rows[0].ToolDiff.Lines[0].NewNumber)
 }
 
 // TestClonePresentationTurns_DeepCopy_ToolPreview verifies that mutating the

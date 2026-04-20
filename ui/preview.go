@@ -1044,7 +1044,11 @@ func (p *PreviewPane) enterScrollMode(instance *session.Instance) error {
 	p.viewport.SetHeight(viewportHeight)
 
 	footer := lipgloss.NewStyle().Foreground(ColorMuted).Render("esc exit scroll mode")
-	p.viewport.SetContent(lipgloss.JoinVertical(lipgloss.Left, content, footer))
+	if p.sdkScrollStrip != "" {
+		p.viewport.SetContent(content)
+	} else {
+		p.viewport.SetContent(lipgloss.JoinVertical(lipgloss.Left, content, footer))
+	}
 	p.viewport.GotoBottom()
 	p.isScrolling = true
 	return nil

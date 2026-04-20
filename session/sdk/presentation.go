@@ -338,7 +338,19 @@ func ClonePresentationTurns(src []*PresentationTurn) []*PresentationTurn {
 			if row.ToolDiff != nil {
 				td := *row.ToolDiff
 				if len(td.Lines) > 0 {
-					td.Lines = append([]ToolDiffLine(nil), td.Lines...)
+					td.Lines = make([]ToolDiffLine, len(row.ToolDiff.Lines))
+					for k, line := range row.ToolDiff.Lines {
+						lineCp := line
+						if line.OldNumber != nil {
+							n := *line.OldNumber
+							lineCp.OldNumber = &n
+						}
+						if line.NewNumber != nil {
+							n := *line.NewNumber
+							lineCp.NewNumber = &n
+						}
+						td.Lines[k] = lineCp
+					}
 				}
 				rowCp.ToolDiff = &td
 			}

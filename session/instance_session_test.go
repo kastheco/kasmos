@@ -152,12 +152,15 @@ func TestInstance_SetCachedPresentation_DeepCopy_ToolDiff(t *testing.T) {
 	// Mutate the original after storing.
 	turns[0].Rows[0].ToolDiff.Path = "mutated.go"
 	turns[0].Rows[0].ToolDiff.Lines[0].NewText = "mutated"
+	*turns[0].Rows[0].ToolDiff.Lines[0].NewNumber = 99
 
 	result := inst.CapturePresentation()
 	require.Len(t, result, 1)
 	require.NotNil(t, result[0].Rows[0].ToolDiff)
 	assert.Equal(t, "original.go", result[0].Rows[0].ToolDiff.Path)
 	assert.Equal(t, "added", result[0].Rows[0].ToolDiff.Lines[0].NewText)
+	require.NotNil(t, result[0].Rows[0].ToolDiff.Lines[0].NewNumber)
+	assert.Equal(t, 1, *result[0].Rows[0].ToolDiff.Lines[0].NewNumber)
 }
 
 // TestInstance_SetCachedPresentation_DeepCopy_ToolPreview verifies that

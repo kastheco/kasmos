@@ -1443,6 +1443,8 @@ func TestPreviewPane_SDKScrollMode_StickyStripPinnedOutsideViewport(t *testing.T
 	require.Contains(t, rendered, "✺", "pinned strip must appear in String() output")
 	require.Contains(t, rendered, "esc exit scroll mode",
 		"esc hint must appear in the pinned strip")
+	require.Equal(t, 1, strings.Count(rendered, "esc exit scroll mode"),
+		"sdk scroll mode must keep the esc hint in the pinned strip only")
 }
 
 // TestPreviewPane_SDKScrollMode_StickyStripClearedOnExit verifies that
