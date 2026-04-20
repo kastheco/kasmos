@@ -93,7 +93,7 @@ func TestInstance_Preview_WithSDKPresentation(t *testing.T) {
 
 	preview, err := inst.Preview()
 	require.NoError(t, err)
-	assert.Contains(t, preview, "response")
+	assert.NotContains(t, preview, "response")
 	assert.Contains(t, preview, "assistant text")
 	assert.Contains(t, preview, "> send a message to the agent")
 }
