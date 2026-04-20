@@ -761,6 +761,33 @@ func TestPreviewPane_SDKPresentation_ShowsPlaceholderWhenNoOutput(t *testing.T) 
 		"no turns and no cache must set fallback state")
 }
 
+func TestPreviewPane_SDKPresentation_UsesCachedPresentationForPlaceholder(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 24)
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:   "daemon-sdk-placeholder",
+		Path:    t.TempDir(),
+		Program: "bash",
+	})
+	require.NoError(t, err)
+	inst.ExecutionMode = session.ExecutionModeSDK
+	inst.SetCachedPresentation([]*sdk.PresentationTurn{
+		{
+			ID:     "t1",
+			Number: 1,
+			Rows: []sdk.PresentationRow{
+				{Kind: sdk.RowResponse},
+				{Kind: sdk.RowProse, Text: "placeholder structured output"},
+			},
+		},
+	})
+
+	require.NoError(t, pane.UpdateContent(inst))
+	require.False(t, pane.previewState.fallback)
+	require.Contains(t, pane.previewState.text, "placeholder structured output")
+}
+
 // TestPreviewPane_SDKPresentation_ClearsInheritedScrollModeOnInstanceSwitch
 // verifies that switching from a previously scrolled instance to an SDK
 // instance with structured turns exits scroll mode so the new timeline renders

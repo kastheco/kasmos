@@ -8,6 +8,7 @@ import (
 
 	"github.com/kastheco/kasmos/session/common"
 	"github.com/kastheco/kasmos/session/git"
+	"github.com/kastheco/kasmos/session/sdk"
 )
 
 // Status represents the current state of an instance.
@@ -149,6 +150,9 @@ type Instance struct {
 	CachedContent string
 	// CachedContentSet is true once CachedContent has been populated for the first time.
 	CachedContentSet bool
+	// CachedPresentation stores structured SDK preview turns for daemon-managed
+	// placeholder instances that have no local execution session.
+	CachedPresentation []*sdk.PresentationTurn
 
 	// started is true once Start() has been called successfully.
 	started bool

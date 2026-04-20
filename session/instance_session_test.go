@@ -45,6 +45,29 @@ func TestInstance_CapturePresentation_NotStarted(t *testing.T) {
 	assert.Nil(t, result)
 }
 
+func TestInstance_CapturePresentation_UsesCachedPresentationForPlaceholder(t *testing.T) {
+	inst := &Instance{}
+	inst.SetCachedPresentation([]*sdk.PresentationTurn{
+		{
+			ID:     "t1",
+			Number: 1,
+			Rows: []sdk.PresentationRow{
+				{Kind: sdk.RowResponse},
+				{Kind: sdk.RowProse, Text: "cached daemon output"},
+			},
+		},
+	})
+
+	result := inst.CapturePresentation()
+	require.Len(t, result, 1)
+	assert.Equal(t, "cached daemon output", result[0].Rows[1].Text)
+
+	result[0].Rows[1].Text = "mutated"
+	fresh := inst.CapturePresentation()
+	require.Len(t, fresh, 1)
+	assert.Equal(t, "cached daemon output", fresh[0].Rows[1].Text)
+}
+
 func TestInstance_CapturePresentation_NilSession(t *testing.T) {
 	inst := &Instance{started: true}
 	// executionSession is nil

@@ -164,17 +164,40 @@ func (i *Instance) Interrupt() error {
 }
 
 // CapturePresentation returns the structured turn-grouped presentation model
-// for SDK-backed instances. Returns nil for tmux-backed instances or when the
-// instance has not been started. The type assertion follows the same optional-
-// capability pattern as pendingPermissionProvider / CollectMetadata.
+// for SDK-backed instances. It prefers a live local execution session when one
+// is available, otherwise it falls back to any cached daemon presentation turns
+// stored on the instance placeholder.
 func (i *Instance) CapturePresentation() []*sdk.PresentationTurn {
-	if !i.started || i.executionSession == nil {
+	if i.executionSession != nil {
+		if pp, ok := i.executionSession.(presentationProvider); ok {
+			return pp.CapturePresentation()
+		}
+	}
+	return clonePresentationTurns(i.CachedPresentation)
+}
+
+// SetCachedPresentation stores a deep copy of daemon-fetched SDK presentation
+// turns so placeholder instances can render structured output without a local
+// execution session.
+func (i *Instance) SetCachedPresentation(turns []*sdk.PresentationTurn) {
+	i.CachedPresentation = clonePresentationTurns(turns)
+}
+
+func clonePresentationTurns(src []*sdk.PresentationTurn) []*sdk.PresentationTurn {
+	if len(src) == 0 {
 		return nil
 	}
-	if pp, ok := i.executionSession.(presentationProvider); ok {
-		return pp.CapturePresentation()
+	out := make([]*sdk.PresentationTurn, len(src))
+	for i, turn := range src {
+		if turn == nil {
+			continue
+		}
+		cp := *turn
+		cp.Rows = make([]sdk.PresentationRow, len(turn.Rows))
+		copy(cp.Rows, turn.Rows)
+		out[i] = &cp
 	}
-	return nil
+	return out
 }
 
 // SetExecutionSessionForTest replaces the execution session without starting the

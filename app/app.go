@@ -28,6 +28,7 @@ import (
 	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
 	gitpkg "github.com/kastheco/kasmos/session/git"
+	sessionsdk "github.com/kastheco/kasmos/session/sdk"
 	"github.com/kastheco/kasmos/session/tmux"
 	"github.com/kastheco/kasmos/ui"
 	"github.com/kastheco/kasmos/ui/overlay"
@@ -1041,6 +1042,16 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// control-socket API so the TUI preview reflects what the
 				// agent is actually doing.
 				if daemonClient != nil && !inst.Started() && session.NormalizeExecutionMode(inst.ExecutionMode) == session.ExecutionModeSDK {
+					turns, supported, err := daemonClient.CapturePresentation(project, inst.Title)
+					if err == nil && supported {
+						results = append(results, instanceMetadata{
+							Title:              inst.Title,
+							PresentationTurns:  turns,
+							PresentationCached: true,
+							TmuxAlive:          true,
+						})
+						continue
+					}
 					content, err := daemonClient.CaptureInstance(project, inst.Title, "", "")
 					if err != nil {
 						results = append(results, instanceMetadata{Title: inst.Title})
@@ -1772,6 +1783,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			inst, ok := instanceMap[md.Title]
 			if !ok {
 				continue
+			}
+
+			if md.PresentationCached {
+				inst.SetCachedPresentation(md.PresentationTurns)
 			}
 
 			if md.ContentCaptured {
@@ -3062,6 +3077,8 @@ type instanceMetadata struct {
 	Title              string
 	Content            string // tmux capture-pane output (reused for preview, activity, hash)
 	ContentCaptured    bool
+	PresentationTurns  []*sessionsdk.PresentationTurn
+	PresentationCached bool
 	Updated            bool
 	HasPrompt          bool
 	CPUPercent         float64

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/session/sdk"
 	"github.com/kastheco/kasmos/session/tmux"
 )
 
@@ -124,6 +125,27 @@ func (c *SocketClient) CaptureInstance(project, title, start, end string) (strin
 		return "", fmt.Errorf("client: read capture body: %w", err)
 	}
 	return buf.String(), nil
+}
+
+// CapturePresentation fetches structured SDK presentation turns for a daemon-
+// tracked instance. It returns supported=false for non-SDK instances and nil
+// turns when the SDK session has not produced any turn data yet.
+func (c *SocketClient) CapturePresentation(project, title string) ([]*sdk.PresentationTurn, bool, error) {
+	var resp api.PresentationResponse
+	if err := c.get("/v1/repos/"+project+"/instances/"+title+"/presentation", &resp); err != nil {
+		return nil, false, err
+	}
+	if !resp.Supported {
+		return nil, false, nil
+	}
+	if len(resp.Turns) == 0 || string(resp.Turns) == "null" {
+		return nil, true, nil
+	}
+	var turns []*sdk.PresentationTurn
+	if err := json.Unmarshal(resp.Turns, &turns); err != nil {
+		return nil, true, fmt.Errorf("client: decode presentation %s/%s: %w", project, title, err)
+	}
+	return turns, true, nil
 }
 
 // SendInstancePrompt delivers a new user turn to a daemon-tracked instance.

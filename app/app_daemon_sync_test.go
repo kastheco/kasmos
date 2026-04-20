@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -19,6 +21,7 @@ import (
 	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/session"
+	sessionsdk "github.com/kastheco/kasmos/session/sdk"
 	"github.com/kastheco/kasmos/ui"
 	"github.com/kastheco/kasmos/ui/overlay"
 	"github.com/stretchr/testify/assert"
@@ -537,6 +540,85 @@ func TestDaemonSync_WaveTaskIndexAndCountPropagatedFromDaemonStatus(t *testing.T
 	assert.Equal(t, session.Running, live.Status)
 	assert.Equal(t, 2, live.WaveTaskIndex, "restored instance must carry WaveTaskIndex")
 	assert.Equal(t, 3, live.WaveTaskCount, "restored instance must carry WaveTaskCount")
+}
+
+func TestDaemonSync_SDKPlaceholderCachesPresentationFromDaemon(t *testing.T) {
+	const planFile = "feature"
+	h, dir := newDaemonSyncTestHome(t, planFile)
+
+	oldManaged := repoManagedByDaemon
+	oldListInstances := listDaemonInstances
+	t.Cleanup(func() {
+		repoManagedByDaemon = oldManaged
+		listDaemonInstances = oldListInstances
+	})
+
+	repoManagedByDaemon = func(repoPath string) bool {
+		return filepath.Clean(repoPath) == filepath.Clean(dir)
+	}
+	listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
+		require.Equal(t, "test", project)
+		return []api.InstanceStatus{{
+			Title:         "sdk-agent",
+			Plan:          planFile,
+			Role:          session.AgentTypeMaster,
+			Active:        true,
+			Program:       "codex",
+			ExecutionMode: string(session.ExecutionModeSDK),
+		}}, nil
+	}
+
+	rawTurns, err := json.Marshal([]*sessionsdk.PresentationTurn{{
+		ID:     "t1",
+		Number: 1,
+		Rows: []sessionsdk.PresentationRow{
+			{Kind: sessionsdk.RowResponse},
+			{Kind: sessionsdk.RowProse, Text: "daemon structured output"},
+		},
+	}})
+	require.NoError(t, err)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/repos/test/instances/sdk-agent/presentation", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(api.PresentationResponse{
+			Supported:  true,
+			Turns:      rawTurns,
+			CapturedAt: time.Now().UTC(),
+		}))
+	})
+	startTestDaemonSocketServer(t, mux)
+
+	_, cmd := h.Update(tickUpdateMetadataMessage{})
+	require.NotNil(t, cmd)
+	msg, ok := cmd().(metadataResultMsg)
+	require.True(t, ok)
+
+	model, _ := h.Update(msg)
+	updated := model.(*home)
+	require.Len(t, updated.nav.GetInstances(), 1)
+	placeholder := updated.nav.GetInstances()[0]
+	assert.False(t, placeholder.Started())
+	assert.Equal(t, session.ExecutionModeSDK, session.NormalizeExecutionMode(placeholder.ExecutionMode))
+	assert.Nil(t, placeholder.CapturePresentation(), "first tick restores the placeholder before metadata is available")
+
+	_, cmd = updated.Update(tickUpdateMetadataMessage{})
+	require.NotNil(t, cmd)
+	msg, ok = cmd().(metadataResultMsg)
+	require.True(t, ok)
+	require.Len(t, msg.Results, 1)
+	assert.True(t, msg.Results[0].PresentationCached)
+	require.Len(t, msg.Results[0].PresentationTurns, 1)
+
+	model, _ = updated.Update(msg)
+	updated = model.(*home)
+	require.Len(t, updated.nav.GetInstances(), 1)
+	placeholder = updated.nav.GetInstances()[0]
+
+	turns := placeholder.CapturePresentation()
+	require.Len(t, turns, 1)
+	require.Len(t, turns[0].Rows, 2)
+	assert.Equal(t, "daemon structured output", turns[0].Rows[1].Text)
 }
 
 func TestDaemonSync_TUIStartedLoadingInstanceNotExpired(t *testing.T) {
