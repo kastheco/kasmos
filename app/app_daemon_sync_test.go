@@ -686,6 +686,138 @@ func TestDaemonSync_DeleteDismissedDeadInstanceDoesNotReappear(t *testing.T) {
 	assert.Equal(t, 0, updated.nav.TotalInstances())
 }
 
+// TestDaemonSync_SDKPresentation_PreservesNestedFieldsAfterSync asserts that
+// daemon placeholder sync preserves tool_diff, tool_preview, and activity
+// fields after SetCachedPresentation() and that later reads via
+// CapturePresentation() do not alias the cached copy.
+func TestDaemonSync_SDKPresentation_PreservesNestedFieldsAfterSync(t *testing.T) {
+	const planFile = "feature"
+	h, dir := newDaemonSyncTestHome(t, planFile)
+
+	oldManaged := repoManagedByDaemon
+	oldListInstances := listDaemonInstances
+	t.Cleanup(func() {
+		repoManagedByDaemon = oldManaged
+		listDaemonInstances = oldListInstances
+	})
+
+	repoManagedByDaemon = func(repoPath string) bool {
+		return filepath.Clean(repoPath) == filepath.Clean(dir)
+	}
+	listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
+		require.Equal(t, "test", project)
+		return []api.InstanceStatus{{
+			Title:         "sdk-agent",
+			Plan:          planFile,
+			Role:          session.AgentTypeCoder,
+			Active:        true,
+			Program:       "codex",
+			ExecutionMode: string(session.ExecutionModeSDK),
+		}}, nil
+	}
+
+	oldN, newN := 1, 1
+	turns := []*sessionsdk.PresentationTurn{{
+		ID:     "t1",
+		Number: 1,
+		Activity: &sessionsdk.TurnActivity{
+			Kind:  "tool",
+			Label: "Edit foo.go",
+		},
+		Rows: []sessionsdk.PresentationRow{
+			{
+				Kind:     sessionsdk.RowToolDiff,
+				ToolName: "Edit",
+				ToolDiff: &sessionsdk.ToolDiffPayload{
+					Path: "foo.go",
+					Lines: []sessionsdk.ToolDiffLine{
+						{Kind: sessionsdk.DiffLineRemoved, OldNumber: &oldN, OldText: "old"},
+						{Kind: sessionsdk.DiffLineAdded, NewNumber: &newN, NewText: "new"},
+					},
+				},
+			},
+			{
+				Kind:     sessionsdk.RowToolPreview,
+				ToolName: "Bash",
+				ToolPreview: &sessionsdk.ToolPreviewPayload{
+					Lines: []string{"result output"},
+				},
+			},
+		},
+	}}
+
+	rawTurns, err := json.Marshal(turns)
+	require.NoError(t, err)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/repos/test/instances/sdk-agent/presentation", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(api.PresentationResponse{
+			Supported:  true,
+			Turns:      rawTurns,
+			CapturedAt: time.Now().UTC(),
+		}))
+	})
+	startTestDaemonSocketServer(t, mux)
+
+	// First tick: placeholder rehydrated; presentation not yet fetched.
+	_, cmd := h.Update(tickUpdateMetadataMessage{})
+	require.NotNil(t, cmd)
+	msg, ok := cmd().(metadataResultMsg)
+	require.True(t, ok)
+	model, _ := h.Update(msg)
+	updated := model.(*home)
+
+	// Second tick: presentation is fetched from the daemon and cached.
+	_, cmd = updated.Update(tickUpdateMetadataMessage{})
+	require.NotNil(t, cmd)
+	msg, ok = cmd().(metadataResultMsg)
+	require.True(t, ok)
+	require.Len(t, msg.Results, 1)
+	require.True(t, msg.Results[0].PresentationCached,
+		"second tick must cache presentation from daemon")
+	require.Len(t, msg.Results[0].PresentationTurns, 1)
+
+	model, _ = updated.Update(msg)
+	updated = model.(*home)
+	require.Len(t, updated.nav.GetInstances(), 1)
+	placeholder := updated.nav.GetInstances()[0]
+
+	// Verify nested fields survive the full daemon sync round-trip.
+	cachedTurns := placeholder.CapturePresentation()
+	require.Len(t, cachedTurns, 1)
+	turn := cachedTurns[0]
+
+	require.NotNil(t, turn.Activity, "activity must be preserved through daemon sync")
+	assert.Equal(t, "tool", turn.Activity.Kind)
+	assert.Equal(t, "Edit foo.go", turn.Activity.Label)
+
+	require.Len(t, turn.Rows, 2)
+	diffRow := turn.Rows[0]
+	require.NotNil(t, diffRow.ToolDiff, "tool_diff must survive daemon sync round-trip")
+	assert.Equal(t, "foo.go", diffRow.ToolDiff.Path)
+	require.Len(t, diffRow.ToolDiff.Lines, 2)
+	assert.Equal(t, sessionsdk.DiffLineRemoved, diffRow.ToolDiff.Lines[0].Kind)
+	assert.Equal(t, sessionsdk.DiffLineAdded, diffRow.ToolDiff.Lines[1].Kind)
+
+	previewRow := turn.Rows[1]
+	require.NotNil(t, previewRow.ToolPreview, "tool_preview must survive daemon sync round-trip")
+	require.Len(t, previewRow.ToolPreview.Lines, 1)
+	assert.Equal(t, "result output", previewRow.ToolPreview.Lines[0])
+
+	// Verify no aliasing: mutating the returned slice must not affect a
+	// subsequent CapturePresentation() call.
+	cachedTurns[0].Rows[0].ToolDiff.Path = "mutated.go"
+	cachedTurns[0].Rows[1].ToolPreview.Lines[0] = "mutated"
+
+	fresh := placeholder.CapturePresentation()
+	require.Len(t, fresh, 1)
+	assert.Equal(t, "foo.go", fresh[0].Rows[0].ToolDiff.Path,
+		"CapturePresentation must return independent copies, not aliases of the cache")
+	assert.Equal(t, "result output", fresh[0].Rows[1].ToolPreview.Lines[0],
+		"CapturePresentation must return independent copies, not aliases of the cache")
+}
+
 // TestNewDaemonSDKInstance_CopiesSoloAgentAndSpeedTier verifies that the
 // SoloAgent flag and SDKSpeedTier from the daemon's InstanceStatus are
 // preserved on the constructed placeholder so TUI restore shows the correct

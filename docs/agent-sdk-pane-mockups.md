@@ -186,12 +186,16 @@ risk:
 |--------------------------------------------------------------------------------------------------|
 | turn 184  00:09                                                                                 |
 |   thinking   6.2s  planning renderer changes in session/sdk/renderer.go                 [show]  |
-|   tool       grep renderer.go                                                                 |
-|   result     4 items                                                                          |
-|   tool       read_file renderer.go                                                            |
-|   result     297 lines                                                                        |
-|   tool       go test ./session/sdk                                                            |
+|   tool       Edit session/sdk/renderer.go                                                     |
+|   diff  ─────────────────────────────────── renderer.go ──────────────────────────────────    |
+|         1   - func renderTurn(t *Turn) string {                                               |
+|         1   + func renderSDKTurn(t *PresentationTurn, width int) []string {                   |
+|         2   + 	if t == nil { return nil }                                                   |
+|         ··· 44 lines hidden                                                                    |
 |   result     ok                                                                               |
+|   tool       Bash: go test ./session/sdk/...                                                  |
+|   preview ───────────────────────────────── output ───────────────────────────────────────    |
+|         ok   github.com/kastheco/kasmos/session/sdk   (cached)                               |
 |   -------------------------------------- response -------------------------------------------   |
 |     i found that the current renderer keeps tool output readable by compressing results into   |
 |     one line, but it loses turn-level grouping. the fastest path is to keep the log layout     |
@@ -204,6 +208,7 @@ risk:
 |--------------------------------------------------------------------------------------------------|
 | > continue with the grouped-turn version                                                        |
 |   enter send   shift+enter newline   esc unfocus                              idle prompt       |
+|  ✺ editing renderer.go  00:12                                                                  |
 +--------------------------------------------------------------------------------------------------+
 ```
 
@@ -212,6 +217,17 @@ implementation notes:
 - easiest variant for future additions like `patch`, `diff`, `retry`, `interrupted`, or `applied`
 - probably needs the pane to understand turns as grouped objects, not just lines
 - this is the variant that best matches codex cli's visual rhythm: dim setup rows, a divider, then bright prose
+- **inline diff blocks** (`RowToolDiff`) are emitted by the in-process LCS differ in
+  `session/sdk/tool_diff.go`; no external `difft` binary is required
+- **inline text preview blocks** (`RowToolPreview`) show a capped slice of non-error
+  tool result text extracted by `session/sdk/tool_preview.go`
+- the **pinned `working + elapsed` strip** (bottom line above the composer) is rendered by
+  `ui/preview.go:buildSDKPresentationView`; it is derived from the last running turn's
+  `Activity` field on every preview tick and disappears when the turn completes
+- hard-coded line caps (both defaulting to 50):
+  - `diffPreviewMaxLines = 50` — maximum visible diff lines per `ToolDiffPayload`
+  - `textPreviewMaxLines = 50` — maximum visible lines per `ToolPreviewPayload`
+    (reuses `diffPreviewMaxLines`; both tools use the same constant)
 
 ## codex-inspired styling pass
 

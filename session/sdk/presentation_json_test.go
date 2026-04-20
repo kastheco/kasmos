@@ -116,3 +116,241 @@ func TestPresentationTurn_JSONContract_Running(t *testing.T) {
 	require.Len(t, decoded.Rows, 1)
 	assert.Equal(t, RowThinking, decoded.Rows[0].Kind)
 }
+
+// TestPresentationTurn_JSONContract_WithPayloadFields verifies that ToolDiff,
+// ToolPreview, and Activity fields survive a JSON round-trip.
+func TestPresentationTurn_JSONContract_WithPayloadFields(t *testing.T) {
+	ts := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	oldN, newN := 1, 1
+
+	turn := &PresentationTurn{
+		ID:        "turn-xyz",
+		Number:    1,
+		StartedAt: ts,
+		Rows: []PresentationRow{
+			{
+				Kind:      RowToolDiff,
+				Timestamp: ts,
+				ToolName:  "Edit",
+				ToolDiff: &ToolDiffPayload{
+					Path: "foo.go",
+					Lines: []ToolDiffLine{
+						{Kind: DiffLineContext, OldNumber: &oldN, NewNumber: &newN, OldText: "ctx", NewText: "ctx"},
+					},
+					Truncated:       false,
+					HiddenLineCount: 0,
+				},
+			},
+			{
+				Kind:      RowToolPreview,
+				Timestamp: ts,
+				ToolName:  "read_file",
+				ToolPreview: &ToolPreviewPayload{
+					Lines:           []string{"line1", "line2"},
+					Truncated:       true,
+					HiddenLineCount: 5,
+				},
+			},
+		},
+		Activity: &TurnActivity{
+			Kind:      "tool",
+			Label:     "Edit foo.go",
+			StartedAt: ts,
+		},
+	}
+
+	data, err := json.Marshal(turn)
+	require.NoError(t, err)
+
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(data, &raw))
+
+	// Activity must appear in the wire format.
+	assert.Contains(t, raw, "activity")
+
+	// Rows must encode ToolDiff and ToolPreview payloads.
+	rows, ok := raw["rows"].([]any)
+	require.True(t, ok)
+	require.Len(t, rows, 2)
+
+	row0, ok := rows[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "tool_diff", row0["kind"])
+	assert.NotNil(t, row0["tool_diff"])
+
+	row1, ok := rows[1].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "tool_preview", row1["kind"])
+	assert.NotNil(t, row1["tool_preview"])
+
+	// Full round-trip.
+	var decoded PresentationTurn
+	require.NoError(t, json.Unmarshal(data, &decoded))
+
+	require.Len(t, decoded.Rows, 2)
+	require.NotNil(t, decoded.Rows[0].ToolDiff)
+	assert.Equal(t, "foo.go", decoded.Rows[0].ToolDiff.Path)
+	require.Len(t, decoded.Rows[0].ToolDiff.Lines, 1)
+	assert.Equal(t, DiffLineContext, decoded.Rows[0].ToolDiff.Lines[0].Kind)
+
+	require.NotNil(t, decoded.Rows[1].ToolPreview)
+	assert.Equal(t, []string{"line1", "line2"}, decoded.Rows[1].ToolPreview.Lines)
+	assert.True(t, decoded.Rows[1].ToolPreview.Truncated)
+	assert.Equal(t, 5, decoded.Rows[1].ToolPreview.HiddenLineCount)
+
+	require.NotNil(t, decoded.Activity)
+	assert.Equal(t, "tool", decoded.Activity.Kind)
+	assert.Equal(t, "Edit foo.go", decoded.Activity.Label)
+	assert.True(t, decoded.Activity.StartedAt.Equal(ts))
+}
+
+// TestClonePresentationTurns_NilAndEmpty verifies degenerate inputs.
+func TestClonePresentationTurns_NilAndEmpty(t *testing.T) {
+	assert.Nil(t, ClonePresentationTurns(nil))
+	assert.Nil(t, ClonePresentationTurns([]*PresentationTurn{}))
+}
+
+// TestClonePresentationTurns_DeepCopy_ToolDiff verifies that mutating the
+// clone's ToolDiff does not affect the original.
+func TestClonePresentationTurns_DeepCopy_ToolDiff(t *testing.T) {
+	oldN, newN := 1, 1
+	src := []*PresentationTurn{
+		{
+			ID:     "t1",
+			Number: 1,
+			Rows: []PresentationRow{
+				{
+					Kind:     RowToolDiff,
+					ToolName: "Edit",
+					ToolDiff: &ToolDiffPayload{
+						Path: "a.go",
+						Lines: []ToolDiffLine{
+							{Kind: DiffLineAdded, NewNumber: &newN, NewText: "added"},
+							{Kind: DiffLineRemoved, OldNumber: &oldN, OldText: "removed"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	cloned := ClonePresentationTurns(src)
+	require.Len(t, cloned, 1)
+
+	// Mutate the clone.
+	cloned[0].Rows[0].ToolDiff.Path = "mutated.go"
+	cloned[0].Rows[0].ToolDiff.Lines[0].NewText = "mutated"
+	*cloned[0].Rows[0].ToolDiff.Lines[0].NewNumber = 99
+
+	// Original must be unchanged.
+	assert.Equal(t, "a.go", src[0].Rows[0].ToolDiff.Path)
+	assert.Equal(t, "added", src[0].Rows[0].ToolDiff.Lines[0].NewText)
+	require.NotNil(t, src[0].Rows[0].ToolDiff.Lines[0].NewNumber)
+	assert.Equal(t, 1, *src[0].Rows[0].ToolDiff.Lines[0].NewNumber)
+}
+
+// TestClonePresentationTurns_DeepCopy_ToolPreview verifies that mutating the
+// clone's ToolPreview does not affect the original.
+func TestClonePresentationTurns_DeepCopy_ToolPreview(t *testing.T) {
+	src := []*PresentationTurn{
+		{
+			ID:     "t1",
+			Number: 1,
+			Rows: []PresentationRow{
+				{
+					Kind:     RowToolPreview,
+					ToolName: "read_file",
+					ToolPreview: &ToolPreviewPayload{
+						Lines: []string{"line1", "line2"},
+					},
+				},
+			},
+		},
+	}
+
+	cloned := ClonePresentationTurns(src)
+	require.Len(t, cloned, 1)
+
+	// Mutate the clone.
+	cloned[0].Rows[0].ToolPreview.Lines[0] = "mutated"
+
+	// Original must be unchanged.
+	assert.Equal(t, "line1", src[0].Rows[0].ToolPreview.Lines[0])
+}
+
+// TestClonePresentationTurns_DeepCopy_EmptyPayloadSlices verifies that non-nil
+// empty payload slices are cloned independently rather than aliased.
+func TestClonePresentationTurns_DeepCopy_EmptyPayloadSlices(t *testing.T) {
+	src := []*PresentationTurn{
+		{
+			ID:     "t1",
+			Number: 1,
+			Rows: []PresentationRow{
+				{
+					Kind:     RowToolDiff,
+					ToolName: "Edit",
+					ToolDiff: &ToolDiffPayload{
+						Lines: make([]ToolDiffLine, 0, 1),
+					},
+				},
+				{
+					Kind:     RowToolPreview,
+					ToolName: "read_file",
+					ToolPreview: &ToolPreviewPayload{
+						Lines: make([]string, 0, 1),
+					},
+				},
+			},
+		},
+	}
+
+	cloned := ClonePresentationTurns(src)
+	require.Len(t, cloned, 1)
+	require.NotNil(t, cloned[0].Rows[0].ToolDiff.Lines)
+	require.NotNil(t, cloned[0].Rows[1].ToolPreview.Lines)
+
+	cloned[0].Rows[0].ToolDiff.Lines = append(cloned[0].Rows[0].ToolDiff.Lines, ToolDiffLine{Kind: DiffLineAdded})
+	cloned[0].Rows[1].ToolPreview.Lines = append(cloned[0].Rows[1].ToolPreview.Lines, "clone")
+
+	src[0].Rows[0].ToolDiff.Lines = append(src[0].Rows[0].ToolDiff.Lines, ToolDiffLine{Kind: DiffLineRemoved})
+	src[0].Rows[1].ToolPreview.Lines = append(src[0].Rows[1].ToolPreview.Lines, "source")
+
+	require.Len(t, cloned[0].Rows[0].ToolDiff.Lines, 1)
+	require.Len(t, cloned[0].Rows[1].ToolPreview.Lines, 1)
+	assert.Equal(t, DiffLineAdded, cloned[0].Rows[0].ToolDiff.Lines[0].Kind)
+	assert.Equal(t, "clone", cloned[0].Rows[1].ToolPreview.Lines[0])
+}
+
+// TestClonePresentationTurns_DeepCopy_Activity verifies that mutating the
+// clone's Activity does not affect the original.
+func TestClonePresentationTurns_DeepCopy_Activity(t *testing.T) {
+	ts := time.Now()
+	src := []*PresentationTurn{
+		{
+			ID:     "t1",
+			Number: 1,
+			Activity: &TurnActivity{
+				Kind:      "tool",
+				Label:     "original",
+				StartedAt: ts,
+			},
+		},
+	}
+
+	cloned := ClonePresentationTurns(src)
+	require.Len(t, cloned, 1)
+
+	cloned[0].Activity.Label = "mutated"
+
+	assert.Equal(t, "original", src[0].Activity.Label)
+}
+
+// TestClonePresentationTurns_NilTurn_HandledGracefully verifies that nil turns
+// in the input slice are handled without panic.
+func TestClonePresentationTurns_NilTurn_HandledGracefully(t *testing.T) {
+	src := []*PresentationTurn{nil, {ID: "t1", Number: 1}}
+	cloned := ClonePresentationTurns(src)
+	require.Len(t, cloned, 2)
+	assert.Nil(t, cloned[0])
+	assert.Equal(t, "t1", cloned[1].ID)
+}

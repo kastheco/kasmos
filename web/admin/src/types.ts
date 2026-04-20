@@ -68,12 +68,43 @@ export type PresentationRowKind =
   | "user"
   | "thinking"
   | "tool"
+  | "tool_diff"
   | "result"
+  | "tool_preview"
   | "system"
   | "permission"
   | "response"
   | "prose"
   | "status";
+
+export type ToolDiffLineKind = "context" | "added" | "removed";
+
+export interface ToolDiffLine {
+  kind: ToolDiffLineKind;
+  old_number?: number;
+  new_number?: number;
+  old_text?: string;
+  new_text?: string;
+}
+
+export interface ToolDiffPayload {
+  path?: string;
+  lines?: ToolDiffLine[];
+  truncated?: boolean;
+  hidden_line_count?: number;
+}
+
+export interface ToolPreviewPayload {
+  lines?: string[];
+  truncated?: boolean;
+  hidden_line_count?: number;
+}
+
+export interface TurnActivity {
+  kind: string;
+  label?: string;
+  started_at: Date | null;
+}
 
 export interface PresentationRow {
   kind: PresentationRowKind;
@@ -81,6 +112,8 @@ export interface PresentationRow {
   timestamp: Date | null;
   tool_name: string;
   is_error: boolean;
+  tool_diff?: ToolDiffPayload;
+  tool_preview?: ToolPreviewPayload;
 }
 
 export interface PresentationTurn {
@@ -91,6 +124,7 @@ export interface PresentationTurn {
   interrupted: boolean;
   tool_count: number;
   rows: PresentationRow[];
+  activity?: TurnActivity;
 }
 
 export interface PresentationResponse {

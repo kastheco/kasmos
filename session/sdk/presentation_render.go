@@ -13,6 +13,7 @@ const (
 	presentationColorMuted  = "#6e6a86"
 	presentationColorSubtle = "#908caa"
 	presentationColorText   = "#e0def4"
+	presentationColorFoam   = "#9ccfd8"
 	presentationColorLove   = "#eb6f92"
 	presentationColorGold   = "#f6c177"
 	presentationColorRose   = "#ea9a97"
@@ -51,14 +52,38 @@ func RenderPresentation(turns []*PresentationTurn, width int) string {
 	}
 
 	footerRows := renderPresentationComposerFooter(width)
+
+	// Append a single activity row immediately above the composer footer when
+	// the most recent non-nil turn is still running and has derived activity
+	// information.
+	var activityLine string
+	for i := len(turns) - 1; i >= 0; i-- {
+		turn := turns[i]
+		if turn == nil {
+			continue
+		}
+		if turn.Running() && turn.Activity != nil {
+			activityStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
+			activityLine = activityStyle.Render(FormatActivityLabel(turn.Activity, time.Now(), narrow))
+			break
+		}
+	}
+
 	if sb.Len() > 0 {
 		sb.WriteString(sep)
+	}
+	if activityLine != "" {
+		sb.WriteString(activityLine)
+		sb.WriteString("\n")
 	}
 	sb.WriteString(strings.Join(footerRows, "\n"))
 	return sb.String()
 }
 
 func renderPresentationTurn(turn *PresentationTurn, width int) []string {
+	if turn == nil {
+		return nil
+	}
 	narrow := width < presentationNarrowPaneThreshold
 	var rows []string
 
@@ -70,7 +95,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 	}
 
 	toolStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
-	userStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#9ccfd8"))
+	userStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
 	resultOKStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
 	resultErrStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
 	systemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
@@ -79,6 +104,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 	statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
 	thinkingStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
 	narrowRuleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
+	gutterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
 
 	for _, row := range turn.Rows {
 		switch row.Kind {
@@ -86,6 +112,33 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 			rows = append(rows, userStyle.Render("you: "+row.Text))
 		case RowTool:
 			rows = append(rows, toolStyle.Render(row.Text))
+		case RowToolDiff:
+			if row.ToolDiff != nil {
+				diffRows := BuildToolDiffBlock(row.ToolDiff, width)
+				for i, dl := range row.ToolDiff.Lines {
+					if i >= len(diffRows) {
+						break
+					}
+					switch dl.Kind {
+					case DiffLineAdded:
+						rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam)).Render(diffRows[i]))
+					case DiffLineRemoved:
+						rows = append(rows, resultErrStyle.Render(diffRows[i]))
+					default:
+						rows = append(rows, gutterStyle.Render(diffRows[i]))
+					}
+				}
+				// Truncation indicator row, if present.
+				if len(diffRows) > len(row.ToolDiff.Lines) {
+					rows = append(rows, gutterStyle.Render(diffRows[len(row.ToolDiff.Lines)]))
+				}
+			}
+		case RowToolPreview:
+			if row.ToolPreview != nil {
+				for _, pr := range BuildToolPreviewBlock(row.ToolPreview, width) {
+					rows = append(rows, gutterStyle.Render(pr))
+				}
+			}
 		case RowResult:
 			if row.IsError {
 				rows = append(rows, resultErrStyle.Render(row.Text))

@@ -448,6 +448,72 @@ func TestHandler_InstancePresentation_Tmux(t *testing.T) {
 	assert.Equal(t, "null", string(outer["turns"]))
 }
 
+// TestHandler_InstancePresentation_RicherPayload verifies that tool_diff,
+// tool_preview, and activity fields in a raw turns payload are returned
+// unchanged inside the PresentationResponse.turns envelope. The handler must
+// be a transparent pass-through for structured payload fields added by the
+// sdk-diff-view plan.
+func TestHandler_InstancePresentation_RicherPayload(t *testing.T) {
+	rawTurns := json.RawMessage(`[{
+		"id":"t1","number":1,"started_at":null,"completed_at":null,
+		"interrupted":false,"tool_count":2,
+		"activity":{"kind":"tool","label":"Edit foo.go","started_at":null},
+		"rows":[
+			{"kind":"tool_diff","text":"","timestamp":null,"tool_name":"Edit","is_error":false,
+			 "tool_diff":{"path":"foo.go","lines":[
+				{"kind":"removed","old_number":1,"old_text":"old line"},
+				{"kind":"added","new_number":1,"new_text":"new line"}
+			 ],"truncated":false,"hidden_line_count":0}},
+			{"kind":"tool_preview","text":"","timestamp":null,"tool_name":"Bash","is_error":false,
+			 "tool_preview":{"lines":["result line 1","result line 2"],"truncated":true,"hidden_line_count":5}}
+		]
+	}]`)
+
+	state := &presentationStub{rawTurns: rawTurns, supported: true}
+	h := NewHandler(state)
+
+	req := httptest.NewRequest("GET", "/v1/repos/myproj/instances/my-agent/presentation", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+
+	var outer map[string]json.RawMessage
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&outer))
+
+	var supported bool
+	require.NoError(t, json.Unmarshal(outer["supported"], &supported))
+	assert.True(t, supported)
+
+	// Decode turns into a neutral map to verify nested fields survived.
+	var turns []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(outer["turns"], &turns))
+	require.Len(t, turns, 1)
+
+	// activity field must be present and contain the original values.
+	var activity map[string]any
+	require.NoError(t, json.Unmarshal(turns[0]["activity"], &activity))
+	assert.Equal(t, "tool", activity["kind"])
+	assert.Equal(t, "Edit foo.go", activity["label"])
+
+	// rows must include the structured diff and preview payloads.
+	var rows []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(turns[0]["rows"], &rows))
+	require.Len(t, rows, 2)
+
+	// First row: tool_diff must be present.
+	var diffPayload map[string]any
+	require.NoError(t, json.Unmarshal(rows[0]["tool_diff"], &diffPayload))
+	assert.Equal(t, "foo.go", diffPayload["path"])
+
+	// Second row: tool_preview must be present with truncated=true.
+	var previewPayload map[string]any
+	require.NoError(t, json.Unmarshal(rows[1]["tool_preview"], &previewPayload))
+	assert.True(t, previewPayload["truncated"].(bool))
+	previewLines, _ := previewPayload["lines"].([]any)
+	assert.Len(t, previewLines, 2)
+}
+
 func TestHandler_InstancePresentation_NotFound(t *testing.T) {
 	state := &presentationStub{err: fmt.Errorf("%w: missing", ErrInstanceNotFound)}
 	h := NewHandler(state)

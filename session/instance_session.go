@@ -197,31 +197,14 @@ func (i *Instance) CapturePresentation() []*sdk.PresentationTurn {
 			return pp.CapturePresentation()
 		}
 	}
-	return clonePresentationTurns(i.CachedPresentation)
+	return sdk.ClonePresentationTurns(i.CachedPresentation)
 }
 
 // SetCachedPresentation stores a deep copy of daemon-fetched SDK presentation
 // turns so placeholder instances can render structured output without a local
 // execution session.
 func (i *Instance) SetCachedPresentation(turns []*sdk.PresentationTurn) {
-	i.CachedPresentation = clonePresentationTurns(turns)
-}
-
-func clonePresentationTurns(src []*sdk.PresentationTurn) []*sdk.PresentationTurn {
-	if len(src) == 0 {
-		return nil
-	}
-	out := make([]*sdk.PresentationTurn, len(src))
-	for i, turn := range src {
-		if turn == nil {
-			continue
-		}
-		cp := *turn
-		cp.Rows = make([]sdk.PresentationRow, len(turn.Rows))
-		copy(cp.Rows, turn.Rows)
-		out[i] = &cp
-	}
-	return out
+	i.CachedPresentation = sdk.ClonePresentationTurns(turns)
 }
 
 // SetExecutionSessionForTest replaces the execution session without starting the

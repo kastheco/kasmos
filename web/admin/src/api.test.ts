@@ -773,6 +773,166 @@ assertEqual((presentationErr as RequestError).status, 404, "getInstancePresentat
 
 console.log("api.test.ts getInstancePresentation ok");
 
+// ---- getInstancePresentation: diff/preview/activity fields ------------------
+
+const diffPreviewPayload = {
+  supported: true,
+  captured_at: "2026-04-17T10:00:00Z",
+  turns: [
+    {
+      id: "turn-dp",
+      number: 1,
+      started_at: "2026-04-17T10:00:01Z",
+      completed_at: null,
+      interrupted: false,
+      tool_count: 1,
+      rows: [
+        {
+          kind: "tool_diff",
+          text: "",
+          timestamp: null,
+          tool_name: "Edit",
+          is_error: false,
+          tool_diff: {
+            path: "renderer.go",
+            lines: [
+              { kind: "context", old_number: 1, new_number: 1, old_text: "ctx line", new_text: "ctx line" },
+              { kind: "removed", old_number: 2, old_text: "old line" },
+              { kind: "added", new_number: 2, new_text: "new line" },
+            ],
+            truncated: true,
+            hidden_line_count: 5,
+          },
+        },
+        {
+          kind: "tool_preview",
+          text: "",
+          timestamp: null,
+          tool_name: "Read",
+          is_error: false,
+          tool_preview: {
+            lines: ["line a", "line b"],
+            truncated: false,
+            hidden_line_count: 0,
+          },
+        },
+      ],
+      activity: {
+        kind: "tool",
+        label: "editing renderer.go",
+        started_at: "2026-04-17T10:00:02Z",
+      },
+    },
+  ],
+};
+mockFetch(true, 200, JSON.stringify(diffPreviewPayload));
+const dpPresentation = await getInstancePresentation("proj", "agent-dp");
+if (!dpPresentation.turns || dpPresentation.turns.length !== 1) {
+  throw new Error("diff/preview: expected 1 turn");
+}
+const dpTurn = dpPresentation.turns[0];
+assertEqual(dpTurn.rows.length, 2, "diff/preview: 2 rows");
+
+// tool_diff row survives normalization
+const diffRow = dpTurn.rows[0];
+assertEqual(diffRow.kind, "tool_diff", "diff row kind");
+if (!diffRow.tool_diff) {
+  throw new Error("diff row must have tool_diff payload");
+}
+assertEqual(diffRow.tool_diff.path, "renderer.go", "diff payload path");
+if (!diffRow.tool_diff.lines || diffRow.tool_diff.lines.length !== 3) {
+  throw new Error("diff payload must have 3 lines");
+}
+assertEqual(diffRow.tool_diff.lines[0].kind, "context", "diff line[0] kind");
+assertEqual(diffRow.tool_diff.lines[1].kind, "removed", "diff line[1] kind");
+assertEqual(diffRow.tool_diff.lines[2].kind, "added", "diff line[2] kind");
+assertEqual(diffRow.tool_diff.truncated, true, "diff payload truncated");
+assertEqual(diffRow.tool_diff.hidden_line_count, 5, "diff payload hidden_line_count");
+
+// tool_preview row survives normalization
+const previewRow = dpTurn.rows[1];
+assertEqual(previewRow.kind, "tool_preview", "preview row kind");
+if (!previewRow.tool_preview) {
+  throw new Error("preview row must have tool_preview payload");
+}
+if (!previewRow.tool_preview.lines || previewRow.tool_preview.lines.length !== 2) {
+  throw new Error("preview payload must have 2 lines");
+}
+assertEqual(previewRow.tool_preview.lines[0], "line a", "preview line[0]");
+assertEqual(previewRow.tool_preview.lines[1], "line b", "preview line[1]");
+assertEqual(previewRow.tool_preview.truncated, false, "preview not truncated");
+
+// activity survives normalization with date parsed
+if (!dpTurn.activity) {
+  throw new Error("turn must have activity");
+}
+assertEqual(dpTurn.activity.kind, "tool", "activity kind");
+assertEqual(dpTurn.activity.label, "editing renderer.go", "activity label");
+if (!(dpTurn.activity.started_at instanceof Date)) {
+  throw new Error("activity.started_at must be a Date");
+}
+assertEqual(
+  dpTurn.activity.started_at.toISOString(),
+  "2026-04-17T10:00:02.000Z",
+  "activity.started_at parsed correctly",
+);
+
+// Turn with no activity field — activity must be undefined.
+const noActivityPayload = {
+  supported: true,
+  captured_at: "2026-04-17T10:00:00Z",
+  turns: [
+    {
+      id: "turn-na",
+      number: 1,
+      started_at: "2026-04-17T10:00:01Z",
+      completed_at: "2026-04-17T10:00:05Z",
+      interrupted: false,
+      tool_count: 0,
+      rows: [],
+      // no activity field
+    },
+  ],
+};
+mockFetch(true, 200, JSON.stringify(noActivityPayload));
+const noActPresentation = await getInstancePresentation("proj", "agent-na");
+if (!noActPresentation.turns || noActPresentation.turns.length !== 1) {
+  throw new Error("no-activity: expected 1 turn");
+}
+if (noActPresentation.turns[0].activity !== undefined) {
+  throw new Error("turn without activity must have activity=undefined");
+}
+
+// Activity with null started_at parses to null.
+const nullActivityPayload = {
+  supported: true,
+  captured_at: "2026-04-17T10:00:00Z",
+  turns: [
+    {
+      id: "turn-nula",
+      number: 1,
+      started_at: "2026-04-17T10:00:01Z",
+      completed_at: null,
+      interrupted: false,
+      tool_count: 0,
+      rows: [],
+      activity: { kind: "thinking", label: "thinking", started_at: null },
+    },
+  ],
+};
+mockFetch(true, 200, JSON.stringify(nullActivityPayload));
+const nullActPresentation = await getInstancePresentation("proj", "agent-nula");
+if (!nullActPresentation.turns || !nullActPresentation.turns[0].activity) {
+  throw new Error("null-activity: expected activity present");
+}
+assertEqual(
+  nullActPresentation.turns[0].activity.started_at,
+  null,
+  "activity.started_at null maps to null",
+);
+
+console.log("api.test.ts diff/preview/activity normalization ok");
+
 // ---- sendInstancePermission -------------------------------------------------
 
 // Reinstall the full-tracking stub so _lastFetchedInit is captured.
