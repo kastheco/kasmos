@@ -89,8 +89,8 @@ type TmuxSpawner struct {
 	// startOnBranch is used by SpawnSolo when a branch override is requested.
 	// It maps to session.Instance.StartOnBranch for production use and can be
 	// replaced in tests to avoid real git worktree operations.
-	startOnBranch func(*session.Instance, string) error
-	startInShared func(*session.Instance, *gitpkg.GitWorktree, string) error
+	startOnBranch      func(*session.Instance, string) error
+	startInShared      func(*session.Instance, *gitpkg.GitWorktree, string) error
 	cmdExec            cmd.Executor
 	discoverOrphans    func([]string) ([]tmuxpkg.SessionInfo, error)
 	restoreInstance    func(session.InstanceData) (*session.Instance, error)
