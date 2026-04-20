@@ -808,18 +808,44 @@ func TestPreviewPane_SDKPresentation_FocusedComposerShowsTypedText(t *testing.T)
 	require.NoError(t, pane.UpdateContent(inst))
 
 	require.Contains(t, pane.previewState.text, "> hello█")
+	require.Contains(t, pane.previewState.text,
+		lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff")).Render("> hello█"))
 	require.Contains(t, pane.previewState.text, "shift+enter newline")
 }
 
-func TestPreviewPane_SDKPresentation_ShowsSpeedTierLabel(t *testing.T) {
+func TestPreviewPane_SDKPresentation_UserHistoryUsesFoam(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 24)
+
+	now := time.Now()
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: now,
+		Rows: []sdk.PresentationRow{{
+			Kind:      sdk.RowUser,
+			Text:      "show logs",
+			Timestamp: now,
+		}},
+	}})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	require.Contains(t, pane.previewState.text,
+		lipgloss.NewStyle().Foreground(ColorFoam).Render("you: show logs"))
+}
+
+func TestPreviewPane_SDKPresentation_ShowsFooterMetadataBeforeHints(t *testing.T) {
 	pane := NewPreviewPane()
 	pane.SetSize(80, 24)
 
 	inst := newSDKInstanceWithTurns(t, nil)
+	inst.Program = "codex -m gpt-5.4 -c reasoning.effort=xhigh"
 	inst.SDKSpeedTier = "fast"
 	require.NoError(t, pane.UpdateContent(inst))
 
-	require.Contains(t, pane.previewState.text, "fast (2x)")
+	plain := stripPreviewANSI(pane.previewState.text)
+	require.Contains(t, plain, "gpt-5.4 xhigh fast (2x) • enter send")
+	require.NotContains(t, plain, "gpt-5.4 xhigh fast (2x)\nenter send")
 }
 
 // TestPreviewPane_SDKPresentation_ClearsInheritedScrollModeOnInstanceSwitch

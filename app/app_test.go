@@ -596,6 +596,7 @@ func TestSpawnAgent_OneSDKProgram_OpensExecutionModePicker(t *testing.T) {
 	_, ok := updated.overlays.Current().(*overlay.PickerOverlay)
 	require.True(t, ok, "active overlay must be a PickerOverlay")
 	assert.Equal(t, "codex", updated.pendingSpawnProgram)
+	assert.Equal(t, session.ExecutionModeTmux, updated.pendingSpawnExecutionMode)
 }
 
 func TestSpawnAgent_OneUnsupportedProgram_OpensFormDirectly(t *testing.T) {

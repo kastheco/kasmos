@@ -2104,6 +2104,37 @@ func withOpenCodeModelFlag(program, model string) string {
 	return program + " --model " + model
 }
 
+func buildHarnessAwareProgramCommand(profile config.AgentProfile) string {
+	program := strings.TrimSpace(profile.Program)
+	if program == "" {
+		return ""
+	}
+
+	// Preserve inline commands verbatim rather than trying to reinterpret them.
+	if strings.Contains(program, " ") {
+		return profile.BuildCommand()
+	}
+
+	registry := harness.NewRegistry()
+	adapter := registry.Get(filepath.Base(program))
+	if adapter == nil {
+		return profile.BuildCommand()
+	}
+
+	agentCfg := harness.AgentConfig{
+		Harness:     adapter.Name(),
+		Model:       profile.Model,
+		Effort:      profile.Effort,
+		Temperature: profile.Temperature,
+		ExtraFlags:  profile.Flags,
+	}
+	flags := adapter.BuildFlags(agentCfg)
+	if len(flags) == 0 {
+		return program
+	}
+	return program + " " + strings.Join(flags, " ")
+}
+
 func (m *home) profileForAgent(agentType string) config.AgentProfile {
 	if m.appConfig == nil {
 		return config.AgentProfile{Program: m.program, ExecutionMode: config.ExecutionModeTmux}
@@ -2138,16 +2169,17 @@ func (m *home) profileForAgent(agentType string) config.AgentProfile {
 // (e.g. "coder", "planner") using the kasmos config profile. Falls back to
 // m.program if no profile is configured.
 //
-// For typed agents (coder/planner/reviewer), opencode's own --agent flag
-// handles model selection via its agent config, so we do NOT append --model.
-// For ad-hoc instances (no agent type), we append --model since there is no
-// --agent flag to drive model selection.
+// Commands are built via harness adapters so claude/codex pick up their
+// configured model/effort flags automatically. opencode still relies on the
+// project config, so only ad-hoc opencode sessions need the explicit --model
+// append below.
 func (m *home) programForAgent(agentType string) string {
 	profile := m.profileForAgent(agentType)
+	program := buildHarnessAwareProgramCommand(profile)
 	if agentType == "" {
-		return withOpenCodeModelFlag(profile.BuildCommand(), profile.Model)
+		return withOpenCodeModelFlag(program, profile.Model)
 	}
-	return profile.BuildCommand()
+	return program
 }
 
 func (m *home) executionModeForAgent(agentType string) session.ExecutionMode {

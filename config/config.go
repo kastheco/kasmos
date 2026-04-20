@@ -16,7 +16,7 @@ import (
 
 const (
 	// defaultProgram is the fallback program name when command detection fails.
-	defaultProgram = "opencode"
+	defaultProgram = "codex"
 
 	// defaultDoubleTapThresholdMS is the default timing window (ms) for double-tap
 	// key detection. Two taps within this window register as ctrl+<key>.
@@ -327,15 +327,18 @@ func (c *Config) IsTelemetryEnabled() bool {
 }
 
 // GetDefaultCommand returns the preferred agent command path.
-// It tries opencode first, then falls back to claude.
+// It tries codex first, then falls back to opencode, then claude.
 func GetDefaultCommand() (string, error) {
+	if p, err := findCommand("codex"); err == nil {
+		return p, nil
+	}
 	if p, err := findCommand("opencode"); err == nil {
 		return p, nil
 	}
 	if p, err := findCommand("claude"); err == nil {
 		return p, nil
 	}
-	return "", fmt.Errorf("neither opencode nor claude command found in aliases or PATH")
+	return "", fmt.Errorf("none of codex, opencode, or claude command found in aliases or PATH")
 }
 
 // ResolveCommandPath locates a command via the user's shell config and PATH.

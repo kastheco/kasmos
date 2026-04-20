@@ -342,6 +342,21 @@ func TestRenderer_CapturePresentation_ToolCall_AddsToolRow(t *testing.T) {
 	assert.Equal(t, 1, turns[0].ToolCount)
 }
 
+func TestRenderer_ToolCall_CommandExecution_SanitizesDisplay(t *testing.T) {
+	r := NewRenderer()
+	r.AddEvent(Event{
+		Kind:      EventToolCall,
+		ToolName:  "commandExecution",
+		ToolInput: "/usr/bin/ls -la",
+		Timestamp: time.Now(),
+	})
+
+	content := r.Capture()
+	assert.Contains(t, content, "• ls -la")
+	assert.NotContains(t, content, "commandExecution")
+	assert.NotContains(t, content, "/usr/bin/ls")
+}
+
 func TestRenderer_CapturePresentation_ToolResult_IsError(t *testing.T) {
 	r := NewRenderer()
 	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1"})

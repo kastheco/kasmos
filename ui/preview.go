@@ -283,7 +283,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 	// to flat cached text, then to a placeholder when no output has arrived yet.
 	if session.NormalizeExecutionMode(instance.ExecutionMode) == session.ExecutionModeSDK {
 		if turns := instance.CapturePresentation(); len(turns) > 0 {
-			p.previewState = previewState{text: renderSDKPresentationWithComposer(turns, p.width, p.sdkComposerText, p.sdkFocusMode, instance.SDKSpeedTier)}
+			p.previewState = previewState{text: renderSDKPresentationWithComposer(turns, p.width, p.sdkComposerText, p.sdkFocusMode, instance.Program, instance.SDKSpeedTier)}
 			p.isRawTerminal = false
 			return nil
 		}
@@ -298,7 +298,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		// generic banner so ad-hoc SDK sessions can enter focus mode immediately.
 		p.isScrolling = false
 		p.viewport.SetContent("")
-		p.previewState = previewState{text: renderSDKPresentationWithComposer(nil, p.width, p.sdkComposerText, p.sdkFocusMode, instance.SDKSpeedTier)}
+		p.previewState = previewState{text: renderSDKPresentationWithComposer(nil, p.width, p.sdkComposerText, p.sdkFocusMode, instance.Program, instance.SDKSpeedTier)}
 		p.isRawTerminal = false
 		return nil
 	}
@@ -406,10 +406,10 @@ const narrowPaneThreshold = 40
 // When width is under narrowPaneThreshold, turns are separated by a single
 // newline instead of a blank line.
 func renderSDKPresentation(turns []*sdk.PresentationTurn, width int) string {
-	return renderSDKPresentationWithComposer(turns, width, "", false, "")
+	return renderSDKPresentationWithComposer(turns, width, "", false, "", "")
 }
 
-func renderSDKPresentationWithComposer(turns []*sdk.PresentationTurn, width int, composer string, focused bool, speedTier string) string {
+func renderSDKPresentationWithComposer(turns []*sdk.PresentationTurn, width int, composer string, focused bool, program string, speedTier string) string {
 	if width <= 0 {
 		width = 80
 	}
@@ -435,7 +435,7 @@ func renderSDKPresentationWithComposer(turns []*sdk.PresentationTurn, width int,
 		sb.WriteString(part)
 	}
 
-	footerRows := renderComposerFooter(width, composer, focused, speedTier)
+	footerRows := renderComposerFooter(width, composer, focused, program, speedTier)
 	if sb.Len() > 0 {
 		sb.WriteString(sep)
 	}
@@ -450,6 +450,7 @@ func renderSDKPresentationWithComposer(turns []*sdk.PresentationTurn, width int,
 //   - error-result rows: ColorLove
 //   - permission rows: ColorRose (salmon)
 //   - prose rows: ColorText (primary)
+//   - user rows: ColorFoam
 //   - RowResponse sentinel: emits a muted divider rule
 //   - RowStatus (interrupted) rows: ColorGold (warning amber)
 //
@@ -468,7 +469,7 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 	}
 
 	toolStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
-	userStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
+	userStyle := lipgloss.NewStyle().Foreground(ColorFoam)
 	resultOKStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	resultErrStyle := lipgloss.NewStyle().Foreground(ColorLove)
 	systemStyle := lipgloss.NewStyle().Foreground(ColorMuted)
@@ -525,9 +526,10 @@ func renderResponseDivider(width int) string {
 
 // renderComposerFooter returns a quiet display-only footer appended below the
 // turn timeline. The send overlay is not plumbed into the pane in this plan.
-func renderComposerFooter(width int, composer string, focused bool, speedTier string) []string {
+func renderComposerFooter(width int, composer string, focused bool, program string, speedTier string) []string {
 	ruleStyle := lipgloss.NewStyle().Foreground(ColorMuted)
-	textStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	placeholderStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	composerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff"))
 	hintStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
 
 	rule := ""
@@ -542,18 +544,97 @@ func renderComposerFooter(width int, composer string, focused bool, speedTier st
 		}
 		promptText = "> " + composer + cursor
 	}
-	prompt := textStyle.Render(promptText)
-	hints := hintStyle.Render("enter send   shift+enter newline   esc unfocus")
-	rows := []string{rule, prompt}
-	if speedTier != "" {
-		label := speedTier
-		if speedTier == "fast" {
-			label = "fast (2x)"
-		}
-		rows = append(rows, hintStyle.Render(label))
+	prompt := placeholderStyle.Render(promptText)
+	if composer != "" || focused {
+		prompt = composerStyle.Render(promptText)
 	}
-	rows = append(rows, hints)
+	hints := "enter send   shift+enter newline   esc unfocus"
+	rows := []string{rule, prompt}
+	statusLabel := sdkFooterModelAndEffort(program)
+	if tierLabel := sdkFooterSpeedTier(speedTier); tierLabel != "" {
+		if statusLabel != "" {
+			statusLabel += " " + tierLabel
+		} else {
+			statusLabel = tierLabel
+		}
+	}
+	if statusLabel != "" {
+		rows = append(rows, hintStyle.Render(statusLabel+" • "+hints))
+	} else {
+		rows = append(rows, hintStyle.Render(hints))
+	}
 	return rows
+}
+
+func sdkFooterSpeedTier(speedTier string) string {
+	switch strings.TrimSpace(strings.ToLower(speedTier)) {
+	case "fast":
+		return "fast (2x)"
+	default:
+		return ""
+	}
+}
+
+func sdkFooterModelAndEffort(program string) string {
+	model, effort := parseSDKProgramModelAndEffort(program)
+	switch {
+	case model != "" && effort != "":
+		return model + " " + effort
+	case model != "":
+		return model
+	case effort != "":
+		return effort
+	default:
+		return ""
+	}
+}
+
+func parseSDKProgramModelAndEffort(program string) (string, string) {
+	tokens := strings.Fields(strings.TrimSpace(program))
+	if len(tokens) == 0 {
+		return "", ""
+	}
+
+	var model string
+	var effort string
+	for i := 0; i < len(tokens); i++ {
+		tok := tokens[i]
+		switch {
+		case tok == "--model" || tok == "-m":
+			if i+1 < len(tokens) {
+				model = tokens[i+1]
+				i++
+			}
+		case strings.HasPrefix(tok, "--model="):
+			model = strings.TrimPrefix(tok, "--model=")
+		case tok == "--effort":
+			if i+1 < len(tokens) {
+				effort = tokens[i+1]
+				i++
+			}
+		case strings.HasPrefix(tok, "--effort="):
+			effort = strings.TrimPrefix(tok, "--effort=")
+		case tok == "-c":
+			if i+1 < len(tokens) {
+				effort = parseSDKConfigToken(tokens[i+1], effort)
+				i++
+			}
+		case strings.HasPrefix(tok, "-c="):
+			effort = parseSDKConfigToken(strings.TrimPrefix(tok, "-c="), effort)
+		}
+	}
+
+	if slash := strings.LastIndex(model, "/"); slash >= 0 {
+		model = model[slash+1:]
+	}
+	return model, effort
+}
+
+func parseSDKConfigToken(token, currentEffort string) string {
+	if strings.HasPrefix(token, "reasoning.effort=") {
+		return strings.TrimPrefix(token, "reasoning.effort=")
+	}
+	return currentEffort
 }
 
 func (p *PreviewPane) SetSDKFocusMode(enabled bool) {

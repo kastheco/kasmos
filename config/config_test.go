@@ -22,7 +22,23 @@ func TestMain(m *testing.M) {
 }
 
 func TestGetDefaultCommand(t *testing.T) {
-	t.Run("finds opencode in PATH", func(t *testing.T) {
+	t.Run("finds codex in PATH", func(t *testing.T) {
+		tempDir := t.TempDir()
+		codexPath := filepath.Join(tempDir, "codex")
+
+		err := os.WriteFile(codexPath, []byte("#!/bin/bash\necho 'mock codex'"), 0755)
+		require.NoError(t, err)
+
+		t.Setenv("PATH", tempDir)
+		t.Setenv("SHELL", "/bin/sh")
+
+		result, err := GetDefaultCommand()
+
+		assert.NoError(t, err)
+		assert.True(t, strings.Contains(result, "codex"))
+	})
+
+	t.Run("falls back to opencode when codex is missing", func(t *testing.T) {
 		tempDir := t.TempDir()
 		opencodePath := filepath.Join(tempDir, "opencode")
 
@@ -38,7 +54,7 @@ func TestGetDefaultCommand(t *testing.T) {
 		assert.True(t, strings.Contains(result, "opencode"))
 	})
 
-	t.Run("falls back to claude when opencode is missing", func(t *testing.T) {
+	t.Run("falls back to claude when codex and opencode are missing", func(t *testing.T) {
 		tempDir := t.TempDir()
 		claudePath := filepath.Join(tempDir, "claude")
 
@@ -54,7 +70,7 @@ func TestGetDefaultCommand(t *testing.T) {
 		assert.True(t, strings.Contains(result, "claude"))
 	})
 
-	t.Run("handles missing opencode and claude commands", func(t *testing.T) {
+	t.Run("handles missing codex, opencode, and claude commands", func(t *testing.T) {
 		tempDir := t.TempDir()
 		t.Setenv("PATH", tempDir)
 		t.Setenv("SHELL", "/bin/sh")
@@ -63,14 +79,14 @@ func TestGetDefaultCommand(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Equal(t, "", result)
-		assert.Contains(t, err.Error(), "neither opencode nor claude command found")
+		assert.Contains(t, err.Error(), "none of codex, opencode, or claude command found")
 	})
 
 	t.Run("handles empty SHELL environment", func(t *testing.T) {
 		tempDir := t.TempDir()
-		opencodePath := filepath.Join(tempDir, "opencode")
+		codexPath := filepath.Join(tempDir, "codex")
 
-		err := os.WriteFile(opencodePath, []byte("#!/bin/bash\necho 'mock opencode'"), 0755)
+		err := os.WriteFile(codexPath, []byte("#!/bin/bash\necho 'mock codex'"), 0755)
 		require.NoError(t, err)
 
 		t.Setenv("PATH", tempDir)
@@ -80,15 +96,18 @@ func TestGetDefaultCommand(t *testing.T) {
 		result, err := GetDefaultCommand()
 
 		assert.NoError(t, err)
-		assert.True(t, strings.Contains(result, "opencode"))
+		assert.True(t, strings.Contains(result, "codex"))
 	})
 
-	t.Run("prefers opencode when both commands exist", func(t *testing.T) {
+	t.Run("prefers codex when multiple commands exist", func(t *testing.T) {
 		tempDir := t.TempDir()
+		codexPath := filepath.Join(tempDir, "codex")
 		opencodePath := filepath.Join(tempDir, "opencode")
 		claudePath := filepath.Join(tempDir, "claude")
 
-		err := os.WriteFile(opencodePath, []byte("#!/bin/bash\necho 'mock opencode'"), 0755)
+		err := os.WriteFile(codexPath, []byte("#!/bin/bash\necho 'mock codex'"), 0755)
+		require.NoError(t, err)
+		err = os.WriteFile(opencodePath, []byte("#!/bin/bash\necho 'mock opencode'"), 0755)
 		require.NoError(t, err)
 		err = os.WriteFile(claudePath, []byte("#!/bin/bash\necho 'mock claude'"), 0755)
 		require.NoError(t, err)
@@ -99,7 +118,7 @@ func TestGetDefaultCommand(t *testing.T) {
 		result, err := GetDefaultCommand()
 
 		assert.NoError(t, err)
-		assert.True(t, strings.Contains(result, "opencode"))
+		assert.True(t, strings.Contains(result, "codex"))
 	})
 
 	t.Run("handles alias parsing", func(t *testing.T) {
@@ -125,14 +144,14 @@ func TestDefaultConfig(t *testing.T) {
 		assert.True(t, strings.HasSuffix(config.BranchPrefix, "/"))
 	})
 
-	t.Run("falls back to opencode when command detection fails", func(t *testing.T) {
+	t.Run("falls back to codex when command detection fails", func(t *testing.T) {
 		tempDir := t.TempDir()
 		t.Setenv("PATH", tempDir)
 		t.Setenv("SHELL", "/bin/sh")
 
 		config := DefaultConfig()
 
-		assert.Equal(t, "opencode", config.DefaultProgram)
+		assert.Equal(t, "codex", config.DefaultProgram)
 	})
 }
 

@@ -458,6 +458,12 @@ func (r *Renderer) ContentHash() string {
 // query/title/url) and fall back to a truncated raw dump when none match.
 func formatToolCallLine(name, rawInput string) string {
 	summary := summariseToolArgs(rawInput)
+	if strings.EqualFold(strings.TrimSpace(name), "commandExecution") {
+		if summary == "" {
+			return "• command"
+		}
+		return "• " + summary
+	}
 	if summary == "" {
 		return fmt.Sprintf("• %s", name)
 	}
@@ -472,7 +478,7 @@ func summariseToolArgs(raw string) string {
 	var obj map[string]any
 	if err := json.Unmarshal([]byte(trimmed), &obj); err != nil {
 		// Not JSON — just truncate the raw string.
-		return truncateOneLine(trimmed, 80)
+		return truncateOneLine(shortenCommandDisplay(trimmed), 80)
 	}
 	// Priority order: most informative single-field summaries first. Paths
 	// get basename'd because absolute paths waste the whole line on the
@@ -484,7 +490,7 @@ func summariseToolArgs(raw string) string {
 		return filepath.Base(v)
 	}
 	if v, ok := obj["command"].(string); ok && v != "" {
-		return truncateOneLine(v, 80)
+		return truncateOneLine(shortenCommandDisplay(v), 80)
 	}
 	if v, ok := obj["pattern"].(string); ok && v != "" {
 		return truncateOneLine(v, 60)
@@ -508,6 +514,18 @@ func summariseToolArgs(raw string) string {
 		return ""
 	}
 	return truncateOneLine(strings.Join(keys, ","), 60)
+}
+
+func shortenCommandDisplay(cmd string) string {
+	fields := strings.Fields(cmd)
+	if len(fields) == 0 {
+		return cmd
+	}
+	switch {
+	case strings.HasPrefix(fields[0], "/usr/bin/"), strings.HasPrefix(fields[0], "/bin/"):
+		fields[0] = filepath.Base(fields[0])
+	}
+	return strings.Join(fields, " ")
 }
 
 // formatToolResultLine renders a short, single-line summary of a tool

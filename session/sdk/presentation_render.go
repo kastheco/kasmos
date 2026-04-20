@@ -70,7 +70,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 	}
 
 	toolStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
-	userStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
+	userStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#9ccfd8"))
 	resultOKStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
 	resultErrStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
 	systemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
