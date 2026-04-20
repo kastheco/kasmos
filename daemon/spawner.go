@@ -1035,6 +1035,18 @@ func (s *TmuxSpawner) InstancesForProject(repoPath, project string) []*session.I
 	return out
 }
 
+// IsTitleTracked reports whether any tracked instance already owns title.
+func (s *TmuxSpawner) IsTitleTracked(title string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, inst := range s.instances {
+		if inst != nil && inst.Title == title {
+			return true
+		}
+	}
+	return false
+}
+
 func ensureWorktreeScaffold(worktreePath, program, role string) error {
 	fields := strings.Fields(program)
 	if len(fields) == 0 {

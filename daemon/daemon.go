@@ -63,9 +63,10 @@ type Daemon struct {
 	createPR        func(RepoEntry, string, string) error
 	// spawnSolo is an injectable seam for tests to override standalone spawn behaviour
 	// without needing a real agent process.
-	spawnSolo func(context.Context, SpawnSoloOpts) error
-	mu        sync.RWMutex
-	startedAt time.Time
+	spawnSolo               func(context.Context, SpawnSoloOpts) error
+	pendingStandaloneTitles map[string]struct{}
+	mu                      sync.RWMutex
+	startedAt               time.Time
 }
 
 // daemonStateAdapter adapts the Daemon to the api.StateProvider interface.
@@ -253,6 +254,31 @@ func (a *daemonStateAdapter) StartPlan(project, filename, prompt, program string
 // synchronously, then delegates to Daemon.SpawnSolo which fires the async start.
 func (a *daemonStateAdapter) SpawnSolo(project string, req api.SpawnSoloRequest) error {
 	return a.d.SpawnSolo(project, req)
+}
+
+func standaloneTitleKey(title string) string {
+	return title
+}
+
+func (d *Daemon) reserveStandaloneTitle(title string) bool {
+	key := standaloneTitleKey(title)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.pendingStandaloneTitles == nil {
+		d.pendingStandaloneTitles = make(map[string]struct{})
+	}
+	if _, exists := d.pendingStandaloneTitles[key]; exists {
+		return false
+	}
+	d.pendingStandaloneTitles[key] = struct{}{}
+	return true
+}
+
+func (d *Daemon) releaseStandaloneTitle(title string) {
+	key := standaloneTitleKey(title)
+	d.mu.Lock()
+	delete(d.pendingStandaloneTitles, key)
+	d.mu.Unlock()
 }
 
 func (a *daemonStateAdapter) EventStream() <-chan api.Event {
@@ -559,10 +585,13 @@ func (d *Daemon) SpawnSolo(project string, req api.SpawnSoloRequest) error {
 		return fmt.Errorf("%w: program %q does not support SDK execution", api.ErrInvalidRequest, req.Program)
 	}
 
-	for _, inst := range d.spawner.InstancesForProject(entry.Path, entry.Project) {
-		if inst.Title == req.Title {
-			return fmt.Errorf("%w: %s", api.ErrStandaloneConflict, req.Title)
-		}
+	if !d.reserveStandaloneTitle(req.Title) {
+		return fmt.Errorf("%w: %s", api.ErrStandaloneConflict, req.Title)
+	}
+
+	if d.spawner.IsTitleTracked(req.Title) {
+		d.releaseStandaloneTitle(req.Title)
+		return fmt.Errorf("%w: %s", api.ErrStandaloneConflict, req.Title)
 	}
 
 	go d.startSoloAsync(entry, req)
@@ -570,6 +599,8 @@ func (d *Daemon) SpawnSolo(project string, req api.SpawnSoloRequest) error {
 }
 
 func (d *Daemon) startSoloAsync(entry RepoEntry, req api.SpawnSoloRequest) {
+	defer d.releaseStandaloneTitle(req.Title)
+
 	spawnSolo := d.spawnSolo
 	if spawnSolo == nil {
 		spawnSolo = func(ctx context.Context, opts SpawnSoloOpts) error {

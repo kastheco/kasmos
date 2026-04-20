@@ -351,21 +351,46 @@ func (m *home) daemonRouteSend(inst *session.Instance, prompt string) (bool, err
 		return true, fmt.Errorf("daemon route: no project for %q", inst.Title)
 	}
 	client := newDaemonActionClient()
-	deadline := time.Now().Add(plannerInstanceWaitTimeout)
-	for {
-		err := client.SendInstancePrompt(project, inst.Title, prompt)
-		if err == nil {
-			return true, nil
+	return true, client.SendInstancePrompt(project, inst.Title, prompt)
+}
+
+// daemonRouteSendCmd retries daemon prompt delivery for SDK placeholders in a
+// background tea.Cmd so Bubble Tea's Update path stays non-blocking while the
+// daemon finishes registering a newly spawned placeholder.
+func (m *home) daemonRouteSendCmd(inst *session.Instance, prompt, auditMsg string) tea.Cmd {
+	if !m.isDaemonSDKPlaceholder(inst) {
+		return nil
+	}
+	project := m.taskStoreProject
+	return func() tea.Msg {
+		if project == "" {
+			return promptSubmittedMsg{
+				instance: inst,
+				auditMsg: auditMsg,
+				err:      fmt.Errorf("daemon route: no project for %q", inst.Title),
+			}
 		}
-		var statusErr *daemonpkg.ClientStatusError
-		if errors.As(err, &statusErr) &&
-			inst.Status == session.Loading &&
-			(statusErr.StatusCode == http.StatusNotFound || statusErr.StatusCode == http.StatusConflict) &&
-			time.Now().Before(deadline) {
-			time.Sleep(plannerInstancePollInterval)
-			continue
+		client := newDaemonActionClient()
+		deadline := time.Now().Add(plannerInstanceWaitTimeout)
+		for {
+			err := client.SendInstancePrompt(project, inst.Title, prompt)
+			if err == nil {
+				return promptSubmittedMsg{instance: inst, auditMsg: auditMsg}
+			}
+			var statusErr *daemonpkg.ClientStatusError
+			if errors.As(err, &statusErr) &&
+				inst.Status == session.Loading &&
+				(statusErr.StatusCode == http.StatusNotFound || statusErr.StatusCode == http.StatusConflict) &&
+				time.Now().Before(deadline) {
+				time.Sleep(plannerInstancePollInterval)
+				continue
+			}
+			return promptSubmittedMsg{
+				instance: inst,
+				auditMsg: auditMsg,
+				err:      err,
+			}
 		}
-		return true, err
 	}
 }
 

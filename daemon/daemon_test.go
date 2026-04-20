@@ -1692,6 +1692,42 @@ func TestDaemon_SpawnSolo_ReturnsBeforeSpawnCompletes(t *testing.T) {
 	close(release)
 }
 
+func TestDaemon_SpawnSolo_ConflictWhileAsyncSpawnPending(t *testing.T) {
+	project := "proj"
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		spawnSolo: func(_ context.Context, opts SpawnSoloOpts) error {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			<-release
+			return nil
+		},
+	}
+	d.repos.repos = []RepoEntry{{Path: "/tmp/proj", Project: project}}
+
+	req := api.SpawnSoloRequest{Title: "my-solo", Program: "claude", SoloAgent: true}
+	require.NoError(t, d.SpawnSolo(project, req))
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("background solo spawn did not start")
+	}
+
+	err := d.SpawnSolo(project, req)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, api.ErrStandaloneConflict)
+	close(release)
+}
+
 func TestDaemon_SpawnSolo_ProjectNotFound(t *testing.T) {
 	d := &Daemon{
 		repos:  NewRepoManager(),
@@ -1751,8 +1787,8 @@ func TestDaemonStateAdapter_SpawnSolo_Conflict(t *testing.T) {
 		return len(tracked) > 0
 	}, time.Second, 5*time.Millisecond)
 
-	// Second spawn with the same title returns 409 synchronously via the
-	// pre-flight check in Daemon.SpawnSolo.
+	// Second spawn with the same title returns 409 synchronously while the first
+	// request is already tracked.
 	err := adapter.SpawnSolo(project, req)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, api.ErrStandaloneConflict)

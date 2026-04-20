@@ -2271,6 +2271,15 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Stale context menu race — show as a plain toast, not an audit-log error.
 		m.toastManager.Error(msg.message)
 		return m, m.toastTickCmd()
+	case promptSubmittedMsg:
+		if msg.err != nil {
+			return m, m.handleError(msg.err)
+		}
+		if msg.instance != nil {
+			msg.instance.SetStatus(session.Running)
+			m.audit(auditlog.EventPromptSent, msg.auditMsg, auditlog.WithInstance(msg.instance.Title))
+		}
+		return m, nil
 	case error:
 		// Handle errors from confirmation actions
 		return m, m.handleError(msg)
@@ -3060,6 +3069,13 @@ func (m *home) reconcileDismissedInstanceTitles(daemonTitles []string) {
 // instanceStartedMsg is sent when an async instance startup completes.
 type instanceStartedMsg struct {
 	instance *session.Instance
+	err      error
+}
+
+// promptSubmittedMsg is sent when an async prompt delivery finishes.
+type promptSubmittedMsg struct {
+	instance *session.Instance
+	auditMsg string
 	err      error
 }
 

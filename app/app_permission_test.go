@@ -409,7 +409,7 @@ func (s *stubDaemonActionClient) SendInstancePermissionResponse(project, title s
 	return nil
 }
 
-func TestDaemonRouteSend_LoadingPlaceholderRetriesStatusRace(t *testing.T) {
+func TestSubmitPromptToInstance_LoadingPlaceholderRetriesStatusRace(t *testing.T) {
 	origClient := newDaemonActionClient
 	t.Cleanup(func() { newDaemonActionClient = origClient })
 
@@ -441,9 +441,11 @@ func TestDaemonRouteSend_LoadingPlaceholderRetriesStatusRace(t *testing.T) {
 	inst.SetStatus(session.Loading)
 
 	m := &home{taskStoreProject: "myproj"}
-	handled, err := m.daemonRouteSend(inst, "hello")
-	require.True(t, handled)
-	require.NoError(t, err)
+	cmd := m.submitPromptToInstance(inst, "hello")
+	require.NotNil(t, cmd)
+	result, ok := cmd().(promptSubmittedMsg)
+	require.True(t, ok)
+	require.NoError(t, result.err)
 	assert.Equal(t, 2, attempts, "daemonRouteSend should retry once the daemon registers the loading placeholder")
 }
 
