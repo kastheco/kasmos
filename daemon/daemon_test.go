@@ -1659,6 +1659,7 @@ func TestDaemon_SpawnSolo_ReturnsBeforeSpawnCompletes(t *testing.T) {
 
 	d := &Daemon{
 		repos:       NewRepoManager(),
+		spawner:     NewTmuxSpawner(),
 		logger:      slog.Default(),
 		broadcaster: api.NewEventBroadcaster(),
 		spawnSolo: func(_ context.Context, opts SpawnSoloOpts) error {
@@ -1750,24 +1751,12 @@ func TestDaemonStateAdapter_SpawnSolo_Conflict(t *testing.T) {
 		return len(tracked) > 0
 	}, time.Second, 5*time.Millisecond)
 
-	// Second spawn with the same title should return a conflict.
-	// The daemon.SpawnSolo doesn't check for conflict before firing async —
-	// the spawner itself returns errInstanceAlreadyTracked, which surfaces as
-	// a logged error (not propagated to the caller). Use the spawnSolo seam to
-	// make the test synchronous.
-	d.spawnSolo = func(_ context.Context, opts SpawnSoloOpts) error {
-		return d.spawner.SpawnSolo(context.Background(), opts)
-	}
-	err := d.SpawnSolo(project, req)
-	// After setting the seam, SpawnSolo itself fires async via go and returns
-	// nil.  The conflict is detected in startSoloAsync which logs and returns.
-	// So we test the seam directly here to verify conflict detection.
-	soloErr := d.spawnSolo(context.Background(), SpawnSoloOpts{
-		RepoPath: repoPath, Project: project, Title: "dupe-solo", Program: "claude",
-	})
-	require.Error(t, soloErr)
-	assert.ErrorIs(t, soloErr, errInstanceAlreadyTracked)
-	_ = err // d.SpawnSolo itself returns nil (async)
+	// Second spawn with the same title returns 409 synchronously via the
+	// pre-flight check in Daemon.SpawnSolo.
+	err := adapter.SpawnSolo(project, req)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, api.ErrStandaloneConflict)
+	assert.Contains(t, err.Error(), "dupe-solo")
 	close(release)
 }
 

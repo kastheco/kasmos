@@ -559,6 +559,12 @@ func (d *Daemon) SpawnSolo(project string, req api.SpawnSoloRequest) error {
 		return fmt.Errorf("%w: program %q does not support SDK execution", api.ErrInvalidRequest, req.Program)
 	}
 
+	for _, inst := range d.spawner.InstancesForProject(entry.Path, entry.Project) {
+		if inst.Title == req.Title {
+			return fmt.Errorf("%w: %s", api.ErrStandaloneConflict, req.Title)
+		}
+	}
+
 	go d.startSoloAsync(entry, req)
 	return nil
 }
