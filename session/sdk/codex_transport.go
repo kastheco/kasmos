@@ -109,6 +109,15 @@ type codexThreadStartParams struct {
 	ServiceTier    string `json:"serviceTier,omitempty"`
 }
 
+func codexServiceTier(speedTier string) string {
+	switch strings.TrimSpace(strings.ToLower(speedTier)) {
+	case "fast", "priority":
+		return "priority"
+	default:
+		return ""
+	}
+}
+
 type codexThreadStartResult struct {
 	Thread codexThread `json:"thread"`
 }
@@ -330,8 +339,8 @@ func (t *CodexTransport) startHandshake(ctx context.Context, cfg LaunchConfig) e
 		threadParams.ApprovalPolicy = "never"
 		threadParams.Sandbox = "danger-full-access"
 	}
-	if cfg.SpeedTier != "" {
-		threadParams.ServiceTier = cfg.SpeedTier
+	if tier := codexServiceTier(cfg.SpeedTier); tier != "" {
+		threadParams.ServiceTier = tier
 	}
 
 	var threadResult codexThreadStartResult

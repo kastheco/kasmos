@@ -208,6 +208,23 @@ func TestSDKSession_TapEnter_SubmitsBufferedPrompt(t *testing.T) {
 	mock.mu.Unlock()
 }
 
+func TestSDKSession_TapEnter_RecordsUserPromptInPresentation(t *testing.T) {
+	mock := newMockTransport()
+	restore := injectTransport(mock)
+	defer restore()
+
+	s := New("name", "claude", false)
+	require.NoError(t, s.Start(t.TempDir()))
+	require.NoError(t, s.SendKeys("show logs"))
+	require.NoError(t, s.TapEnter())
+
+	turns := s.CapturePresentation()
+	require.Len(t, turns, 1)
+	require.Len(t, turns[0].Rows, 1)
+	assert.Equal(t, RowUser, turns[0].Rows[0].Kind)
+	assert.Equal(t, "show logs", turns[0].Rows[0].Text)
+}
+
 func TestSDKSession_TapEnter_ClearsBuffer(t *testing.T) {
 	mock := newMockTransport()
 	restore := injectTransport(mock)

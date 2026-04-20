@@ -32,6 +32,10 @@
   color: var(--rp-muted);
 }
 
+.kindUser {
+  color: var(--rp-subtle);
+}
+
 .kindTool {
   color: var(--rp-subtle);
 }
@@ -67,19 +71,8 @@
 .responseDivider {
   display: flex;
   align-items: center;
-  gap: 8px;
   margin: 8px 0 4px;
   min-width: 0;
-}
-
-.responseDividerLabel {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-feature-settings: "tnum" 1;
-  color: var(--rp-subtle);
-  flex-shrink: 0;
-  text-transform: lowercase;
-  letter-spacing: 0.04em;
 }
 
 .responseDividerRule {

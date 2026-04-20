@@ -666,9 +666,11 @@ func TestPreviewPane_SDKPresentation_RendersTurnHierarchy(t *testing.T) {
 	require.Contains(t, rendered, lipgloss.NewStyle().Foreground(ColorText).Render("assistant text"),
 		"prose row must be rendered in ColorText")
 
-	// RowResponse sentinel must emit the "response" divider label.
-	require.Contains(t, rendered, "response",
-		"RowResponse must emit the response divider")
+	plain := stripPreviewANSI(rendered)
+	require.NotContains(t, plain, "response",
+		"RowResponse must not emit a visible label")
+	require.Regexp(t, `(?s)42 lines\s+─{8,}\s+assistant text`, plain,
+		"RowResponse must render a divider rule between result and prose")
 
 	// Composer footer must be present.
 	require.Contains(t, rendered, "> send a message to the agent",
@@ -807,6 +809,17 @@ func TestPreviewPane_SDKPresentation_FocusedComposerShowsTypedText(t *testing.T)
 
 	require.Contains(t, pane.previewState.text, "> hello█")
 	require.Contains(t, pane.previewState.text, "shift+enter newline")
+}
+
+func TestPreviewPane_SDKPresentation_ShowsSpeedTierLabel(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 24)
+
+	inst := newSDKInstanceWithTurns(t, nil)
+	inst.SDKSpeedTier = "fast"
+	require.NoError(t, pane.UpdateContent(inst))
+
+	require.Contains(t, pane.previewState.text, "speed tier: fast (priority) (2x usage)")
 }
 
 // TestPreviewPane_SDKPresentation_ClearsInheritedScrollModeOnInstanceSwitch

@@ -10,6 +10,8 @@ const (
 	EventTurnStarted EventKind = "turn_started"
 	// EventTextDelta carries an incremental text chunk from the agent's response.
 	EventTextDelta EventKind = "text_delta"
+	// EventUserPrompt records a user-authored prompt submitted through kasmos.
+	EventUserPrompt EventKind = "user_prompt"
 	// EventToolCall is emitted when the agent invokes a tool.
 	EventToolCall EventKind = "tool_call"
 	// EventToolResult carries the result returned from a tool invocation.

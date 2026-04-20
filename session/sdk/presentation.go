@@ -47,6 +47,8 @@ const (
 	// RowThinking is a timing-only placeholder row for long-running turns that
 	// have not yet produced substantive content.
 	RowThinking PresentationRowKind = "thinking"
+	// RowUser records a user-authored prompt in the turn history.
+	RowUser PresentationRowKind = "user"
 	// RowTool represents a tool invocation.
 	RowTool PresentationRowKind = "tool"
 	// RowResult represents a tool result.

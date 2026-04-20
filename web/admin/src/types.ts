@@ -65,6 +65,7 @@ export type ScrollbackDepth = "120" | "1000" | "full";
 export type ExecutionMode = "tmux" | "sdk";
 
 export type PresentationRowKind =
+  | "user"
   | "thinking"
   | "tool"
   | "result"

@@ -240,7 +240,15 @@ func (s *Session) TapEnter() error {
 	}
 	ctx, cancel := context.WithTimeout(pctx, 10*time.Second)
 	defer cancel()
-	return tr.SendPrompt(ctx, prompt)
+	if err := tr.SendPrompt(ctx, prompt); err != nil {
+		return err
+	}
+	s.renderer.AddEvent(Event{
+		Kind:      EventUserPrompt,
+		Text:      prompt,
+		Timestamp: time.Now(),
+	})
+	return nil
 }
 
 // SendPermissionResponse forwards a permission dialog choice to the transport.

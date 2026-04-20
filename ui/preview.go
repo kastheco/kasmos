@@ -283,7 +283,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 	// to flat cached text, then to a placeholder when no output has arrived yet.
 	if session.NormalizeExecutionMode(instance.ExecutionMode) == session.ExecutionModeSDK {
 		if turns := instance.CapturePresentation(); len(turns) > 0 {
-			p.previewState = previewState{text: renderSDKPresentationWithComposer(turns, p.width, p.sdkComposerText, p.sdkFocusMode)}
+			p.previewState = previewState{text: renderSDKPresentationWithComposer(turns, p.width, p.sdkComposerText, p.sdkFocusMode, instance.SDKSpeedTier)}
 			p.isRawTerminal = false
 			return nil
 		}
@@ -298,7 +298,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		// generic banner so ad-hoc SDK sessions can enter focus mode immediately.
 		p.isScrolling = false
 		p.viewport.SetContent("")
-		p.previewState = previewState{text: renderSDKPresentationWithComposer(nil, p.width, p.sdkComposerText, p.sdkFocusMode)}
+		p.previewState = previewState{text: renderSDKPresentationWithComposer(nil, p.width, p.sdkComposerText, p.sdkFocusMode, instance.SDKSpeedTier)}
 		p.isRawTerminal = false
 		return nil
 	}
@@ -406,10 +406,10 @@ const narrowPaneThreshold = 40
 // When width is under narrowPaneThreshold, turns are separated by a single
 // newline instead of a blank line.
 func renderSDKPresentation(turns []*sdk.PresentationTurn, width int) string {
-	return renderSDKPresentationWithComposer(turns, width, "", false)
+	return renderSDKPresentationWithComposer(turns, width, "", false, "")
 }
 
-func renderSDKPresentationWithComposer(turns []*sdk.PresentationTurn, width int, composer string, focused bool) string {
+func renderSDKPresentationWithComposer(turns []*sdk.PresentationTurn, width int, composer string, focused bool, speedTier string) string {
 	if width <= 0 {
 		width = 80
 	}
@@ -435,7 +435,7 @@ func renderSDKPresentationWithComposer(turns []*sdk.PresentationTurn, width int,
 		sb.WriteString(part)
 	}
 
-	footerRows := renderComposerFooter(width, composer, focused)
+	footerRows := renderComposerFooter(width, composer, focused, speedTier)
 	if sb.Len() > 0 {
 		sb.WriteString(sep)
 	}
@@ -450,7 +450,7 @@ func renderSDKPresentationWithComposer(turns []*sdk.PresentationTurn, width int,
 //   - error-result rows: ColorLove
 //   - permission rows: ColorRose (salmon)
 //   - prose rows: ColorText (primary)
-//   - RowResponse sentinel: emits the "─── response ───" divider
+//   - RowResponse sentinel: emits a muted divider rule
 //   - RowStatus (interrupted) rows: ColorGold (warning amber)
 //
 // In narrow mode (width < narrowPaneThreshold):
@@ -468,6 +468,7 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 	}
 
 	toolStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
+	userStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
 	resultOKStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	resultErrStyle := lipgloss.NewStyle().Foreground(ColorLove)
 	systemStyle := lipgloss.NewStyle().Foreground(ColorMuted)
@@ -479,6 +480,8 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 
 	for _, row := range turn.Rows {
 		switch row.Kind {
+		case sdk.RowUser:
+			rows = append(rows, userStyle.Render("you: "+row.Text))
 		case sdk.RowTool:
 			rows = append(rows, toolStyle.Render(row.Text))
 		case sdk.RowResult:
@@ -509,30 +512,20 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 	return rows
 }
 
-// renderResponseDivider returns a muted horizontal rule with the literal label
-// "response" — the visual separator between tool/setup noise and assistant prose.
+// renderResponseDivider returns a muted horizontal rule separating tool/setup
+// noise from assistant prose.
 // See variant-c in docs/agent-sdk-pane-mockups.md.
 func renderResponseDivider(width int) string {
-	const label = " response "
-	labelLen := len([]rune(label))
 	ruleStyle := lipgloss.NewStyle().Foreground(ColorMuted)
-	labelStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
-
-	if width <= labelLen+4 {
-		return labelStyle.Render(label)
+	if width <= 0 {
+		return ""
 	}
-
-	remaining := width - labelLen
-	left := remaining / 2
-	right := remaining - left
-	return ruleStyle.Render(strings.Repeat("─", left)) +
-		labelStyle.Render(label) +
-		ruleStyle.Render(strings.Repeat("─", right))
+	return ruleStyle.Render(strings.Repeat("─", width))
 }
 
 // renderComposerFooter returns a quiet display-only footer appended below the
 // turn timeline. The send overlay is not plumbed into the pane in this plan.
-func renderComposerFooter(width int, composer string, focused bool) []string {
+func renderComposerFooter(width int, composer string, focused bool, speedTier string) []string {
 	ruleStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	textStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	hintStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
@@ -551,7 +544,16 @@ func renderComposerFooter(width int, composer string, focused bool) []string {
 	}
 	prompt := textStyle.Render(promptText)
 	hints := hintStyle.Render("enter send   shift+enter newline   esc unfocus")
-	return []string{rule, prompt, hints}
+	rows := []string{rule, prompt}
+	if speedTier != "" {
+		label := speedTier
+		if speedTier == "fast" {
+			label = "fast (priority)"
+		}
+		rows = append(rows, hintStyle.Render("speed tier: "+label+" (2x usage)"))
+	}
+	rows = append(rows, hints)
+	return rows
 }
 
 func (p *PreviewPane) SetSDKFocusMode(enabled bool) {

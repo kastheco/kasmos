@@ -14,6 +14,7 @@ interface RowProps {
 
 function rowKindClass(row: PresentationRow): string {
   switch (row.kind) {
+    case "user":       return styles.kindUser;
     case "thinking":   return styles.kindThinking;
     case "tool":       return styles.kindTool;
     case "result":     return row.is_error ? styles.kindResultError : styles.kindResult;
@@ -26,6 +27,7 @@ function rowKindClass(row: PresentationRow): string {
 
 function rowPrefix(row: PresentationRow): string {
   switch (row.kind) {
+    case "user":       return "you";
     case "thinking":   return "thinking";
     case "tool":       return row.tool_name || "tool";
     case "result":     return "result";

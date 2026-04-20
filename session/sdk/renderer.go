@@ -55,6 +55,16 @@ func (r *Renderer) AddEvent(e Event) {
 		turn := r.ensureTurn(e.TurnID, e.Timestamp)
 		r.appendTurnText(turn, e.Text, e.Timestamp)
 
+	case EventUserPrompt:
+		r.appendLine("> " + e.Text)
+		turn := r.ensureTurn(e.TurnID, e.Timestamp)
+		r.closeStructuredProseBlock()
+		turn.Rows = append(turn.Rows, PresentationRow{
+			Kind:      RowUser,
+			Text:      e.Text,
+			Timestamp: e.Timestamp,
+		})
+
 	case EventToolCall:
 		line := formatToolCallLine(e.ToolName, e.ToolInput)
 		// Flat path.

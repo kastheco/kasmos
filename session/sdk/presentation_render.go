@@ -70,6 +70,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 	}
 
 	toolStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
+	userStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
 	resultOKStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
 	resultErrStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
 	systemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
@@ -81,6 +82,8 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 
 	for _, row := range turn.Rows {
 		switch row.Kind {
+		case RowUser:
+			rows = append(rows, userStyle.Render("you: "+row.Text))
 		case RowTool:
 			rows = append(rows, toolStyle.Render(row.Text))
 		case RowResult:
@@ -111,21 +114,11 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 }
 
 func renderPresentationResponseDivider(width int) string {
-	const label = " response "
-	labelLen := len([]rune(label))
 	ruleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
-	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
-
-	if width <= labelLen+4 {
-		return labelStyle.Render(label)
+	if width <= 0 {
+		return ""
 	}
-
-	remaining := width - labelLen
-	left := remaining / 2
-	right := remaining - left
-	return ruleStyle.Render(strings.Repeat("─", left)) +
-		labelStyle.Render(label) +
-		ruleStyle.Render(strings.Repeat("─", right))
+	return ruleStyle.Render(strings.Repeat("─", width))
 }
 
 func renderPresentationComposerFooter(width int) []string {

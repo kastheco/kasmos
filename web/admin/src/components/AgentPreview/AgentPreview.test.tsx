@@ -87,6 +87,7 @@ describe("AgentPreview", () => {
     const turn = makeTurn({
       tool_count: 1,
       rows: [
+        makeRow({ kind: "user", text: "show me the logs" }),
         makeRow({ kind: "tool", text: "reading file", tool_name: "Read" }),
         makeRow({ kind: "result", text: "file contents here" }),
         makeRow({ kind: "response", text: "" }),
@@ -97,15 +98,17 @@ describe("AgentPreview", () => {
       makePresentation({ turns: [turn] }),
     );
 
-    render(<AgentPreview project="my-project" title="agent-1" />);
+    const { container } = render(<AgentPreview project="my-project" title="agent-1" />);
 
     await waitFor(() => {
+      expect(screen.getByText("show me the logs")).toBeTruthy();
+      expect(screen.getByText("you")).toBeTruthy();
       expect(screen.getByText("reading file")).toBeTruthy();
       expect(screen.getByText("file contents here")).toBeTruthy();
-      // response row renders as a divider with the label "response"
-      expect(screen.getByText("response")).toBeTruthy();
       expect(screen.getByText("I found the content you needed.")).toBeTruthy();
     });
+
+    expect(container.querySelectorAll("[data-kind='response']")).toHaveLength(1);
   });
 
   it("renders a new response divider when prose resumes after tool rows", async () => {
@@ -124,7 +127,7 @@ describe("AgentPreview", () => {
       makePresentation({ turns: [turn] }),
     );
 
-    render(<AgentPreview project="my-project" title="agent-1" />);
+    const { container } = render(<AgentPreview project="my-project" title="agent-1" />);
 
     await waitFor(() => {
       expect(screen.getByText("using architect first")).toBeTruthy();
@@ -132,7 +135,7 @@ describe("AgentPreview", () => {
       expect(screen.getByText("next i'm reading overlay code")).toBeTruthy();
     });
 
-    const responseDividers = screen.getAllByText("response");
+    const responseDividers = container.querySelectorAll("[data-kind='response']");
     expect(responseDividers).toHaveLength(2);
   });
 
@@ -419,7 +422,7 @@ describe("AgentPreview", () => {
   // Collapse
   // -------------------------------------------------------------------------
 
-  it("collapse button hides tool rows but keeps prose and response visible", async () => {
+  it("collapse button hides tool rows but keeps prose and divider visible", async () => {
     const turn = makeTurn({
       tool_count: 1,
       rows: [
@@ -432,7 +435,7 @@ describe("AgentPreview", () => {
       makePresentation({ turns: [turn] }),
     );
 
-    render(<AgentPreview project="my-project" title="agent-1" />);
+    const { container } = render(<AgentPreview project="my-project" title="agent-1" />);
 
     await waitFor(() => {
       expect(screen.getByText("tool-text")).toBeTruthy();
@@ -445,7 +448,7 @@ describe("AgentPreview", () => {
       expect(screen.queryByText("tool-text")).toBeNull();
       // Prose and response divider still visible
       expect(screen.getByText("prose-text")).toBeTruthy();
-      expect(screen.getByText("response")).toBeTruthy();
+      expect(container.querySelectorAll("[data-kind='response']")).toHaveLength(1);
     });
   });
 

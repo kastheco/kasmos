@@ -314,6 +314,16 @@ func TestRenderer_CapturePresentation_TextDelta_FragmentsExtendLastProse(t *test
 	assert.Equal(t, "hello", prose[0])
 }
 
+func TestRenderer_CapturePresentation_UserPrompt_AddsUserRow(t *testing.T) {
+	r := NewRenderer()
+	r.AddEvent(Event{Kind: EventUserPrompt, Text: "show logs"})
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+	require.Len(t, turns[0].Rows, 1)
+	assert.Equal(t, RowUser, turns[0].Rows[0].Kind)
+	assert.Equal(t, "show logs", turns[0].Rows[0].Text)
+}
+
 func TestRenderer_CapturePresentation_ToolCall_AddsToolRow(t *testing.T) {
 	r := NewRenderer()
 	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1"})
