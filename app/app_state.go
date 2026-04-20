@@ -1798,6 +1798,9 @@ func (m *home) updateSidebarTasks() {
 			case taskfsm.ExecutionPhaseFixing, taskfsm.ExecutionPhaseReviewing, "readiness_reviewing":
 				activeRound = entry.ReviewCycle + 1
 			}
+			if activeRound == 0 && p.Status == taskstate.StatusVerifying && entry.ExecutionState.ActiveAgentType == session.AgentTypeMaster {
+				activeRound = entry.ReviewCycle + 1
+			}
 			planDisplays = append(planDisplays, ui.PlanDisplay{
 				Filename:    p.Filename,
 				Status:      string(p.Status),
@@ -1823,6 +1826,9 @@ func (m *home) updateSidebarTasks() {
 		activeRound := 0
 		switch taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase) {
 		case taskfsm.ExecutionPhaseFixing, taskfsm.ExecutionPhaseReviewing, "readiness_reviewing":
+			activeRound = entry.ReviewCycle + 1
+		}
+		if activeRound == 0 && p.Status == taskstate.StatusVerifying && entry.ExecutionState.ActiveAgentType == session.AgentTypeMaster {
 			activeRound = entry.ReviewCycle + 1
 		}
 		ungrouped = append(ungrouped, ui.PlanDisplay{

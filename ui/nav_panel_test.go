@@ -1402,7 +1402,7 @@ func TestNavPlanSortKey_VerifyingIsActive(t *testing.T) {
 	assert.Equal(t, 0, key, "verifying status must sort as reviewing (key 0)")
 }
 
-func TestString_VerifyingPlanAppearsInActiveSection(t *testing.T) {
+func TestString_VerifyingMasterShowsReadinessReview(t *testing.T) {
 	n := newTestPanel()
 	n.SetSize(60, 40)
 	n.SetData(
@@ -1419,5 +1419,63 @@ func TestString_VerifyingPlanAppearsInActiveSection(t *testing.T) {
 
 	output := n.String()
 	require.NotEmpty(t, output)
-	assert.Contains(t, output, "verifying", "verifying status must be visible in sidebar")
+	assert.Contains(t, output, "readiness review", "verifying+master must render as readiness review in sidebar")
+}
+
+func TestString_VerifyingMasterWithRoundShowsReadinessReviewN(t *testing.T) {
+	n := newTestPanel()
+	n.SetSize(60, 40)
+	n.SetData(
+		[]PlanDisplay{
+			{
+				Filename:    "auth-feature",
+				Status:      "verifying",
+				Phase:       "",
+				AgentType:   "master",
+				ActiveRound: 3,
+			},
+		},
+		nil, nil, nil, nil,
+	)
+
+	output := n.String()
+	require.NotEmpty(t, output)
+	assert.Contains(t, output, "readiness review 3", "verifying+master+round must render as readiness review N in sidebar")
+}
+
+func TestNavPlanRowLabel_VerifyingMasterRound(t *testing.T) {
+	p := PlanDisplay{
+		Filename:    "feature-auth",
+		Status:      "verifying",
+		Phase:       "",
+		AgentType:   "master",
+		ActiveRound: 2,
+	}
+	label := navPlanRowLabel(p)
+	assert.Equal(t, "feature-auth · readiness review 2", label,
+		"verifying+master with round must show readiness review N")
+}
+
+func TestNavPlanRowLabel_VerifyingMasterNoRound(t *testing.T) {
+	p := PlanDisplay{
+		Filename:  "feature-auth",
+		Status:    "verifying",
+		Phase:     "",
+		AgentType: "master",
+	}
+	label := navPlanRowLabel(p)
+	assert.Equal(t, "feature-auth · readiness review", label,
+		"verifying+master without round must show readiness review")
+}
+
+func TestNavPlanRowLabel_VerifyingNonMasterFallback(t *testing.T) {
+	p := PlanDisplay{
+		Filename:  "feature-auth",
+		Status:    "verifying",
+		Phase:     "",
+		AgentType: "coder",
+	}
+	label := navPlanRowLabel(p)
+	assert.Equal(t, "feature-auth · verifying", label,
+		"verifying with non-master agent must still show plain verifying")
 }
