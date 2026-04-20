@@ -811,3 +811,235 @@ func TestTmuxSpawner_SpawnMaster_DeduplicatesTrackedInstance(t *testing.T) {
 	assert.NoError(t, err)
 	assert.False(t, startCalled, "SpawnMaster must no-op when master is already tracked")
 }
+
+// ---------------------------------------------------------------------------
+// SpawnSolo tests
+// ---------------------------------------------------------------------------
+
+func TestTmuxSpawner_SpawnSolo_DefaultPath_CallsStartOnMain(t *testing.T) {
+	s := NewTmuxSpawner()
+	var capturedInst *session.Instance
+	s.startOnMain = func(inst *session.Instance) error {
+		capturedInst = inst
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+
+	const repoPath = "/tmp/repo"
+	err := s.SpawnSolo(context.Background(), SpawnSoloOpts{
+		RepoPath:     repoPath,
+		Project:      "proj",
+		Title:        "my-solo-agent",
+		Program:      "claude",
+		Prompt:       "do the thing",
+		SoloAgent:    true,
+		SDKSpeedTier: "fast",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, capturedInst)
+	assert.Equal(t, "my-solo-agent", capturedInst.Title)
+	assert.Equal(t, repoPath, capturedInst.Path)
+	assert.True(t, capturedInst.SkipPermissions, "standalone daemon-spawned instance must skip permissions")
+	assert.True(t, capturedInst.SoloAgent)
+	assert.Equal(t, "do the thing", capturedInst.QueuedPrompt)
+
+	running := s.RunningInstances()
+	require.Len(t, running, 1)
+	assert.Equal(t, instanceKeyForStandalone(repoPath, "my-solo-agent"), running[0].Key)
+	assert.Equal(t, "", running[0].PlanFile, "standalone instances have no plan file")
+}
+
+func TestTmuxSpawner_SpawnSolo_WithBranch_CallsStartOnBranch(t *testing.T) {
+	s := NewTmuxSpawner()
+	var capturedInst *session.Instance
+	var capturedBranch string
+	s.startOnBranch = func(inst *session.Instance, branch string) error {
+		capturedInst = inst
+		capturedBranch = branch
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+
+	const repoPath = "/tmp/repo"
+	err := s.SpawnSolo(context.Background(), SpawnSoloOpts{
+		RepoPath: repoPath,
+		Project:  "proj",
+		Title:    "branch-solo",
+		Program:  "claude",
+		Branch:   "feature/my-branch",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, capturedInst)
+	assert.Equal(t, "feature/my-branch", capturedBranch)
+	assert.Equal(t, repoPath, capturedInst.Path)
+}
+
+func TestTmuxSpawner_SpawnSolo_WithWorkPath_CallsStartOnMain(t *testing.T) {
+	s := NewTmuxSpawner()
+	var capturedInst *session.Instance
+	s.startOnMain = func(inst *session.Instance) error {
+		capturedInst = inst
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+
+	const repoPath = "/tmp/repo"
+	const workPath = "/tmp/other-checkout"
+	err := s.SpawnSolo(context.Background(), SpawnSoloOpts{
+		RepoPath: repoPath,
+		Project:  "proj",
+		Title:    "work-path-solo",
+		Program:  "claude",
+		WorkPath: workPath,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, capturedInst)
+	// WorkPath without Branch: instance path is workPath, start via StartOnMainBranch.
+	assert.Equal(t, workPath, capturedInst.Path)
+}
+
+func TestTmuxSpawner_SpawnSolo_WithBranchAndWorkPath_UsesWorkPathAsRoot(t *testing.T) {
+	s := NewTmuxSpawner()
+	var capturedInst *session.Instance
+	var capturedBranch string
+	s.startOnBranch = func(inst *session.Instance, branch string) error {
+		capturedInst = inst
+		capturedBranch = branch
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+
+	const repoPath = "/tmp/repo"
+	const workPath = "/tmp/other-checkout"
+	err := s.SpawnSolo(context.Background(), SpawnSoloOpts{
+		RepoPath: repoPath,
+		Project:  "proj",
+		Title:    "branch-work-solo",
+		Program:  "claude",
+		Branch:   "feature/x",
+		WorkPath: workPath,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, capturedInst)
+	assert.Equal(t, workPath, capturedInst.Path)
+	assert.Equal(t, "feature/x", capturedBranch)
+}
+
+func TestTmuxSpawner_SpawnSolo_Conflict_ReturnsDuplicateError(t *testing.T) {
+	s := NewTmuxSpawner()
+	release := make(chan struct{})
+	s.startOnMain = func(inst *session.Instance) error {
+		<-release // block until test signals release
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+
+	const repoPath = "/tmp/repo"
+	opts := SpawnSoloOpts{
+		RepoPath: repoPath,
+		Project:  "proj",
+		Title:    "clash-agent",
+		Program:  "claude",
+	}
+
+	// Start first spawn in background — it will block inside startOnMain.
+	firstErr := make(chan error, 1)
+	go func() { firstErr <- s.SpawnSolo(context.Background(), opts) }()
+
+	// Wait until the first instance is visible in the tracking maps (Loading state).
+	require.Eventually(t, func() bool {
+		tracked := s.InstancesForProject(repoPath, "proj")
+		return len(tracked) > 0
+	}, time.Second, 5*time.Millisecond)
+
+	// Second spawn with the same title must return a conflict error.
+	err := s.SpawnSolo(context.Background(), opts)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errInstanceAlreadyTracked)
+
+	// Unblock the first spawn.
+	close(release)
+	require.NoError(t, <-firstErr)
+}
+
+func TestTmuxSpawner_SpawnSolo_TracksBeforeStartCompletes(t *testing.T) {
+	s := NewTmuxSpawner()
+	started := make(chan *session.Instance, 1)
+	release := make(chan struct{})
+	s.startOnMain = func(inst *session.Instance) error {
+		select {
+		case started <- inst:
+		default:
+		}
+		<-release
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+
+	const repoPath = "/tmp/repo"
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- s.SpawnSolo(context.Background(), SpawnSoloOpts{
+			RepoPath: repoPath,
+			Project:  "proj",
+			Title:    "async-solo",
+			Program:  "claude",
+		})
+	}()
+
+	var blockedInst *session.Instance
+	select {
+	case blockedInst = <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("SpawnSolo did not reach the injected starter")
+	}
+
+	// Instance should be visible in tracking maps with Loading status while start is blocked.
+	tracked := s.InstancesForProject(repoPath, "proj")
+	require.Len(t, tracked, 1, "loading standalone instance should be tracked before start completes")
+	assert.Same(t, blockedInst, tracked[0])
+	assert.Equal(t, session.Loading, tracked[0].Status)
+
+	close(release)
+	require.NoError(t, <-errCh)
+}
+
+func TestTmuxSpawner_SpawnSolo_StartFailureDiscardsTrackedInstance(t *testing.T) {
+	s := NewTmuxSpawner()
+	s.startOnMain = func(_ *session.Instance) error {
+		return fmt.Errorf("start failed")
+	}
+
+	const repoPath = "/tmp/repo"
+	const title = "fail-solo"
+	err := s.SpawnSolo(context.Background(), SpawnSoloOpts{
+		RepoPath: repoPath,
+		Project:  "proj",
+		Title:    title,
+		Program:  "claude",
+	})
+	require.Error(t, err)
+
+	key := instanceKeyForStandalone(repoPath, title)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, tracked := s.instances[key]
+	assert.False(t, tracked, "failed spawn must not leave a tracked placeholder behind")
+}
+
+func TestInstanceKeyForStandalone(t *testing.T) {
+	key := instanceKeyForStandalone("/tmp/repo", "my-agent")
+	assert.Contains(t, key, "standalone")
+	assert.Contains(t, key, "/tmp/repo")
+	assert.Contains(t, key, "my-agent")
+	// Two different titles must produce distinct keys.
+	assert.NotEqual(t, instanceKeyForStandalone("/tmp/repo", "a"), instanceKeyForStandalone("/tmp/repo", "b"))
+	// Two different repos with the same title must produce distinct keys.
+	assert.NotEqual(t, instanceKeyForStandalone("/repo-a", "agent"), instanceKeyForStandalone("/repo-b", "agent"))
+}

@@ -6,6 +6,7 @@ import (
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/auditlog"
 	"github.com/kastheco/kasmos/config/taskstate"
+	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/internal/clickup"
 	"github.com/kastheco/kasmos/keys"
 	"github.com/kastheco/kasmos/log"
@@ -98,21 +99,22 @@ func (m *home) handleMenuHighlighting(msg tea.KeyPressMsg) (cmd tea.Cmd, returnE
 		m.keydownCallback(name)), true
 }
 
-func (m *home) submitPromptToInstance(selected *session.Instance, value string) error {
-	if handled, err := m.daemonRouteSend(selected, value); handled {
-		if err != nil {
-			return err
-		}
-	} else if err := selected.SendPrompt(value); err != nil {
-		return err
-	}
-	selected.SetStatus(session.Running)
+func (m *home) submitPromptToInstance(selected *session.Instance, value string) tea.Cmd {
 	auditMsg := value
 	if len(auditMsg) > 200 {
 		auditMsg = auditMsg[:200]
 	}
-	m.audit(auditlog.EventPromptSent, auditMsg, auditlog.WithInstance(selected.Title))
-	return nil
+	if m.isDaemonSDKPlaceholder(selected) {
+		return m.daemonRouteSendCmd(selected, value, auditMsg)
+	}
+	return func() tea.Msg {
+		err := selected.SendPrompt(value)
+		return promptSubmittedMsg{
+			instance: selected,
+			auditMsg: auditMsg,
+			err:      err,
+		}
+	}
 }
 
 func (m *home) openSendPromptOverlay(seed string) tea.Cmd {
@@ -789,9 +791,27 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				m.promptAfterName = false
 			}
 
-			// Start instance asynchronously
-			startCmd := func() tea.Msg {
-				return instanceStartedMsg{instance: instance, err: instance.Start(true)}
+			// Start instance asynchronously. For SDK instances whose repo is
+			// daemon-managed, hand the spawn to the daemon so the web UI can
+			// render it; keep the local instance as the in-memory placeholder.
+			var startCmd tea.Cmd
+			if session.NormalizeExecutionMode(instance.ExecutionMode) == session.ExecutionModeSDK &&
+				repoManagedByDaemon(m.activeRepoPath) {
+				capturedInst := instance
+				capturedProject := m.taskStoreProject
+				startCmd = func() tea.Msg {
+					req := api.SpawnSoloRequest{
+						Title:        capturedInst.Title,
+						Program:      capturedInst.Program,
+						AgentType:    capturedInst.AgentType,
+						SDKSpeedTier: capturedInst.SDKSpeedTier,
+					}
+					return instanceStartedMsg{instance: capturedInst, err: spawnSoloWithDaemon(capturedProject, req)}
+				}
+			} else {
+				startCmd = func() tea.Msg {
+					return instanceStartedMsg{instance: instance, err: instance.Start(true)}
+				}
 			}
 
 			return m, tea.Batch(tea.RequestWindowSize, startCmd)
@@ -844,25 +864,23 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 			}
 			if result.Submitted {
 				promptText := result.Value
-				if handled, err := m.daemonRouteSend(selected, promptText); handled {
-					if err != nil {
-						return m, m.handleError(err)
-					}
-				} else if err := selected.SendPrompt(promptText); err != nil {
-					// TODO: we probably end up in a bad state here.
-					return m, m.handleError(err)
+				sendCmd := m.submitPromptToInstance(selected, promptText)
+				if sendCmd == nil {
+					return m, nil
 				}
-				// Emit audit event for prompt sent (truncate to 200 chars).
-				msg := promptText
-				if len(msg) > 200 {
-					msg = msg[:200]
-				}
-				m.audit(auditlog.EventPromptSent, msg,
-					auditlog.WithInstance(selected.Title),
+				m.state = stateDefault
+				return m, tea.Batch(
+					sendCmd,
+					tea.Sequence(
+						tea.RequestWindowSize,
+						func() tea.Msg {
+							m.menu.SetState(ui.StateDefault)
+							m.showHelpScreen(helpStart(selected), nil)
+							return nil
+						},
+					),
 				)
 			}
-
-			// Close the overlay and reset state
 			m.state = stateDefault
 			return m, tea.Sequence(
 				tea.RequestWindowSize,
@@ -1147,14 +1165,12 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				if value == "" {
 					return m, nil
 				}
-				if err := m.submitPromptToInstance(selected, value); err != nil {
-					return m, m.handleError(err)
-				}
+				sendCmd := m.submitPromptToInstance(selected, value)
 				m.tabbedWindow.ClearSDKComposerText()
 				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
 					return m, m.handleError(err)
 				}
-				return m, tea.RequestWindowSize
+				return m, tea.Batch(tea.RequestWindowSize, sendCmd)
 			case firstRuneIsPrintable(msg.Text):
 				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
 					return m, m.handleError(err)
@@ -1213,11 +1229,10 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				value := result.Value
 				selected := m.nav.GetSelectedInstance()
 				if selected != nil && value != "" {
-					if err := m.submitPromptToInstance(selected, value); err != nil {
-						m.state = stateDefault
-						m.menu.SetState(ui.StateDefault)
-						return m, m.handleError(err)
-					}
+					sendCmd := m.submitPromptToInstance(selected, value)
+					m.state = stateDefault
+					m.menu.SetState(ui.StateDefault)
+					return m, tea.Batch(tea.RequestWindowSize, sendCmd)
 				}
 			}
 			m.state = stateDefault

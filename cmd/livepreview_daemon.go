@@ -125,6 +125,8 @@ func daemonStatusToRecord(s api.InstanceStatus) livepreview.Record {
 		TaskNumber:      s.TaskNumber,
 		ReviewCycle:     s.ReviewCycle,
 		ExecutionMode:   s.ExecutionMode,
+		SoloAgent:       s.SoloAgent,
+		SDKSpeedTier:    s.SDKSpeedTier,
 		ManagedByDaemon: true,
 	}
 }

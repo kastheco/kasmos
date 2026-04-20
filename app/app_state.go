@@ -21,6 +21,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	daemonpkg "github.com/kastheco/kasmos/daemon"
+	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/internal/clickup"
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
 	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
@@ -89,6 +90,37 @@ func waitForDaemonPlannerInstance(project string, data session.InstanceData) (*s
 		return nil, lastErr
 	}
 	return nil, fmt.Errorf("planner session did not appear")
+}
+
+// spawnSoloWithDaemon is a seam for tests. It POSTs to the daemon's
+// /instances/solo endpoint and waits until the title appears in daemon
+// ListInstances before returning. Returns a non-nil error on timeout so the
+// instanceStartedMsg error path removes the local placeholder.
+var spawnSoloWithDaemon = func(project string, req api.SpawnSoloRequest) error {
+	client := daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath())
+	if err := client.SpawnSolo(project, req); err != nil {
+		return err
+	}
+	return waitForDaemonTitle(project, req.Title)
+}
+
+// waitForDaemonTitle polls ListInstances until the given title appears as an
+// active entry (loading counts as active). Reuses plannerInstancePollInterval
+// and plannerInstanceWaitTimeout so solo and planner waits share the same knob.
+func waitForDaemonTitle(project, title string) error {
+	deadline := time.Now().Add(plannerInstanceWaitTimeout)
+	for time.Now().Before(deadline) {
+		statuses, err := listDaemonInstances(project)
+		if err == nil {
+			for _, s := range statuses {
+				if s.Title == title && s.Active {
+					return nil
+				}
+			}
+		}
+		time.Sleep(plannerInstancePollInterval)
+	}
+	return fmt.Errorf("daemon did not register %q within timeout", title)
 }
 
 var spawnPlannerWithDaemon = func(repoPath, project, planFile, title, prompt, program string) (*session.Instance, error) {
@@ -1190,12 +1222,20 @@ func (m *home) switchToTab(name keys.KeyName) (tea.Model, tea.Cmd) {
 }
 
 // saveAllInstances saves allInstances (all repos) to storage.
+// Daemon SDK placeholders are excluded: they have no local execution session
+// and would appear as stale "standalone sdk" rows after the daemon restarts.
 // No-ops gracefully when storage is nil (e.g. in unit tests).
 func (m *home) saveAllInstances() error {
 	if m.storage == nil {
 		return nil
 	}
-	return m.storage.SaveInstances(m.allInstances)
+	toSave := make([]*session.Instance, 0, len(m.allInstances))
+	for _, inst := range m.allInstances {
+		if !m.isDaemonSDKPlaceholder(inst) {
+			toSave = append(toSave, inst)
+		}
+	}
+	return m.storage.SaveInstances(toSave)
 }
 
 func (m *home) syncInstanceDisplayTitle(inst *session.Instance, rawTitle string) error {
@@ -3135,8 +3175,24 @@ func (m *home) quickLaunchAgent() (tea.Model, tea.Cmd) {
 	m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))
 	m.nav.SelectInstance(inst)
 
-	startCmd := func() tea.Msg {
-		return instanceStartedMsg{instance: inst, err: quickLaunchStartOnMain(inst)}
+	var startCmd tea.Cmd
+	if session.NormalizeExecutionMode(inst.ExecutionMode) == session.ExecutionModeSDK &&
+		repoManagedByDaemon(m.activeRepoPath) {
+		capturedInst := inst
+		capturedProject := m.taskStoreProject
+		startCmd = func() tea.Msg {
+			req := api.SpawnSoloRequest{
+				Title:        capturedInst.Title,
+				Program:      capturedInst.Program,
+				AgentType:    capturedInst.AgentType,
+				SDKSpeedTier: capturedInst.SDKSpeedTier,
+			}
+			return instanceStartedMsg{instance: capturedInst, err: spawnSoloWithDaemon(capturedProject, req)}
+		}
+	} else {
+		startCmd = func() tea.Msg {
+			return instanceStartedMsg{instance: inst, err: quickLaunchStartOnMain(inst)}
+		}
 	}
 	return m, tea.Batch(tea.RequestWindowSize, startCmd)
 }
@@ -3247,18 +3303,15 @@ func (m *home) beginSpawnAgentFlow() (tea.Model, tea.Cmd) {
 func (m *home) showSpawnAgentForm(program string) {
 	m.pendingSpawnProgram = program
 	m.state = stateSpawnAgent
-	fo := overlay.NewSpawnFormOverlay("spawn agent", 60)
+	formOverlay := overlay.NewSpawnFormOverlay("spawn agent", 60)
 	var hints []string
-	if m.pendingSpawnExecutionMode == session.ExecutionModeSDK {
-		hints = append(hints, "standalone sdk agents cannot be controlled from the web ui")
-	}
 	if m.pendingSpawnSpeedTier == "fast" {
 		hints = append(hints, "fast tier consumes 2x usage")
 	}
 	if len(hints) > 0 {
-		fo.SetFooterHint(strings.Join(hints, "\n"))
+		formOverlay.SetFooterHint(strings.Join(hints, "\n"))
 	}
-	m.overlays.Show(fo)
+	m.overlays.Show(formOverlay)
 }
 
 // newNamedAgentInstance builds the interactive ad-hoc session used by the
@@ -3319,23 +3372,42 @@ func (m *home) spawnAdHocAgent(name, branch, workPath, program string, requested
 	m.menu.SetState(ui.StateDefault)
 
 	var startCmd tea.Cmd
-	switch {
-	case workPath != "" && branch == "":
-		// Path override only - run in-place on main branch (no worktree)
+	if session.NormalizeExecutionMode(inst.ExecutionMode) == session.ExecutionModeSDK &&
+		repoManagedByDaemon(m.activeRepoPath) {
+		capturedInst := inst
+		capturedProject := m.taskStoreProject
+		capturedBranch := branch
+		capturedWorkPath := workPath
 		startCmd = func() tea.Msg {
-			return instanceStartedMsg{instance: inst, err: inst.StartOnMainBranch()}
+			req := api.SpawnSoloRequest{
+				Title:        capturedInst.Title,
+				Program:      capturedInst.Program,
+				AgentType:    capturedInst.AgentType,
+				Branch:       capturedBranch,
+				WorkPath:     capturedWorkPath,
+				SDKSpeedTier: capturedInst.SDKSpeedTier,
+			}
+			return instanceStartedMsg{instance: capturedInst, err: spawnSoloWithDaemon(capturedProject, req)}
 		}
+	} else {
+		switch {
+		case workPath != "" && branch == "":
+			// Path override only - run in-place on main branch (no worktree)
+			startCmd = func() tea.Msg {
+				return instanceStartedMsg{instance: inst, err: inst.StartOnMainBranch()}
+			}
 
-	case branch != "":
-		// Branch override - create worktree on specified branch
-		startCmd = func() tea.Msg {
-			return instanceStartedMsg{instance: inst, err: inst.StartOnBranch(branch)}
-		}
+		case branch != "":
+			// Branch override - create worktree on specified branch
+			startCmd = func() tea.Msg {
+				return instanceStartedMsg{instance: inst, err: inst.StartOnBranch(branch)}
+			}
 
-	default:
-		// No overrides - run in-place on current branch (no worktree)
-		startCmd = func() tea.Msg {
-			return instanceStartedMsg{instance: inst, err: inst.StartOnMainBranch()}
+		default:
+			// No overrides - run in-place on current branch (no worktree)
+			startCmd = func() tea.Msg {
+				return instanceStartedMsg{instance: inst, err: inst.StartOnMainBranch()}
+			}
 		}
 	}
 
@@ -3435,6 +3507,24 @@ func (m *home) spawnTaskAgent(planFile, action, prompt string) (tea.Model, tea.C
 			startCmd = func() tea.Msg {
 				inst, err := spawnPlannerWithDaemon(capturedRepoPath, capturedProject, capturedPlanFile, capturedTitle, capturedPrompt, capturedProgram)
 				return daemonPlannerStartedMsg{instance: inst, err: err}
+			}
+		} else if action == "solo" &&
+			session.NormalizeExecutionMode(inst.ExecutionMode) == session.ExecutionModeSDK &&
+			repoManagedByDaemon(m.activeRepoPath) {
+			capturedInst := inst
+			capturedProject := m.taskStoreProject
+			capturedPlanFile := planFile
+			capturedAgentType := agentType
+			startCmd = func() tea.Msg {
+				req := api.SpawnSoloRequest{
+					Title:     capturedInst.Title,
+					Program:   capturedInst.Program,
+					Prompt:    capturedInst.QueuedPrompt,
+					TaskFile:  capturedPlanFile,
+					AgentType: capturedAgentType,
+					SoloAgent: true,
+				}
+				return instanceStartedMsg{instance: capturedInst, err: spawnSoloWithDaemon(capturedProject, req)}
 			}
 		} else {
 			startCmd = func() tea.Msg {

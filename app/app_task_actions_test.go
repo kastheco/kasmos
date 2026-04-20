@@ -2952,3 +2952,146 @@ func TestExecuteContextAction_StartVerify_PreemptsLiveCoderAndFixer(t *testing.T
 		})
 	}
 }
+
+// TestSpawnAdHocAgent_SDKRoutesThroughDaemonWhenManaged verifies that when
+// the repo is managed by the daemon and the instance uses SDK mode, spawnAdHocAgent
+// delegates to the spawnSoloWithDaemon seam instead of calling inst.StartOnMainBranch.
+func TestSpawnAdHocAgent_SDKRoutesThroughDaemonWhenManaged(t *testing.T) {
+	oldManaged := repoManagedByDaemon
+	oldSpawner := spawnSoloWithDaemon
+	t.Cleanup(func() {
+		repoManagedByDaemon = oldManaged
+		spawnSoloWithDaemon = oldSpawner
+	})
+	repoManagedByDaemon = func(string) bool { return true }
+
+	var capturedReq api.SpawnSoloRequest
+	var capturedProject string
+	spawnSoloWithDaemon = func(project string, req api.SpawnSoloRequest) error {
+		capturedProject = project
+		capturedReq = req
+		return nil
+	}
+
+	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:              context.Background(),
+		state:            stateDefault,
+		taskStoreProject: "myproject",
+		appConfig: &config.Config{
+			Profiles: map[string]config.AgentProfile{
+				"master": {Program: "claude", Enabled: true, ExecutionMode: config.ExecutionModeSDK},
+			},
+		},
+		nav:            ui.NewNavigationPanel(&spin),
+		menu:           ui.NewMenu(),
+		tabbedWindow:   ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:   overlay.NewToastManager(&spin),
+		overlays:       overlay.NewManager(),
+		activeRepoPath: t.TempDir(),
+		program:        "claude",
+		daemonStatusChecker: func(string) daemonStatusMsg {
+			return daemonStatusMsg{ready: true}
+		},
+		instanceFinalizers: make(map[*session.Instance]func()),
+	}
+
+	_, cmd := h.spawnAdHocAgent("solo-agent", "", "", "claude", session.ExecutionModeSDK, "")
+	require.NotNil(t, cmd)
+
+	// Execute the returned cmd to get the instanceStartedMsg.
+	msg := cmd()
+	var started instanceStartedMsg
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, sub := range batch {
+			if sm, ok := sub().(instanceStartedMsg); ok {
+				started = sm
+				break
+			}
+		}
+	} else {
+		started, _ = msg.(instanceStartedMsg)
+	}
+
+	require.NotNil(t, started.instance)
+	assert.NoError(t, started.err)
+	assert.Equal(t, "myproject", capturedProject)
+	assert.Equal(t, "solo-agent", capturedReq.Title)
+	assert.Equal(t, "claude", capturedReq.Program)
+	assert.False(t, started.instance.Started(), "daemon SDK placeholder must not be started locally")
+}
+
+// TestSpawnTaskAgent_SoloSDKRoutesThroughDaemonWhenManaged verifies that when
+// the solo action uses SDK mode and the repo is daemon-managed, the spawn is
+// routed through spawnSoloWithDaemon with SoloAgent=true.
+func TestSpawnTaskAgent_SoloSDKRoutesThroughDaemonWhenManaged(t *testing.T) {
+	oldManaged := repoManagedByDaemon
+	oldSpawner := spawnSoloWithDaemon
+	t.Cleanup(func() {
+		repoManagedByDaemon = oldManaged
+		spawnSoloWithDaemon = oldSpawner
+	})
+	repoManagedByDaemon = func(string) bool { return true }
+
+	var capturedReq api.SpawnSoloRequest
+	spawnSoloWithDaemon = func(project string, req api.SpawnSoloRequest) error {
+		capturedReq = req
+		return nil
+	}
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	planFile := "my-task.md"
+	require.NoError(t, ps.Register(planFile, "My Task", "plan/my-task", time.Now()))
+
+	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:              context.Background(),
+		state:            stateDefault,
+		taskState:        ps,
+		taskStoreProject: "myproject",
+		activeRepoPath:   dir,
+		appConfig: &config.Config{
+			PhaseRoles: map[string]string{"implementing": "coder"},
+			Profiles: map[string]config.AgentProfile{
+				"coder": {Program: "claude", Enabled: true, ExecutionMode: config.ExecutionModeSDK},
+			},
+		},
+		nav:          ui.NewNavigationPanel(&spin),
+		menu:         ui.NewMenu(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager: overlay.NewToastManager(&spin),
+		overlays:     overlay.NewManager(),
+		program:      "claude",
+		daemonStatusChecker: func(string) daemonStatusMsg {
+			return daemonStatusMsg{ready: true}
+		},
+		instanceFinalizers: make(map[*session.Instance]func()),
+	}
+
+	_, cmd := h.spawnTaskAgent(planFile, "solo", "solo prompt")
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	var started instanceStartedMsg
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, sub := range batch {
+			if sm, ok := sub().(instanceStartedMsg); ok {
+				started = sm
+				break
+			}
+		}
+	} else {
+		started, _ = msg.(instanceStartedMsg)
+	}
+
+	require.NotNil(t, started.instance)
+	assert.NoError(t, started.err)
+	assert.True(t, capturedReq.SoloAgent, "SoloAgent must be set on the daemon request")
+	assert.Equal(t, "solo prompt", capturedReq.Prompt, "solo prompt must be forwarded to daemon request")
+	assert.Equal(t, planFile, capturedReq.TaskFile, "TaskFile must be forwarded to daemon request")
+	assert.True(t, started.instance.SoloAgent, "local placeholder must keep SoloAgent=true")
+}

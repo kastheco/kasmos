@@ -61,8 +61,12 @@ type Daemon struct {
 	killWaveAgents  func(repoPath, planFile string, wave int) error
 	reapSDKOrphan   func(project, instanceTitle, program string) error
 	createPR        func(RepoEntry, string, string) error
-	mu              sync.RWMutex
-	startedAt       time.Time
+	// spawnSolo is an injectable seam for tests to override standalone spawn behaviour
+	// without needing a real agent process.
+	spawnSolo               func(context.Context, SpawnSoloOpts) error
+	pendingStandaloneTitles map[string]struct{}
+	mu                      sync.RWMutex
+	startedAt               time.Time
 }
 
 // daemonStateAdapter adapts the Daemon to the api.StateProvider interface.
@@ -71,10 +75,12 @@ type daemonStateAdapter struct {
 }
 
 // activePlansByProject counts distinct plan files currently running per project.
+// Standalone instances (PlanFile == "") are excluded: they are not orchestration
+// plans and must not inflate the active-plan count shown in the admin overview.
 func (a *daemonStateAdapter) activePlansByProject() map[string]int {
 	counts := map[string]int{}
 	for _, inst := range a.d.spawner.RunningInstances() {
-		if inst.Project == "" {
+		if inst.Project == "" || inst.PlanFile == "" {
 			continue
 		}
 		key := inst.Project + "\x00" + inst.PlanFile
@@ -204,7 +210,9 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 		if entry.Project != project {
 			continue
 		}
-		tracked := a.d.spawner.InstancesForRepo(entry.Path)
+		// Use InstancesForProject so standalone instances whose inst.Path differs
+		// from entry.Path (e.g. WorkPath overrides) are also surfaced.
+		tracked := a.d.spawner.InstancesForProject(entry.Path, project)
 		out := make([]api.InstanceStatus, 0, len(tracked))
 		for _, inst := range tracked {
 			if inst == nil {
@@ -229,6 +237,8 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 				WaveTaskIndex: inst.WaveTaskIndex,
 				WaveTaskCount: inst.WaveTaskCount,
 				ExecutionMode: string(session.NormalizeExecutionMode(inst.ExecutionMode)),
+				SoloAgent:     inst.SoloAgent,
+				SDKSpeedTier:  inst.SDKSpeedTier,
 			})
 		}
 		return out
@@ -238,6 +248,37 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 
 func (a *daemonStateAdapter) StartPlan(project, filename, prompt, program string) error {
 	return a.d.StartPlan(project, filename, prompt, program)
+}
+
+// SpawnSolo implements api.StateProvider. It validates the project and program
+// synchronously, then delegates to Daemon.SpawnSolo which fires the async start.
+func (a *daemonStateAdapter) SpawnSolo(project string, req api.SpawnSoloRequest) error {
+	return a.d.SpawnSolo(project, req)
+}
+
+func standaloneTitleKey(title string) string {
+	return title
+}
+
+func (d *Daemon) reserveStandaloneTitle(title string) bool {
+	key := standaloneTitleKey(title)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.pendingStandaloneTitles == nil {
+		d.pendingStandaloneTitles = make(map[string]struct{})
+	}
+	if _, exists := d.pendingStandaloneTitles[key]; exists {
+		return false
+	}
+	d.pendingStandaloneTitles[key] = struct{}{}
+	return true
+}
+
+func (d *Daemon) releaseStandaloneTitle(title string) {
+	key := standaloneTitleKey(title)
+	d.mu.Lock()
+	delete(d.pendingStandaloneTitles, key)
+	d.mu.Unlock()
 }
 
 func (a *daemonStateAdapter) EventStream() <-chan api.Event {
@@ -516,6 +557,80 @@ func (d *Daemon) startPlanAsync(entry RepoEntry, planFile, prompt, program strin
 			Repo:      entry.Path,
 			PlanFile:  planFile,
 			AgentType: session.AgentTypePlanner,
+		})
+	}
+}
+
+// SpawnSolo asks the daemon to launch a standalone SDK agent instance outside
+// the plan orchestration lifecycle. It validates the project registration and
+// program synchronously, then fires startSoloAsync in a goroutine and returns
+// immediately — following the same async pattern as StartPlan.
+func (d *Daemon) SpawnSolo(project string, req api.SpawnSoloRequest) error {
+	var entry RepoEntry
+	var found bool
+	for _, repo := range d.repos.List() {
+		if repo.Project == project {
+			entry = repo
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("%w: %s", api.ErrProjectNotFound, project)
+	}
+
+	// Reject programs that do not support SDK execution so the HTTP handler
+	// can return 400 before wasting async resources.
+	if session.ResolveExecutionMode(session.ExecutionModeSDK, req.Program) != session.ExecutionModeSDK {
+		return fmt.Errorf("%w: program %q does not support SDK execution", api.ErrInvalidRequest, req.Program)
+	}
+
+	if !d.reserveStandaloneTitle(req.Title) {
+		return fmt.Errorf("%w: %s", api.ErrStandaloneConflict, req.Title)
+	}
+
+	if d.spawner.IsTitleTracked(req.Title) {
+		d.releaseStandaloneTitle(req.Title)
+		return fmt.Errorf("%w: %s", api.ErrStandaloneConflict, req.Title)
+	}
+
+	go d.startSoloAsync(entry, req)
+	return nil
+}
+
+func (d *Daemon) startSoloAsync(entry RepoEntry, req api.SpawnSoloRequest) {
+	defer d.releaseStandaloneTitle(req.Title)
+
+	spawnSolo := d.spawnSolo
+	if spawnSolo == nil {
+		spawnSolo = func(ctx context.Context, opts SpawnSoloOpts) error {
+			return d.spawner.SpawnSolo(ctx, opts)
+		}
+	}
+
+	opts := SpawnSoloOpts{
+		RepoPath:     entry.Path,
+		Project:      entry.Project,
+		Title:        req.Title,
+		Program:      req.Program,
+		Prompt:       req.Prompt,
+		TaskFile:     req.TaskFile,
+		AgentType:    req.AgentType,
+		SoloAgent:    req.SoloAgent,
+		Branch:       req.Branch,
+		WorkPath:     req.WorkPath,
+		SDKSpeedTier: req.SDKSpeedTier,
+	}
+	if err := spawnSolo(context.Background(), opts); err != nil {
+		d.logger.Error("spawn solo failed", "project", entry.Project, "title", req.Title, "err", err)
+		return
+	}
+	if d.broadcaster != nil {
+		d.broadcaster.Emit(api.Event{
+			Kind:      api.EventKindAgentSpawned,
+			Message:   "standalone agent spawned: " + req.Title,
+			Repo:      entry.Path,
+			AgentType: req.AgentType,
 		})
 	}
 }

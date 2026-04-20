@@ -31,6 +31,17 @@ var ErrInstanceNotFound = errors.New("instance not found")
 // instance's current state (e.g. pausing an already-paused instance).
 var ErrInvalidTransition = errors.New("invalid state transition")
 
+// ErrStandaloneConflict is returned when a standalone spawn is requested for
+// a title that is already tracked by the daemon. Kept separate from
+// ErrInvalidTransition because duplicate titles are a create-time conflict (409),
+// not a state-transition failure.
+var ErrStandaloneConflict = errors.New("standalone title already tracked")
+
+// ErrInvalidRequest is returned when a spawn request is semantically invalid
+// (e.g. the requested program does not support the SDK execution mode). It maps
+// to HTTP 400 Bad Request at the handler layer.
+var ErrInvalidRequest = errors.New("invalid request")
+
 // ---------------------------------------------------------------------------
 // Wire types
 // ---------------------------------------------------------------------------
@@ -77,6 +88,33 @@ type InstanceStatus struct {
 	// the web admin can disable tmux-only controls for sdk instances
 	// that never had a pane in the first place.
 	ExecutionMode string `json:"execution_mode,omitempty"`
+	// SoloAgent is true for standalone SDK instances spawned outside the
+	// plan-orchestration lifecycle (e.g. via POST .../instances/solo).
+	SoloAgent bool `json:"solo_agent,omitempty"`
+	// SDKSpeedTier carries the session-scoped speed tier for SDK sessions
+	// ("" for default, "fast" for the fast tier). Omitted when empty so that
+	// existing SDK rows without a tier setting are unchanged on the wire.
+	SDKSpeedTier string `json:"sdk_speed_tier,omitempty"`
+}
+
+// SpawnSoloRequest is the request body for POST /v1/repos/{project}/instances/solo.
+// The endpoint is SDK-specific: programs that do not resolve to SDK execution are
+// rejected with 400.
+type SpawnSoloRequest struct {
+	Title        string `json:"title"`
+	Program      string `json:"program"`
+	Prompt       string `json:"prompt,omitempty"`
+	TaskFile     string `json:"task_file,omitempty"`
+	AgentType    string `json:"agent_type,omitempty"`
+	SoloAgent    bool   `json:"solo_agent,omitempty"`
+	Branch       string `json:"branch,omitempty"`
+	WorkPath     string `json:"work_path,omitempty"`
+	SDKSpeedTier string `json:"sdk_speed_tier,omitempty"`
+}
+
+// SpawnSoloResponse is the response body for a successful POST .../instances/solo.
+type SpawnSoloResponse struct {
+	Title string `json:"title"`
 }
 
 // PresentationResponse is the response body for GET .../presentation.
@@ -164,6 +202,11 @@ type StateProvider interface {
 	// SendInstancePermissionResponse forwards a permission-overlay selection to
 	// the tracked instance identified by project/title.
 	SendInstancePermissionResponse(project, title string, choice PermissionChoice) error
+	// SpawnSolo creates a standalone SDK instance for the given project. The
+	// spawn is asynchronous: the instance is tracked immediately and the method
+	// returns before the agent process has started. Errors from the async start
+	// (e.g. git operations) are not propagated to the caller.
+	SpawnSolo(project string, req SpawnSoloRequest) error
 }
 
 // ---------------------------------------------------------------------------
@@ -278,6 +321,12 @@ func (s *DaemonState) SendInstancePermissionResponse(_, _ string, _ PermissionCh
 	return fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
 }
 
+// SpawnSolo implements StateProvider. DaemonState has no backing store so it
+// always succeeds as a no-op (useful for unit tests that don't need real spawn behaviour).
+func (s *DaemonState) SpawnSolo(_ string, _ SpawnSoloRequest) error {
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------------
@@ -346,6 +395,7 @@ func (h *Handler) registerRoutes() {
 	h.mux.HandleFunc("GET /v1/repos/{project}/instances/{title}/presentation", h.handleInstancePresentation)
 	h.mux.HandleFunc("POST /v1/repos/{project}/instances/{title}/send", h.handleInstanceSend)
 	h.mux.HandleFunc("POST /v1/repos/{project}/instances/{title}/permission", h.handleInstancePermission)
+	h.mux.HandleFunc("POST /v1/repos/{project}/instances/solo", h.handleSpawnSolo)
 	h.mux.HandleFunc("POST /v1/repos/{project}/plans/{filename}/plan", h.handleStartPlan)
 	h.mux.HandleFunc("POST /v1/repos/{project}/plans/{filename}/implement", h.handleImplementPlan)
 
@@ -585,6 +635,42 @@ func (h *Handler) handleInstancePresentation(w http.ResponseWriter, r *http.Requ
 		Turns:      turns,
 		CapturedAt: capturedAt,
 	})
+}
+
+// handleSpawnSolo serves POST /v1/repos/{project}/instances/solo. It creates a
+// daemon-owned standalone SDK instance. The spawn is asynchronous: the handler
+// returns 202 Accepted once the instance is reserved in the daemon's tracking
+// maps. Non-SDK programs and missing titles/programs are rejected with 400.
+// Unknown projects return 404; duplicate titles return 409.
+func (h *Handler) handleSpawnSolo(w http.ResponseWriter, r *http.Request) {
+	project := r.PathValue("project")
+	var req SpawnSoloRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if req.Title == "" {
+		writeError(w, http.StatusBadRequest, "title is required")
+		return
+	}
+	if req.Program == "" {
+		writeError(w, http.StatusBadRequest, "program is required")
+		return
+	}
+	if err := h.state.SpawnSolo(project, req); err != nil {
+		switch {
+		case errors.Is(err, ErrProjectNotFound):
+			writeError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, ErrStandaloneConflict):
+			writeError(w, http.StatusConflict, err.Error())
+		case errors.Is(err, ErrInvalidRequest):
+			writeError(w, http.StatusBadRequest, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusAccepted, SpawnSoloResponse{Title: req.Title})
 }
 
 // handleImplementPlan serves POST /v1/repos/{project}/plans/{filename}/implement (comment preserved for accurate label).

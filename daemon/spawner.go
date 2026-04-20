@@ -43,6 +43,22 @@ type InstanceInfo struct {
 	Project string
 }
 
+// SpawnSoloOpts holds all parameters for a standalone SDK agent spawn that is
+// not part of a plan-orchestration lifecycle.
+type SpawnSoloOpts struct {
+	RepoPath     string
+	Project      string
+	Title        string
+	Program      string
+	Prompt       string
+	TaskFile     string
+	AgentType    string
+	SoloAgent    bool
+	Branch       string
+	WorkPath     string
+	SDKSpeedTier string
+}
+
 // TmuxSpawner implements loop.AgentSpawner using tmux-backed sessions managed
 // by the session package. It tracks running instances in a map keyed by
 // "repoPath:planFile:agentType" and provides a KillAgent method to stop them.
@@ -70,6 +86,10 @@ type TmuxSpawner struct {
 	sleep              func(time.Duration)
 	kill               func(*session.Instance) error
 	startOnMain        func(*session.Instance) error
+	// startOnBranch is used by SpawnSolo when a branch override is requested.
+	// It maps to session.Instance.StartOnBranch for production use and can be
+	// replaced in tests to avoid real git worktree operations.
+	startOnBranch      func(*session.Instance, string) error
 	startInShared      func(*session.Instance, *gitpkg.GitWorktree, string) error
 	cmdExec            cmd.Executor
 	discoverOrphans    func([]string) ([]tmuxpkg.SessionInfo, error)
@@ -126,6 +146,7 @@ func newTmuxSpawnerWithConfig(logger *slog.Logger, drainTimeout time.Duration) *
 		sleep:              time.Sleep,
 		kill:               func(inst *session.Instance) error { return inst.Kill() },
 		startOnMain:        func(inst *session.Instance) error { return inst.StartOnMainBranch() },
+		startOnBranch:      func(inst *session.Instance, branch string) error { return inst.StartOnBranch(branch) },
 		startInShared: func(inst *session.Instance, worktree *gitpkg.GitWorktree, branch string) error {
 			return inst.StartInSharedWorktree(worktree, branch)
 		},
@@ -915,6 +936,115 @@ func (s *TmuxSpawner) spawnInSharedWorktreeReserved(_ context.Context, opts loop
 		inst.AwaitingWork = true
 	}
 	return nil
+}
+
+// instanceKeyForStandalone returns the map key for a standalone (non-plan)
+// agent instance. The "standalone:" prefix distinguishes these keys from
+// plan-agent keys so callers can identify them without additional metadata.
+func instanceKeyForStandalone(repoPath, title string) string {
+	return "standalone:" + repoPath + ":" + title
+}
+
+// SpawnSolo launches a standalone SDK agent that is not part of a plan
+// orchestration lifecycle. It mirrors the branch/path routing from the TUI's
+// spawnAdHocAgent:
+//
+//   - WorkPath != "" && Branch == "": start in WorkPath via StartOnMainBranch
+//   - Branch != "":                   start on Branch via StartOnBranch; WorkPath
+//     (if non-empty) is used as the repo root in the instance options
+//   - default:                         start in RepoPath via StartOnMainBranch
+//
+// The instance is committed to the tracking maps before the blocking start call
+// so ListInstances surfaces a loading row immediately. On start failure,
+// discardTrackedInstance removes the dead placeholder.
+func (s *TmuxSpawner) SpawnSolo(ctx context.Context, opts SpawnSoloOpts) error {
+	key := instanceKeyForStandalone(opts.RepoPath, opts.Title)
+	if !s.reserveInstanceSlot(key, opts.Title) {
+		return fmt.Errorf("%w: %s", errInstanceAlreadyTracked, opts.Title)
+	}
+
+	// Determine the instance path following the TUI branch/path switch.
+	instPath := opts.RepoPath
+	switch {
+	case opts.Branch != "" && opts.WorkPath != "":
+		instPath = opts.WorkPath
+	case opts.WorkPath != "" && opts.Branch == "":
+		instPath = opts.WorkPath
+	}
+
+	agentType := opts.AgentType
+	if agentType == "" {
+		agentType = session.AgentTypeMaster
+	}
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:           opts.Title,
+		Path:            instPath,
+		Program:         opts.Program,
+		ExecutionMode:   session.ExecutionModeSDK,
+		TaskFile:        opts.TaskFile,
+		AgentType:       agentType,
+		SDKSpeedTier:    opts.SDKSpeedTier,
+		SkipPermissions: true,
+	})
+	if err != nil {
+		s.releaseReservation(key)
+		return fmt.Errorf("TmuxSpawner.SpawnSolo: create instance: %w", err)
+	}
+	inst.SoloAgent = opts.SoloAgent
+	inst.QueuedPrompt = opts.Prompt
+	inst.SetStatus(session.Loading)
+
+	// Commit before the blocking start so ListInstances surfaces a loading row.
+	s.commitInstance(key, "" /* no plan file */, agentType, opts.Project, inst)
+
+	var startErr error
+	switch {
+	case opts.Branch != "":
+		startOnBranch := s.startOnBranch
+		if startOnBranch == nil {
+			startOnBranch = func(i *session.Instance, b string) error { return i.StartOnBranch(b) }
+		}
+		startErr = startOnBranch(inst, opts.Branch)
+	default:
+		startErr = s.startOnMain(inst)
+	}
+	if startErr != nil {
+		s.discardTrackedInstance(key, inst)
+		return fmt.Errorf("TmuxSpawner.SpawnSolo: start: %w", startErr)
+	}
+	return nil
+}
+
+// InstancesForProject returns a snapshot of tracked instances that belong to
+// the given project. It matches instances both by path (inst.Path == repoPath)
+// and by project tracking (projectByKey[key] == project), so standalone
+// instances whose path differs from the registered repo root are also included.
+func (s *TmuxSpawner) InstancesForProject(repoPath, project string) []*session.Instance {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*session.Instance, 0, len(s.instances))
+	for key, inst := range s.instances {
+		if inst == nil {
+			continue
+		}
+		if inst.Path == repoPath || s.projectByKey[key] == project {
+			out = append(out, inst)
+		}
+	}
+	return out
+}
+
+// IsTitleTracked reports whether any tracked instance already owns title.
+func (s *TmuxSpawner) IsTitleTracked(title string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, inst := range s.instances {
+		if inst != nil && inst.Title == title {
+			return true
+		}
+	}
+	return false
 }
 
 func ensureWorktreeScaffold(worktreePath, program, role string) error {
