@@ -79,6 +79,15 @@ func (r *Renderer) AddEvent(e Event) {
 			ToolName:  e.ToolName,
 		})
 		turn.ToolCount++
+		// Append one RowToolDiff per diff payload immediately after the tool row.
+		for _, diff := range extractToolDiffs(e.ToolName, e.ToolInput, diffPreviewMaxLines) {
+			turn.Rows = append(turn.Rows, PresentationRow{
+				Kind:      RowToolDiff,
+				Timestamp: e.Timestamp,
+				ToolName:  e.ToolName,
+				ToolDiff:  diff,
+			})
+		}
 
 	case EventToolResult:
 		// Render a short, single-line result summary. Long payloads (file
@@ -93,13 +102,25 @@ func (r *Renderer) AddEvent(e Event) {
 			// Structured path.
 			turn := r.ensureTurn(e.TurnID, e.Timestamp)
 			r.closeStructuredProseBlock()
+			isErr := strings.HasPrefix(line, "✗ ")
 			turn.Rows = append(turn.Rows, PresentationRow{
 				Kind:      RowResult,
 				Text:      line,
 				Timestamp: e.Timestamp,
 				ToolName:  e.ToolName,
-				IsError:   strings.HasPrefix(line, "✗ "),
+				IsError:   isErr,
 			})
+			// Append a RowToolPreview row for non-error textual results.
+			if !isErr {
+				if preview := extractToolPreview(e.ToolName, e.ToolResult, diffPreviewMaxLines); preview != nil {
+					turn.Rows = append(turn.Rows, PresentationRow{
+						Kind:        RowToolPreview,
+						Timestamp:   e.Timestamp,
+						ToolName:    e.ToolName,
+						ToolPreview: preview,
+					})
+				}
+			}
 		}
 
 	case EventPermission:
@@ -226,6 +247,7 @@ func (r *Renderer) CapturePresentation() []*PresentationTurn {
 	copied := deepCopyTurns(r.turns)
 	for _, t := range copied {
 		maybeInjectThinking(t, now)
+		t.Activity = deriveTurnActivity(t, now)
 	}
 	return copied
 }
@@ -342,20 +364,10 @@ func (r *Renderer) appendStandaloneTurn(turnID string, ts time.Time, row Present
 	r.clearCurrentTurn()
 }
 
-// deepCopyTurns returns a fully independent copy of src. The returned pointers
-// and all Rows slices are freshly allocated so callers can safely mutate them.
+// deepCopyTurns returns a fully independent copy of src. Delegates to
+// ClonePresentationTurns which handles all nested pointer fields.
 func deepCopyTurns(src []*PresentationTurn) []*PresentationTurn {
-	if len(src) == 0 {
-		return nil
-	}
-	out := make([]*PresentationTurn, len(src))
-	for i, t := range src {
-		cp := *t // value copy of PresentationTurn
-		cp.Rows = make([]PresentationRow, len(t.Rows))
-		copy(cp.Rows, t.Rows) // PresentationRow has no pointer fields
-		out[i] = &cp
-	}
-	return out
+	return ClonePresentationTurns(src)
 }
 
 // appendText appends a raw text fragment (which may contain newlines) to the

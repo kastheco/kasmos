@@ -591,17 +591,19 @@ func TestRenderer_CapturePresentation_ProseAfterToolStartsNewResponseBlock(t *te
 
 	turns := r.CapturePresentation()
 	require.Len(t, turns, 1)
+	// RowToolPreview is now inserted after RowResult for non-error textual results.
 	require.Equal(t, []PresentationRowKind{
 		RowResponse,
 		RowProse,
 		RowTool,
 		RowResult,
+		RowToolPreview,
 		RowResponse,
 		RowProse,
 	}, rowKinds(turns[0].Rows))
 
 	assert.Equal(t, "using architect first", turns[0].Rows[1].Text)
-	assert.Equal(t, "next i'm reading overlay code", turns[0].Rows[5].Text)
+	assert.Equal(t, "next i'm reading overlay code", turns[0].Rows[6].Text)
 }
 
 // --- HeaderText tests ---
@@ -873,4 +875,319 @@ func TestRenderer_ClaudeTransportContract_MultiTurn(t *testing.T) {
 	assert.Equal(t, 2, turns[1].Number)
 	assert.False(t, turns[0].Running())
 	assert.False(t, turns[1].Running())
+}
+
+// --- RowToolDiff and RowToolPreview injection tests ---
+
+func TestRenderer_ToolCall_Edit_InjectsToolDiffRow(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{
+		Kind:      EventToolCall,
+		TurnID:    "t1",
+		ToolName:  "Edit",
+		ToolInput: `{"path":"main.go","old_string":"hello","new_string":"world"}`,
+		Timestamp: ts,
+	})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+
+	kinds := rowKinds(turns[0].Rows)
+	toolIdx := -1
+	for i, k := range kinds {
+		if k == RowTool {
+			toolIdx = i
+			break
+		}
+	}
+	require.True(t, toolIdx >= 0, "must have a RowTool row")
+	require.True(t, toolIdx+1 < len(kinds), "must have a row after RowTool")
+	assert.Equal(t, RowToolDiff, kinds[toolIdx+1], "RowToolDiff must immediately follow RowTool")
+
+	diffRow := turns[0].Rows[toolIdx+1]
+	require.NotNil(t, diffRow.ToolDiff)
+	assert.Equal(t, "main.go", diffRow.ToolDiff.Path)
+}
+
+func TestRenderer_ToolCall_NonDiffTool_NoToolDiffRow(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{
+		Kind:      EventToolCall,
+		TurnID:    "t1",
+		ToolName:  "bash",
+		ToolInput: `{"command":"ls"}`,
+		Timestamp: ts,
+	})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+	for _, row := range turns[0].Rows {
+		assert.NotEqual(t, RowToolDiff, row.Kind, "non-diff tool must not produce RowToolDiff")
+	}
+}
+
+func TestRenderer_ToolResult_NonError_InjectsToolPreviewRow(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{
+		Kind:       EventToolResult,
+		TurnID:     "t1",
+		ToolName:   "read_file",
+		ToolResult: `{"content":"line1\nline2"}`,
+		Timestamp:  ts,
+	})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+
+	kinds := rowKinds(turns[0].Rows)
+	resultIdx := -1
+	for i, k := range kinds {
+		if k == RowResult {
+			resultIdx = i
+			break
+		}
+	}
+	require.True(t, resultIdx >= 0, "must have a RowResult row")
+	require.True(t, resultIdx+1 < len(kinds), "must have a row after RowResult")
+	assert.Equal(t, RowToolPreview, kinds[resultIdx+1], "RowToolPreview must immediately follow RowResult")
+
+	previewRow := turns[0].Rows[resultIdx+1]
+	require.NotNil(t, previewRow.ToolPreview)
+	assert.Equal(t, []string{"line1", "line2"}, previewRow.ToolPreview.Lines)
+}
+
+func TestRenderer_ToolResult_Error_NoToolPreviewRow(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{
+		Kind:       EventToolResult,
+		TurnID:     "t1",
+		ToolName:   "bash",
+		ToolResult: `{"success":false,"error":"denied"}`,
+		Timestamp:  ts,
+	})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+	for _, row := range turns[0].Rows {
+		assert.NotEqual(t, RowToolPreview, row.Kind, "error result must not produce RowToolPreview")
+	}
+}
+
+func TestRenderer_ToolResult_DiffTool_NoToolPreviewRow(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{
+		Kind:      EventToolCall,
+		TurnID:    "t1",
+		ToolName:  "Edit",
+		ToolInput: `{"path":"a.go","old_string":"old","new_string":"new"}`,
+		Timestamp: ts,
+	})
+	r.AddEvent(Event{
+		Kind:       EventToolResult,
+		TurnID:     "t1",
+		ToolName:   "Edit",
+		ToolResult: `{"content":"result"}`,
+		Timestamp:  ts,
+	})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+	for _, row := range turns[0].Rows {
+		assert.NotEqual(t, RowToolPreview, row.Kind, "Edit result must not produce RowToolPreview")
+	}
+}
+
+func TestRenderer_CapturePresentation_DeepCopy_ToolDiffAndPreview(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{
+		Kind:      EventToolCall,
+		TurnID:    "t1",
+		ToolName:  "Edit",
+		ToolInput: `{"path":"x.go","old_string":"old","new_string":"new"}`,
+		Timestamp: ts,
+	})
+	r.AddEvent(Event{
+		Kind:       EventToolResult,
+		TurnID:     "t1",
+		ToolName:   "read_file",
+		ToolResult: `{"content":"hello"}`,
+		Timestamp:  ts,
+	})
+
+	copy1 := r.CapturePresentation()
+	require.Len(t, copy1, 1)
+
+	// Find and mutate ToolDiff in copy1.
+	for _, row := range copy1[0].Rows {
+		if row.ToolDiff != nil {
+			row.ToolDiff.Path = "mutated"
+		}
+		if row.ToolPreview != nil && len(row.ToolPreview.Lines) > 0 {
+			row.ToolPreview.Lines[0] = "mutated"
+		}
+	}
+
+	// Second capture must not see mutations.
+	copy2 := r.CapturePresentation()
+	require.Len(t, copy2, 1)
+	for _, row := range copy2[0].Rows {
+		if row.ToolDiff != nil {
+			assert.NotEqual(t, "mutated", row.ToolDiff.Path, "ToolDiff in second copy must not be affected by mutation of first copy")
+		}
+		if row.ToolPreview != nil && len(row.ToolPreview.Lines) > 0 {
+			assert.NotEqual(t, "mutated", row.ToolPreview.Lines[0], "ToolPreview in second copy must not be affected by mutation of first copy")
+		}
+	}
+}
+
+// --- Activity derivation tests ---
+
+func TestDeriveTurnActivity_UnresolvedTool(t *testing.T) {
+	ts := time.Now()
+	turn := &PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: ts,
+		Rows: []PresentationRow{
+			{Kind: RowTool, Text: "• read_file main.go", ToolName: "read_file", Timestamp: ts},
+		},
+	}
+	act := deriveTurnActivity(turn, ts)
+	require.NotNil(t, act)
+	assert.Equal(t, "tool", act.Kind)
+	assert.Equal(t, "read_file main.go", act.Label)
+}
+
+func TestDeriveTurnActivity_ResolvedTool_NoActivity(t *testing.T) {
+	ts := time.Now()
+	turn := &PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: ts,
+		Rows: []PresentationRow{
+			{Kind: RowTool, Text: "• bash ls", ToolName: "bash", Timestamp: ts},
+			{Kind: RowResult, Text: "→ ok", Timestamp: ts},
+		},
+	}
+	act := deriveTurnActivity(turn, ts)
+	// Tool is resolved — should fall through to "working".
+	require.NotNil(t, act)
+	assert.Equal(t, "working", act.Kind)
+}
+
+func TestDeriveTurnActivity_Permission(t *testing.T) {
+	ts := time.Now()
+	turn := &PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: ts,
+		Rows: []PresentationRow{
+			{Kind: RowTool, Text: "• bash", ToolName: "bash", Timestamp: ts},
+			{Kind: RowResult, Text: "→ ok", Timestamp: ts},
+			{Kind: RowPermission, Text: "[permission: run bash]", Timestamp: ts},
+		},
+	}
+	act := deriveTurnActivity(turn, ts)
+	require.NotNil(t, act)
+	assert.Equal(t, "permission", act.Kind)
+	assert.Equal(t, "permission requested", act.Label)
+}
+
+func TestDeriveTurnActivity_NoRows_Thinking(t *testing.T) {
+	ts := time.Now()
+	turn := &PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: ts,
+	}
+	act := deriveTurnActivity(turn, ts)
+	require.NotNil(t, act)
+	assert.Equal(t, "thinking", act.Kind)
+	assert.Equal(t, "thinking", act.Label)
+}
+
+func TestDeriveTurnActivity_CompletedTurn_ReturnsNil(t *testing.T) {
+	ts := time.Now()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   ts,
+		CompletedAt: ts,
+	}
+	act := deriveTurnActivity(turn, ts)
+	assert.Nil(t, act)
+}
+
+func TestDeriveTurnActivity_InterruptedTurn_ReturnsNil(t *testing.T) {
+	ts := time.Now()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   ts,
+		Interrupted: true,
+	}
+	act := deriveTurnActivity(turn, ts)
+	assert.Nil(t, act)
+}
+
+func TestRenderer_CapturePresentation_ActivitySetOnRunningTurn(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{
+		Kind:      EventToolCall,
+		TurnID:    "t1",
+		ToolName:  "bash",
+		ToolInput: `{"command":"ls"}`,
+		Timestamp: ts,
+	})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+	assert.True(t, turns[0].Running())
+	require.NotNil(t, turns[0].Activity)
+	assert.Equal(t, "tool", turns[0].Activity.Kind)
+}
+
+func TestRenderer_CapturePresentation_ActivityNilOnCompletedTurn(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{Kind: EventTurnCompleted, TurnID: "t1", Timestamp: ts})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+	assert.False(t, turns[0].Running())
+	assert.Nil(t, turns[0].Activity)
+}
+
+func TestRenderer_CapturePresentation_ActivityNotStoredInternally(t *testing.T) {
+	// Activity must be set only on the deep copy, not the internal turn.
+	r := NewRenderer()
+	ts := time.Now()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+
+	turns1 := r.CapturePresentation()
+	// Mutate the activity on the copy.
+	if turns1[0].Activity != nil {
+		turns1[0].Activity.Kind = "mutated"
+	}
+
+	turns2 := r.CapturePresentation()
+	require.Len(t, turns2, 1)
+	if turns2[0].Activity != nil {
+		assert.NotEqual(t, "mutated", turns2[0].Activity.Kind)
+	}
 }

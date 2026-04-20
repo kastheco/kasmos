@@ -120,3 +120,102 @@ func TestInstance_SendPromptWithLocalImages_DelegatesToExecutionSession(t *testi
 	assert.Equal(t, "describe this", mock.lastPrompt)
 	assert.Equal(t, []string{"/tmp/screenshot.png"}, mock.lastImages)
 }
+
+// TestInstance_SetCachedPresentation_DeepCopy_ToolDiff verifies that
+// SetCachedPresentation stores a deep copy so subsequent mutations to the
+// source slice do not affect the cached data.
+func TestInstance_SetCachedPresentation_DeepCopy_ToolDiff(t *testing.T) {
+	oldN, newN := 1, 1
+	turns := []*sdk.PresentationTurn{
+		{
+			ID:     "t1",
+			Number: 1,
+			Rows: []sdk.PresentationRow{
+				{
+					Kind:     sdk.RowToolDiff,
+					ToolName: "Edit",
+					ToolDiff: &sdk.ToolDiffPayload{
+						Path: "original.go",
+						Lines: []sdk.ToolDiffLine{
+							{Kind: sdk.DiffLineAdded, NewNumber: &newN, NewText: "added"},
+							{Kind: sdk.DiffLineRemoved, OldNumber: &oldN, OldText: "removed"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	inst := &Instance{}
+	inst.SetCachedPresentation(turns)
+
+	// Mutate the original after storing.
+	turns[0].Rows[0].ToolDiff.Path = "mutated.go"
+	turns[0].Rows[0].ToolDiff.Lines[0].NewText = "mutated"
+
+	result := inst.CapturePresentation()
+	require.Len(t, result, 1)
+	require.NotNil(t, result[0].Rows[0].ToolDiff)
+	assert.Equal(t, "original.go", result[0].Rows[0].ToolDiff.Path)
+	assert.Equal(t, "added", result[0].Rows[0].ToolDiff.Lines[0].NewText)
+}
+
+// TestInstance_SetCachedPresentation_DeepCopy_ToolPreview verifies that
+// SetCachedPresentation deep copies ToolPreview payloads.
+func TestInstance_SetCachedPresentation_DeepCopy_ToolPreview(t *testing.T) {
+	turns := []*sdk.PresentationTurn{
+		{
+			ID:     "t1",
+			Number: 1,
+			Rows: []sdk.PresentationRow{
+				{
+					Kind:     sdk.RowToolPreview,
+					ToolName: "read_file",
+					ToolPreview: &sdk.ToolPreviewPayload{
+						Lines: []string{"original line"},
+					},
+				},
+			},
+		},
+	}
+
+	inst := &Instance{}
+	inst.SetCachedPresentation(turns)
+
+	// Mutate the original.
+	turns[0].Rows[0].ToolPreview.Lines[0] = "mutated"
+
+	result := inst.CapturePresentation()
+	require.Len(t, result, 1)
+	require.NotNil(t, result[0].Rows[0].ToolPreview)
+	assert.Equal(t, "original line", result[0].Rows[0].ToolPreview.Lines[0])
+}
+
+// TestInstance_SetCachedPresentation_DeepCopy_Activity verifies that Activity
+// pointer fields are deep-copied.
+func TestInstance_SetCachedPresentation_DeepCopy_Activity(t *testing.T) {
+	ts := sdk.PresentationTurn{}.StartedAt // zero time
+	_ = ts
+
+	turns := []*sdk.PresentationTurn{
+		{
+			ID:     "t1",
+			Number: 1,
+			Activity: &sdk.TurnActivity{
+				Kind:  "tool",
+				Label: "original label",
+			},
+		},
+	}
+
+	inst := &Instance{}
+	inst.SetCachedPresentation(turns)
+
+	// Mutate original activity.
+	turns[0].Activity.Label = "mutated"
+
+	result := inst.CapturePresentation()
+	require.Len(t, result, 1)
+	require.NotNil(t, result[0].Activity)
+	assert.Equal(t, "original label", result[0].Activity.Label)
+}
