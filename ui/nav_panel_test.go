@@ -1309,6 +1309,17 @@ func TestNavPlanRowLabel_ReadinessReview(t *testing.T) {
 	label := navPlanRowLabel(p)
 	assert.Equal(t, "feature-auth · readiness review", label,
 		"sidebar row label must be '<name> · readiness review'")
+
+	// When ActiveRound > 0 the round number must appear in the row label.
+	p2 := PlanDisplay{
+		Filename:    "feature-auth",
+		Status:      "reviewing",
+		Phase:       "readiness_reviewing",
+		ActiveRound: 2,
+	}
+	label2 := navPlanRowLabel(p2)
+	assert.Equal(t, "feature-auth · readiness review 2", label2,
+		"sidebar row label must be '<name> · readiness review N' when ActiveRound > 0")
 }
 
 func TestNavPlanSortKey_ReadinessReviewingIsActive(t *testing.T) {
@@ -1323,8 +1334,8 @@ func TestNavPlanSortKey_ReadinessReviewingIsActive(t *testing.T) {
 
 func TestNavPlanPhaseLabel_ReadinessReview(t *testing.T) {
 	assert.Equal(t, "readiness review", navPlanPhaseLabel("readiness_reviewing", 0, 0))
-	// wave and round values are ignored for readiness review
-	assert.Equal(t, "readiness review", navPlanPhaseLabel("readiness_reviewing", 2, 3))
+	// wave is still ignored; round is now rendered when > 0
+	assert.Equal(t, "readiness review 3", navPlanPhaseLabel("readiness_reviewing", 2, 3))
 }
 
 func TestString_ReadinessReviewPlanAppearsInActiveSection(t *testing.T) {
@@ -1345,6 +1356,27 @@ func TestString_ReadinessReviewPlanAppearsInActiveSection(t *testing.T) {
 	output := n.String()
 	require.NotEmpty(t, output)
 	assert.Contains(t, output, "readiness review", "readiness review phase must be visible in sidebar")
+}
+
+func TestString_ReadinessReviewWithRoundAppearsInActiveSection(t *testing.T) {
+	n := newTestPanel()
+	n.SetSize(60, 40)
+	n.SetData(
+		[]PlanDisplay{
+			{
+				Filename:    "auth-feature",
+				Status:      "reviewing",
+				Phase:       "readiness_reviewing",
+				AgentType:   "master",
+				ActiveRound: 2,
+			},
+		},
+		nil, nil, nil, nil,
+	)
+
+	output := n.String()
+	require.NotEmpty(t, output)
+	assert.Contains(t, output, "readiness review 2", "readiness review phase with round must be visible in sidebar")
 }
 
 // ---------- verifying status ----------
@@ -1370,7 +1402,7 @@ func TestNavPlanSortKey_VerifyingIsActive(t *testing.T) {
 	assert.Equal(t, 0, key, "verifying status must sort as reviewing (key 0)")
 }
 
-func TestString_VerifyingPlanAppearsInActiveSection(t *testing.T) {
+func TestString_VerifyingMasterShowsReadinessReview(t *testing.T) {
 	n := newTestPanel()
 	n.SetSize(60, 40)
 	n.SetData(
@@ -1387,5 +1419,63 @@ func TestString_VerifyingPlanAppearsInActiveSection(t *testing.T) {
 
 	output := n.String()
 	require.NotEmpty(t, output)
-	assert.Contains(t, output, "verifying", "verifying status must be visible in sidebar")
+	assert.Contains(t, output, "readiness review", "verifying+master must render as readiness review in sidebar")
+}
+
+func TestString_VerifyingMasterWithRoundShowsReadinessReviewN(t *testing.T) {
+	n := newTestPanel()
+	n.SetSize(60, 40)
+	n.SetData(
+		[]PlanDisplay{
+			{
+				Filename:    "auth-feature",
+				Status:      "verifying",
+				Phase:       "",
+				AgentType:   "master",
+				ActiveRound: 3,
+			},
+		},
+		nil, nil, nil, nil,
+	)
+
+	output := n.String()
+	require.NotEmpty(t, output)
+	assert.Contains(t, output, "readiness review 3", "verifying+master+round must render as readiness review N in sidebar")
+}
+
+func TestNavPlanRowLabel_VerifyingMasterRound(t *testing.T) {
+	p := PlanDisplay{
+		Filename:    "feature-auth",
+		Status:      "verifying",
+		Phase:       "",
+		AgentType:   "master",
+		ActiveRound: 2,
+	}
+	label := navPlanRowLabel(p)
+	assert.Equal(t, "feature-auth · readiness review 2", label,
+		"verifying+master with round must show readiness review N")
+}
+
+func TestNavPlanRowLabel_VerifyingMasterNoRound(t *testing.T) {
+	p := PlanDisplay{
+		Filename:  "feature-auth",
+		Status:    "verifying",
+		Phase:     "",
+		AgentType: "master",
+	}
+	label := navPlanRowLabel(p)
+	assert.Equal(t, "feature-auth · readiness review", label,
+		"verifying+master without round must show readiness review")
+}
+
+func TestNavPlanRowLabel_VerifyingNonMasterFallback(t *testing.T) {
+	p := PlanDisplay{
+		Filename:  "feature-auth",
+		Status:    "verifying",
+		Phase:     "",
+		AgentType: "coder",
+	}
+	label := navPlanRowLabel(p)
+	assert.Equal(t, "feature-auth · verifying", label,
+		"verifying with non-master agent must still show plain verifying")
 }

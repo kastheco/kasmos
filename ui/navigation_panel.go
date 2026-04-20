@@ -650,6 +650,9 @@ func navPlanPhaseLabel(phase string, activeWave, activeRound int) string {
 		}
 		return "reviewing"
 	case "readiness_reviewing":
+		if activeRound > 0 {
+			return fmt.Sprintf("readiness review %d", activeRound)
+		}
 		return "readiness review"
 	default:
 		return ""
@@ -660,9 +663,17 @@ func navPlanRowLabel(p PlanDisplay) string {
 	label := taskstate.DisplayName(p.Filename)
 	stage := navPlanPhaseLabel(p.Phase, p.ActiveWave, p.ActiveRound)
 	if stage == "" {
-		switch p.Status {
-		case "planning", "implementing", "reviewing", "verifying":
-			stage = p.Status
+		if p.Status == "verifying" && p.AgentType == "master" {
+			if p.ActiveRound > 0 {
+				stage = fmt.Sprintf("readiness review %d", p.ActiveRound)
+			} else {
+				stage = "readiness review"
+			}
+		} else {
+			switch p.Status {
+			case "planning", "implementing", "reviewing", "verifying":
+				stage = p.Status
+			}
 		}
 	}
 	if stage == "" {
