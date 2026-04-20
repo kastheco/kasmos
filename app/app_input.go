@@ -6,6 +6,7 @@ import (
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/auditlog"
 	"github.com/kastheco/kasmos/config/taskstate"
+	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/internal/clickup"
 	"github.com/kastheco/kasmos/keys"
 	"github.com/kastheco/kasmos/log"
@@ -789,9 +790,27 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				m.promptAfterName = false
 			}
 
-			// Start instance asynchronously
-			startCmd := func() tea.Msg {
-				return instanceStartedMsg{instance: instance, err: instance.Start(true)}
+			// Start instance asynchronously. For SDK instances whose repo is
+			// daemon-managed, hand the spawn to the daemon so the web UI can
+			// render it; keep the local instance as the in-memory placeholder.
+			var startCmd tea.Cmd
+			if session.NormalizeExecutionMode(instance.ExecutionMode) == session.ExecutionModeSDK &&
+				repoManagedByDaemon(m.activeRepoPath) {
+				capturedInst := instance
+				capturedProject := m.taskStoreProject
+				startCmd = func() tea.Msg {
+					req := api.SpawnSoloRequest{
+						Title:        capturedInst.Title,
+						Program:      capturedInst.Program,
+						AgentType:    capturedInst.AgentType,
+						SDKSpeedTier: capturedInst.SDKSpeedTier,
+					}
+					return instanceStartedMsg{instance: capturedInst, err: spawnSoloWithDaemon(capturedProject, req)}
+				}
+			} else {
+				startCmd = func() tea.Msg {
+					return instanceStartedMsg{instance: instance, err: instance.Start(true)}
+				}
 			}
 
 			return m, tea.Batch(tea.RequestWindowSize, startCmd)

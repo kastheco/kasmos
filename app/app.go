@@ -2637,7 +2637,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds := []tea.Cmd{tea.RequestWindowSize, m.instanceChanged()}
 		if msg.instance.TaskFile == "" &&
 			msg.instance.AgentType == session.AgentTypeMaster &&
-			session.NormalizeExecutionMode(msg.instance.ExecutionMode) == session.ExecutionModeSDK {
+			session.NormalizeExecutionMode(msg.instance.ExecutionMode) == session.ExecutionModeSDK &&
+			msg.instance.Started() {
 			if focusCmd := m.enterFocusMode(); focusCmd != nil {
 				cmds = append(cmds, focusCmd)
 			}

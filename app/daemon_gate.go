@@ -176,6 +176,8 @@ func daemonInstanceData(repoPath string, status api.InstanceStatus) session.Inst
 		ReviewCycle:   status.ReviewCycle,
 		WaveTaskIndex: status.WaveTaskIndex,
 		WaveTaskCount: status.WaveTaskCount,
+		SoloAgent:     status.SoloAgent,
+		SDKSpeedTier:  status.SDKSpeedTier,
 	}
 	if status.Branch != "" {
 		shared := gitpkg.NewSharedTaskWorktree(repoPath, status.Branch)
@@ -224,10 +226,12 @@ func newDaemonSDKInstance(repoPath string, status api.InstanceStatus) (*session.
 		ReviewCycle:   status.ReviewCycle,
 		WaveTaskIndex: status.WaveTaskIndex,
 		WaveTaskCount: status.WaveTaskCount,
+		SDKSpeedTier:  status.SDKSpeedTier,
 	})
 	if err != nil {
 		return nil, err
 	}
+	inst.SoloAgent = status.SoloAgent
 	if status.Branch != "" {
 		inst.BindSharedTaskWorktree(repoPath, status.Branch)
 	}

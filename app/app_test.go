@@ -3590,3 +3590,81 @@ func TestMetadataResultMsg_DismissesTrackedContextMenuOnPhaseChange(t *testing.T
 	assert.Contains(t, updated.toastManager.View(), "menu dismissed",
 		"dismissal toast must include 'menu dismissed' on phase-only change")
 }
+
+// TestSaveAllInstances_SkipsDaemonSDKPlaceholders verifies that the filtering
+// logic in saveAllInstances excludes daemon SDK placeholders (unstarted SDK
+// instances) so they are never handed off to storage.
+func TestSaveAllInstances_SkipsDaemonSDKPlaceholders(t *testing.T) {
+	h := newTestHome()
+	// storage nil → saveAllInstances no-ops; we test the filtering through
+	// isDaemonSDKPlaceholder directly on the home value.
+
+	// A daemon SDK placeholder: SDK mode, not started.
+	placeholder, err := session.NewInstance(session.InstanceOptions{
+		Title:         "solo-placeholder",
+		Path:          t.TempDir(),
+		Program:       "claude",
+		ExecutionMode: session.ExecutionModeSDK,
+	})
+	require.NoError(t, err)
+
+	// A tmux instance (not an SDK placeholder).
+	tmuxInst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "regular-tmux",
+		Path:          t.TempDir(),
+		Program:       "opencode",
+		ExecutionMode: session.ExecutionModeTmux,
+	})
+	require.NoError(t, err)
+
+	assert.True(t, h.isDaemonSDKPlaceholder(placeholder),
+		"unstarted SDK instance must be identified as daemon SDK placeholder")
+	assert.False(t, h.isDaemonSDKPlaceholder(tmuxInst),
+		"tmux instance must not be identified as daemon SDK placeholder")
+
+	// saveAllInstances with nil storage must not panic.
+	h.allInstances = []*session.Instance{placeholder, tmuxInst}
+	require.NoError(t, h.saveAllInstances())
+}
+
+// TestInstanceStartedMsg_SDKPlaceholderDoesNotAutoFocus verifies that when an
+// SDK placeholder (not locally started) triggers instanceStartedMsg, the TUI
+// does not enter focus mode. Focus mode requires a real local execution session.
+func TestInstanceStartedMsg_SDKPlaceholderDoesNotAutoFocus(t *testing.T) {
+	h := newTestHome()
+
+	// Build an SDK master instance without calling Start — this mimics a daemon
+	// SDK placeholder where inst.Started() returns false.
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "solo-sdk",
+		Path:          t.TempDir(),
+		Program:       "claude",
+		ExecutionMode: session.ExecutionModeSDK,
+		AgentType:     session.AgentTypeMaster,
+	})
+	require.NoError(t, err)
+	// Do NOT call inst.MarkStartedForTest() — placeholder stays unstarted.
+
+	_ = h.nav.AddInstance(inst)
+	h.instanceFinalizers = make(map[*session.Instance]func())
+
+	model, _ := h.Update(instanceStartedMsg{instance: inst, err: nil})
+	updated := model.(*home)
+
+	assert.NotEqual(t, stateFocusAgent, updated.state,
+		"daemon SDK placeholder must not trigger auto-focus mode")
+}
+
+// TestShowSpawnAgentForm_SDKHintRemoved verifies that the outdated "cannot be
+// controlled from the web ui" footer hint is no longer shown for SDK mode.
+func TestShowSpawnAgentForm_SDKHintRemoved(t *testing.T) {
+	h := newTestHome()
+	h.pendingSpawnExecutionMode = session.ExecutionModeSDK
+	h.pendingSpawnSpeedTier = ""
+	h.showSpawnAgentForm("claude")
+
+	fo, ok := h.overlays.Current().(*overlay.FormOverlay)
+	require.True(t, ok, "spawn form overlay must be active")
+	assert.NotContains(t, fo.View(), "web ui",
+		"outdated 'web ui' hint must be removed for SDK spawn form")
+}

@@ -685,3 +685,39 @@ func TestDaemonSync_DeleteDismissedDeadInstanceDoesNotReappear(t *testing.T) {
 	assert.False(t, updated.isInstanceTitleDismissed(inst.Title), "tombstone should clear once the daemon stops reporting the title")
 	assert.Equal(t, 0, updated.nav.TotalInstances())
 }
+
+// TestNewDaemonSDKInstance_CopiesSoloAgentAndSpeedTier verifies that the
+// SoloAgent flag and SDKSpeedTier from the daemon's InstanceStatus are
+// preserved on the constructed placeholder so TUI restore shows the correct
+// nav label and fast-tier info-pane row.
+func TestNewDaemonSDKInstance_CopiesSoloAgentAndSpeedTier(t *testing.T) {
+	status := api.InstanceStatus{
+		Title:         "my-solo",
+		Program:       "codex",
+		Active:        true,
+		ExecutionMode: "sdk",
+		SoloAgent:     true,
+		SDKSpeedTier:  "fast",
+	}
+	inst, err := newDaemonSDKInstance(t.TempDir(), status)
+	require.NoError(t, err)
+	assert.True(t, inst.SoloAgent, "SoloAgent must be copied from daemon status")
+	assert.Equal(t, "fast", inst.SDKSpeedTier, "SDKSpeedTier must be copied from daemon status")
+}
+
+// TestDaemonInstanceData_CopiesSoloAgentAndSpeedTier verifies that the
+// SoloAgent flag and SDKSpeedTier are preserved in the InstanceData returned
+// by daemonInstanceData so that restoreInstanceFromData produces matching fields.
+func TestDaemonInstanceData_CopiesSoloAgentAndSpeedTier(t *testing.T) {
+	status := api.InstanceStatus{
+		Title:         "my-solo",
+		Program:       "codex",
+		Active:        true,
+		ExecutionMode: "sdk",
+		SoloAgent:     true,
+		SDKSpeedTier:  "fast",
+	}
+	data := daemonInstanceData(t.TempDir(), status)
+	assert.True(t, data.SoloAgent, "SoloAgent must be propagated to InstanceData")
+	assert.Equal(t, "fast", data.SDKSpeedTier, "SDKSpeedTier must be propagated to InstanceData")
+}
