@@ -323,6 +323,32 @@ func (i *Instance) DisplayName() string {
 	return i.Title
 }
 
+// IdentityKey returns a stable in-memory identity for UI selection and preview
+// caches. Titles are user-editable and not globally unique for ad-hoc agents,
+// so title-only comparisons can collide between distinct instances.
+func (i *Instance) IdentityKey() string {
+	if i == nil {
+		return ""
+	}
+	mode := NormalizeExecutionMode(i.ExecutionMode)
+	if !i.CreatedAt.IsZero() {
+		return fmt.Sprintf(
+			"%s|%s|%d|%s",
+			strings.TrimSpace(i.Title),
+			mode,
+			i.CreatedAt.UnixNano(),
+			strings.TrimSpace(i.Path),
+		)
+	}
+	return fmt.Sprintf(
+		"%s|%s|%s|%p",
+		strings.TrimSpace(i.Title),
+		mode,
+		strings.TrimSpace(i.Path),
+		i,
+	)
+}
+
 func isSharedTaskWorktree(data GitWorktreeData, agentType string) bool {
 	if data.RepoPath == "" || data.WorktreePath == "" || data.BranchName == "" {
 		return false

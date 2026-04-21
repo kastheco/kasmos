@@ -1264,7 +1264,7 @@ func TestQuickLaunch_TitleSyncUpdatesDisplayTitle(t *testing.T) {
 	h.nav.SelectInstance(inst)
 	h.allInstances = append(h.allInstances, inst)
 	h.tabbedWindow.SetInstance(inst)
-	h.previewTerminalInstance = inst.Title
+	h.previewTerminalInstance = inst.IdentityKey()
 	h.updateInfoPane()
 	originalTitle := inst.Title
 
@@ -1274,7 +1274,7 @@ func TestQuickLaunch_TitleSyncUpdatesDisplayTitle(t *testing.T) {
 	assert.Nil(t, cmd)
 	assert.Equal(t, originalTitle, inst.Title)
 	assert.Equal(t, "investigate-flaky-auth-tests", inst.DisplayTitle)
-	assert.Equal(t, originalTitle, updated.previewTerminalInstance)
+	assert.Equal(t, inst.IdentityKey(), updated.previewTerminalInstance)
 	selected := updated.nav.GetSelectedInstance()
 	require.Same(t, inst, selected)
 	assert.Equal(t, originalTitle, selected.Title)
@@ -1986,13 +1986,13 @@ func TestPreviewTerminal_SelectionChange(t *testing.T) {
 	}
 
 	t.Run("swap terminal when selection changes from A to B", func(t *testing.T) {
-		h, _, instB := newTestHomeWithInstances(t)
+		h, instA, instB := newTestHomeWithInstances(t)
 		h.previewRequested = true
 
 		// Simulate: previewTerminal is attached to instance "A".
 		dummyTerm := session.NewDummyTerminal()
 		h.previewTerminal = dummyTerm
-		h.previewTerminalInstance = "instance-A"
+		h.previewTerminalInstance = instA.IdentityKey()
 
 		// Select instance "B" by reference (sort-order safe).
 		require.True(t, h.nav.SelectInstance(instB), "should find instance-B in list")
@@ -2023,7 +2023,7 @@ func TestPreviewTerminal_SelectionChange(t *testing.T) {
 		// Attach a terminal.
 		dummyTerm := session.NewDummyTerminal()
 		h.previewTerminal = dummyTerm
-		h.previewTerminalInstance = "instance-A"
+		h.previewTerminalInstance = "orphaned-preview"
 
 		cmd := h.instanceChanged()
 
@@ -2039,7 +2039,7 @@ func TestPreviewTerminal_SelectionChange(t *testing.T) {
 
 		dummyTerm := session.NewDummyTerminal()
 		h.previewTerminal = dummyTerm
-		h.previewTerminalInstance = "instance-A"
+		h.previewTerminalInstance = instA.IdentityKey()
 
 		// Select instance "A" — same as current terminal (use reference, sort-order safe).
 		require.True(t, h.nav.SelectInstance(instA), "should find instance-A in list")
@@ -2048,12 +2048,78 @@ func TestPreviewTerminal_SelectionChange(t *testing.T) {
 
 		// Terminal should remain attached (not nil).
 		assert.Equal(t, dummyTerm, h.previewTerminal, "previewTerminal should remain attached")
-		assert.Equal(t, "instance-A", h.previewTerminalInstance, "previewTerminalInstance should remain")
+		assert.Equal(t, instA.IdentityKey(), h.previewTerminalInstance, "previewTerminalInstance should remain")
 		// No spawn cmd — terminal already attached.
 		assert.Nil(t, cmd, "no spawn cmd when same instance is selected")
 
 		// Cleanup
 		dummyTerm.Close()
+	})
+
+	t.Run("duplicate titles still trigger preview swap for different instances", func(t *testing.T) {
+		h := newTestHome()
+		h.previewRequested = true
+
+		instA, err := session.NewInstance(session.InstanceOptions{
+			Title:   "codex",
+			Path:    t.TempDir(),
+			Program: "claude",
+		})
+		require.NoError(t, err)
+		instA.MarkStartedForTest()
+		instA.Status = session.Running
+		instA.CachedContentSet = true
+
+		instB, err := session.NewInstance(session.InstanceOptions{
+			Title:   "codex",
+			Path:    t.TempDir(),
+			Program: "claude",
+		})
+		require.NoError(t, err)
+		instB.MarkStartedForTest()
+		instB.Status = session.Running
+		instB.CachedContentSet = true
+
+		h.nav.AddInstance(instA)()
+		h.nav.AddInstance(instB)()
+		h.previewTerminal = session.NewDummyTerminal()
+		h.previewTerminalInstance = instA.IdentityKey()
+
+		require.True(t, h.nav.SelectInstance(instB), "should select the second duplicate-titled instance")
+
+		cmd := h.instanceChanged()
+
+		assert.Nil(t, h.previewTerminal, "switching between duplicate-titled instances must drop the stale terminal")
+		assert.Empty(t, h.previewTerminalInstance, "terminal identity cache must clear before the new attach")
+		assert.NotNil(t, cmd, "a fresh attach command must be issued for the new instance")
+	})
+
+	t.Run("duplicate titles keep the selected instance across nav status rebuilds", func(t *testing.T) {
+		h := newTestHome()
+		sdkInst, err := session.NewInstance(session.InstanceOptions{
+			Title:         "codex",
+			Path:          t.TempDir(),
+			Program:       "codex",
+			ExecutionMode: session.ExecutionModeSDK,
+		})
+		require.NoError(t, err)
+
+		tmuxInst, err := session.NewInstance(session.InstanceOptions{
+			Title:         "codex",
+			Path:          t.TempDir(),
+			Program:       "codex",
+			ExecutionMode: session.ExecutionModeTmux,
+		})
+		require.NoError(t, err)
+
+		h.nav.AddInstance(sdkInst)()
+		h.nav.AddInstance(tmuxInst)()
+		require.True(t, h.nav.SelectInstance(tmuxInst), "should select the tmux instance before rebuild")
+
+		h.updateNavPanelStatus()
+
+		assert.Same(t, tmuxInst, h.nav.GetSelectedInstance(),
+			"status-only sidebar rebuilds must preserve the exact selected instance even when titles collide")
 	})
 
 	t.Run("previewTerminalReadyMsg attaches terminal on match", func(t *testing.T) {
@@ -2063,14 +2129,14 @@ func TestPreviewTerminal_SelectionChange(t *testing.T) {
 
 		readyTerm := session.NewDummyTerminal()
 		msg := previewTerminalReadyMsg{
-			term:          readyTerm,
-			instanceTitle: "instance-A",
+			term:        readyTerm,
+			instanceKey: instA.IdentityKey(),
 		}
 
 		_, cmd := h.Update(msg)
 
 		assert.Equal(t, readyTerm, h.previewTerminal, "previewTerminal should be set from msg")
-		assert.Equal(t, "instance-A", h.previewTerminalInstance, "previewTerminalInstance should match")
+		assert.Equal(t, instA.IdentityKey(), h.previewTerminalInstance, "previewTerminalInstance should match")
 		assert.NotNil(t, cmd, "preview terminal attach should request a resize refresh")
 
 		// Cleanup
@@ -2084,8 +2150,8 @@ func TestPreviewTerminal_SelectionChange(t *testing.T) {
 
 		staleTerm := session.NewDummyTerminal()
 		msg := previewTerminalReadyMsg{
-			term:          staleTerm,
-			instanceTitle: "instance-A", // stale — selection moved to B
+			term:        staleTerm,
+			instanceKey: "stale-instance", // stale — selection moved to B
 		}
 
 		_, cmd := h.Update(msg)
@@ -2104,9 +2170,9 @@ func TestPreviewTerminal_SelectionChange(t *testing.T) {
 
 		errTerm := session.NewDummyTerminal()
 		msg := previewTerminalReadyMsg{
-			term:          errTerm,
-			instanceTitle: "instance-A",
-			err:           fmt.Errorf("tmux attach failed"),
+			term:        errTerm,
+			instanceKey: instA.IdentityKey(),
+			err:         fmt.Errorf("tmux attach failed"),
 		}
 
 		_, cmd := h.Update(msg)
@@ -2168,11 +2234,11 @@ func TestPreviewTerminal_RenderTickIntegration(t *testing.T) {
 		// Step 2: Async spawn completes — deliver previewTerminalReadyMsg for instance A.
 		termA := session.NewDummyTerminal()
 		_, cmd := h.Update(previewTerminalReadyMsg{
-			term:          termA,
-			instanceTitle: "instance-A",
+			term:        termA,
+			instanceKey: instA.IdentityKey(),
 		})
 		assert.Equal(t, termA, h.previewTerminal, "terminal A should be attached")
-		assert.Equal(t, "instance-A", h.previewTerminalInstance)
+		assert.Equal(t, instA.IdentityKey(), h.previewTerminalInstance)
 		assert.NotNil(t, cmd, "ready msg should request a resize refresh")
 
 		// Step 3: Render tick fires — terminal is active, tick returns event-driven cmd.
@@ -2205,7 +2271,7 @@ func TestPreviewTerminal_RenderTickIntegration(t *testing.T) {
 
 		term := session.NewDummyTerminal()
 		h.previewTerminal = term
-		h.previewTerminalInstance = "instance-A"
+		h.previewTerminalInstance = instA.IdentityKey()
 		defer term.Close()
 
 		_, cmd := h.Update(previewTickMsg{})
@@ -2229,8 +2295,8 @@ func TestPreviewTerminal_RenderTickIntegration(t *testing.T) {
 		// Now the stale ready msg for A arrives.
 		staleTermA := session.NewDummyTerminal()
 		_, cmd := h.Update(previewTerminalReadyMsg{
-			term:          staleTermA,
-			instanceTitle: "instance-A", // stale — selection is now B
+			term:        staleTermA,
+			instanceKey: instA.IdentityKey(), // stale — selection is now B
 		})
 
 		// Stale terminal must be discarded (not attached).
@@ -2267,9 +2333,9 @@ func TestPreviewTerminalReadyMsg_StaleDiscard(t *testing.T) {
 	// Simulate a stale previewTerminalReadyMsg arriving for "A" (selection already moved to "B").
 	// The handler should discard the terminal since selected.Title != msg.instanceTitle.
 	msg := previewTerminalReadyMsg{
-		term:          nil, // nil is fine — we just check it's discarded
-		instanceTitle: "A",
-		err:           nil,
+		term:        nil, // nil is fine — we just check it's discarded
+		instanceKey: "stale-instance",
+		err:         nil,
 	}
 
 	// Process the message through Update.
@@ -2385,9 +2451,9 @@ func TestPreviewTerminalReadyMsg_AcceptsCurrentInstance(t *testing.T) {
 
 	// Simulate a fresh previewTerminalReadyMsg for "A" (current selection).
 	msg := previewTerminalReadyMsg{
-		term:          nil, // nil terminal — we just verify the instance title is set
-		instanceTitle: "A",
-		err:           nil,
+		term:        nil, // nil terminal — we just verify the instance title is set
+		instanceKey: instA.IdentityKey(),
+		err:         nil,
 	}
 
 	model, cmd := h.Update(msg)
@@ -2395,7 +2461,7 @@ func TestPreviewTerminalReadyMsg_AcceptsCurrentInstance(t *testing.T) {
 	require.True(t, ok)
 
 	// previewTerminalInstance should be set to "A".
-	assert.Equal(t, "A", homeModel.previewTerminalInstance,
+	assert.Equal(t, instA.IdentityKey(), homeModel.previewTerminalInstance,
 		"previewTerminalInstance should be set when msg matches current selection")
 	assert.NotNil(t, cmd, "preview terminal attach should request a resize refresh")
 }
@@ -2480,7 +2546,7 @@ func TestFocusMode_ReusesPreviewTerminal(t *testing.T) {
 
 	// Simulate previewTerminal already attached to "my-agent".
 	// enterFocusMode should detect this and NOT spawn a new terminal.
-	h.previewTerminalInstance = "my-agent"
+	h.previewTerminalInstance = inst.IdentityKey()
 	// Instance is not started, so enterFocusMode should return nil (guard check).
 	cmd := h.enterFocusMode()
 
@@ -2709,12 +2775,12 @@ func TestExitFocusMode_KeepsPreviewTerminal(t *testing.T) {
 	}
 
 	// Set previewTerminalInstance to simulate an attached terminal.
-	h.previewTerminalInstance = "my-agent"
+	h.previewTerminalInstance = "focus-agent"
 
 	h.exitFocusMode()
 
 	assert.Equal(t, stateDefault, h.state, "state should return to default after exitFocusMode")
-	assert.Equal(t, "my-agent", h.previewTerminalInstance,
+	assert.Equal(t, "focus-agent", h.previewTerminalInstance,
 		"previewTerminalInstance should NOT be cleared by exitFocusMode")
 }
 
@@ -2786,7 +2852,7 @@ func TestHandleKeyPress_CtrlShiftEnterSubmitsAndExitsFocusMode(t *testing.T) {
 	h := newTestHome()
 	h.state = stateFocusAgent
 	h.previewTerminal = session.NewDummyTerminal()
-	h.previewTerminalInstance = "test-agent"
+	h.previewTerminalInstance = "focus-agent"
 	h.keySent = true
 
 	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModCtrl | tea.ModShift})
@@ -2796,7 +2862,7 @@ func TestHandleKeyPress_CtrlShiftEnterSubmitsAndExitsFocusMode(t *testing.T) {
 	require.Len(t, sent, 1)
 	assert.Equal(t, []byte{0x0D}, sent[0])
 	assert.Equal(t, stateDefault, updated.state)
-	assert.Equal(t, "test-agent", updated.previewTerminalInstance)
+	assert.Equal(t, "focus-agent", updated.previewTerminalInstance)
 	require.NotNil(t, cmd)
 }
 
@@ -2804,7 +2870,7 @@ func TestHandleKeyPress_CtrlEnterStaysInFocusMode(t *testing.T) {
 	h := newTestHome()
 	h.state = stateFocusAgent
 	h.previewTerminal = session.NewDummyTerminal()
-	h.previewTerminalInstance = "test-agent"
+	h.previewTerminalInstance = "focus-agent"
 	h.keySent = true
 
 	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModCtrl})
@@ -2829,7 +2895,7 @@ func TestHandleKeyPress_CtrlSpaceTogglesIntoFocusMode(t *testing.T) {
 	h.nav.AddInstance(inst)
 	h.nav.SelectInstance(inst)
 	h.previewTerminal = session.NewDummyTerminal()
-	h.previewTerminalInstance = inst.Title
+	h.previewTerminalInstance = inst.IdentityKey()
 	h.keySent = true
 
 	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeySpace, Mod: tea.ModCtrl})
@@ -3053,7 +3119,7 @@ func TestHandleMouseClick_OutsideAgentPane_ExitsFocusMode(t *testing.T) {
 	h.nav.AddInstance(inst)
 	h.nav.SelectInstance(inst)
 	h.previewTerminal = session.NewDummyTerminal()
-	h.previewTerminalInstance = inst.Title
+	h.previewTerminalInstance = inst.IdentityKey()
 	h.state = stateFocusAgent
 	h.tabbedWindow.SetFocusMode(true)
 	h.menu.SetFocusMode(true)
@@ -3095,7 +3161,7 @@ func TestHandleMouseClick_InsideAgentPane_StaysInFocusMode(t *testing.T) {
 	h.nav.AddInstance(inst)
 	h.nav.SelectInstance(inst)
 	h.previewTerminal = session.NewDummyTerminal()
-	h.previewTerminalInstance = inst.Title
+	h.previewTerminalInstance = inst.IdentityKey()
 	h.state = stateFocusAgent
 	h.tabbedWindow.SetFocusMode(true)
 	h.menu.SetFocusMode(true)

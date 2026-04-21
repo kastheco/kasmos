@@ -81,6 +81,10 @@ type navRow struct {
 	Indent          int
 }
 
+func navInstanceRowID(inst *session.Instance) string {
+	return "inst:" + inst.IdentityKey()
+}
+
 // ---------- styles ----------
 
 var (
@@ -391,7 +395,7 @@ func (n *NavigationPanel) rebuildRows() {
 			for _, inst := range insts {
 				rows = append(rows, navRow{
 					Kind:     navRowInstance,
-					ID:       "inst:" + inst.Title,
+					ID:       navInstanceRowID(inst),
 					Label:    inst.DisplayName(),
 					TaskFile: inst.TaskFile,
 					Instance: inst,
@@ -506,7 +510,7 @@ func (n *NavigationPanel) rebuildRows() {
 		for _, inst := range solo {
 			rows = append(rows, navRow{
 				Kind:     navRowInstance,
-				ID:       "inst:" + inst.Title,
+				ID:       navInstanceRowID(inst),
 				Label:    inst.DisplayName(),
 				Instance: inst,
 			})

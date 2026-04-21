@@ -140,7 +140,7 @@ func TestHandleMouseWheel_FocusModeForwardsToEmbeddedTerminal(t *testing.T) {
 	h.nav.SelectInstance(inst)
 	h.tabbedWindow.SetInstance(inst)
 	h.previewTerminal = session.NewDummyTerminal()
-	h.previewTerminalInstance = inst.Title
+	h.previewTerminalInstance = inst.IdentityKey()
 	h.state = stateFocusAgent
 	h.tabbedWindow.SetFocusMode(true)
 	h.menu.SetFocusMode(true)
@@ -181,7 +181,7 @@ func TestHandleMouseWheel_DefaultModeForwardsToEmbeddedTerminal(t *testing.T) {
 	h.nav.SelectInstance(inst)
 	h.tabbedWindow.SetInstance(inst)
 	h.previewTerminal = session.NewDummyTerminal()
-	h.previewTerminalInstance = inst.Title
+	h.previewTerminalInstance = inst.IdentityKey()
 	h.navWidth = 36
 	agentPane := prepareAgentPaneForWheelTest(t, h, 84, 38)
 

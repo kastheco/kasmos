@@ -737,6 +737,27 @@ func TestSelectInstance(t *testing.T) {
 	assert.Equal(t, inst2, n.GetSelectedInstance())
 }
 
+func TestInstanceRowIDs_AreUniqueForDuplicateTitles(t *testing.T) {
+	n := newTestPanel()
+	sdkInst := &session.Instance{
+		Title:         "codex",
+		Status:        session.Running,
+		ExecutionMode: session.ExecutionModeSDK,
+	}
+	tmuxInst := &session.Instance{
+		Title:         "codex",
+		Status:        session.Running,
+		ExecutionMode: session.ExecutionModeTmux,
+	}
+
+	n.SetData(nil, []*session.Instance{sdkInst, tmuxInst}, nil, nil, nil)
+	require.Len(t, n.rows, 3)
+	assert.Equal(t, navRowInstance, n.rows[1].Kind)
+	assert.Equal(t, navRowInstance, n.rows[2].Kind)
+	assert.NotEqual(t, n.rows[1].ID, n.rows[2].ID,
+		"duplicate titles must still produce unique nav row ids")
+}
+
 func TestGetSelectedID(t *testing.T) {
 	n := newTestPanel()
 	plans := []PlanDisplay{{Filename: "my-plan"}}

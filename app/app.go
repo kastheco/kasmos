@@ -328,7 +328,7 @@ type home struct {
 	// previewTerminal is the VT emulator for the selected instance's preview.
 	// Also used for focus mode — entering focus just forwards keys to this terminal.
 	previewTerminal         *session.EmbeddedTerminal
-	previewTerminalInstance string // title of the instance the terminal is attached to
+	previewTerminalInstance string // identity key of the instance the terminal is attached to
 	previewRequested        bool   // true once the app should keep the live agent preview attached
 	previewClipboardPending bool
 	previewClipboardTarget  byte
@@ -2291,11 +2291,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case previewTerminalReadyMsg:
 		// Discard stale attach if selection changed while spawning.
 		selected := m.nav.GetSelectedInstance()
-		if msg.err != nil || !m.shouldAttachPreviewTerminal(selected) || selected.Title != msg.instanceTitle {
+		if msg.err != nil || !m.shouldAttachPreviewTerminal(selected) || previewIdentityKey(selected) != msg.instanceKey {
 			return m, asyncClosePreviewTerminal(msg.term)
 		}
 		m.previewTerminal = msg.term
-		m.previewTerminalInstance = msg.instanceTitle
+		m.previewTerminalInstance = msg.instanceKey
 		if msg.term != nil {
 			previewWidth, previewHeight := m.tabbedWindow.GetPreviewSize()
 			msg.term.Resize(previewWidth, previewHeight)
@@ -2889,9 +2889,9 @@ type tickUpdateMetadataMessage struct{}
 
 // previewTerminalReadyMsg signals that the async terminal attach completed.
 type previewTerminalReadyMsg struct {
-	term          *session.EmbeddedTerminal
-	instanceTitle string
-	err           error
+	term        *session.EmbeddedTerminal
+	instanceKey string
+	err         error
 }
 
 type instanceChangedMsg struct{}

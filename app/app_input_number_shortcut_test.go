@@ -42,7 +42,7 @@ func TestHandleKeyPress_NumberShortcutPassthroughWhenPreviewActive(t *testing.T)
 	h.nav.AddInstance(inst)()
 	h.nav.SetSelectedInstance(0)
 	h.previewTerminal = session.NewDummyTerminal()
-	h.previewTerminalInstance = inst.Title
+	h.previewTerminalInstance = inst.IdentityKey()
 
 	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Text: "1", Code: '1'})
 	updated := model.(*home)
@@ -88,7 +88,7 @@ func TestHandleKeyPress_NumberShortcutNoOpWhenInstanceNotStarted(t *testing.T) {
 	h.nav.AddInstance(inst)()
 	h.nav.SetSelectedInstance(0)
 	h.previewTerminal = session.NewDummyTerminal()
-	h.previewTerminalInstance = inst.Title
+	h.previewTerminalInstance = inst.IdentityKey()
 
 	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Text: "2", Code: '2'})
 	updated := model.(*home)
@@ -106,7 +106,7 @@ func TestHandleKeyPress_NumberShortcutNoOpWhenInstancePaused(t *testing.T) {
 	h.nav.AddInstance(inst)()
 	h.nav.SetSelectedInstance(0)
 	h.previewTerminal = session.NewDummyTerminal()
-	h.previewTerminalInstance = inst.Title
+	h.previewTerminalInstance = inst.IdentityKey()
 
 	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Text: "2", Code: '2'})
 	updated := model.(*home)
@@ -123,7 +123,7 @@ func TestHandleKeyPress_NumberShortcutHandlesSendKeyError(t *testing.T) {
 	h.nav.AddInstance(inst)()
 	h.nav.SetSelectedInstance(0)
 	h.previewTerminal = session.NewDummyTerminal()
-	h.previewTerminalInstance = inst.Title
+	h.previewTerminalInstance = inst.IdentityKey()
 
 	ptmx, err := os.CreateTemp(t.TempDir(), "closed-pty")
 	require.NoError(t, err)
@@ -158,7 +158,7 @@ func TestHandleKeyPress_NumberShortcutPassthroughDigits(t *testing.T) {
 			h.nav.AddInstance(inst)()
 			h.nav.SetSelectedInstance(0)
 			h.previewTerminal = session.NewDummyTerminal()
-			h.previewTerminalInstance = inst.Title
+			h.previewTerminalInstance = inst.IdentityKey()
 
 			model, cmd := h.handleKeyPress(tea.KeyPressMsg{Text: tt.digit, Code: tt.code})
 			updated := model.(*home)
@@ -178,7 +178,7 @@ func TestHandleKeyPress_CtrlOPassesThroughToPTY(t *testing.T) {
 	h.nav.AddInstance(inst)()
 	h.nav.SetSelectedInstance(0)
 	h.previewTerminal = session.NewDummyTerminal()
-	h.previewTerminalInstance = inst.Title
+	h.previewTerminalInstance = inst.IdentityKey()
 
 	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'o', Mod: tea.ModCtrl})
 	updated := model.(*home)

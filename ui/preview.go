@@ -224,11 +224,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 	}
 	instanceKey := ""
 	if instance != nil {
-		if instance.Title != "" {
-			instanceKey = instance.Title
-		} else {
-			instanceKey = fmt.Sprintf("%p", instance)
-		}
+		instanceKey = instance.IdentityKey()
 	}
 	if instanceKey != p.lastInstanceKey {
 		p.isScrolling = false

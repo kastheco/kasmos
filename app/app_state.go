@@ -640,6 +640,13 @@ func asyncClosePreviewTerminal(term *session.EmbeddedTerminal) tea.Cmd {
 	}
 }
 
+func previewIdentityKey(inst *session.Instance) string {
+	if inst == nil {
+		return ""
+	}
+	return inst.IdentityKey()
+}
+
 func (m *home) shouldAttachPreviewTerminal(selected *session.Instance) bool {
 	return m.previewRequested &&
 		selected != nil &&
@@ -661,18 +668,18 @@ func (m *home) spawnPreviewTerminal(selected *session.Instance) tea.Cmd {
 	if rows < 5 {
 		rows = 24
 	}
-	capturedTitle := selected.Title
+	capturedKey := previewIdentityKey(selected)
 	capturedInstance := selected
 	return func() tea.Msg {
 		term, err := capturedInstance.NewEmbeddedTerminalForInstance(cols, rows)
-		return previewTerminalReadyMsg{term: term, instanceTitle: capturedTitle, err: err}
+		return previewTerminalReadyMsg{term: term, instanceKey: capturedKey, err: err}
 	}
 }
 
 func (m *home) syncPreviewTerminal() tea.Cmd {
 	selected := m.nav.GetSelectedInstance()
 	needsPreview := m.shouldAttachPreviewTerminal(selected)
-	currentMatches := needsPreview && m.previewTerminal != nil && m.previewTerminalInstance == selected.Title
+	currentMatches := needsPreview && m.previewTerminal != nil && m.previewTerminalInstance == previewIdentityKey(selected)
 
 	var cmds []tea.Cmd
 	if m.previewTerminal != nil && !currentMatches {
@@ -713,7 +720,7 @@ func (m *home) enterFocusMode() tea.Cmd {
 	}
 
 	// If previewTerminal is already attached to this instance, just enter focus mode.
-	if m.previewTerminal != nil && m.previewTerminalInstance == selected.Title {
+	if m.previewTerminal != nil && m.previewTerminalInstance == previewIdentityKey(selected) {
 		m.state = stateFocusAgent
 		m.tabbedWindow.SetFocusMode(true)
 		m.menu.SetFocusMode(true)
@@ -2366,7 +2373,7 @@ func (m *home) killExistingPlanAgent(planFile, agentType string) {
 		// Invalidate the preview terminal cache so that a replacement instance
 		// with the same title (e.g. a new "applying fixes" fixer) gets a fresh
 		// terminal instead of showing stale output from the killed session.
-		if title == m.previewTerminalInstance {
+		if inst != nil && inst.IdentityKey() == m.previewTerminalInstance {
 			if m.previewTerminal != nil {
 				m.previewTerminal.Close()
 			}

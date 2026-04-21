@@ -35,7 +35,7 @@ func TestRenameInstance_SubmitPreservesStableTitle(t *testing.T) {
 	h.nav.SelectInstance(inst)
 	h.allInstances = append(h.allInstances, inst)
 	h.tabbedWindow.SetInstance(inst)
-	h.previewTerminalInstance = inst.Title
+	h.previewTerminalInstance = inst.IdentityKey()
 	h.updateInfoPane()
 
 	h.state = stateRenameInstance
@@ -53,7 +53,7 @@ func TestRenameInstance_SubmitPreservesStableTitle(t *testing.T) {
 	assert.False(t, updated.overlays.IsActive())
 	assert.Equal(t, "agent-1", inst.Title)
 	assert.Equal(t, "ship-auth-ui", inst.DisplayTitle)
-	assert.Equal(t, "agent-1", updated.previewTerminalInstance)
+	assert.Equal(t, inst.IdentityKey(), updated.previewTerminalInstance)
 	assert.Equal(t, "ship-auth-ui", updated.nav.GetSelectedInstance().DisplayName())
 	assert.Equal(t, "ship-auth-ui", updated.tabbedWindow.GetInfoData().Title)
 }

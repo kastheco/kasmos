@@ -24,7 +24,7 @@ func TestHandleKeyPress_ExclamationEntersFocusMode(t *testing.T) {
 	h.nav.AddInstance(inst)()
 	h.nav.SetSelectedInstance(0)
 	h.previewTerminal = session.NewDummyTerminal()
-	h.previewTerminalInstance = inst.Title
+	h.previewTerminalInstance = inst.IdentityKey()
 	h.keySent = true
 
 	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: '!', Text: "!"})

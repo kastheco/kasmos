@@ -83,7 +83,7 @@ func TestHandleKeyPress_SendPrompt_TmuxStillEntersFocusMode(t *testing.T) {
 	h.nav.AddInstance(inst)
 	h.nav.SelectInstance(inst)
 	h.previewTerminal = session.NewDummyTerminal()
-	h.previewTerminalInstance = inst.Title
+	h.previewTerminalInstance = inst.IdentityKey()
 	h.keySent = true
 
 	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'i', Text: "i"})
@@ -353,7 +353,7 @@ func TestHandleKeyPress_TmuxCodexFocusMode_ShiftEnterUsesLiteralTmuxInjection(t 
 	h.state = stateFocusAgent
 	h.tabbedWindow.SetFocusMode(true)
 	h.previewTerminal = session.NewDummyTerminal()
-	h.previewTerminalInstance = inst.Title
+	h.previewTerminalInstance = inst.IdentityKey()
 
 	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift})
 	updated := model.(*home)
