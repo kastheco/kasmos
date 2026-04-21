@@ -570,6 +570,9 @@ func formatToolResultLine(raw string) string {
 		if exit, ok := obj["exit_code"].(float64); ok && exit != 0 {
 			return fmt.Sprintf("✗ exit=%d", int(exit))
 		}
+		if summary := summarizeStructuredCollection(obj); summary != "" {
+			return summary
+		}
 		if text := extractTextFromObject(obj); text != "" {
 			return summarizeToolResultText(text)
 		}

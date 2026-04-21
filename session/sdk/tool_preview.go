@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -160,6 +161,9 @@ func extractTextFromObject(obj map[string]any) string {
 			}
 		}
 	}
+	if text := extractStructuredCollectionText(obj); text != "" {
+		return text
+	}
 	// stderr: only on successful results (exit_code=0 or absent).
 	if v, ok := obj["stderr"].(string); ok && strings.TrimSpace(v) != "" {
 		exitOK := true
@@ -174,6 +178,136 @@ func extractTextFromObject(obj map[string]any) string {
 		}
 	}
 	return ""
+}
+
+func summarizeStructuredCollection(obj map[string]any) string {
+	switch {
+	case hasCollection(obj, "matches"):
+		return fmt.Sprintf("→ %d %s", collectionCount(obj, "matches"), pluralizeCollection(collectionCount(obj, "matches"), "match", "matches"))
+	case hasCollection(obj, "entries"):
+		return fmt.Sprintf("→ %d %s", collectionCount(obj, "entries"), pluralizeCollection(collectionCount(obj, "entries"), "entry", "entries"))
+	default:
+		return ""
+	}
+}
+
+func extractStructuredCollectionText(obj map[string]any) string {
+	switch {
+	case hasCollection(obj, "matches"):
+		return formatGrepMatches(obj["matches"])
+	case hasCollection(obj, "entries"):
+		return formatDirEntries(obj["entries"])
+	default:
+		return ""
+	}
+}
+
+func hasCollection(obj map[string]any, key string) bool {
+	_, ok := obj[key]
+	return ok
+}
+
+func collectionCount(obj map[string]any, key string) int {
+	if total, ok := jsonNumberToInt(obj["total"]); ok {
+		return total
+	}
+	items, ok := obj[key].([]any)
+	if !ok {
+		return 0
+	}
+	return len(items)
+}
+
+func pluralizeCollection(count int, singular, plural string) string {
+	if count == 1 {
+		return singular
+	}
+	return plural
+}
+
+func formatGrepMatches(value any) string {
+	items, ok := value.([]any)
+	if !ok {
+		return ""
+	}
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		file, _ := entry["file"].(string)
+		text, _ := entry["text"].(string)
+		line, _ := jsonNumberToInt(entry["line"])
+		location := file
+		if location != "" && line > 0 {
+			location = fmt.Sprintf("%s:%d", location, line)
+		}
+		switch {
+		case location != "" && strings.TrimSpace(text) != "":
+			parts = append(parts, location+": "+strings.TrimSpace(text))
+		case location != "":
+			parts = append(parts, location)
+		case strings.TrimSpace(text) != "":
+			parts = append(parts, strings.TrimSpace(text))
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+func formatDirEntries(value any) string {
+	items, ok := value.([]any)
+	if !ok {
+		return ""
+	}
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := entry["name"].(string)
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
+		if isDir, ok := entry["is_dir"].(bool); ok && isDir {
+			parts = append(parts, name+"/")
+			continue
+		}
+		parts = append(parts, name)
+	}
+	return strings.Join(parts, "\n")
+}
+
+func jsonNumberToInt(value any) (int, bool) {
+	switch n := value.(type) {
+	case float64:
+		return int(n), true
+	case float32:
+		return int(n), true
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case int32:
+		return int(n), true
+	case int16:
+		return int(n), true
+	case int8:
+		return int(n), true
+	case uint:
+		return int(n), true
+	case uint64:
+		return int(n), true
+	case uint32:
+		return int(n), true
+	case uint16:
+		return int(n), true
+	case uint8:
+		return int(n), true
+	default:
+		return 0, false
+	}
 }
 
 func extractTextFromValue(value any) string {

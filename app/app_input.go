@@ -112,6 +112,12 @@ func isPlainShiftEnter(msg tea.KeyPressMsg) bool {
 		!msg.Mod.Contains(tea.ModMeta)
 }
 
+func allowsBinaryClipboardPaste(selected *session.Instance) bool {
+	return selected != nil &&
+		session.NormalizeExecutionMode(selected.ExecutionMode) == session.ExecutionModeTmux &&
+		common.DetectProgramKind(selected.Program) == common.ProgramCodex
+}
+
 func (m *home) applyPendingSetStatus(picked string) (tea.Model, tea.Cmd) {
 	status, state, err := taskstate.ResolveManualOverride(picked)
 	if err != nil {
@@ -303,6 +309,25 @@ func (m *home) handleSDKComposerImagePreferredPaste(selected *session.Instance) 
 		return m.appendSDKComposerText(selected, text)
 	}
 	return m, nil
+}
+
+func (m *home) handleSDKClipboardPasteShortcut(selected *session.Instance) (tea.Model, tea.Cmd) {
+	if common.DetectProgramKind(selected.Program) == common.ProgramCodex {
+		imagePath, err := captureClipboardImage(context.Background())
+		if err == nil {
+			return m.appendSDKComposerImage(selected, imagePath)
+		}
+		if err != nil &&
+			!errors.Is(err, errClipboardImageNotFound) &&
+			!errors.Is(err, errClipboardImageNoHelpers) &&
+			!errors.Is(err, errClipboardImageUnsupported) {
+			return m, m.handleError(err)
+		}
+	}
+	if text, err := readClipboardText(); err == nil {
+		return m.handleSDKComposerPaste(selected, text)
+	}
+	return m.handleSDKComposerPaste(selected, "")
 }
 
 func (m *home) clearSDKComposer(selected *session.Instance) (tea.Model, tea.Cmd) {
@@ -1368,10 +1393,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 			case detectPasteShortcut(msg) == pasteShortcutImagePreferred:
 				return m.handleSDKComposerImagePreferredPaste(selected)
 			case detectPasteShortcut(msg) == pasteShortcutText:
-				if text, err := readClipboardText(); err == nil && text != "" {
-					return m.appendSDKComposerText(selected, text)
-				}
-				return m.handleSDKComposerPaste(selected, "")
+				return m.handleSDKClipboardPasteShortcut(selected)
 			case firstRuneIsPrintable(msg.Text):
 				return m.appendSDKComposerText(selected, msg.Text)
 			}
@@ -1411,7 +1433,8 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 			return m, nil
 		}
 		if isPasteShortcut(msg) {
-			if text, err := readClipboardText(); err == nil && text != "" {
+			if text, err := readClipboardText(); err == nil && text != "" &&
+				(!pasteContentLooksBinary(text) || allowsBinaryClipboardPaste(selected)) {
 				data := []byte("\x1b[200~" + text + "\x1b[201~")
 				if err := m.previewTerminal.SendKey(data); err != nil {
 					return m, m.handleError(err)

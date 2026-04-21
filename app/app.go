@@ -27,6 +27,7 @@ import (
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
+	"github.com/kastheco/kasmos/session/common"
 	gitpkg "github.com/kastheco/kasmos/session/git"
 	sessionsdk "github.com/kastheco/kasmos/session/sdk"
 	"github.com/kastheco/kasmos/session/tmux"
@@ -2692,7 +2693,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Forward pasted text to the embedded PTY in focus mode.
 		if m.state == stateFocusAgent && m.previewTerminal != nil {
-			if content := msg.Content; content != "" {
+			selected := m.nav.GetSelectedInstance()
+			allowBinaryPaste := selected != nil &&
+				session.NormalizeExecutionMode(selected.ExecutionMode) == session.ExecutionModeTmux &&
+				common.DetectProgramKind(selected.Program) == common.ProgramCodex
+			if content := msg.Content; content != "" && (!pasteContentLooksBinary(content) || allowBinaryPaste) {
 				// Wrap in bracketed paste so the program inside tmux sees it
 				// as a paste event rather than typed input.
 				data := []byte("\x1b[200~" + content + "\x1b[201~")

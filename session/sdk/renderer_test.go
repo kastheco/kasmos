@@ -93,6 +93,28 @@ func TestRenderer_ToolResult_ContentBlocksSurfacesTextSummary(t *testing.T) {
 	assert.Contains(t, content, "match one", "content[] text blocks must contribute a visible result summary")
 }
 
+func TestRenderer_ToolResult_GrepSummaryUsesMatchCount(t *testing.T) {
+	r := NewRenderer()
+	r.AddEvent(Event{
+		Kind:       EventToolResult,
+		ToolName:   "grep",
+		ToolResult: `{"matches":[{"file":"app/main.go","line":12,"text":"first match"}],"total":1}`,
+	})
+	content := r.Capture()
+	assert.Contains(t, content, "1 match")
+}
+
+func TestRenderer_ToolResult_GrepEmptySummaryUsesZeroMatches(t *testing.T) {
+	r := NewRenderer()
+	r.AddEvent(Event{
+		Kind:       EventToolResult,
+		ToolName:   "grep",
+		ToolResult: `{"matches":[],"total":0}`,
+	})
+	content := r.Capture()
+	assert.Contains(t, content, "0 matches")
+}
+
 func TestRenderer_Permission_ProducesLine(t *testing.T) {
 	r := NewRenderer()
 	r.AddEvent(Event{Kind: EventPermission, PermissionDescription: "run bash"})
@@ -1003,6 +1025,38 @@ func TestRenderer_ToolResult_ContentBlocks_InjectsToolPreviewRow(t *testing.T) {
 	previewRow := turns[0].Rows[resultIdx+1]
 	require.NotNil(t, previewRow.ToolPreview)
 	assert.Equal(t, []string{"match one", "match two"}, previewRow.ToolPreview.Lines)
+}
+
+func TestRenderer_ToolResult_GrepMatches_InjectsToolPreviewRow(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{
+		Kind:       EventToolResult,
+		TurnID:     "t1",
+		ToolName:   "grep",
+		ToolResult: `{"matches":[{"file":"app/main.go","line":12,"text":"first match"},{"file":"app/input.go","line":27,"text":"second match"}],"total":2}`,
+		Timestamp:  ts,
+	})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+
+	kinds := rowKinds(turns[0].Rows)
+	resultIdx := -1
+	for i, k := range kinds {
+		if k == RowResult {
+			resultIdx = i
+			break
+		}
+	}
+	require.True(t, resultIdx >= 0, "must have a RowResult row")
+	require.True(t, resultIdx+1 < len(kinds), "must have a row after RowResult")
+	assert.Equal(t, RowToolPreview, kinds[resultIdx+1], "RowToolPreview must immediately follow RowResult")
+
+	previewRow := turns[0].Rows[resultIdx+1]
+	require.NotNil(t, previewRow.ToolPreview)
+	assert.Equal(t, []string{"app/main.go:12: first match", "app/input.go:27: second match"}, previewRow.ToolPreview.Lines)
 }
 
 func TestRenderer_ToolResult_Error_NoToolPreviewRow(t *testing.T) {

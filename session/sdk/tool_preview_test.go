@@ -60,6 +60,18 @@ func TestExtractToolPreview_JSONObjectContentBlocksKey(t *testing.T) {
 	assert.Equal(t, []string{"match one", "match two"}, result.Lines)
 }
 
+func TestExtractToolPreview_GrepMatchesObject(t *testing.T) {
+	result := extractToolPreview("grep", `{"matches":[{"file":"app/main.go","line":12,"text":"first match"},{"file":"app/input.go","line":27,"text":"second match"}],"total":2}`, 50)
+	require.NotNil(t, result)
+	assert.Equal(t, []string{"app/main.go:12: first match", "app/input.go:27: second match"}, result.Lines)
+}
+
+func TestExtractToolPreview_ListDirEntriesObject(t *testing.T) {
+	result := extractToolPreview("list_dir", `{"entries":[{"name":"cmd","is_dir":true,"size":0},{"name":"README.md","is_dir":false,"size":720}],"total":2}`, 50)
+	require.NotNil(t, result)
+	assert.Equal(t, []string{"cmd/", "README.md"}, result.Lines)
+}
+
 func TestExtractToolPreview_JSONObjectTextKey(t *testing.T) {
 	result := extractToolPreview("tool", `{"text":"hello"}`, 50)
 	require.NotNil(t, result)

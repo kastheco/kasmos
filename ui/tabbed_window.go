@@ -186,7 +186,11 @@ func (w *TabbedWindow) IsDocumentMode() bool { return w.preview.IsDocumentMode()
 // ViewportUpdate forwards a tea.Msg to the preview viewport for native key
 // handling (PgUp/PgDn, Home/End, etc.).
 func (w *TabbedWindow) ViewportUpdate(msg tea.Msg) tea.Cmd {
-	return w.preview.ViewportUpdate(msg)
+	cmd := w.preview.ViewportUpdate(msg)
+	if err := w.preview.autoExitScrollMode(w.instance); err != nil {
+		log.InfoLog.Printf("tabbed window failed to auto-exit preview scroll mode: %v", err)
+	}
+	return cmd
 }
 
 // ViewportHandlesKey reports whether the preview viewport keymap handles msg.

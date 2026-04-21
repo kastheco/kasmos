@@ -773,6 +773,13 @@ func (m *home) exclamationAutoFocus() (tea.Model, tea.Cmd) {
 // exitFocusMode resets focus state. previewTerminal stays alive — it continues
 // rendering in normal preview mode after the user exits focus/insert mode.
 func (m *home) exitFocusMode() {
+	if m.tabbedWindow.IsPreviewInScrollMode() {
+		if selected := m.nav.GetSelectedInstance(); selected != nil {
+			if err := m.tabbedWindow.ResetPreviewToNormalMode(selected); err != nil && log.ErrorLog != nil {
+				log.ErrorLog.Printf("exitFocusMode: reset preview scroll mode: %v", err)
+			}
+		}
+	}
 	// previewTerminal stays alive — it continues rendering in normal preview mode.
 	m.state = stateDefault
 	m.tabbedWindow.SetFocusMode(false)

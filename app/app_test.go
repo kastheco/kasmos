@@ -22,6 +22,7 @@ import (
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session"
 	gitpkg "github.com/kastheco/kasmos/session/git"
+	sessionsdk "github.com/kastheco/kasmos/session/sdk"
 	"github.com/kastheco/kasmos/session/tmux"
 	"github.com/kastheco/kasmos/ui"
 	"github.com/kastheco/kasmos/ui/overlay"
@@ -2737,6 +2738,48 @@ func TestExitFocusMode_PreservesSDKComposerDraft(t *testing.T) {
 	assert.Equal(t, stateDefault, h.state)
 	assert.Equal(t, "draft message", h.tabbedWindow.SDKComposerText())
 	assert.Equal(t, []string{"/tmp/clipboard.png"}, h.tabbedWindow.SDKComposerImages())
+}
+
+func TestExitFocusMode_ResetsPreviewScrollMode(t *testing.T) {
+	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:          context.Background(),
+		state:        stateFocusAgent,
+		appConfig:    config.DefaultConfig(),
+		nav:          ui.NewNavigationPanel(&spin),
+		menu:         ui.NewMenu(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+	}
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "sdk-scroll",
+		Path:          t.TempDir(),
+		Program:       "codex",
+		ExecutionMode: session.ExecutionModeSDK,
+	})
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	inst.Width = 80
+	inst.SetCachedPresentation([]*sessionsdk.PresentationTurn{{
+		Rows: []sessionsdk.PresentationRow{
+			{Kind: sessionsdk.RowProse, Text: "line one", Timestamp: time.Now()},
+			{Kind: sessionsdk.RowProse, Text: "line two", Timestamp: time.Now()},
+		},
+	}})
+
+	_ = h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+	h.tabbedWindow.SetInstance(inst)
+	h.tabbedWindow.SetSize(80, 12)
+	h.tabbedWindow.SetFocusMode(true)
+
+	h.tabbedWindow.ContentScrollUp()
+	require.True(t, h.tabbedWindow.IsPreviewInScrollMode(), "precondition: preview must enter scroll mode")
+
+	h.exitFocusMode()
+
+	assert.Equal(t, stateDefault, h.state)
+	assert.False(t, h.tabbedWindow.IsPreviewInScrollMode(), "leaving focus mode must also reset preview scroll mode")
 }
 
 func TestHandleKeyPress_CtrlShiftEnterSubmitsAndExitsFocusMode(t *testing.T) {

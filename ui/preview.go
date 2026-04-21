@@ -168,6 +168,17 @@ func (p *PreviewPane) ViewportUpdate(msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
+func (p *PreviewPane) shouldAutoExitScrollMode() bool {
+	return p.isScrolling && p.viewport.AtBottom()
+}
+
+func (p *PreviewPane) autoExitScrollMode(instance *session.Instance) error {
+	if !p.shouldAutoExitScrollMode() {
+		return nil
+	}
+	return p.ResetToNormalMode(instance)
+}
+
 // ViewportHandlesKey reports whether the viewport keymap matches the given key
 // when the pane is in document or scroll mode.
 func (p *PreviewPane) ViewportHandlesKey(msg tea.KeyMsg) bool {
@@ -1110,10 +1121,10 @@ func (p *PreviewPane) ScrollDown(instance *session.Instance) error {
 		if err := p.enterScrollMode(instance); err != nil {
 			return err
 		}
-		return nil
+		return p.autoExitScrollMode(instance)
 	}
 	p.viewport.ScrollDown(1)
-	return nil
+	return p.autoExitScrollMode(instance)
 }
 
 // HalfPageUp scrolls up half a viewport height. Enters scroll mode on first call.
@@ -1149,7 +1160,7 @@ func (p *PreviewPane) HalfPageDown(instance *session.Instance) error {
 		}
 	}
 	p.viewport.HalfPageDown()
-	return nil
+	return p.autoExitScrollMode(instance)
 }
 
 // ResetToNormalMode exits scroll mode and returns to live preview.

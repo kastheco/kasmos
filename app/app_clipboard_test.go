@@ -76,6 +76,53 @@ func TestPasteMsg_EmptyContentForwardsCtrlVToEmbeddedTerminal(t *testing.T) {
 	require.Equal(t, []byte{0x16}, sent[0])
 }
 
+func TestPasteMsg_RawPNGContentForwardsCtrlVToEmbeddedTerminal(t *testing.T) {
+	h := newTestHome()
+	term := session.NewDummyTerminal()
+	h.previewTerminal = term
+	h.state = stateFocusAgent
+
+	rawPNG := "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+	model, cmd := h.Update(tea.PasteMsg{Content: rawPNG})
+	updated := model.(*home)
+
+	require.Nil(t, cmd)
+	require.Equal(t, stateFocusAgent, updated.state)
+
+	sent := term.SentKeys()
+	require.Len(t, sent, 1)
+	require.Equal(t, []byte{0x16}, sent[0])
+}
+
+func TestPasteMsg_RawPNGContentForCodexTmuxUsesBracketedPaste(t *testing.T) {
+	h := newTestHome()
+	term := session.NewDummyTerminal()
+	h.previewTerminal = term
+	h.state = stateFocusAgent
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "codex-tmux",
+		Path:          t.TempDir(),
+		Program:       "codex",
+		ExecutionMode: session.ExecutionModeTmux,
+	})
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+
+	rawPNG := "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+	model, cmd := h.Update(tea.PasteMsg{Content: rawPNG})
+	updated := model.(*home)
+
+	require.Nil(t, cmd)
+	require.Equal(t, stateFocusAgent, updated.state)
+
+	sent := term.SentKeys()
+	require.Len(t, sent, 1)
+	require.Equal(t, []byte("\x1b[200~"+rawPNG+"\x1b[201~"), sent[0])
+}
+
 func TestPasteMsg_EmptyContentAttachesClipboardImageForSDKFocusMode(t *testing.T) {
 	origCapture := captureClipboardImage
 	captureClipboardImage = func(_ context.Context) (string, error) {
@@ -197,4 +244,58 @@ func TestHandleKeyPress_TmuxFocusMode_CtrlVFallsBackToRawCtrlVWhenClipboardTextU
 	sent := term.SentKeys()
 	require.Len(t, sent, 1)
 	require.Equal(t, []byte{0x16}, sent[0])
+}
+
+func TestHandleKeyPress_TmuxFocusMode_CtrlVWithRawPNGClipboardFallsBackToRawCtrlV(t *testing.T) {
+	origRead := readClipboardText
+	readClipboardText = func() (string, error) { return "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR", nil }
+	t.Cleanup(func() { readClipboardText = origRead })
+
+	h := newTestHome()
+	term := session.NewDummyTerminal()
+	h.previewTerminal = term
+	h.state = stateFocusAgent
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
+	updated := model.(*home)
+
+	require.Nil(t, cmd)
+	require.Equal(t, stateFocusAgent, updated.state)
+
+	sent := term.SentKeys()
+	require.Len(t, sent, 1)
+	require.Equal(t, []byte{0x16}, sent[0])
+}
+
+func TestHandleKeyPress_TmuxCodexFocusMode_CtrlVWithRawPNGClipboardUsesBracketedPaste(t *testing.T) {
+	origRead := readClipboardText
+	rawPNG := "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+	readClipboardText = func() (string, error) { return rawPNG, nil }
+	t.Cleanup(func() { readClipboardText = origRead })
+
+	h := newTestHome()
+	term := session.NewDummyTerminal()
+	h.previewTerminal = term
+	h.state = stateFocusAgent
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "codex-tmux",
+		Path:          t.TempDir(),
+		Program:       "codex",
+		ExecutionMode: session.ExecutionModeTmux,
+	})
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
+	updated := model.(*home)
+
+	require.Nil(t, cmd)
+	require.Equal(t, stateFocusAgent, updated.state)
+
+	sent := term.SentKeys()
+	require.Len(t, sent, 1)
+	require.Equal(t, []byte("\x1b[200~"+rawPNG+"\x1b[201~"), sent[0])
 }

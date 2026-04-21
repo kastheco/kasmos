@@ -1,10 +1,14 @@
 package ui
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/kastheco/kasmos/session/sdk"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUpdatePreview_SkipsWhenFocusMode(t *testing.T) {
@@ -101,6 +105,40 @@ func TestViewportUpdate_DelegatesOnlyForPreviewTab(t *testing.T) {
 	assert.Nil(t, cmd)
 	assert.NotEqual(t, before, after,
 		"viewport update should always delegate in document mode")
+}
+
+func TestViewportUpdate_AutoExitsPreviewScrollModeAtBottom(t *testing.T) {
+	preview := NewPreviewPane()
+	preview.SetSize(40, 5)
+	info := NewInfoPane()
+	tw := NewTabbedWindow(preview, info)
+	tw.SetSize(42, 7)
+
+	now := time.Now()
+	turns := make([]*sdk.PresentationTurn, 0, 12)
+	for i := 0; i < 12; i++ {
+		turns = append(turns, &sdk.PresentationTurn{
+			ID:        fmt.Sprintf("t%d", i+1),
+			Number:    i + 1,
+			StartedAt: now,
+			Rows: []sdk.PresentationRow{{
+				Kind:      sdk.RowProse,
+				Text:      fmt.Sprintf("line %02d", i+1),
+				Timestamp: now,
+			}},
+		})
+	}
+
+	inst := newSDKInstanceWithTurns(t, turns)
+	tw.SetInstance(inst)
+	require.NoError(t, tw.UpdatePreview(inst))
+	tw.ScrollUp()
+	tw.ScrollUp()
+	require.True(t, tw.IsPreviewInScrollMode(), "precondition: preview must be in scroll mode")
+
+	cmd := tw.ViewportUpdate(tea.KeyPressMsg{Code: tea.KeyPgDown})
+	assert.Nil(t, cmd)
+	assert.False(t, tw.IsPreviewInScrollMode(), "paging back to the live bottom must auto-exit scroll mode")
 }
 
 // ── New tests for the simplified TabbedWindow ─────────────────────────────────

@@ -1540,3 +1540,32 @@ func TestPreviewPane_SDKScrollMode_StickyStripClearedOnExit(t *testing.T) {
 	require.Empty(t, pane.sdkScrollStrip, "pinned strip must be cleared after exiting scroll mode")
 	require.Equal(t, 20, pane.viewport.Height(), "viewport height must be restored after exiting scroll mode")
 }
+
+func TestPreviewPane_ScrollDown_AutoExitsAtBottom(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(60, 6)
+
+	now := time.Now()
+	turns := make([]*sdk.PresentationTurn, 0, 12)
+	for i := 0; i < 12; i++ {
+		turns = append(turns, &sdk.PresentationTurn{
+			ID:        fmt.Sprintf("t%d", i+1),
+			Number:    i + 1,
+			StartedAt: now,
+			Rows: []sdk.PresentationRow{{
+				Kind:      sdk.RowProse,
+				Text:      fmt.Sprintf("line %02d", i+1),
+				Timestamp: now,
+			}},
+		})
+	}
+
+	inst := newSDKInstanceWithTurns(t, turns)
+	require.NoError(t, pane.UpdateContent(inst))
+	require.NoError(t, pane.ScrollUp(inst))
+	require.NoError(t, pane.ScrollUp(inst))
+	require.True(t, pane.isScrolling, "precondition: pane must be in scroll mode after scrolling up")
+
+	require.NoError(t, pane.ScrollDown(inst))
+	require.False(t, pane.isScrolling, "scrolling back to the live bottom must auto-exit scroll mode")
+}

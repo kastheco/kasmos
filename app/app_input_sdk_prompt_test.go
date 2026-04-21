@@ -143,6 +143,12 @@ func TestHandleKeyPress_SDKFocusMode_CtrlVPastesClipboardText(t *testing.T) {
 	readClipboardText = func() (string, error) { return "pasted text", nil }
 	t.Cleanup(func() { readClipboardText = origRead })
 
+	origCapture := captureClipboardImage
+	captureClipboardImage = func(_ context.Context) (string, error) {
+		return "", errClipboardImageNotFound
+	}
+	t.Cleanup(func() { captureClipboardImage = origCapture })
+
 	h := newTestHome()
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:         "sdk-inline",
@@ -162,6 +168,40 @@ func TestHandleKeyPress_SDKFocusMode_CtrlVPastesClipboardText(t *testing.T) {
 
 	assert.Equal(t, stateFocusAgent, updated.state)
 	assert.Equal(t, "pasted text", updated.tabbedWindow.SDKComposerText())
+	assert.NotNil(t, cmd)
+}
+
+func TestHandleKeyPress_SDKFocusMode_CtrlVPrefersClipboardImageWhenAvailable(t *testing.T) {
+	origRead := readClipboardText
+	readClipboardText = func() (string, error) { return "text fallback", nil }
+	t.Cleanup(func() { readClipboardText = origRead })
+
+	origCapture := captureClipboardImage
+	captureClipboardImage = func(_ context.Context) (string, error) {
+		return "/tmp/clipboard.png", nil
+	}
+	t.Cleanup(func() { captureClipboardImage = origCapture })
+
+	h := newTestHome()
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "sdk-inline",
+		Path:          t.TempDir(),
+		Program:       "codex",
+		ExecutionMode: session.ExecutionModeSDK,
+	})
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+	h.state = stateFocusAgent
+	h.tabbedWindow.SetFocusMode(true)
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
+	updated := model.(*home)
+
+	assert.Equal(t, stateFocusAgent, updated.state)
+	assert.Empty(t, updated.tabbedWindow.SDKComposerText())
+	assert.Equal(t, []string{"/tmp/clipboard.png"}, updated.tabbedWindow.SDKComposerImages())
 	assert.NotNil(t, cmd)
 }
 
@@ -229,6 +269,40 @@ func TestHandleKeyPress_SDKFocusMode_CtrlShiftVPrefersClipboardImage(t *testing.
 	h.tabbedWindow.SetFocusMode(true)
 
 	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'V', Mod: tea.ModCtrl | tea.ModShift})
+	updated := model.(*home)
+
+	assert.Equal(t, stateFocusAgent, updated.state)
+	assert.Empty(t, updated.tabbedWindow.SDKComposerText())
+	assert.Equal(t, []string{"/tmp/clipboard.png"}, updated.tabbedWindow.SDKComposerImages())
+	assert.NotNil(t, cmd)
+}
+
+func TestHandleKeyPress_SDKFocusMode_CtrlVWithRawPNGPrefersClipboardImage(t *testing.T) {
+	origRead := readClipboardText
+	readClipboardText = func() (string, error) { return "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR", nil }
+	t.Cleanup(func() { readClipboardText = origRead })
+
+	origCapture := captureClipboardImage
+	captureClipboardImage = func(_ context.Context) (string, error) {
+		return "/tmp/clipboard.png", nil
+	}
+	t.Cleanup(func() { captureClipboardImage = origCapture })
+
+	h := newTestHome()
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "sdk-inline",
+		Path:          t.TempDir(),
+		Program:       "codex",
+		ExecutionMode: session.ExecutionModeSDK,
+	})
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+	h.state = stateFocusAgent
+	h.tabbedWindow.SetFocusMode(true)
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
 	updated := model.(*home)
 
 	assert.Equal(t, stateFocusAgent, updated.state)
