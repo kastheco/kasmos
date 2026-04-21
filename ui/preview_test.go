@@ -837,6 +837,18 @@ func TestPreviewPane_SDKPresentation_FocusedComposerShowsImageAttachmentCount(t 
 	require.Contains(t, plain, "\n\n1 image attached\n")
 }
 
+func TestPreviewPane_SetSDKFocusMode_DisablePreservesComposerDraft(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSDKFocusMode(true)
+	pane.AppendSDKComposerText("draft message")
+	pane.AppendSDKComposerImage("/tmp/clipboard.png")
+
+	pane.SetSDKFocusMode(false)
+
+	require.Equal(t, "draft message", pane.SDKComposerText())
+	require.Equal(t, []string{"/tmp/clipboard.png"}, pane.SDKComposerImages())
+}
+
 func TestPreviewPane_SDKPresentation_UserHistoryUsesFoam(t *testing.T) {
 	pane := NewPreviewPane()
 	pane.SetSize(80, 24)

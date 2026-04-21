@@ -845,10 +845,6 @@ func parseSDKConfigToken(token, currentEffort string) string {
 
 func (p *PreviewPane) SetSDKFocusMode(enabled bool) {
 	p.sdkFocusMode = enabled
-	if !enabled {
-		p.sdkComposerText = ""
-		p.sdkComposerImages = nil
-	}
 }
 
 func (p *PreviewPane) AppendSDKComposerText(text string) {
