@@ -15,38 +15,83 @@ const features = [
     title: "multi-agent orchestration",
     description:
       "run claude, codex, gemini, amp, and other AI agents concurrently. each gets an isolated git worktree and tmux session.",
+    tone: "iris",
   },
   {
     icon: "\u{1F30A}",
     title: "wave-based lifecycle",
     description:
       "plans decompose into waves of parallel tasks. an architect pass structures each wave before coders implement. reviewers verify the work, fixers apply requested changes — looping back until the task is clean — and a master agent performs a final readiness check before the task ships.",
+    tone: "foam",
   },
   {
     icon: "\u{1F527}",
     title: "mcp server architecture",
     description:
       "kasmos exposes a shared http mcp endpoint for task crud, signals, instance management, and codebase tools. agents use mcp by default, not ad hoc cli wrappers or filesystem hacks.",
+    tone: "gold",
   },
   {
     icon: "\u{1F5C2}",
     title: "multi-repo support",
     description:
       "manage tasks across multiple repositories from a single daemon while sharing one global task store. repo config stays local; task state stays centralized.",
+    tone: "rose",
   },
   {
     icon: "\u{1F4BE}",
     title: "session persistence",
     description:
       "sessions survive restarts. pick up where you left off, even after rebooting your machine.",
+    tone: "foam",
   },
   {
     icon: "\u{1F680}",
     title: "auto-commit & PR",
     description:
       "automatically commit agent work and create pull requests. ship faster with less manual overhead.",
+    tone: "gold",
   },
-];
+ ] as const;
+
+const agents = [
+  {
+    role: "planner",
+    icon: "📋",
+    desc: "writes the feature spec and breaks it into high-level tasks.",
+    color: "gold",
+  },
+  {
+    role: "architect",
+    icon: "🏗️",
+    desc: "decomposes the plan into implementation waves with inter-task dependencies.",
+    color: "iris",
+  },
+  {
+    role: "coder",
+    icon: "⚡",
+    desc: "implements the task in an isolated git worktree, following TDD.",
+    color: "foam",
+  },
+  {
+    role: "reviewer",
+    icon: "🔍",
+    desc: "checks correctness, spec compliance, and code quality per task.",
+    color: "rose",
+  },
+  {
+    role: "fixer",
+    icon: "🔧",
+    desc: "applies reviewer feedback, debugs issues, and prepares the work for re-review.",
+    color: "gold",
+  },
+  {
+    role: "master",
+    icon: "🎯",
+    desc: "final readiness gate after reviewer approval — performs holistic review across all merged changes before marking the task done.",
+    color: "pine",
+  },
+] as const;
 
 const typewriterTexts = [
   "parallel agents, isolated worktrees",
@@ -56,6 +101,14 @@ const typewriterTexts = [
 ];
 
 export default function PageContent() {
+  const agentToneClasses = {
+    gold: styles.agentGold,
+    iris: styles.agentIris,
+    foam: styles.agentFoam,
+    rose: styles.agentRose,
+    pine: styles.agentPine,
+  } as const;
+
   return (
     <div className={styles.page}>
       <StarField />
@@ -69,6 +122,7 @@ export default function PageContent() {
         {/* Hero */}
         <section className={styles.hero}>
           <OrchestrationVisual className={styles.heroBee} />
+          <p className={styles.heroKicker}>mcp-first orchestration system</p>
           <h1 className={styles.heroTitle}>
             <img
               src="/logo-full.png"
@@ -83,6 +137,17 @@ export default function PageContent() {
           </p>
           <div className={styles.heroTypewriter}>
             <TypewriterText texts={typewriterTexts} />
+          </div>
+          <div className={styles.heroSignals}>
+            <span className={`${styles.heroSignal} ${styles.signalGold}`}>
+              planner → architect
+            </span>
+            <span className={`${styles.heroSignal} ${styles.signalIris}`}>
+              parallel worktrees
+            </span>
+            <span className={`${styles.heroSignal} ${styles.signalFoam}`}>
+              review / fix loop
+            </span>
           </div>
           <div className={styles.heroCtas}>
             <a href="#install" className={styles.ctaPrimary}>
@@ -107,153 +172,123 @@ export default function PageContent() {
 
         {/* Features */}
         <section className={styles.section}>
-          <ScrollReveal>
-            <h2 className={styles.sectionTitle}>why <span className={styles.gradientInline}>kasmos</span>?</h2>
-            <p className={styles.sectionSubtitle}>
-              wave-based execution, isolated worktrees, and mcp-native tooling — everything you need to run concurrent ai agents at scale.
-            </p>
-          </ScrollReveal>
-          <div className={styles.featuresGrid}>
-            {features.map((feature, i) => (
-              <ScrollReveal key={feature.title} delay={i * 0.1}>
-                <FeatureCard {...feature} />
-              </ScrollReveal>
-            ))}
+          <div className={`${styles.sectionFrame} ${styles.sectionFrameIris}`}>
+            <ScrollReveal>
+              <p className={styles.sectionEyebrow}>capability map</p>
+              <h2 className={styles.sectionTitle}>why <span className={styles.gradientInline}>kasmos</span>?</h2>
+              <p className={styles.sectionSubtitle}>
+                wave-based execution, isolated worktrees, and mcp-native tooling — everything you need to run concurrent ai agents at scale.
+              </p>
+            </ScrollReveal>
+            <div className={styles.featuresGrid}>
+              {features.map((feature, i) => (
+                <ScrollReveal key={feature.title} delay={i * 0.1}>
+                  <FeatureCard {...feature} />
+                </ScrollReveal>
+              ))}
+            </div>
           </div>
         </section>
 
         {/* How it Works */}
         <section className={styles.section}>
-          <ScrollReveal>
-            <h2 className={styles.sectionTitle}>how it works</h2>
-            <p className={styles.sectionSubtitle}>
-              kasmos decomposes your feature spec into waves of parallel tasks,
-              each executed by a specialized agent in its own isolated worktree.
-            </p>
-          </ScrollReveal>
+          <div className={`${styles.sectionFrame} ${styles.sectionFrameGold}`}>
+            <ScrollReveal>
+              <p className={styles.sectionEyebrow}>execution flow</p>
+              <h2 className={styles.sectionTitle}>how it works</h2>
+              <p className={styles.sectionSubtitle}>
+                kasmos decomposes your feature spec into waves of parallel tasks,
+                each executed by a specialized agent in its own isolated worktree.
+              </p>
+            </ScrollReveal>
 
-          {/* Lifecycle grid – single layout for all viewports */}
-          <ScrollReveal>
-            <div className={styles.lifecycleGrid}>
-              {/* Row 1: planning → architect */}
-              <div className={styles.lifecycleRow}>
-                <div className={`${styles.lifecycleStep} ${styles.lifecycleAmber}`}>
-                  <span className={styles.lifecycleStepNum}>1</span>
-                  <span className={styles.lifecycleStepLabel}>planning</span>
+            {/* Lifecycle grid – single layout for all viewports */}
+            <ScrollReveal>
+              <div className={styles.lifecycleGrid}>
+                {/* Row 1: planning → architect */}
+                <div className={styles.lifecycleRow}>
+                  <div className={`${styles.lifecycleStep} ${styles.lifecycleGold}`}>
+                    <span className={styles.lifecycleStepNum}>1</span>
+                    <span className={styles.lifecycleStepLabel}>planning</span>
+                  </div>
+                  <div className={styles.lifecycleHArrow}>→</div>
+                  <div className={`${styles.lifecycleStep} ${styles.lifecycleIris}`}>
+                    <span className={styles.lifecycleStepNum}>2</span>
+                    <span className={styles.lifecycleStepLabel}>architect</span>
+                  </div>
                 </div>
-                <div className={styles.lifecycleHArrow}>→</div>
-                <div className={`${styles.lifecycleStep} ${styles.lifecycleTeal}`}>
-                  <span className={styles.lifecycleStepNum}>2</span>
-                  <span className={styles.lifecycleStepLabel}>architect</span>
+                <div className={styles.lifecycleVConnector}>↓</div>
+                {/* Row 2: implementing */}
+                <div className={styles.lifecycleRow}>
+                  <div className={`${styles.lifecycleStep} ${styles.lifecycleFoam} ${styles.lifecycleStepWide}`}>
+                    <span className={styles.lifecycleStepNum}>3</span>
+                    <span className={styles.lifecycleStepLabel}>implementing</span>
+                  </div>
+                </div>
+                <div className={styles.lifecycleVConnector}>↓</div>
+                {/* Row 3: reviewer ⇄ fixer */}
+                <div className={styles.lifecycleRow}>
+                  <div className={`${styles.lifecycleStep} ${styles.lifecycleRose}`}>
+                    <span className={styles.lifecycleStepNum}>4</span>
+                    <span className={styles.lifecycleStepLabel}>reviewer</span>
+                  </div>
+                  <div className={`${styles.lifecycleHArrow} ${styles.lifecycleArrowLoop}`}>
+                    ⇄
+                    <span className={styles.lifecycleLoopNote}>review/fix loop</span>
+                  </div>
+                  <div className={`${styles.lifecycleStep} ${styles.lifecycleGold}`}>
+                    <span className={styles.lifecycleStepNum}>5</span>
+                    <span className={styles.lifecycleStepLabel}>fixer</span>
+                  </div>
+                </div>
+                <div className={styles.lifecycleVConnector}>↓</div>
+                {/* Row 4: readiness review → done */}
+                <div className={styles.lifecycleRow}>
+                  <div className={`${styles.lifecycleStep} ${styles.lifecycleIris}`}>
+                    <span className={styles.lifecycleStepNum}>6</span>
+                    <span className={styles.lifecycleStepLabel}>readiness review</span>
+                  </div>
+                  <div className={styles.lifecycleHArrow}>→</div>
+                  <div className={`${styles.lifecycleStep} ${styles.lifecycleFoam}`}>
+                    <span className={styles.lifecycleStepNum}>7</span>
+                    <span className={styles.lifecycleStepLabel}>done</span>
+                  </div>
                 </div>
               </div>
-              <div className={styles.lifecycleVConnector}>↓</div>
-              {/* Row 2: implementing */}
-              <div className={styles.lifecycleRow}>
-                <div className={`${styles.lifecycleStep} ${styles.lifecycleTeal} ${styles.lifecycleStepWide}`}>
-                  <span className={styles.lifecycleStepNum}>3</span>
-                  <span className={styles.lifecycleStepLabel}>implementing</span>
-                </div>
-              </div>
-              <div className={styles.lifecycleVConnector}>↓</div>
-              {/* Row 3: reviewer ⇄ fixer */}
-              <div className={styles.lifecycleRow}>
-                <div className={`${styles.lifecycleStep} ${styles.lifecycleAmber}`}>
-                  <span className={styles.lifecycleStepNum}>4</span>
-                  <span className={styles.lifecycleStepLabel}>reviewer</span>
-                </div>
-                <div className={`${styles.lifecycleHArrow} ${styles.lifecycleArrowLoop}`}>
-                  ⇄
-                  <span className={styles.lifecycleLoopNote}>review/fix loop</span>
-                </div>
-                <div className={`${styles.lifecycleStep} ${styles.lifecycleAmber}`}>
-                  <span className={styles.lifecycleStepNum}>5</span>
-                  <span className={styles.lifecycleStepLabel}>fixer</span>
-                </div>
-              </div>
-              <div className={styles.lifecycleVConnector}>↓</div>
-              {/* Row 4: readiness review → done */}
-              <div className={styles.lifecycleRow}>
-                <div className={`${styles.lifecycleStep} ${styles.lifecycleTeal}`}>
-                  <span className={styles.lifecycleStepNum}>6</span>
-                  <span className={styles.lifecycleStepLabel}>readiness review</span>
-                </div>
-                <div className={styles.lifecycleHArrow}>→</div>
-                <div className={`${styles.lifecycleStep} ${styles.lifecycleTeal}`}>
-                  <span className={styles.lifecycleStepNum}>7</span>
-                  <span className={styles.lifecycleStepLabel}>done</span>
-                </div>
-              </div>
+            </ScrollReveal>
+
+            <div className={styles.agentsGrid}>
+              {agents.map((agent, i) => (
+                <ScrollReveal key={agent.role} delay={i * 0.08}>
+                  <div
+                    className={`${styles.agentCard} ${agentToneClasses[agent.color]}`}
+                  >
+                    <span className={styles.agentIcon}>{agent.icon}</span>
+                    <span className={styles.agentRole}>{agent.role}</span>
+                    <p className={styles.agentDesc}>{agent.desc}</p>
+                  </div>
+                </ScrollReveal>
+              ))}
             </div>
-          </ScrollReveal>
-
-          <div className={styles.agentsGrid}>
-            {(
-              [
-                {
-                  role: "planner",
-                  icon: "📋",
-                  desc: "writes the feature spec and breaks it into high-level tasks.",
-                  color: "amber",
-                },
-                {
-                  role: "architect",
-                  icon: "🏗️",
-                  desc: "decomposes the plan into implementation waves with inter-task dependencies.",
-                  color: "teal",
-                },
-                {
-                  role: "coder",
-                  icon: "⚡",
-                  desc: "implements the task in an isolated git worktree, following TDD.",
-                  color: "teal",
-                },
-                {
-                  role: "reviewer",
-                  icon: "🔍",
-                  desc: "checks correctness, spec compliance, and code quality per task.",
-                  color: "amber",
-                },
-                {
-                  role: "fixer",
-                  icon: "🔧",
-                  desc: "applies reviewer feedback, debugs issues, and prepares the work for re-review.",
-                  color: "amber",
-                },
-                {
-                  role: "master",
-                  icon: "🎯",
-                  desc: "final readiness gate after reviewer approval — performs holistic review across all merged changes before marking the task done.",
-                  color: "teal",
-                },
-              ] as const
-            ).map((agent, i) => (
-              <ScrollReveal key={agent.role} delay={i * 0.08}>
-                <div
-                  className={`${styles.agentCard} ${agent.color === "amber" ? styles.agentAmber : styles.agentTeal}`}
-                >
-                  <span className={styles.agentIcon}>{agent.icon}</span>
-                  <span className={styles.agentRole}>{agent.role}</span>
-                  <p className={styles.agentDesc}>{agent.desc}</p>
-                </div>
-              </ScrollReveal>
-            ))}
           </div>
         </section>
 
         {/* Installation */}
         <section id="install" className={styles.section}>
-          <ScrollReveal className={styles.installSection}>
-            <h2 className={styles.sectionTitle}>get started</h2>
-            <p className={styles.sectionSubtitle}>
-              install kasmos in seconds. works on macOS, Linux, and Windows.
-            </p>
-            <InstallTabs />
-            <p className={styles.installPrereqs}>
-              prerequisites: tmux, gh, and at least one supported ai cli —{" "}
-              <a href="/docs/getting-started/prerequisites/">see full list</a>
-            </p>
-          </ScrollReveal>
+          <div className={`${styles.sectionFrame} ${styles.sectionFrameFoam}`}>
+            <ScrollReveal className={styles.installSection}>
+              <p className={styles.sectionEyebrow}>install</p>
+              <h2 className={styles.sectionTitle}>get started</h2>
+              <p className={styles.sectionSubtitle}>
+                install kasmos in seconds. works on macOS, Linux, and Windows.
+              </p>
+              <InstallTabs />
+              <p className={styles.installPrereqs}>
+                prerequisites: tmux, gh, and at least one supported ai cli —{" "}
+                <a href="/docs/getting-started/prerequisites/">see full list</a>
+              </p>
+            </ScrollReveal>
+          </div>
         </section>
 
         {/* Footer */}

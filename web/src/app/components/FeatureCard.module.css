@@ -1,40 +1,118 @@
 .card {
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: 16px;
-  padding: 32px;
-  backdrop-filter: blur(12px);
+  position: relative;
+  min-height: 100%;
+  background: linear-gradient(180deg, rgba(49, 45, 74, 0.78) 0%, rgba(27, 24, 41, 0.88) 100%);
+  border: 1px solid var(--tone-border, var(--card-border));
+  border-radius: 20px;
+  padding: 28px;
+  backdrop-filter: blur(16px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  overflow: hidden;
   transition: border-color 0.3s, box-shadow 0.3s, transform 0.3s;
 }
 
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--tone-solid), transparent);
+}
+
+.card::after {
+  content: "";
+  position: absolute;
+  width: 180px;
+  height: 180px;
+  right: -56px;
+  bottom: -78px;
+  background: radial-gradient(circle, var(--tone-glow), transparent 70%);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
 .card:hover {
-  border-color: var(--card-border-hover);
-  box-shadow: 0 0 30px rgba(196, 167, 231, 0.08);
-  transform: translateY(-4px);
+  border-color: var(--tone-border-strong, var(--card-border-hover));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 24px 56px rgba(8, 7, 18, 0.32);
+  transform: translateY(-6px);
 }
 
 .icon {
   font-size: 28px;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
   display: flex;
-  width: 48px;
-  height: 48px;
+  width: 54px;
+  height: 54px;
   align-items: center;
   justify-content: center;
-  background: rgba(196, 167, 231, 0.1);
-  border-radius: 12px;
+  background: linear-gradient(180deg, var(--tone-soft), rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--tone-border-soft);
+  border-radius: 16px;
+  box-shadow: 0 14px 34px var(--tone-shadow);
 }
 
 .title {
   font-size: 18px;
   font-weight: 600;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   color: var(--foreground);
 }
 
 .description {
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.65;
   color: var(--foreground-secondary);
   margin: 0;
+}
+
+.toneIris {
+  --tone-solid: var(--accent-iris);
+  --tone-soft: rgba(196, 167, 231, 0.16);
+  --tone-glow: rgba(196, 167, 231, 0.18);
+  --tone-border: rgba(196, 167, 231, 0.18);
+  --tone-border-soft: rgba(196, 167, 231, 0.14);
+  --tone-border-strong: rgba(196, 167, 231, 0.34);
+  --tone-shadow: rgba(196, 167, 231, 0.12);
+}
+
+.toneFoam {
+  --tone-solid: var(--accent-foam);
+  --tone-soft: rgba(156, 207, 216, 0.16);
+  --tone-glow: rgba(156, 207, 216, 0.16);
+  --tone-border: rgba(156, 207, 216, 0.18);
+  --tone-border-soft: rgba(156, 207, 216, 0.13);
+  --tone-border-strong: rgba(156, 207, 216, 0.34);
+  --tone-shadow: rgba(156, 207, 216, 0.12);
+}
+
+.toneGold {
+  --tone-solid: var(--accent-gold);
+  --tone-soft: rgba(246, 193, 119, 0.16);
+  --tone-glow: rgba(246, 193, 119, 0.16);
+  --tone-border: rgba(246, 193, 119, 0.18);
+  --tone-border-soft: rgba(246, 193, 119, 0.14);
+  --tone-border-strong: rgba(246, 193, 119, 0.32);
+  --tone-shadow: rgba(246, 193, 119, 0.12);
+}
+
+.toneRose {
+  --tone-solid: var(--accent-rose);
+  --tone-soft: rgba(234, 154, 151, 0.16);
+  --tone-glow: rgba(234, 154, 151, 0.18);
+  --tone-border: rgba(234, 154, 151, 0.18);
+  --tone-border-soft: rgba(234, 154, 151, 0.14);
+  --tone-border-strong: rgba(234, 154, 151, 0.34);
+  --tone-shadow: rgba(234, 154, 151, 0.12);
+}
+
+.tonePine {
+  --tone-solid: var(--accent-pine);
+  --tone-soft: rgba(62, 143, 176, 0.18);
+  --tone-glow: rgba(62, 143, 176, 0.18);
+  --tone-border: rgba(62, 143, 176, 0.2);
+  --tone-border-soft: rgba(62, 143, 176, 0.14);
+  --tone-border-strong: rgba(62, 143, 176, 0.34);
+  --tone-shadow: rgba(62, 143, 176, 0.14);
 }
