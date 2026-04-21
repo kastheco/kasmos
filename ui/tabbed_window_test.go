@@ -130,6 +130,32 @@ func TestTabbedWindow_StringRendersWithoutSize(t *testing.T) {
 	assert.Empty(t, tw.String(), "should return empty string when no size is set")
 }
 
+func TestTabbedWindow_StringSkipsNonPositiveWidth(t *testing.T) {
+	tw := NewTabbedWindow(NewPreviewPane(), NewInfoPane())
+	tw.SetSize(1, 10)
+
+	assert.Empty(t, tw.String(), "should return empty when adjusted width is non-positive")
+}
+
+func TestTabbedWindow_StringClampsTinyInnerDimensions(t *testing.T) {
+	tw := NewTabbedWindow(NewPreviewPane(), NewInfoPane())
+	tw.SetInfoData(InfoData{
+		HasInstance:     true,
+		ExecutionPhase:  "reviewing",
+		ActiveRound:     2,
+		ActiveAgentType: "coder",
+		WaveNumber:      1,
+		TotalWaves:      3,
+		WaveTaskIndex:   1,
+		WaveTaskCount:   2,
+	})
+	tw.SetSize(3, 1)
+
+	assert.NotPanics(t, func() {
+		_ = tw.String()
+	}, "String should clamp inner dimensions before rendering tiny layouts")
+}
+
 func TestTabbedWindow_FocusModeSetsFocusColor(t *testing.T) {
 	preview := NewPreviewPane()
 	preview.SetSize(80, 24)

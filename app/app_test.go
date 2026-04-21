@@ -18,6 +18,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstore"
 	daemonpkg "github.com/kastheco/kasmos/daemon"
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/keys"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session"
 	gitpkg "github.com/kastheco/kasmos/session/git"
@@ -411,6 +412,18 @@ func TestExecuteLauncherAction_NewInstanceSDKIgnoresTmuxLimit(t *testing.T) {
 	require.Equal(t, stateNew, updated.state)
 	require.NotNil(t, updated.newInstance)
 	assert.Equal(t, session.ExecutionModeSDK, updated.newInstance.ExecutionMode)
+}
+
+func TestExecuteLauncherAction_InfoTabRequestsWindowResize(t *testing.T) {
+	h := newTestHome()
+	wasShowing := h.tabbedWindow.IsShowingInfo()
+
+	model, cmd := h.executeLauncherAction("info_tab")
+	updated := model.(*home)
+
+	require.NotNil(t, cmd, "launcher info toggle must request a window resize")
+	assert.IsType(t, tea.RequestWindowSize(), cmd())
+	assert.Equal(t, !wasShowing, updated.tabbedWindow.IsShowingInfo())
 }
 
 func TestSpawnAdHocAgent_BranchOverride(t *testing.T) {
@@ -1759,13 +1772,15 @@ func TestFocusRing(t *testing.T) {
 
 	t.Run("I toggles compact info header visibility, sidebar keeps focus", func(t *testing.T) {
 		h := newTestHome()
-		// showInfo starts as false (from NewTabbedWindow).
 		wasShowing := h.tabbedWindow.IsShowingInfo()
 
-		homeModel := handle(t, h, tea.KeyPressMsg{Code: 'I', Text: "I"})
+		model, cmd := h.handleResolvedKey(keys.KeyInfoTab)
+		homeModel := model.(*home)
 
 		assert.Equal(t, slotNav, homeModel.focusSlot, "sidebar must retain focus")
 		assert.Equal(t, !wasShowing, homeModel.tabbedWindow.IsShowingInfo(), "I must toggle info header visibility")
+		require.NotNil(t, cmd, "I must request a window resize after toggling the header")
+		assert.IsType(t, tea.RequestWindowSize(), cmd())
 	})
 
 	t.Run("# is no-op (direct info-tab shortcut removed)", func(t *testing.T) {

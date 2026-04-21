@@ -56,5 +56,6 @@ func TestHandleKeyPress_ShiftITogglesInfoHeader(t *testing.T) {
 	// I toggles the compact info header, not the instance tab index.
 	assert.Equal(t, !wasShowing, updated.tabbedWindow.IsShowingInfo())
 	assert.Equal(t, stateDefault, updated.state)
-	assert.Nil(t, cmd)
+	require.NotNil(t, cmd)
+	assert.NotNil(t, cmd(), "I should request a follow-up resize after toggling the header")
 }

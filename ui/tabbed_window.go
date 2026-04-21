@@ -270,7 +270,7 @@ func (w *TabbedWindow) SetAnimateBanner(enabled bool) { w.preview.SetAnimateBann
 // String renders the compact info header and content window as a single string.
 // Returns an empty string when no size has been allocated.
 func (w *TabbedWindow) String() string {
-	if w.width == 0 || w.height == 0 {
+	if w.width <= 0 || w.height <= 0 {
 		return ""
 	}
 
@@ -296,6 +296,12 @@ func (w *TabbedWindow) String() string {
 	ws := windowStyle.BorderForeground(borderColor)
 	innerW := w.width - ws.GetHorizontalFrameSize()
 	innerH := w.height - ws.GetVerticalFrameSize() - compactH
+	if innerW < 0 {
+		innerW = 0
+	}
+	if innerH < 0 {
+		innerH = 0
+	}
 
 	window := ws.Render(lipgloss.Place(innerW, innerH, lipgloss.Left, lipgloss.Top, content))
 	// Wrap the preview content in a zone so mouse clicks are detected.

@@ -2205,7 +2205,7 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 	case keys.KeyInfoTab:
 		// Toggle the compact info header without stealing sidebar focus.
 		m.tabbedWindow.SetShowInfo(!m.tabbedWindow.IsShowingInfo())
-		return m, nil
+		return m, tea.RequestWindowSize
 	case keys.KeyFocusAgent:
 		return m.exclamationAutoFocus()
 	case keys.KeySendPrompt:
