@@ -51,3 +51,23 @@ func RenderToolCallLine(head, args string, headStyle, argsStyle lipgloss.Style) 
 	}
 	return headStyle.Render(head) + " " + argsStyle.Render(args)
 }
+
+// RenderPromptLine renders a one-token prefix followed by a content segment.
+// It is used for quiet transcript rows like user prompts where the prefix
+// should carry a stronger accent than the body text.
+func RenderPromptLine(prefix, text string, prefixStyle, textStyle lipgloss.Style) string {
+	if text == "" {
+		return prefixStyle.Render(prefix)
+	}
+	return prefixStyle.Render(prefix) + " " + textStyle.Render(text)
+}
+
+// RenderStructuredChildLine renders rows that begin with the standard "│ "
+// gutter used by preview and diff blocks, allowing callers to accent the
+// gutter separately from the row content.
+func RenderStructuredChildLine(row string, gutterStyle, contentStyle lipgloss.Style) string {
+	if strings.HasPrefix(row, "│ ") {
+		return gutterStyle.Render("│ ") + contentStyle.Render(strings.TrimPrefix(row, "│ "))
+	}
+	return contentStyle.Render(row)
+}

@@ -68,13 +68,13 @@ func TestRenderPresentation_ToolLineHighlightAndIndent(t *testing.T) {
 	result := RenderPresentation([]*PresentationTurn{turn}, 80)
 
 	expectedTool := ToolCallIndent +
-		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle)).Render("• Edit") +
+		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorPine)).Render("• Edit") +
 		" " +
-		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorText)).Render("main.go")
+		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold)).Render("main.go")
 	require.Contains(t, result, expectedTool, "tool row must indent and highlight head vs args")
 
 	expectedResult := ToolChildIndent +
-		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted)).Render("→ ok")
+		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam)).Render("→ ok")
 	require.Contains(t, result, expectedResult, "tool result must render as an indented child row")
 }
 
@@ -107,11 +107,15 @@ func TestRenderPresentation_DiffRows(t *testing.T) {
 	plain := stripANSI(result)
 
 	require.Contains(t, result,
-		ToolChildIndent+lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove)).Render("│ 11 - old line"),
-		"removed diff line must be indented and rendered in love")
+		ToolChildIndent+
+			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle)).Render("│ ")+
+			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove)).Render("11 - old line"),
+		"removed diff line must be indented with a subtle gutter and love content")
 	require.Contains(t, result,
-		ToolChildIndent+lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose)).Render("│ 11 + new line"),
-		"added diff line must be indented and rendered in rose")
+		ToolChildIndent+
+			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle)).Render("│ ")+
+			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam)).Render("11 + new line"),
+		"added diff line must be indented with a subtle gutter and foam content")
 	require.Contains(t, plain, ToolChildIndent+"│ 10   unchanged", "context line must be indented beneath the tool row")
 }
 
@@ -169,8 +173,10 @@ func TestRenderPresentation_PreviewRows(t *testing.T) {
 	plain := stripANSI(result)
 
 	require.Contains(t, result,
-		ToolChildIndent+lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted)).Render("│ package main"),
-		"preview rows must be indented and rendered in muted")
+		ToolChildIndent+
+			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle)).Render("│ ")+
+			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold)).Render("package main"),
+		"preview rows must be indented with a subtle gutter and gold content")
 	require.Contains(t, plain, ToolChildIndent+"│ func main() {}", "preview line must be indented beneath the tool row")
 }
 

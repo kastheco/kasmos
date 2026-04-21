@@ -612,26 +612,28 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 		rows = append(rows, headerStyle.Render(turn.HeaderText(time.Now())))
 	}
 
-	toolStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
-	toolArgStyle := lipgloss.NewStyle().Foreground(ColorText)
-	userStyle := lipgloss.NewStyle().Foreground(ColorFoam)
-	resultOKStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	toolStyle := lipgloss.NewStyle().Foreground(ColorPine)
+	toolArgStyle := lipgloss.NewStyle().Foreground(ColorGold)
+	userPrefixStyle := lipgloss.NewStyle().Foreground(ColorRose)
+	userTextStyle := lipgloss.NewStyle().Foreground(ColorFoam)
+	resultOKStyle := lipgloss.NewStyle().Foreground(ColorFoam)
 	resultErrStyle := lipgloss.NewStyle().Foreground(ColorLove)
-	systemStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	systemStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
 	permStyle := lipgloss.NewStyle().Foreground(ColorRose)
 	proseStyle := lipgloss.NewStyle().Foreground(ColorText)
 	statusStyle := lipgloss.NewStyle().Foreground(ColorGold)
 	thinkingStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	narrowRuleStyle := lipgloss.NewStyle().Foreground(ColorMuted)
-	gutterStyle := lipgloss.NewStyle().Foreground(ColorMuted)
-	diffAddedStyle := lipgloss.NewStyle().Foreground(ColorRose)
+	gutterStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
+	diffAddedStyle := lipgloss.NewStyle().Foreground(ColorFoam)
 	diffRemovedStyle := lipgloss.NewStyle().Foreground(ColorLove)
-	diffContextStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	diffContextStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
+	previewStyle := lipgloss.NewStyle().Foreground(ColorGold)
 
 	for _, row := range turn.Rows {
 		switch row.Kind {
 		case sdk.RowUser:
-			rows = append(rows, userStyle.Render("> "+row.Text))
+			rows = append(rows, sdk.RenderPromptLine(">", row.Text, userPrefixStyle, userTextStyle))
 		case sdk.RowTool:
 			head, args := sdk.SplitToolCallText(row.Text, row.ToolName)
 			line := sdk.RenderToolCallLine(head, args, toolStyle, toolArgStyle)
@@ -647,22 +649,22 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 					}
 					switch dl.Kind {
 					case sdk.DiffLineAdded:
-						rows = append(rows, sdk.ToolChildIndent+diffAddedStyle.Render(diffRows[i]))
+						rows = append(rows, sdk.ToolChildIndent+sdk.RenderStructuredChildLine(diffRows[i], gutterStyle, diffAddedStyle))
 					case sdk.DiffLineRemoved:
-						rows = append(rows, sdk.ToolChildIndent+diffRemovedStyle.Render(diffRows[i]))
+						rows = append(rows, sdk.ToolChildIndent+sdk.RenderStructuredChildLine(diffRows[i], gutterStyle, diffRemovedStyle))
 					default:
-						rows = append(rows, sdk.ToolChildIndent+diffContextStyle.Render(diffRows[i]))
+						rows = append(rows, sdk.ToolChildIndent+sdk.RenderStructuredChildLine(diffRows[i], gutterStyle, diffContextStyle))
 					}
 				}
 				// Truncation indicator row, if present.
 				if len(diffRows) > len(row.ToolDiff.Lines) {
-					rows = append(rows, sdk.ToolChildIndent+diffContextStyle.Render(diffRows[len(row.ToolDiff.Lines)]))
+					rows = append(rows, sdk.ToolChildIndent+sdk.RenderStructuredChildLine(diffRows[len(row.ToolDiff.Lines)], gutterStyle, diffContextStyle))
 				}
 			}
 		case sdk.RowToolPreview:
 			if row.ToolPreview != nil {
 				for _, pr := range sdk.BuildToolPreviewBlock(row.ToolPreview, width) {
-					rows = append(rows, sdk.ToolChildIndent+gutterStyle.Render(pr))
+					rows = append(rows, sdk.ToolChildIndent+sdk.RenderStructuredChildLine(pr, gutterStyle, previewStyle))
 				}
 			}
 		case sdk.RowResult:
@@ -708,30 +710,40 @@ func renderResponseDivider(width int) string {
 // turn timeline. The send overlay is not plumbed into the pane in this plan.
 func renderComposerFooter(width int, composer string, images []string, focused bool, program string, speedTier string) []string {
 	ruleStyle := lipgloss.NewStyle().Foreground(ColorMuted)
-	placeholderStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	promptPrefixStyle := lipgloss.NewStyle().Foreground(ColorRose)
+	placeholderStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
 	composerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff"))
 	hintStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
+	metaStyle := lipgloss.NewStyle().Foreground(ColorIris)
+	attachmentStyle := lipgloss.NewStyle().Foreground(ColorGold)
+	enterStyle := lipgloss.NewStyle().Foreground(ColorFoam)
+	newlineStyle := lipgloss.NewStyle().Foreground(ColorGold)
+	escapeStyle := lipgloss.NewStyle().Foreground(ColorRose)
 
 	rule := ""
 	if width > 0 {
 		rule = ruleStyle.Render(strings.Repeat("─", width))
 	}
-	promptText := "> send a message to the agent …"
+	promptBody := "send a message to the agent …"
+	promptStyle := placeholderStyle
 	if composer != "" || focused {
 		cursor := ""
 		if focused {
 			cursor = "█"
 		}
-		promptText = "> " + composer + cursor
+		promptBody = composer + cursor
+		promptStyle = composerStyle
 	}
-	prompt := placeholderStyle.Render(promptText)
-	if composer != "" || focused {
-		prompt = composerStyle.Render(promptText)
-	}
-	hints := "enter send   shift+enter newline   esc unfocus"
+	prompt := sdk.RenderPromptLine(">", promptBody, promptPrefixStyle, promptStyle)
+	hints := enterStyle.Render("enter") +
+		hintStyle.Render(" send   ") +
+		newlineStyle.Render("shift+enter") +
+		hintStyle.Render(" newline   ") +
+		escapeStyle.Render("esc") +
+		hintStyle.Render(" unfocus")
 	rows := []string{rule, prompt, ""}
 	if attachmentLabel := sdkFooterAttachmentLabel(len(images)); attachmentLabel != "" {
-		rows = append(rows, hintStyle.Render(attachmentLabel))
+		rows = append(rows, attachmentStyle.Render(attachmentLabel))
 	}
 	statusLabel := sdkFooterModelAndEffort(program)
 	if tierLabel := sdkFooterSpeedTier(speedTier); tierLabel != "" {
@@ -742,9 +754,9 @@ func renderComposerFooter(width int, composer string, images []string, focused b
 		}
 	}
 	if statusLabel != "" {
-		rows = append(rows, hintStyle.Render(statusLabel+" • "+hints))
+		rows = append(rows, metaStyle.Render(statusLabel)+hintStyle.Render(" • ")+hints)
 	} else {
-		rows = append(rows, hintStyle.Render(hints))
+		rows = append(rows, hints)
 	}
 	return rows
 }

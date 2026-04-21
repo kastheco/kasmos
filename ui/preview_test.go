@@ -536,7 +536,7 @@ func TestPreviewPane_SDKUpdateContent_ClearsStaleContentWhenCacheEmpty(t *testin
 				"empty SDK capture should render the empty SDK view, not the fallback banner")
 			require.NotContains(t, previewPane.previewState.text, "previous instance content",
 				"empty SDK capture must not leave stale content from the previously selected instance")
-			require.Contains(t, previewPane.previewState.text, "> send a message to the agent",
+			require.Contains(t, stripPreviewANSI(previewPane.previewState.text), "> send a message to the agent",
 				"empty SDK capture should show the interactive footer")
 		})
 	}
@@ -566,7 +566,7 @@ func TestPreviewPane_SDKUpdateContent_ClearsScrollModeWhenCacheEmpty(t *testing.
 		"entering the SDK empty-cache fallback path must drop inherited scroll-mode state")
 	require.False(t, previewPane.previewState.fallback,
 		"empty SDK capture should render the empty SDK view, not the fallback banner")
-	require.Contains(t, previewPane.previewState.text, "> send a message to the agent",
+	require.Contains(t, stripPreviewANSI(previewPane.previewState.text), "> send a message to the agent",
 		"empty SDK capture should show the interactive footer after clearing stale scroll state")
 }
 
@@ -657,15 +657,15 @@ func TestPreviewPane_SDKPresentation_RendersTurnHierarchy(t *testing.T) {
 	// Tool rows indent under the turn header and highlight the tool head separately from args.
 	require.Contains(t, rendered,
 		sdk.ToolCallIndent+
-			lipgloss.NewStyle().Foreground(ColorSubtle).Render("• read_file")+
+			lipgloss.NewStyle().Foreground(ColorPine).Render("• read_file")+
 			" "+
-			lipgloss.NewStyle().Foreground(ColorText).Render("main.go"),
+			lipgloss.NewStyle().Foreground(ColorGold).Render("main.go"),
 		"tool row must indent and highlight tool head vs args")
 
-	// Successful result rows are indented child rows in ColorMuted.
+	// Successful result rows are indented child rows in ColorFoam.
 	require.Contains(t, rendered,
-		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorMuted).Render("→ 42 lines"),
-		"ok-result row must be rendered in ColorMuted as an indented child")
+		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorFoam).Render("→ 42 lines"),
+		"ok-result row must be rendered in ColorFoam as an indented child")
 
 	// Prose rows use ColorText.
 	require.Contains(t, rendered, lipgloss.NewStyle().Foreground(ColorText).Render("assistant text"),
@@ -678,7 +678,7 @@ func TestPreviewPane_SDKPresentation_RendersTurnHierarchy(t *testing.T) {
 		"RowResponse must render a divider rule between result and prose")
 
 	// Composer footer must be present.
-	require.Contains(t, rendered, "> send a message to the agent",
+	require.Contains(t, plain, "> send a message to the agent",
 		"composer footer must appear after the turn timeline")
 }
 
@@ -771,7 +771,7 @@ func TestPreviewPane_SDKPresentation_ShowsComposerWhenNoOutput(t *testing.T) {
 
 	require.False(t, pane.previewState.fallback,
 		"no turns and no cache should render the empty SDK view")
-	require.Contains(t, pane.previewState.text, "> send a message to the agent",
+	require.Contains(t, stripPreviewANSI(pane.previewState.text), "> send a message to the agent",
 		"empty SDK preview should still show the composer footer")
 }
 
@@ -812,10 +812,12 @@ func TestPreviewPane_SDKPresentation_FocusedComposerShowsTypedText(t *testing.T)
 	pane.AppendSDKComposerText("hello")
 	require.NoError(t, pane.UpdateContent(inst))
 
-	require.Contains(t, pane.previewState.text, "> hello█")
+	require.Contains(t, stripPreviewANSI(pane.previewState.text), "> hello█")
 	require.Contains(t, pane.previewState.text,
-		lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff")).Render("> hello█"))
-	require.Contains(t, pane.previewState.text, "shift+enter newline")
+		sdk.RenderPromptLine(">", "hello█",
+			lipgloss.NewStyle().Foreground(ColorRose),
+			lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff"))))
+	require.Contains(t, stripPreviewANSI(pane.previewState.text), "shift+enter newline")
 	require.Contains(t, stripPreviewANSI(pane.previewState.text), "> hello█\n\nenter send",
 		"typed prompt must be visually separated from footer details")
 }
@@ -853,7 +855,9 @@ func TestPreviewPane_SDKPresentation_UserHistoryUsesFoam(t *testing.T) {
 	require.NoError(t, pane.UpdateContent(inst))
 
 	require.Contains(t, pane.previewState.text,
-		lipgloss.NewStyle().Foreground(ColorFoam).Render("> show logs"))
+		sdk.RenderPromptLine(">", "show logs",
+			lipgloss.NewStyle().Foreground(ColorRose),
+			lipgloss.NewStyle().Foreground(ColorFoam)))
 }
 
 func TestPreviewPane_SDKPresentation_ShowsFooterMetadataBeforeHints(t *testing.T) {
@@ -918,9 +922,9 @@ func TestPreviewPane_SDKPresentation_ClearsInheritedScrollModeOnInstanceSwitch(t
 // structured path only fires when len(turns) > 0, test the helper directly).
 func TestPreviewPane_SDKPresentation_ComposerFooterPresent(t *testing.T) {
 	output := renderSDKPresentation(nil, 80)
-	require.Contains(t, output, "> send a message to the agent",
+	require.Contains(t, stripPreviewANSI(output), "> send a message to the agent",
 		"renderSDKPresentation must include composer footer prompt")
-	require.Contains(t, output, "shift+enter newline",
+	require.Contains(t, stripPreviewANSI(output), "shift+enter newline",
 		"renderSDKPresentation must include keyboard hint line")
 }
 
@@ -1182,11 +1186,15 @@ func TestPreviewPane_SDKPresentation_DiffRowsRendered(t *testing.T) {
 	rendered := pane.previewState.text
 	plain := stripPreviewANSI(rendered)
 	require.Contains(t, rendered,
-		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorLove).Render("│ 11 - removed line"),
-		"removed diff line must be indented and rendered in love")
+		sdk.ToolChildIndent+
+			lipgloss.NewStyle().Foreground(ColorSubtle).Render("│ ")+
+			lipgloss.NewStyle().Foreground(ColorLove).Render("11 - removed line"),
+		"removed diff line must be indented with a subtle gutter and love content")
 	require.Contains(t, rendered,
-		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorRose).Render("│ 11 + added line"),
-		"added diff line must be indented and rendered in rose")
+		sdk.ToolChildIndent+
+			lipgloss.NewStyle().Foreground(ColorSubtle).Render("│ ")+
+			lipgloss.NewStyle().Foreground(ColorFoam).Render("11 + added line"),
+		"added diff line must be indented with a subtle gutter and foam content")
 	require.Contains(t, plain, sdk.ToolChildIndent+"│ 10   unchanged line",
 		"context diff line must stay indented beneath the tool row")
 }
@@ -1254,8 +1262,10 @@ func TestPreviewPane_SDKPresentation_PreviewRowsRendered(t *testing.T) {
 	rendered := pane.previewState.text
 	plain := stripPreviewANSI(rendered)
 	require.Contains(t, rendered,
-		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorMuted).Render("│ match one"),
-		"preview line must be indented and rendered in muted")
+		sdk.ToolChildIndent+
+			lipgloss.NewStyle().Foreground(ColorSubtle).Render("│ ")+
+			lipgloss.NewStyle().Foreground(ColorGold).Render("match one"),
+		"preview line must be indented with a subtle gutter and gold content")
 	require.Contains(t, plain, sdk.ToolChildIndent+"│ match two", "preview line must stay indented beneath the tool row")
 	require.Contains(t, plain, sdk.ToolChildIndent+"│ match three", "preview line must stay indented beneath the tool row")
 }

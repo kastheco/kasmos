@@ -165,3 +165,31 @@ func TestRenderToolCallLine(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderPromptLine(t *testing.T) {
+	plain := lipgloss.NewStyle()
+	bold := lipgloss.NewStyle().Bold(true)
+
+	assert.Equal(t,
+		bold.Render(">")+" "+plain.Render("show logs"),
+		RenderPromptLine(">", "show logs", bold, plain),
+	)
+	assert.Equal(t,
+		bold.Render(">"),
+		RenderPromptLine(">", "", bold, plain),
+	)
+}
+
+func TestRenderStructuredChildLine(t *testing.T) {
+	gutter := lipgloss.NewStyle().Italic(true)
+	content := lipgloss.NewStyle().Bold(true)
+
+	assert.Equal(t,
+		gutter.Render("│ ")+content.Render("line one"),
+		RenderStructuredChildLine("│ line one", gutter, content),
+	)
+	assert.Equal(t,
+		content.Render("plain"),
+		RenderStructuredChildLine("plain", gutter, content),
+	)
+}
