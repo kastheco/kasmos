@@ -3,6 +3,7 @@ package session
 import (
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/kastheco/kasmos/session/sdk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -107,7 +108,7 @@ func TestInstance_Preview_WithSDKPresentation(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, preview, "response")
 	assert.Contains(t, preview, "assistant text")
-	assert.Contains(t, preview, "> send a message to the agent")
+	assert.Contains(t, ansi.Strip(preview), "> send a message to the agent")
 }
 
 func TestInstance_SendPromptWithLocalImages_DelegatesToExecutionSession(t *testing.T) {

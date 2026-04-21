@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,6 +32,51 @@ func stripANSI(s string) string {
 
 // intPtr returns a pointer to the given int (helper for ToolDiffLine line numbers).
 func intPtr(n int) *int { return &n }
+
+func TestRenderPresentation_UserPrefix(t *testing.T) {
+	now := time.Now()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{Kind: RowUser, Text: "show logs", Timestamp: now},
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+	plain := stripANSI(result)
+
+	require.Contains(t, plain, "> show logs")
+	require.NotContains(t, plain, "you: show logs")
+}
+
+func TestRenderPresentation_ToolLineHighlightAndIndent(t *testing.T) {
+	now := time.Now()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{Kind: RowTool, Text: "• Edit main.go", ToolName: "Edit", Timestamp: now},
+			{Kind: RowResult, Text: "→ ok", Timestamp: now},
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+
+	expectedTool := ToolCallIndent +
+		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorPine)).Render("• Edit") +
+		" " +
+		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold)).Render("main.go")
+	require.Contains(t, result, expectedTool, "tool row must indent and highlight head vs args")
+
+	expectedResult := ToolChildIndent +
+		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam)).Render("→ ok")
+	require.Contains(t, result, expectedResult, "tool result must render as an indented child row")
+}
 
 // TestRenderPresentation_DiffRows verifies that RowToolDiff rows produce gutter
 // lines with +/- markers for added/removed lines and spaces for context lines.
@@ -60,10 +106,17 @@ func TestRenderPresentation_DiffRows(t *testing.T) {
 	result := RenderPresentation([]*PresentationTurn{turn}, 80)
 	plain := stripANSI(result)
 
-	require.Contains(t, plain, "│", "diff rows must include gutter character")
-	require.Contains(t, plain, " - old line", "removed line must have - marker")
-	require.Contains(t, plain, " + new line", "added line must have + marker")
-	require.Contains(t, plain, "   unchanged", "context line must have space marker")
+	require.Contains(t, result,
+		ToolChildIndent+
+			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle)).Render("│ ")+
+			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove)).Render("11 - old line"),
+		"removed diff line must be indented with a subtle gutter and love content")
+	require.Contains(t, result,
+		ToolChildIndent+
+			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle)).Render("│ ")+
+			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam)).Render("11 + new line"),
+		"added diff line must be indented with a subtle gutter and foam content")
+	require.Contains(t, plain, ToolChildIndent+"│ 10   unchanged", "context line must be indented beneath the tool row")
 }
 
 // TestRenderPresentation_DiffRows_Truncation verifies that the truncation
@@ -119,8 +172,12 @@ func TestRenderPresentation_PreviewRows(t *testing.T) {
 	result := RenderPresentation([]*PresentationTurn{turn}, 80)
 	plain := stripANSI(result)
 
-	require.Contains(t, plain, "│ package main", "preview line must have gutter")
-	require.Contains(t, plain, "│ func main() {}", "preview line must have gutter")
+	require.Contains(t, result,
+		ToolChildIndent+
+			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle)).Render("│ ")+
+			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold)).Render("package main"),
+		"preview rows must be indented with a subtle gutter and gold content")
+	require.Contains(t, plain, ToolChildIndent+"│ func main() {}", "preview line must be indented beneath the tool row")
 }
 
 // TestRenderPresentation_PreviewRows_Truncation verifies that the preview

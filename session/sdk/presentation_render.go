@@ -17,6 +17,7 @@ const (
 	presentationColorLove   = "#eb6f92"
 	presentationColorGold   = "#f6c177"
 	presentationColorRose   = "#ea9a97"
+	presentationColorPine   = "#3e8fb0"
 
 	presentationNarrowPaneThreshold = 40
 	presentationDefaultWidth        = 80
@@ -94,24 +95,34 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 		rows = append(rows, headerStyle.Render(turn.HeaderText(time.Now())))
 	}
 
-	toolStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
-	userStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
-	resultOKStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
+	toolStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorPine))
+	toolArgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
+	userPrefixStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose))
+	userTextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
+	resultOKStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
 	resultErrStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
-	systemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
+	systemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
 	permStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose))
 	proseStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorText))
 	statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
 	thinkingStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
 	narrowRuleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
-	gutterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
+	gutterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
+	addedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
+	removedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
+	diffContextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
+	previewStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
 
 	for _, row := range turn.Rows {
 		switch row.Kind {
 		case RowUser:
-			rows = append(rows, userStyle.Render("you: "+row.Text))
+			rows = append(rows, RenderPromptLine(">", row.Text, userPrefixStyle, userTextStyle))
 		case RowTool:
-			rows = append(rows, toolStyle.Render(row.Text))
+			head, args := SplitToolCallText(row.Text, row.ToolName)
+			line := RenderToolCallLine(head, args, toolStyle, toolArgStyle)
+			if line != "" {
+				rows = append(rows, ToolCallIndent+line)
+			}
 		case RowToolDiff:
 			if row.ToolDiff != nil {
 				diffRows := BuildToolDiffBlock(row.ToolDiff, width)
@@ -121,29 +132,29 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 					}
 					switch dl.Kind {
 					case DiffLineAdded:
-						rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam)).Render(diffRows[i]))
+						rows = append(rows, ToolChildIndent+RenderStructuredChildLine(diffRows[i], gutterStyle, addedStyle))
 					case DiffLineRemoved:
-						rows = append(rows, resultErrStyle.Render(diffRows[i]))
+						rows = append(rows, ToolChildIndent+RenderStructuredChildLine(diffRows[i], gutterStyle, removedStyle))
 					default:
-						rows = append(rows, gutterStyle.Render(diffRows[i]))
+						rows = append(rows, ToolChildIndent+RenderStructuredChildLine(diffRows[i], gutterStyle, diffContextStyle))
 					}
 				}
 				// Truncation indicator row, if present.
 				if len(diffRows) > len(row.ToolDiff.Lines) {
-					rows = append(rows, gutterStyle.Render(diffRows[len(row.ToolDiff.Lines)]))
+					rows = append(rows, ToolChildIndent+RenderStructuredChildLine(diffRows[len(row.ToolDiff.Lines)], gutterStyle, diffContextStyle))
 				}
 			}
 		case RowToolPreview:
 			if row.ToolPreview != nil {
 				for _, pr := range BuildToolPreviewBlock(row.ToolPreview, width) {
-					rows = append(rows, gutterStyle.Render(pr))
+					rows = append(rows, ToolChildIndent+RenderStructuredChildLine(pr, gutterStyle, previewStyle))
 				}
 			}
 		case RowResult:
 			if row.IsError {
-				rows = append(rows, resultErrStyle.Render(row.Text))
+				rows = append(rows, ToolChildIndent+resultErrStyle.Render(row.Text))
 			} else {
-				rows = append(rows, resultOKStyle.Render(row.Text))
+				rows = append(rows, ToolChildIndent+resultOKStyle.Render(row.Text))
 			}
 		case RowSystem:
 			rows = append(rows, systemStyle.Render(row.Text))
@@ -176,14 +187,23 @@ func renderPresentationResponseDivider(width int) string {
 
 func renderPresentationComposerFooter(width int) []string {
 	ruleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
-	textStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
+	promptPrefixStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose))
+	textStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
 	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
+	enterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
+	newlineStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
+	escapeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose))
 
 	rule := ""
 	if width > 0 {
 		rule = ruleStyle.Render(strings.Repeat("─", width))
 	}
-	prompt := textStyle.Render("> send a message to the agent …")
-	hints := hintStyle.Render("enter send   shift+enter newline   esc unfocus")
+	prompt := RenderPromptLine(">", "send a message to the agent …", promptPrefixStyle, textStyle)
+	hints := enterStyle.Render("enter") +
+		hintStyle.Render(" send   ") +
+		newlineStyle.Render("shift+enter") +
+		hintStyle.Render(" newline   ") +
+		escapeStyle.Render("esc") +
+		hintStyle.Render(" unfocus")
 	return []string{rule, prompt, hints}
 }
