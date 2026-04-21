@@ -152,3 +152,8 @@ func TestHandleKeyPress_SDKFocusMode_CtrlShiftVPastesClipboardText(t *testing.T)
 	assert.Equal(t, "pasted text", updated.tabbedWindow.SDKComposerText())
 	assert.NotNil(t, cmd)
 }
+
+func TestPasteContentLooksBinary_DetectsPNGSignature(t *testing.T) {
+	assert.True(t, pasteContentLooksBinary("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"))
+	assert.False(t, pasteContentLooksBinary("plain pasted text"))
+}

@@ -47,6 +47,31 @@ func firstRuneIsPrintable(s string) bool {
 	return unicode.IsPrint(r)
 }
 
+func pasteContentLooksBinary(content string) bool {
+	if content == "" {
+		return false
+	}
+	if strings.HasPrefix(content, "\x89PNG\r\n\x1a\n") {
+		return true
+	}
+	if !utf8.ValidString(content) {
+		return true
+	}
+	for _, r := range content {
+		switch r {
+		case '\n', '\r', '\t':
+			continue
+		}
+		if r == utf8.RuneError {
+			return true
+		}
+		if !unicode.IsPrint(r) {
+			return true
+		}
+	}
+	return false
+}
+
 func isPasteShortcut(msg tea.KeyPressMsg) bool {
 	if !msg.Mod.Contains(tea.ModCtrl) || msg.Mod.Contains(tea.ModAlt) {
 		return false
@@ -217,7 +242,7 @@ func (m *home) appendSDKComposerImage(selected *session.Instance, path string) (
 }
 
 func (m *home) handleSDKComposerPaste(selected *session.Instance, content string) (tea.Model, tea.Cmd) {
-	if content != "" {
+	if content != "" && !pasteContentLooksBinary(content) {
 		return m.appendSDKComposerText(selected, content)
 	}
 	if common.DetectProgramKind(selected.Program) != common.ProgramCodex {

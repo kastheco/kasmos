@@ -105,6 +105,37 @@ func TestPasteMsg_EmptyContentAttachesClipboardImageForSDKFocusMode(t *testing.T
 	require.Equal(t, []string{"/tmp/clipboard.png"}, updated.tabbedWindow.SDKComposerImages())
 }
 
+func TestPasteMsg_RawPNGContentAttachesClipboardImageForSDKFocusMode(t *testing.T) {
+	origCapture := captureClipboardImage
+	captureClipboardImage = func(_ context.Context) (string, error) {
+		return "/tmp/clipboard.png", nil
+	}
+	t.Cleanup(func() { captureClipboardImage = origCapture })
+
+	h := newTestHome()
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "sdk-agent",
+		Path:          t.TempDir(),
+		Program:       "codex",
+		ExecutionMode: session.ExecutionModeSDK,
+	})
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+	h.state = stateFocusAgent
+	h.tabbedWindow.SetFocusMode(true)
+
+	rawPNG := "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+	model, cmd := h.Update(tea.PasteMsg{Content: rawPNG})
+	updated := model.(*home)
+
+	require.NotNil(t, cmd)
+	require.Equal(t, stateFocusAgent, updated.state)
+	require.Equal(t, []string{"/tmp/clipboard.png"}, updated.tabbedWindow.SDKComposerImages())
+	require.Equal(t, "", updated.tabbedWindow.SDKComposerText())
+}
+
 func TestHandleKeyPress_TmuxFocusMode_CtrlVPastesClipboardText(t *testing.T) {
 	origRead := readClipboardText
 	readClipboardText = func() (string, error) { return "hello", nil }
