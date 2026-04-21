@@ -2,6 +2,8 @@
 
 .row {
   display: flex;
+  --row-accent: var(--rp-subtle);
+  --row-ink: var(--rp-text);
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.55;
@@ -15,45 +17,53 @@
   width: 88px;
   text-align: right;
   font-feature-settings: "tnum" 1;
-  opacity: 0.75;
-  color: inherit;
+  opacity: 1;
+  color: var(--row-accent);
   white-space: nowrap;
 }
 
 .rowText {
   flex: 1;
   min-width: 0;
+  color: var(--row-ink);
   word-break: break-word;
   overflow-wrap: anywhere;
 }
 
 /* kind-specific colors */
 .kindThinking {
-  color: var(--rp-muted);
+  --row-accent: var(--rp-muted);
+  --row-ink: var(--rp-muted);
 }
 
 .kindUser {
-  color: var(--rp-subtle);
+  --row-accent: var(--rp-rose);
+  --row-ink: var(--rp-foam);
 }
 
 .kindTool {
-  color: var(--rp-subtle);
+  --row-accent: var(--rp-pine);
+  --row-ink: var(--rp-gold);
 }
 
 .kindResult {
-  color: var(--rp-muted);
+  --row-accent: var(--rp-foam);
+  --row-ink: var(--rp-foam);
 }
 
 .kindResultError {
-  color: var(--rp-love);
+  --row-accent: var(--rp-love);
+  --row-ink: var(--rp-love);
 }
 
 .kindSystem {
-  color: var(--rp-muted);
+  --row-accent: var(--rp-subtle);
+  --row-ink: var(--rp-subtle);
 }
 
 .kindPermission {
-  color: var(--rp-rose);
+  --row-accent: var(--rp-rose);
+  --row-ink: var(--rp-rose);
 }
 
 .kindProse {
@@ -64,12 +74,14 @@
 }
 
 .kindStatus {
-  color: var(--rp-gold);
+  --row-accent: var(--rp-gold);
+  --row-ink: var(--rp-gold);
 }
 
 /* tool_diff rows */
 .kindDiff {
-  color: var(--rp-subtle);
+  --row-accent: var(--rp-subtle);
+  --row-ink: var(--rp-subtle);
   align-items: flex-start;
 }
 
@@ -119,11 +131,17 @@
 
 /* tool_preview rows */
 .kindPreview {
-  color: var(--rp-muted);
+  --row-accent: var(--rp-subtle);
+  --row-ink: var(--rp-gold);
   align-items: flex-start;
 }
 
+.toolDetail {
+  color: var(--rp-gold);
+}
+
 .previewLines {
+  display: block;
   white-space: pre-wrap;
   word-break: break-all;
 }

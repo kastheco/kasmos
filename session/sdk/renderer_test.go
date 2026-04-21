@@ -618,7 +618,7 @@ func TestRenderer_CapturePresentation_ProseAfterToolStartsNewResponseBlock(t *te
 	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
 	r.AddEvent(Event{Kind: EventTextDelta, TurnID: "t1", Text: "using architect first", Timestamp: ts})
 	r.AddEvent(Event{Kind: EventToolCall, TurnID: "t1", ToolName: "read_file", ToolInput: `{"path":"CLAUDE.md"}`, Timestamp: ts})
-	r.AddEvent(Event{Kind: EventToolResult, TurnID: "t1", ToolName: "read_file", ToolResult: `{"content":"ok"}`, Timestamp: ts})
+	r.AddEvent(Event{Kind: EventToolResult, TurnID: "t1", ToolName: "read_file", ToolResult: `{"content":"line1\nline2"}`, Timestamp: ts})
 	r.AddEvent(Event{Kind: EventTextDelta, TurnID: "t1", Text: "next i'm reading overlay code", Timestamp: ts})
 	r.AddEvent(Event{Kind: EventTurnCompleted, TurnID: "t1", Timestamp: ts})
 
@@ -1057,6 +1057,43 @@ func TestRenderer_ToolResult_GrepMatches_InjectsToolPreviewRow(t *testing.T) {
 	previewRow := turns[0].Rows[resultIdx+1]
 	require.NotNil(t, previewRow.ToolPreview)
 	assert.Equal(t, []string{"app/main.go:12: first match", "app/input.go:27: second match"}, previewRow.ToolPreview.Lines)
+}
+
+func TestRenderer_ToolResult_PreviewRowsCappedToTenLines(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+	lines := make([]string, 12)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("line %d", i+1)
+	}
+
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{
+		Kind:       EventToolResult,
+		TurnID:     "t1",
+		ToolName:   "bash",
+		ToolResult: strings.Join(lines, "\n"),
+		Timestamp:  ts,
+	})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+
+	var previewRow *PresentationRow
+	for i := range turns[0].Rows {
+		if turns[0].Rows[i].Kind == RowToolPreview {
+			previewRow = &turns[0].Rows[i]
+			break
+		}
+	}
+
+	require.NotNil(t, previewRow, "must include a RowToolPreview row")
+	require.NotNil(t, previewRow.ToolPreview)
+	assert.Len(t, previewRow.ToolPreview.Lines, toolPreviewMaxLines)
+	assert.Equal(t, "line 1", previewRow.ToolPreview.Lines[0])
+	assert.Equal(t, "line 10", previewRow.ToolPreview.Lines[toolPreviewMaxLines-1])
+	assert.True(t, previewRow.ToolPreview.Truncated)
+	assert.Equal(t, 2, previewRow.ToolPreview.HiddenLineCount)
 }
 
 func TestRenderer_ToolResult_SingleLineSummary_DoesNotInjectDuplicateToolPreviewRow(t *testing.T) {

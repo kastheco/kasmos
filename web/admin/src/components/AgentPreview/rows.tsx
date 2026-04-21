@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { PresentationRow, ToolDiffLineKind } from "../../types";
 import { ResponseDivider } from "./ResponseDivider";
 import { ProseMarkdown } from "./ProseMarkdown";
+import { formatToolLabel, limitToolPreview, splitToolText } from "./toolFormatting";
 import styles from "./rows.module.css";
 
 // ---------------------------------------------------------------------------
@@ -29,7 +30,7 @@ function rowPrefix(row: PresentationRow): string {
   switch (row.kind) {
     case "user":       return "you";
     case "thinking":   return "thinking";
-    case "tool":       return row.tool_name || "tool";
+    case "tool":       return formatToolLabel(row.tool_name);
     case "result":     return "result";
     case "system":     return "system";
     case "permission": return "permission";
@@ -49,6 +50,8 @@ function diffLineClass(kind: ToolDiffLineKind): string {
 function TextRow({ row }: RowProps) {
   const kindClass = rowKindClass(row);
   const prefix = rowPrefix(row);
+  const toolText = row.kind === "tool" ? splitToolText(row.text, row.tool_name) : null;
+  const detail = toolText ? toolText.detail : row.text;
   return (
     <div
       className={`${styles.row} ${kindClass}`}
@@ -56,7 +59,7 @@ function TextRow({ row }: RowProps) {
       data-error={row.is_error ? "true" : undefined}
     >
       {prefix && <span className={styles.rowKind}>{prefix}</span>}
-      <span className={styles.rowText}>{row.text}</span>
+      <span className={`${styles.rowText} ${row.kind === "tool" ? styles.toolDetail : ""}`}>{detail}</span>
     </div>
   );
 }
@@ -108,15 +111,16 @@ function DiffRow({ row }: RowProps) {
 function PreviewRow({ row }: RowProps) {
   const payload = row.tool_preview;
   if (!payload) return null;
-  const text = (payload.lines ?? []).join("\n");
+  const preview = limitToolPreview(payload);
+  const text = preview.lines.join("\n");
   return (
     <div className={`${styles.row} ${styles.kindPreview}`} data-kind="tool_preview">
       <span className={styles.rowKind}>preview</span>
       <span className={styles.rowText}>
         <span className={styles.previewLines}>{text}</span>
-        {payload.truncated && (
+        {preview.truncated && (
           <div className={styles.previewTruncated}>
-            {`… ${payload.hidden_line_count ?? 0} lines hidden`}
+            {`… ${preview.hiddenLineCount} lines hidden`}
           </div>
         )}
       </span>

@@ -112,7 +112,7 @@ func (r *Renderer) AddEvent(e Event) {
 			})
 			// Append a RowToolPreview row for non-error textual results.
 			if !isErr {
-				if preview := extractToolPreview(e.ToolName, e.ToolResult, diffPreviewMaxLines); preview != nil {
+				if preview := extractToolPreview(e.ToolName, e.ToolResult, toolPreviewMaxLines); preview != nil {
 					if !isRedundantToolPreview(line, preview) {
 						turn.Rows = append(turn.Rows, PresentationRow{
 							Kind:        RowToolPreview,

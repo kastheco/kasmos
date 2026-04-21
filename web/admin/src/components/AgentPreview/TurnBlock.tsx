@@ -3,6 +3,7 @@ import type { PresentationTurn } from "../../types";
 import type { AgentPreviewFilters } from "./FilterToolbar";
 import { PermissionCard } from "./PermissionCard";
 import { renderRow } from "./rows";
+import { formatToolCopyText, limitToolPreview } from "./toolFormatting";
 import styles from "./AgentPreview.module.css";
 
 // ---------------------------------------------------------------------------
@@ -37,7 +38,7 @@ function buildCopyText(turn: PresentationTurn, elapsedLabel: string | null): str
     } else if (row.kind === "permission") {
       // omit permission from copy
     } else if (row.kind === "tool") {
-      lines.push(`[${row.tool_name || "tool"}] ${row.text}`);
+      lines.push(formatToolCopyText(row.text, row.tool_name));
     } else if (row.kind === "tool_diff") {
       const payload = row.tool_diff;
       if (payload) {
@@ -52,10 +53,10 @@ function buildCopyText(turn: PresentationTurn, elapsedLabel: string | null): str
         if (payload.truncated) lines.push(`… ${payload.hidden_line_count ?? 0} lines hidden`);
       }
     } else if (row.kind === "tool_preview") {
-      const payload = row.tool_preview;
-      if (payload) {
-        for (const line of payload.lines ?? []) lines.push(line);
-        if (payload.truncated) lines.push(`… ${payload.hidden_line_count ?? 0} lines hidden`);
+      const preview = limitToolPreview(row.tool_preview);
+      if (preview.lines.length > 0 || preview.truncated) {
+        for (const line of preview.lines) lines.push(line);
+        if (preview.truncated) lines.push(`… ${preview.hiddenLineCount} lines hidden`);
       }
     } else {
       lines.push(row.text);

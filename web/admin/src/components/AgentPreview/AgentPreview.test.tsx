@@ -707,6 +707,55 @@ describe("AgentPreview", () => {
     expect(container.querySelectorAll("[data-kind='tool_preview']")).toHaveLength(1);
   });
 
+  it("caps tool_preview rows to 10 visible lines in the web view", async () => {
+    const turn = makeTurn({
+      rows: [
+        makeRow({
+          kind: "tool_preview",
+          text: "",
+          tool_preview: {
+            lines: Array.from({ length: 12 }, (_, i) => `line ${i + 1}`),
+          },
+        }),
+      ],
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    const { container } = render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/2 lines hidden/)).toBeTruthy();
+    });
+
+    const previewRow = container.querySelector("[data-kind='tool_preview']");
+    expect(previewRow?.textContent).toContain("line 10");
+    expect(previewRow?.textContent).not.toContain("line 11");
+    expect(previewRow?.textContent).not.toContain("line 12");
+  });
+
+  it("renders commandExecution tool rows as ran without duplicating the command head", async () => {
+    const turn = makeTurn({
+      tool_count: 1,
+      rows: [
+        makeRow({ kind: "tool", text: "• zsh -lc 'git status'", tool_name: "commandExecution" }),
+      ],
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("ran")).toBeTruthy();
+      expect(screen.getByText("zsh -lc 'git status'")).toBeTruthy();
+    });
+
+    expect(screen.queryByText("commandExecution")).toBeNull();
+  });
+
   // -------------------------------------------------------------------------
   // Running activity label
   // -------------------------------------------------------------------------

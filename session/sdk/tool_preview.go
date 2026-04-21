@@ -6,6 +6,9 @@ import (
 	"strings"
 )
 
+// toolPreviewMaxLines is the default cap on visible tool-preview lines per payload.
+const toolPreviewMaxLines = 10
+
 // isDiffTool reports whether toolName produces ToolDiff rows (and therefore
 // must not also produce ToolPreview rows).
 func isDiffTool(toolName string) bool {
@@ -51,7 +54,7 @@ func extractToolPreview(toolName, rawResult string, maxLines int) *ToolPreviewPa
 		return nil
 	}
 	if maxLines <= 0 {
-		maxLines = diffPreviewMaxLines
+		maxLines = toolPreviewMaxLines
 	}
 
 	trimmed := strings.TrimSpace(rawResult)
