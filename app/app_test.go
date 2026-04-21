@@ -2717,6 +2717,28 @@ func TestExitFocusMode_KeepsPreviewTerminal(t *testing.T) {
 		"previewTerminalInstance should NOT be cleared by exitFocusMode")
 }
 
+func TestExitFocusMode_PreservesSDKComposerDraft(t *testing.T) {
+	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:          context.Background(),
+		state:        stateFocusAgent,
+		appConfig:    config.DefaultConfig(),
+		nav:          ui.NewNavigationPanel(&spin),
+		menu:         ui.NewMenu(),
+		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+	}
+
+	h.tabbedWindow.SetFocusMode(true)
+	h.tabbedWindow.AppendSDKComposerText("draft message")
+	h.tabbedWindow.AppendSDKComposerImage("/tmp/clipboard.png")
+
+	h.exitFocusMode()
+
+	assert.Equal(t, stateDefault, h.state)
+	assert.Equal(t, "draft message", h.tabbedWindow.SDKComposerText())
+	assert.Equal(t, []string{"/tmp/clipboard.png"}, h.tabbedWindow.SDKComposerImages())
+}
+
 func TestHandleKeyPress_CtrlShiftEnterSubmitsAndExitsFocusMode(t *testing.T) {
 	h := newTestHome()
 	h.state = stateFocusAgent

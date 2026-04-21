@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/kastheco/kasmos/config"
@@ -47,9 +48,42 @@ func firstRuneIsPrintable(s string) bool {
 	return unicode.IsPrint(r)
 }
 
-func isPasteShortcut(msg tea.KeyPressMsg) bool {
-	if !msg.Mod.Contains(tea.ModCtrl) || msg.Mod.Contains(tea.ModAlt) {
+func pasteContentLooksBinary(content string) bool {
+	if content == "" {
 		return false
+	}
+	if strings.HasPrefix(content, "\x89PNG\r\n\x1a\n") {
+		return true
+	}
+	if !utf8.ValidString(content) {
+		return true
+	}
+	for _, r := range content {
+		switch r {
+		case '\n', '\r', '\t':
+			continue
+		}
+		if r == utf8.RuneError {
+			return true
+		}
+		if !unicode.IsPrint(r) {
+			return true
+		}
+	}
+	return false
+}
+
+type pasteShortcutKind int
+
+const (
+	pasteShortcutNone pasteShortcutKind = iota
+	pasteShortcutText
+	pasteShortcutImagePreferred
+)
+
+func detectPasteShortcut(msg tea.KeyPressMsg) pasteShortcutKind {
+	if !msg.Mod.Contains(tea.ModCtrl) || msg.Mod.Contains(tea.ModAlt) {
+		return pasteShortcutNone
 	}
 
 	code := msg.Code
@@ -57,7 +91,25 @@ func isPasteShortcut(msg tea.KeyPressMsg) bool {
 		code = key.BaseCode
 	}
 
-	return unicode.ToLower(code) == 'v'
+	if unicode.ToLower(code) != 'v' {
+		return pasteShortcutNone
+	}
+	if msg.Mod.Contains(tea.ModShift) {
+		return pasteShortcutImagePreferred
+	}
+	return pasteShortcutText
+}
+
+func isPasteShortcut(msg tea.KeyPressMsg) bool {
+	return detectPasteShortcut(msg) != pasteShortcutNone
+}
+
+func isPlainShiftEnter(msg tea.KeyPressMsg) bool {
+	return msg.Code == tea.KeyEnter &&
+		msg.Mod.Contains(tea.ModShift) &&
+		!msg.Mod.Contains(tea.ModCtrl) &&
+		!msg.Mod.Contains(tea.ModAlt) &&
+		!msg.Mod.Contains(tea.ModMeta)
 }
 
 func (m *home) applyPendingSetStatus(picked string) (tea.Model, tea.Cmd) {
@@ -217,7 +269,7 @@ func (m *home) appendSDKComposerImage(selected *session.Instance, path string) (
 }
 
 func (m *home) handleSDKComposerPaste(selected *session.Instance, content string) (tea.Model, tea.Cmd) {
-	if content != "" {
+	if content != "" && !pasteContentLooksBinary(content) {
 		return m.appendSDKComposerText(selected, content)
 	}
 	if common.DetectProgramKind(selected.Program) != common.ProgramCodex {
@@ -228,6 +280,40 @@ func (m *home) handleSDKComposerPaste(selected *session.Instance, content string
 		return m, m.handleError(err)
 	}
 	return m.appendSDKComposerImage(selected, imagePath)
+}
+
+func (m *home) handleSDKComposerImagePreferredPaste(selected *session.Instance) (tea.Model, tea.Cmd) {
+	if common.DetectProgramKind(selected.Program) == common.ProgramCodex {
+		imagePath, err := captureClipboardImage(context.Background())
+		if err == nil {
+			return m.appendSDKComposerImage(selected, imagePath)
+		}
+		if text, textErr := readClipboardText(); textErr == nil && text != "" {
+			return m.appendSDKComposerText(selected, text)
+		}
+		if errors.Is(err, errClipboardImageNotFound) ||
+			errors.Is(err, errClipboardImageNoHelpers) ||
+			errors.Is(err, errClipboardImageUnsupported) {
+			return m, nil
+		}
+		return m, m.handleError(err)
+	}
+
+	if text, err := readClipboardText(); err == nil && text != "" {
+		return m.appendSDKComposerText(selected, text)
+	}
+	return m, nil
+}
+
+func (m *home) clearSDKComposer(selected *session.Instance) (tea.Model, tea.Cmd) {
+	if strings.TrimSpace(m.tabbedWindow.SDKComposerText()) == "" && len(m.tabbedWindow.SDKComposerImages()) == 0 {
+		return m, nil
+	}
+	m.tabbedWindow.ClearSDKComposerText()
+	if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+		return m, m.handleError(err)
+	}
+	return m, tea.RequestWindowSize
 }
 
 func (m *home) openSendPromptOverlay(seed string) tea.Cmd {
@@ -1236,6 +1322,8 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		// SDK sessions have no PTY — handle key events without forwarding bytes.
 		if selected != nil && session.NormalizeExecutionMode(selected.ExecutionMode) == session.ExecutionModeSDK {
 			switch {
+			case msg.String() == "ctrl+c":
+				return m.clearSDKComposer(selected)
 			case msg.Code == tea.KeyEscape:
 				// Interrupt if actively running; exit focus mode if already idle.
 				if selected.Status == session.Running {
@@ -1277,7 +1365,9 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 					return m, m.handleError(err)
 				}
 				return m, tea.Batch(tea.RequestWindowSize, sendCmd)
-			case isPasteShortcut(msg):
+			case detectPasteShortcut(msg) == pasteShortcutImagePreferred:
+				return m.handleSDKComposerImagePreferredPaste(selected)
+			case detectPasteShortcut(msg) == pasteShortcutText:
 				if text, err := readClipboardText(); err == nil && text != "" {
 					return m.appendSDKComposerText(selected, text)
 				}
@@ -1286,6 +1376,15 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				return m.appendSDKComposerText(selected, msg.Text)
 			}
 			// All other keys are no-ops for SDK sessions in focus mode.
+			return m, nil
+		}
+
+		if selected != nil &&
+			common.DetectProgramKind(selected.Program) == common.ProgramCodex &&
+			isPlainShiftEnter(msg) {
+			if err := selected.SendKeys(string(kittyCSIu(13, tea.ModShift))); err != nil {
+				return m, m.handleError(err)
+			}
 			return m, nil
 		}
 
