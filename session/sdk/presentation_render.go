@@ -21,6 +21,71 @@ const (
 	presentationDefaultWidth        = 80
 )
 
+// DiffLineKind classifies a single annotated line within a structured diff.
+type DiffLineKind string
+
+const (
+	DiffLineAdded   DiffLineKind = "added"
+	DiffLineRemoved DiffLineKind = "removed"
+	DiffLineContext DiffLineKind = "context"
+)
+
+// DiffLine represents a single annotated line in a structured diff block.
+type DiffLine struct {
+	Kind DiffLineKind
+	Text string
+}
+
+// ToolDiffPayload holds a structured diff produced by a file-editing tool call.
+// Lines holds the annotated diff entries; Truncated is true when the diff was
+// capped at a line limit and a truncation sentinel should be shown after the
+// last line.
+type ToolDiffPayload struct {
+	Lines     []DiffLine
+	Truncated bool
+}
+
+// ToolPreviewPayload holds structured file-content rows for a read-tool preview.
+// Truncated is true when the content was capped and a truncation sentinel should
+// follow the last row.
+type ToolPreviewPayload struct {
+	Rows      []string
+	Truncated bool
+}
+
+// BuildToolDiffBlock converts a ToolDiffPayload into a flat slice of plain-text
+// lines ready for colour-styling. Entry i corresponds to payload.Lines[i].Text.
+// When payload.Truncated is true an extra truncation sentinel "… (truncated)" is
+// appended at index len(payload.Lines). Returns nil when payload is nil.
+func BuildToolDiffBlock(payload *ToolDiffPayload) []string {
+	if payload == nil {
+		return nil
+	}
+	rows := make([]string, len(payload.Lines))
+	for i, l := range payload.Lines {
+		rows[i] = l.Text
+	}
+	if payload.Truncated {
+		rows = append(rows, "… (truncated)")
+	}
+	return rows
+}
+
+// BuildToolPreviewBlock converts a ToolPreviewPayload into a flat slice of
+// plain-text lines. When payload.Truncated is true an extra truncation sentinel
+// "… (truncated)" is appended after the last row. Returns nil when payload is nil.
+func BuildToolPreviewBlock(payload *ToolPreviewPayload) []string {
+	if payload == nil {
+		return nil
+	}
+	rows := make([]string, len(payload.Rows))
+	copy(rows, payload.Rows)
+	if payload.Truncated {
+		rows = append(rows, "… (truncated)")
+	}
+	return rows
+}
+
 // RenderPresentation converts a slice of PresentationTurns into an ANSI-styled
 // terminal transcript that follows the variant-c hierarchy from
 // docs/agent-sdk-pane-mockups.md.
@@ -70,6 +135,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 	}
 
 	toolStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
+	toolArgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorText))
 	userStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#9ccfd8"))
 	resultOKStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
 	resultErrStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
@@ -79,18 +145,34 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 	statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
 	thinkingStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
 	narrowRuleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
+	gutterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
+	addedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose))
+	removedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
+	diffContextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
 
 	for _, row := range turn.Rows {
 		switch row.Kind {
 		case RowUser:
-			rows = append(rows, userStyle.Render("you: "+row.Text))
+			rows = append(rows, userStyle.Render("> "+row.Text))
 		case RowTool:
-			rows = append(rows, toolStyle.Render(row.Text))
-		case RowResult:
-			if row.IsError {
-				rows = append(rows, resultErrStyle.Render(row.Text))
+			head, args := SplitToolCallText(row.Text, row.ToolName)
+			line := RenderToolCallLine(head, args, toolStyle, toolArgStyle)
+			if line == "" {
+				rows = append(rows, line)
 			} else {
-				rows = append(rows, resultOKStyle.Render(row.Text))
+				rows = append(rows, ToolCallIndent+line)
+			}
+		case RowResult:
+			var styled string
+			if row.IsError {
+				styled = resultErrStyle.Render(row.Text)
+			} else {
+				styled = resultOKStyle.Render(row.Text)
+			}
+			if styled != "" {
+				rows = append(rows, ToolChildIndent+styled)
+			} else {
+				rows = append(rows, styled)
 			}
 		case RowSystem:
 			rows = append(rows, systemStyle.Render(row.Text))
@@ -108,6 +190,35 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 			rows = append(rows, statusStyle.Render(row.Text))
 		case RowThinking:
 			rows = append(rows, thinkingStyle.Render(row.Text))
+		case RowToolPreview:
+			if row.ToolPreview == nil {
+				break
+			}
+			previewRows := BuildToolPreviewBlock(row.ToolPreview)
+			for _, pr := range previewRows {
+				rows = append(rows, ToolChildIndent+gutterStyle.Render(pr))
+			}
+		case RowToolDiff:
+			if row.ToolDiff == nil {
+				break
+			}
+			diffRows := BuildToolDiffBlock(row.ToolDiff)
+			for i, dr := range diffRows {
+				var styled string
+				if row.ToolDiff.Truncated && i == len(row.ToolDiff.Lines) {
+					styled = diffContextStyle.Render(dr)
+				} else {
+					switch row.ToolDiff.Lines[i].Kind {
+					case DiffLineAdded:
+						styled = addedStyle.Render(dr)
+					case DiffLineRemoved:
+						styled = removedStyle.Render(dr)
+					default:
+						styled = diffContextStyle.Render(dr)
+					}
+				}
+				rows = append(rows, ToolChildIndent+styled)
+			}
 		}
 	}
 	return rows

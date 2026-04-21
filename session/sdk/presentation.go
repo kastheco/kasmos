@@ -63,6 +63,10 @@ const (
 	RowProse PresentationRowKind = "prose"
 	// RowStatus carries lifecycle annotations such as "[interrupted]".
 	RowStatus PresentationRowKind = "status"
+	// RowToolDiff holds a structured file-diff block produced by an editing tool.
+	RowToolDiff PresentationRowKind = "tool_diff"
+	// RowToolPreview holds a structured file-content preview block from a read tool.
+	RowToolPreview PresentationRowKind = "tool_preview"
 )
 
 // PresentationRow is a single typed content row within a PresentationTurn.
@@ -73,9 +77,11 @@ type PresentationRow struct {
 	Kind PresentationRowKind
 	Text string
 	// Zero timestamps still encode as JSON null via MarshalJSON below.
-	Timestamp time.Time
-	ToolName  string
-	IsError   bool
+	Timestamp   time.Time
+	ToolName    string
+	IsError     bool
+	ToolDiff    *ToolDiffPayload    // set on RowToolDiff rows
+	ToolPreview *ToolPreviewPayload // set on RowToolPreview rows
 }
 
 // PresentationTurn groups all content rows produced within one agent response turn.
@@ -92,11 +98,13 @@ type PresentationTurn struct {
 }
 
 type presentationRowJSON struct {
-	Kind      PresentationRowKind `json:"kind"`
-	Text      string              `json:"text"`
-	Timestamp *time.Time          `json:"timestamp"`
-	ToolName  string              `json:"tool_name"`
-	IsError   bool                `json:"is_error"`
+	Kind        PresentationRowKind `json:"kind"`
+	Text        string              `json:"text"`
+	Timestamp   *time.Time          `json:"timestamp"`
+	ToolName    string              `json:"tool_name"`
+	IsError     bool                `json:"is_error"`
+	ToolDiff    *ToolDiffPayload    `json:"tool_diff,omitempty"`
+	ToolPreview *ToolPreviewPayload `json:"tool_preview,omitempty"`
 }
 
 type presentationTurnJSON struct {
@@ -120,11 +128,13 @@ func optionalJSONTime(ts time.Time) *time.Time {
 // MarshalJSON encodes zero timestamps as null in the wire format.
 func (r PresentationRow) MarshalJSON() ([]byte, error) {
 	return json.Marshal(presentationRowJSON{
-		Kind:      r.Kind,
-		Text:      r.Text,
-		Timestamp: optionalJSONTime(r.Timestamp),
-		ToolName:  r.ToolName,
-		IsError:   r.IsError,
+		Kind:        r.Kind,
+		Text:        r.Text,
+		Timestamp:   optionalJSONTime(r.Timestamp),
+		ToolName:    r.ToolName,
+		IsError:     r.IsError,
+		ToolDiff:    r.ToolDiff,
+		ToolPreview: r.ToolPreview,
 	})
 }
 
@@ -138,6 +148,8 @@ func (r *PresentationRow) UnmarshalJSON(data []byte) error {
 	r.Text = aux.Text
 	r.ToolName = aux.ToolName
 	r.IsError = aux.IsError
+	r.ToolDiff = aux.ToolDiff
+	r.ToolPreview = aux.ToolPreview
 	r.Timestamp = time.Time{}
 	if aux.Timestamp != nil {
 		r.Timestamp = *aux.Timestamp
