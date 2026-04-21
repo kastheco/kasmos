@@ -69,8 +69,41 @@ const (
 	RowToolPreview PresentationRowKind = "tool_preview"
 )
 
+// DiffLineKind classifies a single annotated line within a structured diff.
+type DiffLineKind string
+
+const (
+	DiffLineAdded   DiffLineKind = "added"
+	DiffLineRemoved DiffLineKind = "removed"
+	DiffLineContext DiffLineKind = "context"
+)
+
+// DiffLine represents a single annotated line in a structured diff block.
+type DiffLine struct {
+	Kind DiffLineKind `json:"kind"`
+	Text string       `json:"text"`
+}
+
+// ToolDiffPayload holds a structured diff produced by a file-editing tool call.
+// Lines holds the annotated diff entries; Truncated is true when the diff was
+// capped at a line limit and a truncation sentinel should be shown after the
+// last line.
+type ToolDiffPayload struct {
+	Lines     []DiffLine `json:"lines"`
+	Truncated bool       `json:"truncated"`
+}
+
+// ToolPreviewPayload holds structured file-content rows for a read-tool preview.
+// Truncated is true when the content was capped and a truncation sentinel should
+// follow the last row.
+type ToolPreviewPayload struct {
+	Rows      []string `json:"rows"`
+	Truncated bool     `json:"truncated"`
+}
+
 // PresentationRow is a single typed content row within a PresentationTurn.
-// All fields are value types — safe to copy and share across goroutines.
+// Most fields are value types. ToolDiff and ToolPreview point to optional
+// read-only payloads and are shared by reference when rows are copied.
 // Zero timestamps marshal as JSON null so browser clients do not need to
 // special-case Go's zero time sentinel.
 type PresentationRow struct {

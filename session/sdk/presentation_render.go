@@ -21,38 +21,6 @@ const (
 	presentationDefaultWidth        = 80
 )
 
-// DiffLineKind classifies a single annotated line within a structured diff.
-type DiffLineKind string
-
-const (
-	DiffLineAdded   DiffLineKind = "added"
-	DiffLineRemoved DiffLineKind = "removed"
-	DiffLineContext DiffLineKind = "context"
-)
-
-// DiffLine represents a single annotated line in a structured diff block.
-type DiffLine struct {
-	Kind DiffLineKind `json:"kind"`
-	Text string       `json:"text"`
-}
-
-// ToolDiffPayload holds a structured diff produced by a file-editing tool call.
-// Lines holds the annotated diff entries; Truncated is true when the diff was
-// capped at a line limit and a truncation sentinel should be shown after the
-// last line.
-type ToolDiffPayload struct {
-	Lines     []DiffLine `json:"lines"`
-	Truncated bool       `json:"truncated"`
-}
-
-// ToolPreviewPayload holds structured file-content rows for a read-tool preview.
-// Truncated is true when the content was capped and a truncation sentinel should
-// follow the last row.
-type ToolPreviewPayload struct {
-	Rows      []string `json:"rows"`
-	Truncated bool     `json:"truncated"`
-}
-
 // BuildToolDiffBlock converts a ToolDiffPayload into a flat slice of plain-text
 // lines ready for colour-styling. Entry i corresponds to payload.Lines[i].Text.
 // When payload.Truncated is true an extra truncation sentinel "… (truncated)" is
