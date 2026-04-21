@@ -31,8 +31,6 @@ func TestHandleKeyPress_ExclamationEntersFocusMode(t *testing.T) {
 	updated := model.(*home)
 
 	assert.Equal(t, stateFocusAgent, updated.state)
-	// In the new model, ! enters focus mode without changing the instance tab index.
-	assert.Equal(t, 0, updated.tabbedWindow.GetActiveTab())
 	assert.NotNil(t, cmd)
 }
 
@@ -49,7 +47,6 @@ func TestHandleKeyPress_ExclamationNoOpWithoutRunningInstance(t *testing.T) {
 
 func TestHandleKeyPress_ShiftITogglesInfoHeader(t *testing.T) {
 	h := newTestHome()
-	// showInfo starts as false (from NewTabbedWindow).
 	wasShowing := h.tabbedWindow.IsShowingInfo()
 	h.keySent = true
 
