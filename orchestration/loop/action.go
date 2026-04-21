@@ -248,6 +248,8 @@ type SpawnOpts struct {
 	// ExecutionMode selects the process host backend ("tmux" or "sdk").
 	// Empty defaults to tmux at the session layer.
 	ExecutionMode string
+	// SDKSpeedTier carries the optional Codex SDK service tier for SDK sessions.
+	SDKSpeedTier string
 }
 
 // AgentSpawner abstracts tmux session management so the daemon and TUI can

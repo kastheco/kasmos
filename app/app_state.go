@@ -1908,6 +1908,7 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 		Path:            m.activeRepoPath,
 		Program:         m.programForAgent(session.AgentTypeReviewer),
 		ExecutionMode:   m.executionModeForAgent(session.AgentTypeReviewer),
+		SDKSpeedTier:    m.sdkSpeedTierForAgent(session.AgentTypeReviewer),
 		TaskFile:        planFile,
 		AgentType:       session.AgentTypeReviewer,
 		ReviewCycle:     spec.ReviewCycle,
@@ -1990,6 +1991,7 @@ func (m *home) spawnMaster(planFile string) tea.Cmd {
 		Path:            m.activeRepoPath,
 		Program:         m.programForAgent(session.AgentTypeMaster),
 		ExecutionMode:   m.executionModeForAgent(session.AgentTypeMaster),
+		SDKSpeedTier:    m.sdkSpeedTierForAgent(session.AgentTypeMaster),
 		TaskFile:        planFile,
 		AgentType:       session.AgentTypeMaster,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
@@ -2136,6 +2138,10 @@ func (m *home) executionModeForAgent(agentType string) session.ExecutionMode {
 	return session.ExecutionMode(config.NormalizeExecutionMode(m.profileForAgent(agentType).ExecutionMode))
 }
 
+func (m *home) sdkSpeedTierForAgent(agentType string) string {
+	return session.NormalizeSDKSpeedTier(m.profileForAgent(agentType).Tier)
+}
+
 // standaloneExecutionMode resolves the execution mode for a standalone ad-hoc
 // agent spawn (KeyPrompt, new_instance, quickLaunchAgent, spawnAdHocAgent).
 // It reads the profile for agentType, normalises the requested mode via
@@ -2146,6 +2152,16 @@ func (m *home) standaloneExecutionMode(agentType, program string) session.Execut
 	normalised := config.NormalizeExecutionMode(profile.ExecutionMode)
 	requested := session.ExecutionMode(normalised)
 	return session.ResolveExecutionMode(requested, program)
+}
+
+func (m *home) standaloneSDKSpeedTier(agentType, program string) string {
+	if m.standaloneExecutionMode(agentType, program) != session.ExecutionModeSDK {
+		return ""
+	}
+	if common.DetectProgramKind(program) != common.ProgramCodex {
+		return ""
+	}
+	return m.sdkSpeedTierForAgent(agentType)
 }
 
 // standaloneExecutionModeLimitError enforces the standalone tmux-session cap.
@@ -2437,6 +2453,7 @@ func (m *home) spawnFixerWithFeedback(planFile, feedback string) tea.Cmd {
 		Path:            m.activeRepoPath,
 		Program:         m.programForAgent(session.AgentTypeFixer),
 		ExecutionMode:   m.executionModeForAgent(session.AgentTypeFixer),
+		SDKSpeedTier:    m.sdkSpeedTierForAgent(session.AgentTypeFixer),
 		TaskFile:        planFile,
 		AgentType:       session.AgentTypeFixer,
 		ReviewCycle:     spec.ReviewCycle,
@@ -2503,6 +2520,7 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 		Path:            m.activeRepoPath,
 		Program:         m.programForAgent(session.AgentTypeElaborator),
 		ExecutionMode:   m.executionModeForAgent(session.AgentTypeElaborator),
+		SDKSpeedTier:    m.sdkSpeedTierForAgent(session.AgentTypeElaborator),
 		TaskFile:        planFile,
 		AgentType:       session.AgentTypeElaborator,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
@@ -3069,6 +3087,7 @@ func (m *home) quickLaunchAgent() (tea.Model, tea.Cmd) {
 		Path:            m.activeRepoPath,
 		Program:         fixerProgram,
 		ExecutionMode:   requestedMode,
+		SDKSpeedTier:    m.sdkSpeedTierForAgent(session.AgentTypeFixer),
 		AgentType:       session.AgentTypeFixer,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
 	})
@@ -3212,13 +3231,18 @@ func (m *home) showSpawnExecutionModePicker(program string) {
 	m.pendingSpawnProgram = program
 	m.pendingSpawnExecutionMode = m.standaloneExecutionMode(session.AgentTypeMaster, program)
 	var options []string
+	defaultSelection := string(m.pendingSpawnExecutionMode)
 	if common.DetectProgramKind(program) == common.ProgramCodex {
 		options = []string{"tmux", "sdk", "sdk-fast"}
+		if m.pendingSpawnExecutionMode == session.ExecutionModeSDK &&
+			m.standaloneSDKSpeedTier(session.AgentTypeMaster, program) == "fast" {
+			defaultSelection = "sdk-fast"
+		}
 	} else {
 		options = []string{"tmux", "sdk"}
 	}
 	picker := overlay.NewPickerOverlay("execution mode", options)
-	picker.SetSelectedValue(string(m.pendingSpawnExecutionMode))
+	picker.SetSelectedValue(defaultSelection)
 	m.overlays.Show(picker)
 	m.state = stateSpawnExecutionModePicker
 }
@@ -3433,6 +3457,7 @@ func (m *home) spawnTaskAgent(planFile, action, prompt string) (tea.Model, tea.C
 		Path:            m.activeRepoPath,
 		Program:         m.programForAgent(agentType),
 		ExecutionMode:   m.executionModeForAgent(agentType),
+		SDKSpeedTier:    m.sdkSpeedTierForAgent(agentType),
 		TaskFile:        planFile,
 		AgentType:       agentType,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
@@ -3483,12 +3508,13 @@ func (m *home) spawnTaskAgent(planFile, action, prompt string) (tea.Model, tea.C
 			capturedAgentType := agentType
 			startCmd = func() tea.Msg {
 				req := api.SpawnSoloRequest{
-					Title:     capturedInst.Title,
-					Program:   capturedInst.Program,
-					Prompt:    capturedInst.QueuedPrompt,
-					TaskFile:  capturedPlanFile,
-					AgentType: capturedAgentType,
-					SoloAgent: true,
+					Title:        capturedInst.Title,
+					Program:      capturedInst.Program,
+					Prompt:       capturedInst.QueuedPrompt,
+					TaskFile:     capturedPlanFile,
+					AgentType:    capturedAgentType,
+					SoloAgent:    true,
+					SDKSpeedTier: capturedInst.SDKSpeedTier,
 				}
 				return instanceStartedMsg{instance: capturedInst, err: spawnSoloWithDaemon(capturedProject, req)}
 			}
@@ -3781,6 +3807,7 @@ func (m *home) spawnWaveTasks(orch *orchestration.WaveOrchestrator, tasks []task
 			Path:          m.activeRepoPath,
 			Program:       m.programForAgent(session.AgentTypeCoder),
 			ExecutionMode: m.executionModeForAgent(session.AgentTypeCoder),
+			SDKSpeedTier:  m.sdkSpeedTierForAgent(session.AgentTypeCoder),
 			TaskFile:      planFile,
 			AgentType:     session.AgentTypeCoder,
 			TaskNumber:    task.Number,
@@ -3943,6 +3970,8 @@ func (m *home) spawnChatAboutTask(planFile, question string) (tea.Model, tea.Cmd
 		Title:           title,
 		Path:            m.activeRepoPath,
 		Program:         m.programForAgent(session.AgentTypeFixer),
+		ExecutionMode:   m.executionModeForAgent(session.AgentTypeFixer),
+		SDKSpeedTier:    m.sdkSpeedTierForAgent(session.AgentTypeFixer),
 		TaskFile:        planFile,
 		AgentType:       session.AgentTypeFixer,
 		ClaudeNoFlicker: m.claudeNoFlicker(),

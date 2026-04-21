@@ -278,7 +278,8 @@ type home struct {
 	pendingSpawnProgram string
 	// pendingSpawnExecutionMode stores the chosen execution mode during the spawn flow
 	pendingSpawnExecutionMode session.ExecutionMode
-	// pendingSpawnSpeedTier stores the chosen speed tier during the spawn flow ("" or "fast")
+	// pendingSpawnSpeedTier stores the chosen speed tier during the spawn flow
+	// ("" or an explicit Codex tier such as "fast" / "flex")
 	pendingSpawnSpeedTier string
 	// pendingChangeTopicTask stores the plan filename during the change-topic flow
 	pendingChangeTopicTask string

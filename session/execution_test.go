@@ -17,6 +17,8 @@ func TestNormalizeSDKSpeedTier(t *testing.T) {
 		{name: "fast stays fast", in: "fast", want: "fast"},
 		{name: "FAST uppercased maps to fast", in: "FAST", want: "fast"},
 		{name: "padded fast maps to fast", in: "  fast  ", want: "fast"},
+		{name: "flex stays flex", in: "flex", want: "flex"},
+		{name: "default aliases to flex", in: "default", want: "flex"},
 		{name: "slow is unknown, defaults to empty", in: "slow", want: ""},
 		{name: "priority is unknown, defaults to empty", in: "priority", want: ""},
 	}

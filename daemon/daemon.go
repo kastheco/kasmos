@@ -560,6 +560,7 @@ func (d *Daemon) startPlanAsync(entry RepoEntry, planFile, prompt, program strin
 		Prompt:        prompt,
 		Program:       program,
 		ExecutionMode: executionModeForAgent(entry.Path, session.AgentTypePlanner),
+		SDKSpeedTier:  sdkSpeedTierForAgent(entry.Path, session.AgentTypePlanner),
 	}); err != nil {
 		d.logger.Error("spawn planner failed", "project", entry.Project, "plan", planFile, "err", err)
 		return
@@ -1489,6 +1490,7 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			Program:       programForAgent(e.Path, session.AgentTypePlanner),
 			Prompt:        spec.Prompt,
 			ExecutionMode: executionModeForAgent(e.Path, session.AgentTypePlanner),
+			SDKSpeedTier:  sdkSpeedTierForAgent(e.Path, session.AgentTypePlanner),
 		}
 		spawnPlanner := d.spawnPlanner
 		if spawnPlanner == nil {
@@ -1521,6 +1523,7 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			Program:       programForAgent(e.Path, session.AgentTypeElaborator),
 			Prompt:        spec.Prompt,
 			ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeElaborator),
+			SDKSpeedTier:  sdkSpeedTierForAgent(e.Path, session.AgentTypeElaborator),
 		}
 		spawnElaborator := d.spawnElaborator
 		if spawnElaborator == nil {
@@ -1827,6 +1830,7 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 			Program:       programForAgent(e.Path, session.AgentTypeCoder),
 			Wave:          waveNum,
 			ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeCoder),
+			SDKSpeedTier:  sdkSpeedTierForAgent(e.Path, session.AgentTypeCoder),
 		}
 		wg.Add(1)
 		go func() {
@@ -1985,41 +1989,63 @@ func sharedWorktreePaths(repoPath string) []string {
 	return paths
 }
 
-// executionModeForAgent resolves the configured execution mode for a given
-// agent type by reading the repo's config.toml profiles.  Returns an empty
-// string when no config exists, letting the spawner/session layer apply its
-// own default (tmux).
-func executionModeForAgent(repoPath, agentType string) string {
+func phaseForAgentType(agentType string) string {
+	switch agentType {
+	case session.AgentTypeCoder:
+		return "implementing"
+	case session.AgentTypePlanner:
+		return "planning"
+	case session.AgentTypeReviewer:
+		return "quality_review"
+	case session.AgentTypeFixer:
+		return "fixer"
+	case session.AgentTypeElaborator:
+		return "elaborating"
+	case session.AgentTypeMaster:
+		return "readiness_review"
+	default:
+		return ""
+	}
+}
+
+func resolvedProfileForAgent(repoPath, agentType string) (config.AgentProfile, string, bool) {
 	configPath := filepath.Join(repoPath, ".kasmos", config.TOMLConfigFileName)
 	result, err := config.LoadTOMLConfigFrom(configPath)
 	if err != nil {
-		return ""
+		return config.AgentProfile{}, "", false
 	}
 	cfg := &config.Config{
 		PhaseRoles: result.PhaseRoles,
 		Profiles:   result.Profiles,
 	}
 
-	var phase string
-	switch agentType {
-	case session.AgentTypeCoder:
-		phase = "implementing"
-	case session.AgentTypePlanner:
-		phase = "planning"
-	case session.AgentTypeReviewer:
-		phase = "quality_review"
-	case session.AgentTypeFixer:
-		phase = "fixer"
-	case session.AgentTypeElaborator:
-		phase = "elaborating"
-	case session.AgentTypeMaster:
-		phase = "readiness_review"
-	default:
-		return ""
+	phase := phaseForAgentType(agentType)
+	if phase == "" {
+		return config.AgentProfile{}, result.DefaultProgram, false
 	}
 
 	profile := cfg.ResolveProfile(phase, result.DefaultProgram)
+	return profile, result.DefaultProgram, true
+}
+
+// executionModeForAgent resolves the configured execution mode for a given
+// agent type by reading the repo's config.toml profiles. Returns an empty
+// string when no config exists, letting the spawner/session layer apply its
+// own default (tmux).
+func executionModeForAgent(repoPath, agentType string) string {
+	profile, _, ok := resolvedProfileForAgent(repoPath, agentType)
+	if !ok {
+		return ""
+	}
 	return config.NormalizeExecutionMode(profile.ExecutionMode)
+}
+
+func sdkSpeedTierForAgent(repoPath, agentType string) string {
+	profile, _, ok := resolvedProfileForAgent(repoPath, agentType)
+	if !ok {
+		return ""
+	}
+	return session.NormalizeSDKSpeedTier(profile.Tier)
 }
 
 // programForAgent resolves the configured program command for a given agent
@@ -2032,37 +2058,13 @@ func programForAgent(repoPath, agentType string) string {
 
 // programForAgentWithRegistry is the testable core of programForAgent.
 func programForAgentWithRegistry(repoPath, agentType string, registry *harness.Registry) string {
-	configPath := filepath.Join(repoPath, ".kasmos", config.TOMLConfigFileName)
-	result, err := config.LoadTOMLConfigFrom(configPath)
-	if err != nil {
+	profile, defaultProgram, ok := resolvedProfileForAgent(repoPath, agentType)
+	if !ok {
+		if phaseForAgentType(agentType) == "" {
+			return defaultProgram
+		}
 		return ""
 	}
-	defaultProgram := result.DefaultProgram
-
-	cfg := &config.Config{
-		PhaseRoles: result.PhaseRoles,
-		Profiles:   result.Profiles,
-	}
-
-	var phase string
-	switch agentType {
-	case session.AgentTypeCoder:
-		phase = "implementing"
-	case session.AgentTypePlanner:
-		phase = "planning"
-	case session.AgentTypeReviewer:
-		phase = "quality_review"
-	case session.AgentTypeFixer:
-		phase = "fixer"
-	case session.AgentTypeElaborator:
-		phase = "elaborating"
-	case session.AgentTypeMaster:
-		phase = "readiness_review"
-	default:
-		return defaultProgram
-	}
-
-	profile := cfg.ResolveProfile(phase, defaultProgram)
 	return buildProgramCommand(profile, registry)
 }
 
@@ -2115,6 +2117,7 @@ func coderSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 		Prompt:        feedback,
 		Feedback:      feedback,
 		ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeCoder),
+		SDKSpeedTier:  sdkSpeedTierForAgent(e.Path, session.AgentTypeCoder),
 	}
 }
 
@@ -2129,6 +2132,7 @@ func reviewerSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
 		ReviewCycle:   spec.ReviewCycle,
 		Prompt:        spec.Prompt,
 		ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeReviewer),
+		SDKSpeedTier:  sdkSpeedTierForAgent(e.Path, session.AgentTypeReviewer),
 	}
 }
 
@@ -2150,6 +2154,7 @@ func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 		Prompt:        spec.Prompt,
 		Feedback:      feedback,
 		ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeFixer),
+		SDKSpeedTier:  sdkSpeedTierForAgent(e.Path, session.AgentTypeFixer),
 	}
 }
 
@@ -2164,6 +2169,7 @@ func masterSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
 		Prompt:        spec.Prompt,
 		ReviewCycle:   entry.ReviewCycle + 1,
 		ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeMaster),
+		SDKSpeedTier:  sdkSpeedTierForAgent(e.Path, session.AgentTypeMaster),
 	}
 }
 

@@ -164,6 +164,7 @@ func (d *Daemon) respawnWaveTaskCandidate(ctx context.Context, e RepoEntry, task
 		Program:       programForAgent(e.Path, session.AgentTypeCoder),
 		Wave:          candidate.WaveNumber,
 		ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeCoder),
+		SDKSpeedTier:  sdkSpeedTierForAgent(e.Path, session.AgentTypeCoder),
 	}, waveTask, prompt, waveTaskIndex, peerCount)
 }
 

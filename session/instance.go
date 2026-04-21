@@ -121,7 +121,7 @@ type Instance struct {
 	// Defaults to false (CLAUDE_CODE_NO_FLICKER=0) so prompt detection works in spawned agents.
 	ClaudeNoFlicker bool
 
-	// SDKSpeedTier is the session-scoped speed tier for SDK sessions ("" or "fast").
+	// SDKSpeedTier is the session-scoped speed tier for SDK sessions ("", "flex", or "fast").
 	// Only meaningful when ExecutionMode is SDK and the program is Codex.
 	// The Codex transport forwards this as serviceTier on thread/start.
 	SDKSpeedTier string
@@ -395,7 +395,7 @@ type InstanceOptions struct {
 	// ClaudeNoFlicker controls whether CLAUDE_CODE_NO_FLICKER=1 is set for the agent process.
 	// Defaults to false (CLAUDE_CODE_NO_FLICKER=0) so prompt detection works in spawned agents.
 	ClaudeNoFlicker bool
-	// SDKSpeedTier is the session-scoped speed tier ("" or "fast").
+	// SDKSpeedTier is the session-scoped speed tier ("", "flex", or "fast").
 	// Only applied when ExecutionMode resolves to SDK and the program is Codex.
 	SDKSpeedTier string
 }
@@ -412,8 +412,8 @@ func NewInstance(opts InstanceOptions) (*Instance, error) {
 
 	resolvedMode := ResolveExecutionMode(opts.ExecutionMode, opts.Program)
 
-	// The fast tier is only available for Codex SDK sessions.
-	// If the resolved mode is not SDK or the program is not Codex, ignore the tier.
+	// SDK tiers are only available for Codex SDK sessions. If the resolved mode is
+	// not SDK or the program is not Codex, ignore the tier.
 	sdkSpeedTier := ""
 	if resolvedMode == ExecutionModeSDK && common.DetectProgramKind(opts.Program) == common.ProgramCodex {
 		sdkSpeedTier = NormalizeSDKSpeedTier(opts.SDKSpeedTier)

@@ -10,6 +10,7 @@ type AgentProfile struct {
 	Temperature   *float64 `json:"temperature,omitempty" toml:"temperature,omitempty"`
 	Effort        string   `json:"effort,omitempty" toml:"effort,omitempty"`
 	ExecutionMode string   `json:"execution_mode,omitempty" toml:"execution_mode,omitempty"`
+	Tier          string   `json:"tier,omitempty" toml:"tier,omitempty"`
 	Enabled       bool     `json:"enabled,omitempty" toml:"enabled,omitempty"`
 }
 
@@ -55,6 +56,24 @@ func NormalizeExecutionMode(mode string) string {
 	}
 }
 
+// NormalizeTier canonicalises a profile SDK tier string.
+//
+//   - ""        → ""     (unset)
+//   - "fast"    → "fast"
+//   - "flex"    → "flex"
+//   - "default" → "flex"
+//   - anything else → ""
+func NormalizeTier(tier string) string {
+	switch strings.ToLower(strings.TrimSpace(tier)) {
+	case "fast":
+		return "fast"
+	case "flex", "default":
+		return "flex"
+	default:
+		return ""
+	}
+}
+
 // ResolveProfile looks up the agent profile for a given lifecycle phase.
 // Falls back to defaultProgram if any link is missing, empty, or disabled.
 //
@@ -78,6 +97,7 @@ func (c *Config) ResolveProfile(phase string, defaultProgram string) AgentProfil
 		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeTmux}
 	}
 	profile.ExecutionMode = NormalizeExecutionMode(profile.ExecutionMode)
+	profile.Tier = NormalizeTier(profile.Tier)
 	return profile
 }
 

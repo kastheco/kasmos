@@ -19,6 +19,7 @@ type TOMLAgent struct {
 	Temperature   *float64 `toml:"temperature,omitempty"`
 	Effort        string   `toml:"effort,omitempty"`
 	ExecutionMode string   `toml:"execution_mode,omitempty"`
+	Tier          string   `toml:"tier,omitempty"`
 	Flags         []string `toml:"flags,omitempty"`
 }
 
@@ -29,6 +30,7 @@ func (a TOMLAgent) toProfile() AgentProfile {
 		Temperature:   a.Temperature,
 		Effort:        a.Effort,
 		ExecutionMode: NormalizeExecutionMode(a.ExecutionMode),
+		Tier:          NormalizeTier(a.Tier),
 		Enabled:       a.Enabled,
 		Flags:         a.Flags,
 	}

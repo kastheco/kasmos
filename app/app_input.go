@@ -2280,6 +2280,7 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 			Path:          m.activeRepoPath,
 			Program:       promptProgram,
 			ExecutionMode: requestedMode,
+			SDKSpeedTier:  m.sdkSpeedTierForAgent(""),
 		})
 		if err != nil {
 			return m, m.handleError(err)

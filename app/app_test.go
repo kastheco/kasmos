@@ -871,6 +871,32 @@ func TestSpawnAgent_CodexPickerShowsSDKFast(t *testing.T) {
 	assert.Contains(t, view, "sdk-fast", "codex picker must include sdk-fast")
 }
 
+func TestSpawnAgent_CodexPickerDefaultsToSDKFastWhenProfileRequestsFast(t *testing.T) {
+	h := newTestHome()
+	h.appConfig = &config.Config{
+		DefaultProgram: "codex",
+		PhaseRoles:     map[string]string{"readiness_review": "master"},
+		Profiles: map[string]config.AgentProfile{
+			"master": {Program: "codex", Enabled: true, ExecutionMode: config.ExecutionModeSDK, Tier: "fast"},
+		},
+	}
+	h.keySent = true
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	h = model.(*home)
+	require.Equal(t, stateSpawnHarnessPicker, h.state)
+	h.keySent = true
+	model, _ = h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
+	h = model.(*home)
+	require.Equal(t, stateSpawnExecutionModePicker, h.state)
+
+	h.keySent = true
+	model, _ = h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
+	h = model.(*home)
+	require.Equal(t, stateSpawnAgent, h.state)
+	assert.Equal(t, session.ExecutionModeSDK, h.pendingSpawnExecutionMode)
+	assert.Equal(t, "fast", h.pendingSpawnSpeedTier)
+}
+
 // TestSpawnAgent_ClaudePickerNoSDKFast verifies that the execution-mode picker
 // does NOT include sdk-fast for claude programs.
 func TestSpawnAgent_ClaudePickerNoSDKFast(t *testing.T) {
@@ -1206,6 +1232,44 @@ func TestQuickLaunch_SDKProfileProducesSDKMode(t *testing.T) {
 	require.Len(t, instances, 1)
 	assert.Equal(t, session.ExecutionModeSDK, instances[0].ExecutionMode,
 		"sdk fixer profile with claude program must produce sdk execution mode")
+}
+
+func TestQuickLaunch_CodexFastProfileProducesFastTier(t *testing.T) {
+	oldQuickLaunchStartOnMain := quickLaunchStartOnMain
+	quickLaunchStartOnMain = func(inst *session.Instance) error {
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+	t.Cleanup(func() { quickLaunchStartOnMain = oldQuickLaunchStartOnMain })
+
+	var capturedTimeoutMsg doubleTapTimeoutMsg
+	oldSchedule := scheduleDoubleTapTimeout
+	scheduleDoubleTapTimeout = func(_ time.Duration, key string, seq int) tea.Cmd {
+		capturedTimeoutMsg = doubleTapTimeoutMsg{key: key, seq: seq}
+		return func() tea.Msg { return capturedTimeoutMsg }
+	}
+	t.Cleanup(func() { scheduleDoubleTapTimeout = oldSchedule })
+
+	h := newTestHome()
+	h.activeRepoPath = filepath.Join(t.TempDir(), "myrepo")
+	h.appConfig = &config.Config{
+		PhaseRoles: map[string]string{"fixer": "fixer"},
+		Profiles: map[string]config.AgentProfile{
+			"fixer": {Program: "codex", Enabled: true, ExecutionMode: config.ExecutionModeSDK, Tier: "fast"},
+		},
+	}
+	h.keySent = true
+
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 's', Text: "s"})
+	updated := model.(*home)
+	model, _ = updated.Update(capturedTimeoutMsg)
+	updated = model.(*home)
+
+	instances := updated.nav.GetInstances()
+	require.Len(t, instances, 1)
+	assert.Equal(t, session.ExecutionModeSDK, instances[0].ExecutionMode)
+	assert.Equal(t, "fast", instances[0].SDKSpeedTier)
 }
 
 func TestQuickLaunch_SDKModeIgnoresTmuxLimit(t *testing.T) {

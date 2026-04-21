@@ -22,21 +22,23 @@ quality_review = "reviewer"
 planning = "planner"
 master_review = "master"
 
-[agents.coder]
-enabled = true
-program = "opencode"
-execution_mode = "headless"
-model = "anthropic/claude-sonnet-4-6"
-temperature = 0.7
-effort = "high"
-flags = []
+	[agents.coder]
+	enabled = true
+	program = "opencode"
+	execution_mode = "headless"
+	tier = "default"
+	model = "anthropic/claude-sonnet-4-6"
+	temperature = 0.7
+	effort = "high"
+	flags = []
 
-[agents.reviewer]
-enabled = true
-program = "claude"
-model = "claude-opus-4-6"
-effort = "high"
-flags = ["--agent", "reviewer"]
+	[agents.reviewer]
+	enabled = true
+	program = "claude"
+	tier = "FAST"
+	model = "claude-opus-4-6"
+	effort = "high"
+	flags = ["--agent", "reviewer"]
 
 [agents.planner]
 enabled = false
@@ -66,6 +68,7 @@ flags = []
 		assert.Equal(t, "high", coder.Effort)
 		// "headless" in config is a legacy alias normalised to "sdk".
 		assert.Equal(t, ExecutionModeSDK, coder.ExecutionMode)
+		assert.Equal(t, "flex", coder.Tier)
 		assert.True(t, coder.Enabled)
 
 		// Verify disabled agent
@@ -76,6 +79,7 @@ flags = []
 		// Verify flags preserved
 		reviewer, ok := tc.Profiles["reviewer"]
 		require.True(t, ok)
+		assert.Equal(t, "fast", reviewer.Tier)
 		assert.Equal(t, []string{"--agent", "reviewer"}, reviewer.Flags)
 	})
 
@@ -101,6 +105,30 @@ flags = []
 		require.True(t, ok)
 		// Invalid execution_mode falls back to the conservative tmux default.
 		assert.Equal(t, ExecutionModeTmux, coder.ExecutionMode)
+	})
+
+	t.Run("normalizes invalid tier in TOML profile", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		tomlPath := filepath.Join(tmpDir, "config.toml")
+
+		content := `
+			[phases]
+			implementing = "coder"
+
+			[agents.coder]
+			enabled = true
+			program = "codex"
+			execution_mode = "sdk"
+			tier = "priority"
+			`
+		require.NoError(t, os.WriteFile(tomlPath, []byte(content), 0o644))
+
+		tc, err := LoadTOMLConfigFrom(tomlPath)
+		require.NoError(t, err)
+
+		coder, ok := tc.Profiles["coder"]
+		require.True(t, ok)
+		assert.Empty(t, coder.Tier)
 	})
 
 	t.Run("returns error on missing file", func(t *testing.T) {

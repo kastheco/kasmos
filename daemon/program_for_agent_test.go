@@ -272,3 +272,36 @@ func TestExecutionModeForAgent(t *testing.T) {
 	assert.Equal(t, config.ExecutionModeTmux, executionModeForAgent(repoDir, session.AgentTypePlanner))
 	assert.Equal(t, config.ExecutionModeSDK, executionModeForAgent(repoDir, session.AgentTypeElaborator))
 }
+
+func TestSDKSpeedTierForAgent(t *testing.T) {
+	repoDir := t.TempDir()
+	kasmosDir := filepath.Join(repoDir, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+
+	configContent := `
+[phases]
+  elaborating = "architect"
+  implementing = "coder"
+
+[agents]
+  [agents.architect]
+    enabled = true
+    program = "codex"
+    execution_mode = "sdk"
+    tier = "default"
+  [agents.coder]
+    enabled = true
+    program = "codex"
+    execution_mode = "sdk"
+    tier = "fast"
+`
+	require.NoError(t, os.WriteFile(
+		filepath.Join(kasmosDir, "config.toml"),
+		[]byte(configContent),
+		0o644,
+	))
+
+	assert.Equal(t, "fast", sdkSpeedTierForAgent(repoDir, session.AgentTypeCoder))
+	assert.Equal(t, "flex", sdkSpeedTierForAgent(repoDir, session.AgentTypeElaborator))
+	assert.Empty(t, sdkSpeedTierForAgent(repoDir, session.AgentTypeReviewer))
+}

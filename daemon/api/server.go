@@ -92,7 +92,8 @@ type InstanceStatus struct {
 	// plan-orchestration lifecycle (e.g. via POST .../instances/solo).
 	SoloAgent bool `json:"solo_agent,omitempty"`
 	// SDKSpeedTier carries the session-scoped speed tier for SDK sessions
-	// ("" for default, "fast" for the fast tier). Omitted when empty so that
+	// ("" for implicit default, or an explicit tier such as "fast" / "flex").
+	// Omitted when empty so that
 	// existing SDK rows without a tier setting are unchanged on the wire.
 	SDKSpeedTier string `json:"sdk_speed_tier,omitempty"`
 }

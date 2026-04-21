@@ -429,6 +429,20 @@ func TestNewInstance_SDKSpeedTier_GatedOnCodexSDK(t *testing.T) {
 			wantSpeedTier: "fast",
 		},
 		{
+			name:          "flex codex sdk stores flex",
+			program:       "codex",
+			mode:          ExecutionModeSDK,
+			tier:          "flex",
+			wantSpeedTier: "flex",
+		},
+		{
+			name:          "default alias stores flex",
+			program:       "codex",
+			mode:          ExecutionModeSDK,
+			tier:          "default",
+			wantSpeedTier: "flex",
+		},
+		{
 			name:          "fast claude sdk is ignored (claude has no tier)",
 			program:       "claude",
 			mode:          ExecutionModeSDK,

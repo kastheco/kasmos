@@ -63,7 +63,8 @@ type ExecutionSession interface {
 	SetProject(project string)
 	SetSessionTitle(title string)
 	SetTitleFunc(fn func(workDir string, beforeStart time.Time, title string))
-	// SetSDKSpeedTier sets the session-scoped speed tier ("" or "fast").
+	// SetSDKSpeedTier sets the session-scoped speed tier ("" or one of the
+	// recognised Codex tiers such as "fast" or "flex").
 	// Non-SDK backends (tmux) ignore this; SDK backends forward it to the transport.
 	SetSDKSpeedTier(tier string)
 }
@@ -94,14 +95,18 @@ type presentationProvider interface {
 }
 
 // NormalizeSDKSpeedTier canonicalises a speed-tier value.
-// Only "fast" (case-insensitive, trimmed) is a recognised non-default tier.
+// Recognised tiers are "fast" and "flex"; "default" maps to "flex".
 // Any other value — including the empty string, whitespace-only strings, or
-// unknown tier names — normalises to "" (the default tier).
+// unknown tier names — normalises to "" (unset / implicit transport default).
 func NormalizeSDKSpeedTier(value string) string {
-	if strings.ToLower(strings.TrimSpace(value)) == "fast" {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "fast":
 		return "fast"
+	case "flex", "default":
+		return "flex"
+	default:
+		return ""
 	}
-	return ""
 }
 
 // NormalizeExecutionMode canonicalises mode for the session layer.
