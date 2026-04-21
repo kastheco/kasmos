@@ -570,16 +570,38 @@ func formatToolResultLine(raw string) string {
 		if exit, ok := obj["exit_code"].(float64); ok && exit != 0 {
 			return fmt.Sprintf("✗ exit=%d", int(exit))
 		}
+		if text := extractTextFromObject(obj); text != "" {
+			return summarizeToolResultText(text)
+		}
+		keys := make([]string, 0, len(obj))
+		for k := range obj {
+			keys = append(keys, k)
+		}
+		if len(keys) > 0 {
+			return "→ " + truncateOneLine(strings.Join(keys, ","), 60)
+		}
+		return ""
 	}
 
 	// Array payload — count items.
 	var arr []any
 	if err := json.Unmarshal([]byte(trimmed), &arr); err == nil {
+		if text := extractTextFromValue(arr); text != "" {
+			return summarizeToolResultText(text)
+		}
 		return fmt.Sprintf("→ %d items", len(arr))
 	}
 
 	// Plain text — compact to first line (or a short slice). Long output
 	// gets a line-count summary instead of the full content.
+	return summarizeToolResultText(trimmed)
+}
+
+func summarizeToolResultText(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return ""
+	}
 	lines := strings.Split(trimmed, "\n")
 	if len(lines) > 3 {
 		return fmt.Sprintf("→ %d lines", len(lines))

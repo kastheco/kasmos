@@ -108,29 +108,13 @@ func extractPreviewText(toolName, trimmed string) string {
 					return v
 				}
 			}
+			if text := extractTextFromObject(obj); text != "" {
+				return text
+			}
 			return ""
 		}
 
-		// General object: check keys in priority order.
-		for _, key := range []string{"content", "text", "output", "stdout"} {
-			if v, ok := obj[key].(string); ok && strings.TrimSpace(v) != "" {
-				return v
-			}
-		}
-		// stderr: only on successful results (exit_code=0 or absent).
-		if v, ok := obj["stderr"].(string); ok && strings.TrimSpace(v) != "" {
-			exitOK := true
-			if ec, ok2 := obj["exit_code"].(float64); ok2 && ec != 0 {
-				exitOK = false
-			}
-			if ec, ok2 := obj["exitCode"].(float64); ok2 && ec != 0 {
-				exitOK = false
-			}
-			if exitOK {
-				return v
-			}
-		}
-		return ""
+		return extractTextFromObject(obj)
 	}
 
 	// 3. JSON array.
@@ -159,6 +143,78 @@ func extractPreviewText(toolName, trimmed string) string {
 
 	// 4. Plain text fallback.
 	return trimmed
+}
+
+func extractTextFromObject(obj map[string]any) string {
+	// General object: check scalar keys in priority order first.
+	for _, key := range []string{"content", "text", "output", "stdout", "aggregatedOutput"} {
+		if v, ok := obj[key].(string); ok && strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	// Structured MCP payloads commonly carry text blocks under content/contentItems.
+	for _, key := range []string{"content", "contentItems"} {
+		if raw, ok := obj[key]; ok {
+			if text := extractTextFromValue(raw); text != "" {
+				return text
+			}
+		}
+	}
+	// stderr: only on successful results (exit_code=0 or absent).
+	if v, ok := obj["stderr"].(string); ok && strings.TrimSpace(v) != "" {
+		exitOK := true
+		if ec, ok2 := obj["exit_code"].(float64); ok2 && ec != 0 {
+			exitOK = false
+		}
+		if ec, ok2 := obj["exitCode"].(float64); ok2 && ec != 0 {
+			exitOK = false
+		}
+		if exitOK {
+			return v
+		}
+	}
+	return ""
+}
+
+func extractTextFromValue(value any) string {
+	switch v := value.(type) {
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return ""
+		}
+		return v
+	case []any:
+		var parts []string
+		for _, elem := range v {
+			if text := extractTextFromValue(elem); text != "" {
+				parts = append(parts, text)
+			}
+		}
+		if len(parts) == 0 {
+			return ""
+		}
+		return strings.Join(parts, "\n")
+	case map[string]any:
+		if typ, ok := v["type"].(string); ok && typ != "" && typ != "text" && typ != "output_text" {
+			// Non-text content blocks (e.g. images) should not produce preview text.
+			return ""
+		}
+		for _, key := range []string{"text", "content", "output", "stdout", "aggregatedOutput"} {
+			if s, ok := v[key].(string); ok && strings.TrimSpace(s) != "" {
+				return s
+			}
+		}
+		for _, key := range []string{"content", "contentItems", "items", "lines"} {
+			if child, ok := v[key]; ok {
+				if text := extractTextFromValue(child); text != "" {
+					return text
+				}
+			}
+		}
+		return ""
+	default:
+		return ""
+	}
 }
 
 // buildPreviewPayload splits text into lines, strips trailing blank lines,

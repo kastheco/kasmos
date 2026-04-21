@@ -54,6 +54,12 @@ func TestExtractToolPreview_JSONObjectContentKey(t *testing.T) {
 	assert.False(t, result.Truncated)
 }
 
+func TestExtractToolPreview_JSONObjectContentBlocksKey(t *testing.T) {
+	result := extractToolPreview("grep", `{"content":[{"type":"text","text":"match one"},{"type":"image","url":"ignore-me"},{"type":"text","text":"match two"}]}`, 50)
+	require.NotNil(t, result)
+	assert.Equal(t, []string{"match one", "match two"}, result.Lines)
+}
+
 func TestExtractToolPreview_JSONObjectTextKey(t *testing.T) {
 	result := extractToolPreview("tool", `{"text":"hello"}`, 50)
 	require.NotNil(t, result)
