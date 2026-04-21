@@ -47,6 +47,19 @@ func firstRuneIsPrintable(s string) bool {
 	return unicode.IsPrint(r)
 }
 
+func isPasteShortcut(msg tea.KeyPressMsg) bool {
+	if !msg.Mod.Contains(tea.ModCtrl) || msg.Mod.Contains(tea.ModAlt) {
+		return false
+	}
+
+	code := msg.Code
+	if key := msg.Key(); key.BaseCode != 0 {
+		code = key.BaseCode
+	}
+
+	return unicode.ToLower(code) == 'v'
+}
+
 func (m *home) applyPendingSetStatus(picked string) (tea.Model, tea.Cmd) {
 	status, state, err := taskstate.ResolveManualOverride(picked)
 	if err != nil {
@@ -334,14 +347,6 @@ func (m *home) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		m.nav.ActivateSearch()
 		m.state = stateSearch
 		return m, nil
-	}
-
-	// Zone-based click: dynamic instance tab headers — switch without stealing sidebar focus.
-	for i := 0; i < m.tabbedWindow.TabCount(); i++ {
-		if zone.Get(ui.InstanceTabZoneID(i)).InBounds(msg) {
-			m.tabbedWindow.SetActiveTab(i)
-			return m, m.tabSwitched()
-		}
 	}
 
 	// Zone-based click: "view plan doc" button in info tab
@@ -1272,7 +1277,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 					return m, m.handleError(err)
 				}
 				return m, tea.Batch(tea.RequestWindowSize, sendCmd)
-			case msg.String() == "ctrl+v":
+			case isPasteShortcut(msg):
 				if text, err := readClipboardText(); err == nil && text != "" {
 					return m.appendSDKComposerText(selected, text)
 				}
@@ -1304,6 +1309,19 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				return m, tea.Batch(tea.RequestWindowSize, m.syncPreviewTerminal())
 			}
 			m.exitFocusMode()
+			return m, nil
+		}
+		if isPasteShortcut(msg) {
+			if text, err := readClipboardText(); err == nil && text != "" {
+				data := []byte("\x1b[200~" + text + "\x1b[201~")
+				if err := m.previewTerminal.SendKey(data); err != nil {
+					return m, m.handleError(err)
+				}
+				return m, nil
+			}
+			if err := m.previewTerminal.SendKey([]byte{0x16}); err != nil {
+				return m, m.handleError(err)
+			}
 			return m, nil
 		}
 		data := keyToBytes(msg)
@@ -2167,8 +2185,6 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 		}
 		m.nav.Down()
 		return m, m.instanceChanged()
-	case keys.KeyTab:
-		return m, m.nextFocusSlot()
 	case keys.KeySpace:
 		if m.focusSlot == slotNav && m.nav.GetSelectedID() == ui.SidebarImportClickUp {
 			m.state = stateClickUpSearch
@@ -2187,12 +2203,10 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case keys.KeyInfoTab:
-		// Toggle the compact info header without stealing sidebar focus or changing the instance tab.
+		// Toggle the compact info header without stealing sidebar focus.
 		m.tabbedWindow.SetShowInfo(!m.tabbedWindow.IsShowingInfo())
-		return m, nil
-	case keys.KeyTabInfo:
-		return m.switchToTab(name)
-	case keys.KeyTabAgent:
+		return m, tea.RequestWindowSize
+	case keys.KeyFocusAgent:
 		return m.exclamationAutoFocus()
 	case keys.KeySendPrompt:
 		// Ensure the preview terminal is ready when entering focus mode.
@@ -2436,20 +2450,10 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 	case keys.KeyAuditCursor:
 		return m.enterAuditCursorMode()
 	case keys.KeyArrowLeft:
-		// With multiple instance tabs, navigate to the previous tab.
-		if m.tabbedWindow.TabCount() > 1 {
-			m.tabbedWindow.PrevTab()
-			return m, m.tabSwitched()
-		}
-		// Otherwise no-op (sidebar already focused).
+		// No-op (sidebar already focused).
 		return m, nil
 	case keys.KeyArrowRight:
-		// With multiple instance tabs, navigate to the next tab.
-		if m.tabbedWindow.TabCount() > 1 {
-			m.tabbedWindow.NextTab()
-			return m, m.tabSwitched()
-		}
-		// Otherwise: preserve existing expand/menu/ClickUp behavior.
+		// Preserve existing expand/menu/ClickUp behavior.
 		if m.nav.GetSelectedID() == ui.SidebarImportClickUp {
 			m.state = stateClickUpSearch
 			tio := overlay.NewTextInputOverlay("enter clickup id or url", "")

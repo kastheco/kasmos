@@ -654,13 +654,18 @@ func TestPreviewPane_SDKPresentation_RendersTurnHierarchy(t *testing.T) {
 
 	rendered := pane.previewState.text
 
-	// Tool rows are indented 2 spaces and head is rendered in ColorSubtle.
-	require.Contains(t, rendered, sdk.ToolCallIndent+lipgloss.NewStyle().Foreground(ColorSubtle).Render("• read_file"),
-		"tool row head must be indented with ToolCallIndent and rendered in ColorSubtle")
+	// Tool rows indent under the turn header and highlight the tool head separately from args.
+	require.Contains(t, rendered,
+		sdk.ToolCallIndent+
+			lipgloss.NewStyle().Foreground(ColorSubtle).Render("• read_file")+
+			" "+
+			lipgloss.NewStyle().Foreground(ColorText).Render("main.go"),
+		"tool row must indent and highlight tool head vs args")
 
-	// Successful result rows are indented 4 spaces and rendered in ColorMuted (quieter than tools).
-	require.Contains(t, rendered, sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorMuted).Render("→ 42 lines"),
-		"ok-result row must be indented with ToolChildIndent and rendered in ColorMuted")
+	// Successful result rows are indented child rows in ColorMuted.
+	require.Contains(t, rendered,
+		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorMuted).Render("→ 42 lines"),
+		"ok-result row must be rendered in ColorMuted as an indented child")
 
 	// Prose rows use ColorText.
 	require.Contains(t, rendered, lipgloss.NewStyle().Foreground(ColorText).Render("assistant text"),
@@ -1140,28 +1145,33 @@ func TestPreviewPane_SDKPresentation_MultipleTurnsSeparatedByBlankLines(t *testi
 		"turns must be separated by a blank line")
 }
 
+// intPtrUI returns a pointer to an int — helper for ToolDiffLine line numbers in UI tests.
+func intPtrUI(n int) *int { return &n }
+
 // TestPreviewPane_SDKPresentation_DiffRowsRendered verifies that RowToolDiff rows
-// are rendered with per-line colour coding and ToolChildIndent.
+// produce gutter lines with +/- markers in the preview pane output.
 func TestPreviewPane_SDKPresentation_DiffRowsRendered(t *testing.T) {
 	pane := NewPreviewPane()
 	pane.SetSize(80, 40)
 
 	now := time.Now()
 	turn := &sdk.PresentationTurn{
-		ID:        "t1",
-		Number:    1,
-		StartedAt: now,
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
 		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowTool, Text: "• Edit main.go", Timestamp: now},
 			{
 				Kind: sdk.RowToolDiff,
 				ToolDiff: &sdk.ToolDiffPayload{
-					Lines: []sdk.DiffLine{
-						{Kind: sdk.DiffLineAdded, Text: "+added line"},
-						{Kind: sdk.DiffLineRemoved, Text: "-removed line"},
-						{Kind: sdk.DiffLineContext, Text: " context line"},
+					Path: "main.go",
+					Lines: []sdk.ToolDiffLine{
+						{Kind: sdk.DiffLineContext, OldNumber: intPtrUI(10), NewNumber: intPtrUI(10), OldText: "unchanged line"},
+						{Kind: sdk.DiffLineRemoved, OldNumber: intPtrUI(11), OldText: "removed line"},
+						{Kind: sdk.DiffLineAdded, NewNumber: intPtrUI(11), NewText: "added line"},
 					},
 				},
-				Timestamp: now,
 			},
 		},
 	}
@@ -1170,40 +1180,39 @@ func TestPreviewPane_SDKPresentation_DiffRowsRendered(t *testing.T) {
 	require.NoError(t, pane.UpdateContent(inst))
 
 	rendered := pane.previewState.text
-
-	// Added lines use ColorRose, indented with ToolChildIndent, with │ gutter.
+	plain := stripPreviewANSI(rendered)
 	require.Contains(t, rendered,
-		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorRose).Render("│ +added line"),
-		"added diff lines must use ColorRose with ToolChildIndent and gutter")
-	// Removed lines use ColorLove.
+		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorLove).Render("│ 11 - removed line"),
+		"removed diff line must be indented and rendered in love")
 	require.Contains(t, rendered,
-		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorLove).Render("│ -removed line"),
-		"removed diff lines must use ColorLove with ToolChildIndent and gutter")
-	// Context lines use ColorMuted.
-	require.Contains(t, rendered,
-		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorMuted).Render("│  context line"),
-		"context diff lines must use ColorMuted with ToolChildIndent and gutter")
+		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorRose).Render("│ 11 + added line"),
+		"added diff line must be indented and rendered in rose")
+	require.Contains(t, plain, sdk.ToolChildIndent+"│ 10   unchanged line",
+		"context diff line must stay indented beneath the tool row")
 }
 
-// TestPreviewPane_SDKPresentation_DiffRowsTruncation verifies that a truncated
-// RowToolDiff renders the "… (truncated)" sentinel after the last diff line.
+// TestPreviewPane_SDKPresentation_DiffRowsTruncation verifies the truncation
+// indicator appears for diff rows with HiddenLineCount > 0.
 func TestPreviewPane_SDKPresentation_DiffRowsTruncation(t *testing.T) {
 	pane := NewPreviewPane()
 	pane.SetSize(80, 40)
 
 	now := time.Now()
 	turn := &sdk.PresentationTurn{
-		ID:        "t1",
-		Number:    1,
-		StartedAt: now,
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
 		Rows: []sdk.PresentationRow{
 			{
 				Kind: sdk.RowToolDiff,
 				ToolDiff: &sdk.ToolDiffPayload{
-					Lines:     []sdk.DiffLine{{Kind: sdk.DiffLineContext, Text: " one line"}},
-					Truncated: true,
+					Lines: []sdk.ToolDiffLine{
+						{Kind: sdk.DiffLineAdded, NewNumber: intPtrUI(1), NewText: "line one"},
+					},
+					Truncated:       true,
+					HiddenLineCount: 99,
 				},
-				Timestamp: now,
 			},
 		},
 	}
@@ -1212,27 +1221,29 @@ func TestPreviewPane_SDKPresentation_DiffRowsTruncation(t *testing.T) {
 	require.NoError(t, pane.UpdateContent(inst))
 
 	plain := stripPreviewANSI(pane.previewState.text)
-	require.Contains(t, plain, "│ … (truncated)", "truncated diff must show sentinel with gutter")
+	require.Contains(t, plain, "+99 more lines", "truncation indicator must appear")
 }
 
 // TestPreviewPane_SDKPresentation_PreviewRowsRendered verifies that RowToolPreview
-// rows are rendered with ColorMuted and ToolChildIndent.
+// rows are rendered with a │ gutter in the preview pane output.
 func TestPreviewPane_SDKPresentation_PreviewRowsRendered(t *testing.T) {
 	pane := NewPreviewPane()
 	pane.SetSize(80, 40)
 
 	now := time.Now()
 	turn := &sdk.PresentationTurn{
-		ID:        "t1",
-		Number:    1,
-		StartedAt: now,
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
 		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowTool, Text: "• Grep pattern", Timestamp: now},
+			{Kind: sdk.RowResult, Text: "→ 3 matches", Timestamp: now},
 			{
 				Kind: sdk.RowToolPreview,
 				ToolPreview: &sdk.ToolPreviewPayload{
-					Rows: []string{"line one", "line two"},
+					Lines: []string{"match one", "match two", "match three"},
 				},
-				Timestamp: now,
 			},
 		},
 	}
@@ -1241,34 +1252,34 @@ func TestPreviewPane_SDKPresentation_PreviewRowsRendered(t *testing.T) {
 	require.NoError(t, pane.UpdateContent(inst))
 
 	rendered := pane.previewState.text
-
+	plain := stripPreviewANSI(rendered)
 	require.Contains(t, rendered,
-		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorMuted).Render("│ line one"),
-		"preview rows must use ColorMuted with ToolChildIndent and gutter")
-	require.Contains(t, rendered,
-		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorMuted).Render("│ line two"),
-		"preview rows must use ColorMuted with ToolChildIndent and gutter")
+		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorMuted).Render("│ match one"),
+		"preview line must be indented and rendered in muted")
+	require.Contains(t, plain, sdk.ToolChildIndent+"│ match two", "preview line must stay indented beneath the tool row")
+	require.Contains(t, plain, sdk.ToolChildIndent+"│ match three", "preview line must stay indented beneath the tool row")
 }
 
-// TestPreviewPane_SDKPresentation_PreviewRowsTruncation verifies that a truncated
-// RowToolPreview renders the "… (truncated)" sentinel after the last content row.
+// TestPreviewPane_SDKPresentation_PreviewRowsTruncation verifies the truncation
+// indicator appears for preview rows with HiddenLineCount > 0.
 func TestPreviewPane_SDKPresentation_PreviewRowsTruncation(t *testing.T) {
 	pane := NewPreviewPane()
 	pane.SetSize(80, 40)
 
 	now := time.Now()
 	turn := &sdk.PresentationTurn{
-		ID:        "t1",
-		Number:    1,
-		StartedAt: now,
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
 		Rows: []sdk.PresentationRow{
 			{
 				Kind: sdk.RowToolPreview,
 				ToolPreview: &sdk.ToolPreviewPayload{
-					Rows:      []string{"line one"},
-					Truncated: true,
+					Lines:           []string{"first line"},
+					Truncated:       true,
+					HiddenLineCount: 5,
 				},
-				Timestamp: now,
 			},
 		},
 	}
@@ -1277,29 +1288,233 @@ func TestPreviewPane_SDKPresentation_PreviewRowsTruncation(t *testing.T) {
 	require.NoError(t, pane.UpdateContent(inst))
 
 	plain := stripPreviewANSI(pane.previewState.text)
-	require.Contains(t, plain, "│ … (truncated)", "truncated preview must show sentinel with gutter")
+	require.Contains(t, plain, "│ … +5 more lines", "preview truncation indicator must appear")
 }
 
-// TestRenderSDKTurn_MatchesPresentationRender verifies that the local TUI turn-body
-// renderer (renderSDKTurn) produces output identical to the daemon/web renderer
-// (sdk.RenderPresentation) for a completed single-tool turn.
-func TestRenderSDKTurn_MatchesPresentationRender(t *testing.T) {
+// TestPreviewPane_SDKPresentation_RunningStickyStrip verifies that a running
+// turn with Activity emits a sticky strip in the pane text.
+func TestPreviewPane_SDKPresentation_RunningStickyStrip(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 40)
+
+	now := time.Now()
+	startedAt := now.Add(-20 * time.Second)
+	turn := &sdk.PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: startedAt,
+		// No CompletedAt → Running.
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowTool, Text: "• Edit renderer.go", Timestamp: startedAt},
+		},
+		Activity: &sdk.TurnActivity{
+			Kind:      "tool",
+			Label:     "editing renderer.go",
+			StartedAt: startedAt,
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	require.NotNil(t, pane.sdkView, "sdkView must be set for structured SDK session")
+	require.NotEmpty(t, pane.sdkView.sticky, "running turn with activity must produce sticky strip")
+
+	plain := stripPreviewANSI(pane.previewState.text)
+	require.Contains(t, plain, "✺", "sticky strip must include spinner glyph")
+	require.Contains(t, plain, "editing renderer.go", "sticky strip must include activity label")
+}
+
+// TestPreviewPane_SDKPresentation_NoStickyStripForCompletedTurn verifies that
+// a completed turn does not produce a sticky strip.
+func TestPreviewPane_SDKPresentation_NoStickyStripForCompletedTurn(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 40)
+
 	now := time.Now()
 	turn := &sdk.PresentationTurn{
 		ID:          "t1",
 		Number:      1,
-		StartedAt:   now,
-		CompletedAt: now, // elapsed = 0 → deterministic header, not "running"
-		ToolCount:   1,
-		Rows: []sdk.PresentationRow{
-			{Kind: sdk.RowTool, Text: "• bash ls", ToolName: "bash", Timestamp: now},
-			{Kind: sdk.RowResult, Text: "→ ok", Timestamp: now},
+		StartedAt:   now.Add(-5 * time.Second),
+		CompletedAt: now, // completed
+		Activity: &sdk.TurnActivity{
+			Kind:      "working",
+			Label:     "stale label",
+			StartedAt: now.Add(-5 * time.Second),
 		},
 	}
 
-	uiBody := strings.Join(renderSDKTurn(turn, 80), "\n")
-	daemonBody, _, found := strings.Cut(sdk.RenderPresentation([]*sdk.PresentationTurn{turn}, 80), "\n\n")
-	require.True(t, found, "RenderPresentation must contain a blank-line separator after the turn body")
-	require.Equal(t, uiBody, daemonBody,
-		"local TUI turn body must match daemon renderer turn body byte-for-byte")
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	require.NotNil(t, pane.sdkView)
+	require.Empty(t, pane.sdkView.sticky, "completed turn must not produce sticky strip")
+
+	plain := stripPreviewANSI(pane.previewState.text)
+	require.NotContains(t, plain, "✺", "completed turn must not show spinner in pane")
+}
+
+// TestPreviewPane_SDKPresentation_NoStickyStripForInterruptedTurn verifies that
+// an interrupted turn does not produce a sticky strip.
+func TestPreviewPane_SDKPresentation_NoStickyStripForInterruptedTurn(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 40)
+
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now.Add(-5 * time.Second),
+		Interrupted: true,
+		Activity: &sdk.TurnActivity{
+			Kind:      "tool",
+			Label:     "interrupted-tool",
+			StartedAt: now.Add(-5 * time.Second),
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	require.NotNil(t, pane.sdkView)
+	require.Empty(t, pane.sdkView.sticky, "interrupted turn must not produce sticky strip")
+	plain := stripPreviewANSI(pane.previewState.text)
+	require.NotContains(t, plain, "✺", "interrupted turn must not show spinner")
+}
+
+// TestPreviewPane_SDKPresentation_NarrowActivityLabel verifies that in narrow
+// mode (width < narrowPaneThreshold) the sticky strip label is collapsed.
+func TestPreviewPane_SDKPresentation_NarrowActivityLabel(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(30, 40) // narrow
+
+	now := time.Now()
+	startedAt := now.Add(-62 * time.Second)
+	turn := &sdk.PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: startedAt,
+		Activity: &sdk.TurnActivity{
+			Kind:      "tool",
+			Label:     "verbose label that should be hidden in narrow mode",
+			StartedAt: startedAt,
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	require.NotNil(t, pane.sdkView)
+	require.NotEmpty(t, pane.sdkView.sticky, "narrow running turn must still produce sticky strip")
+
+	stickyPlain := stripPreviewANSI(pane.sdkView.sticky)
+	require.Contains(t, stickyPlain, "✺", "narrow sticky must show spinner")
+	require.Contains(t, stickyPlain, "01:02", "narrow sticky must show MM:SS clock")
+	require.NotContains(t, stickyPlain, "verbose label that should be hidden in narrow mode",
+		"narrow sticky must suppress long label text")
+}
+
+func TestPreviewPane_SDKPresentation_IgnoresNilTrailingTurn(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 24)
+
+	now := time.Now()
+	startedAt := now.Add(-8 * time.Second)
+	turn := &sdk.PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: startedAt,
+		Activity: &sdk.TurnActivity{
+			Kind:      "tool",
+			Label:     "editing renderer.go",
+			StartedAt: startedAt,
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn, nil})
+	require.NoError(t, pane.UpdateContent(inst))
+	require.NotNil(t, pane.sdkView)
+	require.NotEmpty(t, pane.sdkView.sticky, "sticky strip must use the last non-nil running turn")
+
+	plain := stripPreviewANSI(pane.String())
+	require.Contains(t, plain, "editing renderer.go")
+}
+
+// TestPreviewPane_SDKScrollMode_StickyStripPinnedOutsideViewport verifies that
+// entering scroll mode for an SDK session with a running activity sets up the
+// pinned strip and restricts the viewport height by one row.
+func TestPreviewPane_SDKScrollMode_StickyStripPinnedOutsideViewport(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 20)
+
+	now := time.Now()
+	startedAt := now.Add(-10 * time.Second)
+	turn := &sdk.PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: startedAt,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowTool, Text: "• Read big file", Timestamp: startedAt},
+		},
+		Activity: &sdk.TurnActivity{
+			Kind:      "tool",
+			Label:     "read big file",
+			StartedAt: startedAt,
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+	require.NotNil(t, pane.sdkView)
+	require.NotEmpty(t, pane.sdkView.sticky)
+
+	// Enter scroll mode.
+	require.NoError(t, pane.ScrollUp(inst))
+	require.True(t, pane.isScrolling)
+
+	// The viewport height must be reduced by 1 for the pinned strip.
+	require.Equal(t, 19, pane.viewport.Height(),
+		"viewport must be one row shorter to make room for pinned strip")
+	require.NotEmpty(t, pane.sdkScrollStrip, "sdkScrollStrip must be set in SDK scroll mode")
+
+	// String() must include both viewport content and the pinned strip.
+	rendered := stripPreviewANSI(pane.String())
+	require.Contains(t, rendered, "✺", "pinned strip must appear in String() output")
+	require.Contains(t, rendered, "esc exit scroll mode",
+		"esc hint must appear in the pinned strip")
+	require.Equal(t, 1, strings.Count(rendered, "esc exit scroll mode"),
+		"sdk scroll mode must keep the esc hint in the pinned strip only")
+}
+
+// TestPreviewPane_SDKScrollMode_StickyStripClearedOnExit verifies that
+// ResetToNormalMode clears the pinned strip and restores viewport height.
+func TestPreviewPane_SDKScrollMode_StickyStripClearedOnExit(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 20)
+
+	now := time.Now()
+	startedAt := now.Add(-5 * time.Second)
+	turn := &sdk.PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: startedAt,
+		Activity: &sdk.TurnActivity{
+			Kind:      "thinking",
+			Label:     "thinking",
+			StartedAt: startedAt,
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+	require.NoError(t, pane.ScrollUp(inst))
+	require.True(t, pane.isScrolling)
+	require.Equal(t, 19, pane.viewport.Height())
+
+	// Exit scroll mode.
+	require.NoError(t, pane.ResetToNormalMode(inst))
+
+	require.False(t, pane.isScrolling)
+	require.Empty(t, pane.sdkScrollStrip, "pinned strip must be cleared after exiting scroll mode")
+	require.Equal(t, 20, pane.viewport.Height(), "viewport height must be restored after exiting scroll mode")
 }

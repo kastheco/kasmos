@@ -19,10 +19,10 @@ function formatElapsedMs(ms: number): string {
 }
 
 /** Rows that are hidden by collapse (but not by filters). */
-const COLLAPSE_HIDDEN_KINDS = new Set(["thinking", "tool", "result", "system"]);
+const COLLAPSE_HIDDEN_KINDS = new Set(["thinking", "tool", "tool_diff", "result", "tool_preview", "system"]);
 
 /** Rows hidden by the hideTools filter. */
-const TOOLS_FILTER_KINDS = new Set(["tool", "result"]);
+const TOOLS_FILTER_KINDS = new Set(["tool", "tool_diff", "result", "tool_preview"]);
 
 /**
  * Produce a plain-text copy summary for a turn.
@@ -38,6 +38,25 @@ function buildCopyText(turn: PresentationTurn, elapsedLabel: string | null): str
       // omit permission from copy
     } else if (row.kind === "tool") {
       lines.push(`[${row.tool_name || "tool"}] ${row.text}`);
+    } else if (row.kind === "tool_diff") {
+      const payload = row.tool_diff;
+      if (payload) {
+        if (payload.path) lines.push(`diff: ${payload.path}`);
+        for (const line of payload.lines ?? []) {
+          const prefix = line.kind === "added" ? "+" : line.kind === "removed" ? "-" : " ";
+          const text = line.kind === "removed"
+            ? (line.old_text ?? "")
+            : (line.new_text ?? line.old_text ?? "");
+          lines.push(`${prefix}${text}`);
+        }
+        if (payload.truncated) lines.push(`… ${payload.hidden_line_count ?? 0} lines hidden`);
+      }
+    } else if (row.kind === "tool_preview") {
+      const payload = row.tool_preview;
+      if (payload) {
+        for (const line of payload.lines ?? []) lines.push(line);
+        if (payload.truncated) lines.push(`… ${payload.hidden_line_count ?? 0} lines hidden`);
+      }
     } else {
       lines.push(row.text);
     }
@@ -195,7 +214,11 @@ export function TurnBlock({
           <span className={styles.turnMeta}>{toolLabel}</span>
         )}
         {isRunning && (
-          <span className={styles.runningPill}>• running</span>
+          <span className={styles.runningPill}>
+            {turn.activity?.label
+              ? `• running · ${turn.activity.label}`
+              : "• running"}
+          </span>
         )}
 
         {/* header controls */}

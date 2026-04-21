@@ -3,236 +3,375 @@ package sdk
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// stripANSI removes ANSI escape sequences from s, returning plain text.
+// stripANSI is a naive ANSI escape sequence stripper for testing.
+// It removes sequences of the form ESC[...m.
 func stripANSI(s string) string {
-	return ansi.Strip(s)
-}
-
-// makePresentationTurn returns a minimal PresentationTurn with the given rows.
-func makePresentationTurn(rows ...PresentationRow) *PresentationTurn {
-	return &PresentationTurn{
-		Number: 1,
-		Rows:   rows,
+	var out strings.Builder
+	i := 0
+	for i < len(s) {
+		if s[i] == '\x1b' && i+1 < len(s) && s[i+1] == '[' {
+			// Skip until 'm'.
+			i += 2
+			for i < len(s) && s[i] != 'm' {
+				i++
+			}
+			i++ // consume 'm'
+			continue
+		}
+		out.WriteByte(s[i])
+		i++
 	}
+	return out.String()
 }
 
-// renderTurnLines calls renderPresentationTurn and returns joined output.
-func renderTurnLines(turn *PresentationTurn) []string {
-	return renderPresentationTurn(turn, 80)
-}
+// intPtr returns a pointer to the given int (helper for ToolDiffLine line numbers).
+func intPtr(n int) *int { return &n }
 
-// plainLines strips ANSI from each line.
-func plainLines(lines []string) []string {
-	out := make([]string, len(lines))
-	for i, l := range lines {
-		out[i] = stripANSI(l)
-	}
-	return out
-}
-
-// TestRenderPresentation_UserPrefix verifies the user-row prefix is "> " not "you: ".
 func TestRenderPresentation_UserPrefix(t *testing.T) {
-	turn := makePresentationTurn(PresentationRow{Kind: RowUser, Text: "show logs"})
-	lines := plainLines(renderTurnLines(turn))
-	result := strings.Join(lines, "\n")
-	assert.Contains(t, result, "> show logs")
-	assert.NotContains(t, result, "you: show logs")
-}
-
-// TestRenderPresentation_ToolHighlight verifies that a tool row is rendered as
-// ToolCallIndent + subtle("• Edit") + " " + text("main.go") when ToolName is set.
-func TestRenderPresentation_ToolHighlight(t *testing.T) {
-	toolStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
-	toolArgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorText))
-	expected := ToolCallIndent + toolStyle.Render("• Edit") + " " + toolArgStyle.Render("main.go")
-
-	turn := makePresentationTurn(PresentationRow{
-		Kind:     RowTool,
-		Text:     "• Edit main.go",
-		ToolName: "Edit",
-	})
-	lines := renderTurnLines(turn)
-	result := strings.Join(lines, "\n")
-	assert.Contains(t, result, expected)
-}
-
-// TestRenderPresentation_ToolIndent verifies that all tool rows are indented with ToolCallIndent.
-func TestRenderPresentation_ToolIndent(t *testing.T) {
-	turn := makePresentationTurn(
-		PresentationRow{Kind: RowTool, Text: "• Read src/main.go", ToolName: "Read"},
-		PresentationRow{Kind: RowTool, Text: "• Grep pattern", ToolName: "Grep"},
-	)
-	lines := renderTurnLines(turn)
-	var toolLines []string
-	for _, l := range lines {
-		plain := stripANSI(l)
-		if strings.Contains(plain, "• Read") || strings.Contains(plain, "• Grep") {
-			toolLines = append(toolLines, l)
-		}
-	}
-	require.Len(t, toolLines, 2, "two tool rows must appear")
-	for _, l := range toolLines {
-		assert.True(t, strings.HasPrefix(l, ToolCallIndent),
-			"tool row %q must start with ToolCallIndent %q", l, ToolCallIndent)
-	}
-}
-
-// TestRenderPresentation_ResultIndent verifies that ok and error result rows are
-// indented with ToolChildIndent.
-func TestRenderPresentation_ResultIndent(t *testing.T) {
-	turn := makePresentationTurn(
-		PresentationRow{Kind: RowResult, Text: "→ 5 lines", IsError: false},
-		PresentationRow{Kind: RowResult, Text: "✗ permission denied", IsError: true},
-	)
-	lines := renderTurnLines(turn)
-	var resultLines []string
-	for _, l := range lines {
-		plain := stripANSI(l)
-		if strings.Contains(plain, "→ 5 lines") || strings.Contains(plain, "✗ permission denied") {
-			resultLines = append(resultLines, l)
-		}
-	}
-	require.Len(t, resultLines, 2, "two result rows must appear")
-	for _, l := range resultLines {
-		assert.True(t, strings.HasPrefix(l, ToolChildIndent),
-			"result row %q must start with ToolChildIndent %q", l, ToolChildIndent)
-	}
-}
-
-// TestRenderPresentation_PreviewRows verifies that preview content rows are
-// indented with ToolChildIndent and carry the │ gutter.
-func TestRenderPresentation_PreviewRows(t *testing.T) {
-	turn := makePresentationTurn(PresentationRow{
-		Kind: RowToolPreview,
-		ToolPreview: &ToolPreviewPayload{
-			Rows: []string{"package main", "func main() {}"},
+	now := time.Now()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{Kind: RowUser, Text: "show logs", Timestamp: now},
 		},
-	})
-	lines := renderTurnLines(turn)
-	var previewLines []string
-	for _, l := range lines {
-		plain := stripANSI(l)
-		if strings.Contains(plain, "package main") || strings.Contains(plain, "func main") {
-			previewLines = append(previewLines, l)
-		}
 	}
-	require.Len(t, previewLines, 2, "two preview rows must appear")
-	for _, l := range previewLines {
-		plain := stripANSI(l)
-		assert.True(t, strings.HasPrefix(plain, ToolChildIndent+"│ "),
-			"preview row %q must start with ToolChildIndent+gutter %q", plain, ToolChildIndent+"│ ")
-	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+	plain := stripANSI(result)
+
+	require.Contains(t, plain, "> show logs")
+	require.NotContains(t, plain, "you: show logs")
 }
 
-// TestRenderPresentation_PreviewRows_Truncation verifies that the truncation
-// sentinel row is indented with ToolChildIndent and carries the │ gutter.
-func TestRenderPresentation_PreviewRows_Truncation(t *testing.T) {
-	turn := makePresentationTurn(PresentationRow{
-		Kind: RowToolPreview,
-		ToolPreview: &ToolPreviewPayload{
-			Rows:      []string{"line one"},
-			Truncated: true,
+func TestRenderPresentation_ToolLineHighlightAndIndent(t *testing.T) {
+	now := time.Now()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{Kind: RowTool, Text: "• Edit main.go", ToolName: "Edit", Timestamp: now},
+			{Kind: RowResult, Text: "→ ok", Timestamp: now},
 		},
-	})
-	lines := renderTurnLines(turn)
-	var truncLine string
-	for _, l := range lines {
-		if strings.Contains(stripANSI(l), "truncated") {
-			truncLine = l
-			break
-		}
 	}
-	require.NotEmpty(t, truncLine, "truncation row must be present in preview output")
-	plain := stripANSI(truncLine)
-	assert.True(t, strings.HasPrefix(plain, ToolChildIndent+"│ "),
-		"preview truncation row %q must start with ToolChildIndent+gutter", plain)
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+
+	expectedTool := ToolCallIndent +
+		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle)).Render("• Edit") +
+		" " +
+		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorText)).Render("main.go")
+	require.Contains(t, result, expectedTool, "tool row must indent and highlight head vs args")
+
+	expectedResult := ToolChildIndent +
+		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted)).Render("→ ok")
+	require.Contains(t, result, expectedResult, "tool result must render as an indented child row")
 }
 
-// TestRenderPresentation_DiffRows verifies that added, removed, and context
-// diff lines are each indented with ToolChildIndent and carry the │ gutter.
+// TestRenderPresentation_DiffRows verifies that RowToolDiff rows produce gutter
+// lines with +/- markers for added/removed lines and spaces for context lines.
 func TestRenderPresentation_DiffRows(t *testing.T) {
-	turn := makePresentationTurn(PresentationRow{
-		Kind: RowToolDiff,
-		ToolDiff: &ToolDiffPayload{
-			Lines: []DiffLine{
-				{Kind: DiffLineAdded, Text: "+ new line"},
-				{Kind: DiffLineRemoved, Text: "- old line"},
-				{Kind: DiffLineContext, Text: "  unchanged"},
+	now := time.Now()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{Kind: RowTool, Text: "• Edit main.go", Timestamp: now},
+			{
+				Kind: RowToolDiff,
+				ToolDiff: &ToolDiffPayload{
+					Path: "main.go",
+					Lines: []ToolDiffLine{
+						{Kind: DiffLineContext, OldNumber: intPtr(10), NewNumber: intPtr(10), OldText: "unchanged"},
+						{Kind: DiffLineRemoved, OldNumber: intPtr(11), OldText: "old line"},
+						{Kind: DiffLineAdded, NewNumber: intPtr(11), NewText: "new line"},
+					},
+				},
 			},
 		},
-	})
-	lines := renderTurnLines(turn)
-	var diffLines []string
-	for _, l := range lines {
-		plain := stripANSI(l)
-		if strings.Contains(plain, "+ new line") ||
-			strings.Contains(plain, "- old line") ||
-			strings.Contains(plain, "  unchanged") {
-			diffLines = append(diffLines, l)
-		}
 	}
-	require.Len(t, diffLines, 3, "three diff lines must appear")
-	for _, l := range diffLines {
-		plain := stripANSI(l)
-		assert.True(t, strings.HasPrefix(plain, ToolChildIndent+"│ "),
-			"diff row %q must start with ToolChildIndent+gutter %q", plain, ToolChildIndent+"│ ")
-	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+	plain := stripANSI(result)
+
+	require.Contains(t, result,
+		ToolChildIndent+lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove)).Render("│ 11 - old line"),
+		"removed diff line must be indented and rendered in love")
+	require.Contains(t, result,
+		ToolChildIndent+lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose)).Render("│ 11 + new line"),
+		"added diff line must be indented and rendered in rose")
+	require.Contains(t, plain, ToolChildIndent+"│ 10   unchanged", "context line must be indented beneath the tool row")
 }
 
 // TestRenderPresentation_DiffRows_Truncation verifies that the truncation
-// sentinel at diffRows[len(row.ToolDiff.Lines)] is indented with ToolChildIndent
-// and carries the │ gutter.
+// indicator is appended when HiddenLineCount > 0.
 func TestRenderPresentation_DiffRows_Truncation(t *testing.T) {
-	turn := makePresentationTurn(PresentationRow{
-		Kind: RowToolDiff,
-		ToolDiff: &ToolDiffPayload{
-			Lines:     []DiffLine{{Kind: DiffLineContext, Text: "  ctx line"}},
-			Truncated: true,
+	now := time.Now()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{
+				Kind: RowToolDiff,
+				ToolDiff: &ToolDiffPayload{
+					Lines: []ToolDiffLine{
+						{Kind: DiffLineAdded, NewNumber: intPtr(1), NewText: "first"},
+					},
+					Truncated:       true,
+					HiddenLineCount: 42,
+				},
+			},
 		},
-	})
-	lines := renderTurnLines(turn)
-	var truncLine string
-	for _, l := range lines {
-		if strings.Contains(stripANSI(l), "truncated") {
-			truncLine = l
-			break
-		}
 	}
-	require.NotEmpty(t, truncLine, "truncation row must be present in diff output")
-	plain := stripANSI(truncLine)
-	assert.True(t, strings.HasPrefix(plain, ToolChildIndent+"│ "),
-		"diff truncation row %q must start with ToolChildIndent+gutter", plain)
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+	plain := stripANSI(result)
+
+	require.Contains(t, plain, "+42 more lines", "truncation indicator must appear")
+}
+
+// TestRenderPresentation_PreviewRows verifies that RowToolPreview rows are
+// rendered with a │ gutter prefix for each line.
+func TestRenderPresentation_PreviewRows(t *testing.T) {
+	now := time.Now()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{Kind: RowTool, Text: "• Read main.go", Timestamp: now},
+			{Kind: RowResult, Text: "→ ok", Timestamp: now},
+			{
+				Kind: RowToolPreview,
+				ToolPreview: &ToolPreviewPayload{
+					Lines: []string{"package main", "func main() {}"},
+				},
+			},
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+	plain := stripANSI(result)
+
+	require.Contains(t, result,
+		ToolChildIndent+lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted)).Render("│ package main"),
+		"preview rows must be indented and rendered in muted")
+	require.Contains(t, plain, ToolChildIndent+"│ func main() {}", "preview line must be indented beneath the tool row")
+}
+
+// TestRenderPresentation_PreviewRows_Truncation verifies that the preview
+// truncation indicator is appended.
+func TestRenderPresentation_PreviewRows_Truncation(t *testing.T) {
+	now := time.Now()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{
+				Kind: RowToolPreview,
+				ToolPreview: &ToolPreviewPayload{
+					Lines:           []string{"line one"},
+					Truncated:       true,
+					HiddenLineCount: 7,
+				},
+			},
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+	plain := stripANSI(result)
+
+	require.Contains(t, plain, "│ … +7 more lines", "preview truncation indicator must appear")
+}
+
+// TestRenderPresentation_ActivityRow_RunningTurn verifies that a running turn
+// with non-nil Activity emits one activity row above the composer footer.
+func TestRenderPresentation_ActivityRow_RunningTurn(t *testing.T) {
+	now := time.Now()
+	startedAt := now.Add(-15 * time.Second)
+	turn := &PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: startedAt,
+		// No CompletedAt → Running.
+		Activity: &TurnActivity{
+			Kind:      "tool",
+			Label:     "editing renderer.go",
+			StartedAt: startedAt,
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+	plain := stripANSI(result)
+
+	require.Contains(t, plain, "✺", "activity row must include spinner glyph")
+	require.Contains(t, plain, "editing renderer.go", "activity row must include tool label")
+}
+
+func TestRenderPresentation_ActivityRow_ZeroStartedAt(t *testing.T) {
+	turn := &PresentationTurn{
+		ID:     "t1",
+		Number: 1,
+		Activity: &TurnActivity{
+			Kind:  "tool",
+			Label: "editing renderer.go",
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+	plain := stripANSI(result)
+
+	require.Contains(t, plain, "editing renderer.go")
+	require.Contains(t, plain, "00:00", "zero started_at must render as zero elapsed time")
+}
+
+func TestRenderPresentation_ActivityRow_SkipsNilTrailingTurn(t *testing.T) {
+	now := time.Now()
+	startedAt := now.Add(-10 * time.Second)
+	turn := &PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: startedAt,
+		Activity: &TurnActivity{
+			Kind:      "tool",
+			Label:     "editing renderer.go",
+			StartedAt: startedAt,
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn, nil}, 80)
+	plain := stripANSI(result)
+
+	require.Contains(t, plain, "editing renderer.go", "activity row must use the last non-nil running turn")
+}
+
+// TestRenderPresentation_ActivityRow_CompletedTurn verifies that a completed
+// turn does not emit an activity row regardless of Activity being set.
+func TestRenderPresentation_ActivityRow_CompletedTurn(t *testing.T) {
+	now := time.Now()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now.Add(-5 * time.Second),
+		CompletedAt: now, // completed — not running
+		Activity: &TurnActivity{
+			Kind:      "working",
+			Label:     "stale",
+			StartedAt: now.Add(-5 * time.Second),
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+	plain := stripANSI(result)
+
+	// The "✺" spinner must NOT appear for a completed turn.
+	require.NotContains(t, plain, "✺", "completed turn must not emit activity row")
+}
+
+// TestRenderPresentation_ActivityRow_InterruptedTurn verifies that an
+// interrupted turn does not emit an activity row.
+func TestRenderPresentation_ActivityRow_InterruptedTurn(t *testing.T) {
+	now := time.Now()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now.Add(-5 * time.Second),
+		Interrupted: true,
+		Activity: &TurnActivity{
+			Kind:      "tool",
+			Label:     "stale-tool",
+			StartedAt: now.Add(-5 * time.Second),
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+	plain := stripANSI(result)
+
+	require.NotContains(t, plain, "✺", "interrupted turn must not emit activity row")
+}
+
+// TestRenderPresentation_NarrowMode_ActivityCollapsed verifies that in narrow
+// mode (width < 40) the activity label is suppressed to just "✺ MM:SS".
+func TestRenderPresentation_NarrowMode_ActivityCollapsed(t *testing.T) {
+	now := time.Now()
+	startedAt := now.Add(-90 * time.Second)
+	turn := &PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: startedAt,
+		Activity: &TurnActivity{
+			Kind:      "tool",
+			Label:     "editing very long file name that should be hidden",
+			StartedAt: startedAt,
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 30) // narrow
+	plain := stripANSI(result)
+
+	require.Contains(t, plain, "✺", "narrow activity must show spinner")
+	require.NotContains(t, plain, "editing very long file name that should be hidden",
+		"narrow activity must suppress label text")
+	// Should show clock format.
+	require.Contains(t, plain, "01:30", "narrow activity must show MM:SS clock")
+}
+
+// TestRenderPresentation_ComposerFooter verifies the composer footer appears.
+func TestRenderPresentation_ComposerFooter(t *testing.T) {
+	result := RenderPresentation(nil, 80)
+	plain := stripANSI(result)
+	require.Contains(t, plain, "> send a message to the agent")
 }
 
 // TestRenderPresentation_NilDiffPayload verifies that a RowToolDiff row with a
-// nil ToolDiff payload does not panic and produces no extra output.
+// nil ToolDiff is silently skipped without panic.
 func TestRenderPresentation_NilDiffPayload(t *testing.T) {
-	turn := makePresentationTurn(PresentationRow{Kind: RowToolDiff, ToolDiff: nil})
-	// Must not panic.
-	lines := plainLines(renderTurnLines(turn))
-	// Only the header row should be present; no diff content.
-	for _, l := range lines {
-		assert.False(t, strings.HasPrefix(l, ToolChildIndent),
-			"nil diff must not produce indented rows; got %q", l)
+	now := time.Now()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{Kind: RowToolDiff, ToolDiff: nil},
+		},
 	}
+	require.NotPanics(t, func() {
+		RenderPresentation([]*PresentationTurn{turn}, 80)
+	})
 }
 
 // TestRenderPresentation_NilPreviewPayload verifies that a RowToolPreview row
-// with a nil ToolPreview payload does not panic and produces no extra output.
+// with a nil ToolPreview is silently skipped without panic.
 func TestRenderPresentation_NilPreviewPayload(t *testing.T) {
-	turn := makePresentationTurn(PresentationRow{Kind: RowToolPreview, ToolPreview: nil})
-	// Must not panic.
-	lines := plainLines(renderTurnLines(turn))
-	// Only the header row should be present; no preview content.
-	for _, l := range lines {
-		assert.False(t, strings.HasPrefix(l, ToolChildIndent),
-			"nil preview must not produce indented rows; got %q", l)
+	now := time.Now()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{Kind: RowToolPreview, ToolPreview: nil},
+		},
 	}
+	require.NotPanics(t, func() {
+		RenderPresentation([]*PresentationTurn{turn}, 80)
+	})
 }

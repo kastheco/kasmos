@@ -28,7 +28,7 @@ tui  ──► enter  ──►  tmux session (fullscreen)
 
 a one-time help overlay reminds you of the detach keys when you first attach. press any key to dismiss it and proceed to the session.
 
-sdk instances are **not attachable** — they run as in-process backends without a PTY. their output streams to the preview tab in the center pane. use `tab` to switch to the agent tab and watch it live.
+sdk instances are **not attachable** — they run as in-process backends without a PTY. their output is already shown in the preview pane; select the instance in the sidebar to watch it live.
 
 ## interactive mode
 
@@ -83,9 +83,9 @@ all sdk instances (daemon-managed or legacy standalone) appear in the sidebar wi
 
 - attach (`↵`) is disabled — a toast informs you that the instance is in sdk mode
 - interactive mode (`i`) is disabled for the same reason
-- all output is visible in the **preview tab** and the **audit log**
+- all output is visible in the **preview pane** and the **audit log**
 
-use the info tab (`#`) to see the instance's current status, wave number, and task number. for instances spawned as `sdk-fast`, the info pane also shows a **speed tier: fast** row beneath the execution mode row.
+the compact info header above the preview pane shows the instance's current status, wave number, and task number. for instances spawned as `sdk-fast`, the info header also shows a **speed tier: fast** row beneath the execution mode row.
 
 **sdk-fast sessions.** when you choose `sdk-fast` in the `S` spawn picker (codex only), the session runs as an ordinary sdk session with `SDKSpeedTier = "fast"`. it uses the same daemon-managed path as `sdk` when the daemon owns the repo — attach and interactive mode are disabled, but the web admin ui shows the full action menu. the fast tier is forwarded once at session start (`serviceTier: "fast"` on `thread/start`); it is not re-negotiated during the session. if the daemon is not running, `sdk-fast` falls back to legacy standalone behavior with no web-ui actions.
 

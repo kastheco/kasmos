@@ -30,6 +30,15 @@ type previewState struct {
 	text string
 }
 
+// sdkPresentationView holds the three layout regions for a structured SDK pane.
+// body is the turn timeline, sticky is the pinned activity strip (empty when no
+// running turn), and footer is the composer footer rows.
+type sdkPresentationView struct {
+	body   string
+	sticky string
+	footer []string
+}
+
 // PreviewPane renders the agent session preview area.
 type PreviewPane struct {
 	width  int
@@ -61,6 +70,13 @@ type PreviewPane struct {
 	sdkComposerText string
 	// sdkComposerImages are local image attachments queued for the next SDK prompt.
 	sdkComposerImages []string
+
+	// sdkView holds the structured layout regions for SDK sessions. Non-nil
+	// only while displaying SDK structured content.
+	sdkView *sdkPresentationView
+	// sdkScrollStrip is the pinned one-line strip shown below the viewport in
+	// SDK scroll mode. Set by enterScrollMode, cleared by ResetToNormalMode.
+	sdkScrollStrip string
 }
 
 // NewPreviewPane constructs a PreviewPane with initial fallback state.
@@ -206,9 +222,12 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 	if instanceKey != p.lastInstanceKey {
 		p.isScrolling = false
 		p.viewport.SetContent("")
+		p.viewport.SetHeight(p.height)
 		p.viewport.GotoTop()
 		p.sdkComposerText = ""
 		p.sdkComposerImages = nil
+		p.sdkView = nil
+		p.sdkScrollStrip = ""
 		p.lastInstanceKey = instanceKey
 	}
 
@@ -286,10 +305,13 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 	// to flat cached text, then to a placeholder when no output has arrived yet.
 	if session.NormalizeExecutionMode(instance.ExecutionMode) == session.ExecutionModeSDK {
 		if turns := instance.CapturePresentation(); len(turns) > 0 {
-			p.previewState = previewState{text: renderSDKPresentationWithComposer(turns, p.width, p.sdkComposerText, p.sdkComposerImages, p.sdkFocusMode, instance.Program, instance.SDKSpeedTier)}
+			view := buildSDKPresentationView(turns, p.width, p.sdkComposerText, p.sdkComposerImages, p.sdkFocusMode, instance.Program, instance.SDKSpeedTier, time.Now())
+			p.sdkView = &view
+			p.previewState = previewState{text: joinSDKView(&view, p.width)}
 			p.isRawTerminal = false
 			return nil
 		}
+		p.sdkView = nil
 		if instance.CachedContentSet && instance.CachedContent != "" {
 			p.previewState = previewState{text: instance.CachedContent}
 			p.isRawTerminal = false
@@ -359,10 +381,23 @@ func (p *PreviewPane) String() string {
 	if p.isDocument || p.isScrolling {
 		viewContent := p.viewport.View()
 		scrollbar := p.renderScrollbar(p.viewport.Height())
+		var viewBlock string
 		if scrollbar == "" {
-			return viewContent
+			viewBlock = viewContent
+		} else {
+			viewBlock = lipgloss.JoinHorizontal(lipgloss.Top, viewContent, scrollbar)
 		}
-		return lipgloss.JoinHorizontal(lipgloss.Top, viewContent, scrollbar)
+		// In SDK scroll mode, append the pinned strip below the viewport.
+		if p.isScrolling && p.sdkScrollStrip != "" {
+			return lipgloss.JoinVertical(lipgloss.Left, viewBlock, p.sdkScrollStrip)
+		}
+		return viewBlock
+	}
+
+	// SDK structured mode: lay out body / sticky / footer explicitly so the
+	// sticky strip is always visible above the composer footer.
+	if p.sdkView != nil {
+		return p.renderSDKStructuredView()
 	}
 
 	// Normal mode: wrap raw lines to pane width, then tail-slice the wrapped
@@ -413,6 +448,50 @@ func renderSDKPresentation(turns []*sdk.PresentationTurn, width int) string {
 }
 
 func renderSDKPresentationWithComposer(turns []*sdk.PresentationTurn, width int, composer string, images []string, focused bool, program string, speedTier string) string {
+	view := buildSDKPresentationView(turns, width, composer, images, focused, program, speedTier, time.Now())
+	return joinSDKView(&view, width)
+}
+
+// joinSDKView assembles the three regions of an sdkPresentationView into a
+// single string for storage in previewState.text. The sticky strip (if any)
+// is placed on its own line between the body and the footer separator.
+func joinSDKView(view *sdkPresentationView, width int) string {
+	if view == nil {
+		return ""
+	}
+	narrow := width > 0 && width < narrowPaneThreshold
+	sep := "\n\n"
+	if narrow {
+		sep = "\n"
+	}
+
+	var sb strings.Builder
+	sb.WriteString(view.body)
+
+	if view.sticky != "" {
+		if sb.Len() > 0 {
+			sb.WriteString("\n")
+		}
+		sb.WriteString(view.sticky)
+	}
+
+	if sb.Len() > 0 {
+		sb.WriteString(sep)
+	}
+	sb.WriteString(strings.Join(view.footer, "\n"))
+	return sb.String()
+}
+
+// buildSDKPresentationView builds the three layout regions for an SDK pane:
+//   - body: the full turn timeline (all turns rendered, no footer).
+//   - sticky: the pinned activity strip for the last running turn, or "" if no
+//     running turn or the turn has no derived activity.
+//   - footer: the composer footer rows.
+//
+// Callers that need only the joined string should use joinSDKView; callers that
+// need to lay out the regions independently (e.g. String() for tail-slicing)
+// use the struct directly.
+func buildSDKPresentationView(turns []*sdk.PresentationTurn, width int, composer string, images []string, focused bool, program, speedTier string, now time.Time) sdkPresentationView {
 	if width <= 0 {
 		width = 80
 	}
@@ -424,26 +503,85 @@ func renderSDKPresentationWithComposer(turns []*sdk.PresentationTurn, width int,
 
 	var parts []string
 	for _, turn := range turns {
+		if turn == nil {
+			continue
+		}
 		rows := renderSDKTurn(turn, width)
 		if len(rows) > 0 {
 			parts = append(parts, strings.Join(rows, "\n"))
 		}
 	}
 
-	var sb strings.Builder
+	var bodyBuilder strings.Builder
 	for i, part := range parts {
 		if i > 0 {
-			sb.WriteString(sep)
+			bodyBuilder.WriteString(sep)
 		}
-		sb.WriteString(part)
+		bodyBuilder.WriteString(part)
 	}
 
-	footerRows := renderComposerFooter(width, composer, images, focused, program, speedTier)
-	if sb.Len() > 0 {
-		sb.WriteString(sep)
+	// Derive sticky strip from the last running turn with activity.
+	sticky := ""
+	for i := len(turns) - 1; i >= 0; i-- {
+		turn := turns[i]
+		if turn == nil {
+			continue
+		}
+		if turn.Running() && turn.Activity != nil {
+			label := sdk.FormatActivityLabel(turn.Activity, now, narrow)
+			activityStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+			sticky = activityStyle.Render(label)
+			break
+		}
 	}
-	sb.WriteString(strings.Join(footerRows, "\n"))
-	return sb.String()
+
+	footer := renderComposerFooter(width, composer, images, focused, program, speedTier)
+
+	return sdkPresentationView{
+		body:   bodyBuilder.String(),
+		sticky: sticky,
+		footer: footer,
+	}
+}
+
+// renderSDKStructuredView lays out the SDK pane using the current p.sdkView:
+// the body is tail-sliced to fit above the sticky strip and footer, the sticky
+// strip is placed immediately above the footer, and the footer closes the pane.
+// An ellipsis replaces the top body row when content was truncated.
+func (p *PreviewPane) renderSDKStructuredView() string {
+	view := p.sdkView
+
+	stickyRows := 0
+	if view.sticky != "" {
+		stickyRows = 1
+	}
+	// Reserve one row for the overflow indicator (matching normal-mode behaviour).
+	availableBody := p.height - len(view.footer) - stickyRows - 1
+	if availableBody < 0 {
+		availableBody = 0
+	}
+
+	bodyRows := wrapPreviewRows(view.body, p.width)
+	overflowed := false
+	if len(bodyRows) > availableBody {
+		bodyRows = bodyRows[len(bodyRows)-availableBody:]
+		overflowed = true
+	} else {
+		padding := availableBody - len(bodyRows)
+		bodyRows = append(bodyRows, make([]string, padding)...)
+	}
+	if overflowed && len(bodyRows) > 0 {
+		bodyRows[0] = "..."
+	}
+
+	allRows := make([]string, 0, len(bodyRows)+stickyRows+len(view.footer))
+	allRows = append(allRows, bodyRows...)
+	if view.sticky != "" {
+		allRows = append(allRows, view.sticky)
+	}
+	allRows = append(allRows, view.footer...)
+
+	return previewPaneStyle.Width(p.width).Render(strings.Join(allRows, "\n"))
 }
 
 // renderSDKTurn renders one turn block as a slice of styled lines following
@@ -461,6 +599,9 @@ func renderSDKPresentationWithComposer(turns []*sdk.PresentationTurn, width int,
 //   - the header is reduced to just "turn N" (no elapsed, tool count, running label)
 //   - the response divider collapses to a single muted rule row
 func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
+	if turn == nil {
+		return nil
+	}
 	narrow := width > 0 && width < narrowPaneThreshold
 	var rows []string
 
@@ -483,8 +624,8 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 	thinkingStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	narrowRuleStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	gutterStyle := lipgloss.NewStyle().Foreground(ColorMuted)
-	addedStyle := lipgloss.NewStyle().Foreground(ColorRose)
-	removedStyle := lipgloss.NewStyle().Foreground(ColorLove)
+	diffAddedStyle := lipgloss.NewStyle().Foreground(ColorRose)
+	diffRemovedStyle := lipgloss.NewStyle().Foreground(ColorLove)
 	diffContextStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 
 	for _, row := range turn.Rows {
@@ -494,51 +635,41 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 		case sdk.RowTool:
 			head, args := sdk.SplitToolCallText(row.Text, row.ToolName)
 			line := sdk.RenderToolCallLine(head, args, toolStyle, toolArgStyle)
-			if line == "" {
-				rows = append(rows, line)
-			} else {
+			if line != "" {
 				rows = append(rows, sdk.ToolCallIndent+line)
 			}
-		case sdk.RowResult:
-			var styled string
-			if row.IsError {
-				styled = resultErrStyle.Render(row.Text)
-			} else {
-				styled = resultOKStyle.Render(row.Text)
-			}
-			if styled != "" {
-				rows = append(rows, sdk.ToolChildIndent+styled)
-			} else {
-				rows = append(rows, styled)
-			}
-		case sdk.RowToolPreview:
-			if row.ToolPreview == nil {
-				break
-			}
-			previewRows := sdk.BuildToolPreviewBlock(row.ToolPreview)
-			for _, pr := range previewRows {
-				rows = append(rows, sdk.ToolChildIndent+gutterStyle.Render(pr))
-			}
 		case sdk.RowToolDiff:
-			if row.ToolDiff == nil {
-				break
-			}
-			diffRows := sdk.BuildToolDiffBlock(row.ToolDiff)
-			for i, dr := range diffRows {
-				var styled string
-				if row.ToolDiff.Truncated && i == len(row.ToolDiff.Lines) {
-					styled = diffContextStyle.Render(dr)
-				} else {
-					switch row.ToolDiff.Lines[i].Kind {
+			if row.ToolDiff != nil {
+				diffRows := sdk.BuildToolDiffBlock(row.ToolDiff, width)
+				for i, dl := range row.ToolDiff.Lines {
+					if i >= len(diffRows) {
+						break
+					}
+					switch dl.Kind {
 					case sdk.DiffLineAdded:
-						styled = addedStyle.Render(dr)
+						rows = append(rows, sdk.ToolChildIndent+diffAddedStyle.Render(diffRows[i]))
 					case sdk.DiffLineRemoved:
-						styled = removedStyle.Render(dr)
+						rows = append(rows, sdk.ToolChildIndent+diffRemovedStyle.Render(diffRows[i]))
 					default:
-						styled = diffContextStyle.Render(dr)
+						rows = append(rows, sdk.ToolChildIndent+diffContextStyle.Render(diffRows[i]))
 					}
 				}
-				rows = append(rows, sdk.ToolChildIndent+styled)
+				// Truncation indicator row, if present.
+				if len(diffRows) > len(row.ToolDiff.Lines) {
+					rows = append(rows, sdk.ToolChildIndent+diffContextStyle.Render(diffRows[len(row.ToolDiff.Lines)]))
+				}
+			}
+		case sdk.RowToolPreview:
+			if row.ToolPreview != nil {
+				for _, pr := range sdk.BuildToolPreviewBlock(row.ToolPreview, width) {
+					rows = append(rows, sdk.ToolChildIndent+gutterStyle.Render(pr))
+				}
+			}
+		case sdk.RowResult:
+			if row.IsError {
+				rows = append(rows, sdk.ToolChildIndent+resultErrStyle.Render(row.Text))
+			} else {
+				rows = append(rows, sdk.ToolChildIndent+resultOKStyle.Render(row.Text))
 			}
 		case sdk.RowSystem:
 			rows = append(rows, systemStyle.Render(row.Text))
@@ -880,12 +1011,20 @@ func (p *PreviewPane) scrollbackContent(instance *session.Instance) (string, err
 		return "", nil
 	}
 	if session.NormalizeExecutionMode(instance.ExecutionMode) == session.ExecutionModeSDK {
+		// For SDK scroll mode, load only the body region into the viewport so
+		// the composer footer is not scrolled away and the sticky strip can be
+		// pinned outside the viewport.
+		if p.sdkView != nil {
+			return p.sdkView.body, nil
+		}
 		if turns := instance.CapturePresentation(); len(turns) > 0 {
 			width := p.viewport.Width()
 			if width <= 0 {
 				width = p.width
 			}
-			return renderSDKPresentation(turns, width), nil
+			view := buildSDKPresentationView(turns, width, "", nil, false, instance.Program, instance.SDKSpeedTier, time.Now())
+			p.sdkView = &view
+			return view.body, nil
 		}
 		if instance.CachedContentSet && instance.CachedContent != "" {
 			return instance.CachedContent, nil
@@ -896,13 +1035,36 @@ func (p *PreviewPane) scrollbackContent(instance *session.Instance) (string, err
 
 // enterScrollMode captures the full preview history and sets up the viewport
 // for scroll mode. Shared by all scroll entry points.
+//
+// For SDK sessions with an active sticky strip, the viewport height is reduced
+// by one row so the pinned strip can be rendered below the viewport in String().
 func (p *PreviewPane) enterScrollMode(instance *session.Instance) error {
 	content, err := p.scrollbackContent(instance)
 	if err != nil {
 		return err
 	}
-	footer := lipgloss.NewStyle().Foreground(ColorMuted).Render("ESC to exit scroll mode")
-	p.viewport.SetContent(lipgloss.JoinVertical(lipgloss.Left, content, footer))
+
+	// For SDK sessions with a running activity, pin the activity + escape hint
+	// as a bottom strip outside the viewport. The viewport height is reduced by
+	// one row to make room for it.
+	p.sdkScrollStrip = ""
+	viewportHeight := p.height
+	if p.sdkView != nil && p.sdkView.sticky != "" {
+		escHint := lipgloss.NewStyle().Foreground(ColorMuted).Render("esc exit scroll mode")
+		p.sdkScrollStrip = p.sdkView.sticky + " · " + escHint
+		viewportHeight = p.height - 1
+		if viewportHeight < 1 {
+			viewportHeight = 1
+		}
+	}
+	p.viewport.SetHeight(viewportHeight)
+
+	footer := lipgloss.NewStyle().Foreground(ColorMuted).Render("esc exit scroll mode")
+	if p.sdkScrollStrip != "" {
+		p.viewport.SetContent(content)
+	} else {
+		p.viewport.SetContent(lipgloss.JoinVertical(lipgloss.Left, content, footer))
+	}
 	p.viewport.GotoBottom()
 	p.isScrolling = true
 	return nil
@@ -991,6 +1153,8 @@ func (p *PreviewPane) ResetToNormalMode(instance *session.Instance) error {
 		return nil
 	}
 	p.isScrolling = false
+	p.sdkScrollStrip = ""
+	p.viewport.SetHeight(p.height)
 	p.viewport.SetContent("")
 	p.viewport.GotoTop()
 

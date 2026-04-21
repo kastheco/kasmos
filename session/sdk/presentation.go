@@ -3,6 +3,7 @@ package sdk
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -51,8 +52,14 @@ const (
 	RowUser PresentationRowKind = "user"
 	// RowTool represents a tool invocation.
 	RowTool PresentationRowKind = "tool"
+	// RowToolDiff is a structured diff payload row that follows a RowTool row
+	// for diff-producing tools (Edit, Write, MultiEdit, apply_patch, fileChange).
+	RowToolDiff PresentationRowKind = "tool_diff"
 	// RowResult represents a tool result.
 	RowResult PresentationRowKind = "result"
+	// RowToolPreview is a structured text-preview payload row that follows a
+	// RowResult row for non-error textual tool results.
+	RowToolPreview PresentationRowKind = "tool_preview"
 	// RowSystem represents a transport-level system message.
 	RowSystem PresentationRowKind = "system"
 	// RowPermission represents a pending permission request.
@@ -63,49 +70,94 @@ const (
 	RowProse PresentationRowKind = "prose"
 	// RowStatus carries lifecycle annotations such as "[interrupted]".
 	RowStatus PresentationRowKind = "status"
-	// RowToolDiff holds a structured file-diff block produced by an editing tool.
-	RowToolDiff PresentationRowKind = "tool_diff"
-	// RowToolPreview holds a structured file-content preview block from a read tool.
-	RowToolPreview PresentationRowKind = "tool_preview"
 )
 
-// DiffLineKind classifies a single annotated line within a structured diff.
-type DiffLineKind string
+// ToolDiffLineKind classifies a single line within a ToolDiffPayload.
+type ToolDiffLineKind string
 
 const (
-	DiffLineAdded   DiffLineKind = "added"
-	DiffLineRemoved DiffLineKind = "removed"
-	DiffLineContext DiffLineKind = "context"
+	// DiffLineContext is an unchanged line present in both old and new.
+	DiffLineContext ToolDiffLineKind = "context"
+	// DiffLineAdded is a line present only in the new version.
+	DiffLineAdded ToolDiffLineKind = "added"
+	// DiffLineRemoved is a line present only in the old version.
+	DiffLineRemoved ToolDiffLineKind = "removed"
 )
 
-// DiffLine represents a single annotated line in a structured diff block.
-type DiffLine struct {
-	Kind DiffLineKind `json:"kind"`
-	Text string       `json:"text"`
+// ToolDiffLine represents a single line in a structured file diff.
+// OldNumber/NewNumber are 1-based and omitted when not applicable.
+type ToolDiffLine struct {
+	Kind      ToolDiffLineKind `json:"kind"`
+	OldNumber *int             `json:"old_number,omitempty"`
+	NewNumber *int             `json:"new_number,omitempty"`
+	OldText   string           `json:"old_text,omitempty"`
+	NewText   string           `json:"new_text,omitempty"`
 }
 
-// ToolDiffPayload holds a structured diff produced by a file-editing tool call.
-// Lines holds the annotated diff entries; Truncated is true when the diff was
-// capped at a line limit and a truncation sentinel should be shown after the
-// last line.
+// ToolDiffPayload holds a render-ready diff for a single file. Renderers
+// consume the Lines slice directly without running their own diff algorithm.
 type ToolDiffPayload struct {
-	Lines     []DiffLine `json:"lines"`
-	Truncated bool       `json:"truncated"`
+	Path            string         `json:"path,omitempty"`
+	Lines           []ToolDiffLine `json:"lines,omitempty"`
+	Truncated       bool           `json:"truncated,omitempty"`
+	HiddenLineCount int            `json:"hidden_line_count,omitempty"`
 }
 
-// ToolPreviewPayload holds structured file-content rows for a read-tool preview.
-// Truncated is true when the content was capped and a truncation sentinel should
-// follow the last row.
+// ToolPreviewPayload holds a capped line slice from a tool result for display.
 type ToolPreviewPayload struct {
-	Rows      []string `json:"rows"`
-	Truncated bool     `json:"truncated"`
+	Lines           []string `json:"lines,omitempty"`
+	Truncated       bool     `json:"truncated,omitempty"`
+	HiddenLineCount int      `json:"hidden_line_count,omitempty"`
+}
+
+// TurnActivity describes the current activity of a running turn. It is
+// derived on demand in CapturePresentation and set only on the deep copy.
+type TurnActivity struct {
+	Kind      string    `json:"kind"`
+	Label     string    `json:"label,omitempty"`
+	StartedAt time.Time `json:"started_at"`
+}
+
+// MarshalJSON encodes zero StartedAt as null consistent with the rest of the
+// presentation model.
+func (a TurnActivity) MarshalJSON() ([]byte, error) {
+	type turnActivityJSON struct {
+		Kind      string     `json:"kind"`
+		Label     string     `json:"label,omitempty"`
+		StartedAt *time.Time `json:"started_at"`
+	}
+	return json.Marshal(turnActivityJSON{
+		Kind:      a.Kind,
+		Label:     a.Label,
+		StartedAt: optionalJSONTime(a.StartedAt),
+	})
+}
+
+// UnmarshalJSON decodes null StartedAt back to zero value.
+func (a *TurnActivity) UnmarshalJSON(data []byte) error {
+	type turnActivityJSON struct {
+		Kind      string     `json:"kind"`
+		Label     string     `json:"label,omitempty"`
+		StartedAt *time.Time `json:"started_at"`
+	}
+	var aux turnActivityJSON
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	a.Kind = aux.Kind
+	a.Label = aux.Label
+	a.StartedAt = time.Time{}
+	if aux.StartedAt != nil {
+		a.StartedAt = *aux.StartedAt
+	}
+	return nil
 }
 
 // PresentationRow is a single typed content row within a PresentationTurn.
-// Most fields are value types. ToolDiff and ToolPreview point to optional
-// read-only payloads and are shared by reference when rows are copied.
 // Zero timestamps marshal as JSON null so browser clients do not need to
 // special-case Go's zero time sentinel.
+// ToolDiff and ToolPreview are non-nil only for RowToolDiff and RowToolPreview
+// rows respectively.
 type PresentationRow struct {
 	Kind PresentationRowKind
 	Text string
@@ -113,8 +165,8 @@ type PresentationRow struct {
 	Timestamp   time.Time
 	ToolName    string
 	IsError     bool
-	ToolDiff    *ToolDiffPayload    // set on RowToolDiff rows
-	ToolPreview *ToolPreviewPayload // set on RowToolPreview rows
+	ToolDiff    *ToolDiffPayload    // non-nil for RowToolDiff rows only
+	ToolPreview *ToolPreviewPayload // non-nil for RowToolPreview rows only
 }
 
 // PresentationTurn groups all content rows produced within one agent response turn.
@@ -128,6 +180,10 @@ type PresentationTurn struct {
 	Interrupted bool
 	ToolCount   int
 	Rows        []PresentationRow
+	// Activity is derived in CapturePresentation for running turns only.
+	// It is nil on completed and interrupted turns, and nil in the live
+	// renderer's internal state (set only on the deep copy).
+	Activity *TurnActivity
 }
 
 type presentationRowJSON struct {
@@ -148,6 +204,7 @@ type presentationTurnJSON struct {
 	Interrupted bool              `json:"interrupted"`
 	ToolCount   int               `json:"tool_count"`
 	Rows        []PresentationRow `json:"rows"`
+	Activity    *TurnActivity     `json:"activity,omitempty"`
 }
 
 func optionalJSONTime(ts time.Time) *time.Time {
@@ -200,6 +257,7 @@ func (t PresentationTurn) MarshalJSON() ([]byte, error) {
 		Interrupted: t.Interrupted,
 		ToolCount:   t.ToolCount,
 		Rows:        t.Rows,
+		Activity:    t.Activity,
 	})
 }
 
@@ -214,6 +272,7 @@ func (t *PresentationTurn) UnmarshalJSON(data []byte) error {
 	t.Interrupted = aux.Interrupted
 	t.ToolCount = aux.ToolCount
 	t.Rows = aux.Rows
+	t.Activity = aux.Activity
 	t.StartedAt = time.Time{}
 	t.CompletedAt = time.Time{}
 	if aux.StartedAt != nil {
@@ -257,6 +316,154 @@ func (t PresentationTurn) HeaderText(now time.Time) string {
 		label += " • running"
 	}
 	return label
+}
+
+// ClonePresentationTurns returns a fully independent deep copy of src.
+// All nested Rows slices, ToolDiff, ToolPreview, and Activity pointer fields
+// are freshly allocated so callers can safely mutate the result without
+// affecting the original. Returns nil when src is empty.
+func ClonePresentationTurns(src []*PresentationTurn) []*PresentationTurn {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]*PresentationTurn, len(src))
+	for i, t := range src {
+		if t == nil {
+			continue
+		}
+		cp := *t
+		cp.Rows = make([]PresentationRow, len(t.Rows))
+		for j, row := range t.Rows {
+			rowCp := row
+			if row.ToolDiff != nil {
+				td := *row.ToolDiff
+				td.Lines = cloneToolDiffLines(row.ToolDiff.Lines)
+				rowCp.ToolDiff = &td
+			}
+			if row.ToolPreview != nil {
+				tp := *row.ToolPreview
+				tp.Lines = cloneStringSlice(row.ToolPreview.Lines)
+				rowCp.ToolPreview = &tp
+			}
+			cp.Rows[j] = rowCp
+		}
+		if t.Activity != nil {
+			actCp := *t.Activity
+			cp.Activity = &actCp
+		}
+		out[i] = &cp
+	}
+	return out
+}
+
+func cloneToolDiffLines(src []ToolDiffLine) []ToolDiffLine {
+	if src == nil {
+		return nil
+	}
+	out := make([]ToolDiffLine, len(src))
+	for i, line := range src {
+		lineCp := line
+		if line.OldNumber != nil {
+			n := *line.OldNumber
+			lineCp.OldNumber = &n
+		}
+		if line.NewNumber != nil {
+			n := *line.NewNumber
+			lineCp.NewNumber = &n
+		}
+		out[i] = lineCp
+	}
+	return out
+}
+
+func cloneStringSlice(src []string) []string {
+	if src == nil {
+		return nil
+	}
+	out := make([]string, len(src))
+	copy(out, src)
+	return out
+}
+
+// deriveTurnActivity returns a TurnActivity describing the current work of a
+// running turn. Returns nil for completed or interrupted turns. The rules are
+// evaluated in order; the first matching rule wins:
+//
+//  1. Last unresolved RowTool (no subsequent RowResult) → kind:"tool"
+//  2. Last RowPermission → kind:"permission"
+//  3. No substantive rows at all → kind:"thinking"
+//  4. Any other running state → kind:"working"
+func deriveTurnActivity(turn *PresentationTurn, now time.Time) *TurnActivity {
+	if !turn.Running() {
+		return nil
+	}
+
+	// Rule 1: last unresolved RowTool.
+	lastToolIdx := -1
+	for i := len(turn.Rows) - 1; i >= 0; i-- {
+		if turn.Rows[i].Kind == RowTool {
+			lastToolIdx = i
+			break
+		}
+	}
+	if lastToolIdx >= 0 {
+		hasResult := false
+		for i := lastToolIdx + 1; i < len(turn.Rows); i++ {
+			if turn.Rows[i].Kind == RowResult {
+				hasResult = true
+				break
+			}
+		}
+		if !hasResult {
+			toolRow := turn.Rows[lastToolIdx]
+			label := strings.TrimPrefix(toolRow.Text, "• ")
+			return &TurnActivity{
+				Kind:      "tool",
+				Label:     label,
+				StartedAt: toolRow.Timestamp,
+			}
+		}
+	}
+
+	// Rule 2: last RowPermission on the turn.
+	for i := len(turn.Rows) - 1; i >= 0; i-- {
+		if turn.Rows[i].Kind == RowPermission {
+			return &TurnActivity{
+				Kind:      "permission",
+				Label:     "permission requested",
+				StartedAt: turn.Rows[i].Timestamp,
+			}
+		}
+	}
+
+	// Rule 3: no substantive rows yet → thinking.
+	hasSubstantive := false
+	for _, row := range turn.Rows {
+		switch row.Kind {
+		case RowTool, RowResult, RowProse, RowPermission, RowSystem:
+			hasSubstantive = true
+		}
+	}
+	if !hasSubstantive {
+		return &TurnActivity{
+			Kind:      "thinking",
+			Label:     "thinking",
+			StartedAt: turn.StartedAt,
+		}
+	}
+
+	// Rule 4: working.
+	label := "working"
+	if lastToolIdx >= 0 {
+		if name := turn.Rows[lastToolIdx].ToolName; name != "" {
+			label = name
+		}
+	}
+	return &TurnActivity{
+		Kind:      "working",
+		Label:     label,
+		StartedAt: turn.StartedAt,
+	}
 }
 
 // formatElapsed formats a duration as a compact human-readable string.

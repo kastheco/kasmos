@@ -67,6 +67,74 @@
   color: var(--rp-gold);
 }
 
+/* tool_diff rows */
+.kindDiff {
+  color: var(--rp-subtle);
+  align-items: flex-start;
+}
+
+.diffPath {
+  color: var(--rp-muted);
+  margin-bottom: 2px;
+  font-style: italic;
+}
+
+.diffLine {
+  display: flex;
+  gap: 6px;
+}
+
+.diffGutter {
+  flex-shrink: 0;
+  width: 40px;
+  text-align: right;
+  opacity: 0.55;
+  user-select: none;
+}
+
+.diffLineContent {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.diffLineContext {
+  color: var(--rp-subtle);
+}
+
+.diffLineAdded {
+  color: var(--rp-pine);
+}
+
+.diffLineRemoved {
+  color: var(--rp-love);
+}
+
+.diffTruncated {
+  color: var(--rp-muted);
+  font-style: italic;
+  margin-top: 2px;
+}
+
+/* tool_preview rows */
+.kindPreview {
+  color: var(--rp-muted);
+  align-items: flex-start;
+}
+
+.previewLines {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.previewTruncated {
+  color: var(--rp-muted);
+  font-style: italic;
+  margin-top: 2px;
+  display: block;
+}
+
 /* response divider */
 .responseDivider {
   display: flex;

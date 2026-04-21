@@ -104,3 +104,66 @@ func TestPasteMsg_EmptyContentAttachesClipboardImageForSDKFocusMode(t *testing.T
 	require.Equal(t, stateFocusAgent, updated.state)
 	require.Equal(t, []string{"/tmp/clipboard.png"}, updated.tabbedWindow.SDKComposerImages())
 }
+
+func TestHandleKeyPress_TmuxFocusMode_CtrlVPastesClipboardText(t *testing.T) {
+	origRead := readClipboardText
+	readClipboardText = func() (string, error) { return "hello", nil }
+	t.Cleanup(func() { readClipboardText = origRead })
+
+	h := newTestHome()
+	term := session.NewDummyTerminal()
+	h.previewTerminal = term
+	h.state = stateFocusAgent
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
+	updated := model.(*home)
+
+	require.Nil(t, cmd)
+	require.Equal(t, stateFocusAgent, updated.state)
+
+	sent := term.SentKeys()
+	require.Len(t, sent, 1)
+	require.Equal(t, []byte("\x1b[200~hello\x1b[201~"), sent[0])
+}
+
+func TestHandleKeyPress_TmuxFocusMode_CtrlShiftVPastesClipboardText(t *testing.T) {
+	origRead := readClipboardText
+	readClipboardText = func() (string, error) { return "hello", nil }
+	t.Cleanup(func() { readClipboardText = origRead })
+
+	h := newTestHome()
+	term := session.NewDummyTerminal()
+	h.previewTerminal = term
+	h.state = stateFocusAgent
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'V', Mod: tea.ModCtrl | tea.ModShift})
+	updated := model.(*home)
+
+	require.Nil(t, cmd)
+	require.Equal(t, stateFocusAgent, updated.state)
+
+	sent := term.SentKeys()
+	require.Len(t, sent, 1)
+	require.Equal(t, []byte("\x1b[200~hello\x1b[201~"), sent[0])
+}
+
+func TestHandleKeyPress_TmuxFocusMode_CtrlVFallsBackToRawCtrlVWhenClipboardTextUnavailable(t *testing.T) {
+	origRead := readClipboardText
+	readClipboardText = func() (string, error) { return "", nil }
+	t.Cleanup(func() { readClipboardText = origRead })
+
+	h := newTestHome()
+	term := session.NewDummyTerminal()
+	h.previewTerminal = term
+	h.state = stateFocusAgent
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
+	updated := model.(*home)
+
+	require.Nil(t, cmd)
+	require.Equal(t, stateFocusAgent, updated.state)
+
+	sent := term.SentKeys()
+	require.Len(t, sent, 1)
+	require.Equal(t, []byte{0x16}, sent[0])
+}

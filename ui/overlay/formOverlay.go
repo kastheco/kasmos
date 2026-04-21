@@ -5,7 +5,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
-	"github.com/atotto/clipboard"
 )
 
 // FormOverlay is a multi-field form overlay backed by huh.Form.
@@ -134,6 +133,18 @@ func (f *FormOverlay) WorkPath() string {
 
 // HandleKey implements Overlay. Processes a key event and returns a Result.
 func (f *FormOverlay) HandleKey(msg tea.KeyPressMsg) Result {
+	if isPasteShortcut(msg) {
+		if text, err := readClipboardText(); err == nil && text != "" {
+			// Strip newlines — form inputs are single-line.
+			text = strings.ReplaceAll(text, "\n", " ")
+			text = strings.ReplaceAll(text, "\r", "")
+			for _, r := range text {
+				f.updateForm(tea.KeyPressMsg{Code: r, Text: string(r)})
+			}
+		}
+		return Result{}
+	}
+
 	switch msg.String() {
 	case "esc":
 		f.canceled = true
@@ -166,17 +177,6 @@ func (f *FormOverlay) HandleKey(msg tea.KeyPressMsg) Result {
 			return Result{}
 		}
 		f.updateForm(huh.PrevField())
-		return Result{}
-
-	case "ctrl+v":
-		if text, err := clipboard.ReadAll(); err == nil && text != "" {
-			// Strip newlines — form inputs are single-line.
-			text = strings.ReplaceAll(text, "\n", " ")
-			text = strings.ReplaceAll(text, "\r", "")
-			for _, r := range text {
-				f.updateForm(tea.KeyPressMsg{Code: r, Text: string(r)})
-			}
-		}
 		return Result{}
 
 	default:

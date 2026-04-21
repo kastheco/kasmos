@@ -330,6 +330,64 @@ func TestDaemonInstanceLister_CapturePresentation_NotFound(t *testing.T) {
 	assert.Contains(t, clientErr.Msg, "instance not found")
 }
 
+// TestDaemonInstanceLister_CapturePresentation_RicherPayload verifies that the
+// daemon lister correctly passes through /presentation responses that include
+// tool_diff, tool_preview, and activity fields. The lister must not discard or
+// transform the structured payload fields added by the sdk-diff-view plan.
+func TestDaemonInstanceLister_CapturePresentation_RicherPayload(t *testing.T) {
+	richTurns := json.RawMessage(`[{
+		"id":"t1","number":1,"started_at":null,"completed_at":null,
+		"interrupted":false,"tool_count":1,
+		"activity":{"kind":"tool","label":"Edit main.go","started_at":null},
+		"rows":[
+			{"kind":"tool_diff","text":"","timestamp":null,"tool_name":"Edit","is_error":false,
+			 "tool_diff":{"path":"main.go","lines":[
+				{"kind":"added","new_number":1,"new_text":"hello"}
+			 ],"truncated":false,"hidden_line_count":0}},
+			{"kind":"tool_preview","text":"","timestamp":null,"tool_name":"Bash","is_error":false,
+			 "tool_preview":{"lines":["ok"],"truncated":false,"hidden_line_count":0}}
+		]
+	}]`)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(api.PresentationResponse{
+			Supported: true,
+			Turns:     richTurns,
+		})
+	}))
+	defer srv.Close()
+
+	lister := &daemonInstanceLister{
+		socketPath: "fake",
+		http:       &http.Client{Transport: &redirectTransport{target: srv.URL}},
+	}
+
+	resp, err := lister.CapturePresentation("proj", "my-agent")
+	require.NoError(t, err)
+	assert.True(t, resp.Supported, "response must be marked supported")
+
+	// The raw turns JSON must survive the round-trip and include all new fields.
+	var decoded []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(resp.Turns, &decoded))
+	require.Len(t, decoded, 1)
+
+	// activity field must be present with correct values.
+	var activity map[string]any
+	require.NoError(t, json.Unmarshal(decoded[0]["activity"], &activity))
+	assert.Equal(t, "tool", activity["kind"])
+	assert.Equal(t, "Edit main.go", activity["label"])
+
+	// rows must include tool_diff and tool_preview.
+	var rows []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(decoded[0]["rows"], &rows))
+	require.Len(t, rows, 2)
+	assert.Contains(t, string(rows[0]["kind"]), "tool_diff",
+		"first row must be a tool_diff row")
+	assert.Contains(t, string(rows[1]["kind"]), "tool_preview",
+		"second row must be a tool_preview row")
+}
+
 // TestDaemonInstanceLister_CapturePresentation_DaemonSocketFailure verifies
 // that a socket failure returns ErrDaemonUnavailable.
 func TestDaemonInstanceLister_CapturePresentation_DaemonSocketFailure(t *testing.T) {

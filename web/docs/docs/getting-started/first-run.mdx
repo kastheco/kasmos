@@ -51,7 +51,7 @@ the interface is divided into three main areas:
 
 - **sidebar** — topics and plan groups, toggled with `ctrl+s`
 - **instance list** — active agent sessions for the selected plan
-- **preview pane** — live agent output; tabs switch between the agent view, info, diff, and git history
+- **preview pane** — live agent output with a compact info header above it showing runtime metadata for the selected instance
 
 ## keybindings reference
 
@@ -88,9 +88,8 @@ the interface is divided into three main areas:
 | key | action |
 |-----|--------|
 | `t` | focus instance list |
-| `tab` / `shift+tab` | cycle tabs (info ↔ agent) |
 | `!` | interactive + shell mode |
-| `#` / `g` | info tab |
+| `I` | toggle compact info header (on by default) |
 | `↑` / `↓` | navigate within focused pane |
 | `←` / `→` | move between panes |
 | `ctrl+s` | toggle sidebar visibility |
@@ -104,7 +103,7 @@ the interface is divided into three main areas:
 when you spawn an agent (`s`), kasmos creates an isolated git worktree and starts the agent in one of two execution modes:
 
 - **tmux** — session is attachable (`↵`/`o`); use interactive mode (`i`) to type directly into the agent pane. best for exploratory work.
-- **sdk** — agent is driven via its app-server JSON-RPC protocol; output is streamed to the preview pane and logs. available for claude and codex only; other programs fall back to tmux silently. best for automated wave work.
+- **sdk** — agent is driven via its app-server JSON-RPC protocol; output streams to the preview pane and audit log. available for claude and codex only; other programs fall back to tmux silently. best for automated wave work.
 
 the execution mode is set per agent role in `config.toml` via the `execution_mode` field. see [setup wizard](./setup-wizard.mdx) for configuration details.
 

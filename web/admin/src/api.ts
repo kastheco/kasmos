@@ -1,4 +1,4 @@
-import type { Status, TaskEntry, SubtaskEntry, TopicEntry, AuditEvent, InstanceEntry, InstanceAction, ScrollbackDepth, ExecutionMode, PresentationResponse, PresentationRowKind, PermissionDecision } from "./types";
+import type { Status, TaskEntry, SubtaskEntry, TopicEntry, AuditEvent, InstanceEntry, InstanceAction, ScrollbackDepth, ExecutionMode, PresentationResponse, PresentationRowKind, ToolDiffPayload, ToolPreviewPayload, PermissionDecision } from "./types";
 
 // Legacy persisted statuses that predate canonical normalization at ingest.
 // Mirrors config/taskfsm/fsm.go:MapLegacyStatus so the SPA reader boundary
@@ -528,6 +528,14 @@ type RawPresentationRow = {
   timestamp: string | null;
   tool_name: string;
   is_error: boolean;
+  tool_diff?: ToolDiffPayload;
+  tool_preview?: ToolPreviewPayload;
+};
+
+type RawTurnActivity = {
+  kind: string;
+  label?: string;
+  started_at: string | null;
 };
 
 type RawPresentationTurn = {
@@ -538,6 +546,7 @@ type RawPresentationTurn = {
   interrupted: boolean;
   tool_count: number;
   rows: RawPresentationRow[] | null;
+  activity?: RawTurnActivity;
 };
 
 type RawPresentationResponse = {
@@ -571,7 +580,18 @@ function normalizePresentationResponse(raw: RawPresentationResponse): Presentati
           timestamp: parseOptionalDate(r.timestamp),
           tool_name: r.tool_name,
           is_error: r.is_error,
+          ...(r.tool_diff !== undefined ? { tool_diff: r.tool_diff } : {}),
+          ...(r.tool_preview !== undefined ? { tool_preview: r.tool_preview } : {}),
         })),
+        ...(t.activity !== undefined
+          ? {
+              activity: {
+                kind: t.activity.kind,
+                label: t.activity.label,
+                started_at: parseOptionalDate(t.activity.started_at),
+              },
+            }
+          : {}),
       })) ?? null,
   };
 }

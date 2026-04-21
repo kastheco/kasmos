@@ -1227,6 +1227,83 @@ func TestHTTPHandler_Presentation_DaemonBacked_HappyPath(t *testing.T) {
 	assert.Equal(t, "sdk-agent", adapter.capturedTitle)
 }
 
+// TestHTTPHandler_Presentation_DaemonBacked_RicherPayload verifies that a
+// presentation response containing tool_diff, tool_preview, and activity fields
+// flows through the daemon-backed proxy path unchanged. The livepreview HTTP
+// handler must not strip or transform structured payload fields added by the
+// sdk-diff-view plan — the browser consumes these fields directly.
+func TestHTTPHandler_Presentation_DaemonBacked_RicherPayload(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root)
+
+	richTurns := json.RawMessage(`[{
+		"id":"t1","number":1,"started_at":null,"completed_at":null,
+		"interrupted":false,"tool_count":2,
+		"activity":{"kind":"tool","label":"Edit foo.go","started_at":null},
+		"rows":[
+			{"kind":"tool_diff","text":"","timestamp":null,"tool_name":"Edit","is_error":false,
+			 "tool_diff":{"path":"foo.go","lines":[
+				{"kind":"removed","old_number":1,"old_text":"old line"},
+				{"kind":"added","new_number":1,"new_text":"new line"}
+			 ],"truncated":false,"hidden_line_count":0}},
+			{"kind":"tool_preview","text":"","timestamp":null,"tool_name":"Bash","is_error":false,
+			 "tool_preview":{"lines":["output line 1","output line 2"],"truncated":true,"hidden_line_count":3}}
+		]
+	}]`)
+
+	adapter := &fakeDaemonAdapter{
+		listRecords: []Record{
+			{Title: "sdk-agent", Status: StatusRunning, ExecutionMode: "sdk", ManagedByDaemon: true},
+		},
+		presentationResp: api.PresentationResponse{
+			Supported: true,
+			Turns:     richTurns,
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, adapter, adapter)
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances/sdk-agent/presentation", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+
+	var resp api.PresentationResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	assert.True(t, resp.Supported)
+
+	// Decode turns and verify the nested fields were preserved end-to-end.
+	var turns []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(resp.Turns, &turns))
+	require.Len(t, turns, 1)
+
+	// activity must survive the proxy round-trip.
+	var activity map[string]any
+	require.NoError(t, json.Unmarshal(turns[0]["activity"], &activity))
+	assert.Equal(t, "tool", activity["kind"])
+	assert.Equal(t, "Edit foo.go", activity["label"])
+
+	// rows with tool_diff and tool_preview must be present.
+	var rows []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(turns[0]["rows"], &rows))
+	require.Len(t, rows, 2)
+
+	// First row: tool_diff payload must be non-empty.
+	assert.True(t, len(rows[0]["tool_diff"]) > 4,
+		"tool_diff field must be present and non-null in first row")
+	var diffPayload map[string]any
+	require.NoError(t, json.Unmarshal(rows[0]["tool_diff"], &diffPayload))
+	assert.Equal(t, "foo.go", diffPayload["path"])
+
+	// Second row: tool_preview payload must reflect truncated=true.
+	assert.True(t, len(rows[1]["tool_preview"]) > 4,
+		"tool_preview field must be present and non-null in second row")
+	var previewPayload map[string]any
+	require.NoError(t, json.Unmarshal(rows[1]["tool_preview"], &previewPayload))
+	assert.True(t, previewPayload["truncated"].(bool))
+}
+
 // TestHTTPHandler_Presentation_DaemonBacked_DaemonError verifies that errors
 // from the daemon presentation path propagate with the correct HTTP status.
 func TestHTTPHandler_Presentation_DaemonBacked_DaemonError(t *testing.T) {

@@ -17,6 +17,7 @@ daemon_poll_interval = 0
     program = "codex"
     model = "gpt-5.4"
     execution_mode = "sdk"
+    sdk_speed_tier = "fast"
     temperature = 0.2
     effort = "xhigh"
   [agents.chat]

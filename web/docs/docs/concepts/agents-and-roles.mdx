@@ -55,7 +55,7 @@ func (p AgentProfile) BuildCommand() string {
 | mode | behavior |
 |------|----------|
 | `tmux` | agent runs in a tmux pane; you can attach with `↵`/`o` |
-| `sdk` | agent is driven via its app-server JSON-RPC protocol; output rendered in the preview tab and logs |
+| `sdk` | agent is driven via its app-server JSON-RPC protocol; output rendered in the preview pane and logs |
 
 sdk mode is only effective for claude and codex. for any other program, `session.ResolveExecutionMode` silently falls back to tmux. sdk mode is preferred for automated wave work (many concurrent tasks) when the agent supports it. tmux mode is better when you want to observe or interact with a single agent.
 

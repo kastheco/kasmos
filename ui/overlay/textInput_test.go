@@ -89,6 +89,18 @@ func TestTextInputOverlay_HandlePaste_InsertsText(t *testing.T) {
 	assert.Equal(t, "pasted text", ti.textarea.Value())
 }
 
+func TestTextInputOverlay_HandleKey_CtrlShiftVPastesText(t *testing.T) {
+	origRead := readClipboardText
+	readClipboardText = func() (string, error) { return "pasted text", nil }
+	t.Cleanup(func() { readClipboardText = origRead })
+
+	ti := NewTextInputOverlay("title", "")
+	result := ti.HandleKey(tea.KeyPressMsg{Code: 'V', Mod: tea.ModCtrl | tea.ModShift})
+
+	assert.False(t, result.Dismissed)
+	assert.Equal(t, "pasted text", ti.textarea.Value())
+}
+
 func TestTextInputOverlay_HandlePaste_IgnoredWhenButtonFocused(t *testing.T) {
 	ti := NewTextInputOverlay("title", "")
 	// Tab to the button

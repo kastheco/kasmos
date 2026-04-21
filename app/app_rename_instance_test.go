@@ -36,7 +36,6 @@ func TestRenameInstance_SubmitPreservesStableTitle(t *testing.T) {
 	h.allInstances = append(h.allInstances, inst)
 	h.tabbedWindow.SetInstance(inst)
 	h.previewTerminalInstance = inst.Title
-	h.populateInstanceTabs()
 	h.updateInfoPane()
 
 	h.state = stateRenameInstance

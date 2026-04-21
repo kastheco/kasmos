@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { PresentationRow } from "../../types";
+import type { PresentationRow, ToolDiffLineKind } from "../../types";
 import { ResponseDivider } from "./ResponseDivider";
 import { ProseMarkdown } from "./ProseMarkdown";
 import styles from "./rows.module.css";
@@ -38,6 +38,14 @@ function rowPrefix(row: PresentationRow): string {
   }
 }
 
+function diffLineClass(kind: ToolDiffLineKind): string {
+  switch (kind) {
+    case "added":   return styles.diffLineAdded;
+    case "removed": return styles.diffLineRemoved;
+    default:        return styles.diffLineContext;
+  }
+}
+
 function TextRow({ row }: RowProps) {
   const kindClass = rowKindClass(row);
   const prefix = rowPrefix(row);
@@ -63,6 +71,59 @@ function ProseRow({ row }: RowProps) {
   );
 }
 
+function DiffRow({ row }: RowProps) {
+  const payload = row.tool_diff;
+  if (!payload) return null;
+  return (
+    <div className={`${styles.row} ${styles.kindDiff}`} data-kind="tool_diff">
+      <span className={styles.rowKind}>diff</span>
+      <span className={styles.rowText}>
+        {payload.path && (
+          <div className={styles.diffPath}>{payload.path}</div>
+        )}
+        {(payload.lines ?? []).map((line, i) => (
+          <div key={i} className={`${styles.diffLine} ${diffLineClass(line.kind)}`}>
+            <span className={styles.diffGutter}>
+              {line.kind === "removed"
+                ? (line.old_number ?? "")
+                : (line.new_number ?? line.old_number ?? "")}
+            </span>
+            <span className={styles.diffLineContent}>
+              {line.kind === "removed"
+                ? (line.old_text ?? "")
+                : (line.new_text ?? line.old_text ?? "")}
+            </span>
+          </div>
+        ))}
+        {payload.truncated && (
+          <div className={styles.diffTruncated}>
+            {`… ${payload.hidden_line_count ?? 0} lines hidden`}
+          </div>
+        )}
+      </span>
+    </div>
+  );
+}
+
+function PreviewRow({ row }: RowProps) {
+  const payload = row.tool_preview;
+  if (!payload) return null;
+  const text = (payload.lines ?? []).join("\n");
+  return (
+    <div className={`${styles.row} ${styles.kindPreview}`} data-kind="tool_preview">
+      <span className={styles.rowKind}>preview</span>
+      <span className={styles.rowText}>
+        <span className={styles.previewLines}>{text}</span>
+        {payload.truncated && (
+          <div className={styles.previewTruncated}>
+            {`… ${payload.hidden_line_count ?? 0} lines hidden`}
+          </div>
+        )}
+      </span>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Public switch: row.kind → renderer
 //
@@ -75,6 +136,8 @@ function ProseRow({ row }: RowProps) {
  * Maps a single `PresentationRow` to its React node.
  * `response` rows always become `ResponseDivider` — never generic text.
  * `prose` rows render as react-markdown (remark-gfm, no raw HTML passthrough).
+ * `tool_diff` rows render as a structured inline diff with gutter and colors.
+ * `tool_preview` rows render as a whitespace-preserving text preview.
  * All other rows are monospace text rows with a dimmed kind prefix.
  */
 export function renderRow(row: PresentationRow, index: number): ReactNode {
@@ -83,6 +146,10 @@ export function renderRow(row: PresentationRow, index: number): ReactNode {
       return <ResponseDivider key={index} />;
     case "prose":
       return <ProseRow key={index} row={row} />;
+    case "tool_diff":
+      return <DiffRow key={index} row={row} />;
+    case "tool_preview":
+      return <PreviewRow key={index} row={row} />;
     default:
       return <TextRow key={index} row={row} />;
   }

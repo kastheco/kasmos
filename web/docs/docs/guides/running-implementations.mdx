@@ -82,7 +82,7 @@ No wave confirmation dialogs appear. The single agent works directly on the plan
 
 ### detecting blueprint skip
 
-In the TUI status bar, the wave label (`wave 1/2`) does not appear for blueprint-skip plans. The info tab shows a single agent instance rather than per-wave task glyphs.
+In the TUI status bar, the wave label (`wave 1/2`) does not appear for blueprint-skip plans. The compact info header shows a single agent instance rather than per-wave task glyphs.
 
 ## the solo path — no orchestration at all
 
@@ -92,8 +92,8 @@ The **start solo agent** option in the context menu bypasses both elaboration an
 
 While implementation runs:
 
-- **preview tab** — live output from the selected agent's terminal (tmux) or structured event stream (sdk)
-- **info tab** (`#` or `g`) — wave progress, per-task status glyphs, and subtask completion counts
+- **preview pane** — live output from the selected agent's terminal (tmux) or structured event stream (sdk)
+- **compact info header** — wave progress, per-task status glyphs, and subtask completion counts; shown above the preview pane by default, toggle with `I`
 - **status bar** — wave label (`wave 1/3`) and glyph strip showing each task's state
 - **audit log** (`L`) — timestamped events for every agent spawn, wave transition, and signal
 
