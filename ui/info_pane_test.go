@@ -276,21 +276,34 @@ func TestInfoPane_ShowsCurrentReviewRound(t *testing.T) {
 	assert.Contains(t, output, "round")
 }
 
+// TestRenderCompact_ShowsPlanMetadata verifies that compact output surfaces
+// runtime fields (phase, agent, wave, task counters) and does NOT include
+// static metadata that is already visible in the sidebar (plan name, branch).
 func TestRenderCompact_ShowsPlanMetadata(t *testing.T) {
 	p := NewInfoPane()
 	p.SetSize(80, 24)
 	p.SetData(InfoData{
-		HasPlan:        true,
-		PlanName:       "my-feature",
-		PlanStatus:     "implementing",
-		PlanBranch:     "plan/my-feature",
-		ExecutionPhase: "planned",
+		IsPlanHeaderSelected: true,
+		PlanName:             "my-feature",
+		PlanStatus:           "implementing",
+		PlanBranch:           "plan/my-feature",
+		ExecutionPhase:       "wave_running",
+		ActiveAgentType:      "coder",
+		ActiveWave:           1,
+		TotalWaves:           3,
 	})
 
 	compact := p.RenderCompact(80)
 	assert.NotEmpty(t, compact)
 	assert.True(t, lipgloss.Width(compact) > 0)
-	assert.Contains(t, compact, "planned")
+	// Runtime fields must be present.
+	assert.Contains(t, compact, "wave 1 running")
+	assert.Contains(t, compact, "coder")
+	assert.Contains(t, compact, "wave 1/3")
+	// Static sidebar fields must be absent.
+	assert.NotContains(t, stripANSI(compact), "my-feature")
+	assert.NotContains(t, stripANSI(compact), "plan/my-feature")
+	assert.NotContains(t, stripANSI(compact), "implementing")
 }
 
 func TestRenderCompact_EmptyWhenNoData(t *testing.T) {
@@ -302,17 +315,68 @@ func TestRenderCompact_EmptyWhenNoData(t *testing.T) {
 	assert.Empty(t, compact)
 }
 
+// TestRenderCompact_ShowsInstanceTitle verifies that compact output for an
+// instance selection contains runtime fields (phase, agent, counters) and does
+// NOT contain static fields already visible in the sidebar (title, status).
 func TestRenderCompact_ShowsInstanceTitle(t *testing.T) {
 	p := NewInfoPane()
 	p.SetSize(80, 24)
 	p.SetData(InfoData{
-		HasInstance: true,
-		Title:       "my-plan-coder-1",
-		Status:      "running",
+		HasInstance:     true,
+		Title:           "my-plan-coder-1",
+		Status:          "running",
+		ExecutionPhase:  "fixing",
+		ActiveAgentType: "fixer",
+		ActiveRound:     2,
+		WaveNumber:      1,
+		TotalWaves:      2,
+		TaskNumber:      3,
+		TotalTasks:      5,
 	})
 
 	compact := p.RenderCompact(80)
 	assert.NotEmpty(t, compact)
+	// Runtime fields present.
+	assert.Contains(t, compact, "fixing round 2")
+	assert.Contains(t, compact, "fixer")
+	assert.Contains(t, compact, "wave 1/2")
+	assert.Contains(t, compact, "task 3/5")
+	// Static sidebar fields absent.
+	assert.NotContains(t, stripANSI(compact), "my-plan-coder-1")
+	assert.NotContains(t, stripANSI(compact), "running")
+}
+
+// TestRenderCompact_ReviewingRoundNoDuplicate verifies that "reviewing round 2"
+// appears exactly once when ExecutionPhase="reviewing" and ActiveRound=2 — the
+// standalone round fragment must not be emitted alongside the phase label.
+func TestRenderCompact_ReviewingRoundNoDuplicate(t *testing.T) {
+	p := NewInfoPane()
+	p.SetSize(80, 24)
+	p.SetData(InfoData{
+		IsPlanHeaderSelected: true,
+		ExecutionPhase:       "reviewing",
+		ActiveRound:          2,
+	})
+
+	compact := stripANSI(p.RenderCompact(80))
+	count := strings.Count(compact, "round 2")
+	assert.Equal(t, 1, count, "\"round 2\" must appear exactly once in compact output")
+}
+
+// TestRenderCompact_PlanHeaderWaveCounter verifies that a plan-header selection
+// with ActiveWave set renders "wave N/M" and never emits "active wave N".
+func TestRenderCompact_PlanHeaderWaveCounter(t *testing.T) {
+	p := NewInfoPane()
+	p.SetSize(80, 24)
+	p.SetData(InfoData{
+		IsPlanHeaderSelected: true,
+		ActiveWave:           2,
+		TotalWaves:           3,
+	})
+
+	compact := stripANSI(p.RenderCompact(80))
+	assert.Contains(t, compact, "wave 2/3")
+	assert.NotContains(t, compact, "active wave 2")
 }
 
 // TestInfoPane_WaveLocalTaskCounters verifies that compact output uses wave-local

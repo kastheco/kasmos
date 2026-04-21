@@ -650,129 +650,85 @@ func (p *InfoPane) renderWaveSection() string {
 	return strings.Join(rows, "\n")
 }
 
-// RenderCompact returns a 1-2 line summary suitable for display above the tab
-// bar. Returns empty string when no meaningful data is present.
+// RenderCompact returns a 1-2 line summary of runtime-only metadata suitable
+// for display above the content pane. Returns empty string when neither a plan
+// header nor an instance is selected, or when no runtime fields resolve.
+//
+// Line 1: phase (gold) · agent (iris) · round (muted, only when the phase
+// label does not already include "round ").
+// Line 2: wave N[/M]  task N[/M] — both muted, joined with two spaces.
 func (p *InfoPane) RenderCompact(width int) string {
 	if width <= 0 {
 		return ""
 	}
 	d := p.data
+
+	// Gate on selection context only — plan header or instance must be selected.
+	if !d.IsPlanHeaderSelected && !d.HasInstance {
+		return ""
+	}
+
+	terminalAttempt := d.ReadinessMaxVerifyCycles > 0 && d.VerifyRound >= d.ReadinessMaxVerifyCycles
+
+	// --- Line 1: phase · agent [· round] ---
+	var line1Parts []string
+
+	phaseLabel := infoPhaseLabel(d.ExecutionPhase, d.ActiveWave, d.ActiveRound, terminalAttempt)
+	if phaseLabel != "" {
+		line1Parts = append(line1Parts, lipgloss.NewStyle().Foreground(ColorGold).Render(phaseLabel))
+	}
+
+	if agentLabel := infoAgentLabel(d.ActiveAgentType); agentLabel != "" {
+		line1Parts = append(line1Parts, lipgloss.NewStyle().Foreground(ColorIris).Render(agentLabel))
+	}
+
+	// Only emit a standalone round fragment when the phase label doesn't already
+	// embed it (e.g. "reviewing round 2" already contains "round ").
+	if d.ActiveRound > 0 && !strings.Contains(phaseLabel, "round ") {
+		line1Parts = append(line1Parts, lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("round %d", d.ActiveRound)))
+	}
+
+	line1 := strings.Join(line1Parts, " · ")
+
+	// --- Line 2: wave N[/M]  task N[/M] ---
+	mutedStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	var line2Parts []string
+
+	// Prefer instance-level wave number; fall back to plan-level active wave so
+	// plan-header selections with ActiveWave set still show a counter.
+	waveCurrent := d.WaveNumber
+	if waveCurrent == 0 {
+		waveCurrent = d.ActiveWave
+	}
+	if waveCurrent > 0 {
+		waveTotal := infoDisplayedWaveTotal(waveCurrent, d.TotalWaves)
+		var waveText string
+		if waveTotal > 0 {
+			waveText = fmt.Sprintf("wave %d/%d", waveCurrent, waveTotal)
+		} else {
+			waveText = fmt.Sprintf("wave %d", waveCurrent)
+		}
+		line2Parts = append(line2Parts, mutedStyle.Render(waveText))
+	}
+
+	if cur, tot, ok := infoDisplayedTaskCounter(d.TaskNumber, d.TotalTasks, d.WaveTaskIndex, d.WaveTaskCount); ok {
+		var taskText string
+		if tot > 0 {
+			taskText = fmt.Sprintf("task %d/%d", cur, tot)
+		} else {
+			taskText = fmt.Sprintf("task %d", cur)
+		}
+		line2Parts = append(line2Parts, mutedStyle.Render(taskText))
+	}
+
+	line2 := strings.Join(line2Parts, "  ")
+
 	var lines []string
-
-	// Choose plan summary first, else instance summary.
-	if d.PlanName != "" || d.IsPlanHeaderSelected {
-		if d.PlanName != "" {
-			nameStyle := lipgloss.NewStyle().Foreground(ColorFoam).Bold(true)
-			statusStyle := lipgloss.NewStyle().Foreground(statusColor(d.PlanStatus))
-			line1 := nameStyle.Render(d.PlanName)
-			terminalAttempt := d.ReadinessMaxVerifyCycles > 0 && d.VerifyRound >= d.ReadinessMaxVerifyCycles
-			phase := infoPhaseLabel(d.ExecutionPhase, d.ActiveWave, d.ActiveRound, terminalAttempt)
-			phaseStyle := lipgloss.NewStyle().Foreground(ColorGold)
-			var states []string
-			if d.PlanStatus != "" {
-				states = append(states, statusStyle.Render(d.PlanStatus))
-			}
-			if phase != "" && phase != d.PlanStatus {
-				states = append(states, phaseStyle.Render(phase))
-			}
-			if len(states) > 0 {
-				line1 += "  " + strings.Join(states, " · ")
-			}
-			lines = append(lines, line1)
-
-			// Build line 2 from branch + wave/task counters.
-			var parts []string
-			branch := d.PlanBranch
-			if branch == "" {
-				branch = d.Branch
-			}
-			if branch != "" {
-				parts = append(parts, lipgloss.NewStyle().Foreground(ColorMuted).Render(branch))
-			}
-			if agent := infoAgentLabel(d.ActiveAgentType); agent != "" {
-				parts = append(parts, agent)
-			}
-			// Show "active wave N" only when the selected instance has no concrete
-			// wave counter of its own (which would make the label redundant).
-			hasInstanceWave := d.WaveNumber > 0
-			if d.ActiveWave > 0 && !hasInstanceWave {
-				parts = append(parts, fmt.Sprintf("active wave %d", d.ActiveWave))
-			}
-			if d.ActiveRound > 0 {
-				parts = append(parts, fmt.Sprintf("round %d", d.ActiveRound))
-			}
-			if d.WaveNumber > 0 {
-				waveTotal := infoDisplayedWaveTotal(d.WaveNumber, d.TotalWaves)
-				if waveTotal > 0 {
-					parts = append(parts, fmt.Sprintf("wave %d/%d", d.WaveNumber, waveTotal))
-				} else {
-					parts = append(parts, fmt.Sprintf("wave %d", d.WaveNumber))
-				}
-			}
-			if cur, tot, ok := infoDisplayedTaskCounter(d.TaskNumber, d.TotalTasks, d.WaveTaskIndex, d.WaveTaskCount); ok {
-				if tot > 0 {
-					parts = append(parts, fmt.Sprintf("task %d/%d", cur, tot))
-				} else {
-					parts = append(parts, fmt.Sprintf("task %d", cur))
-				}
-			}
-			if len(parts) > 0 {
-				lines = append(lines, strings.Join(parts, "  "))
-			}
-		}
-	} else if d.HasInstance && d.Title != "" {
-		nameStyle := lipgloss.NewStyle().Foreground(ColorFoam).Bold(true)
-		statusStyle := lipgloss.NewStyle().Foreground(statusColor(d.Status))
-		line1 := nameStyle.Render(d.Title)
-		terminalAttempt := d.ReadinessMaxVerifyCycles > 0 && d.VerifyRound >= d.ReadinessMaxVerifyCycles
-		phase := infoPhaseLabel(d.ExecutionPhase, d.ActiveWave, d.ActiveRound, terminalAttempt)
-		phaseStyle := lipgloss.NewStyle().Foreground(ColorGold)
-		var states []string
-		if d.Status != "" {
-			states = append(states, statusStyle.Render(d.Status))
-		}
-		if phase != "" {
-			states = append(states, phaseStyle.Render(phase))
-		}
-		if len(states) > 0 {
-			line1 += "  " + strings.Join(states, " · ")
-		}
+	if line1 != "" {
 		lines = append(lines, line1)
-
-		// Build line 2 from branch + wave/task counters.
-		var parts []string
-		if d.Branch != "" {
-			parts = append(parts, lipgloss.NewStyle().Foreground(ColorMuted).Render(d.Branch))
-		}
-		if agent := infoAgentLabel(d.ActiveAgentType); agent != "" {
-			parts = append(parts, agent)
-		}
-		// Suppress "active wave N" when a concrete wave counter is already shown.
-		hasInstanceWave := d.WaveNumber > 0
-		if d.ActiveWave > 0 && !hasInstanceWave {
-			parts = append(parts, fmt.Sprintf("active wave %d", d.ActiveWave))
-		}
-		if d.ActiveRound > 0 {
-			parts = append(parts, fmt.Sprintf("round %d", d.ActiveRound))
-		}
-		if d.WaveNumber > 0 {
-			waveTotal := infoDisplayedWaveTotal(d.WaveNumber, d.TotalWaves)
-			if waveTotal > 0 {
-				parts = append(parts, fmt.Sprintf("wave %d/%d", d.WaveNumber, waveTotal))
-			} else {
-				parts = append(parts, fmt.Sprintf("wave %d", d.WaveNumber))
-			}
-		}
-		if cur, tot, ok := infoDisplayedTaskCounter(d.TaskNumber, d.TotalTasks, d.WaveTaskIndex, d.WaveTaskCount); ok {
-			if tot > 0 {
-				parts = append(parts, fmt.Sprintf("task %d/%d", cur, tot))
-			} else {
-				parts = append(parts, fmt.Sprintf("task %d", cur))
-			}
-		}
-		if len(parts) > 0 {
-			lines = append(lines, strings.Join(parts, "  "))
-		}
+	}
+	if line2 != "" {
+		lines = append(lines, line2)
 	}
 
 	if len(lines) == 0 {
