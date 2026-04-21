@@ -111,7 +111,7 @@ Every harness can run in one of two execution modes:
 | mode | description |
 |------|-------------|
 | `tmux` | agent runs in a tmux session; you can attach fullscreen with `↵` and detach with `ctrl+space` |
-| `sdk` | agent is driven via its app-server JSON-RPC protocol; output streams to the preview tab and audit log |
+| `sdk` | agent is driven via its app-server JSON-RPC protocol; output streams to the preview pane and audit log |
 
 `sdk` mode is only available for **claude** and **codex**. setting `execution_mode = "sdk"` for any other program (opencode, gemini, amp, or custom binaries) causes kasmos to silently fall back to tmux at runtime — those programs do not have sdk transports.
 

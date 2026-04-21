@@ -21,17 +21,13 @@ func TestRightOnInstance_OpensContextMenu(t *testing.T) {
 	h.nav.AddInstance(inst)
 	h.nav.SelectInstance(inst)
 
-	// Press right from the info tab — should open context menu, not switch tab.
-	h.tabbedWindow.SetActiveTab(ui.InfoTab)
+	// Press right on the instance — should open context menu.
 	h.keySent = true
 	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyRight})
 	updated := model.(*home)
 
 	assert.Equal(t, stateContextMenu, updated.state,
 		"right on instance should open context menu")
-	// Tab should not have changed.
-	assert.Equal(t, ui.InfoTab, updated.tabbedWindow.GetActiveTab(),
-		"right on instance should not switch tab")
 }
 
 // TestRightOnInstance_PreviewTab_OpensContextMenu verifies that pressing right
@@ -43,13 +39,12 @@ func TestRightOnInstance_PreviewTab_OpensContextMenu(t *testing.T) {
 	h.nav.AddInstance(inst)
 	h.nav.SelectInstance(inst)
 
-	h.tabbedWindow.SetActiveTab(ui.PreviewTab)
 	h.keySent = true
 	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyRight})
 	updated := model.(*home)
 
 	assert.Equal(t, stateContextMenu, updated.state,
-		"right on instance from preview tab should open context menu")
+		"right on instance should open context menu")
 }
 
 func TestSpaceOnInstance_OpensContextMenu(t *testing.T) {
@@ -90,7 +85,6 @@ func TestRightOnNonInstanceRow_DoesNotOpenContextMenu(t *testing.T) {
 	h := newTestHome()
 
 	// Set up with no instance selected and no plan selected (empty nav).
-	h.tabbedWindow.SetActiveTab(ui.InfoTab)
 
 	// Press right with no instance and no plan selected.
 	h.keySent = true
@@ -100,9 +94,6 @@ func TestRightOnNonInstanceRow_DoesNotOpenContextMenu(t *testing.T) {
 	// Should not have entered context menu state.
 	assert.NotEqual(t, stateContextMenu, updated.state,
 		"right on non-instance row should not open context menu")
-	// Tab should not have changed.
-	assert.Equal(t, ui.InfoTab, updated.tabbedWindow.GetActiveTab(),
-		"right on non-instance row should not switch tab")
 }
 
 // TestRightOnPlanRow_ViewsPlan verifies that pressing right on a plan header
@@ -118,7 +109,6 @@ func TestRightOnPlanRow_ViewsPlan(t *testing.T) {
 	// Row 0 is the plan header; select it.
 	h.nav.Down()
 
-	h.tabbedWindow.SetActiveTab(ui.InfoTab)
 	h.keySent = true
 	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyRight})
 	updated := model.(*home)
@@ -126,7 +116,4 @@ func TestRightOnPlanRow_ViewsPlan(t *testing.T) {
 	// Should not have entered context menu state.
 	assert.NotEqual(t, stateContextMenu, updated.state,
 		"right on plan row should not open context menu")
-	// Tab should not have changed (plan view does not switch tabs).
-	assert.Equal(t, ui.InfoTab, updated.tabbedWindow.GetActiveTab(),
-		"right on plan row should not switch tab")
 }

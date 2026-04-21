@@ -26,7 +26,6 @@ import (
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
 	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
 	"github.com/kastheco/kasmos/internal/opencodesession"
-	"github.com/kastheco/kasmos/keys"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
@@ -613,7 +612,6 @@ func (m *home) computePlanStatuses() map[string]ui.TopicStatus {
 // skip this — updateSidebarTasks already includes plan statuses in its rebuild.
 func (m *home) updateNavPanelStatus() {
 	m.nav.SetItems(nil, nil, 0, nil, nil, m.computePlanStatuses())
-	m.populateInstanceTabs()
 }
 
 // focusSlot constants for readability.
@@ -630,21 +628,6 @@ func (m *home) setFocusSlot(slot int) {
 	m.nav.SetFocused(slot == slotNav)
 	m.menu.SetFocusSlot(slot)
 	m.tabbedWindow.SetFocused(slot == slotAgent)
-}
-
-// nextFocusSlot cycles forward through dynamic instance tabs.
-// The sidebar always retains keyboard focus (focusSlot stays slotNav); only the
-// displayed tab changes. This is called by Tab.
-func (m *home) nextFocusSlot() tea.Cmd {
-	m.tabbedWindow.NextTab()
-	return m.tabSwitched()
-}
-
-// prevFocusSlot cycles backward through dynamic instance tabs.
-// The sidebar always retains keyboard focus (focusSlot stays slotNav).
-func (m *home) prevFocusSlot() tea.Cmd {
-	m.tabbedWindow.PrevTab()
-	return m.tabSwitched()
 }
 
 func asyncClosePreviewTerminal(term *session.EmbeddedTerminal) tea.Cmd {
@@ -712,85 +695,6 @@ func (m *home) syncPreviewTerminal() tea.Cmd {
 		return cmds[0]
 	}
 	return tea.Batch(cmds...)
-}
-
-// populateInstanceTabs rebuilds the dynamic instance tab list based on the
-// currently selected nav item. When a plan header is selected, it includes
-// all instances whose TaskFile matches that plan. When a solo instance is
-// selected, it shows exactly one tab for that instance.
-func (m *home) populateInstanceTabs() {
-	prevKey := m.tabbedWindow.ActiveTabKey()
-
-	var tabs []ui.InstanceTab
-	planFile := m.nav.GetSelectedPlanFile()
-
-	if planFile != "" {
-		// Plan header selected — show all instances belonging to this plan.
-		for _, inst := range m.nav.GetInstances() {
-			if inst.TaskFile == planFile {
-				tabs = append(tabs, ui.InstanceTab{Title: inst.DisplayName(), Key: inst.Title})
-			}
-		}
-	} else if selected := m.nav.GetSelectedInstance(); selected != nil {
-		// Solo instance selected — show just this one.
-		tabs = []ui.InstanceTab{{Title: selected.DisplayName(), Key: selected.Title}}
-	}
-
-	m.tabbedWindow.SetTabs(tabs)
-
-	// Prefer the currently selected instance's tab.
-	if selected := m.nav.GetSelectedInstance(); selected != nil {
-		for i, tab := range tabs {
-			if tab.Key == selected.Title {
-				m.tabbedWindow.SetActiveTab(i)
-				return
-			}
-		}
-	}
-
-	// Otherwise restore prevKey if still present.
-	if prevKey != "" {
-		for i, tab := range tabs {
-			if tab.Key == prevKey {
-				m.tabbedWindow.SetActiveTab(i)
-				return
-			}
-		}
-	}
-	// Otherwise leave at index 0 (default).
-}
-
-// tabSwitched syncs the preview terminal and info pane after the active
-// instance tab has changed. It should be called immediately after any
-// NextTab / PrevTab / SetActiveTab call that the user triggered.
-func (m *home) tabSwitched() tea.Cmd {
-	m.previewRequested = true
-	m.tabbedWindow.ClearDocumentMode()
-
-	key := m.tabbedWindow.ActiveTabKey()
-	if key != "" {
-		for _, inst := range m.nav.GetInstances() {
-			if inst.Title == key {
-				m.nav.SelectInstance(inst)
-				m.tabbedWindow.SetInstance(inst)
-				m.updateInfoPane()
-				m.menu.SetInstance(inst)
-				break
-			}
-		}
-	}
-
-	return m.syncPreviewTerminal()
-}
-
-func (m *home) activateInfoTab() tea.Cmd {
-	m.tabbedWindow.SetShowInfo(true)
-	return nil
-}
-
-func (m *home) activateLivePreviewTab() tea.Cmd {
-	m.previewRequested = true
-	return m.syncPreviewTerminal()
 }
 
 // enterFocusMode enters focus/insert mode and starts the fast preview ticker.
@@ -1211,16 +1115,6 @@ func (m *home) snapshotPaneOnCompletion(inst *session.Instance, planFile string,
 	_ = os.WriteFile(filepath.Join(logDir, filename), []byte(inst.CachedContent), 0o644)
 }
 
-// switchToTab toggles the compact info header without stealing focus from the sidebar.
-// The sidebar (slotNav) always retains keyboard focus.
-func (m *home) switchToTab(name keys.KeyName) (tea.Model, tea.Cmd) {
-	switch name {
-	case keys.KeyTabInfo:
-		m.tabbedWindow.SetShowInfo(!m.tabbedWindow.IsShowingInfo())
-	}
-	return m, nil
-}
-
 // saveAllInstances saves allInstances (all repos) to storage.
 // Daemon SDK placeholders are excluded: they have no local execution session
 // and would appear as stale "standalone sdk" rows after the daemon restarts.
@@ -1265,7 +1159,6 @@ func (m *home) syncInstanceDisplayTitle(inst *session.Instance, rawTitle string)
 	}
 
 	inst.DisplayTitle = newTitle
-	m.populateInstanceTabs()
 	if selected := m.nav.GetSelectedInstance(); selected == inst {
 		m.updateInfoPane()
 	}
@@ -1397,9 +1290,6 @@ func (m *home) instanceChanged() tea.Cmd {
 	m.updateInfoPane()
 	// Update menu with current instance.
 	m.menu.SetInstance(selected)
-
-	// Rebuild the dynamic instance tab list for the new selection.
-	m.populateInstanceTabs()
 
 	// Collect async commands.
 	var cmds []tea.Cmd

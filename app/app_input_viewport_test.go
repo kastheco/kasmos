@@ -114,7 +114,6 @@ func TestHandleMouseWheel_DocumentModeScrollsWithoutSelectedInstance(t *testing.
 
 	h.navWidth = 24
 	h.tabbedWindow.SetSize(100, 16)
-	h.tabbedWindow.SetActiveTab(ui.PreviewTab)
 	h.tabbedWindow.SetDocumentContent(appTestDocumentLines(120))
 	agentPane := prepareAgentPaneForWheelTest(t, h, 100, 16)
 

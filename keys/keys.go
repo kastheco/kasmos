@@ -20,7 +20,6 @@ const (
 	KeyPush
 	KeySubmit
 
-	KeyTab        // Tab is a special keybinding for cycling the focus ring.
 	KeySubmitName // SubmitName is a special keybinding for submitting the name of a new instance.
 
 	KeyCheckout
@@ -41,11 +40,8 @@ const (
 	KeySpace // Key for opening context menu on selected item
 	KeyCommandLauncher
 
-	KeyInfoTab // Key for toggling the compact info header visibility
-
-	// Tab switching keybindings
-	KeyTabAgent
-	KeyTabInfo
+	KeyInfoTab    // Key for toggling the compact info header visibility
+	KeyFocusAgent // Key for entering focus/interactive mode on the selected agent (!)
 
 	KeySpawnAgent    // S - spawn ad-hoc agent session
 	KeyQuickLaunch   // s - quick launch ad-hoc agent session
@@ -66,10 +62,9 @@ const (
 	KeyHalfPageDown // ctrl+d — scroll preview half-page down
 )
 
-// Backward-compatible aliases; prefer KeyInfoTab/KeyTabInfo.
+// Backward-compatible alias; prefer KeyInfoTab.
 const (
 	KeyGitTab = KeyInfoTab
-	KeyTabGit = KeyTabInfo
 )
 
 // GlobalKeyStringsMap is a global, immutable map string to keybinding.
@@ -85,7 +80,6 @@ var GlobalKeyStringsMap = map[string]KeyName{
 	"ctrl+u":       KeyHalfPageUp,
 	"ctrl+d":       KeyHalfPageDown,
 	"q":            KeyQuit,
-	"tab":          KeyTab,
 	"r":            KeyResume,
 	"?":            KeyHelp,
 	"S":            KeySpawnAgent,
@@ -106,7 +100,7 @@ var GlobalKeyStringsMap = map[string]KeyName{
 	"ctrl+s":       KeyToggleSidebar,
 	"ctrl+space":   KeyExitFocus,
 	"I":            KeyInfoTab,
-	"!":            KeyTabAgent,
+	"!":            KeyFocusAgent,
 }
 
 // GlobalkeyBindings is a global, immutable map of KeyName tot keybinding.
@@ -154,10 +148,6 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	KeyPrompt: key.NewBinding(
 		key.WithKeys("N"),
 		key.WithHelp("N", "new with prompt"),
-	),
-	KeyTab: key.NewBinding(
-		key.WithKeys("tab"),
-		key.WithHelp("tab", "cycle panes"),
 	),
 	KeyResume: key.NewBinding(
 		key.WithKeys("r"),
@@ -215,9 +205,9 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 		key.WithKeys("I"),
 		key.WithHelp("I", "toggle info header"),
 	),
-	KeyTabAgent: key.NewBinding(
+	KeyFocusAgent: key.NewBinding(
 		key.WithKeys("!"),
-		key.WithHelp("!", "switch tab"),
+		key.WithHelp("!", "focus agent"),
 	),
 	KeyExitFocus: key.NewBinding(
 		key.WithKeys("ctrl+space"),

@@ -2074,7 +2074,7 @@ func (m *home) executeLauncherAction(action string) (tea.Model, tea.Cmd) {
 		return m.enterAuditCursorMode()
 	case "info_tab":
 		m.tabbedWindow.SetShowInfo(!m.tabbedWindow.IsShowingInfo())
-		return m, nil
+		return m, tea.RequestWindowSize
 	case "quit":
 		return m.handleQuit()
 

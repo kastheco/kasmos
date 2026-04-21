@@ -118,17 +118,25 @@ func TestBuildKeybindBrowserItems_HidesSubmitNameAndRemovedBindings(t *testing.T
 	items := buildKeybindBrowserItems()
 
 	var foundInfoTab bool
+	var foundFocusAgent bool
 	for _, item := range items {
 		assert.NotEqual(t, "submit name", item.Label)
 		assert.NotEqual(t, "checkout", item.Label)
 		assert.NotEqual(t, "right sidebar", item.Label)
+		assert.NotEqual(t, "cycle panes", item.Label, "cycle panes binding must be removed")
+		assert.NotEqual(t, "switch tab", item.Label, "switch tab binding must be removed")
 		if item.Label == "toggle info header" {
 			foundInfoTab = true
 			assert.Equal(t, "I", item.Hint)
 		}
+		if item.Label == "focus agent" {
+			foundFocusAgent = true
+			assert.Equal(t, "!", item.Hint)
+		}
 	}
 
 	require.True(t, foundInfoTab, "toggle info header should still be listed in the keybind browser")
+	require.True(t, foundFocusAgent, "focus agent should be listed in the keybind browser")
 }
 
 // TestBuildLauncherItems_NoSelection_OnlyGlobalActions verifies that when nothing

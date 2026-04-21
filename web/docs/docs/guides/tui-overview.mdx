@@ -7,7 +7,7 @@ title: "tui overview"
 kasmos is a terminal UI that manages concurrent AI agent sessions. The interface is split into three areas:
 
 - **sidebar** (left) — instance list grouped by plan; use `←→` to move focus between panes
-- **center pane** — tabbed view: live agent preview, info tab, or plan document viewer
+- **center pane** — preview pane with a compact info header above it showing runtime metadata for the selected instance
 - **status bar** (bottom) — current branch, plan status, wave progress, and PR state
 
 Press `?` at any time to open the keybind browser, or `q` to quit.
@@ -32,7 +32,7 @@ These keys act on the **currently selected instance** in the sidebar.
 | `1` / `2` | filter instance list: all / active only |
 | `3` | cycle sort mode |
 
-Headless instances run as background processes and are **not attachable**. Their output is visible in the preview tab and in the audit log. Tmux instances can be attached with `↵` and detached with `ctrl+space` or `ctrl-q`.
+Headless instances run as background processes and are **not attachable**. Their output is visible in the preview pane and in the audit log. Tmux instances can be attached with `↵` and detached with `ctrl+space` or `ctrl-q`.
 
 ## plans
 
@@ -52,9 +52,8 @@ The **context menu** (opened with `↵` on a plan header) lists all available li
 
 | key | action |
 |-----|--------|
-| `tab` / `shift+tab` | cycle tabs in the center pane (info ↔ agent preview) |
 | `!` | enter interactive + shell mode (sends `!` to the harness terminal) |
-| `#` / `g` | jump to the info tab |
+| `I` | toggle the compact info header above the preview pane (on by default) |
 | `↑` / `↓` | navigate within the focused pane |
 | `←` / `→` | move focus between the sidebar and center pane |
 | `ctrl+s` | toggle sidebar visibility |
@@ -69,7 +68,6 @@ Press `ctrl+p` or the assigned key to open the global command launcher overlay. 
 
 ## layout tips
 
-- The sidebar always retains keyboard focus; tab/shift+tab change which center-pane tab is displayed without moving focus to the center.
 - `ctrl+s` hides the sidebar and gives the center pane more room when reviewing long agent output.
-- When a plan is selected, all instances belonging to that plan appear as tabs in the center pane. Select a solo instance to narrow to one tab.
+- The compact info header is shown above the preview pane by default; press `I` to toggle it off if you want more vertical space for agent output.
 - The status bar shows wave progress glyphs (`■ □ ✓ ✗`) for the current wave while implementation is running.
