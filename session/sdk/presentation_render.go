@@ -102,6 +102,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 	resultOKStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
 	resultErrStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
 	systemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
+	warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
 	permStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose))
 	proseStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorText))
 	statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
@@ -156,6 +157,8 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 			} else {
 				rows = append(rows, ToolChildIndent+resultOKStyle.Render(row.Text))
 			}
+		case RowWarning:
+			rows = append(rows, warningStyle.Render(row.Text))
 		case RowSystem:
 			rows = append(rows, systemStyle.Render(row.Text))
 		case RowPermission:

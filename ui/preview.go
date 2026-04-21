@@ -50,6 +50,9 @@ type PreviewPane struct {
 	// lastInstanceKey tracks the most recently rendered instance so inherited
 	// scroll mode can be cleared when the user switches to a different session.
 	lastInstanceKey string
+	// lastSDKComposerOwner tracks which logical SDK session owns the current
+	// draft so daemon placeholder replacement does not wipe in-progress input.
+	lastSDKComposerOwner string
 
 	// bannerFrame is the current animation tick index for the idle banner.
 	bannerFrame int
@@ -226,16 +229,20 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 	if instance != nil {
 		instanceKey = instance.IdentityKey()
 	}
+	composerOwnerKey := sdkComposerOwnerKey(instance)
 	if instanceKey != p.lastInstanceKey {
 		p.isScrolling = false
 		p.viewport.SetContent("")
 		p.viewport.SetHeight(p.height)
 		p.viewport.GotoTop()
-		p.sdkComposerText = ""
-		p.sdkComposerImages = nil
 		p.sdkView = nil
 		p.sdkScrollStrip = ""
 		p.lastInstanceKey = instanceKey
+	}
+	if composerOwnerKey != p.lastSDKComposerOwner {
+		p.sdkComposerText = ""
+		p.sdkComposerImages = nil
+		p.lastSDKComposerOwner = composerOwnerKey
 	}
 
 	switch {
@@ -597,10 +604,10 @@ func (p *PreviewPane) renderSDKStructuredView() string {
 //   - ok-result, system, and thinking rows: ColorMuted (quieter than tools)
 //   - error-result rows: ColorLove
 //   - permission rows: ColorRose (salmon)
+//   - warning and RowStatus rows: ColorGold (warning amber)
 //   - prose rows: ColorText (primary)
 //   - user rows: ColorFoam
 //   - RowResponse sentinel: emits a muted divider rule
-//   - RowStatus (interrupted) rows: ColorGold (warning amber)
 //
 // In narrow mode (width < narrowPaneThreshold):
 //   - the header is reduced to just "turn N" (no elapsed, tool count, running label)
@@ -626,6 +633,7 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 	resultOKStyle := lipgloss.NewStyle().Foreground(ColorFoam)
 	resultErrStyle := lipgloss.NewStyle().Foreground(ColorLove)
 	systemStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
+	warningStyle := lipgloss.NewStyle().Foreground(ColorGold)
 	permStyle := lipgloss.NewStyle().Foreground(ColorRose)
 	proseStyle := lipgloss.NewStyle().Foreground(ColorText)
 	statusStyle := lipgloss.NewStyle().Foreground(ColorGold)
@@ -680,6 +688,8 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 			} else {
 				rows = append(rows, sdk.ToolChildIndent+resultOKStyle.Render(row.Text))
 			}
+		case sdk.RowWarning:
+			rows = append(rows, warningStyle.Render(row.Text))
 		case sdk.RowSystem:
 			rows = append(rows, systemStyle.Render(row.Text))
 		case sdk.RowPermission:
@@ -700,6 +710,21 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 		}
 	}
 	return rows
+}
+
+func sdkComposerOwnerKey(instance *session.Instance) string {
+	if instance == nil {
+		return ""
+	}
+	if session.NormalizeExecutionMode(instance.ExecutionMode) == session.ExecutionModeSDK && !instance.Started() {
+		return fmt.Sprintf(
+			"sdk-placeholder|%s|%s|%s",
+			strings.TrimSpace(instance.Title),
+			strings.TrimSpace(instance.Program),
+			strings.TrimSpace(instance.Path),
+		)
+	}
+	return instance.IdentityKey()
 }
 
 // renderResponseDivider returns a muted horizontal rule separating tool/setup

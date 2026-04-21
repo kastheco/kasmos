@@ -140,6 +140,32 @@ func (r *Renderer) AddEvent(e Event) {
 			Timestamp: e.Timestamp,
 		})
 
+	case EventWarning:
+		if e.Text != "" {
+			r.appendLine("[warning: " + e.Text + "]")
+		}
+		if e.Text != "" {
+			row := PresentationRow{
+				Kind:      RowWarning,
+				Text:      "[warning: " + e.Text + "]",
+				Timestamp: e.Timestamp,
+			}
+			if r.currentTurn != nil {
+				r.closeStructuredProseBlock()
+				r.currentTurn.Rows = append(r.currentTurn.Rows, row)
+			} else {
+				r.appendStandaloneTurn(e.TurnID, e.Timestamp, row)
+			}
+		}
+		if e.Final && r.currentTurn != nil {
+			ts := e.Timestamp
+			if ts.IsZero() {
+				ts = time.Now()
+			}
+			r.currentTurn.CompletedAt = ts
+			r.clearCurrentTurn()
+		}
+
 	case EventSystem:
 		// Flat path — unchanged.
 		if e.Text != "" {

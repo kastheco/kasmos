@@ -30,6 +30,7 @@ func TestPresentationTurn_JSONContract(t *testing.T) {
 			{Kind: RowResponse, Text: "", Timestamp: ts},
 			{Kind: RowProse, Text: "Here is the output.", Timestamp: ts},
 			{Kind: RowPermission, Text: "allow write?", Timestamp: ts},
+			{Kind: RowWarning, Text: "mcp server startup is slow", Timestamp: ts},
 			{Kind: RowSystem, Text: "rate limit", Timestamp: ts, IsError: true},
 			{Kind: RowStatus, Text: "[interrupted]", Timestamp: ts},
 		},

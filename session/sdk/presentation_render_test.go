@@ -346,6 +346,23 @@ func TestRenderPresentation_ComposerFooter(t *testing.T) {
 	require.Contains(t, plain, "> send a message to the agent")
 }
 
+func TestRenderPresentation_WarningRowsUseGold(t *testing.T) {
+	now := time.Now()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{Kind: RowWarning, Text: "[warning: mcp server startup is slow]", Timestamp: now},
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+	require.Contains(t, result,
+		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold)).Render("[warning: mcp server startup is slow]"))
+}
+
 // TestRenderPresentation_NilDiffPayload verifies that a RowToolDiff row with a
 // nil ToolDiff is silently skipped without panic.
 func TestRenderPresentation_NilDiffPayload(t *testing.T) {

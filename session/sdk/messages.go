@@ -27,6 +27,9 @@ const (
 	// EventSystem carries system-level messages such as startup, shutdown, or
 	// non-fatal errors from the transport layer.
 	EventSystem EventKind = "system"
+	// EventWarning carries non-fatal warning messages from the transport layer
+	// or the backing agent server.
+	EventWarning EventKind = "warning"
 )
 
 // Event is a program-agnostic structured event produced by a Transport.
@@ -43,8 +46,8 @@ type Event struct {
 	// EventTurnInterrupted so the consumer can correlate events.
 	TurnID string
 
-	// Text is the content for EventTextDelta (incremental text chunk) and
-	// EventSystem (human-readable status or error message).
+	// Text is the content for EventTextDelta (incremental text chunk),
+	// EventSystem, and EventWarning (human-readable status/error/warning text).
 	Text string
 
 	// ToolName identifies the tool being called (EventToolCall) or whose

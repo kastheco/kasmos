@@ -732,6 +732,29 @@ func TestPreviewPane_SDKPresentation_PermissionColor(t *testing.T) {
 		"permission row must be rendered in ColorRose")
 }
 
+func TestPreviewPane_SDKPresentation_WarningColor(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 40)
+
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: now,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowWarning, Text: "[warning: mcp server startup is slow]", Timestamp: now},
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	rendered := pane.previewState.text
+	require.Contains(t, rendered,
+		lipgloss.NewStyle().Foreground(ColorGold).Render("[warning: mcp server startup is slow]"),
+		"warning row must be rendered in ColorGold")
+}
+
 // TestPreviewPane_SDKPresentation_FallsBackToCachedContent verifies that when the
 // presentation model returns no turns but cached flat content is available, the
 // pane uses the flat cache (preserving the existing fallback contract).
@@ -847,6 +870,40 @@ func TestPreviewPane_SetSDKFocusMode_DisablePreservesComposerDraft(t *testing.T)
 
 	require.Equal(t, "draft message", pane.SDKComposerText())
 	require.Equal(t, []string{"/tmp/clipboard.png"}, pane.SDKComposerImages())
+}
+
+func TestPreviewPane_SDKPresentation_PlaceholderReplacementPreservesComposerDraft(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 24)
+	pane.SetSDKFocusMode(true)
+
+	repoPath := t.TempDir()
+	inst1, err := session.NewInstance(session.InstanceOptions{
+		Title:   "daemon-sdk-placeholder",
+		Path:    repoPath,
+		Program: "codex",
+	})
+	require.NoError(t, err)
+	inst1.ExecutionMode = session.ExecutionModeSDK
+	inst1.SetStatus(session.Loading)
+	require.NoError(t, pane.UpdateContent(inst1))
+
+	pane.AppendSDKComposerText("draft steer")
+	pane.AppendSDKComposerImage("/tmp/clipboard.png")
+
+	inst2, err := session.NewInstance(session.InstanceOptions{
+		Title:   "daemon-sdk-placeholder",
+		Path:    repoPath,
+		Program: "codex",
+	})
+	require.NoError(t, err)
+	inst2.ExecutionMode = session.ExecutionModeSDK
+	inst2.SetStatus(session.Running)
+	require.NoError(t, pane.UpdateContent(inst2))
+
+	require.Equal(t, "draft steer", pane.SDKComposerText())
+	require.Equal(t, []string{"/tmp/clipboard.png"}, pane.SDKComposerImages())
+	require.Contains(t, stripPreviewANSI(pane.previewState.text), "> draft steer█")
 }
 
 func TestPreviewPane_SDKPresentation_UserHistoryUsesFoam(t *testing.T) {

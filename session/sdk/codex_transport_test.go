@@ -550,6 +550,19 @@ func TestCodexTransport_ErrorNotification_EmitsSystemEvent(t *testing.T) {
 	assert.True(t, ev.HasPrompt)
 }
 
+func TestCodexTransport_WarningNotification_EmitsWarningEvent(t *testing.T) {
+	ct, srv := newStartedCodexTransport(t)
+
+	srv.pushNotification(codexNotifyWarning, map[string]any{
+		"message": "mcp server startup is slow",
+		"turnId":  "turn-3",
+	})
+
+	ev := waitForEvent(t, ct.Events(), EventWarning, time.Second)
+	assert.Equal(t, "turn-3", ev.TurnID)
+	assert.Equal(t, "mcp server startup is slow", ev.Text)
+}
+
 func TestCodexTransport_BenignNotifications_AreSilentlyIgnored(t *testing.T) {
 	ct, srv := newStartedCodexTransport(t)
 

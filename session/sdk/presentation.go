@@ -13,7 +13,7 @@ const thinkingThreshold = 2 * time.Second
 
 // maybeInjectThinking appends a timing-only RowThinking row to the turn copy
 // when the turn is still running, has not yet produced any tool, result, prose,
-// permission, or system rows, and has been running for longer than
+// permission, warning, or system rows, and has been running for longer than
 // thinkingThreshold. Because this is called on a deep copy in CapturePresentation,
 // the row disappears automatically once real content arrives.
 func maybeInjectThinking(turn *PresentationTurn, now time.Time) {
@@ -30,7 +30,7 @@ func maybeInjectThinking(turn *PresentationTurn, now time.Time) {
 	// Do not inject when the turn already has substantive content.
 	for _, row := range turn.Rows {
 		switch row.Kind {
-		case RowTool, RowResult, RowProse, RowPermission, RowSystem:
+		case RowTool, RowResult, RowProse, RowPermission, RowWarning, RowSystem:
 			return
 		}
 	}
@@ -60,6 +60,8 @@ const (
 	// RowToolPreview is a structured text-preview payload row that follows a
 	// RowResult row for non-error textual tool results.
 	RowToolPreview PresentationRowKind = "tool_preview"
+	// RowWarning represents a transport-level warning message.
+	RowWarning PresentationRowKind = "warning"
 	// RowSystem represents a transport-level system message.
 	RowSystem PresentationRowKind = "system"
 	// RowPermission represents a pending permission request.
@@ -440,7 +442,7 @@ func deriveTurnActivity(turn *PresentationTurn, now time.Time) *TurnActivity {
 	hasSubstantive := false
 	for _, row := range turn.Rows {
 		switch row.Kind {
-		case RowTool, RowResult, RowProse, RowPermission, RowSystem:
+		case RowTool, RowResult, RowProse, RowPermission, RowWarning, RowSystem:
 			hasSubstantive = true
 		}
 	}

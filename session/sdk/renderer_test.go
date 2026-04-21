@@ -506,6 +506,25 @@ func TestRenderer_CapturePresentation_SystemOutsideTurn_Preserved(t *testing.T) 
 	assert.Equal(t, "[system: transport failed]", sysRows[0].Text)
 }
 
+func TestRenderer_CapturePresentation_Warning_AddsRow(t *testing.T) {
+	r := NewRenderer()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1"})
+	r.AddEvent(Event{Kind: EventWarning, Text: "mcp server startup is slow"})
+
+	assert.Equal(t, "[warning: mcp server startup is slow]", r.Capture())
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+	var warningRows []PresentationRow
+	for _, row := range turns[0].Rows {
+		if row.Kind == RowWarning {
+			warningRows = append(warningRows, row)
+		}
+	}
+	require.Len(t, warningRows, 1)
+	assert.Equal(t, "[warning: mcp server startup is slow]", warningRows[0].Text)
+}
+
 func TestRenderer_CapturePresentation_System_EmptyText_NoRow(t *testing.T) {
 	r := NewRenderer()
 	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1"})

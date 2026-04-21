@@ -40,6 +40,7 @@ const (
 
 	// Server -> client notifications.
 	codexNotifyError             = "error"
+	codexNotifyWarning           = "warning"
 	codexNotifyThreadStarted     = "thread/started"
 	codexNotifyTurnStarted       = "turn/started"
 	codexNotifyTurnCompleted     = "turn/completed"
@@ -185,6 +186,15 @@ type codexErrorNotification struct {
 	ThreadID  string         `json:"threadId"`
 	TurnID    string         `json:"turnId"`
 	WillRetry bool           `json:"willRetry"`
+}
+
+type codexWarningNotification struct {
+	Message string `json:"message"`
+	Warning string `json:"warning"`
+	Text    string `json:"text"`
+	Detail  string `json:"detail"`
+	Title   string `json:"title"`
+	TurnID  string `json:"turnId"`
 }
 
 type codexTurnError struct {
@@ -679,9 +689,64 @@ func (t *CodexTransport) translateNotification(n Notification) (*Event, error) {
 			Timestamp: now,
 		}, nil
 
+	case codexNotifyWarning:
+		return codexWarningEvent(n.Params, now), nil
+
 	default:
 		return nil, fmt.Errorf("unrecognised method %q", n.Method)
 	}
+}
+
+func codexWarningEvent(raw json.RawMessage, now time.Time) *Event {
+	ev := &Event{
+		Kind:      EventWarning,
+		Text:      "codex emitted a warning",
+		Timestamp: now,
+	}
+
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return ev
+	}
+
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		if msg := strings.TrimSpace(text); msg != "" {
+			ev.Text = msg
+			return ev
+		}
+	}
+
+	var p codexWarningNotification
+	if err := json.Unmarshal(raw, &p); err == nil {
+		ev.TurnID = strings.TrimSpace(p.TurnID)
+		title := strings.TrimSpace(p.Title)
+		message := firstNonEmptyTrimmed(p.Message, p.Warning, p.Text, p.Detail)
+		switch {
+		case title != "" && message != "" && !strings.EqualFold(title, message):
+			ev.Text = title + ": " + message
+		case message != "":
+			ev.Text = message
+		case title != "":
+			ev.Text = title
+		}
+		return ev
+	}
+
+	if len(trimmed) > 200 {
+		trimmed = trimmed[:200] + "…"
+	}
+	ev.Text = trimmed
+	return ev
+}
+
+func firstNonEmptyTrimmed(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func (t *CodexTransport) handleServerRequest(req ServerRequest) error {
