@@ -107,7 +107,7 @@ func TestRenderPresentation_ResultIndent(t *testing.T) {
 }
 
 // TestRenderPresentation_PreviewRows verifies that preview content rows are
-// indented with ToolChildIndent.
+// indented with ToolChildIndent and carry the │ gutter.
 func TestRenderPresentation_PreviewRows(t *testing.T) {
 	turn := makePresentationTurn(PresentationRow{
 		Kind: RowToolPreview,
@@ -125,13 +125,14 @@ func TestRenderPresentation_PreviewRows(t *testing.T) {
 	}
 	require.Len(t, previewLines, 2, "two preview rows must appear")
 	for _, l := range previewLines {
-		assert.True(t, strings.HasPrefix(l, ToolChildIndent),
-			"preview row %q must start with ToolChildIndent %q", l, ToolChildIndent)
+		plain := stripANSI(l)
+		assert.True(t, strings.HasPrefix(plain, ToolChildIndent+"│ "),
+			"preview row %q must start with ToolChildIndent+gutter %q", plain, ToolChildIndent+"│ ")
 	}
 }
 
 // TestRenderPresentation_PreviewRows_Truncation verifies that the truncation
-// sentinel row is also indented with ToolChildIndent.
+// sentinel row is indented with ToolChildIndent and carries the │ gutter.
 func TestRenderPresentation_PreviewRows_Truncation(t *testing.T) {
 	turn := makePresentationTurn(PresentationRow{
 		Kind: RowToolPreview,
@@ -149,12 +150,13 @@ func TestRenderPresentation_PreviewRows_Truncation(t *testing.T) {
 		}
 	}
 	require.NotEmpty(t, truncLine, "truncation row must be present in preview output")
-	assert.True(t, strings.HasPrefix(truncLine, ToolChildIndent),
-		"preview truncation row %q must start with ToolChildIndent", truncLine)
+	plain := stripANSI(truncLine)
+	assert.True(t, strings.HasPrefix(plain, ToolChildIndent+"│ "),
+		"preview truncation row %q must start with ToolChildIndent+gutter", plain)
 }
 
 // TestRenderPresentation_DiffRows verifies that added, removed, and context
-// diff lines are each indented with ToolChildIndent.
+// diff lines are each indented with ToolChildIndent and carry the │ gutter.
 func TestRenderPresentation_DiffRows(t *testing.T) {
 	turn := makePresentationTurn(PresentationRow{
 		Kind: RowToolDiff,
@@ -178,13 +180,15 @@ func TestRenderPresentation_DiffRows(t *testing.T) {
 	}
 	require.Len(t, diffLines, 3, "three diff lines must appear")
 	for _, l := range diffLines {
-		assert.True(t, strings.HasPrefix(l, ToolChildIndent),
-			"diff row %q must start with ToolChildIndent %q", l, ToolChildIndent)
+		plain := stripANSI(l)
+		assert.True(t, strings.HasPrefix(plain, ToolChildIndent+"│ "),
+			"diff row %q must start with ToolChildIndent+gutter %q", plain, ToolChildIndent+"│ ")
 	}
 }
 
 // TestRenderPresentation_DiffRows_Truncation verifies that the truncation
-// sentinel at diffRows[len(row.ToolDiff.Lines)] is indented with ToolChildIndent.
+// sentinel at diffRows[len(row.ToolDiff.Lines)] is indented with ToolChildIndent
+// and carries the │ gutter.
 func TestRenderPresentation_DiffRows_Truncation(t *testing.T) {
 	turn := makePresentationTurn(PresentationRow{
 		Kind: RowToolDiff,
@@ -202,8 +206,9 @@ func TestRenderPresentation_DiffRows_Truncation(t *testing.T) {
 		}
 	}
 	require.NotEmpty(t, truncLine, "truncation row must be present in diff output")
-	assert.True(t, strings.HasPrefix(truncLine, ToolChildIndent),
-		"diff truncation row %q must start with ToolChildIndent", truncLine)
+	plain := stripANSI(truncLine)
+	assert.True(t, strings.HasPrefix(plain, ToolChildIndent+"│ "),
+		"diff truncation row %q must start with ToolChildIndent+gutter", plain)
 }
 
 // TestRenderPresentation_NilDiffPayload verifies that a RowToolDiff row with a

@@ -1171,18 +1171,18 @@ func TestPreviewPane_SDKPresentation_DiffRowsRendered(t *testing.T) {
 
 	rendered := pane.previewState.text
 
-	// Added lines use ColorRose, indented with ToolChildIndent.
+	// Added lines use ColorRose, indented with ToolChildIndent, with │ gutter.
 	require.Contains(t, rendered,
-		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorRose).Render("+added line"),
-		"added diff lines must use ColorRose with ToolChildIndent")
+		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorRose).Render("│ +added line"),
+		"added diff lines must use ColorRose with ToolChildIndent and gutter")
 	// Removed lines use ColorLove.
 	require.Contains(t, rendered,
-		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorLove).Render("-removed line"),
-		"removed diff lines must use ColorLove with ToolChildIndent")
+		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorLove).Render("│ -removed line"),
+		"removed diff lines must use ColorLove with ToolChildIndent and gutter")
 	// Context lines use ColorMuted.
 	require.Contains(t, rendered,
-		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorMuted).Render(" context line"),
-		"context diff lines must use ColorMuted with ToolChildIndent")
+		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorMuted).Render("│  context line"),
+		"context diff lines must use ColorMuted with ToolChildIndent and gutter")
 }
 
 // TestPreviewPane_SDKPresentation_DiffRowsTruncation verifies that a truncated
@@ -1212,7 +1212,7 @@ func TestPreviewPane_SDKPresentation_DiffRowsTruncation(t *testing.T) {
 	require.NoError(t, pane.UpdateContent(inst))
 
 	plain := stripPreviewANSI(pane.previewState.text)
-	require.Contains(t, plain, "… (truncated)", "truncated diff must show sentinel")
+	require.Contains(t, plain, "│ … (truncated)", "truncated diff must show sentinel with gutter")
 }
 
 // TestPreviewPane_SDKPresentation_PreviewRowsRendered verifies that RowToolPreview
@@ -1243,11 +1243,11 @@ func TestPreviewPane_SDKPresentation_PreviewRowsRendered(t *testing.T) {
 	rendered := pane.previewState.text
 
 	require.Contains(t, rendered,
-		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorMuted).Render("line one"),
-		"preview rows must use ColorMuted with ToolChildIndent")
+		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorMuted).Render("│ line one"),
+		"preview rows must use ColorMuted with ToolChildIndent and gutter")
 	require.Contains(t, rendered,
-		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorMuted).Render("line two"),
-		"preview rows must use ColorMuted with ToolChildIndent")
+		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorMuted).Render("│ line two"),
+		"preview rows must use ColorMuted with ToolChildIndent and gutter")
 }
 
 // TestPreviewPane_SDKPresentation_PreviewRowsTruncation verifies that a truncated
@@ -1277,7 +1277,7 @@ func TestPreviewPane_SDKPresentation_PreviewRowsTruncation(t *testing.T) {
 	require.NoError(t, pane.UpdateContent(inst))
 
 	plain := stripPreviewANSI(pane.previewState.text)
-	require.Contains(t, plain, "… (truncated)", "truncated preview must show sentinel")
+	require.Contains(t, plain, "│ … (truncated)", "truncated preview must show sentinel with gutter")
 }
 
 // TestRenderSDKTurn_MatchesPresentationRender verifies that the local TUI turn-body

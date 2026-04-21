@@ -63,10 +63,10 @@ func BuildToolDiffBlock(payload *ToolDiffPayload) []string {
 	}
 	rows := make([]string, len(payload.Lines))
 	for i, l := range payload.Lines {
-		rows[i] = l.Text
+		rows[i] = "│ " + l.Text
 	}
 	if payload.Truncated {
-		rows = append(rows, "… (truncated)")
+		rows = append(rows, "│ … (truncated)")
 	}
 	return rows
 }
@@ -79,9 +79,11 @@ func BuildToolPreviewBlock(payload *ToolPreviewPayload) []string {
 		return nil
 	}
 	rows := make([]string, len(payload.Rows))
-	copy(rows, payload.Rows)
+	for i, r := range payload.Rows {
+		rows[i] = "│ " + r
+	}
 	if payload.Truncated {
-		rows = append(rows, "… (truncated)")
+		rows = append(rows, "│ … (truncated)")
 	}
 	return rows
 }
