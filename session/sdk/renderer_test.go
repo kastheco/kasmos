@@ -1059,6 +1059,26 @@ func TestRenderer_ToolResult_GrepMatches_InjectsToolPreviewRow(t *testing.T) {
 	assert.Equal(t, []string{"app/main.go:12: first match", "app/input.go:27: second match"}, previewRow.ToolPreview.Lines)
 }
 
+func TestRenderer_ToolResult_SingleLineSummary_DoesNotInjectDuplicateToolPreviewRow(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{
+		Kind:       EventToolResult,
+		TurnID:     "t1",
+		ToolName:   "git_diff",
+		ToolResult: "no changes",
+		Timestamp:  ts,
+	})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+
+	kinds := rowKinds(turns[0].Rows)
+	assert.Equal(t, []PresentationRowKind{RowResult}, kinds)
+	assert.Equal(t, "→ no changes", turns[0].Rows[0].Text)
+}
+
 func TestRenderer_ToolResult_Error_NoToolPreviewRow(t *testing.T) {
 	r := NewRenderer()
 	ts := time.Now()

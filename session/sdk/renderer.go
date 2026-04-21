@@ -113,12 +113,14 @@ func (r *Renderer) AddEvent(e Event) {
 			// Append a RowToolPreview row for non-error textual results.
 			if !isErr {
 				if preview := extractToolPreview(e.ToolName, e.ToolResult, diffPreviewMaxLines); preview != nil {
-					turn.Rows = append(turn.Rows, PresentationRow{
-						Kind:        RowToolPreview,
-						Timestamp:   e.Timestamp,
-						ToolName:    e.ToolName,
-						ToolPreview: preview,
-					})
+					if !isRedundantToolPreview(line, preview) {
+						turn.Rows = append(turn.Rows, PresentationRow{
+							Kind:        RowToolPreview,
+							Timestamp:   e.Timestamp,
+							ToolName:    e.ToolName,
+							ToolPreview: preview,
+						})
+					}
 				}
 			}
 		}
@@ -610,6 +612,13 @@ func summarizeToolResultText(text string) string {
 		return fmt.Sprintf("→ %d lines", len(lines))
 	}
 	return "→ " + truncateOneLine(trimmed, 120)
+}
+
+func isRedundantToolPreview(summaryLine string, preview *ToolPreviewPayload) bool {
+	if preview == nil || preview.Truncated || preview.HiddenLineCount != 0 || len(preview.Lines) != 1 {
+		return false
+	}
+	return summaryLine == summarizeToolResultText(preview.Lines[0])
 }
 
 // truncateOneLine collapses internal whitespace and caps the string at n
