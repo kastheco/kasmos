@@ -640,7 +640,7 @@ func TestPreviewPane_SDKPresentation_RendersTurnHierarchy(t *testing.T) {
 		Number:    1,
 		StartedAt: now,
 		Rows: []sdk.PresentationRow{
-			{Kind: sdk.RowTool, Text: "• read_file main.go", Timestamp: now},
+			{Kind: sdk.RowTool, Text: "• read_file main.go", ToolName: "read_file", Timestamp: now},
 			{Kind: sdk.RowResult, Text: "→ 42 lines", Timestamp: now},
 			{Kind: sdk.RowResponse, Timestamp: now},
 			{Kind: sdk.RowProse, Text: "assistant text", Timestamp: now},
@@ -654,13 +654,13 @@ func TestPreviewPane_SDKPresentation_RendersTurnHierarchy(t *testing.T) {
 
 	rendered := pane.previewState.text
 
-	// Tool rows use ColorSubtle.
-	require.Contains(t, rendered, lipgloss.NewStyle().Foreground(ColorSubtle).Render("• read_file main.go"),
-		"tool row must be rendered in ColorSubtle")
+	// Tool rows are indented 2 spaces and head is rendered in ColorSubtle.
+	require.Contains(t, rendered, sdk.ToolCallIndent+lipgloss.NewStyle().Foreground(ColorSubtle).Render("• read_file"),
+		"tool row head must be indented with ToolCallIndent and rendered in ColorSubtle")
 
-	// Successful result rows use ColorMuted (quieter than tools).
-	require.Contains(t, rendered, lipgloss.NewStyle().Foreground(ColorMuted).Render("→ 42 lines"),
-		"ok-result row must be rendered in ColorMuted")
+	// Successful result rows are indented 4 spaces and rendered in ColorMuted (quieter than tools).
+	require.Contains(t, rendered, sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorMuted).Render("→ 42 lines"),
+		"ok-result row must be indented with ToolChildIndent and rendered in ColorMuted")
 
 	// Prose rows use ColorText.
 	require.Contains(t, rendered, lipgloss.NewStyle().Foreground(ColorText).Render("assistant text"),
@@ -848,7 +848,7 @@ func TestPreviewPane_SDKPresentation_UserHistoryUsesFoam(t *testing.T) {
 	require.NoError(t, pane.UpdateContent(inst))
 
 	require.Contains(t, pane.previewState.text,
-		lipgloss.NewStyle().Foreground(ColorFoam).Render("you: show logs"))
+		lipgloss.NewStyle().Foreground(ColorFoam).Render("> show logs"))
 }
 
 func TestPreviewPane_SDKPresentation_ShowsFooterMetadataBeforeHints(t *testing.T) {
@@ -1138,4 +1138,168 @@ func TestPreviewPane_SDKPresentation_MultipleTurnsSeparatedByBlankLines(t *testi
 	between := rendered[idxFirst:idxSecond]
 	require.Contains(t, between, "\n\n",
 		"turns must be separated by a blank line")
+}
+
+// TestPreviewPane_SDKPresentation_DiffRowsRendered verifies that RowToolDiff rows
+// are rendered with per-line colour coding and ToolChildIndent.
+func TestPreviewPane_SDKPresentation_DiffRowsRendered(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 40)
+
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: now,
+		Rows: []sdk.PresentationRow{
+			{
+				Kind: sdk.RowToolDiff,
+				ToolDiff: &sdk.ToolDiffPayload{
+					Lines: []sdk.DiffLine{
+						{Kind: sdk.DiffLineAdded, Text: "+added line"},
+						{Kind: sdk.DiffLineRemoved, Text: "-removed line"},
+						{Kind: sdk.DiffLineContext, Text: " context line"},
+					},
+				},
+				Timestamp: now,
+			},
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	rendered := pane.previewState.text
+
+	// Added lines use ColorRose, indented with ToolChildIndent.
+	require.Contains(t, rendered,
+		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorRose).Render("+added line"),
+		"added diff lines must use ColorRose with ToolChildIndent")
+	// Removed lines use ColorLove.
+	require.Contains(t, rendered,
+		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorLove).Render("-removed line"),
+		"removed diff lines must use ColorLove with ToolChildIndent")
+	// Context lines use ColorMuted.
+	require.Contains(t, rendered,
+		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorMuted).Render(" context line"),
+		"context diff lines must use ColorMuted with ToolChildIndent")
+}
+
+// TestPreviewPane_SDKPresentation_DiffRowsTruncation verifies that a truncated
+// RowToolDiff renders the "… (truncated)" sentinel after the last diff line.
+func TestPreviewPane_SDKPresentation_DiffRowsTruncation(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 40)
+
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: now,
+		Rows: []sdk.PresentationRow{
+			{
+				Kind: sdk.RowToolDiff,
+				ToolDiff: &sdk.ToolDiffPayload{
+					Lines:     []sdk.DiffLine{{Kind: sdk.DiffLineContext, Text: " one line"}},
+					Truncated: true,
+				},
+				Timestamp: now,
+			},
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	plain := stripPreviewANSI(pane.previewState.text)
+	require.Contains(t, plain, "… (truncated)", "truncated diff must show sentinel")
+}
+
+// TestPreviewPane_SDKPresentation_PreviewRowsRendered verifies that RowToolPreview
+// rows are rendered with ColorMuted and ToolChildIndent.
+func TestPreviewPane_SDKPresentation_PreviewRowsRendered(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 40)
+
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: now,
+		Rows: []sdk.PresentationRow{
+			{
+				Kind: sdk.RowToolPreview,
+				ToolPreview: &sdk.ToolPreviewPayload{
+					Rows: []string{"line one", "line two"},
+				},
+				Timestamp: now,
+			},
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	rendered := pane.previewState.text
+
+	require.Contains(t, rendered,
+		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorMuted).Render("line one"),
+		"preview rows must use ColorMuted with ToolChildIndent")
+	require.Contains(t, rendered,
+		sdk.ToolChildIndent+lipgloss.NewStyle().Foreground(ColorMuted).Render("line two"),
+		"preview rows must use ColorMuted with ToolChildIndent")
+}
+
+// TestPreviewPane_SDKPresentation_PreviewRowsTruncation verifies that a truncated
+// RowToolPreview renders the "… (truncated)" sentinel after the last content row.
+func TestPreviewPane_SDKPresentation_PreviewRowsTruncation(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 40)
+
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: now,
+		Rows: []sdk.PresentationRow{
+			{
+				Kind: sdk.RowToolPreview,
+				ToolPreview: &sdk.ToolPreviewPayload{
+					Rows:      []string{"line one"},
+					Truncated: true,
+				},
+				Timestamp: now,
+			},
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	plain := stripPreviewANSI(pane.previewState.text)
+	require.Contains(t, plain, "… (truncated)", "truncated preview must show sentinel")
+}
+
+// TestRenderSDKTurn_MatchesPresentationRender verifies that the local TUI turn-body
+// renderer (renderSDKTurn) produces output identical to the daemon/web renderer
+// (sdk.RenderPresentation) for a completed single-tool turn.
+func TestRenderSDKTurn_MatchesPresentationRender(t *testing.T) {
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now, // elapsed = 0 → deterministic header, not "running"
+		ToolCount:   1,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowTool, Text: "• bash ls", ToolName: "bash", Timestamp: now},
+			{Kind: sdk.RowResult, Text: "→ ok", Timestamp: now},
+		},
+	}
+
+	uiBody := strings.Join(renderSDKTurn(turn, 80), "\n")
+	daemonBody, _, found := strings.Cut(sdk.RenderPresentation([]*sdk.PresentationTurn{turn}, 80), "\n\n")
+	require.True(t, found, "RenderPresentation must contain a blank-line separator after the turn body")
+	require.Equal(t, uiBody, daemonBody,
+		"local TUI turn body must match daemon renderer turn body byte-for-byte")
 }

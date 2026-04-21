@@ -472,6 +472,7 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 	}
 
 	toolStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
+	toolArgStyle := lipgloss.NewStyle().Foreground(ColorText)
 	userStyle := lipgloss.NewStyle().Foreground(ColorFoam)
 	resultOKStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	resultErrStyle := lipgloss.NewStyle().Foreground(ColorLove)
@@ -481,18 +482,63 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 	statusStyle := lipgloss.NewStyle().Foreground(ColorGold)
 	thinkingStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	narrowRuleStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	gutterStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	addedStyle := lipgloss.NewStyle().Foreground(ColorRose)
+	removedStyle := lipgloss.NewStyle().Foreground(ColorLove)
+	diffContextStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 
 	for _, row := range turn.Rows {
 		switch row.Kind {
 		case sdk.RowUser:
-			rows = append(rows, userStyle.Render("you: "+row.Text))
+			rows = append(rows, userStyle.Render("> "+row.Text))
 		case sdk.RowTool:
-			rows = append(rows, toolStyle.Render(row.Text))
-		case sdk.RowResult:
-			if row.IsError {
-				rows = append(rows, resultErrStyle.Render(row.Text))
+			head, args := sdk.SplitToolCallText(row.Text, row.ToolName)
+			line := sdk.RenderToolCallLine(head, args, toolStyle, toolArgStyle)
+			if line == "" {
+				rows = append(rows, line)
 			} else {
-				rows = append(rows, resultOKStyle.Render(row.Text))
+				rows = append(rows, sdk.ToolCallIndent+line)
+			}
+		case sdk.RowResult:
+			var styled string
+			if row.IsError {
+				styled = resultErrStyle.Render(row.Text)
+			} else {
+				styled = resultOKStyle.Render(row.Text)
+			}
+			if styled != "" {
+				rows = append(rows, sdk.ToolChildIndent+styled)
+			} else {
+				rows = append(rows, styled)
+			}
+		case sdk.RowToolPreview:
+			if row.ToolPreview == nil {
+				break
+			}
+			previewRows := sdk.BuildToolPreviewBlock(row.ToolPreview)
+			for _, pr := range previewRows {
+				rows = append(rows, sdk.ToolChildIndent+gutterStyle.Render(pr))
+			}
+		case sdk.RowToolDiff:
+			if row.ToolDiff == nil {
+				break
+			}
+			diffRows := sdk.BuildToolDiffBlock(row.ToolDiff)
+			for i, dr := range diffRows {
+				var styled string
+				if row.ToolDiff.Truncated && i == len(row.ToolDiff.Lines) {
+					styled = diffContextStyle.Render(dr)
+				} else {
+					switch row.ToolDiff.Lines[i].Kind {
+					case sdk.DiffLineAdded:
+						styled = addedStyle.Render(dr)
+					case sdk.DiffLineRemoved:
+						styled = removedStyle.Render(dr)
+					default:
+						styled = diffContextStyle.Render(dr)
+					}
+				}
+				rows = append(rows, sdk.ToolChildIndent+styled)
 			}
 		case sdk.RowSystem:
 			rows = append(rows, systemStyle.Render(row.Text))
