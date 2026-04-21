@@ -32,8 +32,8 @@ const (
 
 // DiffLine represents a single annotated line in a structured diff block.
 type DiffLine struct {
-	Kind DiffLineKind
-	Text string
+	Kind DiffLineKind `json:"kind"`
+	Text string       `json:"text"`
 }
 
 // ToolDiffPayload holds a structured diff produced by a file-editing tool call.
@@ -41,16 +41,16 @@ type DiffLine struct {
 // capped at a line limit and a truncation sentinel should be shown after the
 // last line.
 type ToolDiffPayload struct {
-	Lines     []DiffLine
-	Truncated bool
+	Lines     []DiffLine `json:"lines"`
+	Truncated bool       `json:"truncated"`
 }
 
 // ToolPreviewPayload holds structured file-content rows for a read-tool preview.
 // Truncated is true when the content was capped and a truncation sentinel should
 // follow the last row.
 type ToolPreviewPayload struct {
-	Rows      []string
-	Truncated bool
+	Rows      []string `json:"rows"`
+	Truncated bool     `json:"truncated"`
 }
 
 // BuildToolDiffBlock converts a ToolDiffPayload into a flat slice of plain-text
