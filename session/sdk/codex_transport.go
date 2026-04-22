@@ -932,15 +932,18 @@ func codexCommandExecutionDescription(item codexThreadItem) string {
 
 func codexCommandExecutionResult(item codexThreadItem) string {
 	type resultPayload struct {
-		ExitCode *int   `json:"exit_code,omitempty"`
-		Output   string `json:"output,omitempty"`
+		ExitCode         *int   `json:"exit_code,omitempty"`
+		Output           string `json:"output,omitempty"`
+		AggregatedOutput string `json:"aggregatedOutput,omitempty"`
 	}
 	p := resultPayload{}
 	if item.ExitCode != nil {
 		p.ExitCode = item.ExitCode
 	}
 	if item.AggregatedOutput != nil && strings.TrimSpace(*item.AggregatedOutput) != "" {
-		p.Output = strings.TrimSpace(*item.AggregatedOutput)
+		trimmed := strings.TrimSpace(*item.AggregatedOutput)
+		p.Output = trimmed
+		p.AggregatedOutput = trimmed
 	}
 	if p.ExitCode == nil && p.Output == "" {
 		return codexCommandExecutionDescription(item)

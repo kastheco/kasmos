@@ -673,7 +673,8 @@ func isRedundantToolPreview(summaryLine string, preview *ToolPreviewPayload) boo
 	if preview == nil || preview.Truncated || preview.HiddenLineCount != 0 || len(preview.Lines) != 1 {
 		return false
 	}
-	return summaryLine == summarizeToolResultText(preview.Lines[0])
+	line := strings.TrimSpace(preview.Lines[0])
+	return summaryLine == line || summaryLine == summarizeToolResultText(line)
 }
 
 // truncateOneLine collapses internal whitespace and caps the string at n

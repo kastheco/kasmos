@@ -1135,6 +1135,27 @@ func TestRenderer_ToolResult_SingleLineSummary_DoesNotInjectDuplicateToolPreview
 	assert.Equal(t, "→ no changes", turns[0].Rows[0].Text)
 }
 
+func TestRenderer_ToolResult_ExitCodeZero_DoesNotInjectDuplicateToolPreviewRow(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{
+		Kind:       EventToolResult,
+		TurnID:     "t1",
+		ToolName:   "commandExecution",
+		ToolResult: `{"exit_code":0,"output":"tests passed"}`,
+		Timestamp:  ts,
+	})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+
+	kinds := rowKinds(turns[0].Rows)
+	assert.Equal(t, []PresentationRowKind{RowResult}, kinds,
+		"successful commandExecution should produce a single RowResult, not a duplicate RowToolPreview")
+	assert.Equal(t, "tests passed", turns[0].Rows[0].Text)
+}
+
 func TestRenderer_ToolResult_Error_NoToolPreviewRow(t *testing.T) {
 	r := NewRenderer()
 	ts := time.Now()
