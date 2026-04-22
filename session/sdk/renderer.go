@@ -103,13 +103,27 @@ func (r *Renderer) AddEvent(e Event) {
 			turn := r.ensureTurn(e.TurnID, e.Timestamp)
 			r.closeStructuredProseBlock()
 			isErr := strings.HasPrefix(line, "✗ ")
-			turn.Rows = append(turn.Rows, PresentationRow{
+			row := PresentationRow{
 				Kind:      RowResult,
 				Text:      line,
 				Timestamp: e.Timestamp,
 				ToolName:  e.ToolName,
 				IsError:   isErr,
-			})
+			}
+			// For commandExecution, decode exit code and output for structured
+			// rendering so the pane can show a colour-coded glyph + plain output.
+			if strings.EqualFold(strings.TrimSpace(e.ToolName), "commandExecution") {
+				var ec struct {
+					ExitCode *int   `json:"exit_code"`
+					Output   string `json:"output"`
+				}
+				if err := json.Unmarshal([]byte(strings.TrimSpace(e.ToolResult)), &ec); err == nil && ec.ExitCode != nil {
+					row.ExitCode = ec.ExitCode
+					row.Output = ec.Output
+					row.IsError = *ec.ExitCode != 0
+				}
+			}
+			turn.Rows = append(turn.Rows, row)
 			// Append a RowToolPreview row for non-error textual results.
 			if !isErr {
 				if preview := extractToolPreview(e.ToolName, e.ToolResult, toolPreviewMaxLines); preview != nil {
@@ -595,8 +609,23 @@ func formatToolResultLine(raw string) string {
 				return "✗ " + truncateOneLine(msg, 120)
 			}
 		}
-		if exit, ok := obj["exit_code"].(float64); ok && exit != 0 {
-			return fmt.Sprintf("✗ exit=%d", int(exit))
+		if exit, ok := obj["exit_code"].(float64); ok {
+			output := ""
+			if v, ok2 := obj["output"].(string); ok2 {
+				output = strings.TrimSpace(v)
+			}
+			if int(exit) != 0 {
+				if output != "" {
+					return fmt.Sprintf("✗ exit=%d: %s", int(exit), truncateOneLine(output, 80))
+				}
+				return fmt.Sprintf("✗ exit=%d", int(exit))
+			}
+			// exit_code == 0: return the output as plain text (Capture path), or
+			// a bare ✓ when no output so the row is still appended.
+			if output != "" {
+				return output
+			}
+			return "✓"
 		}
 		if summary := summarizeStructuredCollection(obj); summary != "" {
 			return summary

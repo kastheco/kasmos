@@ -927,20 +927,26 @@ func codexCommandExecutionDescription(item codexThreadItem) string {
 	if strings.TrimSpace(item.Command) != "" {
 		return item.Command
 	}
-	if item.ExitCode != nil {
-		return fmt.Sprintf("exit_code=%d", *item.ExitCode)
-	}
 	return ""
 }
 
 func codexCommandExecutionResult(item codexThreadItem) string {
-	if item.AggregatedOutput != nil && strings.TrimSpace(*item.AggregatedOutput) != "" {
-		if item.ExitCode != nil {
-			return fmt.Sprintf("exit_code=%d output=%s", *item.ExitCode, strings.TrimSpace(*item.AggregatedOutput))
-		}
-		return strings.TrimSpace(*item.AggregatedOutput)
+	type resultPayload struct {
+		ExitCode *int   `json:"exit_code,omitempty"`
+		Output   string `json:"output,omitempty"`
 	}
-	return codexCommandExecutionDescription(item)
+	p := resultPayload{}
+	if item.ExitCode != nil {
+		p.ExitCode = item.ExitCode
+	}
+	if item.AggregatedOutput != nil && strings.TrimSpace(*item.AggregatedOutput) != "" {
+		p.Output = strings.TrimSpace(*item.AggregatedOutput)
+	}
+	if p.ExitCode == nil && p.Output == "" {
+		return codexCommandExecutionDescription(item)
+	}
+	data, _ := json.Marshal(p)
+	return string(data)
 }
 
 func codexToolName(item codexThreadItem) string {

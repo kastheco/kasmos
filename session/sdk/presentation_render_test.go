@@ -440,3 +440,94 @@ func TestRenderPresentation_NilPreviewPayload(t *testing.T) {
 		RenderPresentation([]*PresentationTurn{turn}, 80)
 	})
 }
+
+// TestRenderPresentation_CommandExecutionResult_Success verifies that a RowResult
+// with ExitCode=0 renders as a Pine-styled ✓ glyph followed by Foam-styled output.
+func TestRenderPresentation_CommandExecutionResult_Success(t *testing.T) {
+	now := time.Now()
+	exitCode := 0
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{
+				Kind:     RowResult,
+				Text:     "tests passed",
+				ExitCode: &exitCode,
+				Output:   "tests passed",
+				ToolName: "commandExecution",
+			},
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+
+	expectedMarker := ToolChildIndent +
+		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorPine)).Render("✓") +
+		" " +
+		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam)).Render("tests passed")
+	require.Contains(t, result, expectedMarker, "success exit code must render Pine ✓ + Foam output")
+	require.NotContains(t, stripANSI(result), "exit_code", "exit_code= prefix must not appear in rendered output")
+	require.NotContains(t, stripANSI(result), "output=", "output= prefix must not appear in rendered output")
+}
+
+// TestRenderPresentation_CommandExecutionResult_Failure verifies that a RowResult
+// with non-zero ExitCode renders as a Love-styled ✗ N glyph + Love-styled output.
+func TestRenderPresentation_CommandExecutionResult_Failure(t *testing.T) {
+	now := time.Now()
+	exitCode := 2
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{
+				Kind:     RowResult,
+				Text:     "✗ exit=2: build failed",
+				ExitCode: &exitCode,
+				Output:   "build failed",
+				IsError:  true,
+				ToolName: "commandExecution",
+			},
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+
+	expectedMarker := ToolChildIndent +
+		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove)).Render("✗ 2") +
+		" " +
+		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove)).Render("build failed")
+	require.Contains(t, result, expectedMarker, "failure exit code must render Love ✗ N + Love output")
+}
+
+// TestRenderPresentation_CommandExecutionResult_SuccessNoOutput verifies that a
+// RowResult with ExitCode=0 and no output renders just the Pine ✓ glyph.
+func TestRenderPresentation_CommandExecutionResult_SuccessNoOutput(t *testing.T) {
+	now := time.Now()
+	exitCode := 0
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{
+				Kind:     RowResult,
+				Text:     "✓",
+				ExitCode: &exitCode,
+				Output:   "",
+				ToolName: "commandExecution",
+			},
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+
+	expectedMarker := ToolChildIndent +
+		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorPine)).Render("✓")
+	require.Contains(t, result, expectedMarker, "success with no output must render just Pine ✓")
+}

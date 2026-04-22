@@ -355,3 +355,84 @@ func TestClonePresentationTurns_NilTurn_HandledGracefully(t *testing.T) {
 	assert.Nil(t, cloned[0])
 	assert.Equal(t, "t1", cloned[1].ID)
 }
+
+// TestPresentationRow_ExitCodeOutput_JSONRoundTrip verifies that the ExitCode and
+// Output fields on PresentationRow survive a JSON marshal/unmarshal round-trip with
+// proper omitempty behaviour.
+func TestPresentationRow_ExitCodeOutput_JSONRoundTrip(t *testing.T) {
+	ts := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	exitCode := 0
+	errCode := 2
+
+	turn := &PresentationTurn{
+		ID:        "turn-ec",
+		Number:    1,
+		StartedAt: ts,
+		Rows: []PresentationRow{
+			// Row with both ExitCode and Output.
+			{Kind: RowResult, Text: "tests passed", Timestamp: ts, ToolName: "commandExecution",
+				ExitCode: &exitCode, Output: "tests passed"},
+			// Row with ExitCode only (no output).
+			{Kind: RowResult, Text: "✓", Timestamp: ts, ToolName: "commandExecution",
+				ExitCode: &exitCode},
+			// Row with non-zero ExitCode and Output.
+			{Kind: RowResult, Text: "✗ exit=2", Timestamp: ts, ToolName: "commandExecution",
+				ExitCode: &errCode, Output: "build failed", IsError: true},
+			// Row without ExitCode — omitempty must omit the field.
+			{Kind: RowResult, Text: "plain result", Timestamp: ts, ToolName: "bash"},
+		},
+	}
+
+	data, err := json.Marshal(turn)
+	require.NoError(t, err)
+
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(data, &raw))
+
+	rows, ok := raw["rows"].([]any)
+	require.True(t, ok)
+	require.Len(t, rows, 4)
+
+	// Row 0: exit_code=0, output="tests passed" must appear in JSON.
+	row0, ok := rows[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, float64(0), row0["exit_code"], "exit_code must be present and 0")
+	assert.Equal(t, "tests passed", row0["output"])
+
+	// Row 1: exit_code=0, no output — output must be omitted.
+	row1, ok := rows[1].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, float64(0), row1["exit_code"])
+	assert.NotContains(t, row1, "output", "output must be omitted when empty")
+
+	// Row 2: exit_code=2, output="build failed".
+	row2, ok := rows[2].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, float64(2), row2["exit_code"])
+	assert.Equal(t, "build failed", row2["output"])
+
+	// Row 3: no exit_code — must be omitted.
+	row3, ok := rows[3].(map[string]any)
+	require.True(t, ok)
+	assert.NotContains(t, row3, "exit_code", "exit_code must be omitted when nil")
+
+	// Full round-trip.
+	var decoded PresentationTurn
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.Len(t, decoded.Rows, 4)
+
+	require.NotNil(t, decoded.Rows[0].ExitCode)
+	assert.Equal(t, 0, *decoded.Rows[0].ExitCode)
+	assert.Equal(t, "tests passed", decoded.Rows[0].Output)
+
+	require.NotNil(t, decoded.Rows[1].ExitCode)
+	assert.Equal(t, 0, *decoded.Rows[1].ExitCode)
+	assert.Equal(t, "", decoded.Rows[1].Output)
+
+	require.NotNil(t, decoded.Rows[2].ExitCode)
+	assert.Equal(t, 2, *decoded.Rows[2].ExitCode)
+	assert.Equal(t, "build failed", decoded.Rows[2].Output)
+
+	assert.Nil(t, decoded.Rows[3].ExitCode)
+	assert.Equal(t, "", decoded.Rows[3].Output)
+}

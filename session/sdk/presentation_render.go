@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -152,7 +153,27 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 				}
 			}
 		case RowResult:
-			if row.IsError {
+			if row.ExitCode != nil {
+				// Structured commandExecution result: render coloured glyph + output.
+				var markerStyle, outputStyle lipgloss.Style
+				var glyph, codeSegment string
+				if *row.ExitCode == 0 {
+					markerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorPine))
+					outputStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
+					glyph = "✓"
+					codeSegment = ""
+				} else {
+					markerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
+					outputStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
+					glyph = "✗"
+					codeSegment = " " + strconv.Itoa(*row.ExitCode)
+				}
+				rendered := ToolChildIndent + markerStyle.Render(glyph+codeSegment)
+				if row.Output != "" {
+					rendered += " " + outputStyle.Render(row.Output)
+				}
+				rows = append(rows, rendered)
+			} else if row.IsError {
 				rows = append(rows, ToolChildIndent+resultErrStyle.Render(row.Text))
 			} else {
 				rows = append(rows, ToolChildIndent+resultOKStyle.Render(row.Text))

@@ -518,8 +518,15 @@ func TestCodexTransport_CommandExecution_ItemEvents(t *testing.T) {
 	})
 	result := waitForEvent(t, ct.Events(), EventToolResult, time.Second)
 	assert.Equal(t, "commandExecution", result.ToolName)
-	assert.Contains(t, result.ToolResult, "exit_code=0")
-	assert.Contains(t, result.ToolResult, "ok")
+	// ToolResult must be a JSON object with exit_code and output fields.
+	var ecResult struct {
+		ExitCode *int   `json:"exit_code"`
+		Output   string `json:"output"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(result.ToolResult), &ecResult), "ToolResult must be valid JSON")
+	require.NotNil(t, ecResult.ExitCode, "exit_code must be present")
+	assert.Equal(t, 0, *ecResult.ExitCode)
+	assert.Equal(t, "ok", ecResult.Output)
 }
 
 func TestCodexTransport_TurnCompleted_HasPrompt(t *testing.T) {
