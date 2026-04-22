@@ -337,6 +337,56 @@ func TestHandleKeyPress_SDKFocusMode_CtrlCClearsComposer(t *testing.T) {
 	assert.NotNil(t, cmd)
 }
 
+func TestHandleKeyPress_SDKFocusMode_EscapeSendsStopRequest(t *testing.T) {
+	h := newTestHome()
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "sdk-inline",
+		Path:          t.TempDir(),
+		Program:       "codex",
+		ExecutionMode: session.ExecutionModeSDK,
+	})
+	require.NoError(t, err)
+	exec := &recordingExecutionSession{}
+	inst.SetExecutionSessionForTest(exec)
+	inst.MarkStartedForTest()
+	inst.SetStatus(session.Ready)
+	h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+	h.state = stateFocusAgent
+	h.tabbedWindow.SetFocusMode(true)
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEscape})
+	updated := model.(*home)
+
+	assert.Equal(t, stateFocusAgent, updated.state)
+	assert.True(t, updated.tabbedWindow.IsFocusMode())
+	assert.Equal(t, []string{"\x03"}, exec.sentKeys)
+	assert.Nil(t, cmd)
+}
+
+func TestHandleKeyPress_SDKFocusMode_EscapeKeepsPlaceholderFocused(t *testing.T) {
+	h := newTestHome()
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "sdk-placeholder",
+		Path:          t.TempDir(),
+		Program:       "codex",
+		ExecutionMode: session.ExecutionModeSDK,
+	})
+	require.NoError(t, err)
+	inst.SetStatus(session.Ready)
+	h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+	h.state = stateFocusAgent
+	h.tabbedWindow.SetFocusMode(true)
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEscape})
+	updated := model.(*home)
+
+	assert.Equal(t, stateFocusAgent, updated.state)
+	assert.True(t, updated.tabbedWindow.IsFocusMode())
+	assert.Nil(t, cmd)
+}
+
 func TestHandleKeyPress_TmuxCodexFocusMode_ShiftEnterUsesLiteralTmuxInjection(t *testing.T) {
 	h := newTestHome()
 	inst, err := session.NewInstance(session.InstanceOptions{

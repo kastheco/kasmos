@@ -694,7 +694,7 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 		case sdk.RowWarning:
 			rows = append(rows, warningStyle.Render(row.Text))
 		case sdk.RowSystem:
-			rows = append(rows, systemStyle.Render(row.Text))
+			rows = append(rows, sdk.RenderTextLineWithTimestamp(row.Text, row.Timestamp, width, systemStyle, timestampStyle))
 		case sdk.RowPermission:
 			rows = append(rows, permStyle.Render(row.Text))
 		case sdk.RowResponse:
@@ -775,7 +775,7 @@ func renderComposerFooter(width int, composer string, images []string, focused b
 		newlineStyle.Render("shift+enter") +
 		hintStyle.Render(" newline   ") +
 		escapeStyle.Render("esc") +
-		hintStyle.Render(" unfocus")
+		hintStyle.Render(" stop")
 	rows := []string{rule, prompt, ""}
 	if attachmentLabel := sdkFooterAttachmentLabel(len(images)); attachmentLabel != "" {
 		rows = append(rows, attachmentStyle.Render(attachmentLabel))

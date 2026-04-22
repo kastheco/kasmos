@@ -1022,6 +1022,8 @@ func TestPreviewPane_SDKPresentation_ComposerFooterPresent(t *testing.T) {
 		"renderSDKPresentation must include composer footer prompt")
 	require.Contains(t, stripPreviewANSI(output), "shift+enter newline",
 		"renderSDKPresentation must include keyboard hint line")
+	require.Contains(t, stripPreviewANSI(output), "esc stop",
+		"renderSDKPresentation must advertise esc as stop in sdk mode")
 }
 
 func TestPreviewPane_SDKScrollMode_UsesStructuredPresentationWhenFlatHistoryEmpty(t *testing.T) {
@@ -1446,6 +1448,30 @@ func TestPreviewPane_SDKPresentation_SystemRowsUseGold(t *testing.T) {
 
 	require.Contains(t, pane.previewState.text,
 		lipgloss.NewStyle().Foreground(ColorGold).Render("[system: unknown message received]"))
+}
+
+func TestPreviewPane_SDKPresentation_SystemRowsWrapTimestamp(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(24, 12)
+
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowSystem, Text: "[system: transport failed]", Timestamp: now},
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	require.Contains(t, pane.previewState.text,
+		sdk.RenderTextLineWithTimestamp("[system: transport failed]", now, 24,
+			lipgloss.NewStyle().Foreground(ColorGold),
+			lipgloss.NewStyle().Foreground(ColorSubtle)))
 }
 
 // TestPreviewPane_SDKPresentation_RunningStickyStrip verifies that a running

@@ -183,7 +183,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 		case RowWarning:
 			rows = append(rows, warningStyle.Render(row.Text))
 		case RowSystem:
-			rows = append(rows, systemStyle.Render(row.Text))
+			rows = append(rows, RenderTextLineWithTimestamp(row.Text, row.Timestamp, width, systemStyle, timestampStyle))
 		case RowPermission:
 			rows = append(rows, permStyle.Render(row.Text))
 		case RowResponse:
@@ -230,6 +230,6 @@ func renderPresentationComposerFooter(width int) []string {
 		newlineStyle.Render("shift+enter") +
 		hintStyle.Render(" newline   ") +
 		escapeStyle.Render("esc") +
-		hintStyle.Render(" unfocus")
+		hintStyle.Render(" stop")
 	return []string{rule, prompt, hints}
 }

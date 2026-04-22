@@ -396,6 +396,7 @@ func TestRenderPresentation_ComposerFooter(t *testing.T) {
 	result := RenderPresentation(nil, 80)
 	plain := stripANSI(result)
 	require.Contains(t, plain, "> send a message to the agent")
+	require.Contains(t, plain, "esc stop")
 }
 
 func TestRenderPresentation_WarningRowsUseGold(t *testing.T) {
@@ -430,6 +431,25 @@ func TestRenderPresentation_SystemRowsUseGold(t *testing.T) {
 	result := RenderPresentation([]*PresentationTurn{turn}, 80)
 	require.Contains(t, result,
 		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold)).Render("[system: unknown message received]"))
+}
+
+func TestRenderPresentation_SystemRowsWrapTimestamp(t *testing.T) {
+	now := time.Now()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{Kind: RowSystem, Text: "[system: transport failed]", Timestamp: now},
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 24)
+	require.Contains(t, result,
+		RenderTextLineWithTimestamp("[system: transport failed]", now, 24,
+			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold)),
+			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))))
 }
 
 // TestRenderPresentation_NilDiffPayload verifies that a RowToolDiff row with a

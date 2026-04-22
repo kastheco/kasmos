@@ -1350,15 +1350,14 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 			case msg.String() == "ctrl+c":
 				return m.clearSDKComposer(selected)
 			case msg.Code == tea.KeyEscape:
-				// Interrupt if actively running; exit focus mode if already idle.
-				if selected.Status == session.Running {
+				// Keep esc inside sdk focus mode so it behaves like the harnesses:
+				// always send a stop request instead of unfocusing the pane.
+				if selected.Started() {
 					if err := selected.Interrupt(); err != nil {
 						return m, m.handleError(err)
 					}
-					return m, nil
 				}
-				m.exitFocusMode()
-				return m, tea.RequestWindowSize
+				return m, nil
 
 			case msg.Code == tea.KeyEnter && msg.Mod.Contains(tea.ModShift):
 				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {

@@ -83,7 +83,7 @@ risk:
 | permission: allow network access for https://api.render.com                      [y] [n] [always]|
 |--------------------------------------------------------------------------------------------------|
 | > continue with the grouped-turn version                                                         |
-|   enter send   shift+enter newline   esc unfocus                              idle prompt        |
+|   enter send   shift+enter newline   esc stop                                 idle prompt        |
 +--------------------------------------------------------------------------------------------------+
 ```
 
@@ -207,7 +207,7 @@ risk:
 |   permission  network access for https://api.render.com                          [y] [n] [all] |
 |--------------------------------------------------------------------------------------------------|
 | > continue with the grouped-turn version                                                        |
-|   enter send   shift+enter newline   esc unfocus                              idle prompt       |
+|   enter send   shift+enter newline   esc stop                                 idle prompt       |
 |  ✺ editing renderer.go  00:12                                                                  |
 +--------------------------------------------------------------------------------------------------+
 ```
