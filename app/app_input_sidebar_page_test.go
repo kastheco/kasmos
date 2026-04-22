@@ -11,6 +11,7 @@ import (
 )
 
 func TestHandleKeyPress_PageDownMovesSidebarSelection(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.nav.SetSize(80, 16)
 	plans := []ui.PlanDisplay{
@@ -32,6 +33,7 @@ func TestHandleKeyPress_PageDownMovesSidebarSelection(t *testing.T) {
 }
 
 func TestHandleKeyPress_PageDownIgnoredInFocusMode(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateFocusAgent
 	h.previewTerminal = session.NewDummyTerminal()
@@ -46,6 +48,7 @@ func TestHandleKeyPress_PageDownIgnoredInFocusMode(t *testing.T) {
 }
 
 func TestHandleKeyPress_SearchPageDownMovesSidebarSelection(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateSearch
 	h.nav.SetSize(80, 16)

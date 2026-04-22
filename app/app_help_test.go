@@ -13,6 +13,7 @@ import (
 )
 
 func TestHandleMouseClick_HelpOverlay_OutsideClickTriggersOnDismiss(t *testing.T) {
+	t.Parallel()
 	dismissed := false
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 

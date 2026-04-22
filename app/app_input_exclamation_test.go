@@ -12,6 +12,7 @@ import (
 )
 
 func TestHandleKeyPress_ExclamationEntersFocusMode(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 
 	inst, err := session.NewInstance(session.InstanceOptions{
@@ -35,6 +36,7 @@ func TestHandleKeyPress_ExclamationEntersFocusMode(t *testing.T) {
 }
 
 func TestHandleKeyPress_ExclamationNoOpWithoutRunningInstance(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.keySent = true
 
@@ -46,6 +48,7 @@ func TestHandleKeyPress_ExclamationNoOpWithoutRunningInstance(t *testing.T) {
 }
 
 func TestHandleKeyPress_ShiftITogglesInfoHeader(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	wasShowing := h.tabbedWindow.IsShowingInfo()
 	h.keySent = true

@@ -9,6 +9,7 @@ import (
 )
 
 func TestCurrentBranch(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	// Initialize a git repo with a commit (needed for branch to exist).
@@ -31,6 +32,7 @@ func TestCurrentBranch(t *testing.T) {
 }
 
 func TestCurrentBranch_Fallback(t *testing.T) {
+	t.Parallel()
 	// Non-existent directory should fall back to "main".
 	branch := currentBranch("/nonexistent/path")
 	assert.Equal(t, "main", branch)

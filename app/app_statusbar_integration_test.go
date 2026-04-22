@@ -15,6 +15,7 @@ import (
 )
 
 func TestStatusBarIncludedInView(t *testing.T) {
+	t.Parallel()
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 	h := &home{
 		ctx:          context.Background(),

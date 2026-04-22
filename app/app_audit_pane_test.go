@@ -11,6 +11,7 @@ import (
 )
 
 func TestAuditPaneToggle(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	// Audit pane should be visible by default
 	require.NotNil(t, h.auditPane, "auditPane must be initialized in newTestHome")
@@ -30,6 +31,7 @@ func TestAuditPaneToggle(t *testing.T) {
 }
 
 func TestAuditPaneRefresh_EmptyWithNilLogger(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	// With nil auditLogger, refreshAuditPane should not panic
 	assert.NotPanics(t, func() {
@@ -41,6 +43,7 @@ func TestAuditPaneRefresh_EmptyWithNilLogger(t *testing.T) {
 // are displayed in local time, not UTC. Timestamps are stored as UTC in the DB
 // and must be converted to local time before formatting for display.
 func TestRefreshAuditPane_TimestampInLocalTime(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()

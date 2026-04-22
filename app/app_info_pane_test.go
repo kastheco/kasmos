@@ -97,6 +97,7 @@ func buildInfoPaneHome(t *testing.T) (*home, *taskstate.TaskState, taskstore.Sto
 
 // TestUpdateInfoPaneForPlanHeader_GoalPopulated verifies that PlanGoal is set.
 func TestUpdateInfoPaneForPlanHeader_GoalPopulated(t *testing.T) {
+	t.Parallel()
 	h, _, _, _ := buildInfoPaneHome(t)
 
 	ok := h.nav.SelectByID(ui.SidebarPlanPrefix + "plan.md")
@@ -110,6 +111,7 @@ func TestUpdateInfoPaneForPlanHeader_GoalPopulated(t *testing.T) {
 
 // TestUpdateInfoPaneForPlanHeader_LifecycleTimestamps verifies that PlanningAt and ImplementingAt are set.
 func TestUpdateInfoPaneForPlanHeader_LifecycleTimestamps(t *testing.T) {
+	t.Parallel()
 	h, _, _, _ := buildInfoPaneHome(t)
 
 	ok := h.nav.SelectByID(ui.SidebarPlanPrefix + "plan.md")
@@ -127,6 +129,7 @@ func TestUpdateInfoPaneForPlanHeader_LifecycleTimestamps(t *testing.T) {
 }
 
 func TestUpdateInfoPaneForPlanHeader_PopulatesExecutionPhaseMetadata(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		status      taskstate.Status
@@ -186,6 +189,7 @@ func TestUpdateInfoPaneForPlanHeader_PopulatesExecutionPhaseMetadata(t *testing.
 
 // TestUpdateInfoPaneForPlanHeader_SubtaskProgress verifies CompletedTasks, TotalSubtasks, and AllWaveSubtasks.
 func TestUpdateInfoPaneForPlanHeader_SubtaskProgress(t *testing.T) {
+	t.Parallel()
 	h, _, _, _ := buildInfoPaneHome(t)
 
 	ok := h.nav.SelectByID(ui.SidebarPlanPrefix + "plan.md")
@@ -217,6 +221,7 @@ func TestUpdateInfoPaneForPlanHeader_SubtaskProgress(t *testing.T) {
 
 // TestUpdateInfoPane_InstanceView_GoalAndLifecycle verifies goal and timestamps populate in instance view.
 func TestUpdateInfoPane_InstanceView_GoalAndLifecycle(t *testing.T) {
+	t.Parallel()
 	h, _, _, _ := buildInfoPaneHome(t)
 
 	inst, err := session.NewInstance(session.InstanceOptions{
@@ -245,6 +250,7 @@ func TestUpdateInfoPane_InstanceView_GoalAndLifecycle(t *testing.T) {
 
 // TestUpdateInfoPane_InstanceView_TaskTitle verifies TaskTitle is populated from the plan.
 func TestUpdateInfoPane_InstanceView_TaskTitle(t *testing.T) {
+	t.Parallel()
 	h, _, _, _ := buildInfoPaneHome(t)
 
 	inst, err := session.NewInstance(session.InstanceOptions{
@@ -270,6 +276,7 @@ func TestUpdateInfoPane_InstanceView_TaskTitle(t *testing.T) {
 
 // TestUpdateInfoPane_InstanceView_SubtaskProgress verifies subtask progress in instance view.
 func TestUpdateInfoPane_InstanceView_SubtaskProgress(t *testing.T) {
+	t.Parallel()
 	h, _, _, _ := buildInfoPaneHome(t)
 
 	inst, err := session.NewInstance(session.InstanceOptions{
@@ -295,6 +302,7 @@ func TestUpdateInfoPane_InstanceView_SubtaskProgress(t *testing.T) {
 // TestUpdateInfoPane_SubtaskReadFailure_PreservesSubtaskFields verifies that when GetSubtasks
 // fails, prior subtask fields are preserved and not zeroed out.
 func TestUpdateInfoPane_SubtaskReadFailure_PreservesSubtaskFields(t *testing.T) {
+	t.Parallel()
 	h, _, _, _ := buildInfoPaneHome(t)
 
 	// Replace the taskState's store with one that will fail GetSubtasks.
@@ -434,6 +442,7 @@ func (f *failingSubtaskStore) Close() error { return f.inner.Close() }
 // TestUpdateInfoPane_SDKFastInstance verifies that updateInfoPane sets ExecutionMode
 // and SDKSpeedTier on InfoData from a fast-tier sdk instance.
 func TestUpdateInfoPane_SDKFastInstance(t *testing.T) {
+	t.Parallel()
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
 	h := &home{
 		ctx:            context.Background(),

@@ -14,6 +14,7 @@ import (
 )
 
 func TestHandleKeyPress_ResumeOnNonPausedInstanceIsNoOp(t *testing.T) {
+	t.Parallel()
 	for _, status := range []session.Status{session.Running, session.Ready} {
 		t.Run(fmt.Sprintf("status-%d", status), func(t *testing.T) {
 			h := newTestHomeWithToast()
@@ -34,6 +35,7 @@ func TestHandleKeyPress_ResumeOnNonPausedInstanceIsNoOp(t *testing.T) {
 }
 
 func TestHandleKeyPress_ResumeOnNilSelectedIsNoOp(t *testing.T) {
+	t.Parallel()
 	h := newTestHomeWithToast()
 
 	h.keySent = true
@@ -43,6 +45,7 @@ func TestHandleKeyPress_ResumeOnNilSelectedIsNoOp(t *testing.T) {
 }
 
 func TestExecuteLauncherAction_ResumeOnNonPausedInstanceIsNoOp(t *testing.T) {
+	t.Parallel()
 	for _, status := range []session.Status{session.Running, session.Ready} {
 		t.Run(fmt.Sprintf("status-%d", status), func(t *testing.T) {
 			h := newTestHomeWithToast()
@@ -62,6 +65,7 @@ func TestExecuteLauncherAction_ResumeOnNonPausedInstanceIsNoOp(t *testing.T) {
 }
 
 func TestExecuteLauncherAction_ResumeOnNilSelectedIsNoOp(t *testing.T) {
+	t.Parallel()
 	h := newTestHomeWithToast()
 
 	_, cmd := h.executeLauncherAction("resume")
@@ -70,6 +74,7 @@ func TestExecuteLauncherAction_ResumeOnNilSelectedIsNoOp(t *testing.T) {
 }
 
 func TestHandleKeyPress_ResumePausedInstanceCallsResume(t *testing.T) {
+	t.Parallel()
 	// Verify that the key handler dispatches to Resume() for a paused instance.
 	// Resume() will fail because we don't have a real tmux, but the key should
 	// produce an error-handling command (not nil), proving the guard passed.

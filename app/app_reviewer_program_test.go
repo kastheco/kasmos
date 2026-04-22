@@ -7,6 +7,7 @@ import (
 )
 
 func TestWithOpenCodeModelFlag(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		program string
@@ -50,6 +51,7 @@ func TestWithOpenCodeModelFlag(t *testing.T) {
 }
 
 func TestBuildHarnessAwareProgramCommand(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		profile config.AgentProfile

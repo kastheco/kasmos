@@ -28,6 +28,7 @@ func collectPlanBrowserMsgs(cmd tea.Cmd) []planBrowserOpenedMsg {
 }
 
 func TestHandleKeyPress_BrowserOpensSelectedPlan(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.taskStoreProject = "proj"
 	h.nav.SetPlans([]ui.PlanDisplay{{Filename: "plan-browser", Status: "ready"}})
@@ -56,6 +57,7 @@ func TestHandleKeyPress_BrowserOpensSelectedPlan(t *testing.T) {
 }
 
 func TestHandleKeyPress_BrowserUsesInstanceTaskWhenNoPlanSelected(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.taskStoreProject = "proj"
 	inst, err := session.NewInstance(session.InstanceOptions{Title: "coder", Program: "opencode"})
@@ -82,6 +84,7 @@ func TestHandleKeyPress_BrowserUsesInstanceTaskWhenNoPlanSelected(t *testing.T) 
 }
 
 func TestOpenTaskContextMenu_IncludesBrowserAction(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.nav.SetPlans([]ui.PlanDisplay{{Filename: "plan-browser", Status: "ready"}})
 	require.True(t, h.nav.SelectByID(ui.SidebarPlanPrefix+"plan-browser"))

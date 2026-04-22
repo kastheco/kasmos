@@ -58,6 +58,7 @@ func newCancelDelayHome(t *testing.T, store taskstore.Store, ps *taskstate.TaskS
 // Update() that removes the plan from the sidebar immediately — without waiting
 // for the next metadata tick.
 func TestCancelPlan_ConfirmActionReturnsPlanRefreshMsg(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -82,6 +83,7 @@ func TestCancelPlan_ConfirmActionReturnsPlanRefreshMsg(t *testing.T) {
 }
 
 func TestCancelPlan_SelectionMovesToNextPlanBeforeCancellation(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -120,6 +122,7 @@ func TestCancelPlan_SelectionMovesToNextPlanBeforeCancellation(t *testing.T) {
 // the cursor silently jumps to whatever row is now at the same numeric index.
 // Two plans are used so the cursor can actually land on the wrong one.
 func TestRenamePlan_SelectionFollowsRenamedPlan(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))

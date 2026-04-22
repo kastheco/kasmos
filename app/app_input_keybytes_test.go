@@ -8,6 +8,7 @@ import (
 )
 
 func TestKeyToBytes_ForwardsAltRuneAsEscapeSequence(t *testing.T) {
+	t.Parallel()
 	msg := tea.KeyPressMsg{Code: 'v', Text: "v", Mod: tea.ModAlt}
 
 	got := keyToBytes(msg)
@@ -16,6 +17,7 @@ func TestKeyToBytes_ForwardsAltRuneAsEscapeSequence(t *testing.T) {
 }
 
 func TestKeyToBytes_ForwardsAltRuneFromCodeWhenTextEmpty(t *testing.T) {
+	t.Parallel()
 	msg := tea.KeyPressMsg{Code: 'v', Mod: tea.ModAlt}
 
 	got := keyToBytes(msg)
@@ -24,6 +26,7 @@ func TestKeyToBytes_ForwardsAltRuneFromCodeWhenTextEmpty(t *testing.T) {
 }
 
 func TestKeyToBytes_ForwardsPlainRuneWithoutEscapePrefix(t *testing.T) {
+	t.Parallel()
 	msg := tea.KeyPressMsg{Code: 'v', Text: "v"}
 
 	got := keyToBytes(msg)
@@ -32,6 +35,7 @@ func TestKeyToBytes_ForwardsPlainRuneWithoutEscapePrefix(t *testing.T) {
 }
 
 func TestKeyToBytes_EscapeKey(t *testing.T) {
+	t.Parallel()
 	msg := tea.KeyPressMsg{Code: tea.KeyEscape}
 
 	got := keyToBytes(msg)
@@ -40,6 +44,7 @@ func TestKeyToBytes_EscapeKey(t *testing.T) {
 }
 
 func TestKeyToBytes_CtrlShiftV(t *testing.T) {
+	t.Parallel()
 	// Ctrl+Shift+V: Code='V' (uppercase due to Shift), Mod has both Ctrl and Shift.
 	// The Ctrl handler only matches lowercase a-z, so this falls through.
 	// With Shift, the switch only handles Tab/arrows/Home/End.
@@ -56,6 +61,7 @@ func TestKeyToBytes_CtrlShiftV(t *testing.T) {
 }
 
 func TestKeyToBytes_CtrlShiftUppercaseV(t *testing.T) {
+	t.Parallel()
 	msg := tea.KeyPressMsg{Code: 'V', Mod: tea.ModCtrl | tea.ModShift}
 
 	got := keyToBytes(msg)
@@ -64,6 +70,7 @@ func TestKeyToBytes_CtrlShiftUppercaseV(t *testing.T) {
 }
 
 func TestKeyToBytes_ShiftEnterUsesKittySequence(t *testing.T) {
+	t.Parallel()
 	msg := tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift}
 
 	got := keyToBytes(msg)

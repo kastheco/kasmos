@@ -19,6 +19,7 @@ import (
 )
 
 func TestNewHomeInitializesNavigationPanel(t *testing.T) {
+	// serial: calls production newHome constructor which connects to shared config/db
 	h := newHome(context.Background(), "opencode", false, "")
 	require.NotNil(t, h.nav)
 }

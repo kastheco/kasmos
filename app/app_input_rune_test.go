@@ -17,6 +17,7 @@ import (
 //   - multi-byte printable runes (é, 中, emoji) → true
 //   - control characters (tab, carriage return) → false
 func TestFirstRuneIsPrintable(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		s    string

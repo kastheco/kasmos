@@ -20,6 +20,7 @@ import (
 )
 
 func TestHandleKeyPress_DownKeyAlwaysFocusesNav(t *testing.T) {
+	t.Parallel()
 	// Up/Down always refocus the sidebar and navigate it, regardless of which
 	// pane was previously focused (when no document/scroll mode is active).
 	for _, slot := range []int{slotAgent} {
@@ -45,6 +46,7 @@ func TestHandleKeyPress_DownKeyAlwaysFocusesNav(t *testing.T) {
 }
 
 func TestHandleKeyPress_UpKeyAlwaysFocusesNav(t *testing.T) {
+	t.Parallel()
 	for _, slot := range []int{slotAgent} {
 		t.Run(fmt.Sprintf("from slot %d", slot), func(t *testing.T) {
 			spin := spinner.New(spinner.WithSpinner(spinner.Dot))
@@ -101,6 +103,7 @@ func prepareAgentPaneForWheelTest(t *testing.T, h *home, width, height int) *zon
 }
 
 func TestHandleMouseWheel_DocumentModeScrollsWithoutSelectedInstance(t *testing.T) {
+	// serial: uses bubblezone global zone state (zone.Clear, zone.Get, zone.Scan)
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 	h := &home{
 		ctx:          context.Background(),
@@ -128,6 +131,7 @@ func TestHandleMouseWheel_DocumentModeScrollsWithoutSelectedInstance(t *testing.
 }
 
 func TestHandleMouseWheel_FocusModeForwardsToEmbeddedTerminal(t *testing.T) {
+	// serial: uses bubblezone global zone state (zone.Clear, zone.Get, zone.Scan)
 	h := newTestHome()
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:   "focus-wheel",
@@ -169,6 +173,7 @@ func TestHandleMouseWheel_FocusModeForwardsToEmbeddedTerminal(t *testing.T) {
 }
 
 func TestHandleMouseWheel_DefaultModeForwardsToEmbeddedTerminal(t *testing.T) {
+	// serial: uses bubblezone global zone state (zone.Clear, zone.Get, zone.Scan)
 	h := newTestHome()
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:   "default-wheel",

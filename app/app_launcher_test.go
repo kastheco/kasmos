@@ -27,6 +27,7 @@ func launcherHasAction(items []overlay.LauncherItem, action string) bool {
 }
 
 func TestShiftSpaceOpensCommandLauncher(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 
@@ -42,6 +43,7 @@ func TestShiftSpaceOpensCommandLauncher(t *testing.T) {
 }
 
 func TestSpaceDoesNotOpenCommandLauncher(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 
@@ -53,6 +55,7 @@ func TestSpaceDoesNotOpenCommandLauncher(t *testing.T) {
 }
 
 func TestQuestionMarkOpensKeybindBrowser(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 
@@ -66,6 +69,7 @@ func TestQuestionMarkOpensKeybindBrowser(t *testing.T) {
 }
 
 func TestLauncherEscReturnToDefault(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 
@@ -83,6 +87,7 @@ func TestLauncherEscReturnToDefault(t *testing.T) {
 }
 
 func TestLauncherViewKeybindsOpensKeybindBrowser(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 
@@ -100,6 +105,7 @@ func TestLauncherViewKeybindsOpensKeybindBrowser(t *testing.T) {
 }
 
 func TestKeybindBrowserEscReturnToDefault(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 
@@ -115,6 +121,7 @@ func TestKeybindBrowserEscReturnToDefault(t *testing.T) {
 }
 
 func TestBuildKeybindBrowserItems_HidesSubmitNameAndRemovedBindings(t *testing.T) {
+	t.Parallel()
 	items := buildKeybindBrowserItems()
 
 	var foundInfoTab bool
@@ -143,6 +150,7 @@ func TestBuildKeybindBrowserItems_HidesSubmitNameAndRemovedBindings(t *testing.T
 // is selected in the nav panel, buildLauncherItems returns only the global items
 // and none of the selection-dependent instance or task actions.
 func TestBuildLauncherItems_NoSelection_OnlyGlobalActions(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	// No plans, no instances — nothing selected.
 
@@ -169,6 +177,7 @@ func TestBuildLauncherItems_NoSelection_OnlyGlobalActions(t *testing.T) {
 // TestBuildLauncherItems_PlannedReadyTask verifies that when a planned-ready task
 // is selected, start_implement appears and instance-only actions are absent.
 func TestBuildLauncherItems_PlannedReadyTask(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -203,6 +212,7 @@ func TestBuildLauncherItems_PlannedReadyTask(t *testing.T) {
 // open_instance requires TmuxAlive() which MarkStartedForTest does not provide,
 // so it must be absent in this scenario.
 func TestBuildLauncherItems_RunningInstance(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, err := newTestInstance("running-agent")
 	require.NoError(t, err)
@@ -226,6 +236,7 @@ func TestBuildLauncherItems_RunningInstance(t *testing.T) {
 // TestBuildLauncherItems_PausedInstance verifies that resume_instance is present
 // and open_instance is absent when the selected instance is paused.
 func TestBuildLauncherItems_PausedInstance(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, err := newTestInstance("paused-agent")
 	require.NoError(t, err)
@@ -246,6 +257,7 @@ func TestBuildLauncherItems_PausedInstance(t *testing.T) {
 // key sequence.  buildKeybindBrowserItems surfaces these via the Hint field so
 // users can discover them via the keybind browser (?).
 func TestBuildKeybindBrowserItems_DoubleTapHints(t *testing.T) {
+	t.Parallel()
 	items := buildKeybindBrowserItems()
 
 	// Build a label → hint map for convenient assertions.
@@ -277,6 +289,7 @@ func TestBuildKeybindBrowserItems_DoubleTapHints(t *testing.T) {
 // TestBuildLauncherItems_PromptDetected verifies that send_yes appears when the
 // selected instance is started, not paused, and has PromptDetected set.
 func TestBuildLauncherItems_PromptDetected(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, err := newTestInstance("prompt-agent")
 	require.NoError(t, err)

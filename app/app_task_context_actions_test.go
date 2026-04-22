@@ -14,6 +14,7 @@ import (
 // transitions a ready plan to planning via the PlanStart event (replacing the
 // deleted setPlanStatus / modify_plan path).
 func TestFSMPlanStart_TransitionsReadyToPlanning(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	if err := os.MkdirAll(plansDir, 0o755); err != nil {
