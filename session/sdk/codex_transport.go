@@ -52,18 +52,18 @@ const (
 	// observable effect on our rendering. We swallow them silently rather
 	// than surfacing "[system: codex: unknown notification ...]" lines into
 	// the agent pane on every tick.
-	codexNotifyMcpStartupStatus       = "mcpServer/startupStatus/updated"
-	codexNotifyThreadStatus           = "thread/status/changed"
-	codexNotifyAccountRateLimits      = "account/rateLimits/updated"
-	codexNotifyThreadTokenUsage       = "thread/tokenUsage/updated"
-	codexNotifyServerRequestDone      = "serverRequest/resolved"
-	codexNotifyTurnPlanUpdated        = "turn/plan/updated"
-	codexNotifyTurnDiffUpdated        = "turn/diff/updated"
-	codexNotifyCommandExecOutputDelta       = "item/commandExecution/outputDelta"
+	codexNotifyMcpStartupStatus               = "mcpServer/startupStatus/updated"
+	codexNotifyThreadStatus                   = "thread/status/changed"
+	codexNotifyAccountRateLimits              = "account/rateLimits/updated"
+	codexNotifyThreadTokenUsage               = "thread/tokenUsage/updated"
+	codexNotifyServerRequestDone              = "serverRequest/resolved"
+	codexNotifyTurnPlanUpdated                = "turn/plan/updated"
+	codexNotifyTurnDiffUpdated                = "turn/diff/updated"
+	codexNotifyCommandExecOutputDelta         = "item/commandExecution/outputDelta"
 	codexNotifyCommandExecTerminalInteraction = "item/commandExecution/terminalInteraction"
-	codexNotifyFileChangeOutputDelta        = "item/fileChange/outputDelta"
-	codexNotifyHookStarted                  = "hook/started"
-	codexNotifyHookCompleted                = "hook/completed"
+	codexNotifyFileChangeOutputDelta          = "item/fileChange/outputDelta"
+	codexNotifyHookStarted                    = "hook/started"
+	codexNotifyHookCompleted                  = "hook/completed"
 
 	// Server -> client requests.
 	codexRequestCommandApproval     = "item/commandExecution/requestApproval"
