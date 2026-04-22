@@ -54,6 +54,13 @@ Always prefer kasmos MCP tools over built-in Claude Code equivalents — they ar
 
 Built-in tools (Read, Grep, Glob, Bash) are fallback only — use when MCP is unavailable or for operations with no MCP equivalent (e.g., Edit, Write).
 
+## test performance
+
+before making broad changes to test structure, parallelism, or timing in `app`
+or `session/tmux`, read [`docs/testing.md`](docs/testing.md). it has the
+canonical baseline numbers, the `t.Parallel()` / `// serial: <reason>` convention,
+and instructions for running the benchmark script to catch regressions.
+
 ## Workflow
 
 Development follows a wave-based plan execution lifecycle. Each agent works only on the specific task it has been assigned — do not expand scope beyond your assigned work package. When `KASMOS_TASK` is set, you are one of several concurrent agents on a shared worktree. `KASMOS_WAVE` identifies your wave, `KASMOS_PEERS` the number of sibling agents. Implement only your assigned task — see your dynamic prompt for specific rules.
