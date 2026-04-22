@@ -518,8 +518,74 @@ func TestCodexTransport_CommandExecution_ItemEvents(t *testing.T) {
 	})
 	result := waitForEvent(t, ct.Events(), EventToolResult, time.Second)
 	assert.Equal(t, "commandExecution", result.ToolName)
-	assert.Contains(t, result.ToolResult, "exit_code=0")
-	assert.Contains(t, result.ToolResult, "ok")
+	// ToolResult must be a JSON object with exit_code, output, and aggregatedOutput fields.
+	var ecResult struct {
+		ExitCode         *int   `json:"exit_code"`
+		Output           string `json:"output"`
+		AggregatedOutput string `json:"aggregatedOutput"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(result.ToolResult), &ecResult), "ToolResult must be valid JSON")
+	require.NotNil(t, ecResult.ExitCode, "exit_code must be present")
+	assert.Equal(t, 0, *ecResult.ExitCode)
+	assert.Equal(t, "ok", ecResult.Output)
+	assert.Equal(t, "ok", ecResult.AggregatedOutput, "aggregatedOutput must mirror output for codex compatibility")
+}
+
+func TestCodexCommandExecutionResult_JSONShapes(t *testing.T) {
+	output := "  ok  "
+	exitZero := 0
+	exitTwo := 2
+
+	testCases := []struct {
+		name string
+		item codexThreadItem
+		want map[string]any
+	}{
+		{
+			name: "exit code and output retain aggregated output",
+			item: codexThreadItem{Type: "commandExecution", AggregatedOutput: &output, ExitCode: &exitZero},
+			want: map[string]any{"exit_code": float64(0), "output": "ok", "aggregatedOutput": "ok"},
+		},
+		{
+			name: "output without exit code omits aggregated output",
+			item: codexThreadItem{Type: "commandExecution", AggregatedOutput: &output},
+			want: map[string]any{"output": "ok"},
+		},
+		{
+			name: "exit code without output omits output fields",
+			item: codexThreadItem{Type: "commandExecution", ExitCode: &exitTwo},
+			want: map[string]any{"exit_code": float64(2)},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var got map[string]any
+			require.NoError(t, json.Unmarshal([]byte(codexCommandExecutionResult(tc.item)), &got))
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestCodexCommandExecutionResult_MarshalErrorFallsBackToDescription(t *testing.T) {
+	origMarshal := codexJSONMarshal
+	codexJSONMarshal = func(any) ([]byte, error) {
+		return nil, fmt.Errorf("marshal failed")
+	}
+	defer func() {
+		codexJSONMarshal = origMarshal
+	}()
+
+	exitZero := 0
+	output := "ok"
+	item := codexThreadItem{
+		Type:             "commandExecution",
+		Command:          "go test ./...",
+		AggregatedOutput: &output,
+		ExitCode:         &exitZero,
+	}
+
+	assert.Equal(t, "go test ./...", codexCommandExecutionResult(item))
 }
 
 func TestCodexTransport_TurnCompleted_HasPrompt(t *testing.T) {
@@ -569,6 +635,7 @@ func TestCodexTransport_BenignNotifications_AreSilentlyIgnored(t *testing.T) {
 	srv.pushNotification(codexNotifyHookStarted, map[string]any{"hook": "started"})
 	srv.pushNotification(codexNotifyHookCompleted, map[string]any{"hook": "completed"})
 	srv.pushNotification(codexNotifyFileChangeOutputDelta, map[string]any{"itemId": "item-1"})
+	srv.pushNotification(codexNotifyCommandExecTerminalInteraction, map[string]any{"itemId": "item-2"})
 
 	assert.Empty(t, collectEvents(t, ct.Events(), 150*time.Millisecond))
 }

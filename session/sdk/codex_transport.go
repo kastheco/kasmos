@@ -29,6 +29,8 @@ import (
 	"github.com/kastheco/kasmos/session/tmux"
 )
 
+var codexJSONMarshal = json.Marshal
+
 const (
 	// Client -> server startup and turn lifecycle.
 	codexMethodInitialize    = "initialize"
@@ -52,17 +54,18 @@ const (
 	// observable effect on our rendering. We swallow them silently rather
 	// than surfacing "[system: codex: unknown notification ...]" lines into
 	// the agent pane on every tick.
-	codexNotifyMcpStartupStatus       = "mcpServer/startupStatus/updated"
-	codexNotifyThreadStatus           = "thread/status/changed"
-	codexNotifyAccountRateLimits      = "account/rateLimits/updated"
-	codexNotifyThreadTokenUsage       = "thread/tokenUsage/updated"
-	codexNotifyServerRequestDone      = "serverRequest/resolved"
-	codexNotifyTurnPlanUpdated        = "turn/plan/updated"
-	codexNotifyTurnDiffUpdated        = "turn/diff/updated"
-	codexNotifyCommandExecOutputDelta = "item/commandExecution/outputDelta"
-	codexNotifyFileChangeOutputDelta  = "item/fileChange/outputDelta"
-	codexNotifyHookStarted            = "hook/started"
-	codexNotifyHookCompleted          = "hook/completed"
+	codexNotifyMcpStartupStatus               = "mcpServer/startupStatus/updated"
+	codexNotifyThreadStatus                   = "thread/status/changed"
+	codexNotifyAccountRateLimits              = "account/rateLimits/updated"
+	codexNotifyThreadTokenUsage               = "thread/tokenUsage/updated"
+	codexNotifyServerRequestDone              = "serverRequest/resolved"
+	codexNotifyTurnPlanUpdated                = "turn/plan/updated"
+	codexNotifyTurnDiffUpdated                = "turn/diff/updated"
+	codexNotifyCommandExecOutputDelta         = "item/commandExecution/outputDelta"
+	codexNotifyCommandExecTerminalInteraction = "item/commandExecution/terminalInteraction"
+	codexNotifyFileChangeOutputDelta          = "item/fileChange/outputDelta"
+	codexNotifyHookStarted                    = "hook/started"
+	codexNotifyHookCompleted                  = "hook/completed"
 
 	// Server -> client requests.
 	codexRequestCommandApproval     = "item/commandExecution/requestApproval"
@@ -607,6 +610,7 @@ func (t *CodexTransport) translateNotification(n Notification) (*Event, error) {
 		codexNotifyTurnPlanUpdated,
 		codexNotifyTurnDiffUpdated,
 		codexNotifyCommandExecOutputDelta,
+		codexNotifyCommandExecTerminalInteraction,
 		codexNotifyFileChangeOutputDelta,
 		codexNotifyHookStarted,
 		codexNotifyHookCompleted:
@@ -925,20 +929,34 @@ func codexCommandExecutionDescription(item codexThreadItem) string {
 	if strings.TrimSpace(item.Command) != "" {
 		return item.Command
 	}
-	if item.ExitCode != nil {
-		return fmt.Sprintf("exit_code=%d", *item.ExitCode)
-	}
 	return ""
 }
 
 func codexCommandExecutionResult(item codexThreadItem) string {
-	if item.AggregatedOutput != nil && strings.TrimSpace(*item.AggregatedOutput) != "" {
-		if item.ExitCode != nil {
-			return fmt.Sprintf("exit_code=%d output=%s", *item.ExitCode, strings.TrimSpace(*item.AggregatedOutput))
-		}
-		return strings.TrimSpace(*item.AggregatedOutput)
+	type resultPayload struct {
+		ExitCode         *int   `json:"exit_code,omitempty"`
+		Output           string `json:"output,omitempty"`
+		AggregatedOutput string `json:"aggregatedOutput,omitempty"`
 	}
-	return codexCommandExecutionDescription(item)
+	p := resultPayload{}
+	if item.ExitCode != nil {
+		p.ExitCode = item.ExitCode
+	}
+	if item.AggregatedOutput != nil && strings.TrimSpace(*item.AggregatedOutput) != "" {
+		trimmed := strings.TrimSpace(*item.AggregatedOutput)
+		p.Output = trimmed
+		if p.ExitCode != nil {
+			p.AggregatedOutput = trimmed
+		}
+	}
+	if p.ExitCode == nil && p.Output == "" {
+		return codexCommandExecutionDescription(item)
+	}
+	data, err := codexJSONMarshal(p)
+	if err != nil {
+		return codexCommandExecutionDescription(item)
+	}
+	return string(data)
 }
 
 func codexToolName(item codexThreadItem) string {

@@ -103,15 +103,30 @@ func (r *Renderer) AddEvent(e Event) {
 			turn := r.ensureTurn(e.TurnID, e.Timestamp)
 			r.closeStructuredProseBlock()
 			isErr := strings.HasPrefix(line, "✗ ")
-			turn.Rows = append(turn.Rows, PresentationRow{
+			row := PresentationRow{
 				Kind:      RowResult,
 				Text:      line,
 				Timestamp: e.Timestamp,
 				ToolName:  e.ToolName,
 				IsError:   isErr,
-			})
-			// Append a RowToolPreview row for non-error textual results.
-			if !isErr {
+			}
+			// For commandExecution, decode exit code and output for structured
+			// rendering so the pane can show a colour-coded glyph + plain output.
+			if strings.EqualFold(strings.TrimSpace(e.ToolName), "commandExecution") {
+				var ec struct {
+					ExitCode *int   `json:"exit_code"`
+					Output   string `json:"output"`
+				}
+				if err := json.Unmarshal([]byte(strings.TrimSpace(e.ToolResult)), &ec); err == nil && ec.ExitCode != nil {
+					row.ExitCode = ec.ExitCode
+					row.Output = normalizeCommandResultOutput(ec.Output)
+					row.IsError = *ec.ExitCode != 0
+				}
+			}
+			turn.Rows = append(turn.Rows, row)
+			// Append a RowToolPreview row for non-error textual results that
+			// are not already represented by structured command output.
+			if !row.IsError && row.ExitCode == nil {
 				if preview := extractToolPreview(e.ToolName, e.ToolResult, toolPreviewMaxLines); preview != nil {
 					if !isRedundantToolPreview(line, preview) {
 						turn.Rows = append(turn.Rows, PresentationRow{
@@ -595,8 +610,24 @@ func formatToolResultLine(raw string) string {
 				return "✗ " + truncateOneLine(msg, 120)
 			}
 		}
-		if exit, ok := obj["exit_code"].(float64); ok && exit != 0 {
-			return fmt.Sprintf("✗ exit=%d", int(exit))
+		if exit, ok := obj["exit_code"].(float64); ok {
+			output := ""
+			if v, ok2 := obj["output"].(string); ok2 {
+				output = normalizeCommandResultOutput(v)
+			}
+			if int(exit) != 0 {
+				if output != "" {
+					return fmt.Sprintf("✗ exit=%d: %s", int(exit), truncateOneLine(output, 80))
+				}
+				return fmt.Sprintf("✗ exit=%d", int(exit))
+			}
+			// exit_code == 0: summarize output into the standard single-line
+			// text form, or return a bare ✓ when no output so the row is still
+			// appended.
+			if output != "" {
+				return summarizeToolResultText(output)
+			}
+			return "✓"
 		}
 		if summary := summarizeStructuredCollection(obj); summary != "" {
 			return summary
@@ -640,11 +671,32 @@ func summarizeToolResultText(text string) string {
 	return "→ " + truncateOneLine(trimmed, 120)
 }
 
+const commandResultOutputMaxRunes = 120
+
+func normalizeCommandResultOutput(text string) string {
+	normalized := strings.TrimSpace(text)
+	if normalized == "" {
+		return ""
+	}
+	normalized = strings.ReplaceAll(normalized, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	parts := strings.Split(normalized, "\n")
+	collapsed := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			collapsed = append(collapsed, part)
+		}
+	}
+	return truncateOneLine(strings.Join(collapsed, " "), commandResultOutputMaxRunes)
+}
+
 func isRedundantToolPreview(summaryLine string, preview *ToolPreviewPayload) bool {
 	if preview == nil || preview.Truncated || preview.HiddenLineCount != 0 || len(preview.Lines) != 1 {
 		return false
 	}
-	return summaryLine == summarizeToolResultText(preview.Lines[0])
+	line := strings.TrimSpace(preview.Lines[0])
+	return summaryLine == line || summaryLine == summarizeToolResultText(line)
 }
 
 // truncateOneLine collapses internal whitespace and caps the string at n

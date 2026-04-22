@@ -169,6 +169,10 @@ type PresentationRow struct {
 	IsError     bool
 	ToolDiff    *ToolDiffPayload    // non-nil for RowToolDiff rows only
 	ToolPreview *ToolPreviewPayload // non-nil for RowToolPreview rows only
+	// ExitCode and Output are non-zero only for commandExecution RowResult rows.
+	// ExitCode nil means "no exit code information"; 0 means success.
+	ExitCode *int   // non-nil when a structured command exit code is available
+	Output   string // normalized single-line stdout/aggregated output from the command
 }
 
 // PresentationTurn groups all content rows produced within one agent response turn.
@@ -196,6 +200,8 @@ type presentationRowJSON struct {
 	IsError     bool                `json:"is_error"`
 	ToolDiff    *ToolDiffPayload    `json:"tool_diff,omitempty"`
 	ToolPreview *ToolPreviewPayload `json:"tool_preview,omitempty"`
+	ExitCode    *int                `json:"exit_code,omitempty"`
+	Output      string              `json:"output,omitempty"`
 }
 
 type presentationTurnJSON struct {
@@ -227,6 +233,8 @@ func (r PresentationRow) MarshalJSON() ([]byte, error) {
 		IsError:     r.IsError,
 		ToolDiff:    r.ToolDiff,
 		ToolPreview: r.ToolPreview,
+		ExitCode:    r.ExitCode,
+		Output:      r.Output,
 	})
 }
 
@@ -242,6 +250,8 @@ func (r *PresentationRow) UnmarshalJSON(data []byte) error {
 	r.IsError = aux.IsError
 	r.ToolDiff = aux.ToolDiff
 	r.ToolPreview = aux.ToolPreview
+	r.ExitCode = aux.ExitCode
+	r.Output = aux.Output
 	r.Timestamp = time.Time{}
 	if aux.Timestamp != nil {
 		r.Timestamp = *aux.Timestamp
@@ -337,6 +347,10 @@ func ClonePresentationTurns(src []*PresentationTurn) []*PresentationTurn {
 		cp.Rows = make([]PresentationRow, len(t.Rows))
 		for j, row := range t.Rows {
 			rowCp := row
+			if row.ExitCode != nil {
+				exitCode := *row.ExitCode
+				rowCp.ExitCode = &exitCode
+			}
 			if row.ToolDiff != nil {
 				td := *row.ToolDiff
 				td.Lines = cloneToolDiffLines(row.ToolDiff.Lines)
