@@ -1474,6 +1474,35 @@ func TestPreviewPane_SDKPresentation_SystemRowsWrapTimestamp(t *testing.T) {
 			lipgloss.NewStyle().Foreground(ColorSubtle)))
 }
 
+func TestPreviewPane_SDKPresentation_SystemBlockOnlyTimestampsFirstRow(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 12)
+
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowSystem, Text: "[system: first line]", Timestamp: now},
+			{Kind: sdk.RowSystem, Text: "[system: second line]", Timestamp: now},
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	rendered := pane.previewState.text
+	require.Contains(t, rendered,
+		sdk.RenderTextLineWithTimestamp("[system: first line]", now, 80,
+			lipgloss.NewStyle().Foreground(ColorGold),
+			lipgloss.NewStyle().Foreground(ColorSubtle)))
+	require.Contains(t, rendered,
+		lipgloss.NewStyle().Foreground(ColorGold).Render("[system: second line]"))
+	require.Equal(t, 1, strings.Count(stripPreviewANSI(rendered), now.Local().Format("15:04")))
+}
+
 // TestPreviewPane_SDKPresentation_RunningStickyStrip verifies that a running
 // turn with Activity emits a sticky strip in the pane text.
 func TestPreviewPane_SDKPresentation_RunningStickyStrip(t *testing.T) {

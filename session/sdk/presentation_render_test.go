@@ -452,6 +452,29 @@ func TestRenderPresentation_SystemRowsWrapTimestamp(t *testing.T) {
 			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))))
 }
 
+func TestRenderPresentation_SystemBlockOnlyTimestampsFirstRow(t *testing.T) {
+	now := time.Now()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{Kind: RowSystem, Text: "[system: first line]", Timestamp: now},
+			{Kind: RowSystem, Text: "[system: second line]", Timestamp: now},
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+	require.Contains(t, result,
+		RenderTextLineWithTimestamp("[system: first line]", now, 80,
+			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold)),
+			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))))
+	require.Contains(t, result,
+		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold)).Render("[system: second line]"))
+	require.Equal(t, 1, strings.Count(stripANSI(result), now.Local().Format("15:04")))
+}
+
 // TestRenderPresentation_NilDiffPayload verifies that a RowToolDiff row with a
 // nil ToolDiff is silently skipped without panic.
 func TestRenderPresentation_NilDiffPayload(t *testing.T) {

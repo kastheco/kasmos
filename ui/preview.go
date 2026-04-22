@@ -648,6 +648,7 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 	diffContextStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
 	previewStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
 
+	prevKind := sdk.PresentationRowKind("")
 	for _, row := range turn.Rows {
 		switch row.Kind {
 		case sdk.RowUser:
@@ -694,7 +695,11 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 		case sdk.RowWarning:
 			rows = append(rows, warningStyle.Render(row.Text))
 		case sdk.RowSystem:
-			rows = append(rows, sdk.RenderTextLineWithTimestamp(row.Text, row.Timestamp, width, systemStyle, timestampStyle))
+			if prevKind == sdk.RowSystem {
+				rows = append(rows, systemStyle.Render(row.Text))
+			} else {
+				rows = append(rows, sdk.RenderTextLineWithTimestamp(row.Text, row.Timestamp, width, systemStyle, timestampStyle))
+			}
 		case sdk.RowPermission:
 			rows = append(rows, permStyle.Render(row.Text))
 		case sdk.RowResponse:
@@ -711,6 +716,7 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 		case sdk.RowThinking:
 			rows = append(rows, thinkingStyle.Render(row.Text))
 		}
+		prevKind = row.Kind
 	}
 	return rows
 }

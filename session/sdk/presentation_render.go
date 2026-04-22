@@ -116,6 +116,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 	diffContextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
 	previewStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
 
+	prevKind := PresentationRowKind("")
 	for _, row := range turn.Rows {
 		switch row.Kind {
 		case RowUser:
@@ -183,7 +184,11 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 		case RowWarning:
 			rows = append(rows, warningStyle.Render(row.Text))
 		case RowSystem:
-			rows = append(rows, RenderTextLineWithTimestamp(row.Text, row.Timestamp, width, systemStyle, timestampStyle))
+			if prevKind == RowSystem {
+				rows = append(rows, systemStyle.Render(row.Text))
+			} else {
+				rows = append(rows, RenderTextLineWithTimestamp(row.Text, row.Timestamp, width, systemStyle, timestampStyle))
+			}
 		case RowPermission:
 			rows = append(rows, permStyle.Render(row.Text))
 		case RowResponse:
@@ -199,6 +204,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 		case RowThinking:
 			rows = append(rows, thinkingStyle.Render(row.Text))
 		}
+		prevKind = row.Kind
 	}
 	return rows
 }
