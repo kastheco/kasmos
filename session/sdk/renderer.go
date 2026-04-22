@@ -119,13 +119,14 @@ func (r *Renderer) AddEvent(e Event) {
 				}
 				if err := json.Unmarshal([]byte(strings.TrimSpace(e.ToolResult)), &ec); err == nil && ec.ExitCode != nil {
 					row.ExitCode = ec.ExitCode
-					row.Output = ec.Output
+					row.Output = normalizeCommandResultOutput(ec.Output)
 					row.IsError = *ec.ExitCode != 0
 				}
 			}
 			turn.Rows = append(turn.Rows, row)
-			// Append a RowToolPreview row for non-error textual results.
-			if !isErr {
+			// Append a RowToolPreview row for non-error textual results that
+			// are not already represented by structured command output.
+			if !row.IsError && row.ExitCode == nil {
 				if preview := extractToolPreview(e.ToolName, e.ToolResult, toolPreviewMaxLines); preview != nil {
 					if !isRedundantToolPreview(line, preview) {
 						turn.Rows = append(turn.Rows, PresentationRow{
@@ -612,7 +613,7 @@ func formatToolResultLine(raw string) string {
 		if exit, ok := obj["exit_code"].(float64); ok {
 			output := ""
 			if v, ok2 := obj["output"].(string); ok2 {
-				output = strings.TrimSpace(v)
+				output = normalizeCommandResultOutput(v)
 			}
 			if int(exit) != 0 {
 				if output != "" {
@@ -620,10 +621,11 @@ func formatToolResultLine(raw string) string {
 				}
 				return fmt.Sprintf("✗ exit=%d", int(exit))
 			}
-			// exit_code == 0: return the output as plain text (Capture path), or
-			// a bare ✓ when no output so the row is still appended.
+			// exit_code == 0: summarize output into the standard single-line
+			// text form, or return a bare ✓ when no output so the row is still
+			// appended.
 			if output != "" {
-				return output
+				return summarizeToolResultText(output)
 			}
 			return "✓"
 		}
@@ -667,6 +669,24 @@ func summarizeToolResultText(text string) string {
 		return fmt.Sprintf("→ %d lines", len(lines))
 	}
 	return "→ " + truncateOneLine(trimmed, 120)
+}
+
+func normalizeCommandResultOutput(text string) string {
+	normalized := strings.TrimSpace(text)
+	if normalized == "" {
+		return ""
+	}
+	normalized = strings.ReplaceAll(normalized, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	parts := strings.Split(normalized, "\n")
+	collapsed := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			collapsed = append(collapsed, part)
+		}
+	}
+	return strings.Join(collapsed, " ")
 }
 
 func isRedundantToolPreview(summaryLine string, preview *ToolPreviewPayload) bool {

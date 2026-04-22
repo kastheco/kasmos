@@ -1153,7 +1153,32 @@ func TestRenderer_ToolResult_ExitCodeZero_DoesNotInjectDuplicateToolPreviewRow(t
 	kinds := rowKinds(turns[0].Rows)
 	assert.Equal(t, []PresentationRowKind{RowResult}, kinds,
 		"successful commandExecution should produce a single RowResult, not a duplicate RowToolPreview")
-	assert.Equal(t, "tests passed", turns[0].Rows[0].Text)
+	assert.Equal(t, "→ tests passed", turns[0].Rows[0].Text)
+	assert.Equal(t, "tests passed", turns[0].Rows[0].Output)
+}
+
+func TestRenderer_ToolResult_ExitCodeZero_NormalizesMultilineCommandOutput(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{
+		Kind:       EventToolResult,
+		TurnID:     "t1",
+		ToolName:   "commandExecution",
+		ToolResult: "{\"exit_code\":0,\"output\":\"tests passed\\n\\nwith warnings\"}",
+		Timestamp:  ts,
+	})
+
+	assert.Equal(t, "→ tests passed with warnings", r.Capture())
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+
+	kinds := rowKinds(turns[0].Rows)
+	assert.Equal(t, []PresentationRowKind{RowResult}, kinds,
+		"normalized commandExecution output should not produce a duplicate RowToolPreview")
+	assert.Equal(t, "→ tests passed with warnings", turns[0].Rows[0].Text)
+	assert.Equal(t, "tests passed with warnings", turns[0].Rows[0].Output)
 }
 
 func TestRenderer_ToolResult_Error_NoToolPreviewRow(t *testing.T) {

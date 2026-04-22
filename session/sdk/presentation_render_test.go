@@ -531,3 +531,32 @@ func TestRenderPresentation_CommandExecutionResult_SuccessNoOutput(t *testing.T)
 		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorPine)).Render("✓")
 	require.Contains(t, result, expectedMarker, "success with no output must render just Pine ✓")
 }
+
+func TestRenderPresentation_CommandExecutionResult_NormalizesMultilineOutput(t *testing.T) {
+	now := time.Now()
+	exitCode := 0
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{
+				Kind:     RowResult,
+				Text:     "→ tests passed with warnings",
+				ExitCode: &exitCode,
+				Output:   "tests passed\n\nwith warnings",
+				ToolName: "commandExecution",
+			},
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+
+	expectedMarker := ToolChildIndent +
+		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorPine)).Render("✓") +
+		" " +
+		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam)).Render("tests passed with warnings")
+	require.Contains(t, result, expectedMarker)
+	require.NotContains(t, stripANSI(result), "\n\nwith warnings")
+}

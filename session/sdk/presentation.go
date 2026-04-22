@@ -172,7 +172,7 @@ type PresentationRow struct {
 	// ExitCode and Output are non-zero only for commandExecution RowResult rows.
 	// ExitCode nil means "no exit code information"; 0 means success.
 	ExitCode *int   // non-nil when a structured command exit code is available
-	Output   string // trimmed stdout/aggregated output from the command
+	Output   string // normalized single-line stdout/aggregated output from the command
 }
 
 // PresentationTurn groups all content rows produced within one agent response turn.
@@ -347,6 +347,10 @@ func ClonePresentationTurns(src []*PresentationTurn) []*PresentationTurn {
 		cp.Rows = make([]PresentationRow, len(t.Rows))
 		for j, row := range t.Rows {
 			rowCp := row
+			if row.ExitCode != nil {
+				exitCode := *row.ExitCode
+				rowCp.ExitCode = &exitCode
+			}
 			if row.ToolDiff != nil {
 				td := *row.ToolDiff
 				td.Lines = cloneToolDiffLines(row.ToolDiff.Lines)

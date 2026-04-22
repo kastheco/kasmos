@@ -346,6 +346,35 @@ func TestClonePresentationTurns_DeepCopy_Activity(t *testing.T) {
 	assert.Equal(t, "original", src[0].Activity.Label)
 }
 
+// TestClonePresentationTurns_DeepCopy_ExitCode verifies that mutating the
+// clone's ExitCode pointer does not affect the original row.
+func TestClonePresentationTurns_DeepCopy_ExitCode(t *testing.T) {
+	exitCode := 0
+	src := []*PresentationTurn{
+		{
+			ID:     "t1",
+			Number: 1,
+			Rows: []PresentationRow{
+				{
+					Kind:     RowResult,
+					ToolName: "commandExecution",
+					ExitCode: &exitCode,
+					Output:   "tests passed",
+				},
+			},
+		},
+	}
+
+	cloned := ClonePresentationTurns(src)
+	require.Len(t, cloned, 1)
+	require.NotNil(t, cloned[0].Rows[0].ExitCode)
+
+	*cloned[0].Rows[0].ExitCode = 7
+
+	require.NotNil(t, src[0].Rows[0].ExitCode)
+	assert.Equal(t, 0, *src[0].Rows[0].ExitCode)
+}
+
 // TestClonePresentationTurns_NilTurn_HandledGracefully verifies that nil turns
 // in the input slice are handled without panic.
 func TestClonePresentationTurns_NilTurn_HandledGracefully(t *testing.T) {

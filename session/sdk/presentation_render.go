@@ -157,6 +157,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 				// Structured commandExecution result: render coloured glyph + output.
 				var markerStyle, outputStyle lipgloss.Style
 				var glyph, codeSegment string
+				output := normalizeCommandResultOutput(row.Output)
 				if *row.ExitCode == 0 {
 					markerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorPine))
 					outputStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
@@ -169,8 +170,8 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 					codeSegment = " " + strconv.Itoa(*row.ExitCode)
 				}
 				rendered := ToolChildIndent + markerStyle.Render(glyph+codeSegment)
-				if row.Output != "" {
-					rendered += " " + outputStyle.Render(row.Output)
+				if output != "" {
+					rendered += " " + outputStyle.Render(output)
 				}
 				rows = append(rows, rendered)
 			} else if row.IsError {
