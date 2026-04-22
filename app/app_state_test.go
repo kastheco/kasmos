@@ -21,6 +21,7 @@ import (
 )
 
 func TestSpawnTaskAgent_PatchesMainBranchOpencodeConfig(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	for _, cmd := range [][]string{
@@ -90,6 +91,7 @@ func TestSpawnTaskAgent_PatchesMainBranchOpencodeConfig(t *testing.T) {
 }
 
 func TestSpawnArchitectPass_PatchesMainBranchOpencodeConfig(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	for _, cmd := range [][]string{
@@ -163,6 +165,7 @@ func TestSpawnArchitectPass_PatchesMainBranchOpencodeConfig(t *testing.T) {
 }
 
 func TestSpawnTaskAgent_ReviewKeepsReviewerCompatibilityMirrorSynced(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	for _, cmd := range [][]string{
@@ -219,6 +222,7 @@ func TestSpawnTaskAgent_ReviewKeepsReviewerCompatibilityMirrorSynced(t *testing.
 }
 
 func TestBuildChatAboutTaskPrompt_UsesMCPFirst(t *testing.T) {
+	t.Parallel()
 	prompt := buildChatAboutTaskPrompt("architect-plan-location", "myproject", taskstate.TaskEntry{
 		Status:      taskstate.StatusReady,
 		Description: "architect-plan-location",
@@ -234,6 +238,7 @@ func TestBuildChatAboutTaskPrompt_UsesMCPFirst(t *testing.T) {
 }
 
 func TestSpawnReviewer_SkipsDuplicatePendingSameCycle(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	for _, cmd := range [][]string{
@@ -293,6 +298,7 @@ func TestSpawnReviewer_SkipsDuplicatePendingSameCycle(t *testing.T) {
 }
 
 func TestDedupeInstancesByRepoAndTitle_KeepsNewest(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	older, err := session.NewInstance(session.InstanceOptions{Title: "feature-review-3", Path: dir, Program: "opencode", TaskFile: "feature", AgentType: session.AgentTypeReviewer})
 	require.NoError(t, err)
@@ -312,6 +318,7 @@ func TestDedupeInstancesByRepoAndTitle_KeepsNewest(t *testing.T) {
 }
 
 func TestAdoptOrphanSession_BindsPersistedReviewerCycle(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -344,6 +351,7 @@ func TestAdoptOrphanSession_BindsPersistedReviewerCycle(t *testing.T) {
 }
 
 func TestAdoptOrphanSession_BindsPlanMetadataFromTitle(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -374,6 +382,7 @@ func TestAdoptOrphanSession_BindsPlanMetadataFromTitle(t *testing.T) {
 }
 
 func TestAdoptOrphanSession_BindsStalePhaseTitleToPlan(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -404,6 +413,7 @@ func TestAdoptOrphanSession_BindsStalePhaseTitleToPlan(t *testing.T) {
 }
 
 func TestAdoptOrphanSession_BindsActiveWaveMetadata(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -441,6 +451,7 @@ func TestAdoptOrphanSession_BindsActiveWaveMetadata(t *testing.T) {
 }
 
 func TestSyncSharedWorktreeScaffold_WritesHarnessFilesForConfiguredProfiles(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	reviewerTemp := 0.2
 	fixerTemp := 0.1
@@ -475,6 +486,7 @@ func TestSyncSharedWorktreeScaffold_WritesHarnessFilesForConfiguredProfiles(t *t
 }
 
 func TestProfileForAgent_MasterUsesReadinessReviewProfile(t *testing.T) {
+	t.Parallel()
 	temp := 0.0
 	m := &home{
 		program: "opencode",
@@ -513,6 +525,7 @@ func newPausedMasterInstance(t *testing.T, planFile string) *session.Instance {
 }
 
 func TestHandleReviewChangesRequested_PausesMasterInstance(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.pendingReviewFeedback = make(map[string]string)
 	planFile := "test-plan.md"

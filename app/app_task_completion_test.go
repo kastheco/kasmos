@@ -25,6 +25,7 @@ import (
 )
 
 func TestShouldPromptPushAfterImplementerExit(t *testing.T) {
+	t.Parallel()
 	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder}}
 	inst := &session.Instance{TaskFile: "p", AgentType: session.AgentTypeCoder}
 
@@ -34,6 +35,7 @@ func TestShouldPromptPushAfterImplementerExit(t *testing.T) {
 }
 
 func TestShouldPromptPushAfterImplementerExit_SDKCoderExited(t *testing.T) {
+	t.Parallel()
 	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder}}
 	inst := &session.Instance{
 		TaskFile:      "p.md",
@@ -46,6 +48,7 @@ func TestShouldPromptPushAfterImplementerExit_SDKCoderExited(t *testing.T) {
 }
 
 func TestShouldPromptPushAfterImplementerExit_PromptDetectedTriggers(t *testing.T) {
+	t.Parallel()
 	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder}}
 	inst := &session.Instance{
 		TaskFile:              "p",
@@ -62,6 +65,7 @@ func TestShouldPromptPushAfterImplementerExit_PromptDetectedTriggers(t *testing.
 }
 
 func TestShouldPromptPushAfterImplementerExit_AwaitingWorkSuppresses(t *testing.T) {
+	t.Parallel()
 	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder}}
 	inst := &session.Instance{
 		TaskFile:       "p",
@@ -77,6 +81,7 @@ func TestShouldPromptPushAfterImplementerExit_AwaitingWorkSuppresses(t *testing.
 }
 
 func TestShouldPromptPushAfterImplementerExit_FixerPromptDetectedTriggers(t *testing.T) {
+	t.Parallel()
 	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseFixing), ActiveAgentType: session.AgentTypeFixer}}
 	inst := &session.Instance{
 		TaskFile:              "p",
@@ -91,6 +96,7 @@ func TestShouldPromptPushAfterImplementerExit_FixerPromptDetectedTriggers(t *tes
 }
 
 func TestShouldPromptPushAfterImplementerExit_NoPromptForSoloAgent(t *testing.T) {
+	t.Parallel()
 	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder}}
 	inst := &session.Instance{TaskFile: "p", AgentType: session.AgentTypeCoder, SoloAgent: true}
 
@@ -99,6 +105,7 @@ func TestShouldPromptPushAfterImplementerExit_NoPromptForSoloAgent(t *testing.T)
 }
 
 func TestShouldPromptPushAfterImplementerExit_NoPromptForReviewer(t *testing.T) {
+	t.Parallel()
 	entry := taskstate.TaskEntry{Status: taskstate.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing), ActiveAgentType: session.AgentTypeCoder}}
 	inst := &session.Instance{TaskFile: "p", AgentType: session.AgentTypeReviewer}
 
@@ -112,6 +119,7 @@ func TestShouldPromptPushAfterImplementerExit_NoPromptForReviewer(t *testing.T) 
 // StatusImplementing, it wires through to promptPushBranchThenAdvance and sets
 // the confirmation overlay (proving the push-prompt lifecycle path is connected).
 func TestMetadataTickHandler_CoderExitTriggersPrompt(t *testing.T) {
+	t.Parallel()
 	const planFile = "test-feature"
 
 	// Build a planState with the plan in StatusImplementing.
@@ -181,6 +189,7 @@ func TestMetadataTickHandler_CoderExitTriggersPrompt(t *testing.T) {
 // the push-prompt confirmation overlay is shown. This is the key path that enables
 // the review→fix→re-review automation cycle.
 func TestMetadataTickHandler_CoderPromptDetectedTriggersPrompt(t *testing.T) {
+	t.Parallel()
 	const planFile = "test-feature"
 
 	dir := t.TempDir()
@@ -245,6 +254,7 @@ func TestMetadataTickHandler_CoderPromptDetectedTriggersPrompt(t *testing.T) {
 }
 
 func TestMetadataTickHandler_UpdatedPromptFrameTriggersPrompt(t *testing.T) {
+	t.Parallel()
 	const planFile = "test-feature"
 
 	dir := t.TempDir()
@@ -314,6 +324,7 @@ func TestMetadataTickHandler_UpdatedPromptFrameTriggersPrompt(t *testing.T) {
 }
 
 func TestMetadataTickHandler_CoderPromptDeferredInFocusMode(t *testing.T) {
+	t.Parallel()
 	const planFile = "test-feature"
 
 	dir := t.TempDir()
@@ -383,6 +394,7 @@ func TestMetadataTickHandler_CoderPromptDeferredInFocusMode(t *testing.T) {
 }
 
 func TestMetadataTick_TaskFinishedSignalMarksWaveTaskComplete(t *testing.T) {
+	t.Parallel()
 	const planFile = "task-finished.md"
 
 	plan := &taskparser.Plan{
@@ -460,6 +472,7 @@ func TestMetadataTick_TaskFinishedSignalMarksWaveTaskComplete(t *testing.T) {
 // confirm action returns a coderCompleteMsg so the Update handler can perform
 // the FSM transition and spawn a reviewer.
 func TestPromptPushBranchThenAdvance_ReturnsCoderCompleteMsg(t *testing.T) {
+	t.Parallel()
 	const planFile = "test-feature"
 
 	dir := t.TempDir()
@@ -504,6 +517,7 @@ func TestPromptPushBranchThenAdvance_ReturnsCoderCompleteMsg(t *testing.T) {
 // metadata tick does NOT re-trigger promptPushBranchThenAdvance and overwrite
 // the existing overlay. Without this guard the modal re-appears every tick.
 func TestMetadataTickHandler_NoRepromptWhenConfirmPending(t *testing.T) {
+	t.Parallel()
 	const planFile = "test-feature"
 
 	dir := t.TempDir()
@@ -572,6 +586,7 @@ func TestMetadataTickHandler_NoRepromptWhenConfirmPending(t *testing.T) {
 }
 
 func TestFullPlanLifecycle_StateTransitions(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -605,6 +620,7 @@ func TestFullPlanLifecycle_StateTransitions(t *testing.T) {
 // m.taskState="ready", then m.taskState=msg.PlanState → m.taskState="planning"
 // (stale), causing the sidebar to show the wrong status for ~500ms.
 func TestMetadataResultMsg_SignalDoesNotClobberFreshPlanState(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -666,6 +682,7 @@ func TestMetadataResultMsg_SignalDoesNotClobberFreshPlanState(t *testing.T) {
 }
 
 func TestMetadataResultMsg_StaleSnapshotDoesNotClobberPlanning(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 
 	dir := t.TempDir()
@@ -726,6 +743,7 @@ func TestMetadataResultMsg_StaleSnapshotDoesNotClobberPlanning(t *testing.T) {
 // list and a start cmd is returned. This is the sentinel-driven equivalent of
 // the old checkPlanCompletion → transitionToReview path.
 func TestImplementFinishedSignal_SpawnsReviewer(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 
 	dir := t.TempDir()
@@ -804,6 +822,7 @@ func TestImplementFinishedSignal_SpawnsReviewer(t *testing.T) {
 // sentinel is processed, the plan transitions back to implementing and a new
 // coder instance is added with the reviewer's feedback in its prompt.
 func TestReviewChangesSignal_RespawnsFixer(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 	const feedback = "Fix the error handling in auth.go"
 
@@ -893,6 +912,7 @@ func TestReviewChangesSignal_RespawnsFixer(t *testing.T) {
 }
 
 func TestMetadataResultMsg_DaemonManagedRepoIgnoresReviewChangesSignal(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 	const feedback = "Fix the error handling in auth.go"
 
@@ -956,6 +976,7 @@ func TestMetadataResultMsg_DaemonManagedRepoIgnoresReviewChangesSignal(t *testin
 }
 
 func TestMetadataResultMsg_ProcessorReviewChangesSignalSpawnsFixer(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 	const feedback = "Fix the error handling in auth.go"
 
@@ -1036,6 +1057,7 @@ func TestMetadataResultMsg_ProcessorReviewChangesSignalSpawnsFixer(t *testing.T)
 }
 
 func TestTickUpdateMetadata_DaemonManagedRepoSkipsFilesystemReviewSignals(t *testing.T) {
+	// serial: modifies repoManagedByDaemon
 	dir := t.TempDir()
 	signalsDir := filepath.Join(dir, ".kasmos", "signals")
 	require.NoError(t, os.MkdirAll(signalsDir, 0o755))
@@ -1075,6 +1097,7 @@ func TestTickUpdateMetadata_DaemonManagedRepoSkipsFilesystemReviewSignals(t *tes
 }
 
 func TestTickUpdateMetadata_DaemonManagedRepoLoadsTaskStateFromStore(t *testing.T) {
+	// serial: modifies repoManagedByDaemon and listDaemonInstances
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -1136,6 +1159,7 @@ func TestTickUpdateMetadata_DaemonManagedRepoLoadsTaskStateFromStore(t *testing.
 }
 
 func TestMetadataResultMsg_DaemonManagedRepoAddsMissingDaemonWaveTask(t *testing.T) {
+	// serial: modifies repoManagedByDaemon, listDaemonInstances, and restoreInstanceFromData
 	dir := t.TempDir()
 
 	oldManaged := repoManagedByDaemon
@@ -1225,6 +1249,7 @@ func TestMetadataResultMsg_DaemonManagedRepoAddsMissingDaemonWaveTask(t *testing
 // reimplementation that drops the started check — a started instance would require
 // an integration test. The behavioral contract is: no auto-approve on reviewer death.
 func TestReviewerTmuxDeath_DoesNotAutoApprove(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 
 	dir := t.TempDir()
@@ -1290,6 +1315,7 @@ func TestReviewerTmuxDeath_DoesNotAutoApprove(t *testing.T) {
 // signal the spawned coder gets title "feature-fix-1"; after the subsequent
 // ImplementFinished the spawned reviewer gets "feature-review-2".
 func TestReviewCycle_InstanceTitlesIncludeCycleNumber(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 	const feedback = "Fix the error handling in auth.go"
 
@@ -1391,6 +1417,7 @@ func TestReviewCycle_InstanceTitlesIncludeCycleNumber(t *testing.T) {
 // With review_cycle=0 in planstate (initial), the first reviewer gets ReviewCycle=1
 // (1-indexed for humans: display value = stored cycle + 1).
 func TestReviewCycle_InstanceStructHasCycleSet(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 
 	dir := t.TempDir()
@@ -1449,6 +1476,7 @@ func TestReviewCycle_InstanceStructHasCycleSet(t *testing.T) {
 // TestIsLocked_FinishedLockedWhenDone verifies that the "finished" stage is
 // locked when the plan is already done, preventing a spurious FSM error.
 func TestIsLocked_FinishedLockedWhenDone(t *testing.T) {
+	t.Parallel()
 	assert.True(t, isLocked(taskstate.StatusDone, "finished"),
 		"finished stage must be locked when plan is already done")
 	// Still unlocked for reviewing (the valid trigger).
@@ -1464,6 +1492,7 @@ func TestIsLocked_FinishedLockedWhenDone(t *testing.T) {
 // panel but transitioned to Paused status (not killed/removed), and the plan
 // status transitions to done.
 func TestReviewApproved_PausesReviewerInsteadOfKilling(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 
 	dir := t.TempDir()
@@ -1554,6 +1583,7 @@ func TestReviewApproved_PausesReviewerInsteadOfKilling(t *testing.T) {
 // away from a paused reviewer whose plan is done, the reviewer instance is
 // automatically removed from the nav panel and allInstances list.
 func TestPausedReviewer_CleanedUpOnNavigateAway(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 
 	dir := t.TempDir()
@@ -1619,6 +1649,7 @@ func TestPausedReviewer_CleanedUpOnNavigateAway(t *testing.T) {
 }
 
 func TestReviewCycleLimitAction_Kind(t *testing.T) {
+	t.Parallel()
 	action := loop.ReviewCycleLimitAction{
 		PlanFile: "test.md",
 		Cycle:    3,
@@ -1634,6 +1665,7 @@ func TestReviewCycleLimitAction_Kind(t *testing.T) {
 // with no matching reviewer instance in nav still transitions the FSM to done
 // without panicking.
 func TestReviewApproved_NoReviewerNoPanic(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 
 	dir := t.TempDir()
@@ -1685,6 +1717,7 @@ func TestReviewApproved_NoReviewerNoPanic(t *testing.T) {
 // metadata tick that dismisses a stale context menu. This prevents a one-tick
 // delay between menu dismissal and the follow-up prompt appearing.
 func TestMetadataResultMsg_DeferredDialogReleasedOnMenuDismissal(t *testing.T) {
+	t.Parallel()
 	const planFile = "planner-ready-task"
 
 	dir := t.TempDir()

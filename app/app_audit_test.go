@@ -35,6 +35,7 @@ func newTestHomeWithToast() *home {
 }
 
 func TestAuditEmit_PlanTransition(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -57,6 +58,7 @@ func TestAuditEmit_PlanTransition(t *testing.T) {
 }
 
 func TestAuditEmit_WaveStarted(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -81,6 +83,7 @@ func TestAuditEmit_WaveStarted(t *testing.T) {
 }
 
 func TestAuditEmit_WaveCompleted(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -104,6 +107,7 @@ func TestAuditEmit_WaveCompleted(t *testing.T) {
 }
 
 func TestAuditEmit_WaveFailed(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -127,6 +131,7 @@ func TestAuditEmit_WaveFailed(t *testing.T) {
 }
 
 func TestAuditEmit_PlanMerged(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -149,6 +154,7 @@ func TestAuditEmit_PlanMerged(t *testing.T) {
 }
 
 func TestAuditEmit_PlanCancelled(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -173,6 +179,7 @@ func TestAuditEmit_PlanCancelled(t *testing.T) {
 // TestAuditHomeEmit_PlanTransition verifies that the home.audit() helper
 // correctly emits plan transition events through the audit logger.
 func TestAuditHomeEmit_PlanTransition(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -200,6 +207,7 @@ func TestAuditHomeEmit_PlanTransition(t *testing.T) {
 // TestAuditEmit_AgentSpawned verifies that the SQLiteLogger correctly stores and
 // retrieves agent spawned events with all lifecycle fields populated.
 func TestAuditEmit_AgentSpawned(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -225,6 +233,7 @@ func TestAuditEmit_AgentSpawned(t *testing.T) {
 // TestAuditHomeEmit_AgentSpawned verifies that spawnAdHocAgent emits an
 // EventAgentSpawned event through the home.audit() helper.
 func TestAuditHomeEmit_AgentSpawned(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -258,6 +267,7 @@ func TestAuditHomeEmit_AgentSpawned(t *testing.T) {
 // fast speed tier emits an event with both execution_mode and speed_tier in the
 // Detail JSON.
 func TestAuditHomeEmit_AgentSpawned_FastTier(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -290,6 +300,7 @@ func TestAuditHomeEmit_AgentSpawned_FastTier(t *testing.T) {
 // TestAuditHomeEmit_AgentKilled verifies that executeContextAction("kill_instance")
 // emits an EventAgentKilled event through the home.audit() helper.
 func TestAuditHomeEmit_AgentKilled(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -321,6 +332,7 @@ func TestAuditHomeEmit_AgentKilled(t *testing.T) {
 // from outside the session package without real tmux, we test the audit emission
 // directly via the audit() helper — the same code path the ctrl+k handler calls.
 func TestAuditHomeEmit_AgentKilled_KeybindCtrlK(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -351,6 +363,7 @@ func TestAuditHomeEmit_AgentKilled_KeybindCtrlK(t *testing.T) {
 // TestAuditHomeEmit_PlanCreated verifies that createTaskEntry emits
 // EventPlanCreated after successfully creating a plan in the store.
 func TestAuditHomeEmit_PlanCreated(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -388,6 +401,7 @@ func TestAuditHomeEmit_PlanCreated(t *testing.T) {
 // an EventAgentPaused event. We test via the audit() helper directly because
 // executeContextAction("pause_instance") requires a started tmux session.
 func TestAuditHomeEmit_AgentPaused(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -416,6 +430,7 @@ func TestAuditHomeEmit_AgentPaused(t *testing.T) {
 // an EventAgentResumed event. We test via the audit() helper directly because
 // executeContextAction("resume_instance") requires a started tmux session.
 func TestAuditHomeEmit_AgentResumed(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -442,6 +457,7 @@ func TestAuditHomeEmit_AgentResumed(t *testing.T) {
 
 // TestAuditEmit_PromptSent verifies that prompt sent events are stored and retrieved correctly.
 func TestAuditEmit_PromptSent(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -465,6 +481,7 @@ func TestAuditEmit_PromptSent(t *testing.T) {
 
 // TestAuditEmit_GitPush verifies that git push events are stored and retrieved correctly.
 func TestAuditEmit_GitPush(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -488,6 +505,7 @@ func TestAuditEmit_GitPush(t *testing.T) {
 
 // TestAuditEmit_PRCreated verifies that PR created events are stored and retrieved correctly.
 func TestAuditEmit_PRCreated(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -512,6 +530,7 @@ func TestAuditEmit_PRCreated(t *testing.T) {
 
 // TestAuditEmit_PermissionDetected verifies that permission detected events are stored correctly.
 func TestAuditEmit_PermissionDetected(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -535,6 +554,7 @@ func TestAuditEmit_PermissionDetected(t *testing.T) {
 
 // TestAuditEmit_PermissionAnswered verifies that permission answered events are stored correctly.
 func TestAuditEmit_PermissionAnswered(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -558,6 +578,7 @@ func TestAuditEmit_PermissionAnswered(t *testing.T) {
 
 // TestAuditEmit_Error verifies that error events are stored with the correct level.
 func TestAuditEmit_Error(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -582,6 +603,7 @@ func TestAuditEmit_Error(t *testing.T) {
 
 // TestAuditEmit_FSMError verifies that FSM error events are stored correctly.
 func TestAuditEmit_FSMError(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()
@@ -606,6 +628,7 @@ func TestAuditEmit_FSMError(t *testing.T) {
 
 // TestAuditHomeEmit_WaveStarted verifies wave started events are emitted correctly.
 func TestAuditHomeEmit_WaveStarted(t *testing.T) {
+	t.Parallel()
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
 	defer logger.Close()

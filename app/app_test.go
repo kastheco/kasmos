@@ -114,6 +114,7 @@ func startTestDaemonSocketServer(t *testing.T, handler http.Handler) string {
 }
 
 func TestShowDaemonRequiredDialog_RegistersRepoOnConfirm(t *testing.T) {
+	t.Parallel()
 	registeredPath := ""
 	h := newTestHome()
 	h.activeRepoPath = filepath.Join(os.TempDir(), "kasmos-test-repo")
@@ -141,6 +142,7 @@ func TestShowDaemonRequiredDialog_RegistersRepoOnConfirm(t *testing.T) {
 }
 
 func TestShowDaemonRequiredDialog_DoesNotRegisterWhenUnavailable(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.showDaemonRequiredDialog(daemonStatusMsg{message: "start the daemon first"})
 	assert.Nil(t, h.pendingConfirmAction)
@@ -152,14 +154,10 @@ func TestShowDaemonRequiredDialog_DoesNotRegisterWhenUnavailable(t *testing.T) {
 }
 
 func TestCheckDaemonStatus_AutoRegistersRepoWhenDaemonIsRunning(t *testing.T) {
+	// serial: subtests call t.Setenv via startTestDaemonSocketServer; a parallel
+	// parent prevents child tests from calling t.Setenv in Go 1.21+.
 	repoPath := filepath.Join(t.TempDir(), "repo")
 	require.NoError(t, os.MkdirAll(repoPath, 0o755))
-
-	oldManaged := repoManagedByDaemon
-	repoManagedByDaemon = func(string) bool { return false }
-	t.Cleanup(func() {
-		repoManagedByDaemon = oldManaged
-	})
 
 	tests := []struct {
 		name            string
@@ -183,6 +181,7 @@ func TestCheckDaemonStatus_AutoRegistersRepoWhenDaemonIsRunning(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			withRepoManagedByDaemon(t, func(string) bool { return false })
 			postCalls := 0
 			mux := http.NewServeMux()
 			mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, r *http.Request) {
@@ -217,6 +216,7 @@ func TestCheckDaemonStatus_AutoRegistersRepoWhenDaemonIsRunning(t *testing.T) {
 }
 
 func TestDaemonRepoRegisteredMsg_KeepsLocalTaskStoreWithoutConfirmation(t *testing.T) {
+	// serial: modifies repoManagedByDaemon and calls os.Chdir
 	// Redirect HOME so newHome() uses a fresh isolated global DB instead of
 	// the developer's real ~/.config/kasmos/taskstore.db.
 	t.Setenv("HOME", t.TempDir())
@@ -274,6 +274,7 @@ func TestDaemonRepoRegisteredMsg_KeepsLocalTaskStoreWithoutConfirmation(t *testi
 }
 
 func TestNewHome_AutoRegisterDoesNotShowStaleDaemonUnavailableToast(t *testing.T) {
+	// serial: modifies repoManagedByDaemon and calls os.Chdir
 	repoDir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755))
 
@@ -355,6 +356,7 @@ func TestNewHome_AutoRegisterDoesNotShowStaleDaemonUnavailableToast(t *testing.T
 }
 
 func TestView_UsesCellMotionMouseMode(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.termHeight = 20
 	h.contentHeight = 10
@@ -366,6 +368,7 @@ func TestView_UsesCellMotionMouseMode(t *testing.T) {
 }
 
 func TestSpawnAdHocAgent_DefaultCreatesWorktree(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	model, cmd := h.spawnAdHocAgent("my-agent", "", "", "", session.ExecutionModeTmux, "")
 	updated := model.(*home)
@@ -382,6 +385,7 @@ func TestSpawnAdHocAgent_DefaultCreatesWorktree(t *testing.T) {
 }
 
 func TestExecuteLauncherAction_NewInstanceUsesClaudeMasterAgent(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 
 	model, cmd := h.executeLauncherAction("new_instance")
@@ -397,6 +401,7 @@ func TestExecuteLauncherAction_NewInstanceUsesClaudeMasterAgent(t *testing.T) {
 }
 
 func TestExecuteLauncherAction_NewInstanceSDKIgnoresTmuxLimit(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.tmuxSessionCount = GlobalInstanceLimit
 	h.appConfig = &config.Config{
@@ -416,6 +421,7 @@ func TestExecuteLauncherAction_NewInstanceSDKIgnoresTmuxLimit(t *testing.T) {
 }
 
 func TestExecuteLauncherAction_InfoTabRequestsWindowResize(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	wasShowing := h.tabbedWindow.IsShowingInfo()
 
@@ -428,6 +434,7 @@ func TestExecuteLauncherAction_InfoTabRequestsWindowResize(t *testing.T) {
 }
 
 func TestSpawnAdHocAgent_BranchOverride(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	model, cmd := h.spawnAdHocAgent("my-agent", "feature/login", "", "", session.ExecutionModeTmux, "")
 	updated := model.(*home)
@@ -439,6 +446,7 @@ func TestSpawnAdHocAgent_BranchOverride(t *testing.T) {
 }
 
 func TestSpawnAdHocAgent_PathOverride(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	model, cmd := h.spawnAdHocAgent("my-agent", "", "/tmp/custom-path", "", session.ExecutionModeTmux, "")
 	updated := model.(*home)
@@ -450,6 +458,7 @@ func TestSpawnAdHocAgent_PathOverride(t *testing.T) {
 }
 
 func TestSpawnAgent_KeyOpensHarnessPicker(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.appConfig = &config.Config{DefaultProgram: "claude"}
 	h.keySent = true
@@ -463,6 +472,7 @@ func TestSpawnAgent_KeyOpensHarnessPicker(t *testing.T) {
 }
 
 func TestSpawnAgent_SDKFlowAtTmuxLimitStillOpensForm(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.tmuxSessionCount = GlobalInstanceLimit
 	h.appConfig = &config.Config{
@@ -500,6 +510,7 @@ func TestSpawnAgent_SDKFlowAtTmuxLimitStillOpensForm(t *testing.T) {
 }
 
 func TestSpawnAgent_EscCancels(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateSpawnAgent
 	h.overlays.Show(overlay.NewSpawnFormOverlay("spawn agent", 60))
@@ -512,6 +523,7 @@ func TestSpawnAgent_EscCancels(t *testing.T) {
 }
 
 func TestSpawnAgent_SubmitCreatesInstance(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateSpawnAgent
 	h.overlays.Show(overlay.NewSpawnFormOverlay("spawn agent", 60))
@@ -543,6 +555,7 @@ func TestSpawnAgent_SubmitCreatesInstance(t *testing.T) {
 }
 
 func TestAvailableSpawnPrograms_DedupesSortedEnabledProfiles(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.appConfig = &config.Config{
 		DefaultProgram: "claude",
@@ -559,6 +572,7 @@ func TestAvailableSpawnPrograms_DedupesSortedEnabledProfiles(t *testing.T) {
 }
 
 func TestAvailableSpawnPrograms_IncludesDefaultProgram(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.appConfig = &config.Config{DefaultProgram: "amp"}
 	programs := h.availableSpawnPrograms()
@@ -566,6 +580,7 @@ func TestAvailableSpawnPrograms_IncludesDefaultProgram(t *testing.T) {
 }
 
 func TestAvailableSpawnPrograms_IgnoresDisabledAndBlankProfiles(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.appConfig = &config.Config{
 		DefaultProgram: "claude",
@@ -579,6 +594,7 @@ func TestAvailableSpawnPrograms_IgnoresDisabledAndBlankProfiles(t *testing.T) {
 }
 
 func TestAvailableSpawnPrograms_FallsBackToProgramField(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.appConfig = nil
 	h.program = "codex"
@@ -587,6 +603,7 @@ func TestAvailableSpawnPrograms_FallsBackToProgramField(t *testing.T) {
 }
 
 func TestAvailableSpawnPrograms_UsesCleanLabelsForConfiguredPaths(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.appConfig = &config.Config{
 		DefaultProgram: "/home/kas/.nvm/versions/node/v22.0.0/bin/codex --model gpt-5.4",
@@ -599,6 +616,7 @@ func TestAvailableSpawnPrograms_UsesCleanLabelsForConfiguredPaths(t *testing.T) 
 }
 
 func TestSpawnAgent_MultiplePrograms_OpensPicker(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.appConfig = &config.Config{
 		DefaultProgram: "claude",
@@ -616,6 +634,7 @@ func TestSpawnAgent_MultiplePrograms_OpensPicker(t *testing.T) {
 }
 
 func TestSpawnAgent_DefaultHarnessSelection_UsesCleanCodexLabel(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.appConfig = &config.Config{DefaultProgram: "/home/kas/.nvm/versions/node/v22.0.0/bin/codex --model gpt-5.4"}
 	h.keySent = true
@@ -638,6 +657,7 @@ func TestSpawnAgent_DefaultHarnessSelection_UsesCleanCodexLabel(t *testing.T) {
 }
 
 func TestSpawnAgent_DefaultCustomProgram_SelectionOpensForm(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.appConfig = &config.Config{DefaultProgram: "amp"}
 	h.keySent = true
@@ -660,6 +680,7 @@ func TestSpawnAgent_DefaultCustomProgram_SelectionOpensForm(t *testing.T) {
 }
 
 func TestSpawnAgent_LauncherAction_MultiplePrograms_OpensPicker(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.appConfig = &config.Config{
 		DefaultProgram: "claude",
@@ -675,6 +696,7 @@ func TestSpawnAgent_LauncherAction_MultiplePrograms_OpensPicker(t *testing.T) {
 }
 
 func TestSpawnAgent_LauncherAction_AlwaysOpensPicker(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.appConfig = &config.Config{DefaultProgram: "amp"}
 	model, _ := h.executeLauncherAction("spawn_agent")
@@ -685,6 +707,7 @@ func TestSpawnAgent_LauncherAction_AlwaysOpensPicker(t *testing.T) {
 }
 
 func TestSpawnHarnessPicker_EscReturnsToDefault(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.appConfig = &config.Config{
 		DefaultProgram: "claude",
@@ -705,6 +728,7 @@ func TestSpawnHarnessPicker_EscReturnsToDefault(t *testing.T) {
 }
 
 func TestSpawnAgent_SubmitCreatesInstanceWithChosenProgram(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.pendingSpawnProgram = "opencode"
 	h.pendingSpawnExecutionMode = session.ExecutionModeTmux
@@ -739,6 +763,7 @@ func TestSpawnAgent_SubmitCreatesInstanceWithChosenProgram(t *testing.T) {
 }
 
 func TestSpawnExecutionModePicker_EscReturnsToDefault(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.appConfig = &config.Config{DefaultProgram: "claude"}
 	h.state = stateSpawnExecutionModePicker
@@ -756,6 +781,7 @@ func TestSpawnExecutionModePicker_EscReturnsToDefault(t *testing.T) {
 }
 
 func TestSpawnAgent_SDKProgram_SDK_Submit_HasSDKMode(t *testing.T) {
+	t.Parallel()
 	// S -> claude -> sdk -> submit => spawned instance has ExecutionModeSDK
 	h := newTestHome()
 	h.pendingSpawnProgram = "claude"
@@ -791,6 +817,7 @@ func TestSpawnAgent_SDKProgram_SDK_Submit_HasSDKMode(t *testing.T) {
 }
 
 func TestSpawnAgent_SDKProgram_Tmux_Submit_HasTmuxMode(t *testing.T) {
+	t.Parallel()
 	// S -> codex -> tmux -> submit => spawned instance has ExecutionModeTmux
 	h := newTestHome()
 	h.pendingSpawnProgram = "codex"
@@ -822,6 +849,7 @@ func TestSpawnAgent_SDKProgram_Tmux_Submit_HasTmuxMode(t *testing.T) {
 }
 
 func TestSpawnAgent_UnsupportedProgram_Submit_HasTmuxModeNoPicker(t *testing.T) {
+	t.Parallel()
 	// S -> opencode -> submit => ExecutionModeTmux with no picker involved
 	h := newTestHome()
 	h.appConfig = &config.Config{DefaultProgram: "opencode"}
@@ -855,6 +883,7 @@ func TestSpawnAgent_UnsupportedProgram_Submit_HasTmuxModeNoPicker(t *testing.T) 
 // TestSpawnAgent_CodexPickerShowsSDKFast verifies that the execution-mode picker
 // exposes sdk-fast for codex programs.
 func TestSpawnAgent_CodexPickerShowsSDKFast(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.appConfig = &config.Config{DefaultProgram: "codex"}
 	h.keySent = true
@@ -872,6 +901,7 @@ func TestSpawnAgent_CodexPickerShowsSDKFast(t *testing.T) {
 }
 
 func TestSpawnAgent_CodexPickerDefaultsToSDKFastWhenProfileRequestsFast(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.appConfig = &config.Config{
 		DefaultProgram: "codex",
@@ -900,6 +930,7 @@ func TestSpawnAgent_CodexPickerDefaultsToSDKFastWhenProfileRequestsFast(t *testi
 // TestSpawnAgent_ClaudePickerNoSDKFast verifies that the execution-mode picker
 // does NOT include sdk-fast for claude programs.
 func TestSpawnAgent_ClaudePickerNoSDKFast(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.appConfig = &config.Config{DefaultProgram: "claude"}
 	h.keySent = true
@@ -920,6 +951,7 @@ func TestSpawnAgent_ClaudePickerNoSDKFast(t *testing.T) {
 // sdk-fast in the picker and completing the form creates an instance with
 // ExecutionModeSDK and SDKSpeedTier=="fast".
 func TestSpawnAgent_SDKFastSubmit_CreatesInstanceWithFastTier(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.appConfig = &config.Config{DefaultProgram: "codex"}
 	h.keySent = true
@@ -976,6 +1008,7 @@ func TestSpawnAgent_SDKFastSubmit_CreatesInstanceWithFastTier(t *testing.T) {
 // TestSpawnAgent_EscFromExecutionModePicker_ClearsSpeedTier verifies that
 // escaping the picker clears both pendingSpawnExecutionMode and pendingSpawnSpeedTier.
 func TestSpawnAgent_EscFromExecutionModePicker_ClearsSpeedTier(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.appConfig = &config.Config{DefaultProgram: "codex"}
 	h.state = stateSpawnExecutionModePicker
@@ -996,6 +1029,7 @@ func TestSpawnAgent_EscFromExecutionModePicker_ClearsSpeedTier(t *testing.T) {
 // TestSpawnAgent_EscFromSpawnForm_ClearsSpeedTier verifies that escaping the
 // spawn form also clears pendingSpawnSpeedTier.
 func TestSpawnAgent_EscFromSpawnForm_ClearsSpeedTier(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateSpawnAgent
 	h.pendingSpawnProgram = "codex"
@@ -1011,6 +1045,7 @@ func TestSpawnAgent_EscFromSpawnForm_ClearsSpeedTier(t *testing.T) {
 }
 
 func TestExecutionModeForAgent_DefaultsToTmuxButHonorsExplicitSDK(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.appConfig = &config.Config{
 		PhaseRoles: map[string]string{
@@ -1031,6 +1066,7 @@ func TestExecutionModeForAgent_DefaultsToTmuxButHonorsExplicitSDK(t *testing.T) 
 }
 
 func TestStandaloneExecutionMode(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		agentType  string
@@ -1131,6 +1167,7 @@ func collectQuickLaunchMsgs(cmd tea.Cmd) (started []instanceStartedMsg) {
 }
 
 func TestQuickLaunch_KeyCreatesInstance(t *testing.T) {
+	// serial: modifies quickLaunchStartOnMain and scheduleDoubleTapTimeout
 	oldQuickLaunchStartOnMain := quickLaunchStartOnMain
 	quickLaunchStartOnMain = func(inst *session.Instance) error {
 		inst.MarkStartedForTest()
@@ -1192,6 +1229,7 @@ func TestQuickLaunch_KeyCreatesInstance(t *testing.T) {
 }
 
 func TestQuickLaunch_SDKProfileProducesSDKMode(t *testing.T) {
+	// serial: modifies quickLaunchStartOnMain and scheduleDoubleTapTimeout
 	// When the fixer profile is configured with SDK mode and the program supports
 	// the SDK transport (claude), the quick-launch instance must use SDK mode.
 	oldQuickLaunchStartOnMain := quickLaunchStartOnMain
@@ -1235,6 +1273,7 @@ func TestQuickLaunch_SDKProfileProducesSDKMode(t *testing.T) {
 }
 
 func TestQuickLaunch_CodexFastProfileProducesFastTier(t *testing.T) {
+	// serial: modifies quickLaunchStartOnMain and scheduleDoubleTapTimeout
 	oldQuickLaunchStartOnMain := quickLaunchStartOnMain
 	quickLaunchStartOnMain = func(inst *session.Instance) error {
 		inst.MarkStartedForTest()
@@ -1273,6 +1312,7 @@ func TestQuickLaunch_CodexFastProfileProducesFastTier(t *testing.T) {
 }
 
 func TestQuickLaunch_SDKModeIgnoresTmuxLimit(t *testing.T) {
+	// serial: modifies quickLaunchStartOnMain and scheduleDoubleTapTimeout
 	oldQuickLaunchStartOnMain := quickLaunchStartOnMain
 	quickLaunchStartOnMain = func(inst *session.Instance) error {
 		inst.MarkStartedForTest()
@@ -1312,6 +1352,7 @@ func TestQuickLaunch_SDKModeIgnoresTmuxLimit(t *testing.T) {
 }
 
 func TestQuickLaunch_TitleSyncUpdatesDisplayTitle(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.nav.SetSize(80, 20)
 
@@ -1348,6 +1389,7 @@ func TestQuickLaunch_TitleSyncUpdatesDisplayTitle(t *testing.T) {
 }
 
 func TestQuickLaunch_InstanceLimitEnforced(t *testing.T) {
+	// serial: modifies scheduleDoubleTapTimeout
 	// s is debounced: limit check happens inside quickLaunchAgent which runs after
 	// the single-tap timeout fires.
 	var capturedTimeout doubleTapTimeoutMsg
@@ -1382,6 +1424,7 @@ func TestQuickLaunch_InstanceLimitEnforced(t *testing.T) {
 }
 
 func TestKeyPrompt_SDKModeIgnoresTmuxLimit(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.tmuxSessionCount = GlobalInstanceLimit
 	h.appConfig = &config.Config{
@@ -1402,6 +1445,7 @@ func TestKeyPrompt_SDKModeIgnoresTmuxLimit(t *testing.T) {
 }
 
 func TestQuickLaunch_PlaceholderNameAvoidsCollisions(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	repoPath := filepath.Join(t.TempDir(), "myrepo")
 	h.activeRepoPath = repoPath
@@ -1428,6 +1472,7 @@ func TestQuickLaunch_PlaceholderNameAvoidsCollisions(t *testing.T) {
 
 // TestConfirmationModalStateTransitions tests state transitions without full instance setup
 func TestConfirmationModalStateTransitions(t *testing.T) {
+	t.Parallel()
 	mgr := overlay.NewManager()
 	// Create a minimal home struct for testing state transitions
 	h := &home{
@@ -1504,6 +1549,7 @@ func TestConfirmationModalStateTransitions(t *testing.T) {
 
 // TestConfirmationModalKeyHandling tests the actual key handling in confirmation state
 func TestConfirmationModalKeyHandling(t *testing.T) {
+	t.Parallel()
 	// Import needed packages
 	spinner := spinner.New(spinner.WithSpinner(spinner.Dot))
 	list := ui.NewNavigationPanel(&spinner)
@@ -1582,6 +1628,7 @@ func TestConfirmationModalKeyHandling(t *testing.T) {
 
 // TestConfirmationMessageFormatting tests that confirmation messages are formatted correctly
 func TestConfirmationMessageFormatting(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name            string
 		sessionTitle    string
@@ -1620,6 +1667,7 @@ func TestConfirmationMessageFormatting(t *testing.T) {
 
 // TestConfirmationFlowSimulation tests the confirmation flow by simulating the state changes
 func TestConfirmationFlowSimulation(t *testing.T) {
+	t.Parallel()
 	// Test the confirmation overlay component directly
 	message := "[!] Kill session 'test-session'?"
 	co := overlay.NewConfirmationOverlay(message)
@@ -1633,6 +1681,7 @@ func TestConfirmationFlowSimulation(t *testing.T) {
 
 // TestConfirmActionWithDifferentTypes tests that ConfirmationOverlay works with different action types
 func TestConfirmActionWithDifferentTypes(t *testing.T) {
+	t.Parallel()
 	t.Run("works with simple action returning nil", func(t *testing.T) {
 		actionCalled := false
 		actionExecuted := false
@@ -1686,6 +1735,7 @@ func TestConfirmActionWithDifferentTypes(t *testing.T) {
 
 // TestMultipleConfirmationsDontInterfere tests that multiple ConfirmationOverlays don't interfere
 func TestMultipleConfirmationsDontInterfere(t *testing.T) {
+	t.Parallel()
 	// First confirmation
 	action1Called := false
 	action1 := func() tea.Msg {
@@ -1739,6 +1789,7 @@ func TestMultipleConfirmationsDontInterfere(t *testing.T) {
 
 // TestConfirmationModalVisualAppearance tests that confirmation modal has distinct visual appearance
 func TestConfirmationModalVisualAppearance(t *testing.T) {
+	t.Parallel()
 	// Test the ConfirmationOverlay component directly
 	message := "[!] Delete everything?"
 	co := overlay.NewConfirmationOverlay(message)
@@ -1760,6 +1811,7 @@ func TestConfirmationModalVisualAppearance(t *testing.T) {
 }
 
 func TestFocusRing(t *testing.T) {
+	t.Parallel()
 	newTestHome := func() *home {
 		spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 		return &home{
@@ -2014,6 +2066,7 @@ func TestFocusRing(t *testing.T) {
 }
 
 func TestPreviewTerminal_SelectionChange(t *testing.T) {
+	t.Parallel()
 	// Helper to create a minimal home with two started instances.
 	newTestHomeWithInstances := func(t *testing.T) (*home, *session.Instance, *session.Instance) {
 		t.Helper()
@@ -2251,6 +2304,7 @@ func TestPreviewTerminal_SelectionChange(t *testing.T) {
 // TestPreviewTerminal_RenderTickIntegration tests the full preview terminal lifecycle:
 // selection change → previewTerminalReadyMsg → render tick → selection change again.
 func TestPreviewTerminal_RenderTickIntegration(t *testing.T) {
+	t.Parallel()
 	newTestHomeWithInstances := func(t *testing.T) (*home, *session.Instance, *session.Instance) {
 		t.Helper()
 		spin := spinner.New(spinner.WithSpinner(spinner.Dot))
@@ -2373,6 +2427,7 @@ func TestPreviewTerminal_RenderTickIntegration(t *testing.T) {
 // TestPreviewTerminalReadyMsg_StaleDiscard verifies that previewTerminalReadyMsg
 // discards the terminal when the selection has changed since the spawn was initiated.
 func TestPreviewTerminalReadyMsg_StaleDiscard(t *testing.T) {
+	t.Parallel()
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 	h := &home{
 		ctx:          context.Background(),
@@ -2415,6 +2470,7 @@ func TestPreviewTerminalReadyMsg_StaleDiscard(t *testing.T) {
 }
 
 func TestTmuxBrowserActions(t *testing.T) {
+	t.Parallel()
 	t.Run("tmuxSessionsMsg with no sessions shows toast", func(t *testing.T) {
 		h := newTestHome()
 		msg := tmuxSessionsMsg{sessions: nil}
@@ -2490,6 +2546,7 @@ func TestTmuxBrowserActions(t *testing.T) {
 // TestPreviewTerminalReadyMsg_AcceptsCurrentInstance verifies that previewTerminalReadyMsg
 // sets the terminal when the instance title matches the current selection.
 func TestPreviewTerminalReadyMsg_AcceptsCurrentInstance(t *testing.T) {
+	t.Parallel()
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 	h := &home{
 		ctx:          context.Background(),
@@ -2531,6 +2588,7 @@ func TestPreviewTerminalReadyMsg_AcceptsCurrentInstance(t *testing.T) {
 }
 
 func TestInstanceChanged_AutoRequestsPreview(t *testing.T) {
+	t.Parallel()
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 	h := &home{
 		ctx:          context.Background(),
@@ -2566,6 +2624,7 @@ func TestInstanceChanged_AutoRequestsPreview(t *testing.T) {
 }
 
 func TestInit_PrimesPreviewForSelectedInstance(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:   "instance-A",
@@ -2587,6 +2646,7 @@ func TestInit_PrimesPreviewForSelectedInstance(t *testing.T) {
 // TestFocusMode_ReusesPreviewTerminal verifies that enterFocusMode reuses the
 // existing previewTerminal when it's already attached to the selected instance.
 func TestFocusMode_ReusesPreviewTerminal(t *testing.T) {
+	t.Parallel()
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 	h := &home{
 		ctx:          context.Background(),
@@ -2619,6 +2679,7 @@ func TestFocusMode_ReusesPreviewTerminal(t *testing.T) {
 }
 
 func TestHandleQuit_NoActiveSessions_QuitsImmediately(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.toastManager = overlay.NewToastManager(&h.spinner)
 
@@ -2635,6 +2696,7 @@ func TestHandleQuit_NoActiveSessions_QuitsImmediately(t *testing.T) {
 }
 
 func TestHandleQuit_ActiveSessions_ShowsConfirmation(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.toastManager = overlay.NewToastManager(&h.spinner)
 
@@ -2676,6 +2738,7 @@ func (h *home) setupPlanState(t *testing.T, planFile string, status taskstate.St
 }
 
 func TestChatAboutPlan_ContextMenuAction(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.setupPlanState(t, "test-plan", taskstate.StatusImplementing, "test topic")
 
@@ -2691,6 +2754,7 @@ func TestChatAboutPlan_ContextMenuAction(t *testing.T) {
 }
 
 func TestChatAboutPlan_AppearsInContextMenu(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.setupPlanState(t, "test-plan", taskstate.StatusImplementing, "")
 
@@ -2716,6 +2780,7 @@ func TestChatAboutPlan_AppearsInContextMenu(t *testing.T) {
 }
 
 func TestCreatePlanPR_AppearsInTaskContextMenu(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.setupPlanState(t, "test-plan", taskstate.StatusImplementing, "")
 
@@ -2740,6 +2805,7 @@ func TestCreatePlanPR_AppearsInTaskContextMenu(t *testing.T) {
 }
 
 func TestStartFixer_AppearsInTaskContextMenu(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.setupPlanState(t, "review-plan", taskstate.StatusReviewing, "")
 
@@ -2764,6 +2830,7 @@ func TestStartFixer_AppearsInTaskContextMenu(t *testing.T) {
 }
 
 func TestStartFixer_AppearsInImplementingTaskContextMenu(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.setupPlanState(t, "implementing-plan", taskstate.StatusImplementing, "")
 
@@ -2788,6 +2855,7 @@ func TestStartFixer_AppearsInImplementingTaskContextMenu(t *testing.T) {
 }
 
 func TestStartVerify_AppearsInTaskContextMenu(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		status taskstate.Status
@@ -2828,6 +2896,7 @@ func TestStartVerify_AppearsInTaskContextMenu(t *testing.T) {
 // TestExitFocusMode_KeepsPreviewTerminal verifies that exitFocusMode does NOT close
 // previewTerminal — it stays alive for preview rendering.
 func TestExitFocusMode_KeepsPreviewTerminal(t *testing.T) {
+	t.Parallel()
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 	h := &home{
 		ctx:          context.Background(),
@@ -2849,6 +2918,7 @@ func TestExitFocusMode_KeepsPreviewTerminal(t *testing.T) {
 }
 
 func TestExitFocusMode_PreservesSDKComposerDraft(t *testing.T) {
+	t.Parallel()
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 	h := &home{
 		ctx:          context.Background(),
@@ -2871,6 +2941,7 @@ func TestExitFocusMode_PreservesSDKComposerDraft(t *testing.T) {
 }
 
 func TestExitFocusMode_ResetsPreviewScrollMode(t *testing.T) {
+	t.Parallel()
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 	h := &home{
 		ctx:          context.Background(),
@@ -2913,6 +2984,7 @@ func TestExitFocusMode_ResetsPreviewScrollMode(t *testing.T) {
 }
 
 func TestHandleKeyPress_CtrlShiftEnterSubmitsAndExitsFocusMode(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateFocusAgent
 	h.previewTerminal = session.NewDummyTerminal()
@@ -2931,6 +3003,7 @@ func TestHandleKeyPress_CtrlShiftEnterSubmitsAndExitsFocusMode(t *testing.T) {
 }
 
 func TestHandleKeyPress_CtrlEnterStaysInFocusMode(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateFocusAgent
 	h.previewTerminal = session.NewDummyTerminal()
@@ -2948,6 +3021,7 @@ func TestHandleKeyPress_CtrlEnterStaysInFocusMode(t *testing.T) {
 }
 
 func TestHandleKeyPress_CtrlSpaceTogglesIntoFocusMode(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:   "test-focus-toggle",
@@ -2970,6 +3044,7 @@ func TestHandleKeyPress_CtrlSpaceTogglesIntoFocusMode(t *testing.T) {
 }
 
 func TestHandleKeyPress_FocusModeKeepsStateWhilePreviewReattaches(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:   "test-focus-reattach",
@@ -2993,6 +3068,7 @@ func TestHandleKeyPress_FocusModeKeepsStateWhilePreviewReattaches(t *testing.T) 
 }
 
 func TestRestartInstance_AppearsInContextMenu(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, _ := session.NewInstance(session.InstanceOptions{
 		Title:   "test-restart-menu",
@@ -3019,6 +3095,7 @@ func TestRestartInstance_AppearsInContextMenu(t *testing.T) {
 }
 
 func TestExecuteContextAction_RestartInstance(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, _ := session.NewInstance(session.InstanceOptions{
 		Title:   "test-restart-action",
@@ -3035,6 +3112,7 @@ func TestExecuteContextAction_RestartInstance(t *testing.T) {
 }
 
 func TestDeleteKey_AllowsRemovalOfExitedRunningInstance(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, err := newTestInstance("exited-reviewer")
 	require.NoError(t, err)
@@ -3052,6 +3130,7 @@ func TestDeleteKey_AllowsRemovalOfExitedRunningInstance(t *testing.T) {
 }
 
 func TestCtrlKill_NoopsOnExitedInstance(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, err := newTestInstance("exited-reviewer")
 	require.NoError(t, err)
@@ -3069,6 +3148,7 @@ func TestCtrlKill_NoopsOnExitedInstance(t *testing.T) {
 }
 
 func TestMetadataTick_ExitedInstanceTransitionsToReady(t *testing.T) {
+	t.Parallel()
 	h := newTestHomeWithToast()
 	inst, err := newTestInstance("reviewer-done")
 	require.NoError(t, err)
@@ -3092,6 +3172,7 @@ func TestMetadataTick_ExitedInstanceTransitionsToReady(t *testing.T) {
 }
 
 func TestShouldCreatePROnApproval(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		entry  taskstore.TaskEntry
@@ -3110,6 +3191,7 @@ func TestShouldCreatePROnApproval(t *testing.T) {
 }
 
 func TestAssemblePRMetadata_FullEntry(t *testing.T) {
+	t.Parallel()
 	meta := gitpkg.AssemblePRMetadata(taskstore.TaskEntry{
 		Description: "Auth Middleware",
 		Goal:        "add JWT auth to all routes",
@@ -3131,6 +3213,7 @@ func TestAssemblePRMetadata_FullEntry(t *testing.T) {
 }
 
 func TestAssemblePRMetadata_EmptyContent(t *testing.T) {
+	t.Parallel()
 	meta := gitpkg.AssemblePRMetadata(taskstore.TaskEntry{
 		Description: "quick fix",
 		Goal:        "fix the bug",
@@ -3145,6 +3228,7 @@ func TestAssemblePRMetadata_EmptyContent(t *testing.T) {
 }
 
 func TestAssemblePRMetadata_InvalidPlanContent(t *testing.T) {
+	t.Parallel()
 	meta := gitpkg.AssemblePRMetadata(taskstore.TaskEntry{
 		Description: "quick fix",
 		Goal:        "fix the bug",
@@ -3158,6 +3242,7 @@ func TestAssemblePRMetadata_InvalidPlanContent(t *testing.T) {
 }
 
 func TestMapPRReviewDecision(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "approved", mapPRReviewDecision("APPROVED"))
 	assert.Equal(t, "changes_requested", mapPRReviewDecision("CHANGES_REQUESTED"))
 	assert.Equal(t, "pending", mapPRReviewDecision("REVIEW_REQUIRED"))
@@ -3165,6 +3250,7 @@ func TestMapPRReviewDecision(t *testing.T) {
 }
 
 func TestMapPRCheckStatus(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "passing", mapPRCheckStatus("SUCCESS"))
 	assert.Equal(t, "failing", mapPRCheckStatus("FAILURE"))
 	assert.Equal(t, "pending", mapPRCheckStatus("PENDING"))
@@ -3172,6 +3258,7 @@ func TestMapPRCheckStatus(t *testing.T) {
 }
 
 func TestHandleMouseClick_OutsideAgentPane_ExitsFocusMode(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:   "focus-click-test",
@@ -3212,6 +3299,7 @@ func TestHandleMouseClick_OutsideAgentPane_ExitsFocusMode(t *testing.T) {
 // implementation's else-clause returns immediately — and by the OutsideAgentPane
 // test which exercises the mirror path.
 func TestHandleMouseClick_InsideAgentPane_StaysInFocusMode(t *testing.T) {
+	t.Parallel()
 	// This test exercises the initial-state setup that both click tests depend on,
 	// and provides a home for the zone-limitation comment above.
 	h := newTestHome()
@@ -3240,6 +3328,7 @@ func TestHandleMouseClick_InsideAgentPane_StaysInFocusMode(t *testing.T) {
 // TestTaskLifecycleItems verifies the lifecycle item builder returns the correct
 // actions in the correct order for each task status.
 func TestTaskLifecycleItems(t *testing.T) {
+	t.Parallel()
 	makeEntry := func(status taskstate.Status, phase string) taskstate.TaskEntry {
 		return taskstate.TaskEntry{
 			Status:         status,
@@ -3304,6 +3393,7 @@ func TestTaskLifecycleItems(t *testing.T) {
 // TestInstanceContextMenu_Running_RootItems verifies that a running attachable instance
 // promotes open, kill, and restart to the root level of the context menu.
 func TestInstanceContextMenu_Running_RootItems(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, _ := session.NewInstance(session.InstanceOptions{
 		Title:   "test-running-instance",
@@ -3336,6 +3426,7 @@ func TestInstanceContextMenu_Running_RootItems(t *testing.T) {
 }
 
 func TestInstanceContextMenu_ReviewerManualActions(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.setupPlanState(t, "feature", taskstate.StatusReviewing, "")
 	inst, _ := session.NewInstance(session.InstanceOptions{
@@ -3365,6 +3456,7 @@ func TestInstanceContextMenu_ReviewerManualActions(t *testing.T) {
 }
 
 func TestInstanceContextMenu_CoderManualAction(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.setupPlanState(t, "feature", taskstate.StatusImplementing, "")
 	// mark_implement_finished is only offered when the task is in a single-agent
@@ -3403,6 +3495,7 @@ func TestInstanceContextMenu_CoderManualAction(t *testing.T) {
 // the expected structure: promoted lifecycle actions at root, followed by grouped
 // sections (start, sync, config, lifecycle), with no separate 'view' group.
 func TestTaskContextMenu_HasGroupedSubMenus(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.setupPlanState(t, "review-task", taskstate.StatusReviewing, "")
 	h.nav.SelectByID(ui.SidebarPlanPrefix + "review-task")
@@ -3443,6 +3536,7 @@ func TestTaskContextMenu_HasGroupedSubMenus(t *testing.T) {
 // task the first two lifecycle actions are promoted to root and the rest go into the
 // 'start' subgroup.
 func TestTaskContextMenu_PlannedReady_PromotedRootItems(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.setupPlanState(t, "ready-task", taskstate.StatusReady, "")
 	entry := h.taskState.Plans["ready-task"]
@@ -3484,6 +3578,7 @@ func TestTaskContextMenu_PlannedReady_PromotedRootItems(t *testing.T) {
 // draft-ready task the single lifecycle action (start_plan) is promoted to root and
 // no 'start' subgroup is rendered.
 func TestTaskContextMenu_DraftReadyStatus_OnlyShowsPlanningStart(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.setupPlanState(t, "draft-ready-task", taskstate.StatusReady, "")
 	h.nav.SelectByID(ui.SidebarPlanPrefix + "draft-ready-task")
@@ -3512,6 +3607,7 @@ func TestTaskContextMenu_DraftReadyStatus_OnlyShowsPlanningStart(t *testing.T) {
 // that the daemon has advanced to planned-ready (phase="planned") must produce
 // a menu with start_implement at the root — not the draft-ready start_plan only.
 func TestOpenTaskContextMenu_RefreshesFromStoreBeforeLifecycleItems(t *testing.T) {
+	t.Parallel()
 	const planFile = "refresh-task"
 
 	dir := t.TempDir()
@@ -3575,6 +3671,7 @@ func TestOpenTaskContextMenu_RefreshesFromStoreBeforeLifecycleItems(t *testing.T
 // must display mark_review_approved even though the original in-memory snapshot
 // had the task as planning.
 func TestOpenContextMenu_TaskOwnerSignalsUseFreshTaskState(t *testing.T) {
+	t.Parallel()
 	const planFile = "owner-task"
 
 	dir := t.TempDir()
@@ -3648,6 +3745,7 @@ func TestOpenContextMenu_TaskOwnerSignalsUseFreshTaskState(t *testing.T) {
 // a task context menu is automatically dismissed when the metadata tick delivers
 // a PlanState snapshot showing the task FSM has moved to a different status.
 func TestMetadataResultMsg_DismissesTrackedContextMenuOnStatusChange(t *testing.T) {
+	t.Parallel()
 	const planFile = "tracked-status-task"
 
 	dir := t.TempDir()
@@ -3715,6 +3813,7 @@ func TestMetadataResultMsg_DismissesTrackedContextMenuOnStatusChange(t *testing.
 // (draft-ready) vs ready+"planned" (planned-ready) to exercise a same-status
 // but different-phase transition.
 func TestMetadataResultMsg_DismissesTrackedContextMenuOnPhaseChange(t *testing.T) {
+	t.Parallel()
 	const planFile = "tracked-phase-task"
 
 	dir := t.TempDir()
@@ -3777,6 +3876,7 @@ func TestMetadataResultMsg_DismissesTrackedContextMenuOnPhaseChange(t *testing.T
 // logic in saveAllInstances excludes daemon SDK placeholders (unstarted SDK
 // instances) so they are never handed off to storage.
 func TestSaveAllInstances_SkipsDaemonSDKPlaceholders(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	// storage nil → saveAllInstances no-ops; we test the filtering through
 	// isDaemonSDKPlaceholder directly on the home value.
@@ -3813,6 +3913,7 @@ func TestSaveAllInstances_SkipsDaemonSDKPlaceholders(t *testing.T) {
 // SDK placeholder (not locally started) triggers instanceStartedMsg, the TUI
 // does not enter focus mode. Focus mode requires a real local execution session.
 func TestInstanceStartedMsg_SDKPlaceholderDoesNotAutoFocus(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 
 	// Build an SDK master instance without calling Start — this mimics a daemon
@@ -3840,6 +3941,7 @@ func TestInstanceStartedMsg_SDKPlaceholderDoesNotAutoFocus(t *testing.T) {
 // TestShowSpawnAgentForm_SDKHintRemoved verifies that the outdated "cannot be
 // controlled from the web ui" footer hint is no longer shown for SDK mode.
 func TestShowSpawnAgentForm_SDKHintRemoved(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.pendingSpawnExecutionMode = session.ExecutionModeSDK
 	h.pendingSpawnSpeedTier = ""

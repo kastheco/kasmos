@@ -77,6 +77,7 @@ func plannerSignalHome(t *testing.T, planFile string) (*home, *taskstate.TaskSta
 // signal is processed, the app enters stateConfirm with a confirmation overlay
 // and pendingPlannerTaskFile is set.
 func TestPlannerFinishedSignal_ShowsConfirmDialog(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 	h, ps, _, _ := plannerSignalHome(t, planFile)
 
@@ -107,6 +108,7 @@ func TestPlannerFinishedSignal_ShowsConfirmDialog(t *testing.T) {
 // after the user confirms (plannerCompleteMsg), the planner instance is removed,
 // plannerPrompted is set, and triggerTaskStage("implement") is called.
 func TestPlannerFinishedSignal_ConfirmKillsPlannerAndTriggersImplement(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 	h, _, plansDir, plannerInst := plannerSignalHome(t, planFile)
 
@@ -148,6 +150,7 @@ func TestPlannerFinishedSignal_ConfirmKillsPlannerAndTriggersImplement(t *testin
 // the user cancels (no), the planner instance is removed, plannerPrompted is set,
 // and the plan stays at StatusReady.
 func TestPlannerFinishedSignal_CancelKillsPlannerAndLeavesReady(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 	h, _, _, plannerInst := plannerSignalHome(t, planFile)
 
@@ -192,6 +195,7 @@ func TestPlannerFinishedSignal_CancelKillsPlannerAndLeavesReady(t *testing.T) {
 // TestPlannerFinishedSignal_SkipsWhenAlreadyPrompted verifies that when
 // plannerPrompted[planFile] is already true, no dialog is shown.
 func TestPlannerFinishedSignal_SkipsWhenAlreadyPrompted(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 	h, ps, _, _ := plannerSignalHome(t, planFile)
 
@@ -223,6 +227,7 @@ func TestPlannerFinishedSignal_SkipsWhenAlreadyPrompted(t *testing.T) {
 // This is the definitive regression test for the removed tmux-death fallback:
 // spurious transitions must not occur just because the planner process died.
 func TestPlannerTmuxDeath_NoFallbackDialog(t *testing.T) {
+	t.Parallel()
 	const planFile = "no-fallback"
 	h, ps, _, _ := plannerSignalHome(t, planFile)
 
@@ -254,6 +259,7 @@ func TestPlannerTmuxDeath_NoFallbackDialog(t *testing.T) {
 // appConfig.AutoAdvance is true, a PlannerFinished signal skips the confirmation
 // dialog entirely: plannerPrompted is set and no overlay is shown.
 func TestPlannerFinishedSignal_AutoAdvance_SkipsDialog(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 	h, ps, _, _ := plannerSignalHome(t, planFile)
 
@@ -284,6 +290,7 @@ func TestPlannerFinishedSignal_AutoAdvance_SkipsDialog(t *testing.T) {
 // PlannerFinished signal arrives while an overlay is active, the dialog is NOT
 // lost — it is deferred and shown on the next metadata tick once the overlay clears.
 func TestPlannerFinishedSignal_DeferredWhenOverlayActive(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 	h, ps, _, _ := plannerSignalHome(t, planFile)
 
@@ -337,6 +344,7 @@ func TestPlannerFinishedSignal_DeferredWhenOverlayActive(t *testing.T) {
 // TestPlannerFinishedSignal_SkipsWhenConfirmActive verifies that when
 // state == stateConfirm, no new dialog is shown (avoids clobbering an active overlay).
 func TestPlannerFinishedSignal_SkipsWhenConfirmActive(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 	h, ps, _, _ := plannerSignalHome(t, planFile)
 

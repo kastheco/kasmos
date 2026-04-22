@@ -16,11 +16,13 @@ import (
 )
 
 func TestBuildPlanFilename(t *testing.T) {
+	t.Parallel()
 	got := buildPlanFilename("Auth Refactor", time.Date(2026, 2, 21, 10, 0, 0, 0, time.UTC))
 	require.Equal(t, "auth-refactor", got)
 }
 
 func TestRenderPlanStub(t *testing.T) {
+	t.Parallel()
 	stub := renderPlanStub("Auth Refactor", "Refactor JWT auth", "auth-refactor")
 	require.Contains(t, stub, "# Auth Refactor")
 	require.Contains(t, stub, "Refactor JWT auth")
@@ -28,6 +30,7 @@ func TestRenderPlanStub(t *testing.T) {
 }
 
 func TestCreatePlanRecord(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -50,6 +53,7 @@ func TestCreatePlanRecord(t *testing.T) {
 }
 
 func TestHandleDefaultStateStartsDescriptionOverlay(t *testing.T) {
+	t.Parallel()
 	h := &home{
 		state:        stateDefault,
 		keySent:      true,
@@ -67,6 +71,7 @@ func TestHandleDefaultStateStartsDescriptionOverlay(t *testing.T) {
 }
 
 func TestHandleKeyPressNewPlanWithoutOverlayReturnsDefault(t *testing.T) {
+	t.Parallel()
 	h := &home{state: stateNewPlan}
 
 	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'x', Text: "x"})
@@ -78,6 +83,7 @@ func TestHandleKeyPressNewPlanWithoutOverlayReturnsDefault(t *testing.T) {
 }
 
 func TestNewPlanSubmitShowsTopicPicker(t *testing.T) {
+	t.Parallel()
 	tio1 := overlay.NewTextInputOverlay("new plan", "refactor auth module")
 	tio1.SetMultiline(true)
 	mgr1 := overlay.NewManager()
@@ -102,6 +108,7 @@ func TestNewPlanSubmitShowsTopicPicker(t *testing.T) {
 }
 
 func TestHandleKeyPressNewPlanTopicWithoutPickerClearsPendingValues(t *testing.T) {
+	t.Parallel()
 	h := &home{
 		state:           stateNewPlanTopic,
 		pendingPlanName: "auth-refactor",
@@ -119,6 +126,7 @@ func TestHandleKeyPressNewPlanTopicWithoutPickerClearsPendingValues(t *testing.T
 }
 
 func TestNewPlanTopicPickerShowsPendingPlanName(t *testing.T) {
+	t.Parallel()
 	tio2 := overlay.NewTextInputOverlay("new plan", "auth refactor")
 	tio2.SetMultiline(true)
 	mgr2 := overlay.NewManager()
@@ -151,6 +159,7 @@ func TestNewPlanTopicPickerShowsPendingPlanName(t *testing.T) {
 }
 
 func TestNewPlanSubmitEntersDerivingState(t *testing.T) {
+	t.Parallel()
 	tio3 := overlay.NewTextInputOverlay("new plan", "refactor auth module")
 	tio3.SetMultiline(true)
 	mgr3 := overlay.NewManager()
@@ -172,6 +181,7 @@ func TestNewPlanSubmitEntersDerivingState(t *testing.T) {
 }
 
 func TestDerivingStateTransitionsToTopicOnAITitle(t *testing.T) {
+	t.Parallel()
 	h := &home{
 		state:           stateNewPlanDeriving,
 		pendingPlanName: "heuristic-fallback",
@@ -189,6 +199,7 @@ func TestDerivingStateTransitionsToTopicOnAITitle(t *testing.T) {
 }
 
 func TestDerivingStateFallsBackOnAIError(t *testing.T) {
+	t.Parallel()
 	h := &home{
 		state:           stateNewPlanDeriving,
 		pendingPlanName: "heuristic fallback title",
@@ -206,6 +217,7 @@ func TestDerivingStateFallsBackOnAIError(t *testing.T) {
 }
 
 func TestDerivingStateBlocksKeyInput(t *testing.T) {
+	t.Parallel()
 	h := &home{
 		state:           stateNewPlanDeriving,
 		pendingPlanName: "test",
@@ -221,6 +233,7 @@ func TestDerivingStateBlocksKeyInput(t *testing.T) {
 }
 
 func TestDerivingStateEscapeCancels(t *testing.T) {
+	t.Parallel()
 	h := &home{
 		state:           stateNewPlanDeriving,
 		pendingPlanName: "test",
@@ -237,6 +250,7 @@ func TestDerivingStateEscapeCancels(t *testing.T) {
 }
 
 func TestIsUserInOverlay(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		state    state
 		expected bool
@@ -261,6 +275,7 @@ func TestIsUserInOverlay(t *testing.T) {
 }
 
 func TestNewPlanSubmitSkipsAIWhenFirstLineIsViableSlug(t *testing.T) {
+	t.Parallel()
 	tio4 := overlay.NewTextInputOverlay("new plan", "fix auth refresh\ndetails about the bug")
 	tio4.SetMultiline(true)
 	mgr4 := overlay.NewManager()
@@ -284,6 +299,7 @@ func TestNewPlanSubmitSkipsAIWhenFirstLineIsViableSlug(t *testing.T) {
 }
 
 func TestNewPlanOverlaySizePreservedOnSpuriousWindowSize(t *testing.T) {
+	t.Parallel()
 	s := spinner.New()
 	h := &home{
 		state:        stateNewPlan,

@@ -20,6 +20,7 @@ import (
 // instance's ImplementationComplete flag is set to true. This prevents the
 // sidebar from reverting to a spinner after attach/detach cycles.
 func TestWaveMonitor_AutoDetectSetsImplementationComplete(t *testing.T) {
+	t.Parallel()
 	const planFile = "autodetect-complete"
 
 	plan := &taskparser.Plan{
@@ -74,6 +75,7 @@ func TestWaveMonitor_AutoDetectSetsImplementationComplete(t *testing.T) {
 // tmux session dies after the agent did real work, the instance gets
 // ImplementationComplete=true alongside the orchestrator's MarkTaskComplete.
 func TestWaveMonitor_TmuxDeathSetsImplementationComplete(t *testing.T) {
+	t.Parallel()
 	const planFile = "tmuxdeath-complete"
 
 	plan := &taskparser.Plan{
@@ -126,6 +128,7 @@ func TestWaveMonitor_TmuxDeathSetsImplementationComplete(t *testing.T) {
 // "mark complete" context menu action sets ImplementationComplete on the
 // selected instance, not just the orchestrator.
 func TestMarkTaskComplete_SetsImplementationComplete(t *testing.T) {
+	t.Parallel()
 	const planFile = "manual-complete"
 
 	plan := &taskparser.Plan{
@@ -175,6 +178,7 @@ func TestMarkTaskComplete_SetsImplementationComplete(t *testing.T) {
 // daemon-managed repo has already marked a wave subtask complete in the store,
 // the sidebar instance picks up the completed glyph on the next metadata tick.
 func TestPersistedSubtaskCompletionSetsImplementationComplete(t *testing.T) {
+	t.Parallel()
 	const planFile = "persisted-complete"
 
 	content := `# Plan

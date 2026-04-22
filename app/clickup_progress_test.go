@@ -24,6 +24,7 @@ import (
 // returns "" when the plan has no ClickUp task ID field and no Source line in
 // content — postClickUpProgress then returns nil (no-op).
 func TestPostClickUpProgressSkipsWithoutTaskID(t *testing.T) {
+	t.Parallel()
 	entry := taskstate.TaskEntry{} // no ClickUpTaskID field
 	taskID := resolveClickUpTaskID(entry, "# Plan without a source line\n\nNo clickup here.")
 	assert.Equal(t, "", taskID)
@@ -36,6 +37,7 @@ func TestPostClickUpProgressSkipsWithoutTaskID(t *testing.T) {
 // TestPostClickUpProgressUsesFieldFirst verifies that the ClickUpTaskID field
 // takes priority over the **Source:** ClickUp <ID> line in content.
 func TestPostClickUpProgressUsesFieldFirst(t *testing.T) {
+	t.Parallel()
 	entry := taskstate.TaskEntry{ClickUpTaskID: "field123"}
 	content := "**Source:** ClickUp content456 (https://app.clickup.com/t/content456)"
 
@@ -47,6 +49,7 @@ func TestPostClickUpProgressUsesFieldFirst(t *testing.T) {
 // TestPostClickUpProgressFallsBackToContentParse verifies that when the
 // ClickUpTaskID field is empty, the task ID is parsed from plan content.
 func TestPostClickUpProgressFallsBackToContentParse(t *testing.T) {
+	t.Parallel()
 	entry := taskstate.TaskEntry{} // field empty
 	content := "**Source:** ClickUp content789 (https://app.clickup.com/t/content789)"
 
@@ -57,6 +60,7 @@ func TestPostClickUpProgressFallsBackToContentParse(t *testing.T) {
 // TestBuildClickUpComment verifies the ClickUp progress comment formatter
 // produces expected markdown for each event type.
 func TestBuildClickUpComment(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		event   string
@@ -80,6 +84,7 @@ func TestBuildClickUpComment(t *testing.T) {
 // NOT posted for single-wave plans. Only multi-wave plans emit intermediate
 // wave-complete comments; single-wave plans use the all-waves-complete event.
 func TestSingleWavePlanSkipsWaveComment(t *testing.T) {
+	t.Parallel()
 	singleWavePlan := &taskparser.Plan{
 		Waves: []taskparser.Wave{
 			{Number: 1, Tasks: []taskparser.Task{{Number: 1, Title: "Only task"}}},
@@ -104,6 +109,7 @@ func TestSingleWavePlanSkipsWaveComment(t *testing.T) {
 
 // TestShouldPostWaveCompleteCommentNilOrch verifies nil-safety of the guard.
 func TestShouldPostWaveCompleteCommentNilOrch(t *testing.T) {
+	t.Parallel()
 	var nilOrch *orchestration.WaveOrchestrator
 	assert.False(t, nilOrch.ShouldPostWaveCompleteComment())
 }
@@ -116,6 +122,7 @@ func TestShouldPostWaveCompleteCommentNilOrch(t *testing.T) {
 // when there is no commenter (click-up not configured), we verify the
 // observable side-effect: pendingReviewFeedback is always cleared.
 func TestFixerCompleteHook_ClearsPendingFeedback(t *testing.T) {
+	t.Parallel()
 	const planFile = "fixer-hook"
 
 	dir := t.TempDir()
@@ -180,6 +187,7 @@ func TestFixerCompleteHook_ClearsPendingFeedback(t *testing.T) {
 // hook does NOT fire when ImplementFinished is for an original coder (no
 // pending feedback). pendingReviewFeedback must remain empty/unchanged.
 func TestFixerCompleteHook_SkipsWhenNoFeedback(t *testing.T) {
+	t.Parallel()
 	const planFile = "no-feedback-hook"
 
 	dir := t.TempDir()

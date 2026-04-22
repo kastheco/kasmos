@@ -100,6 +100,7 @@ func collectAutoApproveMsgs(cmd tea.Cmd) []permissionAutoApproveMsg {
 // TestUpdate_PermissionPromptDetection_ShowsOverlay exercises the real metadata-tick
 // detection path through Update(), rather than manually setting m.state.
 func TestUpdate_PermissionPromptDetection_ShowsOverlay(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 	inst := &session.Instance{Title: "test-agent", Program: "opencode"}
 	inst.MarkStartedForTest()
@@ -124,6 +125,7 @@ func TestUpdate_PermissionPromptDetection_ShowsOverlay(t *testing.T) {
 // TestUpdate_PermissionAutoApprove_FiresOnCachedPattern verifies that a cached pattern
 // fires permissionAutoApproveMsg (not the modal) on the first tick.
 func TestUpdate_PermissionAutoApprove_FiresOnCachedPattern(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 	m.permissionStore.Remember(m.activeProject(), "/opt/*")
 
@@ -146,6 +148,7 @@ func TestUpdate_PermissionAutoApprove_FiresOnCachedPattern(t *testing.T) {
 }
 
 func TestUpdate_PermissionPromptDetection_ShowsOverlayForClaude(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 	inst := &session.Instance{Title: "test-agent", Program: "claude"}
 	inst.MarkStartedForTest()
@@ -170,6 +173,7 @@ func TestUpdate_PermissionPromptDetection_ShowsOverlayForClaude(t *testing.T) {
 }
 
 func TestUpdate_PermissionAutoApprove_FiresOnCachedClaudePattern(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 	m.permissionStore.Remember(m.activeProject(), "Bash")
 
@@ -196,6 +200,7 @@ func TestUpdate_PermissionAutoApprove_FiresOnCachedClaudePattern(t *testing.T) {
 // a second metadata tick with the same prompt (before opencode clears it) must NOT fire
 // a second auto-approve, which would corrupt opencode's input state.
 func TestUpdate_PermissionAutoApprove_DeduplicatesOnMultipleTicks(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 	m.permissionStore.Remember(m.activeProject(), "/opt/*")
 
@@ -223,6 +228,7 @@ func TestUpdate_PermissionAutoApprove_DeduplicatesOnMultipleTicks(t *testing.T) 
 }
 
 func TestUpdate_PermissionAutoApprove_DeduplicatesClaudeOnMultipleTicks(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 	m.permissionStore.Remember(m.activeProject(), "Bash")
 
@@ -250,6 +256,7 @@ func TestUpdate_PermissionAutoApprove_DeduplicatesClaudeOnMultipleTicks(t *testi
 // permission prompt disappears from the pane the deduplication guard is cleared,
 // allowing a future prompt to trigger auto-approve again.
 func TestUpdate_PermissionAutoApprove_ClearsGuardWhenPromptGone(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 	m.permissionStore.Remember(m.activeProject(), "/opt/*")
 
@@ -285,6 +292,7 @@ func TestUpdate_PermissionAutoApprove_ClearsGuardWhenPromptGone(t *testing.T) {
 // a new permission prompt with a different cache key appears before the pane clears,
 // the dedup guard does not block auto-approval of the new prompt.
 func TestUpdate_PermissionAutoApprove_DifferentPromptBypassesGuard(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 	m.permissionStore.Remember(m.activeProject(), "Bash: ls -la")
 	m.permissionStore.Remember(m.activeProject(), "Bash: git status")
@@ -320,6 +328,7 @@ func TestUpdate_PermissionAutoApprove_DifferentPromptBypassesGuard(t *testing.T)
 // TestHandleKeyPress_PermissionEnter_SendsResponse verifies that pressing Enter while
 // in statePermission triggers a SendPermissionResponse cmd and returns to stateDefault.
 func TestHandleKeyPress_PermissionEnter_SendsResponse(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 	inst := &session.Instance{Title: "test-agent", Program: "opencode"}
 	inst.MarkStartedForTest()
@@ -338,6 +347,7 @@ func TestHandleKeyPress_PermissionEnter_SendsResponse(t *testing.T) {
 }
 
 func TestHandleKeyPress_PermissionEnter_DaemonPlaceholderRoutesResponse(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 	m.taskStoreProject = "myproj"
 	inst, err := session.NewInstance(session.InstanceOptions{
@@ -421,6 +431,7 @@ func (s *stubDaemonActionClient) SendInstancePermissionResponse(project, title s
 }
 
 func TestSubmitPromptToInstance_LoadingPlaceholderRetriesStatusRace(t *testing.T) {
+	t.Parallel()
 	origClient := newDaemonActionClient
 	t.Cleanup(func() { newDaemonActionClient = origClient })
 
@@ -463,6 +474,7 @@ func TestSubmitPromptToInstance_LoadingPlaceholderRetriesStatusRace(t *testing.T
 // TestHandleKeyPress_PermissionEsc_DismissesWithoutSending verifies that Esc closes
 // the modal without sending any keys to the tmux pane.
 func TestHandleKeyPress_PermissionEsc_DismissesWithoutSending(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 	inst := &session.Instance{Title: "test-agent", Program: "opencode"}
 	inst.MarkStartedForTest()
@@ -483,6 +495,7 @@ func TestHandleKeyPress_PermissionEsc_DismissesWithoutSending(t *testing.T) {
 }
 
 func TestHandleMouseClick_PermissionOverlay_InsideClickSendsResponse(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 	inst := &session.Instance{Title: "test-agent", Program: "opencode"}
 	inst.MarkStartedForTest()
@@ -507,6 +520,7 @@ func TestHandleMouseClick_PermissionOverlay_InsideClickSendsResponse(t *testing.
 }
 
 func TestHandleMouseClick_PermissionOverlay_OutsideClickDismissesWithoutSending(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 	inst := &session.Instance{Title: "test-agent", Program: "opencode"}
 	inst.MarkStartedForTest()
@@ -533,6 +547,7 @@ func TestHandleMouseClick_PermissionOverlay_OutsideClickDismissesWithoutSending(
 // TestPermissionOverlay_PatternExposed verifies the overlay exposes its pattern
 // so app_input.go can read it on confirm without re-parsing CachedContent.
 func TestPermissionOverlay_PatternExposed(t *testing.T) {
+	t.Parallel()
 	po := overlay.NewPermissionOverlay("test", "Access /opt", "/opt/*")
 	assert.Equal(t, "/opt/*", po.Pattern())
 }
@@ -540,6 +555,7 @@ func TestPermissionOverlay_PatternExposed(t *testing.T) {
 // --- Legacy unit tests (kept for overlay component coverage) ---
 
 func TestPermissionDetection_ShowsOverlayForOpenCode(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 	inst := &session.Instance{
 		Title:   "test-agent",
@@ -566,6 +582,7 @@ func TestPermissionDetection_ShowsOverlayForOpenCode(t *testing.T) {
 }
 
 func TestPermissionOverlay_ArrowKeysNavigate(t *testing.T) {
+	t.Parallel()
 	po := overlay.NewPermissionOverlay("test", "Access /opt", "/opt/*")
 
 	// Default is "allow always" (index 1)
@@ -589,6 +606,7 @@ func TestPermissionOverlay_ArrowKeysNavigate(t *testing.T) {
 }
 
 func TestPermissionOverlay_EnterConfirms(t *testing.T) {
+	t.Parallel()
 	po := overlay.NewPermissionOverlay("test", "Access /opt", "/opt/*")
 	result := po.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	assert.True(t, result.Dismissed)
@@ -597,6 +615,7 @@ func TestPermissionOverlay_EnterConfirms(t *testing.T) {
 }
 
 func TestPermissionOverlay_EscDismisses(t *testing.T) {
+	t.Parallel()
 	po := overlay.NewPermissionOverlay("test", "Access /opt", "/opt/*")
 	result := po.HandleKey(tea.KeyPressMsg{Code: tea.KeyEscape})
 	assert.True(t, result.Dismissed)
@@ -604,6 +623,7 @@ func TestPermissionOverlay_EscDismisses(t *testing.T) {
 }
 
 func TestPermissionCache_AutoApprovesCachedPattern(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 	m.permissionStore.Remember("test-project", "/opt/*")
 	assert.True(t, m.permissionStore.IsAllowedAlways("test-project", "/opt/*"))
@@ -613,6 +633,7 @@ func TestPermissionCache_AutoApprovesCachedPattern(t *testing.T) {
 // a Pattern (e.g. bash command permissions) still auto-approve when the description
 // has been cached via "allow always".
 func TestUpdate_PermissionAutoApprove_DescriptionOnly(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 	// Cache by description (no pattern).
 	m.permissionStore.Remember(m.activeProject(), "Execute bash command")
@@ -638,6 +659,7 @@ func TestUpdate_PermissionAutoApprove_DescriptionOnly(t *testing.T) {
 // TestUpdate_PermissionPrompt_DefersInFocusMode verifies that a permission
 // prompt is deferred (not shown) while the user is in focus/interactive mode.
 func TestUpdate_PermissionPrompt_DefersInFocusMode(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 	inst := &session.Instance{Title: "test-agent", Program: "opencode"}
 	inst.MarkStartedForTest()
@@ -666,6 +688,7 @@ func TestUpdate_PermissionPrompt_DefersInFocusMode(t *testing.T) {
 // permission prompt is detected for a non-selected instance, that instance becomes
 // selected before the overlay is shown — so the user sees the agent output behind it.
 func TestUpdate_PermissionPrompt_FocusesInstanceBeforeOverlay(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 
 	// Add two instances; select the first one.
@@ -703,6 +726,7 @@ func TestUpdate_PermissionPrompt_FocusesInstanceBeforeOverlay(t *testing.T) {
 // prompt fires on a non-selected instance (switching nav focus to it), dismissing
 // the overlay by choosing "allow once" restores the original selection.
 func TestFinishPermission_RestoresFocus_AfterAllowOnce(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 
 	inst1 := &session.Instance{Title: "agent-1", Program: "opencode"}
@@ -747,6 +771,7 @@ func TestFinishPermission_RestoresFocus_AfterAllowOnce(t *testing.T) {
 // TestFinishPermission_RestoresFocus_AfterEscape verifies that dismissing a permission
 // overlay via Escape also restores the original nav selection.
 func TestFinishPermission_RestoresFocus_AfterEscape(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 
 	inst1 := &session.Instance{Title: "agent-1", Program: "opencode"}
@@ -786,6 +811,7 @@ func TestFinishPermission_RestoresFocus_AfterEscape(t *testing.T) {
 // preserves the very first nav selection — not the intermediate one — and only
 // restores once the last prompt is dismissed.
 func TestFinishPermission_RestoresFocus_QueuedPrompts(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 
 	inst1 := &session.Instance{Title: "agent-1", Program: "opencode"}
@@ -848,6 +874,7 @@ func TestFinishPermission_RestoresFocus_QueuedPrompts(t *testing.T) {
 // and no restoration occurs — the selection stays on that instance without
 // triggering unnecessary instanceChanged() side effects.
 func TestFinishPermission_NoRestore_WhenSameInstance(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 
 	inst1 := &session.Instance{Title: "agent-1", Program: "opencode"}
@@ -883,6 +910,7 @@ func TestFinishPermission_NoRestore_WhenSameInstance(t *testing.T) {
 // original row disappears from the nav before the overlay is dismissed, the
 // restoration attempt fails gracefully (no panic, no stale preOverlay fields).
 func TestFinishPermission_NoRestore_WhenSavedRowRemoved(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 
 	inst1 := &session.Instance{Title: "agent-1", Program: "opencode"}
@@ -921,6 +949,7 @@ func TestFinishPermission_NoRestore_WhenSavedRowRemoved(t *testing.T) {
 // flow: permission prompt arrives while the user is in focus mode, the user exits
 // focus mode, the prompt is shown, and on response the original selection is restored.
 func TestFinishPermission_RestoresFocus_DeferredPrompt(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 
 	inst1 := &session.Instance{Title: "agent-1", Program: "opencode"}
@@ -982,6 +1011,7 @@ func TestFinishPermission_RestoresFocus_DeferredPrompt(t *testing.T) {
 // that the last real prompt still restores the original selection and that
 // drainDeferredDialogs does not surface a bogus overlay.
 func TestUpdate_DeferredPromptClearedBeforeDisplay(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 
 	inst1 := &session.Instance{Title: "agent-1", Program: "opencode"}
@@ -1063,6 +1093,7 @@ func TestUpdate_DeferredPromptClearedBeforeDisplay(t *testing.T) {
 // deferred entry would have been drained first, showing a bogus overlay that
 // would corrupt the preOverlay fields and break focus restoration.
 func TestUpdate_DeferredPromptClearedBeforeDisplay_NewPromptRestoresFocus(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 
 	inst1 := &session.Instance{Title: "agent-1", Program: "opencode"}
@@ -1147,6 +1178,7 @@ func TestUpdate_DeferredPromptClearedBeforeDisplay_NewPromptRestoresFocus(t *tes
 // instance. This exercises the GetSelectedID / SelectByID path which handles
 // non-instance rows where GetSelectedInstance() returns nil.
 func TestFinishPermission_RestoresFocus_NonInstanceRow_Immediate(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 
 	// Seed a persistent plan-state entry so the plan header survives the
@@ -1198,6 +1230,7 @@ func TestFinishPermission_RestoresFocus_NonInstanceRow_Immediate(t *testing.T) {
 // user is in focus mode on a non-instance nav row must, once drained and
 // answered, restore the original plan-header selection.
 func TestFinishPermission_RestoresFocus_NonInstanceRow_Deferred(t *testing.T) {
+	t.Parallel()
 	m := newTestHomeWithCache(t)
 
 	// Seed a persistent plan-state entry so the plan header survives the
