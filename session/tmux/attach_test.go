@@ -56,6 +56,8 @@ func TestUpdateWindowSize_NilPTY(t *testing.T) {
 // responses (e.g. DA1 replies like "\e[?62;22;52c") from leaking to whatever
 // process reads stdin after kasmos relinquishes the terminal.
 func TestDetach_DrainsStdinBeforeRestoringTTY(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	oldStdinFD := stdinFD
 	oldIsTTY := terminalIsTTY
 	oldMakeRaw := terminalMakeRaw

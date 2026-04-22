@@ -20,6 +20,10 @@ var (
 	terminalRestore = term.Restore
 )
 
+// detachWaitTimeout is the maximum time to wait for attach goroutines to exit
+// during Detach. Exposed as a var so tests can shorten it without real-time delays.
+var detachWaitTimeout = 500 * time.Millisecond
+
 // Attach connects the calling terminal to the tmux session.
 // It disables mouse on the enclosing outer tmux session (if kasmos is running
 // inside tmux), then spawns two goroutines:
@@ -144,8 +148,8 @@ func (t *TmuxSession) Detach() {
 		}()
 		select {
 		case <-done:
-		case <-time.After(500 * time.Millisecond):
-			log.InfoLog.Printf("Detach: goroutines did not exit within 500ms timeout")
+		case <-time.After(detachWaitTimeout):
+			log.InfoLog.Printf("Detach: goroutines did not exit within timeout")
 		}
 		t.wg = nil
 	}

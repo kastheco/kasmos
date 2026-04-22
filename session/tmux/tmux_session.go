@@ -38,6 +38,15 @@ const codexBypassFlag = "--dangerously-bypass-approvals-and-sandbox"
 // tests can shorten it without real-time delays.
 var codexGracePeriod = 2 * time.Second
 
+var (
+	sessionStartWaitTimeout          = 2 * time.Second
+	sessionStartPollInitialDelay     = 5 * time.Millisecond
+	sessionStartPollMaxDelay         = 50 * time.Millisecond
+	programReadyPollInitialDelay     = 100 * time.Millisecond
+	programReadyPollMaxDelay         = time.Second
+	programReadySessionCheckInterval = 3 * time.Second
+)
+
 // ansiRe strips ANSI escape sequences (SGR, cursor movement, etc.) so that
 // content hashing is not affected by cursor blink, color resets, or other
 // terminal control codes that change between captures of an otherwise-idle pane.
@@ -426,8 +435,8 @@ func (t *TmuxSession) Start(workDir string) error {
 	t.reportProgress(2, "Waiting for session to start...")
 
 	// Poll for session existence with exponential backoff.
-	timeout := time.After(2 * time.Second)
-	sleepDuration := 5 * time.Millisecond
+	timeout := time.After(sessionStartWaitTimeout)
+	sleepDuration := sessionStartPollInitialDelay
 	for !t.DoesSessionExist() {
 		select {
 		case <-timeout:
@@ -437,8 +446,8 @@ func (t *TmuxSession) Start(workDir string) error {
 			return fmt.Errorf("timed out waiting for tmux session %s: %v", t.sanitizedName, err)
 		default:
 			time.Sleep(sleepDuration)
-			// Exponential backoff up to 50ms max.
-			if sleepDuration < 50*time.Millisecond {
+			// Exponential backoff up to max.
+			if sleepDuration < sessionStartPollMaxDelay {
 				sleepDuration *= 2
 			}
 		}
@@ -521,8 +530,8 @@ func (t *TmuxSession) Start(workDir string) error {
 
 		// Poll with exponential backoff until the ready string appears or we time out.
 		startTime := time.Now()
-		sleepDuration := 100 * time.Millisecond
-		sessionCheckInterval := 3 * time.Second
+		sleepDuration := programReadyPollInitialDelay
+		sessionCheckInterval := programReadySessionCheckInterval
 		lastSessionCheck := startTime
 
 		for time.Since(startTime) < maxWaitTime {
@@ -563,10 +572,10 @@ func (t *TmuxSession) Start(workDir string) error {
 				}
 			}
 
-			// Exponential backoff with cap at 1 second.
+			// Exponential backoff with cap.
 			sleepDuration = time.Duration(float64(sleepDuration) * 1.2)
-			if sleepDuration > time.Second {
-				sleepDuration = time.Second
+			if sleepDuration > programReadyPollMaxDelay {
+				sleepDuration = programReadyPollMaxDelay
 			}
 		}
 

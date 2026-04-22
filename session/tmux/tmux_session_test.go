@@ -158,6 +158,8 @@ func TestCountKasSessions_Simple(t *testing.T) {
 }
 
 func TestStart_CreatesAndRestoresSession(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
 	cmdExec := cmd_test.MockCmdExec{
@@ -187,6 +189,8 @@ func TestStart_CreatesAndRestoresSession(t *testing.T) {
 }
 
 func TestStart_WithSkipPermissions(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
 	cmdExec := cmd_test.MockCmdExec{
@@ -213,6 +217,8 @@ func TestStart_WithSkipPermissions(t *testing.T) {
 }
 
 func TestStart_OpenCode_NoTrustTap(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
 	var ranCmds []string
@@ -243,6 +249,8 @@ func TestStart_OpenCode_NoTrustTap(t *testing.T) {
 }
 
 func TestStart_DisablesMouseOnInnerSession(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
 	var ranCmds []string
@@ -306,6 +314,8 @@ func TestRestore_DisablesMouseOnRestoredSession(t *testing.T) {
 }
 
 func TestStart_InjectsAgentFlag(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
 	cmdExec := cmd_test.MockCmdExec{
@@ -333,6 +343,8 @@ func TestStart_InjectsAgentFlag(t *testing.T) {
 }
 
 func TestStart_InjectsTaskEnvVars(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
 	cmdExec := cmd_test.MockCmdExec{
@@ -363,6 +375,8 @@ func TestStart_InjectsTaskEnvVars(t *testing.T) {
 }
 
 func TestStart_WithInitialPrompt_OpenCode(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
 	cmdExec := cmd_test.MockCmdExec{
@@ -447,6 +461,8 @@ func TestParseClientCount(t *testing.T) {
 }
 
 func TestStart_Codex_NoAgentFlag(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
 	cmdExec := cmd_test.MockCmdExec{
@@ -461,10 +477,6 @@ func TestStart_Codex_NoAgentFlag(t *testing.T) {
 			return []byte("output"), nil
 		},
 	}
-
-	origGrace := codexGracePeriod
-	codexGracePeriod = 1 * time.Millisecond
-	t.Cleanup(func() { codexGracePeriod = origGrace })
 
 	workdir := t.TempDir()
 	s := NewTmuxSessionWithDeps("test-codex-noagent", "codex", false, ptyFactory, cmdExec)
@@ -476,6 +488,8 @@ func TestStart_Codex_NoAgentFlag(t *testing.T) {
 }
 
 func TestStart_Codex_BypassFlagPresentWithSkipPermissions(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
 	cmdExec := cmd_test.MockCmdExec{
@@ -490,10 +504,6 @@ func TestStart_Codex_BypassFlagPresentWithSkipPermissions(t *testing.T) {
 			return []byte("output"), nil
 		},
 	}
-
-	origGrace := codexGracePeriod
-	codexGracePeriod = 1 * time.Millisecond
-	t.Cleanup(func() { codexGracePeriod = origGrace })
 
 	workdir := t.TempDir()
 	s := NewTmuxSessionWithDeps("test-codex-bypass", "codex", true, ptyFactory, cmdExec)
@@ -503,6 +513,8 @@ func TestStart_Codex_BypassFlagPresentWithSkipPermissions(t *testing.T) {
 }
 
 func TestStart_Codex_BypassFlagAbsentWithoutSkipPermissions(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
 	cmdExec := cmd_test.MockCmdExec{
@@ -517,10 +529,6 @@ func TestStart_Codex_BypassFlagAbsentWithoutSkipPermissions(t *testing.T) {
 			return []byte("output"), nil
 		},
 	}
-
-	origGrace := codexGracePeriod
-	codexGracePeriod = 1 * time.Millisecond
-	t.Cleanup(func() { codexGracePeriod = origGrace })
 
 	workdir := t.TempDir()
 	s := NewTmuxSessionWithDeps("test-codex-nobypass", "codex", false, ptyFactory, cmdExec)
@@ -530,6 +538,8 @@ func TestStart_Codex_BypassFlagAbsentWithoutSkipPermissions(t *testing.T) {
 }
 
 func TestStart_Codex_BypassFlagNotDuplicatedWhenAlreadyInProgram(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
 	cmdExec := cmd_test.MockCmdExec{
@@ -544,10 +554,6 @@ func TestStart_Codex_BypassFlagNotDuplicatedWhenAlreadyInProgram(t *testing.T) {
 			return []byte("output"), nil
 		},
 	}
-
-	origGrace := codexGracePeriod
-	codexGracePeriod = 1 * time.Millisecond
-	t.Cleanup(func() { codexGracePeriod = origGrace })
 
 	workdir := t.TempDir()
 	// Profile-level flags already pin the bypass flag on the program string —
@@ -563,6 +569,8 @@ func TestStart_Codex_BypassFlagNotDuplicatedWhenAlreadyInProgram(t *testing.T) {
 }
 
 func TestStart_Claude_BypassFlagNotDuplicatedWhenAlreadyInProgram(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
 	cmdExec := cmd_test.MockCmdExec{
@@ -589,6 +597,8 @@ func TestStart_Claude_BypassFlagNotDuplicatedWhenAlreadyInProgram(t *testing.T) 
 }
 
 func TestStart_Codex_ShortPromptPositional(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
 	cmdExec := cmd_test.MockCmdExec{
@@ -603,10 +613,6 @@ func TestStart_Codex_ShortPromptPositional(t *testing.T) {
 			return []byte("output"), nil
 		},
 	}
-
-	origGrace := codexGracePeriod
-	codexGracePeriod = 1 * time.Millisecond
-	t.Cleanup(func() { codexGracePeriod = origGrace })
 
 	workdir := t.TempDir()
 	s := NewTmuxSessionWithDeps("test-codex-prompt", "codex", false, ptyFactory, cmdExec)
@@ -620,6 +626,8 @@ func TestStart_Codex_ShortPromptPositional(t *testing.T) {
 }
 
 func TestStart_Codex_LongPromptUsesCatSubstitution(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
 	cmdExec := cmd_test.MockCmdExec{
@@ -634,10 +642,6 @@ func TestStart_Codex_LongPromptUsesCatSubstitution(t *testing.T) {
 			return []byte("output"), nil
 		},
 	}
-
-	origGrace := codexGracePeriod
-	codexGracePeriod = 1 * time.Millisecond
-	t.Cleanup(func() { codexGracePeriod = origGrace })
 
 	workdir := t.TempDir()
 	s := NewTmuxSessionWithDeps("test-codex-longprompt", "codex", false, ptyFactory, cmdExec)
@@ -652,6 +656,8 @@ func TestStart_Codex_LongPromptUsesCatSubstitution(t *testing.T) {
 }
 
 func TestStart_Codex_ReadyWaitUsesAdapterPath(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
 	var ranCmds []string
@@ -670,10 +676,6 @@ func TestStart_Codex_ReadyWaitUsesAdapterPath(t *testing.T) {
 		},
 	}
 
-	origGrace := codexGracePeriod
-	codexGracePeriod = 1 * time.Millisecond
-	t.Cleanup(func() { codexGracePeriod = origGrace })
-
 	workdir := t.TempDir()
 	s := NewTmuxSessionWithDeps("test-codex-ready", "codex", false, ptyFactory, cmdExec)
 	err := s.Start(workdir)
@@ -685,6 +687,8 @@ func TestStart_Codex_ReadyWaitUsesAdapterPath(t *testing.T) {
 }
 
 func TestStart_WithInitialPrompt_Claude(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
 	cmdExec := cmd_test.MockCmdExec{
@@ -712,6 +716,8 @@ func TestStart_WithInitialPrompt_Claude(t *testing.T) {
 }
 
 func TestStart_WithInitialPrompt_Claude_NoTrustPromptReturnsOnStartupUI(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
 	var ranCmds []string
