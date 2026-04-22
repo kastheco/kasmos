@@ -41,35 +41,32 @@ timings collected on the development machine with a warmed module cache.
 | `app` package cold | 72.440s |
 | `session/tmux` package cold | 36.120s |
 
-### after (2026-04-22, post tasks 1–7)
+### after (2026-04-22, post tasks 1–8 + seam fixes)
 
 | scenario | time |
 |----------|------|
-| cold suite (`go test -count=1 ./...`) | 46.3s |
+| cold suite (`go test -count=1 ./...`) | ~21s |
 | warm suite (`go test ./...`, second pass) | ~4s (all packages `(cached)`) |
-| `app` package cold | 27.0s |
-| `session/tmux` package cold | 44.6s ¹ |
+| `app` package cold | ~21s |
+| `session/tmux` package cold | ~0.6s |
 
-¹ `session/tmux` measured under system load from concurrent agent tasks; individual
-test timing improved by replacing hard-coded sleeps with injectable vars, but
-parallel scheduling overhead is visible when the suite runs under contention.
+**cold suite improvement: 74s → 21s (~72%). session/tmux improvement: 36s → 0.6s (~98%).**
 
-**cold suite improvement: 74s → 46s (~38%). app package improvement: 72s → 27s (~63%).**
-
-the `app` gain comes from two changes: injectable timing knobs eliminated the
-hard-coded poll/title-sync delays, and `t.Parallel()` was added to all isolated
-test cases so the package runs its tests concurrently.
+the `session/tmux` gain comes from adding `programReadyMaxWaitTime` and
+`codexGracePeriod` overrides to `withFastTmuxTimings`, eliminating the 30s
+adapter timeout and 2s codex grace period from all mocked tests. the `app` gain
+comes from injectable timing knobs and `t.Parallel()` on all isolated test cases.
 
 ### top cold packages after optimisation
 
 ```
 elapsed     package
 -------     -------
-44.6s       session/tmux
-27.0s       app
-6.6s        config
-5.2s        cmd
-2.7s        config/taskstore
+20.7s       app
+5.3s        config
+4.2s        cmd
+2.1s        config/taskstore
+0.6s        session/tmux
 ```
 
 ## reproducible benchmarks

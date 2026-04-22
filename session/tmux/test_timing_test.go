@@ -13,18 +13,22 @@ func withFastTmuxTimings(t *testing.T) {
 	oldStartWaitTimeout := sessionStartWaitTimeout
 	oldStartInitial := sessionStartPollInitialDelay
 	oldStartMax := sessionStartPollMaxDelay
+	oldReadyMaxWait := programReadyMaxWaitTime
 	oldReadyInitial := programReadyPollInitialDelay
 	oldReadyMax := programReadyPollMaxDelay
 	oldReadyCheck := programReadySessionCheckInterval
+	oldGrace := codexGracePeriod
 	oldPermissionDelay := permissionResponseSettleDelay
 	oldDetachTimeout := detachWaitTimeout
 
 	sessionStartWaitTimeout = 50 * time.Millisecond
 	sessionStartPollInitialDelay = 0
 	sessionStartPollMaxDelay = 0
+	programReadyMaxWaitTime = 50 * time.Millisecond
 	programReadyPollInitialDelay = 0
 	programReadyPollMaxDelay = 0
 	programReadySessionCheckInterval = time.Millisecond
+	codexGracePeriod = 0
 	permissionResponseSettleDelay = 0
 	detachWaitTimeout = 10 * time.Millisecond
 
@@ -32,9 +36,11 @@ func withFastTmuxTimings(t *testing.T) {
 		sessionStartWaitTimeout = oldStartWaitTimeout
 		sessionStartPollInitialDelay = oldStartInitial
 		sessionStartPollMaxDelay = oldStartMax
+		programReadyMaxWaitTime = oldReadyMaxWait
 		programReadyPollInitialDelay = oldReadyInitial
 		programReadyPollMaxDelay = oldReadyMax
 		programReadySessionCheckInterval = oldReadyCheck
+		codexGracePeriod = oldGrace
 		permissionResponseSettleDelay = oldPermissionDelay
 		detachWaitTimeout = oldDetachTimeout
 	})

@@ -42,6 +42,7 @@ var (
 	sessionStartWaitTimeout          = 2 * time.Second
 	sessionStartPollInitialDelay     = 5 * time.Millisecond
 	sessionStartPollMaxDelay         = 50 * time.Millisecond
+	programReadyMaxWaitTime          = 30 * time.Second
 	programReadyPollInitialDelay     = 100 * time.Millisecond
 	programReadyPollMaxDelay         = time.Second
 	programReadySessionCheckInterval = 3 * time.Second
@@ -513,11 +514,13 @@ func (t *TmuxSession) Start(workDir string) error {
 
 		var searchString string
 		var tapFunc func() error // nil means no key tap needed
-		maxWaitTime := 30 * time.Second
+		maxWaitTime := programReadyMaxWaitTime
 
 		if adapter != nil {
 			searchString = adapter.ReadyString()
-			maxWaitTime = adapter.MaxWaitTime()
+			if adapterMax := adapter.MaxWaitTime(); adapterMax < maxWaitTime {
+				maxWaitTime = adapterMax
+			}
 			if adapter.NeedsTrustTap() {
 				tapFunc = t.TapEnter
 			}
