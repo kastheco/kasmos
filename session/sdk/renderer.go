@@ -671,6 +671,8 @@ func summarizeToolResultText(text string) string {
 	return "→ " + truncateOneLine(trimmed, 120)
 }
 
+const commandResultOutputMaxRunes = 120
+
 func normalizeCommandResultOutput(text string) string {
 	normalized := strings.TrimSpace(text)
 	if normalized == "" {
@@ -686,7 +688,7 @@ func normalizeCommandResultOutput(text string) string {
 			collapsed = append(collapsed, part)
 		}
 	}
-	return strings.Join(collapsed, " ")
+	return truncateOneLine(strings.Join(collapsed, " "), commandResultOutputMaxRunes)
 }
 
 func isRedundantToolPreview(summaryLine string, preview *ToolPreviewPayload) bool {

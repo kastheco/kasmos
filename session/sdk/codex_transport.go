@@ -29,6 +29,8 @@ import (
 	"github.com/kastheco/kasmos/session/tmux"
 )
 
+var codexJSONMarshal = json.Marshal
+
 const (
 	// Client -> server startup and turn lifecycle.
 	codexMethodInitialize    = "initialize"
@@ -950,7 +952,10 @@ func codexCommandExecutionResult(item codexThreadItem) string {
 	if p.ExitCode == nil && p.Output == "" {
 		return codexCommandExecutionDescription(item)
 	}
-	data, _ := json.Marshal(p)
+	data, err := codexJSONMarshal(p)
+	if err != nil {
+		return codexCommandExecutionDescription(item)
+	}
 	return string(data)
 }
 

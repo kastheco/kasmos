@@ -567,6 +567,27 @@ func TestCodexCommandExecutionResult_JSONShapes(t *testing.T) {
 	}
 }
 
+func TestCodexCommandExecutionResult_MarshalErrorFallsBackToDescription(t *testing.T) {
+	origMarshal := codexJSONMarshal
+	codexJSONMarshal = func(any) ([]byte, error) {
+		return nil, fmt.Errorf("marshal failed")
+	}
+	defer func() {
+		codexJSONMarshal = origMarshal
+	}()
+
+	exitZero := 0
+	output := "ok"
+	item := codexThreadItem{
+		Type:             "commandExecution",
+		Command:          "go test ./...",
+		AggregatedOutput: &output,
+		ExitCode:         &exitZero,
+	}
+
+	assert.Equal(t, "go test ./...", codexCommandExecutionResult(item))
+}
+
 func TestCodexTransport_TurnCompleted_HasPrompt(t *testing.T) {
 	ct, srv := newStartedCodexTransport(t)
 

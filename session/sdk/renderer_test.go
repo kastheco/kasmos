@@ -1181,6 +1181,29 @@ func TestRenderer_ToolResult_ExitCodeZero_NormalizesMultilineCommandOutput(t *te
 	assert.Equal(t, "tests passed with warnings", turns[0].Rows[0].Output)
 }
 
+func TestRenderer_ToolResult_ExitCodeZero_CapsStructuredCommandOutput(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+	longOutput := strings.Repeat("x", 200)
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{
+		Kind:       EventToolResult,
+		TurnID:     "t1",
+		ToolName:   "commandExecution",
+		ToolResult: fmt.Sprintf(`{"exit_code":0,"output":"%s"}`, longOutput),
+		Timestamp:  ts,
+	})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+	require.Len(t, turns[0].Rows, 1)
+
+	assert.Equal(t,
+		truncateOneLine(longOutput, commandResultOutputMaxRunes),
+		turns[0].Rows[0].Output,
+		"structured commandExecution output must be capped before it is stored in the presentation model")
+}
+
 func TestRenderer_ToolResult_Error_NoToolPreviewRow(t *testing.T) {
 	r := NewRenderer()
 	ts := time.Now()
